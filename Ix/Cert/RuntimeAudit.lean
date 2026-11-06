@@ -41,7 +41,7 @@ symbol that no library defines, so a binary that links them fails. -/
 -- beside the BLAKE3 primitives it reaches. Nothing else changes.
 -- Both `Ix.Cert.compile` (which drives `Ix.Compile.compileEnv` / `compileEnvFold`) and
 -- `Ix.Compile.ReadyCompile.reportIO` (the parallel ready-queue driver used by
--- `Ix.CompileCertified.compileCertifiedIO`) are audited here.
+-- `Ix.CompileM.compileCertifiedPrepared`) are audited here.
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
 [Address.admissionHash,
  Ix.groundExpr,
@@ -150,22 +150,17 @@ run_cmd do
 
 /-! ## The CLI certified compiler and role-binding finalizer
 
-`ix compile` and `ix compile-lean` invoke `Ix.CanonM.canonEnv`,
-`Ix.CompileM.compileCertified` (over `Ix.Compile.compileEnv`, alongside
-`Ix.Compile.ReadyCompile.reportIO`, the parallel ready-queue driver used by
-`Ix.CompileCertified.compileCertifiedIO`, audited above),
-`Ix.CompileM.validateFinalized`, `Ix.RoleBinding.Compile.finalize`, and
-`Ixon.serEnv`. Beyond `Init`, `Std`, `Lean`, and the `compileChecked` list
-above, their runtime closure reaches the source-contract environment
-extensions, the syntax equality helper, the Merkle tree builder, the name
-topological sort, and the `partial` helpers of role-evidence and role-binding
-synthesis, frozen here. -/
+`ix compile`, `ix compile-lean`, `ix compile-export` and `ix validate-lean`
+invoke `Ix.CompileM.compileAndFinalize`: `Ix.CompileM.compileCertified` (over
+`Ix.Compile.ReadyCompile.reportIO`, the parallel ready-queue driver audited
+above), `Ix.RoleBinding.Compile.finalize` with the certified backend,
+`Ix.CompileM.validateFinalized` and `Ixon.serEnv`. Beyond `Init`, `Std`,
+`Lean`, and the `compileChecked` list above, their runtime closure reaches the
+source-contract environment extensions, the syntax equality helper, the
+Merkle tree builder, the name topological sort, and the `partial` helpers of
+role-evidence and role-binding synthesis, frozen here. -/
 
-/-- error: project-level execution replacements reached from [Ix.CanonM.canonEnv,
- Ix.CompileM.compileCertified,
- Ix.CompileM.validateFinalized,
- Ix.RoleBinding.Compile.finalize,
- Ixon.serEnv]:
+/-- error: project-level execution replacements reached from [Ix.CompileM.compileAndFinalize]:
 [Ix.groundExpr,
  Ix.groundLevel,
  instBEqSyntax_ix.beq,
@@ -193,9 +188,7 @@ synthesis, frozen here. -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
-    #[``Ix.CanonM.canonEnv, ``Ix.CompileM.compileCertified,
-      ``Ix.CompileM.validateFinalized, ``Ix.RoleBinding.Compile.finalize,
-      ``Ixon.serEnv]
+    #[``Ix.CompileM.compileAndFinalize]
     #[`Init, `Std, `Lean]
     { Ix.Kernel.Audit.runtimeRulings with
       csimpModules := Ix.Kernel.Audit.runtimeRulings.csimpModules.push `Ix,

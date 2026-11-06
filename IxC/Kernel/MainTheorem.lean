@@ -2,7 +2,7 @@ module
 
 import IxC.Kernel.Verify.Cached.MainC
 public import IxC.Kernel.Denotes
-public import IxC.Kernel.Cached.Installed
+public import IxC.Kernel.Cached.Policy
 import IxC.Kernel.Model.Denotes
 public section
 
@@ -64,15 +64,19 @@ theorem model_exists {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
   obtain ⟨m⟩ := Cached.checkDecls_sound (V := V) rfl accepted
   exact ⟨Model.Model.ofEnvModelM m⟩
 
-/-- **Conditional model existence**: every environment accepted by `checkDecls`
-has a model in `V` realizing all custom user axioms in `env.customAxiomInfos`. -/
-theorem model_exists_conditional {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
+/-- **The main theorem for the fold that admits user axioms, without them.**
+An accept of `checkDeclsWithUserAxioms` from records that declare no user axiom
+(`userAxiomsOfDecls`, the `.axiomDecl`s under eligible keys) has a model in
+every set theory: over such records the fold is `checkDecls`
+(`Cached.checkDeclsWithUserAxioms_eq_checkDecls`). An accept that admitted user
+axioms is conditional on them, and no model is claimed for it here. -/
+theorem model_exists_of_no_user_axioms {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
     (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
-    (accepted : checkDecls .verified ev ds = .ok env) :
-    ∃ M : Model V env, AxiomSetRealized V M.cval env env.customAxiomInfos := by
-  obtain ⟨M⟩ := model_exists V ev ds env accepted
-  refine ⟨M, fun cv hcv => ?_⟩
-  exact M.realizes_of_mem_consts ((Env.mem_customAxiomInfos_iff.mp hcv).1)
+    (accepted : Cached.checkDeclsWithUserAxioms .verified ev ds = .ok env)
+    (hnone : userAxiomsOfDecls ds.toList = []) :
+    Nonempty (Model V env) := by
+  rw [Cached.checkDeclsWithUserAxioms_eq_checkDecls .verified ev ds hnone] at accepted
+  exact model_exists V ev ds env accepted
 
 /-- **Consistency of accepted environments**: every environment accepted by
 `checkDecls` is semantically consistent (`Consistent env`, i.e., contains no
@@ -82,15 +86,5 @@ theorem checkDecls_consistent {md : Mode} [md.Certified] (V : Type w) [SetTheory
     (accepted : checkDecls .verified ev ds = .ok env) :
     Consistent env :=
   consistent_of_model V (model_exists V ev ds env accepted)
-
-/-- **Conditional consistency under custom user axioms**: any environment `env`
-with a model `M : Model V env` realizing its custom user axioms
-(`AxiomSetRealized V M.cval env env.customAxiomInfos`) is semantically
-consistent (`Consistent env`). -/
-theorem consistent_of_userAxioms_realized {md : Mode} (V : Type w) [SetTheory V]
-    {env : Env md} (M : Model V env)
-    (_hax : AxiomSetRealized V M.cval env env.customAxiomInfos) :
-    Consistent env :=
-  consistent_of_model V ⟨M⟩
 
 end Ix.Kernel

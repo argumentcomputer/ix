@@ -28,10 +28,13 @@ structure Defaults where
   workers : Nat
   deriving FromJson, ToJson
 
+/-- The pinned artifact: its file name, size and Blake3 digest. A manifest that
+pins no Blake3 digest (the committed one still carries the v3 artifact's
+SHA-256) validates, but `run` refuses to check against it. -/
 structure Artifact where
   filename : String
   bytes : Nat
-  sha256 : String
+  blake3 : Option String := none
   deriving FromJson, ToJson
 
 structure Manifest where
@@ -69,7 +72,7 @@ def need (value : Except String α) : IO α :=
   | .error e => throw (IO.userError e)
 
 def validate (m : Manifest) : Except String Unit := do
-  unless m.schema == 1 && isHex m.artifact.sha256 do throw "invalid manifest/artifact"
+  unless m.schema == 1 && m.artifact.blake3.all isHex do throw "invalid manifest/artifact"
   unless m.defaults.workers == 1 do throw "suite requires one fresh worker"
   unless 0 < m.defaults.memory_gib && m.defaults.memory_gib ≤ 96 do
     throw "memory budget must be between 1 and 96 GiB"
@@ -168,10 +171,12 @@ def checkedOutput (cmd : String) (args : Array String) : IO String := do
   unless r.exitCode == 0 do throw (IO.userError s!"{cmd}: {r.stderr}")
   return r.stdout.trimAscii.toString
 
+/-- A file's Blake3 digest, by `b3sum`: the harness runs under `lean --run`,
+where the `Blake3` package's FFI hasher (`Ix.FileDigest`) is not linked. -/
 def digest (path : FilePath) : IO String := do
-  let output ← checkedOutput "sha256sum" #["--", path.toString]
+  let output ← checkedOutput "b3sum" #["--", path.toString]
   let hash := (output.splitOn " ").head!
-  unless isHex hash do throw (IO.userError "invalid sha256sum output")
+  unless isHex hash do throw (IO.userError "invalid b3sum output")
   return hash
 
 def identities (paths : Array FilePath) : IO (Array String) :=
@@ -364,6 +369,8 @@ def run (opts : Options) : IO UInt32 := do
   let m : Manifest ← need (fromJson? manifestJson)
   need (validate m)
   if opts.selfTest then selfTest m; return 0
+  if m.artifact.blake3.isNone then
+    throw (IO.userError "the manifest pins no Blake3 digest for its artifact; record artifact.blake3 first")
   unless [opts.ixe, opts.baseline, opts.adaptive, opts.output].all (!·.isEmpty) do
     throw (IO.userError "required: --ixe FILE --baseline BIN --adaptive BIN --output NEW_DIR")
   for id in opts.cases do
@@ -381,7 +388,7 @@ def run (opts : Options) : IO UInt32 := do
   let out ← IO.FS.realPath out
   announce "Fingerprinting input and executables before timed checks..."
   let hashes ← paths.mapM digest
-  ensure (hashes[0]! == m.artifact.sha256) "artifact SHA-256 mismatch"
+  ensure (some hashes[0]! == m.artifact.blake3) "artifact Blake3 digest mismatch"
   ensure (hashes[1]! != hashes[2]!) "baseline/adaptive binaries are identical"
   ensure ((← identities paths) == initial) "input changed during fingerprinting"
   let runId := s!"{← IO.Process.getPID}-{← IO.monoMsNow}"
@@ -389,36 +396,15 @@ def run (opts : Options) : IO UInt32 := do
   saveJson (out / "run.json") (Json.mkObj [
     ("schema", toJson (1 : Nat)), ("run_id", toJson runId), ("manifest", manifestJson),
     ("selected_case_ids", toJson (selected.map (·.id))),
-    ("paths", toJson (paths.map (·.toString))), ("sha256", toJson hashes),
+    ("paths", toJson (paths.map (·.toString))), ("blake3", toJson hashes),
     ("file_identity", toJson initial), ("rounds", toJson opts.rounds),
     ("allow_work_changes", toJson opts.allowWorkChanges),
     ("host", toJson (← checkedOutput "uname" #["-a"])),
-    ("driver_sha256", toJson (← digest (suiteDir / "RunSuite.lean"))),
+    ("driver_blake3", toJson (← digest (suiteDir / "RunSuite.lean"))),
     ("started_utc", toJson (← checkedOutput "date" #["-u", "+%Y-%m-%dT%H:%M:%SZ"])),
     ("scope", toJson "subject-only; dependencies trusted"), ("workers", toJson (1 : Nat))])
   -- Explicit prototype source snapshot; no unrelated worktree files.
-  for relative in #["crates/kernel/src/env.rs", "crates/kernel/src/env/scratch.rs",
-    "crates/kernel/src/subst.rs", "crates/kernel/src/subst/scratch_tests.rs",
-    "crates/kernel/src/infer.rs", "crates/kernel/src/infer/binders.rs",
-    "crates/kernel/src/infer/binders/tests.rs",
-    "crates/kernel/src/infer/application.rs",
-    "crates/kernel/src/infer/application/prefix.rs",
-    "crates/kernel/src/infer/application/tests.rs",
-    "crates/kernel/src/infer/summary.rs",
-    "crates/kernel/src/infer/summary/tests.rs", "crates/kernel/src/perf.rs",
-    "crates/kernel/src/perf/same_head.rs",
-    "crates/kernel/src/perf/hot_misses.rs",
-    "crates/kernel/src/def_eq.rs", "crates/kernel/src/tc.rs",
-    "crates/kernel/src/tc/spine_tests.rs", "crates/kernel/src/whnf.rs",
-    "crates/kernel/src/def_eq/projection_tests.rs",
-    "crates/kernel/src/def_eq/application.rs",
-    "crates/kernel/src/def_eq/application/tests.rs",
-    "crates/kernel/src/def_eq/same_head_tests.rs",
-    "crates/kernel/src/def_eq/speculation.rs",
-    "crates/kernel/src/def_eq/binders.rs",
-    "crates/kernel/src/def_eq/binders/tests.rs",
-    "crates/ffi/examples/check_anon_subject.rs", "Cargo.toml", "Cargo.lock",
-    "crates/kernel/Cargo.toml", "rust-toolchain.toml", "lean-toolchain",
+  for relative in #["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "lean-toolchain",
     "flake.nix", "flake.lock",
     ".cargo/config.toml", "Benchmarks/Kernel/AnthropicFLT/RunSuite.lean"] do
     let src : FilePath := relative

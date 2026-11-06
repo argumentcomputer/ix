@@ -1,13 +1,15 @@
-/-
-  Ixon.* type FFI roundtrip tests.
-  Pattern: Lean value → Rust (decode) → Rust (re-encode via C API) → Lean value → compare
--/
 module
 
 public import LSpec
 public import Tests.Gen.Ixon
 public import Ix.Ixon
 public import Ix.IxonUniv
+public import Ix.Cli.DiffCmd
+
+/-!
+  Ixon.* type FFI roundtrip tests.
+  Pattern: Lean value → Rust (decode) → Rust (re-encode via C API) → Lean value → compare
+-/
 
 public section
 
@@ -221,15 +223,6 @@ def constantMetaTests : TestSeq :=
 @[extern "rs_eq_univ_serialization"]
 opaque rsEqUnivSerialization : @& Univ → @& ByteArray → Bool
 
-/-- P5 mirror parity (canonicity §10.6): Rust `canon_univ` of arg 1
-    equals the Lean-computed canonical form (arg 2) structurally. -/
-@[extern "rs_canon_univ_matches"]
-opaque rsCanonUnivMatches : @& Univ → @& Univ → Bool
-
-/-- Twin parity for the frozen `mk*` rebuild closure. -/
-@[extern "rs_reduce_univ_matches"]
-opaque rsReduceUnivMatches : @& Univ → @& Univ → Bool
-
 @[extern "rs_eq_expr_serialization"]
 opaque rsEqExprSerialization : @& Expr → @& ByteArray → Bool
 
@@ -354,11 +347,13 @@ def envDiffTests : TestSeq :=
     let pb := dir / "b.ixe"
     IO.FS.writeBinFile pa (serEnv! envBase)
     IO.FS.writeBinFile pb (serEnv! envValueChanged)
-    let same ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pa.toString, "--meta"] }
-    let differ ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pb.toString, "--anon"] }
+    let (sameOut, sameCode) ← IO.FS.withIsolatedStreams
+      (diffCmd.validate [pa.toString, pa.toString, "--meta"])
+    let (_, differCode) ← IO.FS.withIsolatedStreams
+      (diffCmd.validate [pa.toString, pb.toString, "--anon"])
     IO.FS.removeDirAll dir
-    let ok := same.exitCode == 0 && same.stdout.contains "identical" && differ.exitCode == 1
-    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {same.exitCode}/{differ.exitCode}")) .done) ++
+    let ok := sameCode == 0 && sameOut.contains "identical" && differCode == 1
+    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {sameCode}/{differCode}")) .done) ++
   test "EnvDiff: self-diff empty (anon)"
     ((runDiff envBase envBase).any (·.isEmpty)) ++
   test "EnvDiff: self-diff empty (meta)"
@@ -607,18 +602,17 @@ def mixedChain (n : Nat) : Univ := imaxChain
     else .imax (.var 1) (.var 0)) (.var (if n % 2 == 0 then 0 else 1)) n
 
 /-- `canonUniv` on long `imax` chains. The `imax` distributions repeat calls
-    of the normalizer (`2ⁿ` calls on these chains); both normalizers skip a
-    repeated call (`CanonUniv.NState`, Rust `Seen`), so chains of 64 finish.
-    Checked by value (P0), idempotence (P1), the `mk*` fixpoint (P3) and
-    Lean/Rust mirror parity. -/
+    of the normalizer (`2ⁿ` calls on these chains); the normalizer skips a
+    repeated call (`CanonUniv.NState`), so chains of 64 finish.
+    Checked by value (P0), idempotence (P1) and the `mk*` fixpoint (P3). -/
 def canonUnivChainTests : TestSeq :=
   let ok (u : Univ) : Bool :=
     let c := Ixon.canonUniv u
     (Tests.Gen.Ixon.univDifferAt? 2 u c).isNone && Ixon.canonUniv c == c &&
-      Ixon.reduceUniv c == c && rsCanonUnivMatches u c
+      Ixon.reduceUniv c == c
   test "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
     (Ixon.canonUniv (cutsatChain 64) == .var 0)
-  ++ test "canonUniv P0, P1, P3 and mirror parity: imax chains of 0–10, 24, 40 and 64 links"
+  ++ test "canonUniv P0, P1 and P3: imax chains of 0–10, 24, 40 and 64 links"
     (((List.range 11) ++ [24, 40, 64]).all fun n => ok (cutsatChain n) && ok (mixedChain n))
 
 /-- `canonUniv` accumulates successor offsets in `Nat`: in `UInt64` an
@@ -682,29 +676,6 @@ def suite : List TestSeq := [
     (∀ env : RawEnv, selfDiffEmpty true env),
   ---- Env pack
   envPackTests,
-  ---- Universe canonicalization mirror parity (canonicity §10.6, P5).
-  -- Exhaustive over all ≤6-node terms (3 params): the property-relevant
-  -- shapes — nested imax at depth ≥ 3 — sit outside `genUniv`'s
-  -- shallow-resized sampling, and the sweep is deterministic and cheap.
-  checkIO "Ixon.canonUniv mirror parity (exhaustive ≤6 nodes)"
-    ((Tests.Gen.Ixon.enumerateUniv 6).all fun u =>
-      rsCanonUnivMatches u (Ixon.canonUniv u)),
-  checkIO "Ixon.reduceUniv mirror parity (exhaustive ≤6 nodes)"
-    ((Tests.Gen.Ixon.enumerateUniv 6).all fun u =>
-      rsReduceUnivMatches u (Ixon.reduceUniv u)),
-  checkIO "Ixon.canonUniv mirror parity (sampled)"
-    (∀ x : Univ, rsCanonUnivMatches x (Ixon.canonUniv x)),
-  -- The value-change witness family and the kernel level comparison's
-  -- biased random levels (deep imax-by-parameter chains over 3–4
-  -- params, where the leak-free self-strip proviso decides the output):
-  -- both languages must make the same leak-free self-strip decisions.
-  test "Ixon.canonUniv mirror parity (value-change witness family)"
-    (Tests.Gen.Ixon.univWitnessFamily.all fun u =>
-      rsCanonUnivMatches u (Ixon.canonUniv u)),
-  test "Ixon.canonUniv mirror parity (biased random, 3 and 4 params)"
-    ((Tests.Gen.Ixon.biasedUnivFamily 3 10 2000 41
-        ++ Tests.Gen.Ixon.biasedUnivFamily 4 12 500 43).all fun u =>
-      rsCanonUnivMatches u (Ixon.canonUniv u)),
   -- long imax chains: the normalizers' call memo (FU item 10)
   canonUnivChainTests,
   canonUnivOffsetTests,

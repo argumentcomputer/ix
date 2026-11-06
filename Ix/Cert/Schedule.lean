@@ -2,8 +2,7 @@ import Ix.Cert.Compile
 
 /-! # The driver's schedule is a fold
 
-`Ix.CompileM.compileEnvFold` is the driver of both `Ix.Cert.compile` and the
-IO pipeline (`Ix.CompileM.compileDecoratedConsts`). Each wave computes its
+`Ix.CompileM.compileEnvFold` is the driver of `Ix.Cert.compile`. Each wave computes its
 ready blocks' outcomes (`auxBlockOutcome`) against the wave's snapshot on
 at most `width` tasks (`waveTasks`), and applies them in block-key order.
 This file proves that the schedule is only a schedule:
@@ -27,12 +26,14 @@ This file proves that the schedule is only a schedule:
 
 "Sequential" is the fold's own order: within a wave every outcome is
 computed against the wave's snapshot (the state the previous wave left),
-then the outcomes are applied in key order. That this equals compiling each
-block against the live state in some dependency order (the reference
-schedule `Tests.Ix.Compile.ScheduleReference`) is a
-property of the blocks' independence within a wave, tested by
-`compile-schedule-identity` and `cert-compile-parity-initstd`, not proved
-here.
+then the outcomes are applied in key order. Wave-snapshot freshness and
+disjointness across blocks in a wave are proved in `Ix.Cert.FreshSnapshot`
+(feeding `Ix.Cert.RunOwnership`, which proves semantic correctness of the
+wave-snapshot fold directly), while `Ix.Compile.ReadyCompile.reportIO`
+proves by type that the IO worker-queue driver computes `Ix.Cert.compileReport`.
+(That the wave-snapshot fold also equals compiling each block one at a time
+against the live state is a property of the blocks' independence within a
+wave, not proved here.)
 
 The driver is restated with its apply step as a parameter
 (`foldWaveWith`), by `rfl` (`foldWave_eq_with`): an edit of `foldWave`
@@ -220,8 +221,7 @@ theorem compileEnvFold_width (env : Ix.Environment) (blocks : Ix.CondensedBlocks
       compileEnvFold env blocks dbg' sharingLimits width' := by
   rw [compileEnvFold_eq_seq, compileEnvFold_eq_seq]
 
-/-- The IO pipeline's wrapper (`compileDecoratedConsts` runs the driver
-under `IO.lazyPure`) is `pure` of the value. -/
+/-- The `IO.lazyPure` wrapper is `pure` of the value. -/
 theorem lazyPure_eq {α : Type} (f : Unit → α) : IO.lazyPure f = pure (f ()) := rfl
 
 end Ix.Cert.Schedule

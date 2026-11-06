@@ -1,9 +1,3 @@
-/-
-  Decompilation tests.
-  Runs the Rust compilation pipeline, then decompiles back to Ix constants
-  and compares via content hashes.
--/
-
 module
 public import Ix.Ixon
 public import Ix.Environment
@@ -11,6 +5,7 @@ public import Ix.Address
 public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
+public import Ix.CompileCertified
 public import Ix.DecompileM
 public import Ix.DecompileDriver
 public import Ix.ImportIxe
@@ -18,115 +13,15 @@ public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
 
+/-!
+  Decompilation tests.
+  Runs the certified compilation pipeline, then decompiles back to Ix constants
+  and compares via content hashes.
+-/
+
 open LSpec
 
 namespace Tests.Decompile
-
-/-- Decompile roundtrip test: Rust compile → parallel decompile → hash comparison -/
-def testDecompile : TestSeq :=
-  .individualIO "Decompilation Roundtrip" none (do
-    let leanEnv ← get_env!
-    let totalConsts := leanEnv.constants.toList.length
-
-    IO.println s!"[Test] Decompilation Roundtrip Test"
-    IO.println s!"[Test] Environment has {totalConsts} constants"
-    IO.println ""
-
-    -- Step 1: Run Rust compilation pipeline
-    IO.println s!"[Step 1] Running Rust compilation pipeline..."
-    let rustStart ← IO.monoMsNow
-    let phases ← Ix.CompileM.rsCompilePhases leanEnv
-    let rustTime := (← IO.monoMsNow) - rustStart
-    IO.println s!"[Step 1]   Rust: {phases.compileEnv.constCount} compiled in {rustTime}ms"
-    IO.println s!"[Step 1]   names={phases.compileEnv.names.size}, named={phases.compileEnv.named.size}, consts={phases.compileEnv.consts.size}, blobs={phases.compileEnv.blobs.size}"
-    IO.println ""
-
-    -- Step 2: Read stored originals and restore inductive flags. The source
-    -- view remains a compatibility argument; comparison is below.
-    IO.println s!"[Step 2] Decompiling (full driver) to Ix types..."
-    let decompStart ← IO.monoMsNow
-    let origView : Std.HashMap Ix.Name Ix.ConstantInfo := phases.rawEnv.consts
-    -- The limits the Rust compile above read (`IX_SHARING_LIMITS`).
-    let sharingLimits ← IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
-    let (decompiled, decompErrors, _p2st) ←
-      Ix.DecompileM.decompileEnvFullParallel phases.compileEnv (some origView)
-        (sharingLimits := sharingLimits)
-    IO.println s!"[Step 2]   {decompiled.size} constants, {decompErrors.size} errors in {(← IO.monoMsNow) - decompStart}ms"
-    IO.println ""
-
-    -- Report errors
-    if !decompErrors.isEmpty then
-      IO.println s!"[Errors] First 20 errors:"
-      for (name, err) in decompErrors.toList.take 20 do
-        IO.println s!"  {name}: {err}"
-      IO.println ""
-
-    -- Count by constant type
-    let mut nDefn := (0 : Nat); let mut nAxiom := (0 : Nat)
-    let mut nInduct := (0 : Nat); let mut nCtor := (0 : Nat)
-    let mut nRec := (0 : Nat); let mut nQuot := (0 : Nat)
-    let mut nOpaque := (0 : Nat); let mut nThm := (0 : Nat)
-    for (_, info) in decompiled do
-      match info with
-      | .defnInfo _ => nDefn := nDefn + 1
-      | .axiomInfo _ => nAxiom := nAxiom + 1
-      | .inductInfo _ => nInduct := nInduct + 1
-      | .ctorInfo _ => nCtor := nCtor + 1
-      | .recInfo _ => nRec := nRec + 1
-      | .quotInfo _ => nQuot := nQuot + 1
-      | .opaqueInfo _ => nOpaque := nOpaque + 1
-      | .thmInfo _ => nThm := nThm + 1
-    IO.println s!"[Types] defn={nDefn}, thm={nThm}, opaque={nOpaque}, axiom={nAxiom}, induct={nInduct}, ctor={nCtor}, rec={nRec}, quot={nQuot}"
-    IO.println ""
-
-    -- Step 3: Hash-based comparison against original Ix.Environment
-    let ixEnv := phases.rawEnv
-    IO.println s!"[Step 3] Original Ix.Environment has {ixEnv.consts.size} constants"
-
-    IO.println s!"[Compare] Hash-comparing {decompiled.size} decompiled constants..."
-    let compareStart ← IO.monoMsNow
-
-    -- Sequential hash comparison (cheap: just address equality on 32-byte hashes)
-    let mut nMatch := (0 : Nat); let mut nMismatch := (0 : Nat); let mut nMissing := (0 : Nat)
-    let mut firstMismatches : Array (Ix.Name × String) := #[]
-    -- Full structural comparison (`ConstantInfo` BEq — hash-based at
-    -- the Name/Level/Expr leaves): every field, not just type/value.
-    for (name, decompInfo) in decompiled do
-      match ixEnv.consts.get? name with
-      | some origInfo =>
-        if decompInfo == origInfo then
-          nMatch := nMatch + 1
-        else
-          nMismatch := nMismatch + 1
-          if firstMismatches.size < 10 then
-            firstMismatches := firstMismatches.push (name, "constant-info mismatch")
-      | none =>
-        nMissing := nMissing + 1
-        if firstMismatches.size < 10 then
-          firstMismatches := firstMismatches.push (name, "not in original")
-    -- Reverse coverage: source constants never reconstructed.
-    let mut nMissingFromDecompile := (0 : Nat)
-    for (name, _) in ixEnv.consts do
-      if !decompiled.contains name then
-        nMissingFromDecompile := nMissingFromDecompile + 1
-        if firstMismatches.size < 10 then
-          firstMismatches := firstMismatches.push (name, "missing from decompile")
-    nMissing := nMissing + nMissingFromDecompile
-
-    let compareTime := (← IO.monoMsNow) - compareStart
-    IO.println s!"[Compare] Matched: {nMatch}, Mismatched: {nMismatch}, Missing: {nMissing} ({compareTime}ms)"
-    if !firstMismatches.isEmpty then
-      IO.println s!"[Compare] First mismatches:"
-      for (name, diff) in firstMismatches do
-        IO.println s!"  {name}: {diff}"
-    IO.println ""
-
-    let success := decompErrors.size == 0 && nMismatch == 0 && nMissing == 0
-    if success then
-      return (true, 0, 0, none)
-    else
-      return (false, 0, 0, some s!"{decompErrors.size} decompilation errors")
-  ) .done
 
 /-! ## Extension-table append (pure unit)
 
@@ -205,8 +100,7 @@ end ExtensionAppend
 `metaSharing[i - p]` (`p ≤ i < p + j`); anything else is
 `invalidMetaShareIndex`. No compiler emits such a share today, so these
 hand-built tables are the only thing pinning the table check
-(`validateMetaSharing`, which every constant's block setup runs; Rust
-mirror: `meta_share_*` tests in `crates/compile/src/decompile.rs`).
+(`validateMetaSharing`, which every constant's block setup runs).
 
 Every fixture has one primary entry (`p = 1`), `prim0 = (#1 #2)`. -/
 
@@ -298,12 +192,6 @@ public def unitSuite : List TestSeq := [
     ++ test "metadata share: tables without shares unchanged" msNoShares
     ++ test "metadata share: a valid shared table passes" msSharedTable
     ++ test "metadata share: shared subterms are checked once" msSharedChain
-]
-
-/-! ## Test Suite -/
-
-public def decompileSuiteIO : List TestSeq := [
-  testDecompile,
 ]
 
 end Tests.Decompile

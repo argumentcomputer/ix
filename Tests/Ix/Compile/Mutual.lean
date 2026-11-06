@@ -1,12 +1,14 @@
 module
 public import Lean
 
-namespace Tests.Ix.Compile.Mutual
+/-!
+  Mutual and auxiliary shapes in the shared compiler fixture corpus.
+  Members retain their source positions even when their shapes agree under
+  renaming. Reordered declarations are separate inputs; the compiler does
+  not promise equal addresses across different member orders.
+-/
 
--- Mutual and auxiliary shapes in the shared compiler fixture corpus.
--- Members retain their source positions even when their shapes agree under
--- renaming. Reordered declarations are separate inputs; the compiler does
--- not promise equal addresses across different member orders.
+namespace Tests.Ix.Compile.Mutual
 
 -- Symmetric pair (A ≅ B under renaming), with two distinct member slots.
 namespace AlphaCollapse
@@ -607,7 +609,7 @@ end BelowPredicate2
 
 -- Type-level mutual indexed inductives + mutual structural recursion +
 -- forced `.eq_def` equation lemmas (the TorchLean `NN.GraphSpec.DAG`
--- `Term`/`Args` shape, torchlean.ixe check-rs failure of 2026-08-22).
+-- `Term`/`Args` shape, torchlean.ixe failure of 2026-08-22).
 --
 -- The mutual defs compile through `X.brecOn`, and the auto-generated
 -- `.eq_def` proofs reference `X.brecOn.go` and `X.brecOn.eq` directly. A
@@ -774,7 +776,7 @@ end TypeBrecOnForwardDepOrder
 
 -- Mutual Prop-valued inductive predicates consumed through the raw mutual
 -- recursor with explicit motives (the PhiConfluence `Par`/`ParB` shape;
--- phiconfluence.ixe check-rs failures of 2026-08-22: `parB_domain`,
+-- phiconfluence.ixe failures of 2026-08-22: `parB_domain`,
 -- `parB_preserves`, `par_to_red`, `WF.par`, `par_triangle`, …).
 --
 -- `induction h using Pb.rec (motive_1 := fun _ _ _ => True)` elaborates to a
@@ -995,7 +997,7 @@ end PropRecMotives
 -- Type-valued nested mutual consumed through the raw recursor with explicit
 -- motives, including the nested-aux motive (the PhiConfluence
 -- `Term`/`Binding` shape — `Term.form` nests `Binding` through `List` — and
--- its `nf_devel`/`nf_false_reducible` check-rs failures of 2026-08-22).
+-- its `nf_devel`/`nf_false_reducible` failures of 2026-08-22).
 -- `Tm.rec` has three motives: Tm, Bd, and the `List Bd` nested auxiliary;
 -- a user `induction … using Tm.rec (motive_2 := …) (motive_3 := …)` passes
 -- all three in source order. Twins in both source orders, as above.

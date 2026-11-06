@@ -1,4 +1,3 @@
-/- IxVM claim execution and target selection shared by check and prove. -/
 module
 public import Ix.Address
 public import Ix.Aiur.Compiler
@@ -15,7 +14,8 @@ public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
 public import Ix.Cli.NameResolve
-public import Ix.CompileResource
+
+/-! IxVM claim execution and target selection shared by check and prove. -/
 
 public section
 
@@ -252,34 +252,11 @@ def runInterp (decls : Aiur.Source.Decls)
 /-- The environment a claim about `name` is checked against when no `.ixe` is
     given: the closure of `name`, with the constants the kernel fabricates
     during reduction and the roles' constants (the selection of
-    `IxVM.ClaimHarness.loadIxonEnv`), bound to the default role table.
-
-    By default the closure is compiled by the validated streamed Lean pipeline
-    (`Ix.CompileM.compileLeanConstsValidated`: streamed canonicalization and
-    condensation, the compile fold, and `Ix.Cert.checkReport`), and any failed
-    constant refuses the load. With `rust` it is compiled by the Rust compiler
-    (`loadIxonEnv`), which runs none of those checks. -/
-def loadNamedIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) (rust : Bool := false) :
-    IO Ixon.Env := do
-  if rust then return ← IxVM.ClaimHarness.loadIxonEnv name leanEnv
-  let mut seen : Lean.NameSet := {}
-  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  let names : Array Lean.Name :=
-    #[name] ++ IxVM.ClaimHarness.synthesizedPrimNames ++ IxVM.ClaimHarness.roleNames
-  for n in names do
-    if leanEnv.constants.contains n then
-      for entry in Lean.collectDependencies n leanEnv.constants do
-        if !seen.contains entry.fst then
-          seen := seen.insert entry.fst
-          deduped := deduped.push entry
-  match ← Ix.CompileM.compileLeanConstsValidated deduped.toList with
-  | .error e => throw (IO.userError s!"the validated Lean compile of {name}'s closure failed: {e}")
-  | .ok out =>
-    unless out.cenv.ungrounded.isEmpty do
-      throw (IO.userError s!"the validated Lean compile of {name}'s closure: \
-        {out.cenv.ungrounded.size} constant(s) failed to compile: \
-        {Ix.CompileM.recordedFailures out.cenv.ungrounded}")
-    IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding out.env)
+    `IxVM.ClaimHarness.loadIxonEnv`), compiled by the certified Lean compiler
+    (`Ix.CompileM.compileCertified`) and bound to the default role table. -/
+def loadNamedIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
+    IO Ixon.Env :=
+  IxVM.ClaimHarness.loadIxonEnv name leanEnv
 
 /-- Shared driver for `ix check` / `ix prove`. Loads either a `.ixe`
     env (with optional `--claim` over a persisted claim, or per-name
@@ -300,14 +277,12 @@ def loadNamedIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) (rust : Boo
     Lean env (no `.ixe` to mmap) or when the persisted `--claim`
     variant isn't `check addr none`.
 
-    Without a `.ixe`, each name's closure is compiled by the validated
-    streamed Lean pipeline, or with `rust` by the uncertified Rust
-    compiler (`loadNamedIxonEnv`). -/
+    Without a `.ixe`, each name's closure is compiled by the certified
+    Lean compiler (`loadNamedIxonEnv`). -/
 def forEachClaim
     (ixePath : Option String) (claimHex : Option String) (names : List String)
     (keepGoing : Bool) (logTag : String) (forceLeanWitness : Bool)
     (runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32)
-    (rust : Bool := false)
     : IO UInt32 := do
   let mut failures : Array String := #[]
   match ixePath with
@@ -393,7 +368,7 @@ def forEachClaim
       -- during reduction (Bool/Nat ctors, String-literal ctor form),
       -- whose bytes must be in ch 2 even when the target's proof body
       -- never references them.
-      let ixonEnv ← loadNamedIxonEnv name env rust
+      let ixonEnv ← loadNamedIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
       let claim ← checkClaimOf ixonEnv addr
       if forceLeanWitness then

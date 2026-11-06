@@ -13,7 +13,7 @@
 //! `contains` traversals that made the former Lean startup super-linear.
 
 use aiur::synthesis::{AiurProof, AiurSystem};
-use ix_kernel::shard::ShardManifest;
+use ixon::shard::ShardManifest;
 use ixon::{ClaimContext, Proof as IxonProof};
 use ixvm_codegen::env_handle::EnvHandle;
 use plan::{

@@ -1,17 +1,21 @@
-/-
+module
+
+public import Lean
+public import Ix.DecompileDriver
+public meta import Ix.DecompileDriver
+public meta import Ix.Replay
+
+/-!
   `import_ixe`: materialize a `.ixe`'s constants into the current
   elaboration environment.
 
   The `.ixe` is ix's fundamental artifact (plan D5 — no olean layer
   anywhere): a consumer file writes `import_ixe "catalog.ixe"` and the
   catalog's qualified constants become referenceable source-level
-  names, kernel-checked on the way in. The heavy lifting happens in
-  Rust: `rs_decompile_env_consts` decompiles the artifact and hands
-  back real `Lean.ConstantInfo` object graphs (constructed through the
-  toolchain's exported `lean_expr_mk_*` constructors, so hashes and
-  cached flags are Lean's own); the Lean side reconstructs kernel
-  `Declaration`s with the shared `Ix.Replay.planDeclarations` planner
-  and replays them with `Lean.addDecl`.
+  names, kernel-checked on the way in. `Ix.DecompileM.decompileEnvConsts`
+  decodes and decompiles the artifact in pure Lean and uncanonicalizes
+  each source constant to a `Lean.ConstantInfo`; `Ix.Replay.planDeclarations`
+  reconstructs kernel `Declaration`s and replays them with `Lean.addDecl`.
 
   Semantics:
   - Import restores the original Lean source declarations.
@@ -23,7 +27,7 @@
     bodies stay transparent even when the consumer file is in module
     mode — Ix punches through the Lean module system (plan D6).
   - `import_ixe "path" only [n₁, n₂]` materializes just the named
-    constants plus their full reference closure (computed Rust-side) —
+    constants plus their full reference closure —
     the bounded-cost import for large catalogs (plan DQ2).
   - Kernel-level only: instances, attributes, and native code do not
     transfer. Instance constants arrive as ordinary definitions; apps
@@ -42,37 +46,19 @@
   namespace resolve to ix's own mirror types, so Lean's are
   `Lean.`-qualified explicitly throughout (repo convention).
 -/
-module
-
-public import Lean
-public meta import Ix.Replay
 
 public section
 
 namespace Ix.ImportIxe
 
-/-- Decompile a `.ixe` and materialize constants as real
-    `Lean.ConstantInfo`s, in Rust
-    (`crates/ffi/src/compile.rs::rs_decompile_env_consts`, construction
-    in `crates/ffi/src/lean_build.rs`). Empty `only` ⇒ every
-    decompiled constant; nonempty ⇒ the requested source constants plus
-    their reference closure. Fails on thin bundles, broken source closures
-    and absent requested names. Pairs return sorted by name. -/
-@[extern "rs_decompile_env_consts"]
-opaque rsDecompileEnvConstsFFI : @& String → @& Array Lean.Name →
-    IO (Array (Lean.Name × Lean.ConstantInfo))
-
-/-- Meta twin of `rsDecompileEnvConstsFFI`, binding the same symbol:
-    the `import_ixe` elaborator chain is `meta` and may only reference
-    `meta` declarations, while compiled programs and tests use the
-    plain twin. -/
-@[extern "rs_decompile_env_consts"]
-meta opaque rsDecompileEnvConstsMetaFFI : @& String → @& Array Lean.Name →
-    IO (Array (Lean.Name × Lean.ConstantInfo))
-
+/-- Decompile a `.ixe` in pure Lean and materialize constants as
+    `Lean.ConstantInfo`s. Empty `only` ⇒ every decompiled constant;
+    nonempty ⇒ the requested source constants plus their reference
+    closure. Fails on thin bundles, broken source closures, and absent
+    requested names. Pairs return sorted by name. -/
 def materializeIxe (path : String) (only : Array Lean.Name := #[]) :
     IO (Array (Lean.Name × Lean.ConstantInfo)) :=
-  rsDecompileEnvConstsFFI path only
+  Ix.DecompileM.decompileEnvConsts path only
 
 /-- Add materialized constants to the environment by checked kernel
     replay in dependency order, skipping names already present.
@@ -102,7 +88,7 @@ meta def addMaterialized (consts : Array (Lean.Name × Lean.ConstantInfo)) :
 
 meta def runImportIxe (path : String) (only : Array Lean.Name := #[]) :
     Lean.Elab.Command.CommandElabM Unit := do
-  let consts ← rsDecompileEnvConstsMetaFFI path only
+  let consts ← Ix.DecompileM.decompileEnvConsts path only
   let (replayed, skipped) ←
     Lean.Elab.Command.liftCoreM (addMaterialized consts)
   Lean.logInfo m!"import_ixe {path}: {consts.size} constants \

@@ -3,8 +3,7 @@
   its reference searches (`docs/sharing-minimum.md`).
 
   The compiler shares every block with the tiered canonical construction
-  `canonicalSharingTiered` (rule `sharing-k16-greedy-v1`; Rust
-  `ixon::sharing_exact::canonical_sharing_tiered`): phase 1 uses the fixed
+  `canonicalSharingTiered` (rule `sharing-k16-greedy-v1`): phase 1 uses the fixed
   K16 initial-component families at widths 1, 2 and 3, phase 2
   allocates the table slots, phase 3 re-materializes every part under the
   real TagN widths, and the candidate with the fewest bytes wins.
@@ -155,7 +154,7 @@ def normalizeConstantSharing (c : Constant) (limits : Limits := {}) :
   let info ← withRoots c.info r.roots
   return { c with info, sharing := r.sharing }
 
-/-- Outcome of `checkExactMinimum` (Rust `ExactMinimumCheck`). -/
+/-- Outcome of `checkExactMinimum`. -/
 inductive ExactMinimumCheck where
   /-- The Constant is its exact-minimum encoding. -/
   | minimum
@@ -165,8 +164,7 @@ inductive ExactMinimumCheck where
 
 /-- Whether `c` is byte-identical to its exact-minimum sharing: a check
 against the test oracle `normalizeConstantSharing`, not against the
-compiler's canonical construction (`canonicalSharingTiered`). Rust
-`check_exact_minimum`. -/
+compiler's canonical construction (`canonicalSharingTiered`). -/
 def checkExactMinimum (c : Constant) (limits : Limits := {}) :
     Except SharingError ExactMinimumCheck := do
   let n ← normalizeConstantSharing c limits

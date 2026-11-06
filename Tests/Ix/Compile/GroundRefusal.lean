@@ -1,4 +1,11 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.CompileDriver
+import Ix.CompileCertified
+import Ix.Cert.Compile
+import LSpec
+
+/-!
   The compile's record of ungrounded input (part of `ground-unit`; the
   adversarial matrix's row 11): a constant whose value dependency is left
   out of the input is refused by name in both compilers and in the pure
@@ -9,11 +16,6 @@
   `--allow-partial` (`Ix.Cli.CompileLeanCmd`), and `Ix.Cert.compileComplete`
   fails on any, so both are fail-closed on ungrounded input.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.CompileDriver
-import Ix.Cert.Compile
-import LSpec
 
 open Lean LSpec
 
@@ -35,23 +37,17 @@ def closure (env : Environment) (drop : Name → Bool) : List (Name × ConstantI
 /-- The Lean IO pipeline's failures `(name, reason)`, sorted by name. -/
 def leanFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Array (String × String)) := do
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env cs).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := 1) with
-  | .error e => throw (IO.userError s!"compileLeanInput: {e}")
-  | .ok out =>
-    let failures := out.cenv.ungrounded.toArray.map fun (n, m) => (n.pretty, m)
-    return failures.qsort fun a b => a.1 < b.1
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs 1)
+  let failures := out.failures.toMap.toArray.map fun (n, m) => (n.pretty, m)
+  return failures.qsort fun a b => a.1 < b.1
 
-/-- The Rust compiler's failures `(name, reason)` (fail-closed `ix compile`),
+/-- The certified compiler's failures `(name, reason)` (`compileCertified`),
     sorted by name. -/
 def rustFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Array (String × String)) := do
-  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env cs)
-  let dir ← IO.FS.createTempDir
-  try
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared (dir / "rust.ixe").toString false
-    return status.ungrounded.qsort fun a b => a.1 < b.1
-  finally IO.FS.removeDirAll dir
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs)
+  let failures := out.failures.toMap.toArray.map fun (n, m) => (n.pretty, m)
+  return failures.qsort fun a b => a.1 < b.1
 
 /-- The pure compile's report on the prepared constants (`Ix.Cert.compileReport`). -/
 def pureReport (env : Environment) (cs : List (Name × ConstantInfo)) :

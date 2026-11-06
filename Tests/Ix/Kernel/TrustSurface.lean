@@ -96,10 +96,10 @@ list fails just as loudly as one in a bare file.
       `peekSquash` reads one (`unsafeCast`, a `Squash` is its value at run
       time) to print it, and `peekAll` hands it to the safe renderer
       (`Ix.KernelDisplay.Render`). No certified root's compiled closure
-      reaches it (`Tests.Ix.Kernel.DisplayRead`), and the `.meta` and
-      `.source` verdicts are `.anon`'s (the erasure test). The file is
-      scanned with the display modules (`displaySources`), which hold no
-      other escape.
+      reaches it (`IxC/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
+      and the `.meta` and `.source` verdicts are `.anon`'s (the erasure test).
+      The file is scanned with the display modules (`displaySources`), which
+      hold no other escape.
 
 Not policed, as upstream: `partial`, `@[csimp]`, `withPtrEq`/`withPtrAddr`,
 `opaque`, `noncomputable`. The Lean runtime audit polices the compiled

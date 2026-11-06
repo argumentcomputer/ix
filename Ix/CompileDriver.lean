@@ -1,24 +1,3 @@
-/-
-  Ix.CompileDriver: the compile-env driver.
-
-  Port of the production scheduler semantics of
-  `crates/compile/src/compile/env.rs` (`compile_env_with_options`) and the
-  per-block dispatch of `compile_const` (compile.rs), on top of the pure
-  block compiler (`Ix.CompileM`). Lean's declarations compile as given: each
-  block of the condensation is compiled once, in Lean's order, and Lean's own
-  auxiliaries (`rec`, `casesOn`, `below`, …) are blocks of their own.
-
-  Deliberate deviations from Rust, none output-visible:
-  - One schedule, a pure fold over waves of ready blocks applied in
-    block-key order (`compileEnvFold`), instead of work-stealing threads.
-    Output maps are keyed by name/address. Name claims (`nameToAddr`) are
-    insert-once: a second claim at a different address is the error Rust's
-    insert-once claims raise (`checkBlockClaims`, single ownership).
-    `Named` entries are last-wins overrides within one block's
-    registrations, and constants and blobs are content-keyed. So
-    scheduling order does not affect the result (Rust relies on the same
-    property for its nondeterministic work-stealing order).
--/
 module
 import Std.Sync
 public import Ix.Common
@@ -35,9 +14,25 @@ import Std.Data.HashSet.Lemmas
 public import Ix.IndFlags
 public import Ix.Compile.Publication
 public import Ix.Compile.SourceContract.Transport
-public import Ix.Compile.SourceGraph.Prepass
-public import Ix.Compile.SourceInput
 public import Ix.Resource.Addressed
+
+/-!
+  Ix.CompileDriver: the compile-env driver.
+
+  The scheduler and the per-block dispatch, on top of the pure block
+  compiler (`Ix.CompileM`). Lean's declarations compile as given: each
+  block of the condensation is compiled once, in Lean's order, and Lean's own
+  auxiliaries (`rec`, `casesOn`, `below`, …) are blocks of their own.
+
+  One schedule, a pure fold over waves of ready blocks applied in block-key
+  order (`compileEnvFold`). Output maps are keyed by name/address. Name
+  claims (`nameToAddr`) are insert-once: a second claim at a different
+  address is an error (`checkBlockClaims`, single ownership). `Named`
+  entries are last-wins overrides within one block's registrations, and
+  constants and blobs are content-keyed. So scheduling order does not
+  affect the result.
+-/
+
 public section
 
 namespace Ix.CompileM
@@ -588,8 +583,8 @@ def applyAuxBlockOutcome (acc : DriverAcc) (lo : Name) (all : Set Name)
 
 /-! ## The wave fold: the one driver
 
-`compileEnvFold` is the driver of both the pure compiler (`Ix.Cert.compile`)
-and the IO pipeline (`compileDecoratedConsts`): the same function, so the
+`compileEnvFold` is the driver of the pure compiler (`Ix.Cert.compile`)
+and the parallel schedule: the same function, so the
 parallel schedule equals the pure one by definition.
 
 **Waves.** A wave is the set of blocks not yet compiled whose scheduling
@@ -871,94 +866,7 @@ def compileEnvFold (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let (ixe, bytes, cenv) ← finalizeEnv st.acc
   return (ixe, bytes, { cenv with env })
 
-/-- The first name, in `Ix.nameCompare` order, whose published address
-    differs from a reference's (the wave driver's fail-fast `rustRef` check,
-    now made after the fold). -/
-def rustRefMismatch? (rust : Std.HashMap Name Address) (cenv : CompileEnv) : Option String :=
-  let bad := cenv.nameToNamed.fold (init := (#[] : Array (Name × Address × Address)))
-    fun acc n named =>
-      match rust.get? n with
-      | some r => if named.addr != r then acc.push (n, named.addr, r) else acc
-      | none => acc
-  match (bad.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt)[0]? with
-  | some (n, l, r) => some s!"rustRef mismatch at {n.pretty}: lean={l} rust={r}"
-  | none => none
-
-instance : Inhabited AuxBlockOutcome where
-  default := .failed "uninitialized"
-
-/-- The options of the Lean compile drivers. The drivers read no environment
-    variable and no `/proc` file: the CLI parses these (`ix compile-lean`:
-    `--sharing-limits` and `IX_SHARING_LIMITS`,
-    `IX_COMPILE_DBG`) and passes them in. -/
-structure DriverOptions where
-  /-- Resource limits of the canonical sharing construction. -/
-  sharingLimits : Ix.Sharing.Exact.Limits := compilerSharingLimits
-  /-- Phase timings, and the fold's per-wave trace. -/
-  dbg : Bool := false
-  /-- A memory reading for the trace after the compile phase, supplied by the
-      caller (the CLI reads the process's resident set size); `none` prints
-      none. -/
-  memory : Option (IO String) := none
-
-/-! ## The full pure-Lean pipeline
-
-`Lean canon → ref graph → ground filter → condense → the wave fold →
-serialize` — the Lean-side mirror of Rust
-`compile_env_with_options`' setup phases (env.rs:146-260) feeding the
-scheduler. This is what `ix compile-lean` and `ix validate-lean`
-phase 1 run.
-
-The driver applies Rust's env-level domain restriction
-(`validate_ind_groups`) first: an input inductive group whose stored flags
-differ from the recomputed ones (`validateInductiveFlags`) fails the compile
-before any block is scheduled. -/
-
-/-- Result of the full pure-Lean compile pipeline. -/
-structure LeanPipelineOut where
-  /-- Canonical serialized environment (`Ixon.serEnv`). -/
-  bytes : ByteArray
-  /-- The assembled environment. -/
-  env : Ixon.Env
-  /-- Final driver state (per-block failures live in `cenv.ungrounded`). -/
-  cenv : CompileEnv
-  /-- Constants rejected by the pre-compile groundedness scan. -/
-  ungroundedCount : Nat
-  /-- SCC block count. -/
-  blockCount : Nat
-  /-- Per-name content digest of every INPUT constant's canonicalized
-      form (derived `Hashable`), collected during the streamed canon
-      pass. The whole-env canon map is never materialized; this is the
-      phase-5 decompile oracle for `ix validate-lean`. -/
-  digests : Std.HashMap Ix.Name UInt64 := {}
-  /-- The input carries semantic contracts: its output is emitted only after
-      the resource post-step (`Ix.CompileM.resourcePostStep`). -/
-  annotated : Bool := false
-  /-- The condensation the driver compiled (the declaration groups and their
-      references). -/
-  blocks : Ix.CondensedBlocks := default
-  /-- Complete original-input dependency facts, before grounding; no acceptance
-      verdict. `none` is unavailable, while `some {}` is an empty input. -/
-  sourceNodes? : Option (Ix.Map Name Ix.Compile.SourceGraph.Node) := none
-  /-- Original prepared-input winners, shared with the lazy compiler fallback.
-      Production always supplies this; manually fabricated outputs may omit it. -/
-  originalSource? : Option Ix.Compile.SourceInput.Carrier := none
-
-/-- Run the full pure-Lean compile pipeline over a constant list.
-
-    STREAMING: the whole-env canonicalized map is never materialized.
-    The canon pass canonicalizes each constant TRANSIENTLY — extracting
-    its reference set, immediate groundedness error, and content digest
-    — then drops the canon form. The compile phase reads constants
-    through `Environment.fallback?` (canon-on-demand against the pinned
-    Lean constants), so a constant's canon form is live only while some
-    block actually reads it: theorem-sized proof bodies exist once
-    during the canon pass and once during their own block's compile,
-    never all at once. Canon is per-constant deterministic (chunking is
-    already arbitrary), so compiled output is byte-identical to the
-    materialized pipeline.
-
-    See the section docstring; phase timings print when `dbg` is set. -/
+/-- Inspect semantic contracts on a source declaration before canonicalization. -/
 def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := do
   if !Ix.Compile.sourceHasSemanticContracts source then return
   let (canonical, _) := (Ix.CanonM.canonConst source).run {}
@@ -981,162 +889,6 @@ def checkPreparedSource (consts : List (Lean.Name × Lean.ConstantInfo)) : Excep
       throw s!"unresolved source binder contracts: {name}"
     inspectSemanticSource source
   return consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
-
-def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
-    (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (opts : DriverOptions := {})
-    : IO (Except String LeanPipelineOut) := do
-  let annotated ← match checkPreparedSource consts with
-    | .ok annotated => pure annotated
-    | .error error => return .error error
-  let dbg := opts.dbg
-  let tick (label : String) (t0 : Nat) : IO Nat := do
-    let t1 ← IO.monoMsNow
-    if dbg then
-      IO.println s!"  [compile-lean] {label}: {t1 - t0}ms"
-    pure t1
-  let t0 ← IO.monoMsNow
-  let constArr := consts.toArray
-  -- 1a. Name pre-pass: canonical names only. Builds the lazy-lookup key
-  --     map (Ix name → pinned Lean constant), and the THIN ground-check env — ground
-  --     checks read only name-existence and is-it-a-ctor
-  --     (`groundExpr`/`groundConst`), so two shared placeholder
-  --     constants stand in for every value.
-  let ⟨leanByIx, thinConsts, ixArr⟩ ← IO.lazyPure fun _ =>
-    Ix.Compile.SourceGraph.Prepass.run constArr
-  let t ← tick s!"canon names ({ixArr.size} consts)" t0
-  -- 1b/2/3a. Streamed canon (chunk-parallel): canonicalize, take refs +
-  --     immediate ground error + digest. PROOF bodies (`thmInfo` /
-  --     `opaqueInfo` — the bulk of a Mathlib-scale env, and never read
-  --     by dependents' compiles) are dropped after extraction and
-  --     re-canonicalized on demand for their own block only. CODE kinds
-  --     (definitions, inductive families, recursors — what the flags check and
-  --     kernel ingress read from dependents, repeatedly and with
-  --     retention) are KEPT and materialized as the shared `consts`
-  --     map: one shared structure instead of a fresh unshared copy per
-  --     on-demand read.
-  -- Destructure immediately: fallback retains only leanByIx; temporary thin,
-  -- label and task storage must not escape through a captured aggregate.
-  let ⟨⟨sourceNodes, codeConsts⟩, outRefs, immediate, digests⟩ ←
-    IO.lazyPure fun _ => Ix.Compile.SourceGraph.Stream.runLabelled
-      { consts := thinConsts } ixArr numWorkers
-  let t ← tick s!"canon+graph+ground ({outRefs.size} nodes, \
-{codeConsts.size} code kept, {outRefs.size - codeConsts.size} proofs streamed)" t
-  let mut inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
-  for (n, refs) in outRefs do
-    for r in refs do
-      inRefs := inRefs.alter r fun
-        | some s => some (s.insert n)
-        | none => some (({} : Ix.Set Ix.Name).insert n)
-  let ungrounded := Ix.proliferateUngrounded immediate inRefs
-  let groundedOutRefs :=
-    if ungrounded.isEmpty then outRefs
-    else outRefs.fold (init := {}) fun m name refs =>
-      if ungrounded.contains name then m
-      else m.insert name (refs.fold (init := {}) fun s r =>
-        if ungrounded.contains r then s else s.insert r)
-  if dbg && !ungrounded.isEmpty then
-    IO.println s!"  [compile-lean] {ungrounded.size} ungrounded constants filtered"
-    for (n, e) in ungrounded.toList.take 5 do
-      IO.println s!"    ungrounded: {n.pretty} ({repr e.kind})"
-  let t ← tick s!"ground ({ungrounded.size} ungrounded)" t
-  -- 4. Condense (Tarjan SCCs over the filtered graph).
-  let condensed := Ix.CondenseM.run groundedOutRefs
-  let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
-  -- 5. The driver (`compileEnvFold`, the same function as `Ix.Cert.compile`'s)
-  --    against the HYBRID environment: code kinds are the materialized
-  --    (shared) map; proof bodies canonicalize on demand from the pinned
-  --    Lean constants and are dropped when their block's `CompileM.run`
-  --    returns. Each wave is split into `4 * numWorkers` tasks (`width`; the
-  --    value does not depend on it): chunks that small let the task pool
-  --    (`LEAN_NUM_THREADS`, else one thread per core) balance blocks of very
-  --    different sizes, where `numWorkers` chunks left the wave waiting on its
-  --    slowest chunk. At most `min width pool` blocks compile at once.
-  let originalSource : Ix.Compile.SourceInput.Carrier := ⟨leanByIx⟩
-  let fallback : Ix.Name → Option Ix.ConstantInfo := originalSource.lookup?
-  let ixEnv : Ix.Environment :=
-    { consts := codeConsts, fallback? := some fallback }
-  if dbg then
-    IO.println s!"  [compile-lean] {condensed.blocks.size} blocks, {4 * numWorkers} tasks per wave"
-  let folded ← IO.lazyPure fun _ =>
-    compileEnvFold ixEnv condensed (dbg := dbg)
-      (sharingLimits := opts.sharingLimits) (width := 4 * numWorkers)
-  match folded with
-  | .error e => return .error e
-  | .ok (ixonEnv, _, cenv) =>
-    let t ← tick "compile" t
-    if dbg then
-      if let some read := opts.memory then
-        IO.println s!"  [compile-lean] rss after the compile phase: {← read}"
-    if let some rust := rustRef then
-      if let some msg := rustRefMismatch? rust cenv then return .error msg
-    -- The constants the groundedness scan rejected are failures of the
-    -- compile, each with its named refusal (`GroundError.refusal`), as the
-    -- Rust compiler records them: an input constant is never dropped
-    -- without a record (`ix compile-lean` is fail-closed on them).
-    let cenv := ungrounded.fold (init := cenv) fun c n e =>
-      if c.ungrounded.contains n then c
-      else { c with ungrounded := c.ungrounded.insert n (e.refusal ungrounded.contains) }
-    if dbg && cenv.ungrounded.size > 0 then
-      IO.println s!"  [compile-lean] {cenv.ungrounded.size} per-block compile failures"
-      for (n, e) in cenv.ungrounded.toList.take 5 do
-        IO.println s!"    failed: {n.pretty}: {e.take 200}"
-    -- 6. Serialize. Resource validation is a post-step of the caller's
-    -- (`Ix.CompileM.resourcePostStep`, `Ix.CompileResource`): semantic
-    -- emission is atomic only through it, so an annotated input's output
-    -- is emitted only after it (`annotated`).
-    match Ixon.serEnv ixonEnv with
-    | .error e => return .error s!"serEnv failed: {e}"
-    | .ok bytes =>
-      let _ ← tick s!"serialize ({bytes.size} bytes)" t
-      return .ok {
-        bytes
-        env := ixonEnv
-        cenv
-        ungroundedCount := ungrounded.size
-        blockCount := condensed.blocks.size
-        digests
-        annotated
-        blocks := condensed
-        sourceNodes? := some sourceNodes
-        originalSource? := some originalSource }
-
-/-- Explicit frontend boundary: resolve occurrence contracts before
-canonicalization. Resources are validated by the caller's post-step
-(`Ix.CompileM.compileLeanInputValidated`). -/
-def compileLeanInput (input : Ix.Compile.CompileInput)
-    (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
-    IO (Except String LeanPipelineOut) := do
-  let constants ← match input.prepare with
-    | .ok constants => pure constants
-    | .error error => return .error error
-  compileDecoratedConsts constants rustRef numWorkers opts
-
-/-- Compile an isolated source list, extracting its checked occurrence records. -/
-def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
-    (rustRef : Option (Std.HashMap Name Address) := none)
-    (numWorkers : Nat := 32) (opts : DriverOptions := {}) :
-    IO (Except String LeanPipelineOut) := do
-  let input ← match Ix.Compile.CompileInput.fromAnnotations consts with
-    | .ok input => pure input
-    | .error error => return .error (toString error)
-  compileLeanInput input rustRef numWorkers opts
-
-/-- Native compiler entrypoint with an explicitly committed resource profile. -/
-@[extern "rs_compile_env_to_ixon_profile"]
-opaque rsCompileEnvProfileFFI :
-  @& List (Lean.Name × Lean.ConstantInfo) → @& ByteArray → IO Ixon.RawEnv
-
-def rsCompileInput (input : Ix.Compile.CompileInput)
-    (resourceProfile : Option Ix.Resource.Profile := none) : IO Ixon.Env := do
-  let constants ← IO.ofExcept input.prepare
-  let raw ← match resourceProfile with
-    | none => rsCompileEnvFFI constants
-    | some profile =>
-      let _ ← IO.ofExcept profile.address
-      rsCompileEnvProfileFFI constants profile.bytes
-  return raw.toEnv
 
 end Ix.CompileM
 

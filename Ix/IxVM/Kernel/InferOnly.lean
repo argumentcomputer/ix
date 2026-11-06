@@ -12,7 +12,7 @@ namespace IxVM
 
 /-! ## Infer-Only
 
-Mirror `with_infer_only` (crates/kernel/src/infer.rs).
+Fast type-synthesis pass (`with_infer_only`).
 
 Type synthesis ONLY. Skips inner validations: App drops
 `k_check(rc, a, dom)`, Lam drops `k_ensure_sort(rc, ty)`, Let drops val/ty

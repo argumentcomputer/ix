@@ -8,9 +8,7 @@ license.workspace = true
 aiur = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
-dashmap = { workspace = true, features = ["rayon"] }
 multi-stark = { workspace = true }
-num-bigint = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 stacker = "0.1"

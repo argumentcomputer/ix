@@ -1,14 +1,23 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.CompileM
+import Ix.CompileDriver
+import Ix.CompileCertified
+import Ix.DecompileDriver
+import Ix.Ixon
+import Tests.Ix.Compile.KernelReport
+
+/-!
   The closure suites' shared harness (`compiler-selected-closure`,
   `compiler-selected-closure-e2e`, `checker-support-regression`,
   `compile-closure-whole`, `pack-units`).
 
-  - `compileClosure`: the unvalidated streamed Lean entry
-    (`compileInputFromEnv`, then `compileLeanInput`) for fixtures without
+  - `compileClosure`: the unvalidated Lean entry
+    (`compileInputFromEnv`, then `compileEnvFold`) for fixtures without
     source contracts, with the configured sharing limits. The harness
     compares raw artifacts before CLI role finalization and resource checks.
-  - `rustClosure`/`rustCheck`: the raw Rust compile
-    (`rsCompileEnvBytesFFI`, used by `ix compile --rust` before finalization)
+  - `rustClosure`/`rustCheck`: the certified compile
+    (`compileCertifiedPrepared`, before finalization)
     of the same prepared constants, and its byte comparison with the Lean
     artifact.
   - `decompileCheck`: decompile fidelity of an output against its source
@@ -21,13 +30,6 @@
   Callers provide output paths in temporary directories made with
   `IO.FS.createTempDir`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.CompileM
-import Ix.CompileDriver
-import Ix.DecompileDriver
-import Ix.Ixon
-import Tests.Ix.Compile.KernelReport
 
 open Lean
 
@@ -58,37 +60,52 @@ def ownConstants (env : Environment) : List Name :=
 
 /-! ## Compiles -/
 
-/-- Read `IX_SHARING_LIMITS` for the Lean fixture legs with the shared parser.
-The Rust FFI reads the same setting for its comparison leg. -/
-def compilerLimits : IO Ix.Sharing.Exact.Limits := do
-  IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
+/-- Output of `compileClosure` before CLI finalization. -/
+structure ClosureOut where
+  bytes : ByteArray
+  env : Ixon.Env
+  cenv : Ix.CompileM.CompileEnv
 
-/-- Compile `closure` through the unvalidated streamed Lean entry
-(`compileInputFromEnv`, then `compileLeanInput`), before CLI finalization.
+/-- The compiler's default sharing limits (`Ix.CompileM.compilerSharingLimits`). -/
+def compilerLimits : IO Ix.Sharing.Exact.Limits :=
+  pure Ix.CompileM.compilerSharingLimits
+
+/-- Compile `closure` through the unvalidated Lean entry
+(`compileInputFromEnv`, then `compileEnvFold`), before CLI finalization.
 Recorded failures are in `out.cenv.ungrounded`; the caller checks them. -/
 def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
-    (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
+    (workers : Nat := 32) : IO ClosureOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  let opts : Ix.CompileM.DriverOptions := { sharingLimits := (← compilerLimits) }
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) (opts := opts) with
-  | .ok o => pure o
-  | .error e => throw (IO.userError s!"Lean compile failed: {e}")
+  let prepared ← IO.ofExcept input.prepare
+  let rawEnv := Ix.CompileM.canonInput prepared.toArray workers
+  let split := Ix.Cert.groundSplit rawEnv
+  let blocks := Ix.CondenseM.run split.1
+  let limits ← compilerLimits
+  let (ixon, _, cenv) ← IO.ofExcept
+    (Ix.CompileM.compileEnvFold rawEnv blocks (sharingLimits := limits) (width := workers))
+  let ungrounded := split.2.fold (init := cenv.ungrounded) fun m n e =>
+    m.insert n (e.refusal split.2.contains)
+  let bytes ← IO.ofExcept (Ixon.serEnv ixon)
+  return { bytes, env := ixon, cenv := { cenv with ungrounded } }
 
-/-- The raw Rust compile of the same prepared constants as `compileClosure`,
+/-- The certified compile of the same prepared constants as `compileClosure`,
 written to `path` before CLI finalization. Partial output is allowed, so the
 status lists every refused constant. Returns the written bytes and status. -/
 def rustClosure (env : Environment) (closure : List (Name × ConstantInfo))
     (path : System.FilePath) : IO (ByteArray × Ix.CompileM.CompileEnvStatus) := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
   let constants ← IO.ofExcept input.prepare
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString true
-  return (← IO.FS.readBinFile path, status)
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertifiedPrepared constants false)
+  let bytes ← IO.ofExcept (Ixon.serEnv out.env)
+  IO.FS.writeBinFile path bytes
+  let status := { Ix.Cli.statusOf out.env out.failures.toMap with bytes := bytes.size.toUInt64 }
+  return (bytes, status)
 
 /-- The Rust leg: the Rust compile of `closure` (written to `path`) must be
 the Lean compile `lean`, byte for byte, with no refusal. `none` when it is;
 otherwise the difference, counted by Named entry. -/
 def rustCheck (label : String) (env : Environment) (closure : List (Name × ConstantInfo))
-    (lean : Ix.CompileM.LeanPipelineOut) (path : System.FilePath) : IO (Option String) := do
+    (lean : ClosureOut) (path : System.FilePath) : IO (Option String) := do
   let (bytes, status) ← rustClosure env closure path
   if bytes == lean.bytes && status.ungrounded.isEmpty then return none
   let rust ← IO.ofExcept (Ixon.rsDeEnv bytes)
@@ -118,13 +135,12 @@ def namedDiff (a b : Ixon.Named) : Option String :=
 /-! ## Decompile -/
 
 /-- Decompile fidelity: the output, decompiled by the full Lean decompiler
-(`decompileEnvFullParallel`, as `ix validate-lean --full-oracle` phase 5 and
-the `decompile-diff` suite run it), equals the canonicalized source constants
+(`decompileEnvFullParallel`), equals the canonicalized source constants
 of `closure` (`ConstantInfo` BEq), in both directions. A constant whose block
 failed to compile (`out.cenv.ungrounded`) is not expected. Returns the
 problems and a summary line. -/
 def decompileCheck (env : Environment) (closure : List (Name × ConstantInfo))
-    (out : Ix.CompileM.LeanPipelineOut) : IO (Array String × String) := do
+    (out : ClosureOut) : IO (Array String × String) := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
   let prepared ← IO.ofExcept input.prepare
   let src : Std.HashMap _root_.Ix.Name _root_.Ix.ConstantInfo :=

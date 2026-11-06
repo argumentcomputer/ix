@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Verify.Cached.InstalledC
+public import IxC.Kernel.Cached.Policy
 public section
 
 /-!
@@ -78,25 +79,38 @@ theorem no_proof_of_False_cached (V : Type w) [SetTheory V]
   obtain ⟨mp⟩ := checkDecls_sound (V := V) hμ h
   exact fun c hc hty => no_constant_of_False mp c hc hty
 
-/-- **Conditional acceptance**: what the fold accepts carries the model
-whenever all custom user axioms in `ds` are realized. -/
-theorem checkDecls_sound_conditional (hμ : μ.verifiedChecks = true)
-    {ds : Array (Declaration md)} {env' : Env md}
-    (h : checkDecls μ ev ds = .ok env')
-    (_hax : ∀ cv ∈ userAxiomsOfDecls ds.toList, .axiomInfo cv ∈ env'.consts → True := fun _ _ _ => trivial) :
-    Nonempty (EnvModelM V μ env') :=
-  checkDecls_sound hμ h
+/-! ## The fold that admits user axioms
 
-/-- **Conditional letter about `False`**: no constant of type `False` is stored
-in an accepted environment when custom user axioms are realized. -/
-theorem no_proof_of_False_cached_conditional (V : Type w) [SetTheory V]
+`checkDeclsWithUserAxioms` (`IxC/Kernel/Cached/Policy.lean`) also admits user
+axioms, and an accept is conditional on them. These letters are what holds
+unconditionally: over records that declare no user axiom
+(`userAxiomsOfDecls`), the fold is `checkDecls`
+(`checkDeclsWithUserAxioms_eq_checkDecls`), so its accept carries the model.
+(The letters these replace, `checkDecls_sound_conditional` and
+`no_proof_of_False_cached_conditional`, were about `checkDecls`, with a
+premise of type `… → True`.) -/
+
+/-- **Acceptance without user axioms**: what the fold that admits user axioms
+accepts from records that declare none carries the model. -/
+theorem checkDeclsWithUserAxioms_sound (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDeclsWithUserAxioms μ ev ds = .ok env')
+    (hnone : userAxiomsOfDecls ds.toList = []) :
+    Nonempty (EnvModelM V μ env') := by
+  rw [checkDeclsWithUserAxioms_eq_checkDecls μ ev ds hnone] at h
+  exact checkDecls_sound hμ h
+
+/-- **The letter about `False`, without user axioms**: the fold that admits
+user axioms, running a validating mode, never accepts records that declare
+none in which some stored constant has type `False`. -/
+theorem no_proof_of_False_cached_userAxioms (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true)
     {ds : Array (Declaration md)} {env' : Env md}
-    (h : checkDecls μ ev ds = .ok env')
-    (hax : ∀ cv ∈ userAxiomsOfDecls ds.toList, .axiomInfo cv ∈ env'.consts → True := fun _ _ _ => trivial) :
+    (h : checkDeclsWithUserAxioms μ ev ds = .ok env')
+    (hnone : userAxiomsOfDecls ds.toList = []) :
     ∀ c ∈ env'.consts,
       c.toConstantVal.type = .const falseName [] → False := by
-  obtain ⟨mp⟩ := checkDecls_sound_conditional (V := V) hμ h hax
+  obtain ⟨mp⟩ := checkDeclsWithUserAxioms_sound (V := V) hμ h hnone
   exact fun c hc hty => no_constant_of_False mp c hc hty
 
 end Ix.Kernel.Cached

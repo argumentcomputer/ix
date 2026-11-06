@@ -19,7 +19,7 @@ use super::{
 };
 use crate::lean::LeanAiurAggregateExpected;
 use aiur::execute::IOBuffer;
-use ix_kernel::shard::ShardManifest;
+use ixon::shard::ShardManifest;
 use ixvm_codegen::env_handle::EnvHandle;
 use lean_ffi::object::LeanString;
 use std::{fs, path::Path};

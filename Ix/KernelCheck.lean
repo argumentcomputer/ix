@@ -1,188 +1,32 @@
-/-
-  Kernel typechecking FFI bindings.
-
-  Exposes `rsCheckConstsFFI` and the `CheckError` ADT shared by:
-  - `Ix.Cli.CheckCmd`           — the `lake exe ix check` CLI entry point.
-  - `Tests.Ix.Kernel.Tutorial`  — the targeted-batch test harness.
-  - `Tests.Ix.Kernel.CheckEnv`  — the full-environment test runner.
-
-  Centralising the binding means the FFI symbol (`rs_kernel_check_consts`,
-  defined in `src/ffi/kernel.rs`) has a single Lean-side `@[extern]`
-  declaration, and every caller agrees on the `CheckError` constructor
-  layout (tag 0 = `kernelException`, tag 1 = `compileError`).
--/
 module
 public import Lean.Data.Name
 public import Lean.Declaration
 public import Ix.Address
 
+/-!
+  Environment extraction and static sharding FFI bindings.
+-/
+
 public section
 
 namespace Ix.KernelCheck
 
-/-- Type-check errors returned from the Rust kernel FFI.
-
-    Two variants:
-    - `kernelException msg` — rejection during kernel typechecking (tag 0).
-    - `compileError    msg` — rejection during `compile_env` (tag 1), emitted
-      when `compile_env`'s tolerant scheduler records a block as ungrounded
-      (e.g. `inductBadNonSort` failing `compute_is_large_and_k`).
-
-    **Important**: keep at least two constructors so Lean's LCNF trivial
-    structure optimization does NOT elide the enum to just `String`. With
-    only one ctor + one field, `hasTrivialStructure?` fires and the runtime
-    representation becomes identical to `String`, which breaks any FFI that
-    allocates a heap ctor. See
-    `refs/lean4/src/Lean/Compiler/LCNF/MonoTypes.lean:20-28`.
-
-    Tags are stable across the Rust FFI — see `KERNEL_EXCEPTION_TAG` and
-    `COMPILE_ERROR_TAG` in `src/ffi/kernel.rs`. -/
+/-- Kernel or compiler check error returned by test and CLI check helpers. -/
 inductive CheckError where
   | kernelException (msg : String)
-  | compileError    (msg : String)
-  deriving Repr
+  | compileError (msg : String)
+  deriving Repr, BEq
 
-/-- Render a `CheckError` as a single-line, prefixed message suitable for
-    log lines. Pulls the message string out of either ctor without going
-    through `repr` — derived `Repr` for long multi-line kernel diagnostics
-    is seconds-slow per call and can make a check appear to hang. -/
 def CheckError.message : CheckError → String
   | .kernelException m => s!"kernel: {m}"
-  | .compileError    m => s!"compile: {m}"
-
-/-- FFI: type-check a batch of constants through the full pipeline
-    (Lean env → Ixon compile → kernel ingress → typecheck).
-
-    Implemented in `src/ffi/kernel.rs::rs_kernel_check_consts`. Note: this
-    used to be gated behind the `test-ffi` Cargo feature. It is now part
-    of the production build so `lake exe ix check` can drive it directly.
-
-    The trailing `Bool` toggles ephemeral progress printing on the Rust
-    side:
-    - `false` (verbose): every constant is logged on its own line with
-      elapsed time and `def_eq` depth — ideal for small, targeted batches
-      where every result matters.
-    - `true` (quiet / ephemeral): the current `[i/N] name ...` label is
-      rewritten in place, and only slow constants (>=7s by default), unexpected
-      passes/failures, and ungrounded compile errors are promoted to
-      persistent lines. Ideal for full-env runs where thousands of fast
-      constants would otherwise swamp the log. Parallel quiet mode also
-      prints periodic done/total, rate, ETA, and oldest in-flight
-      constants. Tune with `IX_KERNEL_CHECK_PROGRESS_MS`,
-      `IX_KERNEL_CHECK_SLOW_MS`, `IX_KERNEL_CHECK_ACTIVE_SLOW_MS`, and
-      `IX_KERNEL_CHECK_INFLIGHT`.
-
-    Results come back in input-array order — the caller pairs each
-    `results[i]` with its `names[i]`. We pass `Lean.Name` structurally
-    (rather than shipping `name.toString` strings) because Lean's
-    default `toString` wraps non-identifier components in `«…»`, and
-    round-tripping that through a Rust string parser was brittle:
-    names like `Lean.Order.«term_⊑_»` failed lookup against the
-    kernel's unescaped `Lean.Order.term_⊑_` key. Rust decodes each
-    `Lean.Name` structurally via `decode_name_array`, so the kernel
-    lookup is an exact structural match. -/
-@[extern "rs_kernel_check_consts"]
-opaque rsCheckConstsFFI :
-    @& List (Lean.Name × Lean.ConstantInfo) →
-    @& Array Lean.Name →
-    @& Array Bool →
-    @& Bool →
-    IO (Array (Option CheckError))
-
-/-- FFI: type-check constants from a serialized Ixon env file produced by
-    `ix compile --out`. If the name array is empty, Rust checks every
-    checkable named constant in the file.
-
-    The trailing `String` is the `--fail-out` path. An empty string means
-    "no streaming"; any other value is a filesystem path that Rust opens
-    truncate-create and incrementally appends one record per failing
-    constant to (with an immediate flush per record), capping with a
-    `# total failures: N` footer once all checks finish. The format is the
-    same one `Ix.Cli.CheckIxonCmd.readNamesFile` reads, so the same file
-    is round-trippable as a `--consts-file` input. Streaming from Rust is
-    what makes a long full-env run visible to a `tail -f` observer instead
-    of dumping every failure only at the very end. -/
-@[extern "rs_kernel_check_ixon"]
-opaque rsCheckIxonFFI :
-    @& String →
-    @& Array Lean.Name →
-    @& Array Bool →
-    @& Bool →
-    @& String →
-    IO (Array (Option CheckError))
-
-/-- FFI: list checkable names from a serialized Ixon env file. Used by the
-    `ix check` CLI to support `--ns` filtering without rebuilding Lean. -/
-@[extern "rs_kernel_ixon_names"]
-opaque rsIxonNamesFFI : @& String → IO (Array Lean.Name)
-
-/-- FFI: metadata-free anonymous-mode type-check of an entire `.ixe`.
-
-    Loads the env via `IxonEnv::get_anon_mmap` (which mmaps the file
-    and discards the `named`/`names`/`comms` sections during
-    deserialization), enumerates every kernel-checkable target by
-    iterating `consts` (skipping projection constants — they're
-    covered by their parent Muts block work item, with projection
-    addresses reconstructed deterministically via `Constant::commit`),
-    and runs `TypeChecker<Anon>::check_const` on each. The kernel's
-    typechecking logic structurally cannot read metadata: every
-    `M::MField<T>` is `()` in Anon mode.
-
-    `fail_out` is a streaming failure log path; pass `""` to disable.
-
-    Returns an array of `(hex_address, Option CheckError)` pairs — one
-    per kernel-checkable target. The kernel has no name to associate
-    with each slot, so the address travels back so the Lean CLI can
-    print `#<hex>` failure labels matching the Rust progress and
-    fail-out output. -/
-@[extern "rs_kernel_check_anon"]
-opaque rsCheckAnonFFI :
-    @& String →                          -- .ixe path
-    @& Bool →                            -- quiet
-    @& String →                          -- fail-out path ("" = none)
-    IO (Array (String × Option CheckError))
-
-/-- FFI: anon-mode type-check of named constants with (by default) their full
-    dependency closures. The `Bool` after the names is `skip-deps`: `true`
-    checks only each name's own work item (subject-only; deps trusted).
-
-    Names are the constants' displayed forms (e.g. `"Nat.add_comm"`,
-    `"_private.Init.….instRxcHasSize_eq"`), resolved through the env's `named`
-    metadata by string match, after
-    which the check runs on the anon view (the kernel never sees names). A
-    member of a mutual block selects the whole block's work item. Multiple
-    names union their closures into one check set.
-
-    The trailing `String` is the results-rows JSON path (`""` = off). When
-    set, each name is instead checked as its own independent closure run —
-    the zkVM hosts' per-constant scope — with the env still loaded once, and
-    the row `{ name: { status, constants, check-time, throughput, peak-rss } }`
-    flushed per name (see `Ix.Benchmark.Results` for the contract). The
-    per-name `check-time`/`peak-rss` window wraps only that name's closure
-    selection + check, so rows aren't distorted by the env load; meaningful
-    `peak-rss` needs `TracingTexray.startSampler`. Not combinable with a
-    fail-out path.
-
-    Returns `(hex_address, Option CheckError)` pairs, one per checked target,
-    exactly like `rsCheckAnonFFI` (concatenated across the per-name runs when
-    rows are on). Errors (rather than returning) when a name doesn't resolve,
-    so a typo can't silently produce an empty check. -/
-@[extern "rs_kernel_check_anon_consts"]
-opaque rsCheckAnonConstsFFI :
-    @& String →                          -- .ixe path
-    @& Array String →                    -- constant names (displayed form)
-    @& Bool →                            -- skip-deps (subject-only)
-    @& Bool →                            -- quiet
-    @& String →                          -- fail-out path ("" = none)
-    @& String →                          -- benchmark results JSON path ("" = off)
-    IO (Array (String × Option CheckError))
+  | .compileError m => s!"compile: {m}"
 
 /-- FFI: extract the named constants' dependency closure from a serialized
     env into a standalone `.ixe` — genuine constant bytes, blobs, and
     reducibility hints, plus the closure constants' Named entries so names
-    still resolve — without recompiling from source. Names resolve like
-    `rsCheckAnonConstsFFI` (displayed form); a mutual-block member pulls its
-    whole block. Errors on an unresolvable name. -/
+    still resolve — without recompiling from source. Names resolve by
+    displayed form; a mutual-block member pulls its whole block. Errors on an
+    unresolvable name. -/
 @[extern "rs_env_extract"]
 opaque rsEnvExtractFFI :
     @& String →                          -- source .ixe path
@@ -194,10 +38,10 @@ opaque rsEnvExtractFFI :
 /-- FFI: partition a `.ixe` with the STATIC strategy (no out-of-circuit
     profiling). Layout `mincut`: byte-balanced min-cut over the static
     walk-edge nets + a predicted-FFT-cost rebalance post-pass
-    (`ix_kernel::shard::shard_static`; model constants documented there).
+    (`ixon::shard::shard_static`; model constants documented there).
     Layout `ordered`: contiguous ranges of a dependency order, shard 0 at
     the top, so a shard's reference closure lies in its own shard and later
-    ones (`ix_kernel::shard::shard_static_ordered`; what the distributed
+    ones (`ixon::shard::shard_static_ordered`; what the distributed
     prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
     selects the static block-shape seed after the `.ixe` has been profiled.
     Writes a `.ixes` manifest; prints the report to stderr. -/
@@ -222,45 +66,6 @@ opaque rsShardEnvStaticFFI :
 opaque rsShardStaticGraphFFI :
     @& String →                          -- .ixe path
     @& String →                          -- output text path
-    IO Unit
-
-/-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
-    per-block heartbeats + the delta-unfold graph (the sharding cost model).
-    Runs the anon kernel over every checkable target.
-    `isolate` clears the kernel's reduction-memo caches between constants for
-    sound/faithful recording; `quiet` suppresses per-constant progress. -/
-@[extern "rs_kernel_profile_anon"]
-opaque rsProfileAnonFFI :
-    @& String →                          -- .ixe path
-    @& String →                          -- .ixprof output path
-    @& Bool →                            -- isolate caches
-    @& Bool →                            -- quiet
-    IO Unit
-
-/-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
-    manifest. Empty `outPath` skips the manifest. Prints a what-if report to
-    stderr. -/
-@[extern "rs_shard_esp"]
-opaque rsShardEspFFI :
-    @& String →                          -- .ixprof path
-    USize →                              -- num_shards (N)
-    UInt64 →                             -- balance percent
-    USize →                              -- parallelism (provers for prove-time est)
-    @& String →                          -- .ixes output path ("" = skip)
-    IO Unit
-
-/-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a
-    `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGib` > 0 it is
-    converted via the measured prover RAM model and overrides `maxCycles`. Pass
-    0 for whichever is unused. -/
-@[extern "rs_shard_esp_cap"]
-opaque rsShardEspCapFFI :
-    @& String →                          -- .ixprof path
-    UInt64 →                             -- max_cycles (0 = unset)
-    UInt64 →                             -- max_ram GiB (0 = unset)
-    UInt64 →                             -- balance percent
-    USize →                              -- parallelism (provers for prove-time est)
-    @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 
 end Ix.KernelCheck

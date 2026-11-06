@@ -1,6 +1,8 @@
 import Tests.Ix.IxVM.Exploits
-import Ix.KernelCheck
-import Ix.EnvScope
+
+/-!
+  Definition dependency tests for IxVM (`Tests.Ix.IxVM.DefinitionDependencies`).
+-/
 
 namespace Tests.Ix.IxVM.DefinitionDependencies
 
@@ -92,92 +94,11 @@ private def ixvmSafetyCases : Array ExploitCase :=
         "the wire safety byte must not bypass the safe declaration peer-slot restriction"
         (block #[{ definition kind everyProp (.recur 0 #[]) with safety }])
 
-def rustTests : IO TestSeq := do
-  let directory ← IO.FS.createTempDir
-  try
-    let mut tests : TestSeq := .done
-    for c in cases do
-      let path := directory / s!"{c.name}.ixe"
-      let bytes ← IO.ofExcept (Ixon.serEnv c.env)
-      IO.FS.writeBinFile path bytes
-      let rows ← Ix.KernelCheck.rsCheckAnonFFI path.toString true ""
-      let .check _ target _ := c.claim | throw <| IO.userError "expected a Check claim"
-      let row := rows.find? (fun row => row.1 == toString target)
-      let correct : Bool := match row with
-        | none => false
-        | some (_, error) =>
-          if c.expectAccept then rows.all (·.2.isNone)
-          else error.any fun e =>
-            (e.message.splitOn "cyclic definition dependency").length > 1
-      tests := tests ++ test s!"Rust definition dependencies: {c.name}" correct
-    return tests
-  finally
-    IO.FS.removeDirAll directory
-
-namespace Fixtures
-
-def countStruct : Nat → Nat
-  | 0 => 0
-  | n + 1 => countStruct n + 1
-termination_by structural n => n
-
-def countWellFounded (n : Nat) : Nat :=
-  if h : n = 0 then 0 else countWellFounded (n - 1) + 1
-termination_by n
-decreasing_by omega
-
-mutual
-  def even : Nat → Bool
-    | 0 => true
-    | n + 1 => odd n
-  termination_by structural n => n
-
-  def odd : Nat → Bool
-    | 0 => false
-    | n + 1 => even n
-  termination_by structural n => n
-end
-
-end Fixtures
-
-/-- The Rust guard must preserve termination-checked source recursion.
-Check every declaration in each exported closure. -/
-private def recursionTests : IO TestSeq := do
-  let env ← get_env!
-  let directory ← IO.FS.createTempDir
-  try
-    let mut tests : TestSeq := .done
-    for (label, seeds) in [("structural", [``Fixtures.countStruct]),
-        ("well-founded", [``Fixtures.countWellFounded]),
-        ("mutual", [``Fixtures.even, ``Fixtures.odd])] do
-      for seed in seeds do
-        let some (.defnInfo declaration) := env.find? seed
-          | throw <| IO.userError s!"missing elaborated definition {seed}"
-        unless declaration.safety == .safe do
-          throw <| IO.userError s!"{seed} is not a safe definition"
-      let path := directory / s!"{label}.ixe"
-      let constants := Ix.EnvScope.collectDeps env seeds
-      let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString false
-      unless status.ungrounded.isEmpty do
-        throw <| IO.userError s!"compilation omitted {status.ungrounded.size} declarations"
-      let source ← IO.ofExcept <| Ixon.deEnv (← IO.FS.readBinFile path)
-      let rows ← Ix.KernelCheck.rsCheckAnonFFI path.toString true ""
-      for seed in seeds do
-        let some address := source.getAddr? (Ix.Name.fromLeanName seed)
-          | throw <| IO.userError s!"export omitted {seed}"
-        unless rows.any (fun row => row.1 == toString address) do
-          throw <| IO.userError s!"no checking result for {seed}"
-      tests := tests ++ test s!"Rust accepts safe {label} recursion" (rows.all (·.2.isNone))
-    return tests
-  finally
-    IO.FS.removeDirAll directory
-
 def tests (compiled : Aiur.CompiledToplevel) : IO TestSeq := do
   let control := asCase "control-closed-identity"
     "a genuine closed proof must still be accepted"
     (storeAt {} ⟨.defn (definition .thm identityType identityValue), #[], #[], #[.zero]⟩) true
   let ixvmCases := cases.filter (fun c => !c.expectAccept) ++ ixvmSafetyCases ++ #[control]
-  return (← runCases compiled ixvmCases) ++ (← runCases compiled ixvmCases true) ++
-    (← rustTests) ++ (← recursionTests)
+  return (← runCases compiled ixvmCases) ++ (← runCases compiled ixvmCases true)
 
 end Tests.Ix.IxVM.DefinitionDependencies

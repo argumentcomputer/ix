@@ -1,16 +1,17 @@
-/-
+import LSpec
+import Tests.Ix.Compile.KernelReport
+
+/-!
   compiler-reports: the strict readers of the checkers' reports
   (`Tests.Ix.Compile.KernelReport`), which the closure suites use. The certified checker's JSONL rows: coverage by owning
   record address, every verdict kept for the caller's policy, an incomplete
   process or a malformed, truncated, duplicate or unknown row refused.
-  `check-rs`'s fail-out rows and summary: messages per label, header and
+  Fail-out rows and summary: messages per label, header and
   trailer comments skipped, anonymous labels resolved to their address.
 
   Ported from a9cf3607 (`Tests/Ix/Compile/KernelReportTests.lean`). The migrated
   IxC `check-lean` protocol has its separate strict controls in LeanReportTests.
 -/
-import LSpec
-import Tests.Ix.Compile.KernelReport
 
 namespace Tests.Ix.Compile.KernelReportTests
 
@@ -31,10 +32,10 @@ private def failsWith (result : Except String α) (fragment : String) : Bool :=
   | .error e => (e.splitOn fragment).length > 1
   | .ok _ => false
 
-/-- A `check-rs --fail-out` file: header, two records under one message, one
+/-- A `--fail-out` file: header, two records under one message, one
 under another, trailer. -/
 private def failOut : String :=
-  "# ix check-rs failures\n# env: out.ixe\n# seeds: names.txt\n" ++
+  "# ix check failures\n# env: out.ixe\n# seeds: names.txt\n" ++
   "# AppTypeMismatch: expected Nat\nA.f\nA.g\n#\n" ++
   "# declaration type mismatch\n#" ++ addressA ++ " (A.h)\n" ++
   "# total failures: 3\n"
@@ -58,6 +59,14 @@ def suite : List TestSeq := [
     ((do
       let report ← parse (row addressA "blocked" addressB)
       pure (report[addressA]?.map Verdict.outcome)).toOption == some (some "blocked"))
+  ++ test "a tier record the typing tier typed is kept with its safety"
+    ((do
+      let report ← parse (row addressA "typed" "partial" ++ "\n" ++ row addressB "typed" "unsafe")
+      pure ([addressA, addressB].map fun a =>
+        report[a]?.map fun (v : Verdict) => (v.outcome, v.reason))).toOption ==
+        some [some ("typed", "partial"), some ("typed", "unsafe")])
+  ++ test "a typed row whose reason is not a tier safety fails"
+    (failsWith (parse (row addressA "typed" "")) "not a tier safety")
   ++ test "an incomplete process fails despite complete-looking rows"
     (failsWith (parse accepted 3) "exited with code 3")
   ++ test "empty successful output fails"
@@ -86,7 +95,7 @@ def suite : List TestSeq := [
     (failOutRows failOut == #[("A.f", "AppTypeMismatch: expected Nat"),
       ("A.g", "AppTypeMismatch: expected Nat"),
       ("#" ++ addressA ++ " (A.h)", "declaration type mismatch")])
-  ++ test "check-rs's summary gives the checked count"
+  ++ test "checker summary gives the checked count"
     (rsChecked "[check] seeded 7\n[check] 5/7 passed\n" == some 7)
   ++ test "no summary, no checked count"
     (rsChecked "[check] seeded 7\n" == none)

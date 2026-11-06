@@ -71,7 +71,7 @@ partial def findLakeRoot (start : FilePath) : IO (Option FilePath) := do
     exactly as before. -/
 def initLeanSearchPathFor (file : FilePath) : IO Unit := do
   let parent := file.parent.getD ⟨"."⟩
-  initLeanSearchPath (some ((← findLakeRoot parent).getD parent))
+  initLeanSearchPath (← findLakeRoot parent)
 
 /-- A file's elaborated environment plus whether its header declares `module`. -/
 structure FileEnv where

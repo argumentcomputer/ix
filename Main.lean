@@ -3,7 +3,6 @@ import Ix.Cli.AggregateCmd
 import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd
 import Ix.Cli.CodegenCmd
-import Ix.Cli.CheckRsCmd
 import Ix.Cli.CheckLeanCmd
 import Ix.Cli.CompileLeanCmd
 import Ix.Cli.CompileExportCmd
@@ -13,11 +12,9 @@ import Ix.Cli.CatalogCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
-import Ix.Cli.IngressCmd
 import Ix.Cli.MergeCmd
 import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
-import Ix.Cli.ProfileCmd
 import Ix.Cli.CompressCmd
 import Ix.Cli.ProveCmd
 import Ix.Cli.ProveBindingCmd
@@ -28,6 +25,8 @@ import Ix.Cli.VerifyHostCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
 import Ix
+
+/-! CLI entry point for the `ix` executable. -/
 
 def VERSION : String := Ix.versionString
 
@@ -43,7 +42,6 @@ def ixCmd : Cli.Cmd := `[Cli|
     decompileCmd;
     mergeCmd;
     checkCmd;
-    checkRsCmd;
     checkLeanCmd;
     compileLeanCmd;
     compileExportCmd;
@@ -52,7 +50,6 @@ def ixCmd : Cli.Cmd := `[Cli|
     diffCmd;
     packCmd;
     treeCmd;
-    profileCmd;
     proveCmd;
     proveBindingCmd;
     compressCmd;
@@ -62,7 +59,6 @@ def ixCmd : Cli.Cmd := `[Cli|
     verifyHostCmd;
     addrOfCmd;
     nameOfCmd;
-    ingressCmd;
     serveCmd;
     connectCmd
 ]

@@ -72,7 +72,10 @@ by hex prefixes (8–64 digits). It prints all aliases, not a single guessed
 name. This separate diagnostic reads the full file into RAM: apply an
 appropriate memory limit for large artifacts. Name lookup is not checking.
 
-`cases.json` pins the exact existing `.ixe` by SHA-256 and byte length. It
+`cases.json` pins the exact existing `.ixe` by Blake3 digest (`artifact.blake3`,
+checked with `b3sum`) and byte length; the committed manifest still carries the
+v3 artifact's SHA-256 instead, so the harness refuses to run against it until a
+Blake3 digest is recorded. It
 tracks 138 target addresses: 120 fuel failures, four depth failures, five
 unfinished tails, and nine passing-baseline controls. The default **25-case core**
 contains all five original tails, all four depth cases, ten fuel failures,

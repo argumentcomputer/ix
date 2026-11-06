@@ -17,8 +17,7 @@ workflows execute, so every CI number is reproducible on your machine.
 ## The row contract
 
 Every measured tool reports through one shape — the **benchmark results JSON** —
-and one exit-code convention (Rust: `crates/bench`; Lean:
-`Ix/Benchmark/Results.lean`):
+and one exit-code convention (`Ix/Benchmark/Results.lean`):
 
 ```json
 { "<name>": { "status": "ok", "<metric>": 123, "phase-<span>": 1.5 } }
@@ -28,8 +27,13 @@ and one exit-code convention (Rust: `crates/bench`; Lean:
 - `status` is `ok` or `rejected` (written by the tool) or `oom` (merged in by
   `ix bench run` after an abnormal exit — a process never observes its own
   OOM kill). An `oom` row keeps whatever metrics landed before the kill.
+  `ix check-lean` also writes `partial` (exit 4: every declaration passed, but
+  the whole artifact carries no role binding) and `conditional` (exit 5: it
+  passed only with user axioms admitted).
 - Exit codes: `0` all ok · `2` usage error · `3` the kernel **rejected** a
-  constant (its row is on disk) · anything else is an infrastructure failure.
+  constant (its row is on disk) · `4`/`5` `ix check-lean`'s partial and
+  conditional runs (their rows are on disk) · anything else is an
+  infrastructure failure.
 
 There is no output scraping anywhere: no marker lines, no log grepping, no
 sentinel-key jq. State flows through rows and exit codes only. A rejected or
@@ -179,8 +183,9 @@ arena-copy fix; they do not measure end-to-end proving or CI wall time.
 Caching the environment's role binding across constants in the benchmark
 runners (`assumeBinding := true` in `bench-typecheck`, matching the production
 claim tree where the binding is proven once and assumed by per-constant claims,
-and upfront `verdict_work` support checking in `rs_kernel_check_anon_consts`)
-eliminates redundant per-constant role-table re-admission:
+and upfront `verdict_work` support checking in the Rust kernel's anonymous
+check, since retired) eliminates redundant per-constant role-table re-admission.
+The `ooc` column was measured when `ooc` ran the Rust kernel:
 
 | Constant | Checked constants (assumed binding) | Stage 1 FFT cost, billions (`09ee682` → assumed binding) | `ooc` check-time (s) |
 |---|---:|---:|---:|
@@ -208,7 +213,7 @@ FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
 | backend | what it measures | tool |
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
-| `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
+| `ooc`     | out-of-circuit Lean kernel (`IxC`): whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-lean --anon --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
@@ -220,13 +225,10 @@ lines on the compile plots; they never enter the certified alert baseline.
 PR comparisons across the switch include the cost of certification and remain
 informational: the table displays the delta without failing on its size.
 Compiler failures, missing rows and kernel rejections still fail their jobs.
-For a separate Rust measurement, run
-`ix compile <env>.lean --rust --out rust.ixe --json rust-compile.json --json-name <env>`;
-keep that row separate from the certified series.
 
 The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
-and [kernel.md](kernel.md). It is separate from the compiler and Rust kernel benchmarks above;
+and [kernel.md](kernel.md). It is separate from the compiler and `ooc` benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
 ### Aggregate baselines
@@ -524,9 +526,7 @@ For context, the retired union `ix catalog` peaked 35.3 GiB at spine
 scale (N=12) and OOM'd this box on its first full-corpus attempt; the
 piece pipeline's box pressure is `jobs × member`, never a union.
 Per-member kernel checking (`lake exe truthmines check`, suite
-`truthmines-check`) and metadata fidelity (`lake exe truthmines
-validate`, suite `truthmines-validate`) are the other two rungs over
-the same artifacts.
+`truthmines-check`) is the other rung over the same artifacts.
 
 ## Not yet covered
 

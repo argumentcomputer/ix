@@ -804,8 +804,8 @@ impl Env {
   /// Addresses of the named constants the kernel typechecker would
   /// iterate via `check_const` — every entry in `env.named` minus the
   /// `Muts` mutual-block pointers (which aren't standalone checkables).
-  /// Matches `crates/ffi/src/kernel.rs::all_checkable_ixon_names` but
-  /// returns addresses rather than names and skips the sort.
+  /// Sorted, and as names, these were the retired Rust check FFI's
+  /// `all_checkable_ixon_names`.
   pub fn checkable_addrs(&self) -> Vec<Address> {
     self
       .named
@@ -1011,8 +1011,8 @@ impl Env {
   ///   ingress to resolve through `named` ([`ConstantMeta::named_refs`]:
   ///   `all`, `ctx`, `ctors`) are carried too, with their Named
   ///   entries: a `mutual` definition's `all` names siblings its value
-  ///   need not reach, and without them `ix check-rs` (meta) fails the
-  ///   bundle with `resolve_all: Named entry … missing`.
+  ///   need not reach, and without them a meta-mode check of the bundle
+  ///   fails on the missing `Named` entry.
   ///
   /// Errors if a reached address is in neither `consts`, `blobs`, nor
   /// `assumed` — the source env cannot produce a closed bundle for

@@ -1,3 +1,0 @@
-# These are committed canonical regression inputs, not generated workspaces.
-!*.const
-!*.ixe

@@ -2790,12 +2790,236 @@ extern "C" int aiur_trace_ix_aggr_233(int device, const uint8_t* seeds, uint32_t
   return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_233);
 }
 
+__device__ __constant__ uint64_t inverse_261_0[] = {0ULL, 1ULL};
+__device__ __constant__ uint64_t inverse_261_1[] = {18446744069414584320ULL, 0ULL};
+template<bool Typed> struct Seed_ix_aggr_261 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u32(data + 8);
+      case 2: return load_u32(data + 12);
+      case 3: return load_u32(data + 16);
+      case 4: return load_u8(data + 44);
+      case 5: return load_u32(data + 20);
+      case 6: return load_u32(data + 24);
+      case 7: return load_u8(data + 45);
+      case 8: return load_u32(data + 28);
+      case 9: return load_u32(data + 32);
+      case 10: return load_u8(data + 46);
+      case 11: return load_u32(data + 36);
+      case 12: return load_u32(data + 40);
+      case 13: return load_u8(data + 47);
+      case 14: return load_u8(data + 48);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_ix_aggr_261(Seed_ix_aggr_261<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  row[1] = v_1;
+  const uint64_t v_2 = seed.word(3);
+  row[2] = v_2;
+  const uint64_t v_3 = seed.word(4);
+  const uint64_t v_4 = seed.word(5);
+  const uint64_t v_5 = seed.word(6);
+  row[layout.auxiliaries + 1] = v_3;
+  row[layout.auxiliaries + 2] = v_4;
+  row[layout.auxiliaries + 3] = v_5;
+  const uint64_t v_6 = seed.word(7);
+  const uint64_t v_7 = seed.word(8);
+  const uint64_t v_8 = seed.word(9);
+  row[layout.auxiliaries + 4] = v_6;
+  row[layout.auxiliaries + 5] = v_7;
+  row[layout.auxiliaries + 6] = v_8;
+  switch (v_3) {
+    case 1ULL: {
+      row[layout.selectors + 0] = 1;
+      return 0;
+    }
+    case 0ULL: {
+      switch (v_6) {
+        case 1ULL: {
+          row[layout.selectors + 1] = 1;
+          return 0;
+        }
+        case 0ULL: {
+          const uint64_t v_9 = seed.word(10);
+          const uint64_t v_10 = seed.word(11);
+          const uint64_t v_11 = seed.word(12);
+          row[layout.auxiliaries + 7] = v_9;
+          row[layout.auxiliaries + 8] = v_10;
+          row[layout.auxiliaries + 9] = v_11;
+          switch (v_9) {
+            case 0ULL: {
+              const uint64_t v_12 = seed.word(13);
+              row[layout.auxiliaries + 10] = v_12;
+              switch (v_12) {
+                case 0ULL: {
+                  const uint64_t v_13 = seed.word(14);
+                  row[layout.auxiliaries + 11] = v_13;
+                  row[layout.selectors + 2] = 1;
+                  return 0;
+                }
+                case 1ULL: {
+                  row[layout.selectors + 3] = 1;
+                  return 0;
+                }
+                default: {
+                  row[layout.auxiliaries + 11] = (v_12 <= 1ULL ? inverse_261_0[v_12] : inverse(goldilocks_sub(v_12, 0ULL)));
+                  row[layout.auxiliaries + 12] = (v_12 <= 1ULL ? inverse_261_1[v_12] : inverse(goldilocks_sub(v_12, 1ULL)));
+                  const uint64_t v_17 = seed.word(14);
+                  row[layout.auxiliaries + 13] = v_17;
+                  row[layout.selectors + 4] = 1;
+                  return 0;
+                }
+              }
+            }
+            default: {
+              return 2;
+            }
+          }
+        }
+        default: {
+          return 2;
+        }
+      }
+    }
+    default: {
+      return 2;
+    }
+  }
+}
+template<bool Typed> __global__ void kernel_ix_aggr_261(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 56 : 120;
+  const Seed_ix_aggr_261<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_ix_aggr_261(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_ix_aggr_261(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_ix_aggr_261<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_ix_aggr_261<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_ix_aggr_261(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 3 || auxiliaries < selectors || auxiliaries - selectors < 5 || width < auxiliaries || width - auxiliaries < 14) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 56 : encoding == 0 ? 120 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_261);
+}
+
+__device__ __constant__ uint64_t inverse_262_0[] = {0ULL, 1ULL};
+__device__ __constant__ uint64_t inverse_262_1[] = {18446744069414584320ULL, 0ULL};
+template<bool Typed> struct Seed_ix_aggr_262 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u32(data + 8);
+      case 2: return load_u32(data + 12);
+      case 3: return load_u8(data + 32);
+      case 4: return load_u32(data + 16);
+      case 5: return load_u32(data + 20);
+      case 6: return load_u8(data + 33);
+      case 7: return load_u32(data + 24);
+      case 8: return load_u32(data + 28);
+      case 9: return load_u8(data + 34);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_ix_aggr_262(Seed_ix_aggr_262<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  row[1] = v_1;
+  const uint64_t v_2 = seed.word(3);
+  const uint64_t v_3 = seed.word(4);
+  const uint64_t v_4 = seed.word(5);
+  row[layout.auxiliaries + 1] = v_2;
+  row[layout.auxiliaries + 2] = v_3;
+  row[layout.auxiliaries + 3] = v_4;
+  const uint64_t v_5 = seed.word(6);
+  const uint64_t v_6 = seed.word(7);
+  const uint64_t v_7 = seed.word(8);
+  row[layout.auxiliaries + 4] = v_5;
+  row[layout.auxiliaries + 5] = v_6;
+  row[layout.auxiliaries + 6] = v_7;
+  switch (v_2) {
+    case 1ULL: {
+      row[layout.selectors + 0] = 1;
+      return 0;
+    }
+    case 0ULL: {
+      switch (v_5) {
+        case 1ULL: {
+          row[layout.selectors + 1] = 1;
+          return 0;
+        }
+        case 0ULL: {
+          const uint64_t v_8 = seed.word(9);
+          row[layout.auxiliaries + 7] = v_8;
+          switch (v_8) {
+            case 0ULL: {
+              row[layout.selectors + 2] = 1;
+              return 0;
+            }
+            case 1ULL: {
+              row[layout.selectors + 3] = 1;
+              return 0;
+            }
+            default: {
+              row[layout.auxiliaries + 8] = (v_8 <= 1ULL ? inverse_262_0[v_8] : inverse(goldilocks_sub(v_8, 0ULL)));
+              row[layout.auxiliaries + 9] = (v_8 <= 1ULL ? inverse_262_1[v_8] : inverse(goldilocks_sub(v_8, 1ULL)));
+              row[layout.selectors + 4] = 1;
+              return 0;
+            }
+          }
+        }
+        default: {
+          return 2;
+        }
+      }
+    }
+    default: {
+      return 2;
+    }
+  }
+}
+template<bool Typed> __global__ void kernel_ix_aggr_262(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 40 : 80;
+  const Seed_ix_aggr_262<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_ix_aggr_262(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_ix_aggr_262(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_ix_aggr_262<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_ix_aggr_262<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_ix_aggr_262(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 2 || auxiliaries < selectors || auxiliaries - selectors < 5 || width < auxiliaries || width - auxiliaries < 10) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 40 : encoding == 0 ? 80 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_262);
+}
+
 extern "C" const uint8_t* aiur_trace_ix_aggr_contract() {
-  static const uint8_t hash[32] = {145, 162, 10, 199, 28, 39, 21, 135, 139, 129, 230, 115, 149, 94, 62, 28, 138, 138, 88, 46, 132, 161, 227, 117, 182, 88, 126, 99, 227, 41, 96, 70};
+  static const uint8_t hash[32] = {16, 192, 139, 155, 202, 145, 36, 243, 93, 246, 216, 189, 250, 221, 54, 36, 149, 240, 11, 40, 210, 134, 183, 238, 67, 74, 234, 134, 107, 96, 246, 23};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ix_aggr_schema() {
-  static const uint8_t hash[32] = {239, 176, 66, 178, 174, 211, 250, 22, 217, 65, 204, 136, 211, 31, 231, 21, 49, 200, 167, 74, 146, 184, 198, 118, 200, 232, 103, 43, 247, 11, 245, 163};
+  static const uint8_t hash[32] = {171, 117, 94, 141, 24, 100, 81, 45, 119, 242, 237, 174, 47, 213, 20, 154, 88, 248, 88, 222, 223, 0, 127, 104, 180, 202, 215, 87, 114, 235, 156, 106};
   return hash;
 }
 }

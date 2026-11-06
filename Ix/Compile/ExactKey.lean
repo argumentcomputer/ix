@@ -455,7 +455,7 @@ structure PreseedKey where
   deriving DecidableEq
 
 instance preseedKeyBEq : BEq PreseedKey :=
-  ⟨fun a b => exprEq a.expr b.expr && a.params.isEqv b.params nameEq && decide (a.contextHash = b.contextHash)⟩
+  ⟨fun a b => decide (a.contextHash = b.contextHash) && exprEq a.expr b.expr && a.params.isEqv b.params nameEq⟩
 
 instance preseedKeyHashable : Hashable PreseedKey :=
   ⟨fun key => hash (key.expr.getHash, key.contextHash)⟩
@@ -466,12 +466,12 @@ instance preseedKeyLawful : LawfulBEq PreseedKey where
     | mk expr params contextHash =>
       cases b with
       | mk other otherParams otherHash =>
-        change (exprEq expr other && params.isEqv otherParams nameEq && decide (contextHash = otherHash)) = true at same
+        change (decide (contextHash = otherHash) && exprEq expr other && params.isEqv otherParams nameEq) = true at same
         simp only [Bool.and_eq_true, exprEq_eq, decide_eq_true_eq, paramsEq_iff] at same
         rcases same with ⟨⟨rfl, rfl⟩, rfl⟩
         rfl
   rfl {a} := by
-    change (exprEq a.expr a.expr && a.params.isEqv a.params nameEq && decide (a.contextHash = a.contextHash)) = true
+    change (decide (a.contextHash = a.contextHash) && exprEq a.expr a.expr && a.params.isEqv a.params nameEq) = true
     simp only [Bool.and_eq_true, exprEq_eq, decide_eq_true_eq, paramsEq_iff, and_self]
 
 theorem preseedKey_fields {a b : PreseedKey} (same : (a == b) = true) :

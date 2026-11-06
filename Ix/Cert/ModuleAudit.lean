@@ -1,11 +1,14 @@
 import IxC.Kernel.Audit.Axioms
+import Ix.Cert.Canon
 import Ix.Cert.Closure
+import Ix.Cert.CompileCorrect
 import Ix.Cert.ConversionValues
 import Ix.Cert.Hybrid
 import Ix.Cert.ReaderClosureKeys
 import Ix.Compile.ReadyCompile
 import Ix.CompileCertified
 import Ix.HostAdmission.Theorems
+import Ix.LeanIngress.NominalQuotient
 import Ix.RoleBinding.ArtifactOrderTheorems
 import Ix.RoleBinding.ArtifactTheorems
 import Ix.RoleBinding.ArtifactTieredTheorems
@@ -59,11 +62,30 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
   Ix.Compile.ReadyQueue
   Ix.Compile.ReadyCompile
   Ix.CompileCertified
+  Ix.LeanIngress.Theorems
+  Ix.LeanIngress.NominalQuotient
 
 #guard_kernel_axioms Ix.RoleBinding.RecordDecoding.parallel_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.recordStore_eq_parallel [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.CompileM.WorkerSnapshot.runBlock_same [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.CompileM.waveTasks_eq_projected [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Compile.ReadyCompile.reportIO [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.LeanIngress.prepareSourceCollapsedAt_trace [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.LeanIngress.Converted.quotient_eq_substKeys_canon [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.LeanIngress.canonDecl_substKeys [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.LeanIngress.checkGroupFiberSafe_sound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.LeanIngress.collapseRead_substKeys_canon_beqF [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.EnvSubstRel.toModelPullback [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.EnvSubstRel.toPullback [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.IxonCommutesCovering.nominalModelPullback [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.IxonCommutesCovering.nominalBridgeAt [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.IxonCommutesCovering.nominalPullback [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.NominalSemanticBridgeAt.of_covering [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.CompileCorrect.nominalBridgeAt [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.CompileCorrect.nominalPullback [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.model_exists_of_no_user_axioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDecls_consistent [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.no_proof_of_False_cached_userAxioms [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert

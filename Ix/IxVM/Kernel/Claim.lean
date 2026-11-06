@@ -306,11 +306,9 @@ def claim := ⟦
   }
 
   -- ============================================================================
-  -- Assumption / env tree: leaf list serialization (ch 1). The format
-  -- matches the Rust implementation in crates/kernel/src, so the same
-  -- witness buffers feed either checker. The tree is bound to its ch 1
-  -- key by recomputing the merkle root, not by hashing the bytes — see
-  -- the channel table in Ix/IxVM/ClaimHarness.lean.
+  -- Assumption / env tree: leaf list serialization (ch 1). The tree is
+  -- bound to its ch 1 key by recomputing the merkle root, not by hashing
+  -- the bytes — see the channel table in Ix/IxVM/ClaimHarness.lean.
   -- ============================================================================
   fn leaf_hash(addr: Addr) -> Addr {
     let tail = put_address(addr, store(ListNode.Nil));
@@ -388,10 +386,13 @@ def claim := ⟦
   -- Aiur memoizes per (addr, owned, asm, strict) — the list pointers
   -- are per-run constants, so shared subgraphs walk once.
   -- Addr-set membership via RBTreeMap keyed on the interned store
-  -- pointer: content-addressed interning makes ptr equality ⇔ 32-byte
-  -- equality in BOTH directions (each content has exactly one store
-  -- slot), so a u32 ptr key is an exact membership test. O(log n) per
-  -- query vs the O(n) list scan — the frontier list is the biggest
+  -- pointer: under honest host/VM content-addressed interning, each 32-byte
+  -- value has one store slot so pointer equality matches 32-byte equality
+  -- (while in the STARK constraint system a `Store` pointer is an auxiliary
+  -- column without value-deduplication constraints, so pointer-inequality
+  -- guards are honest-prover checks whereas positive membership still checks
+  -- a pointer loaded from the authenticated assumption/owned tree). O(log n)
+  -- per query vs the O(n) list scan — the frontier list is the biggest
   -- per-visit cost on fat-frontier shards (e.g. 1977 asm leaves).
   fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹G›) -> RBTreeMap‹G› {
     match load(leaves) {
@@ -416,14 +417,17 @@ def claim := ⟦
     -- exclude an owned leaf from both while the claim's merkle root still
     -- commits to it.
     match addr_set_member(addr, asm) {
-      1 => (),
+      1 =>
+        assert_eq!(eq_zero(strict - 2), 0,
+          "Check: target is in the assumption set");
+        (),
       _ =>
-        match strict {
+        let next_strict = match strict {
           1 =>
             assert_eq!(addr_set_member(addr, owned), 1,
               "CheckEnv: walk reached a constant outside the owned set");
-            (),
-          _ => (),
+            1,
+          _ => 0,
         };
         let c = load_verified_constant(addr);
         match c {
@@ -435,29 +439,29 @@ def claim := ⟦
                 match dprj {
                   DefinitionProj.Mk(_, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               ConstantInfo.IPrj(iprj) =>
                 match iprj {
                   InductiveProj.Mk(_, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               ConstantInfo.CPrj(cprj) =>
                 match cprj {
                   ConstructorProj.Mk(_, _, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               ConstantInfo.RPrj(rprj) =>
                 match rprj {
                   RecursorProj.Mk(_, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               _ => run_check(rc, addr),
             };
-            env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, strict),
+            env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, next_strict),
         },
     }
   }
@@ -486,6 +490,10 @@ def claim := ⟦
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
+        -- Assumptions waive out-of-shard dependency checks, never the
+        -- check of an owned subject itself.
+        assert_eq!(addr_set_member(a, asm), 0,
+          "CheckEnv: owned constant is in the assumption set");
         env_walk(rc, a, owned, asm, 1);
         env_walk_leaves(rc, rest, owned, asm),
     }
@@ -498,6 +506,13 @@ def claim := ⟦
   -- being well-typed, so every constant the claim covers must be
   -- reached by this walk or assumed via the frontier.
   fn run_check_env(rc: RoleCtx, env_root: Addr, asm: Option‹Addr›) {
+    let owned = load_assumption_tree(env_root);
+    match load(owned) {
+      ListNode.Nil =>
+        assert_eq!(0, 1, "CheckEnv: owned tree has no leaves");
+        (),
+      ListNode.Cons(_, _) => (),
+    };
     match asm {
       Option.None =>
         -- The whole environment: every constant under `env_root` is
@@ -514,13 +529,11 @@ def claim := ⟦
         -- (the sharded walk below aborts instead), so a claim without
         -- assumptions proves every constant its tree reaches, not only
         -- those it lists. For an environment's tree the two coincide.
-        let leaves = load_assumption_tree(env_root);
         match role_ctx_axioms(rc) {
-          RBTreeMap.Nil => walk_leaves_owned(rc, leaves),
-          RBTreeMap.Node(_, _, _, _, _) => walk_leaves_transitive(rc, leaves),
+          RBTreeMap.Nil => walk_leaves_owned(rc, owned),
+          RBTreeMap.Node(_, _, _, _, _) => walk_leaves_transitive(rc, owned),
         },
       Option.Some(r) =>
-        let owned = load_assumption_tree(env_root);
         let owned_set = addr_set_build(owned, RBTreeMap.Nil);
         let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
         env_walk_leaves(rc, owned, owned_set, asm_set),
@@ -646,8 +659,7 @@ def claim := ⟦
   }
 
   -- ============================================================================
-  -- Reveal claim (variant 6). Mirrors the Rust implementation in
-  -- crates/kernel/src; the machinery is Ixon-level rather than
+  -- Reveal claim (variant 6). The machinery is Ixon-level rather than
   -- typechecker-level: parse a `RevealConstantInfo` (per-field Option
   -- mirror of `ConstantInfo`, Expr fields as content hashes), load the
   -- committed constant, assert every Some(field) equals the real one.
@@ -1410,7 +1422,9 @@ def claim := ⟦
           Option.Some(r) =>
             let asm_leaves = load_assumption_tree(r);
             let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
-            env_walk(rc, target, RBTreeMap.Nil, asm_set, 0),
+            -- strict = 2 rejects `target ∈ asm_set` at the root without
+            -- enforcing owned-set membership on transitive dependencies.
+            env_walk(rc, target, RBTreeMap.Nil, asm_set, 2),
         },
       5 =>
         let (binding, axioms, s) = get_claim_context(s);

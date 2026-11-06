@@ -2,7 +2,7 @@ module
 
 public import IxC.Kernel.Admission.Bytes
 public import IxC.Kernel.Ixon.Prelude
-public import IxC.Kernel.Cached.Installed
+public import IxC.Kernel.Cached.Policy
 public import IxC.Kernel.Egress.Projection
 
 /-! # Admission from ordered Ixon record bytes
@@ -106,6 +106,10 @@ inductive Error where
   prelude record does not read to what the prelude read -/
   | preludeCopy
   | kernel (error : Ix.Kernel.CheckError .anon) (position : Nat)
+  /-- the check admits user axioms (`AxiomPolicy.allowUser`), and the role table
+  leaves one of `userAxiomRoles` unbound: that role's own axiom would read under
+  an input key and be admitted as a user axiom (`admitAxiomPolicy`) -/
+  | axiomRoleUnbound (role : Ix.Kernel.Role)
 
 instance : ToString Error where
   toString
@@ -120,6 +124,8 @@ instance : ToString Error where
     | .read p e => s!"read at {p}: {e}"
     | .preludeCopy => "prelude copy: the stream's reading leaves other entries than the prelude's at a prelude key"
     | .kernel e p => s!"kernel at {p}: {e}"
+    | .axiomRoleUnbound r => s!"user axioms: the role table leaves {repr r} unbound; a check that \
+        admits user axioms requires sorryAx, propext and Classical.choice bound"
 
 /-- The byte stage's failures, unchanged. -/
 def Error.ofBytes : ByteError → Error
@@ -295,6 +301,7 @@ def Error.outcome : Error → Outcome
   | .read _ (.declined _) => .declined
   | .preludeCopy => .declined
   | .kernel _ _ => .declined
+  | .axiomRoleUnbound _ => .declined
 
 /-- The classification of a byte-stage failure, as `Error.outcome` makes it:
 a batch limit declines; a key used twice in one table, a key that is not the
@@ -306,15 +313,94 @@ def ByteError.outcome : ByteError → Outcome
   | .mismatch .. => .rejected
   | .decode .. => .rejected
 
-/-- Extract the custom user axioms from a prepared declaration array. -/
+/-! ## Checks that admit user axioms
+
+The fold runs under an axiom policy (`Ix.Kernel.Cached.AxiomPolicy`,
+`IxC/Kernel/Cached/Policy.lean`). `strict` is the certified entry's: at it,
+`checkConstantsUnder` and `checkBytesUnder` are `checkConstantsWith` and
+`checkBytesWith` (`checkConstantsUnder_strict`, `checkBytesUnder_strict`,
+`Ix.Kernel.Admission.UserAxioms`). `allowUser` also admits user axioms, and an
+accept is then conditional on them: the entries return the environment
+together with the user axioms of the declarations the fold ran over
+(`preparedUserAxioms`; the environment cannot list them, since an opaque is
+installed as `.axiomInfo` too). With none, the accept is the strict entry's
+(`checkBytesUnder_strict_of_nil`). Under `allowUser` the role table must bind
+the axiom roles (`admitAxiomPolicy`), and the fold declines a user axiom that
+restates an axiom role's specification (`Cached.checkUserAxiomDeclC`). -/
+
+/-- The user axioms of a prepared declaration array (`userAxiomsOfDecls`): its
+`.axiomDecl`s under eligible keys, in order. -/
 def preparedUserAxioms (decls : Array (Ix.Kernel.Declaration .anon)) :
     List (Ix.Kernel.ConstantVal .anon) :=
   Ix.Kernel.userAxiomsOfDecls decls.toList
 
-/-- Extract the custom user axioms stored in an admitted environment. -/
-def admittedUserAxioms (env : Ix.Kernel.Env .anon) :
-    List (Ix.Kernel.ConstantVal .anon) :=
-  env.customAxiomInfos
+/-- **The roles a check that admits user axioms requires bound**: `sorryAx`,
+`propext` and `Classical.choice`. Left unbound, the role's own axiom (Lean's
+`sorryAx`, say) reads under an input key, which is eligible, and would be
+admitted as a user axiom. -/
+def userAxiomRoles : List Ix.Kernel.Role := [.sorryAx, .propext, .choice]
+
+/-- **The role table's admission under an axiom policy**: nothing more under
+`strict`; under `allowUser`, every role of `userAxiomRoles` bound, else the
+first unbound one is refused (`Error.axiomRoleUnbound`). -/
+def admitAxiomPolicy (policy : Ix.Kernel.Cached.AxiomPolicy) (t : Ix.Kernel.RoleTable) :
+    Except Error Unit :=
+  match policy with
+  | .strict => pure ()
+  | .allowUser =>
+    match userAxiomRoles.find? (fun r => (t.addressOf? r).isNone) with
+    | some r => throw (.axiomRoleUnbound r)
+    | none => pure ()
+
+/-- **The fold over decoded records under an axiom policy**: the policy's
+admission of the table (`admitAxiomPolicy`), the reader, the prelude, and the
+fold under the policy (`Cached.checkDeclsUnder`). The result is the environment
+and the user axioms it is conditional on (`preparedUserAxioms`, empty under
+`strict`). -/
+def checkConstantsUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
+    (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon × List (Ix.Kernel.ConstantVal .anon)) := do
+  admitAxiomPolicy policy t
+  let (ev, decls) ← readStream hash t pre constants blobs hint
+  let ds := Ix.Kernel.Frontend.preparePrelude pre.ix decls
+  let env ← (Ix.Kernel.Cached.checkDeclsUnder .verified policy ev ds).mapError
+    fun (e, i) => .kernel e i
+  pure (env, preparedUserAxioms ds)
+
+/-- **The bytes entry under an axiom policy**: `checkBytesWith`'s byte
+admission (`checkBytesWith_eq`: the batch limits, key uniqueness,
+authentication, the role table's admission, canonical decoding), then
+`checkConstantsUnder`. -/
+def checkBytesUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
+    (binding : Binding) (pre : Prelude .anon)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon × List (Ix.Kernel.ConstantVal .anon)) := do
+  (preflight limits records blobs).mapError Error.ofBytes
+  (uniqueKeys records blobs).mapError Error.ofBytes
+  (authenticate hash records blobs).mapError Error.ofBytes
+  let t ← (admitBinding hash binding).mapError .binding
+  let constants ← (decodeRecords limits records).mapError Error.ofBytes
+  checkConstantsUnder policy hash t pre constants blobs hint
+
+/-- `checkBytesWith` with user axioms admitted: the environment of
+`checkBytesUnder .allowUser`, which also lists the user axioms the accept is
+conditional on. -/
+def checkBytesWithUserAxioms (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon) :=
+  Prod.fst <$> checkBytesUnder .allowUser hash binding pre limits records blobs hint
+
+/-- `checkConstantsWith` with user axioms admitted: the environment of
+`checkConstantsUnder .allowUser`. -/
+def checkConstantsWithUserAxioms (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon) :=
+  Prod.fst <$> checkConstantsUnder .allowUser hash t pre constants blobs hint
 
 end Ix.Kernel.Admission
 

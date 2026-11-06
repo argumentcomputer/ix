@@ -657,28 +657,24 @@ def exprMetaSlotCount : Nat → Option Nat
   | 8 | 9 => some 1
   | _ => none
 
-/-- The structural child slots of a node, in field order. -/
-def ExprMetaData.structuralSlots : ExprMetaData → Array UInt64
-  | .app f a => #[f, a]
-  | .binder _ _ t b => #[t, b]
-  | .letBinder _ t v b => #[t, v, b]
-  | .prj _ c => #[c]
-  | .mdata _ c => #[c]
-  | _ => #[]
-
 /-- The implicit-slot mask of node `i` and its block start `lo[i]`, given
 the block starts `lo[0..i]` of the preceding nodes. -/
 def exprMetaImplicitMask (node : ExprMetaData) (i : Nat) (lo : Array Nat) :
-    UInt8 × Nat := Id.run do
-  let slots := node.structuralSlots
-  let mut top := i
-  let mut mask : UInt8 := 0
-  for k in [0:slots.size] do
-    let s := slots.size - 1 - k
-    if top > 0 && slots[s]!.toNat == top - 1 then
-      mask := mask ||| ((1 : UInt8) <<< s.toUInt8)
-      top := lo[top - 1]!
-  return (mask, top)
+    UInt8 × Nat :=
+  match node with
+  | .leaf | .ref _ => (0, i)
+  | .prj _ c | .mdata _ c =>
+    if i > 0 && c.toNat == i - 1 then (1, lo[i - 1]!) else (0, i)
+  | .app c0 c1 | .binder _ _ c0 c1 =>
+    let (mask, top) :=
+      if i > 0 && c1.toNat == i - 1 then ((2 : UInt8), lo[i - 1]!) else (0, i)
+    if top > 0 && c0.toNat == top - 1 then (mask ||| 1, lo[top - 1]!) else (mask, top)
+  | .letBinder _ c0 c1 c2 =>
+    let (mask, top) :=
+      if i > 0 && c2.toNat == i - 1 then ((4 : UInt8), lo[i - 1]!) else (0, i)
+    let (mask, top) :=
+      if top > 0 && c1.toNat == top - 1 then (mask ||| 2, lo[top - 1]!) else (mask, top)
+    if top > 0 && c0.toNat == top - 1 then (mask ||| 1, lo[top - 1]!) else (mask, top)
 
 /-- Explicit reference from node `i` to node `c`: TagN of `i - 1 - c`
 (wrapping). -/
@@ -964,18 +960,6 @@ def exprMetaNodeByteSize (em : ExprMetaData) (i : Nat) (mask : UInt8) (idx : Nam
   | .prj structName child => 1 + idxByteSize structName idx + slot 0 child
   | .mdata mdata child => 1 + mdataStackIndexedByteSize mdata idx + slot 0 child
 
-/-- Exact byte length written by `putExprMetaArenaIndexed arena idx`. -/
-def exprMetaArenaIndexedByteSize (arena : ExprMetaArena) (idx : NameIndex) : Nat := Id.run do
-  let mut total := tag0ByteSize arena.nodes.size.toUInt64
-  let mut lo : Array Nat := Array.emptyWithCapacity arena.nodes.size
-  let mut i := 0
-  for node in arena.nodes do
-    let (mask, top) := exprMetaImplicitMask node i lo
-    total := total + exprMetaNodeByteSize node i mask idx
-    lo := lo.push top
-    i := i + 1
-  return total
-
 /-- Exact byte length written by `putUniv u`. -/
 def univByteSize : Univ → Nat
   | .zero => tagNByteWidth 2 0
@@ -993,50 +977,94 @@ decreasing_by
   have hbase := Univ.succBase_sizeOf_le inner
   omega
 
-/-- Exact byte length written by `putConstantMetaInfoIndexed cm idx`. -/
-def constantMetaInfoIndexedByteSize (cm : ConstantMetaInfo) (idx : NameIndex) : Nat :=
+/-- Compute the per-node implicit-slot masks and exact byte length of
+`putExprMetaArenaIndexed arena idx` in a single pass over `arena.nodes`. -/
+def exprMetaArenaMasksAndByteSize (arena : ExprMetaArena) (idx : NameIndex) :
+    ByteArray × Nat := Id.run do
+  let n := arena.nodes.size
+  if n == 0 then
+    return (ByteArray.empty, 1)
+  let mut total := tag0ByteSize n.toUInt64
+  let mut lo : Array Nat := Array.emptyWithCapacity n
+  let mut masks : ByteArray := ByteArray.emptyWithCapacity n
+  for i in [0:n] do
+    let node := arena.nodes[i]!
+    let (mask, top) := exprMetaImplicitMask node i lo
+    total := total + exprMetaNodeByteSize node i mask idx
+    lo := lo.push top
+    masks := masks.push mask
+  return (masks, total)
+
+/-- Serialize `ExprMetaArena` using precomputed per-node implicit-slot `masks`
+from `exprMetaArenaMasksAndByteSize`. -/
+def putExprMetaArenaWithMasks (arena : ExprMetaArena) (masks : ByteArray) (idx : NameIndex) :
+    PutM Unit := do
+  let n := arena.nodes.size
+  putTagN 0 0 n.toUInt64
+  for i in [0:n] do
+    putExprMetaNode arena.nodes[i]! i (masks.get! i) idx
+
+/-- Compute the arena implicit-slot masks and exact byte length of
+`putConstantMetaInfoIndexed cm idx` in a single arena pass. -/
+def constantMetaInfoMasksAndByteSize (cm : ConstantMetaInfo) (idx : NameIndex) :
+    ByteArray × Nat :=
   match cm with
-  | .empty => 1
+  | .empty => (ByteArray.empty, 1)
   | .defn name lvls all ctx arena typeRoot valueRoot =>
-    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize all idx +
-      idxVecByteSize ctx idx + exprMetaArenaIndexedByteSize arena idx +
-      tag0ByteSize typeRoot + tag0ByteSize valueRoot
+    let (masks, arenaBytes) := exprMetaArenaMasksAndByteSize arena idx
+    (masks,
+      1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize all idx +
+        idxVecByteSize ctx idx + arenaBytes +
+        tag0ByteSize typeRoot + tag0ByteSize valueRoot)
   | .axio name lvls arena typeRoot =>
-    1 + idxByteSize name idx + idxVecByteSize lvls idx +
-      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+    let (masks, arenaBytes) := exprMetaArenaMasksAndByteSize arena idx
+    (masks,
+      1 + idxByteSize name idx + idxVecByteSize lvls idx +
+        arenaBytes + tag0ByteSize typeRoot)
   | .quot name lvls arena typeRoot =>
-    1 + idxByteSize name idx + idxVecByteSize lvls idx +
-      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+    let (masks, arenaBytes) := exprMetaArenaMasksAndByteSize arena idx
+    (masks,
+      1 + idxByteSize name idx + idxVecByteSize lvls idx +
+        arenaBytes + tag0ByteSize typeRoot)
   | .indc name lvls ctors all ctx arena typeRoot =>
-    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize ctors idx +
-      idxVecByteSize all idx + idxVecByteSize ctx idx +
-      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+    let (masks, arenaBytes) := exprMetaArenaMasksAndByteSize arena idx
+    (masks,
+      1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize ctors idx +
+        idxVecByteSize all idx + idxVecByteSize ctx idx +
+        arenaBytes + tag0ByteSize typeRoot)
   | .ctor name lvls induct arena typeRoot =>
-    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxByteSize induct idx +
-      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+    let (masks, arenaBytes) := exprMetaArenaMasksAndByteSize arena idx
+    (masks,
+      1 + idxByteSize name idx + idxVecByteSize lvls idx + idxByteSize induct idx +
+        arenaBytes + tag0ByteSize typeRoot)
   | .recr name lvls rules all ctx arena typeRoot ruleRoots =>
-    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize rules idx +
-      idxVecByteSize all idx + idxVecByteSize ctx idx +
-      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot +
-      ruleRoots.foldl (fun acc r => acc + tag0ByteSize r) (tag0ByteSize ruleRoots.size.toUInt64)
+    let (masks, arenaBytes) := exprMetaArenaMasksAndByteSize arena idx
+    (masks,
+      1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize rules idx +
+        idxVecByteSize all idx + idxVecByteSize ctx idx +
+        arenaBytes + tag0ByteSize typeRoot +
+        ruleRoots.foldl (fun acc r => acc + tag0ByteSize r) (tag0ByteSize ruleRoots.size.toUInt64))
   | .muts all auxLayout =>
     let allBytes := all.foldl (fun acc cls => acc + idxVecByteSize cls idx)
       (1 + tag0ByteSize all.size.toUInt64)
-    match auxLayout with
-    | none => allBytes + 1
-    | some layout =>
-      let permBytes := layout.perm.foldl (fun acc p => acc + tag0ByteSize p)
-        (tag0ByteSize layout.perm.size.toUInt64)
-      let countsBytes := layout.sourceCtorCounts.foldl (fun acc c => acc + tag0ByteSize c)
-        (tag0ByteSize layout.sourceCtorCounts.size.toUInt64)
-      let evapLen := if layout.evaporated.isEmpty && !layout.perm.isEmpty
-        then layout.perm.size else layout.evaporated.size
-      let evapBytes := tag0ByteSize evapLen.toUInt64 + evapLen
-      allBytes + 1 + permBytes + countsBytes + evapBytes
+    let total := match auxLayout with
+      | none => allBytes + 1
+      | some layout =>
+        let permBytes := layout.perm.foldl (fun acc p => acc + tag0ByteSize p)
+          (tag0ByteSize layout.perm.size.toUInt64)
+        let countsBytes := layout.sourceCtorCounts.foldl (fun acc c => acc + tag0ByteSize c)
+          (tag0ByteSize layout.sourceCtorCounts.size.toUInt64)
+        let evapLen := if layout.evaporated.isEmpty && !layout.perm.isEmpty
+          then layout.perm.size else layout.evaporated.size
+        let evapBytes := tag0ByteSize evapLen.toUInt64 + evapLen
+        allBytes + 1 + permBytes + countsBytes + evapBytes
+    (ByteArray.empty, total)
 
-/-- Exact byte length written by `putConstantMetaIndexed cm idx`. -/
-def constantMetaIndexedByteSize (cm : ConstantMeta) (idx : NameIndex) : Nat :=
-  let infoBytes := constantMetaInfoIndexedByteSize cm.info idx
+/-- Compute the arena implicit-slot masks and exact byte length of
+`putConstantMetaIndexed cm idx` in a single arena pass. -/
+def constantMetaMasksAndByteSize (cm : ConstantMeta) (idx : NameIndex) :
+    ByteArray × Nat :=
+  let (masks, infoBytes) := constantMetaInfoMasksAndByteSize cm.info idx
   let sharingBytes := cm.metaSharing.foldl (fun acc e => acc + (runPut (putExpr e)).size)
     (tag0ByteSize cm.metaSharing.size.toUInt64)
   let refsBytes := tag0ByteSize cm.metaRefs.size.toUInt64 + cm.metaRefs.size * 32
@@ -1046,7 +1074,94 @@ def constantMetaIndexedByteSize (cm : ConstantMeta) (idx : NameIndex) : Nat :=
     (fun acc p => acc + tag0ByteSize p.arenaIdx +
       p.univIdxs.foldl (fun a i => a + tag0ByteSize i) (tag0ByteSize p.univIdxs.size.toUInt64))
     (tag0ByteSize cm.univPatches.size.toUInt64)
-  infoBytes + sharingBytes + refsBytes + univsBytes + patchesBytes
+  (masks, infoBytes + sharingBytes + refsBytes + univsBytes + patchesBytes)
+
+/-- Serialize `ConstantMetaInfo` using precomputed arena implicit-slot `masks`. -/
+def putConstantMetaInfoWithMasks (cm : ConstantMetaInfo) (masks : ByteArray) (idx : NameIndex) :
+    PutM Unit := do
+  match cm with
+  | .empty => putU8 255
+  | .defn name lvls all ctx arena typeRoot valueRoot =>
+    putU8 0
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdxVec all idx
+    putIdxVec ctx idx
+    putExprMetaArenaWithMasks arena masks idx
+    putTagN 0 0 typeRoot
+    putTagN 0 0 valueRoot
+  | .axio name lvls arena typeRoot =>
+    putU8 1
+    putIdx name idx
+    putIdxVec lvls idx
+    putExprMetaArenaWithMasks arena masks idx
+    putTagN 0 0 typeRoot
+  | .quot name lvls arena typeRoot =>
+    putU8 2
+    putIdx name idx
+    putIdxVec lvls idx
+    putExprMetaArenaWithMasks arena masks idx
+    putTagN 0 0 typeRoot
+  | .indc name lvls ctors all ctx arena typeRoot =>
+    putU8 3
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdxVec ctors idx
+    putIdxVec all idx
+    putIdxVec ctx idx
+    putExprMetaArenaWithMasks arena masks idx
+    putTagN 0 0 typeRoot
+  | .ctor name lvls induct arena typeRoot =>
+    putU8 4
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdx induct idx
+    putExprMetaArenaWithMasks arena masks idx
+    putTagN 0 0 typeRoot
+  | .recr name lvls rules all ctx arena typeRoot ruleRoots =>
+    putU8 5
+    putIdx name idx
+    putIdxVec lvls idx
+    putIdxVec rules idx
+    putIdxVec all idx
+    putIdxVec ctx idx
+    putExprMetaArenaWithMasks arena masks idx
+    putTagN 0 0 typeRoot
+    putTagN 0 0 ruleRoots.size.toUInt64
+    for r in ruleRoots do putTagN 0 0 r
+  | .muts all auxLayout =>
+    putU8 6
+    putTagN 0 0 all.size.toUInt64
+    for cls in all do
+      putIdxVec cls idx
+    match auxLayout with
+    | none => putU8 0
+    | some layout =>
+      putU8 1
+      putTagN 0 0 layout.perm.size.toUInt64
+      for p in layout.perm do putTagN 0 0 p
+      putTagN 0 0 layout.sourceCtorCounts.size.toUInt64
+      for c in layout.sourceCtorCounts do putTagN 0 0 c
+      let evaporated := if layout.evaporated.isEmpty && !layout.perm.isEmpty
+        then Array.replicate layout.perm.size 0 else layout.evaporated
+      putTagN 0 0 evaporated.size.toUInt64
+      for b in evaporated do putU8 (if b != 0 then 1 else 0)
+
+/-- Serialize `ConstantMeta` using precomputed arena implicit-slot `masks`. -/
+def putConstantMetaWithMasks (cm : ConstantMeta) (masks : ByteArray) (idx : NameIndex) :
+    PutM Unit := do
+  putConstantMetaInfoWithMasks cm.info masks idx
+  putTagN 0 0 cm.metaSharing.size.toUInt64
+  for e in cm.metaSharing do putExpr e
+  putTagN 0 0 cm.metaRefs.size.toUInt64
+  for a in cm.metaRefs do Serialize.put a
+  putTagN 0 0 cm.metaUnivs.size.toUInt64
+  for u in cm.metaUnivs do putUniv u
+  putTagN 0 0 cm.univPatches.size.toUInt64
+  for p in cm.univPatches do
+    putTagN 0 0 p.arenaIdx
+    putTagN 0 0 p.univIdxs.size.toUInt64
+    for i in p.univIdxs do putTagN 0 0 i
 
 def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo := do
   let cm ← match ← getU8 with
@@ -1776,13 +1891,6 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) :
 @[inline] def runPutWithCapacity (cap : Nat) (p : PutM Unit) : ByteArray :=
   (p.run (ByteArray.emptyWithCapacity cap)).2
 
-/-- Exact byte length of the §5 metadata blob for `namedEntry`. -/
-def namedMetaBlobByteSize (namedEntry : Named) (nameIdx : NameIndex) : Nat :=
-  constantMetaIndexedByteSize namedEntry.constMeta nameIdx +
-    match namedEntry.original with
-    | none => 1
-    | some (_, origMeta) => 1 + 32 + constantMetaIndexedByteSize origMeta nameIdx
-
 /-- §5 entries `named[lo:hi]`, exactly as `putEnv` writes them one after the
     other: the entry's §4 name index, its §2 constant rank, its exact hint,
     and its length-prefixed metadata blob. -/
@@ -1803,16 +1911,23 @@ def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
     putFusedOptHint namedEntry.hints
     -- Metadata blob: ConstantMeta + original as Option (0 = none,
     -- 1 = some(addr, meta)), length-prefixed, written directly without
-    -- allocating a temporary ByteArray per entry.
-    let blobLen := namedMetaBlobByteSize namedEntry nameIdx
-    putTagN 0 0 blobLen.toUInt64
-    putConstantMetaIndexed namedEntry.constMeta nameIdx
+    -- allocating a temporary ByteArray per entry and computing the arena
+    -- implicit-slot masks once for both byte-size accounting and writing.
+    let (constMasks, constBytes) := constantMetaMasksAndByteSize namedEntry.constMeta nameIdx
     match namedEntry.original with
-    | none => putU8 0
+    | none =>
+      let blobLen := constBytes + 1
+      putTagN 0 0 blobLen.toUInt64
+      putConstantMetaWithMasks namedEntry.constMeta constMasks nameIdx
+      putU8 0
     | some (origAddr, origMeta) =>
+      let (origMasks, origBytes) := constantMetaMasksAndByteSize origMeta nameIdx
+      let blobLen := constBytes + 1 + 32 + origBytes
+      putTagN 0 0 blobLen.toUInt64
+      putConstantMetaWithMasks namedEntry.constMeta constMasks nameIdx
       putU8 1
       Serialize.put origAddr
-      putConstantMetaIndexed origMeta nameIdx
+      putConstantMetaWithMasks origMeta origMasks nameIdx
 
 /-- Entries per task when §5 is written in parallel (`putEnv`). -/
 def namedChunk : Nat := 2048
@@ -2767,11 +2882,17 @@ structure RawEnvLazy where
     that share `buf`. `buf` MUST be the exact buffer passed to `rs_de_env_lazy`
     (offsets are relative to it). -/
 def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
-  let mut env : Env := { main := raw.main
+  let mut env : Env := { consts := Std.HashMap.emptyWithCapacity raw.consts.size
+                         named := Std.HashMap.emptyWithCapacity raw.named.size
+                         blobs := Std.HashMap.emptyWithCapacity raw.blobs.size
+                         addrToName := Std.HashMap.emptyWithCapacity raw.named.size
+                         main := raw.main
                          roleBinding := raw.roleBinding
-                         assumptions := raw.assumptions.foldl (·.insert ·) {}
+                         assumptions := raw.assumptions.foldl (·.insert ·)
+                           (Std.HashSet.emptyWithCapacity raw.assumptions.size)
                          anonHints := raw.anonHints.foldl
-                           (fun m (a, h) => m.insert a h) {} }
+                           (fun m (a, h) => m.insert a h)
+                           (Std.HashMap.emptyWithCapacity raw.anonHints.size) }
   for ⟨addr, offset, len⟩ in raw.consts do
     env := { env with
       consts := env.consts.insert addr

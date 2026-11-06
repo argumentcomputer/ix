@@ -1,18 +1,14 @@
 //! Hardcoded primitive content-addresses.
 //!
-//! Lives in `ix-common` rather than `ix-kernel` because several crates
-//! need this table and `ixon` (and everything above it) cannot depend on
-//! the kernel — `ix-kernel` already depends on `ixon`, so the edge would
-//! be a cycle. Witness builders need it to seed primitives the kernel
-//! FABRICATES during reduction rather than discovers by walking `refs`.
+//! Lives in `ix-common` because several crates need this table: witness
+//! builders need it to seed primitives the kernel FABRICATES during
+//! reduction rather than discovers by walking `refs`.
 //!
 //! Addresses are blake3 hashes of each primitive's Ixon-compiled form.
 //! Regenerate with `lake test -- --ignored rust-kernel-build-primitives`, which
 //! dumps the current `(name, hex)` pairs — paste the updated lines into
-//! `PrimAddrs::new`. `lake test -- prim-addrs` pins this table against
-//! the Lean mirror in `Ix/Tc/Primitive.lean`.
-
-use std::sync::LazyLock;
+//! `PrimAddrs::new`. The Lean mirror is `Ix/PrimAddrs.lean`, which the
+//! `prim-addrs` test compares with the live addresses.
 
 use crate::address::Address;
 
@@ -125,13 +121,9 @@ impl Default for PrimAddrs {
 impl PrimAddrs {
   /// Addresses reserved for kernel-only reduction markers. These are not
   /// Lean constants and must never be accepted as user environment entries.
-  pub fn reserved_marker_addrs() -> [(&'static str, Address); 2] {
+  pub fn reserved_marker_addrs() -> [(&'static str, Address); 1] {
     let canon = Self::new();
-    let orig = Self::new_orig();
-    [
-      ("eager_reduce", canon.eager_reduce.clone()),
-      ("orig.eager_reduce", orig.eager_reduce.clone()),
-    ]
+    [("eager_reduce", canon.eager_reduce.clone())]
   }
 
   /// Canonical content-hash addresses, hardcoded from the Ixon-compiled
@@ -451,13 +443,6 @@ impl PrimAddrs {
     Self::parity_table(&Self::new())
   }
 
-  /// `(lean_name, original_address_hex)` table from `Self::new_orig()`.
-  /// The name order matches [`Self::lean_parity_table`] so the same live
-  /// primitive catalog can validate both address schemes.
-  pub fn lean_orig_parity_table() -> Vec<(&'static str, String)> {
-    Self::parity_table(&Self::new_orig())
-  }
-
   fn parity_table(p: &Self) -> Vec<(&'static str, String)> {
     vec![
       ("Nat", p.nat.hex()),
@@ -554,315 +539,4 @@ impl PrimAddrs {
       ("String.decEq", p.string_dec_eq.hex()),
     ]
   }
-
-  /// LEON content-hash addresses, hardcoded from
-  /// `ConstantInfo::get_hash()` applied to each primitive's original
-  /// (pre-compile) Lean declaration. Used by `Primitives::from_env_orig`
-  /// to resolve primitives against `orig_kenv` — the direct-ingress
-  /// environment produced by `lean_ingress` where KIds live at LEON
-  /// addresses rather than canonical addresses.
-  ///
-  /// Regenerate with `lake test -- --ignored rust-kernel-build-prim-origs`.
-  /// The
-  /// failure mode when these drift is a synthetic `@<hex>` KId in every
-  /// primitive field of `orig_kenv.prims()`, which cascades into a
-  /// flood of `AppTypeMismatch` errors during original-constant
-  /// verification (any Nat literal reduction, Bool literal, `String`
-  /// coercion, or reducer-marker comparison will diverge from the real
-  /// `orig_kenv` entry for that primitive).
-  pub fn new_orig() -> Self {
-    let h = |hex: &str| -> Address {
-      Address::from_hex(hex).expect("invalid primitive address hex")
-    };
-    PrimAddrs {
-      nat: h(
-        "0c0524ffa66fdbc0c9d3f12faf1a27b2ecd331ffa06da24a78f832e4f4145589",
-      ),
-      nat_zero: h(
-        "adc9f7ba6a90c3caacf0be308c2012437e9dd810bfc2b9b286b4934be4e86cb1",
-      ),
-      nat_succ: h(
-        "e4f2b35614ae2c6487084cb96e90852643a043296bc682b469ccfd430650cf8d",
-      ),
-      nat_add: h(
-        "ed99025afee9212ecf57c260d56d5dce9c901628cb0080421989da4fe979ede7",
-      ),
-      nat_pred: h(
-        "26245a09319bcf9d55a08431bce3b9d8a8d09e3dad25b9a83cc666e3736deeb4",
-      ),
-      nat_sub: h(
-        "858e3184f315fc8f85614d8ccd6f854a71bb8ff1d2e2c0f2819bf411ff25f294",
-      ),
-      nat_mul: h(
-        "ea30166fa0b64cf3da2d952ed470d6c3d33de3e85243f95026f3b5262367ec9f",
-      ),
-      nat_pow: h(
-        "5cf09dd7481dee82376ed65b09a08ea716f3575dd5b0b2d76c04c4fbb2a36a5d",
-      ),
-      nat_gcd: h(
-        "09ae07bc024bfb0317aa228d1274294b40aebb4229dc7014f7b22d56fa46a760",
-      ),
-      nat_mod: h(
-        "7ee6854a6ef5afb0e83f8aae9ccc2cbb457110bd1013a6f7615a98667a34322a",
-      ),
-      nat_div: h(
-        "acb405101f168dc08bf410d54a8f588893776ab61be81f2c7e5e1dd05685560e",
-      ),
-      nat_bitwise: h(
-        "21a51ddc3faeec42c0f3897955d5e24c40ffb1924824bd919da5db0346962a98",
-      ),
-      nat_beq: h(
-        "6a397f8ed945046604a856b84b14a683b23916d83e794fd8ecc3348be87a8486",
-      ),
-      nat_ble: h(
-        "25bacf590070ada376418c4eae60a90fa529d56951f451166cd6ba15cf0eeb68",
-      ),
-      nat_land: h(
-        "dd73c5c1552ff6ad35537b83f46c9e8c4c2c979eda612fe169e29f3028c63db9",
-      ),
-      nat_lor: h(
-        "8390650998cbee5ee2432a797635d7a331f623eb6fae9f26f17191fcdb880c60",
-      ),
-      nat_xor: h(
-        "04ffebfee34f36c46f63ef6aa347b0b81db8c1cbf3fb9a282799cac024310e69",
-      ),
-      nat_shift_left: h(
-        "e09f39bd5d0655d8a7844447e85c5a865bb0d233e7512f21e3de78d15808eb59",
-      ),
-      nat_shift_right: h(
-        "6be9556dba2dedb10ea06533ac97de79a1d4973f32f8d0657a1467ea1f746e32",
-      ),
-      bool_type: h(
-        "95fc5d28972d1472a12ddfc2f4a5eefec9a81652fcb63ef06c7f6f6d21a951ab",
-      ),
-      bool_true: h(
-        "fc3a88e4dc16055bc8b797f9544909043015a3a349f2b3fc3e86990b2b9f2999",
-      ),
-      bool_false: h(
-        "c595b2c899f6f0ef39cfab3ac2fbe3b826a7ed21318defc64bbb861d754f8bdf",
-      ),
-      string: h(
-        "3589e6266ed0703fb4008f1e134775dff6bc9a15619687e75222f44253ab8663",
-      ),
-      string_mk: h(
-        "22d668557ab1f800aaf7312f10d9f36ec4d24d0389ac8d0b6d66fd2daf0be903",
-      ),
-      char_type: h(
-        "16e10c6b75431ae16fc23ef43f07512a1f34cff2a33d85b44aae5898e002ac8d",
-      ),
-      char_mk: h(
-        "feb0d0ed724893b5d3d57bafee59ff3cfbe76f43e03fad2b2cf237198aca4457",
-      ),
-      char_of_nat: h(
-        "3ac41b61c538227409f133982435bc97d59489b9129a61d1c4baa14fdb1d6a6a",
-      ),
-      string_of_list: h(
-        "0422aae71a49fd82c87cc8493725a927c1205a9418dc648947d7fde8ed240625",
-      ),
-      string_to_byte_array: h(
-        "714e5b7ea77110a862699b662ecc0bc5a6d70e25bbf6b69dc0f0ec5feb2cfbb3",
-      ),
-      byte_array_empty: h(
-        "5e80d9c092e5fd25417a3a011632e0d060adf9cfd4c0a0bd6798868f067a7cb2",
-      ),
-      list: h(
-        "5886afc36363b59242671f7171bedb319d2a8fa514bc4dc322e3ebcadc85e8ad",
-      ),
-      list_nil: h(
-        "c912ac74d13fa61091059bdae32484e44aea05f439cbbfff7998ef0bfb0e3409",
-      ),
-      list_cons: h(
-        "40b5c0b66834f312bbe3afcadd07911be4182695313be33394eef53d0026e988",
-      ),
-      eq: h("bc3de4d3492ebcf56e98f63459ea705005c1a4216cfc57113617738ae4d84870"),
-      eq_refl: h(
-        "3b01e364067d2ce2ac308da57512992635212487359b62a3c75f60686febef26",
-      ),
-      quot_type: h(
-        "7f7b22596ffee865e1be503216e360ab7dcbd0de645987916484c264ce52f9fe",
-      ),
-      quot_ctor: h(
-        "f06cc3564d1d269e96a51a3f41f1fae1214884ab6d555a11213b8bb2e9e517ef",
-      ),
-      quot_lift: h(
-        "ce268528ab8fe6ec17039a37e73079e3453eae1675c6c76ef302ac87e9a0bd90",
-      ),
-      quot_ind: h(
-        "4ce41a11c66a351352ab27fdfbda9d980f6e296a2fa7f20fdd41377482ed3d52",
-      ),
-      reduce_bool: h(
-        "43875997e42a7c9ea04f24b924da2299aa68e4f2dfb626d67fccfcf5b5132660",
-      ),
-      reduce_nat: h(
-        "604dc8af16829c747638e4b6d58be2baf5280077f8de9db71acb6ef8bbc5f25d",
-      ),
-      // Synthetic kernel-only marker for the original Lean-addressed env.
-      eager_reduce: h(
-        "ff00000000000000000000000000000000000000000000000000000000000013",
-      ),
-      system_platform_num_bits: h(
-        "6fb004fbafb4b68446a57550e21ac08d7599cb157ab194c52fcd7ba1671f10da",
-      ),
-      system_platform_get_num_bits: h(
-        "b9fe4dfbc707ca46de307491541e35ad89a93115245bca3860b74ebcc96a1af2",
-      ),
-      subtype_val: h(
-        "1cf910601d9d86d741333d9547d69d0e299bfe2f99a23a9e838d207fd641eac0",
-      ),
-      nat_dec_le: h(
-        "e34083eb212a258b36374129f6170a9972adceb78356b6c83aa32284ad4edee3",
-      ),
-      nat_dec_eq: h(
-        "a466eec5433bc056803f38b897d9913f91d836260c6ba4176374d1b66f98acc8",
-      ),
-      nat_dec_lt: h(
-        "759a284b4f73e6aa405b409d741fa2b35642693bd041e74b790623121c5e1e33",
-      ),
-      decidable_rec: h(
-        "19e688c7cc2966eb4f79a58eb501c776689f515a7a4cb39fdf7482f1294a1511",
-      ),
-      decidable_is_true: h(
-        "d235a7033c457dfed0f1e34d1d50e97279893b63bdcab3c4490dd9da7d47327f",
-      ),
-      decidable_is_false: h(
-        "2c26576bf92a0d9c2d169be19317e587eec54945a5a241c30dd84908d534d5a1",
-      ),
-      nat_le_of_ble_eq_true: h(
-        "ce908a2c83164cb59df5afba6345e29fa1ae44032e2aed8ac4d7fc0c87951849",
-      ),
-      nat_not_le_of_not_ble_eq_true: h(
-        "adb3eaf42d5f4c368bb929b20cec07fa96f9c9fe70d372ec72b25e6510ae14d4",
-      ),
-      nat_eq_of_beq_eq_true: h(
-        "06f72598e90d27fd5ba7700a2920781048e9712693b5a2d20df885cb203aa2d3",
-      ),
-      nat_ne_of_beq_eq_false: h(
-        "0bc9d7d2a3d61217967bec2dbdfdbda85e6c41dcb5340d859d0177beeee18437",
-      ),
-      fin: h(
-        "aca8ccd74023a139175db5f1b5b4d037ba1559e25a5d091f2bdc797b23dbb275",
-      ),
-      bool_no_confusion: h(
-        "68bd3c3b59b4bf7285096a8a0b90308db6307b082d24a08b91924b5e6cdcb53a",
-      ),
-      // Int primitives — LEON content-hashes from
-      // `lake test -- rust-kernel-build-prim-origs`. These are the
-      // addresses KIds live at in `orig_kenv`.
-      int: h(
-        "2c073df1601a9c8c7f26bdc51f22b8b7c6072fe6acbea71f244b4f67ceb1472b",
-      ),
-      int_of_nat: h(
-        "c7804dff4a217f857cb6ff58e60d9cb405bc48caffba3240e3f5601d359f9f21",
-      ),
-      int_neg_succ: h(
-        "a8fa07b6cbfec95b534e33a342ef8812aeecd00fbbd2378d71be0d45b876331a",
-      ),
-      int_add: h(
-        "5ef343c73bd4a1c1c7de0701ee822797783a988f8c71965316c7f44a64d5a9c1",
-      ),
-      int_sub: h(
-        "fbfbdc2f6d22d80e3ffb43897dfffedaf5729d5923d412c9bf5cd63ee7790bde",
-      ),
-      int_mul: h(
-        "43b5d0d51e29a259302707a64508345354061bbf2249aba25bd9962d0cdd538e",
-      ),
-      int_neg: h(
-        "8cf21639a1d062be65fa2a475a9a9945d43aa07344dac30a3eacdc512bab14de",
-      ),
-      int_emod: h(
-        "f528f52cf0c85aa71a26f9ed88d11e488c110a7b0854c74ddd0c95ff8f8d1f72",
-      ),
-      int_ediv: h(
-        "8b7ec664a8781cb34ec3678d2ce7fe4e22574ab5605c4988d841c84d8c63d6b0",
-      ),
-      int_bmod: h(
-        "61b9e1d73ecf8dff84ed4e7499c7552211695c9cdfe4a432f17e36c432efc7b2",
-      ),
-      int_bdiv: h(
-        "db0b8bb87b0d4d9fd68fa5039c3657866e122f2dea5e891bd2a0eb16569596b7",
-      ),
-      int_nat_abs: h(
-        "cc43f34a58ce42dfedfdfb0c07a5f31dffa6ba3fb272f3c573ec547eaef722d6",
-      ),
-      int_pow: h(
-        "ae92f05449a4d67697f3649225f88703a6a928a815b7cf6448e92b3a787a1103",
-      ),
-      int_dec_eq: h(
-        "6dc280a4f5be950140e02d61f81ce01b1e21ec06f338a973039bcebf13e8e08b",
-      ),
-      int_dec_le: h(
-        "dcce6645b4b207f4805c7c6878b7704ebd840903387f7848a3e544fe196f6ee3",
-      ),
-      int_dec_lt: h(
-        "ecffd44f689ee7dd7462e3a4b4620ae72637bc59c38b91e8dd5c3d98d899623d",
-      ),
-      punit: h(
-        "e4d0247a1393397d7efa718dc31229b3592a522531595290683ca63dfe420e4d",
-      ),
-      pprod: h(
-        "ce996300ab608fc33ff251a16ac724b19f169dac8ba3fa1c5be2276158adcf5c",
-      ),
-      pprod_mk: h(
-        "0a9e6c68e0531826a4b7e6cb74c5dacb7689e7ef1b78fc21f56acaf65ea25add",
-      ),
-      // Names previously matched via `is_const_named` in whnf.rs.
-      // LEON content-hashes from `lake test -- rust-kernel-build-prim-origs`.
-      nat_rec: h(
-        "02af71bf807e615ee42b36d8d5b210329cddfd1e739fc11f6ba097a2bf74fe5a",
-      ),
-      nat_cases_on: h(
-        "df2e7a477bd8b2ac4936f22c6a60a98e9055759cbcb856895497ee02bbd4af67",
-      ),
-      bit_vec: h(
-        "6f450298341dec31bbbd159414a9193b437e8541e24304c9b680a7d5384643b3",
-      ),
-      bit_vec_to_nat: h(
-        "ae3d3b7ad4c1376fe9d30b335ee19a6e5397672a5b5800f2a0276f8d249d2ed9",
-      ),
-      bit_vec_of_nat: h(
-        "b685da004503283d7a3b2b73a3ad29100762de6eced0b305aede886af05cb3ee",
-      ),
-      bit_vec_ult: h(
-        "7d0fd8eb0e739c1643319a0e6554ee7070aa575416d54c80f8f3d2b166cb7ac8",
-      ),
-      decidable_decide: h(
-        "741a3a166dabcf41a357ad70893ac52feb84068a4bc9de54596bbe602648e3d0",
-      ),
-      lt_lt: h(
-        "3f3eff2353822391e4db7f2b403cb79d2fca36c5a9a0d2dc4fce20850bb8b355",
-      ),
-      of_nat_of_nat: h(
-        "f75083bb57a4a1c5ce0b83945e39da01e11fb9f28f2ab4b57d8f0615ccda8c9d",
-      ),
-      unit: h(
-        "a9be73125f8d296246aa55a183e74d49c420b79c852c36df4fbb87a2ca1d751b",
-      ),
-      punit_size_of_1: h(
-        "6f48fa355d342f1b035ef0777c1ad72e669978816c2c09a3048c4848de4ff443",
-      ),
-      size_of_size_of: h(
-        "ac6c0f1adb8f8f74235dab15b624902bdc0832ed77fae0d62242d0e7717cb06a",
-      ),
-      string_back: h(
-        "54317bf07a28017fbfccf7d9f11c97846c106be220ab98ce1e1b58a196c12be8",
-      ),
-      string_utf8_byte_size: h(
-        "06ba07154a1cd0e1e9eec2b6e27b195a6fc3ae20a70d1ced7643a61e4e3e6d0f",
-      ),
-      string_append: h(
-        "93faafad0b7eff95765986eb5f5cb10635818129b72d8e7fdddaca2a5fb45844",
-      ),
-      string_dec_eq: h(
-        "a53c141a7bbbbdf77d4a2cb049911fd4001f7d71b94ed5c3b877e837da94c349",
-      ),
-    }
-  }
-}
-
-pub fn reserved_marker_name(addr: &Address) -> Option<&'static str> {
-  static MARKERS: LazyLock<[(&'static str, Address); 2]> =
-    LazyLock::new(PrimAddrs::reserved_marker_addrs);
-  MARKERS
-    .iter()
-    .find_map(|(name, marker_addr)| (marker_addr == addr).then_some(*name))
 }

@@ -127,8 +127,7 @@ def tagNWidth (i : Nat) : Nat := Ixon.tagNByteWidth 4 i
 /-! ## Layouts -/
 
 /-- A Share width layout. TagN is the only Share code, so this is the only
-layout; the type is kept so that layouts stay explicit in the API (and match
-the Rust `ShareLayout::TagN`). -/
+layout; the type is kept so that layouts stay explicit in the API. -/
 inductive ShareLayout where
   /-- The TagN Share code (`tagNWidth`). -/
   | tagN

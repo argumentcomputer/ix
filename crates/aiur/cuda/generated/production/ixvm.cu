@@ -17032,6 +17032,7 @@ template<bool Typed> struct Seed_ixvm_710 {
       case 15: return load_u8(data + 78);
       case 16: return load_u8(data + 79);
       case 17: return load_u32(data + 72);
+      case 18: return load_u8(data + 80);
       default: return 0;
     }
   }
@@ -17077,6 +17078,8 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_710(Seed_ixvm_
       return 0;
     }
     case 0ULL: {
+      const uint64_t v_17 = seed.word(18);
+      row[layout.auxiliaries + 4] = v_17;
       row[layout.selectors + 1] = 1;
       return 0;
     }
@@ -17089,7 +17092,7 @@ template<bool Typed> __global__ void kernel_ixvm_710(const uint8_t* __restrict__
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
-  constexpr size_t stride = Typed ? 80 : 144;
+  constexpr size_t stride = Typed ? 88 : 152;
   const Seed_ixvm_710<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
   const uint32_t status = row_ixvm_710(seed, layout, row);
@@ -17101,8 +17104,8 @@ cudaError_t launch_ixvm_710(const uint8_t* seeds, uint32_t encoding, size_t real
   return cudaGetLastError();
 }
 extern "C" int aiur_trace_ixvm_710(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
-  if (selectors < 14 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 4) return int(cudaErrorInvalidValue);
-  const size_t stride = encoding == 1 ? 80 : encoding == 0 ? 144 : 0;
+  if (selectors < 14 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 5) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 88 : encoding == 0 ? 152 : 0;
   return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ixvm_710);
 }
 
@@ -19957,11 +19960,11 @@ extern "C" int aiur_trace_ixvm_783(int device, const uint8_t* seeds, uint32_t en
 }
 
 extern "C" const uint8_t* aiur_trace_ixvm_contract() {
-  static const uint8_t hash[32] = {170, 92, 226, 63, 246, 182, 23, 209, 212, 212, 191, 239, 12, 22, 123, 170, 44, 208, 140, 255, 236, 216, 99, 67, 65, 3, 208, 61, 213, 142, 208, 36};
+  static const uint8_t hash[32] = {134, 255, 142, 155, 247, 231, 0, 155, 156, 136, 201, 185, 23, 188, 13, 83, 187, 4, 113, 195, 47, 43, 101, 210, 29, 29, 27, 138, 47, 144, 112, 191};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ixvm_schema() {
-  static const uint8_t hash[32] = {215, 91, 140, 243, 211, 65, 176, 235, 26, 107, 64, 249, 107, 209, 195, 240, 90, 50, 241, 44, 255, 202, 183, 8, 43, 48, 100, 180, 9, 103, 132, 232};
+  static const uint8_t hash[32] = {63, 91, 117, 50, 80, 90, 212, 4, 235, 24, 107, 94, 84, 249, 63, 203, 8, 1, 215, 241, 165, 238, 247, 222, 166, 172, 140, 73, 23, 5, 219, 38};
   return hash;
 }
 }

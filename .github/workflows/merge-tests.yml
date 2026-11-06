@@ -116,36 +116,82 @@ jobs:
           issue-number: ${{ steps.target.outputs.pr }}
           body-path: comment-body.md
 
+  # One build of the test revision for the partitions below, in place of one
+  # each. It uses their sticky disk (ci.yml's lean-test lineage, same paths)
+  # and builds what they build: the test binary with the executables it
+  # needs, the ZK voting prover, the standalone certified kernel package,
+  # the certification statements' freeze and the kernel gate's
+  # executables. RunsOn snapshots the disk when the job ends, under the
+  # run's ref, and the partitions start after it and restore that ref's
+  # latest snapshot. A partition that restores an older one (`main`'s)
+  # rebuilds what it needs, as before, and its log says so.
+  build:
+    name: Build merge-test targets
+    needs: prepare
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
+    # On-demand, as the partitions are: every partition waits for it.
+    runs-on: runs-on=${{ github.run_id }}-merge-build-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          persist-credentials: false
+
+      - name: Verify test revision
+        env:
+          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: |
+          checked_out=$(git rev-parse HEAD)
+          if [ "$checked_out" != "$TEST_REVISION" ]; then
+            echo "::error::PR merge ref changed before the run started; comment !merge-tests again"
+            exit 1
+          fi
+
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target,path=Models/SetTheory/.lake
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          use-github-cache: "false"
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          auto-config: false
+          use-github-cache: false
+
+      # The kernel gate's strict list of audit modules (`lake run
+      # check-kernel`) is left to the kernel partition: its modules are
+      # leaves over the closures built here.
+      - name: Build the partitions' targets
+        run: |
+          lake build --wfail IxTests Apps.ZKVoting.Prover
+          lake -d IxC build --wfail
+          lake build --wfail Ix.Cert.Audit kernel-layering kernel-trust-surface kernel-entry-cases kernel-meta-names
+
+      - name: Record the built revision
+        env:
+          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: echo "$TEST_REVISION" > .lake/merge-build-revision
+
   merge-tests:
     name: ${{ matrix.name }}
-    needs: prepare
+    needs: [prepare, build]
     if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Lake ignored tests (compile pipeline)
-            kind: lake
-            test_args: --tier ci:compile-pipeline
           - name: Lake ignored tests (compiler closures)
             kind: lake
             test_args: --tier ci:compiler-closures
-          - name: Lake ignored tests (compile)
-            kind: lake
-            test_args: --tier ci:compile
-          - name: Lake ignored tests (decompile)
-            kind: lake
-            test_args: --tier ci:decompile
           - name: Lake ignored tests (misc)
             kind: lake
             test_args: --tier ci:misc
             zk_voting: true
-          - name: Lake ignored tests (landing, compilers)
-            kind: lake
-            test_args: --tier ci:landing-compilers
-          - name: Lake ignored tests (landing, Init+Std)
-            kind: lake
-            test_args: --tier ci:landing-initstd
           - name: Lake ignored tests (landing, Init+Std through ix)
             kind: lake
             test_args: --tier ci:landing-initstd-cli
@@ -159,7 +205,8 @@ jobs:
     # The sticky disk is ci.yml's lean-test lineage: same toolchain, same
     # portable codegen, same cached paths, and that job's push-to-main runs
     # are what keep the lineage's `main` snapshot fresh. A merge-queue ref
-    # has no snapshot of its own and falls back to that one.
+    # has no snapshot of its own until the build job above saves one; a
+    # partition that does not find it falls back to `main`'s.
     runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
     steps:
       - name: Validate merge-test variant
@@ -205,6 +252,18 @@ jobs:
           auto-config: false
           use-github-cache: false
 
+      # Whether the disk is the build job's snapshot. Either way the steps
+      # below build what is stale; this only says whether they had to.
+      - name: Check for the build job's snapshot
+        env:
+          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: |
+          if [ "$(cat .lake/merge-build-revision 2>/dev/null)" = "$TEST_REVISION" ]; then
+            echo "Restored the build job's snapshot of $TEST_REVISION"
+          else
+            echo "::notice::Did not restore the build job's snapshot of $TEST_REVISION; this partition builds its own targets"
+          fi
+
       - name: Run ignored Lake test partition
         if: ${{ matrix.kind == 'lake' }}
         run: lake test --wfail -- ${{ matrix.test_args }}
@@ -215,9 +274,9 @@ jobs:
 
       # The certified kernel gate (docs/kernel.md): the standalone IxC
       # package build, which has no dependencies and so proves the kernel needs
-      # only the toolchain, then the host tests, the Rust differentials, the
-      # set-theory model, the fences, the entry cases, the reader fidelity, the
-      # `.meta` and `.source` names, and quotient Source on Init and Std.
+      # only the toolchain, then the host audits and kernel tests, the
+      # set-theory model, the layering and trust-surface fences, the entry
+      # cases, and the `.meta` and `.source` names.
       # The kernel artifacts come from .lake/kernel on the sticky disk. The
       # model lives in its own workspace so Mathlib stays out of the root
       # package; its objects come from Mathlib's cache and persist on the
@@ -229,7 +288,7 @@ jobs:
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
-      - name: Check certified kernel, codec and order differentials, model, entry cases, reader fidelity and quotient Source
+      - name: Check certified kernel, host audits, model, fences, entry cases and meta names
         if: ${{ matrix.kind == 'kernel' }}
         run: lake run check-kernel --with-model
 
@@ -240,7 +299,7 @@ jobs:
     # Valgrind cannot decode AVX-512, so this job builds generic artifacts and
     # keeps them in the S3-backed actions cache under their own key rather
     # than sharing a sticky disk with the x86-64-v4 partitions.
-    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -258,6 +317,9 @@ jobs:
           fi
 
       - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: generic
@@ -273,8 +335,13 @@ jobs:
           auto-config: false
           use-github-cache: false
 
+      # `ffi-tests` is the primary tier's `ffi` suite as an executable of its
+      # own, whose import closure leaves out the test binary's proofs.
+      - name: Build the FFI suite
+        run: lake build --wfail ffi-tests
+
       - name: Run FFI tests normally
-        run: lake test --wfail -- ffi
+        run: .lake/build/bin/ffi-tests
 
       - name: Install valgrind
         run: |
@@ -290,11 +357,11 @@ jobs:
             --track-origins=yes \
             --error-exitcode=1 \
             --suppressions=.github/valgrind.supp \
-            .lake/build/bin/IxTests ffi
+            .lake/build/bin/ffi-tests
 
   merge-gate:
     if: ${{ always() && github.event_name != 'issue_comment' }}
-    needs: [prepare, merge-tests, valgrind]
+    needs: [prepare, build, merge-tests, valgrind]
     permissions:
       actions: read
       checks: read
@@ -308,7 +375,7 @@ jobs:
       always() &&
       github.event_name == 'workflow_dispatch' &&
       needs.prepare.result == 'success'
-    needs: [prepare, merge-tests, valgrind, merge-gate]
+    needs: [prepare, build, merge-tests, valgrind, merge-gate]
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -318,11 +385,12 @@ jobs:
         env:
           MERGE_SHA: ${{ needs.prepare.outputs.revision }}
           PR_NUMBER: ${{ needs.prepare.outputs.pr }}
+          BUILD_RESULT: ${{ needs.build.result }}
           TEST_RESULT: ${{ needs.merge-tests.result }}
           VALGRIND_RESULT: ${{ needs.valgrind.result }}
           GATE_RESULT: ${{ needs.merge-gate.result }}
         run: |
-          if [ "$GATE_RESULT" = success ] && [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
+          if [ "$GATE_RESULT" = success ] && [ "$BUILD_RESULT" = success ] && [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
             heading="## ✅ Merge tests passed"
             summary="All test partitions and Valgrind passed"
           elif [ "$GATE_RESULT" = success ]; then

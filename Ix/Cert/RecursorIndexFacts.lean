@@ -536,35 +536,14 @@ theorem recLps_params {names : Array Ix.Name} {L : Nat} (hnd : names.toList.Nodu
 
 /-! ## A recursor references its rules' constructors -/
 
-open Ix.Cert.GraphWalk (MemoOK) in
-theorem forIn_rules_ctor (f : Ix.RecursorRule → Ix.Set Ix.Name → Ix.GraphM (ForInStep (Ix.Set Ix.Name)))
-    (hf : ∀ rule r env s, f rule r env s =
-      (.yield ((r.insert rule.ctor).union (Ix.graphExpr rule.rhs env s).1), (Ix.graphExpr rule.rhs env s).2))
-    (env : Ix.Environment) :
-    ∀ (rules : List Ix.RecursorRule) (r0 : Ix.Set Ix.Name) (s : Ix.GraphState), MemoOK s →
-      ∀ rule ∈ rules, (forIn rules r0 f env s).1.contains rule.ctor = true
-  | [], _, _, _ => fun _ h => nomatch h
-  | rule :: rules, r0, s, hs => by
-    obtain ⟨s1, -⟩ := GraphWalk.graphExpr_refs rule.rhs env s hs
-    have step : forIn (rule :: rules) r0 f env s =
-        forIn rules ((r0.insert rule.ctor).union (Ix.graphExpr rule.rhs env s).1) f env
-          (Ix.graphExpr rule.rhs env s).2 := by
-      rw [List.forIn_cons, GraphWalk.bind_run, hf]
-    rw [step]
-    obtain ⟨keep, -⟩ := GraphWalk.forIn_rules f hf env rules _ _ s1
-    intro rule' hr
-    rcases List.mem_cons.mp hr with rfl | hr
-    · exact keep _ (GraphWalk.contains_union_iff.mpr (.inl (GraphWalk.contains_insert_iff.mpr (.inl BEq.rfl))))
-    · exact forIn_rules_ctor f hf env rules _ _ s1 rule' hr
-
 /-- **A recursor references each rule's constructor.** -/
 theorem refsOf_rule (v : Ix.RecursorVal) {rule : Ix.RecursorRule} (hr : rule ∈ v.rules.toList) :
     (refsOf (.recInfo v)).contains rule.ctor = true := by
-  obtain ⟨st, -⟩ := GraphWalk.graphExpr_refs v.cnst.type { consts := {} } Ix.GraphState.init GraphWalk.memoOK_init
+  obtain ⟨st, -⟩ := GraphWalk.graphExpr_refs v.cnst.type { consts := {} } Ix.GraphState.init (GraphWalk.memoOK_init ∅)
   show (Ix.graphConst (.recInfo v) { consts := {} } Ix.GraphState.init).1.contains rule.ctor = true
   rw [Ix.graphConst, GraphWalk.bind_run, GraphWalk.bind_run, ← Array.forIn_toList]
   refine GraphWalk.foldl_insert_keeps _ _ _ ?_
-  exact forIn_rules_ctor _ (fun _ _ _ _ => rfl) _ v.rules.toList _ _ st rule hr
+  exact (GraphWalk.forIn_rules _ (fun _ _ _ _ => rfl) _ v.rules.toList _ _ st).2.1 rule hr
 
 /-! ## The compile's headers -/
 

@@ -41,10 +41,12 @@ over table references (and the `extra` edges), with projections replaced by
 their owners; `first` comes first, in its own order. -/
 def order (store : RecordStore) (extra : Std.HashMap Address (Array Address))
     (first : Array Address) : Array Address := Id.run do
-  let mut done : Std.HashSet Address := {}
-  let mut active : Std.HashSet Address := {}
-  let mut out : Array Address := #[]
-  let roots := first ++ (store.toArray.qsort (fun a b => a.1.cmpBytes b.1 == .lt)).map (·.1)
+  let mut done : Std.HashSet Address := Std.HashSet.emptyWithCapacity store.size
+  let mut active : Std.HashSet Address := Std.HashSet.emptyWithCapacity 256
+  let mut out : Array Address := Array.mkEmpty store.size
+  let mut keys : Array Address := Array.mkEmpty store.size
+  for (a, _) in store do keys := keys.push a
+  let roots := first ++ keys.qsort (fun a b => a.cmpBytes b == .lt)
   for address in roots do
     let some source := store[address]? | continue
     let root := owner address source
@@ -62,11 +64,17 @@ def order (store : RecordStore) (extra : Std.HashMap Address (Array Address))
         active := active.insert node
         stack := stack.push (node, true)
         let refs := (store[node]?.map (·.refs)).getD #[]
-        for ref in refs ++ extra.getD node #[] do
+        for ref in refs do
           if let some target := store[ref]? then
             let dependency := owner ref target
             unless dependency == node || done.contains dependency || active.contains dependency do
               stack := stack.push (dependency, false)
+        if let some ex := extra[node]? then
+          for ref in ex do
+            if let some target := store[ref]? then
+              let dependency := owner ref target
+              unless dependency == node || done.contains dependency || active.contains dependency do
+                stack := stack.push (dependency, false)
   return out
 
 /-- Only the records reachable from `roots` (with projections replaced by
@@ -85,8 +93,11 @@ def closure (store : RecordStore) (extra : Std.HashMap Address (Array Address))
     let o := owner a c
     if reach.contains o then continue
     reach := reach.insert o
-    for r in ((store[o]?.map (·.refs)).getD #[]) ++ extra.getD o #[] do
+    for r in (store[o]?.map (·.refs)).getD #[] do
       if store.contains r then todo := todo.push r
+    if let some ex := extra[o]? then
+      for r in ex do
+        if store.contains r then todo := todo.push r
   return sub.filter reach.contains
 
 
@@ -102,12 +113,20 @@ def dependencies (store : RecordStore) (index : RecIndex) (extra : Std.HashMap A
     (address : Address) (source : Ixon.Constant) : Array Address := Std.HashSet.toArray <| Id.run do
   let recs := recursorRecords index address
   let mut out : Std.HashSet Address := {}
-  for r in #[address] ++ recs do
+  let addRef (out : Std.HashSet Address) (ref : Address) : Std.HashSet Address :=
+    match store[ref]? with
+    | some target =>
+      let o := owner ref target
+      if o == address || recs.contains o then out else out.insert o
+    | none => out
+  for ref in source.refs do out := addRef out ref
+  if let some ex := extra[address]? then
+    for ref in ex do out := addRef out ref
+  for r in recs do
     let refs := if r == address then source.refs else ((store[r]?.map (·.refs)).getD #[])
-    for ref in refs ++ extra.getD r #[] do
-      if let some target := store[ref]? then
-        let o := owner ref target
-        unless o == address || recs.contains o do out := out.insert o
+    for ref in refs do out := addRef out ref
+    if let some ex := extra[r]? then
+      for ref in ex do out := addRef out ref
   return out
 
 /-- The certified `Nat` operations' certificate ground as extra edges

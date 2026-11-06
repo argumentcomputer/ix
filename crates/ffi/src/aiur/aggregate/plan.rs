@@ -11,7 +11,7 @@ use super::{
 };
 use aiur::G;
 use ix_common::address::Address;
-use ix_kernel::shard::AggNode;
+use ixon::shard::AggNode;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 

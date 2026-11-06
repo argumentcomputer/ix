@@ -22,7 +22,7 @@ module
   - `canonName` / `uncanonName`: Lean.Name <-> Ix.Name
   - `canonLevel` / `uncanonLevel`: Lean.Level <-> Ix.Level
   - `canonExpr` / `uncanonExpr`: Lean.Expr <-> Ix.Expr
-  - `canonEnv` / `uncanonEnv`: whole-environment conversion
+  - `canonChunk`: a slice of constants, through one memo
   - `compareEnvsParallel`: parallel structural equality check between environments
 -/
 
@@ -742,37 +742,6 @@ def uncanonConst : Ix.ConstantInfo → UncanonM Lean.ConstantInfo
       isUnsafe := v.isUnsafe
     }
 
-/-- Canonicalize an entire Lean environment, sharing a single CanonState for
-    deduplication across all constants. -/
-def canonEnv (env : Lean.Environment) : CanonM Ix.Environment := do
-  let mut consts : HashMap Ix.Name Ix.ConstantInfo := {}
-  for (name, const) in env.constants do
-    let name' <- canonName name
-    let const' <- canonConst const
-    consts := consts.insert name' const'
-  return { consts := consts }
-
-/-- Uncanonicalize an Ix environment back to a map of Lean constants. -/
-def uncanonEnv (env : Ix.Environment) : UncanonM (HashMap Lean.Name Lean.ConstantInfo) := do
-  let mut result : HashMap Lean.Name Lean.ConstantInfo := {}
-  for (name, const) in env.consts do
-    let name' ← uncanonName name
-    let const' ← uncanonConst const
-    result := result.insert name' const'
-  return result
-
-/-- Format milliseconds as human-readable time string. -/
-def formatTime (ms : Nat) : String :=
-  if ms < 1000 then s!"{ms}ms"
-  else if ms < 60000 then
-    let s := ms / 1000
-    let frac := (ms % 1000) / 100
-    s!"{s}.{frac}s"
-  else
-    let m := ms / 60000
-    let s := (ms % 60000) / 1000
-    s!"{m}m{s}s"
-
 /- ## Optimized equality with pointer-pair caching -/
 
 /-- A pair of pointers for caching equality results. -/
@@ -999,53 +968,6 @@ def chunks (arr : Array α) (chunkSize : Nat) : Array (Array α) := Id.run do
     let name' ← canonName name
     let const' ← canonConst const
     pure (name', const')).run' (CanonState.withCapacity chunk.size)
-
-/-- Canonicalize an entire Lean environment in parallel (pure).
-    Returns just the constants map. -/
-def canonEnvParallel (env : Lean.Environment) (numWorkers : Nat := 8)
-    : HashMap Ix.Name Ix.ConstantInfo :=
-  let constArr := env.constants.toList.toArray
-  let chunkSize := (constArr.size + numWorkers - 1) / numWorkers
-  let chunkArr := chunks constArr chunkSize
-  let tasks := chunkArr.map fun chunk =>
-    Task.spawn fun _ => canonChunk chunk
-  Id.run do
-    let mut consts : HashMap Ix.Name Ix.ConstantInfo :=
-      HashMap.emptyWithCapacity constArr.size
-    for task in tasks do
-      for (name, const) in task.get do
-        consts := consts.insert name const
-    consts
-
-/-- Process a chunk of Ix constants back to Lean (pure).
-    Returns just the uncanonicalized constants. -/
-def uncanonChunk (chunk : Array (Ix.Name × Ix.ConstantInfo))
-    : Array (Lean.Name × Lean.ConstantInfo) := Id.run do
-  let mut state : UncanonState := {}
-  let mut results : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  for (name, const) in chunk do
-    let (name', state') := StateT.run (uncanonName name) state
-    let (const', state'') := StateT.run (uncanonConst const) state'
-    state := state''
-    results := results.push (name', const')
-  results
-
-/-- Uncanonicalize an Ix environment in parallel (pure).
-    Returns a HashMap of Lean constants. -/
-def uncanonEnvParallel (consts : HashMap Ix.Name Ix.ConstantInfo) (numWorkers : Nat := 8)
-    : HashMap Lean.Name Lean.ConstantInfo :=
-  let constArr := consts.toArray
-  let chunkSize := (constArr.size + numWorkers - 1) / numWorkers
-  let chunkArr := chunks constArr chunkSize
-  let tasks := chunkArr.map fun chunk =>
-    Task.spawn fun _ => uncanonChunk chunk
-  Id.run do
-    let mut result : HashMap Lean.Name Lean.ConstantInfo :=
-      HashMap.emptyWithCapacity constArr.size
-    for task in tasks do
-      for (name, const) in task.get do
-        result := result.insert name const
-    result
 
 end Ix.CanonM
 

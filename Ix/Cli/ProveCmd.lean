@@ -1,31 +1,3 @@
-/-
-  `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
-  the CLI shape of `ix check`:
-
-      ix prove Nat.add_comm                            # compiled-in Lean env
-      ix prove --ixe arena.ixe Foo.bar                 # from .ixe, named target
-      ix prove --ixe arena.ixe                         # iterate every named const
-      ix prove --ixe arena.ixe --claim <hex>           # against a persisted claim
-      ix prove --ixe env.ixe --ixes env.ixes           # whole env, aggregated
-      ix prove --ixe env.ixe --ixes env.ixes --compress plonk
-
-  Each invocation runs the same `verify_claim` Aiur witness that
-  `ix check` does, then drives Aiur's `prove` over it and persists
-  the result as an `Ixon.Proof` wrapper (claim + opaque proof
-  bytes). Prints the resulting proof blake3 hex on stdout — feed
-  that to `ix verify <proof-hex>`.
-
-  Per-claim mode (`--claim`) loads the claim from the store and
-  resolves every referenced assumption / env / contains tree
-  (build trees with `ix tree canonical` / `ix tree env`).
-
-  Per-name mode builds a default `Claim.check addr none` and
-  persists the claim alongside the proof so `ix verify` can stand
-  alone with just the proof hex.
-
-  Driven by the shared `Ix.Check.forEachClaim`: the only
-  prove-specific surface is `runOne = proveOne aiurSystem compiled`.
--/
 module
 public import Cli
 public import Ix.Aiur.Compiler
@@ -37,11 +9,6 @@ public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.CompressCmd
 public import Ix.Common
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
-public import Ix.IxVM.ClaimHarness
-public import Ix.Ixon
-public import Ix.Store
 
 public section
 
@@ -602,7 +569,6 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       return if failed.isEmpty then 0 else 1
   | _, _, _ =>
     Ix.Check.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
-      (rust := p.hasFlag "rust")
 
 end Ix.Cli.ProveCmd
 
@@ -616,7 +582,6 @@ def proveCmd : Cli.Cmd := `[Cli|
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
     "texray";           "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) to stderr as each span closes."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env. The file must carry a role binding: its claims are relative to it."
-    "rust";             "Without --ixe: compile each name's closure with the Rust compiler instead of the certified Lean pipeline. The Rust compiler runs none of the compile's checks, and its output is not covered by the compiler's correctness theorem."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
     "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). By default, prove every shard and aggregate them into one root, printing its address. With --shard K: prove shard K. With --shards-only: prove every shard without aggregating."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."

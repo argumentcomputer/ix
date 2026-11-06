@@ -1,6 +1,5 @@
 import Ix.Meta
-import Ix.CompileDriver
-import Ix.KernelCheck
+import Ix.CompileCertified
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.SourceIngressCompare
@@ -40,13 +39,8 @@ def run : IO UInt32 := do
     (roots ++ Tests.Ix.Kernel.SourceIngress.preludeNames))
   let names := (closed.map (·.1)).toArray
   need (!closed.isEmpty && roots.all names.contains) "selected semantic closure lost a root"
-  let compiled ← IO.ofExcept (← Ix.CompileM.compileLeanConsts closed (numWorkers := 4))
-  need (compiled.ungroundedCount == 0) "semantic closure has ungrounded inputs"
-  let rust ← Ix.KernelCheck.rsCheckConstsFFI closed names (Array.replicate names.size true) true
-  need (rust.size == names.size) "Rust omitted selected closure verdicts"
-  for i in [:names.size] do
-    if let some error := rust[i]! then
-      throw (IO.userError s!"Rust rejected {names[i]!}: {error.message}")
+  let compiled ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv closed 4)
+  need compiled.failures.isEmpty "semantic closure has ungrounded inputs"
   let checked ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts compiled.env
   for name in names do
     let key := Ix.LeanIngress.ingressKey (Ix.Name.fromLeanName name)

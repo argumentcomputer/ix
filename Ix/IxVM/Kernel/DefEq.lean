@@ -393,8 +393,8 @@ def defEq := ⟦
   -- Takes the no-delta forms slow_nd already computed and NEVER calls
   -- full whnf: full WHNF here would delta-unfold stuck open primitives
   -- such as `Nat.ble` into their recursive logical models and walk
-  -- enormous Nat offsets layer by layer (mirror the Tier 4c whnf-core
-  -- discipline in crates/kernel/src/def_eq.rs). Delta happens only
+  -- enormous Nat offsets layer by layer (the retired Rust kernel's Tier 4c
+  -- whnf-core discipline). Delta happens only
   -- inside lazy_delta_loop, one definitional step at a time, with the
   -- cheap tiers re-consulted between steps; the loop hands back its
   -- final forms for the structural fallback tiers.
@@ -656,7 +656,7 @@ def defEq := ⟦
   -- Struct-eta: if `s` is a fully-applied ctor of a single-ctor
   -- 0-indices inductive (struct-like) and `t` is any expr,
   -- accept when `Proj(induct, i, t) ≡ s_args[nparams + i]` for every
-  -- field. Mirror crates/kernel/src.
+  -- field.
   fn try_eta_struct(rc: RoleCtx, t: KExpr, s: KExpr, types: List‹KExpr›) -> G {
     match collect_spine(s) {
       (s_head, s_args) =>
@@ -696,9 +696,7 @@ def defEq := ⟦
                                 -- synthesized inside def-eq and never
                                 -- inferred, so `k_infer_proj`'s own
                                 -- head-address gate never sees them.
-                                -- Mirrors the reference's
-                                -- "Types must be def-eq" check
-                                -- (crates/kernel/src/def_eq.rs), itself
+                                -- The types must be def-eq, as in
                                 -- lean4lean's `tryEtaStructCore`.
                                 let t_ty = k_infer_only(rc, t, types);
                                 let s_ty = k_infer_only(rc, s, types);
@@ -830,7 +828,7 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src: if `a`'s type is a Prop,
+  -- Proof irrelevance: if `a`'s type is a Prop,
   -- and `b`'s type is def-eq to `a`'s type, then a ≡ b as proof-terms.
   -- Uses k_infer_only to avoid the def_eq ↔ check cycle.
   fn try_proof_irrel(rc: RoleCtx, a: KExpr, b: KExpr, types: List‹KExpr›) -> G {

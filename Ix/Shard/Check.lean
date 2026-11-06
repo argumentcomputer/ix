@@ -278,7 +278,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     IO UInt32 := do
   -- The row's peak-rss needs the process-tree RSS sampler running
   -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
-  -- load so the peak covers the whole run, like `check-rs`.
+  -- load so the peak covers the whole run, like `check-lean`.
   if json?.isSome then TracingTexray.startSampler
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
@@ -350,7 +350,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       | .ok rs =>
         if waveNum == 0 then
           -- The bench row's measured window: the planned partition's
-          -- batch call, matching `check-rs`. Split waves are audit
+          -- batch call, matching `check-lean`. Split waves are audit
           -- extras outside the benchmarked engine window.
           elapsedMs := (← IO.monoMsNow) - start
           totalConsts := ownedPer.foldl (· + ·.size) 0
@@ -533,7 +533,7 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     -- `ix shard refine` still wrote its manifest (failed leaves unchanged):
     -- exit 2 tells the operator to read the report. Under `--json` a kernel
     -- rejection is the benchmark's `rejected` exit (the row is already
-    -- written), same contract as `check-rs`.
+    -- written), same contract as `check-lean`.
     if opts.emitOnFailure then return 2
     return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
 

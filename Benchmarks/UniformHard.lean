@@ -20,7 +20,7 @@ lake exe uniform-hard <corpus.ixe> --scan-k <bound>     # constants with more th
 ```
 The default run's limits can be overridden with `UNIFORM_STATES` /
 `UNIFORM_EVALS`. `--tiered` and `--work` run the compiler's construction under
-the compiler's limits, which `IX_SHARING_LIMITS` overrides.
+the compiler's limits.
 -/
 
 namespace Benchmarks.UniformHard
@@ -60,13 +60,10 @@ def headName : Ix.Sharing.Exact.Head → String
   | .all .. => "all"
   | .letE _ => "let"
 
-/-- The compiler's sharing limits (`Ix.CompileM.compilerSharingLimitsFromEnv`,
-honouring `IX_SHARING_LIMITS`), under which the tiered runs measure the
-production construction. -/
-def compilerLimits : IO Ix.Sharing.Exact.Limits := do
-  match ← Ix.CompileM.compilerSharingLimitsFromEnv with
-  | .ok l => pure l
-  | .error e => throw (IO.userError e)
+/-- The compiler's sharing limits (`Ix.CompileM.compilerSharingLimits`),
+under which the tiered runs measure the production construction. -/
+def compilerLimits : IO Ix.Sharing.Exact.Limits :=
+  pure Ix.CompileM.compilerSharingLimits
 
 /-- The tiered construction on the named constants under the TagN layout and
 the compiler's limits: the three candidate lengths and the winning width. -/

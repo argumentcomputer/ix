@@ -219,36 +219,6 @@ impl Expr {
     }
   }
 
-  /// Rebuild a node without dropping any scalar or contract field.
-  pub fn with_children(&self, children: &[Arc<Self>]) -> Result<Self, String> {
-    if self.children().len() != children.len() {
-      return Err("expression reconstruction child count mismatch".into());
-    }
-    Ok(match self {
-      Self::Sort(_)
-      | Self::Var(_)
-      | Self::Ref(..)
-      | Self::Rec(..)
-      | Self::Str(_)
-      | Self::Nat(_)
-      | Self::Share(_) => self.clone(),
-      Self::Prj(t, f, _) => Self::Prj(*t, *f, children[0].clone()),
-      Self::App(..) => Self::App(children[0].clone(), children[1].clone()),
-      Self::Lam(c, ..) => {
-        Self::Lam(*c, children[0].clone(), children[1].clone())
-      },
-      Self::All(c, v, ..) => {
-        Self::All(*c, *v, children[0].clone(), children[1].clone())
-      },
-      Self::Let(c, ..) => Self::Let(
-        *c,
-        children[0].clone(),
-        children[1].clone(),
-        children[2].clone(),
-      ),
-    })
-  }
-
   /// Count nested applications for telescope compression.
   pub fn app_telescope_count(&self) -> u64 {
     let mut count = 0u64;

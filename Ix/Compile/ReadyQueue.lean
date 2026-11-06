@@ -47,8 +47,12 @@ def makePlan (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldStat
     let (nextUnmet, nextReady) := predictedNext blocks sched unmet ready
     unmet := nextUnmet
     ready := nextReady
-  let indices := rows.zipIdx.foldl (fun indices ((_, rep, _), i) =>
-    indices.insert rep i) (Std.HashMap.emptyWithCapacity rows.size)
+  let indices := Id.run do
+    let mut indices : Std.HashMap Ix.Compile.ExactKey.ExactName Nat :=
+      Std.HashMap.emptyWithCapacity rows.size
+    for h : i in [:rows.size] do
+      indices := indices.insert rows[i].2.1 i
+    return indices
   let descriptors := Ix.Compile.Parallel.map 256 (fun (key, representative, members) => Id.run do
     let dependencies := (sched.deps.getD representative {}).toArray
     let mut parents : Array Nat := #[]
@@ -119,6 +123,8 @@ structure State (input : FixedInput) where
   ready : Array Nat := #[]
   active : List (Nat × Task (Nat × Candidate input)) := []
   bank : Std.HashMap Nat (Candidate input) := {}
+  /-- Published candidates not yet released (`Controller.published`). -/
+  released : Array (Candidate input) := #[]
   claims : AddressTable := {}
   sizes : Std.HashMap Nat Nat := {}
   edges : Nat := 0
@@ -259,7 +265,9 @@ private def collect (i : Nat) (candidate : Candidate input) (st : State input) :
 def create (input : FixedInput) (config : Config) (blocks : Ix.CondensedBlocks)
     (sched : FoldSchedule) (st : FoldState) : IO (Controller input) := do
   let plan := makePlan blocks sched st
-  let state ← IO.mkRef { claims := st.acc.cenv.nameToAddr : State input }
+  let initSt : State input := startReady input config plan
+    (admit config plan { claims := st.acc.cenv.nameToAddr : State input })
+  let state ← IO.mkRef initSt
   return { config, plan, state }
 
 /-- Collect completed workers even when the next publication is already in
@@ -270,14 +278,22 @@ def Controller.pump (controller : Controller input) : IO Unit := do
     if ← IO.hasFinished task then
       let (finished, candidate) ← IO.wait task
       controller.state.modify (collect finished candidate)
-  controller.state.modify fun st => startReady input controller.config controller.plan
-    (admit controller.config controller.plan st)
+  controller.state.modify fun st =>
+    let canAdmit := st.next < controller.plan.descriptors.size &&
+      st.next < st.frontier + max 1 controller.config.lookahead &&
+      st.edges < controller.config.pendingEdges
+    let st := if canAdmit then admit controller.config controller.plan st else st
+    if st.active.length < controller.config.workers - 1 && !st.ready.isEmpty then
+      startReady input controller.config controller.plan st
+    else st
 
 def chooseLoop (controller : Controller input) (i : Nat) : Nat → IO (Option (Candidate input))
   | 0 => pure none
   | fuel + 1 => do
+    let found := (← controller.state.get).bank.get? i
+    if found.isSome then return found
     controller.pump
-    let found ← controller.state.modifyGet fun st => (st.bank.get? i, st)
+    let found := (← controller.state.get).bank.get? i
     if found.isSome then return found
     let active := (← controller.state.get).active
     match active with
@@ -310,6 +326,20 @@ def Controller.observe (controller : Controller input)
       | .blobMismatch => { state.metrics with blobFallbacks := state.metrics.blobFallbacks + 1 }
     { state with metrics }
 
+/-- Keep `x` alive until this call, wherever it runs. -/
+@[noinline] private def keepAlive (x : α) : IO α :=
+  pure x
+
+/-- Hand the published candidates, once there are enough of them, to a pool
+task that drops them, so that freeing them runs off the publication thread. -/
+def Controller.release (controller : Controller input) (batch : Nat := 1024) : IO Unit := do
+  let released ← controller.state.modifyGet fun st =>
+    if st.released.size < batch then (#[], st) else (st.released, { st with released := #[] })
+  unless released.isEmpty do
+    let _ ← IO.asTask do
+      let _ ← keepAlive released
+      pure ()
+
 def Controller.published (controller : Controller input) (rep : Ix.Name) : IO Unit := do
   let some i := controller.plan.indices.get? rep | return ()
   controller.state.modify fun st => Id.run do
@@ -317,25 +347,41 @@ def Controller.published (controller : Controller input) (rep : Ix.Name) : IO Un
     let admitted := st.admitted
     let bank := st.bank
     let sizes := st.sizes
+    let released := st.released
     let bytes := st.bytes - sizes.getD i 0
     let mut st := { st with
       published := {}
       admitted := {}
       bank := {}
       sizes := {}
+      released := #[]
       bytes }
+    -- The bank holds the last reference to a published candidate: dropping it
+    -- here would free its whole block state (expression caches included) on
+    -- this thread, which every publication waits for.
+    let released := match bank.get? i with
+      | some candidate => released.push candidate
+      | none => released
     st := { st with
-      published := published.insert i
       admitted := admitted.erase i
       bank := bank.erase i
-      sizes := sizes.erase i }
+      sizes := sizes.erase i
+      released }
     -- An unlaunched fallback has completed on the publication thread.
     -- A running speculation still owns its completion and is drained normally.
     if !st.active.any (·.1 == i) then st := wake i st
-    for _ in [:controller.plan.descriptors.size] do
-      if !st.published.contains st.frontier then break
-      st := { st with frontier := st.frontier + 1 }
+    if i == st.frontier then
+      let mut published := published
+      let mut frontier := i + 1
+      for _ in [:controller.plan.descriptors.size] do
+        if !published.contains frontier then break
+        published := published.erase frontier
+        frontier := frontier + 1
+      st := { st with published, frontier }
+    else
+      st := { st with published := published.insert i }
     return st
+  controller.release
   controller.pump
 
 /-- Consume every remaining task even on a terminal compiler refusal or IO
@@ -358,6 +404,8 @@ def Controller.drain (controller : Controller input) : IO Unit := do
     ready := #[]
     bytes := 0
     edges := 0 }
+  -- the last published candidates, fewer than a batch, go the same way
+  controller.release 0
 
 def run (config : Config) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (fuel : Nat) (st : FoldState) :

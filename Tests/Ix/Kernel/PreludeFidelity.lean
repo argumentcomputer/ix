@@ -1,7 +1,11 @@
 import LSpec
-import Ix.CompileResource
+import Ix.CompileCertified
 import Ix.EnvScope
 import Tests.Ix.Kernel.ReaderRoundtrip
+
+/-!
+  Prelude fidelity regression suite (`kernel-prelude-fidelity`).
+-/
 
 namespace Tests.Ix.Kernel.PreludeFidelity
 
@@ -24,10 +28,11 @@ private def check : IO Nat := do
   -- adding the roundtrip fixture's explicit prelude seeds.
   let seeds := lean.constants.toList.filterMap fun (n, _) =>
     if defsModule.isPrefixOf n then some n else none
-  let out ← IO.ofExcept ((← _root_.Ix.CompileM.compileLeanConstsValidated
-    (_root_.Ix.EnvScope.collectSelectedDeps lean seeds) (numWorkers := 1)).mapError toString)
-  ensure (out.ungroundedCount == 0) "selected closure has compile failures"
-  let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy out.bytes)
+  let out ← IO.ofExcept (← _root_.Ix.CompileM.compileCertified lean
+    (_root_.Ix.EnvScope.collectSelectedDeps lean seeds) 1)
+  ensure out.failures.isEmpty "selected closure has compile failures"
+  let outBytes ← IO.ofExcept (Ixon.serEnv out.env)
+  let parts ← IO.ofExcept (Ixon.deEnvVerifiedLazy outBytes)
   let access ← IO.ofExcept (InputAccess.ofParts lean parts)
   let injected := pre.records.filter fun (a, _) => !access.store.contains a
   ensure (!injected.isEmpty) "selected closure exercises no setup-only prelude records"

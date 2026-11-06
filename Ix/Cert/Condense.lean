@@ -136,8 +136,7 @@ def blockRefsOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) (blocks : Ix.Map Ix.Nam
     let mut rs : Ix.Set Ix.Name := {}
     for a in all do
       rs := rs.union (refs.getD a {})
-    rs := rs.filter (!all.contains ·)
-    blockRefs := blockRefs.insert lo rs
+    blockRefs := blockRefs.insert lo (rs.filter (!all.contains ·))
   return blockRefs
 
 theorem blockRefs_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
@@ -222,8 +221,8 @@ theorem condense_blockRefs {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep : Ix.Na
 
 `CondenseM.run` as the composition of its loops (`blocks_eq`, by `rfl`): the
 nodes and their positions (`nodesOf`), the edges (`adjOf`), Tarjan's
-components, each node's representative (`rootNames`), the nodes in discovery
-order (`discOf`), and the blocks (`blocksOfDisc`). -/
+components, each node's representative (`rootNames`, `discOf`), and the
+blocks (`blocksOfDisc`). -/
 
 /-- `CondenseM.run`'s first loop. -/
 def nodesOf (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Array (Ix.Name × Ix.Set Ix.Name) × Std.HashMap Ix.Name Nat := Id.run do
@@ -257,24 +256,27 @@ def rootNames (names : Array Ix.Name) (c : Ix.Compile.Canon.Condensation)
       rootName := rootName.setIfInBounds v rn
   return rootName
 
-def discOf (names : Array Ix.Name) (c : Ix.Compile.Canon.Condensation) (rootName : Vector Ix.Name names.size)
-    (hv : ∀ v ∈ c.order, v < names.size) : Std.HashMap UInt64 (Ix.Name × Ix.Name) := Id.run do
-  let mut byDiscovery : Std.HashMap UInt64 (Ix.Name × Ix.Name) := {}
-  let mut d : Nat := 0
-  for h : v in c.order do
-    have hv : v < names.size := hv v h
-    byDiscovery := byDiscovery.insert d.toUInt64 (names[v], rootName[v])
-    d := d + 1
-  return byDiscovery
+structure Disc (names : Array Ix.Name) where
+  c : Ix.Compile.Canon.Condensation
+  rn : Vector Ix.Name names.size
+  hr : ∀ p ∈ c.comps.zip c.roots, p.2 < names.size
 
-def blocksOfDisc (byDiscovery : Std.HashMap UInt64 (Ix.Name × Ix.Name)) : Ix.Map Ix.Name (Ix.Set Ix.Name) := Id.run do
+def Disc.get? {names : Array Ix.Name} (d : Disc names) (v : Nat) : Option (Ix.Name × Ix.Name) :=
+  if h : v < names.size then some (names[v], d.rn[v]) else none
+
+def discOf (names : Array Ix.Name) (c : Ix.Compile.Canon.Condensation) (rootName : Vector Ix.Name names.size)
+    (hr : ∀ p ∈ c.comps.zip c.roots, p.2 < names.size) : Disc names :=
+  ⟨c, rootName, hr⟩
+
+def blocksOfDisc {names : Array Ix.Name} (bd : Disc names) : Ix.Map Ix.Name (Ix.Set Ix.Name) := Id.run do
   let mut blocks : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
-  let mut lowLinks : Map Ix.Name Ix.Name := {}
-  for (_, (name, lowName)) in byDiscovery do
-    lowLinks := lowLinks.insert name lowName
-    blocks := blocks.alter lowName fun x => match x with
-      | .some s => .some (s.insert name)
-      | .none => .some {name}
+  for h : p in bd.c.comps.zip bd.c.roots do
+    have hr : p.2 < names.size := bd.hr p h
+    let rn := names[p.2]
+    let mut s : Set Ix.Name := {rn}
+    for v in p.1 do
+      s := if hv : v < names.size then s.insert names[v] else s
+    blocks := blocks.insert rn s
   return blocks
 
 /-- The condensation's nodes, as names. -/
@@ -300,9 +302,10 @@ theorem namesOf_size (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
 theorem blocks_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
     ∃ hr hv, (CondenseM.run refs).blocks =
       blocksOfDisc (discOf (namesOf refs) (compsOf refs) (rootNames (namesOf refs) (compsOf refs) hr) hv) := by
-  refine ⟨fun p h => ?_, fun v h => ?_, rfl⟩
-  · rw [namesOf_size]; exact Ix.CompileCert.Canon.condensation_roots_lt (compsOf_eq refs) (Array.of_mem_zip h).2
-  · rw [namesOf_size]; exact Ix.CompileCert.Canon.condensation_order_lt (compsOf_eq refs) h
+  have hr : ∀ p ∈ (compsOf refs).comps.zip (compsOf refs).roots, p.2 < (namesOf refs).size := fun p h => by
+    rw [namesOf_size]
+    exact Ix.CompileCert.Canon.condensation_roots_lt (compsOf_eq refs) (Array.of_mem_zip h).2
+  exact ⟨hr, hr, rfl⟩
 
 /-! ## Paths in the reference graph and closures -/
 
@@ -553,70 +556,122 @@ theorem rootNames_get {names : Array Ix.Name} {c : Ix.Compile.Canon.Condensation
       · exact ih _ h
   exact hit _ _ (by rw [Array.mem_toList_iff]; exact Array.mem_attach _ _)
 
-/-! ## The nodes in discovery order, and the blocks -/
+/-! ## The nodes, their representatives, and the blocks -/
 
-/-- **The discovery map holds nodes with their representatives.** -/
+/-- **The node lookup returns a node with its representative.** -/
 theorem discOf_get {names : Array Ix.Name} {c : Ix.Compile.Canon.Condensation}
-    {rn : Vector Ix.Name names.size} {hv : ∀ v ∈ c.order, v < names.size} {key : UInt64}
+    {rn : Vector Ix.Name names.size} {hv : ∀ p ∈ c.comps.zip c.roots, p.2 < names.size} {key : Nat}
     {val : Ix.Name × Ix.Name} (h : (discOf names c rn hv).get? key = some val) :
     ∃ (v : Nat) (hv : v < names.size), val = (names[v], rn[v]) := by
-  unfold discOf at h
-  simp only [Id.run, Array.forIn'_pure_yield_eq_foldl] at h
-  change (Array.foldl (fun b (x : {v // v ∈ c.order}) =>
-    (b.fst.insert b.snd.toUInt64 ((names[x.val]'(hv _ x.property)), rn[x.val]'(hv _ x.property)), b.snd + 1))
-      ((∅ : Std.HashMap UInt64 (Ix.Name × Ix.Name)), 0) c.order.attach).fst.get? key = some val at h
+  unfold discOf Disc.get? at h
+  split at h
+  · rename_i hlt
+    cases h
+    exact ⟨key, hlt, rfl⟩
+  · cases h
+
+/-- One component's member set, as built by the inner loop of `blocksOfDisc`. -/
+private theorem compSet_mem {names : Array Ix.Name} (rn : Ix.Name) (comp : Array Nat) :
+    let out := Array.foldl (fun (s : Ix.Set Ix.Name) v =>
+      if hv : v < names.size then s.insert names[v] else s) ({rn} : Ix.Set Ix.Name) comp
+    Std.HashSet.contains out rn = true ∧
+      ∀ x, Std.HashSet.contains out x = true →
+        (rn == x) = true ∨ ∃ v ∈ comp, ∃ hv : v < names.size, (names[v] == x) = true := by
+  dsimp only
+  rw [← Array.foldl_toList]
+  have h0 : Std.HashSet.contains ({rn} : Ix.Set Ix.Name) rn = true := by
+    change ((∅ : Ix.Set Ix.Name).insert rn).contains rn = true
+    exact Std.HashSet.contains_insert_self
+  have h1 : ∀ x, Std.HashSet.contains ({rn} : Ix.Set Ix.Name) x = true → (rn == x) = true := by
+    intro x hx
+    change ((∅ : Ix.Set Ix.Name).insert rn).contains x = true at hx
+    rw [Std.HashSet.contains_insert, Std.HashSet.contains_empty, Bool.or_false] at hx
+    exact hx
+  refine foldl_inv (fun s : Ix.Set Ix.Name =>
+      Std.HashSet.contains s rn = true ∧
+      ∀ x, Std.HashSet.contains s x = true →
+        (rn == x) = true ∨ ∃ v ∈ comp, ∃ hv : v < names.size, (names[v] == x) = true)
+    _ comp.toList {rn} ⟨h0, fun x hx => .inl (h1 x hx)⟩ ?_
+  intro s v hv ⟨hrn, hmem⟩
+  split
+  · rename_i hlt
+    refine ⟨by rw [Std.HashSet.contains_insert, hrn, Bool.or_true], fun x hx => ?_⟩
+    rw [Std.HashSet.contains_insert] at hx
+    rcases Bool.or_eq_true_iff.mp hx with e | hx
+    · exact .inr ⟨v, Array.mem_toList_iff.mp hv, hlt, e⟩
+    · exact hmem x hx
+  · exact ⟨hrn, hmem⟩
+
+private theorem blocksOfDisc_mem_aux {names : Array Ix.Name} (bd : Disc names)
+    {rep x : Ix.Name} {all : Ix.Set Ix.Name}
+    (h : (blocksOfDisc bd).get? rep = some all) (hx : Std.HashSet.contains all x = true) :
+    ∃ p : {p // p ∈ bd.c.comps.zip bd.c.roots},
+      let rn := names[p.1.2]'(bd.hr p.1 p.2)
+      (rn == rep) = true ∧
+        ((rn == x) = true ∨ ∃ v ∈ p.1.1, ∃ hlt : v < names.size, (names[v] == x) = true) := by
+  unfold blocksOfDisc at h
+  simp only [Id.run, Array.forIn_pure_yield_eq_foldl, pure_bind, Array.forIn'_pure_yield_eq_foldl] at h
+  let stepInner (s : Ix.Set Ix.Name) (v : Nat) : Ix.Set Ix.Name :=
+    if hlt : v < names.size then s.insert names[v] else s
+  change (Array.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name))
+      (p : {p // p ∈ bd.c.comps.zip bd.c.roots}) =>
+      let rn := names[p.1.2]'(bd.hr p.1 p.2)
+      b.insert rn (Array.foldl stepInner {rn} p.1.1))
+    ∅ (bd.c.comps.zip bd.c.roots).attach).get? rep = some all at h
   rw [← Array.foldl_toList] at h
-  refine foldl_inv (fun s : Std.HashMap UInt64 (Ix.Name × Ix.Name) × Nat => ∀ key val, s.1.get? key = some val →
-      ∃ (v : Nat) (hv : v < names.size), val = (names[v], rn[v])) _ _ _
-    (fun key val h => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
-    (fun s x _ hs key val h => ?_) key val h
+  refine foldl_inv (fun b : Ix.Map Ix.Name (Ix.Set Ix.Name) =>
+      ∀ rep all, b.get? rep = some all → ∀ x, Std.HashSet.contains all x = true →
+        ∃ p : {p // p ∈ bd.c.comps.zip bd.c.roots},
+          let rn := names[p.1.2]'(bd.hr p.1 p.2)
+          (rn == rep) = true ∧
+            ((rn == x) = true ∨ ∃ v ∈ p.1.1, ∃ hlt : v < names.size, (names[v] == x) = true))
+    _ _ ∅
+    (fun rep all h => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+    (fun b p _ ih rep all h x hx => ?_) rep all h x hx
   dsimp only at h
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
   split at h
-  · cases h
-    exact ⟨x.val, hv _ x.property, rfl⟩
-  · rw [← Std.HashMap.get?_eq_getElem?] at h
-    exact hs key val h
-
-/-- **A block's members come from the discovery map**: each member of the
-block at `rep` hashes like a node's name whose representative hashes like
-`rep`. -/
-theorem blocksOfDisc_mem {bd : Std.HashMap UInt64 (Ix.Name × Ix.Name)} {rep x : Ix.Name}
-    {all : Ix.Set Ix.Name} (h : (blocksOfDisc bd).get? rep = some all) (hx : all.contains x = true) :
-    ∃ key val, bd.get? key = some val ∧ (val.2 == rep) = true ∧ (val.1 == x) = true := by
-  unfold blocksOfDisc at h
-  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl] at h
-  change (List.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name) a =>
-      (Std.HashMap.alter b.fst a.2.snd fun x => match x with
-        | some s => some (Std.HashSet.insert s a.2.fst)
-        | none => some {a.2.fst},
-       Std.HashMap.insert b.snd a.2.fst a.2.snd)) (∅, ∅) bd.toList).fst.get? rep = some all at h
-  refine foldl_inv (fun s : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name => ∀ rep all x,
-      s.1.get? rep = some all → all.contains x = true →
-        ∃ key val, bd.get? key = some val ∧ (val.2 == rep) = true ∧ (val.1 == x) = true) _ _ _
-    (fun rep all x h _ => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
-    (fun s e he hs rep all x h hx => ?_) rep all x h hx
-  have hbe : bd.get? e.1 = some e.2 := by
-    rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.mem_toList_iff_getElem?_eq_some]
-    exact he
-  dsimp only at h
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_alter] at h
-  split at h
   · rename_i same
-    split at h
-    · rename_i s hs'
-      cases h
-      rw [Std.HashSet.contains_insert] at hx
-      rcases Bool.or_eq_true_iff.mp hx with e' | hx
-      · exact ⟨e.1, e.2, hbe, same, e'⟩
-      · rw [Std.HashMap.getElem?_congr same, ← Std.HashMap.get?_eq_getElem?] at hs'
-        exact hs _ _ x hs' hx
-    · cases h
-      rw [show ({e.2.1} : Ix.Set Ix.Name) = (∅ : Ix.Set Ix.Name).insert e.2.1 from rfl,
-        Std.HashSet.contains_insert, Std.HashSet.contains_empty, Bool.or_false] at hx
-      exact ⟨e.1, e.2, hbe, same, hx⟩
+    cases h
+    exact ⟨p, same, (compSet_mem _ p.1.1).2 x hx⟩
   · rw [← Std.HashMap.get?_eq_getElem?] at h
-    exact hs rep all x h hx
+    exact ih rep all h x hx
+
+/-- **A block's members come from a component**: each member of the block at `rep`
+hashes like a node's name whose representative hashes like `rep`. -/
+theorem blocksOfDisc_mem {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)}
+    {hr : ∀ p ∈ (compsOf refs).comps.zip (compsOf refs).roots, p.2 < (namesOf refs).size}
+    {hv : ∀ p ∈ (compsOf refs).comps.zip (compsOf refs).roots, p.2 < (namesOf refs).size}
+    {rep x : Ix.Name} {all : Ix.Set Ix.Name}
+    (h : (blocksOfDisc (discOf (namesOf refs) (compsOf refs) (rootNames (namesOf refs) (compsOf refs) hr) hv)).get? rep = some all)
+    (hx : all.contains x = true) :
+    ∃ key val,
+      (discOf (namesOf refs) (compsOf refs) (rootNames (namesOf refs) (compsOf refs) hr) hv).get? key = some val ∧
+      (val.2 == rep) = true ∧ (val.1 == x) = true := by
+  obtain ⟨⟨⟨comp, r⟩, hp⟩, hrep, hmem⟩ := blocksOfDisc_mem_aux _ h hx
+  dsimp only [discOf] at hp hrep hmem
+  have hc := compsOf_eq refs
+  obtain ⟨k, hk, ek⟩ := Array.mem_iff_getElem.mp hp
+  rw [Array.getElem_zip] at ek
+  have hk1 : k < (compsOf refs).comps.size := by rw [Array.size_zip] at hk; omega
+  have hk2 : k < (compsOf refs).roots.size := by rw [Array.size_zip] at hk; omega
+  have hcomp : (compsOf refs).comps[k]? = some comp := by
+    rw [Array.getElem?_eq_getElem hk1, (Prod.mk.inj ek).1]
+  have hroot : (compsOf refs).roots[k]? = some r := by
+    rw [Array.getElem?_eq_getElem hk2, (Prod.mk.inj ek).2]
+  have hrn : r < (namesOf refs).size := hv (comp, r) hp
+  have hrmem : r ∈ comp := (CondenseRoots.condensation_roots_mem hc).2 k r comp hroot hcomp
+  obtain ⟨v, hvc, hlt, hvx⟩ : ∃ v ∈ comp, ∃ hlt : v < (namesOf refs).size, ((namesOf refs)[v] == x) = true := by
+    rcases hmem with erx | ⟨v, hvc, hlt, evx⟩
+    · exact ⟨r, hrmem, hrn, erx⟩
+    · exact ⟨v, hvc, hlt, evx⟩
+  have hrget := rootNames_get (hr := hr) (Ix.CompileCert.Canon.condensation_unique hc) hcomp hroot hvc hlt hrn
+  refine ⟨v, ((namesOf refs)[v], (rootNames (namesOf refs) (compsOf refs) hr)[v]), ?_, ?_, hvx⟩
+  · unfold discOf Disc.get?
+    simp [hlt]
+  · dsimp only
+    rw [hrget]
+    exact hrep
 
 /-! ## Blocks are strongly connected -/
 
@@ -700,31 +755,29 @@ theorem condense_scc {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep x y : Ix.Name
   simp only [namesOf, Array.getElem_map] at hnx hny
   exact (p.congr_left hnx).congr_right hny
 
-/-- A block of the discovery map's blocks is not empty. -/
-theorem blocksOfDisc_nonempty {bd : Std.HashMap UInt64 (Ix.Name × Ix.Name)} {rep : Ix.Name}
+/-- A block of `blocksOfDisc` is not empty. -/
+theorem blocksOfDisc_nonempty {names : Array Ix.Name} {bd : Disc names} {rep : Ix.Name}
     {all : Ix.Set Ix.Name} (h : (blocksOfDisc bd).get? rep = some all) : all.isEmpty = false := by
   unfold blocksOfDisc at h
-  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl] at h
-  change (List.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name) a =>
-      (Std.HashMap.alter b.fst a.2.snd fun x => match x with
-        | some s => some (Std.HashSet.insert s a.2.fst)
-        | none => some {a.2.fst},
-       Std.HashMap.insert b.snd a.2.fst a.2.snd)) (∅, ∅) bd.toList).fst.get? rep = some all at h
-  refine foldl_inv (fun s : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name => ∀ rep all,
-      s.1.get? rep = some all → all.isEmpty = false) _ _ _
+  simp only [Id.run, Array.forIn_pure_yield_eq_foldl, pure_bind, Array.forIn'_pure_yield_eq_foldl] at h
+  let stepInner (s : Ix.Set Ix.Name) (v : Nat) : Ix.Set Ix.Name :=
+    if hlt : v < names.size then s.insert names[v] else s
+  change (Array.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name))
+      (p : {p // p ∈ bd.c.comps.zip bd.c.roots}) =>
+      let rn := names[p.1.2]'(bd.hr p.1 p.2)
+      b.insert rn (Array.foldl stepInner {rn} p.1.1))
+    ∅ (bd.c.comps.zip bd.c.roots).attach).get? rep = some all at h
+  rw [← Array.foldl_toList] at h
+  refine foldl_inv (fun s : Ix.Map Ix.Name (Ix.Set Ix.Name) => ∀ rep all,
+      s.get? rep = some all → all.isEmpty = false) _ _ ∅
     (fun rep all h => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
-    (fun s e _ hs rep all h => ?_) rep all h
+    (fun s p _ hs rep all h => ?_) rep all h
   dsimp only at h
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_alter] at h
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
   split at h
-  · rw [Std.HashSet.isEmpty_eq_false_iff_exists_contains_eq_true]
-    split at h
-    · cases h
-      exact ⟨_, Std.HashSet.contains_insert_self⟩
-    · cases h
-      exact ⟨e.2.1, by
-        rw [show ({e.2.1} : Ix.Set Ix.Name) = (∅ : Ix.Set Ix.Name).insert e.2.1 from rfl]
-        exact Std.HashSet.contains_insert_self⟩
+  · cases h
+    rw [Std.HashSet.isEmpty_eq_false_iff_exists_contains_eq_true]
+    exact ⟨_, (compSet_mem _ p.1.1).1⟩
   · rw [← Std.HashMap.get?_eq_getElem?] at h
     exact hs rep all h
 

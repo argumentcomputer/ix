@@ -1,22 +1,21 @@
-/-
-  FFI test suite aggregator.
-  Imports all Tests.FFI.* modules and exports a combined suite.
--/
 module
 
 public import Tests.FFI.Basic
 public import Tests.FFI.CompileStatus
-public import Tests.FFI.Ix
 public import Tests.FFI.Ixon
 public import Tests.FFI.Lifecycle
 public import Tests.FFI.Refcount
+
+/-!
+  FFI test suite aggregator.
+  Imports all Tests.FFI.* modules and exports a combined suite.
+-/
 
 namespace Tests.FFI
 
 public def suite : List LSpec.TestSeq := List.foldr (· ++ ·) []
   [ Tests.FFI.Basic.suite
   , Tests.FFI.CompileStatus.suite
-  , Tests.FFI.Ix.suite
   , Tests.FFI.Ixon.suite
   , Tests.FFI.Lifecycle.suite
   , Tests.FFI.Refcount.suite

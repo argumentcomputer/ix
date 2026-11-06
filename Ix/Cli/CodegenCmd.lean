@@ -127,14 +127,10 @@ def emitRoleSpecs (checkOnly : Bool) : IO Bool := do
   IO.println s!"[codegen] wrote {roleSpecPath}"
   return true
 
-/-- Keep the Rust validator and the shared shape fixture derived from the
+/-- Keep the shared role specification shape fixture derived from the
 same specification data used by the verified kernel and circuit renderer. -/
 def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
-  let source ← match Ix.RoleBinding.RustSpecGen.render with
-    | .ok source => pure source
-    | .error error => IO.eprintln s!"Rust role specifications: {error}"; return false
   let outputs := #[
-    ("crates/kernel/src/role_admission/specs.rs", source),
     ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", Ix.RoleBinding.RustSpecGen.shape)]
   let mut ok := true
   for (path, contents) in outputs do

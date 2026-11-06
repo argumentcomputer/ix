@@ -19,8 +19,6 @@ lean_ffi::lean_domain_type! {
   LeanIxonQuotKind;
 
   // Opaque types (passed through without field access)
-  LeanIxRawEnvironment;
-  LeanIxEnvironment;
   LeanIxonExprMetaArena;
   LeanAiurCommitmentParameters;
   LeanAiurFriParameters;
@@ -162,19 +160,6 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 8: muts
   ];
 
-  // --- Ix structures (single-constructor) ---
-
-  LeanIxConstantVal     [ { num_obj: 3 } ];
-  LeanIxRecursorRule    [ { num_obj: 3 } ];
-  LeanIxTheoremVal      [ { num_obj: 3 } ];
-  LeanIxCondensedBlocks [ { num_obj: 3 } ];
-  LeanIxCompilePhases   [ { num_obj: 3 } ];
-  // Ix.CompileM.CompileEnvStatus: root (String), ungrounded
-  // (Array (String × String)), nonCanonical (Array (String × String)),
-  // then UInt64 scalars bytes/named/uniqueAnon
-  LeanIxCompileEnvStatus [ { num_obj: 3, num_64: 3 } ];
-  LeanIxSubstring       [ { num_obj: 3 } ];
-
   // --- Ix multi-variant inductives ---
 
   LeanIxName [
@@ -183,93 +168,11 @@ lean_ffi::lean_inductive! {
     { num_obj: 3 },                           // tag 2: num
   ];
 
-  LeanIxLevel [
-    { num_obj: 1 },                           // tag 0: zero
-    { num_obj: 2 },                           // tag 1: succ
-    { num_obj: 3 },                           // tag 2: max
-    { num_obj: 3 },                           // tag 3: imax
-    { num_obj: 2 },                           // tag 4: param
-    { num_obj: 2 },                           // tag 5: mvar
-  ];
-
-  LeanIxExpr [
-    { num_obj: 2 },                           // tag 0: bvar
-    { num_obj: 2 },                           // tag 1: fvar
-    { num_obj: 2 },                           // tag 2: mvar
-    { num_obj: 2 },                           // tag 3: sort
-    { num_obj: 3 },                           // tag 4: const
-    { num_obj: 3 },                           // tag 5: app
-    { num_obj: 4, num_8: 1 },                 // tag 6: lam
-    { num_obj: 4, num_8: 1 },                 // tag 7: forallE
-    { num_obj: 5, num_8: 1 },                 // tag 8: letE
-    { num_obj: 2 },                           // tag 9: lit
-    { num_obj: 3 },                           // tag 10: mdata
-    { num_obj: 4 },                           // tag 11: proj
-  ];
-
-  LeanIxConstantInfo [
-    { num_obj: 1 },                           // tag 0: axiom
-    { num_obj: 1 },                           // tag 1: defn
-    { num_obj: 1 },                           // tag 2: thm
-    { num_obj: 1 },                           // tag 3: opaque
-    { num_obj: 1 },                           // tag 4: quot
-    { num_obj: 1 },                           // tag 5: induct
-    { num_obj: 1 },                           // tag 6: ctor
-    { num_obj: 1 },                           // tag 7: rec
-  ];
-
   LeanIxReducibilityHints [
     { },                                      // tag 0: opaque (scalar)
     { },                                      // tag 1: abbrev (scalar)
     { num_32: 1 },                            // tag 2: regular
   ];
-
-  LeanIxLiteral [
-    { num_obj: 1 },                           // tag 0: nat
-    { num_obj: 1 },                           // tag 1: str
-  ];
-
-  LeanIxInt [
-    { num_obj: 1 },                           // tag 0: ofNat
-    { num_obj: 1 },                           // tag 1: negSucc
-  ];
-
-  LeanIxSourceInfo [
-    { num_obj: 4 },                           // tag 0: original
-    { num_obj: 2, num_8: 1 },                 // tag 1: synthetic
-    { },                                      // tag 2: none
-  ];
-
-  LeanIxSyntax [
-    { },                                      // tag 0: missing
-    { num_obj: 3 },                           // tag 1: node
-    { num_obj: 2 },                           // tag 2: atom
-    { num_obj: 4 },                           // tag 3: ident
-  ];
-
-  LeanIxSyntaxPreresolved [
-    { num_obj: 1 },                           // tag 0: namespace
-    { num_obj: 2 },                           // tag 1: decl
-  ];
-
-  LeanIxDataValue [
-    { num_obj: 1 },                           // tag 0: ofString
-    { num_8: 1 },                             // tag 1: ofBool
-    { num_obj: 1 },                           // tag 2: ofName
-    { num_obj: 1 },                           // tag 3: ofNat
-    { num_obj: 1 },                           // tag 4: ofInt
-    { num_obj: 1 },                           // tag 5: ofSyntax
-  ];
-
-  // --- Lean kernel inner val types (used in Ix.ConstantInfo decode) ---
-
-  LeanIxAxiomVal       [ { num_obj: 1, num_8: 1 } ];
-  LeanIxDefinitionVal  [ { num_obj: 4, num_8: 1 } ];
-  LeanIxOpaqueVal      [ { num_obj: 3, num_8: 1 } ];
-  LeanIxQuotVal        [ { num_obj: 1, num_8: 1 } ];
-  LeanIxInductiveVal   [ { num_obj: 6, num_8: 3 } ];
-  LeanIxConstructorVal [ { num_obj: 5, num_8: 1 } ];
-  LeanIxRecursorVal    [ { num_obj: 7, num_8: 2 } ];
 
   // --- Aiur types ---
 
@@ -301,61 +204,6 @@ lean_ffi::lean_inductive! {
   LeanAiurShardProvenAhead [ { num_obj: 3 } ];
   // claimBytes, constantCount
   LeanAiurAggregateExpected [ { num_obj: 2 } ];
-
-  // --- Block / comparison types ---
-
-  LeanIxBlockCompareResult [
-    { },                                      // tag 0: match
-    { num_64: 3 },                            // tag 1: mismatch
-    { },                                      // tag 2: notFound
-  ];
-
-  LeanIxBlockCompareDetail [ { num_obj: 1, num_64: 2 } ];
-  LeanIxBlock              [ { num_obj: 2, num_64: 1 } ];
-
-  // --- Error types ---
-
-  LeanIxSerializeError [
-    { num_obj: 1 },                           // tag 0: unexpectedEof
-    { num_obj: 1, num_8: 1 },                 // tag 1: invalidTag
-    { num_obj: 1, num_8: 1 },                 // tag 2: invalidFlag
-    { num_obj: 1, num_64: 1 },                // tag 3: invalidVariant
-    { num_8: 1 },                             // tag 4: invalidBool
-    { },                                      // tag 5: addressError
-    { num_obj: 1, num_64: 1 },                // tag 6: invalidShareIndex
-  ];
-
-  LeanIxDecompileError [
-    { num_obj: 2, num_64: 1 },                // tag 0: invalidRefIndex
-    { num_obj: 2, num_64: 1 },                // tag 1: invalidUnivIndex
-    { num_obj: 2, num_64: 1 },                // tag 2: invalidShareIndex
-    { num_obj: 2, num_64: 1 },                // tag 3: invalidRecIndex
-    { num_obj: 2, num_64: 1 },                // tag 4: invalidUnivVarIndex
-    { num_obj: 1 },                           // tag 5: missingAddress
-    { num_obj: 1 },                           // tag 6: missingMetadata
-    { num_obj: 1 },                           // tag 7: blobNotFound
-    { num_obj: 2 },                           // tag 8: badBlobFormat
-    { num_obj: 1 },                           // tag 9: badConstantFormat
-    { num_obj: 1 },                           // tag 10: serialize
-    { num_obj: 3, num_64: 2 },                // tag 11: invalidMetaShareIndex
-  ];
-
-  LeanIxCompileError [
-    { num_obj: 1 },                           // tag 0: missingConstant
-    { num_obj: 1 },                           // tag 1: missingAddress
-    { num_obj: 1 },                           // tag 2: invalidMutualBlock
-    { num_obj: 1 },                           // tag 3: unsupportedExpr
-    { num_obj: 2 },                           // tag 4: unknownUnivParam
-    { num_obj: 1 },                           // tag 5: serialize
-    { num_obj: 1 },                           // tag 6: resourceLimit
-    { num_obj: 1 },                           // tag 7: sharingConstruction
-  ];
-
-  // Defined in `Ix/KernelCheck.lean`.
-  LeanIxCheckError [
-    { num_obj: 1 },                           // tag 0: kernelException
-    { num_obj: 1 },                           // tag 1: compileError
-  ];
 
   // --- Iroh types ---
 
@@ -425,5 +273,175 @@ impl<'a> LeanIxAddress<LeanBorrowed<'a>> {
   #[inline]
   pub fn from_borrowed(ba: LeanByteArray<LeanBorrowed<'a>>) -> Self {
     Self(ba)
+  }
+}
+
+// =============================================================================
+// LeanBuildCache & Scalar Domain Builders/Decoders
+// =============================================================================
+
+use ix_common::address::Address;
+use ix_common::env::{BinderInfo, Name, NameData, ReducibilityHints};
+use lean_ffi::object::{LeanArray, LeanNat, LeanString};
+use rustc_hash::FxHashMap;
+
+/// Deduplication cache for constructing Lean objects during FFI calls.
+#[derive(Default)]
+pub struct LeanBuildCache {
+  /// Cached `Ix.Name` objects keyed by content hash.
+  pub names: FxHashMap<blake3::Hash, LeanIxName<LeanOwned>>,
+}
+
+impl LeanBuildCache {
+  /// Create an empty build cache.
+  pub fn new() -> Self {
+    Self::default()
+  }
+}
+
+impl LeanIxAddress<LeanOwned> {
+  /// Construct a Lean `Address` (`ByteArray` of length 32).
+  pub fn build(addr: &Address) -> Self {
+    LeanIxAddress::new(LeanByteArray::from_bytes(addr.as_bytes()))
+  }
+
+  /// Construct a Lean `Address` from a [`blake3::Hash`].
+  pub fn build_hash(hash: &blake3::Hash) -> Self {
+    LeanIxAddress::new(LeanByteArray::from_bytes(hash.as_bytes()))
+  }
+
+  /// Construct a `LeanArray` of `Address` values.
+  pub fn build_array(addrs: &[Address]) -> LeanArray<LeanOwned> {
+    let arr = LeanArray::alloc(addrs.len());
+    for (i, a) in addrs.iter().enumerate() {
+      arr.set(i, Self::build(a));
+    }
+    arr
+  }
+}
+
+impl<R: LeanRef> LeanIxAddress<R> {
+  /// Decode a 32-byte Lean `Address` into a Rust [`Address`].
+  pub fn decode(&self) -> Address {
+    Address::from_slice(self.as_bytes()).expect("Lean Address must be 32 bytes")
+  }
+}
+
+impl LeanIxAddress<LeanBorrowed<'_>> {
+  /// Decode a `LeanArray` of `Address` values into a `Vec<Address>`.
+  pub fn decode_array(arr: LeanArray<LeanBorrowed<'_>>) -> Vec<Address> {
+    arr
+      .iter()
+      .map(|elem| LeanIxAddress::from_borrowed(elem.as_byte_array()).decode())
+      .collect()
+  }
+}
+
+impl LeanIxName<LeanOwned> {
+  /// Construct a Lean `Ix.Name` (deduplicated via `cache`).
+  pub fn build(cache: &mut LeanBuildCache, name: &Name) -> Self {
+    let key = *name.get_hash();
+    if let Some(existing) = cache.names.get(&key) {
+      return existing.clone();
+    }
+    let built = match name.as_data() {
+      NameData::Anonymous(h) => {
+        let ctor = LeanIxName::alloc(0);
+        ctor.set_obj(0, LeanIxAddress::build_hash(h));
+        ctor
+      },
+      NameData::Str(parent, s, h) => {
+        let p_obj = Self::build(cache, parent);
+        let ctor = LeanIxName::alloc(1);
+        ctor.set_obj(0, p_obj);
+        ctor.set_obj(1, LeanString::new(s));
+        ctor.set_obj(2, LeanIxAddress::build_hash(h));
+        ctor
+      },
+      NameData::Num(parent, n, h) => {
+        let p_obj = Self::build(cache, parent);
+        let ctor = LeanIxName::alloc(2);
+        ctor.set_obj(0, p_obj);
+        ctor.set_obj(1, LeanNat::from_nat(n));
+        ctor.set_obj(2, LeanIxAddress::build_hash(h));
+        ctor
+      },
+    };
+    cache.names.insert(key, built.clone());
+    built
+  }
+}
+
+impl<R: LeanRef> LeanIxName<R> {
+  /// Decode a Lean `Ix.Name` into a Rust [`Name`].
+  pub fn decode(&self) -> Name {
+    match self.as_ctor().tag() {
+      0 => Name::anon(),
+      1 => {
+        let parent = LeanIxName::new(self.get_obj(0).to_owned_ref()).decode();
+        let s = self.get_obj(1).as_string().to_string();
+        Name::str(parent, s)
+      },
+      2 => {
+        let parent = LeanIxName::new(self.get_obj(0).to_owned_ref()).decode();
+        let n = LeanNat::to_nat(&self.get_obj(1));
+        Name::num(parent, n)
+      },
+      t => panic!("LeanIxName::decode: unexpected tag {t}"),
+    }
+  }
+}
+
+impl LeanIxBinderInfo<LeanOwned> {
+  /// Encode [`BinderInfo`] as a Lean enum tag.
+  pub fn to_u8(bi: &BinderInfo) -> u8 {
+    match bi {
+      BinderInfo::Default => 0,
+      BinderInfo::Implicit => 1,
+      BinderInfo::StrictImplicit => 2,
+      BinderInfo::InstImplicit => 3,
+    }
+  }
+
+  /// Decode [`BinderInfo`] from a Lean enum tag.
+  pub fn from_u8(v: u8) -> BinderInfo {
+    match v {
+      0 => BinderInfo::Default,
+      1 => BinderInfo::Implicit,
+      2 => BinderInfo::StrictImplicit,
+      3 => BinderInfo::InstImplicit,
+      _ => panic!("Invalid BinderInfo tag: {v}"),
+    }
+  }
+}
+
+impl LeanIxReducibilityHints<LeanOwned> {
+  /// Construct a Lean `Ix.ReducibilityHints`.
+  pub fn build(hints: &ReducibilityHints) -> Self {
+    match hints {
+      ReducibilityHints::Opaque => Self::new(LeanOwned::box_usize(0)),
+      ReducibilityHints::Abbrev => Self::new(LeanOwned::box_usize(1)),
+      ReducibilityHints::Regular(h) => {
+        let ctor = LeanIxReducibilityHints::alloc(2);
+        ctor.set_num_32(0, *h);
+        ctor
+      },
+    }
+  }
+}
+
+impl<R: LeanRef> LeanIxReducibilityHints<R> {
+  /// Decode a Lean `Ix.ReducibilityHints`.
+  pub fn decode(&self) -> ReducibilityHints {
+    if self.inner().is_scalar() {
+      match (self.inner().as_raw() as usize) >> 1 {
+        0 => ReducibilityHints::Opaque,
+        1 => ReducibilityHints::Abbrev,
+        t => panic!("Invalid scalar ReducibilityHints tag: {t}"),
+      }
+    } else {
+      assert_eq!(self.as_ctor().tag(), 2);
+      ReducibilityHints::Regular(self.get_num_32(0))
+    }
   }
 }

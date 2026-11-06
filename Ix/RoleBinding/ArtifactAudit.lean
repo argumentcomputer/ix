@@ -46,21 +46,39 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- These entries use the supplied binding, so they gain no committed-fixture
 -- helpers. All direct and reached implementation, extern, unsafe, csimp,
 -- replacement and opaque entries were compared exactly and are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6780 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6777 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6914 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6911 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6780 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6777 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6914 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6911 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
+
+/- `ix check-lean --allow-user-axioms` runs the entries that admit user axioms
+in place of `check` and `checkTiered`. When the kernel lists no user axiom,
+their receipt is the certified one (`ReceiptConditional.toReceipt`,
+`TierReceiptConditional.toTierReceipt`, T1) and a host statement is derived
+from it, so their closure is frozen here with the same rulings. It has 61
+more compiled functions than `checkTiered`'s (the fold under the axiom policy
+and the list); the extern, implemented_by, unsafe and csimp counts and every
+ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.checkBytesUnder`,
+`checkBytesTieredUsingUnder`) are frozen apart in
+`IxC/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 6972 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+#guard_msgs (whitespace := lax) in
+run_cmd do
+  Ix.Kernel.Audit.checkRuntimeWith
+    #[``Ix.RoleBinding.Artifact.checkConditional, ``Ix.RoleBinding.Artifact.checkTieredConditional]
+    #[`Init, `Std] rulings
 
 #guard_kernel_axioms Ixon.putTagN_eq_I [propext, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.Receipt.strongModel [propext, Classical.choice, Quot.sound]
@@ -73,6 +91,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 #guard_kernel_axioms Ix.RoleBinding.Artifact.Materialized.complete [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsAt_reading [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsAt_complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.decodeRecordsPar_eq [propext, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsForPar_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.prepareRecordsPar_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.prepareAt_obligations [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.prepareTieredAt_obligations [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedReceipt.complete [propext, Classical.choice, Quot.sound]
@@ -81,5 +102,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.target_unique [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedReceipt.authentic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.authentic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.ReceiptConditional.toReceipt [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceiptConditional.toTierReceipt [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.ReceiptConditional.strongModel_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceiptConditional.strongModel_of_nil [propext, Classical.choice, Quot.sound]
 
 end Ix.RoleBinding.Artifact.Audit

@@ -55,64 +55,6 @@ impl Address {
       .map(|c| Address::from_slice(c).expect("malformed address chunk"))
   }
 
-  /// Build a deterministic, collision-resistant `Name` for this address:
-  /// `Ix._#.<hex>`. Mirrors Lean-side `Ix.Address.toUniqueName`.
-  ///
-  /// Use this when you need to register a KId/Named entry at a synthetic
-  /// name that can't collide with any Lean-originated name (e.g. for
-  /// scratch `KEnv` entries that should not participate in the
-  /// `name_to_addr` namespace).
-  pub fn to_unique_name(&self) -> crate::env::Name {
-    use crate::env::Name;
-    Name::str(
-      Name::str(Name::str(Name::anon(), "Ix".to_string()), "_#".to_string()),
-      self.hex(),
-    )
-  }
-
-  /// Inverse of `to_unique_name`. Returns `Some(Address)` iff `name` has
-  /// shape `Ix._#.<hex>` with valid 64-char hex; otherwise `None`.
-  pub fn from_unique_name(name: &crate::env::Name) -> Option<Self> {
-    use crate::env::NameData;
-    let (parent, hex) = match name.as_data() {
-      NameData::Str(parent, s, _) => (parent.clone(), s.clone()),
-      _ => return None,
-    };
-    let parent = match parent.as_data() {
-      NameData::Str(pp, s, _) if s == "_#" => pp.clone(),
-      _ => return None,
-    };
-    match parent.as_data() {
-      NameData::Str(ppp, s, _) if s == "Ix" => match ppp.as_data() {
-        NameData::Anonymous(_) => Address::from_hex(&hex),
-        _ => None,
-      },
-      _ => None,
-    }
-  }
-
-  /// Build a synthetic `Name` for a mutual block's `Named` entry:
-  /// `Ix.<hex>.<first_member_name>`. Disambiguates alpha-equivalent blocks
-  /// that share an `addr` but have different member names.
-  ///
-  /// Used by `compile_mutual` to register each mutual block under a
-  /// Muts-tagged meta so kernel ingress can discover and process it via
-  /// `ingress_muts_block`.
-  pub fn muts_name(&self, first_member: &crate::env::Name) -> crate::env::Name {
-    use crate::env::{Name, NameData};
-    let base = Name::str(Name::str(Name::anon(), "Ix".to_string()), self.hex());
-    // Append each component of `first_member` to the base, preserving
-    // numeric vs string parts.
-    fn go(base: Name, name: &Name) -> Name {
-      match name.as_data() {
-        NameData::Anonymous(_) => base,
-        NameData::Str(parent, s, _) => Name::str(go(base, parent), s.clone()),
-        NameData::Num(parent, n, _) => Name::num(go(base, parent), n.clone()),
-      }
-    }
-    go(base, first_member)
-  }
-
   /// Constructs an address from a 64-character hexadecimal string.
   pub fn from_hex(hex: &str) -> Option<Self> {
     if hex.len() != 64 {

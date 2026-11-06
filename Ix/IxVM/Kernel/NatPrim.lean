@@ -11,8 +11,7 @@ namespace IxVM
 
 /-! ## Nat primitive dispatch
 
-Nat/Str/BitVec/decidable reduction, mirroring
-crates/kernel/src/primitive.rs. Recognizes Const-headed applications of
+Nat/Str/BitVec/decidable reduction. Recognizes Const-headed applications of
 Nat.succ / Nat.pred / Nat.add / Nat.sub / Nat.mul / Nat.div / Nat.mod /
 Nat.pow / Nat.gcd / Nat.land / Nat.lor / Nat.xor / Nat.shl / Nat.shr /
 Nat.beq / Nat.ble on Nat literals (or on Nat.zero / App(Nat.succ, ...)
@@ -175,9 +174,9 @@ def natPrim := ⟦
     }
   }
 
-  -- Native string-value fast paths (mirror crates/kernel/src/primitive.rs
-  -- `string_append` / `string_dec_eq`): literal append and literal
-  -- decidable equality reduce natively in whnf, keeping evaluator-grade
+  -- Native string-value fast paths (`string_append` / `string_dec_eq`):
+  -- literal append and literal decidable equality reduce natively in
+  -- whnf, keeping evaluator-grade
   -- string values out of the structural ByteArray/UTF-8 model.
 
   -- String primitive dispatch (`op`: 1 ofList, 2 utf8ByteSize, 3 back,

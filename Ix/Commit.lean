@@ -1,16 +1,17 @@
-/-
-  Ix.Commit: Commitment pipeline for ZK voting and claim construction.
-
-  Provides utilities for:
-  - Building a CompileEnv from rsCompilePhases output
-  - Incrementally compiling and committing definitions
-  - Building evaluation, check, and reveal claims
-  - Opening committed constants for selective field revelation
--/
 module
 public import Ix.Claim
 public import Ix.CompileM
 public import Ix.CanonM
+
+/-!
+  Ix.Commit: Commitment pipeline for ZK voting and claim construction.
+
+  Provides utilities for:
+  - Building a CompileEnv from CompilePhases output
+  - Incrementally compiling and committing definitions
+  - Building evaluation, check, and reveal claims
+  - Opening committed constants for selective field revelation
+-/
 
 public section
 
@@ -19,10 +20,10 @@ namespace Ix.Commit
 open Ixon (PutM runPut putConstant putExpr Comm)
 
 -- ============================================================================
--- mkCompileEnv: Build a compilation cache from rsCompilePhases output
+-- mkCompileEnv: Build a compilation cache from CompilePhases output
 -- ============================================================================
 
-/-- Create a CompileEnv from the output of rsCompilePhases.
+/-- Create a CompileEnv from a `CompilePhases` value.
     This allows incremental compilation of new definitions against
     the already-compiled base environment. -/
 def mkCompileEnv (phases : Ix.CompileM.CompilePhases) : Ix.CompileM.CompileEnv :=

@@ -1,4 +1,11 @@
-/-
+module
+public import Cli
+public import Ix.Common
+public import Ix.DecompileDriver
+public import Ix.TracingTexray
+public import Ix.Benchmark.Results
+
+/-!
   `ix decompile <path.ixe>`: decompile a serialized `.ixe` environment back to
   Lean constants — the inverse of `ix compile`. This is the decompile
   benchmark's measured tool (env-keyed row, mirroring `ix compile --json`).
@@ -10,11 +17,6 @@
   tests), which need the original Lean env a `.ixe` can't supply — so this
   performance tool does not reproduce them.
 -/
-module
-public import Cli
-public import Ix.Common
-public import Ix.TracingTexray
-public import Ix.Benchmark.Results
 
 public section
 
@@ -22,11 +24,12 @@ open System (FilePath)
 
 namespace Ix.Cli.DecompileCmd
 
-/-- Decompile a `.ixe` from disk, returning the decompiled constant
-    count. A malformed decompile throws (hard error). Implemented in
-    `crates/ffi/src/compile.rs::rs_decompile_env`. -/
-@[extern "rs_decompile_env"]
-opaque rsDecompileEnvFFI : @& String → IO Nat
+/-- Decompile a `.ixe` from disk in pure Lean (`Ixon.deEnvVerifiedLazy` +
+    `Ix.DecompileM.decompileEnvFullParallel`), returning the decompiled
+    `(Lean.Name × Lean.ConstantInfo)` array. A malformed decompile throws
+    (hard error). -/
+def decompileEnv (envPath : String) : IO (Array (Lean.Name × Lean.ConstantInfo)) :=
+  Ix.DecompileM.decompileEnvConsts envPath
 
 def runDecompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
@@ -44,7 +47,8 @@ def runDecompileCmd (p : Cli.Parsed) : IO UInt32 := do
 
   IO.println s!"Decompiling {envPath}"
   let start ← IO.monoMsNow
-  let constants ← rsDecompileEnvFFI envPath
+  let decompiled ← decompileEnv envPath
+  let constants := decompiled.size
   let elapsed := (← IO.monoMsNow) - start
   IO.println s!"[decompile] {constants} constants in {elapsed.formatMs}"
 

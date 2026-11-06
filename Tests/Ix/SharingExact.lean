@@ -1143,9 +1143,7 @@ def overrideFails (e : Except String Limits) : Bool :=
   | .ok _ => false
   | .error _ => true
 
-/-- Override specs and the `states` limit each sets (`none`: rejected). The
-Rust test list `LIMIT_SPEC_PARITY` (`crates/ixon/src/sharing_exact/tests.rs`)
-is the same list, so both parsers give every spec the same verdict. Values
+/-- Override specs and the `states` limit each sets (`none`: rejected). Values
 are ASCII digits, `2^k` or `max` (no sign, no `_` separator, no other
 spelling); items and keys are trimmed of space, tab, line feed and carriage
 return only. -/
@@ -1209,10 +1207,9 @@ def limitTests (_ : Unit) : TestSeq :=
        | .ok l => l.maxStates == 2048 && l.maxCostEvals == 12345 &&
            l.maxOutputBytes == limitMax && l.maxDepth == d.maxDepth
        | .error _ => false : Bool) ++
-    test "Rust-only keys are accepted and ignored"
-      (match d.withOverrides "height=5,work=2^3,layer_states=9,input_nodes=1,distinct_nodes=1,candidates=1" with
-       | .ok l => reprStr l == reprStr d
-       | .error _ => false : Bool) ++
+    test "the retired Rust port's keys are unknown keys"
+      (["height=5", "work=2^3", "layer_states=9", "input_nodes=1", "distinct_nodes=1",
+        "candidates=1"].all fun s => overrideFails (d.withOverrides s)) ++
     test "unbounded sets every production limit to max; a later item still applies"
       (match d.withOverrides "unbounded,states=2" with
        | .ok l => l.maxDepth == limitMax && l.maxMaterializeWork == limitMax &&
@@ -1221,7 +1218,7 @@ def limitTests (_ : Unit) : TestSeq :=
     test "malformed overrides are errors"
       (["bogus=1", "states", "states=2^64", "states=-1", "states=1e3", "=3",
         "states=18446744073709551616"].all fun s => overrideFails (d.withOverrides s)) ++
-    test s!"the {limitSpecParity.length} specs shared with Rust get the listed verdict"
+    test s!"the {limitSpecParity.length} grammar specs get the listed verdict"
       (limitSpecParity.length == 35 && limitSpecMismatches.isEmpty) ++
     test "every production resource key names a limit"
       (resources.all fun r => (d.set? r.key 3).isSome)

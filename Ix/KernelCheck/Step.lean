@@ -53,11 +53,16 @@ structure Checker (md : Ix.Kernel.Mode) where
 instance : Inhabited (Checker md) := ⟨{}⟩
 
 /-- Install and check one declaration; on failure, the state before it. -/
-def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.Declaration md) :
+def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.Declaration md)
+    (allowUserAxioms : Bool := false) :
     Checker md × Option (Ix.Kernel.CheckError md) :=
   let ⟨fe, cs, pos⟩ := c
   let before := fe.env
-  match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
+  let stepFn := if allowUserAxioms then
+      Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev
+    else
+      Ix.Kernel.Cached.annotDeclStep .verified ev
+  match stepFn (pos, fe, #[]) d cs with
   | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos + 1⟩, some e)
   | .ok ((pos', fe', pend), cs') =>
     match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
@@ -66,10 +71,11 @@ def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.D
 
 /-- One record's declarations, in order; the first failure ends it. -/
 def Checker.steps (ev : Ix.Kernel.Evidences md) (c : Checker md)
-    (ds : Array (Ix.Kernel.Declaration md)) : Checker md × Option (Ix.Kernel.CheckError md) := Id.run do
+    (ds : Array (Ix.Kernel.Declaration md)) (allowUserAxioms : Bool := false) :
+    Checker md × Option (Ix.Kernel.CheckError md) := Id.run do
   let mut c := c
   for d in ds do
-    let (c', e) := c.step ev d
+    let (c', e) := c.step ev d allowUserAxioms
     c := c'
     if e.isSome then return (c, e)
   return (c, none)
@@ -120,8 +126,9 @@ structure Hints where
 
 def Hints.ofStore (store : RecordStore) (hints : Std.HashMap Address Lean.ReducibilityHints) :
     Hints := Id.run do
-  let mut projAt : Std.HashMap (ConstRef Address) Address := {}
-  for (a, c) in store.toList do
+  let mut projAt : Std.HashMap (ConstRef Address) Address :=
+    Std.HashMap.emptyWithCapacity (store.size / 2)
+  for (a, c) in store do
     if let .dPrj p := c.info then projAt := projAt.insert (.member p.block p.idx.toNat) a
   return { projAt, hints }
 
@@ -149,6 +156,18 @@ def Row.json (row : Row) : Lean.Json := Lean.Json.mkObj [
   ("reason", Lean.toJson row.reason), ("micros", Lean.toJson row.micros),
   ("readMicros", Lean.toJson row.readMicros)]
 
+/-- `row.json.compress`, written out without building the `Json` value (keys
+in `Json`'s sorted order). `kernel-record-check` checks the two agree. -/
+def Row.jsonLine (row : Row) : String :=
+  let namesStr := String.intercalate "," (row.names.toList.map Lean.Json.renderString)
+  "{\"address\":\"" ++ toString row.address ++
+    "\",\"kind\":" ++ Lean.Json.renderString row.kind ++
+    ",\"micros\":" ++ toString row.micros ++
+    ",\"names\":[" ++ namesStr ++
+    "],\"outcome\":" ++ Lean.Json.renderString row.outcome ++
+    ",\"readMicros\":" ++ toString row.readMicros ++
+    ",\"reason\":" ++ Lean.Json.renderString row.reason ++ "}"
+
 /-- A field of `/proc/self/status` in kB (Linux only; 0 elsewhere). -/
 def statusKb (field : String) : IO Nat := do
   let status ← (IO.FS.readFile "/proc/self/status" |>.toBaseIO)
@@ -157,6 +176,44 @@ def statusKb (field : String) : IO Nat := do
   return ((line.drop field.length).trimAscii.toString.takeWhile Char.isDigit).toNat!
 
 /-! ## The run -/
+
+/-- Pre-sized `keysOf` for `.anon` mode that resolves each record address once. -/
+def fastKeysOf (store : Store) (roles : Bindings .anon)
+    (records : Array (Address × Ixon.Constant)) : Keys .anon store roles :=
+  let init : Keys .anon store roles :=
+    { byAddress := Std.HashMap.emptyWithCapacity records.size
+      address := Std.HashMap.emptyWithCapacity records.size
+      byAddress_sound := by intro a k hk; simp at hk
+      address_sound := by intro r a hr; simp at hr }
+  records.foldl (init := init) fun k (a, _) =>
+    match h : resolve store a with
+    | none => k
+    | some r =>
+      let k := k.withAddress r a h
+      let key : CName .anon := match roles.names[r]? with
+        | some k => k
+        | none => .id a
+      have hKey : keyOfAddress store roles a = some key := by
+        dsimp only [key]
+        simp only [keyOfAddress, h, bind, Option.bind, Ix.Kernel.Mode.addressId?, Option.map]
+        cases roles.names[r]? <;> rfl
+      k.withKey a key hKey
+
+/-- Dependency edges from pre-computed `(address, nat, str)` literal-kind flags. -/
+def literalEdgesOfFlags (roles : Std.HashMap (ConstRef Address) (CName md))
+    (flags : Array (Address × Bool × Bool)) : Std.HashMap Address (Array Address) := Id.run do
+  let byName : Std.HashMap (CName md) Address := roles.fold (fun m r n => m.insert n r.block) {}
+  let targets (names : List (CName md)) : Array Address :=
+    names.foldl (fun acc n => match byName[n]? with
+      | some a => if acc.contains a then acc else acc.push a
+      | none => acc) #[]
+  let natTargets := targets natLitSupportNames
+  let strTargets := targets strLitSupportNames
+  let mut out : Std.HashMap Address (Array Address) := {}
+  for (a, nat, str) in flags do
+    let ts := (if str then strTargets else if nat then natTargets else #[]).filter (· != a)
+    unless ts.isEmpty do out := out.insert a ts
+  return out
 
 /-- What an environment-check run reads: the store, the reader context and the order. -/
 structure Setup where
@@ -179,7 +236,8 @@ are computed instead of from the store. -/
 def setup (store : RecordStore) (blobs : Address → Option ByteArray)
     (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
-    (literals : Option (Array (Address × Ixon.Constant)) := none) : Setup := Id.run do
+    (literals : Option (Array (Address × Ixon.Constant)) := none)
+    (literalFlags : Option (Array (Address × Bool × Bool)) := none) : Setup := Id.run do
   let mut store := store
   let mut added : Array (Address × Ixon.Constant) := #[]
   for (a, c) in pre.records do
@@ -194,13 +252,24 @@ def setup (store : RecordStore) (blobs : Address → Option ByteArray)
   let evidence : Std.HashMap Address Ixon.Constant := pre.evidence.foldl
     (fun m (a, c) => if store.contains a then m else m.insert a c) {}
   let look : Address → Option Ixon.Constant := fun a => store[a]? <|> evidence[a]?
-  let cx : Ctx .anon := contextWith look blobs' t records hint
-    (Ix.Kernel.Admission.projectionAddress Address.blake3 look)
-  let roles := cx.roles
-  let literalRecords := match literals with
-    | some ls => ls ++ added
-    | none => records
-  let extra := mergeEdges (groundEdges roles.names) (literalEdges roles.names literalRecords)
+  let indexed := records.filter fun (_, c) => !(recursorMembers c).isEmpty
+  let roles := bindingsOf look t
+  let cx : Ctx .anon :=
+    { store := look, blob := blobs', roles, index := buildIndex look indexed, hint,
+      reconstruct := Ix.Kernel.Admission.projectionAddress Address.blake3 look,
+      keys := fastKeysOf look roles records }
+  let litEdges := match literalFlags with
+    | some fs =>
+      let allFlags := added.foldl (fun acc (a, c) =>
+        let (nat, str) := literalKinds c
+        if nat || str then acc.push (a, nat, str) else acc) fs
+      literalEdgesOfFlags roles.names allFlags
+    | none =>
+      let literalRecords := match literals with
+        | some ls => ls ++ added
+        | none => records
+      literalEdges roles.names literalRecords
+  let extra := mergeEdges (groundEdges roles.names) litEdges
   let first := pre.records.foldl (fun acc (a, c) =>
     let o := owner a c
     if acc.contains o then acc else acc.push o) #[]
@@ -252,6 +321,9 @@ the step state's environment. -/
 structure TierHook (σ κ : Type) (md : Ix.Kernel.Mode := .anon) where
   read : σ → Address → Option (Except ReadError (Ix.Kernel.Tier.TierDecl md))
   index : κ → Ix.Kernel.FEnv md
+  /-- optional known set of tier record addresses; when `some`, only these
+  addresses are queried via `read` -/
+  tierAddresses : Option (Std.HashSet Address) := none
 
 /-- A tier record's declaration, read against `cx` (`none`: not a tier record). -/
 def readTierAt (cx : Ctx md) (address : Address) (source : Ixon.Constant) :
@@ -296,6 +368,12 @@ def Checker.stepRecord (ev : Ix.Kernel.Evidences md) (c : Checker md) (_ : Addre
     Checker md × Option (Ix.Kernel.CheckError md) :=
   c.steps ev rd.decls
 
+/-- `Checker.stepRecord` with `allowUserAxioms` threaded to `Checker.steps`. -/
+def Checker.stepRecordWithUserAxioms (ev : Ix.Kernel.Evidences md) (allowUserAxioms : Bool)
+    (c : Checker md) (_ : Address) (rd : Read md) :
+    Checker md × Option (Ix.Kernel.CheckError md) :=
+  c.steps ev rd.decls allowUserAxioms
+
 /-- Check `addresses` in order, continuing past failures; each row is passed
 to `emit`. The records' views and readings come from `view` and `read`; the
 reading state `σ` is threaded through `commit` after every reading that
@@ -318,7 +396,8 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
     (after : IO Unit := pure ()) (progress : Nat → LoopOutcome κ → IO Unit := fun _ _ => pure ())
     (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
     (spell : Ix.Kernel.Key md → String := toString)
-    (tier : Option (TierHook σ κ md) := none) :
+    (tier : Option (TierHook σ κ md) := none)
+    (onView : Address → RecordView → IO Unit := fun _ _ => pure ()) :
     IO (LoopOutcome κ) := do
   let mut out : LoopOutcome κ := { checker := default }
   -- the reading state and the step state live in references of the loop's
@@ -346,11 +425,15 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
     let r0 ← IO.monoNanosNow
     let st ← state.get
     -- a tier record: read by the tier reader and deferred
-    let tr? ← IO.lazyPure fun _ => tier.bind (·.read st address)
+    let tr? ← IO.lazyPure fun _ => tier.bind fun th =>
+      match th.tierAddresses with
+      | some ta => if !ta.isEmpty && ta.contains address then th.read st address else none
+      | none => th.read st address
     if let some tr := tr? then
       let readMicros := ((← IO.monoNanosNow) - r0) / 1000
       match tr with
       | .error e =>
+        onView address v
         let (outcome, reason) := readOutcome e
         for row in rowsFor outcome reason 0 readMicros do
           out := { out with failed := out.failed.insert row.address row.address,
@@ -359,7 +442,9 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
         out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
       | .ok d =>
         let deps := v.deps ()
-        match deps.find? out.failed.contains with
+        let v := { v with deps := fun _ => deps }
+        onView address v
+        match if out.failed.isEmpty then none else deps.find? out.failed.contains with
         | some blocker =>
           let root := out.failed.getD blocker blocker
           for row in rowsFor "blocked" (toString root) 0 readMicros do
@@ -375,6 +460,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
     onRead address reading readMicros
     match reading with
     | .error e =>
+      onView address v
       let (outcome, reason) := readOutcome e
       for row in rowsFor outcome reason 0 readMicros do
         out := { out with failed := out.failed.insert row.address row.address,
@@ -385,8 +471,11 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
       -- the reader's state learns from every record it reads; what a failed
       -- record taught is read only by its dependents, which are blocked
       state.modify (commit · address rd)
-      let deps := v.deps ()
-      match deps.find? out.failed.contains with
+      let (v, deps) :=
+        if out.failed.isEmpty && deferredSet.isEmpty then (v, #[])
+        else let d := v.deps (); ({ v with deps := fun _ => d }, d)
+      onView address v
+      match if out.failed.isEmpty then none else deps.find? out.failed.contains with
       | some blocker =>
         let root := out.failed.getD blocker blocker
         for row in rowsFor "blocked" (toString root) 0 readMicros do
@@ -395,7 +484,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
           emit row
       | none =>
         -- the fence: a logical record that names a tier record
-        if let some t := deps.find? deferredSet.contains then
+        if let some t := if deferredSet.isEmpty then none else deps.find? deferredSet.contains then
           let reason := s!"fence: names the tier record {t}"
           for row in rowsFor "decline" reason 0 readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
@@ -403,7 +492,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
             emit row
           out := { out with reasons := out.reasons.insert "fence" (out.reasons.getD "fence" 0 + 1) }
           continue
-        if skip.contains (toString address) then
+        if !skip.isEmpty && skip.contains (toString address) then
           let reason := "check-ixe: skipped: exceeded the watchdog's limits on an earlier run"
           for row in rowsFor "decline" reason 0 readMicros do
             out := { out with failed := out.failed.insert row.address row.address,
@@ -434,33 +523,34 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
   -- the typing tier, staged, from the final step state's index (also the
   -- logical view of the unsafe opaques)
   if let some th := tier then
-    let logical := th.index checker
-    let fe ← IO.mkRef logical
-    for (address, v, d, deps, readMicros) in stageDeferred (·.2.2.1) deferred do
-      let row (outcome reason : String) (micros : Nat) : Row :=
-        ⟨address, names address, v.kind, outcome, reason, micros, readMicros⟩
-      match deps.find? out.failed.contains with
-      | some blocker =>
-        let root := out.failed.getD blocker blocker
-        out := { out with failed := out.failed.insert address root,
-                          counts := out.counts.insert "blocked" (out.counts.getD "blocked" 0 + 1) }
-        emit (row "blocked" (toString root) 0)
-      | none =>
-        let t0 ← IO.monoNanosNow
-        let fe₀ ← fe.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
-        let (fe₁, err) ← IO.lazyPure fun _ => stepTier logical fe₀ d
-        fe.set fe₁
-        let micros := ((← IO.monoNanosNow) - t0) / 1000
-        match err with
+    unless deferred.isEmpty do
+      let logical := th.index checker
+      let fe ← IO.mkRef logical
+      for (address, v, d, deps, readMicros) in stageDeferred (·.2.2.1) deferred do
+        let row (outcome reason : String) (micros : Nat) : Row :=
+          ⟨address, names address, v.kind, outcome, reason, micros, readMicros⟩
+        match if out.failed.isEmpty then none else deps.find? out.failed.contains with
+        | some blocker =>
+          let root := out.failed.getD blocker blocker
+          out := { out with failed := out.failed.insert address root,
+                            counts := out.counts.insert "blocked" (out.counts.getD "blocked" 0 + 1) }
+          emit (row "blocked" (toString root) 0)
         | none =>
-          out := { out with counts := out.counts.insert "typed" (out.counts.getD "typed" 0 + 1) }
-          emit (row "typed" (tierSafety d).word micros)
-        | some e =>
-          let (outcome, reason) := tierOutcome (tierSafety d) e spell
-          out := { out with failed := out.failed.insert address address,
-                            counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1),
-                            reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
-          emit (row outcome reason micros)
+          let t0 ← IO.monoNanosNow
+          let fe₀ ← fe.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
+          let (fe₁, err) ← IO.lazyPure fun _ => stepTier logical fe₀ d
+          fe.set fe₁
+          let micros := ((← IO.monoNanosNow) - t0) / 1000
+          match err with
+          | none =>
+            out := { out with counts := out.counts.insert "typed" (out.counts.getD "typed" 0 + 1) }
+            emit (row "typed" (tierSafety d).word micros)
+          | some e =>
+            let (outcome, reason) := tierOutcome (tierSafety d) e spell
+            out := { out with failed := out.failed.insert address address,
+                              counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1),
+                              reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
+            emit (row outcome reason micros)
   return { out with checker := checker }
 
 /-- A record of a check setup, read by the reader at the state `st`. -/
@@ -479,6 +569,8 @@ structure LoopSource (σ : Type) (md : Ix.Kernel.Mode := .anon) where
   init : IO σ
   /-- the tier reader (`TierHook.read`), if the source runs the typing tier -/
   tier : Option (σ → Address → Option (Except ReadError (Ix.Kernel.Tier.TierDecl md))) := none
+  /-- optional known set of tier record addresses -/
+  tierAddresses : Option (Std.HashSet Address) := none
 
 /-- A record of a check setup, read by the tier reader if it is a tier record. -/
 def Setup.tierRead (s : Setup) (address : Address) :
@@ -490,12 +582,14 @@ def Setup.tierRead (s : Setup) (address : Address) :
 /-- A check setup as a loop source: every record read from the setup's store,
 a tier record by the tier reader. -/
 def Setup.source (s : Setup) : LoopSource (State .anon) :=
+  let ta := s.store.fold (fun acc a c =>
+    if Ix.Kernel.Admission.isTierInfo c.info then acc.insert a else acc) {}
   { view := s.view, read := s.read, commit := fun st _ rd => st.commit rd, init := pure {},
-    tier := some fun _ a => s.tierRead a }
+    tier := some fun _ a => s.tierRead a, tierAddresses := some ta }
 
 /-- The per-record check's tier hook over a source's tier reader. -/
 def LoopSource.tierHook (src : LoopSource σ md) : Option (TierHook σ (Checker md) md) :=
-  src.tier.map fun r => { read := r, index := (·.fe) }
+  src.tier.map fun r => { read := r, index := (·.fe), tierAddresses := src.tierAddresses }
 
 /-- `checkLoopWith` over a check setup with the per-record step: each record
 is read by the reader at the state the records before it left; with `tier`,
@@ -513,8 +607,8 @@ def checkLoop (s : Setup) (names : Address → Array String)
 
 /-- Names by owning record, for reporting only (at most three). -/
 def reportNames (env : Ixon.Env) (store : RecordStore) : Std.HashMap Address (Array String) := Id.run do
-  let mut names : Std.HashMap Address (Array String) := {}
-  for (name, named) in env.named.toList do
+  let mut names : Std.HashMap Address (Array String) := Std.HashMap.emptyWithCapacity store.size
+  for (name, named) in env.named do
     let root := match store[named.addr]? with
       | some source => owner named.addr source
       | none => named.addr

@@ -1,11 +1,16 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.Ixon
+import Tests.Ix.Compile.ClosureHarness
+
+/-!
   pack-units: `ix pack` carries the root's reference closure, never its
   compilation unit (`Ix.Cli.PackCmd`).
 
   Source: the selected closure of the fixture
   `Tests/Ix/Compile/Fixtures/PackUnits.lean`, that is of its own constants
   (`PackU.*`; `Ix.EnvScope.localConstList`, the `--local` scope). It is
-  compiled by the Lean pipeline (`compileLeanInput`) and written as an
+  compiled by the Lean pipeline (`compileClosure`) and written as an
   `.ixe` from the output's bytes. Each root below is packed as `ix pack`
   packs it (`Ixon.rsPackEnv`, with metadata).
 
@@ -27,10 +32,6 @@
 
   Run with: `lake test -- --ignored pack-units`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.Ixon
-import Tests.Ix.Compile.ClosureHarness
 
 open Lean
 open Tests.Ix.Compile.ClosureHarness

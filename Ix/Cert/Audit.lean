@@ -864,7 +864,7 @@ constructor:
 -- `Ix.Cert.Statement`, unchanged, because the check reads it.
 --
 -- The driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
--- one driver of `compile` and of the IO pipeline (`compileDecoratedConsts`);
+-- one driver of `compile`;
 -- the queue drivers `compileEnvAux` (sequential, live state) and
 -- `compileEnvParallelAux` (waves applied in completion order) go. Only the
 -- driver's name changes in this body; its arguments are the same.
@@ -1957,6 +1957,20 @@ fun names large n =>
 /-- info: 'Ix.Cert.Canon.UniverseBridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.UniverseBridge
+
+/-- info: [cert-audit] canon correspondence: 22 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "canon correspondence"
+    (#[`canonMCorrect, `canonChunkCorrect, `find?_canonChunk,
+      `numbering_nameS, `numbering_pos_nameS, `numbering_params_nameS,
+      `ingressConstantVal_constValS, `convertAxiom_axiomValS, `convertQuotient_quotValS,
+      `ingressDefinitionVal_defnValS, `convertDefinitions_singleton, `convertDefinitions_defnValS,
+      `ingressTheoremVal_thmValS, `convertDefinitions_thmValS,
+      `ingressOpaqueVal_opaqueValS, `convertDefinitions_opaqueValS,
+      `ingressInductiveVal_inductValS, `ingressConstructorVal_ctorValS, `ingressRecursorRule_recRuleS,
+      `universe_bridge, `univMeaningS, `universeBridge].map (`Ix.Cert.Canon ++ ·))
 
 /-! ## Component theorems: the reading chain's tables
 
@@ -3448,9 +3462,13 @@ against the wave's snapshot, applied one by one (`applySeq`). The tasks a
 wave is split into are contiguous slices of the ready blocks and a spawned
 task's value is its function's, so the split (`width`) and the trace
 (`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
-`IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Blocks of one wave
-being independent (the reference schedule) stays a test
-(`compile-schedule-identity`, `cert-compile-parity-initstd`).
+`IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Wave-snapshot freshness
+and disjointness across blocks in a wave are proved in `Ix.Cert.FreshSnapshot`
+(feeding `Ix.Cert.RunOwnership`, which proves semantic correctness of the
+wave-snapshot fold directly; that the wave-snapshot fold also equals a
+one-block-at-a-time live-state fold is a property of block independence within
+a wave, not proved in `Ix.Cert.Schedule`), and `Ix.Compile.ReadyCompile.reportIO`
+proves by type that the IO worker-queue pipeline computes `Ix.Cert.compileReport`.
 
 The runtime projects each worker snapshot before spawning its tasks. The
 exact block read frame and task equality add two proof roots. The original
@@ -3841,9 +3859,9 @@ the same environment (`Ix.Cert.Evidence.acceptsRef_covers`). The roles agree
 when every published name whose ingress name is a role's Lean name sits at the
 role table's address for that role (`Ix.Cert.PublishedRolesBound`, decided by
 `publishedRolesBound`; the reading of a role's constant is then at the table's
-address, `Ix.Cert.publishedAddress_role`); `cert-statement`,
-`cert-compile-parity-initstd` and `cert-roles-initstd` run it on the fixtures and
-on Init+Std. `RolesBound` and
+address, `Ix.Cert.publishedAddress_role`); `cert-statement` runs it on the
+fixtures, while `Ix.Compile.ReadyCompile.reportIO` proves by type that the IO
+worker-queue compile returns `Ix.Cert.compileReport`. `RolesBound` and
 `RolesBound.of_closure` are removed; `RolesBound` trusts stored name hashes and is
 superseded by `PublishedRolesBound`. -/
 
@@ -4187,14 +4205,35 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.sourceAcceptsQ_addrAt
 
-/-- info: [cert-audit] quotient addresses: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] quotient addresses: 36 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "quotient addresses"
     (#[`ValueModel.pullback, `publishedRolesBound_iff, `byLeanName_foldl, `roleOf_leanName,
       `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
-      `reading_id, `sourceAcceptsQ_addrAt].map (`Ix.Cert ++ ·))
+      `reading_id, `sourceAcceptsQ_addrAt, `LawModel.Rel, `ValueModel.comp, `LawModel.comp,
+      `ValueModel.pullback_rel, `substCval, `EnvSubstRel, `EnvSubstRel.find_some,
+      `EnvSubstRel.findProj?, `Denotes.substPullback, `Denotes.subst_const_push,
+      `Model.substPullback, `defn_value_substPullback, `ValueModel.substPullback,
+      `ValueModel.substPullback_rel, `EnvSubstModelPullback, `EnvSubstRel.toModelPullback,
+      `EnvSubstModelPullback.comp_envRel_valueModel, `EnvSubstPullback,
+      `EnvSubstModelPullback.toPullback, `EnvSubstRel.toPullback,
+      `EnvSubstRel.toPullback_of_laws, `EnvSubstPullback.comp_envRel_valueModel,
+      `evAddr_subst_key, `evAddr_subst_ingressKey, `evAddr_subst_named].map (`Ix.Cert ++ ·))
+
+/-- info: [cert-audit] nominal quotient: 19 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "nominal quotient"
+    (#[`checkSource_has_model, `checkGroupIntraInjective_sound, `checkHintsAgreeAt_sound,
+      `checkGroupFiberSafe_sound, `step_fresh_or_beqF, `alias_fresh_or_beqF,
+      `collapseGroup_alias_beqF, `collapseRead_fresh_or_beqF, `collapseRead_kept_beqF,
+      `collapseRead_substKeys_canon_beqF, `prepareSourceCollapsedAtUsing_trace,
+      `prepareSourceCollapsedAt_trace, `canonExprM_run, `canonValM_run,
+      `Converted.canon_idem, `canonDecl_idem, `Converted.quotient_eq_substKeys_canon,
+      `canonDecl_substKeys, `Declaration.beqF_refl].map (`Ix.LeanIngress ++ ·))
 
 /-! ## Distinct name hashes
 
@@ -6002,7 +6041,66 @@ fun ixe t cx envQ envA =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 31 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: @Ix.Cert.IxonCommutesCovering.nominalBridgeAt : ∀ {P : Ix.Kernel.Mode.source.Id → Prop} {ixe : Ixon.Env}
+  {sub : Ix.Environment} {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IxonCommutesCovering ixe sub t envQ →
+    Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+      Ix.Cert.NominalModelBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.IxonCommutesCovering.nominalBridgeAt
+
+/-- info: @Ix.Cert.IxonCommutesCovering.nominalPullback : ∀ {ixe : Ixon.Env} {sub : Ix.Environment} {t : Ix.Kernel.RoleTable}
+  {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IxonCommutesCovering ixe sub t envQ →
+    Ix.Cert.EnvSubstPullback (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+      Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.IxonCommutesCovering.nominalPullback
+
+/-- info: @Ix.Cert.NominalSemanticBridgeAt.of_covering : ∀ {P : Ix.Kernel.Mode.source.Id → Prop} {ixe : Ixon.Env}
+  {sub : Ix.Environment} {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IxonCommutesCovering ixe sub t envQ →
+    Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+      Ix.Cert.LawModel.Rel (Ix.LeanIngress.Key.subst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)))
+          envS envQ →
+        Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.NominalSemanticBridgeAt.of_covering
+
+/-- info: Ix.Cert.CompileCorrect.nominalBridgeAt : Ix.Cert.CompileCorrect →
+  ∀ {P : Ix.Kernel.Mode.source.Id → Prop} {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Ix.Cert.Failures} {t : Ix.Kernel.RoleTable}
+    {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+          Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+            Ix.Cert.NoFailure failures sub →
+              Ix.Cert.PublishedRolesBound t ixe →
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalModelBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.nominalBridgeAt
+
+/-- info: Ix.Cert.CompileCorrect.nominalPullback : Ix.Cert.CompileCorrect →
+  ∀ {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.EnvSubstPullback (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+          Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+            Ix.Cert.NoFailure failures sub →
+              Ix.Cert.PublishedRolesBound t ixe →
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.nominalPullback
+
+/-- info: [cert-audit] final statement: 40 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -6037,7 +6135,16 @@ run_cmd do
       `compileCorrect_iff_published,
       `CompileCorrect.artifactChecked,
       `CompileCorrect.checked,
-      `CompileCorrect.nominal].map
+      `CompileCorrect.nominal,
+      `CommutesStrong.substPullback,
+      `NominalModelBridgeAt,
+      `IxonCommutesCovering.nominalModelPullback,
+      `IxonCommutesCovering.nominalBridgeAt,
+      `NominalSemanticBridgeAt,
+      `IxonCommutesCovering.nominalPullback,
+      `NominalSemanticBridgeAt.of_covering,
+      `CompileCorrect.nominalBridgeAt,
+      `CompileCorrect.nominalPullback].map
       (`Ix.Cert ++ ·))
 
 /-! ## The composition skeleton

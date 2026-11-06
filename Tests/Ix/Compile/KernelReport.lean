@@ -12,9 +12,18 @@ public section
 
 namespace Tests.Ix.Compile.KernelReport
 
+/-- The outcomes a row may carry (`Ix.KernelCheck.Step`, on every driver
+path, `--jobs` included): `accept`; `typed`, a tier record (a partial or
+unsafe declaration) that the typing tier typed, whose reason is its safety
+(`partial` or `unsafe`, `Ix.Kernel.Tier.Safety.word`); `decline`; `reject`;
+`blocked`. A run with `--allow-user-axioms` keeps these outcomes: it lists
+the user axioms it admitted on stderr (`CONDITIONAL on K user axioms`), not
+in the rows. -/
+def outcomes : Array String := #["accept", "typed", "decline", "reject", "blocked"]
+
 /-- One row's verdict: the record's display names (at most three), its
-outcome (`accept`, `decline`, `reject` or `blocked`) and its reason (a
-blocked row's reason is its root record's address). -/
+outcome (one of `outcomes`) and its reason (a typed row's reason is its
+safety, a blocked row's its root record's address). -/
 structure Verdict where
   names : Array String
   outcome : String
@@ -27,8 +36,9 @@ abbrev Report := Std.HashMap String Verdict
 def isAddress (address : String) : Bool :=
   address.length == 64 && address.toList.all (fun c => "0123456789abcdef".contains c)
 
-/-- Reject failed processes, malformed or incomplete rows, duplicate records,
-and empty output. A valid report can contain declines, rejects and blocked
+/-- Reject failed processes, malformed or incomplete rows, unknown outcomes, a
+typed row whose reason is not a tier safety, duplicate records, and empty
+output. A valid report can contain typed, declined, rejected and blocked
 records; those verdicts remain available for the caller's explicit policy. -/
 def parse (content : String) (exitCode : UInt32 := 0) : Except String Report := do
   unless exitCode == 0 do
@@ -47,8 +57,10 @@ def parse (content : String) (exitCode : UInt32 := 0) : Except String Report := 
       let names ← j.getObjValAs? (Array String) "names"
       let outcome ← j.getObjValAs? String "outcome"
       let reason ← j.getObjValAs? String "reason"
-      unless #["accept", "decline", "reject", "blocked"].contains outcome do
+      unless outcomes.contains outcome do
         throw s!"unknown outcome {outcome}"
+      if outcome == "typed" && !(reason == "partial" || reason == "unsafe") then
+        throw s!"typed row whose reason {reason} is not a tier safety"
       return (address, { names, outcome, reason })
     let (address, verdict) ← read.mapError (fun e => s!"certified row {lineNo}: {e}")
     if report.contains address then
@@ -67,14 +79,14 @@ def checkCoverage (report : Report) (expected : Array (String × String)) : Exce
       {String.intercalate ", " (missing.toList.map fun (n, a) => s!"{n}@{a}")}"
 
 /-- The address of an anonymous diagnostic label: `#<hex>` or `<hex>`,
-optionally followed by a display name (`check-rs --anon`'s fail-out rows). -/
+optionally followed by a display name (anonymous fail-out rows). -/
 def anonymousAddress? (label : String) : Option String := do
   let token ← (label.trimAscii.toString.splitOn " ").head?
   let address := if token.startsWith "#" then (token.drop 1).toString else token
   if isAddress address then some address else none
 
-/-- `(label, message)` of every record of a FailureLog file (the `--fail-out`
-of `check-rs`): a `# message` comment, then the record's label lines. The
+/-- `(label, message)` of every record of a FailureLog file (`--fail-out`):
+a `# message` comment, then the record's label lines. The
 header and trailer comments are not messages. -/
 def failOutRows (content : String) : Array (String × String) := Id.run do
   let mut out : Array (String × String) := #[]
@@ -90,7 +102,7 @@ def failOutRows (content : String) : Array (String × String) := Id.run do
     else out := out.push (l, msg)
   return out
 
-/-- The number of constants `check-rs` reports it checked (`[check] P/N passed`). -/
+/-- The number of constants the checker summary reports it checked (`[check] P/N passed`). -/
 def rsChecked (out : String) : Option Nat :=
   (out.splitOn "\n").findSome? fun line =>
     let l := line.trimAscii.toString

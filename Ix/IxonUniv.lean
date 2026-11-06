@@ -7,8 +7,6 @@ public import Batteries.Recycling.RBTree.Basic
 /-!
 Universe-level canonicalization (canonicity §10.6).
 
-Mirror: crates/ixon/src/canon_univ.rs
-
 `canonUniv = linearize ∘ subsumption ∘ normalizeAux` — a total,
 deterministic canonical representative of a stored level's Géran
 semantic-equality class, kernel-free and next to the wire type so

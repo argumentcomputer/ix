@@ -56,6 +56,75 @@ the same smart constructors (so the same hash fields). They are defined
 beside the conversions, in the module `Ix.CanonM`, under this namespace, so
 that the memo's entries can carry their proofs. -/
 
+/-- `canonConst`'s action on `Lean.AxiomVal`, without its memo. -/
+def axiomValS (v : Lean.AxiomVal) : Ix.AxiomVal :=
+  { cnst := constValS v.toConstantVal, isUnsafe := v.isUnsafe }
+
+/-- `canonConst`'s action on `Lean.DefinitionVal`, without its memo. -/
+def defnValS (v : Lean.DefinitionVal) : Ix.DefinitionVal :=
+  { cnst := constValS v.toConstantVal, value := exprS v.value, hints := v.hints,
+    safety := v.safety, all := (v.all.map nameS).toArray }
+
+/-- `canonConst`'s action on `Lean.TheoremVal`, without its memo. -/
+def thmValS (v : Lean.TheoremVal) : Ix.TheoremVal :=
+  { cnst := constValS v.toConstantVal, value := exprS v.value, all := (v.all.map nameS).toArray }
+
+/-- `canonConst`'s action on `Lean.OpaqueVal`, without its memo. -/
+def opaqueValS (v : Lean.OpaqueVal) : Ix.OpaqueVal :=
+  { cnst := constValS v.toConstantVal, value := exprS v.value, isUnsafe := v.isUnsafe,
+    all := (v.all.map nameS).toArray }
+
+/-- `canonConst`'s action on `Lean.QuotVal`, without its memo. -/
+def quotValS (v : Lean.QuotVal) : Ix.QuotVal :=
+  { cnst := constValS v.toConstantVal, kind := v.kind }
+
+/-- `canonConst`'s action on `Lean.InductiveVal`, without its memo. -/
+def inductValS (v : Lean.InductiveVal) : Ix.InductiveVal :=
+  { cnst := constValS v.toConstantVal, numParams := v.numParams, numIndices := v.numIndices,
+    all := (v.all.map nameS).toArray, ctors := (v.ctors.map nameS).toArray,
+    numNested := v.numNested, isRec := v.isRec, isUnsafe := v.isUnsafe,
+    isReflexive := v.isReflexive }
+
+/-- `canonConst`'s action on `Lean.ConstructorVal`, without its memo. -/
+def ctorValS (v : Lean.ConstructorVal) : Ix.ConstructorVal :=
+  { cnst := constValS v.toConstantVal, induct := nameS v.induct, cidx := v.cidx,
+    numParams := v.numParams, numFields := v.numFields, isUnsafe := v.isUnsafe }
+
+/-- `canonConst`'s action on `Lean.RecursorRule`, without its memo. -/
+def recRuleS (r : Lean.RecursorRule) : Ix.RecursorRule :=
+  { ctor := nameS r.ctor, nfields := r.nfields, rhs := exprS r.rhs }
+
+/-- `canonConst`'s action on `Lean.RecursorVal`, without its memo. -/
+def recValS (v : Lean.RecursorVal) : Ix.RecursorVal :=
+  { cnst := constValS v.toConstantVal, all := (v.all.map nameS).toArray,
+    numParams := v.numParams, numIndices := v.numIndices, numMotives := v.numMotives,
+    numMinors := v.numMinors, rules := (v.rules.map recRuleS).toArray,
+    k := v.k, isUnsafe := v.isUnsafe }
+
+@[simp] theorem constS_axiomInfo (v : Lean.AxiomVal) :
+    constS (.axiomInfo v) = .axiomInfo (axiomValS v) := rfl
+
+@[simp] theorem constS_defnInfo (v : Lean.DefinitionVal) :
+    constS (.defnInfo v) = .defnInfo (defnValS v) := rfl
+
+@[simp] theorem constS_thmInfo (v : Lean.TheoremVal) :
+    constS (.thmInfo v) = .thmInfo (thmValS v) := rfl
+
+@[simp] theorem constS_opaqueInfo (v : Lean.OpaqueVal) :
+    constS (.opaqueInfo v) = .opaqueInfo (opaqueValS v) := rfl
+
+@[simp] theorem constS_quotInfo (v : Lean.QuotVal) :
+    constS (.quotInfo v) = .quotInfo (quotValS v) := rfl
+
+@[simp] theorem constS_inductInfo (v : Lean.InductiveVal) :
+    constS (.inductInfo v) = .inductInfo (inductValS v) := rfl
+
+@[simp] theorem constS_ctorInfo (v : Lean.ConstructorVal) :
+    constS (.ctorInfo v) = .ctorInfo (ctorValS v) := rfl
+
+@[simp] theorem constS_recInfo (v : Lean.RecursorVal) :
+    constS (.recInfo v) = .recInfo (recValS v) := rfl
+
 /-! ## 2. `CanonM` computes the specification (proved)
 
 `Ix.CanonM`'s memo entries carry the proof that their image is the
@@ -133,6 +202,16 @@ theorem canonChunkCorrect : CanonChunkCorrect := by
   rw [list_mapM_run _ _ hf]
   rcases chunk with ⟨l⟩
   simp
+
+theorem mem_canonChunk_iff (chunk : Array (Lean.Name × Lean.ConstantInfo))
+    (p : Ix.Name × Ix.ConstantInfo) :
+    p ∈ canonChunk chunk ↔ ∃ nc ∈ chunk, (nameS nc.1, constS nc.2) = p := by
+  rw [canonChunkCorrect chunk, Array.mem_map]
+
+theorem mem_canonChunk_of_mem {chunk : Array (Lean.Name × Lean.ConstantInfo)}
+    {n : Lean.Name} {c : Lean.ConstantInfo} (h : (n, c) ∈ chunk) :
+    (nameS n, constS c) ∈ canonChunk chunk :=
+  (mem_canonChunk_iff chunk (nameS n, constS c)).mpr ⟨(n, c), h, rfl⟩
 
 end Production
 
@@ -375,6 +454,303 @@ theorem numbering_nameS (names : Array Lean.Name) (large : Bool) (n : Lean.Name)
   simp only [Ix.LeanIngress.Numbering.pos, leanPos, Array.size_map]
   rw [key]
   rfl
+
+theorem list_find?_canon (l : List (Lean.Name × Lean.ConstantInfo)) (n : Lean.Name) :
+    (l.map fun (m, c) => (nameS m, constS c)).find? (fun p => Ix.Name.beqRaw p.1 (nameS n)) =
+      (l.find? (fun p => p.1 == n)).map (fun (m, c) => (nameS m, constS c)) := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    rcases hd with ⟨m, c⟩
+    simp only [List.map_cons, List.find?_cons, beqRaw_nameS m n]
+    cases m == n <;> simp [ih]
+
+theorem find?_canonChunk (chunk : Array (Lean.Name × Lean.ConstantInfo)) (n : Lean.Name) :
+    (Ix.CanonM.canonChunk chunk).find? (fun p => Ix.Name.beqRaw p.1 (nameS n)) =
+      (chunk.find? (fun p => p.1 == n)).map (fun (m, c) => (nameS m, constS c)) := by
+  rcases chunk with ⟨l⟩
+  rw [canonChunkCorrect]
+  simpa using list_find?_canon l n
+
+/-! ### Direct Lean constant and declaration-group readers -/
+
+/-- `Numbering.params`, over Lean's level-parameter names. -/
+def leanParams (lps : List Lean.Name) (large : Bool := false) : List LevelParam :=
+  lps.map (leanPos lps.toArray large)
+
+theorem numbering_pos_nameS (lps : List Lean.Name) (large : Bool) :
+    (Ix.LeanIngress.Numbering.pos ⟨(lps.map nameS).toArray, large⟩ ∘ nameS) =
+      leanPos lps.toArray large := by
+  have h : (lps.map nameS).toArray = lps.toArray.map nameS := by simp
+  rw [h]
+  funext n
+  exact numbering_nameS lps.toArray large n
+
+theorem numbering_params_nameS (lps : List Lean.Name) (large : Bool := false) :
+    (Ix.LeanIngress.Numbering.mk (lps.map nameS).toArray large).params =
+      leanParams lps large := by
+  unfold Ix.LeanIngress.Numbering.params leanParams
+  show ((lps.map nameS).map (Ix.LeanIngress.Numbering.pos ⟨(lps.map nameS).toArray, large⟩)) =
+    lps.map (leanPos lps.toArray large)
+  rw [List.map_map, numbering_pos_nameS]
+
+@[simp] theorem numbering_beq_self (σ : Ix.LeanIngress.Numbering) : (σ == σ) = true := by
+  show (σ.large == σ.large && σ.names.isEqv σ.names Ix.Name.beqRaw) = true
+  rw [Bool.and_eq_true, Array.isEqv_iff_rel]
+  exact ⟨by cases σ.large <;> rfl, rfl, fun _ _ => Ix.Name.beqRaw_iff.mpr rfl⟩
+
+theorem exprsOf_singleton (σ : Ix.LeanIngress.Numbering) (e : Ix.Expr) :
+    Ix.LeanIngress.exprsOf #[(σ, e)] =
+      match Ix.LeanIngress.ingressExpr σ.pos e with
+      | .ok k => .ok #[k]
+      | .error err => .error (.malformed s!"source term: {err}") := by
+  unfold Ix.LeanIngress.exprsOf
+  simp only [Ix.LeanIngress.ingressExprs, List.forIn_toArray, List.forIn_cons, List.forIn_nil,
+    List.mapM_cons, List.mapM_nil, bind, Except.bind, pure, Except.pure]
+  cases Ix.LeanIngress.ingressExpr σ.pos e with
+  | error err => rfl
+  | ok k =>
+    simp only [Ix.LeanIngress.nameExprs_eq]
+    rfl
+
+theorem exprsOf_pair (σ : Ix.LeanIngress.Numbering) (e₁ e₂ : Ix.Expr) :
+    Ix.LeanIngress.exprsOf #[(σ, e₁), (σ, e₂)] =
+      match do
+        let k₁ ← Ix.LeanIngress.ingressExpr σ.pos e₁
+        let k₂ ← Ix.LeanIngress.ingressExpr σ.pos e₂
+        pure #[k₁, k₂] with
+      | .ok ks => .ok ks
+      | .error err => .error (.malformed s!"source term: {err}") := by
+  unfold Ix.LeanIngress.exprsOf
+  simp only [Ix.LeanIngress.ingressExprs, List.forIn_toArray, List.forIn_cons, List.forIn_nil,
+    numbering_beq_self, ↓reduceIte, Array.toList_push, List.cons_append, List.nil_append,
+    List.mapM_cons, List.mapM_nil, bind, Except.bind, pure, Except.pure]
+  cases Ix.LeanIngress.ingressExpr σ.pos e₁ with
+  | error err => rfl
+  | ok k₁ =>
+    cases Ix.LeanIngress.ingressExpr σ.pos e₂ with
+    | error err => rfl
+    | ok k₂ =>
+      simp only [Ix.LeanIngress.nameExprs_eq]
+      rfl
+
+@[simp] theorem constValS_levelParams (cv : Lean.ConstantVal) :
+    (constValS cv).levelParams = (cv.levelParams.map nameS).toArray := rfl
+
+/-- Source-mode reading of an `Ix.ConstantVal`. -/
+def ingressConstantVal (cv : Ix.ConstantVal) (large : Bool := false) :
+    Except ExprError (Ix.Kernel.ConstantVal .source) := do
+  let σ : Ix.LeanIngress.Numbering := ⟨cv.levelParams, large⟩
+  let ty ← Ix.LeanIngress.ingressExpr σ.pos cv.type
+  pure ⟨Ix.LeanIngress.ingressKey cv.name, σ.params, ty⟩
+
+/-- Direct Source-mode reading of a `Lean.ConstantVal`, without `Ix.ConstantVal`. -/
+def leanConstantVal (cv : Lean.ConstantVal) (large : Bool := false) :
+    Except ExprError (Ix.Kernel.ConstantVal .source) := do
+  let ty ← leanExpr (leanPos cv.levelParams.toArray large) cv.type
+  pure ⟨leanKey cv.name, leanParams cv.levelParams large, ty⟩
+
+theorem ingressConstantVal_constValS (cv : Lean.ConstantVal) (large : Bool := false) :
+    ingressConstantVal (constValS cv) large = leanConstantVal cv large := by
+  simp only [ingressConstantVal, leanConstantVal, constValS, ingressKey_nameS,
+    numbering_params_nameS, ingressExpr_exprS, numbering_pos_nameS]
+
+/-- Direct Source-mode conversion of a `Lean.AxiomVal`. -/
+def leanAxiomVal (v : Lean.AxiomVal) :
+    Except Ix.Kernel.Reader.ReadError Ix.LeanIngress.Converted := do
+  if v.isUnsafe then throw (.declined "unsafe axiom")
+  match leanConstantVal v.toConstantVal false with
+  | .ok cv => pure (.axiom cv)
+  | .error err => throw (.malformed s!"source term: {err}")
+
+theorem convertAxiom_axiomValS (v : Lean.AxiomVal) :
+    Ix.LeanIngress.convert (.axiom (axiomValS v)) = leanAxiomVal v := by
+  unfold Ix.LeanIngress.convert leanAxiomVal axiomValS
+  rw [← ingressConstantVal_constValS v.toConstantVal false]
+  unfold ingressConstantVal
+  cases v.isUnsafe
+  · simp only [Bool.false_eq_true, ↓reduceIte, exprsOf_singleton, bind, Except.bind, pure,
+      Except.pure]
+    cases Ix.LeanIngress.ingressExpr
+      (Ix.LeanIngress.Numbering.pos ⟨(constValS v.toConstantVal).levelParams, false⟩)
+      (constValS v.toConstantVal).type <;> rfl
+  · rfl
+
+/-- Direct Source-mode conversion of a `Lean.QuotVal`. -/
+def leanQuotVal (v : Lean.QuotVal) :
+    Except Ix.Kernel.Reader.ReadError Ix.LeanIngress.Converted :=
+  match leanConstantVal v.toConstantVal false with
+  | .ok cv => .ok (.quot (Ix.LeanIngress.quotKindOf v.kind) cv)
+  | .error err => .error (.malformed s!"source term: {err}")
+
+theorem convertQuotient_quotValS (v : Lean.QuotVal) :
+    Ix.LeanIngress.convert (.quot (quotValS v)) = leanQuotVal v := by
+  unfold Ix.LeanIngress.convert leanQuotVal quotValS
+  rw [← ingressConstantVal_constValS v.toConstantVal false]
+  unfold ingressConstantVal
+  simp only [exprsOf_singleton, bind, Except.bind, pure, Except.pure]
+  cases Ix.LeanIngress.ingressExpr
+    (Ix.LeanIngress.Numbering.pos ⟨(constValS v.toConstantVal).levelParams, false⟩)
+    (constValS v.toConstantVal).type <;> rfl
+
+/-- Source-mode reading of an `Ix.DefinitionVal` as a `DefMember`. -/
+def ingressDefinitionVal (v : Ix.DefinitionVal) :
+    Except ExprError Ix.LeanIngress.DefMember := do
+  let cv ← ingressConstantVal v.cnst false
+  let val ← Ix.LeanIngress.ingressExpr (Ix.LeanIngress.Numbering.pos ⟨v.cnst.levelParams, false⟩) v.value
+  pure ⟨cv, val, .defn, Ix.LeanIngress.safetyOf v.safety, Ix.LeanIngress.hintOf v.hints⟩
+
+/-- Direct Source-mode reading of a `Lean.DefinitionVal` as a `DefMember`. -/
+def leanDefinitionVal (v : Lean.DefinitionVal) :
+    Except ExprError Ix.LeanIngress.DefMember := do
+  let cv ← leanConstantVal v.toConstantVal false
+  let val ← leanExpr (leanPos v.levelParams.toArray false) v.value
+  pure ⟨cv, val, .defn, Ix.LeanIngress.safetyOf v.safety, Ix.LeanIngress.hintOf v.hints⟩
+
+theorem ingressDefinitionVal_defnValS (v : Lean.DefinitionVal) :
+    ingressDefinitionVal (defnValS v) = leanDefinitionVal v := by
+  simp only [ingressDefinitionVal, leanDefinitionVal, defnValS, ingressConstantVal_constValS,
+    constValS_levelParams, ingressExpr_exprS, numbering_pos_nameS]
+
+set_option linter.unusedSimpArgs false in
+theorem convertDefinitions_singleton (ci : Ix.ConstantInfo)
+    (kind : Ix.DefKind) (safety : Ix.DefinitionSafety)
+    (hint : Ix.Kernel.ReducibilityHint) (val : Ix.Expr)
+    (hs : Ix.LeanIngress.definitionShape ci = some (kind, safety, hint))
+    (hv : Ix.LeanIngress.definitionValue ci = some val) :
+    Ix.LeanIngress.convertDefinitions #[ci] =
+      match (do
+        let cv ← ingressConstantVal ci.getCnst false
+        let v' ← Ix.LeanIngress.ingressExpr
+          (Ix.LeanIngress.Numbering.pos ⟨ci.getCnst.levelParams, false⟩) val
+        pure (Ix.LeanIngress.DefMember.mk cv v' kind safety hint) :
+          Except ExprError Ix.LeanIngress.DefMember) with
+      | .ok m => .ok (.definitions #[m])
+      | .error err => .error (.malformed s!"source term: {err}") := by
+  simp [Ix.LeanIngress.convertDefinitions, hs, hv, ingressConstantVal, exprsOf_pair]
+  cases Ix.LeanIngress.ingressExpr
+    (Ix.LeanIngress.Numbering.pos ⟨ci.getCnst.levelParams, false⟩) ci.getCnst.type with
+  | error err => simp [bind, Except.bind, pure, Except.pure, Functor.map, Except.map]
+  | ok k₁ =>
+    cases Ix.LeanIngress.ingressExpr
+      (Ix.LeanIngress.Numbering.pos ⟨ci.getCnst.levelParams, false⟩) val with
+    | error err => simp [bind, Except.bind, pure, Except.pure, Functor.map, Except.map]
+    | ok k₂ => simp [bind, Except.bind, pure, Except.pure, Functor.map, Except.map]
+
+theorem convertDefinitions_defnValS (v : Lean.DefinitionVal) :
+    Ix.LeanIngress.convertDefinitions #[.defnInfo (defnValS v)] =
+      match leanDefinitionVal v with
+      | .ok m => .ok (.definitions #[m])
+      | .error err => .error (.malformed s!"source term: {err}") := by
+  rw [← ingressDefinitionVal_defnValS]
+  exact convertDefinitions_singleton (.defnInfo (defnValS v)) _ _ _ _ rfl rfl
+
+/-- Source-mode reading of an `Ix.TheoremVal` as a `DefMember`. -/
+def ingressTheoremVal (v : Ix.TheoremVal) :
+    Except ExprError Ix.LeanIngress.DefMember := do
+  let cv ← ingressConstantVal v.cnst false
+  let val ← Ix.LeanIngress.ingressExpr (Ix.LeanIngress.Numbering.pos ⟨v.cnst.levelParams, false⟩) v.value
+  pure ⟨cv, val, .thm, .safe, .opaque⟩
+
+/-- Direct Source-mode reading of a `Lean.TheoremVal` as a `DefMember`. -/
+def leanTheoremVal (v : Lean.TheoremVal) :
+    Except ExprError Ix.LeanIngress.DefMember := do
+  let cv ← leanConstantVal v.toConstantVal false
+  let val ← leanExpr (leanPos v.levelParams.toArray false) v.value
+  pure ⟨cv, val, .thm, .safe, .opaque⟩
+
+theorem ingressTheoremVal_thmValS (v : Lean.TheoremVal) :
+    ingressTheoremVal (thmValS v) = leanTheoremVal v := by
+  simp only [ingressTheoremVal, leanTheoremVal, thmValS, ingressConstantVal_constValS,
+    constValS_levelParams, ingressExpr_exprS, numbering_pos_nameS]
+
+theorem convertDefinitions_thmValS (v : Lean.TheoremVal) :
+    Ix.LeanIngress.convertDefinitions #[.thmInfo (thmValS v)] =
+      match leanTheoremVal v with
+      | .ok m => .ok (.definitions #[m])
+      | .error err => .error (.malformed s!"source term: {err}") := by
+  rw [← ingressTheoremVal_thmValS]
+  exact convertDefinitions_singleton (.thmInfo (thmValS v)) _ _ _ _ rfl rfl
+
+/-- Source-mode reading of an `Ix.OpaqueVal` as a `DefMember`. -/
+def ingressOpaqueVal (v : Ix.OpaqueVal) :
+    Except ExprError Ix.LeanIngress.DefMember := do
+  let cv ← ingressConstantVal v.cnst false
+  let val ← Ix.LeanIngress.ingressExpr (Ix.LeanIngress.Numbering.pos ⟨v.cnst.levelParams, false⟩) v.value
+  pure ⟨cv, val, .opaq, if v.isUnsafe then .unsaf else .safe, .opaque⟩
+
+/-- Direct Source-mode reading of a `Lean.OpaqueVal` as a `DefMember`. -/
+def leanOpaqueVal (v : Lean.OpaqueVal) :
+    Except ExprError Ix.LeanIngress.DefMember := do
+  let cv ← leanConstantVal v.toConstantVal false
+  let val ← leanExpr (leanPos v.levelParams.toArray false) v.value
+  pure ⟨cv, val, .opaq, if v.isUnsafe then .unsaf else .safe, .opaque⟩
+
+theorem ingressOpaqueVal_opaqueValS (v : Lean.OpaqueVal) :
+    ingressOpaqueVal (opaqueValS v) = leanOpaqueVal v := by
+  simp only [ingressOpaqueVal, leanOpaqueVal, opaqueValS, ingressConstantVal_constValS,
+    constValS_levelParams, ingressExpr_exprS, numbering_pos_nameS]
+  rfl
+
+theorem convertDefinitions_opaqueValS (v : Lean.OpaqueVal) :
+    Ix.LeanIngress.convertDefinitions #[.opaqueInfo (opaqueValS v)] =
+      match leanOpaqueVal v with
+      | .ok m => .ok (.definitions #[m])
+      | .error err => .error (.malformed s!"source term: {err}") := by
+  rw [← ingressOpaqueVal_opaqueValS]
+  exact convertDefinitions_singleton (.opaqueInfo (opaqueValS v)) _ _ _ _ rfl rfl
+
+/-- Source-mode reading of an `Ix.InductiveVal`'s header and counts. -/
+def ingressInductiveVal (v : Ix.InductiveVal) :
+    Except ExprError (Ix.Kernel.ConstantVal .source × Nat × Nat) := do
+  let cv ← ingressConstantVal v.cnst false
+  pure (cv, v.numParams, v.numIndices)
+
+/-- Direct Source-mode reading of a `Lean.InductiveVal`'s header and counts. -/
+def leanInductiveVal (v : Lean.InductiveVal) :
+    Except ExprError (Ix.Kernel.ConstantVal .source × Nat × Nat) := do
+  let cv ← leanConstantVal v.toConstantVal false
+  pure (cv, v.numParams, v.numIndices)
+
+theorem ingressInductiveVal_inductValS (v : Lean.InductiveVal) :
+    ingressInductiveVal (inductValS v) = leanInductiveVal v := by
+  simp only [ingressInductiveVal, leanInductiveVal, inductValS, ingressConstantVal_constValS]
+
+/-- Source-mode reading of an `Ix.ConstructorVal`. -/
+def ingressConstructorVal (c : Ix.ConstructorVal) :
+    Except ExprError (Ix.Kernel.ConstantVal .source × Nat × Nat) := do
+  let cv ← ingressConstantVal c.cnst false
+  pure (cv, c.numParams, c.numFields)
+
+/-- Direct Source-mode reading of a `Lean.ConstructorVal`. -/
+def leanConstructorVal (c : Lean.ConstructorVal) :
+    Except ExprError (Ix.Kernel.ConstantVal .source × Nat × Nat) := do
+  let cv ← leanConstantVal c.toConstantVal false
+  pure (cv, c.numParams, c.numFields)
+
+theorem ingressConstructorVal_ctorValS (c : Lean.ConstructorVal) :
+    ingressConstructorVal (ctorValS c) = leanConstructorVal c := by
+  simp only [ingressConstructorVal, leanConstructorVal, ctorValS, ingressConstantVal_constValS]
+
+/-- Source-mode reading of an `Ix.RecursorRule` under level-parameter numbering `σ`. -/
+def ingressRecursorRule (σ : Ix.LeanIngress.Numbering) (r : Ix.RecursorRule) :
+    Except ExprError (Ix.Kernel.RecRule .source) := do
+  let rhs ← Ix.LeanIngress.ingressExpr σ.pos r.rhs
+  pure ⟨Ix.LeanIngress.ingressKey r.ctor, r.nfields, 0, .inert, rhs, false, false, false⟩
+
+/-- Direct Source-mode reading of a `Lean.RecursorRule` under level parameters `lps` and
+large-eliminator flag `large`. -/
+def leanRecursorRule (lps : List Lean.Name) (large : Bool) (r : Lean.RecursorRule) :
+    Except ExprError (Ix.Kernel.RecRule .source) := do
+  let rhs ← leanExpr (leanPos lps.toArray large) r.rhs
+  pure ⟨leanKey r.ctor, r.nfields, 0, .inert, rhs, false, false, false⟩
+
+theorem ingressRecursorRule_recRuleS (lps : List Lean.Name) (large : Bool)
+    (r : Lean.RecursorRule) :
+    ingressRecursorRule ⟨(lps.map nameS).toArray, large⟩ (recRuleS r) =
+      leanRecursorRule lps large r := by
+  simp only [ingressRecursorRule, leanRecursorRule, recRuleS, ingressExpr_exprS,
+    numbering_pos_nameS, ingressKey_nameS]
 
 /-! ## 5. Universes: composing with canonical universe evaluation
 

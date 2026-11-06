@@ -1,4 +1,12 @@
-/-
+module
+public import Cli
+public import Lean.Data.Json
+public import Ix.BenchConstants
+public import Ix.Benchmark.Results
+public import Ix.Cli.ConstsFile
+public import Ix.Watchdog
+
+/-!
   `ix bench run`: the benchmark orchestrator — one command that
   reproduces a CI benchmark run locally, byte-for-byte on the same tools.
 
@@ -11,7 +19,7 @@
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
   3. spawns the run's measured tool — `bench-typecheck` (aiur),
-     `ix check-rs` (ooc),
+     `ix check-lean` (ooc),
      `ix compile` (compile) — wrapped in the RAM watchdog (`Ix.Watchdog`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
      at the ceiling). The per-constant backend (aiur) spawns
@@ -29,13 +37,6 @@
   module (`envSpecs`/`backendSpecs`) — one language, one owner.
 
 -/
-module
-public import Cli
-public import Lean.Data.Json
-public import Ix.BenchConstants
-public import Ix.Benchmark.Results
-public import Ix.Cli.ConstsFile
-public import Ix.Watchdog
 
 public section
 
@@ -744,19 +745,19 @@ is not a benchmark run"
     -- Whole-env row (keyed by the env name), plus the per-constant
     -- attribution CSV the compare drill-down reads (top movers).
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.name,
+      #["check-lean", ixe, "--anon", "--json", out, "--json-name", info.name,
         "--per-const", s!"{out}.perconst.csv"]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- … plus one full-closure row per constant. ONE process for all names
-    -- (unlike the per-constant backends below): the check-rs rows mode
+    -- (unlike the per-constant backends below): the check-lean rows mode
     -- attributes per name internally with the env loaded once — a
     -- per-constant process would re-pay the multi-minute Mathlib env parse
     -- per name — and out-of-circuit checks don't approach the RAM ceiling.
     if !names.isEmpty then
       IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
       let exit ← runGuarded watchdog ceilingGb ix
-        #["check-rs", ixe, "--anon", "--consts-file", namesFile, "--json", out]
+        #["check-lean", ixe, "--anon", "--consts-file", namesFile, "--json", out]
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur-sharded-env" =>

@@ -1,5 +1,6 @@
 import Ix.Cert.StrongCommutation
 import Ix.LeanIngress.Rename
+import Ix.LeanIngress.NominalQuotient
 import Ix.Cert.EvidenceCheck
 import Ix.Cert.Quotient
 import Ix.Cert.RoleClosure
@@ -436,5 +437,266 @@ theorem CompileCorrect.nominal (h : CompileCorrect.{w}) {env : Ix.Environment}
   obtain ⟨envQ, quotient⟩ := agreeAt envS nominal
   exact ⟨envQ, quotient, h env roots sub ixe failures t envQ table quotient compiled none bound
     agree evidenceAgrees evidence⟩
+
+/-! ## Strengthened nominal semantic bridge along `Key.subst (fiberAliasAt ixe (roleAtMap t))` -/
+
+/-- **Strong commutation pulls back along `EnvSubstPullback`**: composing
+`CommutesStrong read envQ envA` with `EnvSubstPullback ρ envS envQ` yields
+`CommutesStrong (fun c => read (ConstantInfo.substKeys ρ c)) envS envA`. -/
+theorem CommutesStrong.substPullback {ρ : Ix.LeanIngress.FiberMap}
+    {read : Ix.Kernel.ConstantInfo .source → Option (Ix.Kernel.Expr .anon)}
+    {envS envQ : Env .source} {envA : Env .anon}
+    (hpull : EnvSubstPullback.{w} ρ envS envQ)
+    (hcomm : CommutesStrong.{w} read envQ envA) :
+    CommutesStrong.{w}
+      (fun c => read (Ix.LeanIngress.ConstantInfo.substKeys ρ c)) envS envA := by
+  intro V _ M
+  obtain ⟨NQ, hNQ⟩ := hcomm V M
+  obtain ⟨NS, hNS⟩ := hpull.lawModel V NQ
+  refine ⟨NS, fun c hc e hre φ ρv => ?_⟩
+  have hd := hNQ (Ix.LeanIngress.ConstantInfo.substKeys ρ c) (hpull.mem hc) e hre φ ρv
+  rw [Ix.LeanIngress.ConstantInfo.substKeys_name, ← hNS c.name φ] at hd
+  exact hd
+
+/-- **Direct value-model semantic bridge between nominal `envS` and the compiled
+Ixon environment `envA`** via quotient `envQ` along the composite key map
+`(Key.map (evAddr ixe b)) ∘ (Key.subst (fiberAliasAt ixe (roleAtMap t)))`,
+requiring only `EnvSubstModelPullback` (or `EnvSubstRel`, without `LawModel.Rel`):
+`ValueModel.Rel` composes directly from `envA` to `envS`, and for every strong
+target model `M` of `envA` there is a nominal `ValueModel V envS` in which every
+nominal constant `c ∈ envS.consts` whose substituted representative reads in `cx`
+is stored in `envA` at its composite compiled key and denotes that key in `envA`. -/
+def NominalModelBridgeAt (ixe : Ixon.Env) (sub : Ix.Environment)
+    (t : Ix.Kernel.RoleTable) (envS envQ : Env .source) : Prop :=
+  let ρ := Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)
+  ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
+    ∃ limits order envA cx b,
+      IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA ∧
+      admissionContext binding limits ixe order = some cx ∧
+      Ix.RoleEvidence.quotientBundle () = .ok b ∧
+      RenamesSource ixe t cx envQ envA ∧
+      ReadingCovers ixe t cx sub envQ ∧
+      ValueModel.Rel.{w}
+        ((Ix.Kernel.Key.map (Ix.LeanIngress.evAddr ixe b)) ∘ (Ix.LeanIngress.Key.subst ρ))
+        envS envA ∧
+      ∀ (V : Type w) [SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+        ∃ NS : ValueModel V envS,
+          ∀ c ∈ envS.consts,
+            let cQ := Ix.LeanIngress.ConstantInfo.substKeys ρ c
+            let d := Ix.Kernel.ConstantInfo.mapKeys (Ix.LeanIngress.evAddr ixe b) cQ
+            cQ ∈ envQ.consts ∧
+            ∀ e,
+              readingAt ixe t cx cQ = some e →
+              e = .const
+                ((Ix.LeanIngress.Key.subst ρ c.name).map (Ix.LeanIngress.evAddr ixe b))
+                (c.toConstantVal.levelParams.map .param) ∧
+              envA.find? ((Ix.LeanIngress.Key.subst ρ c.name).map (Ix.LeanIngress.evAddr ixe b)) =
+                some d ∧
+              d ∈ envA.consts ∧
+              ∀ φ ρv, Ix.Kernel.Denotes M.model.cval envA φ ρv e (NS.cval c.name φ)
+
+/-- **Combining `IxonCommutesCovering` on `envQ` with `EnvSubstModelPullback` from
+`envQ` to `envS` yields `NominalModelBridgeAt`** without requiring `LawModel.Rel`,
+discharging all intermediate lookup and membership premises in `envQ` and `envA`
+directly from `c ∈ envS.consts`. -/
+theorem IxonCommutesCovering.nominalModelPullback {ixe : Ixon.Env} {sub : Ix.Environment}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
+    (hcov : IxonCommutesCovering.{w} ixe sub t envQ)
+    (hpull : EnvSubstModelPullback.{w}
+      (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ) :
+    NominalModelBridgeAt.{w} ixe sub t envS envQ := by
+  let ρ := Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)
+  obtain ⟨binding, hbind, limits, order, envA, cx, hacc, hcx, hren, hcomm, hread⟩ := hcov
+  obtain ⟨b, hb, hrel, hrenRead⟩ := hren
+  refine ⟨binding, hbind, limits, order, envA, cx, b, hacc, hcx, hb,
+    ⟨b, hb, hrel, hrenRead⟩, hread,
+    hpull.comp_envRel_valueModel hrel, ?_⟩
+  intro V _ M
+  obtain ⟨NQ, hNQ⟩ := hcomm V M
+  obtain ⟨NS, hNS⟩ := hpull.valueModel V NQ.toValueModel
+  refine ⟨NS, fun c hc => ?_⟩
+  have hmemQ := hpull.mem hc
+  refine ⟨hmemQ, fun e hre => ?_⟩
+  obtain ⟨he, hfindA⟩ := hrenRead (Ix.LeanIngress.ConstantInfo.substKeys ρ c) hmemQ e hre
+  simp only [Ix.LeanIngress.ConstantInfo.substKeys_name,
+    Ix.LeanIngress.ConstantInfo.substKeys_toConstantVal,
+    Ix.LeanIngress.ConstantVal.substKeys_levelParams] at he hfindA
+  have hmemA : Ix.Kernel.ConstantInfo.mapKeys (Ix.LeanIngress.evAddr ixe b)
+      (Ix.LeanIngress.ConstantInfo.substKeys ρ c) ∈ envA.consts :=
+    List.mem_of_find?_eq_some hfindA
+  refine ⟨he, hfindA, hmemA, fun φ ρv => ?_⟩
+  have hd := hNQ (Ix.LeanIngress.ConstantInfo.substKeys ρ c) hmemQ e hre φ ρv
+  rw [Ix.LeanIngress.ConstantInfo.substKeys_name, ← hNS c.name φ] at hd
+  exact hd
+
+/-- **Construct `NominalModelBridgeAt` directly from `IxonCommutesCovering` and
+`EnvSubstRel`** (without `LawModel.Rel`), so callers only need `c ∈ envS.consts`. -/
+theorem IxonCommutesCovering.nominalBridgeAt {P : Ix.Kernel.Mode.Id .source → Prop}
+    {ixe : Ixon.Env} {sub : Ix.Environment}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
+    (hcov : IxonCommutesCovering.{w} ixe sub t envQ)
+    (hrel : EnvSubstRel P
+      (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ) :
+    NominalModelBridgeAt.{w} ixe sub t envS envQ :=
+  hcov.nominalModelPullback hrel.toModelPullback
+
+/-- **Direct semantic bridge between nominal `envS` and the compiled Ixon
+environment `envA`** via quotient `envQ` along the composite key map
+`(Key.map (evAddr ixe b)) ∘ (Key.subst (fiberAliasAt ixe (roleAtMap t)))`:
+both `ValueModel.Rel` and `CommutesStrong` (producing a nominal `LawModel`)
+compose directly from `envA` to `envS`, and every nominal constant whose
+substituted representative reads in `cx` is stored in `envA` and denotes its
+composite compiled key in `envA`. -/
+def NominalSemanticBridgeAt (ixe : Ixon.Env) (sub : Ix.Environment)
+    (t : Ix.Kernel.RoleTable) (envS envQ : Env .source) : Prop :=
+  let ρ := Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)
+  ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
+    ∃ limits order envA cx b,
+      IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA ∧
+      admissionContext binding limits ixe order = some cx ∧
+      Ix.RoleEvidence.quotientBundle () = .ok b ∧
+      RenamesSource ixe t cx envQ envA ∧
+      ReadingCovers ixe t cx sub envQ ∧
+      ValueModel.Rel.{w}
+        ((Ix.Kernel.Key.map (Ix.LeanIngress.evAddr ixe b)) ∘ (Ix.LeanIngress.Key.subst ρ))
+        envS envA ∧
+      CommutesStrong.{w}
+        (fun c => readingAt ixe t cx (Ix.LeanIngress.ConstantInfo.substKeys ρ c))
+        envS envA ∧
+      ∀ (V : Type w) [SetTheory V] (M : Ix.Kernel.Cached.StrongModel V envA),
+        ∃ NS : LawModel V envS,
+          ∀ c ∈ envS.consts,
+            let cQ := Ix.LeanIngress.ConstantInfo.substKeys ρ c
+            let d := Ix.Kernel.ConstantInfo.mapKeys (Ix.LeanIngress.evAddr ixe b) cQ
+            cQ ∈ envQ.consts ∧
+            ∀ e,
+              readingAt ixe t cx cQ = some e →
+              e = .const
+                ((Ix.LeanIngress.Key.subst ρ c.name).map (Ix.LeanIngress.evAddr ixe b))
+                (c.toConstantVal.levelParams.map .param) ∧
+              envA.find? ((Ix.LeanIngress.Key.subst ρ c.name).map (Ix.LeanIngress.evAddr ixe b)) =
+                some d ∧
+              d ∈ envA.consts ∧
+              ∀ φ ρv, Ix.Kernel.Denotes M.model.cval envA φ ρv e (NS.cval c.name φ)
+
+/-- **Combining `IxonCommutesCovering` on `envQ` with `EnvSubstPullback` from
+`envQ` to `envS` yields `NominalSemanticBridgeAt`**, discharging all intermediate
+lookup and membership premises in `envQ` and `envA` directly from `c ∈ envS.consts`. -/
+theorem IxonCommutesCovering.nominalPullback {ixe : Ixon.Env} {sub : Ix.Environment}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
+    (hcov : IxonCommutesCovering.{w} ixe sub t envQ)
+    (hpull : EnvSubstPullback.{w}
+      (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ) :
+    NominalSemanticBridgeAt.{w} ixe sub t envS envQ := by
+  let ρ := Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)
+  obtain ⟨binding, hbind, limits, order, envA, cx, hacc, hcx, hren, hcomm, hread⟩ := hcov
+  obtain ⟨b, hb, hrel, hrenRead⟩ := hren
+  refine ⟨binding, hbind, limits, order, envA, cx, b, hacc, hcx, hb,
+    ⟨b, hb, hrel, hrenRead⟩, hread,
+    hpull.comp_envRel_valueModel hrel,
+    CommutesStrong.substPullback hpull hcomm, ?_⟩
+  intro V _ M
+  obtain ⟨NS, hNS⟩ := CommutesStrong.substPullback hpull hcomm V M
+  refine ⟨NS, fun c hc => ?_⟩
+  have hmemQ := hpull.mem hc
+  refine ⟨hmemQ, fun e hre => ?_⟩
+  obtain ⟨he, hfindA⟩ := hrenRead (Ix.LeanIngress.ConstantInfo.substKeys ρ c) hmemQ e hre
+  simp only [Ix.LeanIngress.ConstantInfo.substKeys_name,
+    Ix.LeanIngress.ConstantInfo.substKeys_toConstantVal,
+    Ix.LeanIngress.ConstantVal.substKeys_levelParams] at he hfindA
+  have hmemA : Ix.Kernel.ConstantInfo.mapKeys (Ix.LeanIngress.evAddr ixe b)
+      (Ix.LeanIngress.ConstantInfo.substKeys ρ c) ∈ envA.consts :=
+    List.mem_of_find?_eq_some hfindA
+  exact ⟨he, hfindA, hmemA, hNS c hc e hre⟩
+
+/-- Construct `NominalSemanticBridgeAt` directly from `IxonCommutesCovering`,
+`EnvSubstRel`, and `LawModel.Rel`, discharging all intermediate lookup and
+membership premises in `envQ` and `envA` from `c ∈ envS.consts`.
+
+Note: Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee: quotient collapse only merges
+declarations that are structurally identical (`Declaration.beqF`, hence `=`)
+under the fiber-alias substitution `Key.subst ρ`, and `CompileCorrect` transports
+both `ValueModel` and `LawModel` unconditionally between `envQ` and `envA`.
+This theorem is a conditional model-theoretic corollary for pulling models of
+`envQ` back to a nominal environment `envS` satisfying `EnvSubstRel` and
+`LawModel.Rel`; deriving `LawModel.Rel` from `EnvSubstRel` and discharging
+`EnvSubstRel` from `Ix.LeanIngress.FiberAliasSafe` on closures whose alias
+fibers do not mix reducibility hints is left for future work. -/
+theorem NominalSemanticBridgeAt.of_covering {P : Ix.Kernel.Mode.Id .source → Prop}
+    {ixe : Ixon.Env} {sub : Ix.Environment}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
+    (hcov : IxonCommutesCovering.{w} ixe sub t envQ)
+    (hrel : EnvSubstRel P
+      (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ)
+    (hlaw : LawModel.Rel.{w}
+      (Ix.LeanIngress.Key.subst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)))
+      envS envQ) :
+    NominalSemanticBridgeAt.{w} ixe sub t envS envQ :=
+  hcov.nominalPullback (hrel.toPullback hlaw)
+
+/-- **Nominal value-model bridge corollary of `CompileCorrect`** (requiring only
+`EnvSubstRel`, without `LawModel.Rel`).
+
+Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee: quotient collapse only merges
+declarations that are structurally identical (`Declaration.beqF`, hence `=`)
+under the fiber-alias substitution `Key.subst ρ`, and `CompileCorrect` transports
+both `ValueModel` and `LawModel` unconditionally between `envQ` and `envA`.
+`nominalBridgeAt` is a conditional model-theoretic corollary for pulling
+`ValueModel`s of `envQ` back to a nominal environment `envS` accepted by nominal
+Source (`SourceAccepts`) and satisfying `EnvSubstRel`; discharging `EnvSubstRel`
+from `Ix.LeanIngress.FiberAliasSafe` on closures whose alias fibers do not mix
+reducibility hints is left for future work. -/
+theorem CompileCorrect.nominalBridgeAt (h : CompileCorrect.{w})
+    {P : Ix.Kernel.Mode.Id .source → Prop} {env : Ix.Environment}
+    {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
+    (table : Ix.Kernel.Reader.defaultTable = .ok t)
+    (quotient : SourceAcceptsQ blocksOf env roots sub ixe t envQ)
+    (hrel : EnvSubstRel P
+      (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ)
+    (compiled : compileReport env = .ok (ixe, failures)) (none : NoFailure failures sub)
+    (bound : PublishedRolesBound t ixe) (agree : PublishedAgree ixe)
+    (evidenceAgrees : EvidenceCheck.EvidenceAgrees t ixe)
+    (evidence : RoleClosure.RoleEvidenceChecks) :
+    Published ixe sub ∧ NominalModelBridgeAt.{w} ixe sub t envS envQ := by
+  obtain ⟨hpub, hcov⟩ :=
+    h env roots sub ixe failures t envQ table quotient compiled none bound
+      agree evidenceAgrees evidence
+  exact ⟨hpub, hcov.nominalBridgeAt hrel⟩
+
+/-- **Nominal pullback corollary of `CompileCorrect`**: when `CompileCorrect`
+holds and nominal `envS` pulls back from quotient `envQ` along
+`Key.subst (fiberAliasAt ixe (roleAtMap t))`, both `LawModel` and
+`ValueModel` compose to relate nominal `envS` directly to the compiled Ixon
+environment `envA` (`NominalSemanticBridgeAt`).
+
+Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee: quotient collapse only merges
+declarations that are structurally identical (`Declaration.beqF`, hence `=`)
+under the fiber-alias substitution `Key.subst ρ`, and `CompileCorrect` transports
+both `ValueModel` and `LawModel` unconditionally between `envQ` and `envA`.
+`nominalPullback` is a conditional model-theoretic corollary for pulling models
+of `envQ` back to a nominal environment `envS` satisfying `EnvSubstRel` and
+`LawModel.Rel`; deriving `LawModel.Rel` from `EnvSubstRel` and discharging
+`EnvSubstRel` from `Ix.LeanIngress.FiberAliasSafe` on closures whose alias
+fibers do not mix reducibility hints is left for future work. -/
+theorem CompileCorrect.nominalPullback (h : CompileCorrect.{w}) {env : Ix.Environment}
+    {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
+    (table : Ix.Kernel.Reader.defaultTable = .ok t)
+    (quotient : SourceAcceptsQ blocksOf env roots sub ixe t envQ)
+    (hpull : EnvSubstPullback.{w}
+      (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ)
+    (compiled : compileReport env = .ok (ixe, failures)) (none : NoFailure failures sub)
+    (bound : PublishedRolesBound t ixe) (agree : PublishedAgree ixe)
+    (evidenceAgrees : EvidenceCheck.EvidenceAgrees t ixe)
+    (evidence : RoleClosure.RoleEvidenceChecks) :
+    Published ixe sub ∧ NominalSemanticBridgeAt.{w} ixe sub t envS envQ := by
+  obtain ⟨hpub, hcov⟩ :=
+    h env roots sub ixe failures t envQ table quotient compiled none bound
+      agree evidenceAgrees evidence
+  exact ⟨hpub, hcov.nominalPullback hpull⟩
 
 end Ix.Cert

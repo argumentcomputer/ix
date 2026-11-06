@@ -17,38 +17,53 @@ namespace Ix
   The canonicalization should be done first (ideally via fast Rust FFI).
 -/
 
-/-- The graph walk's memo: each expression's references, keyed exactly
-(`Ix.Compile.ExactKey.ExprKey`: complete structural equality confirms a hit, as in
-the compiler's caches). A stored hash is not a content hash on every input, so a
-key compared by stored hashes alone could return another expression's references. -/
+/-- The graph walk's visited set: shared expression sub-DAGs already walked in
+the current constant, keyed exactly (`Ix.Compile.ExactKey.ExprKey`: complete
+structural equality confirms a hit, as in the compiler's caches). A stored hash
+is not a content hash on every input, so a key compared by stored hashes alone
+could skip another expression's references. -/
 structure GraphState where
-  exprCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Set Ix.Name)
+  exprSeen : Std.HashSet Ix.Compile.ExactKey.ExprKey := {}
 
-def GraphState.init : GraphState := ⟨{}⟩
+def GraphState.init : GraphState := {}
 
 abbrev GraphM := ReaderT Ix.Environment <| StateT GraphState Id
 
-/-- Extract constant references from an Ix.Expr.
-    NOTE: Aligned with Rust's get_expr_references for cross-impl testing. -/
-def graphExpr (expr: Ix.Expr) : GraphM (Set Ix.Name) := do
-  match (<- get).exprCache.get? ⟨expr⟩ with
-  | some x => pure x
-  | none =>
-    let refs <- go expr
+/-- Extract constant references from an `Ix.Expr` into a single accumulator `acc`,
+skipping shared sub-DAGs already recorded in `exprSeen`. -/
+def graphExprAcc (expr : Ix.Expr) (acc : Set Ix.Name) : GraphM (Set Ix.Name) := do
+  if (← get).exprSeen.contains ⟨expr⟩ then
+    pure acc
+  else
+    let refs ← go expr acc
     modifyGet fun stt => (refs, { stt with
-      exprCache := stt.exprCache.insert ⟨expr⟩ refs
+      exprSeen := stt.exprSeen.insert ⟨expr⟩
     })
   where
-    go : Ix.Expr -> GraphM (Set Ix.Name)
-    | .mdata _ x _ => graphExpr x
-    | .const name _ _ => pure {name}
-    | .app f a _ => .union <$> graphExpr f <*> graphExpr a
-    | .lam _ t b _ _ => .union <$> graphExpr t <*> graphExpr b
-    | .forallE _ t b _ _ => .union <$> graphExpr t <*> graphExpr b
-    | .letE _ t v b _ _ =>
-      .union <$> graphExpr t <*> (.union <$> graphExpr v <*> graphExpr b)
-    | .proj typeName _ s _ => (.insert · typeName) <$> graphExpr s
-    | _ => pure {}
+    go : Ix.Expr → Set Ix.Name → GraphM (Set Ix.Name)
+    | .mdata _ x _, acc => graphExprAcc x acc
+    | .const name _ _, acc => pure (acc.insert name)
+    | .app f a _, acc => do
+      let acc ← graphExprAcc f acc
+      graphExprAcc a acc
+    | .lam _ t b _ _, acc => do
+      let acc ← graphExprAcc t acc
+      graphExprAcc b acc
+    | .forallE _ t b _ _, acc => do
+      let acc ← graphExprAcc t acc
+      graphExprAcc b acc
+    | .letE _ t v b _ _, acc => do
+      let acc ← graphExprAcc t acc
+      let acc ← graphExprAcc v acc
+      graphExprAcc b acc
+    | .proj typeName _ s _, acc => do
+      let acc ← graphExprAcc s acc
+      pure (acc.insert typeName)
+    | _, acc => pure acc
+
+/-- Extract constant references from an Ix.Expr. -/
+def graphExpr (expr : Ix.Expr) : GraphM (Set Ix.Name) :=
+  graphExprAcc expr {}
 
 /-- The recursors of an inductive block, in the family's declared order: `X.rec` for
 each member `X` of `all`, then the nested auxiliary recursors `all[0].rec_N`,
@@ -61,7 +76,6 @@ def recursorFamilyNames (all : Array Ix.Name) (numMotives : Nat) : Array Ix.Name
   return out
 
 /-- Extract constant references from an Ix.ConstantInfo.
-    NOTE: Aligned with Rust's get_constant_info_references for cross-impl testing.
 
     An inductive refers to the other members of its Lean block (`all`) and a
     recursor to the other recursors of its family (`recursorFamilyNames`): the
@@ -70,9 +84,15 @@ def recursorFamilyNames (all : Array Ix.Name) (numMotives : Nat) : Array Ix.Name
     not strongly connected through their types. -/
 def graphConst: Ix.ConstantInfo -> GraphM (Set Ix.Name)
 | .axiomInfo val => graphExpr val.cnst.type
-| .defnInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
-| .thmInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
-| .opaqueInfo val => .union <$> graphExpr val.cnst.type <*> graphExpr val.value
+| .defnInfo val => do
+  let acc ← graphExprAcc val.cnst.type {}
+  graphExprAcc val.value acc
+| .thmInfo val => do
+  let acc ← graphExprAcc val.cnst.type {}
+  graphExprAcc val.value acc
+| .opaqueInfo val => do
+  let acc ← graphExprAcc val.cnst.type {}
+  graphExprAcc val.value acc
 | .quotInfo val => graphExpr val.cnst.type
 | .inductInfo val => do
   -- Rust: type refs + constructor names (NOT constructor type refs) + block siblings
@@ -91,39 +111,13 @@ def graphConst: Ix.ConstantInfo -> GraphM (Set Ix.Name)
   let mut rs := t
   for rule in val.rules do
     rs := rs.insert rule.ctor
-    let rhsRefs <- graphExpr rule.rhs
-    rs := rs.union rhsRefs
+    rs <- graphExprAcc rule.rhs rs
   return (recursorFamilyNames val.all val.numMotives).foldl
     (fun s r => if r != val.cnst.name then s.insert r else s) rs
 
 def GraphM.run (env: Ix.Environment) (stt: GraphState) (g: GraphM α)
   : α × GraphState
   := StateT.run (ReaderT.run (Id.run g env)) stt
-
-/-- Build dependency graph from Ix.Environment.
-    Returns a map from Ix.Name to the set of Ix.Names it references.
-    Pass `dbg := true` and `total` (constant count) to enable progress tracing. -/
-def GraphM.env (env: Ix.Environment) (dbg : Bool := false) (total : Nat := 0)
-    : Map Ix.Name (Set Ix.Name) := Id.run do
-  let mut stt : GraphState := .init
-  let mut refs: Map Ix.Name (Set Ix.Name) := Std.HashMap.emptyWithCapacity env.consts.size
-  let mut i : Nat := 0
-  let mut lastPct : Nat := 0
-  for (name, const) in env.consts do
-    let (rs, stt') := GraphM.run env stt (graphConst const)
-    refs := refs.insert name rs
-    stt := stt'
-    i := i + 1
-    if dbg && total > 0 then
-      let pct := (i * 100) / total
-      if pct >= lastPct + 10 then
-        dbg_trace s!"  [Graph] {pct}% ({i}/{total})"
-        lastPct := pct
-  return refs
-
-def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
-  (Ix.Compile.Parallel.map 256 (fun (name, ci) => (name, (GraphM.run { consts := {} } .init (graphConst ci)).1))
-    env.consts.toList.toArray).foldl (fun out (name, refs) => out.insert name refs) {}
 
 def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
   let mut refs: Map Ix.Name (Set Ix.Name) := {}
@@ -181,50 +175,65 @@ private theorem EnvFree.forInArray {α σ : Type} (f : α → σ → GraphM (For
   rw [← Array.forIn_toList]
   exact EnvFree.forInList f hf xs.toList init
 
-private theorem graphExpr_envFree (e : Ix.Expr) : EnvFree (graphExpr e) := by
+private theorem graphExprAcc_envFree (e : Ix.Expr) : ∀ acc : Set Ix.Name, EnvFree (graphExprAcc e acc) := by
   induction e with
   | bvar | fvar | mvar | sort | const | lit =>
-    rw [graphExpr]
+    intro acc
+    rw [graphExprAcc]
     refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
     split
     · exact EnvFree.pure _
-    · rw [graphExpr.go.eq_def]
+    · rw [graphExprAcc.go.eq_def]
       exact (EnvFree.pure _).bind fun _ _ _ => rfl
   | app _ _ _ ihf iha =>
-    rw [graphExpr]
+    intro acc
+    rw [graphExprAcc]
     refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
     split
     · exact EnvFree.pure _
-    · rw [graphExpr.go.eq_def]
-      exact ((ihf.map _).seq iha).bind fun _ _ _ => rfl
+    · rw [graphExprAcc.go.eq_def]
+      exact ((ihf acc).bind iha).bind fun _ _ _ => rfl
   | lam _ _ _ _ _ iht ihb | forallE _ _ _ _ _ iht ihb =>
-    rw [graphExpr]
+    intro acc
+    rw [graphExprAcc]
     refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
     split
     · exact EnvFree.pure _
-    · rw [graphExpr.go.eq_def]
-      exact ((iht.map _).seq ihb).bind fun _ _ _ => rfl
+    · rw [graphExprAcc.go.eq_def]
+      exact ((iht acc).bind ihb).bind fun _ _ _ => rfl
   | letE _ _ _ _ _ _ iht ihv ihb =>
-    rw [graphExpr]
+    intro acc
+    rw [graphExprAcc]
     refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
     split
     · exact EnvFree.pure _
-    · rw [graphExpr.go.eq_def]
-      exact ((iht.map _).seq ((ihv.map _).seq ihb)).bind fun _ _ _ => rfl
+    · rw [graphExprAcc.go.eq_def]
+      exact ((iht acc).bind fun acc₁ => (ihv acc₁).bind ihb).bind fun _ _ _ => rfl
   | mdata _ _ _ ih =>
-    rw [graphExpr]
+    intro acc
+    rw [graphExprAcc]
     refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
     split
     · exact EnvFree.pure _
-    · rw [graphExpr.go.eq_def]
-      exact ih.bind fun _ _ _ => rfl
+    · rw [graphExprAcc.go.eq_def]
+      exact (ih acc).bind fun _ _ _ => rfl
   | proj _ _ _ _ ih =>
-    rw [graphExpr]
+    intro acc
+    rw [graphExprAcc]
     refine EnvFree.bind (fun _ _ => rfl) fun stt => ?_
     split
     · exact EnvFree.pure _
-    · rw [graphExpr.go.eq_def]
-      exact (ih.map _).bind fun _ _ _ => rfl
+    · rw [graphExprAcc.go.eq_def]
+      exact ((ih acc).bind fun _ => EnvFree.pure _).bind fun _ _ _ => rfl
+
+private theorem graphExpr_envFree (e : Ix.Expr) : EnvFree (graphExpr e) :=
+  graphExprAcc_envFree e {}
+
+/-- **`graphExprAcc` does not read the environment it runs in.** -/
+theorem graphExprAcc_env (e : Ix.Expr) (acc : Set Ix.Name) (env₁ env₂ : Ix.Environment) (s : GraphState) :
+    GraphM.run env₁ s (graphExprAcc e acc) = GraphM.run env₂ s (graphExprAcc e acc) := by
+  show (graphExprAcc e acc env₁).run s = (graphExprAcc e acc env₂).run s
+  rw [graphExprAcc_envFree e acc env₁ env₂]
 
 /-- **`graphExpr` does not read the environment it runs in.** -/
 theorem graphExpr_env (e : Ix.Expr) (env₁ env₂ : Ix.Environment) :
@@ -239,14 +248,14 @@ theorem graphConst_env (ci : Ix.ConstantInfo) (env₁ env₂ : Ix.Environment) (
     cases ci with
     | axiomInfo v | quotInfo v => exact graphExpr_envFree _
     | defnInfo v | thmInfo v | opaqueInfo v =>
-      exact ((graphExpr_envFree _).map _).seq (graphExpr_envFree _)
+      exact (graphExprAcc_envFree _ _).bind fun acc => graphExprAcc_envFree _ acc
     | inductInfo v => exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
     | ctorInfo v => exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
     | recInfo v =>
       refine (graphExpr_envFree _).bind fun t => ?_
       dsimp only
       refine (EnvFree.forInArray _ (fun rule r => ?_) _ _).bind fun _ => EnvFree.pure _
-      exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
+      exact (graphExprAcc_envFree _ _).bind fun _ => EnvFree.pure _
   show (graphConst ci env₁).run s = (graphConst ci env₂).run s
   rw [h env₁ env₂]
 

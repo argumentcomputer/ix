@@ -2,7 +2,7 @@
 
 use super::statement::{CanonicalTree, ShardSet, Statement, SubjectTree};
 use ix_common::address::Address;
-use ix_kernel::shard::{AggNode, ShardManifest};
+use ixon::shard::{AggNode, ShardManifest};
 use ixon::{
   Constant, ConstantInfo, merkle::merkle_root_canonical_sorted,
   shard_claim::walk_edges,

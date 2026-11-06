@@ -51,7 +51,7 @@ enum doc comments for details.
 - `normal`  — default; adds warmup + running lines, plus the outlier-variance warning when moderate or severe
 - `verbose` — adds R² alongside the time line, always prints outlier-variance + Tukey breakdown
 
-Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
+Example: `BENCH_VERBOSITY=v lake exe bench-blake3`
 
 ## Limitations
 - Measures time in nanoseconds using `IO.monoNanosNow`, which is less precise than the picoseconds used in Criterion.rs

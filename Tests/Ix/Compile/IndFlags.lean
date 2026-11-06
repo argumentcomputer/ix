@@ -1,13 +1,20 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.CompileDriver
+import Ix.CompileCertified
+import Ix.Cert.Compile
+import LSpec
+
+/-!
   compile-ind-flags: both compilers refuse an input inductive whose stored
   flags (`isRec`, `isReflexive`, `numNested`) differ from the recomputed
-  ones (Rust `validate_ind_groups`, Lean `Ix.CompileM.validateInductiveFlags`),
+  ones (`Ix.CompileM.validateInductiveFlags`),
   and compile the same closure with the true flags byte-identically.
 
   The closure is `T` (a recursive inductive) with its recursor; the
   refused neighbour stores `isRec := false` on `T`. The
   Lean refusal is checked on both Lean drivers: the IO pipeline
-  (`compileLeanConsts`, the parallel driver) and the pure compiler
+  (`compileCertified`, the parallel driver) and the pure compiler
   (`Ix.Cert.compile`, the sequential driver).
 
   The second domain restriction: both compilers refuse a mutual block whose
@@ -21,11 +28,6 @@
 
   Run with: `lake test -- --ignored compile-ind-flags`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.CompileDriver
-import Ix.Cert.Compile
-import LSpec
 
 open Lean
 
@@ -86,27 +88,28 @@ def flagsMessage : String :=
   s!"non-canonical inductive flags for '{tName}': stored isRec=false \
 isReflexive=false numNested=0, computed isRec=true isReflexive=false numNested=0"
 
-/-- Rust (`ix compile`, fail-closed): `ok bytes`, or the refusal text. -/
+/-- Certified compile (`ix compile`, fail-closed): `ok bytes`, or the refusal text. -/
 def rust (env : Environment) (cs : List (Name × ConstantInfo)) (out : System.FilePath) :
     IO (Except String ByteArray) := do
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env cs)
   try
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared out.toString false
-    if let some (n, m) := status.ungrounded[0]? then
-      return .error s!"{n}: {m}"
+    let res ← IO.ofExcept (← Ix.CompileM.compileCertifiedPrepared prepared false)
+    if let some (n, m) := res.failures.toMap.toArray[0]? then
+      return .error s!"{n.pretty}: {m}"
+    let bytes ← IO.ofExcept (Ixon.serEnv res.env)
+    IO.FS.writeBinFile out bytes
     return .ok (← IO.FS.readBinFile out)
   catch e => return .error (toString e)
 
 /-- The Lean IO pipeline (`compile-lean`): `ok bytes`, or the refusal text. -/
 def lean (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Except String ByteArray) := do
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env cs).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := 1) with
+  match ← Ix.CompileM.compileCertified env cs 1 with
   | .error e => return .error e
   | .ok o =>
-    if let some (n, m) := o.cenv.ungrounded.toList.head? then
+    if let some (n, m) := o.failures.toMap.toList.head? then
       return .error s!"{n}: {m}"
-    return .ok o.bytes
+    return Ixon.serEnv o.env
 
 /-- The pure compiler (`Ix.Cert.compile`): `ok bytes`, or the refusal text. -/
 def pure (cs : List (Name × ConstantInfo)) : Except String ByteArray := do

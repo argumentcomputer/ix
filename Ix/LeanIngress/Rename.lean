@@ -142,6 +142,60 @@ theorem Key.subst_good (hroles : FibersRoleFree ixe) :
   | .role _, _ => trivial
   | .aux k _, hk => Key.subst_good hroles (k := k) hk
 
+@[simp] theorem ConstantVal.substKeys_name (ρ : FiberMap)
+    (cv : Ix.Kernel.ConstantVal .source) :
+    (ConstantVal.substKeys ρ cv).name = Key.subst ρ cv.name := rfl
+
+@[simp] theorem ConstantVal.substKeys_levelParams (ρ : FiberMap)
+    (cv : Ix.Kernel.ConstantVal .source) :
+    (ConstantVal.substKeys ρ cv).levelParams = cv.levelParams := rfl
+
+@[simp] theorem ConstantVal.substKeys_type (ρ : FiberMap)
+    (cv : Ix.Kernel.ConstantVal .source) :
+    (ConstantVal.substKeys ρ cv).type = Expr.substKeys ρ cv.type := rfl
+
+@[simp] theorem ConstantInfo.substKeys_toConstantVal (ρ : FiberMap)
+    (c : Ix.Kernel.ConstantInfo .source) :
+    (ConstantInfo.substKeys ρ c).toConstantVal =
+      ConstantVal.substKeys ρ c.toConstantVal := by
+  cases c <;> rfl
+
+@[simp] theorem ConstantInfo.substKeys_name (ρ : FiberMap)
+    (c : Ix.Kernel.ConstantInfo .source) :
+    (ConstantInfo.substKeys ρ c).name = Key.subst ρ c.name := by
+  cases c <;> rfl
+
+@[simp] theorem ConstantInfo.substKeys_levelParams (ρ : FiberMap)
+    (c : Ix.Kernel.ConstantInfo .source) :
+    (ConstantInfo.substKeys ρ c).toConstantVal.levelParams =
+      c.toConstantVal.levelParams := by
+  cases c <;> rfl
+
+@[simp] theorem ConstantInfo.substKeys_type (ρ : FiberMap)
+    (c : Ix.Kernel.ConstantInfo .source) :
+    (ConstantInfo.substKeys ρ c).type = Expr.substKeys ρ c.type := by
+  cases c <;> rfl
+
+@[simp] theorem RecRule.substKeys_ctor (ρ : FiberMap)
+    (r : Ix.Kernel.RecRule .source) :
+    (RecRule.substKeys ρ r).ctor = Key.subst ρ r.ctor := rfl
+
+@[simp] theorem RecRule.substKeys_nfields (ρ : FiberMap)
+    (r : Ix.Kernel.RecRule .source) :
+    (RecRule.substKeys ρ r).nfields = r.nfields := rfl
+
+@[simp] theorem RecRule.substKeys_rhs (ρ : FiberMap)
+    (r : Ix.Kernel.RecRule .source) :
+    (RecRule.substKeys ρ r).rhs = Expr.substKeys ρ r.rhs := rfl
+
+@[simp] theorem BlockRead.substKeys_names (ρ : FiberMap)
+    (rb : Ix.Kernel.Reader.BlockRead .source) :
+    BlockRead.names (BlockRead.substKeys ρ rb) =
+      (BlockRead.names rb).map (Key.subst ρ) := by
+  simp only [BlockRead.names, BlockRead.substKeys, Array.toList_map,
+    List.map_append, List.map_map, Function.comp_def]
+  rfl
+
 section Structural
 
 variable {ρ : FiberMap} {P Q : Ix.Kernel.Mode.Id .source → Prop}

@@ -375,12 +375,11 @@ def failsWith (roots : Array Ixon.Expr) (l : Limits) (r : Resource) (v : Nat) : 
   | _ => false
 
 /-- The compiler's builder on `c` under `l` fails with the `resourceLimit`
-error naming the limit `key`, its value and its override. -/
+error naming the limit `key` and its value. -/
 def compilerFailsWith (c : Constant) (l : Limits) (key : String) (v : Nat) : Bool :=
   match Ix.CompileM.buildConstantWithSharing l c.info c.refs c.univs with
   | .error (.resourceLimit msg) =>
-    (msg.splitOn s!"resource exhausted: {key} (limit {v})").length > 1 &&
-      (msg.splitOn s!"--sharing-limits {key}=N (IX_SHARING_LIMITS)").length > 1
+    (msg.splitOn s!"resource exhausted: {key} (limit {v})").length > 1
   | _ => false
 
 def productionLimitTests (_ : Unit) : TestSeq :=
@@ -405,7 +404,7 @@ def productionLimitTests (_ : Unit) : TestSeq :=
     ("128 atoms", atomsC, { d with maxKnapsackCells := 10 }, .knapsackCells, 10)]
   group "the production construction under its limits" <|
     cases.foldl (init := .done) (fun acc (name, c, l, r, v) =>
-      acc ++ test s!"{name}: {r.key} = {v} → canonicalSharingTiered fails with resourceExhausted {r.key} {v}; the compiler's builder with resourceLimit naming --sharing-limits {r.key}=N"
+      acc ++ test s!"{name}: {r.key} = {v} → canonicalSharingTiered fails with resourceExhausted {r.key} {v}; the compiler's builder with resourceLimit naming {r.key}"
         (failsWith (constantInfoRoots c.info) l r v && compilerFailsWith c l r.key v)) ++
     test "the transitions limit meters only the width-state oracle: maxTransitions = 0 leaves T16 and the 128 atoms unchanged"
       ((canonicalSharingTiered .tagN t16 { d with maxTransitions := 0 }).toOption.map

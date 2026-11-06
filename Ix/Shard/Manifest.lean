@@ -108,7 +108,7 @@ structure IxesManifestView where
 /-- The deepest aggregation tree a manifest may carry, in internal nodes on a
 path. A planner tree comes from recursive bisection, so its depth stays far below
 this; the bound keeps every recursive walk of a parsed tree shallow. The Rust
-reader (`AGG_TREE_MAX_DEPTH`, `crates/kernel/src/shard.rs`) uses the same. -/
+reader (`AGG_TREE_MAX_DEPTH`, `crates/ixon/src/shard.rs`) uses the same. -/
 def ixesTreeMaxDepth : Nat := 4096
 
 /-- A preorder aggregation tree with at most `depth` internal nodes on any

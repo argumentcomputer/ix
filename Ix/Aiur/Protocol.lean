@@ -380,22 +380,9 @@ opaque proofToAdviceBytes : @& AiurSystem →
 
 end AiurSystem
 
-/-- Write a `.ixes` manifest for an EXPLICIT partition — the block lists
-    a run actually produced (splits included) rather than a planner's
-    output. `shardsBlob`: per shard, a 4-byte LE block count followed by
-    that many 32-byte block addresses; every env block must appear in
-    exactly one shard. `peaksBlob`: one 8-byte LE measured prover peak
-    per shard in order, recorded on the manifest for schedulers. Own
-    sizes, foreign blocks, cross-ingress and assumption roots are
-    recomputed from the env's static profile; prints the manifest
-    summary to stderr. -/
-@[extern "rs_shard_manifest_from_partition"]
-opaque shardManifestFromPartition : @& EnvHandle →
-  @& ByteArray → @& ByteArray → @& String → IO Unit
-
 /-- Refine an existing `.ixes` manifest (`sourcePath`) by cutting some of
     its leaves into parts and write the result to `outPath`
-    (`ShardManifest::refine`, `crates/kernel/src/shard.rs`). Every other
+    (`ShardManifest::refine`, `crates/ixon/src/shard.rs`). Every other
     leaf keeps its block list, record, id and place in the aggregation
     tree; a refined leaf's place becomes a balanced subtree over its
     parts, part 0 keeps the leaf's id and later parts take fresh ids after
@@ -416,7 +403,7 @@ opaque shardManifestRefine : @& EnvHandle → @& String →
 private opaque detectedRamBudgetFFI : IO UInt64
 
 /-- The prover/execution RAM budget the Rust side detects on this machine:
-    85 % of `MemAvailable` (`ix_kernel::shard::RAM_USABLE_FRAC`) — the policy
+    85 % of `MemAvailable` (`ixon::shard::RAM_USABLE_FRAC`) — the policy
     the check batch's RAM gate and `ix prove --max-ram 0` use. `0` when
     `/proc/meminfo` is unreadable; callers that need a budget fail closed
     on it instead of running ungated. -/

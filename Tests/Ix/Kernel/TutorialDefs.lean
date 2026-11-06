@@ -1254,16 +1254,24 @@ good_thm natBeqTrue : Nat.beq 42 42 = true := by native_decide
 
 good_thm natBeqFalse : Nat.beq 42 43 = false := by native_decide
 
-/-! ## Nested-occurrence spec_params validity
+/-! ## Nested-occurrence spec_params validity (a corner case)
 
 `F.mk : (n : Nat) → P n F → F`. The `P n F` occurrence LOOKS nested
 (head `P` is an external inductive whose param args mention the block
 member `F`), but its first param arg `n` references the constructor's
 own field-local binder, so it is NOT a valid nested-inductive
-parameterization. Rust (`crates/kernel/src/inductive.rs:723-730`)
-skips the occurrence: no `P` aux is synthesized, `F.rec` keeps the
-plain non-nested shape (no IH for the `P n F` field), and the env is
-accepted — this is a GOOD fixture.
+parameterization. `P` stores nothing, so the occurrence is phantom. The
+Rust kernel skipped the occurrence: no `P` aux is synthesized, `F.rec`
+keeps the plain non-nested shape (no IH for the `P n F` field), and the env
+was accepted.
+
+Its right verdict is not settled. lean-kernel-arena's nearest test,
+`corner-cases/nested-nonuniform-param`, has outcome `either`; its relative
+`bugs/nested-unused-param` is a proof of `False` through an unchecked
+parametric argument (lean4#14576, fixed in lean4#14577). It is registered
+with the good cases, for the IxVM arena run (`Tests.Ix.Kernel.Arena`), which
+follows the Rust kernel. The IxC tutorial run treats it as a corner case and
+pins IxC's verdict, a decline (`Tests.Ix.Kernel.Tutorial.cornerCases`).
 
 Lean's elaborator rejects this declaration (nested occurrences must
 use only the block's fixed params), so it is hand-built here with its
@@ -1389,7 +1397,7 @@ run_cmd do
     `nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
   let some tc := cases[cases.size - 1]? | throwError "nested-local fixture is absent"
   unless tc.outcome == .good && tc.decls == expected do
-    throwError "nested-local fixture must retain all six accepted targets"
+    throwError "nested-local fixture must retain all six targets"
   let raw := getRawConsts env
   for (owner, params, fields) in [(`nestedSpecLocalP, 2, 0), (`nestedSpecLocalF, 0, 2)] do
     let found := raw.filter (fun ci => ci.name == owner ++ `rec)

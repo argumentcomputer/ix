@@ -111,7 +111,7 @@ namespace Aggr
 def circuit := ⟦
   enum AggrNextAssumption {
     Done,
-    More(Addr, List‹Addr›, List‹Addr›)
+    More(Addr, G, List‹Addr›, List‹Addr›)
   }
 
   /- ## Small strict byte readers
@@ -415,21 +415,64 @@ def circuit := ⟦
     }
   }
 
+  -- Assert `output` is the sorted, disjoint union of two sorted unique inputs.
+  -- Used for flat pair subject sets (`aggr_pair`), where child subject sets
+  -- must partition the joined subjects without overlap.
+  fn aggr_assert_disjoint_union(left: List‹Addr›, right: List‹Addr›,
+      output: List‹Addr›) {
+    match (load(left), load(right)) {
+      (ListNode.Nil, _) => aggr_assert_same_list(right, output),
+      (_, ListNode.Nil) => aggr_assert_same_list(left, output),
+      (ListNode.Cons(a, ar), ListNode.Cons(b, br)) =>
+        let ListNode.Cons(o, or) = load(output);
+        match aggr_address_order(a, b) {
+          0 =>
+            assert_eq!(address_eq(a, o), 1, "aggr: subject union mismatch");
+            aggr_assert_disjoint_union(ar, right, or),
+          1 =>
+            assert_eq!(0, 1, "aggr: child subject sets overlap");
+            (),
+          _ =>
+            assert_eq!(address_eq(b, o), 1, "aggr: subject union mismatch");
+            aggr_assert_disjoint_union(left, br, or),
+        },
+    }
+  }
+
+  -- Assert two sorted address lists are disjoint. Used in `aggr_pair` to
+  -- enforce `subjects_i ∩ assumptions_i = ∅` per child so a child's subjects
+  -- can never discharge its own assumptions.
+  fn aggr_assert_disjoint(left: List‹Addr›, right: List‹Addr›) {
+    match (load(left), load(right)) {
+      (ListNode.Nil, _) => (),
+      (_, ListNode.Nil) => (),
+      (ListNode.Cons(a, ar), ListNode.Cons(b, br)) =>
+        match aggr_address_order(a, b) {
+          0 => aggr_assert_disjoint(ar, right),
+          1 =>
+            assert_eq!(0, 1, "aggr: subject set overlaps assumption set");
+            (),
+          _ => aggr_assert_disjoint(left, br),
+        },
+    }
+  }
+
   -- Select the next unique value from the union of two sorted assumption
-  -- lists, returning the unconsumed tails.
+  -- lists, tagging its origin (`0 = left only`, `1 = both`, `2 = right only`)
+  -- and returning the unconsumed tails.
   fn aggr_next_assumption(left: List‹Addr›, right: List‹Addr›)
       -> AggrNextAssumption {
     match (load(left), load(right)) {
       (ListNode.Nil, ListNode.Nil) => AggrNextAssumption.Done,
       (ListNode.Cons(a, ar), ListNode.Nil) =>
-        AggrNextAssumption.More(a, ar, right),
+        AggrNextAssumption.More(a, 0, ar, right),
       (ListNode.Nil, ListNode.Cons(b, br)) =>
-        AggrNextAssumption.More(b, left, br),
+        AggrNextAssumption.More(b, 2, left, br),
       (ListNode.Cons(a, ar), ListNode.Cons(b, br)) =>
         match aggr_address_order(a, b) {
-          0 => AggrNextAssumption.More(a, ar, right),
-          1 => AggrNextAssumption.More(a, ar, br),
-          _ => AggrNextAssumption.More(b, left, br),
+          0 => AggrNextAssumption.More(a, 0, ar, right),
+          1 => AggrNextAssumption.More(a, 1, ar, br),
+          _ => AggrNextAssumption.More(b, 2, left, br),
         },
     }
   }
@@ -458,7 +501,7 @@ def circuit := ⟦
         assert_eq!(load(output), ListNode.Nil,
           "aggr: output has an extra assumption");
         (),
-      AggrNextAssumption.More(candidate, left_rest, right_rest) =>
+      AggrNextAssumption.More(candidate, _source, left_rest, right_rest) =>
         let (discharged, subject_rest) = aggr_seek_subject(candidate, subjects);
         match discharged {
           1 => aggr_assert_difference(left_rest, right_rest, subject_rest, output),
@@ -476,8 +519,11 @@ def circuit := ⟦
   Structural pairs do not open their subject trees. Channel 6 carries one
   choice for every unique input-assumption candidate, keyed by the raw
   candidate address. A carried candidate must occur next in the canonical
-  output-assumption list; a discharged candidate must supply a valid Merkle
-  path into the one-hash structural output root.
+  output-assumption list; a discharged candidate must supply a valid cross-child
+  Merkle path into the opposite child's subject root (`right_root` for a
+  left-only assumption, `left_root` for a right-only assumption) and step into
+  the one-hash structural output root. An assumption shared by both children
+  cannot be discharged and must be carried.
   -/
 
   fn aggr_fold_path(hash: Addr, remaining: G, stream: ByteStream)
@@ -497,11 +543,15 @@ def circuit := ⟦
     }
   }
 
-  -- Return 1 when `candidate` is discharged by a path into `root`, or 0
-  -- when it is explicitly carried. The payload is strict:
+  -- Return 1 when `candidate` is discharged by a cross-child path into the
+  -- opposite child's subject root (`right_root` for a left-only assumption,
+  -- `left_root` for a right-only assumption), or 0 when it is explicitly
+  -- carried. An assumption present in both children (`source == 1`) cannot be
+  -- discharged at this join and must be carried. The payload is strict:
   --   carried:     0
   --   discharged: 1 || count:u8 || (side:u8 || sibling:32)*
-  fn aggr_discharge_choice(candidate: Addr, root: Addr) -> G {
+  fn aggr_discharge_choice(candidate: Addr, source: G,
+      left_root: Addr, right_root: Addr) -> G {
     let (idx, len) = io_get_info(6, load(candidate));
     let bytes = read_checked_byte_stream(6, idx, len);
     let (choice, rest) = aggr_read_byte(bytes);
@@ -514,37 +564,60 @@ def circuit := ⟦
         0,
       _ =>
         let (count, path) = aggr_read_byte(rest);
+        assert_eq!(u8_less_than(0u8, count), 1,
+          "aggr structural: Merkle path must have at least 1 step");
         assert_eq!(u8_less_than(count, 65u8), 1,
           "aggr structural: Merkle path exceeds 64 steps");
-        let (actual, stop) = aggr_fold_path(aggr_leaf_hash(candidate),
-          to_field(count), path);
+        let (child_actual, last_step) = aggr_fold_path(aggr_leaf_hash(candidate),
+          to_field(count) - 1, path);
+        let (last_side, s1) = aggr_read_byte(last_step);
+        let (last_sibling, stop) = aggr_read_address(s1);
         assert_eq!(load(stop), ListNode.Nil,
           "aggr structural: trailing bytes after Merkle path");
-        assert_eq!(address_eq(actual, root), 1,
-          "aggr structural: assumption path does not reach subject root");
-        1,
+        match source {
+          0 =>
+            assert_eq!(last_side, 0u8,
+              "aggr structural: left assumption must be discharged by right child");
+            assert_eq!(address_eq(last_sibling, left_root), 1,
+              "aggr structural: final step sibling is not left subject root");
+            assert_eq!(address_eq(child_actual, right_root), 1,
+              "aggr structural: assumption path does not reach right subject root");
+            1,
+          2 =>
+            assert_eq!(last_side, 1u8,
+              "aggr structural: right assumption must be discharged by left child");
+            assert_eq!(address_eq(last_sibling, right_root), 1,
+              "aggr structural: final step sibling is not right subject root");
+            assert_eq!(address_eq(child_actual, left_root), 1,
+              "aggr structural: assumption path does not reach left subject root");
+            1,
+          _ =>
+            assert_eq!(0, 1,
+              "aggr structural: shared assumption cannot be discharged");
+            0,
+        },
     }
   }
 
   -- Every unique candidate from `left ∪ right` is either discharged by a
-  -- membership path or consumed from the strictly-sorted output list.
+  -- cross-child membership path or consumed from the strictly-sorted output list.
   fn aggr_assert_structural_difference(left: List‹Addr›, right: List‹Addr›,
-      subject_root: Addr, output: List‹Addr›) {
+      left_root: Addr, right_root: Addr, output: List‹Addr›) {
     match aggr_next_assumption(left, right) {
       AggrNextAssumption.Done =>
         assert_eq!(load(output), ListNode.Nil,
           "aggr structural: output has an extra assumption");
         (),
-      AggrNextAssumption.More(candidate, left_rest, right_rest) =>
-        match aggr_discharge_choice(candidate, subject_root) {
+      AggrNextAssumption.More(candidate, source, left_rest, right_rest) =>
+        match aggr_discharge_choice(candidate, source, left_root, right_root) {
           1 => aggr_assert_structural_difference(left_rest, right_rest,
-            subject_root, output),
+            left_root, right_root, output),
           _ =>
             let ListNode.Cons(actual, output_rest) = load(output);
             assert_eq!(address_eq(candidate, actual), 1,
               "aggr structural: outstanding assumption mismatch");
             aggr_assert_structural_difference(left_rest, right_rest,
-              subject_root, output_rest),
+              left_root, right_root, output_rest),
         },
     }
   }
@@ -820,7 +893,9 @@ def circuit := ⟦
     let output_subjects = aggr_load_canonical_tree(output_root);
     let output_assumptions = aggr_load_optional_tree(output_asm);
 
-    aggr_assert_union(left_subjects, right_subjects, output_subjects);
+    aggr_assert_disjoint(left_subjects, left_assumptions);
+    aggr_assert_disjoint(right_subjects, right_assumptions);
+    aggr_assert_disjoint_union(left_subjects, right_subjects, output_subjects);
     aggr_assert_difference(left_assumptions, right_assumptions,
       output_subjects, output_assumptions);
     ()
@@ -850,6 +925,8 @@ def circuit := ⟦
     aggr_assert_same_context(left_ctx, right_ctx);
     aggr_assert_same_context(left_ctx, output_ctx);
 
+    assert_eq!(address_eq(left_root, right_root), 0,
+      "aggr structural: child subject roots must be distinct");
     let expected_root = aggr_node_hash(left_root, right_root);
     assert_eq!(address_eq(output_root, expected_root), 1,
       "aggr structural: output subject root is not nodeHash(left, right)");
@@ -858,7 +935,7 @@ def circuit := ⟦
     let right_assumptions = aggr_load_optional_tree(right_asm);
     let output_assumptions = aggr_load_optional_tree(output_asm);
     aggr_assert_structural_difference(left_assumptions, right_assumptions,
-      output_root, output_assumptions);
+      left_root, right_root, output_assumptions);
     ()
   }
 
@@ -1017,6 +1094,8 @@ def circuit := ⟦
     aggr_assert_same_context((left_spec, left_class, left_axioms, 5), output_ctx);
     aggr_assert_same_context((right_spec, right_class, right_axioms, 5), output_ctx);
 
+    assert_eq!(address_eq(left_root, right_root), 0,
+      "aggr cross-binding: child subject roots must be distinct");
     let expected_root = aggr_node_hash(left_root, right_root);
     assert_eq!(address_eq(output_root, expected_root), 1,
       "aggr cross-binding: output subject root is not nodeHash(left, right)");
@@ -1024,7 +1103,7 @@ def circuit := ⟦
     let right_assumptions = aggr_load_optional_tree(right_asm);
     let output_assumptions = aggr_load_optional_tree(output_asm);
     aggr_assert_structural_difference(left_assumptions, right_assumptions,
-      output_root, output_assumptions);
+      left_root, right_root, output_assumptions);
     ()
   }
 

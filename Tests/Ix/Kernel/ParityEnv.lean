@@ -1,11 +1,12 @@
 module
 
 -- Private imports: `ensureSelected` returns only `IO FilePath`; these provide
--- only its implementation. `Ix.Meta` re-exports `getFileEnv` and `Ix.CompileM`
--- (`rsCompileEnvBytesFFI`). The transitive dep closure comes from the shared
+-- only its implementation. `Ix.Meta` re-exports `getFileEnv` and `Ix.CompileCertified`
+-- provides `compileCertified`. The transitive dep closure comes from the shared
 -- `Ix.EnvScope.collectDeps` (namespaced, so it can meet the same-named
 -- top-level def in `Tests.Ix.Compile.ValidateAux` inside `Tests.Main`).
 import Ix.Meta
+import Ix.CompileCertified
 import Ix.EnvScope
 import Ix.Cli.ConstsFile
 
@@ -60,13 +61,14 @@ public def ensureSelected : IO System.FilePath := do
     else
       throw <| IO.userError s!"tc-parity: seed constant not found in Ix.lean env: {s}"
   let closed := Ix.EnvScope.collectSelectedDeps leanEnv seeds
-  -- Fail-closed (`allowPartial := false`): with `getFileEnv` always
-  -- full-content, every referenced constant — `_private.*` proof auxiliaries
-  -- included — must ground; a silent drop here is exactly how the
-  -- exported-level trim regression hid until the tc gates fired.
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI closed out.toString false
-  if !status.ungrounded.isEmpty then
-    throw (IO.userError s!"tc-pins: selected fixture compilation refused {status.ungrounded.size} constants")
+  -- Fail-closed: with `getFileEnv` always full-content, every referenced
+  -- constant — `_private.*` proof auxiliaries included — must ground; a silent
+  -- drop here is exactly how the exported-level trim regression hid until the
+  -- tc gates fired.
+  let outEnv ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv closed)
+  if !outEnv.failures.isEmpty then
+    throw (IO.userError s!"tc-pins: selected fixture compilation refused {outEnv.failures.toMap.size} constants")
+  IO.FS.writeBinFile out (← IO.ofExcept (Ixon.serEnv outEnv.env))
   return out
 
 end Tests.Tc.ParityEnv

@@ -6,15 +6,17 @@ public import Std.Data.HashSet
 /-!
 # The canonical primitive addresses (Address-only)
 
-Mirror: crates/kernel/src/primitive.rs (`PrimAddrs::new()`).
+Mirror: crates/common/src/prim_addrs.rs (`PrimAddrs::new()`).
 
 The primitive and reserved-marker content addresses, the Lean parity table,
 and their membership set are shared by the resource validator and IxVM claim
 harness. They require only the address representation, independently of the
 kernel typechecker.
-The addresses are hardcoded BLAKE3 hashes matching Rust's `PrimAddrs::new()`;
-regenerate with `lake test -- --ignored rust-kernel-build-primitives` and
-update both tables. The ordered live comparison is
+The addresses are hardcoded BLAKE3 hashes matching `PrimAddrs::new()` in
+`ix-common`; regenerate them as `docs/kernel.md` describes (`lake exe
+ixon-v4-primitives`; `lake test -- --ignored rust-kernel-build-primitives`
+prints the table in `PrimAddrs::new` form) and update both tables. The ordered
+live comparison is
 `Tests.Ix.Kernel.PrimitiveTable` in the `prim-addrs` entry.
 
 `Lean.reduceBool` and `Lean.reduceNat` dispatch by their real content
@@ -228,18 +230,10 @@ def canonical : PrimAddrs where
   stringAppend := h "0eae69f3f8b198d1ffac67b9e88d39526b1b039ff519cd87eec106f63974860c"
   stringDecEq := h "da7bb331e098f9bf5cdabcb9609a7e953dffc609ad9d90871a14c016c52a3011"
 
-/-- The synthetic kernel-only marker address used by the *original*
-    (LEON-addressed) environment's `PrimAddrs::new_orig()`. Only the marker is
-    ported — the full orig table belongs to the Lean→kernel ingress half,
-    which is out of scope. -/
-def origEagerReduce : Address :=
-  h "ff00000000000000000000000000000000000000000000000000000000000013"
-
 /-- Addresses reserved for kernel-only reduction markers. These are not Lean
     constants and must never be accepted as user environment entries. -/
 def reservedMarkerAddrs : Array (String × Address) :=
-  #[("eager_reduce", canonical.eagerReduce),
-    ("orig.eager_reduce", origEagerReduce)]
+  #[("eager_reduce", canonical.eagerReduce)]
 
 /-- `(lean_name, canonical_address_hex)` pairs in the same order as Rust's
     `PrimAddrs::lean_parity_table()` / the `kernelPrimitives` list. Used by
@@ -352,18 +346,12 @@ def reservedMarkerName (addr : Address) : Option String :=
     address (built once at module init from `leanParityTable` +
     `reservedMarkerAddrs`).
 
-    Soundness note: the kernel substitutes native/GMP semantics for the
-    declarations at these addresses (`tryReduceNat*`/`tryReduceDecidable`/
-    …), so its verdicts are sound only if address = content holds exactly
-    here — which the blake3 integrity check at materialization
-    establishes. Ingress therefore verifies prim-addressed constants
-    UNCONDITIONALLY, even under `--no-verify` (`getConstVerified`): for
-    every other constant, skipping verification merely risks checking a
-    mislabeled-but-still-checked declaration; a mislabeled primitive
-    would be silently trusted with the wrong semantics. The Rust mirror
-    has no analogous hole — its integrity check is unconditional at
-    deserialize (`crates/ixon/src/serialize.rs` `Env::get`/`get_anon`,
-    plus the anon merkle-root check). -/
+    The IxVM claim harness (`IxVM.ClaimHarness.closureFrom` and its
+    siblings) seeds a claim's byte scope with the members an environment
+    carries: the kernel can reference them without any `Constant.refs`
+    naming them. Membership grants no semantics: every constant a native
+    rule recognizes or builds is a role, read through the claim's role
+    binding and validated against its specification. -/
 def primAddrSet : Std.HashSet Address := Id.run do
   let mut s : Std.HashSet Address :=
     Std.HashSet.emptyWithCapacity (PrimAddrs.leanParityTable.size + 4)

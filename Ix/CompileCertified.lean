@@ -3,17 +3,18 @@ public import Ix.Cert.Compile
 public import Ix.Compile.ReadyCompile
 public import Ix.Resource.Validate
 public import Ix.RoleBinding.Compile
+public import Ix.Cli.Common
 public section
 
 /-!
 # The certified compile of Lean source
 
-`ix compile` and `ix compile-lean` compile with `Ix.Cert.compileReport`, the
-function `Ix.Cert.CompileCorrect` is about, on the canonical environment of
-their input:
+`ix compile`, `ix compile-lean`, `ix compile-export` and `ix validate-lean`
+compile with `Ix.Cert.compileReport`, the function `Ix.Cert.CompileCorrect` is
+about, on the canonical environment of their input (`compileAndFinalize`):
 
-1. **Source contracts.** The selected constants are prepared as the streamed
-   pipeline prepares them (`prepareCertified`). A list with no contract
+1. **Source contracts.** The selected constants are prepared
+   (`prepareCertified`). A list with no contract
    registration and no contract metadata in either reserved namespace (a scan
    on tasks, `Ix.Compile.checkOrdinaryConstants`, which also checks that each
    constant is listed once, under its own name) is used as it is. Any other
@@ -22,9 +23,10 @@ their input:
    (`Ix.CompileM.checkPreparedSource`: no binder contract left unresolved,
    every semantic contract inspects).
 2. **Canonicalization** (`canonInput`): `Ix.CanonM.canonChunk` on consecutive
-   slices, on tasks. A chunk's value is `(nameS, constS)` of each of its
-   constants (`Ix.Cert.Canon.canonChunkCorrect`), and the slices are joined in
-   order, so the environment does not depend on the worker count.
+   slices (`Ix.CanonM.chunks`), on tasks. A chunk's value is `(nameS, constS)`
+   of each of its constants (`Ix.Cert.Canon.canonChunkCorrect`), and the
+   slices are joined in order, so the environment does not depend on the
+   worker count.
 3. **The compile**: `Ix.Cert.compileReport`, with its checks, at the default
    sharing limits, which it fixes. Execution runs through the
    `Ix.Compile.ReadyCompile.reportIO` subtype bridge
@@ -34,21 +36,15 @@ their input:
    hypothesis of `Ix.Cert.checkReport_sound` and `Ix.Cert.CompileCorrect`
    directly from the parallel ready-queue execution without re-running
    sequential `compileEnv`.
-4. **Accounting**: every failure it reports is an input constant's. With
-   `compileReport`'s coverage check, every input constant is then published or
-   reported as failed, and never both (the streamed pipeline's source
-   accounting, `Ix.Compile.SourceGraph.Accounting`).
+4. **Accounting**: every failure it reports is an input constant's
+   (`failureOutside`). With `compileReport`'s coverage check, every input
+   constant is then published or reported as failed, and never both.
 5. **Resources**: an input with semantic contracts compiles completely, and its
-   artifact validates (`Ix.Resource.validate`), as the streamed pipeline's
-   resource post-step requires (`Ix.CompileM.resourcePostStep`).
+   artifact validates (`Ix.Resource.validate`), before `finalize` and after it
+   (`validateFinalized`).
 
 The artifact's role support and certificates are compiled the same way
 (`certifiedBackend`), by `Ix.RoleBinding.Compile.finalize`.
-
-The streamed pipeline (`Ix.CompileM.compileLeanInputValidated`) stays available
-as an uncertified option of both commands: only its fold is proved to be
-`compileReport`'s (`Ix.Cert.Hybrid`), and its streamed front end is tested
-against it.
 -/
 
 namespace Ix.CompileM
@@ -85,7 +81,8 @@ private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
 list, canonicalized on `workers` tasks over consecutive slices, joined in order. -/
 def canonInput (consts : Array (Lean.Name × Lean.ConstantInfo)) (workers : Nat) :
     Ix.Environment :=
-  let tasks := (Ix.Compile.SourceGraph.Stream.partition consts workers).map fun part =>
+  let size := max 1 ((consts.size + workers - 1) / workers)
+  let tasks := (Ix.CanonM.chunks consts size).map fun part =>
     Task.spawn fun _ => Ix.CanonM.canonChunk part
   { consts := tasks.foldl (init := Std.HashMap.emptyWithCapacity consts.size) fun m t =>
       t.get.foldl (fun m (n, c) => m.insert n c) m }
@@ -118,7 +115,7 @@ def unboundPublishedRole (ixe : Ixon.Env)
 
 /-- The certified compile's result. -/
 structure CertifiedOut where
-  /-- The prepared input, which `--rust-check` compiles too. -/
+  /-- The prepared input. -/
   prepared : List (Lean.Name × Lean.ConstantInfo)
   /-- The input carries semantic contracts. -/
   annotated : Bool
@@ -134,9 +131,20 @@ structure CertifiedOut where
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an
 input with semantic contracts, the resource checks. `log` receives each
-phase's time. -/
+phase's time.
+
+With `defaultRoles`, every published role name must sit at the default role
+table's address of its role (`unboundPublishedRole`): the input is ix's own
+toolchain's, whose role constants the default table binds. An export of
+another toolchain is compiled without it. Its role constants reach that
+toolchain's `Init`, so they sit at other addresses (4.35.0's `Decidable` has
+one constructor, so its `Int.decLt` does). `finalize` binds them in a table
+generated from the export, and `checkFinalized` checks every published role
+name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
+binding). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
-    (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ()) :
+    (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
+    (defaultRoles : Bool := true) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
@@ -157,9 +165,10 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let existing ← match Ix.RoleBinding.sourceAddresses ixe with
     | .ok m => pure m
     | .error e => return .error e
-  if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
-    return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
-      not its bound address in the default role table"
+  if defaultRoles then
+    if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
+      return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
+        not its bound address in the default role table"
   if annotated then
     unless failures.isEmpty do
       return .error "resource compilation requires the complete requested closure"
@@ -168,9 +177,10 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing }
 
 /-- **The certified compile** of the constants `constants` of `source`:
-`prepareCertified`, then `compileCertifiedPrepared`. -/
+`prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`). -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
-    (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ()) :
+    (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
+    (defaultRoles : Bool := true) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let (prepared, annotated) ← match prepareCertified source constants with
@@ -178,13 +188,31 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  compileCertifiedPrepared prepared annotated workers log
+  compileCertifiedPrepared prepared annotated workers log defaultRoles
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
-validates too, as the streamed pipeline checks it after `finalize`. -/
+validates too: `compileCertifiedPrepared` validates the compiled artifact, this
+the finalized one. -/
 def validateFinalized (annotated : Bool) (artifact : Ixon.Env) : Except String Unit := do
   if annotated then
     let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact)
+
+/-- Up to three recorded failures, root causes first (`Ix.Cli.rootCausesFirst`). -/
+def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
+  "; ".intercalate ((Ix.Cli.rootCausesFirst failures.toList).take 3 |>.map fun (n, e) =>
+    s!"{n.pretty}: {(e.replace "\n" " ").take 200}")
+
+/-- Compile `constList` with the certified Lean compiler and return its `CompilePhases`. -/
+def compilePhasesOf (leanEnv : Lean.Environment)
+    (constList : List (Lean.Name × Lean.ConstantInfo))
+    (workers : Nat := 8) : IO CompilePhases := do
+  let certOut ← IO.ofExcept (← compileCertified leanEnv constList workers)
+  unless certOut.failures.isEmpty do
+    let fMap := certOut.failures.toMap
+    throw (IO.userError s!"compilePhasesOf: {fMap.size} constant(s) failed to compile: {recordedFailures fMap}")
+  let rawEnv := canonInput certOut.prepared.toArray workers
+  let condensed := Ix.Cert.blocksOf rawEnv
+  return { rawEnv, condensed, compileEnv := certOut.env }
 
 end Ix.CompileM
 
@@ -192,15 +220,82 @@ namespace Ix.RoleBinding.Compile
 
 /-- The certified compiler as `finalize`'s backend: the role support and the
 certificates are compiled with `Ix.Cert.compileReport`, and must compile
-completely. -/
-def certifiedBackend (workers : Nat) : Backend := fun _ input => do
+completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`. -/
+def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) : Backend := fun _ input => do
   let prepared ← IO.ofExcept input.prepare
   let annotated ← IO.ofExcept (Ix.CompileM.checkPreparedSource prepared)
-  let out ← IO.ofExcept (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers)
+  let out ← IO.ofExcept
+    (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles))
   unless out.failures.isEmpty do
     throw (IO.userError "artifact support: incomplete certified compilation")
   return out.env
 
 end Ix.RoleBinding.Compile
+
+namespace Ix.CompileM
+
+/-- What `compileAndFinalize` made of a certified compile. -/
+inductive Finalization where
+  /-- Not finalized: a constant failed to compile, and a partial artifact was
+  not allowed. -/
+  | refused
+  /-- `finalize`, `validateFinalized` or `Ixon.serEnv` failed. -/
+  | failed (error : String)
+  /-- The finalized artifact, after `strip`, and its serialization. -/
+  | done (artifact : Ixon.Env) (bytes : ByteArray)
+
+/-- **The certified compile, finalized**, as the compile commands run it:
+`compileCertified`; then, unless a constant failed and `allowPartial` is false,
+the role support, certificates and binding (`Ix.RoleBinding.Compile.finalize`
+with `certifiedBackend`, the certificate theorems from `certSource`),
+`validateFinalized`, `strip` and `Ixon.serEnv`. The outer error is the
+compile's refusal. `log` receives each phase's time and the resident set size.
+`defaultRoles` is off for another toolchain's export, as in
+`compileCertifiedPrepared`; the finalized artifact's published role names are
+then checked against its own binding (`checkFinalized`).
+
+With `prefetch`, every role's certificate compile starts first, beside the
+source compile (`Ix.RoleBinding.Compile.prefetchCertificates`): a compile of a
+whole toolchain's library publishes every role, so `finalize` needs exactly
+those certificates. The prefetch is always joined before returning, also on a
+refusal or a failure, or when `finalize` needed other certificates: a task
+still running when `main` returns would wait for subtasks that the runtime's
+shutdown no longer runs. -/
+def compileAndFinalize (source : Lean.Environment)
+    (constants : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) (allowPartial : Bool)
+    (log : String → IO Unit := fun _ => pure ())
+    (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
+    (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
+    (prefetch : Bool := false) :
+    IO (Except String (CertifiedOut × Finalization)) := do
+  let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
+  let certificates? ← if prefetch then
+      some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
+    else pure none
+  let run : IO (Except String (CertifiedOut × Finalization)) := do
+    let out ← match ← compileCertified source constants workers log defaultRoles with
+      | .ok out => pure out
+      | .error e => return .error e
+    log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
+    if !allowPartial && !out.failures.isEmpty then return .ok (out, .refused)
+    try
+      let t0 ← IO.monoMsNow
+      let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
+        (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
+        (prefetched? := certificates?)
+      IO.ofExcept (validateFinalized out.annotated artifact)
+      let t1 ← IO.monoMsNow
+      log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
+      let artifact := strip artifact
+      let bytes ← IO.ofExcept (Ixon.serEnv artifact)
+      log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
+      return .ok (out, .done artifact bytes)
+    catch e => return .ok (out, .failed e.toString)
+  try run
+  finally
+    if let some (_, task) := certificates? then
+      let _ ← IO.wait task
+
+end Ix.CompileM
 
 end

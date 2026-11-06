@@ -8,7 +8,6 @@
 
   Run with: `lake test -- kernel-check-primegaps --ignored`
 -/
-import Ix.KernelCheck
 import Ix.Meta
 import Tests.Ix.Kernel.FocusedLeanCheck
 import Tests.Ix.Kernel.PrimeGapsReduction
@@ -16,7 +15,6 @@ import Tests.Ix.Kernel.TutorialMeta
 import LSpec
 
 open LSpec
-open Ix.KernelCheck (CheckError rsCheckConstsFFI)
 
 namespace Tests.Ix.Kernel.CheckPrimeGaps
 
@@ -34,42 +32,6 @@ private def filterFocusConsts (names : Array Lean.Name) : IO (Array Lean.Name) :
       {filtered.size}/{names.size}"
     pure filtered
 
-def testRustCheckPrimeGaps : TestSeq :=
-  .individualIO s!"kernel check {focusConsts.size} inlined PrimeGaps consts" none (do
-    let names ← filterFocusConsts focusConsts
-    if names.isEmpty then
-      return (false, 0, 0, some "IX_KERNEL_FOCUS_CONST matched no PrimeGaps canary")
-
-    let leanEnv ← get_env!
-    let (_, closedConsts) :=
-      Tests.Ix.Kernel.TutorialMeta.collectDepsWithExtras leanEnv {} names.toList
-    IO.println s!"[check-primegaps] compiling {closedConsts.length}-constant \
-      closure for {names.size} exact subject(s)"
-
-    let expected := names.map fun _ => true
-    let start ← IO.monoMsNow
-    let results ← rsCheckConstsFFI closedConsts names expected false
-    let elapsed := (← IO.monoMsNow) - start
-
-    let mut failures : Array (Lean.Name × String) := #[]
-    for i in [:names.size] do
-      if let some err := results[i]! then
-        let message := match err with
-          | .kernelException m => s!"kernel: {m}"
-          | .compileError m => s!"compile: {m}"
-        failures := failures.push (names[i]!, message)
-
-    IO.println s!"[check-primegaps] {names.size - failures.size}/{names.size} \
-      passed in {elapsed}ms"
-    for (name, message) in failures do
-      IO.println s!"  ✗ {name}: {message}"
-
-    if failures.isEmpty then
-      return (true, names.size, names.size, none)
-    return (false, names.size - failures.size, names.size,
-      some s!"PrimeGaps focus check failed with {failures.size} failure(s)")
-  ) .done
-
 def testLeanCheckPrimeGaps : TestSeq :=
   .individualIO s!"IxC check {focusConsts.size} inlined PrimeGaps consts" none (do
     let names ← filterFocusConsts focusConsts
@@ -80,6 +42,6 @@ def testLeanCheckPrimeGaps : TestSeq :=
       "primegaps-reduction" leanEnv names
   ) .done
 
-def suite : List TestSeq := [testRustCheckPrimeGaps, testLeanCheckPrimeGaps]
+def suite : List TestSeq := [testLeanCheckPrimeGaps]
 
 end Tests.Ix.Kernel.CheckPrimeGaps

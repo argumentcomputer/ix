@@ -6,8 +6,8 @@ import Ix.Cert.Statement
 /-! # The hybrid environment compiles as the materialized one
 
 `Ix.Cert.compile` runs the driver `Ix.CompileM.compileEnvFold` over the
-materialized environment (`{ consts := env.consts }`); the IO pipeline
-(`Ix.CompileM.compileDecoratedConsts`) runs it over a hybrid one: the code
+materialized environment (`{ consts := env.consts }`); the hybrid model
+runs it over a hybrid one: the code
 kinds materialized, theorem and opaque bodies canonicalized again on demand
 through `fallback?` (`hybridEnv`). The driver and its validations read the
 environment through `Ix.Environment.get?` only, apart from the order of the
@@ -39,14 +39,17 @@ restatements, behaviour-identical). So:
   one condensation, under those premises.
 
 **What stays a premise, and why:** the group order is no longer one (the
-validations order groups by the first members' set). The IO layer's own steps are tested, not proved:
-that its loops build the hybrid environment's pieces as stated (`code`,
-`canon`, and `inductives`: the code constants hold exactly the input's
-inductives), that its streamed
-canonicalization, graph, ground filter and condensation are
-`Ix.Cert.groundSplit`'s and `blocksOf`'s (`cert-compile-parity-initstd`), and
-that the blocks of one wave are independent (`compile-schedule-identity`'s
-reference schedule). -/
+validations order groups by the first members' set). For the hybrid model,
+its premises record that the materialized code constants and fallback
+canonicalization match `Ix.Cert.Canon.constS` (`code`, `canon`, and
+`inductives`: the code constants hold exactly the input's inductives). In the
+certified production path, `Ix.Compile.ReadyCompile.reportIO` proves directly
+by type that the IO worker-queue pipeline returns `Ix.Cert.compileReport`, and
+`Ix.Cert.FreshSnapshot` proves wave-snapshot freshness and disjointness across
+blocks in a wave (used to prove semantic correctness of the wave-snapshot fold
+directly; equivalence between the wave-snapshot fold and a one-block-at-a-time
+live-state fold is a property of block independence within a wave, not proved
+in `Ix.Cert.Schedule`). -/
 
 namespace Ix.Cert.Hybrid
 
@@ -178,8 +181,8 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
 
 /-! ## The IO pipeline's environment -/
 
-/-- The IO pipeline's hybrid environment, as `compileDecoratedConsts` builds
-it from its pieces: the materialized code constants, and every input
+/-- The hybrid environment, built
+from its pieces: the materialized code constants, and every input
 constant canonicalized again on demand. -/
 def hybridEnv (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
     (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)) : Ix.Environment :=

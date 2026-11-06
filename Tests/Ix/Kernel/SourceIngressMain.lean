@@ -1,4 +1,5 @@
 import Ix.Meta
+import Ix.CompileCertified
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.SourceIngressStep
 import Tests.Ix.Kernel.SourceIngressCompare
@@ -101,7 +102,8 @@ def main (args : List String) : IO UInt32 := do
       let some path := a.ixe | throw (IO.userError "--fiber-hints and --collapse need --ixe")
       unless ← path.pathExists do
         let t ← IO.monoMsNow
-        let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
+        let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList a.workers)
+        IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv out.env))
         IO.println s!"compiled {path} in {(← IO.monoMsNow) - t} ms"
       pure (some (← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))))
     else pure none
@@ -236,11 +238,14 @@ def main (args : List String) : IO UInt32 := do
   if let some path := a.ixe then
     unless ← path.pathExists do
       let t ← IO.monoMsNow
-      let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
+      let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList a.workers)
+      IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv out.env))
       IO.println s!"compiled {path} in {(← IO.monoMsNow) - t} ms"
     let t ← IO.monoMsNow
-    let ixon ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-    let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts ixon
+    let ixon ← match artifact with
+      | some ixon => pure ixon
+      | none => IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+    let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts ixon a.workers
     let cmp := Tests.Ix.Kernel.SourceIngressCompare.compare r.rows verdicts
     IO.println s!"ixon check (default role table) in {(← IO.monoMsNow) - t} ms: {verdicts.size} \
       constants with a verdict, {cmp.unmatched} source constants without one"

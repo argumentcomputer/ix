@@ -1,9 +1,17 @@
-/-
+module
+
+public import Lean
+public meta import Ix.Replay
+public meta import Ix.CompileCertified
+public meta import Ix.Commit
+public meta import Ix.ClaimContext
+
+/-!
   `#ixeval`: evaluate a term through the ix pipeline and surface the
   content-addressed evaluation claim.
 
   `#ixeval t` elaborates `t`, computes a candidate normal form with `Meta.reduceAll`,
-  compiles the term's reference closure with the Rust compiler, and
+  compiles the term's reference closure with the certified Lean compiler, and
   builds an `Ix.Claim.eval` from the input and output content
   addresses (`Ix.Commit.evalClaim`). The reduced value, the claim, and
   its digest (blake3 of the serialized claim — the public input
@@ -24,13 +32,6 @@
   resolve to ix's own mirror types, so Lean's are `Lean.`-qualified
   explicitly throughout (repo convention).
 -/
-module
-
-public import Lean
-public meta import Ix.Replay
-public meta import Ix.CompileM
-public meta import Ix.Commit
-public meta import Ix.ClaimContext
 
 public section
 
@@ -76,7 +77,7 @@ meta def elabIxEval : CommandElab := fun stx => do
         for r in Ix.Replay.constantInfoReferences ci do
           unless seen.contains r do
             work := work.push r
-      let phases ← Ix.CompileM.rsCompilePhasesOf closure
+      let phases ← Ix.CompileM.compilePhasesOf env closure
       let compileEnv := Ix.Commit.mkCompileEnv phases
       let ctx ← match Ix.ClaimContext.ofDefaultTable with
         | .ok ctx => pure ctx

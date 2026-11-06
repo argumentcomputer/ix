@@ -1,7 +1,3 @@
-/-
-  Generators for Ix.* types (canonical Lean types with Blake3 hashes).
-  Generators for property-based FFI roundtrip tests.
--/
 module
 
 public import LSpec
@@ -10,8 +6,11 @@ public import Tests.Gen.Ixon
 public import Ix.Address
 public import Ix.Environment
 public import Ix.CondenseM
-public import Ix.CompileM
-public import Ix.DecompileM
+
+/-!
+  Generators for Ix.* types (canonical Lean types with Blake3 hashes).
+  Generators for property-based FFI roundtrip tests.
+-/
 
 public section
 
@@ -485,30 +484,6 @@ instance : Shrinkable Ix.ConstantInfo where
 
 instance : SampleableExt Ix.ConstantInfo := SampleableExt.mkSelfContained genIxConstantInfo
 
-/-! ## Generators for Ix.RawEnvironment -/
-
-/-- Generate small arrays for RawEnvironment to avoid memory issues -/
-def genSmallArray (g : Gen α) : Gen (Array α) :=
-  resize (fun s => if s > 3 then 3 else s / 2) <|
-  Array.mk <$> (listOf g >>= fun l => pure (l.take 3))
-
-/-- Generate a simple ConstantInfo (only axiomInfo for FFI stability) -/
-def genSimpleConstantInfo : Gen Ix.ConstantInfo :=
-  Ix.ConstantInfo.axiomInfo <$> genIxAxiomVal
-
-/-- Generate a (Name × ConstantInfo) pair for RawEnvironment -/
-def genNameConstantPair : Gen (Ix.Name × Ix.ConstantInfo) :=
-  Prod.mk <$> genIxName 3 <*> genSimpleConstantInfo
-
-/-- Generate a RawEnvironment with small arrays to avoid memory issues -/
-def genIxRawEnvironment : Gen Ix.RawEnvironment :=
-  Ix.RawEnvironment.mk <$> genSmallArray genNameConstantPair
-
-instance : Shrinkable Ix.RawEnvironment where
-  shrink env := if env.consts.isEmpty then [] else [{ consts := env.consts.pop }]
-
-instance : SampleableExt Ix.RawEnvironment := SampleableExt.mkSelfContained genIxRawEnvironment
-
 /-! ## Generators for Additional Ix Types -/
 
 def genAddress : Gen Address := Tests.Gen.Ixon.genAddress
@@ -539,148 +514,6 @@ instance : Shrinkable Ix.DataValue where
     | _ => [.ofBool true]
 
 instance : SampleableExt Ix.DataValue := SampleableExt.mkSelfContained genIxDataValue
-
-/-! ## Generators for RustCondensedBlocks and RustCompilePhases -/
-
-/-- Generate a (Name × Name) pair for lowLinks -/
-def genNamePair : Gen (Ix.Name × Ix.Name) :=
-  Prod.mk <$> genIxName 3 <*> genIxName 3
-
-/-- Generate a (Name × Array Name) pair for blocks/blockRefs -/
-def genNameArrayPair : Gen (Ix.Name × Array Ix.Name) := do
-  let name ← genIxName 3
-  let arr ← genSmallArray (genIxName 3)
-  pure (name, arr)
-
-/-- Generate Ix.RustCondensedBlocks -/
-def genRustCondensedBlocks : Gen Ix.RustCondensedBlocks :=
-  Ix.RustCondensedBlocks.mk
-    <$> genSmallArray genNamePair
-    <*> genSmallArray genNameArrayPair
-    <*> genSmallArray genNameArrayPair
-
-instance : Shrinkable Ix.RustCondensedBlocks where
-  shrink cb :=
-    (if cb.lowLinks.size > 0 then [{ cb with lowLinks := cb.lowLinks.pop }] else []) ++
-    (if cb.blocks.size > 0 then [{ cb with blocks := cb.blocks.pop }] else []) ++
-    (if cb.blockRefs.size > 0 then [{ cb with blockRefs := cb.blockRefs.pop }] else [])
-
-instance : SampleableExt Ix.RustCondensedBlocks := SampleableExt.mkSelfContained genRustCondensedBlocks
-
-/-- Generate Ix.CompileM.RustCompilePhases -/
-def genRustCompilePhases : Gen Ix.CompileM.RustCompilePhases :=
-  Ix.CompileM.RustCompilePhases.mk
-    <$> genIxRawEnvironment
-    <*> genRustCondensedBlocks
-    <*> Tests.Gen.Ixon.genRawEnv
-
-instance : Shrinkable Ix.CompileM.RustCompilePhases where
-  shrink p :=
-    -- Shrink to empty structures
-    let empty : Ix.CompileM.RustCompilePhases := {
-      rawEnv := { consts := #[] },
-      condensed := { lowLinks := #[], blocks := #[], blockRefs := #[] },
-      compileEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
-    }
-    if p.rawEnv.consts.isEmpty && p.condensed.lowLinks.isEmpty && p.compileEnv.consts.isEmpty
-    then []
-    else [empty]
-
-instance : SampleableExt Ix.CompileM.RustCompilePhases := SampleableExt.mkSelfContained genRustCompilePhases
-
-/-! ## Generators for SerializeError, CompileError, and DecompileError -/
-
-instance : Inhabited Ixon.SerializeError where
-  default := .addressError
-
-instance : Inhabited Ix.DecompileM.DecompileError where
-  default := .badConstantFormat ""
-
-instance : Inhabited Ix.CompileM.CompileError where
-  default := .missingConstant ""
-
-/-- Generate a SerializeError with all variants -/
-def genSerializeError : Gen Ixon.SerializeError := do
-  let s ← genIxString
-  let byte ← Gen.choose Nat 0 255
-  let idx ← Gen.choose Nat 0 100
-  let len ← Gen.choose Nat 0 100
-  Gen.frequency #[
-    (1, pure (.unexpectedEof s)),
-    (1, pure (.invalidTag byte.toUInt8 s)),
-    (1, pure (.invalidFlag byte.toUInt8 s)),
-    (1, pure (.invalidVariant idx.toUInt64 s)),
-    (1, pure (.invalidBool byte.toUInt8)),
-    (1, pure .addressError),
-    (1, pure (.invalidShareIndex idx.toUInt64 len))
-  ] (pure default)
-
-instance : Shrinkable Ixon.SerializeError where
-  shrink e := match e with
-    | .addressError => []
-    | _ => [.addressError]
-
-instance : SampleableExt Ixon.SerializeError :=
-  SampleableExt.mkSelfContained genSerializeError
-
-/-- Generate a DecompileError with all variants -/
-def genDecompileError : Gen Ix.DecompileM.DecompileError := do
-  let addr ← genAddress
-  let idx ← Gen.choose Nat 0 100
-  let len ← Gen.choose Nat 0 100
-  let s ← genIxString
-  let se ← genSerializeError
-  Gen.frequency #[
-    (1, pure (.invalidRefIndex idx.toUInt64 len s)),
-    (1, pure (.invalidUnivIndex idx.toUInt64 len s)),
-    (1, pure (.invalidShareIndex idx.toUInt64 len s)),
-    (1, pure (.invalidRecIndex idx.toUInt64 len s)),
-    (1, pure (.invalidUnivVarIndex idx.toUInt64 len s)),
-    (1, pure (.missingAddress addr)),
-    (1, pure (.missingMetadata addr)),
-    (1, pure (.blobNotFound addr)),
-    (1, do let expected ← genIxString; pure (.badBlobFormat addr expected)),
-    (1, pure (.badConstantFormat s)),
-    (1, pure (.serializeError se)),
-    (1, do let entry ← Gen.choose Nat 0 100; let q ← Gen.choose Nat 0 100
-           pure (.invalidMetaShareIndex idx.toUInt64 entry.toUInt64 len q s))
-  ] (pure default)
-
-instance : Shrinkable Ix.DecompileM.DecompileError where
-  shrink e := match e with
-    | .badConstantFormat s => if s.isEmpty then [] else [.badConstantFormat ""]
-    | .serializeError se =>
-      [.badConstantFormat ""] ++ (.serializeError <$> Shrinkable.shrink se)
-    | _ => [.badConstantFormat ""]
-
-instance : SampleableExt Ix.DecompileM.DecompileError :=
-  SampleableExt.mkSelfContained genDecompileError
-
-/-- Generate a CompileError with all variants -/
-def genCompileError : Gen Ix.CompileM.CompileError := do
-  let addr ← genAddress
-  let s ← genIxString
-  let se ← genSerializeError
-  Gen.frequency #[
-    (1, pure (.missingConstant s)),
-    (1, pure (.missingAddress addr)),
-    (1, pure (.invalidMutualBlock s)),
-    (1, pure (.unsupportedExpr s)),
-    (1, do let s2 ← genIxString; pure (.unknownUnivParam s s2)),
-    (1, pure (.serializeError se)),
-    (1, pure (.resourceLimit s)),
-    (1, pure (.sharingConstruction s))
-  ] (pure default)
-
-instance : Shrinkable Ix.CompileM.CompileError where
-  shrink e := match e with
-    | .missingConstant s => if s.isEmpty then [] else [.missingConstant ""]
-    | .serializeError se =>
-      [.missingConstant ""] ++ (.serializeError <$> Shrinkable.shrink se)
-    | _ => [.missingConstant ""]
-
-instance : SampleableExt Ix.CompileM.CompileError :=
-  SampleableExt.mkSelfContained genCompileError
 
 end Tests.Gen.Ix
 

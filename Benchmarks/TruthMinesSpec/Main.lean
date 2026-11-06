@@ -1,4 +1,9 @@
-/-
+import Benchmarks.TruthMinesSpec.Projection
+import Ix.Catalog
+import Ix.Common
+import Ix.Watchdog
+
+/-!
   `lake exe truthmines` — the corpus driver: Mathlib-parity ergonomics for
   the TruthMines catalog. Everything is projected from the typed records in
   `Benchmarks.TruthMinesSpec`; there is no version or toolchain handshake
@@ -33,7 +38,7 @@
                     its source workspaces and compatibility patches stay
                     owned by Palomar.ix.
     check [--mini] [--ixc DIR.ixc] [--only Q[,Q…]] [--jobs N]
-                    per-piece KERNEL sweep: `ix check-rs --anon` over
+                    per-piece KERNEL sweep: `ix check-lean --anon` over
                     each member's piece in the `.ixc` directory — the
                     fat-profile rung-1 checking story. Each piece is a
                     self-contained env checked in its own subprocess
@@ -53,10 +58,6 @@
 
   Run from the repo root; `build` needs `lake build ix` first.
 -/
-import Benchmarks.TruthMinesSpec.Projection
-import Ix.Catalog
-import Ix.Common
-import Ix.Watchdog
 
 open TruthMinesSpec
 
@@ -524,7 +525,7 @@ private def parseCheck : List String → Except String CheckOptions
     pure { ← parseCheck rest with mini := true }
   | arg :: _ => .error s!"unknown check argument `{arg}`"
 
-/-- Per-piece kernel sweep: `ix check-rs --anon` over each member's
+/-- Per-piece kernel sweep: `ix check-lean --anon` over each member's
     piece in the `.ixc` directory. Every piece is a self-contained env
     checked in its own subprocess, so the pool's peak is one mmap'd
     member (~4–6 GiB RSS), never a union — no watchdog needed. Output
@@ -554,7 +555,7 @@ build{if options.mini then " --mini" else ""}` first"
   let jobs := options.jobs?.getD 4
   let exe ← IO.FS.realPath ixExe
   stageLine s!"[truthmines] check: {labels.size} piece(s), {jobs} in flight \
-({tier} tier; per-piece `ix check-rs --anon` over {ixc})"
+({tier} tier; per-piece `ix check-lean --anon` over {ixc})"
   let runOne (q : String) : IO (MemberOutcome × String) := do
     let piece := ixc / s!"{q}.ixe"
     unless (← piece.pathExists) do
@@ -562,7 +563,7 @@ build{if options.mini then " --mini" else ""}` first"
         s!"piece {piece} missing — stale manifest or partial build")
     let out ← IO.Process.output {
       cmd := exe.toString
-      args := #["check-rs", piece.toString, "--anon"]
+      args := #["check-lean", piece.toString, "--anon"]
       env := #[("IX_MAX_REC_FUEL", some "1000000000")] }
     let tail := if out.exitCode == 0 then "" else
       s!"── {q} stderr (first 4000) ──\n{out.stderr.take 4000}\n\
@@ -589,7 +590,7 @@ build{if options.mini then " --mini" else ""}` first"
       let piece := ixc / s!"{outcome.qualifier}.ixe"
       stageLine s!"[truthmines] {outcome.qualifier}: kernel REJECTED \
 ({outcome.exit}) — rerun solo: IX_MAX_REC_FUEL=1000000000 \
-{ixExe} check-rs {piece} --anon"
+{ixExe} check-lean {piece} --anon"
       unless tail.isEmpty do IO.eprintln tail
   stageLine s!"[truthmines] check done: {passed}/{labels.size} piece(s) \
 kernel-clean{if failures.isEmpty then "" else s!"; failed: {failures}"}"

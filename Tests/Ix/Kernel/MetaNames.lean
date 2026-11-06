@@ -1,5 +1,6 @@
 import Ix.Meta
 import Ix.CompileM
+import Ix.CompileCertified
 import Tests.Ix.Kernel.SourceIngressStep
 import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelDisplay.MetaNames
@@ -296,10 +297,11 @@ unsafe def main (_args : List String) : IO UInt32 := do
   -- `.meta`: compiled with the metadata, read, named, checked
   let dir ← IO.FS.createTempDir
   let path := dir / "meta-names.ixe"
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI consts.toList path.toString true
-  unless status.ungrounded.isEmpty do
-    IO.println s!"kernel-meta-names: {status.ungrounded.size} constants not compiled: \
-      {status.ungrounded.toList.take 5}"
+  let (ixe0, failures) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput consts 32))
+  IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv ixe0))
+  unless failures.isEmpty do
+    IO.println s!"kernel-meta-names: {failures.toMap.size} constants not compiled: \
+      {failures.toMap.toList.take 5}"
   let metaSeen ← metaSide path wanted
   let sourceSeen ← sourceSide consts leanEnv wanted
   let mut failures := 0

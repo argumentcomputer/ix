@@ -4,6 +4,7 @@ import Ix.ClaimContext
 import Ix.Address
 import Ix.Meta
 import Ix.CompileM
+import Ix.CompileCertified
 import Batteries
 
 inductive Candidate
@@ -31,8 +32,8 @@ def runElection (votes: List Candidate) : Result :=
 def main : IO UInt32 := do
   let mut env : Lean.Environment ← get_env!
 
-  -- 1. Full compilation via Rust
-  let phases ← Ix.CompileM.rsCompilePhases env
+  -- 1. Full compilation via certified pipeline
+  let phases ← Ix.CompileM.compilePhasesOf env env.constants.toList
   let mut compileEnv := Ix.Commit.mkCompileEnv phases
 
   -- simulate getting the votes from somewhere
