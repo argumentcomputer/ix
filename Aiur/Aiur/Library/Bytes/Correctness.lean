@@ -64,6 +64,46 @@ theorem repByteStream_heapMono [NatCast F] (enumName : String) (bytes : _root_.L
     HeapMono (fun h ptr => RepByteStream (F := F) enumName h bytes ptr) :=
   List.repList_heapMono enumName repU8_heapMono₂ bytes
 
+private theorem list_map_u8_field_inj [Field F] (large : U32.Compatible F)
+    {xs ys : _root_.List UInt8}
+    (h : xs.map (fun b : UInt8 => (Value.field (b.toNat : F) : SourceValue F)) =
+         ys.map (fun b : UInt8 => (Value.field (b.toNat : F) : SourceValue F))) :
+    xs = ys := by
+  induction xs generalizing ys with
+  | nil =>
+      cases ys <;> simp at h ⊢
+  | cons x xs ih =>
+      cases ys with
+      | nil => simp at h
+      | cons y ys =>
+          simp only [_root_.List.map_cons, _root_.List.cons.injEq] at h
+          exact _root_.List.cons_eq_cons.mpr ⟨repU8_inj large (h := ([] : Heap F)) rfl h.1, ih h.2⟩
+
+theorem repAddress_inj [Field F] (large : U32.Compatible F) {h : Heap F}
+    {a₁ a₂ : Address} {v : SourceValue F}
+    (h₁ : RepAddress h a₁ v) (h₂ : RepAddress h a₂ v) : a₁ = a₂ := by
+  have hTuple := Value.tuple.inj (h₁.symm.trans h₂)
+  exact Vector.toList_inj.mp (list_map_u8_field_inj large hTuple)
+
+theorem repAddressRef_inj [Field F] (large : U32.Compatible F) {ty : Ty} {h : Heap F}
+    {a₁ a₂ : Address} {ptr : SourceValue F}
+    (h₁ : RepAddressRef ty h a₁ ptr) (h₂ : RepAddressRef ty h a₂ ptr) : a₁ = a₂ := by
+  obtain ⟨addr₁, v₁, hptr₁, hcell₁, hrep₁⟩ := h₁
+  obtain ⟨addr₂, v₂, hptr₂, hcell₂, hrep₂⟩ := h₂
+  rw [hptr₁] at hptr₂
+  injection hptr₂ with _ hAddr
+  subst hAddr
+  rw [hcell₁] at hcell₂
+  injection hcell₂ with hVal
+  subst hVal
+  exact repAddress_inj large hrep₁ hrep₂
+
+theorem repByteStream_inj [Field F] (large : U32.Compatible F) {enumName : String} {h : Heap F}
+    {bs₁ bs₂ : _root_.List UInt8} {ptr : SourceValue F}
+    (h₁ : RepByteStream enumName h bs₁ ptr) (h₂ : RepByteStream enumName h bs₂ ptr) :
+    bs₁ = bs₂ :=
+  List.repList_inj (repU8_inj large) h₁ h₂
+
 /-! ### 2. `Bytes::address_eq_tail` and `Bytes::address_eq` Correctness -/
 
 /-- Packed 7-byte field limb `pa1` (`Bytes::address_eq_tail`, lines 27-29). -/

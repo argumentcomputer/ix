@@ -1086,7 +1086,7 @@ theorem RepRoleCtx.det [Field F] (large : U32.Compatible F)
 byte stream at `(idx, len)` and passing `Blake3::verify_bytes_against` guarantees
 a heap-extended `RepByteStream` of length `len < 2^32` whose pure BLAKE3 digest
 equals `expectedAddr`. -/
-theorem ingress_verify_stream_sound [Field F] (large : U64.Compatible F)
+theorem ingress_verify_stream_sound [Field F] (large : U32.Compatible F)
     (enumName : String) (stream : Nat → UInt8) (idx len : Nat) (h : Heap F)
     (expectedAddr : Address)
     (hDepth : Word.depthChecked (readByteStream stream idx len) = some len)
@@ -1102,6 +1102,33 @@ theorem ingress_verify_stream_sound [Field F] (large : U64.Compatible F)
   obtain ⟨hDepthIff, hExt, hRep, hLen⟩ := read_finite_byte_stream_spec enumName stream idx len h
   exact ⟨hExt, hRep, hLen, hDepthIff.mp hDepth,
     (Blake3.verify_bytes_against_iff large (readByteStream stream idx len) expectedAddr).mp hVerify⟩
+
+/-- Canonical `SourceValue F` representation of a decoded `Tag4` pair `(flag, value)`
+(`(Field, UInt64::U64)` returned by `IxonDeserialize::get_tagn4`). -/
+def RepTag4 [NatCast F] (h : Heap F) (tag : UInt8 × UInt64) (v : SourceValue F) : Prop :=
+  ∃ valTuple, v = .tuple [.field (tag.1.toNat : F), valTuple] ∧
+    RepU64 h tag.2 valTuple
+
+theorem repTag4_heapMono₂ [NatCast F] : HeapMono₂ (RepTag4 (F := F)) := by
+  intro h₁ h₂ tag v ext ⟨valTuple, hv, hVal⟩
+  exact ⟨valTuple, hv, repU64_heapMono₂ ext hVal⟩
+
+theorem repTag4_inj [Field F] (large : U32.Compatible F) {h : Heap F}
+    {t₁ t₂ : UInt8 × UInt64} {v : SourceValue F}
+    (h₁ : RepTag4 h t₁ v) (h₂ : RepTag4 h t₂ v) :
+    t₁ = t₂ := by
+  obtain ⟨val₁, rfl, hVal₁⟩ := h₁
+  obtain ⟨val₂, hEq, hVal₂⟩ := h₂
+  injection hEq with hList
+  injection hList with hFlag hRest
+  injection hRest with hVal _
+  subst hVal
+  rcases t₁ with ⟨f₁, w₁⟩
+  rcases t₂ with ⟨f₂, w₂⟩
+  have hf := repU8_inj large (h := ([] : Heap F)) rfl hFlag
+  have hw := repU64_det large hVal₁ hVal₂
+  subst hf hw
+  rfl
 
 /-- Uniqueness of splitting a header byte into `flag * 32 + low5` with `low5 < 32`. -/
 theorem tag_header_split_unique {f₁ l₁ f₂ l₂ : Nat}

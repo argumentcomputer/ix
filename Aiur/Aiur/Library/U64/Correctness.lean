@@ -300,6 +300,15 @@ theorem wrapping_succ_sound {b0 b1 b2 b3 b4 b5 b6 b7 : Nat}
     unfold pack
     omega
 
+theorem wrapping_succ_bytes_sound {b0 b1 b2 b3 b4 b5 b6 b7 : Nat}
+    (h0 : b0 < 256) (h1 : b1 < 256) (h2 : b2 < 256) (h3 : b3 < 256)
+    (h4 : b4 < 256) (h5 : b5 < 256) (h6 : b6 < 256) (h7 : b7 < 256) :
+    let (r0, r1, r2, r3, r4, r5, r6, r7) := wrappingSuccBytes b0 b1 b2 b3 b4 b5 b6 b7
+    r0 < 256 ∧ r1 < 256 ∧ r2 < 256 ∧ r3 < 256 ∧
+    r4 < 256 ∧ r5 < 256 ∧ r6 < 256 ∧ r7 < 256 ∧
+    pack r0 r1 r2 r3 r4 r5 r6 r7 = (pack b0 b1 b2 b3 b4 b5 b6 b7 + 1) % base :=
+  wrapping_succ_sound h0 h1 h2 h3 h4 h5 h6 h7
+
 /-! ### 5. `saturating_pred` -/
 
 def saturatingPredBytes (b0 b1 b2 b3 b4 b5 b6 b7 : Nat) :

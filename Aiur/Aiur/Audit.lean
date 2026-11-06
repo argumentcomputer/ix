@@ -1237,6 +1237,20 @@ info: @Library.Carry.mapEntries_iff : ∀ {F : Type} [inst : Field F] (base coun
 #guard_msgs in
 #print axioms Aiur.Library.Carry.mapEntries_iff
 
+/-- info: Library.U8.nat_xor_and_sum : ∀ (n m : ℕ), n + m = n.xor m + 2 * n.land m -/
+#guard_msgs in
+#check @Aiur.Library.U8.nat_xor_and_sum
+/-- info: 'Aiur.Library.U8.nat_xor_and_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U8.nat_xor_and_sum
+
+/-- info: Library.U8.nat_xor_or_sum : ∀ (n m : ℕ), 2 * n.lor m = n + m + n.xor m -/
+#guard_msgs in
+#check @Aiur.Library.U8.nat_xor_or_sum
+/-- info: 'Aiur.Library.U8.nat_xor_or_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U8.nat_xor_or_sum
+
 /-- info: Library.U8.xor_and_sum : ∀ (a b : BitVec 8), a.toNat + b.toNat = (a ^^^ b).toNat + 2 * (a &&& b).toNat -/
 #guard_msgs in
 #check @Aiur.Library.U8.xor_and_sum
@@ -1270,6 +1284,34 @@ info: @Library.U8.or_field : ∀ {F : Type u_1} [inst : Field F],
 /-- info: 'Aiur.Library.U8.or_field' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.U8.or_field
+
+/-- info: @Library.U8Facts.xor_lt_256 : ∀ {a b : ℕ}, a < 256 → b < 256 → a.xor b < 256 -/
+#guard_msgs in
+#check @Aiur.Library.U8Facts.xor_lt_256
+/-- info: 'Aiur.Library.U8Facts.xor_lt_256' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U8Facts.xor_lt_256
+
+/-- info: Library.U8Facts.xor_and_identity : ∀ (a b : ℕ), a + b = a.xor b + 2 * a.land b -/
+#guard_msgs in
+#check @Aiur.Library.U8Facts.xor_and_identity
+/-- info: 'Aiur.Library.U8Facts.xor_and_identity' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U8Facts.xor_and_identity
+
+/-- info: Library.U8Facts.xor_or_identity : ∀ (a b : ℕ), 2 * a.lor b = a + b + a.xor b -/
+#guard_msgs in
+#check @Aiur.Library.U8Facts.xor_or_identity
+/-- info: 'Aiur.Library.U8Facts.xor_or_identity' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U8Facts.xor_or_identity
+
+/-- info: @Library.U8Facts.land_128_div : ∀ {a : ℕ}, a < 256 → a.land 128 / 128 = a / 128 -/
+#guard_msgs in
+#check @Aiur.Library.U8Facts.land_128_div
+/-- info: 'Aiur.Library.U8Facts.land_128_div' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U8Facts.land_128_div
 
 /--
 info: @Library.U32.add_check_iff : ∀ {F : Type} [inst : Field F],
@@ -1519,6 +1561,35 @@ info: @Library.U64.wrapping_succ_sound : ∀ {b0 b1 b2 b3 b4 b5 b6 b7 : ℕ},
 /-- info: 'Aiur.Library.U64.wrapping_succ_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.U64.wrapping_succ_sound
+
+/--
+info: @Library.U64.wrapping_succ_bytes_sound : ∀ {b0 b1 b2 b3 b4 b5 b6 b7 : ℕ},
+  b0 < 256 →
+    b1 < 256 →
+      b2 < 256 →
+        b3 < 256 →
+          b4 < 256 →
+            b5 < 256 →
+              b6 < 256 →
+                b7 < 256 →
+                  match Library.U64.wrappingSuccBytes b0 b1 b2 b3 b4 b5 b6 b7 with
+                  | (r0, r1, r2, r3, r4, r5, r6, r7) =>
+                    r0 < 256 ∧
+                      r1 < 256 ∧
+                        r2 < 256 ∧
+                          r3 < 256 ∧
+                            r4 < 256 ∧
+                              r5 < 256 ∧
+                                r6 < 256 ∧
+                                  r7 < 256 ∧
+                                    Library.U64.pack r0 r1 r2 r3 r4 r5 r6 r7 =
+                                      (Library.U64.pack b0 b1 b2 b3 b4 b5 b6 b7 + 1) % Library.U64.base
+-/
+#guard_msgs in
+#check @Aiur.Library.U64.wrapping_succ_bytes_sound
+/-- info: 'Aiur.Library.U64.wrapping_succ_bytes_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.U64.wrapping_succ_bytes_sound
 
 /--
 info: @Library.U64.saturating_pred_sound : ∀ {b0 b1 b2 b3 b4 b5 b6 b7 : ℕ},
@@ -2128,26 +2199,35 @@ info: @Library.Blake3.cvBytes_inj : ∀ {cv1 cv2 : Library.Blake3.CV},
 #print axioms Aiur.Library.Blake3.cvBytes_inj
 
 /--
+info: @Library.Blake3.pack_digest_inj : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F → Function.Injective (Library.Blake3.packDigest F)
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.pack_digest_inj
+/-- info: 'Aiur.Library.Blake3.pack_digest_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.pack_digest_inj
+
+/--
 info: @Library.Blake3.address_to_fields_inj : ∀ {F : Type} [inst : Field F],
-  Library.U64.Compatible F →
-    ∀ {a b : Library.Blake3.Digest}, Library.Blake3.addressToFields F a = Library.Blake3.addressToFields F b ↔ a = b
+  Library.U32.Compatible F → Function.Injective (Library.Blake3.addressToFields F)
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.address_to_fields_inj
-/-- info: 'Aiur.Library.Blake3.address_to_fields_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Aiur.Library.Blake3.address_to_fields_inj' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.Blake3.address_to_fields_inj
 
 /--
 info: @Library.Blake3.verify_bytes_against_iff : ∀ {F : Type} [inst : Field F],
-  Library.U64.Compatible F →
+  Library.U32.Compatible F →
     ∀ (bytes : List UInt8) (expectedAddr : Library.Blake3.Digest),
       Library.Blake3.addressToFields F (Library.Blake3.digest bytes) = Library.Blake3.addressToFields F expectedAddr ↔
         Library.Blake3.digest bytes = expectedAddr
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.verify_bytes_against_iff
-/-- info: 'Aiur.Library.Blake3.verify_bytes_against_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Aiur.Library.Blake3.verify_bytes_against_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.Blake3.verify_bytes_against_iff
 
@@ -2521,6 +2601,19 @@ info: @Library.List.repList_heapMono : ∀ {F : Type} {α : Type u_1} (enumName 
 #print axioms Aiur.Library.List.repList_heapMono
 
 /--
+info: @Library.List.repList_inj : ∀ {F : Type} {α : Type u_1} {enumName : String} {R : Heap F → α → SourceValue F → Prop}
+  {h : Heap F},
+  (∀ {x₁ x₂ : α} {v : SourceValue F}, R h x₁ v → R h x₂ v → x₁ = x₂) →
+    ∀ {xs₁ xs₂ : List α} {ptr : SourceValue F},
+      Library.List.RepList enumName R h xs₁ ptr → Library.List.RepList enumName R h xs₂ ptr → xs₁ = xs₂
+-/
+#guard_msgs in
+#check @Aiur.Library.List.repList_inj
+/-- info: 'Aiur.Library.List.repList_inj' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.Library.List.repList_inj
+
+/--
 info: @Library.List.allocNil_extends : ∀ {F : Type} (enumName : String) (h : Heap F),
   h.Extends (Library.List.allocNil enumName h).2
 -/
@@ -2599,6 +2692,26 @@ info: @Library.List.is_empty_spec : ∀ {F : Type} {α : Type u_1} [inst : Field
 /-- info: 'Aiur.Library.List.is_empty_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.List.is_empty_spec
+
+/--
+info: @Library.List.is_empty_one_iff : ∀ {F : Type} {α : Type u_1} [inst : Field F] (xs : List α),
+  Library.List.isEmpty xs = 1 ↔ xs = []
+-/
+#guard_msgs in
+#check @Aiur.Library.List.is_empty_one_iff
+/-- info: 'Aiur.Library.List.is_empty_one_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.List.is_empty_one_iff
+
+/--
+info: @Library.List.is_empty_zero_iff : ∀ {F : Type} {α : Type u_1} [inst : Field F] (xs : List α),
+  Library.List.isEmpty xs = 0 ↔ xs ≠ []
+-/
+#guard_msgs in
+#check @Aiur.Library.List.is_empty_zero_iff
+/-- info: 'Aiur.Library.List.is_empty_zero_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.List.is_empty_zero_iff
 
 /-- info: @Library.List.reverse_acc_spec : ∀ {α : Type u_1} (xs acc : List α), Library.List.reverseAcc xs acc = xs.reverse ++ acc -/
 #guard_msgs in
@@ -2739,6 +2852,42 @@ info: @Library.Bytes.repByteStream_heapMono : ∀ {F : Type} [inst : NatCast F] 
 /-- info: 'Aiur.Library.Bytes.repByteStream_heapMono' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms Aiur.Library.Bytes.repByteStream_heapMono
+
+/--
+info: @Library.Bytes.repAddress_inj : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F →
+    ∀ {h : Heap F} {a₁ a₂ : Library.Bytes.Address} {v : SourceValue F},
+      Library.Bytes.RepAddress h a₁ v → Library.Bytes.RepAddress h a₂ v → a₁ = a₂
+-/
+#guard_msgs in
+#check @Aiur.Library.Bytes.repAddress_inj
+/-- info: 'Aiur.Library.Bytes.repAddress_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Bytes.repAddress_inj
+
+/--
+info: @Library.Bytes.repAddressRef_inj : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F →
+    ∀ {ty : Ty} {h : Heap F} {a₁ a₂ : Library.Bytes.Address} {ptr : SourceValue F},
+      Library.Bytes.RepAddressRef ty h a₁ ptr → Library.Bytes.RepAddressRef ty h a₂ ptr → a₁ = a₂
+-/
+#guard_msgs in
+#check @Aiur.Library.Bytes.repAddressRef_inj
+/-- info: 'Aiur.Library.Bytes.repAddressRef_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Bytes.repAddressRef_inj
+
+/--
+info: @Library.Bytes.repByteStream_inj : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F →
+    ∀ {enumName : String} {h : Heap F} {bs₁ bs₂ : List UInt8} {ptr : SourceValue F},
+      Library.Bytes.RepByteStream enumName h bs₁ ptr → Library.Bytes.RepByteStream enumName h bs₂ ptr → bs₁ = bs₂
+-/
+#guard_msgs in
+#check @Aiur.Library.Bytes.repByteStream_inj
+/-- info: 'Aiur.Library.Bytes.repByteStream_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Bytes.repByteStream_inj
 
 /--
 info: @Library.Bytes.address_eq_spec : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F],
@@ -4373,7 +4522,7 @@ info: @Library.IxVMRep.RepRoleCtx.det : ∀ {F : Type} [inst : Field F],
 
 /--
 info: @Library.IxVMRep.ingress_verify_stream_sound : ∀ {F : Type} [inst : Field F],
-  Library.U64.Compatible F →
+  Library.U32.Compatible F →
     ∀ (enumName : String) (stream : ℕ → UInt8) (idx len : ℕ) (h : Heap F) (expectedAddr : Library.Bytes.Address),
       Library.List.Word.depthChecked (Library.Bytes.readByteStream stream idx len) = some len →
         Library.Blake3.addressToFields F (Library.Blake3.digest (Library.Bytes.readByteStream stream idx len)) =
@@ -4389,6 +4538,25 @@ info: @Library.IxVMRep.ingress_verify_stream_sound : ∀ {F : Type} [inst : Fiel
 /-- info: 'Aiur.Library.IxVMRep.ingress_verify_stream_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.IxVMRep.ingress_verify_stream_sound
+
+/-- info: @Library.IxVMRep.repTag4_heapMono₂ : ∀ {F : Type} [inst : NatCast F], HeapMono₂ Library.IxVMRep.RepTag4 -/
+#guard_msgs in
+#check @Aiur.Library.IxVMRep.repTag4_heapMono₂
+/-- info: 'Aiur.Library.IxVMRep.repTag4_heapMono₂' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.Library.IxVMRep.repTag4_heapMono₂
+
+/--
+info: @Library.IxVMRep.repTag4_inj : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F →
+    ∀ {h : Heap F} {t₁ t₂ : UInt8 × UInt64} {v : SourceValue F},
+      Library.IxVMRep.RepTag4 h t₁ v → Library.IxVMRep.RepTag4 h t₂ v → t₁ = t₂
+-/
+#guard_msgs in
+#check @Aiur.Library.IxVMRep.repTag4_inj
+/-- info: 'Aiur.Library.IxVMRep.repTag4_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.IxVMRep.repTag4_inj
 
 /--
 info: @Library.IxVMRep.tag_header_split_unique : ∀ {f₁ l₁ f₂ l₂ : ℕ},
