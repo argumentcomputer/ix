@@ -185,9 +185,8 @@ extern "C" fn rs_compression_root_rows(
     }
     backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
     let hints = stark_verifier::prepare(&program, &invocation.streams)?;
-    let record = hints
-      .execute(&invocation.entry, args)
-      .map_err(|e| e.to_string())?;
+    let record =
+      hints.execute(&invocation.entry, args).map_err(|e| e.to_string())?;
     if !record.output.is_empty() {
       return Err("verifier returned a non-unit value".into());
     }

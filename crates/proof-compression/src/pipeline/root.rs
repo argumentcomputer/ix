@@ -10,7 +10,9 @@ use super::{
   stage::{FriVerifier, Prepared},
 };
 use crate::fri::*;
-use aiur::trace::stark::{BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey};
+use aiur::trace::stark::{
+  BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey,
+};
 use multi_stark::batch::BatchProof;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::types::GoldilocksBlake3Config;

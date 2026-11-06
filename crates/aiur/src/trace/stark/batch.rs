@@ -671,12 +671,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   pub fn execution_rows(&self, record: &Execution<B>) -> Vec<usize> {
     let mut rows = Vec::with_capacity(self.system.circuits.len());
     for members in &self.members {
-      rows.push(
-        members
-          .iter()
-          .map(|&f| record.queries.tables[f].len())
-          .sum(),
-      );
+      rows.push(members.iter().map(|&f| record.queries.tables[f].len()).sum());
     }
     for ci in self.members.len()..self.members.len() + self.tables.len() {
       rows.push(self.system.circuits[ci].preprocessed_height);
@@ -803,8 +798,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let claim = self.claim(entry, args, output)?;
     let mut traces = self.generate_stage_1(&record, entry, args)?;
     drop(record);
-    for (index, (trace, &log)) in
-      traces.iter_mut().zip(log_heights).enumerate()
+    for (index, (trace, &log)) in traces.iter_mut().zip(log_heights).enumerate()
     {
       let target_height = 1usize << log;
       if trace.height() > target_height {
@@ -823,9 +817,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let mut messages = Vec::with_capacity(self.rom.widths.len() * 2);
     for (i, &width) in self.rom.widths.iter().enumerate() {
       let unpadded = unpadded_rows[rom_base + i];
-      messages.push(BatchMessage::pull(
-        memseg_args(width, Val::ZERO).to_vec(),
-      ));
+      messages.push(BatchMessage::pull(memseg_args(width, Val::ZERO).to_vec()));
       messages.push(BatchMessage::push(
         memseg_args(width, Val::from_usize(unpadded)).to_vec(),
       ));
