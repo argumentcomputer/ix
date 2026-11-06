@@ -384,7 +384,12 @@ module KernelClaim {
 
   fn run_check_env(rc: KernelRoles::RoleCtx, env_root: Bytes::AddressRef, asm: Options::Option<Bytes::AddressRef>) -> () {
       let owned = load_assumption_tree(env_root);
-      let Lists::Node::Cons(_, _) = (*(owned));
+      match (*(owned)) {
+        Lists::Node::Nil => {
+          assert_eq!(0, 1, "CheckEnv: owned tree has no leaves");
+          () } ,
+        Lists::Node::Cons(_, _) => {  () } ,
+      };
       match asm {
         Options::Option::None => {
 

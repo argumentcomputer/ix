@@ -12,7 +12,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_REVISION = '827550579ea660a4749c520968ad6f58be63acf4'
-REVISION = '38f034062a817b39d73cfb061a2d847d3295c744'
+REVISION = '075b49e0756af6afab049de1169c41fc38adc6d0'
 FILES = ['Core', 'ByteStream', 'Blake3', 'RBTreeMap', 'Ixon', 'IxonSerialize',
          'IxonDeserialize', 'KernelTypes', 'Kernel/Klimbs', 'Kernel/NatPrim',
          'Convert', 'Ingress', 'Kernel/Levels', 'Kernel/Subst',
@@ -464,13 +464,6 @@ def adapt(s, semantic=True):
                   KLiteral.Str(_) => 0,
                 }''', s)
         if count != 1: raise ValueError('changed literal-expansion progress guard')
-        # CheckEnv rejects an empty owned tree. Ix compares the tree's interned
-        # pointer with a freshly stored Nil; require a Cons by pattern instead.
-        s, count = re.subn(
-            r'let empty_leaves:[^=]*= store\(ListNode\.Nil\);\s*'
-            r'assert_eq!\(eq_zero\(ptr_val\(owned\) - ptr_val\(empty_leaves\)\), 0,\s*"STRING_\d+"\);',
-            'let ListNode.Cons(_, _) = load(owned);', s)
-        if count != 1: raise ValueError('changed CheckEnv empty owned-tree guard')
         # Address equality selects a semantic case or enforces a type assertion;
         # it is not an optional early return. Keep these comparisons by contents.
         def compare_addresses(m):
