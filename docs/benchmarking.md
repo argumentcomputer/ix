@@ -286,8 +286,12 @@ grouped by env: the env row in bold, the env's constant rows under it. Each
 headline metric (at most four) is one column whose cell reads
 `base → PR (Δ%)`, with ⚠️ for a regression and 🟢 for an improvement past
 ±3%; the backend's other metrics sit in one collapsed block, and an
-`ixvm-ooc` env row adds its per-constant attribution drill-down. `ix bench
-compare` renders a single cell with the same table.
+`ixvm-ooc` env row adds its per-constant attribution drill-down. A run with
+`BENCH_PROVE=1` or `BENCH_COMPRESS=kzg` names its stages in the header line
+(`stages execute+prove+compress`) and adds one table per stage under the
+`ixvm` table (`#### ixvm · prove`, `#### ixvm · compress`), with the
+constant rows that ran it. `ix bench compare` renders a single cell with the
+same table.
 
 ```
 ## `!benchmark` — main [`1a2b3c4`](…) ← PR [`5d6e7f8`](…)
