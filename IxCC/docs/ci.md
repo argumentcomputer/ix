@@ -30,7 +30,7 @@ The later consumer-order snapshot (2,394 files) passed all 16 required local
 checks in 19m 43.930s with the existing store. The subsequent explicit-cap
 commit has four affected-check results. The cleanup checkpoint requires its
 own complete run; [workspaces and recovery](workspaces-and-recovery.md)
-separates published source recovery from compiler/proof acceptance.
+separates source recovery from compiler/proof acceptance.
 
 The removed surface, with its code and its last passing run, is preserved on
 branch `jcb/ixby-archive` at `7599a43`. There, `nix flake check` passed all 44
