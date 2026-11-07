@@ -1557,7 +1557,7 @@
       "CompilatrixTests/Fences/RcPromotion/Compilatrix_X86_Proof_DriverSession.lean": "0b3ba9f7b6548e185fabc13f8a8eef0f185545dd51438508ad4c38bc7c69c741",
       "CompilatrixTests/Recheck/Rc/CodecControls.lean": "06ae820fad2393133f8660018150e7ff0f8ac4d1568dea4f5969cdb1c88a1e91",
       "CompilatrixTests/Recheck/Rc/CodecIO.lean": "5d3a7ddb6c638b1e7fc4f78cfb92c682bb4d6727b41f11e1846de8253ac5bcff",
-      "CompilatrixTests/Recheck/Rc/Fixtures.lean": "2b6f8bc49c04b97648062ef8a18007c66af36d26a85132f8fece056a925bc0e1",
+      "CompilatrixTests/Recheck/Rc/Fixtures.lean": "cb5b8b36edb2e03ced84886501a3d1e00dd249d984a16ad009d3ef36a2c630cc",
       "CompilatrixTests/Recheck/Rc/FreshIO.lean": "2d0e303100222016c7421eb5384139b625e4880c0813eea769f82e3fb738f149",
       "CompilatrixTests/Recheck/Rc/Main.lean": "882930ff23d4668763dedfba81c2055c722513a9712a2601be581c93dda34875",
       "CompilatrixTests/Recheck/Rc/ReplayIO.lean": "ba97e173b772b27d0873378a73a1ef4e713cc4b89194bad5c968a7362427647c",
