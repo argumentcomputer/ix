@@ -114,25 +114,39 @@ fn main() -> Result<(), Box<dyn Error>> {
     struct Case {
       label: String,
       accept: bool,
+      /// For a rejection: text the execution error must contain.
+      #[serde(default)]
+      rejects_with: Option<String>,
       invocation: stark_verifier::Invocation,
     }
     let cases: Vec<Case> = serde_json::from_slice(&std::fs::read(
       cli.get(3).ok_or("missing cases")?,
     )?)?;
+    // Every case runs, so that one report names every unexpected verdict.
+    let mut failed = Vec::new();
     for case in cases {
       let args = program.field().decode(&case.invocation.args)?;
       let result = stark_verifier::prepare(&program, &case.invocation.streams)?
         .execute(&case.invocation.entry, args);
-      if result.is_ok() != case.accept {
-        return Err(
-          format!("{}: unexpected result {:?}", case.label, result.err())
-            .into(),
-        );
+      let error = result.err().map(|e| e.to_string());
+      let expected = match (&error, &case.rejects_with) {
+        (None, _) => case.accept,
+        (Some(e), Some(reason)) => !case.accept && e.contains(reason.as_str()),
+        (Some(_), None) => !case.accept,
+      };
+      let verdict =
+        error.map_or("accepted".to_owned(), |e| format!("rejected: {e}"));
+      if expected {
+        println!("{}: {verdict}", case.label);
+      } else {
+        println!("FAILED {}: {verdict}", case.label);
+        failed.push(case.label);
       }
-      println!(
-        "{}: {}",
-        case.label,
-        if case.accept { "accepted" } else { "rejected" }
+    }
+    if !failed.is_empty() {
+      return Err(
+        format!("{} unexpected verdicts: {}", failed.len(), failed.join("; "))
+          .into(),
       );
     }
     return Ok(());

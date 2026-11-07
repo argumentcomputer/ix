@@ -22,6 +22,14 @@ struct Package {
 struct Case {
   label: String,
   accept: bool,
+  /// For a rejection: text the execution error must contain, so that a case
+  /// is not satisfied by a failure other than the one it targets.
+  #[serde(default)]
+  rejects_with: Option<String>,
+  /// For an acceptance: a function the execution must call, so that a case is
+  /// not satisfied without reaching the path it targets.
+  #[serde(default)]
+  exercises: Option<String>,
   invocation: Invocation,
 }
 
@@ -69,21 +77,54 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Ok(());
   }
   if mode == "test" {
+    // Every case runs, so that one report names every unexpected verdict.
     let cases: Vec<Case> = serde_json::from_slice(&std::fs::read(&cli[3])?)?;
+    let mut failed = Vec::new();
     for case in cases {
       let args = program.field().decode(&case.invocation.args)?;
+      let start = Instant::now();
       let result = ixvm::prepare_streams(&program, &case.invocation.streams)?
         .execute(&case.invocation.entry, args);
-      if result.is_ok() != case.accept {
-        return Err(
-          format!("{}: unexpected result: {:?}", case.label, result.err())
-            .into(),
-        );
+      let seconds = start.elapsed().as_secs_f64();
+      let error = result.as_ref().err().map(ToString::to_string);
+      let reached = match (&result, &case.exercises) {
+        (Ok(record), Some(name)) => record.queries.keys().any(|query| {
+          program.callable_name(query.function) == Some(name.as_str())
+        }),
+        _ => true,
+      };
+      // A witness that lacks data the program asks for stops execution before
+      // the logic under test: that is not a verdict unless the case names it.
+      let expected = match (&error, case.accept, &case.rejects_with) {
+        (None, accept, _) => accept && reached,
+        (Some(_), true, _) => false,
+        (Some(e), false, Some(reason)) => e.contains(reason.as_str()),
+        (Some(e), false, None) => !e.contains("missing hint"),
+      };
+      let verdict = match &error {
+        None => "accepted".to_owned(),
+        Some(e) => format!("rejected: {e}"),
+      };
+      if expected {
+        println!("{}: {verdict} ({seconds:.3}s)", case.label);
+      } else {
+        let wanted = match (case.accept, &case.rejects_with) {
+          (true, _) if !reached => format!(
+            "an acceptance calling {}",
+            case.exercises.as_deref().unwrap_or_default()
+          ),
+          (true, _) => "acceptance".to_owned(),
+          (false, Some(reason)) => format!("a rejection containing {reason:?}"),
+          (false, None) => "a rejection by the program".to_owned(),
+        };
+        println!("FAILED {}: {verdict}; expected {wanted}", case.label);
+        failed.push(case.label);
       }
-      println!(
-        "{}: {}",
-        case.label,
-        if case.accept { "accepted" } else { "rejected" }
+    }
+    if !failed.is_empty() {
+      return Err(
+        format!("{} unexpected verdicts: {}", failed.len(), failed.join("; "))
+          .into(),
       );
     }
     return Ok(());
