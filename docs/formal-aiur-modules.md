@@ -158,7 +158,10 @@ Moving the modules from `.aiur` text into Lean changed no program. Compared
 with the string frontend's programs from the `.aiur` bundles, the elaborated
 IxVM, recursion and aggregation programs are equal (`==`) and render identically
 (`Repr`), and the exported artifacts (`ixvm export-claim-trace`,
-`stark-export export-trace [--aggregate]`) are byte-identical.
+`stark-export export-trace [--aggregate]`) are byte-identical. Moving the library
+modules and their test clients from strings into Lean likewise left every
+library program equal and identically rendered, and the `u32_tests` and
+`library_tests` exports byte-identical.
 
 For the modularization itself, `formal-checks refactor` (`Tests/FormalChecks/Refactor.lean`) compares complete
 compiled exports against the pre-refactor artifacts. It permits only declared
