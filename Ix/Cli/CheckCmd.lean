@@ -26,6 +26,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "legacy"; "Retired legacy Aiur backend flag."
     "formal"; "Compatibility alias for the default certified Aiur backend."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
     interp : String;        "Unsupported legacy interpreter flag."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."

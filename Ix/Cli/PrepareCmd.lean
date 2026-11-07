@@ -40,5 +40,7 @@ def prepareCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "cuda"; "Also build the CUDA hosts (requires the CUDA toolkit)."
     "aiur-artifact" : String; "Use this trusted IxVM artifact instead of exporting one."
+    "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
     "aggr-artifact" : String; "Use this trusted aggregation artifact instead of exporting one."
+    "aggr-artifact-digest" : String; "Refuse an aggregation artifact whose BLAKE3 digest is not this one."
 ]
