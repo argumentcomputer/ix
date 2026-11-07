@@ -3,21 +3,21 @@ import Ix.Cert.Schedule
 import Ix.Cert.ProjectionRead
 import Ix.LeanIngress.Theorems
 import Ix.Ixon.Authenticated.Theorems
-import IxC.Kernel.Ixon.Values
+import IxCK.Kernel.Ixon.Values
 import Ix.Cert.SourceBundled
 import Ix.CompileCert.Canon.Ref
 
-/-! # The certification statements, in terms of IxC
+/-! # The certification statements, in terms of IxCK
 
 One checker, two front ends:
 
 * **Source mode.** `Ix.CanonM` turns a Lean environment into an
   `Ix.Environment`, the compiler's input. `Ix.LeanIngress.checkSourceBundled`
-  hands its constants, under Lean's own names, to IxC's verified fold
+  hands its constants, under Lean's own names, to IxCK's verified fold
   `Ix.Kernel.Cached.checkDecls`, under the fixed Source role table (each
   role bound to its Lean name) with the committed bundle's evidence
   (`Ix.RoleEvidence.bundleEvidence`, RoleData's `sourceEvidence`),
-  whatever the input carries. IxC's model of the result
+  whatever the input carries. IxCK's model of the result
   is the source semantics.
 * **Ixon mode.** The compiled artifact's records, as the bytes their
   addresses are computed over, go through the certified entry at BLAKE3,
@@ -64,7 +64,7 @@ Statements (`def … : Prop`) and the theorems proved now:
 * `ClosureCorrect`: the computed closure is the closure. Proved
   (`closureCorrect`, in `Ix.Cert.Closure`).
 
-That the fold commutes with renaming keys is IxC's, at the reference level
+That the fold commutes with renaming keys is IxCK's, at the reference level
 (`Ix.Kernel.Cached.AcceptsRef.rename`).
 
 No reverse statement ("Ixon accepts, so Source accepts") is made. Source
@@ -119,13 +119,13 @@ def termsOf : Ix.ConstantInfo → List Ix.Expr
   | .recInfo v => v.cnst.type :: v.rules.toList.map (·.rhs)
   | ci => [ci.getCnst.type]
 
-/-- The Lean names of IxC's literal support (`Ix.Kernel.Reader.strLitSupportNames`,
+/-- The Lean names of IxCK's literal support (`Ix.Kernel.Reader.strLitSupportNames`,
 `natLitSupportNames`): the constants it checks a literal against. -/
 def supportNames (keys : List (Ix.Kernel.Key .source)) : Array Ix.Name :=
   keys.toArray.map fun k => Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName k)
 
 /-- **The constants a constant's literals depend on**: a
-`String` literal references no constant, but IxC checks it against `String`,
+`String` literal references no constant, but IxCK checks it against `String`,
 `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat` and the `Nat`
 basis (`Expr.constsResolve`), and a `Nat` literal against the `Nat` basis. -/
 def literalSupport (ci : Ix.ConstantInfo) : Array Ix.Name :=
@@ -1289,8 +1289,8 @@ theorem Commutes.alias {τ : Ix.Kernel.ConstantInfo .source → Option (Ix.Kerne
 /-! ## Renaming keys
 
 `Rename` renames every key of a term, constant, declaration, evidence entry or
-environment by a function on keys. At `σ = Key.map f` it is IxC's
-`Ix.Kernel.Expr.mapKeys f` (and its companions), over which IxC proves that the
+environment by a function on keys. At `σ = Key.map f` it is IxCK's
+`Ix.Kernel.Expr.mapKeys f` (and its companions), over which IxCK proves that the
 reference fold commutes with renaming (`Ix.Kernel.Cached.AcceptsRef.rename`), and
 the quotient Source run renamed to the artifact's addresses is accepted
 (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`). -/

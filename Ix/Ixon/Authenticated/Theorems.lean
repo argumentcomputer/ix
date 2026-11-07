@@ -1,6 +1,6 @@
 import Ix.Ixon.Authenticated
 import Ix.Ixon.Projection.Theorems
-import IxC.Kernel.Admission.TierTheorems
+import IxCK.Kernel.Admission.TierTheorems
 
 /-! # The theorems of the authenticated entries at BLAKE3
 

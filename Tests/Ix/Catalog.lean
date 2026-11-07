@@ -5,7 +5,7 @@ public import Ix.Catalog
 public import Ix.CompileM
 public import Ix.CompileCertified
 public import Ix.Cli.CatalogCmd
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.Prelude
 
 /-!
   `.ixc` catalog format suite (primary, network-free).

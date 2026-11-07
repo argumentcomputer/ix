@@ -12,7 +12,7 @@ for each toolchain in `toolchains`, or for the versions given. For each one it:
 1. fetches the official release `lean-<version>-linux.tar.zst` into the work directory;
 2. builds `lean4export` at the commit pinned below, with that toolchain's `lake`,
    after two small changes (`exporterPatches`);
-3. compiles the certificate theorems (`IxC/Kernel/PinGen/Certs.lean`, or the
+3. compiles the certificate theorems (`IxCK/Kernel/PinGen/Certs.lean`, or the
    variant named below) and `Primitives.lean` with that toolchain's `lean`, under
    the module names ix compiles them under;
 4. exports the closure of `rootsFor` with `lean4export --export-mdata
@@ -41,7 +41,7 @@ structure Toolchain where
   version : String
   exporterTag : String
   exporterCommit : String
-  certificates : System.FilePath := "IxC/Kernel/PinGen/Certs.lean"
+  certificates : System.FilePath := "IxCK/Kernel/PinGen/Certs.lean"
   omitStringBack : Bool := false
 
 def fixtureDir : System.FilePath := "Tests/Fixtures/toolchains"
@@ -216,7 +216,7 @@ def regenerate (work : System.FilePath) (t : Toolchain) : IO Unit := do
   let src := work / s!"src-{v}"
   let olean := work / s!"olean-{v}"
   let modules : List (System.FilePath × System.FilePath) := [
-    (t.certificates, "IxC/Kernel/PinGen/Certs.lean"),
+    (t.certificates, "IxCK/Kernel/PinGen/Certs.lean"),
     (fixtureDir / "Primitives.lean", "Tests/Fixtures/toolchains/Primitives.lean")]
   for (from_, to) in modules do
     IO.FS.createDirAll ((src / to).parent.get!)
@@ -234,7 +234,7 @@ def regenerate (work : System.FilePath) (t : Toolchain) : IO Unit := do
   IO.println s!"[{v}] exporting {selectedRoots.length} roots"
   let out ← IO.Process.output {
     cmd := (exporter / ".lake" / "build" / "bin" / "lean4export").toString
-    args := #["--export-mdata", "--export-unsafe", "Init", "IxC.Kernel.PinGen.Certs",
+    args := #["--export-mdata", "--export-unsafe", "Init", "IxCK.Kernel.PinGen.Certs",
       "Tests.Fixtures.toolchains.Primitives", "--"] ++ selectedRoots.toArray
     env := #[("LEAN_PATH", some s!"{olean}:{sysroot}/lib/lean")] }
   if out.exitCode != 0 || (out.stderr.splitOn "PANIC").length > 1 then
@@ -249,7 +249,7 @@ def main (args : List String) : IO UInt32 := do
   let some work := args.head? | do
     IO.eprintln "usage: lean --run Tests/Fixtures/toolchains/Regenerate.lean <work dir> [<version>…]"
     return 2
-  let variant := certificateVariant (← IO.FS.readFile "IxC/Kernel/PinGen/Certs.lean")
+  let variant := certificateVariant (← IO.FS.readFile "IxCK/Kernel/PinGen/Certs.lean")
   unless variant == (← IO.FS.readFile (fixtureDir / "Certs-4.35.0.lean")) do
     IO.eprintln "Certs-4.35.0.lean is not Certs.lean under `certificateVariant`: rewrite it from Certs.lean"
     return 1

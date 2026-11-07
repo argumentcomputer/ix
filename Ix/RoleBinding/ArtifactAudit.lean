@@ -31,15 +31,15 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
 -- `lowerInductiveDecls`) adds 11 compiled functions to each of the four closures, the entry's
--- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- (`IxCK/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
 -- (`inputIndexed`) adds 32 compiled functions to each of the four closures, the reader's
--- (`IxC/Kernel/Audit/Roots.lean`): the predicate and the derived equality of `Ixon.Constant`
+-- (`IxCK/Kernel/Audit/Roots.lean`): the predicate and the derived equality of `Ixon.Constant`
 -- that compares a record with the fallback's. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the entry's four compiled functions
--- (`IxC/Kernel/Audit/Roots.lean`) to each closure, measured with the fallback-record
+-- (`IxCK/Kernel/Audit/Roots.lean`) to each closure, measured with the fallback-record
 -- guard. Execution allowances are unchanged.
 -- The expanded catalog adds 703 compiled functions (495 role and 208 key
 -- helpers) and removes eight specializations from each artifact closure.
@@ -71,7 +71,7 @@ more compiled functions than `checkTiered`'s (the fold under the axiom policy
 and the list); the extern, implemented_by, unsafe and csimp counts and every
 ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.checkBytesUnder`,
 `checkBytesTieredUsingUnder`) are frozen apart in
-`IxC/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
+`IxCK/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
  Ix.RoleBinding.Artifact.checkTieredConditional]: 6972 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in

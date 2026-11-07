@@ -84,7 +84,7 @@ def roleNames : Array Lean.Name :=
   Ix.Kernel.Role.all.toArray.map fun r => r.leanName.toString.toName
 
 /-- The records, blobs and hints the default role table's roles and evidence
-    are validated against (`IxC/Kernel/Ixon/RoleData.lean`): the prelude's
+    are validated against (`IxCK/Kernel/Ixon/RoleData.lean`): the prelude's
     basis records, the evidence theorems and the well-founded operations'
     dependency closure in the compiled `Init`. -/
 def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×

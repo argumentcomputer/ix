@@ -1,7 +1,7 @@
 import Ix.Cert.DefinitionBlockReads
 import Ix.Cert.Statement
 import Ix.CompileCert.Canon.QSort
-import IxC.Kernel.Semantics.Bridge.Sound
+import IxCK.Kernel.Semantics.Bridge.Sound
 
 /-! # A definition group's member names are distinct
 

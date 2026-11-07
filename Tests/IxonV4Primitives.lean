@@ -27,7 +27,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   let tsvPath := Tests.IxonV4.primitivesTsv dir
   let leanEnv ← get_env!
-  -- the selected closure, self-contained for IxC (recursors, literal support):
+  -- the selected closure, self-contained for IxCK (recursors, literal support):
   -- `ixon-v4-tests --primitives` validates it
   let needed : Lean.NameSet := (Ix.EnvScope.collectSelectedDeps leanEnv
     (kernelPrimitives.map parseNameToLean).toList).foldl (fun s (n, _) => s.insert n) {}

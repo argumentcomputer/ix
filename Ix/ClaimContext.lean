@@ -3,8 +3,8 @@ module
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.SpecDigest
-public import IxC.Kernel.Ixon.Prelude
-public import IxC.Kernel.Ixon.RoleTable
+public import IxCK.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.RoleTable
 
 /-! # Building a claim's context
 
@@ -80,12 +80,12 @@ def ofDefaultTable : Except String ClaimContext := do
 
 /-- The roles the checker uses without a reference to them, in role order:
 - `Nat`, `Nat.zero` and `Nat.succ`: a `Nat` literal's type and constructor
-  forms (IxVM `k_infer_lit`, `Whnf.lean`; IxC `litNatKeys`);
+  forms (IxVM `k_infer_lit`, `Whnf.lean`; IxCK `litNatKeys`);
 - `List`, `List.nil`, `List.cons`, `String`, `String.ofList`, `Char` and
   `Char.ofNat`: a `String` literal's type and constructor form (IxVM
-  `str_lit_to_ctor`; IxC `litStrKeys`);
+  `str_lit_to_ctor`; IxCK `litStrKeys`);
 - `propext` and `Classical.choice`: the standard axioms the axiom policy
-  admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
+  admits as the binding binds them (IxVM `axiom_standing`; IxCK `stdAxiomOk`).
 `Quot.sound` and the quotient block are fixed by their specifications. -/
 def classRoles : List Role :=
   [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .string, .stringOfList,

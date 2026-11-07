@@ -4,9 +4,9 @@ Ix has **two distinct identity layers**, and they serve different masters.
 This document records the boundary between them: why the checker's internal
 term identity does not affect the proof-carrying-code story, and what a
 future feature must do if it ever needs cryptographic identity at
-sub-constant granularity. The checker is the certified IxC kernel
+sub-constant granularity. The checker is the certified IxCK kernel
 ([kernel](kernel.md)); its executed term operations are in
-`IxC/Kernel/Expr.lean` and `IxC/Kernel/Cached/`.
+`IxCK/Kernel/Expr.lean` and `IxCK/Kernel/Cached/`.
 
 ## Layer 1: Ixon content addresses (external, cryptographic, in proofs)
 
@@ -50,7 +50,7 @@ claim roots  ──Merkle──▶  constant Addresses
 External dependency addresses are pinned by the constant's bytes:
 constructing a cycle between blocks would require solving a hash preimage.
 Cycles inside a block go through local `Rec` slots and need an explicit
-check. IxC's reader (`IxC/Kernel/Ixon/Reader.lean`) applies the safety
+check. IxCK's reader (`IxCK/Kernel/Ixon/Reader.lean`) applies the safety
 policy to every member of a definition block first, then orders the block
 so that every member follows the members it names (`defOrder`). A safe
 block with no such order is declined as a mutually recursive definition
@@ -71,17 +71,17 @@ for memo keys, cache keys and quick equality. These objects are ephemeral:
 they are never serialized, never compared against Ixon addresses, and die
 with the run.
 
-IxC has one expression type, `Ix.Kernel.Expr`, whose nodes carry derived
+IxCK has one expression type, `Ix.Kernel.Expr`, whose nodes carry derived
 data as Lean `@[computed_field]`s: a hash, the loose bound- and
 free-variable bounds and a level-parameter flag, packed into one word
-(`Expr.data`; `IxC/Kernel/Cached/ExprNodes.lean`). There is no hash-consing
+(`Expr.data`; `IxCK/Kernel/Cached/ExprNodes.lean`). There is no hash-consing
 table. Terms are shared by Lean's own structure sharing: an operation
 returns unchanged children by reference, so a result shares every unchanged
 subterm with its input.
 
 - **Equality is decided, not assumed.** The executed equality follows the
   official kernel: pointer equality first, then the computed hashes, then
-  structural descent (`IxC/Kernel/Expr.lean`). Every branch returns
+  structural descent (`IxCK/Kernel/Expr.lean`). Every branch returns
   `Decidable (a = b)`. Pointer equality is a fast path for equal terms and a
   hash mismatch one for unequal terms; an equal hash decides nothing.
 - **The equality memo is verified.** An entry is the pair of objects a
@@ -92,13 +92,13 @@ subterm with its input.
 - **Memo keys are terms.** The scope and definedness walks key their memos on
   `Expr` itself (`Std.HashMap Expr α`: hashing off the cached field,
   pointer-first equality); the substitution walks key theirs by address
-  (`IxC/Kernel/Cached/ExprOpsC.lean`).
+  (`IxCK/Kernel/Cached/ExprOpsC.lean`).
 - **Trust.** That the stored word agrees with the function defining it is
   the code generator's guarantee, not a theorem of this repository:
   `@[computed_field]` is implemented with `implemented_by`. It is the one
-  entry of the trust census in `IxC/Kernel/Cached/ExprNodes.lean`.
+  entry of the trust census in `IxCK/Kernel/Cached/ExprNodes.lean`.
 
-Before IxC, this layer belonged to the retired Rust kernel: per-node blake3
+Before IxCK, this layer belonged to the retired Rust kernel: per-node blake3
 hashes at first, then intern-assigned `u64` uids from a process-global
 counter, with a hash-consing intern table keyed by shallow structural keys
 ([retired Rust](retired-rust.md)).

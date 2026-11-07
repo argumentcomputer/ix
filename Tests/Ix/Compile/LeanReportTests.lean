@@ -55,7 +55,7 @@ private def check : IO Nat := do
   return cases.length + 2
 
 def suite : List TestSeq := [
-  .individualIO "IxC CLI reports require exact labels and coherent outcome evidence" none (do
+  .individualIO "IxCK CLI reports require exact labels and coherent outcome evidence" none (do
     let n ← check
     return (true, n, 0, none)) .done]
 

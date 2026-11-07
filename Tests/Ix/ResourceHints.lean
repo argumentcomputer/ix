@@ -54,7 +54,7 @@ def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
     | .error e => #[s!"{label}: the typing half declines: {e} (names: {named e})"]
     | .ok _ => #[]
   (errors, #[s!"{label}: {ixe.consts.size} records, {uncertifiedSize ixe} in the initial uncertified split, \
-    IxC {if ixc.toOption.isSome then "accepts" else "declines"}"])
+    IxCK {if ixc.toOption.isSome then "accepts" else "declines"}"])
 
 def fixtureVerdict : IO (Array String × Array String) := do
   let leanEnv ← getCompileEnv #[defsModule, ownModule]

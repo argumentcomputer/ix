@@ -607,7 +607,7 @@ run_cmd do
 
 /-! ## Levels read syntactically
 
-Since IxC's U lowers Source levels to the compiler's canonical form
+Since IxCK's U lowers Source levels to the compiler's canonical form
 (`Ix.LeanIngress.canonLevelIn`), the reader's level is the Source level in that
 form, not only equal to it in value (`CanonLevelReading.related_ingress_canon`). -/
 

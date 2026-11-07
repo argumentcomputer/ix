@@ -2,7 +2,7 @@ module
 import Std.Sync
 public import Ix.Ixon
 public import Ix.IxonUniv
-public import IxC.Ixon.WireCheck
+public import IxCK.Ixon.WireCheck
 public import Ix.Environment
 public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.Transport

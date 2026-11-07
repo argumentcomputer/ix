@@ -25,7 +25,7 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.34.0"
 
-require «ix-kernel» from "IxC" with
+require «ix-ck» from "IxCK" with
   if (get_config? profile).isSome then
     ({} : Lean.NameMap String).insert `profile ""
   else {}
@@ -187,7 +187,7 @@ def profileLeancArgs : Array String :=
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
 import, such as `Ix.Cert.Audit`, is built only when named, as the
-`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
+`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-ck` dependency or `IxSharingVerify` owns
 is under the `Ix.` module root (their declaration namespaces are, their module
 names are not), so this library never shadows them. Keep new modules of theirs
 under their roots. -/
@@ -413,7 +413,7 @@ def moduleExclusions : Array ModuleExclusion := #[
     kind := .script }]
 
 /-- The directories whose modules `check-modules` builds, with the root files.
-`IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
+`IxCK/` (its own package, globbed, `lake -d IxCK build --wfail`) and
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets; `Models/` and every directory with its own lakefile are
 other workspaces. -/
@@ -582,10 +582,10 @@ lean_lib IxSharingVerify where
 
 end IxSharingVerify
 
-section IxC
+section IxCK
 
-/- The `ix-kernel` dependency owns the certified modules and their artifacts.
-`lake -d IxC build --wfail` checks them without host dependencies;
+/- The `ix-ck` dependency owns the certified modules and their artifacts.
+`lake -d IxCK build --wfail` checks them without host dependencies;
 the host tests below consume that same package. See `docs/kernel.md`. -/
 
 /-- The kernel's fences, derived from con-leche's (`Tests/Ix/Kernel/{Layering,
@@ -646,7 +646,7 @@ lean_exe «kernel-check-ixe» where
   root := `Benchmarks.Kernel.CheckIxeMain
   moreLinkObjs := #[ix_rs]
 
-/-- The role-table generator: regenerates `IxC/Kernel/Ixon/RoleData.lean` (the
+/-- The role-table generator: regenerates `IxCK/Kernel/Ixon/RoleData.lean` (the
 default role table, its evidence records and the Ixon prelude) from a compiled
 Init (`.lake/envs/initstd.ixe`), each binding validated by the verified fold,
 and Source mode's evidence from the certificate module's environment, which it
@@ -670,7 +670,7 @@ script "check-kernel" (args) := do
     let code ← child.wait
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
-  run "lake" #["-d", "IxC", "build", "--wfail"]
+  run "lake" #["-d", "IxCK", "build", "--wfail"]
   run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
@@ -697,4 +697,4 @@ script "check-kernel" (args) := do
   IO.println "Certified kernel checks passed."
   return 0
 
-end IxC
+end IxCK

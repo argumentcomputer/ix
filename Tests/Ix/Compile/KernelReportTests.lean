@@ -10,7 +10,7 @@ import Tests.Ix.Compile.KernelReport
   trailer comments skipped, anonymous labels resolved to their address.
 
   Ported from a9cf3607 (`Tests/Ix/Compile/KernelReportTests.lean`). The migrated
-  IxC `check-lean` protocol has its separate strict controls in LeanReportTests.
+  IxCK `check-lean` protocol has its separate strict controls in LeanReportTests.
 -/
 
 namespace Tests.Ix.Compile.KernelReportTests

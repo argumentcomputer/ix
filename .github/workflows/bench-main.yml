@@ -193,7 +193,7 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
-      - run: lake build Compile${{ matrix.env }} IxC.Kernel.PinGen.Certs
+      - run: lake build Compile${{ matrix.env }} IxCK.Kernel.PinGen.Certs
         working-directory: ${{ env.COMPILE_DIR }}
       # The measured compile: serializes the env to `<env>.ixe` at the
       # workspace root and writes one results row keyed by the env name.

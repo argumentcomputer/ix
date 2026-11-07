@@ -220,7 +220,7 @@ private def check : IO Nat := do
     IO.FS.removeDirAll dir
 
 def suite : List TestSeq := [
-  .individualIO "authenticated IxC CLI and repeatable prepared callers" none (do
+  .individualIO "authenticated IxCK CLI and repeatable prepared callers" none (do
     let n ← check
     return (true, n, 0, none)) .done]
 

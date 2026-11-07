@@ -1,8 +1,8 @@
 module
 
 public import Ix.Ixon
-public import IxC.Kernel.Ixon.Reader
-public import IxC.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Ixon.Reader
+public import IxCK.Kernel.Ixon.Prelude
 
 /-!
 # An Ixon environment's check order (executable; not a statement)

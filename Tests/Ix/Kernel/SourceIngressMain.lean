@@ -10,7 +10,7 @@ import Tests.Ix.Kernel.SourceIngressCompare
   `kernel-source-ingress` (`Tests.Ix.Kernel.SourceIngress`).
 * `kernel-source-ingress [--workers n] [--rows path] [--ixe path] [--no-certs] [--fiber-hints] [--collapse]
   [--bundle-evidence] Module…`: the modules' environment (default `Init`), with
-  `IxC.Kernel.PinGen.Certs` (the certificate theorems Source mode's evidence
+  `IxCK.Kernel.PinGen.Certs` (the certificate theorems Source mode's evidence
   is made of, `Ix.LeanIngress.sourceEvidence`; not with `--no-certs`), loaded
   from this toolchain's `.olean` files, canonicalized (`Ix.CanonM`) and
   condensed (`Ix.GraphM`, `Ix.CondenseM`) on `n` workers (default 8), and
@@ -44,7 +44,7 @@ namespace Tests.Ix.Kernel.SourceIngressMain
 open Tests.Ix.Kernel.SourceIngressStep
 
 /-- The module whose certificate theorems Source mode's evidence is. -/
-def certsModule : Lean.Name := `IxC.Kernel.PinGen.Certs
+def certsModule : Lean.Name := `IxCK.Kernel.PinGen.Certs
 
 structure Args where
   workers : Nat := 8

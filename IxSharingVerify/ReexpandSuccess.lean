@@ -1,6 +1,6 @@
 import IxSharingVerify.ExpandSuccess
 import IxSharingVerify.FamilyExpand
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # Re-expansion of a materialized encoding never refuses

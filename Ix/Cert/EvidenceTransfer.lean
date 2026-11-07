@@ -6,8 +6,8 @@ import Ix.Cert.ReaderUnits
 import Ix.Cert.ReaderKeys
 import Ix.Cert.SourceNames
 import Ix.Cert.Evidence
-import IxC.Kernel.Verify.Frontend.Prepare
-import IxC.Kernel.Verify.Rename.Installs
+import IxCK.Kernel.Verify.Frontend.Prepare
+import IxCK.Kernel.Verify.Rename.Installs
 
 /-! # The role table's evidence passes where quotient Source's does
 

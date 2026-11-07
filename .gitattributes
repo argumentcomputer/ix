@@ -29,7 +29,7 @@ Tests/Ix/AuxGen/Reference/*.lean linguist-generated=true
 Tests/Ix/AuxGen/Reference/JsonTable.lean -linguist-generated
 
 # The default role table, its evidence and the Ixon prelude (`kernel-pin-gen`)
-IxC/Kernel/Ixon/RoleData.lean linguist-generated=true
+IxCK/Kernel/Ixon/RoleData.lean linguist-generated=true
 
 # The compiler's non-canonical record (the `twins` suite's re-record mode)
 Tests/Ix/Compile/NonCanonicalDefault.lean linguist-generated=true

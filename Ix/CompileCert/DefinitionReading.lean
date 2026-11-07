@@ -1,5 +1,5 @@
 import Ix.CompileCert.EmissionDispatch
-import IxC.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Ixon.ReaderSpec
 
 /-! # Compiled definitions are read back as their sources
 

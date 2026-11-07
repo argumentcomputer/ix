@@ -208,8 +208,8 @@
             fileset = pkgs.lib.fileset.unions [
               # What `lake build` reads: Lean sources, manifests, FFI shims.
               (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
-              ./IxC/lake-manifest.json
-              ./IxC/lean-toolchain
+              ./IxCK/lake-manifest.json
+              ./IxCK/lean-toolchain
               # What its Rust archive target traces, as Crane sees it.
               cargoSource
               compressionData

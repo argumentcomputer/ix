@@ -1279,7 +1279,7 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
   return (errors, lines)
 
 /-- Literal support in `DependsOn` (owner, 2026-10-20): the statement closure of a root
-with a `String` literal (`outOfBounds`, a `panic!` message) holds the constants IxC checks
+with a `String` literal (`outOfBounds`, a `panic!` message) holds the constants IxCK checks
 the literal against (`Ix.Cert.literalSupport`), and Source at the bundle evidence accepts it. -/
 def literalClosure (leanEnv : Lean.Environment) (root : Lean.Name) : IO (Array String × Array String) := do
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[root])

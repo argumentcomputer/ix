@@ -1,7 +1,7 @@
 import IxSharingVerify.FinishSuccess
 import IxSharingVerify.AllocateSuccess
 import IxSharingVerify.RematerializeSuccess
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The production sharing rule never fails

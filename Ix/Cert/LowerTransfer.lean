@@ -1,5 +1,5 @@
 import Ix.Cert.CtxAgreeOwners
-import IxC.Kernel.Verify.Rename.Decl5
+import IxCK.Kernel.Verify.Rename.Decl5
 import Ix.Cert.StreamUnits
 import Ix.Cert.SourceOriginRead
 

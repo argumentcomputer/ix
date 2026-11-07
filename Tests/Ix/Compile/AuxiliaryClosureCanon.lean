@@ -42,17 +42,17 @@ import LSpec
   - `selected`: the selected closure (`collectSelectedDeps`, what
     `ix compile --consts` takes: recursors, whole logical units, checker
     and literal support). Every address must match, and the certified
-    checker (IxC, `rsCheckIxonFFI`) accepts or types the seed in that
+    checker (IxCK, `rsCheckIxonFFI`) accepts or types the seed in that
     artifact.
   - `pack`: `ix pack` (`rsPackEnv`) of the bound reference to each
-    auxiliary seed keeps the seed's address, and IxC accepts or types the
+    auxiliary seed keeps the seed's address, and IxCK accepts or types the
     seed in the bundle.
 
   And `twin` (`twinRecursorCheck`): a closure that is not closed over its
   recursors can meet the compile's recursor check on alpha-equivalent
   families, which refuses it whole; closed over them it compiles.
 
-  Only the `selected` and `pack` artifacts are type-checked. IxC reads an
+  Only the `selected` and `pack` artifacts are type-checked. IxCK reads an
   inductive block together with its recursor and declines it otherwise
   (`reader: inductive block without a recursor in the input`,
   `Ix.EnvScope.ClosureOptions.recursors`), and neither the `collectDeps`
@@ -213,7 +213,7 @@ def compileClosure (env : Lean.Environment) (dir : System.FilePath)
 
 /-- The certified checker's verdict on `seed` in the artifact at `path`
     (`rsCheckIxonFFI`: `ix check-lean`'s selected check), as failure
-    messages: none when IxC accepts or types it. -/
+    messages: none when IxCK accepts or types it. -/
 def checkSeed (path : System.FilePath) (seed : Lean.Name) : IO (Array String) := do
   let results ← rsCheckIxonFFI path.toString #[seed] #[true] true ""
   return match results[0]? with
@@ -376,7 +376,7 @@ def suite : List TestSeq := [
     -- block's class `.brecOn.eq` included.
     let f2 ← runLeg env dir ref "raw" seeds (fun s => rawDeps env [s]) (fun _ => none)
     -- Leg 3, the selected closure (`ix compile --consts`), self-contained
-    -- for IxC: every address is the reference's, and the seed type-checks.
+    -- for IxCK: every address is the reference's, and the seed type-checks.
     let f3 ← runLeg env dir ref "selected" seeds
       (fun s => Ix.EnvScope.collectSelectedDeps env [s]) (fun _ => none) (check := true)
     -- Leg 4, the pack-side closure (`ix pack`, `Env::prune_to_closure`):

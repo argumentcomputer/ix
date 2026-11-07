@@ -10,14 +10,14 @@ namespace IxVM
 /-! ## Roles — the claim's binding, read and validated in the circuit
 
 A typing claim names a role binding (`Ix.ClaimContext.binding`): the BLAKE3
-hash of a role table's `E8 03` section, which binds IxC's roles
+hash of a role table's `E8 03` section, which binds IxCK's roles
 (`Ix.Kernel.Role`) to constants and carries the evidence of the `Nat`
 operations. IxVM recognizes its primitives only through that table: a
 constant plays a role because the table binds it, never because of its
 address.
 
 The table is prover data, so no role is used before it is validated
-against IxC's specification of it (`Ix/IxVM/Kernel/RoleSpec.lean`, rendered
+against IxCK's specification of it (`Ix/IxVM/Kernel/RoleSpec.lean`, rendered
 from `Ix.Kernel.Role.spec`). Roles are validated by group, as the
 specifications group them (`Role.block`), in the order of the rendered
 `group_roles`, and a group is admitted whole or not at all:
@@ -29,7 +29,7 @@ specifications group them (`Role.block`), in the order of the rendered
   member is then checked like any constant, so its recursor's rules are the
   canonical ones for the specified inductive;
 - an anchor (the literal support, `Bool`, `True` and `And`) must be safe,
-  with the specified level count and type: its type alone, as IxC and the
+  with the specified level count and type: its type alone, as IxCK and the
   Rust kernel validate it;
 - a standard axiom (`propext`, `Classical.choice`) must be a safe axiom of
   the specified type, over its families as blocks; `sorryAx` must be a safe

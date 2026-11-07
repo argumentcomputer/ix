@@ -19,7 +19,7 @@ rides the existing `NatOpsOk` literal semantics.
 generator (`Ix.RoleEvidence.closeProof`) inlines every constant outside
 the operation's dependency closure, with beta reduction, so a lemma
 outside the closure costs its whole proof once per instantiation, and
-every checker of the default table (IxC, IxVM in-circuit) checks the
+every checker of the default table (IxCK, IxVM in-circuit) checks the
 result. So the proofs here:
 
 - unfold the operations definitionally (`with_unfolding_all`), never
@@ -46,7 +46,7 @@ evidence records, the compiler's role binding
 (`Ix.RoleBinding.Compile.finalize`) compiles and closes them the same way,
 and Source mode reads them from the checked environment
 (`Ix.LeanIngress.sourceEvidence`). The model reuses the bit operations'
-statements (`IxC/Kernel/Model/NatWf.lean`), so the theorems' names and
+statements (`IxCK/Kernel/Model/NatWf.lean`), so the theorems' names and
 statements are fixed.
 -/
 

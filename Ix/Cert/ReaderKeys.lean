@@ -1,5 +1,5 @@
-import IxC.Kernel.Ixon.ReaderSpec
-import IxC.Kernel.Ixon.RoleTableInj
+import IxCK.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Ixon.RoleTableInj
 
 /-! # Reader caches and role keys
 

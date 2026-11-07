@@ -60,7 +60,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
    values still differ inside the shorter encoding. That the price of the tiered output is its
    serialized length is a theorem (`canonicalSharingTiered_serialized`), so the construction
    does not serialize its output to measure it.
-4. **There are three codecs.** Besides Lean (`IxC/Ixon/Codec.lean`, with the metadata and
+4. **There are three codecs.** Besides Lean (`IxCK/Ixon/Codec.lean`, with the metadata and
    environment codecs in `Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
    circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
    generated into `crates/ixvm-codegen/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
@@ -104,7 +104,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
 
 ### 3.1 The integer code: writers and readers
 
-**Lean** (`IxC/Ixon/Codec.lean`; metadata, names and environments in `Ix/Ixon.lean`): `putTagN f flag value` / `getTagN f` (a `TagN` is `{flag, value}`;
+**Lean** (`IxCK/Ixon/Codec.lean`; metadata, names and environments in `Ix/Ixon.lean`): `putTagN f flag value` / `getTagN f` (a `TagN` is `{flag, value}`;
 `getTagN0Values` reads a run of `f = 0` values). Every site uses them: expressions (`putExpr`,
 `getExprFuel`, `getExprFromTag`), universes (`putUniv`, `getUnivFromTag`), constants and
 projections, metadata (`ConstantMeta`, `ExprMeta` arenas), names, environments (`putEnv`,
@@ -164,7 +164,7 @@ failure does not switch families or emit a best-so-far result.
 
 These expand `Share(i)` against the decoded table and need no change for TagN:
 `Ix/DecompileM.lean` (`resolveShareIn`, `collectIxonTelescopeExpandingShares`),
-IxC's reader (`IxC/Kernel/Ixon/Reader.lean`),
+IxCK's reader (`IxCK/Kernel/Ixon/Reader.lean`),
 `Ix/SemanticContract.lean` (`containsIxon`), `Ix/Resource/Addressed.lean` (offsets Share into a
 program-wide table); Rust `crates/ixon/src/diff.rs` (`resolve_share`) and
 `crates/ffi/src/lean_ixon/diff.rs`. The IxVM ingress and conversion modules also consume the
@@ -187,7 +187,7 @@ The source map is:
 
 | Contract | Source and conditions |
 | --- | --- |
-| TagN and constant codec | `IxC/Ixon/Verify/{Basic,TagN,Constant}.lean` and the supporting codecs; wire bounds and exact decoding remain explicit |
+| TagN and constant codec | `IxCK/Ixon/Verify/{Basic,TagN,Constant}.lean` and the supporting codecs; wire bounds and exact decoding remain explicit |
 | Actual input expansion and output meaning | `IxSharingVerify/CanonicalMeaning.lean`, `FamilyDomain.lean`, `CanonicalProduction.lean`; successful production runs preserve the ordered input expressions, including the input-to-DAG bridge |
 | K16 family minimum, format and serialized length | `IxSharingVerify/CanonicalProduction.lean`; the successful production entry supplies the domain and check premises; phase 1 minimizes within the fixed family, not over every subset of a large component |
 | Representation congruence and idempotence | `IxSharingVerify/FamilyIdempotence.lean`; congruence requires the same unfolded roots, non-expression fields, refs and universes, and both normalizations must succeed at the same configuration, layout and limits |
@@ -202,7 +202,7 @@ It does not assert unchanged bytes for the whole K16 cutover; §14.4 of
 `sharing-minimum.md` records the changed corpus constants and their attribution.
 
 `lake build --wfail IxSharingVerify` builds these sharing proofs and audits;
-`lake -d IxC build --wfail` builds the codec proofs with the certified checker.
+`lake -d IxCK build --wfail` builds the codec proofs with the certified checker.
 `Audit/Statements.lean` fixes each root's axiom set, `Audit/SorryFrontier.lean`
 rejects `sorryAx` in sharing declarations, and `Audit/CompiledCode.lean`
 requires every compiler-path `csimp` equality to be an audit root. The
@@ -230,7 +230,7 @@ codec, is retired (see [kernel](kernel.md)).
 - **Separate namespaces.** `ConstantMeta.metaSharing` is its own table, indexed from 0 per
   constant. No compiler writes it now: the call-site metadata and the decompile records that
   indexed it are retired.
-- **Kernel ingress ignores it.** IxC's reader does not
+- **Kernel ingress ignores it.** IxCK's reader does not
   read `metaSharing`.
 
 ### 5.2 Metadata payloads contain no primary Share references
@@ -267,9 +267,9 @@ certified reader and from other host traversals:
 
 | Entry | Current checks and boundary |
 | --- | --- |
-| Certified IxC admission | `IxC/Kernel/Ixon/Reader.lean`, `MemberReader.mk'` builds each primary sharing entry against earlier entries only; `convExpr` returns a malformed-reference error when a self/forward reference is used. An unused failing entry need not be forced. This entry does not read optional `ConstantMeta` or replay `_ix.inline` records. |
+| Certified IxCK admission | `IxCK/Kernel/Ixon/Reader.lean`, `MemberReader.mk'` builds each primary sharing entry against earlier entries only; `convExpr` returns a malformed-reference error when a self/forward reference is used. An unused failing entry need not be forced. This entry does not read optional `ConstantMeta` or replay `_ix.inline` records. |
 | Host metadata-Share expansion | `validateMetaSharing` checks every metadata table entry, rejecting self, forward and out-of-range metadata Shares before decompilation. This does not validate the primary sharing table or the metadata arena/replay graph. |
-| Raw host primary-Share expansion | `Ix.DecompileM.resolveShareIn` checks the primary index range but has no backwardness/progress guard on that traversal. For example, `sharing = [Share(0)]` resolves `Share(0)` back to itself. This host path is distinct from the certified IxC reader. |
+| Raw host primary-Share expansion | `Ix.DecompileM.resolveShareIn` checks the primary index range but has no backwardness/progress guard on that traversal. For example, `sharing = [Share(0)]` resolves `Share(0)` back to itself. This host path is distinct from the certified IxCK reader. |
 | Host metadata replay | The arena codec represents arbitrary UInt64 child references with wrapping deltas (`Ix/Ixon.lean`, `crates/ixon/src/metadata.rs`). Its canonical byte encoding does not establish acyclicity. The decompiler follows `Mdata.child` and range-checked `_ix.inline` replay targets without a general active-cycle check; the metadata-Share bound does not constrain those edges. |
 
 These remaining host traversal limits follow from the current resolver/replay
@@ -367,7 +367,7 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
 6. **Stale artifacts.** Caches are keyed by the format version (§6). Artifacts pinned by hash
    from outside the repository (the FLT benchmark) must be regenerated by their owners.
 7. **Host traversal limits** (§5.3): raw host primary-Share expansion and metadata
-   arena/replay traversal still lack general cycle guards. The certified IxC reader
+   arena/replay traversal still lack general cycle guards. The certified IxCK reader
    uses only earlier primary entries, and host metadata-Share self/forward references
    already fail their dedicated check. These are separate entrypoint contracts.
 

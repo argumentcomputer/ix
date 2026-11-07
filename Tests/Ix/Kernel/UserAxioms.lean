@@ -1,11 +1,11 @@
 import LSpec
-import IxC.Kernel.Admission
+import IxCK.Kernel.Admission
 
 /-! # The checks that admit user axioms, at the kernel
 
 Small declaration arrays over the committed Ixon prelude, through the fold
 under each axiom policy (`Ix.Kernel.Cached.AxiomPolicy`,
-`IxC/Kernel/Cached/Policy.lean`), and the role table's admission under the
+`IxCK/Kernel/Cached/Policy.lean`), and the role table's admission under the
 policy (`Ix.Kernel.Admission.admitAxiomPolicy`):
 
 * a user axiom (`axiom cheat : False`) declines under `strict` and is admitted

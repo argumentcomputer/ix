@@ -124,7 +124,7 @@ shared workflow name.
 
 The stub runs nothing: a green `merge-gate / pass` on a pull request says
 nothing about the merge-queue tiers, the certified kernel gate (the only job
-that builds the standalone `IxC` package with its audits, and the set-theory
+that builds the standalone `IxCK` package with its audits, and the set-theory
 model) or Valgrind. They guard `main` only while `main` requires
 `merge-gate / pass` and every merge goes through the queue, which are
 repository settings these files cannot check. To run them on a pull request

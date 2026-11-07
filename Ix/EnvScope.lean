@@ -12,12 +12,12 @@ public import Ix.Meta
 public import Ix.Compile.Parallel
 -- The checker-support ground is derived from the kernel's role table
 -- along the layering fence's allowed host → kernel direction
--- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
+-- (`Ix/SpecDigest.lean` does the same). This links `IxCK.Kernel.Roles`'s
 -- import closure into the `ix` binary.
-import IxC.Kernel.Roles
+import IxCK.Kernel.Roles
 -- The string-literal support (`strLitSupportNames`), from the certified
 -- reader's own list, the same direction.
-import IxC.Kernel.Ixon.Reader
+import IxCK.Kernel.Ixon.Reader
 
 public section
 
@@ -199,7 +199,7 @@ private def kernelNameToLean : Ix.Kernel.Name → Lean.Name
 `r.leanName`, the constants of the roles its validation needs (`Role.deps
 r`) with their blocks (`Role.block`), the roots of the fold's evidence
 closure (`Ix.Kernel.evidenceDepKeys`), without `r` itself. Derived from
-`IxC/Kernel/Roles.lean`, not a copy: a superset of the old Nat-operation
+`IxCK/Kernel/Roles.lean`, not a copy: a superset of the old Nat-operation
 table (`997088e9`), and exactly what `RoleTable.wf` requires of a table
 that binds `r`. -/
 private def checkerSupportTable : Std.HashMap Lean.Name (List Lean.Name) :=
@@ -364,7 +364,7 @@ def introducedSupport (env : Lean.Environment) : List Lean.Name :=
   [``And, ``And.intro, ``True, ``True.intro, ``PProd, ``PProd.mk, ``PProd.fst,
     ``PProd.snd, ``PUnit, ``PUnit.unit, ``Eq, ``Eq.refl].filter env.contains
 
-/-- **The string-literal support**, as Lean names: the constants IxC types a
+/-- **The string-literal support**, as Lean names: the constants IxCK types a
 `String` literal with (`Ix.Kernel.Reader.strLitSupportNames`, `Nat`'s
 included), spelled by their roles' Lean names. A literal references none of
 them, so a closure carries them only by asking. -/
@@ -388,7 +388,7 @@ checker-support ground close to the same fixed point as ordinary
 references, mutual `all` members and auxiliary-family siblings, seeded with
 the always-carried library support (`introducedSupport`) and their units.
 
-The closure is **self-contained for IxC**: when a closed constant holds a
+The closure is **self-contained for IxCK**: when a closed constant holds a
 `String` literal and the closure lacks some of the string-literal support
 (`literalSupportLeanNames`), it is closed again with that support as seeds
 (the certified checker declines a string literal before `String.ofList` and
@@ -413,7 +413,7 @@ set plus everything the file itself elaborates — closed as a selected input
 `_private.*` proof auxiliaries are pulled in (their content is mandatory for
 groundedness and their named rows for decompile/tc lookups), with every
 inductive's recursor, whole logical units, checker support and the
-string-literal support (so the output is self-contained for IxC), while
+string-literal support (so the output is self-contained for IxCK), while
 unreferenced foreign privates stay out — the qualified-package isolation the
 `module` header asks for. Content always comes from `fe.env` (full,
 private-level); the exported view contributes names only. -/

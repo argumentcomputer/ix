@@ -1,0 +1,116 @@
+module
+
+public import IxCK.Kernel.Verify.Cached.InstalledC
+public import IxCK.Kernel.Cached.Policy
+public section
+
+/-!
+# The capstone letters of the fold `checkDecls`
+
+`checkDecls` (`IxCK/Kernel/Cached/Installed.lean`) is the declaration fold
+the binary runs — install every record, then check every recorded
+declaration — and the subject of the main theorem
+(`Ix.Kernel.model_exists`, `IxCK/Kernel/MainTheorem.lean`).  Its letters
+are the letters on the fully checked environment the driver assembles
+(`IxCK/Kernel/Verify/Cached/InstalledC.lean`) read through
+`checkDecls_fullyChecked`: an accept of the fold IS a fully checked
+environment, and a fully checked environment carries the graded model
+(`fullyChecked_sound`), so no constant of type `False` (or `Empty`) is
+stored in what the fold accepts.
+
+**At every evidence** (task #304, step 4): the fold's evidence parameter is
+free in all three letters below (`checkDecls μ ev ds`), because
+nothing the model tier consumes reads which evidence enabled an
+operation.  Each entry's statements are these at the evidence of the role
+table it admitted.
+
+Retired at task #172 with the arena they were fed from: the
+`checkDecls` letters (`SPC_*` and `input_SPC_*`), which took a
+`WFStore` and a `List DeclP` and converted once before folding.
+
+Retired at the SetR removal (2026-09-05) **with their subjects**: the
+collapsed-lane letters `no_proof_of_Empty_SPCD_{R,R2,R2M}`, their
+acceptance corollaries and the folds `foldSPC_{R,R2,R2M}`.  Every one
+of them was stated over an `EnvS`/`EnvModelU`/`EnvModelUM` carrier, and those
+carriers were the `IxCK/Kernel/SetR/*` tier — the B4 measurement having
+shown a zero acceptance delta between the two verified configurations,
+the P letter is the whole story.  This module used to be the only one
+allowed to see both lanes; there is one lane.
+-/
+
+namespace Ix.Kernel.Cached
+
+open Ix.Kernel Ix.Kernel.Semantics SetTheory Ix.Kernel.SetModel
+open Ix.Kernel.Model (EnvModelM no_constant_of_Empty no_constant_of_False)
+
+universe w
+variable {V : Type w} [SetTheory V] {μ : CheckMode}
+variable {ev : Evidences md}
+
+/-- **Acceptance**: what the fold accepts carries the model. -/
+theorem checkDecls_sound (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDecls μ ev ds = .ok env') :
+    Nonempty (EnvModelM V μ env') := by
+  obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked μ h
+  exact fullyChecked_sound V hμ fc
+
+/-- **The fold's letter about `Empty`**: the checker, running a
+validating mode, never accepts a stream in which some stored constant
+has type `Empty`.  Hypotheses are input-level only. -/
+theorem no_proof_of_Empty_cached (V : Type w) [SetTheory V]
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDecls μ ev ds = .ok env') :
+    ∀ c ∈ env'.consts,
+      c.toConstantVal.type = .const emptyName [] → False := by
+  obtain ⟨mp⟩ := checkDecls_sound (V := V) hμ h
+  exact fun c hc hty => no_constant_of_Empty mp c hc hty
+
+/-- **The fold's letter about `False`** (task #181): the same letter at
+the pinned `False` block — no hypothesis about how the stream declared
+`False`.  The step the main corollary rests on is this at `.verified`. -/
+theorem no_proof_of_False_cached (V : Type w) [SetTheory V]
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDecls μ ev ds = .ok env') :
+    ∀ c ∈ env'.consts,
+      c.toConstantVal.type = .const falseName [] → False := by
+  obtain ⟨mp⟩ := checkDecls_sound (V := V) hμ h
+  exact fun c hc hty => no_constant_of_False mp c hc hty
+
+/-! ## The fold that admits user axioms
+
+`checkDeclsWithUserAxioms` (`IxCK/Kernel/Cached/Policy.lean`) also admits user
+axioms, and an accept is conditional on them. These letters are what holds
+unconditionally: over records that declare no user axiom
+(`userAxiomsOfDecls`), the fold is `checkDecls`
+(`checkDeclsWithUserAxioms_eq_checkDecls`), so its accept carries the model.
+(The letters these replace, `checkDecls_sound_conditional` and
+`no_proof_of_False_cached_conditional`, were about `checkDecls`, with a
+premise of type `… → True`.) -/
+
+/-- **Acceptance without user axioms**: what the fold that admits user axioms
+accepts from records that declare none carries the model. -/
+theorem checkDeclsWithUserAxioms_sound (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDeclsWithUserAxioms μ ev ds = .ok env')
+    (hnone : userAxiomsOfDecls ds.toList = []) :
+    Nonempty (EnvModelM V μ env') := by
+  rw [checkDeclsWithUserAxioms_eq_checkDecls μ ev ds hnone] at h
+  exact checkDecls_sound hμ h
+
+/-- **The letter about `False`, without user axioms**: the fold that admits
+user axioms, running a validating mode, never accepts records that declare
+none in which some stored constant has type `False`. -/
+theorem no_proof_of_False_cached_userAxioms (V : Type w) [SetTheory V]
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDeclsWithUserAxioms μ ev ds = .ok env')
+    (hnone : userAxiomsOfDecls ds.toList = []) :
+    ∀ c ∈ env'.consts,
+      c.toConstantVal.type = .const falseName [] → False := by
+  obtain ⟨mp⟩ := checkDeclsWithUserAxioms_sound (V := V) hμ h hnone
+  exact fun c hc hty => no_constant_of_False mp c hc hty
+
+end Ix.Kernel.Cached

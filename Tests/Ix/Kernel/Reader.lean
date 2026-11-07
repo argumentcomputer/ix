@@ -1,5 +1,5 @@
-import IxC.Kernel.Admission.Theorems
-import IxC.Fixtures.Authentic
+import IxCK.Kernel.Admission.Theorems
+import IxCK.Fixtures.Authentic
 import Ix.Address.Admission
 
 /-! # Ixon records through the verified checker
@@ -550,7 +550,7 @@ both claim motive 1 here (`List`'s singleton group and `LNode`'s family), and
 the block would be rejected with `duplicate declaration
 ix.<LTree>.0._model._impl.pack_0`, as Mathlib's `Lean.Elab.InfoTree` would
 be (with `pack_1`). The modeller forms the groups largest family first
-(`IxC/Kernel/Frontend/InModel/Nested.lean`, an adapted file). -/
+(`IxCK/Kernel/Frontend/InModel/Nested.lean`, an adapted file). -/
 
 /-- (address, canonical record bytes) -/
 def lTreeRecords : List (String × String) := [
@@ -737,7 +737,7 @@ kernel's `Level.leqCore` implements) establishes only `≤`: the converse
 `application type mismatch`, as Mathlib's `RatFunc.liftOn_def` and
 `RatFunc.liftOn'_def` (unfolding lemmas of `irreducible_def`) would be.
 That case of the comparison falls back on Géran's sublevels
-(`IxC/Kernel/LevelGeran.lean`, a decision procedure,
+(`IxCK/Kernel/LevelGeran.lean`, a decision procedure,
 `Ix.Kernel.Level.Geran.leq_iff`), and the theorem is accepted. The reader
 converts levels as stored. -/
 

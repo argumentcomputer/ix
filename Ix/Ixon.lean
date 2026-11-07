@@ -12,9 +12,9 @@ public import Ix.Address.Admission
 public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
-public import IxC.Ixon.Codec
-public import IxC.Ixon.Bounded.Constant
-import all IxC.Ixon.Codec
+public import IxCK.Ixon.Codec
+public import IxCK.Ixon.Bounded.Constant
+import all IxCK.Ixon.Codec
 public import Ix.Merkle
 
 public section

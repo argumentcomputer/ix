@@ -169,7 +169,7 @@ jobs:
       - name: Build the partitions' targets
         run: |
           lake build --wfail IxTests Apps.ZKVoting.Prover
-          lake -d IxC build --wfail
+          lake -d IxCK build --wfail
           lake build --wfail Ix.Cert.Audit kernel-layering kernel-trust-surface kernel-entry-cases kernel-meta-names
 
       - name: Record the built revision
@@ -272,7 +272,7 @@ jobs:
         if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
         run: lake exe Apps.ZKVoting.Prover
 
-      # The certified kernel gate (docs/kernel.md): the standalone IxC
+      # The certified kernel gate (docs/kernel.md): the standalone IxCK
       # package build, which has no dependencies and so proves the kernel needs
       # only the toolchain, then the host audits and kernel tests, the
       # set-theory model, the layering and trust-surface fences, the entry

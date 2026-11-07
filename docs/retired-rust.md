@@ -5,7 +5,7 @@ paths that used them: the compiler (`crates/compile`), the kernel
 (`crates/kernel`) and the port of the sharing construction
 (`crates/ixon/src/sharing_exact`). None was certified: no theorem covered
 them, and neither the certified compiler (`Ix.Cert.compileReport`) nor the
-certified checker (IxC, [kernel](kernel.md)) called them. Lean is now the
+certified checker (IxCK, [kernel](kernel.md)) called them. Lean is now the
 only implementation of each.
 
 The code is kept on the branch `jcb/archive-rust-compiler-kernel`, at commit
@@ -57,7 +57,7 @@ inference, plus claim builders, role admission and the shard partitioner (the
 partitioner moved to `crates/ixon/src/shard.rs`).
 
 - **Trust.** Uncertified, and never a fallback for the certified entry.
-  IxC is a separate design, derived from con-leche's verified checker, not a
+  IxCK is a separate design, derived from con-leche's verified checker, not a
   port of this kernel. Its tests compared verdicts: the tutorial and
   check-env suites, and on Init+Std the `initstd-reference` fixture, where it
   passed 99,427 of 99,432 constants (the five others are the

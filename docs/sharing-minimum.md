@@ -69,8 +69,8 @@ the corpus-measurement gate, and §11 (division of the work).
 - Tests: `lake test -- exact-sharing sharing-components` runs the construction's suites (the
   plan was written against the heuristic's `sharing` suite, since removed); `lake test --
   ixon` the codec suite; `cargo test -p ixon` the Rust codec; `lake build --wfail IxSharingVerify`
-  the proofs (`IxSharingVerify`; the TagN and codec proofs are in `IxC/Ixon/Verify` and build
-  with `lake -d IxC build --wfail`).
+  the proofs (`IxSharingVerify`; the TagN and codec proofs are in `IxCK/Ixon/Verify` and build
+  with `lake -d IxCK build --wfail`).
 - Corpus: `Init`, compiled by the production compiler with
   `lake exe ix compile Benchmarks/CompileInit.lean --out init.ixe` from the repository root
   (NOT `Benchmarks/Compile/CompileInit.lean`, which is a separate Lake project that pulls
@@ -906,14 +906,14 @@ phase-1 runs instead of one (about 3× the time; still minutes for all of Mathli
 TagN (flag widths 0, 2, 4) replaces Tag0, Tag2 and Tag4 everywhere in the Ixon
 grammar, for uniformity and to simplify the serialization. Measured byte effect is the Share
 savings only (other fields change by ≈0), and no integer gets longer. Consequences: one integer
-code with one proof of roundtrip/bijectivity (now `IxC/Ixon/Verify/TagN.lean`); the three
+code with one proof of roundtrip/bijectivity (now `IxCK/Ixon/Verify/TagN.lean`); the three
 "noncanonical … integer" reader checks are removed; every codec theorem that mentions
 `tag0Bytes`/`tag4Bytes` sizes is restated with `tagNBytes`; the format version bumps once for
 sharing + integers together.
 
 ### 12.13 What is machine-checked
 
-The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
+The theorems below are in `IxSharingVerify` (the TagN theorems in `IxCK/Ixon/Verify/TagN.lean`)
 and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (144 roots on Lean
 4.34.1; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
 `sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
@@ -1027,7 +1027,7 @@ invalid). Widths become 1/2/3/4/5/9 for every flag width f ∈ {0, 2, 4}; rung e
 `R1 = 2^(r−1)`, `R2 = R1 + 2^(r−2+8)`, `R3 = R2 + 2^16`, `R4 = R3 + 2^24`, `R5 = R4 + 2^32`,
 `R6 = R5 + 2^64` (r = 8 − f). Reason: without it, f = 0 values in [82,048, 2^24) cost 5 bytes where
 Tag0 cost 4; Mathlib's 4.8M name indices lose 22.1 MB (+0.66% of the file). With it TagN is never
-longer than the old codes on any field measured. Still bijective; `IxC/Ixon/Codec.lean`'s TagN docstring is
+longer than the old codes on any field measured. Still bijective; `IxCK/Ixon/Codec.lean`'s TagN docstring is
 the normative layout.
 
 ### 12.17 Proof-library status after the TagN switch
@@ -1141,12 +1141,12 @@ with `i ≥ p + q` out of range
 and `p + j ≤ i < p + q` a forward or self reference. When a constant's metadata is loaded, the
 whole table is checked first (`validateMetaSharing`), reporting
 the first violation in entry order and then left-to-right pre-order. Kernel ingress
-(IxC's reader), the IxVM circuit and the
+(IxCK's reader), the IxVM circuit and the
 resource validators do not read `metaSharing` contents. Two gaps of the readers predate this
 rule and are not addressed by it: a record nested inside a metadata expression may reference
 any `metaSharing` entry, including its own, and the decompiler does not check that primary
 table entries reference only earlier entries. A malformed table of either kind can therefore
-make it loop instead of failing; hardening it is follow-up work. IxC's reader builds each
+make it loop instead of failing; hardening it is follow-up work. IxCK's reader builds each
 primary entry against the entries before it, so a self or forward reference it uses is an
 error.
 

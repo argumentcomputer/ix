@@ -1,5 +1,5 @@
 import Ix.Cert.Compile
-import IxC.Ixon.Verify.BoundedConstant
+import IxCK.Ixon.Verify.BoundedConstant
 
 /-! # A cheap definition-projection reader, equal on every input
 

@@ -1,7 +1,7 @@
 module
 
-public import IxC.Kernel.Roles
-public import IxC.Ixon.Codec
+public import IxCK.Kernel.Roles
+public import IxCK.Ixon.Codec
 public import Ix.Address.Pure
 
 @[expose] public section
@@ -9,7 +9,7 @@ public import Ix.Address.Pure
 /-! # The specification digest
 
 The specification set (`Ix.Kernel.Role.spec`, `Role.block`, `Role.deps`,
-`specVersion`; `IxC/Kernel/Roles.lean`) is identified by a digest: BLAKE3
+`specVersion`; `IxCK/Kernel/Roles.lean`) is identified by a digest: BLAKE3
 (`Blake3.Pure.hash`) of its canonical encoding (`specBytes`). The kernel
 admits no hasher (`Ix.Kernel.Audit.kernelImportAllowlist`), so the digest is
 computed here, in the root library. A claim commits to it beside the binding

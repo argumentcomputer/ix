@@ -2,8 +2,8 @@ import LSpec
 import Ix.Meta
 import Ix.EnvScope
 import Tests.Ix.Compile.ClosureHarness
-import IxC.Kernel.CoreDefs
-import IxC.Kernel.Roles
+import IxCK.Kernel.CoreDefs
+import IxCK.Kernel.Roles
 
 /-!
   compiler-selected-closure: what a selected closure
@@ -23,16 +23,16 @@ import IxC.Kernel.Roles
   3. **Mutual siblings.** The closure of each `mutual` member of
      `Tests.Ix.Compile.AuxiliaryClosure.mutualSeeds` holds its sibling.
   4. **Checker support** (`checkerSupportOf`, derived from
-     `IxC.Kernel.Roles` `Role.deps`). `Nat.land`'s support holds
+     `IxCK.Kernel.Roles` `Role.deps`). `Nat.land`'s support holds
      `Nat.mul` (`natOpDeps`). It is drawn from existing records only. The
      selected closure of a `Nat.land` user holds `Nat.mul`, and the raw
      closure does not. The drift check of the derivation against
      `natOpDeps` is a separate test.
-  5. **Self-contained for IxC.** The selected closure of `matcher` holds
+  5. **Self-contained for IxCK.** The selected closure of `matcher` holds
      `Nat.rec` (the certified reader declines an inductive block without
      its recursor); the raw closure does not. The selected closure of
      `greeting`, a string literal, holds the literal support
-     (`literalSupportLeanNames`, `String.ofList` among them; IxC declines a
+     (`literalSupportLeanNames`, `String.ofList` among them; IxCK declines a
      string literal before it); the raw closure lacks `String.ofList`, and a
      closure with no string literal (`landUser`'s) does not gain it. A
      literal in a theorem's proof only (`stringInProof`, the rest of its
@@ -111,7 +111,7 @@ def mutualSeeds : List (Lean.Name × Lean.Name) := [
 (`natOpDeps Nat.land`), which `Nat.land`'s value does not reference. -/
 def landUser (a b : Nat) : Nat := Nat.land a b
 
-/-- A string literal, which references none of the constants IxC types it
+/-- A string literal, which references none of the constants IxCK types it
 with (`String.ofList` among them). -/
 def greeting : String := "hi"
 
@@ -237,7 +237,7 @@ def suite : List TestSeq := [
     unless selected.contains ``Nat.mul do
       errors := errors.push "landUser's selected closure lacks Nat.mul"
     checked := checked + 1
-    -- 5. self-contained for IxC: an inductive's recursor, and the string-literal
+    -- 5. self-contained for IxCK: an inductive's recursor, and the string-literal
     -- support when a closed constant has a string literal
     unless (nameSet (Ix.EnvScope.collectSelectedDeps env [``matcher])).contains ``Nat.rec do
       errors := errors.push "the matcher's selected closure lacks Nat.rec"

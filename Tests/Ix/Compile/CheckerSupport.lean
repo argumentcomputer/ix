@@ -4,14 +4,14 @@ import Tests.Ix.Compile.ClosureHarness
 
 /-!
   checker-support-regression: a selected closure carries the checker's
-  certificate ground (`Ix.EnvScope.checkerSupportOf`, from `IxC.Kernel.Roles`
+  certificate ground (`Ix.EnvScope.checkerSupportOf`, from `IxCK.Kernel.Roles`
   `Role.deps`), on the exact failing corpus case `S_T_0_0_dir`
   (`Tests/Ix/Compile/CheckerSupport/Single.lean`).
 
   The checker installs a well-founded `Nat` operation only when every
   operation of its recurrences is stored (`divModEnvGuardF`,
-  `IxC/Kernel/DeclCheck.lean`). The evidence of those recurrences must also
-  lie in the reference closure (`evidenceLocal`, `IxC/Kernel/Roles.lean`).
+  `IxCK/Kernel/DeclCheck.lean`). The evidence of those recurrences must also
+  lie in the reference closure (`evidenceLocal`, `IxCK/Kernel/Roles.lean`).
   The fixture's `isBase` helpers reach `Nat.land`. `Nat.land`'s value does
   not mention `Nat.mul`, but its certificate needs it.
 
@@ -57,8 +57,8 @@ namespace Tests.Ix.Compile.CheckerSupport
 def fixture : System.FilePath := "Tests/Ix/Compile/CheckerSupport/Single.lean"
 
 /-- The certified checker's reason for declining `Nat.land` in the raw
-closure (`IxC/Kernel/DeclCheck.lean:882`), as `kernel-check-ixe` renders it
-since IxC step 6: the key as its Lean name and the first eight hexadecimal
+closure (`IxCK/Kernel/DeclCheck.lean:882`), as `kernel-check-ixe` renders it
+since IxCK step 6: the key as its Lean name and the first eight hexadecimal
 digits of its record address (`Ix.Kernel.Reader.spellWith`). Recorded from a
 run of this tree, character for character; re-record it when the raw
 closure's `Nat.land` record moves. -/

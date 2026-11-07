@@ -2,7 +2,7 @@ module
 
 public import Ix.Address.Admission
 public import Ix.Ixon.Projection
-public import IxC.Kernel.Admission.Tier
+public import IxCK.Kernel.Admission.Tier
 
 @[expose] public section
 

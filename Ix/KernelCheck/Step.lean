@@ -1,10 +1,10 @@
 module
 
 public import Ix.Ixon
-public import IxC.Kernel.Ixon.Prelude
-public import IxC.Kernel.Cached.Installed
-public import IxC.Kernel.Admission
-public import IxC.Kernel.Admission.Tier
+public import IxCK.Kernel.Ixon.Prelude
+public import IxCK.Kernel.Cached.Installed
+public import IxCK.Kernel.Admission
+public import IxCK.Kernel.Admission.Tier
 public import Ix.Ixon.CheckOrder
 
 @[expose] public section
@@ -355,7 +355,7 @@ def stageDeferred {α : Type} (decl : α → Ix.Kernel.Tier.TierDecl md) (xs : A
   xs.filter (fun x => (decl x).stage == 0) ++ xs.filter (fun x => (decl x).stage == 1) ++
     xs.filter (fun x => (decl x).stage == 2)
 
-/-- A tier failure's outcome and reason: always a decline (IxC cannot tell an
+/-- A tier failure's outcome and reason: always a decline (IxCK cannot tell an
 ill-typed tier declaration from one that types only by unfolding a tier
 definition), the checker's message under `tier (<safety>)`. -/
 def tierOutcome (s : Ix.Kernel.Tier.Safety) (e : Ix.Kernel.CheckError md)

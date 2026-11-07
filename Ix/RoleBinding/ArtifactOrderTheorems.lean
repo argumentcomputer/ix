@@ -1,7 +1,7 @@
 import Ix.RoleBinding.ArtifactTiered
 import Ix.CompileCert.Loop
 import Ix.CompileCert.Canon.QSort
-import IxC.Kernel.Admission.TierTheorems
+import IxCK.Kernel.Admission.TierTheorems
 
 namespace Ix.RoleBinding.Artifact
 open Ix.Kernel Ix.Kernel.Reader Ix.Kernel.Admission Ix.CompileCert.Loop

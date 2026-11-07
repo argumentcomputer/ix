@@ -1,5 +1,5 @@
 import IxSharingVerify.TieredModel
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # Materialization never refuses a model evaluation

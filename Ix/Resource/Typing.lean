@@ -3,9 +3,9 @@ module
 public import Ix.Address.Admission
 public import Ix.Ixon.CheckOrder
 public import Ix.RoleBinding.Artifact
-public import IxC.Kernel.Admission.Tier
-public import IxC.Kernel.Tier.Ind
-public import IxC.Kernel.Tier.Answer
+public import IxCK.Kernel.Admission.Tier
+public import IxCK.Kernel.Tier.Ind
+public import IxCK.Kernel.Tier.Answer
 
 /-! # resource-v1's typing half
 
@@ -15,7 +15,7 @@ check order (`Ixon.CheckOrder.wholeEnv`), with every blob, the compiler's
 reducibility hints and the artifact's admitted role table and actual prelude.
 Legacy unbound inputs retain the default table/prelude. It splits the records in two.
 
-**The certified part** is checked by IxC's tiered Ixon entry at BLAKE3,
+**The certified part** is checked by IxCK's tiered Ixon entry at BLAKE3,
 `Ix.Kernel.Admission.checkBytesTieredUsing`, with the same prepared binding and
 guarded prelude. Its accept is what the entry's theorem states: every record
 and blob of the part authenticated, the logical environment model-backed, and
@@ -28,7 +28,7 @@ it, divergence Q2) and every **assumption axiom** (a safe axiom no role
 binds: the certified theory is Lean's with its three standard axioms, which
 the role table binds), with the recursor and projection records of such a
 block and every record that names one of them, transitively. No record of
-the certified part names an uncertified one. It is typed by IxC's checking
+the certified part names an uncertified one. It is typed by IxCK's checking
 functions outside any theorem, as Lean's kernel would type it, from the
 certified part's environment:
 * first its safe records in check order: an assumption axiom by its header
@@ -38,7 +38,7 @@ certified part's environment:
 * then, staged as Lean's lattice (`Tier.TierDecl.stage`), every tier record
   and its unsafe inductive blocks, **transparently, as Lean and `Ix.Tc`
   check them**: with δ on tier definitions and ι on unsafe recursors, over
-  the typing tier's **answer view** (`IxC.Kernel.Tier.Answer`; this module is
+  the typing tier's **answer view** (`IxCK.Kernel.Tier.Answer`; this module is
   the answers fence's one allowed importer, `Tests/Ix/Kernel/Layering.lean`).
   A definition block is checked by the batch tier's step (`Tier.checkDeclC`,
   tier constants opaque) and, if that refuses, over the answer view with its
@@ -63,7 +63,7 @@ the batch tier succeeds. If the batch tier refuses a tier record, `typeCheck`
 moves every tier record to the uncertified part and retries certified
 admission on the remaining logical records. The separate checker then types
 the tier transparently. A successful result with a nonempty uncertified part
-combines the certified part's theorem with IxC's uncertified typing of the
+combines the certified part's theorem with IxCK's uncertified typing of the
 rest. The claim string stays `resource-v1`, uncertified as a resource claim
 (`Ix.Resource.Claim`).
 
@@ -477,7 +477,7 @@ def splitOf (input : TypingInput) : Std.HashSet Address :=
   let look : Store := fun a => store[a]? <|> (input.pre.records.find? (·.1 == a)).map (·.2) <|> evidence[a]?
   uncertifiedOwners (bindingsOf look input.table) input.ordered
 
-/-- **The certified part**: IxC's tiered entry at BLAKE3 under the input's
+/-- **The certified part**: IxCK's tiered entry at BLAKE3 under the input's
 actual binding and prelude, over every record outside `unc`, exactly as the
 entry and its theorem (`Ix.Kernel.Admission.checkBytesTieredUsing_ok`) take it. Its result is
 the installed logical environment; nothing here reads the answer view. A
@@ -532,7 +532,7 @@ result (`typeUncertified`). When the batch tier refuses a tier record (it
 keeps tier constants opaque, where Lean unfolds tier definitions), the
 certified part is the logical records alone, and every tier record joins the
 uncertified part, typed transparently. A failure is `resource validator:
-erased typing failed`, with IxC's error and, where it has one, the failing
+erased typing failed`, with IxCK's error and, where it has one, the failing
 record; an uncertified part's failure says so. -/
 def typeCheck (env : Ixon.Env) : Except String Unit := do
   let input ← (typingInput env).mapError (s!"resource validator: erased typing failed: {·}")

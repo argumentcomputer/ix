@@ -7,7 +7,7 @@ import Ix.KernelDisplay.MetaNames
 import Ix.KernelDisplay.Peek
 import Tests.Ix.Kernel.MetaNamesFixtures
 
-/-! # `kernel-meta-names`: `.meta` and `.source` names against Lean (IxC step 6b)
+/-! # `kernel-meta-names`: `.meta` and `.source` names against Lean (IxCK step 6b)
 
 The oracle of step 6b's names. A small Lean environment (`Init` and
 `Tests.Ix.Kernel.MetaNamesFixtures`) and five ill-typed declarations built
@@ -105,7 +105,7 @@ def defnOf (n : Name) (ty v : Expr) : ConstantInfo :=
     hints := ReducibilityHints.opaque, safety := .safe, all := [n] }
 
 /-- What Lean's kernel says of an ill-typed declaration: the roles and the
-printed terms, in IxC's role names. -/
+printed terms, in IxCK's role names. -/
 def leanRoles (env : Environment) (n : Name) (ty v : Expr) : IO (List (String × String)) := do
   let decl : Declaration := .defnDecl {
     name := n, levelParams := [], type := ty, value := v,
@@ -128,7 +128,7 @@ def leanRoles (env : Environment) (n : Name) (ty v : Expr) : IO (List (String ×
     let msg ← (e.toMessageData {}).toString
     throw (IO.userError s!"{n}: unexpected kernel exception {msg}")
 
-/-! ## IxC's side -/
+/-! ## IxCK's side -/
 
 /-- The roles and printed terms of a failure, from its rendering (a role line,
 then its term indented). -/

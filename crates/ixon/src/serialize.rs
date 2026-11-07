@@ -1064,7 +1064,7 @@ fn put_univs(univs: &[Arc<Univ>], buf: &mut Vec<u8>) {
 }
 
 /// A record's universe table, its universes' expanded constructors charged
-/// to one budget (`MAX_UNIV_NODES`), as IxC's bounded decoder charges a
+/// to one budget (`MAX_UNIV_NODES`), as IxCK's bounded decoder charges a
 /// record's.
 fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   let num = get_u64(buf)?;

@@ -1,7 +1,7 @@
-import IxC.Kernel.Rules.Rel
-import IxC.Kernel.Verify.Rename.Core7
-import IxC.Kernel.Verify.Rename.Native3
-import IxC.Kernel.Verify.Leaves
+import IxCK.Kernel.Rules.Rel
+import IxCK.Kernel.Verify.Rename.Core7
+import IxCK.Kernel.Verify.Rename.Native3
+import IxCK.Kernel.Verify.Leaves
 
 /-! # The rules tier commutes with renaming
 
@@ -9,7 +9,7 @@ The six relations of the rules tier (`Rules.Red`, `Rules.DefEq`, `Rules.Infer`,
 `Rules.Certs`, `Rules.DefEqList`, `Rules.EtaProjCerts`) are preserved by a renaming
 of the input keys, `Expr.mapKeys f`, between environments related as the renaming
 walk relates them (`EnvRelG`). This is the derivation-level counterpart of the
-run-level simulations (`IxC/Kernel/Verify/Rename/Core*.lean`), and it reuses their
+run-level simulations (`IxCK/Kernel/Verify/Rename/Core*.lean`), and it reuses their
 per-helper commutations.
 
 **The hypotheses (`Renaming`).**

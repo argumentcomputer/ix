@@ -1,5 +1,5 @@
 import Ix.Cert.SourceDeclares
-import IxC.Kernel.Verify.Rename.UnionFold
+import IxCK.Kernel.Verify.Rename.UnionFold
 
 /-! # What an accepted declaration installs
 

@@ -1,10 +1,10 @@
-import IxC.Kernel.Admission.Theorems
+import IxCK.Kernel.Admission.Theorems
 import Ix.Ixon.Authenticated.Theorems
 import Tests.Ix.Kernel.Reader
 
 /-! # Ixon binder contracts in the checker
 
-Ixon's binder contracts (`IxC/Ixon/Types/Contract.lean`) are identity data
+Ixon's binder contracts (`IxCK/Ixon/Types/Contract.lean`) are identity data
 in the checker's `BinderMeta`. Conversion compares binders' input contracts
 and never their result contracts:
 

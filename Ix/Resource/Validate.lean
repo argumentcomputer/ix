@@ -8,11 +8,11 @@ public import Ix.PrimAddrs
 addressed constant bytes and bound artifacts use their admitted identities.
 Kernel typechecking alone has no resource meaning.
 
-The typing half is `Ix.Resource.typeCheck` (`Ix.Resource.Typing`): IxC's
+The typing half is `Ix.Resource.typeCheck` (`Ix.Resource.Typing`): IxCK's
 tiered Ixon entry, with its theorem, over everything it admits, and beside it,
-uncertified, IxC's typing of the unsafe inductives and assumption axioms it
+uncertified, IxCK's typing of the unsafe inductives and assumption axioms it
 declines by design and of the records that depend on them. The claim string
-stays `resource-v1`: re-based on IxC, still uncertified as a resource claim
+stays `resource-v1`: re-based on IxCK, still uncertified as a resource claim
 (`Ix.Resource.Claim`). -/
 
 @[expose] public section

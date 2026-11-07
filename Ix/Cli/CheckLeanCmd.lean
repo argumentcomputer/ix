@@ -14,7 +14,7 @@ public import Ix.Benchmark.Results
 
 public section
 
-/-! The IxC host record checker behind check-lean. Both modes authenticate
+/-! The IxCK host record checker behind check-lean. Both modes authenticate
 input bytes. A whole-artifact run of a bound artifact also runs the certified
 logical or tiered entry (`Ix.HostAdmission.certify`) and reports its host
 statement. Selected/capped runs report only their selected declarations;
@@ -726,7 +726,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       h.putStrLn s!"# ix check-lean failures\n# env: {o.path}"
       pure h
     let bytes ← IO.FS.readBinFile o.path
-    IO.println s!"Running IxC record check ({if o.anon then "anon" else "meta"} mode\
+    IO.println s!"Running IxCK record check ({if o.anon then "anon" else "meta"} mode\
 {if o.allowUserAxioms then "; user axioms allowed" else ""})"
     let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms with
       | .ok prep => pure prep
@@ -758,7 +758,7 @@ end Ix.Cli.CheckLeanCmd
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 2: usage, including a selector naming no declaration and a host statement the run could not issue; 1: infrastructure"
+  "Check authenticated .ixe declarations with IxCK (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 2: usage, including a selector naming no declaration and a host statement the run could not issue; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
     workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"

@@ -7,7 +7,7 @@ import Tests.Ix.Kernel.SourceIngressStep
 /-! # Source evidence from the committed bundle (`kernel-bundle-evidence`)
 
 Source mode's evidence for the well-founded `Nat` operations is the
-certificate theorems of `IxC/Kernel/PinGen/Certs.lean`, closed. An input that
+certificate theorems of `IxCK/Kernel/PinGen/Certs.lean`, closed. An input that
 does not carry that module (the compiler's: Init, Std, Mathlib) takes them
 from the committed bundle (`Ix.RoleEvidence.bundleEvidence`:
 `RoleData.sourceEvidence`, theorem records whose references are names).

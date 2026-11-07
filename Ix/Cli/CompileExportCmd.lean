@@ -20,7 +20,7 @@ public import Ix.LeanExport.Compare
   (`Ix.CompileM.compileAndFinalize`): the certified compile, then the role
   binding (`finalize`), whose support and certificate theorems come from the
   export itself, so from that toolchain's `Init` and its
-  `IxC.Kernel.PinGen.Certs`. With `--certificates` the certificate theorems
+  `IxCK.Kernel.PinGen.Certs`. With `--certificates` the certificate theorems
   come from a second export of the same toolchain instead, for an export that
   does not carry them.
 
@@ -123,7 +123,7 @@ def compileExportCmd : Cli.Cmd := `[Cli|
   FLAGS:
     out          : String; "Output path; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
-    certificates : String; "An export of the same toolchain carrying the certificate theorems (`IxC.Kernel.PinGen.Certs`), when the main export does not"
+    certificates : String; "An export of the same toolchain carrying the certificate theorems (`IxCK.Kernel.PinGen.Certs`), when the main export does not"
     compare      : String; "A native compile of the same declarations: check that the content is equal (exit 1 if not) and report the metadata differences"
 
   ARGS:

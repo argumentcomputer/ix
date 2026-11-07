@@ -5,7 +5,7 @@ import IxSharingVerify.FamilyBudget
 import IxSharingVerify.FamilySuccess
 import IxSharingVerify.FamilyComponents
 import IxSharingVerify.FamilyFinish
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The uniform phase never refuses

@@ -1,5 +1,5 @@
-import IxC.Kernel.Verify.Frontend.InModelGenNested
-import IxC.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Verify.Frontend.InModelGenNested
+import IxCK.Kernel.Ixon.ReaderSpec
 import Ix.CompileCert.Loop
 import Ix.Cert.LowerDistinct
 
@@ -8,7 +8,7 @@ import Ix.Cert.LowerDistinct
 For a mutual or nested inductive block, `Reader.lowerInductive` prepends the
 in-process modeller's records (`InModel.generate`) on both streams: quotient
 Source's (`Ix.LeanIngress.lowerAllCollapsed`) and the Ixon reader's
-(`Reader.readRecords`). IxC proves the generator parametric
+(`Reader.readRecords`). IxCK proves the generator parametric
 (`InModel.generate_mapKeys`): at contexts that agree on a scope under a
 renaming `f` injective there (`InModel.CtxAgree`), a good block's generation
 and its renaming's give renamed records, or both fail. This file is the other
@@ -557,7 +557,7 @@ theorem wants_mapKeys (b : BlockRec md) : wants (b.mapKeys f) = wants b := by
 
 /-- **A block and its renaming lower to renamed records** at agreeing states,
 before their names are compared (`lowerInductiveDecls`): the modeller's records
-renamed (IxC's parametricity, `generate_toOption_mapKeys`), then the renamed
+renamed (IxCK's parametricity, `generate_toOption_mapKeys`), then the renamed
 block's declaration; the renamed block. -/
 theorem lowerInductiveDecls_mapKeys (hP : P.Pre) (hf : InjOn f P) {stS : State md} {stA : State md'}
     (hst : StateAgree f P stS stA) {rb : BlockRead md} (hg : rb.Good P) {rS : Read md} {rA : Read md'}

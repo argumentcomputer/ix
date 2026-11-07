@@ -1,7 +1,7 @@
 module
 public import Lean.ToExpr
 public import Ix.Common
-public import IxC.Address.Core
+public import IxCK.Address.Core
 public import Blake3.Rust
 
 public section

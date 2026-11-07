@@ -109,7 +109,7 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
 /-- Where the IxVM role specifications are rendered (`IxVM.RoleSpecGen`). -/
 def roleSpecPath : String := "Ix/IxVM/Kernel/RoleSpec.lean"
 
-/-- Render the IxVM role specifications from IxC's; in `--check` mode,
+/-- Render the IxVM role specifications from IxCK's; in `--check` mode,
     compare against the file instead of writing it. The kernel reads the file,
     so a regenerated file takes effect after the next build. -/
 def emitRoleSpecs (checkOnly : Bool) : IO Bool := do

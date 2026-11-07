@@ -33,7 +33,7 @@ def generic : Array Lean.Name :=
 end Ixon.Authenticated.Audit
 
 -- Step 5a (typed keys) moved the count from 5839 by the generic entries' change
--- (`IxC/Kernel/Audit/Roots.lean`); step 5b's `LetMeta` from 5630, by the let
+-- (`IxCK/Kernel/Audit/Roots.lean`); step 5b's `LetMeta` from 5630, by the let
 -- contract's equality, hash and `Repr`; step 5b's walk change from 5657, by the
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
 -- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
@@ -41,7 +41,7 @@ end Ixon.Authenticated.Audit
 -- externs, by the generic entries' change; the per-step memo reset, shared
 -- binder metadata, fixed-width TagN fast paths, and task-parallel phase B
 -- from 5727 and 117 inherited externs, by the generic
--- entries' change (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors
+-- entries' change (`IxCK/Kernel/Audit/Roots.lean`); step 6's structured errors
 -- from 5745 and 119 inherited externs, by the generic entries' change; the
 -- validation of the four install anchors from 5963, by the generic entries' change;
 -- step 6b's display annotations from 5974, by the generic entries' change (8
@@ -52,14 +52,14 @@ end Ixon.Authenticated.Audit
 -- `Ixon.BlockOrder.compareExpr_letE`) from 6041, by `compareExpr`'s own
 -- compiler-generated lambdas (`Ix/Ixon/BlockOrder/Audit.lean`); testing non-recursive fields after the auxiliary rewrite in
 -- the in-model generator from 6043, by the generic entries' change (4 of
--- `genNested`'s specialisations gone, `IxC/Kernel/Audit/Roots.lean`); retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) from 6039, by the generic entries' change (122 out:
--- the compiler-trust roles and their checks, `IxC/Kernel/Audit/Roots.lean`); the
+-- `genNested`'s specialisations gone, `IxCK/Kernel/Audit/Roots.lean`); retiring the compiler-trust roles (`IxCK.Kernel.PinGen.Defs`) from 6039, by the generic entries' change (122 out:
+-- the compiler-trust roles and their checks, `IxCK/Kernel/Audit/Roots.lean`); the
 -- `.indDecl` shape guard from 5917, by the generic entries' change (44 in: the guard,
 -- its memoized walk and their specialisations; one more csimp, ruled,
--- `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's recursive
+-- `IxCK/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's recursive
 -- fields from 5961, likewise (9 more); the rest-only hoist and the decided units
 -- check from 5970, by the generic entries' change (117 in,
--- `IxC/Kernel/Audit/Roots.lean`); the prelude's
+-- `IxCK/Kernel/Audit/Roots.lean`); the prelude's
 -- shape check from 6087, likewise (12 in); the hoist guard
 -- from 6099, likewise (4 in); the in-model generator's totality
 -- from 6103, likewise (15 more; its nine ruled `partial` definitions are total,
@@ -80,7 +80,7 @@ end Ixon.Authenticated.Audit
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
 -- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
--- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- (`IxCK/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Removing the block-order entry (`checkBytesBlockOrder`: every block is stored in its
 -- source's order, so the structural order check is gone) removes 141 compiled functions
@@ -88,12 +88,12 @@ end Ixon.Authenticated.Audit
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged. Measured before
 -- refreezing.
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
--- (`inputIndexed`) adds 32 compiled functions, the reader's (`IxC/Kernel/Audit/Roots.lean`):
+-- (`inputIndexed`) adds 32 compiled functions, the reader's (`IxCK/Kernel/Audit/Roots.lean`):
 -- the predicate and the derived equality of `Ixon.Constant` that compares a record with the
 -- fallback's. Measured before refreezing; externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
 -- The role-shape validation merge adds the entry's four compiled functions
--- (`IxC/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
+-- (`IxCK/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
 -- Execution allowances are unchanged.
 -- The expanded role and evidence catalog adds 811 compiled functions and removes
 -- eight specializations in both authenticated closures: 495 role helpers, 208
@@ -101,7 +101,7 @@ end Ixon.Authenticated.Audit
 -- and reached implementation, csimp, replacement and opaque entry is unchanged.
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
 -- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
--- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
+-- `Ix.Kernel.Cached` (26 -> 27; see `IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Address.admissionHash]: 6891 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
@@ -224,10 +224,10 @@ annotations moved it from 5888 by the generic tiered entries' change (8 more,
 one more ruled csimp), and its failure display from 5896, likewise (33 more,
 one more ruled csimp). The reader's conversion to Lean `module`s moved it from 5929,
 likewise (28 more), and the tier fold's unsafe stage from 5957, likewise (10
-more: the fold's split by kind and the staging; `IxC/Kernel/Audit/Roots.lean`), and the
+more: the fold's split by kind and the staging; `IxCK/Kernel/Audit/Roots.lean`), and the
 tiered Ixon entry's routing of unsafe records from 5967, likewise (12 more: the
 partition's safety and the tier reader's unsafe opaque and axiom branches), and testing non-recursive fields after the auxiliary rewrite in the in-model generator from 5979, likewise (4 of `genNested`'s
-specialisations gone), and retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) from 5975, likewise (122
+specialisations gone), and retiring the compiler-trust roles (`IxCK.Kernel.PinGen.Defs`) from 5975, likewise (122
 out: the compiler-trust roles and their checks), and the `.indDecl` shape guard from
 5853, likewise (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled),
 and the mutual modeller's reading of Lean's recursive fields from 5897, likewise (9 more),
@@ -247,7 +247,7 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
 -- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
--- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- (`IxCK/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
 -- (`inputIndexed`) adds 32 compiled functions, the reader's, as above. Measured before

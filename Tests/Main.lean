@@ -139,7 +139,7 @@ def registry : List Entry := [
   .suite "aiur-trace-plan" .primary [AiurTests.TracePlan.tests],
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
   -- the role table's wire vectors (Tests/Fixtures/ixon-v4/role-table.tsv), which
-  -- Rust's codec is tested against, are IxC's codec's
+  -- Rust's codec is tested against, are IxCK's codec's
   .runner "role-table-wire" .primary Tests.RoleTableWire.run,
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
@@ -174,7 +174,7 @@ def registry : List Entry := [
   .runner "aiur-rust-syntax" .primary AiurTests.RustSyntax.run,
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
-  -- probe's closure through IxC.
+  -- probe's closure through IxCK.
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
   -- The circuit TagN codec against the host codec (about 16 s).
   .runner "ixvm-tagn" .primary Tests.Ix.IxVM.TagN.runSuite,
@@ -381,7 +381,7 @@ def registry : List Entry := [
   .runner "compile-closure-whole" (.ci .compilerClosures) Tests.Ix.Compile.ClosureWhole.run,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
-  -- The existing eight IxC selected-producer pins and their subject budgets.
+  -- The existing eight IxCK selected-producer pins and their subject budgets.
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,

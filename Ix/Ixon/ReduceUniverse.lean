@@ -5,7 +5,7 @@ rules are shared by host normalization and canonical block comparison.
 -/
 
 module
-public import IxC.Ixon.Types
+public import IxCK.Ixon.Types
 
 public section
 @[expose] section

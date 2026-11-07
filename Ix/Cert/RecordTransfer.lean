@@ -1,4 +1,4 @@
-import IxC.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Ixon.ReaderSpec
 
 /-! # A singleton record read in a larger context
 

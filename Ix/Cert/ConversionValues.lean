@@ -1,9 +1,9 @@
 import Ix.Cert.ValueRows
-import IxC.Kernel.Model.Capstone
-import IxC.Kernel.Model.Rules.Sound
-import IxC.Kernel.Verify.Rules.Bridge
-import IxC.Kernel.Semantics.DeclRun
-import IxC.Kernel.Semantics.Bridge.DeclRun
+import IxCK.Kernel.Model.Capstone
+import IxCK.Kernel.Model.Rules.Sound
+import IxCK.Kernel.Verify.Rules.Bridge
+import IxCK.Kernel.Semantics.DeclRun
+import IxCK.Kernel.Semantics.Bridge.DeclRun
 
 /-! # Checked conversion gives public value equality
 

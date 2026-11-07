@@ -3,7 +3,7 @@ module
 public import Ix.GraphM
 public import Ix.Ground
 public import Ix.Compile.Parallel
-import all IxC.Address.Core
+import all IxCK.Address.Core
 import all Ix.Common
 import all Ix.Environment
 import all Ix.GraphM

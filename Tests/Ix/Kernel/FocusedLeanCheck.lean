@@ -86,7 +86,7 @@ def checkClosure (tag fileStem : String)
   if names.isEmpty then
     return (false, 0, 0, some s!"[{tag}] no subjects selected")
   let consts := Ix.EnvScope.collectSelectedDeps env names.toList
-  IO.println s!"[{tag}] {consts.length} constants in the selected IxC closure (recursors, units and checker support)"
+  IO.println s!"[{tag}] {consts.length} constants in the selected IxCK closure (recursors, units and checker support)"
   let dir ← IO.FS.createTempDir
   try
     let path := dir / s!"{fileStem}.ixe"
@@ -113,7 +113,7 @@ def checkClosure (tag fileStem : String)
       | .ok cs => pure cs
       | .error _ => return (false, 0, names.size, some s!"[{tag}] subject selection failed")
     match ← Ix.Cli.CheckLeanCmd.runPrepared prepared cfg (.only only) with
-    | .error err => return (false, 0, names.size, some s!"[{tag}] IxC driver failed: {err.message}")
+    | .error err => return (false, 0, names.size, some s!"[{tag}] IxCK driver failed: {err.message}")
     | .ok report =>
         IO.println s!"[{tag}] {report.passed}/{report.targetsCovered} passed; selected checker \
           {report.subjectMicros / 1000}ms, support checker {report.supportMicros / 1000}ms, run {report.elapsedMs}ms"

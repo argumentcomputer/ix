@@ -1,5 +1,5 @@
 import Ix.Cert.Statement
-import IxC.Kernel.Rules.Rel
+import IxCK.Kernel.Rules.Rel
 
 /-! # Source laws: recursor rules and capability laws in a value model
 

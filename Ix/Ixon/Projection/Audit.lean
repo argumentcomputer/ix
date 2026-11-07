@@ -1,5 +1,5 @@
 import Ix.Ixon.Projection.Theorems
-import IxC.Kernel.Admission.Audit
+import IxCK.Kernel.Admission.Audit
 
 /-! Projection reconstruction has an explicit boundary outside the
 dependency-free kernel and codec. It takes its content hash as a parameter,
@@ -24,8 +24,8 @@ def allowedData (name : Lean.Name) : Bool :=
   Ix.Kernel.Audit.allowed dataPrefixes name dataDenied
 
 def allowedProof (name : Lean.Name) : Bool :=
-  allowedData name || Ix.Kernel.Audit.allowed #[`Lean, `IxC.Ixon.Verify, `Ix.Ixon.Projection.Theorems,
-    `IxC.Kernel.Admission.Theorems, `IxC.Kernel.Admission.Bytes.Theorems] name
+  allowedData name || Ix.Kernel.Audit.allowed #[`Lean, `IxCK.Ixon.Verify, `Ix.Ixon.Projection.Theorems,
+    `IxCK.Kernel.Admission.Theorems, `IxCK.Kernel.Admission.Bytes.Theorems] name
 
 /-- The import closure of `roots` stays inside `allowed`, below the kernel's
 ruled elaboration-time imports inside `Kernel.Audit.elaborationImports`
@@ -54,7 +54,7 @@ run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection] Ixon.Projectio
 run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ixon.Projection.Audit.allowedProof
 
 #guard !Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Theorems
-#guard !Ixon.Projection.Audit.allowedData `IxC.Kernel.Admission.Bytes.Theorems
+#guard !Ixon.Projection.Audit.allowedData `IxCK.Kernel.Admission.Bytes.Theorems
 #guard !Ixon.Projection.Audit.allowedData `Blake3.Rust
 #guard !Ixon.Projection.Audit.allowedData `Blake3.C
 #guard !Ixon.Projection.Audit.allowedData `Blake3.Pure.Proofs
@@ -68,7 +68,7 @@ run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.Projection.Theorems] Ixon.
 #guard !Ix.Kernel.Audit.allowed Ixon.Audit.dataImports `Ix.Ixon.Projection
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Admission.Audit.dataImports `Ix.Ixon.Projection Ix.Kernel.Audit.importDenylist
 #guard !Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection.Audit
-#guard !Ixon.Projection.Audit.allowedData `IxC.Kernel.Admission.Theorems
+#guard !Ixon.Projection.Audit.allowedData `IxCK.Kernel.Admission.Theorems
 #guard Ixon.Projection.Audit.allowedData `Ix.Ixon.Projection
 
 /- Measured independently before freezing. The certified entry adds
@@ -78,7 +78,7 @@ the certified byte admission
 codec: projection records are written with Ixon v4's TagN writer
 (`Ixon.putTagN`, `tagNHeader`, `tagNEnd1..6`) and read with its reader
 (`getTagN`, `getTagNWide`, `getTagN0Values`). Step 5a (typed keys) moved the
-count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
+count from 5687 by the entry's change (`IxCK/Kernel/Audit/Roots.lean`); step 5b's
 `LetMeta` from 5478, by the let contract's equality, hash and `Repr`; step 5b's
 walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
 reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); step
@@ -86,11 +86,11 @@ reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); step
 and 111 inherited externs, by the entry's change; the per-step memo reset,
 shared binder metadata, fixed-width TagN fast paths, and task-parallel phase B
 from 5574 and 113 inherited externs, by the entry's
-change (`IxC/Kernel/Audit/Roots.lean`: the memo state reset, the shared
+change (`IxCK/Kernel/Audit/Roots.lean`: the memo state reset, the shared
 binder metadata, the codec's TagN twins with their two ruled csimps, which
 the projection writer and reader also call, and phase B on tasks with
 `Init`'s `Task.spawn` and `Task.get`). Step 6's structured errors moved it from 5592 and 115
-inherited externs, by the entry's change (`IxC/Kernel/Audit/Roots.lean`: the
+inherited externs, by the entry's change (`IxCK/Kernel/Audit/Roots.lean`: the
 fold no longer spells keys or prints terms, and a fixed message is a one-part
 list, two more closed objects per message site); the validation of the four
 install anchors from 5810, by the entry's change; step 6b's display annotations from
@@ -99,12 +99,12 @@ from 5829 (30 more, one more ruled csimp); the reader's conversion to Lean `modu
 5859, by the entry's change (28 more: the module's own specialisations,
 `instBEqAddress.beq` and `Std.Format.defWidth` called); testing non-recursive fields after the auxiliary rewrite in the
 in-model generator from 5887, by the entry's change (4 of `genNested`'s
-specialisations gone, `IxC/Kernel/Audit/Roots.lean`); retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) from 5883, by the entry's change (122 out: the compiler-trust roles and
-their checks, `IxC/Kernel/Audit/Roots.lean`); the `.indDecl` shape guard from 5761, by the
-entry's change (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled, `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's
+specialisations gone, `IxCK/Kernel/Audit/Roots.lean`); retiring the compiler-trust roles (`IxCK.Kernel.PinGen.Defs`) from 5883, by the entry's change (122 out: the compiler-trust roles and
+their checks, `IxCK/Kernel/Audit/Roots.lean`); the `.indDecl` shape guard from 5761, by the
+entry's change (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled, `IxCK/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's
 recursive fields from 5805, by the entry's change (9 more); the rest-only hoist and the
 decided units check from 5814, by the entry's change (117 in,
-`IxC/Kernel/Audit/Roots.lean`); the prelude's shape check from 5931, by the entry's change (12 in); the hoist guard from 5943, by
+`IxCK/Kernel/Audit/Roots.lean`); the prelude's shape check from 5931, by the entry's change (12 in); the hoist guard from 5943, by
 the entry's change (4 in); the in-model generator's totality from
 5947, by the entry's change (15 more; its nine ruled `partial` definitions are total,
 and the ruling is gone); the prelude-copy check (`State.keepsPrelude` in `readStream`)
@@ -118,13 +118,13 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
 -- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
--- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- (`IxCK/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
--- (`inputIndexed`) adds 32, the entry's (`IxC/Kernel/Audit/Roots.lean`). Measured before
+-- (`inputIndexed`) adds 32, the entry's (`IxCK/Kernel/Audit/Roots.lean`). Measured before
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the four compiled functions attributed in
--- `IxC/Kernel/Audit/Roots.lean`, measured with the fallback-record guard above.
+-- `IxCK/Kernel/Audit/Roots.lean`, measured with the fallback-record guard above.
 -- Execution allowances are unchanged.
 -- The expanded role and evidence catalog adds 811 compiled functions (495 role
 -- helpers, 208 key helpers and 108 fixture helpers) and removes eight obsolete
@@ -132,10 +132,10 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- opaque entry sets are identical; only the compiled-function count changes.
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
 -- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
--- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
+-- `Ix.Kernel.Cached` (26 -> 27; see `IxCK/Kernel/Audit/Roots.lean`).
 -- The indexed inductive shape guard adds 14 compiled functions net and the
 -- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps; see
--- `IxC/Kernel/Audit/Roots.lean`).
+-- `IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
  Ixon.Projection.checkBytes]: 6875 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/

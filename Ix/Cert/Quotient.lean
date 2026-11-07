@@ -1,19 +1,19 @@
 import Ix.Cert.Statement
 import Ix.Cert.SourceLaws
 import Ix.LeanIngress.Rename
-import IxC.Kernel.Verify.Rename.Model
-import IxC.Kernel.Ixon.ReaderSpec
+import IxCK.Kernel.Verify.Rename.Model
+import IxCK.Kernel.Ixon.ReaderSpec
 
 /-! # Quotient Source at the artifact's addresses: the statements' side (step 7.3 (iv))
 
-IxC renames a checked quotient Source accept to the artifact's addresses
+IxCK renames a checked quotient Source accept to the artifact's addresses
 (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`, by the joined map `evAddr`: a
 published name to its address, a bundle-only name to its bundle address), with the
 two environments related key by key (`Ix.Kernel.EnvRel`). This module supplies what
 the statements need around it:
 
 * `ValueModel.pullback`: a value model of the renamed environment is one of the
-  quotient environment (IxC's `Model.pullback` and `defn_value_pullback`);
+  quotient environment (IxCK's `Model.pullback` and `defn_value_pullback`);
 * `PublishedRolesBound`, decided: every published name whose ingress name is a role's
   Lean name sits at the table's address for that role. It is B5a's role binding, by
   ingress name over every published name, so no stored name hash is trusted. It gives
@@ -21,7 +21,7 @@ the statements need around it:
   agreement of Source's by-name and Ixon's by-table role binding
   (`publishedAddress_role`);
 * `publishedAddress_id`, `reading_id`: the address the statements read a source name
-  at (`publishedAddress`) is the one IxC renames it to (`addrOf`), when every
+  at (`publishedAddress`) is the one IxCK renames it to (`addrOf`), when every
   published name agrees with the artifact's address map (`PublishedAgree`, decided);
   and its reading is the role key the table binds there or the address itself
   (`Ix.Kernel.Reader.Ctx.keyAt_ok`);
@@ -200,7 +200,7 @@ theorem publishedAddress_role {t : Ix.Kernel.RoleTable} {ixe : Ixon.Env}
 
 /-- **The published address of an input name is the renamed one**: when every
 published name agrees with the address map, the statements' published address for an
-input key (`publishedAddress`) is its address in the map, which IxC renames it to
+input key (`publishedAddress`) is its address in the map, which IxCK renames it to
 (`addrOf`). -/
 theorem publishedAddress_id {ixe : Ixon.Env} (agree : PublishedAgree ixe) {n : Ix.Kernel.Name}
     (noRole : roleOf n = none) {a : Address} (published : (sourceAddrs ixe)[n]? = some a) :
@@ -260,7 +260,7 @@ admitted table that every published role name sits at, renamed by the joined map
 bundle address), is a reference accept at the same fuel, at the renamed bundle
 evidence, of the renamed declarations, installing an environment related key by key to
 the quotient one (`Ix.Kernel.EnvRel`); every value model of it pulls back
-(`ValueModel.pullback`). From IxC's `acceptsRef_prepareSourceCollapsedAt`; the
+(`ValueModel.pullback`). From IxCK's `acceptsRef_prepareSourceCollapsedAt`; the
 committed bundle is not unfolded. -/
 theorem sourceAcceptsQ_addrAt {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment}
     {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable}

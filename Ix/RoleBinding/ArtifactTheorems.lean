@@ -1,5 +1,5 @@
 import Ix.RoleBinding.Artifact
-import IxC.Kernel.Admission.Reference
+import IxCK.Kernel.Admission.Reference
 
 /-! Target-model exports of the receipt's actual certified run. These do
 not establish Source value preservation or a host claim commitment. -/

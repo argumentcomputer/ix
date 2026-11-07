@@ -1,6 +1,6 @@
 import Ix.LeanIngress.Expr
 import Ix.CompileCert.CanonUnivEmit
-import IxC.Kernel.Verify.Level
+import IxCK.Kernel.Verify.Level
 
 /-! # Canonical levels keep their value
 

@@ -1,7 +1,7 @@
 import Ix.LeanIngress.Rename
-import IxC.Kernel.Verify.Frontend.InModelProjRec
-import IxC.Kernel.Verify.Frontend.InModelMutualRename
-import IxC.Kernel.Ixon.Prelude
+import IxCK.Kernel.Verify.Frontend.InModelProjRec
+import IxCK.Kernel.Verify.Frontend.InModelMutualRename
+import IxCK.Kernel.Ixon.Prelude
 
 /-! # The committed prelude read at both modes agrees under every renaming
 

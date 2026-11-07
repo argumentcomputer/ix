@@ -1,19 +1,19 @@
 module
 
-public import IxC.Kernel.Core
-public import IxC.Kernel.ExprOps
+public import IxCK.Kernel.Core
+public import IxCK.Kernel.ExprOps
 public import Lean.Data.Name
 
 @[expose] public section
 
-/-! # Printing terms with Lean's names (IxC step 6b, display only)
+/-! # Printing terms with Lean's names (IxCK step 6b, display only)
 
 `.meta` and `.source` terms carry each binder's Lean name and binder info, and
 a failure the terms it is about and the binders it was thrown under
 (`Ix.Kernel.BinderMeta.display`, `Ix.Kernel.FailureDisplay`). This module
 prints them in the style of Lean's delaborator (`ppExpr`), under Lean's
 default options except three that need Lean's elaborator: no notation, no
-coercions, full names (IxC has no open namespaces); proofs are printed.
+coercions, full names (IxCK has no open namespaces); proofs are printed.
 
 * **Binders.** A binder's name is Lean's with its macro scopes erased; an
   anonymous one suggests `a`. A name already in scope is kept when the body

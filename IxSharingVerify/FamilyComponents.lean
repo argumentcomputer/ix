@@ -1,5 +1,5 @@
 import IxSharingVerify.FamilyCost
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! The uncertain components always pass their check.
 

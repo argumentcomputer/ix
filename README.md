@@ -174,7 +174,7 @@ Ix consists of the following core components:
 
 ### Certified Ixon checker
 
-`IxC/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
+`IxCK/Kernel` is a type checker for `ixon` whose acceptance is proved to imply
 consistency. It is Ix's own kernel, derived from the verified checker of
 [con-leche](https://github.com/leanprover/con-leche). Its entry,
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
@@ -273,7 +273,7 @@ holds the end-to-end checks on Init+Std; `--tier landing` selects it.
   [evaluation claims](docs/eval-claims.md) through Aiur execution and
   generated-backend parity, without proving
 - `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_V4_DIR` (default `/tmp`)
-- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxC build --wfail`
+- `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxCK build --wfail`
 
 **Rust tests:** `cargo test` or `cargo nextest run`
 

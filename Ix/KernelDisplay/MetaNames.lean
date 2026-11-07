@@ -2,13 +2,13 @@ module
 
 public import Ix.Ixon
 public import Ix.LeanIngress.Names
-public import IxC.Kernel.Ixon.Reader
+public import IxCK.Kernel.Ixon.Reader
 public import Ix.KernelDisplay.Render
-public import IxC.Kernel.FEnv
+public import IxCK.Kernel.FEnv
 
 @[expose] public section
 
-/-! # `.meta`'s binder names, from the `.ixe`'s metadata (IxC step 6b, display only)
+/-! # `.meta`'s binder names, from the `.ixe`'s metadata (IxCK step 6b, display only)
 
 The meta reader is the Ixon reader at `.meta` (`Ix.Kernel.Reader.readRecord`,
 the same code as `.anon`'s), followed by two display steps outside the kernel:

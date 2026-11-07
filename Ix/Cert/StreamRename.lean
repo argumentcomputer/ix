@@ -1,7 +1,7 @@
 import Ix.Cert.CtxAgree
 import Ix.Cert.PreludeAgree
 import Ix.Cert.PrepareRename
-import IxC.Kernel.Verify.Rename.UnionFold
+import IxCK.Kernel.Verify.Rename.UnionFold
 
 /-! # Reader states under a renaming
 

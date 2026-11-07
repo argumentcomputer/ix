@@ -6,9 +6,9 @@ import Ix.Cert.LowerDistinct
 
 The S1 union is stated over units: one record's lowering, the modeller's
 generated records then the record's own declaration, or a definition block's
-declarations. IxC's decided units check closes each run of generated records
+declarations. IxCK's decided units check closes each run of generated records
 with an ungenerated declaration whose bases cover the run's
-(`IxC/Kernel/Units.lean`). What the reader adds, per record:
+(`IxCK/Kernel/Units.lean`). What the reader adds, per record:
 
 * `stream_lowerings`: the stream `readRecords` decodes is its records'
   lowerings (`Read.decls`) concatenated, one per record, in order;
@@ -24,7 +24,7 @@ with an ungenerated declaration whose bases cover the run's
 * `memberKey_role_or_id`, `Lowering.closed`: under a table that keys only
   roles (`RolesKeyed`, `contextWith_keyed`) a member key is a role or input
   key, never derived, so each lowering is empty or ends in a declaration that
-  is not generated (IxC's `Declaration.isGenerated`, `IxC/Kernel/Units.lean`).
+  is not generated (IxCK's `Declaration.isGenerated`, `IxCK/Kernel/Units.lean`).
 
 The ingress side, the same facts over a Lean group's keys (`GroupKeyOf`: the
 ingress keys of its constants):
@@ -39,9 +39,9 @@ ingress keys of its constants):
   shape over its group's keys (`scheduleOf_ok`, `graph_converted_ok`), which
   are never derived (`GroupKeyOf.not_derived`, so `LoweringBy.closed`).
 
-So IxC's units of each side are the pieces `unitsOf` cuts each lowering into
+So IxCK's units of each side are the pieces `unitsOf` cuts each lowering into
 (each an `IsLowering`, since every lowering ends in a declaration that is not
-generated). Nothing here is about what `InModel.generate` returns: IxC's
+generated). Nothing here is about what `InModel.generate` returns: IxCK's
 decided units check closes each run of generated records and requires their
 bases among the closing declaration's. -/
 
@@ -528,7 +528,7 @@ theorem MemberKeyOf.not_derived {cx : Ctx md} (hr : RolesKeyed cx) {owner : Addr
   rcases h.role_or_id hr with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
 
 /-- **Each lowering is empty or ends in a declaration that is not generated**,
-whose names are `K`-keys, when no `K`-key is derived (what IxC's units need
+whose names are `K`-keys, when no `K`-key is derived (what IxCK's units need
 of a record or a group). -/
 theorem LoweringBy.closed {K : CName md → Prop} (hK : ∀ k, K k → Ix.Kernel.Key.isAux k = false) {r : Read md}
     (h : LoweringBy K r) :

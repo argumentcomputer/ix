@@ -2,7 +2,7 @@ module
 
 public import Ix.Ixon
 public import Ix.Address.Admission
-public import IxC.Kernel.Ixon.Reader
+public import IxCK.Kernel.Ixon.Reader
 
 /-! # Writing the role table's closed proof evidence
 

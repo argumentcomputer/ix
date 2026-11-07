@@ -1,11 +1,11 @@
-import IxC.Kernel.Verify.Frontend.Prepare
-import IxC.Kernel.Verify.Rename.Basic
+import IxCK.Kernel.Verify.Frontend.Prepare
+import IxCK.Kernel.Verify.Rename.Basic
 import Std.Data.HashMap.Lemmas
 import Std.Data.HashSet.Lemmas
 
 /-! # The prepared stream under a renaming
 
-`preparePrelude` (`IxC/Kernel/Frontend/Prepare.lean`) commutes with a renaming of input
+`preparePrelude` (`IxCK/Kernel/Frontend/Prepare.lean`) commutes with a renaming of input
 names (`Declaration.mapKeys f`) injective on the names the stream carries, when the
 prelude's declarations name no input (`preparePrelude_mapKeys`).
 

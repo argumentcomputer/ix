@@ -99,9 +99,9 @@ in the scratch directory, and `--export-fixtures` writes `claims.tsv`,
 fixture directory only after validation.
 
 The formal gates are `lake build Ix.Resource.Audit` (the resource-state
-invariants), `lake -d IxC build --wfail` (the Ixon codec contracts
-under `IxC/Ixon/Verify`, including the TagN laws, with their audit
-`IxC/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
+invariants), `lake -d IxCK build --wfail` (the Ixon codec contracts
+under `IxCK/Ixon/Verify`, including the TagN laws, with their audit
+`IxCK/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
 canonical sharing construction, `IxSharingVerify`, with its audit).
 Resource theorems cover the executed quantitative and state-transition
 invariants. They do not constitute a verified allocation backend or a proof of

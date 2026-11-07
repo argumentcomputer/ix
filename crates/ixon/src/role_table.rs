@@ -1,7 +1,7 @@
-//! Canonical E8 03 role-binding sections, matching IxC's `RoleTable` codec.
+//! Canonical E8 03 role-binding sections, matching IxCK's `RoleTable` codec.
 //!
 //! This is wire validation only (`RoleTable.wireWF` in
-//! `IxC/Kernel/Ixon/RoleTable.lean`). It neither authenticates the section nor
+//! `IxCK/Kernel/Ixon/RoleTable.lean`). It neither authenticates the section nor
 //! admits its roles/evidence. In particular, any byte-sized version, repeated
 //! bound addresses, missing dependencies and unbound evidence can be canonical.
 //! Semantic admission is a separate check. Bound packing uses this codec only
@@ -11,7 +11,7 @@ use ix_common::address::Address;
 
 macro_rules! roles {
   ($($role:ident => $name:literal),+ $(,)?) => {
-    /// Indices are IxC's `Role.all` order, independent of native primitive pins.
+    /// Indices are IxCK's `Role.all` order, independent of native primitive pins.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(u8)]
     pub enum Role { $($role),+ }
@@ -195,7 +195,7 @@ impl RoleTable {
     self.bound.iter().map(|(_, address)| address).chain(proofs)
   }
 
-  /// Exact counterpart of IxC's wireWF; Address and version widths are typed.
+  /// Exact counterpart of IxCK's wireWF; Address and version widths are typed.
   pub fn check_wire(&self) -> Result<(), String> {
     byte_count(self.bound.len())?;
     byte_count(self.evidence.len())?;

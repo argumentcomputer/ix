@@ -1,5 +1,5 @@
 import Ix.CompileCert.RawRun
-import IxC.Ixon.Verify.WireCheck
+import IxCK.Ixon.Verify.WireCheck
 
 /-! # The preseed's universe-wire guard
 

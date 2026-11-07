@@ -1,4 +1,4 @@
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 import Ix.Cert.Canon
 import Ix.Cert.Closure
 import Ix.Cert.CompileCorrect
@@ -38,7 +38,7 @@ none of them, or only in part:
 Every safe declaration of each named module, and of every `Ix.Cert` and
 `Ix.CompileCert` module this module imports, depends on no axiom beyond
 `propext`, `Classical.choice` and `Quot.sound` (`#guard_module_axioms`,
-`IxC/Kernel/Audit/Axioms.lean`). Importing the IO pipeline's agreement
+`IxCK/Kernel/Audit/Axioms.lean`). Importing the IO pipeline's agreement
 (`Ix.Cert.Hybrid`), the checked conversion values (`Ix.Cert.ConversionValues`)
 and the reader's closure keys (`Ix.Cert.ReaderClosureKeys`) keeps the
 expression, emission, preseed and universe proofs they import under that

@@ -1,6 +1,6 @@
 import Ix.RoleBinding.ArtifactTiered
-import IxC.Kernel.Admission.TierTheorems
-import IxC.Kernel.Admission.Reference
+import IxCK.Kernel.Admission.TierTheorems
+import IxCK.Kernel.Admission.Reference
 
 namespace Ix.RoleBinding.Artifact
 

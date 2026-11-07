@@ -1,0 +1,264 @@
+module
+
+public import IxCK.Kernel.Cached.CheckerC
+
+@[expose] public section
+
+/-!
+# The parsed-declaration driver on the cached representation
+
+One `CState` per declaration (every step starts from the empty state,
+`resetC`), declarations consumed as `Declaration` records
+straight from the direct parse (`IxCK/Kernel/Frontend/ExportC.lean`, task
+#171 — no conversion detour).
+
+`checkDeclStepC` is the fold's step for every declaration kind that is
+checked as it is installed: axioms, inductive and basis blocks, the
+pinned `Nat`-operation and `reduce*` declarations — and, on this step,
+a definition, theorem or opaque too.  The declaration fold itself,
+`checkDecls` (`IxCK/Kernel/Cached/Installed.lean`), installs every record
+first (a separable value declaration by the install half of this
+step, annotated and pushed with its check recorded; everything else by
+this step) and checks the recorded declarations afterwards; the
+binary's driver (`Main.lean`) runs that fold with a heartbeat between
+the steps and returns its environment together with the proof that
+`checkDecls` returns it.  The fold runs at `.verified` and at
+`.trusted` alike (the twin driver `checkDeclsT` /
+`IxCK/Kernel/Cached/ParsedT.lean` retired 2026-09-06; the trusted lane is
+the same fold at the other mode, and nothing else): acceptance at
+`.verified` is covered by the main corollary
+`no_False_declaration` (`IxCK/Kernel/MainTheorem.lean`, through
+`no_False_theorem_accepted` in `IxCK/Kernel/Verify/Cached/StreamThm.lean`), and the two
+modes agree on the install skeletons whenever both accept
+(`trusted_agrees_skels_D`, `IxCK/Kernel/Verify/Cached/AgreeFloor.lean`).
+
+The driver's parameter is the `CheckMode` itself (task #185; from
+2026-09-06 to then a configuration record stood in for it): the knot it
+ties (`coreKnotI mode`) and the install-time stages
+(`checkIotaRulesF`, `checkProjIotaF`, `indBlockCapsF`,
+`ctorResidualOkF` — each reads only the uninhabited-true `ttChecks`)
+all take the same mode.
+-/
+
+namespace Ix.Kernel.Cached
+
+open Ix.Kernel
+
+/-! ## The parsed-declaration checker -/
+
+variable (mode : CheckMode)
+
+/-- Parsed `ensureSort` (no per-call conversion). -/
+def opSIxC (fe : FEnv md) (d : Nat) (i : Expr md) : (CheckCM md) Level :=
+  ensureSortI (coreKnotI mode fe checkFuel) d i
+
+/-- `checkConstantVal` on a parsed declaration: the checks of
+`checkConstantValF` with the syntactic passes memoized on the `Expr`
+DAG and the cached operations on its nodes. -/
+def checkConstantValC (fe : FEnv md) (cv : ConstantVal md) :
+    (CheckCM md) (ConstantVal md × Expr md) := do
+  if (fe.find? cv.name).isSome then
+    throw (.invalid msg!"duplicate declaration {cv.name}")
+  if reservedBasisNames.contains cv.name then
+    throw (.invalid msg!"reserved basis name {cv.name}")
+  if cv.name.isProjFnShape then
+    throw (.invalid msg!"reserved projection name {cv.name}")
+  unless LevelParam.nodup cv.levelParams do
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
+  unless Expr.looseBVarsBounded 0 cv.type do
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
+  if Expr.hasFvar cv.type then
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
+  let jty ← (coreKnotI mode fe checkFuel).annotate 0 cv.type
+  unless Expr.allLevelParamsDefinedC cv.levelParams jty do
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
+  unless constsResolveFC fe jty do
+    throw (unresolvedConstsError msg!"type of {cv.name}" jty)
+  let jsty ← (coreKnotI mode fe checkFuel).infer 0 jty
+  let _u ← opSIxC mode fe 0 jsty
+  let tyE := jty
+  pure (⟨cv.name, cv.levelParams, tyE⟩, jty)
+
+/-- `checkDefnValP` over `Expr`. -/
+def checkDefnValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
+    (value : Expr md) (hint : ReducibilityHint) : (CheckCM md) (FEnv md) := do
+  unless Expr.looseBVarsBounded 0 value do
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
+  if value.hasFvar then
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
+  let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
+  unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
+  unless constsResolveFC fe jv do
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
+  let vE := jv
+  let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
+  unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
+    throw (.invalid msg!"type mismatch in definition {cvA.name}")
+  pure (fe.push (.defnInfo cvA vE hint))
+
+/-- `checkThmValP` over `Expr`. -/
+def checkThmValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
+    (value : Expr md) : (CheckCM md) (FEnv md) := do
+  let jsty ← (coreKnotI mode fe checkFuel).infer 0 jty
+  let ul ← opSIxC mode fe 0 jsty
+  unless (← liftFueled "level comparison" (Level.isEquiv ul .zero)) do
+    throw (.invalid msg!"type of theorem {cvA.name} is not a proposition")
+  unless Expr.looseBVarsBounded 0 value do
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
+  if value.hasFvar then
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
+  let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
+  unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
+  unless constsResolveFC fe jv do
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
+  let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
+  unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
+    throw (.invalid msg!"type mismatch in theorem {cvA.name}")
+  -- stored by statement: the record's own value, unread (opaque)
+  pure (fe.push (.thmInfo cvA value))
+
+/-- `checkOpaqueValP` over `Expr`. -/
+def checkOpaqueValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
+    (value : Expr md) : (CheckCM md) (FEnv md) := do
+  unless Expr.looseBVarsBounded 0 value do
+    throw (.invalid msg!"loose bound variable in value of {cvA.name}")
+  if value.hasFvar then
+    throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
+  let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
+  unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
+    throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
+  unless constsResolveFC fe jv do
+    throw (unresolvedConstsError msg!"value of {cvA.name}" jv)
+  let jvt ← (coreKnotI mode fe checkFuel).infer 0 jv
+  unless ← (coreKnotI mode fe checkFuel).defeq 0 jvt jty do
+    throw (.invalid msg!"type mismatch in opaque {cvA.name}")
+  pure (fe.push (.axiomInfo cvA))
+
+/-- `checkBasisDecl`'s cached twin: the body the three records that
+install a pinned basis block share (task #293). -/
+def checkBasisDeclC (fe : FEnv md) (kind : BasisKind) : (CheckCM md) (FEnv md) := do
+  if kind = .quotK then
+    unless fe.find? eqName = some eqA do
+      throw (.notImplemented "quotient basis requires the pinned Eq basis")
+  kind.declsA.foldlM installBasisDeclF fe
+
+/-- One converted declaration (mirrors `checkDeclSPPlain` branch by
+branch; inductive and basis blocks reuse the `Expr`-level drivers).
+`ev` is the role table's evidence the operations' install gates read,
+threaded from the fold. -/
+def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
+    (CheckCM md) (FEnv md) :=
+  match pd with
+  | .defnDecl cv value hint => do
+    let (cvA, jty) ← checkConstantValC mode fe cv
+    if natOpNames.contains cvA.name || natDivModNames.contains cvA.name then
+      let fe2 ← checkDefnValC mode fe cvA jty value hint
+      if natOpNames.contains cvA.name then
+        unless evidenceDefeqOk ev cvA.name do
+          throw (.notImplemented
+            msg!"unsupported structural Nat operation evidence ({cvA.name})")
+        unless natOpGuardF fe2 cvA.name &&
+            (natOpDeps cvA.name).all (natOpStoredOkF fe2) do
+          throw (.notImplemented
+            msg!"nonstandard structural Nat operation environment ({cvA.name})")
+        match fe2.find? cvA.name with
+        | some (.defnInfo _ value' _) =>
+          let ok ← certifyNatEqs (sharedOpsC mode fe) fe.env
+            ((natOpEquations 0 cvA.name).map fun eq =>
+              (Expr.substConst0 cvA.name value' eq.1,
+               Expr.substConst0 cvA.name value' eq.2))
+          unless ok do
+            throw (.notImplemented
+              msg!"nonstandard structural Nat operation ({cvA.name})")
+        | _ => throw (.internal
+            msg!"structural Nat operation not stored ({cvA.name})")
+      if natDivModNames.contains cvA.name then
+        checkDivModEvidenceF (sharedOpsC mode fe) ev fe fe2 cvA.name
+      pure fe2
+    else
+      checkDefnValC mode fe cvA jty value hint
+  | .thmDecl cv value => do
+    let (cvA, jty) ← checkConstantValC mode fe cv
+    checkThmValC mode fe cvA jty value
+  | .opaqueDecl cv value => do
+    let (cvA, jty) ← checkConstantValC mode fe cv
+    checkOpaqueValC mode fe cvA jty value
+  | .axiomDecl cv =>
+    -- `checkDecl`'s twin (task #293): `Quot.sound` is the pinned
+    -- quotient block's own record — compared with the pin, installing
+    -- nothing, declining on a mismatch.
+    if cv.name = quotSoundName then
+      (if ConstantInfo.canonEq (.axiomInfo cv) (quotBasis.getD 4 (.axiomInfo default)) then
+        pure fe
+      else
+        throw (.notImplemented "quotient soundness axiom mismatch"))
+    else do
+      let (cvA, _) ← checkConstantValC mode fe cv
+      if stdAxiomOkF fe cvA then
+        pure (fe.push (.axiomInfo cvA))
+      else if cvA.name = propextName ∨ cvA.name = choiceName then
+        throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
+      else if cvA.name = sorryAxName then
+        pure fe
+      else
+        throw (.notImplemented msg!"non-standard axiom ({cv.name})")
+  | .basisDecl kind => checkBasisDeclC fe kind
+  | .indDecl block nP => do
+    -- the declared shape, first and for every route (`checkDecl`'s twin)
+    checkIndShape fe.find? block
+    -- **THE PINNED BASIS BLOCKS** (`checkDecl`'s twin, task #293): the
+    -- stream's own `Nat` block, recognised here and installed as the
+    -- pin; a block under a pinned name that does not match falls
+    -- through and the reserved-name check rejects it.
+    match basisPinHit block with
+    | some kind => checkBasisDeclC fe kind
+    | none =>
+    -- TASK #228: the stream's DECLARED parameter count, checked before
+    -- the dispatch and for both routes (`checkDecl`'s twin).
+    if indParamsOk nP block then
+      -- ONE ROUTE (task #210), dispatched by the RECOGNISER alone (task
+      -- #219): a recognised block is the fixpoint route's, every other
+      -- one the modeled path's (its model the in-process modeller's).
+      match nativeParts? nP block with
+      | some p => checkNativeS mode fe p
+      | none => checkIndDeclSF mode fe block
+    else throw (.invalid "number of parameters mismatch")
+  | .quotDecl k cv =>
+    -- `checkDecl`'s twin (task #293): the `type` record installs the
+    -- pinned block whole, the other members install nothing, and a
+    -- record that does not match its pin is a positive decline.
+    if quotPinHit k cv then
+      (match k with
+       | .type => checkBasisDeclC fe .quotK
+       | _ => pure fe)
+    else throw (.notImplemented (match k with
+      | .sound => "quotient soundness axiom mismatch"
+      | _ => "quotient declaration mismatch"))
+
+/-! ## Names and durations for the driver's messages -/
+
+/-- Milliseconds as `s.d` seconds (`12345` ↦ `"12.3"`).  `Nat`
+arithmetic — no `Float` formatting on a message path. -/
+def msSecs (ms : Nat) : String := s!"{ms / 1000}.{(ms % 1000) / 100}"
+
+/-- A parsed declaration's display label (`Main.declCName`, shared with
+the driver's progress callback so the two can never drift). -/
+def declCLabel : Declaration md → String
+  | .defnDecl cv _ _ => s!"def {cv.name}"
+  | .thmDecl cv _ => s!"theorem {cv.name}"
+  | .opaqueDecl cv _ => s!"opaque {cv.name}"
+  | .axiomDecl cv => s!"axiom {cv.name}"
+  | .indDecl b _ => s!"inductive {(b.head?.map (toString ·.name)).getD "[anonymous]"}"
+  | .basisDecl k => s!"basis block {repr k}"
+  | .quotDecl _ cv => s!"quot {cv.name}"
+
+/-- One step of the converted-declaration fold: from the empty memo state
+(`resetC`), check. -/
+def checkDeclStepC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
+    (CheckCM md) (FEnv md) := do
+  resetC
+  checkDeclC mode ev fe pd
+
+end Ix.Kernel.Cached

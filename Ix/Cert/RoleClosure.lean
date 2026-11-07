@@ -3,7 +3,7 @@ import Ix.Cert.PreludeAgree
 
 /-! # The role table's certificates check on their own closure
 
-The default role table (`IxC/Kernel/Ixon/RoleData.lean`) is the verifier's pinned
+The default role table (`IxCK/Kernel/Ixon/RoleData.lean`) is the verifier's pinned
 configuration. For each well-founded `Nat` operation (`Ix.Kernel.natDivModNames`)
 its proof evidence must pass the fold's gate (`Ix.Kernel.checkDivModEvidence`,
 reached from `checkDecl`'s definition arm) in the environment that holds the
@@ -190,7 +190,7 @@ with its dependency closure installed and runs its evidence gate there
 (`checkDivModEvidence`), so every gate passed. And every committed prelude and evidence
 row is stored at the admission hash of its bytes (`FallbackHashed`), and the default binding
 admits under the admission hash (`DefaultAdmits`), and the committed prelude reads alike at
-both modes (`PreludeAgrees`). A closed proposition about `IxC/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
+both modes (`PreludeAgrees`). A closed proposition about `IxCK/Kernel/Ixon/RoleData.lean`, the verifier's pinned configuration:
 it mentions no input. -/
 def RoleEvidenceChecks : Prop :=
   (∃ ev ds env, preparedDefault = .ok (ev, ds) ∧ DefinesAll ds ∧ Cached.AcceptsRef .verified ev ds env) ∧

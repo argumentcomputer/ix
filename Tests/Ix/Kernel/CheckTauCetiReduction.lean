@@ -24,10 +24,10 @@ def focusConsts : Array Lean.Name := #[
 ]
 
 def testLeanCheckTauCetiReduction : TestSeq :=
-  .individualIO s!"IxC check {focusConsts.size} inlined TauCeti reductions" none (do
+  .individualIO s!"IxCK check {focusConsts.size} inlined TauCeti reductions" none (do
     let leanEnv ← get_env!
     IO.println s!"[check-tauceti-reduction/lean] compiling \
-      selected IxC closure for {focusConsts.size} subject(s)"
+      selected IxCK closure for {focusConsts.size} subject(s)"
     Tests.Ix.Kernel.FocusedLeanCheck.checkClosure
       "check-tauceti-reduction/lean" "tauceti-reduction" leanEnv focusConsts
   ) .done

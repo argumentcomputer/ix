@@ -1,8 +1,8 @@
-import IxC.Kernel.Verify.Cached.Reference
+import IxCK.Kernel.Verify.Cached.Reference
 
 /-! # Evidence only gates the checker (Route A, B6a)
 
-The role table's evidence enters IxC's checker at two gates of
+The role table's evidence enters IxCK's checker at two gates of
 `Ix.Kernel.checkDecl`, both on a definition: `evidenceDefeqOk` for a
 structural `Nat` operation and `checkDivModEvidence` for a well-founded one.
 Each either throws or passes; neither changes what is installed. So a run
@@ -95,7 +95,7 @@ theorem checkDeclsPure_covers {mode : CheckMode} {ops : (CheckerOps md) (CheckM 
     (hd : checkDeclsPure mode ops ev ds = .ok env) : checkDeclsPure mode ops ev' ds = .ok env :=
   foldlM_covers h ds _ _ hd
 
-/-- **Reference acceptance** (IxC step 7.1) moves to any evidence that covers
+/-- **Reference acceptance** (IxCK step 7.1) moves to any evidence that covers
 `ev` at every fuel. -/
 theorem acceptsRef_covers {μ : CheckMode} {ev ev' : Evidences md}
     (h : ∀ F, Covers (fueledOps μ F) ev ev') {ds : List (Declaration md)} {env : Env md}

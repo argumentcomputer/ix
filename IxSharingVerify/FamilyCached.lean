@@ -1,5 +1,5 @@
 import Ix.Sharing.FamilyCached
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 #guard_kernel_axioms Ix.Sharing.Family.cachedStep_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Sharing.Family.componentsCachedWith_eq [propext, Classical.choice, Quot.sound]

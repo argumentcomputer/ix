@@ -16,15 +16,15 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
 -- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
--- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- (`IxCK/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
--- (`inputIndexed`) adds 32 compiled functions, the reader's (`IxC/Kernel/Audit/Roots.lean`):
+-- (`inputIndexed`) adds 32 compiled functions, the reader's (`IxCK/Kernel/Audit/Roots.lean`):
 -- the predicate and the derived equality of `Ixon.Constant` that compares a record with the
 -- fallback's. Measured before refreezing; externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
 -- The role-shape validation merge adds the entry's four compiled functions
--- (`IxC/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
+-- (`IxCK/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
 -- Execution allowances are unchanged.
 -- The expanded specification adds 706 compiled helpers: 496 from Roles, 208
 -- from Key and two from SpecDigest, and removes eight old specializations.

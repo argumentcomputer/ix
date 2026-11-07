@@ -1,6 +1,6 @@
 import Ix.Cert.SourceTrace
 import Ix.Cert.ReaderUnits
-import IxC.Kernel.Verify.Frontend.Prepare
+import IxCK.Kernel.Verify.Frontend.Prepare
 
 /-! # Quotient Source declares every stored constant's quotient key
 

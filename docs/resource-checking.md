@@ -11,9 +11,9 @@ The executable modules are [Basic](../Ix/Resource/Basic.lean),
 [Check](../Ix/Resource/Check.lean), and [Admit](../Ix/Resource/Admit.lean).
 The production boundary is [Validate](../Ix/Resource/Validate.lean).
 
-Lean's [typing half](../Ix/Resource/Typing.lean) uses IxC's certified tiered
+Lean's [typing half](../Ix/Resource/Typing.lean) uses IxCK's certified tiered
 admission entry for the part it admits. Unsafe inductives, safe assumption
-axioms not bound by a role, and their dependents are typed separately by IxC
+axioms not bound by a role, and their dependents are typed separately by IxCK
 outside that theorem. Their tier checks use the typing tier's answer view;
 the certified entry never reads that view. If opaque batch-tier checking
 refuses a tier record, all tier records move to the separate typing path
@@ -153,7 +153,7 @@ required closure. Merely parsing a claim or proof wrapper validates no program.
 | Consumer | Advertised validation |
 | --- | --- |
 | Resource admission (`Ix.Resource.validate`) | Resources plus erased typing, with a committed profile |
-| IxC certified admission | Authenticated logical admission and the entry's stated partial/unsafe typing tier |
+| IxCK certified admission | Authenticated logical admission and the entry's stated partial/unsafe typing tier |
 | IxVM `Check` and `CheckEnv` | Erased Lean typing, validator byte `1` |
 | IxVM `Reveal` and `Contains` | Structural validation, validator byte `0` |
 | IxVM `Resource` | Explicitly unsupported; native success is not a circuit proof |

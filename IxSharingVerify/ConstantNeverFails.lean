@@ -1,7 +1,7 @@
 import IxSharingVerify.NeverFails
 import IxSharingVerify.SufficientBudget
 import IxSharingVerify.Builder
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # Re-sharing a constant never fails

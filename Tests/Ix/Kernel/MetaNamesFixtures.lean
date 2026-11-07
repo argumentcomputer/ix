@@ -1,4 +1,4 @@
-/-! # Fixtures of the `kernel-meta-names` oracle (IxC step 6b)
+/-! # Fixtures of the `kernel-meta-names` oracle (IxCK step 6b)
 
 Well-typed declarations whose types and values the oracle prints at `.meta`
 and `.source` against Lean's `ppExpr`, and the constants its ill-typed

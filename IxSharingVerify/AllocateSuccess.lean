@@ -1,7 +1,7 @@
 import IxSharingVerify.KahnOrderSpec
 import IxSharingVerify.PinnedOrderSpec
 import IxSharingVerify.BudgetMono
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The first tier never refuses

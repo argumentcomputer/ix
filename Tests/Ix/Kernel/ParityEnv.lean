@@ -11,7 +11,7 @@ import Ix.EnvScope
 import Ix.Cli.ConstsFile
 
 /-!
-Selected fixture for the IxC regression pins (`tc-pins`):
+Selected fixture for the IxCK regression pins (`tc-pins`):
 the serialized `.ixe` env they check against. Compiled on demand from `Ix.lean`
 plus the checked-in seed list when the file isn't already present, so the tests
 run unconditionally instead of skipping when no fixture is supplied.

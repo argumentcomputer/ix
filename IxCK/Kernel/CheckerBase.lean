@@ -1,0 +1,364 @@
+module
+
+public import IxCK.Kernel.StdAxioms
+public import IxCK.Kernel.TypeChecker
+public import IxCK.Kernel.Roles
+public import IxCK.Kernel.Inductives.StructParts
+
+@[expose] public section
+
+/-!
+# The declaration checker's common ground
+
+The core entry-point record (`CheckerOps`) with its pure and memoized
+instantiations, the common per-declaration constant check
+(`checkConstantVal`), and the small strategy-independent helpers the
+install paths share (`domsMatchAux`, `openPisAtFvars`,
+`checkTypedList`, `checkDefEqList`, `piResultSort`).  The
+modeled-inductive install builds on this in
+`IxCK/Kernel/Inductives/Modeled.lean`, everything else in
+`IxCK/Kernel/Checker.lean`.
+-/
+
+namespace Ix.Kernel
+
+/-- The core entry points the declaration checker runs on: the checker
+is written once against this record, monad-polymorphically, and
+instantiated with the pure knot (`fueledOps`/`pureOps`, the
+verification's subject) and, in `IxCK/Kernel/Cached/CheckerC.lean`, with the
+memoized cached knot the binary executes. -/
+structure CheckerOps (md : Mode) (m : Type → Type) where
+  annotate : Env md → Nat → Expr md → m (Expr md)
+  inferType : Env md → Nat → Expr md → m (Expr md)
+  isDefEq : Env md → Nat → Expr md → Expr md → m Bool
+  ensureSort : Env md → Nat → Expr md → m Level
+  whnf : Env md → Nat → Expr md → m (Expr md)
+  /-- **The evidence-fallback combinator** (task #273).  Run the
+  attempt; on `true` the whole is `pure ()`; on `false` OR ON AN ERROR
+  the continuation runs.  The only place the checker recovers from a
+  thrown error, and it is scoped to the certificate check of a
+  well-founded `Nat` operation's evidence (`checkDivModEvidence`), where
+  a proof elaborated against another toolchain can be ill-typed against
+  this stream — that is "this evidence does not certify the operation",
+  a decline, not a checker bug.  The continuation is told the outcome
+  (`none` after `false`, `some e` after an error) **for diagnostic text
+  only**; the pure instantiations (`fueledOps`, the fueled families of
+  the verification tier) hand it `none` regardless — a fuel-indexed
+  family is monotone in its *success* and cannot carry an outcome that
+  differs between fuels — and the executable's cached instantiation
+  (`sharedOpsC`, `IxCK/Kernel/Cached/CheckerC.lean`) delivers it.  The
+  `Unit` result is what makes the combinator fuel-monotone: an attempt
+  that fails at one fuel and succeeds at a larger one changes which
+  branch ran, not whether the whole succeeded. -/
+  orElse : m Bool → (Option (CheckError md) → m Unit) → m Unit
+
+variable (mode : CheckMode)
+
+/-- The pure instantiation, at an arbitrary fuel. -/
+def fueledOps (F : Nat) : (CheckerOps md) (CheckM md) where
+  annotate env d e := annotateCore mode env F d e
+  inferType env d e := inferTypeCore mode env F d e
+  isDefEq env d a b := isDefEqCore mode env F d a b
+  ensureSort env d e := ensureSortCore mode env F d e
+  whnf env d e := Ix.Kernel.whnf mode env F d e
+  orElse x k := match x with
+    | .ok true => pure ()
+    | _ => k none
+
+/-- The pure instantiation, at the standard fuel. -/
+def pureOps : (CheckerOps md) (CheckM md) := fueledOps mode checkFuel
+
+/-- **The verdict at a term whose constants do not all resolve.**
+
+Every front door for stream-supplied data — a declaration's type, a
+value, a recursor rule's right-hand side — guards it with
+`Expr.constsResolve` (or its indexed / cached twin) and throws here on
+a `false`.  A term that mentions `sorryAx` DECLINES: that axiom is
+tolerated as a declaration and installs nothing, so a use of it is a
+positively detected unsupported feature, never a malformed stream.
+Anything else is an unknown constant, and rejects with the message
+unchanged.  `where_` names the slot, e.g. `"type of Foo"`.
+
+`Expr.mentionsConst` is the same walk `constsResolve` just ran (the
+`.proj` struct name included) and is memoized by `@[csimp]`
+(`IxCK/Kernel/Inductives/StructParts.lean`), so a DAG-shared term
+does not unfold here.  The companion `unknownConstError`
+(`IxCK/Kernel/Core.lean`) decides the same question inside
+inference, which the annotation pass reaches before this guard runs. -/
+def unresolvedConstsError (where_ : Msg md) (e : Expr md) : CheckError md :=
+  if e.mentionsConst sorryAxName then
+    .notImplemented msg!"use of the sorryAx axiom in {where_}"
+  else .invalid msg!"unknown constant in {where_}"
+
+/-- The first name a list repeats. -/
+def firstDupKey : List (Key md) → Option (Key md)
+  | [] => none
+  | c :: cs => if cs.contains c then some c else firstDupKey cs
+
+/-- What `checkIndShape` throws: `checkConstantVal`'s own message for the
+first member the shape guard refuses (an unresolved declared type, or a
+constructor name declared twice), so a block both refuse keeps its text. -/
+def indShapeError (find? : Key md → Option (ConstantInfo md)) (block : List (ConstantInfo md)) :
+    CheckError md :=
+  let unresolved := block.findSome? fun ci => match ci with
+    | .indInfo cv _ | .ctorInfo cv _ _ =>
+      if cv.type.constsResolveBy (indShapeHas find? block) then none
+      else some (unresolvedConstsError msg!"type of {cv.name}" cv.type)
+    | _ => none
+  match unresolved with
+  | some e => e
+  | none =>
+    let taken := (indCtorNames block).find? fun c =>
+      (find? c).isSome || (indFormerNames block).contains c
+    match taken.orElse fun _ => firstDupKey (indCtorNames block) with
+    | some c => .invalid msg!"duplicate declaration {c}"
+    | none => .invalid msg!"malformed inductive block"
+
+variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
+
+/-- **The `.indDecl` shape guard** (`indShapeOk`), run on every inductive
+block before the pinned-block recognition and the route dispatch. -/
+def checkIndShape (find? : Key md → Option (ConstantInfo md)) (block : List (ConstantInfo md)) :
+    m Unit :=
+  unless indShapeOk find? block do throw (indShapeError find? block)
+
+/-- **The shape guard, inverted** (in `Except`): a run past it had the
+guard hold, and continues as the rest of the arm. -/
+theorem checkIndShape_bind_ok {α : Type} {find? : Key md → Option (ConstantInfo md)}
+    {block : List (ConstantInfo md)} {k : PUnit → Except (CheckError md) α} {v : α}
+    (h : (checkIndShape find? block >>= k) = .ok v) :
+    indShapeOk find? block = true ∧ k () = .ok v := by
+  unfold checkIndShape at h
+  split at h
+  · next hg => exact ⟨hg, h⟩
+  · exact nomatch h
+
+/-- The shape guard, passed (in `Except`). -/
+theorem checkIndShape_pass {α : Type} {find? : Key md → Option (ConstantInfo md)}
+    {block : List (ConstantInfo md)} {k : PUnit → Except (CheckError md) α}
+    (h : indShapeOk find? block = true) :
+    (checkIndShape find? block >>= k) = k () := by
+  unfold checkIndShape
+  simp only [h, ↓reduceIte]
+  rfl
+
+/-- Checks common to all declarations: fresh name, well-formed universe
+parameters, and a type that is a type and mentions only declared
+parameters.  Returns the constant with its type **annotated**
+(`annotate`); the guards run on the annotated type. -/
+def checkConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md) : m (ConstantVal md) := do
+  if (env.find? cv.name).isSome then
+    throw (.invalid msg!"duplicate declaration {cv.name}")
+  if reservedBasisNames.contains cv.name then
+    throw (.invalid msg!"reserved basis name {cv.name}")
+  if cv.name.isProjFnShape then
+    throw (.invalid msg!"reserved projection name {cv.name}")
+  unless LevelParam.nodup cv.levelParams do
+    throw (.invalid msg!"duplicate universe parameters in {cv.name}")
+  unless cv.type.looseBVarsBounded 0 do
+    throw (.invalid msg!"loose bound variable in type of {cv.name}")
+  if cv.type.hasFvar then
+    throw (.invalid msg!"unexpected free variable in type of {cv.name}")
+  let type ← ops.annotate env 0 cv.type
+  unless type.allLevelParamsDefined cv.levelParams do
+    throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
+  unless type.constsResolve env do
+    throw (unresolvedConstsError msg!"type of {cv.name}" type)
+  let stype ← ops.inferType env 0 type
+  let _u ← ops.ensureSort env 0 stype
+  pure { cv with type := type }
+
+/-- Compare binder domains at offsets `o₁`/`o₂` for `n` positions, the
+right side viewed through `g` (identity, lifting, or renaming). -/
+def domsMatchAux (g : Nat → Expr md → Expr md)
+    (bs₁ bs₂ : List (Expr md × BinderMeta)) (o₁ o₂ n : Nat) : Bool :=
+  (List.range n).all fun i =>
+    match bs₁[o₁ + i]?, bs₂[o₂ + i]? with
+    | some b₁, some b₂ => b₁.1 == g i b₂.1
+    | _, _ => false
+
+/-- Open the first `n` `∀`-binders at fresh free variables `0..n-1`
+(each fvar's type is the binder domain, instantiated with the earlier
+fvars).  Returns the fvars and the opened body. -/
+def openPisAtFvars : Nat → Expr md → Nat → Option (List (Expr md) × Expr md)
+  | 0, e, _ => some ([], e)
+  | n + 1, .forallE dom body _, i =>
+    let fv : Expr md := .fvar i dom
+    match openPisAtFvars n (body.instantiate1 fv) (i + 1) with
+    | some (fvs, e) => some (fv :: fvs, e)
+    | none => none
+  | _ + 1, _, _ => none
+
+/-- `domsMatchAux` over arrays (equal to it at `List.toArray`:
+`domsMatchAuxA_eq`) — positional list indexing is linear per access,
+which made the binder-domain comparison quadratic on wide
+telescopes. -/
+def domsMatchAuxA (g : Nat → Expr md → Expr md)
+    (bs₁ bs₂ : Array (Expr md × BinderMeta)) (o₁ o₂ n : Nat) : Bool :=
+  (List.range n).all fun i =>
+    match bs₁[o₁ + i]?, bs₂[o₂ + i]? with
+    | some b₁, some b₂ => b₁.1 == g i b₂.1
+    | _, _ => false
+
+/-- Core of `openPisAtFvarsF`: `acc` holds the already-created fvars,
+innermost binder first.  Computes
+`openPisAtFvars n (e.instantiateList acc) i` whenever `e` raw-strips
+`n` `∀`-binders (`openPisAtFvarsFGo_sound`), `none` otherwise —
+one `instantiateList` pass per domain instead of one whole-telescope
+`instantiate1` pass per binder. -/
+def openPisAtFvarsFGo (acc : List (Expr md)) :
+    Nat → Expr md → Nat → Option (List (Expr md) × Expr md)
+  | 0, e, _ => some ([], e.instantiateList acc)
+  | n + 1, .forallE dom body _, i =>
+    let fv : Expr md := .fvar i (dom.instantiateList acc)
+    match openPisAtFvarsFGo (fv :: acc) n body (i + 1) with
+    | some (fvs, e) => some (fv :: fvs, e)
+    | none => none
+  | _ + 1, _, _ => none
+
+/-- One-pass `openPisAtFvars` (equal to it: `openPisAtFvarsF_eq`; the
+fallback covers telescopes whose binders only appear after
+substitution). -/
+def openPisAtFvarsF (n : Nat) (e : Expr md) (i : Nat) :
+    Option (List (Expr md) × Expr md) :=
+  match openPisAtFvarsFGo [] n e i with
+  | some r => some r
+  | none => openPisAtFvars n e i
+
+/-- Check each expression's inferred type against the corresponding
+expected type (definitionally); throws on a length mismatch.  Used to
+pin a nested rule's stored parameter instantiations to the
+constructor's parameter domains. -/
+def checkTypedList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → List (Expr md) → m Unit
+  | [], [] => pure ()
+  | a :: as, t :: ts => do
+    let ty ← ops.inferType env depth a
+    unless ← ops.isDefEq env depth ty t do
+      throw (.notImplemented "nested pin type mismatch")
+    checkTypedList ops env depth as ts
+  | _, _ => throw (.notImplemented "nested pin arity mismatch")
+
+/-- Check that each expression is a fixed point of the annotation pass
+in the given context: its codomain-sort annotations are exactly the
+ones annotation reconstructs.  Used to certify a nested rule's stored
+parameter instantiations (opened at the rule-prefix variables): the
+soundness layer needs their annotation truthfulness at the canonical
+frame, and index premises between the prefix and the major put them
+out of reach of the recursor-type walk. -/
+def checkAnnotList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → m Unit
+  | [] => pure ()
+  | a :: as => do
+    let aA ← ops.annotate env depth a
+    unless aA == a do
+      throw (.notImplemented "nested pin annotation mismatch")
+    checkAnnotList ops env depth as
+
+/-- Is the expression the pinned equality former at one level? -/
+def isEqHead : Expr md → Bool
+  | .const c [_ℓ] => c == eqName
+  | _ => false
+
+/-- The level an equality head carries — the statement's own `Eq.{ℓ}`
+level, read off a head `isEqHead` has accepted (task #146: the iota
+statements' type slot is certified to inhabit *this* sort).  Off shape
+it is `.zero`, which `isEqHead` has already rejected wherever the
+result is used. -/
+def eqHeadLevel : Expr md → Level
+  | .const _ [ℓ] => ℓ
+  | _ => .zero
+
+/-- Pairwise definitional-equality check of two spines (throws on any
+mismatch, including a length difference). -/
+def checkDefEqList (ops : (CheckerOps md) m) (env : Env md) (depth : Nat) :
+    List (Expr md) → List (Expr md) → m Unit
+  | [], [] => pure ()
+  | a :: as, b :: bs => do
+    unless ← ops.isDefEq env depth a b do
+      throw (.notImplemented "iota statement component mismatch")
+    checkDefEqList ops env depth as bs
+  | _, _ => throw (.notImplemented "iota statement component arity")
+
+/-- Unwrap an optional value or fail with the given error (the
+`Option`-shaped checks below stay bind-shaped for the verification
+batteries). -/
+def unwrapOr {α : Type} (o : Option α) (err : CheckError md) : m α :=
+  match o with
+  | some a => pure a
+  | none => throw err
+
+/-- The stored constant under `n`, as a `ConstantVal`, if any.  The
+iota-certificate checks below consume only the stored constant's
+*type* (any stored constant witnesses its type's inhabitation in the
+model — `EnvModel.mem_type` is kind-agnostic), so no theorem-kind
+filter is imposed. -/
+def Env.findCV? (env : Env md) (n : Key md) : Option (ConstantVal md) :=
+  (env.find? n).map (·.toConstantVal)
+
+/-- The result sort of a syntactic pi telescope (the sort the type
+former's type ends in), if it ends in a sort at all. -/
+def piResultSort (e : Expr md) : Option Level :=
+  match e.piResult with
+  | .sort u => some u
+  | _ => none
+
+
+/-- Stage 2b: the projection type's parameter telescope is
+*syntactically* the constructor's, and the constructor's residual is
+the family applied to exactly the parameters — the syntactic pins the
+rule's total λ-equality derivation folds over (task #58; completeness-
+safe: both telescopes spell the family's parameter types, and a
+structure constructor targets the family at its parameters). -/
+def checkProjShape (pty ctorTy : Expr md) (nP nF : Nat) : m Unit := do
+  let some (_abinders, _) := pty.stripPis nP
+    | throw (.notImplemented "projection type telescope")
+  let some (_, cbody) := ctorTy.stripPis (nP + nF)
+    | throw (.notImplemented "projection constructor telescope")
+  unless cbody.getAppArgs.length == nP do
+    throw (.notImplemented "projection constructor residual arity")
+  match cbody.getAppFn with
+  | .const _ _ => pure ()
+  | _ => throw (.notImplemented "projection constructor residual head")
+
+/-- Stage 3: the reduction rule — λ over the constructor telescope
+returning field `i`, annotated; its λ-domains stay the constructor's. -/
+def checkProjRule (ops : (CheckerOps md) m) (env' : Env md) (pty : Expr md) (cvj : ConstantVal md) (lps : List LevelParam)
+    (nP nF i : Nat) : m (Expr md) := do
+  let some rhs := Expr.pisToLams (nP + nF) cvj.type (.bvar (nF - 1 - i))
+    | throw (.notImplemented "projection rule telescope")
+  unless !rhs.hasFvar && rhs.looseBVarsBounded 0 do
+    throw (.notImplemented "projection rule scoping")
+  let rhsA ← ops.annotate env' 0 rhs
+  unless rhsA.allLevelParamsDefined lps && rhsA.constsResolve env' &&
+      rhsA.looseBVarsBounded 0 && !rhsA.hasFvar do
+    throw (.notImplemented "projection rule wellformedness")
+  let some (rbinders, rrbody) := rhsA.stripLams (nP + nF)
+    | throw (.notImplemented "projection rule telescope")
+  unless rrbody == Expr.bvar (nF - 1 - i) do
+    throw (.notImplemented "projection rule body")
+  let some (cbindersR, _) := cvj.type.stripPis (nP + nF)
+    | throw (.notImplemented "projection constructor telescope")
+  unless domsMatchAux (fun _ e => e) rbinders cbindersR 0 0 (nP + nF) do
+    throw (.notImplemented "projection rule domain mismatch")
+  -- the frame walks and the definitional parameter/domain pins
+  -- (task #58): the projection type's opened parameter annotations are
+  -- definitionally the constructor's instantiated parameter domains,
+  -- and the whole frame's annotations are definitionally the rule
+  -- λ-tower's instantiated domains
+  let some (fvsP, _) := openPisAtFvars nP pty 0
+    | throw (.notImplemented "projection type telescope")
+  let some (cdomsP, crestP) := Expr.instPisAt fvsP cvj.type
+    | throw (.notImplemented "projection constructor telescope")
+  checkDefEqList ops env' (nP + nF) (fvsP.map Expr.fvarTypeD) cdomsP
+  let some (xFvs, _) := openPisAtFvars nF crestP nP
+    | throw (.notImplemented "projection constructor telescope")
+  let some (ldoms, _) := Expr.instLamsAt (fvsP ++ xFvs) rhsA
+    | throw (.notImplemented "projection rule telescope")
+  checkDefEqList ops env' (nP + nF) ((fvsP ++ xFvs).map Expr.fvarTypeD)
+    ldoms
+  let _rhsTy ← ops.inferType env' 0 rhsA
+  pure rhsA
+
+
+end Ix.Kernel

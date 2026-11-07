@@ -1,13 +1,13 @@
 /-! # The kernel's layout, for the kernel fences
 
 What the fences `kernel-layering` and `kernel-trust-surface` cover, and the
-part each file of `IxC/Kernel/` belongs to, by its path. The table
+part each file of `IxCK/Kernel/` belongs to, by its path. The table
 `topLevel` is the one place to update when a top-level entry of
-`IxC/Kernel/` is added, moved or removed: a file under an entry it does not
+`IxCK/Kernel/` is added, moved or removed: a file under an entry it does not
 list fails both fences.
 
 * **The checker** (`Part.checker`): the implementation, con-leche's
-  `ConLeche/Kernel/*` (flattened into `IxC/Kernel/`), `Cached/*` and
+  `ConLeche/Kernel/*` (flattened into `IxCK/Kernel/`), `Cached/*` and
   `Frontend/*`, with Ix's `LevelGeran.lean` beside `Level.lean` and Ix's
   typing tier `Tier/*`. It must
   never import the theory.
@@ -23,10 +23,10 @@ list fails both fences.
   do not cover them, and the layering fence requires the checker and the
   theory never to import them: the boundary imports the kernel, never the
   other way round. They are fenced by Ix's Lean audits instead
-  (`IxC/Kernel/Audit/*`), which see compiled code rather than tokens.
+  (`IxCK/Kernel/Audit/*`), which see compiled code rather than tokens.
 
-The fences cover every `IxC/Kernel/**/*.lean` in the first two parts; the
-umbrella `IxC/Kernel.lean` sits outside `IxC/Kernel/`. Also here, the two
+The fences cover every `IxCK/Kernel/**/*.lean` in the first two parts; the
+umbrella `IxCK/Kernel.lean` sits outside `IxCK/Kernel/`. Also here, the two
 pieces of Python's text model the fences were first written against and
 keep: universal-newline reading and Unicode whitespace. Tooling only:
 nothing here is part of the certified closure. -/
@@ -39,8 +39,8 @@ inductive Part where
   | ix
   deriving BEq, Repr
 
-/-- Every top-level entry of `IxC/Kernel/` (a module stem: the file
-`IxC/Kernel/X.lean` and the directory `IxC/Kernel/X/` alike), by part. -/
+/-- Every top-level entry of `IxCK/Kernel/` (a module stem: the file
+`IxCK/Kernel/X.lean` and the directory `IxCK/Kernel/X/` alike), by part. -/
 def topLevel : List (String × Part) := [
   -- the checker: con-leche's `ConLeche/Kernel/*`, flattened
   ("Basis", .checker), ("BasisA", .checker), ("BasisGen", .checker), ("Canon", .checker),
@@ -63,33 +63,33 @@ def topLevel : List (String × Part) := [
   ("Admission", .ix), ("Audit", .ix), ("Egress", .ix), ("Ingress", .ix), ("Ixon", .ix), ("Ref", .ix),
   ("Search", .ix)]
 
-def root : String := "IxC/Kernel/"
+def root : String := "IxCK/Kernel/"
 
 /-- `s` without its first `n` characters (via `s.toList` and `List.drop`). -/
 def dropChars (s : String) (n : Nat) : String := String.ofList (s.toList.drop n)
 
-/-- The top-level entry of a path under `IxC/Kernel/`: its first component,
+/-- The top-level entry of a path under `IxCK/Kernel/`: its first component,
 without a `.lean` suffix. -/
 def topEntry (path : String) : String :=
   let head := ((dropChars path root.length).splitOn "/").headD ""
   if head.endsWith ".lean" then String.ofList (head.toList.take (head.length - 5)) else head
 
-/-- The part of a file under `IxC/Kernel/`, or `none` if `topLevel` does not
+/-- The part of a file under `IxCK/Kernel/`, or `none` if `topLevel` does not
 classify it. -/
 def part? (path : String) : Option Part := topLevel.lookup (topEntry path)
 
-/-- The model lane: `IxC/Kernel/Model{,/*}`. -/
+/-- The model lane: `IxCK/Kernel/Model{,/*}`. -/
 def isModelLane (path : String) : Bool :=
-  path == "IxC/Kernel/Model.lean" || path.startsWith "IxC/Kernel/Model/"
+  path == "IxCK/Kernel/Model.lean" || path.startsWith "IxCK/Kernel/Model/"
 
 /-- The capstone assembly: `MainTheorem` and `Verify/Cached{,/*}`. -/
 def isCapstone (path : String) : Bool :=
-  path == "IxC/Kernel/MainTheorem.lean" || path == "IxC/Kernel/Verify/Cached.lean" ||
-  path.startsWith "IxC/Kernel/Verify/Cached/"
+  path == "IxCK/Kernel/MainTheorem.lean" || path == "IxCK/Kernel/Verify/Cached.lean" ||
+  path.startsWith "IxCK/Kernel/Verify/Cached/"
 
 /-- The rules tier: `Rules/*` and `Model/Rules/*`. -/
 def isRulesTier (path : String) : Bool :=
-  path.startsWith "IxC/Kernel/Rules/" || path.startsWith "IxC/Kernel/Model/Rules/"
+  path.startsWith "IxCK/Kernel/Rules/" || path.startsWith "IxCK/Kernel/Model/Rules/"
 
 /-- Every `.lean` file under `dir` (relative to the working directory),
 recursively, sorted by code point. -/
@@ -104,13 +104,13 @@ def leanFilesUnder (dir : System.FilePath) : IO (Array String) := do
 /-- The files the fences cover (the checker and the theory), sorted, and the
 files `topLevel` does not classify. -/
 def covered : IO (Array String × Array String) := do
-  let files ← leanFilesUnder "IxC/Kernel"
+  let files ← leanFilesUnder "IxCK/Kernel"
   return (files.filter (fun f => (part? f).any (· != .ix)), files.filter (part? · |>.isNone))
 
 /-- Fail on files no entry of `topLevel` classifies. -/
 def reportUnclassified (fence : String) (files : Array String) : IO Bool := do
   if files.isEmpty then return false
-  IO.println s!"{fence} FAIL - files under IxC/Kernel/ that no part classifies ({files.size}):"
+  IO.println s!"{fence} FAIL - files under IxCK/Kernel/ that no part classifies ({files.size}):"
   for f in files do IO.println s!"    {f}"
   IO.println "    Add the file's top-level entry to `topLevel` in Tests/Ix/Kernel/KernelLayout.lean"
   IO.println "    (the checker, the theory, or Ix's boundary)."

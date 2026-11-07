@@ -1,7 +1,7 @@
 import IxSharingVerify.CanonicalMeaning
 import IxSharingVerify.UniformFinal
 import IxSharingVerify.BudgetMono
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-! Canonical renumbering never refuses its production input.
 

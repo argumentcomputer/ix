@@ -1,6 +1,6 @@
 module
 public import Ix.Ixon
-public import IxC.Kernel.Admission
+public import IxCK.Kernel.Admission
 public import Tests.FFI.Ixon
 public import LSpec
 

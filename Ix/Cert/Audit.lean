@@ -104,7 +104,7 @@ fun env a b =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.DependsOn
 
--- The literal support: a constant's literals depend on the constants IxC
+-- The literal support: a constant's literals depend on the constants IxCK
 -- checks them against.
 /-- info: def Ix.Cert.literalSupport : Ix.ConstantInfo → Array Ix.Name :=
 fun ci =>
@@ -789,11 +789,11 @@ fun {md md'} σ e => { consts := List.map (Ix.Cert.Rename.constantInfo σ) e.con
 -- The renaming lemma (`RenamingLemma`), its hypothesis (`RenamingHyp`), the
 -- failure renaming it compared (`Rename.result`) and the input-key sets its
 -- hypothesis read (`Keys`, `InputKey`, `keyIds`, `InputId`) are deleted: the
--- lemma was stated, never proved and used by no theorem, and IxC proves the
+-- lemma was stated, never proved and used by no theorem, and IxCK proves the
 -- reference-level renaming the statements need (`Ix.Kernel.Cached.AcceptsRef.rename`,
 -- and the quotient Source run renamed to the artifact's addresses,
 -- `Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`). Their freezes go with
--- them, and so do the freezes of IxC's message renaming (`MsgPart.mapKeys`,
+-- them, and so do the freezes of IxCK's message renaming (`MsgPart.mapKeys`,
 -- `Msg.mapKeys`, `CheckError.mapKeys`), which only `Rename.result` read. `Rename`
 -- stays (a test compares the ingress against it), and so does `Key.map`.
 
@@ -3653,7 +3653,7 @@ order of distinct addresses and the blob map, authentication from
 given that every stored record decodes to a wire-valid constant whose
 canonical encoding is its stored bytes, `StoredCanonical`), and the reader's
 stream succeeds on every record-by-record reading (`readRecords_complete`,
-the converse of IxC's `readRecords_spec`) whose final state keeps the
+the converse of IxCK's `readRecords_spec`) whose final state keeps the
 prelude's entries (`State.keepsPrelude`, required by `readStream_complete`).
 With the fold's acceptance under
 the committed prelude that is `IxonAccepts` (`closure_accepts`).
@@ -3853,7 +3853,7 @@ fun ixe =>
 
 Source mode and Ixon mode check under different evidence (the certificate
 theorems of the checked environment against the role table's synthesized
-records). IxC's checker reads evidence only at `checkDecl`'s two gates, so an
+records). IxCK's checker reads evidence only at `checkDecl`'s two gates, so an
 acceptance moves to any evidence that passes every gate the first passes, with
 the same environment (`Ix.Cert.Evidence.acceptsRef_covers`). The roles agree
 when every published name whose ingress name is a role's Lean name sits at the
@@ -3943,7 +3943,7 @@ run_cmd do
 /-! ## Levels read syntactically
 
 The reader's level is the Source level in the compiler's canonical form
-(`Ix.LeanIngress.canonLevelIn`, what IxC's U lowers Source levels to), when the
+(`Ix.LeanIngress.canonLevelIn`, what IxCK's U lowers Source levels to), when the
 reader's parameter map is the constant's level parameters; roots in
 `Ix.CompileCert.ReadingAudit` ("levels canonically"). -/
 
@@ -4014,7 +4014,7 @@ run_cmd do
 
 /-! ## No constructor of a Source-accepted family in its types
 
-IxC checks every accepted `.indDecl`'s declared shape before its route
+IxCK checks every accepted `.indDecl`'s declared shape before its route
 (`Ix.Kernel.Semantics.checkDecl_noCtor`). The ingress carries the sources'
 constants to their keys, so no constructor of a Source-accepted family occurs
 in the family's types (`Ix.Cert.NoCtor.noCtor_of_checkSourceWith`), and
@@ -4141,7 +4141,7 @@ fun env roots sub ixe t =>
 
 /-! ## Quotient Source at the artifact's addresses
 
-IxC renames a checked quotient accept to the artifact's addresses by the joined map
+IxCK renames a checked quotient accept to the artifact's addresses by the joined map
 (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`, `evAddr`). The table rule's
 premise `TableBound` follows from an admitted role table and an artifact-wide check
 that every published role name sits at its role's address (`Ix.Cert.tableBound_of`),
@@ -5049,7 +5049,7 @@ declarations, and every declaration past the modeller's names only the
 record's member keys (`MemberKeyOf`) or the group's ingress keys
 (`GroupKeyOf`). Neither is ever derived, so each lowering is empty or ends in
 a declaration that is not generated (`Lowering.closed`, `LoweringBy.closed`):
-what IxC's units check needs of each side to read the units as the lowerings'
+what IxCK's units check needs of each side to read the units as the lowerings'
 pieces. Nothing about `InModel.generate`'s output is used. -/
 
 /-- info: [cert-audit] reader units: 25 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
@@ -5151,7 +5151,7 @@ run_cmd do
 
 `Ix.Cert.CtxAgree`: a mutual or nested block's modeller records agree on the
 two streams. At reader states that agree on the block's scope, the block and its
-renaming lower to renamed records through IxC's parametricity
+renaming lower to renamed records through IxCK's parametricity
 (`lowerInductive_mapKeys`, at `KeyScope.Pre`); the states agree at every key but
 the derived ones by the per-key relation (`ReadsAgreeAt`, read off the two
 prefixes, `nonAuxAgree_of_reads`), and at the derived ones because they are an

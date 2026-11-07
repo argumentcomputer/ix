@@ -16,7 +16,7 @@ the `partial`/`unsafe` definitions the reader declines) and everything in
 `Init` they reach are canonicalized (`Ix.CanonM`), condensed (`Ix.GraphM`,
 `Ix.CondenseM`) and checked in Source mode (`Ix.LeanIngress`) at Source mode's
 evidence (`Ix.LeanIngress.sourceEvidence`: the certificate theorems of
-`IxC.Kernel.PinGen.Certs`, loaded and checked with the fixtures):
+`IxCK.Kernel.PinGen.Certs`, loaded and checked with the fixtures):
 
 * group by group (`Tests.Ix.Kernel.SourceIngressStep`), where every fixture
   declaration must get its expected verdict;
@@ -120,7 +120,7 @@ def expected : List (Lean.Name × String) := [
   (defs "spin._unsafe_rec", "typed"), (defs "unsafeId", "typed"),
   -- `Nat.div` is a certified operation, accepted on the proof evidence of
   -- the certificate theorems the environment carries
-  -- (`IxC.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded
+  -- (`IxCK.Kernel.PinGen.Certs`, Source mode's evidence); the well-founded
   -- `log2` divides
   (`Nat.div, "accept"), (defs "log2", "accept"),
   -- the prelude, checked on the environment's own copies
@@ -319,7 +319,7 @@ def sharing : TestSeq :=
 /-- The run on the fixture closure, its expected verdicts, and `checkSource` on
 the accepted closure: failures as messages, and lines for the report. -/
 def evaluate : IO (Array String × Array String) := do
-  let leanEnv ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxC.Kernel.PinGen.Certs]
+  let leanEnv ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxCK.Kernel.PinGen.Certs]
   let some idx := leanEnv.getModuleIdx? defsModule | throw (IO.userError "fixture module not loaded")
   let some idx' := leanEnv.getModuleIdx? ownModule | throw (IO.userError "fixture module not loaded")
   let some idx'' := leanEnv.getModuleIdx? reducedModule | throw (IO.userError "fixture module not loaded")

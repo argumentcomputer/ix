@@ -1,7 +1,7 @@
 import LSpec
 import Ix.Meta
 import Ix.LeanIngress
-import IxC.Kernel.Tier.Answer
+import IxCK.Kernel.Tier.Answer
 import Ix.Resource.Typing
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierIndDefs

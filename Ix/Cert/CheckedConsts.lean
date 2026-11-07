@@ -1,10 +1,10 @@
 import Ix.Cert.NoCtor
-import IxC.Kernel.Verify.InferLemmas
-import IxC.Kernel.Verify.Abstract
+import IxCK.Kernel.Verify.InferLemmas
+import IxCK.Kernel.Verify.Abstract
 
 /-! # The constants of a checked term
 
-IxC's checker looks up every constant of a term it accepts: inference looks up a constant node
+IxCK's checker looks up every constant of a term it accepts: inference looks up a constant node
 and visits every subterm (an application's argument too), and annotation keeps every constant
 node except a `let`'s type and value, which it infers before taking the reduct. So whatever
 holds of the constants the checker finds, and of the constants an annotated term keeps, holds

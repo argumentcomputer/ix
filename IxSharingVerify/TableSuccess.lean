@@ -1,7 +1,7 @@
 import IxSharingVerify.BuildSuccess
 import IxSharingVerify.TieredPhase3
 import IxSharingVerify.BudgetMono
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # Materializing a table never refuses

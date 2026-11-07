@@ -3,10 +3,10 @@
  "packages":
  [{"type": "path",
    "scope": "",
-   "name": "«ix-kernel»",
+   "name": "«ix-ck»",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../IxC",
+   "dir": "../../IxCK",
    "configFile": "lakefile.lean"},
   {"url": "https://github.com/leanprover-community/mathlib4",
    "type": "git",

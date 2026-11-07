@@ -10,7 +10,7 @@ audit and the host-admission audit import this module. -/
 `sorryAx` its type. It adds the `eqns` kind, 44 native definitions and their
 anchors, and `Role.usedImplicitly`. A change to the
 specification set changes these lines; it
-is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`).
+is made on purpose, with `specVersion` (`IxCK/Kernel/Audit/Roles.lean`).
 
 The composed encoding adds 669 bytes to the earlier 103-role specification:
 the six Iff/Nonempty family rows now carry complete blocks, and sorryAx carries

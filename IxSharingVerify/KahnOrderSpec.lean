@@ -1,6 +1,6 @@
 import IxSharingVerify.TieredTier
 import IxSharingVerify.SharingExactCanon
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # The Kahn priority order is a dependency order

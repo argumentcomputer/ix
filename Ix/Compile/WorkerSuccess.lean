@@ -3,7 +3,7 @@ module
 public import Ix.Compile.WorkerContext
 import all Ix.CompileM
 import all Ix.Compile.WorkerContext
-import IxC.Kernel.Ingress.Records
+import IxCK.Kernel.Ingress.Records
 import Std.Data.HashMap.Lemmas
 import Init.Data.Array.Monadic
 import Lean.Elab.Tactic.Omega

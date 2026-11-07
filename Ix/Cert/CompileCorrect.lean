@@ -65,7 +65,7 @@ def quotientKey (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (n : Ix.Name) : Ix.Ke
     (Ix.LeanIngress.ingressKey n)
 
 /-- **The address the artifact gives a quotient Source key**: an input key's
-published address, by ingress name (`Ix.LeanIngress.sourceAddrs`, the map IxC
+published address, by ingress name (`Ix.LeanIngress.sourceAddrs`, the map IxCK
 renames quotient Source by); a role key's address in the role table `t`, which the
 reader keys by the role; none for a derived key. -/
 def keyAddress (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) :
@@ -138,7 +138,7 @@ the reader's keys (`Obligation.ReadingKeys`). It is stated over the installed en
 rather than the reader's declaration stream because that environment is what the acceptance
 conjunct (`IxonAcceptsRef`) and the commutation conjunct read, and the stream would put the
 reader's prelude and preparation into the statement. "Quotient Source" is Lean's constants
-ingressed, renamed onto their alias fibers and lowered by IxC's reader
+ingressed, renamed onto their alias fibers and lowered by IxCK's reader
 (`Ix.Kernel.Reader.lowerInductive`, `lowerDefinition`), so the equality is with that lowering,
 not with Lean's kernel objects themselves. -/
 def RenamesSource (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (cx : Ix.Kernel.Reader.Ctx .anon)

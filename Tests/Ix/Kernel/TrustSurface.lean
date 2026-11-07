@@ -3,20 +3,20 @@ import Tests.Ix.Kernel.KernelLayout
 /-! # The kernel's trust-surface fence (`kernel-trust-surface`)
 
 Derived from con-leche's `tests/trust-surface.sh` (Apache-2.0), modified; see
-`IxC/Kernel/NOTICE`. Its lexer fixture, upstream's
+`IxCK/Kernel/NOTICE`. Its lexer fixture, upstream's
 `tests/trust-surface/lexer.lean`, is kept unchanged as
 `Tests/Fixtures/trust-surface/lexer.lean` (its text still names upstream's
 script). Upstream's is a Python program in a shell wrapper.
 
-It scans the checker and the theory under `IxC/Kernel/`
+It scans the checker and the theory under `IxCK/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every
-file under `IxC/Kernel/`) for compiler escapes, and the root library's files
+file under `IxCK/Kernel/`) for compiler escapes, and the root library's files
 that substitute code in the certified entries' execution (`rootSources`),
 and its display modules (`displaySources`, step 6b: the one display-only
 read).
 Ix's boundary (`Ixon`,
 `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) is fenced by Ix's Lean audits
-in `IxC/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
+in `IxCK/Kernel/Audit/*`, which see compiled code, not tokens; ruled entries
 are recorded once more in the Lean runtime audit
 (`Ix.Kernel.Audit.runtimeRulings`), which checks the compiled closure.
 
@@ -42,25 +42,25 @@ THE ALLOWLIST, and the justification for every entry (file → the tokens
 tolerated there). A token in an allowlisted file that is not on its own
 list fails just as loudly as one in a bare file.
 
-  IxC/Kernel/Expr.lean          computed_field
+  IxCK/Kernel/Expr.lean         computed_field
       The packed `@[computed_field] data` and `Level.hashData`: the
       user's ruling R-meta ("we trust the compiler"), the same escape
       class `Lean.Expr` lives on. Expression equality is not an escape:
       it goes through `@[csimp]` + `withPtrEq`/`withPtrAddr` with the
       memoised descent proved equal to `decide (a = b)`.
 
-  IxC/Kernel/Name.lean          computed_field
+  IxCK/Kernel/Name.lean         computed_field
       A cached hash only (`Name.hashData`), as `Lean.Name`'s. Pointer
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
-  IxC/Kernel/Key.lean           computed_field
+  IxCK/Kernel/Key.lean          computed_field
       A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
       (input, role and derived) hash in O(1). Pointer equality goes
       through `@[csimp]` + `withPtrEq` with the redundancy proved
       (`Key.beqPtr_eq`).
 
-  IxC/Kernel/Exclusive.lean     unsafe, implemented_by
+  IxCK/Kernel/Exclusive.lean    unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
       compiled `k (isExclusiveUnsafe a)`, the reference-count read the
       substitution memo keys on. The obligation `h : k true = k false`
@@ -68,7 +68,7 @@ list fails just as loudly as one in a bare file.
       whose continuation returns a `Subsingleton`, so `h` is
       `Subsingleton.elim`. The file's docstring is the justification.
 
-  IxC/Kernel/BasisGen.lean      unsafe, implemented_by
+  IxCK/Kernel/BasisGen.lean     unsafe, implemented_by
       ELABORATION ONLY. `#annotate_basis` / `#annotate_pins` run the
       annotation pass at elaboration time through `unsafe evalTerm`
       (a `meta section`) and splice the resulting literals. Nothing here
@@ -96,7 +96,7 @@ list fails just as loudly as one in a bare file.
       `peekSquash` reads one (`unsafeCast`, a `Squash` is its value at run
       time) to print it, and `peekAll` hands it to the safe renderer
       (`Ix.KernelDisplay.Render`). No certified root's compiled closure
-      reaches it (`IxC/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
+      reaches it (`IxCK/Kernel/Audit/Roots.lean`, `Ix/Cert/RuntimeAudit.lean`),
       and the `.meta` and `.source` verdicts are `.anon`'s (the erasure test).
       The file is scanned with the display modules (`displaySources`), which
       hold no other escape.
@@ -107,10 +107,10 @@ form of the first two (no `partial` definition at all, `csimp` only with a
 theorem on the standard axioms).
 
 Changes from upstream: the scanned files come from the repository's own
-layout, and a file under `IxC/Kernel/` that the layout does not classify
+layout, and a file under `IxCK/Kernel/` that the layout does not classify
 fails; the allowlist drops upstream's `Main.lean` and
 `ConLeche/Challenge.lean` (not part of this kernel) and names files by
-their paths here; an empty `IxC/Kernel/` scans nothing and passes once the
+their paths here; an empty `IxCK/Kernel/` scans nothing and passes once the
 lexer self-test passes; and three patterns are wider than upstream's
 regular expressions, so this fence reports everything they do and more: a
 token's word boundary is ASCII (a non-ASCII letter next to a token is a
@@ -138,11 +138,11 @@ def tokens : List String :=
    "ofReduceBool", "sorry", "lcProof", "extern", "axiom"]
 
 def allow : List (String × List String) := [
-  ("IxC/Kernel/Expr.lean", ["computed_field"]),
-  ("IxC/Kernel/Name.lean", ["computed_field"]),
-  ("IxC/Kernel/Key.lean", ["computed_field"]),
-  ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
-  ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("IxCK/Kernel/Expr.lean", ["computed_field"]),
+  ("IxCK/Kernel/Name.lean", ["computed_field"]),
+  ("IxCK/Kernel/Key.lean", ["computed_field"]),
+  ("IxCK/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
+  ("IxCK/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
   ("Ix/KernelDisplay/Peek.lean", ["unsafe", "unsafeCast"])]
 

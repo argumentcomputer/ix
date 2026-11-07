@@ -1,8 +1,8 @@
 import Ix.Cert.Compile
 import Ix.Cert.CompileCorrect
 import Ix.CompileCertified
-import IxC.Kernel.Audit.Runtime
-import IxC.Kernel.Audit.Roots
+import IxCK.Kernel.Audit.Runtime
+import IxCK.Kernel.Audit.Roots
 
 /-! # The compiler's runtime closure, frozen
 

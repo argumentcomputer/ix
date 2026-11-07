@@ -4,7 +4,7 @@
   then checks each through the full pipeline: Lean env → Ixon → kernel.
   Good constants must pass; bad constants must be rejected.
 
-  The tutorial was written for the Rust kernel. The certified checker (IxC)
+  The tutorial was written for the Rust kernel. The certified checker (IxCK)
   gives four kinds of fixture another verdict, each with the check that
   stands in for the tutorial's (`nativeEvaluationFixtures`,
   `axiomFixtures`, `cornerCases`, `sourceOnlyBad`), as
@@ -40,7 +40,7 @@ private def defs : Lean.Name := `Tests.Ix.Kernel.TutorialDefs
 
 /-- The `native_decide` fixtures (`Arena.nativeEvaluationFixtures` for the
 IxVM kernel). Their proof is an auxiliary axiom that asserts the compiled
-evaluation's result, a non-standard axiom IxC's strict policy declines, so
+evaluation's result, a non-standard axiom IxCK's strict policy declines, so
 they must not pass. The kernel's own reduction of `Nat.ble`/`Nat.beq` on
 literals is checked by `NatReduction`'s `natBle*`/`natBeq*` declarations. -/
 def nativeEvaluationFixtures : Array Lean.Name := #[
@@ -50,7 +50,7 @@ def nativeEvaluationFixtures : Array Lean.Name := #[
 def tutorialAxioms : Array Lean.Name :=
   #[defs ++ `aDepProp, defs ++ `mkADepProp, defs ++ `aType, defs ++ `aProp]
 
-/-- Good fixtures that use the tutorial's axioms. IxC's strict policy
+/-- Good fixtures that use the tutorial's axioms. IxCK's strict policy
 declines a non-standard axiom, so the strict check blocks them; with user
 axioms admitted (`ix check-lean --allow-user-axioms` on the bound artifact,
 `checkWithUserAxioms`) they must be accepted, conditional on tutorial
@@ -59,7 +59,7 @@ def axiomFixtures : Array Lean.Name := #[`letTypeDep, `letRed]
 
 /-- Corner cases: fixtures registered with the good cases (the IxVM arena run,
 which follows the Rust kernel, accepts them) whose right verdict is not
-settled, pinned to IxC's verdict with its reason.
+settled, pinned to IxCK's verdict with its reason.
 
 `nestedSpecLocalF`'s field `P n F` is a nested occurrence whose parametric
 argument `n` is the constructor's own field, so no auxiliary type can be
@@ -71,8 +71,8 @@ something other than the parameter, phantom too), has outcome `either`. Its
 relative `bugs/nested-unused-param`, whose parametric argument was never
 type-checked, is a proof of `False` (lean4#14576, fixed in lean4#14577).
 
-IxC declines it as outside its model, which is neither an acceptance nor a
-rejection. An IxC change that accepts or rejects it is allowed by the
+IxCK declines it as outside its model, which is neither an acceptance nor a
+rejection. An IxCK change that accepts or rejects it is allowed by the
 `either` outcome, and updates the pinned reason. -/
 def cornerCases : Array (Lean.Name × String) :=
   let reason := "decline: direct rec: a nested occurrence of the block (not modeled here)"
@@ -362,7 +362,7 @@ def testTutorialConsts : TestSeq :=
           expected tutorial axioms among {allowed}"
       else passed := passed + 1
 
-    -- Check good test cases (must pass, but for the IxC verdicts above).
+    -- Check good test cases (must pass, but for the IxCK verdicts above).
     -- When a good constant is rejected, pull the raw message string out of
     -- `CheckError.kernelException` rather than calling `repr err` — derived
     -- `Repr` for long multi-line strings is extremely slow (seconds per
@@ -381,7 +381,7 @@ def testTutorialConsts : TestSeq :=
             | _ =>
               failed := failed + 1
               errors := errors.push s!"  ✗ GOOD {n} (native_decide): {msg?.getD "not found"}, \
-                expected IxC not to accept it"
+                expected IxCK not to accept it"
           else if let some (_, reason) := cornerCases.find? (·.1 == n) then
             if msg? == some s!"kernel: {reason}" then passed := passed + 1
             else

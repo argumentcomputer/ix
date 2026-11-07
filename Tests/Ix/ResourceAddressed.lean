@@ -23,7 +23,7 @@ def unitBlock : Constant := {
 `{motive : U → Sort u} → motive U.mk → (t : U) → motive t`, the `k`-like
 large eliminator of a `Prop` with one constructor and no fields, with the
 rule `fun motive mk => mk`. Every Lean inductive comes with its recursor,
-and the typing half (IxC's tiered entry) declines a block without one. -/
+and the typing half (IxCK's tiered entry) declines a block without one. -/
 def unitRec (type ctor : Address) : Constant :=
   let motive := Expr.leanAll (.ref 0 #[]) (.sort 0)
   let typ := Expr.leanAll motive (Expr.leanAll (.app (.var 0) (.ref 1 #[]))

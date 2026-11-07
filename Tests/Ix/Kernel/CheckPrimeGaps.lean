@@ -33,11 +33,11 @@ private def filterFocusConsts (names : Array Lean.Name) : IO (Array Lean.Name) :
     pure filtered
 
 def testLeanCheckPrimeGaps : TestSeq :=
-  .individualIO s!"IxC check {focusConsts.size} inlined PrimeGaps consts" none (do
+  .individualIO s!"IxCK check {focusConsts.size} inlined PrimeGaps consts" none (do
     let names ← filterFocusConsts focusConsts
     let leanEnv ← get_env!
     IO.println s!"[check-primegaps/lean] compiling \
-      selected IxC closure for {names.size} exact subject(s)"
+      selected IxCK closure for {names.size} exact subject(s)"
     Tests.Ix.Kernel.FocusedLeanCheck.checkClosure "check-primegaps/lean"
       "primegaps-reduction" leanEnv names
   ) .done

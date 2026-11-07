@@ -165,7 +165,7 @@ so none of these change:
 
 - the compiler (`Ix/CompileM.lean`);
 - the decompiler (`Ix/DecompileM.lean`);
-- kernel ingress (IxC's reader, `IxC/Kernel/Ixon/Reader.lean`, reads no arena);
+- kernel ingress (IxCK's reader, `IxCK/Kernel/Ixon/Reader.lean`, reads no arena);
 - the FFI marshalling (`crates/ffi/src/lean_ixon/meta.rs`);
 - the proofs (none is about the serialized arena; the sharing proofs in `IxSharingVerify`
   do not touch metadata);
@@ -292,7 +292,7 @@ it, and so were the Rust `resource` and `sharing_exact` tests named below.
 
 This audit was made when four consumers read arenas: the Lean and the Rust decompilers, Rust
 kernel ingress and a Lean kernel ingress since removed. The decompiler (`Ix/DecompileM.lean`)
-is the only one left; IxC's reader reads no metadata.
+is the only one left; IxCK's reader reads no metadata.
 
 - **No code mutates an arena node after allocation.** The only post-allocation read was
   `finishEtaCallSite`, which only reads.

@@ -1,4 +1,4 @@
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 import Ix.Resource.Admit
 
 /-! Exact trust manifest for the executable resource-state invariants.

@@ -1,7 +1,7 @@
 # Design: moving the certified kernel out of the `Ix.` module namespace
 
-Status: implemented on top of the `ix-kernel` dependency restructuring
-(root `lakefile.lean` requires `IxC/`). Two details were settled
+Status: implemented on top of the `ix-ck` dependency restructuring
+(root `lakefile.lean` requires `IxCK/`). Two details were settled
 during implementation and are not in the plan below: the sharing audits in
 `IxSharingVerify/Audit/` accept the `IxSharingVerify` module prefix alongside
 `Ix.Sharing`, since their scope was defined by module name; and the
@@ -10,7 +10,7 @@ standalone step already builds.
 
 ## Problem
 
-The certified kernel package `ix-kernel` owns modules whose names live under
+The certified kernel package `ix-ck` owns modules whose names live under
 the root package's `Ix.` module root: `Ix.Kernel.*`, `Ix.Address.Core` and
 the Ixon codec modules under `Ix.Ixon.*`. Lake resolves a module to the root
 package before dependencies and, inside a package, to the last-declared
@@ -34,17 +34,17 @@ with its consumer.
 
 ## Proposal
 
-Move the dependency-owned modules to a module root of their own, `IxC` (Ix
-Certified). Module paths change by one prefix substitution,
-`Ix.` to `IxC.`, so every module path still mirrors its declaration
+Move the dependency-owned modules to a module root of their own, `IxCK` (Ix
+Certified Kernel). Module paths change by one prefix substitution,
+`Ix.` to `IxCK.`, so every module path still mirrors its declaration
 namespace. Declaration namespaces and import relationships do not change.
 
 | Today | After |
 | --- | --- |
-| `Ix.Kernel`, `Ix.Kernel.X` | `IxC.Kernel`, `IxC.Kernel.X` |
-| `Ix.Address.Core` | `IxC.Address.Core` |
-| `Ix.Ixon.Types`, `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.WireCheck`, `Ix.Ixon.Bounded.*`, `Ix.Ixon.Canonical`, `Ix.Ixon.Verify.*`, `Ix.Ixon.Audit` | the same under `IxC.Ixon.` |
-| `Tests.Ix.Kernel.{IxonFixtures,Codec,ByteAdmission,ParserWork}` | `IxC.Fixtures.{IxonFixtures,Codec,ByteAdmission,ParserWork}` |
+| `Ix.Kernel`, `Ix.Kernel.X` | `IxCK.Kernel`, `IxCK.Kernel.X` |
+| `Ix.Address.Core` | `IxCK.Address.Core` |
+| `Ix.Ixon.Types`, `Ix.Ixon.Codec`, `Ix.Ixon.Wire`, `Ix.Ixon.WireCheck`, `Ix.Ixon.Bounded.*`, `Ix.Ixon.Canonical`, `Ix.Ixon.Verify.*`, `Ix.Ixon.Audit` | the same under `IxCK.Ixon.` |
+| `Tests.Ix.Kernel.{IxonFixtures,Codec,ByteAdmission,ParserWork}` | `IxCK.Fixtures.{IxonFixtures,Codec,ByteAdmission,ParserWork}` |
 
 ### What moves
 
@@ -89,7 +89,7 @@ where they are.
 
 Declaration namespaces. The kernel tree opens `namespace Ix.Kernel…` 487
 times and the codec uses `Ixon` and `Univ`. Lean does not tie a
-declaration's namespace to its module name, so `IxC/Kernel/Admission.lean`
+declaration's namespace to its module name, so `IxCK/Kernel/Admission.lean`
 keeps `namespace Ix.Kernel.Admission`, and the roughly 9,000 qualified
 references to `Ix.Kernel.*` constants across the repository, the axiom pins,
 and the `#guard_kernel_axioms` records stay valid.
@@ -110,11 +110,11 @@ The con-leche attribution. Only the paths in the NOTICE file change.
 ### Layout
 
 The package keeps the repository as its source root (`srcDir := ".."`), so
-the package directory is the `IxC` module directory, the way `Ix/` is
+the package directory is the `IxCK` module directory, the way `Ix/` is
 for the root package:
 
 ```
-IxC/
+IxCK/
   lakefile.lean
   lake-manifest.json
   lean-toolchain
@@ -138,7 +138,7 @@ IxC/
     ParserWork.lean
 ```
 
-### Libraries in `IxC/lakefile.lean`
+### Libraries in `IxCK/lakefile.lean`
 
 Today's two libraries are kept, relocated, plus one for the fixtures. Each
 has its own root, and no library globs a root that another library owns, so
@@ -146,23 +146,23 @@ ownership never depends on declaration order:
 
 ```lean
 @[default_target]
-lean_lib IxC.Kernel where
+lean_lib IxCK.Kernel where
   srcDir := ".."
-  roots := #[`IxC.Kernel]
-  globs := #[.andSubmodules `IxC.Kernel]
+  roots := #[`IxCK.Kernel]
+  globs := #[.andSubmodules `IxCK.Kernel]
   leanOptions := #[⟨`linter.deprecated, false⟩]
 
 @[default_target]
-lean_lib IxC.Ixon where
+lean_lib IxCK.Ixon where
   srcDir := ".."
-  roots := #[`IxC.Address.Core, `IxC.Ixon]
-  globs := #[.one `IxC.Address.Core, .submodules `IxC.Ixon]
+  roots := #[`IxCK.Address.Core, `IxCK.Ixon]
+  globs := #[.one `IxCK.Address.Core, .submodules `IxCK.Ixon]
 
 @[default_target]
-lean_lib IxC.Fixtures where
+lean_lib IxCK.Fixtures where
   srcDir := ".."
-  roots := #[`IxC.Fixtures]
-  globs := #[.submodules `IxC.Fixtures]
+  roots := #[`IxCK.Fixtures]
+  globs := #[.submodules `IxCK.Fixtures]
 ```
 
 Two points are deliberate:
@@ -170,22 +170,22 @@ Two points are deliberate:
 - **Explicit globs, not default roots.** A library with default globs builds
   only its root module's import closure, and the `Ix.Kernel` umbrella imports
   nine modules, omitting `Admission` and every audit. The `.andSubmodules`
-  glob is what makes `lake -d IxC build --wfail` build every kernel
+  glob is what makes `lake -d IxCK build --wfail` build every kernel
   module and audit, as it does today.
 - **Two libraries, not one.** `linter.deprecated := false` exists for the
   con-leche-derived sources and must not extend to the codec, which is
   written for the current toolchain. A single library over the whole package
   would silence deprecation warnings in the codec. The umbrella
-  `IxC/Kernel.lean` is owned by `IxC.Kernel` as today.
+  `IxCK/Kernel.lean` is owned by `IxCK.Kernel` as today.
 
 ## Resulting root `lakefile.lean`
 
 - `lean_lib Ix` returns to default roots and globs. The `ixRoots` list,
   `IxImports` and `IxCertified` are deleted. A new `Ix/Foo.lean` is owned by
   `Ix` automatically.
-- The root `Tests` library imports the fixtures from `IxC.Fixtures`
+- The root `Tests` library imports the fixtures from `IxCK.Fixtures`
   instead of owning them, which restores the standalone fence: a fixture that
-  gains a host import fails `lake -d IxC build --wfail` again.
+  gains a host import fails `lake -d IxCK build --wfail` again.
 - `IxSharingVerify` (`Ix.Sharing.Verify.*`, 33 files) still overlaps a
   default-rooted `Ix`, exactly as at the branch point, and is owned by it
   only because it is declared later. Giving it a sibling root
@@ -201,7 +201,7 @@ Two points are deliberate:
 1. `git mv` the 513 files to the layout above, so history follows.
 2. Rewrite the imports with a script that matches every import form. The
    mapping is one prefix substitution on the dependency-owned module set, and
-   the four fixture modules map to `IxC.Fixtures.*`.
+   the four fixture modules map to `IxCK.Fixtures.*`.
 3. Edit by hand, against the mapping table, the places that hold module
    names as data rather than imports: the allowlist and denylist arrays and
    `#guard`s in the six audit files, the module and path strings in
@@ -210,7 +210,7 @@ Two points are deliberate:
    text and output paths, and the directory list in `sourceFingerprint` in
    `Benchmarks/Kernel/CheckIxePaired.lean`.
 4. Declare the three libraries above, delete `ixRoots`, `IxImports` and
-   `IxCertified`, and point the root tests at `IxC.Fixtures` (today one
+   `IxCertified`, and point the root tests at `IxCK.Fixtures` (today one
    root test, `Tests.Ix.Kernel.Projection`, imports a fixture).
 5. In `flake.nix`, set the library derivation's `name` back to `"Ix"`
    (it currently builds `IxImports`). Keep the `buildDir := "../.lake/kernel"`
@@ -238,7 +238,7 @@ Two points are deliberate:
   the manifest, the hand-written `package-overrides.json`). That belongs in
   lean4-nix.
 - The shared artifact directory. With the sources inside the package
-  directory, Lake's default `IxC/.lake/build` is already one location
+  directory, Lake's default `IxCK/.lake/build` is already one location
   for every workspace that requires the package by path. The
   `buildDir := "../.lake/kernel"` override survives until lean4-nix exports
   path dependencies' artifacts and CI caches that directory; it is not
@@ -248,7 +248,7 @@ Two points are deliberate:
 ## Migrating a local checkout
 
 A checkout that built the intermediate layout (the root requiring
-`ix-kernel` before this move) still holds the old `Ix/` olean tree under
+`ix-ck` before this move) still holds the old `Ix/` olean tree under
 `.lake/kernel/lib/lean/` and `.lake/kernel/ir/`. Lean's module loader takes
 the first search-path entry whose root directory exists, and the dependency's
 entries precede the root's, so that stale `Ix/` directory shadows every

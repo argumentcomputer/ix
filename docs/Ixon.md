@@ -78,7 +78,7 @@ and Tag0, which had the same flag widths (4, 2 and 0 bits). For values below
 byte. Larger values are encoded differently.
 
 The implementation is Lean `Ixon.putTagN f flag value` / `Ixon.getTagN f`
-(`IxC/Ixon/Codec.lean`, which documents the bit layout) and Rust
+(`IxCK/Ixon/Codec.lean`, which documents the bit layout) and Rust
 `ixon::tag::TagN::put` / `TagN::get`.
 
 ### Layout
@@ -122,8 +122,8 @@ to reject. A reader rejects only three things:
 - an 8-byte rung whose value would reach `2^64`;
 - truncated input.
 
-The Lean proofs are in `IxC/Ixon/Verify/TagN.lean` (namespace
-`Ixon.Verify.TagN`, built with the codec proofs by `lake -d IxC build`):
+The Lean proofs are in `IxCK/Ixon/Verify/TagN.lean` (namespace
+`Ixon.Verify.TagN`, built with the codec proofs by `lake -d IxCK build`):
 
 - `runGetExact_getTagN_eq`: accepted encodings are canonical;
 - `putTagN_inj`: distinct values or flags have distinct encodings;
@@ -668,7 +668,7 @@ implementation; the Rust port was retired in PR #677
   Roots may reference any entry. Expanding each `Share(j)` to entry `j`,
   left to right, reproduces the roots exactly. No de Bruijn index is shifted
   at a `Share`. Readers reject a `Share` index outside the table; the
-  decompiler does not yet check backwardness, and IxC's reader fails on a
+  decompiler does not yet check backwardness, and IxCK's reader fails on a
   self or forward reference only when it uses one (see
   [Sharing in metadata expressions](#sharing-in-metadata-expressions)). The
   canonical construction guarantees it for compiler output.
@@ -811,7 +811,7 @@ claim about components that use the new greedy family.
 
 The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
-`IxC/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
+`IxCK/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
 `IxSharingVerify/Audit/Statements.lean` (184 roots including the guarded area evaluator), which
 `lake build --wfail IxSharingVerify` checks: every root uses exactly its
 listed axioms, which are among `propext`, `Classical.choice` and
@@ -1030,7 +1030,7 @@ metadata expression may reference any `metaSharing` entry, including its own,
 and the decompiler does not check that primary entries reference only
 earlier entries. A malformed table of either kind can make it loop instead
 of failing; hardening it against malformed input is follow-up work. Kernel
-ingress (IxC's reader, `MemberReader.mk'`) builds each primary entry against
+ingress (IxCK's reader, `MemberReader.mk'`) builds each primary entry against
 the entries before it, so a self or forward reference it uses is an error.
 
 The primary table is built first and never depends on metadata. No compiler

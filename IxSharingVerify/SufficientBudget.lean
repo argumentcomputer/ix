@@ -1,6 +1,6 @@
 import IxSharingVerify.OutputBound
 import IxSharingVerify.AllocateBudget
-import IxC.Kernel.Audit.Axioms
+import IxCK.Kernel.Audit.Axioms
 
 /-!
 # A sufficient budget for the production sharing rule
