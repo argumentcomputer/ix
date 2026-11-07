@@ -24,8 +24,9 @@ crates have been retired.
 The generic Aiur crate does not depend on IxVM, the legacy interpreter, or a
 Lean installation. The IxVM crate registers its hint channels and table
 accelerators using Aiur's generic APIs. Its Rust binary accepts an exported
-execution package. Lean's `IxVM.parse` loads the application and its shared
-Goldilocks word/hash library; callers select entrypoints with
+execution package. `IxVM.program` is the application with its shared
+Goldilocks word/hash library, elaborated from the Lean modules when the package
+is built; callers select entrypoints with
 `Aiur.Modules.prepare`.
 
 Aiur owns the FFI: `Aiur/c/execution.c` adapts Lean objects to the JSON C ABI
@@ -166,8 +167,8 @@ refinement loop without proving. Reports use `ix-formal-run/1` and contain
 per-part plans, timings, failures and proof addresses. A failed run does not
 publish a refined manifest. Ordinary `ix check` only executes.
 
-`MultiStark/MultiStark/Program.sources` composes the ordinary Aiur recursive
-verifier modules; `Aggregate.sources` reuses them and adds all thirteen current
+`MultiStark.recursionProgram` composes the ordinary Aiur recursive
+verifier modules; `MultiStark.aggregateProgram` reuses them and adds all thirteen current
 aggregation shapes, including range leaves, joins and closure. Both reuse the
 checked byte/word, list, address, Blake3, and Goldilocks libraries. See
 [the module layout](formal-aiur-modules.md) for interfaces and compatibility
@@ -261,16 +262,17 @@ The [batch preparation follow-up](formal-aiur-gpu-preparation.md) records the
 hardware review and fixes for serial host lookup reconstruction, redundant
 trace copying and unnecessary single-shard commitment regeneration.
 
-`tools/ixvm/adapt.py --check` checks reproducibility against the pinned source
-revision. `tools/ixvm/recursion.py --check` and `--aggregate --check` do the same
-for recursive programs. `tools/ixvm/audit.py --out DIR` inventories lexical and
-semantic adaptations; the audit is not a proof of equivalence to legacy IxVM.
+The IxVM and recursive-verifier modules are Lean source (`aiur⟦ … ⟧` blocks;
+see [the module layout](formal-aiur-modules.md)), and the port generators that
+reproduced them from pinned legacy sources are retired. The port's intentional
+differences from legacy IxVM are listed there; they are not a proof of
+equivalence to legacy IxVM.
 The compiler correctness proofs remain intact. Neither those proofs nor the
 port tests constitute a new formal proof of the cryptographic backend or
 discharge the existing memo-acyclicity hypothesis of the semantic model.
 
 The retired legacy native execution crate (`crates/ixvm-legacy-native`),
-`legacy-native` Cargo feature, `ix codegen`, and `trace-fixtures` have been
+`legacy-native` Cargo feature and `trace-fixtures` have been
 removed along with the legacy backend.
 
 Function grouping is now enabled in the IxVM and recursive-verifier exports.

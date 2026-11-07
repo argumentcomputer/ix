@@ -1,12 +1,12 @@
 /-
   `ix prepare [--cuda]`
 
-  Readies the default backend once per source revision, so later commands
+  Readies the default backend once per program and exporter build, so later commands
   start immediately and from any directory: builds its Rust hosts (CPU, and
   with `--cuda` the CUDA hosts too) and exports the certified IxVM and
   aggregation artifacts into the checkout's cache. Cargo rebuilds a host only
   when its sources changed; an artifact is exported only when its exporter or
-  sources changed.
+  the digest of the program it embeds changed.
 -/
 module
 public import Cli
