@@ -3,7 +3,6 @@ import IxVM.FunctionGroups
 import Aiur.Execution.Encode
 import Aiur.Optimized.Program
 import Aiur.Trace.Export
-import Aiur.SourceBundle
 import IxVM.PropagationBench
 
 /-! Experimental stage-one port of IxVM. Prepare source, export bytecode and
@@ -162,21 +161,20 @@ unsafe def main (args : List String) : IO Unit := do
   if mode == "propagation" || mode == "propagation-trace" then
     let some path := args[1]? | throw (IO.userError "propagation requires a chip snapshot path")
     return ← PropagationBench.run (F := F) path (mode == "propagation-trace")
+  if mode == "digest" then
+    IO.println IxVM.programDigest
+    return
   unless ["transitive", "constant", "serde", "primitives", "check", "check-claim", "export-claim", "export-claim-trace", "export", "export-trace", "export-primitives", "stats", "stats-profile", "stats-no-propagation", "stats-reference", "dump-propagation", "grouping-snapshot"].contains mode do
-    throw (IO.userError s!"unknown mode '{mode}'; use transitive, constant, serde, primitives, check, export, export-trace, stats, stats-profile, stats-no-propagation, stats-reference, grouping-snapshot, dump-propagation, propagation, or propagation-trace")
+    throw (IO.userError s!"unknown mode '{mode}'; use digest, transitive, constant, serde, primitives, check, export, export-trace, stats, stats-profile, stats-no-propagation, stats-reference, grouping-snapshot, dump-propagation, propagation, or propagation-trace")
   let entry := match mode with
     | "check-claim" | "export-claim" | "export-claim-trace" | "grouping-snapshot" => "IxVM::verify_claim"
     | "serde" => "IxVM::verify_serde"
     | "constant" => "IxVM::verify_constant"
     | "primitives" | "export-primitives" => "IxVM::check_primitives"
     | _ => "IxVM::verify_transitive"
-  let text ← SourceBundle.read (← sourcePath "Program.sources")
-  initSearchPath (← findSysroot)
-  enableInitializersExecution
-  let env ← importModules (loadExts := true) #[{module := `Aiur.Modules.Frontend}] {} 0
   if profile then IO.eprintln s!"Phase initialization: {(← IO.monoMsNow) - totalStart}ms"
-  IO.eprintln "Parsing and checking IxVM..."
-  let source ← timePhase profile "parsing and source checking" fun _ => IxVM.parse env text
+  IO.eprintln s!"IxVM program {IxVM.programDigest}"
+  let source := IxVM.program
   IO.eprintln "Checking IxVM tables..."
   let start ← IO.monoMsNow
   let entries := if mode == "export" then ["IxVM::verify_transitive", "IxVM::verify_constant", "IxVM::verify_serde", "IxVM::check_primitives", "IxVM::check_port_cases"] else [entry]
