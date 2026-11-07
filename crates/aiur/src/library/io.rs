@@ -45,7 +45,7 @@ impl Streams {
       // This host adapter supports small numbered stream channels. The hint
       // mechanism itself has no such restriction; another closure may be used.
       let channel =
-        usize::try_from(stream.channel).map_err(|_| "IO channel overflow")?;
+        usize::try_from(stream.channel).ok().ok_or("IO channel overflow")?;
       if channel >= 256 {
         return Err("IO arena channel must be below 256".into());
       }
@@ -86,9 +86,11 @@ impl<B: FieldBackend> Arenas<'_, B> {
       },
       move |[channel, offset]| {
         let channel = usize::try_from(field.to_u64(channel))
-          .map_err(|_| "IO channel overflow")?;
+          .ok()
+          .ok_or("IO channel overflow")?;
         let offset = usize::try_from(field.to_u64(offset))
-          .map_err(|_| "IO offset overflow")?;
+          .ok()
+          .ok_or("IO offset overflow")?;
         let end = offset.checked_add(N).ok_or("IO offset overflow")?;
         let row = values
           .get(channel)
@@ -104,7 +106,7 @@ impl<B: FieldBackend> Arenas<'_, B> {
   pub fn metadata(
     &self,
     name: &str,
-    key_type: Type,
+    key_type: &Type,
     fixed_channel: Option<u64>,
     accepts: impl Fn(&Stream) -> bool,
     value: bool,

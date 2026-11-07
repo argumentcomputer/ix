@@ -29,10 +29,10 @@ struct Package {
 fn run(
   program: &CheckedProgram,
   name: &str,
-  args: Vec<u64>,
+  args: &[u64],
   hints: &[HintEntry],
 ) -> Result<Execution, Box<dyn Error>> {
-  let args = program.field().decode(&args)?;
+  let args = program.field().decode(args)?;
   let start = Instant::now();
   let result = ixvm_hints::prepare(program, hints)?.execute(name, args)?;
   let elapsed = start.elapsed();
@@ -134,11 +134,11 @@ fn benchmark(
 fn rejected(
   program: &CheckedProgram,
   label: &str,
-  args: Vec<u64>,
+  args: &[u64],
   hints: &[HintEntry],
   reason: &str,
 ) -> Result<(), Box<dyn Error>> {
-  let args = program.field().decode(&args)?;
+  let args = program.field().decode(args)?;
   match ixvm_hints::prepare(program, hints)?
     .execute("IxVM::verify_constant", args)
   {
@@ -175,7 +175,7 @@ fn negatives(
   rejected(
     program,
     "corrupted serialization",
-    package.address.clone(),
+    &package.address,
     &bad,
     "hash of the supplied bytes",
   )?;
@@ -187,7 +187,7 @@ fn negatives(
   rejected(
     program,
     "wrong Blake3 address",
-    digest,
+    &digest,
     &bad,
     "hash of the supplied bytes",
   )?;
@@ -197,7 +197,7 @@ fn negatives(
   rejected(
     program,
     "missing byte hint",
-    package.address.clone(),
+    &package.address,
     &bad,
     "missing hint",
   )?;
@@ -205,7 +205,7 @@ fn negatives(
     rejected(
       program,
       "correctly hashed invalid proof",
-      package.invalid_address.clone(),
+      &package.invalid_address,
       &package.hints,
       "inferred type is not def-eq",
     )?;
@@ -218,7 +218,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let path = args.get(1).ok_or(
         "usage: ixvm PACKAGE.json [all|primitives|serde|constant|transitive|negative|bench [SAMPLES]|record OUTPUT.json]",
     )?;
-  let mode = args.get(2).map(String::as_str).unwrap_or("all");
+  let mode = args.get(2).map_or("all", String::as_str);
   let package: Package = serde_json::from_slice(&std::fs::read(path)?)?;
   let program =
     package.program.clone().check_field::<multi_stark::types::Val>()?;
@@ -307,7 +307,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       run(
         &program,
         entry,
-        if selected == "primitives" { vec![] } else { package.address.clone() },
+        if selected == "primitives" { &[] } else { &package.address },
         &package.hints,
       )?;
     }

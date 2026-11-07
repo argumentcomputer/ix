@@ -398,8 +398,8 @@ fn ranges(cli: &[String]) -> Result<(), Box<dyn Error>> {
     layer = next;
   }
   for (id, spec) in specs.iter().enumerate() {
-    let lo = spec["lo"].as_u64().unwrap() as usize;
-    let hi = spec["hi"].as_u64().unwrap() as usize;
+    let lo = usize::try_from(spec["lo"].as_u64().unwrap())?;
+    let hi = usize::try_from(spec["hi"].as_u64().unwrap())?;
     if proof.proofs[lo..hi]
       .iter()
       .any(|p| p.intermediate_accumulators.is_empty())

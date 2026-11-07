@@ -45,7 +45,7 @@ fn rebinding_a_fixed_map_to_a_slice_provider_replaces_prepared_calls() {
   fixed
     .insert_fixed::<1, 1>("square", move |[x]| {
       calls.fetch_add(1, Ordering::Relaxed);
-      Ok((x as usize, [x * x]))
+      Ok((usize::try_from(x).unwrap(), [x * x]))
     })
     .unwrap();
   let prepared =
@@ -60,7 +60,7 @@ fn rebinding_a_fixed_map_to_a_slice_provider_replaces_prepared_calls() {
     .insert("square", 1, 1, move |input, output| {
       calls.fetch_add(1, Ordering::Relaxed);
       output[0] = input[0] * input[0];
-      Ok(input[0] as usize)
+      Ok(usize::try_from(input[0]).unwrap())
     })
     .unwrap();
   let prepared = prepared.with_map_overrides(&fallback).unwrap();
@@ -192,7 +192,7 @@ fn provider_errors_and_noncanonical_outputs_fail_execution() {
   maps
     .insert("square", 1, 1, |args, out| {
       out[0] = 97;
-      Ok(args[0] as usize)
+      Ok(usize::try_from(args[0]).unwrap())
     })
     .unwrap();
   let prepared =
@@ -219,7 +219,11 @@ fn binding_checks_actual_row_order_and_runtime_rejects_invalid_indices() {
       out[0] = args[0] * args[0] % 97;
       // Valid on table inputs, but deliberately returns invalid row indices
       // outside its domain. The runtime must report an error without panicking.
-      Ok(if args[0] == 91 { usize::MAX } else { args[0] as usize })
+      Ok(if args[0] == 91 {
+        usize::MAX
+      } else {
+        usize::try_from(args[0]).unwrap()
+      })
     })
     .unwrap();
   let prepared =
@@ -284,7 +288,7 @@ fn fixed_providers_preserve_runtime_validation_and_binding_errors() {
   maps
     .insert_fixed::<1, 1>("square", |[x]| {
       Ok((
-        if x == 90 { usize::MAX } else { x as usize },
+        if x == 90 { usize::MAX } else { usize::try_from(x).unwrap() },
         [if x == 2 { 97 } else { 0 }],
       ))
     })

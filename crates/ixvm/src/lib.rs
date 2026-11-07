@@ -24,21 +24,21 @@ pub fn prepare_streams<'a, B: FieldBackend>(
   let address_key = Type::Tuple { items: vec![Type::Field, address] };
   let mut data = arenas.metadata(
     "ixvm.io.info",
-    address_key.clone(),
+    &address_key,
     None,
     |s| [1, 2, 4, 6].contains(&s.channel),
     false,
   )?;
   data.extend(arenas.metadata(
     "ixvm.io.claim",
-    Type::Tuple { items: vec![Type::Field; 8] },
+    &Type::Tuple { items: vec![Type::Field; 8] },
     Some(0),
     |s| s.channel == 0,
     false,
   )?);
   data.extend(arenas.metadata(
     "ixvm.io.tag",
-    address_key,
+    &address_key,
     None,
     |s| s.channel == 3,
     true,

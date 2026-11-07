@@ -708,7 +708,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
             ));
           }
           return u8::try_from(circuit.preprocessed_height.ilog2())
-            .map_err(|_| format!("fixed circuit {index} log height overflow"));
+            .map_err(|e| format!("fixed circuit {index} log height: {e}"));
         }
         let base = count
           .max(2)
@@ -842,8 +842,8 @@ mod tests {
 
   #[test]
   fn copy_rows_matches_a_serial_copy() {
-    for len in [0, 1, 4 << 16, (4 << 16) + 1, (9 << 16) + 12345] {
-      let values: Vec<Val> = (0..len as u64).map(Val::from_u64).collect();
+    for len in [0_u64, 1, 4 << 16, (4 << 16) + 1, (9 << 16) + 12345] {
+      let values: Vec<Val> = (0..len).map(Val::from_u64).collect();
       assert_eq!(copy_rows(&values), values);
     }
   }

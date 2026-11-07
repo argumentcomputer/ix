@@ -110,6 +110,7 @@ fn standard_order(rows: &[Vec<u64>], width: usize, count: usize) -> bool {
 }
 
 #[inline]
+#[allow(clippy::cast_possible_truncation)] // The value is below LIMIT.
 fn unary<const LIMIT: u64, B: FieldBackend>(
   field: B,
   input: &[B::Element],
@@ -122,6 +123,7 @@ fn unary<const LIMIT: u64, B: FieldBackend>(
 }
 
 #[inline]
+#[allow(clippy::cast_possible_truncation)] // The index is below 2^16.
 fn pair<B: FieldBackend>(
   field: B,
   input: &[B::Element],

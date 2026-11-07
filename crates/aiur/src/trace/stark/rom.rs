@@ -57,7 +57,7 @@ impl Rom {
       // Consecutive addresses in an active prefix prove functionality.
       let width = payload_width
         .checked_add(3)
-        .filter(|&w| w <= u32::MAX as usize)
+        .filter(|&w| u32::try_from(w).is_ok())
         .ok_or("ROM too wide")?;
       let count = main_var(0);
       let active = main_var(1);

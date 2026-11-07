@@ -5,6 +5,9 @@ use crate::{bytecode::Type, field::FieldBackend, hints::HintChannels};
 
 pub const MIN_MODULUS: u64 = 3 * (1_u64 << 32);
 
+// Hint answers are raw: an operand above 32 bits is truncated to its low word,
+// and the source library's constraints reject any answer that is then wrong.
+#[allow(clippy::cast_possible_truncation)]
 pub fn register<B: FieldBackend>(
   channels: &mut HintChannels<B::Element>,
   field: B,
@@ -75,7 +78,8 @@ fn register_sum<const INPUTS: usize, B: FieldBackend>(
         let mut bytes = [0u8; 4];
         for (byte, &value) in bytes.iter_mut().zip(word) {
           *byte = u8::try_from(field.to_u64(value))
-            .map_err(|_| "non-byte u32 sum operand")?;
+            .ok()
+            .ok_or("non-byte u32 sum operand")?;
         }
         sum = sum.wrapping_add(u32::from_le_bytes(bytes));
       }

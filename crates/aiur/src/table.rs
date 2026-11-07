@@ -9,6 +9,7 @@ pub(crate) enum TableIndex<B: FieldBackend = PrimeField> {
   Sparse(FxHashMap<Vec<B::Element>, usize>),
 }
 
+#[allow(clippy::cast_possible_truncation)] // Each index is below the table length.
 fn position<B: FieldBackend>(
   bounds: &[u64],
   key: &[B::Element],

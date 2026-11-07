@@ -89,8 +89,7 @@ impl<F> MapOverrides<F> {
         inputs: INPUTS,
         outputs: OUTPUTS,
         function: Arc::new(move |args, output| {
-          let input =
-            args.try_into().map_err(|_| "map input width mismatch")?;
+          let input = args.try_into().ok().ok_or("map input width mismatch")?;
           let (row, answer) = function(input)?;
           output.copy_from_slice(&answer);
           Ok(row)

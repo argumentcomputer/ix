@@ -626,7 +626,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }
       active.push(height != 0);
       if height != 0 {
-        degrees.push(height.ilog2() as u8);
+        degrees.push(
+          u8::try_from(height.ilog2())
+            .ok()
+            .ok_or("trace height log overflow")?,
+        );
       }
     }
     Ok((active, degrees))

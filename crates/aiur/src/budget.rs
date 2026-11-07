@@ -32,7 +32,7 @@ impl std::fmt::Display for StorageError {
 
 impl Budget {
   #[inline]
-  pub fn reserve(&self, bytes: usize) -> Result<(), BudgetError> {
+  pub(crate) fn reserve(&self, bytes: usize) -> Result<(), BudgetError> {
     if let Some(reservation) = &self.0 {
       reservation.reserve(bytes)?;
     }
@@ -40,7 +40,7 @@ impl Budget {
   }
 
   #[inline]
-  pub fn vector<T>(
+  pub(crate) fn vector<T>(
     &self,
     values: &Vec<T>,
     additional: usize,
@@ -53,13 +53,13 @@ impl Budget {
         .saturating_add(additional)
         .max(values.capacity().saturating_mul(2))
         .max(8);
-      self.reserve(capacity.saturating_mul(std::mem::size_of::<T>()))?;
+      self.reserve(capacity.saturating_mul(size_of::<T>()))?;
     }
     Ok(())
   }
 
   #[inline]
-  pub fn hash<T>(
+  pub(crate) fn hash<T>(
     &self,
     len: usize,
     capacity: usize,
@@ -71,7 +71,7 @@ impl Budget {
           .saturating_add(1)
           .next_power_of_two()
           .saturating_mul(4)
-          .saturating_mul(std::mem::size_of::<T>() + 1),
+          .saturating_mul(size_of::<T>() + 1),
       )?;
     }
     Ok(())

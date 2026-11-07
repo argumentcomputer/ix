@@ -54,11 +54,10 @@ impl<B: FieldBackend> QueryTable<B> {
   fn new(input_width: usize, output_width: usize, field: B) -> Self {
     let stride = input_width + output_width;
     // At most 4096 rows / 512 KiB per chunk (one full row if wider).
-    let chunk_shift =
-      (524288 / std::mem::size_of::<B::Element>().max(1) / stride.max(1))
-        .max(1)
-        .ilog2()
-        .min(12);
+    let chunk_shift = (524288 / size_of::<B::Element>().max(1) / stride.max(1))
+      .max(1)
+      .ilog2()
+      .min(12);
     Self {
       budget: Default::default(),
       field,
@@ -159,7 +158,7 @@ impl<B: FieldBackend> QueryTable<B> {
         self
           .stride
           .saturating_mul(self.chunk_mask + 1)
-          .saturating_mul(std::mem::size_of::<B::Element>()),
+          .saturating_mul(size_of::<B::Element>()),
       )?;
       self.rows.push(Vec::with_capacity(self.stride * (self.chunk_mask + 1)));
     }

@@ -132,7 +132,7 @@ fn record(
           start.elapsed().as_secs_f64(),
         ));
       },
-      Err(super::PrepFailure::Resource(BudgetError::Cancelled)) => continue,
+      Err(super::PrepFailure::Resource(BudgetError::Cancelled)) => {},
       Err(super::PrepFailure::Resource(e)) => return Err(e.to_string()),
       Err(super::PrepFailure::Other(e)) => return Err(e),
     }
@@ -213,7 +213,7 @@ fn validate_owned_key(key: &[u64], width: usize) -> Result<(), String> {
   }
 }
 
-pub fn run(
+pub(crate) fn run(
   artifact: &Path,
   specification: &Path,
   out: &Path,
@@ -266,7 +266,7 @@ pub fn run(
     .checked_sub(planning::resident_memory().saturating_mul(5) / 4)
     .ok_or("distributed budget is below resident setup")?;
   let records_bytes =
-    usize::try_from(remaining / 2).map_err(|_| "record pool overflow")?;
+    usize::try_from(remaining / 2).ok().ok_or("record pool overflow")?;
   if records_bytes == 0 {
     return Err("no record capacity remains".into());
   }

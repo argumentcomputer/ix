@@ -18,7 +18,9 @@ fn k(x: u64) -> Json {
   json!({"const":x})
 }
 fn step(action: Json) -> Json {
-  json!({"guard":k(1), "action":action})
+  let mut step = json!({"guard":k(1)});
+  step["action"] = action;
+  step
 }
 fn writes(n: usize) -> Vec<Json> {
   (0..n).map(|i| json!({"column":i,"source":i,"guard":k(1)})).collect()
@@ -521,7 +523,7 @@ fn map_overrides_populate_witnesses_but_cannot_replace_certifying_tables() {
       let row = x
         .checked_sub(2)
         .filter(|&row| row < 3)
-        .map(|row| row as usize)
+        .map(|row| usize::try_from(row).unwrap())
         .ok_or_else(|| "no table entry for map input".to_owned())?;
       Ok((row, [x * x + u64::from(!correct)]))
     };
@@ -579,7 +581,7 @@ fn an_accelerator_cannot_certify_a_missing_input_by_returning_a_valid_row() {
     .insert_fixed::<1, 1>("square", |[x]| {
       // Correct numbering on all three table rows (2, 3, 4), so binding
       // succeeds. Deliberately aliases the missing input 5 to the row for 2.
-      let row = if x == 5 { 0 } else { x as usize - 2 };
+      let row = if x == 5 { 0 } else { usize::try_from(x).unwrap() - 2 };
       Ok((row, [x * x]))
     })
     .unwrap();
@@ -1079,7 +1081,7 @@ fn native_field_witnesses_and_proofs_match_the_integer_backend() {
         .as_canonical_u64()
         .checked_sub(2)
         .filter(|&row| row < 3)
-        .map(|row| row as usize)
+        .map(|row| usize::try_from(row).unwrap())
         .ok_or_else(|| "no table entry for map input".into())
     })
     .unwrap();
@@ -1315,8 +1317,8 @@ fn cuda_host_plan_omits_device_phases() {
 fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
   #[derive(serde::Deserialize)]
   struct Package {
-    program: crate::Program,
-    trace: crate::trace::TraceArtifact,
+    program: Program,
+    trace: TraceArtifact,
   }
   let package: Package = serde_json::from_str(include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),

@@ -41,7 +41,10 @@ pub(super) fn eliminate<F>(function: &mut Function, inverses: &[Option<F>]) {
   // Validated intra-function control flow is forward-only. Union successor
   // liveness before processing each instruction, including both branch arms.
   for pc in (0..function.code.len()).rev() {
-    use Instruction::*;
+    use Instruction::{
+      AssertEq, Binary, Branch, Call, Copy, Fail, Guard, Hint, Jump, Literal,
+      Load, Neg, Ret, Store,
+    };
     let mut live = match &function.code[pc] {
       Ret { .. } | Fail { .. } => empty.clone(),
       Jump { target } => before.get(*target).unwrap_or(&empty).clone(),
@@ -146,10 +149,12 @@ mod tests {
   use serde_json::{Value, json};
 
   fn program(code: Value, registers: usize) -> Program {
+    let mut function = json!({"name": "root", "params": [{"kind": "field"}],
+        "result": {"kind": "field"}, "registers": registers});
+    function["code"] = code;
     serde_json::from_value(json!({
         "version": 2, "modulus": 65537, "enums": [], "tables": [], "maps": [],
-        "functions": [{"name": "root", "params": [{"kind": "field"}],
-            "result": {"kind": "field"}, "registers": registers, "code": code}],
+        "functions": [function],
         "entries": [{"name": "root", "function": 0,
             "inputs": [{"kind": "field"}], "output": {"kind": "field"}}]
     }))

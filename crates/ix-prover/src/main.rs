@@ -72,8 +72,9 @@ impl Log {
   }
 }
 
-fn fail(error: impl ToString) -> Value {
-  json!({"verified":false, "error":error.to_string()})
+fn fail(error: impl Into<String>) -> Value {
+  let error: String = error.into();
+  json!({"verified":false, "error":error})
 }
 
 fn tracing(enabled: bool) -> Result<(), String> {
@@ -362,7 +363,7 @@ impl Drop for Shutdown<'_> {
   }
 }
 
-fn serve(config: Config, dir: &Path) -> Result<(), String> {
+fn serve(config: &Config, dir: &Path) -> Result<(), String> {
   tracing(config.texray)?;
   if config.artifacts.is_empty()
     || config.devices.is_empty()
@@ -442,7 +443,7 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
     .checked_sub(static_bytes.saturating_mul(5) / 4)
     .ok_or("RAM budget cannot hold resident artifacts and prover systems")?;
   let records_bytes =
-    usize::try_from(remaining / 2).map_err(|_| "record pool overflow")?;
+    usize::try_from(remaining / 2).ok().ok_or("record pool overflow")?;
   if records_bytes == 0 {
     return Err("no record capacity remains".into());
   }
@@ -644,7 +645,8 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
         let priority = job.priority;
         prep_queue
           .push(Prep { job, artifact, reservation }, priority)
-          .map_err(|_| "execution queue closed")?;
+          .ok()
+          .ok_or("execution queue closed")?;
         active += 1;
         preparing += 1;
       }
@@ -667,7 +669,7 @@ fn main() {
   let result = if args.len() == 4 && args[1] == "serve" {
     let dir = PathBuf::from(&args[3]);
     read_json(Path::new(&args[2]))
-      .and_then(|config| serve(config, &dir))
+      .and_then(|config| serve(&config, &dir))
       .inspect_err(|error| {
         let _ = atomic_json(&dir.join("failed.json"), &fail(error));
       })

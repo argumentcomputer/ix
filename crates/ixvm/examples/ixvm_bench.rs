@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let addr_ptr = *key.args.last().ok_or("missing address arg")?;
         let cell = record
           .memory
-          .get_by_width(32, program.field().to_u64(addr_ptr) as usize)
+          .get_by_width(32, usize::try_from(program.field().to_u64(addr_ptr))?)
           .ok_or("missing address cell")?;
         assert_eq!(cell.cell.value.len(), 32);
         addresses.insert(

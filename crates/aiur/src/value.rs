@@ -224,7 +224,8 @@ impl IoType {
         }
         let tag = if tagged {
           usize::try_from(field.to_u64(words[0]))
-            .map_err(|_| "invalid enum tag")?
+            .ok()
+            .ok_or("invalid enum tag")?
         } else {
           0
         };
