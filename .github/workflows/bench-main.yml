@@ -20,8 +20,9 @@ name: Benchmark main
 # Each entry uploads to its own bencher testbed. No regression thresholds
 # are configured, so uploads raise no alerts. When the kernel REJECTS a
 # constant, `ix bench run` exits 3 and that step fails visibly — but the
-# clean rows still upload, because `ix bench bmf` drops every non-ok row
-# (rejected or OOM) before the upload.
+# clean rows still upload, because `ix bench bmf` keeps only `ok` and
+# `conditional` rows (a complete check under listed user axioms), dropping
+# rejected and OOM rows before the upload.
 
 on:
   push:
@@ -369,8 +370,8 @@ jobs:
           path: bench-hardware.txt
           key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # Convert rows for upload even when the run step failed: bmf drops
-      # every non-ok row (rejected or OOM), so only clean measurements
-      # reach bencher. bmf exits nonzero when NO ok rows survive — the
+      # rejected and OOM rows, so only clean measurements reach bencher.
+      # bmf exits nonzero when NO measured rows survive — the
       # steady state for a cell whose only constant exceeds the RAM
       # ceiling (the OOM row documents the gap) — so that skips the
       # upload without failing the job; the run step above is the

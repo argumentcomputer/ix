@@ -631,7 +631,8 @@ def shardMeasure (k : String) : String :=
 def toBmf (rows : Json) : Json := Id.run do
   let mut out : Array (String × Json) := #[]
   for name in rowNames rows do
-    if rowStatus rows name != "ok" then continue
+    -- A conditional row is a complete check whose verdict lists user axioms.
+    if !["ok", "conditional"].contains (rowStatus rows name) then continue
     let some row := (rows.getObjVal? name).toOption | continue
     let mut measures : Array (String × Json) := #[]
     let mut shardRows : Array (String × Array (String × Json)) := #[]
