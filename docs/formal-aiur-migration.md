@@ -213,8 +213,9 @@ planning and refinement loop without proving, and `ix shard refine` runs it
 with a per-leaf budget (85% of available memory by default), keeping every
 leaf that already has a verified proof in the shard-proof index. Reports use
 `ix-formal-run/1` and contain per-part plans, timings, failures and proof
-addresses. A failed run does not publish a refined manifest and exits 1;
-`ix shard refine` on the retired backend wrote its manifest anyway and exited 2.
+addresses. A failed run does not publish a refined manifest and exits 1 (3, the
+benchmark contract's rejection code, under `ix check --json`); `ix shard refine`
+on the retired backend wrote its manifest anyway and exited 2.
 Ordinary `ix check` only executes.
 
 `MultiStark/MultiStark/Program.sources` composes the ordinary Aiur recursive
