@@ -398,7 +398,7 @@ syntax (name := embedded) "aiur⟦" declsText "⟧" : term
 /-- Run `x` without counting its allocations against `maxHeartbeats`, which
 bounds elaboration's search. Lowering a program block and evaluating a program
 are linear in its size, so a large program needs no heartbeat budget. -/
-private def uncounted [Monad m] [MonadLiftT BaseIO m] (x : m α) : m α := do
+def uncounted [Monad m] [MonadLiftT BaseIO m] (x : m α) : m α := do
   let heartbeats ← IO.getNumHeartbeats
   let result ← x
   IO.setNumHeartbeats heartbeats
