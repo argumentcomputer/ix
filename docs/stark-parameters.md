@@ -63,7 +63,20 @@ lake exe fri-security stats.json --table \
 It also reads the compression stage's FRI key
 (`fri_sizing --statistics outer-vk.bin`, see
 [compression stage boundaries](compression-stage-collapse.md)), and
-`--instance` takes an instance's facts directly.
+`--instance` takes an instance's facts directly. It covers FRI only; the BN254
+KZG stages after it are not FRI.
+
+Under the default parameters, the weakest term of each regime is (bits, and
+the limiting term):
+
+| Instance | Unique decoding | Johnson, BCHKS25 | Johnson, DKT26 | Conjectured |
+| --- | --- | --- | --- | --- |
+| IxVM `Nat.add_comm` (2^16 rows, 158 circuits, 1.5M lookup rows) | 87.8 (query) | 85.2 (batching) | 87.9 (batching) | 100.1 (lookup) |
+| Its recursive verifier (2^22 rows, 68 circuits, 367M lookup rows) | 87.8 (query) | 80.3 (batching) | 82.9 (batching) | 92.2 (lookup) |
+
+So the provable security of a recursive proof is about 80 bits and its
+conjectured security about 92; the extension field, not the FRI parameters,
+sets both. Larger instances lose more.
 
 ## The floor
 
@@ -79,8 +92,8 @@ Building a backend (`Backend::new`, `for_batch`, `for_batch_verification`,
 `for_batch_on_device`) checks it, and so do both key decoders
 (`stark_key::from_bytes` and `aiur::trace::stark::VerifyingKey::from_bytes`),
 including the compression pipeline's root key. The floor makes "never weaker
-than main" a property of the code: a key at #678's original setting (blowup 2,
-64 queries, no proof of work: 64 bits) is rejected.
+than main" a property of the code: a key at #678's original setting
+(`log_blowup` 1, 64 queries, no proof of work: 64 bits) is rejected.
 
 Tests whose toy keys keep recursive circuits small use
 `from_bytes_below_floor` and `Backend::for_batch_below_floor`. They are hidden
@@ -104,3 +117,44 @@ from the documentation and must never decode or build a key a verifier trusts.
 For measurements, `compare` (`crates/stark-verifier/examples/compare.rs`)
 takes `--parameters LOG_BLOWUP,QUERIES,COMMIT_POW,QUERY_POW`, and
 `--below-floor` for weaker settings.
+
+## Choosing the parameters
+
+Candidate sets with at least the default's 220 conjectured bits, measured on
+2026-11-07 at `b919c570` on a 64-core Xeon 6975P-C, CPU only, with the box to
+itself (`compare --parameters`). Each row proves IxVM's `Nat.add_comm` claim,
+then runs the recursive verifier on that proof and proves it, both under the
+row's parameters. Security is each regime's weakest term on the recursive
+verifier's instance. #678's original setting is the first row, for reference.
+
+| log_blowup, queries, commit PoW, query PoW | Conjectured query bits | IxVM prove (s) | IxVM proof (MB) | Recursion cells (M) | Recursion FFT cost (G) | Recursion prove (s) | Recursion peak RSS (GB) | Recursion proof (MB) | Unique decoding | Johnson (BCHKS25 / DKT26) | Conjectured |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1, 64, 0, 0 | 64 | 0.49 | 6.00 | 930 | 142 | 20.7 | 45.8 | 3.17 | 26.6 | 31.9 / 31.9 | 62.3 |
+| **2, 100, 0, 20 (default)** | 220 | 0.69 | 9.20 | 1,037 | 160 | 29.4 | 71.1 | 4.88 | 87.8 | 80.3 / 82.9 | 92.2 |
+| 1, 200, 0, 20 | 220 | 0.56 | 17.90 | 1,839 | 292 | 39.9 | 82.9 | 9.36 | 92.2 | 81.0 / 83.8 | 92.2 |
+| 3, 67, 0, 20 | 221 | 0.92 | 6.32 | 944 | 144 | 40.1 | 111.7 | 3.39 | 75.6 | 77.8 / 80.9 | 92.2 |
+| 4, 50, 0, 20 | 220 | 1.36 | 4.84 | 929 | 141 | | | | 65.6 | 75.3 / 78.9 | 92.2 |
+| 2, 96, 0, 28 | 220 | 6.59 | 8.85 | 1,032 | 159 | | | | 91.8 | 80.3 / 82.9 | 92.2 |
+| 2, 100, 16, 20 | 220 | 0.75 | 9.20 | 1,037 | 160 | | | | 87.8 | 80.3 / 82.9 | 92.2 |
+
+- The conjectured regime is the same for every set: the lookup term, which the
+  field sets, limits it.
+- A larger blowup (`log_blowup` 3 or 4) shrinks IxVM proofs by up to 47 % and
+  the recursive verifier by up to 10 %. It costs the inner prover time and
+  memory, and the recursive proof under blowup 8 took 36 % longer and 57 %
+  more memory. It also loses 2.5 to 22 provable bits, because the Johnson
+  batching term and the unique-decoding query term both weaken as the rate
+  falls.
+- `log_blowup` 1 with 200 queries is provably slightly stronger. It doubles the
+  recursive verifier's queries: 77 % more cells, a 36 % slower recursive
+  proof and proofs twice as large.
+- Moving 4 queries into 8 more bits of query proof of work gains 4 provable
+  bits under unique decoding and saves under 1 % of the recursive verifier,
+  but grinding 2^28 adds about 6 s to every proof.
+- Commit-phase proof of work only strengthens the commit term, which limits no
+  regime here.
+
+No candidate is clearly better at equal or better security, so the default
+stays at main's parameters. `Nat.add_comm` is small; on large claims the
+inner prover's LDE, and so its time and memory, grows with `2^log_blowup`,
+which weighs further against a larger blowup.
