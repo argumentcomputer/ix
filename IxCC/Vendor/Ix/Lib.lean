@@ -8,6 +8,7 @@ utilities accumulate.
 -/
 
 public section
+namespace IxCC.Vendor
 @[expose] section
 
 /-! ### `List.mapM` / `Array.mapM` progress in `Except` -/
@@ -184,4 +185,5 @@ theorem Std.HashMap.getElem?_foldl_insert_of_pairwise_distinct
   simp
 
 end -- @[expose] section
+end IxCC.Vendor
 end

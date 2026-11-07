@@ -7,7 +7,7 @@ binding. Erasing the rank before matching messages is not sufficient. -/
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 theorem functionMessage_rank {leftFunction rightFunction : G}
     {leftInputs leftOutputs rightInputs rightOutputs : List G} {leftRank rightRank : G}
@@ -41,7 +41,7 @@ theorem bound_message_rank {child : Limbs} (bounded : child.Bounded)
   exact ⟨rfl, child.value_lt bounded⟩
 
 theorem ordered_message_of_balance {demands : List (List G)} {providers : List RangeRow}
-    (balanced : RangeBalanced demands providers) (budget : demands.length < _root_.Aiur.gSize.toNat)
+    (balanced : RangeBalanced demands providers) (budget : demands.length < _root_.IxCC.Vendor.Aiur.gSize.toNat)
     {parent gap child : Limbs}
     (requested : ∀ message ∈ parent.requests ++ gap.requests ++ child.requests, message ∈ demands)
     {callerFunction providerFunction : G} {callInputs callOutputs providerInputs providerOutputs : List G}

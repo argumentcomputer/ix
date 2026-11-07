@@ -8,7 +8,7 @@ neither follows merely from addressed bytecode/component ingress. -/
 
 namespace IxCC.Aiur
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 open OracleEval (Values AdviceOracle)
 
 theorem Trace.Derivation.bytecode {toplevel : Toplevel} {oracle : AdviceOracle} {trace : Trace}

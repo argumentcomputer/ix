@@ -2,11 +2,14 @@ import IxCC.Tools.Check
 
 /-! Exact pure-source inventory for the initial Aiur target reference.
 
-The reference is vendored from ix under `IxCC.Vendor`: upstream module `M`
-is `IxCC.Vendor.M`, at `IxCC/Vendor/<path of M>`, so it never shares a module
-name with ix's own packages. That prefix in the vendored imports is the only
-difference from upstream. The check restores each vendored source's upstream
-imports and compares the result with the recorded upstream SHA-256. -/
+The reference is vendored from ix under `IxCC.Vendor`, so it shares neither a
+module nor a declaration name with ix's own packages: upstream module `M` is
+`IxCC.Vendor.M`, at `IxCC/Vendor/<path of M>`, and every vendored declaration
+`D` is `IxCC.Vendor.D`. Two mechanical edits are the only difference from
+upstream: the prefix of each `Ix` import, and a `namespace IxCC.Vendor` line
+right after the file's first `public section` with its `end IxCC.Vendor` right
+before the file's final `end`. The check undoes both and compares the result
+with the recorded upstream SHA-256. -/
 
 namespace IxCC.Tools.AiurCheck
 
@@ -20,6 +23,9 @@ def vendorDir : FilePath := "IxCC/Vendor"
 /-- Vendored module `IxCC.Vendor.M` is upstream module `M`. -/
 def modulePrefix := "IxCC.Vendor."
 
+/-- Vendored declaration `IxCC.Vendor.D` is upstream declaration `D`. -/
+def vendorNamespace := "IxCC.Vendor"
+
 def upstreamFiles : List String := [
   "Ix/Lib.lean", "Ix/IndexMap.lean", "Ix/Aiur/Goldilocks.lean",
   "Ix/Aiur/Stages/Source.lean", "Ix/Aiur/Stages/Typed.lean", "Ix/Aiur/Stages/Simple.lean",
@@ -31,12 +37,24 @@ def localFiles : List String := ["README.md", "upstream.json"]
 
 private def importKeywords : List String := ["import ", "public import "]
 
-/-- A vendored Lean source's upstream text: each import of `IxCC.Vendor.M`
-becomes the upstream import of `M`. An import of an `Ix` module that does not
-carry the prefix is refused, so the vendored text is exactly the upstream text
-with every `Ix` import prefixed. -/
+/-- A vendored Lean source's upstream text. The `namespace IxCC.Vendor` line
+must directly follow the first `public section` line and its `end IxCC.Vendor`
+must directly precede the final `end` line; both are removed. Each import of
+`IxCC.Vendor.M` becomes the upstream import of `M`, and an import of an `Ix`
+module without the prefix is refused. Nothing else may mention `IxCC.Vendor`,
+so the vendored text is exactly the upstream text under these two edits. -/
 def upstreamText (path text : String) : IO String := do
-  let lines ← (text.splitOn "\n").mapM fun line => do
+  let lines := text.splitOn "\n"
+  let opening := s!"namespace {vendorNamespace}"
+  let closing := s!"end {vendorNamespace}"
+  let some start := lines.findIdx? (· == "public section")
+    | throw (IO.userError s!"vendored {path} has no public section")
+  need (lines[start + 1]? == some opening) s!"vendored {path} lacks `{opening}` after `public section`"
+  let count := lines.length
+  need (count ≥ 3 && lines[count - 1]? == some "" && lines[count - 2]? == some "end" &&
+    lines[count - 3]? == some closing) s!"vendored {path} lacks `{closing}` before its final `end`"
+  let unwrapped := (lines.eraseIdx (count - 3)).eraseIdx (start + 1)
+  let restored ← unwrapped.mapM fun line => do
     let some keyword := importKeywords.find? (fun keyword => line.startsWith keyword)
       | return line
     let target := (line.drop keyword.length).toString
@@ -44,7 +62,9 @@ def upstreamText (path text : String) : IO String := do
       return keyword ++ (target.drop modulePrefix.length).toString
     need (!target.startsWith "Ix.") s!"vendored {path} imports upstream module {target}"
     return line
-  return "\n".intercalate lines
+  let upstream := "\n".intercalate restored
+  need (!upstream.contains vendorNamespace) s!"vendored {path} mentions {vendorNamespace} elsewhere"
+  return upstream
 
 private def sha256Text (text : String) : IO String :=
   IO.FS.withTempFile fun handle path => do
@@ -73,7 +93,8 @@ def verifyVendor (root : FilePath) : IO Unit := do
   need ((← strField pin "repository") == "https://github.com/argumentcomputer/ix" &&
     (← strField pin "revision") == revision &&
     (← strField pin "upstream_toolchain") == "leanprover/lean4:v4.33.1" &&
-    (← strField pin "module_prefix") == modulePrefix)
+    (← strField pin "module_prefix") == modulePrefix &&
+    (← strField pin "namespace") == vendorNamespace)
     "Aiur upstream identity differs"
   let hashes ← pairs (← field pin "upstream_files_sha256")
   need ((hashes.map Prod.fst).mergeSort (· ≤ ·) == upstreamFiles.mergeSort (· ≤ ·))
@@ -124,11 +145,17 @@ def mutationChecks (root : FilePath) : IO Unit := IO.FS.withTempDir fun temporar
   IO.FS.writeFile importer reverted
   mustReject "unprefixed import" (verifyVendor temporary)
   IO.FS.writeFile importer text
+  -- a vendored file without its namespace wrapper
+  let wrapped := copied / "Ix/Aiur/Goldilocks.lean"
+  let text ← IO.FS.readFile wrapped
+  IO.FS.writeFile wrapped (text.replace s!"namespace {vendorNamespace}\n" "")
+  mustReject "unwrapped declarations" (verifyVendor temporary)
+  IO.FS.writeFile wrapped text
   verifyVendor temporary
 
 def run (root : FilePath) : IO Unit := do
   verifyVendor root
   mutationChecks root
-  IO.println "aiur-inventory-ok: 11 upstream Lean modules (imports under IxCC.Vendor), 2 licenses, 5 mutation rejections"
+  IO.println "aiur-inventory-ok: 11 upstream Lean modules (modules and declarations under IxCC.Vendor), 2 licenses, 6 mutation rejections"
 
 end IxCC.Tools.AiurCheck

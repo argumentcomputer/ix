@@ -8,7 +8,7 @@ by the checked program; no per-edge counter or mode choice is accepted. -/
 
 namespace IxCC.Aiur.Static
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 
 structure AssignmentLimits where
   maxPairs : Nat := 65536

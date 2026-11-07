@@ -2,7 +2,7 @@ import IxCC.Aiur.OracleEval.Gadgets
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 def read (state : State) (index : Nat) : Except Error G :=
   match state.values[index]? with

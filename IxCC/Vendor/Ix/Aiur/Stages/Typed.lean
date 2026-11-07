@@ -9,6 +9,7 @@ child has been flattened into direct `.tuple` / `.array` constructors.
 -/
 
 public section
+namespace IxCC.Vendor
 
 namespace Aiur
 
@@ -132,4 +133,5 @@ end Typed
 
 end Aiur
 
+end IxCC.Vendor
 end

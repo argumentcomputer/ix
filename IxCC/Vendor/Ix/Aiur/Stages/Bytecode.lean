@@ -9,6 +9,7 @@ same datatype.
 -/
 
 public section
+namespace IxCC.Vendor
 
 namespace Aiur
 
@@ -174,4 +175,5 @@ end Bytecode
 
 end Aiur
 
+end IxCC.Vendor
 end

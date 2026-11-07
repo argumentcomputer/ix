@@ -7,8 +7,8 @@ namespace IxCCTests.Aiur.Execution
 
 open IxCC.Aiur
 open IxCC.Aiur.OracleEval
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode (Block Toplevel)
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Block Toplevel)
 
 def provider (message : Message) (demands : List Message := []) (weight : G := 1)
     (active : Bool := true) : Row := ⟨active, message, weight, demands⟩

@@ -6,7 +6,7 @@ use canonical residues and concrete bounds, not primality or field axioms. -/
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem mul_n (left right : G) : (left * right).n = (left.n * right.n) % gSize.toNat :=
   G.ofNat_n _

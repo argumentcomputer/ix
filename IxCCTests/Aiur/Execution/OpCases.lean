@@ -8,7 +8,7 @@ namespace IxCCTests.Aiur.Execution
 
 open IxCC.Aiur
 open IxCC.Aiur.OracleEval
-open _root_.Aiur.Bytecode (Op Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Op Toplevel)
 
 structure OpCase where
   name : String

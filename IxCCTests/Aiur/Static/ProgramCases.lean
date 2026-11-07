@@ -3,8 +3,8 @@ import IxCCTests.Aiur.Static.Fixtures
 namespace IxCCTests.Aiur.Static
 
 open IxCC.Aiur
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 def inferredCounter (toplevel : Toplevel) (mode : UnitCounter.Mode) (step : G) : Bool :=
   match Static.prepare {} toplevel with

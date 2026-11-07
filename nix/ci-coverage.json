@@ -1547,7 +1547,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "e1dff426: rename to IxCC; vendor the Aiur reference as IxCC.Vendor.Ix.*; preserve all 5353 assertions and runtime coverage",
+ "e1dff426: rename to IxCC; vendor the Aiur reference as IxCC.Vendor.Ix.* with its declarations under the IxCC.Vendor namespace (the 7 Aiur fences name IxCC.Vendor.Aiur.*, axioms unchanged); preserve all 5353 assertions and runtime coverage",
  "axiom_sha256":
- "e6495414786b1b285e23303672a8a56ae5075b44b5fcef844506c368ee736986",
+ "8632071603377f4623b354fdd11bfee563c511ecfb9adb7e33edee49c3e6a90d",
  "axiom_count": 5353}

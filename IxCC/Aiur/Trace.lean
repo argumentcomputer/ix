@@ -10,7 +10,7 @@ are counted in Nat and embedded only when expressing lookup balance.
 
 namespace IxCC.Aiur
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 inductive Message where
   | function (function : Nat) (inputs outputs : List G)

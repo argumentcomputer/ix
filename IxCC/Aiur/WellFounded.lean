@@ -9,7 +9,7 @@ certificate and the keyed AIR establish those properties is separate work.
 
 namespace IxCC.Aiur
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 structure RowFacts where
   order : Nat
@@ -88,7 +88,7 @@ theorem noShortCycle (walk : Nat → Row) (length : Nat)
     have impossible := increasing length (Nat.le_refl _)
     rw [closed.2] at impossible
     omega
-  · have counter := _root_.Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle
+  · have counter := _root_.IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle
       (fun i => (certificate.facts (walk i)).counter) positive short
       (fun i hi => by simpa [ranked] using steps i hi)
     exact counter (by rw [closed.2])

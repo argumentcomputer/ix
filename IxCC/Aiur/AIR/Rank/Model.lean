@@ -5,7 +5,7 @@ The physical range channel is 15; it is distinct from the two-byte channel. -/
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 abbrev limbBound : Nat := 65536
 abbrev rankBound : Nat := 281474976710656

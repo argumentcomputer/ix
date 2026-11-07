@@ -14,6 +14,7 @@ The `gadget` arm of the previous `Layout` is dropped.
 -/
 
 public section
+namespace IxCC.Vendor
 @[expose] section
 
 namespace Aiur
@@ -334,4 +335,5 @@ end Concrete
 end Aiur
 
 end -- @[expose] section
+end IxCC.Vendor
 end

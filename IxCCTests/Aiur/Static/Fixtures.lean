@@ -4,8 +4,8 @@ import IxCC.Aiur.Static
 namespace IxCCTests.Aiur.Static
 
 open IxCC.Aiur
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode (Block Toplevel)
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Block Toplevel)
 open IxCCTests.Aiur.Execution (mkFunction provider)
 
 def need (count : IO.Ref Nat) (label : String) (condition : Bool) : IO Unit := do

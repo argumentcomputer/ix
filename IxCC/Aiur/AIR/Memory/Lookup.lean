@@ -5,7 +5,7 @@ the full bucket, pointer and contents; the pull weight is minus multiplicity. -/
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 theorem eval_scale (window : Window) (expression : Expr) (constant value : G)
     (evaluated : expression.eval window = some value) :

@@ -3,7 +3,7 @@ import IxCCTests.Aiur.Static.Fixtures
 namespace IxCCTests.Aiur.Static
 
 open IxCC.Aiur
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 open Execution (provider)
 
 def runRejections (count : IO.Ref Nat) : IO Unit := do

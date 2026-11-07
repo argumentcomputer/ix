@@ -3,8 +3,8 @@ import IxCC.Aiur.CounterAnalysis.Loops
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 structure Found (functionIndex : Nat) (function : Function) (candidate : UnitCounter.Certificate) : Prop where
   checked : UnitCounter.check 256 functionIndex candidate (initialState function.layout.inputSize) function.body = true

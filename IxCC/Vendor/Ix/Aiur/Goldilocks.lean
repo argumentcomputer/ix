@@ -1,6 +1,7 @@
 module
 
 public section
+namespace IxCC.Vendor
 
 namespace Aiur
 
@@ -208,4 +209,5 @@ theorem G.add_neg_one_eq_sub (a : G) : a + ((0 : G) - 1) = a - 1 := by
 
 end Aiur
 
+end IxCC.Vendor
 end

@@ -3,7 +3,7 @@ import IxCC.Aiur.BytecodeSound
 
 namespace IxCC.Aiur.Static
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 open OracleEval (AdviceOracle Values)
 
 theorem CheckedTrace.public_message {toplevel : Toplevel} {oracle : AdviceOracle} {trace : Trace}
@@ -25,7 +25,7 @@ theorem CheckedTrace.wellFounded {toplevel : Toplevel} {oracle : AdviceOracle} {
 
 theorem CheckedTrace.noShortCycle {toplevel : Toplevel} {oracle : AdviceOracle} {trace : Trace}
     (checked : CheckedTrace toplevel oracle trace) (walk : Nat → trace.RowId) (length : Nat)
-    (positive : 0 < length) (short : length < _root_.Aiur.gSize.toNat)
+    (positive : 0 < length) (short : length < _root_.IxCC.Vendor.Aiur.gSize.toNat)
     (edges : ∀ i, i < length → trace.Requires (walk (i + 1)) (walk i))
     (closed : walk length = walk 0) : False :=
   checked.assignment.certificate.noShortCycle walk length positive short ⟨edges, closed⟩

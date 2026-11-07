@@ -3,6 +3,7 @@ public import IxCC.Vendor.Ix.Aiur.Compiler.Layout
 public import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 public section
+namespace IxCC.Vendor
 @[expose] section
 namespace Aiur
 
@@ -190,4 +191,5 @@ end Bytecode
 
 end Aiur
 end
+end IxCC.Vendor
 end

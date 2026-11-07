@@ -3,6 +3,7 @@ public import IxCC.Vendor.Ix.Lib
 public import Std.Data.HashMap
 
 public section
+namespace IxCC.Vendor
 
 structure IndexMap (α : Type u) (β : Type v) [BEq α] [Hashable α] where
   pairs : Array (α × β)
@@ -373,4 +374,5 @@ end FoldlM
 
 end IndexMap
 
+end IxCC.Vendor
 end

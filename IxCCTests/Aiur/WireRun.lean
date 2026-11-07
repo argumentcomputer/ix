@@ -5,8 +5,8 @@ namespace IxCCTests.Aiur.WireRun
 open IxCC.Aiur.Wire
 open IxCC.Ixon
 open IxCCTests.Aiur.WireFixtures
-open _root_.Aiur (G gSize)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 private def rejected (result : Except String α) (part : String) : Bool :=
   match result with

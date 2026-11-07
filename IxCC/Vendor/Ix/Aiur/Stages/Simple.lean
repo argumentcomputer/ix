@@ -20,6 +20,7 @@ Type-level invariants:
 -/
 
 public section
+namespace IxCC.Vendor
 
 namespace Aiur
 
@@ -156,4 +157,5 @@ end Simple
 
 end Aiur
 
+end IxCC.Vendor
 end

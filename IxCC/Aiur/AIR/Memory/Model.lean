@@ -7,7 +7,7 @@ the Rust builder separately; no Rust semantics are assumed in these definitions.
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 /-- Match the Rust expression constructors' constant zero/one folding. -/
 def scale (expression : Expr) (constant : G) : Expr :=

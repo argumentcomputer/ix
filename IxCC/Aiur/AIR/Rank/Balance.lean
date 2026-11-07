@@ -6,7 +6,7 @@ row index and full two-field message remain part of the argument. -/
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 structure RangeRow where
   index : Fin limbBound

@@ -2,7 +2,7 @@ import IxCC.Aiur.CounterAnalysis.Effects
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 open OracleEval (Values State Error)
 
 theorem read_spec {state : State} {index : Nat} {value : G}

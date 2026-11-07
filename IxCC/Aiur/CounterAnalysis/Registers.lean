@@ -3,8 +3,8 @@ import IxCC.Aiur.CounterAnalysis.Effects
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 def Extends (before after : Array G) : Prop :=
   ∀ (index : Nat) (value : G), before[index]? = some value → after[index]? = some value

@@ -4,7 +4,7 @@ import IxCC.Aiur.AIR.Rank.Arithmetic
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem rangeValue_n {index : Nat} (bound : index < limbBound) : (rangeValue index).n = index := by
   change index < 65536 at bound

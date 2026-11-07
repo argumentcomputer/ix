@@ -11,6 +11,7 @@ so `typSize` has no `.mvar` / `.app` arms to reject.
 -/
 
 public section
+namespace IxCC.Vendor
 
 namespace Aiur
 
@@ -168,4 +169,5 @@ end Concrete
 
 end Aiur
 
+end IxCC.Vendor
 end

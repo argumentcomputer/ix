@@ -5,7 +5,7 @@ matches the pinned Rust multiplication constructor used by selector gating. -/
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 def gate (branchless : Bool) (selector argument : Expr) : Expr :=
   if branchless then argument

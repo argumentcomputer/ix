@@ -2,7 +2,7 @@ import IxCC.Aiur.OracleEval.Machine
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 
 /-- More local transition fuel cannot change a successful replay. -/
 theorem run_add_fuel (toplevel : Toplevel) (maxValues : Nat) {fuel : Nat} {task : Task}

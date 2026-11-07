@@ -5,7 +5,7 @@ proof-only soundness module derives coherence without a quadratic cell check. -/
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (gSize)
+open _root_.IxCC.Vendor.Aiur (gSize)
 
 structure Limits where
   maxTables : Nat := 256

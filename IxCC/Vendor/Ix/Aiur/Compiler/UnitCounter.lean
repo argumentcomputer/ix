@@ -21,6 +21,7 @@ cycles; all unrecognized recursive components retain their dynamic ranks.
 -/
 
 public section
+namespace IxCC.Vendor
 @[expose] section
 
 namespace Aiur.Bytecode.UnitCounter
@@ -264,4 +265,5 @@ end Proofs
 end Aiur.Bytecode.UnitCounter
 
 end
+end IxCC.Vendor
 end

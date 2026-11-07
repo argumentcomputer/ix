@@ -3,7 +3,7 @@ import IxCCTests.Aiur.Fixtures
 namespace IxCCTests.Aiur
 
 open IxCC.Aiur
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 private def need (label : String) (condition : Bool) : IO Unit :=
   unless condition do throw (IO.userError s!"Aiur regression failed: {label}")

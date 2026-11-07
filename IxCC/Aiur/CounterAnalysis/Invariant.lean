@@ -2,8 +2,8 @@ import IxCC.Aiur.CounterAnalysis.Registers
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open OracleEval (Values)
 
 def InputCalls (self column : Nat) (step : G) (inputs : Array G) (demands : List Call) : Prop :=

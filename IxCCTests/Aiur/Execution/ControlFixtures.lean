@@ -2,7 +2,7 @@ import IxCCTests.Aiur.Execution.Support
 
 namespace IxCCTests.Aiur.Execution
 
-open _root_.Aiur.Bytecode (Block Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Block Toplevel)
 
 def emptyReturn : Toplevel := program 0 ⟨#[], .return 7 #[]⟩
 def rootYield : Toplevel := program 1 ⟨#[], .yield 3 #[0]⟩

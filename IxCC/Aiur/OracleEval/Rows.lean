@@ -2,7 +2,7 @@ import IxCC.Aiur.OracleEval.Local
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 
 /-- Concrete bytecode facts for one provider. Memory and gadget providers
 are leaves in this projection. Heap agreement is supplied by trace coherence. -/

@@ -7,7 +7,7 @@ outputs and the u32 comparison's range lookups. -/
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 inductive Gadget where
   | bitDecomposition | shiftLeft | shiftRight | xor | add | mul | sub

@@ -8,7 +8,7 @@ No allocation order, prior store, or determinism of advice is assumed. -/
 
 namespace IxCC.Aiur
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 open OracleEval (Values AdviceOracle AdviceAllowed)
 
 inductive MessageEval (toplevel : Toplevel) (heap : Memory.Heap) (oracle : AdviceOracle) :
@@ -19,7 +19,7 @@ inductive MessageEval (toplevel : Toplevel) (heap : Memory.Heap) (oracle : Advic
       (allowed : AdviceAllowed oracle advice)
       (children : ∀ message ∈ demands, MessageEval toplevel heap oracle message) :
       MessageEval toplevel heap oracle (.function function inputs outputs)
-  | memory {bucket : Nat} {pointer : _root_.Aiur.G} {values : Values}
+  | memory {bucket : Nat} {pointer : _root_.IxCC.Vendor.Aiur.G} {values : Values}
       (observed : heap bucket pointer = some values) (width : values.length = bucket) :
       MessageEval toplevel heap oracle (.memory bucket pointer values)
   | gadget {channel : Nat} {payload : Values} (valid : OracleEval.Gadget.check channel payload = true) :
@@ -37,7 +37,7 @@ theorem OracleEval.Checked.sound {toplevel : Toplevel} {function : Nat} {inputs 
   .function checked.body allowed children
 
 theorem MessageEval.memory_iff {toplevel : Toplevel} {heap : Memory.Heap} {oracle : AdviceOracle}
-    {bucket : Nat} {pointer : _root_.Aiur.G} {values : Values} :
+    {bucket : Nat} {pointer : _root_.IxCC.Vendor.Aiur.G} {values : Values} :
     MessageEval toplevel heap oracle (.memory bucket pointer values) ↔
       heap bucket pointer = some values ∧ values.length = bucket := by
   constructor

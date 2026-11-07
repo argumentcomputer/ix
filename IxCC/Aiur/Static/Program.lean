@@ -7,8 +7,8 @@ equations are checked on the supplied trace; no analyzer theorem is assumed. -/
 
 namespace IxCC.Aiur.Static
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 inductive ProgramError where
   | functionLimit

@@ -10,7 +10,7 @@ counts must be bounded separately from their compact wire representation. -/
 
 namespace IxCC.Aiur.Wire
 
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open IxCC.Ixon
 
 structure CheckLimits where

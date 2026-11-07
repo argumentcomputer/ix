@@ -3,8 +3,8 @@ import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 private theorem field_val_eq (a b : G) : a.val = b.val ↔ a = b :=
   ⟨Subtype.ext, congrArg Subtype.val⟩

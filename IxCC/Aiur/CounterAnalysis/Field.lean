@@ -6,7 +6,7 @@ primality assumption is introduced. -/
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem add_assoc (a b c : G) : (a + b) + c = a + (b + c) := by
   apply Field.ext

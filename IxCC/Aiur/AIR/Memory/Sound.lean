@@ -7,7 +7,7 @@ row facts and the single witness heap. No coherence callback is required. -/
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem Table.check_sound (table : Table) (checked : table.check = true) :
     table.Shape ∧ table.rows.size < gSize.toNat ∧ table.BooleanSelectors ∧ table.Satisfied := by
@@ -59,7 +59,7 @@ theorem Checked.row_shape {tables : List Table} (checked : Checked tables)
   (checked.table member).1.2 _ (Array.mem_toList_iff.mp (table.row_mem index bound))
 
 theorem Checked.message_eval {tables : List Table} (checked : Checked tables)
-    (toplevel : _root_.Aiur.Bytecode.Toplevel) (oracle : OracleEval.AdviceOracle)
+    (toplevel : _root_.IxCC.Vendor.Aiur.Bytecode.Toplevel) (oracle : OracleEval.AdviceOracle)
     {table : Table} (member : table ∈ tables) (index : Nat) (bound : index < table.rows.size)
     (selected : (table.row index).selector = 1) :
     MessageEval toplevel (IxCC.Aiur.Memory.heap

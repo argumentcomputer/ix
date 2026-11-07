@@ -4,7 +4,7 @@ import IxCC.Aiur.WellFounded
 
 namespace IxCC.Aiur.Trace.Validated
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 /-- The checked logical trace plus static row facts establishes finite
 derivations. No connection to an emitted circuit or source DSL is implicit. -/

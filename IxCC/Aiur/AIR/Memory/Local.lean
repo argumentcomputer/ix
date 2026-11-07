@@ -5,7 +5,7 @@ No primality or no-zero-divisors axiom is used. -/
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem mul_one (a : G) : a * 1 = a := by
   apply Field.ext

@@ -5,7 +5,7 @@ decoding establishes representation only, not well-formedness or execution. -/
 
 namespace IxCC.Aiur.Wire
 
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open IxCC.Ixon
 open IxCC.IxIR
 

@@ -7,8 +7,8 @@ their full meanings remain in OracleEval. Constrained calls remain exact. -/
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open OracleEval (Values)
 
 structure Call where

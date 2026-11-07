@@ -4,7 +4,7 @@ import IxCC.Aiur.AIR.Memory.Sound
 
 namespace IxCCTests.Aiur.MemoryAIR
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 open IxCC.Aiur.AIR.Memory
 
 theorem arbitrary_checked : check [arbitraryStart] = true := by cbv
@@ -23,7 +23,7 @@ theorem repeated_pointer_impossible (pointer left right : G) :
     ¬ (⟨1, #[realRow pointer left, realRow pointer right]⟩ : Table).Satisfied := by
   intro satisfied
   have different := Table.pointer_ne _ satisfied
-    (by change 2 < _root_.Aiur.gSize.toNat; decide) 0 1 (by decide) (by change 1 < 2; decide) rfl
+    (by change 2 < _root_.IxCC.Vendor.Aiur.gSize.toNat; decide) 0 1 (by decide) (by change 1 < 2; decide) rfl
   exact different rfl
 
 theorem padding_restart_impossible (pointer left right : G) :
@@ -37,7 +37,7 @@ theorem wrapped_heap :
     IxCC.Aiur.Memory.heap (IxCC.Aiur.Memory.cells (project [wrapped])) 1 0 = some [52] := by
   exact Checked.heap_agrees ⟨wrapped_checked⟩ (table := wrapped) (by simp) 1 (by decide) rfl
 
-theorem self_pointer_message (toplevel : _root_.Aiur.Bytecode.Toplevel)
+theorem self_pointer_message (toplevel : _root_.IxCC.Vendor.Aiur.Bytecode.Toplevel)
     (oracle : IxCC.Aiur.OracleEval.AdviceOracle) :
     IxCC.Aiur.MessageEval toplevel
       (IxCC.Aiur.Memory.heap (IxCC.Aiur.Memory.cells (project [selfPointer]))) oracle

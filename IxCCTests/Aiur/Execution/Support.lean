@@ -4,7 +4,7 @@ namespace IxCCTests.Aiur.Execution
 
 open IxCC.Aiur
 open IxCC.Aiur.OracleEval
-open _root_.Aiur.Bytecode (Block Function Toplevel Op)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Block Function Toplevel Op)
 
 def mkFunction (inputSize : Nat) (body : Block) : Function :=
   ⟨body, ⟨inputSize, 8, 32, 16⟩, true, true⟩

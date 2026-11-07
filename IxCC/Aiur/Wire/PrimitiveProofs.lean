@@ -2,7 +2,7 @@ import IxCC.Aiur.Wire.Primitives
 
 namespace IxCC.Aiur.Wire
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 open IxCC.Ixon
 open IxCC.IxIR
 

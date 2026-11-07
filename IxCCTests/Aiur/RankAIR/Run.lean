@@ -2,7 +2,7 @@ import IxCCTests.Aiur.RankAIR.Fixtures
 
 namespace IxCCTests.Aiur.RankAIR
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 open IxCC.Aiur.AIR
 open IxCC.Aiur.AIR.Rank
 

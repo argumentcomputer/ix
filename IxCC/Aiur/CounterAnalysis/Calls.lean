@@ -2,8 +2,8 @@ import IxCC.Aiur.CounterAnalysis.Invariant
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open OracleEval (Values)
 
 theorem Invariant.nonselfCall {self : Nat} {candidate : UnitCounter.Certificate} {inputs : Array G}

@@ -2,7 +2,7 @@ import IxCCTests.Aiur.Static.Fixtures
 
 namespace IxCCTests.Aiur.CounterAnalysis
 
-open _root_.Aiur.Bytecode (Block Function Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Block Function Toplevel)
 open IxCCTests.Aiur.Execution (mkFunction)
 
 /-- Two self-calls use the second input. Constant multiplication and

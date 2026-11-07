@@ -1,6 +1,6 @@
 # Canonical Aiur bytecode, version 1
 
-`aiur-bytecode/1` gives the complete pinned `Aiur.Bytecode.Toplevel` a
+`aiur-bytecode/1` gives the complete pinned `IxCC.Vendor.Aiur.Bytecode.Toplevel` a
 canonical binary representation and BLAKE3 content root. The implementation
 is [IxCC.Aiur.Wire](../IxCC/Aiur/Wire.lean). It preserves every
 field, including layouts, debug text, circuit membership, and call-component

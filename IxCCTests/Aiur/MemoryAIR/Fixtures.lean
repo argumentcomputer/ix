@@ -2,7 +2,7 @@ import IxCC.Aiur.AIR.Memory
 
 namespace IxCCTests.Aiur.MemoryAIR
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 open IxCC.Aiur.AIR.Memory
 
 def realRow (pointer value : G) (multiplicity : G := 1) : Row :=

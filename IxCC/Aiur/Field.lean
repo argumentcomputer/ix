@@ -5,7 +5,7 @@ abstract field-law instance or primality axiom is assumed. -/
 
 namespace IxCC.Aiur.Field
 
-open _root_.Aiur
+open _root_.IxCC.Vendor.Aiur
 
 theorem ext {a b : G} (h : a.n = b.n) : a = b := by
   apply Subtype.ext

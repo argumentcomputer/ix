@@ -6,8 +6,8 @@ register namespace and appends only its declared outputs. -/
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode (Op Ctrl Block Toplevel)
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Op Ctrl Block Toplevel)
 
 structure Continuation where
   savedValues : Array G

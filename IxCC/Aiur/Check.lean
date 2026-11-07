@@ -7,7 +7,7 @@ separate certificate consumed by the derivation interface. -/
 
 namespace IxCC.Aiur.Trace
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 def mentioned (trace : Trace) : List Message :=
   trace.requirements ++ trace.rows.map Row.provides

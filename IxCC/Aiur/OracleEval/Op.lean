@@ -6,8 +6,8 @@ No callee body is recursively evaluated inside a row. -/
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode (Op Toplevel)
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Op Toplevel)
 
 def evalOp (toplevel : Toplevel) (maxValues : Nat) (op : Op) (state : State) :
     Except Error State :=

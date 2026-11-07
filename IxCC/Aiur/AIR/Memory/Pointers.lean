@@ -7,7 +7,7 @@ an active pointer. Its initial pointer is unrestricted. -/
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem Table.consecutive (table : Table) (satisfied : table.Satisfied)
     (index : Nat) (bound : index + 1 < table.rows.size) :
@@ -42,7 +42,7 @@ theorem Table.pointer_ne (table : Table) (satisfied : table.Satisfied)
     have step := selected_predecessor
       (table.consecutive satisfied (first + index) (by omega)) next
     simpa only [Nat.add_assoc] using step.2
-  have different := _root_.Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle
+  have different := _root_.IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle
     (fun index => (table.row (first + index)).pointer)
     (m := last - first) (by omega) (by omega) steps
   have endIndex : first + (last - first) = last := by omega

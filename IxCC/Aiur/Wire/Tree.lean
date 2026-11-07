@@ -7,8 +7,8 @@ continuation layout fields participate in identity. -/
 
 namespace IxCC.Aiur.Wire
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open IxCC.Ixon
 open IxCC.IxIR
 

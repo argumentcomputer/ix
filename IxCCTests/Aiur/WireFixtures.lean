@@ -6,8 +6,8 @@ and circuit partitions; it is not an executable-program correctness fixture. -/
 
 namespace IxCCTests.Aiur.WireFixtures
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 def bytes (values : List UInt8) : ByteArray := ⟨values.toArray⟩
 

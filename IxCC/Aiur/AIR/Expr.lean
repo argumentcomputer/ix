@@ -6,7 +6,7 @@ multi-stark expression language. -/
 
 namespace IxCC.Aiur.AIR
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 inductive Expr where
   | constant (value : G)

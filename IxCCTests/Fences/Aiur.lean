@@ -70,26 +70,26 @@ import IxCCTests.Aiur.Proofs
 /-- info: 'IxCC.Aiur.Trace.Validated.memory_agrees' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Trace.Validated.memory_agrees
 
-/-- info: 'Aiur.Bytecode.CallComponent.wellFounded_calls' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.CallComponent.wellFounded_calls
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.CallComponent.wellFounded_calls' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.CallComponent.wellFounded_calls
 
-/-- info: 'Aiur.Bytecode.UnitCounter.Proofs.no_short_unit_cycle' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.UnitCounter.Proofs.no_short_unit_cycle
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_unit_cycle' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_unit_cycle
 
-/-- info: 'Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_unit_cycle' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_unit_cycle
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_unit_cycle' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_unit_cycle
 
-/-- info: 'Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_field_cycle
 
-/-- info: 'Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_field_cycle' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_field_cycle
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_field_cycle' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_reverse_field_cycle
 
-/-- info: 'Aiur.Bytecode.UnitCounter.Proofs.no_short_decrement_cycle' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.UnitCounter.Proofs.no_short_decrement_cycle
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_decrement_cycle' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_decrement_cycle
 
-/-- info: 'Aiur.Bytecode.UnitCounter.Proofs.no_short_negative_field_cycle' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms Aiur.Bytecode.UnitCounter.Proofs.no_short_negative_field_cycle
+/-- info: 'IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_negative_field_cycle' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Vendor.Aiur.Bytecode.UnitCounter.Proofs.no_short_negative_field_cycle
 
 /-- info: 'IxCCTests.Aiur.mixed_derives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCCTests.Aiur.mixed_derives

@@ -11,6 +11,7 @@ The `Data` mutual child has been flattened into direct `Term.tuple` /
 -/
 
 public section
+namespace IxCC.Vendor
 @[expose] section
 
 namespace Aiur
@@ -1285,4 +1286,5 @@ end Source
 end Aiur
 
 end -- @[expose] section
+end IxCC.Vendor
 end

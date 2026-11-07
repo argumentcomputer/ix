@@ -2,7 +2,7 @@ import IxCC.Aiur.OracleEval.Machine
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 
 /-- A finite local bytecode computation. The witness binds the exact toplevel,
 function index, inputs, outputs, all demands, and all advice observations.

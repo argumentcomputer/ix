@@ -9,8 +9,8 @@ namespace IxCCTests.Aiur.CounterAnalysis
 open IxCC.Aiur
 open IxCC.Aiur.CounterAnalysis
 open IxCC.Aiur.Static (counterObservation CounterStep)
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open OracleEval (Values)
 open IxCCTests.Aiur.Execution (mkFunction)
 

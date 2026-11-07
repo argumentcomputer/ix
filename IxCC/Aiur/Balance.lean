@@ -2,7 +2,7 @@ import IxCC.Aiur.Trace
 
 namespace IxCC.Aiur.Trace
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem providerSum_zero (message : Message) (rows : List Row)
     (zero : ∀ row ∈ rows, row.provides = message → row.multiplicity = 0) :

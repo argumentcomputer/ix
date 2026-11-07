@@ -2,8 +2,8 @@ import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 namespace IxCC.Aiur.Static
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 def counterObservation (candidate : UnitCounter.Certificate) (inputs outputs : List G) : Option G :=
   match candidate.mode with

@@ -6,8 +6,8 @@ pinned field representation. No abstract field-law or primality axiom is used. -
 
 namespace IxCC.Aiur.Static
 
-open _root_.Aiur (G gSize)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 theorem neg_add_one (value : G) : (0 - (value + 1)) + 1 = 0 - value := by
   apply Field.ext

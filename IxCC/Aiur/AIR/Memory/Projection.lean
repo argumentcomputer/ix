@@ -5,7 +5,7 @@ All active cells agree with one heap; no prior-store or allocation premise. -/
 
 namespace IxCC.Aiur.AIR.Memory
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 
 theorem Table.row_mem (table : Table) (index : Nat) (bound : index < table.rows.size) :
     table.row index ∈ table.rows.toList := by

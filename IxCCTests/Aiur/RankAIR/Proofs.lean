@@ -4,7 +4,7 @@ import IxCC.Aiur.AIR.Rank.GraphProofs
 
 namespace IxCCTests.Aiur.RankAIR
 
-open _root_.Aiur (G gSize)
+open _root_.IxCC.Vendor.Aiur (G gSize)
 open IxCC.Aiur.AIR
 open IxCC.Aiur.AIR.Rank
 

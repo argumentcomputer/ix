@@ -6,7 +6,7 @@ bytecode, rows, ranks, and replay tapes; the result retains all proof objects. -
 
 namespace IxCC.Aiur.Static
 
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 open OracleEval (AdviceOracle Values)
 
 structure TraceLimits where

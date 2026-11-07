@@ -3,8 +3,8 @@ import IxCC.Aiur.CounterAnalysis.Replay
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 
 /-- One accepted abstract step preserves its meaning for every successful
 concrete step, including arbitrary values supplied through the answer tape. -/

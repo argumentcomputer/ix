@@ -7,7 +7,7 @@ allowed answers; it does not silently compute an honest hint. -/
 
 namespace IxCC.Aiur.OracleEval
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 abbrev Values := List G
 

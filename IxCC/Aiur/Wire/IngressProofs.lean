@@ -5,7 +5,7 @@ namespace IxCC.Aiur.Wire
 
 open IxCC.Ixon
 
-theorem ComponentChecked.evidence {limits : CheckLimits} {value : _root_.Aiur.Bytecode.Toplevel}
+theorem ComponentChecked.evidence {limits : CheckLimits} {value : _root_.IxCC.Vendor.Aiur.Bytecode.Toplevel}
     (checked : ComponentChecked limits value) :
     value.callComponents.isEmpty = true ∨ value.validCallComponents = true := by
   simpa only [componentsValid, Bool.or_eq_true] using checked.accepted

@@ -100,7 +100,7 @@ theorem mutual_loop_no_static (certificate : StaticCertificate mutualLoopTrace.R
     rcases cases with rfl | rfl <;> decide
   · decide
 
-theorem false_gadget_has_no_meaning (toplevel : _root_.Aiur.Bytecode.Toplevel)
+theorem false_gadget_has_no_meaning (toplevel : _root_.IxCC.Vendor.Aiur.Bytecode.Toplevel)
     (heap : Memory.Heap) (oracle : AdviceOracle) :
     ¬ MessageEval toplevel heap oracle (.gadget 3 [1, 2, 9]) := by
   intro execution

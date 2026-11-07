@@ -8,7 +8,7 @@ namespace IxCCTests.Aiur.Static
 
 open IxCC.Aiur
 open OracleEval (unrestrictedAdvice)
-open _root_.Aiur.Bytecode (Toplevel)
+open _root_.IxCC.Vendor.Aiur.Bytecode (Toplevel)
 
 private def accepted {toplevel : Toplevel} {oracle : OracleEval.AdviceOracle} {trace : Trace}
     (result : Except Static.Error (Static.CheckedTrace toplevel oracle trace))

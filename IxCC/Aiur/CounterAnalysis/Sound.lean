@@ -7,8 +7,8 @@ not identify local replay with satisfying keyed AIR rows. -/
 
 namespace IxCC.Aiur.CounterAnalysis
 
-open _root_.Aiur (G)
-open _root_.Aiur.Bytecode
+open _root_.IxCC.Vendor.Aiur (G)
+open _root_.IxCC.Vendor.Aiur.Bytecode
 open OracleEval (Values)
 
 theorem find_runFunction {toplevel : Toplevel} {self : Nat} {function : Function}
@@ -59,7 +59,7 @@ theorem find_body_counter_ne {toplevel : Toplevel} {self : Nat} {function : Func
   have step := find_body_normalized lookup found body demanded
   intro equal
   have unchanged : (Static.normalizedCounter candidate inputs outputs).n =
-      ((Static.normalizedCounter candidate inputs outputs).n + 1) % _root_.Aiur.gSize.toNat := by
+      ((Static.normalizedCounter candidate inputs outputs).n + 1) % _root_.IxCC.Vendor.Aiur.gSize.toNat := by
     have := congrArg G.n (equal.symm.trans step)
     simpa only [G.add_one_n] using this
   exact UnitCounter.Proofs.add_mod_ne_self (Field.value_lt _) (by decide) (by decide) unchanged.symm
@@ -74,7 +74,7 @@ theorem find_body_no_short_cycle {toplevel : Toplevel} {self : Nat} {function : 
     (advice : Nat → List OracleEval.AdviceObservation)
     (bodies : ∀ index, index < length → OracleEval.Body toplevel self (inputs index) (outputs index) (demands index) (advice index))
     (edges : ∀ index, index < length → .function self (inputs (index + 1)) (outputs (index + 1)) ∈ demands index)
-    (positive : 0 < length) (short : length < _root_.Aiur.gSize.toNat)
+    (positive : 0 < length) (short : length < _root_.IxCC.Vendor.Aiur.gSize.toNat)
     (sameInputs : inputs length = inputs 0) (sameOutputs : outputs length = outputs 0) : False := by
   let value := fun index => Static.normalizedCounter candidate (inputs index) (outputs index)
   have advances : ∀ index, index < length → value (index + 1) = value index + 1 :=

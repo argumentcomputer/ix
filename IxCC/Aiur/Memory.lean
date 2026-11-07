@@ -6,7 +6,7 @@ Coherence alone establishes neither type validity nor heap acyclicity. -/
 
 namespace IxCC.Aiur.Memory
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 structure Cell where
   bucket : Nat

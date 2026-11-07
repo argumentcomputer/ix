@@ -6,7 +6,7 @@ columns continue to fail evaluation, including within a selected gate. -/
 
 namespace IxCC.Aiur.AIR.Rank
 
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 theorem pack_eval (window : Window) (low middle high : Expr) (limbs : Limbs)
     (hl : low.eval window = some limbs.low) (hm : middle.eval window = some limbs.middle)

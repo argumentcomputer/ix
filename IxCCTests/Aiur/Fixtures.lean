@@ -3,7 +3,7 @@ import IxCC.Aiur
 namespace IxCCTests.Aiur
 
 open IxCC.Aiur
-open _root_.Aiur (G)
+open _root_.IxCC.Vendor.Aiur (G)
 
 def call (function : Nat) (input : Nat := 0) (output : Nat := 9) : Message :=
   .function function [G.ofNat input] [G.ofNat output]

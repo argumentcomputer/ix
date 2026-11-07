@@ -2,7 +2,7 @@
 
 Checked bytecode rows now give concrete execution meaning to the
 [logical-trace derivation](aiur-backend.md). For a fixed pinned
-`Aiur.Bytecode.Toplevel`, `Trace.Validated.public_bytecode` proves:
+`IxCC.Vendor.Aiur.Bytecode.Toplevel`, `Trace.Validated.public_bytecode` proves:
 
 > A validated trace, rows satisfying the bytecode replay rules, and the
 > existing static row certificate give a finite execution of each public
