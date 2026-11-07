@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "k1",
   "description": "The K1 pack (phase1.md M0.2): the five first-rung scalar programs of K1.lean in one closure with their unfolding equations, and its admission census. The roots have no cases here; tests-src, tests-lam, tests-anf, tests-fir, tests-rt and tests-pipeline run them. Not among tests-corpus's registered families: this manifest makes the pack one `corpus rebuild` and `corpus check` (with its path).",
   "tier": "required",
@@ -91,14 +91,14 @@
       },
       "equations": {
         "path": "equations.json",
-        "sha256": "5a97ce601da4722835362bdcc7e7468b227e04a97a77b7e6a16b2dbce6c747df",
+        "sha256": "73c99bfc698c7f8c0a8ff1871162b9ac81a1b40e935a72f257dfd30e5eb63e47",
         "equations": 40,
         "failures": 0
       },
       "named_env_sha256": "8fcbf436470e5a98dd9f3b904571880cf66c475338c07fa9779fa4cc63f05b78",
       "census": {
         "path": "census.json",
-        "sha256": "c76c76f6ac3972459caa6891bb12882672e0381aaa2e240a583ff16d95225162"
+        "sha256": "1ffe40eaeee7286b07ad77041dfb4b778d965e99438e5b1419e2c9104d9c05ad"
       },
       "roots": [
         {

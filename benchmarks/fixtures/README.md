@@ -7,12 +7,12 @@ twin that prints the same output. The data is in
 
 | Fixture | Rung | Variant | Source | Twin | Test args | Bench args |
 | --- | --- | --- | --- | --- | --- | --- |
-| [`fib`](fib) | K1 | upstream | Compilatr.ix `fixtures/ixon-v4/k1/K1.lean` | `fib.c` (original) | `25` | `40` |
+| [`fib`](fib) | K1 | upstream | IxCC `fixtures/ixon-v4/k1/K1.lean` | `fib.c` (original) | `25` | `40` |
 | [`sum-loop`](sum-loop) | K1 | upstream | same | `sum_loop.c` (original) | `1000000` | `100000000` |
 | [`ackermann`](ackermann) | K1 | upstream | same | `ackermann.c` (original) | `3 6` | `3 10` |
 | [`tak`](tak) | K1 | upstream | same | `tak.c` (original) | `18 18 12 6` | `24 24 16 8` |
 | [`gcd`](gcd) | K1 | upstream | same | `gcd.c` (original) | `1071 462` | `F(91) F(90)` |
-| [`collatz`](collatz) | K1 | corpus | Compilatr.ix `fixtures/corpus/phase1-scalar/src/Scalar.lean` | `collatz.c` (original) | `10000` | `1000000` |
+| [`collatz`](collatz) | K1 | corpus | IxCC `fixtures/corpus/phase1-scalar/src/Scalar.lean` | `collatz.c` (original) | `10000` | `1000000` |
 | [`prime-count`](prime-count) | K1 | corpus | same | `prime_count.c` (original) | `10000` | `2000000` |
 | [`even-odd`](even-odd) | K1 | corpus | same | `even_odd.c` (original) | `100001` | `200000` |
 | [`sfib`](sfib) | K1 | corpus | same | `sfib.c` (original) | `1000` | `100000000` |
@@ -32,7 +32,7 @@ The source commits are:
 - Lean `v4.34.0`, `293d5d0c0c3f3dded4688b3ccd6a33939ac5102b`;
 - Koka `8b803da69d3941ce1e03173578093aefc41ee548`;
 - CakeML `530c7deec135ad421cce7ca768eed2f5801261b2`;
-- Compilatr.ix `2e4740dea324ab0122e909613687d2b812eab4e0`.
+- IxCC `2e4740dea324ab0122e909613687d2b812eab4e0`.
 
 The bench arguments for Lean fixtures come from the upstream `.init.sh`. For
 the ports they are the constants in the upstream program. For K1 they were
@@ -187,7 +187,7 @@ starts with a notice saying that it was modified.
 - **CakeML**: BSD-3-Clause
   ([`LICENSES/cakeml-LICENSE`](LICENSES/cakeml-LICENSE)). This covers the
   `.cml` programs, and the K2 ports derive from them.
-- **Compilatr.ix**: the K1 definitions and the original twins are under the
+- **IxCC**: the K1 definitions and the original twins are under the
   repository's licence (Apache-2.0 or MIT).
 
 ## Admission census (2026-09-29)
@@ -228,7 +228,7 @@ wall time) showed three properties of these fixtures that any comparison must
 account for:
 - **`sum-loop`'s twin folds to a closed form.** Clang at `-O2` and `-O3`
   replaces `for (i < n) s += i` with arithmetic, so the twin's row (2–3 ms at
-  `n = 10⁸`) measures process startup, not a loop. Compare Compilatrix with
+  `n = 10⁸`) measures process startup, not a loop. Compare IxCC with
   `lean-clang` on this fixture, or add a twin whose loop cannot be solved in
   closed form.
 - **`tak` and `gcd` are startup-dominated.** At their bench arguments every

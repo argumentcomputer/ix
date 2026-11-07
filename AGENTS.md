@@ -22,17 +22,17 @@ tree still contains monolithic test and proof modules that need migration.
 
 ## Modules, namespaces, and dependencies
 
-- Keep production declarations under `Compilatrix.<Area>`, following the
+- Keep production declarations under `IxCC.<Area>`, following the
   pipeline areas in docs/compiler-design.md (Ixon, Src, Lam, Anf, Fir, Own,
   Cfg, Lir, X86) and the Aiur target. Match
   module paths to their area and purpose; avoid unrelated global declarations.
-- Put new test-only modules under `CompilatrixTests.<Area>`, with shared test
-  utilities in `CompilatrixTests.Support`. Give them explicit Lake library and
+- Put new test-only modules under `IxCCTests.<Area>`, with shared test
+  utilities in `IxCCTests.Support`. Give them explicit Lake library and
   executable targets. Keep standalone entry points thin and their reusable
   logic in named modules.
 - Separate definitions and executable algorithms from large simulation proofs,
   example corpora, fixture builders, and axiom fences. Proofs may retain their
-  existing public `Compilatrix` declaration names when moved to narrower files.
+  existing public `IxCC` declaration names when moved to narrower files.
   Small interface lemmas and proof-carrying compiler contracts belong with the
   interface that needs them.
 - Production modules must not depend on test modules, fixtures, example suites,
@@ -40,7 +40,7 @@ tree still contains monolithic test and proof modules that need migration.
   into a lower-level production module before depending on them. Repository
   checkers and test support may depend on production interfaces.
 - Import the smallest module that supplies the needed interface. Reserve broad
-  umbrella imports for explicit aggregate targets. Keep `Compilatrix.lean`
+  umbrella imports for explicit aggregate targets. Keep `IxCC.lean`
   focused on the production API; expose complete proof and test collections
   through separate targets that CI builds explicitly.
 - Namespaces alone do not isolate compilation. Align file boundaries, imports,

@@ -1,5 +1,5 @@
 import Lean
-import Compilatrix.Tools.Check
+import IxCC.Tools.Check
 
 /-! Generator for `fixtures/ixon-v4/src-tables.tsv` (design note 01 §4.2).
 
@@ -26,7 +26,7 @@ fixtures/ixon-v4/src-sortpoly` instead compile a roots-only fixture from the
 Lean source in that directory.
 -/
 
-open Lean Compilatrix.Tools.Check
+open Lean IxCC.Tools.Check
 
 namespace PinSrcTables
 
@@ -88,7 +88,7 @@ def sortPolyFixture : RootsFixture where
     `SortPoly.typeArg]
 
 /-- Compile a roots-only fixture (anonymous and named), resolve its roots and
-write the closure, its `compilatrix/k1-equations/1` sidecar (roots only) and
+write the closure, its `ixcc/k1-equations/1` sidecar (roots only) and
 a provenance record. -/
 def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     (revision : String) : IO Unit := do
@@ -108,7 +108,7 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
     roots := roots.push (Json.mkObj [("name", name.toString), ("address", address)])
   let sidecar := dir / s!"{fx.stem}.equations.json"
-  IO.FS.writeFile sidecar ((Json.mkObj [("format", "compilatrix/k1-equations/1"),
+  IO.FS.writeFile sidecar ((Json.mkObj [("format", "ixcc/k1-equations/1"),
     ("source", fx.source), ("roots", Json.arr roots), ("equations", Json.arr #[]),
     ("failures", Json.arr #[])]).pretty ++ "\n")
   IO.FS.writeFile (dir / "provenance.json") ((Json.mkObj [
@@ -126,7 +126,7 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
   IO.println s!"wrote {closure} with {fx.roots.length} roots"
 
 
-/-! ## Repinning `Compilatrix.Src.Pinned`
+/-! ## Repinning `IxCC.Src.Pinned`
 
 After a refreeze, `--repin FILE --old-primitives OLD --old-tables OLD` rewrites
 every pinned address in FILE (as a hex string or a `0x` numeral) from the old
@@ -245,7 +245,7 @@ def main (args : List String) : IO Unit := do
   let version := String.intercalate " " (words (← run ix #["--version"]))
   let binary ← sha256 ix
   IO.FS.writeFile provenance ((Json.mkObj [
-    ("format", "compilatrix/src-tables/1"),
+    ("format", "ixcc/src-tables/1"),
     ("producer_version", version),
     ("producer_revision", option options "--revision" "unrecorded"),
     ("producer_binary_sha256", binary),

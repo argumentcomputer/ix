@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "phase1-boundary",
   "description": "The Phase 1 boundary corpus (phase1.md MT.3): every Nat primitive and operand shape at the 2^63 edge of its arguments, results and intermediate values, with a literal of at least 2^63 in live and dead code, and the field-count and constructor-count limits as sources reach them (254 fields and 125 constructors decode, 255 and 126 exceed the decoder's depth budget; a four-arm wildcard match over 17 constructors is declined with fir.closures); expected values from Lean 4.34's interpreter, status 3 where a word cannot hold an argument, the result or an intermediate value, and every spurious status 3 pinned.",
   "tier": "required",
@@ -145,14 +145,14 @@
       },
       "equations": {
         "path": "boundary.equations.json",
-        "sha256": "bb4f49ebf1c25cb3a7a40b89c917c44f40632e23243fdc8e1b7daa3cbbe3165b",
+        "sha256": "e34a500cca76097feb201fd45b212bb0677b062c0b5db2aa046b1882ccd61386",
         "equations": 14,
         "failures": 0
       },
       "named_env_sha256": "507d7fa20b1298bc7b596a3ec6b19a46ae8f5e44978952751a896b39d7d15767",
       "census": {
         "path": "boundary.census.json",
-        "sha256": "c17971a1d96e18fd887c61ee50fdd8824917c81306699a6b61dd7b169c58a082"
+        "sha256": "1635da131e5b6dc9674003d66ddb2e1b8c33151be0ae778c94231e98e5c83367"
       },
       "roots": [
         {
@@ -5214,14 +5214,14 @@
       },
       "equations": {
         "path": "fields254.equations.json",
-        "sha256": "b4a935cc5eb43aa26b6c58b5a709d3b3a19026cb49329bcb6f35280fbd66bdbb",
+        "sha256": "bfaddf81fb24981e9a263c84d06e60a81e93eea7a0cf49d598f294e678774b74",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "13c712fb6a16b1d8b3ee7d9f0e05828b20134e748e61388ae714fa558dcc0041",
       "census": {
         "path": "fields254.census.json",
-        "sha256": "ee247736bf2b3248a84bc3ad3eaeed886e08f2693ac89a32d48455439a303edd"
+        "sha256": "b85c9a86af745fdb5f21cbe7a184137d1f5809cc1381b35cb2f9bb9319b93cdc"
       },
       "roots": [
         {
@@ -5299,14 +5299,14 @@
       },
       "equations": {
         "path": "fields255.equations.json",
-        "sha256": "4d2f0ba4c5bb2615b1653cb2560f1b1d93bcd22022b083dbcc4be85b0c260980",
+        "sha256": "9534f97e479b39af356d630e44e63a36688802832de921cb80fb3d01d98363ca",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "b7fc6c038d4502fbff48f58b4cb70f433224fd5cb5572b5c02647d081d9c5953",
       "census": {
         "path": "fields255.census.json",
-        "sha256": "875d2ae8fa768bf5b1e7ae838090341b945d90cbb1071bac4e4f4388dd7995c1"
+        "sha256": "14a7af73b49984f2ad0f0ee68b1a7592f502ff478164f10cdb28af504fffb097"
       },
       "roots": [
         {
@@ -5354,14 +5354,14 @@
       },
       "equations": {
         "path": "tags16.equations.json",
-        "sha256": "cdb1e55160eee234127e7f98544f72964b96d19d8f9475d6f317b27a993fe942",
+        "sha256": "dac50c80c44cd8e1192a5c377a3cb3ae4f55754c5d08d0fe7e1e6b4af82a93b7",
         "equations": 10,
         "failures": 0
       },
       "named_env_sha256": "493358125876552968dc99570718d051d513a68ae98a06d439710a98f3415d87",
       "census": {
         "path": "tags16.census.json",
-        "sha256": "574ae92ba003f6f5133eafa4380350266e7b3a4b66bf19b335dc217b780103bf"
+        "sha256": "88596e763e82d425f40f949559aa108f5cd67a35c488b975d84f47a558e5ea4f"
       },
       "roots": [
         {
@@ -5439,14 +5439,14 @@
       },
       "equations": {
         "path": "tags17.equations.json",
-        "sha256": "743e0853dbded2bfaeed0459230306437d6552a8028dfaf47429838342aefc72",
+        "sha256": "af7f3cf48b9f8ec6114795c75e594cfeced705bb24c9a4f273c1cffc08c2e335",
         "equations": 10,
         "failures": 0
       },
       "named_env_sha256": "05ac1beadffd11869cfc768d78e8725dc6f8f0dc57c7c037fd04b960ac08400d",
       "census": {
         "path": "tags17.census.json",
-        "sha256": "65fcf29a1ea1ca1ecc9c356366eb041dc136d30815a89c4ecaaf9a37717f2c43"
+        "sha256": "18140c71612aa4e161da7c47506c07b274d1d0241a385b1619646c0826d46a05"
       },
       "roots": [
         {
@@ -5494,14 +5494,14 @@
       },
       "equations": {
         "path": "tags125.equations.json",
-        "sha256": "da5e51baee5be9e77fd36bfbf1f65ff00bd8596c34995788385c5733bec532d7",
+        "sha256": "e400380481c3b2bb616e98940b66ce6ea72b74ce19c9ace4e4001b8cbbd0096d",
         "equations": 10,
         "failures": 0
       },
       "named_env_sha256": "5b2e7ac2322f60029a603ec066af980b155fb75ee559b64eb3197ba676847246",
       "census": {
         "path": "tags125.census.json",
-        "sha256": "5fb1ba86b18d086545fbd522642d42f49ab363b1c3e4226055d8745a44cd5629"
+        "sha256": "872052174aa2220672a7c3444bf68795727e4b59089a5241354715e7aa98dc2c"
       },
       "roots": [
         {
@@ -5549,14 +5549,14 @@
       },
       "equations": {
         "path": "tags126.equations.json",
-        "sha256": "c03ffc2c2ff1e1e17f066775963c871396fc24b1a12e4b115243b9a13010b698",
+        "sha256": "e7b5716d799c61cce33142482672bc4e36a3c098cf10f8cf6607e7e5b51899e3",
         "equations": 10,
         "failures": 0
       },
       "named_env_sha256": "2eefdb7e1cdfe8afede42526f6a7c5aaadba776f31f11d8d099f84f640099586",
       "census": {
         "path": "tags126.census.json",
-        "sha256": "875d2ae8fa768bf5b1e7ae838090341b945d90cbb1071bac4e4f4388dd7995c1"
+        "sha256": "14a7af73b49984f2ad0f0ee68b1a7592f502ff478164f10cdb28af504fffb097"
       },
       "roots": [
         {

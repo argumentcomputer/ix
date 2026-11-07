@@ -2,7 +2,7 @@
 Lean port of CakeML `compiler/benchmarks/cakeml_benchmarks/cakeml/qsort.cml`
 (CakeML/cakeml 530c7deec135ad421cce7ca768eed2f5801261b2). BSD-3-Clause; see
 `benchmarks/fixtures/LICENSES/cakeml-LICENSE`.
-Modified for Compilatr.ix: translated from CakeML to Lean, with well-founded
+Modified for IxCC: translated from CakeML to Lean, with well-founded
 recursion on the list length for `qsort` (a termination proof over `part`),
 and a printed length and checksum in place of the unused `val test`; see
 `VARIANT.md`.

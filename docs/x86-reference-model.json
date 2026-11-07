@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/x86-reference-readiness/1",
+  "format": "ixcc/x86-reference-readiness/1",
   "reviewed_at": "2026-09-09",
   "model": {
     "repository": "https://github.com/rems-project/sail-x86-from-acl2",

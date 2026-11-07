@@ -2,7 +2,7 @@
 Lean port of CakeML `compiler/benchmarks/cakeml_benchmarks/cakeml/foldl.cml`
 (CakeML/cakeml 530c7deec135ad421cce7ca768eed2f5801261b2). BSD-3-Clause; see
 `benchmarks/fixtures/LICENSES/cakeml-LICENSE`.
-Modified for Compilatr.ix: translated from CakeML to Lean, with the size as
+Modified for IxCC: translated from CakeML to Lean, with the size as
 an argument (upstream: 40000) and a printed result in place of the unused
 `val test`; see `VARIANT.md`.
 -/

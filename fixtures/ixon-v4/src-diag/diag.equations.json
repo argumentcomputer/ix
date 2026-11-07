@@ -18,6 +18,6 @@
   {"name": "SrcDiag.rootOpaqueId",
    "address":
    "e7a7d94bc60d4628624833ea569fff0508da67ef9d5af5019690c0a25f5bf0c2"}],
- "format": "compilatrix/k1-equations/1",
+ "format": "ixcc/k1-equations/1",
  "failures": [],
  "equations": []}

@@ -29,7 +29,7 @@ revision. The source SHA-256 values are:
 | ix `crates/aiur/src/bytecode.rs` | `f3b2ac1a00db49f964313010a63b39906a6b8c30f51b1e1087edf782be6d8cb6` |
 | multi-stark `src/expr.rs` | `09d491e5cef888975b21be9dcabd53f57b9d8c1c28204820fd74a5af2d1c2bb0` |
 
-From the Compilatrix root, with Rust 1.98.1 selected for both `cargo` and
+From the IxCC root, with Rust 1.98.1 selected for both `cargo` and
 `rustc`, prepare and run the optional producer:
 
 ```sh

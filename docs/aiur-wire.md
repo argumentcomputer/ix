@@ -2,11 +2,11 @@
 
 `aiur-bytecode/1` gives the complete pinned `Aiur.Bytecode.Toplevel` a
 canonical binary representation and BLAKE3 content root. The implementation
-is [Compilatrix.Aiur.Wire](../Compilatrix/Aiur/Wire.lean). It preserves every
+is [IxCC.Aiur.Wire](../IxCC/Aiur/Wire.lean). It preserves every
 field, including layouts, debug text, circuit membership, and call-component
 metadata. Reader limits are supplied by the consumer and are not encoded.
 
-This is the Compilatrix wire boundary. The upstream IxVM exporter and AIR
+This is the IxCC wire boundary. The upstream IxVM exporter and AIR
 constraint dump are still needed to instantiate it on the production IxVM.
 Decoding does not establish SSA validity, circuit partition validity, bytecode
 execution, or correspondence to a keyed AIR. The separate component check
@@ -132,7 +132,7 @@ the input. This last check also rejects nonminimal LEB128 spellings. Low-level
 boundary. `encodeChecked` returns bytes with their exact-preimage and
 representability proofs. Raising a budget changes admission, not identity.
 
-[CodecProofs](../Compilatrix/Aiur/Wire/CodecProofs.lean) proves round-trip for
+[CodecProofs](../IxCC/Aiur/Wire/CodecProofs.lean) proves round-trip for
 every toplevel satisfying `Fits limits`, canonical bytes and `Fits` for every
 successful decode, and preimage injectivity within that representable domain.
 The proofs cover all opcodes and recursive controls. They use only the
@@ -171,7 +171,7 @@ deliberately includes semantically invalid indices and circuit membership;
 its acceptance tests only representation and the stated component check.
 
 The expected bytes are handwritten in
-[WireFixtures](../CompilatrixTests/Aiur/WireFixtures.lean), independently of
+[WireFixtures](../IxCCTests/Aiur/WireFixtures.lean), independently of
 the encoder. `tests-aiur` compares those bytes and runs 308 wire assertions
 in addition to the original 25 trace regressions. `check-aiur` compares a
 fresh fixture process against the frozen files, replays each in another
@@ -179,7 +179,7 @@ process, checks its root/counts, and rejects seven corruptions. Its original
 vendor-inventory and four inventory mutation checks remain required.
 
 ```sh
-lake build tests-aiur check-aiur CompilatrixTests.Fences.AiurWire
+lake build tests-aiur check-aiur IxCCTests.Fences.AiurWire
 lake exe tests-aiur
 lake exe check-aiur --root .
 lake exe check-aiur --bytecode fixtures/aiur-bytecode/unit-counter.bin \

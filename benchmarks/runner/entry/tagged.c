@@ -4,7 +4,7 @@
  * code), for the runner's diagnostic clang-tagged row. The
  * twins of fib, sum-loop and gcd are MEAS-4's (benchmarks/meas4/twins.c);
  * these follow the same rules, so the row measures what clang makes of the
- * K1 algorithms on compilatrix's value representation:
+ * K1 algorithms on ixcc's value representation:
  *
  * - a Nat n < 2^63 is the word 2n + 1 (Rt.Layout's scalar encoding);
  * - n + 1 is a tagged + 2 whose carry out is natOverflow (the compiled

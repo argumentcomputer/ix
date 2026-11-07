@@ -16,7 +16,7 @@ and their contracts are on branch `jcb/ixby-archive`.
 
 ## Principles
 
-- **Lean semantics, verified checkers.** Compilatr.ix is written and proved
+- **Lean semantics, verified checkers.** IxCC is written and proved
   in Lean. Expensive analyses and profitability heuristics may be untrusted
   only when a proved checker validates their output, or when the
   transformation is proved correct for every heuristic choice. A rejected
@@ -59,7 +59,7 @@ statement is established in two stages:
    denotations.
 
 **What is proved (Phase 1, stage 1).** `Recheck.sound`
-(`Compilatrix/Recheck/Proof/Soundness.lean`) states the correctness
+(`IxCC/Recheck/Proof/Soundness.lean`) states the correctness
 statement at stage 1 for the object the checked compiler path writes. Its
 two hypotheses:
 - `Recheck.run cfg P c = .ok a`: the recheck path accepted source `P`
@@ -106,10 +106,10 @@ decoding and this composition theorem do not establish kernel-model adequacy.
 See the [compile boundary](compile-boundary.md).
 
 **Bounded plain-RC path.** The separate
-[`Compilatrix.Recheck.RcReplay`](../Compilatrix/Recheck/Rc/Replay.lean) API
+[`IxCC.Recheck.RcReplay`](../IxCC/Recheck/Rc/Replay.lean) API
 provides serialized `Cert` values and `run`; the separate
-[`produce`](../Compilatrix/Recheck/Rc/Produce.lean) entry constructs candidates. Its
-[`object_refines` and `sound`](../Compilatrix/Recheck/Rc/Proof/ObjectSound.lean)
+[`produce`](../IxCC/Recheck/Rc/Produce.lean) entry constructs candidates. Its
+[`object_refines` and `sound`](../IxCC/Recheck/Rc/Proof/ObjectSound.lean)
 prove the same SrcEval-relative return, safety and divergence clauses for the
 actual emitted RC object. The final premises remain successful `run` and
 `X86.Driver.Ok`; `driver_exists` proves that the driver contract is inhabited.
@@ -128,7 +128,7 @@ The separate release/reentry operation contract is described under
 [Runtime](#runtime).
 
 Validation retains the earlier abstract-Cfg gates independently of the native
-certificate path: `CompilatrixTests.Cfg.Rc.Proofs` checks all 29 original
+certificate path: `IxCCTests.Cfg.Rc.Proofs` checks all 29 original
 marker/map/scope/bounds examples, and `tests-cfg-rc` executes complete value/heap,
 timeout and bridge ownership controls. They are test dependencies of the
 required proof/runtime checks, not imports of the compiler algorithms.
@@ -180,7 +180,7 @@ the resource-contract/relevance relation and a SrcEval adequacy theorem.
 Upstream metadata erasure does not prove ownership-contract preservation.
 
 **Statement shape (decision D-1).** Per-level and pipeline theorems are
-stated in the traced shape of `Compilatrix.Sem`, so IO can be added without
+stated in the traced shape of `IxCC.Sem`, so IO can be added without
 restating them:
 - A traced language runs a program on an input under an abstract
   environment and returns, at every clock, the result with the events
@@ -195,7 +195,7 @@ restating them:
 
 **Evaluator interface.** Simulation proofs reason through each evaluator's
 bind-form unfolding lemmas (one equation per rule, sequencing as
-`Result.bind`), with the combinators of `Compilatrix.Sem` (`Agrees.bind`,
+`Result.bind`), with the combinators of `IxCC.Sem` (`Agrees.bind`,
 `Result.Dom.bind`, `ClockMono.bind`, `SimUpTo.bind` and the `Result.bind`
 inversions), never by unfolding the evaluator's `match`. Moving an
 evaluator to a traced, environment-reading monad then changes its unfolding
@@ -351,9 +351,9 @@ The runtime is ordinary Lir code under the same proofs. It links no C runtime
 and does not depend on GMP.
 
 The implemented bounded route uses
-[`Rt.Rc.Procs`](../Compilatrix/Rt/Rc/Procs.lean),
-[`Cfg.Rc.Native`](../Compilatrix/Cfg/Rc/Native.lean) and
-[`Cfg.Rc.Public`](../Compilatrix/Cfg/Rc/Public.lean). It admits table-bound,
+[`Rt.Rc.Procs`](../IxCC/Rt/Rc/Procs.lean),
+[`Cfg.Rc.Native`](../IxCC/Cfg/Rc/Native.lean) and
+[`Cfg.Rc.Public`](../IxCC/Cfg/Rc/Public.lean). It admits table-bound,
 fully scanned shared constructors with at most 31 fields and the existing tag
 bound; fieldless constructors use immediates. Unsupported layouts, contracts
 and malformed ownership/control maps are explicit declines. Allocation and
@@ -363,7 +363,7 @@ ownership contracts are outside this first route.
 
 A successful physical source completion carries one owned output token.
 `Returned.release_public` in
-[`PublicRelease`](../Compilatrix/Recheck/Rc/Proof/PublicRelease.lean) executes
+[`PublicRelease`](../IxCC/Recheck/Rc/Proof/PublicRelease.lean) executes
 the actual exported `cx_drop` on that exact represented word and restores full
 allocator readiness. The caller observes the complete result before dropping
 it; the `.word` export representation passes the original word unchanged,
@@ -371,7 +371,7 @@ including immediates. Ownership comes from the return invariant, never from
 successful readback or a header inspection. With no external owners, the
 ordered-heap invariant proves complete reclamation.
 
-[`recycled_entry`](../Compilatrix/Recheck/Rc/Proof/Reentry.lean) starts another
+[`recycled_entry`](../IxCC/Recheck/Rc/Proof/Reentry.lean) starts another
 numeric root from that reached heap without resetting the bump pointer or
 free lists. The emitted drop export also has its existing backend ABI
 simulation under `EntryBase`. These are operation-composition results, not an

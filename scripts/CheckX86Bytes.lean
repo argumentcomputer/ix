@@ -1,15 +1,15 @@
-import Compilatrix.Tools.Check
-import Compilatrix.X86.ByteBranch
-import Compilatrix.X86.ByteCall
-import Compilatrix.X86.EvalExamples
-import Compilatrix.X86.DecodeWindow
+import IxCC.Tools.Check
+import IxCC.X86.ByteBranch
+import IxCC.X86.ByteCall
+import IxCC.X86.EvalExamples
+import IxCC.X86.DecodeWindow
 
 /-! Finite regression evidence for the independent decoder and byte evaluator.
 The universal local laws live in EncodeExecution/ByteBranch/ByteCall. The
 separate GNU and linked-native gates remain external oracles. -/
 
-open Compilatrix Compilatrix.X86
-open Compilatrix.Tools.Check (checked cli)
+open IxCC IxCC.X86
+open IxCC.Tools.Check (checked cli)
 
 private def need (condition : Bool) (message : String) : Except String Unit :=
   if condition then .ok () else .error message

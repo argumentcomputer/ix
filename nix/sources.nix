@@ -29,9 +29,9 @@
 in {
   inherit programTargets;
   # The production library, including the Aiur reference roots it builds on.
-  production = source (["Compilatrix"] ++ graph.targets.AiurReference.roots);
+  production = source (["IxCC"] ++ graph.targets.AiurReference.roots);
   # Every executable plus the complete proof and fence collection, built once.
-  programs = source (["CompilatrixTests.Proofs"]
+  programs = source (["IxCCTests.Proofs"]
     ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);
   dependencies = lib.fileset.toSource {
     inherit root;

@@ -10,14 +10,14 @@ implements.
 
 | Row | Build |
 | --- | --- |
-| `compilatrix` | The fixture's frozen Ixon closure (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`) through `compilatrix compile … --no-typecheck`, linked with the timing driver |
+| `ixcc` | The fixture's frozen Ixon closure (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`) through `ixcc compile … --no-typecheck`, linked with the timing driver |
 | `lean-clang` | The fixture's Lean source through `lean -c` and Lean's `leanc -O3 -DNDEBUG` (bundled clang and Lean runtime) |
 | `clang-O2`, `clang-O3` | The fixture's natural C or C++ twin at `-O2` and `-O3` |
-| `clang-tagged` | Diagnostic, entry profile only: the K1 algorithms on compilatrix's value representation (tagged words, carry-checked `+ 1`; [`../meas4/twins.c`](../meas4/twins.c) and [`entry/tagged.c`](entry/tagged.c)) at `-O2` |
+| `clang-tagged` | Diagnostic, entry profile only: the K1 algorithms on ixcc's value representation (tagged words, carry-checked `+ 1`; [`../meas4/twins.c`](../meas4/twins.c) and [`entry/tagged.c`](entry/tagged.c)) at `-O2` |
 | `lir-kernel` | Diagnostic, entry profile only: MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd) through the current backend, from `backend-probe` |
-| `compilatrix@NAME` | Diagnostic, entry profile only (`build --variant NAME=DIR`): objects `DIR/<fixture>.o` with the compilatrix row's interface (`cx_init`, `cx_entry`), such as another commit's compiler output (an A/B pair) or a hand-edited what-if; reports then add a ratio to `compilatrix` |
+| `ixcc@NAME` | Diagnostic, entry profile only (`build --variant NAME=DIR`): objects `DIR/<fixture>.o` with the ixcc row's interface (`cx_init`, `cx_entry`), such as another commit's compiler output (an A/B pair) or a hand-edited what-if; reports then add a ratio to `ixcc` |
 
-The `compilatrix` row exists where a frozen closure exists (the nine K1
+The `ixcc` row exists where a frozen closure exists (the nine K1
 fixtures: the original five and the MT.2 corpus four). A compiler decline or rejection is recorded in `build.json` with
 its `stage: code: message`, and the row is left out. Diagnostic rows
 attribute a gap; they are never real-program results.
@@ -26,14 +26,14 @@ attribute a gap; they are never real-program results.
 
 - **Process** (`OUT/bin/<row>/<fixture>`): the fixture's own program, one
   run per process, whole-process wall time (startup included). The
-  `compilatrix` binary is the driver built with `-DPROCESS`: it maps the
+  `ixcc` binary is the driver built with `-DPROCESS`: it maps the
   region, calls `cx_init` and the entry once, and prints the result.
 - **Entry** (`OUT/entry/<row>/<fixture>`): [`entry/driver.c`](entry/driver.c)
   with the row's adapter (`entry/row_<row>.c`) and code. One process
-  initialises the row once (Lean's runtime; the compilatrix region and
+  initialises the row once (Lean's runtime; the ixcc region and
   `cx_init`), makes `warmup` untimed calls and times `reps` calls of `entry`
   in one interval, so `tak` and `gcd` are no longer startup-dominated. The
-  compilatrix adapter calls the root's SysV wrapper directly, so its
+  ixcc adapter calls the root's SysV wrapper directly, so its
   argument checks, tagging and callee-saved saves are part of every call. The
   entry profile covers fixtures whose `entry` is `Nat → … → Nat`
   (the K1 rung). All its C (driver, adapters, twins) is compiled with `cc`
@@ -44,14 +44,14 @@ attribute a gap; they are never real-program results.
 
 Run from this directory with Lean 4.34.1 (`lean`, `leanc`), `clang`/`clang++`,
 `cc` and `objdump` on `PATH` (for example inside `nix develop ../..`), and
-with the compiler built (`lake build compilatrix` at the repository root, or
-pass `--compilatrix "nix run ../..#compilatrix --"`). `OUT` should be an
+with the compiler built (`lake build ixcc` at the repository root, or
+pass `--ixcc "nix run ../..#ixcc --"`). `OUT` should be an
 absolute path, conventionally under `plans/`.
 
 ```sh
 lake build
 ./.lake/build/bin/runner build OUT --fixtures fib,sum-loop,ackermann,tak,gcd \
-    [--compilatrix CMD] [--closures DIR] [--probe ../../.lake/build/bin/backend-probe] \
+    [--ixcc CMD] [--closures DIR] [--probe ../../.lake/build/bin/backend-probe] \
     [--variant base=DIR_A,next=DIR_B]
 ./.lake/build/bin/runner check OUT          # every binary against expected.txt and bench_expected
 taskset -c 5 ./.lake/build/bin/runner calibrate OUT --cpu 2              # entry reps per row
@@ -62,7 +62,7 @@ taskset -c 5 ./.lake/build/bin/runner perf OUT --cpu 2 [--perf PATH] [--runs 3] 
 ```
 
 `build` also writes each row's disassembly (`OUT/asm/<row>/<fixture>.txt`),
-compilatrix's IR at every level (`OUT/compilatrix/<fixture>.ir.txt`) and
+ixcc's IR at every level (`OUT/ixcc/<fixture>.ir.txt`) and
 `--stats` lines, and Lean's final IR (`OUT/ir/lean-clang/<fixture>.txt`), for
 comparing IR against IR. `--probe` builds the `lir-kernel` row from
 `backend-probe`'s objects (`lake build backend-probe` at the root).
@@ -75,7 +75,7 @@ differs (process profile: the rows' outputs; entry profile:
 `bench_expected`). `calibrate` chooses `reps` per row and fixture in a pilot
 so that a timed chunk lasts about `--target-ms` (default 250), and `warmup` as
 a tenth of it. `calibrate`, `measure` and `perf` take `--rows` (names, or a
-prefix ending in `*`, such as `compilatrix,compilatrix@*` for an A/B session).
+prefix ending in `*`, such as `ixcc,ixcc@*` for an A/B session).
 
 On a shared machine, `--gate MAXBUSY` makes the entry profile's blocks
 quiet: the runner reads per-CPU busy time from `/proc/stat` over each block,

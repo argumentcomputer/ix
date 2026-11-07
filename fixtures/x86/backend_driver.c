@@ -15,7 +15,7 @@
  *
  * Cases come one per line on stdin: "budget a1 ... an" (at most five
  * arguments), or "seed S" to refill the region with the test pattern of
- * CompilatrixTests.Lir.Region (seed S, fixed region only). Built with
+ * IxCCTests.Lir.Region (seed S, fixed region only). Built with
  * -DFIXED_REGION, the region is mapped at 0x10000, the address the Lean
  * test region uses, so programs that compute with absolute addresses agree
  * with the Lean models.
@@ -95,7 +95,7 @@ __asm__(
 static uint8_t *region;
 static int patterned;
 
-/* CompilatrixTests.Lir.Region.pattern */
+/* IxCCTests.Lir.Region.pattern */
 static uint8_t pattern(uint64_t seed, uint64_t address) {
   return (uint8_t)((address * 0x9e3779b97f4a7c15ULL + seed) >> 29);
 }

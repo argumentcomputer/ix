@@ -1,6 +1,6 @@
-import Compilatrix.Tools.Check
-import Compilatrix.X86.ByteEval
-import Compilatrix.X86.Encode
+import IxCC.Tools.Check
+import IxCC.X86.ByteEval
+import IxCC.X86.Encode
 
 /-! Hardware-differential gate for the local x86 byte model.
 
@@ -17,7 +17,7 @@ the same state. The gate compares:
 This tests, rather than proves, that the local model agrees with the
 processor; the trust ledger records it as such. -/
 
-open Compilatrix Compilatrix.X86 Compilatrix.Tools.Check
+open IxCC IxCC.X86 IxCC.Tools.Check
 
 namespace CheckX86Hardware
 

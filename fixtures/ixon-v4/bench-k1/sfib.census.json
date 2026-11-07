@@ -9,7 +9,7 @@
   "definition": 73,
   "constructor-projection": 19},
  "ingress": "accepted",
- "format": "compilatrix/census/1",
+ "format": "ixcc/census/1",
  "entries":
  [{"safety": "safe",
    "reached": "policy",

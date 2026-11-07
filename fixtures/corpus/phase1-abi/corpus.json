@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "phase1-abi",
   "description": "The Phase 1 ABI and readback matrix (phase1.md MT.4): roots of arity 0-6 returning Nat, Bool and a three-constructor enumeration, at the edge arguments 0, 1, 2^32-1, 2^62 and 2^63-1 in every position, called natively through the runtime driver and read back by its C decoder and by Rt.readback; arity 6 is declined with rt.params.",
   "tier": "required",
@@ -107,14 +107,14 @@
       },
       "equations": {
         "path": "abi.equations.json",
-        "sha256": "2157af8e9a95de52b5f72e8f80865c009e7d81903b26a755c76242e317e01b99",
+        "sha256": "2dd4fafdb3ca428add1df5b1fb81da37f8c210e0f642047a32e8811ec5e69118",
         "equations": 9,
         "failures": 0
       },
       "named_env_sha256": "9901c2399ec7dae9250ea61b33caf081dd473322a3bfae411c8d9f6f914fda2d",
       "census": {
         "path": "abi.census.json",
-        "sha256": "ce5485a1eda6eaf4bec8b568b8e2de2fcafb90e502aceb4b169ba5a720ab9571"
+        "sha256": "0ccd4ccd74ddf775fcc1f59c8e0f18acba80c6d736c11391f07a99ecc223c595"
       },
       "roots": [
         {

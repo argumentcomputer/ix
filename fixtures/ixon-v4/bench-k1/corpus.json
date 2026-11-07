@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "bench-k1",
   "description": "The benchmark fixtures' pure entry closures (phase1.md M0.4, MT.2): the five K1 programs, and the four MT.2 rows (collatz, prime-count, even-odd, sfib), with unfolding equations.",
   "tier": "required",
@@ -94,14 +94,14 @@
       },
       "equations": {
         "path": "fib.equations.json",
-        "sha256": "8d46247c9d2c78cd65130ceea7e7e017424c3480702055b71b6444d1ddd53d4f",
+        "sha256": "757eec65da4e6ce249d937e9af571270a800372dd7dee181c79dbce903854b37",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "086ec854d2f7005031f80cd7460e2ade311e063c45e35a798b5313fc96d9ec30",
       "census": {
         "path": "fib.census.json",
-        "sha256": "3375f72c5cab530eb8020e7f37ec60df0a8e971476d28fff0f061d8c4665c8e2"
+        "sha256": "8b4d207a9f240e2df0bdc646dae523eb85ccfdccc953bcf96216e2620982bfc3"
       },
       "roots": [
         {
@@ -212,14 +212,14 @@
       },
       "equations": {
         "path": "sum-loop.equations.json",
-        "sha256": "3cd90d0f7ba60d3e31ef15d078de9dd6101256eec7510a9b89ecc1900718abcf",
+        "sha256": "4c4f47fdc03dc46dad56a9cdfcdacc4856311b2911cfc7b11b32650fbbe3751e",
         "equations": 34,
         "failures": 0
       },
       "named_env_sha256": "393deeeda257d1c92bc793c5e7a3ef5112e0b50fd84e798e764c315365c866d1",
       "census": {
         "path": "sum-loop.census.json",
-        "sha256": "1087c0532fe32b9e34cc13f46be2048c4ca64ee15b186d4dc682052bc14cb068"
+        "sha256": "c9d18b5495e9992b02d899de020b2d74e4d94385a398e5d2a0d74800270b4323"
       },
       "roots": [
         {
@@ -330,14 +330,14 @@
       },
       "equations": {
         "path": "ackermann.equations.json",
-        "sha256": "8cf95ab52a4dfd4b7f490b6457ceb5e9000b4b7da19691eb23dc9127b2154ad9",
+        "sha256": "96aa6dec672cc563f2cb3df54635d77057d2707d8ccf6886e344f93f8a020984",
         "equations": 34,
         "failures": 0
       },
       "named_env_sha256": "5d83c7dbc180925ace540e00520e1f02ae05a9d9f8420386ee902a184b89ab53",
       "census": {
         "path": "ackermann.census.json",
-        "sha256": "05f4b32ef24a588111efbcd0dbb6d906de5b01caacd42a63483aa9aed008e014"
+        "sha256": "00799d98c964a4c6d621bbd31957a9b673d302e71bdf57e405865b9bf4d6831c"
       },
       "roots": [
         {
@@ -485,14 +485,14 @@
       },
       "equations": {
         "path": "tak.equations.json",
-        "sha256": "2477ee14afcc16df4e2fdba9f6470097aa832885d5b79eabfb1cc71dce39a359",
+        "sha256": "e48c92ef3d91535ffbce1bce55549e029359e3a1ff53d6e71f9941092de082d4",
         "equations": 5,
         "failures": 0
       },
       "named_env_sha256": "797c3d14c9fe939098566644b7852c4ccbbf887a1320531fb0bc146568c00bb1",
       "census": {
         "path": "tak.census.json",
-        "sha256": "98a3e54189db53965a780028b7264cbe3d3d82e910d840175a36501b00ae4796"
+        "sha256": "8d0709b91b814b2558c87bc92301501e7461349168cc352397ca52af064ee8d3"
       },
       "roots": [
         {
@@ -629,14 +629,14 @@
       },
       "equations": {
         "path": "gcd.equations.json",
-        "sha256": "89d0d1f4fbe1548d575b8b872c0c427b750351700bf89927b5f9cdc3fbbe2d89",
+        "sha256": "0aa0f19759d67e72102569417208c39a4e7e83f81ef6a61195f5296c84a9cbe0",
         "equations": 7,
         "failures": 0
       },
       "named_env_sha256": "87d8f59ac2f4f943e267a1b196cf25258bdeafb2d79bfe7717137d1e3b676e20",
       "census": {
         "path": "gcd.census.json",
-        "sha256": "641ad971c4594bfb87681f29509046e7807e8d385f820b5dd78fcf1a257bb5fd"
+        "sha256": "9ae50e79d1bfe7974f4e2f00a5ba0189285f64bb27706d53afe6aad5d7b2ab28"
       },
       "roots": [
         {
@@ -782,14 +782,14 @@
       },
       "equations": {
         "path": "collatz.equations.json",
-        "sha256": "36aa186f914a9ebf23ce56e8ea1988e386d36172c895b57b412e4aec03251117",
+        "sha256": "d764f8e91ee06a0de4ce7fa8714fe729154345899b4eb34c8b38289faa3e6c27",
         "equations": 35,
         "failures": 0
       },
       "named_env_sha256": "39ee7ebc1847692eccdceee43327f299f5e4fa748e3bfc4b5f2f674059f773d7",
       "census": {
         "path": "collatz.census.json",
-        "sha256": "04630fd5046be4d14e91c44fe074e9df4a44d0797cda3566f073b94a6fa572ca"
+        "sha256": "bf96768b21f26f923022431ba0582cc9ea453a4874e861b51be18d1ba85c8d26"
       },
       "roots": [
         {
@@ -883,14 +883,14 @@
       },
       "equations": {
         "path": "prime-count.equations.json",
-        "sha256": "c8fadafe8955500f0964ed28c0af977ead35e8229de3bed36469672295b3826e",
+        "sha256": "61f1693d4e6050940991e5351a56b6419ba0ae6789b8329cf22a600643c6c22b",
         "equations": 35,
         "failures": 0
       },
       "named_env_sha256": "64828068fe49e098eee9a3b4f1a739e9b42be970aa7b0f2cf6d76a2fca8b3501",
       "census": {
         "path": "prime-count.census.json",
-        "sha256": "62a1884a7ae67d8903a16284186678aa0faca0bddb8b1c9ec01e42bb0a99b89a"
+        "sha256": "b1879f55be2018ddbe86c93417e9d44ef50797e385f3e9c9e280947fa3e7d20f"
       },
       "roots": [
         {
@@ -980,14 +980,14 @@
       },
       "equations": {
         "path": "even-odd.equations.json",
-        "sha256": "72667ac517c60b2a30c49c63e4bbffe41c3110f5d956af096eac72f0573303c5",
+        "sha256": "5bf9087940f721bb4b64263d188e1bcb343246c9231ae35592bdc96db5fea136",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "074c609645475a561cf74503174f37afe31be59850dfac8053baaf8ae4a10340",
       "census": {
         "path": "even-odd.census.json",
-        "sha256": "f60ba9d27f14fc284c6dcad532f88206e23090f9eefd3f13804ac1b1dee8b2ca"
+        "sha256": "a553191b5b7ed60f69a254ae47639cf7090bb1264770e43b17930f9e6920c2d8"
       },
       "roots": [
         {
@@ -1084,14 +1084,14 @@
       },
       "equations": {
         "path": "sfib.equations.json",
-        "sha256": "287b03a03fcdb46b0eb5ce0bbdd9635e28925e66c3f1e9f35928a4e30afb9eb2",
+        "sha256": "f3a5e6103234b9f9793351f628937af1ac37e2bf6088770d72854122ee208f24",
         "equations": 5,
         "failures": 0
       },
       "named_env_sha256": "122a50cdd6fbf90d47543a4dba2e565a4ad4a8fe041dfc2baab02f1fcdee9ac8",
       "census": {
         "path": "sfib.census.json",
-        "sha256": "5dff2ba3e9e0cbff2a24927858fbdc40b79354580eab450cca53e81941e61f6b"
+        "sha256": "a0df7e3a080b95285f8d7f118d360b662008098a2093cef67316146f16e84b35"
       },
       "roots": [
         {

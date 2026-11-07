@@ -8,7 +8,7 @@
   "definition": 8,
   "constructor-projection": 4},
  "ingress": "accepted",
- "format": "compilatrix/census/1",
+ "format": "ixcc/census/1",
  "entries":
  [{"safety": "safe",
    "reached": "policy",

@@ -1,12 +1,12 @@
-import Compilatrix.Tools.Check
-import Compilatrix.X86.StreamExamples
+import IxCC.Tools.Check
+import IxCC.X86.StreamExamples
 
 /-! Complete-stream and serialized-object regressions. The universal laws
 live in StreamTrace and ObjectExecution. Mutations below
 alter concrete instruction and ELF fields, independently of the writers. -/
 
-open Compilatrix Compilatrix.X86
-open Compilatrix.Tools.Check (checked cli)
+open IxCC IxCC.X86
+open IxCC.Tools.Check (checked cli)
 
 private def need (condition : Bool) (message : String) : Except String Unit :=
   if condition then .ok () else .error message
@@ -28,7 +28,7 @@ private def sameBytes (left right : Memory) (addresses : List Word) : Bool :=
   addresses.all fun address => left.bytes address == right.bytes address &&
     left.readable address == right.readable address && left.writable address == right.writable address
 
-private def provenance : ELF.Provenance := .ixir1Policy (Compilatrix.Ixon.Address.replicate 0x42) 3 7
+private def provenance : ELF.Provenance := .ixir1Policy (IxCC.Ixon.Address.replicate 0x42) 3 7
 private def sentinel : Word := 0xff00
 private def textBase : Word := 0x100000
 
@@ -290,7 +290,7 @@ private def objectCorruptions : Except String Nat := do
   let strings := view.sections[5]!.header
   let names := view.sections[7]!.header
   let descriptor := note + 24
-  let domainSize := "compilatrix/x86-object-provenance/1".toUTF8.size
+  let domainSize := "ixcc/x86-object-provenance/1".toUTF8.size
   let fieldMutations : List (String × Nat × Nat × Nat) := [
     ("magic", 0, 1, 0), ("class", 4, 1, 1), ("endianness", 5, 1, 2),
     ("ident padding", 15, 1, 1), ("object type", 16, 2, 2), ("machine", 18, 2, 3),
@@ -329,7 +329,7 @@ private def objectCorruptions : Except String Nat := do
   for cut in [:bytes.size] do need (!ELF.check input (bytes.extract 0 cut)) s!"object accepted truncated prefix {cut}"
   need (!ELF.check input (bytes.push 0)) "object accepted trailing data"
   need ((ELF.entry? bytes "wrong_export").isNone) "wrong exported name resolved"
-  need (!ELF.check { input with provenance := .ixir2 (Compilatrix.Ixon.Address.replicate 0x42) } bytes) "wrong provenance family accepted"
+  need (!ELF.check { input with provenance := .ixir2 (IxCC.Ixon.Address.replicate 0x42) } bytes) "wrong provenance family accepted"
   let (_, otherInput, otherBytes) ← artifact Examples.arithmeticProgram
   need (!ELF.check otherInput bytes && !ELF.check input otherBytes) "cross-object substitution accepted"
   return fieldMutations.length + bytes.size + 4
@@ -373,7 +373,7 @@ private def relocationCases : Except String Nat := do
   let next := relocation.offset + 4
   let targets : List Int := [0x1000, -0x1000, (next : Int) - 2147483648, (next : Int) + 2147483647]
   for destination in targets do
-    let symbols : ELFLink.Symbols := fun name => if name == "compilatrix_rt_allocate" then some destination else none
+    let symbols : ELFLink.Symbols := fun name => if name == "ixcc_rt_allocate" then some destination else none
     let linked ← (ELFLink.resolve target input object symbols).mapError reprStr
     streamResult target.program linked.output true (ELFLink.targets symbols)
     need (linked.view.relocations == view.relocations) "linker changed relocation interpretation"

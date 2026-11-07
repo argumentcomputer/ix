@@ -24,6 +24,6 @@
   {"name": "SortPoly.typeArg",
    "address":
    "a0bc40591c2cd95983b027a8b2a5895d883a7f4e4b982d773f3edaa76f17c768"}],
- "format": "compilatrix/k1-equations/1",
+ "format": "ixcc/k1-equations/1",
  "failures": [],
  "equations": []}

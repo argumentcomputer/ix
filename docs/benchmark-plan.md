@@ -4,9 +4,9 @@ This document defines comparison rules. The [roadmap](roadmap.md) owns the
 benchmark ladder and targets. [Performance reports](performance/README.md)
 retain earlier results. The first-wave [fixtures](../benchmarks/fixtures/README.md)
 and the optional [runner](../benchmarks/runner/README.md) implement these rules for
-the `compilatrix`, `lean-clang` and `clang-idiomatic` rows. The `compilatrix`
+the `ixcc`, `lean-clang` and `clang-idiomatic` rows. The `ixcc`
 row compiles each K1 fixture's frozen closure (`fixtures/ixon-v4/bench-k1`)
-with the `compilatrix` executable; the runner times every row in the process
+with the `ixcc` executable; the runner times every row in the process
 (startup) profile and, for `Nat` entries, in the entry profile with
 calibrated repetition counts, and adds two diagnostic rows for attribution
 (the K1 algorithms on the compiled value representation, and MEAS-4's
@@ -27,7 +27,7 @@ reproducible from its retained artifacts and samples.
 
 | Row | Definition | Question |
 | --- | --- | --- |
-| `compilatrix` | The certified production artifact | The primary result |
+| `ixcc` | The certified production artifact | The primary result |
 | `lean-clang` | The same Lean source through Lean's compiler and its bundled Clang at `leanc -O3` (Lean's defaults, including its runtime) | Competitiveness with the incumbent |
 | `clang-idiomatic` | A natural C or C++ twin (for example Koka's C++ benchmarks, Lean's `std::map` twins, BLAKE3's portable C) at `-O2` and `-O3` | Distance from what a C programmer gets |
 | `lean-clang-nix` | Lean's generated C through the pinned Nix Clang with our flags | Separates compiler-version effects |
@@ -35,7 +35,7 @@ reproducible from its retained artifacts and samples.
 
 - Compile the driver identically, with Clang, for every row, and record the
   hardening flags.
-- From the first real-source rung on, the Compilatrix and Lean rows compile
+- From the first real-source rung on, the IxCC and Lean rows compile
   the *same* Lean source file.
 - Pin compiler versions, build options, runtime configuration, assembler,
   linker, ISA and dependency closure.
@@ -68,11 +68,11 @@ reproducible from its retained artifacts and samples.
 
 ## Attribution
 
-- **Gap to a baseline:** Compilatrix time divided by baseline time; above 1
-  is slower. Published reports use speedup, `baseline / Compilatrix`.
+- **Gap to a baseline:** IxCC time divided by baseline time; above 1
+  is slower. Published reports use speedup, `baseline / IxCC`.
 - **Split each gap** into more instructions versus lower IPC, using
   instructions, cycles and branch misses per operation.
-- **Compare IR against IR.** Put Lean's final compiler IR beside Compilatrix's
+- **Compare IR against IR.** Put Lean's final compiler IR beside IxCC's
   ownership and control-flow IRs for the same function.
   - Differences in allocations, reference-count operations or calls attribute
     the gap to the middle end.

@@ -10,7 +10,7 @@ S2.
 
 One declarative table drives the typed machine, the byte machine, the
 encoder and the decoder
-([`Table/`](../Compilatrix/X86/Table/Op.lean)). A row `Op` is a mnemonic, an
+([`Table/`](../IxCC/X86/Table/Op.lean)). A row `Op` is a mnemonic, an
 operand width, an SDM encoding class (`OpEn`: MR, RM, MI, MI8, M, MC, OI, O,
 RMI, RMI8, D32, ZO) and, for `movzx`, a source width. `desc : Op → OpDesc`
 gives each row:
@@ -84,7 +84,7 @@ that.
 
 ## Proved interface
 
-[`Decode.lean`](../Compilatrix/X86/Decode.lean) imports only the table and
+[`Decode.lean`](../IxCC/X86/Decode.lean) imports only the table and
 its decoder index. It parses the operand-size prefix, REX, opcode map,
 opcode, ModRM, SIB, displacement and immediate, finds the row by
 `(prefix, REX.W, map, opcode, ModRM digit)`, and checks the operands against
@@ -92,7 +92,7 @@ the row's slot kinds. It never calls the encoder or either evaluator.
 Truncated, non-canonical and unlisted forms reject; rejection does not mean
 that a byte sequence is invalid on general x86-64.
 
-[`ByteEval.lean`](../Compilatrix/X86/ByteEval.lean) executes decoded rows with
+[`ByteEval.lean`](../IxCC/X86/ByteEval.lean) executes decoded rows with
 the local register and permissioned byte-memory primitives. Its RIP is a
 64-bit byte address. CF, ZF, SF and OF have explicit values; undefined flags
 (IMUL's SF/ZF, a shift's OF for counts other than one, and every flag after
@@ -136,7 +136,7 @@ Named runtime calls emit ordinary CALL bytes (`runtime_call_form`). Their
 typed atomic invocation denotes an external procedure contract. E1 does not
 equate a single physical CALL with execution of an external body.
 
-The public laws are audited in [`Fences/X86.lean`](../CompilatrixTests/Fences/X86.lean).
+The public laws are audited in [`Fences/X86.lean`](../IxCCTests/Fences/X86.lean).
 They depend only on `propext`, `Classical.choice` and `Quot.sound`; the
 table facts, `Op.safe_ok`, `row_execution` and the patch splice need only `propext` and
 `Quot.sound`. They add no hashing, native decision, ISA axiom, or assumed
@@ -144,14 +144,14 @@ step-simulation callback.
 
 ## Executable evidence
 
-[`EncodeExamples.lean`](../Compilatrix/X86/EncodeExamples.lean) freezes byte-exact
+[`EncodeExamples.lean`](../IxCC/X86/EncodeExamples.lean) freezes byte-exact
 goldens for every encoding choice, and
 [`CheckX86Encoder`](../scripts/CheckX86Encoder.lean) has GNU objdump decode
 the same 30 forms, 18 Phase 1 forms (`div`, shifts by imm8 and `cl`, `test`,
 `setcc`, `cmovcc`, `op r, r/m` including the prologue's `cmp r11, [r15 −
 56]`, and the failure exit's `mov rsp, [r15 − 64]` = `49 8B 67 C0`), the
 addressing/REX edges and two resolved programs.
-[`ByteExamples.lean`](../Compilatrix/X86/ByteExamples.lean) checks bytes for
+[`ByteExamples.lean`](../IxCC/X86/ByteExamples.lean) checks bytes for
 SIL, clearing upper register bits, R12 SIB indices, signed comparison
 overflow, sign-extended immediates, POP RSP and truncation.
 
@@ -198,7 +198,7 @@ These are finite regressions, not universal proofs. The GNU objdump gate,
 ELF checks and linked native tests remain mandatory external evidence.
 
 ```sh
-lake build Compilatrix check-x86-bytes check-x86-hardware
+lake build IxCC check-x86-bytes check-x86-hardware
 ./.lake/build/bin/check-x86-bytes
 ```
 

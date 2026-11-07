@@ -1,6 +1,6 @@
-import Compilatrix.Ixon.V3
+import IxCC.Ixon.V3
 
-open Compilatrix.Ixon.V3
+open IxCC.Ixon.V3
 
 private def readBounded (path : System.FilePath) (limit : Nat) : IO ByteArray :=
   IO.FS.withFile path .read fun handle => do

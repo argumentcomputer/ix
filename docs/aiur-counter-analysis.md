@@ -1,6 +1,6 @@
 # Aiur unit-counter analyzer soundness
 
-[`CounterAnalysis.find_body`](../Compilatrix/Aiur/CounterAnalysis/Sound.lean)
+[`CounterAnalysis.find_body`](../IxCC/Aiur/CounterAnalysis/Sound.lean)
 proves universal soundness of the pinned `UnitCounter.find?` against the
 actual [`OracleEval.Body`](aiur-semantics.md) relation. Given the exact
 function at its toplevel index and a returned candidate, every constrained
@@ -49,7 +49,7 @@ provider dependency. Its executable behavior is unchanged.
 ## Proof structure
 
 The proof-only aggregate is
-[`Compilatrix.Aiur.CounterAnalysis`](../Compilatrix/Aiur/CounterAnalysis.lean).
+[`IxCC.Aiur.CounterAnalysis`](../IxCC/Aiur/CounterAnalysis.lean).
 It remains outside the production API's import closure.
 
 1. Affine expressions denote concrete registers, with an existing register
@@ -75,10 +75,10 @@ It remains outside the production API's import closure.
 ## Validation and remaining boundary
 
 ```sh
-lake build Compilatrix.Aiur.CounterAnalysis \
-  CompilatrixTests.Aiur.CounterAnalysis.Proofs \
-  CompilatrixTests.Fences.AiurCounterAnalysis
-lake build CompilatrixTests.Proofs
+lake build IxCC.Aiur.CounterAnalysis \
+  IxCCTests.Aiur.CounterAnalysis.Proofs \
+  IxCCTests.Fences.AiurCounterAnalysis
+lake build IxCCTests.Proofs
 lake exe check-build-graph
 nix build .#checks.x86_64-linux.proofs
 ```

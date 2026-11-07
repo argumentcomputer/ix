@@ -1,14 +1,14 @@
 /*
  * The runner's adapter for the diagnostic lir-kernel row (untrusted
  * measurement code): MEAS-4's hand-written Lir kernels
- * (CompilatrixTests/Lir/Kernels.lean) through the current backend, as
+ * (IxCCTests/Lir/Kernels.lean) through the current backend, as
  * `backend-probe DIR` writes them (lir_fib.o, lir_sumLoop.o, lir_gcd.o), each
  * exporting the SysV wrapper of note 05 §6.1,
  *
  *     {status, value} lir_<kernel>(void *region, a1, ...)    in rax:rdx
  *
  * The objects carry no cx_init, so the context is set up once as
- * benchmarks/meas4/row_compilatrix.c does; the wrapper writes entrySp and
+ * benchmarks/meas4/row_ixcc.c does; the wrapper writes entrySp and
  * the stack limit on every call. FIXTURE_<name> selects the kernel; only
  * fib, sum-loop and gcd have one.
  */

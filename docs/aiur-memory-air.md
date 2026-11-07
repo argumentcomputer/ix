@@ -1,15 +1,15 @@
 # Aiur memory AIR extraction
 
-[`AIR.Memory.coherent`](../Compilatrix/Aiur/AIR/Memory/Projection.lean)
+[`AIR.Memory.coherent`](../IxCC/Aiur/AIR/Memory/Projection.lean)
 derives one coherent witness heap from the memory-table polynomials, distinct
 bucket identities, and table heights below the Goldilocks characteristic.
 Selected rows have selector exactly one. Their pointers may start anywhere
 and cross the field boundary. No prior-store, honest allocator, zero-origin,
 datatype-validity, or heap-acyclicity premise is used.
 
-[`AIR.Memory.validate`](../Compilatrix/Aiur/AIR/Memory/Check.lean) checks
+[`AIR.Memory.validate`](../IxCC/Aiur/AIR/Memory/Check.lean) checks
 ordinary supplied tables and returns `Checked tables`. Its proof-only
-[`Sound`](../Compilatrix/Aiur/AIR/Memory/Sound.lean) module derives activity,
+[`Sound`](../IxCC/Aiur/AIR/Memory/Sound.lean) module derives activity,
 coherence, exact value widths, heap agreement, and the existing
 `MessageEval.memory` meaning for every selected cell. The caller supplies no
 heap-coherence proof. The production aggregate imports the model and checker;
@@ -88,8 +88,8 @@ fixtures; a universal Rust theorem and the full keyed IxVM comparison remain
 outside its scope.
 
 ```sh
-lake build Compilatrix.Aiur.AIR.Memory.Sound \
-  CompilatrixTests.Aiur.MemoryAIR.Proofs CompilatrixTests.Fences.AiurMemoryAIR \
+lake build IxCC.Aiur.AIR.Memory.Sound \
+  IxCCTests.Aiur.MemoryAIR.Proofs IxCCTests.Fences.AiurMemoryAIR \
   tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .

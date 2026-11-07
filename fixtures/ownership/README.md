@@ -27,18 +27,18 @@ benefit of an annotation: Phase 1 has none.
 
 | File | What |
 | --- | --- |
-| [`corpus.json`](corpus.json) | the `ownership` family, format `compilatrix/corpus/1` ([`docs/corpus.md`](../../docs/corpus.md)): every closure, with its source, licence, roots, cases and the values Lean 4.34's interpreter printed |
-| [`verdicts.json`](verdicts.json) | format `compilatrix/own-verdicts/1`: ix's verdict on every annotated source, and the corpus fixture of each accepted one |
+| [`corpus.json`](corpus.json) | the `ownership` family, format `ixcc/corpus/1` ([`docs/corpus.md`](../../docs/corpus.md)): every closure, with its source, licence, roots, cases and the values Lean 4.34's interpreter printed |
+| [`verdicts.json`](verdicts.json) | format `ixcc/own-verdicts/1`: ix's verdict on every annotated source, and the corpus fixture of each accepted one |
 | `src/<ID>/Annotated.lean` | an annotated source (imports `Ix.Compile.SourceContract.Elab`) |
-| `src/<ID>/Plain.lean` | its plain twin: the annotated text with the contract atoms, `borrow` and the elaborator import deleted; `tests-own` checks this (`CompilatrixTests.Own.Strip`) |
+| `src/<ID>/Plain.lean` | its plain twin: the annotated text with the contract atoms, `borrow` and the elaborator import deleted; `tests-own` checks this (`IxCCTests.Own.Strip`) |
 | `<ID>-annotated.*`, `<ID>-plain.*` | the frozen closures (`.ixe`), `eq_def` sidecars (`.equations.json`) and admission censuses (`.census.json`) |
 
-All sources were written for Compilatr.ix (Apache-2.0 OR MIT); most are the
+All sources were written for IxCC (Apache-2.0 OR MIT); most are the
 probes of the design note, renamed by fixture id.
 
 ## Fixtures compiled today
 
-| ID | Annotated | ix | Compilatrix | Code against the twin |
+| ID | Annotated | ix | IxCC | Code against the twin |
 | --- | --- | --- | --- | --- |
 | OS-01 `erased-proof-arg` | `pick (0 _h : True) (n : Nat)` | accepted | compiled | equal Fir, Cfg and object |
 | OS-03 `erased-data` | `ignoreFirst (0 _n : Nat) (m : Nat)`, called with `n` | accepted | compiled (CX-1; `relevance-C0` before) | equal |

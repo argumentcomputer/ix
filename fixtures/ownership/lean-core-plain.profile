@@ -42,7 +42,7 @@
 #   update of it.
 # - A constructor without run-time fields (`Nat.zero`, `[]`, `none`) is an
 #   immediate, unique: the consumer represents it without a heap object (a
-#   scalar, as Lean and Compilatr do), never as a shared static object.
+#   scalar, as Lean and IxCC do), never as a shared static object.
 # - A field is an owned reference: a value extracted by a projection or a
 #   case split stays valid after its aggregate is dropped (the consumer takes
 #   its own reference, as Lean's runtime does). The checker ties a field to

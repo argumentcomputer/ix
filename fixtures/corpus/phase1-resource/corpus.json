@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "phase1-resource",
   "description": "The Phase 1 resource corpus (phase1.md MT.3): heap, stack and trap failures (statuses 1, 2 and 4) through the driver's --region and --stack, at exact heap thresholds from the immortal cell layout and at stack bounds one of which must succeed and the other fail.",
   "tier": "required",
@@ -96,14 +96,14 @@
       },
       "equations": {
         "path": "resource.equations.json",
-        "sha256": "e1540d1e1b6f3b59e9a414371552582b7ea2b09e8fad09b8e4a65fb7045bfc18",
+        "sha256": "68314326b93e58fab1ff95305e73b857d00b0395025b5dd53c32827c2ce6d23f",
         "equations": 40,
         "failures": 0
       },
       "named_env_sha256": "39c5530351781767d1b17e95241e022fe0bf7a835fa06b07946635c2967276d8",
       "census": {
         "path": "resource.census.json",
-        "sha256": "313439e7356e19bd24114dc470ab232eeb3d157980e843774e450f19b7f3febe"
+        "sha256": "a830f418d98b8671b9129cd9181fbb5d5a186214345fb48efd8e561bd87f0492"
       },
       "roots": [
         {

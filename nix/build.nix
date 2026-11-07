@@ -14,9 +14,9 @@
   # «ix-kernel»: ix's `IxKernel/lakefile.lean` declares `srcDir := ".."` (the ix
   # checkout root), which lean4-nix cannot shadow (it copies only a
   # dependency's `subDir`), and its `IxKernel` library also holds the codec's
-  # proofs and audits, which import the whole kernel: linking Compilatrix's
+  # proofs and audits, which import the whole kernel: linking IxCC's
   # shared library would build all of it. So the pinned sources of the codec
-  # closure Compilatrix imports (`Ix.Ixon.Canonical`: 11 modules under
+  # closure IxCC imports (`Ix.Ixon.Canonical`: 11 modules under
   # `Ix/Address` and `Ix/Ixon`, unchanged) are packaged under the same package
   # name and toolchain with a library holding exactly those modules, built
   # once here with its shared and static facets. A module missing at a new
@@ -77,10 +77,10 @@
     cp ${packageOverrides} .lake/package-overrides.json
   '';
   buildInputs = [pkgs.gmp lean pkgs.rsync];
-  compilatrixLib = lake2nix.mkPackage {
+  ixccLib = lake2nix.mkPackage {
     inherit lakeDeps buildInputs;
     src = sources.production;
-    name = "Compilatrix";
+    name = "IxCC";
     buildLibrary = true;
     meta.description = "Production compiler library and reusable Lake artifacts";
     postConfigure = asciiPackages;
@@ -90,16 +90,16 @@
   programs = lake2nix.mkPackage {
     inherit lakeDeps buildInputs;
     src = sources.programs;
-    name = "compilatrix-programs";
+    name = "ixcc-programs";
     postConfigure = asciiPackages;
     prePatch = ''
       mkdir -p .lake
-      cp -R ${compilatrixLib}/.lake/build .lake/build
+      cp -R ${ixccLib}/.lake/build .lake/build
       chmod -R +w .lake/build
     '';
     buildPhase = ''
       runHook preBuild
-      lake -KciLeanLibDir=${lean}/lib/lean build CompilatrixTests.Proofs \
+      lake -KciLeanLibDir=${lean}/lib/lean build IxCCTests.Proofs \
         ${pkgs.lib.escapeShellArgs sources.programTargets}
       runHook postBuild
     '';
@@ -124,5 +124,5 @@
       touch $out
     '';
 in {
-  inherit compilatrixLib programs mkCheck ixKernel;
+  inherit ixccLib programs mkCheck ixKernel;
 }

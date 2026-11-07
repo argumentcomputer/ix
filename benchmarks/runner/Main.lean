@@ -5,10 +5,10 @@ open Runner System
 def usage : String :=
   "usage: runner COMMAND [OPTIONS] OUT\n\
    \n\
-   build     [--fixtures a,b] [--compilatrix CMD] [--closures DIR] [--probe PATH] [--cc CC]\n\
+   build     [--fixtures a,b] [--ixcc CMD] [--closures DIR] [--probe PATH] [--cc CC]\n\
    \x20         [--variant NAME=DIR[,NAME=DIR...]]\n\
    check     [--fixtures a,b]\n\
-   calibrate [--cpu N] [--target-ms T] [--fixtures a,b] [--rows r,s,compilatrix@*]\n\
+   calibrate [--cpu N] [--target-ms T] [--fixtures a,b] [--rows r,s,ixcc@*]\n\
    measure   [--profile process|entry] [--cpu N] [--blocks B] [--fixtures a,b] [--rows ...]\n\
    \x20         [--gate MAXBUSY [--gate-wait S] [--gate-attempts A]]   (entry profile)\n\
    perf      [--cpu N] [--perf PATH] [--runs R] [--fixtures a,b] [--rows ...] [--gate MAXBUSY]\n\
@@ -46,7 +46,7 @@ def main (args : List String) : IO UInt32 := do
         | some n => pure n
         | none => throw (IO.userError s!"--{name} expects a number, got {v}")
     let known := match command with
-      | "build" => ["fixtures", "compilatrix", "closures", "probe", "cc", "variant"]
+      | "build" => ["fixtures", "ixcc", "closures", "probe", "cc", "variant"]
       | "check" => ["fixtures"]
       | "calibrate" => ["cpu", "target-ms", "fixtures", "rows"]
       | "measure" => ["profile", "cpu", "blocks", "fixtures", "rows", "gate", "gate-wait", "gate-attempts"]
@@ -73,8 +73,8 @@ def main (args : List String) : IO UInt32 := do
       build manifest root out {
         variants
         fixtures := only
-        compilatrix := ((get "compilatrix").map (·.splitOn " " |>.filter (!·.isEmpty))).getD
-          ["../../.lake/build/bin/compilatrix"]
+        ixcc := ((get "ixcc").map (·.splitOn " " |>.filter (!·.isEmpty))).getD
+          ["../../.lake/build/bin/ixcc"]
         closures := (get "closures").getD "../../fixtures/ixon-v4/bench-k1"
         probe := (get "probe").map FilePath.mk
         cc := (get "cc").getD "cc" }

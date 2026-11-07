@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/benchmark-fixtures/1",
+  "format": "ixcc/benchmark-fixtures/1",
   "description": "First-wave (K1-K3) benchmark fixtures; see README.md. Paths are relative to benchmarks/fixtures unless noted. `expected` holds the test-size oracle; `bench_expected` is the output at `bench_args` on which the Lean variant and its twin agree (cross-validated, not an upstream oracle).",
   "lean": {
     "version": "4.34.0",
@@ -31,7 +31,7 @@
       "license_file": "LICENSES/cakeml-LICENSE",
       "ref_dir": "cakeml"
     },
-    "compilatrix": {
+    "ixcc": {
       "url": "https://github.com/argumentcomputer/Compilatr.ix",
       "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
       "license": "Apache-2.0 OR MIT",

@@ -21,7 +21,7 @@ For a new theorem-backed boundary:
    callback or substitute a theorem about a hand-built target.
 3. Expose semantic preservation, resource/cost laws, and native byte/runtime
    guarantees at their respective boundaries. Add public results to
-   [the axiom fences](../CompilatrixTests/Fences.lean) and preserve the existing axiom
+   [the axiom fences](../IxCCTests/Fences.lean) and preserve the existing axiom
    basis unless a deliberate trust change is part of the package.
 4. Exercise a non-degenerate input at the claimed entry point, checked
    fallback, and the negative boundaries affected by the extension.
@@ -56,7 +56,7 @@ coverage inventory and the coverage-change record. During development:
 
 - Build the affected targets: `nix develop -c lake build <targets>`.
 - Build every program and the proof collection:
-  `nix develop -c lake build CompilatrixTests.Proofs <executables>`.
+  `nix develop -c lake build IxCCTests.Proofs <executables>`.
 - Run the focused suites for the area: `lake exe tests-ixon-v3`,
   `lake exe check-ixon-v3 …`, `lake exe check-ixon-v3-catalog …`,
   `lake exe tests-aiur`, the x86 checks `check-x86-encoder`,
@@ -106,9 +106,9 @@ It does not establish arbitrary resource-profile compatibility or producer
 admission. Run the complete `tests-lam` suite after changing this gate.
 
 For the plain-RC foundation, build and run `tests-own-plain` and build
-`CompilatrixTests.Own.Plain.Suite`, `CompilatrixTests.Fences.OwnPlain` and
-`CompilatrixTests.Fences.OwnRc`. The pure suite is also required by
-`CompilatrixTests.Proofs`.
+`IxCCTests.Own.Plain.Suite`, `IxCCTests.Fences.OwnPlain` and
+`IxCCTests.Fences.OwnRc`. The pure suite is also required by
+`IxCCTests.Proofs`.
 The executable covers candidate rejection, complete values, shared aliases,
 calls/joins, clocks and final release. These abstract-heap checks remain
 required alongside the promoted runtime/certificate gates. Keep proof modules
@@ -118,7 +118,7 @@ For the bounded plain-RC path, build the five focused executables and pure
 Cfg controls once:
 
 ```sh
-nix develop -c lake build CompilatrixTests.Cfg.Rc.Proofs tests-rt-rc tests-rc-certificate tests-driver-session tests-cfg-rc tests-pipeline-rc
+nix develop -c lake build IxCCTests.Cfg.Rc.Proofs tests-rt-rc tests-rc-certificate tests-driver-session tests-cfg-rc tests-pipeline-rc
 ```
 
 Run the portable Lir and driver-model controls:
@@ -178,7 +178,7 @@ RC pipeline `native`/`negative`). They execute the shared programs artifact, wit
 
 ```sh
 nix build .#checks.x86_64-linux.rc-runtime .#checks.x86_64-linux.rc-native
-nix develop -c lake build CompilatrixTests.Proofs
+nix develop -c lake build IxCCTests.Proofs
 ```
 
 Also run the complete build-graph, exact fence, trust/tool and required Nix
@@ -251,7 +251,7 @@ supporting each claim together in `plans/<task>/`.
 
 The generators (LamGen, FoGen, the Lir generator and the allocation
 mutants) draw every choice through `RngM`, whose tape can record a run's
-choice sequence or replay an edited one (`CompilatrixTests.Support.Rng`).
+choice sequence or replay an edited one (`IxCCTests.Support.Rng`).
 `lake exe tests-shrink` checks that recorded sequences regenerate their
 seeded cases, and that a planted bug per generator is found, named at the
 first level of its ladder that diverges from the generator's reference
@@ -268,7 +268,7 @@ Fir, Own, Cfg; `fogen`: Anf, Fir, Own, Cfg; `lirgen`: Lir, Lir with critical
 edges split, Xv, Xl; `regalloc-mutants`: Lir, Xv, Xl, the validator-accepted
 mutant) on each seed's case, shrinks every failing one by its choice
 sequences until the same first level still diverges, and writes a
-`compilatrix/repro/1` record: the sequences that regenerate the shrunk
+`ixcc/repro/1` record: the sequences that regenerate the shrunk
 case, its input, the level and both observations, the sizes before and
 after, and the program as text. `replay` regenerates the case from the
 sequences (not the seed, which stops reproducing once a generator changes)

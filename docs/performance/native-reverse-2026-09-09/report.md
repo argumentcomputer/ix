@@ -1,6 +1,6 @@
 # Native reversal: shared-host reference run
 
-This report covers one bounded reversal workload on one recorded x86-64 Linux host. It compares the checked Compilatrix object with consuming Lean and CakeML programs and the same arena C kernel compiled by CompCert, GCC, and Clang. The worker is pinned, but the host, SMT sibling, temperature, and turbo behavior are not controlled. These observations do not establish a dedicated regression baseline.
+This report covers one bounded reversal workload on one recorded x86-64 Linux host. It compares the checked IxCC object with consuming Lean and CakeML programs and the same arena C kernel compiled by CompCert, GCC, and Clang. The worker is pinned, but the host, SMT sibling, temperature, and turbo behavior are not controlled. These observations do not establish a dedicated regression baseline.
 
 Every row has 30 paired blocks in three sessions, with the median of three samples per executable per block. Samples accumulate at least 100 ms of measured work. Counts are identical across implementations in each paired case. The raw timer and handoff control is retained without subtraction. All valid slow observations are included. Intervals use 10,000 hierarchical paired bootstrap replicates (seed 2671931027), resampling sessions then blocks. Only three session clusters are available, so interval precision and generalization remain limited. Full medians, quartiles, intervals, session medians, and paired ratios are in `summary.json`.
 
@@ -8,7 +8,7 @@ Every row has 30 paired blocks in three sessions, with the median of three sampl
 
 Nanoseconds per operation, median across block medians. Lifecycle includes construction, reversal, order-sensitive consumption, and normal memory management.
 
-| Length | Payload domain | Compilatrix | Lean | CakeML | CompCert | GCC | Clang |
+| Length | Payload domain | IxCC | Lean | CakeML | CompCert | GCC | Clang |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0 | six patterns, <2^30 | 7.710000 | 2.620000 | 4.170000 | 5.090000 | 4.660000 | 5.140000 |
 | 1 | six patterns, <2^30 | 10.790000 | 3.090000 | 5.380000 | 6.220000 | 5.570000 | 6.450000 |
@@ -34,7 +34,7 @@ Nanoseconds per operation, median across block medians. Lifecycle includes const
 
 Nanoseconds per operation, median across block medians. Lifecycle includes construction, reversal, order-sensitive consumption, and normal memory management.
 
-| Length | Payload domain | Compilatrix | Lean | CakeML | CompCert | GCC | Clang |
+| Length | Payload domain | IxCC | Lean | CakeML | CompCert | GCC | Clang |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0 | six patterns, <2^30 | 20.900000 | 7.160000 | 8.960000 | 18.250000 | 17.800000 | 18.060000 |
 | 1 | six patterns, <2^30 | 24.340000 | 12.890000 | 53.730000 | 20.070000 | 18.730000 | 19.680000 |
@@ -58,7 +58,7 @@ Nanoseconds per operation, median across block medians. Lifecycle includes const
 
 ## Paired comparison at the current 64-element bound
 
-Each cell is baseline time / Compilatrix time, followed by its 95% interval. Values above one favor Compilatrix. The JSON summary retains paired intervals for every other length as well.
+Each cell is baseline time / IxCC time, followed by its 95% interval. Values above one favor IxCC. The JSON summary retains paired intervals for every other length as well.
 
 | Profile | Domain | Lean | CakeML | CompCert | GCC | Clang |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -77,7 +77,7 @@ RSS is read from `/proc/self/statm`; peak RSS is the maximum recorded `getrusage
 
 | Implementation | Median ready RSS KiB | Minimum sample RSS KiB | Maximum sample RSS KiB | Maximum recorded peak KiB |
 | --- | ---: | ---: | ---: | ---: |
-| compilatrix | 2028.000000 | 2192 | 2464 | 11104 |
+| ixcc | 2028.000000 | 2192 | 2464 | 11104 |
 | lean | 7342.000000 | 7300 | 15720 | 15716 |
 | cakeml | 2540.000000 | 68060 | 68108 | 67896 |
 | compcert | 2024.000000 | 2188 | 2460 | 11100 |
@@ -88,12 +88,12 @@ The separate CakeML lifecycle diagnostic observed 11258 natural collections acro
 
 ## Native code and compiler work
 
-The following object `.text` sizes come from retained `size -A` output. The CakeML object includes the ML driver and basis code; the Lean object includes its generated module entry, and the C/Compilatrix rows isolate the arena kernels. The complete sections, linked executable sizes, and dynamic dependencies are retained; these scopes are not interchangeable.
+The following object `.text` sizes come from retained `size -A` output. The CakeML object includes the ML driver and basis code; the Lean object includes its generated module entry, and the C/IxCC rows isolate the arena kernels. The complete sections, linked executable sizes, and dynamic dependencies are retained; these scopes are not interchangeable.
 
 | Object | `.text` bytes |
 | --- | ---: |
-| compilatrix-main | 1036 |
-| compilatrix-release | 231 |
+| ixcc-main | 1036 |
+| ixcc-release | 231 |
 | lean-kernel | 0 |
 | cakeml-kernel | 106564 |
 | compcert-kernel | 679 |
@@ -104,8 +104,8 @@ Compiler rows are single observed process envelopes. They include process startu
 
 | Operation | Elapsed ms | Peak RSS KiB |
 | --- | ---: | ---: |
-| compilatrix-produce | 13502.260000 | 83660 |
-| compilatrix-independent-gate | 31847.570000 | 84696 |
+| ixcc-produce | 13502.260000 | 83660 |
+| ixcc-independent-gate | 31847.570000 | 84696 |
 | lean-generate-c | 284.920000 | 466108 |
 | lean-kernel | 129.480000 | 71508 |
 | cakeml-kernel | 1100.610000 | 740392 |

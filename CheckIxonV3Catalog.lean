@@ -1,3 +1,3 @@
-import Compilatrix.Tools.IxonV3Catalog
+import IxCC.Tools.IxonV3Catalog
 
-def main := Compilatrix.Tools.IxonV3Catalog.run
+def main := IxCC.Tools.IxonV3Catalog.run

@@ -89,7 +89,7 @@ structure RatioSet where
 def entryBaselines : List Row := [.leanClang, .clangO2, .clangO3, .clangTagged]
 
 /-- Rows whose geometric means the entry report gives. -/
-def geomeanRows : List Row := [.compilatrix, .lirKernel, .clangTagged, .leanClang]
+def geomeanRows : List Row := [.ixcc, .lirKernel, .clangTagged, .leanClang]
 
 def fmtNs (ns : Float) : String :=
   if ns ≥ 1e6 then s!"{fmt (ns / 1e6) 3} ms" else if ns ≥ 1e3 then s!"{fmt (ns / 1e3) 3} µs"
@@ -146,7 +146,7 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
   -- variant rows (A/B and what-if objects), in name order
   let variants : List Row := (samples.map (·.2.1)).toList.eraseDups.mergeSort (· ≤ ·) |>.filterMap fun n =>
     match Row.ofName? n with | some (.variant v) => some (Row.variant v) | _ => none
-  let baselinesAll := if variants.isEmpty then entryBaselines else .compilatrix :: entryBaselines
+  let baselinesAll := if variants.isEmpty then entryBaselines else .ixcc :: entryBaselines
   for fixture in manifest.fixtures do
     let of (row : String) := samples.filter fun (f, r, _) => f == fixture.name && r == row
     let rows := (Row.entry ++ variants).filter fun r => !(of r.name).isEmpty
@@ -220,10 +220,10 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
           ("fixtures", toJson used), ("missing", toJson missing)])
   -- compile times
   if let some b := build then
-    let compiles := (b.getObjValD "compilatrix_compiles").getArr?.toOption.getD #[]
+    let compiles := (b.getObjValD "ixcc_compiles").getArr?.toOption.getD #[]
     unless compiles.isEmpty do
-      lines := lines ++ #["", "## compilatrix compiles", "",
-        "`compilatrix compile … --no-typecheck` per closure: wall time of the process, and its `--stats` lines.", "",
+      lines := lines ++ #["", "## ixcc compiles", "",
+        "`ixcc compile … --no-typecheck` per closure: wall time of the process, and its `--stats` lines.", "",
         "| Fixture | Wall ms | Stats |", "| --- | ---: | --- |"]
       for c in compiles do
         let stats := ((c.getObjValD "stats").getStr?.toOption.getD "").splitOn "\n" |>.filter (!·.isEmpty)

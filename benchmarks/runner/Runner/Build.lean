@@ -12,9 +12,9 @@ the fixture's `main` prints.
 row's code; one process initialises the row once and times repetitions of
 the fixture's `entry` (see `Runner.Measure`).
 
-The `compilatrix` row compiles the fixture's frozen closure
+The `ixcc` row compiles the fixture's frozen closure
 (`<closures>/<fixture>.ixe` with its `.equations.json`) with the
-`compilatrix` executable, `compile … --no-typecheck` (typing is gated by the
+`ixcc` executable, `compile … --no-typecheck` (typing is gated by the
 compiler's own suites and costs 35–40 s on two closures). A decline or
 rejection is recorded as the row's status, with the compiler's
 `stage: code: message`, and the row is left out. All C of the entry profile
@@ -45,16 +45,16 @@ structure Options where
   /-- Restrict to these fixtures. -/
   fixtures : Option (List String) := none
   /-- The compiler command: an executable and any leading arguments, for
-  example `nix run ../..#compilatrix --`. -/
-  compilatrix : List String := ["../../.lake/build/bin/compilatrix"]
+  example `nix run ../..#ixcc --`. -/
+  ixcc : List String := ["../../.lake/build/bin/ixcc"]
   /-- The frozen closures (`<fixture>.ixe`, `<fixture>.equations.json`). -/
   closures : FilePath := "../../fixtures/ixon-v4/bench-k1"
   /-- `backend-probe`, for the diagnostic `lir-kernel` row (left out when absent). -/
   probe : Option FilePath := none
   /-- The C compiler of the entry profile. -/
   cc : String := "cc"
-  /-- Diagnostic `compilatrix@NAME` rows: objects `DIR/<fixture>.o` with the
-  compilatrix row's interface (`cx_init`, `cx_entry`). -/
+  /-- Diagnostic `ixcc@NAME` rows: objects `DIR/<fixture>.o` with the
+  ixcc row's interface (`cx_init`, `cx_entry`). -/
   variants : List (String × FilePath) := []
 
 def Options.selects (o : Options) (f : Fixture) : Bool := o.fixtures.all (·.contains f.name)
@@ -75,9 +75,9 @@ def firstLine (cmd : String) (args : List String) : IO String := do
 
 /-- Toolchain versions recorded with every build. -/
 def versions (o : Options) : IO Json := do
-  let compilatrixPath := o.compilatrix.headD ""
+  let ixccPath := o.ixcc.headD ""
   let digest ← try
-      pure ((← run "sha256sum" [compilatrixPath]).stdout.splitOn " ").head!
+      pure ((← run "sha256sum" [ixccPath]).stdout.splitOn " ").head!
     catch _ => pure "unavailable"
   return Json.mkObj [
     ("lean", Json.str (← firstLine "lean" ["--version"])),
@@ -86,8 +86,8 @@ def versions (o : Options) : IO Json := do
     ("clang++", Json.str (← firstLine "clang++" ["--version"])),
     ("cc", Json.str (← firstLine o.cc ["--version"])),
     ("objdump", Json.str (← firstLine "objdump" ["--version"])),
-    ("compilatrix", Json.str (" ".intercalate o.compilatrix)),
-    ("compilatrix_sha256", Json.str digest),
+    ("ixcc", Json.str (" ".intercalate o.ixcc)),
+    ("ixcc_sha256", Json.str digest),
     ("repository", Json.str (← firstLine "git" ["-C", "../..", "describe", "--always", "--dirty", "--abbrev=12"]))]
 
 /-- A build outcome, recorded in `build.json`. -/
@@ -102,23 +102,23 @@ def Status.json (s : Status) : Json :=
   Json.mkObj [("profile", Json.str s.profile), ("row", Json.str s.row),
     ("fixture", Json.str s.fixture), ("status", Json.str s.status), ("detail", Json.str s.detail)]
 
-/-! ## The compilatrix row's object -/
+/-! ## The ixcc row's object -/
 
-/-- `compilatrix compile` of the fixture's closure into `OUT/compilatrix/`:
+/-- `ixcc compile` of the fixture's closure into `OUT/ixcc/`:
 `ok` with the wall time and `--stats` text, or the compiler's diagnostic. -/
 def compileClosure (o : Options) (out : FilePath) (fixture : Fixture) (arity : Nat) :
     IO (Except String (Float × String)) := do
   let closure := o.closures / s!"{fixture.name}.ixe"
   let equations := o.closures / s!"{fixture.name}.equations.json"
   unless ← closure.pathExists do return .error s!"no frozen closure {closure}"
-  let dir := out / "compilatrix"
+  let dir := out / "ixcc"
   IO.FS.createDirAll dir
   let obj := dir / s!"{fixture.name}.o"
   let sig := dir / s!"{fixture.name}.sig.json"
   let common := ["compile", closure.toString, "--equations", equations.toString,
     "-o", obj.toString, "--no-typecheck"]
-  let cmd := o.compilatrix.headD "compilatrix"
-  let lead := o.compilatrix.drop 1
+  let cmd := o.ixcc.headD "ixcc"
+  let lead := o.ixcc.drop 1
   let start ← IO.monoNanosNow
   let output ← IO.Process.output { cmd, args := (lead ++ common ++ ["--signatures", sig.toString, "--stats"]).toArray }
   let stop ← IO.monoNanosNow
@@ -176,10 +176,10 @@ def buildEntryRow (o : Options) (root out : FilePath) (row : Row) (fixture : Fix
   let here ← IO.FS.realPath "entry"
   let fixtureMacro := s!"-DFIXTURE_{fixture.ident}"
   match row with
-  | .compilatrix =>
-    let object := out / "compilatrix" / s!"{fixture.name}.o"
+  | .ixcc =>
+    let object := out / "ixcc" / s!"{fixture.name}.o"
     unless ← object.pathExists do return none
-    cc o "-O2" ["-c", (here / "row_compilatrix.c").toString, "-o", (obj / "row.o").toString]
+    cc o "-O2" ["-c", (here / "row_ixcc.c").toString, "-o", (obj / "row.o").toString]
     cc o "-O2" ["-o", target.toString, driver, (obj / "row.o").toString, object.toString]
     objdump object (out / "asm" / row.name / s!"{fixture.name}.txt")
     return some "built"
@@ -233,7 +233,7 @@ def buildEntryRow (o : Options) (root out : FilePath) (row : Row) (fixture : Fix
     let kept := out / "variants" / name / s!"{fixture.name}.o"
     IO.FS.createDirAll (out / "variants" / name)
     IO.FS.writeBinFile kept (← IO.FS.readBinFile object)
-    cc o "-O2" ["-c", (here / "row_compilatrix.c").toString, "-o", (obj / "row.o").toString]
+    cc o "-O2" ["-c", (here / "row_ixcc.c").toString, "-o", (obj / "row.o").toString]
     cc o "-O2" ["-o", target.toString, driver, (obj / "row.o").toString, kept.toString]
     objdump kept (out / "asm" / row.name / s!"{fixture.name}.txt")
     return some "built"
@@ -263,8 +263,8 @@ def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (r
     let command := command.map fun word => if word == "-O2" then level else word
     let _ ← run command.head! command.tail!
     return some "built"
-  | .compilatrix =>
-    let object := out / "compilatrix" / s!"{fixture.name}.o"
+  | .ixcc =>
+    let object := out / "ixcc" / s!"{fixture.name}.o"
     unless ← object.pathExists do return none
     let rowObj := out / "entry-obj" / row.name / fixture.name / "row.o"
     cc o "-O2" ["-o", target.toString, (out / "entry-obj" / "driver-process.o").toString,
@@ -295,7 +295,7 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
     IO.FS.writeFile (out / "probe" / "probe.jsonl") probed.stdout
   for fixture in fixtures do
     let arity := fixture.natArity?
-    -- the compilatrix object, shared by both profiles
+    -- the ixcc object, shared by both profiles
     if let some k := arity then
       match ← compileClosure o out fixture k with
       | .ok (ms, stats) =>
@@ -303,9 +303,9 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
           ("wall_ms", toJson ms), ("stats", Json.str stats)])
       | .error why =>
         statuses := statuses.push
-          { profile := "both", row := "compilatrix", fixture := fixture.name,
+          { profile := "both", row := "ixcc", fixture := fixture.name,
             status := "declined or unavailable", detail := why }
-        IO.eprintln s!"compilatrix/{fixture.name}: {why}"
+        IO.eprintln s!"ixcc/{fixture.name}: {why}"
       for row in Row.entry ++ o.variants.map (Row.variant ·.1) do
         match ← buildEntryRow o root out row fixture k with
         | some s => statuses := statuses.push { profile := "entry", row := row.name, fixture := fixture.name, status := s }
@@ -316,13 +316,13 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
       | none => pure ()
     IO.println s!"built {fixture.name}"
   IO.FS.writeFile (out / "build.json") ((Json.mkObj [
-    ("format", Json.str "compilatrix/benchmark-build/3"),
+    ("format", Json.str "ixcc/benchmark-build/3"),
     ("process_rows", Json.arr (Row.process.map (Json.str ·.name)).toArray),
     ("entry_rows", Json.arr ((Row.entry ++ o.variants.map (Row.variant ·.1)).map (Json.str ·.name)).toArray),
     ("variants", Json.mkObj (o.variants.map fun (n, d) => (n, Json.str d.toString))),
     ("fixtures", Json.arr (fixtures.map (Json.str ·.name))),
     ("statuses", Json.arr (statuses.map Status.json)),
-    ("compilatrix_compiles", Json.arr compiles),
+    ("ixcc_compiles", Json.arr compiles),
     ("versions", ← versions o),
     ("entry_cc_flags", toJson (ccFlags "-O2|-O3")),
     ("entry_cc_env", Json.str "NIX_HARDENING_ENABLE="),

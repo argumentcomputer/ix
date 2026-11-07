@@ -14,10 +14,10 @@ in the upstream format.
 +++ RbmapCheckpoint.lean
 @@ -1,4 +1,14 @@
  /-
-+Compilatr.ix fixture `rbmap_checkpoint` (upstream variant) of Lean
++IxCC fixture `rbmap_checkpoint` (upstream variant) of Lean
 +`tests/compile_bench/rbmap_checkpoint.lean` (leanprover/lean4
 +v4.34.0, 293d5d0c0c3f3dded4688b3ccd6a33939ac5102b; Apache-2.0, see
-+`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for Compilatr.ix:
++`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for IxCC:
 +the upstream `main` is replaced by a pure `entry` and a `main` that
 +prints its result in the upstream format; the definitions above `entry`
 +are unchanged. See `VARIANT.md`.

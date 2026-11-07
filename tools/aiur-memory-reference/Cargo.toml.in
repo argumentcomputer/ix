@@ -1,6 +1,6 @@
 # Copy into an ignored plans directory and replace both absolute paths.
 [package]
-name = "compilatrix-aiur-memory-reference"
+name = "ixcc-aiur-memory-reference"
 version = "0.0.0"
 edition = "2024"
 
@@ -8,7 +8,7 @@ edition = "2024"
 
 [[bin]]
 name = "aiur-memory-reference"
-path = "/absolute/path/to/compilatrix/tools/aiur-memory-reference/Export.rs"
+path = "/absolute/path/to/ixcc/tools/aiur-memory-reference/Export.rs"
 
 [dependencies]
 aiur = { path = "/absolute/path/to/pinned/ix/crates/aiur" }

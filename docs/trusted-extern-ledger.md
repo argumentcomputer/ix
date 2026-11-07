@@ -12,7 +12,7 @@ on branch `jcb/ixby-archive`. `nix flake check` runs the audit again.
 
 This document separates four things that are easy to blur:
 
-1. a native semantic boundary whose result Compilatr.ix uses;
+1. a native semantic boundary whose result IxCC uses;
 2. the Gen-0 seed/build/runtime supply chain used to construct and test it;
 3. a target specification or emitter assumption not yet connected by proof;
 4. interpreter oracles that are mathematical models, not linked native code.
@@ -93,8 +93,8 @@ new executable roots, project/dependency extern drift, imports and native
 entry points, integrity changes, malformed/duplicate Cargo metadata, and CI
 action drift. The Nix trust-ledger check runs these regressions too.
 
-The `CompilatrixTests` Lake root keeps every test and fence inside the
-audited source inventory, and the proof aggregate `CompilatrixTests.Proofs`
+The `IxCCTests` Lake root keeps every test and fence inside the
+audited source inventory, and the proof aggregate `IxCCTests.Proofs`
 imports every fence. The [CI guide](ci.md) records the current check surface
 and its coverage changes.
 
@@ -102,10 +102,10 @@ and its coverage changes.
 
 | Field | Ledger value |
 | --- | --- |
-| Owner | Compilatr.ix maintainers |
-| Project entry points | `Blake3.Rust.hash` in `Compilatrix/Ixon/Hash.lean`; `Blake3.Rust.Hasher` in the v3 typechecker's node/context hashing |
+| Owner | IxCC maintainers |
+| Project entry points | `Blake3.Rust.hash` in `IxCC/Ixon/Hash.lean`; `Blake3.Rust.Hasher` in the v3 typechecker's node/context hashing |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
-| Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, catalog admission, typing and claim binding) expose the exact native hash dependency, pinned in the `CompilatrixTests/Fences/IxonV3*.lean` fences. |
+| Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, catalog admission, typing and claim binding) expose the exact native hash dependency, pinned in the `IxCCTests/Fences/IxonV3*.lean` fences. |
 | Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment, catalog and claim fixtures with independently recorded addresses |
 | Primary pin | Blake3.lean `3f8b805614a0bae1c033469ff893a8f0ee85f601` |
 | Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
@@ -113,7 +113,7 @@ and its coverage changes.
 
 The actual compiler composition results in `Recheck/Proof/Compile.lean`
 retain this same native hash dependency through their ingress/producer premises.
-Seven required exact fences in `CompilatrixTests/Fences/Compile.lean` record
+Seven required exact fences in `IxCCTests/Fences/Compile.lean` record
 the three standard logical axioms plus
 `Blake3.HasherOps.hash._native.native_decide.ax_1`. No axiom declaration,
 native symbol or dependency was added. `Recheck.run` and `Recheck.sound` retain
@@ -128,7 +128,7 @@ sources to 1.8.7 and lean-ffi to `163a6618`, and refreshes the Cargo lock.
 The lock now resolves two `shlex` releases, which the ledger records as a
 version list. The package precompiles its Lean libraries, so importing
 elaborators load the same native objects as shared libraries. It also adds a
-pure Lean `Blake3.Pure` module with no extern declarations, which Compilatr.ix
+pure Lean `Blake3.Pure` module with no extern declarations, which IxCC
 does not import. The native symbol set and the Rust entry points are unchanged
 apart from the reported version string. The Lean 4.34.1 update moves
 Blake3.lean from `c32002ee` to `3f8b8056`, the revision ix's certified line
@@ -145,7 +145,7 @@ reflection axiom is introduced. Keyed and derive-key operations remain unused.
 The audit enumerates extern declarations across the entire pinned package
 source tree — every `.lean` file, in `@[extern ...] opaque`/`def` and
 post-hoc `attribute [extern ...]` form — not just the imported entry module.
-The tree ships twelve C-ABI symbols across two backend modules. Compilatr.ix
+The tree ships twelve C-ABI symbols across two backend modules. IxCC
 imports only `Blake3.Rust`; the active hash path calls `rs_blake3_init`,
 `rs_blake3_hasher_update`, and `rs_blake3_hasher_finalize`, and the version,
 keyed-init, and derive-key exports remain listed because downstream code can
@@ -229,7 +229,7 @@ and fixture refreeze.
 ## Pure Lean dependencies
 
 `lean_dependencies` records Lake dependencies that contain no native code, so
-they are not trusted externs, but whose behaviour Compilatr.ix relies on. Each
+they are not trusted externs, but whose behaviour IxCC relies on. Each
 entry pins the Lake package and revision (`lake-manifest.json`), the flake
 input with the same revision (Nix), the modules our sources import from it,
 and the SHA-256 of every file of their import closure. The checker requires
@@ -241,7 +241,7 @@ outside the closure or the toolchain; and requires the Lake and flake pins to
 agree.
 
 The one entry, `ix-kernel-ixon-v4-codec`, is ix's `IxKernel/` package at
-`f829b760`, of which Compilatr.ix imports `Ix.Ixon.Canonical` and
+`f829b760`, of which IxCC imports `Ix.Ixon.Canonical` and
 `Ix.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
 use `propext` and `Quot.sound`). It is the ingress decoder and encoder.
 The resource-selection checker also uses its pure framing operations on the
@@ -396,7 +396,7 @@ status 2, not a fault). In test mode it decodes the result with a C mirror
 of `Rt.readback` and dumps the object area, and `tests-rt` checks the C
 decoder against `Rt.readback` of the dump. `native_harness.c` stays only as
 `check-x86-object`'s harness for the legacy `callRuntime` fixture (which
-still needs its `compilatrix_rt_allocate` stub) until `Instr.callRuntime`
+still needs its `ixcc_rt_allocate` stub) until `Instr.callRuntime`
 retires.
 
 `Recheck.Readback` adds bounded structural signature discovery for ground
@@ -466,9 +466,9 @@ review and refreeze are still separate from these accepted local results.
 **The driver model (specification assumption
 `x86-phase1-runtime-driver-model`).** `Recheck.sound` and the bounded
 `Recheck.RcReplay.sound` are theorems about
-`X86.Linked` ([`Linked.lean`](../Compilatrix/X86/Linked.lean)): the
+`X86.Linked` ([`Linked.lean`](../IxCC/X86/Linked.lean)): the
 object's execution from a `X86.Driver`
-([`Driver.lean`](../Compilatrix/X86/Driver.lean)) that calls `cx_init` and
+([`Driver.lean`](../IxCC/X86/Driver.lean)) that calls `cx_init` and
 then the root's export, each at the address `ELF.symbol?` finds for its
 symbol in the parsed object, and observes the root's result by
 `Rt.readback`. Reading it as a statement about the native executable
@@ -509,7 +509,7 @@ The benchmark runner's entry profile
 driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
 `collatz`, `prime-count`, `even-odd` and `sfib`)
 is untrusted measurement code, integrity-pinned so that a change to how a
-row is built or timed is reviewed with the ledger. Its compilatrix adapter
+row is built or timed is reviewed with the ledger. Its ixcc adapter
 stores the stack budget at `region + 16` as the runtime driver does, calls
 `cx_init` once and then the root's SysV wrapper directly, under the
 runtime driver's contract (a private region untouched by C, a stack budget
@@ -566,7 +566,7 @@ a project FFI symbol.
 | Entry | Current role | Retirement/containment |
 | --- | --- | --- |
 | Lean 4.34.1 seed/runtime | Elaborates, kernel-checks, compiles, executes `#guard`s, and hosts compiled tests | Gen-1 self-host plus address-exact diverse double compilation; production checking moves to the public lean4ix/ix verified checker |
-| GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled by Compilatr.ix |
+| GMP 6.3.0 | Lean runtime arbitrary-precision arithmetic; direct Nix build input | Verified limb bignums refining `Nat`/`Int`, compiled by IxCC |
 | Host C ABI/runtime | glibc 2.40-66 on the x86_64-linux baseline, plus compiler runtime; hosts Lean/Rust and the native x86 test harness | Gen 1 removes upstream runtime; allocator/memcpy and libc surface retire to verified `.ix` code plus a syscall model |
 | Locked Nix supply chain | nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, host C compiler/linker, GNU binutils readelf/objdump, rsync, binary substitution | Locked hashes now; later diverse reproduction and address-exact output comparison remove it from the semantic TCB |
 

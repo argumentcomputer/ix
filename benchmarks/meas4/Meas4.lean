@@ -4,12 +4,12 @@ import Lean.Data.Json
 # MEAS-4 early probe (roadmap MEAS-4, note 05 §12, Phase 1 item M1.B6)
 
 Measures the synthetic Lir kernels `fib`, `sum-loop` and `gcd`, compiled
-natively by Compilatr.ix, against C twins and Lean's own compiler. These
+natively by IxCC, against C twins and Lean's own compiler. These
 are backend probes, never real-program results (roadmap §9).
 
 | Row | Build |
 | --- | --- |
-| `compilatrix-probe` | `backend-probe`'s objects (`Backend.compile` of `CompilatrixTests/Lir/Kernels.lean`), called through their SysV export wrappers |
+| `ixcc-probe` | `backend-probe`'s objects (`Backend.compile` of `IxCCTests/Lir/Kernels.lean`), called through their SysV export wrappers |
 | `clang-twin` | `twins.c`'s tagged twins (the kernels' representation and overflow checks) at `-O2` |
 | `lean-clang` | `K1Probe.lean` (the K1 definitions of the fixtures) through `lean -c` and `leanc -O3 -DNDEBUG` |
 | `clang-natural` | the fixtures' untagged algorithms at `-O2`, for reference (`sum-loop` folds to a closed form) |
@@ -31,8 +31,8 @@ lean --run benchmarks/meas4/Meas4.lean report OUT
 `build` takes `--probe PATH` (default `.lake/build/bin/backend-probe`) and
 uses `cc` for C, `lean` and `leanc` for the Lean row, and `objdump` and `nm`
 for code size and static counts. With `--baseline DIR` (an earlier
-backend's `lir_<kernel>.o` objects) it also builds a `compilatrix-baseline`
-row, and `report` gives its ratio to `compilatrix-probe`: the measured
+backend's `lir_<kernel>.o` objects) it also builds an `ixcc-baseline`
+row, and `report` gives its ratio to `ixcc-probe`: the measured
 effect of a backend increment. `measure` runs one untimed warm-up per row
 and kernel, then blocks; each block runs every row once in a shuffled order,
 pinned with `taskset`, and fails if the rows' results differ. `perf` counts
@@ -50,7 +50,7 @@ namespace Meas4
 
 /-! ## Rows and kernels -/
 
-def rows : List String := ["compilatrix-probe", "clang-twin", "lean-clang", "clang-natural"]
+def rows : List String := ["ixcc-probe", "clang-twin", "lean-clang", "clang-natural"]
 
 structure Kernel where
   name : String
@@ -103,11 +103,11 @@ def firstLine (cmd : String) (args : List String) : IO String := do
 
 def binary (out : FilePath) (row : String) : FilePath := out / "bin" / row
 
-/-- The rows built into `out`: the four above, and `compilatrix-baseline`
+/-- The rows built into `out`: the four above, and `ixcc-baseline`
 when `build` was given `--baseline DIR` (an earlier backend's objects, to
 measure a backend increment). -/
 def rowsIn (out : FilePath) : IO (List String) := do
-  if ← (binary out "compilatrix-baseline").pathExists then return rows ++ ["compilatrix-baseline"]
+  if ← (binary out "ixcc-baseline").pathExists then return rows ++ ["ixcc-baseline"]
   else return rows
 
 /-- Run a row on a kernel: `(result, ns per operation)`. -/
@@ -172,7 +172,7 @@ def build (out probe : FilePath) (baseline : Option FilePath := none) : IO Unit 
   IO.FS.createDirAll obj
   IO.FS.createDirAll (out / "bin")
   IO.FS.createDirAll (out / "asm")
-  -- the Compilatrix objects and their static counts and compile times
+  -- the IxCC objects and their static counts and compile times
   let probed ← run probe.toString [obj.toString, "--reps", "50"]
   IO.FS.writeFile (out / "probe.jsonl") probed.stdout
   -- Plain clang -O2: without the nixpkgs wrapper's hardening (zeroing
@@ -183,13 +183,13 @@ def build (out probe : FilePath) (baseline : Option FilePath := none) : IO Unit 
   let _ ← cc ["-c", (here / "twins.c").toString, "-o", (obj / "twins.o").toString]
   let _ ← cc ["-c", (here / "row_twin.c").toString, "-o", (obj / "row_twin.o").toString]
   let _ ← cc ["-DNATURAL", "-c", (here / "row_twin.c").toString, "-o", (obj / "row_natural.o").toString]
-  let _ ← cc ["-c", (here / "row_compilatrix.c").toString, "-o", (obj / "row_compilatrix.o").toString]
+  let _ ← cc ["-c", (here / "row_ixcc.c").toString, "-o", (obj / "row_ixcc.o").toString]
   let lirs := kernels.map fun k => (obj / s!"lir_{k.lir}.o").toString
-  let _ ← cc (["-o", (binary out "compilatrix-probe").toString, (obj / "driver.o").toString,
-    (obj / "row_compilatrix.o").toString] ++ lirs)
+  let _ ← cc (["-o", (binary out "ixcc-probe").toString, (obj / "driver.o").toString,
+    (obj / "row_ixcc.o").toString] ++ lirs)
   if let some dir := baseline then
-    let _ ← cc (["-o", (binary out "compilatrix-baseline").toString, (obj / "driver.o").toString,
-      (obj / "row_compilatrix.o").toString] ++ kernels.map fun k => (dir / s!"lir_{k.lir}.o").toString)
+    let _ ← cc (["-o", (binary out "ixcc-baseline").toString, (obj / "driver.o").toString,
+      (obj / "row_ixcc.o").toString] ++ kernels.map fun k => (dir / s!"lir_{k.lir}.o").toString)
   let _ ← cc ["-o", (binary out "clang-twin").toString, (obj / "driver.o").toString,
     (obj / "row_twin.o").toString, (obj / "twins.o").toString]
   let _ ← cc ["-o", (binary out "clang-natural").toString, (obj / "driver.o").toString,
@@ -220,7 +220,7 @@ def build (out probe : FilePath) (baseline : Option FilePath := none) : IO Unit 
     -- named after the definition.
     let leanNames := leanSizes.filter (fun (n, _) => k.lean.any fun s => (n.splitOn s).length > 1) |>.map (·.1)
     code := code.push (Json.mkObj [("kernel", Json.str k.name),
-      ("compilatrix-probe", Json.mkObj [("object_text", toJson ((symbolSizes (← run "nm" ["-S", (obj / s!"lir_{k.lir}.o").toString]).stdout).foldl (· + ·.2) 0)),
+      ("ixcc-probe", Json.mkObj [("object_text", toJson ((symbolSizes (← run "nm" ["-S", (obj / s!"lir_{k.lir}.o").toString]).stdout).foldl (· + ·.2) 0)),
         ("static_object", staticCounts (functionLines lirDump s!"lir_{k.lir}"))]),
       ("clang-twin", Json.mkObj [("bytes", toJson (sized twinSizes [k.twin])),
         ("static", staticCounts (functionLines twinDump k.twin))]),
@@ -235,7 +235,7 @@ def build (out probe : FilePath) (baseline : Option FilePath := none) : IO Unit 
     ("lean", Json.str (← firstLine "lean" ["--version"])),
     ("leanc", Json.str (← firstLine "leanc" ["--version"])),
     ("objdump", Json.str (← firstLine "objdump" ["--version"]))]
-  IO.FS.writeFile (out / "build.json") ((Json.mkObj [("format", Json.str "compilatrix/meas4-build/1"),
+  IO.FS.writeFile (out / "build.json") ((Json.mkObj [("format", Json.str "ixcc/meas4-build/1"),
     ("rows", toJson rows), ("versions", versions), ("cc_flags", toJson ccFlags),
     ("cc_env", Json.str "NIX_HARDENING_ENABLE="),
     ("lean_flags", Json.str "lean -c; leanc -O3 -DNDEBUG (K1Probe.c), leanc -O2 (row_lean.c)")]).pretty ++ "\n")
@@ -295,7 +295,7 @@ def measure (out : FilePath) (cpu blocks : Nat) : IO Unit := do
           ("block", toJson block), ("reps", toJson k.reps), ("ns_per_op", toJson ns)])
     IO.println s!"measured {k.name}: {blocks} blocks"
   IO.FS.writeFile (out / "samples.json") ((Json.mkObj [
-    ("format", Json.str "compilatrix/meas4-samples/1"), ("environment", env), ("blocks", toJson blocks),
+    ("format", Json.str "ixcc/meas4-samples/1"), ("environment", env), ("blocks", toJson blocks),
     ("samples", Json.arr samples)]).pretty ++ "\n")
 
 /-! ## Counters -/
@@ -424,11 +424,11 @@ def report (out : FilePath) : IO Unit := do
         ("ratio_to_clang_twin", toJson (median (paired row "clang-twin"))),
         ("ratio_to_lean_clang", toJson (median (paired row "lean-clang")))])
     lines := lines.push ""
-    if allRows.contains "compilatrix-baseline" then
-      lines := lines ++ #[s!"Backend increment: compilatrix-baseline / compilatrix-probe = {cell "compilatrix-baseline" "compilatrix-probe"}.", ""]
+    if allRows.contains "ixcc-baseline" then
+      lines := lines ++ #[s!"Backend increment: ixcc-baseline / ixcc-probe = {cell "ixcc-baseline" "ixcc-probe"}.", ""]
   -- code size and static counts
   lines := lines ++ #["## Code size and static counts", "",
-    "Bytes of the kernel's own code (`nm -S`; for compilatrix-probe the function without its export wrapper and exit group, from `backend-probe`), and static counts over those instructions (`objdump`): register-to-register moves, `rsp`-relative stores and loads (spills, reloads and callee-saved saves), pushes and pops.", "",
+    "Bytes of the kernel's own code (`nm -S`; for ixcc-probe the function without its export wrapper and exit group, from `backend-probe`), and static counts over those instructions (`objdump`): register-to-register moves, `rsp`-relative stores and loads (spills, reloads and callee-saved saves), pushes and pops.", "",
     "| Kernel | Row | Bytes | Instructions | Reg moves | Stack stores | Stack loads | Push/pop |",
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
   for entry in code.getArr?.toOption.getD #[] do
@@ -438,7 +438,7 @@ def report (out : FilePath) : IO Unit := do
     for row in rows do
       let r := entry.getObjValD row
       let n (o : Json) (key : String) := toString (num o key).toUInt64
-      if row == "compilatrix-probe" then
+      if row == "ixcc-probe" then
         -- the function alone, from the typed program backend-probe laid out
         let f := (p.map (·.getObjValD "function_x86")).getD Json.null
         let bytes := (p.map fun j => num j "function").getD 0
@@ -446,7 +446,7 @@ def report (out : FilePath) : IO Unit := do
       else
         let s := r.getObjValD "static"
         lines := lines.push s!"| {kernel} | {row} | {n r "bytes"} | {n s "instructions"} | {n s "reg_moves"} | {n s "stack_stores"} | {n s "stack_loads"} | {n s "push_pop"} |"
-  lines := lines ++ #["", "## Compilatrix: allocation, loops and compile time", "",
+  lines := lines ++ #["", "## IxCC: allocation, loops and compile time", "",
     "From `backend-probe`: allocation's static edits in Xl, the laid-out x86 inside natural loops, prologue stack checks, and the median native time of each phase (`Backend.compile` = selection, allocation and emission).", "",
     "| Kernel | Allocation | Xl spills / reloads / moves | Loop blocks | Loop instructions | Loop moves / stack stores / loads | Stack checks | Select ms | Allocate ms | Emit ms | Compile ms |",
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]

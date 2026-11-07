@@ -10,7 +10,7 @@
  {"diag.ixe":
   "83d318a278d0278e0bff367d6d2d10ab0d4e2845a79a5841ef503960e86d1d22",
   "diag.equations.json":
-  "d68250675f595d2b07be5f9fcb1334485afc2b4a20898132ceb1bf6280fb2f4a"},
+  "81ad9a52b3da7fcfbaad66c6fa85018bb83bc8177817cf99010a162dedd9d425"},
  "commands":
  ["ix compile --no-build --consts <roots> --anon --out diag.ixe Diag.lean",
   "ix compile --no-build --consts <roots> --out diag.named.ixe Diag.lean",

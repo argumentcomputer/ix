@@ -10,7 +10,7 @@
  {"sortpoly.ixe":
   "a376405e9ff90830c3271b0dfc8a024f2e62d3d11832a87507bef80f70d9593b",
   "sortpoly.equations.json":
-  "96869f01dfdfba52755223a7309d9c8c60dad84f52b4a94b7a2066b2cb40dc6d"},
+  "8e3f72dc2424a12c7aeddacd46f45d9114e10d2df2672f87de21938d96261a1d"},
  "commands":
  ["ix compile --no-build --consts <roots> --anon --out sortpoly.ixe SortPoly.lean",
   "ix compile --no-build --consts <roots> --out sortpoly.named.ixe SortPoly.lean",

@@ -1,7 +1,7 @@
-// Compilatr.ix twin of Lean `const_fold`, adapted from Koka `test/bench/cpp/cfold.cpp`
+// IxCC twin of Lean `const_fold`, adapted from Koka `test/bench/cpp/cfold.cpp`
 // (koka-lang/koka 8b803da69d3941ce1e03173578093aefc41ee548; Apache-2.0,
 // see benchmarks/fixtures/LICENSES/koka-LICENSE).
-// Modified for Compilatr.ix: const_folding folds its subterms first, as Lean's
+// Modified for IxCC: const_folding folds its subterms first, as Lean's
 // constFolding and Koka's cfold.kk do (upstream C++ does not recurse); the size is
 // read from argv[1] (default 20, as upstream); the output is "v1 v2", as in Lean.
 #include <math.h>

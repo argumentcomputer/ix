@@ -73,37 +73,37 @@ def Fixture.natArity? (f : Fixture) : Option Nat :=
 * `lean-clang` is the incumbent: the fixture's Lean source through Lean's own
   compiler and bundled `leanc`/clang at `-O3`.
 * `clang-O2`/`clang-O3` compile the natural C or C++ twin.
-* `compilatrix` compiles the fixture's frozen Ixon closure
+* `ixcc` compiles the fixture's frozen Ixon closure
   (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`)
-  with the `compilatrix` executable.
+  with the `ixcc` executable.
 * Diagnostic rows, entry profile only, which attribute a gap and are never
-  real-program results: `clang-tagged`, the K1 algorithms on compilatrix's
+  real-program results: `clang-tagged`, the K1 algorithms on ixcc's
   value representation (tagged words, carry-checked `+ 1`) at `-O2`;
   `lir-kernel`, MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd)
-  through the current backend; and `compilatrix@NAME`, objects with the
-  compilatrix row's interface from elsewhere (`build --variant NAME=DIR`,
+  through the current backend; and `ixcc@NAME`, objects with the
+  ixcc row's interface from elsewhere (`build --variant NAME=DIR`,
   `DIR/<fixture>.o`): another commit's compiler, or a hand-edited
-  what-if, measured against `compilatrix` in the same blocks. -/
-inductive Row | leanClang | clangO2 | clangO3 | compilatrix | clangTagged | lirKernel
+  what-if, measured against `ixcc` in the same blocks. -/
+inductive Row | leanClang | clangO2 | clangO3 | ixcc | clangTagged | lirKernel
   | variant (name : String)
   deriving BEq, Repr, Inhabited
 
 /-- The process profile's rows (each fixture's own program, whole-process time). -/
-def Row.process : List Row := [.leanClang, .clangO2, .clangO3, .compilatrix]
+def Row.process : List Row := [.leanClang, .clangO2, .clangO3, .ixcc]
 
 /-- The entry profile's fixed rows (in-process repetitions); variants join
 them where built. -/
-def Row.entry : List Row := [.compilatrix, .lirKernel, .clangTagged, .leanClang, .clangO2, .clangO3]
+def Row.entry : List Row := [.ixcc, .lirKernel, .clangTagged, .leanClang, .clangO2, .clangO3]
 
-def Row.all : List Row := [.leanClang, .clangO2, .clangO3, .compilatrix, .clangTagged, .lirKernel]
+def Row.all : List Row := [.leanClang, .clangO2, .clangO3, .ixcc, .clangTagged, .lirKernel]
 
-def variantPrefix : String := "compilatrix@"
+def variantPrefix : String := "ixcc@"
 
 def Row.name : Row → String
   | .leanClang => "lean-clang"
   | .clangO2 => "clang-O2"
   | .clangO3 => "clang-O3"
-  | .compilatrix => "compilatrix"
+  | .ixcc => "ixcc"
   | .clangTagged => "clang-tagged"
   | .lirKernel => "lir-kernel"
   | .variant n => variantPrefix ++ n

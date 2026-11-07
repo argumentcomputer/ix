@@ -8,9 +8,9 @@ Checked bytecode rows now give concrete execution meaning to the
 > existing static row certificate give a finite execution of each public
 > function claim against the same extracted witness heap and allowed advice.
 
-The implementation is [OracleEval](../Compilatrix/Aiur/OracleEval.lean),
-[BytecodeEvalW](../Compilatrix/Aiur/BytecodeEvalW.lean), and
-[BytecodeSound](../Compilatrix/Aiur/BytecodeSound.lean). It covers all 34
+The implementation is [OracleEval](../IxCC/Aiur/OracleEval.lean),
+[BytecodeEvalW](../IxCC/Aiur/BytecodeEvalW.lean), and
+[BytecodeSound](../IxCC/Aiur/BytecodeSound.lean). It covers all 34
 operations and four controls at the unchanged upstream revision
 `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`.
 
@@ -179,8 +179,8 @@ this API adds no binary trace or answer-tape parser.
 ## Validation and remaining work
 
 ```sh
-lake build Compilatrix.Aiur CompilatrixTests.Aiur.Execution.Proofs \
-  CompilatrixTests.Fences.AiurExecution tests-aiur
+lake build IxCC.Aiur IxCCTests.Aiur.Execution.Proofs \
+  IxCCTests.Fences.AiurExecution tests-aiur
 lake exe tests-aiur
 nix build .#checks.x86_64-linux.aiur
 ```

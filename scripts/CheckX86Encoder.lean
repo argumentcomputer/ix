@@ -1,10 +1,10 @@
-import Compilatrix.Tools.Check
+import IxCC.Tools.Check
 
 /-! Independently decode the byte-exact encoder goldens (`X86/EncodeExamples`)
 with GNU objdump. The byte strings are frozen here, not produced by compiler
 code. -/
 
-open Compilatrix.Tools.Check
+open IxCC.Tools.Check
 
 /-- One golden per emitted form, including the compact immediate choices:
 `mov r32, imm32` and `mov r/m64, imm32` for small 64-bit moves, `83 /d ib`

@@ -164,7 +164,7 @@
  "ff6b2f018063b338c14a955bca647591dc5eb5e7b9da0cd668f4a95c75ff5822",
  "macro_inline_count": 28,
  "lean": "4.34.1",
- "format": "compilatrix/src-tables/1",
+ "format": "ixcc/src-tables/1",
  "commands":
  ["ix compile --no-build --consts <names> --out src-tables.named.ixe SrcTables.lean",
   "ix addr-of --ixe src-tables.named.ixe NAME, for every row"]}

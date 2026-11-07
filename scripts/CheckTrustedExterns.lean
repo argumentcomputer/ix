@@ -1,6 +1,6 @@
-import Compilatrix.Tools.TrustLedger
+import IxCC.Tools.TrustLedger
 
-open Compilatrix.Tools.Check Compilatrix.Tools.TrustLedger
+open IxCC.Tools.Check IxCC.Tools.TrustLedger
 
 def main (args : List String) : IO UInt32 := cli "trusted-extern ledger check failed" do
   let args ← checked (parseArgs ["--root", "--dependency-root", "--gmp-version"]

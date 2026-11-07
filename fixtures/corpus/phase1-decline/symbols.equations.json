@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/k1-equations/1",
+  "format": "ixcc/k1-equations/1",
   "source": "Symbols.lean",
   "roots": [
     {

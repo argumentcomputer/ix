@@ -2,7 +2,7 @@
 Lean port of CakeML `compiler/benchmarks/cakeml_benchmarks/cakeml/queue.cml`
 (CakeML/cakeml 530c7deec135ad421cce7ca768eed2f5801261b2). BSD-3-Clause; see
 `benchmarks/fixtures/LICENSES/cakeml-LICENSE`.
-Modified for Compilatr.ix: translated from CakeML to Lean, with a default for
+Modified for IxCC: translated from CakeML to Lean, with a default for
 the partial `head`, and a printed result in place of the unused `val test`;
 see `VARIANT.md`.
 -/

@@ -2,7 +2,7 @@ import Lake
 
 open System Lake DSL
 
-package compilatrix where
+package «ix-cc» where
   /- CI distributes many executables together. Resolve Lean/Lake symbols from
   the pinned shared libraries before the default static archives, avoiding a
   separate copy of the compiler runtime in every test binary. -/
@@ -24,30 +24,30 @@ require Blake3 from git
 
 /- Ix's certified-kernel package (`IxKernel/`, no dependencies, no Rust).
 Only its pure Ixon v4 codec (`Ix.Ixon.Canonical` and its import closure, 11
-modules) is imported, by the ingress wire layer (`Compilatrix.Ixon.V4.Convert`,
-`Compilatrix.Ixon.V3.Wire`). Keep this revision in lockstep with the flake's
+modules) is imported, by the ingress wire layer (`IxCC.Ixon.V4.Convert`,
+`IxCC.Ixon.V3.Wire`). Keep this revision in lockstep with the flake's
 `ix-src` input, `lake-manifest.json` and the trust ledger. -/
 require «ix-kernel» from git
   "https://github.com/argumentcomputer/ix" @
   "f829b76044a44a61023d0983516137147bbb12a7" / "IxKernel"
 
 @[default_target]
-lean_lib Compilatrix where
-  roots := #[`Compilatrix]
+lean_lib IxCC where
+  roots := #[`IxCC]
 
-/- The compiler (M1.I1): `compilatrix compile CLOSURE.ixe --equations EQ.json
+/- The compiler (M1.I1): `ixcc compile CLOSURE.ixe --equations EQ.json
 --root NAME -o OUT.o` runs ingress, `produce` and `Recheck.run` and writes the
-ELF object; `compilatrix check-cert` rechecks a certificate. The logic is in
-`Compilatrix.Cli`; the root only calls it. -/
-lean_exe compilatrix where
-  root := `Compilatrix.Cli.Main
+ELF object; `ixcc check-cert` rechecks a certificate. The logic is in
+`IxCC.Cli`; the root only calls it. -/
+lean_exe ixcc where
+  root := `IxCC.Cli.Main
 
 /- Test modules are separate from the production import root. -/
-lean_lib CompilatrixTests where
-  roots := #[`CompilatrixTests]
+lean_lib IxCCTests where
+  roots := #[`IxCCTests]
 
 /- The K1 research fixture compiled natively: the independent oracle of the
-Src differential suite. Test-only; nothing in `Compilatrix` imports it. -/
+Src differential suite. Test-only; nothing in `IxCC` imports it. -/
 lean_lib K1Fixture where
   srcDir := "fixtures/ixon-v4/k1"
   roots := #[`K1]
@@ -61,35 +61,35 @@ lean_lib SortPolyFixture where
 /- Src: rules, the K1 table and runs, the native differential, pins,
 diagnostics and the bench-k1 entries (design note 01 §10). -/
 lean_exe «tests-src» where
-  root := `CompilatrixTests.Src.Main
+  root := `IxCCTests.Src.Main
 
 /- Src rows over the 60 s budget: `ack 3 10`, `fib 30` without primitives. -/
 lean_exe «tests-src-slow» where
-  root := `CompilatrixTests.Src.SlowMain
+  root := `IxCCTests.Src.SlowMain
 
 /- The relevance annotator and checker (design note 02 §3, §13). -/
 lean_exe «tests-relevance» where
-  root := `CompilatrixTests.Src.Relevance.Main
+  root := `IxCCTests.Src.Relevance.Main
 
 /- Lam and erasure (design note 02 §4–5, §13): Lam's rules, erasure on
 synthetic programs, SrcEval against Lam on K1, bench-k1 and src-sortpoly
 (readback, traps, least clocks), the native differential, annotation
 mutation, well-formedness and static modes of every erased program. -/
 lean_exe «tests-lam» where
-  root := `CompilatrixTests.Lam.Main
+  root := `IxCCTests.Lam.Main
 
 /- Regenerates (or with `--check` compares) the K1 artifacts the kernel
-evaluates: `CompilatrixTests/Src/Artifacts/*.lean`, the loaded fib, tak and
+evaluates: `IxCCTests/Src/Artifacts/*.lean`, the loaded fib, tak and
 gcd programs with their annotations as Lean terms (M1.K1). -/
 lean_exe «gen-src-artifacts» where
-  root := `CompilatrixTests.Src.ArtifactMain
+  root := `IxCCTests.Src.ArtifactMain
 
 /- Anf and the middle-end passes P1–P4 (design note 02 §6–8, §13): Lam
 against Anf after every pass on k1.ixe and bench-k1, the K1 shape
 expectations, generated Lam programs under random oracles, WellScoped and
 shrink idempotence, and the passes re-run by the kernel. -/
 lean_exe «tests-anf» where
-  root := `CompilatrixTests.Anf.Main
+  root := `IxCCTests.Anf.Main
 
 /- Fir, the Phase 1 Own fragment and Cfg (design note 03, M1.F5): every
 root and first-order constant of k1.ixe and bench-k1 through Anf → Fir →
@@ -98,7 +98,7 @@ timeout clause), the fallback route declined at Fir, generated first-order
 programs, the bench entries at test sizes, well-formedness at every level,
 and the lowerings re-run by the kernel. -/
 lean_exe «tests-fir» where
-  root := `CompilatrixTests.Fir.Main
+  root := `IxCCTests.Fir.Main
 
 /- The runtime lowering (design note 04, M1.F6): `Rt.lower` from Cfg to
 Lir on k1.ixe, bench-k1 and generated programs against Cfg (related values,
@@ -108,88 +108,88 @@ planted mutations; with `--cc`, `Backend.compile` to native objects run at
 every level and under `fixtures/x86/runtime_driver.c`; and the lowering
 re-run by the kernel. -/
 lean_exe «tests-rt» where
-  root := `CompilatrixTests.Rt.Main
+  root := `IxCCTests.Rt.Main
 
 /- Plain-RC runtime controls, iterative reclamation and native allocator ABI. -/
 lean_exe «tests-rt-rc» where
-  root := `CompilatrixTests.Rt.Rc.Main
+  root := `IxCCTests.Rt.Rc.Main
 
 /- Exact RC Cfg admission predicates and independently literal evaluator results. -/
 lean_exe «tests-cfg-rc» where
-  root := `CompilatrixTests.Cfg.Rc.Main
+  root := `IxCCTests.Cfg.Rc.Main
 
 /- Real-source RC certificates: independent writer/reader processes,
 complete list observations, corruptions and same-arena call/drop recycling. -/
 lean_exe «tests-rc-certificate» where
-  root := `CompilatrixTests.Recheck.Rc.Main
+  root := `IxCCTests.Recheck.Rc.Main
 
 /- Actual RC pipeline observations and event counts, with independent emitted
 object corruption and real-source heap exhaustion controls. -/
 lean_exe «tests-pipeline-rc» where
-  root := `CompilatrixTests.Pipeline.Rc.Main
+  root := `IxCCTests.Pipeline.Rc.Main
 
 /- Object driver protocol, raw-word release and inter-call memory controls. -/
 lean_exe «tests-driver-session» where
-  root := `CompilatrixTests.X86.DriverSession.Main
+  root := `IxCCTests.X86.DriverSession.Main
 
-/- The compiler end to end (M1.I1, M1.I2): the `compilatrix` command line on
+/- The compiler end to end (M1.I1, M1.I2): the `ixcc` command line on
 the bench-k1 closures and k1.ixe (with `--cc`, linked with the runtime driver
 and run at test and bench sizes), `produce` + `Recheck.run` against the stage
 suites' pipeline, the certificate's JSON round trip, declines, and
 certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
-  root := `CompilatrixTests.Pipeline.Main
+  root := `IxCCTests.Pipeline.Main
 
 /- Deterministic x86 step counts (M3.2, MEAS-3): each bench-k1 program's
 `cx_init` and root on the typed x86 machine and on `ByteEval`, compared
 exactly with the reviewed baseline `fixtures/ixon-v4/bench-k1/steps.json`
 (`--write` regenerates it). -/
 lean_exe «check-steps» where
-  root := `CompilatrixTests.Pipeline.StepsMain
+  root := `IxCCTests.Pipeline.StepsMain
 
 /- The corpus builder (MT.1, `docs/corpus.md`): `corpus check` verifies the
-frozen fixture families against their `compilatrix/corpus/1` manifests
+frozen fixture families against their `ixcc/corpus/1` manifests
 without ix; `corpus rebuild MANIFEST --ix IX` recompiles a family with the
 pinned ix and recomputes the expected outputs with Lean's interpreter. -/
 lean_exe corpus where
-  root := `CompilatrixTests.Corpus.ToolMain
+  root := `IxCCTests.Corpus.ToolMain
 
 /- Optional diagnostic report from an external, pinned certified checker.
 The kernel itself is neither imported nor a build dependency. -/
 lean_exe «certified-census» where
-  root := `CompilatrixTests.Corpus.CertifiedCensusMain
+  root := `IxCCTests.Corpus.CertifiedCensusMain
 
 /- The corpus suite (MT.2): every root of every registered corpus family
 compiled, declined with its expected code, or run at every level (SrcEval
 … Cfg, Lir, Xv, Xl, typed x86, ByteEval) and natively (with `--cc`) on its
 frozen cases against Lean's interpreter. -/
 lean_exe «tests-corpus» where
-  root := `CompilatrixTests.Corpus.Main
+  root := `IxCCTests.Corpus.Main
 
 /- The ownership and usage-annotation suite, Phase 1 part (MT.7): the annotated
 programs ix accepts against their plain twins and Lean's interpreter at every
 level and natively, their code compared, erasure, the Cfg stepper's counters,
 CX-1, and ix's recorded verdicts (`fixtures/ownership`). -/
 lean_exe «tests-own» where
-  root := `CompilatrixTests.Own.Main
+  root := `IxCCTests.Own.Main
 
 /- Checked plain-RC acceptance, execution, aliasing and complete release. -/
 lean_exe «tests-own-plain» where
-  root := `CompilatrixTests.Own.Plain.Main
+  root := `IxCCTests.Own.Plain.Main
 
 /- Shrinking and first-divergence reports for the generators (MT.5): recorded
 choice sequences replay to the seeded cases, and a planted bug per generator
 (LamGen, FoGen, the Lir generator, the allocation mutants) is found, named at
 its level, shrunk and written out as a replayable record. -/
 lean_exe «tests-shrink» where
-  root := `CompilatrixTests.Pipeline.ShrinkMain
+  root := `IxCCTests.Pipeline.ShrinkMain
 
 /- Regenerates (or with `--check` compares) the recheck artifacts the kernel
-evaluates (M1.K1): `CompilatrixTests/Recheck/Artifacts/*.lean`, each bench-k1
+evaluates (M1.K1): `IxCCTests/Recheck/Artifacts/*.lean`, each bench-k1
 closure's `Src.Program`, configuration and certificate as shared Lean terms,
 with the typed program and object bytes of the native run. -/
 lean_exe «gen-recheck-artifacts» where
-  root := `CompilatrixTests.Recheck.ArtifactMain
+  root := `IxCCTests.Recheck.ArtifactMain
 
 /- The recheck path in kernel-evaluable style (M1.K1): building it evaluates
 `Recheck.runTyped` on the fib, tak and gcd artifacts and the whole
@@ -197,15 +197,15 @@ lean_exe «gen-recheck-artifacts» where
 artifact against a fresh ingress, `produce` and native run, and the
 recheck path's statistics-free selection against `Select.run`. -/
 lean_exe «tests-recheck» where
-  root := `CompilatrixTests.Recheck.Main
+  root := `IxCCTests.Recheck.Main
 
 /- Ground first-order readback discovery: source instances, emitted layouts,
 independent signature validation and malformed candidate rejection. -/
 lean_exe «tests-recheck-readback» where
-  root := `CompilatrixTests.Recheck.ReadbackMain
+  root := `IxCCTests.Recheck.ReadbackMain
 
 lean_exe «tests-ixon-v3» where
-  root := `CompilatrixTests.IxonV3.Main
+  root := `IxCCTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
 
 lean_exe «check-ixon-v3» where
@@ -215,35 +215,35 @@ lean_exe «check-ixon-v3-catalog» where
   root := `CheckIxonV3Catalog
 
 lean_exe «tests-aiur» where
-  root := `CompilatrixTests.Aiur.Main
+  root := `IxCCTests.Aiur.Main
 
 /- Lir: kernels, then generated SSA programs checked for well-formedness,
 critical-edge splitting, clock monotonicity and exactness, and determinism. -/
 lean_exe «check-lir» where
-  root := `CompilatrixTests.Lir.Main
+  root := `IxCCTests.Lir.Main
 
 /- Selection: Lir.eval against Xv.eval on the kernels and on generated Lir, in
 lock-step (outcome, memory and clock), with per-rule firing counts. -/
 lean_exe «check-xv-select» where
-  root := `CompilatrixTests.Xv.Main
+  root := `IxCCTests.Xv.Main
 
 /- Allocation (TT-3): linear scan, the validator and the all-slots fallback on
 the kernels and on generated programs, with chaos seeds, validator mutation
 and Xv.eval against Xl.eval on every accepted allocation. -/
 lean_exe «check-regalloc» where
-  root := `CompilatrixTests.Xv.Alloc.Main
+  root := `IxCCTests.Xv.Alloc.Main
 
 /- Stacking, layout and emission: hand-written Xl, the Lir kernels and
 generated Lir to ELF objects, run on the typed machine, the byte machine
 and (with `--cc`) natively under `fixtures/x86/backend_driver.c`. -/
 lean_exe «check-backend» where
-  root := `CompilatrixTests.Backend.Main
+  root := `IxCCTests.Backend.Main
 
 /- MEAS-4 (M1.B6): the Lir kernels fib, sumLoop and gcd as ELF objects, with
 their static spill and move counts and compile times, for the optional
 measurement in benchmarks/meas4 (not a CI gate). -/
 lean_exe «backend-probe» where
-  root := `CompilatrixTests.Backend.ProbeMain
+  root := `IxCCTests.Backend.ProbeMain
 
 lean_exe «check-aiur» where
   srcDir := "scripts"

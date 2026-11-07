@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/own-verdicts/1",
+  "format": "ixcc/own-verdicts/1",
   "description": "ix's verdict, under the pinned producer and the corpus manifest's anonymous command, on every annotated source of the ownership suite (MT.7): accepted sources are frozen as fixtures of corpus.json, rejected ones are recorded here with the stage and code ix gave.",
   "source_root": "fixtures/ownership/src",
   "manifest": "fixtures/ownership/corpus.json",
@@ -79,7 +79,7 @@
       },
       "fixture": "OS03-annotated",
       "twin": "OS03-plain",
-      "note": "CX-1: Compilatrix rejected it with relevance-C0 before the annotator honoured 0 binders"
+      "note": "CX-1: IxCC rejected it with relevance-C0 before the annotator honoured 0 binders"
     },
     {
       "id": "OS-03b",
@@ -935,7 +935,7 @@
         "code": "Usage(0, Erased, Many)",
         "constant": "882cfa899204"
       },
-      "note": "true negative: the producer's half of CX-1's negative; Compilatrix's half (relevance-C1) is tests-own's synthetic case"
+      "note": "true negative: the producer's half of CX-1's negative; IxCC's half (relevance-C1) is tests-own's synthetic case"
     }
   ]
 }

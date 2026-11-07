@@ -1,4 +1,4 @@
-// Compilatr.ix twin of Lean `rbmap_checkpoint`: a persistent (path-copying)
+// IxCC twin of Lean `rbmap_checkpoint`: a persistent (path-copying)
 // red-black tree with shared ownership, so that every checkpoint stays valid
 // while later insertions proceed. The driver follows Koka
 // `test/bench/cpp/rbtree-ck.cpp` and Lean `tests/bench/rbmap_checkpoint_cpp_std.cpp`

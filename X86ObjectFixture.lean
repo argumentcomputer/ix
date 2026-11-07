@@ -1,11 +1,11 @@
-import Compilatrix.X86.ELFValidate
-import Compilatrix.X86.EvalExamples
+import IxCC.X86.ELFValidate
+import IxCC.X86.EvalExamples
 
 /-! Operational fixture generator for the external ELF/binutils gate. -/
 
-open Compilatrix
-open Compilatrix.X86
-open Compilatrix.Ixon
+open IxCC
+open IxCC.X86
+open IxCC.Ixon
 
 private def usage : String :=
   "usage: lake exe x86-object-fixture (arithmetic|direct-call|runtime|unwind|exports) <output.o>"
@@ -43,7 +43,7 @@ private def fixture? : String → Except String Fixture
   | "exports" =>
       pure { program := X86.Examples.callProgram
              runtime := Runtime.rejecting
-             exports := [("compilatrix_forty", 1)] }
+             exports := [("ixcc_forty", 1)] }
   | _ => .error usage
 
 def main (args : List String) : IO UInt32 := do

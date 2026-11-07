@@ -5,7 +5,7 @@ The vectors (`addressed.tsv`, `claims.tsv`, `expressions.txt`, `resource.tsv`,
 unchanged files from `argumentcomputer/ix`, branch `jcb/ix-certified`, commit
 `f829b76044a44a61023d0983516137147bbb12a7` (the pinned `ix-kernel`), directory
 `Tests/Fixtures/ixon-v4/`, copied by `lake exe refreeze-ixon package`.
-`README.md` and the copied license notices are Compilatrix packaging
+`README.md` and the copied license notices are IxCC packaging
 additions. Do not regenerate expected bytes from the consumer codec. The
 upstream handoff manifest records the original BLAKE3 file and
 subject/profile/claim hashes.
@@ -32,7 +32,7 @@ The producer is a local ix change on top of the pinned revision; its manifest
 `src-tables.tsv` holds the Src front end's pinned `lazy` rows (the 28
 `@[macro_inline]` Init declarations, `Bool.or` and `Bool.and`, with their
 by-name arities) and its opaque-by-value row (`Lean.opaqueId`), transcribed
-in `Compilatrix.Src.Pinned` (`pin-src-tables --repin` after a refreeze). `src-names.tsv` resolves a few Init names for
+in `IxCC.Src.Pinned` (`pin-src-tables --repin` after a refreeze). `src-names.tsv` resolves a few Init names for
 tests only; it is an untrusted oracle. [`src-diag/`](src-diag/README.md) is
 the admission-diagnostics closure, and [`src-sortpoly/`](src-sortpoly/README.md)
 the sort-polymorphism closure (level-exact relevance). All four come from

@@ -4,10 +4,10 @@ Production `Stream.encode` and `ELFLink.resolve` validate through
 `Stream.checkIndexed`. They return the existing `Stream.Valid` certificate,
 so the complete-stream, relocation, and source-to-ELF theorems keep the same
 statements. The original `Stream.check` remains available as a reference in
-[`StreamSpec.lean`](../Compilatrix/X86/StreamSpec.lean), with its original
+[`StreamSpec.lean`](../IxCC/X86/StreamSpec.lean), with its original
 decoder and prefix-sum layout specification.
 
-[`DecodeWindow.lean`](../Compilatrix/X86/DecodeWindow.lean) extracts at most
+[`DecodeWindow.lean`](../IxCC/X86/DecodeWindow.lean) extracts at most
 15 bytes at the requested position before converting them to a list. It uses
 the same table-indexed instruction parser. Prefix-consumption lemmas show
 that accepted instructions do not inspect their remaining suffix;
@@ -17,7 +17,7 @@ unsupported prefixes, alternative encodings, and positions past the end.
 The bound is the architectural limit; `table_bounded` proves that every
 listed row encodes within it.
 
-[`StreamIndex.lean`](../Compilatrix/X86/StreamIndex.lean) computes canonical
+[`StreamIndex.lean`](../IxCC/X86/StreamIndex.lean) computes canonical
 instruction positions, block starts, and total text size in one traversal of
 the program's size lists. Each cached position is proved equal to the
 original prefix-sum specification. The proposed encoder's offset table is
@@ -25,7 +25,7 @@ still checked against the canonical table. A `PreparedLayout program` carries
 an erased equality proof tying its index to that exact program; callers may
 reuse it with `checkPrepared` to validate multiple proposed outputs.
 
-[`StreamIndexed.lean`](../Compilatrix/X86/StreamIndexed.lean) checks every
+[`StreamIndexed.lean`](../IxCC/X86/StreamIndexed.lean) checks every
 instruction and terminator, including unreachable blocks, with bounded
 windows and indexed positions. It checks the same total length, block
 offsets, target bounds, signed displacements, and ordered relocation inventory.

@@ -21,6 +21,6 @@
    "inputRev": "3f8b805614a0bae1c033469ff893a8f0ee85f601",
    "inherited": false,
    "configFile": "lakefile.lean"}],
- "name": "compilatrix",
+ "name": "«ix-cc»",
  "lakeDir": ".lake",
  "fixedToolchain": false}

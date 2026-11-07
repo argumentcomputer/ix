@@ -153,28 +153,28 @@ Cold/warm refer to absent/persisted HPT evidence, not the OS page cache. Warm pr
 
 ## Rejections and experiment endpoints
 
-- `declarations-353-cold` / `source-preflight`: Compilatrix.Pipeline.Error.resource   { metric := Compilatrix.Ixon.Work.Metric.certificateSourceNodeWork, actual := 135287305, limit := 134217728 }
-- `declarations-512-cold` / `source-preflight`: Compilatrix.Pipeline.Error.resource   { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 514, limit := 512 }
+- `declarations-353-cold` / `source-preflight`: IxCC.Pipeline.Error.resource   { metric := IxCC.Ixon.Work.Metric.certificateSourceNodeWork, actual := 135287305, limit := 134217728 }
+- `declarations-512-cold` / `source-preflight`: IxCC.Pipeline.Error.resource   { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 514, limit := 512 }
 - `call-depth-33-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `call-depth-64-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `call-depth-128-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `call-depth-256-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `call-depth-318-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
-- `call-depth-319-cold` / `source-preflight`: Compilatrix.Pipeline.Error.resource   { metric := Compilatrix.Ixon.Work.Metric.certificateSourceNodeWork, actual := 135413228, limit := 134217728 }
-- `call-depth-512-cold` / `source-preflight`: Compilatrix.Pipeline.Error.resource   { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 516, limit := 512 }
+- `call-depth-319-cold` / `source-preflight`: IxCC.Pipeline.Error.resource   { metric := IxCC.Ixon.Work.Metric.certificateSourceNodeWork, actual := 135413228, limit := 134217728 }
+- `call-depth-512-cold` / `source-preflight`: IxCC.Pipeline.Error.resource   { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 516, limit := 512 }
 - `branches-32-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `branches-64-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `branches-128-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `branches-256-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
 - `branches-453-cold` / `native-select`: heap CFG call graph is recursive or exceeds 32 functions
-- `branches-454-cold` / `source-construction`: synthetic source address rejected: Compilatrix.Ixon.Constant.AddressError.resource   { metric := Compilatrix.Ixon.Work.Metric.compressionInputUnits, actual := 4097, limit := 4096 }
-- `branches-512-cold` / `source-construction`: synthetic source address rejected: Compilatrix.Ixon.Constant.AddressError.resource   { metric := Compilatrix.Ixon.Work.Metric.compressionInputUnits, actual := 4619, limit := 4096 }
+- `branches-454-cold` / `source-construction`: synthetic source address rejected: IxCC.Ixon.Constant.AddressError.resource   { metric := IxCC.Ixon.Work.Metric.compressionInputUnits, actual := 4097, limit := 4096 }
+- `branches-512-cold` / `source-construction`: synthetic source address rejected: IxCC.Ixon.Constant.AddressError.resource   { metric := IxCC.Ixon.Work.Metric.compressionInputUnits, actual := 4619, limit := 4096 }
 - `allocations-9-cold` / `native-select`: heap CFG entry has no admitted scalar-argument interface
 - `allocations-16-cold` / `native-select`: heap CFG entry has no admitted scalar-argument interface
 - `allocations-32-cold` / `native-select`: heap CFG entry has no admitted scalar-argument interface
 - `allocations-64-cold` / `native-select`: heap CFG entry has no admitted scalar-argument interface
 - `allocations-128-cold` / `native-select`: heap CFG source function exceeds the block/instruction limits
-- `candidates-513-cold` / `source-preflight`: Compilatrix.Pipeline.Error.resource   { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 513, limit := 512 }
+- `candidates-513-cold` / `source-preflight`: IxCC.Pipeline.Error.resource   { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 513, limit := 512 }
 - `joins-9-cold`: fixed experiment endpoint after native lowering; 3584 target blocks, 11786 instructions. No ELF timing or rejection is claimed.
 - `joins-10-cold` / `native-select`: heap CFG entry has no admitted scalar-argument interface
 - `joins-11-cold` / `native-select`: heap CFG entry has no admitted scalar-argument interface

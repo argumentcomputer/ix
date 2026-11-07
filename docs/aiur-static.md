@@ -1,6 +1,6 @@
 # Checked Aiur static assignments
 
-[`Static.validate`](../Compilatrix/Aiur/Static/Check.lean) accepts a pinned
+[`Static.validate`](../IxCC/Aiur/Static/Check.lean) accepts a pinned
 bytecode toplevel, an advice policy, a logical trace, one natural rank per
 row, and local replay tapes. Successful validation returns a
 `Static.CheckedTrace`. Its `public_bytecode` theorem proves a finite
@@ -98,8 +98,8 @@ trace, rank, or replay-tape parser is introduced.
 ## Validation and remaining work
 
 ```sh
-lake build Compilatrix.Aiur CompilatrixTests.Aiur.Static.Proofs \
-  CompilatrixTests.Fences.AiurStatic tests-aiur
+lake build IxCC.Aiur IxCCTests.Aiur.Static.Proofs \
+  IxCCTests.Fences.AiurStatic tests-aiur
 lake exe tests-aiur
 nix build .#checks.x86_64-linux.aiur
 ```

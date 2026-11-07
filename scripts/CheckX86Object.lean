@@ -1,9 +1,9 @@
-import Compilatrix.Tools.X86Check
+import IxCC.Tools.X86Check
 
 /-! Inspect and natively run independently generated ELF files. All byte and
 address expectations are frozen here rather than obtained from compiler code. -/
 
-open System Compilatrix.Tools.Check Compilatrix.Tools.X86Check
+open System IxCC.Tools.Check IxCC.Tools.X86Check
 
 private structure Fixture where
   name : String
@@ -56,12 +56,12 @@ private def inspect (readelf objdump : String) (fixture : Fixture) (path : FileP
     | "direct-call" => pure ["push   rbp", "call   c", "pop    rbp", "add    rax,0x2", "mov    eax,0x28"]
     | "runtime" => pure [
         "push   rbp", "mov    edi,0x10", "mov    esi,0x8",
-        "r_x86_64_pc32\tcompilatrix_rt_allocate-0x4", "pop    rbp"]
+        "r_x86_64_pc32\tixcc_rt_allocate-0x4", "pop    rbp"]
     | "unwind" => pure [
         "push   r15", "lea    r15,[rdi+0x40]", "mov    qword ptr [r15-0x40],rsp", "lea    r11,[rsp-0x40]",
         "cmp    r11,qword ptr [r15-0x38]", "jb", "mov    rsp,qword ptr [r15-0x40]", "xor    edx,edx", "pop    rbx"]
-    | "exports" => pure ["push   rbp", "call   c <compilatrix_forty>", "pop    rbp", "add    rax,0x2",
-        "<compilatrix_forty>:", "mov    eax,0x28"]
+    | "exports" => pure ["push   rbp", "call   c <ixcc_forty>", "pop    rbp", "add    rax,0x2",
+        "<ixcc_forty>:", "mov    eax,0x28"]
     | _ => throw (IO.userError "unknown fixture kind")
   requireAll disassembly expected s!"{fixture.name}: disassembly"
   if fixture.kind == "exports" then
@@ -70,10 +70,10 @@ private def inspect (readelf objdump : String) (fixture : Fixture) (path : FileP
     let defined := ((elf.splitOn "\n").map words).filterMap fun
       | [_, value, _, "FUNC", "GLOBAL", "DEFAULT", "1", name] => some (name, value)
       | _ => none
-    need (defined == [("compilatrix_main", "0000000000000000"), ("compilatrix_forty", "000000000000000c")])
+    need (defined == [("ixcc_main", "0000000000000000"), ("ixcc_forty", "000000000000000c")])
       s!"exports: expected two defined global function symbols\n{elf}"
   if fixture.kind == "runtime" then
-    requireAll elf ["R_X86_64_PC32", "compilatrix_rt_allocate - 4"] "runtime relocation"
+    requireAll elf ["R_X86_64_PC32", "ixcc_rt_allocate - 4"] "runtime relocation"
   else
     need (elf.contains "There are no relocations in this file.")
       s!"unexpected relocation for {fixture.name}\n{elf}"

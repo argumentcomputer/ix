@@ -17,10 +17,10 @@ the fixture's environment.
 +++ ConstFold.lean
 @@ -1,3 +1,13 @@
 +/-
-+Compilatr.ix fixture `const_fold` (upstream variant) of
++IxCC fixture `const_fold` (upstream variant) of
 +Lean `tests/compile_bench/const_fold.lean` (leanprover/lean4
 +v4.34.0, 293d5d0c0c3f3dded4688b3ccd6a33939ac5102b; Apache-2.0, see
-+`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for Compilatr.ix:
++`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for IxCC:
 +the upstream `unsafe def main` is replaced by a pure `entry` and a safe
 +`main` that prints its result in the upstream format; the definitions above
 +`entry` are unchanged. See `VARIANT.md`.
@@ -73,10 +73,10 @@ limit).
 --- upstream/cfold.cpp
 +++ cfold.cpp
 @@ -1,3 +1,9 @@
-+// Compilatr.ix twin of Lean `const_fold`, adapted from Koka `test/bench/cpp/cfold.cpp`
++// IxCC twin of Lean `const_fold`, adapted from Koka `test/bench/cpp/cfold.cpp`
 +// (koka-lang/koka 8b803da69d3941ce1e03173578093aefc41ee548; Apache-2.0,
 +// see benchmarks/fixtures/LICENSES/koka-LICENSE).
-+// Modified for Compilatr.ix: const_folding folds its subterms first, as Lean's
++// Modified for IxCC: const_folding folds its subterms first, as Lean's
 +// constFolding and Koka's cfold.kk do (upstream C++ does not recurse); the size is
 +// read from argv[1] (default 20, as upstream); the output is "v1 v2", as in Lean.
  #include <math.h>

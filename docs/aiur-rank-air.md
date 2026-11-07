@@ -1,6 +1,6 @@
 # Aiur rank AIR extraction
 
-[`Rank.ordered_message_of_balance`](../Compilatrix/Aiur/AIR/Rank/Sound.lean)
+[`Rank.ordered_message_of_balance`](../IxCC/Aiur/AIR/Rank/Sound.lean)
 proves that an ordered call's provider has a strictly larger natural rank.
 Its premises retain normalized scalar-u16 lookup balance, the demand-count
 bound, the fixed range-table rows, all nine limb demands, and equality of the
@@ -28,7 +28,7 @@ uses main multiplicity column seven with weight `-m` and arguments
 `[15, column0 * 256 + column1]`. It therefore provides exactly `[15, i]`.
 This differs from physical channel 11's two independent byte arguments.
 
-[`Rank.rangeProvided_iff`](../Compilatrix/Aiur/AIR/Rank/Range.lean) proves that an exact
+[`Rank.rangeProvided_iff`](../IxCC/Aiur/AIR/Rank/Range.lean) proves that an exact
 scalar message has a fixed-table provider if and only if its value is below
 65536. The proof covers every table index, not only sampled values.
 `RangeBalanced` counts exact requested messages and equates their field count
@@ -76,7 +76,7 @@ through provider selection and prove its projection to the bytecode semantics.
 This package does not silently infer that correspondence or construct a whole
 static trace certificate from erased messages.
 
-[`Rank.validate`](../Compilatrix/Aiur/AIR/Rank/Check.lean) accepts one supplied
+[`Rank.validate`](../IxCC/Aiur/AIR/Rank/Check.lean) accepts one supplied
 ordered edge: exactly three parent limbs, three gap limbs, and three child
 limbs. It checks their ranges and the physical rank equality, returning
 `Checked edge`. Its soundness module derives the exact natural equation,
@@ -101,8 +101,8 @@ correctness are outside these fixtures. Expected data are never regenerated
 from the Lean model.
 
 ```sh
-lake build Compilatrix.Aiur.AIR.Rank.Sound Compilatrix.Aiur.AIR.Rank.GraphProofs \
-  CompilatrixTests.Aiur.RankAIR.Proofs CompilatrixTests.Fences.AiurRankAIR \
+lake build IxCC.Aiur.AIR.Rank.Sound IxCC.Aiur.AIR.Rank.GraphProofs \
+  IxCCTests.Aiur.RankAIR.Proofs IxCCTests.Fences.AiurRankAIR \
   tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .

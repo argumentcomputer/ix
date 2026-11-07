@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "phase1-scalar",
   "description": "The Phase 1 scalar corpus (phase1.md MT.2): first-order, total programs over Nat and Bool, compiled by ix with unfolding equations; expected outputs from Lean 4.34's interpreter and independent constants.",
   "tier": "required",
@@ -178,14 +178,14 @@
       },
       "equations": {
         "path": "scalar.equations.json",
-        "sha256": "6af5847cee5d38be384a901ccb3da217aae092a70784d1e2e9518ca13adc1520",
+        "sha256": "4b2642f0561bfc2a5539e4815cef6f54afe27bde0e116f205e579703ce4fe99f",
         "equations": 50,
         "failures": 0
       },
       "named_env_sha256": "1bee786ebe91bc5707f29fd28bd6a878d56761aea67df04062fc3b720456c554",
       "census": {
         "path": "scalar.census.json",
-        "sha256": "29041ba24adfd7d0afbb02a02b73ba1a7e17f2dcb101a39c59179cbe8229e897"
+        "sha256": "4916a0a451479ee70621cf988b2aee56882beab8c1e8d206441df4c92bbfe5b9"
       },
       "roots": [
         {
@@ -1860,14 +1860,14 @@
       },
       "equations": {
         "path": "strictAndOr.equations.json",
-        "sha256": "169f103337a9f9a6c876043de65bfdce1ad9d909bd188ba7424a02b2e6c0bcc8",
+        "sha256": "e1681fcc2cfb221892f7a6dc808986d2b046767332371af5ddb937068893a35e",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "81aea4fdeffa71fea9c853223dc6f3938c4215be1aa516169bd9803610486fed",
       "census": {
         "path": "strictAndOr.census.json",
-        "sha256": "fe56e0bbe150b27a0e7d020253df2bec34c31d60e4b25f1f3963f61ba38d8724"
+        "sha256": "7e52f311a3f7918ab95d475dcbdfa20975768409eac9374646bc3df1ce99e0a6"
       },
       "roots": [
         {
@@ -2002,14 +2002,14 @@
       },
       "equations": {
         "path": "tuple.equations.json",
-        "sha256": "db0d2fd9e363cef021c4a0fd238c12ab456b4a3f536509491661aec6627597b2",
+        "sha256": "858cb5830ef4e3275faaaf621f5202fbd9e9a50ead976c33ec9054400242eb7c",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "327565bc27086139780efb237b75b157bc90ed91a87cc5b48edfa342eb251663",
       "census": {
         "path": "tuple.census.json",
-        "sha256": "ba719398493d8b24096af6404fdcf6277f2a8a790bced5fd8e8057a83007bdca"
+        "sha256": "0788c031c33692b3df721b2dbb2dca152f644f56d61d092cfb212c39e6e2e5ee"
       },
       "roots": [
         {
@@ -2130,14 +2130,14 @@
       },
       "equations": {
         "path": "bigctor.equations.json",
-        "sha256": "4d9924817ef07d0d41ce33ce7bb469592f44b416ca63dcd502ea13ad8fe54ec8",
+        "sha256": "63ec969ad773699c25a0c9069ceadacabdb8d3ac0e6901637eb1faa5d9b90d0c",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "2a48da8def8d0c4a1073e6ed10367ccacaa20e4672fb115329a7c955fd89d6f1",
       "census": {
         "path": "bigctor.census.json",
-        "sha256": "f7686e8cafaf3220326c8b944c2130de5fa9a69849b8fc0acd2cd76cd4979954"
+        "sha256": "d983b856a10fba2f0afa98db0230eb5ed82b13a0339e43f9bb7039cb7e0567f4"
       },
       "roots": [
         {
@@ -2201,14 +2201,14 @@
       },
       "equations": {
         "path": "typeFormerPolymorphism.equations.json",
-        "sha256": "cfbdb5672ed03a0b9b53419ee9edd38a0583becfdc56d6867866e924dc018a0a",
+        "sha256": "1c8c3cf8b4c16af4de1f20dcdaa287e4ed785e30f80be2f9a030d6becbbd3899",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "d116a2156b4cc068c655b7192ae8042f67f9080b9081044eab16f9eaddea581b",
       "census": {
         "path": "typeFormerPolymorphism.census.json",
-        "sha256": "ba4681dfdd8da4243128a6bd23913353ee07bfba5419f30bed4cccbd14510c1b"
+        "sha256": "4e49b9cf1ffea72ed1e828b6ed21b1300995eb17533b2022a27f2015d51a2f44"
       },
       "roots": [
         {
@@ -2275,14 +2275,14 @@
       },
       "equations": {
         "path": "natShiftr.equations.json",
-        "sha256": "c4436710c8b6aff8da0a358b9dfd219d7ba8b0ef7520fc5f6bcbacc2785d7f99",
+        "sha256": "61d0dde13581b43e65b77f291bc96ad02882d8a3528040e5df53da37726a4c6d",
         "equations": 6,
         "failures": 0
       },
       "named_env_sha256": "e6dbdf0f0ed0706ba8ac0ee9f83336bb6290728d8daad63d1285718c746b3b29",
       "census": {
         "path": "natShiftr.census.json",
-        "sha256": "ce7d3468a688b6a74e875c230e39ba78ff06fb7a357cf3dc14e17e1753e3c6c9"
+        "sha256": "b26effa1b666351ddc2c87d5e95ba71811e3f1d8a8f0136a0b83960520f209ae"
       },
       "roots": [
         {

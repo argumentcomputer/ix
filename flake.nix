@@ -1,5 +1,5 @@
 {
-  description = "Compilatr.ix: a certified Lean 4 toolchain for Ix";
+  description = "IxCC: a certified Lean 4 toolchain for Ix";
 
   nixConfig = {
     extra-substituters = [
@@ -33,7 +33,7 @@
     blake3-lean.inputs.lean4-nix.follows = "lean4-nix";
 
     # Ix's certified-kernel package (`IxKernel/`), as source: the Lake
-    # dependency «ix-kernel», of which Compilatrix imports only the pure Ixon
+    # dependency «ix-kernel», of which IxCC imports only the pure Ixon
     # v4 codec (`Ix.Ixon.Canonical` and its closure). Keep the revision in
     # lockstep with lakefile.lean/lake-manifest.json and the trust ledger.
     ix-src = {
@@ -112,28 +112,28 @@
           root = ./.;
           blake3 = blake3WithStaticCrates.packages.${system}.rust;
         };
-        inherit (build) compilatrixLib programs mkCheck;
+        inherit (build) ixccLib programs mkCheck;
         gateChecks = import ./nix/checks.nix {
           inherit pkgs system auditSrc blake3-lean ix-src mkCheck;
         };
       in {
         packages = {
-          default = compilatrixLib;
-          compilatrix = compilatrixLib;
+          default = ixccLib;
+          ixcc = ixccLib;
         };
 
-        # The compiler's command line (`Compilatrix.Cli`), from the shared
-        # program build: `nix run .#compilatrix -- compile ...`.
-        apps.compilatrix = {
+        # The compiler's command line (`IxCC.Cli`), from the shared
+        # program build: `nix run .#ixcc -- compile ...`.
+        apps.ixcc = {
           type = "app";
-          program = "${programs}/bin/compilatrix";
+          program = "${programs}/bin/ixcc";
           meta.description = "Compile an Ixon v3 closure to an x86-64 ELF object";
         };
 
         # The required check surface was emptied on 2026-09-29 and returns
         # gate by gate (docs/ci.md). Every check reuses one program build.
         checks = {
-          build = compilatrixLib;
+          build = ixccLib;
           proofs = programs;
         } // gateChecks;
 

@@ -1,6 +1,6 @@
 # Used with a generated wrapper that includes the pinned lib.rs unchanged.
 [package]
-name = "compilatrix-aiur-rank-reference"
+name = "ixcc-aiur-rank-reference"
 version = "0.0.0"
 edition = "2024"
 

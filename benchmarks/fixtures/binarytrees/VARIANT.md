@@ -27,10 +27,10 @@ is a recorded rejection: it uses `partial` (`make'`, `sumT`, `depth`),
 +++ BinaryTrees.lean
 @@ -1,3 +1,16 @@
 +/-
-+Compilatr.ix fixture `binarytrees` (total variant) of Lean
++IxCC fixture `binarytrees` (total variant) of Lean
 +`tests/compile_bench/binarytrees.lean` (leanprover/lean4 v4.34.0,
 +293d5d0c0c3f3dded4688b3ccd6a33939ac5102b; Apache-2.0, see
-+`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for Compilatr.ix:
++`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for IxCC:
 +`make'` and `sumT` recurse structurally on a `Nat` depth and count instead
 +of `partial` recursion on `UInt32`; `depth` is well-founded on
 +`m + 1 - d` instead of `partial`; the `Task.spawn` is replaced by the
@@ -138,11 +138,11 @@ runs. It still allocates from `std::pmr` arenas, as upstream does.
 --- upstream/binarytrees.cpp
 +++ binarytrees.cpp
 @@ -1,3 +1,12 @@
-+// Compilatr.ix twin of Lean `binarytrees`, adapted from Koka `test/bench/cpp/binarytrees.cpp`
++// IxCC twin of Lean `binarytrees`, adapted from Koka `test/bench/cpp/binarytrees.cpp`
 +// (koka-lang/koka 8b803da69d3941ce1e03173578093aefc41ee548; Apache-2.0, see
 +// benchmarks/fixtures/LICENSES/koka-LICENSE; the program itself is from the Computer
 +// Language Benchmarks Game, whose programs are distributed under the 3-Clause BSD licence).
-+// Modified for Compilatr.ix: run_parallel uses BINARYTREES_WORKERS threads (default 1,
++// Modified for IxCC: run_parallel uses BINARYTREES_WORKERS threads (default 1,
 +// matching the single-threaded total Lean variant; upstream uses hardware_concurrency()).
 +#ifndef BINARYTREES_WORKERS
 +#define BINARYTREES_WORKERS 1

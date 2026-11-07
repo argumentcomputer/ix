@@ -7,7 +7,7 @@ bytes denote that Src program in the certified kernel's model. The existing
 `compile_sound` and `compile_safe` names also have recheck-path premises;
 their names do not supply a theorem about the `Recheck.compile` definition.
 
-The separate [compiler bridge](../Compilatrix/Recheck/Proof/Compile.lean) now
+The separate [compiler bridge](../IxCC/Recheck/Proof/Compile.lean) now
 proves that a successful actual `compile` returns an artifact accepted by
 `run`. `compile_parts` records the exact successful ingress, producer and replay,
 including `cfg.forInput` and the returned certificate. `compiled_sound` derives
@@ -49,7 +49,7 @@ resource validator also reach
 `Blake3.HasherOps.hash._native.native_decide.ax_1`. This is an inventory of
 existing dependencies, not a new axiom or an assumption added to `run`.
 
-The seven exact [compiler-bridge fences](../CompilatrixTests/Fences/Compile.lean)
+The seven exact [compiler-bridge fences](../IxCCTests/Fences/Compile.lean)
 record `propext`, `Classical.choice`, `Quot.sound`, and the existing
 `Blake3.HasherOps.hash._native.native_decide.ax_1` dependency. Mentioning the
 actual ingress/producer in these statements exposes that dependency; no native

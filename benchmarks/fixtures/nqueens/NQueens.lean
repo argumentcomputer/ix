@@ -3,7 +3,7 @@ Lean port of Koka `test/bench/koka/nqueens.kk`
 (koka-lang/koka 8b803da69d3941ce1e03173578093aefc41ee548).
 Copyright 2012-2023, Microsoft Research, Daan Leijen. Apache-2.0; see
 `benchmarks/fixtures/LICENSES/koka-LICENSE`.
-Modified for Compilatr.ix: translated from Koka to Lean, with `int32` queens
+Modified for IxCC: translated from Koka to Lean, with `int32` queens
 as `Nat` and solutions as `List`; see `VARIANT.md`.
 -/
 

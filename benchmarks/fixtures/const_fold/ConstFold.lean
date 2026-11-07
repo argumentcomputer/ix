@@ -1,8 +1,8 @@
 /-
-Compilatr.ix fixture `const_fold` (upstream variant) of
+IxCC fixture `const_fold` (upstream variant) of
 Lean `tests/compile_bench/const_fold.lean` (leanprover/lean4
 v4.34.0, 293d5d0c0c3f3dded4688b3ccd6a33939ac5102b; Apache-2.0, see
-`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for Compilatr.ix:
+`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for IxCC:
 the upstream `unsafe def main` is replaced by a pure `entry` and a safe
 `main` that prints its result in the upstream format; the definitions above
 `entry` are unchanged. See `VARIANT.md`.

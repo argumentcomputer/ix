@@ -1,6 +1,6 @@
-import Compilatrix.Tools.BuildGraph
+import IxCC.Tools.BuildGraph
 
-open Lean Compilatrix.Tools.Check Compilatrix.Tools.BuildGraph
+open Lean IxCC.Tools.Check IxCC.Tools.BuildGraph
 
 /-- Runtime suites whose `Run` failure assertions form the coverage inventory. -/
 def runtimeSuites : List String := ["IxonV3", "Aiur"]

@@ -1,8 +1,8 @@
-// Compilatr.ix twin of Lean `binarytrees`, adapted from Koka `test/bench/cpp/binarytrees.cpp`
+// IxCC twin of Lean `binarytrees`, adapted from Koka `test/bench/cpp/binarytrees.cpp`
 // (koka-lang/koka 8b803da69d3941ce1e03173578093aefc41ee548; Apache-2.0, see
 // benchmarks/fixtures/LICENSES/koka-LICENSE; the program itself is from the Computer
 // Language Benchmarks Game, whose programs are distributed under the 3-Clause BSD licence).
-// Modified for Compilatr.ix: run_parallel uses BINARYTREES_WORKERS threads (default 1,
+// Modified for IxCC: run_parallel uses BINARYTREES_WORKERS threads (default 1,
 // matching the single-threaded total Lean variant; upstream uses hardware_concurrency()).
 #ifndef BINARYTREES_WORKERS
 #define BINARYTREES_WORKERS 1

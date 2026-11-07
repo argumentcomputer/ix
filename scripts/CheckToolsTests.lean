@@ -1,13 +1,13 @@
-import Compilatrix.Tools.TrustLedger
-import Compilatrix.Tools.X86Check
-import Compilatrix.Tools.BuildGraph
-import CompilatrixTests.Tools.BuildGraph
+import IxCC.Tools.TrustLedger
+import IxCC.Tools.X86Check
+import IxCC.Tools.BuildGraph
+import IxCCTests.Tools.BuildGraph
 
 /-! Regression tests for the trust gate's failure paths. Mutations are confined
 to fresh temporary copies; the source tree and reviewed ledger are never edited. -/
 
-open Lean System Compilatrix.Tools.Check Compilatrix.Tools.SourceScan
-open Compilatrix.Tools.TrustLedger
+open Lean System IxCC.Tools.Check IxCC.Tools.SourceScan
+open IxCC.Tools.TrustLedger
 
 private def rejects (label fragment : String) (action : IO Unit) : IO Unit := do
   let error ← try action; pure none catch error => pure (some error.toString)
@@ -97,37 +97,37 @@ private def disassemblyTests : IO Unit := do
   let body := "   0:\t48 89 f8\tmov    rax,rdi\n   3:\tc3\tret"
   let dump := "/tmp/r12-rsp-push (bad)/object.o: file format elf64-x86-64\n" ++
     "0000000000000000 <rbx_pop>:\n" ++ body ++ "\n\t4: R_X86_64_PC32 r15\n"
-  let actual := Compilatrix.Tools.X86Check.instructionText dump
+  let actual := IxCC.Tools.X86Check.instructionText dump
   need (actual == body) "objdump filenames or symbols leaked into instruction checks"
   for register in ["rbx", "rbp", "rsp", "r12", "r13", "r14", "r15"] do
     let instruction := s!"   0:\t49 89 fc\tmov    {register},rdi\n"
-    need ((Compilatrix.Tools.X86Check.instructionText instruction).contains register)
+    need ((IxCC.Tools.X86Check.instructionText instruction).contains register)
       "actual register use escaped the instruction check"
-  need ((Compilatrix.Tools.X86Check.instructionText "   a:\t0f\t(bad)\n").contains "(bad)")
+  need ((IxCC.Tools.X86Check.instructionText "   a:\t0f\t(bad)\n").contains "(bad)")
     "invalid instruction escaped the instruction check"
 
 private def buildGraphTests (root : FilePath) : IO Unit := do
-  CompilatrixTests.Tools.BuildGraph.run
-  let checkGraph := Compilatrix.Tools.BuildGraph.check root
+  IxCCTests.Tools.BuildGraph.run
+  let checkGraph := IxCC.Tools.BuildGraph.check root
   checkGraph
-  let api := root / "Compilatrix.lean"
-  withFile api ("import CompilatrixTests.IxonV3.Run\n" ++ (← IO.FS.readFile api)) do
+  let api := root / "IxCC.lean"
+  withFile api ("import IxCCTests.IxonV3.Run\n" ++ (← IO.FS.readFile api)) do
     rejects "stale source manifest" "Nix import manifest is stale" checkGraph
-    let actual ← Compilatrix.Tools.BuildGraph.manifest root
+    let actual ← IxCC.Tools.BuildGraph.manifest root
     withFile (root / "nix/lean-modules.json") actual.pretty do
       rejects "production imports tests" "production imports regression module" checkGraph
-  let proofs := root / "CompilatrixTests/Proofs.lean"
+  let proofs := root / "IxCCTests/Proofs.lean"
   withFile proofs ((← IO.FS.readFile proofs).replace
-      "import Compilatrix.X86.ELFExamples\n" "") do
+      "import IxCC.X86.ELFExamples\n" "") do
     rejects "missing moved proof module" "required proof aggregate no longer builds" do
-      Compilatrix.Tools.BuildGraph.checkCoverage root (← Compilatrix.Tools.BuildGraph.manifest root)
-  let fence := root / "CompilatrixTests/Fences/X86.lean"
+      IxCC.Tools.BuildGraph.checkCoverage root (← IxCC.Tools.BuildGraph.manifest root)
+  let fence := root / "IxCCTests/Fences/X86.lean"
   let source ← IO.FS.readFile fence
-  let assertions ← Compilatrix.Tools.BuildGraph.axiomAssertions source
+  let assertions ← IxCC.Tools.BuildGraph.axiomAssertions source
   need (!assertions.isEmpty) "empty axiom-fence regression fixture"
   withFile fence (source.replace assertions.head! "") do
     rejects "removed axiom assertion" "required axiom assertions or expected messages changed" checkGraph
-  let runtime := root / "CompilatrixTests/IxonV3/Run.lean"
+  let runtime := root / "IxCCTests/IxonV3/Run.lean"
   withFile runtime ((← IO.FS.readFile runtime).replace "FAIL:" "REMOVED:") do
     rejects "removed runtime assertions" "runtime assertion inventory changed" checkGraph
 
@@ -158,7 +158,7 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
   copyFile (blakeSource / cargoRelative) (blake / cargoRelative)
   let check := audit root [("Blake3", blake.toString), ("«ix-kernel»", ixKernel.toString)] (some "6.3.0")
   check
-  withFile (root / "Compilatrix/AuditRegression.lean") "import Ix.Ixon.Verify\n" do
+  withFile (root / "IxCC/AuditRegression.lean") "import Ix.Ixon.Verify\n" do
     rejects "unledgered pure dependency import" "imports of pure Lean dependencies drifted" check
   let codec := ixKernel / ".." / ixClosure.head!
   withFile codec ((← IO.FS.readFile codec) ++ "\n") do
@@ -172,7 +172,7 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
     withFile (root / "docs/trusted-externs.json") ledger.compress do
       rejects "pure dependency native code" "declares native symbols" check
   buildGraphTests root
-  let regression := root / "Compilatrix/AuditRegression.lean"
+  let regression := root / "IxCC/AuditRegression.lean"
   for token in ["axiom", "sorry", "native_decide"] do
     withFile regression s!"{token} injected\n" do
       rejects token (token ++ " is not allowed") check

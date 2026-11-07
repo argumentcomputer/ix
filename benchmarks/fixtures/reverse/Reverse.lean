@@ -2,7 +2,7 @@
 Lean port of CakeML `compiler/benchmarks/cakeml_benchmarks/cakeml/reverse.cml`
 (CakeML/cakeml 530c7deec135ad421cce7ca768eed2f5801261b2). BSD-3-Clause; see
 `benchmarks/fixtures/LICENSES/cakeml-LICENSE`.
-Modified for Compilatr.ix: translated from CakeML to Lean, with a printed
+Modified for IxCC: translated from CakeML to Lean, with a printed
 length and checksum in place of the unused `val test`; see `VARIANT.md`.
 -/
 

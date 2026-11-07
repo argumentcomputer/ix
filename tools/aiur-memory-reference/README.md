@@ -2,7 +2,7 @@
 
 `Export.rs` calls the actual `aiur::memory::Memory::build` and serializes its
 returned expression trees and lookup. It contains no replacement builder.
-The required Compilatrix gate compares its frozen output with the Lean
+The required IxCC gate compares its frozen output with the Lean
 builder for widths 0, 1, 2, 7, and 256. This is a fixture conformance check,
 not a universal theorem about Rust or an IxVM verifying-key comparison.
 

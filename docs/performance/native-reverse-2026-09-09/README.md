@@ -20,14 +20,14 @@ The domain is independently owned lists of 0–64 exact unsigned 64-bit payloads
 Primary rows cycle through six patterns below `2^30`. The consuming Lean and
 CakeML programs are language/runtime comparisons. CompCert, GCC, and Clang
 compile the same arena C source and form the matched C comparison.
-Compilatrix retains its existing validation and counter work in both profiles.
+IxCC retains its existing validation and counter work in both profiles.
 
 At length 64 with primary payloads, times below are nanoseconds per operation:
 the median across 30 block medians, followed by its 95% bootstrap interval.
 
 | Implementation | Entry + bounded handoff | Fresh allocation lifecycle |
 | --- | ---: | ---: |
-| Compilatrix | 237.60 [237.17, 238.63] | 418.38 [417.30, 420.90] |
+| IxCC | 237.60 [237.17, 238.63] | 418.38 [417.30, 420.90] |
 | Lean 4 | 92.23 [91.71, 92.94] | 455.16 [452.99, 459.82] |
 | CakeML | 180.27 [175.91, 186.88] | 2,879.84 [2,857.91, 2,908.12] |
 | CompCert | 74.94 [74.65, 75.37] | 263.41 [262.78, 264.70] |
@@ -40,40 +40,40 @@ list construction, reversal, an order-sensitive result digest, and normal
 memory management. Immutable scalar datasets are prepared before either
 profile. These boundaries are specified in the [protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/protocol.md).
 
-The paired baseline/Compilatrix ratios at length 64 are:
+The paired baseline/IxCC ratios at length 64 are:
 
 | Comparison | Entry ratio [95% interval] | Lifecycle ratio [95% interval] |
 | --- | ---: | ---: |
-| Lean / Compilatrix | 0.3880 [0.3859, 0.3904] | 1.0865 [1.0785, 1.0982] |
-| CakeML / Compilatrix | 0.7579 [0.7403, 0.7789] | 6.8679 [6.7993, 6.9297] |
-| CompCert / Compilatrix | 0.3150 [0.3144, 0.3161] | 0.6295 [0.6275, 0.6312] |
-| GCC / Compilatrix | 0.3068 [0.3064, 0.3074] | 0.6015 [0.5992, 0.6066] |
-| Clang / Compilatrix | 0.2128 [0.2122, 0.2135] | 0.5616 [0.5571, 0.5664] |
+| Lean / IxCC | 0.3880 [0.3859, 0.3904] | 1.0865 [1.0785, 1.0982] |
+| CakeML / IxCC | 0.7579 [0.7403, 0.7789] | 6.8679 [6.7993, 6.9297] |
+| CompCert / IxCC | 0.3150 [0.3144, 0.3161] | 0.6295 [0.6275, 0.6312] |
+| GCC / IxCC | 0.3068 [0.3064, 0.3074] | 0.6015 [0.5992, 0.6066] |
+| Clang / IxCC | 0.2128 [0.2122, 0.2135] | 0.5616 [0.5571, 0.5664] |
 
-Ratios above one favor Compilatrix. They are medians of within-block ratios;
+Ratios above one favor IxCC. They are medians of within-block ratios;
 dividing independently aggregated time medians need not give the same number.
-Compilatrix's primary lifecycle time is about 8% below Lean's and substantially
+IxCC's primary lifecycle time is about 8% below Lean's and substantially
 below CakeML's here. Its entry time is about 2.58 times Lean's and 4.70 times
 Clang's. All three C variants have lower lifecycle times as well.
 
 The length dependence matters. Lean's primary lifecycle is faster at the
-measured lengths 0–8; Compilatrix is faster at 16–64. For example, the respective
+measured lengths 0–8; IxCC is faster at 16–64. For example, the respective
 times are 12.89 and 24.34 ns at length 1, versus 112.81 and 100.82 ns at length 16.
 The report retains all measured lengths and the adverse small-input cases.
 
 Payload representation changes the lifecycle comparison:
 
-| Repeated payload at length 64 | Compilatrix ns | Lean ns | CakeML ns |
+| Repeated payload at length 64 | IxCC ns | Lean ns | CakeML ns |
 | --- | ---: | ---: | ---: |
 | `2^63-1` | 418.58 | 454.49 | 2,888.33 |
 | `2^63` | 420.08 | 3,216.88 | 2,902.60 |
 | `2^64-1` | 418.90 | 3,254.13 | 2,910.99 |
 
-The paired Lean/Compilatrix lifecycle ratios for the latter two rows are
+The paired Lean/IxCC lifecycle ratios for the latter two rows are
 7.6463 [7.6129, 7.6987] and 7.7489 [7.6894, 7.8040]. Lean entry times change
 much less: 91.58–95.42 ns across these stress rows. This pattern is consistent
 with payload representation and lifetime/consumption costs outside reversal;
-the experiment does not isolate one cause. Compilatrix and the C variants use
+the experiment does not isolate one cause. IxCC and the C variants use
 exact words throughout this bounded domain. These stress cases do not establish
 performance or correctness for unbounded Nat arithmetic.
 
@@ -90,7 +90,7 @@ addresses. CakeML collections occur during its timed allocating work.
 
 | Implementation | Median ready RSS KiB | Sample RSS range KiB | Maximum recorded `ru_maxrss` KiB |
 | --- | ---: | ---: | ---: |
-| Compilatrix | 2,028 | 2,192–2,464 | 11,104 |
+| IxCC | 2,028 | 2,192–2,464 | 11,104 |
 | Lean | 7,342 | 7,300–15,720 | 15,716 |
 | CakeML | 2,540 | 68,060–68,108 | 67,896 |
 | CompCert / GCC / Clang, each | 2,024 | 2,188–2,460 | 11,100 |
@@ -112,8 +112,8 @@ recorded environment, so no hardware-counter totals are claimed.
 
 | Retained object scope | Sum of `.text` and `.text.*` bytes |
 | --- | ---: |
-| Compilatrix reversal | 1,036 |
-| Compilatrix release | 231 |
+| IxCC reversal | 1,036 |
+| IxCC release | 231 |
 | Lean generated module, including initialization | 665 |
 | CakeML program, driver and basis | 106,564 |
 | CompCert arena kernel | 679 |
@@ -250,11 +250,11 @@ From the repository root, using fresh paths:
 ```sh
 archive=benchmarks/runs/c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac.tar.gz
 printf '%s  %s\n' c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac "$archive" | sha256sum --check -
-mkdir /tmp/compilatrix-reference-retrieved
-tar --no-same-owner -xzf "$archive" -C /tmp/compilatrix-reference-retrieved
-/tmp/compilatrix-reference-retrieved/reference/run.sh verify-bundle
-/tmp/compilatrix-reference-retrieved/reference/run.sh analyze /tmp/compilatrix-analysis-replay
-/tmp/compilatrix-reference-retrieved/reference/run.sh reproduce /tmp/compilatrix-artifact-replay
+mkdir /tmp/ixcc-reference-retrieved
+tar --no-same-owner -xzf "$archive" -C /tmp/ixcc-reference-retrieved
+/tmp/ixcc-reference-retrieved/reference/run.sh verify-bundle
+/tmp/ixcc-reference-retrieved/reference/run.sh analyze /tmp/ixcc-analysis-replay
+/tmp/ixcc-reference-retrieved/reference/run.sh reproduce /tmp/ixcc-artifact-replay
 ```
 
 The installed pinned Nix closure is required. Exact paths and the successful
@@ -269,7 +269,7 @@ To collect a new full session against the retained artifacts on this host,
 after finishing other build/network work and choosing available physical cores:
 
 ```sh
-/tmp/compilatrix-reference-retrieved/reference/run.sh measure /tmp/compilatrix-new-reference 2 0
+/tmp/ixcc-reference-retrieved/reference/run.sh measure /tmp/ixcc-new-reference 2 0
 ```
 
 This creates fresh correctness, pilot, measurement, diagnostics and analysis

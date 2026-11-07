@@ -11,7 +11,7 @@
   "constructor-projection": 10,
   "axiom": 1},
  "ingress": "accepted",
- "format": "compilatrix/census/1",
+ "format": "ixcc/census/1",
  "entries":
  [{"safety": "safe",
    "reached": "policy",

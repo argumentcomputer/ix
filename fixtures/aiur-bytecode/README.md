@@ -5,7 +5,7 @@ The four `.bin` files are complete canonical `aiur-bytecode/1` preimages.
 and exporter contract are in [aiur-wire.md](../../docs/aiur-wire.md).
 
 Expected bytes are handwritten in
-[WireFixtures.lean](../../CompilatrixTests/Aiur/WireFixtures.lean), separately
+[WireFixtures.lean](../../IxCCTests/Aiur/WireFixtures.lean), separately
 from the production encoder. The required `check-aiur` gate compares fresh
 encoding and replay processes against these files, then exercises corrupted
 frames, roots, and component certificates. Changing a golden requires a

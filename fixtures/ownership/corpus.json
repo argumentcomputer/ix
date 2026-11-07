@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "ownership",
   "description": "The ownership and usage-annotation suite, Phase 1 part (MT.7): each annotated program ix accepts, written with ix's contract syntax, with its plain twin (the annotated source with the contract atoms deleted), and the plain-only erasure and allocation fixtures. tests-own pairs the twins; ix's verdicts on the annotated sources it rejects are in verdicts.json.",
   "tier": "required",
@@ -87,14 +87,14 @@
       },
       "equations": {
         "path": "OS01-annotated.equations.json",
-        "sha256": "c1bed23f926cf23033561769fec23a895e6fa600513a898a8066ae5121d6215a",
+        "sha256": "6ec2fc46d19a7e1f3106f81311385cfbf3124ff0be5fc2eccc28521da7e2bb35",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "76dd966fb523db520665dd310a45713e137231ae7605cdbd0336516adfca1fb6",
       "census": {
         "path": "OS01-annotated.census.json",
-        "sha256": "9b61f84cee27e36b62fa802f85e6edac40f13ef9dd1f97f84ef023c89d0682da"
+        "sha256": "328410a27269f74043f61002b13b70c46ebc316cac03c61b2df42ea24d5540b1"
       },
       "roots": [
         {
@@ -234,14 +234,14 @@
       },
       "equations": {
         "path": "OS01-plain.equations.json",
-        "sha256": "8177685ab0be155d7f57e232c9677a77093e9f71e7005b6d9a125ad2743acc93",
+        "sha256": "c837284602fc37dc80fab81748d29a53269d4bedfa8a56431d091c29ef417ab9",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "83b147fc049b2f7cbc69f0e7a879cd6f0e8016ae99da66e1a7fa000fe1bf701b",
       "census": {
         "path": "OS01-plain.census.json",
-        "sha256": "42b3b2b701e45c020930d0e8c1a0e80d0aced6339651a5461d52f2808573cd16"
+        "sha256": "ecae44e571a33525addb8159f9e35bc5fb214fc64967fbab7571c4f24bac0c1b"
       },
       "roots": [
         {
@@ -381,14 +381,14 @@
       },
       "equations": {
         "path": "OS02-plain.equations.json",
-        "sha256": "b1cc4938a938ac5bbbef1b0cad2990d9fc5d74a607d9ab03d99e376af8bae0c4",
+        "sha256": "3a93bd1db2be167776d38b12566517a41d75114cb3eefa49ff1d08aeb689b7f9",
         "equations": 3,
         "failures": 0
       },
       "named_env_sha256": "a694d9c88e2a75d4f937822b8e157a5a6aa933def11d2c49fcb7b7f0086a1f21",
       "census": {
         "path": "OS02-plain.census.json",
-        "sha256": "8331cadc0afb8ad453f585248d6cb16598a63b1564695e91f80c56c6187923bc"
+        "sha256": "3345aec6db34ac8610e0c16183b080a366c3e8c7aea230f6a3c54f2d36c77fbf"
       },
       "roots": [
         {
@@ -532,14 +532,14 @@
       },
       "equations": {
         "path": "OS03-annotated.equations.json",
-        "sha256": "c59d9ada849af8faa81130c3dc5d76e84d6521bc7e0c1fa1335652c9fde52450",
+        "sha256": "b18ee0b7c774542e99c68044c065ec2299b2940815fb8a3be4de773236817bdb",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "a06fba049bfc553400ac72220f39c1e3031d2623867a096816c91f06c202e08b",
       "census": {
         "path": "OS03-annotated.census.json",
-        "sha256": "cb035d014690ab9a6fdb6886f3fa6f01746aee7229d54cb99f46ab49590a77d2"
+        "sha256": "f5ad8def8784a8facafd4e03e7f30ee5adf55bfc78089804f2b81d18e86fb943"
       },
       "roots": [
         {
@@ -679,14 +679,14 @@
       },
       "equations": {
         "path": "OS03-plain.equations.json",
-        "sha256": "8198151f473fe5d2994b5186df2474801edba9ddf2df9db6ce9c64c12425d48d",
+        "sha256": "bad803a23227faaba8ba1b308c423a40dad99a6acafb16bc74021ee2e6957748",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "e9b6d358285841b34b03fd83e907c9a358542e86514732ac64ca407bc0e3f093",
       "census": {
         "path": "OS03-plain.census.json",
-        "sha256": "243f50b0c490817189abf9849f414427fdc32b83b1db76aef547f1a9260552f5"
+        "sha256": "65784d5e9b83f082065c4d1f44928ecee4ac29f3e085281c88562cc61fc0870e"
       },
       "roots": [
         {
@@ -826,14 +826,14 @@
       },
       "equations": {
         "path": "OS03b-annotated.equations.json",
-        "sha256": "87a344442aa02d98e6dbeb3ca86073f7b8ca10ed8bd4b96362ff4ee24c493484",
+        "sha256": "a434ec323262783b1ffc3b23c7d2ce803796717736ff53f38f2c1dfbe19cc928",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "91af8b5b5f8ff3521d22a9b7de1fdd135a13ffe2b5018507e8cb6ea663169421",
       "census": {
         "path": "OS03b-annotated.census.json",
-        "sha256": "39fb4c800bf2d7df74f805afdce4db20b3445202100f0384d6e8f074d22e10cf"
+        "sha256": "f12c0a6f72bb64657200c7348ddce8007cf00524c2431cd77352463518384d63"
       },
       "roots": [
         {
@@ -973,14 +973,14 @@
       },
       "equations": {
         "path": "OS03b-plain.equations.json",
-        "sha256": "832556d72411b5d96207028fd1f33fd190dde99cb745b525be20ec45a835e711",
+        "sha256": "ac4a788af2d5d8f87f8c00b792350b6d20afd0e20e7bdf53ed795c6710da90f3",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "dacaa2909941b3c1fbf049c2bd1ec431f5f5c993d7fe0b870e5792c81e9c268e",
       "census": {
         "path": "OS03b-plain.census.json",
-        "sha256": "68086108e8ec67c940e35a825122ac5911215d47a27997a65e86f50892f4f90d"
+        "sha256": "6637bbcae91bc86ed116acfb362bc7650ed3b3d9be7681b9b25492b76deba092"
       },
       "roots": [
         {
@@ -1121,14 +1121,14 @@
       },
       "equations": {
         "path": "OS13-annotated.equations.json",
-        "sha256": "cf2f63afbaa6c45abf3bbe7af795b74855147dd8f391c71bb9d449936104426b",
+        "sha256": "d65d33e829ebee4e48386508a9a807c74c8dca6b6983514fec42a6627b0a4db7",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "1b676bf04187c953d744c179856348b6c67ec4c3e0995d336cc377f53e927bc2",
       "census": {
         "path": "OS13-annotated.census.json",
-        "sha256": "1f98f41a1454a33f6dca161dd109e246d56ae965943c8b98ba9365777c58a5e1"
+        "sha256": "3bb0faed9449b19c021dfad432224de3243faa83f7e82abc19363f896d5f1491"
       },
       "roots": [
         {
@@ -1384,14 +1384,14 @@
       },
       "equations": {
         "path": "OS13-plain.equations.json",
-        "sha256": "4d78e4e2433dfdf89986f90d33a4e1fe24ac61243afad120a4c476ae2dfcfbce",
+        "sha256": "9d03e6ff8d3eaa2187ef7e46a36a72e0df590dbb6d99efe0a6020b1b052d0b43",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "25dc1328b033af2e360bc364575da472b1f18a17fd0329dcc1c80501251711b9",
       "census": {
         "path": "OS13-plain.census.json",
-        "sha256": "40856d1b6ce6ffe5728f40b97d50f63d34929fac4877d1ca7fea6d6db4e7c8ff"
+        "sha256": "978a32898f24e99d72ca98064a801675a4648c2abeb63aa0d711340a433fd34b"
       },
       "roots": [
         {
@@ -1646,14 +1646,14 @@
       },
       "equations": {
         "path": "OS14-annotated.equations.json",
-        "sha256": "dd35da215c4858b80229939bcd8cb54fcda0a84d0656b596fd257a3f22995521",
+        "sha256": "2a22ba4252d7fe28471251c07ba02145cddeb554610c1b0772a0a249dc91e8ff",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "1b92379b113ae57e8b6ec51b3b81e79cea47ad5d3fba409fc36e54628abb0e41",
       "census": {
         "path": "OS14-annotated.census.json",
-        "sha256": "d062ad19b40b5dfa0f78301bbff6b286b4ec4bfe9bb7068a16d3ddb44da75e07"
+        "sha256": "6cc4850fabc10f2966bb75195bdf9f42ec07eaceebf2a54f4ac5769a8e7b481e"
       },
       "roots": [
         {
@@ -1793,14 +1793,14 @@
       },
       "equations": {
         "path": "OS14-plain.equations.json",
-        "sha256": "4b9028b5498656fc1cdf241ccb91e94102741f75c209fccf0b9cc1b60848aca0",
+        "sha256": "daa8c259c800b4fbc753487511d929ed3f33bc62858c72258d7c014b11d112d0",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "f0de57ed850199398a6ebc0d1d56b7312474c9d166881e041635e6be28055454",
       "census": {
         "path": "OS14-plain.census.json",
-        "sha256": "d4f8d517692317bd1ba25d6d38820e30c7abd3c7e6e6c4fd8d690f24e25313b7"
+        "sha256": "31b75ce46660176ae3c987771dd8d861092df9f99c0c56eaa18fb8da86020918"
       },
       "roots": [
         {
@@ -1940,14 +1940,14 @@
       },
       "equations": {
         "path": "OS16-plain.equations.json",
-        "sha256": "ae02064a31a453f99087190bccdb3c8496dcc3a50c51562733fdfb04d65af7a2",
+        "sha256": "0ad0812260c7538672fc21e2f74b22a3d7f6bb769c46ea00ff3684d994a592bd",
         "equations": 4,
         "failures": 0
       },
       "named_env_sha256": "be34638a2984e9ae46c7ebe81a54d525718a0b5c345e484610a3e6222c5dcc04",
       "census": {
         "path": "OS16-plain.census.json",
-        "sha256": "ac726d5e98397d991a93243106088abb489bb7b7bac60f3691f65758361e62d7"
+        "sha256": "b5a5351318b89e62bb0a5164da4b30517aed459deba2936d525423fada8fc2fe"
       },
       "roots": [
         {
@@ -2011,14 +2011,14 @@
       },
       "equations": {
         "path": "OS22-annotated.equations.json",
-        "sha256": "7e85adb30347ac57e98689e8061b39f05a7b969d6eea69f554471de2b11b1703",
+        "sha256": "336fafe46769803f979fbe7ddd9862575f7faef1aa2da49709c6ad078f916b6c",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "fbc6641dfe3d8867fda9a0c1a50cbcfc841b3eb776dd1fc33056fa9421bcec5e",
       "census": {
         "path": "OS22-annotated.census.json",
-        "sha256": "1fe1b47549f96c3127f14ca04e61f16f0ffb3fdb53d6c79418a8894a7ea7b3bb"
+        "sha256": "7deb8c896cf960ff3cbc3f796f1d2ace3da01c3f9d33503da972cead877ec3a0"
       },
       "roots": [
         {
@@ -2158,14 +2158,14 @@
       },
       "equations": {
         "path": "OS22-plain.equations.json",
-        "sha256": "a01129695b446cce42bba44a18ad28f5c2045a75a9f78fddee62be338ceca8a9",
+        "sha256": "3c3dcbd538451d124011accc2828ba08af2342bb041980df4bdd99dc955ca62f",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "23c1f06771968e6ccef9cd25e03ede9c304c94cb5f5a52aa89054e08bb692028",
       "census": {
         "path": "OS22-plain.census.json",
-        "sha256": "2cfaf842e0587761f137da7f1c406229e53655fa027e1b9d1b8ce2b94be1ce0a"
+        "sha256": "005a770534b8aa0c08fde7effcb320794f2d4d2a1e5c49c92f5082205da930cf"
       },
       "roots": [
         {

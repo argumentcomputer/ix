@@ -196,9 +196,9 @@ From the repository root, in the pinned environment and using fresh paths:
 ```sh
 archive=benchmarks/runs/b2c2282c4023e9652c7e3b661492502153e2b61368fbc639edd9eb7f3cf37c12.tar.gz
 printf '%s  %s\n' b2c2282c4023e9652c7e3b661492502153e2b61368fbc639edd9eb7f3cf37c12 "$archive" | sha256sum --check -
-mkdir /tmp/compilatrix-counter-fold-retrieved
-tar --no-same-owner --no-same-permissions -xzf "$archive" -C /tmp/compilatrix-counter-fold-retrieved
-/tmp/compilatrix-counter-fold-retrieved/reference/run.sh verify-bundle
-/tmp/compilatrix-counter-fold-retrieved/reference/run.sh analyze /tmp/compilatrix-counter-fold-analysis
-/tmp/compilatrix-counter-fold-retrieved/reference/run.sh reproduce /tmp/compilatrix-counter-fold-reproduction
+mkdir /tmp/ixcc-counter-fold-retrieved
+tar --no-same-owner --no-same-permissions -xzf "$archive" -C /tmp/ixcc-counter-fold-retrieved
+/tmp/ixcc-counter-fold-retrieved/reference/run.sh verify-bundle
+/tmp/ixcc-counter-fold-retrieved/reference/run.sh analyze /tmp/ixcc-counter-fold-analysis
+/tmp/ixcc-counter-fold-retrieved/reference/run.sh reproduce /tmp/ixcc-counter-fold-reproduction
 ```

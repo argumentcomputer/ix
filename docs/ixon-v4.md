@@ -1,9 +1,9 @@
 # Ix frontend and Ixon v4
 
-Compilatrix consumes closures produced by ix's shared Lean frontend: usage,
+IxCC consumes closures produced by ix's shared Lean frontend: usage,
 ownership, relative locality and scoped shared borrowing are written in the
 source and carried, as contracts, in the content-addressed objects. Aiur is
-one consumer. Compilatrix consumes the resulting binary objects; it does not
+one consumer. IxCC consumes the resulting binary objects; it does not
 introduce another parser or elaborator.
 
 Two ix revisions are pinned, for two different things:
@@ -14,7 +14,7 @@ Two ix revisions are pinned, for two different things:
   dependency, and it is the only reader and writer of constant, expression and
   universe bytes ([trust ledger](trusted-extern-ledger.md), `lean_dependencies`).
 - **The data model, the resource rules and the erased checker** come from ix
-  `jcb/ix-compilatrix` at `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3,
+  `jcb/ix-ixcc` at `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3,
   which introduced the contract-carrying model; v4 changed only the wire),
   with the erased checker's primitive table and the resource profile and claim
   framing moved to `f829b760`.
@@ -29,7 +29,7 @@ Changing the source producer does not replace that target vocabulary.
 
 ## Contract and wire boundary
 
-[`Compilatrix.Ixon.V3`](../Compilatrix/Ixon/V3.lean) is the data model: all
+[`IxCC.Ixon.V3`](../IxCC/Ixon/V3.lean) is the data model: all
 twelve expression constructors with these addressed fields (the namespace
 keeps the name of the Ixon version that introduced it):
 
@@ -64,10 +64,10 @@ authenticated versioned boundary. The v4 primitive inventory is ix's
 [`primitives.tsv`](../fixtures/ixon-v4/primitives.tsv) (copied unchanged); 66
 of the erased checker's primitive addresses moved from v3.
 
-[`Ixon.V4.Convert`](../Compilatrix/Ixon/V4/Convert.lean) is the total
+[`Ixon.V4.Convert`](../IxCC/Ixon/V4/Convert.lean) is the total
 structural correspondence between ix's `Ixon.*` data and ours (the only
 failure is an ix address of other than 32 bytes), and
-[`Ixon.V3.Wire`](../Compilatrix/Ixon/V3/Wire.lean) defines our encoders as
+[`Ixon.V3.Wire`](../IxCC/Ixon/V3/Wire.lean) defines our encoders as
 ix's (`constantBytes c = Ixon.serConstant (constantToIx c)`, likewise
 expressions and universes). `decodeConstant` runs ix's
 `Ixon.Canonical.deConstant` (a byte and universe-expansion budget, the wire
@@ -82,7 +82,7 @@ its import closure. The full ix kernel and the ix resource checker remain
 outside the production dependency closure. Resource metadata is input data,
 not an external acceptance result used as a proof premise.
 
-[`Ixon.V3.Env`](../Compilatrix/Ixon/V3/Env.lean) frames environments itself,
+[`Ixon.V3.Env`](../IxCC/Ixon/V3/Env.lean) frames environments itself,
 after ix's `Env.getEnv` (whose module is outside the pure package): it checks
 sorted address tables, every blob's and constant's hash, the complete
 constant-set Merkle root, main membership, assumptions and hint indices.
@@ -111,14 +111,14 @@ producer environment; they do not establish a wall-time or host-memory bound.
 
 ## Admission and claims
 
-[`validate`](../Compilatrix/Ixon/V3/Validate.lean) runs resource admission,
+[`validate`](../IxCC/Ixon/V3/Validate.lean) runs resource admission,
 fixes Nat/String literal types to the canonical primitive identities, and
 runs erased typing over the same decoded environment. Its `ValidatedInput`
 retains the original environment/profile byte indices and equations for all
 three checks. The literal-pin theorem proves that an optional selected type
 is either absent or the canonical address.
 
-[`admitResources`](../Compilatrix/Ixon/V3/Source.lean) returns a `ResourceInput`
+[`admitResources`](../IxCC/Ixon/V3/Source.lean) returns a `ResourceInput`
 indexed by the original environment/profile bytes. It carries equations for
 their decoding and the actual addressed resource check. The adapter rebuilds
 all references, sharing, mutual members and supported fields from canonical
@@ -162,7 +162,7 @@ checker. Aiur Ixon/DSL lowering remains a later target milestone.
 
 ## Catalog-v2 admission
 
-[`Ixon.V3.Catalog.admit`](../Compilatrix/Ixon/V3/Catalog/Admit.lean) accepts
+[`Ixon.V3.Catalog.admit`](../IxCC/Ixon/V3/Catalog/Admit.lean) accepts
 manifest **version 2**, object format **4**, and validator **1**
 (`erased-lean-v1`). It checks the manifest, original piece bytes, membership,
 and the erased typing of every constant in the complete union. `load` exposes
@@ -250,7 +250,7 @@ checking; required tests run combined admission, valid literals,
 `20 + 22 = 42`, and rejection of false arithmetic and redirected literal pins.
 
 Contract bit roundtrips, quantity laws and the executed state invariants have
-exact kernel axiom fences in `CompilatrixTests.Fences.IxonV3`. In particular,
+exact kernel axiom fences in `IxCCTests.Fences.IxonV3`. In particular,
 the scope theorem rules out an origin in a fresh scope escaping to an older
 destination; owner transfer requires a live unique owner with no active loan.
 These are selected invariants, not a machine soundness theorem for the whole
@@ -281,9 +281,9 @@ adds the consumer bounds above and accounts for every raw constant key.
 ix's codec declares a root-namespace `Address` (and `hexOfByte`,
 `bytesOfHex`, …) and the root namespace `Ixon`. In a module that imports the
 codec (directly or through `Ixon.V3.Env`), a bare `Address` under
-`open Compilatrix.Ixon` is ambiguous, and `Ixon.X` under `open Compilatrix`
-outside the `Compilatrix` namespace can resolve to ix's; write
-`Ixon.Address` inside `namespace Compilatrix …` and `Compilatrix.Ixon.X`
+`open IxCC.Ixon` is ambiguous, and `Ixon.X` under `open IxCC`
+outside the `IxCC` namespace can resolve to ix's; write
+`Ixon.Address` inside `namespace IxCC …` and `IxCC.Ixon.X`
 elsewhere. `vendor/aiur`'s `Ix.Aiur`/`Ix.Lib`/`Ix.IndexMap` and the codec's
 `Ix.Ixon.*`/`Ix.Address.Core` share the module root `Ix` but no module:
 `lake build` and `lake lean` resolve both, while a raw `lake env lean FILE`

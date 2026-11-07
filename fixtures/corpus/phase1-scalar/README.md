@@ -3,7 +3,7 @@
 The `phase1-scalar` family of the [fixture corpora](../../../docs/corpus.md)
 (phase 1 plan, MT.2): first-order, total programs over `Nat` and `Bool`,
 compiled from Lean 4.34 sources by ix with unfolding equations, and frozen.
-[`corpus.json`](corpus.json) (`compilatrix/corpus/1`) records every source,
+[`corpus.json`](corpus.json) (`ixcc/corpus/1`) records every source,
 licence and origin, the ix revision and commands, the files' hashes, the
 roots and their cases, with the outputs Lean's interpreter printed, the
 independent constants, and the expected declines.
@@ -27,7 +27,7 @@ and the expected lines are the cases' `constant`s. Lean 4's licence is
 
 Files per closure: `<name>.ixe` (the anonymous closure of the roots, `ix
 compile --consts ROOTS --equations --anon`), `<name>.equations.json` (the
-sidecar, `compilatrix/k1-equations/1`, addresses resolved against the named
+sidecar, `ixcc/k1-equations/1`, addresses resolved against the named
 twin) and `<name>.census.json` (the admission census: every constant passes
 decoding, erased typing and the policy stage). `lake exe corpus check`
 verifies them; `lake exe corpus rebuild` remakes them with the pinned ix

@@ -22,7 +22,7 @@ diagnostic only, and the addresses are authoritative. They were resolved with
 `ix addr-of` against the named variant of the same closure. That variant is
 not retained; its SHA-256 is in the manifest.
 
-[`corpus.json`](corpus.json) is the pack's manifest (`compilatrix/corpus/1`,
+[`corpus.json`](corpus.json) is the pack's manifest (`ixcc/corpus/1`,
 [`docs/corpus.md`](../../../docs/corpus.md)): the source, the ix revision
 (`be45a159`: the certified line `f829b760` plus the local `--equations`
 export), binary hash and commands, every file hash and the roots'

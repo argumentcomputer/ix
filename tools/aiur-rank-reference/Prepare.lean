@@ -1,6 +1,6 @@
-import Compilatrix.Tools.Check
+import IxCC.Tools.Check
 
-open Lean System Compilatrix.Tools.Check
+open Lean System IxCC.Tools.Check
 
 private def pins : List (String × String) := [
   ("lib.rs", "88d605423f79e310b73a643e122babae76a87407571edee7a1887faeb9a7f142"),

@@ -1,4 +1,4 @@
-# Compilatr.ix roadmap
+# IxCC roadmap
 
 Reviewed 2026-10-08 against the `dd7863c` baseline and the current integration tree. This page owns priorities,
 delivery state and acceptance criteria. [Compiler design](compiler-design.md)
@@ -253,7 +253,7 @@ and correspondence to executed runtime remain explicit trust boundaries.
 
 The [benchmark design](benchmark-plan.md) defines comparison rules. The first
 rows are:
-- Compilatr.ix;
+- IxCC;
 - `lean-clang` (the same Lean source through Lean's bundled Clang at `-O3`);
 - `clang-idiomatic` (natural C or C++ twins).
 

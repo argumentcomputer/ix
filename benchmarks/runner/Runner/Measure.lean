@@ -13,7 +13,7 @@ process and runtime startup.
 **Entry profile** (`calibrate`, then `measure --profile entry`). Each block
 runs every built entry row of a fixture once, in a shuffled order, as a
 fresh pinned process that initialises the row once (Lean's runtime, the
-compilatrix region and `cx_init`), makes `warmup` untimed calls and times
+ixcc region and `cx_init`), makes `warmup` untimed calls and times
 `reps` calls of the entry in one interval. `calibrate` chooses `reps` per
 row and fixture in a pilot so that each timed chunk lasts about the target
 (default 250 ms), and `warmup` as a tenth of it; startup is excluded, so
@@ -79,7 +79,7 @@ def environment (cpu : Nat) : IO Json := do
     ("loadavg", Json.str (← readProc "/proc/loadavg")),
     ("kernel", Json.str uname.stdout.trimAscii.toString)]
 
-/-- `--rows`: row names, or a prefix ending in `*` (`compilatrix@*`). -/
+/-- `--rows`: row names, or a prefix ending in `*` (`ixcc@*`). -/
 def rowSelected (spec : Option (List String)) (row : Row) : Bool :=
   spec.all fun names => names.any fun s =>
     s == row.name || (s.endsWith "*" && row.name.startsWith (s.dropEnd 1).toString)
@@ -107,7 +107,7 @@ def measureProcess (manifest : Manifest) (out : FilePath) (cpu blocks : Nat)
         throw (IO.userError s!"{fixture.name}: rows disagree at benchmark size in block {block}")
     IO.println s!"measured {fixture.name}: {blocks} blocks"
   IO.FS.writeFile (out / "samples.json") ((Json.mkObj [
-    ("format", Json.str "compilatrix/benchmark-samples/1"),
+    ("format", Json.str "ixcc/benchmark-samples/1"),
     ("environment", env), ("environment_end", ← environment cpu), ("blocks", toJson blocks),
     ("samples", Json.arr (samples.map Sample.json))]).pretty ++ "\n")
 
@@ -174,7 +174,7 @@ def calibrate (manifest : Manifest) (out : FilePath) (cpu targetMs : Nat) (only 
       IO.println s!"{fixture.name} {row.name}: {fmtPilot per} per call, reps {chosen}"
   let json := plans.map fun (f, r, p) => Json.mkObj [("fixture", Json.str f), ("row", Json.str r),
     ("reps", toJson p.reps), ("warmup", toJson p.warmup), ("pilot_ns_per_call", toJson p.pilotNs)]
-  IO.FS.writeFile (repsFile out) ((Json.mkObj [("format", Json.str "compilatrix/benchmark-entry-reps/1"),
+  IO.FS.writeFile (repsFile out) ((Json.mkObj [("format", Json.str "ixcc/benchmark-entry-reps/1"),
     ("target_ms", toJson targetMs), ("worker_cpu", toJson cpu), ("plans", Json.arr json)]).pretty ++ "\n")
 
 def planFor (plans : List (String × String × Plan)) (fixture : Fixture) (row : Row) : Option Plan :=
@@ -310,7 +310,7 @@ def measureEntry (manifest : Manifest) (out : FilePath) (cpu blocks : Nat) (only
         attempt := attempt + 1
     IO.println s!"measured {fixture.name}: {blocks} blocks × {rows.length} rows"
   IO.FS.writeFile (out / "entry-samples.json") ((Json.mkObj [
-    ("format", Json.str "compilatrix/benchmark-entry-samples/2"),
+    ("format", Json.str "ixcc/benchmark-entry-samples/2"),
     ("environment", env), ("environment_end", ← environment cpu), ("blocks", toJson blocks),
     ("gate", match gate with
       | some g => Json.mkObj [("max_busy", toJson g.maxBusy), ("max_wait_s", toJson g.maxWaitS),

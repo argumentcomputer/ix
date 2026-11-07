@@ -1,8 +1,8 @@
 /-
-Compilatr.ix fixture `binarytrees` (total variant) of Lean
+IxCC fixture `binarytrees` (total variant) of Lean
 `tests/compile_bench/binarytrees.lean` (leanprover/lean4 v4.34.0,
 293d5d0c0c3f3dded4688b3ccd6a33939ac5102b; Apache-2.0, see
-`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for Compilatr.ix:
+`benchmarks/fixtures/LICENSES/lean4-LICENSE`). Modified for IxCC:
 `make'` and `sumT` recurse structurally on a `Nat` depth and count instead
 of `partial` recursion on `UInt32`; `depth` is well-founded on
 `m + 1 - d` instead of `partial`; the `Task.spawn` is replaced by the

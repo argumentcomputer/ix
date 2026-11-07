@@ -4,7 +4,7 @@
  * -O2 so that the timing driver cannot inline or hoist it.
  *
  * Tagged twins (twin_*) use the object layout of the Lir kernels in
- * CompilatrixTests/Lir/Kernels.lean: a Nat n < 2^63 is the word 2n + 1,
+ * IxCCTests/Lir/Kernels.lean: a Nat n < 2^63 is the word 2n + 1,
  * and every Nat addition checks the carry of `(a - 1) + b`
  * (natOverflow), leaving through a cold, noreturn failure path. They are
  * the kernels' algorithms statement for statement, so they measure code

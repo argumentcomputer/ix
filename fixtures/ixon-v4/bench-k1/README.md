@@ -4,7 +4,7 @@ The Phase 1 compiler input: for each K1 benchmark fixture, the anonymous
 Ixon v4 closure of its pure `entry` function
 ([`benchmarks/fixtures/<name>/`](../../../benchmarks/fixtures/README.md)),
 with the kernel-checked unfolding theorem `f.eq_def` of every recursive
-definition in the closure. The Compilatrix and `lean-clang` benchmark rows
+definition in the closure. The IxCC and `lean-clang` benchmark rows
 compile the same Lean source.
 
 | Fixture | Entry | Constants | Equations | Bytes |
@@ -28,21 +28,21 @@ Files per fixture:
   --anon`, with the producer the manifest pins (ix `be45a159`: the certified
   line `f829b760` plus the local `--equations` export), as for the
   [`k1`](../k1/README.md) pack;
-- `<name>.equations.json` (`compilatrix/k1-equations/1`): the root and each
+- `<name>.equations.json` (`ixcc/k1-equations/1`): the root and each
   `(definition, equation)` pair by name and content address. Names are
   diagnostic only; addresses are authoritative, resolved with `ix addr-of`
   against the named twin of the same closure (not retained; its SHA-256 is in
   the manifest);
 - `<name>.census.json`: the reviewed admission census. Every constant of
   every closure passes decoding, erased typing and the D12 policy stage;
-- `steps.json` (`compilatrix/x86-steps/1`): the reviewed typed-x86 and
+- `steps.json` (`ixcc/x86-steps/1`): the reviewed typed-x86 and
   `ByteEval` step counts of each program's `cx_init` and root on its
   machine-level test arguments, which `check-steps` (the `x86-steps` check)
   must reproduce exactly. A change is a reviewed, performance-relevant
   change; regenerate with `lake exe check-steps --write`.
 
 [`corpus.json`](corpus.json) is the family's manifest
-(`compilatrix/corpus/1`, [`docs/corpus.md`](../../../docs/corpus.md)): sources,
+(`ixcc/corpus/1`, [`docs/corpus.md`](../../../docs/corpus.md)): sources,
 licences, the ix revision, binary hash and commands, every file hash, the
 roots' addresses, and per root its cases with the outputs Lean's interpreter
 printed and independent constants. `lake exe corpus rebuild` remakes the

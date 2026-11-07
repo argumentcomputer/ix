@@ -8,7 +8,7 @@ bodies, and system linker/loader behavior remain explicit boundaries.
 
 ## Complete text
 
-[`StreamValidate.lean`](../Compilatrix/X86/StreamValidate.lean) validates the
+[`StreamValidate.lean`](../IxCC/X86/StreamValidate.lean) validates the
 ordinary encoder's output using the separate table-indexed instruction
 decoder ([E1](x86-encoded-instructions.md)). A checked program's instructions
 are listed table rows with operands of their slot kinds
@@ -30,7 +30,7 @@ there is no completeness claim that the unchecked encoder succeeds and
 passes validation for every possible input. Equivalent encodings are allowed
 when they decode to the required operation with the required length.
 
-[`StreamLayout.lean`](../Compilatrix/X86/StreamLayout.lean) maps symbolic
+[`StreamLayout.lean`](../IxCC/X86/StreamLayout.lean) maps symbolic
 block/instruction positions to byte offsets. The map is injective and stays
 inside the text; successful linear instructions have valid symbolic
 successors. `StreamLinear` proves actual whole-text fetch, register/memory
@@ -64,7 +64,7 @@ does not establish that physical memory premise.
 ## Calls and stack observations
 
 The typed evaluator stores a structural continuation token; CALL stores a
-physical RIP. [`StreamMemory.lean`](../Compilatrix/X86/StreamMemory.lean)
+physical RIP. [`StreamMemory.lean`](../IxCC/X86/StreamMemory.lean)
 relates all registers, permissions, and data bytes outside a precise mask of
 return-slot differences. Each active frame's physical slot contains the
 mapped continuation address. RET retains differences in the released slot;
@@ -72,7 +72,7 @@ an ordinary store clears exactly the bytes it overwrites. This permits
 reusing a released call slot and subsequently reading ordinary data stored
 there, including partial overwrites.
 
-[`StreamTrace.lean`](../Compilatrix/X86/StreamTrace.lean) states the concrete
+[`StreamTrace.lean`](../IxCC/X86/StreamTrace.lean) states the concrete
 conditions for `run_with_calls`:
 
 - CALL has an aligned stack, eight writable bytes, and a return slot disjoint
@@ -144,13 +144,13 @@ check) is covered by `check-x86-streams`.
 
 ## Object interpretation and relocation
 
-[`ELFRead.lean`](../Compilatrix/X86/ELFRead.lean) imports neither the encoder
+[`ELFRead.lean`](../IxCC/X86/ELFRead.lean) imports neither the encoder
 nor the writer. It reads actual little-endian fields using mathematical
 naturals, bounded slices, and terminated strings. It independently parses
 headers, sections, symbol names and values, Rela symbol indices/types/addends,
 and provenance domain, kind, root, and version fields.
 
-[`ELFValidate.lean`](../Compilatrix/X86/ELFValidate.lean) checks the exact
+[`ELFValidate.lean`](../IxCC/X86/ELFValidate.lean) checks the exact
 eight-section ET_REL/EM_X86_64 inventory, sizes, alignment, nonoverlap,
 executable text and non-executable-stack policy, export placement, full
 symbol/relocation inventory, and exact semantic provenance. `ELF.writeChecked`
@@ -169,7 +169,7 @@ header fields and four-byte padding in ELF64. This convention is explicitly
 supported by [GNU binutils](https://sourceware.org/pipermail/binutils-cvs/2017-November/046965.html);
 it is not a claim of generic ELF64 eight-byte note alignment.
 
-[`ELFLink.lean`](../Compilatrix/X86/ELFLink.lean) applies parsed PC32
+[`ELFLink.lean`](../IxCC/X86/ELFLink.lean) applies parsed PC32
 relocations using `S + A - P`, checks signed overflow, and records a concrete
 trace of the actual four-byte patcher. For CALL's displacement field at
 instruction offset plus one and addend minus four, `pc32_call` proves that
@@ -190,7 +190,7 @@ compiler, and parameterized native runtime compiler. Their existing artifact
 format and provenance identities are preserved. The unchecked encoder and
 writer remain available for isolated tests and do not supply certificates.
 
-[`ObjectExecution.lean`](../Compilatrix/X86/ObjectExecution.lean) starts
+[`ObjectExecution.lean`](../IxCC/X86/ObjectExecution.lean) starts
 execution from the text and exported symbol parsed from actual object bytes.
 Its `run_from_typed` and `run_with_calls` theorems lift the corresponding
 complete-stream results through serialized ELF interpretation.
@@ -202,10 +202,10 @@ branch `jcb/ixby-archive`. New source compilers attach through the same
 
 ## Evidence and remaining boundaries
 
-[`StreamExamples.lean`](../Compilatrix/X86/StreamExamples.lean) uses kernel
+[`StreamExamples.lean`](../IxCC/X86/StreamExamples.lean) uses kernel
 evaluation for accepted streams, typed returns, and complete nested/reused
 call safety. The public interface axioms are pinned in
-[`Fences/X86.lean`](../CompilatrixTests/Fences/X86.lean). Generic stream/object proofs use
+[`Fences/X86.lean`](../IxCCTests/Fences/X86.lean). Generic stream/object proofs use
 ordinary logical axioms; the indexed source endpoint retains the existing
 addressed-source BLAKE3 boundary. No new native reflection or ISA axiom is
 introduced.
@@ -230,7 +230,7 @@ The 2026-09-09 validation passed the 760-job Lake build, all fifteen compiled
 regression gates, and all seventeen Nix checks on x86_64 Linux.
 
 ```sh
-lake build Compilatrix check-x86-streams
+lake build IxCC check-x86-streams
 ./.lake/build/bin/check-x86-streams
 nix build .#checks.x86_64-linux.x86-stream-objects
 ```

@@ -1,5 +1,5 @@
-import Compilatrix.Tools.Check
-import CompilatrixTests.IxonV3.Catalog.Fixtures
+import IxCC.Tools.Check
+import IxCCTests.IxonV3.Catalog.Fixtures
 
 /-! The refreeze steps that are not `corpus rebuild`, `tests-own verdicts` or
 `pin-src-tables` (`docs/corpus.md`, "Refreezing"). A manual tool: it runs the
@@ -17,7 +17,7 @@ their provenance; required CI never runs it.
   `primitives.tsv`.
 * `tc-primitives --ix-repo DIR --ix-revision REV`: rewrite the erased
   checker's primitive table (`PrimAddrs.canonical` in
-  `Compilatrix/Ixon/V3/Tc/Primitive.lean`) field by field from ix's
+  `IxCC/Ixon/V3/Tc/Primitive.lean`) field by field from ix's
   `Ix/Tc/Primitive.lean` at REV, and check that the two tables are equal.
 * `typing --ix IX --revision REV [--work DIR]`: compile the primitive closure
   (`ix compile --consts` every `primitives.tsv` name the toolchain has), check
@@ -31,7 +31,7 @@ their provenance; required CI never runs it.
 
 namespace RefreezeIxon
 
-open Lean System Compilatrix.Tools.Check
+open Lean System IxCC.Tools.Check
 
 def fixtures : FilePath := "fixtures/ixon-v4"
 
@@ -102,7 +102,7 @@ def canonicalRows (text : String) : List (String × String) := Id.run do
   return rows
 
 def tcPrimitives (repo revision : String) : IO Unit := do
-  let path : FilePath := "Compilatrix/Ixon/V3/Tc/Primitive.lean"
+  let path : FilePath := "IxCC/Ixon/V3/Tc/Primitive.lean"
   let theirs := canonicalRows (String.fromUTF8! (← ixFile repo revision "Ix/Tc/Primitive.lean"))
   need (!theirs.isEmpty) "ix's Ix/Tc/Primitive.lean has no canonical table"
   let mut text ← IO.FS.readFile path
@@ -206,7 +206,7 @@ def catalog (ix revision : String) (work : FilePath) : IO Unit := do
   for file in ["manifest"] ++ pieces.map (· ++ ".ixe") do
     IO.FS.writeBinFile (fat / file) (← IO.FS.readBinFile (work / "fat.ixc" / file))
   let chunked := fixtures / "catalog" / "chunked.ixc"
-  CompilatrixTests.IxonV3.CatalogFixtures.writeChunked fat chunked
+  IxCCTests.IxonV3.CatalogFixtures.writeChunked fat chunked
   let chunkedAbs ← IO.FS.realPath chunked
   need (← ixRun ix.toString #["catalog", "verify", "--deep", chunkedAbs.toString] work
     (work / "verify-chunked.log")) "ix catalog verify chunked.ixc"
@@ -256,4 +256,4 @@ def main (args : List String) : IO Unit := do
 end RefreezeIxon
 
 def main (args : List String) : IO UInt32 :=
-  Compilatrix.Tools.Check.cli "refreeze-ixon" (RefreezeIxon.main args)
+  IxCC.Tools.Check.cli "refreeze-ixon" (RefreezeIxon.main args)

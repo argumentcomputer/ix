@@ -1,9 +1,9 @@
-# Compilatr.ix
+# IxCC
 
 A certified compiler for [ix](https://github.com/argumentcomputer/ix),
 implemented in Lean 4. It compiles Ixon v4, ix's content-addressed Lean
 kernel terms, to x86-64. The goal is certified native code that competes
-with Lean → Clang. Compilatrix is the project's Lean namespace.
+with Lean → Clang. IxCC is the project's Lean namespace.
 
 The design combines three ideas:
 

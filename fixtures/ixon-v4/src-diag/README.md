@@ -2,7 +2,7 @@
 
 `Diag.lean` has one root per expected `Src.Admit` outcome (design note 01
 §10, part 5). `diag.ixe` is the anonymous v4 closure of those roots and
-`diag.equations.json` names them by address (a `compilatrix/k1-equations/1`
+`diag.equations.json` names them by address (an `ixcc/k1-equations/1`
 sidecar with no equations), from `lake exe pin-src-tables --diagnostics
 fixtures/ixon-v4/src-diag` with ix `be45a159`; `provenance.json` records the
 binary, commands and file hashes.

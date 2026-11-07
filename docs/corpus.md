@@ -3,7 +3,7 @@
 The compiler is tested on corpora of real Lean programs, frozen as Ixon v4
 closures ([Ixon v4](ixon-v4.md)) with their `eq_def` sidecars (phase 1 plan, MT). Each *family* is a
 directory of closures described by one manifest in the format
-`compilatrix/corpus/1`. Required CI uses only the frozen files; it never runs
+`ixcc/corpus/1`. Required CI uses only the frozen files; it never runs
 ix.
 
 | Family | Manifest | Sources | Contents |
@@ -24,7 +24,7 @@ A manifest describes one family. Paths are relative to the repository root
 
 | Field | Kind | Meaning |
 | --- | --- | --- |
-| `format` | fixed | `compilatrix/corpus/1` |
+| `format` | fixed | `ixcc/corpus/1` |
 | `family`, `description` | reviewed | the family's name and purpose |
 | `tier` | reviewed | `required`, `campaign` or `manual` (research §9.5) |
 | `phase` | reviewed | the roadmap phase whose fragment the family tests |
@@ -44,7 +44,7 @@ Per fixture:
 | `protocol` | reviewed | how the interpreter is run: `args` (one `lean --run SRC ARG…` per case, as the benchmark sources' `main`) or `stdin` (one run; a line `ROOT ARG…` per case; no run when no case is interpreted) |
 | `allow_constructs` | reviewed | forbidden constructs (`partial`, `unsafe`, …) the source uses on purpose; only for fixtures whose roots are all declined (absent: none) |
 | `closure` | derived | the anonymous closure: `path`, `sha256`, `bytes` |
-| `equations` | derived | the sidecar (`compilatrix/k1-equations/1`): `path`, `sha256`, and the `equations` and `failures` counts |
+| `equations` | derived | the sidecar (`ixcc/k1-equations/1`): `path`, `sha256`, and the `equations` and `failures` counts |
 | `named_env_sha256` | derived | the named twin the addresses were resolved against (not retained) |
 | `census` | derived | the admission census (`lake exe census`): `path`, `sha256` |
 | `roots[]` | | one closure root each |
@@ -183,11 +183,11 @@ distinct region and stack of a root's cases.
 `lake exe corpus kernel-artifacts` prints the recheck input of four small
 corpus roots (`bench-k1/even-odd`, `phase1-scalar/tuple`, `natShiftr` and
 `strictAndOr`'s `entryStrictAnd`) with the recheck artifact printer into
-`CompilatrixTests/Corpus/Artifacts/`; with `--check` it compares them with a
+`IxCCTests/Corpus/Artifacts/`; with `--check` it compares them with a
 fresh ingress, `produce` and native run. The manual target
-`lake build CompilatrixTests.Corpus.KernelSample` states, for each, that
+`lake build IxCCTests.Corpus.KernelSample` states, for each, that
 `Recheck.run` gives the object's bytes, by `decide +kernel` (20–24 s and
-about 4 GB each on 2026-10-01). Like `CompilatrixTests.Recheck.KernelSlow`,
+about 4 GB each on 2026-10-01). Like `IxCCTests.Recheck.KernelSlow`,
 nothing in the default build or the programs derivation imports it.
 
 ## Optional certified-checker census
@@ -292,7 +292,7 @@ lake exe refreeze-ixon tc-primitives --ix-repo $IXREPO --ix-revision $IXPIN
 # 6. Src.Pinned from the old and new primitives.tsv/src-tables.tsv
 git show HEAD:fixtures/ixon-v4/primitives.tsv > old-primitives.tsv
 git show HEAD:fixtures/ixon-v4/src-tables.tsv > old-src-tables.tsv
-lake exe pin-src-tables --repin Compilatrix/Src/Pinned.lean \
+lake exe pin-src-tables --repin IxCC/Src/Pinned.lean \
   --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
 # 7. the typing bundles, then the catalogs over them
 PATH=$FAKE:$PATH lake exe refreeze-ixon typing --ix $IX --revision $REV
@@ -302,7 +302,7 @@ lake build gen-src-artifacts gen-recheck-artifacts corpus tests-fir
 lake exe gen-src-artifacts
 lake exe gen-recheck-artifacts
 lake exe corpus kernel-artifacts
-lake exe tests-fir --render-artifacts > CompilatrixTests/Fir/Artifacts.lean
+lake exe tests-fir --render-artifacts > IxCCTests/Fir/Artifacts.lean
 # 9. checks that must not change
 lake exe check-steps          # the step baseline: a change is a stop-and-review
 lake exe corpus check
@@ -310,13 +310,13 @@ lake exe corpus check fixtures/ixon-v4/k1/corpus.json fixtures/ownership/corpus.
 ```
 
 Then:
-- the tests that name constants by number (`CompilatrixTests/Lam/KernelK1/*.lean`,
+- the tests that name constants by number (`IxCCTests/Lam/KernelK1/*.lean`,
   which state facts about the Src artifacts by `decide +kernel`) are renumbered
   by their meaning (the entry root, the `prim`/`eqn`/`case` entries, the
   subsingleton recursor, the `lazy` constant, `Nat.zero`), each evaluated
   natively before the kernel build;
 - the fixed identities in tests (the catalog roots in
-  `CompilatrixTests/IxonV3/Catalog/Files.lean`) come from the catalog
+  `IxCCTests/IxonV3/Catalog/Files.lean`) come from the catalog
   provenance;
 - the trust ledger's integrity pins are recomputed for every tracked file
   that changed, `nix/lean-modules.json` with `lake exe check-build-graph

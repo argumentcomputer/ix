@@ -1,7 +1,7 @@
 /*
  * Native harness for the failure-exit fixture (note 05 §6.1).
  *
- * compilatrix_main(ctx, depth, mode) is an export wrapper: it saves the
+ * ixcc_main(ctx, depth, mode) is an export wrapper: it saves the
  * callee-saved registers and its stack pointer at ctx[0], recurses `depth`
  * levels (each checking the stack against ctx[1]), and at the bottom either
  * returns 42 (mode 0: rax:rdx = 0:42) or fails (mode 1: rax:rdx = 1:0). A
@@ -24,7 +24,7 @@ struct result {
   uint64_t rax, rdx, rbx, rbp, r12, r13, r14, r15, rsp_before, rsp_after;
 };
 
-extern void compilatrix_main(void);
+extern void ixcc_main(void);
 void call_with_sentinels(uint64_t *ctx, uint64_t depth, uint64_t mode, struct result *out, void (*export)(void));
 
 /* rdi = ctx, rsi = depth, rdx = mode, rcx = out, r8 = export. */
@@ -74,7 +74,7 @@ static int failures;
 static void expect(const char *name, uint64_t *ctx, uint64_t depth, uint64_t mode, uint64_t status,
                    uint64_t value) {
   struct result r;
-  call_with_sentinels(ctx, depth, mode, &r, compilatrix_main);
+  call_with_sentinels(ctx, depth, mode, &r, ixcc_main);
   int ok = r.rax == status && r.rdx == value && r.rbx == 0x1111111111111111ULL &&
            r.rbp == 0x2222222222222222ULL && r.r12 == 0x3333333333333333ULL &&
            r.r13 == 0x4444444444444444ULL && r.r14 == 0x5555555555555555ULL &&

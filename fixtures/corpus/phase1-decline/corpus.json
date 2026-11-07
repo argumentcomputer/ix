@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/corpus/1",
+  "format": "ixcc/corpus/1",
   "family": "phase1-decline",
   "description": "The Phase 1 decline corpus (phase1.md MT.4): real Lean programs outside the Phase 1 fragment, each declined with its exact stage and code (closures, strings, six parameters, erasure and admission declines, the alloc.fallback wrong decline), and roots whose exported symbols collide when compiled together (stacking.symbols).",
   "tier": "required",
@@ -92,14 +92,14 @@
       },
       "equations": {
         "path": "closures.equations.json",
-        "sha256": "fbf2c538fabbd3dc448f54059b80dbd9cb0220cb2fd7e0d57bf240d05fc909eb",
+        "sha256": "f39c2a97769c91c1889472a92086fa8ea5487ee6c9e77b18df0335f67afdc2e2",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "79fada577068e27ddfe6a13a1b364ef85dc303abf5c67b1de3c3fc3b98926c03",
       "census": {
         "path": "closures.census.json",
-        "sha256": "9ebd813075628abec6617ffbd6e0ada2fed7c7ce6b60de610648c0a9aaaeabe1"
+        "sha256": "de035528737f3628392060a7390c17e89f2cd0faebe2295486b4dd8995e855e3"
       },
       "roots": [
         {
@@ -159,14 +159,14 @@
       },
       "equations": {
         "path": "loops.equations.json",
-        "sha256": "41f0be99329abee417c935e343819f1aff47c3335e6633ae58fee46f518f0377",
+        "sha256": "1e675a829586f69f87ee74ff542c93d9ef621a7e4ab1e0d0b5e221de54ee259d",
         "equations": 34,
         "failures": 0
       },
       "named_env_sha256": "d0d67f3e1d84cf5be013ae6c2f8607b632d056455614711519f7ff15922207e2",
       "census": {
         "path": "loops.census.json",
-        "sha256": "4e580ab87d893215fe76ddad45e49f161f3a2b98a46d180b2e42b0f49b37ddfe"
+        "sha256": "84f4e680da13051a1fda8d63f3e2965c58a54104c764aa6f90fb12f11cfbf7d0"
       },
       "roots": [
         {
@@ -225,14 +225,14 @@
       },
       "equations": {
         "path": "strings.equations.json",
-        "sha256": "f303a3bdba4d1eeee9738cc122768bc120afa5031383adce6e4fe55cc5934da5",
+        "sha256": "49ab6058fef9142b57defc972cd6fdadae9e24d80e840be2ea1277ebebbc9e4c",
         "equations": 55,
         "failures": 0
       },
       "named_env_sha256": "440856c4c4777649008ec3fd6c6af983204a85eecc70ffa16861026669d39343",
       "census": {
         "path": "strings.census.json",
-        "sha256": "e88b5d13dccf45dd46d12bebcd4de44bb9c5605d08729c3861b859882b06c249"
+        "sha256": "eee3ce77174c6ad7e8cb30739696296e316e7fd8f6d9b538c449f7c2317242c0"
       },
       "roots": [
         {
@@ -276,14 +276,14 @@
       },
       "equations": {
         "path": "panic.equations.json",
-        "sha256": "4c95b20dfe4027a427a87fe3ed2babb50ef591f9646582aec5bdee0816f4c7f7",
+        "sha256": "7c3473e1c870b24d4919a41a517adf338964074b383627e6a0f03d617fcb601b",
         "equations": 15,
         "failures": 0
       },
       "named_env_sha256": "2ef87356271984db98adfea149a1dee1d7c7f654683f9d3fdaa6dc846fb5a565",
       "census": {
         "path": "panic.census.json",
-        "sha256": "786ef1063dfac97ed51f67922e537cd4f53cd5d472bae6d122285998c8eed50b"
+        "sha256": "c246a17ef121cea15c0f5676440402cc054cb752d1e4d0e698281bd5cf3a6fcf"
       },
       "roots": [
         {
@@ -329,14 +329,14 @@
       },
       "equations": {
         "path": "params.equations.json",
-        "sha256": "18369ec5065a8460e0c12e541ebd2c69fb84312e8d60c98579520e7def311468",
+        "sha256": "fe973d5dce9c1fef284b5a84918314fa92e67f62db844fa8cac38242ebb13af9",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "be8b32656468b199fb76719acc7c02b24b4a11ab4c470114f96c6f6a75086e9d",
       "census": {
         "path": "params.census.json",
-        "sha256": "a62056c61dd45aaf55a341b687dc435f3fa38c89a66a7e332db58a9f2a261997"
+        "sha256": "c608e403471700742a81045e98e48803b5ee9acbc4bfb39282e83ec6c4444608"
       },
       "roots": [
         {
@@ -412,14 +412,14 @@
       },
       "equations": {
         "path": "erase.equations.json",
-        "sha256": "d9ef9d8d9fbd74fa21f1fe05413e0c968bb39b3221fb1bbd6992c7deac66845a",
+        "sha256": "d874f99ed215bcdb2e1e0093be37bf5476817901cf858c38224f11e5fce3e72b",
         "equations": 0,
         "failures": 0
       },
       "named_env_sha256": "0a06e8d2e9cfed70ee8051ce1177bfedf198fe8dd3a70f54fec9667041e50acb",
       "census": {
         "path": "erase.census.json",
-        "sha256": "0560d101f9d29faeb190abf2f21d5a6112ae48cec12ba4f1e19b8b1835ee27f4"
+        "sha256": "d62bfbef9bee49bbaf786d9b853fb17cb101fe5c814641b43f1732f692138dbd"
       },
       "roots": [
         {
@@ -496,14 +496,14 @@
       },
       "equations": {
         "path": "admit.equations.json",
-        "sha256": "cf2ec89c39e85da847ebc923b991dbfcfdd6ce7a33909f15e47da8d124dc3a28",
+        "sha256": "bc54a7fa044cbf5a80b280d439c67d72784717fb086f70fc760e735121b8d1e0",
         "equations": 1,
         "failures": 0
       },
       "named_env_sha256": "2e75b1af5b81a8ee0e8f6209d0a48d567c196660cea39b2a07b7563b28b3085b",
       "census": {
         "path": "admit.census.json",
-        "sha256": "e2cdd5e46a017e417da9401b18e4b243845501204ca8fc1759c0427605f2326c"
+        "sha256": "f44e5b74e7f331461a3590dfcb1990bb65e8925205ae25dcafd919ce1c1f0371"
       },
       "roots": [
         {
@@ -597,14 +597,14 @@
       },
       "equations": {
         "path": "symbols.equations.json",
-        "sha256": "92f0a728b0e9c21cbcfc1deff44470c871654d78a309834efda2b43693d092ed",
+        "sha256": "57936f6992a601d1159eea7c5d85c78a9e9a4260ae11e263bc6f71bc919b1fbc",
         "equations": 2,
         "failures": 0
       },
       "named_env_sha256": "e8a18883bacb9e9a1f517c54b0de272174f05d92afc3fc8e8359a0dc1eaecd62",
       "census": {
         "path": "symbols.census.json",
-        "sha256": "e73dee7d6c4f5cd2b7895347a516cb8a59720aa5955d688b4fd5df2015fbf42e"
+        "sha256": "0d9fab9d0428bf795d18741ace9ddb6c3c517dcc6ef8eeaf44fcc9e4003a842e"
       },
       "roots": [
         {

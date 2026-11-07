@@ -44,12 +44,12 @@ codec proofs use ordinary logic; addressed wrappers retain the existing
 native BLAKE3 axiom exception. The exact grammar, component-check scope,
 fixtures, and ix exporter contract are in [aiur-wire.md](aiur-wire.md).
 
-[`Compilatrix.Aiur`](../Compilatrix/Aiur.lean) exposes the new production API.
+[`IxCC.Aiur`](../IxCC/Aiur.lean) exposes the new production API.
 Tests, source-inventory checking, and axiom fences have separate module roots.
 
 ## Logical traces and checked facts
 
-[`Trace`](../Compilatrix/Aiur/Trace.lean) distinguishes exact function
+[`Trace`](../IxCC/Aiur/Trace.lean) distinguishes exact function
 messages (function, inputs, outputs), memory messages (bucket, pointer,
 contents), and gadget messages (channel, values). Message equality includes
 the complete payload and kind. These constructors are a logical model;
@@ -72,7 +72,7 @@ demands, and public claims, and must be strictly below the characteristic.
 The AIR adapter must show this is bounded by the verifier's checked slot
 budget, which also counts provider slots and padding rows.
 
-[`Trace.validate`](../Compilatrix/Aiur/Check.lean) checks activity, complete
+[`Trace.validate`](../IxCC/Aiur/Check.lean) checks activity, complete
 message balance, the characteristic bound, and memory coherence. It returns
 `Trace.Validated trace` retaining the corresponding proofs. Balance checking
 enumerates the finite mentioned-message set; its soundness theorem covers
@@ -86,7 +86,7 @@ No binary trace parser is included yet.
 
 ## One witness heap
 
-[`Memory`](../Compilatrix/Aiur/Memory.lean) checks that active memory
+[`Memory`](../IxCC/Aiur/Memory.lean) checks that active memory
 providers with the same bucket and pointer agree on their contents. It
 constructs one heap from those providers and proves that every observed
 memory cell agrees with that heap. `Trace.Validated.memory_agrees` applies
@@ -108,7 +108,7 @@ extraction and remaining Booleanity, assignment, and key-binding boundaries.
 
 ## Static order, counters, and ranks
 
-[`StaticCertificate`](../Compilatrix/Aiur/WellFounded.lean) records facts
+[`StaticCertificate`](../IxCC/Aiur/WellFounded.lean) records facts
 about the extracted rows and a fixed ranked/unranked choice per component.
 Each dependency must either advance component order or stay in one
 component and:
@@ -144,7 +144,7 @@ extensions.
 
 ## Derivation endpoint and remaining assumptions
 
-[`Trace.Validated.public_derivation`](../Compilatrix/Aiur/Certificate.lean)
+[`Trace.Validated.public_derivation`](../IxCC/Aiur/Certificate.lean)
 combines the checked trace and static certificate. Well-founded induction
 chooses a nonzero active provider for each demanded message and constructs
 its finite derivation. The provider-existence proof uses the nonzero field
@@ -152,7 +152,7 @@ image of a positive demand count below the characteristic; it does not
 assume nonnegative provider multiplicities.
 
 `Derivation.sound` is the generic induction principle for interpreting those
-derivations in a row-local semantics. [BytecodeSound](../Compilatrix/Aiur/BytecodeSound.lean)
+derivations in a row-local semantics. [BytecodeSound](../IxCC/Aiur/BytecodeSound.lean)
 now discharges that rule using checked replay of the actual function bodies,
 allowed advice, concrete gadget meanings, and the extracted witness heap.
 `Trace.Validated.public_bytecode` produces a finite `BytecodeEvalW` execution
@@ -164,7 +164,7 @@ refinement, bytecode/descriptor/key binding, primitive AIR conformance, and
 source preservation remain explicit work. The cryptographic proof-system
 boundary is not replaced by these checkers.
 
-The upstream frontend handoff does not change that order: Compilatrix will
+The upstream frontend handoff does not change that order: IxCC will
 read addressed mode bytes and primitive identities, validate required typed
 facts before erasure, and then recognize the admitted monadic DSL over
 the erased source IR. Optional hints can guide checks but cannot authorize lowering or
@@ -173,15 +173,15 @@ establish trace acyclicity on their own.
 ## Validation
 
 ```sh
-lake build AiurReference Compilatrix.Aiur CompilatrixTests.Aiur.Proofs \
-  CompilatrixTests.Aiur.Execution.Proofs CompilatrixTests.Fences.Aiur \
-  CompilatrixTests.Aiur.Static.Proofs CompilatrixTests.Fences.AiurWire \
-  CompilatrixTests.Fences.AiurExecution CompilatrixTests.Fences.AiurStatic \
-  Compilatrix.Aiur.CounterAnalysis CompilatrixTests.Aiur.CounterAnalysis.Proofs \
-  CompilatrixTests.Fences.AiurCounterAnalysis \
-  Compilatrix.Aiur.AIR.Memory.Sound Compilatrix.Aiur.AIR.Memory.Lookup \
-  CompilatrixTests.Fences.AiurMemoryAIR Compilatrix.Aiur.AIR.Rank.Sound \
-  Compilatrix.Aiur.AIR.Rank.GraphProofs CompilatrixTests.Fences.AiurRankAIR \
+lake build AiurReference IxCC.Aiur IxCCTests.Aiur.Proofs \
+  IxCCTests.Aiur.Execution.Proofs IxCCTests.Fences.Aiur \
+  IxCCTests.Aiur.Static.Proofs IxCCTests.Fences.AiurWire \
+  IxCCTests.Fences.AiurExecution IxCCTests.Fences.AiurStatic \
+  IxCC.Aiur.CounterAnalysis IxCCTests.Aiur.CounterAnalysis.Proofs \
+  IxCCTests.Fences.AiurCounterAnalysis \
+  IxCC.Aiur.AIR.Memory.Sound IxCC.Aiur.AIR.Memory.Lookup \
+  IxCCTests.Fences.AiurMemoryAIR IxCC.Aiur.AIR.Rank.Sound \
+  IxCC.Aiur.AIR.Rank.GraphProofs IxCCTests.Fences.AiurRankAIR \
   tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .

@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/x86-steps/1",
+  "format": "ixcc/x86-steps/1",
   "regenerate": "lake exe check-steps --write",
   "rows": [
     {"name": "fib", "args": [13], "typed": 11406, "bytes": 14274, "initTyped": 115, "initBytes": 119, "status": 0, "value": 467, "obs": "233"},
