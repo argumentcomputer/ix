@@ -30,8 +30,15 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- from Key and two from SpecDigest, and removes eight old specializations.
 -- The complete extern, unsafe, direct and reached implementation, csimp,
 -- replacement and opaque entry sets are unchanged, as are all runtime rulings.
+-- The specification digest's encoding version 2 adds 369 compiled functions,
+-- measured by diffing the closures by module. `Ix.SpecDigest` grows by 242:
+-- 187 encode the role names (`roleName`, with `Role.leanName`'s table
+-- inlined), 42 are `nativeOp`'s table, and 13 are the new encoder's rows.
+-- `Ix.SpecDigest.Schedule` adds 127: 73 for `groupOrder`'s closed terms and 54
+-- for the schedule's checks. Externs, implemented_by, unsafe, csimp and every
+-- ruling are unchanged.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7725 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7542 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]
