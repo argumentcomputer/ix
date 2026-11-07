@@ -5,7 +5,7 @@ import Ix.AiurInvocation
 /-!
 # Shared pieces of the formal-backend check drivers
 
-The drivers (`formal-checks controller|cuda|refactor|ranges`, run by
+The drivers (`formal-checks controller|cuda|ranges`, run by
 `tools/ixvm/check-formal.sh`) drive the Rust hosts and the `ix` CLI on the
 fixtures `check-formal.sh` leaves, log each command to a file in a fresh
 directory beside the fixtures, and keep a JSON report there.

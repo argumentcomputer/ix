@@ -152,14 +152,16 @@ IxVM, recursion and aggregation programs are equal (`==`) and render identically
 (`Repr`), and the exported artifacts (`ixvm export-claim-trace`,
 `stark-export export-trace [--aggregate]`) are byte-identical.
 
-For the modularization itself, `formal-checks refactor` (`Tests/FormalChecks/Refactor.lean`) compares complete
-compiled exports against the pre-refactor artifacts. It permits only declared
-name changes and no-op removal: empty bytecode guards and trace assignments of
-each column to itself. Jump targets and hint instruction offsets are adjusted
-for removed guards. All other instructions, enum layouts, fixed-table rows,
-constraints, lookup messages, trace actions, and group layouts must match.
-Direct `*`/`&` syntax replaces the legacy inline `load`/`store` wrappers, which
-accounts for those no-ops disappearing.
+For the modularization itself, a comparison tool, `formal-checks refactor`,
+compared complete compiled exports against the pre-refactor artifacts. It
+permitted only declared name changes and no-op removal: empty bytecode guards
+and trace assignments of each column to itself. Jump targets and hint
+instruction offsets were adjusted for removed guards. All other instructions,
+enum layouts, fixed-table rows, constraints, lookup messages, trace actions,
+and group layouts had to match. Direct `*`/`&` syntax replaced the legacy inline
+`load`/`store` wrappers, which accounts for those no-ops disappearing. The tool
+read JSON exports, so it was retired when the artifacts moved to Ixon
+serialization; its record below stands.
 
 The comparison against `44ea8742` passed for all three applications:
 
