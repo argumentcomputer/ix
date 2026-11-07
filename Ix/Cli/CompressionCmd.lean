@@ -36,7 +36,7 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
       let (addr, wrapper) ← loadRoot hex
       IO.eprintln s!"Executing the root wrap of {addr}."
       let (raw, inv) ← FormalAggregate.wrapInvocation ctx wrapper
-      rows := rows.push (← Compression.rootRows ctx.aggrArtifact inv.compress raw)
+      rows := rows.push (← Compression.rootRows ctx.aggrArtifact inv raw)
       claimLen := (FormalAggregate.outerClaim ctx .aggr wrapper.claim).size
     let layout ← Compression.rootLayout ctx.aggrArtifact
       ("[" ++ ",".intercalate rows.toList ++ "]") headroom.toUInt32 claimLen.toUInt32

@@ -1,15 +1,17 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
+import Ix.AiurInvocation
 
 /-! Real claim fixtures, plus independently specified evaluation inputs.
 Run through the Rust host. -/
 open Lean IxVM.ClaimHarness
 
-private def caseJson (label : String) (w : ClaimWitness) (accept : Bool := true) : Json :=
-  Json.mkObj [("label", toJson label), ("accept", toJson accept),
-    ("invocation", Ix.Cli.FormalAiur.invocation w.input w.inputIOBuffer)]
+private def claimCase (label : String) (w : ClaimWitness) (accept : Bool := true) :
+    Ix.AiurInvocation.Case :=
+  { label := label, accept := accept,
+    invocation := Ix.Cli.FormalAiur.invocation w.input w.inputIOBuffer }
 
-private def evalCases : Except String (Array Json) := do
+private def evalCases : Except String (Array Ix.AiurInvocation.Case) := do
   let ty : Ixon.Expr := .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
   let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
   let beta : Ixon.Expr := .app (.leanLam ty (.var 0)) value
@@ -23,8 +25,8 @@ private def evalCases : Except String (Array Json) := do
   let ctx ← Ix.ClaimContext.ofDefaultTable
   let good ← buildClaimWitness env (.eval ctx ia oa none)
   let unreduced ← buildClaimWitness env (.eval ctx ia ia none)
-  return #[caseJson "Eval beta normal form" good,
-    caseJson "Eval rejects an unreduced claimed result" unreduced false]
+  return #[claimCase "Eval beta normal form" good,
+    claimCase "Eval rejects an unreduced claimed result" unreduced false]
 
 /-- Small, dependency-bearing environment for the orchestration gate. This
 exercises real IxVM checking and cross-record calls without importing Init. -/
@@ -61,7 +63,7 @@ private def singletonTrees (tree : Ix.AssumptionTree) :
 constant. Each case pairs the ill-typed `Prop : Prop` with an assumption tree
 that would let the circuit skip checking it; the control shows the circuit
 rejects it when it is checked. -/
-private def assumptionCases : Except String (Array Json) := do
+private def assumptionCases : Except String (Array Ix.AiurInvocation.Case) := do
   let prop : Ixon.Expr := .sort 0
   let bad : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, prop, prop⟩, #[], #[], #[.zero]⟩
   let ba := Address.blake3 (Ixon.ser bad)
@@ -76,10 +78,10 @@ private def assumptionCases : Except String (Array Json) := do
   let selfEnv ← buildClaimWitness env (.checkEnv ctx self.root (some self.root))
     (singletonTrees self)
   let emptyEnv ← buildClaimWitness env (.checkEnv ctx empty.root none) (singletonTrees empty)
-  return #[caseJson "Check rejects the ill-typed constant (control)" control false,
-    caseJson "Check rejects a target in its own assumption set" selfCheck false,
-    caseJson "CheckEnv rejects an owned subject in its own assumption set" selfEnv false,
-    caseJson "CheckEnv rejects an owned tree with no leaves" emptyEnv false]
+  return #[claimCase "Check rejects the ill-typed constant (control)" control false,
+    claimCase "Check rejects a target in its own assumption set" selfCheck false,
+    claimCase "CheckEnv rejects an owned subject in its own assumption set" selfEnv false,
+    claimCase "CheckEnv rejects an owned tree with no leaves" emptyEnv false]
 
 private def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) := do
   let target ← lookupAddr ixonEnv ``Nat.zero
@@ -181,7 +183,7 @@ def main (args : List String) : IO Unit := do
     | some path => pure path
     | none => do
       let dir ← IO.FS.createTempDir
-      pure (dir / "claims.json").toString
+      pure (dir / "claims.ixt").toString
   IO.eprintln s!"[formal-aiur-tests] writing {path}"
   let env ← get_env!
   let fixture ← loadIxonEnv ``Nat.add_comm env
@@ -193,8 +195,8 @@ def main (args : List String) : IO Unit := do
       claimRevealDefnFields, claimRevealDefnExpr,
       claimRevealCPrj] do
     let (label, witness) ← build fixture
-    cases := cases.push (caseJson label witness)
+    cases := cases.push (claimCase label witness)
   for (label, witness) in [← claimContains, ← claimRevealBinderModes] do
-    cases := cases.push (caseJson label witness)
-  IO.FS.writeFile path (toJson cases).compress
+    cases := cases.push (claimCase label witness)
+  IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases cases)
   IO.println s!"Wrote {cases.size} production claim cases and .ixe fixture to {path}"

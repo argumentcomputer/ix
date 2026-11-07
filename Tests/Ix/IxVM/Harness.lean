@@ -2,6 +2,7 @@ module
 
 public import Ix.Cli.FormalAiur
 public import Ix.IxVM.ClaimHarness
+public import Ix.AiurInvocation
 
 /-!
 # Running claims through the IxVM program
@@ -88,55 +89,18 @@ def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
 
 /-! ## The case file
 
-`ixvm-proof test` reads a JSON array of `{label, accept, rejects_with,
-invocation}`, where `invocation` is `Ix.Cli.FormalAiur.invocation`'s object.
-Witnesses carry megabytes of constant bytes, so the streams are written as
-text directly rather than through a `Json` node per byte. -/
+`ixvm-proof test` reads a case file in Ixon (`Ix.AiurInvocation`): a header,
+the cases one at a time, each a label, the verdict, `rejects_with`,
+`exercises` and the invocation (`Ix.Cli.FormalAiur.invocation`), and a
+trailer. Witnesses carry megabytes of constant bytes, so a case is encoded
+when it is written and then dropped. -/
 
-/-- Append the decimal digits of `n`. -/
-@[inline] private def pushNat (out : ByteArray) (n : Nat) : ByteArray :=
-  let digit (d : Nat) : UInt8 := 48 + d.toUInt8
-  if n < 10 then out.push (digit n)
-  else if n < 100 then (out.push (digit (n / 10))).push (digit (n % 10))
-  else if n < 1000 then
-    ((out.push (digit (n / 100))).push (digit (n / 10 % 10))).push (digit (n % 10))
-  else out ++ (toString n).toUTF8
-
-private def pushStr (out : ByteArray) (s : String) : ByteArray := out ++ s.toUTF8
-
-/-- Append `[a, b, …]`, the values of `xs` from `start` for `len` elements. -/
-private def pushArray (out : ByteArray) (xs : Array Aiur.G) (start len : Nat) : ByteArray :=
-  Id.run do
-    let mut out := out.push '['.toUInt8
-    for i in [start:start + len] do
-      if i != start then out := out.push ','.toUInt8
-      out := pushNat out (xs[i]?.map (·.n) |>.getD 0)
-    return out.push ']'.toUInt8
-
-/-- One case as `ixvm-proof test` reads it. -/
-def Case.encode (c : Case) (out : ByteArray := .empty) : ByteArray := Id.run do
-  let w := c.witness
-  let mut out := pushStr out s!"\{\"label\":{(Lean.toJson c.label).compress},\
-    \"accept\":{c.accept}"
-  if let some reason := c.rejectsWith then
-    out := pushStr out s!",\"rejects_with\":{(Lean.toJson reason).compress}"
-  if let some name := c.exercises then
-    out := pushStr out s!",\"exercises\":{(Lean.toJson name).compress}"
-  out := pushStr out ",\"invocation\":{\"entry\":\"IxVM::verify_claim\",\"args\":"
-  out := pushArray out w.input 0 w.input.size
-  out := pushStr out ",\"streams\":["
-  let mut first := true
-  for ((channel, key), info) in w.inputIOBuffer.map.toArray do
-    unless first do out := out.push ','.toUInt8
-    first := false
-    out := pushStr out "{\"channel\":"
-    out := pushNat out channel.n
-    out := pushStr out ",\"key\":"
-    out := pushArray out key 0 key.size
-    out := pushStr out ",\"values\":"
-    out := pushArray out (w.inputIOBuffer.data.getD channel #[]) info.idx info.len
-    out := out.push '}'.toUInt8
-  return pushStr out "]}}"
+/-- One case as it follows the header of a case file. -/
+def Case.encode (c : Case) : ByteArray :=
+  let invocation := Ix.Cli.FormalAiur.invocation c.witness.input c.witness.inputIOBuffer
+  Ix.AiurInvocation.Case.encode
+    { label := c.label, accept := c.accept, rejectsWith := c.rejectsWith,
+      exercises := c.exercises, invocation := invocation }
 
 /-- The stream elements of a case, the measure of its size. -/
 def Case.size (c : Case) : Nat :=
@@ -174,7 +138,7 @@ structure Runner where
 private def Runner.flush (r : Runner) : IO Unit := do
   let some file ← r.current.get | return
   r.current.set none
-  file.handle.write "]".toUTF8
+  file.handle.write Ix.AiurInvocation.casesTrailer
   file.handle.flush
   let tasks ← r.tasks.get
   if tasks.size ≥ r.jobs then
@@ -196,11 +160,10 @@ def Runner.add (r : Runner) (c : Case) : IO Unit := do
   let file ← match ← r.current.get with
     | some file => pure file
     | none => do
-      let path := r.dir / s!"{r.suite}-{(← r.tasks.get).size}.json"
+      let path := r.dir / s!"{r.suite}-{(← r.tasks.get).size}.ixt"
       let handle ← IO.FS.Handle.mk path .write
-      handle.write "[".toUTF8
+      handle.write Ix.AiurInvocation.casesHeader
       pure { path, handle, cases := 0, size := 0 }
-  if file.cases > 0 then file.handle.write ",".toUTF8
   file.handle.write c.encode
   let file := { file with cases := file.cases + 1, size := file.size + c.size }
   r.current.set (some file)

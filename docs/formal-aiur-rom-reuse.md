@@ -137,7 +137,7 @@ cargo build --release --locked -p stark-verifier \
 RAYON_NUM_THREADS=64 IX_BENCH_NO_THP=1 IX_BENCH_REUSE_EXECUTION=1 \
   AIUR_TRACE_ONLY_LOOKUPS=0 taskset -c 0-63 target/release/examples/compare \
   .lake/formal-integration/recursion-tuned.json \
-  .lake/formal-comparison/final/new-environment-grouped.json.inner/input.json \
+  .lake/formal-comparison/final/new-environment-grouped.json.inner/input.ixi \
   /tmp/recursion-rom-reuse.json 5
 ```
 

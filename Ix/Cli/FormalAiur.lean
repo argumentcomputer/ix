@@ -7,6 +7,7 @@ public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
 public import Ix.AiurArtifact
+public import Ix.AiurInvocation
 public import Ix.Benchmark.Results
 public import Ix.TracingTexray
 
@@ -228,8 +229,12 @@ def withController {α : Type} (p : Cli.Parsed) (artifacts : Array (String × St
       | some n => pure (toJson n)
       | none => throw (IO.userError "AIUR_RECORD_MAX_BYTES must be a positive integer")
   IO.FS.withTempDir fun dir => do
+    -- The host refuses an artifact whose digest is not the one named here.
+    let entries ← artifacts.mapM fun (path, kind) => do
+      let digest := Address.blake3 (← IO.FS.readBinFile path)
+      pure (Json.mkObj [("path", toJson path), ("kind", toJson kind), ("digest", toJson (toString digest))])
     let config := Json.mkObj [
-      ("artifacts", toJson (artifacts.map fun (path, kind) => Json.mkObj [("path", toJson path), ("kind", toJson kind)])),
+      ("artifacts", toJson entries),
       ("devices", toJson devices), ("exec_jobs", toJson executors),
       ("threads_per_prover", toJson (max 1 (options.threads / lanes))),
       ("max_ram_bytes", toJson ram), ("record_limit_bytes", recordLimit),
@@ -276,10 +281,10 @@ private def residentRequest (resident : Resident) (artifactPath input output : S
   let result ← IO.ofExcept (Json.parse (← IO.FS.readFile donePath))
   return UInt32.ofNat (← IO.ofExcept (result.getObjValAs? Nat "status"))
 
-def runHost (binary artifactPath mode : String) (input : Json) (output : String)
+def runHost (binary artifactPath mode : String) (input : ByteArray) (output : String)
     (options : HostOptions) : IO UInt32 :=
   IO.FS.withTempFile fun h path => IO.FS.withTempFile fun oh opath => do
-    h.putStr input.compress
+    h.write input
     h.flush
     oh.putStr options.json.compress
     oh.flush
@@ -294,19 +299,17 @@ def runHost (binary artifactPath mode : String) (input : Json) (output : String)
       stdout := .inherit, stderr := .inherit }
     child.wait
 
-/-- Stream metadata is small; each byte payload is transported exactly once.
-The Rust host turns these into immutable vectors captured by hint closures. -/
+/-- A host input, in Ixon (`Ix.AiurInvocation`). Stream metadata is small; each
+byte payload is transported exactly once. The Rust host turns these into
+immutable vectors captured by hint closures. -/
 def invocation (input : Array Aiur.G) (buffer : Aiur.IOBuffer)
-    (entry : String := "IxVM::verify_claim") : Json :=
-  Json.mkObj [("entry", toJson entry), ("args", toJson (input.map (·.n))),
-    ("streams", toJson (buffer.map.toArray.map fun ((channel, key), info) =>
-      Json.mkObj [("channel", toJson channel.n), ("key", toJson (key.map Aiur.G.n)),
-        ("values", toJson ((buffer.data.getD channel #[]).extract info.idx (info.idx + info.len) |>.map Aiur.G.n))]))]
+    (entry : String := "IxVM::verify_claim") : ByteArray :=
+  AiurInvocation.ofBuffer input buffer entry
 
-def invoke (artifactPath mode : String) (input : Json) (proofPath : String)
+def invoke (artifactPath mode : String) (input : ByteArray) (proofPath : String)
     (rows : Nat) (retention : String := "regenerate") : IO Unit :=
   IO.FS.withTempFile fun handle path => do
-    handle.putStr input.compress
+    handle.write input
     handle.flush
     command (← host) #[mode, artifactPath, path.toString, proofPath, toString rows, retention]
 
@@ -445,12 +448,14 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
       if i == 0 then
         io := io.extend 0 args (bytes.data.map Aiur.G.ofUInt8)
         io := io.extend 1 (tree.root.hash.data.map Aiur.G.ofUInt8) (tree.ser.data.map Aiur.G.ofUInt8)
-      let input := dir / s!"worker-{i}.json"
-      IO.FS.writeFile input (invocation args io).compress
+      let input := dir / s!"worker-{i}.ixi"
+      IO.FS.writeBinFile input (invocation args io)
       workers := workers.push (Json.mkObj [("input", toJson input.toString),
         ("owned", toJson (owners[i]!.map fun a =>
           binding.address.hash.data.map UInt8.toNat ++ #[validator] ++ a.hash.data.map UInt8.toNat))])
-    let spec := Json.mkObj [("invocation", invocation args default), ("workers", toJson workers),
+    let publicPath := dir / "invocation.ixi"
+    IO.FS.writeBinFile publicPath (invocation args default)
+    let spec := Json.mkObj [("invocation", toJson publicPath.toString), ("workers", toJson workers),
       ("exec_jobs", toJson (min jobs owners.size)), ("exec_only", toJson (p.hasFlag "exec-only")),
       ("texray", toJson (p.hasFlag "texray")),
       ("cells", toJson (((p.flag? "cells").map (·.as! Nat)).getD 0))]

@@ -1,7 +1,7 @@
 //! Production claim driver. The trusted artifact is separate from witness and
 //! proof inputs. No legacy executor or generated kernels are linked here.
 use aiur::{
-  artifact::Package,
+  artifact::{Package, load_cases},
   field::FieldBackend,
   library::io::Invocation,
   trace::{
@@ -14,21 +14,6 @@ use std::{error::Error, time::Instant};
 
 const MAGIC: &[u8] = b"IXAIUR2\0";
 
-#[derive(serde::Deserialize)]
-struct Case {
-  label: String,
-  accept: bool,
-  /// For a rejection: text the execution error must contain, so that a case
-  /// is not satisfied by a failure other than the one it targets.
-  #[serde(default)]
-  rejects_with: Option<String>,
-  /// For an acceptance: a function the execution must call, so that a case is
-  /// not satisfied without reaching the path it targets.
-  #[serde(default)]
-  exercises: Option<String>,
-  invocation: Invocation,
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.get(1).is_some_and(|s| s == "resources") {
@@ -40,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Ok(());
   }
   if cli.len() < 4 {
-    return Err("usage: ixvm-proof execute|plan|prove|verify ARTIFACT INPUT [PROOF] [SHARD_ROWS] [RETENTION] [OPTIONS.json]".into());
+    return Err("usage: ixvm-proof execute|plan|prove|verify ARTIFACT INPUT.ixi [PROOF] [SHARD_ROWS] [RETENTION] [OPTIONS.json]".into());
   }
   let mode = cli[1].as_str();
   if !["execute", "plan", "prove", "verify", "test", "key"].contains(&mode) {
@@ -76,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   if mode == "test" {
     // Every case runs, so that one report names every unexpected verdict.
-    let cases: Vec<Case> = serde_json::from_slice(&std::fs::read(&cli[3])?)?;
+    let cases = load_cases(cli[3].as_ref())?;
     let mut failed = Vec::new();
     for case in cases {
       let args = program.field().decode(&case.invocation.args)?;
@@ -127,7 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     return Ok(());
   }
-  let input: Invocation = serde_json::from_slice(&std::fs::read(&cli[3])?)?;
+  let input = Invocation::load(cli[3].as_ref())?;
   let args = program.field().decode(&input.args)?;
   // A production claim has precisely eight public digest words and no result.
   if input.entry != "IxVM::verify_claim" || args.len() != 8 {

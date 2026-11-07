@@ -17,10 +17,10 @@ def artifact (p : Cli.Parsed) : IO String :=
 
 def host : IO String := rustHost "stark-verifier" "stark-verifier" "IX_STARK_HOST"
 
-def invoke (artifactPath mode : String) (input : Json) (output : String)
+def invoke (artifactPath mode : String) (input : ByteArray) (output : String)
     (rows : Nat := 65536) (retention : String := "regenerate") : IO Unit :=
   IO.FS.withTempFile fun h path => do
-    h.putStr input.compress
+    h.write input
     h.flush
     command (← host) #[mode, artifactPath, path.toString, output, toString rows, retention]
 
@@ -69,8 +69,9 @@ def rawProof (kind : ChildKind) (proof : ByteArray) : IO ByteArray := do
   return proof.extract magic.size proof.size
 
 /-- Build the shape-1 (`(.aggr, none)`) recursive wrap invocation for an
-aggregate root `wrapper`. Returns `(rawProofBytes, invocationJson)`. -/
-def wrapInvocation (ctx : Context) (wrapper : Ixon.Proof) : IO (ByteArray × Json) := do
+aggregate root `wrapper`. Returns `(rawProofBytes, invocation)`, the invocation
+in Ixon (`Ix.AiurInvocation`). -/
+def wrapInvocation (ctx : Context) (wrapper : Ixon.Proof) : IO (ByteArray × ByteArray) := do
   let raw ← rawProof .aggr wrapper.proof
   let shape := Aggr.shapeCode (.aggr, none)
   let io := Aggr.extendChild (Aggr.extendVk (Aggr.extendIdentity default ctx.allowed shape) .aggr ctx.aggr.key) 0 raw
@@ -82,7 +83,7 @@ def wrapInvocation (ctx : Context) (wrapper : Ixon.Proof) : IO (ByteArray × Jso
 /-- Normalize `wrapper`'s aggregate root to `layout` under `ctx`. -/
 def normalize (ctx : Context) (wrapper : Ixon.Proof) (layout : String) : IO ByteArray := do
   let (raw, inv) ← wrapInvocation ctx wrapper
-  Compression.normalizeRoot ctx.aggrArtifact inv.compress raw layout
+  Compression.normalizeRoot ctx.aggrArtifact inv raw layout
 
 /-- The root statement a compressed proof of `claim` must expose: the public
 claim of the backend's `MultiStark::ix_aggr` entrypoint, serialized as one

@@ -72,10 +72,8 @@ fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
   std::fs::write(dir.join("key.bin"), &key)?;
   std::fs::write(dir.join("claims.bin"), &claims)?;
   std::fs::write(dir.join("proof.bin"), &proof)?;
-  write_json(
-    &dir.join("input.json"),
-    &stark_verifier::invocation(&key, &claims, &proof),
-  )?;
+  stark_verifier::invocation(&key, &claims, &proof)
+    .store(&dir.join("input.ixi"))?;
   println!("created natively verified recursion fixture in {}", dir.display());
   Ok(())
 }
@@ -104,27 +102,24 @@ fn main() -> Result<(), Box<dyn Error>> {
   let program = program.check_field::<Val>()?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "cases" {
-    #[derive(serde::Deserialize)]
-    struct Case {
-      label: String,
-      accept: bool,
-      /// For a rejection: text the execution error must contain.
-      #[serde(default)]
-      rejects_with: Option<String>,
-      invocation: stark_verifier::Invocation,
-    }
-    let cases: Vec<Case> = serde_json::from_slice(&std::fs::read(
-      cli.get(3).ok_or("missing cases")?,
-    )?)?;
+    let cases =
+      aiur::artifact::load_cases(cli.get(3).ok_or("missing cases")?.as_ref())?;
     // Every case runs, so that one report names every unexpected verdict.
     let mut failed = Vec::new();
     for case in cases {
       let args = program.field().decode(&case.invocation.args)?;
       let result = stark_verifier::prepare(&program, &case.invocation.streams)?
         .execute(&case.invocation.entry, args);
+      // An acceptance that names a function must have called it.
+      let reached = match (&result, &case.exercises) {
+        (Ok(record), Some(name)) => record.queries.keys().any(|query| {
+          program.callable_name(query.function) == Some(name.as_str())
+        }),
+        _ => true,
+      };
       let error = result.err().map(|e| e.to_string());
       let expected = match (&error, &case.rejects_with) {
-        (None, _) => case.accept,
+        (None, _) => case.accept && reached,
         (Some(e), Some(reason)) => !case.accept && e.contains(reason.as_str()),
         (Some(_), None) => !case.accept,
       };
@@ -165,8 +160,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     return Ok(());
   }
-  let invocation: stark_verifier::Invocation = serde_json::from_slice(
-    &std::fs::read(cli.get(3).ok_or("missing invocation")?)?,
+  let invocation = stark_verifier::Invocation::load(
+    cli.get(3).ok_or("missing invocation")?.as_ref(),
   )?;
   if !["MultiStark::verify_multi_stark_proof", "MultiStark::ix_aggr"]
     .contains(&invocation.entry.as_str())
@@ -329,24 +324,20 @@ fn main() -> Result<(), Box<dyn Error>> {
   std::fs::write(out.join("proof.bin"), &bytes)?;
   std::fs::write(out.join("key.bin"), &key)?;
   std::fs::write(out.join("claims.bin"), &claims)?;
-  write_json(
-    &out.join("public.json"),
-    &aiur::library::io::Invocation {
-      entry: invocation.entry,
-      args: invocation.args,
-      streams: Default::default(),
-    },
-  )?;
+  aiur::library::io::Invocation {
+    entry: invocation.entry,
+    args: invocation.args,
+    streams: Default::default(),
+  }
+  .store(&out.join("public.ixi"))?;
   report["verified"] = true.into();
   report["trace_seconds"] = trace.into();
   report["proving_seconds"] = proving.into();
   report["proof_bytes"] = bytes.len().into();
   report["shards"] = proof.proofs.len().into();
   std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
-  write_json(
-    &out.join("input.json"),
-    &stark_verifier::invocation(&key, &claims, &bytes),
-  )?;
+  stark_verifier::invocation(&key, &claims, &bytes)
+    .store(&out.join("input.ixi"))?;
   println!(
     "outer proof verified: {} bytes, {} shards",
     bytes.len(),

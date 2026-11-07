@@ -126,18 +126,13 @@ def main (argv : List String) : IO UInt32 := do
       let which ← IO.Process.output { cmd := "sh", args := #["-c", "command -v nvidia-smi"] }
       if which.exitCode == 0 then run c "nvidia-smi" #["nvidia-smi"] gpuEnv
 
-    let claims ← IO.ofExcept ((← readJson (fixtures / "claims.json")).getArr?)
-    let some claim := claims.findSome? fun entry =>
-        if (entry.getObjValAs? Bool "accept").toOption == some true &&
-            (entry.getObjValAs? String "label").toOption == some "CheckEnv frontier-asm (Nat.add_comm)"
-        then (entry.getObjVal? "invocation").toOption else none
-      | fail "claims.json has no accepted CheckEnv frontier-asm (Nat.add_comm) case"
-    let claimPath := out / "claim.json"
-    IO.FS.writeFile claimPath (claim.compress ++ "\n")
+    let claim ← caseInvocation (fixtures / "claims.ixt") "CheckEnv frontier-asm (Nat.add_comm)"
+    let claimPath := out / "claim.ixi"
+    IO.FS.writeBinFile claimPath claim
     let cases : Array (String × FilePath × FilePath × Bool) := #[
       ("ixvm", System.FilePath.mk ixvmArtifact, claimPath, true),
-      ("recursion", System.FilePath.mk recursionArtifact, fixtures / "inner/input.json", false),
-      ("aggregate", System.FilePath.mk aggregateArtifact, fixtures / "aggregation.json.wrap.json",
+      ("recursion", System.FilePath.mk recursionArtifact, fixtures / "inner/input.ixi", false),
+      ("aggregate", System.FilePath.mk aggregateArtifact, fixtures / "aggregation.ixt.wrap.ixi",
         false)]
     for (name, artifact, invocation, ixvm) in cases do
       digests "artifact_sha256" artifact
@@ -191,12 +186,11 @@ def main (argv : List String) : IO UInt32 := do
             verifyEnv
           unless (← IO.FS.readBinFile (exported / "key.bin")) == keyBytes do
             fail s!"{name}: exported key differs from proving key"
-          let wrong ← readJson invocation
-          let first ← IO.ofExcept ((← field wrong ["args"]).getArrVal? 0 >>= (·.getNat?))
-          let args ← IO.ofExcept ((← field wrong ["args"]).getArr?)
-          let wrong := wrong.setObjVal! "args" (.arr (args.set! 0 (toJson (if first == 0 then 1 else 0))))
-          let wrongPath := directory / "wrong-public.json"
-          IO.FS.writeFile wrongPath wrong.compress
+          let wrong ← IO.ofExcept (Ix.AiurInvocation.Invocation.decode (← IO.FS.readBinFile invocation))
+          let some first := wrong.args[0]? | fail s!"{name}: the invocation has no arguments"
+          let wrong := { wrong with args := wrong.args.set! 0 (if first == 0 then 1 else 0) }
+          let wrongPath := directory / "wrong-public.ixi"
+          IO.FS.writeBinFile wrongPath (← IO.ofExcept wrong.encode)
           run c s!"{name}-reject-wrong-public" #[cpu.toString, "verify", artifact.toString,
             wrongPath.toString, proof.toString] verifyEnv (succeeds := false)
           -- A CPU host must not silently honor an explicit GPU request.

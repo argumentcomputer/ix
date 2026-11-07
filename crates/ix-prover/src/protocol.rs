@@ -14,6 +14,8 @@ pub(crate) enum Kind {
 pub(crate) struct Artifact {
   pub(crate) path: PathBuf,
   pub(crate) kind: Kind,
+  /// The BLAKE3 digest the artifact must have (`aiur::artifact::Digest`).
+  pub(crate) digest: String,
 }
 
 #[derive(Deserialize)]

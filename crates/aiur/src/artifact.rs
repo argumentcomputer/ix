@@ -13,6 +13,12 @@
 //!             list(hint)
 //! groups    = "IXAIURG\0" nat(1) list(group)
 //!
+//! invocation = "IXAIURI\0" nat(1) string(entry) nats(args)
+//!              list(nat(channel) nats(key) nats(values))
+//! cases      = "IXAIURT\0" nat(1) (1 case)* 0
+//! case       = string(label) bool(accept) option(string(rejects_with))
+//!              option(string(exercises)) invocation
+//!
 //! program   = nat(version) nat(modulus) list(function) list(enum)
 //!             list(table) list(map) list(entry)
 //! function  = string(name) list(type) type(result) nat(registers)
@@ -63,6 +69,7 @@ use crate::{
   },
   hints::HintEntry,
   ixon::{Reader, Writer},
+  library::io::{Invocation, Stream, Streams},
   trace::{
     Action, Chip, ColumnWrite, FunctionGroup, FunctionPlan, GroupLookup,
     GroupMember, GroupWrite, MemoryLookup, Polynomial, PopulationStep, Send,
@@ -78,6 +85,10 @@ pub const PACKAGE_MAGIC: &[u8; 8] = b"IXAIURP\0";
 pub const EXECUTION_MAGIC: &[u8; 8] = b"IXAIURX\0";
 /// Checked function groups alone, replacing a package's grouping.
 pub const GROUPS_MAGIC: &[u8; 8] = b"IXAIURG\0";
+/// An entry point with its arguments and input streams (a host's input).
+pub const INVOCATION_MAGIC: &[u8; 8] = b"IXAIURI\0";
+/// Labelled invocations with their expected verdicts (`test`, `cases`).
+pub const CASES_MAGIC: &[u8; 8] = b"IXAIURT\0";
 /// The artifact grammar's version. Every magic shares it.
 pub const FORMAT_VERSION: u64 = 1;
 /// The conventional file extension.
@@ -256,6 +267,119 @@ pub fn encode_groups(groups: &[FunctionGroup]) -> Vec<u8> {
   w.into_bytes()
 }
 
+impl Invocation {
+  pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+    let mut r = Reader::new(bytes);
+    let invocation = invocation(&mut r)?;
+    r.finish()?;
+    Ok(invocation)
+  }
+
+  pub fn encode(&self) -> Vec<u8> {
+    let mut w = Writer::new();
+    put_invocation(&mut w, self);
+    w.into_bytes()
+  }
+
+  pub fn load(path: &Path) -> Result<Self, String> {
+    let bytes = std::fs::read(path)
+      .map_err(|e| format!("cannot read invocation {}: {e}", path.display()))?;
+    Self::decode(&bytes)
+      .map_err(|e| format!("invalid invocation {}: {e}", path.display()))
+  }
+
+  /// Write the invocation through a temporary file, so that no reader sees
+  /// a partial one.
+  pub fn store(&self, path: &Path) -> Result<(), String> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(format!(".tmp.{}", std::process::id()));
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp, self.encode())
+      .and_then(|()| std::fs::rename(&tmp, path))
+      .map_err(|e| format!("cannot write invocation {}: {e}", path.display()))
+  }
+}
+
+fn put_invocation(w: &mut Writer, i: &Invocation) {
+  w.raw(INVOCATION_MAGIC);
+  w.nat(FORMAT_VERSION);
+  w.str(&i.entry);
+  w.nats(&i.args);
+  w.list(&i.streams.0, |w, s| {
+    w.nat(s.channel);
+    w.nats(&s.key);
+    w.nats(&s.values);
+  });
+}
+
+fn invocation(r: &mut Reader<'_>) -> Result<Invocation, String> {
+  header(r, INVOCATION_MAGIC)?;
+  Ok(Invocation {
+    entry: r.string()?,
+    args: r.nats()?,
+    streams: Streams(r.list(|r| {
+      Ok(Stream { channel: r.nat()?, key: r.nats()?, values: r.nats()? })
+    })?),
+  })
+}
+
+/// A labelled invocation and the verdict a test driver expects of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Case {
+  pub label: String,
+  /// Whether the program must accept the invocation.
+  pub accept: bool,
+  /// For a rejection: text the execution error must contain, so that a case
+  /// is not satisfied by a failure other than the one it targets.
+  pub rejects_with: Option<String>,
+  /// For an acceptance: a function the execution must call, so that a case
+  /// is not satisfied without reaching the path it targets.
+  pub exercises: Option<String>,
+  pub invocation: Invocation,
+}
+
+/// A case file: each case follows a byte 1 and a byte 0 ends the file, so a
+/// writer can append cases one at a time and a truncated file is refused.
+pub fn decode_cases(bytes: &[u8]) -> Result<Vec<Case>, String> {
+  let mut r = Reader::new(bytes);
+  header(&mut r, CASES_MAGIC)?;
+  let mut cases = Vec::new();
+  while r.tag("case continuation", 2)? == 1 {
+    cases.push(Case {
+      label: r.string()?,
+      accept: r.bool()?,
+      rejects_with: r.option(Reader::string)?,
+      exercises: r.option(Reader::string)?,
+      invocation: invocation(&mut r)?,
+    });
+  }
+  r.finish()?;
+  Ok(cases)
+}
+
+pub fn encode_cases(cases: &[Case]) -> Vec<u8> {
+  let mut w = Writer::new();
+  w.raw(CASES_MAGIC);
+  w.nat(FORMAT_VERSION);
+  for c in cases {
+    w.u8(1);
+    w.str(&c.label);
+    w.bool(c.accept);
+    w.option(c.rejects_with.as_ref(), |w, s| w.str(s));
+    w.option(c.exercises.as_ref(), |w, s| w.str(s));
+    put_invocation(&mut w, &c.invocation);
+  }
+  w.u8(0);
+  w.into_bytes()
+}
+
+pub fn load_cases(path: &Path) -> Result<Vec<Case>, String> {
+  let bytes = std::fs::read(path)
+    .map_err(|e| format!("cannot read cases {}: {e}", path.display()))?;
+  decode_cases(&bytes)
+    .map_err(|e| format!("invalid cases {}: {e}", path.display()))
+}
+
 /// Data hints in the same grammar, for the in-process FFI.
 pub fn decode_hints(bytes: &[u8]) -> Result<Vec<HintEntry>, String> {
   let mut r = Reader::new(bytes);
@@ -280,6 +404,10 @@ fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<(), String> {
         "an execution package"
       } else if m == GROUPS_MAGIC {
         "a function grouping"
+      } else if m == INVOCATION_MAGIC {
+        "an invocation"
+      } else if m == CASES_MAGIC {
+        "a case file"
       } else {
         "not an Aiur artifact"
       }
@@ -298,7 +426,7 @@ fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 // Bytecode
 
-fn put_type(w: &mut Writer, ty: &Type) {
+pub(crate) fn put_type(w: &mut Writer, ty: &Type) {
   match ty {
     Type::Field => w.u8(0),
     Type::Tuple { items } => {
@@ -316,7 +444,7 @@ fn put_type(w: &mut Writer, ty: &Type) {
   }
 }
 
-fn ty(r: &mut Reader<'_>) -> Result<Type, String> {
+pub(crate) fn ty(r: &mut Reader<'_>) -> Result<Type, String> {
   Ok(match r.tag("type", 4)? {
     0 => Type::Field,
     1 => Type::Tuple { items: r.list(ty)? },

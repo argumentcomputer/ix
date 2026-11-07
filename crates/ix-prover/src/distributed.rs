@@ -34,9 +34,17 @@ struct Worker {
   input: PathBuf,
   owned: Vec<Vec<u64>>,
 }
+/// The public invocation is an Ixon file (`aiur::artifact`), named by path.
+fn invocation_file<'de, D: serde::Deserializer<'de>>(
+  d: D,
+) -> Result<Invocation, D::Error> {
+  Invocation::load(&PathBuf::deserialize(d)?).map_err(serde::de::Error::custom)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Spec {
+  #[serde(deserialize_with = "invocation_file")]
   invocation: Invocation,
   workers: Vec<Worker>,
   exec_jobs: usize,
@@ -90,8 +98,8 @@ fn record(
       reservation.reserve(
         usize::try_from(bytes.saturating_mul(8)).unwrap_or(usize::MAX),
       )?;
-      let input: Invocation =
-        read_json(&source.input).map_err(super::PrepFailure::Other)?;
+      let input =
+        Invocation::load(&source.input).map_err(super::PrepFailure::Other)?;
       let args = program
         .field()
         .decode(&spec.invocation.args)

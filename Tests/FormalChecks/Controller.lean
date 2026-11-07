@@ -135,15 +135,10 @@ def main (argv : List String) : IO UInt32 := do
   (← IO.getStdout).flush
   let c : Context := { out, report, env }
   try
-    let cases ← IO.ofExcept ((← readJson (fixtures / "claims.json")).getArr?)
-    let some claim := cases.findSome? fun entry =>
-        if (entry.getObjValAs? Bool "accept").toOption == some true &&
-            (entry.getObjValAs? String "label").toOption == some "CheckEnv frontier-asm (Nat.add_comm)"
-        then (entry.getObjVal? "invocation").toOption else none
-      | fail "claims.json has no accepted CheckEnv frontier-asm (Nat.add_comm) case"
-    let invocation := out / "claim.json"
-    IO.FS.writeFile invocation claim.compress
-    let inputs := #[invocation, fixtures / "inner/input.json", fixtures / "aggregation.json.wrap.json"]
+    let claim ← caseInvocation (fixtures / "claims.ixt") "CheckEnv frontier-asm (Nat.add_comm)"
+    let invocation := out / "claim.ixi"
+    IO.FS.writeBinFile invocation claim
+    let inputs := #[invocation, fixtures / "inner/input.ixi", fixtures / "aggregation.ixt.wrap.ixi"]
     let mut jobs : Array Json := #[]
     let mut references : Array (ByteArray × ByteArray) := #[]
     for i in [0:3] do
@@ -169,9 +164,11 @@ def main (argv : List String) : IO UInt32 := do
           ("artifact", toJson artifact.toString), ("input", toJson source.toString),
           ("output", toJson (out / s!"proof-{i}-{copy}").toString), ("priority", toJson (i != 0)),
           ("options", Json.mkObj [("max_rows", toJson rows), ("retention", "regenerate")])])
+    let entries ← artifacts.zipIdx.mapM fun (p, i) => do
+      return Json.mkObj [("path", toJson p.toString), ("digest", toJson (← artifactDigest p)),
+        ("kind", toJson (if i == 0 then "ixvm" else "recursion"))]
     let config := Json.mkObj [
-      ("artifacts", toJson (artifacts.zipIdx.map fun (p, i) => Json.mkObj [
-        ("path", toJson p.toString), ("kind", toJson (if i == 0 then "ixvm" else "recursion"))])),
+      ("artifacts", toJson entries),
       ("devices", toJson devices), ("exec_jobs", toJson 2), ("threads_per_prover", toJson 4),
       ("max_ram_bytes", toJson (8 * 2 ^ 30)), ("texray", toJson true)]
     let directory ← resident c binary "resident" config jobs (jobs.map fun _ => 0)
@@ -195,7 +192,7 @@ def main (argv : List String) : IO UInt32 := do
 
     -- A real dependency-bearing IxVM environment, with all worker records
     -- contributing to one public claim rather than independent leaf claims.
-    let tiny := fixtures / "claims.json.controller.ixe"
+    let tiny := fixtures / "claims.ixt.controller.ixe"
     unless ← tiny.pathExists do
       fail "regenerate formal-aiur-tests fixtures: missing controller environment"
     let ix := (← absolute ".lake/build/bin/ix").toString

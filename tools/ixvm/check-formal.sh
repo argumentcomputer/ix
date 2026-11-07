@@ -40,9 +40,9 @@ if [[ -z ${IX_AGGR_ARTIFACT:-} ]]; then
 fi
 export IX_AIUR_ARTIFACT IX_AGGR_ARTIFACT
 
-lake env .lake/build/bin/formal-aiur-tests "$formal_tmp/claims.json"
-target/release/ixvm-proof test "$IX_AIUR_ARTIFACT" "$formal_tmp/claims.json"
-.lake/build/bin/ix check --ixe "$formal_tmp/claims.json.ixe" Nat.add_comm
+lake env .lake/build/bin/formal-aiur-tests "$formal_tmp/claims.ixt"
+target/release/ixvm-proof test "$IX_AIUR_ARTIFACT" "$formal_tmp/claims.ixt"
+.lake/build/bin/ix check --ixe "$formal_tmp/claims.ixt.ixe" Nat.add_comm
 .lake/build/bin/ix prove Nat.add_comm > "$formal_tmp/prove.log"
 cat "$formal_tmp/prove.log"
 formal_proof=$(tail -n 1 "$formal_tmp/prove.log")
@@ -52,14 +52,14 @@ AIUR_TRACE_ONLY_LOOKUPS=1 .lake/build/bin/ix verify "$formal_proof"
 target/release/stark-verifier fixture "$formal_tmp/inner"
 target/release/stark-verifier ranges "$formal_tmp/inner/proof.bin" "$formal_tmp/ranges" 1
 .lake/build/bin/formal-checks ranges "$formal_tmp"
-target/release/stark-verifier test "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json"
-target/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" "$formal_tmp/outer"
-target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.json" "$formal_tmp/outer/proof.bin"
-AIUR_TRACE_ONLY_LOOKUPS=1 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.json" "$formal_tmp/outer/proof.bin"
-.lake/build/bin/formal-aggregate-tests "$formal_tmp/aggregation.json"
-target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.json"
-target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.json.wrap.json" "$formal_tmp/aggregate"
-target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/public.json" "$formal_tmp/aggregate/proof.bin"
+target/release/stark-verifier test "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.ixi"
+target/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.ixi" "$formal_tmp/outer"
+target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.ixi" "$formal_tmp/outer/proof.bin"
+AIUR_TRACE_ONLY_LOOKUPS=1 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.ixi" "$formal_tmp/outer/proof.bin"
+.lake/build/bin/formal-aggregate-tests "$formal_tmp/aggregation.ixt"
+target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.ixt"
+target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.ixt.wrap.ixi" "$formal_tmp/aggregate"
+target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/public.ixi" "$formal_tmp/aggregate/proof.bin"
 
 .lake/build/bin/formal-checks controller "$formal_tmp" \
   --ixvm-artifact "$IX_AIUR_ARTIFACT" \

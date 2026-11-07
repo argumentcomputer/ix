@@ -101,8 +101,7 @@ fn prepare(
     reservation.reserve(
       usize::try_from(bytes.saturating_mul(8)).unwrap_or(usize::MAX),
     )?;
-    let input: Invocation =
-      read_json(&job.input).map_err(PrepFailure::Other)?;
+    let input = Invocation::load(&job.input).map_err(PrepFailure::Other)?;
     let valid = match kind {
       Kind::Ixvm => {
         input.entry == "IxVM::verify_claim" && input.args.len() == 8
@@ -399,6 +398,13 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
   for artifact in &config.artifacts {
     let (package, digest) = aiur::artifact::Package::load(&artifact.path)?;
     eprintln!("artifact {}: blake3 {digest}", artifact.path.display());
+    if digest != aiur::artifact::Digest::from_hex(&artifact.digest)? {
+      return Err(format!(
+        "artifact {} has digest {digest}, but the configuration names {}",
+        artifact.path.display(),
+        artifact.digest
+      ));
+    }
     let (program, trace) = package.traced()?;
     programs.push(program.check_field::<Val>()?);
     artifacts.push(trace);
