@@ -248,8 +248,9 @@ def registry : List Entry := [
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
-  -- Compression CLI setup and proof-rejection checks, run explicitly.
-  .runner "compression-cli" (.manual "compression CLI setup and proof-rejection checks; needs `lake build ix`") (do
+  -- Compression CLI setup and proof-rejection checks, and the bundled release
+  -- keys' acceptance of the formal backends, run explicitly.
+  .runner "compression-cli" (.manual "compression CLI setup, proof-rejection and release-acceptance checks; needs `lake build ix`, and exports the IxVM and aggregation artifacts unless IX_AIUR_ARTIFACT and IX_AGGR_ARTIFACT name them") (do
     Tests.CompressionCli.run
     return 0)
 ]
