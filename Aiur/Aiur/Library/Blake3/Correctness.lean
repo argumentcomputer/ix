@@ -408,8 +408,8 @@ theorem g_function_spec (a b c d mx my : UInt32) :
     #v[a2, b2, c2, d2] = mix a b c d mx my := by
   rfl
 
-/-- The 8 patterns of `Blake3::g(state, j, mx, my)` in `Aiur.Library.Blake3` match
-the 4 column and 4 diagonal `g` applications in a BLAKE3 round. -/
+/-- Helper for `compressInnerJ`, indexing the 4 column and 4 diagonal `g`
+applications (`Blake3::g_function`) in `Blake3::compress_inner_j`. -/
 theorem g_spec (state : Block) (j : Fin 8) (mx my : UInt32) :
     (match j.val with
      | 0 => g state 0 4 8 12 mx my
@@ -429,8 +429,9 @@ theorem g_spec (state : Block) (j : Fin 8) (mx my : UInt32) :
 
 /-! ### 4. `round`, `permute`, and `compress` Specifications -/
 
-/-- `Blake3::compress_inner_j(state, m, 0)` in `Aiur.Library.Blake3` computes
-`round state m schedules[0]`. -/
+/-- `Blake3::compress_inner_j` in `Aiur.Library.Blake3` applies the 8 `g_function`
+steps to the 16 state words `state[0..16]` and 16 message words `state[16..32]`,
+computing `round state m schedules[0]`. -/
 def compressInnerJ (state m : Block) : Block :=
   let state := g state 0 4 8 12 m[0] m[1]
   let state := g state 1 5 9 13 m[2] m[3]
@@ -707,133 +708,50 @@ theorem cvBytes_inj {cv1 cv2 : CV} (h : cvBytes cv1 = cvBytes cv2) : cv1 = cv2 :
       cv1[w] = cv2[w])
   exact hw
 
-/-- `Blake3::address_to_fields(address: [G; 32]) -> [G; 5]` packs a 32-byte digest into
-4 56-bit (7-byte) field limbs and 1 32-bit (4-byte) field limb using `U64::to_field` and
-`U32::to_field`. -/
-def addressToFields (F : Type) [Field F] (addr : Digest) : Vector F 5 :=
-  let limb0 : F := ((U64.pack56 addr[0].toNat addr[1].toNat addr[2].toNat
-    addr[3].toNat addr[4].toNat addr[5].toNat addr[6].toNat : Nat) : F)
-  let limb1 : F := ((U64.pack56 addr[7].toNat addr[8].toNat addr[9].toNat
-    addr[10].toNat addr[11].toNat addr[12].toNat addr[13].toNat : Nat) : F)
-  let limb2 : F := ((U64.pack56 addr[14].toNat addr[15].toNat addr[16].toNat
-    addr[17].toNat addr[18].toNat addr[19].toNat addr[20].toNat : Nat) : F)
-  let limb3 : F := ((U64.pack56 addr[21].toNat addr[22].toNat addr[23].toNat
-    addr[24].toNat addr[25].toNat addr[26].toNat addr[27].toNat : Nat) : F)
-  let limb4 : F := ((U32.pack addr[28].toNat addr[29].toNat addr[30].toNat
-    addr[31].toNat : Nat) : F)
-  #v[limb0, limb1, limb2, limb3, limb4]
+/-- `Blake3::pack_digest(h: [UInt32::U32; 8]) -> [Field; 8]` converts each 32-bit
+word of a chaining value into a field element via `UInt32::to_field`. -/
+def packDigest (F : Type) [Field F] (cv : CV) : Vector F 8 :=
+  cv.map (fun w => (w.toNat : F))
 
-theorem address_to_fields_limb_eq {F : Type} [Field F] (addr : Digest) :
-    (addressToFields F addr)[0] =
-      (addr[0].toNat : F) + 256 * (addr[1].toNat : F) + 65536 * (addr[2].toNat : F) +
-      16777216 * (addr[3].toNat : F) + 4294967296 * (addr[4].toNat : F) +
-      1099511627776 * (addr[5].toNat : F) + 281474976710656 * (addr[6].toNat : F) ∧
-    (addressToFields F addr)[4] =
-      (addr[28].toNat : F) + 256 * (addr[29].toNat : F) + 65536 * (addr[30].toNat : F) +
-      16777216 * (addr[31].toNat : F) := by
-  unfold addressToFields U64.pack56 U32.pack
-  simp only [Vector.getElem_mk, List.getElem_toArray, List.getElem_cons_zero,
-    List.getElem_cons_succ]
-  constructor <;> (push_cast; ring)
+/-- Under `U32.Compatible F`, `packDigest F` is injective on 8-word chaining values. -/
+theorem pack_digest_inj {F : Type} [Field F] (large : U32.Compatible F) :
+    Function.Injective (packDigest F) := by
+  intro a b h
+  ext i hi
+  have hi_eq := congrArg (fun v : Vector F 8 => v[i]) h
+  simp only [packDigest, Vector.getElem_map] at hi_eq
+  have ha_lt : a[i].toNat < 3 * U32.base := by
+    have := a[i].toNat_lt; unfold U32.base; omega
+  have hb_lt : b[i].toNat < 3 * U32.base := by
+    have := b[i].toNat_lt; unfold U32.base; omega
+  exact large ha_lt hb_lt hi_eq
 
-theorem limb7_inj {F : Type} [Field F] (large : U64.Compatible F)
-    {a0 a1 a2 a3 a4 a5 a6 b0 b1 b2 b3 b4 b5 b6 : UInt8}
-    (h : ((U64.pack56 a0.toNat a1.toNat a2.toNat a3.toNat a4.toNat a5.toNat a6.toNat : Nat) : F) =
-         ((U64.pack56 b0.toNat b1.toNat b2.toNat b3.toNat b4.toNat b5.toNat b6.toNat : Nat) : F)) :
-    a0.toNat = b0.toNat ∧ a1.toNat = b1.toNat ∧ a2.toNat = b2.toNat ∧
-    a3.toNat = b3.toNat ∧ a4.toNat = b4.toNat ∧ a5.toNat = b5.toNat ∧
-    a6.toNat = b6.toNat := by
-  have hl := U64.natCast_inj large
-    (U64.pack56_lt a0.toNat_lt a1.toNat_lt a2.toNat_lt a3.toNat_lt a4.toNat_lt a5.toNat_lt a6.toNat_lt)
-    (U64.pack56_lt b0.toNat_lt b1.toNat_lt b2.toNat_lt b3.toNat_lt b4.toNat_lt b5.toNat_lt b6.toNat_lt) h
-  exact (U64.pack56_inj
-    a0.toNat_lt a1.toNat_lt a2.toNat_lt a3.toNat_lt a4.toNat_lt a5.toNat_lt a6.toNat_lt
-    b0.toNat_lt b1.toNat_lt b2.toNat_lt b3.toNat_lt b4.toNat_lt b5.toNat_lt b6.toNat_lt).mp hl
+/-- `Blake3::address_to_fields(bytes: [U8; 32]) -> [Field; 32]` converts each byte
+of a 32-byte digest into a field element via `UInt8::to_field`. -/
+def addressToFields (F : Type) [Field F] (addr : Digest) : Vector F 32 :=
+  addr.map (fun b => (b.toNat : F))
 
-theorem limb4_inj {F : Type} [Field F] (large : U64.Compatible F)
-    {a0 a1 a2 a3 b0 b1 b2 b3 : UInt8}
-    (h : ((U32.pack a0.toNat a1.toNat a2.toNat a3.toNat : Nat) : F) =
-         ((U32.pack b0.toNat b1.toNat b2.toNat b3.toNat : Nat) : F)) :
-    a0.toNat = b0.toNat ∧ a1.toNat = b1.toNat ∧ a2.toNat = b2.toNat ∧
-    a3.toNat = b3.toNat := by
-  have ha0 := a0.toNat_lt; have ha1 := a1.toNat_lt; have ha2 := a2.toNat_lt; have ha3 := a3.toNat_lt
-  have hb0 := b0.toNat_lt; have hb1 := b1.toNat_lt; have hb2 := b2.toNat_lt; have hb3 := b3.toNat_lt
-  have hl := U64.natCast_inj large
-    (by have := U32.pack_lt ha0 ha1 ha2 ha3; unfold U32.base U64.fieldBound at *; omega)
-    (by have := U32.pack_lt hb0 hb1 hb2 hb3; unfold U32.base U64.fieldBound at *; omega) h
-  unfold U32.pack at hl
-  omega
+/-- Under `U32.Compatible F`, `addressToFields F` is injective on 32-byte digests. -/
+theorem address_to_fields_inj {F : Type} [Field F] (large : U32.Compatible F) :
+    Function.Injective (addressToFields F) := by
+  intro a b h
+  ext i hi
+  have hi_eq := congrArg (fun v : Vector F 32 => v[i]) h
+  simp only [addressToFields, Vector.getElem_map] at hi_eq
+  have ha_lt : a[i].toNat < 3 * U32.base := by
+    have := a[i].toNat_lt; unfold U32.base; omega
+  have hb_lt : b[i].toNat < 3 * U32.base := by
+    have := b[i].toNat_lt; unfold U32.base; omega
+  exact large ha_lt hb_lt hi_eq
 
-/-- Under `U64.Compatible F`, `addressToFields F` is injective on 32-byte digests. -/
-theorem address_to_fields_inj {F : Type} [Field F] (large : U64.Compatible F)
-    {a b : Digest} :
-    addressToFields F a = addressToFields F b ↔ a = b := by
-  constructor
-  · intro h
-    have h0 : (addressToFields F a)[0] = (addressToFields F b)[0] := by rw [h]
-    have h1 : (addressToFields F a)[1] = (addressToFields F b)[1] := by rw [h]
-    have h2 : (addressToFields F a)[2] = (addressToFields F b)[2] := by rw [h]
-    have h3 : (addressToFields F a)[3] = (addressToFields F b)[3] := by rw [h]
-    have h4 : (addressToFields F a)[4] = (addressToFields F b)[4] := by rw [h]
-    simp only [addressToFields, Vector.getElem_mk, List.getElem_toArray,
-      List.getElem_cons_zero, List.getElem_cons_succ] at h0 h1 h2 h3 h4
-    obtain ⟨e0, e1, e2, e3, e4, e5, e6⟩ := limb7_inj large h0
-    obtain ⟨e7, e8, e9, e10, e11, e12, e13⟩ := limb7_inj large h1
-    obtain ⟨e14, e15, e16, e17, e18, e19, e20⟩ := limb7_inj large h2
-    obtain ⟨e21, e22, e23, e24, e25, e26, e27⟩ := limb7_inj large h3
-    obtain ⟨e28, e29, e30, e31⟩ := limb4_inj large h4
-    ext i hi
-    have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 ∨
-           i = 8 ∨ i = 9 ∨ i = 10 ∨ i = 11 ∨ i = 12 ∨ i = 13 ∨ i = 14 ∨ i = 15 ∨
-           i = 16 ∨ i = 17 ∨ i = 18 ∨ i = 19 ∨ i = 20 ∨ i = 21 ∨ i = 22 ∨ i = 23 ∨
-           i = 24 ∨ i = 25 ∨ i = 26 ∨ i = 27 ∨ i = 28 ∨ i = 29 ∨ i = 30 ∨ i = 31 := by omega
-    rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · exact e0
-    · exact e1
-    · exact e2
-    · exact e3
-    · exact e4
-    · exact e5
-    · exact e6
-    · exact e7
-    · exact e8
-    · exact e9
-    · exact e10
-    · exact e11
-    · exact e12
-    · exact e13
-    · exact e14
-    · exact e15
-    · exact e16
-    · exact e17
-    · exact e18
-    · exact e19
-    · exact e20
-    · exact e21
-    · exact e22
-    · exact e23
-    · exact e24
-    · exact e25
-    · exact e26
-    · exact e27
-    · exact e28
-    · exact e29
-    · exact e30
-    · exact e31
-  · rintro rfl
-    rfl
-
-/-- `Blake3::verify_bytes_against(bytes, expected_addr)` asserts that the 5 field limbs
-`address_to_fields(bytes_to_addr(bytes))` equal `address_to_fields(expected_addr)`.
-Under `U64.Compatible F`, this field-array equality holds if and only if the BLAKE3 digest
-of `bytes` equals `expected_addr`. -/
-theorem verify_bytes_against_iff {F : Type} [Field F] (large : U64.Compatible F)
+/-- `Blake3::verify_bytes_against(bytes, expected)` asserts that the 32 field elements
+`address_to_fields(digest_bytes(h))` equal `address_to_fields(expected)`.
+Under `U32.Compatible F`, this field-array equality holds if and only if the BLAKE3 digest
+of `bytes` equals `expectedAddr`. -/
+theorem verify_bytes_against_iff {F : Type} [Field F] (large : U32.Compatible F)
     (bytes : List UInt8) (expectedAddr : Digest) :
     addressToFields F (digest bytes) = addressToFields F expectedAddr ↔
       digest bytes = expectedAddr :=
-  address_to_fields_inj large
+  (address_to_fields_inj large).eq_iff
 
 end Aiur.Library.Blake3

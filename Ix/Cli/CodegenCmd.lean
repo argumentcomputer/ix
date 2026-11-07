@@ -12,8 +12,10 @@ public section
 namespace Ix.Cli.CodegenCmd
 
 def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let formalAiur ← IO.ofExcept IxVM.RoleSpecGen.renderFormalAiur
   let outputs := #[
-    ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", Ix.RoleBinding.RustSpecGen.shape)]
+    ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", IxVM.RoleSpecGen.renderSpecShapeTsv),
+    ("IxVM/IxVM/Modules/KernelRoleSpec.aiur", formalAiur)]
   let mut ok := true
   for (path, contents) in outputs do
     if checkOnly then

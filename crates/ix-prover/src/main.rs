@@ -252,10 +252,11 @@ fn prove(
   device: Option<i32>,
 ) -> (Job, u32, Value) {
   let Prepared { job, entry, args, record, mut report, .. } = prepared;
+  let effective_device = job.options.device.or(device);
   let result = (|| -> Result<(), String> {
     let plan = |budget: u64| {
       let mut options = job.options.clone();
-      options.device = device;
+      options.device = effective_device;
       options.max_ram_bytes =
         Some(options.max_ram_bytes.unwrap_or(budget).min(budget));
       backend.plan_record(&record, &options, 0)
@@ -273,7 +274,7 @@ fn prove(
     let batch = wide.unwrap_or(narrow);
     report["plan"] = serde_json::to_value(&batch).map_err(|e| e.to_string())?;
     report["lane"] = lane.into();
-    report["device"] = device.into();
+    report["device"] = effective_device.into();
     report["borrowed_workspace"] = borrowed.into();
     if !batch.fits {
       return Ok(());
@@ -525,10 +526,20 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
       scope.spawn(move || {
         let pools = Pools { lane: &rayon, wide };
-        while let Some(prepared) = records.pop() {
+        while let Some(prepared) = records.pop_matching(|r| {
+          r.job.options.device.is_none() || r.job.options.device == device
+        }) {
           log.event(json!({"phase":"prove", "id":prepared.job.id, "lane":lane, "device":device}));
           let id = prepared.artifact;
-          let (job, code, report) = prove(&backends[id], kinds[id].kind, prepared, workspace, &pools, lane, device);
+          let (job, code, report) = prove(
+            &backends[id],
+            kinds[id].kind,
+            prepared,
+            workspace,
+            &pools,
+            lane,
+            device,
+          );
           let _ = send.send(Event::Done(job, code, report, false));
         }
       });

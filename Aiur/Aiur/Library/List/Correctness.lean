@@ -130,6 +130,38 @@ theorem repList_heapMono {α : Type*} (enumName : String)
     HeapMono (fun h ptr => RepList enumName R h xs ptr) :=
   HeapMono.repLinkedList enumName "Nil" "Cons" hR xs
 
+theorem repList_inj {α : Type*} {enumName : String}
+    {R : Heap F → α → SourceValue F → Prop} {h : Heap F}
+    (hR : ∀ {x₁ x₂ v}, R h x₁ v → R h x₂ v → x₁ = x₂)
+    {xs₁ xs₂ : _root_.List α} {ptr : SourceValue F}
+    (h₁ : RepList enumName R h xs₁ ptr)
+    (h₂ : RepList enumName R h xs₂ ptr) :
+    xs₁ = xs₂ := by
+  induction h₁ generalizing xs₂ with
+  | nil cell₁ =>
+      cases h₂ with
+      | nil _ => rfl
+      | cons cell₂ _ _ =>
+          rw [cell₁] at cell₂
+          injection cell₂ with hVal
+          injection hVal with _ hCtor _
+          exact absurd hCtor (by decide)
+  | cons cell₁ headRep₁ _ ih =>
+      cases h₂ with
+      | nil cell₂ =>
+          rw [cell₁] at cell₂
+          injection cell₂ with hVal
+          injection hVal with _ hCtor _
+          exact absurd hCtor.symm (by decide)
+      | cons cell₂ headRep₂ tailRep₂ =>
+          rw [cell₁] at cell₂
+          injection cell₂ with hVal
+          injection hVal with _ _ hArgs
+          injection hArgs with hHead hTail
+          injection hTail with hTailPtr _
+          subst hHead hTailPtr
+          exact _root_.List.cons_eq_cons.mpr ⟨hR headRep₁ headRep₂, ih tailRep₂⟩
+
 /-- Allocate `&Lists::Node::Nil` at the end of `h : Heap F`. -/
 def allocNil (enumName : String) (h : Heap F) : SourceValue F × Heap F :=
   (.ptr (.enum enumName) h.length, h ++ [.construct enumName "Nil" []])
@@ -203,6 +235,14 @@ def isEmpty [Zero F] [One F] (xs : _root_.List α) : F :=
 theorem is_empty_spec [Field F] (xs : _root_.List α) :
     (isEmpty xs : F) = if xs.isEmpty then 1 else 0 := by
   cases xs <;> rfl
+
+theorem is_empty_one_iff [Field F] (xs : _root_.List α) :
+    (isEmpty xs : F) = 1 ↔ xs = [] := by
+  cases xs <;> simp [isEmpty]
+
+theorem is_empty_zero_iff [Field F] (xs : _root_.List α) :
+    (isEmpty xs : F) = 0 ↔ xs ≠ [] := by
+  cases xs <;> simp [isEmpty]
 
 /-- `Lists::reverse_acc(list, acc)` computes `list.reverseAux acc = list.reverse ++ acc`. -/
 def reverseAcc (xs acc : _root_.List α) : _root_.List α :=

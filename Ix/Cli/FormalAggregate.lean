@@ -33,7 +33,7 @@ def identity (host artifact : String) : IO Identity :=
     command host #["key", artifact, dir.toString]
     let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / "identity.json")))
     let channel : Nat ← IO.ofExcept (json.getObjValAs? Nat "call_channel")
-    unless channel == 1 do throw (IO.userError "unexpected formal call namespace")
+    unless channel == Aiur.functionChannel.n do throw (IO.userError "unexpected formal call namespace")
     let key ← IO.FS.readBinFile (dir / "key.bin")
     let index ← IO.ofExcept (json.getObjValAs? Nat "function_index")
     return { key, index }
@@ -58,10 +58,9 @@ def context (p : Cli.Parsed) : IO Context := do
   return { ixvmArtifact, aggrArtifact, ixvm, aggr, allowed }
 
 def outerClaim (ctx : Context) (kind : ChildKind) (claim : Ix.Claim) : Array Aiur.G :=
-  let bytes := Ix.Claim.ser claim
   match kind with
-  | .ixvm => #[1, .ofNat ctx.ixvm.index] ++ MultiStark.digestGs bytes
-  | .aggr => #[1, .ofNat ctx.aggr.index] ++ Aggr.pubInput ctx.allowed bytes
+  | .ixvm => Aiur.buildClaim ctx.ixvm.index (MultiStark.digestGs (Ix.Claim.ser claim)) #[]
+  | .aggr => Aggr.aggregateOuterClaim ctx.allowed ctx.aggr.index claim
 
 def rawProof (kind : ChildKind) (proof : ByteArray) : IO ByteArray := do
   let magic := (if kind == .ixvm then "IXAIUR2\x00" else "IXAGGR2\x00").toUTF8
@@ -216,7 +215,7 @@ structure RangeNode where
   proof : ByteArray
 
 def rangeClaims (ctx : Context) (statement : ByteArray) : ByteArray :=
-  MultiStark.serializeClaims #[#[1, .ofNat ctx.aggr.index] ++ Aggr.pubInput ctx.allowed statement]
+  MultiStark.serializeClaims #[Aiur.buildClaim ctx.aggr.index (Aggr.pubInput ctx.allowed statement) #[]]
 
 def verifyRange (ctx : Context) (node : RangeNode) : IO Unit :=
   IO.FS.withTempFile fun _ path => do

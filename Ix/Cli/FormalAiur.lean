@@ -6,7 +6,6 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
-public import Aiur.SourceBundle
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
@@ -52,6 +51,22 @@ def repoRoot : IO System.FilePath := do
     if ← (root / "IxVM" / "lakefile.lean").pathExists then return root
   return "."
 
+/-- Read an ordered `.sources` manifest. Paths are relative to the manifest;
+blank lines and `#` comments are ignored. -/
+private def readSourceBundle (manifest : System.FilePath) : IO String := do
+  let directory := manifest.parent.getD "."
+  let mut result := ""
+  let mut seen : List String := []
+  for raw in (← IO.FS.readFile manifest).splitOn "\n" do
+    let line := raw.trimAscii.toString
+    if line.isEmpty || line.startsWith "#" then continue
+    if seen.contains line then
+      throw (IO.userError s!"duplicate source '{line}' in {manifest}")
+    seen := line :: seen
+    result := result ++ s!"// Source: {line}\n" ++ (← IO.FS.readFile (directory / line)) ++ "\n"
+  if seen.isEmpty then throw (IO.userError s!"empty source bundle {manifest}")
+  return result
+
 def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath mode : String)
     (extra : Array String := #[]) : IO String := do
   if let some path := p.flag? flag then return path.as! String
@@ -64,7 +79,7 @@ def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath m
   command "lake" #["-q", "build", buildTarget] root
   let sourcePath := root / sourcePath
   let source ← if sourcePath.extension == some "sources" then
-      pure (← Aiur.SourceBundle.read sourcePath).toUTF8
+      pure (← readSourceBundle sourcePath).toUTF8
     else IO.FS.readBinFile sourcePath
   let compiler ← IO.FS.readBinFile exporter
   let digest := Address.blake3 ((Address.blake3 compiler).hash ++ source)

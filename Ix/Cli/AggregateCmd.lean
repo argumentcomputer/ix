@@ -27,7 +27,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."
     "legacy"; "Retired legacy Aiur backend flag."
-    "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
+    "formal"; "Compatibility alias for the default certified Aiur backend."
     "aiur-artifact" : String; "Trusted formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 0, which lets the planner choose the largest shards within the RAM budget and, on CUDA, the device cell budget AIUR_TRACE_SHARD_MAX_CELLS, default 1.5e9). Small caps multiply recursive verification work."

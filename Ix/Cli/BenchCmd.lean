@@ -245,6 +245,7 @@ def backendSpecs : List BackendSpec := [
   -- the fast Phase-1-only signal (witness generation, no proving),
   -- `unscheduled`: a local / on-demand mode that never uploads.
   { name := "aiur", defaultMode := "prove", inputs := .perConstant,
+    disabled := some "LegacyAiur bench-typecheck has been retired; use aiur-sharded-env",
     testbeds := [("prove", "aiur"),
                  ("execute", "aiur-execute")],
     unscheduled := ["execute"],
@@ -783,7 +784,7 @@ is not a benchmark run"
       IO.eprintln s!"[bench] ix shard failed (exit {exit})"
       return 1
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check", "--legacy", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib,
+      #["check", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib,
         "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"

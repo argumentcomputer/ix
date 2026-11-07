@@ -86,3 +86,38 @@ theorem or_field {F : Type*} [Field F] (two : (2 : F) ≠ 0) (a b : BitVec 8) :
   linear_combination -h
 
 end Aiur.Library.U8
+
+namespace Aiur.Library.U8Facts
+
+theorem xor_lt_256 {a b : Nat} (ha : a < 256) (hb : b < 256) :
+    Nat.xor a b < 256 := by
+  have h : Nat.xor a b = (BitVec.ofNat 8 a ^^^ BitVec.ofNat 8 b).toNat := by
+    simp [BitVec.toNat_xor, BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+  rw [h]
+  exact (BitVec.ofNat 8 a ^^^ BitVec.ofNat 8 b).isLt
+
+theorem xor_and_identity (a b : Nat) :
+    a + b = Nat.xor a b + 2 * Nat.land a b :=
+  U8.nat_xor_and_sum a b
+
+theorem xor_or_identity (a b : Nat) :
+    2 * Nat.lor a b = a + b + Nat.xor a b :=
+  U8.nat_xor_or_sum a b
+
+theorem land_128_div {a : Nat} (ha : a < 256) :
+    Nat.land a 128 / 128 = a / 128 := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  have h1 : (128 : Nat) = 2 ^ 7 := rfl
+  have hland : Nat.land a (2 ^ 7) = a &&& 2 ^ 7 := rfl
+  rw [h1, hland, ← Nat.shiftRight_eq_div_pow, ← Nat.shiftRight_eq_div_pow,
+      Nat.testBit_shiftRight, Nat.testBit_shiftRight, Nat.testBit_and]
+  rcases i with _ | i
+  · have : Nat.testBit 128 7 = true := rfl
+    simp [this]
+  · have hlt : a < 2 ^ (7 + (i + 1)) := by
+      calc a < 2 ^ 8 := ha
+      _ ≤ 2 ^ (7 + (i + 1)) := Nat.pow_le_pow_right (by omega) (by omega)
+    simp [Nat.testBit_lt_two_pow hlt]
+
+end Aiur.Library.U8Facts
