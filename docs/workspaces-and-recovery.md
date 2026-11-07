@@ -1,8 +1,9 @@
 # Workspaces and recovery
 
-Use `jcb/x86` for the compiler integration tree. Keep new work in a named,
-bounded task and close its temporary workspace after its source, useful evidence
-and validation are recorded. Local `plans/` directories remain ignored; they
+IxCC is developed in ix, under `IxCC/`; its standalone history is preserved
+there by the subtree merge. Keep new work in a named, bounded task and close
+its temporary workspace after its source, useful evidence and validation are
+recorded. Local `plans/` directories remain ignored; they
 are not the sole durable home of useful source or indispensable evidence.
 
 The October 2026 consolidation preserves source without adopting unfinished
@@ -15,13 +16,15 @@ Phase 1.5 and the first heap-slice objective remain incomplete.
 
 | Repository and reference | Checkpoint | Contents |
 | --- | --- | --- |
-| Compilatr.ix `jcb/phase15-research-2026-10-11` | `c59be1b227bdf7eb9d589c493074aa662ad8e31a` | Selected checker inputs, proof foundations/reviews, unfinished successors and the optional recovery tool. |
-| Compilatr.ix `jcb/pre-cleanup-history-2026-10-11` | `dbc09f330e19015df0eee49af586a7acc65e0b74` | Original donor histories, branch-name map, source/evidence dispositions and retained ignored files. Its tree is an archive, not a combined compiler. |
-| ix `jcb/compilatrix-resource-wip-2026-10-11` | `83f1c0c48790010499b2311a33bc25ccaaec802c` | Older resource checker and fixtures, preserved as WIP. |
-| ix `jcb/compilatrix-donor-history-2026-10-11` | `a55a06d2dd69a14e2463d57e170a4e843c24ff23` | Optimization histories and the source-only untested A6d kernel draft. The tree equals `83f1c0c4`; additional parents preserve history without integrating it. |
+| [standalone repository](https://github.com/argumentcomputer/Compilatr.ix/tree/jcb/phase15-research-2026-10-11) `jcb/phase15-research-2026-10-11` | `c59be1b227bdf7eb9d589c493074aa662ad8e31a` | Selected checker inputs, proof foundations/reviews, unfinished successors and the optional recovery tool. |
+| [standalone repository](https://github.com/argumentcomputer/Compilatr.ix/tree/jcb/pre-cleanup-history-2026-10-11) `jcb/pre-cleanup-history-2026-10-11` | `dbc09f330e19015df0eee49af586a7acc65e0b74` | Original donor histories, branch-name map, source/evidence dispositions and retained ignored files. Its tree is an archive, not a combined compiler. |
+| ix, resource WIP checkpoint | `83f1c0c48790010499b2311a33bc25ccaaec802c` | Older resource checker and fixtures, preserved as WIP. |
+| ix, donor-history checkpoint | `a55a06d2dd69a14e2463d57e170a4e843c24ff23` | Optimization histories and the source-only untested A6d kernel draft. The tree equals `83f1c0c4`; additional parents preserve history without integrating it. |
 
-These are immutable recovery checkpoints. Later source changes need their own
-commits and validation. Preserve the existing Ixby archive and useful toolchain
+These are immutable recovery checkpoints. The two research and history
+checkpoints are not ancestors of IxCC's history, so they stay in the
+standalone repository; the ix checkpoints are ix commits. Later source changes
+need their own commits and validation. Preserve the existing Ixby archive and useful toolchain
 and phase references. Do not infer implementation equivalence from matching
 commit subjects or from a history-preservation merge.
 
@@ -31,8 +34,8 @@ ix Git/jj store also serves other projects and must remain available to them.
 
 ## Restore selected research
 
-Check out the research reference separately from the integration tree. From
-that checkout, use the pinned Lean 4.34.1 environment:
+Check out the research reference (in the standalone repository) separately
+from ix. From that checkout, use the pinned Lean 4.34.1 environment:
 
 ```sh
 nix develop
@@ -62,12 +65,12 @@ limits; preserving a diagnostic or a proof prerequisite does not close that gate
 ## Restore historical work
 
 Fetch the history reference and consult its `README.md`, `branches.tsv`,
-`checkpoints.tsv` and disposition tables. Every original local Compilatr.ix
-branch tip is reachable from `dbc09f33`, including the separately committed
-repin donor snapshot `7100f2f`. Selected ignored source/evidence is either
-stored under `files/BLOB` or already present as a Git blob in the named donor
-repository. The tables give the original path and blob identity needed to
-recover it without overwriting a live workspace.
+`checkpoints.tsv` and disposition tables. Every original local branch tip of
+the standalone repository is reachable from `dbc09f33`, including the
+separately committed repin donor snapshot `7100f2f`. Selected ignored
+source/evidence is either stored under `files/BLOB` or already present as a Git
+blob in the named donor repository. The tables give the original path and blob
+identity needed to recover it without overwriting a live workspace.
 
 Both history checkpoints were fetched into an independent recovery clone.
 All 2,594 retained source/evidence occurrences passed source-hash, copied-byte
@@ -86,7 +89,8 @@ reference. Never remove the shared repository store with a workspace.
 ## Validation and continuation
 
 The cleanup adds no compiler semantic change. The integration candidate must
-pass the complete required local surface before publication:
+pass the complete required local surface before publication, from the `IxCC`
+directory:
 
 ```sh
 nix flake check -L --max-jobs 1 --cores 12

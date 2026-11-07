@@ -11,8 +11,8 @@
       "status": "passed"
     },
     "build": {
-      "drv": "/nix/store/3ih1w3780n0ss09xw7nfrk3anfvbjmcx-Compilatrix.drv",
-      "out": "/nix/store/g1in2asa35l5kgdhywb3ddhq5zk6rvka-Compilatrix",
+      "drv": "/nix/store/3ih1w3780n0ss09xw7nfrk3anfvbjmcx-IxCC.drv",
+      "out": "/nix/store/g1in2asa35l5kgdhywb3ddhq5zk6rvka-IxCC",
       "status": "passed"
     },
     "catalog-contact": {
@@ -169,11 +169,11 @@
     "--print-build-logs"
   ],
   "completed_utc": "2026-09-13T13:36:59.335276+00:00",
-  "cwd": "/home/jcb/projects/compilatrix",
+  "cwd": "/home/jcb/projects/ix/IxCC",
   "existing_modular_golden_and_rebuilt_baseline_bytes_exact": true,
   "exit_code": 0,
   "fence_sha256": "94865b0af769aceb956d4a7e500cf48dc3aee665e40698abc8dae62a31c514e1",
-  "format": "compilatrix/source-evidence-validation/1",
+  "format": "ixcc/source-evidence-validation/1",
   "full_five_width_reference_precheck_passed": true,
   "independent_preparation_gate_passed": true,
   "ledger_sha256": "2848827943b04e1679dd54f63ff88e9325bd5334721bb90b073c363f8a925407",

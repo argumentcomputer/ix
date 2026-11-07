@@ -1239,7 +1239,7 @@
    "maximum_recorded_peak_rss_kb": 11104}],
  "measurement_blake3": "57c1188e9d0855b4160cb6d5a32f18a32f0f7b6fd4f9cd745ce88e3ab1a1286c",
  "freeze_blake3": "c0ea17f430dbde053e39e07eb68db14cf7ad266fa784b09d0acd3844fd5ef7d2",
- "format": "compilatrix/counter-fold-analysis/1",
+ "format": "ixcc/counter-fold-analysis/1",
  "environment":
  {"utc": "2026-09-10T16:29:51Z",
   "stable_blake3": "2b30653ee8c56186ec0600ffde9d16cda0f84d91c50775f9c2aac1f3c894fdd5",
@@ -1343,11 +1343,11 @@
    "worker affinity is pinned; NUMA follows Linux first-touch placement on the pinned worker",
    "turbo, governor, system services, thermal state, and ambient load are observed, not administratively changed",
    "this run is not a dedicated performance-regression baseline"],
-  "format": "compilatrix/benchmark-environment/1",
+  "format": "ixcc/benchmark-environment/1",
   "environment_variables":
   {"OMP_NUM_THREADS": null,
    "NIX_LDFLAGS":
-   "-rpath /home/jcb/projects/compilatrix/outputs/out/lib  -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib",
+   "-rpath /home/jcb/projects/ix/IxCC/outputs/out/lib  -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib -L/nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/lib",
    "NIX_CFLAGS_COMPILE":
    " -frandom-seed=bb05dhrgkr -isystem /nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/include -isystem /nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/include -isystem /nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/include -isystem /nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/include -isystem /nix/store/gj06hl0vb46kf66zpsss4gk5wphfh5lk-compiler-rt-libc-21.1.2-dev/include -isystem /nix/store/gj06hl0vb46kf66zpsss4gk5wphfh5lk-compiler-rt-libc-21.1.2-dev/include -isystem /nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/include -isystem /nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/include -isystem /nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/include -isystem /nix/store/3lll9y925zz9393sa59h653xik66srjb-python3-3.13.9/include -isystem /nix/store/gj06hl0vb46kf66zpsss4gk5wphfh5lk-compiler-rt-libc-21.1.2-dev/include -isystem /nix/store/gj06hl0vb46kf66zpsss4gk5wphfh5lk-compiler-rt-libc-21.1.2-dev/include",
    "MALLOC_PERTURB_": null,

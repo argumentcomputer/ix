@@ -13,7 +13,7 @@
     "source-evidence",
     "source-modular"
   ],
-  "format": "compilatrix/source-evidence-retention/1",
+  "format": "ixcc/source-evidence-retention/1",
   "inventoried_files": 412,
   "inventory_verified": true,
   "source": {

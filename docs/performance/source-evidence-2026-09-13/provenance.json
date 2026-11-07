@@ -1,7 +1,7 @@
 {
   "base_commit": "4878b0252ec531b54a15bc342fe79583bb8d1e82",
   "baseline": {
-    "compilatrix_rebuilt_from_extracted_source": true,
+    "ixcc_rebuilt_from_extracted_source": true,
     "executable": {
       "bytes": 124085888,
       "sha256": "932fc37a26bdade3b7ba2cb12d6c1c5ed89498e3c36636d872ddfef6f1a2f693"
@@ -15,7 +15,7 @@
     "source_files": 796
   },
   "code_files": 645,
-  "format": "compilatrix/source-evidence-reference/1",
+  "format": "ixcc/source-evidence-reference/1",
   "frozen_utc": "2026-09-13T13:37:07.524573+00:00",
   "plan": {
     "comparison_order": [
@@ -38,7 +38,7 @@
       "LEAN_NUM_THREADS": "1",
       "MALLOC_ARENA_MAX": "1"
     },
-    "format": "compilatrix/source-evidence-observation-plan/1",
+    "format": "ixcc/source-evidence-observation-plan/1",
     "frozen_utc": "2026-09-13T13:37:07.524573+00:00",
     "matrix_case_order": [
       "baseline",
@@ -103,8 +103,8 @@
         "status": "passed"
       },
       "build": {
-        "drv": "/nix/store/3ih1w3780n0ss09xw7nfrk3anfvbjmcx-Compilatrix.drv",
-        "out": "/nix/store/g1in2asa35l5kgdhywb3ddhq5zk6rvka-Compilatrix",
+        "drv": "/nix/store/3ih1w3780n0ss09xw7nfrk3anfvbjmcx-IxCC.drv",
+        "out": "/nix/store/g1in2asa35l5kgdhywb3ddhq5zk6rvka-IxCC",
         "status": "passed"
       },
       "catalog-contact": {
@@ -261,11 +261,11 @@
       "--print-build-logs"
     ],
     "completed_utc": "2026-09-13T13:36:59.335276+00:00",
-    "cwd": "/home/jcb/projects/compilatrix",
+    "cwd": "/home/jcb/projects/ix/IxCC",
     "existing_modular_golden_and_rebuilt_baseline_bytes_exact": true,
     "exit_code": 0,
     "fence_sha256": "94865b0af769aceb956d4a7e500cf48dc3aee665e40698abc8dae62a31c514e1",
-    "format": "compilatrix/source-evidence-validation/1",
+    "format": "ixcc/source-evidence-validation/1",
     "full_five_width_reference_precheck_passed": true,
     "independent_preparation_gate_passed": true,
     "ledger_sha256": "2848827943b04e1679dd54f63ff88e9325bd5334721bb90b073c363f8a925407",

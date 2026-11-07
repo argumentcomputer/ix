@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/reference-retention/1",
+  "format": "ixcc/reference-retention/1",
   "archive": "benchmarks/runs/847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea.tar.gz",
   "sha256": "847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea",
   "bytes": 314849251,

@@ -7,7 +7,7 @@
   },
   "base_commit": "8d46aa231fb7e3ae4350a5cd499c16b762cb675d",
   "code_files": 619,
-  "format": "compilatrix/native-sharing-reference/1",
+  "format": "ixcc/native-sharing-reference/1",
   "frozen_utc": "2026-09-12T22:07:55.165935+00:00",
   "host": {
     "allowed_cpus": [

@@ -6,7 +6,7 @@
  "fresh extracted source, empty process environment plus recorded variables, hashed producer/checker seeds, same host and pinned Nix closure",
  "rebuilt_build_blake3": "e32d10a3817b8d20129bf37ef3936b599edac9bad934dd78deaac3d18197162d",
  "original_build_blake3": "e32d10a3817b8d20129bf37ef3936b599edac9bad934dd78deaac3d18197162d",
- "format": "compilatrix/counter-fold-reproduction/1",
+ "format": "ixcc/counter-fold-reproduction/1",
  "executables_exact": true,
  "correctness_exact": true,
  "artifacts_exact": true,

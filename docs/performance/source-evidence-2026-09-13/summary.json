@@ -1520,7 +1520,7 @@
         "certificate_store_bytes": 279203,
         "expected_value": 1599,
         "monolithic": {
-          "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
+          "reason": "IxCC.Pipeline.Error.resource\n  { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
           "status": "rejected"
         },
         "name": "wide-600",
@@ -1838,7 +1838,7 @@
       }
     }
   ],
-  "format": "compilatrix/source-evidence-cost-summary/1",
+  "format": "ixcc/source-evidence-cost-summary/1",
   "phase_unit": "nanoseconds",
   "preparation_regressions": {
     "cases": [
@@ -1931,7 +1931,7 @@
         "accepted": false,
         "kind": "preparation",
         "name": "same-key-changed-body",
-        "reason": "Compilatrix.Ixon.Constant.AddressError.invalid\n  (Compilatrix.Ixon.DecodeCheck.Error.refIndex\n    { member := none, root := Compilatrix.Ixon.DecodeCheck.Root.definitionValue }\n    (Compilatrix.Ixon.DecodeCheck.RefKind.natural)\n    999\n    1)"
+        "reason": "IxCC.Ixon.Constant.AddressError.invalid\n  (IxCC.Ixon.DecodeCheck.Error.refIndex\n    { member := none, root := IxCC.Ixon.DecodeCheck.Root.definitionValue }\n    (IxCC.Ixon.DecodeCheck.RefKind.natural)\n    999\n    1)"
       },
       {
         "hit": false,
@@ -1953,7 +1953,7 @@
         "accepted": false,
         "kind": "preparation",
         "name": "same-key-changed-sharing",
-        "reason": "Compilatrix.Ixon.Constant.AddressError.invalid (Compilatrix.Ixon.DecodeCheck.Error.sharingInvariant)"
+        "reason": "IxCC.Ixon.Constant.AddressError.invalid (IxCC.Ixon.DecodeCheck.Error.sharingInvariant)"
       },
       {
         "hit": true,
@@ -2029,13 +2029,13 @@
         "accepted": false,
         "kind": "preparation",
         "name": "known-address-usage-fuel",
-        "reason": "unit usage check: Compilatrix.Ixon.UsageCheck.UsageErr.fuel"
+        "reason": "unit usage check: IxCC.Ixon.UsageCheck.UsageErr.fuel"
       },
       {
         "accepted": false,
         "kind": "preparation",
         "name": "known-address-candidate-limit",
-        "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 1, limit := 0 }"
+        "reason": "IxCC.Pipeline.Error.resource\n  { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 1, limit := 0 }"
       },
       {
         "accepted": false,
@@ -2073,7 +2073,7 @@
         "run",
         "/tmp/source-evidence-reference-001/comparisons/reference-1"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:37:45.298037+00:00",
       "name": "reference-1",
@@ -2104,7 +2104,7 @@
         "run",
         "/tmp/source-evidence-reference-001/comparisons/prepared-1"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:37:49.728975+00:00",
       "name": "prepared-1",
@@ -2135,7 +2135,7 @@
         "run",
         "/tmp/source-evidence-reference-001/comparisons/prepared-2"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:37:54.200594+00:00",
       "name": "prepared-2",
@@ -2166,7 +2166,7 @@
         "run",
         "/tmp/source-evidence-reference-001/comparisons/reference-2"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:38:00.420774+00:00",
       "name": "reference-2",
@@ -2197,7 +2197,7 @@
         "run",
         "/tmp/source-evidence-reference-001/comparisons/reference-3"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:38:06.624968+00:00",
       "name": "reference-3",
@@ -2228,7 +2228,7 @@
         "run",
         "/tmp/source-evidence-reference-001/comparisons/prepared-3"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:38:11.070672+00:00",
       "name": "prepared-3",
@@ -2260,7 +2260,7 @@
         "/tmp/source-evidence-reference-001/profile-1",
         "reference"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:38:22.486124+00:00",
       "name": "profile-1",
@@ -2292,7 +2292,7 @@
         "/tmp/source-evidence-reference-001/profile-2",
         "reference"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:38:33.948042+00:00",
       "name": "profile-2",
@@ -2324,7 +2324,7 @@
         "/tmp/source-evidence-reference-001/profile-3",
         "reference"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T13:38:45.432385+00:00",
       "name": "profile-3",

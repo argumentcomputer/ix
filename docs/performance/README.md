@@ -18,9 +18,9 @@ shared-host references do not establish dedicated regression thresholds.
 | [Indexed modular assembly](assembly-scaling-2026-09-13/README.md) | Exact baseline/indexed artifacts, cold/unchanged/edit/recovery costs, five assembly widths, and retained replay. Assembly for 611 reachable source declarations falls from 2,180 to 131 ms on the recorded host. |
 | [Reused source preparation](source-evidence-2026-09-13/README.md) | Exact baseline/prepared artifacts, canonical-address reuse, fresh checker equality, five preparation widths, and retained recovery. For 611 declarations, source evidence falls from 1,363 to 499 ms cold and from 475 to 41 ms unchanged on the recorded host. |
 
-Use the [implemented benchmark protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/protocol.md) to
+Use the implemented benchmark protocol (`benchmarks/protocol.md` at archive commit `7599a434`) to
 build, verify, measure, and reproduce the suite. The [benchmark design](../benchmark-plan.md)
 defines comparison rules and expansion criteria; the
 [roadmap](../roadmap.md#performance-measurement) owns PERF2/PERF3 priorities.
-[Interpreter counter evidence](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/thesis-counter-evidence.md) complements native
+Interpreter counter evidence (`docs/thesis-counter-evidence.md` at archive commit `7599a434`) complements native
 measurements without implying a wall-clock speedup.

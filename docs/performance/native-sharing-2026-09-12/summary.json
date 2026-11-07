@@ -2057,7 +2057,7 @@
       "x86_instructions": 195
     }
   ],
-  "format": "compilatrix/native-sharing-reference-summary/1",
+  "format": "ixcc/native-sharing-reference-summary/1",
   "phase_unit": "nanoseconds",
   "processes": [
     {

@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/compiler-scaling-setup/1",
+  "format": "ixcc/compiler-scaling-setup/1",
   "scope": "probes before the frozen reference schedule; not reference samples",
   "generator_worker": "reference/build/tools/compiler-scaling",
   "generator_worker_sha256": "3a42d9602056296fcee04ee91e7eebf1ce59a68bd1912ede3d30e02e97086de7",

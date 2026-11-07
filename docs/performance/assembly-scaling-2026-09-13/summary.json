@@ -1648,7 +1648,7 @@
         "certificate_store_bytes": 279203,
         "expected_value": 1599,
         "monolithic": {
-          "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
+          "reason": "IxCC.Pipeline.Error.resource\n  { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
           "status": "rejected"
         },
         "name": "wide-600",
@@ -1966,7 +1966,7 @@
       }
     }
   ],
-  "format": "compilatrix/assembly-scaling-cost-summary/1",
+  "format": "ixcc/assembly-scaling-cost-summary/1",
   "phase_unit": "nanoseconds",
   "processes": [
     {
@@ -1983,7 +1983,7 @@
         "run",
         "/tmp/assembly-scaling-reference-001/comparisons/reference-1"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:06:55.493255+00:00",
       "name": "reference-1",
@@ -2014,7 +2014,7 @@
         "run",
         "/tmp/assembly-scaling-reference-001/comparisons/indexed-1"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:07:01.728554+00:00",
       "name": "indexed-1",
@@ -2045,7 +2045,7 @@
         "run",
         "/tmp/assembly-scaling-reference-001/comparisons/indexed-2"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:07:07.948918+00:00",
       "name": "indexed-2",
@@ -2076,7 +2076,7 @@
         "run",
         "/tmp/assembly-scaling-reference-001/comparisons/reference-2"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:07:20.363727+00:00",
       "name": "reference-2",
@@ -2107,7 +2107,7 @@
         "run",
         "/tmp/assembly-scaling-reference-001/comparisons/reference-3"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:07:32.774896+00:00",
       "name": "reference-3",
@@ -2138,7 +2138,7 @@
         "run",
         "/tmp/assembly-scaling-reference-001/comparisons/indexed-3"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:07:39.018795+00:00",
       "name": "indexed-3",
@@ -2170,7 +2170,7 @@
         "/tmp/assembly-scaling-reference-001/profile-1",
         "reference"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:07:55.041805+00:00",
       "name": "profile-1",
@@ -2202,7 +2202,7 @@
         "/tmp/assembly-scaling-reference-001/profile-2",
         "reference"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:08:10.976728+00:00",
       "name": "profile-2",
@@ -2234,7 +2234,7 @@
         "/tmp/assembly-scaling-reference-001/profile-3",
         "reference"
       ],
-      "cwd": "/home/jcb/projects/compilatrix",
+      "cwd": "/home/jcb/projects/ix/IxCC",
       "exit_code": 0,
       "finished_utc": "2026-09-13T12:08:26.987400+00:00",
       "name": "profile-3",

@@ -11,8 +11,8 @@
       "status": "passed"
     },
     "build": {
-      "drv": "/nix/store/19md60cnsp2xllqgi5j01l3pa3w7wm13-Compilatrix.drv",
-      "out": "/nix/store/c6xj92ifxkpwjx9p0p7mj19gda1syd49-Compilatrix",
+      "drv": "/nix/store/19md60cnsp2xllqgi5j01l3pa3w7wm13-IxCC.drv",
+      "out": "/nix/store/c6xj92ifxkpwjx9p0p7mj19gda1syd49-IxCC",
       "status": "passed"
     },
     "catalog-contact": {
@@ -164,11 +164,11 @@
     "--keep-going"
   ],
   "completed_utc": "2026-09-13T12:05:01.055799+00:00",
-  "cwd": "/home/jcb/projects/compilatrix",
+  "cwd": "/home/jcb/projects/ix/IxCC",
   "existing_modular_golden_and_rebuilt_baseline_bytes_exact": true,
   "exit_code": 0,
   "fence_sha256": "4fb65b9c4e6a237786cc283cc0bf62fc3c92a7320f709266dd29388d81f13e02",
-  "format": "compilatrix/assembly-scaling-validation/1",
+  "format": "ixcc/assembly-scaling-validation/1",
   "full_five_width_reference_precheck_passed": true,
   "independent_assembly_gate_passed": true,
   "initial_run": {

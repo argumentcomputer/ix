@@ -7,7 +7,7 @@
   },
   "base_commit": "e333e02a722826245d93966d8734dccd0d14c496",
   "code_files": 632,
-  "format": "compilatrix/native-graph-reference/1",
+  "format": "ixcc/native-graph-reference/1",
   "frozen_utc": "2026-09-13T01:04:45.705805+00:00",
   "host": {
     "allowed_cpus": [

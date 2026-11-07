@@ -6,7 +6,7 @@
  "fresh extracted source directory and empty process environment; retained hashed compiler/checker seeds; same physical host and pinned Nix runtime closure",
  "rebuilt_build_blake3": "2fce45cc124c1ebd30e946d054d64d20d8044c7ecf153c3b64412f01685005c8",
  "original_build_blake3": "0a3c7757fa3b6c3634c75d247c65b5da92b04692429376d77a278aa8edab1046",
- "format": "compilatrix/benchmark-reproduction/1",
+ "format": "ixcc/benchmark-reproduction/1",
  "executables_exact": true,
  "correctness_exact": true,
  "artifacts_exact": true,

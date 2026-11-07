@@ -5,7 +5,7 @@ units**, reuses unaffected source evidence after dependency edits, and checks
 retained certificates in a fresh process. The same 611-declaration program
 is rejected by the monolithic entry point at its unchanged **512-candidate**
 limit. The implementation and proof contract are in
-[modular source certification](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/modular-source.md).
+modular source certification (`docs/modular-source.md` at archive commit `7599a434`).
 
 Three fresh reference processes ran from **2026-09-12T20:56:06Z** to
 **2026-09-12T20:56:43Z**, after all 28 x86_64 Linux Nix checks passed. Every
@@ -125,7 +125,7 @@ lake build source-modular check-source-modular
 .lake/build/bin/check-source-modular --fixture .lake/build/bin/source-modular
 ```
 
-The [raw archive](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/runs/modular-source-2026-09-12.tar.gz)
+The raw archive (`benchmarks/runs/modular-source-2026-09-12.tar.gz` at archive commit `7599a434`)
 is retained in ignored workspace storage: **74,835,897 bytes**, SHA-256
 `4e92c953bab080eab11f15e74279ba87dfedc0749608d6dab1869180edf46d71`.
 It is local retention, not an uploaded artifact-service URL. Its verified

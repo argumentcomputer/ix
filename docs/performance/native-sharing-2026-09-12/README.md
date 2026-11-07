@@ -8,7 +8,7 @@ the same encoder and checker receiving a smaller program.
 The physical heap source and snapshot object APIs now default to shared
 emission. The original tree emitter remains selectable. Both use the existing
 execution, argument-transfer, ownership, workspace, and ELF proof contracts.
-[Implementation and API](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/native-sharing.md).
+Implementation and API (`docs/native-sharing.md` at archive commit `7599a434`).
 
 ## Fixed comparison
 
@@ -99,7 +99,7 @@ Cases ran in increasing join count, tree then shared. Each named stage has one
 randomization, confidence interval, or per-stage process isolation. Timings
 exclude fixture construction, default-API replay, semantic/mutation checks,
 report hashing, JSON, and file writes. Do not add medians to infer an end-to-end
-latency. [Commands and protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/native-sharing.md).
+latency. Commands and protocol (`benchmarks/native-sharing.md` at archive commit `7599a434`).
 
 Validation passed on the final implementation:
 

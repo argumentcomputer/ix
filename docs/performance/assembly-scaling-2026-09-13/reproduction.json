@@ -1,5 +1,5 @@
 {
-  "format": "compilatrix/assembly-scaling-reproduction/1",
+  "format": "ixcc/assembly-scaling-reproduction/1",
   "host_after": {
     "allowed_cpus": [
       0,

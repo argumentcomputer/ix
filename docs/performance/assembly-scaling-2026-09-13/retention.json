@@ -7,7 +7,7 @@
   "archive_path": "benchmarks/runs/assembly-scaling-2026-09-13.tar.gz",
   "current_code_files_match_frozen": 640,
   "current_optimized_executables_match_frozen": 4,
-  "format": "compilatrix/assembly-scaling-retention/1",
+  "format": "ixcc/assembly-scaling-retention/1",
   "inventory_files_verified": 450,
   "root": "assembly-scaling-reference-001",
   "uploaded": false,

@@ -1,7 +1,7 @@
 {
   "artifact_sets_equal_across_three_reference_processes": true,
   "certificate_rejections": 40,
-  "format": "compilatrix/modular-source-validation/1",
+  "format": "ixcc/modular-source-validation/1",
   "fresh_replay": {
     "all_artifact_bytes_exact": true,
     "compiler_executable_rebuilt": false,
@@ -22,7 +22,7 @@
   },
   "full_nix_checks": [
     {
-      "derivation": "/nix/store/2f3x74ilp9330b8qyasp7xrig8ij4pf6-Compilatrix.drv",
+      "derivation": "/nix/store/2f3x74ilp9330b8qyasp7xrig8ij4pf6-IxCC.drv",
       "name": "build"
     },
     {

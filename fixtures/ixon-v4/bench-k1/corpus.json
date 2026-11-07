@@ -79,7 +79,7 @@
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.fib",
             "path": "fixtures/ixon-v4/k1/K1.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -197,7 +197,7 @@
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.sumLoop",
             "path": "fixtures/ixon-v4/k1/K1.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -315,7 +315,7 @@
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.ack",
             "path": "fixtures/ixon-v4/k1/K1.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -470,7 +470,7 @@
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.tak",
             "path": "fixtures/ixon-v4/k1/K1.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -614,7 +614,7 @@
             "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
             "declaration": "K1.gcd",
             "path": "fixtures/ixon-v4/k1/K1.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -767,7 +767,7 @@
           {
             "declaration": "collatz",
             "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -868,7 +868,7 @@
           {
             "declaration": "prime-count",
             "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -965,7 +965,7 @@
           {
             "declaration": "even-odd",
             "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },
@@ -1069,7 +1069,7 @@
           {
             "declaration": "sfib",
             "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
-            "repository": "https://github.com/argumentcomputer/Compilatr.ix"
+            "repository": "IxCC"
           }
         ]
       },

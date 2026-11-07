@@ -53,7 +53,7 @@ long instruction arrays through 1,024 instructions, repeated layout use,
 invalid direct/tail targets, and resolved signed-rel32 endpoints and overflow.
 Direct typed-x86 stress inputs do not alter source compiler admission limits.
 
-The former [native graph benchmark](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/native-graph.md), retired with the legacy pipeline,
+The former native graph benchmark (`benchmarks/native-graph.md` at archive commit `7599a434`), retired with the legacy pipeline,
 separates raw encoding, reference validation, layout construction, prepared
 validation, and complete indexed validation. All snapshot, text, ELF,
 observation, and resource-bound goldens remain unchanged. Its independent

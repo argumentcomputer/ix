@@ -10,7 +10,7 @@ previous selector still rejects ten under its original expansion budget.
 Physical heap source and snapshot object APIs now default to `.graph`.
 The `.shared` and `.tree` paths remain available. Existing physical and
 source-to-ELF statements and proof assumptions remain in force.
-[Implementation, APIs, and limits](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/docs/native-graph.md).
+Implementation, APIs, and limits (`docs/native-graph.md` at archive commit `7599a434`).
 
 ## Fixed comparison and representation
 
@@ -123,7 +123,7 @@ interval, or per-stage process isolation. Fixture construction, API replay,
 semantic/mutation tests, budget/context tests, inspection formatting, hashing
 reported artifacts, and file writes are outside the stage intervals. Medians
 must not be added to infer end-to-end latency.
-[Commands and protocol](https://github.com/argumentcomputer/Compilatr.ix/blob/jcb/ixby-archive/benchmarks/native-graph.md).
+Commands and protocol (`benchmarks/native-graph.md` at archive commit `7599a434`).
 
 Validation on the final implementation passed:
 

@@ -7,7 +7,7 @@
   },
   "base_commit": "4df05d8cda00b1ab271a19e3e222fd237ee22869",
   "code_files": 636,
-  "format": "compilatrix/stream-check-reference/1",
+  "format": "ixcc/stream-check-reference/1",
   "frozen_utc": "2026-09-13T10:38:08.052019+00:00",
   "host": {
     "allowed_cpus": [

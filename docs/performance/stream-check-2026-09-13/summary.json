@@ -4532,7 +4532,7 @@
       "x86_instructions": 789
     }
   ],
-  "format": "compilatrix/stream-check-reference-summary/1",
+  "format": "ixcc/stream-check-reference-summary/1",
   "graph_limits": {
     "allocations": 64,
     "controls": 1048576,

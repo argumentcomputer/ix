@@ -3382,7 +3382,7 @@
       "x86_instructions": 789
     }
   ],
-  "format": "compilatrix/native-graph-reference-summary/1",
+  "format": "ixcc/native-graph-reference-summary/1",
   "graph_limits": {
     "allocations": 64,
     "controls": 1048576,

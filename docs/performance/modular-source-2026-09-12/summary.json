@@ -1147,7 +1147,7 @@
         "certificate_store_bytes": 279203,
         "expected_value": 1599,
         "monolithic": {
-          "reason": "Compilatrix.Pipeline.Error.resource\n  { metric := Compilatrix.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
+          "reason": "IxCC.Pipeline.Error.resource\n  { metric := IxCC.Ixon.Work.Metric.certificateCandidates, actual := 611, limit := 512 }",
           "status": "rejected"
         },
         "name": "wide-600",
@@ -1390,7 +1390,7 @@
       ]
     }
   ],
-  "format": "compilatrix/modular-source-cost-summary/1",
+  "format": "ixcc/modular-source-cost-summary/1",
   "process_resources": [
     {
       "exit_code": 0,

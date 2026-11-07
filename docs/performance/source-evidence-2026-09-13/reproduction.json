@@ -20,7 +20,7 @@
       "LEAN_NUM_THREADS": "1",
       "MALLOC_ARENA_MAX": "1"
     },
-    "format": "compilatrix/source-evidence-observation-plan/1",
+    "format": "ixcc/source-evidence-observation-plan/1",
     "frozen_utc": "2026-09-13T13:37:07.524573+00:00",
     "matrix_case_order": [
       "baseline",
@@ -66,7 +66,7 @@
       }
     }
   },
-  "format": "compilatrix/source-evidence-reproduction/1",
+  "format": "ixcc/source-evidence-reproduction/1",
   "host_after": {
     "allowed_cpus": [
       0,

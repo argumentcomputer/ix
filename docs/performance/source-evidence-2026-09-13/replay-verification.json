@@ -3,7 +3,7 @@
   "compiler_executables_rebuilt_during_replay": false,
   "completed_utc": "2026-09-13T13:39:53.025242+00:00",
   "executable_seeds_checked": true,
-  "format": "compilatrix/source-evidence-source-replay/1",
+  "format": "ixcc/source-evidence-source-replay/1",
   "independent_gates_passed": true,
   "passed": true,
   "retained_certificates_rechecked": true,

@@ -5,7 +5,7 @@
  "scope":
  "fresh extracted source directory; empty environment plus recorded variables; retained hashed compiler/orchestrator binaries and pinned installed tools; compiler executable itself is not rebuilt from Lean",
  "original_build_blake3": "e41b92574d239a463a59fc917c5368038387fa0bc8b15d5444e52dbc5aa77afd",
- "format": "compilatrix/compiler-scaling-reproduction/1",
+ "format": "ixcc/compiler-scaling-reproduction/1",
  "correctness_exact": true,
  "artifacts_exact": true,
  "artifact_rows": 114,

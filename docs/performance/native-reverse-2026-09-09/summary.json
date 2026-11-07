@@ -148,7 +148,7 @@
    "profile": "entry+handoff",
    "length": 0,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 129689405.03155,
      "ns_per_operation":
@@ -160,8 +160,8 @@
       "ci95_high": 7.754163,
       "blocks": 30},
      "ns_per_element": null,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.338514, 0.339272, 0.339755],
       "q75": 0.340292,
       "q25": 0.337455,
@@ -180,7 +180,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.540552, 0.540637, 0.540537],
       "q75": 0.542488,
       "q25": 0.539054,
@@ -199,7 +199,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.657224, 0.660743, 0.660683],
       "q75": 0.662441,
       "q25": 0.655879,
@@ -218,7 +218,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.603157, 0.605384, 0.603886],
       "q75": 0.606845,
       "q25": 0.602344,
@@ -237,7 +237,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.666283, 0.666243, 0.667148],
       "q75": 0.66982,
       "q25": 0.662027,
@@ -261,7 +261,7 @@
    "profile": "entry+handoff",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 92703047.014119,
      "ns_per_operation":
@@ -273,8 +273,8 @@
       "ci95_high": 10.870645,
       "blocks": 30},
      "ns_per_element": 10.787132,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.285897, 0.284075, 0.290543],
       "q75": 0.301038,
       "q25": 0.283137,
@@ -293,7 +293,7 @@
       "blocks": 30},
      "ns_per_element": 3.088144,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.499693, 0.497697, 0.499432],
       "q75": 0.501265,
       "q25": 0.495701,
@@ -312,7 +312,7 @@
       "blocks": 30},
      "ns_per_element": 5.376858,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.574068, 0.575554, 0.576717],
       "q75": 0.579682,
       "q25": 0.57334,
@@ -331,7 +331,7 @@
       "blocks": 30},
      "ns_per_element": 6.221061,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.513545, 0.516423, 0.516056],
       "q75": 0.518275,
       "q25": 0.513901,
@@ -350,7 +350,7 @@
       "blocks": 30},
      "ns_per_element": 5.573164,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.595067, 0.597516, 0.599624],
       "q75": 0.600831,
       "q25": 0.595379,
@@ -374,7 +374,7 @@
    "profile": "entry+handoff",
    "length": 2,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 70917015.456686,
      "ns_per_operation":
@@ -386,8 +386,8 @@
       "ci95_high": 14.153883,
       "blocks": 30},
      "ns_per_element": 7.050494,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.268285, 0.268672, 0.281127],
       "q75": 0.286065,
       "q25": 0.26763,
@@ -406,7 +406,7 @@
       "blocks": 30},
      "ns_per_element": 1.903383,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.459299, 0.45836, 0.460101],
       "q75": 0.460343,
       "q25": 0.456189,
@@ -425,7 +425,7 @@
       "blocks": 30},
      "ns_per_element": 3.23163,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.515234, 0.518971, 0.51971],
       "q75": 0.521544,
       "q25": 0.515483,
@@ -444,7 +444,7 @@
       "blocks": 30},
      "ns_per_element": 3.660582,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.456276, 0.460065, 0.460423],
       "q75": 0.460645,
       "q25": 0.458319,
@@ -463,7 +463,7 @@
       "blocks": 30},
      "ns_per_element": 3.238781,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.505977, 0.50709, 0.507263],
       "q75": 0.508067,
       "q25": 0.504475,
@@ -487,7 +487,7 @@
    "profile": "entry+handoff",
    "length": 4,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 48503977.054414,
      "ns_per_operation":
@@ -499,8 +499,8 @@
       "ci95_high": 20.720823,
       "blocks": 30},
      "ns_per_element": 5.154217,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.258803, 0.250069, 0.251302],
       "q75": 0.274376,
       "q25": 0.248683,
@@ -519,7 +519,7 @@
       "blocks": 30},
      "ns_per_element": 1.2927,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.435081, 0.427801, 0.433013],
       "q75": 0.436057,
       "q25": 0.4288,
@@ -538,7 +538,7 @@
       "blocks": 30},
      "ns_per_element": 2.221117,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.468038, 0.468848, 0.468504],
       "q75": 0.469714,
       "q25": 0.467827,
@@ -557,7 +557,7 @@
       "blocks": 30},
      "ns_per_element": 2.415315,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.398459, 0.401467, 0.401459],
       "q75": 0.402799,
       "q25": 0.398871,
@@ -576,7 +576,7 @@
       "blocks": 30},
      "ns_per_element": 2.068833,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.412606, 0.414444, 0.413768],
       "q75": 0.415499,
       "q25": 0.412063,
@@ -600,7 +600,7 @@
    "profile": "entry+handoff",
    "length": 8,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 29772623.906432,
      "ns_per_operation":
@@ -612,8 +612,8 @@
       "ci95_high": 33.775249,
       "blocks": 30},
      "ns_per_element": 4.198488,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.251976, 0.250474, 0.252378],
       "q75": 0.25977,
       "q25": 0.248683,
@@ -632,7 +632,7 @@
       "blocks": 30},
      "ns_per_element": 1.05789,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.410386, 0.404827, 0.406413],
       "q75": 0.411183,
       "q25": 0.404467,
@@ -651,7 +651,7 @@
       "blocks": 30},
      "ns_per_element": 1.70355,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.412274, 0.410697, 0.411988],
       "q75": 0.414444,
       "q25": 0.410291,
@@ -670,7 +670,7 @@
       "blocks": 30},
      "ns_per_element": 1.72989,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.354966, 0.353589, 0.357719],
       "q75": 0.360572,
       "q25": 0.353162,
@@ -689,7 +689,7 @@
       "blocks": 30},
      "ns_per_element": 1.493579,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.339441, 0.339112, 0.340155],
       "q75": 0.340748,
       "q25": 0.338284,
@@ -713,7 +713,7 @@
    "profile": "entry+handoff",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 16719523.585411,
      "ns_per_operation":
@@ -725,8 +725,8 @@
       "ci95_high": 60.395667,
       "blocks": 30},
      "ns_per_element": 3.738145,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.503191, 0.499575, 0.497874],
       "q75": 0.558536,
       "q25": 0.454997,
@@ -745,7 +745,7 @@
       "blocks": 30},
      "ns_per_element": 1.904892,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.647318, 0.639173, 0.639265],
       "q75": 0.650707,
       "q25": 0.633289,
@@ -764,7 +764,7 @@
       "blocks": 30},
      "ns_per_element": 2.396611,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.373055, 0.374214, 0.374323],
       "q75": 0.374963,
       "q25": 0.372886,
@@ -783,7 +783,7 @@
       "blocks": 30},
      "ns_per_element": 1.399761,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.321786, 0.317898, 0.320756],
       "q75": 0.325249,
       "q25": 0.317625,
@@ -802,7 +802,7 @@
       "blocks": 30},
      "ns_per_element": 1.195123,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.280729, 0.282089, 0.283079],
       "q75": 0.283269,
       "q25": 0.280568,
@@ -826,7 +826,7 @@
    "profile": "entry+handoff",
    "length": 32,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 8694421.410886,
      "ns_per_operation":
@@ -838,8 +838,8 @@
       "ci95_high": 115.368298,
       "blocks": 30},
      "ns_per_element": 3.594259,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.576772, 0.570359, 0.575286],
       "q75": 0.577773,
       "q25": 0.562984,
@@ -858,7 +858,7 @@
       "blocks": 30},
      "ns_per_element": 2.06688,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.765065, 0.720076, 0.74878],
       "q75": 0.763783,
       "q25": 0.714909,
@@ -877,7 +877,7 @@
       "blocks": 30},
      "ns_per_element": 2.645162,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.347206, 0.346504, 0.3472],
       "q75": 0.348123,
       "q25": 0.345532,
@@ -896,7 +896,7 @@
       "blocks": 30},
      "ns_per_element": 1.246941,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.303657, 0.305119, 0.310901],
       "q75": 0.314324,
       "q25": 0.303498,
@@ -915,7 +915,7 @@
       "blocks": 30},
      "ns_per_element": 1.094985,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.243593, 0.24376, 0.244026],
       "q75": 0.244631,
       "q25": 0.243585,
@@ -939,7 +939,7 @@
    "profile": "entry+handoff",
    "length": 48,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 5680248.571497,
      "ns_per_operation":
@@ -951,8 +951,8 @@
       "ci95_high": 177.530835,
       "blocks": 30},
      "ns_per_element": 3.66768,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.417576, 0.418652, 0.418076],
       "q75": 0.421488,
       "q25": 0.407056,
@@ -971,7 +971,7 @@
       "blocks": 30},
      "ns_per_element": 1.539239,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.747512, 0.744359, 0.75058],
       "q75": 0.756049,
       "q25": 0.737585,
@@ -990,7 +990,7 @@
       "blocks": 30},
      "ns_per_element": 2.747697,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.324876, 0.325638, 0.326036],
       "q75": 0.327002,
       "q25": 0.324418,
@@ -1009,7 +1009,7 @@
       "blocks": 30},
      "ns_per_element": 1.196883,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.308966, 0.305678, 0.305532],
       "q75": 0.310021,
       "q25": 0.305274,
@@ -1028,7 +1028,7 @@
       "blocks": 30},
      "ns_per_element": 1.123271,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.2222, 0.222653, 0.223367],
       "q75": 0.223761,
       "q25": 0.22233,
@@ -1052,7 +1052,7 @@
    "profile": "entry+handoff",
    "length": 63,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 4278249.031196,
      "ns_per_operation":
@@ -1064,8 +1064,8 @@
       "ci95_high": 234.917739,
       "blocks": 30},
      "ns_per_element": 3.710166,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.389281, 0.38854, 0.388022],
       "q75": 0.390811,
       "q25": 0.380448,
@@ -1084,7 +1084,7 @@
       "blocks": 30},
      "ns_per_element": 1.441365,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.812673, 0.807747, 0.801803],
       "q75": 0.818576,
       "q25": 0.802447,
@@ -1103,7 +1103,7 @@
       "blocks": 30},
      "ns_per_element": 3.008637,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.317163, 0.31677, 0.315591],
       "q75": 0.317484,
       "q25": 0.315078,
@@ -1122,7 +1122,7 @@
       "blocks": 30},
      "ns_per_element": 1.173019,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.308032, 0.307724, 0.306712],
       "q75": 0.308945,
       "q25": 0.306331,
@@ -1141,7 +1141,7 @@
       "blocks": 30},
      "ns_per_element": 1.139119,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.221099, 0.221812, 0.222106],
       "q75": 0.22226,
       "q25": 0.221053,
@@ -1165,7 +1165,7 @@
    "profile": "entry+handoff",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 4208839.515713,
      "ns_per_operation":
@@ -1177,8 +1177,8 @@
       "ci95_high": 238.634529,
       "blocks": 30},
      "ns_per_element": 3.712425,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.387952, 0.389235, 0.387764],
       "q75": 0.390784,
       "q25": 0.383908,
@@ -1197,7 +1197,7 @@
       "blocks": 30},
      "ns_per_element": 1.441055,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.777839, 0.740002, 0.757891],
       "q75": 0.778184,
       "q25": 0.741539,
@@ -1216,7 +1216,7 @@
       "blocks": 30},
      "ns_per_element": 2.816654,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.315704, 0.314532, 0.314975],
       "q75": 0.316254,
       "q25": 0.314246,
@@ -1235,7 +1235,7 @@
       "blocks": 30},
      "ns_per_element": 1.170883,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.306614, 0.30688, 0.306935],
       "q75": 0.308383,
       "q25": 0.306336,
@@ -1254,7 +1254,7 @@
       "blocks": 30},
      "ns_per_element": 1.140484,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.212845, 0.212348, 0.213092],
       "q75": 0.213476,
       "q25": 0.212142,
@@ -1278,7 +1278,7 @@
    "profile": "entry+handoff",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 92676653.561503,
      "ns_per_operation":
@@ -1290,8 +1290,8 @@
       "ci95_high": 10.843852,
       "blocks": 30},
      "ns_per_element": 10.790204,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.285649, 0.282637, 0.288821],
       "q75": 0.302501,
       "q25": 0.28249,
@@ -1310,7 +1310,7 @@
       "blocks": 30},
      "ns_per_element": 3.082605,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.49841, 0.498434, 0.498506],
       "q75": 0.499715,
       "q25": 0.496427,
@@ -1329,7 +1329,7 @@
       "blocks": 30},
      "ns_per_element": 5.377537,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.571316, 0.575029, 0.576249],
       "q75": 0.577216,
       "q25": 0.571887,
@@ -1348,7 +1348,7 @@
       "blocks": 30},
      "ns_per_element": 6.213476,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.512735, 0.516514, 0.516598],
       "q75": 0.51786,
       "q25": 0.513313,
@@ -1367,7 +1367,7 @@
       "blocks": 30},
      "ns_per_element": 5.571021,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.597522, 0.597924, 0.597993],
       "q75": 0.59946,
       "q25": 0.595644,
@@ -1391,7 +1391,7 @@
    "profile": "entry+handoff",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 16705536.529156,
      "ns_per_operation":
@@ -1403,8 +1403,8 @@
       "ci95_high": 60.062297,
       "blocks": 30},
      "ns_per_element": 3.741275,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.50961, 0.496068, 0.571953],
       "q75": 0.581833,
       "q25": 0.464136,
@@ -1423,7 +1423,7 @@
       "blocks": 30},
      "ns_per_element": 1.932247,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.679875, 0.671152, 0.685992],
       "q75": 0.68705,
       "q25": 0.669039,
@@ -1442,7 +1442,7 @@
       "blocks": 30},
      "ns_per_element": 2.535241,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.375391, 0.373827, 0.373025],
       "q75": 0.374796,
       "q25": 0.372825,
@@ -1461,7 +1461,7 @@
       "blocks": 30},
      "ns_per_element": 1.397372,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.32353, 0.318338, 0.317949],
       "q75": 0.330995,
       "q25": 0.316785,
@@ -1480,7 +1480,7 @@
       "blocks": 30},
      "ns_per_element": 1.192155,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.282373, 0.282316, 0.282042],
       "q75": 0.282897,
       "q25": 0.281481,
@@ -1504,7 +1504,7 @@
    "profile": "entry+handoff",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 4205777.426021,
      "ns_per_operation":
@@ -1516,8 +1516,8 @@
       "ci95_high": 241.176323,
       "blocks": 30},
      "ns_per_element": 3.715128,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.382617, 0.385904, 0.382519],
       "q75": 0.387545,
       "q25": 0.376475,
@@ -1536,7 +1536,7 @@
       "blocks": 30},
      "ns_per_element": 1.430944,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.742109, 0.738784, 0.755029],
       "q75": 0.758831,
       "q25": 0.736557,
@@ -1555,7 +1555,7 @@
       "blocks": 30},
      "ns_per_element": 2.799301,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.315159, 0.315461, 0.314832],
       "q75": 0.315784,
       "q25": 0.31414,
@@ -1574,7 +1574,7 @@
       "blocks": 30},
      "ns_per_element": 1.172773,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.302821, 0.307183, 0.307017],
       "q75": 0.307591,
       "q25": 0.305248,
@@ -1593,7 +1593,7 @@
       "blocks": 30},
      "ns_per_element": 1.140609,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.211418, 0.213204, 0.213301],
       "q75": 0.213865,
       "q25": 0.212094,
@@ -1617,7 +1617,7 @@
    "profile": "entry+handoff",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 92756381.808543,
      "ns_per_operation":
@@ -1629,8 +1629,8 @@
       "ci95_high": 10.891963,
       "blocks": 30},
      "ns_per_element": 10.780929,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.282734, 0.28278, 0.283802],
       "q75": 0.284627,
       "q25": 0.282126,
@@ -1649,7 +1649,7 @@
       "blocks": 30},
      "ns_per_element": 3.055919,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.497218, 0.496668, 0.5007],
       "q75": 0.500814,
       "q25": 0.495249,
@@ -1668,7 +1668,7 @@
       "blocks": 30},
      "ns_per_element": 5.38729,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.572354, 0.574874, 0.576278],
       "q75": 0.577999,
       "q25": 0.572542,
@@ -1687,7 +1687,7 @@
       "blocks": 30},
      "ns_per_element": 6.215536,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.513832, 0.517153, 0.516257],
       "q75": 0.517757,
       "q25": 0.513409,
@@ -1706,7 +1706,7 @@
       "blocks": 30},
      "ns_per_element": 5.574891,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.59539, 0.597446, 0.598761],
       "q75": 0.60064,
       "q25": 0.59536,
@@ -1730,7 +1730,7 @@
    "profile": "entry+handoff",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 16723014.640901,
      "ns_per_operation":
@@ -1742,8 +1742,8 @@
       "ci95_high": 60.064202,
       "blocks": 30},
      "ns_per_element": 3.737364,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.590127, 0.553792, 0.549214],
       "q75": 0.593436,
       "q25": 0.535872,
@@ -1762,7 +1762,7 @@
       "blocks": 30},
      "ns_per_element": 2.11092,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.692409, 0.671154, 0.679409],
       "q75": 0.697109,
       "q25": 0.672754,
@@ -1781,7 +1781,7 @@
       "blocks": 30},
      "ns_per_element": 2.548733,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.374146, 0.374354, 0.373311],
       "q75": 0.374636,
       "q25": 0.373058,
@@ -1800,7 +1800,7 @@
       "blocks": 30},
      "ns_per_element": 1.398795,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.319454, 0.318599, 0.344891],
       "q75": 0.343129,
       "q25": 0.317055,
@@ -1819,7 +1819,7 @@
       "blocks": 30},
      "ns_per_element": 1.192943,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.281351, 0.28227, 0.282223],
       "q75": 0.282561,
       "q25": 0.281088,
@@ -1843,7 +1843,7 @@
    "profile": "entry+handoff",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 4209975.779663,
      "ns_per_operation":
@@ -1855,8 +1855,8 @@
       "ci95_high": 238.383338,
       "blocks": 30},
      "ns_per_element": 3.711423,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.397918, 0.401566, 0.400482],
       "q75": 0.402924,
       "q25": 0.397442,
@@ -1875,7 +1875,7 @@
       "blocks": 30},
      "ns_per_element": 1.490987,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.754441, 0.739749, 0.754368],
       "q75": 0.771174,
       "q25": 0.739774,
@@ -1894,7 +1894,7 @@
       "blocks": 30},
      "ns_per_element": 2.803848,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.313329, 0.314768, 0.314984],
       "q75": 0.315316,
       "q25": 0.313566,
@@ -1913,7 +1913,7 @@
       "blocks": 30},
      "ns_per_element": 1.168637,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.30552, 0.306793, 0.308617],
       "q75": 0.307523,
       "q25": 0.305964,
@@ -1932,7 +1932,7 @@
       "blocks": 30},
      "ns_per_element": 1.138507,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.212784, 0.212946, 0.21363],
       "q75": 0.213789,
       "q25": 0.212727,
@@ -1956,7 +1956,7 @@
    "profile": "entry+handoff",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 92598644.188747,
      "ns_per_operation":
@@ -1968,8 +1968,8 @@
       "ci95_high": 10.873572,
       "blocks": 30},
      "ns_per_element": 10.799294,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.28503, 0.283326, 0.283786],
       "q75": 0.286458,
       "q25": 0.282272,
@@ -1988,7 +1988,7 @@
       "blocks": 30},
      "ns_per_element": 3.062797,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.498189, 0.498478, 0.499102],
       "q75": 0.501147,
       "q25": 0.496962,
@@ -2007,7 +2007,7 @@
       "blocks": 30},
      "ns_per_element": 5.377123,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.573514, 0.575344, 0.57356],
       "q75": 0.57759,
       "q25": 0.572241,
@@ -2026,7 +2026,7 @@
       "blocks": 30},
      "ns_per_element": 6.208574,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.511843, 0.517377, 0.516125],
       "q75": 0.517422,
       "q25": 0.513085,
@@ -2045,7 +2045,7 @@
       "blocks": 30},
      "ns_per_element": 5.567146,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.594829, 0.599413, 0.595349],
       "q75": 0.601283,
       "q25": 0.594109,
@@ -2069,7 +2069,7 @@
    "profile": "entry+handoff",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 16703029.274061,
      "ns_per_operation":
@@ -2081,8 +2081,8 @@
       "ci95_high": 60.313622,
       "blocks": 30},
      "ns_per_element": 3.741836,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.565502, 0.547032, 0.572486],
       "q75": 0.587236,
       "q25": 0.532879,
@@ -2101,7 +2101,7 @@
       "blocks": 30},
      "ns_per_element": 2.109918,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.690703, 0.671619, 0.676857],
       "q75": 0.68877,
       "q25": 0.669416,
@@ -2120,7 +2120,7 @@
       "blocks": 30},
      "ns_per_element": 2.535763,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.373428, 0.373874, 0.374002],
       "q75": 0.374501,
       "q25": 0.372501,
@@ -2139,7 +2139,7 @@
       "blocks": 30},
      "ns_per_element": 1.397735,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.323834, 0.318504, 0.318419],
       "q75": 0.331105,
       "q25": 0.317309,
@@ -2158,7 +2158,7 @@
       "blocks": 30},
      "ns_per_element": 1.193309,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.280741, 0.28225, 0.282614],
       "q75": 0.283012,
       "q25": 0.280936,
@@ -2182,7 +2182,7 @@
    "profile": "entry+handoff",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 4206807.579468,
      "ns_per_operation":
@@ -2194,8 +2194,8 @@
       "ci95_high": 239.127348,
       "blocks": 30},
      "ns_per_element": 3.714218,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.400035, 0.395966, 0.399606],
       "q75": 0.4021,
       "q25": 0.395387,
@@ -2214,7 +2214,7 @@
       "blocks": 30},
      "ns_per_element": 1.483186,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.746295, 0.7384, 0.756374],
       "q75": 0.759394,
       "q25": 0.735369,
@@ -2233,7 +2233,7 @@
       "blocks": 30},
      "ns_per_element": 2.782426,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.314367, 0.314531, 0.31442],
       "q75": 0.315744,
       "q25": 0.31353,
@@ -2252,7 +2252,7 @@
       "blocks": 30},
      "ns_per_element": 1.170742,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.30583, 0.306331, 0.307589],
       "q75": 0.308026,
       "q25": 0.305304,
@@ -2271,7 +2271,7 @@
       "blocks": 30},
      "ns_per_element": 1.139606,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.212491, 0.213605, 0.213223],
       "q75": 0.21367,
       "q25": 0.212343,
@@ -2295,7 +2295,7 @@
    "profile": "lifecycle",
    "length": 0,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 47855547.672905,
      "ns_per_operation":
@@ -2307,8 +2307,8 @@
       "ci95_high": 21.039509,
       "blocks": 30},
      "ns_per_element": null,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.341014, 0.34615, 0.343082],
       "q75": 0.34692,
       "q25": 0.339321,
@@ -2327,7 +2327,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.429784, 0.432256, 0.429075],
       "q75": 0.434983,
       "q25": 0.426405,
@@ -2346,7 +2346,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.875985, 0.882613, 0.874835],
       "q75": 0.883382,
       "q25": 0.872501,
@@ -2365,7 +2365,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.856336, 0.859809, 0.853231],
       "q75": 0.863022,
       "q25": 0.848177,
@@ -2384,7 +2384,7 @@
       "blocks": 30},
      "ns_per_element": null,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.868122, 0.869328, 0.868566],
       "q75": 0.874813,
       "q25": 0.858001,
@@ -2408,7 +2408,7 @@
    "profile": "lifecycle",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 41083006.814658,
      "ns_per_operation":
@@ -2420,8 +2420,8 @@
       "ci95_high": 24.657309,
       "blocks": 30},
      "ns_per_element": 24.340964,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.520972, 0.531723, 0.530713],
       "q75": 0.536392,
       "q25": 0.516328,
@@ -2440,7 +2440,7 @@
       "blocks": 30},
      "ns_per_element": 12.890323,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [2.206779, 2.198657, 2.215612],
       "q75": 2.226414,
       "q25": 2.168496,
@@ -2459,7 +2459,7 @@
       "blocks": 30},
      "ns_per_element": 53.734486,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.823107, 0.828192, 0.83224],
       "q75": 0.832657,
       "q25": 0.81097,
@@ -2478,7 +2478,7 @@
       "blocks": 30},
      "ns_per_element": 20.069798,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.766056, 0.767727, 0.772333],
       "q75": 0.775247,
       "q25": 0.762849,
@@ -2497,7 +2497,7 @@
       "blocks": 30},
      "ns_per_element": 18.728387,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.80632, 0.810995, 0.809084],
       "q75": 0.815646,
       "q25": 0.794182,
@@ -2521,7 +2521,7 @@
    "profile": "lifecycle",
    "length": 2,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 34394482.931091,
      "ns_per_operation":
@@ -2533,8 +2533,8 @@
       "ci95_high": 29.279675,
       "blocks": 30},
      "ns_per_element": 14.537215,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.63856, 0.638097, 0.632421],
       "q75": 0.645835,
       "q25": 0.624222,
@@ -2553,7 +2553,7 @@
       "blocks": 30},
      "ns_per_element": 9.235174,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [3.412325, 3.399822, 3.399391],
       "q75": 3.428904,
       "q25": 3.362753,
@@ -2572,7 +2572,7 @@
       "blocks": 30},
      "ns_per_element": 49.362361,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.758328, 0.758667, 0.760499],
       "q75": 0.764806,
       "q25": 0.753985,
@@ -2591,7 +2591,7 @@
       "blocks": 30},
      "ns_per_element": 11.022689,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.70599, 0.714775, 0.70502],
       "q75": 0.715257,
       "q25": 0.698457,
@@ -2610,7 +2610,7 @@
       "blocks": 30},
      "ns_per_element": 10.312497,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.729729, 0.726647, 0.730284],
       "q75": 0.733669,
       "q25": 0.722675,
@@ -2634,7 +2634,7 @@
    "profile": "lifecycle",
    "length": 4,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 25987183.557374,
      "ns_per_operation":
@@ -2646,8 +2646,8 @@
       "ci95_high": 38.622313,
       "blocks": 30},
      "ns_per_element": 9.620127,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.780217, 0.782507, 0.776919],
       "q75": 0.791556,
       "q25": 0.771042,
@@ -2666,7 +2666,7 @@
       "blocks": 30},
      "ns_per_element": 7.478322,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [4.884671, 4.866573, 4.887637],
       "q75": 4.906098,
       "q25": 4.85096,
@@ -2685,7 +2685,7 @@
       "blocks": 30},
      "ns_per_element": 46.858881,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.719477, 0.716552, 0.714006],
       "q75": 0.72088,
       "q25": 0.711693,
@@ -2704,7 +2704,7 @@
       "blocks": 30},
      "ns_per_element": 6.860198,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.684954, 0.686037, 0.683169],
       "q75": 0.691877,
       "q25": 0.678835,
@@ -2723,7 +2723,7 @@
       "blocks": 30},
      "ns_per_element": 6.571258,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.65759, 0.654126, 0.655636],
       "q75": 0.660335,
       "q25": 0.651486,
@@ -2747,7 +2747,7 @@
    "profile": "lifecycle",
    "length": 8,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 17548188.368133,
      "ns_per_operation":
@@ -2759,8 +2759,8 @@
       "ci95_high": 57.333102,
       "blocks": 30},
      "ns_per_element": 7.123242,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.967101, 0.969734, 0.976325],
       "q75": 0.979947,
       "q25": 0.961981,
@@ -2779,7 +2779,7 @@
       "blocks": 30},
      "ns_per_element": 6.933151,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.497835, 6.472539, 6.482465],
       "q75": 6.526907,
       "q25": 6.410256,
@@ -2798,7 +2798,7 @@
       "blocks": 30},
      "ns_per_element": 46.270334,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.695999, 0.6988, 0.70277],
       "q75": 0.71168,
       "q25": 0.693961,
@@ -2817,7 +2817,7 @@
       "blocks": 30},
      "ns_per_element": 5.008275,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.656229, 0.666427, 0.668748],
       "q75": 0.676327,
       "q25": 0.652205,
@@ -2836,7 +2836,7 @@
       "blocks": 30},
      "ns_per_element": 4.70915,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.675117, 0.684047, 0.688124],
       "q75": 0.706503,
       "q25": 0.671574,
@@ -2860,7 +2860,7 @@
    "profile": "lifecycle",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 9918934.996791,
      "ns_per_operation":
@@ -2872,8 +2872,8 @@
       "ci95_high": 101.457069,
       "blocks": 30},
      "ns_per_element": 6.30108,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.116493, 1.117717, 1.123834],
       "q75": 1.125459,
       "q25": 1.114505,
@@ -2892,7 +2892,7 @@
       "blocks": 30},
      "ns_per_element": 7.050771,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [7.190232, 7.153094, 7.23907],
       "q75": 7.240389,
       "q25": 7.151561,
@@ -2911,7 +2911,7 @@
       "blocks": 30},
      "ns_per_element": 45.41793,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.671024, 0.67172, 0.67318],
       "q75": 0.67508,
       "q25": 0.669321,
@@ -2930,7 +2930,7 @@
       "blocks": 30},
      "ns_per_element": 4.242586,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.625913, 0.628311, 0.630305],
       "q75": 0.631299,
       "q25": 0.62565,
@@ -2949,7 +2949,7 @@
       "blocks": 30},
      "ns_per_element": 3.961935,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.617879, 0.621301, 0.622646],
       "q75": 0.624431,
       "q25": 0.616782,
@@ -2973,7 +2973,7 @@
    "profile": "lifecycle",
    "length": 32,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 4749164.560104,
      "ns_per_operation":
@@ -2985,8 +2985,8 @@
       "ci95_high": 211.317709,
       "blocks": 30},
      "ns_per_element": 6.580105,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.076771, 1.078939, 1.083674],
       "q75": 1.089027,
       "q25": 1.072921,
@@ -3005,7 +3005,7 @@
       "blocks": 30},
      "ns_per_element": 7.103587,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.862899, 6.812995, 6.861477],
       "q75": 6.877239,
       "q25": 6.789653,
@@ -3024,7 +3024,7 @@
       "blocks": 30},
      "ns_per_element": 45.071577,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.65554, 0.655397, 0.656756],
       "q75": 0.659977,
       "q25": 0.653557,
@@ -3043,7 +3043,7 @@
       "blocks": 30},
      "ns_per_element": 4.321597,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.597028, 0.597806, 0.59791],
       "q75": 0.602377,
       "q25": 0.595688,
@@ -3062,7 +3062,7 @@
       "blocks": 30},
      "ns_per_element": 3.941879,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.590578, 0.593269, 0.589452],
       "q75": 0.616924,
       "q25": 0.588305,
@@ -3086,7 +3086,7 @@
    "profile": "lifecycle",
    "length": 48,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 3171877.509822,
      "ns_per_operation":
@@ -3098,8 +3098,8 @@
       "ci95_high": 318.146268,
       "blocks": 30},
      "ns_per_element": 6.568139,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.071417, 1.069583, 1.080952],
       "q75": 1.08228,
       "q25": 1.062249,
@@ -3118,7 +3118,7 @@
       "blocks": 30},
      "ns_per_element": 7.067408,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.872261, 6.764139, 6.839454],
       "q75": 6.891113,
       "q25": 6.746143,
@@ -3137,7 +3137,7 @@
       "blocks": 30},
      "ns_per_element": 44.992396,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.632126, 0.63063, 0.635071],
       "q75": 0.635221,
       "q25": 0.629184,
@@ -3156,7 +3156,7 @@
       "blocks": 30},
      "ns_per_element": 4.157441,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.596149, 0.602388, 0.603637],
       "q75": 0.606676,
       "q25": 0.595905,
@@ -3175,7 +3175,7 @@
       "blocks": 30},
      "ns_per_element": 3.94291,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.581499, 0.580722, 0.586749],
       "q75": 0.589596,
       "q25": 0.566338,
@@ -3199,7 +3199,7 @@
    "profile": "lifecycle",
    "length": 63,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 2367025.608451,
      "ns_per_operation":
@@ -3211,8 +3211,8 @@
       "ci95_high": 426.574723,
       "blocks": 30},
      "ns_per_element": 6.705891,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.051732, 1.056073, 1.054901],
       "q75": 1.06352,
       "q25": 1.04789,
@@ -3231,7 +3231,7 @@
       "blocks": 30},
      "ns_per_element": 7.076798,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.737971, 6.7051, 6.714096],
       "q75": 6.755883,
       "q25": 6.661799,
@@ -3250,7 +3250,7 @@
       "blocks": 30},
      "ns_per_element": 45.099634,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.619935, 0.61982, 0.619157],
       "q75": 0.621717,
       "q25": 0.616247,
@@ -3269,7 +3269,7 @@
       "blocks": 30},
      "ns_per_element": 4.150272,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.585465, 0.591793, 0.590281],
       "q75": 0.597283,
       "q25": 0.584847,
@@ -3288,7 +3288,7 @@
       "blocks": 30},
      "ns_per_element": 3.968022,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.559126, 0.560261, 0.555921],
       "q75": 0.566611,
       "q25": 0.552175,
@@ -3312,7 +3312,7 @@
    "profile": "lifecycle",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 2390170.236872,
      "ns_per_operation":
@@ -3324,8 +3324,8 @@
       "ci95_high": 420.902361,
       "blocks": 30},
      "ns_per_element": 6.537191,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.082732, 1.089746, 1.087325],
       "q75": 1.106703,
       "q25": 1.077454,
@@ -3344,7 +3344,7 @@
       "blocks": 30},
      "ns_per_element": 7.111932,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.912365, 6.857857, 6.853182],
       "q75": 6.921092,
       "q25": 6.784615,
@@ -3363,7 +3363,7 @@
       "blocks": 30},
      "ns_per_element": 44.997535,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.629527, 0.628985, 0.630491],
       "q75": 0.631412,
       "q25": 0.627281,
@@ -3382,7 +3382,7 @@
       "blocks": 30},
      "ns_per_element": 4.115828,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.601983, 0.60153, 0.601614],
       "q75": 0.609094,
       "q25": 0.598588,
@@ -3401,7 +3401,7 @@
       "blocks": 30},
      "ns_per_element": 3.941938,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.558211, 0.563587, 0.563261],
       "q75": 0.568291,
       "q25": 0.556719,
@@ -3425,7 +3425,7 @@
    "profile": "lifecycle",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 41537758.77754,
      "ns_per_operation":
@@ -3437,8 +3437,8 @@
       "ci95_high": 24.36793,
       "blocks": 30},
      "ns_per_element": 24.074481,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.531662, 0.539282, 0.533572],
       "q75": 0.541105,
       "q25": 0.527938,
@@ -3457,7 +3457,7 @@
       "blocks": 30},
      "ns_per_element": 12.892928,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [2.252228, 2.261789, 2.264794],
       "q75": 2.271963,
       "q25": 2.228227,
@@ -3476,7 +3476,7 @@
       "blocks": 30},
      "ns_per_element": 54.403233,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.828694, 0.820433, 0.826363],
       "q75": 0.831419,
       "q25": 0.811995,
@@ -3495,7 +3495,7 @@
       "blocks": 30},
      "ns_per_element": 19.802176,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.767442, 0.769332, 0.773698],
       "q75": 0.782739,
       "q25": 0.760687,
@@ -3514,7 +3514,7 @@
       "blocks": 30},
      "ns_per_element": 18.530745,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.80042, 0.804669, 0.807113],
       "q75": 0.810198,
       "q25": 0.795882,
@@ -3538,7 +3538,7 @@
    "profile": "lifecycle",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 9946466.635615,
      "ns_per_operation":
@@ -3550,8 +3550,8 @@
       "ci95_high": 101.039633,
       "blocks": 30},
      "ns_per_element": 6.283638,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.116877, 1.125576, 1.121098],
       "q75": 1.129712,
       "q25": 1.112981,
@@ -3570,7 +3570,7 @@
       "blocks": 30},
      "ns_per_element": 7.045087,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [7.25906, 7.299803, 7.298823],
       "q75": 7.349215,
       "q25": 7.229875,
@@ -3589,7 +3589,7 @@
       "blocks": 30},
      "ns_per_element": 45.940075,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.671694, 0.674839, 0.671295],
       "q75": 0.677498,
       "q25": 0.66891,
@@ -3608,7 +3608,7 @@
       "blocks": 30},
      "ns_per_element": 4.223975,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.628415, 0.630825, 0.628849],
       "q75": 0.631228,
       "q25": 0.626556,
@@ -3627,7 +3627,7 @@
       "blocks": 30},
      "ns_per_element": 3.960166,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.615367, 0.628667, 0.617069],
       "q75": 0.627716,
       "q25": 0.614764,
@@ -3651,7 +3651,7 @@
    "profile": "lifecycle",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 2389035.002587,
      "ns_per_operation":
@@ -3663,8 +3663,8 @@
       "ci95_high": 420.759229,
       "blocks": 30},
      "ns_per_element": 6.540298,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1.082322, 1.084034, 1.089596],
       "q75": 1.094074,
       "q25": 1.075474,
@@ -3683,7 +3683,7 @@
       "blocks": 30},
      "ns_per_element": 7.101461,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.907249, 6.918503, 6.862077],
       "q75": 6.961542,
       "q25": 6.846778,
@@ -3702,7 +3702,7 @@
       "blocks": 30},
      "ns_per_element": 45.130097,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.629198, 0.629405, 0.628971],
       "q75": 0.632359,
       "q25": 0.626701,
@@ -3721,7 +3721,7 @@
       "blocks": 30},
      "ns_per_element": 4.115893,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.60504, 0.606372, 0.602486],
       "q75": 0.608168,
       "q25": 0.601989,
@@ -3740,7 +3740,7 @@
       "blocks": 30},
      "ns_per_element": 3.960816,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.561668, 0.572815, 0.558994],
       "q75": 0.573798,
       "q25": 0.557941,
@@ -3764,7 +3764,7 @@
    "profile": "lifecycle",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 41524614.419806,
      "ns_per_operation":
@@ -3776,8 +3776,8 @@
       "ci95_high": 24.25117,
       "blocks": 30},
      "ns_per_element": 24.082102,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [2.352618, 2.347823, 2.339703],
       "q75": 2.367097,
       "q25": 2.322785,
@@ -3796,7 +3796,7 @@
       "blocks": 30},
      "ns_per_element": 56.515177,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [2.266472, 2.257141, 2.257838],
       "q75": 2.279057,
       "q25": 2.231195,
@@ -3815,7 +3815,7 @@
       "blocks": 30},
      "ns_per_element": 54.365645,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.820941, 0.824638, 0.827714],
       "q75": 0.829224,
       "q25": 0.818165,
@@ -3834,7 +3834,7 @@
       "blocks": 30},
      "ns_per_element": 19.820818,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.766342, 0.767338, 0.766222],
       "q75": 0.774852,
       "q25": 0.760126,
@@ -3853,7 +3853,7 @@
       "blocks": 30},
      "ns_per_element": 18.461689,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.803351, 0.80875, 0.808751],
       "q75": 0.811279,
       "q25": 0.800461,
@@ -3877,7 +3877,7 @@
    "profile": "lifecycle",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 9931796.922383,
      "ns_per_operation":
@@ -3889,8 +3889,8 @@
       "ci95_high": 101.277281,
       "blocks": 30},
      "ns_per_element": 6.29292,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [8.085495, 8.139392, 8.170475],
       "q75": 8.191129,
       "q25": 8.09844,
@@ -3909,7 +3909,7 @@
       "blocks": 30},
      "ns_per_element": 51.298751,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [7.269205, 7.225688, 7.32401],
       "q75": 7.330232,
       "q25": 7.214091,
@@ -3928,7 +3928,7 @@
       "blocks": 30},
      "ns_per_element": 45.906541,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.6713, 0.670501, 0.67153],
       "q75": 0.674639,
       "q25": 0.668577,
@@ -3947,7 +3947,7 @@
       "blocks": 30},
      "ns_per_element": 4.219412,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.629379, 0.627276, 0.62936],
       "q75": 0.631667,
       "q25": 0.625229,
@@ -3966,7 +3966,7 @@
       "blocks": 30},
      "ns_per_element": 3.956188,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.616295, 0.619528, 0.620397],
       "q75": 0.62172,
       "q25": 0.614212,
@@ -3990,7 +3990,7 @@
    "profile": "lifecycle",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 2380493.018741,
      "ns_per_operation":
@@ -4002,8 +4002,8 @@
       "ci95_high": 421.692706,
       "blocks": 30},
      "ns_per_element": 6.563766,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [7.633516, 7.640296, 7.695314],
       "q75": 7.700392,
       "q25": 7.588335,
@@ -4022,7 +4022,7 @@
       "blocks": 30},
      "ns_per_element": 50.263714,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.939273, 6.915388, 6.847322],
       "q75": 6.958164,
       "q25": 6.80698,
@@ -4041,7 +4041,7 @@
       "blocks": 30},
      "ns_per_element": 45.353128,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.629807, 0.630293, 0.627646],
       "q75": 0.632308,
       "q25": 0.624436,
@@ -4060,7 +4060,7 @@
       "blocks": 30},
      "ns_per_element": 4.11834,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.598927, 0.59833, 0.60594],
       "q75": 0.607964,
       "q25": 0.595731,
@@ -4079,7 +4079,7 @@
       "blocks": 30},
      "ns_per_element": 3.944461,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.56621, 0.567745, 0.558188],
       "q75": 0.570802,
       "q25": 0.55738,
@@ -4103,7 +4103,7 @@
    "profile": "lifecycle",
    "length": 1,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 41428454.589494,
      "ns_per_operation":
@@ -4115,8 +4115,8 @@
       "ci95_high": 24.235448,
       "blocks": 30},
      "ns_per_element": 24.137999,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [2.336964, 2.362566, 2.341955],
       "q75": 2.365741,
       "q25": 2.329307,
@@ -4135,7 +4135,7 @@
       "blocks": 30},
      "ns_per_element": 56.661987,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [2.26428, 2.25398, 2.246738],
       "q75": 2.270932,
       "q25": 2.228962,
@@ -4154,7 +4154,7 @@
       "blocks": 30},
      "ns_per_element": 54.306026,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.822988, 0.82906, 0.818936],
       "q75": 0.831323,
       "q25": 0.81766,
@@ -4173,7 +4173,7 @@
       "blocks": 30},
      "ns_per_element": 19.789058,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.765454, 0.762963, 0.765237],
       "q75": 0.770962,
       "q25": 0.758262,
@@ -4192,7 +4192,7 @@
       "blocks": 30},
      "ns_per_element": 18.457141,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.808808, 0.809716, 0.805367],
       "q75": 0.811014,
       "q25": 0.802567,
@@ -4216,7 +4216,7 @@
    "profile": "lifecycle",
    "length": 16,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 9928343.059492,
      "ns_per_operation":
@@ -4228,8 +4228,8 @@
       "ci95_high": 101.112741,
       "blocks": 30},
      "ns_per_element": 6.295109,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [8.190856, 8.186396, 8.191465],
       "q75": 8.227931,
       "q25": 8.141041,
@@ -4248,7 +4248,7 @@
       "blocks": 30},
      "ns_per_element": 51.595192,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [7.261045, 7.280141, 7.290569],
       "q75": 7.324755,
       "q25": 7.210654,
@@ -4267,7 +4267,7 @@
       "blocks": 30},
      "ns_per_element": 45.945492,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.673301, 0.669193, 0.668801],
       "q75": 0.675203,
       "q25": 0.667856,
@@ -4286,7 +4286,7 @@
       "blocks": 30},
      "ns_per_element": 4.217321,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.631102, 0.628529, 0.628146],
       "q75": 0.631704,
       "q25": 0.626993,
@@ -4305,7 +4305,7 @@
       "blocks": 30},
      "ns_per_element": 3.957393,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.617267, 0.624896, 0.618338],
       "q75": 0.624869,
       "q25": 0.61577,
@@ -4329,7 +4329,7 @@
    "profile": "lifecycle",
    "length": 64,
    "implementations":
-   [{"paired_speedup_baseline_over_compilatrix":
+   [{"paired_speedup_baseline_over_ixcc":
      {"session_medians": [1, 1, 1], "q75": 1, "q25": 1, "median": 1, "ci95_low": 1, "ci95_high": 1, "blocks": 30},
      "operations_per_second": 2387221.010769,
      "ns_per_operation":
@@ -4341,8 +4341,8 @@
       "ci95_high": 423.610091,
       "blocks": 30},
      "ns_per_element": 6.545267,
-     "implementation": "compilatrix"},
-    {"paired_speedup_baseline_over_compilatrix":
+     "implementation": "ixcc"},
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [7.712812, 7.715512, 7.800835],
       "q75": 7.811232,
       "q25": 7.677105,
@@ -4361,7 +4361,7 @@
       "blocks": 30},
      "ns_per_element": 50.845827,
      "implementation": "lean"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [6.931174, 6.905916, 6.919817],
       "q75": 6.976935,
       "q25": 6.853414,
@@ -4380,7 +4380,7 @@
       "blocks": 30},
      "ns_per_element": 45.484201,
      "implementation": "cakeml"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.629276, 0.626218, 0.630352],
       "q75": 0.631229,
       "q25": 0.625763,
@@ -4399,7 +4399,7 @@
       "blocks": 30},
      "ns_per_element": 4.116645,
      "implementation": "compcert"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.604032, 0.603967, 0.605163],
       "q75": 0.60758,
       "q25": 0.598701,
@@ -4418,7 +4418,7 @@
       "blocks": 30},
      "ns_per_element": 3.954267,
      "implementation": "gcc"},
-    {"paired_speedup_baseline_over_compilatrix":
+    {"paired_speedup_baseline_over_ixcc":
      {"session_medians": [0.563277, 0.555756, 0.557898],
       "q75": 0.566913,
       "q25": 0.555317,
@@ -4444,7 +4444,7 @@
    "minimum_sample_rss_kb": 2192,
    "maximum_sample_rss_kb": 2464,
    "maximum_recorded_peak_rss_kb": 11104,
-   "implementation": "compilatrix"},
+   "implementation": "ixcc"},
   {"ready_rss_kb_median": 7342,
    "minimum_sample_rss_kb": 7300,
    "maximum_sample_rss_kb": 15720,
@@ -4473,7 +4473,7 @@
  "missing_rows": [],
  "measurement_blake3": "2854a62e2bc3a475400701cbdf53d5f6fc434799910519fdd629849a2b1e1cfb",
  "freeze_blake3": "22f37e6fac692671bd89d31ba4d6422d8c5b7db31778eab7641620e3ae3938f1",
- "format": "compilatrix/benchmark-analysis/1",
+ "format": "ixcc/benchmark-analysis/1",
  "failed_published_rows": [],
  "diagnostics_blake3": "2aa74791ca03ec5d59523f464b40bc57c379441740177aa084f25f333296d0a6",
  "diagnostics":
@@ -4773,21 +4773,21 @@
    "maximum_current_rss_kb": 68124,
    "interpretation":
    "separate instrumented lifecycle executions; GC time uses the pinned runtime gettimeofday hook; terminal elapsed time uses CLOCK_MONOTONIC_RAW"},
-  "format": "compilatrix/benchmark-diagnostics/1",
+  "format": "ixcc/benchmark-diagnostics/1",
   "compiler_costs":
   [{"resources":
     {"wall_seconds": 13.5, "user_seconds": 13.4, "system_seconds": 0.01, "peak_rss_kb": 83660, "exit_code": 0},
-    "name": "compilatrix-produce",
+    "name": "ixcc-produce",
     "command":
     {"stdin_blake3": null,
      "exit_code": 0,
      "environment_overrides": [],
      "envelope_ns": 13502264965,
      "command": ".lake/build/bin/source-native-runtime",
-     "arguments": ["/tmp/compilatrix-perf-build-11/artifacts/compilatrix"]}},
+     "arguments": ["/tmp/ixcc-perf-build-11/artifacts/ixcc"]}},
    {"resources":
     {"wall_seconds": 31.84, "user_seconds": 31.05, "system_seconds": 0.17, "peak_rss_kb": 84696, "exit_code": 0},
-    "name": "compilatrix-independent-gate",
+    "name": "ixcc-independent-gate",
     "command":
     {"stdin_blake3": null,
      "exit_code": 0,
@@ -4813,7 +4813,7 @@
      "arguments":
      ["--root=benchmarks/lean",
       "-c",
-      "/tmp/compilatrix-perf-build-11/artifacts/lean/LeanReverse.c",
+      "/tmp/ixcc-perf-build-11/artifacts/lean/LeanReverse.c",
       "benchmarks/lean/LeanReverse.lean"]}},
    {"resources":
     {"wall_seconds": 0.12, "user_seconds": 0.08, "system_seconds": 0.03, "peak_rss_kb": 71508, "exit_code": 0},
@@ -4830,14 +4830,14 @@
       "-mtune=generic",
       "-fno-lto",
       "-fomit-frame-pointer",
-      "-ffile-prefix-map=/tmp/compilatrix-perf-build-11=/benchmark-build",
+      "-ffile-prefix-map=/tmp/ixcc-perf-build-11=/benchmark-build",
       "-DNDEBUG",
       "-I",
       "/nix/store/fbgp3pw492kzs76jb8c62zwy8ndz6a58-lean-4.33.0/include",
       "-c",
-      "/tmp/compilatrix-perf-build-11/artifacts/lean/LeanReverse.c",
+      "/tmp/ixcc-perf-build-11/artifacts/lean/LeanReverse.c",
       "-o",
-      "/tmp/compilatrix-perf-build-11/artifacts/lean/kernel.o"]}},
+      "/tmp/ixcc-perf-build-11/artifacts/lean/kernel.o"]}},
    {"resources":
     {"wall_seconds": 1.09, "user_seconds": 0.51, "system_seconds": 0.55, "peak_rss_kb": 740392, "exit_code": 0},
     "name": "cakeml-kernel",
@@ -4862,7 +4862,7 @@
       "-c",
       "benchmarks/native/arena_kernel.c",
       "-o",
-      "/tmp/compilatrix-perf-build-11/artifacts/compcert/kernel.o"]}},
+      "/tmp/ixcc-perf-build-11/artifacts/compcert/kernel.o"]}},
    {"resources":
     {"wall_seconds": 0.05, "user_seconds": 0.03, "system_seconds": 0.01, "peak_rss_kb": 36160, "exit_code": 0},
     "name": "kernel-gcc",
@@ -4878,11 +4878,11 @@
       "-mtune=generic",
       "-fno-lto",
       "-fomit-frame-pointer",
-      "-ffile-prefix-map=/tmp/compilatrix-perf-build-11=/benchmark-build",
+      "-ffile-prefix-map=/tmp/ixcc-perf-build-11=/benchmark-build",
       "-c",
       "benchmarks/native/arena_kernel.c",
       "-o",
-      "/tmp/compilatrix-perf-build-11/artifacts/gcc/kernel.o"]}},
+      "/tmp/ixcc-perf-build-11/artifacts/gcc/kernel.o"]}},
    {"resources":
     {"wall_seconds": 0.07, "user_seconds": 0.04, "system_seconds": 0.02, "peak_rss_kb": 108284, "exit_code": 0},
     "name": "kernel-clang",
@@ -4898,11 +4898,11 @@
       "-mtune=generic",
       "-fno-lto",
       "-fomit-frame-pointer",
-      "-ffile-prefix-map=/tmp/compilatrix-perf-build-11=/benchmark-build",
+      "-ffile-prefix-map=/tmp/ixcc-perf-build-11=/benchmark-build",
       "-c",
       "benchmarks/native/arena_kernel.c",
       "-o",
-      "/tmp/compilatrix-perf-build-11/artifacts/clang/kernel.o"]}},
+      "/tmp/ixcc-perf-build-11/artifacts/clang/kernel.o"]}},
    {"resources":
     {"wall_seconds": 0.05, "user_seconds": 0.04, "system_seconds": 0, "peak_rss_kb": 53980, "exit_code": 0},
     "name": "upstream-applyClosed-produce",
@@ -4912,7 +4912,7 @@
      "environment_overrides": [],
      "envelope_ns": 54372820,
      "command": ".lake/build/bin/source-native-upstream",
-     "arguments": ["/tmp/compilatrix-perf-build-11/artifacts/upstream-applyClosed", "applyClosed"]}},
+     "arguments": ["/tmp/ixcc-perf-build-11/artifacts/upstream-applyClosed", "applyClosed"]}},
    {"resources":
     {"wall_seconds": 0.03, "user_seconds": 0.02, "system_seconds": 0, "peak_rss_kb": 49588, "exit_code": 0},
     "name": "upstream-applyClosed-check",
@@ -4922,7 +4922,7 @@
      "environment_overrides": [],
      "envelope_ns": 36530084,
      "command": ".lake/build/bin/check-source-native-upstream",
-     "arguments": ["inspect", "/tmp/compilatrix-perf-build-11/artifacts/upstream-applyClosed"]}},
+     "arguments": ["inspect", "/tmp/ixcc-perf-build-11/artifacts/upstream-applyClosed"]}},
    {"resources":
     {"wall_seconds": 0.05, "user_seconds": 0.04, "system_seconds": 0, "peak_rss_kb": 56004, "exit_code": 0},
     "name": "upstream-letClosed-produce",
@@ -4932,7 +4932,7 @@
      "environment_overrides": [],
      "envelope_ns": 62775537,
      "command": ".lake/build/bin/source-native-upstream",
-     "arguments": ["/tmp/compilatrix-perf-build-11/artifacts/upstream-letClosed", "letClosed"]}},
+     "arguments": ["/tmp/ixcc-perf-build-11/artifacts/upstream-letClosed", "letClosed"]}},
    {"resources":
     {"wall_seconds": 0.03, "user_seconds": 0.02, "system_seconds": 0.01, "peak_rss_kb": 49760, "exit_code": 0},
     "name": "upstream-letClosed-check",
@@ -4942,47 +4942,47 @@
      "environment_overrides": [],
      "envelope_ns": 42417603,
      "command": ".lake/build/bin/check-source-native-upstream",
-     "arguments": ["inspect", "/tmp/compilatrix-perf-build-11/artifacts/upstream-letClosed"]}}],
+     "arguments": ["inspect", "/tmp/ixcc-perf-build-11/artifacts/upstream-letClosed"]}}],
   "code_sizes":
-  [{"name": "compilatrix-main",
+  [{"name": "ixcc-main",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/compilatrix/main.o  :\nsection             size   addr\n.text               1036      0\n.note.compilatrix    104      0\n.note.GNU-stack        0      0\nTotal               1140\n\n\n"},
-   {"name": "compilatrix-release",
+    "/tmp/ixcc-perf-build-11/artifacts/ixcc/main.o  :\nsection             size   addr\n.text               1036      0\n.note.ixcc    104      0\n.note.GNU-stack        0      0\nTotal               1140\n\n\n"},
+   {"name": "ixcc-release",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/compilatrix/release.o  :\nsection             size   addr\n.text                231      0\n.note.compilatrix    104      0\n.note.GNU-stack        0      0\nTotal                335\n\n\n"},
+    "/tmp/ixcc-perf-build-11/artifacts/ixcc/release.o  :\nsection             size   addr\n.text                231      0\n.note.ixcc    104      0\n.note.GNU-stack        0      0\nTotal                335\n\n\n"},
    {"name": "lean-kernel",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/lean/kernel.o  :\nsection                        size   addr\n.text                             0      0\n.data                             0      0\n.bss                              0      0\n.text.l_benchReverseOnto        349      0\n.text.bench_lean_reverse         10      0\n.text.initialize_LeanReverse    306      0\n.bss._G_initialized               1      0\n.comment                         19      0\n.note.GNU-stack                   0      0\n.note.gnu.property               48      0\n.eh_frame                       136      0\nTotal                           869\n\n\n"},
+    "/tmp/ixcc-perf-build-11/artifacts/lean/kernel.o  :\nsection                        size   addr\n.text                             0      0\n.data                             0      0\n.bss                              0      0\n.text.l_benchReverseOnto        349      0\n.text.bench_lean_reverse         10      0\n.text.initialize_LeanReverse    306      0\n.bss._G_initialized               1      0\n.comment                         19      0\n.note.GNU-stack                   0      0\n.note.gnu.property               48      0\n.eh_frame                       136      0\nTotal                           869\n\n\n"},
    {"name": "cakeml-kernel",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/cakeml/kernel.o  :\nsection                size   addr\n.text                106564      0\n.data                 16272      0\n.bss                      0      0\n.note.gnu.property       48      0\nTotal                122884\n\n\n"},
+    "/tmp/ixcc-perf-build-11/artifacts/cakeml/kernel.o  :\nsection                size   addr\n.text                106564      0\n.data                 16272      0\n.bss                      0      0\n.note.gnu.property       48      0\nTotal                122884\n\n\n"},
    {"name": "compcert-kernel",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/compcert/kernel.o  :\nsection              size   addr\n.text                 679      0\n.data                   0      0\n.bss                    0      0\n.note.GNU-stack         0      0\n.note.gnu.property     48      0\n.eh_frame              64      0\nTotal                 791\n\n\n"},
+    "/tmp/ixcc-perf-build-11/artifacts/compcert/kernel.o  :\nsection              size   addr\n.text                 679      0\n.data                   0      0\n.bss                    0      0\n.note.GNU-stack         0      0\n.note.gnu.property     48      0\n.eh_frame              64      0\nTotal                 791\n\n\n"},
    {"name": "gcc-kernel",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/gcc/kernel.o  :\nsection              size   addr\n.text                 596      0\n.data                   0      0\n.bss                    0      0\n.rodata.cst16          16      0\n.comment               19      0\n.note.GNU-stack         0      0\n.note.gnu.property     48      0\n.eh_frame              80      0\nTotal                 759\n\n\n"},
+    "/tmp/ixcc-perf-build-11/artifacts/gcc/kernel.o  :\nsection              size   addr\n.text                 596      0\n.data                   0      0\n.bss                    0      0\n.rodata.cst16          16      0\n.comment               19      0\n.note.GNU-stack         0      0\n.note.gnu.property     48      0\n.eh_frame              80      0\nTotal                 759\n\n\n"},
    {"name": "clang-kernel",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/artifacts/clang/kernel.o  :\nsection           size   addr\n.text              776      0\n.comment            22      0\n.note.GNU-stack      0      0\n.eh_frame          120      0\n.llvm_addrsig        0      0\nTotal              918\n\n\n"},
-   {"name": "compilatrix",
+    "/tmp/ixcc-perf-build-11/artifacts/clang/kernel.o  :\nsection           size   addr\n.text              776      0\n.comment            22      0\n.note.GNU-stack      0      0\n.eh_frame          120      0\n.llvm_addrsig        0      0\nTotal              918\n\n\n"},
+   {"name": "ixcc",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/bin/compilatrix  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11991    4512\n.fini                    13   16504\n.rodata                2200   20480\n.eh_frame_hdr           260   22680\n.eh_frame              1424   22944\n.note.gnu.property       32   24368\n.note.ABI-tag            32   24400\n.init_array               8   27864\n.fini_array               8   27872\n.dynamic                528   27880\n.got                    264   28408\n.data                    16   28672\n.bss                 455872   28704\n.comment                 18       0\n.note.compilatrix       208       0\nTotal                475903\n\n\n"},
+    "/tmp/ixcc-perf-build-11/bin/ixcc  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11991    4512\n.fini                    13   16504\n.rodata                2200   20480\n.eh_frame_hdr           260   22680\n.eh_frame              1424   22944\n.note.gnu.property       32   24368\n.note.ABI-tag            32   24400\n.init_array               8   27864\n.fini_array               8   27872\n.dynamic                528   27880\n.got                    264   28408\n.data                    16   28672\n.bss                 455872   28704\n.comment                 18       0\n.note.ixcc       208       0\nTotal                475903\n\n\n"},
    {"name": "lean",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/bin/lean  :\nsection                 size      addr\n.interp                   83       848\n.hash                   2300       936\n.gnu.hash                 48      3240\n.dynsym                 7440      3288\n.dynstr                 3834     10728\n.gnu.version             620     14562\n.gnu.version_r           368     15184\n.rela.dyn             160584     15552\n.rela.plt               7056    176136\n.init                     27    184320\n.plt                    4720    184352\n.plt.got                  24    189072\n.text                1915232    189120\n__lcxx_override          277   2104352\n.fini                     13   2104632\n.rodata               111751   2105344\n.eh_frame_hdr          60972   2217096\n.eh_frame             281992   2278072\n.gcc_except_table      12108   2560064\n.note.gnu.property        32   2572176\n.note.ABI-tag             32   2572208\n.tdata                     8   2575800\n.tbss                    168   2575808\n.init_array               40   2575808\n.fini_array               24   2575848\n.data.rel.ro           95720   2575872\n.dynamic                 608   2671592\n.got                    2488   2672200\n.data                  18008   2674688\n.bss                  853624   2692736\n.comment                 221         0\n.deplibs                  11         0\nTotal                3540433\n\n\n"},
+    "/tmp/ixcc-perf-build-11/bin/lean  :\nsection                 size      addr\n.interp                   83       848\n.hash                   2300       936\n.gnu.hash                 48      3240\n.dynsym                 7440      3288\n.dynstr                 3834     10728\n.gnu.version             620     14562\n.gnu.version_r           368     15184\n.rela.dyn             160584     15552\n.rela.plt               7056    176136\n.init                     27    184320\n.plt                    4720    184352\n.plt.got                  24    189072\n.text                1915232    189120\n__lcxx_override          277   2104352\n.fini                     13   2104632\n.rodata               111751   2105344\n.eh_frame_hdr          60972   2217096\n.eh_frame             281992   2278072\n.gcc_except_table      12108   2560064\n.note.gnu.property        32   2572176\n.note.ABI-tag             32   2572208\n.tdata                     8   2575800\n.tbss                    168   2575808\n.init_array               40   2575808\n.fini_array               24   2575848\n.data.rel.ro           95720   2575872\n.dynamic                 608   2671592\n.got                    2488   2672200\n.data                  18008   2674688\n.bss                  853624   2692736\n.comment                 221         0\n.deplibs                  11         0\nTotal                3540433\n\n\n"},
    {"name": "cakeml",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/bin/cakeml  :\nsection                size     addr\n.interp                  83      792\n.hash                   328      880\n.gnu.hash                36     1208\n.dynsym                1032     1248\n.dynstr                 724     2280\n.gnu.version             86     3004\n.gnu.version_r          144     3096\n.rela.dyn               264     3240\n.rela.plt               840     3504\n.init                    27     8192\n.plt                    576     8224\n.plt.got                  8     8800\n.text                118852    12288\n.fini                    13   131140\n.rodata                2731   135168\n.eh_frame_hdr           396   137900\n.eh_frame              1964   138296\n.note.gnu.property       64   140264\n.note.ABI-tag            32   140328\n.init_array               8   146528\n.fini_array               8   146536\n.dynamic                544   146544\n.got                    368   147088\n.data                 16288   147456\n.bss                 324888   163744\n.comment                 18        0\nTotal                470322\n\n\n"},
+    "/tmp/ixcc-perf-build-11/bin/cakeml  :\nsection                size     addr\n.interp                  83      792\n.hash                   328      880\n.gnu.hash                36     1208\n.dynsym                1032     1248\n.dynstr                 724     2280\n.gnu.version             86     3004\n.gnu.version_r          144     3096\n.rela.dyn               264     3240\n.rela.plt               840     3504\n.init                    27     8192\n.plt                    576     8224\n.plt.got                  8     8800\n.text                118852    12288\n.fini                    13   131140\n.rodata                2731   135168\n.eh_frame_hdr           396   137900\n.eh_frame              1964   138296\n.note.gnu.property       64   140264\n.note.ABI-tag            32   140328\n.init_array               8   146528\n.fini_array               8   146536\n.dynamic                544   146544\n.got                    368   147088\n.data                 16288   147456\n.bss                 324888   163744\n.comment                 18        0\nTotal                470322\n\n\n"},
    {"name": "compcert",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/bin/compcert  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11399    4512\n.fini                    13   15912\n.rodata                2200   16384\n.eh_frame_hdr           276   18584\n.eh_frame              1468   18864\n.note.gnu.property       64   20336\n.note.ABI-tag            32   20400\n.init_array               8   23768\n.fini_array               8   23776\n.dynamic                528   23784\n.got                    264   24312\n.data                    16   24576\n.bss                 455872   24608\n.comment                 18       0\nTotal                475195\n\n\n"},
+    "/tmp/ixcc-perf-build-11/bin/compcert  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11399    4512\n.fini                    13   15912\n.rodata                2200   16384\n.eh_frame_hdr           276   18584\n.eh_frame              1468   18864\n.note.gnu.property       64   20336\n.note.ABI-tag            32   20400\n.init_array               8   23768\n.fini_array               8   23776\n.dynamic                528   23784\n.got                    264   24312\n.data                    16   24576\n.bss                 455872   24608\n.comment                 18       0\nTotal                475195\n\n\n"},
    {"name": "gcc",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/bin/gcc  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11316    4512\n.fini                    13   15828\n.rodata                2216   16384\n.eh_frame_hdr           276   18600\n.eh_frame              1484   18880\n.note.gnu.property       64   20368\n.note.ABI-tag            32   20432\n.init_array               8   23768\n.fini_array               8   23776\n.dynamic                528   23784\n.got                    264   24312\n.data                    16   24576\n.bss                 455872   24608\n.comment                 18       0\nTotal                475144\n\n\n"},
+    "/tmp/ixcc-perf-build-11/bin/gcc  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11316    4512\n.fini                    13   15828\n.rodata                2216   16384\n.eh_frame_hdr           276   18600\n.eh_frame              1484   18880\n.note.gnu.property       64   20368\n.note.ABI-tag            32   20432\n.init_array               8   23768\n.fini_array               8   23776\n.dynamic                528   23784\n.got                    264   24312\n.data                    16   24576\n.bss                 455872   24608\n.comment                 18       0\nTotal                475144\n\n\n"},
    {"name": "clang",
     "gnu_size_A":
-    "/tmp/compilatrix-perf-build-11/bin/clang  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11496    4512\n.fini                    13   16008\n.rodata                2200   16384\n.eh_frame_hdr           276   18584\n.eh_frame              1524   18864\n.note.gnu.property       32   20392\n.note.ABI-tag            32   20424\n.init_array               8   23768\n.fini_array               8   23776\n.dynamic                528   23784\n.got                    264   24312\n.data                    16   24576\n.bss                 455872   24608\n.comment                 39       0\nTotal                475337\n\n\n"}],
+    "/tmp/ixcc-perf-build-11/bin/clang  :\nsection                size    addr\n.interp                  83     792\n.hash                   196     880\n.gnu.hash                36    1080\n.dynsym                 720    1120\n.dynstr                 627    1840\n.gnu.version             60    2468\n.gnu.version_r          112    2528\n.rela.dyn               264    2640\n.rela.plt               528    2904\n.init                    27    4096\n.plt                    368    4128\n.plt.got                  8    4496\n.text                 11496    4512\n.fini                    13   16008\n.rodata                2200   16384\n.eh_frame_hdr           276   18584\n.eh_frame              1524   18864\n.note.gnu.property       32   20392\n.note.ABI-tag            32   20424\n.init_array               8   23768\n.fini_array               8   23776\n.dynamic                528   23784\n.got                    264   24312\n.data                    16   24576\n.bss                 455872   24608\n.comment                 39       0\nTotal                475337\n\n\n"}],
   "build_blake3": "0a3c7757fa3b6c3634c75d247c65b5da92b04692429376d77a278aa8edab1046"},
  "build_blake3": "0a3c7757fa3b6c3634c75d247c65b5da92b04692429376d77a278aa8edab1046",
  "bootstrap_seed": 2671931027,

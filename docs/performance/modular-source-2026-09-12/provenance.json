@@ -151,7 +151,7 @@
       "stdout": "Linux sharkanfahr 7.1.2 #1-NixOS SMP PREEMPT_DYNAMIC Sat Jun 27 10:08:18 UTC 2026 x86_64 GNU/Linux\n"
     }
   },
-  "format": "compilatrix/modular-source-provenance/1",
+  "format": "ixcc/modular-source-provenance/1",
   "measured_base_revision": "c6ef19a4481aec6b81083210c6833e2758a35cc9",
   "plan": {
     "case_order": [
@@ -182,7 +182,7 @@
       "bytes": 27476,
       "sha256": "1b6842f8705f23d67c6834ad669fcdda62ecb6691c05e677526dcb6a602e5c5b"
     },
-    "format": "compilatrix/modular-source-observation-plan/1",
+    "format": "ixcc/modular-source-observation-plan/1",
     "processes": 3,
     "replay": "Exact retained source and artifact replay using hashed executable seeds, not a Lean compiler rebuild or identical timing replay.",
     "scope": "Descriptive observations of three fresh fixed-order processes; no speedup, confidence, or isolated phase-memory claim.",
