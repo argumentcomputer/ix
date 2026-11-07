@@ -777,7 +777,10 @@ time a claim uses one of its roles, under a context that admits only the
 groups before it, so an operation's fast path never takes part in its own
 validation. The well-founded operations' groups come last and share the
 context before the first of them, so their common dependencies are checked
-once. A claim's walk checks a constant bound to a basis member or an
+once. The specification digest commits to this order and its two boundaries
+(`Ix/SpecDigest/Schedule.lean`), and to what the circuit reads off a role's
+identity (its name, inertness, quotient kind and native rule), so every table
+the circuit renders is a function of the digest's bytes. A claim's walk checks a constant bound to a basis member or an
 operation under the context its group is validated in, whether or not the
 claim uses the role: the check is the group's own when it does, and admits
 nothing when it does not. Under the standard axiom policy this declines a

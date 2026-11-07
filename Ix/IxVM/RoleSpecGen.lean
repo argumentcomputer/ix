@@ -30,22 +30,16 @@ What is rendered, per role:
 - for a definition specified by its equations, each unconditional equation's
   sides closed over its typed variables, and every equation's statement
   (`Π vars, Π hyps, Eq lhs rhs`), which a proof must meet;
-- the family of native rules that fires on the role's constant
-  (`role_prim_family`), which is IxVM's, not the specification's.
+- the native rule that fires on the role's constant (`role_prim_family`).
 
-The groups are validated in `groupOrder`: a group's roles are bound
-together (`Role.block`), and every role a group needs (`Role.deps`) is in an
-earlier group. The axioms come before the well-founded operations, whose
-certificates use `propext`. The tail comes last: the well-founded operations'
-groups, the groups of the definitions specified by their equations, and the
-groups that need them. The well-founded groups occupy a contiguous block
-before the first equation group. The circuit validates that block under the
-groups before it (`first_well_founded_group`), and later groups under the
-prefix before the equation groups (`first_equation_group`). Thus the
-well-founded operations cannot validate each other through native rules,
-while later checks can use them after admission. Equation definitions cannot
-validate each other through their native rules. Both boundaries and the
-contiguous block are checked before rendering. -/
+Every value rendered is a function of the specification digest's bytes
+(`Ix.SpecDigest.specBytes`). The specifications give the kinds, counts,
+types and equations. What the circuit reads off a role's identity (its name,
+inertness, quotient kind and native rule: `Ix.SpecDigest.inert`, `quotKind`,
+`nativeOp`) and the validation schedule (the group order and its two
+boundaries, `Ix.SpecDigest.Schedule.current`, `Ix/SpecDigest/Schedule.lean`)
+are defined beside the encoder, which commits to them, and only read here.
+The schedule is checked before rendering (`checkGroups`). -/
 
 @[expose] public section
 
@@ -53,28 +47,10 @@ namespace IxVM.RoleSpecGen
 
 open Ix.Kernel
 
-/-- The groups, by their first role, in validation order. -/
-def groupOrder : List Role :=
-  [.nat, .eq, .punit, .empty, .false, .quot, .char, .string, .list, .charOfNat,
-   .stringOfList, .bool, .natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq,
-   .natBle, .true, .and, .iff, .nonempty, .propext, .choice, .sorryAx,
-   .notProp, .decidable, .natLe, .int, .intLe, .bitVec, .byteArray,
-   .natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight,
-   .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse, .natDecEq, .natDecLe, .natDecLt,
-   .intNegOfNat, .intSubNatNat, .intNeg, .intAdd, .intSub, .intMul, .intNatAbs, .intEdiv,
-   .intEmod, .intPow, .bitVecToNat, .bitVecUlt, .stringDecEq, .stringToByteArray,
-   .listAppend, .stringAppend, .ifThenElse, .intDecEq, .intDecLe, .intDecLt, .intBmod, .intBdiv,
-   .charUtf8Size, .stringUtf8ByteSize, .stringBack]
-
-def groups : List (List Role) := groupOrder.map Role.block
+export Ix.SpecDigest (groupOrder groups groupOf groupNeeds wellFounded tailOnly
+  firstWellFoundedGroup firstEquationGroup)
 
 def roleIdx (r : Role) : Nat := Role.all.idxOf r
-
-def groupOf (r : Role) : Nat := (groups.findIdx? (·.contains r)).getD groups.length
-
-/-- The roles a group needs outside itself. -/
-def groupNeeds (g : List Role) : List Role :=
-  (g.flatMap Role.deps).eraseDups.filter (!g.contains ·)
 
 /-- The role keys actually read by a closed generated term, including
 projection heads and binder domains. Open variables and non-role keys do not
@@ -116,18 +92,14 @@ def checkReferenceGroups (g needs : List Role) (terms : List (Expr .anon)) :
       unless allowed.contains role do
         throw s!"generated specification references {repr role} outside its declared dependency groups"
 
-/-- The group order covers every role once, each group is a block, every
-dependency group is earlier, and its metadata covers the actual generated
-anchor and equation references. -/
+
+/-- The validation schedule is valid (`Ix.SpecDigest.Schedule.current`: it
+covers every role once, each group is a block, every dependency group is
+earlier, and both boundaries hold), and the dependency metadata covers the
+actual generated anchor and equation references. -/
 def checkGroups : Except String Unit := do
-  let flat := groups.flatten
-  unless flat.length == Role.all.length && Role.all.all flat.contains do
-    throw "role groups do not cover every role exactly once"
-  for (g, i) in groups.zipIdx do
-    for r in g do
-      unless Role.block r == g do throw s!"role group {i} is not {repr r}'s block"
-    for r in groupNeeds g do
-      unless groupOf r < i do throw s!"role group {i} needs {repr r}, which is not earlier"
+  let _ ← Ix.SpecDigest.Schedule.current
+  for g in groups do
     checkReferenceGroups g (groupNeeds g) (g.flatMap closedSpecTerms)
 
 /-- `natZero` ↦ `nat_zero`. -/
@@ -274,20 +246,17 @@ def member (r : Role) : Except String (ConstantInfo .anon × List (ConstantInfo 
   pure (d, decls)
 
 /-- How IxVM sees a block member: 0 inductive, 1 constructor, 2 recursor,
-3 axiom, 4–7 the quotient type, constructor, lift and induction principle. -/
+3 axiom, 4–7 the quotient type, constructor, lift and induction principle
+(`Ix.SpecDigest.quotKind` 1–4). -/
 def memberKind (r : Role) : Except String Nat := do
-  match r with
-  | .quot => pure 4
-  | .quotMk => pure 5
-  | .quotLift => pure 6
-  | .quotInd => pure 7
-  | _ =>
-    match (← member r).1 with
-    | .indInfo .. => pure 0
-    | .ctorInfo .. => pure 1
-    | .recInfo .. => pure 2
-    | .axiomInfo .. => pure 3
-    | _ => throw s!"{repr r}: unexpected block member"
+  let quot := Ix.SpecDigest.quotKind r
+  if quot != 0 then return 3 + quot
+  match (← member r).1 with
+  | .indInfo .. => pure 0
+  | .ctorInfo .. => pure 1
+  | .recInfo .. => pure 2
+  | .axiomInfo .. => pure 3
+  | _ => throw s!"{repr r}: unexpected block member"
 
 /-- A constructor's inductive role, index, parameter and field counts: the
 constructors after an inductive in its block are its own, in order. -/
@@ -320,14 +289,14 @@ def ctorCount (r : Role) : Except String Nat := do
   pure count
 
 /-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 the inert
-axiom `sorryAx` (tolerated as a declaration, never usable), 5 definition
-specified by its equations. -/
+axiom `sorryAx` (`Ix.SpecDigest.inert`: tolerated as a declaration, never
+usable), 5 definition specified by its equations. -/
 def specKind (r : Role) : Nat :=
   match r.spec (md := .anon) with
   | .block _ => 0
   | .anchor .. => 1
   | .ops .. => 2
-  | .axiom .. => if r == .sorryAx then 4 else 3
+  | .axiom .. => if Ix.SpecDigest.inert r then 4 else 3
   | .eqns .. => 5
 
 def levels (r : Role) : Except String Nat := do
@@ -361,46 +330,6 @@ def eqnsEquations (r : Role) : List (Equation .anon) :=
   | .eqns _ _ eqs => eqs
   | _ => []
 
-/-- A group of well-founded operations: its equations are certificates,
-which carry hypotheses. -/
-def wellFounded (g : List Role) : Bool :=
-  g.any fun r => (equations r).any (!·.1.isEmpty)
-
-/-- A group that must follow the initial structural prefix: a well-founded
-operation's, or a definition's specified by its equations. -/
-def tailOnly (g : List Role) : Bool :=
-  wellFounded g || g.any fun r => specKind r == 5
-
-/-- The index of the first group of the tail. Every group that must be in
-the tail is (`tailOnly`), and so is every group that needs a tail group;
-no other group is. `firstEquationGroup` additionally checks that its initial
-block consists exactly of the well-founded operations. -/
-def firstWellFoundedGroup : Except String Nat := do
-  let some first := groups.findIdx? tailOnly
-    | throw "no well-founded operation's group"
-  for (g, i) in groups.zipIdx do
-    let needsTail := (groupNeeds g).any fun r => first ≤ groupOf r
-    unless (tailOnly g || needsTail) == decide (first ≤ i) do
-      throw s!"role group {i}: the tail must be exactly the groups that need it"
-  pure first
-
-/-- The first equation group follows a nonempty contiguous block containing
-every well-founded group. This preserves the well-founded validation context
-and excludes equation definitions' native rules from later validation.
-Coverage and dependency order are checked separately by `checkGroups`. -/
-def firstEquationGroup (orderedGroups : List (List Role) := groups) : Except String Nat := do
-  let some firstWf := orderedGroups.findIdx? wellFounded
-    | throw "no well-founded operation's group"
-  let some firstEquation := orderedGroups.findIdx? (fun group =>
-      group.any fun role => specKind role == 5)
-    | throw "no definition-equation group"
-  unless firstWf < firstEquation do
-    throw "equation groups must follow the well-founded validation block"
-  for (group, index) in orderedGroups.zipIdx do
-    unless wellFounded group == decide (firstWf ≤ index ∧ index < firstEquation) do
-      throw s!"role group {index}: well-founded groups must form the block before the equation groups"
-  return firstEquation
-
 /-- An equation's levels: positional, as for its definition. -/
 def eqnLevels (r : Role) : List LevelParam := List.range (levels r |>.toOption.getD 0)
 
@@ -431,51 +360,10 @@ def closeEqnStatement (r : Role) (e : Equation .anon) : Except String String := 
     body := rStore "KernelTypes::KExprNode::Forall" [← expr ps i t, body]
   pure (renderArm body)
 
-/-- The family of native rules that fires on a role's constant (1 `Nat`
-operations, 2 `String`, 3 `BitVec`, 5 decision procedures, 6 `Int`; 0 none)
-together with the operation index within that family. -/
-def primFamilyOp : Role → Nat × Nat
-  | .natSucc => (1, 1)
-  | .natPred => (1, 2)
-  | .natAdd => (1, 3)
-  | .natSub => (1, 4)
-  | .natMul => (1, 5)
-  | .natDiv => (1, 6)
-  | .natMod => (1, 7)
-  | .natGcd => (1, 8)
-  | .natPow => (1, 9)
-  | .natLand => (1, 10)
-  | .natLor => (1, 11)
-  | .natXor => (1, 12)
-  | .natShiftLeft => (1, 13)
-  | .natShiftRight => (1, 14)
-  | .natBeq => (1, 15)
-  | .natBle => (1, 16)
-  | .stringOfList => (2, 1)
-  | .stringUtf8ByteSize => (2, 2)
-  | .stringBack => (2, 3)
-  | .stringToByteArray => (2, 4)
-  | .stringDecEq => (2, 5)
-  | .stringAppend => (2, 6)
-  | .bitVecToNat => (3, 1)
-  | .bitVecUlt => (3, 2)
-  | .natDecLt => (5, 1)
-  | .natDecLe => (5, 2)
-  | .natDecEq => (5, 3)
-  | .intDecLt => (5, 4)
-  | .intDecLe => (5, 5)
-  | .intDecEq => (5, 6)
-  | .intNeg => (6, 1)
-  | .intNatAbs => (6, 2)
-  | .intBmod => (6, 3)
-  | .intBdiv => (6, 4)
-  | .intPow => (6, 5)
-  | .intAdd => (6, 6)
-  | .intSub => (6, 7)
-  | .intMul => (6, 8)
-  | .intEmod => (6, 9)
-  | .intEdiv => (6, 10)
-  | _ => (0, 0)
+/-- The native rule that fires on a role's constant (`Ix.SpecDigest.nativeOp`):
+its family (1 `Nat` operations, 2 `String`, 3 `BitVec`, 5 decision
+procedures, 6 `Int`; 0 none) and the operation's index within that family. -/
+def primFamilyOp (r : Role) : Nat × Nat := Ix.SpecDigest.nativeOp r
 
 def primFamily (r : Role) : Nat := (primFamilyOp r).1
 
@@ -526,27 +414,33 @@ def kernelRoleSpec : Aiur.Modules.Program Nat := aiur⟦
 "
 
 /-- Render `IxVM/IxVM/Modules/KernelRoleSpec.lean`, whose block is `module KernelRoleSpec { … }`,
-from `Ix.Kernel.Role.all` and `Role.spec`. -/
+from `Ix.Kernel.Role.all` and `Role.spec`. The schedule rendered is the one
+the digest rendered beside it commits to. -/
 def renderFormalAiur : Except String String := do
   checkGroups
-  let firstWf ← firstWellFoundedGroup
-  let firstEquation ← firstEquationGroup
-  let digest ← Ix.SpecDigest.specDigest
+  let schedule ← Ix.SpecDigest.Schedule.current
+  let digest := Address.blake3Pure (← Ix.SpecDigest.specBytesWith schedule)
+  -- Equations are keyed `64 * role + index`.
+  for r in Role.all do
+    unless (equations r).length < 64 && (eqnsEquations r).length < 64 do
+      throw s!"{repr r} has 64 or more equations, which the rendered keys cannot index"
   let bytes := digest.hash.data.toList.map fun b => s!"UInt8::BYTE_{b.toNat}"
   let mut fns : Array String := #[]
   fns := fns.push (formalAiurFn "inline fn spec_version() -> Field" s!"      {specVersion}")
   fns := fns.push (formalAiurFn "inline fn spec_digest() -> Bytes::AddressRef" s!"      (&([{", ".intercalate bytes}]))")
   fns := fns.push (formalAiurFn "inline fn role_count() -> Field" s!"      {Role.all.length}")
-  fns := fns.push (formalAiurFn "inline fn group_count() -> Field" s!"      {groups.length}")
-  fns := fns.push (formalAiurFn "inline fn first_well_founded_group() -> Field" s!"      {firstWf}")
-  fns := fns.push (formalAiurFn "inline fn first_equation_group() -> Field" s!"      {firstEquation}")
+  fns := fns.push (formalAiurFn "inline fn group_count() -> Field" s!"      {schedule.groups.length}")
+  fns := fns.push (formalAiurFn "inline fn first_well_founded_group() -> Field"
+    s!"      {schedule.firstWellFounded}")
+  fns := fns.push (formalAiurFn "inline fn first_equation_group() -> Field"
+    s!"      {schedule.firstEquation}")
   for r in namedRoles do
     fns := fns.push (formalAiurFn s!"inline fn role_{roleName r}() -> Field" s!"      {roleIdx r}")
   fns := fns.push (formalAiurFn "fn role_group(r: Field) -> Field"
-    (← byRole (fun r => pure (toString (groupOf r))) "0"))
+    (← byRole (fun r => pure (toString (groupOf r schedule.groups))) "0"))
   let mut groupArms := ""
   let mut needArms := ""
-  for (g, i) in groups.zipIdx do
+  for (g, i) in schedule.groups.zipIdx do
     groupArms := groupArms ++ arm (toString i) (list (g.map (toString ∘ roleIdx)))
     let needs := groupNeeds g
     unless needs.isEmpty do
