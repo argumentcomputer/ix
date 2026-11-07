@@ -104,12 +104,11 @@ measured in this profile.
 ## Saved data and reproduction
 
 [Phase summary](benchmarks/formal-aiur-trace-profile/phase-summary.csv),
-[raw phase/circuit spans](benchmarks/formal-aiur-trace-profile/phases.jsonl),
-[small-claim scaling](benchmarks/formal-aiur-trace-profile/nat-frontier.csv),
-[raw small-claim samples](benchmarks/formal-aiur-trace-profile/nat-frontier-runs.json)
-and [manifest](benchmarks/formal-aiur-trace-profile/manifest.json) preserve the
-measurements. The host reports 32 cores and 64 logical CPUs; the runs use the
-same CPU and input configuration as the scaling report.
+[small-claim scaling](benchmarks/formal-aiur-trace-profile/nat-frontier.csv) and
+[manifest](benchmarks/formal-aiur-trace-profile/manifest.json) preserve the
+measurements. Raw phase spans and samples are not kept in the repository; the
+commands below reproduce them. The host reports 32 cores and 64 logical CPUs;
+the runs use the same CPU and input configuration as the scaling report.
 
 ```sh
 cargo build --release --locked -p stark-verifier \

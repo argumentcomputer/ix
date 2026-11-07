@@ -328,5 +328,6 @@ default) and 28 GB on the GPU (32.5 GB).
 
 ## Data
 
-[Prover medians](benchmarks/formal-aiur-gpu-validation/prover.csv) and
-[pipeline runs](benchmarks/formal-aiur-gpu-validation/pipeline.json).
+[Prover medians](benchmarks/formal-aiur-gpu-validation/prover.csv). The individual
+pipeline runs are not kept in the repository; the commands above reproduce
+them.

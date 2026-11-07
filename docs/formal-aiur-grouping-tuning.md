@@ -128,38 +128,42 @@ GPU timing was collected for this tuning.
 
 ## Data and reproduction
 
-The [summary](benchmarks/formal-aiur-grouping-tuning/summary.csv),
-[every-circuit table](benchmarks/formal-aiur-grouping-tuning/circuits.csv),
-[raw timing samples](benchmarks/formal-aiur-grouping-tuning/runs.json) and
+The [summary](benchmarks/formal-aiur-grouping-tuning/summary.csv) and
 [manifest](benchmarks/formal-aiur-grouping-tuning/manifest.json) preserve the
-results. The same directory contains both policies, per-function query counts,
-layout metrics, singleton shapes and search reports. These files are sufficient
-to rerun the membership search without rebuilding or executing IxVM:
+results. The per-circuit table, raw samples, policies, query counts, layout
+metrics, singleton shapes and search reports are not kept in the repository:
+they describe `ade9330c`, not the programs that ship, and the commands below
+regenerate them for the current sources. The manifest's revisions are commits
+of the migration branch, which a squash merge does not keep.
+
+To tune a program, generate a snapshot and its layout metrics once:
 
 ```sh
-data=docs/benchmarks/formal-aiur-grouping-tuning
-python3 tools/ixvm/tune-groups.py "$data/ixvm-metrics.json" /tmp/ixvm-policy.json \
-  --prefix ixvm_group \
-  --profile "$data/ixvm-counts.json" "$data/ixvm-ungrouped-shapes.json" \
-  --profile "$data/environment-counts.json" "$data/ixvm-ungrouped-shapes.json"
-python3 tools/ixvm/tune-groups.py "$data/recursion-metrics.json" /tmp/recursion-policy.json \
-  --prefix verifier_group \
-  --profile "$data/recursion-counts.json" "$data/recursion-ungrouped-shapes.json" \
-  --profile "$data/recursion-real-counts.json" "$data/recursion-ungrouped-shapes.json"
-```
-
-To tune a changed program, generate a snapshot once, then reuse it:
-
-```sh
-lake build ixvm/ixvm multiStark/stark-export aiur/grouping_tune
+lake build ixvm/ixvm multiStark/stark-export aiur/grouping_tune aiur/grouping_search
 lake env IxVM/.lake/build/bin/ixvm grouping-snapshot /tmp/ixvm-snapshot.json
 lake env MultiStark/.lake/build/bin/stark-export grouping-snapshot /tmp/recursion-snapshot.json
 lake env Aiur/.lake/build/bin/grouping_tune /tmp/ixvm-snapshot.json /tmp/ixvm-metrics.json --metrics
+```
+
+Record per-function query counts with the `compare` example's `--counts-only`
+and singleton shapes with `--ungrouped`, one counts file per workload, then
+search for a policy and apply it:
+
+```sh
+lake env Aiur/.lake/build/bin/grouping_search /tmp/ixvm-metrics.json /tmp/ixvm-policy.json \
+  --prefix ixvm_group \
+  --profile /tmp/ixvm-counts.json /tmp/ixvm-ungrouped-shapes.json \
+  --profile /tmp/environment-counts.json /tmp/ixvm-ungrouped-shapes.json
 lake env Aiur/.lake/build/bin/grouping_tune /tmp/ixvm-snapshot.json /tmp/ixvm-groups.json \
   --policy /tmp/ixvm-policy.json
 ```
 
-The last command runs the ordinary grouping and partition certificates. Use
+`grouping_search` (`Aiur/Examples/GroupingSearch.lean`) is the Lean port of the
+former `tools/ixvm/tune-groups.py` and makes the same moves. It is an untrusted
+heuristic: the policy it writes is only a membership proposal, and
+`grouping_tune` checks the resulting layout.
+
+`grouping_tune --policy` runs the ordinary grouping and partition certificates. Use
 `--baseline` to inspect the former layout algorithm. The `compare` Rust example
 accepts `--counts-only` to record function query counts, `--ungrouped` to measure
 singleton shapes, and `--groups /tmp/ixvm-groups.json` to benchmark a certified

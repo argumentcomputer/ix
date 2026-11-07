@@ -82,8 +82,9 @@ The workloads are the same self-contained 342-constant IxVM environment and
 the same real 7,232,210-byte inner proof as the earlier comparisons. Artifacts,
 inputs and binaries are hashed in the
 [manifest](benchmarks/formal-aiur-trace-scaling/manifest.json). The
-[summary CSV](benchmarks/formal-aiur-trace-scaling/summary.csv) and
-[raw samples](benchmarks/formal-aiur-trace-scaling/runs.json) include every run.
+[summary CSV](benchmarks/formal-aiur-trace-scaling/summary.csv) gives every
+configuration's medians and ranges; the raw samples are not kept in the
+repository.
 Circuit heights, widths and cell counts were checked to be independent of the
 thread count for each backend/workload.
 
@@ -104,16 +105,10 @@ the same circuit shapes as ordinary execution. The interpreter, trace
 generation implementations and grouping policies were not changed for this
 experiment.
 
-With the existing exported artifacts and inputs:
-
-```sh
-lake build bench-compare-aiur
-cargo build --release --locked -p stark-verifier --features parallel --example compare
-python3 tools/ixvm/trace-scaling.py .lake/trace-scaling/sweep \
-  --ixvm-artifact .lake/formal-integration/ixvm-tuned.json \
-  --recursion-artifact .lake/formal-integration/recursion-tuned.json
-```
-
-Use `--inputs`, `--threads` and `--samples` to select another saved comparison
-directory, CPU counts or sample count. The manifest records every invocation,
-including the two additional runs with the previous grouping artifacts.
+This is a historical comparison. Its driver, `tools/ixvm/trace-scaling.py`,
+ran the legacy backend through `bench-compare-aiur`; both were removed with the
+legacy backend. The manifest records every invocation, including the two
+additional runs with the previous grouping artifacts. The formal side of each
+run is `target/release/examples/compare` (`cargo build --release --locked -p
+stark-verifier --features parallel --example compare`) with
+`RAYON_NUM_THREADS` set to the thread count.

@@ -86,6 +86,11 @@ lean_exe grouping_example where
 lean_exe grouping_tune where
   root := `Examples.GroupingTune
 
+/-- Searches for a function-grouping policy from `grouping_tune --metrics`
+output and measured row counts (see `Examples/GroupingSearch.lean`). -/
+lean_exe grouping_search where
+  root := `Examples.GroupingSearch
+
 /-- Fails if any declaration of the package uses an axiom beyond propext,
 Classical.choice and Quot.sound. Run after `lake build aiur/Aiur`:
 `lake env Aiur/.lake/build/bin/axiom_sweep Aiur`. -/
