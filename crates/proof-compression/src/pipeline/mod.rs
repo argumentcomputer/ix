@@ -56,6 +56,13 @@ pub fn check_claim(
   Ok(words)
 }
 
+/// Check that `statement` belongs to `claim` and to the aggregation backend
+/// the bundled keys were derived for, as the default verifier requires.
+pub fn check_release_statement(claim: &[u8], statement: &[u8]) -> Result<()> {
+  let words = check_claim(claim, statement)?;
+  verifying_keys::check_release_prefix(&words)
+}
+
 /// Describe the inner KZG setup selected for a compression run.
 pub fn setup_description(
   development_kzg: bool,

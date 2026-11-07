@@ -105,6 +105,21 @@ pub fn release_root_layout(root_vk: &[u8]) -> Result<&'static [u8]> {
   Ok(LAYOUT)
 }
 
+/// Check that `words` is a statement of the release's aggregation program:
+/// the IxVM and aggregation backends the keys were derived for.
+pub(super) fn check_release_prefix(words: &statement::Statement) -> Result<()> {
+  if words[..10] != STATEMENT_PREFIX {
+    return Err(
+      format!(
+        "the statement's aggregation backend differs from the one verifying \
+         keys {VERSION} were derived for"
+      )
+      .into(),
+    );
+  }
+  Ok(())
+}
+
 /// The release key fixes the Ignition identity, public degree and anchors.
 pub(crate) fn ignition_parameters() -> Result<VerifierParams> {
   // Only the parameter section is needed here, not a prepared circuit verifier.
@@ -260,5 +275,9 @@ mod tests {
     packet[..32].copy_from_slice(&decode(RECURSIVE_VK_ID).unwrap());
     assert!(verify_recursive(&packet, b"claim").is_err());
     assert!(release_root_layout(b"another backend").is_err());
+    let mut words = statement::with_claim(&STATEMENT_PREFIX, b"claim");
+    check_release_prefix(&words).unwrap();
+    words[1] += 1;
+    assert!(check_release_prefix(&words).is_err());
   }
 }

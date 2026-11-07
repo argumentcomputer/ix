@@ -152,6 +152,22 @@ extern "C" fn rs_compression_check_claim(
   }
 }
 
+/// Check that `statement` belongs to `claim` and to the aggregation backend
+/// the bundled verifying keys were derived for.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_check_release_statement(
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  statement: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match pipeline::check_release_statement(
+    claim.as_bytes(),
+    statement.as_bytes(),
+  ) {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
+  }
+}
+
 /// The versioned normalization layout (`.ixl` bytes) for the selected
 /// aggregation backend.
 #[unsafe(no_mangle)]

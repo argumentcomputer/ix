@@ -29,6 +29,11 @@ backend's key. -/
 @[extern "rs_compression_release_root_layout"]
 opaque releaseRootLayout (vk : @& ByteArray) : IO ByteArray
 
+/-- Check that `statement` belongs to `claim` and to the aggregation backend the
+bundled verifying keys were derived for, as the default verifier requires. -/
+@[extern "rs_compression_check_release_statement"]
+opaque checkReleaseStatement (claim statement : @& ByteArray) : IO Unit
+
 /-- Per-circuit rows of one root wrap execution of `rawProof`, as a JSON array.
 `invocation` is in Ixon (`Ix.AiurInvocation`). -/
 @[extern "rs_compression_root_rows"]
