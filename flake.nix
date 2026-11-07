@@ -77,10 +77,15 @@
               || file.name == "go.mod" || file.name == "go.sum"
           ) ./tools/gnark;
 
+          # IxCC/ is a package of its own that selects its own sources (see
+          # `ixcc` below). No host source set includes it, so editing it
+          # rebuilds nothing of the host.
+          withoutIxcc = fileset: pkgs.lib.fileset.difference fileset ./IxCC;
+
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
-          cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
+          cargoSource = withoutIxcc (pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.));
           # Profiles are embedded in the verifier; compression tests also read
           # binary fixtures that Cargo's source filter does not retain.
           compressionData = pkgs.lib.fileset.unions [
@@ -207,7 +212,7 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               # What `lake build` reads: Lean sources, manifests, FFI shims.
-              (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
+              (withoutIxcc (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.)))
               ./IxCK/lake-manifest.json
               ./IxCK/lean-toolchain
               # What its Rust archive target traces, as Crane sees it.
@@ -216,22 +221,21 @@
               plonkSources
             ];
           };
+          # Blake3.lean's `rust` package builds only its `Blake3Rust` library
+          # (`Blake3.Rust` and the `Blake3` root). Ix also imports `Blake3.Pure`
+          # (`Ix.Address.Pure`), and binaries that import their closure at run
+          # time (`get_env!`) look for it under this package's path in
+          # `LEAN_PATH`, so build it here as well. IxCC uses the same build.
+          blake3Lake = blake3-lean.packages.${system}.rust.overrideAttrs (old: {
+            postBuild = (old.postBuild or "") + ''
+              lake build +Blake3.Pure
+            '';
+          });
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
           # Local packages build in the workspace; buildDeps only supports Git sources.
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
-            depOverrideDeriv = {
-              # Blake3.lean's `rust` package builds only its `Blake3Rust`
-              # library (`Blake3.Rust` and the `Blake3` root). Ix also imports
-              # `Blake3.Pure` (`Ix.Address.Pure`), and binaries that import
-              # their closure at run time (`get_env!`) look for it under this
-              # package's path in `LEAN_PATH`, so build it here as well.
-              Blake3 = blake3-lean.packages.${system}.rust.overrideAttrs (old: {
-                postBuild = (old.postBuild or "") + ''
-                  lake build +Blake3.Pure
-                '';
-              });
-            };
+            depOverrideDeriv.Blake3 = blake3Lake;
           }) (map (p: p.name) (builtins.filter (p: p.type == "path") lakeManifest.packages));
           lakePackageOverrides = pkgs.writers.writeJSON "lake-package-overrides.json" (
             lakeManifest
@@ -343,6 +347,33 @@
               }
             )
           );
+          # The tracked tree without IxCC/, for the host test suite.
+          hostTree = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = withoutIxcc ./.;
+          };
+
+          # The certified compiler, IxCC/ (its own Lake package, «ix-cc»), with
+          # this flake's toolchain and Blake3 build. Its expressions select
+          # their sources from the workspace: IxCC/, the IxCK codec closure its
+          # trust ledger records, and for the ledger check flake.lock and the
+          # workflows the ledger scopes. A host-only change leaves its
+          # derivations unchanged. See IxCC/docs/ci.md.
+          ixcc = import ./IxCC/nix/build.nix {
+            inherit pkgs lean lake2nix;
+            blake3 = blake3Lake;
+            workspace = ./.;
+          };
+          # Its required checks: the production library, the shared program
+          # and proof build, and the gates that run those programs.
+          ixccChecks = {
+            build = ixcc.ixccLib;
+            proofs = ixcc.programs;
+          }
+          // import ./IxCC/nix/checks.nix {
+            inherit pkgs system blake3-lean;
+            inherit (ixcc) auditSrc ledgerWorkspace mkCheck;
+          };
         in
         {
           packages = {
@@ -351,11 +382,21 @@
             zkv-prover = ZKVotingProver // {
               meta.mainProgram = "Apps-ZKVoting-Prover";
             };
+            ixcc = ixcc.ixccLib;
           };
 
-          # The Nix packaging check. Clippy and the cargo tests are CI Jobs'
-          # rust-test job (`.github/workflows/ci.yml`), with the same
-          # features and profile; the flake does not repeat them.
+          # The compiler's command line (`IxCC.Cli`), from IxCC's program
+          # build: `nix run .#ixcc -- compile ...`.
+          apps.ixcc = {
+            type = "app";
+            program = "${ixcc.programs}/bin/ixcc";
+            meta.description = "Compile an Ixon closure to an x86-64 ELF object";
+          };
+
+          # The Nix packaging check, and IxCC's required checks as `ixcc-*`.
+          # Clippy and the cargo tests are CI Jobs' rust-test job
+          # (`.github/workflows/ci.yml`), with the same features and profile;
+          # the flake does not repeat them.
           checks = {
             # Lean test suite. The suite reads fixtures and writes scratch
             # files by paths relative to the working dir, so run it from a
@@ -364,7 +405,7 @@
               # zstd decompresses the lean-export suite's toolchain fixture.
               nativeBuildInputs = [ rustToolchain lean pkgs.zstd ];
             } ''
-              cp -r ${./.} src
+              cp -r ${hostTree} src
               chmod -R u+w src
               # Source-mode CLI tests invoke Lake. Reuse the configured build
               # tree, including local package overrides and fixture oleans,
@@ -385,7 +426,8 @@
               ${ixTest}/bin/IxTests
               touch $out
             '';
-          };
+          }
+          // pkgs.lib.mapAttrs' (name: check: pkgs.lib.nameValuePair "ixcc-${name}" check) ixccChecks;
 
           devShells = {
             # Lean + Rust shell for host development (`cargo build`, `lake build`).
