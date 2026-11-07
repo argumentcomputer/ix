@@ -418,10 +418,24 @@ def Cell.rows (c : Cell) : Array (String × Bool) := Id.run do
     return #[(c.env, true)] ++ constants.map ((·, false))
   return #[]
 
+/-- The measures a row of this kind carries: the env columns for an env
+    row; the constant columns and every stage's measures for a constant
+    row. A tool can write more (the ixvm-ooc constant rows share their
+    process's peak RSS), but only these are shown and compared. -/
+def rowMetrics (spec : Ix.Cli.BenchCmd.BackendSpec) (isEnv : Bool) :
+    List String :=
+  if isEnv then spec.envMetrics
+  else spec.constantMetrics ++ (spec.stages.map (·.2)).flatten
+
 /-- The headline columns of a backend's table (at most four) and the
-    secondary metrics its details block shows. -/
-def columnsOf (spec : Ix.Cli.BenchCmd.BackendSpec) : List String × List String :=
-  (spec.metrics.take 4, spec.metrics.drop 4)
+    secondary metrics its details block shows: the backend's columns that
+    some row of `cells` has a value for, in registry order. -/
+def columnsOf (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell) :
+    List String × List String :=
+  let present := spec.metrics.filter fun m => cells.any fun c =>
+    c.rows.any fun (name, isEnv) => (rowMetrics spec isEnv).contains m
+      && ((rowNum c.base name m).isSome || (rowNum c.pr name m).isSome)
+  (present.take 4, present.drop 4)
 
 /-- One backend's table over its cells: env rows in bold, each followed
     by its constant rows, one `base → PR (Δ%)` column per headline metric;
@@ -429,7 +443,7 @@ def columnsOf (spec : Ix.Cli.BenchCmd.BackendSpec) : List String × List String 
     drill-down per env. -/
 def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     (threshold : Float) (baseLabel : String) : IO String := do
-  let (headline, secondary) := columnsOf spec
+  let (headline, secondary) := columnsOf spec cells
   let order := Ix.Cli.BenchCmd.envSpecs.map (·.name)
   let cells := cells.qsort fun a b => order.idxOf a.env < order.idxOf b.env
   let label := fun (c : Cell) (name : String) (isEnv : Bool) =>
@@ -448,7 +462,8 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
         let blank := !stage.isEmpty && isEnv
         if blank && c.rows.size == 1 then continue
         let cols := metrics.toArray.map fun m =>
-          if blank then "" else (metricCell c.base c.pr name m threshold).1
+          if blank || !(rowMetrics spec isEnv).contains m then ""
+          else (metricCell c.base c.pr name m threshold).1
         lines := lines.push ("| " ++ " | ".intercalate (label c name isEnv :: cols.toList) ++ " |")
     return lines
   let mut rows := 0
@@ -456,10 +471,10 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
   let mut improved := 0
   let mut failures : Array String := #[]
   for c in cells do
-    for (name, _) in c.rows do
+    for (name, isEnv) in c.rows do
       if !(rowNames c.base ++ rowNames c.pr).contains name then continue
       rows := rows + 1
-      let flags := spec.trackedMetrics.map fun m => (metricCell c.base c.pr name m threshold).2
+      let flags := (rowMetrics spec isEnv).map fun m => (metricCell c.base c.pr name m threshold).2
       if flags.any (·.1) then regressed := regressed + 1
       if flags.any (·.2) then improved := improved + 1
       if rowStatus c.base name == "rejected" then
@@ -483,9 +498,7 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
   else if cells.all (fun c => (rowNames c.pr).isEmpty) then
     out := out.push "" |>.push "_⚠️ no PR-side results (see the workflow logs)._"
   out := out.push "" ++ table headline ""
-  let hasSecondary := cells.any fun c => c.rows.any fun (name, _) =>
-    secondary.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
-  if hasSecondary then
+  if !secondary.isEmpty then
     out := out ++ #["", "<details><summary>more metrics</summary>", ""]
       ++ table secondary "" ++ #["", "</details>"]
   -- One table per proving stage the constant rows ran.
