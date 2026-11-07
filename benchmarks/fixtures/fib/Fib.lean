@@ -1,5 +1,5 @@
-/-! K1 `fib`. The definition is verbatim from `fixtures/ixon-v4/k1/K1.lean`
-(Compilatr.ix `2e4740d`); `entry` and `main` are the benchmark wrapper. -/
+/-! K1 `fib`. The definition is verbatim from `IxCCTests/Fixtures/K1.lean`
+(IxCC `2e4740d`); `entry` and `main` are the benchmark wrapper. -/
 
 namespace K1
 

@@ -1,4 +1,4 @@
-/-! First-rung (K1) scalar programs for Compilatr.ix, written as ordinary Lean. -/
+/-! First-rung (K1) scalar programs for IxCC, written as ordinary Lean. -/
 
 namespace K1
 

@@ -132,7 +132,7 @@ definition and equation name with `ix addr-of` against the twin, and writes
 the sidecar and census. It draws the generated cases, runs every case through
 `lean -Dlinter.all=false --run`, checks the constants, and rewrites the
 derived fields. Files that do not change are not rewritten; the log says which
-did. The pinned ix (`be45a159`, SHA-256 `fc4e07ab…`; see [Refreezing](#refreezing))
+did. The pinned ix (`be45a159`, SHA-256 `396dffb7…`; see [Refreezing](#refreezing))
 asks `lake env` for `LEAN_PATH`, so `--ix-path` names a directory with a
 `lake` stand-in that answers it. It replaces
 `plans/x86-phase1/bench-k1/build.sh`.
@@ -253,7 +253,9 @@ diff <(git show HEAD:$m | jq -S "$norm") <(jq -S "$norm" $m)
 
 What a refreeze needs:
 - `IX`: the producer binary (now ix `be45a159`, `f829b760` plus the
-  `--equations` export, SHA-256 `fc4e07ab…`);
+  `--equations` export, built with Lake in ix's dev shell at that revision;
+  SHA-256 `396dffb7…` from the 2026-11-07 rebuild, as the build is not
+  reproducible);
 - `FAKE`: a directory holding a `lake` stand-in that answers
   `lake env printenv LEAN_PATH` with the producer workspace's built Lean
   libraries at the same revision (ix elaborates the sources against them; the
@@ -277,14 +279,19 @@ for m in fixtures/ixon-v4/bench-k1/corpus.json fixtures/ixon-v4/k1/corpus.json \
          fixtures/corpus/*/corpus.json; do
   lake exe corpus rebuild $m --ix $IX --ix-path $FAKE
 done
+# the built tool itself: `lake exe` replaces LEAN_PATH for the interpreter runs
 LEAN_PATH=$($FAKE/lake env printenv LEAN_PATH) \
-  lake exe corpus rebuild fixtures/ownership/corpus.json --ix $IX --ix-path $FAKE
+  .lake/build/bin/corpus rebuild fixtures/ownership/corpus.json --ix $IX --ix-path $FAKE
 # 3. ix's verdicts on the annotated ownership sources
 lake exe tests-own verdicts --ix $IX --ix-path $FAKE
+# 3b. the RC real-source input (fixtures/rc/real-source): the commands its
+#     provenance.json records, then its manifest.sha256
 # 4. the Src tables and the roots-only fixtures
-PATH=$FAKE:$PATH lake exe pin-src-tables --ix $IX --revision $REV
-PATH=$FAKE:$PATH lake exe pin-src-tables --ix $IX --revision $REV --diagnostics fixtures/ixon-v4/src-diag
-PATH=$FAKE:$PATH lake exe pin-src-tables --ix $IX --revision $REV --sortpoly fixtures/ixon-v4/src-sortpoly
+#    (the real lake by its path: with FAKE first on PATH, `lake` is the stand-in)
+LAKE=$(command -v lake)
+PATH=$FAKE:$PATH $LAKE exe pin-src-tables --ix $IX --revision $REV
+PATH=$FAKE:$PATH $LAKE exe pin-src-tables --ix $IX --revision $REV --diagnostics fixtures/ixon-v4/src-diag
+PATH=$FAKE:$PATH $LAKE exe pin-src-tables --ix $IX --revision $REV --sortpoly fixtures/ixon-v4/src-sortpoly
 # 5. ix's fixture package (vectors, handoff, primitives.tsv) and the erased
 #    checker's primitive table, unchanged from ix
 lake exe refreeze-ixon package --ix-repo $IXREPO --ix-revision $IXPIN
@@ -295,7 +302,7 @@ git show HEAD:fixtures/ixon-v4/src-tables.tsv > old-src-tables.tsv
 lake exe pin-src-tables --repin IxCC/Src/Pinned.lean \
   --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
 # 7. the typing bundles, then the catalogs over them
-PATH=$FAKE:$PATH lake exe refreeze-ixon typing --ix $IX --revision $REV
+PATH=$FAKE:$PATH $LAKE exe refreeze-ixon typing --ix $IX --revision $REV
 lake exe refreeze-ixon catalog --ix $IX --revision $REV
 # 8. the generated kernel artifacts (rebuild the generators first: Pinned changed)
 lake build gen-src-artifacts gen-recheck-artifacts corpus tests-fir
@@ -308,6 +315,11 @@ lake exe check-steps          # the step baseline: a change is a stop-and-review
 lake exe corpus check
 lake exe corpus check fixtures/ixon-v4/k1/corpus.json fixtures/ownership/corpus.json
 ```
+
+`corpus rebuild` refuses a closure that does not decode, so it cannot refreeze
+phase1-boundary's `fields255` and `tags126`, whose expected decline is that
+decode failure; that family keeps its closures and producer pin until a
+refreeze admits them deliberately.
 
 Then:
 - the tests that name constants by number (`IxCCTests/Lam/KernelK1/*.lean`,

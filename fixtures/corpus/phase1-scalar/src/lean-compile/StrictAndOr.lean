@@ -1,6 +1,6 @@
 /-! Lean 4 `tests/compile/strictAndOr.lean` (v4.34.0,
 `293d5d0c0c3f3dded4688b3ccd6a33939ac5102b`; Apache-2.0, see
-`../../LICENSES/lean4-LICENSE`), modified for Compilatr.ix: the upstream file
+`../../LICENSES/lean4-LICENSE`), modified for IxCC: the upstream file
 is only a `main` printing core's `strictOr` and `strictAnd` on the four
 Boolean pairs (kept in `upstream/`). Here each is a closure root over
 `Nat`-encoded Booleans (`0` is `false`), and `main` is the corpus oracle

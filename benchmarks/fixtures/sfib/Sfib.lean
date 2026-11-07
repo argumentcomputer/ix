@@ -1,5 +1,5 @@
 /-! MT.2 `sfib` benchmark: Koka's `sfib-int.kk` loop, verbatim from
-`fixtures/corpus/phase1-scalar/src/Scalar.lean` (Compilatr.ix); `entry` and
+`fixtures/corpus/phase1-scalar/src/Scalar.lean` (IxCC); `entry` and
 `main` are the benchmark wrapper. -/
 
 namespace Scalar

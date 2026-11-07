@@ -11,7 +11,7 @@ Producer binary SHA256:
 `d96956f18c318679b0f1c45136bdd4a1f32ed5f46a967ca63a46682319f6dc93`.
 Lean toolchain:4.34.1, exact original reference/producer command receipts are
 included. The copied original lean-core.profile is pinned at SHA256
-`36ffbecc8414dbad5a9ab7a2ca28f8efd5a1a582e105cb9fd894042a25a300a7`.
+`860120c0265e5d61444efdef55bbd3fe6c8596b889047d94d7160ba4d5d78aec`.
 Its original100000-step/depth256 settings are unchanged. The effective
 annotated profile address is
 `5e387038c267c42212fa9c62ddbac9d062eb3354f79ade3fb57ee9a3ddac09b9`.

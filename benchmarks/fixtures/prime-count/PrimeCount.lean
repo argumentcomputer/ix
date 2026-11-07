@@ -1,5 +1,5 @@
 /-! MT.2 `prime-count` benchmark: `π(n)` by trial division, verbatim from
-`fixtures/corpus/phase1-scalar/src/Scalar.lean` (Compilatr.ix); `entry` and
+`fixtures/corpus/phase1-scalar/src/Scalar.lean` (IxCC); `entry` and
 `main` are the benchmark wrapper. -/
 
 namespace Scalar

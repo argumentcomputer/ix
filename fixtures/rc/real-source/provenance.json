@@ -1,11 +1,22 @@
-{
-  "source_path": "plans/codex/phase-1.5-to-phase-2/h0",
-  "producer_status": "Historical accepted H0/H4 baseline; final selected-producer refreeze tracked separately.",
-  "source_sha256": {
-    "anonymous.ixe": "41e1d6594ebff384c05c7ca9e61fd065028717ff81d6fd31e1c6f8fa1058f06d",
-    "consumer.equations.json": "3cacdd50e9ad5e00a4ac8d70c865f6d871ef9b20803fe430ab95262534f0abb5",
-    "Reverse.lean": "f063666664571f5ea071fa290a0ba31a5537616057b4f960e0414b751c46a01d"
-  },
-  "original_lean_version": "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
-  "consumer_sha256_receipt": "097835eaa8cfa733b38e94fc4069036a4d6fd67969bc742d652204a0a77d7193  /home/jcb/projects/Compilatr.ix/.lake/build/bin/compilatrix\n"
-}
+{"source_sha256":
+ {"consumer.equations.json":
+  "427c7f328cbbce34c35aa83c9182d27212722f698e563f4c77f5fb3d7f411e2b",
+  "anonymous.ixe":
+  "29a1c94ec1efdb513d20ed6c721fb839330a0e9a7139b00d51af23179d85185b",
+  "Reverse.lean":
+  "c2035e83589a7f6ddb0aa807e1c17d94cb95bbab0c7b85d9a41c9febbc927ed7"},
+ "source_path": "fixtures/rc/real-source",
+ "producer_version": "4.34.1|0.0.1",
+ "producer_status":
+ "Refrozen on 2026-11-07 for the IxCC rename (roots IxCCTests.Own.H0.*) with the producer of the original H0 export, rebuilt; final producer selection (G2) is separate.",
+ "producer_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+ "producer_binary_sha256":
+ "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+ "named_env_sha256":
+ "a74b648294277b46cdb8ccf652d59574172e7fa5bdf038cbc7e1ceb8a89a4ed8",
+ "lean_version":
+ "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
+ "commands":
+ ["ix compile --no-build --consts <roots> --equations --anon --out fixtures/rc/real-source/anonymous.ixe --equations-out /home/john/runs/ixcc/cx/../refreeze-work/h0/anonymous.equations.json fixtures/rc/real-source/Reverse.lean",
+  "ix compile --no-build --consts <roots> --equations --out /home/john/runs/ixcc/cx/../refreeze-work/h0/named.ixe --equations-out /home/john/runs/ixcc/cx/../refreeze-work/h0/named.equations.json fixtures/rc/real-source/Reverse.lean",
+  "ix addr-of --ixe named.ixe NAME, for every root, definition and equation"]}

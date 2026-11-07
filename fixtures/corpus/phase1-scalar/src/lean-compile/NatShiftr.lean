@@ -1,6 +1,6 @@
 /-! Lean 4 `tests/compile/nat_shiftr.lean` (v4.34.0,
 `293d5d0c0c3f3dded4688b3ccd6a33939ac5102b`; Apache-2.0, see
-`../../LICENSES/lean4-LICENSE`), modified for Compilatr.ix: the text up to
+`../../LICENSES/lean4-LICENSE`), modified for IxCC: the text up to
 `def main` is upstream's, verbatim (`test` prints `a >>> b` for twelve shift
 counts); `entry` is that shift as a closure root, and the corpus oracle driver
 replaces upstream's `main` (fourteen values of `a`, kept in `upstream/`; the

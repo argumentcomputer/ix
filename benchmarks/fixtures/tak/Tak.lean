@@ -1,5 +1,5 @@
-/-! K1 `tak`. The definition is verbatim from `fixtures/ixon-v4/k1/K1.lean`
-(Compilatr.ix `2e4740d`); `entry` and `main` are the benchmark wrapper. The
+/-! K1 `tak`. The definition is verbatim from `IxCCTests/Fixtures/K1.lean`
+(IxCC `2e4740d`); `entry` and `main` are the benchmark wrapper. The
 fuel is an explicit argument. For `tak x y z` with these arguments, fuel
 `x - 1` is the least that gives Takeuchi's unbounded result, so the test and
 bench arguments pass fuel `x`. -/

@@ -5,7 +5,7 @@
   "manifest": "fixtures/ownership/corpus.json",
   "producer": {
     "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
     "command": [
       "ix",
       "compile",
@@ -30,7 +30,7 @@
         "equivalence"
       ],
       "source": "OS01/Annotated.lean",
-      "sha256": "523cfdc0a51e02954a8297a40d48dc8768c501964a455688c6c8bcda64d2f9dd",
+      "sha256": "a8d9d931c90a5924a4d82c5849492b4d5046dafe397c889b49eb484c98752d66",
       "consts": [
         "entry"
       ],
@@ -48,7 +48,7 @@
         "erasure"
       ],
       "source": "OS01b/Annotated.lean",
-      "sha256": "727e28bc7b6e999d062bbefd4ac8cb5f04559f08d733a75d6fd58e8f2867dd3e",
+      "sha256": "df96e89875f3908daa1ec82ed8e4bb6aa9149e908bd01e624deb47f7ff113118",
       "consts": [
         "predPos",
         "entry"
@@ -69,7 +69,7 @@
         "negative"
       ],
       "source": "OS03/Annotated.lean",
-      "sha256": "037bf7a16ea6523c62cf59e9e2bc1dd61de4e631748d10669f005747ccc517f6",
+      "sha256": "b0e19d4dac63549473cf2e19a78ec11f8993afd08f72b1b07c5f8843c654871e",
       "consts": [
         "entry"
       ],
@@ -88,7 +88,7 @@
         "erasure"
       ],
       "source": "OS03b/Annotated.lean",
-      "sha256": "a925cf242bae61cec829f1cc89215c1c7c381b1e2b03283c412f6adefc5a5066",
+      "sha256": "84a0e57a03c2587590ee50e39cb2375bda92155a37e1ffee2d3b648c41214ebf",
       "consts": [
         "entry"
       ],
@@ -107,7 +107,7 @@
         "erasure"
       ],
       "source": "OS04/Annotated.lean",
-      "sha256": "ee6429daa634015d3f773ff22901b9d7662f9ab224af0f1bfd3da0d5717c2c43",
+      "sha256": "fa303b2ede308f1dc98cbe5956c44ee567abc571f0674c0c10dac933729a60cf",
       "consts": [
         "len",
         "entry"
@@ -128,7 +128,7 @@
         "erasure"
       ],
       "source": "OS05/Annotated.lean",
-      "sha256": "459bc03880726b1e5c5b9045bd9c2c11dc9eecb1b2f03e329c94732e74042f0d",
+      "sha256": "b678a93b7c32e5be00ce82cdea7821f0603fcd02762ade5bf5123cc307639a97",
       "consts": [
         "vhead",
         "entry"
@@ -148,7 +148,7 @@
         "negative"
       ],
       "source": "OS06/Annotated.lean",
-      "sha256": "c997c149f6bff600f6a42d59aa074fb88bcc46e6cc7556e6458c25801fc1bfcd",
+      "sha256": "a72cb0e27a6a42e3e987eb89f8110eb54f36842759856ead0a4027e3a960708d",
       "consts": [
         "absurdUse"
       ],
@@ -168,7 +168,7 @@
         "negative"
       ],
       "source": "OS06b/Annotated.lean",
-      "sha256": "89a53edd6352553ccf9df4c4589ef0fbce8d296f8903995694b145670cef5a7a",
+      "sha256": "c25211a27a59726df5ec0649c2d18b76b109f351b02b8c6054b3d8551a9ce099",
       "consts": [
         "headOr",
         "entry"
@@ -188,7 +188,7 @@
         "erasure"
       ],
       "source": "OS07/Annotated.lean",
-      "sha256": "8ae7d5c3c84ceedef3c18c9cc4e645196cfeb805b95e5e4224a65a3303248529",
+      "sha256": "5bfa1a9b17e9abfde122c5356307bed4c564c366b439860ba2465a0bee3b0d52",
       "consts": [
         "countdown",
         "entry"
@@ -208,7 +208,7 @@
         "erasure"
       ],
       "source": "OS07b/Annotated.lean",
-      "sha256": "e1df345766baea802eb23139795bd066feca9c0a3f4640e33ef2aa70c5dd2e55",
+      "sha256": "7cc468f856a217af17f6378dc861cbf3b057d7209a998300ed057445150c768c",
       "consts": [
         "countdownWF",
         "entry"
@@ -227,7 +227,7 @@
         "erasure"
       ],
       "source": "OS08/Annotated.lean",
-      "sha256": "2d6c07a24782e1a5c8266dc16b9b5cb48e6d0bdfb10aa32df1d6a74b43c7c0ea",
+      "sha256": "1d8b11145a8618374163ebe950fb99a2f0dc36432c686410ef6d7d2f9452da6a",
       "consts": [
         "getE"
       ],
@@ -246,7 +246,7 @@
         "negative"
       ],
       "source": "OS09/Annotated.lean",
-      "sha256": "5bb888ec1a640475a47e96b20ee3a5936ead461ff4f2c15443c6677c09a89ae3",
+      "sha256": "71c03ca41d54812f80dba6b742edaa6f7411c58aec7775c3af390a1a2ee16ac3",
       "consts": [
         "lin"
       ],
@@ -266,7 +266,7 @@
         "negative"
       ],
       "source": "OS10/Annotated.lean",
-      "sha256": "54216ff4ddc1b365594de5aff800a091f8baf3a929884cc4521191e7b461922d",
+      "sha256": "6a00b1b874ef5f31eb0b13663c057a3654b886758a04cf61fd047808276ba397",
       "consts": [
         "twice"
       ],
@@ -286,7 +286,7 @@
         "negative"
       ],
       "source": "OS11/Annotated.lean",
-      "sha256": "94f497abc5e95adbc2eda10cb2bb64c6e3d4fb28e06522c406c9c8717fa8eddd",
+      "sha256": "c7ab7c9d5d72680285eae81975807aef1f2eb041524e0b3d93a57e95b4450fd3",
       "consts": [
         "unused"
       ],
@@ -306,7 +306,7 @@
         "negative"
       ],
       "source": "OS12/Annotated.lean",
-      "sha256": "e30daba679269dd870021629857c05454da29f16dfb3bc2b367e1b8038f5fb3a",
+      "sha256": "28d576517764a7d8b4e43cd134badf6c5f674a275ed8c54030dd8fd0c4aa93be",
       "consts": [
         "twiceA"
       ],
@@ -327,7 +327,7 @@
         "negative"
       ],
       "source": "OS13/Annotated.lean",
-      "sha256": "ca3eb6ce4ed1a9c9edfca167fc3b0b1cb85ea4c57c0257bffe381005b35be53b",
+      "sha256": "bde79bcd6fac5387698f44bd14fdce90d1f40b360799b695ec2cbefba5609995",
       "consts": [
         "linId",
         "entry"
@@ -347,7 +347,7 @@
         "negative"
       ],
       "source": "OS14/Annotated.lean",
-      "sha256": "c73c95c967a90d9ca6a68244939277912d590130cabe5f8e67296da543658fef",
+      "sha256": "a983c58c209357a9a4590d5ff3a32a168483cb3ec95a2751abe8112fa9faff92",
       "consts": [
         "entry"
       ],
@@ -365,7 +365,7 @@
         "negative"
       ],
       "source": "OS14b/Annotated.lean",
-      "sha256": "0f6060e4f7d1cd93e1df9016ed0447afdf8fcb302463b8f57d3c865709da5cee",
+      "sha256": "5036ab836e905409a36cd46cfe7ed73468b9db4675f65f98f93e2e587a995f59",
       "consts": [
         "pred",
         "entry"
@@ -387,7 +387,7 @@
         "inference"
       ],
       "source": "OS15/Annotated.lean",
-      "sha256": "aaf7b5c2cd00d84394b25ce279eebd051e33d900991bb6602ea4171db7586e90",
+      "sha256": "f98cbd4c4350186fad0a382e306ba0e744da420cea6d029957c972610a507128",
       "consts": [
         "revAcc"
       ],
@@ -408,7 +408,7 @@
         "inference"
       ],
       "source": "OS15b/Annotated.lean",
-      "sha256": "eebaef1ed31413f85aa33db14d4088da49d75e51237d55ff93b2f868776daf93",
+      "sha256": "3a697e12f754298aa60aa63a1f260d4fa810bb23993aa1c15102d4d60af183ad",
       "consts": [
         "revAcc"
       ],
@@ -427,7 +427,7 @@
         "negative"
       ],
       "source": "OS17/Annotated.lean",
-      "sha256": "ce878601e4305713e2d197ca771443e32d53e14ffb2599d9829cd2b9af0307b8",
+      "sha256": "29130239a0279bcb127c9468570826b8a8f98241822599375a6cb7adeca37f27",
       "consts": [
         "push"
       ],
@@ -446,7 +446,7 @@
         "negative"
       ],
       "source": "OS18/Annotated.lean",
-      "sha256": "1b1b2b20c6e08b94d6d596d60364ac2d779c6b050df42e6fa1c84466a5c15761",
+      "sha256": "fc8ae9b5e50c6e630b2c7a7605b11c93f67ae567017de5aed67e9c5a36b3e156",
       "consts": [
         "dupU"
       ],
@@ -466,7 +466,7 @@
         "effect"
       ],
       "source": "OS19/Annotated.lean",
-      "sha256": "e3dc31e5cd059e363683441155fc7308345f907cdaa351ba68856f231d89d394",
+      "sha256": "3e20cc3e9dd5b8c9e3d8e325ebed3422f5fda3d6fd4eecee827748cb7cd98ff5",
       "consts": [
         "swapT"
       ],
@@ -485,7 +485,7 @@
         "negative"
       ],
       "source": "OS20/Annotated.lean",
-      "sha256": "91b243c5a966ec7dbe309f131230483f131584a20e0cd45cb49aa24f0384fdd3",
+      "sha256": "a50c7a84ff61cc6366bdcf29d68e160e5f8afca7186af7b143a513c46ce45d4f",
       "consts": [
         "addExcl"
       ],
@@ -504,7 +504,7 @@
         "negative"
       ],
       "source": "OS21/Annotated.lean",
-      "sha256": "4966c3b202825880ca74778c45225db7cb21b99374cf7421a5c6754bb6c86fc0",
+      "sha256": "9dffbd0be75ea86fb255c51457218d928bd2b2079529f7a4fc9e9918a6a71e00",
       "consts": [
         "single",
         "idT",
@@ -526,7 +526,7 @@
         "negative"
       ],
       "source": "OS22/Annotated.lean",
-      "sha256": "b5250514ba3c234df6863ea877be8c87d479ef2e774da862f5e7ce3b4985c863",
+      "sha256": "21930e6bb9230f92c122b5f77f25fff03cf89650151f827f561cce262396c609",
       "consts": [
         "entry"
       ],
@@ -544,7 +544,7 @@
         "negative"
       ],
       "source": "OS23/Annotated.lean",
-      "sha256": "e7cb215e9079106bd80e7a30d403faa0f038ee7892246d1a1f53bddec9f8456c",
+      "sha256": "8c98b328621cd10cea3fc352a24281be99d1598a11992c7e3f35d5e1d1883248",
       "consts": [
         "esc"
       ],
@@ -564,7 +564,7 @@
         "negative"
       ],
       "source": "OS24/Annotated.lean",
-      "sha256": "48c46d15250395147f3c53f3b5037bd222c4356814f654dbc0fcf4bd2f9d829a",
+      "sha256": "3033e45896d7c4af71d04d59aa4fc57f6cdff5ded625c66e7448951f4e8b1f03",
       "consts": [
         "len"
       ],
@@ -584,7 +584,7 @@
         "negative"
       ],
       "source": "OS25/Annotated.lean",
-      "sha256": "b3cc235e39bcfc99e893e18ad4f86cddc645c210dc6ad1ec955967e45ceba02b",
+      "sha256": "cbdc03b4489ec2969b14e18a504a0ef908128daf30fa03aeceb4377edfc70d2b",
       "consts": [
         "nonEmpty"
       ],
@@ -604,7 +604,7 @@
         "negative"
       ],
       "source": "OS26/Annotated.lean",
-      "sha256": "e472d366967e9599d8fef70c920ddd80459dde6fd31e3d6665c432349e787d65",
+      "sha256": "4f05c213bb2453846014b26a9f6f4e516446390a2e510ef7318a10a989097791",
       "consts": [
         "viaBorrow"
       ],
@@ -623,7 +623,7 @@
         "negative"
       ],
       "source": "OS27/Annotated.lean",
-      "sha256": "7ed29a5e4dbe0ed7b39bd2f3b04575b133bae26d22fc7a825bdb4358cab305ed",
+      "sha256": "8332f6450f6daae5714dd24b307750284bf911b9187efa6523e526a92fa7f8e9",
       "consts": [
         "sharedLoan",
         "entry"
@@ -645,7 +645,7 @@
         "inference"
       ],
       "source": "OS28/Annotated.lean",
-      "sha256": "6f5acc951d275ef88897aae2ad80e74929343bb7506e8e7eb066f3b6a406ba96",
+      "sha256": "1b7f3022537993726d7bde8f0affa7d9ed1efe0b0bc4e496468d36d1c8ebd2b0",
       "consts": [
         "lenL",
         "countAll"
@@ -665,7 +665,7 @@
         "effect"
       ],
       "source": "OS29/Annotated.lean",
-      "sha256": "698d6b49f346ce4253a20eece014bf4ff2e7fd97e1e25d37c66fed61c8585bf1",
+      "sha256": "a78b132e4dda61b7444a029f975f472a060e7b13aa7e32a60cbab9e2248bc901",
       "consts": [
         "applyOnce",
         "useIt"
@@ -685,7 +685,7 @@
         "effect"
       ],
       "source": "OS29b/Annotated.lean",
-      "sha256": "30ba59e9a653e9a83edcfe8cb93df408b54caa1ad15ad5aa6c3a547ea0582707",
+      "sha256": "ee3fe22cdedee6cead8b5c02dc74df33d7802ff74701bb083a690afda42e5a22",
       "consts": [
         "applyOnce",
         "useIt"
@@ -705,7 +705,7 @@
         "negative"
       ],
       "source": "OS34/Annotated.lean",
-      "sha256": "c3c438ecf5c1a44b2f824eefa621f1beeaac204e19403693b9f71860c3eeb60b",
+      "sha256": "456d24883b5e578054a5992a6bffd7f018c2a5c0d9815dc0e6df05b7c0f44e77",
       "consts": [
         "leafPair",
         "keep",
@@ -726,7 +726,7 @@
         "effect"
       ],
       "source": "OS35/Annotated.lean",
-      "sha256": "ce8a5c1e990a5e2bdf3d8a0ff9db366a9d111f0887894047ea50ee4a9c818610",
+      "sha256": "5e72078885d2d7d032196400de2884fda7657d10b5ec6d2d3be1f3efe90f7b3a",
       "consts": [
         "filterOdd"
       ],
@@ -745,7 +745,7 @@
         "effect"
       ],
       "source": "OS36/Annotated.lean",
-      "sha256": "2693ad1e5f5b203b5c9001d7b302b1f69f2d3230e2cced23988ec76aa9d6e5aa",
+      "sha256": "2a458ba32003e6bed2f745325534cc37cca400cc2ccb0b790290543bed64c4c4",
       "consts": [
         "bump"
       ],
@@ -764,7 +764,7 @@
         "effect"
       ],
       "source": "OS37/Annotated.lean",
-      "sha256": "37c75739a611868a48c0634b2d952ee9912fcd69255169eab00d55d1594b1eb5",
+      "sha256": "0b617e65defb781584a4c5f8bbd93dd77f2e4a1584950ddb4bed61335e9745d1",
       "consts": [
         "emit"
       ],
@@ -783,7 +783,7 @@
         "negative"
       ],
       "source": "N01/Annotated.lean",
-      "sha256": "1981bc9259d511282c96b7ad6fbc2160fb1baa46bd2720eb01465ff6f8cbf46e",
+      "sha256": "a86f09af909c2fd19db52a85b0fbaf498d9c25ce5a745b50d06fe54f2015ed65",
       "consts": [
         "take",
         "consumeView"
@@ -803,7 +803,7 @@
         "negative"
       ],
       "source": "N02/Annotated.lean",
-      "sha256": "0be98ffcc5cd6fd23646ed02c86696a952a0c5a13ea0a2e6f067e1a5fa757976",
+      "sha256": "298da6073feb1207be6827949347f96d362e0b7c2a5bea75bdcce46f471ac4f8",
       "consts": [
         "lenL",
         "moveDuringLoan"
@@ -823,7 +823,7 @@
         "negative"
       ],
       "source": "N03/Annotated.lean",
-      "sha256": "e31e95bea8cae48feda02c6f95bf96fd958705d27c0232c3d2aa016ac3ec1956",
+      "sha256": "83d0f5f4bd4ffb65bbb7fa73b383df1739500bf885c8ae8b6a8b2eed8bab9fdb",
       "consts": [
         "take",
         "twice"
@@ -844,7 +844,7 @@
         "negative"
       ],
       "source": "N04/Annotated.lean",
-      "sha256": "f2b8acbab73fea38dc7c7a5cd5d049a10c2e452b7be8c607e1845bdc691e5819",
+      "sha256": "01a4a7cc604d0f16ac8a9b35f7712ded2b2a4633226171ba9c1c4cbef6989d5b",
       "consts": [
         "take",
         "freezeThenTake"
@@ -864,7 +864,7 @@
         "negative"
       ],
       "source": "N05/Annotated.lean",
-      "sha256": "9ab6d73e82ac8fe2262e2ceaf6d72653cd76d05418773fc09c17795dc0005784",
+      "sha256": "5d4d06c9ebbfca72821935bcf5bbccc10b84a5feb46132326bd1df1bb464f2fc",
       "consts": [
         "escList"
       ],
@@ -884,7 +884,7 @@
         "negative"
       ],
       "source": "N06/Annotated.lean",
-      "sha256": "c23e410e489f286f26952908d0ed66d4082dac1a542d068cef1047711621f0fb",
+      "sha256": "4aef5c13bc6e2b6bd7dbe3b62bba7904fe37db87d28515fe3c1a58ae3e31c64a",
       "consts": [
         "wrap"
       ],
@@ -904,7 +904,7 @@
         "negative"
       ],
       "source": "N07/Annotated.lean",
-      "sha256": "b3fd475704da6440784566cc0dd03f28047dc56d3e168e374f7e86cec20ed5ac",
+      "sha256": "2dba47ec7fa02e1092ce710e3f3ee78f378a10278a5f1b12dc204029c984dae7",
       "consts": [
         "pickOne"
       ],
@@ -924,7 +924,7 @@
         "negative"
       ],
       "source": "N08/Annotated.lean",
-      "sha256": "6c4b0994977d82262d2ec5b30c2cf22fcf475b8802e5803db090910df8c8dce5",
+      "sha256": "9978f2dceadb97445bf9eef0493ef581d83b14689bab7cefae70a733d4efce84",
       "consts": [
         "useErased"
       ],

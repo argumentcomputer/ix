@@ -28,9 +28,9 @@
   },
   "producer": {
     "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -71,7 +71,7 @@
       "name": "fib",
       "source": {
         "path": "fib/Fib.lean",
-        "sha256": "b7445dd389244868be77c3dcec3ea7ee13e590dac35037ef0058d821e08dfe93",
+        "sha256": "5ba3a81e36723691b07932f95752cd71a1814983915323751d0632aa8d53bc47",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
@@ -189,7 +189,7 @@
       "name": "sum-loop",
       "source": {
         "path": "sum-loop/SumLoop.lean",
-        "sha256": "b97a2269815731d2596c72e90ec64e2de490fe51b6c73de03124bbdcb82b1d3f",
+        "sha256": "e563a28b8b02a15ddd506fdad127c86f705fe63c6fa1b3875b3eb1c0eb13a5f5",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
@@ -307,7 +307,7 @@
       "name": "ackermann",
       "source": {
         "path": "ackermann/Ackermann.lean",
-        "sha256": "cd5bd9e8c23f8271b0692bfac389c05e0663ea88760255e85fa3e444aa8fa61e",
+        "sha256": "344a9a29feaaa22d5bf9462c72bde0c853c033c10b8e7f4aab22e0d21e8dede2",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
@@ -325,8 +325,8 @@
       "protocol": "args",
       "closure": {
         "path": "ackermann.ixe",
-        "sha256": "e52d5a4292b89bd22e391834843bb879786a206db4a21c0673de4ae2919ae5f5",
-        "bytes": 911594
+        "sha256": "25b716f001548cfbd587383ee1f03cf5469a7b55df9fef98d152f3671fae5a6d",
+        "bytes": 911585
       },
       "equations": {
         "path": "ackermann.equations.json",
@@ -334,10 +334,10 @@
         "equations": 34,
         "failures": 0
       },
-      "named_env_sha256": "5d83c7dbc180925ace540e00520e1f02ae05a9d9f8420386ee902a184b89ab53",
+      "named_env_sha256": "d73f8255465100cd0d9dd6f42f2241d32a6b1022f4c9a6f121d3a2da8a6ac962",
       "census": {
         "path": "ackermann.census.json",
-        "sha256": "00799d98c964a4c6d621bbd31957a9b673d302e71bdf57e405865b9bf4d6831c"
+        "sha256": "386841524f8fcf90c000d334dc87126191a432218e5fa5bfaf48ddff58cf5b73"
       },
       "roots": [
         {
@@ -462,7 +462,7 @@
       "name": "tak",
       "source": {
         "path": "tak/Tak.lean",
-        "sha256": "72ccf900ad5da31f9f9f679f5163e8ae23f008fc3b638fe2f3bf0fd7b421542a",
+        "sha256": "dc979b1873f7bf13728300480ac0f414ec83cd773804ea06e50f5e8895d9d54f",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
@@ -606,7 +606,7 @@
       "name": "gcd",
       "source": {
         "path": "gcd/Gcd.lean",
-        "sha256": "f3125df943085d0c6a6a40475782376ccc5b83a6f353a01eb639e12ad5011e14",
+        "sha256": "8375dcd325baf250150872686c62e2f660c46e6f45e80151e934420d65be2d8c",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
@@ -624,8 +624,8 @@
       "protocol": "args",
       "closure": {
         "path": "gcd.ixe",
-        "sha256": "92e4aad837e91baca7762cdf044b6b18a4db631336e1027aee45aa5c3e4a83c5",
-        "bytes": 111796
+        "sha256": "546017d9632a29dcfa972d7dd072a898549145be12af014d2276dc44f175a573",
+        "bytes": 111787
       },
       "equations": {
         "path": "gcd.equations.json",
@@ -633,10 +633,10 @@
         "equations": 7,
         "failures": 0
       },
-      "named_env_sha256": "87d8f59ac2f4f943e267a1b196cf25258bdeafb2d79bfe7717137d1e3b676e20",
+      "named_env_sha256": "5abf441806f0b5e1b5250c98a028d8240e95dce6cfe39cae15f294ec950bd01f",
       "census": {
         "path": "gcd.census.json",
-        "sha256": "9ae50e79d1bfe7974f4e2f00a5ba0189285f64bb27706d53afe6aad5d7b2ab28"
+        "sha256": "0a2f955bec460f918de9c777e6ed74b7009b5a9d0deed727e3ddb5f51e31ee30"
       },
       "roots": [
         {
@@ -760,7 +760,7 @@
       "name": "collatz",
       "source": {
         "path": "collatz/Collatz.lean",
-        "sha256": "05e97897fe27ccf0d993dc8d32eafea329b5bc9fec2e1b439da472330ae79398",
+        "sha256": "805046e4c89628013c15da3e2dfcf47bf09e77ce99749404b2b637d5a0732cab",
         "license": "Apache-2.0 OR MIT",
         "variant": "corpus",
         "origins": [
@@ -861,7 +861,7 @@
       "name": "prime-count",
       "source": {
         "path": "prime-count/PrimeCount.lean",
-        "sha256": "ba421604e9ffe557afba630d14d783b138a45694f25bd0c3770f227cec6db513",
+        "sha256": "e56857c2eb9156738430e404a31c3eaa800b06c094138e62e18b34bf6c8cbe6a",
         "license": "Apache-2.0 OR MIT",
         "variant": "corpus",
         "origins": [
@@ -958,7 +958,7 @@
       "name": "even-odd",
       "source": {
         "path": "even-odd/EvenOdd.lean",
-        "sha256": "0266bb38590a645440f255c9d9ab6b2e15e3cf6bab476961c6364f2afb0e759a",
+        "sha256": "4fbf0a5e4b196a40c7d4bb742e1f2835fb26af646944395b7c555149a22dd6c7",
         "license": "Apache-2.0 OR MIT",
         "variant": "corpus",
         "origins": [
@@ -1062,7 +1062,7 @@
       "name": "sfib",
       "source": {
         "path": "sfib/Sfib.lean",
-        "sha256": "7c729b7c41c2eb7bd1705971674b2a4e612c362fda9daba6fde4d1e8f25a6de0",
+        "sha256": "3e8f1db8c0764fe3d528f9a626c5d20d607cf597b1d556e73a65761cfa6faf45",
         "license": "Apache-2.0 OR MIT",
         "variant": "corpus",
         "origins": [

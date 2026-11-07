@@ -2,7 +2,7 @@
 `List.reverse`; main is an independent, full-result reference oracle.
 No production fixture identity is frozen until G2 selects its producer. -/
 
-namespace CompilatrixTests.Own.H0
+namespace IxCCTests.Own.H0
 
 def descending (n seed : Nat) : List Nat :=
   match n with
@@ -27,7 +27,7 @@ def sharedReverse (n seed : Nat) : List Nat × List Nat :=
   let ys := List.reverse xs
   (xs, ys)
 
-end CompilatrixTests.Own.H0
+end IxCCTests.Own.H0
 
 private def ascendingOracle (n seed : Nat) : List Nat :=
   (List.range n).map fun i => seed + i
@@ -38,18 +38,18 @@ private def descendingOracle (n seed : Nat) : List Nat :=
 def main : IO UInt32 := do
   let cases := [(0, 7), (1, 42), (4, 3), (7, 0), (32, 11), (128, 100)]
   for (n, seed) in cases do
-    let actual := CompilatrixTests.Own.H0.reverseList n seed
+    let actual := IxCCTests.Own.H0.reverseList n seed
     let expected := ascendingOracle n seed
     unless actual == expected do
       throw (IO.userError s!"reverseList {n} {seed}: {actual} != {expected}")
     IO.println s!"reverseList {n} {seed}: {actual}"
-    let actualShared := CompilatrixTests.Own.H0.sharedReverse n seed
+    let actualShared := IxCCTests.Own.H0.sharedReverse n seed
     let expectedShared := (descendingOracle n seed, expected)
     unless actualShared == expectedShared do
       throw (IO.userError s!"sharedReverse {n} {seed}: {actualShared} != {expectedShared}")
     IO.println s!"sharedReverse {n} {seed}: {actualShared}"
   for (n, value) in [(0, 9), (1, 2), (5, 7), (64, 3)] do
-    let actual := CompilatrixTests.Own.H0.reverseRepeated n value
+    let actual := IxCCTests.Own.H0.reverseRepeated n value
     let expected := List.replicate n value
     unless actual == expected do
       throw (IO.userError s!"reverseRepeated {n} {value}: {actual} != {expected}")

@@ -28,9 +28,9 @@
   },
   "producer": {
     "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",

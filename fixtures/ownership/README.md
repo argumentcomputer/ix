@@ -63,7 +63,7 @@ later).
 The closures and the verdicts come from the pinned ix of
 [`docs/corpus.md`](../../docs/corpus.md) (revision `be45a159`: the certified
 line `f829b760` plus the local `--equations` export, Ixon v4, binary SHA-256
-`fc4e07ab…`), with the manifest's anonymous command (`ix compile --no-build
+`396dffb7…` from the 2026-11-07 rebuild), with the manifest's anonymous command (`ix compile --no-build
 --consts ROOTS --equations --anon`). ix elaborates an annotated source
 against the Lean libraries `lake env printenv LEAN_PATH` names, through a
 `lake` stand-in (`FAKE`) that answers with the producer workspace's libraries

@@ -1,7 +1,7 @@
 /-!
 # The Phase 1 scalar corpus (MT.2)
 
-First-order, total programs over `Nat` and `Bool`, written for Compilatr.ix
+First-order, total programs over `Nat` and `Bool`, written for IxCC
 (Apache-2.0 OR MIT). Several are re-derivations of classic benchmark
 programs: the algorithm is reimplemented in fresh Lean, no upstream text is
 copied, and `corpus.json` records each origin and its licence.

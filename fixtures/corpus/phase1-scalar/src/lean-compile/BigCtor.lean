@@ -1,6 +1,6 @@
 /-! Lean 4 `tests/compile/bigctor.lean` (v4.34.0,
 `293d5d0c0c3f3dded4688b3ccd6a33939ac5102b`; Apache-2.0, see
-`../../LICENSES/lean4-LICENSE`), modified for Compilatr.ix: the text up to
+`../../LICENSES/lean4-LICENSE`), modified for IxCC: the text up to
 `def main` is upstream's, verbatim (a 70-field structure); `entry` and the
 corpus oracle driver replace upstream's `main` (`IO.println (mkFoo 10).yy10`,
 kept in `upstream/`). -/

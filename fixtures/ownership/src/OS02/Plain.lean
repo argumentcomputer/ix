@@ -1,7 +1,7 @@
 /-!
 OS-02 `subtype-decidable` of the ownership suite (`fixtures/ownership/README.md`,
 MT.7): a plain program whose `Subtype` and `Decidable` erasure costs nothing.
-Written for Compilatr.ix (Apache-2.0 OR MIT). `main` is the oracle driver for
+Written for IxCC (Apache-2.0 OR MIT). `main` is the oracle driver for
 `lean --run`: each stdin line `ROOT ARG…` prints that root's value on those
 arguments.
 -/

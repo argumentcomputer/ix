@@ -28,9 +28,9 @@
   },
   "producer": {
     "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -71,7 +71,7 @@
       "name": "OS01-annotated",
       "source": {
         "path": "OS01/Annotated.lean",
-        "sha256": "523cfdc0a51e02954a8297a40d48dc8768c501964a455688c6c8bcda64d2f9dd",
+        "sha256": "a8d9d931c90a5924a4d82c5849492b4d5046dafe397c889b49eb484c98752d66",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -218,7 +218,7 @@
       "name": "OS01-plain",
       "source": {
         "path": "OS01/Plain.lean",
-        "sha256": "6491c0764a4fe0dbe524a742131602f710e4161a4478b44a4977d66265fe03ea",
+        "sha256": "b0da8dd7a6d8b0c6d97bf57cff8ee14c30c11ec242c44ffba9337569d1c15a48",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -365,7 +365,7 @@
       "name": "OS02-plain",
       "source": {
         "path": "OS02/Plain.lean",
-        "sha256": "e4fe0e6cea18a73a5e44f79d732c75069f6030a1911c4447426f6634c39d0f59",
+        "sha256": "c4d24b4f3abd3624728ed1d0047a2d1f05111314e6170bcd4c983d8652f3447b",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -516,7 +516,7 @@
       "name": "OS03-annotated",
       "source": {
         "path": "OS03/Annotated.lean",
-        "sha256": "037bf7a16ea6523c62cf59e9e2bc1dd61de4e631748d10669f005747ccc517f6",
+        "sha256": "b0e19d4dac63549473cf2e19a78ec11f8993afd08f72b1b07c5f8843c654871e",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -663,7 +663,7 @@
       "name": "OS03-plain",
       "source": {
         "path": "OS03/Plain.lean",
-        "sha256": "f93fe99fb967255804e43ad0e91c6de842ad6bf404a20931aebb7bfd6135d715",
+        "sha256": "1cffb2d1a14e5f0a100d1803afb5cbf6228f96679abfd55cec4da54838fba1b1",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -810,7 +810,7 @@
       "name": "OS03b-annotated",
       "source": {
         "path": "OS03b/Annotated.lean",
-        "sha256": "a925cf242bae61cec829f1cc89215c1c7c381b1e2b03283c412f6adefc5a5066",
+        "sha256": "84a0e57a03c2587590ee50e39cb2375bda92155a37e1ffee2d3b648c41214ebf",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -957,7 +957,7 @@
       "name": "OS03b-plain",
       "source": {
         "path": "OS03b/Plain.lean",
-        "sha256": "897c5f37fafe7c080f1bd4575d76c447ef7f45c38f1d7e1d56eed7577fb59b30",
+        "sha256": "d960d7d8184a5d9ca030cfab0fba9f255a53665004321afc43d03354826f8832",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -1104,7 +1104,7 @@
       "name": "OS13-annotated",
       "source": {
         "path": "OS13/Annotated.lean",
-        "sha256": "ca3eb6ce4ed1a9c9edfca167fc3b0b1cb85ea4c57c0257bffe381005b35be53b",
+        "sha256": "bde79bcd6fac5387698f44bd14fdce90d1f40b360799b695ec2cbefba5609995",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -1367,7 +1367,7 @@
       "name": "OS13-plain",
       "source": {
         "path": "OS13/Plain.lean",
-        "sha256": "4dbc55ac52471cc6836089eb7298c20ff6a760ddfa67a1fdbd8f4eb30355030f",
+        "sha256": "f2278278d154a68dff3cb0e903fe45928b7d4822115781604c4e8ba424c20ea6",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -1630,7 +1630,7 @@
       "name": "OS14-annotated",
       "source": {
         "path": "OS14/Annotated.lean",
-        "sha256": "c73c95c967a90d9ca6a68244939277912d590130cabe5f8e67296da543658fef",
+        "sha256": "a983c58c209357a9a4590d5ff3a32a168483cb3ec95a2751abe8112fa9faff92",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -1777,7 +1777,7 @@
       "name": "OS14-plain",
       "source": {
         "path": "OS14/Plain.lean",
-        "sha256": "f1bc58f8585dfb5eb885496544a31f02746d815da6b68bc1c0ffb8d8342c018d",
+        "sha256": "b059cc46f2d261ca4ae1830fbcf1e83a5db55c95387e033686fc40a5045f485c",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -1924,7 +1924,7 @@
       "name": "OS16-plain",
       "source": {
         "path": "OS16/Plain.lean",
-        "sha256": "c3c7b86091990f00929c44861fe7ece220308bc3eed8d5a8cbda5a5d2b9ad858",
+        "sha256": "7bbfe2e7b929b630d2b3c96732cfdae8a937ada250b9b3c5f5e57392c902596d",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []
@@ -1995,7 +1995,7 @@
       "name": "OS22-annotated",
       "source": {
         "path": "OS22/Annotated.lean",
-        "sha256": "b5250514ba3c234df6863ea877be8c87d479ef2e774da862f5e7ce3b4985c863",
+        "sha256": "21930e6bb9230f92c122b5f77f25fff03cf89650151f827f561cce262396c609",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -2142,7 +2142,7 @@
       "name": "OS22-plain",
       "source": {
         "path": "OS22/Plain.lean",
-        "sha256": "f6de6ed0863a972b6f858c3f0d1d474fc7f33f1ddde71a6f6a4b99cf56f8dfd6",
+        "sha256": "d0ebe9d723497231039c15208ac8f045bfa52b0c8a61fca886dcfb6eb507b21f",
         "license": "Apache-2.0 OR MIT",
         "variant": "plain",
         "origins": []

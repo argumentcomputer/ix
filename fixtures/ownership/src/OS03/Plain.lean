@@ -1,6 +1,6 @@
 /-!
 OS-03 `erased-data` of the ownership suite (`fixtures/ownership/README.md`, MT.7).
-Written for Compilatr.ix (Apache-2.0 OR MIT). The annotated source uses ix's
+Written for IxCC (Apache-2.0 OR MIT). The annotated source uses ix's
 contract syntax; its plain twin is this text with the contract atoms and the
 elaborator import deleted (`tests-own` checks this). `main` is the oracle
 driver for `lean --run`: each stdin line `ROOT ARG…` prints that root's

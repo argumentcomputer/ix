@@ -1,30 +1,29 @@
-{"source":
- "/home/jcb/projects/Compilatr.ix/plans/codex/phase-1.5-to-phase-2/h0/Reverse.lean",
+{"source": "fixtures/rc/real-source/Reverse.lean",
  "roots":
- [{"name": "CompilatrixTests.Own.H0.reverseList",
+ [{"name": "IxCCTests.Own.H0.reverseList",
    "address":
    "184d5657057c3b822a6be86fc177e82450b202b218be9f9e253655f1faef9880"},
-  {"name": "CompilatrixTests.Own.H0.reverseRepeated",
+  {"name": "IxCCTests.Own.H0.reverseRepeated",
    "address":
    "1496d54b208beecf51a6e2cc1c22e049bca994b869ba6db8297d166ae9e85654"},
-  {"name": "CompilatrixTests.Own.H0.sharedReverse",
+  {"name": "IxCCTests.Own.H0.sharedReverse",
    "address":
    "d49a0d6e7b2fffdc0b9a66ce7fbeea4b29452bf1d92cc264c6764bebc5546a1a"}],
- "format": "compilatrix/k1-equations/1",
+ "format": "ixcc/k1-equations/1",
  "failures": [],
  "equations":
  [{"equation_address":
    "59939bbd24ab662852a7310fddb9e1e142f7bbc7dbffde3c4fc386bd84264958",
-   "equation": "CompilatrixTests.Own.H0.descending.eq_def",
+   "equation": "IxCCTests.Own.H0.descending.eq_def",
    "definition_address":
    "1cb34996b9089ab29b09d489bc8299ee9bc114404f5ec92e29be2bcd9b86b784",
-   "definition": "CompilatrixTests.Own.H0.descending"},
+   "definition": "IxCCTests.Own.H0.descending"},
   {"equation_address":
    "fd6d74cee1b19660daaef94af13d23d682ddc4de277cb59af049b87662a1e7a1",
-   "equation": "CompilatrixTests.Own.H0.repeated.eq_def",
+   "equation": "IxCCTests.Own.H0.repeated.eq_def",
    "definition_address":
    "22618e884928c0a271619d7b14670da01ae0c66668ed41c829fcf9a34d5476b6",
-   "definition": "CompilatrixTests.Own.H0.repeated"},
+   "definition": "IxCCTests.Own.H0.repeated"},
   {"equation_address":
    "5148f95371dd4309ff667037a61d8ffcb03cc460fedf87119cb4bbb8109f6ad8",
    "equation": "List.reverseAux.eq_def",

@@ -28,9 +28,9 @@
   },
   "producer": {
     "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -71,7 +71,7 @@
       "name": "k1",
       "source": {
         "path": "K1.lean",
-        "sha256": "49321a0aa894eedbfb3538314c7480f9d0350e8b1870b758bf7134bf4ca3456f",
+        "sha256": "a69712c62e7ae65ccd0d874ffa793b7eb366fdb386c065dff56775abe9d1f3a5",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -86,8 +86,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "k1.ixe",
-        "sha256": "fc649d26e99a02cdbd95868f73a996f508e5d9d970473736f05572a8443cb9d8",
-        "bytes": 1078660
+        "sha256": "03859c54afc7432f95cd333fe6fa075ee29acaa2518502a23a0f9380dc0f0c0f",
+        "bytes": 1078652
       },
       "equations": {
         "path": "equations.json",
@@ -95,10 +95,10 @@
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "8fcbf436470e5a98dd9f3b904571880cf66c475338c07fa9779fa4cc63f05b78",
+      "named_env_sha256": "7cb85533f5176fb6b6c085b04129dd5273d0deb390f52f0fb676f37af7f5774d",
       "census": {
         "path": "census.json",
-        "sha256": "1ffe40eaeee7286b07ad77041dfb4b778d965e99438e5b1419e2c9104d9c05ad"
+        "sha256": "f9e15e4893912b2b0ba5f722d6d6cb2ce6563919c72d6883952ab1893897f88e"
       },
       "roots": [
         {

@@ -28,9 +28,9 @@
   },
   "producer": {
     "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -71,7 +71,7 @@
       "name": "scalar",
       "source": {
         "path": "Scalar.lean",
-        "sha256": "544ce4f4c49387de05e2952299a962165f11704a7ee58d9405f2e75edb115c8d",
+        "sha256": "aa96187766cab71d4561e8c398a822e8dd1b74c66a783d717e91efa2a7aed9fe",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
@@ -173,8 +173,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "scalar.ixe",
-        "sha256": "636b292f917b5efbfba06298f39049d2d691f0628f25b9f90a296f1b54ad7626",
-        "bytes": 1119651
+        "sha256": "ee32ba3e3222a07e06a0e7088b0f30c8cf0f3a448f55abd6acbb9974365dc95e",
+        "bytes": 1119643
       },
       "equations": {
         "path": "scalar.equations.json",
@@ -182,10 +182,10 @@
         "equations": 50,
         "failures": 0
       },
-      "named_env_sha256": "1bee786ebe91bc5707f29fd28bd6a878d56761aea67df04062fc3b720456c554",
+      "named_env_sha256": "f564bb17b1a3ea0dbb73d6f8ff66bfd5952bdc323206d8cf27739ecf00460d82",
       "census": {
         "path": "scalar.census.json",
-        "sha256": "4916a0a451479ee70621cf988b2aee56882beab8c1e8d206441df4c92bbfe5b9"
+        "sha256": "42f484f32d4137d38aae647e0c5b697c1b523682bed9e4a1ec3cc7cdf36c049f"
       },
       "roots": [
         {
@@ -1833,7 +1833,7 @@
       "name": "strictAndOr",
       "source": {
         "path": "lean-compile/StrictAndOr.lean",
-        "sha256": "fe5938ff83f6eb6f2eb76e25f4b15c476a2a1ce813c014a7abc05da09c3167b9",
+        "sha256": "2c75d40c547769565319ebca5df66009506e24b62fa70a032879e87c6c4a2ed5",
         "license": "Apache-2.0",
         "variant": "port",
         "origins": [
@@ -1976,7 +1976,7 @@
       "name": "tuple",
       "source": {
         "path": "lean-compile/Tuple.lean",
-        "sha256": "a828c7442ea2a6fa74ce264019b81d569989fb92a834dc026f59724aef8330c5",
+        "sha256": "d399af1c869ac6a23192baae8851e27bb5b2917c11f0b96bb10291febeba3dfa",
         "license": "Apache-2.0",
         "variant": "upstream",
         "origins": [
@@ -2104,7 +2104,7 @@
       "name": "bigctor",
       "source": {
         "path": "lean-compile/BigCtor.lean",
-        "sha256": "8b542107c4196929128d5f06b27e40a418ed1dab2f88232949be1344bfc16f72",
+        "sha256": "57134a97c4099fe5714a3a35036267f3a4740e9d9cb44e57a3768997d3c4f1fe",
         "license": "Apache-2.0",
         "variant": "upstream",
         "origins": [
@@ -2175,7 +2175,7 @@
       "name": "typeFormerPolymorphism",
       "source": {
         "path": "lean-compile/TypeFormerPolymorphism.lean",
-        "sha256": "25e9fe994bb6d8ea477129cd815f3cdda19175ff58bbe4bc9d36b28157272817",
+        "sha256": "56f136531ae8e979234fb8a6e9e3b9762192a45138d2f2da67c5452c8c55515c",
         "license": "Apache-2.0",
         "variant": "upstream",
         "origins": [
@@ -2249,7 +2249,7 @@
       "name": "natShiftr",
       "source": {
         "path": "lean-compile/NatShiftr.lean",
-        "sha256": "cec9226d206a4857d9be1d76a21708a79f7c701fe72d24156f885745768103bf",
+        "sha256": "bf769db106bc3eeb16e906d692781989a63e264941056e17102f691bf18ea2de",
         "license": "Apache-2.0",
         "variant": "upstream",
         "origins": [

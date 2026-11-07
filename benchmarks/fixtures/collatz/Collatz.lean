@@ -1,5 +1,5 @@
 /-! MT.2 `collatz` benchmark: the Collatz step count, verbatim from
-`fixtures/corpus/phase1-scalar/src/Scalar.lean` (Compilatr.ix); `entry` sums
+`fixtures/corpus/phase1-scalar/src/Scalar.lean` (IxCC); `entry` sums
 it over `[1, limit)` and `main` is the benchmark wrapper. -/
 
 namespace Scalar

@@ -1,6 +1,6 @@
 /-!
 OS04 `erased-type-recursive` of the ownership suite (`fixtures/ownership/README.md`, MT.7),
-from probe `P31LenErasedType`. Written for Compilatr.ix (Apache-2.0 OR MIT). The
+from probe `P31LenErasedType`. Written for IxCC (Apache-2.0 OR MIT). The
 pinned ix rejects it; its verdict is recorded in `fixtures/ownership/verdicts.json`.
 -/
 

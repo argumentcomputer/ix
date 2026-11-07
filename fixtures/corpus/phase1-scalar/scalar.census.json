@@ -13046,7 +13046,7 @@
    "ff83fc32ae006a0535644aa3fd7011bba19db74668ad54de1adfa68916eedd9d"}],
  "constants": 1614,
  "budgets":
- [{"limit": 16777216, "budget": "environment bytes", "actual": 1119651},
+ [{"limit": 16777216, "budget": "environment bytes", "actual": 1119643},
   {"limit": 16384, "budget": "constants", "actual": 1614},
   {"limit": 16384, "budget": "blobs", "actual": 1478},
   {"limit": 1048576, "budget": "largest constant bytes", "actual": 13453},

@@ -1,7 +1,7 @@
 /-!
 OS-16 `k0-reverse-plain` of the ownership suite (`fixtures/ownership/README.md`,
 MT.7): the plain K0 reversal, whose annotated twin (OS-15) the pinned ix rejects.
-Written for Compilatr.ix (Apache-2.0 OR MIT). `main` is the oracle driver for
+Written for IxCC (Apache-2.0 OR MIT). `main` is the oracle driver for
 `lean --run`: each stdin line `ROOT ARG…` prints that root's value on those
 arguments.
 -/

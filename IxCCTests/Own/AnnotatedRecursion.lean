@@ -253,7 +253,7 @@ def fixtureDirectory : FilePath := "fixtures/ownership/historical/annotated-recu
 
 -- Replaced only when this exact independent historical fixture inventory is
 -- intentionally reviewed. It is not the final selected-producer corpus.
-def fixtureInventorySha : String := "1f761c2b2e318a99b5f38dba6f2e27ec6b84d0c1ce1e97f725c4bf970c4ae446"
+def fixtureInventorySha : String := "e469b3dcf277439f1ea202e6b365236fe8ecb1c541f1cd1fb5678bdbe76e22be"
 
 def checkedCopy (sourceRoot destination : FilePath) : IO Unit := do
   let manifest := sourceRoot / "inputs.sha256"

@@ -20,7 +20,7 @@
 #   update of it.
 # - A constructor without run-time fields (`Nat.zero`, `[]`, `none`) is an
 #   immediate, unique: the consumer represents it without a heap object (a
-#   scalar, as Lean and Compilatr do), never as a shared static object.
+#   scalar, as Lean and IxCC do), never as a shared static object.
 # - The linearity of a shareable immediate has no run-time meaning: a `1` or
 #   `&` contract on a Nat, Bool, String, Char or UIntN value bounds how often
 #   the program names it, not a resource the consumer relies on. (Uniqueness

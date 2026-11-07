@@ -1,5 +1,5 @@
 /-! MT.2 `even-odd` benchmark: MLton's `even-odd.sml` mutual recursion,
-verbatim from `fixtures/corpus/phase1-scalar/src/Scalar.lean` (Compilatr.ix);
+verbatim from `fixtures/corpus/phase1-scalar/src/Scalar.lean` (IxCC);
 `entry` and `main` are the benchmark wrapper. -/
 
 namespace Scalar
