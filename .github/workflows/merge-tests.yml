@@ -359,9 +359,26 @@ jobs:
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/ffi-tests
 
+  # The certified compiler's required checks (IxCC/docs/ci.md), on every
+  # merge group whatever it changes; CI Jobs runs them on pull requests only
+  # when a change reaches them. Its Nix builds share nothing with the Lake
+  # partitions above.
+  ixcc:
+    name: IxCC (certified compiler)
+    needs: prepare
+    if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+    uses: $/.github/workflows/ixcc.yml
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+      revision: ${{ needs.prepare.outputs.revision }}
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
   merge-gate:
     if: ${{ always() && github.event_name != 'issue_comment' }}
-    needs: [prepare, build, merge-tests, valgrind]
+    needs: [prepare, build, merge-tests, valgrind, ixcc]
     permissions:
       actions: read
       checks: read
@@ -375,7 +392,7 @@ jobs:
       always() &&
       github.event_name == 'workflow_dispatch' &&
       needs.prepare.result == 'success'
-    needs: [prepare, build, merge-tests, valgrind, merge-gate]
+    needs: [prepare, build, merge-tests, valgrind, ixcc, merge-gate]
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -388,11 +405,12 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           TEST_RESULT: ${{ needs.merge-tests.result }}
           VALGRIND_RESULT: ${{ needs.valgrind.result }}
+          IXCC_RESULT: ${{ needs.ixcc.result }}
           GATE_RESULT: ${{ needs.merge-gate.result }}
         run: |
-          if [ "$GATE_RESULT" = success ] && [ "$BUILD_RESULT" = success ] && [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ]; then
+          if [ "$GATE_RESULT" = success ] && [ "$BUILD_RESULT" = success ] && [ "$TEST_RESULT" = success ] && [ "$VALGRIND_RESULT" = success ] && [ "$IXCC_RESULT" = success ]; then
             heading="## ✅ Merge tests passed"
-            summary="All test partitions and Valgrind passed"
+            summary="All test partitions, Valgrind and IxCC's checks passed"
           elif [ "$GATE_RESULT" = success ]; then
             heading="## ⏳ Merge tests awaiting Spot retry"
             summary="RunsOn will retry the failed jobs"

@@ -60,12 +60,20 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
-      # The flake's one check, `ix-tests`: the primary tier from the
+      # The flake's host check, `ix-tests`: the primary tier from the
       # Nix-built test binary, in the sandbox, on a fresh copy of the
       # tracked sources. CI Jobs' lean-test runs the same tier on its
       # incremental sticky disk and its rust-test job runs clippy and
-      # nextest, so neither runs again here.
-      - run: nix flake check --print-build-logs --accept-flake-config
+      # nextest, so neither runs again here. IxCC's `ixcc-*` checks have
+      # their own job (ixcc.yml, from CI Jobs and Merge tests): they are
+      # evaluated here but not built.
+      - run: nix flake check --no-build --accept-flake-config
+      - name: Build the flake's checks other than IxCC's
+        run: |
+          mapfile -t checks < <(nix eval --accept-flake-config --json .#checks.x86_64-linux \
+            --apply 'checks: builtins.filter (name: builtins.substring 0 5 name != "ixcc-") (builtins.attrNames checks)' \
+            | jq -r '.[]')
+          nix build --print-build-logs --accept-flake-config --no-link "${checks[@]/#/.#checks.x86_64-linux.}"
       # The development shell builds the library; the tests ran above.
       - run: nix develop --accept-flake-config --command lake build
 

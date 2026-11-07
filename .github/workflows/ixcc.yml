@@ -1,0 +1,81 @@
+name: IxCC
+
+# The certified compiler's required checks: every `ixcc-*` check of the flake
+# (IxCC/docs/ci.md). CI Jobs (ci.yml) calls this on pull requests and main
+# pushes whose changes reach IxCC; Merge tests (merge-tests.yml) calls it on
+# every merge group.
+#
+# IxCC's trust ledger (IxCC/docs/trusted-externs.json, policy.repository)
+# audits this file and the repository-local actions it uses: every remote
+# action here is pinned to a full commit and listed in the ledger's
+# ci_actions, so changing one means reviewing the ledger. The calling
+# workflows are ix's and outside that audit.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Revision to check out; empty for the triggering one
+        type: string
+        default: ""
+      revision:
+        description: Commit the checkout must resolve to; empty to skip the check
+        type: string
+        default: ""
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: IxCC checks
+    permissions:
+      contents: read
+    # Nix builds in its own store on the root volume; Cachix holds the
+    # artifacts between runs, so there is no sticky disk.
+    runs-on: runs-on=${{ github.run_id }}-ixcc-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/extras=s3-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Verify test revision
+        if: ${{ inputs.revision != '' }}
+        env:
+          TEST_REVISION: ${{ inputs.revision }}
+        run: |
+          checked_out=$(git rev-parse HEAD)
+          if [ "$checked_out" != "$TEST_REVISION" ]; then
+            echo "::error::Checked out $checked_out, not the test revision $TEST_REVISION"
+            exit 1
+          fi
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ github.token }}
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: argumentcomputer
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # Git-CLI fetches at evaluation time carry the job's token (see nix.yml).
+      - uses: $/.github/actions/authenticate-github-fetches
+
+      # Every check runs the programs of one shared build (`ixcc-proofs`);
+      # the checks then run concurrently.
+      - name: Build and run the ixcc-* checks
+        run: |
+          system=$(nix eval --impure --raw --expr builtins.currentSystem)
+          mapfile -t checks < <(nix eval --accept-flake-config --json ".#checks.$system" \
+            --apply 'checks: builtins.filter (name: builtins.substring 0 5 name == "ixcc-") (builtins.attrNames checks)' \
+            | jq -r '.[]')
+          if [ "${#checks[@]}" -eq 0 ]; then
+            echo "::error::The flake defines no ixcc-* checks for $system"
+            exit 1
+          fi
+          echo "Checks: ${checks[*]}"
+          nix build --print-build-logs --accept-flake-config --keep-going --no-link \
+            "${checks[@]/#/.#checks.$system.}"

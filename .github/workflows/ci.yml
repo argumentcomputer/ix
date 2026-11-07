@@ -63,12 +63,13 @@ jobs:
       - name: Check generated trace writers, CUDA units and manifest are up to date
         if: github.event_name != 'push'
         run: lake exe ix codegen --trace-bundle --check
-      - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
+      - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model, and certified compiler
         if: github.event_name != 'push'
         run: |
           diff lean-toolchain Benchmarks/Compile/lean-toolchain
           diff lean-toolchain IxCK/lean-toolchain
           diff lean-toolchain Models/SetTheory/lean-toolchain
+          diff lean-toolchain IxCC/lean-toolchain
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- --tier ci:cli
@@ -194,9 +195,86 @@ jobs:
       # must be SHA-pinned with a matching version comment) and zizmor
       - uses: argumentcomputer/ci-workflows/.github/actions/lint-workflows@main
 
+  # Whether a change reaches the certified compiler's checks (IxCC/docs/ci.md):
+  # IxCC/ itself, the IxCK codec it imports, the flake, the toolchain, and the
+  # workflow and local actions its trust ledger audits. Job-level gates, as in
+  # codeql.yml. A merge group skips the filter: merge-tests.yml runs IxCC's
+  # checks on every merge group.
+  changes:
+    name: Detect IxCC changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ixcc: ${{ steps.filter.outputs.ixcc }}
+    steps:
+      # paths-filter diffs the PR via the API on pull_request events, but
+      # needs a checkout to resolve the pushed commit range on push events.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'merge_group'
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name != 'merge_group'
+        id: filter
+        with:
+          filters: |
+            ixcc:
+              - 'IxCC/**'
+              - 'IxCK/Ixon/**'
+              - 'IxCK/Address/**'
+              - 'IxCK/lakefile.lean'
+              - 'IxCK/lake-manifest.json'
+              - 'IxCK/lean-toolchain'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'lean-toolchain'
+              - '.github/workflows/ixcc.yml'
+              - '.github/actions/**'
+
+  ixcc:
+    name: IxCC
+    needs: changes
+    if: needs.changes.outputs.ixcc == 'true'
+    permissions:
+      contents: read
+    uses: $/.github/workflows/ixcc.yml
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  # One result for ci-gate, which requires every job it needs to succeed:
+  # IxCC's checks passed, or the change does not reach them.
+  ixcc-result:
+    name: IxCC result
+    if: ${{ always() }}
+    needs: [changes, ixcc]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require IxCC's checks when the change reaches them
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          REACHES_IXCC: ${{ needs.changes.outputs.ixcc }}
+          IXCC_RESULT: ${{ needs.ixcc.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != success ]; then
+            echo "::error::The IxCC path filter did not succeed: $CHANGES_RESULT"
+            exit 1
+          fi
+          if [ "$REACHES_IXCC" = true ]; then
+            if [ "$IXCC_RESULT" != success ]; then
+              echo "::error::IxCC's checks did not succeed: $IXCC_RESULT"
+              exit 1
+            fi
+            echo "IxCC's checks passed."
+          else
+            echo "The change does not reach IxCC, or this is a merge group (merge-tests.yml runs IxCC's checks there)."
+          fi
+
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, rust-test, cuda-compile, lints]
+    needs: [lean-test, rust-test, cuda-compile, lints, ixcc-result]
     permissions:
       actions: read
       checks: read
