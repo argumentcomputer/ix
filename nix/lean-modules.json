@@ -1,5 +1,6 @@
 {"targets":
- {"x86-object-fixture": {"roots": ["X86ObjectFixture"], "kind": "lean_exe"},
+ {"x86-object-fixture":
+  {"roots": ["IxCCTests.Scripts.X86ObjectFixture"], "kind": "lean_exe"},
   "tests-src-slow": {"roots": ["IxCCTests.Src.SlowMain"], "kind": "lean_exe"},
   "tests-src": {"roots": ["IxCCTests.Src.Main"], "kind": "lean_exe"},
   "tests-shrink":
@@ -28,8 +29,10 @@
   "tests-cfg-rc": {"roots": ["IxCCTests.Cfg.Rc.Main"], "kind": "lean_exe"},
   "tests-anf": {"roots": ["IxCCTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["IxCCTests.Aiur.Main"], "kind": "lean_exe"},
-  "refreeze-ixon": {"roots": ["RefreezeIxon"], "kind": "lean_exe"},
-  "pin-src-tables": {"roots": ["PinSrcTables"], "kind": "lean_exe"},
+  "refreeze-ixon":
+  {"roots": ["IxCCTests.Scripts.RefreezeIxon"], "kind": "lean_exe"},
+  "pin-src-tables":
+  {"roots": ["IxCCTests.Scripts.PinSrcTables"], "kind": "lean_exe"},
   "ixcc": {"roots": ["IxCC.Cli.Main"], "kind": "lean_exe"},
   "gen-src-artifacts":
   {"roots": ["IxCCTests.Src.ArtifactMain"], "kind": "lean_exe"},
@@ -37,48 +40,42 @@
   {"roots": ["IxCCTests.Recheck.ArtifactMain"], "kind": "lean_exe"},
   "corpus": {"roots": ["IxCCTests.Corpus.ToolMain"], "kind": "lean_exe"},
   "check-xv-select": {"roots": ["IxCCTests.Xv.Main"], "kind": "lean_exe"},
-  "check-x86-streams": {"roots": ["CheckX86Streams"], "kind": "lean_exe"},
-  "check-x86-object": {"roots": ["CheckX86Object"], "kind": "lean_exe"},
-  "check-x86-hardware": {"roots": ["CheckX86Hardware"], "kind": "lean_exe"},
-  "check-x86-encoder": {"roots": ["CheckX86Encoder"], "kind": "lean_exe"},
-  "check-x86-bytes": {"roots": ["CheckX86Bytes"], "kind": "lean_exe"},
+  "check-x86-streams":
+  {"roots": ["IxCCTests.Scripts.CheckX86Streams"], "kind": "lean_exe"},
+  "check-x86-object":
+  {"roots": ["IxCCTests.Scripts.CheckX86Object"], "kind": "lean_exe"},
+  "check-x86-hardware":
+  {"roots": ["IxCCTests.Scripts.CheckX86Hardware"], "kind": "lean_exe"},
+  "check-x86-encoder":
+  {"roots": ["IxCCTests.Scripts.CheckX86Encoder"], "kind": "lean_exe"},
+  "check-x86-bytes":
+  {"roots": ["IxCCTests.Scripts.CheckX86Bytes"], "kind": "lean_exe"},
   "check-trusted-externs":
-  {"roots": ["CheckTrustedExterns"], "kind": "lean_exe"},
-  "check-tools-tests": {"roots": ["CheckToolsTests"], "kind": "lean_exe"},
+  {"roots": ["IxCCTests.Scripts.CheckTrustedExterns"], "kind": "lean_exe"},
+  "check-tools-tests":
+  {"roots": ["IxCCTests.Scripts.CheckToolsTests"], "kind": "lean_exe"},
   "check-steps":
   {"roots": ["IxCCTests.Pipeline.StepsMain"], "kind": "lean_exe"},
   "check-regalloc": {"roots": ["IxCCTests.Xv.Alloc.Main"], "kind": "lean_exe"},
   "check-lir": {"roots": ["IxCCTests.Lir.Main"], "kind": "lean_exe"},
   "check-ixon-v3-catalog":
-  {"roots": ["CheckIxonV3Catalog"], "kind": "lean_exe"},
-  "check-ixon-v3": {"roots": ["CheckIxonV3"], "kind": "lean_exe"},
-  "check-build-graph": {"roots": ["CheckBuildGraph"], "kind": "lean_exe"},
+  {"roots": ["IxCCTests.Scripts.CheckIxonV3Catalog"], "kind": "lean_exe"},
+  "check-ixon-v3":
+  {"roots": ["IxCCTests.Scripts.CheckIxonV3"], "kind": "lean_exe"},
+  "check-build-graph":
+  {"roots": ["IxCCTests.Scripts.CheckBuildGraph"], "kind": "lean_exe"},
   "check-backend": {"roots": ["IxCCTests.Backend.Main"], "kind": "lean_exe"},
-  "check-aiur": {"roots": ["CheckAiur"], "kind": "lean_exe"},
+  "check-aiur": {"roots": ["IxCCTests.Scripts.CheckAiur"], "kind": "lean_exe"},
   "certified-census":
   {"roots": ["IxCCTests.Corpus.CertifiedCensusMain"], "kind": "lean_exe"},
-  "census": {"roots": ["Census"], "kind": "lean_exe"},
+  "census": {"roots": ["IxCCTests.Scripts.Census"], "kind": "lean_exe"},
   "backend-probe":
   {"roots": ["IxCCTests.Backend.ProbeMain"], "kind": "lean_exe"},
-  "SortPolyFixture": {"roots": ["SortPoly"], "kind": "lean_lib"},
-  "K1Fixture": {"roots": ["K1"], "kind": "lean_lib"},
   "IxCCTests": {"roots": ["IxCCTests"], "kind": "lean_lib"},
   "IxCC": {"roots": ["IxCC"], "kind": "lean_lib"}},
  "schema_version": 1,
  "modules":
- {"X86ObjectFixture":
-  {"path": "X86ObjectFixture.lean",
-   "imports": ["IxCC.X86.ELFValidate", "IxCC.X86.EvalExamples"]},
-  "SortPoly":
-  {"path": "fixtures/ixon-v4/src-sortpoly/SortPoly.lean", "imports": []},
-  "RefreezeIxon":
-  {"path": "scripts/RefreezeIxon.lean",
-   "imports": ["IxCC.Tools.Check", "IxCCTests.IxonV3.Catalog.Fixtures"]},
-  "PinSrcTables":
-  {"path": "scripts/PinSrcTables.lean",
-   "imports": ["Lean", "IxCC.Tools.Check"]},
-  "K1": {"path": "fixtures/ixon-v4/k1/K1.lean", "imports": []},
-  "IxCCTests.Xv.XlCases":
+ {"IxCCTests.Xv.XlCases":
   {"path": "IxCCTests/Xv/XlCases.lean",
    "imports":
    ["IxCC.Xv.XlSemantics",
@@ -189,7 +186,7 @@
    "imports": ["IxCCTests.Src.Support"]},
   "IxCCTests.Src.SortPoly":
   {"path": "IxCCTests/Src/SortPoly.lean",
-   "imports": ["IxCCTests.Src.StuckEval", "SortPoly"]},
+   "imports": ["IxCCTests.Src.StuckEval", "IxCCTests.Fixtures.SortPoly"]},
   "IxCCTests.Src.SlowMain":
   {"path": "IxCCTests/Src/SlowMain.lean", "imports": ["IxCCTests.Src.Run"]},
   "IxCCTests.Src.Runs":
@@ -246,7 +243,8 @@
   {"path": "IxCCTests/Src/Main.lean", "imports": ["IxCCTests.Src.Run"]},
   "IxCCTests.Src.Differential":
   {"path": "IxCCTests/Src/Differential.lean",
-   "imports": ["IxCCTests.Src.Support", "IxCCTests.Src.Rules", "K1"]},
+   "imports":
+   ["IxCCTests.Src.Support", "IxCCTests.Src.Rules", "IxCCTests.Fixtures.K1"]},
   "IxCCTests.Src.Diagnostics":
   {"path": "IxCCTests/Src/Diagnostics.lean",
    "imports": ["IxCCTests.Src.Rules", "IxCC.Src.Admit"]},
@@ -298,6 +296,62 @@
    "imports": ["IxCCTests.Sem.Toy.Pipeline"]},
   "IxCCTests.Sem.Toy.Big":
   {"path": "IxCCTests/Sem/Toy/Big.lean", "imports": ["IxCC.Sem.Transform"]},
+  "IxCCTests.Scripts.X86ObjectFixture":
+  {"path": "IxCCTests/Scripts/X86ObjectFixture.lean",
+   "imports": ["IxCC.X86.ELFValidate", "IxCC.X86.EvalExamples"]},
+  "IxCCTests.Scripts.RefreezeIxon":
+  {"path": "IxCCTests/Scripts/RefreezeIxon.lean",
+   "imports": ["IxCC.Tools.Check", "IxCCTests.IxonV3.Catalog.Fixtures"]},
+  "IxCCTests.Scripts.PinSrcTables":
+  {"path": "IxCCTests/Scripts/PinSrcTables.lean",
+   "imports": ["Lean", "IxCC.Tools.Check"]},
+  "IxCCTests.Scripts.CheckX86Streams":
+  {"path": "IxCCTests/Scripts/CheckX86Streams.lean",
+   "imports": ["IxCC.Tools.Check", "IxCC.X86.StreamExamples"]},
+  "IxCCTests.Scripts.CheckX86Object":
+  {"path": "IxCCTests/Scripts/CheckX86Object.lean",
+   "imports": ["IxCC.Tools.X86Check"]},
+  "IxCCTests.Scripts.CheckX86Hardware":
+  {"path": "IxCCTests/Scripts/CheckX86Hardware.lean",
+   "imports": ["IxCC.Tools.Check", "IxCC.X86.ByteEval", "IxCC.X86.Encode"]},
+  "IxCCTests.Scripts.CheckX86Encoder":
+  {"path": "IxCCTests/Scripts/CheckX86Encoder.lean",
+   "imports": ["IxCC.Tools.Check"]},
+  "IxCCTests.Scripts.CheckX86Bytes":
+  {"path": "IxCCTests/Scripts/CheckX86Bytes.lean",
+   "imports":
+   ["IxCC.Tools.Check",
+    "IxCC.X86.ByteBranch",
+    "IxCC.X86.ByteCall",
+    "IxCC.X86.EvalExamples",
+    "IxCC.X86.DecodeWindow"]},
+  "IxCCTests.Scripts.CheckTrustedExterns":
+  {"path": "IxCCTests/Scripts/CheckTrustedExterns.lean",
+   "imports": ["IxCC.Tools.TrustLedger"]},
+  "IxCCTests.Scripts.CheckToolsTests":
+  {"path": "IxCCTests/Scripts/CheckToolsTests.lean",
+   "imports":
+   ["IxCC.Tools.TrustLedger",
+    "IxCC.Tools.X86Check",
+    "IxCC.Tools.BuildGraph",
+    "IxCCTests.Tools.BuildGraph"]},
+  "IxCCTests.Scripts.CheckIxonV3Catalog":
+  {"path": "IxCCTests/Scripts/CheckIxonV3Catalog.lean",
+   "imports": ["IxCC.Tools.IxonV3Catalog"]},
+  "IxCCTests.Scripts.CheckIxonV3":
+  {"path": "IxCCTests/Scripts/CheckIxonV3.lean", "imports": ["IxCC.Ixon.V3"]},
+  "IxCCTests.Scripts.CheckBuildGraph":
+  {"path": "IxCCTests/Scripts/CheckBuildGraph.lean",
+   "imports": ["IxCC.Tools.BuildGraph"]},
+  "IxCCTests.Scripts.CheckAiur":
+  {"path": "IxCCTests/Scripts/CheckAiur.lean",
+   "imports":
+   ["IxCC.Tools.AiurCheck",
+    "IxCC.Tools.AiurWireCheck",
+    "IxCC.Tools.AiurMemoryCheck",
+    "IxCC.Tools.AiurRankCheck"]},
+  "IxCCTests.Scripts.Census":
+  {"path": "IxCCTests/Scripts/Census.lean", "imports": ["IxCC.Tools.Census"]},
   "IxCCTests.Rt.Support":
   {"path": "IxCCTests/Rt/Support.lean",
    "imports":
@@ -565,7 +619,10 @@
     "IxCCTests.Cfg.Rc.Proofs"]},
   "IxCCTests.Pipeline.Twin":
   {"path": "IxCCTests/Pipeline/Twin.lean",
-   "imports": ["IxCCTests.Pipeline.Support", "IxCCTests.Support.Rng", "K1"]},
+   "imports":
+   ["IxCCTests.Pipeline.Support",
+    "IxCCTests.Support.Rng",
+    "IxCCTests.Fixtures.K1"]},
   "IxCCTests.Pipeline.Support":
   {"path": "IxCCTests/Pipeline/Support.lean",
    "imports":
@@ -795,8 +852,8 @@
     "IxCCTests.Src.Bench",
     "IxCCTests.Src.Rules",
     "IxCCTests.Src.SortPoly",
-    "K1",
-    "SortPoly"]},
+    "IxCCTests.Fixtures.K1",
+    "IxCCTests.Fixtures.SortPoly"]},
   "IxCCTests.IxonV3.TypingFixtures":
   {"path": "IxCCTests/IxonV3/TypingFixtures.lean",
    "imports": ["IxCC.Ixon.V3.Validate"]},
@@ -847,6 +904,10 @@
   "IxCCTests.IxonV3.Catalog.Admission":
   {"path": "IxCCTests/IxonV3/Catalog/Admission.lean",
    "imports": ["IxCCTests.IxonV3.Catalog.Fixtures"]},
+  "IxCCTests.Fixtures.SortPoly":
+  {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
+  "IxCCTests.Fixtures.K1":
+  {"path": "IxCCTests/Fixtures/K1.lean", "imports": []},
   "IxCCTests.Fir.Support":
   {"path": "IxCCTests/Fir/Support.lean",
    "imports":
@@ -8057,46 +8118,4 @@
     "IxCC.Recheck.Proof.Object",
     "IxCC.Recheck.Proof.Soundness",
     "IxCC.Cli",
-    "IxCC.Aiur"]},
-  "CheckX86Streams":
-  {"path": "scripts/CheckX86Streams.lean",
-   "imports": ["IxCC.Tools.Check", "IxCC.X86.StreamExamples"]},
-  "CheckX86Object":
-  {"path": "scripts/CheckX86Object.lean", "imports": ["IxCC.Tools.X86Check"]},
-  "CheckX86Hardware":
-  {"path": "scripts/CheckX86Hardware.lean",
-   "imports": ["IxCC.Tools.Check", "IxCC.X86.ByteEval", "IxCC.X86.Encode"]},
-  "CheckX86Encoder":
-  {"path": "scripts/CheckX86Encoder.lean", "imports": ["IxCC.Tools.Check"]},
-  "CheckX86Bytes":
-  {"path": "scripts/CheckX86Bytes.lean",
-   "imports":
-   ["IxCC.Tools.Check",
-    "IxCC.X86.ByteBranch",
-    "IxCC.X86.ByteCall",
-    "IxCC.X86.EvalExamples",
-    "IxCC.X86.DecodeWindow"]},
-  "CheckTrustedExterns":
-  {"path": "scripts/CheckTrustedExterns.lean",
-   "imports": ["IxCC.Tools.TrustLedger"]},
-  "CheckToolsTests":
-  {"path": "scripts/CheckToolsTests.lean",
-   "imports":
-   ["IxCC.Tools.TrustLedger",
-    "IxCC.Tools.X86Check",
-    "IxCC.Tools.BuildGraph",
-    "IxCCTests.Tools.BuildGraph"]},
-  "CheckIxonV3Catalog":
-  {"path": "CheckIxonV3Catalog.lean", "imports": ["IxCC.Tools.IxonV3Catalog"]},
-  "CheckIxonV3": {"path": "CheckIxonV3.lean", "imports": ["IxCC.Ixon.V3"]},
-  "CheckBuildGraph":
-  {"path": "scripts/CheckBuildGraph.lean",
-   "imports": ["IxCC.Tools.BuildGraph"]},
-  "CheckAiur":
-  {"path": "scripts/CheckAiur.lean",
-   "imports":
-   ["IxCC.Tools.AiurCheck",
-    "IxCC.Tools.AiurWireCheck",
-    "IxCC.Tools.AiurMemoryCheck",
-    "IxCC.Tools.AiurRankCheck"]},
-  "Census": {"path": "scripts/Census.lean", "imports": ["IxCC.Tools.Census"]}}}
+    "IxCC.Aiur"]}}}

@@ -3,8 +3,8 @@ import IxCCTests.Src.Relevance.Stuck
 import IxCCTests.Src.Bench
 import IxCCTests.Src.Rules
 import IxCCTests.Src.SortPoly
-import K1
-import SortPoly
+import IxCCTests.Fixtures.K1
+import IxCCTests.Fixtures.SortPoly
 
 /-! SrcEval against Lam on the Phase 1 fixtures (design note 02 §13 items 1
 and 3):
@@ -21,7 +21,7 @@ and 3):
 * the **fallback route** (no `eqn` entries), whose recursors reach run time:
   `brecOn` through `Nat.rec` with by-name IHs and `PProd` projections,
   `WellFounded.fix` through `Acc.rec`;
-* **native Lean** (`K1Fixture`) against Lam on the K1 roots, as `tests-src`
+* **native Lean** (`IxCCTests.Fixtures.K1`) against Lam on the K1 roots, as `tests-src`
   does for SrcEval; the bench-k1 entries at their test sizes
   (`sum-loop` 10⁶ in a child process with a larger stack);
 * `Erase.Input.unbox?` equals `Checked.unbox?` on every inductive whose

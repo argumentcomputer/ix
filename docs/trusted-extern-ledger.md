@@ -2,7 +2,7 @@
 
 The machine-readable ledger is
 [`trusted-externs.json`](trusted-externs.json); `nix flake check` validates
-it with [`scripts/CheckTrustedExterns.lean`](../scripts/CheckTrustedExterns.lean).
+it with [`IxCCTests/Scripts/CheckTrustedExterns.lean`](../IxCCTests/Scripts/CheckTrustedExterns.lean).
 
 **Status, 2026-09-29.** The inventory was reset for the rebuilt compiler.
 Removed with the legacy pipeline: the durable-filesystem native interface,

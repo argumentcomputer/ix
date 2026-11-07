@@ -3,7 +3,7 @@ import IxCC.X86.EvalExamples
 
 /-!
 Golden encoder checks for the table-driven encoder.  These byte strings are
-also decoded independently by `scripts/CheckX86Encoder.lean`; keeping the
+also decoded independently by `IxCCTests/Scripts/CheckX86Encoder.lean`; keeping the
 Lean expectations here makes every ordinary build catch encoder drift before
 the external check.  Memory operands use the shortest displacement, and REX
 appears only when a field needs it.

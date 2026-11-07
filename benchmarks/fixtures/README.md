@@ -7,7 +7,7 @@ twin that prints the same output. The data is in
 
 | Fixture | Rung | Variant | Source | Twin | Test args | Bench args |
 | --- | --- | --- | --- | --- | --- | --- |
-| [`fib`](fib) | K1 | upstream | IxCC `fixtures/ixon-v4/k1/K1.lean` | `fib.c` (original) | `25` | `40` |
+| [`fib`](fib) | K1 | upstream | IxCC `IxCCTests/Fixtures/K1.lean` | `fib.c` (original) | `25` | `40` |
 | [`sum-loop`](sum-loop) | K1 | upstream | same | `sum_loop.c` (original) | `1000000` | `100000000` |
 | [`ackermann`](ackermann) | K1 | upstream | same | `ackermann.c` (original) | `3 6` | `3 10` |
 | [`tak`](tak) | K1 | upstream | same | `tak.c` (original) | `18 18 12 6` | `24 24 16 8` |
@@ -44,7 +44,7 @@ chosen here, and the manifest records where each value comes from.
   by a pure `entry` and a `main` that prints `entry`'s result in the upstream
   format, so the upstream `.out.expected` still applies. `const_fold` is in
   this class: only its `unsafe def main` is replaced. The K1 definitions are
-  verbatim from `fixtures/ixon-v4/k1/K1.lean` in this repository.
+  verbatim from `IxCCTests/Fixtures/K1.lean` in this repository.
 - **total**: a minimal, reviewed rewrite of an upstream program that uses
   `partial`, Tasks or computation in `IO`. The upstream file stays in
   `upstream/` as the recorded rejection, and `VARIANT.md` gives the diff and
@@ -151,7 +151,7 @@ For each fixture it runs these checks:
 1. **Forbidden constructs.** The Lean code uses none of the words listed
    above.
 2. **Verbatim.** The K1 definitions occur verbatim in
-   `fixtures/ixon-v4/k1/K1.lean`, and the text of an upstream-variant Lean
+   `IxCCTests/Fixtures/K1.lean`, and the text of an upstream-variant Lean
    file before `def main` occurs verbatim in the variant.
 3. **Oracle.** `expected.txt` equals the upstream `.out.expected`.
 4. **Vendored files** (`--refs`). Each file in `upstream/` matches the

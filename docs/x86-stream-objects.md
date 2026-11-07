@@ -210,7 +210,7 @@ ordinary logical axioms; the indexed source endpoint retains the existing
 addressed-source BLAKE3 boundary. No new native reflection or ISA axiom is
 introduced.
 
-[`check-x86-streams`](../scripts/CheckX86Streams.lean) checks complete objects,
+[`check-x86-streams`](../IxCCTests/Scripts/CheckX86Streams.lean) checks complete objects,
 all branch conditions, branches after memory `cmp`, `test`, `add` and `sub`
 producers (155 objects), fused `cmp`/`test` pairs into `setcc` and `cmovcc`
 (50 objects), the failure exit at depths 0, 1, 3 and 7 and after a completed

@@ -1,6 +1,7 @@
 # K1 scalar programs with unfolding equations
 
-[`K1.lean`](K1.lean) holds the first-rung scalar programs of the benchmark
+[`K1.lean`](../../../IxCCTests/Fixtures/K1.lean) (the Lake module `IxCCTests.Fixtures.K1`,
+this manifest's `source_root`) holds the first-rung scalar programs of the benchmark
 ladder, written as ordinary Lean 4.34 (`fib`, a `for` loop, Ackermann, `tak`
 with fuel, and `gcd` by well-founded recursion).
 

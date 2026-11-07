@@ -36,7 +36,7 @@ in `IxCC.Src.Pinned` (`pin-src-tables --repin` after a refreeze). `src-names.tsv
 tests only; it is an untrusted oracle. [`src-diag/`](src-diag/README.md) is
 the admission-diagnostics closure, and [`src-sortpoly/`](src-sortpoly/README.md)
 the sort-polymorphism closure (level-exact relevance). All four come from
-`lake exe pin-src-tables` (`scripts/PinSrcTables.lean`) with the same ix
+`lake exe pin-src-tables` (`IxCCTests/Scripts/PinSrcTables.lean`) with the same ix
 producer as the K1 packs; `src-tables.provenance.json` and each directory's
 `provenance.json` record it, and `tests-src` compares the TSVs with the Lean
 tables.

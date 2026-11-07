@@ -1,12 +1,12 @@
 import IxCCTests.Pipeline.Support
 import IxCCTests.Support.Rng
-import K1
+import IxCCTests.Fixtures.K1
 
 /-! The compiled K1 roots against their Lean-compiled twin (M1.I2).
 
 `k1.ixe` is compiled with its five roots into one object; each root runs on
 generated inputs and must agree with the same definition compiled by Lean
-(the test-only `K1Fixture` library, `fixtures/ixon-v4/k1/K1.lean`), with the
+(the test module `IxCCTests/Fixtures/K1.lean`), with the
 `2⁶³` boundary of the Phase 1 `Nat` representation (04 §2, 06 S19):
 
 * an argument of at least `2⁶³` has no word: the entry wrapper returns

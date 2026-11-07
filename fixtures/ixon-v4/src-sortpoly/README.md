@@ -1,6 +1,7 @@
 # Sort-polymorphic code at `Sort 0`
 
-`SortPoly.lean` holds `Nat → Nat` roots that instantiate sort-polymorphic
+[`SortPoly.lean`](../../../IxCCTests/Fixtures/SortPoly.lean) (the Lake module
+`IxCCTests.Fixtures.SortPoly`) holds `Nat → Nat` roots that instantiate sort-polymorphic
 code at `Sort 0`: the regression for level-exact relevance (D18, research
 note `relevance-checker.md` §2.4). `sortpoly.ixe` is the anonymous v4
 closure of those roots and `sortpoly.equations.json` names them by address
@@ -26,5 +27,5 @@ flowing into a relevant position is not a universe condition, so the
 checker rejects it (C2, an exact equality) and, run unchecked, it stays
 stuck until a shape typing (SRC-10) or □ absorption covers it. `tests-src`
 runs every other root against the same source compiled natively (the
-test-only `SortPolyFixture` library), and `tests-relevance` classifies the
+test module `IxCCTests.Fixtures.SortPoly`), and `tests-relevance` classifies the
 runs in its stuck-cause census.

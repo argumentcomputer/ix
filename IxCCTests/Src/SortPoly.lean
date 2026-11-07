@@ -1,11 +1,11 @@
 import IxCCTests.Src.StuckEval
-import SortPoly
+import IxCCTests.Fixtures.SortPoly
 
 /-! Level-exact relevance (D18) on ix-compiled sort-polymorphic code
 (`fixtures/ixon-v4/src-sortpoly`, research note `relevance-checker.md`
 §2.4, §4.7): every covered root loads through the whole front end and
 evaluates without getting stuck, matching the same Lean source compiled
-natively (the test-only `SortPolyFixture` library); the level-blind
+natively (the test module `IxCCTests.Fixtures.SortPoly`); the level-blind
 annotation of M1.F2 (a proof under a universe condition counted as relevant)
 is rejected by the checker and makes the unchecked run stuck, as it did
 before D18; and the one case level-exact relevance does not cover, a *type*

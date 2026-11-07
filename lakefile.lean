@@ -37,21 +37,13 @@ ELF object; `ixcc check-cert` rechecks a certificate. The logic is in
 lean_exe ixcc where
   root := `IxCC.Cli.Main
 
-/- Test modules are separate from the production import root. -/
+/- Test modules are separate from the production import root. They include the
+repository checks and tools (`IxCCTests.Scripts`) and the fixture sources
+compiled natively as independent oracles (`IxCCTests.Fixtures.K1` for the Src
+differential suite, `IxCCTests.Fixtures.SortPoly` for level-exact relevance,
+D18). -/
 lean_lib IxCCTests where
   roots := #[`IxCCTests]
-
-/- The K1 research fixture compiled natively: the independent oracle of the
-Src differential suite. Test-only; nothing in `IxCC` imports it. -/
-lean_lib K1Fixture where
-  srcDir := "fixtures/ixon-v4/k1"
-  roots := #[`K1]
-
-/- The sort-polymorphism fixture compiled natively: the independent oracle of
-the level-exact relevance regression (D18). Test-only, like `K1Fixture`. -/
-lean_lib SortPolyFixture where
-  srcDir := "fixtures/ixon-v4/src-sortpoly"
-  roots := #[`SortPoly]
 
 /- Src: rules, the K1 table and runs, the native differential, pins,
 diagnostics and the bench-k1 entries (design note 01 §10). -/
@@ -204,10 +196,10 @@ lean_exe «tests-ixon-v3» where
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
 
 lean_exe «check-ixon-v3» where
-  root := `CheckIxonV3
+  root := `IxCCTests.Scripts.CheckIxonV3
 
 lean_exe «check-ixon-v3-catalog» where
-  root := `CheckIxonV3Catalog
+  root := `IxCCTests.Scripts.CheckIxonV3Catalog
 
 lean_exe «tests-aiur» where
   root := `IxCCTests.Aiur.Main
@@ -241,60 +233,48 @@ lean_exe «backend-probe» where
   root := `IxCCTests.Backend.ProbeMain
 
 lean_exe «check-aiur» where
-  srcDir := "scripts"
-  root := `CheckAiur
+  root := `IxCCTests.Scripts.CheckAiur
 
 /- Emit deterministic ELF fixtures for the independent object/link gate. -/
 lean_exe «x86-object-fixture» where
-  root := `X86ObjectFixture
+  root := `IxCCTests.Scripts.X86ObjectFixture
 
 lean_exe «check-x86-encoder» where
-  srcDir := "scripts"
-  root := `CheckX86Encoder
+  root := `IxCCTests.Scripts.CheckX86Encoder
 
 lean_exe «check-x86-bytes» where
-  srcDir := "scripts"
-  root := `CheckX86Bytes
+  root := `IxCCTests.Scripts.CheckX86Bytes
 
 lean_exe «check-x86-streams» where
-  srcDir := "scripts"
-  root := `CheckX86Streams
+  root := `IxCCTests.Scripts.CheckX86Streams
 
 lean_exe «check-x86-object» where
-  srcDir := "scripts"
-  root := `CheckX86Object
+  root := `IxCCTests.Scripts.CheckX86Object
 
 lean_exe «check-trusted-externs» where
-  srcDir := "scripts"
-  root := `CheckTrustedExterns
+  root := `IxCCTests.Scripts.CheckTrustedExterns
 
 lean_exe «check-tools-tests» where
-  srcDir := "scripts"
-  root := `CheckToolsTests
+  root := `IxCCTests.Scripts.CheckToolsTests
 
 lean_exe «check-build-graph» where
-  srcDir := "scripts"
-  root := `CheckBuildGraph
+  root := `IxCCTests.Scripts.CheckBuildGraph
 
 /- Admission census over an Ixon v4 closure: first rejecting stage per constant. -/
 lean_exe census where
-  srcDir := "scripts"
-  root := `Census
+  root := `IxCCTests.Scripts.Census
 
 /- Differential check of the local x86 byte model against the host processor. -/
 lean_exe «check-x86-hardware» where
-  srcDir := "scripts"
-  root := `CheckX86Hardware
+  root := `IxCCTests.Scripts.CheckX86Hardware
 
 /- Manual generator for `fixtures/ixon-v4/src-tables.tsv` (runs ix). -/
 lean_exe «pin-src-tables» where
-  srcDir := "scripts"
-  root := `PinSrcTables
+  root := `IxCCTests.Scripts.PinSrcTables
   supportInterpreter := true
 
 /- Manual refreeze steps beside `corpus rebuild` and `pin-src-tables`: the
 producer pins, ix's fixture package, the erased checker's primitive table,
 the typing bundles and the catalogs (runs ix; `docs/corpus.md`). -/
 lean_exe «refreeze-ixon» where
-  srcDir := "scripts"
-  root := `RefreezeIxon
+  root := `IxCCTests.Scripts.RefreezeIxon

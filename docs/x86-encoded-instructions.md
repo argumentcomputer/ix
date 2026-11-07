@@ -146,7 +146,7 @@ step-simulation callback.
 
 [`EncodeExamples.lean`](../IxCC/X86/EncodeExamples.lean) freezes byte-exact
 goldens for every encoding choice, and
-[`CheckX86Encoder`](../scripts/CheckX86Encoder.lean) has GNU objdump decode
+[`CheckX86Encoder`](../IxCCTests/Scripts/CheckX86Encoder.lean) has GNU objdump decode
 the same 30 forms, 18 Phase 1 forms (`div`, shifts by imm8 and `cl`, `test`,
 `setcc`, `cmovcc`, `op r, r/m` including the prologue's `cmp r11, [r15 −
 56]`, and the failure exit's `mov rsp, [r15 − 64]` = `49 8B 67 C0`), the
@@ -155,7 +155,7 @@ addressing/REX edges and two resolved programs.
 SIL, clearing upper register bits, R12 SIB indices, signed comparison
 overflow, sign-extended immediates, POP RSP and truncation.
 
-The compiled [`check-x86-bytes`](../scripts/CheckX86Bytes.lean) gate covers:
+The compiled [`check-x86-bytes`](../IxCCTests/Scripts/CheckX86Bytes.lean) gate covers:
 
 - 55,940 instruction cases, including every GPR pair, width, ALU operation,
   three-operand IMUL, every base/index/scale combination, imm8/imm32/imm64
@@ -175,7 +175,7 @@ The compiled [`check-x86-bytes`](../scripts/CheckX86Bytes.lean) gate covers:
   bounds, signed rel32 endpoints and corruptions.
 - Four complete arithmetic, stack/spill, direct-call and tail-call streams.
 
-The [`check-x86-hardware`](../scripts/CheckX86Hardware.lean) gate enumerates
+The [`check-x86-hardware`](../IxCCTests/Scripts/CheckX86Hardware.lean) gate enumerates
 `Op.rows`: for every non-control row (flag consumers read the case's input
 flags) and each kind combination of its slots it generates register,
 address (SIB and displacement holes, disp8 and disp32 edges including ±2³¹)

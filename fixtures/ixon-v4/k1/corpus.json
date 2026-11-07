@@ -5,7 +5,7 @@
   "tier": "required",
   "phase": 1,
   "directory": "fixtures/ixon-v4/k1",
-  "source_root": "fixtures/ixon-v4/k1",
+  "source_root": "IxCCTests/Fixtures",
   "lean": {
     "version": "4.34.1",
     "interpret": {

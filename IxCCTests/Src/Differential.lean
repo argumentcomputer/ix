@@ -1,10 +1,10 @@
 import IxCCTests.Src.Support
 import IxCCTests.Src.Rules
-import K1
+import IxCCTests.Fixtures.K1
 
 /-! SrcEval against native Lean (design note 01 §10 part 4). The fixture
-`fixtures/ixon-v4/k1/K1.lean` is compiled into this executable by the
-test-only Lake library `K1Fixture`, so each K1 definition runs natively
+`IxCCTests/Fixtures/K1.lean` is compiled into this executable as the
+test module `IxCCTests.Fixtures.K1`, so each K1 definition runs natively
 beside its SrcEval run on the same `k1.ixe` closure. Primitives are compared
 with Lean's `Nat` at the word boundaries, and the primitive route against
 the `eqn`/kernel-body route (`noPrims`). -/
