@@ -34,7 +34,7 @@
     "ixcc": {
       "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
       "license": "Apache-2.0 OR MIT",
-      "license_file": "../../LICENSE-APACHE",
+      "license_file": "../../../LICENSE-APACHE",
       "ref_dir": "../.."
     }
   },

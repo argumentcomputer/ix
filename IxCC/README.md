@@ -75,5 +75,5 @@ without notice.
 
 ## License
 
-Dual-licensed under [Apache 2.0](LICENSE-APACHE) and [MIT](LICENSE-MIT),
-matching ix.
+Dual-licensed under [Apache 2.0](../LICENSE-APACHE) and [MIT](../LICENSE-MIT),
+as is the rest of ix.
