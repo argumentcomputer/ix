@@ -85,3 +85,9 @@ lean_exe grouping_example where
 
 lean_exe grouping_tune where
   root := `Examples.GroupingTune
+
+/-- Converts `.aiur` module source text to embedded `aiur⟦ … ⟧` Lean syntax,
+checking that both lower to the same program (`Tools/AiurEmbed.lean`). -/
+lean_exe aiur_embed where
+  root := `Tools.AiurEmbed
+  supportInterpreter := true
