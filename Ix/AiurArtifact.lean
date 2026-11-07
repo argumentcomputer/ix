@@ -80,8 +80,9 @@ def cached (directory : System.FilePath) (target : String) (key : Address)
         throw (IO.userError s!"cached artifact {path} hashes to {actual}, not its digest; delete it to export again")
       let _ ← admit target path.toString expected
       return path.toString
-  IO.eprintln s!"[aiur] exporting the certified {target} artifact to {directory}; this runs once \
-    per source revision and takes several minutes (`ix prepare` does it ahead of time)"
+  IO.eprintln s!"[aiur] compiling {target} with the verified Aiur compiler and exporting the \
+    artifact to {directory}; this runs once per source revision and takes several minutes \
+    (`ix prepare` does it ahead of time)"
   let tmp := directory / s!"{target}-{key}.tmp.{← IO.Process.getPID}.{← IO.monoNanosNow}"
   try
     exportTo tmp

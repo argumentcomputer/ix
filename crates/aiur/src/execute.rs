@@ -76,9 +76,7 @@ impl<F: Copy + Eq + std::hash::Hash> Deferred<F> {
       let edge = (source.to_vec(), target.to_vec());
       if !self.edges.contains(&edge) {
         budget.reserve(
-          (source.len() + target.len())
-            .saturating_mul(std::mem::size_of::<F>())
-            + 192,
+          (source.len() + target.len()).saturating_mul(size_of::<F>()) + 192,
         )?;
         self.edges.insert(edge);
       }
@@ -88,9 +86,7 @@ impl<F: Copy + Eq + std::hash::Hash> Deferred<F> {
       }
       let set = self.dependencies.entry((function, row)).or_default();
       if !set.contains(target) {
-        budget.reserve(
-          target.len().saturating_mul(std::mem::size_of::<F>()) + 96,
-        )?;
+        budget.reserve(target.len().saturating_mul(size_of::<F>()) + 96)?;
         set.insert(target.to_vec());
       }
     }
@@ -407,9 +403,7 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
     );
     queries.reserve_with(reservation);
     for map in &self.maps {
-      queries
-        .budget
-        .reserve(map.rows().saturating_mul(std::mem::size_of::<u64>()))?;
+      queries.budget.reserve(map.rows().saturating_mul(size_of::<u64>()))?;
     }
     queries.bind_maps(&self.maps);
     let mut memory = Memory::new(
@@ -512,10 +506,8 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
   }
 
   fn error(&self, message: impl Into<String>) -> ExecutionError {
-    let (function, instruction) = self
-      .frames
-      .last()
-      .map(|f| {
+    let (function, instruction) =
+      self.frames.last().map_or(("<entry>".into(), 0), |f| {
         (
           self
             .program
@@ -524,8 +516,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             .to_owned(),
           f.pc,
         )
-      })
-      .unwrap_or(("<entry>".into(), 0));
+      });
     ExecutionError {
       function,
       instruction,
@@ -596,11 +587,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       let calls = &mut self.record.deferred.as_mut().unwrap().calls;
       if !calls.contains_key(&self.arguments) {
         self.record.queries.budget.reserve(
-          self
-            .arguments
-            .len()
-            .saturating_mul(std::mem::size_of::<B::Element>())
-            + 96,
+          self.arguments.len().saturating_mul(size_of::<B::Element>()) + 96,
         )?;
       }
       let count = calls.entry(self.arguments.clone()).or_default();
@@ -758,7 +745,10 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       };
       let instruction =
         &program.execution_functions[frame.function].code[frame.pc];
-      use Instruction::*;
+      use Instruction::{
+        AssertEq, Binary, Branch, Call, Copy, Fail, Guard, Hint, Jump, Literal,
+        Load, Neg, Ret, Store,
+      };
       #[cfg(feature = "function-profile-ops")]
       if let Some(profile) = &mut self.profile {
         profile.operation(match instruction {
@@ -902,7 +892,8 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         Load { pointer, dest, .. } => {
           let address =
             usize::try_from(program.field.to_u64(frame.registers[*pointer]))
-              .map_err(|_| self.error("ROM address overflow"))?;
+              .ok()
+              .ok_or_else(|| self.error("ROM address overflow"))?;
           let Some(index) =
             self.record.memory.index_for_type(memory_type, address)
           else {

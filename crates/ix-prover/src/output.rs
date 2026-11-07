@@ -4,7 +4,11 @@ use aiur::trace::stark::{Backend, BatchProof};
 use multi_stark::{p3_field::PrimeField64, types::Val};
 use serde_json::{Value, json};
 
-pub fn report(job: &Job, kind: Kind, report: &Value) -> Result<(), String> {
+pub(crate) fn report(
+  job: &Job,
+  kind: Kind,
+  report: &Value,
+) -> Result<(), String> {
   let path = match kind {
     Kind::Ixvm => {
       std::path::PathBuf::from(format!("{}.report.json", job.output.display()))
@@ -17,7 +21,7 @@ pub fn report(job: &Job, kind: Kind, report: &Value) -> Result<(), String> {
   atomic_json(&path, report)
 }
 
-pub fn proof(
+pub(crate) fn proof(
   job: &Job,
   kind: Kind,
   backend: &Backend<'_, '_, NativeField<Val>>,

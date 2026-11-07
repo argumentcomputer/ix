@@ -50,7 +50,7 @@ impl Options {
         .map(|s| s.parse::<usize>().map_err(|e| e.to_string()))
         .transpose()?
         .filter(|&n| n != 0);
-      result.retention = match retention.map(String::as_str).unwrap_or("auto") {
+      result.retention = match retention.map_or("auto", String::as_str) {
         "auto" => RetentionPolicy::Auto,
         "retain" => RetentionPolicy::Retain,
         "regenerate" => RetentionPolicy::Regenerate,
@@ -182,7 +182,7 @@ fn padded(n: usize) -> Result<usize, String> {
   }
 }
 fn bounded(n: u128) -> u64 {
-  n.min(u128::from(u64::MAX)) as u64
+  u64::try_from(n).unwrap_or(u64::MAX)
 }
 fn margin(n: u128) -> u128 {
   n.saturating_mul(5).div_ceil(4)
@@ -477,9 +477,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         c.graph.lookups.iter().map(|l| l.args.len() as u128).sum();
       let main = c.main_width as u128;
       witness += 8 * n * (main + count + args)
-        + n
-          * std::mem::size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>()
-            as u128;
+        + n * size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>() as u128;
       lde += 8 * b * n * main;
       lookups += 8 * n * (count + args);
       messages += 32 * n * count;
@@ -529,8 +527,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         0
       } else {
         8 * (c.num_lookups as u128 + args)
-          + std::mem::size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>()
-            as u128
+          + size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>() as u128
       };
       for (shard, (trace, lookups)) in witness.iter_mut().enumerate() {
         let n = if c.preprocessed_height == 0 {

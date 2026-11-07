@@ -9,7 +9,7 @@ rust-version = "1.98"
 [dependencies]
 aiur = { workspace = true }
 multi-stark = { workspace = true }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
 
@@ -33,3 +33,6 @@ required-features = ["stark"]
 name = "ixvm-proof"
 path = "src/proof.rs"
 required-features = ["stark"]
+
+[lints]
+workspace = true

@@ -2,9 +2,30 @@ import Aiur.Optimized.Grouping.Plan
 import Aiur.Optimized.Activation
 
 /-!
-Unified end-to-end compiler soundness from activated and grouped physical circuits
-all the way back to the independent modular source evaluation predicate
+Unified compiler soundness from derivations over activated and grouped physical
+circuits all the way back to the independent modular source evaluation predicate
 `Modules.Prepared.EvalFn`.
+
+## Trust boundary
+
+These theorems start from a *finite* derivation tree over the activated grouped
+system (`Grouping.Plan.ActivatedDerives`), together with `rom.Valid`,
+`Erasure.Signed` and `Plan.WellFormedActivation`. They do not start from STARK
+traces. An accepting STARK proof gives at most what the Lean checker
+`Circuit.System.checkMemo` accepts: rows that satisfy their constraints, with
+balanced LogUp lookups. `Circuit.System.checkMemo_sound` turns those into a
+`Circuit.MemoDerivation`, a graph in which a call row may rest on a memoized
+row that depends on the call itself. That graph can be cyclic: for
+`fn loop(x) { loop(x) }`, a row stating `loop(0) = 42` balances its own
+lookup although no evaluation returns 42. `memo_acyclic_sound` needs the graph
+to be acyclic, which amounts to every proved call terminating; nothing proves
+it for a STARK, so it is a hypothesis of the end-to-end argument.
+
+Also outside these theorems, and trusted: the Rust lowering of the exported
+artifact into multi-stark circuits (the CALL, ROM and memory-segment channel
+tags, activation times multiplicity, trace-shard segment boundaries, the fixed
+tables and the claim encoding), multi-stark's STARK and FRI soundness, and the
+`.aiur` parser and the artifact exporter.
 -/
 
 namespace Aiur
@@ -89,7 +110,9 @@ theorem Plan.activatedLocalRule_iff (plan : Plan source id)
       exact Or.inl ⟨c, hc, (Activation.activeRule_iff c wf.1 wf.2 rom root premises).mpr rule⟩
     · exact Or.inr ⟨p, hp, rule⟩
 
-/-- Finite derivation tree over the activated grouped physical system. -/
+/-- Finite derivation tree over the activated grouped physical system. Finiteness
+is what the soundness theorems need and a STARK does not provide: lookup balance
+only yields a memo graph, which may be cyclic. -/
 inductive Plan.ActivatedDerives (plan : Plan source id) (rom : WireROM F) : Message F → Prop
   | node {root premises} (rule : plan.ActivatedLocalRule rom root premises)
       (children : ∀ message ∈ premises, plan.ActivatedDerives rom message) :
@@ -219,8 +242,9 @@ open Circuit Optimized
 variable {F : Type} [Field F] [DecidableEq F]
 variable {id : String → Except String Nat}
 
-/-- End-to-end soundness from a physical type-erased circuit derivation to
-`Modules.Prepared.EvalFn`. -/
+/-- Soundness from a finite derivation over the physical type-erased circuits to
+`Modules.Prepared.EvalFn`. The derivation is a hypothesis, not a STARK proof; see
+the module's trust boundary. -/
 theorem Prepared.physical_heap_sound {program : Modules.Program F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
@@ -238,8 +262,9 @@ theorem Prepared.physical_heap_sound {program : Modules.Program F}
         heap value result :=
   compiled.physical_heap_sound physical selected valid signed derived arguments decoded
 
-/-- End-to-end soundness from a grouped physical circuit derivation to
-`Modules.Prepared.EvalFn`. -/
+/-- Soundness from a finite derivation over the grouped physical circuits to
+`Modules.Prepared.EvalFn`. The derivation is a hypothesis, not a STARK proof; see
+the module's trust boundary. -/
 theorem Prepared.grouped_heap_sound {program : Modules.Program F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
@@ -258,8 +283,10 @@ theorem Prepared.grouped_heap_sound {program : Modules.Program F}
         heap value result :=
   compiled.grouped_heap_sound physical plan selected valid signed derived arguments decoded
 
-/-- End-to-end soundness from an activated grouped physical circuit derivation to
-`Modules.Prepared.EvalFn`. -/
+/-- Soundness from a finite derivation over the activated grouped physical circuits
+to `Modules.Prepared.EvalFn`, the headline theorem. The derivation is a
+hypothesis, not a STARK proof: a STARK establishes lookup balance, which yields
+a possibly cyclic memo graph (see the module's trust boundary). -/
 theorem Prepared.grouped_activated_heap_sound {program : Modules.Program F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)

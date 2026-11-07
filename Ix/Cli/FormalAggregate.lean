@@ -139,6 +139,12 @@ def persist (wrapper : Ixon.Proof) : IO Address := do
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser wrapper.claim))
   StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
 
+/-- Whether earlier aggregate and range proofs must not be reused: `--no-cache`
+neither reads nor writes the caches, and `ix prove --fresh` replaces their
+entries with new proofs. -/
+def noCacheReads (p : Cli.Parsed) : Bool :=
+  p.hasFlag "no-cache" || p.hasFlag "fresh"
+
 def cachedNode (ctx : Context) (output : CheckEnvTrees) : IO (Option Node) := do
   let cache ← StoreIO.toIO (Store.cacheDir "formal-aggregates")
   let key := Address.blake3 (ctx.aggr.key ++ MultiStark.serializeClaims #[outerClaim ctx .aggr output.claim])
@@ -170,7 +176,7 @@ def proveNode (p : Cli.Parsed) (ctx : Context) (output : CheckEnvTrees)
     (options : HostOptions := {}) (force : Bool := false) : IO Node := do
   let cache ← StoreIO.toIO (Store.cacheDir "formal-aggregates")
   let key := Address.blake3 (ctx.aggr.key ++ MultiStark.serializeClaims #[outerClaim ctx .aggr output.claim])
-  unless force || p.hasFlag "no-cache" do
+  unless force || noCacheReads p do
     if let some node ← cachedNode ctx output then return node
   let io ← advice ctx left right output structural
   let proof ← proveAdvice ctx (Ix.Claim.ser output.claim) io options
@@ -199,7 +205,7 @@ def dischargeBindingNode (p : Cli.Parsed) (ctx : Context) (child : Node)
   let output : CheckEnvTrees := { child.statement with ctx := { child.statement.ctx with bindingAssumed := false } }
   let cache ← StoreIO.toIO (Store.cacheDir "formal-aggregates")
   let key := Address.blake3 (ctx.aggr.key ++ MultiStark.serializeClaims #[outerClaim ctx .aggr output.claim])
-  unless force || p.hasFlag "no-cache" do
+  unless force || noCacheReads p do
     if let some node ← cachedNode ctx output then return node
   let io ← dischargeAdvice ctx child bindingWrapper output
   let proof ← proveAdvice ctx (Ix.Claim.ser output.claim) io options
@@ -227,7 +233,7 @@ def proveRange (p : Cli.Parsed) (ctx : Context) (statement : ByteArray)
     (io : Aiur.IOBuffer) (options : HostOptions) : IO RangeNode := do
   let cache ← StoreIO.toIO (Store.cacheDir "formal-ranges")
   let key := Address.blake3 (ctx.aggr.key ++ rangeClaims ctx statement)
-  unless p.hasFlag "no-cache" do
+  unless noCacheReads p do
     if let some addr ← ShardProofIndex.readAddress cache key then
       try
         let node : RangeNode := { statement, proof := ← StoreIO.toIO (Store.read addr) }
@@ -247,7 +253,7 @@ def rangeChild (ctx : Context) (io : Aiur.IOBuffer) (slot : Nat) (node : RangeNo
 ordinary Aiur verify every range, sum, boundary, and final public claim. -/
 def wrapRanges (p : Cli.Parsed) (ctx : Context) (source : Node)
     (options : HostOptions) (size : Nat) (force : Bool := false) : IO Node := do
-  unless force || p.hasFlag "no-cache" do
+  unless force || noCacheReads p do
     if let some node ← cachedNode ctx source.statement then return node
   unless source.kind == .ixvm && size > 0 do throw (IO.userError "range wrapping requires an IxVM proof and positive range size")
   IO.FS.withTempDir fun dir => do
@@ -317,7 +323,7 @@ private partial def proveBlocks (p : Cli.Parsed) (ctx : Context) (env : Ixon.Env
     (assumeBinding : Bool := false) : IO (Node × Array (Array Address × Nat)) := do
   let some source := (← IO.ofExcept (Reference.prepareShards env #[blocks] #[] assumeBinding))[0]?
     | throw (IO.userError "empty shard")
-  unless preferRaw || p.hasFlag "no-cache" do
+  unless preferRaw || noCacheReads p do
     if let some cached ← cachedNode ctx source.statement then
       progress #[(blocks, 0)]
       return (cached, #[(blocks, 0)])
@@ -462,7 +468,7 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
       if pending[i]! && reproveSlot != some i then
         if let some wrapper := supplied.get? (Address.blake3 (Ix.Claim.ser statement.claim)) then
           nodes := nodes.set! i (some { statement, kind := .aggr, wrapper })
-        else if item.kind == .aggr && !p.hasFlag "no-cache" then
+        else if item.kind == .aggr && !noCacheReads p then
           if let some cached ← cachedNode ctx statement then nodes := nodes.set! i (some cached)
       if pending[i]! && nodes[i]!.isNone then
         if let .join l r := item.op then pending := pending.set! l true |>.set! r true
@@ -575,8 +581,8 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
 def run (p : Cli.Parsed) : IO UInt32 := runCore p false
 
 def runPipeline (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pure ()) : IO UInt32 := do
-  unless p.hasFlag "ixe" && p.hasFlag "ixes" && (p.hasFlag "trace-shards" || p.hasFlag "compress") do
-    throw (IO.userError "--lanes/--aggregate requires --ixe, --ixes and --trace-shards")
+  unless p.hasFlag "ixe" && p.hasFlag "ixes" do
+    throw (IO.userError "--lanes/--aggregate/--compress requires --ixe and --ixes")
   for flag in #["shard", "shards", "distributed", "exec-only"] do
     if p.hasFlag flag then throw (IO.userError s!"--lanes/--aggregate cannot be combined with --{flag}")
   if p.hasFlag "lanes" && p.hasFlag "jobs" then

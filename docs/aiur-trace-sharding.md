@@ -1,5 +1,13 @@
 # Prover-level trace sharding for Aiur
 
+> **Historical.** This design document describes the trace sharding of the
+> legacy Aiur backend as it was on main at `3d725c8c0`; its file references
+> and measurements are to that tree. The formal Aiur backend proves a claim as
+> a batch of trace shards with the same structure (memory intervals closed
+> across shards, byte tables in every shard) in `crates/aiur/src/trace/stark`;
+> see [Formal Aiur in Ix](formal-aiur-migration.md#current-port-and-cli-integration)
+> for its planner and batch verifier.
+
 Design for splitting one Aiur execution into K independently provable
 trace shards whose proofs form a batch of STARKs, so that each shard's
 STARK phases fit in GPU memory, then aggregating that batch with the
@@ -87,24 +95,25 @@ on one or several GPUs is [aiur-gpu-proving.md](aiur-gpu-proving.md).
   an ungated `m` would let a padding row — every constraint off — pull an
   arbitrary `f(x) = y`); every constrained `Call`, `Store`, `Load` and
   byte op pushes one message with the branch selector as multiplicity
-  (`crates/aiur/src/trace/`). Function circuits have no
+  (`crates/aiur/src/constraints.rs:170-190, 400-490`;
+  `crates/aiur/src/trace.rs:96-160`). Function circuits have no
   cross-row constraints.
 - The claim `[chan 0, fun_idx, input…, output…]` is the verifier's push
-  balancing the entry row's pull (`crates/aiur/src/trace/stark.rs`).
+  balancing the entry row's pull (`crates/aiur/src/synthesis.rs:447-452`).
 - Memory is content-addressed and write-once: `Store(values)` dedups by
   value and assigns `ptr = insertion index`; `Load(ptr)` bumps the
-  multiplicity (`crates/aiur/src/execute.rs`). The memory circuit
+  multiplicity (`crates/aiur/src/execute.rs:365-407`). The memory circuit
   for width `w` has rows `[mult, sel, ptr, values…]`, one pull of
   `(chan 1, w, ptr, values)` with multiplicity `sel · mult`, and
   constraints: `sel` boolean, real-next ⇒ real-current,
   `ptr_next = ptr + 1` on real transitions. There is no
-  first-row anchor (`crates/aiur/src/trace/stark.rs`). An unqueried
+  first-row anchor (`crates/aiur/src/memory.rs:34-67`). An unqueried
   memory width yields an empty trace and is deactivated.
-- Fixed byte tables carry preprocessed operand
+- Bytes1 (256 rows) and Bytes2 (65 536 rows) carry preprocessed operand
   columns and always emit the full table
-  (`crates/aiur/src/trace/stark.rs`). They are the per-proof
+  (`crates/aiur/src/gadgets/bytes2.rs:284-`). They are the per-proof
   fixed floor of the RAM model.
-- Prover peak model (`crates/aiur/src/trace/stark/planning.rs`):
+- Prover peak model (`crates/aiur/src/synthesis.rs:287-367`):
   `max(phase_witness, phase_stage2, phase_open) + preprocessed`, where
   `phase_open` ∝ committed LDE bytes `8·b·n·(main + stage2 + q·d)` per
   circuit plus FRI buffers ∝ `b · tallest`. `suggested_split_parts`
@@ -226,7 +235,7 @@ q·d` is circuit `c`'s committed width, `n_c` its padded height in `S`,
 - proof size: `9 B · q · Σ_{c active in S} W_c` — a fixed price per
   *activation*, independent of rows.
 
-Planner (`crates/aiur/src/trace/stark/planning.rs`): every shard commits
+Planner (`plan_rows` in `crates/aiur/src/shard.rs`): every shard commits
 the byte tables, so their cells are charged to every shard and the room a
 shard has for rows is what remains after them. Each circuit is cut into
 the fewest pieces that each fit that room — a circuit that fits whole is

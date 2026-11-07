@@ -100,12 +100,13 @@ valid measurement.
 
 ## Reproduction and validation
 
-[Summary](benchmarks/formal-aiur-gpu-preparation/summary.csv),
-[individual runs](benchmarks/formal-aiur-gpu-preparation/runs.json), and
+[Summary](benchmarks/formal-aiur-gpu-preparation/summary.csv) and
 [manifest](benchmarks/formal-aiur-gpu-preparation/manifest.json) preserve the
-measurements, binary/input hashes and proof identities. Full local logs,
-baseline/fixed binaries and saved proofs are in
-`.lake/gpu-followup-20261030`.
+measurements, binary/input hashes and proof identities. Individual runs are not
+kept in the repository; the manifest records the inputs, binaries and commands
+that reproduce them. Its revisions are commits of the migration branch, which a
+squash merge does not keep. Full local logs, baseline/fixed binaries and saved
+proofs were kept outside the repository in `.lake/gpu-followup-20261030`.
 
 ```sh
 cargo build --release --locked -p stark-verifier \

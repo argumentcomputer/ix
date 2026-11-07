@@ -1,7 +1,7 @@
-//! Witness population plans for the final, certified circuit layout.
+//! Witness population plans for the final circuit layout of the verified compiler.
 //!
 //! This is an untrusted witness generator. Plans are exported by Lean alongside
-//! the certified circuits. Population never executes a callee or obtains fresh
+//! the compiled circuits. Population never executes a callee or obtains fresh
 //! hints. Constraints and exact integer message balance can be checked separately.
 use crate::bytecode::{CheckedProgram, Instruction, Type};
 use crate::execute::Execution;
@@ -703,13 +703,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                   .get(buffer.as_slice())
                   .ok_or("missing recorded store")?;
                 scratch[*dest] = field.from_u64(
-                  u64::try_from(address).map_err(|_| "ROM address overflow")?,
+                  u64::try_from(address).ok().ok_or("ROM address overflow")?,
                 );
               },
               Action::Load { address, dest, .. } => {
                 let address =
                   usize::try_from(field.to_u64(address.eval(&scratch, field)))
-                    .map_err(|_| "ROM address overflow")?;
+                    .ok()
+                    .ok_or("ROM address overflow")?;
                 let cell = &record
                   .memory
                   .get_by_width(dest.len(), address)
@@ -816,7 +817,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     if record
       .memory
       .iter()
-      .any(|m| m.address as u128 >= self.program.field.modulus() as u128)
+      .any(|m| m.address as u128 >= u128::from(self.program.field.modulus()))
     {
       return Err("ROM exceeds field capacity".into());
     }
@@ -942,7 +943,8 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           }
           let address =
             usize::try_from(field.to_u64(cell.address.eval(row, field)))
-              .map_err(|_| "ROM address overflow")?;
+              .ok()
+              .ok_or("ROM address overflow")?;
           let value = &record
             .memory
             .get_by_width(cell.values.len(), address)

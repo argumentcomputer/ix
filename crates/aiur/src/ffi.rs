@@ -137,6 +137,7 @@ fn run_request<B: FieldBackend>(
 /// this call (a null pointer only with length zero). The returned allocation
 /// must be released exactly once with `aiur_free_string`.
 #[unsafe(no_mangle)]
+#[allow(unreachable_pub)] // Exported through the C ABI, not Rust paths.
 pub unsafe extern "C" fn aiur_execute(
   package: *const u8,
   package_length: usize,
@@ -186,6 +187,7 @@ pub unsafe extern "C" fn aiur_execute(
 /// # Safety
 /// `string` must be null or a live pointer returned by `aiur_execute`.
 #[unsafe(no_mangle)]
+#[allow(unreachable_pub)] // Exported through the C ABI, not Rust paths.
 pub unsafe extern "C" fn aiur_free_string(string: *mut c_char) {
   if !string.is_null() {
     // SAFETY: ownership of precisely this CString allocation is returned.

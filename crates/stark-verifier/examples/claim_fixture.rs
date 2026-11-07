@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   };
   let one = Expr::constant(Val::ONE);
   let mut lookup = vec![one.clone(), Expr::constant(Val::ZERO)];
-  lookup.extend((0..args.len()).map(|i| Expr::main(i as u32)));
+  lookup.extend((0..u32::try_from(args.len())?).map(Expr::main));
   let inputs = vec![CircuitInputs {
     main_width: args.len(),
     constraints: vec![],

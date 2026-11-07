@@ -113,7 +113,11 @@ fn main() -> Result<(), Box<dyn Error>> {
       check(
         "Wide::mul",
         args.clone(),
-        [bytes(product as u64), bytes((product >> 64) as u64)].concat(),
+        [
+          bytes(u64::try_from(product & u128::from(u64::MAX)).unwrap()),
+          bytes(u64::try_from(product >> 64).unwrap()),
+        ]
+        .concat(),
       )?;
       check("Wide::eq", args.clone(), vec![u64::from(a == b)])?;
       for (op, result) in [("and", a & b), ("or", a | b), ("xor", a ^ b)] {
@@ -128,7 +132,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   // Block/chunk boundaries and odd Merkle layers, compared with the Rust
   // Blake3 crate. This tests the library, not a copied hash implementation.
   for length in [0, 1, 63, 64, 65, 1023, 1024, 1025, 2048, 2049, 3072, 4097] {
-    let input: Vec<u8> = (0..length).map(|i| i as u8).collect();
+    let input: Vec<u8> =
+      (0..length).map(|i| u8::try_from(i % 256).unwrap()).collect();
     let expected =
       blake3::hash(&input).as_bytes().iter().copied().map(u64::from).collect();
     check("Benchmark::hash", vec![length], expected)?;

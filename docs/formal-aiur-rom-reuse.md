@@ -114,14 +114,13 @@ including the default library build and profiled comparison build.
 
 ## Data and reproduction
 
-[Summary](benchmarks/formal-aiur-rom-reuse/summary.csv),
-[raw samples](benchmarks/formal-aiur-rom-reuse/runs.json),
-[circuit shapes](benchmarks/formal-aiur-rom-reuse/circuits.json), and
+[Summary](benchmarks/formal-aiur-rom-reuse/summary.csv) and
 [manifest](benchmarks/formal-aiur-rom-reuse/manifest.json) include both binaries'
 hashes, source and input hashes, memory measurements and all selected controls.
-[Phase medians](benchmarks/formal-aiur-rom-reuse/phase-summary.csv) and
-[raw phase/circuit spans](benchmarks/formal-aiur-rom-reuse/phases.jsonl) preserve
-the separate instrumented run.
+[Phase medians](benchmarks/formal-aiur-rom-reuse/phase-summary.csv) preserve the
+separate instrumented run. Raw samples, circuit shapes and phase spans are not
+kept in the repository; the manifest records how to reproduce them, at commits
+of the migration branch that a squash merge does not keep.
 All new-Aiur circuit statistics match before/after for each workload, including
 the recursive verifier's 937,960,213 padded main cells.
 

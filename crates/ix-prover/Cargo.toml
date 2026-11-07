@@ -6,12 +6,12 @@ license.workspace = true
 
 [dependencies]
 aiur = { workspace = true, features = ["stark"] }
-ixvm = { path = "../ixvm", features = ["stark"] }
-stark-verifier = { path = "../stark-verifier" }
+ixvm = { workspace = true, features = ["stark"] }
+stark-verifier = { workspace = true }
 record-pool = { workspace = true }
 multi-stark = { workspace = true }
 rayon = { workspace = true }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
 rustc-hash = { workspace = true }
@@ -23,3 +23,6 @@ tracing-texray = { workspace = true }
 default = ["parallel"]
 parallel = ["aiur/parallel", "ixvm/parallel", "stark-verifier/parallel"]
 cuda = ["aiur/cuda", "ixvm/cuda", "stark-verifier/cuda"]
+
+[lints]
+workspace = true

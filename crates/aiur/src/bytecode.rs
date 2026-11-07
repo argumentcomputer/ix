@@ -226,8 +226,9 @@ impl Layout {
   pub(crate) fn has_shape_checks(&self) -> bool {
     match self {
       Self::Field | Self::Pointer => false,
-      Self::Tuple { shape_checks, .. } => *shape_checks,
-      Self::Enum { shape_checks, .. } => *shape_checks,
+      Self::Tuple { shape_checks, .. } | Self::Enum { shape_checks, .. } => {
+        *shape_checks
+      },
     }
   }
   pub(crate) fn validate<B: FieldBackend>(
@@ -249,8 +250,9 @@ impl Layout {
     field: B,
   ) -> Result<(), String> {
     match self {
-      Self::Field | Self::Pointer => Ok(()),
-      Self::Tuple { shape_checks: false, .. }
+      Self::Field
+      | Self::Pointer
+      | Self::Tuple { shape_checks: false, .. }
       | Self::Enum { shape_checks: false, .. } => Ok(()),
       Self::Tuple { items, .. } => {
         let mut offset = 0;
@@ -264,7 +266,8 @@ impl Layout {
         let (tag, payload) = if constructors.len() > 1 {
           (
             usize::try_from(field.to_u64(words[0]))
-              .map_err(|_| "enum tag too large")?,
+              .ok()
+              .ok_or("enum tag too large")?,
             &words[1..],
           )
         } else {
@@ -426,7 +429,7 @@ fn link_registers(
   let mut writes = vec![0usize; function.registers];
   writes[..input].fill(1);
   for op in &function.code {
-    use Instruction::*;
+    use Instruction::{Binary, Call, Copy, Hint, Literal, Load, Neg, Store};
     let dest: &[usize] = match op {
       Literal { dest, .. }
       | Neg { dest, .. }
@@ -476,7 +479,9 @@ fn link_registers(
     *reg = aliases.get(*reg).copied().unwrap_or(*reg);
   };
   for op in &mut linked.code {
-    use Instruction::*;
+    use Instruction::{
+      AssertEq, Binary, Branch, Call, Copy, Guard, Hint, Load, Neg, Ret, Store,
+    };
     match op {
       Copy { dest, source } => {
         dest.iter_mut().for_each(read);
@@ -488,7 +493,9 @@ fn link_registers(
         read(right);
       },
       Guard { tests, .. } | Branch { tests, .. } => {
-        tests.iter_mut().for_each(|(reg, _)| read(reg))
+        for (reg, _) in tests.iter_mut() {
+          read(reg);
+        }
       },
       Call { args, .. } => args.iter_mut().for_each(read),
       Store { value, .. } | Ret { value } => value.iter_mut().for_each(read),
@@ -620,6 +627,11 @@ impl<B: FieldBackend> CheckedProgram<B> {
       .iter()
       .find(|e| e.name == name)
       .ok_or_else(|| format!("unselected entrypoint {name}"))
+  }
+  /// The number of field elements a call to function `id` takes: the width
+  /// of its flattened parameters.
+  pub fn input_width(&self, id: usize) -> Option<usize> {
+    self.inputs.get(id).map(Layout::width)
   }
   pub fn callable_name(&self, id: usize) -> Option<&str> {
     if let Some(f) = self.program.functions.get(id) {
@@ -948,7 +960,10 @@ fn check_function(
     let mut reads = vec![];
     let mut writes = vec![];
     let mut successors = vec![pc + 1];
-    use Instruction::*;
+    use Instruction::{
+      AssertEq, Binary, Branch, Call, Copy, Fail, Guard, Hint, Jump, Literal,
+      Load, Neg, Ret, Store,
+    };
     match instruction {
       Literal { dest, value } => {
         if !field.contains(*value) {

@@ -132,7 +132,7 @@ fn record(
           start.elapsed().as_secs_f64(),
         ));
       },
-      Err(super::PrepFailure::Resource(BudgetError::Cancelled)) => continue,
+      Err(super::PrepFailure::Resource(BudgetError::Cancelled)) => {},
       Err(super::PrepFailure::Resource(e)) => return Err(e.to_string()),
       Err(super::PrepFailure::Other(e)) => return Err(e),
     }
@@ -169,7 +169,51 @@ fn acyclic(
   }
 }
 
-pub fn run(
+/// `check_owned(binding: [U8; 32], validator: Field, address: [U8; 32])`.
+const OWNED_KEY_WIDTH: usize = 65;
+
+/// The callable that checks one owned constant. Its module is an artifact
+/// detail, so it is found by its unqualified name, which must be unique.
+fn check_owned(program: &aiur::Program) -> Result<usize, String> {
+  let mut found = program
+    .functions
+    .iter()
+    .enumerate()
+    .filter(|(_, f)| f.name.rsplit("::").next() == Some("check_owned"))
+    .map(|(i, _)| i);
+  let function =
+    found.next().ok_or("IxVM artifact has no check_owned callable")?;
+  if found.next().is_some() {
+    return Err("IxVM artifact has several check_owned callables".into());
+  }
+  Ok(function)
+}
+
+/// An owned key is `binding ‖ validator ‖ address`: two 32-byte addresses
+/// around the claim's validator, which must be one that `check_owned` accepts.
+fn validate_owned_key(key: &[u64], width: usize) -> Result<(), String> {
+  if key.len() != width {
+    return Err(format!(
+      "owned key has {} elements; check_owned takes {width}",
+      key.len()
+    ));
+  }
+  let (binding, rest) = key.split_at(32);
+  let (validator, address) = rest.split_at(1);
+  if binding.iter().chain(address).any(|&x| x > 255) {
+    return Err("owned key binding and address must be bytes".into());
+  }
+  match validator[0] {
+    3 | 4 => Ok(()),
+    5 => Err(
+      "distributed proving does not support literal-class claims (validator 5)"
+        .into(),
+    ),
+    v => Err(format!("owned key has unknown validator {v}")),
+  }
+}
+
+pub(crate) fn run(
   artifact: &Path,
   specification: &Path,
   out: &Path,
@@ -193,31 +237,20 @@ pub fn run(
   {
     return Err("invalid distributed IxVM specification".into());
   }
-  let function = program
-    .program()
-    .functions
-    .iter()
-    // Retain compatibility with cached artifacts from before the module split.
-    .position(|f| {
-      matches!(f.name.as_str(), "IxVMCompat::check_owned" | "IxVM::check_owned")
-    })
-    .ok_or("IxVM artifact has no check_owned callable")?;
+  let function = check_owned(program.program())?;
+  let width =
+    program.input_width(function).ok_or("check_owned has no input layout")?;
+  if width != OWNED_KEY_WIDTH {
+    return Err(format!(
+      "check_owned takes {width} field elements, not binding, validator and \
+       address ({OWNED_KEY_WIDTH})"
+    ));
+  }
   let mut owners = FxHashMap::default();
   let mut keys = Vec::new();
   for (worker, source) in spec.workers.iter().enumerate() {
     for key in &source.owned {
-      let valid_key = match key.len() {
-        32 => key.iter().all(|&x| x <= 255),
-        65 => {
-          key[..32].iter().all(|&x| x <= 255)
-            && matches!(key[32], 3 | 4)
-            && key[33..].iter().all(|&x| x <= 255)
-        },
-        _ => false,
-      };
-      if !valid_key {
-        return Err("owned address must contain 32 or 65 elements".into());
-      }
+      validate_owned_key(key, width)?;
       let key = program.field().decode(key)?;
       if owners.insert(key.clone(), (worker, keys.len())).is_some() {
         return Err("a constant has multiple owners".into());
@@ -233,7 +266,7 @@ pub fn run(
     .checked_sub(planning::resident_memory().saturating_mul(5) / 4)
     .ok_or("distributed budget is below resident setup")?;
   let records_bytes =
-    usize::try_from(remaining / 2).map_err(|_| "record pool overflow")?;
+    usize::try_from(remaining / 2).ok().ok_or("record pool overflow")?;
   if records_bytes == 0 {
     return Err("no record capacity remains".into());
   }

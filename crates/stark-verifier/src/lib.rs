@@ -28,14 +28,14 @@ pub fn prepare<'a, B: FieldBackend>(
   arenas.register_read::<64>("stark.io.read64", false, &mut channels)?;
   let mut data = arenas.metadata(
     "stark.io.info",
-    Type::Tuple { items: vec![Type::Field; 2] },
+    &Type::Tuple { items: vec![Type::Field; 2] },
     None,
     |s| s.key.len() == 1,
     false,
   )?;
   data.extend(arenas.metadata(
     "stark.io.address",
-    Type::Tuple {
+    &Type::Tuple {
       items: vec![Type::Field, Type::Tuple { items: vec![Type::Field; 32] }],
     },
     None,
@@ -44,7 +44,7 @@ pub fn prepare<'a, B: FieldBackend>(
   )?);
   data.extend(arenas.metadata(
     "stark.io.digest",
-    Type::Tuple { items: vec![Type::Field; 8] },
+    &Type::Tuple { items: vec![Type::Field; 8] },
     Some(4),
     |s| s.channel == 4 && s.key.len() == 8,
     false,

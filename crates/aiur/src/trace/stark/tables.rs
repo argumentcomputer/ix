@@ -69,14 +69,15 @@ pub(super) fn fixed_tables<B: WitnessField>(
         args.resize(2 + input_width + output_width, constant(0));
         constraints.push(main_var(column));
       } else {
-        args.extend(
-          (offsets[0]..offsets[0] + input_width)
-            .map(|i| Expr::preprocessed(i as u32)),
-        );
-        args.extend(
-          (offsets[1]..offsets[1] + output_width)
-            .map(|i| Expr::preprocessed(i as u32)),
-        );
+        for (start, len) in
+          [(offsets[0], input_width), (offsets[1], output_width)]
+        {
+          let (start, end) = u32::try_from(start)
+            .ok()
+            .zip(u32::try_from(start + len).ok())
+            .ok_or("fixed table column overflow")?;
+          args.extend((start..end).map(Expr::preprocessed));
+        }
       }
       lookups.push(Lookup::pull(main_var(column), args));
     }

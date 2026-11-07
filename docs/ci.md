@@ -10,7 +10,7 @@ Formal Aiur's CPU integration job exercises the CPU controls of
 `formal-checks cuda` (`Tests/FormalChecks/Cuda.lean`). Actual CPU/CUDA proof and key parity, including
 sharded IxVM, recursion, and aggregation, requires a GPU host running
 `IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh`. The
-[migration guide](formal-aiur-migration.md#legacy-support-and-native-builds)
+[migration guide](formal-aiur-migration.md#cuda-and-native-builds)
 documents the retained logs and report; the CUDA compilation job does not
 provide hardware validation.
 
@@ -54,19 +54,19 @@ the entry runs:
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
 | `ci:ixvm` | a step of the `lean-test` job, after `tools/ixvm/check-formal.sh`, on its claim artifact | claims through the formal IxVM program (`ixvm-proof test`): kernel verdicts, the exploit, arena, TagN, evaluation, binding and IO-ingress suites |
 | `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the binding proof through the `ix` binary |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, and catalog and commit I/O |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, catalog and commit I/O |
 | `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; the Rust, pure and admission BLAKE3 on every record, blob and binding of that artifact; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
-The manual runners that prove through the production `ix_aggr` circuit,
-`aggregate-proof` and `aggregate-binding-reuse`, take minutes of recursion and
-about 190 GB, three quarters of a 32-CPU merge-tests runner's memory, so they
-stay manual. `binding-proof-cli` (`ci:compiler-closures`) runs
-`aggregate-binding-reuse`'s flow without its two aggregates: the binding proof,
-the shard proofs that assume it, their composition with it, and the refusals
-without it; the aggregation circuit's handling of the binding is tested in
-`ix-aggr` (primary). Its proving budget is 64 GiB, so it runs in the merge
-queue, on a 32-CPU runner, rather than in every pull request's `lean-test`.
+The manual runner that proves through the production `ix_aggr` circuit,
+`aggregate-binding-reuse`, takes minutes of recursion and about 190 GB, three
+quarters of a 32-CPU merge-tests runner's memory, so it stays manual.
+`binding-proof-cli` (`ci:compiler-closures`) runs `aggregate-binding-reuse`'s
+flow without its two aggregates: the binding proof, the shard proofs that
+assume it, their composition with it, and the refusals without it; the
+aggregation circuit's handling of the binding is tested in `ix-aggr`
+(primary). Its proving budget is 64 GiB, so it runs in the merge queue, on a
+32-CPU runner, rather than in every pull request's `lean-test`.
 
 `aggregate-toolchains` is also manual: it proves the committed library fixtures
 from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each

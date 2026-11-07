@@ -117,7 +117,7 @@ impl<B: FieldBackend> Builder<B> {
     (start..start + width).map(Value::Slot).collect()
   }
   fn arithmetic(&mut self, op: Arithmetic<B::Element>) -> Value<B::Element> {
-    use Arithmetic::*;
+    use Arithmetic::{Add, Mul, Select, Sub};
     use Value::Constant as C;
     let zero = Value::Constant(self.field.zero());
     let one = Value::Constant(self.field.one());
@@ -367,7 +367,8 @@ impl<B: FieldBackend> FillPlan<B> {
         },
         Node::Load { address, .. } => {
           let address = usize::try_from(field.to_u64(address.get(scratch)))
-            .map_err(|_| "ROM address overflow")?;
+            .ok()
+            .ok_or("ROM address overflow")?;
           let cell = &record
             .memory
             .get_by_width(k.width, address)

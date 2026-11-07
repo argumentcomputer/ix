@@ -7,16 +7,16 @@ use std::{error::Error, ffi::CString, path::PathBuf};
 type Start = unsafe extern "C" fn(*const std::ffi::c_char) -> std::ffi::c_int;
 type Stop = unsafe extern "C" fn();
 
-pub struct Profiler {
+pub(crate) struct Profiler {
   directory: PathBuf,
   start: Start,
   stop: Stop,
 }
 
-pub struct Guard<'a>(&'a Profiler);
+pub(crate) struct Guard<'a>(&'a Profiler);
 
 impl Profiler {
-  pub fn from_env() -> Result<Option<Self>, Box<dyn Error>> {
+  pub(crate) fn from_env() -> Result<Option<Self>, Box<dyn Error>> {
     let Some(directory) = std::env::var_os("AIUR_CPU_PROFILE") else {
       return Ok(None);
     };
@@ -56,7 +56,7 @@ impl Profiler {
     }
   }
 
-  pub fn start(
+  pub(crate) fn start(
     &self,
     engine: &str,
     sample: usize,

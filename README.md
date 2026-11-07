@@ -34,9 +34,10 @@ transactions over proofs.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 
-The formal Aiur compiler and runtime now live in separate Lean and Rust packages.
-See [the migration guide](docs/formal-aiur-migration.md) for their build commands
-and the boundary around the retained legacy implementation.
+The formal Aiur compiler and runtime live in separate Lean and Rust packages
+(`Aiur/`, `IxVM/`, `MultiStark/` and `crates/`). See
+[the migration guide](docs/formal-aiur-migration.md) for their build commands,
+what the Aiur proofs cover and what they trust.
 
 ## Use Cases
 
@@ -205,23 +206,23 @@ cells locally, and `!benchmark` runs them on a PR — see
 
 Aiur can use multi-stark's first-party CUDA backend. CUDA is opt-in: ordinary
 Cargo and Lake builds remain CPU-only and do not require a CUDA toolkit or
-runtime. First generate the benchmark environment, then set `IX_CUDA=1` (also
-accepts `true` or `yes`) for the proving command:
+runtime. Build the CUDA hosts once, then select a device for proving:
 
 ```sh
+ix prepare --cuda
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out InitStd.ixe
-IX_CUDA=1 lake exe bench-typecheck --ixe InitStd.ixe \
-  --consts Vector.extract_append --recursive
+ix prove --ixe InitStd.ixe --gpu-device 0 Nat.add_comm
 ```
 
-Rust consumers can instead enable the `cuda` feature on `aiur` or `ix-ffi`.
-The backend requires an NVIDIA GPU and a CUDA toolkit with `nvcc`; build and
-architecture controls are documented in the multi-stark repository. It keeps
-the Goldilocks/BLAKE3 protocol and proof format unchanged, and GPU proofs remain
-verifiable by the CPU implementation. Proving a whole environment across
-several GPUs (`ix prove --gpus`), generating traces on the device, and
-benchmarking such runs are covered in
-[docs/aiur-gpu-proving.md](docs/aiur-gpu-proving.md). Dated hardware
+`IX_CUDA=1` selects the CUDA hosts too (also `true` or `yes`; the device comes
+from `MULTI_STARK_CUDA_DEVICE`, otherwise zero). Rust consumers can instead
+enable the `cuda` feature on `aiur` or `ix-ffi`. The backend requires an NVIDIA
+GPU and a CUDA toolkit with `nvcc`; build and architecture controls are
+documented in the multi-stark repository. It keeps the Goldilocks/BLAKE3
+protocol and proof format unchanged, and GPU proofs remain verifiable by the CPU
+implementation. Proving and aggregating a whole environment across several
+GPUs (`ix prove --lanes N --gpu-device 0 --ixe E --ixes M`) is covered in
+[the orchestration guide](docs/formal-aiur-orchestration.md). Dated hardware
 measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 [docs/benchmarking.md](docs/benchmarking.md), not this stable overview.
 
@@ -234,7 +235,13 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 ### Build
 
 - Build and test the Ix library with `lake build` and `lake test`
-- Install the `ix` binary with `lake run install`, or run with `lake exe ix`
+- Install the `ix` binary with `lake run install`, or run with `lake exe ix`.
+  The proving commands build Rust hosts and export Aiur artifacts in the
+  checkout `ix` was built in. An installed copy finds that checkout through
+  `IX_ROOT` (or by running inside it), or takes prebuilt inputs:
+  `--aiur-artifact`/`IX_AIUR_ARTIFACT`, `--aggr-artifact`/`IX_AGGR_ARTIFACT` and
+  the `IX_AIUR_HOST`, `IX_PROVER_HOST` and `IX_STARK_HOST` executables. Without
+  either it stops with an error naming them.
 
 ### Compiling Lean to Ixon
 

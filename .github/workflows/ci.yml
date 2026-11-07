@@ -55,21 +55,28 @@ jobs:
           test-args: "--wfail"
           lint-args: "-- --wfail -v"
           use-github-cache: false
+      # --wfail fails on any warning, `sorry` included. axiom_sweep then fails
+      # if any declaration of the Aiur package depends on an axiom beyond
+      # propext, Classical.choice and Quot.sound.
       - name: Check formal Aiur proofs, FFI, and IxVM packages
         run: |
-          lake build aiur/Aiur ixvm/IxVM multiStark/MultiStark
-          lake build aiur/aiur_tests aiur/execution_tests aiur/trace_tests ixvm/ixvm
+          lake build --wfail aiur/Aiur ixvm/IxVM multiStark/MultiStark
+          lake build --wfail aiur/aiur_tests aiur/execution_tests aiur/trace_tests ixvm/ixvm \
+            multiStark/stark-export aiur/axiom_sweep
+          lake env Aiur/.lake/build/bin/axiom_sweep Aiur
           Aiur/.lake/build/bin/aiur_tests
           Aiur/.lake/build/bin/execution_tests
           Aiur/.lake/build/bin/trace_tests
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
-          lake exe ixvm/ixvm export /tmp/ixvm-execution.ixa
-          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.ixa all
-          target/release/ixvm /tmp/ixvm-execution.ixa validate IxVM/IxVM/fixtures/nat-add-comm.ixf
-          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.ixa
-          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.ixa IxVM/IxVM/fixtures/nat-add-comm.ixf witness 1
+          tmp=$(mktemp -d)
+          lake exe ixvm/ixvm export "$tmp/ixvm-execution.ixa"
+          cargo run --release --locked -p ixvm -- "$tmp/ixvm-execution.ixa" all
+          target/release/ixvm "$tmp/ixvm-execution.ixa" validate IxVM/IxVM/fixtures/nat-add-comm.ixf
+          lake exe ixvm/ixvm export-trace "$tmp/ixvm-trace.ixa"
+          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- "$tmp/ixvm-trace.ixa" IxVM/IxVM/fixtures/nat-add-comm.ixf witness 1
+          rm -rf "$tmp"
       # The script keeps its exported artifacts in IX_TEST_OUTPUT_DIR, so the
       # IxVM suites below run against the same claim artifact.
       - name: Check formal claims, recursive verification, and aggregation
@@ -82,12 +89,13 @@ jobs:
         env:
           IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.ixa
         run: lake test --wfail -- --tier ci:ixvm
-      - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
+      - name: Check Lean versions match for Ix, compiler bench, Aiur packages, certified kernel and its model
         if: github.event_name != 'push'
         run: |
           diff lean-toolchain Benchmarks/Compile/lean-toolchain
           diff lean-toolchain Aiur/lean-toolchain
           diff lean-toolchain IxVM/lean-toolchain
+          diff lean-toolchain MultiStark/lean-toolchain
           diff lean-toolchain IxC/lean-toolchain
           diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI

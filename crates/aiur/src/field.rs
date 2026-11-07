@@ -138,6 +138,7 @@ impl PrimeField {
     value < self.modulus
   }
   #[inline]
+  #[allow(clippy::cast_possible_truncation)] // The remainder is below the modulus.
   pub fn add(self, a: u64, b: u64) -> u64 {
     ((u128::from(a) + u128::from(b)) % u128::from(self.modulus)) as u64
   }
@@ -148,6 +149,7 @@ impl PrimeField {
     if a == 0 { 0 } else { self.modulus - a }
   }
   #[inline]
+  #[allow(clippy::cast_possible_truncation)] // The remainder is below the modulus.
   pub fn mul(self, a: u64, b: u64) -> u64 {
     ((u128::from(a) * u128::from(b)) % u128::from(self.modulus)) as u64
   }
@@ -249,16 +251,16 @@ mod tests {
         let (a, b) = (a % p, b % p);
         let modulus = u128::from(p);
         assert_eq!(
-          field.add(a, b),
-          ((u128::from(a) + u128::from(b)) % modulus) as u64
+          u128::from(field.add(a, b)),
+          (u128::from(a) + u128::from(b)) % modulus
         );
         assert_eq!(
-          field.sub(a, b),
-          ((u128::from(a) + modulus - u128::from(b)) % modulus) as u64
+          u128::from(field.sub(a, b)),
+          (u128::from(a) + modulus - u128::from(b)) % modulus
         );
         assert_eq!(
-          field.mul(a, b),
-          ((u128::from(a) * u128::from(b)) % modulus) as u64
+          u128::from(field.mul(a, b)),
+          (u128::from(a) * u128::from(b)) % modulus
         );
         if let Some(inverse) = field.inverse(a) {
           assert!(inverse < p);

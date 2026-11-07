@@ -175,7 +175,14 @@ private def claimContains : IO (String × ClaimWitness) := do
   pure ("Claim Contains (synthetic 3-leaf)", witness)
 
 def main (args : List String) : IO Unit := do
-  let path := args.headD "/tmp/ix-formal-claims.json"
+  -- Without an argument, write into a fresh temporary directory, not a fixed
+  -- /tmp path that concurrent runs would share.
+  let path ← match args.head? with
+    | some path => pure path
+    | none => do
+      let dir ← IO.FS.createTempDir
+      pure (dir / "claims.json").toString
+  IO.eprintln s!"[formal-aiur-tests] writing {path}"
   let env ← get_env!
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))

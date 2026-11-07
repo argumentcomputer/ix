@@ -81,7 +81,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     if !self.is_empty() || start >= end {
       return Err("invalid empty ROM range");
     }
-    self.base = usize::try_from(start).map_err(|_| "ROM base overflow")?;
+    self.base = usize::try_from(start).ok().ok_or("ROM base overflow")?;
     self.end = end;
     Ok(())
   }
@@ -195,7 +195,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.budget.vector(bucket, 1)?;
     let address =
       self.base.checked_add(bucket.len()).ok_or("ROM address overflow")?;
-    if u64::try_from(address).map_err(|_| "ROM address overflow")?
+    if u64::try_from(address).ok().ok_or("ROM address overflow")?
       >= modulus.min(self.end)
     {
       return Err("ROM exceeds field capacity".into());

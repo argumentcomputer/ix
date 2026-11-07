@@ -13,7 +13,7 @@ pub(super) struct Placement {
 }
 
 impl Placement {
-  pub fn finish(&self, row: &mut [Val], count: u64) {
+  pub(crate) fn finish(&self, row: &mut [Val], count: u64) {
     row[self.selector] = Val::ONE;
     for write in &self.writes {
       row[write.column] = write.value.eval(row, NativeField::<Val>::default());

@@ -43,14 +43,16 @@ pub(super) fn register<B: FieldBackend>(
   for (rows, arena) in rows.iter_mut().zip(&mut arenas) {
     rows.sort_unstable_by_key(|entry| entry.key[1]);
     for entry in rows {
-      let offset = entry.key[1];
-      if offset > arena.len() as u64 {
+      let Ok(offset) = usize::try_from(entry.key[1]) else {
+        return Ok(false);
+      };
+      if offset > arena.len() {
         return Ok(false);
       }
       let value = field.from_u64(entry.output[0]);
-      if offset == arena.len() as u64 {
+      if offset == arena.len() {
         arena.push(value);
-      } else if arena[offset as usize] != value {
+      } else if arena[offset] != value {
         return Err("conflicting IO byte hint entries".into());
       }
     }
@@ -68,7 +70,8 @@ pub(super) fn register<B: FieldBackend>(
         _ => return Err("missing hint data: unknown IO channel".into()),
       };
       let offset = usize::try_from(field.to_u64(key[1]))
-        .map_err(|_| "IO byte offset exceeds host index range")?;
+        .ok()
+        .ok_or("IO byte offset exceeds host index range")?;
       output[0] = *arena
         .get(offset)
         .ok_or("missing hint data: IO byte offset out of bounds")?;

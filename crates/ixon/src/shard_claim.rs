@@ -1,7 +1,7 @@
-//! Shard `CheckEnv` claim convention — the single source of truth shared
-//! by every builder (Lean `IxVM.ClaimHarness.shardCheckEnvClaim` and
-//! `ix-kernel::claim`). Any change here changes claim digests; keep the
-//! Lean mirror in lockstep.
+//! Shard `CheckEnv` claim convention, shared by the Rust shard planner
+//! (`crate::shard`) and the Lean claim builder
+//! (`IxVM.ClaimHarness.shardCheckEnvClaim`). Any change here changes claim
+//! digests; keep the Lean mirror in lockstep.
 //!
 //! Semantics (mirrors the Aiur kernel's `env_walk`):
 //!

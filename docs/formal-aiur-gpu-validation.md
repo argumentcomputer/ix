@@ -6,7 +6,8 @@ Platinum 8559C and 249 GB of RAM, starting from `129c8056`. Legacy numbers use
 the binaries built for the 2026-10-29 review; the legacy sources have not
 changed since. Prover benchmarks pin `RAYON_NUM_THREADS=16` and disable
 transparent huge pages, as in the earlier comparisons. The same machine also
-ran `origin/main` and the complete CPU pipeline for comparison.
+ran `origin/main` and the complete CPU pipeline for comparison. The branch
+still had the legacy backend then (`--legacy`); it has since been removed.
 
 ## Hardware validation
 
@@ -267,7 +268,8 @@ sources, artifact cache and Rust hosts against the checkout it was built in
 export. `ix prepare [--cuda]` builds the hosts and exports the IxVM and
 aggregation artifacts ahead of time. The IxVM export itself still takes 9.5
 minutes: 41 s parsing and checking, 10 s table checks, 35 s bytecode and 480 s
-compiling the certified circuits, grouping and population plans.
+compiling the circuits with the verified compiler, grouping and population
+plans.
 
 **Multi-lane GPU smoke tests.** Every multi-stark CUDA entry point selects its
 device explicitly, and its process-wide caches are host-only or keyed by
@@ -319,8 +321,9 @@ default) and 28 GB on the GPU (32.5 GB).
 - **Row-capped shards.** Every circuit shorter than the row cap stays in shard
   zero, so a job just over the cell bound becomes one large shard plus small
   ones, and graph lookups regenerate every shard of a multi-shard batch.
-- **Export time.** The certified IxVM export takes 9.5 minutes, 85% of it in
-  circuit compilation, grouping certification and population plans. `ix
+- **Export time.** The IxVM export, which compiles IxVM with the verified
+  compiler, takes 9.5 minutes, 85% of it in circuit compilation, grouping
+  certification and population plans. `ix
   prepare` moves it out of the first proof but does not shorten it.
 - **multi-stark revision.** The lookup fallback is multi-stark `ed65a7c` on
   branch `formal-aiur/lazy-lookups`, on top of the previous pin `c7324887`
@@ -328,5 +331,6 @@ default) and 28 GB on the GPU (32.5 GB).
 
 ## Data
 
-[Prover medians](benchmarks/formal-aiur-gpu-validation/prover.csv) and
-[pipeline runs](benchmarks/formal-aiur-gpu-validation/pipeline.json).
+[Prover medians](benchmarks/formal-aiur-gpu-validation/prover.csv). The individual
+pipeline runs are not kept in the repository; the commands above reproduce
+them.

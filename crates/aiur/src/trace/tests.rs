@@ -64,7 +64,9 @@ fn constant(value: u64) -> Json {
   json!({"const":value})
 }
 fn step(action: Json) -> Json {
-  json!({"guard":constant(1),"action":action})
+  let mut step = json!({"guard":constant(1)});
+  step["action"] = action;
+  step
 }
 fn write(column: usize) -> Json {
   json!({"column":column,"source":column,"guard":constant(1)})
@@ -76,14 +78,18 @@ fn setup(
   params: Json,
   output: Json,
 ) -> (CheckedProgram, TraceArtifact) {
-  let program: crate::Program = serde_json::from_value(json!({
-        "version":1,"modulus":97,"functions":functions,"enums":[],"maps":[],"tables":[],
-        "entries":[{"name":"main","function":0,"inputs":params,"output":output}]
-    }))
-    .unwrap();
-  let artifact = raw_artifact(
-    json!({"version":1,"modulus":97,"functions":plans,"chips":chips}),
-  );
+  let mut entry = json!({"name":"main","function":0});
+  entry["inputs"] = params;
+  entry["output"] = output;
+  let mut source =
+    json!({"version":1,"modulus":97,"enums":[],"maps":[],"tables":[]});
+  source["functions"] = functions;
+  source["entries"] = Json::Array(vec![entry]);
+  let program: crate::Program = serde_json::from_value(source).unwrap();
+  let mut plan = json!({"version":1,"modulus":97});
+  plan["functions"] = plans;
+  plan["chips"] = chips;
+  let artifact = raw_artifact(plan);
   (program.check().unwrap(), artifact)
 }
 fn square() -> (CheckedProgram, TraceArtifact) {
@@ -208,15 +214,10 @@ fn hint_providers_survive_preparation_and_replay_for_each_trace() {
   let mut channels = crate::hints::HintChannels::new();
   let calls = invoked.clone();
   channels
-    .insert_fixed::<1, 1>(
-      "square",
-      crate::bytecode::Type::Field,
-      crate::bytecode::Type::Field,
-      move |key| {
-        calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Ok(key)
-      },
-    )
+    .insert_fixed::<1, 1>("square", Type::Field, Type::Field, move |key| {
+      calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      Ok(key)
+    })
     .unwrap();
   let from_code = program
     .prepare_hint_channels(&[], &channels)

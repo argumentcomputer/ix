@@ -8,13 +8,17 @@ This module establishes:
 1. Canonical `SourceValue F` representation predicates `RepAddress` (`[UInt8::U8; 32]`),
    `RepAddressRef` (`&[UInt8::U8; 32]`), and `RepByteStream` (`Lists::List<UInt8::U8>`)
    along with their `HeapMono` / `HeapMono₂` proofs.
-2. Soundness and completeness of `Bytes::address_eq_tail` and `Bytes::address_eq`
-   under `[Field F] [DecidableEq F] (large : U64.Compatible F)`:
+2. A Lean reference model `addressEq` of `Bytes::address_eq_tail` and
+   `Bytes::address_eq`, and its specification under
+   `[Field F] [DecidableEq F] (large : U64.Compatible F)`:
    `addressEq F a b = if a = b then 1 else 0` (`1` iff `a = b`, `0` iff `a ≠ b`).
-3. Mathematical and heap specifications of `read_byte_stream` and
+3. Lean models and heap specifications of `read_byte_stream` and
    `read_finite_byte_stream`: reading `len` bytes from an I/O stream starting at
    `idx` produces a heap-extended `RepByteStream` of length `len` (with
    `len < 2^32` enforced by `WordLists::depth_checked`).
+
+The models are written by hand after the Aiur source; no theorem here evaluates
+that source.
 -/
 
 namespace Aiur.Library.Bytes
@@ -220,7 +224,7 @@ private theorem byte0_sub_eq_zero_iff [Field F] (large : U64.Compatible F)
   · intro h
     rw [h]
 
-/-- `Bytes::address_eq(a, b)` returns `1` if `a = b` and `0` if `a ≠ b`. -/
+/-- In the Lean model, `Bytes::address_eq(a, b)` returns `1` if `a = b` and `0` if `a ≠ b`. -/
 theorem address_eq_spec [Field F] [DecidableEq F] (large : U64.Compatible F)
     (a b : Address) :
     addressEq F a b = if a = b then 1 else 0 := by

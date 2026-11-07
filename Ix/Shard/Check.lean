@@ -120,24 +120,6 @@ def emitRefinedManifest (tag : String) (envHandle : Aiur.EnvHandle)
     IO.eprintln s!"--out-ixes {out} skipped: {failures} failure(s)"
     pure #[]
 
-/-- What a batch run is asked to do beyond the plain check. -/
-structure AuditOptions where
-  selection : Option (Array Nat) := none
-  provenGuard : Option (Ixon.Env → Array (Array Address) → Array (Array Address)
-    → Array Nat → IO (Std.HashMap Nat Address)) := none
-  report : Option String := none
-  emitOnFailure : Bool := false
-  command : String := ""
-  budgetSource : String := "flag"
-
-/-- One settled part of a leaf's cascade, for the manifest and the report. -/
-structure PartReport where
-  label : String
-  blocks : Array Address
-  owned : Array Address
-  peak : Nat
-  error : String := ""
-
 /-- Claim digest of a leaf from its already-known owned constants (no env
     rescan): the digest `ix prove` persists and `ix aggregate` matches on. -/
 def claimDigestOfOwned (ixonEnv : Ixon.Env) (owned : Array Address)

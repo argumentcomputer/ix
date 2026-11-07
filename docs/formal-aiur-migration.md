@@ -21,8 +21,7 @@ The previous unverified `LegacyAiur`, `LegacyIxVM`, `LegacyMultiStark` packages
 and `crates/aiur-legacy`, `crates/ixvm-legacy`, `crates/ixvm-legacy-native`
 crates have been retired.
 
-The generic Aiur crate does not depend on IxVM, the legacy interpreter, or a
-Lean installation. The IxVM crate registers its hint channels and table
+The generic Aiur crate does not depend on IxVM or a Lean installation. The IxVM crate registers its hint channels and table
 accelerators using Aiur's generic APIs. Its Rust binary accepts an exported
 execution package. Lean's `IxVM.parse` loads the application and its shared
 Goldilocks word/hash library; callers select entrypoints with
@@ -41,6 +40,39 @@ The old experimental IxVM
 `ffi` replay command is removed: the data-only ABI cannot supply the word
 library's closure hints. Generic Aiur FFI execution and tracing remain covered
 by their own test executables.
+
+## What the proofs cover
+
+The Aiur proofs are about the compiler. The headline backend theorem,
+`Modules.Prepared.grouped_activated_heap_sound` (`Aiur/Aiur/Optimized/EndToEnd.lean`,
+frozen in `Aiur/Aiur/Audit.lean`), says that the source program evaluates
+(`Modules.Prepared.EvalFn`) to the decoded result when the compiled, grouped and
+activated circuits have a *finite* derivation of the claimed call
+(`Grouping.Plan.ActivatedDerives`), under `rom.Valid`, `Erasure.Signed` and
+`Plan.WellFormedActivation`. It is not a theorem about STARK traces:
+
+- A STARK proof gives rows that satisfy their constraints with balanced LogUp
+  lookups. `Circuit.System.checkMemo_sound` turns that into a
+  `Circuit.MemoDerivation`, a memo graph that may be cyclic: a provided row
+  `loop(0) = 42` balances `fn loop(x) { loop(x) }` although no evaluation
+  returns 42. `memo_acyclic_sound` needs the graph to be acyclic, which means
+  every proved call terminates. Nothing proves acyclicity for a STARK; it is a
+  hypothesis of the end-to-end argument.
+- Trusted and unproved: the Rust lowering of the exported artifact into
+  multi-stark circuits (`crates/aiur`: the CALL, ROM and memory-segment channel
+  tags, activation times multiplicity, trace-shard segment boundaries, fixed
+  tables and the claim encoding); multi-stark's STARK and FRI soundness at the
+  configured parameters, and its CUDA prover's agreement with the CPU one; and
+  the `.aiur` parser and the artifact exporter.
+- The IxVM and MultiStark programs are ports checked by tests and
+  reproducibility scripts, not proved equivalent to a specification. The
+  library `Correctness` files and `IxVMRep` prove facts about hand-written Lean
+  models of Aiur library and IxVM functions, not about the Aiur source.
+
+The axioms are checked mechanically: `Aiur.Audit` freezes the named theorems'
+statements and axioms, and CI runs `axiom_sweep`, which fails if any
+declaration of the Aiur package uses an axiom beyond `propext`,
+`Classical.choice` and `Quot.sound`.
 
 ## Build and run
 
@@ -73,17 +105,18 @@ evaluation, environment checking, reveal and membership claims. It contains
 bytecode functions including shared libraries. The generic Aiur proofs have
 not changed in this update.
 
-The ordinary commands use the certified Formal Aiur backend (`--formal` remains
-a compatibility alias; `--legacy` has been retired):
+The ordinary commands use the formal Aiur backend. The retired backend's
+`--legacy` flag, the `--formal` alias and `--interp` have been removed:
 
 ```sh
-ix prepare --cuda   # once per source revision: hosts and certified artifacts
+ix prepare --cuda   # once per source revision: hosts and compiled artifacts
 ix check Nat.add_comm
 ix prove Nat.add_comm
 ix verify <proof-address>
 
-ix prove --ixe env.ixe --ixes env.ixes
+ix prove --ixe env.ixe --ixes env.ixes      # one leaf proof per shard
 ix verify --ixe env.ixe --ixes env.ixes <shard-proof-address>...
+ix prove --aggregate --ixe env.ixe --ixes env.ixes   # leaves, joins and root
 ix aggregate --ixe env.ixe --ixes env.ixes \
   --shard-rows 1048576 --direct-joins --structural-above 0 <shard-proof-address>...
 ix verify --aggregate --ixe env.ixe --ixes env.ixes \
@@ -91,14 +124,22 @@ ix verify --aggregate --ixe env.ixe --ixes env.ixes \
 ```
 
 The CLI builds the separate exporter and caches its artifact by source and
-exporter contents, in the `.lake/aiur` of the checkout `ix` was built in (or
-`IX_ROOT`), so commands work from any directory. `ix prepare` does this, and
-builds the Rust hosts, ahead of time; otherwise the first command that needs an
-artifact exports it, which takes about ten minutes for IxVM. `--aiur-artifact` / `IX_AIUR_ARTIFACT` and
-`--aggr-artifact` / `IX_AGGR_ARTIFACT` select already exported **trusted** compiler
-artifacts. These are verifier configuration, never advice supplied by the
-prover. `IX_AIUR_HOST` and `IX_STARK_HOST` can select prebuilt host executables.
-Rebuild the Rust binaries after changing their sources.
+exporter contents, in the `.lake/aiur` of the checkout `ix` was built in, so
+commands work from any directory. `ix prepare` does this, and builds the Rust
+hosts, ahead of time; otherwise the first command that needs an artifact
+exports it, which takes about ten minutes for IxVM.
+
+The checkout is, in order: `IX_ROOT`, which must name an Ix checkout; the
+checkout whose `.lake/build/bin` holds the running `ix`; or the working
+directory, if it is one. An installed or packaged `ix` outside a checkout
+matches none of these and stops with an error before running `lake` or
+`cargo`, unless every input it needs is supplied: `--aiur-artifact` /
+`IX_AIUR_ARTIFACT` and `--aggr-artifact` / `IX_AGGR_ARTIFACT` select already
+exported **trusted** compiler artifacts, and `IX_AIUR_HOST`, `IX_PROVER_HOST`
+and `IX_STARK_HOST` (with `_CUDA` variants) select prebuilt host executables.
+The artifacts are verifier configuration, never advice supplied by the prover;
+use an artifact exported from the same revision as the `ix` binary. Rebuild the
+Rust binaries after changing their sources.
 
 Proofs retain Ix's claim wrapper and content-addressed store. Formal stage-one
 and aggregate proof payloads have distinct `IXAIUR2` and `IXAGGR2` markers;
@@ -109,10 +150,12 @@ nonempty shard, and rejects duplicate or missing proofs. Aggregate verification
 also reconstructs the requested flat/structural root and checks that all
 environment constants occur exactly once with no undischarged assumptions.
 
-The formal shard index and aggregate cache use separate namespaces from the
-legacy caches. Cache hits are verified before reuse. `--skip-proven`,
-`--no-index`, `--no-cache`, and `--no-write` apply to their corresponding formal
-paths. Aggregation supports wrap-first and direct joins, flat and structural
+The formal shard-proof index (`~/.ix/cache/formal-shard-proofs`) and aggregate
+cache use separate namespaces from the retired backend's caches. Cache hits are
+verified before reuse. `--skip-proven`, `--no-index`, `--no-cache`, and
+`--no-write` apply to their corresponding formal paths; `ix prove --fresh`
+bypasses the index and the aggregate and range caches and replaces their
+entries. Aggregation supports wrap-first and direct joins, flat and structural
 folds, manifest plan inspection, subtree selection, and targeted reproving from
 verified cached children. Ready slots run in bounded waves. `--jobs` defaults to
 one; zero uses the available CPU count. The total RAM budget and CPU threads
@@ -160,17 +203,27 @@ verification work (at 65536 rows the complete pipeline failed on both CPU and
 CUDA; see [GPU validation](formal-aiur-gpu-validation.md)).
 
 Manifest proving supports `--shards`, `--jobs`, `--skip-proven`, `--exec-only`,
-`--out-ixes`, and `--report`. An oversized claim is cut into whole blocks and
-its parts are executed and planned again. `--trace-shards` requires the original
-claim to fit through trace sharding and rejects it if source-record or trace
-residency prevents that. `ix check --ram-budget` runs the same planning and
-refinement loop without proving. Reports use `ix-formal-run/1` and contain
-per-part plans, timings, failures and proof addresses. A failed run does not
-publish a refined manifest. Ordinary `ix check` only executes.
+`--out-ixes`, and `--report`. Every proof is a batch of trace shards planned
+within the RAM budget; a claim whose batch still cannot fit is cut into whole
+blocks and its parts are executed and planned again. `--trace-shards` requires
+the original claim to fit through trace sharding and rejects it if
+source-record or trace residency prevents that. Without `--aggregate`,
+`--lanes` or `--compress`, `ix prove --ixe --ixes` proves the leaves and prints
+their proofs; flags that only matter to an aggregate root, such as
+`--binding-proof`, are rejected there. `ix check --ram-budget` runs the same
+planning and refinement loop without proving, and `ix shard refine` runs it
+with a per-leaf budget (85% of available memory by default), keeping every
+leaf that already has a verified proof in the shard-proof index. Reports use
+`ix-formal-run/1` and contain per-part plans, timings, failures and proof
+addresses. A failed run does not publish a refined manifest and exits 1 (3, the
+benchmark contract's rejection code, under `ix check --json`); `ix shard refine`
+on the retired backend wrote its manifest anyway and exited 2.
+Ordinary `ix check` only executes.
 
 `MultiStark/MultiStark/Program.sources` composes the ordinary Aiur recursive
-verifier modules; `Aggregate.sources` reuses them and adds all thirteen current
-aggregation shapes, including range leaves, joins and closure. Both reuse the
+verifier modules; `Aggregate.sources` reuses them and adds all seventeen
+aggregation shapes (0–16), including range leaves, joins, closure, binding
+discharge, cross-binding pairs and catalog joins. Both reuse the
 checked byte/word, list, address, Blake3, and Goldilocks libraries. See
 [the module layout](formal-aiur-modules.md) for interfaces and compatibility
 checks. Hint closures provide raw advice, and ordinary program assertions
@@ -188,7 +241,7 @@ and `input.json` for feeding the proof into another recursive-verifier run.
 ## CUDA and native builds
 
 The legacy `--legacy` execution, proving, verification, and generated-kernel
-paths have been retired. The certified Formal Aiur backend provides a resident
+paths have been retired. The formal Aiur backend provides a resident
 execution/proving controller (`crates/ix-prover`), CPU execution ahead of
 proving, GPU lanes, checkpointed leaf refinement, recursive aggregation,
 cross-record distributed execution, and texray. See
@@ -271,9 +324,10 @@ The compiler correctness proofs remain intact. Neither those proofs nor the
 port tests constitute a new formal proof of the cryptographic backend or
 discharge the existing memo-acyclicity hypothesis of the semantic model.
 
-The retired legacy native execution crate (`crates/ixvm-legacy-native`),
-`legacy-native` Cargo feature, `ix codegen`, and `trace-fixtures` have been
-removed along with the legacy backend.
+The retired legacy native execution crate (`crates/ixvm-legacy-native`), its
+`legacy-native` Cargo feature, the generated trace kernels
+(`IX_CUDA_TRACE_CODEGEN`, `cuda-trace-codegen`) and `trace-fixtures` were
+removed with the legacy backend.
 
 Function grouping is now enabled in the IxVM and recursive-verifier exports.
 The application policies translate legacy's measured groups; missing, inlined,
@@ -313,6 +367,12 @@ Neither belongs in the ordinary `aiur` or `ixvm` dependency graph. This change
 does not implement the future macro backend or create empty placeholder crates.
 
 ## Migration validation
+
+These are dated records of the validation at each step of the migration, while
+the legacy backend was still in the tree. What they say about it (the legacy
+bytecode path, legacy runtime tests and native features,
+`Tests.AiurBoundaries`, the then thirteen aggregation shapes) describes that
+time, not the current tree.
 
 Default-backend/controller checks on 2026-10-26:
 

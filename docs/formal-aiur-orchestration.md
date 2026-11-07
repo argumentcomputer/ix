@@ -1,9 +1,8 @@
 # Formal Aiur orchestration
 
-The certified Formal Aiur backend uses `crates/ix-prover` for resident proving
-(the legacy `--legacy` backend has been retired). This governs runtime
-scheduling and witness construction; it adds no Aiur primitive, constraint,
-axiom, or `sorry`.
+The formal Aiur backend uses `crates/ix-prover` for resident proving. This
+governs runtime scheduling and witness construction; it adds no Aiur primitive,
+constraint, axiom, or `sorry`.
 
 ## Commands
 
@@ -41,7 +40,9 @@ on CPU. Explicit CUDA requests never select a CPU host silently. Hosts live in
 `target/release` and `target/formal-cuda/release` of the checkout `ix` was
 built in, with independent overrides `IX_PROVER_HOST` and `IX_PROVER_HOST_CUDA`.
 Exporters, sources and the artifact cache (`.lake/aiur`) are also resolved
-against that checkout (or `IX_ROOT`), so `ix` runs from any directory.
+against that checkout (or `IX_ROOT`), so `ix` runs from any directory; outside
+a checkout it fails unless the artifacts and hosts are supplied (see
+[Formal Aiur in Ix](formal-aiur-migration.md#current-port-and-cli-integration)).
 `ix prepare [--cuda]` builds the hosts and exports the IxVM and aggregation
 artifacts ahead of time; otherwise the first command that needs an artifact
 exports it (several minutes, once per source revision). Building by hand:
@@ -173,8 +174,9 @@ lifetime, cross-record proofs, wrong claims, overlapping ROM intervals,
 unresolved calls, cached-helper dependencies, retention planning and replay
 failure. Lean tests cover failure draining in the scheduler. The ROM composition
 lemma checks in Lean without new axioms or placeholders.
-The targeted Rust suite passes 194 tests, with three existing legacy tests
-ignored. The standard gate also checks explicit legacy bytecode execution.
+When this was validated, the targeted Rust suite passed 194 tests, with three
+legacy tests ignored, and the standard gate also checked explicit legacy
+bytecode execution; both legacy parts have since been removed.
 
 The controller and both application hosts compile/link with CUDA 13.3.1 for
 SM 80. The one-device gate passed on hardware on 2026-10-31

@@ -101,8 +101,9 @@ mod tests {
 
   #[test]
   fn register_handlers_gather_before_writes_and_check_count_errors() {
-    let binder =
-      map_binder(Arc::new(|[a, b]: [u64; 2]| Ok(((a + b) as usize, [b, a]))));
+    let binder = map_binder(Arc::new(|[a, b]: [u64; 2]| {
+      Ok((usize::try_from(a + b).unwrap(), [b, a]))
+    }));
     let call = binder(&[0, 1], &[0, 1], None).unwrap();
     let mut registers = [2, 5];
     let mut counts = [0; 8];

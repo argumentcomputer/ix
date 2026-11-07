@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Stage-one row population on the GPU for the certified Aiur trace plans.
+// Stage-one row population on the GPU for the trace plans exported with the
+// circuits of the verified Aiur compiler.
 //
 // Each row is filled by interpreting its function's compiled population plan
 // (the same dataflow graph the host `FillPlan` runs): guarded arithmetic,

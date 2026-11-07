@@ -8,8 +8,11 @@ import Aiur.Library.Blake3.Correctness
 /-!
 # `IxVM` Heap Representation Predicates, Monotonicity, Determinism, and Deserialization Lemmas
 
-This module provides the Phase 4 (`IxVM` correspondence) representation and
-authentication foundation:
+This module defines Lean reference models of IxVM's data (universes, expressions,
+role tables) and predicates relating them to `SourceValue F` heap values. They
+are models written after the IxVM sources, groundwork for a future proof of
+correspondence with the IxVM program; nothing here evaluates an IxVM `.aiur`
+function or proves anything about one. It provides:
 1. Determinism/injectivity (`det`) for primitive and container representation
    predicates (`RepU8`, `RepU32`, `RepU64`, `RepAddress`, `RepAddressRef`,
    `RepOption`, `RepLinkedList`, `RepList`, `RepBinaryTree`, `RepRBTreePtr`).
@@ -1081,11 +1084,13 @@ theorem RepRoleCtx.det [Field F] (large : U32.Compatible F)
 
 /-! ## 7. Ingress Stream Authentication & `TagN` Field-Decoding Correctness -/
 
-/-- Ingress stream verification soundness (`Ingress::load_verified_constant`,
-`Ingress::load_verified_blob`, `KernelRoles::load_role_table`): reading a finite
-byte stream at `(idx, len)` and passing `Blake3::verify_bytes_against` guarantees
-a heap-extended `RepByteStream` of length `len < 2^32` whose pure BLAKE3 digest
-equals `expectedAddr`. -/
+/-- Ingress stream authentication in the Lean model: if the bytes read at
+`(idx, len)` pass `depthChecked` and the model of `Blake3::verify_bytes_against`
+(field-wise equality of `addressToFields` of the Lean `Blake3.digest`), then
+allocating them yields a heap-extended `RepByteStream` of length `len < 2^32`
+whose BLAKE3 digest equals `expectedAddr`. It models the checks that the IxVM
+functions `Ingress::load_verified_constant`, `Ingress::load_verified_blob` and
+`KernelRoles::load_role_table` make, but is not a theorem about them. -/
 theorem ingress_verify_stream_sound [Field F] (large : U32.Compatible F)
     (enumName : String) (stream : Nat → UInt8) (idx len : Nat) (h : Heap F)
     (expectedAddr : Address)

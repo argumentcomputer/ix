@@ -4,48 +4,51 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Kind {
+pub(crate) enum Kind {
   Ixvm,
   Recursion,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Artifact {
-  pub path: PathBuf,
-  pub kind: Kind,
+pub(crate) struct Artifact {
+  pub(crate) path: PathBuf,
+  pub(crate) kind: Kind,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Config {
-  pub artifacts: Vec<Artifact>,
-  pub devices: Vec<Option<i32>>,
-  pub exec_jobs: usize,
-  pub threads_per_prover: usize,
-  pub max_ram_bytes: u64,
+pub(crate) struct Config {
+  pub(crate) artifacts: Vec<Artifact>,
+  pub(crate) devices: Vec<Option<i32>>,
+  pub(crate) exec_jobs: usize,
+  pub(crate) threads_per_prover: usize,
+  pub(crate) max_ram_bytes: u64,
   #[serde(default)]
-  pub record_limit_bytes: Option<usize>,
+  pub(crate) record_limit_bytes: Option<usize>,
   #[serde(default)]
-  pub parent_pid: Option<u32>,
+  pub(crate) parent_pid: Option<u32>,
   #[serde(default)]
-  pub texray: bool,
+  pub(crate) texray: bool,
 }
 
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Job {
-  pub id: String,
-  pub artifact: PathBuf,
-  pub input: PathBuf,
-  pub output: PathBuf,
+pub(crate) struct Job {
+  pub(crate) id: String,
+  pub(crate) artifact: PathBuf,
+  pub(crate) input: PathBuf,
+  pub(crate) output: PathBuf,
   #[serde(default)]
-  pub options: Options,
+  pub(crate) options: Options,
   #[serde(default)]
-  pub priority: bool,
+  pub(crate) priority: bool,
 }
 
-pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
+pub(crate) fn atomic_json(
+  path: &Path,
+  value: &impl Serialize,
+) -> Result<(), String> {
   use std::io::Write;
   let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
   // Recursive inputs encode each proof byte as a JSON number. Without a
@@ -59,7 +62,7 @@ pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
   std::fs::rename(tmp, path).map_err(|e| e.to_string())
 }
 
-pub fn read_json<T: serde::de::DeserializeOwned>(
+pub(crate) fn read_json<T: serde::de::DeserializeOwned>(
   path: &Path,
 ) -> Result<T, String> {
   let file = std::fs::File::open(path)

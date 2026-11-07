@@ -102,8 +102,7 @@ impl<F> HintChannels<F> {
         key_type,
         output_type,
         function: Arc::new(move |key, output| {
-          let input =
-            key.try_into().map_err(|_| "hint input width mismatch")?;
+          let input = key.try_into().ok().ok_or("hint input width mismatch")?;
           output.copy_from_slice(&function(input)?);
           Ok(())
         }),

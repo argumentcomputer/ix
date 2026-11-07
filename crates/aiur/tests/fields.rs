@@ -62,12 +62,15 @@ fn program(
   params: Value,
   result: Value,
 ) -> Program {
-  serde_json::from_value(json!({
-        "version": 2, "modulus": modulus, "enums": [], "tables": [], "maps": [],
-        "functions": functions,
-        "entries": [{"name": "main", "function": 0, "inputs": params, "output": result}]
-    }))
-    .unwrap()
+  let mut entry = json!({"name": "main", "function": 0});
+  entry["inputs"] = params;
+  entry["output"] = result;
+  let mut source = json!({
+    "version": 2, "modulus": modulus, "enums": [], "tables": [], "maps": []
+  });
+  source["functions"] = functions;
+  source["entries"] = Value::Array(vec![entry]);
+  serde_json::from_value(source).unwrap()
 }
 
 fn differential<B: FieldBackend>(field: B) {
@@ -165,7 +168,7 @@ fn differential<B: FieldBackend>(field: B) {
 fn native_and_independent_fields_preserve_queries_memory_hints_and_tables() {
   differential(NativeField::<Goldilocks>::new());
   differential(SmallField);
-  assert_eq!(std::mem::size_of::<Small>(), 4);
+  assert_eq!(size_of::<Small>(), 4);
 }
 
 #[test]

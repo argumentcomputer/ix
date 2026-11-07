@@ -63,8 +63,7 @@ def enabled (name : String) : IO Bool :=
   return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
 /-- Rust feature selection shared by compilation and native runtime linkage.
-IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA; IX_CUDA_TRACE_CODEGEN
-enables generated trace kernels and implies CUDA. For `net` (the `ix` CLI),
+IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA. For `net` (the `ix` CLI),
 IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
 end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
 library. -/
@@ -74,7 +73,6 @@ def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array St
   if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
   if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
   if ← enabled "IX_CUDA" then features := features.push "cuda"
-  if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
@@ -388,7 +386,9 @@ def moduleExclusions : Array ModuleExclusion := #[
 `IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets; `Models/` and every directory with its own lakefile are
-other workspaces. -/
+other workspaces. The nested Aiur, IxVM and MultiStark packages are built
+with `--wfail` by their own CI step (`aiur/Aiur` globs every module; every
+IxVM and MultiStark module is reachable from its library or executable root). -/
 def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps"]
 def coveredRootFiles : Array FilePath :=
   #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean"]

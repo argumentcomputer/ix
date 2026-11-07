@@ -272,7 +272,14 @@ def main (args : List String) : IO Unit := do
     throw (IO.userError "subtree scheduling escaped its dependency closure")
   if (neededSlots schedule 5).toOption.isSome then
     throw (IO.userError "out-of-range subtree was accepted")
-  let path := args.headD "/tmp/ix-formal-aggregate-cases.json"
+  -- Without an argument, write into a fresh temporary directory, not a fixed
+  -- /tmp path that concurrent runs would share.
+  let path ← match args.head? with
+    | some path => pure path
+    | none => do
+      let dir ← IO.FS.createTempDir
+      pure (dir / "aggregation.json").toString
+  IO.eprintln s!"[formal-aggregate-tests] writing {path}"
   IO.FS.withTempDir fun dir => do
     fixture (dir / "ixvm") (Array.replicate 8 0)
     fixture (dir / "self") (Array.replicate 16 0)

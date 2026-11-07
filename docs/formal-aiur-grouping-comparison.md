@@ -227,26 +227,21 @@ those polynomial trees per row. Neither improvement is claimed implemented here.
 
 The checked-in [summary CSV](benchmarks/formal-aiur-grouping/summary.csv)
 contains all grouped and ungrouped timings, cells, and FFT estimates.
-[The per-circuit CSV](benchmarks/formal-aiur-grouping/circuits.csv) includes
-**every circuit**, its name, height, and separate stage-one/stage-two widths.
 [The manifest](benchmarks/formal-aiur-grouping/manifest.json) records the code
-revision, configuration, artifact hashes, and recursive input hashes. Adjacent
-[`runs.json`](benchmarks/formal-aiur-grouping/runs.json) retains all raw samples
-and proof sizes. Large generated artifacts
-and proof inputs remain under `.lake/formal-comparison/final/` locally.
+revision, configuration, artifact hashes, and recursive input hashes. The
+per-circuit table and raw samples are not kept in the repository. Large
+generated artifacts and proof inputs were kept outside it, under
+`.lake/formal-comparison/final/`.
 
 The code is in commit `9bd5d3ce` on `migration/formal-aiur`.
 
 ## Reproduction
 
-```sh
-RAYON_NUM_THREADS=8 IX_BENCH_NO_THP=1 \
-  bash tools/ixvm/compare-backends.sh .lake/formal-comparison/run
-```
-
-The script exports both artifacts unless `IX_AIUR_ARTIFACT` and
-`IX_RECURSION_ARTIFACT` are supplied. Set `IX_BENCH_RECURSIVE_PROVE=1` to prove the
-large recursive traces too. The small recursive fixture always gets proved.
-`tools/ixvm/compare-results.py` produces `summary.csv`, `circuits.csv` (every
-circuit, stage one and stage two separately), and the artifact-hash manifest.
+This is a historical comparison. Its driver, `tools/ixvm/compare-backends.sh`,
+ran the legacy backend through `bench-compare-aiur`, and both were removed with
+the legacy backend, together with the `compare-results.py` summarizer; they
+remain in the history of the migration branch. The formal side of each
+measurement is still `target/release/examples/compare` (`cargo build --release
+--locked -p stark-verifier --features parallel --example compare`), run on an
+exported artifact and a claim input.
 
