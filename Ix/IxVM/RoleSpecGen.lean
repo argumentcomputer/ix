@@ -2,7 +2,7 @@ module
 
 public import IxC.Kernel.Roles
 public import IxC.Kernel.RoleEquations
-public import Ix.SpecDigest
+public import Ix.SpecDigest.Decode
 
 /-! # The role specifications, rendered for the circuit
 
@@ -32,14 +32,18 @@ What is rendered, per role:
   (`Π vars, Π hyps, Eq lhs rhs`), which a proof must meet;
 - the native rule that fires on the role's constant (`role_prim_family`).
 
-Every value rendered is a function of the specification digest's bytes
-(`Ix.SpecDigest.specBytes`). The specifications give the kinds, counts,
-types and equations. What the circuit reads off a role's identity (its name,
-inertness, quotient kind and native rule: `Ix.SpecDigest.inert`, `quotKind`,
-`nativeOp`) and the validation schedule (the group order and its two
-boundaries, `Ix.SpecDigest.Schedule.current`, `Ix/SpecDigest/Schedule.lean`)
-are defined beside the encoder, which commits to them, and only read here.
-The schedule is checked before rendering (`checkGroups`). -/
+The renderer reads only the specification digest's bytes
+(`Ix.SpecDigest.specBytes`), read back by `Ix.SpecDigest.Committed.ofBytes`
+(`renderFromBytes`, "The source" below). The specifications give the kinds,
+counts, types and equations. What the circuit reads off a role's identity
+(its name, inertness, quotient kind and native rule: `Ix.SpecDigest.inert`,
+`quotKind`, `nativeOp`) and the validation schedule (the group order and its
+two boundaries, `Ix.SpecDigest.Schedule.current`,
+`Ix/SpecDigest/Schedule.lean`) are defined beside the encoder, which commits to
+them. So every value the rendered file holds comes from the bytes the digest
+hashes, and `ix codegen --check` (`tools/ixvm/check-formal.sh`) fails when the
+file and the digest drift apart. IxC's specification set and its schedule are
+checked before rendering (`checkGroups`). -/
 
 @[expose] public section
 
@@ -213,45 +217,89 @@ def expr (ps : List LevelParam) (depth : Nat) : Expr .anon → Except String RVa
   | .proj s i e => do
     pure (rStore "KernelTypes::KExprNode::Proj" [rBoundAddr (← roleKey s), .raw (toString i), ← expr ps depth e])
 
-/-- `Nat`, through the binding. -/
-def natT : RVal := rStore "KernelTypes::KExprNode::Const" [rBoundAddr (roleIdx .nat), rNil]
+/-! ## The source: the specification digest's bytes
+
+The renderer reads nothing but the bytes the specification digest is the
+hash of (`Ix.SpecDigest.specBytes`), read back by
+`Ix.SpecDigest.Committed.ofBytes`, which accepts them only when what it reads
+re-encodes to them. A role is an index into those rows; `Role.all[i]` only
+carries the index `i`. The circuit's own names for roles (`role_nat`, …) and
+the roles its closing terms use (`Nat`, `Eq`) are looked up by the names the
+bytes give. So every value the rendered file holds comes from the bytes, and
+`ix codegen --check`, which compares the file with this rendering, fails when
+the file and the digest drift apart. -/
+
+/-- The decoded bytes and their digest. -/
+structure Source where
+  committed : Ix.SpecDigest.Committed
+  digest : Address
+
+/-- The source of `bytes`: refused unless they read back canonically
+(`Ix.SpecDigest.Committed.ofBytes`) and give one row per role. -/
+def Source.ofBytes (bytes : ByteArray) : Except String Source := do
+  let committed ← Ix.SpecDigest.Committed.ofBytes bytes
+  unless committed.rows.length == Role.all.length do
+    throw s!"the specification bytes give {committed.rows.length} roles, not {Role.all.length}"
+  return { committed, digest := Address.blake3Pure bytes }
+
+/-- The row at `r`'s index. -/
+def Source.row (src : Source) (r : Role) : Ix.SpecDigest.Row :=
+  src.committed.rows.getD (roleIdx r) default
+
+/-- The index of the role the bytes name `n`. -/
+def Source.indexOf (src : Source) (n : Ix.Kernel.Name) : Except String Nat := do
+  let parts ← Ix.SpecDigest.nameParts n
+  match src.committed.rows.findIdx? (·.name == parts) with
+  | some i => pure i
+  | none => throw s!"the specification bytes name no role {n}"
+
+/-- The roles a group needs outside itself, by the bytes' dependencies. -/
+def Source.groupNeeds (src : Source) (g : List Role) : List Role :=
+  (g.flatMap fun r => (src.row r).deps).eraseDups.filter (!g.contains ·)
+
+/-- `Nat`, through the binding, at its index `nat`. -/
+def natT (nat : Nat) : RVal := rStore "KernelTypes::KExprNode::Const" [rBoundAddr nat, rNil]
 
 /-- `λ (x y : Nat), side`. -/
-def closeEquationSide (side : Expr .anon) : Except String String := do
-  let root := rStore "KernelTypes::KExprNode::Lam" [natT, rStore "KernelTypes::KExprNode::Lam" [natT, ← expr [] 2 side]]
+def closeEquationSide (nat : Nat) (side : Expr .anon) : Except String String := do
+  let root := rStore "KernelTypes::KExprNode::Lam"
+    [natT nat, rStore "KernelTypes::KExprNode::Lam" [natT nat, ← expr [] 2 side]]
   pure (renderArm root)
 
-/-- `Π (x y : Nat) (h₀ : hyp₀) …, @Eq.{1} Nat lhs rhs`. -/
-def closeCertificate (hyps : List (Expr .anon)) (lhs rhs : Expr .anon) :
+/-- `Π (x y : Nat) (h₀ : hyp₀) …, @Eq.{1} Nat lhs rhs`, for `Nat` and `Eq` at
+the indices `nat` and `eq`. -/
+def closeCertificate (nat eq : Nat) (hyps : List (Expr .anon)) (lhs rhs : Expr .anon) :
     Except String String := do
   let depth := 2 + hyps.length
   let eqHead := rStore "KernelTypes::KExprNode::Const"
-    [rBoundAddr (roleIdx .eq), rList [rStore "KernelTypes::KLevelNode::Succ" [rStore "KernelTypes::KLevelNode::Zero" []]]]
+    [rBoundAddr eq, rList [rStore "KernelTypes::KLevelNode::Succ" [rStore "KernelTypes::KLevelNode::Zero" []]]]
   let eqn := rStore "KernelTypes::KExprNode::App"
-    [rStore "KernelTypes::KExprNode::App" [rStore "KernelTypes::KExprNode::App" [eqHead, natT], ← expr [] depth lhs],
+    [rStore "KernelTypes::KExprNode::App" [rStore "KernelTypes::KExprNode::App" [eqHead, natT nat], ← expr [] depth lhs],
      ← expr [] depth rhs]
   let mut body := eqn
   for (h, i) in hyps.zipIdx.reverse do
     body := rStore "KernelTypes::KExprNode::Forall" [← expr [] (2 + i) h, body]
-  let root := rStore "KernelTypes::KExprNode::Forall" [natT, rStore "KernelTypes::KExprNode::Forall" [natT, body]]
+  let root := rStore "KernelTypes::KExprNode::Forall"
+    [natT nat, rStore "KernelTypes::KExprNode::Forall" [natT nat, body]]
   pure (renderArm root)
 
-/-! ## Per-role data -/
+/-! ## Per-role data, from the source -/
 
 /-- The block member of `r` and the block it is in. -/
-def member (r : Role) : Except String (ConstantInfo .anon × List (ConstantInfo .anon)) := do
-  let .block decls := r.spec (md := .anon) | throw s!"{repr r} is not a block member"
+def member (src : Source) (r : Role) :
+    Except String (ConstantInfo .anon × List (ConstantInfo .anon)) := do
+  let .block decls := (src.row r).spec | throw s!"{repr r} is not a block member"
   let some d := decls.find? (·.toConstantVal.name == .role r)
     | throw s!"{repr r}'s block does not declare it"
   pure (d, decls)
 
 /-- How IxVM sees a block member: 0 inductive, 1 constructor, 2 recursor,
 3 axiom, 4–7 the quotient type, constructor, lift and induction principle
-(`Ix.SpecDigest.quotKind` 1–4). -/
-def memberKind (r : Role) : Except String Nat := do
-  let quot := Ix.SpecDigest.quotKind r
+(the row's quotient kind, 1–4). -/
+def memberKind (src : Source) (r : Role) : Except String Nat := do
+  let quot := (src.row r).quotKind
   if quot != 0 then return 3 + quot
-  match (← member r).1 with
+  match (← member src r).1 with
   | .indInfo .. => pure 0
   | .ctorInfo .. => pure 1
   | .recInfo .. => pure 2
@@ -260,8 +308,8 @@ def memberKind (r : Role) : Except String Nat := do
 
 /-- A constructor's inductive role, index, parameter and field counts: the
 constructors after an inductive in its block are its own, in order. -/
-def ctorOf (r : Role) : Except String (Nat × Nat × Nat × Nat) := do
-  let (d, decls) ← member r
+def ctorOf (src : Source) (r : Role) : Except String (Nat × Nat × Nat × Nat) := do
+  let (d, decls) ← member src r
   let .ctorInfo _ nP nF := d | throw s!"{repr r} is not a constructor"
   let mut ind? : Option Role := none
   let mut cidx := 0
@@ -277,8 +325,8 @@ def ctorOf (r : Role) : Except String (Nat × Nat × Nat × Nat) := do
   throw s!"{repr r} not found in its block"
 
 /-- An inductive's constructor count. -/
-def ctorCount (r : Role) : Except String Nat := do
-  let (_, decls) ← member r
+def ctorCount (src : Source) (r : Role) : Except String Nat := do
+  let (_, decls) ← member src r
   let mut count := 0
   let mut mine := false
   for decl in decls do
@@ -289,29 +337,29 @@ def ctorCount (r : Role) : Except String Nat := do
   pure count
 
 /-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 the inert
-axiom `sorryAx` (`Ix.SpecDigest.inert`: tolerated as a declaration, never
+axiom `sorryAx` (the row's `inert`: tolerated as a declaration, never
 usable), 5 definition specified by its equations. -/
-def specKind (r : Role) : Nat :=
-  match r.spec (md := .anon) with
+def specKind (src : Source) (r : Role) : Nat :=
+  match (src.row r).spec with
   | .block _ => 0
   | .anchor .. => 1
   | .ops .. => 2
-  | .axiom .. => if Ix.SpecDigest.inert r then 4 else 3
+  | .axiom .. => if (src.row r).inert then 4 else 3
   | .eqns .. => 5
 
-def levels (r : Role) : Except String Nat := do
-  match r.spec (md := .anon) with
-  | .block _ => pure (← member r).1.toConstantVal.levelParams.length
+def levels (src : Source) (r : Role) : Except String Nat := do
+  match (src.row r).spec with
+  | .block _ => pure (← member src r).1.toConstantVal.levelParams.length
   | .anchor n _ => pure n
   | .ops .. => pure 0
   | .axiom n _ => pure n
   | .eqns n _ _ => pure n
 
 /-- The specified type; an axiom of any type has none (`Sort 0` stands in). -/
-def specType (r : Role) : Except String String := do
-  match r.spec (md := .anon) with
+def specType (src : Source) (r : Role) : Except String String := do
+  match (src.row r).spec with
   | .block _ =>
-    let v := (← member r).1.toConstantVal
+    let v := (← member src r).1.toConstantVal
     pure (renderArm (← expr v.levelParams 0 v.type))
   | .anchor n t => pure (renderArm (← expr (List.range n) 0 t))
   | .ops t _ => pure (renderArm (← expr [] 0 t))
@@ -319,36 +367,46 @@ def specType (r : Role) : Except String String := do
   | .axiom _ none => pure "(&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))))"
   | .eqns n t _ => pure (renderArm (← expr (List.range n) 0 t))
 
+/-- An operation's equations (`Spec.ops`), from IxC's specification set. -/
 def equations (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) :=
   match r.spec (md := .anon) with
   | .ops _ eqs => eqs
   | _ => []
 
-/-- A definition's equations (`Spec.eqns`). -/
-def eqnsEquations (r : Role) : List (Equation .anon) :=
-  match r.spec (md := .anon) with
+/-- An operation's equations (`Spec.ops`), from the source. -/
+def opEquations (src : Source) (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) :=
+  match (src.row r).spec with
+  | .ops _ eqs => eqs
+  | _ => []
+
+/-- A definition's equations (`Spec.eqns`), from the source. -/
+def eqnsEquations (src : Source) (r : Role) : List (Equation .anon) :=
+  match (src.row r).spec with
   | .eqns _ _ eqs => eqs
   | _ => []
 
 /-- An equation's levels: positional, as for its definition. -/
-def eqnLevels (r : Role) : List LevelParam := List.range (levels r |>.toOption.getD 0)
+def eqnLevels (src : Source) (r : Role) : List LevelParam :=
+  List.range (levels src r |>.toOption.getD 0)
 
 /-- `λ vars, side`: an unconditional equation's side, closed over its
 variables. -/
-def closeEqnSide (r : Role) (e : Equation .anon) (side : Expr .anon) : Except String String := do
-  let ps := eqnLevels r
+def closeEqnSide (src : Source) (r : Role) (e : Equation .anon) (side : Expr .anon) :
+    Except String String := do
+  let ps := eqnLevels src r
   let mut body ← expr ps e.vars.length side
   for (t, i) in e.vars.zipIdx.reverse do
     body := rStore "KernelTypes::KExprNode::Lam" [← expr ps i t, body]
   pure (renderArm body)
 
 /-- `Π vars, Π hyps, @Eq.{level} carrier lhs rhs`: an equation's statement,
-which a proof's type must meet. -/
-def closeEqnStatement (r : Role) (e : Equation .anon) : Except String String := do
-  let ps := eqnLevels r
+which a proof's type must meet, for `Eq` at the index `eq`. -/
+def closeEqnStatement (src : Source) (eq : Nat) (r : Role) (e : Equation .anon) :
+    Except String String := do
+  let ps := eqnLevels src r
   let n := e.vars.length
   let depth := n + e.hyps.length
-  let eqHead := rStore "KernelTypes::KExprNode::Const" [rBoundAddr (roleIdx .eq), rList [← level ps e.level]]
+  let eqHead := rStore "KernelTypes::KExprNode::Const" [rBoundAddr eq, rList [← level ps e.level]]
   let mut body := rStore "KernelTypes::KExprNode::App"
     [rStore "KernelTypes::KExprNode::App"
       [rStore "KernelTypes::KExprNode::App" [eqHead, ← expr ps depth e.carrier],
@@ -360,16 +418,16 @@ def closeEqnStatement (r : Role) (e : Equation .anon) : Except String String := 
     body := rStore "KernelTypes::KExprNode::Forall" [← expr ps i t, body]
   pure (renderArm body)
 
-/-- The native rule that fires on a role's constant (`Ix.SpecDigest.nativeOp`):
-its family (1 `Nat` operations, 2 `String`, 3 `BitVec`, 5 decision
-procedures, 6 `Int`; 0 none) and the operation's index within that family. -/
-def primFamilyOp (r : Role) : Nat × Nat := Ix.SpecDigest.nativeOp r
-
-def primFamily (r : Role) : Nat := (primFamilyOp r).1
+/-- The native rule that fires on a role's constant (the row's
+`Ix.SpecDigest.nativeOp`): its family (1 `Nat` operations, 2 `String`,
+3 `BitVec`, 5 decision procedures, 6 `Int`; 0 none) and the operation's index
+within that family. -/
+def primFamilyOp (src : Source) (r : Role) : Nat × Nat := (src.row r).native
 
 /-! ## The file (`IxVM/IxVM/Modules/KernelRoleSpec.lean`) -/
 
-/-- The roles directly named by circuit modules (`role_<name>`). -/
+/-- The roles directly named by circuit modules (`role_<name>`). Each name's
+index is the one the specification bytes give the role's Lean name. -/
 def namedRoles : List Role :=
   [.nat, .natZero, .natSucc, .bool, .boolFalse, .boolTrue, .eq, .eqRefl,
    .listNil, .listCons, .quot, .quotMk, .quotLift, .quotInd, .quotSound,
@@ -413,36 +471,37 @@ set_option maxRecDepth 32768 in
 def kernelRoleSpec : Aiur.Modules.Program Nat := aiur⟦
 "
 
-/-- Render `IxVM/IxVM/Modules/KernelRoleSpec.lean`, whose block is `module KernelRoleSpec { … }`,
-from `Ix.Kernel.Role.all` and `Role.spec`. The schedule rendered is the one
-the digest rendered beside it commits to. -/
-def renderFormalAiur : Except String String := do
-  checkGroups
-  let schedule ← Ix.SpecDigest.Schedule.current
-  let digest := Address.blake3Pure (← Ix.SpecDigest.specBytesWith schedule)
+/-- Render `IxVM/IxVM/Modules/KernelRoleSpec.lean`, whose block is
+`module KernelRoleSpec { … }`, from the source alone. -/
+def renderSource (src : Source) : Except String String := do
+  let c := src.committed
+  let schedule := c.schedule
   -- Equations are keyed `64 * role + index`.
   for r in Role.all do
-    unless (equations r).length < 64 && (eqnsEquations r).length < 64 do
+    unless (opEquations src r).length < 64 && (eqnsEquations src r).length < 64 do
       throw s!"{repr r} has 64 or more equations, which the rendered keys cannot index"
-  let bytes := digest.hash.data.toList.map fun b => s!"UInt8::BYTE_{b.toNat}"
+  let nat ← src.indexOf Role.nat.leanName
+  let eq ← src.indexOf Role.eq.leanName
+  let bytes := src.digest.hash.data.toList.map fun b => s!"UInt8::BYTE_{b.toNat}"
   let mut fns : Array String := #[]
-  fns := fns.push (formalAiurFn "inline fn spec_version() -> Field" s!"      {specVersion}")
+  fns := fns.push (formalAiurFn "inline fn spec_version() -> Field" s!"      {c.specVersion}")
   fns := fns.push (formalAiurFn "inline fn spec_digest() -> Bytes::AddressRef" s!"      (&([{", ".intercalate bytes}]))")
-  fns := fns.push (formalAiurFn "inline fn role_count() -> Field" s!"      {Role.all.length}")
+  fns := fns.push (formalAiurFn "inline fn role_count() -> Field" s!"      {c.rows.length}")
   fns := fns.push (formalAiurFn "inline fn group_count() -> Field" s!"      {schedule.groups.length}")
   fns := fns.push (formalAiurFn "inline fn first_well_founded_group() -> Field"
     s!"      {schedule.firstWellFounded}")
   fns := fns.push (formalAiurFn "inline fn first_equation_group() -> Field"
     s!"      {schedule.firstEquation}")
   for r in namedRoles do
-    fns := fns.push (formalAiurFn s!"inline fn role_{roleName r}() -> Field" s!"      {roleIdx r}")
+    let index ← src.indexOf r.leanName
+    fns := fns.push (formalAiurFn s!"inline fn role_{roleName r}() -> Field" s!"      {index}")
   fns := fns.push (formalAiurFn "fn role_group(r: Field) -> Field"
     (← byRole (fun r => pure (toString (groupOf r schedule.groups))) "0"))
   let mut groupArms := ""
   let mut needArms := ""
   for (g, i) in schedule.groups.zipIdx do
     groupArms := groupArms ++ arm (toString i) (list (g.map (toString ∘ roleIdx)))
-    let needs := groupNeeds g
+    let needs := src.groupNeeds g
     unless needs.isEmpty do
       needArms := needArms ++ arm (toString i) (list (needs.map (toString ∘ roleIdx)))
   fns := fns.push (formalAiurFn "fn group_roles(g: Field) -> Lists::List<Field>"
@@ -450,43 +509,43 @@ def renderFormalAiur : Except String String := do
   fns := fns.push (formalAiurFn "fn group_needs(g: Field) -> Lists::List<Field>"
     s!"      match g \{\n{needArms}{arm "_" "(&(Lists::Node::Nil))"}      }")
   fns := fns.push (formalAiurFn "fn role_spec_kind(r: Field) -> Field"
-    (← byRole (fun r => pure (toString (specKind r))) "0"))
+    (← byRole (fun r => pure (toString (specKind src r))) "0"))
   fns := fns.push (formalAiurFn "fn role_levels(r: Field) -> Field"
-    (← byRole (fun r => do return toString (← levels r)) "0"))
+    (← byRole (fun r => do return toString (← levels src r)) "0"))
   fns := fns.push (formalAiurFn "fn role_member_kind(r: Field) -> Field"
     (← byRole (fun r => do
-      if specKind r != 0 then return "0"
-      return toString (← memberKind r)) "0"))
+      if specKind src r != 0 then return "0"
+      return toString (← memberKind src r)) "0"))
   fns := fns.push (formalAiurFn "fn role_ctor_of(r: Field) -> (Field, Field, Field, Field)"
     (← byRole (fun r => do
-      if specKind r != 0 then return "(0, 0, 0, 0)"
-      if (← memberKind r) != 1 then return "(0, 0, 0, 0)"
-      let (i, c, p, f) ← ctorOf r
+      if specKind src r != 0 then return "(0, 0, 0, 0)"
+      if (← memberKind src r) != 1 then return "(0, 0, 0, 0)"
+      let (i, c, p, f) ← ctorOf src r
       pure s!"({i}, {c}, {p}, {f})") "(0, 0, 0, 0)"))
   fns := fns.push (formalAiurFn "fn role_ctor_count(r: Field) -> Field"
     (← byRole (fun r => do
-      if specKind r != 0 then return "0"
-      if (← memberKind r) != 0 then return "0"
-      return toString (← ctorCount r)) "0"))
+      if specKind src r != 0 then return "0"
+      if (← memberKind src r) != 0 then return "0"
+      return toString (← ctorCount src r)) "0"))
   let dummy := "(&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))))"
   fns := fns.push (formalAiurFn "fn role_type(tbl: KernelRoles::RoleTable, r: Field) -> KernelTypes::KExpr"
-    (← byRole specType dummy))
+    (← byRole (specType src) dummy))
   fns := fns.push (formalAiurFn "fn op_equation_count(r: Field) -> Field"
-    (← byRole (fun r => pure (toString (equations r).length)) "0"))
+    (← byRole (fun r => pure (toString (opEquations src r).length)) "0"))
   fns := fns.push (formalAiurFn "fn op_evidence_is_proof(r: Field) -> Field"
-    (← byRole (fun r => pure (if (equations r).any (!·.1.isEmpty) then "1" else "0")) "0"))
+    (← byRole (fun r => pure (if (opEquations src r).any (!·.1.isEmpty) then "1" else "0")) "0"))
   -- Equation sides and certificates, by role and equation index.
   let mut lhsArms := ""
   let mut rhsArms := ""
   let mut certArms := ""
   for r in Role.all do
-    for ((hyps, l, rhs), k) in (equations r).zipIdx do
+    for ((hyps, l, rhs), k) in (opEquations src r).zipIdx do
       let key := toString (64 * roleIdx r + k)
       if hyps.isEmpty then
-        lhsArms := lhsArms ++ arm key (← closeEquationSide l)
-        rhsArms := rhsArms ++ arm key (← closeEquationSide rhs)
+        lhsArms := lhsArms ++ arm key (← closeEquationSide nat l)
+        rhsArms := rhsArms ++ arm key (← closeEquationSide nat rhs)
       else
-        certArms := certArms ++ arm key (← closeCertificate hyps l rhs)
+        certArms := certArms ++ arm key (← closeCertificate nat eq hyps l rhs)
   fns := fns.push (formalAiurFn "fn op_equation_lhs(tbl: KernelRoles::RoleTable, r: Field, k: Field) -> KernelTypes::KExpr"
     s!"      match 64 * r + k \{\n{lhsArms}{arm "_" dummy}      }")
   fns := fns.push (formalAiurFn "fn op_equation_rhs(tbl: KernelRoles::RoleTable, r: Field, k: Field) -> KernelTypes::KExpr"
@@ -495,18 +554,18 @@ def renderFormalAiur : Except String String := do
     s!"      match 64 * r + k \{\n{certArms}{arm "_" dummy}      }")
   -- Definitions specified by their equations, by role and equation index.
   fns := fns.push (formalAiurFn "fn eqns_equation_count(r: Field) -> Field"
-    (← byRole (fun r => pure (toString (eqnsEquations r).length)) "0"))
+    (← byRole (fun r => pure (toString (eqnsEquations src r).length)) "0"))
   let mut condArms := ""
   let mut eLhsArms := ""
   let mut eRhsArms := ""
   let mut stmtArms := ""
   for r in Role.all do
-    for (e, k) in (eqnsEquations r).zipIdx do
+    for (e, k) in (eqnsEquations src r).zipIdx do
       let key := toString (64 * roleIdx r + k)
-      stmtArms := stmtArms ++ arm key (← closeEqnStatement r e)
+      stmtArms := stmtArms ++ arm key (← closeEqnStatement src eq r e)
       if e.hyps.isEmpty then
-        eLhsArms := eLhsArms ++ arm key (← closeEqnSide r e e.lhs)
-        eRhsArms := eRhsArms ++ arm key (← closeEqnSide r e e.rhs)
+        eLhsArms := eLhsArms ++ arm key (← closeEqnSide src r e e.lhs)
+        eRhsArms := eRhsArms ++ arm key (← closeEqnSide src r e e.rhs)
       else
         condArms := condArms ++ arm key "1"
   fns := fns.push (formalAiurFn "fn eqns_conditional(r: Field, k: Field) -> Field"
@@ -519,10 +578,41 @@ def renderFormalAiur : Except String String := do
     s!"      match 64 * r + k \{\n{stmtArms}{arm "_" dummy}      }")
   fns := fns.push (formalAiurFn "fn role_prim_family(r: Field) -> (Field, Field)"
     (← byRole (fun r => do
-      let (fam, op) := primFamilyOp r
+      let (fam, op) := primFamilyOp src r
       pure s!"({fam}, {op})") "(0, 0)"))
   let body := "module KernelRoleSpec {\n" ++ "\n\n".intercalate fns.toList ++ "\n}"
   pure (leanHeader ++ body ++ "\n⟧\n\nend IxVM.Source\n")
+
+/-- **`KernelRoleSpec.lean`, rebuilt from the specification bytes alone.** -/
+def renderFromBytes (bytes : ByteArray) : Except String String := do
+  renderSource (← Source.ofBytes bytes)
+
+/-- The first line where `a` and `b` differ, for a check's message. -/
+def firstDifference (a b : String) : String := Id.run do
+  let xs := a.splitOn "\n"
+  let ys := b.splitOn "\n"
+  let clip (s : String) : String := String.ofList (s.toList.take 80)
+  for i in [0:max xs.length ys.length] do
+    let x := xs.getD i "<end of file>"
+    let y := ys.getD i "<end of file>"
+    if x != y then
+      return s!"line {i + 1}: expected {clip x}, found {clip y}"
+  return "no line differs"
+
+/-- **The rendering check**: `file` is `KernelRoleSpec.lean` rebuilt from the
+specification bytes `bytes`, or the check fails with the first difference. -/
+def checkRendering (bytes : ByteArray) (file : String) : Except String Unit := do
+  let rendered ← renderFromBytes bytes
+  unless rendered == file do
+    throw s!"KernelRoleSpec.lean is not the rendering of the specification bytes \
+      (digest {Address.blake3Pure bytes}): {firstDifference rendered file}"
+
+/-- Render `IxVM/IxVM/Modules/KernelRoleSpec.lean` from the specification
+digest's bytes, once IxC's specification set and its schedule are checked
+(`checkGroups`). `ix codegen` writes it and `ix codegen --check` compares. -/
+def renderFormalAiur : Except String String := do
+  checkGroups
+  renderFromBytes (← Ix.SpecDigest.specBytes)
 
 /-- An independent wire-shape fixture for Rust's candidate checks. -/
 def renderSpecShapeTsv : String := Id.run do

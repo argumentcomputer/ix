@@ -31,6 +31,7 @@ import Tests.Ix.Kernel.CheckTauCetiReduction
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
+import Tests.Ix.SpecDigestRendering
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Eval
@@ -170,6 +171,9 @@ def registry : List Entry := [
   -- Differential comparison of Address.blake3, Address.blake3Pure, and
   -- Address.admissionHash across multi-chunk boundaries and an .ixe artifact.
   .runner "admission-hash-diff" .primary Tests.Ix.Kernel.AdmissionHashDiff.run,
+  -- `KernelRoleSpec.lean` rebuilt from the specification digest's bytes; mutated
+  -- bytes or a mutated file are refused (`IxVM.RoleSpecGen.checkRendering`).
+  .runner "spec-digest-rendering" .primary Tests.Ix.SpecDigestRendering.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -276,6 +280,7 @@ def required : List (String × String) := [
   ("kernel-record-check", "primary"),
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
+  ("spec-digest-rendering", "primary"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),

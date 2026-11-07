@@ -23,11 +23,13 @@ together with `specVersion` or `encodingVersion`.
 
 IxVM holds the digest as a literal (`KernelRoleSpec::spec_digest`) beside the
 tables `IxVM.RoleSpecGen` renders from the specifications
-(`IxVM/IxVM/Modules/KernelRoleSpec.lean`). Every value those tables hold is a
-function of `specBytes`, so a circuit that validates roles in another way
-carries another digest. Beyond the specifications, the encoding therefore
-holds what the circuit reads off a role's identity, and the order it
-validates the roles in:
+(`IxVM/IxVM/Modules/KernelRoleSpec.lean`). The renderer reads nothing but
+`specBytes`, read back by `Committed.ofBytes` (`Ix/SpecDigest/Decode.lean`),
+so every value those tables hold is a function of the bytes, a circuit that
+validates roles in another way carries another digest, and `ix codegen
+--check` fails when the rendered file and the digest drift apart. Beyond the
+specifications, the encoding therefore holds what the circuit reads off a
+role's identity, and the order it validates the roles in:
 
 - each role's name (`Role.leanName`), so the index of every role the
   circuit names (`role_nat`, …) is fixed;
@@ -186,9 +188,6 @@ def nameParts : Ix.Kernel.Name → Except String (List String)
   | .str p s => return (← nameParts p) ++ [s]
   | .num .. => throw "a role name with a numeric component"
 
-/-- A role's name (`Role.leanName`). -/
-def roleName (r : Role) : EncM Unit := do list (← nameParts r.leanName) str
-
 /-- A role key, by the role's index; any other key is refused. -/
 def key : Key md → EncM Unit
   | .role r => index r
@@ -294,19 +293,64 @@ def spec : Spec md → EncM Unit
     list eqs fun e => do
       list e.vars expr; list e.hyps expr; level e.level; expr e.carrier; expr e.lhs; expr e.rhs
 
-/-- One role's row. -/
-def role (r : Role) : EncM Unit := do
-  index r
-  roleName r
-  spec (r.spec (md := .anon))
-  list r.block index
-  list r.deps index
-  bool r.usedImplicitly
-  bool (inert r)
-  nat (quotKind r)
-  let (family, op) := nativeOp r
-  nat family
-  nat op
+/-! ## The committed data -/
+
+/-- **One role's row**: what the digest commits to about the role at index `i`
+of `Role.all`. A decoded row (`Ix.SpecDigest.Decode`) holds `Role.all[j]` for
+every index `j` it reads. -/
+structure Row where
+  /-- `Role.leanName`'s components, outermost first. -/
+  name : List String
+  spec : Spec .anon
+  block : List Role
+  deps : List Role
+  implicit : Bool
+  inert : Bool
+  quotKind : Nat
+  /-- The native rule's family and operation (`nativeOp`). -/
+  native : Nat × Nat
+  deriving Inhabited
+
+/-- **What the digest commits to**: the two versions, every role's row in
+`Role.all` order, and the validation schedule. `encode` writes it, and
+`Committed.ofBytes` (`Ix/SpecDigest/Decode.lean`) reads it back. -/
+structure Committed where
+  specVersion : Nat
+  encodingVersion : Nat
+  rows : List Row
+  schedule : Schedule
+  deriving Inhabited
+
+/-- Role `r`'s row, from IxC's specification set and the tables above. -/
+def Row.ofRole (r : Role) : Except String Row := do
+  return { name := ← nameParts r.leanName, spec := r.spec (md := .anon), block := r.block,
+           deps := r.deps, implicit := r.usedImplicitly, inert := Ix.SpecDigest.inert r,
+           quotKind := Ix.SpecDigest.quotKind r, native := Ix.SpecDigest.nativeOp r }
+
+/-- The specification set, validated under the schedule `s`. -/
+def Committed.withSchedule (s : Schedule) : Except String Committed := do
+  return { specVersion := Ix.Kernel.specVersion, encodingVersion := Ix.SpecDigest.encodingVersion,
+           rows := ← Role.all.mapM Row.ofRole, schedule := s }
+
+/-- **The data the digest commits to today**: the specification set under the
+current schedule (`Schedule.current`, checked). -/
+def Committed.current : Except String Committed := do
+  Committed.withSchedule (← Schedule.current)
+
+/-! ## The bytes -/
+
+/-- One role's row, at its index. -/
+def row (i : Nat) (w : Row) : EncM Unit := do
+  nat i
+  list w.name str
+  spec w.spec
+  list w.block index
+  list w.deps index
+  bool w.implicit
+  bool w.inert
+  nat w.quotKind
+  nat w.native.1
+  nat w.native.2
 
 /-- A validation schedule: each group as its roles, then the boundaries. -/
 def schedule (s : Schedule) : EncM Unit := do
@@ -314,22 +358,27 @@ def schedule (s : Schedule) : EncM Unit := do
   nat s.firstWellFounded
   nat s.firstEquation
 
+/-- **The canonical bytes of `c`.** -/
+def encode (c : Committed) : Except String ByteArray := do
+  let act : EncM Unit := do
+    nat c.specVersion
+    nat c.encodingVersion
+    nat c.rows.length
+    for (w, i) in c.rows.zipIdx do row i w
+    schedule c.schedule
+  let ((), bytes) ← act.run .empty
+  pure bytes
+
 /-- The canonical bytes of the specification set validated under `s`.
 `specBytes` takes the current, checked schedule; any other schedule gives
 other bytes. -/
 def specBytesWith (s : Schedule) : Except String ByteArray := do
-  let act : EncM Unit := do
-    nat specVersion
-    nat encodingVersion
-    list Role.all role
-    schedule s
-  let ((), bytes) ← act.run .empty
-  pure bytes
+  encode (← Committed.withSchedule s)
 
-/-- **The specification set's canonical bytes**, under the current schedule
-(`Schedule.current`, checked). -/
+/-- **The specification set's canonical bytes**: `Committed.current`,
+encoded. -/
 def specBytes : Except String ByteArray := do
-  specBytesWith (← Schedule.current)
+  encode (← Committed.current)
 
 /-- **The specification digest**: BLAKE3 of `specBytes`. -/
 def specDigest : Except String Address := do

@@ -128,7 +128,7 @@ structure Schedule where
   groups : List (List Role)
   firstWellFounded : Nat
   firstEquation : Nat
-  deriving BEq
+  deriving BEq, Inhabited
 
 /-- The schedule of `orderedGroups`, with its boundaries, once the order is
 checked (`checkOrder`, `firstWellFoundedGroup`, `firstEquationGroup`). -/

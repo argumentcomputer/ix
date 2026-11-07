@@ -65,7 +65,8 @@ entrypoints in `IxVM.lean`. `IxVM.source` (`IxVM/IxVM/Program.lean`) composes
 them in a fixed order, and `IxVM.program` adds the shared libraries over
 Goldilocks. `KernelRoleSpec.lean` is the one rendered module: `lake exe ix
 codegen` writes it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`),
-and `lake exe ix codegen --check` fails when it is stale.
+reading only the specification digest's bytes, and `lake exe ix codegen
+--check` fails when it is stale.
 
 `MultiStark/MultiStark/Modules/*.lean` hold proof and system decoding,
 transcript, hash adapters, Merkle verification, PCS, the STARK verifier, and

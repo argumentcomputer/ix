@@ -1,6 +1,10 @@
 /-
   `ix codegen`: render the shared role specification shape fixture derived from
-  the verified IxC specification data.
+  the verified IxC specification data, and IxVM's `KernelRoleSpec.lean`, which
+  is rebuilt from the specification digest's bytes alone
+  (`IxVM.RoleSpecGen.renderFromBytes`). `--check` fails when a file on disk
+  differs, so the rendered circuit specification and the digest cannot drift
+  apart; `tools/ixvm/check-formal.sh` runs it.
 -/
 module
 public import Cli
@@ -24,6 +28,8 @@ def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
         IO.println s!"[codegen --check] {path} up to date"
       else
         IO.eprintln s!"[codegen --check] {path} STALE: re-run `ix codegen` and commit the result."
+        if let some text := existing then
+          IO.eprintln s!"[codegen --check] {path}: {IxVM.RoleSpecGen.firstDifference contents text}"
         ok := false
     else
       IO.FS.writeFile path contents

@@ -54,9 +54,12 @@ Claim/Proof format 4, the `.ixe` envelope, or IxVM public inputs.
 Unknown tags, versions, object formats, truncations and trailing bytes refuse.
 The statement address is BLAKE3 of all canonical envelope bytes. Verification
 derives the current `Ix.SpecDigest.specDigest`; a stale proposed digest cannot
-change the checker's specification. Its existing 8696-byte/version-2 frozen
-guards live in `Ix.SpecDigest.Audit`, imported by both certificate and host
-audits. The spec encoder and frozen values are unchanged.
+change the checker's specification. Its frozen value (19427 bytes;
+specification version 3, encoding version 2) is guarded in
+`Ix.SpecDigest.Audit`, imported by both certificate and host audits. IxVM holds
+the same digest beside its rendered role specifications
+(`KernelRoleSpec.lean`), which `ix codegen` rebuilds from the digest's bytes
+alone and `ix codegen --check` compares on every PR (`docs/kernel.md`).
 
 The Rust module mirrors only the host codec and checks independent shared
 vectors. Rust decoding alone provides no semantic admission. These target
