@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.len() < 5 {
     return Err(
-      "usage: compare PACKAGE INPUT OUTPUT SAMPLES [--ungrouped] [--prove] [--counts-only] [--groups FILE]"
+      "usage: compare PACKAGE INPUT OUTPUT SAMPLES [--ungrouped] [--prove] [--counts-only] [--groups FILE] [--parameters LOG_BLOWUP,QUERIES,COMMIT_POW,QUERY_POW]"
         .into(),
     );
   }
@@ -68,7 +68,27 @@ fn main() -> Result<(), Box<dyn Error>> {
   let prepare = start.elapsed().as_secs_f64();
   let start = Instant::now();
   let plan = TracePlan::new(&program, package.trace)?;
-  let backend = Backend::for_batch(&plan, Parameters::default())?;
+  let parameters = match cli.iter().position(|a| a == "--parameters") {
+    None => Parameters::default(),
+    Some(at) => {
+      let values: Vec<usize> = cli
+        .get(at + 1)
+        .ok_or("missing parameters")?
+        .split(',')
+        .map(str::parse)
+        .collect::<Result<_, _>>()?;
+      let [log_blowup, num_queries, commit_pow, query_pow] = values[..] else {
+        return Err("expected four comma-separated parameters".into());
+      };
+      Parameters {
+        log_blowup,
+        num_queries,
+        commit_proof_of_work_bits: commit_pow,
+        query_proof_of_work_bits: query_pow,
+      }
+    },
+  };
+  let backend = Backend::for_batch(&plan, parameters)?;
   let setup = start.elapsed().as_secs_f64();
   let mut times = vec![];
   let mut circuits = vec![];
@@ -120,7 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
           shape.stage2_width,
           shape.quotient_degree,
           matrix.height(),
-          1
+          parameters.log_blowup
         ));
         circuits.push(row);
       }
@@ -141,7 +161,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         Retention::Retain,
       )?;
       let seconds = start.elapsed().as_secs_f64();
-      proof_report = json!({"prove_including_trace_seconds":seconds,"bytes":proof.to_bytes()?.len(),"verified":true});
+      let start = Instant::now();
+      backend.verify_batch(&invocation.entry, &args, &output, &proof)?;
+      let verify = start.elapsed().as_secs_f64();
+      proof_report = json!({"prove_including_trace_seconds":seconds,"verify_seconds":verify,"bytes":proof.to_bytes()?.len(),"shards":proof.proofs.len(),"verified":true});
       if cli.iter().any(|a| a == "--save-proof") {
         let directory = std::path::PathBuf::from(format!("{}.inner", cli[3]));
         std::fs::create_dir_all(&directory)?;
@@ -163,7 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       cached_record = Some(record);
     }
   }
-  let report = json!({"backend":"new-bytecode","thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"reused_execution":reuse_execution,"initial_execute_seconds":initial_execute,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
+  let report = json!({"backend":"new-bytecode","parameters":parameters,"thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"reused_execution":reuse_execution,"initial_execute_seconds":initial_execute,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
   std::fs::write(&cli[3], serde_json::to_vec_pretty(&report)?)?;
   println!("Wrote {}", cli[3]);
   Ok(())

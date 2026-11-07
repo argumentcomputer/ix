@@ -345,17 +345,19 @@ mod tests {
     ]))?;
     let program = package.program.check_field::<Val>()?;
     let plan = TracePlan::new(&program, package.trace)?;
-    let params = Parameters { log_blowup: 2, num_queries: 2 };
-    let backend = Backend::for_batch(&plan, params)?;
-    let cp = CommitmentParameters { log_blowup: 2, cap_height: 0 };
-    let fp = FriParameters {
-      log_final_poly_len: 0,
-      max_log_arity: 1,
+    // Toy parameters keep the verifier circuit small; production keys must
+    // meet the security floor.
+    let params = Parameters {
+      log_blowup: 2,
       num_queries: 2,
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     };
-    let key = AiurVerifyingKey::from_bytes(&backend.verifying_key_bytes()?)?;
+    let backend = Backend::for_batch_below_floor(&plan, params)?;
+    let (cp, fp) = (params.commitment(), params.fri());
+    let bytes = backend.verifying_key_bytes()?;
+    assert!(AiurVerifyingKey::from_bytes(&bytes).is_err());
+    let key = AiurVerifyingKey::from_bytes_below_floor(&bytes)?;
     let fixed = FixedRoot::new(vec![4, 4, 2, 1], vec![(2, 3)], 4)?;
     for logs in [vec![4, 4, 2, 1, 1], vec![4, 4, 3, 1]] {
       let invalid = FixedRoot::new(logs, vec![(2, 3)], 4)?;
@@ -441,8 +443,9 @@ mod tests {
         ..Default::default()
       }),
     );
-    let key =
-      AiurVerifyingKey::from_bytes(&stark_key::to_bytes(&system, cp, fp))?;
+    let key = AiurVerifyingKey::from_bytes_below_floor(&stark_key::to_bytes(
+      &system, cp, fp,
+    ))?;
     let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2)?;
     let config = || {
       GoldilocksBlake3Config::new(

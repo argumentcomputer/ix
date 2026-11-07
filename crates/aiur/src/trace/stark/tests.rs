@@ -6,6 +6,7 @@ use crate::{
   trace::TraceArtifact,
 };
 use serde_json::{Value as Json, json};
+mod parameters;
 mod partition;
 
 fn f() -> Json {
@@ -24,7 +25,13 @@ fn writes(n: usize) -> Vec<Json> {
   (0..n).map(|i| json!({"column":i,"source":i,"guard":k(1)})).collect()
 }
 fn parameters() -> Parameters {
-  Parameters { log_blowup: 1, num_queries: 32 }
+  // The floor (220 conjectured bits) without grinding, slow in debug builds.
+  Parameters {
+    log_blowup: 1,
+    num_queries: 220,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 0,
+  }
 }
 
 #[cfg(not(feature = "cuda"))]
@@ -873,10 +880,10 @@ fn checks_field_parameters_domains_and_shapes_before_proving() {
   let (program, artifact) = identity(false);
   let plan = TracePlan::new(&program, activate(artifact.clone())).unwrap();
   assert!(
-    Backend::new(&plan, Parameters { log_blowup: 0, num_queries: 32 }).is_err()
+    Backend::new(&plan, Parameters { log_blowup: 0, ..parameters() }).is_err()
   );
   assert!(
-    Backend::new(&plan, Parameters { log_blowup: 1, num_queries: 0 }).is_err()
+    Backend::new(&plan, Parameters { num_queries: 0, ..parameters() }).is_err()
   );
   let backend = Backend::new(&plan, parameters()).unwrap();
   assert!(backend.check_shape(&[true], &[32]).is_err());

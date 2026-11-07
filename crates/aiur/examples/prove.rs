@@ -46,6 +46,12 @@ fn main() -> Result<(), Box<dyn Error>> {
   if let Ok(n) = std::env::var("AIUR_STARK_QUERIES") {
     parameters.num_queries = n.parse()?;
   }
+  if let Ok(n) = std::env::var("AIUR_STARK_COMMIT_POW") {
+    parameters.commit_proof_of_work_bits = n.parse()?;
+  }
+  if let Ok(n) = std::env::var("AIUR_STARK_QUERY_POW") {
+    parameters.query_proof_of_work_bits = n.parse()?;
+  }
   eprintln!("Setting up circuits and committing fixed tables...");
   let start = Instant::now();
   let backend = Backend::new(&plan, parameters)?;

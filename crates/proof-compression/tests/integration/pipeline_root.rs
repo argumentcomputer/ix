@@ -28,8 +28,22 @@ fn root_system() -> (
   root_system_with_blowup(1)
 }
 
+/// Two queries keep the compression circuits small. Such toy keys are below
+/// the security floor, so only `from_bytes_below_floor` decodes them.
 fn root_system_with_blowup(
   log_blowup: usize,
+) -> (
+  System<GoldilocksBlake3Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  CommitmentParameters,
+  FriParameters,
+) {
+  root_system_with(log_blowup, 2)
+}
+
+fn root_system_with(
+  log_blowup: usize,
+  num_queries: usize,
 ) -> (
   System<GoldilocksBlake3Config>,
   multi_stark::system::ProverKey<GoldilocksBlake3Config>,
@@ -40,7 +54,7 @@ fn root_system_with_blowup(
   let fp = FriParameters {
     log_final_poly_len: 0,
     max_log_arity: 1,
-    num_queries: 2,
+    num_queries,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
   };
@@ -65,10 +79,16 @@ fn root_system_with_blowup(
 fn different_root_statements_and_trace_shard_counts() {
   let (system, pk, cp, fp) = root_system();
   let key_bytes = to_bytes(&system, cp, fp);
-  let key = AiurVerifyingKey::from_bytes(&key_bytes).unwrap();
+  assert!(AiurVerifyingKey::from_bytes(&key_bytes).is_err());
+  let key = AiurVerifyingKey::from_bytes_below_floor(&key_bytes).unwrap();
+  // The production entry point decodes keys with the floor: 4 x 55 = 220
+  // conjectured bits, the fewest queries that reach it.
+  let (floor_system, floor_pk, floor_cp, floor_fp) = root_system_with(4, 55);
+  let floor_key_bytes = to_bytes(&floor_system, floor_cp, floor_fp);
+  let floor_key = AiurVerifyingKey::from_bytes(&floor_key_bytes).unwrap();
   for (seed, shards) in [(7, 1), (31, 2)] {
     let expected: Vec<_> = (0..18).map(|i| Val::from_u32(seed + i)).collect();
-    let inputs = || {
+    let inputs = |system: &System<GoldilocksBlake3Config>| {
       (0..shards)
         .map(|i| {
           let mut row = expected.clone();
@@ -78,23 +98,30 @@ fn different_root_statements_and_trace_shard_counts() {
             claims: if i == 0 { vec![expected.clone()] } else { vec![] },
             witness: SystemWitness::from_stage_1(
               vec![RowMajorMatrix::new(row, 19)],
-              &system,
+              system,
             ),
           }
         })
         .collect()
     };
-    let proof = system.prove_batch(&pk, inputs(), vec![]);
+    let proof = system.prove_batch(&pk, inputs(&system), vec![]);
     let stage =
       prepare_root(&key, &proof, &expected, Default::default()).unwrap();
     assert_eq!(stage.public_values(), expected);
+    let floor_proof =
+      floor_system.prove_batch(&floor_pk, inputs(&floor_system), vec![]);
+    let floor_stage =
+      prepare_root(&floor_key, &floor_proof, &expected, Default::default())
+        .unwrap();
     check_root_directory(
-      &key_bytes,
-      &proof,
+      &floor_key_bytes,
+      &floor_proof,
       &expected,
       shards,
-      stage.circuit().stats(),
+      floor_stage.circuit().stats(),
     );
+    drop(floor_stage);
+    check_root_rejects_below_floor(&key_bytes, &proof, &expected, shards);
     let mut wrong = expected.clone();
     wrong[17] += Val::ONE;
     assert!(prepare_root(&key, &proof, &wrong, Default::default()).is_err());
@@ -107,7 +134,7 @@ fn different_root_statements_and_trace_shard_counts() {
       multi_stark::batch::BatchMessage::push(vec![Val::ONE]),
       multi_stark::batch::BatchMessage::pull(vec![Val::ONE]),
     ];
-    let bad = system.prove_batch(&pk, inputs(), messages);
+    let bad = system.prove_batch(&pk, inputs(&system), messages);
     system.verify_batch(&bad).unwrap();
     assert!(prepare_root(&key, &bad, &expected, Default::default()).is_err());
     let insufficient =
@@ -141,7 +168,8 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   use multi_stark::plonkish::CircuitBuilder;
 
   let (system, pk, cp, fp) = root_system_with_blowup(2);
-  let key = AiurVerifyingKey::from_bytes(&to_bytes(&system, cp, fp))?;
+  let key =
+    AiurVerifyingKey::from_bytes_below_floor(&to_bytes(&system, cp, fp))?;
   let expected: Vec<_> = (0..18).map(|i| Val::from_u32(41 + i)).collect();
   let mut row = expected.clone();
   row.push(Val::ONE);
@@ -300,12 +328,50 @@ fn check_root_directory(
   result.unwrap();
 }
 
+/// The production entry point refuses a root key below the security floor.
+fn check_root_rejects_below_floor(
+  key: &[u8],
+  proof: &AiurProof,
+  expected: &[Val],
+  shards: usize,
+) {
+  use p3_field::PrimeField64;
+  use std::fs;
+
+  let directory = std::env::temp_dir()
+    .join(format!("ix-root-below-floor-{}-{shards}", std::process::id()));
+  fs::create_dir(&directory).unwrap();
+  let result = (|| -> Result<String, Box<dyn std::error::Error>> {
+    let input = directory.join("input");
+    fs::create_dir(&input)?;
+    fs::write(input.join("root-vk.bin"), key)?;
+    fs::write(input.join("root-proof.bin"), proof.to_bytes()?)?;
+    let mut claims = 1u64.to_le_bytes().to_vec();
+    claims.extend((expected.len() as u64).to_le_bytes());
+    for value in expected {
+      claims.extend(value.as_canonical_u64().to_le_bytes());
+    }
+    fs::write(input.join("root-claims.bin"), claims)?;
+    let output = directory.join("output");
+    Ok(
+      ix_proof_compression::pipeline::check_root(&input, &output)
+        .err()
+        .ok_or("accepted a key below the security floor")?
+        .to_string(),
+    )
+  })();
+  fs::remove_dir_all(directory).unwrap();
+  let error = result.unwrap();
+  assert!(error.contains("security floor"), "{error}");
+}
+
 /// Runs all real compression circuits; expensive because it includes two KZG provers.
 #[test]
 #[ignore = "complete compression chain, including recursive KZG proving"]
 fn complete_compression_chain() -> Result<(), Box<dyn std::error::Error>> {
   let (system, pk, cp, fp) = root_system();
-  let key = AiurVerifyingKey::from_bytes(&to_bytes(&system, cp, fp))?;
+  let key =
+    AiurVerifyingKey::from_bytes_below_floor(&to_bytes(&system, cp, fp))?;
   let height = 1 << 22;
   let srs =
     Arc::new(Srs::unsafe_dev_setup(height, b"complete-compression-test"));

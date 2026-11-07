@@ -12,7 +12,7 @@ use multi_stark::{
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   system::{CircuitInputs, System, SystemWitness},
-  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val},
+  types::{GoldilocksBlake3Config, Val},
 };
 use std::{
   error::Error,
@@ -39,16 +39,11 @@ fn write_json(
   Ok(())
 }
 
+/// A small proof under the production parameters, so the recursive verifier
+/// is tested on the query proof of work and the full query count.
 fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
   std::fs::create_dir_all(dir)?;
-  let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
-  let fp = FriParameters {
-    log_final_poly_len: 0,
-    max_log_arity: 1,
-    num_queries: 16,
-    commit_proof_of_work_bits: 0,
-    query_proof_of_work_bits: 0,
-  };
+  let (cp, fp) = (Parameters::DEFAULT.commitment(), Parameters::DEFAULT.fri());
   let x = Expr::main(0);
   let y = Expr::main(1);
   let one = Expr::constant(Val::ONE);
@@ -92,12 +87,15 @@ fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
-  let mode = cli.get(1).ok_or("usage: stark-verifier fixture DIR | key PACKAGE DIR | execute|test|prove|verify PACKAGE INPUT [OUTPUT] [SHARD_ROWS] [RETENTION]")?;
+  let mode = cli.get(1).ok_or("usage: stark-verifier fixture DIR | key PACKAGE DIR | statistics KEY PROOF | execute|test|prove|verify PACKAGE INPUT [OUTPUT] [SHARD_ROWS] [RETENTION]")?;
   if mode == "fixture" {
     return fixture(Path::new(cli.get(2).ok_or("missing directory")?));
   }
   if mode == "ranges" || mode == "inspect" {
     return ranges(&cli);
+  }
+  if mode == "statistics" {
+    return statistics(&cli);
   }
   if !["execute", "plan", "test", "prove", "verify", "key", "cases"]
     .contains(&mode.as_str())
@@ -417,5 +415,53 @@ fn ranges(cli: &[String]) -> Result<(), Box<dyn Error>> {
     )?;
   }
   std::fs::write(out.join("ranges.json"), serde_json::to_vec_pretty(&specs)?)?;
+  Ok(())
+}
+
+/// Instance statistics of a proof under its key, as JSON for
+/// `lake exe fri-security`: the key's parameters and, for every active circuit
+/// of every shard, its trace height and the widths, constraints and lookups
+/// the soundness bounds need. Shards are separate FRI instances, so listing
+/// each one's circuits also charges the union bound over shards.
+fn statistics(cli: &[String]) -> Result<(), Box<dyn Error>> {
+  use aiur::trace::stark::{BatchProof, VerifyingKey};
+  let key = VerifyingKey::from_bytes(&std::fs::read(
+    cli.get(2).ok_or("usage: stark-verifier statistics KEY PROOF")?,
+  )?)?;
+  let bytes = std::fs::read(cli.get(3).ok_or("missing proof")?)?;
+  let proof = BatchProof::from_bytes(&bytes)?;
+  if proof.to_bytes()? != bytes {
+    return Err("noncanonical or trailing proof bytes".into());
+  }
+  let (cp, fp) = (key.commitment_parameters(), key.fri_parameters());
+  let mut circuits = vec![];
+  for header in &proof.preamble.headers {
+    let mut heights = header.log_degrees.iter();
+    for (circuit, &active) in key.system().circuits.iter().zip(&header.active) {
+      if !active {
+        continue;
+      }
+      let log = heights.next().ok_or("missing trace height")?;
+      circuits.push(serde_json::json!({
+        "main": circuit.main_width, "pre": circuit.preprocessed_width,
+        "height": 1u64 << log, "lookups": circuit.num_lookups,
+        "stage2": circuit.stage_2_width, "group": circuit.lookup_group_size,
+        "max_degree": circuit.max_constraint_degree,
+        "zeros": circuit.graph.zeros.len(),
+        "max_lookup_width": circuit.graph.lookups.iter()
+          .map(|l| l.args.len()).max().unwrap_or(0),
+      }));
+    }
+  }
+  println!(
+    "{}",
+    serde_json::json!({
+      "log_blowup": cp.log_blowup, "cap": cp.cap_height,
+      "num_queries": fp.num_queries, "commit_pow": fp.commit_proof_of_work_bits,
+      "query_pow": fp.query_proof_of_work_bits, "max_log_arity": fp.max_log_arity,
+      "shards": proof.proofs.len(), "proof_bytes": bytes.len(),
+      "circuits": circuits,
+    })
+  );
   Ok(())
 }
