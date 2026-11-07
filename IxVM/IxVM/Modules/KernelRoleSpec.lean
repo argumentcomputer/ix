@@ -2,6 +2,10 @@ import Aiur.Modules.Frontend
 
 /-! # IxVM module `KernelRoleSpec`
 
+Rendered from IxC's role specifications (`Ix.Kernel.Role.spec`) by
+`IxVM.RoleSpecGen.renderFormalAiur`; do not edit. `lake exe ix codegen` writes
+this file, and `lake exe ix codegen --check` fails when it is stale.
+
 Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `IxVM.source`
 (`IxVM/IxVM/Program.lean`) composes the modules. -/
 
