@@ -248,16 +248,19 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
   return tests
 
 def main (args : List String) : IO Unit := do
-  let started ← IO.mkRef false
+  -- The sibling signals through a promise, not an `IO.Ref`: a `get` on a ref
+  -- shared between threads writes back the value it read over a concurrent
+  -- `set` (`lean_st_ref_get`), so a polling loop can miss the signal forever.
+  let started : IO.Promise Unit ← IO.Promise.new
   let completed ← IO.mkRef false
   let failed ← try
       let _ ← FormalAiur.boundedMap 2 #[false, true] fun _ sibling => do
         if sibling then
-          started.set true
+          started.resolve ()
           IO.sleep 30
           completed.set true
         else
-          while !(← started.get) do IO.sleep 1
+          let _ ← IO.wait started.result?
           throw (IO.userError "intentional scheduler failure")
       pure false
     catch _ => pure true
