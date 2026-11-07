@@ -453,15 +453,19 @@ structure Stages where
   /-- Compress the aggregate root to KZG (implies `prove`). -/
   compress : Bool := false
 
+/-- The shards a proven constant's env is split into: aggregation needs a
+    join, so one shard has no root. -/
+def proveShards : Nat := 2
+
 /-- Prove a constant end to end, after its execution row: extract it into
-    a one-constant env and shard that (setup, unmeasured), prove every
-    shard and aggregate them into a root on the controller (`prove-*`),
-    verify the root (`verify-time`), and with `compress` compress the root
-    to KZG with development parameters (`compress-*`) and verify that
-    (`compress-verify-time`). Each stage is its own spawn, timed by its
-    wall clock and the texray tree sampler. A kill marks the row `oom` or
-    `crash`, keeping what was measured; returns whether every stage
-    succeeded. -/
+    a one-constant env and split that into `proveShards` shards (setup,
+    unmeasured), prove them and aggregate them into a root on the
+    controller (`prove-*`), verify the root (`verify-time`), and with
+    `compress` compress the root to KZG with development parameters
+    (`compress-*`) and verify that (`compress-verify-time`). Each stage is
+    its own spawn, timed by its wall clock and the texray tree sampler. A
+    kill marks the row `oom` or `crash`, keeping what was measured; returns
+    whether every stage succeeded. -/
 def runIxvmProve (ix ixe out name : String) (stages : Stages) : IO Bool := do
   let slug := String.ofList (name.toList.map fun c => if c.isAlphanum then c else '_')
   let dir := s!"{out}.prove/{slug}"
@@ -475,11 +479,13 @@ def runIxvmProve (ix ixe out name : String) (stages : Stages) : IO Bool := do
     return false
   if !(← stage "extract" (← runTool ix #["shard", "extract", ixe, "--consts", name, "--out", one])) then
     return false
-  if !(← stage "shard" (← runTool ix #["shard", one, "--shards", "1", "--out", manifest])) then
+  if !(← stage "shard" (← runTool ix #["shard", one, "--shards", toString proveShards, "--out", manifest])) then
     return false
+  -- One lane per shard: each lane reserves its prover workspace up front
+  -- and proves with every core, so a lane with no shard only holds memory.
   let (exit, seconds, peak, stdout) ← runCaptured ix
     #["prove", "--ixe", one, "--ixes", manifest, "--aggregate", "--trace-shards",
-      "--jobs", "0", "--fresh"]
+      "--jobs", toString proveShards, "--fresh"]
   if !(← stage "prove" exit) then return false
   let some root := lastAddress stdout
     | IO.eprintln s!"[bench] prove printed no root address for '{name}'"; return false
