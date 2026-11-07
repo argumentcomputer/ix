@@ -6,6 +6,8 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
+public import Ix.Benchmark.Results
+public import Ix.TracingTexray
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
@@ -14,15 +16,6 @@ The generic Aiur Lean library does not acquire application-specific FFI. -/
 public section
 namespace Ix.Cli.FormalAiur
 open Lean IxVM.ClaimHarness
-
-def selected (p : Cli.Parsed) : IO Bool := do
-  if p.hasFlag "formal" && p.hasFlag "legacy" then
-    throw (IO.userError "--formal and --legacy cannot be combined")
-  if p.hasFlag "legacy" && p.hasFlag "gpu-device" then
-    throw (IO.userError "--gpu-device selects the new backend; legacy device selection uses its existing environment settings")
-  if p.hasFlag "legacy" then
-    throw (IO.userError "--legacy has been retired; use the default certified Aiur backend")
-  return true
 
 def commandStatus (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
     IO UInt32 := do
@@ -35,12 +28,21 @@ def command (cmd : String) (args : Array String) (cwd : Option System.FilePath :
   let code ← commandStatus cmd args cwd
   unless code == 0 do throw (IO.userError s!"{cmd} failed with status {code}")
 
-/-- The checkout this `ix` belongs to. The default backend's exporters, Rust
-hosts and artifact cache live there, so commands work from any directory.
-`IX_ROOT` overrides it; otherwise an executable at `<root>/.lake/build/bin`
-identifies it, falling back to the working directory. -/
+/-- Whether `dir` is an Ix checkout: it holds the IxVM package. -/
+private def isCheckout (dir : System.FilePath) : IO Bool :=
+  (dir / "IxVM" / "lakefile.lean").pathExists
+
+/-- The checkout this `ix` belongs to. The backend's exporters, Rust hosts and
+artifact cache live there, so commands work from any directory. In order:
+`IX_ROOT`, which must name a checkout; the checkout whose `.lake/build/bin`
+holds this executable; the working directory, if it is a checkout. An
+installed or packaged `ix` outside a checkout matches none of these and fails
+here, before any `lake` or `cargo` runs. -/
 def repoRoot : IO System.FilePath := do
-  if let some root ← IO.getEnv "IX_ROOT" then return root
+  if let some root ← IO.getEnv "IX_ROOT" then
+    unless ← isCheckout root do
+      throw (IO.userError s!"IX_ROOT={root} is not an Ix checkout (it has no IxVM/lakefile.lean)")
+    return root
   let app ← IO.appPath
   let root := do
     let bin ← app.parent
@@ -48,8 +50,15 @@ def repoRoot : IO System.FilePath := do
     let lake ← build.parent
     lake.parent
   if let some root := root then
-    if ← (root / "IxVM" / "lakefile.lean").pathExists then return root
-  return "."
+    if ← isCheckout root then return root
+  let cwd ← IO.currentDir
+  if ← isCheckout cwd then return cwd
+  throw (IO.userError s!"cannot find the Ix checkout that builds the Aiur artifacts and Rust \
+    hosts: {app} is not in a checkout's .lake/build/bin, and the working directory is not a \
+    checkout. Set IX_ROOT to an Ix checkout of the same revision as this ix, or pass prebuilt \
+    inputs: --aiur-artifact or IX_AIUR_ARTIFACT (and --aggr-artifact or IX_AGGR_ARTIFACT for \
+    aggregation) for the exported artifacts, and IX_AIUR_HOST, IX_PROVER_HOST and IX_STARK_HOST \
+    for the Rust hosts.")
 
 /-- Read an ordered `.sources` manifest. Paths are relative to the manifest;
 blank lines and `#` comments are ignored. -/
@@ -87,7 +96,8 @@ def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath m
   IO.FS.createDirAll directory
   let path := directory / s!"{target}-{digest}.json"
   unless ← path.pathExists do
-    IO.eprintln s!"[aiur] exporting the certified {target} artifact to {path}; this runs once \
+    IO.eprintln s!"[aiur] compiling {target} with the verified Aiur compiler and exporting the \
+      artifact to {path}; this runs once \
       per source revision and takes several minutes (`ix prepare` does it ahead of time)"
     let pid ← IO.Process.getPID
     let stamp ← IO.monoNanosNow
@@ -333,7 +343,7 @@ def readProofFileOrStore (pathOrHex : String) : IO Ixon.Proof := do
       throw (IO.userError s!"cannot find proof file or store address '{pathOrHex}'")
   IO.ofExcept (Ixon.Proof.de bytes)
 
-def shardIndex : IO System.FilePath := StoreIO.toIO (Store.cacheDir "formal-shard-proofs")
+def shardIndex : IO System.FilePath := ShardProofIndex.indexDir
 
 structure JobResult where
   code : UInt32 := 0
@@ -361,13 +371,18 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
   try
     let .leanW witness := target | throw (IO.userError "formal backend needs a stream witness")
     let digest := Address.blake3 (Ix.Claim.ser claim)
-    if mode == "prove" && (resume || p.hasFlag "skip-proven") && !p.hasFlag "no-index" then
+    -- A verified proof of exactly this claim settles it: proving reuses it,
+    -- and checking (`ix shard refine`) keeps its leaf rather than orphan it.
+    let lookup := (resume && mode == "prove" || p.hasFlag "skip-proven") &&
+      !p.hasFlag "no-index" && !p.hasFlag "fresh"
+    if lookup then
       if let some addr ← ShardProofIndex.readAddress (← shardIndex) digest then
         try
           let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read addr)))
           unless wrapper.claim == claim do throw (IO.userError "cached claim mismatch")
           verifyWrapper artifactPath wrapper
-          IO.println s!"reused {addr}"
+          IO.println s!"{label}: verified proof {addr} of this claim in the shard-proof index; reused"
+          if mode == "prove" then IO.println (toString addr)
           return { address := some addr, report := Json.mkObj [("reused", toJson (toString addr))] }
         catch e => IO.eprintln s!"ignored cached proof {addr}: {e}"
     IO.println s!"[aiur] {mode} {label}"
@@ -394,6 +409,7 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
 structure PartResult where
   blocks : Array Address
   result : JobResult
+  constants : Nat := 0
 
 private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : HostOptions)
     (ixe manifest : String) : IO UInt32 := do
@@ -495,7 +511,11 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
       IO.println s!"shard {k}: {view.shards[k]!.size} blocks; RAM reservation {options.ram} bytes"
     return 0
   let jobs := max 1 (min jobs selected.size)
+  -- `--json` writes one benchmark results row (`Ix.Benchmark.Results`) for
+  -- `ix bench run --backend aiur-sharded-env`; its peak covers the hosts.
+  if p.hasFlag "json" then TracingTexray.startSampler
   let drive (options : HostOptions) : IO UInt32 := do
+    let start ← IO.monoMsNow
     let capacity ← if options.resident.isSome then pure (jobs + (← executionJobs p jobs)) else pure jobs
     let results ← boundedMap capacity selected fun members k => do
       let options := options.forWave jobs members
@@ -519,9 +539,10 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
         else
           if result.code == 75 then
             IO.eprintln s!"shard {k}: cannot fit budget; {if canSplit then "increase --max-ram or refine the environment" else "increase the RAM share (fewer --jobs or a larger budget)"}"
-          settled := settled.push { blocks, result }
+          settled := settled.push { blocks, result, constants := owned.size }
           if result.code != 0 && !p.hasFlag "keep-going" then pending := #[]
       return (k, settled)
+    let elapsedMs := (← IO.monoMsNow) - start
     let failures := results.foldl (fun n (_, parts) => n + parts.countP (·.result.code != 0)) 0
     let (refinements, measured) := Ix.Shard.Check.refinementsOfRuns view.shards.size
       (results.map fun (k, parts) => (k, parts.map fun r => (r.blocks, r.result.peak)))
@@ -533,26 +554,45 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
         ("blocks", toJson (part.blocks.map toString)), ("status", toJson part.result.code.toNat),
         ("proof", toJson (part.result.address.map toString)), ("report", part.result.report)]
       Json.mkObj [("shard", toJson k), ("parts", toJson reports)]
+    let name := ((p.flag? "json-name").map (·.as! String)).getD "env"
     let report := Json.mkObj [("schema", toJson "ix-formal-run/1"), ("failures", toJson failures),
-      ("name", toJson (((p.flag? "json-name").map (·.as! String)).getD "env")),
+      ("name", toJson name),
       ("jobs", toJson jobs), ("options", options.json), ("leaves", toJson leafReports)]
     if let some flag := p.flag? "report" then IO.FS.writeFile (flag.as! String) report.pretty
     if let some flag := p.flag? "json" then
-      let handle ← IO.FS.Handle.mk (flag.as! String) .append
-      handle.putStrLn report.compress
+      let constants := results.foldl (fun n (_, parts) => parts.foldl (· + ·.constants) n) 0
+      let leaves := results.foldl (fun n (_, parts) => n + parts.size) 0
+      let secs := elapsedMs.toFloat / 1000.0
+      let throughput := if elapsedMs > 0 then constants.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
+      Ix.Benchmark.Results.writeRow (flag.as! String) name
+        (if failures == 0 then "ok" else "rejected")
+        [("constants", toJson constants), ("shards", toJson leaves),
+         ("check-time", Ix.Benchmark.Results.jsonRound 3 secs),
+         ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
+         ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))]
+      if failures != 0 then return Ix.Benchmark.Results.exitRejected
     return if failures == 0 then 0 else 1
   if mode == "prove" then withController p #[(artifactPath, "ixvm")] options jobs drive
   else drive options
 
 def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
-  rejectFlags p #["interp", "lanes"]
-  for flag in #["direct-joins", "structural-above", "range", "no-cache", "aggr-artifact"] do
+  rejectFlags p #["lanes"]
+  -- Aggregation flags would otherwise be ignored here: `--binding-proof`
+  -- only takes effect at an aggregate root, which this path never builds.
+  for flag in #["direct-joins", "structural-above", "range", "no-cache", "aggr-artifact",
+      "binding-proof"] do
     if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --aggregate or --lanes")
   if p.hasFlag "texray" && (!prove || p.hasFlag "exec-only") && !p.hasFlag "distributed" then
     throw (IO.userError "--texray requires proving or --distributed")
   if p.hasFlag "cells" && !p.hasFlag "distributed" then throw (IO.userError "--cells requires --distributed")
   let ixe := (p.flag? "ixe").map (·.as! String)
   let manifest := (p.flag? "ixes").map (·.as! String)
+  -- Reject manifest-only flags before any artifact export or host build.
+  if manifest.isSome && ixe.isNone then throw (IO.userError "--ixes requires --ixe")
+  if manifest.isNone then
+    for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "distributed", "exec-jobs",
+        "trace-shards", "json", "json-name"] do
+      if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --ixe and --ixes")
   let requestedJobs ← jobCount p
   let jobs ← if p.hasFlag "exec-only" && p.hasFlag "exec-jobs" && !p.hasFlag "distributed" then
       executionJobs p requestedJobs
@@ -569,8 +609,6 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
     else runManifest p artifactPath binary options mode ixe manifest jobs
   | _, some _ => throw (IO.userError "--ixes requires --ixe")
   | _, none =>
-    for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "distributed", "exec-jobs"] do
-      if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --ixe and --ixes")
     if jobs != 1 then throw (IO.userError "--jobs currently requires --ixe and --ixes")
     let run options := Ix.Check.forEachClaim ixe ((p.flag? "claim").map (·.as! String))
         (p.variableArgsAs! String).toList (p.hasFlag "keep-going") "aiur" true

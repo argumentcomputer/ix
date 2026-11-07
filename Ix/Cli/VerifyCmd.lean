@@ -1,9 +1,9 @@
 /-
   `ix verify <proof-hex>`: read a persisted `Ixon.Proof` wrapper from
   the content-addressed store, extract the inner claim + opaque ZK
-  proof bytes, reconstruct the Aiur-level public input, and run the
-  certified Aiur backend's `verify`. Exits 0 on success, 1 with an error
-  message otherwise.
+  proof bytes, reconstruct the Aiur-level public input, and verify the
+  proof against the IxVM program compiled by the verified Aiur compiler.
+  Exits 0 on success, 1 with an error message otherwise.
 -/
 module
 public import Cli
@@ -44,7 +44,6 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
     return 1
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
-  let _ ← FormalAiur.selected p
   if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
     return ← verifyDevelopmentInputs p
   if p.hasFlag "aggregate" then
@@ -61,8 +60,6 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
-    "legacy"; "Retired legacy Aiur backend flag."
-    "formal"; "Compatibility alias for the default certified Aiur backend."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "dev-srs"; "Allow development compressed proofs; these are not production-secure."
@@ -76,7 +73,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "ixc" : String;   "For --aggregate: a .ixc catalog directory. Recompute the catalog's root claim from its manifest and pieces (`ix aggregate --ixc`'s plan), check that each proof states it, verify it, and print every member's statement: label, toolchain, binding, literal class, specification digest and subjects."
     "distributed";    "Bind one default-backend distributed proof to the whole environment. Requires --ixe and --ixes; the manifest must cover the environment exactly."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
-    "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it."
+    "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it."
 
   ARGS:
     ...proofs : String; "32-byte hex addresses of persisted Ixon.Proof wrappers. With --verifier-bundle, proof-wrapper file paths are also accepted. Omit for --ixe + --ixes partition auditing."

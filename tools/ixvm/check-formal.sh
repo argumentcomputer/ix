@@ -65,13 +65,6 @@ formal_proof=$(tail -n 1 "$formal_tmp/prove.log")
 .lake/build/bin/ix verify "$formal_proof"
 AIUR_TRACE_ONLY_LOOKUPS=1 .lake/build/bin/ix verify "$formal_proof"
 
-# Backend selection is explicit and the retired legacy flag is rejected.
-if .lake/build/bin/ix check --formal --legacy Nat.add_comm > "$formal_tmp/conflict.log" 2>&1; then
-  echo "conflicting backends were accepted" >&2
-  exit 1
-fi
-grep -qF -- '--formal and --legacy cannot be combined' "$formal_tmp/conflict.log"
-
 target/release/stark-verifier fixture "$formal_tmp/inner"
 target/release/stark-verifier ranges "$formal_tmp/inner/proof.bin" "$formal_tmp/ranges" 1
 python3 - "$formal_tmp" <<'PYTEST'

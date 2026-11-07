@@ -1,8 +1,8 @@
 /-
-  The shard-proof index: `~/.ix/cache/shard-proofs/<claim-digest-hex>` holds
-  the store address of an `Ixon.Proof` wrapper whose bundled `CheckEnv` claim
-  has that digest. It is what lets a partially proved partition resume after
-  a refinement: a leaf's identity is its claim digest, never its manifest
+  The shard-proof index: `~/.ix/cache/formal-shard-proofs/<claim-digest-hex>`
+  holds the store address of an `Ixon.Proof` wrapper whose bundled `CheckEnv`
+  claim has that digest. It is what lets a partially proved partition resume
+  after a refinement: a leaf's identity is its claim digest, never its manifest
   index. An index entry is an untrusted hint — readers decode the wrapper,
   compare the bundled claim with the one they expect and verify the proof
   natively before reusing it, the aggregate cache's discipline.
@@ -15,15 +15,16 @@ public section
 
 namespace Ix.Cli.ShardProofIndex
 
-/-- The index directory: the global `~/.ix/cache/shard-proofs`, or a hermetic
-    root for tests. -/
+/-- The index directory: the global `~/.ix/cache/formal-shard-proofs`, or a
+    hermetic root for tests. The retired backend's `shard-proofs` index held
+    proofs in another format and is not read. -/
 def indexDir (cacheRoot? : Option System.FilePath := none) : IO System.FilePath := do
   match cacheRoot? with
   | some root =>
-    let dir := root / "shard-proofs"
+    let dir := root / "formal-shard-proofs"
     IO.FS.createDirAll dir
     pure dir
-  | none => StoreIO.toIO (Store.cacheDir "shard-proofs")
+  | none => StoreIO.toIO (Store.cacheDir "formal-shard-proofs")
 
 /-- Read an index entry. A missing or malformed entry is a miss, never an
     error: store loading and verification happen separately. -/

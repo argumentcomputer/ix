@@ -12,7 +12,6 @@ public section
 namespace Ix.Cli.AggregateCmd
 
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
-  let _ ← FormalAiur.selected p
   if let some ixc := (p.flag? "ixc").map (·.as! String) then
     return ← CatalogAggregate.aggregateCatalog p ixc
   FormalAggregate.run p
@@ -26,8 +25,6 @@ def aggregateCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."
-    "legacy"; "Retired legacy Aiur backend flag."
-    "formal"; "Compatibility alias for the default certified Aiur backend."
     "aiur-artifact" : String; "Trusted formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 0, which lets the planner choose the largest shards within the RAM budget and, on CUDA, the device cell budget AIUR_TRACE_SHARD_MAX_CELLS, default 1.5e9). Small caps multiply recursive verification work."
@@ -44,7 +41,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "max-ram" : Nat; "Total in-flight RAM budget in GiB (Aiur default 85% of available memory). Aiur rejects slots that cannot fit through trace sharding."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
     "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
-    "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
+    "trace-shards";  "Implied: every slot is proven as a batch of trace shards within its share of --max-ram (the budget divided by --jobs); a slot no shard count can fit fails the run. Accepted so older invocations keep working."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
     "binding-proof" : String; "A proof of the `binding` claim for the env's role binding (`ix prove-binding`). The shard claims (proven with `--assume-binding`) assume their binding, and the root discharges that condition once, after any wrap; the final claim is the one an aggregate of claims that validate their binding states."

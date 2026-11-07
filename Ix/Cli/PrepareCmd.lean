@@ -1,12 +1,12 @@
 /-
   `ix prepare [--cuda]`
 
-  Readies the default backend once per source revision, so later commands
+  Readies the Aiur backend once per source revision, so later commands
   start immediately and from any directory: builds its Rust hosts (CPU, and
-  with `--cuda` the CUDA hosts too) and exports the certified IxVM and
-  aggregation artifacts into the checkout's cache. Cargo rebuilds a host only
-  when its sources changed; an artifact is exported only when its exporter or
-  sources changed.
+  with `--cuda` the CUDA hosts too) and compiles the IxVM and aggregation
+  programs with the verified Aiur compiler, exporting the artifacts into the
+  checkout's cache. Cargo rebuilds a host only when its sources changed; an
+  artifact is exported only when its exporter or sources changed.
 -/
 module
 public import Cli
@@ -35,7 +35,7 @@ end Ix.Cli.PrepareCmd
 open Ix.Cli.PrepareCmd in
 def prepareCmd : Cli.Cmd := `[Cli|
   prepare VIA runPrepareCmd;
-  "Build the default backend's Rust hosts and export its certified artifacts ahead of time"
+  "Build the Aiur backend's Rust hosts and export its compiled IxVM and aggregation artifacts ahead of time"
 
   FLAGS:
     "cuda"; "Also build the CUDA hosts (requires the CUDA toolkit)."

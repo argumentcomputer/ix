@@ -63,8 +63,7 @@ def enabled (name : String) : IO Bool :=
   return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
 /-- Rust feature selection shared by compilation and native runtime linkage.
-IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA; IX_CUDA_TRACE_CODEGEN
-enables generated trace kernels and implies CUDA. For `net` (the `ix` CLI),
+IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA. For `net` (the `ix` CLI),
 IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
 end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
 library. -/
@@ -74,7 +73,6 @@ def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array St
   if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
   if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
   if ← enabled "IX_CUDA" then features := features.push "cuda"
-  if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
