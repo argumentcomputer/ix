@@ -13,7 +13,9 @@ mod derive;
 mod development;
 pub(crate) use compress::StageConfig;
 pub use compress::{CompressConfig, CompressInput, compress};
-pub use derive::derive_recursive_vk;
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub use derive::final_schema;
+pub use derive::{ReleaseKeys, derive_recursive_vk, derive_release};
 pub use development::verify_with_development_verifier;
 mod final_proof;
 mod first;
@@ -33,6 +35,7 @@ pub use verifying_keys::release_root_layout;
 mod setup;
 pub use setup::{SetupClass, SetupConfig};
 mod statement;
+pub use statement::backend_prefix;
 mod storage;
 mod wrap;
 
