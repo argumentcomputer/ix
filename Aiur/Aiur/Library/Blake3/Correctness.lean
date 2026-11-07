@@ -10,13 +10,17 @@ This module establishes:
    `round`, `permute`, `initialWords`, `compress`, `wordBytes`, `littleEndian`,
    `bytesWord`, `blockWords`, `cvBytes`, `chunkLoop`, `chunkOutput`,
    `parentOutput`, `subtree`, `digest`).
-2. Byte-level and word-level correctness of `Blake3`'s core compression and hashing
-   primitives (`iv_spec`, `rotr8_spec`, `rotr16_spec`, `xor_rotr12_spec`,
-   `xor_rotr7_spec`, `g_spec`, `round_spec`, `permute_spec`, `counter_split_spec`,
+2. Lean reference models of the `Blake3` library functions (`compressInnerJ`,
+   `padBlock`, `nextLayer`, `compressLayer`, `packDigest`, `addressToFields`, ...)
+   and their byte-level and word-level correctness against the specification
+   (`iv_spec`, `rotr8_spec`, `rotr16_spec`, `xor_rotr12_spec`, `xor_rotr7_spec`,
+   `g_spec`, `round_spec`, `permute_spec`, `counter_split_spec`,
    `compress_spec`, `pad_block_spec`, `bytes_to_block_spec`, `chunk_single_root_spec`,
    `next_layer_pair_spec`, `compress_layer_two_spec`, `compress_layer_step_spec`,
    `digest_bytes_spec`, `cvBytes_inj`, `address_to_fields_inj`, and
-   `verify_bytes_against_iff`).
+   `verify_bytes_against_iff`). The models are written by hand after the Aiur
+   source; no theorem here evaluates that source, so these are statements about
+   the models and the specification, not about the `Blake3` Aiur functions.
 -/
 namespace Aiur.Library.Blake3
 
@@ -202,7 +206,7 @@ theorem wordOfBytes_wordBytes (w : UInt32) :
   have hw := w.toNat_lt
   omega
 
-/-- `Blake3::iv()` in `Aiur.Library.Blake3` packs to the standard 8-word BLAKE3 `iv`. -/
+/-- In the Lean model, `Blake3::iv()` in `Aiur.Library.Blake3` packs to the standard 8-word BLAKE3 `iv`. -/
 theorem iv_spec :
     #v[wordOfBytes 103 230 9 106,
        wordOfBytes 133 174 103 187,
@@ -264,7 +268,7 @@ theorem rotateRight_toNat (w : UInt32) {r : Nat} (hrpos : 0 < r) (hr : r < 32) :
     rw [U64.bitwise_zero_left rfl]; rfl
   simpa [hlor0, hlor0y] using hlor
 
-/-- `U32::rotr8([b0, b1, b2, b3]) = [b1, b2, b3, b0]` computes `rotateRight w 8`. -/
+/-- In the Lean model, `U32::rotr8([b0, b1, b2, b3]) = [b1, b2, b3, b0]` computes `rotateRight w 8`. -/
 theorem rotr8_spec (b0 b1 b2 b3 : UInt8) :
     rotateRight (wordOfBytes b0 b1 b2 b3) 8 = wordOfBytes b1 b2 b3 b0 := by
   apply UInt32.ext
@@ -275,7 +279,7 @@ theorem rotr8_spec (b0 b1 b2 b3 : UInt8) :
   unfold U32.pack
   omega
 
-/-- `U32::rotr16([b0, b1, b2, b3]) = [b2, b3, b0, b1]` computes `rotateRight w 16`. -/
+/-- In the Lean model, `U32::rotr16([b0, b1, b2, b3]) = [b2, b3, b0, b1]` computes `rotateRight w 16`. -/
 theorem rotr16_spec (b0 b1 b2 b3 : UInt8) :
     rotateRight (wordOfBytes b0 b1 b2 b3) 16 = wordOfBytes b2 b3 b0 b1 := by
   apply UInt32.ext
@@ -286,7 +290,7 @@ theorem rotr16_spec (b0 b1 b2 b3 : UInt8) :
   unfold U32.pack
   omega
 
-/-- `U32::xor([a0, a1, a2, a3], [b0, b1, b2, b3])` computes `w1 ^^^ w2`. -/
+/-- In the Lean model, `U32::xor([a0, a1, a2, a3], [b0, b1, b2, b3])` computes `w1 ^^^ w2`. -/
 theorem xor_spec (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8) :
     (wordOfBytes a0 a1 a2 a3) ^^^ (wordOfBytes b0 b1 b2 b3) =
       wordOfBytes (a0 ^^^ b0) (a1 ^^^ b1) (a2 ^^^ b2) (a3 ^^^ b3) := by
@@ -313,7 +317,7 @@ theorem div_mod_eq {w d q r : Nat} (hd : 0 < d) (hw : w = r + d * q) (hr : r < d
   exact ⟨by rw [Nat.add_mul_div_left _ _ hd, Nat.div_eq_of_lt hr, Nat.zero_add],
          by rw [Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hr]⟩
 
-/-- `U32::xor_rotr12` computes `rotateRight (a ^^^ b) 12` by combining `#u8_xor_rotr4` limbs. -/
+/-- In the Lean model, `U32::xor_rotr12` computes `rotateRight (a ^^^ b) 12` by combining `#u8_xor_rotr4` limbs. -/
 theorem xor_rotr12_spec (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8) :
     let x0 := (a0 ^^^ b0).toNat
     let x1 := (a1 ^^^ b1).toNat
@@ -354,7 +358,7 @@ theorem xor_rotr12_spec (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8) :
   change x1 / 16 + 16 * x2 + 4096 * x3 + 1048576 * (x0 + 256 * (x1 % 16)) = _
   omega
 
-/-- `U32::xor_rotr7` computes `rotateRight (a ^^^ b) 7` by combining `#u8_xor_rotr7` limbs. -/
+/-- In the Lean model, `U32::xor_rotr7` computes `rotateRight (a ^^^ b) 7` by combining `#u8_xor_rotr7` limbs. -/
 theorem xor_rotr7_spec (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8) :
     let x0 := (a0 ^^^ b0).toNat
     let x1 := (a1 ^^^ b1).toNat
@@ -395,7 +399,7 @@ theorem xor_rotr7_spec (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8) :
   change x0 / 128 + 2 * x1 + 512 * x2 + 131072 * x3 + 33554432 * (x0 % 128) = _
   omega
 
-/-- `Blake3::g_function` computes `mix a b c d mx my`. -/
+/-- In the Lean model, `Blake3::g_function` computes `mix a b c d mx my`. -/
 theorem g_function_spec (a b c d mx my : UInt32) :
     let a1 := a + b + mx
     let d1 := rotateRight (d ^^^ a1) 16
@@ -429,7 +433,7 @@ theorem g_spec (state : Block) (j : Fin 8) (mx my : UInt32) :
 
 /-! ### 4. `round`, `permute`, and `compress` Specifications -/
 
-/-- `Blake3::compress_inner_j` in `Aiur.Library.Blake3` applies the 8 `g_function`
+/-- Lean model of `Blake3::compress_inner_j` in `Aiur.Library.Blake3`, which applies the 8 `g_function`
 steps to the 16 state words `state[0..16]` and 16 message words `state[16..32]`,
 computing `round state m schedules[0]`. -/
 def compressInnerJ (state m : Block) : Block :=
@@ -496,7 +500,7 @@ theorem schedules_foldl {α : Type} (f : α → Vector (Fin 16) 16 → α) (init
   unfold schedules
   rfl
 
-/-- The 7-round loop `Blake3::compress_inner_i(state, m, 0)` in `Aiur.Library.Blake3`
+/-- Lean model of the 7-round loop `Blake3::compress_inner_i(state, m, 0)` in `Aiur.Library.Blake3`, which
 equals folding `round` over all 7 `schedules`. -/
 def compressInnerI (state m : Block) : Block :=
   let s0 := compressInnerJ state m
@@ -576,7 +580,7 @@ theorem counter_split_spec (c0 c1 c2 c3 c4 c5 c6 c7 : UInt8) :
     unfold U64.pack U32.pack
     omega
 
-/-- `Blake3::compress` in `Aiur.Library.Blake3` computes `compress cv message counter blockLen flags`. -/
+/-- In the Lean model, `Blake3::compress` in `Aiur.Library.Blake3` computes `compress cv message counter blockLen flags`. -/
 theorem compress_spec (cv : CV) (message : Block) (counter : UInt64) (blockLen flags : UInt32) :
     finalizeState (compressInnerI (initialWords cv counter blockLen flags) message) =
       compress cv message counter blockLen flags :=
@@ -584,7 +588,7 @@ theorem compress_spec (cv : CV) (message : Block) (counter : UInt64) (blockLen f
 
 /-! ### 5. Block Padding, Chunk Compression, Merkle Tree Layer Reduction, and `hash` -/
 
-/-- `Blake3::pad_block(rev_acc, block_index)` pads a reversed byte list `rev_acc` of length
+/-- Lean model of `Blake3::pad_block(rev_acc, block_index)`, which pads a reversed byte list `rev_acc` of length
 `block_index ≤ 64` by prepending `64 - block_index` zero bytes, so reversing the result produces
 `acc ++ List.replicate (64 - acc.length) 0`. -/
 def padBlock (revAcc : List UInt8) (blockIndex : Nat) : List UInt8 :=
@@ -614,7 +618,7 @@ theorem bytes_to_block_spec (acc : List UInt8) (hlen : acc.length ≤ 64) :
     have hrep : w.val * 4 + b.val - acc.length < 64 - acc.length := by omega
     simp [hrep]
 
-/-- `Blake3::compress_chunks` compresses a non-empty stream of bytes into the sequence of
+/-- Lean model of `Blake3::compress_chunks`, which compresses a non-empty stream of bytes into the sequence of
 1024-byte chunk chaining values (or a single root digest when `bytes.length ≤ 1024`). -/
 def chunkOption (counter : UInt64) (input : List UInt8) : Output :=
   chunkOutput counter (input.take 1024)
@@ -624,7 +628,7 @@ theorem chunk_single_root_spec (input : List UInt8) (hlen : input.length ≤ 102
   unfold digest subtree
   simp [hlen]
 
-/-- `Blake3::next_layer` pairs adjacent chaining values `(left, right)` using `parentOutput`
+/-- Lean model of `Blake3::next_layer`, which pairs adjacent chaining values `(left, right)` using `parentOutput`
 and leaves a trailing odd chaining value unchanged. -/
 def nextLayer (cvs : List CV) : List CV :=
   match cvs with
@@ -654,7 +658,7 @@ theorem next_layer_length_lt {cvs : List CV} (h : 2 ≤ cvs.length) :
         simp only [nextLayer, List.length_cons] at hih ⊢
         omega
 
-/-- `Blake3::compress_layer` reduces a layer of `≥ 2` chaining values by repeatedly applying
+/-- Lean model of `Blake3::compress_layer`, which reduces a layer of `≥ 2` chaining values by repeatedly applying
 `nextLayer` until a root pair `[left, right]` remains, then compresses that pair with
 `PARENT | ROOT = 4 | 8 = 12`. -/
 def compressLayer (cvs : List CV) : CV :=
@@ -682,7 +686,7 @@ theorem compress_layer_step_spec (left right c : CV) (rest : List CV) :
 
 /-! ### 6. `digest_bytes`, `bytes_to_addr`, `address_to_fields`, and `verify_bytes_against` -/
 
-/-- `Blake3::digest_bytes` unpacks the 8 32-bit words of a chaining value into a 32-byte digest,
+/-- In the Lean model, `Blake3::digest_bytes` unpacks the 8 32-bit words of a chaining value into a 32-byte digest,
 matching `cvBytes`. -/
 theorem digest_bytes_spec (cv : CV) (i : Fin 32) :
     (cvBytes cv)[i] = (wordBytes cv[i.val / 4])[i.val % 4] := by
@@ -708,7 +712,7 @@ theorem cvBytes_inj {cv1 cv2 : CV} (h : cvBytes cv1 = cvBytes cv2) : cv1 = cv2 :
       cv1[w] = cv2[w])
   exact hw
 
-/-- `Blake3::pack_digest(h: [UInt32::U32; 8]) -> [Field; 8]` converts each 32-bit
+/-- Lean model of `Blake3::pack_digest(h: [UInt32::U32; 8]) -> [Field; 8]`, which converts each 32-bit
 word of a chaining value into a field element via `UInt32::to_field`. -/
 def packDigest (F : Type) [Field F] (cv : CV) : Vector F 8 :=
   cv.map (fun w => (w.toNat : F))
@@ -726,7 +730,7 @@ theorem pack_digest_inj {F : Type} [Field F] (large : U32.Compatible F) :
     have := b[i].toNat_lt; unfold U32.base; omega
   exact large ha_lt hb_lt hi_eq
 
-/-- `Blake3::address_to_fields(bytes: [U8; 32]) -> [Field; 32]` converts each byte
+/-- Lean model of `Blake3::address_to_fields(bytes: [U8; 32]) -> [Field; 32]`, which converts each byte
 of a 32-byte digest into a field element via `UInt8::to_field`. -/
 def addressToFields (F : Type) [Field F] (addr : Digest) : Vector F 32 :=
   addr.map (fun b => (b.toNat : F))
@@ -744,7 +748,7 @@ theorem address_to_fields_inj {F : Type} [Field F] (large : U32.Compatible F) :
     have := b[i].toNat_lt; unfold U32.base; omega
   exact large ha_lt hb_lt hi_eq
 
-/-- `Blake3::verify_bytes_against(bytes, expected)` asserts that the 32 field elements
+/-- In the Lean model, `Blake3::verify_bytes_against(bytes, expected)` asserts that the 32 field elements
 `address_to_fields(digest_bytes(h))` equal `address_to_fields(expected)`.
 Under `U32.Compatible F`, this field-array equality holds if and only if the BLAKE3 digest
 of `bytes` equals `expectedAddr`. -/

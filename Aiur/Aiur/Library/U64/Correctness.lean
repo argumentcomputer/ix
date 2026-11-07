@@ -6,11 +6,13 @@ import Mathlib.Tactic.NormNum
 import Mathlib.Tactic.Ring
 import Mathlib.Tactic.Linarith
 
-/-! Algebraic and byte-packing correctness lemmas for the `UInt64` library (`Aiur.Library.U64`).
-These lemmas establish soundness and completeness of all 12 `UInt64` operations
-(`is_zero`, `eq`, `add`, `wrapping_succ`, `saturating_pred`, `to_field`,
-`sub_with_borrow`, `mul`, `and`, `or`, `xor`, `from_field`) under `[Field F]`
-and `U64.Compatible F`.
+/-! Algebraic and byte-packing lemmas for the algorithms of the `UInt64` library
+(`Aiur.Library.U64`). For each of its twelve operations (`is_zero`, `eq`, `add`,
+`wrapping_succ`, `saturating_pred`, `to_field`, `sub_with_borrow`, `mul`, `and`,
+`or`, `xor`, `from_field`) they relate the byte-level computation, written out in
+Lean, to the packed 64-bit value under `[Field F]` and `U64.Compatible F`. They
+are lemmas about these Lean renderings, not theorems that evaluate the Aiur
+source of the library functions.
 -/
 namespace Aiur.Library.U64
 

@@ -14,10 +14,11 @@ This module establishes:
    their `HeapMono` / `HeapMono₂` proofs.
 2. Heap-allocation constructors (`allocNil`, `allocCons`, `allocList`) and their
    heap-extension and representation soundness proofs.
-3. Mathematical specifications for `Lists` (`is_empty`, `length`, `concat`,
+3. Lean reference models of the `Lists` functions (`is_empty`, `length`, `concat`,
    `drop`, `take`, `lookup`, `lookup_or_default`, `snoc`, `reverse_acc`, `reverse`)
-   and `WordLists` (`checked_depth_succ`, `depth_checked`, `length_u64`,
-   `lookup_u64`).
+   and `WordLists` functions (`checked_depth_succ`, `depth_checked`, `length_u64`,
+   `lookup_u64`), with lemmas about them. The models are written by hand after
+   the Aiur source; no theorem here evaluates that source.
 -/
 
 namespace Aiur.Library
@@ -226,7 +227,7 @@ theorem allocValues_rep {α : Type*} (enumName : String)
 
 /-! ### 4. Specifications of `Lists` Operations -/
 
-/-- `Lists::is_empty` returns `1` on `Nil` and `0` on `Cons`. -/
+/-- Lean model of `Lists::is_empty`, which returns `1` on `Nil` and `0` on `Cons`. -/
 def isEmpty [Zero F] [One F] (xs : _root_.List α) : F :=
   match xs with
   | [] => 1
@@ -244,7 +245,7 @@ theorem is_empty_zero_iff [Field F] (xs : _root_.List α) :
     (isEmpty xs : F) = 0 ↔ xs ≠ [] := by
   cases xs <;> simp [isEmpty]
 
-/-- `Lists::reverse_acc(list, acc)` computes `list.reverseAux acc = list.reverse ++ acc`. -/
+/-- Lean model of `Lists::reverse_acc(list, acc)`, which computes `list.reverseAux acc = list.reverse ++ acc`. -/
 def reverseAcc (xs acc : _root_.List α) : _root_.List α :=
   match xs with
   | [] => acc
@@ -269,12 +270,12 @@ theorem snoc_spec (xs : _root_.List α) (v : α) :
 
 namespace Word
 
-/-- `WordLists::checked_depth_succ(depth)` checks `UInt32::less_than_fields(depth, 4294967295) == 1`
+/-- Lean model of `WordLists::checked_depth_succ(depth)`, which checks `UInt32::less_than_fields(depth, 4294967295) == 1`
 and returns `depth + 1`. -/
 def checkedDepthSucc (depth : Nat) : Option Nat :=
   if depth < 4294967295 then some (depth + 1) else none
 
-/-- `WordLists::depth_checked(list)` recursively computes the list length while asserting
+/-- Lean model of `WordLists::depth_checked(list)`, which recursively computes the list length while asserting
 at each step that the depth is `< 2^32 - 1`, so the resulting length fits in `UInt32`. -/
 def depthChecked : _root_.List α → Option Nat
   | [] => some 0
@@ -320,7 +321,7 @@ theorem depth_checked_some_iff (xs : _root_.List α) (n : Nat) :
   · simp [h, eq_comm]
   · simp [h]
 
-/-- `WordLists::length_u64(list)` computes the 64-bit length by starting at `0 : UInt64`
+/-- Lean model of `WordLists::length_u64(list)`, which computes the 64-bit length by starting at `0 : UInt64`
 on `Nil` and applying `UInt64::wrapping_succ` on each `Cons`. -/
 def lengthU64 : _root_.List α → UInt64
   | [] => 0
@@ -347,7 +348,7 @@ theorem length_u64_of_depth_checked {xs : _root_.List α} {n : Nat}
     unfold U32.base U64.base at *; omega
   exact ⟨length_u64_toNat_of_lt hlt64, rfl⟩
 
-/-- `WordLists::lookup_u64(list, idx)` dereferences `Cons(v, rest)` and returns `v`
+/-- Lean model of `WordLists::lookup_u64(list, idx)`, which dereferences `Cons(v, rest)` and returns `v`
 when `UInt64::is_zero(idx) == 1`, or recurses with `UInt64::saturating_pred(idx)`
 when `UInt64::is_zero(idx) == 0`. -/
 def lookupU64 : _root_.List α → UInt64 → Option α

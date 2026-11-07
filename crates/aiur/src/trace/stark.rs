@@ -1,4 +1,5 @@
-//! Experimental multi-stark adapter for the certified circuit export.
+//! Experimental multi-stark adapter for the circuits exported by the verified
+//! Aiur compiler.
 //!
 //! The verifier's program, artifact and fixed tables must come from the trusted
 //! compilation, not from the proof supplier. This Rust adapter and multi-stark
@@ -452,7 +453,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         .collect();
       SystemWitness { traces, lookups }
     } else {
-      // The certified adapter accepts only row-local lookup expressions.
+      // This adapter, which the Lean proofs do not cover, accepts only
+      // row-local lookup expressions.
       // Reuse its compiled writer after slicing, just as in fused generation,
       // instead of serially interpreting the full graph for every padded row.
       #[cfg(feature = "parallel")]

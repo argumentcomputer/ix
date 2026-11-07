@@ -1,7 +1,7 @@
-//! Witness population plans for the final, certified circuit layout.
+//! Witness population plans for the final circuit layout of the verified compiler.
 //!
 //! This is an untrusted witness generator. Plans are exported by Lean alongside
-//! the certified circuits. Population never executes a callee or obtains fresh
+//! the compiled circuits. Population never executes a callee or obtains fresh
 //! hints. Constraints and exact integer message balance can be checked separately.
 use crate::bytecode::{CheckedProgram, Instruction, Type};
 use crate::execute::Execution;

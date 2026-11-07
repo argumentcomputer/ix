@@ -32,7 +32,30 @@ theorems in `Aiur`.
 
 Every theorem audited here depends strictly on a subset of the standard Lean
 foundational axioms `[propext, Classical.choice, Quot.sound]`, with zero
-`sorryAx` and zero custom or `bv_decide` axioms.
+`sorryAx` and zero custom or `bv_decide` axioms. The `axiom_sweep` executable
+(`Examples/AxiomSweep.lean`, run in CI) checks the same of every declaration in
+the package.
+
+## What the audited theorems do not cover
+
+The backend theorems (`Modules.Prepared.grouped_activated_heap_sound` and its
+relatives in `Aiur.Optimized.EndToEnd`) assume a *finite* derivation over the
+compiled circuits (`Grouping.Plan.ActivatedDerives`), plus `rom.Valid`,
+`Erasure.Signed` and `Plan.WellFormedActivation`. A STARK proof does not supply
+that derivation. It gives at most rows that satisfy their constraints with
+balanced LogUp lookups, which `checkMemo_sound` turns into a
+`Circuit.MemoDerivation`; that memo graph may be cyclic (a provided row
+`loop(0) = 42` balances `fn loop(x) { loop(x) }`). `memo_acyclic_sound` needs
+it acyclic, i.e. every proved call terminating, and nothing proves that, so
+acyclicity is a hypothesis of the end-to-end argument.
+
+Trusted and unproved: the Rust lowering of the exported artifact into
+multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
+times multiplicity, trace-shard segment boundaries, fixed tables and claim
+encoding), multi-stark's STARK and FRI soundness, and the `.aiur` parser and
+artifact exporter. The library `Correctness` theorems relate Aiur library
+functions to Lean reference models (for example `Blake3.digest`); they are not
+proofs about the IxVM or MultiStark programs that call those functions.
 -/
 
 namespace Aiur.Audit
