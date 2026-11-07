@@ -36,20 +36,21 @@ def resolveBudget (p : Cli.Parsed) : IO Nat := do
   IO.println s!"[refine] budget {gib} GiB per leaf (detected: 85% of available memory)"
   return gib
 
-/-- The `ix check` arguments of a refinement. `ix check --ram-budget` divides
-    its budget among the leaves it runs at once, so the per-leaf budget is
-    multiplied by that count. -/
+/-- The `ix check` arguments of a refinement that runs `concurrent` leaves at
+    once. `ix check --ram-budget` divides its budget among them, so the
+    per-leaf budget is multiplied by that count. -/
 def checkArgs (ixe manifest out : String) (shards report : Option String)
-    (budgetGib jobs concurrent : Nat) (index : Bool) : Array String :=
+    (budgetGib concurrent : Nat) (index : Bool) : Array String :=
   #["check", "--ixe", ixe, "--ixes", manifest, "--out-ixes", out,
-    "--ram-budget", toString (budgetGib * concurrent), "--jobs", toString jobs, "--keep-going"]
+    "--ram-budget", toString (budgetGib * concurrent), "--jobs", toString concurrent,
+    "--keep-going"]
     ++ (match shards with | some s => #["--shards", s] | none => #[])
     ++ (match report with | some r => #["--report", r] | none => #[])
     ++ (if index then #["--skip-proven"] else #[])
 
-#guard checkArgs "e.ixe" "m.ixes" "o.ixes" none none 64 4 3 true ==
+#guard checkArgs "e.ixe" "m.ixes" "o.ixes" none none 64 3 true ==
   #["check", "--ixe", "e.ixe", "--ixes", "m.ixes", "--out-ixes", "o.ixes",
-    "--ram-budget", "192", "--jobs", "4", "--keep-going", "--skip-proven"]
+    "--ram-budget", "192", "--jobs", "3", "--keep-going", "--skip-proven"]
 
 def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
@@ -64,10 +65,12 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
   let selected ← match shards with
     | some s => pure (← IO.ofExcept (Ix.Shard.Check.parseShardSelection s)).size
     | none => pure view.shards.size
-  let jobs ← FormalAiur.jobCount p
+  -- `ix check` divides its budget by --jobs, so pass exactly the number of
+  -- leaves that run at once; each is then planned against the full budget.
+  let concurrent := max 1 (min (← FormalAiur.jobCount p) selected)
   let budget ← resolveBudget p
   let args := checkArgs ixePath manifest out shards ((p.flag? "report").map (·.as! String))
-    budget jobs (max 1 (min jobs selected)) (!p.hasFlag "no-index")
+    budget concurrent (!p.hasFlag "no-index")
   FormalAiur.commandStatus (← IO.appPath).toString args
 
 end Ix.Cli.RefineCmd
