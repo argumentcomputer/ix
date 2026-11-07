@@ -2,39 +2,29 @@
 //! entrypoint. See design/multi-stark.md for the trust boundary and commands.
 use aiur::field::FieldBackend;
 use aiur::{
-  Program,
-  hints::HintEntry,
+  artifact::ExecutionPackage,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters, Proof},
   },
 };
 use multi_stark::p3_field::PrimeField64;
 use multi_stark::p3_matrix::Matrix;
-use serde::Deserialize;
 use serde_json::json;
 use std::{error::Error, time::Instant};
-
-#[derive(Deserialize)]
-struct Package {
-  program: Program,
-  #[serde(default)]
-  hints: Vec<HintEntry>,
-  #[serde(alias = "args")]
-  address: Vec<u64>,
-  trace: TraceArtifact,
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
   let args: Vec<_> = std::env::args().collect();
   let path =
-    args.get(1).ok_or("usage: prove PACKAGE.json [PROOF.bin] [REPORT.json]")?;
+    args.get(1).ok_or("usage: prove PACKAGE.ixa [PROOF.bin] [REPORT.json]")?;
   let start = Instant::now();
-  let package: Package = serde_json::from_slice(&std::fs::read(path)?)?;
-  let program = package.program.check_field::<multi_stark::types::Val>()?;
-  let address = program.field().decode(&package.address)?;
+  let (package, digest) = ExecutionPackage::load(path.as_ref())?;
+  eprintln!("artifact {path}: blake3 {digest}");
+  let (program, trace) = package.package.traced()?;
+  let program = program.check_field::<multi_stark::types::Val>()?;
+  let address = program.field().decode(&package.args)?;
   let hints = program.prepare_hints(&package.hints)?;
-  let plan = TracePlan::new(&program, package.trace)?;
+  let plan = TracePlan::new(&program, trace)?;
   let entry =
     &program.program().entries.first().ok_or("no selected entrypoint")?.name;
   let prepare_seconds = start.elapsed().as_secs_f64();

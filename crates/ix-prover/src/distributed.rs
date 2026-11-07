@@ -1,7 +1,7 @@
 //! One claim, multiple execution records. Only unit calls are deferred. Each
 //! record owns a disjoint ROM interval, and the batch balances calls across it.
 use super::{
-  Field, Package, Program, output,
+  Field, Program, output,
   protocol::{Job, Kind, read_json},
 };
 use aiur::{
@@ -177,11 +177,11 @@ pub fn run(
 ) -> Result<(), String> {
   let spec: Spec = read_json(specification)?;
   super::tracing(spec.texray)?;
-  let package: Package =
-    aiur::decode_artifact(&std::fs::read(artifact).map_err(|e| e.to_string())?)
-      .map_err(|e| e.to_string())?;
-  let program = package.program.check_field::<Val>()?;
-  let plan = TracePlan::new(&program, package.trace)?;
+  let (package, digest) = aiur::artifact::Package::load(artifact)?;
+  eprintln!("artifact {}: blake3 {digest}", artifact.display());
+  let (program, trace) = package.traced()?;
+  let program = program.check_field::<Val>()?;
+  let plan = TracePlan::new(&program, trace)?;
   let options: Options = read_json(options_path)?;
   options.validate()?;
   let backend =

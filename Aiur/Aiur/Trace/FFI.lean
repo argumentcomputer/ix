@@ -22,23 +22,23 @@ structure Result where
   trace : Matrices
 
 @[extern "aiur_lean_execute"]
-private opaque executeJson (request : @& String) : IO String
+private opaque executeRaw (package hints : @& ByteArray) (request : @& String) : IO String
 
 /-- Execute and populate using the companion plan. This path additionally runs
 the Rust diagnostic checker; callers can then use the original Lean checker. -/
-def run (exported : Execution.Export (ZMod p)) [NeZero p] (plan : Json)
+def run (exported : Execution.Export (ZMod p)) [NeZero p] (plan : ByteArray)
     (entry : String) (args : Array Nat) (hints : Array (Execution.HintEntry (ZMod p)) := #[])
     (pad : Bool := true) : IO (Except String Result) := do
-  let request := do
-    let program ← exported.toJson p ZMod.val
-    let hints ← exported.prepareHints hints
-    pure <| Json.mkObj [("program", program), ("trace", plan), ("entry", toJson entry),
-      ("flat_args", toJson args), ("hints", Execution.hintsJson ZMod.val hints), ("pad_trace", toJson pad),
-      ("compare_reference", toJson true)]
-  match request with
+  let inputs := do
+    let package ← Artifact.package exported p ZMod.val (some plan)
+    let hints ← Artifact.hints ZMod.val (← exported.prepareHints hints)
+    pure (package, hints)
+  match inputs with
   | .error e => return .error e
-  | .ok request =>
-    let response ← executeJson request.compress
+  | .ok (package, hints) =>
+    let request := Json.mkObj [("entry", toJson entry), ("flat_args", toJson args),
+      ("pad_trace", toJson pad), ("compare_reference", toJson true)]
+    let response ← executeRaw package hints request.compress
     return do
       let response ← Json.parse response
       if let .ok error := response.getObjValAs? String "error" then throw error

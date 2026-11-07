@@ -1,7 +1,7 @@
 //! Run a Lean-produced IxVM execution package without transporting the full
-//! query record back through JSON. Execution uses the same VM as the Lean FFI.
+//! query record back to Lean. Execution uses the same VM as the Lean FFI.
 use aiur::{
-  Program,
+  artifact::ExecutionPackage,
   field::{FieldBackend, NativeField},
   hints::HintEntry,
 };
@@ -9,7 +9,6 @@ use aiur::{
 type HostField = NativeField<multi_stark::types::Val>;
 type CheckedProgram = aiur::bytecode::CheckedProgram<HostField>;
 type Execution = aiur::execute::Execution<HostField>;
-use serde::Deserialize;
 use std::{error::Error, time::Instant};
 
 #[path = "../../../tools/bench/profile.rs"]
@@ -17,12 +16,11 @@ mod profile;
 
 use ixvm as ixvm_hints;
 
-#[derive(Deserialize)]
+/// The invocation of an execution package: the target address, an address
+/// the verifier must reject (or none), and the data hints.
 struct Package {
-  program: Program,
   address: Vec<u64>,
   hints: Vec<HintEntry>,
-  #[serde(default)]
   invalid_address: Vec<u64>,
 }
 
@@ -216,16 +214,22 @@ fn negatives(
 fn main() -> Result<(), Box<dyn Error>> {
   let args: Vec<_> = std::env::args().collect();
   let path = args.get(1).ok_or(
-        "usage: ixvm PACKAGE.json [all|primitives|serde|constant|transitive|negative|bench [SAMPLES]|record OUTPUT.json]",
+        "usage: ixvm PACKAGE.ixa [all|primitives|serde|constant|transitive|negative|validate FIXTURE.ixf|bench [SAMPLES]|record OUTPUT.json]",
     )?;
   let mode = args.get(2).map(String::as_str).unwrap_or("all");
-  let package: Package = serde_json::from_slice(&std::fs::read(path)?)?;
+  let (execution, digest) = ExecutionPackage::load(path.as_ref())?;
+  eprintln!("artifact {path}: blake3 {digest}");
   let program =
-    package.program.clone().check_field::<multi_stark::types::Val>()?;
+    execution.package.program.check_field::<multi_stark::types::Val>()?;
+  let package = Package {
+    address: execution.args,
+    hints: execution.hints,
+    invalid_address: execution.invalid_args,
+  };
   if mode == "validate" {
-    let fixture: serde_json::Value = serde_json::from_slice(&std::fs::read(
-      args.get(3).ok_or("validate requires FIXTURE.json")?,
-    )?)?;
+    let fixture = ixvm::fixture::Fixture::load(
+      args.get(3).ok_or("validate requires FIXTURE.ixf")?.as_ref(),
+    )?;
     let hints = ixvm_hints::prepare(&program, &package.hints)?;
     let mut cases = vec![];
     for name in [
@@ -245,20 +249,20 @@ fn main() -> Result<(), Box<dyn Error>> {
       cases.push(serde_json::json!({"entry": name, "accepted": result.is_ok(), "error": result.err().map(|e| e.to_string())}));
     }
     let mut serde_failures = vec![];
-    for row in fixture["constants"].as_array().unwrap() {
-      let input: Vec<u64> = serde_json::from_value(row["address"].clone())?;
-      let input = program.field().decode(&input)?;
+    for row in &fixture.constants {
+      let address = row.address_words();
+      let input = program.field().decode(&address)?;
       if let Err(error) = hints.execute("IxVM::verify_serde", input) {
         serde_failures.push(
-                    serde_json::json!({"address": row["address"], "error": error.to_string()}),
-                );
+          serde_json::json!({"address": address, "error": error.to_string()}),
+        );
       }
     }
     let accepted = cases.iter().all(|case| case["accepted"] == true)
       && serde_failures.is_empty();
     println!(
       "{}",
-      serde_json::json!({"cases": cases, "serde_cases": fixture["constants"].as_array().unwrap().len(), "serde_failures": serde_failures})
+      serde_json::json!({"cases": cases, "serde_cases": fixture.constants.len(), "serde_failures": serde_failures})
     );
     if !accepted {
       return Err("IxVM validation failed; see the case report".into());

@@ -38,20 +38,20 @@ fi
 lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests \
   aiur/grouping_example aiur/Aiur.Library.U8Facts
 .lake/build/bin/ix codegen --check
-lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.json --check
+lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.ixa --check
 cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel \
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
 
 if [[ -z ${IX_AIUR_ARTIFACT:-} ]]; then
-  IX_AIUR_ARTIFACT="$formal_tmp/ixvm.json"
+  IX_AIUR_ARTIFACT="$formal_tmp/ixvm.ixa"
   lake env IxVM/.lake/build/bin/ixvm export-claim-trace "$IX_AIUR_ARTIFACT"
 fi
 if [[ -z ${IX_RECURSION_ARTIFACT:-} ]]; then
-  IX_RECURSION_ARTIFACT="$formal_tmp/recursion.json"
+  IX_RECURSION_ARTIFACT="$formal_tmp/recursion.ixa"
   lake env MultiStark/.lake/build/bin/stark-export export-trace "$IX_RECURSION_ARTIFACT"
 fi
 if [[ -z ${IX_AGGR_ARTIFACT:-} ]]; then
-  IX_AGGR_ARTIFACT="$formal_tmp/aggregate.json"
+  IX_AGGR_ARTIFACT="$formal_tmp/aggregate.ixa"
   lake env MultiStark/.lake/build/bin/stark-export export-trace "$IX_AGGR_ARTIFACT" --aggregate
 fi
 export IX_AIUR_ARTIFACT IX_AGGR_ARTIFACT

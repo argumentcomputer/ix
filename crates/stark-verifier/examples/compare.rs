@@ -1,21 +1,16 @@
 //! Same bytecode benchmark contract as Benchmarks.CompareAiur for legacy.
 use aiur::{
+  artifact::{Package, decode_groups},
   field::FieldBackend,
   library::io::Invocation,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters},
   },
 };
 use multi_stark::{batch::Retention, p3_matrix::Matrix, types::Val};
 use serde_json::json;
 use std::{error::Error, time::Instant};
-
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
   let thp_disabled = configure_benchmark_memory()?;
@@ -26,7 +21,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into(),
     );
   }
-  let mut package: Package = aiur::decode_artifact(&std::fs::read(&cli[1])?)?;
+  let (package, digest) = Package::load(cli[1].as_ref())?;
+  eprintln!("artifact {}: blake3 {digest}", cli[1]);
+  let (program, mut trace) = package.traced()?;
   let invocation: Invocation =
     serde_json::from_slice(&std::fs::read(&cli[2])?)?;
   let samples: usize = cli[4].parse()?;
@@ -34,22 +31,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("zero benchmark samples".into());
   }
   if cli.iter().any(|a| a == "--ungrouped") {
-    package.trace.groups.clear();
+    trace.groups.clear();
   }
   if let Some(at) = cli.iter().position(|a| a == "--groups") {
     let path = cli.get(at + 1).ok_or("missing groups path")?;
-    package.trace.groups = aiur::decode_artifact(&std::fs::read(path)?)?;
+    trace.groups = decode_groups(&std::fs::read(path)?)?;
   }
   let counts_only = cli.iter().any(|a| a == "--counts-only");
   let reuse_execution =
     std::env::var("IX_BENCH_REUSE_EXECUTION").is_ok_and(|v| v == "1");
-  let functions: Vec<_> = package
-    .program
+  let functions: Vec<_> = program
     .functions
     .iter()
     .map(|f| {
-      let plan = package
-        .trace
+      let plan = trace
         .functions
         .iter()
         .find(|p| p.name == f.name)
@@ -58,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     })
     .collect::<Result<_, &str>>()?;
   let start = Instant::now();
-  let program = package.program.check_field::<Val>()?;
+  let program = program.check_field::<Val>()?;
   let args = program.field().decode(&invocation.args)?;
   let hints = if invocation.entry.starts_with("IxVM::") {
     ixvm::prepare_streams(&program, &invocation.streams)?
@@ -67,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   };
   let prepare = start.elapsed().as_secs_f64();
   let start = Instant::now();
-  let plan = TracePlan::new(&program, package.trace)?;
+  let plan = TracePlan::new(&program, trace)?;
   let backend = Backend::for_batch(&plan, Parameters::default())?;
   let setup = start.elapsed().as_secs_f64();
   let mut times = vec![];

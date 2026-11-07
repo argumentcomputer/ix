@@ -65,11 +65,11 @@ jobs:
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
-          lake exe ixvm/ixvm export /tmp/ixvm-execution.json
-          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.json all
-          target/release/ixvm /tmp/ixvm-execution.json validate IxVM/IxVM/fixtures/nat-add-comm.json
-          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.json
-          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.json IxVM/IxVM/fixtures/nat-add-comm.json witness 1
+          lake exe ixvm/ixvm export /tmp/ixvm-execution.ixa
+          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.ixa all
+          target/release/ixvm /tmp/ixvm-execution.ixa validate IxVM/IxVM/fixtures/nat-add-comm.ixf
+          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.ixa
+          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.ixa IxVM/IxVM/fixtures/nat-add-comm.ixf witness 1
       - name: Check formal claims, recursive verification, and aggregation
         if: github.event_name != 'push'
         run: bash tools/ixvm/check-formal.sh

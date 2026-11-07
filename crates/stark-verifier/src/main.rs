@@ -1,7 +1,8 @@
 use aiur::{
+  artifact::Package,
   field::FieldBackend,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters, planning::Options},
   },
 };
@@ -20,12 +21,6 @@ use std::{
   path::Path,
   time::Instant,
 };
-
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
-}
 
 /// Serialize through a buffer. Recursive invocations encode every proof byte
 /// as a JSON number; unbuffered, each token was a separate write syscall.
@@ -104,10 +99,11 @@ fn main() -> Result<(), Box<dyn Error>> {
   {
     return Err("unknown mode".into());
   }
-  let package: Package = aiur::decode_artifact(&std::fs::read(
-    cli.get(2).ok_or("missing package")?,
-  )?)?;
-  let program = package.program.check_field::<Val>()?;
+  let path = cli.get(2).ok_or("missing package")?;
+  let (package, artifact) = Package::load(path.as_ref())?;
+  eprintln!("artifact {path}: blake3 {artifact}");
+  let (program, trace) = package.traced()?;
+  let program = program.check_field::<Val>()?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "cases" {
     #[derive(serde::Deserialize)]
@@ -140,7 +136,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   if mode == "key" {
     let out = Path::new(cli.get(3).ok_or("missing output directory")?);
     std::fs::create_dir_all(out)?;
-    let plan = TracePlan::new(&program, package.trace)?;
+    let plan = TracePlan::new(&program, trace)?;
     let backend =
       Backend::for_batch_verification(&plan, Parameters::default())?;
     let entry = &program.program().entries[0].name;
@@ -152,7 +148,8 @@ fn main() -> Result<(), Box<dyn Error>> {
       &out.join("identity.json"),
       &serde_json::json!({
       "function_index":claim[1].as_canonical_u64(), "call_channel":claim[0].as_canonical_u64(),
-      "key_digest":blake3::hash(&key).to_hex().to_string()}),
+      "key_digest":blake3::hash(&key).to_hex().to_string(),
+      "artifact_digest":artifact.to_string()}),
     )?;
     return Ok(());
   }
@@ -170,7 +167,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let args = program.field().decode(&invocation.args)?;
   if mode == "verify" {
     use aiur::trace::stark::BatchProof;
-    let plan = TracePlan::new(&program, package.trace)?;
+    let plan = TracePlan::new(&program, trace)?;
     let backend =
       Backend::for_batch_verification(&plan, Parameters::default())?;
     let bytes = std::fs::read(cli.get(4).ok_or("missing proof")?)?;
@@ -179,7 +176,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       return Err("noncanonical or trailing proof bytes".into());
     }
     backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
-    println!("verified recursive proof");
+    println!("verified recursive proof (artifact {artifact})");
     return Ok(());
   }
   let options = Options::read(cli.get(7), cli.get(5), cli.get(6))?;
@@ -187,7 +184,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let trace_plan = if mode == "execute" || mode == "test" {
     None
   } else {
-    Some(TracePlan::new(&program, package.trace)?)
+    Some(TracePlan::new(&program, trace)?)
   };
   let backend = trace_plan
     .as_ref()
@@ -278,7 +275,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let out = Path::new(cli.get(4).ok_or("missing output directory")?);
   std::fs::create_dir_all(out)?;
   let batch = backend.plan_batch(&record, &options)?;
-  let mut report = serde_json::json!({"plan":batch, "execution_seconds":execute,
+  let mut report = serde_json::json!({"plan":batch, "artifact_digest":artifact.to_string(), "execution_seconds":execute,
     "queries":record.queries.len(), "instructions":record.instructions, "verified":false});
   std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
   if mode == "plan" {

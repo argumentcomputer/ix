@@ -1,33 +1,28 @@
 //! Exercise the actual Lean-exported opaque word library, including malicious
-//! advice and mutated circuit rows. Run after `lake exe u32_tests PACKAGE.json`.
+//! advice and mutated circuit rows. Run after `lake exe u32_tests PACKAGE.ixa`.
 use aiur::{
-  Program,
+  artifact::Package,
   bytecode::Type,
   execute::Execution,
   hints::HintChannels,
   maps::MapOverrides,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters},
   },
 };
-use serde::Deserialize;
 use std::error::Error;
-
-#[derive(Deserialize)]
-struct Package {
-  program: Program,
-  trace: TraceArtifact,
-}
 
 fn bytes(word: u32) -> Vec<u64> {
   word.to_le_bytes().into_iter().map(u64::from).collect()
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-  let path = std::env::args().nth(1).ok_or("usage: u32_check PACKAGE.json")?;
-  let package: Package = serde_json::from_slice(&std::fs::read(path)?)?;
-  let program = package.program.check()?;
+  let path = std::env::args().nth(1).ok_or("usage: u32_check PACKAGE.ixa")?;
+  let (package, digest) = Package::load(path.as_ref())?;
+  eprintln!("artifact {path}: blake3 {digest}");
+  let (program, trace) = package.traced()?;
+  let program = program.check()?;
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, program.field())?;
   let mut maps = MapOverrides::new();
@@ -35,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let hints =
     program.prepare_hint_channels(&[], &channels)?.with_map_overrides(&maps)?;
   let table_hints = program.prepare_hint_channels(&[], &channels)?;
-  let plan = TracePlan::new(&program, package.trace)?;
+  let plan = TracePlan::new(&program, trace)?;
   let backend = Backend::new(&plan, Parameters::default())?;
   let mut checks = 0;
   let mut check = |name: &str,

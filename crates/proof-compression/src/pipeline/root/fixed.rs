@@ -323,28 +323,24 @@ mod tests {
   #[test]
   fn normalized_aiur_execution_matches_the_fixed_verifier() -> Result<()> {
     use aiur::{
-      Program,
+      artifact::Package,
       trace::{
-        TraceArtifact, TracePlan,
+        TracePlan,
         stark::{Backend, Parameters},
       },
     };
-    #[derive(serde::Deserialize)]
-    struct Package {
-      program: Program,
-      trace: TraceArtifact,
-    }
-    let mut package: Package = serde_json::from_str(include_str!(
-      "../../../../aiur/tests/fixtures/grouping.json"
-    ))?;
-    package.program.maps = serde_json::from_value(serde_json::json!([
+    let (mut program, trace) = Package::decode(include_bytes!(
+      "../../../../aiur/tests/fixtures/grouping.ixa"
+    ))
+    .and_then(Package::traced)?;
+    program.maps = serde_json::from_value(serde_json::json!([
       {"name":"id","params":[{"kind":"field"}],"result":{"kind":"tuple","items":[{"kind":"field"}]},"input":0,"output":0}
     ]))?;
-    package.program.tables = serde_json::from_value(serde_json::json!([
+    program.tables = serde_json::from_value(serde_json::json!([
       {"name":"xs","type":{"kind":"tuple","items":[{"kind":"field"}]},"rows":[[0],[1],[2],[3]]}
     ]))?;
-    let program = package.program.check_field::<Val>()?;
-    let plan = TracePlan::new(&program, package.trace)?;
+    let program = program.check_field::<Val>()?;
+    let plan = TracePlan::new(&program, trace)?;
     let params = Parameters { log_blowup: 2, num_queries: 2 };
     let backend = Backend::for_batch(&plan, params)?;
     let cp = CommitmentParameters { log_blowup: 2, cap_height: 0 };

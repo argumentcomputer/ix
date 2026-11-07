@@ -7,6 +7,7 @@ use aiur::{
   maps::MapOverrides,
 };
 
+pub mod fixture;
 mod io;
 
 /// Prepare a production claim witness using immutable IO arenas.

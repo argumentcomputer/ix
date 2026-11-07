@@ -1,9 +1,9 @@
 //! Bytecode-only, hint-free persistent trie benchmark.
 use aiur::field::FieldBackend;
 use aiur::{
-  Program,
+  artifact::ExecutionPackage,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters, Proof},
   },
 };
@@ -16,11 +16,6 @@ use std::{error::Error, time::Instant};
 mod profile;
 
 #[derive(Deserialize)]
-struct Package {
-  program: Program,
-  trace: TraceArtifact,
-}
-#[derive(Deserialize)]
 struct Fixture {
   args: Vec<u64>,
   expected: Vec<u64>,
@@ -30,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.len() != 5 {
     return Err(
-            "usage: trie_bench PACKAGE.json FIXTURE.json prove|execute|witness SAMPLES".into(),
+            "usage: trie_bench PACKAGE.ixa FIXTURE.json prove|execute|witness SAMPLES".into(),
         );
   }
   let mode = &cli[3];
@@ -39,9 +34,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("invalid mode or sample count".into());
   }
   let start = Instant::now();
-  let package: Package = serde_json::from_slice(&std::fs::read(&cli[1])?)?;
+  let (package, digest) = ExecutionPackage::load(cli[1].as_ref())?;
+  eprintln!("artifact {}: blake3 {digest}", cli[1]);
+  let (program, trace) = package.package.traced()?;
   let fixture: Fixture = serde_json::from_slice(&std::fs::read(&cli[2])?)?;
-  let program = package.program.check_field::<multi_stark::types::Val>()?;
+  let program = program.check_field::<multi_stark::types::Val>()?;
   let args = program.field().decode(&fixture.args)?;
   let expected = program.field().decode(&fixture.expected)?;
   assert!(program.program().functions.iter().all(|f| {
@@ -49,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       .iter()
       .all(|op| !matches!(op, aiur::bytecode::Instruction::Hint { .. }))
   }));
-  let plan = TracePlan::new(&program, package.trace)?;
+  let plan = TracePlan::new(&program, trace)?;
   let entry = &program.program().entries[0].name;
   let prepare_seconds = start.elapsed().as_secs_f64();
   let parameters = Parameters::default();

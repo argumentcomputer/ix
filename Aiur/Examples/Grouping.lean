@@ -1,6 +1,6 @@
 import Aiur.Library.U32.Goldilocks
 import Aiur.Modules.Frontend
-import Aiur.Execution.Encode
+import Aiur.Artifact
 import Aiur.Trace.Export
 
 open Aiur Lean
@@ -76,17 +76,16 @@ def main (args : List String) : IO Unit := do
   let prepared ← IO.ofExcept (Modules.prepare source ["Grouped::run"])
   let exported ← IO.ofExcept prepared.exportExecution
   let compiled ← IO.ofExcept prepared.compileOptimized
-  let program ← IO.ofExcept (exported.toJson Library.U32.Goldilocks.modulus ZMod.val)
-  let trace ← IO.ofExcept (Trace.exportJson Library.U32.Goldilocks.modulus ZMod.val
+  let trace ← IO.ofExcept (Trace.exportPlan Library.U32.Goldilocks.modulus ZMod.val
     compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode
     [("arithmetic_and_memory", ["Grouped::left", "Grouped::right", "Grouped::memory"])])
-  let package := Json.mkObj [("program", program), ("trace", trace)]
-  let path := args.headD "/tmp/aiur-grouping.json"
+  let package ← IO.ofExcept (Artifact.package exported Library.U32.Goldilocks.modulus ZMod.val (some trace))
+  let path := args.headD "/tmp/aiur-grouping.ixa"
   if args.contains "--check" then
-    let previous ← IO.FS.readFile path
-    unless previous == package.compress ++ "\n" do throw (IO.userError "grouping fixture is stale")
+    let previous ← IO.FS.readBinFile path
+    unless previous.data == package.data do throw (IO.userError "grouping fixture is stale")
     auditSelectedArguments
     let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.circuit.artifact)
     auditCertificates physical.system
       (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name))
-  else IO.FS.writeFile path (package.compress ++ "\n")
+  else Artifact.write path package

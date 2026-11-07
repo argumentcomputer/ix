@@ -28,8 +28,10 @@ execution package. Lean's `IxVM.parse` loads the application and its shared
 Goldilocks word/hash library; callers select entrypoints with
 `Aiur.Modules.prepare`.
 
-Aiur owns the FFI: `Aiur/c/execution.c` adapts Lean objects to the JSON C ABI
-exported by the Rust `aiur` static library. Lake's `aiur/execution_o` and
+Aiur owns the FFI: `Aiur/c/execution.c` adapts Lean objects to the C ABI
+exported by the Rust `aiur` static library, which takes the compiled package
+and data hints in Ixon serialization (`Aiur.Artifact`, `aiur::artifact`) and the
+entry and arguments as JSON. Lake's `aiur/execution_o` and
 `aiur/aiur_rs` targets are linked only by executables that use it. The IxVM
 export driver builds without Rust and invokes the separate `ixvm` host for
 execution with its application hint providers. Pure Lean library/proof builds
@@ -50,12 +52,12 @@ lake -d Aiur test
 cargo test --locked -p aiur -p ixvm --features parallel --all-targets
 
 lake -d IxVM build ixvm
-lake -d IxVM exe ixvm export /tmp/ixvm-execution.json
-cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.json all
+lake -d IxVM exe ixvm export /tmp/ixvm-execution.ixa
+cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.ixa all
 
-lake -d IxVM exe ixvm export-trace /tmp/ixvm-trace.json
+lake -d IxVM exe ixvm export-trace /tmp/ixvm-trace.ixa
 cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- \
-  /tmp/ixvm-trace.json IxVM/IxVM/fixtures/nat-add-comm.json witness 1
+  /tmp/ixvm-trace.ixa IxVM/IxVM/fixtures/nat-add-comm.ixf witness 1
 ```
 
 The last command executes bytecode, generates traces, and proves and verifies

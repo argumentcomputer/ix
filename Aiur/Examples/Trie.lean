@@ -112,16 +112,14 @@ private theorem modulus_prime : Nat.Prime modulus := by
 instance : Fact (Nat.Prime modulus) := ⟨modulus_prime⟩
 
 def main (args : List String) : IO Unit := do
-  let path := args.headD "/tmp/aiur-trie.json"
+  let path := args.headD "/tmp/aiur-trie.ixa"
   let prepared ← IO.ofExcept (Modules.prepare (source.toField F) ["Trie::run"])
   let execution ← IO.ofExcept prepared.exportExecution
   let compiled ← IO.ofExcept (prepared.compileOptimized {})
-  let program ← IO.ofExcept (execution.toJson modulus ZMod.val)
-  let trace ← IO.ofExcept (Trace.exportJson modulus ZMod.val compiled.circuit.inlined.program
+  let trace ← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
     compiled.circuit.artifact execution.bytecode)
-  IO.FS.writeFile path (Json.mkObj [
-    ("program", program), ("trace", trace),
-    ("args", toJson ([14, 4096, 17] : List Nat))]).compress
+  Artifact.write path (← IO.ofExcept (Artifact.execution execution modulus ZMod.val (some trace)
+    [14, 4096, 17] [] #[]))
   IO.println s!"Exported {execution.bytecode.functions.length} functions to {path}"
 
 end TrieBenchmark
