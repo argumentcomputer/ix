@@ -1,6 +1,6 @@
 import IxCC.Aiur.Finite
 import IxCC.Aiur.Trace
-import Ix.Aiur.Compiler.UnitCounter
+import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 /-! A mixed static-order / unit-counter / ranked trace argument. The
 certificate records properties of extracted rows. Proving that a bytecode

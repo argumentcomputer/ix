@@ -1,5 +1,5 @@
 import IxCC.Aiur.Wire.Codec
-import Ix.Aiur.Compiler.CallOrder
+import IxCC.Vendor.Ix.Aiur.Compiler.CallOrder
 
 /-! Invoke the pinned static-component checker after a resource preflight.
 The retained result is the upstream Boolean check, not a checker-to-AIR or

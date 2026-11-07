@@ -1,4 +1,4 @@
-import Ix.Aiur.Goldilocks
+import IxCC.Vendor.Ix.Aiur.Goldilocks
 
 /-! Small algebraic bridges for the exact pinned field representation. No
 abstract field-law instance or primality axiom is assumed. -/

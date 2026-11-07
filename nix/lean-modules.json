@@ -65,7 +65,9 @@
   "IxCCTests": {"roots": ["IxCCTests"], "kind": "lean_lib"},
   "IxCC": {"roots": ["IxCC"], "kind": "lean_lib"},
   "AiurReference":
-  {"roots": ["Ix.Aiur", "Ix.IndexMap", "Ix.Lib"], "kind": "lean_lib"}},
+  {"roots":
+   ["IxCC.Vendor.Ix.Aiur", "IxCC.Vendor.Ix.IndexMap", "IxCC.Vendor.Ix.Lib"],
+   "kind": "lean_lib"}},
  "schema_version": 1,
  "modules":
  {"X86ObjectFixture":
@@ -3000,7 +3002,9 @@
   "IxCCTests.Fences.Aiur":
   {"path": "IxCCTests/Fences/Aiur.lean",
    "imports":
-   ["IxCC.Aiur", "Ix.Aiur.Compiler.CallOrder", "IxCCTests.Aiur.Proofs"]},
+   ["IxCC.Aiur",
+    "IxCC.Vendor.Ix.Aiur.Compiler.CallOrder",
+    "IxCCTests.Aiur.Proofs"]},
   "IxCCTests.Fences":
   {"path": "IxCCTests/Fences.lean",
    "imports":
@@ -3993,6 +3997,51 @@
   {"path": "IxCC/X86/BlockSharing.lean", "imports": ["IxCC.X86.Basic"]},
   "IxCC.X86.Basic":
   {"path": "IxCC/X86/Basic.lean", "imports": ["IxCC.X86.Table.Rows"]},
+  "IxCC.Vendor.Ix.Lib":
+  {"path": "IxCC/Vendor/Ix/Lib.lean",
+   "imports": ["Std.Data.HashMap.Basic", "Std.Data.HashMap.Lemmas"]},
+  "IxCC.Vendor.Ix.IndexMap":
+  {"path": "IxCC/Vendor/Ix/IndexMap.lean",
+   "imports": ["IxCC.Vendor.Ix.Lib", "Std.Data.HashMap"]},
+  "IxCC.Vendor.Ix.Aiur.Stages.Typed":
+  {"path": "IxCC/Vendor/Ix/Aiur/Stages/Typed.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Stages.Source"]},
+  "IxCC.Vendor.Ix.Aiur.Stages.Source":
+  {"path": "IxCC/Vendor/Ix/Aiur/Stages/Source.lean",
+   "imports":
+   ["Std.Data.HashSet.Basic",
+    "IxCC.Vendor.Ix.Aiur.Goldilocks",
+    "IxCC.Vendor.Ix.IndexMap"]},
+  "IxCC.Vendor.Ix.Aiur.Stages.Simple":
+  {"path": "IxCC/Vendor/Ix/Aiur/Stages/Simple.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Stages.Typed"]},
+  "IxCC.Vendor.Ix.Aiur.Stages.Concrete":
+  {"path": "IxCC/Vendor/Ix/Aiur/Stages/Concrete.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Stages.Simple"]},
+  "IxCC.Vendor.Ix.Aiur.Stages.Bytecode":
+  {"path": "IxCC/Vendor/Ix/Aiur/Stages/Bytecode.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Goldilocks"]},
+  "IxCC.Vendor.Ix.Aiur.Goldilocks":
+  {"path": "IxCC/Vendor/Ix/Aiur/Goldilocks.lean", "imports": []},
+  "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter":
+  {"path": "IxCC/Vendor/Ix/Aiur/Compiler/UnitCounter.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Stages.Bytecode"]},
+  "IxCC.Vendor.Ix.Aiur.Compiler.Layout":
+  {"path": "IxCC/Vendor/Ix/Aiur/Compiler/Layout.lean",
+   "imports":
+   ["IxCC.Vendor.Ix.Aiur.Stages.Concrete",
+    "IxCC.Vendor.Ix.Aiur.Stages.Bytecode",
+    "Std.Data.TreeSet"]},
+  "IxCC.Vendor.Ix.Aiur.Compiler.CallOrder":
+  {"path": "IxCC/Vendor/Ix/Aiur/Compiler/CallOrder.lean",
+   "imports":
+   ["IxCC.Vendor.Ix.Aiur.Compiler.Layout",
+    "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
+  "IxCC.Vendor.Ix.Aiur":
+  {"path": "IxCC/Vendor/Ix/Aiur.lean",
+   "imports":
+   ["IxCC.Vendor.Ix.Aiur.Stages.Bytecode",
+    "IxCC.Vendor.Ix.Aiur.Compiler.CallOrder"]},
   "IxCC.Tools.X86Check":
   {"path": "IxCC/Tools/X86Check.lean", "imports": ["IxCC.Tools.Check"]},
   "IxCC.Tools.TrustLedger":
@@ -7296,13 +7345,15 @@
    "imports": ["IxCC.Aiur.Wire.Op", "IxCC.Aiur.Wire.PrimitiveProofs"]},
   "IxCC.Aiur.Wire.Op":
   {"path": "IxCC/Aiur/Wire/Op.lean",
-   "imports": ["Ix.Aiur.Stages.Bytecode", "IxCC.Aiur.Wire.Primitives"]},
+   "imports":
+   ["IxCC.Vendor.Ix.Aiur.Stages.Bytecode", "IxCC.Aiur.Wire.Primitives"]},
   "IxCC.Aiur.Wire.IngressProofs":
   {"path": "IxCC/Aiur/Wire/IngressProofs.lean",
    "imports": ["IxCC.Aiur.Wire.ComponentCheck", "IxCC.Aiur.Wire.CodecProofs"]},
   "IxCC.Aiur.Wire.ComponentCheck":
   {"path": "IxCC/Aiur/Wire/ComponentCheck.lean",
-   "imports": ["IxCC.Aiur.Wire.Codec", "Ix.Aiur.Compiler.CallOrder"]},
+   "imports":
+   ["IxCC.Aiur.Wire.Codec", "IxCC.Vendor.Ix.Aiur.Compiler.CallOrder"]},
   "IxCC.Aiur.Wire.CodecProofs":
   {"path": "IxCC/Aiur/Wire/CodecProofs.lean",
    "imports": ["IxCC.Aiur.Wire.Codec", "IxCC.Aiur.Wire.RecordProofs"]},
@@ -7313,7 +7364,9 @@
   "IxCC.Aiur.WellFounded":
   {"path": "IxCC/Aiur/WellFounded.lean",
    "imports":
-   ["IxCC.Aiur.Finite", "IxCC.Aiur.Trace", "Ix.Aiur.Compiler.UnitCounter"]},
+   ["IxCC.Aiur.Finite",
+    "IxCC.Aiur.Trace",
+    "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
   "IxCC.Aiur.Trace":
   {"path": "IxCC/Aiur/Trace.lean", "imports": ["IxCC.Aiur.Field"]},
   "IxCC.Aiur.Static.Sound":
@@ -7333,7 +7386,7 @@
    "imports": ["IxCC.Aiur.Static.Counter", "IxCC.Aiur.Field"]},
   "IxCC.Aiur.Static.Counter":
   {"path": "IxCC/Aiur/Static/Counter.lean",
-   "imports": ["Ix.Aiur.Compiler.UnitCounter"]},
+   "imports": ["IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
   "IxCC.Aiur.Static.Check":
   {"path": "IxCC/Aiur/Static/Check.lean",
    "imports": ["IxCC.Aiur.Static.Assignment", "IxCC.Aiur.OracleEval.Rows"]},
@@ -7345,7 +7398,7 @@
   {"path": "IxCC/Aiur/Static.lean", "imports": ["IxCC.Aiur.Static.Ingress"]},
   "IxCC.Aiur.OracleEval.Types":
   {"path": "IxCC/Aiur/OracleEval/Types.lean",
-   "imports": ["Ix.Aiur.Stages.Bytecode", "IxCC.Aiur.Trace"]},
+   "imports": ["IxCC.Vendor.Ix.Aiur.Stages.Bytecode", "IxCC.Aiur.Trace"]},
   "IxCC.Aiur.OracleEval.State":
   {"path": "IxCC/Aiur/OracleEval/State.lean",
    "imports": ["IxCC.Aiur.OracleEval.Gadgets"]},
@@ -7374,7 +7427,8 @@
   {"path": "IxCC/Aiur/Memory.lean", "imports": ["IxCC.Aiur.Trace"]},
   "IxCC.Aiur.Finite": {"path": "IxCC/Aiur/Finite.lean", "imports": []},
   "IxCC.Aiur.Field":
-  {"path": "IxCC/Aiur/Field.lean", "imports": ["Ix.Aiur.Goldilocks"]},
+  {"path": "IxCC/Aiur/Field.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Goldilocks"]},
   "IxCC.Aiur.Derivation":
   {"path": "IxCC/Aiur/Derivation.lean", "imports": ["IxCC.Aiur.Balance"]},
   "IxCC.Aiur.CounterAnalysis.Step":
@@ -7413,7 +7467,8 @@
    "imports": ["IxCC.Aiur.Field"]},
   "IxCC.Aiur.CounterAnalysis.Effects":
   {"path": "IxCC/Aiur/CounterAnalysis/Effects.lean",
-   "imports": ["IxCC.Aiur.OracleEval.Op", "Ix.Aiur.Compiler.UnitCounter"]},
+   "imports":
+   ["IxCC.Aiur.OracleEval.Op", "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
   "IxCC.Aiur.CounterAnalysis.Control":
   {"path": "IxCC/Aiur/CounterAnalysis/Control.lean",
    "imports":
@@ -7430,7 +7485,8 @@
   "IxCC.Aiur.CounterAnalysis.Affine":
   {"path": "IxCC/Aiur/CounterAnalysis/Affine.lean",
    "imports":
-   ["IxCC.Aiur.CounterAnalysis.Field", "Ix.Aiur.Compiler.UnitCounter"]},
+   ["IxCC.Aiur.CounterAnalysis.Field",
+    "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
   "IxCC.Aiur.CounterAnalysis":
   {"path": "IxCC/Aiur/CounterAnalysis.lean",
    "imports": ["IxCC.Aiur.CounterAnalysis.Sound"]},
@@ -7492,7 +7548,8 @@
    "imports": ["IxCC.Aiur.AIR.Memory.Pointers"]},
   "IxCC.Aiur.AIR.Memory.Pointers":
   {"path": "IxCC/Aiur/AIR/Memory/Pointers.lean",
-   "imports": ["IxCC.Aiur.AIR.Memory.Local", "Ix.Aiur.Compiler.UnitCounter"]},
+   "imports":
+   ["IxCC.Aiur.AIR.Memory.Local", "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
   "IxCC.Aiur.AIR.Memory.Model":
   {"path": "IxCC/Aiur/AIR/Memory/Model.lean",
    "imports": ["IxCC.Aiur.AIR.Expr", "IxCC.Aiur.Memory"]},
@@ -7509,11 +7566,12 @@
   {"path": "IxCC/Aiur/AIR/Memory.lean",
    "imports": ["IxCC.Aiur.AIR.Memory.Check"]},
   "IxCC.Aiur.AIR.Expr":
-  {"path": "IxCC/Aiur/AIR/Expr.lean", "imports": ["Ix.Aiur.Goldilocks"]},
+  {"path": "IxCC/Aiur/AIR/Expr.lean",
+   "imports": ["IxCC.Vendor.Ix.Aiur.Goldilocks"]},
   "IxCC.Aiur":
   {"path": "IxCC/Aiur.lean",
    "imports":
-   ["Ix.Aiur.Stages.Bytecode",
+   ["IxCC.Vendor.Ix.Aiur.Stages.Bytecode",
     "IxCC.Aiur.Certificate",
     "IxCC.Aiur.Wire",
     "IxCC.Aiur.OracleEval",
@@ -8009,42 +8067,6 @@
     "IxCC.Recheck.Proof.Soundness",
     "IxCC.Cli",
     "IxCC.Aiur"]},
-  "Ix.Lib":
-  {"path": "vendor/aiur/Ix/Lib.lean",
-   "imports": ["Std.Data.HashMap.Basic", "Std.Data.HashMap.Lemmas"]},
-  "Ix.IndexMap":
-  {"path": "vendor/aiur/Ix/IndexMap.lean",
-   "imports": ["Ix.Lib", "Std.Data.HashMap"]},
-  "Ix.Aiur.Stages.Typed":
-  {"path": "vendor/aiur/Ix/Aiur/Stages/Typed.lean",
-   "imports": ["Ix.Aiur.Stages.Source"]},
-  "Ix.Aiur.Stages.Source":
-  {"path": "vendor/aiur/Ix/Aiur/Stages/Source.lean",
-   "imports": ["Std.Data.HashSet.Basic", "Ix.Aiur.Goldilocks", "Ix.IndexMap"]},
-  "Ix.Aiur.Stages.Simple":
-  {"path": "vendor/aiur/Ix/Aiur/Stages/Simple.lean",
-   "imports": ["Ix.Aiur.Stages.Typed"]},
-  "Ix.Aiur.Stages.Concrete":
-  {"path": "vendor/aiur/Ix/Aiur/Stages/Concrete.lean",
-   "imports": ["Ix.Aiur.Stages.Simple"]},
-  "Ix.Aiur.Stages.Bytecode":
-  {"path": "vendor/aiur/Ix/Aiur/Stages/Bytecode.lean",
-   "imports": ["Ix.Aiur.Goldilocks"]},
-  "Ix.Aiur.Goldilocks":
-  {"path": "vendor/aiur/Ix/Aiur/Goldilocks.lean", "imports": []},
-  "Ix.Aiur.Compiler.UnitCounter":
-  {"path": "vendor/aiur/Ix/Aiur/Compiler/UnitCounter.lean",
-   "imports": ["Ix.Aiur.Stages.Bytecode"]},
-  "Ix.Aiur.Compiler.Layout":
-  {"path": "vendor/aiur/Ix/Aiur/Compiler/Layout.lean",
-   "imports":
-   ["Ix.Aiur.Stages.Concrete", "Ix.Aiur.Stages.Bytecode", "Std.Data.TreeSet"]},
-  "Ix.Aiur.Compiler.CallOrder":
-  {"path": "vendor/aiur/Ix/Aiur/Compiler/CallOrder.lean",
-   "imports": ["Ix.Aiur.Compiler.Layout", "Ix.Aiur.Compiler.UnitCounter"]},
-  "Ix.Aiur":
-  {"path": "vendor/aiur/Ix/Aiur.lean",
-   "imports": ["Ix.Aiur.Stages.Bytecode", "Ix.Aiur.Compiler.CallOrder"]},
   "CheckX86Streams":
   {"path": "scripts/CheckX86Streams.lean",
    "imports": ["IxCC.Tools.Check", "IxCC.X86.StreamExamples"]},

@@ -24,8 +24,8 @@ root = BLAKE3(preimage)                       # 32 bytes
 
 The revision is an exact, case-sensitive string. The fixed header occupies
 57 bytes: 16 domain bytes, a one-byte length of 40, and the revision's ASCII
-bytes. It identifies the eleven unchanged upstream modules recorded in
-[upstream.json](../vendor/aiur/upstream.json). This format has its own
+bytes. It identifies the eleven upstream modules recorded in
+[upstream.json](../IxCC/Vendor/upstream.json). This format has its own
 version; it is not the native Aiur FFI serialization.
 
 | Notation | Bytes |

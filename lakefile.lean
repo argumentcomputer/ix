@@ -11,10 +11,10 @@ package «ix-cc» where
         "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
     | none => #[]
 
-/- Pure Aiur target definitions and abstract counter/order lemmas. -/
+/- Pure Aiur target definitions and abstract counter/order lemmas, vendored
+from ix under `IxCC.Vendor` (`IxCC/Vendor/README.md`). -/
 lean_lib AiurReference where
-  srcDir := "vendor/aiur"
-  roots := #[`Ix.Aiur, `Ix.IndexMap, `Ix.Lib]
+  roots := #[`IxCC.Vendor.Ix.Aiur, `IxCC.Vendor.Ix.IndexMap, `IxCC.Vendor.Ix.Lib]
 
 /- Blake3 FFI. Keep this revision in lockstep with the flake's
 `blake3-lean` input and `lake-manifest.json`. -/

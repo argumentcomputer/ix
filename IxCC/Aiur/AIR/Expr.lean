@@ -1,4 +1,4 @@
-import Ix.Aiur.Goldilocks
+import IxCC.Vendor.Ix.Aiur.Goldilocks
 
 /-! The base-field expression fragment used by the pinned memory and rank AIR.
 Missing columns fail evaluation. This is not a parser or the complete

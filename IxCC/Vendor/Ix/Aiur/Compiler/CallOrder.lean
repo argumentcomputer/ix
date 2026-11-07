@@ -1,6 +1,6 @@
 module
-public import Ix.Aiur.Compiler.Layout
-public import Ix.Aiur.Compiler.UnitCounter
+public import IxCC.Vendor.Ix.Aiur.Compiler.Layout
+public import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 public section
 @[expose] section

@@ -27,12 +27,13 @@ The source producer pin is independent of the target snapshot below.
 
 ## Reference and module boundaries
 
-[`vendor/aiur/upstream.json`](../vendor/aiur/upstream.json) pins eleven
-unchanged Lean modules and both upstream licenses from argumentcomputer/ix
-at `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`. They supply Goldilocks,
+[`IxCC/Vendor/upstream.json`](../IxCC/Vendor/upstream.json) pins eleven
+Lean modules and both upstream licenses from argumentcomputer/ix at
+`a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`, vendored as `IxCC.Vendor.Ix.*`
+(upstream `Ix.*`); that import prefix is their only change. They supply Goldilocks,
 the source-to-bytecode IR vocabulary, layout and call-component definitions,
 and the existing abstract counter/order lemmas. Their upstream toolchain is
-Lean 4.33.1; they build unchanged with this repository's pinned Lean 4.34.1.
+Lean 4.33.1; they build with this repository's pinned Lean 4.34.1.
 
 The `AiurReference` Lake library imports no native Aiur FFI. The upstream
 bytecode evaluator currently imports its IO types from an FFI module, so it

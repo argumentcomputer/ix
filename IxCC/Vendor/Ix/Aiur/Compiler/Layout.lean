@@ -1,6 +1,6 @@
 module
-public import Ix.Aiur.Stages.Concrete
-public import Ix.Aiur.Stages.Bytecode
+public import IxCC.Vendor.Ix.Aiur.Stages.Concrete
+public import IxCC.Vendor.Ix.Aiur.Stages.Bytecode
 public import Std.Data.TreeSet
 
 /-!

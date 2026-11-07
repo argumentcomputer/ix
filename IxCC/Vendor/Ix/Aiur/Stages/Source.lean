@@ -1,7 +1,7 @@
 module
 public import Std.Data.HashSet.Basic
-public import Ix.Aiur.Goldilocks
-public import Ix.IndexMap
+public import IxCC.Vendor.Ix.Aiur.Goldilocks
+public import IxCC.Vendor.Ix.IndexMap
 
 /-!
 Stage 1 (Source) IR — the post-elaboration term language.

@@ -1,5 +1,5 @@
 {"upstream_toolchain": "leanprover/lean4:v4.33.1",
- "unchanged_files_sha256":
+ "upstream_files_sha256":
  {"LICENSE-MIT":
   "dc9de72071a0c52ba5ea1796e08a4a19a9d5f931e742db66290867246dc2a418",
   "LICENSE-APACHE":
@@ -28,4 +28,5 @@
   "3c05adc592fe00afa9d6b994ded7d576d6cffd581639a514db5fe04d55cfb18f"},
  "revision": "a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03",
  "repository": "https://github.com/argumentcomputer/ix",
+ "module_prefix": "IxCC.Vendor.",
  "local_files": ["Ix/Aiur.lean", "README.md", "upstream.json"]}

@@ -1,5 +1,5 @@
 import IxCC.Aiur.OracleEval.Op
-import Ix.Aiur.Compiler.UnitCounter
+import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 /-! The observations needed to relate the affine analyzer to real replay.
 Memory, gadgets, and advice are unconstrained here except for register count;

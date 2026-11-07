@@ -1,5 +1,5 @@
 module
-public import Ix.Aiur.Stages.Typed
+public import IxCC.Vendor.Ix.Aiur.Stages.Typed
 
 /-!
 Stage 3 (Simple) IR — post match-compilation.

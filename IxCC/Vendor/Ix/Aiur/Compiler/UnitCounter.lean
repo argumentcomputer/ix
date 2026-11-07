@@ -1,5 +1,5 @@
 module
-public import Ix.Aiur.Stages.Bytecode
+public import IxCC.Vendor.Ix.Aiur.Stages.Bytecode
 
 /-!
 Unit-counter certificates for singleton recursive components.

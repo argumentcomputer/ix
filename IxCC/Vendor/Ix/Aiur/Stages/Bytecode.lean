@@ -1,5 +1,5 @@
 module
-public import Ix.Aiur.Goldilocks
+public import IxCC.Vendor.Ix.Aiur.Goldilocks
 
 /-!
 Stage 5 (Bytecode) IR — flat, post-lowering.

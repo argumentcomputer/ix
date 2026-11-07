@@ -23,7 +23,7 @@ The producer of the frozen fixtures is a third, local revision: `f829b760`
 plus the `--equations` export (`be45a159`, [corpus](corpus.md)).
 
 This source pin is independent of the Aiur target snapshot in
-[`vendor/aiur/README.md`](../vendor/aiur/README.md). That target contains the
+[`IxCC/Vendor/README.md`](../IxCC/Vendor/README.md). That target contains the
 counter, memory and rank work on which the existing target proofs depend.
 Changing the source producer does not replace that target vocabulary.
 
@@ -284,8 +284,5 @@ codec (directly or through `Ixon.V3.Env`), a bare `Address` under
 `open IxCC.Ixon` is ambiguous, and `Ixon.X` under `open IxCC`
 outside the `IxCC` namespace can resolve to ix's; write
 `Ixon.Address` inside `namespace IxCC …` and `IxCC.Ixon.X`
-elsewhere. `vendor/aiur`'s `Ix.Aiur`/`Ix.Lib`/`Ix.IndexMap` and the codec's
-`Ix.Ixon.*`/`Ix.Address.Core` share the module root `Ix` but no module:
-`lake build` and `lake lean` resolve both, while a raw `lake env lean FILE`
-importing modules of both libraries finds only the first `Ix` directory on
-`LEAN_PATH`.
+elsewhere. The vendored Aiur reference is under `IxCC.Vendor`, so the
+codec's `Ix.Ixon.*`/`Ix.Address.Core` are the only `Ix` modules imported.

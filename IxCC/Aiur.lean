@@ -1,4 +1,4 @@
-import Ix.Aiur.Stages.Bytecode
+import IxCC.Vendor.Ix.Aiur.Stages.Bytecode
 import IxCC.Aiur.Certificate
 import IxCC.Aiur.Wire
 import IxCC.Aiur.OracleEval

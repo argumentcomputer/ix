@@ -1,5 +1,5 @@
 module
-public import Ix.Lib
+public import IxCC.Vendor.Ix.Lib
 public import Std.Data.HashMap
 
 public section

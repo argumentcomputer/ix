@@ -1,5 +1,5 @@
 import IxCC.Aiur
-import Ix.Aiur.Compiler.CallOrder
+import IxCC.Vendor.Ix.Aiur.Compiler.CallOrder
 import IxCCTests.Aiur.Proofs
 
 /-! Exact axiom sets for the initial Aiur trace boundary and pinned reference lemmas. -/

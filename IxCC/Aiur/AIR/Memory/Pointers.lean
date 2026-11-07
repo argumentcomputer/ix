@@ -1,5 +1,5 @@
 import IxCC.Aiur.AIR.Memory.Local
-import Ix.Aiur.Compiler.UnitCounter
+import IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter
 
 /-! Selected memory rows form a prefix. Their pointers advance by one,
 including wraparound; a table shorter than the characteristic cannot repeat
