@@ -18,15 +18,16 @@ and to the validation schedule (the 72 groups in order and the two
 boundaries). The specification set is unchanged, so `specVersion` and every
 role table are too. Under version 1 (no version field, the roles alone) the
 encoding was 17727 bytes, with digest
-6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33. -/
+6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33; version 2
+adds 1700 bytes. -/
 
-/-- info: "17727 bytes" -/
+/-- info: "19427 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33" -/
+/-- info: "84d3999ef8f830d2d0678f21d81730d2aee6f9a2cfd04c84d593b38f52eb7fae" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a
