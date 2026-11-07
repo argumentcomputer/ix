@@ -3,7 +3,8 @@
 The vectors (`addressed.tsv`, `claims.tsv`, `expressions.txt`, `resource.tsv`,
 `text.tsv`), the primitive inventory `primitives.tsv` and `handoff/` are
 unchanged files from `argumentcomputer/ix`, branch `jcb/ix-certified`, commit
-`f829b76044a44a61023d0983516137147bbb12a7` (the pinned `ix-kernel`), directory
+`f829b76044a44a61023d0983516137147bbb12a7` (the wire revision; the codec
+dependency is ix's `IxCK/` at a later revision), directory
 `Tests/Fixtures/ixon-v4/`, copied by `lake exe refreeze-ixon package`.
 `README.md` and the copied license notices are IxCC packaging
 additions. Do not regenerate expected bytes from the consumer codec. The

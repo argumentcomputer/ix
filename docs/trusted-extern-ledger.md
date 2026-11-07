@@ -111,7 +111,8 @@ new executable roots, project/dependency extern drift, imports and native
 entry points, integrity changes, malformed/duplicate Cargo metadata, CI
 action drift (including scoped repository workflows and their local actions),
 an overriding `flake.lock`, path-pinned pure Lean dependencies, and unlisted,
-malformed or attribute-only `@[csimp]` theorems. The Nix trust-ledger check runs these regressions too.
+dropped, malformed or attribute-only `@[csimp]` theorems. The Nix trust-ledger
+check runs these regressions too.
 
 The `IxCCTests` Lake root keeps every test and fence inside the
 audited source inventory, and the proof aggregate `IxCCTests.Proofs`
@@ -266,10 +267,16 @@ hash; rejects a closure file that declares a native symbol, uses
 outside the closure or the toolchain, and requires its `@[csimp]` theorems to be
 exactly the entry's `csimp_theorems`.
 
-The one entry, `ix-kernel-ixon-v4-codec`, is ix's `IxKernel/` package at
-`f829b760`, of which IxCC imports `Ix.Ixon.Canonical` and
-`Ix.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
+The one entry, `ix-ck-ixon-v4-codec`, is ix's `IxCK/` package (`«ix-ck»`) at
+`2dd96055`, of which IxCC imports `IxCK.Ixon.Canonical` and
+`IxCK.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
 use `propext` and `Quot.sound`). It is the ingress decoder and encoder.
+Its two `@[csimp]` theorems, `putTagN_eq_fast` and `getTagN_eq_fast` in
+`IxCK/Ixon/Codec.lean`, are the entry's `csimp_theorems`: compiled code
+writes and reads TagN integers with copies of `putTagN` and `getTagN`
+specialized to the flag widths 0, 2 and 4 (`putTagNFast`, `getTagNFast`).
+Each is a proved equality, so the functions the theorems are about are
+unchanged; only the compiled code path differs.
 The resource-selection checker also uses its pure framing operations on the
 recheck path, with pure BLAKE3 for the effective profile's identity. The
 rechecker receives the raw profile bytes and pair records and validates them

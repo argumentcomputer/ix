@@ -124,17 +124,17 @@
     "ix-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1790984456,
-        "narHash": "sha256-MfoQ54mEhyvyRVyC5+vp4Aol+GmsW8Gndzz8kPmDJVo=",
+        "lastModified": 1794058706,
+        "narHash": "sha256-OwhhMF13khyrYdp0dbMZZY5N9UOjmWvUZa4f42OF0YI=",
         "owner": "argumentcomputer",
         "repo": "ix",
-        "rev": "f829b76044a44a61023d0983516137147bbb12a7",
+        "rev": "2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2",
         "type": "github"
       },
       "original": {
         "owner": "argumentcomputer",
         "repo": "ix",
-        "rev": "f829b76044a44a61023d0983516137147bbb12a7",
+        "rev": "2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2",
         "type": "github"
       }
     },

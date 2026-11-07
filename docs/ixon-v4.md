@@ -6,20 +6,26 @@ source and carried, as contracts, in the content-addressed objects. Aiur is
 one consumer. IxCC consumes the resulting binary objects; it does not
 introduce another parser or elaborator.
 
-Two ix revisions are pinned, for two different things:
+Three ix revisions are pinned, for three different things:
 
 - **The wire** is Ixon **v4** (`ixon-v4`), as written by ix `jcb/ix-certified`
-  at `f829b76044a44a61023d0983516137147bbb12a7`. Its pure codec (`IxKernel/`,
-  the 11 modules of `Ix.Ixon.Canonical`'s import closure, Init only) is a Lake
-  dependency, and it is the only reader and writer of constant, expression and
-  universe bytes ([trust ledger](trusted-extern-ledger.md), `lean_dependencies`).
+  at `f829b76044a44a61023d0983516137147bbb12a7`.
+- **The codec** that reads and writes it is a Lake dependency: ix's `IxCK/`
+  package (`«ix-ck»`) at `2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2`, of which
+  IxCC imports the 11 modules of `IxCK.Ixon.Canonical`'s import closure (Init
+  only). They are `f829b760`'s `Ix.Ixon.*` and `Ix.Address.Core` under the
+  `IxCK` module root, without an unused error type, and with a TagN fast path:
+  two `@[csimp]` theorems make compiled code use copies of `putTagN` and
+  `getTagN` specialized to the flag widths 0, 2 and 4. It is the only reader
+  and writer of constant, expression and universe bytes ([trust
+  ledger](trusted-extern-ledger.md), `lean_dependencies`).
 - **The data model, the resource rules and the erased checker** come from ix
   `jcb/ix-ixcc` at `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3,
   which introduced the contract-carrying model; v4 changed only the wire),
   with the erased checker's primitive table and the resource profile and claim
   framing moved to `f829b760`.
 
-The producer of the frozen fixtures is a third, local revision: `f829b760`
+The producer of the frozen fixtures is a fourth, local revision: `f829b760`
 plus the `--equations` export (`be45a159`, [corpus](corpus.md)).
 
 This source pin is independent of the Aiur target snapshot in
@@ -74,7 +80,7 @@ expressions and universes). `decodeConstant` runs ix's
 domain check, and re-encoding to exactly the input), converts, applies the
 consumer budgets below, and retains `constantBytes value = bytes` as evidence.
 This is not a universal codec roundtrip or source-typing theorem; ix proves
-its codec's roundtrip at the same revision (`Ix.Ixon.Verify`), which we do not
+its codec's roundtrip at the same revision (`IxCK.Ixon.Verify`), which we do not
 import. Src terms remain the consumer's own data types. Resource-selection
 metadata is checked again on the `Recheck.run` path using the pinned pure
 codec's framing operations and pure BLAKE3; this adds those pure modules to
@@ -285,4 +291,4 @@ codec (directly or through `Ixon.V3.Env`), a bare `Address` under
 outside the `IxCC` namespace can resolve to ix's; write
 `Ixon.Address` inside `namespace IxCC …` and `IxCC.Ixon.X`
 elsewhere. The vendored Aiur reference is under `IxCC.Vendor`, so the
-codec's `Ix.Ixon.*`/`Ix.Address.Core` are the only `Ix` modules imported.
+codec's `IxCK.Ixon.*`/`IxCK.Address.Core` are the only ix modules imported.

@@ -8,7 +8,7 @@ in ix's anonymous reader, presentation metadata is retained as opaque bytes;
 this is not a validator of the full metadata serialization.
 
 The framing follows ix's `Env.getEnv` (`Ix/Ixon.lean` at
-`producerRevision`), whose module is outside the pure `IxKernel` package:
+`producerRevision`), whose module is outside ix's pure codec package:
 the header is TagN(4) with flag `0xE` and value 4 (the byte `0xE4`), every
 count, length, hint delta and hint is a TagN(0) integer read by ix's codec,
 and constants are decoded by `decodeConstant` (ix's canonical decoder). Every

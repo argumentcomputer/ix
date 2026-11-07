@@ -1,11 +1,11 @@
-import Ix.Ixon.Canonical
+import IxCK.Ixon.Canonical
 import IxCC.Ixon.V4.Convert
 
 /-!
 # The Ixon v4 wire for our Ixon data
 
 Canonical bytes of universes, expressions and constants are ix's Ixon v4
-encodings (`Ix.Ixon.Codec`, TagN integers), computed through the structural
+encodings (`IxCK.Ixon.Codec`, TagN integers), computed through the structural
 correspondence of `IxCC.Ixon.V4.Convert`. Decoding uses ix's bounded,
 canonical constant decoder (`Ixon.Canonical.deConstant`: an input-byte and
 universe-expansion budget, the wire domain check, and re-encoding to exactly

@@ -32,12 +32,12 @@
     blake3-lean.url = "github:argumentcomputer/Blake3.lean/3f8b805614a0bae1c033469ff893a8f0ee85f601";
     blake3-lean.inputs.lean4-nix.follows = "lean4-nix";
 
-    # Ix's certified-kernel package (`IxKernel/`), as source: the Lake
-    # dependency «ix-kernel», of which IxCC imports only the pure Ixon
-    # v4 codec (`Ix.Ixon.Canonical` and its closure). Keep the revision in
+    # Ix's certified-kernel package (`IxCK/`), as source: the Lake
+    # dependency «ix-ck», of which IxCC imports only the pure Ixon
+    # v4 codec (`IxCK.Ixon.Canonical` and its closure). Keep the revision in
     # lockstep with lakefile.lean/lake-manifest.json and the trust ledger.
     ix-src = {
-      url = "github:argumentcomputer/ix/f829b76044a44a61023d0983516137147bbb12a7";
+      url = "github:argumentcomputer/ix/2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2";
       flake = false;
     };
   };

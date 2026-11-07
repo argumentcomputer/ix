@@ -1,4 +1,4 @@
-import Ix.Ixon.Codec
+import IxCK.Ixon.Codec
 import IxCC.Ixon.V3.Const
 
 /-!
@@ -7,9 +7,10 @@ import IxCC.Ixon.V3.Const
 Ixon v4 changed the wire (TagN integers, canonical sharing) and kept the
 data model that Ixon v3 introduced: the same universes, expressions,
 contracts and constants. The bytes are read and written by ix's pure codec
-(`Ix.Ixon.Codec`, `IxKernel` at the pinned revision); everything downstream
-of ingress (`V3.Tc`, `Src.Ingress`, the resource checker) keeps our own
-copy of the data types, so no ix type reaches `Src` or the recheck path.
+(`IxCK.Ixon.Codec`, ix's `IxCK` package at the pinned revision);
+everything downstream of ingress (`V3.Tc`, `Src.Ingress`, the resource
+checker) keeps our own copy of the data types, so no ix type reaches `Src`
+or the recheck path.
 
 This module is the total structural correspondence between the two copies.
 `ofIx` direction: the only partiality is an address whose byte string is not

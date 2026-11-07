@@ -17,14 +17,15 @@ require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
   "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
-/- Ix's certified-kernel package (`IxKernel/`, no dependencies, no Rust).
-Only its pure Ixon v4 codec (`Ix.Ixon.Canonical` and its import closure, 11
+/- Ix's certified-kernel package (`IxCK/`, no dependencies, no Rust).
+Only its pure Ixon v4 codec (`IxCK.Ixon.Canonical` and its import closure, 11
 modules) is imported, by the ingress wire layer (`IxCC.Ixon.V4.Convert`,
-`IxCC.Ixon.V3.Wire`). Keep this revision in lockstep with the flake's
-`ix-src` input, `lake-manifest.json` and the trust ledger. -/
-require «ix-kernel» from git
+`IxCC.Ixon.V3.Wire`) and the resource profile reader
+(`IxCC.Src.Resource.Profile`). Keep this revision in lockstep with the
+flake's `ix-src` input, `lake-manifest.json` and the trust ledger. -/
+require «ix-ck» from git
   "https://github.com/argumentcomputer/ix" @
-  "f829b76044a44a61023d0983516137147bbb12a7" / "IxKernel"
+  "2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2" / "IxCK"
 
 @[default_target]
 lean_lib IxCC where

@@ -262,8 +262,8 @@ What a refreeze needs:
   ownership sources import `Ix.Compile.SourceContract.Elab`), and refuses
   everything else;
 - `IXREPO`, `IXPIN`: a read-only ix checkout and the revision whose
-  `Tests/Fixtures/ixon-v4/` and `Ix/Tc/Primitive.lean` apply (the pinned
-  `ix-kernel` revision);
+  `Tests/Fixtures/ixon-v4/` and `Ix/Tc/Primitive.lean` apply (`f829b760`, the
+  wire revision; the codec pin `2dd96055` no longer has `Ix/Tc`);
 - the pinned toolchain's `lean` on `PATH` (`nix develop`).
 
 The commands, in order, from the repository root, with `lake build` of the

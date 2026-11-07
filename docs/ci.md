@@ -56,7 +56,7 @@ with the checks.
 | `x86-byte-execution` | `check-x86-bytes` |
 | `x86-stream-objects` | `check-x86-streams` |
 | `x86-elf-object` | `check-x86-object` with readelf and objdump; on x86-64 Linux, native link and run |
-| `trusted-extern-ledger` | `check-trusted-externs` against the pinned Blake3 and ix (`IxKernel/`) sources and the GMP version; `check-tools-tests` |
+| `trusted-extern-ledger` | `check-trusted-externs` against the pinned Blake3 and ix (`IxCK/`) sources and the GMP version; `check-tools-tests` |
 | `build-graph` | `check-build-graph`: the module manifest, production-import hygiene, and the proof, fence and runtime coverage inventory in [`nix/ci-coverage.json`](../nix/ci-coverage.json) |
 | `census` | `census` on the K1 pack and on the five K1 benchmark closures in [`fixtures/ixon-v4/bench-k1`](../fixtures/ixon-v4/bench-k1/README.md); each report must equal its reviewed baseline (for example [`fixtures/ixon-v4/k1/census.json`](../fixtures/ixon-v4/k1/census.json)) |
 | `x86-hardware` | x86-64 Linux only: `check-x86-hardware` enumerates `Op.rows` and runs 53,279 generated cases natively, compares them with `ByteEval`, and checks `llvm-mc` decodes each identically |

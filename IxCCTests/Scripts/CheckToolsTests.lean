@@ -155,8 +155,8 @@ private def withPolicy (ledger : Json) (key : String) (value : Json) : IO Json :
 /-- The project inside an enclosing repository (`temporary`): its flake.lock,
 a scoped workflow, and the remote actions of the repository-local actions and
 reusable workflows that workflow uses. -/
-private def repositoryTests (temporary root blake ixKernel : FilePath) (ledger : Json) : IO Unit := do
-  let overrides := [("Blake3", blake.toString), ("«ix-kernel»", ixKernel.toString)]
+private def repositoryTests (temporary root blake ixCK : FilePath) (ledger : Json) : IO Unit := do
+  let overrides := [("Blake3", blake.toString), ("«ix-ck»", ixCK.toString)]
   let audited : IO Unit := audit root overrides (some "6.3.0")
   let auditedWith (flakeLock : FilePath) : IO Unit := audit root overrides (some "6.3.0") none (some flakeLock)
   let ledgerPath := root / "docs/trusted-externs.json"
@@ -205,16 +205,17 @@ private def repositoryTests (temporary root blake ixKernel : FilePath) (ledger :
     rejects "escaping local action" "local action escapes the repository" audited
 
 /-- A pure Lean dependency of the enclosing workspace, pinned by its path
-(`../ix/IxKernel` here, `../IxCK` inside ix) rather than a git revision. -/
-private def workspaceDependencyTests (root blake ixKernel : FilePath) (ledger : Json) : IO Unit := do
+(`../ix/IxCK` in this test's layout, `../IxCK` from `IxCC/` inside ix) rather
+than a git revision. -/
+private def workspaceDependencyTests (root blake ixCK : FilePath) (ledger : Json) : IO Unit := do
   let audited : IO Unit := audit root [("Blake3", blake.toString)] (some "6.3.0")
   let ledgerPath := root / "docs/trusted-externs.json"
   let manifestPath := root / "lake-manifest.json"
   let manifest ← readJson manifestPath
   let pathManifest (dir : String) : IO String := do
     let packages ← (← arrField manifest "packages").mapM fun entry => do
-      if (← strField entry "name") != "«ix-kernel»" then return entry
-      return Json.mkObj [("type", toJson "path"), ("scope", toJson ""), ("name", toJson "«ix-kernel»"),
+      if (← strField entry "name") != "«ix-ck»" then return entry
+      return Json.mkObj [("type", toJson "path"), ("scope", toJson ""), ("name", toJson "«ix-ck»"),
         ("manifestFile", toJson "lake-manifest.json"), ("inherited", toJson false),
         ("dir", toJson dir), ("configFile", toJson "lakefile.lean")]
     return (← replaceField manifest "packages" (Json.arr packages)).compress
@@ -222,33 +223,33 @@ private def workspaceDependencyTests (root blake ixKernel : FilePath) (ledger : 
     let entries ← (← arrField ledger "lean_dependencies").mapM fun entry => do
       replaceField (← replaceField entry "source_kind" (toJson "workspace_path")) "pins" (Json.mkObj pins)
     replaceField ledger "lean_dependencies" (Json.arr entries)
-  let workspace := [("workspace_path", toJson "../ix/IxKernel")]
+  let workspace := [("workspace_path", toJson "../ix/IxCK")]
   -- the manifest and the ledger record the dependency by path; the ledger
   -- re-records the manifest's hash
   let withPaths (manifestDir : String) (pins : List (String × Json)) (action : IO Unit) : IO Unit := do
     withFile manifestPath (← pathManifest manifestDir) do
       withFile ledgerPath (← rehash (← pinned pins) root "lake-manifest.json").compress action
   let closure ← pairs (← field ((← arrField ledger "lean_dependencies")[0]!) "closure")
-  let codec := ixKernel / ".." / (closure.headD ("", Json.null)).1
-  withFile (ixKernel / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage «ix-kernel» where\n" do
-    withPaths "../ix/IxKernel" workspace audited
+  let codec := ixCK / ".." / (closure.headD ("", Json.null)).1
+  withFile (ixCK / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage «ix-ck» where\n" do
+    withPaths "../ix/IxCK" workspace audited
     withPaths "../ix/Elsewhere" workspace do
       rejects "workspace manifest path" "Lake dependency inventory drifted" audited
-    withPaths "../ix/IxKernel" (workspace ++ [("lake_rev", toJson (String.ofList (List.replicate 40 '0')))]) do
+    withPaths "../ix/IxCK" (workspace ++ [("lake_rev", toJson (String.ofList (List.replicate 40 '0')))]) do
       rejects "workspace pin with a revision" "pins only its path" audited
-    withPaths "/ix/IxKernel" [("workspace_path", toJson "/ix/IxKernel")] do
+    withPaths "/ix/IxCK" [("workspace_path", toJson "/ix/IxCK")] do
       rejects "absolute workspace path" "must be relative" audited
-    withPaths "../ix/IxKernel" workspace do
+    withPaths "../ix/IxCK" workspace do
       withFile codec ((← IO.FS.readFile codec) ++ "\n") do
         rejects "workspace dependency source drift" "changed" audited
-  withFile (ixKernel / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
-    withPaths "../ix/IxKernel" workspace do
+  withFile (ixCK / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
+    withPaths "../ix/IxCK" workspace do
       rejects "workspace path holding another package" "does not hold its lakefile.lean" audited
 
-private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
+private def regressionTests (source blakeSource ixCKSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let root := temporary / "project"
   let blake := temporary / "Blake3"
-  let ixKernel := temporary / "ix" / "IxKernel"
+  let ixCK := temporary / "ix" / "IxCK"
   cloneProject source root
   let originalLedger ← readJson (root / "docs/trusted-externs.json")
   -- the pure Lean dependency's recorded closure, laid out as its package root sees it
@@ -256,9 +257,9 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
   for entry in ← arrField originalLedger "lean_dependencies" do
     let sourceDir ← strField entry "source_dir"
     for (relative, _) in ← pairs (← field entry "closure") do
-      copyFile (ixKernelSource / sourceDir / relative) (ixKernel / sourceDir / relative)
+      copyFile (ixCKSource / sourceDir / relative) (ixCK / sourceDir / relative)
       ixClosure := ixClosure ++ [relative]
-  need (!ixClosure.isEmpty) "test fixture lost the ix-kernel closure"
+  need (!ixClosure.isEmpty) "test fixture lost the ix-ck closure"
   for path in (← files blakeSource true).filter (·.extension == some "lean") do
     copyRelative blakeSource blake path
   let interfaces ← arrField originalLedger "native_interfaces"
@@ -270,11 +271,11 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
       blake3Version ← strField (← field entry "pins") "blake3_version"
   need (!cargoRelative.isEmpty) "test fixture lost the Blake3 Cargo lock"
   copyFile (blakeSource / cargoRelative) (blake / cargoRelative)
-  let check := audit root [("Blake3", blake.toString), ("«ix-kernel»", ixKernel.toString)] (some "6.3.0")
+  let check := audit root [("Blake3", blake.toString), ("«ix-ck»", ixCK.toString)] (some "6.3.0")
   check
-  withFile (root / "IxCC/AuditRegression.lean") "import Ix.Ixon.Verify\n" do
+  withFile (root / "IxCC/AuditRegression.lean") "import IxCK.Ixon.Verify\n" do
     rejects "unledgered pure dependency import" "imports of pure Lean dependencies drifted" check
-  let codec := ixKernel / ".." / ixClosure.head!
+  let codec := ixCK / ".." / ixClosure.head!
   withFile codec ((← IO.FS.readFile codec) ++ "\n") do
     rejects "pure dependency source drift" "changed" check
   withFile codec ((← IO.FS.readFile codec) ++ "\n@[extern \"rogue\"] opaque rogue : Nat\n") do
@@ -285,8 +286,17 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
     let ledger ← replaceField originalLedger "lean_dependencies" (Json.arr entries)
     withFile (root / "docs/trusted-externs.json") ledger.compress do
       rejects "pure dependency native code" "declares native symbols" check
-  -- a csimp theorem in the dependency closure, with its hash re-recorded:
-  -- refused until the ledger lists it
+  -- the reviewed dependency csimp inventory is exact: dropping a listed
+  -- theorem is refused
+  let dropped ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
+    let listed ← arrField entry "csimp_theorems"
+    need (!listed.isEmpty) "test fixture lost the dependency csimp inventory"
+    replaceField entry "csimp_theorems" (Json.arr listed.pop)
+  withFile (root / "docs/trusted-externs.json")
+      (← replaceField originalLedger "lean_dependencies" (Json.arr dropped)).compress do
+    rejects "dropped dependency csimp" "csimp inventory drifted" check
+  -- a csimp theorem added to the dependency closure, with its hash
+  -- re-recorded: refused until the ledger lists it
   let csimpRecord (file : String) : Json := Json.mkObj [("file", toJson file),
     ("theorem", toJson "rogue_eq"), ("replaces", toJson "rogue"), ("replacement", toJson "rogueFast")]
   let csimpTheorem := "@[csimp] theorem rogue_eq : @rogue = @rogueFast := rfl\n"
@@ -294,7 +304,8 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
     let rehashed (records : Array Json) : IO Json := do
       let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
         let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
-        replaceField (← replaceField entry "closure" closure) "csimp_theorems" (Json.arr records)
+        let listed ← arrField entry "csimp_theorems"
+        replaceField (← replaceField entry "closure" closure) "csimp_theorems" (Json.arr (listed ++ records))
       replaceField originalLedger "lean_dependencies" (Json.arr entries)
     withFile (root / "docs/trusted-externs.json") (← rehashed #[]).compress do
       rejects "unlisted dependency csimp" "csimp inventory drifted" check
@@ -363,15 +374,15 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
       let ledger ← replaceField originalLedger "native_interfaces" (Json.arr entries)
       withFile (root / "docs/trusted-externs.json") ledger.compress do
         rejects "Cargo metadata drift" diagnostic check
-  repositoryTests temporary root blake ixKernel originalLedger
-  workspaceDependencyTests root blake ixKernel originalLedger
+  repositoryTests temporary root blake ixCK originalLedger
+  workspaceDependencyTests root blake ixCK originalLedger
 
 def main (args : List String) : IO UInt32 := cli "Lean check regressions failed" do
-  let args ← checked (parseArgs ["--root", "--blake3", "--ix-kernel"] args)
+  let args ← checked (parseArgs ["--root", "--blake3", "--ix-ck"] args)
   let root ← IO.FS.realPath (option args "--root" ".")
   let blake ← IO.FS.realPath (option args "--blake3" (root / ".lake/packages/Blake3").toString)
-  let ixKernel ← IO.FS.realPath (option args "--ix-kernel" (root / ".lake/packages/ix-kernel/IxKernel").toString)
+  let ixCK ← IO.FS.realPath (option args "--ix-ck" (root / ".lake/packages/ix-ck/IxCK").toString)
   lexerTests
   disassemblyTests
-  regressionTests root blake ixKernel
+  regressionTests root blake ixCK
   IO.println "Lean check regressions ok: source lexing, root/native/csimp inventories, build graph, proof/runtime coverage, integrity, Cargo, CI, repository and workspace-dependency rejection paths"

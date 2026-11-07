@@ -4154,7 +4154,8 @@
    "imports": ["IxCC.Ixon.V3.Contracts", "IxCC.Ixon.Address"]},
   "IxCC.Src.Resource.Profile":
   {"path": "IxCC/Src/Resource/Profile.lean",
-   "imports": ["Ix.Ixon.Codec", "IxCC.Ixon.Address", "IxCC.Ixon.V3.Contracts"]},
+   "imports":
+   ["IxCK.Ixon.Codec", "IxCC.Ixon.Address", "IxCC.Ixon.V3.Contracts"]},
   "IxCC.Src.Resource.Check":
   {"path": "IxCC/Src/Resource/Check.lean",
    "imports":
@@ -5658,10 +5659,10 @@
   "IxCC.Key": {"path": "IxCC/Key.lean", "imports": ["IxCC.Src.Value"]},
   "IxCC.Ixon.V4.Convert":
   {"path": "IxCC/Ixon/V4/Convert.lean",
-   "imports": ["Ix.Ixon.Codec", "IxCC.Ixon.V3.Const"]},
+   "imports": ["IxCK.Ixon.Codec", "IxCC.Ixon.V3.Const"]},
   "IxCC.Ixon.V3.Wire":
   {"path": "IxCC/Ixon/V3/Wire.lean",
-   "imports": ["Ix.Ixon.Canonical", "IxCC.Ixon.V4.Convert"]},
+   "imports": ["IxCK.Ixon.Canonical", "IxCC.Ixon.V4.Convert"]},
   "IxCC.Ixon.V3.Validate":
   {"path": "IxCC/Ixon/V3/Validate.lean",
    "imports": ["IxCC.Ixon.V3.Source", "IxCC.Ixon.V3.Tc.Driver"]},

@@ -70,10 +70,10 @@ in
       ./.lake/build/bin/check-trusted-externs \
         --root ${auditSrc} \
         --dependency-root Blake3=${blake3-lean.outPath} \
-        --dependency-root "«ix-kernel»=${ix-src}/IxKernel" \
+        --dependency-root "«ix-ck»=${ix-src}/IxCK" \
         --gmp-version ${pkgs.gmp.version}
       ./.lake/build/bin/check-tools-tests \
-        --root ${auditSrc} --blake3 ${blake3-lean.outPath} --ix-kernel ${ix-src}/IxKernel
+        --root ${auditSrc} --blake3 ${blake3-lean.outPath} --ix-ck ${ix-src}/IxCK
     '';
 
     build-graph = mkCheck "build-graph" [] ''

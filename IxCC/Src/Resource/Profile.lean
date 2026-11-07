@@ -1,4 +1,4 @@
-import Ix.Ixon.Codec
+import IxCK.Ixon.Codec
 import IxCC.Ixon.Address
 import IxCC.Ixon.V3.Contracts
 

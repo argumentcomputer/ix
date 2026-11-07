@@ -11,55 +11,55 @@
     inherit (pkgs) lib;
     inherit root;
   };
-  # «ix-kernel»: ix's `IxKernel/lakefile.lean` declares `srcDir := ".."` (the ix
-  # checkout root), which lean4-nix cannot shadow (it copies only a
-  # dependency's `subDir`), and its `IxKernel` library also holds the codec's
-  # proofs and audits, which import the whole kernel: linking IxCC's
-  # shared library would build all of it. So the pinned sources of the codec
-  # closure IxCC imports (`Ix.Ixon.Canonical`: 11 modules under
-  # `Ix/Address` and `Ix/Ixon`, unchanged) are packaged under the same package
-  # name and toolchain with a library holding exactly those modules, built
-  # once here with its shared and static facets. A module missing at a new
-  # pin fails this build.
-  ixKernelSrc = pkgs.runCommand "ix-kernel-src" {} ''
-    mkdir -p $out/Ix
-    cp ${ix-src}/IxKernel/lean-toolchain ${ix-src}/IxKernel/lake-manifest.json $out/
-    cp -r ${ix-src}/Ix/Address ${ix-src}/Ix/Ixon $out/Ix/
+  # «ix-ck»: the libraries of ix's `IxCK/lakefile.lean` declare
+  # `srcDir := ".."` (the ix checkout root), which lean4-nix cannot shadow (it
+  # copies only a dependency's `subDir`), and its `IxCK.Ixon` library also
+  # holds the codec's proofs and audits, which import the kernel: linking
+  # IxCC's shared library would build all of it. So the pinned sources of the
+  # codec closure IxCC imports (`IxCK.Ixon.Canonical`: 11 modules under
+  # `IxCK/Address` and `IxCK/Ixon`, unchanged) are packaged under the same
+  # package name and toolchain with a library holding exactly those modules,
+  # built once here with its shared and static facets. A module missing at a
+  # new pin fails this build.
+  ixCKSrc = pkgs.runCommand "ix-ck-src" {} ''
+    mkdir -p $out/IxCK
+    cp ${ix-src}/IxCK/lean-toolchain ${ix-src}/IxCK/lake-manifest.json $out/
+    cp -r ${ix-src}/IxCK/Address ${ix-src}/IxCK/Ixon $out/IxCK/
     cat > $out/lakefile.lean <<'EOF'
     import Lake
     open Lake DSL
 
-    package «ix-kernel» where
+    package «ix-ck» where
       version := v!"0.1.0"
 
     @[default_target]
-    lean_lib IxKernel where
-      roots := #[`Ix.Address.Core, `Ix.Ixon.Types.Kinds, `Ix.Ixon.Types.Modes,
-        `Ix.Ixon.Types.Contract, `Ix.Ixon.Types, `Ix.Ixon.Codec, `Ix.Ixon.Wire,
-        `Ix.Ixon.WireCheck, `Ix.Ixon.Bounded.Universe, `Ix.Ixon.Bounded.Constant,
-        `Ix.Ixon.Canonical]
+    lean_lib IxCK where
+      roots := #[`IxCK.Address.Core, `IxCK.Ixon.Types.Kinds, `IxCK.Ixon.Types.Modes,
+        `IxCK.Ixon.Types.Contract, `IxCK.Ixon.Types, `IxCK.Ixon.Codec, `IxCK.Ixon.Wire,
+        `IxCK.Ixon.WireCheck, `IxCK.Ixon.Bounded.Universe, `IxCK.Ixon.Bounded.Constant,
+        `IxCK.Ixon.Canonical]
     EOF
   '';
-  ixKernel = lake2nix.mkLakeDerivation {
-    name = "IxKernel";
-    src = ixKernelSrc;
+  ixCK = lake2nix.mkLakeDerivation {
+    name = "IxCK";
+    src = ixCKSrc;
     buildLibrary = true;
   };
   lakeDeps = lake2nix.buildDeps {
     src = sources.dependencies;
     depOverrideDeriv = {
       Blake3 = blake3;
-      "«ix-kernel»" = ixKernel;
+      "«ix-ck»" = ixCK;
     };
   };
   # lean4-nix shadows each dependency under `.lake/packages/<manifest name>`;
-  # for `«ix-kernel»` that directory name is not ASCII, and Lake mangles it
-  # when it passes object paths to the linker (`.lake/packages/302253ix-kernel302273/…`
-  # in clang's arguments). Move it to `ix-kernel`, the directory Lake itself
+  # for `«ix-ck»` that directory name is not ASCII, and Lake mangles it
+  # when it passes object paths to the linker (`.lake/packages/302253ix-ck302273/…`
+  # in clang's arguments). Move it to `ix-ck`, the directory Lake itself
   # checks the package out to, and point the package overrides there.
   packageOverrides = pkgs.writers.writeJSON "package-overrides.json" (let
     manifest = builtins.fromJSON (builtins.readFile (root + "/lake-manifest.json"));
-    dir = name: if name == "«ix-kernel»" then "ix-kernel" else name;
+    dir = name: if name == "«ix-ck»" then "ix-ck" else name;
   in
     manifest
     // {
@@ -72,7 +72,7 @@
       manifest.packages;
     });
   asciiPackages = ''
-    mv ".lake/packages/«ix-kernel»" .lake/packages/ix-kernel
+    mv ".lake/packages/«ix-ck»" .lake/packages/ix-ck
     rm -f .lake/package-overrides.json
     cp ${packageOverrides} .lake/package-overrides.json
   '';
@@ -124,5 +124,5 @@
       touch $out
     '';
 in {
-  inherit ixccLib programs mkCheck ixKernel;
+  inherit ixccLib programs mkCheck ixCK;
 }
