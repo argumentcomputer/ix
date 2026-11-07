@@ -49,6 +49,13 @@ def mutations (bytes : ByteArray) (file : String) :
     ("bytes: one byte appended", bytes.push 0, file),
     ("file: first_equation_group edited to 40", bytes, edited)]
 
+/-- The rendering without its `spec_digest` literal, the one line holding byte
+constants, so that a comparison sees the tables alone. -/
+def tables (rendering : String) : String :=
+  let kept := (rendering.splitOn "\n").filter fun line =>
+    (line.splitOn "UInt8::BYTE_").length == 1
+  "\n".intercalate kept
+
 def run : IO UInt32 := do
   let file ← IO.FS.readFile renderedPath
   let bytes ← IO.ofExcept Ix.SpecDigest.specBytes
@@ -70,7 +77,19 @@ def run : IO UInt32 := do
       | .ok () =>
         IO.eprintln s!"[spec-digest-rendering] FAIL: {name}: accepted"
         failures := failures + 1
-      | .error e => IO.println s!"[spec-digest-rendering] refused, {name}: {e}"
+      | .error e =>
+        IO.println s!"[spec-digest-rendering] refused, {name}: {e}"
+        -- Mutated bytes must change the tables too, not only the digest literal.
+        if f == file then
+          match IxVM.RoleSpecGen.renderFromBytes b with
+          | .error _ => pure ()
+          | .ok rendered =>
+            if tables rendered == tables file then
+              IO.eprintln s!"[spec-digest-rendering] FAIL: {name}: only the digest literal changed"
+              failures := failures + 1
+            else
+              IO.println s!"[spec-digest-rendering]   tables differ too, \
+                {IxVM.RoleSpecGen.firstDifference (tables rendered) (tables file)}"
   return if failures == 0 then 0 else 1
 
 end Tests.Ix.SpecDigestRendering
