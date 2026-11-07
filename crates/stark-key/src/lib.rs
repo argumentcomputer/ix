@@ -56,8 +56,14 @@
 //! Mul = sum, Neg = child) and recomputed on decode in node order (children
 //! precede parents in the compiled vector). Goldilocks constants are written
 //! canonically and reduced on read.
+//!
+//! Every parameter that affects soundness is in the header, so it is covered
+//! by the key's digest, and multi-stark also seeds the transcript with it.
+//! [`from_bytes`] rejects a key whose parameters are below
+//! [`security::MIN_CONJECTURED_BITS`].
 
 pub mod range;
+pub mod security;
 
 use multi_stark::{
   expr::{ColRef, RowOffset, Source},
@@ -428,12 +434,25 @@ fn zeros_plus_logup(
     + multi_stark::lookup::logup_constraint_count(num_lookups, group_size, d)
 }
 
+/// A decoded key: the system and its config's construction parameters, which
+/// the `System` itself doesn't expose.
+pub type Decoded = (System<AiurConfig>, CommitmentParameters, FriParameters);
+
 /// Deserialize a `System<AiurConfig>` from [`to_bytes`] output, requiring that
-/// every byte is consumed. Also returns the config's construction parameters,
-/// which the `System` itself doesn't expose.
-pub fn from_bytes(
-  bytes: &[u8],
-) -> Result<(System<AiurConfig>, CommitmentParameters, FriParameters), String> {
+/// every byte is consumed and that the parameters meet the security floor
+/// ([`security::check`]).
+pub fn from_bytes(bytes: &[u8]) -> Result<Decoded, String> {
+  decode(bytes, true)
+}
+
+/// [`from_bytes`] without the security floor, for tests whose toy keys keep
+/// recursive circuits small. A verifier must never trust a key decoded this way.
+#[doc(hidden)]
+pub fn from_bytes_below_floor(bytes: &[u8]) -> Result<Decoded, String> {
+  decode(bytes, false)
+}
+
+fn decode(bytes: &[u8], floor: bool) -> Result<Decoded, String> {
   let mut r = Seg { buf: bytes, pos: 0 };
   let commitment_parameters = CommitmentParameters {
     log_blowup: r.u16()? as usize,
@@ -446,6 +465,9 @@ pub fn from_bytes(
     commit_proof_of_work_bits: r.u16()? as usize,
     query_proof_of_work_bits: r.u16()? as usize,
   };
+  if floor {
+    security::check(&commitment_parameters, &fri_parameters)?;
+  }
   let n_circuits = r.u16()? as usize;
   let mut circuits = Vec::with_capacity(n_circuits);
   for _ in 0..n_circuits {
@@ -482,4 +504,130 @@ pub fn from_bytes(
     preprocessed_indices,
   };
   Ok((system, commitment_parameters, fri_parameters))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use multi_stark::{
+    expr::Expr, p3_matrix::dense::RowMajorMatrix, system::CircuitInputs,
+  };
+
+  /// Main's parameters, the lowest the floor admits.
+  fn floor_parameters() -> (CommitmentParameters, FriParameters) {
+    let cp = CommitmentParameters { log_blowup: 2, cap_height: 0 };
+    let fp = FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 100,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 20,
+    };
+    (cp, fp)
+  }
+
+  /// Two circuits: a constrained one with a lookup, and a preprocessed table
+  /// with a grouped lookup, so the record and trailer paths are covered.
+  fn test_system(
+    cp: CommitmentParameters,
+    fp: FriParameters,
+  ) -> System<AiurConfig> {
+    let x = Expr::main(0);
+    let y = Expr::main(1);
+    let one = Expr::constant(Val::ONE);
+    let inputs = vec![
+      CircuitInputs {
+        main_width: 2,
+        constraints: vec![x.clone() * x.clone() - y.clone()],
+        lookups: vec![Lookup::pull(one.clone(), vec![one.clone(), x, y])],
+        ..Default::default()
+      },
+      CircuitInputs {
+        main_width: 1,
+        preprocessed: Some(RowMajorMatrix::new_col(
+          (0..4).map(Val::from_u32).collect(),
+        )),
+        lookups: vec![
+          Lookup::push(Expr::main(0), vec![one.clone(), Expr::preprocessed(0)]),
+          Lookup::push(Expr::main(0), vec![one, Expr::preprocessed(0)]),
+        ],
+        lookup_group_size: 2,
+        ..Default::default()
+      },
+    ];
+    System::new(AiurConfig::new(cp, fp), inputs).0
+  }
+
+  fn encoded() -> Vec<u8> {
+    let (cp, fp) = floor_parameters();
+    to_bytes(&test_system(cp, fp), cp, fp)
+  }
+
+  #[test]
+  fn round_trips() {
+    let bytes = encoded();
+    let (system, cp, fp) = from_bytes(&bytes).expect("decode");
+    assert_eq!(to_bytes(&system, cp, fp), bytes);
+    let fresh = test_system(cp, fp);
+    assert_eq!(fresh.circuits.len(), system.circuits.len());
+    for (a, b) in fresh.circuits.iter().zip(&system.circuits) {
+      assert_eq!(a.graph.nodes, b.graph.nodes);
+      assert_eq!(a.graph.zeros, b.graph.zeros);
+      assert_eq!(a.main_width, b.main_width);
+      assert_eq!(a.preprocessed_width, b.preprocessed_width);
+      assert_eq!(a.preprocessed_height, b.preprocessed_height);
+      assert_eq!(a.lookup_group_size, b.lookup_group_size);
+      assert_eq!(a.stage_2_width, b.stage_2_width);
+      assert_eq!(a.num_publics, b.num_publics);
+      assert_eq!(a.constraint_count, b.constraint_count);
+    }
+  }
+
+  #[test]
+  fn rejects_trailing_bytes() {
+    let mut bytes = encoded();
+    bytes.push(0);
+    assert!(from_bytes(&bytes).is_err(), "accepted trailing data");
+    assert!(from_bytes_below_floor(&bytes).is_err());
+  }
+
+  /// Records carry no length prefix, so full consumption and read bounds are
+  /// the malformation guards: every truncation must be rejected.
+  #[test]
+  fn rejects_truncation() {
+    let bytes = encoded();
+    for len in 0..bytes.len() {
+      assert!(from_bytes(&bytes[..len]).is_err(), "accepted {len} bytes");
+    }
+  }
+
+  /// The header fields are u16 LE at these offsets.
+  fn with_header(field: usize, value: u16) -> Vec<u8> {
+    let mut bytes = encoded();
+    bytes[2 * field..2 * field + 2].copy_from_slice(&value.to_le_bytes());
+    bytes
+  }
+
+  #[test]
+  fn rejects_keys_below_the_security_floor() {
+    // (field, value): log_blowup 0, log_blowup 1 (110 bits), 99 queries,
+    // 19 query proof-of-work bits, and 33 commit proof-of-work bits.
+    for (field, value) in [(0, 0), (0, 1), (4, 99), (6, 19), (5, 33)] {
+      let bytes = with_header(field, value);
+      let error = from_bytes(&bytes).err().expect("accepted a weak key");
+      assert!(
+        error.contains("floor")
+          || error.contains("outside")
+          || error.contains("exceeds"),
+        "{error}"
+      );
+      // The waiver decodes the same bytes, for tests only.
+      if field != 0 || value != 0 {
+        from_bytes_below_floor(&bytes).unwrap();
+      }
+    }
+    // Stronger parameters than the floor decode.
+    from_bytes(&with_header(4, 101)).unwrap();
+    from_bytes(&with_header(5, 16)).unwrap();
+  }
 }

@@ -153,7 +153,7 @@ from the proof.
 
 `fri_sizing --statistics <outer-vk.bin>` exports key statistics through the
 Rust decoder without building a circuit. Pipe its JSON to
-`tools/compression/fri_security_estimate.py -` for parameter estimates.
+`lake exe fri-security -` for parameter estimates (`docs/stark-parameters.md`).
 `fri_sizing` also retains opt-in frontend sizing.
 
 Focused entry points include the field primitives and complete verifier

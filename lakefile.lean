@@ -204,6 +204,10 @@ lean_exe ix where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_net]
 
+/-- FRI soundness estimates for a key's instance (`docs/stark-parameters.md`). -/
+lean_exe «fri-security» where
+  root := `Scripts.FriSecurity
+
 section Tests
 
 lean_lib Tests

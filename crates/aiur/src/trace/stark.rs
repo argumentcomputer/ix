@@ -75,16 +75,58 @@ const CALL: u64 = 1;
 const ROM: u64 = 2;
 pub const MEMSEG: u64 = 16;
 
-/// CPU FRI configuration. Root Merkle caps also cover height-one circuits.
-/// These are explicit protocol parameters, not a claimed security-bit estimate.
-#[derive(Clone, Copy, Debug, Serialize)]
+/// The FRI parameters that vary. This adapter and the recursive verifier fix
+/// the rest: binary folding, a constant final polynomial and root Merkle caps
+/// (which also cover height-one circuits). Every field is written into the
+/// verifying key and seeds the transcript, so a proof made under other
+/// parameters does not verify against a key built with these. Building a
+/// backend rejects parameters below the security floor
+/// ([`stark_key::security`]); `docs/stark-parameters.md` gives the levels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Parameters {
   pub log_blowup: usize,
   pub num_queries: usize,
+  /// Proof of work before each FRI folding challenge.
+  pub commit_proof_of_work_bits: usize,
+  /// Proof of work before the FRI query indices are sampled.
+  pub query_proof_of_work_bits: usize,
+}
+impl Parameters {
+  /// Main's parameters before formal Aiur: blowup 4, 100 queries and 20
+  /// query proof-of-work bits, 220 conjectured bits. The Lean mirror is
+  /// `Aiur.defaultCommitmentParameters` and `Aiur.defaultFriParameters` in
+  /// `Ix/Aiur/Parameters.lean`, checked by the test `lean_mirror_matches`.
+  pub const DEFAULT: Self = Self {
+    log_blowup: 2,
+    num_queries: 100,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
+  };
+
+  pub const fn commitment(self) -> CommitmentParameters {
+    CommitmentParameters { log_blowup: self.log_blowup, cap_height: 0 }
+  }
+  pub const fn fri(self) -> FriParameters {
+    FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: self.num_queries,
+      commit_proof_of_work_bits: self.commit_proof_of_work_bits,
+      query_proof_of_work_bits: self.query_proof_of_work_bits,
+    }
+  }
+  /// `log_blowup · num_queries + query_proof_of_work_bits`.
+  pub const fn conjectured_bits(self) -> usize {
+    stark_key::security::conjectured_bits(&self.commitment(), &self.fri())
+  }
+  /// The security floor ([`stark_key::security::check`]).
+  pub fn check(self) -> Result<(), String> {
+    stark_key::security::check(&self.commitment(), &self.fri())
+  }
 }
 impl Default for Parameters {
   fn default() -> Self {
-    Self { log_blowup: 1, num_queries: 64 }
+    Self::DEFAULT
   }
 }
 
@@ -202,7 +244,18 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, device)
+    Self::build(plan, parameters, true, device, true)
+  }
+
+  /// [`Self::for_batch`] without the security floor, for tests whose toy
+  /// parameters keep recursive verifier circuits small. A verifier must never
+  /// trust a key or proof from such a backend.
+  #[doc(hidden)]
+  pub fn for_batch_below_floor(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, true, None, false)
   }
 
   fn with_memory_policy(
@@ -210,7 +263,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     segmented_memory: bool,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, segmented_memory, None)
+    Self::build(plan, parameters, segmented_memory, None, true)
   }
 
   fn build(
@@ -218,15 +271,17 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     segmented_memory: bool,
     device: Option<i32>,
+    floor: bool,
   ) -> Result<Self, String> {
     let gpu_lookup_only = device_lookups()?;
     #[allow(unused_mut)]
-    let mut backend = Self::build_with_lookup_policy(
+    let mut backend = Self::assemble(
       plan,
       parameters,
       segmented_memory,
       device,
       gpu_lookup_only,
+      floor,
     )?;
     // Only proving backends populate traces; verification ignores this.
     #[cfg(feature = "cuda")]
@@ -243,6 +298,34 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     device: Option<i32>,
     gpu_lookup_only: bool,
   ) -> Result<Self, String> {
+    Self::assemble(
+      plan,
+      parameters,
+      segmented_memory,
+      device,
+      gpu_lookup_only,
+      true,
+    )
+  }
+
+  fn assemble(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    segmented_memory: bool,
+    device: Option<i32>,
+    gpu_lookup_only: bool,
+    floor: bool,
+  ) -> Result<Self, String> {
+    if floor {
+      parameters.check()?;
+    } else if !stark_key::security::LOG_BLOWUP_RANGE
+      .contains(&parameters.log_blowup)
+      || parameters.num_queries == 0
+    {
+      return Err(
+        "expected log_blowup in 1..=4 and positive num_queries".into(),
+      );
+    }
     if gpu_lookup_only && !cfg!(feature = "cuda") {
       return Err("AIUR_TRACE_ONLY_LOOKUPS=1 requires a CUDA build".into());
     }
@@ -258,12 +341,6 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
-    }
-    if !(1..=4).contains(&parameters.log_blowup) || parameters.num_queries == 0
-    {
-      return Err(
-        "expected log_blowup in 1..=4 and positive num_queries".into(),
-      );
     }
     let rom = rom::Rom::new(plan);
     let mut inputs = vec![];
@@ -299,14 +376,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }
     }
     let config = GoldilocksBlake3Config::with_device(
-      CommitmentParameters { log_blowup: parameters.log_blowup, cap_height: 0 },
-      FriParameters {
-        log_final_poly_len: 0,
-        max_log_arity: 1,
-        num_queries: parameters.num_queries,
-        commit_proof_of_work_bits: 0,
-        query_proof_of_work_bits: 0,
-      },
+      parameters.commitment(),
+      parameters.fri(),
       device,
     );
     let (mut system, key) = System::new(config, inputs);
@@ -366,6 +437,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       device_plans: None,
     };
     Ok(backend)
+  }
+
+  pub const fn parameters(&self) -> Parameters {
+    self.parameters
   }
 
   pub fn statistics(&self) -> Vec<CircuitStatistics> {

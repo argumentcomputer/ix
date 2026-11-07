@@ -162,7 +162,9 @@ fn main() -> Result<(), Box<dyn Error>> {
   let batch = backend.plan_batch(&record, &options)?;
   let mut report = serde_json::json!({"plan":batch, "execution_seconds":execute,
     "queries":record.queries.len(), "instructions":record.instructions,
-    "circuits":backend.statistics(), "verified":false});
+    "circuits":backend.statistics(), "parameters":backend.parameters(),
+    "conjectured_security_bits":backend.parameters().conjectured_bits(),
+    "verified":false});
   let report_path = format!("{path}.report.json");
   std::fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
   if mode == "plan" {

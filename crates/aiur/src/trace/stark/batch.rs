@@ -37,19 +37,6 @@ fn copy_rows(values: &[Val]) -> Vec<Val> {
   values.to_vec()
 }
 
-fn commitment_parameters(p: Parameters) -> CommitmentParameters {
-  CommitmentParameters { log_blowup: p.log_blowup, cap_height: 0 }
-}
-fn fri_parameters(p: Parameters) -> FriParameters {
-  FriParameters {
-    log_final_poly_len: 0,
-    max_log_arity: 1,
-    num_queries: p.num_queries,
-    commit_proof_of_work_bits: 0,
-    query_proof_of_work_bits: 0,
-  }
-}
-
 /// Stage-one traces ready for batch proving: host rows, plus the device
 /// record of the function circuits the GPU fills
 /// (`AIUR_GPU_TRACE=generated`), whose host matrices are empty placeholders.
@@ -108,7 +95,8 @@ pub struct VerifyingKey {
 }
 impl Clone for VerifyingKey {
   fn clone(&self) -> Self {
-    Self::from_bytes(&self.to_bytes()).expect("valid VerifyingKey")
+    // Already accepted, possibly through the test-only waiver.
+    Self::decode(&self.to_bytes(), false).expect("valid VerifyingKey")
   }
 }
 impl std::fmt::Debug for VerifyingKey {
@@ -119,10 +107,26 @@ impl std::fmt::Debug for VerifyingKey {
   }
 }
 impl VerifyingKey {
+  /// Decode a key, rejecting parameters this adapter does not produce or
+  /// that are below the security floor ([`stark_key::security`]).
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-    let (system, cp, fp) = stark_key::from_bytes(bytes)?;
+    Self::decode(bytes, true)
+  }
+  /// [`Self::from_bytes`] without the security floor, for tests whose toy
+  /// keys keep recursive verifier circuits small. A verifier must never trust
+  /// a key decoded this way.
+  #[doc(hidden)]
+  pub fn from_bytes_below_floor(bytes: &[u8]) -> Result<Self, String> {
+    Self::decode(bytes, false)
+  }
+  fn decode(bytes: &[u8], floor: bool) -> Result<Self, String> {
+    let (system, cp, fp) = if floor {
+      stark_key::from_bytes(bytes)?
+    } else {
+      stark_key::from_bytes_below_floor(bytes)?
+    };
     if cp.cap_height != 0
-      || !(1..=4).contains(&cp.log_blowup)
+      || !stark_key::security::LOG_BLOWUP_RANGE.contains(&cp.log_blowup)
       || fp.log_final_poly_len != 0
       || fp.max_log_arity != 1
       || fp.num_queries == 0
@@ -444,8 +448,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     Ok(stark_key::to_bytes(
       &self.system,
-      commitment_parameters(self.parameters),
-      fri_parameters(self.parameters),
+      self.parameters.commitment(),
+      self.parameters.fri(),
     ))
   }
 

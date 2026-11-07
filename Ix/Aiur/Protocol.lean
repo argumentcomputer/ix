@@ -2,10 +2,11 @@ module
 public import Std.Data.HashMap
 public import Ix.Aiur.Goldilocks
 public import Ix.Address
+public import Ix.Aiur.Parameters
 
 /-!
-Pure Lean protocol types (`IOBuffer`, `QueryCount`, `CommitmentParameters`,
-`FriParameters`, `ShardRetention`, `buildClaim`) and Rust-backed environment /
+Pure Lean protocol types (`IOBuffer`, `QueryCount`, `ShardRetention`,
+`buildClaim`; the STARK parameters are in `Ix.Aiur.Parameters`) and Rust-backed environment /
 manifest FFI (`EnvHandle`, `shardManifestRefine`,
 `detectedRamBudgetBytes`).
 -/
@@ -85,28 +86,6 @@ def fromBytes (bytes : ByteArray) : Except String EnvHandle :=
   fromBytes' bytes
 
 end EnvHandle
-
-structure CommitmentParameters where
-  logBlowup : Nat
-  capHeight : Nat
-
-structure FriParameters where
-  logFinalPolyLen : Nat
-  maxLogArity : Nat
-  numQueries : Nat
-  commitProofOfWorkBits : Nat
-  queryProofOfWorkBits : Nat
-
-def defaultCommitmentParameters : CommitmentParameters :=
-  { logBlowup := 2, capHeight := 0 }
-
-def defaultFriParameters : FriParameters := {
-  logFinalPolyLen := 0
-  maxLogArity := 1
-  numQueries := 100
-  commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
-}
 
 structure CircuitShape where
   mainWidth : Nat
