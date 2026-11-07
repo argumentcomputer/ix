@@ -202,8 +202,8 @@ multi-stark's `libmulti_stark_cuda.so`.
 
 `IX_NO_PAR=1` builds without the `parallel` feature.
 
-See [the GPU proving guide](../../docs/aiur-gpu-proving.md) for shared CUDA
-backend packaging and host-toolchain requirements. When deploying `ix`,
+See [Formal Aiur in Ix](../../docs/formal-aiur-migration.md#cuda-and-native-builds)
+for shared CUDA backend packaging and host-toolchain requirements. When deploying `ix`,
 copy both libraries from `.lake/build/lib` into `../lib` relative to the
 executable.
 

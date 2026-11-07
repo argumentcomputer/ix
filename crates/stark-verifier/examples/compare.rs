@@ -1,4 +1,5 @@
-//! Same bytecode benchmark contract as Benchmarks.CompareAiur for legacy.
+//! Bytecode benchmark of an exported Aiur artifact: execution, trace and
+//! optional proving timings, and every circuit's shape and FFT cost.
 use aiur::{
   field::FieldBackend,
   library::io::Invocation,
@@ -169,9 +170,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-/// Same Goldilocks FFT model as `LegacyAiur.Statistics.fftCost`: two extension
-/// limbs, inverse/forward trace transforms, and quotient transforms. This is
-/// a work estimate, not elapsed time; height is already padded.
+/// The Goldilocks FFT model of the retired `Aiur.Statistics.fftCost`: two
+/// extension limbs, inverse/forward trace transforms, and quotient
+/// transforms. This is a work estimate, not elapsed time; height is already
+/// padded.
 #[allow(clippy::cast_precision_loss)] // Approximate work, not an exact cell count.
 fn fft_cost(
   stage1: usize,
@@ -190,7 +192,7 @@ fn fft_cost(
 }
 
 /// Optional process-local control for comparing allocation-heavy small runs.
-/// Legacy query arenas request huge pages; faulting a 2 MiB page for a tiny
+/// Query arenas may request huge pages; faulting a 2 MiB page for a tiny
 /// function can dominate execution. Never changes the machine's THP policy.
 fn configure_benchmark_memory() -> Result<bool, String> {
   let disable = std::env::var("IX_BENCH_NO_THP").as_deref() == Ok("1");

@@ -73,10 +73,11 @@ inside monomorphized names. Existing tuned groups use the relocated names.
 
 ## Compatibility checks
 
-Legacy is the behavioral reference, with the previously reviewed adaptations:
-no unconstrained pointer values, explicit raw hint channels, checked byte/word
-construction, and structural equality where equality is required. Optional
-pointer shortcuts stay removed. These adaptations have not been changed.
+The retired legacy IxVM, as ported, was the behavioral reference, with the
+previously reviewed adaptations: no unconstrained pointer values, explicit raw
+hint channels, checked byte/word construction, and structural equality where
+equality is required. Optional pointer shortcuts stay removed. These
+adaptations have not been changed.
 The port audit distinguishes lexical translation, semantic adaptations, and
 library replacements; it is not a theorem of equivalence to legacy.
 
@@ -120,8 +121,8 @@ tools/ixvm/check-formal.sh
 The library regression also instantiates abstract byte/word clients, rejects
 opaque hints and incomplete providers, and checks accelerated execution against
 table execution and reference trace generation. The full integration gate
-covers valid/invalid IxVM claims, the retained legacy bytecode entrypoint,
-recursive proofs, aggregation, and production controllers.
+covers valid/invalid IxVM claims, recursive proofs, aggregation, and production
+controllers.
 
 Validation of this refactor passed 2,586 accelerated/table execution and
 reference-trace comparisons, the Lean arithmetic/domain/opacity checks, two
