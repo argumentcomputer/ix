@@ -4,8 +4,8 @@
 
     - Constants registered under a `.bad` test-case outcome (intentional
       kernel rejections).
-    - Constants in `knownIncompatible` (cases the
-      kernel structurally cannot adjudicate).
+    - Constants in `Tests.Ix.Kernel.Arena.knownIncompatible` (cases the
+      IxVM kernel structurally cannot adjudicate — see comments there).
     - Constants whose test case carries a non-empty `renamings` field
       (collision tests, not single-constant typechecks).
 
@@ -18,17 +18,10 @@
 -/
 import Ix.Meta
 import Tests.Ix.Kernel.TutorialMeta
+import Tests.Ix.Kernel.Arena
 
 open Tests.Ix.Kernel.TutorialMeta
-
-def knownIncompatible : Array (Lean.Name × String) := #[
-  (`tut06_bad01,
-   "duplicate levelParams: Anon-mode hygiene check"),
-  (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
-   "malformed rec rule; Tutorial uses bespoke FFI"),
-  (`inductLevelParam,
-   "duplicate levelParams: Anon-mode hygiene check")
-]
+open Tests.Ix.Kernel.Arena (knownIncompatible)
 
 /-- Parse `--out <path>` / `--out=<path>` from the arg list. Last one wins. -/
 private def outPath? : List String → Option String

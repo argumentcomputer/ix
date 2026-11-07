@@ -31,6 +31,16 @@ import Tests.Ix.Kernel.CheckTauCetiReduction
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
+import Tests.Ix.Kernel.Arena
+import Tests.Ix.IxVM
+import Tests.Ix.IxVM.Eval
+import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.DefinitionDependencies
+import Tests.Ix.IxVM.BindingAnchors
+import Tests.Ix.IxVM.BindingFrontier
+import Tests.Ix.IxVM.TagN
+import Tests.Ix.IxVM.Codec
+import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.PreludeFidelity
@@ -114,7 +124,10 @@ def registry : List Entry := [
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  -- the formal IxVM program holds no address literal but its specification digest
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
+  -- every IO byte the IxVM and multi-stark programs read is range-checked
+  .suite "io-ingress" .primary Tests.IOIngress.suite,
   -- the role table's wire vectors (Tests/Fixtures/ixon-v4/role-table.tsv), which
   -- Rust's codec is tested against, are IxC's codec's
   .runner "role-table-wire" .primary Tests.RoleTableWire.run,
@@ -164,6 +177,29 @@ def registry : List Entry := [
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
+
+  -- Claims through the formal IxVM program (`ixvm-proof test` on the claim
+  -- artifact; `Tests.Ix.IxVM.Harness`), each verdict pinned: the only
+  -- evidence, until the refinement proof lands, that the program rejects
+  -- what it must.
+  -- Kernel verdicts on compiled Lean constants, the binding claim and a shard.
+  .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
+  -- Prover-authored malformed Ixon, each exploit with its controls.
+  .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
+  -- The lean-kernel-arena tutorial fixtures: good accepted, `bad_*` rejected.
+  .env "ixvm-arena" (.ci .ixvm) Tests.Ix.Kernel.Arena.run,
+  -- The program's TagN codec against the host's (`Ixon.putTagN`/`getTagN`).
+  .runner "ixvm-tagn" (.ci .ixvm) Tests.Ix.IxVM.TagN.run,
+  -- The program's Ixon codec (`ixon-v4-tests`' vectors) and claim boundary.
+  .runner "ixvm-codec" (.ci .ixvm) Tests.Ix.IxVM.Codec.run,
+  -- Evaluation claims against Lean's own reduction and generated arithmetic.
+  .env "ixvm-eval" (.ci .ixvm) Tests.Ix.IxVM.Eval.run,
+  -- Circular definitions, binding anchors and the lazy binding frontier.
+  .runner "ixvm-definition-dependencies" (.ci .ixvm) Tests.Ix.IxVM.DefinitionDependencies.run,
+  .runner "ixvm-binding-anchors" (.ci .ixvm) Tests.Ix.IxVM.BindingAnchors.run,
+  .runner "ixvm-binding-frontier" (.ci .ixvm) Tests.Ix.IxVM.BindingFrontier.run,
+  -- A constant byte out of range is refused.
+  .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
@@ -231,6 +267,7 @@ def required : List (String × String) := [
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),
   ("prim-addrs", "primary"),
+  ("io-ingress", "primary"),
   ("role-table-wire", "primary"),
   ("exact-sharing", "primary"),
   ("ixon-reject-parity", "primary"),
@@ -244,6 +281,13 @@ def required : List (String × String) := [
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
+  ("ixvm-kernel-checks", "ci:ixvm"),
+  ("ixvm-exploits", "ci:ixvm"),
+  ("ixvm-arena", "ci:ixvm"),
+  ("ixvm-tagn", "ci:ixvm"),
+  ("ixvm-codec", "ci:ixvm"),
+  ("ixvm-eval", "ci:ixvm"),
+  ("ixvm-io-ingress", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),

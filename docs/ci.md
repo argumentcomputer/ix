@@ -7,7 +7,7 @@ which does not run on a GPU. Future GPU benchmarks should explicitly request
 unavailable or when provisioning an automatic recovery attempt.
 
 Formal Aiur's CPU integration job exercises the CPU controls of
-`tools/ixvm/check-cuda.py`. Actual CPU/CUDA proof and key parity, including
+`formal-checks cuda` (`Tests/FormalChecks/Cuda.lean`). Actual CPU/CUDA proof and key parity, including
 sharded IxVM, recursion, and aggregation, requires a GPU host running
 `IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh`. The
 [migration guide](formal-aiur-migration.md#legacy-support-and-native-builds)
@@ -52,8 +52,9 @@ the entry runs:
 | --- | --- | --- |
 | `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
+| `ci:ixvm` | a step of the `lean-test` job, after `tools/ixvm/check-formal.sh`, on its claim artifact | claims through the formal IxVM program (`ixvm-proof test`): kernel verdicts, the exploit, arena, TagN, evaluation, binding and IO-ingress suites |
 | `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the binding proof through the `ix` binary |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, catalog and commit I/O, and the IxVM suite |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, and catalog and commit I/O |
 | `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; the Rust, pure and admission BLAKE3 on every record, blob and binding of that artifact; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
