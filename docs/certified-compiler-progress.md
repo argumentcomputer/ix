@@ -14,8 +14,8 @@ role finalization, output writing and cleanup are retained. No workload Ixon
 output cache or partial-output option is used. Timed runs are exclusive.
 
 The current Init+Std workload has 117,694 input declarations and zero compiler
-failures. Its complete 253,772,604-byte artifact has Blake3 digest
-`a24fd146fcf3c5ed6e6a4821f5f122a6d397270f7eb3106bd7b75ff23eeca9a3`.
+failures. Its complete 253,772,605-byte artifact has Blake3 digest
+`baf25d8344fa60df1deb000122461c2034f5dc924fe0fdaa84b8e42ee1af2521`.
 
 ## Integrated pipeline components
 

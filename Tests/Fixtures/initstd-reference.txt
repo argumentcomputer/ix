@@ -13,8 +13,8 @@
 #
 # A change that moves the compiler's bytes, or the kernel's verdicts on
 # this artifact, updates these lines in the same commit and says why.
-blake3	a24fd146fcf3c5ed6e6a4821f5f122a6d397270f7eb3106bd7b75ff23eeca9a3
-bytes	253772604
+blake3	baf25d8344fa60df1deb000122461c2034f5dc924fe0fdaa84b8e42ee1af2521
+bytes	253772605
 lean-kernel-passed	99514
 lean-kernel-checked	99519
 lean-kernel-refused	78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2	Lean.trustCompiler
