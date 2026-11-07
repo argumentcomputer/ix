@@ -153,14 +153,31 @@ def parseLog (log : String) : Producer :=
 
 private def containsText (text needle : String) : Bool := (text.splitOn needle).length > 1
 
+/-- The final message of an ix log as one line: the last `uncaught exception:`
+line with its indented continuation lines (a structured value Lean prints
+across lines) joined by single spaces, and without the `FILE:LINE:COL: error: `
+position Lean puts before an elaboration error. `none` when anything but
+continuation lines follows that line. -/
+def finalRejection (log : String) : Option String := do
+  let marker := "uncaught exception: "
+  let lines := (log.splitOn "\n").filter (!·.trimAscii.isEmpty)
+  let start ← ((List.range lines.length).filter (fun i => lines[i]!.startsWith marker)).getLast?
+  let continuation := lines.drop (start + 1)
+  guard (continuation.all (·.startsWith " "))
+  let message := (lines[start]!.drop marker.length).toString
+  let message := match message.splitOn ": error: " with
+    | position :: first :: rest =>
+      if (position.splitOn ".lean:").length > 1 then ": error: ".intercalate (first :: rest) else message
+    | _ => message
+  return " ".intercalate ((marker ++ message) :: continuation.map (·.trimAscii.toString))
+
 /-- Only completed, known CLI refusals are frozen. Exit 1 is ix's normal
 failure status; signal/timeout statuses and resource-budget exhaustion are
 infrastructure failures. Keep `parseLog` for legacy frozen records. -/
 def completedRejection (status : UInt32) (log : String) : Except String Producer := do
   unless status == 1 do throw s!"unexpected ix exit status {status}"
   unless log.endsWith "\n" do throw "unterminated ix rejection output"
-  let line := ((log.splitOn "\n").filter (!·.trimAscii.isEmpty)).getLast?.getD ""
-  unless line.startsWith "uncaught exception: " do throw "missing completed ix rejection"
+  let some line := finalRejection log | throw "missing completed ix rejection"
   let p := parseLog line
   unless !p.code.isEmpty do throw "empty ix rejection code"
   match p.stage with

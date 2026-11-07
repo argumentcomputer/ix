@@ -162,8 +162,15 @@ private def verdictResults (a : Assert) (work : FilePath) : IO Unit := do
   let sourceFailure := "uncaught exception: source contract: Ix.Compile.SourceContractError.duplicateAnnotation `f (Ix.Compile.SourceRoot.type) 42\n"
   let recursiveFailure := "uncaught exception: resource profile: `f` is an annotated recursive definition; it is admitted only when checked through its unfolding equation (ix compile --equations --profile FILE) or assumed by the profile (assume f), never through its kernel encoding\n"
   let nativeFailure := "uncaught exception: resource profile: `f` has a native implementation (@[extern], @[implemented_by], an opaque or partial definition) and a resource contract; its Lean body is only a model, so the contract must be an explicit profile assumption (assume f)\n"
+  -- as ix prints an elaboration error: positioned, its value across indented lines
+  let positionedFailure := "uncaught exception: /work/src/OS05/Annotated.lean:13:0: error: " ++
+    "source contract: Ix.Compile.SourceContractError.misplacedAnnotation\n  `vhead\n" ++
+    "  { root := Ix.Compile.SourceRoot.body,\n    path := [Ix.Compile.SourceStep.binderBody] }\n"
+  expect a (!(Own.Verdicts.completedRejection 1 (positionedFailure ++ "segmentation fault\n")).isOk)
+    "resource-records: output after a positioned rejection cannot authorize it"
   for (text, stage, code) in [(resourceFailure, "resource", "TypeMismatch"),
       (sourceFailure, "elaboration", "duplicateAnnotation"),
+      (positionedFailure, "elaboration", "misplacedAnnotation"),
       (recursiveFailure, "profile", "annotated-recursion"), (nativeFailure, "profile", "native")] do
     let parsed := Own.Verdicts.completedRejection 1 text
     expect a (parsed.toOption.any fun p => p.verdict == "reject" && p.stage == stage && p.code == code)
