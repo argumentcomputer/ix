@@ -2,7 +2,10 @@
 //! Only the claim, proof and memory interval ends vary between invocations.
 use super::{Prepared, Result};
 use crate::fri::*;
-use aiur::{synthesis::AiurProof, vk_codec::AiurVerifyingKey};
+use aiur::trace::stark::{
+  BatchProof as AiurProof, MEMSEG, VerifyingKey as AiurVerifyingKey,
+  batch::memseg_args,
+};
 use multi_stark::{
   batch::{BatchMessage, BatchPreamble, ShardHeader},
   plonkish::{Circuit, CircuitBuilder, Value},
@@ -121,13 +124,8 @@ impl FixedRoot {
     }
     let mut messages = vec![];
     for (&(width, _), &end) in self.memory_traces.iter().zip(ends) {
-      messages.push(BatchMessage::pull(
-        aiur::memory::Memory::memseg_args(Val::from_usize(width), Val::ZERO)
-          .to_vec(),
-      ));
-      messages.push(BatchMessage::push(
-        aiur::memory::Memory::memseg_args(Val::from_usize(width), end).to_vec(),
-      ));
+      messages.push(BatchMessage::pull(memseg_args(width, Val::ZERO).to_vec()));
+      messages.push(BatchMessage::push(memseg_args(width, end).to_vec()));
     }
     Ok(BatchPreamble {
       headers: vec![ShardHeader {
@@ -205,7 +203,7 @@ impl FixedRoot {
       b.assert_equal(value, end);
       let overflow = b.mul(low, top);
       b.assert_zero(overflow);
-      let channel = b.constant(aiur::shard::memseg_channel_value());
+      let channel = b.constant(Val::from_u64(MEMSEG));
       let width = b.constant(Val::from_usize(width));
       let zero = b.constant(Val::ZERO);
       let minus = b.constant(Val::NEG_ONE);
@@ -252,7 +250,7 @@ impl FixedRoot {
     limits: VerifierLimits,
   ) -> Result<Prepared<Val>> {
     key
-      .verify(expected, proof)
+      .verify(&[expected.to_vec()], proof)
       .map_err(|e| format!("normalized root: {e:?}"))?;
     if expected.len() != self.claim_len
       || proof.preamble.headers.len() != 1
@@ -324,7 +322,31 @@ mod tests {
 
   #[test]
   fn normalized_aiur_execution_matches_the_fixed_verifier() -> Result<()> {
-    use aiur::{bytecode::*, execute::IOBuffer, synthesis::AiurSystem};
+    use aiur::{
+      Program,
+      trace::{
+        TraceArtifact, TracePlan,
+        stark::{Backend, Parameters},
+      },
+    };
+    #[derive(serde::Deserialize)]
+    struct Package {
+      program: Program,
+      trace: TraceArtifact,
+    }
+    let mut package: Package = serde_json::from_str(include_str!(
+      "../../../../aiur/tests/fixtures/grouping.json"
+    ))?;
+    package.program.maps = serde_json::from_value(serde_json::json!([
+      {"name":"id","params":[{"kind":"field"}],"result":{"kind":"tuple","items":[{"kind":"field"}]},"input":0,"output":0}
+    ]))?;
+    package.program.tables = serde_json::from_value(serde_json::json!([
+      {"name":"xs","type":{"kind":"tuple","items":[{"kind":"field"}]},"rows":[[0],[1],[2],[3]]}
+    ]))?;
+    let program = package.program.check_field::<Val>()?;
+    let plan = TracePlan::new(&program, package.trace)?;
+    let params = Parameters { log_blowup: 2, num_queries: 2 };
+    let backend = Backend::for_batch(&plan, params)?;
     let cp = CommitmentParameters { log_blowup: 2, cap_height: 0 };
     let fp = FriParameters {
       log_final_poly_len: 0,
@@ -333,38 +355,16 @@ mod tests {
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     };
-    let layout = FunctionLayout {
-      input_size: 2,
-      selectors: 1,
-      auxiliaries: 2,
-      lookups: 1,
-    };
-    let top = Toplevel {
-      functions: vec![Function {
-        body: Block {
-          ops: vec![Op::Mul(0, 1)],
-          ctrl: Ctrl::Return(0, vec![2]),
-        },
-        layout,
-        entry: true,
-        constrained: true,
-      }],
-      memory_sizes: vec![1],
-      circuits: vec![Circuit { members: vec![0], layout }],
-    };
-    let system = AiurSystem::build(top, cp, fp);
-    let key = AiurVerifyingKey::from_bytes(
-      &aiur::vk_codec::aiur_system_to_bytes(&system)?,
-    )?;
-    let fixed = FixedRoot::new(vec![4, 1, 8, 16], vec![(1, 1)], 5)?;
-    for logs in [vec![4, 1, 8], vec![4, 1, 8, 15]] {
-      let invalid = FixedRoot::new(logs, vec![(1, 1)], 5)?;
+    let key = AiurVerifyingKey::from_bytes(&backend.verifying_key_bytes()?)?;
+    let fixed = FixedRoot::new(vec![4, 4, 2, 1], vec![(2, 3)], 4)?;
+    for logs in [vec![4, 4, 2, 1, 1], vec![4, 4, 3, 1]] {
+      let invalid = FixedRoot::new(logs, vec![(2, 3)], 4)?;
       assert!(invalid.circuit(&key, Default::default()).is_err());
     }
-    for memories in [vec![(1, 4)], vec![(1, 1), (2, 1)], vec![(2, 1), (1, 0)]] {
-      assert!(FixedRoot::new(vec![4, 1, 8, 16], memories, 5).is_err());
+    for memories in [vec![(2, 4)], vec![(1, 3), (2, 3)], vec![(2, 3), (1, 0)]] {
+      assert!(FixedRoot::new(vec![4, 4, 2, 1], memories, 4).is_err());
     }
-    assert_eq!(system.memory_circuits(), fixed.memory_traces());
+    assert_eq!(backend.memory_circuits(), fixed.memory_traces());
     assert_eq!(
       FixedRoot::from_json(&fixed.to_json())?.to_json(),
       fixed.to_json()
@@ -372,7 +372,7 @@ mod tests {
     assert!(
       FixedRoot::from_json(&fixed.to_json().replace("-v1", "-v0")).is_err()
     );
-    let other = FixedRoot::new(vec![4, 2, 8, 16], vec![(1, 1)], 5)?;
+    let other = FixedRoot::new(vec![4, 4, 2, 2], vec![(2, 3)], 4)?;
     assert_ne!(fixed.identity(&key), other.identity(&key));
     let config = || GoldilocksBlake3Config::new(cp, fp);
     let local = FriVerifier::derive(
@@ -381,22 +381,19 @@ mod tests {
       1 << 16,
     )?;
     for value in [3, 7] {
-      let input = vec![Val::from_u32(value), Val::TWO];
-      let mut io =
-        IOBuffer { data: Default::default(), map: Default::default() };
-      let (record, output) =
-        system.toplevel().execute(0, input.clone(), &mut io)?;
+      let input = vec![Val::from_u32(value)];
+      let record = program.execute("Grouped::run", input.clone())?;
       let logs =
-        system.normalized_log_heights(&system.execution_rows(&record), 0)?;
-      assert_eq!(&logs[2..], &[8, 16]);
+        backend.normalized_log_heights(&backend.execution_rows(&record), 0)?;
+      assert_eq!(logs[2], 2);
       assert!(logs.iter().zip(fixed.log_heights()).all(|(a, b)| a <= b));
-      let (claim, proof) = system.prove_from_execution_normalized(
-        0,
+      let output = record.output.clone();
+      let (claim, proof) = backend.prove_normalized(
+        "Grouped::run",
         &input,
-        &io,
-        record,
         &output,
-        &[4, 1, 8, 16],
+        record,
+        &[4, 4, 2, 1],
       )?;
       assert!(other.prepare(&key, &proof, &claim, Default::default()).is_err());
       let prepared = fixed.prepare(&key, &proof, &claim, Default::default())?;
@@ -417,7 +414,7 @@ mod tests {
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     };
-    let channel = aiur::shard::memseg_channel_value();
+    let channel = Val::from_u64(MEMSEG);
     let (system, pk) = System::new(
       GoldilocksBlake3Config::new(cp, fp),
       [(8, 8), (1, 2)].into_iter().map(|(width, height)| CircuitInputs {
@@ -445,7 +442,7 @@ mod tests {
       }),
     );
     let key =
-      AiurVerifyingKey::from_bytes(&aiur::vk_codec::to_bytes(&system, cp, fp))?;
+      AiurVerifyingKey::from_bytes(&stark_key::to_bytes(&system, cp, fp))?;
     let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2)?;
     let config = || {
       GoldilocksBlake3Config::new(
@@ -498,7 +495,7 @@ mod tests {
         }],
         messages,
       );
-      key.verify(&expected, &proof).unwrap();
+      key.verify(std::slice::from_ref(&expected), &proof).unwrap();
       if small_end <= 2 && large_end <= 8 {
         let stage =
           fixed.prepare(&key, &proof, &expected, Default::default())?;

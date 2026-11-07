@@ -484,7 +484,7 @@ fn check_fri(
   }
   let layout = root.join(root::FIXED_ROOT_LAYOUT);
   if layout.is_file() {
-    let key = aiur::vk_codec::AiurVerifyingKey::from_bytes(&fs::read(
+    let key = aiur::trace::stark::VerifyingKey::from_bytes(&fs::read(
       root.join("root-vk.bin"),
     )?)?;
     let fixed = FixedRoot::from_json(&fs::read_to_string(layout)?)?;

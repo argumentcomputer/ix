@@ -8,20 +8,21 @@ license.workspace = true
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
-aiur = { workspace = true }
+aiur = { workspace = true, features = ["stark"] }
 blake3 = { workspace = true }
-ixvm-codegen = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
 ix-proof-compression = { path = "../proof-compression", default-features = false }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
-multi-stark = { workspace = true }
 mimalloc = { workspace = true }
+multi-stark = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+stark-key = { workspace = true }
+stark-verifier = { path = "../stark-verifier" }
 tiny-keccak = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -33,18 +34,18 @@ iroh = { version = "0.97", optional = true }
 n0-error = { version = "0.1", optional = true }
 getrandom = { version = "0.3", optional = true }
 bincode = { version = "2.0.1", optional = true }
-serde = { version = "1.0.219", features = ["derive"], optional = true }
+serde = { version = "1.0.219", features = ["derive"] }
 
 [features]
 default = []
 parallel = ["aiur/parallel", "ix-proof-compression/parallel"]
 cuda = ["aiur/cuda", "ix-proof-compression/cuda"]
-cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
+cuda-trace-codegen = ["cuda"]
 # Final proof systems, which link the gnark Go archive.
 plonk = ["ix-proof-compression/plonk"]
 groth16 = ["ix-proof-compression/groth16"]
 test-ffi = []
-net = ["tokio", "iroh", "n0-error", "getrandom", "bincode", "serde"]
+net = ["tokio", "iroh", "n0-error", "getrandom", "bincode"]
 
 [lints]
 workspace = true

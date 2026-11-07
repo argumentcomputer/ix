@@ -36,7 +36,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -55,18 +55,30 @@ jobs:
           test-args: "--wfail"
           lint-args: "-- --wfail -v"
           use-github-cache: false
-      - name: Check codegen'd IxVM kernel is up to date
+      - name: Check formal Aiur proofs, FFI, and IxVM packages
+        run: |
+          lake build aiur/Aiur ixvm/IxVM multiStark/MultiStark
+          lake build aiur/aiur_tests aiur/execution_tests aiur/trace_tests ixvm/ixvm
+          Aiur/.lake/build/bin/aiur_tests
+          Aiur/.lake/build/bin/execution_tests
+          Aiur/.lake/build/bin/trace_tests
+      - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
-        run: lake exe ix codegen --check
-      # A stale generated trace module is otherwise caught only when the
-      # generated GPU provider registers at proving time.
-      - name: Check generated trace writers, CUDA units and manifest are up to date
+        run: |
+          lake exe ixvm/ixvm export /tmp/ixvm-execution.json
+          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.json all
+          target/release/ixvm /tmp/ixvm-execution.json validate IxVM/IxVM/fixtures/nat-add-comm.json
+          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.json
+          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.json IxVM/IxVM/fixtures/nat-add-comm.json witness 1
+      - name: Check formal claims, recursive verification, and aggregation
         if: github.event_name != 'push'
-        run: lake exe ix codegen --trace-bundle --check
+        run: bash tools/ixvm/check-formal.sh
       - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
         if: github.event_name != 'push'
         run: |
           diff lean-toolchain Benchmarks/Compile/lean-toolchain
+          diff lean-toolchain Aiur/lean-toolchain
+          diff lean-toolchain IxVM/lean-toolchain
           diff lean-toolchain IxC/lean-toolchain
           diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI
@@ -93,7 +105,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -114,11 +126,11 @@ jobs:
         if: github.event_name != 'push'
         uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
       - name: Check clippy warnings
-        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi -- -D warnings
+        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,aiur/parallel,ixvm/parallel -- -D warnings
       - name: Check *everything* compiles
-        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi
+        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,aiur/parallel,ixvm/parallel
       - name: Tests
-        run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
+        run: cargo nextest run --release --profile ci --workspace --features aiur/parallel,ixvm/parallel ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
         if: github.event_name != 'push'
         run: |
@@ -134,8 +146,9 @@ jobs:
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
-  # Compile and link the opt-in backend without requiring a GPU. Runtime and
-  # proof-byte equivalence are covered by multi-stark's NVIDIA smoke suite.
+  # Compile and link the opt-in backend without requiring a GPU. Application
+  # runtime/proof parity uses IX_TEST_CUDA=1 tools/ixvm/check-formal.sh on a
+  # GPU host; the CPU job also exercises that gate's CPU controls.
   cuda-compile:
     runs-on: runs-on=${{ github.run_id }}-cuda-compile-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     container:
@@ -176,10 +189,11 @@ jobs:
           auto-config: false
           use-github-cache: false
       - name: Compile CUDA Rust targets
-        run: |
-          cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda
-      - name: Link CUDA-enabled Lean executables
-        run: IX_CUDA=1 lake build ix bench-typecheck
+        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda,ixvm/cuda,stark-verifier/cuda,ix-prover/cuda
+      - name: Link separate Aiur CUDA hosts
+        run: cargo build --release --locked --target-dir target/formal-cuda -p ixvm -p stark-verifier -p ix-prover --features parallel,cuda --bin ixvm-proof --bin stark-verifier --bin ix-prover
+      - name: Link a CUDA-enabled Lean executable
+        run: IX_CUDA=1 lake build ix
 
   lints:
     name: Lint workflows

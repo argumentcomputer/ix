@@ -11,12 +11,9 @@
 -/
 module
 public import Cli
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Protocol
+public import Ix.Cli.FormalAiur
 public import Ix.Claim
 public import Ix.ClaimContext
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Store
@@ -45,28 +42,16 @@ def runProveBinding (p : Cli.Parsed) : IO UInt32 := do
   let witness ← match IxVM.ClaimHarness.buildClaimWitness env claim {} with
     | .error e => IO.eprintln s!"binding claim witness: {e}"; return 1
     | .ok w => pure w
-  let toplevel ← match IxVM.ixVM with
-    | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
-    | .ok t => pure t
-  let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
-    | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
-    | .ok c => pure c
-  let some funIdx := compiled.getFuncIdx `verify_claim
-    | IO.eprintln "compiled toplevel has no `verify_claim` entry"; return 1
-  let system := Aiur.AiurSystem.build compiled.bytecode Aiur.defaultCommitmentParameters
-    Aiur.defaultFriParameters
-  let maxRamBytes :=
-    ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * (1024 * 1024 * 1024)
+  let artifactPath ← FormalAiur.artifact p
+  let options ← FormalAiur.hostOptions p
+  let binary ← FormalAiur.rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST" options.device
   IO.println s!"Proving the binding claim for {binding.address}"
   (← IO.getStdout).flush
-  let proof ← match system.proveIxVM funIdx witness.input witness.inputIOBuffer
-      maxRamBytes (traceShards := true) with
-    | .error e => IO.eprintln s!"binding claim: {e}"; return 1
-    | .ok (_, proof, _) => pure proof
-  let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-  let wrapperBytes := Ixon.Proof.ser wrapper
-  let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-  let address ← StoreIO.toIO (Store.write wrapperBytes)
+  let result ← FormalAiur.one p artifactPath binary options "prove" claim (.leanW witness)
+    s!"binding claim for {binding.address}"
+  let some address := result.address
+    | IO.eprintln s!"binding claim failed with status {result.code}"; return 1
+  let wrapperBytes ← StoreIO.toIO (Store.read address)
   let out : String := match p.flag? "out" with
     | some flag => flag.as! String
     | none => s!"binding-{binding.address}.proof"
@@ -84,6 +69,11 @@ def proveBindingCmd : Cli.Cmd := `[Cli|
   FLAGS:
     out : String; "Where to write the proof (an `Ixon.Proof`; default `binding-<binding hash>.proof`). It is also persisted to `~/.ix/store/`."
     "max-ram" : Nat; "Prover RAM budget in GiB (default 0: 85% of MemAvailable); over-budget executions prove as trace shards."
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."
+    "shard-rows" : Nat; "Maximum rows per function/memory chip per trace shard (power of two; default 0)."
+    "retention" : String; "What the batch keeps between its two rounds: auto, retain, or regenerate."
+    "no-index"; "Do not record the proof in the shard-proof index."
 
   ARGS:
     ixe : String; "Path to an .ixe that carries the role binding."

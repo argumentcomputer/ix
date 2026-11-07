@@ -9,7 +9,7 @@
 module
 public import Cli
 public import Ix.Cli.Compression
-public import Ix.Aggr.Backend
+public import Ix.Cli.FormalAggregate
 
 public section
 namespace Ix.Cli.CompressionCmd
@@ -22,9 +22,6 @@ private def loadRoot (input : String) : IO (Address × Ixon.Proof) := do
     | throw <| IO.userError s!"proof {addr} is not an aggregate CheckEnv proof"
   return (addr, wrapper)
 
-private def backend : IO Aggr.VerificationBackend := do
-  IO.ofExcept (← Aggr.buildVerificationBackend Aggr.defaultRecursionParameters)
-
 def runLayout (p : Cli.Parsed) : IO UInt32 := do
   try
     let out := p.positionalArg! "out" |>.as! String
@@ -32,16 +29,16 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
     if proofs.isEmpty then
       throw <| IO.userError "expected at least one aggregate proof file or address"
     let headroom := ((p.flag? "headroom").map (·.as! Nat)).getD 0
-    let backend ← backend
+    let ctx ← FormalAggregate.context p
     let mut rows := #[]
     let mut claimLen := 0
     for hex in proofs do
       let (addr, wrapper) ← loadRoot hex
       IO.eprintln s!"Executing the root wrap of {addr}."
-      rows := rows.push (← Compression.rootRows backend.system backend.aggrIdx
-        backend.allowed backend.ixvmVk (Ix.Claim.ser wrapper.claim) wrapper.proof)
-      claimLen := (Aggr.aggregateOuterClaim backend.allowed backend.aggrIdx wrapper.claim).size
-    let layout ← Compression.rootLayout backend.system
+      let (raw, inv) ← FormalAggregate.wrapInvocation ctx wrapper
+      rows := rows.push (← Compression.rootRows ctx.aggrArtifact inv.compress raw)
+      claimLen := (FormalAggregate.outerClaim ctx .aggr wrapper.claim).size
+    let layout ← Compression.rootLayout ctx.aggrArtifact
       ("[" ++ ",".intercalate rows.toList ++ "]") headroom.toUInt32 claimLen.toUInt32
     IO.FS.writeFile out layout
     IO.println out
@@ -56,12 +53,12 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
     let layoutPath := p.positionalArg! "layout" |>.as! String
     let out := p.positionalArg! "out" |>.as! String
     let layout ← IO.FS.readFile layoutPath
-    let backend ← backend
+    let ctx ← FormalAggregate.context p
     IO.eprintln s!"Normalizing aggregate root {addr} to {layoutPath}."
-    let root ← Compression.normalize backend wrapper layout
+    let root ← FormalAggregate.normalize ctx wrapper layout
     let claim := Ix.Claim.ser wrapper.claim
-    Compression.writeRoot backend.system.vkBytes root claim
-      (Compression.statementBytes backend wrapper.claim) layout out
+    Compression.writeRoot ctx.aggr.key root claim
+      (FormalAggregate.statementBytes ctx wrapper.claim) layout out
     IO.println out
     return 0
   catch e =>
@@ -73,6 +70,8 @@ def layoutCmd : Cli.Cmd := `[Cli|
   "Size one fixed root layout that holds the root wrap of every given aggregate proof."
 
   FLAGS:
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     headroom : Nat; "Extra doublings of every circuit's height beyond the largest execution (default 0)."
 
   ARGS:
@@ -83,6 +82,10 @@ def layoutCmd : Cli.Cmd := `[Cli|
 def normalizeCmd : Cli.Cmd := `[Cli|
   normalize VIA runNormalize;
   "Prove a root's wrap in a fixed layout and write the FRI worker's root input directory."
+
+  FLAGS:
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
 
   ARGS:
     proof : String; "Aggregate Ixon.Proof file or content address in the ix store."
@@ -114,8 +117,8 @@ private def parametersDir : IO System.FilePath := do
   if let some dir ← IO.getEnv "IX_PARAMS_DIR" then return dir
   return (← StoreIO.toIO Store.getHomeDir) / ".ix/compression/params"
 
-private def backendVk : IO ByteArray := do
-  return (← backend).system.vkBytes
+private def backendVk (p : Cli.Parsed) : IO ByteArray := do
+  return (← FormalAggregate.aggrIdentity p).2.key
 
 def runSetup (p : Cli.Parsed) : IO UInt32 := do
   try
@@ -134,7 +137,7 @@ def runSetup (p : Cli.Parsed) : IO UInt32 := do
         else
           IO.eprintln s!"parameters: downloading {ignitionUrl}/{file}"
           download s!"{ignitionUrl}/{file}" path
-    Compression.prepare (← backendVk) (← Compression.cacheDir).toString
+    Compression.prepare (← backendVk p) (← Compression.cacheDir).toString
       devKzgSrs (p.hasFlag "plonk")
     return 0
   catch e =>
@@ -146,6 +149,7 @@ def setupCmd : Cli.Cmd := `[Cli|
   "Prepare this machine for compression of the bundled version: download the released BN254 Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) if missing and check it against its pin, then publish the fixed preprocessing of the first KZG stage and the recursive stage to the fixed cache, checking each derived key against its bundled pin. Present cache entries are only checked."
 
   FLAGS:
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of Ignition (not production-secure)."
     "plonk"; "Also build the PLONK circuit, keys and parameter exports into the PLONK cache."
 ]

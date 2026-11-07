@@ -1,12 +1,22 @@
 //! Main CLI bridge; compression is linked into the ix executable.
-use crate::aiur::aggregate::normalize::{self, RootWrap};
-use crate::aiur::lean_unbox_nat_as_usize;
-use aiur::synthesis::AiurSystem;
+use aiur::{
+  field::FieldBackend,
+  trace::{
+    TraceArtifact, TracePlan,
+    stark::{Backend, BatchProof, Parameters},
+  },
+};
 use ix_proof_compression::pipeline::{self, FixedRoot};
 use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanExternal, LeanIOResult, LeanNat, LeanOwned,
-  LeanString,
+  LeanBorrowed, LeanByteArray, LeanIOResult, LeanOwned, LeanString,
 };
+use multi_stark::types::Val;
+
+#[derive(serde::Deserialize)]
+struct Package {
+  program: aiur::Program,
+  trace: TraceArtifact,
+}
 
 fn optional(text: &LeanString<LeanBorrowed<'_>>) -> Option<String> {
   let text = text.to_string();
@@ -136,22 +146,6 @@ extern "C" fn rs_compression_check_claim(
   }
 }
 
-fn root_wrap<'a>(
-  system: &'a LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_idx: &LeanNat<LeanBorrowed<'_>>,
-  allowed: &'a LeanByteArray<LeanBorrowed<'_>>,
-  ixvm_vk: &'a LeanByteArray<LeanBorrowed<'_>>,
-  claim: &'a LeanByteArray<LeanBorrowed<'_>>,
-) -> RootWrap<'a> {
-  RootWrap {
-    system: system.get(),
-    aggr_idx: lean_unbox_nat_as_usize(aggr_idx.inner()),
-    allowed: allowed.as_bytes(),
-    ixvm_vk: ixvm_vk.as_bytes(),
-    claim: claim.as_bytes(),
-  }
-}
-
 /// The versioned normalization layout for the selected aggregation backend.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_release_root_layout(
@@ -166,18 +160,41 @@ extern "C" fn rs_compression_release_root_layout(
 /// Per-circuit rows of one root wrap execution, as a JSON array.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_root_rows(
-  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_idx: LeanNat<LeanBorrowed<'_>>,
-  allowed: LeanByteArray<LeanBorrowed<'_>>,
-  ixvm_vk: LeanByteArray<LeanBorrowed<'_>>,
-  claim: LeanByteArray<LeanBorrowed<'_>>,
-  proof: LeanByteArray<LeanBorrowed<'_>>,
+  aggr_artifact: LeanString<LeanBorrowed<'_>>,
+  invocation_json: LeanString<LeanBorrowed<'_>>,
+  raw_proof: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let wrap = root_wrap(&system, &aggr_idx, &allowed, &ixvm_vk, &claim);
-  match wrap.rows(proof.as_bytes()) {
-    Ok(rows) => LeanIOResult::ok(LeanString::new(
-      &serde_json::to_string(&rows).expect("row counts serialize"),
-    )),
+  let result = (|| -> Result<String, String> {
+    let bytes =
+      std::fs::read(aggr_artifact.to_string()).map_err(|e| e.to_string())?;
+    let package: Package =
+      aiur::decode_artifact(&bytes).map_err(|e| e.to_string())?;
+    let program = package.program.check_field::<Val>()?;
+    let plan = TracePlan::new(&program, package.trace)?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
+    let invocation: stark_verifier::Invocation =
+      serde_json::from_str(&invocation_json.to_string())
+        .map_err(|e| e.to_string())?;
+    let args = program.field().decode(&invocation.args)?;
+    let proof_bytes = raw_proof.as_bytes();
+    let proof = BatchProof::from_bytes(proof_bytes)
+      .map_err(|e| format!("root proof decode failed: {e}"))?;
+    if proof.to_bytes().map_err(|e| e.to_string())? != proof_bytes {
+      return Err("noncanonical or trailing root proof bytes".into());
+    }
+    backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
+    let hints = stark_verifier::prepare(&program, &invocation.streams)?;
+    let record =
+      hints.execute(&invocation.entry, args).map_err(|e| e.to_string())?;
+    if !record.output.is_empty() {
+      return Err("verifier returned a non-unit value".into());
+    }
+    let rows = backend.execution_rows(&record);
+    serde_json::to_string(&rows).map_err(|e| e.to_string())
+  })();
+  match result {
+    Ok(rows) => LeanIOResult::ok(LeanString::new(&rows)),
     Err(e) => LeanIOResult::error_string(&e),
   }
 }
@@ -185,7 +202,7 @@ extern "C" fn rs_compression_root_rows(
 /// The fixed layout holding every row-count array in the JSON array `rows`.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_root_layout(
-  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  aggr_artifact: LeanString<LeanBorrowed<'_>>,
   rows: LeanString<LeanBorrowed<'_>>,
   headroom: u32,
   claim_len: u32,
@@ -200,12 +217,24 @@ extern "C" fn rs_compression_root_layout(
     let maxima: Vec<_> = (0..first.len())
       .map(|i| executions.iter().map(|rows| rows[i]).max().unwrap_or(0))
       .collect();
-    let layout = normalize::layout(
-      system.get(),
+    let bytes =
+      std::fs::read(aggr_artifact.to_string()).map_err(|e| e.to_string())?;
+    let package: Package =
+      aiur::decode_artifact(&bytes).map_err(|e| e.to_string())?;
+    let program = package.program.check_field::<Val>()?;
+    let plan = TracePlan::new(&program, package.trace)?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
+    let log_heights = backend.normalized_log_heights(
       &maxima,
       u8::try_from(headroom).map_err(|e| e.to_string())?,
-      claim_len as usize,
     )?;
+    let layout = FixedRoot::new(
+      log_heights,
+      backend.memory_circuits(),
+      claim_len as usize,
+    )
+    .map_err(|e| e.to_string())?;
     Ok(layout.to_json())
   })();
   match result {
@@ -217,18 +246,54 @@ extern "C" fn rs_compression_root_layout(
 /// Wrap and prove the root in `layout`'s fixed shape.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_normalize_root(
-  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_idx: LeanNat<LeanBorrowed<'_>>,
-  allowed: LeanByteArray<LeanBorrowed<'_>>,
-  ixvm_vk: LeanByteArray<LeanBorrowed<'_>>,
-  claim: LeanByteArray<LeanBorrowed<'_>>,
-  proof: LeanByteArray<LeanBorrowed<'_>>,
+  aggr_artifact: LeanString<LeanBorrowed<'_>>,
+  invocation_json: LeanString<LeanBorrowed<'_>>,
+  raw_proof: LeanByteArray<LeanBorrowed<'_>>,
   layout: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let wrap = root_wrap(&system, &aggr_idx, &allowed, &ixvm_vk, &claim);
-  let result = FixedRoot::from_json(&layout.to_string())
-    .map_err(|e| e.to_string())
-    .and_then(|layout| wrap.normalize(proof.as_bytes(), &layout));
+  let result = (|| -> Result<Vec<u8>, String> {
+    let layout =
+      FixedRoot::from_json(&layout.to_string()).map_err(|e| e.to_string())?;
+    let bytes =
+      std::fs::read(aggr_artifact.to_string()).map_err(|e| e.to_string())?;
+    let package: Package =
+      aiur::decode_artifact(&bytes).map_err(|e| e.to_string())?;
+    let program = package.program.check_field::<Val>()?;
+    let plan = TracePlan::new(&program, package.trace)?;
+    let backend = Backend::for_batch(&plan, Parameters::default())?;
+    let invocation: stark_verifier::Invocation =
+      serde_json::from_str(&invocation_json.to_string())
+        .map_err(|e| e.to_string())?;
+    let args = program.field().decode(&invocation.args)?;
+    let proof_bytes = raw_proof.as_bytes();
+    let proof = BatchProof::from_bytes(proof_bytes)
+      .map_err(|e| format!("root proof decode failed: {e}"))?;
+    if proof.to_bytes().map_err(|e| e.to_string())? != proof_bytes {
+      return Err("noncanonical or trailing root proof bytes".into());
+    }
+    backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
+    let hints = stark_verifier::prepare(&program, &invocation.streams)?;
+    let record = hints
+      .execute(&invocation.entry, args.clone())
+      .map_err(|e| e.to_string())?;
+    if !record.output.is_empty() {
+      return Err("verifier returned a non-unit value".into());
+    }
+    let (claim, normalized) = backend.prove_normalized(
+      &invocation.entry,
+      &args,
+      &[],
+      record,
+      layout.log_heights(),
+    )?;
+    let expected = backend.claim(&invocation.entry, &args, &[])?;
+    if claim != expected {
+      return Err(
+        "normalized root claim differs from expected outer claim".into(),
+      );
+    }
+    normalized.to_bytes().map_err(|e| e.to_string())
+  })();
   match result {
     Ok(bytes) => LeanIOResult::ok(LeanByteArray::from_bytes(&bytes)),
     Err(e) => LeanIOResult::error_string(&e),

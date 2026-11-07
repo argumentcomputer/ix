@@ -10,7 +10,9 @@ use super::{
   stage::{FriVerifier, Prepared},
 };
 use crate::fri::*;
-use aiur::{synthesis::AiurProof, vk_codec::AiurVerifyingKey};
+use aiur::trace::stark::{
+  BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey,
+};
 use multi_stark::batch::BatchProof;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::types::GoldilocksBlake3Config;
@@ -66,7 +68,7 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   drop(input_span);
   let start = Instant::now();
   tracing::info_span!("compression/verify_input")
-    .in_scope(|| native_key.verify(&claims[0], &proof))
+    .in_scope(|| native_key.verify(&claims, &proof))
     .map_err(|e| format!("Aiur policy: {e:?}"))?;
   eprintln!(
     "Native Ix root batch verified in {:?}: {} bytes, {} circuits, {} shards",
@@ -191,7 +193,9 @@ pub fn prepare_root(
   expected: &[Val],
   limits: VerifierLimits,
 ) -> Result<Prepared<Val>> {
-  key.verify(expected, proof).map_err(|e| format!("aggregate root: {e:?}"))?;
+  key
+    .verify(&[expected.to_vec()], proof)
+    .map_err(|e| format!("aggregate root: {e:?}"))?;
   let verifier = VerifierKey::from_system(key.system());
   RootPlan::new(&verifier, proof, limits)?.prepare(
     proof,

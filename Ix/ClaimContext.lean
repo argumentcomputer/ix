@@ -40,8 +40,8 @@ namespace Ix.ClaimContext
 open Ix.Kernel (Role RoleTable)
 
 /-- The context of a claim over the role binding with hash `binding`. -/
-def ofBinding (binding : Address) : Except String ClaimContext := do
-  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none }
+def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
+  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
 /-- Safe axioms in `env` not bound by its role binding (`propext`,
     `Classical.choice` and `sorryAx` are role-bound; `Quot.sound` is a `.quot`
@@ -65,12 +65,13 @@ def userAxiomTree (env : Ixon.Env) : Option AssumptionTree :=
 
 /-- The context of a claim over an environment's own role binding and user
     axioms. -/
-def ofEnv (env : Ixon.Env) : Except String ClaimContext := do
+def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   let some binding := env.roleBinding
     | throw "claim context: the environment carries no role binding"
   return { spec := ← Ix.SpecDigest.specDigest
            binding := binding.address
-           axioms := (userAxiomTree env).map (·.root) }
+           axioms := (userAxiomTree env).map (·.root)
+           bindingAssumed }
 
 /-- The context of a claim over the default role table
 (`Ix.Kernel.Reader.defaultTable`), the generated table of the compiled

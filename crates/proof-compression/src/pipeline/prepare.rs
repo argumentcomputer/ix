@@ -125,7 +125,7 @@ fn prepare_first(
     return Ok((None, Prepared::Present { bytes }, cache));
   }
   let fri = {
-    let key = aiur::vk_codec::AiurVerifyingKey::from_bytes(root_vk)?;
+    let key = aiur::trace::stark::VerifyingKey::from_bytes(root_vk)?;
     let layout = verifying_keys::release_root_layout(root_vk)?;
     root::verifier(&key, &FixedRoot::from_json(layout)?)?
   };

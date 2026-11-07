@@ -1,0 +1,30 @@
+{
+  "base_revision": "9bd5d3ce3dd11142f57a9c1e4acded8c8f3c358e",
+  "working_tree_modified": true,
+  "platform": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+  "threads": "8",
+  "thp": "1",
+  "rustflags": "[build]\nrustflags = [\"-Ctarget-cpu=native\"]",
+  "artifacts": {
+    ".lake/formal-integration/ixvm-final.json": "114311f43f6fb39a2d5ccc5c4e6fb279d4eb6c08655cd08731c949e7e537fabf",
+    ".lake/formal-integration/recursion-final.json": "ae96efa2ce33a07bd79fc5100395aa09a7f3d5f436ae04ee7be2f6bcd71e2afa"
+  },
+  "recursive_input": {
+    "proof.bin": {
+      "bytes": 7232210,
+      "sha256": "12e57eb8e260e0fe6a416b24d2c015c74a1e01006caea3beae87f63dd276c23a"
+    },
+    "key.bin": {
+      "bytes": 727066,
+      "sha256": "a1712dc53c8928f7539937085f6b6f904064a533d40cc1e9b9f6ea18d6d05606"
+    },
+    "claims.bin": {
+      "bytes": 96,
+      "sha256": "3bf7b58d3da6199546ac0ac885d60323969d3867c08bbfc5ac0e12dacb46a4c9"
+    },
+    "input.json": {
+      "bytes": 25521014,
+      "sha256": "2ecf2051d112503637b9d3c1a6201bd66f91df4568a95faff3cef068e3f96a1a"
+    }
+  }
+}

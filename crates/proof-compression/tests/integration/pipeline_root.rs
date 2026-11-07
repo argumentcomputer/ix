@@ -1,5 +1,7 @@
 //! Generated aggregate-shaped statements, including multi-shard Aiur batches.
-use aiur::vk_codec::{AiurVerifyingKey, to_bytes};
+use aiur::trace::stark::{
+  BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey,
+};
 use ix_proof_compression::kzg::Srs;
 use ix_proof_compression::pipeline::{
   FixedRoot, FriVerifier, KzgVerifier, RecursiveVerifier, prepare_kzg,
@@ -14,6 +16,7 @@ use multi_stark::types::{
 };
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
+use stark_key::to_bytes;
 use std::sync::Arc;
 
 fn root_system() -> (
@@ -239,7 +242,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
 
 fn check_root_directory(
   key: &[u8],
-  proof: &aiur::synthesis::AiurProof,
+  proof: &AiurProof,
   expected: &[Val],
   shards: usize,
   stats: multi_stark::plonkish::CircuitStats,

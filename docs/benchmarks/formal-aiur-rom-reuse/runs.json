@@ -1,0 +1,948 @@
+[
+  {
+    "workload": "recursion-real",
+    "version": "before",
+    "threads": 64,
+    "peak_rss_kib": 33161460,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 8.47199176,
+      "prepare_seconds": 0.104275378,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.155563461
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.166214709
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.18902988
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.17903538
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.200906444
+        }
+      ],
+      "setup_seconds": 0.038139071,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/recursion-real-before-64.json"
+    }
+  },
+  {
+    "workload": "recursion-real",
+    "version": "after",
+    "threads": 64,
+    "peak_rss_kib": 32855756,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 8.422921376,
+      "prepare_seconds": 0.102862632,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.774523583
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.815869941
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.821910108
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.834549858
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.798773967
+        }
+      ],
+      "setup_seconds": 0.039915728,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/recursion-real-after-64.json"
+    }
+  },
+  {
+    "workload": "recursion-real",
+    "version": "legacy",
+    "threads": 64,
+    "peak_rss_kib": 30698904,
+    "report": {
+      "thp_disabled": true,
+      "setup_seconds": 0.024871591,
+      "samples": [
+        {
+          "trace_with_lookups_seconds": 0.580716202,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.681849536,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.687254515,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.696399799,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.749651405,
+          "execute_seconds": null
+        }
+      ],
+      "reused_execution": true,
+      "proof": null,
+      "initial_execute_seconds": 8.562772401,
+      "circuit_names": [
+        "verifier_group_00",
+        "u64_eq",
+        "verifier_group_02",
+        "verifier_group_03",
+        "verifier_group_04",
+        "verifier_group_05",
+        "verifier_group_06",
+        "verifier_group_07",
+        "read_u64_vec_n",
+        "verifier_group_08",
+        "verifier_group_09",
+        "verifier_group_10",
+        "verifier_group_11",
+        "read_proof",
+        "read_header_vec_n",
+        "read_message_vec_n",
+        "read_proof_vec_n",
+        "blake3_compress_chunks",
+        "verifier_group_12",
+        "blake3_compress",
+        "read_vk_u8",
+        "read_vk_tag",
+        "read_vk_u16",
+        "verifier_group_13",
+        "read_nodes_n",
+        "verifier_group_14",
+        "select_rows",
+        "verifier_group_15",
+        "rows_pop",
+        "b3_rows_chunks",
+        "verifier_group_16",
+        "ro_fold",
+        "bucket_update",
+        "ri_apply",
+        "verifier_group_17",
+        "cons8",
+        "eval_at",
+        "count_onto",
+        "claims_onto",
+        "claims_onto_each",
+        "header_onto",
+        "headers_onto",
+        "messages_onto",
+        "messages_onto_each",
+        "batch_fiat_shamir",
+        "shard_fiat_shamir",
+        "assert_same_u8s",
+        "assert_same_limbs",
+        "assert_same_claims",
+        "assert_same_cap",
+        "last_acc",
+        "messages_acc",
+        "log_degree_ok",
+        "assert_log_degrees_ok",
+        "count_ones",
+        "assert_shard_count_ok",
+        "three_limbs",
+        "le_step",
+        "bytes8_le",
+        "assert_closure_pairs",
+        "verify_shard",
+        "verify_shards",
+        "batch_claims",
+        "verify_batch",
+        "verify_multi_stark_proof",
+        "verifier_group_19",
+        "list_length.Proof",
+        "list_concat.Ptr.ListNode.U8_8",
+        "list_length.U8_8",
+        "list_lookup.SysNode",
+        "list_is_empty.U8",
+        "ROM:3",
+        "ROM:4",
+        "ROM:5",
+        "ROM:6",
+        "ROM:7",
+        "ROM:8",
+        "ROM:10",
+        "ROM:11",
+        "ROM:26",
+        "ROM:32",
+        "ROM:34",
+        "Bytes1",
+        "Bytes2"
+      ],
+      "backend": "legacy-bytecode",
+      "source_report": ".lake/trace-rom-reuse/recursion-real-legacy-64.json"
+    }
+  },
+  {
+    "workload": "recursion-real",
+    "version": "before",
+    "threads": 8,
+    "peak_rss_kib": 31267400,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 8.897202338,
+      "prepare_seconds": 0.102426899,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.76702339
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.746706993
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.720119701
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.712494595
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.965910889
+        }
+      ],
+      "setup_seconds": 0.034163862,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/recursion-real-before-8.json"
+    }
+  },
+  {
+    "workload": "recursion-real",
+    "version": "after",
+    "threads": 8,
+    "peak_rss_kib": 31261444,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 8.741785067,
+      "prepare_seconds": 0.102750888,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.377041931
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.322383143
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.451785187
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.346335667
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 3.322701609
+        }
+      ],
+      "setup_seconds": 0.035058655,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/recursion-real-after-8.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "before",
+    "threads": 64,
+    "peak_rss_kib": 2735500,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.353954044,
+      "prepare_seconds": 0.131552345,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.046271222
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.05074245
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.045158082
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.046452293
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.045162997
+        }
+      ],
+      "setup_seconds": 0.310193883,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/environment-before-64.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "after",
+    "threads": 64,
+    "peak_rss_kib": 2692984,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.349963253,
+      "prepare_seconds": 0.131250346,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.035529341
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.046118373
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.034540328
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.037519189
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.042746566
+        }
+      ],
+      "setup_seconds": 0.311314517,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/environment-after-64.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "legacy",
+    "threads": 64,
+    "peak_rss_kib": 2860884,
+    "report": {
+      "thp_disabled": true,
+      "setup_seconds": 0.077388041,
+      "samples": [
+        {
+          "trace_with_lookups_seconds": 0.063414971,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.028746304,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.04726461,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.027207929,
+          "execute_seconds": null
+        },
+        {
+          "trace_with_lookups_seconds": 0.043628496,
+          "execute_seconds": null
+        }
+      ],
+      "reused_execution": true,
+      "proof": null,
+      "initial_execute_seconds": 0.39492426,
+      "circuit_names": [
+        "ixvm_group_00",
+        "ixvm_group_01",
+        "address_eq",
+        "checked_depth_succ",
+        "read_finite_byte_stream",
+        "u64_is_zero",
+        "ixvm_group_02",
+        "ixvm_group_03",
+        "ixvm_group_04",
+        "ixvm_group_05",
+        "ixvm_group_06",
+        "ixvm_group_07",
+        "ixvm_group_08",
+        "blake3_compress_chunks",
+        "bytes_to_block",
+        "pad_block",
+        "blake3_compress_block",
+        "blake3_compress",
+        "ixvm_group_09",
+        "ixvm_group_10",
+        "ixvm_group_11",
+        "ixvm_group_12",
+        "put_tagn_tail",
+        "put_tagn_wide",
+        "ixvm_group_13",
+        "value_contract_code",
+        "binder_contract_code",
+        "put_lam_mode",
+        "ixvm_group_15",
+        "ixvm_group_16",
+        "ixvm_group_17",
+        "ixvm_group_14",
+        "ixvm_group_18",
+        "ixvm_group_19",
+        "ixvm_group_20",
+        "ixvm_group_21",
+        "ixvm_group_22",
+        "ixvm_group_23",
+        "ixvm_group_24",
+        "get_u64_le",
+        "get_tagn4",
+        "ixvm_group_25",
+        "get_tagn0",
+        "get_tagn_tail",
+        "get_tagn_wide",
+        "get_u64_list",
+        "get_app_telescope",
+        "value_contract_from_bits",
+        "binder_contract_from_bits",
+        "get_lam_mode",
+        "get_all_mode",
+        "ixvm_group_26",
+        "get_expr",
+        "ixvm_group_27",
+        "get_address",
+        "get_expr_list",
+        "ixvm_group_28",
+        "get_address_list",
+        "ixvm_group_30",
+        "ixvm_group_31",
+        "ixvm_group_32",
+        "ixvm_group_33",
+        "ixvm_group_34",
+        "ixvm_group_35",
+        "collect_spine",
+        "ixvm_group_36",
+        "klimbs_add_carry",
+        "klimbs_add",
+        "ixvm_group_37",
+        "ixvm_group_38",
+        "glimbs_to_klimbs_with_depth",
+        "klimbs_normalize",
+        "ixvm_group_39",
+        "klimbs_mul_outer",
+        "klimbs_mul_single",
+        "klimbs_shl_limbs",
+        "ixvm_group_40",
+        "ixvm_group_41",
+        "ixvm_group_42",
+        "ixvm_group_43",
+        "ixvm_group_44",
+        "ixvm_group_45",
+        "ixvm_group_46",
+        "ixvm_group_47",
+        "ixvm_group_48",
+        "ixvm_group_49",
+        "ixvm_group_50",
+        "ixvm_group_51",
+        "ixvm_group_52",
+        "ixvm_group_53",
+        "ixvm_group_54",
+        "ixvm_group_55",
+        "ixvm_group_56",
+        "ixvm_group_57",
+        "ixvm_group_58",
+        "ixvm_group_59",
+        "ixvm_group_60",
+        "ixvm_group_61",
+        "ixvm_group_62",
+        "apply_spine_expr",
+        "ixvm_group_63",
+        "ixvm_group_64",
+        "convert_expr",
+        "ixvm_group_65",
+        "ixvm_group_66",
+        "ixvm_group_67",
+        "ixvm_group_68",
+        "ixvm_group_69",
+        "ixvm_group_70",
+        "ixvm_group_71",
+        "expr_inst_levels",
+        "expr_inst_levels_walk",
+        "expr_lbr",
+        "has_bvar_in_range",
+        "ixvm_group_72",
+        "ixvm_group_73",
+        "ixvm_group_74",
+        "expr_glb",
+        "expr_glb_walk",
+        "expr_glb_binder",
+        "expr_lift",
+        "expr_lift_walk",
+        "expr_lower",
+        "expr_lower_walk",
+        "expr_has_bvar_at",
+        "ixvm_group_75",
+        "expr_inst1",
+        "expr_inst1_walk",
+        "expr_inst_many",
+        "expr_inst_many_bvar",
+        "expr_inst_many_walk",
+        "peel_beta",
+        "whnf_apply_beta",
+        "whnf_with_spine",
+        "ixvm_group_76",
+        "ixvm_group_77",
+        "try_prim_dispatch",
+        "whnf_const_head",
+        "whnf",
+        "whnf_struct_core",
+        "whnf_struct_core_spine",
+        "ixvm_group_78",
+        "whnf_nd",
+        "whnf_nd_with_spine",
+        "whnf_nd_apply_beta",
+        "whnf_nd_const_head",
+        "types_lookup",
+        "ixvm_group_79",
+        "ixvm_group_80",
+        "k_is_def_eq",
+        "k_def_eq_rebase",
+        "ixvm_group_81",
+        "try_def_eq_app",
+        "de_args",
+        "is_nat_zero",
+        "nat_offset_of",
+        "try_string_lit_one",
+        "ixvm_group_82",
+        "k_is_def_eq_struct_bounded",
+        "lazy_delta_loop",
+        "head_addr",
+        "k_infer",
+        "k_infer_rebase",
+        "k_infer_core",
+        "k_infer_let_start",
+        "infer_let_lookup_type",
+        "infer_let_lookup_value",
+        "infer_let_materialize",
+        "k_infer_let_env",
+        "infer_let_local_cutoff",
+        "k_infer_let_env_rebase",
+        "infer_let_drop_unused",
+        "k_infer_let_env_core",
+        "k_infer_app_spine_loop",
+        "k_ensure_sort",
+        "k_check",
+        "canon_cmp_kexpr_node_ctx",
+        "safe_refs_only",
+        "validate_expr_well_scoped",
+        "const_idxs_expr",
+        "const_idxs_exprs",
+        "g_list_has",
+        "walk_refs_transitive",
+        "walk_leaves_owned",
+        "check_owned",
+        "env_walk_all",
+        "env_walk_refs_all",
+        "eval_nf",
+        "eval_nf_spine",
+        "eval_body",
+        "eval_output",
+        "run_eval",
+        "verify_claim",
+        "list_snoc.G",
+        "list_concat.Ptr.KExprNode",
+        "list_length.Ptr.KExprNode",
+        "list_lookup.Ptr.KLevelNode",
+        "list_is_empty.U8",
+        "list_take.Ptr.KExprNode",
+        "list_drop.Ptr.Expr",
+        "list_depth_checked.U8",
+        "rbtree_map_balance_fix.G",
+        "ROM:2",
+        "ROM:3",
+        "ROM:4",
+        "ROM:5",
+        "ROM:6",
+        "ROM:8",
+        "ROM:9",
+        "ROM:10",
+        "ROM:11",
+        "ROM:12",
+        "ROM:18",
+        "ROM:19",
+        "ROM:32",
+        "ROM:34",
+        "ROM:36",
+        "ROM:47",
+        "ROM:50",
+        "ROM:64",
+        "Bytes1",
+        "Bytes2"
+      ],
+      "backend": "legacy-bytecode",
+      "source_report": ".lake/trace-rom-reuse/environment-legacy-64.json"
+    }
+  },
+  {
+    "workload": "nat-frontier",
+    "version": "before",
+    "threads": 8,
+    "peak_rss_kib": 528948,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.005943244,
+      "prepare_seconds": 0.132465402,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.005860235
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.004629695
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.004854088
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.00500133
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.003766314
+        }
+      ],
+      "setup_seconds": 0.308456838,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/nat-frontier-before-8.json"
+    }
+  },
+  {
+    "workload": "nat-frontier",
+    "version": "after",
+    "threads": 8,
+    "peak_rss_kib": 502016,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.005658887,
+      "prepare_seconds": 0.131574581,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.005292236
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.004251044
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.004685638
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.003642888
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 0.003597198
+        }
+      ],
+      "setup_seconds": 0.307630262,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/nat-frontier-after-8.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "before",
+    "threads": 1,
+    "peak_rss_kib": 1638336,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.36701827,
+      "prepare_seconds": 0.131748936,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.053992048
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.04522975
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.0460100940000001
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.045521451
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.035948373
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.030051527
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.031595177
+        }
+      ],
+      "setup_seconds": 0.352281495,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/environment-before-1-control.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "after",
+    "threads": 1,
+    "peak_rss_kib": 1614336,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.364770631,
+      "prepare_seconds": 0.132108845,
+      "proof": null,
+      "reused_execution": true,
+      "samples": [
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.099835276
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.05893824
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.038276022
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.035865654
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.035648138
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.03441593
+        },
+        {
+          "execute_seconds": null,
+          "trace_with_lookups_seconds": 1.035719573
+        }
+      ],
+      "setup_seconds": 0.353487061,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/environment-after-1.json"
+    }
+  },
+  {
+    "workload": "recursion-real",
+    "version": "before",
+    "threads": 64,
+    "peak_rss_kib": 32892492,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 8.506663605,
+      "prepare_seconds": 0.102233171,
+      "proof": null,
+      "reused_execution": false,
+      "samples": [
+        {
+          "execute_seconds": 8.036972906,
+          "trace_with_lookups_seconds": 1.193211115
+        },
+        {
+          "execute_seconds": 7.965733047,
+          "trace_with_lookups_seconds": 1.2015805
+        },
+        {
+          "execute_seconds": 7.97696767,
+          "trace_with_lookups_seconds": 1.195626571
+        }
+      ],
+      "setup_seconds": 0.039092586,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/recursion-real-before-64-execute-control.json"
+    }
+  },
+  {
+    "workload": "recursion-real",
+    "version": "after",
+    "threads": 64,
+    "peak_rss_kib": 32386332,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 8.456119514,
+      "prepare_seconds": 0.102793352,
+      "proof": null,
+      "reused_execution": false,
+      "samples": [
+        {
+          "execute_seconds": 7.855048111,
+          "trace_with_lookups_seconds": 0.82331303
+        },
+        {
+          "execute_seconds": 7.893231397,
+          "trace_with_lookups_seconds": 0.825366706
+        },
+        {
+          "execute_seconds": 7.960565911,
+          "trace_with_lookups_seconds": 0.813162851
+        }
+      ],
+      "setup_seconds": 0.038498527,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/recursion-real-after-64-execute.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "before",
+    "threads": 8,
+    "peak_rss_kib": 1783672,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.360020828,
+      "prepare_seconds": 0.130382701,
+      "proof": null,
+      "reused_execution": false,
+      "samples": [
+        {
+          "execute_seconds": 0.34342845,
+          "trace_with_lookups_seconds": 0.171609409
+        },
+        {
+          "execute_seconds": 0.339794891,
+          "trace_with_lookups_seconds": 0.166820398
+        },
+        {
+          "execute_seconds": 0.33654005,
+          "trace_with_lookups_seconds": 0.17480632
+        },
+        {
+          "execute_seconds": 0.333318081,
+          "trace_with_lookups_seconds": 0.161910382
+        },
+        {
+          "execute_seconds": 0.327633773,
+          "trace_with_lookups_seconds": 0.164534814
+        },
+        {
+          "execute_seconds": 0.330828194,
+          "trace_with_lookups_seconds": 0.169791653
+        },
+        {
+          "execute_seconds": 0.341451165,
+          "trace_with_lookups_seconds": 0.168694825
+        }
+      ],
+      "setup_seconds": 0.306169559,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/environment-before-8-execute-control.json"
+    }
+  },
+  {
+    "workload": "environment",
+    "version": "after",
+    "threads": 8,
+    "peak_rss_kib": 1745552,
+    "report": {
+      "backend": "new-bytecode",
+      "function_rows": [],
+      "initial_execute_seconds": 0.352677831,
+      "prepare_seconds": 0.132380878,
+      "proof": null,
+      "reused_execution": false,
+      "samples": [
+        {
+          "execute_seconds": 0.350287944,
+          "trace_with_lookups_seconds": 0.148761292
+        },
+        {
+          "execute_seconds": 0.359173343,
+          "trace_with_lookups_seconds": 0.155687993
+        },
+        {
+          "execute_seconds": 0.337600957,
+          "trace_with_lookups_seconds": 0.149076474
+        },
+        {
+          "execute_seconds": 0.328338814,
+          "trace_with_lookups_seconds": 0.152075767
+        },
+        {
+          "execute_seconds": 0.347675405,
+          "trace_with_lookups_seconds": 0.149049375
+        },
+        {
+          "execute_seconds": 0.356321865,
+          "trace_with_lookups_seconds": 0.149276511
+        },
+        {
+          "execute_seconds": 0.359402022,
+          "trace_with_lookups_seconds": 0.148436867
+        }
+      ],
+      "setup_seconds": 0.305503672,
+      "thp_disabled": true,
+      "source_report": ".lake/trace-rom-reuse/environment-after-8-execute.json"
+    }
+  }
+]

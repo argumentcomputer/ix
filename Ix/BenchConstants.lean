@@ -32,7 +32,7 @@ def benchConstants : Array BenchConstant := #[
   { name := "Char.ofOrdinal_le_of_le",           env := "InitStd" },
   { name := "Std.HashMap",                       env := "InitStd" },
   -- TODO: re-add bitblast once a prover can carry it. Its ~18B-step
-  -- atomic mutual block exceeds the available RAM on the Aiur prove, so a
+  -- atomic mutual block exceeds the available RAM on the LegacyAiur prove, so a
   -- scheduled run could only re-document the same OOM every push. Until then it
   -- runs on demand via `--consts` / BENCH_CONSTS, which bypass the
   -- curated set.

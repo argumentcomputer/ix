@@ -11,6 +11,10 @@ package ix where
   moreLinkArgs := if System.Platform.isLinux then
     #["-Wl,--allow-shlib-undefined", "-Wl,-rpath,$ORIGIN/../lib"] else #[]
 
+require aiur from "Aiur"
+require ixvm from "IxVM"
+require multiStark from "MultiStark"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
@@ -175,9 +179,6 @@ target ix_rs_net pkg : FilePath := do
 
 end FFI
 
-lean_lib MultiStark where
-  moreLinkObjs := #[ix_rs]
-
 /-- `lake -R -Kprofile build` compiles with frame pointers, so `perf` can unwind
 call graphs through generated C (LBR and DWARF unwinding are unavailable on
 the benchmark machines). The default build is unaffected. -/
@@ -213,6 +214,14 @@ are installed unchecked on purpose). -/
 lean_lib EntryCaseFixtures where
   roots := #[`Tests.Ix.Kernel.EntryCaseDefs]
 
+lean_exe «formal-aiur-tests» where
+  root := `Tests.FormalAiur
+  supportInterpreter := true
+
+lean_exe «formal-aggregate-tests» where
+  root := `Tests.FormalAggregate
+  supportInterpreter := true
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
@@ -229,13 +238,6 @@ lean_exe «ffi-tests» where
 
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
-  supportInterpreter := true
-
-/-- Regenerates, or with `--check` verifies, the trace-codegen test fixtures:
-the Rust writers, CUDA units and manifest the `aiur` parity tests compile
-against. -/
-lean_exe «trace-fixtures» where
-  root := `Tests.Aiur.TraceFixtures
   supportInterpreter := true
 
 /-- Focused source-contract checks, including fresh-module registration export. -/
@@ -276,45 +278,6 @@ lean_exe «sharing-family-normalize» where
 /-- Fixed component work with independently scaled full-DAG scratch buffers. -/
 lean_exe «sharing-scratch» where
   root := `Benchmarks.SharingScratch
-
-lean_exe «bench-aiur» where
-  root := `Benchmarks.Aiur
-
-lean_exe «bench-blake3» where
-  root := `Benchmarks.Blake3
-
-lean_exe «bench-sha256» where
-  root := `Benchmarks.Sha256
-
-lean_exe «bench-ixvm» where
-  root := `Benchmarks.IxVM
-  supportInterpreter := true
-
-lean_exe «bench-typecheck» where
-  root := `Benchmarks.Typecheck
-  supportInterpreter := true
-
-/-- Generic execution profiles for full-closure proving workloads. -/
-lean_exe «proving-profile» where
-  root := `Scripts.Performance.ProvingProfile
-  moreLinkObjs := #[ix_rs]
-
-/-- Validate and compare circuit partitions against measured query heights. -/
-lean_exe «function-grouping» where
-  root := `Scripts.Performance.FunctionGrouping
-  moreLinkObjs := #[ix_rs]
-
-lean_exe «bench-recursion-debug» where
-  root := `Benchmarks.RecursionDebug
-  supportInterpreter := true
-
-lean_exe «bench-aggregate-policy» where
-  root := `Benchmarks.AggregatePolicy
-  supportInterpreter := true
-  -- Keep ix_ffi ahead of Blake3's Rust staticlib. Importing the converged
-  -- aggregator makes both archives direct dependencies; Rust allocator
-  -- symbols are then resolved from ix_ffi and not pulled twice.
-  moreLinkObjs := #[ix_rs]
 
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
@@ -417,9 +380,9 @@ def moduleExclusions : Array ModuleExclusion := #[
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets; `Models/` and every directory with its own lakefile are
 other workspaces. -/
-def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps", "MultiStark"]
+def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps"]
 def coveredRootFiles : Array FilePath :=
-  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "MultiStark.lean"]
+  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean"]
 
 /-- Whether `dir` is a nested Lake workspace (it has its own lakefile). -/
 def isNestedWorkspace (dir : FilePath) : IO Bool := do
@@ -560,6 +523,13 @@ script "check-source-docs" := do
 runs it too, with the lint arguments. -/
 script "check-modules" (args) := do
   return ← checkModules ("--wfail" :: args)
+
+/-- Check the `IxTests` registry against CI workflows and required entries. -/
+script "check-ixtests-registry" := do
+  let child ← IO.Process.spawn {
+    cmd := ".lake/build/bin/IxTests", args := #["ixtests-registry"]
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
 
 end Scripts
 

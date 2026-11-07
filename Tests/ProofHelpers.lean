@@ -18,11 +18,7 @@ def expectErr (descr : String) (e : Except ε α) : TestSeq :=
   | .error _ => test descr true
   | .ok _ => test s!"{descr} — expected a rejection but it was accepted" false
 
-/-- Inner-proof commitment/FRI parameters. A tractable subset of production
-(`numQueries := 3`, standard PoW regime: commit 0 / query 20); the verifier
-code itself is blowup/query-count agnostic, and `pcs_check_witness` is shared
-by both PoW phases, so the query-phase grinding exercises the commit-phase
-code path too. -/
+/-- Inner-proof commitment/FRI parameters. -/
 def recCommitParams : Aiur.CommitmentParameters :=
   { logBlowup := 2, capHeight := 0 }
 def innerFri : Aiur.FriParameters :=
@@ -32,7 +28,6 @@ def innerFri : Aiur.FriParameters :=
 /-- 8 little-endian bytes of a `Nat` (taken mod 2^64). -/
 def u64le (n : Nat) : Array UInt8 :=
   (Array.range 8).map (fun i => UInt8.ofNat ((n >>> (8 * i)) % 256))
-
 
 end Tests.ProofHelpers
 end

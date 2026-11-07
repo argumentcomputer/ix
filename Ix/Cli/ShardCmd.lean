@@ -47,8 +47,6 @@ def runShardExtractCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     match p.flag? "out" with
     | some flag => flag.as! String
-    -- Default output mirrors the first constant's slug next to the source
-    -- env: `init.ixe --consts Nat.add_comm` → `nat_add_comm.ixe`.
     | none =>
       let slug := names[0]!.map fun c =>
         if c.isAlphanum then c.toLower else '_'
@@ -80,7 +78,6 @@ def runShardGraphCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     match p.flag? "out" with
     | some flag => flag.as! String
-    -- `init.ixe` → `init.graph`.
     | none =>
       let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
       base ++ ".graph"
@@ -111,8 +108,6 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     match p.flag? "out" with
     | some flag => flag.as! String
-    -- Default manifest mirrors the env's base name: `init.ixe` →
-    -- `init.ixes` (not `init.ixe.ixes`).
     | none      =>
       let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
       base ++ ".ixes"
@@ -152,8 +147,8 @@ def shardCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     shards       : Nat;    "Fixed number of shards N (overrides --max-ram sizing)"
-    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term). A CUDA build seeds for the trace-shard prover by serialized block bytes, against one execution's share of the record budget (this budget less the prover's working set at AIUR_TRACE_SHARD_MAX_CELLS, over --exec-jobs + 2), anchored at the 78-shard Mathlib cut proven on four GPUs (execution records are close to linear in owned bytes); a CPU build seeds with the CPU prover's fitted scale and budget exponents anchored at Mathlib. The record cap or the execution gate corrects every boundary."
-    "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
+    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term)."
+    "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --lanes --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     ordered;               "Lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"

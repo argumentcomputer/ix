@@ -2,7 +2,7 @@ module
 public import Cli
 public import Ix.Cli.Compression
 public import Ix.Cli.CompressionCmd
-public import Ix.Aggr.Backend
+public import Ix.Cli.FormalAggregate
 
 public section
 namespace Ix.Cli.CompressCmd
@@ -27,7 +27,7 @@ def finalOf : String → Except String UInt8
 
 /-- Check what can be checked before proving: the setup is configured and
 authenticates, and the options are consistent. Returns the setup description. -/
-def preflight (opts : Options) : IO String := do
+def preflight (_p : Cli.Parsed) (opts : Options) : IO String := do
   if let some path := opts.fixedRoot then
     unless ← System.FilePath.pathExists path do
       throw <| IO.userError s!"fixed root layout {path} does not exist"
@@ -35,15 +35,15 @@ def preflight (opts : Options) : IO String := do
 
 /-- Compress the aggregate root `addr`, persist the compressed proof under the
 same claim and return its address. -/
-private def compressProof (addr : Address) (wrapper : Ixon.Proof)
+private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proof)
     (opts : Options) (setup : String) : IO Address := do
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError "proof is already compressed"
   let .checkEnv .. := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
   -- The statement comes from the same backend `ix verify --aggregate` uses;
   -- a trusted root key only replaces the verifying key the FRI stage checks.
-  let backend ← IO.ofExcept (← Aggr.buildVerificationBackend Aggr.defaultRecursionParameters)
-  let statement := Compression.statementBytes backend wrapper.claim
+  let ctx ← FormalAggregate.context p
+  let statement := FormalAggregate.statementBytes ctx wrapper.claim
   Compression.checkClaim (Ix.Claim.ser wrapper.claim) statement
   let out ← match opts.out with
     | some path => pure path
@@ -53,12 +53,12 @@ private def compressProof (addr : Address) (wrapper : Ixon.Proof)
   if opts.fresh then IO.eprintln s!"[compress] fresh: replacing stage artifacts in {out}"
   let vk ← match opts.rootVk with
     | some path => IO.FS.readBinFile path
-    | none => pure backend.system.vkBytes
+    | none => pure ctx.aggr.key
   let layout ← match opts.fixedRoot with
     | some path => IO.FS.readFile path
     | none => Compression.releaseRootLayout vk
   IO.eprintln s!"Normalizing aggregate root {addr} for compression."
-  let root ← Compression.normalize backend wrapper layout
+  let root ← FormalAggregate.normalize ctx wrapper layout
   Compression.releaseGpuMemory
   IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
   let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
@@ -68,9 +68,9 @@ private def compressProof (addr : Address) (wrapper : Ixon.Proof)
   StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
 
 /-- Compress a stored aggregate proof and return the compressed proof address. -/
-def compressRoot (addr : Address) (opts : Options) : IO Address := do
-  let setup ← preflight opts
-  compressProof addr (← Compression.readProof addr) opts setup
+def compressRoot (p : Cli.Parsed) (addr : Address) (opts : Options) : IO Address := do
+  let setup ← preflight p opts
+  compressProof p addr (← Compression.readProof addr) opts setup
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
@@ -86,10 +86,10 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
       out := (p.flag? "out").map (·.as! String)
       rootVk := (p.flag? "root-vk").map (·.as! String)
       fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
-    let setup ← preflight opts
+    let setup ← preflight p opts
     let input := p.positionalArg! "proof" |>.as! String
     let (addr, wrapper) ← Compression.readProofInput input
-    let result ← compressProof addr wrapper opts setup
+    let result ← compressProof p addr wrapper opts setup
     IO.println (toString result)
     return 0
   catch e =>
@@ -103,6 +103,8 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
     "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."

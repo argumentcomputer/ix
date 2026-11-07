@@ -16,7 +16,7 @@ pub fn derive_recursive_vk(
   setup: &SetupConfig,
 ) -> Result<Vec<u8>> {
   let fri = {
-    let key = aiur::vk_codec::AiurVerifyingKey::from_bytes(root_vk)?;
+    let key = aiur::trace::stark::VerifyingKey::from_bytes(root_vk)?;
     root::verifier(&key, &FixedRoot::from_json(layout)?)?
   };
   let (manifest, parts, _) =

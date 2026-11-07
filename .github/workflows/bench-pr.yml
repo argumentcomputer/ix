@@ -249,9 +249,9 @@ jobs:
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
-          lake build ix bench-typecheck
-          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
-          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
+          lake build ix
+          cp .lake/build/bin/ix ~/.local/bin/
+          chmod +x ~/.local/bin/ix
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -260,7 +260,7 @@ jobs:
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix bench-typecheck
+          ix
       - name: Upload run binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -751,8 +751,8 @@ jobs:
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
-              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
-              [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
+              mv ~/.local/bin/ix base/.lake/build/bin/ 2>/dev/null || true
+              [ -x base/.lake/build/bin/ix ] \
                 && cached=true
             fi
           fi
@@ -777,14 +777,14 @@ jobs:
         uses: $/.github/actions/log-cpu
         with:
           label: Base benchmark binary build CPU
-      - name: Build base (ix, bench-typecheck)
+      - name: Build base (ix)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix bench-typecheck"
+          build-args: "ix"
           use-github-cache: false
       # For a mathlib-importing env (Mathlib, FLT), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile

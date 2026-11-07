@@ -1,5 +1,15 @@
 # Proving on GPUs: multi-GPU scheduling, generated traces, and how to benchmark them
 
+The certified Formal Aiur backend (`crates/aiur`, `crates/ixvm`,
+`crates/ix-prover`) is now the default and only backend; the legacy `--legacy`
+flag and `aiur-legacy` / `ixvm-legacy` crates have been retired. For current
+resident controller and CUDA commands (`ix prepare --cuda`,
+`ix prove --lanes N --gpu-device 0 ...`), see
+[Formal Aiur orchestration](formal-aiur-orchestration.md) and
+[Formal Aiur in Ix](formal-aiur-migration.md#cuda-and-native-builds). The rest
+of this document records the multi-GPU scheduling design, device trace
+population, and benchmark methodology.
+
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
 claim is proven as a batch of trace shards that each fit a device, and the
@@ -25,7 +35,7 @@ everything else unchanged.
 Build on a GPU host:
 
 ```sh
-IX_CUDA_TRACE_CODEGEN=1 lake build ix
+ix prepare --cuda
 ```
 
 The build detects the installed GPUs and compiles only their distinct SM
@@ -76,12 +86,12 @@ ix shard mathlib.ixe --max-ram 230 --exec-jobs 3 --out mathlib.ixes
 #    persisted as it lands; joins run as soon as their children exist;
 #    the root is wrapped until it is a single trace shard, verified,
 #    and its address printed on stdout.
-export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
 export AIUR_TRACE_SHARD_MAX_CELLS=1500000000
-export AIUR_GPU_TRACE=generated AIUR_PROOF_CACHE_DIR=$PWD/cache
+export AIUR_GPU_TRACE=generated
 systemd-run --user --scope -q -p MemoryMax=920G -- \
   ix prove --ixe mathlib.ixe --ixes mathlib.ixes \
-    --gpus 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
+    --lanes 4 --gpu-device 0 --trace-shards --exec-jobs 3 --max-ram 230 \
+    --out-ixes mathlib-proven.ixes \
     > prove.out 2> prove.err
 
 # 3. Verify the root against the partition that was actually proven.
@@ -157,29 +167,12 @@ re-upload them; memory-table rows stay on the host unless
 `AIUR_GPU_TRACE_MEMORY=1`, because a memory seed is the row minus one
 column and generating them bought nothing on Init.
 
-The generated units are checked in and regenerated like the executors:
+In the Formal Aiur backend, `crates/aiur/cuda/population.cu` interprets the
+compiled population plans and group placements directly on the device:
 
 ```sh
-lake exe ix codegen --trace-bundle          # regenerate the three programs' units
-lake exe ix codegen --trace-bundle --check  # CI: fail on a stale unit
-lake exe IxTests aiur-trace-plan            # planner fixtures
-cargo test -p aiur trace_codegen            # Rust parity, no GPU needed
-```
-
-The fixtures the Rust parity tests compile against are produced by the
-same generator from two test programs:
-
-```sh
-lake exe trace-fixtures          # regenerate crates/aiur/src/trace_codegen/tests/* and cuda/generated/*
-lake exe trace-fixtures --check  # fail on a stale fixture
-```
-
-The GPU-side parity tests and the two-round generated proof need a device:
-
-```sh
-NVCC=/usr/local/cuda-13.3/bin/nvcc MULTI_STARK_CUDA_ARCHS=120 \
-  AIUR_TEST_GPU_DEVICES=0,1,2,3 \
-  cargo test -p aiur --release --features cuda-trace-codegen
+cargo test --release --locked -p aiur -p ixvm -p ix-prover --features parallel
+IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh
 ```
 
 ## 5. Knobs
