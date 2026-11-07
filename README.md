@@ -190,6 +190,13 @@ the Mathlib-based model package `Models/SetTheory`:
 lake run check-kernel --with-model
 ```
 
+### Certified compiler
+
+`IxCC/` is a certified compiler from `ixon` to x86-64, a Lake package of its
+own that reads `ixon` with the `IxCK` codec. Its [README](IxCC/README.md)
+describes its design and status; the flake builds it (`nix build .#ixcc`) and
+runs its required checks as `ixcc-*`.
+
 ## Benchmarks
 
 Benchmarks (compiler, kernel, and zk-prover backends) are tracked at

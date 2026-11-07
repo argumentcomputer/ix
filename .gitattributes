@@ -33,3 +33,21 @@ IxCK/Kernel/Ixon/RoleData.lean linguist-generated=true
 
 # The compiler's non-canonical record (the `twins` suite's re-record mode)
 Tests/Ix/Compile/NonCanonicalDefault.lean linguist-generated=true
+
+# The certified compiler (IxCC/), whose tools regenerate these: its Nix module
+# manifest and reviewed coverage inventory (`check-build-graph --write`,
+# `--write-coverage`), the artifacts its kernel evaluates
+# (`gen-src-artifacts`, `gen-recheck-artifacts`, `corpus kernel-artifacts`),
+# its fixtures' recorded census baselines, equation exports and step counts
+# (`census`, the producer's `--equations` export, `check-steps --write`), and
+# its measurement records. The hand-written fixture sources, manifests and C
+# harnesses stay counted.
+IxCC/nix/lean-modules.json linguist-generated=true
+IxCC/nix/ci-coverage.json linguist-generated=true
+IxCC/IxCCTests/Src/Artifacts/*.lean linguist-generated=true
+IxCC/IxCCTests/Recheck/Artifacts/*.lean linguist-generated=true
+IxCC/IxCCTests/Corpus/Artifacts/*.lean linguist-generated=true
+IxCC/fixtures/**/*census.json linguist-generated=true
+IxCC/fixtures/**/*equations.json linguist-generated=true
+IxCC/fixtures/**/steps.json linguist-generated=true
+IxCC/docs/performance/**/*.json linguist-generated=true
