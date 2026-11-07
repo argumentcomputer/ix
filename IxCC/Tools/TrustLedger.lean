@@ -123,6 +123,16 @@ def repository (root : FilePath) (ledger : Json) (rootOverride flakeLock : Optio
   return { root := base, flakeLock := flakeLock.getD (base / "flake.lock"),
            workflows := configured.getD [base / ".github" / "workflows"], configured := configured.isSome }
 
+/-- A reviewed `@[csimp]` inventory: each theorem as `(file, theorem,
+replaces, replacement)`, the file relative to the dependency's source
+directory (or, for the project's own `csimp_theorems`, to the project root). A
+csimp theorem changes the code the compiler emits for every call of
+`replaces`, so each one is listed and any other fails the audit. -/
+def csimpRecords (value : Json) : IO (List (String × String × String × String)) := do
+  (← array value).toList.mapM fun entry => do
+    return (← strField entry "file", ← strField entry "theorem", ← strField entry "replaces",
+      ← strField entry "replacement")
+
 def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) := do
   need ((← nat (← field ledger "schema_version")) == 2) "unsupported ledger schema_version"
   let interfaces ← arrField ledger "native_interfaces"
@@ -153,6 +163,7 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
     fields entry ["id", "status", "owner", "lake_package", "source_dir", "closure",
       "pins", "semantics_assumed", "proof_effect", "trust_basis", "tests", "retirement"]
     let _ ← jsonStrings (← field entry "imported_modules")
+    let _ ← csimpRecords (← field entry "csimp_theorems")
     match ← leanDependencyPin entry with
     | .git _ => fields (← field entry "pins") ["lake_rev", "flake_node"]
     | .path _ =>
@@ -162,6 +173,7 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
     retirement entry
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
+  let _ ← csimpRecords (← field ledger "csimp_theorems")
   let modeled ← arrField ledger "modeled_oracles"
   let mut modeledIds := []
   for entry in modeled do
@@ -490,6 +502,7 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
     need (!closure.isEmpty) s!"{package}: empty closure"
     let closureModules := closure.map fun (relative, _) =>
       ((FilePath.mk relative).withExtension "").toString.replace "/" "."
+    let mut replacements : List (String × String × String × String) := []
     for (relative, expected) in closure do
       let path := sourceRoot / relative
       need ((← sha256 path) == expected) s!"{package}: {relative} changed"
@@ -502,7 +515,10 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
       for mod in imports tokens do
         need (closureModules.contains mod || toolchainRoots.contains ((mod.splitOn ".").headD ""))
           s!"{package}: {relative} imports {mod} outside the recorded closure"
+      for c in ← checked ((csimps tokens).mapError (fun error => s!"{package}: {relative}: {error}")) do
+        replacements := (relative, c.name, c.replaces, c.replacement) :: replacements
       checkedFiles := checkedFiles + 1
+    sameSet replacements (← csimpRecords (← field entry "csimp_theorems")) s!"{package} csimp inventory"
     let imported ← jsonStrings (← field entry "imported_modules")
     need (imported.all closureModules.contains) s!"{package}: an imported module is outside its closure"
     declared := declared ++ imported
@@ -603,6 +619,18 @@ def validateCI (repo : Repository) (ledger : Json) : IO Unit := do
     return (← strField entry "repository", ← strField entry "commit")
   sameSet actual expected "CI action inventory"
 
+/-- Every `@[csimp]` theorem in the project's audited sources is in the
+ledger's `csimp_theorems`, and every listed one exists. -/
+def validateProjectCSimps (root : FilePath) (ledger : Json)
+    (sources : List (FilePath × Array Token)) : IO Unit := do
+  let mut actual : List (String × String × String × String) := []
+  for (path, tokens) in sources do
+    let relative := (path.toString.dropPrefix (root.toString ++ "/")).toString
+      |>.dropPrefix "./" |>.toString
+    for c in ← checked ((csimps tokens).mapError (fun error => s!"{path}: {error}")) do
+      actual := (relative, c.name, c.replaces, c.replacement) :: actual
+  sameSet actual (← csimpRecords (← field ledger "csimp_theorems")) "project csimp inventory"
+
 /-- The complete audit. `repositoryRoot` and `flakeLock` override the ledger's
 repository root and the `flake.lock` in it (for a copy of the project taken
 out of its repository, as in a Nix check). -/
@@ -619,6 +647,7 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
   for (path, tokens) in sources do
     checked ((hygiene tokens).mapError (fun error => s!"{path}: {error}"))
   validateImports root ledger interfaces sources
+  validateProjectCSimps root ledger sources
   let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
   let leanFiles ← validateLeanDependencies root ledger lake sources overrides repo.flakeLock
   validateSeeds root seeds gmp

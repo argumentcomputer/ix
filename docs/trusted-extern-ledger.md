@@ -57,6 +57,11 @@ The checker deliberately fails closed on changes to:
 - declaration-level `axiom`, standalone `sorry`, or `native_decide` tokens in
   the checked project sources (a conservative lexer excludes comments and
   literals and retains line locations);
+- every `@[csimp]` theorem (and `attribute [csimp]` command) in the project's
+  audited sources and in each pure Lean dependency's closure: each must be
+  stated as `: @f = @g :=` and listed with its file and replacement pair
+  (`csimp_theorems`, top level and per dependency), since it changes the code
+  compiled for every call of `f`;
 - every package/version and the complete checksum-bearing Cargo lockfile;
 - every locked Nix flake node and the build-selection files, including
   `.envrc` (it injects `NIX_CONFIG` for direnv users);
@@ -105,7 +110,8 @@ copies. It checks source literals/comments, unrecognized extern attributes,
 new executable roots, project/dependency extern drift, imports and native
 entry points, integrity changes, malformed/duplicate Cargo metadata, CI
 action drift (including scoped repository workflows and their local actions),
-an overriding `flake.lock`, and path-pinned pure Lean dependencies. The Nix trust-ledger check runs these regressions too.
+an overriding `flake.lock`, path-pinned pure Lean dependencies, and unlisted,
+malformed or attribute-only `@[csimp]` theorems. The Nix trust-ledger check runs these regressions too.
 
 The `IxCCTests` Lake root keeps every test and fence inside the
 audited source inventory, and the proof aggregate `IxCCTests.Proofs`
@@ -257,7 +263,8 @@ every import of the project's sources that names neither a project module nor
 a toolchain module to be such a recorded module; checks each closure file's
 hash; rejects a closure file that declares a native symbol, uses
 `implemented_by`, `axiom`, `sorry` or `native_decide`, or imports a module
-outside the closure or the toolchain.
+outside the closure or the toolchain, and requires its `@[csimp]` theorems to be
+exactly the entry's `csimp_theorems`.
 
 The one entry, `ix-kernel-ixon-v4-codec`, is ix's `IxKernel/` package at
 `f829b760`, of which IxCC imports `Ix.Ixon.Canonical` and

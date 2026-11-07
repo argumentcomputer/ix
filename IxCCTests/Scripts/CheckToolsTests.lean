@@ -76,6 +76,18 @@ private def lexerTests : IO Unit := do
     let _ ← checked (externs (← checked (scan "@[extern \"unaccounted\"] theorem unsupported : True := by trivial")))
   rejects "implicit extern" "explicit symbol" do
     let _ ← checked (externs (← checked (scan "@[extern] opaque unsupported : Nat")))
+  let csimpInput := "/- @[csimp] theorem hidden : @a = @b := rfl -/\n" ++
+    "def text := \"@[csimp] theorem quoted : @a = @b := rfl\"\n" ++
+    "@[inline, csimp] private theorem f_eq : @f = @fFast := rfl\n" ++
+    "theorem g_eq : g = gFast := by rfl\nattribute [csimp] g_eq\n"
+  need ((← checked (csimps (← checked (scan csimpInput)))) ==
+      ([⟨"f_eq", "f", "fFast"⟩, ⟨"g_eq", "g", "gFast"⟩] : List CSimp)) "csimp declaration/attribute inventory changed"
+  rejects "csimp with binders" "is not stated as" do
+    let _ ← checked (csimps (← checked (scan "@[csimp] theorem h_eq (x : Nat) : f x = g x := rfl")))
+  rejects "csimp attribute without its theorem" "not a theorem of this source" do
+    let _ ← checked (csimps (← checked (scan "attribute [csimp] elsewhere_eq\n")))
+  rejects "csimp on a definition" "csimp attribute not on a theorem" do
+    let _ ← checked (csimps (← checked (scan "@[csimp] def notATheorem : Nat := 0")))
   rejects "unterminated comment" "unterminated block comment" do
     let _ ← checked (scan "/- nested /- closed -/")
   let cInput := "/* LEAN_EXPORT int ignored(void); */\n" ++
@@ -273,8 +285,29 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
     let ledger ← replaceField originalLedger "lean_dependencies" (Json.arr entries)
     withFile (root / "docs/trusted-externs.json") ledger.compress do
       rejects "pure dependency native code" "declares native symbols" check
+  -- a csimp theorem in the dependency closure, with its hash re-recorded:
+  -- refused until the ledger lists it
+  let csimpRecord (file : String) : Json := Json.mkObj [("file", toJson file),
+    ("theorem", toJson "rogue_eq"), ("replaces", toJson "rogue"), ("replacement", toJson "rogueFast")]
+  let csimpTheorem := "@[csimp] theorem rogue_eq : @rogue = @rogueFast := rfl\n"
+  withFile codec ((← IO.FS.readFile codec) ++ "\n" ++ csimpTheorem) do
+    let rehashed (records : Array Json) : IO Json := do
+      let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
+        let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
+        replaceField (← replaceField entry "closure" closure) "csimp_theorems" (Json.arr records)
+      replaceField originalLedger "lean_dependencies" (Json.arr entries)
+    withFile (root / "docs/trusted-externs.json") (← rehashed #[]).compress do
+      rejects "unlisted dependency csimp" "csimp inventory drifted" check
+    withFile (root / "docs/trusted-externs.json") (← rehashed #[csimpRecord ixClosure.head!]).compress do
+      check
   buildGraphTests root
   let regression := root / "IxCC/AuditRegression.lean"
+  -- the project's own csimp theorems are inventoried the same way
+  withFile regression csimpTheorem do
+    rejects "unlisted project csimp" "project csimp inventory drifted" check
+    let listed ← replaceField originalLedger "csimp_theorems"
+      (Json.arr #[csimpRecord "IxCC/AuditRegression.lean"])
+    withFile (root / "docs/trusted-externs.json") listed.compress check
   for token in ["axiom", "sorry", "native_decide"] do
     withFile regression s!"{token} injected\n" do
       rejects token (token ++ " is not allowed") check
@@ -341,4 +374,4 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   lexerTests
   disassemblyTests
   regressionTests root blake ixKernel
-  IO.println "Lean check regressions ok: source lexing, root/native inventories, build graph, proof/runtime coverage, integrity, Cargo, CI, repository and workspace-dependency rejection paths"
+  IO.println "Lean check regressions ok: source lexing, root/native/csimp inventories, build graph, proof/runtime coverage, integrity, Cargo, CI, repository and workspace-dependency rejection paths"

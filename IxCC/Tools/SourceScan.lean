@@ -155,6 +155,68 @@ def externs (tokens : Array Token) : Except String (List (String × String)) := 
         if count == 0 then throw s!"line {token.line}: missing attribute-command names"
   return declarations.reverse
 
+/-- A `@[csimp]` theorem as its source states it: compiled code calls
+`replacement` wherever it would call `replaces`. -/
+structure CSimp where
+  name : String
+  replaces : String
+  replacement : String
+  deriving BEq, Repr
+
+/-- The replacement stated by the theorem whose name is the token at `index`:
+the statement must be `: @f = @g :=` (no binders; each `@` optional). -/
+private def csimpStatement (tokens : Array Token) (index : Nat) : Except String (String × String) :=
+  let text (i : Nat) : String := (tokens[i]?.map (·.text)).getD ""
+  let isName (i : Nat) : Bool := (tokens[i]?.map (fun token => token.kind == Kind.name)).getD false
+  let skipAt (i : Nat) : Nat := if text i == "@" then i + 1 else i
+  let lhs := skipAt (index + 2)
+  let rhs := skipAt (lhs + 2)
+  if text (index + 1) == ":" && isName lhs && text (lhs + 1) == "=" && isName rhs &&
+      text (rhs + 1) == ":" && text (rhs + 2) == "=" then
+    .ok (text lhs, text rhs)
+  else
+    .error s!"line {(tokens[index]?.map (·.line)).getD 0}: csimp theorem {text index} is not stated as `: @f = @g :=`"
+
+/-- Every `@[csimp]` theorem and `attribute [csimp]` command, with the
+replacement each states. A csimp attribute that is not on a theorem of this
+source stated as `: @f = @g :=` is refused. -/
+def csimps (tokens : Array Token) : Except String (List CSimp) := do
+  let mut result : List CSimp := []
+  for index in [:tokens.size] do
+    let token := tokens[index]!
+    if token.kind == .literal then continue
+    unless (token.text == "@" || token.text == "attribute") &&
+        (tokens[index + 1]?.map (·.text)) == some "[" do continue
+    let mut finish := index + 2
+    while finish < tokens.size && tokens[finish]!.text != "]" do finish := finish + 1
+    if finish == tokens.size then throw s!"line {token.line}: unterminated attribute"
+    let attributes := tokens.extract (index + 2) finish
+    unless attributes.any (fun a => a.kind == .name && a.text == "csimp") do continue
+    if token.text == "@" then
+      let mut after := finish + 1
+      while after < tokens.size && modifier tokens[after]!.text do after := after + 1
+      unless (tokens[after]?.map (·.text)) == some "theorem" do
+        throw s!"line {token.line}: csimp attribute not on a theorem"
+      let (replaces, replacement) ← csimpStatement tokens (after + 1)
+      result := ⟨(tokens[after + 1]?.map (·.text)).getD "", replaces, replacement⟩ :: result
+    else
+      let mut after := finish + 1
+      let mut count := 0
+      while after < tokens.size && tokens[after]!.line == tokens[finish]!.line &&
+          tokens[after]!.kind == .name do
+        let name := tokens[after]!.text
+        let declared := (List.range tokens.size).find? fun i =>
+          tokens[i]!.kind == .name && tokens[i]!.text == "theorem" &&
+            (tokens[i + 1]?.map (·.text)) == some name
+        let some declared := declared
+          | throw s!"line {token.line}: csimp attribute on {name}, which is not a theorem of this source"
+        let (replaces, replacement) ← csimpStatement tokens (declared + 1)
+        result := ⟨name, replaces, replacement⟩ :: result
+        count := count + 1
+        after := after + 1
+      if count == 0 then throw s!"line {token.line}: missing csimp attribute names"
+  return result.reverse
+
 def cExports (tokens : Array Token) : Except String (List String) := do
   let mut result := []
   for index in [:tokens.size] do

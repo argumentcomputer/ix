@@ -706,6 +706,7 @@
   ],
   "modeled_oracles": [],
   "ci_actions": [],
+  "csimp_theorems": [],
   "integrity": {
     "tracked_files": {
       "IxCCTests/Lam/EvaluationOrder.lean": "2d90bb75b629f3d8abf2a1f8af2f39b250b3bd607114a31fa1a4ce9d8da0280c",
@@ -1854,8 +1855,8 @@
       "IxCC/Tools/BuildGraph.lean": "056bf0964fd442ad49ad9a81ef5d405a2a9d301cb1cf40f367ba4caa0dec6b9d",
       "IxCC/Tools/Check.lean": "833acfda9a8518dad58b8da53a92cdfad9ee126c7196eff42e85ac3a5a7b0369",
       "IxCC/Tools/IxonV3Catalog.lean": "4ea61429b1ea252539b08e7eb70711ad2fcc890572d6729b3f90491729f15111",
-      "IxCC/Tools/SourceScan.lean": "f09c5feb7bb648b2364353d39a638b101343c0dc37ae5354084ed28ddec9e7fc",
-      "IxCC/Tools/TrustLedger.lean": "281b16a9f47cb4fce463c48d9b5cef1e14b0ab9a57aba566769692c4a7772344",
+      "IxCC/Tools/SourceScan.lean": "ee8abee89db9b637a82f1d928ce6a9face03eb811f7721b08c5551e0c696d7f0",
+      "IxCC/Tools/TrustLedger.lean": "63b0390ae5dbcf0c603a6ada2513edbe8363b3a4b4cb95f07ae134a93cdb0589",
       "IxCC/Tools/X86Check.lean": "0c182c039b511e26535ec0277d950bd20e2eec96bf6c0379c543e82ac29a3ef5",
       "IxCC/X86/BlockSharing.lean": "4badb534b2035257b64dee8c6970be5372aef249835c11405ab47b666f562752",
       "docs/aiur-counter-analysis.md": "22be65038247f50bdbb6153acd499b51c4121e0a02eb23b544e0aef7b3bb0e4e",
@@ -2159,7 +2160,7 @@
       "nix/sources.nix": "de74fcfd15856a7be1e4db5fe5ffd5f554aeb585b7c137797c8a32dc3162442b",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
       "IxCCTests/Scripts/CheckBuildGraph.lean": "806e4b62f9aff562ad35797ecf772ef6c908ee931e768146e6910fa4bdf916a2",
-      "IxCCTests/Scripts/CheckToolsTests.lean": "8ec2d0d1e5971903ced042965ab653575c616c36b9452e201a0f722944620153",
+      "IxCCTests/Scripts/CheckToolsTests.lean": "2987fccf60be77f550a6447c193c2266977c1a70becaaa9e1de39c2647a05741",
       "IxCCTests/Scripts/CheckTrustedExterns.lean": "9bc091fc7a493186304ffd722e4af20e4484be2a695b3d745d7ed32a86fa4556",
       "IxCCTests/Scripts/CheckX86Bytes.lean": "5cdf3a680cfa520b70cd47d6b6a304017e979612706ffbf9ad5cb29c0aacd22b",
       "IxCCTests/Scripts/CheckX86Encoder.lean": "be487807a2e174e256b59f4dd959192abd74552a9156fd9441d5c58ce8d30379",
@@ -2199,6 +2200,7 @@
       "lake_package": "«ix-kernel»",
       "source_kind": "git",
       "source_dir": "..",
+      "csimp_theorems": [],
       "imported_modules": [
         "Ix.Ixon.Canonical",
         "Ix.Ixon.Codec"
