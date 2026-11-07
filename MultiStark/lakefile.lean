@@ -6,6 +6,10 @@ package multiStark where
 
 require aiur from "../Aiur"
 
+/- Program digests (`programDigest`) hash with the same pinned BLAKE3 as the root package. -/
+require Blake3 from git
+  "https://github.com/argumentcomputer/Blake3.lean" @ "3f8b805614a0bae1c033469ff893a8f0ee85f601"
+
 @[default_target]
 lean_lib MultiStark
 
