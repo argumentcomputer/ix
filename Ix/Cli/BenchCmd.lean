@@ -154,9 +154,10 @@ def backendSpecs : List BackendSpec := [
   -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
   -- constant rows check each constant's full closure in one process per
   -- env; the env row checks the whole env and writes the per-constant
-  -- attribution CSV the compare drill-down reads.
+  -- attribution CSV the compare drill-down reads. The constant rows share
+  -- that process, so its peak RSS is the env load, not the constant.
   { name := "ixvm-ooc", testbed := "ixvm-ooc",
-    constantMetrics := ["check-time", "peak-rss"],
+    constantMetrics := ["check-time"],
     envMetrics := ["check-time", "throughput", "peak-rss"] },
   -- A distinct baseline keeps the cost of certification out of comparisons
   -- against historical Rust compiler timings.
@@ -203,6 +204,10 @@ def resolveBin (repo : String) (name : String) : IO String := do
   if ← FilePath.pathExists inTree then
     return inTree
   return name
+
+/-- `ix check-lean`'s exit for a verdict that holds only under the user
+    axioms it lists (`Ix.Cli.CheckLeanCmd.exitConditional`). -/
+def checkLeanConditional : UInt32 := 5
 
 /-- Spawn `cmd args` (inheriting stdio) and wait for its exit code. The
     tools set no memory limit of their own: CI runs `ix bench run` in a
@@ -563,13 +568,18 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"[bench] ix decompile failed (exit {exit})"
   | "ixvm-ooc" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    -- User axioms are admitted, as the ixvm claim context admits them; a run
+    -- that reads one exits `exitConditional` and marks its rows `conditional`.
+    let ok := fun (exit : UInt32) =>
+      exit == 0 || exit == exitRejected || exit == checkLeanConditional
     if envRow then
       -- Whole-env row, plus the per-constant attribution CSV the compare
       -- drill-down reads (top movers).
       let exit ← runTool ix
-        #["check-lean", ixe, "--anon", "--json", out, "--json-name", info.name,
+        #["check-lean", ixe, "--anon", "--allow-user-axioms",
+          "--json", out, "--json-name", info.name,
           "--per-const", s!"{out}.perconst.csv"]
-      if exit != 0 && exit != exitRejected then
+      if !ok exit then
         IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- One full-closure row per constant, from ONE process for all names:
     -- the check-lean rows mode attributes per name internally with the env
@@ -578,8 +588,8 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     if !names.isEmpty then
       IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
       let exit ← runTool ix
-        #["check-lean", ixe, "--anon", "--consts-file", namesFile, "--json", out]
-      if exit != 0 && exit != exitRejected then
+        #["check-lean", ixe, "--anon", "--allow-user-axioms", "--consts-file", namesFile, "--json", out]
+      if !ok exit then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "ixvm" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
