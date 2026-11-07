@@ -45,6 +45,8 @@ license = "MIT OR Apache-2.0"
 record-pool = { path = "crates/record-pool" }
 aiur = { path = "crates/aiur" }
 stark-key = { path = "crates/stark-key" }
+ixvm = { path = "crates/ixvm" }
+stark-verifier = { path = "crates/stark-verifier" }
 ix-common = { path = "crates/common" }
 ixon = { path = "crates/ixon" }
 
@@ -68,6 +70,7 @@ quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 rayon = "1"
 rustc-hash = "2"
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["unbounded_depth"] }
 sha2 = "0.10"
 tiny-keccak = { version = "2", features = ["keccak"] }

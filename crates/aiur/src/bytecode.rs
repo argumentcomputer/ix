@@ -621,6 +621,11 @@ impl<B: FieldBackend> CheckedProgram<B> {
       .find(|e| e.name == name)
       .ok_or_else(|| format!("unselected entrypoint {name}"))
   }
+  /// The number of field elements a call to function `id` takes: the width
+  /// of its flattened parameters.
+  pub fn input_width(&self, id: usize) -> Option<usize> {
+    self.inputs.get(id).map(Layout::width)
+  }
   pub fn callable_name(&self, id: usize) -> Option<&str> {
     if let Some(f) = self.program.functions.get(id) {
       Some(&f.name)

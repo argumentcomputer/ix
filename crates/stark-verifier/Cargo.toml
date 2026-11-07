@@ -9,7 +9,7 @@ aiur = { workspace = true, features = ["stark"] }
 multi-stark = { workspace = true }
 stark-key = { workspace = true }
 blake3 = { workspace = true }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
@@ -17,5 +17,8 @@ parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 
 [dev-dependencies]
-ixvm = { path = "../ixvm" }
+ixvm = { workspace = true }
 libc = { workspace = true }
+
+[lints]
+workspace = true

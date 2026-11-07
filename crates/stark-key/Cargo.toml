@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 multi-stark = { workspace = true }
 bincode = { version = "2", features = ["serde"] }
+
+[lints]
+workspace = true
