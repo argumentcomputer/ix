@@ -271,7 +271,7 @@ pub fn encode_hints(hints: &[HintEntry]) -> Vec<u8> {
 }
 
 fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<(), String> {
-  let found = r.raw(magic.len()).map_err(|_| "not an Aiur artifact")?;
+  let found = r.raw(magic.len()).map_err(|_e| "not an Aiur artifact")?;
   if found != magic {
     let kind = |m: &[u8]| {
       if m == PACKAGE_MAGIC {
