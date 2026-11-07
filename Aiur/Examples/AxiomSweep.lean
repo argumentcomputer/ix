@@ -38,9 +38,36 @@ def packageModules (root : System.FilePath) : IO (Array Name) := do
       (System.FilePath.mk relative.toString).components.foldl .str .anonymous
   return modules.qsort Name.lt
 
+/-- The axioms `c` depends on, directly or transitively. One cache serves the
+whole sweep, so every constant's closure is walked once. As in Lean's
+`collectAxioms`, a constant in progress counts as axiom-free when a cycle
+(an inductive type and its constructors) reaches it again. -/
+partial def axiomsOf (env : Environment) (cache : IO.Ref (Std.HashMap Name (Array Name)))
+    (c : Name) : IO (Array Name) := do
+  if let some axioms := (← cache.get)[c]? then return axioms
+  cache.modify (·.insert c #[])
+  let some info := env.find? c | return #[]
+  let (exprs, more) : Array Expr × List Name := match info with
+    | .axiomInfo v => (#[v.type], [])
+    | .defnInfo v => (#[v.type, v.value], [])
+    | .thmInfo v => (#[v.type, v.value], [])
+    | .opaqueInfo v => (#[v.type, v.value], [])
+    | .quotInfo _ => (#[], [])
+    | .ctorInfo v => (#[v.type], [])
+    | .recInfo v => (#[v.type], [])
+    | .inductInfo v => (#[v.type], v.ctors)
+  let mut result : Array Name := if info matches .axiomInfo _ then #[c] else #[]
+  for dependency in exprs.flatMap (·.getUsedConstants) ++ more.toArray do
+    for a in ← axiomsOf env cache dependency do
+      unless result.contains a do result := result.push a
+  cache.modify (·.insert c result)
+  return result
+
 /-- Every declaration of a module under `Aiur` whose axioms leave the standard
 three, with those extra axioms. -/
-def offenders (env : Environment) : CoreM (Nat × Array (Name × Name × Array Name)) := do
+def offenders (env : Environment) : IO (Nat × Array (Name × Name × Array Name)) := do
+  let env := env.setExporting false
+  let cache ← IO.mkRef {}
   let moduleNames := env.allImportedModuleNames
   let mut scanned := 0
   let mut found := #[]
@@ -49,7 +76,7 @@ def offenders (env : Environment) : CoreM (Nat × Array (Name × Name × Array N
     let module := moduleNames[index.toNat]!
     unless (`Aiur).isPrefixOf module do continue
     scanned := scanned + 1
-    let extra := (← collectAxioms name).filter (!standardAxioms.contains ·)
+    let extra := (← axiomsOf env cache name).filter (!standardAxioms.contains ·)
     unless extra.isEmpty do found := found.push (module, name, extra)
   return (scanned, found.qsort fun a b => Name.lt a.2.1 b.2.1)
 
@@ -64,8 +91,7 @@ def main (args : List String) : IO UInt32 := do
   initSearchPath (← findSysroot)
   let modules ← packageModules root
   let env ← importModules (modules.map ({ module := · })) {} (trustLevel := 1024)
-  let (scanned, found) ← (offenders env).toIO' { fileName := "<axiom_sweep>", fileMap := default }
-    { env }
+  let (scanned, found) ← offenders env
   if found.isEmpty then
     IO.println s!"Aiur axiom sweep OK: {scanned} declarations in {modules.size} modules use only \
       {standardAxioms.toList}"
