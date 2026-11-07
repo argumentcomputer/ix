@@ -193,6 +193,9 @@ pub enum WitnessError {
   /// A canonical tree's root disagrees with the claim computed from the
   /// same leaves.
   TreeMismatch,
+  /// The claim's user-axioms root is not the root of the environment's
+  /// user axioms.
+  AxiomsMismatch,
   /// The claim recomputed from the request is not the expected claim.
   ClaimMismatch {
     expected: Box<Claim>,
@@ -209,6 +212,12 @@ impl fmt::Display for WitnessError {
       },
       WitnessError::TreeMismatch => {
         write!(f, "canonical tree root disagrees with the shard claim")
+      },
+      WitnessError::AxiomsMismatch => {
+        write!(
+          f,
+          "the claim's axioms root is not the environment's user axioms"
+        )
       },
       WitnessError::ClaimMismatch { expected, computed } => write!(
         f,
@@ -259,7 +268,8 @@ pub fn claim_context(
   env: &Env,
   assume_binding: bool,
 ) -> Result<ClaimContext, WitnessError> {
-  let ctx = ClaimContext::for_env(env).map_err(|_unbound| WitnessError::Unbound)?;
+  let ctx =
+    ClaimContext::for_env(env).map_err(|_unbound| WitnessError::Unbound)?;
   Ok(if assume_binding { ctx.assuming_binding() } else { ctx })
 }
 
@@ -311,8 +321,8 @@ impl<'a> Statement<'a> {
     env: &Env,
     owned: &'a [Address],
   ) -> Result<Self, WitnessError> {
-    let (claim, frontier) = shard_check_env_claim(ctx, env, owned)
-      .ok_or(WitnessError::EmptyOwned)?;
+    let (claim, frontier) =
+      shard_check_env_claim(ctx, env, owned).ok_or(WitnessError::EmptyOwned)?;
     let subject =
       AssumptionTree::canonical(owned).ok_or(WitnessError::EmptyOwned)?;
     let assumptions = AssumptionTree::canonical(&frontier);
@@ -332,6 +342,18 @@ impl<'a> Statement<'a> {
 
   fn into_witness(self, env: &Env) -> Result<ClaimWitness, WitnessError> {
     let binding = env.role_binding.as_ref().ok_or(WitnessError::Unbound)?;
+    // A context naming user axioms has the kernel load their tree and every
+    // axiom in it (`KernelRoles::load_role_ctx`), whatever the target.
+    let axioms = self
+      .claim
+      .context()
+      .and_then(|c| c.axioms.as_ref())
+      .map(|root| {
+        ClaimContext::user_axiom_tree(env)
+          .filter(|tree| tree.root() == *root)
+          .ok_or(WitnessError::AxiomsMismatch)
+      })
+      .transpose()?;
     let mut claim_bytes = Vec::new();
     self.claim.put(&mut claim_bytes);
     let digest = Address::hash(&claim_bytes);
@@ -341,7 +363,14 @@ impl<'a> Statement<'a> {
       payload: Payload::Bytes(claim_bytes.clone().into()),
     }];
     streams.extend(self.trees.iter().map(tree_stream));
-    streams.extend(scope_streams(env, &witness_scope(env, self.roots)));
+    let mut roots = self.roots.to_vec();
+    if let Some(tree) = &axioms {
+      if !self.trees.iter().any(|t| t.root() == tree.root()) {
+        streams.push(tree_stream(tree));
+      }
+      roots.extend(ClaimContext::user_axioms(env));
+    }
+    streams.extend(scope_streams(env, &witness_scope(env, &roots)));
     streams.push(AdviceStream {
       channel: ROLE_CHANNEL,
       key: StreamKey::Address(binding.address.clone()),
@@ -583,6 +612,31 @@ mod tests {
       binding.bytes.iter().map(|b| u64::from(*b)).collect::<Vec<_>>()
     );
     assert_eq!(layout(&w), layout(&witness(&env, shard(&owned)).unwrap()));
+  }
+
+  #[test]
+  fn check_witness_ships_the_user_axioms() {
+    let (env, a, b, c, _) = chain();
+    let w = witness(
+      &env,
+      WitnessRequest::Check { target: &c, assume_binding: false },
+    )
+    .unwrap();
+    let Claim::Check { ctx, .. } = &w.claim else { panic!() };
+    let tree = ClaimContext::user_axiom_tree(&env).unwrap();
+    assert_eq!(ctx.axioms, Some(tree.root()));
+    assert!(w.streams.iter().any(|s| s.channel == TREE_CHANNEL
+      && s.key == StreamKey::Address(tree.root())
+      && s.payload.values()
+        == tree.ser().iter().map(|b| u64::from(*b)).collect::<Vec<_>>()));
+    // `c` reaches neither `a` nor `b`, but the kernel loads every user axiom.
+    for x in [&a, &b] {
+      assert!(w.streams.iter().any(|s| {
+        s.channel == CONSTANT_CHANNEL && s.key == StreamKey::Address(x.clone())
+      }));
+    }
+    let channels: Vec<u8> = w.streams.iter().map(|s| s.channel).collect();
+    assert!(channels.is_sorted());
   }
 
   #[test]
