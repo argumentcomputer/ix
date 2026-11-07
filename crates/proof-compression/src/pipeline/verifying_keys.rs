@@ -17,9 +17,10 @@ const VERSION: &str = "0.2";
 /// Log2 of the first KZG stage's partition height the keys were derived for.
 pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 
-/// Serialized aggregation backend key whose roots the layout normalizes.
+/// Serialized aggregation backend key whose roots the layout normalizes: the
+/// formal aggregation program under `aiur::trace::stark::Parameters::DEFAULT`.
 const ROOT_VK_BLAKE3: &str =
-  "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc";
+  "d286b37b8b9167fff7de272b70a577d1a8e5fb7ba66dd68488d3b79467820c02";
 /// The root layout (`.ixl`, see `FixedRoot`) and its content address.
 const LAYOUT: &[u8] =
   include_bytes!("../../verifying-keys/0.2/root-layout.ixl");
@@ -27,28 +28,29 @@ const LAYOUT_BLAKE3: &str =
   "708e3b5d7494d3657e78c104d15a276df89299cc589b4444fa1b4ade80cdd928";
 
 /// Backend and entrypoint words of the aggregation program, the statement
-/// prefix every compressed claim of this release carries.
+/// prefix every compressed claim of this release carries
+/// ([`statement::backend_prefix`] of the IxVM and aggregation keys).
 pub(super) const STATEMENT_PREFIX: [u64; 10] = [
-  0, 293, 3849420707, 4087085283, 470000540, 2154705852, 3686466056,
-  4052325645, 2284798839, 2062413424,
+  1, 0, 860334012, 1220120966, 1187167253, 3205439471, 3112596009, 4264259287,
+  80555980, 4021139237,
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
   include_bytes!("../../verifying-keys/0.2/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
-  "b4c58f798380d2fd91594763613874fdaf2d407631cee98fe361a287265d074a";
+  "81ca053b35d43bf4d17447e8c21749ad74d24573abc367da5682b4bb6506c7fd";
 /// The identifier a recursive KZG packet begins with.
 pub(super) const RECURSIVE_VK_ID: &str =
-  "376163d7ec5afa644e393d0d1828b3fc46be2f80cc5e4d122c739e9b28129330";
+  "2546e82d4da4c117e5f545223d623f162e9601f7d72dd6132f3b2335bc9d2634";
 
 /// Identity of the first stage's FRI verifier plan for the bundled backend
 /// and layout, half of its fixed-cache identity. Independent of the KZG setup.
 pub(super) const FIRST_PLAN_ID: &str =
-  "99048e124eb0d8bb752c77db7e06ebf7a8254174c05c9140e31c039c4d03a198";
+  "82dfa4c4a13a4c5f743e6a662dea693a0adfaa5d6302cead56077d1e63efaad3";
 /// Identity of the recursive stage's verifier frontend over the first stage
 /// under Ignition, half of its fixed-cache identity.
 pub(super) const RECURSIVE_FRONTEND_ID: &str =
-  "2f201f43533d930326e535fb61ee3e8ee8716ebfdaf8ffce7e1083b71ef160f6";
+  "050bf45b9b729c0839d4b31f72b2115676218d2cab666e350b89569bc121e66b";
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =
@@ -262,6 +264,9 @@ mod tests {
       &decode(LAYOUT_BLAKE3).unwrap()
     );
     assert_eq!(FixedRoot::from_bytes(LAYOUT).unwrap().to_bytes(), LAYOUT);
+    // The prefix names the call channel; its digest words are u32s.
+    assert_eq!(STATEMENT_PREFIX[0], 1);
+    assert!(STATEMENT_PREFIX[2..].iter().all(|&w| u32::try_from(w).is_ok()));
     statement::from_claims_bytes(&statement::to_claims_bytes(
       &statement::with_claim(&STATEMENT_PREFIX, b""),
     ))
