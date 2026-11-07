@@ -355,10 +355,16 @@ def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
   let totalCostDelta :=
     if sumCostMain > 0
     then fmtPct ((sumCostPr - sumCostMain) / sumCostMain) else "n/a"
+  -- A kernel that reports no op counters (`ix check-lean` writes them as
+  -- zero) leaves wall time as the only evidence, so its movers are not
+  -- labelled noise and the cost columns are dropped.
+  let counted := sumCostMain > 0 || sumCostPr > 0
+  let movers :=
+    if counted then s!"Σ cost {totalCostDelta}; \
+      {behavior.size} cost mover(s), {timeOnly.size} time-only mover(s)"
+    else s!"{timeOnly.size} mover(s)"
   let mut out := s!"<details><summary>per-constant drill-down — \
-    Σ check {fmtMs sumMain} → {fmtMs sumPr} ({totalDelta}), \
-    Σ cost {totalCostDelta}; \
-    {behavior.size} cost mover(s), {timeOnly.size} time-only mover(s)"
+    Σ check {fmtMs sumMain} → {fmtMs sumPr} ({totalDelta}); {movers}"
   if added > 0 || removed > 0 then
     out := out ++ s!"; {added} added ({fmtMs addedNs}), \
       {removed} removed ({fmtMs removedNs})"
@@ -372,20 +378,24 @@ def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
     if rows.isEmpty then ""
     else Id.run do
       let mut s := s!"**{title}**\n\n\
-        | constant | {baseLabel} | PR | Δtime | Δcost | driver |\n\
-        |---|---|---|---|---|---|\n"
+        | constant | {baseLabel} | PR | Δtime |"
+      s := s ++ (if counted then " Δcost | driver |\n|---|---|---|---|---|---|\n"
+        else "\n|---|---|---|---|\n")
       for (name, m, p, _) in rows do
-        let dcost := fmtDeltaCell m.cost p.cost "cycles"
         let dtime := fmtDeltaCell m.nanos p.nanos "check-time"
-        s := s ++ s!"| `{name}` | {fmtMs m.nanos} | {fmtMs p.nanos} \
-          | {dtime} | {dcost} | {moverDriver m p} |\n"
+        s := s ++ s!"| `{name}` | {fmtMs m.nanos} | {fmtMs p.nanos} | {dtime} |"
+        s := s ++ (if counted then
+          s!" {fmtDeltaCell m.cost p.cost "cycles"} | {moverDriver m p} |\n" else "\n")
       s ++ "\n"
+  let tSorted := timeOnly.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
+  if !counted then
+    out := out ++ section_ "Time movers" (tSorted.extract 0 topN)
+    return out ++ "</details>"
   let bSorted := behavior.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
   out := out ++ section_ "Cost regressions (counter-backed)"
     (bSorted.filter (fun a => a.2.2.2 > 0) |>.extract 0 topN)
   out := out ++ section_ "Cost improvements (counter-backed)"
     (bSorted.filter (fun a => a.2.2.2 < 0) |>.extract 0 topN)
-  let tSorted := timeOnly.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
   out := out ++ section_
     "Time-only movers (cost flat — scheduling/locality noise)"
     (tSorted.extract 0 (min topN 5))

@@ -3,7 +3,8 @@
   are the shared constants, each in its own env, and its env rows are the
   registry envs; both kinds plot on the backend's one testbed. The
   PR-comment renderer marks each cell past ±3% and groups a cell's rows
-  under its env.
+  under its env, and its per-constant drill-down ranks wall-time movers
+  when the kernel reports no op counters.
 -/
 
 module
@@ -122,6 +123,21 @@ def testRowKinds : TestSeq := .individualIO "a row shows and compares only its k
     && (ixvmText.splitOn "shards").length == 1
   return (ok, 0, 0, if ok then none else some (oocText ++ "\n" ++ ixvmText))) .done
 
-def suite : List TestSeq := [testRows, testCells, testReport, testRowKinds]
+open Ix.Cli.BenchReport in
+def testDrillDown : TestSeq := .individualIO "a drill-down without op counters ranks time movers" none (do
+  let dir ← IO.FS.createTempDir
+  let header := "name,addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost\n"
+  let csv := fun (nanos : Nat) => header ++ s!"Nat.add,00,1,{nanos},0,0,0,0,0,0,0\nEq,01,1,1000,0,0,0,0,0,0,0\n"
+  IO.FS.writeFile (dir / "base.csv") (csv 100000000)
+  IO.FS.writeFile (dir / "pr.csv") (csv 150000000)
+  let text ← renderPerConstMovers (dir / "base.csv").toString (dir / "pr.csv").toString
+  IO.FS.removeDirAll dir
+  let ok := (text.splitOn "1 mover(s)").length == 2
+    && (text.splitOn "**Time movers**").length == 2
+    && (text.splitOn "| `Nat.add` | 100ms | 150ms | +50.0% ⚠️ |").length == 2
+    && (text.splitOn "cost").length == 1
+  return (ok, 0, 0, if ok then none else some text)) .done
+
+def suite : List TestSeq := [testRows, testCells, testReport, testRowKinds, testDrillDown]
 
 end Tests.Ix.BenchMeasures
