@@ -77,17 +77,20 @@ operation's, or a definition's specified by its equations. -/
 def tailOnly (g : List Role) : Bool := wellFounded g || g.any isEquationDef
 
 /-- The order covers every role once, each group is a block, and every role a
-group needs is in an earlier group. -/
+group needs is in an earlier group. A role is named by its index: `specBytes`
+runs this check, and spelling `Role.leanName` here would inline its table
+into every caller's runtime closure a second time. -/
 def checkOrder (orderedGroups : List (List Role)) : Except String Unit := do
   let flat := orderedGroups.flatten
   unless flat.length == Role.all.length && Role.all.all flat.contains do
     throw "role groups do not cover every role exactly once"
   for (g, i) in orderedGroups.zipIdx do
     for r in g do
-      unless Role.block r == g do throw s!"role group {i} is not {r.leanName}'s block"
+      unless Role.block r == g do
+        throw s!"role group {i} is not role {Role.all.idxOf r}'s block"
     for r in groupNeeds g do
       unless groupOf r orderedGroups < i do
-        throw s!"role group {i} needs {r.leanName}, which is not earlier"
+        throw s!"role group {i} needs role {Role.all.idxOf r}, which is not earlier"
 
 /-- The index of the first group of the tail. Every group that must be in
 the tail is (`tailOnly`), and so is every group that needs a tail group;
