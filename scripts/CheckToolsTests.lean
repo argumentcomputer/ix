@@ -131,6 +131,108 @@ private def buildGraphTests (root : FilePath) : IO Unit := do
   withFile runtime ((← IO.FS.readFile runtime).replace "FAIL:" "REMOVED:") do
     rejects "removed runtime assertions" "runtime assertion inventory changed" checkGraph
 
+/-- `ledger` with `relative`'s integrity hash re-recorded from `root`. -/
+private def rehash (ledger : Json) (root : FilePath) (relative : String) : IO Json := do
+  let integrity ← field ledger "integrity"
+  let tracked ← replaceField (← field integrity "tracked_files") relative (toJson (← sha256 (root / relative)))
+  replaceField ledger "integrity" (← replaceField integrity "tracked_files" tracked)
+
+private def withPolicy (ledger : Json) (key : String) (value : Json) : IO Json := do
+  replaceField ledger "policy" ((← field ledger "policy").setObjVal! key value)
+
+/-- The project inside an enclosing repository (`temporary`): its flake.lock,
+a scoped workflow, and the remote actions of the repository-local actions and
+reusable workflows that workflow uses. -/
+private def repositoryTests (temporary root blake ixKernel : FilePath) (ledger : Json) : IO Unit := do
+  let overrides := [("Blake3", blake.toString), ("«ix-kernel»", ixKernel.toString)]
+  let audited : IO Unit := audit root overrides (some "6.3.0")
+  let auditedWith (flakeLock : FilePath) : IO Unit := audit root overrides (some "6.3.0") none (some flakeLock)
+  let ledgerPath := root / "docs/trusted-externs.json"
+  -- an explicit flake.lock replaces the project's
+  let outerLock := temporary / "outer.lock"
+  copyFile (root / "flake.lock") outerLock
+  auditedWith outerLock
+  let rev ← strField (← field (← field (← field (← readJson outerLock) "nodes") "ix-src") "locked") "rev"
+  withFile outerLock ((← IO.FS.readFile outerLock).replace rev (String.ofList (List.replicate 40 '0'))) do
+    rejects "flake lock override" "flake node/revision inventory drifted" (auditedWith outerLock)
+  rejects "missing flake lock" "missing.lock" (auditedWith (temporary / "missing.lock"))
+  -- the repository's own flake.lock and workflows
+  copyFile (root / "flake.lock") (temporary / "flake.lock")
+  let pinned := String.join (List.replicate 40 "1")
+  let workflows := temporary / ".github" / "workflows"
+  let setup := temporary / ".github" / "actions" / "setup"
+  IO.FS.createDirAll workflows
+  IO.FS.createDirAll setup
+  IO.FS.writeFile (workflows / "outer.yml") "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@main\n"
+  IO.FS.writeFile (workflows / "ixcc.yml") ("jobs:\n  local:\n    uses: ./.github/workflows/reusable.yml\n" ++
+    "  test:\n    steps:\n      - uses: ./.github/actions/setup\n")
+  IO.FS.writeFile (workflows / "reusable.yml") "jobs:\n  test:\n    steps:\n      - uses: $/.github/actions/setup\n"
+  IO.FS.writeFile (setup / "action.yml")
+    s!"runs:\n  using: composite\n  steps:\n    - uses: reviewed/action@{pinned} # v1\n"
+  let inRepository (scope : List String) : IO Json :=
+    withPolicy ledger "repository" (Json.mkObj ([("root", toJson "..")] ++
+      (if scope.isEmpty then [] else [("workflows", toJson scope)])))
+  let reviewed (ledger : Json) : IO Json := replaceField ledger "ci_actions" (Json.arr #[Json.mkObj
+    [("repository", toJson "reviewed/action"), ("commit", toJson pinned)]])
+  let scope := [".github/workflows/ixcc.yml"]
+  withFile ledgerPath (← reviewed (← inRepository scope)).compress do
+    audited
+  withFile ledgerPath (← inRepository scope).compress do
+    rejects "remote action of a local action" "CI action inventory drifted" audited
+  withFile ledgerPath (← reviewed (← inRepository [])).compress do
+    rejects "unscoped repository workflows" "unpinned CI action" audited
+  withFile ledgerPath (← reviewed (← inRepository [".github/workflows/absent.yml"])).compress do
+    rejects "missing scoped workflow" "missing configured CI workflow path" audited
+  withFile (workflows / "ixcc.yml") "jobs:\n  test:\n    steps:\n      - uses: ./.github/actions/absent\n" do
+    withFile ledgerPath (← reviewed (← inRepository scope)).compress do
+      rejects "missing local action" "missing local action or workflow" audited
+  -- a local action outside the (standalone) repository
+  IO.FS.createDirAll (temporary / "escape")
+  IO.FS.writeFile (temporary / "escape" / "action.yml") "runs:\n  using: composite\n  steps: []\n"
+  withFile (root / ".github/workflows/regression.yml") "jobs:\n  test:\n    steps:\n      - uses: ./../escape\n" do
+    rejects "escaping local action" "local action escapes the repository" audited
+
+/-- A pure Lean dependency of the enclosing workspace, pinned by its path
+(`../ix/IxKernel` here, `../IxCK` inside ix) rather than a git revision. -/
+private def workspaceDependencyTests (root blake ixKernel : FilePath) (ledger : Json) : IO Unit := do
+  let audited : IO Unit := audit root [("Blake3", blake.toString)] (some "6.3.0")
+  let ledgerPath := root / "docs/trusted-externs.json"
+  let manifestPath := root / "lake-manifest.json"
+  let manifest ← readJson manifestPath
+  let pathManifest (dir : String) : IO String := do
+    let packages ← (← arrField manifest "packages").mapM fun entry => do
+      if (← strField entry "name") != "«ix-kernel»" then return entry
+      return Json.mkObj [("type", toJson "path"), ("scope", toJson ""), ("name", toJson "«ix-kernel»"),
+        ("manifestFile", toJson "lake-manifest.json"), ("inherited", toJson false),
+        ("dir", toJson dir), ("configFile", toJson "lakefile.lean")]
+    return (← replaceField manifest "packages" (Json.arr packages)).compress
+  let pinned (pins : List (String × Json)) : IO Json := do
+    let entries ← (← arrField ledger "lean_dependencies").mapM fun entry => do
+      replaceField (← replaceField entry "source_kind" (toJson "workspace_path")) "pins" (Json.mkObj pins)
+    replaceField ledger "lean_dependencies" (Json.arr entries)
+  let workspace := [("workspace_path", toJson "../ix/IxKernel")]
+  -- the manifest and the ledger record the dependency by path; the ledger
+  -- re-records the manifest's hash
+  let withPaths (manifestDir : String) (pins : List (String × Json)) (action : IO Unit) : IO Unit := do
+    withFile manifestPath (← pathManifest manifestDir) do
+      withFile ledgerPath (← rehash (← pinned pins) root "lake-manifest.json").compress action
+  let closure ← pairs (← field ((← arrField ledger "lean_dependencies")[0]!) "closure")
+  let codec := ixKernel / ".." / (closure.headD ("", Json.null)).1
+  withFile (ixKernel / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage «ix-kernel» where\n" do
+    withPaths "../ix/IxKernel" workspace audited
+    withPaths "../ix/Elsewhere" workspace do
+      rejects "workspace manifest path" "Lake dependency inventory drifted" audited
+    withPaths "../ix/IxKernel" (workspace ++ [("lake_rev", toJson (String.ofList (List.replicate 40 '0')))]) do
+      rejects "workspace pin with a revision" "pins only its path" audited
+    withPaths "/ix/IxKernel" [("workspace_path", toJson "/ix/IxKernel")] do
+      rejects "absolute workspace path" "must be relative" audited
+    withPaths "../ix/IxKernel" workspace do
+      withFile codec ((← IO.FS.readFile codec) ++ "\n") do
+        rejects "workspace dependency source drift" "changed" audited
+  withFile (ixKernel / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
+    withPaths "../ix/IxKernel" workspace do
+      rejects "workspace path holding another package" "does not hold its lakefile.lean" audited
+
 private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let root := temporary / "project"
   let blake := temporary / "Blake3"
@@ -228,6 +330,8 @@ private def regressionTests (source blakeSource ixKernelSource : FilePath) : IO 
       let ledger ← replaceField originalLedger "native_interfaces" (Json.arr entries)
       withFile (root / "docs/trusted-externs.json") ledger.compress do
         rejects "Cargo metadata drift" diagnostic check
+  repositoryTests temporary root blake ixKernel originalLedger
+  workspaceDependencyTests root blake ixKernel originalLedger
 
 def main (args : List String) : IO UInt32 := cli "Lean check regressions failed" do
   let args ← checked (parseArgs ["--root", "--blake3", "--ix-kernel"] args)
@@ -237,4 +341,4 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   lexerTests
   disassemblyTests
   regressionTests root blake ixKernel
-  IO.println "Lean check regressions ok: source lexing, root/native inventories, build graph, proof/runtime coverage, integrity, Cargo, and CI rejection paths"
+  IO.println "Lean check regressions ok: source lexing, root/native inventories, build graph, proof/runtime coverage, integrity, Cargo, CI, repository and workspace-dependency rejection paths"

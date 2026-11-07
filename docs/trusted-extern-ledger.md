@@ -62,9 +62,22 @@ The checker deliberately fails closed on changes to:
   `.envrc` (it injects `NIX_CONFIG` for direnv users);
 - the integrity-pinned independent x86 decoder and ELF object/link checks used
   as E0 evidence, including their native harness;
-- every `uses:` reference in any CI workflow file: a reference not pinned
-  to a full 40-hex commit is rejected outright, and the pinned inventory must
-  match the ledger. The inventory is empty while hosted workflows are removed.
+- every `uses:` reference in the CI workflows in scope (below), followed
+  through the repository's own local actions and reusable workflows
+  (`./path` or `$/path`, which must stay inside the repository): a remote
+  reference not pinned to a full 40-hex commit is rejected outright, and the
+  pinned inventory must match the ledger. The inventory is empty while hosted
+  workflows are removed.
+
+Standalone, the project is its repository: its `flake.lock` and
+`.github/workflows` are checked. Inside a larger repository, the optional
+`policy.repository` object names it: `root` is the repository root relative to
+the project (`..` for `ix/IxCC`), whose `flake.lock` is checked, and
+`workflows` (repository-relative files or directories, default
+`.github/workflows`) scopes the workflows whose actions this ledger
+inventories. `check-trusted-externs --repository-root DIR --flake-lock FILE`
+overrides both, for a copy of the project taken out of its repository (as in a
+Nix check).
 
 Updating a dependency therefore requires reviewing and updating this ledger,
 not merely refreshing a lockfile. An entry may only be removed when its exit
@@ -90,8 +103,9 @@ dependencies of the root flake checks.
 `lake exe check-tools-tests` exercises the auditor on isolated temporary
 copies. It checks source literals/comments, unrecognized extern attributes,
 new executable roots, project/dependency extern drift, imports and native
-entry points, integrity changes, malformed/duplicate Cargo metadata, and CI
-action drift. The Nix trust-ledger check runs these regressions too.
+entry points, integrity changes, malformed/duplicate Cargo metadata, CI
+action drift (including scoped repository workflows and their local actions),
+an overriding `flake.lock`, and path-pinned pure Lean dependencies. The Nix trust-ledger check runs these regressions too.
 
 The `IxCCTests` Lake root keeps every test and fence inside the
 audited source inventory, and the proof aggregate `IxCCTests.Proofs`
@@ -230,15 +244,20 @@ and fixture refreeze.
 
 `lean_dependencies` records Lake dependencies that contain no native code, so
 they are not trusted externs, but whose behaviour IxCC relies on. Each
-entry pins the Lake package and revision (`lake-manifest.json`), the flake
-input with the same revision (Nix), the modules our sources import from it,
-and the SHA-256 of every file of their import closure. The checker requires
+entry names the Lake package and how it is pinned (`source_kind`), the modules
+our sources import from it, and the SHA-256 of every file of their import
+closure. A `git` dependency pins the Lake revision (`lake-manifest.json`) and
+the flake input with the same revision (Nix); the two must agree. A
+`workspace_path` dependency is a package of the enclosing workspace,
+`pins.workspace_path` relative to the project (`../IxCK` inside ix): the
+manifest must record it by that path, and the directory must hold that
+package's `lakefile.lean`. Either way the closure hashes, not a revision, fix
+the audited source. The checker requires
 every import of the project's sources that names neither a project module nor
 a toolchain module to be such a recorded module; checks each closure file's
 hash; rejects a closure file that declares a native symbol, uses
 `implemented_by`, `axiom`, `sorry` or `native_decide`, or imports a module
-outside the closure or the toolchain; and requires the Lake and flake pins to
-agree.
+outside the closure or the toolchain.
 
 The one entry, `ix-kernel-ixon-v4-codec`, is ix's `IxKernel/` package at
 `f829b760`, of which IxCC imports `Ix.Ixon.Canonical` and

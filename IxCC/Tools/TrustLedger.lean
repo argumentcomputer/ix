@@ -50,14 +50,78 @@ private def cargoPairs (value : Json) : IO (List (String × String)) := do
 
 /-- Pure Lean Lake dependencies (`lean_dependencies`, absent: none). They carry
 no native code, so they have no `native_interfaces` entry; each records its
-Lake package and revision, the flake node pinning the same revision for Nix,
-the source directory of its modules relative to the package root, the
-modules IxCC imports from it, and the SHA-256 of every file of their
-import closure. -/
+Lake package and how it is pinned (`source_kind`), the source directory of its
+modules relative to the package root, the modules IxCC imports from it, and
+the SHA-256 of every file of their import closure. A `git` dependency pins a
+Lake revision and the flake node pinning the same revision for Nix; a
+`workspace_path` dependency is a package of the enclosing workspace, at
+`pins.workspace_path` relative to the project root (`../IxCK` inside ix). -/
 def leanDependencies (ledger : Json) : IO (Array Json) :=
   match ledger.getObjVal? "lean_dependencies" with
   | .ok value => array value
   | .error _ => pure #[]
+
+/-- How a Lake dependency is pinned: a git revision, or a directory of the
+enclosing workspace (as `lake-manifest.json` records them). -/
+inductive Pin where
+  | git (rev : String)
+  | path (dir : String)
+  deriving BEq, Repr
+
+private def manifestPin (entry : Json) : IO (String × Pin) := do
+  let name ← strField entry "name"
+  match ← strField entry "type" with
+  | "git" => return (name, .git (← strField entry "rev"))
+  | "path" => return (name, .path (← strField entry "dir"))
+  | other => throw (IO.userError s!"Lake dependency {name}: unsupported manifest type {other}")
+
+/-- The pin the ledger records for a pure Lean dependency. -/
+def leanDependencyPin (entry : Json) : IO Pin := do
+  let pins ← field entry "pins"
+  match ← strField entry "source_kind" with
+  | "git" => return .git (← strField pins "lake_rev")
+  | "workspace_path" =>
+      let dir ← strField pins "workspace_path"
+      need (!dir.isEmpty && !(FilePath.mk dir).isAbsolute)
+        s!"{(← strField entry "lake_package")}: workspace_path must be relative to the project root"
+      return .path dir
+  | other => throw (IO.userError s!"unknown lean dependency source_kind {other}")
+
+/-- The repository around the project: where its `flake.lock` and CI
+workflows are. Standalone the project is the repository. Inside a larger one,
+`policy.repository.root` (relative to the project, e.g. `..`) names it, and
+`policy.repository.workflows` (relative to it) scopes the workflow files or
+directories whose actions this ledger inventories, absent: `.github/workflows`. -/
+structure Repository where
+  root : FilePath
+  flakeLock : FilePath
+  workflows : List FilePath
+  /-- Whether the workflows were configured, so must exist. -/
+  configured : Bool
+
+private def relativeString (value : Json) (label : String) : IO String := do
+  let path ← string value
+  need (!path.isEmpty && !(FilePath.mk path).isAbsolute) s!"{label} must be a relative path: {path}"
+  return path
+
+/-- The repository configuration, with command-line overrides of its root
+and of its `flake.lock`. -/
+def repository (root : FilePath) (ledger : Json) (rootOverride flakeLock : Option FilePath := none) :
+    IO Repository := do
+  let config := ((← field ledger "policy").getObjVal? "repository").toOption
+  let relative ← match config with
+    | some value => do relativeString (← field value "root") "policy.repository.root"
+    | none => pure "."
+  let base ← IO.FS.realPath (rootOverride.getD (root / relative))
+  let workflows := config.bind fun value => (value.getObjVal? "workflows").toOption
+  let configured ← match workflows with
+    | some value => do
+        let paths ← (← array value).toList.mapM fun path =>
+          relativeString path "policy.repository.workflows"
+        pure (some (paths.map fun (path : String) => base / path))
+    | none => pure none
+  return { root := base, flakeLock := flakeLock.getD (base / "flake.lock"),
+           workflows := configured.getD [base / ".github" / "workflows"], configured := configured.isSome }
 
 def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) := do
   need ((← nat (← field ledger "schema_version")) == 2) "unsupported ledger schema_version"
@@ -89,7 +153,12 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
     fields entry ["id", "status", "owner", "lake_package", "source_dir", "closure",
       "pins", "semantics_assumed", "proof_effect", "trust_basis", "tests", "retirement"]
     let _ ← jsonStrings (← field entry "imported_modules")
-    fields (← field entry "pins") ["lake_rev", "flake_node"]
+    match ← leanDependencyPin entry with
+    | .git _ => fields (← field entry "pins") ["lake_rev", "flake_node"]
+    | .path _ =>
+      let package ← strField entry "lake_package"
+      need ((← pairs (← field entry "pins")).length == 1)
+        s!"{package}: a workspace_path dependency pins only its path"
     retirement entry
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
@@ -191,14 +260,14 @@ def leanSources (root : FilePath) (lake : Array Token) : IO (List FilePath) := d
 private def scanFile (path : FilePath) (cSource : Bool := false) : IO (Array Token) := do
   checked ((scan (← IO.FS.readFile path) cSource).mapError (fun message => s!"{path}: {message}"))
 
-def validateIntegrity (root : FilePath) (ledger : Json) : IO Unit := do
+def validateIntegrity (root : FilePath) (ledger : Json) (flakeLock : FilePath) : IO Unit := do
   let integrity ← field ledger "integrity"
   let tracked ← stringPairs (← field integrity "tracked_files")
   need (!tracked.isEmpty) "empty integrity.tracked_files"
   for (relative, expected) in tracked do
     let actual ← sha256 (root / relative)
     need (actual == expected) s!"{relative} changed: ledger {expected}, actual {actual}"
-  let lock ← readJson (root / "flake.lock")
+  let lock ← readJson flakeLock
   let mut revisions := []
   for (name, node) in ← pairs (← field lock "nodes") do
     if let .ok locked := node.getObjVal? "locked" then
@@ -215,13 +284,13 @@ private def localInterfaces (interfaces : Array Json) : IO (Array Json) :=
 def validateImports (root : FilePath) (ledger : Json) (interfaces : Array Json)
     (sources : List (FilePath × Array Token)) : IO Unit := do
   let manifest ← readJson (root / "lake-manifest.json")
-  let actual ← (← arrField manifest "packages").toList.mapM fun entry =>
-    return (← strField entry "name", ← strField entry "rev")
+  let actual ← (← arrField manifest "packages").toList.mapM manifestPin
   let deps ← dependencies interfaces
-  let leanDeps ← leanDependencies ledger
-  let expected ← (deps ++ leanDeps).toList.mapM fun entry =>
-    return (← strField entry "lake_package", ← strField (← field entry "pins") "lake_rev")
-  sameSet actual expected "Lake dependency inventory"
+  let native ← deps.toList.mapM fun entry => do
+    return (← strField entry "lake_package", Pin.git (← strField (← field entry "pins") "lake_rev"))
+  let leanPins ← (← leanDependencies ledger).toList.mapM fun entry => do
+    return (← strField entry "lake_package", ← leanDependencyPin entry)
+  sameSet actual (native ++ leanPins) "Lake dependency inventory"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
   need (!locals.isEmpty) "empty local_import_roots"
   let actualImports := sources.flatMap (fun source => imports source.2)
@@ -287,9 +356,9 @@ private def cargoPackages (path : FilePath) : IO (List Lake.Toml.Table) := do
 
 def validateNative (root : FilePath) (interfaces : Array Json)
     (sources : List (FilePath × Array Token)) (lake : Array Token)
-    (overrides : List (String × String)) : IO Nat := do
+    (overrides : List (String × String)) (flakeLock : FilePath) : IO Nat := do
   let manifest ← readJson (root / "lake-manifest.json")
-  let lock ← readJson (root / "flake.lock")
+  let lock ← readJson flakeLock
   let nodes ← field lock "nodes"
   let locals ← localInterfaces interfaces
   sameSet (← symbolsOf root sources) (← expectedSymbols locals) "project extern inventory"
@@ -362,18 +431,31 @@ private def checkoutName (package : String) : String :=
     ((package.drop 1).dropEnd 1).toString
   else package
 
+/-- Whether a Lake configuration declares the package `name` (as the manifest
+spells it, `«a-b»` for a name that needs quoting). -/
+private def declaresPackage (lakefile : FilePath) (name : String) : IO Bool := do
+  let tokens ← scanFile lakefile
+  return (List.range tokens.size).any fun index =>
+    tokens[index]!.kind == .name && tokens[index]!.text == "package" &&
+      (match tokens[index + 1]? with
+       | some token => (if token.kind == .quotedName then s!"«{token.text}»" else token.text) == name
+       | none => false)
+
 /-- Every import of the project's sources that names neither a project module
 nor a toolchain module is a recorded module of a pure Lean dependency; every
 file of each dependency's recorded import closure has its recorded hash, no
 native declaration, no `implemented_by`, no `axiom`/`sorry`/`native_decide`,
-and imports only closure or toolchain modules; and its Lake and flake pins
-agree. Returns the number of closure files checked. -/
+and imports only closure or toolchain modules. A `git` dependency's Lake and
+flake pins agree; a `workspace_path` dependency's directory holds that
+package's `lakefile.lean` (a `--dependency-root` override replaces the
+directory, as it replaces a git checkout). Returns the number of closure files
+checked. -/
 def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Token)
-    (sources : List (FilePath × Array Token)) (overrides : List (String × String)) : IO Nat := do
+    (sources : List (FilePath × Array Token)) (overrides : List (String × String))
+    (flakeLock : FilePath) : IO Nat := do
   let manifest ← readJson (root / "lake-manifest.json")
   let packagesDir := (manifest.getObjValAs? String "packagesDir").toOption.getD ".lake/packages"
   let packages ← arrField manifest "packages"
-  let nodes ← field (← readJson (root / "flake.lock")) "nodes"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
   let mut unresolved := []
   for mod in (sources.flatMap fun source => imports source.2).eraseDups do
@@ -390,10 +472,19 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
     for candidate in packages do
       if (← strField candidate "name") == package then found := some candidate
     let some record := found | throw (IO.userError s!"lean dependency {package} is not in lake-manifest.json")
-    let packageRoot : FilePath := match optional overrides package with
-      | some path => path
-      | none => root / packagesDir / checkoutName package /
+    let pin ← leanDependencyPin entry
+    let packageRoot : FilePath := match optional overrides package, pin with
+      | some path, _ => path
+      | none, .path dir => root / dir
+      | none, .git _ => root / packagesDir / checkoutName package /
           ((record.getObjValAs? String "subDir").toOption.getD ".")
+    match pin with
+    | .git rev =>
+        let node ← field (← field (← readJson flakeLock) "nodes") (← strField pins "flake_node")
+        need ((← strField (← field node "locked") "rev") == rev) s!"{package}: flake/Lake pin mismatch"
+    | .path dir =>
+        need (← declaresPackage (packageRoot / "lakefile.lean") package)
+          s!"{package}: {dir} does not hold its lakefile.lean"
     let sourceRoot ← IO.FS.realPath (packageRoot / (← strField entry "source_dir"))
     let closure ← stringPairs (← field entry "closure")
     need (!closure.isEmpty) s!"{package}: empty closure"
@@ -415,9 +506,6 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
     let imported ← jsonStrings (← field entry "imported_modules")
     need (imported.all closureModules.contains) s!"{package}: an imported module is outside its closure"
     declared := declared ++ imported
-    let node ← field nodes (← strField pins "flake_node")
-    need ((← strField (← field node "locked") "rev") == (← strField pins "lake_rev"))
-      s!"{package}: flake/Lake pin mismatch"
   sameSet unresolved declared "imports of pure Lean dependencies"
   return checkedFiles
 
@@ -437,52 +525,104 @@ def validateSeeds (root : FilePath) (seeds : Array Json) (gmp : Option String) :
         need ((← strField entry "version") == version) "GMP ledger version differs from Nix"
   need (foundLean && foundGmp) "missing Lean/GMP seed entries"
 
-def validateCI (root : FilePath) (ledger : Json) : IO Unit := do
-  let directory := root / ".github/workflows"
-  let entries ← if ← directory.pathExists then pure (← directory.readDir).toList else pure []
-  let workflows := entries.filter fun entry =>
-    entry.path.extension == some "yml" || entry.path.extension == some "yaml"
-  let mut actual := []
-  for workflow in workflows do
-    for (line, index) in (← IO.FS.readFile workflow.path).splitOn "\n" |>.zipIdx do
-      let line := line.trimAscii.toString
-      let line := if line.startsWith "-" &&
-          (line.toList[1]?.map Char.isWhitespace).getD false then
-        (line.drop 1).toString.trimAscii.toString else line
-      if !line.startsWith "uses:" then continue
-      let parts := words (line.drop 5).toString
-      need (parts.tail.isEmpty || (parts.tail.headD "").startsWith "#")
-        s!"{workflow.path}:{index + 1}: unsupported CI action reference"
-      let reference := parts.headD ""
-      let first := reference.toList.headD '\x00'
-      let reference ← if first == '"' || first == '\'' then do
-        need (reference.length ≥ 2 && reference.endsWith (String.singleton first))
-          s!"{workflow.path}:{index + 1}: malformed quoted CI action"
-        pure (String.ofList (reference.toList.drop 1 |>.take (reference.length - 2)))
-      else pure reference
+private def yaml (path : FilePath) : Bool :=
+  path.extension == some "yml" || path.extension == some "yaml"
+
+/-- The `uses:` references of a workflow or action file, with their lines. -/
+private def usesReferences (path : FilePath) : IO (List (Nat × String)) := do
+  let mut result : List (Nat × String) := []
+  for (line, index) in (← IO.FS.readFile path).splitOn "\n" |>.zipIdx do
+    let line := line.trimAscii.toString
+    let line := if line.startsWith "-" &&
+        (line.toList[1]?.map Char.isWhitespace).getD false then
+      (line.drop 1).toString.trimAscii.toString else line
+    if !line.startsWith "uses:" then continue
+    let parts := words (line.drop 5).toString
+    need (parts.tail.isEmpty || (parts.tail.headD "").startsWith "#")
+      s!"{path}:{index + 1}: unsupported CI action reference"
+    let reference := parts.headD ""
+    let first := reference.toList.headD '\x00'
+    let reference ← if first == '"' || first == '\'' then do
+      need (reference.length ≥ 2 && reference.endsWith (String.singleton first))
+        s!"{path}:{index + 1}: malformed quoted CI action"
+      pure (String.ofList (reference.toList.drop 1 |>.take (reference.length - 2)))
+    else pure reference
+    result := (index + 1, reference) :: result
+  return result.reverse
+
+/-- The file a repository-local reference (`./path` or `$/path`) names: a
+reusable workflow, or a local action's `action.yml`/`action.yaml`. It must
+stay inside the repository. -/
+private def localTarget (repo : Repository) (origin : FilePath) (line : Nat) (relative : String) :
+    IO FilePath := do
+  let location := s!"{origin}:{line}"
+  let base := repo.root / relative
+  let target ← if ← base.isDir then do
+      if ← (base / "action.yml").pathExists then pure (base / "action.yml")
+      else if ← (base / "action.yaml").pathExists then pure (base / "action.yaml")
+      else throw (IO.userError s!"{location}: local action {relative} has no action.yml")
+    else if (← base.pathExists) && yaml base then pure base
+    else throw (IO.userError s!"{location}: missing local action or workflow {relative}")
+  let target ← IO.FS.realPath target
+  need (target.toString.startsWith (repo.root.toString ++ "/"))
+    s!"{location}: local action escapes the repository: {relative}"
+  return target
+
+/-- Every remote action the scoped workflows use is pinned to a full commit and
+recorded in `ci_actions`. A repository-local action or reusable workflow is
+reviewed with the repository: it is followed, and the remote actions it uses
+are inventoried in its place. -/
+def validateCI (repo : Repository) (ledger : Json) : IO Unit := do
+  let mut pending : List FilePath := []
+  for entry in repo.workflows do
+    if ← entry.isDir then
+      pending := pending ++ ((← entry.readDir).toList.map (·.path) |>.filter yaml)
+    else if ← entry.pathExists then
+      need (yaml entry) s!"configured CI workflow is not YAML: {entry}"
+      pending := pending ++ [entry]
+    else need (!repo.configured) s!"missing configured CI workflow path: {entry}"
+  let mut seen : List FilePath := []
+  let mut actual : List (String × String) := []
+  while !pending.isEmpty do
+    let path := pending.head!
+    pending := pending.tail!
+    let real ← IO.FS.realPath path
+    if seen.contains real then continue
+    seen := real :: seen
+    for (line, reference) in ← usesReferences path do
+      let relative := if reference.startsWith "./" || reference.startsWith "$/" then
+        some (reference.drop 2).toString else none
+      if let some relative := relative then
+        pending := pending ++ [← localTarget repo path line relative]
+        continue
       let [repository, commit] := reference.splitOn "@"
-        | throw (IO.userError s!"{workflow.path}:{index + 1}: unpinned CI action {reference}")
-      need (!repository.isEmpty && isHex 40 commit) s!"{workflow.path}:{index + 1}: unpinned CI action {reference}"
+        | throw (IO.userError s!"{path}:{line}: unpinned CI action {reference}")
+      need (!repository.isEmpty && isHex 40 commit) s!"{path}:{line}: unpinned CI action {reference}"
       actual := (repository, commit) :: actual
   let expected ← (← arrField ledger "ci_actions").toList.mapM fun entry =>
     return (← strField entry "repository", ← strField entry "commit")
   sameSet actual expected "CI action inventory"
 
-def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option String) : IO Unit := do
+/-- The complete audit. `repositoryRoot` and `flakeLock` override the ledger's
+repository root and the `flake.lock` in it (for a copy of the project taken
+out of its repository, as in a Nix check). -/
+def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option String)
+    (repositoryRoot flakeLock : Option FilePath := none) : IO Unit := do
   let root ← IO.FS.realPath root
   let ledger ← readJson (root / "docs/trusted-externs.json")
   let (interfaces, seeds, specifications) ← validateShape ledger
+  let repo ← repository root ledger repositoryRoot flakeLock
   let lake ← scanFile (root / "lakefile.lean")
   let paths ← leanSources root lake
   let sources ← paths.mapM fun path => return (path, ← scanFile path)
-  validateIntegrity root ledger
+  validateIntegrity root ledger repo.flakeLock
   for (path, tokens) in sources do
     checked ((hygiene tokens).mapError (fun error => s!"{path}: {error}"))
   validateImports root ledger interfaces sources
-  let cargoCount ← validateNative root interfaces sources lake overrides
-  let leanFiles ← validateLeanDependencies root ledger lake sources overrides
+  let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
+  let leanFiles ← validateLeanDependencies root ledger lake sources overrides repo.flakeLock
   validateSeeds root seeds gmp
-  validateCI root ledger
+  validateCI repo ledger
   let mut symbols := 0
   for entry in interfaces do symbols := symbols + (← arrField entry "foreign_symbols").size
   IO.println s!"trusted-extern ledger ok: {interfaces.size} native interface, {symbols} symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependency ({leanFiles} files), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
