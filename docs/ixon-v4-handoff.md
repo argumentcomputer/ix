@@ -1,10 +1,10 @@
-# Compilatrix handoff: Ixon v4
+# Compiler handoff: Ixon v4
 
-This package describes the Ix producer and its checked fragment. Compilatrix
-has not been changed or tested by this work. Consume the versioned data and
-validation interfaces below before enabling ownership or locality optimizations.
-(The file name keeps the v3 suffix from the handoff that introduced the
-contract model.)
+This package describes the Ix producer and its checked fragment for the
+certified compiler, IxCC (`IxCC/`), which reads v4 with the IxCK codec
+and records its pins and checks in [its Ixon v4 notes](../IxCC/docs/ixon-v4.md).
+Consume the versioned data and validation interfaces below before enabling
+ownership or locality optimizations.
 
 ## Breaking format
 
@@ -55,7 +55,7 @@ Optional metadata and cached materializations grant no semantic facts.
 | IxVM codecs and structural revelation | Read and write v4 (TagN); preserve every contract field |
 | IxVM Check/CheckEnv | Erased-lean-v1; contracts do not strengthen that statement |
 | IxVM Resource proofs | Explicitly unsupported |
-| Compilatrix backend | External migration required; support not inferred from these fixtures |
+| IxCC backend | Migrated by IxCC itself ([its Ixon v4 notes](../IxCC/docs/ixon-v4.md)); support not inferred from these fixtures |
 
 Annotated inductive/constructor/recursor generation and nonidentity compiler
 surgery reject before emission. The native projection fragment requires closed,

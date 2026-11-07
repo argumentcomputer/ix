@@ -27,8 +27,8 @@ an annotated production artifact is emitted.
   representation rules, primitive pins, and analysis limits.
 - IxVM preserves all contract fields and proves its advertised erased-typing
   or structural statement. Resource-proof requests reject explicitly.
-- Compilatrix migration remains external. The
-  [handoff package](compilatrix-ixon-v3.md) supplies complete accepted and
+- Migration of the certified compiler (since merged as `IxCC/`) remained
+  external. The [handoff package](ixon-v4-handoff.md) supplies complete accepted and
   rejected environments, a profile, a resource claim, and exact identities.
 
 The [resource-checker specification](resource-checking.md) records the bounded

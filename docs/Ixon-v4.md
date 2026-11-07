@@ -21,7 +21,7 @@ v4. The byte-level reference is [Ixon](Ixon.md).
 
 See the [text format](ixon-text-v3.md) and the
 [resource checker](resource-checking.md) for supported behavior and checking
-limits, and the [consumer handoff](compilatrix-ixon-v3.md) for migration
+limits, and the [consumer handoff](ixon-v4-handoff.md) for migration
 fixtures. Native resource claims are implemented. IxVM checks erased Lean
 typing and explicitly rejects resource-proof requests. The
 [v3 verification record](ixon-v3-verification.md) lists the gates executed

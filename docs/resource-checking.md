@@ -162,7 +162,7 @@ IxVM preserves every contract field in serialization and revelation. Its typing
 conversion erases contracts and interprets a borrow let as an ordinary let.
 The committed validator identity prevents these typing proofs from claiming
 resource validity. Backends relying on ownership or locality must require
-resource admission separately. The [consumer handoff](compilatrix-ixon-v3.md)
+resource admission separately. The [consumer handoff](ixon-v4-handoff.md)
 records the supported interfaces and migration fixtures.
 
 ## Verification and regression coverage
