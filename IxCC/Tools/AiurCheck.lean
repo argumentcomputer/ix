@@ -27,7 +27,7 @@ def upstreamFiles : List String := [
   "Ix/Aiur/Compiler/Layout.lean", "Ix/Aiur/Compiler/UnitCounter.lean", "Ix/Aiur/Compiler/CallOrder.lean",
   "LICENSE-MIT", "LICENSE-APACHE"]
 
-def localFiles : List String := ["Ix/Aiur.lean", "README.md", "upstream.json"]
+def localFiles : List String := ["README.md", "upstream.json"]
 
 private def importKeywords : List String := ["import ", "public import "]
 

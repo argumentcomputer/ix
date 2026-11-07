@@ -29,4 +29,4 @@
  "revision": "a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03",
  "repository": "https://github.com/argumentcomputer/ix",
  "module_prefix": "IxCC.Vendor.",
- "local_files": ["Ix/Aiur.lean", "README.md", "upstream.json"]}
+ "local_files": ["README.md", "upstream.json"]}

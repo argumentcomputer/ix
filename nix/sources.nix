@@ -28,8 +28,8 @@
     (lib.filterAttrs (_: target: target.kind == "lean_exe") graph.targets);
 in {
   inherit programTargets;
-  # The production library, including the Aiur reference roots it builds on.
-  production = source (["IxCC"] ++ graph.targets.AiurReference.roots);
+  # The production library, with the vendored Aiur reference it imports.
+  production = source ["IxCC"];
   # Every executable plus the complete proof and fence collection, built once.
   programs = source (["IxCCTests.Proofs"]
     ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);

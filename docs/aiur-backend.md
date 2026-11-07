@@ -35,7 +35,7 @@ the source-to-bytecode IR vocabulary, layout and call-component definitions,
 and the existing abstract counter/order lemmas. Their upstream toolchain is
 Lean 4.33.1; they build with this repository's pinned Lean 4.34.1.
 
-The `AiurReference` Lake library imports no native Aiur FFI. The upstream
+The vendored modules import no native Aiur FFI. The upstream
 bytecode evaluator currently imports its IO types from an FFI module, so it
 is deferred until that pure interface is split. No evaluator shim or native
 stub is substituted under an upstream module name.
@@ -174,7 +174,7 @@ establish trace acyclicity on their own.
 ## Validation
 
 ```sh
-lake build AiurReference IxCC.Aiur IxCCTests.Aiur.Proofs \
+lake build IxCC.Aiur IxCCTests.Aiur.Proofs \
   IxCCTests.Aiur.Execution.Proofs IxCCTests.Fences.Aiur \
   IxCCTests.Aiur.Static.Proofs IxCCTests.Fences.AiurWire \
   IxCCTests.Fences.AiurExecution IxCCTests.Fences.AiurStatic \

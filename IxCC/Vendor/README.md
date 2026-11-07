@@ -5,8 +5,8 @@ vendored under the `IxCC.Vendor` module prefix: upstream module `Ix.M` is
 `IxCC.Vendor.Ix.M` here, so no vendored module shares a name with ix's own
 packages. That prefix in their imports is the only change. `upstream.json`
 records the upstream SHA-256 of each file and both licenses; `check-aiur`
-restores each file's upstream imports and compares the result with it.
-`Ix/Aiur.lean` is a local import root. No Rust executor, FFI stub,
+restores each file's upstream imports and compares the result with it. The
+`IxCC` library imports all eleven modules. No Rust executor, FFI stub,
 prover, or verifier is imported. The bytecode evaluator is deferred
 until its pure IO types have an independent upstream module.
 

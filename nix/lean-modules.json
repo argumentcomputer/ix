@@ -63,11 +63,7 @@
   "SortPolyFixture": {"roots": ["SortPoly"], "kind": "lean_lib"},
   "K1Fixture": {"roots": ["K1"], "kind": "lean_lib"},
   "IxCCTests": {"roots": ["IxCCTests"], "kind": "lean_lib"},
-  "IxCC": {"roots": ["IxCC"], "kind": "lean_lib"},
-  "AiurReference":
-  {"roots":
-   ["IxCC.Vendor.Ix.Aiur", "IxCC.Vendor.Ix.IndexMap", "IxCC.Vendor.Ix.Lib"],
-   "kind": "lean_lib"}},
+  "IxCC": {"roots": ["IxCC"], "kind": "lean_lib"}},
  "schema_version": 1,
  "modules":
  {"X86ObjectFixture":
@@ -4037,11 +4033,6 @@
    "imports":
    ["IxCC.Vendor.Ix.Aiur.Compiler.Layout",
     "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter"]},
-  "IxCC.Vendor.Ix.Aiur":
-  {"path": "IxCC/Vendor/Ix/Aiur.lean",
-   "imports":
-   ["IxCC.Vendor.Ix.Aiur.Stages.Bytecode",
-    "IxCC.Vendor.Ix.Aiur.Compiler.CallOrder"]},
   "IxCC.Tools.X86Check":
   {"path": "IxCC/Tools/X86Check.lean", "imports": ["IxCC.Tools.Check"]},
   "IxCC.Tools.TrustLedger":
