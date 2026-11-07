@@ -85,3 +85,10 @@ lean_exe grouping_example where
 
 lean_exe grouping_tune where
   root := `Examples.GroupingTune
+
+/-- Fails if any declaration of the package uses an axiom beyond propext,
+Classical.choice and Quot.sound. Run after `lake build aiur/Aiur`:
+`lake env Aiur/.lake/build/bin/axiom_sweep Aiur`. -/
+lean_exe axiom_sweep where
+  root := `Examples.AxiomSweep
+  supportInterpreter := true

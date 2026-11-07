@@ -377,7 +377,9 @@ def moduleExclusions : Array ModuleExclusion := #[
 `IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets; `Models/` and every directory with its own lakefile are
-other workspaces. -/
+other workspaces. The nested Aiur, IxVM and MultiStark packages are built
+with `--wfail` by their own CI step (`aiur/Aiur` globs every module; every
+IxVM and MultiStark module is reachable from its library or executable root). -/
 def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps"]
 def coveredRootFiles : Array FilePath :=
   #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean"]
