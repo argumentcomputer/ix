@@ -1040,8 +1040,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   for b in skipped do
     summary := summary ++
       s!" · skipped `{b.name}` ({b.disabled.getD "disabled in the registry"})"
-  if !passthrough.isEmpty then
-    summary := summary ++ " · env: `" ++ " ".intercalate passthrough.toList ++ "`"
+  -- The proving stages ride the passthrough env to the jobs; the summary
+  -- names them as stages, not as raw settings.
+  let staged := fun (k : String) => passthrough.contains s!"{k}=1" || passthrough.contains s!"{k}=kzg"
+  if staged "BENCH_COMPRESS" then summary := summary ++ " · stages `execute+prove+compress`"
+  else if staged "BENCH_PROVE" then summary := summary ++ " · stages `execute+prove`"
+  let shownEnv := passthrough.filter fun kv => !kv.startsWith "BENCH_PROVE=" && !kv.startsWith "BENCH_COMPRESS="
+  if !shownEnv.isEmpty then
+    summary := summary ++ " · env: `" ++ " ".intercalate shownEnv.toList ++ "`"
 
   -- `envs` drives the workflow's compile stage: every requested env is
   -- compiled exactly once — the `.ixe` artifact the prover runs restore,
