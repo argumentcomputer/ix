@@ -41,12 +41,14 @@ structure IOBuffer where
 on the same channel. -/
 def IOBuffer.extend (ioBuffer : IOBuffer) (channel : G) (key data : Array G) :
     IOBuffer :=
-  let arena := ioBuffer.data.getD channel #[]
+  let ⟨arenas, map⟩ := ioBuffer
+  let arena := arenas.getD channel #[]
   let idx := arena.size
   let len := data.size
-  { ioBuffer with
-    data := ioBuffer.data.insert channel (arena ++ data)
-    map := ioBuffer.map.insert (channel, key) { idx, len } }
+  -- Erasing the channel first leaves its arena unshared, so the append reuses
+  -- it in place: building a witness is linear in its bytes, not quadratic.
+  { data := (arenas.erase channel).insert channel (arena ++ data)
+    map := map.insert (channel, key) { idx, len } }
 
 /-- Rebuild an `IOBuffer` from the flat arrays produced by the Rust FFI. -/
 def IOBuffer.ofArrays (data : Array (G × Array G))

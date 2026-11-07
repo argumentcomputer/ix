@@ -226,6 +226,11 @@ lean_exe «formal-aggregate-tests» where
   root := `Tests.FormalAggregate
   supportInterpreter := true
 
+/-- The formal backend's check drivers (`controller`, `cuda`, `ranges`,
+`refactor`), run by `tools/ixvm/check-formal.sh`. -/
+lean_exe «formal-checks» where
+  root := `Tests.FormalChecks
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
