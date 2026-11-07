@@ -1,15 +1,13 @@
 //! Bytecode-only IxVM with value hints and constrained recursive calls.
 use aiur::field::FieldBackend;
 use aiur::{
-  Program,
-  hints::HintEntry,
+  artifact::ExecutionPackage,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters, Proof},
   },
 };
 use multi_stark::p3_matrix::Matrix;
-use serde::Deserialize;
 use serde_json::json;
 use std::{error::Error, time::Instant};
 
@@ -17,19 +15,11 @@ use std::{error::Error, time::Instant};
 mod profile;
 
 use ixvm as ixvm_hints;
-
-#[derive(Deserialize)]
-struct Package {
-  program: Program,
-  trace: TraceArtifact,
-  hints: Vec<HintEntry>,
-  address: Vec<u64>,
-}
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.len() != 5 {
     return Err(
-            "usage: ixvm_bench PACKAGE.json FIXTURE.json prove|execute|witness|functions SAMPLES"
+            "usage: ixvm_bench PACKAGE.ixa FIXTURE.ixf prove|execute|witness|functions SAMPLES"
                 .into(),
         );
   }
@@ -41,17 +31,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("invalid mode or sample count".into());
   }
   let start = Instant::now();
-  let package: Package = aiur::decode_artifact(&std::fs::read(&cli[1])?)?;
-  let fixture: serde_json::Value =
-    serde_json::from_slice(&std::fs::read(&cli[2])?)?;
-  let args: Vec<u64> = serde_json::from_value(fixture["address"].clone())?;
-  assert_eq!(args, package.address);
-  let program = package.program.check_field::<multi_stark::types::Val>()?;
+  let (package, digest) = ExecutionPackage::load(cli[1].as_ref())?;
+  eprintln!("artifact {}: blake3 {digest}", cli[1]);
+  let fixture = ixvm::fixture::Fixture::load(cli[2].as_ref())?;
+  let args = fixture.address_words();
+  assert_eq!(args, package.args);
+  let (program, trace) = package.package.traced()?;
+  let program = program.check_field::<multi_stark::types::Val>()?;
   let args = program.field().decode(&args)?;
   let hints = ixvm_hints::prepare(&program, &package.hints)?;
   let function_chips: Vec<_> =
-    package.trace.functions.iter().map(|f| f.chip.clone()).collect();
-  let plan = TracePlan::new(&program, package.trace)?;
+    trace.functions.iter().map(|f| f.chip.clone()).collect();
+  let plan = TracePlan::new(&program, trace)?;
   let entry = &program.program().entries[0].name;
   let prepare_seconds = start.elapsed().as_secs_f64();
   let parameters = Parameters::default();

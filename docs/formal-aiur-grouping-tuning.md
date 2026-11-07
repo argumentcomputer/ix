@@ -155,13 +155,13 @@ lake build ixvm/ixvm multiStark/stark-export aiur/grouping_tune
 lake env IxVM/.lake/build/bin/ixvm grouping-snapshot /tmp/ixvm-snapshot.json
 lake env MultiStark/.lake/build/bin/stark-export grouping-snapshot /tmp/recursion-snapshot.json
 lake env Aiur/.lake/build/bin/grouping_tune /tmp/ixvm-snapshot.json /tmp/ixvm-metrics.json --metrics
-lake env Aiur/.lake/build/bin/grouping_tune /tmp/ixvm-snapshot.json /tmp/ixvm-groups.json \
+lake env Aiur/.lake/build/bin/grouping_tune /tmp/ixvm-snapshot.json /tmp/ixvm-groups.ixa \
   --policy /tmp/ixvm-policy.json
 ```
 
 The last command runs the ordinary grouping and partition certificates. Use
 `--baseline` to inspect the former layout algorithm. The `compare` Rust example
 accepts `--counts-only` to record function query counts, `--ungrouped` to measure
-singleton shapes, and `--groups /tmp/ixvm-groups.json` to benchmark a certified
+singleton shapes, and `--groups /tmp/ixvm-groups.ixa` (an Ixon grouping) to benchmark a certified
 candidate against an existing package. The normal application exports use the
 committed policies without additional flags.

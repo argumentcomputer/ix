@@ -181,7 +181,7 @@ def run : IO Unit := do
     let some binary := physical.system.findChip? "Merge::public_binary" | throw (IO.userError "missing binary entry")
     let some ternary := physical.system.findChip? "Merge::public_ternary" | throw (IO.userError "missing ternary entry")
     unless binary.constraints != ternary.constraints do throw (IO.userError "public canonicality checks disappeared")
-    let plan ← IO.ofExcept (Trace.exportPreparedJson 97 ZMod.val compiled.circuit.inlined.program artifact physical exported.bytecode)
+    let plan ← IO.ofExcept (Trace.exportPreparedPlan 97 ZMod.val compiled.circuit.inlined.program artifact physical exported.bytecode)
     for (name, args) in cases do
       for pad in [false, true] do
         let result ← IO.ofExcept (← Trace.run exported plan name args hints pad)
@@ -236,7 +236,7 @@ def runSmallField : IO Unit := do
   let compiled ← IO.ofExcept (prepared.compileOptimized {})
   let artifact := compiled.circuit.artifact
   let physical ← IO.ofExcept (Optimized.Physical.prepare artifact)
-  let plan ← IO.ofExcept (Trace.exportPreparedJson 2 ZMod.val compiled.circuit.inlined.program artifact physical exported.bytecode)
+  let plan ← IO.ofExcept (Trace.exportPreparedPlan 2 ZMod.val compiled.circuit.inlined.program artifact physical exported.bytecode)
   let cases : List (String × Array Nat) := [
     ("Extra::width_capacity", #[0]), ("Extra::width_capacity", #[1]),
     ("Extra::high", #[1,1]), ("Extra::branches", #[0,0]),

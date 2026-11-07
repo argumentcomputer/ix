@@ -1,6 +1,6 @@
 import MultiStark
 import MultiStark.FunctionGroups
-import Aiur.Execution.Encode
+import Aiur.Artifact
 import Aiur.Trace.Export
 import Aiur.SourceBundle
 import Aiur.Optimized.Grouping.Snapshot
@@ -13,7 +13,7 @@ unsafe def main (args : List String) : IO Unit := do
   let groups := if args.contains "--ungrouped" then [] else MultiStark.functionGroups
   let mode := args.headD "check"
   unless ["check", "export", "export-trace", "grouping-snapshot"].contains mode do
-    throw (IO.userError "usage: stark-export check|export|export-trace|grouping-snapshot [output.json] [--aggregate]")
+    throw (IO.userError "usage: stark-export check|export|export-trace|grouping-snapshot [output] [--aggregate]")
   let aggregate := args.contains "--aggregate"
   let file := if aggregate then "Aggregate.sources" else "Program.sources"
   let sourcePath ← [s!"MultiStark/{file}", s!"MultiStark/MultiStark/{file}"].findM?
@@ -39,14 +39,12 @@ unsafe def main (args : List String) : IO Unit := do
     IO.FS.writeFile path (toJson snapshot).compress
     IO.eprintln s!"Wrote grouping snapshot {path}"
     return
-  let program ← IO.ofExcept (exported.toJson MultiStark.modulus ZMod.val)
   let trace ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportJson MultiStark.modulus ZMod.val
+    pure <| some (← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
       compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode groups))
   else pure none
-  let package := Json.mkObj ([("program", program)] ++ trace.toList.map ("trace", ·))
-  let path := args[1]?.getD "/tmp/ix-recursion.json"
-  IO.FS.writeFile path package.compress
+  let path := args[1]?.getD "/tmp/ix-recursion.ixa"
+  Artifact.write path (← IO.ofExcept (Artifact.package exported MultiStark.modulus ZMod.val trace))
   IO.eprintln s!"Wrote {path}"

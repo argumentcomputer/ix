@@ -6,6 +6,7 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
+public import Ix.AiurArtifact
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
@@ -69,8 +70,11 @@ private def readSourceBundle (manifest : System.FilePath) : IO String := do
 
 def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath mode : String)
     (extra : Array String := #[]) : IO String := do
-  if let some path := p.flag? flag then return path.as! String
-  if let some path ← IO.getEnv env then return path
+  let expected ← AiurArtifact.expected ((p.flag? s!"{flag}-digest").map (·.as! String)) env
+  if let some path := (p.flag? flag).map (·.as! String) then
+    let _ ← AiurArtifact.admit target path expected; return path
+  if let some path ← IO.getEnv env then
+    let _ ← AiurArtifact.admit target path expected; return path
   let root ← repoRoot
   let exporter := root / exporterPath
   let buildTarget := if target == "ixvm" then "ixvm/ixvm"
@@ -83,21 +87,8 @@ def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath m
     else IO.FS.readBinFile sourcePath
   let compiler ← IO.FS.readBinFile exporter
   let digest := Address.blake3 ((Address.blake3 compiler).hash ++ source)
-  let directory := root / ".lake" / "aiur"
-  IO.FS.createDirAll directory
-  let path := directory / s!"{target}-{digest}.json"
-  unless ← path.pathExists do
-    IO.eprintln s!"[aiur] exporting the certified {target} artifact to {path}; this runs once \
-      per source revision and takes several minutes (`ix prepare` does it ahead of time)"
-    let pid ← IO.Process.getPID
-    let stamp ← IO.monoNanosNow
-    let tmp := directory / s!"{target}-{digest}.tmp.{pid}.{stamp}"
-    try
-      command "lake" (#["env", exporter.toString, mode, tmp.toString] ++ extra) root
-      IO.FS.rename tmp path
-    finally
-      if ← tmp.pathExists then IO.FS.removeFile tmp
-  return path.toString
+  AiurArtifact.cached (root / ".lake" / "aiur") target digest expected fun tmp =>
+    command "lake" (#["env", exporter.toString, mode, tmp.toString] ++ extra) root
 
 def artifact (p : Cli.Parsed) : IO String :=
   compiledArtifact p "aiur-artifact" "IX_AIUR_ARTIFACT" "IxVM/.lake/build/bin/ixvm"

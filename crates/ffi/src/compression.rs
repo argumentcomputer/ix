@@ -1,6 +1,8 @@
 //! Main CLI bridge; compression is linked into the ix executable.
 use aiur::{
-  field::FieldBackend,
+  artifact::Package,
+  bytecode::CheckedProgram,
+  field::{FieldBackend, NativeField},
   trace::{
     TraceArtifact, TracePlan,
     stark::{Backend, BatchProof, Parameters},
@@ -12,10 +14,13 @@ use lean_ffi::object::{
 };
 use multi_stark::types::Val;
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
+/// The aggregation artifact's checked program and trace plan.
+fn aggregate(
+  path: &LeanString<LeanBorrowed<'_>>,
+) -> Result<(CheckedProgram<NativeField<Val>>, TraceArtifact), String> {
+  let (package, _) = Package::load(path.to_string().as_ref())?;
+  let (program, trace) = package.traced()?;
+  Ok((program.check_field::<Val>()?, trace))
 }
 
 fn optional(text: &LeanString<LeanBorrowed<'_>>) -> Option<String> {
@@ -165,12 +170,8 @@ extern "C" fn rs_compression_root_rows(
   raw_proof: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let result = (|| -> Result<String, String> {
-    let bytes =
-      std::fs::read(aggr_artifact.to_string()).map_err(|e| e.to_string())?;
-    let package: Package =
-      aiur::decode_artifact(&bytes).map_err(|e| e.to_string())?;
-    let program = package.program.check_field::<Val>()?;
-    let plan = TracePlan::new(&program, package.trace)?;
+    let (program, trace) = aggregate(&aggr_artifact)?;
+    let plan = TracePlan::new(&program, trace)?;
     let backend =
       Backend::for_batch_verification(&plan, Parameters::default())?;
     let invocation: stark_verifier::Invocation =
@@ -217,12 +218,8 @@ extern "C" fn rs_compression_root_layout(
     let maxima: Vec<_> = (0..first.len())
       .map(|i| executions.iter().map(|rows| rows[i]).max().unwrap_or(0))
       .collect();
-    let bytes =
-      std::fs::read(aggr_artifact.to_string()).map_err(|e| e.to_string())?;
-    let package: Package =
-      aiur::decode_artifact(&bytes).map_err(|e| e.to_string())?;
-    let program = package.program.check_field::<Val>()?;
-    let plan = TracePlan::new(&program, package.trace)?;
+    let (program, trace) = aggregate(&aggr_artifact)?;
+    let plan = TracePlan::new(&program, trace)?;
     let backend =
       Backend::for_batch_verification(&plan, Parameters::default())?;
     let log_heights = backend.normalized_log_heights(
@@ -254,12 +251,8 @@ extern "C" fn rs_compression_normalize_root(
   let result = (|| -> Result<Vec<u8>, String> {
     let layout =
       FixedRoot::from_json(&layout.to_string()).map_err(|e| e.to_string())?;
-    let bytes =
-      std::fs::read(aggr_artifact.to_string()).map_err(|e| e.to_string())?;
-    let package: Package =
-      aiur::decode_artifact(&bytes).map_err(|e| e.to_string())?;
-    let program = package.program.check_field::<Val>()?;
-    let plan = TracePlan::new(&program, package.trace)?;
+    let (program, trace) = aggregate(&aggr_artifact)?;
+    let plan = TracePlan::new(&program, trace)?;
     let backend = Backend::for_batch(&plan, Parameters::default())?;
     let invocation: stark_verifier::Invocation =
       serde_json::from_str(&invocation_json.to_string())

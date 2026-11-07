@@ -62,4 +62,5 @@ def main (args : List String) : IO Unit := do
     packed := packed ++ [⟨chips, checked⟩]
     IO.eprintln s!"{name}: {chips.length} members, {checked.layout.width + 1} main columns"
   let plan ← IO.ofExcept (Grouping.preparePlan {chips := snapshot.chips} (ident snapshot) packed)
-  IO.FS.writeFile output (toJson (plan.groups.map fun p => Trace.groupJson ZMod.val p.checked.layout)).compress
+  Artifact.write output
+    (← IO.ofExcept (Trace.exportGroups ZMod.val (plan.groups.map (·.checked.layout))))

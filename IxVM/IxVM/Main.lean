@@ -1,10 +1,11 @@
 import IxVM
 import IxVM.FunctionGroups
-import Aiur.Execution.Encode
+import Aiur.Artifact
 import Aiur.Optimized.Program
 import Aiur.Trace.Export
 import Aiur.SourceBundle
 import IxVM.PropagationBench
+import IxVM.Fixture
 
 /-! Experimental stage-one port of IxVM. Prepare source, export bytecode and
 typed data hints, execute Rust, or report circuit widths with `stats`,
@@ -23,22 +24,6 @@ private def sourcePath (relative : String) : IO System.FilePath := do
 private instance : ToJson F := ⟨fun x => toJson x.val⟩
 private instance : FromJson F := ⟨fun json => (fun n : Nat => (n : F)) <$> fromJson? json⟩
 
-structure Serialized where
-  address : Array Nat
-  bytes : Array Nat
-  hint : Nat
-  deriving FromJson
-structure Fixture where
-  format : String
-  name : String
-  address : Array Nat
-  addressHex : String
-  invalidProof : Serialized
-  constants : Array Serialized
-  blobs : Array Serialized
-  roles : Array Serialized := #[]
-  deriving FromJson
-
 private def scalar (n : Nat) : Execution.DataValue F := .field n
 private def array (ns : Array Nat) : Execution.DataValue F := .array .field (ns.toList.map scalar)
 private def tuple (vs : List (Execution.DataValue F)) : Execution.DataValue F := .tuple vs
@@ -47,7 +32,7 @@ private def tuple (vs : List (Execution.DataValue F)) : Execution.DataValue F :=
 length), and (channel, offset) → byte. The Rust host prepares dense byte rows
 as immutable vectors; the same entries remain usable by Lean's data provider.
 Aiur ROM allocation happens inside the program. -/
-def Fixture.hints (fixture : Fixture) : Array (Execution.HintEntry F) := Id.run do
+def fixtureHints (fixture : Fixture) : Array (Execution.HintEntry F) := Id.run do
   let mut hints : Array (Execution.HintEntry F) := #[]
   for (channel, entries) in [(2,fixture.constants.push fixture.invalidProof), (4,fixture.blobs), (6,fixture.roles)] do
     let mut offset := 0
@@ -141,9 +126,9 @@ private def reportColumns {source : Modules.Program F}
 
 /-- The IxVM host binds the library's code hints. The general Lean FFI stays
 data-only; it does not acquire a hardcoded registry of arithmetic operations. -/
-private def runHost (package : Json) (mode : String) : IO Unit :=
+private def runHost (package : ByteArray) (mode : String) : IO Unit :=
   IO.FS.withTempFile fun handle path => do
-    handle.putStr package.compress
+    handle.write package
     handle.flush
     let result ← IO.Process.output {
       cmd := "cargo"
@@ -203,43 +188,38 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln s!"Wrote grouping snapshot {path}"
     return
   if mode == "export-claim" || mode == "export-claim-trace" then
-    let program ← IO.ofExcept (exported.toJson modulus ZMod.val)
     let trace ← if mode == "export-claim-trace" then do
       IO.eprintln "Compiling claim circuits and witness population plans..."
       let compiled ← IO.ofExcept (prepared.compileOptimized {})
-      pure <| some (← IO.ofExcept (Trace.exportJson modulus ZMod.val compiled.circuit.inlined.program
+      pure <| some (← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
         compiled.circuit.artifact exported.bytecode groups))
     else pure none
-    let package := Json.mkObj ([("program", program)] ++ trace.toList.map ("trace", ·))
-    let path := args[1]?.getD "/tmp/ix-claim.json"
-    IO.FS.writeFile path package.compress
+    let path := args[1]?.getD "/tmp/ix-claim.ixa"
+    Artifact.write path (← IO.ofExcept (Artifact.package exported modulus ZMod.val trace))
     IO.eprintln s!"Wrote {path}"
     return
-  let json ← IO.ofExcept (Json.parse (← IO.FS.readFile (← sourcePath "fixtures/nat-add-comm.json")))
-  let fixture : Fixture ← IO.ofExcept (fromJson? json)
+  let fixture ← IO.ofExcept (Fixture.decode (← IO.FS.readBinFile (← sourcePath "fixtures/nat-add-comm.ixf")))
   unless fixture.format == "ixon-v4" do throw (IO.userError "unsupported fixture format")
   IO.eprintln "Building typed hints..."
-  let hints := fixture.hints
+  let hints := fixtureHints fixture
   IO.eprintln s!"Preparing {hints.size} hint entries..."
   let hints ← IO.ofExcept (exported.prepareHints hints)
-  IO.eprintln "Encoding bytecode..."
-  let program ← IO.ofExcept (exported.toJson modulus ZMod.val)
   let trace ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportJson modulus ZMod.val compiled.circuit.inlined.program
+    pure <| some (← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
       compiled.circuit.artifact exported.bytecode groups))
   else pure none
-  let package := Json.mkObj ([("program", program), ("address", toJson fixture.address),
-    ("invalid_address", toJson fixture.invalidProof.address),
-    ("hints", Execution.hintsJson ZMod.val hints)] ++ trace.toList.map ("trace", ·))
+  IO.eprintln "Encoding execution package..."
+  let package ← IO.ofExcept (Artifact.execution exported modulus ZMod.val trace
+    fixture.address.toList fixture.invalidProof.address.toList hints)
   if mode.startsWith "export" then
     IO.eprintln "Writing execution package..."
-    let path := args[1]?.getD "/tmp/aiur-ixvm-package.json"
-    IO.FS.writeFile path package.compress
+    let path := args[1]?.getD "/tmp/aiur-ixvm-package.ixa"
+    Artifact.write path package
     IO.eprintln s!"Wrote {path}"
     return
-  IO.eprintln s!"Executing {entry}: {fixture.name} / {fixture.addressHex}"
+  IO.eprintln s!"Executing {entry}: {fixture.name}"
   runHost package mode
 
 end IxVM.Cli

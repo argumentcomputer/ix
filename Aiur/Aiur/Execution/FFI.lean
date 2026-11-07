@@ -1,11 +1,14 @@
-import Aiur.Execution.Encode
+import Aiur.Artifact
+import Lean.Data.Json
 import Mathlib.Data.ZMod.Basic
 
 namespace Aiur.Execution
 open Lean
 
+/-- The compiled package and prepared hints travel in Ixon (`Aiur.Artifact`);
+the entry, its arguments and the result are JSON. -/
 @[extern "aiur_lean_execute"]
-private opaque executeJson (request : @& String) : IO String
+private opaque executeRaw (package hints : @& ByteArray) (request : @& String) : IO String
 
 structure Query where
   function : Nat
@@ -30,10 +33,9 @@ structure Result where
   instructions : Nat
   deriving FromJson
 
-private def executeRequest (program : Json) (entry : String) (key : String) (args hints : Json) :
+private def executeRequest (package hints : ByteArray) (entry : String) (key : String) (args : Json) :
     IO (Except String Result) := do
-  let response ← executeJson (Json.mkObj [("program", program), ("entry", toJson entry),
-    (key, args), ("hints", hints)]).compress
+  let response ← executeRaw package hints (Json.mkObj [("entry", toJson entry), (key, args)]).compress
   return do
     let json ← Json.parse response
     if let .ok error := json.getObjValAs? String "error" then throw error
@@ -46,21 +48,21 @@ def Export.run (exported : Export (ZMod p)) [NeZero p] (entry : String) (args : 
     (hints : Array (HintEntry (ZMod p)) := #[]) :
     IO (Except String Result) := do
   match (do
-    let program ← exported.toJson p ZMod.val
-    let hints ← exported.prepareHints hints
-    return (program, hintsJson ZMod.val hints)) with
+    let package ← Artifact.package exported p ZMod.val
+    let hints ← Artifact.hints ZMod.val (← exported.prepareHints hints)
+    return (package, hints)) with
   | .error error => return .error error
-  | .ok (program, hints) => executeRequest program entry "args" (Lean.toJson args) hints
+  | .ok (package, hints) => executeRequest package hints entry "args" (Lean.toJson args)
 
 /-- Low-level entry IO still checks canonical fields, enum tags and padding. -/
 def Export.runFlat (exported : Export (ZMod p)) [NeZero p] (entry : String) (args : Array Nat)
     (hints : Array (HintEntry (ZMod p)) := #[]) :
     IO (Except String Result) := do
   match (do
-    let program ← exported.toJson p ZMod.val
-    let hints ← exported.prepareHints hints
-    return (program, hintsJson ZMod.val hints)) with
+    let package ← Artifact.package exported p ZMod.val
+    let hints ← Artifact.hints ZMod.val (← exported.prepareHints hints)
+    return (package, hints)) with
   | .error error => return .error error
-  | .ok (program, hints) => executeRequest program entry "flat_args" (Lean.toJson args) hints
+  | .ok (package, hints) => executeRequest package hints entry "flat_args" (Lean.toJson args)
 
 end Aiur.Execution

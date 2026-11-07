@@ -1,22 +1,15 @@
-//! Check the shared modules exported by `lake exe library_tests PACKAGE.json`.
+//! Check the shared modules exported by `lake exe library_tests PACKAGE.ixa`.
 use aiur::{
-  Program,
+  artifact::Package,
   bytecode::Type,
   hints::HintChannels,
   maps::MapOverrides,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters},
   },
 };
-use serde::Deserialize;
 use std::error::Error;
-
-#[derive(Deserialize)]
-struct Package {
-  program: Program,
-  trace: TraceArtifact,
-}
 
 fn bytes(word: u64) -> Vec<u64> {
   word.to_le_bytes().into_iter().map(u64::from).collect()
@@ -24,9 +17,11 @@ fn bytes(word: u64) -> Vec<u64> {
 
 fn main() -> Result<(), Box<dyn Error>> {
   let path =
-    std::env::args().nth(1).ok_or("usage: library_check PACKAGE.json")?;
-  let package: Package = serde_json::from_slice(&std::fs::read(path)?)?;
-  let program = package.program.check()?;
+    std::env::args().nth(1).ok_or("usage: library_check PACKAGE.ixa")?;
+  let (package, digest) = Package::load(path.as_ref())?;
+  eprintln!("artifact {path}: blake3 {digest}");
+  let (program, trace) = package.traced()?;
+  let program = program.check()?;
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, program.field())?;
   aiur::library::u64::register(&mut channels, program.field())?;
@@ -35,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let tables = program.prepare_hint_channels(&[], &channels)?;
   let accelerated =
     program.prepare_hint_channels(&[], &channels)?.with_map_overrides(&maps)?;
-  let plan = TracePlan::new(&program, package.trace)?;
+  let plan = TracePlan::new(&program, trace)?;
   let backend = Backend::new(&plan, Parameters::default())?;
   let mut checks = 0;
   let mut check = |entry: &str,

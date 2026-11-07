@@ -11,7 +11,7 @@ use aiur::{
   field::{FieldBackend, NativeField},
   library::io::Invocation,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters, planning},
   },
 };
@@ -32,12 +32,6 @@ use std::{
 type Field = NativeField<Val>;
 type Program = CheckedProgram<Field>;
 type Prover<'a, 'p> = Backend<'a, 'p, Field>;
-
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
-}
 
 struct Prepared {
   job: Job,
@@ -399,21 +393,14 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
     ),
     start: Instant::now(),
   };
-  let packages = config
-    .artifacts
-    .iter()
-    .map(|artifact| {
-      aiur::decode_artifact::<Package>(
-        &fs::read(&artifact.path).map_err(|e| e.to_string())?,
-      )
-      .map_err(|e| e.to_string())
-    })
-    .collect::<Result<Vec<_>, String>>()?;
   let mut programs = Vec::new();
   let mut artifacts = Vec::new();
-  for package in packages {
-    programs.push(package.program.check_field::<Val>()?);
-    artifacts.push(package.trace);
+  for artifact in &config.artifacts {
+    let (package, digest) = aiur::artifact::Package::load(&artifact.path)?;
+    eprintln!("artifact {}: blake3 {digest}", artifact.path.display());
+    let (program, trace) = package.traced()?;
+    programs.push(program.check_field::<Val>()?);
+    artifacts.push(trace);
   }
   let plans = programs
     .iter()

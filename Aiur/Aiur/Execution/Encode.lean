@@ -1,105 +1,104 @@
 import Aiur.Execution.Hints
-import Lean
+import Aiur.Ixon
+
+/-! Ixon encodings of execution bytecode and data hints. The grammar is
+documented with its Rust reader, `aiur::artifact`; `Aiur.Artifact` frames the
+complete files. -/
 
 namespace Aiur.Execution
-open Lean
+open Aiur.Ixon
 
-private def tagged (key tag : String) (fields : List (String × Json) := []) : Json :=
-  Json.mkObj ((key, Lean.toJson tag) :: fields)
+/-- The bytecode semantics version. Version 2 adds named hint channels. -/
+def bytecodeVersion : Nat := 2
 
-def typeJson : Ty → Json
-  | .field => tagged "kind" "field"
-  | .ptr type => tagged "kind" "ptr" [("target", typeJson type)]
-  | .tuple types => tagged "kind" "tuple" [("items", Lean.toJson (types.map typeJson))]
-  | .enum name => tagged "kind" "enum" [("name", Lean.toJson name)]
-termination_by type => sizeOf type
+partial def putTy : Ty → PutM Unit
+  | .field => u8 0
+  | .tuple items => do u8 1; list items putTy
+  | .ptr type => do u8 2; putTy type
+  | .enum name => do u8 3; str name
 
-def ioTypeJson : IOType → Json
-  | .field => tagged "kind" "field"
-  | .tuple items => tagged "kind" "tuple" [("items", Lean.toJson (items.map ioTypeJson))]
-  | .array element length => tagged "kind" "array" [("element", ioTypeJson element), ("length", Lean.toJson length)]
-  | .record name fields => tagged "kind" "struct" [("name", Lean.toJson name),
-      ("fields", Lean.toJson (fields.map fun entry => Lean.toJson [Lean.toJson entry.1, ioTypeJson entry.2]))]
-  | .enum name constructors => tagged "kind" "enum" [("name", Lean.toJson name),
-      ("constructors", Lean.toJson (constructors.map fun entry => Lean.toJson [Lean.toJson entry.1, Lean.toJson (entry.2.map ioTypeJson)]))]
-termination_by type => sizeOf type
-decreasing_by
-  all_goals simp_wf
-  all_goals
-    first
-    | omega
-    | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›
-      omega
-    | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›
-      cases ‹String × IOType›
-      simp_all only [Prod.mk.sizeOf_spec]
-      omega
-    | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›
-      have hp : sizeOf entry < sizeOf constructors := List.sizeOf_lt_of_mem (by assumption)
-      cases entry
-      simp_all only [Prod.mk.sizeOf_spec]
-      omega
+partial def putIOType : IOType → PutM Unit
+  | .field => u8 0
+  | .tuple items => do u8 1; list items putIOType
+  | .array element length => do u8 2; putIOType element; nat length
+  | .record name fields => do
+      u8 3; str name
+      list fields fun (field, type) => do str field; putIOType type
+  | .enum name constructors => do
+      u8 4; str name
+      list constructors fun (constructor, fields) => do str constructor; list fields putIOType
 
-def instructionJson (encode : F → Nat) : Instruction F → Json
-  | .literal dest value => tagged "op" "literal" [("dest", Lean.toJson dest), ("value", Lean.toJson (encode value))]
-  | .copy dest source => tagged "op" "copy" [("dest", Lean.toJson dest), ("source", Lean.toJson source)]
-  | .neg dest source => tagged "op" "neg" [("dest", Lean.toJson dest), ("source", Lean.toJson source)]
-  | .binary dest op left right => tagged "op" "binary" [("dest", Lean.toJson dest),
-      ("operator", Lean.toJson (match op with | .add => "add" | .sub => "sub" | .mul => "mul" | .div => "div")),
-      ("left", Lean.toJson left), ("right", Lean.toJson right)]
-  | .guard tests message => tagged "op" "guard"
-      [("tests", Lean.toJson (tests.map fun (r,v) => [r, encode v])), ("message", Lean.toJson message)]
-  | .branch tests target => tagged "op" "branch"
-      [("tests", Lean.toJson (tests.map fun (r,v) => [r, encode v])), ("otherwise", Lean.toJson target)]
-  | .jump target => tagged "op" "jump" [("target", Lean.toJson target)]
-  | .call function args dest => tagged "op" "call"
-      [("function", Lean.toJson function), ("args", Lean.toJson args), ("dest", Lean.toJson dest)]
-  | .store type value dest => tagged "op" "store"
-      [("type", typeJson type), ("value", Lean.toJson value), ("dest", Lean.toJson dest)]
-  | .load type pointer dest => tagged "op" "load"
-      [("type", typeJson type), ("pointer", Lean.toJson pointer), ("dest", Lean.toJson dest)]
-  | .hint type keyType key dest channel => tagged "op" "hint"
-      [("channel", Lean.toJson channel), ("type", typeJson type), ("key_type", typeJson keyType), ("key", Lean.toJson key), ("dest", Lean.toJson dest)]
-  | .assertEq left right assertion => tagged "op" "assert_eq"
-      [("left", Lean.toJson left), ("right", Lean.toJson right),
-       ("message", Lean.toJson assertion.message), ("runtime_check", Lean.toJson assertion.runtimeCheck)]
-  | .ret value => tagged "op" "ret" [("value", Lean.toJson value)]
-  | .fail message => tagged "op" "fail" [("message", Lean.toJson message)]
+private def putTests (encode : F → Nat) (tests : List (Register × F)) : PutM Unit :=
+  list tests fun (register, value) => do nat register; nat (encode value)
 
-def FlatHintEntry.toJson (encode : F → Nat) (entry : FlatHintEntry F) : Json :=
-  Json.mkObj [("channel", Lean.toJson entry.channel), ("type", typeJson entry.type), ("key_type", typeJson entry.keyType),
-    ("key", Lean.toJson (entry.key.map encode)), ("output", Lean.toJson (entry.output.map encode))]
+def putInstruction (encode : F → Nat) : Instruction F → PutM Unit
+  | .literal dest value => do u8 0; nat dest; nat (encode value)
+  | .copy dest source => do u8 1; nats dest; nats source
+  | .neg dest source => do u8 2; nat dest; nat source
+  | .binary dest op left right => do
+      u8 3; nat dest
+      u8 (match op with | .add => 0 | .sub => 1 | .mul => 2 | .div => 3)
+      nat left; nat right
+  | .guard tests message => do u8 4; putTests encode tests; str message
+  | .branch tests target => do u8 5; putTests encode tests; nat target
+  | .jump target => do u8 6; nat target
+  | .call function args dest => do u8 7; nat function; nats args; nats dest
+  | .store type value dest => do u8 8; putTy type; nats value; nat dest
+  | .load type pointer dest => do u8 9; putTy type; nat pointer; nats dest
+  | .hint type keyType key dest channel => do
+      u8 10; str channel; putTy type; putTy keyType; nats key; nats dest
+  | .assertEq left right assertion => do
+      u8 11; nats left; nats right
+      option assertion.message str
+      bool assertion.runtimeCheck
+  | .ret value => do u8 12; nats value
+  | .fail message => do u8 13; str message
 
-/-- Large witness datasets must not rely on specialization of Array.map's
-generic monadic implementation. Build the JSON array with a direct fold. -/
-def hintsJson (encode : F → Nat) (entries : Array (FlatHintEntry F)) : Json :=
-  .arr (entries.foldl (fun out entry => out.push (entry.toJson encode)) #[])
+def putHint (encode : F → Nat) (entry : FlatHintEntry F) : PutM Unit := do
+  str entry.channel
+  putTy entry.type
+  putTy entry.keyType
+  nats (entry.key.map encode)
+  nats (entry.output.map encode)
 
-/-- Versioned data transported by the FFI. The initial Rust field backend
-supports primes fitting UInt64; the bytecode compiler itself is field-generic. -/
-def Export.toJson (exported : Export F) (modulus : Nat) (encode : F → Nat) : Except String Json := do
+/-- Prepared data hints, as the in-process FFI and execution packages carry
+them. -/
+def putHints (encode : F → Nat) (entries : Array (FlatHintEntry F)) : PutM Unit :=
+  array entries (putHint encode)
+
+/-- The program section of an artifact. The Rust field backend supports
+primes fitting UInt64; the bytecode compiler itself is field-generic. -/
+def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat) :
+    PutM Unit := do
   if modulus < 2 || modulus ≥ 2^64 then throw "execution requires a prime modulus fitting UInt64"
   let code := exported.bytecode
-  let entries ← code.entries.mapM fun (name, function) => do
+  nat bytecodeVersion
+  nat modulus
+  list code.functions fun fn => do
+    str fn.name
+    list fn.params putTy
+    putTy fn.result
+    nat fn.registers
+    array fn.code (putInstruction encode)
+  list code.enums fun decl => do
+    str decl.name
+    list decl.constructors fun c => do str c.name; list c.fields putTy
+  list code.tables fun table => do
+    str table.name
+    putTy table.type
+    list table.rows fun row => nats (row.map encode)
+  list code.maps fun map => do
+    str map.name
+    list map.params putTy
+    putTy map.result
+    nat map.input
+    nat map.output
+  list code.entries fun (name, function) => do
     let some interface := exported.interfaces.find? (·.name == name)
       | throw s!"missing entry IO interface {name}"
-    return Json.mkObj [("name", Lean.toJson name), ("function", Lean.toJson function),
-      ("inputs", Lean.toJson (interface.inputs.map ioTypeJson)),
-      ("output", (interface.output.map ioTypeJson).getD Json.null)]
-  return Json.mkObj [
-    ("version", Lean.toJson (2 : Nat)), ("modulus", Lean.toJson modulus),
-    ("functions", Lean.toJson (code.functions.map fun fn => Json.mkObj [
-      ("name", Lean.toJson fn.name), ("params", Lean.toJson (fn.params.map typeJson)),
-      ("result", typeJson fn.result), ("registers", Lean.toJson fn.registers),
-      ("code", Lean.toJson (fn.code.map (instructionJson encode)))])),
-    ("enums", Lean.toJson (code.enums.map fun decl => Json.mkObj [
-      ("name", Lean.toJson decl.name), ("constructors", Lean.toJson (decl.constructors.map fun c =>
-        Json.mkObj [("name", Lean.toJson c.name), ("fields", Lean.toJson (c.fields.map typeJson))]))])),
-    ("tables", Lean.toJson (code.tables.map fun table => Json.mkObj [
-      ("name", Lean.toJson table.name), ("type", typeJson table.type), ("rows", Lean.toJson (table.rows.map (List.map encode)))])),
-    ("maps", Lean.toJson (code.maps.map fun map => Json.mkObj [
-      ("name", Lean.toJson map.name), ("params", Lean.toJson (map.params.map typeJson)), ("result", typeJson map.result),
-      ("input", Lean.toJson map.input), ("output", Lean.toJson map.output)])),
-    ("entries", Lean.toJson entries)]
+    str name
+    nat function
+    list interface.inputs putIOType
+    option interface.output putIOType
 
 end Aiur.Execution

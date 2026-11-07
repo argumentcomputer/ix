@@ -17,7 +17,7 @@ pub mod stark;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Polynomial {
   Const(u64),
@@ -74,7 +74,7 @@ impl Polynomial {
   }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Action {
   Assign {
@@ -148,18 +148,18 @@ impl Action {
   }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct PopulationStep {
   pub guard: Polynomial,
   pub action: Action,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct ColumnWrite {
   pub column: usize,
   pub source: usize,
   pub guard: Polynomial,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FunctionPlan {
   pub name: String,
   pub chip: String,
@@ -169,21 +169,21 @@ pub struct FunctionPlan {
   pub steps: Vec<PopulationStep>,
   pub writes: Vec<ColumnWrite>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Send {
   pub channel: String,
   pub args: Vec<Polynomial>,
   pub result: Vec<usize>,
   pub enable: Polynomial,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct MemoryLookup {
   pub r#type: Type,
   pub address: Polynomial,
   pub values: Vec<Polynomial>,
   pub enable: Polynomial,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Chip {
   pub name: String,
   pub width: usize,
@@ -195,7 +195,7 @@ pub struct Chip {
   pub sends: Vec<Send>,
   pub memory: Vec<MemoryLookup>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct TraceArtifact {
   pub version: u32,
   pub modulus: u64,
@@ -207,13 +207,13 @@ pub struct TraceArtifact {
   pub groups: Vec<FunctionGroup>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct GroupWrite {
   pub column: usize,
   pub value: Polynomial,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct GroupMember {
   pub name: String,
   pub columns: Vec<usize>,
@@ -221,13 +221,13 @@ pub struct GroupMember {
   pub writes: Vec<GroupWrite>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct GroupLookup {
   pub enable: Polynomial,
   pub args: Vec<Polynomial>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FunctionGroup {
   pub name: String,
   pub width: usize,

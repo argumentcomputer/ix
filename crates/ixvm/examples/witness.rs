@@ -2,14 +2,12 @@
 //! CPU profiles exclude setup, execution, warmups, diagnostics and destruction.
 use aiur::field::FieldBackend;
 use aiur::{
-  Program,
-  hints::HintEntry,
+  artifact::ExecutionPackage,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters},
   },
 };
-use serde::Deserialize;
 use serde_json::json;
 use std::{error::Error, time::Instant};
 
@@ -18,29 +16,21 @@ mod profile;
 
 use ixvm as ixvm_hints;
 
-#[derive(Deserialize)]
-struct Package {
-  program: Program,
-  #[serde(default)]
-  hints: Vec<HintEntry>,
-  #[serde(alias = "args")]
-  address: Vec<u64>,
-  trace: TraceArtifact,
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
   let args: Vec<_> = std::env::args().collect();
-  let path = args.get(1).ok_or("usage: witness PACKAGE.json [SAMPLES]")?;
+  let path = args.get(1).ok_or("usage: witness PACKAGE.ixa [SAMPLES]")?;
   let samples =
     args.get(2).map(|s| s.parse::<usize>()).transpose()?.unwrap_or(10);
   if samples == 0 {
     return Err("SAMPLES must be positive".into());
   }
-  let package: Package = aiur::decode_artifact(&std::fs::read(path)?)?;
-  let program = package.program.check_field::<multi_stark::types::Val>()?;
-  let address = program.field().decode(&package.address)?;
+  let (package, digest) = ExecutionPackage::load(path.as_ref())?;
+  eprintln!("artifact {path}: blake3 {digest}");
+  let (program, trace) = package.package.traced()?;
+  let program = program.check_field::<multi_stark::types::Val>()?;
+  let address = program.field().decode(&package.args)?;
   let hints = ixvm_hints::prepare(&program, &package.hints)?;
-  let plan = TracePlan::new(&program, package.trace)?;
+  let plan = TracePlan::new(&program, trace)?;
   let entry = &program.program().entries.first().ok_or("missing entry")?.name;
   let backend = Backend::new(&plan, Parameters::default())?;
   let record = hints.execute(entry, address.clone())?;

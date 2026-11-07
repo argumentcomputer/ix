@@ -1,10 +1,11 @@
 //! Production claim driver. The trusted artifact is separate from witness and
 //! proof inputs. No legacy executor or generated kernels are linked here.
 use aiur::{
+  artifact::Package,
   field::FieldBackend,
   library::io::Invocation,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, BatchProof, Parameters, VerifyingKey, planning::Options},
   },
 };
@@ -12,11 +13,6 @@ use multi_stark::{p3_field::PrimeField64, types::Val};
 use std::{error::Error, time::Instant};
 
 const MAGIC: &[u8] = b"IXAIUR2\0";
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: Option<TraceArtifact>,
-}
 
 #[derive(serde::Deserialize)]
 struct Case {
@@ -50,7 +46,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   if !["execute", "plan", "prove", "verify", "test", "key"].contains(&mode) {
     return Err("unknown mode".into());
   }
-  let package: Package = aiur::decode_artifact(&std::fs::read(&cli[2])?)?;
+  let (package, artifact) = Package::load(cli[2].as_ref())?;
+  eprintln!("artifact {}: blake3 {artifact}", cli[2]);
   let program = package.program.check_field::<Val>()?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "key" {
@@ -72,7 +69,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     serde_json::to_writer(
       std::fs::File::create(dir.join("identity.json"))?,
       &serde_json::json!({"function_index":claim[1].as_canonical_u64(),
-        "call_channel":claim[0].as_canonical_u64(), "key_digest":blake3::hash(&key).to_hex().to_string()}),
+        "call_channel":claim[0].as_canonical_u64(), "key_digest":blake3::hash(&key).to_hex().to_string(),
+        "artifact_digest":artifact.to_string()}),
     )?;
     return Ok(());
   }
@@ -169,7 +167,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     backend.verify_batch(&input.entry, &args, &[], &proof)?;
     println!(
-      "verified formal Aiur proof ({} trace shards)",
+      "verified formal Aiur proof ({} trace shards, artifact {artifact})",
       proof.proofs.len()
     );
     return Ok(());
@@ -201,7 +199,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("claim verifier returned a value".into());
   }
   let batch = backend.plan_batch(&record, &options)?;
-  let mut report = serde_json::json!({"plan":batch, "execution_seconds":execute,
+  let mut report = serde_json::json!({"plan":batch, "artifact_digest":artifact.to_string(), "execution_seconds":execute,
     "queries":record.queries.len(), "instructions":record.instructions,
     "circuits":backend.statistics(), "parameters":backend.parameters(),
     "conjectured_security_bits":backend.parameters().conjectured_bits(),

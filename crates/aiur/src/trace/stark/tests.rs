@@ -1318,18 +1318,22 @@ fn cuda_host_plan_omits_device_phases() {
     ((cells * 8 + prep + retained) * 5).div_ceil(4)
   );
 }
+/// The Lean grouping example's package (`Aiur/Examples/Grouping.lean`).
+struct Traced {
+  program: Program,
+  trace: TraceArtifact,
+}
+fn grouping_fixture() -> Traced {
+  let (program, trace) = crate::artifact::Package::decode(include_bytes!(
+    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/grouping.ixa")
+  ))
+  .and_then(crate::artifact::Package::traced)
+  .unwrap();
+  Traced { program, trace }
+}
 #[test]
 fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
-  #[derive(serde::Deserialize)]
-  struct Package {
-    program: crate::Program,
-    trace: crate::trace::TraceArtifact,
-  }
-  let package: Package = serde_json::from_str(include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/grouping.json"
-  )))
-  .unwrap();
+  let package = grouping_fixture();
   assert_eq!(package.trace.groups.len(), 1);
   let group = &package.trace.groups[0];
   assert_eq!(group.members.len(), 3);
@@ -1413,16 +1417,7 @@ fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
 #[test]
 fn gpu_population_proves_identically() {
   use multi_stark::batch::Retention;
-  #[derive(serde::Deserialize)]
-  struct Package {
-    program: crate::Program,
-    trace: crate::trace::TraceArtifact,
-  }
-  let package: Package = serde_json::from_str(include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/grouping.json"
-  )))
-  .unwrap();
+  let package = grouping_fixture();
   let program = package.program.check().unwrap();
   let plan = TracePlan::new(&program, package.trace).unwrap();
   let mut backend =

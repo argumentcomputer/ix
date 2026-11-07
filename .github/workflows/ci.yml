@@ -65,11 +65,11 @@ jobs:
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
-          lake exe ixvm/ixvm export /tmp/ixvm-execution.json
-          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.json all
-          target/release/ixvm /tmp/ixvm-execution.json validate IxVM/IxVM/fixtures/nat-add-comm.json
-          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.json
-          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.json IxVM/IxVM/fixtures/nat-add-comm.json witness 1
+          lake exe ixvm/ixvm export /tmp/ixvm-execution.ixa
+          cargo run --release --locked -p ixvm -- /tmp/ixvm-execution.ixa all
+          target/release/ixvm /tmp/ixvm-execution.ixa validate IxVM/IxVM/fixtures/nat-add-comm.ixf
+          lake exe ixvm/ixvm export-trace /tmp/ixvm-trace.ixa
+          cargo run --release --locked -p ixvm --features parallel --example ixvm_bench -- /tmp/ixvm-trace.ixa IxVM/IxVM/fixtures/nat-add-comm.ixf witness 1
       # The script keeps its exported artifacts in IX_TEST_OUTPUT_DIR, so the
       # IxVM suites below run against the same claim artifact.
       - name: Check formal claims, recursive verification, and aggregation
@@ -80,7 +80,7 @@ jobs:
       - name: Test the IxVM program on adversarial and regression claims
         if: github.event_name != 'push'
         env:
-          IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.json
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.ixa
         run: lake test --wfail -- --tier ci:ixvm
       - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
         if: github.event_name != 'push'
