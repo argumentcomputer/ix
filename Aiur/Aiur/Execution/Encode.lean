@@ -17,6 +17,14 @@ partial def putTy : Ty → PutM Unit
   | .ptr type => do u8 2; putTy type
   | .enum name => do u8 3; str name
 
+/-- Read a type written by `putTy`. -/
+partial def getTy : GetM Ty := do
+  match ← getTag "type" 4 with
+  | 0 => return .field
+  | 1 => return .tuple (← getArray getTy).toList
+  | 2 => return .ptr (← getTy)
+  | _ => return .enum (← getString)
+
 partial def putIOType : IOType → PutM Unit
   | .field => u8 0
   | .tuple items => do u8 1; list items putIOType
