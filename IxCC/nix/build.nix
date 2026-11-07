@@ -3,29 +3,32 @@
   lean,
   lake2nix,
   blake3,
-  ix-src,
-  root,
-  auditSrc,
+  # The ix workspace (the repository root); see sources.nix.
+  workspace,
 }: let
   sources = import ./sources.nix {
     inherit (pkgs) lib;
-    inherit root;
+    inherit workspace;
   };
+  inherit (sources) root;
   # «ix-ck»: the libraries of ix's `IxCK/lakefile.lean` declare
   # `srcDir := ".."` (the ix checkout root), which lean4-nix cannot shadow (it
-  # copies only a dependency's `subDir`), and its `IxCK.Ixon` library also
-  # holds the codec's proofs and audits, which import the kernel: linking
-  # IxCC's shared library would build all of it. So the pinned sources of the
-  # codec closure IxCC imports (`IxCK.Ixon.Canonical`: 11 modules under
-  # `IxCK/Address` and `IxCK/Ixon`, unchanged) are packaged under the same
-  # package name and toolchain with a library holding exactly those modules,
-  # built once here with its shared and static facets. A module missing at a
-  # new pin fails this build.
+  # copies only a dependency's own directory), and its `IxCK.Ixon` library
+  # also holds the codec's proofs and audits, which import the kernel: linking
+  # IxCC's shared library would build all of it. So the sources of the codec
+  # closure IxCC imports (the files the trust ledger hashes: `IxCK.Ixon.Canonical`
+  # and its imports, under `IxCK/Address` and `IxCK/Ixon`, unchanged) are
+  # packaged under the same package name and toolchain with a library holding
+  # exactly those modules, built once here with its shared and static facets.
+  # A module the closure imports but the ledger does not record fails this
+  # build.
   ixCKSrc = pkgs.runCommand "ix-ck-src" {} ''
-    mkdir -p $out/IxCK
-    cp ${ix-src}/IxCK/lean-toolchain ${ix-src}/IxCK/lake-manifest.json $out/
-    cp -r ${ix-src}/IxCK/Address ${ix-src}/IxCK/Ixon $out/IxCK/
-    cat > $out/lakefile.lean <<'EOF'
+    mkdir -p $out
+    cp -r ${sources.ixCK.modules}/. $out/
+    chmod -R u+w $out
+    cp ${sources.ixCK.toolchain} $out/lean-toolchain
+    cp ${sources.ixCK.manifest} $out/lake-manifest.json
+    cat > $out/lakefile.lean <<'LAKEFILE'
     import Lake
     open Lake DSL
 
@@ -34,11 +37,8 @@
 
     @[default_target]
     lean_lib IxCK where
-      roots := #[`IxCK.Address.Core, `IxCK.Ixon.Types.Kinds, `IxCK.Ixon.Types.Modes,
-        `IxCK.Ixon.Types.Contract, `IxCK.Ixon.Types, `IxCK.Ixon.Codec, `IxCK.Ixon.Wire,
-        `IxCK.Ixon.WireCheck, `IxCK.Ixon.Bounded.Universe, `IxCK.Ixon.Bounded.Constant,
-        `IxCK.Ixon.Canonical]
-    EOF
+      roots := #[${pkgs.lib.concatMapStringsSep ", " (name: "`" + name) sources.ixCK.moduleNames}]
+    LAKEFILE
   '';
   ixCK = lake2nix.mkLakeDerivation {
     name = "IxCK";
@@ -109,6 +109,10 @@
     '';
     postInstall = "";
   };
+  # The checks see the complete tracked IxCC tree; the trust-ledger check sees
+  # it inside the workspace it audits (`ledgerWorkspace`, IxCC at `IxCC/`).
+  auditSrc = sources.audit;
+  ledgerWorkspace = sources.ledgerWorkspace;
   mkCheck = name: inputs: command:
     pkgs.runCommand "${name}-check" {
       nativeBuildInputs = [pkgs.coreutils] ++ inputs;
@@ -124,5 +128,5 @@
       touch $out
     '';
 in {
-  inherit ixccLib programs mkCheck ixCK;
+  inherit ixccLib programs mkCheck ixCK auditSrc ledgerWorkspace;
 }

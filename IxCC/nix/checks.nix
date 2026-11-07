@@ -2,8 +2,8 @@
   pkgs,
   system,
   auditSrc,
+  ledgerWorkspace,
   blake3-lean,
-  ix-src,
   mkCheck,
 }: let
   nativeArgs =
@@ -66,14 +66,15 @@ in
         --objdump ${pkgs.binutils}/bin/objdump ${nativeArgs}
     '';
 
+    # The ledger audits IxCC in its workspace: «ix-ck» at its recorded path
+    # (`../IxCK`), the repository's flake.lock and the workflows it scopes.
     trusted-extern-ledger = mkCheck "trusted-extern-ledger" [] ''
       ./.lake/build/bin/check-trusted-externs \
-        --root ${auditSrc} \
+        --root ${ledgerWorkspace}/IxCC \
         --dependency-root Blake3=${blake3-lean.outPath} \
-        --dependency-root "«ix-ck»=${ix-src}/IxCK" \
         --gmp-version ${pkgs.gmp.version}
       ./.lake/build/bin/check-tools-tests \
-        --root ${auditSrc} --blake3 ${blake3-lean.outPath} --ix-ck ${ix-src}/IxCK
+        --root ${ledgerWorkspace}/IxCC --blake3 ${blake3-lean.outPath}
     '';
 
     build-graph = mkCheck "build-graph" [] ''

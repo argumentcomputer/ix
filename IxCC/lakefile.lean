@@ -11,8 +11,8 @@ package «ix-cc» where
         "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
     | none => #[]
 
-/- Blake3 FFI. Keep this revision in lockstep with the flake's
-`blake3-lean` input and `lake-manifest.json`. -/
+/- Blake3 FFI. Keep this revision in lockstep with ix's (`../lakefile.lean`),
+the repository flake's `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
   "3f8b805614a0bae1c033469ff893a8f0ee85f601"
@@ -21,11 +21,10 @@ require Blake3 from git
 Only its pure Ixon v4 codec (`IxCK.Ixon.Canonical` and its import closure, 11
 modules) is imported, by the ingress wire layer (`IxCC.Ixon.V4.Convert`,
 `IxCC.Ixon.V3.Wire`) and the resource profile reader
-(`IxCC.Src.Resource.Profile`). Keep this revision in lockstep with the
-flake's `ix-src` input, `lake-manifest.json` and the trust ledger. -/
-require «ix-ck» from git
-  "https://github.com/argumentcomputer/ix" @
-  "2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2" / "IxCK"
+(`IxCC.Src.Resource.Profile`). It is the package beside this one in the ix
+workspace; the trust ledger records the SHA-256 of every file of that
+closure, so a change to it is reviewed here. -/
+require «ix-ck» from "../IxCK"
 
 @[default_target]
 lean_lib IxCC where

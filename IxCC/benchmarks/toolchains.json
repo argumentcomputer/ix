@@ -1,7 +1,7 @@
 {
   "format": "ixcc/benchmark-toolchains/1",
   "platform": "x86_64-linux",
-  "repository_lock": "../flake.lock",
+  "repository_lock": "../../flake.lock",
   "comparison_package": "comparisons/lakefile.lean",
   "optional_environment": "comparisons/shell.nix",
   "nixpkgs": {

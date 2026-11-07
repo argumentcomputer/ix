@@ -13,7 +13,13 @@
       "Lean",
       "Std"
     ],
-    "rule": "Every project-local or external native interface, every native symbol declared anywhere in its Lean source tree (imported or not, with the shipping module and reachability recorded per symbol), seed/runtime dependency, target specification assumption, and CI action is recorded here with an owner and a retirement condition. A modeled oracle is not native code and is listed separately."
+    "rule": "Every project-local or external native interface, every native symbol declared anywhere in its Lean source tree (imported or not, with the shipping module and reachability recorded per symbol), seed/runtime dependency, target specification assumption, and CI action is recorded here with an owner and a retirement condition. A modeled oracle is not native code and is listed separately.",
+    "repository": {
+      "root": "..",
+      "workflows": [
+        ".github/workflows/ixcc.yml"
+      ]
+    }
   },
   "native_interfaces": [
     {
@@ -705,7 +711,26 @@
     }
   ],
   "modeled_oracles": [],
-  "ci_actions": [],
+  "ci_actions": [
+    {
+      "repository": "actions/checkout",
+      "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "version": "v7.0.1",
+      "use": "checks out the revision under test"
+    },
+    {
+      "repository": "cachix/install-nix-action",
+      "commit": "13d8dd58da0234aa297dedd986986ccb8e7f3e24",
+      "version": "v31.11.1",
+      "use": "installs Nix, which builds and runs the ixcc-* flake checks"
+    },
+    {
+      "repository": "cachix/cachix-action",
+      "commit": "38b082610b782e7e93e209c35fd730d399dee866",
+      "version": "v17",
+      "use": "substitutes from and pushes to the argumentcomputer binary cache"
+    }
+  ],
   "csimp_theorems": [],
   "integrity": {
     "tracked_files": {
@@ -1651,7 +1676,7 @@
       "benchmarks/runner/entry/row_lir.c": "42392ebc362ef1ebe3320b026bcaa7b91c7879348ad16c38025e802befa53d85",
       "benchmarks/runner/entry/row_tagged.c": "53a9c55d6af758ca5b644219d42b53bfee46f1605728457855dfcf1b72356a9e",
       "benchmarks/runner/entry/tagged.c": "aca088f1a7ec63bc9dee94a984a79a699cdebbbfbaec98e312d92fb4dc4220af",
-      "benchmarks/toolchains.json": "68a3eb40e56fc1e6a120309fa7f01ca40779d57af318d950b341bde95e5fd16d",
+      "benchmarks/toolchains.json": "1c8f608095a92dfdc742d1cb9a521e917ffee0742a5aa3bfa405f23a8f17bbd5",
       "IxCCTests/Scripts/CheckIxonV3Catalog.lean": "c66c512a0c9c8c66989a8f2f00bcf1ff322e95ee1cc0d74e7ccd083177c11965",
       "IxCCTests/Scripts/CheckIxonV3.lean": "40668422a01704ab8efe29def6c4a8bc9731f75707dbbacc8dc1037db7e7969d",
       "IxCC/Aiur/AIR/Expr.lean": "105f94b8ffd69abb01a7c120d384557e1839ee97ffafff730f980484fe178e02",
@@ -1867,7 +1892,6 @@
       "docs/aiur-wire.md": "9d943bd1a539eb6fb577797b54fba1796a3f05270b6bb7c2a11e8180200d05a8",
       "docs/ixon-v4.md": "b578d3d34b30fa96fc85875c1f0028f71edac16673ce0b4b47d01907ac863c81",
       "docs/x86-reference-model.json": "93fa12e8fcfa9be6b9df3130833229d7badca61fa64493558c70faad8bebdaad",
-      ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
       "fixtures/aiur-bytecode/empty.bin": "ac8f265bce6449b21586b2f817fd2f39eb584080f8a7de62bd5c695bec7b6cf0",
       "fixtures/aiur-bytecode/expected.json": "564ff7567985daa8a6d986a50511fad09610159fd62172f19e9b1d809b907e13",
       "fixtures/aiur-bytecode/ranked-mutual.bin": "224da2dfabdaeb9651d4c37073b385bfff90697a2154d206a1592995d933f357",
@@ -2148,19 +2172,17 @@
       "fixtures/x86/hw_diff_harness.c": "39e0c301496321e1ce1b2821b3fd80cabd42812d7afee73da8dee9d80e24d9c9",
       "fixtures/x86/native_harness.c": "60ca740c5e7b28450cf4df18960c0732bd9cf3496b4e6572469f8eb4e8579aa1",
       "fixtures/x86/runtime_driver.c": "e0a1b9413371487edf155040ca033d64e63f9563a289ea2e4610627e6a0929ac",
-      "flake.lock": "9bc258180694b0a04712c27984c2bba5b818a9fe85473081e831bf87877958d6",
-      "flake.nix": "9799956cd693bbe716483bfdc45b570ea7dcd2b42f4e2ebe25afcf1dd2cad769",
-      "lakefile.lean": "3bb5ebd72db293a3924fb78f7413e5eb79e8edb1cee2448ff4dbccb16be0fd3c",
-      "lake-manifest.json": "3f2c28411afe5bc9bca9cc9c026796e16db4884201e56535e2b208e1c6f48850",
+      "lakefile.lean": "cd95bbdff29a0e873211ac646c808d70fba90be947b0c929090d12380f181586",
+      "lake-manifest.json": "cde6efd06948f02c5452a56924e6557bfdf1b85f103e0498eb67d2c3410148ec",
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
-      "nix/build.nix": "18668af5efa2ba7290358f76287f7973fc644908c285a3ec8c10be636f210045",
-      "nix/checks.nix": "c8190475b29b4a917c2bb598ef1e38443813d8d04f223e87bafe9cba39e4ceaf",
+      "nix/build.nix": "569d06ea68a351343004d5c834f666da74eef81c2bd6a1dca30396ac6758ca3e",
+      "nix/checks.nix": "9b6427f7f7b299e75d37af09153ad17f9130afd3e375425f271d416f272beba8",
       "nix/ci-coverage.json": "ae027f29f6a0033717ff2bd78a6af9bf6f47ca6bf075775237c2039208f616d2",
       "nix/lean-modules.json": "7ea898e1857c308ede495c0aa72e46c66c9f100e8b9f08caddc279ef6de43d3c",
-      "nix/sources.nix": "de74fcfd15856a7be1e4db5fe5ffd5f554aeb585b7c137797c8a32dc3162442b",
+      "nix/sources.nix": "35d92c734021729a4488bb94b1f5be48f732721e04d57425616b7433a4cf26b5",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
       "IxCCTests/Scripts/CheckBuildGraph.lean": "806e4b62f9aff562ad35797ecf772ef6c908ee931e768146e6910fa4bdf916a2",
-      "IxCCTests/Scripts/CheckToolsTests.lean": "c27839ce8ccdd687de962cb8f719a4b79a1269a8417acc2f03d73cf129d2bccc",
+      "IxCCTests/Scripts/CheckToolsTests.lean": "d66ca07ca3c3f0ca5c0e6859eadfa941014c28ef3ab8ae4c3d3ba30171da5c86",
       "IxCCTests/Scripts/CheckTrustedExterns.lean": "9bc091fc7a493186304ffd722e4af20e4484be2a695b3d745d7ed32a86fa4556",
       "IxCCTests/Scripts/CheckX86Bytes.lean": "5cdf3a680cfa520b70cd47d6b6a304017e979612706ffbf9ad5cb29c0aacd22b",
       "IxCCTests/Scripts/CheckX86Encoder.lean": "be487807a2e174e256b59f4dd959192abd74552a9156fd9441d5c58ce8d30379",
@@ -2181,15 +2203,19 @@
       "blake3": "f3149ec5bb5449af877ba20377a11008ff499fa2",
       "blake3-lean": "3f8b805614a0bae1c033469ff893a8f0ee85f601",
       "crane": "692f7e9ef2ece8125b466f66f2af532b3edaed0d",
+      "crane_2": "692f7e9ef2ece8125b466f66f2af532b3edaed0d",
       "fenix": "eacb66f3a1e40cc5ac88ef588ed6bc9bbff1c79c",
+      "fenix_2": "2013c981829bd5e93db06749b5639450c81bece3",
       "flake-parts": "427bf4bd9435fdf21321c8cc628c24efc14c0f7a",
-      "flake-parts_2": "a34fae9c08a15ad73f295041fec82323541400a9",
+      "flake-parts_2": "9d0d87172c374f89da73c1cfe6d81ae62feac1f1",
+      "flake-parts_3": "a34fae9c08a15ad73f295041fec82323541400a9",
       "lean4-nix": "e828640c7710bb571eb052d02f1adb2ed5694c5e",
       "nixpkgs": "1306659b587dc277866c7b69eb97e5f07864d8c4",
       "nixpkgs-lib": "0e79af5e3d4dcfcd676ab5ba3f95d2e3352e078c",
-      "nixpkgs-lib_2": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
+      "nixpkgs-lib_2": "0e79af5e3d4dcfcd676ab5ba3f95d2e3352e078c",
+      "nixpkgs-lib_3": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
       "rust-analyzer-src": "d2e55da49132fa70a13dfbdc99122432b02cf464",
-      "ix-src": "2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2"
+      "rust-analyzer-src_2": "5c156cdfb047ea171ba255dcdcd86236d98a389e"
     }
   },
   "lean_dependencies": [
@@ -2198,7 +2224,7 @@
       "status": "active",
       "owner": "IxCC maintainers",
       "lake_package": "«ix-ck»",
-      "source_kind": "git",
+      "source_kind": "workspace_path",
       "source_dir": "..",
       "csimp_theorems": [
         {
@@ -2232,18 +2258,16 @@
         "IxCK/Ixon/Canonical.lean": "e5c8e1b67de645d6483536fe6236c8e8b85f1f8f6355315593e69a4db22aef34"
       },
       "pins": {
-        "lake_rev": "2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2",
-        "flake_node": "ix-src",
-        "lake_subdir": "IxCK"
+        "workspace_path": "../IxCK"
       },
-      "semantics_assumed": "Ix's pure Ixon v4 codec (argumentcomputer/ix at the pinned revision, package IxCK/) reads and writes the canonical bytes of universes, expressions and constants: Ixon.Canonical.deConstant accepts exactly the canonical encodings within its byte and universe-expansion budgets (it re-encodes and compares), and Ixon.serConstant/serExpr/serUniv are the encodings ix's compiler content-addresses. IxCC converts the decoded values to its own data types structurally (IxCC.Ixon.V4.Convert) and frames environments itself (IxCC.Ixon.V3.Env), authenticating every object with pure BLAKE3.",
+      "semantics_assumed": "Ix's pure Ixon v4 codec (the IxCK/ package of the enclosing ix workspace) reads and writes the canonical bytes of universes, expressions and constants: Ixon.Canonical.deConstant accepts exactly the canonical encodings within its byte and universe-expansion budgets (it re-encodes and compares), and Ixon.serConstant/serExpr/serUniv are the encodings ix's compiler content-addresses. IxCC converts the decoded values to its own data types structurally (IxCC.Ixon.V4.Convert) and frames environments itself (IxCC.Ixon.V3.Env), authenticating every object with pure BLAKE3.",
       "proof_effect": "The resource-selection path of Recheck.run now imports pure codec framing to validate raw profile bytes and address-bound equation records, alongside pure BLAKE3. This input validation introduces no external acceptance Boolean or ix resource-soundness premise; existing run theorems and exact fences remain unchanged. The codec also decodes ingress, so a defect can make ingress reject a closure or read a different program than ix compiled; the compiled program is then still the one Recheck.run checks. The imported codec closure uses only the standard axioms (#print axioms: propext and Quot.sound), no extern, implemented_by or unsafe, and no foreign code. Its two @[csimp] theorems, putTagN_eq_fast and getTagN_eq_fast, make compiled code write and read TagN integers with copies of putTagN and getTagN specialized to the flag widths 0, 2 and 4 (putTagNFast, getTagNFast); each is a proved equality (rfl in each branch), so they change the code that runs, not the functions the theorems are about. The full ix kernel and resource checker are not imported.",
       "trust_basis": [
-        "the Lake revision, the flake input ix-src and this entry's lake_rev agree, and the SHA-256 of every file of the imported closure is recorded here and checked",
+        "lake-manifest.json and this entry record the same workspace path (../IxCK), whose lakefile.lean declares the «ix-ck» package, and the SHA-256 of every file of the imported closure is recorded here and checked",
         "the closure imports only Init (IxCK.Address.Core, IxCK.Ixon.Types{,.Kinds,.Modes,.Contract}, IxCK.Ixon.Codec, IxCK.Ixon.Wire, IxCK.Ixon.WireCheck, IxCK.Ixon.Bounded.{Universe,Constant}, IxCK.Ixon.Canonical) and is scanned for native declarations, implemented_by, axiom, sorry and native_decide",
         "its @[csimp] theorems are exactly the reviewed csimp_theorems, putTagN_eq_fast (putTagN to putTagNFast) and getTagN_eq_fast (getTagN to getTagNFast) in IxCK/Ixon/Codec.lean; any other csimp theorem in the closure, or a listed one missing, fails the audit",
-        "ix proves the codec's round trip (Ixon.Verify.Canonical.deConstant_serConstant in IxCK.Ixon.Verify.Canonical, and the Verify tree) at the same revision; IxCC imports the executable codec, not those proofs",
-        "Nix packages exactly these sources under the same package name and toolchain (nix/build.nix ixCK), so the kernel library is never built"
+        "ix proves the codec's round trip (Ixon.Verify.Canonical.deConstant_serConstant in IxCK.Ixon.Verify.Canonical, and the Verify tree) in the same tree; IxCC imports the executable codec, not those proofs",
+        "Nix packages exactly the closure recorded here (nix/sources.nix) under the same package name and toolchain (nix/build.nix ixCK), so the kernel library is never built"
       ],
       "tests": [
         "tests-ixon-v3: the unchanged ix v4 fixture package (expressions, addressed constants, claims, resource cases, handoff) decoded and re-encoded byte for byte, truncation and trailing-byte rejection, the typing and catalog fixtures",
@@ -2257,7 +2281,7 @@
         "replacement": "The certified ix reader and checker (Ix.Kernel.Admission.checkBytes) as the ingress gate, or a proved IxCC decoder",
         "exit_criteria": [
           "ingress decoding is either proved against a byte specification or performed by a component whose correctness theorem IxCC consumes",
-          "the pinned revision is a merged, tagged ix release"
+          "the recorded closure is part of a merged, tagged ix release"
         ]
       }
     }
