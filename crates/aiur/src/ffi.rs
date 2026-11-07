@@ -137,8 +137,8 @@ fn run_request<B: FieldBackend>(
   w.list(&queries, |w, (input, output)| {
     w.usize(input.function);
     w.str(program.callable_name(input.function).unwrap_or_default());
-    words(w, &input.args);
-    words(w, &output.output);
+    words(w, input.args);
+    words(w, output.output);
     w.nat(output.multiplicity);
   });
   let memory: Vec<_> = record.memory.iter().collect();

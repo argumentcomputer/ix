@@ -215,12 +215,13 @@ impl<'a> Reader<'a> {
   pub fn usize(&mut self) -> Result<usize, String> {
     let value = self.nat()?;
     usize::try_from(value)
-      .map_err(|_| self.error(format!("{value} exceeds usize")))
+      .map_err(|_e| self.error(format!("{value} exceeds usize")))
   }
 
   pub fn u32(&mut self) -> Result<u32, String> {
     let value = self.nat()?;
-    u32::try_from(value).map_err(|_| self.error(format!("{value} exceeds u32")))
+    u32::try_from(value)
+      .map_err(|_e| self.error(format!("{value} exceeds u32")))
   }
 
   pub fn bool(&mut self) -> Result<bool, String> {
@@ -248,7 +249,7 @@ impl<'a> Reader<'a> {
   pub fn string(&mut self) -> Result<String, String> {
     let start = self.offset;
     let bytes = self.bytes()?;
-    String::from_utf8(bytes.to_vec()).map_err(|_| {
+    String::from_utf8(bytes.to_vec()).map_err(|_e| {
       let error = self.error("invalid UTF-8 string");
       self.offset = start;
       error
