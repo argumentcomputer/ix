@@ -2,7 +2,7 @@ use crate::protocol::{Job, Kind, atomic_json};
 use aiur::field::NativeField;
 use aiur::trace::stark::{Backend, BatchProof};
 use multi_stark::{p3_field::PrimeField64, types::Val};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub(crate) fn report(
   job: &Job,
@@ -50,14 +50,14 @@ pub(crate) fn proof(
       write(job.output.join("proof.bin"), &raw)?;
       write(job.output.join("key.bin"), &key)?;
       write(job.output.join("claims.bin"), &claims)?;
-      atomic_json(
-        &job.output.join("public.json"),
-        &json!({"entry":entry, "args":args.iter().map(Val::as_canonical_u64).collect::<Vec<_>>()}),
-      )?;
-      atomic_json(
-        &job.output.join("input.json"),
-        &stark_verifier::invocation(&key, &claims, &raw),
-      )?;
+      aiur::library::io::Invocation {
+        entry: entry.to_owned(),
+        args: args.iter().map(Val::as_canonical_u64).collect(),
+        streams: Default::default(),
+      }
+      .store(&job.output.join("public.ixi"))?;
+      stark_verifier::invocation(&key, &claims, &raw)
+        .store(&job.output.join("input.ixi"))?;
     },
   }
   result["verified"] = true.into();

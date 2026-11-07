@@ -1,9 +1,11 @@
 import Lean.Data.Json
+import Ix.Address
+import Ix.AiurInvocation
 
 /-!
 # Shared pieces of the formal-backend check drivers
 
-The drivers (`formal-checks controller|cuda|refactor|ranges`, run by
+The drivers (`formal-checks controller|cuda|ranges`, run by
 `tools/ixvm/check-formal.sh`) drive the Rust hosts and the `ix` CLI on the
 fixtures `check-formal.sh` leaves, log each command to a file in a fresh
 directory beside the fixtures, and keep a JSON report there.
@@ -51,6 +53,18 @@ def usageError (usage message : String) : IO UInt32 := do
   IO.eprintln usage
   IO.eprintln s!"error: {message}"
   return 2
+
+/-- The invocation of the accepted case labelled `label` in the Ixon case file
+`cases` (`Ix.AiurInvocation`), as its bytes. -/
+def caseInvocation (cases : FilePath) (label : String) : IO ByteArray := do
+  let decoded ← IO.ofExcept (Ix.AiurInvocation.decodeCases (← IO.FS.readBinFile cases))
+  let some c := decoded.find? fun c => c.accept && c.label == label
+    | fail s!"{cases} has no accepted {label} case"
+  return c.bytes
+
+/-- The BLAKE3 digest of an artifact, as `ix-prover` configurations name it. -/
+def artifactDigest (path : FilePath) : IO String :=
+  return toString (Address.blake3 (← IO.FS.readBinFile path))
 
 /-- `path` made absolute. -/
 def absolute (path : FilePath) : IO FilePath := do
@@ -160,3 +174,31 @@ def floatJson (x : Float) : Json :=
   | .inl _ => .null
 
 end Tests.FormalChecks
+
+/-! The Ixon invocation and case codecs (`Ix.AiurInvocation`) round-trip, and a
+truncated case file is refused at every length. The Rust readers carry the
+same checks (`aiur::artifact`); `check-formal.sh` runs files each side wrote
+through the other. -/
+
+private def sampleInvocation : Ix.AiurInvocation.Invocation :=
+  { entry := "IxVM::verify_claim", args := #[0, 127, 128, 2 ^ 64 - 1],
+    streams := #[{ channel := 2, key := #[1, 2], values := #[0, 255, 16512] },
+      { channel := 7, key := #[], values := #[] }] }
+
+#guard match sampleInvocation.encode >>= Ix.AiurInvocation.Invocation.decode with
+  | .ok decoded => decoded == sampleInvocation
+  | .error _ => false
+
+#guard (({ sampleInvocation with args := #[2 ^ 64] } : Ix.AiurInvocation.Invocation).encode).toOption.isNone
+
+#guard match sampleInvocation.encode with
+  | .error _ => false
+  | .ok bytes =>
+    let file := Ix.AiurInvocation.encodeCases
+      #[{ label := "case", accept := false, rejectsWith := some "why", invocation := bytes }]
+    (match Ix.AiurInvocation.decodeCases file with
+      | .ok #[c] => c.label == "case" && !c.accept && c.rejectsWith == some "why" &&
+          c.exercises.isNone && c.bytes.data == bytes.data && c.invocation == sampleInvocation
+      | _ => false) &&
+    (List.range file.size).all fun n =>
+      (Ix.AiurInvocation.decodeCases (file.extract 0 n)).toOption.isNone

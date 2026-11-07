@@ -5,10 +5,10 @@ use crate::{
   field::FieldBackend,
   hints::{HintChannels, HintEntry},
 };
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// One input stream: a channel, its key, and the values read under it.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stream {
   pub channel: u64,
   pub key: Vec<u64>,
@@ -16,14 +16,15 @@ pub struct Stream {
 }
 
 /// Compact interchange format. One entry per stream, rather than per byte.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Streams(pub Vec<Stream>);
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// An entry point, its public arguments and its input streams. Hosts read
+/// invocations in Ixon (`crate::artifact`, `Invocation::load`).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Invocation {
   pub entry: String,
   pub args: Vec<u64>,
-  #[serde(default)]
   pub streams: Streams,
 }
 

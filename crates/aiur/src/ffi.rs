@@ -1,14 +1,27 @@
 //! A small C ABI transports an Ixon package (execution bytecode and an
-//! optional companion trace plan), Ixon data hints and a JSON request.
+//! optional companion trace plan), Ixon data hints and a JSON request, and
+//! returns the execution record (and trace) in Ixon:
+//!
+//! ```text
+//! response = 0 string(error) | 1 record
+//! record   = nats(output) option(string(pretty_output)) list(query)
+//!            list(memory) list(type nat(width)) nat(instructions)
+//!            option(list(matrix))
+//! query    = nat(function) string(name) nats(args) nats(output)
+//!            nat(multiplicity)
+//! memory   = nat(address) type nats(value) nat(multiplicity)
+//! matrix   = string(chip) nat(width) nat(height) nat(unpadded_height)
+//!            nats(values) nats(multiplicities)
+//! ```
 //! Lean's object ABI is confined to c/execution.c; Rust owns execution and tracing.
-use crate::artifact::{Package, decode_hints};
+use crate::artifact::{Package, decode_hints, put_type};
 use crate::bytecode::Program;
 use crate::field::{FieldBackend, NativeField, PrimeField, PrimeField64};
 use crate::hints::HintEntry;
+use crate::ixon::Writer;
 use crate::trace::TraceArtifact;
 use serde::Deserialize;
-use serde_json::{Value as Json, json};
-use std::ffi::{CString, c_char};
+use serde_json::Value as Json;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -25,7 +38,7 @@ fn execute_request(
   package: &[u8],
   hints: &[u8],
   request: &[u8],
-) -> Result<Json, String> {
+) -> Result<Vec<u8>, String> {
   let Package { program, trace } = Package::decode(package)
     .map_err(|e| format!("invalid execution package: {e}"))?;
   let hints =
@@ -49,7 +62,7 @@ fn run_request<B: FieldBackend>(
   hints: &[HintEntry],
   request: Request,
   field: B,
-) -> Result<Json, String> {
+) -> Result<Vec<u8>, String> {
   let program = program.check_with(field)?;
   let record = match (request.args, request.flat_args) {
     (Some(args), None) => {
@@ -115,27 +128,49 @@ fn run_request<B: FieldBackend>(
         .cmp(b.args.iter().map(|&x| field.to_u64(x)))
     })
   });
-  let queries = queries
-        .into_iter()
-        .map(|(input, output)| {
-            json!({
-                "function": input.function, "name": program.callable_name(input.function),
-                "args": input.args, "output": output.output, "multiplicity": output.multiplicity,
-            })
-        })
-        .collect::<Vec<_>>();
-  Ok(
-    json!({ "output": record.output, "pretty_output": pretty_output, "queries": queries,
-        "memory": record.memory, "memory_types": program.memory_types.iter()
-            .map(|(ty, layout)| (ty, layout.width())).collect::<Vec<_>>(),
-        "instructions": record.instructions, "trace": trace }),
-  )
+  let words = |w: &mut Writer, xs: &[B::Element]| {
+    w.list(xs, |w, &x| w.nat(field.to_u64(x)));
+  };
+  let mut w = Writer::new();
+  words(&mut w, &record.output);
+  w.option(pretty_output.as_ref(), |w, s| w.str(s));
+  w.list(&queries, |w, (input, output)| {
+    w.usize(input.function);
+    w.str(program.callable_name(input.function).unwrap_or_default());
+    words(w, input.args);
+    words(w, output.output);
+    w.nat(output.multiplicity);
+  });
+  let memory: Vec<_> = record.memory.iter().collect();
+  w.list(&memory, |w, entry| {
+    w.usize(entry.address);
+    put_type(w, entry.cell.r#type);
+    words(w, entry.cell.value);
+    w.nat(entry.multiplicity);
+  });
+  w.list(&program.memory_types, |w, (ty, layout)| {
+    put_type(w, ty);
+    w.usize(layout.width());
+  });
+  w.nat(record.instructions);
+  w.option(trace.as_ref(), |w, trace| {
+    w.list(&trace.matrices, |w, m| {
+      w.str(&m.chip);
+      w.usize(m.width);
+      w.usize(m.height);
+      w.usize(m.unpadded_height);
+      words(w, &m.values);
+      w.nats(&m.multiplicities);
+    });
+  });
+  Ok(w.into_bytes())
 }
 
 /// # Safety
 /// Each pointer must address its length in readable bytes for the duration of
-/// this call (a null pointer only with length zero). The returned allocation
-/// must be released exactly once with `aiur_free_string`.
+/// this call (a null pointer only with length zero), and `response_length`
+/// must be writable. The returned buffer of `*response_length` bytes must be
+/// released exactly once with `aiur_free_bytes`.
 #[unsafe(no_mangle)]
 #[allow(unreachable_pub)] // Exported through the C ABI, not Rust paths.
 pub unsafe extern "C" fn aiur_execute(
@@ -145,7 +180,8 @@ pub unsafe extern "C" fn aiur_execute(
   hints_length: usize,
   request: *const u8,
   request_length: usize,
-) -> *mut c_char {
+  response_length: *mut usize,
+) -> *mut u8 {
   // SAFETY: the caller guarantees the buffer's validity; it is only borrowed.
   let borrow = |data: *const u8, length: usize| unsafe {
     if data.is_null() {
@@ -166,62 +202,85 @@ pub unsafe extern "C" fn aiur_execute(
       _ => Err("null execution input".into()),
     }
   });
-  let value = match response {
-    Ok(Ok(value)) => json!({"ok": value}),
-    Ok(Err(error)) => json!({"error": error}),
+  let mut w = Writer::new();
+  match response {
+    Ok(Ok(record)) => {
+      w.u8(1);
+      w.raw(&record);
+    },
+    Ok(Err(error)) => {
+      w.u8(0);
+      w.str(&error);
+    },
     Err(panic) => {
       let message = panic
         .downcast_ref::<String>()
         .map(String::as_str)
         .or_else(|| panic.downcast_ref::<&str>().copied())
         .unwrap_or("Rust execution panic");
-      json!({"error": message})
+      w.u8(0);
+      w.str(message);
     },
-  };
-  // JSON escapes all embedded NULs. No unwind may cross the C boundary.
-  CString::new(value.to_string())
-    .expect("JSON cannot contain a NUL byte")
-    .into_raw()
+  }
+  let bytes = w.into_bytes().into_boxed_slice();
+  // SAFETY: the caller supplies a writable length slot.
+  unsafe { *response_length = bytes.len() };
+  Box::into_raw(bytes).cast::<u8>()
 }
 
 /// # Safety
-/// `string` must be null or a live pointer returned by `aiur_execute`.
+/// `bytes` must be a live buffer of `length` bytes returned by
+/// `aiur_execute`.
 #[unsafe(no_mangle)]
 #[allow(unreachable_pub)] // Exported through the C ABI, not Rust paths.
-pub unsafe extern "C" fn aiur_free_string(string: *mut c_char) {
-  if !string.is_null() {
-    // SAFETY: ownership of precisely this CString allocation is returned.
-    drop(unsafe { CString::from_raw(string) });
-  }
+pub unsafe extern "C" fn aiur_free_bytes(bytes: *mut u8, length: usize) {
+  // SAFETY: ownership of precisely this boxed slice is returned.
+  drop(unsafe {
+    Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, length))
+  });
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::artifact::encode_hints;
-  use std::ffi::CStr;
+  use crate::ixon::Reader;
+  use serde_json::json;
 
-  fn call_raw(package: &[u8], hints: &[u8], request: &Json) -> Json {
+  /// The output words of a successful execution, or its error.
+  fn call_raw(
+    package: &[u8],
+    hints: &[u8],
+    request: &Json,
+  ) -> Result<Vec<u64>, String> {
     let request = request.to_string().into_bytes();
-    // SAFETY: the input buffers outlive the call. The returned string is
-    // read before it is released once with the matching allocator.
-    unsafe {
-      let response = aiur_execute(
+    let mut length = 0;
+    // SAFETY: the input buffers outlive the call. The returned buffer is
+    // read before it is released once with its length.
+    let response = unsafe {
+      let bytes = aiur_execute(
         package.as_ptr(),
         package.len(),
         hints.as_ptr(),
         hints.len(),
         request.as_ptr(),
         request.len(),
+        &raw mut length,
       );
-      let json =
-        serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
-      aiur_free_string(response);
-      json
+      let response = std::slice::from_raw_parts(bytes, length).to_vec();
+      aiur_free_bytes(bytes, length);
+      response
+    };
+    let mut r = Reader::new(&response);
+    if r.tag("response", 2).unwrap() == 0 {
+      let error = r.string().unwrap();
+      r.finish().unwrap();
+      return Err(error);
     }
+    Ok(r.nats().unwrap())
   }
 
-  fn call(program: Json, request: &Json) -> Json {
+  fn call(program: Json, request: &Json) -> Result<Vec<u64>, String> {
     let program: Program = serde_json::from_value(program).unwrap();
     let package = Package { program, trace: None }.encode();
     call_raw(&package, &encode_hints(&[]), request)
@@ -230,7 +289,7 @@ mod tests {
   #[test]
   fn missing_hint_is_an_error_at_the_ffi_boundary() {
     let field = json!({"kind":"field"});
-    let response = call(
+    let error = call(
       json!({
           "version":1, "modulus":97, "enums":[], "maps":[], "tables":[],
           "functions":[{"name":"hinted", "params":[field], "result":field, "registers":2,
@@ -239,15 +298,15 @@ mod tests {
           "entries":[{"name":"main", "function":0, "inputs":[field], "output":field}]
       }),
       &json!({"entry":"main", "args":[7]}),
-    );
-    assert!(response["error"].as_str().unwrap().contains("missing hint"));
+    )
+    .unwrap_err();
+    assert!(error.contains("missing hint"), "{error}");
   }
 
   #[test]
   fn malformed_inputs_return_owned_error_text() {
     let empty = encode_hints(&[]);
-    let response = call_raw(&[], &empty, &json!({"entry":"missing"}));
-    let error = response["error"].as_str().unwrap();
+    let error = call_raw(&[], &empty, &json!({"entry":"missing"})).unwrap_err();
     assert!(error.contains("invalid execution package"), "{error}");
     let program = json!({"version":2, "modulus":97, "enums":[], "maps":[],
       "tables":[], "functions":[], "entries":[]});
@@ -255,15 +314,13 @@ mod tests {
       (json!({"entry":"main", "extra":1}), "unknown field"),
       (json!({"flat_args":[]}), "missing field"),
     ] {
-      let response = call(program.clone(), &request);
-      let error = response["error"].as_str().unwrap();
+      let error = call(program.clone(), &request).unwrap_err();
       assert!(error.contains("invalid execution request"), "{error}");
       assert!(error.contains(expected), "{error}");
     }
     let package: Program = serde_json::from_value(program).unwrap();
     let package = Package { program: package, trace: None }.encode();
-    let response = call_raw(&package, &[1], &json!({"entry":"main"}));
-    let error = response["error"].as_str().unwrap();
+    let error = call_raw(&package, &[1], &json!({"entry":"main"})).unwrap_err();
     assert!(error.contains("invalid execution hints"), "{error}");
   }
 
@@ -278,9 +335,9 @@ mod tests {
         "entries":[{"name":"main", "function":0, "inputs":[f], "output":f}]
     });
     let mut request = json!({"entry":"main", "flat_args":[p-1]});
-    assert_eq!(call(program.clone(), &request)["ok"]["output"], json!([p - 1]));
+    assert_eq!(call(program.clone(), &request), Ok(vec![p - 1]));
     request["flat_args"] = json!([p]);
-    let response = call(program, &request);
-    assert!(response["error"].as_str().unwrap().contains("noncanonical"));
+    let error = call(program, &request).unwrap_err();
+    assert!(error.contains("noncanonical"), "{error}");
   }
 }

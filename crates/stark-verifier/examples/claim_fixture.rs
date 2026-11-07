@@ -13,9 +13,11 @@ use std::{error::Error, path::Path};
 
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
-  let args: Vec<u64> = serde_json::from_slice(&std::fs::read(
-    cli.get(1).ok_or("expected digest arguments JSON")?,
-  )?)?;
+  // The digest arguments, as an Ixon invocation (`aiur::artifact`).
+  let args = aiur::library::io::Invocation::load(
+    cli.get(1).ok_or("expected a digest-argument invocation")?.as_ref(),
+  )?
+  .args;
   if ![8, 16].contains(&args.len()) || args.iter().any(|&x| x >= Val::ORDER_U64)
   {
     return Err("expected eight or sixteen canonical field elements".into());

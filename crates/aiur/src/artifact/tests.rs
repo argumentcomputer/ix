@@ -273,3 +273,87 @@ fn json_and_ixon_artifacts_decode_identically() {
     }
   }
 }
+
+fn sample_invocation() -> Invocation {
+  Invocation {
+    entry: "IxVM::verify_claim".into(),
+    args: vec![0, 1, 127, 128, u64::MAX],
+    streams: Streams(vec![
+      Stream { channel: 0, key: vec![1, 2], values: vec![0, 255, 16512] },
+      Stream { channel: 7, key: vec![], values: vec![] },
+    ]),
+  }
+}
+
+#[test]
+fn invocations_round_trip_strictly() {
+  let invocation = sample_invocation();
+  let bytes = invocation.encode();
+  assert_eq!(&bytes[..8], INVOCATION_MAGIC);
+  let decoded = Invocation::decode(&bytes).unwrap();
+  assert_eq!(decoded, invocation);
+  assert_eq!(decoded.encode(), bytes);
+  for end in 0..bytes.len() {
+    assert!(Invocation::decode(&bytes[..end]).is_err(), "prefix {end}");
+  }
+  let mut trailing = bytes.clone();
+  trailing.push(0);
+  assert!(Invocation::decode(&trailing).unwrap_err().contains("trailing"));
+  let error = Invocation::decode(&sample().encode()).unwrap_err();
+  assert!(error.contains("found a compiled package"), "{error}");
+  let error = Package::decode(&bytes).unwrap_err();
+  assert!(error.contains("found an invocation"), "{error}");
+  // A stream count beyond the remaining input.
+  let mut w = Writer::new();
+  w.raw(INVOCATION_MAGIC);
+  w.nat(FORMAT_VERSION);
+  w.str("e");
+  w.nats(&[]);
+  w.nat(1000);
+  let error = Invocation::decode(&w.into_bytes()).unwrap_err();
+  assert!(error.contains("count 1000"), "{error}");
+}
+
+#[test]
+fn case_files_round_trip_strictly() {
+  let cases = vec![
+    Case {
+      label: "accepted ✓".into(),
+      accept: true,
+      rejects_with: None,
+      exercises: Some("IxVM::check".into()),
+      invocation: sample_invocation(),
+    },
+    Case {
+      label: "rejected".into(),
+      accept: false,
+      rejects_with: Some("hash of the supplied bytes".into()),
+      exercises: None,
+      invocation: Invocation {
+        streams: Streams::default(),
+        ..sample_invocation()
+      },
+    },
+  ];
+  let bytes = encode_cases(&cases);
+  assert_eq!(&bytes[..8], CASES_MAGIC);
+  assert_eq!(decode_cases(&bytes).unwrap(), cases);
+  assert_eq!(decode_cases(&encode_cases(&[])).unwrap(), vec![]);
+  // Every truncation is refused, including one at a case boundary.
+  for end in 0..bytes.len() {
+    assert!(decode_cases(&bytes[..end]).is_err(), "prefix {end}");
+  }
+  let mut trailing = bytes.clone();
+  trailing.push(0);
+  assert!(decode_cases(&trailing).unwrap_err().contains("trailing"));
+  let mut continuation = bytes.clone();
+  *continuation.last_mut().unwrap() = 2;
+  let error = decode_cases(&continuation).unwrap_err();
+  assert!(error.contains("case continuation tag 2"), "{error}");
+  // A verdict is a strict bool.
+  let label_end = 9 + 1 + 1 + "accepted ✓".len();
+  let mut verdict = bytes.clone();
+  verdict[label_end] = 2;
+  let error = decode_cases(&verdict).unwrap_err();
+  assert!(error.contains("bool tag 2"), "{error}");
+}

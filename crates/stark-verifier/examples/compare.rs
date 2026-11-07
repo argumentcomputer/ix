@@ -25,8 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let (package, digest) = Package::load(cli[1].as_ref())?;
   eprintln!("artifact {}: blake3 {digest}", cli[1]);
   let (program, mut trace) = package.traced()?;
-  let invocation: Invocation =
-    serde_json::from_slice(&std::fs::read(&cli[2])?)?;
+  let invocation = Invocation::load(cli[2].as_ref())?;
   let samples: usize = cli[4].parse()?;
   if samples == 0 {
     return Err("zero benchmark samples".into());
@@ -176,12 +175,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::fs::write(directory.join("key.bin"), &key)?;
         std::fs::write(directory.join("claims.bin"), &claims)?;
         std::fs::write(directory.join("proof.bin"), &bytes)?;
-        std::fs::write(
-          directory.join("input.json"),
-          serde_json::to_vec(&stark_verifier::invocation(
-            &key, &claims, &bytes,
-          ))?,
-        )?;
+        stark_verifier::invocation(&key, &claims, &bytes)
+          .store(&directory.join("input.ixi"))?;
       }
     } else if reuse_execution {
       cached_record = Some(record);

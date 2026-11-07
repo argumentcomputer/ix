@@ -236,8 +236,11 @@ limbs instead of reducing modulo Goldilocks.
 The standalone recursive host supports `execute`, `plan`, `prove`, `verify`,
 key export, and range-advice export. A proof invocation supplies the key digest and claims digest publicly,
 and proof/key/claims streams privately. The output directory contains
-`proof.bin`, `key.bin`, `claims.bin`, `public.json` for independent verification,
-and `input.json` for feeding the proof into another recursive-verifier run.
+`proof.bin`, `key.bin`, `claims.bin`, `public.ixi` for independent verification,
+and `input.ixi` for feeding the proof into another recursive-verifier run. Host
+inputs (`*.ixi`) and case files (`*.ixt`, read by `ixvm-proof test` and
+`stark-verifier cases`) are Ixon, documented with their reader in
+`aiur::artifact` and written by `Ix.AiurInvocation`.
 
 ## CUDA and native builds
 

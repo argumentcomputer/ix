@@ -1,5 +1,6 @@
 import Ix.Cli.FormalAggregate
 import Ix.Aggr.CatalogPlan
+import Ix.AiurInvocation
 
 /-! Execute every aggregation shape, 0 to 16 (wraps, flat and structural pairs,
 range sums, binding discharge, cross-binding joins and catalog joins), and the
@@ -11,7 +12,7 @@ open Lean Aggr Ix.Cli Ix.Cli.FormalAggregate
 
 private def fixture (dir : System.FilePath) (args : Array Aiur.G) : IO Unit := do
   IO.FS.withTempFile fun h path => do
-    h.putStr (toJson (args.map (·.n))).compress
+    h.write (FormalAiur.invocation args default "MultiStark::verify_multi_stark_proof")
     h.flush
     FormalAiur.command "target/release/examples/claim_fixture" #[path.toString, dir.toString]
 
@@ -55,11 +56,10 @@ private def rejectionReasons : List (String × String) := [
     "Aggregation::aggr_load_canonical_tree")]
 
 private def test (ctx : Context) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
-    (accept : Bool := true) : Json :=
-  let reason := if accept then none else rejectionReasons.lookup label
-  Json.mkObj ([("label", toJson label), ("accept", toJson accept),
-    ("invocation", FormalAiur.invocation (pubInput ctx.allowed bytes) io "MultiStark::ix_aggr")]
-    ++ reason.toList.map fun r => ("rejects_with", toJson r))
+    (accept : Bool := true) : Ix.AiurInvocation.Case :=
+  { label := label, accept := accept,
+    rejectsWith := (if accept then none else rejectionReasons.lookup label),
+    invocation := FormalAiur.invocation (pubInput ctx.allowed bytes) io "MultiStark::ix_aggr" }
 
 /-- `bytes` as elements, with the first four-byte word whose second byte is
 nonzero shifted out of byte range: its first element raised by 256 and its
@@ -108,8 +108,8 @@ private def tableOf (rebind : List Ix.Kernel.Role) (tag : String) (drop : Bool :
 each with the negative cases of the bindings it checks. -/
 private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
     (claimCtx : Ix.ClaimContext) (left right : CheckEnvTrees) (li : Node) :
-    IO (Array Json) := do
-  let mut tests : Array Json := #[]
+    IO (Array Ix.AiurInvocation.Case) := do
+  let mut tests : Array Ix.AiurInvocation.Case := #[]
   -- ── binding discharge (shapes 13–14) ──
   -- Children that assume their binding (validator 4), and one proof of the
   -- binding claim for their context: the same binding proof discharges two
@@ -278,7 +278,7 @@ def main (args : List String) : IO Unit := do
     | some path => pure path
     | none => do
       let dir ← IO.FS.createTempDir
-      pure (dir / "aggregation.json").toString
+      pure (dir / "aggregation.ixt").toString
   IO.eprintln s!"[formal-aggregate-tests] writing {path}"
   IO.FS.withTempDir fun dir => do
     fixture (dir / "ixvm") (Array.replicate 8 0)
@@ -304,7 +304,7 @@ def main (args : List String) : IO Unit := do
     let la ← node ctx (dir / "la") .aggr left
     let ra ← node ctx (dir / "ra") .aggr right
     let bytes := Ix.Claim.ser left.claim
-    let mut tests : Array Json := #[]
+    let mut tests : Array Ix.AiurInvocation.Case := #[]
     for n in #[li, la] do
       tests := tests.push (test ctx s!"wrap {n.kind.code}" bytes (← advice ctx n none left false))
     for l in #[li, la] do
@@ -391,7 +391,8 @@ def main (args : List String) : IO Unit := do
     let io := extendVk (extendChild io 1 preamble ByteArray.empty) .ixvm ctx.ixvm.key
     tests := tests.push (test ctx "range root rejects incomplete batch" bytes io false)
     tests := tests ++ (← bindingShapeCases ctx dir claimCtx left right li)
-    IO.FS.writeFile path (toJson tests).compress
-    IO.FS.writeFile (path ++ ".wrap.json") (FormalAiur.invocation (pubInput ctx.allowed bytes) wrap "MultiStark::ix_aggr").compress
+    IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases tests)
+    IO.FS.writeBinFile (path ++ ".wrap.ixi")
+      (FormalAiur.invocation (pubInput ctx.allowed bytes) wrap "MultiStark::ix_aggr")
     IO.println s!"Wrote {tests.size} aggregation cases: shapes 0 to 16, the invalid shape 17, \
       and negative bindings"

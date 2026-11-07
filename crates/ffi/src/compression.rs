@@ -162,11 +162,12 @@ extern "C" fn rs_compression_release_root_layout(
   }
 }
 
-/// Per-circuit rows of one root wrap execution, as a JSON array.
+/// Per-circuit rows of one root wrap execution, as a JSON array. The
+/// invocation is in Ixon (`aiur::artifact`).
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_root_rows(
   aggr_artifact: LeanString<LeanBorrowed<'_>>,
-  invocation_json: LeanString<LeanBorrowed<'_>>,
+  invocation: LeanByteArray<LeanBorrowed<'_>>,
   raw_proof: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let result = (|| -> Result<String, String> {
@@ -174,9 +175,7 @@ extern "C" fn rs_compression_root_rows(
     let plan = TracePlan::new(&program, trace)?;
     let backend =
       Backend::for_batch_verification(&plan, Parameters::default())?;
-    let invocation: stark_verifier::Invocation =
-      serde_json::from_str(&invocation_json.to_string())
-        .map_err(|e| e.to_string())?;
+    let invocation = stark_verifier::Invocation::decode(invocation.as_bytes())?;
     let args = program.field().decode(&invocation.args)?;
     let proof_bytes = raw_proof.as_bytes();
     let proof = BatchProof::from_bytes(proof_bytes)
@@ -244,7 +243,7 @@ extern "C" fn rs_compression_root_layout(
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_normalize_root(
   aggr_artifact: LeanString<LeanBorrowed<'_>>,
-  invocation_json: LeanString<LeanBorrowed<'_>>,
+  invocation: LeanByteArray<LeanBorrowed<'_>>,
   raw_proof: LeanByteArray<LeanBorrowed<'_>>,
   layout: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
@@ -254,9 +253,7 @@ extern "C" fn rs_compression_normalize_root(
     let (program, trace) = aggregate(&aggr_artifact)?;
     let plan = TracePlan::new(&program, trace)?;
     let backend = Backend::for_batch(&plan, Parameters::default())?;
-    let invocation: stark_verifier::Invocation =
-      serde_json::from_str(&invocation_json.to_string())
-        .map_err(|e| e.to_string())?;
+    let invocation = stark_verifier::Invocation::decode(invocation.as_bytes())?;
     let args = program.field().decode(&invocation.args)?;
     let proof_bytes = raw_proof.as_bytes();
     let proof = BatchProof::from_bytes(proof_bytes)
