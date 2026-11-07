@@ -318,8 +318,7 @@ compile-row caches are keyed by commit and env, so a compile setting on an
 already benchmarked commit replays the cached row.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
-binary exists — the registry lives in Lean, so nothing pre-build reads it
-(and no Python remains). PR runs never upload to bencher, so the comparison
+binary exists — the registry lives in Lean, so nothing pre-build reads it. PR runs never upload to bencher, so the comparison
 prints in the comment and the canonical baseline is untouched.
 
 ## CI shape
