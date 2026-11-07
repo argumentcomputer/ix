@@ -81,16 +81,16 @@ def ceilDiv (a b : Nat) : Nat := (a + b - 1) / b
 /-- Groups keyed by insertion order, as a Python dict iterates. -/
 abbrev Groups := Array (Nat × Array Nat)
 
-def Groups.get? (groups : Groups) (key : Nat) : Option (Array Nat) :=
+def Groups.lookup (groups : Groups) (key : Nat) : Option (Array Nat) :=
   (groups.find? (·.1 == key)).map (·.2)
 
 /-- Replace the members of `key` in place, or append a new key. -/
-def Groups.set (groups : Groups) (key : Nat) (members : Array Nat) : Groups :=
+def Groups.assign (groups : Groups) (key : Nat) (members : Array Nat) : Groups :=
   match groups.findIdx? (·.1 == key) with
   | some i => groups.set! i (key, members)
   | none => groups.push (key, members)
 
-def Groups.erase (groups : Groups) (key : Nat) : Groups := groups.filter (·.1 != key)
+def Groups.remove (groups : Groups) (key : Nat) : Groups := groups.filter (·.1 != key)
 
 def sorted (xs : Array Nat) : Array Nat := xs.qsort (· < ·)
 
@@ -143,12 +143,12 @@ def Search.cost (s : Search) (members : Array Nat) : IO (Array Int) := do
 def addAll (a b : Array Int) : Array Int := (a.zip b).map fun (x, y) => x + y
 
 def Search.total (s : Search) (groups : Groups) : IO (Array Int) := do
-  let mut sum := Array.replicate (2 + 2 * s.counts.size) 0
+  let mut sum : Array Int := Array.replicate (2 + 2 * s.counts.size) 0
   for (_, g) in groups do sum := addAll sum (← s.cost g)
   return sum
 
 def Search.delta (s : Search) (old new : Array (Array Nat)) : IO (Array Int) := do
-  let mut result := Array.replicate (2 + 2 * s.counts.size) 0
+  let mut result : Array Int := Array.replicate (2 + 2 * s.counts.size) 0
   for g in new do result := addAll result (← s.cost g)
   for g in old do result := (result.zip (← s.cost g)).map fun (x, y) => x - y
   return result
@@ -223,8 +223,11 @@ def run (o : Options) : IO Unit := do
   -- Singleton shapes come from the actual Rust lowering, including lookup
   -- pairing; they do not depend on which workload produced the rows.
   let search : Search := {
-    chips, counts, singleton := statistics[0]!
-    shapes := ← IO.mkRef {}, costs := ← IO.mkRef {} }
+    chips := chips
+    counts := counts
+    singleton := statistics[0]!
+    shapes := ← IO.mkRef {}
+    costs := ← IO.mkRef {} }
   let mut groups : Groups := #[]
   let mut used : Array Nat := #[]
   for g in ← IO.ofExcept (metrics.getObjValAs? (Array (String × Array String)) "groups") do
@@ -258,7 +261,7 @@ def run (o : Options) : IO Unit := do
         let mut best : Option (Float × Option Nat × Array Nat × Array Int) := none
         for target in destinations do
           if target == some source then continue
-          let other := (target.bind groups.get?).getD #[]
+          let other := (target.bind groups.lookup).getD #[]
           if hasEntry other || other.size ≥ o.maxMembers then continue
           let combined := sorted (other.push member)
           let delta ← search.delta #[old, other] #[remainder, combined]
@@ -268,14 +271,14 @@ def run (o : Options) : IO Unit := do
             best := some (gain, target, combined, delta)
         if let some (_, target, combined, delta) := best then
           let key := target.getD (groups.foldl (fun m (k, _) => max m k) 0 + 1)
-          groups := groups.set key combined
-          groups := if remainder.isEmpty then groups.erase source else groups.set source remainder
+          groups := groups.assign key combined
+          groups := if remainder.isEmpty then groups.remove source else groups.assign source remainder
           current := addAll current delta
           moves := moves + 1
       -- Moving a whole group can cross a padding boundary that no single
       -- member move can improve on its own.
       for source in groups.map (·.1) do
-        let some old := groups.get? source | continue
+        let some old := groups.lookup source | continue
         if hasEntry old then continue
         let mut best : Option (Float × Nat × Array Nat × Array Int) := none
         for (target, other) in groups do
@@ -288,7 +291,7 @@ def run (o : Options) : IO Unit := do
               (best.all fun (b, _) => gain < b) then
             best := some (gain, target, combined, delta)
         if let some (_, target, combined, delta) := best then
-          groups := (groups.set target combined).erase source
+          groups := (groups.assign target combined).remove source
           current := addAll current delta
           moves := moves + 1
       IO.println s!"sweep {sweep}: {moves} moves, {groups.size} function circuits, \
