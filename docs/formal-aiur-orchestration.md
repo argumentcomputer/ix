@@ -142,7 +142,7 @@ it is a deliberate implementation tradeoff, not a performance parity claim.
 
 ## Validation (2026-10-29)
 
-`tools/ixvm/check-controller.py` is the repeatable gate, also called by
+`formal-checks controller` (`Tests/FormalChecks/Controller.lean`) is the repeatable gate, also called by
 `tools/ixvm/check-formal.sh`. It tests two resident CPU lanes with six jobs
 (IxVM, recursive verification, aggregation), compares every proof/key byte to
 standalone hosts, independently verifies the proofs, checks quota rejection and
@@ -178,7 +178,7 @@ ignored. The standard gate also checks explicit legacy bytecode execution.
 
 The controller and both application hosts compile/link with CUDA 13.3.1 for
 SM 80. The one-device gate passed on hardware on 2026-10-31
-([GPU validation](formal-aiur-gpu-validation.md)); `check-controller.py --devices 0,1`
+([GPU validation](formal-aiur-gpu-validation.md)); `formal-checks controller --devices 0,1`
 tests multiple GPU lanes and distributed proving, with independent CPU
 verification; add `--pipeline` for complete aggregation. On a single GPU,
 `--devices 0,0` runs two lanes on the same device (the test opt-in

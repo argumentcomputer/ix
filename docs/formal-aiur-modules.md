@@ -80,7 +80,7 @@ pointer shortcuts stay removed. These adaptations have not been changed.
 The port audit distinguishes lexical translation, semantic adaptations, and
 library replacements; it is not a theorem of equivalence to legacy.
 
-For the modularization itself, `tools/ixvm/check-refactor.py` compares complete
+For the modularization itself, `formal-checks refactor` (`Tests/FormalChecks/Refactor.lean`) compares complete
 compiled exports against the pre-refactor artifacts. It permits only declared
 name changes and no-op removal: empty bytecode guards and trace assignments of
 each column to itself. Jump targets and hint instruction offsets are adjusted

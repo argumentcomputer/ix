@@ -35,7 +35,7 @@ if [[ $have_pinned_revs == 1 ]]; then
   python3 tools/ixvm/recursion.py --check
   python3 tools/ixvm/recursion.py --aggregate --check
 fi
-lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests \
+lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests formal-checks \
   aiur/grouping_example aiur/Aiur.Library.U8Facts
 .lake/build/bin/ix codegen --check
 lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.json --check
@@ -74,13 +74,7 @@ grep -qF -- '--formal and --legacy cannot be combined' "$formal_tmp/conflict.log
 
 target/release/stark-verifier fixture "$formal_tmp/inner"
 target/release/stark-verifier ranges "$formal_tmp/inner/proof.bin" "$formal_tmp/ranges" 1
-python3 - "$formal_tmp" <<'PYTEST'
-import json, pathlib, sys
-p = pathlib.Path(sys.argv[1])
-ranges = json.loads((p / "ranges/ranges.json").read_text())
-assert ranges == [{"lo": 0, "hi": 1, "children": []}]
-assert len((p / "ranges/0.statement").read_bytes()) == 65
-PYTEST
+.lake/build/bin/formal-checks ranges "$formal_tmp"
 target/release/stark-verifier test "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json"
 target/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/input.json" "$formal_tmp/outer"
 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.json" "$formal_tmp/outer/proof.bin"
@@ -90,7 +84,7 @@ target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation
 target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.json.wrap.json" "$formal_tmp/aggregate"
 target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/public.json" "$formal_tmp/aggregate/proof.bin"
 
-python3 tools/ixvm/check-controller.py "$formal_tmp" \
+.lake/build/bin/formal-checks controller "$formal_tmp" \
   --ixvm-artifact "$IX_AIUR_ARTIFACT" \
   --recursion-artifact "$IX_RECURSION_ARTIFACT" \
   --aggregate-artifact "$IX_AGGR_ARTIFACT"
@@ -101,14 +95,14 @@ cuda_check_args=()
 if [[ ${IX_TEST_CUDA:-0} == 1 ]]; then
   cargo build --release --locked --target-dir target/formal-cuda \
     -p ixvm -p stark-verifier -p ix-prover --features parallel,cuda --bin ixvm-proof --bin stark-verifier --bin ix-prover
-  python3 tools/ixvm/check-controller.py "$formal_tmp" \
+  .lake/build/bin/formal-checks controller "$formal_tmp" \
     --ixvm-artifact "$IX_AIUR_ARTIFACT" \
     --recursion-artifact "$IX_RECURSION_ARTIFACT" \
     --aggregate-artifact "$IX_AGGR_ARTIFACT" --devices "${MULTI_STARK_CUDA_DEVICE:-0}"
 else
   cuda_check_args+=(--cpu-only)
 fi
-python3 tools/ixvm/check-cuda.py "$formal_tmp" \
+.lake/build/bin/formal-checks cuda "$formal_tmp" \
   --ixvm-artifact "$IX_AIUR_ARTIFACT" \
   --recursion-artifact "$IX_RECURSION_ARTIFACT" \
   --aggregate-artifact "$IX_AGGR_ARTIFACT" "${cuda_check_args[@]}"

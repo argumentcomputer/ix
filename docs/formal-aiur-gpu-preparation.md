@@ -122,7 +122,7 @@ RAYON_NUM_THREADS=16 IX_BENCH_NO_THP=1 IX_BENCH_REUSE_EXECUTION=1 \
 For GPU timing, build the same example in a separate target directory with
 `parallel,cuda,aiur/trace-profile`, and compare lookup modes 0 and 1.
 
-The hardware gate in `tools/ixvm/check-cuda.py` adds single-shard graph-lookup
+The hardware gate in `formal-checks cuda` (`Tests/FormalChecks/Cuda.lean`) adds single-shard graph-lookup
 retention/regeneration proofs for IxVM, recursion and aggregation, each checked
 against a CPU reference. It asserts the requested retention policy was honored.
 The existing multi-shard cases remain. Run it through `IX_TEST_CUDA=1

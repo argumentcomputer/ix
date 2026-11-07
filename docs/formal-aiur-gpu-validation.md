@@ -273,7 +273,7 @@ compiling the certified circuits, grouping and population plans.
 device explicitly, and its process-wide caches are host-only or keyed by
 device, so lanes on different devices in one process do not share device
 state. With one GPU, the test opt-in `IX_PROVER_SHARED_DEVICES=1` lets lanes
-share a device: `check-controller.py --devices 0,0` passed (jobs split across
+share a device: `formal-checks controller --devices 0,0` passed (jobs split across
 both lanes, every proof byte-identical to the CPU reference), and the pipeline
 with `--lanes 2` on device 0 proved the same root as one lane in 56.6 s.
 
