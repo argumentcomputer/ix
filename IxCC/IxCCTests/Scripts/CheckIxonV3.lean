@@ -1,0 +1,29 @@
+import IxCC.Ixon.V3
+
+open IxCC.Ixon.V3
+
+private def readBounded (path : System.FilePath) (limit : Nat) : IO ByteArray :=
+  IO.FS.withFile path .read fun handle => do
+    let mut bytes := ByteArray.empty
+    for _ in [:limit + 1] do
+      let chunk ← handle.read (min 65536 (limit + 1 - bytes.size)).toUSize
+      if chunk.isEmpty then return bytes
+      bytes := bytes ++ chunk
+      if bytes.size > limit then throw (IO.userError "input file exceeds the byte budget")
+    throw (IO.userError "input file exceeds the byte budget")
+
+def main (args : List String) : IO UInt32 := do
+  try
+    let (envFile, profileFile, claimFile) ← match args with
+      | [envFile, profileFile] => pure (envFile, profileFile, none)
+      | [envFile, profileFile, claimFile] => pure (envFile, profileFile, some claimFile)
+      | _ => throw (IO.userError "usage: check-ixon-v3 ENV.ixe PROFILE.bin [RESOURCE.claim]")
+    let input ← IO.ofExcept (validate (← readBounded envFile (16 * 1024 * 1024))
+      (← readBounded profileFile (1024 * 1024)))
+    if let some path := claimFile then
+      IO.ofExcept (input.checkClaim (← readBounded path 68))
+    IO.println s!"ixon-v3 validated: subject={input.resource.env.root} profile={input.resource.resolved.profileAddress} declarations={input.resource.resolved.program.declarations.size}"
+    return 0
+  catch error =>
+    IO.eprintln s!"ixon-v3 rejected: {error}"
+    return 1

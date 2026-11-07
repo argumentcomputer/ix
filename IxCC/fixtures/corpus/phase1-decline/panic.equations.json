@@ -1,0 +1,103 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.withPanic",
+      "address": "24037f3228d6cbed3292047d89217bbe4bbfa91809b4bb3a917293abecc9b0b7"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "List.append",
+      "definition_address": "bb94d9f9475ba141a037dddbc665e907506b87bfc7267d9e0f7ec173a21709df",
+      "equation": "List.append.eq_def",
+      "equation_address": "7f57f446c5e78764228f1e42cd3fa17f1742f246eb78d8e6ff9323879cecf6d1"
+    },
+    {
+      "definition": "List.concat",
+      "definition_address": "4f3e4cfe1582fc6b21ea1f49ab447a9a0be3c428946f7e8dd2244538bd6979f3",
+      "equation": "List.concat.eq_def",
+      "equation_address": "2cc0cb500125abd5a2cccbcdbecfe7c0152ea99c937cddcc0f54fdec20166712"
+    },
+    {
+      "definition": "List.flatten",
+      "definition_address": "b75f797a6db81de727707edff629bcbd1d4e1bebf61d971c2789d2124ddf46cd",
+      "equation": "List.flatten.eq_def",
+      "equation_address": "c1b146fe009228aa812e60bd787a6e6972f58dd036fb616dee946dd134a5e195"
+    },
+    {
+      "definition": "List.map",
+      "definition_address": "41bc3fb2f4a64a6a3ef78acae0ce66cd937f5d9fd89293dd63c43b86f6c4c579",
+      "equation": "List.map.eq_def",
+      "equation_address": "6ea323f15cd044541d824400f7b68f507bbf088bed38b72426879dd05b355463"
+    },
+    {
+      "definition": "List.toByteArray.loop",
+      "definition_address": "1f79571b2c56b52b6a195504bad9085731f727c5e9d101466bee28862a47f558",
+      "equation": "List.toByteArray.loop.eq_def",
+      "equation_address": "a2dabd85fcf324395765816a39f0f0a5042a059339f7c843486ee3ecfac90b0a"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "9ac282a4ad68bf13a9138fbdc44c7cb161307ddba94ea3a73e86652682092134"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "8bddd43d36af159f8f1c7edf477d9f0a06a26bfbecf5a198c0e9ec4ac370f6e6",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "bac3ccdefe551ee2cfbcd41d660bf053f7746acbcfa484a072d2ff4e68e28986"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "23036bf2103e4d2edd76b759cdceb07c059b7b78c6c8a6600b070590dc54a000",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "4f4c23821fab10c2d3020c5805163a8efbd1d317be0dddffc7884ccc1ecb0d18"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "832765d5edead81a6ce670de18784cdd6f9f58da57651b8a9c0da4b4977747b4"
+    },
+    {
+      "definition": "Nat.toDigitsCore",
+      "definition_address": "e86dac272aaac2bd8f41cdf3d428aeb535ce4088dff38a2a1f62a9f44cb355b5",
+      "equation": "Nat.toDigitsCore.eq_def",
+      "equation_address": "a7e10053d2950b9db87bb16fa5b2803f5db19d1de970c8e2f122ad86c1575a65"
+    },
+    {
+      "definition": "String.utf8EncodeChar",
+      "definition_address": "8493dbf4b9739fb0f509241bfde2eb1a8479ec7c5bd785aaf8211ba7850b7e14",
+      "equation": "String.utf8EncodeChar.eq_def",
+      "equation_address": "9a2ab6dc75ee03dd37423131d4d50353639508d77132b40630d4b615bca93f41"
+    }
+  ],
+  "failures": []
+}

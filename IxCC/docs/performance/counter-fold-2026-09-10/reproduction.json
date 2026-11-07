@@ -1,0 +1,13 @@
+{"timing_samples_rerun": false,
+ "status": "passed",
+ "source_files": 491,
+ "source_archive_blake3": "0b8a6e2376fba30214c30c5fcf268d5ef9ad22d58a3fea6185fee9d9714946c6",
+ "scope":
+ "fresh extracted source, empty process environment plus recorded variables, hashed producer/checker seeds, same host and pinned Nix closure",
+ "rebuilt_build_blake3": "e32d10a3817b8d20129bf37ef3936b599edac9bad934dd78deaac3d18197162d",
+ "original_build_blake3": "e32d10a3817b8d20129bf37ef3936b599edac9bad934dd78deaac3d18197162d",
+ "format": "ixcc/counter-fold-reproduction/1",
+ "executables_exact": true,
+ "correctness_exact": true,
+ "artifacts_exact": true,
+ "analysis_exact": true}

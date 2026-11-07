@@ -1,0 +1,16 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "OS13/Plain.lean",
+  "roots": [
+    {
+      "name": "linId",
+      "address": "733dc79213a887b5d8bc79e64b11efd9110c44b02c4b9f0669ea80df24c50da2"
+    },
+    {
+      "name": "entry",
+      "address": "c69cddc711d189c2f0646968207608776df46cc4ac5fbafe51ab961343183cdc"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

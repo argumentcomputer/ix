@@ -1,0 +1,12 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "lean-compile/BigCtor.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "13f7e2ff9d7191bcecedadd5e38aa746eb4a3ff0468e20218fefd8ab367a4cc6"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

@@ -1,0 +1,25 @@
+{
+  "all_archive_files_regular_and_inventory_exact": true,
+  "archive": {
+    "bytes": 187612339,
+    "sha256": "9804bffcf0e6f1df3a59dfc2995b8c7496576be46fa398342f0311848d2be362"
+  },
+  "archive_path": "benchmarks/runs/source-evidence-2026-09-13.tar.gz",
+  "bundle_root": "source-evidence-reference-001",
+  "current_code_files_match_frozen_source": 645,
+  "current_executables_match_retained_seeds": [
+    "check-source-evidence",
+    "check-source-modular",
+    "source-evidence",
+    "source-modular"
+  ],
+  "format": "ixcc/source-evidence-retention/1",
+  "inventoried_files": 412,
+  "inventory_verified": true,
+  "source": {
+    "bytes": 3701831,
+    "sha256": "e8bdc9a22569aff28bc25d6c3c340748dc77711345a9c67fdda9ff8be7c5578d"
+  },
+  "storage_scope": "Machine-local ignored archive; not uploaded.",
+  "verified_utc": "2026-09-13T13:41:41.114256+00:00"
+}

@@ -1,0 +1,12 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "OS14/Annotated.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "3f64c2844bea1f66cb044be129be0290baf4543a779eed50a88241dd1fe3972f"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

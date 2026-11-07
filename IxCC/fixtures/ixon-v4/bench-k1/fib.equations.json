@@ -1,0 +1,25 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "fib/Fib.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "716d5bdbea51fe80c954570c5520d0ac7ce5a86b9448e08259e73138c42a566a"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "K1.fib",
+      "definition_address": "8fa2b0a45f209a79ba48a7dd59606257b44e358f04b0ce29856d6650ce0ea724",
+      "equation": "K1.fib.eq_def",
+      "equation_address": "5c715e3195a00dc5a54dc1818bcbf8709b49191c1d343febea521c77a002a3bb"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    }
+  ],
+  "failures": []
+}

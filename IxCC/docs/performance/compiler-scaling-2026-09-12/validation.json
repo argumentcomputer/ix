@@ -1,0 +1,47 @@
+{
+  "format": "ixcc/compiler-scaling-validation/1",
+  "nix_flake_check": {
+    "status": "passed",
+    "system": "x86_64-linux",
+    "checks": 27,
+    "log": "nix-full.log"
+  },
+  "lake_build": {
+    "status": "passed",
+    "log": "lake-build.log"
+  },
+  "full_correctness": {
+    "status": "passed",
+    "cases": 67,
+    "rows": 114,
+    "cache_pairs": 47,
+    "native_calls": 1169
+  },
+  "reference_measurement_started_after_nix_completion": true,
+  "reference_measurement": {
+    "status": "passed",
+    "sessions": 3,
+    "blocks": 9,
+    "samples": 1026,
+    "retries": 0,
+    "discarded_samples": 0
+  },
+  "measurement_corruption_regressions": {
+    "status": "passed",
+    "cases": 4
+  },
+  "full_reproduction": {
+    "timing_samples_rerun": false,
+    "status": "passed",
+    "source_files": 712,
+    "source_archive_blake3": "da7d1053039afb2ab2c310343d3e77d00bde4eae48b88b9a620a1baf4443d50e",
+    "scope": "fresh extracted source directory; empty environment plus recorded variables; retained hashed compiler/orchestrator binaries and pinned installed tools; compiler executable itself is not rebuilt from Lean",
+    "original_build_blake3": "e41b92574d239a463a59fc917c5368038387fa0bc8b15d5444e52dbc5aa77afd",
+    "format": "ixcc/compiler-scaling-reproduction/1",
+    "correctness_exact": true,
+    "artifacts_exact": true,
+    "artifact_rows": 114,
+    "analysis_exact": true
+  },
+  "frozen_executable_sources_match_final_implementation": true
+}

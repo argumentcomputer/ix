@@ -1,0 +1,15 @@
+{
+  "all_profile_and_matrix_artifact_bytes_exact": true,
+  "compiler_executables_rebuilt_during_replay": false,
+  "completed_utc": "2026-09-13T13:39:53.025242+00:00",
+  "executable_seeds_checked": true,
+  "format": "ixcc/source-evidence-source-replay/1",
+  "independent_gates_passed": true,
+  "passed": true,
+  "retained_certificates_rechecked": true,
+  "source": {
+    "bytes": 3701831,
+    "sha256": "e8bdc9a22569aff28bc25d6c3c340748dc77711345a9c67fdda9ff8be7c5578d"
+  },
+  "source_files_checked": 803
+}

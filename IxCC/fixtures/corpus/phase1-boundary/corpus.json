@@ -1,0 +1,5588 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase1-boundary",
+  "description": "The Phase 1 boundary corpus (phase1.md MT.3): every Nat primitive and operand shape at the 2^63 edge of its arguments, results and intermediate values, with a literal of at least 2^63 in live and dead code, and the field-count and constructor-count limits as sources reach them (254 fields and 125 constructors decode, 255 and 126 exceed the decoder's depth budget; a four-arm wildcard match over 17 constructors is declined with fir.closures); expected values from Lean 4.34's interpreter, status 3 where a word cannot hold an argument, the result or an intermediate value, and every spurious status 3 pinned.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/phase1-boundary",
+  "source_root": "fixtures/corpus/phase1-boundary/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "boundary",
+      "source": {
+        "path": "Boundary.lean",
+        "sha256": "4f674a047692460e51fba3d161f350d30e99692cb08b14f914b2e6c582b089bb",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Boundary.add",
+        "Boundary.sub",
+        "Boundary.mul",
+        "Boundary.div",
+        "Boundary.mod",
+        "Boundary.pow",
+        "Boundary.gcd",
+        "Boundary.land",
+        "Boundary.lor",
+        "Boundary.xor",
+        "Boundary.shl",
+        "Boundary.shr",
+        "Boundary.beq",
+        "Boundary.ble",
+        "Boundary.blt",
+        "Boundary.decEq",
+        "Boundary.decLe",
+        "Boundary.decLt",
+        "Boundary.decGt",
+        "Boundary.bne",
+        "Boundary.ltBranch",
+        "Boundary.leBranch",
+        "Boundary.minN",
+        "Boundary.maxN",
+        "Boundary.pred",
+        "Boundary.succ",
+        "Boundary.ident",
+        "Boundary.addK",
+        "Boundary.kAdd",
+        "Boundary.subK",
+        "Boundary.kSub",
+        "Boundary.mulK",
+        "Boundary.kMul",
+        "Boundary.divK",
+        "Boundary.kDiv",
+        "Boundary.modK",
+        "Boundary.kMod",
+        "Boundary.shlK",
+        "Boundary.kShl",
+        "Boundary.shrK",
+        "Boundary.kShr",
+        "Boundary.powK",
+        "Boundary.kPow",
+        "Boundary.landK",
+        "Boundary.xorK",
+        "Boundary.ltK",
+        "Boundary.leK",
+        "Boundary.eqK",
+        "Boundary.litMax",
+        "Boundary.litWord",
+        "Boundary.litDead",
+        "Boundary.litArm",
+        "Boundary.litOperand",
+        "Boundary.litCompare",
+        "Boundary.addSub",
+        "Boundary.mulDiv",
+        "Boundary.shlShr",
+        "Boundary.powMod",
+        "Boundary.succPred"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "boundary.ixe",
+        "sha256": "fce841fc45e0a1946a75a1ebb49fa38480400e7bd001f02d53953fe6038871b8",
+        "bytes": 246932
+      },
+      "equations": {
+        "path": "boundary.equations.json",
+        "sha256": "e34a500cca76097feb201fd45b212bb0677b062c0b5db2aa046b1882ccd61386",
+        "equations": 14,
+        "failures": 0
+      },
+      "named_env_sha256": "507d7fa20b1298bc7b596a3ec6b19a46ae8f5e44978952751a896b39d7d15767",
+      "census": {
+        "path": "boundary.census.json",
+        "sha256": "1635da131e5b6dc9674003d66ddb2e1b8c33151be0ae778c94231e98e5c83367"
+      },
+      "roots": [
+        {
+          "name": "Boundary.add",
+          "address": "c3271441252ff215a3db1456277b472530b63701f13f05dd69f88bf831f7b2c4",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775806
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775807
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "18446744073709551614",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                4611686018427387904
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                4611686018427387903
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.sub",
+          "address": "2824b335ea6cf46751e82ebda7346ff6ea37e5bc1b5cb9cd86183ce66fda342e",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.mul",
+          "address": "a90a50f4d3e4c755d23d0df005f78f0b2043e02f9d27ddd4e373ab78a2dc1137",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                7,
+                1317624576693539401
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "note": "7 × 1317624576693539401 = 2⁶³ − 1"
+            },
+            {
+              "args": [
+                1317624576693539401,
+                7
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387903,
+                2
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                2,
+                4611686018427387904
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                2
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                3037000499,
+                3037000499
+              ],
+              "value": "9223372030926249001",
+              "machine": true
+            },
+            {
+              "args": [
+                3037000500,
+                3037000500
+              ],
+              "value": "9223372037000250000",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "85070591730234615847396907784232501249",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                2147483648
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                4294967296,
+                2147483647
+              ],
+              "value": "9223372032559808512",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                2
+              ],
+              "value": "18446744073709551614",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.div",
+          "address": "2ba407b938a17f7d73f974b0c647377757f2d9e8b46818357ed6f914ae444e25",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                2
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                4611686018427387904
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.mod",
+          "address": "a8676897ded8f41cd435cc37814a4caf30a36696155a76fb21bbde1c495f9fef",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                2
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                4611686018427387904
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.pow",
+          "address": "9f6665685ae3878899d985928dce2d05acdd44433998a6922101b9d3b280c1a1",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3,
+                39
+              ],
+              "value": "4052555153018976267",
+              "machine": true
+            },
+            {
+              "args": [
+                3,
+                40
+              ],
+              "value": "12157665459056928801",
+              "machine": true
+            },
+            {
+              "args": [
+                2,
+                62
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                2,
+                63
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                2,
+                64
+              ],
+              "value": "18446744073709551616",
+              "machine": true
+            },
+            {
+              "args": [
+                2,
+                1000
+              ],
+              "value": "10715086071862673209484250490600018105614048117055336074437503883703510511249361224931983788156958581275946729175531468251871452856923140435984577574698574803934567774824230985421074605062371141877954182153046474983581941267398767559165543946077062914571196477686542167660429831652624386837205668069376",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                2
+              ],
+              "value": "85070591730234615847396907784232501249",
+              "machine": true
+            },
+            {
+              "args": [
+                3037000499,
+                2
+              ],
+              "value": "9223372030926249001",
+              "machine": true
+            },
+            {
+              "args": [
+                3037000500,
+                2
+              ],
+              "value": "9223372037000250000",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                4294967295
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                4294967295
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true,
+              "note": "Lean's interpreter panics (`Nat.pow exponent is too big`, exponents of 2³² or more); the kernel's value is 0",
+              "lean_fails": true
+            },
+            {
+              "args": [
+                1,
+                9223372036854775807
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true,
+              "note": "Lean's interpreter panics (`Nat.pow exponent is too big`); the kernel's value is 1",
+              "lean_fails": true
+            },
+            {
+              "args": [
+                1,
+                4294967296
+              ],
+              "value": "1",
+              "constant": "1",
+              "machine": true,
+              "note": "the first exponent Lean's interpreter refuses",
+              "lean_fails": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.gcd",
+          "address": "9a0331ede7c5b853e8fb11f598bca916e151fc079487ea25eea880fef0e0284b",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                4611686018427387904
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                2305843009213693952
+              ],
+              "value": "2305843009213693952",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.land",
+          "address": "24e01c010a417d16bd2d3865b745fe4f46e130cb591c7d782d2ef6328af29801",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                4611686018427387904
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                2305843009213693952
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.lor",
+          "address": "da423fa352f00a7a66d240e1c87a9c33c61b41a94542f377afe1a2f3bc10d11f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4611686018427387904,
+                2305843009213693952
+              ],
+              "value": "6917529027641081856",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                4611686018427387903
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.xor",
+          "address": "2b56485cc8ce02bbbbf74132e12acc5c4f9fecbf94615139a6a62ab4af369f6d",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                9223372036854775807
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.shl",
+          "address": "3595c09da37f97fe6578e0309dce0f02f3133e2b07c21f21a912ec70c9129d19",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                1,
+                62
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                3,
+                61
+              ],
+              "value": "6917529027641081856",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                63
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                5,
+                61
+              ],
+              "value": "11529215046068469760",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                64
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                1000
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                64
+              ],
+              "value": "18446744073709551616",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1000
+              ],
+              "value": "10715086071862673209484250490600018105614048117055336074437503883703510511249361224931983788156958581275946729175531468251871452856923140435984577574698574803934567774824230985421074605062371141877954182153046474983581941267398767559165543946077062914571196477686542167660429831652624386837205668069376",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "18446744073709551614",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                1
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                2305843009213693952,
+                1
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                4294967296
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true,
+              "note": "the source-level evaluators run on Lean's runtime, whose `Nat.pow` refuses exponents of 2³² or more, and `Src.PrimOp.eval2` computes `a <<< b` as `a * 2 ^ b`; the value is 0",
+              "lean_fails": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true,
+              "note": "the source-level evaluators run on Lean's runtime, whose `Nat.pow` refuses exponents of 2³² or more, and `Src.PrimOp.eval2` computes `a <<< b` as `a * 2 ^ b`; the value is 0",
+              "lean_fails": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.shr",
+          "address": "7e016253dce7009cd911f845473c2b5a673f3225ccdf53c57a5d923abb2a03dc",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                63
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                62
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                64
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1000
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                62
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.beq",
+          "address": "3f413366c7829d11169e40fa842d990dba9a1c55fc43ae0bced5c558488cf3f2",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.ble",
+          "address": "e773649dc0996750c71d6ca574a19cf64deb4f7790d522cfd25b2ab8364a6a48",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.blt",
+          "address": "02ce2ba0ac0fe26707c03c743b13b37a3a401fa498e5dc4785e898eee86ec060",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `Nat.blt a b` is `Nat.ble (a + 1) b`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `Nat.blt a b` is `Nat.ble (a + 1) b`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `Nat.blt a b` is `Nat.ble (a + 1) b`"
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.decEq",
+          "address": "6357c9ab8313b29de3a871ed67693911c2e166377562c67759d5c02b5baca41e",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.decLe",
+          "address": "4fd39c7c1b95c6af2f8358370a112bd9a25057bc116ab25bebe34d4b6bdc6aea",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.decLt",
+          "address": "776c534f4b4c8935a939d96cf130f6d4263e2549b8f596e989ad69a197feef14",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.decGt",
+          "address": "a3cfe5f187fd5358b97d6e3802c9d28926cd02239a1c9a16e2b737ef76647f72",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a > b` is `b < a`, so `b = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: as `[0, 2⁶³ − 1]`"
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: as `[0, 2⁶³ − 1]`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.bne",
+          "address": "a2e24510cfff9b423fc1bbadb83714ee596a82776859b481696be56747adb7bf",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.ltBranch",
+          "address": "471195a71be5f7a7d53799df231831a17ffde89659a540a2dd9f41515a18e660",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "0",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "0",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.leBranch",
+          "address": "956ecd8f8f91c8f0cc77a7c5d2765f538225147772344a78013b36cbf73bf467",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.minN",
+          "address": "47fac8494b8bfc8c2806527da1a1c6bf99ff6c3258c2254659eb059b0e9dc298",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.maxN",
+          "address": "2c658cc69710940a35d725df058776d112bdb3911ae8fe43d9c9b2ce48238e52",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775806
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.pred",
+          "address": "36f2f0c1c06f52d1902eda35039dfd31ea75f05e20584675e28791519ab59f43",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.succ",
+          "address": "43537bb1522208f7c6d37232901388e095b60d4136f49a8cab947bf27977d44e",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.ident",
+          "address": "733dc79213a887b5d8bc79e64b11efd9110c44b02c4b9f0669ea80df24c50da2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.addK",
+          "address": "62aa7dda01bdca8c0dd9f34b5c0432dd3012bc10d4e33e4159e581ccfc2b743d",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kAdd",
+          "address": "25a79413d1a6e6bc6c2774f9b9a7bdfbd29f746e3b2f1d4bdefd36d45949b163",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.subK",
+          "address": "4c066f1bb55e5e4e1375560e8526e90a047017fce27481db26ab0425828a4cc3",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kSub",
+          "address": "4c69651cd88909b5c53bcb529daa58012aa7c0e18ffb84aa1200614c619fb0ac",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.mulK",
+          "address": "ed32e0891aa180d38cebbb61b574d7caf9a84e6c6f2c8d40fc2312da5aa449b1",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "18446744073709551614",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kMul",
+          "address": "30b7eb58c43f01c622f23eb549b5a932d54088b9cf7ca7f2be9712ee14a88672",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "18446744073709551614",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.divK",
+          "address": "20ef211fa3c18241cb4c5201b3ce038c339de20cae6037658adf714405528f08",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kDiv",
+          "address": "61ab663c84544d6c1321e4bdf3aaf9f8d3c11be29d142f74023d651887beadd2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                2
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.modK",
+          "address": "0e9ec6fd3c0962ed10f98129395129d87f24638279f4fdc7ba2e1a0e2b639792",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                6
+              ],
+              "value": "6",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kMod",
+          "address": "a0329278baa494aeea9b41c256e4dcf15a6a68903473ce2614ed09de71adeb8a",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                2
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.shlK",
+          "address": "e33c61fe7e62e9c78a683c7487d8a21e41b10a155c0c7c8f6922b2417658ed76",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "18446744073709551614",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kShl",
+          "address": "e4ec7c27f5cb0e7df17a391fa6399f9cf62d88cc8933a43de2bed82fe88525ed",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                62
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                63
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                64
+              ],
+              "value": "18446744073709551616",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "10715086071862673209484250490600018105614048117055336074437503883703510511249361224931983788156958581275946729175531468251871452856923140435984577574698574803934567774824230985421074605062371141877954182153046474983581941267398767559165543946077062914571196477686542167660429831652624386837205668069376",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.shrK",
+          "address": "17c4c5b9088dc63ec2415a51ff5e8b2dba4041e8dde22111916ba89729cd980e",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kShr",
+          "address": "2029675a6598be67c795782fc1efa88388a52103347b8b235595f08bd259f530",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                62
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                63
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                64
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.powK",
+          "address": "dd3440672e742467d0b9e707c3607ac79ca3e32fda60d9f27c41935f7fcd9125",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                3037000499
+              ],
+              "value": "9223372030926249001",
+              "machine": true
+            },
+            {
+              "args": [
+                3037000500
+              ],
+              "value": "9223372037000250000",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "85070591730234615847396907784232501249",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.kPow",
+          "address": "a37b6aeed54798e2663a471b4100519367b26745ecc371412f8a3c624bc7d388",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                39
+              ],
+              "value": "4052555153018976267",
+              "machine": true
+            },
+            {
+              "args": [
+                40
+              ],
+              "value": "12157665459056928801",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "1322070819480806636890455259752144365965422032752148167664920368226828597346704899540778313850608061963909777696872582355950954582100618911865342725257953674027620225198320803878014774228964841274390400117588618041128947815623094438061566173054086674490506178125480344405547054397038895817465368254916136220830268563778582290228416398307887896918556404084898937609373242171846359938695516765018940588109060426089671438864102814350385648747165832010614366132173102768902855220001",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.landK",
+          "address": "b86827d4d01d4621f89110e65766b233472752f6d936ebcec319b4727ef4f390",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387903
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.xorK",
+          "address": "e45dbbf2a1ef34899867b2e3c62cf36016056b4f8e581ddd01b4c9402dd15759",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "4611686018427387903",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.ltK",
+          "address": "b3be0ada82b43a62810f59f9de8beffe895c7a3cdc8dd30458b815ce3ede057a",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true,
+              "fail": "natOverflow",
+              "spurious": true,
+              "note": "spurious: `a < b` is `Nat.decLt a b`, defined as `Nat.decLe (a + 1) b`, so `a = 2⁶³ − 1` computes `2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.leK",
+          "address": "9b535cb1e58e42eb7b831f812b648c0953a44d5bdf2a7b893006750fa88fb757",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.eqK",
+          "address": "d63e3166064870df135bb00c52af51899cef8bb756742e3a6da5a5eca2f5cc3b",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.litMax",
+          "address": "bc7371b4bcdf2106f4f0bd7b8c82506b037a0ff79479161302adcd9eee5a962e",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                5
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.litWord",
+          "address": "e3c67aa61ddff2234f1351ca14ac051ecb6cd0dd5a69411918ff7847d8671b81",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775808",
+              "machine": true,
+              "note": "the live literal 2⁶³ is the result"
+            },
+            {
+              "args": [
+                5
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.litDead",
+          "address": "548d617f95f6d6c94616c6003b4eb00ebe9b249a4c0fcfa1a5e9b7a0946c25cb",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true,
+              "note": "the literal 2⁶⁴ is in a branch no argument takes"
+            },
+            {
+              "args": [
+                9223372036854775806
+              ],
+              "value": "9223372036854775806",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `n + 1 = 2⁶³` in the test that guards the dead literal"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.litArm",
+          "address": "2059cde5a6e30c3c587a97079580c111548c61d677723e7b65c5bf96b80665be",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "340282366920938463463374607431768211456",
+              "machine": true,
+              "note": "the arm's literal 2¹²⁸ is the result"
+            },
+            {
+              "args": [
+                2
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775805",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.litOperand",
+          "address": "21ccebc4ad35433f4ec7afc698f4bb0b656553a536f5b88daee0d85a58b7f082",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: the literal 2⁶³ is an operand"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "9223372036854775808",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: the literal 2⁶³ is an operand"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.litCompare",
+          "address": "0c545271a3a670512a61fd90cad0a4ce28c6becf14c9c783f3a84ef474da1761",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "true",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `n < 2⁶⁴` compares with the literal 2⁶⁴ (as `n + 1 ≤ 2⁶⁴`)"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: as `[0]`"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.addSub",
+          "address": "aad718dab56bc0bc01f1cd61e0e0aa1d8198c1d23784eb55fcf5f9faba2b6fb7",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807,
+                1,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `a + b = 2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0,
+                0
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                4611686018427387904,
+                4611686018427387904,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `a + b = 2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775806,
+                1,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                5
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.mulDiv",
+          "address": "e0692aa74519a2ee60b7bb072b8fdff73bd77485df99b20e271e7d11fe12c5f7",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                4611686018427387904,
+                2,
+                2
+              ],
+              "value": "4611686018427387904",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `a * b = 2⁶³`"
+            },
+            {
+              "args": [
+                3,
+                3,
+                3
+              ],
+              "value": "3",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.shlShr",
+          "address": "0b643959ca160188ed182e08a82c3476b5cd62269c488eaa28aa8a94213fe256",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                1,
+                62
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                63
+              ],
+              "value": "1",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `1 <<< 63 = 2⁶³`"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `a <<< 1 = 2⁶⁴ − 2`"
+            },
+            {
+              "args": [
+                0,
+                1000
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.powMod",
+          "address": "9dd7a054afa1003da4001b422308d058bc23da7d1919e94aeee0c8d76bf42f7d",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                2,
+                63,
+                1000
+              ],
+              "value": "808",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `2 ^ 63 = 2⁶³`"
+            },
+            {
+              "args": [
+                3,
+                39,
+                1000
+              ],
+              "value": "267",
+              "machine": true
+            },
+            {
+              "args": [
+                2,
+                10,
+                1000
+              ],
+              "value": "24",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Boundary.succPred",
+          "address": "733fb633cf2241565bbdc28e6625b34bc33bce2c21201827b7bf764ec4891fe3",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true,
+              "fail": "natOverflow",
+              "note": "intermediate: `a + 1 = 2⁶³`"
+            },
+            {
+              "args": [
+                5
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fields254",
+      "source": {
+        "path": "Limits.lean",
+        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Limits.fields254"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "fields254.ixe",
+        "sha256": "fdaa121eec4ff5909254a835a4a1e99afad4206148f6e0e02996720698423625",
+        "bytes": 43395
+      },
+      "equations": {
+        "path": "fields254.equations.json",
+        "sha256": "bfaddf81fb24981e9a263c84d06e60a81e93eea7a0cf49d598f294e678774b74",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "13c712fb6a16b1d8b3ee7d9f0e05828b20134e748e61388ae714fa558dcc0041",
+      "census": {
+        "path": "fields254.census.json",
+        "sha256": "b85c9a86af745fdb5f21cbe7a184137d1f5809cc1381b35cb2f9bb9319b93cdc"
+      },
+      "roots": [
+        {
+          "name": "Limits.fields254",
+          "address": "6004dbed90179302ab7a87c7367f57831d89320ec6cf036e3e439d17109a30bc",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "254 fields, the most a header counts (04 §3): allocated, kept through a recursion and read",
+          "cases": [
+            {
+              "args": [
+                5,
+                3
+              ],
+              "value": "258",
+              "machine": true
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "253",
+              "machine": true
+            },
+            {
+              "args": [
+                1000,
+                10
+              ],
+              "value": "1253",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775554,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854776060",
+              "machine": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fields255",
+      "source": {
+        "path": "Limits.lean",
+        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Limits.fields255"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "fields255.ixe",
+        "sha256": "50ad76144d4598ffcf5ea1c56f1b1f050ab9f7ea2829c3a33a51671e36feb597",
+        "bytes": 43506
+      },
+      "equations": {
+        "path": "fields255.equations.json",
+        "sha256": "9534f97e479b39af356d630e44e63a36688802832de921cb80fb3d01d98363ca",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "b7fc6c038d4502fbff48f58b4cb70f433224fd5cb5572b5c02647d081d9c5953",
+      "census": {
+        "path": "fields255.census.json",
+        "sha256": "14a7af73b49984f2ad0f0ee68b1a7592f502ff478164f10cdb28af504fffb097"
+      },
+      "roots": [
+        {
+          "name": "Limits.fields255",
+          "address": "162fa3d5a1de9abeef35258d662e31f92f1e67629c5efc9d7076fd22fe0a8631",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "ingress",
+            "code": "decode"
+          },
+          "note": "255 fields: the recursor type is deeper than the decoder budget of 256, so ingress declines it before `Rt.lower`'s `rt.layout` could",
+          "cases": [
+            {
+              "args": [
+                5,
+                3
+              ],
+              "value": "259"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tags16",
+      "source": {
+        "path": "Limits.lean",
+        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Limits.tags16"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "tags16.ixe",
+        "sha256": "5cf0b48f52e5482aa9583973b5b46572ceb0ada4e36ade6de48f5de0ec7b30ae",
+        "bytes": 191346
+      },
+      "equations": {
+        "path": "tags16.equations.json",
+        "sha256": "dac50c80c44cd8e1192a5c377a3cb3ae4f55754c5d08d0fe7e1e6b4af82a93b7",
+        "equations": 10,
+        "failures": 0
+      },
+      "named_env_sha256": "493358125876552968dc99570718d051d513a68ae98a06d439710a98f3415d87",
+      "census": {
+        "path": "tags16.census.json",
+        "sha256": "88596e763e82d425f40f949559aa108f5cd67a35c488b975d84f47a558e5ea4f"
+      },
+      "roots": [
+        {
+          "name": "Limits.tags16",
+          "address": "52dc1d919bd08960444f55f11e351a686a42160f008ca8cb622f767fe1bf6e12",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "16 constructors, the most this four-arm wildcard `match` compiles: tags 0, 14 (immediates) and 15 (a cell)",
+          "cases": [
+            {
+              "args": [
+                0,
+                2
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                2
+              ],
+              "value": "14",
+              "machine": true
+            },
+            {
+              "args": [
+                7,
+                2
+              ],
+              "value": "22",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775792,
+                1
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                1
+              ],
+              "value": "9223372036854775822",
+              "machine": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tags17",
+      "source": {
+        "path": "Limits.lean",
+        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Limits.tags17"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "tags17.ixe",
+        "sha256": "23cd00dfaba78f7e54fe56bfdbdd29471934cf54b31e68885e2d2f488a99c61c",
+        "bytes": 191802
+      },
+      "equations": {
+        "path": "tags17.equations.json",
+        "sha256": "af7f3cf48b9f8ec6114795c75e594cfeced705bb24c9a4f273c1cffc08c2e335",
+        "equations": 10,
+        "failures": 0
+      },
+      "named_env_sha256": "05ac1beadffd11869cfc768d78e8725dc6f8f0dc57c7c037fd04b960ac08400d",
+      "census": {
+        "path": "tags17.census.json",
+        "sha256": "18140c71612aa4e161da7c47506c07b274d1d0241a385b1619646c0826d46a05"
+      },
+      "roots": [
+        {
+          "name": "Limits.tags17",
+          "address": "59631fabfdab496a883049fa2e8bba14f26d5b6ce99eb33c5912eef4d76b6c91",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "note": "17 constructors: the wildcard `match` keeps its alternatives as closures (a completeness gap)",
+          "cases": [
+            {
+              "args": [
+                7,
+                2
+              ],
+              "value": "23"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tags125",
+      "source": {
+        "path": "Limits.lean",
+        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Limits.tags125"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "tags125.ixe",
+        "sha256": "1c1956770e221e19a2a018146396e4f362bd55d6e42c107a95fafbc55d7cee2f",
+        "bytes": 275654
+      },
+      "equations": {
+        "path": "tags125.equations.json",
+        "sha256": "e400380481c3b2bb616e98940b66ce6ea72b74ce19c9ace4e4001b8cbbd0096d",
+        "equations": 10,
+        "failures": 0
+      },
+      "named_env_sha256": "5b2e7ac2322f60029a603ec066af980b155fb75ee559b64eb3197ba676847246",
+      "census": {
+        "path": "tags125.census.json",
+        "sha256": "872052174aa2220672a7c3444bf68795727e4b59089a5241354715e7aa98dc2c"
+      },
+      "roots": [
+        {
+          "name": "Limits.tags125",
+          "address": "cf7714d3407be8f8a05e70a12b76b868937cdc06b51a195e47c1403c3a760766",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "fir",
+            "code": "fir.closures"
+          },
+          "note": "125 constructors, the most an inductive of this shape has within the decoder budget; declined as `tags17`",
+          "cases": [
+            {
+              "args": [
+                7,
+                2
+              ],
+              "value": "131"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tags126",
+      "source": {
+        "path": "Limits.lean",
+        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Limits.tags126"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "tags126.ixe",
+        "sha256": "b9e69a064d40b5d88a52876d51e24b339de72b7e247bb4618db9dae6329882da",
+        "bytes": 276772
+      },
+      "equations": {
+        "path": "tags126.equations.json",
+        "sha256": "e7b5716d799c61cce33142482672bc4e36a3c098cf10f8cf6607e7e5b51899e3",
+        "equations": 10,
+        "failures": 0
+      },
+      "named_env_sha256": "2eefdb7e1cdfe8afede42526f6a7c5aaadba776f31f11d8d099f84f640099586",
+      "census": {
+        "path": "tags126.census.json",
+        "sha256": "14a7af73b49984f2ad0f0ee68b1a7592f502ff478164f10cdb28af504fffb097"
+      },
+      "roots": [
+        {
+          "name": "Limits.tags126",
+          "address": "aa60d795c465cdd644b6fbe2e2aa0e5bb6fc7636b9532d009db2cfce2e73b555",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "ingress",
+            "code": "decode"
+          },
+          "note": "126 constructors: deeper than the decoder budget of 256",
+          "cases": [
+            {
+              "args": [
+                5,
+                3
+              ],
+              "value": "130"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

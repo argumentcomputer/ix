@@ -1,0 +1,20 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.recMinor",
+      "address": "7c67e57b4787f3b9a5a31c0015e7667d687cea56c23d04e02f0398b5ff665aa9"
+    },
+    {
+      "name": "Decline.unboxMatch",
+      "address": "a06104f06bbf0474f3f0b1b4f7abddcbfbb91260c8f6b9d7e5b5820ec5594e2f"
+    },
+    {
+      "name": "Decline.subtypeMatch",
+      "address": "dafe15c6f366b2fe95f5f73bc3b8b97591eedf3d20e74ab1b63a1d0fdcd1eb2c"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

@@ -1,0 +1,29 @@
+{"source": "SortPoly.lean",
+ "roots":
+ [{"name": "SortPoly.comp",
+   "address":
+   "fb7e763295e5a91b2af2a4569e8e59926350f2087490621bc52f4de08ec7c0cf"},
+  {"name": "SortPoly.throughRoot",
+   "address":
+   "517476474afd4152f06cb4bee744bc5806ff9b66a4e7dd8822bc945b3bafbecc"},
+  {"name": "SortPoly.punitCases",
+   "address":
+   "61ed61a59193f215cbc6ab7b9702b83043f099c044542a56903adf1649393074"},
+  {"name": "SortPoly.punitCasesType",
+   "address":
+   "9b6bb4938e112651fb1821cd100bacd47b204659c1f4e8a5026bf1fe349e6d03"},
+  {"name": "SortPoly.punitRec",
+   "address":
+   "d7c330ce1e0ffffb2bab60fc4fb9e0d8c29d1eda3db3bdc3d79ea09a1fc4657f"},
+  {"name": "SortPoly.unitBoth",
+   "address":
+   "6bc76ecb60f01c4d69ec14205d837ee2ba22fb4bde5eb04d964c3f4090ca57a7"},
+  {"name": "SortPoly.sigmaRoot",
+   "address":
+   "14e038b9ccb609703cea287ec2dc428d352f4271a92ca4bab6027c1befe21d06"},
+  {"name": "SortPoly.typeArg",
+   "address":
+   "a0bc40591c2cd95983b027a8b2a5895d883a7f4e4b982d773f3edaa76f17c768"}],
+ "format": "ixcc/k1-equations/1",
+ "failures": [],
+ "equations": []}

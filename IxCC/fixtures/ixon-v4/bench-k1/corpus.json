@@ -1,0 +1,1158 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "bench-k1",
+  "description": "The benchmark fixtures' pure entry closures (phase1.md M0.4, MT.2): the five K1 programs, and the four MT.2 rows (collatz, prime-count, even-odd, sfib), with unfolding equations.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/ixon-v4/bench-k1",
+  "source_root": "benchmarks/fixtures",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "fib",
+      "source": {
+        "path": "fib/Fib.lean",
+        "sha256": "5ba3a81e36723691b07932f95752cd71a1814983915323751d0632aa8d53bc47",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": [
+          {
+            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "declaration": "K1.fib",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "fib.ixe",
+        "sha256": "fb45a1677c4454485caaf344fac462fa7f1ae553bc4aa6f89e3b1e6971449a25",
+        "bytes": 15121
+      },
+      "equations": {
+        "path": "fib.equations.json",
+        "sha256": "757eec65da4e6ce249d937e9af571270a800372dd7dee181c79dbce903854b37",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "086ec854d2f7005031f80cd7460e2ade311e063c45e35a798b5313fc96d9ec30",
+      "census": {
+        "path": "fib.census.json",
+        "sha256": "8b4d207a9f240e2df0bdc646dae523eb85ccfdccc953bcf96216e2620982bfc3"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "716d5bdbea51fe80c954570c5520d0ac7ce5a86b9448e08259e73138c42a566a",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 1,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                24
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                13
+              ],
+              "value": "233",
+              "constant": "233",
+              "machine": true
+            },
+            {
+              "args": [
+                25
+              ],
+              "value": "75025",
+              "constant": "75025"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                15
+              ],
+              "value": "610",
+              "generated": true
+            },
+            {
+              "args": [
+                19
+              ],
+              "value": "4181",
+              "generated": true
+            },
+            {
+              "args": [
+                15
+              ],
+              "value": "610",
+              "generated": true
+            },
+            {
+              "args": [
+                10
+              ],
+              "value": "55",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sum-loop",
+      "source": {
+        "path": "sum-loop/SumLoop.lean",
+        "sha256": "e563a28b8b02a15ddd506fdad127c86f705fe63c6fa1b3875b3eb1c0eb13a5f5",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": [
+          {
+            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "declaration": "K1.sumLoop",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "sum-loop.ixe",
+        "sha256": "57a0e477d25899acdd88de8ffb327baa92166d8ae0d6a7a3bf3d3d46752883ac",
+        "bytes": 1030158
+      },
+      "equations": {
+        "path": "sum-loop.equations.json",
+        "sha256": "4c4f47fdc03dc46dad56a9cdfcdacc4856311b2911cfc7b11b32650fbbe3751e",
+        "equations": 34,
+        "failures": 0
+      },
+      "named_env_sha256": "393deeeda257d1c92bc793c5e7a3ef5112e0b50fd84e798e764c315365c866d1",
+      "census": {
+        "path": "sum-loop.census.json",
+        "sha256": "c9d18b5495e9992b02d899de020b2d74e4d94385a398e5d2a0d74800270b4323"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "b0d8a68956c0956eafadae2947747dcc59003780c4166a4235d5cdabb3ae8e99",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 2,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                20000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                5000
+              ],
+              "value": "12497500",
+              "constant": "12497500",
+              "machine": true
+            },
+            {
+              "args": [
+                100000
+              ],
+              "value": "4999950000",
+              "constant": "4999950000"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                11485
+              ],
+              "value": "65946870",
+              "generated": true
+            },
+            {
+              "args": [
+                18077
+              ],
+              "value": "163379926",
+              "generated": true
+            },
+            {
+              "args": [
+                13629
+              ],
+              "value": "92868006",
+              "generated": true
+            },
+            {
+              "args": [
+                14958
+              ],
+              "value": "111863403",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ackermann",
+      "source": {
+        "path": "ackermann/Ackermann.lean",
+        "sha256": "344a9a29feaaa22d5bf9462c72bde0c853c033c10b8e7f4aab22e0d21e8dede2",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": [
+          {
+            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "declaration": "K1.ack",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "ackermann.ixe",
+        "sha256": "25b716f001548cfbd587383ee1f03cf5469a7b55df9fef98d152f3671fae5a6d",
+        "bytes": 911585
+      },
+      "equations": {
+        "path": "ackermann.equations.json",
+        "sha256": "96aa6dec672cc563f2cb3df54635d77057d2707d8ccf6886e344f93f8a020984",
+        "equations": 34,
+        "failures": 0
+      },
+      "named_env_sha256": "d73f8255465100cd0d9dd6f42f2241d32a6b1022f4c9a6f121d3a2da8a6ac962",
+      "census": {
+        "path": "ackermann.census.json",
+        "sha256": "386841524f8fcf90c000d334dc87126191a432218e5fa5bfaf48ddff58cf5b73"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "d821ea2da4dc5a20a143e6bac6209d5cf287b762541164accb0c6da301db2c18",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "note": "constants from the closed forms A(1, n) = n + 2, A(2, n) = 2n + 3, A(3, n) = 2^(n+3) - 3",
+          "generate": {
+            "seed": 3,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                3
+              ],
+              [
+                0,
+                5
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                3,
+                3
+              ],
+              "value": "61",
+              "constant": "61",
+              "machine": true
+            },
+            {
+              "args": [
+                3,
+                6
+              ],
+              "value": "509",
+              "constant": "509"
+            },
+            {
+              "args": [
+                2,
+                100
+              ],
+              "value": "203",
+              "constant": "203"
+            },
+            {
+              "args": [
+                1,
+                1000
+              ],
+              "value": "1002",
+              "constant": "1002"
+            },
+            {
+              "args": [
+                0,
+                9223372036854775806
+              ],
+              "value": "9223372036854775807",
+              "constant": "9223372036854775807"
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "9223372036854775808",
+              "constant": "9223372036854775808"
+            },
+            {
+              "args": [
+                9223372036854775808,
+                0
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                3
+              ],
+              "value": "5",
+              "generated": true
+            },
+            {
+              "args": [
+                1,
+                5
+              ],
+              "value": "7",
+              "generated": true
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "value": "5",
+              "generated": true
+            },
+            {
+              "args": [
+                0,
+                4
+              ],
+              "value": "5",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tak",
+      "source": {
+        "path": "tak/Tak.lean",
+        "sha256": "dc979b1873f7bf13728300480ac0f414ec83cd773804ea06e50f5e8895d9d54f",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": [
+          {
+            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "declaration": "K1.tak",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "tak.ixe",
+        "sha256": "273ed007b44ec4822327bee07036e59f99adf6da4dd0f83a76b7ac5e493eb560",
+        "bytes": 49721
+      },
+      "equations": {
+        "path": "tak.equations.json",
+        "sha256": "e48c92ef3d91535ffbce1bce55549e029359e3a1ff53d6e71f9941092de082d4",
+        "equations": 5,
+        "failures": 0
+      },
+      "named_env_sha256": "797c3d14c9fe939098566644b7852c4ccbbf887a1320531fb0bc146568c00bb1",
+      "census": {
+        "path": "tak.census.json",
+        "sha256": "8d0709b91b814b2558c87bc92301501e7461349168cc352397ca52af064ee8d3"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "94872d818eb602e1568c65e25d706b6e87657d6de88075cd7aa046926257684b",
+          "params": 4,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 4,
+            "count": 4,
+            "ranges": [
+              [
+                0,
+                8
+              ],
+              [
+                0,
+                12
+              ],
+              [
+                0,
+                12
+              ],
+              [
+                0,
+                12
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                12,
+                12,
+                8,
+                4
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                18,
+                18,
+                12,
+                6
+              ],
+              "value": "7",
+              "constant": "7"
+            },
+            {
+              "args": [
+                0,
+                3,
+                2,
+                1
+              ],
+              "value": "1",
+              "constant": "1"
+            },
+            {
+              "args": [
+                4,
+                3,
+                3,
+                6
+              ],
+              "value": "6",
+              "generated": true
+            },
+            {
+              "args": [
+                7,
+                2,
+                6,
+                4
+              ],
+              "value": "4",
+              "generated": true
+            },
+            {
+              "args": [
+                8,
+                4,
+                8,
+                3
+              ],
+              "value": "3",
+              "generated": true
+            },
+            {
+              "args": [
+                1,
+                6,
+                6,
+                0
+              ],
+              "value": "0",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gcd",
+      "source": {
+        "path": "gcd/Gcd.lean",
+        "sha256": "8375dcd325baf250150872686c62e2f660c46e6f45e80151e934420d65be2d8c",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": [
+          {
+            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "declaration": "K1.gcd",
+            "path": "fixtures/ixon-v4/k1/K1.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "gcd.ixe",
+        "sha256": "546017d9632a29dcfa972d7dd072a898549145be12af014d2276dc44f175a573",
+        "bytes": 111787
+      },
+      "equations": {
+        "path": "gcd.equations.json",
+        "sha256": "0aa0f19759d67e72102569417208c39a4e7e83f81ef6a61195f5296c84a9cbe0",
+        "equations": 7,
+        "failures": 0
+      },
+      "named_env_sha256": "5abf441806f0b5e1b5250c98a028d8240e95dce6cfe39cae15f294ec950bd01f",
+      "census": {
+        "path": "gcd.census.json",
+        "sha256": "0a2f955bec460f918de9c777e6ed74b7009b5a9d0deed727e3ddb5f51e31ee30"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "7ed9f5281635110cee22efbf072f66972423e13d09c0c68772a64b29c573de73",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 5,
+            "count": 6,
+            "ranges": [
+              [
+                0,
+                9223372036854775807
+              ],
+              [
+                0,
+                9223372036854775807
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                1071,
+                462
+              ],
+              "value": "21",
+              "constant": "21",
+              "machine": true
+            },
+            {
+              "args": [
+                4660046610375530309,
+                2880067194370816120
+              ],
+              "value": "1",
+              "constant": "1"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                0
+              ],
+              "value": "9223372036854775807",
+              "constant": "9223372036854775807"
+            },
+            {
+              "args": [
+                0,
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "constant": "9223372036854775807"
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                7134611160154358618,
+                4654242949169100536
+              ],
+              "value": "2",
+              "generated": true
+            },
+            {
+              "args": [
+                4292726422858613063,
+                1832488697174800709
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                3467252261107883461,
+                7020995479949754436
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                8957066056171264801,
+                204786321411665707
+              ],
+              "value": "7",
+              "generated": true
+            },
+            {
+              "args": [
+                7866638711627835880,
+                1908141438795372387
+              ],
+              "value": "1",
+              "generated": true
+            },
+            {
+              "args": [
+                8309798722296661671,
+                2521712920250132284
+              ],
+              "value": "1",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "collatz",
+      "source": {
+        "path": "collatz/Collatz.lean",
+        "sha256": "805046e4c89628013c15da3e2dfcf47bf09e77ce99749404b2b637d5a0732cab",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "collatz",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "collatz.ixe",
+        "sha256": "e6fbdc075fbf5efd21cba475bfc3c0abefcbfeb39fa2fe9185a316787bb1532f",
+        "bytes": 1034864
+      },
+      "equations": {
+        "path": "collatz.equations.json",
+        "sha256": "d764f8e91ee06a0de4ce7fa8714fe729154345899b4eb34c8b38289faa3e6c27",
+        "equations": 35,
+        "failures": 0
+      },
+      "named_env_sha256": "39ee7ebc1847692eccdceee43327f299f5e4fa748e3bfc4b5f2f674059f773d7",
+      "census": {
+        "path": "collatz.census.json",
+        "sha256": "bf96768b21f26f923022431ba0582cc9ea453a4874e861b51be18d1ba85c8d26"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "a4b3ab76d42ef5acda0520fe2826b0051e5ba3f96dcc1ed9ab2565fd55d06fad",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 6,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                200
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "423",
+              "machine": true
+            },
+            {
+              "args": [
+                300
+              ],
+              "value": "14151"
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                77
+              ],
+              "value": "2116",
+              "generated": true
+            },
+            {
+              "args": [
+                155
+              ],
+              "value": "5839",
+              "generated": true
+            },
+            {
+              "args": [
+                132
+              ],
+              "value": "4788",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "prime-count",
+      "source": {
+        "path": "prime-count/PrimeCount.lean",
+        "sha256": "e56857c2eb9156738430e404a31c3eaa800b06c094138e62e18b34bf6c8cbe6a",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "prime-count",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "prime-count.ixe",
+        "sha256": "c472a44c22dca0a9c5fe41a9e49f1c4626243c4a868bf7c66a920eeb817e3e0f",
+        "bytes": 1035505
+      },
+      "equations": {
+        "path": "prime-count.equations.json",
+        "sha256": "61f1693d4e6050940991e5351a56b6419ba0ae6789b8329cf22a600643c6c22b",
+        "equations": 35,
+        "failures": 0
+      },
+      "named_env_sha256": "64828068fe49e098eee9a3b4f1a739e9b42be970aa7b0f2cf6d76a2fca8b3501",
+      "census": {
+        "path": "prime-count.census.json",
+        "sha256": "b1879f55be2018ddbe86c93417e9d44ef50797e385f3e9c9e280947fa3e7d20f"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "f412cc054de18807c31c0e3d344d4def82d27dfe33b859de429e8f46b2ea70c2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 7,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                500
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                30
+              ],
+              "value": "10",
+              "constant": "10",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "168",
+              "constant": "168"
+            },
+            {
+              "args": [
+                279
+              ],
+              "value": "59",
+              "generated": true
+            },
+            {
+              "args": [
+                432
+              ],
+              "value": "83",
+              "generated": true
+            },
+            {
+              "args": [
+                390
+              ],
+              "value": "77",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "even-odd",
+      "source": {
+        "path": "even-odd/EvenOdd.lean",
+        "sha256": "4fbf0a5e4b196a40c7d4bb742e1f2835fb26af646944395b7c555149a22dd6c7",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "even-odd",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "even-odd.ixe",
+        "sha256": "e1e6dec644e55ca83aa0f05e2fbcecdff95d5e1331178fe2f09e7c013b7797b2",
+        "bytes": 18339
+      },
+      "equations": {
+        "path": "even-odd.equations.json",
+        "sha256": "5bf9087940f721bb4b64263d188e1bcb343246c9231ae35592bdc96db5fea136",
+        "equations": 2,
+        "failures": 0
+      },
+      "named_env_sha256": "074c609645475a561cf74503174f37afe31be59850dfac8053baaf8ae4a10340",
+      "census": {
+        "path": "even-odd.census.json",
+        "sha256": "a553191b5b7ed60f69a254ae47639cf7090bb1264770e43b17930f9e6920c2d8"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "be9dd49d53cc2465cecdc3d1a6d569fc9049c038490b3f82b9279e30dce12eb4",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 8,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                20000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                7
+              ],
+              "value": "0",
+              "constant": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                100001
+              ],
+              "value": "0",
+              "constant": "0"
+            },
+            {
+              "args": [
+                100000
+              ],
+              "value": "1",
+              "constant": "1"
+            },
+            {
+              "args": [
+                4567
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                5009
+              ],
+              "value": "0",
+              "generated": true
+            },
+            {
+              "args": [
+                1396
+              ],
+              "value": "1",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sfib",
+      "source": {
+        "path": "sfib/Sfib.lean",
+        "sha256": "3e8f1db8c0764fe3d528f9a626c5d20d607cf597b1d556e73a65761cfa6faf45",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "corpus",
+        "origins": [
+          {
+            "declaration": "sfib",
+            "path": "fixtures/corpus/phase1-scalar/src/Scalar.lean",
+            "repository": "IxCC"
+          }
+        ]
+      },
+      "consts": [
+        "entry"
+      ],
+      "protocol": "args",
+      "closure": {
+        "path": "sfib.ixe",
+        "sha256": "a1ef5017b5e42205fce98aaf60a3512333817dc4073d8f2a5d48531838593ac3",
+        "bytes": 49224
+      },
+      "equations": {
+        "path": "sfib.equations.json",
+        "sha256": "f3a5e6103234b9f9793351f628937af1ac37e2bf6088770d72854122ee208f24",
+        "equations": 5,
+        "failures": 0
+      },
+      "named_env_sha256": "122a50cdd6fbf90d47543a4dba2e565a4ad4a8fe041dfc2baab02f1fcdee9ac8",
+      "census": {
+        "path": "sfib.census.json",
+        "sha256": "a0df7e3a080b95285f8d7f118d360b662008098a2093cef67316146f16e84b35"
+      },
+      "roots": [
+        {
+          "name": "entry",
+          "address": "d7c0255a4c9a6ef2412af77bc250d625667becb01c8d77ef67f29eae0c4f3945",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run",
+            "constant"
+          ],
+          "decline": null,
+          "generate": {
+            "seed": 9,
+            "count": 3,
+            "ranges": [
+              [
+                0,
+                3000
+              ]
+            ]
+          },
+          "cases": [
+            {
+              "args": [
+                10
+              ],
+              "value": "258574",
+              "machine": true
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "258574",
+              "constant": "258574"
+            },
+            {
+              "args": [
+                604
+              ],
+              "value": "258574",
+              "generated": true
+            },
+            {
+              "args": [
+                1291
+              ],
+              "value": "4",
+              "generated": true
+            },
+            {
+              "args": [
+                2962
+              ],
+              "value": "258574",
+              "generated": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

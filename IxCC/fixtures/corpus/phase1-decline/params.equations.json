@@ -1,0 +1,27 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.six",
+      "address": "08cff2eff5c6c7898218be4114fe238a759d0f76860316523eaa685815704f50"
+    },
+    {
+      "name": "Decline.fiveAndType",
+      "address": "8d62b2b3ed3e42df1ed3518c56905733fc4209ef0767b8c1a33ae7f0cb1be4b6"
+    },
+    {
+      "name": "Decline.fiveAndProof",
+      "address": "8b106d022e50197f3dcf3b3f6943b5ccf124f1cb0701735d65dcff5a7f3dd7ff"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    }
+  ],
+  "failures": []
+}

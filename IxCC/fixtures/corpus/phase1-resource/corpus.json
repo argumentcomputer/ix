@@ -1,0 +1,489 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase1-resource",
+  "description": "The Phase 1 resource corpus (phase1.md MT.3): heap, stack and trap failures (statuses 1, 2 and 4) through the driver's --region and --stack, at exact heap thresholds from the immortal cell layout and at stack bounds one of which must succeed and the other fail.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/phase1-resource",
+  "source_root": "fixtures/corpus/phase1-resource/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "resource",
+      "source": {
+        "path": "Resource.lean",
+        "sha256": "ab942c5feaea09fb8c2271e367c795584e63cdc6df1591696281e9a06d2edcab",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Resource.heapList",
+        "Resource.twoVars",
+        "Resource.oneVar",
+        "Resource.depth",
+        "Resource.tail",
+        "Resource.isEven",
+        "Resource.isOdd",
+        "Resource.trapEmpty",
+        "Resource.trapFalse",
+        "Resource.trapAbsurd"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "resource.ixe",
+        "sha256": "af52779e740a92b3662463245cdfa6a39f75247902ea8e357c6bd16a3f66e077",
+        "bytes": 1049324
+      },
+      "equations": {
+        "path": "resource.equations.json",
+        "sha256": "68314326b93e58fab1ff95305e73b857d00b0395025b5dd53c32827c2ce6d23f",
+        "equations": 40,
+        "failures": 0
+      },
+      "named_env_sha256": "39c5530351781767d1b17e95241e022fe0bf7a835fa06b07946635c2967276d8",
+      "census": {
+        "path": "resource.census.json",
+        "sha256": "a830f418d98b8671b9129cd9181fbb5d5a186214345fb48efd8e561bd87f0492"
+      },
+      "roots": [
+        {
+          "name": "Resource.heapList",
+          "address": "28638c564b92e3018c9d70199342c139a2770cdca48be32467c29c8d1d491b61",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "n cells of two fields: 24 n bytes from the 640th byte of the region",
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true,
+              "region": 4096,
+              "note": "nothing allocated in the smallest region cx_init accepts"
+            },
+            {
+              "args": [
+                144
+              ],
+              "value": "144",
+              "machine": true,
+              "region": 4096,
+              "note": "144 × 24 = 3456 = 4096 − 640: the region exactly full"
+            },
+            {
+              "args": [
+                145
+              ],
+              "value": "145",
+              "machine": true,
+              "fail": "heap",
+              "region": 4096,
+              "note": "one cell more than the region holds"
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true,
+              "fail": "heap",
+              "region": 4095,
+              "note": "cx_init refuses a region below 4 KiB (status 1 before the root runs)"
+            },
+            {
+              "args": [
+                300
+              ],
+              "value": "300",
+              "note": "the default regions (64 KiB at the word levels, 16 MiB natively)"
+            }
+          ]
+        },
+        {
+          "name": "Resource.twoVars",
+          "address": "7a92d0c58d30db86d6be65abfb4d322a437780127a32975223f30825d8c8489f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "MT.2 finding 5: a `for` loop with two mutable variables allocates a cell per iteration",
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0",
+              "machine": true,
+              "region": 4096,
+              "note": "no iteration"
+            },
+            {
+              "args": [
+                100
+              ],
+              "value": "300",
+              "machine": true,
+              "region": 4096,
+              "note": ""
+            },
+            {
+              "args": [
+                143
+              ],
+              "value": "429",
+              "machine": true,
+              "region": 4096,
+              "note": ""
+            },
+            {
+              "args": [
+                144
+              ],
+              "value": "432",
+              "machine": true,
+              "fail": "heap",
+              "region": 4096,
+              "note": ""
+            },
+            {
+              "args": [
+                200
+              ],
+              "value": "600",
+              "machine": true,
+              "fail": "heap",
+              "region": 4096,
+              "note": ""
+            },
+            {
+              "args": [
+                300
+              ],
+              "value": "900",
+              "note": "default regions"
+            }
+          ]
+        },
+        {
+          "name": "Resource.oneVar",
+          "address": "49367270c744e0856ff93cbcdabd99c8228874e7132b68264848d297031140c0",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "one mutable variable: no allocation",
+          "cases": [
+            {
+              "args": [
+                100
+              ],
+              "value": "300",
+              "machine": true,
+              "region": 4096,
+              "note": ""
+            },
+            {
+              "args": [
+                10000
+              ],
+              "value": "30000",
+              "region": 4096,
+              "note": ""
+            }
+          ]
+        },
+        {
+          "name": "Resource.depth",
+          "address": "f81ae726847fead67405464836963e0bd615114bedb3cdb18c34b86dc9bc7467",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "non-tail recursion: each call pushes at least its 8-byte return address",
+          "cases": [
+            {
+              "args": [
+                100
+              ],
+              "value": "100",
+              "machine": true,
+              "stack": 8192,
+              "note": "100 frames within the 4 KiB budget of an 8 KiB stack"
+            },
+            {
+              "args": [
+                513
+              ],
+              "value": "513",
+              "machine": true,
+              "fail": "stack",
+              "stack": 8192,
+              "note": "513 return addresses alone exceed the 4096-byte budget"
+            },
+            {
+              "args": [
+                10000
+              ],
+              "value": "10000",
+              "fail": "stack",
+              "stack": 65536,
+              "note": "80 KB of return addresses against a 60 KiB budget"
+            },
+            {
+              "args": [
+                1000
+              ],
+              "value": "1000",
+              "machine": true,
+              "stack": 65536,
+              "note": "1000 frames within a 60 KiB budget"
+            },
+            {
+              "args": [
+                10000
+              ],
+              "value": "10000",
+              "note": "the default stack (256 MiB natively)"
+            }
+          ]
+        },
+        {
+          "name": "Resource.tail",
+          "address": "13dd70b3f01c8cfdfa5effa4afef0c40bf2b2f0174da2b92484022fb3c5d0cb0",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "tail recursion runs in constant stack",
+          "cases": [
+            {
+              "args": [
+                1000
+              ],
+              "value": "2000",
+              "machine": true,
+              "stack": 8192,
+              "note": "1000 iterations in the 4 KiB budget"
+            },
+            {
+              "args": [
+                10000
+              ],
+              "value": "20000",
+              "stack": 8192,
+              "note": "10000 iterations in the 4 KiB budget"
+            }
+          ]
+        },
+        {
+          "name": "Resource.isEven",
+          "address": "6a95c0e321c602cf788b502681a2d273157a5a0653c26af77691ea83721dcb5d",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "mutual tail calls run in constant stack",
+          "cases": [
+            {
+              "args": [
+                1001
+              ],
+              "value": "false",
+              "machine": true,
+              "stack": 8192,
+              "note": ""
+            },
+            {
+              "args": [
+                10000
+              ],
+              "value": "true",
+              "stack": 8192,
+              "note": ""
+            }
+          ]
+        },
+        {
+          "name": "Resource.isOdd",
+          "address": "d0fbb9dc3009c45b10d6614048dd0c8f7fa62bed1b833946403b7730466d8bfc",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                1001
+              ],
+              "value": "true",
+              "machine": true,
+              "stack": 8192,
+              "note": ""
+            },
+            {
+              "args": [
+                10000
+              ],
+              "value": "false",
+              "stack": 8192,
+              "note": ""
+            }
+          ]
+        },
+        {
+          "name": "Resource.trapEmpty",
+          "address": "893d0b67173d89cdef2d573e0e14b62189061e4f66eace13da2786b39858c97f",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "`nomatch` on `Empty`: the wrapper passes a word for the empty argument",
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "-",
+              "machine": true,
+              "fail": "trap",
+              "note": "no value of `Empty` exists"
+            },
+            {
+              "args": [
+                7
+              ],
+              "value": "-",
+              "machine": true,
+              "fail": "trap",
+              "note": ""
+            }
+          ]
+        },
+        {
+          "name": "Resource.trapFalse",
+          "address": "9aa371d698f89937366d21b4b573baf3117a4dc1e343a64352117210d2a78650",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "`False.elim` on a proof argument (erased, passed as a word)",
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "-",
+              "machine": true,
+              "fail": "trap",
+              "note": ""
+            }
+          ]
+        },
+        {
+          "name": "Resource.trapAbsurd",
+          "address": "9f73ab07bb837426f8413a8760f60ccf6e61ec624c3739dccc00e9ac52e28e8a",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "`absurd rfl h` for `h : n ≠ n`",
+          "cases": [
+            {
+              "args": [
+                3,
+                0
+              ],
+              "value": "-",
+              "machine": true,
+              "fail": "trap",
+              "note": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

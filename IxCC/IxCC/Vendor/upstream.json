@@ -1,0 +1,33 @@
+{"upstream_toolchain": "leanprover/lean4:v4.33.1",
+ "upstream_files_sha256":
+ {"LICENSE-MIT":
+  "dc9de72071a0c52ba5ea1796e08a4a19a9d5f931e742db66290867246dc2a418",
+  "LICENSE-APACHE":
+  "b28f8e76818565e459f777688228fd41d4de08df939c47709e931d8a733c152a",
+  "Ix/Lib.lean":
+  "160407c46838d5ab8c520a5aeb76ece6f9f02c0a6e22028514b8dd61c40b6436",
+  "Ix/IndexMap.lean":
+  "cfe9e704adc9b3f837fa51ccd1843bf1dae9780c4f2786567ab57c97d54b692d",
+  "Ix/Aiur/Stages/Typed.lean":
+  "25625598b3b80cb2019af13bec44d5e92fba44b1c92e7f0d42be8868ee6a6665",
+  "Ix/Aiur/Stages/Source.lean":
+  "6aef5421eaa98c658008a008fe8223d76fb59979d9f6b6d8beed19a59ac6b176",
+  "Ix/Aiur/Stages/Simple.lean":
+  "67605e042fe2eaeaade2ca5a4af8554bef7d6bee0a02192b04f9bdb673770c7f",
+  "Ix/Aiur/Stages/Concrete.lean":
+  "76bf3b86f509b0373975cef44c3484acbdbfa614fed4c4a38df7ee492719ca56",
+  "Ix/Aiur/Stages/Bytecode.lean":
+  "1bb4cf20ad6b56bbeca774e06ab7912e89676f9d3c77c30ebb362a4851ec48f8",
+  "Ix/Aiur/Goldilocks.lean":
+  "8184bf5c983475253c5d6c1035367a5effb331942712cd7f4277043157274035",
+  "Ix/Aiur/Compiler/UnitCounter.lean":
+  "9a81da318c7a0b594adc31aa3099b5aa0405ac070098a9d289e910dd4dc5953a",
+  "Ix/Aiur/Compiler/Layout.lean":
+  "7bbc32b31286c8f62e7143de741da830729e7ee4700f7ab3566c369396b993ee",
+  "Ix/Aiur/Compiler/CallOrder.lean":
+  "3c05adc592fe00afa9d6b994ded7d576d6cffd581639a514db5fe04d55cfb18f"},
+ "revision": "a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03",
+ "repository": "https://github.com/argumentcomputer/ix",
+ "module_prefix": "IxCC.Vendor.",
+ "namespace": "IxCC.Vendor",
+ "local_files": ["README.md", "upstream.json"]}

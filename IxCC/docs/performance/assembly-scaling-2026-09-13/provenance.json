@@ -1,0 +1,275 @@
+{
+  "base_commit": "c41d4813d71250c6b95b3e5002a31f76946d6e9d",
+  "baseline": {
+    "ixcc_rebuilt_from_extracted_source": true,
+    "executable": {
+      "bytes": 124062728,
+      "sha256": "5e3cfbc5c149fc1134dee0f3f93eda208dcca3c14ec38196ba5c5acfec16d321"
+    },
+    "repository_source_files_exact": true,
+    "shared_dependency": "pinned Blake3 package cache",
+    "source": {
+      "bytes": 3642327,
+      "sha256": "c4ae20e8c069c6df5cf19b456f27467323399c8a8d7c5fbfa45ee6b01e8bb9c2"
+    },
+    "source_files": 782
+  },
+  "code_files": 640,
+  "format": "ixcc/assembly-scaling-reference/1",
+  "frozen_utc": "2026-09-13T12:05:09.131520+00:00",
+  "plan": {
+    "comparison_order": [
+      [
+        "reference",
+        "indexed"
+      ],
+      [
+        "indexed",
+        "reference"
+      ],
+      [
+        "reference",
+        "indexed"
+      ]
+    ],
+    "cpu": 0,
+    "environment_overrides": {
+      "LC_ALL": "C",
+      "LEAN_NUM_THREADS": "1",
+      "MALLOC_ARENA_MAX": "1"
+    },
+    "format": "ixcc/assembly-observation-plan/1",
+    "frozen_utc": "2026-09-13T12:05:09.131520+00:00",
+    "matrix_case_order": [
+      "baseline",
+      "edited",
+      "blob-edited",
+      "mutual",
+      "wide-32",
+      "wide-600"
+    ],
+    "memory_scope": "Separate GNU time envelopes for the identical old/new six-case process and the additional diagnostic profile.",
+    "phase_scope": "One call per named clock; profile addressing/audit/total intervals overlap and must not be summed.",
+    "profile_processes_after_comparisons": 3,
+    "profile_width_order": [
+      32,
+      64,
+      128,
+      256,
+      600
+    ],
+    "repetitions": 3,
+    "replay_scope": "Fresh source directory plus retained executable seeds; independently check retained certificates and all artifact bytes. No executable rebuild during replay.",
+    "scope": "Descriptive fresh-process observations. All values retained; no significance claim or timing threshold.",
+    "seed": {
+      "assembly-scaling": {
+        "bytes": 124361872,
+        "sha256": "40eef828798cdbd82237d17d47412e9381d76a60514ccdc90c3d3f2add4b89f5"
+      },
+      "check-assembly-scaling": {
+        "bytes": 119270544,
+        "sha256": "c8297765fe0e791a93edf5d6fa907764cd9e6a7004c172823af6f76ec5515a0e"
+      },
+      "check-source-modular": {
+        "bytes": 119277504,
+        "sha256": "531f7e47e639f3273db87ebab013030026de3cb6c65172e5a3ba9d37d51cb8f9"
+      },
+      "source-modular": {
+        "bytes": 124085888,
+        "sha256": "932fc37a26bdade3b7ba2cb12d6c1c5ed89498e3c36636d872ddfef6f1a2f693"
+      },
+      "source-modular-reference": {
+        "bytes": 124062728,
+        "sha256": "5e3cfbc5c149fc1134dee0f3f93eda208dcca3c14ec38196ba5c5acfec16d321"
+      }
+    }
+  },
+  "source": {
+    "bytes": 3654988,
+    "sha256": "d2d7856ab60ee42d788a2cd74a734badd4105643d0932df43a2585b55e16c2e2"
+  },
+  "source_files": 789,
+  "source_state": "Base commit plus the full frozen working source; final performance prose is added later.",
+  "validation": {
+    "checks": {
+      "assembly-scaling": {
+        "drv": "/nix/store/jjsq3bzg620c88710lyfycy6kzsv0888-assembly-scaling.drv",
+        "out": "/nix/store/zyfm1rg303g1b8j3s5a08qpasq79bmhd-assembly-scaling",
+        "status": "passed"
+      },
+      "benchmark-correctness-smoke": {
+        "drv": "/nix/store/yf8h1a0nhnf5za2zzimbzibfydq23ybv-benchmark.drv",
+        "out": "/nix/store/gxw0bzppybzwg7pypd688nkniw2ynaay-benchmark",
+        "status": "passed"
+      },
+      "build": {
+        "drv": "/nix/store/19md60cnsp2xllqgi5j01l3pa3w7wm13-IxCC.drv",
+        "out": "/nix/store/c6xj92ifxkpwjx9p0p7mj19gda1syd49-IxCC",
+        "status": "passed"
+      },
+      "catalog-contact": {
+        "drv": "/nix/store/baiqd0hzhcbyvddjlxkqz0sjk4qrzfr6-catalog-contact.drv",
+        "out": "/nix/store/48j6p623mnf7avnxnshsd87nq2w2kggh-catalog-contact",
+        "status": "passed"
+      },
+      "ci-workflow": {
+        "drv": "/nix/store/fcyr28cwp5vqxhlf8pn04kfb5qj6r52l-ci-workflow-check.drv",
+        "out": "/nix/store/46bly1z6pc25vd5smf3laf7vcbpa2zj8-ci-workflow-check",
+        "status": "passed"
+      },
+      "compiler-scaling-correctness-smoke": {
+        "drv": "/nix/store/r3a71jj22y0754zlgfl0gq2wwn6bwg5p-compiler-scaling.drv",
+        "out": "/nix/store/bqglj173h6r8y3wml2mwjn7yys4dzmmi-compiler-scaling",
+        "status": "passed"
+      },
+      "ixir2-identity": {
+        "drv": "/nix/store/8gd64xs6irb7qwsw0kkqhfqczsqv9k77-ixir2-fixture.drv",
+        "out": "/nix/store/i6wxp24rg8znssr3wjli8rr581xslv99-ixir2-fixture",
+        "status": "passed"
+      },
+      "native-graph": {
+        "drv": "/nix/store/pcrcx8l47hb817kln2vdy3mfwr0cnafd-native-graph.drv",
+        "out": "/nix/store/c951gykk4grl2jdivrj8va4hdfav5ks9-native-graph",
+        "status": "passed"
+      },
+      "native-sharing": {
+        "drv": "/nix/store/vawl6ivlpx2cgs165jghgzp3gjlzwvj2-native-sharing.drv",
+        "out": "/nix/store/h6qgka43d6pcz5nn072qm2x3w18jnyds-native-sharing",
+        "status": "passed"
+      },
+      "source-borrow": {
+        "drv": "/nix/store/0m0h8fzj5jkaxsf477bx3zf42g5s2yvh-source-borrow.drv",
+        "out": "/nix/store/pq2v51p4nr295jw862imcrb33di9vm6p-source-borrow",
+        "status": "passed"
+      },
+      "source-borrow-runtime": {
+        "drv": "/nix/store/342zgwdavhax69rvaw6kvsfhjmrbrzjw-source-borrow-runtime.drv",
+        "out": "/nix/store/x471xj20qyba1qi5yqqqz2d867m42jbn-source-borrow-runtime",
+        "status": "passed"
+      },
+      "source-call-reuse": {
+        "drv": "/nix/store/4rz58adspijhrjf05cqd8dp3smlgvi97-source-call-reuse.drv",
+        "out": "/nix/store/11dgq89w581jswi7ym2haw6q5aq13j88-source-call-reuse",
+        "status": "passed"
+      },
+      "source-coverage": {
+        "drv": "/nix/store/vlndqqi4sqydinmafr3yk427alvgis5d-source-coverage.drv",
+        "out": "/nix/store/x5kkp5mc20cddq6p05brqid49xzsn8cy-source-coverage",
+        "status": "passed"
+      },
+      "source-modular": {
+        "drv": "/nix/store/ynh551447qbm8dpgwhxxqyg5jiqdz57z-source-modular.drv",
+        "out": "/nix/store/w89mp6dspmkha1vvh58ak535ncmhdsgi-source-modular",
+        "status": "passed"
+      },
+      "source-native-allocating": {
+        "drv": "/nix/store/jb4rss24ykhm2h74hvslp5f4inyjvz7m-source-native-allocating.drv",
+        "out": "/nix/store/sksx6va6alx20hpv4qlwnq2rvf8x0zjd-source-native-allocating",
+        "status": "passed"
+      },
+      "source-native-captured-scalar": {
+        "drv": "/nix/store/gy1lr48lid7crhyxay45vvbj8x4671dv-source-native-captured-scalar.drv",
+        "out": "/nix/store/2m4k4j4rv8d9rz14b30kc084gidxamvg-source-native-captured-scalar",
+        "status": "passed"
+      },
+      "source-native-heap": {
+        "drv": "/nix/store/l2ihjc8zfza59cw049771f7hxi3vrbz8-source-native-heap.drv",
+        "out": "/nix/store/56f944xy9ahpjbp7snsxh40bxa9a2caq-source-native-heap",
+        "status": "passed"
+      },
+      "source-native-physical-scalar": {
+        "drv": "/nix/store/4w8hgs4mab6325zxangl26rpql9r93im-source-native-physical-scalar.drv",
+        "out": "/nix/store/yxbx7x038nqd4bjwijik75qw5x4kp5ck-source-native-physical-scalar",
+        "status": "passed"
+      },
+      "source-native-runtime": {
+        "drv": "/nix/store/il63mm0w2mjqd2a96il9rb6gakz5yl1b-source-native-runtime.drv",
+        "out": "/nix/store/y7h2yrzy7b01gj94kh0f8rx3qp66rvvz-source-native-runtime",
+        "status": "passed"
+      },
+      "source-native-scalar": {
+        "drv": "/nix/store/bnyi9814x6gaxslf893laqwssjcvaq3f-source-native-scalar.drv",
+        "out": "/nix/store/f8rlrpdydiaksgynr3794zygxs7l6pf1-source-native-scalar",
+        "status": "passed"
+      },
+      "source-native-unique": {
+        "drv": "/nix/store/0gaqk3zs8iqsiqaspzjdls82m1ymh4ya-source-native-unique.drv",
+        "out": "/nix/store/mq8bzbaq49rmzxnzdmkw07wffsj1p9dl-source-native-unique",
+        "status": "passed"
+      },
+      "source-native-upstream": {
+        "drv": "/nix/store/vnjlplk7w5avxydgsirx460rgk70q5nn-source-native-upstream.drv",
+        "out": "/nix/store/p01clgvz850p019yk9kf4zmira6pv672-source-native-upstream",
+        "status": "passed"
+      },
+      "source-recursion": {
+        "drv": "/nix/store/zlqvvmsfil1bppdj7hrb0lcqxn6giq2v-source-recursion.drv",
+        "out": "/nix/store/lyyyjvy45is5bcmcvf6fik69rxjkk245-source-recursion",
+        "status": "passed"
+      },
+      "source-space": {
+        "drv": "/nix/store/11r0mfh7wgw0fzjlfmsja93k14a9siwg-source-space.drv",
+        "out": "/nix/store/vbh70pa5mqhbgi00r6pqpy8cx4fdsqx0-source-space",
+        "status": "passed"
+      },
+      "source-unique-reuse": {
+        "drv": "/nix/store/34dk92hzp0w3wx3z65pgr0lvny81xkzs-source-unique-reuse.drv",
+        "out": "/nix/store/v41p0friln7hixb6qszx7hhsjnw8zwi0-source-unique-reuse",
+        "status": "passed"
+      },
+      "tests": {
+        "drv": "/nix/store/c83ywnq7fkq115qx1jrcdsyzhgkzvypd-tests.drv",
+        "out": "/nix/store/s35kqndczyx5gzfp51r714c6rk6dinam-tests",
+        "status": "passed"
+      },
+      "trusted-extern-ledger": {
+        "drv": "/nix/store/zq19msvczns11k891nj7ardn1g2ssfpm-check-trusted-externs.drv",
+        "out": "/nix/store/ii34rgnqpxm9v6xrhxk23sb61fnxnqg2-check-trusted-externs",
+        "status": "passed"
+      },
+      "x86-byte-execution": {
+        "drv": "/nix/store/yw4dk411vvgm5g7m21vb58my80xw8glk-check-x86-bytes.drv",
+        "out": "/nix/store/g46bbsns28983baas7lsgwx6achlbif2-check-x86-bytes",
+        "status": "passed"
+      },
+      "x86-elf-object": {
+        "drv": "/nix/store/brp4v8rmm61wwa81acnr0p1r5i3j4bjr-x86-object-fixture.drv",
+        "out": "/nix/store/9zchnw1av8b9mziqpy9f7bk9ncs4v9b8-x86-object-fixture",
+        "status": "passed"
+      },
+      "x86-encoder-decoder": {
+        "drv": "/nix/store/mhgzx43rgqn41mvg52g826852n76dxqq-check-x86-encoder.drv",
+        "out": "/nix/store/02va45x3lib1690piwrg0694cngz8y95-check-x86-encoder",
+        "status": "passed"
+      },
+      "x86-stream-objects": {
+        "drv": "/nix/store/xn70byqgpcwk0ypj4bvpajy4yvp7v9av-check-x86-streams.drv",
+        "out": "/nix/store/cs2wzjimsw6jxkgq9ja1pkgx6pivxg78-check-x86-streams",
+        "status": "passed"
+      }
+    },
+    "checks_passed": 31,
+    "command": [
+      "nix",
+      "flake",
+      "check",
+      "--keep-going"
+    ],
+    "completed_utc": "2026-09-13T12:05:01.055799+00:00",
+    "cwd": "/home/jcb/projects/ix/IxCC",
+    "existing_modular_golden_and_rebuilt_baseline_bytes_exact": true,
+    "exit_code": 0,
+    "fence_sha256": "4fb65b9c4e6a237786cc283cc0bf62fc3c92a7320f709266dd29388d81f13e02",
+    "format": "ixcc/assembly-scaling-validation/1",
+    "full_five_width_reference_precheck_passed": true,
+    "independent_assembly_gate_passed": true,
+    "initial_run": {
+      "exit_code": 1,
+      "reason": "Trust-ledger digests for the new Fence pins and build metadata needed review and refresh; the other 30 checks passed.",
+      "resolved_by": "Reviewed digest updates, nine new integrity pins, successful local/Nix ledger checks, and a complete passing final Nix run."
+    },
+    "ledger_sha256": "a0452a5683a655b0b14b272bec750dbc18549c3472850d61404d39d30e80973c",
+    "native_symbols_and_contracts_unchanged": true,
+    "proof_fence_and_runtime_tests_passed": true
+  }
+}

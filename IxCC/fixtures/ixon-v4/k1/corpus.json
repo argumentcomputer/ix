@@ -1,0 +1,162 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "k1",
+  "description": "The K1 pack (phase1.md M0.2): the five first-rung scalar programs of K1.lean in one closure with their unfolding equations, and its admission census. The roots have no cases here; tests-src, tests-lam, tests-anf, tests-fir, tests-rt and tests-pipeline run them. Not among tests-corpus's registered families: this manifest makes the pack one `corpus rebuild` and `corpus check` (with its path).",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/ixon-v4/k1",
+  "source_root": "IxCCTests/Fixtures",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "k1",
+      "source": {
+        "path": "K1.lean",
+        "sha256": "a69712c62e7ae65ccd0d874ffa793b7eb366fdb386c065dff56775abe9d1f3a5",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "K1.fib",
+        "K1.sumLoop",
+        "K1.ack",
+        "K1.tak",
+        "K1.gcd"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "k1.ixe",
+        "sha256": "03859c54afc7432f95cd333fe6fa075ee29acaa2518502a23a0f9380dc0f0c0f",
+        "bytes": 1078652
+      },
+      "equations": {
+        "path": "equations.json",
+        "sha256": "73c99bfc698c7f8c0a8ff1871162b9ac81a1b40e935a72f257dfd30e5eb63e47",
+        "equations": 40,
+        "failures": 0
+      },
+      "named_env_sha256": "7cb85533f5176fb6b6c085b04129dd5273d0deb390f52f0fb676f37af7f5774d",
+      "census": {
+        "path": "census.json",
+        "sha256": "f9e15e4893912b2b0ba5f722d6d6cb2ce6563919c72d6883952ab1893897f88e"
+      },
+      "roots": [
+        {
+          "name": "K1.fib",
+          "address": "8fa2b0a45f209a79ba48a7dd59606257b44e358f04b0ce29856d6650ce0ea724",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.sumLoop",
+          "address": "a3143304e862b054b087ad25072718d7d36e63dee6f2811e5260a588dc9bc1a1",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.ack",
+          "address": "6d14626c288f7e23f42b571bb0ac0fd0366499dfde38f5d80937e60e5ddeaac4",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.tak",
+          "address": "adc25602666f8402b986cdba49b0edec2efe00ccb757a187edfc06ac3b99b620",
+          "params": 4,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.gcd",
+          "address": "6ae620c9935731c8f5a6a7ec7c587128ce094191b29c434b1748dcd5d8e8fd68",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        }
+      ]
+    }
+  ]
+}

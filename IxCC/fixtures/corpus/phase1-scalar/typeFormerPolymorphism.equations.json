@@ -1,0 +1,12 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "lean-compile/TypeFormerPolymorphism.lean",
+  "roots": [
+    {
+      "name": "entry",
+      "address": "9cfb76a7c941bdb23068c25939fb0c3fa164632f1950630066897ed0f39e5302"
+    }
+  ],
+  "equations": [],
+  "failures": []
+}

@@ -1,0 +1,16 @@
+# Copy into an ignored plans directory and replace both absolute paths.
+[package]
+name = "ixcc-aiur-memory-reference"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[[bin]]
+name = "aiur-memory-reference"
+path = "/absolute/path/to/ixcc/tools/aiur-memory-reference/Export.rs"
+
+[dependencies]
+aiur = { path = "/absolute/path/to/pinned/ix/crates/aiur" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "9a90612286625b6cec59516532d4501677cf468c" }
+serde_json = "1"

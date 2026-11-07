@@ -1,0 +1,170 @@
+{"tsv_sha256":
+ "9ab4827a76b949b276bf80f685392cf48bac58a96f64198b6e785c0a08851f1f",
+ "rows":
+ [{"name": "Bool.Internal.and",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "8aecd1899a1abee9a31981b685d9ef3ce0c71ffb17e0c9f99156673eb9420321"},
+  {"name": "Bool.Internal.or",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "84e3d5d2658b83e7df8ba6671a718f4e5e7d26a659fdd7883df18aae805e8b4c"},
+  {"name": "Bool.dcond",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "e1fda335132697d6d1033672e926074305dfda2ba0eaedaacc80b2a1297d567a"},
+  {"name": "Decidable.byCases",
+   "kind": "lazy",
+   "arity": 5,
+   "address":
+   "ccedbaecf614590292f1a0056ebb08c52f50893b6a55e5985a76ae1c8bb39c03"},
+  {"name": "Empty.elim",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "dd0a1d92482375a620bb02be517bfa7888a89359c6d9c497fc02780fec0f77f6"},
+  {"name": "Eq.mp",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "b8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6"},
+  {"name": "Eq.mpr",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "24b70f41992f54374a770e24aa9efcea1e482ee79acc03f59ebe669fe1a94bb6"},
+  {"name": "False.elim",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "37a4e5f7a83669fe4145c8798097172a8cf16d2d13053370a2b39ca0cc453892"},
+  {"name": "IO.Promise.resultD",
+   "kind": "lazy",
+   "arity": 3,
+   "address":
+   "373d75775b9c2330be5be327adbf315bce35973d9b1667f28ed90cbf7f064614"},
+  {"name": "Option.getD",
+   "kind": "lazy",
+   "arity": 3,
+   "address":
+   "3e8f690010de45112576cbc3757b7eb23d419bd17424f9b9ef3d5bd6997ddb66"},
+  {"name": "Option.or",
+   "kind": "lazy",
+   "arity": 3,
+   "address":
+   "5d03f769376a68dd9cd024fef1c2e595f2e4cf9746754c5319e53755b61ed4f8"},
+  {"name": "Option.orElse",
+   "kind": "lazy",
+   "arity": 3,
+   "address":
+   "2ae96ce801c763491f575b03200dcb754e55a6f6e75b49906513429ce2a993a4"},
+  {"name": "Ordering.then",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "3e4b7bd89de6a5960436112a201a3e0796ae0d20e9f17cff4163c21bff4c0453"},
+  {"name": "PEmpty.elim",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "58f691c06d6fa1845be65300442559b5c12e23df90e0792773f3641332139057"},
+  {"name": "Quot.indep",
+   "kind": "lazy",
+   "arity": 5,
+   "address":
+   "456c548337f901b432fed5364396628709e83737dbcd5dca046c9d24edb2dc41"},
+  {"name": "absurd",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "f79aee413ee47bb1fa6f2027fb04ef1597871a4086d4217cff4913fa1d6ae0ba"},
+  {"name": "andM",
+   "kind": "lazy",
+   "arity": 6,
+   "address":
+   "7e95d703176cd27ad0e683a2ea5311ff48d436f654de3cf129eb5ee0fb753c7b"},
+  {"name": "bool",
+   "kind": "lazy",
+   "arity": 6,
+   "address":
+   "cf4af596699212b63db5461637f587a3b8631f3e2fe571b0950e5c1d1128dd78"},
+  {"name": "cast",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "b8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6"},
+  {"name": "cond",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "8e5edab25811750a5e2edaafb70ccf03cbd6ca091ca41ec81402549ba3df969b"},
+  {"name": "dite",
+   "kind": "lazy",
+   "arity": 5,
+   "address":
+   "e40e768eb60d4d15047d0dc3b820eaaf6bfdfbc8a1ad268dcd78722d32164ab9"},
+  {"name": "instDecidableAnd",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "c88094ee69ede73cf3ed4928a43cbc3899fb22829483557e30a136eb6d064910"},
+  {"name": "instDecidableForall",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "6aba75ff2b781cf5f24b4555ab3c26e3a3f972300b96678ea4bf5ec039dee227"},
+  {"name": "instDecidableIte",
+   "kind": "lazy",
+   "arity": 6,
+   "address":
+   "49343bf26d48be15080b3947b0149f5b636ee59f8d65d209b2b2c964cbeeb182"},
+  {"name": "instDecidableOr",
+   "kind": "lazy",
+   "arity": 4,
+   "address":
+   "a6037c1dcfd5fc3e1e63c157f6e543a85df3ce58561ac4757f193e9cab7765e2"},
+  {"name": "ite",
+   "kind": "lazy",
+   "arity": 5,
+   "address":
+   "717463825c552702ba1908b9fa5d8f3f7786d7730c633e41d8d380939feeb748"},
+  {"name": "notM",
+   "kind": "lazy",
+   "arity": 3,
+   "address":
+   "f80598d53042259ee247d25a61645831e38d5ef186ef3b1c06fb476415222521"},
+  {"name": "orM",
+   "kind": "lazy",
+   "arity": 6,
+   "address":
+   "c2c229cf2f49e5c368fcb79f6d9f816672224758778ed0dd77003e1a67c693d1"},
+  {"name": "Bool.or",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "a5c0e8c9e71e5afd925536c00092750ac8b34af67793c564617e2abbca5c100b"},
+  {"name": "Bool.and",
+   "kind": "lazy",
+   "arity": 2,
+   "address":
+   "83353e9273ba68884a3890c6411de16698457cc9d148a5bf29e73d280fbaf091"},
+  {"name": "Lean.opaqueId",
+   "kind": "opaque-by-value",
+   "arity": null,
+   "address":
+   "d0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046"}],
+ "producer_version": "4.34.1|0.0.1",
+ "producer_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+ "producer_binary_sha256":
+ "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+ "names_tsv_sha256":
+ "b69ebc301cbb6c8ca7c7293816a7f446afbe3685a34df2f06e109145bbd6faac",
+ "macro_inline_count": 28,
+ "lean": "4.34.1",
+ "format": "ixcc/src-tables/1",
+ "commands":
+ ["ix compile --no-build --consts <names> --out src-tables.named.ixe SrcTables.lean",
+  "ix addr-of --ixe src-tables.named.ixe NAME, for every row"]}

@@ -1,0 +1,2160 @@
+{
+  "byte_identical_outputs_across_repetitions": true,
+  "cases": [
+    {
+      "allocation_bound": 0,
+      "case": "joins-2-tree",
+      "control_bound": 7,
+      "elf_bytes": 1760,
+      "elf_root": "71d9441480cfefc870b32b9274e07557d42a4dcaf446d0d9e91d4dac34a9fd56",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 886,
+      "function_count": 1,
+      "input_blocks": 7,
+      "joined_blocks": 2,
+      "joins": 2,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 72607,
+          "median_ns": 71345,
+          "min_ns": 70112,
+          "samples_ns": [
+            72607,
+            70112,
+            71345
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 18304,
+          "median_ns": 17894,
+          "min_ns": 15880,
+          "samples_ns": [
+            18304,
+            15880,
+            17894
+          ]
+        },
+        "native-emit": {
+          "max_ns": 12383,
+          "median_ns": 11331,
+          "min_ns": 11141,
+          "samples_ns": [
+            12383,
+            11141,
+            11331
+          ]
+        },
+        "native-export": {
+          "max_ns": 2585,
+          "median_ns": 2184,
+          "min_ns": 2084,
+          "samples_ns": [
+            2585,
+            2184,
+            2084
+          ]
+        },
+        "native-select": {
+          "max_ns": 18315,
+          "median_ns": 12864,
+          "min_ns": 12112,
+          "samples_ns": [
+            18315,
+            12112,
+            12864
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 56376,
+          "median_ns": 55715,
+          "min_ns": 51517,
+          "samples_ns": [
+            55715,
+            51517,
+            56376
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 19366,
+          "median_ns": 18956,
+          "min_ns": 18896,
+          "samples_ns": [
+            18896,
+            18956,
+            19366
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 6927288,
+          "median_ns": 6887413,
+          "min_ns": 6847829,
+          "samples_ns": [
+            6847829,
+            6887413,
+            6927288
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 67,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 74,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 74,
+          "value": 0
+        },
+        {
+          "argument": 2,
+          "byte_steps": 81,
+          "value": 0
+        },
+        {
+          "argument": 3,
+          "byte_steps": 81,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 81,
+          "value": 18446744073709551613
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 315,
+      "snapshot_root": "06267a406135b9716b6377a535c4925c1c0301f4188760728a70a7b88bf38306",
+      "text_bytes": 911,
+      "text_root": "43290f01db5bf481851a5c9629b5c039bd594c15daec6df7eab851f1e4ccfb7b",
+      "x86_blocks": 28,
+      "x86_instructions": 102
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-2-shared",
+      "control_bound": 7,
+      "elf_bytes": 1464,
+      "elf_root": "3b1c97b491920197f67f7dd706602574bb60bf984f10630a9ef3c17c25920aa6",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 587,
+      "function_count": 1,
+      "input_blocks": 7,
+      "joined_blocks": 3,
+      "joins": 2,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 71725,
+          "median_ns": 70563,
+          "min_ns": 68810,
+          "samples_ns": [
+            68810,
+            70563,
+            71725
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 12824,
+          "median_ns": 12633,
+          "min_ns": 12494,
+          "samples_ns": [
+            12633,
+            12494,
+            12824
+          ]
+        },
+        "native-emit": {
+          "max_ns": 14216,
+          "median_ns": 13806,
+          "min_ns": 13726,
+          "samples_ns": [
+            14216,
+            13726,
+            13806
+          ]
+        },
+        "native-export": {
+          "max_ns": 1072,
+          "median_ns": 1062,
+          "min_ns": 1042,
+          "samples_ns": [
+            1042,
+            1072,
+            1062
+          ]
+        },
+        "native-select": {
+          "max_ns": 11411,
+          "median_ns": 11381,
+          "min_ns": 11151,
+          "samples_ns": [
+            11411,
+            11151,
+            11381
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 45425,
+          "median_ns": 45045,
+          "min_ns": 44974,
+          "samples_ns": [
+            45425,
+            45045,
+            44974
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 14828,
+          "median_ns": 14658,
+          "min_ns": 14538,
+          "samples_ns": [
+            14538,
+            14828,
+            14658
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 3143060,
+          "median_ns": 3079731,
+          "min_ns": 3045076,
+          "samples_ns": [
+            3143060,
+            3079731,
+            3045076
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 35,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 67,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 74,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 74,
+          "value": 0
+        },
+        {
+          "argument": 2,
+          "byte_steps": 81,
+          "value": 0
+        },
+        {
+          "argument": 3,
+          "byte_steps": 81,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 81,
+          "value": 18446744073709551613
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 315,
+      "snapshot_root": "06267a406135b9716b6377a535c4925c1c0301f4188760728a70a7b88bf38306",
+      "text_bytes": 612,
+      "text_root": "ee600fc404ce1dbfd2e8f71d8d73c5f2ef9b20744ce4a1f67ea796e3bd720c1e",
+      "x86_blocks": 17,
+      "x86_instructions": 69
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-3-tree",
+      "control_bound": 10,
+      "elf_bytes": 2600,
+      "elf_root": "77f70ea7b68f9fe500062793ec9c5fcfa9deb3f90c3253574c99683e7e8cf253",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 1722,
+      "function_count": 1,
+      "input_blocks": 10,
+      "joined_blocks": 2,
+      "joins": 3,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 64772,
+          "median_ns": 63780,
+          "min_ns": 63329,
+          "samples_ns": [
+            64772,
+            63780,
+            63329
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 25287,
+          "median_ns": 21631,
+          "min_ns": 21510,
+          "samples_ns": [
+            21631,
+            21510,
+            25287
+          ]
+        },
+        "native-emit": {
+          "max_ns": 12604,
+          "median_ns": 12122,
+          "min_ns": 11942,
+          "samples_ns": [
+            12604,
+            11942,
+            12122
+          ]
+        },
+        "native-export": {
+          "max_ns": 1122,
+          "median_ns": 1052,
+          "min_ns": 1032,
+          "samples_ns": [
+            1122,
+            1032,
+            1052
+          ]
+        },
+        "native-select": {
+          "max_ns": 15960,
+          "median_ns": 15950,
+          "min_ns": 15228,
+          "samples_ns": [
+            15950,
+            15960,
+            15228
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 60163,
+          "median_ns": 56256,
+          "min_ns": 53320,
+          "samples_ns": [
+            60163,
+            56256,
+            53320
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 22122,
+          "median_ns": 21812,
+          "min_ns": 21531,
+          "samples_ns": [
+            21812,
+            22122,
+            21531
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 26647582,
+          "median_ns": 26224038,
+          "min_ns": 26126056,
+          "samples_ns": [
+            26224038,
+            26647582,
+            26126056
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 80,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 87,
+          "value": 0
+        },
+        {
+          "argument": 2,
+          "byte_steps": 94,
+          "value": 0
+        },
+        {
+          "argument": 3,
+          "byte_steps": 101,
+          "value": 0
+        },
+        {
+          "argument": 4,
+          "byte_steps": 101,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 101,
+          "value": 18446744073709551612
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 361,
+      "snapshot_root": "d32c2422cd9b9602630839ea7f1eca01c48d9d1de0546bc59feeeb4f06e01d3e",
+      "text_bytes": 1747,
+      "text_root": "31ecbc6622c96f503bc172dc9a01dc9dca336af5d81e29a896645b10bd6c4485",
+      "x86_blocks": 56,
+      "x86_instructions": 194
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-3-shared",
+      "control_bound": 10,
+      "elf_bytes": 1624,
+      "elf_root": "02061dd412c5f8ff02cb4cca0f275f7bcc86b5087e02ba2db172305e4e9dceb0",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 751,
+      "function_count": 1,
+      "input_blocks": 10,
+      "joined_blocks": 4,
+      "joins": 3,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 63319,
+          "median_ns": 61596,
+          "min_ns": 60885,
+          "samples_ns": [
+            63319,
+            60885,
+            61596
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 19477,
+          "median_ns": 19256,
+          "min_ns": 19216,
+          "samples_ns": [
+            19477,
+            19216,
+            19256
+          ]
+        },
+        "native-emit": {
+          "max_ns": 18625,
+          "median_ns": 18475,
+          "min_ns": 18424,
+          "samples_ns": [
+            18625,
+            18424,
+            18475
+          ]
+        },
+        "native-export": {
+          "max_ns": 1062,
+          "median_ns": 1062,
+          "min_ns": 1042,
+          "samples_ns": [
+            1042,
+            1062,
+            1062
+          ]
+        },
+        "native-select": {
+          "max_ns": 15659,
+          "median_ns": 15450,
+          "min_ns": 15178,
+          "samples_ns": [
+            15659,
+            15178,
+            15450
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 53451,
+          "median_ns": 53310,
+          "min_ns": 52599,
+          "samples_ns": [
+            53310,
+            52599,
+            53451
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 36459,
+          "median_ns": 28353,
+          "min_ns": 21360,
+          "samples_ns": [
+            36459,
+            21360,
+            28353
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 5112790,
+          "median_ns": 5082324,
+          "min_ns": 5042527,
+          "samples_ns": [
+            5082324,
+            5112790,
+            5042527
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 45,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 80,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 87,
+          "value": 0
+        },
+        {
+          "argument": 2,
+          "byte_steps": 94,
+          "value": 0
+        },
+        {
+          "argument": 3,
+          "byte_steps": 101,
+          "value": 0
+        },
+        {
+          "argument": 4,
+          "byte_steps": 101,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 101,
+          "value": 18446744073709551612
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 361,
+      "snapshot_root": "d32c2422cd9b9602630839ea7f1eca01c48d9d1de0546bc59feeeb4f06e01d3e",
+      "text_bytes": 776,
+      "text_root": "01e68d6db416d5ec8f33640da49f0d97cbf6bb1702649ed0b11e50470a8a0234",
+      "x86_blocks": 22,
+      "x86_instructions": 87
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-4-tree",
+      "control_bound": 13,
+      "elf_bytes": 4272,
+      "elf_root": "c80651b2ef9ebeb4b29e34bd05fccd93ca1588b9f92df8a4ad99a4c8c70f8aa3",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 3394,
+      "function_count": 1,
+      "input_blocks": 13,
+      "joined_blocks": 2,
+      "joins": 4,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 74600,
+          "median_ns": 71485,
+          "min_ns": 65784,
+          "samples_ns": [
+            65784,
+            71485,
+            74600
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 36298,
+          "median_ns": 36148,
+          "min_ns": 35938,
+          "samples_ns": [
+            36148,
+            35938,
+            36298
+          ]
+        },
+        "native-emit": {
+          "max_ns": 28633,
+          "median_ns": 27692,
+          "min_ns": 23705,
+          "samples_ns": [
+            27692,
+            28633,
+            23705
+          ]
+        },
+        "native-export": {
+          "max_ns": 1092,
+          "median_ns": 1032,
+          "min_ns": 1022,
+          "samples_ns": [
+            1032,
+            1022,
+            1092
+          ]
+        },
+        "native-select": {
+          "max_ns": 24026,
+          "median_ns": 24006,
+          "min_ns": 23344,
+          "samples_ns": [
+            24026,
+            23344,
+            24006
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 63630,
+          "median_ns": 63400,
+          "min_ns": 62067,
+          "samples_ns": [
+            63400,
+            62067,
+            63630
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 28924,
+          "median_ns": 22843,
+          "min_ns": 22542,
+          "samples_ns": [
+            22843,
+            22542,
+            28924
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 99921457,
+          "median_ns": 99149021,
+          "min_ns": 98151696,
+          "samples_ns": [
+            98151696,
+            99921457,
+            99149021
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 93,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 100,
+          "value": 0
+        },
+        {
+          "argument": 3,
+          "byte_steps": 114,
+          "value": 0
+        },
+        {
+          "argument": 4,
+          "byte_steps": 121,
+          "value": 0
+        },
+        {
+          "argument": 5,
+          "byte_steps": 121,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 121,
+          "value": 18446744073709551611
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 407,
+      "snapshot_root": "fc68db2b3bf2fabb8ec35a41d364a0cdcb3bbaeaf8cf5febca0e9ca43d2c7f56",
+      "text_bytes": 3419,
+      "text_root": "a1e52e5a505efb80fca91058b0e83095176bd8b2c68be0134c3e034f2c1755e9",
+      "x86_blocks": 112,
+      "x86_instructions": 378
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-4-shared",
+      "control_bound": 13,
+      "elf_bytes": 1792,
+      "elf_root": "7dfd3cbc161accde297e35ab6989eaa3a42a436fcf47dd4a34a840cc30674e8f",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 915,
+      "function_count": 1,
+      "input_blocks": 13,
+      "joined_blocks": 5,
+      "joins": 4,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 65203,
+          "median_ns": 64542,
+          "min_ns": 61365,
+          "samples_ns": [
+            65203,
+            61365,
+            64542
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 35236,
+          "median_ns": 32020,
+          "min_ns": 31890,
+          "samples_ns": [
+            32020,
+            31890,
+            35236
+          ]
+        },
+        "native-emit": {
+          "max_ns": 36018,
+          "median_ns": 29355,
+          "min_ns": 29195,
+          "samples_ns": [
+            29195,
+            29355,
+            36018
+          ]
+        },
+        "native-export": {
+          "max_ns": 2835,
+          "median_ns": 1102,
+          "min_ns": 1072,
+          "samples_ns": [
+            1072,
+            1102,
+            2835
+          ]
+        },
+        "native-select": {
+          "max_ns": 33723,
+          "median_ns": 23945,
+          "min_ns": 23654,
+          "samples_ns": [
+            23654,
+            23945,
+            33723
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 84529,
+          "median_ns": 62638,
+          "min_ns": 62558,
+          "samples_ns": [
+            62558,
+            62638,
+            84529
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 29705,
+          "median_ns": 22743,
+          "min_ns": 22722,
+          "samples_ns": [
+            22743,
+            22722,
+            29705
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 7375221,
+          "median_ns": 7369300,
+          "min_ns": 7295983,
+          "samples_ns": [
+            7295983,
+            7375221,
+            7369300
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 55,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 93,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 100,
+          "value": 0
+        },
+        {
+          "argument": 3,
+          "byte_steps": 114,
+          "value": 0
+        },
+        {
+          "argument": 4,
+          "byte_steps": 121,
+          "value": 0
+        },
+        {
+          "argument": 5,
+          "byte_steps": 121,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 121,
+          "value": 18446744073709551611
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 407,
+      "snapshot_root": "fc68db2b3bf2fabb8ec35a41d364a0cdcb3bbaeaf8cf5febca0e9ca43d2c7f56",
+      "text_bytes": 940,
+      "text_root": "62c1e20c68452704c54543cbadf679ea9d5aa1d26fb49283e5e538ddb2846329",
+      "x86_blocks": 27,
+      "x86_instructions": 105
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-5-tree",
+      "control_bound": 16,
+      "elf_bytes": 7616,
+      "elf_root": "5a39fdfaaf169b364d59b12b5033e48b3310d1db0a25b9d1909bf05838f1b55c",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 6738,
+      "function_count": 1,
+      "input_blocks": 16,
+      "joined_blocks": 2,
+      "joins": 5,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 69481,
+          "median_ns": 68018,
+          "min_ns": 66896,
+          "samples_ns": [
+            69481,
+            66896,
+            68018
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 66274,
+          "median_ns": 65934,
+          "min_ns": 65493,
+          "samples_ns": [
+            65493,
+            65934,
+            66274
+          ]
+        },
+        "native-emit": {
+          "max_ns": 49563,
+          "median_ns": 46918,
+          "min_ns": 43221,
+          "samples_ns": [
+            49563,
+            46918,
+            43221
+          ]
+        },
+        "native-export": {
+          "max_ns": 1122,
+          "median_ns": 1032,
+          "min_ns": 1012,
+          "samples_ns": [
+            1032,
+            1012,
+            1122
+          ]
+        },
+        "native-select": {
+          "max_ns": 40406,
+          "median_ns": 38854,
+          "min_ns": 38783,
+          "samples_ns": [
+            38854,
+            38783,
+            40406
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 74421,
+          "median_ns": 71164,
+          "min_ns": 69962,
+          "samples_ns": [
+            71164,
+            69962,
+            74421
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 21371,
+          "median_ns": 20138,
+          "min_ns": 19788,
+          "samples_ns": [
+            19788,
+            20138,
+            21371
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 383837974,
+          "median_ns": 381395349,
+          "min_ns": 380051084,
+          "samples_ns": [
+            380051084,
+            381395349,
+            383837974
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 106,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 113,
+          "value": 0
+        },
+        {
+          "argument": 4,
+          "byte_steps": 134,
+          "value": 0
+        },
+        {
+          "argument": 5,
+          "byte_steps": 141,
+          "value": 0
+        },
+        {
+          "argument": 6,
+          "byte_steps": 141,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 141,
+          "value": 18446744073709551610
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 453,
+      "snapshot_root": "b9859d543ba9c4f851d04428e630a71911b770f437386158dc2fcb0e349ba1f7",
+      "text_bytes": 6763,
+      "text_root": "6102dad0f1eb488e10bb232e0f6bb1154126064c0b4d7d8b709c730c39014602",
+      "x86_blocks": 224,
+      "x86_instructions": 746
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-5-shared",
+      "control_bound": 16,
+      "elf_bytes": 1952,
+      "elf_root": "d17631b9ea4edec62c25db242a5879294c7bb0b5c2808a3bec0f5b07ad12ae03",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 1079,
+      "function_count": 1,
+      "input_blocks": 16,
+      "joined_blocks": 6,
+      "joins": 5,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 61075,
+          "median_ns": 60804,
+          "min_ns": 58811,
+          "samples_ns": [
+            61075,
+            58811,
+            60804
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 60023,
+          "median_ns": 58430,
+          "min_ns": 58099,
+          "samples_ns": [
+            60023,
+            58430,
+            58099
+          ]
+        },
+        "native-emit": {
+          "max_ns": 52670,
+          "median_ns": 48942,
+          "min_ns": 48271,
+          "samples_ns": [
+            52670,
+            48942,
+            48271
+          ]
+        },
+        "native-export": {
+          "max_ns": 1854,
+          "median_ns": 1503,
+          "min_ns": 1252,
+          "samples_ns": [
+            1854,
+            1503,
+            1252
+          ]
+        },
+        "native-select": {
+          "max_ns": 48711,
+          "median_ns": 44344,
+          "min_ns": 41989,
+          "samples_ns": [
+            44344,
+            48711,
+            41989
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 85180,
+          "median_ns": 78257,
+          "min_ns": 76745,
+          "samples_ns": [
+            85180,
+            78257,
+            76745
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 31329,
+          "median_ns": 25989,
+          "min_ns": 24015,
+          "samples_ns": [
+            25989,
+            24015,
+            31329
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 10128359,
+          "median_ns": 10118228,
+          "min_ns": 10054236,
+          "samples_ns": [
+            10128359,
+            10118228,
+            10054236
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 65,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 106,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 113,
+          "value": 0
+        },
+        {
+          "argument": 4,
+          "byte_steps": 134,
+          "value": 0
+        },
+        {
+          "argument": 5,
+          "byte_steps": 141,
+          "value": 0
+        },
+        {
+          "argument": 6,
+          "byte_steps": 141,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 141,
+          "value": 18446744073709551610
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 453,
+      "snapshot_root": "b9859d543ba9c4f851d04428e630a71911b770f437386158dc2fcb0e349ba1f7",
+      "text_bytes": 1104,
+      "text_root": "4b502dd40a3f2f84f34cabcbead94aaba410b1322d1fa54960f69ba7548f272a",
+      "x86_blocks": 32,
+      "x86_instructions": 123
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-6-tree",
+      "control_bound": 19,
+      "elf_bytes": 14304,
+      "elf_root": "e9688fbb2adbbbc0787434770e6dc08f7ee143fd7563453db8d4fc4d5c3745c8",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 13426,
+      "function_count": 1,
+      "input_blocks": 19,
+      "joined_blocks": 2,
+      "joins": 6,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 92835,
+          "median_ns": 92264,
+          "min_ns": 80611,
+          "samples_ns": [
+            80611,
+            92835,
+            92264
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 137639,
+          "median_ns": 137158,
+          "min_ns": 133451,
+          "samples_ns": [
+            137158,
+            137639,
+            133451
+          ]
+        },
+        "native-emit": {
+          "max_ns": 95661,
+          "median_ns": 89629,
+          "min_ns": 85682,
+          "samples_ns": [
+            89629,
+            85682,
+            95661
+          ]
+        },
+        "native-export": {
+          "max_ns": 1052,
+          "median_ns": 1042,
+          "min_ns": 1042,
+          "samples_ns": [
+            1042,
+            1042,
+            1052
+          ]
+        },
+        "native-select": {
+          "max_ns": 80622,
+          "median_ns": 77616,
+          "min_ns": 76284,
+          "samples_ns": [
+            77616,
+            80622,
+            76284
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 83257,
+          "median_ns": 81424,
+          "min_ns": 79169,
+          "samples_ns": [
+            81424,
+            79169,
+            83257
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 33503,
+          "median_ns": 28564,
+          "min_ns": 27472,
+          "samples_ns": [
+            27472,
+            33503,
+            28564
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 1517014464,
+          "median_ns": 1510544994,
+          "min_ns": 1503212038,
+          "samples_ns": [
+            1503212038,
+            1510544994,
+            1517014464
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 119,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 126,
+          "value": 0
+        },
+        {
+          "argument": 5,
+          "byte_steps": 154,
+          "value": 0
+        },
+        {
+          "argument": 6,
+          "byte_steps": 161,
+          "value": 0
+        },
+        {
+          "argument": 7,
+          "byte_steps": 161,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 161,
+          "value": 18446744073709551609
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 499,
+      "snapshot_root": "d838109332761350802a51ee3986da23266032870079d2f9fb79b148a9bb24ce",
+      "text_bytes": 13451,
+      "text_root": "aadf585d1e10d4aed50d853bade4192bbdfacc4bb5c867d9dfc61f00adaeb04a",
+      "x86_blocks": 448,
+      "x86_instructions": 1482
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-6-shared",
+      "control_bound": 19,
+      "elf_bytes": 2120,
+      "elf_root": "6f025f5551c9ca8ba756081d7bf53ac53f7cfbdbc8d85a22996ec78b3f2f9d44",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 1243,
+      "function_count": 1,
+      "input_blocks": 19,
+      "joined_blocks": 7,
+      "joins": 6,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 69952,
+          "median_ns": 67738,
+          "min_ns": 59191,
+          "samples_ns": [
+            67738,
+            59191,
+            69952
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 117692,
+          "median_ns": 116059,
+          "min_ns": 113033,
+          "samples_ns": [
+            113033,
+            117692,
+            116059
+          ]
+        },
+        "native-emit": {
+          "max_ns": 96883,
+          "median_ns": 94407,
+          "min_ns": 93055,
+          "samples_ns": [
+            96883,
+            94407,
+            93055
+          ]
+        },
+        "native-export": {
+          "max_ns": 3116,
+          "median_ns": 2835,
+          "min_ns": 2585,
+          "samples_ns": [
+            2835,
+            2585,
+            3116
+          ]
+        },
+        "native-select": {
+          "max_ns": 85050,
+          "median_ns": 81463,
+          "min_ns": 80913,
+          "samples_ns": [
+            80913,
+            81463,
+            85050
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 106501,
+          "median_ns": 105319,
+          "min_ns": 101471,
+          "samples_ns": [
+            105319,
+            101471,
+            106501
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 37541,
+          "median_ns": 35497,
+          "min_ns": 32672,
+          "samples_ns": [
+            37541,
+            32672,
+            35497
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 13744577,
+          "median_ns": 13598725,
+          "min_ns": 13448080,
+          "samples_ns": [
+            13598725,
+            13448080,
+            13744577
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 75,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 119,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 126,
+          "value": 0
+        },
+        {
+          "argument": 5,
+          "byte_steps": 154,
+          "value": 0
+        },
+        {
+          "argument": 6,
+          "byte_steps": 161,
+          "value": 0
+        },
+        {
+          "argument": 7,
+          "byte_steps": 161,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 161,
+          "value": 18446744073709551609
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 499,
+      "snapshot_root": "d838109332761350802a51ee3986da23266032870079d2f9fb79b148a9bb24ce",
+      "text_bytes": 1268,
+      "text_root": "7c94b3b5108721858e6f043051259456438fdcb81e1aa70f4373ad07669f0e11",
+      "x86_blocks": 37,
+      "x86_instructions": 141
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-7-tree",
+      "control_bound": 22,
+      "elf_bytes": 27680,
+      "elf_root": "27b549a8fc0c73292398e167038d9a54344b297ca4b8c9307d1a7b820bcf6970",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 26802,
+      "function_count": 1,
+      "input_blocks": 22,
+      "joined_blocks": 2,
+      "joins": 7,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 84730,
+          "median_ns": 79510,
+          "min_ns": 79059,
+          "samples_ns": [
+            84730,
+            79510,
+            79059
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 255451,
+          "median_ns": 254289,
+          "min_ns": 245352,
+          "samples_ns": [
+            254289,
+            245352,
+            255451
+          ]
+        },
+        "native-emit": {
+          "max_ns": 259739,
+          "median_ns": 251033,
+          "min_ns": 248438,
+          "samples_ns": [
+            251033,
+            248438,
+            259739
+          ]
+        },
+        "native-export": {
+          "max_ns": 1082,
+          "median_ns": 1062,
+          "min_ns": 1042,
+          "samples_ns": [
+            1042,
+            1062,
+            1082
+          ]
+        },
+        "native-select": {
+          "max_ns": 137599,
+          "median_ns": 136187,
+          "min_ns": 134534,
+          "samples_ns": [
+            134534,
+            137599,
+            136187
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 100630,
+          "median_ns": 89449,
+          "min_ns": 88878,
+          "samples_ns": [
+            89449,
+            88878,
+            100630
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 36328,
+          "median_ns": 28945,
+          "min_ns": 28724,
+          "samples_ns": [
+            28945,
+            28724,
+            36328
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 6129885554,
+          "median_ns": 6042827589,
+          "min_ns": 6042294377,
+          "samples_ns": [
+            6042294377,
+            6042827589,
+            6129885554
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 132,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 139,
+          "value": 0
+        },
+        {
+          "argument": 6,
+          "byte_steps": 174,
+          "value": 0
+        },
+        {
+          "argument": 7,
+          "byte_steps": 181,
+          "value": 0
+        },
+        {
+          "argument": 8,
+          "byte_steps": 181,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 181,
+          "value": 18446744073709551608
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 545,
+      "snapshot_root": "b30415c6741ec2ae114ee194562d9ca09473397eadc14b00a2974974ab7fe894",
+      "text_bytes": 26827,
+      "text_root": "6e8ad5c3e0c22a9a86103c9c8684a30efdab83f4142c416e4d47dc7f1b19bfa6",
+      "x86_blocks": 896,
+      "x86_instructions": 2954
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-7-shared",
+      "control_bound": 22,
+      "elf_bytes": 2280,
+      "elf_root": "eb5807dee575647ae8fbb1b793015914b45735d2b3d7df3a82aac90d6aa00425",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 1407,
+      "function_count": 1,
+      "input_blocks": 22,
+      "joined_blocks": 8,
+      "joins": 7,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 66215,
+          "median_ns": 66035,
+          "min_ns": 60173,
+          "samples_ns": [
+            66035,
+            60173,
+            66215
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 222038,
+          "median_ns": 221577,
+          "min_ns": 220255,
+          "samples_ns": [
+            220255,
+            222038,
+            221577
+          ]
+        },
+        "native-emit": {
+          "max_ns": 172425,
+          "median_ns": 166875,
+          "min_ns": 163568,
+          "samples_ns": [
+            172425,
+            166875,
+            163568
+          ]
+        },
+        "native-export": {
+          "max_ns": 2755,
+          "median_ns": 2715,
+          "min_ns": 2484,
+          "samples_ns": [
+            2484,
+            2755,
+            2715
+          ]
+        },
+        "native-select": {
+          "max_ns": 145715,
+          "median_ns": 144562,
+          "min_ns": 141596,
+          "samples_ns": [
+            141596,
+            145715,
+            144562
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 124204,
+          "median_ns": 112722,
+          "min_ns": 111420,
+          "samples_ns": [
+            111420,
+            124204,
+            112722
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 36760,
+          "median_ns": 35046,
+          "min_ns": 33573,
+          "samples_ns": [
+            35046,
+            33573,
+            36760
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 17569361,
+          "median_ns": 17459335,
+          "min_ns": 17314925,
+          "samples_ns": [
+            17314925,
+            17459335,
+            17569361
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 85,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 132,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 139,
+          "value": 0
+        },
+        {
+          "argument": 6,
+          "byte_steps": 174,
+          "value": 0
+        },
+        {
+          "argument": 7,
+          "byte_steps": 181,
+          "value": 0
+        },
+        {
+          "argument": 8,
+          "byte_steps": 181,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 181,
+          "value": 18446744073709551608
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 545,
+      "snapshot_root": "b30415c6741ec2ae114ee194562d9ca09473397eadc14b00a2974974ab7fe894",
+      "text_bytes": 1432,
+      "text_root": "002069136e19eaf2e5ebacc379c82d25ea1d46055ad2e0cbfe40c3554d4e4748",
+      "x86_blocks": 42,
+      "x86_instructions": 159
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-8-tree",
+      "control_bound": 25,
+      "elf_bytes": 54432,
+      "elf_root": "ba831c7858eb73430695d07643f31378c598e7ad96f0263f30c6fb9ec67fbb80",
+      "emission": "heap-block-tree/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 53554,
+      "function_count": 1,
+      "input_blocks": 25,
+      "joined_blocks": 2,
+      "joins": 8,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 78558,
+          "median_ns": 75913,
+          "min_ns": 75272,
+          "samples_ns": [
+            75272,
+            75913,
+            78558
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 511514,
+          "median_ns": 509580,
+          "min_ns": 507796,
+          "samples_ns": [
+            509580,
+            511514,
+            507796
+          ]
+        },
+        "native-emit": {
+          "max_ns": 401326,
+          "median_ns": 386668,
+          "min_ns": 379575,
+          "samples_ns": [
+            401326,
+            379575,
+            386668
+          ]
+        },
+        "native-export": {
+          "max_ns": 2685,
+          "median_ns": 1233,
+          "min_ns": 1042,
+          "samples_ns": [
+            2685,
+            1042,
+            1233
+          ]
+        },
+        "native-select": {
+          "max_ns": 288764,
+          "median_ns": 276921,
+          "min_ns": 274317,
+          "samples_ns": [
+            288764,
+            276921,
+            274317
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 123693,
+          "median_ns": 104316,
+          "min_ns": 99888,
+          "samples_ns": [
+            123693,
+            99888,
+            104316
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 40696,
+          "median_ns": 33834,
+          "min_ns": 32731,
+          "samples_ns": [
+            40696,
+            32731,
+            33834
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 23750051508,
+          "median_ns": 23674764087,
+          "min_ns": 23637696475,
+          "samples_ns": [
+            23674764087,
+            23637696475,
+            23750051508
+          ]
+        }
+      },
+      "mode": "tree",
+      "mutation_rejections": 0,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 145,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 152,
+          "value": 0
+        },
+        {
+          "argument": 7,
+          "byte_steps": 194,
+          "value": 0
+        },
+        {
+          "argument": 8,
+          "byte_steps": 201,
+          "value": 0
+        },
+        {
+          "argument": 9,
+          "byte_steps": 201,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 201,
+          "value": 18446744073709551607
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 591,
+      "snapshot_root": "e00c3785a77bd75feba94c13b243a9d490b84f070a27ac68342c6272d340778f",
+      "text_bytes": 53579,
+      "text_root": "4efca20b341b89f3a97b1b749c7d6d5c9c9b171611bafc0310154d7d09a13ffa",
+      "x86_blocks": 1792,
+      "x86_instructions": 5898
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-8-shared",
+      "control_bound": 25,
+      "elf_bytes": 2448,
+      "elf_root": "ef273105b60451ef19ecb3d90450821aa904bf3de2c10c6db0fe4544329e1473",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 1571,
+      "function_count": 1,
+      "input_blocks": 25,
+      "joined_blocks": 9,
+      "joins": 8,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 68158,
+          "median_ns": 67246,
+          "min_ns": 66475,
+          "samples_ns": [
+            67246,
+            68158,
+            66475
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 435571,
+          "median_ns": 424750,
+          "min_ns": 422366,
+          "samples_ns": [
+            424750,
+            435571,
+            422366
+          ]
+        },
+        "native-emit": {
+          "max_ns": 329099,
+          "median_ns": 325443,
+          "min_ns": 320464,
+          "samples_ns": [
+            329099,
+            325443,
+            320464
+          ]
+        },
+        "native-export": {
+          "max_ns": 3036,
+          "median_ns": 2765,
+          "min_ns": 2746,
+          "samples_ns": [
+            2746,
+            3036,
+            2765
+          ]
+        },
+        "native-select": {
+          "max_ns": 277743,
+          "median_ns": 277703,
+          "min_ns": 272453,
+          "samples_ns": [
+            277743,
+            272453,
+            277703
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 120647,
+          "median_ns": 120357,
+          "min_ns": 118994,
+          "samples_ns": [
+            118994,
+            120647,
+            120357
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 41939,
+          "median_ns": 38162,
+          "min_ns": 36188,
+          "samples_ns": [
+            36188,
+            41939,
+            38162
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 21989123,
+          "median_ns": 21480357,
+          "min_ns": 21397434,
+          "samples_ns": [
+            21397434,
+            21480357,
+            21989123
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 95,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 145,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 152,
+          "value": 0
+        },
+        {
+          "argument": 7,
+          "byte_steps": 194,
+          "value": 0
+        },
+        {
+          "argument": 8,
+          "byte_steps": 201,
+          "value": 0
+        },
+        {
+          "argument": 9,
+          "byte_steps": 201,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 201,
+          "value": 18446744073709551607
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 591,
+      "snapshot_root": "e00c3785a77bd75feba94c13b243a9d490b84f070a27ac68342c6272d340778f",
+      "text_bytes": 1596,
+      "text_root": "c8de79ada35048a53f496d4f2148e9cb7c70d15e35c3319f27949757157f5fcd",
+      "x86_blocks": 47,
+      "x86_instructions": 177
+    },
+    {
+      "allocation_bound": 0,
+      "case": "joins-9-shared",
+      "control_bound": 28,
+      "elf_bytes": 2608,
+      "elf_root": "59d3d1d1d50c1316b500b40891d386691fee2b499257d146e919c35e279745af",
+      "emission": "heap-block-sharing/1",
+      "entry": "8b0adee91086ced6820acc29318e2230caf2e8c5cd5c8140595c87db121b2811",
+      "entry_offset": 1735,
+      "function_count": 1,
+      "input_blocks": 28,
+      "joined_blocks": 10,
+      "joins": 9,
+      "measurements": {
+        "elf-write-check": {
+          "max_ns": 71745,
+          "median_ns": 69200,
+          "min_ns": 66906,
+          "samples_ns": [
+            71745,
+            66906,
+            69200
+          ]
+        },
+        "native-certificate-check": {
+          "max_ns": 933258,
+          "median_ns": 880237,
+          "min_ns": 872433,
+          "samples_ns": [
+            933258,
+            872433,
+            880237
+          ]
+        },
+        "native-emit": {
+          "max_ns": 684399,
+          "median_ns": 670954,
+          "min_ns": 655865,
+          "samples_ns": [
+            684399,
+            655865,
+            670954
+          ]
+        },
+        "native-export": {
+          "max_ns": 1904,
+          "median_ns": 1883,
+          "min_ns": 1142,
+          "samples_ns": [
+            1883,
+            1142,
+            1904
+          ]
+        },
+        "native-select": {
+          "max_ns": 604820,
+          "median_ns": 602334,
+          "min_ns": 587547,
+          "samples_ns": [
+            602334,
+            604820,
+            587547
+          ]
+        },
+        "snapshot-decode-check": {
+          "max_ns": 123723,
+          "median_ns": 119745,
+          "min_ns": 109577,
+          "samples_ns": [
+            123723,
+            109577,
+            119745
+          ]
+        },
+        "snapshot-encode-check": {
+          "max_ns": 39755,
+          "median_ns": 39615,
+          "min_ns": 39043,
+          "samples_ns": [
+            39755,
+            39043,
+            39615
+          ]
+        },
+        "x86-encode-check": {
+          "max_ns": 26494313,
+          "median_ns": 25980954,
+          "min_ns": 25860584,
+          "samples_ns": [
+            26494313,
+            25980954,
+            25860584
+          ]
+        }
+      },
+      "mode": "shared",
+      "mutation_rejections": 105,
+      "observations": [
+        {
+          "argument": 0,
+          "byte_steps": 158,
+          "value": 0
+        },
+        {
+          "argument": 1,
+          "byte_steps": 165,
+          "value": 0
+        },
+        {
+          "argument": 8,
+          "byte_steps": 214,
+          "value": 0
+        },
+        {
+          "argument": 9,
+          "byte_steps": 221,
+          "value": 0
+        },
+        {
+          "argument": 10,
+          "byte_steps": 221,
+          "value": 1
+        },
+        {
+          "argument": 18446744073709551615,
+          "byte_steps": 221,
+          "value": 18446744073709551606
+        }
+      ],
+      "origin": "checked-ixir2",
+      "snapshot_bytes": 637,
+      "snapshot_root": "0c1b117ab8d644384d88f09dfdd850e01b486a21de6f1a5582cd57b4f3fdf39f",
+      "text_bytes": 1760,
+      "text_root": "0f4047c69214186fb01ee0bb94cfc38207c6e1691260641cd89de5a92072bc5d",
+      "x86_blocks": 52,
+      "x86_instructions": 195
+    }
+  ],
+  "format": "ixcc/native-sharing-reference-summary/1",
+  "phase_unit": "nanoseconds",
+  "processes": [
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"elapsed_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"max_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c}",
+        "-o",
+        "/tmp/native-sharing-reference-001/repetition-1-resources.json",
+        "/tmp/native-sharing-reference-001/seed/native-sharing",
+        "/tmp/native-sharing-reference-001/repetition-1",
+        "reference"
+      ],
+      "finished_utc": "2026-09-12T22:08:32.358585+00:00",
+      "repetition": 1,
+      "resources": {
+        "elapsed_seconds": 36.96,
+        "involuntary_context_switches": 236,
+        "major_faults": 0,
+        "max_rss_kib": 78272,
+        "minor_faults": 8950,
+        "system_seconds": 0.01,
+        "user_seconds": 36.83,
+        "voluntary_context_switches": 3
+      },
+      "started_utc": "2026-09-12T22:07:55.392408+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"elapsed_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"max_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c}",
+        "-o",
+        "/tmp/native-sharing-reference-001/repetition-2-resources.json",
+        "/tmp/native-sharing-reference-001/seed/native-sharing",
+        "/tmp/native-sharing-reference-001/repetition-2",
+        "reference"
+      ],
+      "finished_utc": "2026-09-12T22:09:09.243881+00:00",
+      "repetition": 2,
+      "resources": {
+        "elapsed_seconds": 36.88,
+        "involuntary_context_switches": 288,
+        "major_faults": 0,
+        "max_rss_kib": 78884,
+        "minor_faults": 9124,
+        "system_seconds": 0.01,
+        "user_seconds": 36.74,
+        "voluntary_context_switches": 3
+      },
+      "started_utc": "2026-09-12T22:08:32.358899+00:00"
+    },
+    {
+      "argv": [
+        "/nix/store/4n075ll5jdwbjv142yg8ymz5f3yf4pam-util-linux-2.42.2-bin/bin/taskset",
+        "-c",
+        "0",
+        "/nix/store/y51431wmnm7vli4l347dpn44nyhmcrw7-time-1.10/bin/time",
+        "-f",
+        "{\"elapsed_seconds\":%e,\"user_seconds\":%U,\"system_seconds\":%S,\"max_rss_kib\":%M,\"minor_faults\":%R,\"major_faults\":%F,\"voluntary_context_switches\":%w,\"involuntary_context_switches\":%c}",
+        "-o",
+        "/tmp/native-sharing-reference-001/repetition-3-resources.json",
+        "/tmp/native-sharing-reference-001/seed/native-sharing",
+        "/tmp/native-sharing-reference-001/repetition-3",
+        "reference"
+      ],
+      "finished_utc": "2026-09-12T22:09:46.447633+00:00",
+      "repetition": 3,
+      "resources": {
+        "elapsed_seconds": 37.19,
+        "involuntary_context_switches": 295,
+        "major_faults": 0,
+        "max_rss_kib": 79368,
+        "minor_faults": 9000,
+        "system_seconds": 0.01,
+        "user_seconds": 37.06,
+        "voluntary_context_switches": 7
+      },
+      "started_utc": "2026-09-12T22:09:09.246542+00:00"
+    }
+  ],
+  "rejected_joins": 10,
+  "rejection": "heap CFG entry has no admitted scalar-argument interface",
+  "repetitions": 3,
+  "selection_limits": {
+    "allocations": 64,
+    "copies": 12,
+    "credits": 4,
+    "depth": 128,
+    "functions": 32,
+    "values": 16,
+    "work": 4096
+  }
+}

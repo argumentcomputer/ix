@@ -1,0 +1,29 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.applyArg",
+      "address": "6838f921eb65b39699e96b1d13216aa78b1ab5356ffafb563a26dd097a1d2bcc"
+    },
+    {
+      "name": "Decline.composeClosure",
+      "address": "e7037cdabfdf3423c812789879bff16a2121a5e0ee79c7099850f15f8989fa9d"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Decline.iterCompose",
+      "definition_address": "6cfbdc642a20e9ccd178e65549b8936b9ed10d803c2233d19bec35d6a570d1d3",
+      "equation": "Decline.iterCompose.eq_def",
+      "equation_address": "0dba24e03ad2653bd72853ee6901faab98d1395f125933db023842cd78c94fb8"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    }
+  ],
+  "failures": []
+}

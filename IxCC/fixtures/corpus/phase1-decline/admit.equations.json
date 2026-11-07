@@ -1,0 +1,31 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.useOpaque",
+      "address": "c66966fdf07410f44f2e7d9b88ae0e6d61bcf3398b4a5edbf8bdb02953e40c54"
+    },
+    {
+      "name": "Decline.usePartial",
+      "address": "7852db972e33cecbb53ab784043340cf7f8427a32ea06c9a57d124cf3b47c32c"
+    },
+    {
+      "name": "Decline.useUnsafe",
+      "address": "14a8bd9e4e6c66b13949aa576bc7eca01cd973e5f579258f60407bc62b01d2da"
+    },
+    {
+      "name": "Decline.useChoice",
+      "address": "4c77d051026837e03f756fa41c9d4cf3c0b8e1229c505074c951f1f221e3a362"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    }
+  ],
+  "failures": []
+}

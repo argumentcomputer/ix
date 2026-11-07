@@ -1,0 +1,402 @@
+import IxCC.Tools.Check
+import IxCC.X86.ByteBranch
+import IxCC.X86.ByteCall
+import IxCC.X86.EvalExamples
+import IxCC.X86.DecodeWindow
+
+/-! Finite regression evidence for the independent decoder and byte evaluator.
+The universal local laws live in EncodeExecution/ByteBranch/ByteCall. The
+separate GNU and linked-native gates remain external oracles. -/
+
+open IxCC IxCC.X86
+open IxCC.Tools.Check (checked cli)
+
+private def need (condition : Bool) (message : String) : Except String Unit :=
+  if condition then .ok () else .error message
+
+private def registers : List GPR :=
+  [.rax, .rcx, .rdx, .rbx, .rsp, .rbp, .rsi, .rdi,
+   .r8, .r9, .r10, .r11, .r12, .r13, .r14, .r15]
+
+private def indices : List (Option IndexReg) :=
+  [none, some .rax, some .rcx, some .rdx, some .rbx, some .rbp, some .rsi, some .rdi,
+   some .r8, some .r9, some .r10, some .r11, some .r12, some .r13, some .r14, some .r15]
+
+private def widths : List Width := [.w8, .w16, .w32, .w64]
+private def operations : List AluOp := [.add, .sub, .and, .or, .xor]
+private def conditions : List Condition :=
+  [.eq, .ne, .unsignedLt, .unsignedLe, .unsignedGt, .unsignedGe,
+   .signedLt, .signedLe, .signedGt, .signedGe]
+private def immediates : List Word :=
+  [0, 1, 0x7f, 0x80, 0xff, 0x8000, 0xffff, 0x7fffffff, 0x80000000,
+   0xffffffff, 0xffffffff80000000, 0xffffffffffffff80, 0x100000000,
+   0x8000000000000000, 0xffffffffffffffff]
+
+/-- The rows M1.B1 added: `test`, shifts, `div`, `setcc`, `cmovcc` and
+`op r, r/m`. -/
+private def phaseOneRow (o : Op) : Bool :=
+  match o.mn with
+  | .test | .shl | .shr | .sar | .div | .setcc _ | .cmovcc _ => true
+  | .add | .or | .and | .sub | .xor | .cmp => o.form == .RM
+  | _ => false
+
+private def rowAddresses : List MemAddr :=
+  [{ base := some .rbx, displacement := 8 }, { base := some .rbp },
+   { base := some .r12, index := some .r13, scale := .eight, displacement := 0x80000000 },
+   { base := some .rsp, displacement := 0xfffffff8 }, { base := none, displacement := 0x100 }]
+
+/-- Every operand choice per slot: all sixteen registers, the addresses
+above, and the immediate edges in their canonical form. -/
+private def slotArguments (slot : Slot) : List Arg :=
+  slot.kinds.flatMap fun
+    | .reg => registers.map .reg
+    | .mem => rowAddresses.map .mem
+    | .imm8 => (immediates.map fun value => .imm (ImmKind.imm8.norm value)).eraseDups
+    | .imm16 => (immediates.map fun value => .imm (ImmKind.imm16.norm value)).eraseDups
+    | .imm32 | .rel32 => (immediates.map fun value => .imm (ImmKind.imm32.norm value)).eraseDups
+    | .imm64 => immediates.map .imm
+
+private def rowArguments : List Slot → List (List Arg)
+  | [] => [[]]
+  | slot :: slots => (slotArguments slot).flatMap fun arg => (rowArguments slots).map (arg :: ·)
+
+private def initial : Core :=
+  { registers := fun register =>
+      if register == .rsp then 0x8008 else if register == .rbp then 0x9000
+      else 0xfedcba9876543210 + (Encode.gprCode register).toUInt64 * 0x102030405
+    memory := { Memory.flat with bytes := fun address => (address ^^^ (address >>> 8)).toUInt8 } }
+
+private def sameRegisters (left right : Core) : Bool :=
+  registers.all fun register => left.readReg register == right.readReg register
+
+private def sameBytes (left right : Memory) (addresses : List Word) : Bool :=
+  addresses.all fun address => left.bytes address == right.bytes address &&
+    left.readable address == right.readable address && left.writable address == right.writable address
+
+private def touched (instruction : Instr) (core : Core) : Word :=
+  match instruction with
+  | .op o args =>
+      match o.reads args core ++ o.writes args core with
+      | access :: _ => access.address
+      | [] => (args.findSome? fun | .mem address => some (address.eval core) | _ => none).getD 0
+  | _ => 0
+
+private def instructionCase (target : Checked) (instruction : Instr) (core : Core) : Except String Unit := do
+  let bytes := (Encode.encodeInstr instruction).bytes
+  let text := Encode.bytes [0xaa, 0xbb] ++ bytes ++ Encode.bytes [0xc3, 0xff]
+  need (Decode.decodeAt text 2 == some ⟨Encode.instructionOperation instruction, bytes.size⟩)
+    s!"decode or length: {repr instruction}"
+  need (Decode.decodeWindowAt text 2 == Decode.decodeAt text 2)
+    s!"bounded decode or length: {repr instruction}"
+  for cut in [:bytes.size] do
+    need ((Decode.decodeAt (bytes.extract 0 cut) 0).isNone) s!"accepted truncated form: {repr instruction}, {cut}"
+    need ((Decode.decodeWindowAt (bytes.extract 0 cut) 0).isNone) s!"bounded decoder accepted truncated form: {repr instruction}, {cut}"
+  if Encode.linearInstruction instruction then
+    let typed := executeInstr Runtime.rejecting target instruction (Machine.initial target core)
+    match ByteEval.step text 0x1000 ⟨core, 0x1002, {}⟩ with
+    | .error (.memory fault) =>
+        need (typed.status == .trapped (.memoryFault fault)) s!"fault disagreement: {repr instruction}"
+    | .error .divideError =>
+        need (typed.status == .trapped (.semantic .divideError)) s!"divide fault disagreement: {repr instruction}"
+    | .error fault => throw s!"unexpected byte fault: {repr instruction}, {repr fault}"
+    | .ok result =>
+        need (typed.status == .running && sameRegisters typed.core result.core &&
+          result.rip == 0x1002 + UInt64.ofNat bytes.size) s!"register or RIP disagreement: {repr instruction}"
+        let address := touched instruction core
+        let probes := (List.range 24).map fun index => address - 8 + UInt64.ofNat index
+        need (sameBytes typed.core.memory result.core.memory probes) s!"memory disagreement: {repr instruction}"
+
+private def instructionMatrix (target : Checked) : Except String Nat := do
+  let mut cases : Array Instr := #[]
+  for width in widths do
+    for destination in registers do
+      for source in registers do
+        cases := cases.push (.mov width destination (.reg source))
+        for operation in operations do cases := cases.push (.alu operation width destination (.reg source))
+      for value in immediates do
+        cases := cases.push (.mov width destination (.imm value))
+        for operation in operations do cases := cases.push (.alu operation width destination (.imm value.toUInt32))
+  for width in ([.w16, .w32, .w64] : List MulWidth) do
+    for destination in registers do
+      for source in registers do cases := cases.push (.imul width destination source)
+      for value in immediates do cases := cases.push (.imulImm width destination .r9 value.toUInt32)
+  for register in registers do
+    cases := cases.push (.push register) |>.push (.pop register)
+    for index in ([0, 1, 0x7fff, 0xffff] : List UInt16) do
+      cases := cases.push (.spill ⟨index⟩ register) |>.push (.reload register ⟨index⟩)
+  for size in ([0, 1, 0x7fff, 0xffff] : List UInt16) do
+    cases := cases.push (.allocFrame ⟨size⟩) |>.push (.freeFrame ⟨size⟩)
+  -- Cross all base/index/scale combinations, including the RSP/R12 and
+  -- RBP/R13 SIB holes, with both low and extended destination fields.
+  for base in none :: registers.map some do
+    for index in indices do
+      for scale in ([.one, .two, .four, .eight] : List Scale) do
+        for destination in ([.rdi, .r9] : List GPR) do
+          let address : MemAddr := { base, index, scale, displacement := 0x80000000 }
+          cases := cases.push (.lea destination address)
+          for width in widths do
+            cases := cases.push (.load width destination address) |>.push (.store width address destination)
+  for displacement in ([0, 1, 0x7fffffff, 0x80000000, 0xffffffff] : List Imm32) do
+    for register in registers do
+      for width in widths do
+        let address : MemAddr := { base := some .r13, index := some .r12, scale := .eight, displacement }
+        cases := cases.push (.load width register address) |>.push (.store width address register)
+  cases := cases.push (.call 0)
+  for intrinsic in ([.allocate, .reserve, .reuse, .releaseReservation, .retainShared,
+      .releaseShared, .memcpy, .unsignedDiv] : List Intrinsic) do
+    cases := cases.push (.callRuntime intrinsic)
+  -- The Phase 1 rows over every register pair, addressing holes and
+  -- immediate edges. Flag consumers only decode here; they execute as fused
+  -- pairs (`fusedMatrix`).
+  for o in Op.rows.filter phaseOneRow do
+    for args in rowArguments (desc o).slots do
+      if o.argsOk args then cases := cases.push (.op o args)
+  for instruction in cases do instructionCase target instruction initial
+  -- `div` with a zero high half: in-range quotients and zero divisors.
+  let mut divisions := 0
+  for o in Op.rows.filter (·.mn == .div) do
+    for register in registers do
+      for divisor in ([0, 1, 7, 0xffffffff, 0xffffffffffffffff] : List Word) do
+        instructionCase target (.op o [.reg register]) ((initial.setReg .rdx 0).setReg register divisor)
+        divisions := divisions + 1
+  return cases.size + divisions
+
+private def branchMatrix : Except String Nat := do
+  let mut count := 0
+  for width in widths do
+    let values := [0, 1, width.mask, width.mask >>> 1, (width.mask >>> 1) + 1]
+    for left in values do
+      for right in values do
+        for source in ([.reg .r12, .imm right.toUInt32] : List AluSource) do
+          let core := (initial.setReg .r9 left).setReg .r12 right
+          let comparison : Compare := { width, left := .r9, right := source }
+          for condition in conditions do
+            let raw := (Encode.encodeTerminator (.compare comparison condition 0 0)).bytes
+            let comparisonSize := (Encode.encodeCompare comparison).size
+            let bytes ← (Encode.patchSigned32 raw (comparisonSize + 2) 13).mapError reprStr
+            let bytes ← (Encode.patchSigned32 bytes (comparisonSize + 7) (-19)).mapError reprStr
+            for offset in [0, comparisonSize, comparisonSize + 6] do
+              need (Decode.decodeWindowAt bytes offset == Decode.decodeAt bytes offset) "bounded branch decode differs"
+            let take := comparison.holds condition core
+            let result ← (ByteEval.run bytes 0x2000 (if take then 2 else 3) ⟨core, 0x2000, {}⟩).mapError reprStr
+            let expected := if take then 0x2000 + UInt64.ofNat (comparisonSize + 6) + 13
+              else 0x2000 + UInt64.ofNat (comparisonSize + 11) - 19
+            need (result.rip == expected && sameRegisters core result.core && result.flags.test condition == some take)
+              s!"patched branch mismatch: {repr comparison}, {repr condition}, {left}, {right}"
+            count := count + 1
+  return count
+
+/-- Patched branches whose producer is any listed flag producer (`cmp` and
+`test` in every operand form, and `add`/`sub`), with register and memory
+operands: the byte run lands where the typed terminator goes, with the
+producer's core. -/
+private def producerBranchMatrix : Except String Nat := do
+  let mut count := 0
+  let producers := Op.rows.filter fun o =>
+    (o.mn == .cmp || o.mn == .test || o.mn == .add || o.mn == .sub) && o.linear
+  for o in producers do
+    for (args, i) in ((rowArguments (desc o).slots).filter o.argsOk).zipIdx do
+      if i % 11 != 0 then continue
+      for condition in conditions do
+        if FusedOk o (Op.jccRel32 condition) then
+          let program : Program := { entry := 0, blocks := #[
+            { instructions := #[], terminator := .branch o args condition 1 2 },
+            { instructions := #[], terminator := .ret }, { instructions := #[], terminator := .ret }] }
+          let target ← program.check.mapError reprStr
+          let typed := step Runtime.rejecting target (Machine.initial target initial)
+          let raw := (Encode.encodeTerminator (.branch o args condition 1 2)).bytes
+          let size := (Encode.encodeOp o args).size
+          let bytes ← (Encode.patchSigned32 raw (size + 2) 13).mapError reprStr
+          let bytes ← (Encode.patchSigned32 bytes (size + 7) (-19)).mapError reprStr
+          match typed.status with
+          | .running =>
+              let take := typed.pc.block == 1
+              let result ← (ByteEval.run bytes 0x2000 (if take then 2 else 3) ⟨initial, 0x2000, {}⟩).mapError reprStr
+              let expected := if take then 0x2000 + UInt64.ofNat (size + 6) + 13
+                else 0x2000 + UInt64.ofNat (size + 11) - 19
+              let address := touched (.op o args) initial
+              let probes := (List.range 24).map fun index => address - 8 + UInt64.ofNat index
+              need (result.rip == expected && sameRegisters typed.core result.core &&
+                  sameBytes typed.core.memory result.core.memory probes)
+                s!"producer branch mismatch: {repr o}, {repr args}, {repr condition}"
+              -- With the false edge falling through: the producer and `jcc`
+              -- only, two byte steps either way.
+              let fallRaw := (Encode.encodeTerminator (.branch o args condition 1 2 .fall)).bytes
+              need (fallRaw.size + 5 == raw.size) s!"fall-through branch size: {repr o}, {repr condition}"
+              let fallBytes ← (Encode.patchSigned32 fallRaw (size + 2) 13).mapError reprStr
+              let fell ← (ByteEval.run fallBytes 0x2000 2 ⟨initial, 0x2000, {}⟩).mapError reprStr
+              need (fell.rip == (if take then 0x2000 + UInt64.ofNat (size + 6) + 13 else 0x2000 + UInt64.ofNat (size + 6)) &&
+                  sameRegisters typed.core fell.core && sameBytes typed.core.memory fell.core.memory probes)
+                s!"fall-through branch mismatch: {repr o}, {repr args}, {repr condition}"
+          | .trapped (.memoryFault fault) =>
+              let .error (.memory byteFault) := ByteEval.run bytes 0x2000 1 ⟨initial, 0x2000, {}⟩
+                | throw s!"producer fault disagreement: {repr o}, {repr args}"
+              need (byteFault == fault) s!"producer fault differs: {repr o}, {repr args}"
+          | status => throw s!"unexpected producer branch status: {repr o}, {repr args}, {repr status}"
+          count := count + 1
+  return count
+
+/-- Fused pairs: every `cmp`/`test` producer with register and memory
+operands, into `setcc` and `cmovcc` at each width, for every condition. The
+two decoded rows run on the byte machine from arbitrary earlier flags and
+agree with the one typed step on registers, touched memory and faults. -/
+private def fusedMatrix (target : Checked) : Except String Nat := do
+  let mut count := 0
+  let producers := Op.rows.filter fun o => o.flagsOnly && o.linear
+  let earlier : List ByteEval.Flags := [{}, ⟨some true, some true, some true, some true⟩,
+    ⟨some false, some false, some false, some false⟩]
+  for p in producers do
+    for (pargs, i) in ((rowArguments (desc p).slots).filter p.argsOk).zipIdx do
+      if i % 13 != 0 then continue
+      for condition in conditions do
+        for consumer in [Op.setccM condition, Op.cmovRM condition .w16, Op.cmovRM condition .w32,
+            Op.cmovRM condition .w64] do
+          let consumerSets := (rowArguments (desc consumer).slots).filter consumer.argsOk
+          let cargs := consumerSets[(i * 7 + count) % consumerSets.length]!
+          let instruction : Instr := .fused p pargs consumer cargs
+          need instruction.wellFormed s!"fused pair rejected: {repr instruction}"
+          let bytes := (Encode.encodeInstr instruction).bytes
+          let text := Encode.bytes [0xaa, 0xbb] ++ bytes ++ Encode.bytes [0xc3, 0xff]
+          let producerSize := (Encode.encodeOp p pargs).size
+          need (Decode.decodeAt text 2 == some ⟨.op p pargs, producerSize⟩ &&
+              Decode.decodeAt text (2 + producerSize) == some ⟨.op consumer cargs, bytes.size - producerSize⟩)
+            s!"fused decode: {repr instruction}"
+          let typed := executeInstr Runtime.rejecting target instruction (Machine.initial target initial)
+          for flags in earlier do
+            match ByteEval.run text 0x1000 2 ⟨initial, 0x1002, flags⟩ with
+            | .error (.memory fault) =>
+                need (typed.status == .trapped (.memoryFault fault)) s!"fused fault disagreement: {repr instruction}"
+            | .error fault => throw s!"unexpected fused byte fault: {repr instruction}, {repr fault}"
+            | .ok result =>
+                let address := touched (.op consumer cargs) initial
+                let probes := (List.range 24).map fun index => address - 8 + UInt64.ofNat index
+                need (typed.status == .running && sameRegisters typed.core result.core &&
+                    sameBytes typed.core.memory result.core.memory probes &&
+                    result.rip == 0x1002 + UInt64.ofNat bytes.size)
+                  s!"fused register, memory or RIP disagreement: {repr instruction}"
+          count := count + 1
+  return count
+
+private def windowCases : Except String Nat := do
+  let mut count := 0
+  -- Exhaust the two-byte opcode/prefix space both truncated and followed by
+  -- operands beyond the bounded window, with a nonzero instruction position.
+  let suffix := ByteArray.mk ((List.range 32).map UInt8.ofNat).toArray
+  for first in [:256] do
+    for second in [:256] do
+      let bytes := Encode.bytes [UInt8.ofNat first, UInt8.ofNat second]
+      for (text, offset) in [(bytes, 0), (Encode.bytes [0xff, 0xf0, 0x90] ++ bytes ++ suffix, 3)] do
+        need (Decode.decodeWindowAt text offset == Decode.decodeAt text offset)
+          s!"bounded decoder differs for {first}/{second} at {offset}"
+        count := count + 1
+  for text in [ByteArray.empty, Encode.byte 0xc3, suffix] do
+    for offset in [text.size, text.size + 1, UInt64.size, 2^128] do
+      need ((Decode.decodeWindowAt text offset).isNone && (Decode.decodeAt text offset).isNone)
+        "out-of-range decode accepted"
+      count := count + 1
+  return count
+
+private def failureCases (target : Checked) : Except String Unit := do
+  for bytes in ([[], [0x90], [0x66, 0x66, 0x48, 0x89, 0xc0], [0x48, 0x48, 0x89, 0xc0],
+      [0x66, 0x48, 0x89, 0xc0], [0x42, 0x89, 0xc0], [0x88, 0xe0],
+      [0xf0, 0x48, 0x01, 0xc0], [0x0f, 0x0b]] : List (List UInt8)) do
+    need ((Decode.decodeAt (Encode.bytes bytes) 0).isNone) s!"unsupported encoding accepted: {repr bytes}"
+    need ((Decode.decodeWindowAt (Encode.bytes bytes) 0).isNone) s!"bounded decoder accepted unsupported encoding: {repr bytes}"
+  for width in widths do
+    for byte in [:width.bytes] do
+      let memory : Memory := { initial.memory with
+        readable := fun address => address != 0x5000 + UInt64.ofNat byte
+        writable := fun address => address != 0x5000 + UInt64.ofNat byte }
+      let core := { initial with memory }
+      instructionCase target (.load width .rax { displacement := 0x5000 }) core
+      instructionCase target (.store width { displacement := 0x5000 } .rax) core
+  for instruction in ([.push .rsp, .pop .rsp, .spill ⟨0⟩ .r9, .reload .r9 ⟨0⟩] : List Instr) do
+    instructionCase target instruction { initial with memory := Memory.unmapped }
+  let denied : ByteEval.State := ⟨{ initial with memory := Memory.unmapped }, 0x1000, {}⟩
+  for bytes in [Encode.byte 0xc3, (Encode.encodeInstr (.call 0)).bytes] do
+    let .error (.memory _) := ByteEval.step bytes 0x1000 denied | throw "unmapped control stack access succeeded"
+  let product ← (ByteEval.step (Encode.encodeInstr (.imul .w64 .rax .rax)).bytes 0x1000 ⟨initial, 0x1000, {}⟩).mapError reprStr
+  need (product.flags.zero.isNone && product.flags.sign.isNone && product.flags.carry.isSome && product.flags.overflow.isSome)
+    "IMUL undefined flag policy changed"
+  let .error (.undefinedCondition .eq) := ByteEval.step (Encode.bytes [0x0f, 0x84, 0, 0, 0, 0]) product.rip product
+    | throw "branch read an undefined IMUL flag"
+  -- Flag consumers run only in fused pairs, after a flag-only producer that
+  -- sets what they read; a branch's producer must set its condition's flags.
+  need (!(Instr.op (Op.setccM .eq) [.reg .rax]).wellFormed) "standalone setcc accepted"
+  need (!(Instr.op (Op.cmovRM .eq .w64) [.reg .rax, .reg .rcx]).wellFormed) "standalone cmovcc accepted"
+  need (!(Instr.fused { mn := .add, w := .w64, form := .MR } [.reg .rax, .reg .rcx]
+    (Op.setccM .eq) [.reg .rax]).wellFormed) "fused pair with a writing producer accepted"
+  need (!(Instr.fused { mn := .cmp, w := .w64, form := .MR } [.reg .rax, .reg .rcx]
+    { mn := .add, w := .w64, form := .MR } [.reg .rax, .reg .rcx]).wellFormed) "fused pair without a consumer accepted"
+  need (!(Terminator.branch { mn := .imul, w := .w64, form := .RM } [.reg .rax, .reg .rcx] .eq 0 0).wellFormed)
+    "branch on an undefined flag accepted"
+  need (Terminator.branch { mn := .imul, w := .w64, form := .RM } [.reg .rax, .reg .rcx] .unsignedLt 0 0).wellFormed
+    "branch on a defined IMUL flag rejected"
+  -- A shift by zero leaves flags undefined in the model, so a branch on them faults.
+  let shifted ← (ByteEval.step (Encode.encodeOp { mn := .shl, w := .w64, form := .MI } [.reg .rax, .imm 0])
+    0x1000 ⟨initial, 0x1000, {}⟩).mapError reprStr
+  let .error (.undefinedCondition .unsignedLt) := ByteEval.step (Encode.bytes [0x0f, 0x82, 0, 0, 0, 0]) shifted.rip shifted
+    | throw "branch read a flag of a zero-count shift"
+  -- div faults with #DE on a zero divisor and on quotient overflow.
+  let .error .divideError := ByteEval.step (Encode.encodeOp (Op.divM .w64) [.reg .rcx]) 0x1000
+      ⟨initial.setReg .rcx 0, 0x1000, {}⟩ | throw "division by zero succeeded"
+  let .error .divideError := ByteEval.step (Encode.encodeOp (Op.divM .w64) [.reg .rcx]) 0x1000
+      ⟨(initial.setReg .rcx 5).setReg .rdx 5, 0x1000, {}⟩ | throw "quotient overflow succeeded"
+  let .error (.invalidPatch _ _) := Encode.patchSigned32 (Encode.bytes [0xe9, 0, 0, 0, 0]) 2 0
+    | throw "out-of-bounds relocation accepted"
+  for value in ([-2147483648, 2147483647] : List Int) do
+    need (Encode.fitsSigned32 value) "signed rel32 endpoint rejected"
+    let bytes := Encode.byte 0xe9 ++ Encode.signed32Bytes value
+    let result ← (ByteEval.step bytes 0x1000 ⟨initial, 0x1000, {}⟩).mapError reprStr
+    need (result.rip == UInt64.ofInt (0x1005 + value)) "signed rel32 endpoint changed target"
+  for value in ([-2147483649, 2147483648] : List Int) do
+    need (!Encode.fitsSigned32 value) "out-of-range rel32 accepted"
+  -- A one-byte corruption must change the decoded operand, and a branch
+  -- relocation corruption must change its destination.
+  let mov := (Encode.encodeInstr (.mov .w64 .rax (.imm 42))).bytes
+  need (Decode.decodeAt (mov.set! 2 43) 0 != Decode.decodeAt mov 0) "immediate corruption was invisible"
+  let jump := Encode.byte 0xe9 ++ Encode.imm32Bytes 0
+  let changed ← (ByteEval.step (jump.set! 1 1) 0x1000 ⟨initial, 0x1000, {}⟩).mapError reprStr
+  need (changed.rip == 0x1006) "relocation corruption was invisible"
+
+private def sentinel : Word := 0xff00
+private def textBase : Word := 0x100000
+
+private def runUntilReturn (text : ByteArray) : Nat → ByteEval.State → Except String (ByteEval.State × Nat)
+  | 0, _ => .error "byte execution exhausted fuel before returning to the harness"
+  | fuel + 1, state => do
+      let some decoded := Decode.decodeAt text (state.rip - textBase).toNat
+        | throw s!"decode fault at {state.rip}"
+      let next ← (ByteEval.step text textBase state).mapError reprStr
+      if next.rip == sentinel then
+        need (decoded.operation == .ret) "harness exit was not a return"
+        return (next, 1)
+      let (result, count) ← runUntilReturn text fuel next
+      return (result, count + 1)
+
+private def entry (encoded : Encode.Output) (target : Checked) (core : Core) : Except String ByteEval.State := do
+  let some offset := encoded.blockOffsets[target.program.entry.toNat]? | throw "encoded entry offset missing"
+  return ⟨core, textBase + UInt64.ofNat offset, {}⟩
+
+private def smallPrograms : Except String Unit := do
+  for program in [Examples.arithmeticProgram, Examples.stackProgram, Examples.callProgram,
+      { entry := 0, blocks := #[{ instructions := #[], terminator := .tailCall 1 },
+        { instructions := #[.mov .w64 .rax (.imm 42)], terminator := .ret }] }] do
+    let target ← program.check.mapError reprStr
+    let encoded ← (Encode.encode target).mapError reprStr
+    let core := { (Core.empty 0x8008) with memory := Memory.flat.write64 0x8008 sentinel }
+    let typed := runFrom Runtime.rejecting target 100 core
+    let (result, _) ← runUntilReturn encoded.text 100 (← entry encoded target core)
+    need (typed.status == .halted 42 && result.core.readReg .rax == 42 && result.core.readReg .rsp == 0x8010 &&
+      sameRegisters typed.core (result.core.setReg .rsp 0x8008)) "complete arithmetic/stack/call/tail stream mismatch"
+
+def main : IO UInt32 := cli "x86 byte execution check failed" do
+  let target ← checked (Examples.arithmeticProgram.check.mapError reprStr)
+  let forms ← checked (instructionMatrix target)
+  let branches ← checked branchMatrix
+  let producerBranches ← checked producerBranchMatrix
+  let fused ← checked (fusedMatrix target)
+  let windows ← checked windowCases
+  checked (failureCases target)
+  checked smallPrograms
+  IO.println s!"x86 byte execution check ok: {forms} instruction cases, {branches} patched branches, {producerBranches} patched producer branches, {fused} fused pairs, {windows} bounded-window cases, truncation/fault/corruption checks, four complete streams"

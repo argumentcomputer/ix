@@ -1,0 +1,3796 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase1-abi",
+  "description": "The Phase 1 ABI and readback matrix (phase1.md MT.4): roots of arity 0-6 returning Nat, Bool and a three-constructor enumeration, at the edge arguments 0, 1, 2^32-1, 2^62 and 2^63-1 in every position, called natively through the runtime driver and read back by its C decoder and by Rt.readback; arity 6 is declined with rt.params.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/phase1-abi",
+  "source_root": "fixtures/corpus/phase1-abi/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "abi",
+      "source": {
+        "path": "Abi.lean",
+        "sha256": "f3eebc564cd04959516a27bd909d83fedccfaea209f17db8f7f9f6e3e89e5379",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Abi.nat0",
+        "Abi.bool0",
+        "Abi.tri0",
+        "Abi.nat1",
+        "Abi.bool1",
+        "Abi.tri1",
+        "Abi.nat2",
+        "Abi.bool2",
+        "Abi.tri2",
+        "Abi.nat3",
+        "Abi.bool3",
+        "Abi.tri3",
+        "Abi.nat4",
+        "Abi.bool4",
+        "Abi.tri4",
+        "Abi.nat5",
+        "Abi.bool5",
+        "Abi.tri5",
+        "Abi.nat6",
+        "Abi.bool6",
+        "Abi.tri6"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "abi.ixe",
+        "sha256": "bb9f406a8912b9ef56e08256ba8bcc74b518dc3e8538ec63e147669d489b0499",
+        "bytes": 191919
+      },
+      "equations": {
+        "path": "abi.equations.json",
+        "sha256": "2dd4fafdb3ca428add1df5b1fb81da37f8c210e0f642047a32e8811ec5e69118",
+        "equations": 9,
+        "failures": 0
+      },
+      "named_env_sha256": "9901c2399ec7dae9250ea61b33caf081dd473322a3bfae411c8d9f6f914fda2d",
+      "census": {
+        "path": "abi.census.json",
+        "sha256": "0ccd4ccd74ddf775fcc1f59c8e0f18acba80c6d736c11391f07a99ecc223c595"
+      },
+      "roots": [
+        {
+          "name": "Abi.nat0",
+          "address": "46137d63a64fa0cea017beaf10f1f6d575234a903d05f1542d8e7e13560153a6",
+          "params": 0,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [],
+              "value": "42",
+              "machine": true
+            }
+          ]
+        },
+        {
+          "name": "Abi.bool0",
+          "address": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44",
+          "params": 0,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [],
+              "value": "true",
+              "machine": true
+            }
+          ]
+        },
+        {
+          "name": "Abi.tri0",
+          "address": "31f4ea9218d73a81d4d818d1c33dfeed3e672e5ca4e029ec96d75039a0a2f90d",
+          "params": 0,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [],
+              "value": "2",
+              "machine": true
+            }
+          ]
+        },
+        {
+          "name": "Abi.nat1",
+          "address": "733dc79213a887b5d8bc79e64b11efd9110c44b02c4b9f0669ea80df24c50da2",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                4294967295
+              ],
+              "value": "4294967295"
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "4611686018427387904"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "9223372036854775807",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.bool1",
+          "address": "93b943bc157d808e8ed37fc20e71622e1dd41585cea138586438f8ffdecd4d62",
+          "params": 1,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                4294967295
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.tri1",
+          "address": "24753de499621b2d18a6509557bda8f23cd471d22150d951bfe1e6ea6c4e3b5f",
+          "params": 1,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                1
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                4294967295
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                4611686018427387904
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.nat2",
+          "address": "a616452f152edb98902a8d7399917ea97153399181bf7286b7cb1e3f6b0b91ba",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11
+              ],
+              "value": "5"
+            },
+            {
+              "args": [
+                1,
+                11
+              ],
+              "value": "4"
+            },
+            {
+              "args": [
+                4294967295,
+                11
+              ],
+              "value": "4294967290"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11
+              ],
+              "value": "4611686018427387909"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11
+              ],
+              "value": "9223372036854775802",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                10,
+                1
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                10,
+                4294967295
+              ],
+              "value": "2147483637"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904
+              ],
+              "value": "2305843009213693962"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807
+              ],
+              "value": "4611686018427387893",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "4611686018427387904",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.bool2",
+          "address": "f9259a5a2464fe990b89e929267ba630da9533e8407e13ea802e23ce46266cf8",
+          "params": 2,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                1,
+                11
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                4294967295,
+                11
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                1
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                4294967295
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.tri2",
+          "address": "de6d14d17ba64f92fa96ab39b3ac6f37889fca65c4965794d959cdbec2f9e8a7",
+          "params": 2,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                1,
+                11
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                4294967295,
+                11
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                1
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                4294967295
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.nat3",
+          "address": "061ba4ed8ce4416e0e882b7f7567ba900b5898f24025219b3f38e0cc1e180b0b",
+          "params": 3,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12
+              ],
+              "value": "4294967289"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12
+              ],
+              "value": "4611686018427387910"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12
+              ],
+              "value": "9223372036854775801",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12
+              ],
+              "value": "9"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12
+              ],
+              "value": "9"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12
+              ],
+              "value": "2147483638"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12
+              ],
+              "value": "2305843009213693961"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12
+              ],
+              "value": "4611686018427387894",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0
+              ],
+              "value": "15"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1
+              ],
+              "value": "15"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295
+              ],
+              "value": "1073741808"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904
+              ],
+              "value": "1152921504606846991"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807
+              ],
+              "value": "2305843009213693936",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "6917529027641081855",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.bool3",
+          "address": "1f5d96ce74279f799e81e7df803742f25e002b8b54659335e72d98d7fc0ba0e8",
+          "params": 3,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.tri3",
+          "address": "d941ccf012eadebf09a1b107decdd5697ac6861a8eda3eb4ba3c3eab1a468841",
+          "params": 3,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.nat4",
+          "address": "e1051e6de6f0570ef9347d71790566d97f95fdf270471cb6581f1529484d659d",
+          "params": 4,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12,
+                13
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12,
+                13
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12,
+                13
+              ],
+              "value": "4294967288"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12,
+                13
+              ],
+              "value": "4611686018427387911"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12,
+                13
+              ],
+              "value": "9223372036854775800",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12,
+                13
+              ],
+              "value": "8"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12,
+                13
+              ],
+              "value": "8"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12,
+                13
+              ],
+              "value": "2147483639"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12,
+                13
+              ],
+              "value": "2305843009213693960"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12,
+                13
+              ],
+              "value": "4611686018427387895",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0,
+                13
+              ],
+              "value": "14"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1,
+                13
+              ],
+              "value": "14"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295,
+                13
+              ],
+              "value": "1073741809"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904,
+                13
+              ],
+              "value": "1152921504606846990"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807,
+                13
+              ],
+              "value": "2305843009213693937",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                0
+              ],
+              "value": "12"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                1
+              ],
+              "value": "12"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4294967295
+              ],
+              "value": "536870899"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4611686018427387904
+              ],
+              "value": "576460752303423500"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                9223372036854775807
+              ],
+              "value": "1152921504606846963",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "5764607523034234880",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.bool4",
+          "address": "6c6e5c3f7114ff4bc3d0457189d1ebead205ad207c6263644ce331265becdbe4",
+          "params": 4,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12,
+                13
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12,
+                13
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12,
+                13
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12,
+                13
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295,
+                13
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904,
+                13
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807,
+                13
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                0
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                1
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4294967295
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4611686018427387904
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.tri4",
+          "address": "98f4a25856c56064fea3cc9d6bcf766599ffe9518f16e8ba2765342b59d7593f",
+          "params": 4,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12,
+                13
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12,
+                13
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12,
+                13
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12,
+                13
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12,
+                13
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1,
+                13
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295,
+                13
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904,
+                13
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807,
+                13
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                1
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4294967295
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4611686018427387904
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.nat5",
+          "address": "424fd85e0745fc4ecd9f23c7f9a738d05643965d37f0a822fa598fe091f60151",
+          "params": 5,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "4294967288"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "4611686018427387911"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "9223372036854775800",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12,
+                13,
+                14
+              ],
+              "value": "8"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12,
+                13,
+                14
+              ],
+              "value": "8"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12,
+                13,
+                14
+              ],
+              "value": "2147483639"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12,
+                13,
+                14
+              ],
+              "value": "2305843009213693960"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12,
+                13,
+                14
+              ],
+              "value": "4611686018427387895",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0,
+                13,
+                14
+              ],
+              "value": "14"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1,
+                13,
+                14
+              ],
+              "value": "14"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295,
+                13,
+                14
+              ],
+              "value": "1073741809"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904,
+                13,
+                14
+              ],
+              "value": "1152921504606846990"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807,
+                13,
+                14
+              ],
+              "value": "2305843009213693937",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                0,
+                14
+              ],
+              "value": "12"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                1,
+                14
+              ],
+              "value": "12"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4294967295,
+                14
+              ],
+              "value": "536870899"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4611686018427387904,
+                14
+              ],
+              "value": "576460752303423500"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                9223372036854775807,
+                14
+              ],
+              "value": "1152921504606846963",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                0
+              ],
+              "value": "13"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                1
+              ],
+              "value": "13"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                4294967295
+              ],
+              "value": "268435442"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                4611686018427387904
+              ],
+              "value": "288230376151711757"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                9223372036854775807
+              ],
+              "value": "576460752303423474",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "6341068275337658367",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.bool5",
+          "address": "e3f7b116a13978d700ad283ba51924bada1de62e75ea0fc845fe0eaabf1dd768",
+          "params": 5,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12,
+                13,
+                14
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12,
+                13,
+                14
+              ],
+              "value": "true",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295,
+                13,
+                14
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904,
+                13,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807,
+                13,
+                14
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                0,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                1,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4294967295,
+                14
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4611686018427387904,
+                14
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                9223372036854775807,
+                14
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                0
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                1
+              ],
+              "value": "true"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                4294967295
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                4611686018427387904
+              ],
+              "value": "false"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "false",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.tri5",
+          "address": "41a9b431b3daf08d343d17d024bdc297e3da47527ea6b94ca89782aa9a72f022",
+          "params": 5,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                4294967295,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                4611686018427387904,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                9223372036854775807,
+                11,
+                12,
+                13,
+                14
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                0,
+                12,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                1,
+                12,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                4294967295,
+                12,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                4611686018427387904,
+                12,
+                13,
+                14
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                9223372036854775807,
+                12,
+                13,
+                14
+              ],
+              "value": "1",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                0,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                1,
+                13,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4294967295,
+                13,
+                14
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                4611686018427387904,
+                13,
+                14
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                9223372036854775807,
+                13,
+                14
+              ],
+              "value": "2",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                0,
+                14
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                1,
+                14
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4294967295,
+                14
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                4611686018427387904,
+                14
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                9223372036854775807,
+                14
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                0
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                1
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                4294967295
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                4611686018427387904
+              ],
+              "value": "2"
+            },
+            {
+              "args": [
+                10,
+                11,
+                12,
+                13,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807,
+                9223372036854775807
+              ],
+              "value": "0",
+              "machine": true
+            },
+            {
+              "args": [
+                9223372036854775808,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551615,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                18446744073709551616,
+                1,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                9223372036854775808,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551615,
+                1,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                18446744073709551616,
+                1,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                9223372036854775808,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551615,
+                1,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                18446744073709551616,
+                1,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                9223372036854775808,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551615,
+                1
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                18446744073709551616,
+                1
+              ],
+              "value": "-"
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                9223372036854775808
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                18446744073709551615
+              ],
+              "value": "-",
+              "machine": true
+            },
+            {
+              "args": [
+                1,
+                1,
+                1,
+                1,
+                18446744073709551616
+              ],
+              "value": "-"
+            }
+          ]
+        },
+        {
+          "name": "Abi.nat6",
+          "address": "cf0c973d939bcc7bd8b39fa78d2c7770907d302f5d62801478b46f3375636ed3",
+          "params": 6,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "rt",
+            "code": "rt.params"
+          },
+          "note": "six parameters: the entry wrapper passes five",
+          "cases": []
+        },
+        {
+          "name": "Abi.bool6",
+          "address": "78469a3d4f3fb90c46a02cfde3b523471887e7e79ced7444b7b752f6194ebf1f",
+          "params": 6,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "rt",
+            "code": "rt.params"
+          },
+          "note": "six parameters: the entry wrapper passes five",
+          "cases": []
+        },
+        {
+          "name": "Abi.tri6",
+          "address": "b4291af85bc9cb30b08ef8d78bb78fd7ce9e0c9c14616cd765369de782382276",
+          "params": 6,
+          "result": "enum",
+          "ctors": 3,
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": {
+            "stage": "rt",
+            "code": "rt.params"
+          },
+          "note": "six parameters: the entry wrapper passes five",
+          "cases": []
+        }
+      ]
+    }
+  ]
+}

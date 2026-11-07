@@ -1,0 +1,12 @@
+{
+  "format": "ixcc/reference-retention/1",
+  "archive": "benchmarks/runs/c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac.tar.gz",
+  "sha256": "c76bfd89e1388bda877e020d4a415473a9aeb7cb0a323b7886317e6c06ebebac",
+  "bytes": 566812498,
+  "retained_files": 2382,
+  "archive_sha256_checked": true,
+  "all_file_checksums_passed": true,
+  "relocated_analysis_byte_exact": true,
+  "status": "passed",
+  "scope": "archive extracted into a fresh directory; retained runner and copied build/raw records regenerated identical report and summary on the same host"
+}

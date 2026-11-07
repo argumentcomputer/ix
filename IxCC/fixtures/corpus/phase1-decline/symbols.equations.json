@@ -1,0 +1,61 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Symbols.lean",
+  "roots": [
+    {
+      "name": "A.b",
+      "address": "62aa7dda01bdca8c0dd9f34b5c0432dd3012bc10d4e33e4159e581ccfc2b743d"
+    },
+    {
+      "name": "A_b",
+      "address": "dbcacd64d9effc2a96a43407100d1ac54ff345bee6f19f791efdfea49e391338"
+    },
+    {
+      "name": "«x-y»",
+      "address": "da5a0b69ba77fdf3be042585764adf8a480d099284797e4ec6674ecf9115e96c"
+    },
+    {
+      "name": "_x_y_",
+      "address": "a1945a193c1b7791ece2c4fc1f5db3169c0b5b3fedfc0a2fb30491a149c4350a"
+    },
+    {
+      "name": "α",
+      "address": "b8ecaf0bed54dfd7bb0da63cd71e00b8d6934f92ae59c55ff2ac9862f6af1def"
+    },
+    {
+      "name": "β",
+      "address": "3907d4b60e2c4cb49cdf5c28ddc716c5a2d28b90599a0b0ff9bc3881d0c90999"
+    },
+    {
+      "name": "init",
+      "address": "96e60fa50f1dacd191c897a6e5b70205bc82741c6c06ddbf4a181bbeca1a6062"
+    },
+    {
+      "name": "root_init",
+      "address": "c6a8eb3b7a9c17be0918fd9f5167a49978726ce621e69b6a5efeec4567329ed1"
+    },
+    {
+      "name": "twinA",
+      "address": "1558fe57d6fd418c738ae3399f201c886bb1e896a4b8f021633cca84e454abdf"
+    },
+    {
+      "name": "twinB",
+      "address": "1558fe57d6fd418c738ae3399f201c886bb1e896a4b8f021633cca84e454abdf"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+    }
+  ],
+  "failures": []
+}

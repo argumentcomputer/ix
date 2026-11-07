@@ -1,0 +1,61 @@
+# Independently specified Ixon v4 bytes: relative locality, no lifetime parameters.
+app 7313121110
+lam 8307000700070010
+lam_local_unique 81090010
+lam_affine_local 810e0010
+all 922900170010
+ordinary_let a100006110
+local_unique_let a00a001110
+borrow a20e0041021110
+borrow_nondep a30f001110
+reference 2000
+recursion 32020001
+# Multi-byte TagN in context: the last and first value of every rung, derived
+# by hand from the TagN rung table, not by the codec under test. A header byte
+# [flag : f bits][payload : r = 8 - f bits] is followed by 0, 1, 2, 3, 4 or 8
+# little-endian bytes. With lead = 2^(r-1) and m = 2^(r-2):
+#   rung 1, [0, R1):  payload = value                      R1 = lead
+#   rung 2, [R1, R2): payload = lead + (value - R1) / 256, then one byte
+#                     (value - R1) mod 256                 R2 = R1 + 2^(r-2+8)
+#   rungs 3, 4, 5, 6: payload = lead + m + c for c = 0, 1, 2, 3, then
+#                     value - R2, R3, R4, R5 in 2, 3, 4, 8 bytes
+#                     R3 = R2 + 2^16, R4 = R3 + 2^24, R5 = R4 + 2^32
+# f = 4 (expression headers; Var is flag 1, so the header is 0x10 + payload):
+#   lead 8, m 4; R1..R5 = 8, 1032, 66568, 16843784, 4311811080 = 0x1_0101_0408.
+#   var 1031: 1023 = 3 * 256 + 255, payload 8 + 3 = 0xB  -> 1B FF
+#   var 66567 - 1032 = 65535 -> 1C FF FF; var 16843783 - 66568 = 2^24 - 1
+#   var 4311811079 - 16843784 = 2^32 - 1
+#   var 2^64 - 1: 0xFFFFFFFF_FFFFFFFF - 0x1_0101_0408 = 0xFFFFFFFE_FEFEFBF7,
+#   little-endian F7 FB FE FE FE FF FF FF
+# f = 0 (the Ref index after the header 20, a Ref with no universes):
+#   lead 128, m 64; R1..R5 = 128, 16512, 82048, 16859264, 4311826560 = 0x1_0101_4080.
+#   ref 16511: 16383 = 63 * 256 + 255, payload 128 + 63 = 0xBF -> BF FF
+#   ref 2^64 - 1: 0xFFFFFFFF_FFFFFFFF - 0x1_0101_4080 = 0xFFFFFFFE_FEFEBF7F,
+#   little-endian 7F BF FE FE FE FF FF FF
+# Counts and other flags: an App of 8 arguments (78 00: count 8 is rung 2 of
+# f = 4, flag 7), a Ref with 8 universes (28 00), Share(1032) (rung 3, flag 0xB).
+tagn4_rung1_last 17
+tagn4_rung2_first 1800
+tagn4_rung2_last 1bff
+tagn4_rung3_first 1c0000
+tagn4_rung3_last 1cffff
+tagn4_rung4_first 1d000000
+tagn4_rung4_last 1dffffff
+tagn4_rung5_first 1e00000000
+tagn4_rung5_last 1effffffff
+tagn4_rung6_first 1f0000000000000000
+tagn4_rung6_last 1ff7fbfefefeffffff
+tagn0_rung1_last 207f
+tagn0_rung2_first 208000
+tagn0_rung2_last 20bfff
+tagn0_rung3_first 20c00000
+tagn0_rung3_last 20c0ffff
+tagn0_rung4_first 20c1000000
+tagn0_rung4_last 20c1ffffff
+tagn0_rung5_first 20c200000000
+tagn0_rung5_last 20c2ffffffff
+tagn0_rung6_first 20c30000000000000000
+tagn0_rung6_last 20c37fbffefefeffffff
+app_telescope_8 780018001716151413121110
+ref_univs_8 2800000001020304050607
+share_rung3 bc0000

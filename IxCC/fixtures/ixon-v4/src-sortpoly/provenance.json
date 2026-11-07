@@ -1,0 +1,17 @@
+{"source_sha256":
+ "ea36ca9f74f87f0b0a038d1f476ecc9374b832f4394a213ef6f17534e5cccb6e",
+ "producer_version": "4.34.1|0.0.1",
+ "producer_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
+ "producer_binary_sha256":
+ "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+ "named_env_sha256":
+ "1fca43cfbecb2f2a9166ca936d8e3f5f0345c7690306ec520dab50d1a5813ac2",
+ "files":
+ {"sortpoly.ixe":
+  "a376405e9ff90830c3271b0dfc8a024f2e62d3d11832a87507bef80f70d9593b",
+  "sortpoly.equations.json":
+  "8e3f72dc2424a12c7aeddacd46f45d9114e10d2df2672f87de21938d96261a1d"},
+ "commands":
+ ["ix compile --no-build --consts <roots> --anon --out sortpoly.ixe SortPoly.lean",
+  "ix compile --no-build --consts <roots> --out sortpoly.named.ixe SortPoly.lean",
+  "ix addr-of --ixe sortpoly.named.ixe NAME, for every root"]}
