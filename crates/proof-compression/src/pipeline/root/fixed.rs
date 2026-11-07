@@ -1,10 +1,24 @@
 //! A fixed verifier for the normalizer's all-active, one-shard output.
 //! Only the claim, proof and memory interval ends vary between invocations.
+//!
+//! A layout file (`.ixl`) is Ixon, written with the primitives of
+//! [`aiur::ixon`] and as canonical as an Aiur artifact: decoding rejects
+//! another magic or version, out-of-range values and trailing bytes, so an
+//! accepted file re-encodes to its own bytes. Its identity is the BLAKE3
+//! digest of those bytes ([`FixedRoot::digest`]).
+//!
+//! ```text
+//! layout = "IXROOTL\0" nat(1) list(nat(log_height))
+//!          list(nat(memory_width) nat(circuit)) nat(claim_len)
+//! ```
 use super::{Prepared, Result};
 use crate::fri::*;
-use aiur::trace::stark::{
-  BatchProof as AiurProof, MEMSEG, VerifyingKey as AiurVerifyingKey,
-  batch::memseg_args,
+use aiur::{
+  ixon::{Reader, Writer},
+  trace::stark::{
+    BatchProof as AiurProof, MEMSEG, VerifyingKey as AiurVerifyingKey,
+    batch::memseg_args,
+  },
 };
 use multi_stark::{
   batch::{BatchMessage, BatchPreamble, ShardHeader},
@@ -13,7 +27,10 @@ use multi_stark::{
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
-const LAYOUT_FORMAT: &str = "ix-fixed-root-layout-v1";
+/// A fixed root layout file's magic number.
+const LAYOUT_MAGIC: &[u8; 8] = b"IXROOTL\0";
+/// The layout grammar's version.
+const LAYOUT_VERSION: u64 = 1;
 
 #[derive(Clone)]
 pub struct FixedRoot {
@@ -70,40 +87,54 @@ impl FixedRoot {
     &self.memory_traces
   }
 
-  /// Canonical JSON layout, readable by [`Self::from_json`].
-  pub fn to_json(&self) -> String {
-    serde_json::to_string_pretty(&serde_json::json!({
-      "format": LAYOUT_FORMAT,
-      "log_heights": self.log_heights,
-      "memory_traces": self.memory_traces,
-      "claim_len": self.claim_len,
-    }))
-    .expect("layout JSON serializes")
+  /// The layout file's bytes, readable by [`Self::from_bytes`].
+  pub fn to_bytes(&self) -> Vec<u8> {
+    let mut w = Writer::new();
+    w.raw(LAYOUT_MAGIC);
+    w.nat(LAYOUT_VERSION);
+    w.list(&self.log_heights, |w, &log| w.nat(u64::from(log)));
+    w.list(&self.memory_traces, |w, &(width, circuit)| {
+      w.usize(width);
+      w.usize(circuit);
+    });
+    w.usize(self.claim_len);
+    w.into_bytes()
   }
 
-  pub fn from_json(text: &str) -> Result<Self> {
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Layout {
-      format: String,
-      log_heights: Vec<u8>,
-      memory_traces: Vec<(usize, usize)>,
-      claim_len: usize,
+  /// Decode a layout file, accepting only its canonical bytes.
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    let mut r = Reader::new(bytes);
+    if r.raw(LAYOUT_MAGIC.len()).ok() != Some(LAYOUT_MAGIC.as_slice()) {
+      return Err("not a fixed root layout (.ixl)".into());
     }
-    let layout: Layout = serde_json::from_str(text)?;
-    if layout.format != LAYOUT_FORMAT {
-      return Err("unsupported fixed root layout format".into());
+    let version = r.nat()?;
+    if version != LAYOUT_VERSION {
+      return Err(
+        format!("unsupported fixed root layout version {version}").into(),
+      );
     }
-    Self::new(layout.log_heights, layout.memory_traces, layout.claim_len)
+    let log_heights = r.list(|r| {
+      let log = r.nat()?;
+      u8::try_from(log).map_err(|_e| r.error(format!("log height {log}")))
+    })?;
+    let memory_traces = r.list(|r| Ok((r.usize()?, r.usize()?)))?;
+    let claim_len = r.usize()?;
+    r.finish()?;
+    Self::new(log_heights, memory_traces, claim_len)
+  }
+
+  /// The layout's content address: the BLAKE3 digest of its bytes.
+  pub fn digest(&self) -> [u8; 32] {
+    *blake3::hash(&self.to_bytes()).as_bytes()
   }
 
   /// Identity of the fixed verifier under `key`. It covers the backend and
   /// layout only: no claim, proof or memory end affects it.
   pub fn identity(&self, key: &AiurVerifyingKey) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"ix/fixed-root/v1");
+    hash.update(b"ix/fixed-root/v2");
     hash.update(blake3::hash(&key.to_bytes()).as_bytes());
-    hash.update(self.to_json().as_bytes());
+    hash.update(&self.digest());
     *hash.finalize().as_bytes()
   }
 
@@ -363,13 +394,25 @@ mod tests {
       assert!(FixedRoot::new(vec![4, 4, 2, 1], memories, 4).is_err());
     }
     assert_eq!(backend.memory_circuits(), fixed.memory_traces());
-    assert_eq!(
-      FixedRoot::from_json(&fixed.to_json())?.to_json(),
-      fixed.to_json()
-    );
-    assert!(
-      FixedRoot::from_json(&fixed.to_json().replace("-v1", "-v0")).is_err()
-    );
+    let bytes = fixed.to_bytes();
+    assert_eq!(&bytes[..8], LAYOUT_MAGIC);
+    assert_eq!(FixedRoot::from_bytes(&bytes)?.to_bytes(), bytes);
+    assert_eq!(fixed.digest(), *blake3::hash(&bytes).as_bytes());
+    // Another version, a trailing byte, any truncation and a count longer
+    // than the input are rejected.
+    let mut other_version = bytes.clone();
+    other_version[8] = 2;
+    assert!(FixedRoot::from_bytes(&other_version).is_err());
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    assert!(FixedRoot::from_bytes(&trailing).is_err());
+    for len in 0..bytes.len() {
+      assert!(FixedRoot::from_bytes(&bytes[..len]).is_err());
+    }
+    let mut long_count = bytes[..9].to_vec();
+    long_count.extend([0x80, 0x00]);
+    long_count.extend_from_slice(&bytes[10..]);
+    assert!(FixedRoot::from_bytes(&long_count).is_err());
     let other = FixedRoot::new(vec![4, 4, 2, 2], vec![(2, 3)], 4)?;
     assert_ne!(fixed.identity(&key), other.identity(&key));
     let config = || GoldilocksBlake3Config::new(cp, fp);

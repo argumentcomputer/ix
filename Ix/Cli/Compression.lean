@@ -19,14 +19,15 @@ opaque describeSetup (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) : IO St
 
 /-- Run the stages in `dir`, resuming checked proofs unless `fresh` replaces
 them. Fixed preprocessing, parameters and proving keys under `cacheRoot`
-remain reusable. A nonempty `fixedRoot` is the JSON layout of `proof`. -/
+remain reusable. A nonempty `fixedRoot` is the layout (`.ixl` bytes) of `proof`. -/
 @[extern "rs_compression_run"]
-opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
+opaque compress (vk proof claim statement fixedRoot : @& ByteArray) (dir cacheRoot : @& String)
   (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) (fresh : Bool := false) : IO ByteArray
 
-/-- The versioned normalization layout for the aggregation backend's key. -/
+/-- The versioned normalization layout (`.ixl` bytes) for the aggregation
+backend's key. -/
 @[extern "rs_compression_release_root_layout"]
-opaque releaseRootLayout (vk : @& ByteArray) : IO String
+opaque releaseRootLayout (vk : @& ByteArray) : IO ByteArray
 
 /-- Per-circuit rows of one root wrap execution of `rawProof`, as a JSON array.
 `invocation` is in Ixon (`Ix.AiurInvocation`). -/
@@ -34,21 +35,21 @@ opaque releaseRootLayout (vk : @& ByteArray) : IO String
 opaque rootRows (aggrArtifact : @& String) (invocation : @& ByteArray)
   (rawProof : @& ByteArray) : IO String
 
-/-- The fixed root layout holding every row-count array in the JSON array
+/-- The fixed root layout (`.ixl` bytes) holding every row-count array in the JSON array
 `rows`, with `headroom` extra doublings per circuit. -/
 @[extern "rs_compression_root_layout"]
 opaque rootLayout (aggrArtifact rows : @& String)
-  (headroom claimLen : UInt32) : IO String
+  (headroom claimLen : UInt32) : IO ByteArray
 
 /-- Wrap the aggregate root `rawProof` once more and prove the wrap in the fixed
 shape of `layout`; returns the normalized proof bytes. -/
 @[extern "rs_compression_normalize_root"]
 opaque normalizeRoot (aggrArtifact : @& String) (invocation : @& ByteArray)
-  (rawProof : @& ByteArray) (layout : @& String) : IO ByteArray
+  (rawProof layout : @& ByteArray) : IO ByteArray
 
 /-- Write the FRI worker's root input directory `dir` without compressing. -/
 @[extern "rs_compression_write_root"]
-opaque writeRoot (vk proof claim statement : @& ByteArray) (fixedRoot dir : @& String) : IO Unit
+opaque writeRoot (vk proof claim statement fixedRoot : @& ByteArray) (dir : @& String) : IO Unit
 
 /-- Verify a compressed proof under the bundled release keys. Development
 proofs require `devSrs`; verification needs no proving setup or GPU. -/

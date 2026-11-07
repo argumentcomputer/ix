@@ -34,8 +34,8 @@ pub struct CompressInput<'a> {
   pub claim: &'a [u8],
   /// The root statement the caller derived for `claim`.
   pub statement: &'a [u8],
-  /// The fixed layout the root is normalized to, as JSON.
-  pub fixed_root: Option<&'a str>,
+  /// The fixed layout the root is normalized to (`.ixl` bytes).
+  pub fixed_root: Option<&'a [u8]>,
   /// Stage directories: empty or missing to start, or an earlier run of the
   /// same root to resume.
   pub out: &'a Path,
@@ -234,7 +234,7 @@ pub(super) fn root_files(
   vk: &[u8],
   proof: &[u8],
   words: &statement::Statement,
-  fixed_root: Option<&str>,
+  fixed_root: Option<&[u8]>,
 ) -> Result<Vec<(&'static str, Vec<u8>)>> {
   let mut files = vec![
     ("root-vk.bin", vk.to_vec()),
@@ -244,7 +244,7 @@ pub(super) fn root_files(
   if let Some(layout) = fixed_root {
     files.push((
       root::FIXED_ROOT_LAYOUT,
-      FixedRoot::from_json(layout)?.to_json().into_bytes(),
+      FixedRoot::from_bytes(layout)?.to_bytes(),
     ));
   }
   Ok(files)
@@ -487,7 +487,7 @@ fn check_fri(
     let key = aiur::trace::stark::VerifyingKey::from_bytes(&fs::read(
       root.join("root-vk.bin"),
     )?)?;
-    let fixed = FixedRoot::from_json(&fs::read_to_string(layout)?)?;
+    let fixed = FixedRoot::from_bytes(&fs::read(layout)?)?;
     if fs::read(dir.join("plan-id.bin"))? != fixed.identity(&key) {
       return Err("FRI proof was made for another layout or backend".into());
     }

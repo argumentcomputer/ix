@@ -122,7 +122,7 @@ pub fn write_root_input(
   proof: &[u8],
   claim: &[u8],
   statement: &[u8],
-  fixed_root: Option<&str>,
+  fixed_root: Option<&[u8]>,
 ) -> Result<()> {
   let words = check_claim(claim, statement)?;
   prepare_output(dir)?;
@@ -143,7 +143,7 @@ fn write_root(
   vk: &[u8],
   proof: &[u8],
   words: &statement::Statement,
-  fixed_root: Option<&str>,
+  fixed_root: Option<&[u8]>,
 ) -> Result<()> {
   fs::create_dir_all(dir)?;
   for (name, bytes) in compress::root_files(vk, proof, words, fixed_root)? {

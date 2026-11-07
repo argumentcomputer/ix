@@ -23,7 +23,7 @@ use p3_symmetric::CryptographicHasher;
 use std::{fs, path::Path, time::Instant};
 
 /// Layout file a normalized root carries beside its proof.
-pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.json";
+pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.ixl";
 /// Largest trace of the FRI stage's lowered verifier circuit.
 const MAX_TRACE_HEIGHT: usize = 1 << 24;
 
@@ -100,8 +100,8 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   let layout_path = dir.join(FIXED_ROOT_LAYOUT);
   let start = Instant::now();
   let prepared = if layout_path.exists() {
-    let fixed = FixedRoot::from_json(&fs::read_to_string(&layout_path)?)?;
-    fs::write(out.join(FIXED_ROOT_LAYOUT), fixed.to_json())?;
+    let fixed = FixedRoot::from_bytes(&fs::read(&layout_path)?)?;
+    fs::write(out.join(FIXED_ROOT_LAYOUT), fixed.to_bytes())?;
     fs::write(out.join("plan-id.bin"), fixed.identity(&native_key))?;
     fixed.prepare(&native_key, &proof, &claims[0], VerifierLimits::default())?
   } else {

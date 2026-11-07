@@ -8,16 +8,16 @@ use super::{
 
 /// Derive the recursive verifying key, as `compress` writes it to
 /// `final-kzg/vk.bin`, for roots of the aggregation backend whose serialized
-/// key is `root_vk`, normalized to the fixed layout `layout` (JSON), and
-/// compressed under `setup`.
+/// key is `root_vk`, normalized to the fixed layout `layout` (`.ixl` bytes),
+/// and compressed under `setup`.
 pub fn derive_recursive_vk(
   root_vk: &[u8],
-  layout: &str,
+  layout: &[u8],
   setup: &SetupConfig,
 ) -> Result<Vec<u8>> {
   let fri = {
     let key = aiur::trace::stark::VerifyingKey::from_bytes(root_vk)?;
-    root::verifier(&key, &FixedRoot::from_json(layout)?)?
+    root::verifier(&key, &FixedRoot::from_bytes(layout)?)?
   };
   let (manifest, parts, _) =
     first::setup(&fri, verifying_keys::FIRST_LOG_HEIGHT, setup, None)?;
@@ -33,7 +33,7 @@ mod tests {
   use super::*;
 
   const RECURSIVE_VK: &[u8] =
-    include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
+    include_bytes!("../../verifying-keys/0.2/recursive-vk.bin");
 
   fn ignition() -> SetupConfig {
     let setup = SetupConfig::from_env(false).unwrap();

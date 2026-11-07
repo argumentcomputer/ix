@@ -12,7 +12,7 @@ use super::{
 use crate::kzg::{Srs, VerifierParams};
 
 /// Version of the bundled verifying keys and the layout they were derived for.
-const VERSION: &str = "0.1";
+const VERSION: &str = "0.2";
 
 /// Log2 of the first KZG stage's partition height the keys were derived for.
 pub(super) const FIRST_LOG_HEIGHT: usize = 24;
@@ -20,7 +20,11 @@ pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 /// Serialized aggregation backend key whose roots the layout normalizes.
 const ROOT_VK_BLAKE3: &str =
   "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc";
-const LAYOUT: &str = include_str!("../../verifying-keys/0.1/layout.json");
+/// The root layout (`.ixl`, see `FixedRoot`) and its content address.
+const LAYOUT: &[u8] =
+  include_bytes!("../../verifying-keys/0.2/root-layout.ixl");
+const LAYOUT_BLAKE3: &str =
+  "708e3b5d7494d3657e78c104d15a276df89299cc589b4444fa1b4ade80cdd928";
 
 /// Backend and entrypoint words of the aggregation program, the statement
 /// prefix every compressed claim of this release carries.
@@ -30,7 +34,7 @@ pub(super) const STATEMENT_PREFIX: [u64; 10] = [
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
+  include_bytes!("../../verifying-keys/0.2/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
   "b4c58f798380d2fd91594763613874fdaf2d407631cee98fe361a287265d074a";
 /// The identifier a recursive KZG packet begins with.
@@ -48,7 +52,7 @@ pub(super) const RECURSIVE_FRONTEND_ID: &str =
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.1/plonk-verifying-key.bin");
+  include_bytes!("../../verifying-keys/0.2/plonk-verifying-key.bin");
 /// SHA-256 of the gnark PLONK verifying key, which a PLONK packet begins with.
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK_SHA256: &str =
@@ -63,7 +67,7 @@ pub(super) const FINAL_SCHEMA_SHA256: &str =
 /// forge proofs, so it verifies only when development setups are accepted.
 #[cfg(any(feature = "groth16", test))]
 pub(super) const GROTH16_VK: &[u8] = include_bytes!(
-  "../../verifying-keys/0.1/groth16-development-verifying-key.bin"
+  "../../verifying-keys/0.2/groth16-development-verifying-key.bin"
 );
 /// SHA-256 of the gnark Groth16 verifying key, which a Groth16 packet begins with.
 pub(super) const GROTH16_VK_SHA256: &str =
@@ -84,16 +88,20 @@ pub(super) fn decode(hex: &str) -> Result<[u8; 32]> {
   super::final_proof::digest(hex)
 }
 
-/// The layout for an aggregation backend's serialized key. Circuit order and
-/// fixed-table heights are meaningful only under the release's backend.
-pub fn release_root_layout(root_vk: &[u8]) -> Result<&'static str> {
+/// The layout (`.ixl` bytes) for an aggregation backend's serialized key.
+/// Circuit order and fixed-table heights are meaningful only under the
+/// release's backend.
+pub fn release_root_layout(root_vk: &[u8]) -> Result<&'static [u8]> {
   if blake3::hash(root_vk).to_hex().as_str() != ROOT_VK_BLAKE3 {
     return Err(format!(
       "aggregation backend differs from the one verifying keys {VERSION} were derived for"
     )
     .into());
   }
-  FixedRoot::from_json(LAYOUT)?;
+  if blake3::hash(LAYOUT).as_bytes() != &decode(LAYOUT_BLAKE3)? {
+    return Err("bundled root layout differs from its pin".into());
+  }
+  FixedRoot::from_bytes(LAYOUT)?;
   Ok(LAYOUT)
 }
 
@@ -234,7 +242,11 @@ mod tests {
     );
     assert!(groth16_setup(false).is_err());
     assert_eq!(groth16_setup(true).unwrap(), SetupClass::Development);
-    FixedRoot::from_json(LAYOUT).unwrap();
+    assert_eq!(
+      blake3::hash(LAYOUT).as_bytes(),
+      &decode(LAYOUT_BLAKE3).unwrap()
+    );
+    assert_eq!(FixedRoot::from_bytes(LAYOUT).unwrap().to_bytes(), LAYOUT);
     statement::from_claims_bytes(&statement::to_claims_bytes(
       &statement::with_claim(&STATEMENT_PREFIX, b""),
     ))

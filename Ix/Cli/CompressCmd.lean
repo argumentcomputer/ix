@@ -55,7 +55,7 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
     | some path => IO.FS.readBinFile path
     | none => pure ctx.aggr.key
   let layout ← match opts.fixedRoot with
-    | some path => IO.FS.readFile path
+    | some path => IO.FS.readBinFile path
     | none => Compression.releaseRootLayout vk
   IO.eprintln s!"Normalizing aggregate root {addr} for compression."
   let root ← FormalAggregate.normalize ctx wrapper layout
