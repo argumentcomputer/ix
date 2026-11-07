@@ -1,4 +1,5 @@
 import Aiur.Modules
+import Aiur.Library.Frontend
 
 /-! The checked byte interface. Callers cannot manufacture bytes or split
 parts from fields, including through hints. Maps and ordinary functions have
@@ -7,7 +8,7 @@ details. The 256 typed literals are added below without exposing a cast. -/
 namespace Aiur.Library.U8
 open Aiur
 
-private def interface : Modules.Program Nat := aiur% "
+private def interface : Modules.Program Nat := aiur_library% ⟦
 signature U8Signature {
     opaque type U8;
     opaque type Parts4;
@@ -40,7 +41,8 @@ signature U8Signature {
     fn join4(high: Parts4, low: Parts4) -> U8;
     fn join7(high: Parts7, low: Parts7) -> U8;
     fn split_sum(sum: Field) -> (U8, U8);
-}"
+}
+⟧
 
 def signature : Modules.Program Nat :=
   { interface with signatures := interface.signatures.map fun s =>

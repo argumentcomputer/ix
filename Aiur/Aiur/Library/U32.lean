@@ -32,7 +32,7 @@ theorem compatible_of_charZero (F : Type) [AddMonoidWithOne F] [CharZero F] :
 including through aliases and aggregates. Only checked constructors and typed
 operations below create them. Typed conversions and word operations inline;
 raw field comparison shares a memoized query across callers. -/
-private def implementation : Modules.Program Nat := aiur_library% (U8.templates.append signature) r#"
+private def implementation : Modules.Program Nat := aiur_library% (U8.templates.append signature) ⟦
 module UInt32: U32Signature {
     type U8 = UInt8::U8;
     opaque type U32 = [U8; 4];
@@ -64,8 +64,8 @@ module UInt32: U32Signature {
     inline fn compact_from_field(value: Field) -> Compact { from_field(value); value }
     inline fn expand(word: Compact) -> U32 { from_field(word) }
 
-    // Advice consumes bytes directly. Packing and the carry relation only
-    // feed constraints, so the Rust backend can discard that arithmetic.
+    -- Advice consumes bytes directly. Packing and the carry relation only
+    -- feed constraints, so the Rust backend can discard that arithmetic.
     inline fn add(a: U32, b: U32) -> U32 {
         let raw = hint::<[Field; 4]>("u32.add",
             ([UInt8::to_field(a[0]), UInt8::to_field(a[1]), UInt8::to_field(a[2]), UInt8::to_field(a[3])],
@@ -97,9 +97,9 @@ module UInt32: U32Signature {
     inline fn compact_less_than(a: Compact, b: Compact) -> Field {
         sub_borrow(a, b).1
     }
-    // Raw scalar compatibility boundary: both operands must be checked here.
-    // One hint supplies all three byte decompositions, including the wrapped
-    // difference. Reuse the byte-pair range table rather than adding a table.
+    -- Raw scalar compatibility boundary: both operands must be checked here.
+    -- One hint supplies all three byte decompositions, including the wrapped
+    -- difference. Reuse the byte-pair range table rather than adding a table.
     fn less_than_fields(a: Field, b: Field) -> Field {
         let raw = hint::<([Field; 4], [Field; 4], [Field; 4])>("u32.lt", (a, b));
         let left = from_fields(raw.0);
@@ -141,7 +141,7 @@ module UInt32: U32Signature {
         [UInt8::join4(p1, p2), UInt8::join4(p2, p3), UInt8::join4(p3, p0), UInt8::join4(p0, p1)]
     }
 }
-"#
+⟧
 
 def declarations : Modules.Program Nat := signature.append implementation
 

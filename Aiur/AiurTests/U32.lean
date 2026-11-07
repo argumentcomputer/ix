@@ -8,7 +8,7 @@ open Aiur
 set_option maxRecDepth 10000
 set_option maxHeartbeats 12000000
 
-def client : Modules.Program Nat := aiur_library% Library.U32.templates r#"
+def client : Modules.Program Nat := aiur_library% Library.U32.templates ⟦
 module Words {
     fn byte(x: Field) -> Field { UInt8::to_field(UInt8::from_field(x)) }
     fn pack(raw: [Field; 4]) -> Field {
@@ -68,7 +68,7 @@ module Words {
         UInt32::compact_field(UInt32::compact(UInt32::from_bytes(UInt32::to_bytes(UInt32::MAX))))
     }
 }
-"#
+⟧
 
 def entries : List String := client.modules.flatMap fun m => match m.body with
   | .definitions d => d.program.functions.map fun f => "Words::" ++ f.name

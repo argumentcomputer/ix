@@ -3,7 +3,7 @@ import Aiur.Library.Blake3
 namespace AiurBlake3Tests
 open Aiur
 
-def benchmark : Modules.Program Nat := aiur_library% Library.Blake3.templates "
+def benchmark : Modules.Program Nat := aiur_library% Library.Blake3.templates ⟦
 module Benchmark {
     fn generate(length: Field, byte: UInt8::U8) -> Blake3::ByteStream {
         match length {
@@ -19,6 +19,7 @@ module Benchmark {
     fn hash(length: Field) -> [Field; 32] {
         Blake3::address_to_fields(Blake3::digest_bytes(Blake3::hash(generate(length, UInt8::BYTE_0))))
     }
-}"
+}
+⟧
 
 end AiurBlake3Tests

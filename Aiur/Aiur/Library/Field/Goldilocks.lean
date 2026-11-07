@@ -12,7 +12,7 @@ open Aiur
 
 def dependencies : Modules.Program Nat := U8.templates.append Library.Field.declarations
 
-def declarations : Modules.Program Nat := aiur_library% dependencies r#"
+def declarations : Modules.Program Nat := aiur_library% dependencies ⟦
 module Goldilocks {
   type Goldilocks = Field;
 
@@ -86,7 +86,7 @@ module Goldilocks {
       Fields::is_zero(a[0] - b[0]) * Fields::is_zero(a[1] - b[1])
     }
 }
-"#
+⟧
 
 def program : Modules.Program U32.Goldilocks.F := declarations.toField U32.Goldilocks.F
 

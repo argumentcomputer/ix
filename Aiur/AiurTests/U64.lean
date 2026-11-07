@@ -5,7 +5,7 @@ namespace AiurU64Tests
 open Aiur
 set_option maxRecDepth 10000
 
-def client : Modules.Program Nat := aiur_library% Library.U64.templates r#"
+def client : Modules.Program Nat := aiur_library% Library.U64.templates ⟦
 module Wide {
     inline fn fields(x: UInt64::U64) -> [Field; 8] {
         [UInt8::to_field(x[0]), UInt8::to_field(x[1]), UInt8::to_field(x[2]), UInt8::to_field(x[3]), UInt8::to_field(x[4]), UInt8::to_field(x[5]), UInt8::to_field(x[6]), UInt8::to_field(x[7])]
@@ -32,7 +32,7 @@ module Wide {
     fn wrapping_succ(a: [Field; 8]) -> [Field; 8] { fields(UInt64::wrapping_succ(UInt64::from_fields(a))) }
     fn saturating_pred(a: [Field; 8]) -> [Field; 8] { fields(UInt64::saturating_pred(UInt64::from_fields(a))) }
 }
-"#
+⟧
 
 def entries : List String := client.modules.flatMap fun m => match m.body with
   | .definitions d => (d.program.functions.filter (·.name != "fields")).map fun f => "Wide::" ++ f.name

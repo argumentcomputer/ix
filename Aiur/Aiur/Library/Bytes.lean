@@ -9,7 +9,7 @@ open Aiur
 
 def dependencies : Modules.Program Nat := U8.templates.append List.declarations
 
-def declarations : Modules.Program Nat := aiur_library% dependencies r#"
+def declarations : Modules.Program Nat := aiur_library% dependencies ⟦
 module Bytes {
     type Stream = Lists::List<UInt8::U8>;
     type Address = [UInt8::U8; 32];
@@ -87,6 +87,6 @@ fn address_eq(a: AddressRef, b: AddressRef) -> Field {
     }
   }
 }
-"#
+⟧
 
 end Aiur.Library.Bytes

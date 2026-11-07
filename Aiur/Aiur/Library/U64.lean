@@ -18,7 +18,7 @@ theorem compatible_of_charP (F : Type) [AddGroupWithOne F] (p : Nat) [CharP F p]
   intro a ha b hb equal
   exact CharP.natCast_injOn_Iio F p (lt_of_lt_of_le ha large) (lt_of_lt_of_le hb large) equal
 
-def declarations : Modules.Program Nat := aiur_library% U8.templates r#"
+def declarations : Modules.Program Nat := aiur_library% U8.templates ⟦
 module UInt64 {
   type U8 = UInt8::U8;
   type U64 = [U8; 8];
@@ -213,7 +213,7 @@ module UInt64 {
     bytes
   }
 }
-"#
+⟧
 
 def templates : Modules.Program Nat := U8.templates.append declarations
 def source : Modules.Program Nat := U8.source.append declarations

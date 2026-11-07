@@ -10,7 +10,7 @@ open Aiur
 def dependencies : Modules.Program Nat :=
   U32.templates.append U64.declarations |>.append List.declarations
 
-def declarations : Modules.Program Nat := aiur_library% dependencies r#"
+def declarations : Modules.Program Nat := aiur_library% dependencies ⟦
 module WordLists {
 fn checked_depth_succ(depth: Field) -> Field {
     assert_eq!(UInt32::less_than_fields(depth, 4294967295), 1,
@@ -43,6 +43,6 @@ fn lookup_u64<T>(list: Lists::List<T>, idx: UInt64::U64) -> T {
     }
   }
 }
-"#
+⟧
 
 end Aiur.Library.List.Word
