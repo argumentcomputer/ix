@@ -17,6 +17,13 @@ There are no new AST operations, native arithmetic primitives, or proof axioms.
 | `Blake3.lean` | Shared compression, hashing, address conversion, and digest packing. Uses the byte, word, and list libraries. |
 | `Field/Goldilocks.lean` | Canonical field encoding, checked inverse advice, and quadratic extension arithmetic with nonresidue 7. This implementation is specifically selected for Goldilocks, unlike the bounded U32 implementation. |
 
+The library modules are written as Lean syntax, as the applications are (see
+"Writing modules in Lean" below): `aiur_library% deps ⟦ … ⟧` checks a fragment
+against the libraries it uses, `deps`, and keeps only the fragment, so linking
+clients share each dependency once; `aiur_library% ⟦ … ⟧` checks a fragment
+that uses no other module. The string forms (`aiur_library% deps "…"`,
+`aiur% "…"`) remain, and the frontend tests exercise them.
+
 Signatures check types, opacity, and provider conformance. They do not assert
 that an arbitrary provider implements correct integer arithmetic: a replacement
 still needs its own arithmetic argument and tests. Existing U32 arithmetic
@@ -83,7 +90,8 @@ Lean. Only the lexical surface differs: comments are Lean comments, a block
 label is written `@name` (`'name` in source text), a negated operand keeps its
 space (`a - -b`, `a / -b`), and a member of a projection needs parentheses
 (`(p.0).f`). Nested generic arguments close as in Rust (`List<List<Field>>`).
-A block is not checked on its own, since it may use modules of other blocks.
+An `aiur⟦ … ⟧` block is not checked on its own, since it may use modules of
+other blocks; `aiur_library%` blocks are checked against their dependencies.
 Lean parses the block where it reads the file, so a syntax error is reported in
 place; the parse keeps only the block's text, which the elaborator lowers. (The
 parse of ambiguous alternatives shares subtrees, and linters that walk a
@@ -150,7 +158,10 @@ Moving the modules from `.aiur` text into Lean changed no program. Compared
 with the string frontend's programs from the `.aiur` bundles, the elaborated
 IxVM, recursion and aggregation programs are equal (`==`) and render identically
 (`Repr`), and the exported artifacts (`ixvm export-claim-trace`,
-`stark-export export-trace [--aggregate]`) are byte-identical.
+`stark-export export-trace [--aggregate]`) are byte-identical. Moving the library
+modules and their test clients from strings into Lean likewise left every
+library program equal and identically rendered, and the `u32_tests` and
+`library_tests` exports byte-identical.
 
 For the modularization itself, `formal-checks refactor` (`Tests/FormalChecks/Refactor.lean`) compares complete
 compiled exports against the pre-refactor artifacts. It permits only declared

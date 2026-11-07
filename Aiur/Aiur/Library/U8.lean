@@ -1,4 +1,5 @@
 import Aiur.Modules
+import Aiur.Library.Frontend
 import Aiur.Library.Carry
 import Aiur.Library.U8.Signature
 
@@ -9,12 +10,12 @@ that establish their opaque results. They never reinterpret unchecked fields.
 namespace Aiur.Library.U8
 open Aiur
 
-def declarations : Modules.Program Nat := aiur% r#"
+def declarations : Modules.Program Nat := aiur_library% ⟦
 module UInt8 {
     opaque type U8 = Field;
-    // Only the split tables construct these parts. Joining parts from different
-    // bytes is safe: their bit positions are disjoint. Keeping them opaque lets
-    // other modules recombine them without another range lookup.
+    -- Only the split tables construct these parts. Joining parts from different
+    -- bytes is safe: their bit positions are disjoint. Keeping them opaque lets
+    -- other modules recombine them without another range lookup.
     opaque type Parts4 = (Field, Field);
     opaque type Parts7 = (Field, Field);
 
@@ -43,9 +44,9 @@ module UInt8 {
     map raw_xor_split7(a: Field, b: Field) -> Parts7 = pair_inputs => pair_xor_parts7;
     map raw_sum_byte(sum: Field) -> U8 = sum_inputs => sum_bytes;
 
-    // XOR/subtraction check both raw inputs. These identities reuse their
-    // fixed-table multiplicities, as in legacy's byte primitives. Division
-    // by two requires odd characteristic (as does a faithful byte embedding).
+    -- XOR/subtraction check both raw inputs. These identities reuse their
+    -- fixed-table multiplicities, as in legacy's byte primitives. Division
+    -- by two requires odd characteristic (as does a faithful byte embedding).
     inline fn raw_and(a: Field, b: Field) -> U8 {
         let x = raw_xor(a, b);
         (a + b - x) / 2
@@ -74,14 +75,14 @@ module UInt8 {
     inline fn join4(high: Parts4, low: Parts4) -> U8 { high.0 + low.1 }
     inline fn join7(high: Parts7, low: Parts7) -> U8 { high.0 + low.1 }
 
-    // Domain 0..767 covers adding three bytes and an incoming carry. The table
-    // supplies the low byte; carry recovery is the ordinary proved field identity.
+    -- Domain 0..767 covers adding three bytes and an incoming carry. The table
+    -- supplies the low byte; carry recovery is the ordinary proved field identity.
     inline fn split_sum(sum: Field) -> (U8, U8) {
         let byte = raw_sum_byte(sum);
         (byte, (sum - byte) / 256)
     }
 }
-"#
+⟧
 
 private def byteTy : Generic.Ty := .named "U8" []
 private def literal (n : Nat) : Generic.Expr Nat := .literal n

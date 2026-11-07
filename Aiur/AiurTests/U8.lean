@@ -7,7 +7,7 @@ open Aiur
 
 set_option maxRecDepth 10000
 
-def client : Modules.Program Nat := aiur_library% Library.U8.templates "
+def client : Modules.Program Nat := aiur_library% Library.U8.templates ⟦
 module ByteChecks {
     fn checked(value: Field) -> Field { UInt8::to_field(UInt8::from_field(value)) }
     fn less_than(a: Field, b: Field) -> Field { UInt8::raw_lt(a, b) }
@@ -35,7 +35,8 @@ module ByteChecks {
     fn join7(a: Field, b: Field) -> Field {
         UInt8::to_field(UInt8::join7(UInt8::raw_xor_split7(a, 0), UInt8::raw_xor_split7(b, 0)))
     }
-}"
+}
+⟧
 
 def entries := ["ByteChecks::checked", "ByteChecks::less_than", "ByteChecks::and", "ByteChecks::or", "ByteChecks::split", "ByteChecks::add",
   "ByteChecks::sub", "ByteChecks::mul", "ByteChecks::join4", "ByteChecks::join7"]

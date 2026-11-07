@@ -7,7 +7,7 @@ Field-specific implementations must establish their own arithmetic bounds. -/
 namespace Aiur.Library.U32
 open Aiur
 
-def signature : Modules.Program Nat := aiur_library% U8.templates "
+def signature : Modules.Program Nat := aiur_library% U8.templates ⟦
 signature U32Signature {
     opaque type U32;
     opaque type Compact;
@@ -37,6 +37,7 @@ signature U32Signature {
     fn rotr16(a: U32) -> U32;
     fn xor_rotr7(a: U32, b: U32) -> U32;
     fn xor_rotr12(a: U32, b: U32) -> U32;
-}"
+}
+⟧
 
 end Aiur.Library.U32

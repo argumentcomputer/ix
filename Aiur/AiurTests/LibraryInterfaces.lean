@@ -6,7 +6,7 @@ open Aiur
 
 /-- Clients are checked against interfaces, before selecting implementations.
 The aliases are static module applications, with no interpreter dispatch. -/
-def clients : Modules.Program Nat := aiur_library% Library.U32.templates "
+def clients : Modules.Program Nat := aiur_library% Library.U32.templates ⟦
 module ByteClient<B: U8Signature> {
     fn run(a: Field, b: Field) -> Field {
         let x = B::from_field(a);
@@ -22,7 +22,7 @@ module WordClient<W: U32Signature> {
 }
 module InterfaceBytes = ByteClient::<UInt8>;
 module InterfaceWords = WordClient::<UInt32>;
-"
+⟧
 
 run_cmd do
   -- Sealing must also protect clients parameterized by an abstract provider.

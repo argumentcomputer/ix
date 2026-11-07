@@ -1,9 +1,10 @@
 import Aiur.Modules
+import Aiur.Library.Frontend
 
 namespace Aiur.Library.List
 open Aiur
 
-def declarations : Modules.Program Nat := aiur% "
+def declarations : Modules.Program Nat := aiur_library% ⟦
 module Lists {
     enum Node<T> { Cons(T, List<T>), Nil }
     type List<T> = &Node<T>;
@@ -73,6 +74,7 @@ fn reverse_acc<T>(list: List<T>, acc: List<T>) -> List<T> {
         reverse_acc(rest, (&(Lists::Node::Cons(head, acc)))) } ,
     }
   }
-}"
+}
+⟧
 
 end Aiur.Library.List

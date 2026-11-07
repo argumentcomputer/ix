@@ -14,7 +14,7 @@ def dependencies : Modules.Program Nat :=
   U32.templates.append U64.declarations |>.append List.declarations |>.append Field.declarations
     |>.append Bytes.declarations
 
-def declarations : Modules.Program Nat := aiur_library% dependencies r#"
+def declarations : Modules.Program Nat := aiur_library% dependencies ⟦
 module Blake3 {
   type U8 = UInt8::U8;
   type U32 = UInt32::U32;
@@ -459,7 +459,7 @@ inline fn pack_digest(h: [UInt32::U32; 8]) -> [Field; 8] {
      pack_word(h[4]), pack_word(h[5]), pack_word(h[6]), pack_word(h[7])]
   }
 }
-"#
+⟧
 
 def templates : Modules.Program Nat :=
   dependencies.append declarations
