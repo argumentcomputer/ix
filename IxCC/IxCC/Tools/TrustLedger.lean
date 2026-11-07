@@ -50,12 +50,11 @@ private def cargoPairs (value : Json) : IO (List (String × String)) := do
 
 /-- Pure Lean Lake dependencies (`lean_dependencies`, absent: none). They carry
 no native code, so they have no `native_interfaces` entry; each records its
-Lake package and how it is pinned (`source_kind`), the source directory of its
-modules relative to the package root, the modules IxCC imports from it, and
-the SHA-256 of every file of their import closure. A `git` dependency pins a
-Lake revision and the flake node pinning the same revision for Nix; a
-`workspace_path` dependency is a package of the enclosing workspace, at
-`pins.workspace_path` relative to the project root (`../IxCK` inside ix). -/
+Lake package, the source directory of its modules relative to the package
+root, the modules IxCC imports from it, and the SHA-256 of every file of their
+import closure. Each is a package of the enclosing workspace
+(`source_kind: workspace_path`), at `pins.workspace_path` relative to the
+project root (`../IxCK` inside ix), so the closure hashes are its pin. -/
 def leanDependencies (ledger : Json) : IO (Array Json) :=
   match ledger.getObjVal? "lean_dependencies" with
   | .ok value => array value
@@ -75,17 +74,15 @@ private def manifestPin (entry : Json) : IO (String × Pin) := do
   | "path" => return (name, .path (← strField entry "dir"))
   | other => throw (IO.userError s!"Lake dependency {name}: unsupported manifest type {other}")
 
-/-- The pin the ledger records for a pure Lean dependency. -/
-def leanDependencyPin (entry : Json) : IO Pin := do
-  let pins ← field entry "pins"
-  match ← strField entry "source_kind" with
-  | "git" => return .git (← strField pins "lake_rev")
-  | "workspace_path" =>
-      let dir ← strField pins "workspace_path"
-      need (!dir.isEmpty && !(FilePath.mk dir).isAbsolute)
-        s!"{(← strField entry "lake_package")}: workspace_path must be relative to the project root"
-      return .path dir
-  | other => throw (IO.userError s!"unknown lean dependency source_kind {other}")
+/-- The workspace path the ledger records for a pure Lean dependency. -/
+def workspacePath (entry : Json) : IO String := do
+  let package ← strField entry "lake_package"
+  let kind ← strField entry "source_kind"
+  need (kind == "workspace_path") s!"{package}: unknown lean dependency source_kind {kind}"
+  let dir ← strField (← field entry "pins") "workspace_path"
+  need (!dir.isEmpty && !(FilePath.mk dir).isAbsolute)
+    s!"{package}: workspace_path must be relative to the project root"
+  return dir
 
 /-- The repository around the project: where its `flake.lock` and CI
 workflows are. Standalone the project is the repository. Inside a larger one,
@@ -164,12 +161,9 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
       "pins", "semantics_assumed", "proof_effect", "trust_basis", "tests", "retirement"]
     let _ ← jsonStrings (← field entry "imported_modules")
     let _ ← csimpRecords (← field entry "csimp_theorems")
-    match ← leanDependencyPin entry with
-    | .git _ => fields (← field entry "pins") ["lake_rev", "flake_node"]
-    | .path _ =>
-      let package ← strField entry "lake_package"
-      need ((← pairs (← field entry "pins")).length == 1)
-        s!"{package}: a workspace_path dependency pins only its path"
+    let _ ← workspacePath entry
+    need ((← pairs (← field entry "pins")).length == 1)
+      s!"{(← strField entry "lake_package")}: a workspace_path dependency pins only its path"
     retirement entry
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
@@ -301,7 +295,7 @@ def validateImports (root : FilePath) (ledger : Json) (interfaces : Array Json)
   let native ← deps.toList.mapM fun entry => do
     return (← strField entry "lake_package", Pin.git (← strField (← field entry "pins") "lake_rev"))
   let leanPins ← (← leanDependencies ledger).toList.mapM fun entry => do
-    return (← strField entry "lake_package", ← leanDependencyPin entry)
+    return (← strField entry "lake_package", Pin.path (← workspacePath entry))
   sameSet actual (native ++ leanPins) "Lake dependency inventory"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
   need (!locals.isEmpty) "empty local_import_roots"
@@ -437,12 +431,6 @@ private def localModule (root : FilePath) (lake : Array Token) (mod : String) : 
     if ← (root / directory / (mod.replace "." "/" ++ ".lean")).pathExists then return true
   return false
 
-/-- Lake's checkout directory name for a package (`«a-b»` is checked out as `a-b`). -/
-private def checkoutName (package : String) : String :=
-  if package.startsWith "«" && package.endsWith "»" then
-    ((package.drop 1).dropEnd 1).toString
-  else package
-
 /-- Whether a Lake configuration declares the package `name` (as the manifest
 spells it, `«a-b»` for a name that needs quoting). -/
 private def declaresPackage (lakefile : FilePath) (name : String) : IO Bool := do
@@ -457,16 +445,12 @@ private def declaresPackage (lakefile : FilePath) (name : String) : IO Bool := d
 nor a toolchain module is a recorded module of a pure Lean dependency; every
 file of each dependency's recorded import closure has its recorded hash, no
 native declaration, no `implemented_by`, no `axiom`/`sorry`/`native_decide`,
-and imports only closure or toolchain modules. A `git` dependency's Lake and
-flake pins agree; a `workspace_path` dependency's directory holds that
-package's `lakefile.lean` (a `--dependency-root` override replaces the
-directory, as it replaces a git checkout). Returns the number of closure files
-checked. -/
+and imports only closure or toolchain modules. Each dependency's workspace
+directory holds that package's `lakefile.lean` (a `--dependency-root`
+override replaces the directory). Returns the number of closure files checked. -/
 def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Token)
-    (sources : List (FilePath × Array Token)) (overrides : List (String × String))
-    (flakeLock : FilePath) : IO Nat := do
+    (sources : List (FilePath × Array Token)) (overrides : List (String × String)) : IO Nat := do
   let manifest ← readJson (root / "lake-manifest.json")
-  let packagesDir := (manifest.getObjValAs? String "packagesDir").toOption.getD ".lake/packages"
   let packages ← arrField manifest "packages"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
   let mut unresolved := []
@@ -479,24 +463,14 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
   let mut checkedFiles := 0
   for entry in ← leanDependencies ledger do
     let package ← strField entry "lake_package"
-    let pins ← field entry "pins"
-    let mut found := none
+    let mut found := false
     for candidate in packages do
-      if (← strField candidate "name") == package then found := some candidate
-    let some record := found | throw (IO.userError s!"lean dependency {package} is not in lake-manifest.json")
-    let pin ← leanDependencyPin entry
-    let packageRoot : FilePath := match optional overrides package, pin with
-      | some path, _ => path
-      | none, .path dir => root / dir
-      | none, .git _ => root / packagesDir / checkoutName package /
-          ((record.getObjValAs? String "subDir").toOption.getD ".")
-    match pin with
-    | .git rev =>
-        let node ← field (← field (← readJson flakeLock) "nodes") (← strField pins "flake_node")
-        need ((← strField (← field node "locked") "rev") == rev) s!"{package}: flake/Lake pin mismatch"
-    | .path dir =>
-        need (← declaresPackage (packageRoot / "lakefile.lean") package)
-          s!"{package}: {dir} does not hold its lakefile.lean"
+      if (← strField candidate "name") == package then found := true
+    need found s!"lean dependency {package} is not in lake-manifest.json"
+    let dir ← workspacePath entry
+    let packageRoot : FilePath := ((optional overrides package).map FilePath.mk).getD (root / dir)
+    need (← declaresPackage (packageRoot / "lakefile.lean") package)
+      s!"{package}: {dir} does not hold its lakefile.lean"
     let sourceRoot ← IO.FS.realPath (packageRoot / (← strField entry "source_dir"))
     let closure ← stringPairs (← field entry "closure")
     need (!closure.isEmpty) s!"{package}: empty closure"
@@ -649,7 +623,7 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
   validateImports root ledger interfaces sources
   validateProjectCSimps root ledger sources
   let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
-  let leanFiles ← validateLeanDependencies root ledger lake sources overrides repo.flakeLock
+  let leanFiles ← validateLeanDependencies root ledger lake sources overrides
   validateSeeds root seeds gmp
   validateCI repo ledger
   let mut symbols := 0

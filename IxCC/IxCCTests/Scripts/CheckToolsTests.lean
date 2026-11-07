@@ -262,6 +262,11 @@ private def workspaceDependencyTests (root blake : FilePath) (ledger : Json) : I
     rejects "absolute workspace path" "must be relative" audited
   withFile (root / recorded / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
     rejects "workspace path holding another package" "does not hold its lakefile.lean" audited
+  -- a pure Lean dependency is a workspace package: a git pin is refused
+  let gitPinned ← (← arrField ledger "lean_dependencies").mapM fun entry =>
+    replaceField entry "source_kind" (toJson "git")
+  withFile ledgerPath (← replaceField ledger "lean_dependencies" (Json.arr gitPinned)).compress do
+    rejects "git-pinned pure dependency" "unknown lean dependency source_kind git" audited
 
 private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let repositoryRoot := temporary / "repository"

@@ -251,15 +251,13 @@ and fixture refreeze.
 
 `lean_dependencies` records Lake dependencies that contain no native code, so
 they are not trusted externs, but whose behaviour IxCC relies on. Each
-entry names the Lake package and how it is pinned (`source_kind`), the modules
-our sources import from it, and the SHA-256 of every file of their import
-closure. A `git` dependency pins the Lake revision (`lake-manifest.json`) and
-the flake input with the same revision (Nix); the two must agree. A
-`workspace_path` dependency is a package of the enclosing workspace,
-`pins.workspace_path` relative to the project (`../IxCK` inside ix): the
-manifest must record it by that path, and the directory must hold that
-package's `lakefile.lean`. Either way the closure hashes, not a revision, fix
-the audited source. The checker requires
+entry names the Lake package, the modules our sources import from it, and the
+SHA-256 of every file of their import closure. Each is a package of the
+enclosing workspace (`source_kind: workspace_path`), at `pins.workspace_path`
+relative to the project (`../IxCK` inside ix): the manifest must record it by
+that path, and the directory must hold that package's `lakefile.lean`. The
+closure hashes, not a revision, fix the audited source; a git-pinned
+dependency is refused. The checker requires
 every import of the project's sources that names neither a project module nor
 a toolchain module to be such a recorded module; checks each closure file's
 hash; rejects a closure file that declares a native symbol, uses
