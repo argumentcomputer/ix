@@ -3,7 +3,7 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur] [ooc] [compile] [decompile] | all) [execute]
+#   !benchmark ([aiur-sharded-env] [ooc] [compile] [decompile] | all)
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
@@ -14,7 +14,7 @@
 #                                  #  — so BENCH_ENVS is never required; a single-env
 #                                  #  BENCH_ENVS still forces placement
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
-#   BENCH_TRACE_SHARDS=<GiB>       # aiur prove: plan each constant's proof as trace shards
+#   BENCH_TRACE_SHARDS=<GiB>       # aiur prove (disabled): plan each constant's proof as trace shards
 #                                  #  within this per-constant RAM budget (0: detect) and
 #                                  #  report `ixvm-trace-shards`; a base checkout that
 #                                  #  predates the flag proves whole
@@ -32,16 +32,11 @@
 #                                  # (default: 131072)
 #
 # Each backend runs its registry default mode:
-#   - aiur: `prove` — the full proof pipeline per constant (stage 1
-#     proves the IxVM typecheck, stage 2 executes and proves the
-#     in-circuit multi-stark verifier over that fresh proof), reported
-#     as one comparison table per stage — witness execute, prove, peak
-#     RAM, proof size, verify — closing with the pipeline ledger (total
-#     time and the run's RAM ceiling). BENCH_CONSTS overrides the shared
-#     selection. The bare `execute`
-#     token switches it to the fast Phase-1-only mode (witness
-#     generation; no bencher baseline exists for that, so the base side
-#     comes from a base-SHA run).
+#   - aiur: disabled. Its per-constant proof pipeline ran on the retired
+#     legacy backend's `bench-typecheck`; a bare `!benchmark`, which
+#     requests it, is rejected until a formal Aiur pipeline replaces it.
+#   - aiur-sharded-env: `execute` — whole-env formal Aiur execution and
+#     proof planning over a sharded manifest (`ix check --ram-budget`).
 #   - ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
@@ -92,7 +87,7 @@ on:
         description: Full head SHA to benchmark
         required: true
       comment-body:
-        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark aiur BENCH_ENVS=InitStd,Mathlib`"
+        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark ooc BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
 run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} (r8i.8xlarge)', inputs.pr) || 'Relay benchmark comment' }}"
