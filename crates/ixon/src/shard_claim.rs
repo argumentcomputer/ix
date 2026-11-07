@@ -50,7 +50,7 @@ use ix_common::address::Address;
 /// itself an entry of `Constant.sharing`, which is walked separately, so
 /// coverage is complete and the traversal stays linear.
 ///
-/// Mirror of `const_idxs_expr` in `IxVM/IxVM/Modules/KernelClaim.aiur`.
+/// Mirror of `const_idxs_expr` in `IxVM/IxVM/Modules/KernelClaim.lean`.
 fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
   match e {
     Expr::Ref(i, _) => {
@@ -76,7 +76,7 @@ fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
 /// The `refs` indices a constant uses as constants, over its `sharing`
 /// table and every Expr its `ConstantInfo` carries.
 ///
-/// Mirror of `const_idxs_of` in `IxVM/IxVM/Modules/KernelClaim.aiur`.
+/// Mirror of `const_idxs_of` in `IxVM/IxVM/Modules/KernelClaim.lean`.
 fn const_idxs_of(c: &Constant) -> FxHashSet<u64> {
   let mut out = FxHashSet::default();
   for e in &c.sharing {

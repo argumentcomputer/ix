@@ -17,26 +17,10 @@ fi
 # poison its CPU-only witness generation. The hardware gate scopes them itself.
 export IX_CUDA=0 AIUR_TRACE_ONLY_LOOKUPS=0
 
-# The legacy port generators read their sources at pinned pre-migration Ix
-# revisions with `git show`. A shallow checkout (CI's) lacks those commits, so
-# fetch them when reachable; if a squash-merged branch commit is later GC'd on
-# the remote, skip the historical port check and rely on `ix codegen --check`.
-have_pinned_revs=1
-for rev in $(sed -nE "s/^(LIBRARY_)?REVISION = '([0-9a-f]{40})'$/\2/p" tools/ixvm/adapt.py); do
-  if ! git cat-file -e "$rev^{commit}" 2>/dev/null && \
-     ! git fetch --quiet --depth 1 origin "$rev" 2>/dev/null; then
-    echo "Pinned pre-migration revision $rev not available; skipping legacy port regeneration check"
-    have_pinned_revs=0
-    break
-  fi
-done
-if [[ $have_pinned_revs == 1 ]]; then
-  python3 tools/ixvm/adapt.py --check
-  python3 tools/ixvm/recursion.py --check
-  python3 tools/ixvm/recursion.py --aggregate --check
-fi
 lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests \
   aiur/grouping_example aiur/Aiur.Library.U8Facts
+# The IxVM and MultiStark modules are Lean source (`aiur⟦ … ⟧`). Only
+# IxVM/IxVM/Modules/KernelRoleSpec.lean is rendered, from IxC's role specifications.
 .lake/build/bin/ix codegen --check
 lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.json --check
 cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel \
