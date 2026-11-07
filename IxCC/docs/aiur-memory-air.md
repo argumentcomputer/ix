@@ -94,7 +94,7 @@ lake build IxCC.Aiur.AIR.Memory.Sound \
 lake exe tests-aiur
 lake exe check-aiur --root .
 lake exe check-aiur --dump-memory-air plans/aiur-memory-air.json
-nix build .#checks.x86_64-linux.aiur .#checks.x86_64-linux.proofs
+nix build .#checks.x86_64-linux.ixcc-aiur .#checks.x86_64-linux.ixcc-proofs
 ```
 
 The suite adds 52 runtime assertions, 16 public kernel regressions, and 46

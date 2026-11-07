@@ -1,9 +1,9 @@
 # IxCC
 
-A certified compiler for [ix](https://github.com/argumentcomputer/ix),
-implemented in Lean 4. It compiles Ixon v4, ix's content-addressed Lean
-kernel terms, to x86-64. The goal is certified native code that competes
-with Lean → Clang. IxCC is the project's Lean namespace.
+The certified compiler of [ix](../README.md), implemented in Lean 4. It
+compiles Ixon v4, ix's content-addressed Lean kernel terms, to x86-64. The
+goal is certified native code that competes with Lean → Clang. IxCC is the
+project's Lean namespace.
 
 The design combines three ideas:
 
@@ -27,7 +27,8 @@ recheck path correct relative to the source evaluator and the native driver
 model; the connection to Lean's denotation remains open. See the
 [roadmap](docs/roadmap.md) for scope and remaining work. Main includes:
 - the scalar compiler, certificate rechecker, proof fences and native suites;
-- [Ixon v4 ingress](docs/ixon-v4.md) (through ix's pinned Ixon v4 codec);
+- [Ixon v4 ingress](docs/ixon-v4.md) (through the Ixon v4 codec of ix's `IxCK`
+  package);
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
   [stream/ELF layer](docs/x86-stream-objects.md);
@@ -44,15 +45,23 @@ The earlier pipeline, the Ixby backend and their measurements are on branch
 
 ## Build and check
 
+IxCC lives in ix under `IxCC/`, as its own Lake package (`«ix-cc»`). It
+requires the `IxCK` package beside it (`../IxCK`, of which it imports only
+the Ixon codec) and Blake3, and nothing of ix's root package. ix's flake
+builds it and exposes its required checks as `ixcc-*`:
+
 ```sh
-nix build                          # production library
-nix flake check                    # required checks (docs/ci.md)
-nix develop -c lake build          # local development build
+nix build .#ixcc                   # production library
+nix run .#ixcc -- --help           # the compiler's command line
+nix build .#checks.x86_64-linux.ixcc-suites  # one required check (docs/ci.md)
+nix develop -c lake build          # local development build, from IxCC/
 ```
 
-The repository pins Lean in `lean-toolchain` and its dependencies in the Nix
-flake. See [development and validation](docs/development-plan.md) for
-individual checks and build troubleshooting.
+Nix finds ix's `flake.nix` from inside `IxCC/`. `lean-toolchain` must equal
+ix's, and the Nix inputs are ix's `flake.lock`; the trust ledger records
+both. CI runs every `ixcc-*` check from `.github/workflows/ixcc.yml`. See
+[development and validation](docs/development-plan.md) for individual checks
+and build troubleshooting.
 
 ## Documentation
 

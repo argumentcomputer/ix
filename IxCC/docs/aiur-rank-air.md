@@ -107,7 +107,7 @@ lake build IxCC.Aiur.AIR.Rank.Sound IxCC.Aiur.AIR.Rank.GraphProofs \
 lake exe tests-aiur
 lake exe check-aiur --root .
 lake exe check-aiur --dump-rank-air plans/aiur-rank-air
-nix build .#checks.x86_64-linux.aiur .#checks.x86_64-linux.proofs
+nix build .#checks.x86_64-linux.ixcc-aiur .#checks.x86_64-linux.ixcc-proofs
 ```
 
 The suite adds 71 runtime assertions, 22 public kernel regressions, and 63

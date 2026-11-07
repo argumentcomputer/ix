@@ -80,7 +80,7 @@ lake build IxCC.Aiur.CounterAnalysis \
   IxCCTests.Fences.AiurCounterAnalysis
 lake build IxCCTests.Proofs
 lake exe check-build-graph
-nix build .#checks.x86_64-linux.proofs
+nix build .#checks.x86_64-linux.ixcc-proofs
 ```
 
 Nineteen public kernel regressions cover arbitrary-input consequences in

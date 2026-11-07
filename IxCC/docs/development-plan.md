@@ -44,11 +44,15 @@ encoder or compiler correctness.
 
 ## Validation commands
 
-Use the Lean version pinned in `lean-toolchain` and the repository's Nix
-environment. The required integration gate is:
+Use the Lean version pinned in `lean-toolchain` (ix's) and ix's Nix
+environment; Nix finds ix's flake from inside `IxCC/`. The required
+integration gate is every `ixcc-*` check of that flake (`nix flake check` at
+ix's root also runs ix's own):
 
 ```sh
-nix flake check
+nix build -L --no-link $(nix eval --raw .#checks.x86_64-linux --apply \
+  'cs: toString (map (n: ".#checks.x86_64-linux." + n)
+    (builtins.filter (n: builtins.substring 0 5 n == "ixcc-") (builtins.attrNames cs)))')
 ```
 
 The [CI guide](ci.md) lists its checks, the shared program build, the
@@ -177,7 +181,7 @@ RC pipeline `native`/`negative`). They execute the shared programs artifact, wit
 30-second native-child limits. Build and run them explicitly during integration:
 
 ```sh
-nix build .#checks.x86_64-linux.rc-runtime .#checks.x86_64-linux.rc-native
+nix build .#checks.x86_64-linux.ixcc-rc-runtime .#checks.x86_64-linux.ixcc-rc-native
 nix develop -c lake build IxCCTests.Proofs
 ```
 
@@ -292,11 +296,12 @@ and runs the ladder again; it exits 1 while the failure reproduces.
 
 ## Build troubleshooting
 
-Crane's Rust build helper downloads its locked crates directly from
-`static.crates.io`. The flake overrides that helper's Nix Cargo fetcher because
-the crates.io API download route can reject CI requests with HTTP 403. The
-override preserves the upstream lockfile, crate checksums and TLS verification;
-it leaves the helper and Blake3 library output paths unchanged. A cached local
-check may conceal a failed source download. Use `nix build --rebuild` on the
-named fetch derivation to exercise the download itself while still allowing
-its build tools to come from the binary cache.
+IxCC builds with ix's Blake3 derivation (`blake3Lake` in ix's `flake.nix`),
+the one the host uses. The standalone flake overrode Crane's Rust build helper
+to download its locked crates from `static.crates.io`, because the crates.io
+API download route can reject CI requests with HTTP 403; ix's flake has no
+such override, and its CI substitutes the helper from the binary cache. If a
+cold build hits that 403, restore the override in ix's flake for both. A
+cached local check may conceal a failed source download. Use
+`nix build --rebuild` on the named fetch derivation to exercise the download
+itself while still allowing its build tools to come from the binary cache.

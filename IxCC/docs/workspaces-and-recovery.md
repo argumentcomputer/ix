@@ -41,14 +41,10 @@ reference. Never remove the shared repository store with a workspace.
 ## Validation and continuation
 
 The cleanup adds no compiler semantic change. The integration candidate must
-pass the complete required local surface before publication, from the `IxCC`
-directory:
-
-```sh
-nix flake check -L --max-jobs 1 --cores 12
-```
-
-On x86-64 Linux this includes all 16 required checks: the shared builds,
+pass the complete required local surface before publication: every `ixcc-*`
+check of ix's flake ([development and validation](development-plan.md#validation-commands)
+has the command; `nix flake check` at ix's root runs them with ix's own).
+On x86-64 Linux these are all 16 required checks: the shared builds,
 complete proof/fence and trust/build-graph inventories, pipeline suites,
 native behavior, RC runtime/certificate controls and deterministic steps.
 Record the exact tested commit/tree, toolchain, cache state and command result.

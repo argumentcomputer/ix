@@ -6,19 +6,21 @@ source and carried, as contracts, in the content-addressed objects. Aiur is
 one consumer. IxCC consumes the resulting binary objects; it does not
 introduce another parser or elaborator.
 
-Three ix revisions are pinned, for three different things:
+Three ix sources are pinned, for three different things:
 
 - **The wire** is Ixon **v4** (`ixon-v4`), as written by ix `jcb/ix-certified`
   at `f829b76044a44a61023d0983516137147bbb12a7`.
 - **The codec** that reads and writes it is a Lake dependency: ix's `IxCK/`
-  package (`«ix-ck»`) at `2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2`, of which
+  package (`«ix-ck»`), beside IxCC in the ix workspace (`../IxCK`), of which
   IxCC imports the 11 modules of `IxCK.Ixon.Canonical`'s import closure (Init
   only). They are `f829b760`'s `Ix.Ixon.*` and `Ix.Address.Core` under the
   `IxCK` module root, without an unused error type, and with a TagN fast path:
   two `@[csimp]` theorems make compiled code use copies of `putTagN` and
   `getTagN` specialized to the flag widths 0, 2 and 4. It is the only reader
-  and writer of constant, expression and universe bytes ([trust
-  ledger](trusted-extern-ledger.md), `lean_dependencies`).
+  and writer of constant, expression and universe bytes. The trust ledger pins
+  it by the SHA-256 of each of those files ([trust
+  ledger](trusted-extern-ledger.md), `lean_dependencies`); they were last
+  reviewed as of ix `2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2`.
 - **The data model, the resource rules and the erased checker** come from ix
   `jcb/ix-ixcc` at `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3,
   which introduced the contract-carrying model; v4 changed only the wire),

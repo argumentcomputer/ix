@@ -182,7 +182,7 @@ this API adds no binary trace or answer-tape parser.
 lake build IxCC.Aiur IxCCTests.Aiur.Execution.Proofs \
   IxCCTests.Fences.AiurExecution tests-aiur
 lake exe tests-aiur
-nix build .#checks.x86_64-linux.aiur
+nix build .#checks.x86_64-linux.ixcc-aiur
 ```
 
 The execution suite adds 276 assertions, with an explicit inventory check

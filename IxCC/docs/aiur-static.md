@@ -101,7 +101,7 @@ trace, rank, or replay-tape parser is introduced.
 lake build IxCC.Aiur IxCCTests.Aiur.Static.Proofs \
   IxCCTests.Fences.AiurStatic tests-aiur
 lake exe tests-aiur
-nix build .#checks.x86_64-linux.aiur
+nix build .#checks.x86_64-linux.ixcc-aiur
 ```
 
 The suite adds 116 runtime assertions over all four counter directions,

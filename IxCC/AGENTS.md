@@ -20,6 +20,25 @@ tree still contains monolithic test and proof modules that need migration.
    `~/projects` where practical. Reuse an appropriate existing checkout and
    give additional workspaces distinct names; preserve unrelated local work.
 
+## IxCC in the ix repository
+
+- IxCC is the `IxCC/` package of ix (`«ix-cc»`). Run Lake from `IxCC/` in
+  ix's development shell (`nix develop` finds ix's flake from here). IxCC
+  depends on `../IxCK` (only its Ixon codec closure) and Blake3; ix's root
+  package does not depend on IxCC, and IxCC must not import the root
+  package's `Ix.*` modules.
+- ix's `flake.nix` builds IxCC from `nix/build.nix` and `nix/checks.nix`,
+  with ix's toolchain, `lake2nix` and Blake3 build, and exposes its
+  checks as `ixcc-*`. `nix/sources.nix` selects IxCC's sources from the
+  workspace, so keep every input IxCC reads inside `IxCC/` or recorded in
+  the trust ledger.
+- `lean-toolchain` must equal ix's. The trust ledger also audits ix's
+  `flake.lock` and `.github/workflows/ixcc.yml`: a change to either, or to
+  a file of the `IxCK` codec closure, needs a reviewed ledger update.
+- Shared files at the repository root (`flake.nix`, `flake.lock`,
+  `.github/`, `.gitattributes`) are ix's; change them with ix's
+  conventions and keep ix's own checks passing.
+
 ## Modules, namespaces, and dependencies
 
 - Keep production declarations under `IxCC.<Area>`, following the
@@ -102,9 +121,9 @@ tree still contains monolithic test and proof modules that need migration.
   memory where available. A warm local success does not establish that a cold
   GitHub runner fits the job budget.
 - Aim for required CI jobs to finish within 30 minutes on their configured
-  runner, including cold compilation, leaving headroom under the current
-  60-minute timeout. Investigate repeated compilation and oversized import
-  closures before raising timeouts or concurrency. Budget long integration
+  runner (`.github/workflows/ixcc.yml`), including cold compilation.
+  Investigate repeated compilation and oversized import closures before
+  raising timeouts or concurrency. Budget long integration
   gates explicitly and retain visible failures and diagnostic logs.
 - Use the pinned Lean toolchain consistently for Lean modules and native FFI
   headers. Keep Lake/Nix dependency pins and the trust ledger synchronized;

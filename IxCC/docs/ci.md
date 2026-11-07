@@ -40,8 +40,13 @@ with the checks.
 
 ## Current surface
 
-`nix flake check` runs the checks defined in `flake.nix` and
-[`nix/checks.nix`](../nix/checks.nix). The builds they share:
+ix's flake (`../flake.nix`) defines the checks of
+[`nix/checks.nix`](../nix/checks.nix) and exposes them as `ixcc-<name>`
+(named below without the prefix). `nix flake check` at ix's root runs them
+with ix's own check; `nix build .#checks.x86_64-linux.ixcc-<name>` runs one.
+In CI, `.github/workflows/ixcc.yml` runs all of them: from CI Jobs when a
+pull request changes IxCC's inputs, and from Merge tests on every merge
+group. The builds they share:
 - **`build`** is the production library.
 - **`proofs`** builds every executable and the complete proof and fence
   collection (`IxCCTests.Proofs`) once, reusing the library's
@@ -56,7 +61,7 @@ with the checks.
 | `x86-byte-execution` | `check-x86-bytes` |
 | `x86-stream-objects` | `check-x86-streams` |
 | `x86-elf-object` | `check-x86-object` with readelf and objdump; on x86-64 Linux, native link and run |
-| `trusted-extern-ledger` | `check-trusted-externs` against the pinned Blake3 and ix (`IxCK/`) sources and the GMP version; `check-tools-tests` |
+| `trusted-extern-ledger` | `check-trusted-externs` on IxCC in its workspace (the `IxCK` codec closure at `../IxCK`, ix's `flake.lock` and `ixcc.yml`), against the pinned Blake3 source and the GMP version; `check-tools-tests` |
 | `build-graph` | `check-build-graph`: the module manifest, production-import hygiene, and the proof, fence and runtime coverage inventory in [`nix/ci-coverage.json`](../nix/ci-coverage.json) |
 | `census` | `census` on the K1 pack and on the five K1 benchmark closures in [`fixtures/ixon-v4/bench-k1`](../fixtures/ixon-v4/bench-k1/README.md); each report must equal its reviewed baseline (for example [`fixtures/ixon-v4/k1/census.json`](../fixtures/ixon-v4/k1/census.json)) |
 | `x86-hardware` | x86-64 Linux only: `check-x86-hardware` enumerates `Op.rows` and runs 53,279 generated cases natively, compares them with `ByteEval`, and checks `llvm-mc` decodes each identically |
@@ -206,6 +211,7 @@ changes visible.
 
 | Date | Change | Checks |
 | --- | --- | --- |
+| 2026-11-07 | IxCC merged into ix as `IxCC/` | No check added, removed or restated: the same 16 checks from the same `nix/checks.nix`, now ix's `ixcc-*` flake checks, and hosted again (`.github/workflows/ixcc.yml`, from CI Jobs and Merge tests). `proofs` unchanged at 5,353 exact axiom assertions (same digest). `trusted-extern-ledger` audits IxCC in its workspace: «ix-ck» as the workspace path `../IxCK` (the same 11-file closure and hashes; git pins retired), ix's `flake.lock` (16 nodes) and `ixcc.yml` (three pinned actions); `check-tools-tests` exercises that layout. Blake3 is ix's build, so the standalone flake's Cargo-fetcher override is gone |
 | 2026-10-11 | Actual compiler composition proof | Adds seven exact fences for `compileInput`/`compile` composition, object refinement, driver existence, the three source-relative guarantees and emitted bytes. All 5,346 previous assertions and runtime coverage remain required; the total is 5,353. The new statements expose the existing native BLAKE3 dependency. No runtime gate or accepted fragment changes. |
 | 2026-10-09 | Rechecked consumer evaluation order | Default `tests-lam` adds 118 assertions over sixteen synthetic cases at two clocks, through actual table/relevance rechecking, lazification and erasure. Independent Src and Lam expectations distinguish direct cases, strict wrappers and effectful overapplication. The focused mode and complete local suite pass; all previous parts and exact fences remain required. Resource-profile compatibility and final producer validation remain separate. |
 | 2026-10-09 | Complete RC pipeline and failure controls | Adds `tests-pipeline-rc`: required portable `levels`/`counters` and x86-64 Linux `native`/`negative` modes, all from the shared programs artifact. Staging passes 192 complete stage observations, 12 event-count cases, nine native values, two object-only corruption refusals and 12 region controls. All six earlier RC behavior commands and 5,346 exact fences remain required. Every integrated tree must pass full validation; producer acceptance/refreeze remains separate. |
@@ -265,7 +271,7 @@ replaces.
 
 ## Rules for returning gates
 
-- **One gate per named check** in `flake.nix`. Build shared artifacts once
+- **One gate per named check** in `nix/checks.nix`. Build shared artifacts once
   and reuse them across checks (AGENTS.md).
 - **Budget:** required checks stay within 30 minutes cold on the configured
   machine. Record elapsed time and peak memory when a gate returns.

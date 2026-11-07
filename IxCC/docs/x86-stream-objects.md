@@ -232,7 +232,7 @@ regression gates, and all seventeen Nix checks on x86_64 Linux.
 ```sh
 lake build IxCC check-x86-streams
 ./.lake/build/bin/check-x86-streams
-nix build .#checks.x86_64-linux.x86-stream-objects
+nix build .#checks.x86_64-linux.ixcc-x86-stream-objects
 ```
 
 The [trust ledger](trusted-extern-ledger.md) discharges stream/layout and

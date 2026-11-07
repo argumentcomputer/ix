@@ -1,8 +1,9 @@
 # Trusted-extern ledger
 
 The machine-readable ledger is
-[`trusted-externs.json`](trusted-externs.json); `nix flake check` validates
-it with [`IxCCTests/Scripts/CheckTrustedExterns.lean`](../IxCCTests/Scripts/CheckTrustedExterns.lean).
+[`trusted-externs.json`](trusted-externs.json); the `ixcc-trusted-extern-ledger`
+check of ix's flake validates it with
+[`IxCCTests/Scripts/CheckTrustedExterns.lean`](../IxCCTests/Scripts/CheckTrustedExterns.lean).
 
 **Status, 2026-09-29.** The inventory was reset for the rebuilt compiler.
 Removed with the legacy pipeline: the durable-filesystem native interface,
@@ -63,16 +64,17 @@ The checker deliberately fails closed on changes to:
   (`csimp_theorems`, top level and per dependency), since it changes the code
   compiled for every call of `f`;
 - every package/version and the complete checksum-bearing Cargo lockfile;
-- every locked Nix flake node and the build-selection files, including
-  `.envrc` (it injects `NIX_CONFIG` for direnv users);
+- every locked Nix flake node of the repository's `flake.lock` and IxCC's
+  build-selection files (`lakefile.lean`, `lake-manifest.json`,
+  `lean-toolchain`, `nix/*.nix`); ix's `flake.nix`, which only instantiates
+  `nix/build.nix` and `nix/checks.nix`, is not pinned;
 - the integrity-pinned independent x86 decoder and ELF object/link checks used
   as E0 evidence, including their native harness;
 - every `uses:` reference in the CI workflows in scope (below), followed
   through the repository's own local actions and reusable workflows
   (`./path` or `$/path`, which must stay inside the repository): a remote
   reference not pinned to a full 40-hex commit is rejected outright, and the
-  pinned inventory must match the ledger. The inventory is empty while hosted
-  workflows are removed.
+  pinned inventory must match the ledger.
 
 Standalone, the project is its repository: its `flake.lock` and
 `.github/workflows` are checked. Inside a larger repository, the optional
@@ -81,8 +83,19 @@ the project (`..` for `ix/IxCC`), whose `flake.lock` is checked, and
 `workflows` (repository-relative files or directories, default
 `.github/workflows`) scopes the workflows whose actions this ledger
 inventories. `check-trusted-externs --repository-root DIR --flake-lock FILE`
-overrides both, for a copy of the project taken out of its repository (as in a
-Nix check).
+overrides both, for a copy of the project taken out of its repository.
+
+Inside ix the ledger names the repository (`root: ".."`), so ix's
+`flake.lock` is checked, and scopes the workflow audit to
+`.github/workflows/ixcc.yml`, the reusable workflow that runs IxCC's checks
+and that IxCC owns; its three remote actions are pinned and listed in
+`ci_actions`. ix's other workflows, including the jobs that call `ixcc.yml`,
+are outside the scope: they track `argumentcomputer/ci-workflows@main` and
+`argumentcomputer/lean-update@dev` by branch, by ix's choice, which this audit
+would reject. A change to `flake.lock` (for example a toolchain or
+`lean4-nix` update) fails the audit until the node inventory is reviewed here.
+The Nix check runs on a copy of the workspace that keeps this layout
+(`nix/sources.nix`, `ledgerWorkspace`).
 
 Updating a dependency therefore requires reviewing and updating this ledger,
 not merely refreshing a lockfile. An entry may only be removed when its exit
@@ -265,8 +278,8 @@ hash; rejects a closure file that declares a native symbol, uses
 outside the closure or the toolchain, and requires its `@[csimp]` theorems to be
 exactly the entry's `csimp_theorems`.
 
-The one entry, `ix-ck-ixon-v4-codec`, is ix's `IxCK/` package (`«ix-ck»`) at
-`2dd96055`, of which IxCC imports `IxCK.Ixon.Canonical` and
+The one entry, `ix-ck-ixon-v4-codec`, is ix's `IxCK/` package (`«ix-ck»`),
+beside IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical` and
 `IxCK.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
 use `propext` and `Quot.sound`). It is the ingress decoder and encoder.
 Its two `@[csimp]` theorems, `putTagN_eq_fast` and `getTagN_eq_fast` in
@@ -282,9 +295,10 @@ against its Src declarations; it does not trust an ix acceptance Boolean.
 A codec defect can make ingress reject a closure or read a different program
 than ix compiled, which `Recheck.run` then checks as given. No whole-kernel
 semantic theorem follows from this codec dependency.
-Nix packages the same 11 sources under the same package name with a codec-only
-library (`nix/build.nix`), so the kernel is never built; the
-`trusted-extern-ledger` check reads the pinned source (`ix-src`).
+Nix packages exactly the closure this entry records (`nix/sources.nix`) under
+the same package name with a codec-only library (`nix/build.nix`), so the
+kernel is never built; the `trusted-extern-ledger` check reads the same files
+at `../IxCK` in its copy of the workspace.
 
 ## Aiur logical-trace boundary
 

@@ -184,7 +184,7 @@ lake exe tests-aiur
 lake exe check-aiur --root .
 lake exe check-aiur --bytecode fixtures/aiur-bytecode/unit-counter.bin \
   --expect-root 9f3d24e0e80b7bb3a788b657cc16608a652ba30da0d0fb3abb0ab58a16658307
-nix build .#checks.x86_64-linux.aiur
+nix build .#checks.x86_64-linux.ixcc-aiur
 ```
 
 The bytecode CLI emits a JSON report; optional `--output PATH` writes its

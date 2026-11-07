@@ -187,7 +187,7 @@ lake build IxCC.Aiur IxCCTests.Aiur.Proofs \
   tests-aiur check-aiur
 lake exe tests-aiur
 lake exe check-aiur --root .
-nix build .#checks.x86_64-linux.aiur
+nix build .#checks.x86_64-linux.ixcc-aiur
 ```
 
 The 25 runtime regressions cover shared demands, negative multiplicities,
