@@ -12,7 +12,8 @@ public import Ix.TracingTexray
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
-Compilation runs in the standalone exporter and is cached by its contents.
+Compilation runs in the standalone exporter, which embeds the program; the
+artifact is cached by the exporter and the program's digest.
 The generic Aiur Lean library does not acquire application-specific FFI. -/
 public section
 namespace Ix.Cli.FormalAiur
@@ -61,23 +62,22 @@ def repoRoot : IO System.FilePath := do
     aggregation) for the exported artifacts, and IX_AIUR_HOST, IX_PROVER_HOST and IX_STARK_HOST \
     for the Rust hosts.")
 
-/-- Read an ordered `.sources` manifest. Paths are relative to the manifest;
-blank lines and `#` comments are ignored. -/
-private def readSourceBundle (manifest : System.FilePath) : IO String := do
-  let directory := manifest.parent.getD "."
-  let mut result := ""
-  let mut seen : List String := []
-  for raw in (← IO.FS.readFile manifest).splitOn "\n" do
-    let line := raw.trimAscii.toString
-    if line.isEmpty || line.startsWith "#" then continue
-    if seen.contains line then
-      throw (IO.userError s!"duplicate source '{line}' in {manifest}")
-    seen := line :: seen
-    result := result ++ s!"// Source: {line}\n" ++ (← IO.FS.readFile (directory / line)) ++ "\n"
-  if seen.isEmpty then throw (IO.userError s!"empty source bundle {manifest}")
-  return result
+/-- The digest of the program an exporter embeds (`IxVM.programDigest`,
+`MultiStark.recursionDigest`, `MultiStark.aggregateDigest`), which it prints in
+its `digest` mode. It identifies the deployed program. -/
+def programDigest (root exporter : System.FilePath) (extra : Array String := #[]) : IO String := do
+  let result ← IO.Process.output {
+    cmd := "lake", args := #["env", exporter.toString, "digest"] ++ extra, cwd := root }
+  let digest := result.stdout.trimAscii.toString
+  unless result.exitCode == 0 && digest.length == 64 && digest.all Char.isHexDigit do
+    throw (IO.userError s!"{exporter} digest failed ({result.exitCode}): {result.stderr}")
+  return digest
 
-def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath mode : String)
+/-- The artifact `exporter` compiles, built once and cached under
+`.lake/aiur`. The key is BLAKE3 of the exporter's binary and the digest of the
+program it embeds: the program alone determines the circuit only together with
+the compiler that is linked into the exporter. -/
+def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target mode : String)
     (extra : Array String := #[]) : IO String := do
   let expected ← AiurArtifact.expected ((p.flag? s!"{flag}-digest").map (·.as! String)) env
   if let some path := (p.flag? flag).map (·.as! String) then
@@ -90,18 +90,15 @@ def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath m
     else if target == "stark-export" then "multiStark/stark-export"
     else target
   command "lake" #["-q", "build", buildTarget] root
-  let sourcePath := root / sourcePath
-  let source ← if sourcePath.extension == some "sources" then
-      pure (← readSourceBundle sourcePath).toUTF8
-    else IO.FS.readBinFile sourcePath
+  let program ← programDigest root exporter extra
   let compiler ← IO.FS.readBinFile exporter
-  let digest := Address.blake3 ((Address.blake3 compiler).hash ++ source)
+  let digest := Address.blake3 ((Address.blake3 compiler).hash ++ program.toUTF8)
   AiurArtifact.cached (root / ".lake" / "aiur") target digest expected fun tmp =>
     command "lake" (#["env", exporter.toString, mode, tmp.toString] ++ extra) root
 
 def artifact (p : Cli.Parsed) : IO String :=
   compiledArtifact p "aiur-artifact" "IX_AIUR_ARTIFACT" "IxVM/.lake/build/bin/ixvm"
-    "ixvm" "IxVM/IxVM/Program.sources" "export-claim-trace"
+    "ixvm" "export-claim-trace"
 
 /-- A Rust host of the checkout. A missing host is built; `refresh` lets
 cargo rebuild an existing one whose sources changed. -/

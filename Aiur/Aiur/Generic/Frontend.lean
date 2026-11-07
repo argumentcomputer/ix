@@ -23,29 +23,29 @@ syntax (name := blockStatements) "{" (aiur_body)? "}" : aiur_expr
 syntax (name := functionStatements) "fn" ident
   "(" sepBy(aiur_param, ",", ",", allowTrailingSep) ")" "->" aiur_type "{" (aiur_body)? "}" : aiur_function
 
-syntax (name := appliedType) ident "<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">" : aiur_type
-syntax (name := genericFunction) "fn" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) ">"
+syntax (name := appliedType) ident "<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle : aiur_type
+syntax (name := genericFunction) "fn" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) closeAngle
   "(" sepBy(aiur_param, ",", ",", allowTrailingSep) ")" "->" aiur_type "{" (aiur_body)? "}" : aiur_function
 syntax (name := inlineFunction) "inline" aiur_function : aiur_function
-syntax (name := genericEnum) "enum" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) ">"
+syntax (name := genericEnum) "enum" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) closeAngle
   "{" sepBy(aiur_constructor, ",", ",", allowTrailingSep) "}" : aiur_enum
-syntax (name := genericCall) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">"
+syntax (name := genericCall) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle
   "(" sepBy(aiur_expr, ",", ",", allowTrailingSep) ")" : aiur_expr
-syntax (name := genericConstructor) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">" "::" ident : aiur_expr
-syntax (name := genericConstructorArgs) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">" "::" ident
+syntax (name := genericConstructor) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle "::" ident : aiur_expr
+syntax (name := genericConstructorArgs) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle "::" ident
   "(" sepBy(aiur_expr, ",", ",", allowTrailingSep) ")" : aiur_expr
 declare_syntax_cat aiur_alias (behavior := symbol)
 syntax (name := aliasDefinition) &"type" ident "=" aiur_type ";" : aiur_alias
-syntax (name := genericAlias) &"type" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) ">"
+syntax (name := genericAlias) &"type" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) closeAngle
   "=" aiur_type ";" : aiur_alias
 syntax (name := aliasDecl) aiur_alias : aiur_decl
 syntax:10 (name := orPattern) aiur_pattern:10 "|" aiur_pattern:11 : aiur_pattern
 syntax:75 (name := loadPattern) "&" aiur_pattern:75 : aiur_pattern
 syntax (name := globalPattern) "::" ident : aiur_pattern
 syntax (name := globalExpr) "::" ident : aiur_expr
-syntax (name := genericConstructorPattern) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">"
+syntax (name := genericConstructorPattern) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle
   "::" ident : aiur_pattern
-syntax (name := genericConstructorPatternArgs) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">"
+syntax (name := genericConstructorPatternArgs) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle
   "::" ident "(" sepBy(aiur_pattern, ",", ",", allowTrailingSep) ")" : aiur_pattern
 declare_syntax_cat aiur_const (behavior := symbol)
 syntax (name := constDefinition) &"const" ident "=" aiur_expr ";" : aiur_const
@@ -75,26 +75,31 @@ declare_syntax_cat aiur_record_pattern_field (behavior := symbol)
 declare_syntax_cat aiur_record_patterns (behavior := symbol)
 syntax (name := structField) ident ":" aiur_type : aiur_struct_field
 syntax (name := structDefinition) &"struct" ident "{" sepBy(aiur_struct_field, ",", ",", allowTrailingSep) "}" : aiur_struct
-syntax (name := genericStruct) &"struct" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) ">"
+syntax (name := genericStruct) &"struct" ident "<" sepBy1(ident, ",", ",", allowTrailingSep) closeAngle
   "{" sepBy(aiur_struct_field, ",", ",", allowTrailingSep) "}" : aiur_struct
 syntax (name := structDecl) aiur_struct : aiur_decl
 syntax (name := recordValueField) ident ":" aiur_expr : aiur_record_value
 syntax (name := recordValueShorthand) ident : aiur_record_value
 syntax (name := recordExpr) atomic(ident "{" sepBy(aiur_record_value, ",", ",", allowTrailingSep) "}") : aiur_expr
-syntax (name := genericRecordExpr) atomic(ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">"
+syntax (name := genericRecordExpr) atomic(ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle
   "{" sepBy(aiur_record_value, ",", ",", allowTrailingSep) "}") : aiur_expr
 syntax:80 (name := memberExpr) aiur_expr:80 "." ident : aiur_expr
+/-- Lean reads the `1.0` of `p.1.0` as one decimal literal; it is the index path
+`.1 .0`. Only embedded `aiur⟦ … ⟧` source produces it: the string frontend
+separates every `.`. -/
+syntax:80 (name := projectChain) aiur_expr:80 "." scientific : aiur_expr
 syntax (name := recordPatternField) ident ":" aiur_pattern : aiur_record_pattern_field
 syntax (name := recordPatternShorthand) ident : aiur_record_pattern_field
 syntax (name := recordPatternFields) sepBy(aiur_record_pattern_field, ",", ",", allowTrailingSep) (".." (",")?)? : aiur_record_patterns
 syntax (name := recordPattern) ident "{" aiur_record_patterns "}" : aiur_pattern
-syntax (name := genericRecordPattern) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) ">"
+syntax (name := genericRecordPattern) ident "::<" sepBy1(aiur_type, ",", ",", allowTrailingSep) closeAngle
   "{" aiur_record_patterns "}" : aiur_pattern
 
 declare_syntax_cat aiur_update_step (behavior := symbol)
 declare_syntax_cat aiur_update_entry (behavior := symbol)
 syntax (name := updateMember) "." ident : aiur_update_step
 syntax (name := updateProject) "." num : aiur_update_step
+syntax (name := updateProjectChain) "." scientific : aiur_update_step
 syntax (name := updateIndex) "[" num "]" : aiur_update_step
 syntax (name := updateEntry) aiur_update_step+ "=" aiur_expr : aiur_update_entry
 syntax:15 (name := updateExpr) aiur_expr:15 &"with" "{"
@@ -104,6 +109,14 @@ def readName (s : Syntax) : Except String String :=
   match s.getId with
   | .str .anonymous n => .ok n
   | _ => .error "expected a simple identifier"
+
+/-- The tuple indices of a decimal literal read after a `.`: `1.0` is `[1, 0]`. -/
+private def tupleIndices (s : Syntax) : Except String (List Nat) := do
+  let some text := s.isLit? scientificLitKind | throw "expected tuple indices"
+  let parts := text.splitOn "."
+  unless parts.length == 2 && parts.all fun p => !p.isEmpty && p.all Char.isDigit do
+    throw s!"expected tuple indices, found '{text}'"
+  return parts.filterMap String.toNat?
 
 private def readLength (s : Syntax) : Except String Nat := do
   let some n := s.isNatLit? | throw "array lengths must be natural-number literals"
@@ -270,15 +283,17 @@ partial def expr (params : List String) (s : Syntax) : Except String (Expr Nat) 
     return .record { type := .named (← readName s[0]) args, fields := named.map Prod.fst } (named.map Prod.snd)
   else if k == ``updateExpr then
     let entries ← s[3].getSepArgs.toList.mapM fun entry => do
-      let path ← entry[0].getArgs.toList.mapM fun step => do
-        if step.getKind == ``updateMember then return UpdateStep.member { name := ← readName step[1] }
-        else if step.getKind == ``updateProject then return UpdateStep.project (step[1].isNatLit?.getD 0)
-        else if step.getKind == ``updateIndex then return UpdateStep.index (step[1].isNatLit?.getD 0)
-        else throw "expected a field or static index in an update path"
+      let path := List.flatten (← entry[0].getArgs.toList.mapM fun step => do
+        if step.getKind == ``updateMember then return [UpdateStep.member { name := ← readName step[1] }]
+        else if step.getKind == ``updateProject then return [UpdateStep.project (step[1].isNatLit?.getD 0)]
+        else if step.getKind == ``updateProjectChain then return (← tupleIndices step[1]).map UpdateStep.project
+        else if step.getKind == ``updateIndex then return [UpdateStep.index (step[1].isNatLit?.getD 0)]
+        else throw "expected a field or static index in an update path")
       return (path, ← expr params entry[2])
     return .update (entries.map Prod.fst) ((← expr params s[0]) :: entries.map Prod.snd)
   else if k == ``memberExpr then return .member (← expr params s[0]) { name := ← readName s[2] }
   else if k == ``project then return .project (← expr params s[0]) (s[2].isNatLit?.getD 0)
+  else if k == ``projectChain then return (← tupleIndices s[2]).foldl .project (← expr params s[0])
   else if k == ``letValue then return .letValue (← pattern params s[1]) (← expr params s[3]) (← expr params s[5])
   else if k == ``parens || k == ``block then expr params s[1]
   else if k == ``store then return .store (← expr params s[1])

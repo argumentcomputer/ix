@@ -2,7 +2,6 @@ import MultiStark
 import MultiStark.FunctionGroups
 import Aiur.Artifact
 import Aiur.Trace.Export
-import Aiur.SourceBundle
 import Aiur.Optimized.Grouping.Snapshot
 
 open Aiur Lean
@@ -12,18 +11,15 @@ private instance : ToJson MultiStark.F := ⟨fun x => toJson x.val⟩
 unsafe def main (args : List String) : IO Unit := do
   let groups := if args.contains "--ungrouped" then [] else MultiStark.functionGroups
   let mode := args.headD "check"
-  unless ["check", "export", "export-trace", "grouping-snapshot"].contains mode do
-    throw (IO.userError "usage: stark-export check|export|export-trace|grouping-snapshot [output] [--aggregate]")
+  unless ["check", "digest", "export", "export-trace", "grouping-snapshot"].contains mode do
+    throw (IO.userError "usage: stark-export check|digest|export|export-trace|grouping-snapshot [output] [--aggregate]")
   let aggregate := args.contains "--aggregate"
-  let file := if aggregate then "Aggregate.sources" else "Program.sources"
-  let sourcePath ← [s!"MultiStark/{file}", s!"MultiStark/MultiStark/{file}"].findM?
-    fun path => (System.FilePath.mk path).pathExists
-  let some sourcePath := sourcePath | throw (IO.userError "cannot locate MultiStark source bundle")
-  initSearchPath (← findSysroot)
-  enableInitializersExecution
-  let env ← importModules (loadExts := true) #[{module := `Aiur.Modules.Frontend}] {} 0
-  IO.eprintln "Parsing and checking recursive verifier..."
-  let source ← IO.ofExcept (MultiStark.parse env (← SourceBundle.read sourcePath))
+  let (source, digest) := if aggregate then (MultiStark.aggregateProgram, MultiStark.aggregateDigest)
+    else (MultiStark.recursionProgram, MultiStark.recursionDigest)
+  if mode == "digest" then
+    IO.println digest
+    return
+  IO.eprintln s!"MultiStark {if aggregate then "aggregate" else "recursion"} program {digest}"
   let entry := if aggregate then "MultiStark::ix_aggr" else "MultiStark::verify_multi_stark_proof"
   let prepared ← IO.ofExcept (Modules.prepare source [entry])
   IO.eprintln "Compiling recursive verifier bytecode..."

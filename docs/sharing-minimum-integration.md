@@ -62,8 +62,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
    does not serialize its output to measure it.
 4. **There are three codecs.** Besides Lean (`IxC/Ixon/Codec.lean`, with the metadata and
    environment codecs in `Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
-   program has its own codec (`IxVM/IxVM/Modules/IxonDeserialize.aiur`,
-   `IxVM/IxVM/Modules/IxonSerialize.aiur`), which the suite `ixvm-tagn` holds to the host's.
+   program has its own codec (`IxVM/IxVM/Modules/IxonDeserialize.lean`,
+   `IxVM/IxVM/Modules/IxonSerialize.lean`), which the suite `ixvm-tagn` holds to the host's.
 5. **Metadata does not depend on the primary table's shape.** `ConstantMeta.metaSharing`,
    which no compiler writes now, is indexed directly, arena roots follow the unshared logical tree, and every consumer expands `Share` transparently.
    Re-sharing a constant leaves its metadata valid (§5).
@@ -119,13 +119,13 @@ syntax-blob writer `Ix.CompileM.tagN0Bytes`.
 and `catalog.rs`. `get_expr` is the only byte-level expression decoder in Rust; the other
 readers decode expressions through it and skip constants by their length prefix.
 
-**IxVM**: `IxVM/IxVM/Modules/IxonDeserialize.aiur` reads with `get_tagn0`, `get_tagn2` and
+**IxVM**: `IxVM/IxVM/Modules/IxonDeserialize.lean` reads with `get_tagn0`, `get_tagn2` and
 `get_tagn4`; the one-byte case is one narrow row and the longer encodings share `get_tagn_tail`
-and `get_tagn_wide`. `IxVM/IxVM/Modules/IxonSerialize.aiur` writes with `put_tagn0/2/4`,
+and `get_tagn_wide`. `IxVM/IxVM/Modules/IxonSerialize.lean` writes with `put_tagn0/2/4`,
 `put_tagn_tail` and `put_tagn_wide`. The program rejects what the hosts reject: invalid codes,
 values reaching `2^64` and truncation. The claim readers (`run_claim` in
-`IxVM/IxVM/Modules/KernelClaim.aiur`, the aggregator's CheckEnv parser in
-`MultiStark/MultiStark/Modules/Aggregation.aiur`) require object format 4; Resource (`E8 01`)
+`IxVM/IxVM/Modules/KernelClaim.lean`, the aggregator's CheckEnv parser in
+`MultiStark/MultiStark/Modules/Aggregation.lean`) require object format 4; Resource (`E8 01`)
 decodes and is rejected explicitly, and Catalog (`E8 00`) has no arm. The assumption-tree header
 must be exactly `0xE2`. The program reads no `.ixe` header and no `ConstantMeta`. The suite
 `ixvm-tagn` (`Tests/Ix/IxVM/TagN.lean`) holds the program's codec to `Ixon.putTagN`/`getTagN`

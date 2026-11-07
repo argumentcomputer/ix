@@ -27,8 +27,8 @@ typing and explicitly rejects resource-proof requests. The
 [v3 verification record](ixon-v3-verification.md) lists the gates executed
 for the contract model.
 
-The IxVM program has its own codec (`IxVM/IxVM/Modules/IxonDeserialize.aiur`,
-`IxVM/IxVM/Modules/IxonSerialize.aiur`). It reads and writes TagN with the
+The IxVM program has its own codec (`IxVM/IxVM/Modules/IxonDeserialize.lean`,
+`IxVM/IxVM/Modules/IxonSerialize.lean`). It reads and writes TagN with the
 host codec's accept and reject rules. The suite `ixvm-tagn`
 (`Tests/Ix/IxVM/TagN.lean`) checks it against `Ixon.putTagN`/`getTagN` through
 the production claim entry point, with the TagN-coded fields of a constant

@@ -45,31 +45,94 @@ row indices, and constraints are unchanged by this refactor.
 
 ## Applications and source composition
 
-`IxVM/IxVM/Program.sources` composes the root entrypoints with Ixon types and
-serialization, ingress, conversion, address maps, and the kernel subsystems:
-limbs, natural primitives, levels, substitution, weak-head reduction,
-inference, definitional equality, canonical checks, checking, claims, and
-evaluation. Those modules are in `IxVM/IxVM/Modules`.
+The application modules are Lean files, one per module, each an embedded
+`aiur⟦ … ⟧` block (`Aiur.Modules.Frontend.embedded`) that defines a
+`Modules.Program Nat` constant. Lean elaborates them when the package is
+built; they are the source of truth, and nothing regenerates them.
 
-`MultiStark/MultiStark/Program.sources` composes proof and system decoding,
-transcript, hash adapters, Merkle verification, PCS, and the STARK verifier.
-`Aggregate.sources` uses those same files and adds aggregation. There is one
-copy of the verifier implementation. The separate root files retain the public
-entrypoints `MultiStark::verify_multi_stark_proof` and `MultiStark::ix_aggr`.
+`IxVM/IxVM/Modules/*.lean` define `IxVM.Source.<module>`: Ixon types and
+serialization, ingress, conversion, address maps, and the kernel subsystems
+(limbs, natural primitives, levels, substitution, weak-head reduction,
+inference, definitional equality, checking, claims, and evaluation), and the
+entrypoints in `IxVM.lean`. `IxVM.source` (`IxVM/IxVM/Program.lean`) composes
+them in a fixed order, and `IxVM.program` adds the shared libraries over
+Goldilocks. `KernelRoleSpec.lean` is the one rendered module: `lake exe ix
+codegen` writes it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`),
+and `lake exe ix codegen --check` fails when it is stale.
 
-The manifests are ordered lists of relative source paths. `Aiur.SourceBundle`
-reads them outside the language frontend; the AST still contains only module
-declarations. Both exporters and the CLI artifact cache consume the complete
-bundle, so editing a dependency invalidates the cache. Shared Lean libraries
-are linked into the exporter and covered by its binary digest.
+`MultiStark/MultiStark/Modules/*.lean` hold proof and system decoding,
+transcript, hash adapters, Merkle verification, PCS, the STARK verifier, and
+aggregation. `MultiStark.recursionSource` and `MultiStark.aggregateSource`
+(`MultiStark/MultiStark/Program.lean`) compose them; there is one copy of the
+verifier implementation. `Recursion.lean` and `Aggregate.lean` are the two
+definitions of module `MultiStark`, with the public entrypoints
+`MultiStark::verify_multi_stark_proof` and `MultiStark::ix_aggr`.
 
-`tools/ixvm/adapt.py` and `recursion.py` reproduce the application modules from
-the pinned legacy sources and reviewed compatibility adapters. This is port
-maintenance tooling, not Rust code generation. `modules.py` changes global
-names and extracts shared bodies; it checks inverse renaming and exact helper
-bodies. The ordinary frontend then checks every cross-module reference. The
-`*.names.json` files map old port names to their new locations, including types
-inside monomorphized names. Existing tuned groups use the relocated names.
+Where a program is composed, `#aiur_check` checks it against the libraries it
+uses, so an ill-formed module fails the build. Each program also has a digest,
+BLAKE3 of its `Repr` rendering computed at build time (`IxVM.programDigest`,
+`MultiStark.recursionDigest`, `MultiStark.aggregateDigest`). The exporters
+print it (`ixvm digest`, `stark-export digest [--aggregate]`) and report it
+when they export, and `ix` caches each exported artifact under BLAKE3 of the
+exporter binary and that digest.
+
+### Writing modules in Lean
+
+The embedded block is the module language of the string frontend, parsed by
+Lean. Only the lexical surface differs: comments are Lean comments, a block
+label is written `@name` (`'name` in source text), a negated operand keeps its
+space (`a - -b`, `a / -b`), and a member of a projection needs parentheses
+(`(p.0).f`). Nested generic arguments close as in Rust (`List<List<Field>>`).
+A block is not checked on its own, since it may use modules of other blocks.
+Lean parses the block where it reads the file, so a syntax error is reported in
+place; the parse keeps only the block's text, which the elaborator lowers. (The
+parse of ambiguous alternatives shares subtrees, and linters that walk a
+command's syntax as a tree would take minutes on it.) Compiling a module that
+nests very deeply can need a larger `maxRecDepth`, as the long role matches of
+`KernelRoleSpec.lean` do.
+
+`lake exe aiur/aiur_embed` converts `.aiur` text, and checks that both forms
+lower to the same program:
+
+```sh
+lake exe aiur/aiur_embed into MultiStark/MultiStark/Modules/StarkVerifier.lean StarkVerifier.aiur
+lake exe aiur/aiur_embed new  FILE.lean SOURCE.aiur NAMESPACE NAME [DOC]
+lake exe aiur/aiur_embed body SOURCE.aiur
+```
+
+`into` replaces the block of an existing file and keeps its header.
+
+### Divergences from main
+
+The port's intentional differences from main's IxVM semantics, formerly
+encoded in the retired `tools/ixvm/adapt.py`, are in the modules, each marked
+by a `-- Port divergence` comment:
+
+- `RBTreeMap`: address-keyed maps compare all 32 address bytes
+  (`canon_ord_cmp_g`, `canon_ord_then`, `canon_addr_cmp`, `canon_addr_chunk`;
+  formerly `CANON_ADDR_CMP_HELPERS`), never prover-chosen ROM addresses.
+- `KernelRoles`: role-indexed maps (`RoleMap`, `role_map_lookup_or_default`) are
+  separate from address-keyed maps, and role contexts are compared by
+  `role_ctx_limit` (formerly `ROLE_MAP_HELPERS`).
+- `KernelSubst::ctx_close_cut`: a cut that runs out of context closes at 0
+  (review item R7).
+- `KernelDefEq`: `k_is_def_eq_core` runs the ordered tiers without pointer
+  shortcuts; the variable arms in `k_is_def_eq_struct_safe` and
+  `try_def_eq_app` (the BVar arms); the literal-tag progress guard in
+  `k_is_def_eq_struct_go`.
+- `IxByteStream::read_byte_stream` and `Ingress::load_constant_hint` read typed
+  hints.
+- `IxVMCompat` holds the former `Compatibility.aiur`: IO hints, ordinary long
+  division (`ordinary_div_mod`, `divide_grow`), `stream_equal`,
+  `default_binding_addr`, `check_owned`; and `audit_div` from `PortCases.aiur`,
+  whose probes are `IxVM::check_port_cases`.
+
+Smaller rewrites with the same aims (byte matches through `to_field`, address
+comparisons through `address_eq`, `klimbs_eq` for limb equality, and
+`constrain_eq!` for recomposed advice) are in the bodies, unmarked. The
+recursive verifier's adaptations (typed hints for IO and arithmetic advice,
+`StarkHash::digest_eq` by all digest bits, the aggregation byte matches) are
+likewise in its modules.
 
 ## Compatibility checks
 
@@ -78,8 +141,16 @@ previously reviewed adaptations: no unconstrained pointer values, explicit raw
 hint channels, checked byte/word construction, and structural equality where
 equality is required. Optional pointer shortcuts stay removed. These
 adaptations have not been changed.
-The port audit distinguishes lexical translation, semantic adaptations, and
-library replacements; it is not a theorem of equivalence to legacy.
+The port audit (the retired `audit.py`) distinguished lexical translation,
+semantic adaptations, and library replacements; it was not a theorem of
+equivalence to legacy. The adaptations are listed under "Divergences from
+main" above.
+
+Moving the modules from `.aiur` text into Lean changed no program. Compared
+with the string frontend's programs from the `.aiur` bundles, the elaborated
+IxVM, recursion and aggregation programs are equal (`==`) and render identically
+(`Repr`), and the exported artifacts (`ixvm export-claim-trace`,
+`stark-export export-trace [--aggregate]`) are byte-identical.
 
 For the modularization itself, `formal-checks refactor` (`Tests/FormalChecks/Refactor.lean`) compares complete
 compiled exports against the pre-refactor artifacts. It permits only declared
@@ -109,9 +180,6 @@ callable and the old name used by cached artifacts.
 From the repository root:
 
 ```sh
-python3 tools/ixvm/adapt.py --check
-python3 tools/ixvm/recursion.py --check
-python3 tools/ixvm/audit.py --out .lake/port-audit
 lake build ixvm/ixvm multiStark/stark-export aiur/library_tests aiur/u32_tests
 lake env Aiur/.lake/build/bin/library_tests .lake/libraries.json
 cargo run --release --locked -p aiur --features stark --example library_check -- .lake/libraries.json

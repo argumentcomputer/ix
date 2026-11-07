@@ -23,8 +23,9 @@ crates have been retired.
 
 The generic Aiur crate does not depend on IxVM or a Lean installation. The IxVM crate registers its hint channels and table
 accelerators using Aiur's generic APIs. Its Rust binary accepts an exported
-execution package. Lean's `IxVM.parse` loads the application and its shared
-Goldilocks word/hash library; callers select entrypoints with
+execution package. `IxVM.program` is the application with its shared
+Goldilocks word/hash library, elaborated from the Lean modules when the package
+is built; callers select entrypoints with
 `Aiur.Modules.prepare`.
 
 Aiur owns the FFI: `Aiur/c/execution.c` adapts Lean objects to the C ABI
@@ -220,10 +221,10 @@ benchmark contract's rejection code, under `ix check --json`); `ix shard refine`
 on the retired backend wrote its manifest anyway and exited 2.
 Ordinary `ix check` only executes.
 
-`MultiStark/MultiStark/Program.sources` composes the ordinary Aiur recursive
-verifier modules; `Aggregate.sources` reuses them and adds all seventeen
-aggregation shapes (0–16), including range leaves, joins, closure, binding
-discharge, cross-binding pairs and catalog joins. Both reuse the
+`MultiStark.recursionProgram` composes the ordinary Aiur recursive
+verifier modules; `MultiStark.aggregateProgram` reuses them and adds all
+seventeen aggregation shapes (0–16), including range leaves, joins, closure,
+binding discharge, cross-binding pairs and catalog joins. Both reuse the
 checked byte/word, list, address, Blake3, and Goldilocks libraries. See
 [the module layout](formal-aiur-modules.md) for interfaces and compatibility
 checks. Hint closures provide raw advice, and ordinary program assertions
@@ -316,10 +317,11 @@ The [batch preparation follow-up](formal-aiur-gpu-preparation.md) records the
 hardware review and fixes for serial host lookup reconstruction, redundant
 trace copying and unnecessary single-shard commitment regeneration.
 
-`tools/ixvm/adapt.py --check` checks reproducibility against the pinned source
-revision. `tools/ixvm/recursion.py --check` and `--aggregate --check` do the same
-for recursive programs. `tools/ixvm/audit.py --out DIR` inventories lexical and
-semantic adaptations; the audit is not a proof of equivalence to legacy IxVM.
+The IxVM and recursive-verifier modules are Lean source (`aiur⟦ … ⟧` blocks;
+see [the module layout](formal-aiur-modules.md)), and the port generators that
+reproduced them from pinned legacy sources are retired. The port's intentional
+differences from legacy IxVM are listed there; they are not a proof of
+equivalence to legacy IxVM.
 The compiler correctness proofs remain intact. Neither those proofs nor the
 port tests constitute a new formal proof of the cryptographic backend or
 discharge the existing memo-acyclicity hypothesis of the semantic model.

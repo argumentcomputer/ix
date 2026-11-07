@@ -5,6 +5,13 @@ namespace Aiur.Frontend
 
 open Lean Elab Term
 
+/-- The `>` that closes a generic argument list. Lean's tokenizer reads `>>`,
+`>>>` and `>>=` as single tokens, so a nested list such as `List<List<Field>>`
+would not close with a `">"` token. This consumes exactly one `>`, the way Rust
+reads it, in embedded `aiur⟦ … ⟧` blocks and source strings alike. -/
+@[run_parser_attribute_hooks] def closeAngle : Lean.Parser.Parser :=
+  Lean.Parser.rawCh '>' (trailingWs := true)
+
 declare_syntax_cat aiur_type
 declare_syntax_cat aiur_expr
 declare_syntax_cat aiur_pattern
@@ -35,8 +42,8 @@ syntax (name := constructorCall) ident "::" ident "(" sepBy(aiur_expr, ",", ",",
 syntax (name := parens) "(" aiur_expr ")" : aiur_expr
 syntax (name := block) "{" aiur_expr "}" : aiur_expr
 syntax (name := call) ident "(" sepBy(aiur_expr, ",", ",", allowTrailingSep) ")" : aiur_expr
-syntax (name := hintExpr) ident "::<" aiur_type ">" "(" aiur_expr ")" : aiur_expr
-syntax (name := channelHintExpr) ident "::<" aiur_type ">" "(" str "," aiur_expr ")" : aiur_expr
+syntax (name := hintExpr) ident "::<" aiur_type closeAngle "(" aiur_expr ")" : aiur_expr
+syntax (name := channelHintExpr) ident "::<" aiur_type closeAngle "(" str "," aiur_expr ")" : aiur_expr
 syntax:75 (name := store) "&" aiur_expr:75 : aiur_expr
 syntax:75 (name := load) "*" aiur_expr:75 : aiur_expr
 syntax:75 (name := neg) "-" aiur_expr:75 : aiur_expr

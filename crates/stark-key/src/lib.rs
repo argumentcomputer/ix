@@ -17,8 +17,8 @@
 //! packed into the tag byte, a small/big constant split, and u16 zeros and
 //! lookup references. The logUp constraints are never serialized — they are
 //! evaluated directly by both verifiers from the compiled lookups.
-//! The in-circuit mirror lives in the formal `MultiStark/*.aiur` programs
-//! (`MultiStark/MultiStark/Modules/SystemDeserialize.aiur`); they must stay byte-identical.
+//! The in-circuit mirror lives in the formal MultiStark programs
+//! (`MultiStark/MultiStark/Modules/SystemDeserialize.lean`); they must stay byte-identical.
 //!
 //! # Wire format (v5, dense)
 //!

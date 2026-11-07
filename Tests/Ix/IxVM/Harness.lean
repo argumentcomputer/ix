@@ -41,18 +41,28 @@ def programArtifact : IO String := Ix.Cli.FormalAiur.artifact default
 /-- The Rust host that executes the cases (`ixvm-proof test`). -/
 def programHost : IO String := Ix.Cli.FormalAiur.host
 
-/-- The source text of an Aiur program, in bundle order as `(file, text)`: by
-default the IxVM program's. -/
-def programSources (manifest : System.FilePath := "IxVM/IxVM/Program.sources") :
+/-- The Aiur source text of a program's modules as `(file, text)`, in file-name
+order: the body of the `aiur⟦ … ⟧` block of each `.lean` file in `dir`, by
+default the IxVM program's modules, without its `--` comment lines. The block
+starts after the last `aiur⟦` before the `⟧` that closes it at the start of a
+line (the module docstring mentions `aiur⟦ … ⟧` first). A module file without
+a block fails, so a change in the sources' layout cannot hide them from the
+guards. -/
+def programSources (dir : System.FilePath := "IxVM/IxVM/Modules") :
     IO (Array (System.FilePath × String)) := do
-  let manifest := (← Ix.Cli.FormalAiur.repoRoot) / manifest
-  let dir := manifest.parent.getD "."
+  let dir := (← Ix.Cli.FormalAiur.repoRoot) / dir
+  let files := ((← dir.readDir).map (·.path)).filter (·.extension == some "lean")
   let mut out := #[]
-  for line in (← IO.FS.readFile manifest).splitOn "\n" do
-    let line := line.trimAscii.toString
-    if line.isEmpty || line.startsWith "#" then continue
-    out := out.push (System.FilePath.mk line, ← IO.FS.readFile (dir / line))
-  if out.isEmpty then throw (IO.userError s!"{manifest} names no sources")
+  for file in files.qsort (·.toString < ·.toString) do
+    let text ← IO.FS.readFile file
+    let (head :: _ :: _) := text.splitOn "\n⟧"
+      | throw (IO.userError s!"{file} has no aiur⟦ … ⟧ block")
+    let parts := head.splitOn "aiur⟦"
+    unless parts.length ≥ 2 do throw (IO.userError s!"{file} has no aiur⟦ … ⟧ block")
+    let lines := ((parts.getLastD "").splitOn "\n").filter
+      fun l => !l.trimAscii.toString.startsWith "--"
+    out := out.push (file, "\n".intercalate lines)
+  if out.isEmpty then throw (IO.userError s!"{dir} holds no module files")
   return out
 
 /-- A claim submitted to the IxVM program, with its expected verdict. -/

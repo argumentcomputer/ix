@@ -96,4 +96,9 @@ Classical.choice and Quot.sound. Run after `lake build aiur/Aiur`:
 `lake env Aiur/.lake/build/bin/axiom_sweep Aiur`. -/
 lean_exe axiom_sweep where
   root := `Examples.AxiomSweep
+
+/-- Converts `.aiur` module source text to embedded `aiur⟦ … ⟧` Lean syntax,
+checking that both lower to the same program (`Tools/AiurEmbed.lean`). -/
+lean_exe aiur_embed where
+  root := `Tools.AiurEmbed
   supportInterpreter := true

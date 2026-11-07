@@ -362,7 +362,7 @@ and `role_map_lookup_or_default`. -/
 def rbtreeLookupOrDefault (cmp : K → K → Ordering) (k : K) (t : RBTree K V) (default : V) : V :=
   (rbtreeGet cmp k t).getD default
 
-/-- Red-black tree rotation helper matching `rbtree_map_balance_fix` in `RBTreeMap.aiur`. -/
+/-- Red-black tree rotation helper matching `rbtree_map_balance_fix` in `IxVM/IxVM/Modules/RBTreeMap.lean`. -/
 def balanceFix (k : K) (v : V) (left right : RBTree K V) : RBTree K V :=
   match left, right with
   | .node 0 yk yv (.node 0 xk xv a b) c, d =>
@@ -376,13 +376,13 @@ def balanceFix (k : K) (v : V) (left right : RBTree K V) : RBTree K V :=
   | _, _ =>
       .node 1 k v left right
 
-/-- Red-black tree balance operation matching `rbtree_map_balance` in `RBTreeMap.aiur`. -/
+/-- Red-black tree balance operation matching `rbtree_map_balance` in `IxVM/IxVM/Modules/RBTreeMap.lean`. -/
 def balance (color : Nat) (k : K) (v : V) (left right : RBTree K V) : RBTree K V :=
   match color with
   | 1 => balanceFix k v left right
   | _ => .node color k v left right
 
-/-- Recursive red-black tree insertion helper matching `rbtree_map_ins` in `RBTreeMap.aiur`. -/
+/-- Recursive red-black tree insertion helper matching `rbtree_map_ins` in `IxVM/IxVM/Modules/RBTreeMap.lean`. -/
 def ins (cmp : K → K → Ordering) (k : K) (v : V) : RBTree K V → RBTree K V
   | .nil => .node 0 k v .nil .nil
   | .node color nk nv left right =>
@@ -391,7 +391,7 @@ def ins (cmp : K → K → Ordering) (k : K) (v : V) : RBTree K V → RBTree K V
       | .eq => .node color k v left right
       | .gt => balance color nk nv left (ins cmp k v right)
 
-/-- Top-level red-black tree insertion matching `rbtree_map_insert` in `RBTreeMap.aiur`. -/
+/-- Top-level red-black tree insertion matching `rbtree_map_insert` in `IxVM/IxVM/Modules/RBTreeMap.lean`. -/
 def rbtreeInsert (cmp : K → K → Ordering) (k : K) (v : V) (t : RBTree K V) : RBTree K V :=
   match ins cmp k v t with
   | .nil => .nil
@@ -834,7 +834,7 @@ def buildBalancedTreeAux : Nat → List (K × V) → RBTree K V
             (buildBalancedTreeAux n rightEntries)
 
 /-- Balanced binary search tree constructor from a slice of `(key, value)` bindings,
-matching `read_role_bindings` / `read_role_evidence` in `KernelRoles.aiur`. -/
+matching `read_role_bindings` / `read_role_evidence` in `IxVM/IxVM/Modules/KernelRoles.lean`. -/
 def buildBalancedTree (entries : List (K × V)) : RBTree K V :=
   buildBalancedTreeAux entries.length entries
 

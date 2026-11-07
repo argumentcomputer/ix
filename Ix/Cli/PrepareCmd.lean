@@ -1,12 +1,13 @@
 /-
   `ix prepare [--cuda]`
 
-  Readies the Aiur backend once per source revision, so later commands
-  start immediately and from any directory: builds its Rust hosts (CPU, and
-  with `--cuda` the CUDA hosts too) and compiles the IxVM and aggregation
-  programs with the verified Aiur compiler, exporting the artifacts into the
-  checkout's cache. Cargo rebuilds a host only when its sources changed; an
-  artifact is exported only when its exporter or sources changed.
+  Readies the Aiur backend once per program and exporter build, so later
+  commands start immediately and from any directory: builds its Rust hosts
+  (CPU, and with `--cuda` the CUDA hosts too) and compiles the IxVM and
+  aggregation programs with the verified Aiur compiler, exporting the artifacts
+  into the checkout's cache. Cargo rebuilds a host only when its sources
+  changed; an artifact is exported only when its exporter or the digest of the
+  program it embeds changed.
 -/
 module
 public import Cli

@@ -34,11 +34,11 @@ namespace Tests.IOIngress
 
 open LSpec Tests.Ix.IxVM
 
-/-- The programs whose IO reads are checked: IxVM, the multi-stark verifier and
-`ix_aggr` (the verifier with the aggregation modules). -/
+/-- The module directories of the programs whose IO reads are checked: IxVM,
+and the multi-stark verifier with `ix_aggr` (the verifier plus the aggregation
+modules), which share one directory and are scanned as their union. -/
 def bundles : List System.FilePath :=
-  ["IxVM/IxVM/Program.sources", "MultiStark/MultiStark/Program.sources",
-   "MultiStark/MultiStark/Aggregate.sources"]
+  ["IxVM/IxVM/Modules", "MultiStark/MultiStark/Modules"]
 
 /-- The byte-reading channels and the functions allowed to read each. -/
 def byteReaders : List (String × List String) := [

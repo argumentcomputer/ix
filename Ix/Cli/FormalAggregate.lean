@@ -13,7 +13,7 @@ open Lean Aggr FormalAiur
 def artifact (p : Cli.Parsed) : IO String :=
   compiledArtifact p "aggr-artifact" "IX_AGGR_ARTIFACT"
     "MultiStark/.lake/build/bin/stark-export" "stark-export"
-    "MultiStark/MultiStark/Aggregate.sources" "export-trace" #["--aggregate"]
+    "export-trace" #["--aggregate"]
 
 def host : IO String := rustHost "stark-verifier" "stark-verifier" "IX_STARK_HOST"
 
