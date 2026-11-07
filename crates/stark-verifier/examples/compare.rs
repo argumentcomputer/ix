@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
   if cli.len() < 5 {
     return Err(
-      "usage: compare PACKAGE INPUT OUTPUT SAMPLES [--ungrouped] [--prove] [--counts-only] [--groups FILE] [--parameters LOG_BLOWUP,QUERIES,COMMIT_POW,QUERY_POW]"
+      "usage: compare PACKAGE INPUT OUTPUT SAMPLES [--ungrouped] [--prove] [--counts-only] [--groups FILE] [--parameters LOG_BLOWUP,QUERIES,COMMIT_POW,QUERY_POW [--below-floor]]"
         .into(),
     );
   }
@@ -88,7 +88,12 @@ fn main() -> Result<(), Box<dyn Error>> {
       }
     },
   };
-  let backend = Backend::for_batch(&plan, parameters)?;
+  // Below-floor parameters only measure the cost of weaker settings.
+  let backend = if cli.iter().any(|a| a == "--below-floor") {
+    Backend::for_batch_below_floor(&plan, parameters)?
+  } else {
+    Backend::for_batch(&plan, parameters)?
+  };
   let setup = start.elapsed().as_secs_f64();
   let mut times = vec![];
   let mut circuits = vec![];

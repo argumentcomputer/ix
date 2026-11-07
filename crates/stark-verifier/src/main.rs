@@ -425,7 +425,8 @@ fn ranges(cli: &[String]) -> Result<(), Box<dyn Error>> {
 /// each one's circuits also charges the union bound over shards.
 fn statistics(cli: &[String]) -> Result<(), Box<dyn Error>> {
   use aiur::trace::stark::{BatchProof, VerifyingKey};
-  let key = VerifyingKey::from_bytes(&std::fs::read(
+  // Reports on any key, including weak ones, and trusts none.
+  let key = VerifyingKey::from_bytes_below_floor(&std::fs::read(
     cli.get(2).ok_or("usage: stark-verifier statistics KEY PROOF")?,
   )?)?;
   let bytes = std::fs::read(cli.get(3).ok_or("missing proof")?)?;

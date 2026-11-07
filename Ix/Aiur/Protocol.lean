@@ -2,10 +2,11 @@ module
 public import Std.Data.HashMap
 public import Ix.Aiur.Goldilocks
 public import Ix.Address
+public import Ix.Aiur.Parameters
 
 /-!
-Pure Lean protocol types (`IOBuffer`, `QueryCount`, `CommitmentParameters`,
-`FriParameters`, `ShardRetention`, `buildClaim`) and Rust-backed environment /
+Pure Lean protocol types (`IOBuffer`, `QueryCount`, `ShardRetention`,
+`buildClaim`; the STARK parameters are in `Ix.Aiur.Parameters`) and Rust-backed environment /
 manifest FFI (`EnvHandle`, `shardManifestRefine`,
 `detectedRamBudgetBytes`).
 -/
@@ -85,57 +86,6 @@ def fromBytes (bytes : ByteArray) : Except String EnvHandle :=
   fromBytes' bytes
 
 end EnvHandle
-
-structure CommitmentParameters where
-  logBlowup : Nat
-  capHeight : Nat
-
-structure FriParameters where
-  logFinalPolyLen : Nat
-  maxLogArity : Nat
-  numQueries : Nat
-  commitProofOfWorkBits : Nat
-  queryProofOfWorkBits : Nat
-
-/-! The STARK parameters every Aiur proof uses, mirroring Rust's
-`aiur::trace::stark::Parameters::DEFAULT` and `stark_key::security`; the Rust
-test `lean_mirror_matches` reads the values below from this file, so keep one
-`name := value` per field. `docs/stark-parameters.md` explains them, and
-`lake exe fri-security` computes their security. -/
-
-def defaultCommitmentParameters : CommitmentParameters :=
-  { logBlowup := 2, capHeight := 0 }
-
-def defaultFriParameters : FriParameters := {
-  logFinalPolyLen := 0
-  maxLogArity := 1
-  numQueries := 100
-  commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
-}
-
-/-- The floor on `logBlowup · numQueries + queryProofOfWorkBits` (the
-ethSTARK conjecture's query-phase bits) that every key must meet. -/
-def minConjecturedSecurityBits : Nat := 220
-
-/-- The most proof-of-work bits either FRI grinding phase may require. -/
-def maxProofOfWorkBits : Nat := 32
-
-/-- The conjectured query-phase bits of `commitment` and `fri`. -/
-def conjecturedSecurityBits (commitment : CommitmentParameters) (fri : FriParameters) : Nat :=
-  commitment.logBlowup * fri.numQueries + fri.queryProofOfWorkBits
-
-/-- Whether `commitment` and `fri` meet the floor Rust enforces
-(`stark_key::security::check`). -/
-def meetsSecurityFloor (commitment : CommitmentParameters) (fri : FriParameters) : Bool :=
-  1 ≤ commitment.logBlowup && commitment.logBlowup ≤ 4 && 0 < fri.numQueries &&
-    fri.commitProofOfWorkBits ≤ maxProofOfWorkBits &&
-    fri.queryProofOfWorkBits ≤ maxProofOfWorkBits &&
-    minConjecturedSecurityBits ≤ conjecturedSecurityBits commitment fri
-
-theorem default_meets_security_floor :
-    meetsSecurityFloor defaultCommitmentParameters defaultFriParameters = true := by
-  decide
 
 structure CircuitShape where
   mainWidth : Nat

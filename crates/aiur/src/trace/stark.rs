@@ -95,7 +95,7 @@ impl Parameters {
   /// Main's parameters before formal Aiur: blowup 4, 100 queries and 20
   /// query proof-of-work bits, 220 conjectured bits. The Lean mirror is
   /// `Aiur.defaultCommitmentParameters` and `Aiur.defaultFriParameters` in
-  /// `Ix/Aiur/Protocol.lean`, checked by the test `lean_mirror_matches`.
+  /// `Ix/Aiur/Parameters.lean`, checked by the test `lean_mirror_matches`.
   pub const DEFAULT: Self = Self {
     log_blowup: 2,
     num_queries: 100,

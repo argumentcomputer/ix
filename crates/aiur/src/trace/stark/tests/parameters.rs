@@ -20,11 +20,11 @@ fn default_parameters_are_mains() {
   p.check().unwrap();
 }
 
-/// The default and the floor are mirrored in `Ix/Aiur/Protocol.lean`.
+/// The default and the floor are mirrored in `Ix/Aiur/Parameters.lean`.
 #[test]
 fn lean_mirror_matches() {
   let path =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../Ix/Aiur/Protocol.lean");
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../Ix/Aiur/Parameters.lean");
   let source = std::fs::read_to_string(path).unwrap();
   let field = |name: &str| -> usize {
     let mut values = source.lines().filter_map(|line| {

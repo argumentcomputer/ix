@@ -11,7 +11,7 @@
 //! those; see `docs/stark-parameters.md`.
 //!
 //! The Lean mirror is `Aiur.minConjecturedSecurityBits` and
-//! `Aiur.maxProofOfWorkBits` in `Ix/Aiur/Protocol.lean`; a test in the `aiur`
+//! `Aiur.maxProofOfWorkBits` in `Ix/Aiur/Parameters.lean`; a test in the `aiur`
 //! crate checks that they agree.
 
 use multi_stark::types::{CommitmentParameters, FriParameters};
