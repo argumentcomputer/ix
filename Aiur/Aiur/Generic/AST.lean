@@ -124,15 +124,279 @@ structure Instance where
   types : List Ty := []
   deriving Repr, BEq, Inhabited, Lean.ToExpr, Lean.ToJson, Lean.FromJson
 
-/-- `$` is reserved for generated names; source identifiers cannot contain it.
-JSON gives an unambiguous encoding of nested types, including empty tuples. -/
+/-! ## Instance symbols
+
+`Instance.symbol` is the instance's compact JSON (`Lean.Json.compress` of its
+derived `ToJson`) behind a `$`. It is written out character by character so
+that the kernel computes it and `Instance.ofSymbol` is its proved inverse
+(`Aiur.Generic.Instance.ofSymbol_symbol`). `Lean.Json.compress` is a
+`partial def`, opaque to the kernel and to proofs. A native test
+(`Tests.Ix.InstanceSymbols`) checks that the two agree byte for byte on every
+instance of the deployed programs. -/
+namespace Symbol
+
+/-- `"field"` -/
+def litField : List Char :=
+  ['"', 'f', 'i', 'e', 'l', 'd', '"']
+
+/-- `{"tuple":{"items":` -/
+def litTuple : List Char :=
+  ['{', '"', 't', 'u', 'p', 'l', 'e', '"', ':', '{', '"', 'i', 't', 'e', 'm', 's', '"', ':']
+
+/-- `{"array":{"element":` -/
+def litArray : List Char :=
+  ['{', '"', 'a', 'r', 'r', 'a', 'y', '"', ':', '{', '"', 'e', 'l', 'e', 'm', 'e', 'n', 't', '"', ':']
+
+/-- `,"length":` -/
+def litLength : List Char :=
+  [',', '"', 'l', 'e', 'n', 'g', 't', 'h', '"', ':']
+
+/-- `{"ptr":{"target":` -/
+def litPtr : List Char :=
+  ['{', '"', 'p', 't', 'r', '"', ':', '{', '"', 't', 'a', 'r', 'g', 'e', 't', '"', ':']
+
+/-- `{"param":{"name":` -/
+def litParam : List Char :=
+  ['{', '"', 'p', 'a', 'r', 'a', 'm', '"', ':', '{', '"', 'n', 'a', 'm', 'e', '"', ':']
+
+/-- `{"named":{"args":` -/
+def litNamed : List Char :=
+  ['{', '"', 'n', 'a', 'm', 'e', 'd', '"', ':', '{', '"', 'a', 'r', 'g', 's', '"', ':']
+
+/-- `,"name":` -/
+def litName : List Char :=
+  [',', '"', 'n', 'a', 'm', 'e', '"', ':']
+
+/-- `}}` -/
+def litClose2 : List Char :=
+  ['}', '}']
+
+/-- `{"name":` -/
+def litKeyName : List Char :=
+  ['{', '"', 'n', 'a', 'm', 'e', '"', ':']
+
+/-- `,"types":` -/
+def litKeyTypes : List Char :=
+  [',', '"', 't', 'y', 'p', 'e', 's', '"', ':']
+
+/-- One character of a JSON string's body, escaped as `Lean.Json.escape`
+escapes it: `"`, `\`, newline and carriage return by a backslash, other
+characters below `0x20` as `\u00xx`, everything else as itself. -/
+def escapeChar (c : Char) : List Char :=
+  if c = '"' then ['\\', '"']
+  else if c = '\\' then ['\\', '\\']
+  else if c = '\n' then ['\\', 'n']
+  else if c = '\r' then ['\\', 'r']
+  else if 0x20 ≤ c.toNat then [c]
+  else
+    let n := c.toNat
+    ['\\', 'u', Nat.digitChar (n / 4096), Nat.digitChar (n % 4096 / 256),
+      Nat.digitChar (n % 256 / 16), Nat.digitChar (n % 16)]
+
+/-- A JSON string literal. -/
+def string (s : String) : List Char := '"' :: (s.toList.flatMap escapeChar ++ ['"'])
+
+/-- The decimal digits of `n`, most significant first, as `toString n`. -/
+def decimal (n : Nat) : List Char :=
+  if h : n < 10 then [Nat.digitChar n] else decimal (n / 10) ++ [Nat.digitChar (n % 10)]
+termination_by n
+decreasing_by omega
+
+mutual
+  /-- A type's JSON, as its derived `ToJson`. -/
+  def ty : Ty → List Char
+    | .field => litField
+    | .tuple items => litTuple ++ (tys items ++ litClose2)
+    | .array t n => litArray ++ (ty t ++ (litLength ++ (decimal n ++ litClose2)))
+    | .ptr t => litPtr ++ (ty t ++ litClose2)
+    | .param n => litParam ++ (string n ++ litClose2)
+    | .named n args => litNamed ++ (tys args ++ (litName ++ (string n ++ litClose2)))
+  termination_by t => sizeOf t
+
+  /-- A JSON array of types. -/
+  def tys : List Ty → List Char
+    | [] => ['[', ']']
+    | t :: ts => '[' :: (ty t ++ elems ts)
+  termination_by ts => sizeOf ts
+
+  /-- The rest of a JSON array after an element. -/
+  def elems : List Ty → List Char
+    | [] => [']']
+    | t :: ts => ',' :: (ty t ++ elems ts)
+  termination_by ts => sizeOf ts
+end
+
+/-- An instance's JSON, as its derived `ToJson`: fields in key order. -/
+def key (k : Instance) : List Char :=
+  litKeyName ++ (string k.name ++ (litKeyTypes ++ (tys k.types ++ ['}'])))
+
+/-- `s` after the prefix `lit`, if it has it. -/
+def expect : List Char → List Char → Option (List Char)
+  | [], s => some s
+  | c :: cs, d :: ds => if c = d then expect cs ds else none
+  | _ :: _, [] => none
+
+/-- A lowercase hexadecimal digit's value. -/
+def hexValue (c : Char) : Option Nat :=
+  if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c ∧ c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else none
+
+/-- The character a one-character escape stands for. -/
+def unescape (e : Char) : Option Char :=
+  if e = '"' then some '"'
+  else if e = '\\' then some '\\'
+  else if e = 'n' then some '\n'
+  else if e = 'r' then some '\r'
+  else none
+
+/-- A JSON string's body up to its closing quote, unescaped, and the rest. -/
+def parseString : Nat → List Char → Option (List Char × List Char)
+  | 0, _ => none
+  | _ + 1, [] => none
+  | f + 1, c :: r =>
+    if c = '"' then some ([], r)
+    else if c = '\\' then
+      match r with
+      | [] => none
+      | e :: r =>
+        if e = 'u' then
+          match r with
+          | a :: b :: c :: d :: r =>
+            match hexValue a, hexValue b, hexValue c, hexValue d, parseString f r with
+            | some a, some b, some c, some d, some (s, r) =>
+                some (Char.ofNat (4096 * a + 256 * b + 16 * c + d) :: s, r)
+            | _, _, _, _, _ => none
+          | _ => none
+        else
+          match unescape e, parseString f r with
+          | some ch, some (s, r) => some (ch :: s, r)
+          | _, _ => none
+    else
+      match parseString f r with
+      | some (s, r) => some (c :: s, r)
+      | none => none
+
+/-- A JSON string literal. -/
+def parseQuoted (fuel : Nat) : List Char → Option (String × List Char)
+  | c :: r => if c = '"' then (parseString fuel r).map fun (cs, r) => (String.ofList cs, r) else none
+  | [] => none
+
+/-- A decimal digit. -/
+def isDigit (c : Char) : Bool := decide ('0' ≤ c ∧ c ≤ '9')
+
+/-- A run of decimal digits and its value. -/
+def parseDecimal (s : List Char) : Option (Nat × List Char) :=
+  let ds := s.takeWhile isDigit
+  if ds.isEmpty then none
+  else some (ds.foldl (fun acc c => 10 * acc + (c.toNat - '0'.toNat)) 0, s.dropWhile isDigit)
+
+mutual
+  /-- A type's JSON. -/
+  def parseTy : Nat → List Char → Option (Ty × List Char)
+    | 0, _ => none
+    | f + 1, s =>
+      match expect litField s with
+      | some r => some (.field, r)
+      | none =>
+      match expect litTuple s with
+      | some r =>
+        match parseTys f r with
+        | some (items, r) => (expect litClose2 r).map fun r => (.tuple items, r)
+        | none => none
+      | none =>
+      match expect litArray s with
+      | some r =>
+        match parseTy f r with
+        | some (t, r) =>
+          match expect litLength r with
+          | some r =>
+            match parseDecimal r with
+            | some (n, r) => (expect litClose2 r).map fun r => (.array t n, r)
+            | none => none
+          | none => none
+        | none => none
+      | none =>
+      match expect litPtr s with
+      | some r =>
+        match parseTy f r with
+        | some (t, r) => (expect litClose2 r).map fun r => (.ptr t, r)
+        | none => none
+      | none =>
+      match expect litParam s with
+      | some r =>
+        match parseQuoted f r with
+        | some (n, r) => (expect litClose2 r).map fun r => (.param n, r)
+        | none => none
+      | none =>
+      match expect litNamed s with
+      | some r =>
+        match parseTys f r with
+        | some (args, r) =>
+          match expect litName r with
+          | some r =>
+            match parseQuoted f r with
+            | some (n, r) => (expect litClose2 r).map fun r => (.named n args, r)
+            | none => none
+          | none => none
+        | none => none
+      | none => none
+
+  /-- A JSON array of types. -/
+  def parseTys : Nat → List Char → Option (List Ty × List Char)
+    | 0, _ => none
+    | _ + 1, [] => none
+    | f + 1, c :: r =>
+      if c = '[' then
+        match r with
+        | d :: r' => if d = ']' then some ([], r') else parseElems f r
+        | [] => none
+      else none
+
+  /-- A JSON array's elements and its closing bracket. -/
+  def parseElems : Nat → List Char → Option (List Ty × List Char)
+    | 0, _ => none
+    | f + 1, s =>
+      match parseTy f s with
+      | some (t, c :: r) =>
+        if c = ']' then some ([t], r)
+        else if c = ',' then (parseElems f r).map fun (ts, r) => (t :: ts, r)
+        else none
+      | _ => none
+end
+
+/-- An instance's JSON, the whole input. -/
+def parseKey (s : List Char) : Option Instance :=
+  match expect litKeyName s with
+  | none => none
+  | some r =>
+    match parseQuoted s.length r with
+    | none => none
+    | some (name, r) =>
+      match expect litKeyTypes r with
+      | none => none
+      | some r =>
+        match parseTys s.length r with
+        | some (types, ['}']) => some ⟨name, types⟩
+        | _ => none
+
+end Symbol
+
+/-- `$` is reserved for generated names; source identifiers cannot contain
+it. The JSON form encodes nested types unambiguously, including empty
+tuples. -/
 def Instance.symbol (key : Instance) : String :=
-  if key.types.isEmpty then key.name else "$" ++ (Lean.toJson key).compress
+  if key.types.isEmpty then key.name else String.ofList ('$' :: Symbol.key key)
 
 def Instance.ofSymbol (name : String) : Except String Instance :=
-  if name.startsWith "$" then do
-    Lean.fromJson? (← Lean.Json.parse (name.drop 1).toString)
-  else return ⟨name, []⟩
+  match name.toList with
+  | c :: rest =>
+    if c = '$' then
+      match Symbol.parseKey rest with
+      | some key => .ok key
+      | none => .error s!"invalid instance symbol '{name}'"
+    else .ok ⟨name, []⟩
+  | [] => .ok ⟨name, []⟩
 
 def Ty.toCore : Ty → Aiur.Ty
   | .field => .field

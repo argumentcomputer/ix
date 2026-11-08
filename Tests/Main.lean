@@ -32,6 +32,7 @@ import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.SpecDigestRendering
+import Tests.Ix.InstanceSymbols
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Eval
@@ -174,6 +175,9 @@ def registry : List Entry := [
   -- `KernelRoleSpec.lean` rebuilt from the specification digest's bytes; mutated
   -- bytes or a mutated file are refused (`IxVM.RoleSpecGen.checkRendering`).
   .runner "spec-digest-rendering" .primary Tests.Ix.SpecDigestRendering.run,
+  -- Instance symbols: the structural encoding agrees with the JSON form on every
+  -- deployed program (`Aiur.Generic.Instance.symbol`).
+  .runner "instance-symbols" .primary Tests.Ix.InstanceSymbols.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -282,6 +286,7 @@ def required : List (String × String) := [
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
+  ("instance-symbols", "primary"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
