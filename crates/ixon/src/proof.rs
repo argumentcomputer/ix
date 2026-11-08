@@ -270,6 +270,12 @@ pub struct Proof {
 /// - 10: Binding claim (`E8 02`)
 /// - 11: RoleTable section (`E8 03`, handled in `role_table.rs`)
 /// - 12: Elab claim (`E8 04`, handled in `Ix/Claim.lean`)
+/// - 13: `.ixs` store slab (`E8 05`, handled in `ix_common::store`)
+/// - 14: `.ixsp` store pointer index (`E8 06`, handled in `ix_common::store`)
+/// - 15: `.ixc` catalog manifest (`E8 07`, reserved `TagN` tag)
+/// - 16: `.ixes` shard manifest (`E8 08`, reserved `TagN` tag)
+/// - 17: `.ixprof` kernel profile (`E8 09`, reserved `TagN` tag)
+/// - 18: `IXHC` host admission (`E8 0A`, reserved `TagN` tag)
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
 /// legacy 4 is `0xE4` and the role-bound 5 is `0xE5`. Checked claims still bind
@@ -289,6 +295,12 @@ pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
 pub const VARIANT_BINDING_CLAIM: u64 = 10;
 // VARIANT 11 = RoleTable (`E8 03`, handled in role_table.rs)
 pub const VARIANT_ELAB_CLAIM: u64 = 12;
+pub const VARIANT_IXS_STORE: u64 = 13;
+pub const VARIANT_IXSP_POINTER: u64 = 14;
+pub const VARIANT_IXC_CATALOG: u64 = 15;
+pub const VARIANT_IXES_SHARD: u64 = 16;
+pub const VARIANT_IXPROF_PROFILE: u64 = 17;
+pub const VARIANT_HOST_ADMISSION: u64 = 18;
 
 /// TagN flag for ZK proofs (0xF). Every variant is in rung 1, a single-byte
 /// tag (`0xF0`–`0xF7`), which uses every single byte; a later proof variant

@@ -67,6 +67,7 @@ tiny-keccak = { version = "2", features = ["keccak"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "6d5016724e7ec3c471df76dc2f19b5a990ee47c2" }
+zstd = "0.13"
 
 [workspace.lints.rust]
 invalid_reference_casting = "warn"

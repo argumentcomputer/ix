@@ -1,19 +1,27 @@
 //! High-performance content-addressed store for Ix (`~/.ix/store`).
 //!
-//! Combines:
-//! 1. **In-memory hot cache (`DashMap<Address, Arc<[u8]>>`)** for zero-syscall
+//! Combines four storage tiers:
+//! 1. **Tier 0 — Hot RAM Cache (`DashMap<Address, Arc<[u8]>>`)** for zero-syscall
 //!    intra-process reads and existence short-circuiting.
-//! 2. **Memory-mapped immutable packfiles (`packs/pack-<hash>.ixpack` + `.ixidx`)**
-//!    with a 256-entry first-byte fan-out table and sorted 32-byte keys for
-//!    zero-syscall `O(log(N/256))` binary search and zero-copy slice reads.
-//! 3. **1-level loose object shards (`objects/<aa>/<62-hex>`)** (`256` shard
-//!    directories instead of `256^3 = 16.7M`), with per-process atomic shard
-//!    initialization bitmaps and atomic temp-file-plus-rename publishing.
+//! 2. **Tier 1 — Warm `.ixs` + `.ixsp` (`StoreTier::Warm`)**: Memory-mapped
+//!    immutable store slabs (`packs/store-<hash>.ixs`, `TagN(4, 0xE, 13)` = `E8 05`)
+//!    with 8-byte-aligned raw payloads and a memory-mapped pointer index
+//!    (`packs/store-<hash>.ixsp`, `TagN(4, 0xE, 14)` = `E8 06`) containing a
+//!    256-entry first-byte fan-out table and sorted 32-byte keys for zero-syscall
+//!    `O(log(N/256))` binary search and zero-copy `mmap` slice reads.
+//! 3. **Tier 2 — Cold `.ixs` + `.ixsp` (`StoreTier::Cold`)**: `zstd`-compressed
+//!    `.ixs` slabs indexed by the exact same `.ixsp` pointer format (`flags & 0xFF == 1`),
+//!    preserving `O(log(N/256))` random access while shrinking constant/blob
+//!    storage by 3x–5x and promoting decompressed objects into Tier 0 on read.
+//! 4. **Tier 3 — Loose Landing Zone (`objects/<aa>/<62-hex>`)**: 1-level sharded
+//!    loose object files (`256` shard directories instead of `256^3 = 16.7M`)
+//!    with a per-process atomic shard-creation bitmap and atomic temp-rename writes.
 
 use crate::address::Address;
 use dashmap::DashMap;
 use memmap2::Mmap;
 use rustc_hash::FxBuildHasher;
+use std::borrow::Cow;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -21,25 +29,49 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
-/// Magic bytes for an `.ixpack` data file (`"IXPK\x00\x00\x00\x01"`).
-pub const PACK_MAGIC: [u8; 8] = *b"IXPK\x00\x00\x00\x01";
+/// `TagN(4, 0xE, 13)` (`[0xE8, 0x05]`) 8-byte header for a Warm `.ixs` ("Ix Store") slab.
+/// Layout: `[0xE8, 0x05, version=1, tier=0 (Warm), 0, 0, 0, 0]`.
+pub const IXS_HEADER_WARM: [u8; 8] = [0xE8, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
 
-/// Magic bytes for an `.ixidx` index file (`"IXID\x00\x00\x00\x01"`).
-pub const IDX_MAGIC: [u8; 8] = *b"IXID\x00\x00\x00\x01";
+/// `TagN(4, 0xE, 13)` (`[0xE8, 0x05]`) 8-byte header for a Cold (`zstd`) `.ixs` slab.
+/// Layout: `[0xE8, 0x05, version=1, tier=1 (Cold/zstd), 0, 0, 0, 0]`.
+pub const IXS_HEADER_COLD: [u8; 8] = [0xE8, 0x05, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00];
 
-/// Header size of `.ixidx`: 8-byte magic + 8-byte LE object count.
-const IDX_HEADER_SIZE: usize = 16;
+/// `TagN(4, 0xE, 14)` (`[0xE8, 0x06]`) 8-byte header for an `.ixsp` ("Ix Store Pointer") index.
+/// Layout: `[0xE8, 0x06, version=1, target=0 (.ixs), 0, 0, 0, 0]`.
+pub const IXSP_HEADER: [u8; 8] = [0xE8, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
 
-/// Size of the 256-entry `u64` fan-out table in `.ixidx` (`256 * 8 = 2048`).
-const IDX_FANOUT_SIZE: usize = 256 * 8;
+/// Header size of `.ixsp`: 8-byte `TagN` header + 8-byte LE object count.
+const IXSP_HEADER_SIZE: usize = 16;
 
-/// Offset where the sorted 32-byte `Address` array begins in `.ixidx`.
-const IDX_KEYS_OFFSET: usize = IDX_HEADER_SIZE + IDX_FANOUT_SIZE;
+/// Size of the 256-entry `u64` fan-out table in `.ixsp` (`256 * 8 = 2048`).
+const IXSP_FANOUT_SIZE: usize = 256 * 8;
 
-/// Size of each entry descriptor in `.ixidx` (`u64 offset + u32 len + u32 flags = 16`).
-const IDX_ENTRY_SIZE: usize = 16;
+/// Offset where the sorted 32-byte `Address` array begins in `.ixsp`.
+const IXSP_KEYS_OFFSET: usize = IXSP_HEADER_SIZE + IXSP_FANOUT_SIZE;
 
-/// Tag identifying the kind of stored object in `.ixidx` flags.
+/// Size of each entry descriptor in `.ixsp` (`u64 offset + u32 stored_len + u32 flags = 16`).
+const IXSP_ENTRY_SIZE: usize = 16;
+
+/// Entry compression codec stored in `flags & 0xFF` of each `.ixsp` entry.
+const COMPRESSION_NONE: u32 = 0;
+const COMPRESSION_ZSTD: u32 = 1;
+
+/// Default `zstd` compression level for Cold `.ixs` segments.
+const ZSTD_DEFAULT_LEVEL: i32 = 3;
+
+/// Temperature tier for `.ixs` store segments.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StoreTier {
+  /// Uncompressed, 8-byte-aligned payloads for zero-copy `mmap` slicing.
+  #[default]
+  Warm = 0,
+  /// `zstd`-compressed payloads with random-access pointer lookup via `.ixsp`.
+  Cold = 1,
+}
+
+/// Tag identifying the kind of stored object in `.ixsp` entry flags (`(flags >> 8) & 0xFF`).
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectKind {
@@ -113,99 +145,105 @@ pub struct StoreStats {
   pub total_loose_bytes: u64,
 }
 
-/// A memory-mapped `.ixpack` + `.ixidx` pair.
-struct MappedPack {
-  pack_id: String,
-  idx_mmap: Mmap,
-  pack_mmap: Mmap,
+#[inline]
+fn is_valid_ixs_header(hdr: &[u8]) -> bool {
+  hdr.len() >= 8
+    && hdr[0] == 0xE8
+    && hdr[1] == 0x05
+    && hdr[2] == 0x01
+    && (hdr[3] == 0x00 || hdr[3] == 0x01)
+}
+
+#[inline]
+fn is_valid_ixsp_header(hdr: &[u8]) -> bool {
+  hdr.len() >= 8 && hdr[0] == 0xE8 && hdr[1] == 0x06 && hdr[2] == 0x01
+}
+
+/// A memory-mapped `.ixs` ("Ix Store") + `.ixsp` ("Ix Store Pointer") pair.
+struct MappedSegment {
+  segment_id: String,
+  ixsp_mmap: Mmap,
+  ixs_mmap: Mmap,
   count: usize,
 }
 
-impl MappedPack {
-  fn open(idx_path: &Path, pack_path: &Path) -> io::Result<Self> {
-    let idx_file = File::open(idx_path)?;
-    let pack_file = File::open(pack_path)?;
-    // SAFETY: `.ixidx` and `.ixpack` files are written atomically via temp-file
+impl MappedSegment {
+  fn open(ixsp_path: &Path, ixs_path: &Path) -> io::Result<Self> {
+    let ixsp_file = File::open(ixsp_path)?;
+    let ixs_file = File::open(ixs_path)?;
+    // SAFETY: `.ixsp` and `.ixs` files are written atomically via temp-file
     // rename and are immutable once published.
-    let idx_mmap = unsafe { Mmap::map(&idx_file)? };
-    let pack_mmap = unsafe { Mmap::map(&pack_file)? };
+    let ixsp_mmap = unsafe { Mmap::map(&ixsp_file)? };
+    let ixs_mmap = unsafe { Mmap::map(&ixs_file)? };
 
-    if idx_mmap.len() < IDX_KEYS_OFFSET || idx_mmap[0..8] != IDX_MAGIC {
+    if ixsp_mmap.len() < IXSP_KEYS_OFFSET || !is_valid_ixsp_header(&ixsp_mmap[0..8]) {
       return Err(io::Error::new(
         io::ErrorKind::InvalidData,
-        "invalid .ixidx header",
+        "invalid .ixsp header (expected TagN E8 06)",
       ));
     }
-    let is_ixe = pack_path.extension().and_then(|s| s.to_str()) == Some("ixe");
-    if is_ixe {
-      if pack_mmap.is_empty() || (pack_mmap[0] != 0xE4 && pack_mmap[0] != 0xE5) {
-        return Err(io::Error::new(
-          io::ErrorKind::InvalidData,
-          "invalid .ixe header for .ixidx companion",
-        ));
-      }
-    } else if pack_mmap.len() < 8 || pack_mmap[0..8] != PACK_MAGIC {
+    if !is_valid_ixs_header(&ixs_mmap) {
       return Err(io::Error::new(
         io::ErrorKind::InvalidData,
-        "invalid .ixpack header",
+        "invalid .ixs header (expected TagN E8 05)",
       ));
     }
     let count_u64 = u64::from_le_bytes(
-      idx_mmap[8..16].try_into().expect("8-byte slice"),
+      ixsp_mmap[8..16].try_into().expect("8-byte slice"),
     );
     let count = usize::try_from(count_u64).map_err(|_| {
-      io::Error::new(io::ErrorKind::InvalidData, "pack count overflow")
+      io::Error::new(io::ErrorKind::InvalidData, ".ixsp count overflow")
     })?;
-    let expected_idx_len =
-      IDX_KEYS_OFFSET + count * 32 + count * IDX_ENTRY_SIZE;
-    if idx_mmap.len() < expected_idx_len {
+    let expected_ixsp_len =
+      IXSP_KEYS_OFFSET + count * 32 + count * IXSP_ENTRY_SIZE;
+    if ixsp_mmap.len() < expected_ixsp_len {
       return Err(io::Error::new(
         io::ErrorKind::InvalidData,
-        "truncated .ixidx file",
+        "truncated .ixsp file",
       ));
     }
-    let pack_id = idx_path
+    let segment_id = ixsp_path
       .file_stem()
       .and_then(|s| s.to_str())
-      .unwrap_or("pack")
+      .unwrap_or("store")
       .to_owned();
-    Ok(Self { pack_id, idx_mmap, pack_mmap, count })
+    Ok(Self { segment_id, ixsp_mmap, ixs_mmap, count })
   }
 
   #[inline]
   fn fanout(&self, byte: u8) -> usize {
-    let off = IDX_HEADER_SIZE + usize::from(byte) * 8;
+    let off = IXSP_HEADER_SIZE + usize::from(byte) * 8;
     let val = u64::from_le_bytes(
-      self.idx_mmap[off..off + 8].try_into().expect("8-byte fanout"),
+      self.ixsp_mmap[off..off + 8].try_into().expect("8-byte fanout"),
     );
     usize::try_from(val).unwrap_or(0)
   }
 
   #[inline]
   fn key_at(&self, index: usize) -> &[u8; 32] {
-    let off = IDX_KEYS_OFFSET + index * 32;
-    self.idx_mmap[off..off + 32].try_into().expect("32-byte key")
+    let off = IXSP_KEYS_OFFSET + index * 32;
+    self.ixsp_mmap[off..off + 32].try_into().expect("32-byte key")
   }
 
   #[inline]
   fn entry_at(&self, index: usize) -> (usize, usize, u32) {
-    let entries_base = IDX_KEYS_OFFSET + self.count * 32;
-    let off = entries_base + index * IDX_ENTRY_SIZE;
+    let entries_base = IXSP_KEYS_OFFSET + self.count * 32;
+    let off = entries_base + index * IXSP_ENTRY_SIZE;
     let data_off_u64 = u64::from_le_bytes(
-      self.idx_mmap[off..off + 8].try_into().expect("8-byte offset"),
+      self.ixsp_mmap[off..off + 8].try_into().expect("8-byte offset"),
     );
     let data_len_u32 = u32::from_le_bytes(
-      self.idx_mmap[off + 8..off + 12].try_into().expect("4-byte len"),
+      self.ixsp_mmap[off + 8..off + 12].try_into().expect("4-byte len"),
     );
     let flags = u32::from_le_bytes(
-      self.idx_mmap[off + 12..off + 16].try_into().expect("4-byte flags"),
+      self.ixsp_mmap[off + 12..off + 16].try_into().expect("4-byte flags"),
     );
     let data_off = usize::try_from(data_off_u64).unwrap_or(0);
     let data_len = usize::try_from(data_len_u32).unwrap_or(0);
     (data_off, data_len, flags)
   }
 
-  /// Look up `addr` in `O(log(N/256))` using the 256-entry fan-out table.
+  /// Look up `addr` in `O(log(N/256))` using the 256-entry fan-out table in `.ixsp`.
   fn find_index(&self, addr: &Address) -> Option<usize> {
     let target = addr.as_bytes();
     let first = target[0];
@@ -232,27 +270,37 @@ impl MappedPack {
     self.find_index(addr).is_some()
   }
 
-  fn get_slice(&self, addr: &Address) -> Option<&[u8]> {
+  /// Read an object from `.ixs` via its `.ixsp` pointer.
+  /// Returns `Cow::Borrowed` for Warm (uncompressed) entries and `Cow::Owned`
+  /// for Cold (`zstd`-compressed) entries.
+  fn get_bytes(&self, addr: &Address) -> Option<Cow<'_, [u8]>> {
     let idx = self.find_index(addr)?;
-    let (data_off, data_len, _flags) = self.entry_at(idx);
+    let (data_off, data_len, flags) = self.entry_at(idx);
     let end = data_off.checked_add(data_len)?;
-    if end <= self.pack_mmap.len() {
-      Some(&self.pack_mmap[data_off..end])
-    } else {
-      None
+    if end > self.ixs_mmap.len() {
+      return None;
+    }
+    let raw_slice = &self.ixs_mmap[data_off..end];
+    match flags & 0xFF {
+      COMPRESSION_NONE => Some(Cow::Borrowed(raw_slice)),
+      COMPRESSION_ZSTD => {
+        let decompressed = zstd::stream::decode_all(raw_slice).ok()?;
+        Some(Cow::Owned(decompressed))
+      },
+      _ => None,
     }
   }
 }
 
-/// Thread-safe, memory-mapped + shard-backed content-addressed store rooted at `root`.
+/// Thread-safe, memory-mapped (`.ixs` + `.ixsp`) + shard-backed content-addressed store.
 pub struct IxStore {
   root: PathBuf,
   objects_dir: PathBuf,
   packs_dir: PathBuf,
-  /// Hot in-memory object cache.
+  /// Tier 0: Hot in-memory object cache.
   hot: DashMap<Address, Arc<[u8]>, FxBuildHasher>,
-  /// Memory-mapped `.ixpack` + `.ixidx` pairs.
-  packs: RwLock<Vec<MappedPack>>,
+  /// Tier 1 (Warm) & Tier 2 (Cold): Memory-mapped `.ixs` + `.ixsp` pairs.
+  segments: RwLock<Vec<MappedSegment>>,
   /// 256-bit bitmap tracking which `objects/<aa>` directories have been created.
   shard_ready: [AtomicU64; 4],
 }
@@ -267,30 +315,39 @@ fn store_registry() -> &'static DashMap<PathBuf, Arc<IxStore>, FxBuildHasher> {
 }
 
 impl IxStore {
-  /// Resolve the default store root directory:
-  /// 1. `$IX_STORE_DIR` if set and non-empty,
-  /// 2. `$HOME/.ix/store` otherwise.
+  /// Resolve the default store root directory: `$IX_STORE_DIR` if set and
+  /// non-empty, otherwise `$HOME/.ix/store`.
   pub fn default_root() -> StoreResult<PathBuf> {
     if let Ok(custom) = env::var("IX_STORE_DIR") {
       if !custom.is_empty() {
         return Ok(PathBuf::from(custom));
       }
     }
-    let home = env::var("HOME").map(PathBuf::from).map_err(StoreError::NoHome)?;
-    Ok(home.join(".ix").join("store"))
+    let home = env::var("HOME").map_err(StoreError::NoHome)?;
+    Ok(Path::new(&home).join(".ix").join("store"))
   }
 
-  /// Resolve the default cache directory `~/.ix/cache/<namespace>`.
-  pub fn default_cache_dir(namespace: &str) -> StoreResult<PathBuf> {
-    let home = env::var("HOME").map(PathBuf::from).map_err(StoreError::NoHome)?;
-    let dir = home.join(".ix").join("cache").join(namespace);
-    if !dir.exists() {
-      fs::create_dir_all(&dir)?;
+  /// Resolve the `~/.ix/cache/<namespace>` directory (or `$IX_CACHE_DIR/<namespace>`).
+  pub fn cache_dir(namespace: &str) -> StoreResult<PathBuf> {
+    let base = if let Ok(custom) = env::var("IX_CACHE_DIR") {
+      if !custom.is_empty() {
+        PathBuf::from(custom)
+      } else {
+        let home = env::var("HOME").map_err(StoreError::NoHome)?;
+        Path::new(&home).join(".ix").join("cache")
+      }
+    } else {
+      let home = env::var("HOME").map_err(StoreError::NoHome)?;
+      Path::new(&home).join(".ix").join("cache")
+    };
+    let path = base.join(namespace);
+    if !path.exists() {
+      fs::create_dir_all(&path)?;
     }
-    Ok(dir)
+    Ok(path)
   }
 
-  /// Open or retrieve the cached process-wide [`IxStore`] for `root`.
+  /// Open (or reuse the process-wide handle for) the store rooted at `root`.
   pub fn open(root: &Path) -> StoreResult<Arc<Self>> {
     let registry = store_registry();
     if let Some(existing) = registry.get(root) {
@@ -306,7 +363,7 @@ impl IxStore {
       objects_dir,
       packs_dir,
       hot: DashMap::with_hasher(FxBuildHasher),
-      packs: RwLock::new(Vec::new()),
+      segments: RwLock::new(Vec::new()),
       shard_ready: [
         AtomicU64::new(0),
         AtomicU64::new(0),
@@ -314,7 +371,7 @@ impl IxStore {
         AtomicU64::new(0),
       ],
     });
-    store.reload_packs()?;
+    store.reload_segments()?;
     registry.insert(root.to_path_buf(), Arc::clone(&store));
     Ok(store)
   }
@@ -331,15 +388,15 @@ impl IxStore {
     &self.root
   }
 
-  /// Scan `packs/*.ixidx` and memory-map any newly discovered packfiles.
-  pub fn reload_packs(&self) -> StoreResult<()> {
+  /// Scan `packs/*.ixsp` and memory-map any newly discovered `.ixs` + `.ixsp` pairs.
+  pub fn reload_segments(&self) -> StoreResult<()> {
     let Ok(entries) = fs::read_dir(&self.packs_dir) else {
       return Ok(());
     };
-    let mut guard = self.packs.write().expect("packs lock poisoned");
+    let mut guard = self.segments.write().expect("segments lock poisoned");
     for entry in entries.flatten() {
       let path = entry.path();
-      if path.extension().and_then(|s| s.to_str()) != Some("ixidx") {
+      if path.extension().and_then(|s| s.to_str()) != Some("ixsp") {
         continue;
       }
       let stem = path
@@ -347,16 +404,11 @@ impl IxStore {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_owned();
-      if stem.is_empty() || guard.iter().any(|p| p.pack_id == stem) {
+      if stem.is_empty() || guard.iter().any(|s| s.segment_id == stem) {
         continue;
       }
-      let ixe_path = self.packs_dir.join(format!("{stem}.ixe"));
-      let data_path = if ixe_path.exists() {
-        ixe_path
-      } else {
-        self.packs_dir.join(format!("{stem}.ixpack"))
-      };
-      if let Ok(mapped) = MappedPack::open(&path, &data_path) {
+      let ixs_path = self.packs_dir.join(format!("{stem}.ixs"));
+      if let Ok(mapped) = MappedSegment::open(&path, &ixs_path) {
         guard.push(mapped);
       }
     }
@@ -396,7 +448,7 @@ impl IxStore {
       .join(&hex[6..])
   }
 
-  /// Check whether `addr` is present in the hot cache, any mapped `.ixpack`,
+  /// Check whether `addr` is present in the hot cache, any mapped `.ixs`+`.ixsp`,
   /// or the loose shard directory.
   #[must_use]
   pub fn contains(&self, addr: &Address) -> bool {
@@ -404,17 +456,17 @@ impl IxStore {
       return true;
     }
     {
-      let packs = self.packs.read().expect("packs lock poisoned");
-      if packs.iter().any(|p| p.contains(addr)) {
+      let segments = self.segments.read().expect("segments lock poisoned");
+      if segments.iter().any(|s| s.contains(addr)) {
         return true;
       }
     }
     if self.loose_path(addr).exists() {
       return true;
     }
-    if self.reload_packs().is_ok() {
-      let packs = self.packs.read().expect("packs lock poisoned");
-      if packs.iter().any(|p| p.contains(addr)) {
+    if self.reload_segments().is_ok() {
+      let segments = self.segments.read().expect("segments lock poisoned");
+      if segments.iter().any(|s| s.contains(addr)) {
         return true;
       }
     }
@@ -428,8 +480,8 @@ impl IxStore {
       return Ok(());
     }
     {
-      let packs = self.packs.read().expect("packs lock poisoned");
-      if packs.iter().any(|p| p.contains(addr)) {
+      let segments = self.segments.read().expect("segments lock poisoned");
+      if segments.iter().any(|s| s.contains(addr)) {
         self.hot.insert(addr.clone(), Arc::from(bytes));
         return Ok(());
       }
@@ -461,18 +513,18 @@ impl IxStore {
     Ok(addr)
   }
 
-  /// Read the bytes stored at `addr` (checking hot cache -> mapped `.ixpack`s -> loose shard).
+  /// Read the bytes stored at `addr` (checking Tier 0 hot cache -> Tier 1/2 `.ixs`+`.ixsp` -> Tier 3 loose shard).
   pub fn read(&self, addr: &Address) -> StoreResult<Vec<u8>> {
     if let Some(cached) = self.hot.get(addr) {
       return Ok(cached.value().as_ref().to_vec());
     }
     {
-      let packs = self.packs.read().expect("packs lock poisoned");
-      for pack in packs.iter() {
-        if let Some(slice) = pack.get_slice(addr) {
-          let arc: Arc<[u8]> = Arc::from(slice);
-          self.hot.insert(addr.clone(), Arc::clone(&arc));
-          return Ok(arc.as_ref().to_vec());
+      let segments = self.segments.read().expect("segments lock poisoned");
+      for seg in segments.iter() {
+        if let Some(cow) = seg.get_bytes(addr) {
+          let vec = cow.into_owned();
+          self.hot.insert(addr.clone(), Arc::from(vec.as_slice()));
+          return Ok(vec);
         }
       }
     }
@@ -481,15 +533,15 @@ impl IxStore {
       self.hot.insert(addr.clone(), Arc::from(bytes.as_slice()));
       return Ok(bytes);
     }
-    // Refresh packs in case another process wrote a new `.ixpack` since we opened.
-    self.reload_packs()?;
+    // Refresh segments in case another process wrote a new `.ixs`+`.ixsp` since we opened.
+    self.reload_segments()?;
     {
-      let packs = self.packs.read().expect("packs lock poisoned");
-      for pack in packs.iter() {
-        if let Some(slice) = pack.get_slice(addr) {
-          let arc: Arc<[u8]> = Arc::from(slice);
-          self.hot.insert(addr.clone(), Arc::clone(&arc));
-          return Ok(arc.as_ref().to_vec());
+      let segments = self.segments.read().expect("segments lock poisoned");
+      for seg in segments.iter() {
+        if let Some(cow) = seg.get_bytes(addr) {
+          let vec = cow.into_owned();
+          self.hot.insert(addr.clone(), Arc::from(vec.as_slice()));
+          return Ok(vec);
         }
       }
     }
@@ -516,9 +568,22 @@ impl IxStore {
   }
 
   /// Write a batch of `(Address, &[u8], ObjectKind)` entries into a single
-  /// immutable, sorted `.ixpack` + `.ixidx` pair and memory-map it immediately.
-  /// Returns the pack's content-addressed ID (`Address`) and number of objects written.
+  /// immutable, sorted Warm `.ixs` + `.ixsp` pair and memory-map it immediately.
   pub fn write_pack<'a, I>(&self, entries: I) -> StoreResult<(Address, usize)>
+  where
+    I: IntoIterator<Item = (Address, &'a [u8], ObjectKind)>,
+  {
+    self.write_pack_tiered(entries, StoreTier::Warm)
+  }
+
+  /// Write a batch of `(Address, &[u8], ObjectKind)` entries into a single
+  /// immutable, sorted `.ixs` ("Ix Store") + `.ixsp` ("Ix Store Pointer") pair
+  /// at the requested [`StoreTier`] (`Warm` = uncompressed `mmap`, `Cold` = `zstd`).
+  pub fn write_pack_tiered<'a, I>(
+    &self,
+    entries: I,
+    tier: StoreTier,
+  ) -> StoreResult<(Address, usize)>
   where
     I: IntoIterator<Item = (Address, &'a [u8], ObjectKind)>,
   {
@@ -530,57 +595,74 @@ impl IxStore {
     sorted.sort_unstable_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
     sorted.dedup_by(|a, b| a.0 == b.0);
 
-    // Populate hot cache and compute pack digest over sorted `(addr, len, bytes)`.
-    let mut pack_hasher = blake3::Hasher::new();
-    pack_hasher.update(&PACK_MAGIC);
+    let ixs_header = match tier {
+      StoreTier::Warm => IXS_HEADER_WARM,
+      StoreTier::Cold => IXS_HEADER_COLD,
+    };
+
+    // Populate hot cache and compute segment digest over header + sorted `(addr, len, bytes)`.
+    let mut seg_hasher = blake3::Hasher::new();
+    seg_hasher.update(&ixs_header);
     for (addr, bytes, kind) in &sorted {
-      pack_hasher.update(addr.as_bytes());
-      pack_hasher.update(&[*kind as u8]);
-      pack_hasher.update(&(bytes.len() as u64).to_le_bytes());
-      pack_hasher.update(bytes);
+      seg_hasher.update(addr.as_bytes());
+      seg_hasher.update(&[*kind as u8]);
+      seg_hasher.update(&(bytes.len() as u64).to_le_bytes());
+      seg_hasher.update(bytes);
       self.hot.insert(addr.clone(), Arc::from(*bytes));
     }
-    let pack_addr = Address::from_blake3_hash(pack_hasher.finalize());
-    let pack_stem = format!("pack-{}", pack_addr.hex());
-    let idx_path = self.packs_dir.join(format!("{pack_stem}.ixidx"));
-    let pack_path = self.packs_dir.join(format!("{pack_stem}.ixpack"));
+    let seg_addr = Address::from_blake3_hash(seg_hasher.finalize());
+    let seg_stem = format!("store-{}", seg_addr.hex());
+    let ixsp_path = self.packs_dir.join(format!("{seg_stem}.ixsp"));
+    let ixs_path = self.packs_dir.join(format!("{seg_stem}.ixs"));
 
-    if idx_path.exists() && pack_path.exists() {
-      self.reload_packs()?;
-      return Ok((pack_addr, sorted.len()));
+    if ixsp_path.exists() && ixs_path.exists() {
+      self.reload_segments()?;
+      return Ok((seg_addr, sorted.len()));
     }
 
     let seq = WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let tmp_pack = self.packs_dir.join(format!("{pack_stem}.ixpack.tmp.{pid}.{seq}"));
-    let tmp_idx = self.packs_dir.join(format!("{pack_stem}.ixidx.tmp.{pid}.{seq}"));
+    let tmp_ixs = self.packs_dir.join(format!("{seg_stem}.ixs.tmp.{pid}.{seq}"));
+    let tmp_ixsp = self.packs_dir.join(format!("{seg_stem}.ixsp.tmp.{pid}.{seq}"));
 
-    // 1. Write `.ixpack` (8-byte header + 8-byte-aligned object payloads).
+    // 1. Write `.ixs` (8-byte `TagN` E8 05 header + 8-byte-aligned object payloads).
     let mut descriptors: Vec<(u64, u32, u32)> = Vec::with_capacity(sorted.len());
     {
-      let mut pack_out = io::BufWriter::new(File::create(&tmp_pack)?);
-      pack_out.write_all(&PACK_MAGIC)?;
+      let mut ixs_out = io::BufWriter::new(File::create(&tmp_ixs)?);
+      ixs_out.write_all(&ixs_header)?;
       let mut offset: u64 = 8;
       for (_addr, bytes, kind) in &sorted {
-        let len_u32 = u32::try_from(bytes.len()).map_err(|_| {
+        let (encoded, comp_flag): (Cow<'_, [u8]>, u32) = match tier {
+          StoreTier::Warm => (Cow::Borrowed(*bytes), COMPRESSION_NONE),
+          StoreTier::Cold => {
+            if let Ok(compressed) = zstd::bulk::compress(bytes, ZSTD_DEFAULT_LEVEL)
+              && compressed.len() < bytes.len()
+            {
+              (Cow::Owned(compressed), COMPRESSION_ZSTD)
+            } else {
+              (Cow::Borrowed(*bytes), COMPRESSION_NONE)
+            }
+          },
+        };
+        let len_u32 = u32::try_from(encoded.len()).map_err(|_| {
           io::Error::new(io::ErrorKind::InvalidInput, "object exceeds 4 GiB")
         })?;
-        let flags = u32::from(*kind as u8) << 8;
+        let flags = (u32::from(*kind as u8) << 8) | comp_flag;
         descriptors.push((offset, len_u32, flags));
-        pack_out.write_all(bytes)?;
+        ixs_out.write_all(&encoded)?;
         offset += u64::from(len_u32);
         let pad = (8 - (offset % 8)) % 8;
         if pad > 0 {
           const ZEROS: [u8; 8] = [0u8; 8];
           let pad_usize = usize::try_from(pad).unwrap_or(0);
-          pack_out.write_all(&ZEROS[..pad_usize])?;
+          ixs_out.write_all(&ZEROS[..pad_usize])?;
           offset += pad;
         }
       }
-      pack_out.flush()?;
+      ixs_out.flush()?;
     }
 
-    // 2. Build 256-entry fan-out table + sorted keys + entry descriptors for `.ixidx`.
+    // 2. Build 256-entry fan-out table + sorted keys + entry descriptors for `.ixsp`.
     let count = sorted.len();
     let mut fanout = [0u64; 256];
     for (addr, _, _) in &sorted {
@@ -594,36 +676,42 @@ impl IxStore {
     }
 
     {
-      let mut idx_out = io::BufWriter::new(File::create(&tmp_idx)?);
-      idx_out.write_all(&IDX_MAGIC)?;
-      idx_out.write_all(&(count as u64).to_le_bytes())?;
+      let mut ixsp_out = io::BufWriter::new(File::create(&tmp_ixsp)?);
+      ixsp_out.write_all(&IXSP_HEADER)?;
+      ixsp_out.write_all(&(count as u64).to_le_bytes())?;
       for f in &fanout {
-        idx_out.write_all(&f.to_le_bytes())?;
+        ixsp_out.write_all(&f.to_le_bytes())?;
       }
       for (addr, _, _) in &sorted {
-        idx_out.write_all(addr.as_bytes())?;
+        ixsp_out.write_all(addr.as_bytes())?;
       }
       for (off, len, flags) in &descriptors {
-        idx_out.write_all(&off.to_le_bytes())?;
-        idx_out.write_all(&len.to_le_bytes())?;
-        idx_out.write_all(&flags.to_le_bytes())?;
+        ixsp_out.write_all(&off.to_le_bytes())?;
+        ixsp_out.write_all(&len.to_le_bytes())?;
+        ixsp_out.write_all(&flags.to_le_bytes())?;
       }
-      idx_out.flush()?;
+      ixsp_out.flush()?;
     }
 
-    // Publish `.ixpack` first, then `.ixidx` so readers scanning `.ixidx`
-    // always see a complete `.ixpack`.
-    fs::rename(&tmp_pack, &pack_path)?;
-    fs::rename(&tmp_idx, &idx_path)?;
+    // Publish `.ixs` first, then `.ixsp` so readers scanning `.ixsp`
+    // always see a complete `.ixs`.
+    fs::rename(&tmp_ixs, &ixs_path)?;
+    fs::rename(&tmp_ixsp, &ixsp_path)?;
 
-    self.reload_packs()?;
-    Ok((pack_addr, count))
+    self.reload_segments()?;
+    Ok((seg_addr, count))
   }
 
-  /// Compact all loose objects in `objects/<aa>/*` into a single `.ixpack` + `.ixidx`
-  /// and unlink the loose files once the pack is mapped.
-  /// Returns `(num_compacted_objects, pack_bytes)`.
+  /// Compact all loose objects in `objects/<aa>/*` into a Warm `.ixs` + `.ixsp` pair.
   pub fn compact(&self) -> StoreResult<(usize, u64)> {
+    self.compact_tiered(StoreTier::Warm)
+  }
+
+  /// Compact all loose objects in `objects/<aa>/*` into a single `.ixs` + `.ixsp`
+  /// at the requested [`StoreTier`] (`Warm` = uncompressed `mmap`, `Cold` = `zstd`)
+  /// and unlink the loose files once the segment is mapped.
+  /// Returns `(num_compacted_objects, raw_bytes_compacted)`.
+  pub fn compact_tiered(&self, tier: StoreTier) -> StoreResult<(usize, u64)> {
     let mut loose_paths: Vec<(Address, PathBuf)> = Vec::new();
     if let Ok(shards) = fs::read_dir(&self.objects_dir) {
       for shard_entry in shards.flatten() {
@@ -668,23 +756,23 @@ impl IxStore {
       .iter()
       .map(|(a, b)| (a.clone(), b.as_slice(), ObjectKind::Raw))
       .collect();
-    let (_pack_addr, count) = self.write_pack(refs)?;
+    let (_seg_addr, count) = self.write_pack_tiered(refs, tier)?;
 
-    // Now that the pack is durably published and mapped, unlink the loose files.
+    // Now that the `.ixs` + `.ixsp` segment is durably published and mapped, unlink loose files.
     for (_addr, path) in &loose_paths {
       let _ = fs::remove_file(path);
     }
     Ok((count, total_bytes))
   }
 
-  /// Compute current store statistics across hot cache, mapped packs, and loose shards.
+  /// Compute current store statistics across hot cache, mapped `.ixs`+`.ixsp` segments, and loose shards.
   pub fn stats(&self) -> StoreResult<StoreStats> {
-    self.reload_packs()?;
+    self.reload_segments()?;
     let (pack_count, packed_objects, total_pack_bytes) = {
-      let packs = self.packs.read().expect("packs lock poisoned");
-      let p_count = packs.len();
-      let p_objs: usize = packs.iter().map(|p| p.count).sum();
-      let p_bytes: u64 = packs.iter().map(|p| p.pack_mmap.len() as u64).sum();
+      let segments = self.segments.read().expect("segments lock poisoned");
+      let p_count = segments.len();
+      let p_objs: usize = segments.iter().map(|s| s.count).sum();
+      let p_bytes: u64 = segments.iter().map(|s| s.ixs_mmap.len() as u64).sum();
       (p_count, p_objs, p_bytes)
     };
     let mut loose_objects = 0usize;
@@ -716,117 +804,56 @@ impl IxStore {
     })
   }
 
-  /// Return the path to a stored `.ixe` bundle (`packs/env-<env_root>.ixe`) if
-  /// the environment with Merkle root `env_root` has been ingested into the store.
-  #[must_use]
-  pub fn env_path(&self, env_root: &Address) -> Option<PathBuf> {
-    let p = self.packs_dir.join(format!("env-{}.ixe", env_root.hex()));
-    if p.exists() { Some(p) } else { None }
+  /// Ingest an `.ixe` file (or all `.ixe` member/chunk files inside a `.ixc`
+  /// catalog directory) into a Warm `.ixs` + `.ixsp` segment.
+  pub fn ingest_ixe(&self, path: &Path) -> StoreResult<(Address, usize)> {
+    self.ingest_ixe_tiered(path, StoreTier::Warm)
   }
 
   /// Ingest an `.ixe` file (or all `.ixe` member/chunk files inside a `.ixc`
-  /// catalog directory) directly into `packs/` by hardlinking `<stem>.ixe` (with
-  /// atomic copy fallback across filesystems) and generating a companion
-  /// `<stem>.ixidx` index over the `.ixe`'s §1 (`Blobs`) and §2 (`Constants`)
-  /// byte windows. Zero constant bytes are duplicated into a separate `.ixpack`.
-  pub fn ingest_ixe(&self, path: &Path) -> StoreResult<(Address, usize)> {
+  /// catalog directory) into a single deduplicated, 8-byte-aligned `.ixs` + `.ixsp`
+  /// segment at the requested [`StoreTier`] (`Warm` = uncompressed `mmap`,
+  /// `Cold` = `zstd`-compressed), stripping inline keys/lengths and `§4/§5` metadata.
+  pub fn ingest_ixe_tiered(
+    &self,
+    path: &Path,
+    tier: StoreTier,
+  ) -> StoreResult<(Address, usize)> {
+    let mut ixe_files: Vec<PathBuf> = Vec::new();
     if path.is_dir() {
-      let mut last_root = Address::hash(&[]);
-      let mut total_indexed = 0usize;
-      let entries = fs::read_dir(path)?;
-      let mut ixe_files: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ixe"))
-        .collect();
+      for e in fs::read_dir(path)?.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|s| s.to_str()) == Some("ixe") {
+          ixe_files.push(p);
+        }
+      }
       ixe_files.sort();
-      for ixe in ixe_files {
-        let (root, count) = self.ingest_single_ixe(&ixe)?;
-        last_root = root;
-        total_indexed += count;
-      }
-      return Ok((last_root, total_indexed));
-    }
-    self.ingest_single_ixe(path)
-  }
-
-  fn ingest_single_ixe(&self, ixe_path: &Path) -> StoreResult<(Address, usize)> {
-    let file = File::open(ixe_path)?;
-    // SAFETY: read-only memory map of `.ixe` file during indexing.
-    let mmap = unsafe { Mmap::map(&file)? };
-    let (stored_root, mut windows) =
-      scan_ixe_windows(&mmap).map_err(StoreError::IxonError)?;
-
-    let stem = format!("env-{}", stored_root.hex());
-    let dst_ixe = self.packs_dir.join(format!("{stem}.ixe"));
-    let dst_idx = self.packs_dir.join(format!("{stem}.ixidx"));
-
-    windows.sort_unstable_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
-    windows.dedup_by(|a, b| a.0 == b.0);
-    let count = windows.len();
-
-    if dst_ixe.exists() && dst_idx.exists() {
-      self.reload_packs()?;
-      return Ok((stored_root, count));
+    } else {
+      ixe_files.push(path.to_path_buf());
     }
 
-    let seq = WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
+    let mut mmaps: Vec<Mmap> = Vec::with_capacity(ixe_files.len());
+    for ixe in &ixe_files {
+      let file = File::open(ixe)?;
+      // SAFETY: read-only memory map of `.ixe` file during ingestion.
+      let mmap = unsafe { Mmap::map(&file)? };
+      mmaps.push(mmap);
+    }
 
-    if !dst_ixe.exists() {
-      let same_path = fs::canonicalize(ixe_path)
-        .ok()
-        .zip(fs::canonicalize(&dst_ixe).ok())
-        .is_some_and(|(a, b)| a == b);
-      if !same_path {
-        let tmp_ixe = self.packs_dir.join(format!("{stem}.ixe.tmp.{pid}.{seq}"));
-        let _ = fs::remove_file(&tmp_ixe);
-        if fs::hard_link(ixe_path, &tmp_ixe).is_err() {
-          fs::copy(ixe_path, &tmp_ixe)?;
-        }
-        if let Err(err) = fs::rename(&tmp_ixe, &dst_ixe) {
-          let _ = fs::remove_file(&tmp_ixe);
-          if !dst_ixe.exists() {
-            return Err(StoreError::IoError(err));
-          }
+    let mut entries: Vec<(Address, &[u8], ObjectKind)> = Vec::new();
+    for mmap in &mmaps {
+      let (_stored_root, windows) =
+        scan_ixe_windows(mmap).map_err(StoreError::IxonError)?;
+      for (addr, off, len, kind) in windows {
+        let start = usize::try_from(off).unwrap_or(0);
+        let end = start + usize::try_from(len).unwrap_or(0);
+        if end <= mmap.len() {
+          entries.push((addr, &mmap[start..end], kind));
         }
       }
     }
 
-    let tmp_idx = self.packs_dir.join(format!("{stem}.ixidx.tmp.{pid}.{seq}"));
-    let mut fanout = [0u64; 256];
-    for (addr, _, _, _) in &windows {
-      let b = usize::from(addr.as_bytes()[0]);
-      fanout[b] += 1;
-    }
-    let mut running = 0u64;
-    for slot in &mut fanout {
-      running += *slot;
-      *slot = running;
-    }
-
-    {
-      let mut idx_out = io::BufWriter::new(File::create(&tmp_idx)?);
-      idx_out.write_all(&IDX_MAGIC)?;
-      idx_out.write_all(&(count as u64).to_le_bytes())?;
-      for f in &fanout {
-        idx_out.write_all(&f.to_le_bytes())?;
-      }
-      for (addr, _, _, _) in &windows {
-        idx_out.write_all(addr.as_bytes())?;
-      }
-      for (_, off, len, kind) in &windows {
-        let flags = u32::from(*kind as u8) << 8;
-        idx_out.write_all(&off.to_le_bytes())?;
-        idx_out.write_all(&len.to_le_bytes())?;
-        idx_out.write_all(&flags.to_le_bytes())?;
-      }
-      idx_out.flush()?;
-    }
-
-    fs::rename(&tmp_idx, &dst_idx)?;
-    self.reload_packs()?;
-    Ok((stored_root, count))
+    self.write_pack_tiered(entries, tier)
   }
 }
 
@@ -974,7 +1001,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_loose_and_pack_roundtrip() {
+  fn test_loose_and_warm_cold_ixs_roundtrip() {
     let tmp = env::temp_dir().join(format!(
       "ix-store-test-{}-{}",
       std::process::id(),
@@ -989,28 +1016,44 @@ mod tests {
     assert_eq!(store.read_verified(&a1).expect("read a1"), b"alpha");
     assert_eq!(store.read_verified(&a2).expect("read a2"), b"beta");
 
-    // Compact loose files into an mmap packfile
-    let (compacted, _) = store.compact().expect("compact");
+    // Compact loose files into a Warm `.ixs` + `.ixsp` pair
+    let (compacted, _) = store.compact().expect("compact warm");
     assert_eq!(compacted, 2);
     assert!(!store.loose_path(&a1).exists());
     assert!(!store.loose_path(&a2).exists());
 
-    // Clear hot cache to force reading from the memory-mapped `.ixpack`
+    // Clear hot cache to force reading from the memory-mapped `.ixs` via `.ixsp`
     store.hot.clear();
     assert!(store.contains(&a1));
-    assert_eq!(store.read_verified(&a1).expect("read a1 from pack"), b"alpha");
-    assert_eq!(store.read_verified(&a2).expect("read a2 from pack"), b"beta");
+    assert_eq!(store.read_verified(&a1).expect("read a1 from warm .ixs"), b"alpha");
+    assert_eq!(store.read_verified(&a2).expect("read a2 from warm .ixs"), b"beta");
+
+    // Write a larger repetitive payload and compact into a Cold (`zstd`) `.ixs` + `.ixsp`
+    let big_payload: Vec<u8> = b"ix-constant-sharing-table-pattern-".repeat(64);
+    let a3 = store.write(&big_payload).expect("write big_payload");
+    let (cold_compacted, raw_bytes) = store
+      .compact_tiered(StoreTier::Cold)
+      .expect("compact cold");
+    assert_eq!(cold_compacted, 1);
+    assert_eq!(raw_bytes, big_payload.len() as u64);
+
+    // Clear hot cache to force zstd decompression from the Cold `.ixs`
+    store.hot.clear();
+    assert_eq!(
+      store.read_verified(&a3).expect("read a3 from cold .ixs"),
+      big_payload
+    );
 
     let st = store.stats().expect("stats");
-    assert_eq!(st.pack_count, 1);
-    assert_eq!(st.packed_objects, 2);
+    assert_eq!(st.pack_count, 2);
+    assert_eq!(st.packed_objects, 3);
     assert_eq!(st.loose_objects, 0);
 
     let _ = fs::remove_dir_all(&tmp);
   }
 
   #[test]
-  fn test_native_ixe_ixidx_ingest() {
+  fn test_ixe_to_ixs_ingest() {
     let tmp = env::temp_dir().join(format!(
       "ix-store-ixe-test-{}-{}",
       std::process::id(),
@@ -1018,11 +1061,10 @@ mod tests {
     ));
     let store = IxStore::open(&tmp).expect("open store");
 
-    // Construct a minimal v4 (0xE4) .ixe buffer with 1 blob and 1 constant.
     let blob_payload = b"hello-ixe-blob";
     let blob_addr = Address::hash(blob_payload);
-    let const_payload = b"\xD0minimal-const-payload";
-    let const_addr = Address::hash(const_payload);
+    let const_payload: Vec<u8> = b"\xD0minimal-const-payload-".repeat(20);
+    let const_addr = Address::hash(&const_payload);
     let env_root = Address::hash(b"test-env-root");
 
     let mut ixe_bytes: Vec<u8> = Vec::new();
@@ -1035,23 +1077,25 @@ mod tests {
     ixe_bytes.extend_from_slice(blob_addr.as_bytes());
     ixe_bytes.push(blob_payload.len() as u8);
     ixe_bytes.extend_from_slice(blob_payload);
-    // §2 Constants: count = 1
+    // §2 Constants: count = 1 (TagN(0) rung 2 length since const_payload.len() = 460 >= 128)
     ixe_bytes.push(0x01);
     ixe_bytes.extend_from_slice(const_addr.as_bytes());
-    ixe_bytes.push(const_payload.len() as u8);
-    ixe_bytes.extend_from_slice(const_payload);
+    let clen = const_payload.len() - 128;
+    ixe_bytes.push((128 + clen / 256) as u8);
+    ixe_bytes.push((clen % 256) as u8);
+    ixe_bytes.extend_from_slice(&const_payload);
     // §3 Hints: count = 0
     ixe_bytes.push(0x00);
 
     let src_ixe = tmp.join("sample.ixe");
     fs::write(&src_ixe, &ixe_bytes).expect("write sample.ixe");
 
-    let (ingested_root, count) = store.ingest_ixe(&src_ixe).expect("ingest_ixe");
-    assert_eq!(ingested_root, env_root);
+    let (_seg_id, count) = store
+      .ingest_ixe_tiered(&src_ixe, StoreTier::Cold)
+      .expect("ingest_ixe_tiered cold");
     assert_eq!(count, 2);
-    assert!(store.env_path(&env_root).is_some());
 
-    // Verify reads come directly out of the memory-mapped .ixe file via .ixidx!
+    store.hot.clear();
     assert!(store.contains(&blob_addr));
     assert!(store.contains(&const_addr));
     assert_eq!(store.read_verified(&blob_addr).expect("read blob"), blob_payload);

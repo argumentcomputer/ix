@@ -27,7 +27,7 @@ def StoreIO.toIO (sio: StoreIO α) : IO α :=
 namespace Store
 
 /-- Summary statistics of the process-wide `IxStore` (hot cache, memory-mapped
-    `.ixpack` packfiles, and 1-level sharded loose objects). -/
+    `.ixs` store files + `.ixsp` pointer indexes, and 1-level sharded loose objects). -/
 structure StoreStats where
   hotEntries : UInt64
   packCount : UInt64
@@ -53,7 +53,7 @@ opaque writeAtFFI : @& Address → @& ByteArray → IO Unit
 opaque writePackFFI : @& Array (Address × ByteArray) → IO (Address × UInt64)
 
 @[extern "rs_store_ingest_ixe"]
-opaque ingestIxeFFI : @& String → IO (Address × UInt64)
+opaque ingestIxeFFI : @& String → Bool → IO (Address × UInt64)
 
 @[extern "rs_store_read"]
 opaque readFFI : @& Address → IO ByteArray
@@ -62,7 +62,7 @@ opaque readFFI : @& Address → IO ByteArray
 opaque readVerifiedFFI : @& Address → IO ByteArray
 
 @[extern "rs_store_compact"]
-opaque compactFFI : IO (UInt64 × UInt64)
+opaque compactFFI : Bool → IO (UInt64 × UInt64)
 
 @[extern "rs_store_stats"]
 opaque statsFFI : IO StoreStats
@@ -117,20 +117,22 @@ def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit :=
   IO.toEIO .ioError (writeAtFFI addr bytes)
 
 /-- Write a batch of `(Address, ByteArray)` objects into a single immutable,
-    memory-mapped `.ixpack` + `.ixidx` pair (2 fsyncs total regardless of
-    object count). Returns `(packId, writtenObjectCount)`. -/
+    memory-mapped `.ixs` ("Ix Store") + `.ixsp` ("Ix Store Pointer") pair
+    (2 fsyncs total regardless of object count). Returns `(packId, writtenObjectCount)`. -/
 def writePack (entries : Array (Address × ByteArray)) : StoreIO (Address × UInt64) :=
   IO.toEIO .ioError (writePackFFI entries)
 
 /-- Ingest a portable `.ixe` environment bundle (or a `.ixc/` catalog directory
-    of `.ixe` member/chunk files) directly into `packs/` by hardlinking
-    `env-<root>.ixe` (zero byte duplication) and generating a companion
-    `env-<root>.ixidx` index over its §1 (`Blobs`) and §2 (`Constants`) windows.
-    Returns `(envRoot, indexedObjectCount)`. -/
-def ingestIxe (path : FilePath) : StoreIO (Address × UInt64) :=
-  IO.toEIO .ioError (ingestIxeFFI path.toString)
+    of `.ixe` member/chunk files) into `packs/` by hardlinking `env-<root>.ixe`
+    (the circuit claim source of truth) and packing any missing §1 (`Blobs`) and
+    §2 (`Constants`) entries into a deduplicated `.ixs` + `.ixsp` pair (Warm
+    uncompressed `mmap` when `cold = false`, or Cold `zstd`-compressed when
+    `cold = true`). Returns `(envRoot, newlyPackedCount)`. -/
+def ingestIxe (path : FilePath) (cold : Bool := false) : StoreIO (Address × UInt64) :=
+  IO.toEIO .ioError (ingestIxeFFI path.toString cold)
 
-/-- Read `addr` from the in-memory hot cache, a memory-mapped `.ixe`/`.ixpack`,
+/-- Read `addr` from the in-memory hot cache, a memory-mapped `.ixs` store file
+    (via `.ixsp` pointer lookup, transparently decompressing Cold `zstd` entries),
     or the 1-level loose object shard. -/
 def read (a: Address) : StoreIO ByteArray :=
   IO.toEIO .ioError (readFFI a)
@@ -140,10 +142,11 @@ def readVerified (a : Address) : StoreIO ByteArray :=
   IO.toEIO .ioError (readVerifiedFFI a)
 
 /-- Compact all loose objects in `objects/<aa>/<62-hex>` into a single
-    memory-mapped `.ixpack` + `.ixidx` and unlink the compacted loose files.
-    Returns `(packedCount, unlinkedCount)`. -/
-def compact : StoreIO (UInt64 × UInt64) :=
-  IO.toEIO .ioError compactFFI
+    memory-mapped `.ixs` + `.ixsp` pair (Warm uncompressed `mmap` when
+    `cold = false`, or Cold `zstd`-compressed when `cold = true`) and unlink
+    the compacted loose files. Returns `(packedCount, unlinkedCount)`. -/
+def compact (cold : Bool := false) : StoreIO (UInt64 × UInt64) :=
+  IO.toEIO .ioError (compactFFI cold)
 
 /-- Query statistics for the current store (`hotEntries`, `packCount`,
     `packedObjects`, `packedBytes`, `looseObjects`, `looseBytes`). -/

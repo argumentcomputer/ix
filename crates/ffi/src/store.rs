@@ -1,11 +1,11 @@
 //! Lean FFI bindings for `ix_common::store::IxStore`.
 //!
 //! Unifies Lean's `Ix/Store.lean` with the Rust `IxStore` engine (in-process
-//! `DashMap` hot cache + memory-mapped `.ixpack`/`.ixidx` packfiles + 1-level
-//! sharded loose objects).
+//! `DashMap` hot cache + memory-mapped `.ixs`/`.ixsp` store files in Warm/Cold
+//! tiers + 1-level sharded loose objects).
 
 use ix_common::address::Address;
-use ix_common::store::IxStore;
+use ix_common::store::{IxStore, StoreTier};
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanByteArray, LeanIOResult, LeanOwned, LeanProd,
   LeanString,
@@ -173,29 +173,35 @@ pub extern "C" fn rs_store_read_verified(
   }
 }
 
-/// `Store.compactFFI : IO (UInt64 × UInt64)`
+/// `Store.compactFFI : Bool → IO (UInt64 × UInt64)`
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_store_compact() -> LeanIOResult<LeanOwned> {
+pub extern "C" fn rs_store_compact(cold: u8) -> LeanIOResult<LeanOwned> {
   let store = match IxStore::global() {
     Ok(s) => s,
     Err(e) => {
       return LeanIOResult::error_string(&format!("rs_store_compact: {e}"));
     },
   };
-  match store.compact() {
+  let tier = if cold != 0 {
+    StoreTier::Cold
+  } else {
+    StoreTier::Warm
+  };
+  match store.compact_tiered(tier) {
     Ok((packed, unlinked)) => {
       let packed_box = LeanOwned::box_u64(packed as u64);
-      let unlinked_box = LeanOwned::box_u64(unlinked as u64);
+      let unlinked_box = LeanOwned::box_u64(unlinked);
       LeanIOResult::ok(LeanProd::new(packed_box, unlinked_box))
     },
     Err(e) => LeanIOResult::error_string(&format!("rs_store_compact: {e}")),
   }
 }
 
-/// `Store.ingestIxeFFI : @& String → IO (Address × UInt64)`
+/// `Store.ingestIxeFFI : @& String → Bool → IO (Address × UInt64)`
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_store_ingest_ixe(
   path: LeanString<LeanBorrowed<'_>>,
+  cold: u8,
 ) -> LeanIOResult<LeanOwned> {
   let store = match IxStore::global() {
     Ok(s) => s,
@@ -203,8 +209,13 @@ pub extern "C" fn rs_store_ingest_ixe(
       return LeanIOResult::error_string(&format!("rs_store_ingest_ixe: {e}"));
     },
   };
+  let tier = if cold != 0 {
+    StoreTier::Cold
+  } else {
+    StoreTier::Warm
+  };
   let path_str = path.as_str();
-  match store.ingest_ixe(std::path::Path::new(path_str)) {
+  match store.ingest_ixe_tiered(std::path::Path::new(path_str), tier) {
     Ok((env_root, count)) => {
       let root_ba = LeanByteArray::from_bytes(env_root.as_bytes());
       let count_box = LeanOwned::box_u64(count as u64);

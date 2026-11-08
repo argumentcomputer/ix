@@ -1,14 +1,14 @@
 /-
-  `ix store <subcommand>`: CLI interface to the principled `IxStore` / `IxPack`
-  content-addressed storage engine:
-  - `ix store stats`: Show hot cache, memory-mapped `.ixpack`, and loose object statistics.
-  - `ix store compact`: Compact all 1-level sharded loose objects into a single
-    memory-mapped `.ixpack` + `.ixidx` pair.
+  `ix store <subcommand>`: CLI interface to the principled `IxStore`
+  content-addressed storage engine (`.ixs` "Ix Store" + `.ixsp` "Ix Store Pointer"):
+  - `ix store stats`: Show hot cache, memory-mapped `.ixs`/`.ixsp`, and loose object statistics.
+  - `ix store compact [--cold]`: Compact all 1-level sharded loose objects into a single
+    memory-mapped `.ixs` + `.ixsp` pair (Warm 8B-aligned mmap or Cold `zstd`-compressed).
   - `ix store put <file>`: Content-address `<file>` (`blake3`) and store it.
   - `ix store get <address> [--out <file>] [--verify]`: Read an object from the store
     (with optional cryptographic verification).
-  - `ix store ingest <ixe-file>`: Batch-pack all constants and blobs from an `.ixe`
-    environment into a single `.ixpack` + `.ixidx` pair (2 fsyncs total).
+  - `ix store ingest <ixe-file> [--cold]`: Hardlink `<ixe-file>` as `env-<root>.ixe`
+    and pack its deduplicated constants and blobs into a Warm or Cold `.ixs` + `.ixsp` pair.
 -/
 module
 
@@ -28,13 +28,15 @@ def runStoreStats (_p : Cli.Parsed) : IO UInt32 := do
   let st ← StoreIO.toIO Store.stats
   IO.println s!"Store root:      {root}"
   IO.println s!"Hot cache:       {st.hotEntries} objects"
-  IO.println s!"Packfiles:       {st.packCount} packs ({st.packedObjects} objects, {st.packedBytes} bytes)"
+  IO.println s!"Store packs:     {st.packCount} .ixs/.ixsp packs ({st.packedObjects} objects, {st.packedBytes} bytes)"
   IO.println s!"Loose objects:   {st.looseObjects} objects ({st.looseBytes} bytes)"
   return 0
 
-def runStoreCompact (_p : Cli.Parsed) : IO UInt32 := do
-  let (packed, packedBytes) ← StoreIO.toIO Store.compact
-  IO.println s!"Compacted {packed} loose object(s) ({packedBytes} bytes) into .ixpack"
+def runStoreCompact (p : Cli.Parsed) : IO UInt32 := do
+  let cold := p.hasFlag "cold"
+  let tierName := if cold then "cold (zstd)" else "warm (mmap)"
+  let (packed, unlinked) ← StoreIO.toIO (Store.compact cold)
+  IO.println s!"Compacted {packed} loose object(s) (unlinked {unlinked}) into {tierName} .ixs + .ixsp"
   return 0
 
 def runStorePut (p : Cli.Parsed) : IO UInt32 := do
@@ -66,18 +68,23 @@ def runStoreGet (p : Cli.Parsed) : IO UInt32 := do
 
 def runStoreIngest (p : Cli.Parsed) : IO UInt32 := do
   let ixePath := p.positionalArg! "ixe" |>.as! String
-  let (envRoot, count) ← StoreIO.toIO (Store.ingestIxe ⟨ixePath⟩)
-  IO.println s!"Ingested '{ixePath}' into store (env-{envRoot}.ixe + .ixidx, {count} indexed object(s), zero payload duplication)"
+  let cold := p.hasFlag "cold"
+  let tierName := if cold then "cold (zstd)" else "warm (mmap)"
+  let (envRoot, count) ← StoreIO.toIO (Store.ingestIxe ⟨ixePath⟩ cold)
+  IO.println s!"Ingested '{ixePath}' into {tierName} .ixs + .ixsp (env-{envRoot}.ixe, {count} newly packed object(s))"
   return 0
 
 def storeStatsCmd : Cli.Cmd := `[Cli|
   stats VIA runStoreStats;
-  "Show store statistics (hot cache, .ixpack files, and loose objects)"
+  "Show store statistics (hot cache, .ixs/.ixsp files, and loose objects)"
 ]
 
 def storeCompactCmd : Cli.Cmd := `[Cli|
   compact VIA runStoreCompact;
-  "Compact all loose objects into a memory-mapped .ixpack + .ixidx packfile"
+  "Compact all loose objects into a memory-mapped .ixs + .ixsp store pack"
+
+  FLAGS:
+    "cold"; "Compress entries with zstd (Cold tier) instead of uncompressed 8B-aligned Warm mmap"
 ]
 
 def storePutCmd : Cli.Cmd := `[Cli|
@@ -102,10 +109,13 @@ def storeGetCmd : Cli.Cmd := `[Cli|
 
 def storeIngestCmd : Cli.Cmd := `[Cli|
   ingest VIA runStoreIngest;
-  "Batch-pack all constants and blobs from an .ixe environment into an .ixpack"
+  "Ingest an .ixe environment or .ixc catalog into a deduplicated .ixs + .ixsp store pack"
+
+  FLAGS:
+    "cold"; "Compress entries with zstd (Cold tier) instead of uncompressed 8B-aligned Warm mmap"
 
   ARGS:
-    ixe : String; "Path to .ixe environment file"
+    ixe : String; "Path to .ixe environment file or .ixc catalog directory"
 ]
 
 def runStore (p : Cli.Parsed) : IO UInt32 := do
@@ -117,7 +127,7 @@ end Ix.Cli.StoreCmd
 open Ix.Cli.StoreCmd in
 def storeCmd : Cli.Cmd := `[Cli|
   store VIA runStore;
-  "Inspect, compact, and manage the content-addressed IxStore (.ixpack + loose shards)"
+  "Inspect, compact, and manage the content-addressed IxStore (.ixs/.ixsp + loose shards)"
 
   SUBCOMMANDS:
     storeStatsCmd;

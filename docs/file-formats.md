@@ -19,13 +19,14 @@ This document is the canonical inventory of every on-disk file format, content-a
 | 9 | **`Ix.Claim` / `ElabClaim`** | `0xE3..0xE7`, `E8 00..02`, `E8 04` | `TagN` statement | `crates/ixon/src/proof.rs`, `Ix/Claim.lean`, `ix claim` | Public statement to be proven (`Eval`, `Check`, `CheckEnv`, `Reveal`, `Contains`, `Catalog`, `Resource`, `Binding`, `ElabClaim`). |
 | 10 | **`Ix.RoleTable`** | `E8 03` (`TagN(4, 0xE, 11)`) | `TagN` + fixed 33B rows | `crates/ixon/src/role_table.rs`, `IxC/Kernel/Ixon/RoleTable.lean` | Canonical 103-entry primitive role-binding table + sorted evidence addresses (embedded in v5 `.ixe` header). |
 | 11 | **`Ixon.Proof`** | `0xF0..0xF7` (`TagN(4, 0xF, 0..7)`) | `TagN` wrapper | `crates/ixon/src/proof.rs`, `Ix/Ixon.lean`, `ix prove`, `ix verify` | Bundles a `Claim` with its opaque `AiurProof` (`BatchProof<GoldilocksBlake3Config>`) bytes; stored in `IxStore`. |
-| 12 | **`.ixpack` + `.ixidx`** | `IXPACK01` / `IXIDX001` | 8B-aligned mmap + 256-fanout index | `crates/common/src/store.rs`, `Ix/Store.lean`, `ix store` | Immutable, memory-mapped packfile pair in `~/.ix/store/packs/` with $O(\log(N/256))$ zero-syscall lookup. |
-| 13 | **`.ixc/` (`manifest`)** | `IXC\0\0\0\0\0` (8B) | Fixed LE (`u32`/`u64`) | `crates/ixon/src/catalog.rs`, `Ix/Catalog.lean`, `ix catalog` | Self-contained catalog directory (`<name>.ixc/manifest` + `<label>.ixe` pieces) committing to `members_root` and `content_root`. |
-| 14 | **`.ixes`** | `IXES\0\0\0\0` (8B) | Fixed LE (`u32`/`u64`/`u128`) | `crates/kernel/src/shard.rs`, `Ix/Cli/ShardCmd.lean`, `ix shard` | Kernel shard partition manifest (per-shard `blocks`, `foreign_blocks`, `assumption_root`, bisection tree, peak RSS). |
-| 15 | **`.ixprof`** | `IXPROF\0\0` (8B) | Fixed LE (`u32`/`u64`) + CSR | `crates/kernel/src/profile.rs`, `Ix/Cli/ProfileCmd.lean`, `ix profile` | Per-block kernel execution counters (80B/block) + CSR consumer→producer $\delta$-unfolding hypergraph. |
-| 16 | **`IXHC`** | `IXHC` (4B) | Fixed LE + option tags | `Ix/HostAdmission/Codec.lean`, `crates/ixon/src/host_admission.rs`, `ix check-lean`, `ix verify-host` | Host-checked target-artifact admission statement (`logical` or `tiered (logicalRoot, tierRoot)`). |
-| 17 | **Aiur VK v5 & `BatchProof`** | 14B header (`7 × u16 LE`) | Dense `u16 LE` / `bincode` | `crates/aiur/src/vk_codec.rs`, `MultiStark/SystemDeserialize.lean` | In-circuit-parseable Multi-STARK verifier key (`vk_codec` v5) and Goldilocks/BLAKE3 FRI `BatchProof`. |
-| 18 | **Cache Hints (`~/.ix/cache/`)** | 65B ASCII `<64-hex>\n` | Plaintext hex pointer | `Ix/Cli/ShardProofIndex.lean`, `crates/ffi/src/aiur/aggregate/store.rs` | Wipeable, untrusted lookup hints (`shard-proofs/<claim-digest>` and `aggregate/<slot-key>`) pointing to `Ixon.Proof` wrappers in `IxStore`. |
+| 12 | **`.ixs` (`Ix Store`)** | `E8 05 01 <tier> 00 00 00 00` (`TagN(4, 0xE, 13)`) | 8B-aligned Warm `mmap` or Cold `zstd` slab | `crates/common/src/store.rs`, `Ix/Store.lean`, `ix store` | Temperature-tiered content-addressed data slab in `~/.ix/store/packs/` (`tier=0x00` Warm uncompressed `mmap`; `tier=0x01` Cold `zstd`-compressed per-entry). |
+| 13 | **`.ixsp` (`Ix Store Pointer`)** | `E8 06 01 00 00 00 00 00` (`TagN(4, 0xE, 14)`) | 256-fanout + sorted keys + `(offset, len, flags)` | `crates/common/src/store.rs`, `Ix/Store.lean`, `ix store` | Memory-mapped pointer index in `~/.ix/store/packs/` giving $O(\log(N/256))$ zero-syscall random access into `.ixs` (Warm or Cold `zstd`) or `.ixe`. |
+| 14 | **`.ixc/` (`manifest`)** | `IXC\0\0\0\0\0` (8B) / reserved `E8 07` | Fixed LE (`u32`/`u64`) | `crates/ixon/src/catalog.rs`, `Ix/Catalog.lean`, `ix catalog` | Self-contained catalog directory (`<name>.ixc/manifest` + `<label>.ixe` pieces) preserving topological composition-order `members_root` and `content_root`. |
+| 15 | **`.ixes`** | `IXES\0\0\0\0` (8B) / reserved `E8 08` | Fixed LE (`u32`/`u64`/`u128`) | `crates/kernel/src/shard.rs`, `Ix/Cli/ShardCmd.lean`, `ix shard` | Kernel shard partition manifest (per-shard `blocks`, `foreign_blocks`, `assumption_root`, bisection tree, peak RSS). |
+| 16 | **`.ixprof`** | `IXPROF\0\0` (8B) / reserved `E8 09` | Fixed LE (`u32`/`u64`) + CSR | `crates/kernel/src/profile.rs`, `Ix/Cli/ProfileCmd.lean`, `ix profile` | Per-block kernel execution counters (80B/block) + CSR consumer→producer $\delta$-unfolding hypergraph. |
+| 17 | **`IXHC`** | `IXHC` (4B) / reserved `E8 0A` | Fixed LE + option tags | `Ix/HostAdmission/Codec.lean`, `crates/ixon/src/host_admission.rs`, `ix check-lean`, `ix verify-host` | Host-checked target-artifact admission statement (`logical` or `tiered (logicalRoot, tierRoot)`). |
+| 18 | **Aiur VK v5 & `BatchProof`** | 14B header (`7 × u16 LE`) | Dense `u16 LE` / `bincode` | `crates/aiur/src/vk_codec.rs`, `MultiStark/SystemDeserialize.lean` | In-circuit-parseable Multi-STARK verifier key (`vk_codec` v5) and Goldilocks/BLAKE3 FRI `BatchProof`. |
+| 19 | **Cache Hints (`~/.ix/cache/`)** | 65B ASCII `<64-hex>\n` | Plaintext hex pointer | `Ix/Cli/ShardProofIndex.lean`, `crates/ffi/src/aiur/aggregate/store.rs` | Wipeable, untrusted lookup hints (`shard-proofs/<claim-digest>` and `aggregate/<slot-key>`) pointing to `Ixon.Proof` wrappers in `IxStore`. |
 
 ---
 
@@ -61,7 +62,7 @@ All core Ixon semantic objects use the **`TagN` varint code** ([`crates/ixon/src
 | `0xB` | `Expr::Share` | `value` = canonical sharing-table index |
 | `0xC` | `Constant::Muts` | `value` = number of mutual constants in the SCC block |
 | `0xD` | `Constant` (singleton) | `0`: `Defn`, `1`: `Recr`, `2`: `Axio`, `3`: `Quot`, `4`: `IPrj`, `5`: `CPrj`, `6`: `RPrj`, `7`: `DPrj` |
-| `0xE` | **Envelopes, Data & Claims** | `1` (`0xE1`): `Comm` (commitment)<br>`2` (`0xE2`): `AssumptionTree`<br>`3` (`0xE3`): `Claim::Eval`<br>`4` (`0xE4`): `Claim::Check` *(also `.ixe` v4 header — see §5.1)*<br>`5` (`0xE5`): `Claim::CheckEnv` *(also `.ixe` v5 header — see §5.1)*<br>`6` (`0xE6`): `Claim::Reveal`<br>`7` (`0xE7`): `Claim::Contains`<br>`8` (`E8 00`): `Claim::Catalog`<br>`9` (`E8 01`): `Claim::Resource`<br>`10` (`E8 02`): `Claim::Binding`<br>`11` (`E8 03`): `RoleTable` section<br>`12` (`E8 04`): `ElabClaim` (`Text -> Syntax -> Environment`) |
+| `0xE` | **Envelopes, Data, Store & Claims** | `1` (`0xE1`): `Comm` (commitment)<br>`2` (`0xE2`): `AssumptionTree`<br>`3` (`0xE3`): `Claim::Eval`<br>`4` (`0xE4`): `Claim::Check` *(also `.ixe` v4 header — see §4.4)*<br>`5` (`0xE5`): `Claim::CheckEnv` *(also `.ixe` v5 header — see §4.4)*<br>`6` (`0xE6`): `Claim::Reveal`<br>`7` (`0xE7`): `Claim::Contains`<br>`8` (`E8 00`): `Claim::Catalog`<br>`9` (`E8 01`): `Claim::Resource`<br>`10` (`E8 02`): `Claim::Binding`<br>`11` (`E8 03`): `RoleTable` section<br>`12` (`E8 04`): `ElabClaim` (`Text -> Syntax -> Environment`)<br>`13` (`E8 05`): **`.ixs` (`Ix Store`)** header (`VARIANT_IXS_STORE`)<br>`14` (`E8 06`): **`.ixsp` (`Ix Store Pointer`)** header (`VARIANT_IXSP_POINTER`)<br>`15` (`E8 07`): **`.ixc` (`Ix Catalog`)** manifest (`VARIANT_IXC_CATALOG`)<br>`16` (`E8 08`): **`.ixes` (`Ix Env Shard`)** manifest (`VARIANT_IXES_SHARD`)<br>`17` (`E8 09`): **`.ixprof` (`Ix Profile`)** header (`VARIANT_IXPROF_PROFILE`)<br>`18` (`E8 0A`): **`IXHC` (`HostAdmission`)** statement (`VARIANT_HOST_ADMISSION`) |
 | `0xF` | **`Ixon.Proof` Wrappers** | `0` (`0xF0`): `Eval` proof<br>`1` (`0xF1`): `Check` proof<br>`2` (`0xF2`): `CheckEnv` proof<br>`3` (`0xF3`): `Reveal` proof<br>`4` (`0xF4`): `Contains` proof<br>`5` (`0xF5`): `Catalog` proof<br>`6` (`0xF6`): `Resource` proof<br>`7` (`0xF7`): `Binding` proof |
 
 ---
@@ -84,27 +85,55 @@ An `.ixe` file is a 5-section sequential container:
 5. **§4 Names**: `TagN(0)` count + `(Address: [u8; 32], NameComponents)`. Verified on load (`Name::hash == Address`).
 6. **§5 Named Metadata**: `TagN(0)` count + delta-coded `(const_idx_delta: TagN(0), ConstantMeta)` carrying human display names, post-order `ExprMetaArena` diffs, `original` flags, and `KVMap` attributes.
 
-### 3.2 `IxStore`: Native `.ixe` + `.ixidx` Indexing, `.ixpack` Loose Compaction, & 1-Level Shards ([`crates/common/src/store.rs`](file:///home/jcb/projects/ix-frontend/crates/common/src/store.rs))
-Because `.ixe` is the circuit's claim source of truth and portable environment bundle (and `.ixc` preserves the composition-order Merkle-inclusion structure across environments), **`IxStore` adapts `.ixidx` directly to `.ixe` files**:
+### 3.2 `IxStore`: `.ixs` ("Ix Store") + `.ixsp` ("Ix Store Pointer") with Warm (`mmap`) & Cold (`zstd`) Tiers ([`crates/common/src/store.rs`](file:///home/jcb/projects/ix-frontend/crates/common/src/store.rs))
+
+While `.ixe` is the circuit's claim source of truth and portable single-environment bundle, serving random-access store queries directly from raw `.ixe` files incurs three costs at scale:
+1. **Inline key & length overhead**: Every §2 entry in `.ixe` repeats its 32-byte `Address` and variable-width `TagN` length inline, breaking 8-byte alignment and adding ~25–35% overhead to hot pages.
+2. **Cross-environment duplication**: Multiple `.ixe` bundles sharing upstream prelude/library constants duplicate their payloads unless unpacked into a globally deduplicated store slab.
+3. **Whole-file vs. random-access compression**: Compressing an entire `.ixe` with `zstd` makes it great for cold archival or wire transfer, but destroys $O(1)$ random-access `mmap` reads of individual constants unless payloads are compressed per-entry and indexed by a pointer table.
+
+To get the best of both worlds, `IxStore` uses a temperature-tiered architecture with two dedicated formats carrying canonical `TagN(4, 0xE, ...)` headers padded to 8-byte alignment:
+
 ```text
 ~/.ix/store/
   packs/
-    env-<env_root>.ixe      # Hardlinked portable .ixe bundle (circuit source of truth, zero byte copy!)
-    env-<env_root>.ixidx    # 256-fanout index pointing directly to §1 (Blobs) and §2 (Constants) windows inside .ixe
-    pack-<64-hex>.ixpack    # 8-byte header ("IXPACK01") + 8-byte-aligned compacted loose objects (Claims, Proofs, AssumptionTrees)
-    pack-<64-hex>.ixidx     # Companion 256-fanout index for compacted loose objects
+    env-<env_root>.ixe      # Hardlinked portable .ixe bundle (circuit claim source of truth)
+    pack-<id>.ixs           # "Ix Store" data slab (E8 05): Warm (8B-aligned mmap) or Cold (per-entry zstd)
+    pack-<id>.ixsp          # "Ix Store Pointer" index (E8 06): 256-fanout + sorted keys + (offset, len, flags)
   objects/
-    00/..ff/                # 256 1-level loose object shards (<62-hex> filenames)
+    00/..ff/                # 256 1-level loose object shards (<62-hex> filenames) for fast incremental writes
 ```
-- **Zero-Copy `.ixe` & `.ixc` Ingest (`IxStore::ingest_ixe` / `ix store ingest`)**:
-  - Given an `.ixe` file (or a `.ixc/` catalog directory of `<label>.ixe` / `<label>.chunk<i>.ixe` files), `IxStore` hardlinks each `.ixe` into `packs/env-<stored_root>.ixe` and scans its §1 (`Blobs`) and §2 (`Constants`) windows in a single pass to emit `packs/env-<stored_root>.ixidx`.
-  - Every constant and blob inside the `.ixe` is then served via zero-syscall $O(\log(N/256))$ mmap slices directly out of `env-<stored_root>.ixe`, while `IxStore::env_path(&env_root)` locates the full portable `.ixe` bundle by its Merkle `env_root` in $O(1)$.
-- **`.ixidx` Binary Layout**:
-  - `0..8`: `b"IXIDX001"`
-  - `8..16`: `object_count : u64 LE` ($N$)
-  - `16..2064`: `fanout : [u64 LE; 256]` — `fanout[b]` is the cumulative number of objects in the pack whose `Address` has first byte $\le b$.
-  - `2064 .. 2064 + 32*N`: `keys : [[u8; 32]; N]` sorted lexicographically.
-  - `2064 + 32*N .. 2064 + 48*N`: `entries : [(offset: u64 LE, len: u32 LE, flags: u32 LE); N]` pointing into the companion `.ixe` or `.ixpack` file.
+
+#### `.ixs` ("Ix Store", `TagN(4, 0xE, 13)` = `E8 05`) Binary Layout
+- `0..8`: 8-byte aligned header `[0xE8, 0x05, 0x01, tier, 0x00, 0x00, 0x00, 0x00]`:
+  - `0..2`: `0xE8 0x05` (`TagN(4, 0xE, 13)`)
+  - `2`: Format version (`0x01`)
+  - `3`: Storage tier (`0x00` = `StoreTier::Warm` uncompressed 8-byte-aligned `mmap`; `0x01` = `StoreTier::Cold` `zstd`-compressed payloads)
+  - `4..8`: Reserved zero padding (ensures first payload starts at byte 8).
+- `8..EOF`: Concatenated object payloads, each padded to an 8-byte (`u64`) boundary.
+  - In **Warm** `.ixs` files (`tier = 0x00`), readers (`get_slice`) return a zero-copy `&[u8]` slice directly from the `mmap` without allocation or syscalls.
+  - In **Cold** `.ixs` files (`tier = 0x01`), each entry is compressed independently with `zstd` (level 3) if compression shrinks the payload; `IxStore::read` binary-searches the `.ixsp` pointer index in $O(\log(N/256))$ and transparently decompresses just the requested entry.
+
+#### `.ixsp` ("Ix Store Pointer", `TagN(4, 0xE, 14)` = `E8 06`) Binary Layout
+- `0..8`: 8-byte aligned header `[0xE8, 0x06, 0x01, target, 0x00, 0x00, 0x00, 0x00]`:
+  - `0..2`: `0xE8 0x06` (`TagN(4, 0xE, 14)`)
+  - `2`: Format version (`0x01`)
+  - `3`: Target container (`0x00` = companion `.ixs` slab; `0x01` = direct `.ixe` window index)
+  - `4..8`: Reserved zero padding.
+- `8..16`: `object_count : u64 LE` ($N$)
+- `16..2064`: `fanout : [u64 LE; 256]` — `fanout[b]` is the cumulative number of objects whose `Address` has first byte $\le b$, narrowing binary search to $N/256$ keys.
+- `2064 .. 2064 + 32*N`: `keys : [[u8; 32]; N]` sorted lexicographically.
+- `2064 + 32*N .. 2064 + 48*N`: `entries : [(offset: u64 LE, stored_len: u32 LE, flags: u32 LE); N]` where:
+  - `flags & 0xFF`: compression codec (`0 = None` for Warm `mmap` slices, `1 = Zstd` for Cold compressed entries)
+  - `(flags >> 8) & 0xFF`: `ObjectKind` (`0 = Raw`, `1 = Constant`, `2 = Blob`, `3 = Proof`, `4 = AssumptionTree`).
+
+#### Temperature Tiers Summary
+| Tier | Format | Compression | Lookup Latency | Best For |
+|---|---|---|---|---|
+| **Hot** | `DashMap<Address, Bytes>` | Uncompressed in RAM | ~50 ns | Active elaboration & kernel checking working set |
+| **Warm** | `.ixs` (`tier=0`) + `.ixsp` | Uncompressed, 8B-aligned `mmap` | ~200 ns (zero-copy slice) | Local active store (`ix store compact`, `ix store ingest`) |
+| **Cold** | `.ixs` (`tier=1`) + `.ixsp` | Per-entry `zstd` (random-access) | ~2–5 µs (single-entry `zstd` decode) | Large historical libraries (`ix store compact --cold`, `ix store ingest --cold`) |
+| **Portable / Circuit** | `.ixe` (+ `.ixc`) | Optional whole-file `zstd` on wire | Streamed / ingested into `.ixs` | Circuit `CheckEnv` claim source of truth & P2P exchange |
 
 ### 3.3 `.ixc/` Catalog Directory ([`crates/ixon/src/catalog.rs`](file:///home/jcb/projects/ix-frontend/crates/ixon/src/catalog.rs))
 A `.ixc` is a directory containing `manifest` (`b"IXC\0\0\0\0\0"`) plus member `.ixe` files (`<label>.ixe` in `Fat` profile or `<label>.chunk<i>.ixe` in `Chunked` profile). It preserves the **Merkle-inclusion structure** of environment composition (since composition order determines how Merkle openings are constructed):
@@ -121,11 +150,11 @@ A `.ixc` is a directory containing `manifest` (`b"IXC\0\0\0\0\0"`) plus member `
 
 As the codebase evolved through multiple milestones (v3 → v4 `TagN`, standalone `.ixe` files → `.ixc` catalogs → `IxStore`, `liblean` ingress → pure `Ix.Frontend`), **four concrete redundancies / overlaps** stand out:
 
-### 4.1 Resolved: `.ixidx` Now Indexes `.ixe` Directly (Instead of Duplicating `.ixe` into `.ixpack`)
+### 4.1 Resolved: `.ixe` (Portable Circuit Bundle) vs. `.ixs` + `.ixsp` (Warm/Cold Store Engine)
 - **Design**:
-  - `.ixe` is the circuit's claim source of truth and portable bundle, and `.ixc` preserves the Merkle-inclusion structure of composed environments.
-  - Rather than re-serializing `.ixe` constants and blobs into a separate `.ixpack` container, `IxStore::ingest_ixe` hardlinks `<stem>.ixe` into `packs/env-<stored_root>.ixe` and writes a companion `env-<stored_root>.ixidx` index directly over the `.ixe`'s §1 (`Blobs`) and §2 (`Constants`) byte windows.
-  - `.ixpack` (`IXPACK01`) is reserved solely for compacting standalone loose store objects (`Claim`, `Ixon.Proof`, `AssumptionTree`) via `ix store compact`.
+  - `.ixe` is the circuit's claim source of truth (`stored_root` Merkle commitment) and portable single-environment bundle, and `.ixc` preserves the composition-order Merkle-inclusion structure across environments (`members_root` + `content_root`).
+  - `.ixs` ("Ix Store", `E8 05`) and `.ixsp` ("Ix Store Pointer", `E8 06`) are the dedicated local storage formats in `~/.ix/store/packs/`, stripping out redundant inline 32-byte keys, variable-width `TagN` lengths, and `§4/§5` metadata from `.ixe` into a globally deduplicated, 8-byte-aligned slab that supports both **Warm** (uncompressed `mmap`) and **Cold** (`zstd` per-entry random-access) tiers.
+  - `IxStore::ingest_ixe_tiered` hardlinks `<stem>.ixe` into `packs/env-<stored_root>.ixe` (preserving the portable bundle for circuit proving and P2P transfer) while packing any new §1 (`Blobs`) and §2 (`Constants`) entries into a Warm or Cold `.ixs` + `.ixsp` pair.
 
 ### 4.2 Overlap 2: `IXHC` (`Ix.HostAdmission.Statement`) vs. `Ix.Claim` (`0xE5 CheckEnv` + `E8 02 Binding`)
 - **Current state**:
