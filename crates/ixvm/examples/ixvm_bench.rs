@@ -37,7 +37,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let args = fixture.address_words();
   assert_eq!(args, package.args);
   let (program, trace) = package.package.traced()?;
-  let program = program.check_field::<multi_stark::types::Val>()?;
+  let mut program = program.check_field::<multi_stark::types::Val>()?;
+  program.track_depth(&trace)?;
   let args = program.field().decode(&args)?;
   let hints = ixvm_hints::prepare(&program, &package.hints)?;
   let function_chips: Vec<_> =

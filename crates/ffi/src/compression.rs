@@ -20,7 +20,9 @@ fn aggregate(
 ) -> Result<(CheckedProgram<NativeField<Val>>, TraceArtifact), String> {
   let (package, _) = Package::load(path.to_string().as_ref())?;
   let (program, trace) = package.traced()?;
-  Ok((program.check_field::<Val>()?, trace))
+  let mut program = program.check_field::<Val>()?;
+  program.track_depth(&trace)?;
+  Ok((program, trace))
 }
 
 /// An optional `.ixl` layout: empty means none.

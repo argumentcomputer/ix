@@ -33,6 +33,7 @@ fn cached_helpers_preserve_cross_record_cycle_edges() {
         owned: vec![vec![0], vec![1]],
         memory_start: 0,
         memory_end: 100,
+        heights: None,
       },
       None,
     )
@@ -123,6 +124,7 @@ fn unit_call_partitions_balance_one_claim_with_disjoint_roms() {
         owned: vec![],
         memory_start: 0,
         memory_end: 100,
+        heights: None,
       },
       None,
     )
@@ -137,6 +139,7 @@ fn unit_call_partitions_balance_one_claim_with_disjoint_roms() {
         owned: vec![vec![3]],
         memory_start: 100,
         memory_end: 200,
+        heights: None,
       },
       None,
     )
@@ -235,7 +238,8 @@ fn unit_call_partitions_balance_one_claim_with_disjoint_roms() {
           function: 0,
           owned: vec![],
           memory_start: 0,
-          memory_end: 100
+          memory_end: 100,
+          heights: None
         },
         None
       )

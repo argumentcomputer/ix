@@ -184,6 +184,7 @@ fn validate_preamble<C: AsRef<[Val]>>(
     return Err("batch public claims mismatch".into());
   }
   let mut budget = claims.len() as u128;
+  let mut rows = 0u128;
   for header in headers {
     if header.active.len() != system.circuits.len()
       || !header.active.contains(&true)
@@ -207,6 +208,11 @@ fn validate_preamble<C: AsRef<[Val]>>(
         && circuit.preprocessed_height as u128 != height
       {
         return Err("fixed table height mismatch".into());
+      }
+      // The depth pass's row bound, over every shard ([`MAX_BATCH_ROWS`]).
+      rows += height;
+      if rows > u128::from(MAX_BATCH_ROWS) {
+        return Err("batch rows exceed the row bound (2^39)".into());
       }
       budget = budget
         .checked_add(height * circuit.num_lookups.max(1) as u128)
@@ -510,7 +516,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let heights: Vec<_> =
         (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();
       let traces = self
-        .generate_with::<false>(record, Some((entry, args)), &heights)?
+        .generate_with::<false>(
+          record,
+          Some((entry, args)),
+          &heights,
+          device.ranges(),
+        )?
         .traces;
       return Ok(StageOne { traces, device: Some(Arc::new(device)) });
     }

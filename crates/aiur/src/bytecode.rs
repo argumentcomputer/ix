@@ -416,6 +416,9 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
   pub(crate) returns: Vec<Vec<Option<ReturnPlan>>>,
   pub(crate) execution_functions: Vec<Function<B::Element>>,
   pub(crate) initial_registers: Vec<Vec<(usize, B::Element)>>,
+  /// Each function's SCC among the depth circuits of a trace plan, when
+  /// execution records honest heights ([`CheckedProgram::track_depth`]).
+  pub(crate) depth: Option<std::sync::Arc<[u32]>>,
 }
 
 // Only globally immutable registers may be aliased. Inputs count as writes;
@@ -617,6 +620,25 @@ impl<B: FieldBackend> CheckedProgram<B> {
   pub fn program(&self) -> &Program {
     &self.program
   }
+  /// Record honest call heights for `trace`'s depth circuits (Track A, H1).
+  /// Each query of a recursive function then records the longest call
+  /// path below it within its SCC, the depth word its circuit row
+  /// provides. A [`crate::trace::TracePlan`] with recursive circuits
+  /// requires a program prepared this way for the same trace.
+  pub fn track_depth(
+    &mut self,
+    trace: &crate::trace::TraceArtifact,
+  ) -> Result<(), String> {
+    let sccs = crate::trace::depth::function_sccs(trace)?;
+    if sccs.len() != self.program.functions.len() {
+      return Err("trace function count mismatch".into());
+    }
+    self.depth = sccs
+      .iter()
+      .any(|&s| s != crate::trace::depth::NO_SCC)
+      .then(|| sccs.into());
+    Ok(())
+  }
   pub fn field(&self) -> B {
     self.field
   }
@@ -632,6 +654,9 @@ impl<B: FieldBackend> CheckedProgram<B> {
   /// of its flattened parameters.
   pub fn input_width(&self, id: usize) -> Option<usize> {
     self.inputs.get(id).map(Layout::width)
+  }
+  pub fn callable_id(&self, name: &str) -> Option<usize> {
+    (0..self.inputs.len()).find(|&id| self.callable_name(id) == Some(name))
   }
   pub fn callable_name(&self, id: usize) -> Option<&str> {
     if let Some(f) = self.program.functions.get(id) {
@@ -860,6 +885,7 @@ impl Program {
       returns,
       execution_functions,
       initial_registers,
+      depth: None,
     })
   }
 }

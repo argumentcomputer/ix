@@ -1087,6 +1087,7 @@ module Aggregation {
       let (headers, messages) = aggr_load_preamble(1, d);
       let k = Lists::length(headers);
       assert_eq!(StarkVerifier::assert_shard_count_ok(k), 1);
+      assert_eq!(StarkVerifier::assert_batch_bounds(sys, headers), 1);
       assert_eq!(UInt64::to_field(lo), 0,
         "aggr range: root range does not start at shard 0");
       assert_eq!(UInt64::to_field(hi), k,
