@@ -104,6 +104,44 @@ theorem checkMemo_rejects (rom : WireROM Rat) (root : Message Rat) (channel : ro
   exact loop_underivable rom _ (Depth.checkMemo_sound certified le_rfl
     (fun n positive _ => Nat.cast_ne_zero.mpr positive.ne') checked (loop_named root channel))
 
+/-! ### The deployed shape: activated plan rows -/
+
+/-- `loop` as the prover commits to it today: one ungrouped, activated chip. -/
+def plainPlan : Grouping.Plan loopSystem (fun _ => .ok 0) :=
+  ⟨loopSystem.chips, [], fun chip member => by
+      simp only [loopSystem, List.mem_singleton] at member
+      subst member
+      rfl,
+    by simp, fun chip member => Or.inl member⟩
+
+/-- The plan checker models the deployed circuit: it accepts the forged
+activated row (`x`, the self-call result, selector `1`) provided twice. -/
+example : plainPlan.checkMemo ⟨[]⟩ (loopClaim 0 42) [⟨⟨"loop", [0, 42, 1]⟩, 2⟩] = .ok () := by
+  decide +kernel
+
+/-- The same plan over the depth pass. -/
+def depthPlan : Grouping.Plan (Depth.system depthConfig loopSystem) (fun _ => .ok 0) :=
+  ⟨(Depth.system depthConfig loopSystem).chips, [], fun chip member => by
+      simp only [Depth.system, loopSystem, List.map_cons, List.map_nil, List.mem_singleton] at member
+      subst member
+      rfl,
+    by simp, fun chip member => Or.inl member⟩
+
+theorem depthActivated : depthPlan.WellFormedActivation := by decide +kernel
+
+/-- Under the depth pass the grouped, activated memo checker rejects every trace
+for `loop`, whatever depth word the root claims. -/
+theorem plan_checkMemo_rejects (rom : WireROM Rat) (root : Message Rat)
+    (channel : root.channel = "loop") (rows : List (WeightedRow Rat)) :
+    depthPlan.checkMemo rom root rows ≠ .ok () := by
+  intro checked
+  exact loop_underivable rom _ (Depth.plan_checkMemo_sound certified depthPlan depthActivated le_rfl
+    (fun n positive _ => Nat.cast_ne_zero.mpr positive.ne') checked (loop_named root channel))
+
+/-- info: 'AiurDepthTests.plan_checkMemo_rejects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms plan_checkMemo_rejects
+
 /-- info: 'AiurDepthTests.checkMemo_rejects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms checkMemo_rejects
