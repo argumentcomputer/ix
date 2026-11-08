@@ -16,32 +16,40 @@ the modules (decision D5: `propext`, `Classical.choice`, `Quot.sound`). A
 change to any of them fails the build, so the statement cannot drift
 silently. The module is outside any namespace, so every name prints in full.
 
-Two guards keep the statement about the deployed object:
+Three guards keep the statement about the deployed object:
 
-* it names `IxVM.program` and the entry `IxVM::verify_claim` (the `run_meta`
-  check, beside the frozen text);
-* it is not vacuous for want of a preparation, and its escape names a real
-  function: preparing `IxVM.program` for `verify_claim` succeeds, selects the
-  entry, the entry's world prepares a call on a digest argument, and the
-  prepared program has the function `Blake3::hash` the escape observes, whose
-  one parameter is a pointer to the byte-stream enum `Hashed` reads
-  (`#guard`, evaluated when this module builds; an evaluation, not a
+* it names the checked source `IxVM.Checked.source` and the entry
+  `IxVM::verify_claim`, and it does not name the module program
+  `IxVM.program` or its preparation (the `run_meta` check, beside the frozen
+  text): the object is the pinned literal;
+* the checked source is the deployed preparation's: that is the native test
+  suite `ixvm-checked-source` (`IxVM.CheckedCheck`), which prepares
+  `IxVM.program` for `verify_claim` and compares the result with
+  `IxVM.Checked.source`, and `lake exe ixvm/ixvm-checked --check`, which
+  compares the files with their rendering. These are checks, not proofs;
+* it is not vacuous, and its escape names a real function: in the checked
+  source, `verify_claim` is an entry, its world prepares a call on a digest
+  argument, and the program has the function `Blake3::hash` the escape
+  observes, whose one parameter is a pointer to the byte-stream enum `Hashed`
+  reads (`#guard`, evaluated when this module builds; an evaluation, not a
   proof). -/
 
 example : IxVM.Refinement.verifyClaim = "IxVM::verify_claim" := rfl
 example : IxVM.Refinement.blake3Hash = "Blake3::hash" := rfl
 example : IxVM.Refinement.byteStreamEnum = "${\"name\":\"Lists::Node\",\"types\":[\"field\"]}" := rfl
+example : IxVM.Checked.entry = IxVM.Refinement.verifyClaim := rfl
 
 open Lean in
 run_meta do
   let names : List (Name × List Name) := [
-    (``IxVM.Refinement.SourceSound, [``IxVM.program, ``IxVM.Refinement.verifyClaim,
-      ``Aiur.Modules.prepare, ``Aiur.Modules.Prepared.ObsFn, ``IxVM.Refinement.digestValue]),
-    (``IxVM.Refinement.CircuitSound, [``IxVM.program, ``IxVM.Refinement.verifyClaim,
-      ``Aiur.Modules.prepare, ``IxVM.Refinement.AcyclicDerivation, ``IxVM.Refinement.digestValue,
-      ``IxVM.Refinement.CallsInROM]),
-    (``IxVM.Refinement.CircuitSoundUntied, [``IxVM.program, ``IxVM.Refinement.verifyClaim,
-      ``Aiur.Modules.prepare, ``IxVM.Refinement.AcyclicDerivation, ``IxVM.Refinement.digestValue]),
+    (``IxVM.Refinement.SourceSound, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+      ``Aiur.Generic.SourceSemantics.ObsFn, ``IxVM.Refinement.digestValue]),
+    (``IxVM.Refinement.CircuitSound, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+      ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
+      ``IxVM.Refinement.digestValue, ``IxVM.Refinement.CallsInROM]),
+    (``IxVM.Refinement.CircuitSoundUntied, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+      ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
+      ``IxVM.Refinement.digestValue]),
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
       ``Ix.Claim.de, ``Ix.Claim.HoldsIn, ``IxVM.Refinement.View.HashedCollision]),
     (``IxVM.Refinement.Hashed, [``IxVM.Refinement.blake3Hash, ``IxVM.Refinement.byteStreamEnum]),
@@ -51,17 +59,19 @@ run_meta do
     let used := info.value!.getUsedConstants
     for n in needed do
       unless used.contains n do throwError "{statement} no longer names {n}"
+  for statement in [``IxVM.Refinement.SourceSound, ``IxVM.Refinement.CircuitSound,
+      ``IxVM.Refinement.CircuitSoundUntied] do
+    let some info := (← getEnv).find? statement | throwError "{statement} is missing"
+    let used := info.value!.getUsedConstants
+    for n in [``IxVM.program, ``Aiur.Modules.prepare] do
+      if used.contains n then throwError "{statement} names {n}: state it over the checked source"
 
-#guard match Aiur.Modules.prepare IxVM.program [IxVM.Refinement.verifyClaim] with
-  | .ok prepared => match prepared.find? IxVM.Refinement.verifyClaim with
-    | some entry =>
-      (prepared.environment.source.world.prepare entry.resolved.name
-          [IxVM.Refinement.digestValue 0]).toBool &&
-        (match prepared.environment.source.program.sourceFunction? IxVM.Refinement.blake3Hash with
-          | some f => f.params.map Prod.snd == [.ptr (.enum IxVM.Refinement.byteStreamEnum)]
-          | none => false)
-    | none => false
-  | .error _ => false
+#guard IxVM.Checked.source.checkEntry IxVM.Refinement.verifyClaim matches .ok () &&
+  (IxVM.Checked.source.world.prepare IxVM.Refinement.verifyClaim
+      [IxVM.Refinement.digestValue 0]).toBool &&
+  (match IxVM.Checked.source.program.sourceFunction? IxVM.Refinement.blake3Hash with
+    | some f => f.params.map Prod.snd == [.ptr (.enum IxVM.Refinement.byteStreamEnum)]
+    | none => false)
 
 /-! ## The statements -/
 
@@ -90,11 +100,11 @@ IxVM.Refinement.CircuitSoundUntied IxVM.Refinement.IxVMClaimSpecIn
 info: def IxVM.Refinement.SourceSound : (List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop) →
   Prop :=
 fun P =>
-  ∀ (prepared : Aiur.Modules.Prepared IxVM.program),
-    Aiur.Modules.prepare IxVM.program [IxVM.Refinement.verifyClaim] = Except.ok prepared →
-      ∀ (d : IxVM.Refinement.Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
-        (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-        prepared.ObsFn IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] value heap calls → P calls d
+  ∀ (d : IxVM.Refinement.Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
+    (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+    Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+        [IxVM.Refinement.digestValue d] [] value heap calls →
+      P calls d
 -/
 #guard_msgs in
 #print IxVM.Refinement.SourceSound
@@ -103,29 +113,26 @@ fun P =>
 info: def IxVM.Refinement.CircuitSound : (List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop) →
   Prop :=
 fun P =>
-  ∀ (prepared : Aiur.Modules.Prepared IxVM.program),
-    Aiur.Modules.prepare IxVM.program [IxVM.Refinement.verifyClaim] = Except.ok prepared →
-      ∀ {id : String → Except String ℕ} (compiled : Aiur.Optimized.ModulesArtifact prepared)
-        (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact)
-        (plan : Aiur.Optimized.Grouping.Plan physical.system id),
-        plan.WellFormedActivation →
-          ∀ {entry : Aiur.Modules.Selection IxVM.program prepared.environment.assembly.instances},
-            prepared.find? IxVM.Refinement.verifyClaim = some entry →
-              ∀ {rom : Aiur.WidthROM IxVM.F},
-                rom.Valid →
-                  ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
-                    {result : Aiur.Value IxVM.F},
-                    Aiur.Circuit.Erasure.Signed compiled.circuit.system
-                        { channel := entry.resolved.name, args := wires, result := output } →
-                      IxVM.Refinement.AcyclicDerivation compiled plan rom
-                          { channel := entry.resolved.name, args := wires, result := output } →
-                        Aiur.DecodesValues compiled.specialized.program.enums wires
-                            (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
-                          Aiur.WireValue.decode compiled.specialized.program.enums output = some result →
-                            ∃ value heap calls,
-                              prepared.ObsFn IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] value heap
-                                  calls ∧
-                                IxVM.Refinement.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls ∧ P calls d
+  ∀ {id : String → Except String ℕ}
+    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [IxVM.Refinement.verifyClaim]}
+    (compiled : Aiur.Optimized.GenericArtifact specialized)
+    (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
+    (plan : Aiur.Optimized.Grouping.Plan physical.system id),
+    plan.WellFormedActivation →
+      ∀ {rom : Aiur.WidthROM IxVM.F},
+        rom.Valid →
+          ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
+            {result : Aiur.Value IxVM.F},
+            Aiur.Circuit.Erasure.Signed compiled.system
+                { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+              IxVM.Refinement.AcyclicDerivation compiled plan rom
+                  { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+                Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
+                  Aiur.WireValue.decode specialized.program.enums output = some result →
+                    ∃ value heap calls,
+                      Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+                          [IxVM.Refinement.digestValue d] [] value heap calls ∧
+                        IxVM.Refinement.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls ∧ P calls d
 -/
 #guard_msgs in
 #print IxVM.Refinement.CircuitSound
@@ -135,55 +142,51 @@ info: def IxVM.Refinement.CircuitSoundUntied : (List (Aiur.Generic.SourceSemanti
     IxVM.Refinement.Digest → Prop) →
   Prop :=
 fun P =>
-  ∀ (prepared : Aiur.Modules.Prepared IxVM.program),
-    Aiur.Modules.prepare IxVM.program [IxVM.Refinement.verifyClaim] = Except.ok prepared →
-      ∀ {id : String → Except String ℕ} (compiled : Aiur.Optimized.ModulesArtifact prepared)
-        (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact)
-        (plan : Aiur.Optimized.Grouping.Plan physical.system id),
-        plan.WellFormedActivation →
-          ∀ {entry : Aiur.Modules.Selection IxVM.program prepared.environment.assembly.instances},
-            prepared.find? IxVM.Refinement.verifyClaim = some entry →
-              ∀ {rom : Aiur.WidthROM IxVM.F},
-                rom.Valid →
-                  ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
-                    {result : Aiur.Value IxVM.F},
-                    Aiur.Circuit.Erasure.Signed compiled.circuit.system
-                        { channel := entry.resolved.name, args := wires, result := output } →
-                      IxVM.Refinement.AcyclicDerivation compiled plan rom
-                          { channel := entry.resolved.name, args := wires, result := output } →
-                        Aiur.DecodesValues compiled.specialized.program.enums wires
-                            (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
-                          Aiur.WireValue.decode compiled.specialized.program.enums output = some result →
-                            ∃ value heap calls,
-                              prepared.ObsFn IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] value heap
-                                  calls ∧
-                                P calls d
+  ∀ {id : String → Except String ℕ}
+    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [IxVM.Refinement.verifyClaim]}
+    (compiled : Aiur.Optimized.GenericArtifact specialized)
+    (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
+    (plan : Aiur.Optimized.Grouping.Plan physical.system id),
+    plan.WellFormedActivation →
+      ∀ {rom : Aiur.WidthROM IxVM.F},
+        rom.Valid →
+          ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
+            {result : Aiur.Value IxVM.F},
+            Aiur.Circuit.Erasure.Signed compiled.system
+                { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+              IxVM.Refinement.AcyclicDerivation compiled plan rom
+                  { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+                Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
+                  Aiur.WireValue.decode specialized.program.enums output = some result →
+                    ∃ value heap calls,
+                      Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+                          [IxVM.Refinement.digestValue d] [] value heap calls ∧
+                        P calls d
 -/
 #guard_msgs in
 #print IxVM.Refinement.CircuitSoundUntied
 
 /--
 info: def IxVM.Refinement.ObservedHeadline : Prop :=
-∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {id : String → Except String ℕ}
-  {program : Aiur.Modules.Program F} {prepared : Aiur.Modules.Prepared program}
-  (compiled : Aiur.Optimized.ModulesArtifact prepared)
-  (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact)
+∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {id : String → Except String ℕ} {s : Aiur.Generic.Source F}
+  {entries : List String} {specialized : Aiur.Generic.Specialized s entries}
+  (compiled : Aiur.Optimized.GenericArtifact specialized)
+  (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
   (plan : Aiur.Optimized.Grouping.Plan physical.system id),
   plan.WellFormedActivation →
-    ∀ {external : String} {entry : Aiur.Modules.Selection program prepared.environment.assembly.instances},
-      prepared.find? external = some entry →
+    ∀ {name : String},
+      name ∈ entries →
         ∀ {rom : Aiur.WidthROM F},
           rom.Valid →
             ∀ {args : List (Aiur.SourceValue F)} {result : Aiur.Value F} {wires : List (Aiur.WireValue F)}
               {output : Aiur.WireValue F},
-              Aiur.Circuit.Erasure.Signed compiled.circuit.system
-                  { channel := entry.resolved.name, args := wires, result := output } →
+              Aiur.Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
                 IxVM.Refinement.AcyclicDerivation compiled plan rom
-                    { channel := entry.resolved.name, args := wires, result := output } →
-                  Aiur.DecodesValues compiled.specialized.program.enums wires (Aiur.entryValues args) →
-                    Aiur.WireValue.decode compiled.specialized.program.enums output = some result →
+                    { channel := name, args := wires, result := output } →
+                  Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues args) →
+                    Aiur.WireValue.decode specialized.program.enums output = some result →
                       ∃ value heap calls,
-                        prepared.ObsFn external args value heap calls ∧
+                        Aiur.Generic.SourceSemantics.ObsFn s.world name args [] value heap calls ∧
                           Aiur.Represents (IxVM.Refinement.traceROM compiled rom) heap value result ∧
                             IxVM.Refinement.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls
 -/
@@ -194,14 +197,15 @@ info: def IxVM.Refinement.ObservedHeadline : Prop :=
 info: def IxVM.Refinement.AcyclicDerivation : {F : Type} →
   [inst : Field F] →
     [inst_1 : DecidableEq F] →
-      {program : Aiur.Modules.Program F} →
-        {prepared : Aiur.Modules.Prepared program} →
-          (compiled : Aiur.Optimized.ModulesArtifact prepared) →
-            {physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact} →
-              {id : String → Except String ℕ} →
-                Aiur.Optimized.Grouping.Plan physical.system id → Aiur.WidthROM F → Aiur.Circuit.Message F → Prop :=
-fun {F} [Field F] [DecidableEq F] {program} {prepared} compiled {physical} {id} plan rom root =>
-  plan.ActivatedDerives (Aiur.Circuit.Erasure.rawROM rom) (Aiur.Circuit.Erasure.message compiled.circuit.system root)
+      {s : Aiur.Generic.Source F} →
+        {entries : List String} →
+          {specialized : Aiur.Generic.Specialized s entries} →
+            (compiled : Aiur.Optimized.GenericArtifact specialized) →
+              {physical : Aiur.Optimized.Physical.Prepared compiled.artifact} →
+                {id : String → Except String ℕ} →
+                  Aiur.Optimized.Grouping.Plan physical.system id → Aiur.WidthROM F → Aiur.Circuit.Message F → Prop :=
+fun {F} [Field F] [DecidableEq F] {s} {entries} {specialized} compiled {physical} {id} plan rom root =>
+  plan.ActivatedDerives (Aiur.Circuit.Erasure.rawROM rom) (Aiur.Circuit.Erasure.message compiled.system root)
 -/
 #guard_msgs in
 #print IxVM.Refinement.AcyclicDerivation
@@ -210,11 +214,12 @@ fun {F} [Field F] [DecidableEq F] {program} {prepared} compiled {physical} {id} 
 info: @[reducible] def IxVM.Refinement.traceROM : {F : Type} →
   [inst : Field F] →
     [inst_1 : DecidableEq F] →
-      {program : Aiur.Modules.Program F} →
-        {prepared : Aiur.Modules.Prepared program} →
-          Aiur.Optimized.ModulesArtifact prepared → Aiur.WidthROM F → Aiur.ROM F :=
-fun {F} [Field F] [DecidableEq F] {program} {prepared} compiled rom =>
-  Aiur.WireROM.decode compiled.specialized.program.enums (Aiur.Circuit.Erasure.typedROM compiled.circuit.system rom)
+      {s : Aiur.Generic.Source F} →
+        {entries : List String} →
+          {specialized : Aiur.Generic.Specialized s entries} →
+            Aiur.Optimized.GenericArtifact specialized → Aiur.WidthROM F → Aiur.ROM F :=
+fun {F} [Field F] [DecidableEq F] {s} {entries} {specialized} compiled rom =>
+  Aiur.WireROM.decode specialized.program.enums (Aiur.Circuit.Erasure.typedROM compiled.system rom)
 -/
 #guard_msgs in
 #print IxVM.Refinement.traceROM
@@ -303,6 +308,33 @@ info: def IxVM.Refinement.verifyClaim : String :=
 -/
 #guard_msgs in
 #print IxVM.Refinement.verifyClaim
+
+/--
+info: @[reducible] def IxVM.Refinement.source : Aiur.Generic.Source IxVM.F :=
+IxVM.Checked.source
+-/
+#guard_msgs in
+#print IxVM.Refinement.source
+
+/--
+info: def IxVM.Checked.source : Aiur.Generic.Source IxVM.Checked.F :=
+{ program := IxVM.Checked.program, tables := IxVM.Checked.coreTables, tablesChecked := IxVM.Checked.tablesChecked }
+-/
+#guard_msgs in
+#print IxVM.Checked.source
+
+/--
+info: def IxVM.Checked.entry : String :=
+"IxVM::verify_claim"
+-/
+#guard_msgs in
+#print IxVM.Checked.entry
+
+/--
+info: IxVM.Checked.tablesChecked : Aiur.typecheck IxVM.Checked.coreTables = Except.ok ()
+-/
+#guard_msgs in
+#check @IxVM.Checked.tablesChecked
 
 /--
 info: def Aiur.Modules.Prepared.ObsFn : {F : Type} →
@@ -1027,12 +1059,13 @@ info: @Aiur.Modules.Prepared.ObsFn.erase : ∀ {F : Type} [inst : Field F] [inst
 info: @IxVM.Refinement.SourceSound.eval : ∀
   {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop},
   IxVM.Refinement.SourceSound P →
-    ∀ {prepared : Aiur.Modules.Prepared IxVM.program},
-      Aiur.Modules.prepare IxVM.program [IxVM.Refinement.verifyClaim] = Except.ok prepared →
-        ∀ {d : IxVM.Refinement.Digest} {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F},
-          prepared.EvalFn IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] value heap →
-            ∃ calls,
-              prepared.ObsFn IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] value heap calls ∧ P calls d
+    ∀ {d : IxVM.Refinement.Digest} {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F},
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+          [IxVM.Refinement.digestValue d] [] value heap →
+        ∃ calls,
+          Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+              [IxVM.Refinement.digestValue d] [] value heap calls ∧
+            P calls d
 -/
 #guard_msgs in
 #check @IxVM.Refinement.SourceSound.eval
@@ -1041,14 +1074,14 @@ info: @IxVM.Refinement.SourceSound.eval : ∀
 info: @IxVM.Refinement.SourceSound.run : ∀
   {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop},
   IxVM.Refinement.SourceSound P →
-    ∀ {prepared : Aiur.Modules.Prepared IxVM.program},
-      Aiur.Modules.prepare IxVM.program [IxVM.Refinement.verifyClaim] = Except.ok prepared →
-        ∀ {d : IxVM.Refinement.Digest} {fuel : ℕ} {hints : prepared.environment.source.HintProvider}
-          {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F},
-          prepared.run IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] fuel hints =
-              Except.ok (value, heap) →
-            ∃ calls,
-              prepared.ObsFn IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] value heap calls ∧ P calls d
+    ∀ {d : IxVM.Refinement.Digest} {fuel : ℕ} {hints : IxVM.Checked.source.HintProvider}
+      {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F},
+      IxVM.Checked.source.run IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] fuel hints =
+          Except.ok (value, heap) →
+        ∃ calls,
+          Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+              [IxVM.Refinement.digestValue d] [] value heap calls ∧
+            P calls d
 -/
 #guard_msgs in
 #check @IxVM.Refinement.SourceSound.run
@@ -1158,6 +1191,9 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_strict [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_iff_of_nil [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.nfGo_of_whnf_sort [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Checked.tablesChecked [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Checked.source [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Ix.IxVM.Refinement.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
+  IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables
