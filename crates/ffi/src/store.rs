@@ -192,6 +192,28 @@ pub extern "C" fn rs_store_compact() -> LeanIOResult<LeanOwned> {
   }
 }
 
+/// `Store.ingestIxeFFI : @& String → IO (Address × UInt64)`
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_store_ingest_ixe(
+  path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let store = match IxStore::global() {
+    Ok(s) => s,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_store_ingest_ixe: {e}"));
+    },
+  };
+  let path_str = path.as_str();
+  match store.ingest_ixe(std::path::Path::new(path_str)) {
+    Ok((env_root, count)) => {
+      let root_ba = LeanByteArray::from_bytes(env_root.as_bytes());
+      let count_box = LeanOwned::box_u64(count as u64);
+      LeanIOResult::ok(LeanProd::new(root_ba, count_box))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_store_ingest_ixe: {e}")),
+  }
+}
+
 /// `Store.statsFFI : IO StoreStats`
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_store_stats() -> LeanIOResult<LeanOwned> {

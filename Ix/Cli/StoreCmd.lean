@@ -66,20 +66,8 @@ def runStoreGet (p : Cli.Parsed) : IO UInt32 := do
 
 def runStoreIngest (p : Cli.Parsed) : IO UInt32 := do
   let ixePath := p.positionalArg! "ixe" |>.as! String
-  let ixeBytes ← IO.FS.readBinFile ⟨ixePath⟩
-  let env : Ixon.Env ←
-    match Ixon.deEnv ixeBytes with
-    | .ok e => pure e
-    | .error err =>
-      p.printError s!"error: failed to decode '{ixePath}': {err}"
-      return 1
-  let mut entries : Array (Address × ByteArray) := #[]
-  for (addr, lc) in env.consts do
-    entries := entries.push (addr, lc.rawBytes)
-  for (addr, blob) in env.blobs do
-    entries := entries.push (addr, blob)
-  let (packId, written) ← StoreIO.toIO (Store.writePack entries)
-  IO.println s!"Ingested { entries.size } object(s) ({ written } newly packed) into pack {packId}"
+  let (envRoot, count) ← StoreIO.toIO (Store.ingestIxe ⟨ixePath⟩)
+  IO.println s!"Ingested '{ixePath}' into store (env-{envRoot}.ixe + .ixidx, {count} indexed object(s), zero payload duplication)"
   return 0
 
 def storeStatsCmd : Cli.Cmd := `[Cli|

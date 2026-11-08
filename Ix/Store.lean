@@ -52,6 +52,9 @@ opaque writeAtFFI : @& Address → @& ByteArray → IO Unit
 @[extern "rs_store_write_pack"]
 opaque writePackFFI : @& Array (Address × ByteArray) → IO (Address × UInt64)
 
+@[extern "rs_store_ingest_ixe"]
+opaque ingestIxeFFI : @& String → IO (Address × UInt64)
+
 @[extern "rs_store_read"]
 opaque readFFI : @& Address → IO ByteArray
 
@@ -119,8 +122,16 @@ def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit :=
 def writePack (entries : Array (Address × ByteArray)) : StoreIO (Address × UInt64) :=
   IO.toEIO .ioError (writePackFFI entries)
 
-/-- Read `addr` from the in-memory hot cache, a memory-mapped `.ixpack`, or
-    the 1-level loose object shard. -/
+/-- Ingest a portable `.ixe` environment bundle (or a `.ixc/` catalog directory
+    of `.ixe` member/chunk files) directly into `packs/` by hardlinking
+    `env-<root>.ixe` (zero byte duplication) and generating a companion
+    `env-<root>.ixidx` index over its §1 (`Blobs`) and §2 (`Constants`) windows.
+    Returns `(envRoot, indexedObjectCount)`. -/
+def ingestIxe (path : FilePath) : StoreIO (Address × UInt64) :=
+  IO.toEIO .ioError (ingestIxeFFI path.toString)
+
+/-- Read `addr` from the in-memory hot cache, a memory-mapped `.ixe`/`.ixpack`,
+    or the 1-level loose object shard. -/
 def read (a: Address) : StoreIO ByteArray :=
   IO.toEIO .ioError (readFFI a)
 

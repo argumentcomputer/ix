@@ -84,26 +84,31 @@ An `.ixe` file is a 5-section sequential container:
 5. **§4 Names**: `TagN(0)` count + `(Address: [u8; 32], NameComponents)`. Verified on load (`Name::hash == Address`).
 6. **§5 Named Metadata**: `TagN(0)` count + delta-coded `(const_idx_delta: TagN(0), ConstantMeta)` carrying human display names, post-order `ExprMetaArena` diffs, `original` flags, and `KVMap` attributes.
 
-### 3.2 `IxStore`: `.ixpack` + `.ixidx` & 1-Level Loose Shards ([`crates/common/src/store.rs`](file:///home/jcb/projects/ix-frontend/crates/common/src/store.rs))
-The content-addressed store under `~/.ix/store/` (or `$IX_STORE_DIR`) uses a two-tier layout:
+### 3.2 `IxStore`: Native `.ixe` + `.ixidx` Indexing, `.ixpack` Loose Compaction, & 1-Level Shards ([`crates/common/src/store.rs`](file:///home/jcb/projects/ix-frontend/crates/common/src/store.rs))
+Because `.ixe` is the circuit's claim source of truth and portable environment bundle (and `.ixc` preserves the composition-order Merkle-inclusion structure across environments), **`IxStore` adapts `.ixidx` directly to `.ixe` files**:
 ```text
 ~/.ix/store/
   packs/
-    pack-<64-hex>.ixpack    # 8-byte header ("IXPACK01") + 8-byte-aligned raw payloads
-    pack-<64-hex>.ixidx     # 8-byte header ("IXIDX001") + count:u64 + fanout[256] + keys[N] + entries[N]
+    env-<env_root>.ixe      # Hardlinked portable .ixe bundle (circuit source of truth, zero byte copy!)
+    env-<env_root>.ixidx    # 256-fanout index pointing directly to §1 (Blobs) and §2 (Constants) windows inside .ixe
+    pack-<64-hex>.ixpack    # 8-byte header ("IXPACK01") + 8-byte-aligned compacted loose objects (Claims, Proofs, AssumptionTrees)
+    pack-<64-hex>.ixidx     # Companion 256-fanout index for compacted loose objects
   objects/
     00/..ff/                # 256 1-level loose object shards (<62-hex> filenames)
 ```
+- **Zero-Copy `.ixe` & `.ixc` Ingest (`IxStore::ingest_ixe` / `ix store ingest`)**:
+  - Given an `.ixe` file (or a `.ixc/` catalog directory of `<label>.ixe` / `<label>.chunk<i>.ixe` files), `IxStore` hardlinks each `.ixe` into `packs/env-<stored_root>.ixe` and scans its §1 (`Blobs`) and §2 (`Constants`) windows in a single pass to emit `packs/env-<stored_root>.ixidx`.
+  - Every constant and blob inside the `.ixe` is then served via zero-syscall $O(\log(N/256))$ mmap slices directly out of `env-<stored_root>.ixe`, while `IxStore::env_path(&env_root)` locates the full portable `.ixe` bundle by its Merkle `env_root` in $O(1)$.
 - **`.ixidx` Binary Layout**:
   - `0..8`: `b"IXIDX001"`
   - `8..16`: `object_count : u64 LE` ($N$)
   - `16..2064`: `fanout : [u64 LE; 256]` — `fanout[b]` is the cumulative number of objects in the pack whose `Address` has first byte $\le b$.
   - `2064 .. 2064 + 32*N`: `keys : [[u8; 32]; N]` sorted lexicographically.
-  - `2064 + 32*N .. 2064 + 48*N`: `entries : [(offset: u64 LE, len: u32 LE, flags: u32 LE); N]`.
+  - `2064 + 32*N .. 2064 + 48*N`: `entries : [(offset: u64 LE, len: u32 LE, flags: u32 LE); N]` pointing into the companion `.ixe` or `.ixpack` file.
 
 ### 3.3 `.ixc/` Catalog Directory ([`crates/ixon/src/catalog.rs`](file:///home/jcb/projects/ix-frontend/crates/ixon/src/catalog.rs))
-A `.ixc` is a directory containing `manifest` (`b"IXC\0\0\0\0\0"`) plus member `.ixe` files (`<label>.ixe` in `Fat` profile or `<label>.chunk<i>.ixe` in `Chunked` profile). Commits to two Merkle roots:
-- `members_root`: canonical Merkle root over member `.ixe` env roots.
+A `.ixc` is a directory containing `manifest` (`b"IXC\0\0\0\0\0"`) plus member `.ixe` files (`<label>.ixe` in `Fat` profile or `<label>.chunk<i>.ixe` in `Chunked` profile). It preserves the **Merkle-inclusion structure** of environment composition (since composition order determines how Merkle openings are constructed):
+- `members_root`: canonical Merkle root over member `.ixe` env roots in composition order.
 - `content_root`: canonical Merkle root over the deduplicated union of all members' §2 constant addresses.
 
 ### 3.4 `.ixes` Shard Manifest ([`crates/kernel/src/shard.rs`](file:///home/jcb/projects/ix-frontend/crates/kernel/src/shard.rs)) & `.ixprof` Kernel Profile ([`crates/kernel/src/profile.rs`](file:///home/jcb/projects/ix-frontend/crates/kernel/src/profile.rs))
@@ -114,15 +119,13 @@ A `.ixc` is a directory containing `manifest` (`b"IXC\0\0\0\0\0"`) plus member `
 
 ## 4. Redundancy & Overlap Audit
 
-As the codebase evolved through multiple milestones (v3 → v4 `TagN`, standalone `.ixe` files → `.ixc` catalogs → `IxStore` `.ixpack`s, `liblean` ingress → pure `Ix.Frontend`), **five concrete redundancies / overlaps** accumulated:
+As the codebase evolved through multiple milestones (v3 → v4 `TagN`, standalone `.ixe` files → `.ixc` catalogs → `IxStore`, `liblean` ingress → pure `Ix.Frontend`), **four concrete redundancies / overlaps** stand out:
 
-### 4.1 Overlap 1: Three Overlapping Ways to Bundle Constants (`.ixe` §1–§2 vs. `.ixc/` Fat Pieces vs. `.ixpack` + `.ixidx`)
-- **Current state**:
-  1. **`.ixe` (§1 Blobs + §2 Constants)** stores constants sequentially with variable-width `TagN` lengths, requiring a linear scan (`Env::parse_lazy_index`) to locate constants.
-  2. **`.ixc/` (`Fat` profile)** copies/hardlinks `<label>.ixe` files into `<name>.ixc/`, duplicating shared transitive dependency constants across member `.ixe` files.
-  3. **`.ixpack` + `.ixidx`** stores deduplicated constants/blobs with 8-byte alignment and a 256-entry fan-out table for instant $O(\log(N/256))$ mmap slicing with zero parsing.
-- **Recommendation**:
-  - Introduce a **thin `.ixe` / store-backed `.ixc` profile** where §1 Blobs and §2 Constants live once in an `.ixpack` (either in `~/.ix/store/packs/` or `<name>.ixc/objects.ixpack` + `objects.ixidx`), and the `.ixe` / `.ixc` manifest only stores the root commitment (`stored_root`, `main`, `assumptions`, `role_binding`), §3 Hints, and optional §4–§5 Metadata.
+### 4.1 Resolved: `.ixidx` Now Indexes `.ixe` Directly (Instead of Duplicating `.ixe` into `.ixpack`)
+- **Design**:
+  - `.ixe` is the circuit's claim source of truth and portable bundle, and `.ixc` preserves the Merkle-inclusion structure of composed environments.
+  - Rather than re-serializing `.ixe` constants and blobs into a separate `.ixpack` container, `IxStore::ingest_ixe` hardlinks `<stem>.ixe` into `packs/env-<stored_root>.ixe` and writes a companion `env-<stored_root>.ixidx` index directly over the `.ixe`'s §1 (`Blobs`) and §2 (`Constants`) byte windows.
+  - `.ixpack` (`IXPACK01`) is reserved solely for compacting standalone loose store objects (`Claim`, `Ixon.Proof`, `AssumptionTree`) via `ix store compact`.
 
 ### 4.2 Overlap 2: `IXHC` (`Ix.HostAdmission.Statement`) vs. `Ix.Claim` (`0xE5 CheckEnv` + `E8 02 Binding`)
 - **Current state**:

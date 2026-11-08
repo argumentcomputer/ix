@@ -136,7 +136,15 @@ impl MappedPack {
         "invalid .ixidx header",
       ));
     }
-    if pack_mmap.len() < 8 || pack_mmap[0..8] != PACK_MAGIC {
+    let is_ixe = pack_path.extension().and_then(|s| s.to_str()) == Some("ixe");
+    if is_ixe {
+      if pack_mmap.is_empty() || (pack_mmap[0] != 0xE4 && pack_mmap[0] != 0xE5) {
+        return Err(io::Error::new(
+          io::ErrorKind::InvalidData,
+          "invalid .ixe header for .ixidx companion",
+        ));
+      }
+    } else if pack_mmap.len() < 8 || pack_mmap[0..8] != PACK_MAGIC {
       return Err(io::Error::new(
         io::ErrorKind::InvalidData,
         "invalid .ixpack header",
@@ -342,8 +350,13 @@ impl IxStore {
       if stem.is_empty() || guard.iter().any(|p| p.pack_id == stem) {
         continue;
       }
-      let pack_path = self.packs_dir.join(format!("{stem}.ixpack"));
-      if let Ok(mapped) = MappedPack::open(&path, &pack_path) {
+      let ixe_path = self.packs_dir.join(format!("{stem}.ixe"));
+      let data_path = if ixe_path.exists() {
+        ixe_path
+      } else {
+        self.packs_dir.join(format!("{stem}.ixpack"))
+      };
+      if let Ok(mapped) = MappedPack::open(&path, &data_path) {
         guard.push(mapped);
       }
     }
@@ -702,6 +715,258 @@ impl IxStore {
       total_loose_bytes,
     })
   }
+
+  /// Return the path to a stored `.ixe` bundle (`packs/env-<env_root>.ixe`) if
+  /// the environment with Merkle root `env_root` has been ingested into the store.
+  #[must_use]
+  pub fn env_path(&self, env_root: &Address) -> Option<PathBuf> {
+    let p = self.packs_dir.join(format!("env-{}.ixe", env_root.hex()));
+    if p.exists() { Some(p) } else { None }
+  }
+
+  /// Ingest an `.ixe` file (or all `.ixe` member/chunk files inside a `.ixc`
+  /// catalog directory) directly into `packs/` by hardlinking `<stem>.ixe` (with
+  /// atomic copy fallback across filesystems) and generating a companion
+  /// `<stem>.ixidx` index over the `.ixe`'s §1 (`Blobs`) and §2 (`Constants`)
+  /// byte windows. Zero constant bytes are duplicated into a separate `.ixpack`.
+  pub fn ingest_ixe(&self, path: &Path) -> StoreResult<(Address, usize)> {
+    if path.is_dir() {
+      let mut last_root = Address::hash(&[]);
+      let mut total_indexed = 0usize;
+      let entries = fs::read_dir(path)?;
+      let mut ixe_files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ixe"))
+        .collect();
+      ixe_files.sort();
+      for ixe in ixe_files {
+        let (root, count) = self.ingest_single_ixe(&ixe)?;
+        last_root = root;
+        total_indexed += count;
+      }
+      return Ok((last_root, total_indexed));
+    }
+    self.ingest_single_ixe(path)
+  }
+
+  fn ingest_single_ixe(&self, ixe_path: &Path) -> StoreResult<(Address, usize)> {
+    let file = File::open(ixe_path)?;
+    // SAFETY: read-only memory map of `.ixe` file during indexing.
+    let mmap = unsafe { Mmap::map(&file)? };
+    let (stored_root, mut windows) =
+      scan_ixe_windows(&mmap).map_err(StoreError::IxonError)?;
+
+    let stem = format!("env-{}", stored_root.hex());
+    let dst_ixe = self.packs_dir.join(format!("{stem}.ixe"));
+    let dst_idx = self.packs_dir.join(format!("{stem}.ixidx"));
+
+    windows.sort_unstable_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    windows.dedup_by(|a, b| a.0 == b.0);
+    let count = windows.len();
+
+    if dst_ixe.exists() && dst_idx.exists() {
+      self.reload_packs()?;
+      return Ok((stored_root, count));
+    }
+
+    let seq = WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+
+    if !dst_ixe.exists() {
+      let same_path = fs::canonicalize(ixe_path)
+        .ok()
+        .zip(fs::canonicalize(&dst_ixe).ok())
+        .is_some_and(|(a, b)| a == b);
+      if !same_path {
+        let tmp_ixe = self.packs_dir.join(format!("{stem}.ixe.tmp.{pid}.{seq}"));
+        let _ = fs::remove_file(&tmp_ixe);
+        if fs::hard_link(ixe_path, &tmp_ixe).is_err() {
+          fs::copy(ixe_path, &tmp_ixe)?;
+        }
+        if let Err(err) = fs::rename(&tmp_ixe, &dst_ixe) {
+          let _ = fs::remove_file(&tmp_ixe);
+          if !dst_ixe.exists() {
+            return Err(StoreError::IoError(err));
+          }
+        }
+      }
+    }
+
+    let tmp_idx = self.packs_dir.join(format!("{stem}.ixidx.tmp.{pid}.{seq}"));
+    let mut fanout = [0u64; 256];
+    for (addr, _, _, _) in &windows {
+      let b = usize::from(addr.as_bytes()[0]);
+      fanout[b] += 1;
+    }
+    let mut running = 0u64;
+    for slot in &mut fanout {
+      running += *slot;
+      *slot = running;
+    }
+
+    {
+      let mut idx_out = io::BufWriter::new(File::create(&tmp_idx)?);
+      idx_out.write_all(&IDX_MAGIC)?;
+      idx_out.write_all(&(count as u64).to_le_bytes())?;
+      for f in &fanout {
+        idx_out.write_all(&f.to_le_bytes())?;
+      }
+      for (addr, _, _, _) in &windows {
+        idx_out.write_all(addr.as_bytes())?;
+      }
+      for (_, off, len, kind) in &windows {
+        let flags = u32::from(*kind as u8) << 8;
+        idx_out.write_all(&off.to_le_bytes())?;
+        idx_out.write_all(&len.to_le_bytes())?;
+        idx_out.write_all(&flags.to_le_bytes())?;
+      }
+      idx_out.flush()?;
+    }
+
+    fs::rename(&tmp_idx, &dst_idx)?;
+    self.reload_packs()?;
+    Ok((stored_root, count))
+  }
+}
+
+/// Read a `TagN(0)` unsigned integer from `buf` (`Ixon.getTagN 0`).
+fn read_tagn0(buf: &mut &[u8]) -> Result<u64, String> {
+  let Some((&head, rest)) = buf.split_first() else {
+    return Err("TagN(0): EOF".to_string());
+  };
+  *buf = rest;
+  let p = u64::from(head);
+  if p < 128 {
+    return Ok(p);
+  }
+  if p < 192 {
+    let Some((&lo, rest2)) = buf.split_first() else {
+      return Err("TagN(0): EOF in rung 2".to_string());
+    };
+    *buf = rest2;
+    return Ok(128 + (p - 128) * 256 + u64::from(lo));
+  }
+  let (len, base): (usize, u64) = match p - 192 {
+    0 => (2, 16512),
+    1 => (3, 82048),
+    2 => (4, 16_859_264),
+    3 => (8, 4_311_826_560),
+    c => return Err(format!("TagN(0): invalid rung code {c}")),
+  };
+  let Some((head_bytes, rest2)) = buf.split_at_checked(len) else {
+    return Err(format!("TagN(0): EOF, need {len} bytes"));
+  };
+  *buf = rest2;
+  let mut raw = [0u8; 8];
+  raw[..len].copy_from_slice(head_bytes);
+  base
+    .checked_add(u64::from_le_bytes(raw))
+    .ok_or_else(|| "TagN(0): u64 overflow".to_string())
+}
+
+fn read_addr(buf: &mut &[u8]) -> Result<Address, String> {
+  let Some((bytes, rest)) = buf.split_at_checked(32) else {
+    return Err("scan_ixe_windows: EOF reading 32-byte Address".to_string());
+  };
+  *buf = rest;
+  Address::from_slice(bytes).map_err(|e| e.to_string())
+}
+
+/// Scan an `.ixe` buffer's header, §1 (`Blobs`), and §2 (`Constants`) in one
+/// pass without parsing constant bodies, returning `(stored_root, windows)`
+/// where each window is `(Address, byte_offset, byte_len, ObjectKind)`.
+pub fn scan_ixe_windows(
+  data: &[u8],
+) -> Result<(Address, Vec<(Address, u64, u32, ObjectKind)>), String> {
+  let mut buf = data;
+  let Some((&head, rest)) = buf.split_first() else {
+    return Err("scan_ixe_windows: empty .ixe file".to_string());
+  };
+  if head != 0xE4 && head != 0xE5 {
+    return Err(format!(
+      "scan_ixe_windows: expected .ixe v4 (0xE4) or v5 (0xE5) header, got 0x{head:02X}"
+    ));
+  }
+  buf = rest;
+  let stored_root = read_addr(&mut buf)?;
+
+  // `main : Option<Address>`
+  let Some((&opt_tag, rest2)) = buf.split_first() else {
+    return Err("scan_ixe_windows: EOF at main option tag".to_string());
+  };
+  buf = rest2;
+  match opt_tag {
+    0 => {},
+    1 => {
+      let _main = read_addr(&mut buf)?;
+    },
+    t => {
+      return Err(format!("scan_ixe_windows: invalid main option tag {t}"));
+    },
+  }
+
+  // `assumptions : Vec<Address>`
+  let num_assumptions = usize::try_from(read_tagn0(&mut buf)?)
+    .map_err(|_| "scan_ixe_windows: assumption count overflow".to_string())?;
+  let asm_bytes = num_assumptions
+    .checked_mul(32)
+    .ok_or_else(|| "scan_ixe_windows: assumption bytes overflow".to_string())?;
+  let Some((_, rest3)) = buf.split_at_checked(asm_bytes) else {
+    return Err("scan_ixe_windows: truncated assumptions".to_string());
+  };
+  buf = rest3;
+
+  // v5 (`0xE5`) role binding section: `addr: 32` + `len: TagN(0)` + `len` bytes
+  if head == 0xE5 {
+    let _rb_addr = read_addr(&mut buf)?;
+    let rb_len = usize::try_from(read_tagn0(&mut buf)?)
+      .map_err(|_| "scan_ixe_windows: role binding length overflow".to_string())?;
+    let Some((_, rest4)) = buf.split_at_checked(rb_len) else {
+      return Err("scan_ixe_windows: truncated role binding section".to_string());
+    };
+    buf = rest4;
+  }
+
+  // §1: Blobs
+  let num_blobs = usize::try_from(read_tagn0(&mut buf)?)
+    .map_err(|_| "scan_ixe_windows: blob count overflow".to_string())?;
+  let mut windows: Vec<(Address, u64, u32, ObjectKind)> = Vec::new();
+  for _ in 0..num_blobs {
+    let addr = read_addr(&mut buf)?;
+    let len_u64 = read_tagn0(&mut buf)?;
+    let len = usize::try_from(len_u64)
+      .map_err(|_| "scan_ixe_windows: blob length overflow".to_string())?;
+    let len_u32 = u32::try_from(len_u64)
+      .map_err(|_| "scan_ixe_windows: blob exceeds 4 GiB".to_string())?;
+    let offset = (data.len() - buf.len()) as u64;
+    let Some((_, rest_b)) = buf.split_at_checked(len) else {
+      return Err("scan_ixe_windows: truncated blob payload".to_string());
+    };
+    buf = rest_b;
+    windows.push((addr, offset, len_u32, ObjectKind::Blob));
+  }
+
+  // §2: Constants
+  let num_consts = usize::try_from(read_tagn0(&mut buf)?)
+    .map_err(|_| "scan_ixe_windows: const count overflow".to_string())?;
+  windows.reserve(num_consts);
+  for _ in 0..num_consts {
+    let addr = read_addr(&mut buf)?;
+    let len_u64 = read_tagn0(&mut buf)?;
+    let len = usize::try_from(len_u64)
+      .map_err(|_| "scan_ixe_windows: const length overflow".to_string())?;
+    let len_u32 = u32::try_from(len_u64)
+      .map_err(|_| "scan_ixe_windows: const exceeds 4 GiB".to_string())?;
+    let offset = (data.len() - buf.len()) as u64;
+    let Some((_, rest_c)) = buf.split_at_checked(len) else {
+      return Err("scan_ixe_windows: truncated constant payload".to_string());
+    };
+    buf = rest_c;
+    windows.push((addr, offset, len_u32, ObjectKind::Constant));
+  }
+
+  Ok((stored_root, windows))
 }
 
 #[cfg(test)]
@@ -740,6 +1005,60 @@ mod tests {
     assert_eq!(st.pack_count, 1);
     assert_eq!(st.packed_objects, 2);
     assert_eq!(st.loose_objects, 0);
+
+    let _ = fs::remove_dir_all(&tmp);
+  }
+
+  #[test]
+  fn test_native_ixe_ixidx_ingest() {
+    let tmp = env::temp_dir().join(format!(
+      "ix-store-ixe-test-{}-{}",
+      std::process::id(),
+      WRITE_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let store = IxStore::open(&tmp).expect("open store");
+
+    // Construct a minimal v4 (0xE4) .ixe buffer with 1 blob and 1 constant.
+    let blob_payload = b"hello-ixe-blob";
+    let blob_addr = Address::hash(blob_payload);
+    let const_payload = b"\xD0minimal-const-payload";
+    let const_addr = Address::hash(const_payload);
+    let env_root = Address::hash(b"test-env-root");
+
+    let mut ixe_bytes: Vec<u8> = Vec::new();
+    ixe_bytes.push(0xE4); // v4 .ixe header
+    ixe_bytes.extend_from_slice(env_root.as_bytes());
+    ixe_bytes.push(0x00); // main = None
+    ixe_bytes.push(0x00); // assumptions count = 0
+    // §1 Blobs: count = 1
+    ixe_bytes.push(0x01);
+    ixe_bytes.extend_from_slice(blob_addr.as_bytes());
+    ixe_bytes.push(blob_payload.len() as u8);
+    ixe_bytes.extend_from_slice(blob_payload);
+    // §2 Constants: count = 1
+    ixe_bytes.push(0x01);
+    ixe_bytes.extend_from_slice(const_addr.as_bytes());
+    ixe_bytes.push(const_payload.len() as u8);
+    ixe_bytes.extend_from_slice(const_payload);
+    // §3 Hints: count = 0
+    ixe_bytes.push(0x00);
+
+    let src_ixe = tmp.join("sample.ixe");
+    fs::write(&src_ixe, &ixe_bytes).expect("write sample.ixe");
+
+    let (ingested_root, count) = store.ingest_ixe(&src_ixe).expect("ingest_ixe");
+    assert_eq!(ingested_root, env_root);
+    assert_eq!(count, 2);
+    assert!(store.env_path(&env_root).is_some());
+
+    // Verify reads come directly out of the memory-mapped .ixe file via .ixidx!
+    assert!(store.contains(&blob_addr));
+    assert!(store.contains(&const_addr));
+    assert_eq!(store.read_verified(&blob_addr).expect("read blob"), blob_payload);
+    assert_eq!(
+      store.read_verified(&const_addr).expect("read const"),
+      const_payload
+    );
 
     let _ = fs::remove_dir_all(&tmp);
   }
