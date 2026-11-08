@@ -4,6 +4,14 @@ import Aiur.Modules.Frontend
 
 Evaluation claims (`run_eval`).
 
+An `eval` claim checks its input as a `check` claim checks its target, then
+compares the output's value with the input's normal form (`eval_nf`)
+structurally, and its type with the input's. It then checks the output
+declaration as a `check` claim would, under the claim's role context and
+assumptions (`check_output`), so that the claim states that the output is
+accepted without appealing to subject reduction: with an assumed dependency,
+the input's normal form can be ill-typed.
+
 Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `IxVM.source`
 (`IxVM/IxVM/Program.lean`) composes the modules. -/
 
@@ -72,7 +80,17 @@ module KernelEval {
       let result = eval_nf(rc, body, (&(Lists::Node::Nil)));
 
       assert_eq!(KernelCheck::kexpr_struct_eq(result, expected), 1, "Eval: result does not match output");
-      ()
+      check_output(rc, output, asm)
+    }
+
+  fn check_output(rc: KernelRoles::RoleCtx, output: Bytes::AddressRef, asm: Options::Option<Bytes::AddressRef>) -> () {
+      match asm {
+        Options::Option::None => {  KernelClaim::run_check_transitive(rc, output) } ,
+        Options::Option::Some(r) => {
+          let asm_set = KernelClaim::addr_set_build(KernelClaim::load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
+          assert_eq!(KernelClaim::addr_set_member(output, asm_set), 0, "Eval: output is an assumption");
+          KernelClaim::env_walk(rc, output, RBTreeMap::RBTreeMap::Nil, asm_set, 0) } ,
+      }
     }
 }
 ⟧
