@@ -51,6 +51,8 @@ run_meta do
     (``IxVM.Refinement.CircuitSoundAssuming, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
       ``IxVM.Refinement.digestValue, ``Aiur.Generic.SourceSemantics.CallsInROM]),
+    (``IxVM.Refinement.AxiomScopeIn, [``IxVM.Refinement.UserAxiomLeavesIn]),
+    (``IxVM.Refinement.TypingIn, [``IxVM.Refinement.AxiomScopeIn, ``IxVM.Refinement.LeavesInstalled]),
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
       ``Ix.Claim.de, ``Ix.Claim.HoldsIn, ``IxVM.Refinement.View.HashedCollision]),
     (``IxVM.Refinement.Hashed, [``IxVM.Refinement.blake3Hash, ``IxVM.Refinement.byteStreamEnum]),
@@ -439,23 +441,25 @@ fun V ctx S asm Q =>
       ((ctx.bindingAssumed = true → IxVM.Refinement.BindingIn V ctx.spec ctx.binding) →
         ∃ b,
           V.binding? ctx.binding = some b ∧
-            IxVM.Refinement.AxiomScopeIn V b ctx.axioms fun policy axioms =>
-              IxVM.Refinement.AssumingIn V { binding := b, policy := policy, axioms := axioms } S Q asm)
+            IxVM.Refinement.AxiomScopeIn V b ctx.axioms fun policy leaves =>
+              IxVM.Refinement.AssumingIn V { binding := b, policy := policy, axioms := fun x => x ∈ leaves }
+                (fun a => S a ∨ a ∈ leaves)
+                (fun bnd envA ds => IxVM.Refinement.LeavesInstalled leaves ds ∧ Q bnd envA ds) asm)
 -/
 #guard_msgs in
 #print IxVM.Refinement.TypingIn
 
 /--
 info: def IxVM.Refinement.AxiomScopeIn : IxVM.Refinement.View →
-  Ix.Kernel.Admission.Binding → Option Address → (Ix.Kernel.Cached.AxiomPolicy → (Address → Prop) → Prop) → Prop :=
+  Ix.Kernel.Admission.Binding → Option Address → (Ix.Kernel.Cached.AxiomPolicy → List Address → Prop) → Prop :=
 fun V b x x_1 =>
   match x, x_1 with
-  | none, k => k Ix.Kernel.Cached.AxiomPolicy.strict fun x => False
+  | none, k => k Ix.Kernel.Cached.AxiomPolicy.strict []
   | some r, k =>
     V.HoldsTree r ∧
       ∀ (leaves : List Address),
         V.LeavesAt r leaves →
-          IxVM.Refinement.UserAxiomLeavesIn V b leaves ∧ k Ix.Kernel.Cached.AxiomPolicy.allowUser fun x => x ∈ leaves
+          IxVM.Refinement.UserAxiomLeavesIn V b leaves ∧ k Ix.Kernel.Cached.AxiomPolicy.allowUser leaves
 -/
 #guard_msgs in
 #print IxVM.Refinement.AxiomScopeIn
@@ -470,6 +474,13 @@ fun V b leaves =>
 -/
 #guard_msgs in
 #print IxVM.Refinement.UserAxiomLeavesIn
+
+/--
+info: def IxVM.Refinement.LeavesInstalled : List Address → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
+fun leaves ds => ∀ a ∈ leaves, ∃ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, cv.name = Ix.Kernel.Key.id a
+-/
+#guard_msgs in
+#print IxVM.Refinement.LeavesInstalled
 
 /--
 info: def IxVM.Refinement.AssumingIn : IxVM.Refinement.View →
@@ -1211,6 +1222,7 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.observedHeadline [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.verifyClaimCircuitSoundIn_of_soundIn [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.verifyClaimCircuitSoundInAssuming_of_soundIn [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TypingIn [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Cert.ixonAcceptsRefUnder_strict [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_strict [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_iff_of_nil [propext, Classical.choice, Quot.sound]
