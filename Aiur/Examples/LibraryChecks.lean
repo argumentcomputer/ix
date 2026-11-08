@@ -22,8 +22,8 @@ def main (args : List String) : IO Unit := do
         ["Benchmark::hash", "InterfaceBytes::run", "InterfaceWords::run"])
     let exported ← IO.ofExcept prepared.exportExecution
     let compiled ← IO.ofExcept prepared.compileOptimized
-    let trace ← IO.ofExcept <| Trace.exportPlan Library.U32.Goldilocks.modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode
+    let (exported, trace) ← IO.ofExcept <| Trace.exportPlan Library.U32.Goldilocks.modulus ZMod.val
+      compiled.circuit.inlined.program compiled.circuit.artifact exported
     Artifact.write path (← IO.ofExcept <|
       Artifact.package exported Library.U32.Goldilocks.modulus ZMod.val (some trace))
     IO.println s!"Exported shared byte, U64 and Blake3 regression program to {path}."

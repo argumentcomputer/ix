@@ -42,7 +42,8 @@
 //!   13 fail string
 //! hint      = string(channel) type type(key) nats(key) nats(output)
 //!
-//! trace     = nat(version) nat(modulus) list(plan) list(chip) list(group)
+//! trace     = nat(version) nat(modulus) nats(limbs) list(plan) list(chip)
+//!             list(group)
 //! poly      = 0 nat | 1 nat | 2 poly poly | 3 poly poly | 4 poly poly
 //!                                            const var add sub mul
 //! plan      = string(name) string(chip) nat(witnesses) nats(inputs)
@@ -57,6 +58,8 @@
 //!             polys(output) polys(constraints)
 //!             list(string(channel) polys(args) nats(result) poly(enable))
 //!             list(type poly(address) polys(values) poly(enable))
+//!             option(nat(depth column)) nat(rank) list(slot)
+//! slot      = 0 | 1 | 2 nat(column) | 3 nat(column)   plain exact gap external
 //! group     = string(name) nat(width) poly(activation) polys(constraints)
 //!             polys(receive) list(poly(enable) polys(args))
 //!             list(string(name) nats(columns) nat(selector)
@@ -71,9 +74,9 @@ use crate::{
   ixon::{Reader, Writer},
   library::io::{Invocation, Stream, Streams},
   trace::{
-    Action, Chip, ColumnWrite, FunctionGroup, FunctionPlan, GroupLookup,
-    GroupMember, GroupWrite, MemoryLookup, Polynomial, PopulationStep, Send,
-    TraceArtifact,
+    Action, Chip, ChipDepth, ColumnWrite, DepthSlot, FunctionGroup,
+    FunctionPlan, GroupLookup, GroupMember, GroupWrite, MemoryLookup,
+    Polynomial, PopulationStep, Send, TraceArtifact,
   },
   value::IoType,
 };
@@ -899,6 +902,7 @@ fn action(r: &mut Reader<'_>) -> Result<Action, String> {
 fn put_trace(w: &mut Writer, t: &TraceArtifact) {
   w.nat(u64::from(t.version));
   w.nat(t.modulus);
+  w.usizes(&t.limbs);
   w.list(&t.functions, |w, f| {
     w.str(&f.name);
     w.str(&f.chip);
@@ -934,6 +938,20 @@ fn put_trace(w: &mut Writer, t: &TraceArtifact) {
       put_polys(w, &m.values);
       put_poly(w, &m.enable);
     });
+    w.option(c.depth.column.as_ref(), |w, c| w.usize(*c));
+    w.nat(c.depth.rank);
+    w.list(&c.depth.slots, |w, s| match s {
+      DepthSlot::Plain => w.u8(0),
+      DepthSlot::Exact => w.u8(1),
+      DepthSlot::Gap { column } => {
+        w.u8(2);
+        w.usize(*column);
+      },
+      DepthSlot::External { column } => {
+        w.u8(3);
+        w.usize(*column);
+      },
+    });
   });
   w.list(&t.groups, put_group);
 }
@@ -963,6 +981,7 @@ fn trace(r: &mut Reader<'_>) -> Result<TraceArtifact, String> {
   Ok(TraceArtifact {
     version: r.u32()?,
     modulus: r.nat()?,
+    limbs: r.usizes()?,
     functions: r.list(|r| {
       Ok(FunctionPlan {
         name: r.string()?,
@@ -1006,6 +1025,18 @@ fn trace(r: &mut Reader<'_>) -> Result<TraceArtifact, String> {
             enable: poly(r)?,
           })
         })?,
+        depth: ChipDepth {
+          column: r.option(Reader::usize)?,
+          rank: r.nat()?,
+          slots: r.list(|r| {
+            Ok(match r.tag("depth slot", 4)? {
+              0 => DepthSlot::Plain,
+              1 => DepthSlot::Exact,
+              2 => DepthSlot::Gap { column: r.usize()? },
+              _ => DepthSlot::External { column: r.usize()? },
+            })
+          })?,
+        },
       })
     })?,
     groups: r.list(group)?,

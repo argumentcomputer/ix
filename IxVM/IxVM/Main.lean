@@ -186,12 +186,13 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln s!"Wrote grouping snapshot {path}"
     return
   if mode == "export-claim" || mode == "export-claim-trace" then
-    let trace ← if mode == "export-claim-trace" then do
+    let (exported, trace) ← if mode == "export-claim-trace" then do
       IO.eprintln "Compiling claim circuits and witness population plans..."
       let compiled ← IO.ofExcept (prepared.compileOptimized {})
-      pure <| some (← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
-        compiled.circuit.artifact exported.bytecode groups))
-    else pure none
+      let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+        compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+      pure (exported, some trace)
+    else pure (exported, none)
     let path := args[1]?.getD "/tmp/ix-claim.ixa"
     Artifact.write path (← IO.ofExcept (Artifact.package exported modulus ZMod.val trace))
     IO.eprintln s!"Wrote {path}"
@@ -202,12 +203,13 @@ unsafe def main (args : List String) : IO Unit := do
   let hints := fixtureHints fixture
   IO.eprintln s!"Preparing {hints.size} hint entries..."
   let hints ← IO.ofExcept (exported.prepareHints hints)
-  let trace ← if mode == "export-trace" then do
+  let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
-      compiled.circuit.artifact exported.bytecode groups))
-  else pure none
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+      compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+    pure (exported, some trace)
+  else pure (exported, none)
   IO.eprintln "Encoding execution package..."
   let package ← IO.ofExcept (Artifact.execution exported modulus ZMod.val trace
     fixture.address.toList fixture.invalidProof.address.toList hints)

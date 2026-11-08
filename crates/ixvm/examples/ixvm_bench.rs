@@ -37,7 +37,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let args = fixture.address_words();
   assert_eq!(args, package.args);
   let (program, trace) = package.package.traced()?;
-  let program = program.check_field::<multi_stark::types::Val>()?;
+  let mut program = program.check_field::<multi_stark::types::Val>()?;
+  program.track_depth(&trace)?;
   let args = program.field().decode(&args)?;
   let hints = ixvm_hints::prepare(&program, &package.hints)?;
   let function_chips: Vec<_> =
@@ -235,6 +236,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     hash.finish()
   };
+  // Depth-pass statistics (follow-ups G1 and G2) need a second population,
+  // outside every measured interval and only on request.
+  let depth = if std::env::var("IX_DEPTH_STATISTICS").is_ok_and(|v| v == "1") {
+    let trace = plan.generate(&record, entry, &args, false)?;
+    Some(plan.depth_statistics(&record, &trace.ranges))
+  } else {
+    None
+  };
+  let rows: usize = witness.traces.iter().map(|t| t.height()).sum();
   drop(record);
   let start = Instant::now();
   let proof = backend.prove(entry, &args, &[], witness)?;
@@ -250,7 +260,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "prepare_seconds": prepare_seconds, "setup_seconds": setup_seconds,
         "execution_seconds": execution_seconds, "witness_seconds": times[0], "seconds": times,
         "prove_seconds": prove_seconds, "verify_seconds": verify_seconds, "proof_bytes": bytes.len(),
-        "counts": counts, "function_counts": function_counts, "checked_scope": checked_scope, "stage1_words": stage1_words, "circuits": circuits, "verified": true,
+        "counts": counts, "function_counts": function_counts, "checked_scope": checked_scope, "stage1_words": stage1_words, "rows": rows, "depth": depth, "circuits": circuits, "verified": true,
         "record_fingerprint": record_fingerprint, "trace_fingerprint": trace_fingerprint})
   );
   Ok(())

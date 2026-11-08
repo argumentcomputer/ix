@@ -11,9 +11,11 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod depth;
 mod plan;
 #[cfg(feature = "stark")]
 pub mod stark;
+pub use depth::{DepthStatistics, RangeCounts, SccStatistics};
 #[cfg(test)]
 mod tests;
 
@@ -194,11 +196,52 @@ pub struct Chip {
   pub constraints: Vec<Polynomial>,
   pub sends: Vec<Send>,
   pub memory: Vec<MemoryLookup>,
+  /// How the depth pass (Track A, H1) extended this circuit. Absent for a
+  /// hand-written circuit: no depth column and only plain slots.
+  #[serde(default)]
+  pub depth: ChipDepth,
 }
+
+/// How a call slot carries its callee's depth word, as the Lean depth pass
+/// (`Aiur.Optimized.Depth`) allocated it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DepthSlot {
+  /// The callee carries no depth word: not recursive, or a fixed map.
+  Plain,
+  /// Same SCC: the callee's depth word is `d - 1`.
+  Exact,
+  /// Same SCC: the callee's depth word is `d - 1 - gap`. The gap's limbs
+  /// ([`TraceArtifact::limbs`], low first) occupy columns from `column`.
+  Gap { column: usize },
+  /// Another SCC: the callee's depth word is column `column` (option E1).
+  External { column: usize },
+}
+
+/// A depth circuit's population metadata.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct ChipDepth {
+  /// The depth word's column, for a recursive circuit. It is also the last
+  /// word of the provided call message.
+  #[serde(default)]
+  pub column: Option<usize>,
+  /// The SCC rank: recursive circuits of equal rank share an SCC.
+  #[serde(default)]
+  pub rank: u64,
+  /// One slot per original send, in send order. The gap slots' limb range
+  /// checks are the sends that follow.
+  #[serde(default)]
+  pub slots: Vec<DepthSlot>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct TraceArtifact {
   pub version: u32,
   pub modulus: u64,
+  /// Bit widths of the gap limbs, low limb first (`[16, 8]`: gaps below
+  /// `2^24`). Each width `w` has the fixed map `Depth::range{w}`.
+  #[serde(default)]
+  pub limbs: Vec<usize>,
   pub functions: Vec<FunctionPlan>,
   pub chips: Vec<Chip>,
   /// Physical function groups emitted by the Lean layout pass. Clearing this
@@ -256,6 +299,10 @@ impl<F> Matrix<F> {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trace<F = u64> {
   pub matrices: Vec<Matrix<F>>,
+  /// Population's uses of the depth range tables, which execution never
+  /// calls ([`TraceArtifact::limbs`]).
+  #[serde(default)]
+  pub ranges: RangeCounts,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -274,6 +321,7 @@ pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
   fills: Vec<plan::FillPlan<B>>,
+  depth: depth::DepthPlan,
 }
 
 fn indices(xs: &[usize], width: usize) -> Result<(), String> {
@@ -289,7 +337,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     program: &'a CheckedProgram<B>,
     mut artifact: TraceArtifact,
   ) -> Result<Self, String> {
-    if artifact.version != 2 || artifact.modulus != program.field.modulus() {
+    if artifact.version != 3 || artifact.modulus != program.field.modulus() {
       return Err("trace version or field mismatch".into());
     }
     if artifact.functions.len() != program.program.functions.len() {
@@ -421,13 +469,22 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         .steps
         .retain(|s| s.action.dest().iter().any(|v| live.contains(v)));
     }
+    // A recursive circuit's call message ends with its depth word.
+    let depth_words = |name: &str| {
+      usize::from(
+        chips
+          .get(name)
+          .is_some_and(|&c| artifact.chips[c].depth.column.is_some()),
+      )
+    };
     for chip in &artifact.chips {
       if chip.activation.checked_add(1) != Some(chip.width) {
         return Err("invalid activation column".into());
       }
       let callable =
         *callables.get(&chip.name).ok_or("unknown chip callable")?;
-      if chip.inputs.len() != program.inputs[callable].width()
+      if chip.inputs.len()
+        != program.inputs[callable].width() + depth_words(&chip.name)
         || chip.output.len() != program.outputs[callable].width()
       {
         return Err("circuit interface width mismatch".into());
@@ -444,7 +501,8 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         indices(&send.result, chip.width)?;
         let id =
           *callables.get(&send.channel).ok_or("unknown circuit channel")?;
-        if send.args.len() != program.inputs[id].width()
+        if send.args.len()
+          != program.inputs[id].width() + depth_words(&send.channel)
           || send.result.len() != program.outputs[id].width()
         {
           return Err("circuit send shape mismatch".into());
@@ -468,7 +526,20 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       .iter()
       .map(|f| plan::FillPlan::compile(f, &callables, program))
       .collect();
-    Ok(Self { program, artifact, callables, members, fills })
+    let depth = depth::DepthPlan::compile(
+      &artifact, &chips, &callables, &members, program,
+    )?;
+    let sccs = depth::function_sccs(&artifact)?;
+    if sccs.iter().any(|&s| s != depth::NO_SCC)
+      && program.depth.as_deref() != Some(sccs.as_slice())
+    {
+      return Err(
+        "these depth circuits need recorded heights: prepare the program with \
+         CheckedProgram::track_depth"
+          .into(),
+      );
+    }
+    Ok(Self { program, artifact, callables, members, fills, depth })
   }
 
   /// Populate each original query once. Power-of-two padding remains all
@@ -586,6 +657,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     let mut scratch = vec![];
     let mut buffer = vec![];
     let mut hint_output = vec![];
+    let mut ranges = RangeCounts::default();
     let field = self.program.field;
     timings.bind_seconds = start.elapsed().as_secs_f64();
     let start = std::time::Instant::now();
@@ -610,6 +682,17 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
               &mut buffer,
               row,
             )
+            .and_then(|()| {
+              self.depth.fill(
+                self.members[function],
+                record,
+                table.depth(query),
+                row,
+                field,
+                &mut buffer,
+                &mut ranges,
+              )
+            })
             .map_err(|e| format!("{} query {query}: {e}", plan.name))?;
           offsets[self.members[function]] += 1;
           continue;
@@ -753,13 +836,25 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
             row[write.column] = scratch[write.source];
           }
         }
+        self
+          .depth
+          .fill(
+            self.members[function],
+            record,
+            table.depth(query),
+            row,
+            field,
+            &mut buffer,
+            &mut ranges,
+          )
+          .map_err(|e| format!("{} query {query}, depth: {e}", plan.name))?;
         offsets[self.members[function]] += 1;
       }
     }
     timings.fill_seconds = start.elapsed().as_secs_f64();
     // Allocation already zeroed the inactive padding rows. Their lookup
     // multiplicities are zero, so execution counts require no repair.
-    Ok(Trace { matrices })
+    Ok(Trace { matrices, ranges })
   }
 
   fn validate_record(&self, record: &Execution<B>) -> Result<(), String> {
@@ -836,6 +931,36 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     Ok(())
   }
 
+  /// Split a recursive entry's public depth word off its arguments. A
+  /// recursive circuit provides its call with a final depth word, so its
+  /// public claim carries one too; the soundness theorem holds for every
+  /// value. Callers pass it after the arguments.
+  pub(crate) fn entry_args<'x>(
+    &self,
+    id: usize,
+    args: &'x [B::Element],
+  ) -> (&'x [B::Element], Option<B::Element>) {
+    if self.artifact.chips[self.members[id]].depth.column.is_some()
+      && args.len() == self.program.inputs[id].width() + 1
+      && let Some((depth, inputs)) = args.split_last()
+    {
+      (inputs, Some(*depth))
+    } else {
+      (args, None)
+    }
+  }
+
+  /// The public arguments of `entry` for the claim `record` proves: `args`,
+  /// followed for a recursive entry by its recorded depth word.
+  pub fn public_args(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<Vec<B::Element>, String> {
+    Ok(self.root(record, entry, args)?.args)
+  }
+
   fn root(
     &self,
     record: &Execution<B>,
@@ -843,16 +968,25 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     args: &[B::Element],
   ) -> Result<Claim<B::Element>, String> {
     let id = self.program.entry(entry)?.function;
-    self.program.inputs[id].validate(args, self.program.field)?;
-    let query =
-      record.queries.tables[id].lookup(args).1.ok_or("missing entry query")?;
-    if record.queries.tables[id].output(query).output != record.output {
+    let (inputs, depth) = self.entry_args(id, args);
+    self.program.inputs[id].validate(inputs, self.program.field)?;
+    let table = &record.queries.tables[id];
+    let query = table.lookup(inputs).1.ok_or("missing entry query")?;
+    if table.output(query).output != record.output {
       return Err("root output mismatch".into());
     }
     let chip = self.members[id];
+    let mut args = inputs.to_vec();
+    if self.artifact.chips[chip].depth.column.is_some() {
+      let recorded = self.program.field.from_u64(table.depth(query));
+      if depth.is_some_and(|d| d != recorded) {
+        return Err("entry depth word differs from the record".into());
+      }
+      args.push(recorded);
+    }
     Ok(Claim {
       channel: self.callables[&self.artifact.chips[chip].name],
-      args: args.to_vec(),
+      args,
       output: record.output.clone(),
     })
   }

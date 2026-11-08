@@ -296,7 +296,7 @@ fn native_and_independent_fields_populate_the_same_trace() {
       f,
     );
     let artifact: aiur::trace::TraceArtifact = serde_json::from_value(json!({
-            "version":2, "modulus":field.modulus(),
+            "version":3, "modulus":field.modulus(),
             "functions":[{"name":"main","chip":"main","witnesses":4,
                 "inputs":[0],"output":[3],
                 "steps":[

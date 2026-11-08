@@ -83,6 +83,10 @@ lean_exe library_tests where
 lean_exe grouping_example where
   root := `Examples.Grouping
 
+/-- Writes or checks the depth-pass fixture `crates/aiur/tests/fixtures/depth.ixa`. -/
+lean_exe depth_example where
+  root := `Examples.Depth
+
 lean_exe grouping_tune where
   root := `Examples.GroupingTune
 

@@ -18,11 +18,12 @@ fi
 export IX_CUDA=0 AIUR_TRACE_ONLY_LOOKUPS=0
 
 lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests formal-checks \
-  aiur/grouping_example aiur/Aiur.Library.U8Facts
+  aiur/grouping_example aiur/depth_example aiur/Aiur.Library.U8Facts
 # The IxVM and MultiStark modules are Lean source (`aiur⟦ … ⟧`). Only
 # IxVM/IxVM/Modules/KernelRoleSpec.lean is rendered, from IxC's role specifications.
 .lake/build/bin/ix codegen --check
 lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.ixa --check
+lake env Aiur/.lake/build/bin/depth_example crates/aiur/tests/fixtures/depth.ixa --check
 cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel \
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
 

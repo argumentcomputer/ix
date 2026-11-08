@@ -99,7 +99,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let (package, artifact) = Package::load(path.as_ref())?;
   eprintln!("artifact {path}: blake3 {artifact}");
   let (program, trace) = package.traced()?;
-  let program = program.check_field::<Val>()?;
+  let mut program = program.check_field::<Val>()?;
+  program.track_depth(&trace)?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "cases" {
     let cases =

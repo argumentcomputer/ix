@@ -104,6 +104,18 @@ module Merge {
 }
 "
 
+/-- The depth system's root claim: a recursive entry's message carries the depth
+word of the row that provides it. -/
+private def depthRoot [Field G] [DecidableEq G] (cfg : Optimized.Depth.Config)
+    (system : Circuit.System G) (rows : List (Circuit.WeightedRow G)) (root : Circuit.Message G) :
+    Except String (Circuit.Message G) := do
+  unless cfg.recursive root.channel do return root
+  let some chip := system.findChip? root.channel | throw "missing entry circuit"
+  let some row := rows.find? fun w =>
+      w.row.chip == root.channel && Optimized.Depth.erase cfg (chip.receive w.row) == root
+    | throw "no row provides the entry claim"
+  return chip.receive row.row
+
 def run : IO Unit := do
   let source := { AiurExecutionTests.source with modules :=
     AiurExecutionTests.source.modules ++ AiurExecutionHintTests.source.modules ++ extras.modules ++ mergeCases.modules }
@@ -181,14 +193,16 @@ def run : IO Unit := do
     let some binary := physical.system.findChip? "Merge::public_binary" | throw (IO.userError "missing binary entry")
     let some ternary := physical.system.findChip? "Merge::public_ternary" | throw (IO.userError "missing ternary entry")
     unless binary.constraints != ternary.constraints do throw (IO.userError "public canonicality checks disappeared")
-    let plan ← IO.ofExcept (Trace.exportPreparedPlan 97 ZMod.val compiled.circuit.inlined.program artifact physical exported.bytecode)
+    let (traced, plan) ← IO.ofExcept (Trace.exportPreparedPlan 97 ZMod.val compiled.circuit.inlined.program artifact physical exported)
+    let cfg ← IO.ofExcept (Trace.depthConfig 97 physical)
+    let depthSystem := Optimized.Depth.system cfg physical.system
     for (name, args) in cases do
       for pad in [false, true] do
-        let result ← IO.ofExcept (← Trace.run exported plan name args hints pad)
+        let result ← IO.ofExcept (← Trace.run traced plan name args hints pad)
         let rows ← IO.ofExcept (result.rows 97)
         let rom ← IO.ofExcept (result.widthROM 97)
         for weighted in ← IO.ofExcept (result.paddedRows 97) do
-          let some source := physical.system.findChip? weighted.row.chip
+          let some source := depthSystem.findChip? weighted.row.chip
             | throw (IO.userError "unknown padded chip")
           let padded := Optimized.Activation.compile source
           let _ ← IO.ofExcept ((padded.checkRow (Circuit.Erasure.rawROM rom) weighted.row).mapError reprStr)
@@ -203,18 +217,20 @@ def run : IO Unit := do
           inputs := inputs ++ [WireValue.mk wire.type value]
         let root := Circuit.Message.mk selection.resolved.name inputs
           ⟨chip.output.type, result.execution.output.toList.map Nat.cast⟩
-        match physical.checkMemo rom root rows with
+        let root ← IO.ofExcept (depthRoot cfg depthSystem rows (Circuit.Erasure.message artifact.system root))
+        match (depthSystem.checkMemo (Circuit.Erasure.rawROM rom) root rows).mapError reprStr with
         | .ok _ => pure ()
         | .error e => throw (IO.userError s!"Lean trace check failed for {name}, pad={pad}: {e}")
         if name == "Merge::public_binary" then
           let some row := rows.find? (·.row.chip == name) | throw (IO.userError "missing binary row")
           let some column := (binary.inputs.flatMap WireValue.words).head? | throw (IO.userError "missing binary input")
           let forged := { row.row with values := row.row.values.set column 2 }
+          let some binary := depthSystem.findChip? name | throw (IO.userError "missing binary depth circuit")
           if (binary.checkRow (Circuit.Erasure.rawROM rom) forged).isOk then
             throw (IO.userError "physical entry accepted a tag canonical only for the other enum")
         if name == "Merge::hints" then
           let hintName := physical.representative "Merge::binary_hint"
-          let some hintChip := physical.system.findChip? hintName | throw (IO.userError "missing hint circuit")
+          let some hintChip := depthSystem.findChip? hintName | throw (IO.userError "missing hint circuit")
           let some row := rows.find? (·.row.chip == hintName) | throw (IO.userError "missing hint row")
           let some (.var column) := hintChip.output.words.head? | throw (IO.userError "missing hint output")
           let forged := { row.row with values := row.row.values.set column 2 }
@@ -222,7 +238,8 @@ def run : IO Unit := do
             throw (IO.userError "physical hint accepted a tag canonical only for the other enum")
         -- Independently exercise rejection in the certified physical checker.
         if let some first := rows.head? then
-          if (physical.checkMemo rom root ({ first with multiplicity := first.multiplicity + 1 } :: rows.tail!)).isOk then
+          if (depthSystem.checkMemo (Circuit.Erasure.rawROM rom) root
+              ({ first with multiplicity := first.multiplicity + 1 } :: rows.tail!)).isOk then
             throw (IO.userError "Lean checker accepted a mutated provide count")
     IO.println s!"Trace: {cases.length * 2} executions accepted by Lean checkMemo ({reprStr config})"
 
@@ -236,7 +253,9 @@ def runSmallField : IO Unit := do
   let compiled ← IO.ofExcept (prepared.compileOptimized {})
   let artifact := compiled.circuit.artifact
   let physical ← IO.ofExcept (Optimized.Physical.prepare artifact)
-  let plan ← IO.ofExcept (Trace.exportPreparedPlan 2 ZMod.val compiled.circuit.inlined.program artifact physical exported.bytecode)
+  let (traced, plan) ← IO.ofExcept (Trace.exportPreparedPlan 2 ZMod.val compiled.circuit.inlined.program artifact physical exported)
+  let cfg ← IO.ofExcept (Trace.depthConfig 2 physical)
+  let depthSystem := Optimized.Depth.system cfg physical.system
   let cases : List (String × Array Nat) := [
     ("Extra::width_capacity", #[0]), ("Extra::width_capacity", #[1]),
     ("Extra::high", #[1,1]), ("Extra::branches", #[0,0]),
@@ -246,17 +265,21 @@ def runSmallField : IO Unit := do
       (fun name => [0, 1].flatMap fun x => [0, 1].map fun y => (name, #[x, y]))
   for (name, args) in cases do
     for pad in [false, true] do
-      let result ← IO.ofExcept (← Trace.run exported plan name args #[] pad)
+      let result ← IO.ofExcept (← Trace.run traced plan name args #[] pad)
       let rows ← IO.ofExcept (result.rows 2)
       let rom ← IO.ofExcept (result.widthROM 2)
       for weighted in ← IO.ofExcept (result.paddedRows 2) do
-        let some source := physical.system.findChip? weighted.row.chip
+        let some source := depthSystem.findChip? weighted.row.chip
           | throw (IO.userError "unknown padded chip")
         let padded := Optimized.Activation.compile source
         let _ ← IO.ofExcept ((padded.checkRow (Circuit.Erasure.rawROM rom) weighted.row).mapError reprStr)
       let root := Circuit.Message.mk name (args.toList.map fun n => WireValue.field (n : ZMod 2))
         (WireValue.field ((result.execution.output[0]?.getD 0 : Nat) : ZMod 2))
-      IO.ofExcept (physical.checkMemo rom root rows)
+      let some original := artifact.system.findChip? name | throw (IO.userError "missing entry circuit")
+      unless Circuit.Erasure.messageShape root == Circuit.Erasure.signature original do
+        throw (IO.userError "wrong entrypoint signature")
+      let root ← IO.ofExcept (depthRoot cfg depthSystem rows (Circuit.Erasure.message artifact.system root))
+      IO.ofExcept ((depthSystem.checkMemo (Circuit.Erasure.rawROM rom) root rows).mapError reprStr)
   IO.println s!"Trace: {cases.length * 2} executions accepted by Lean checkMemo over F₂"
 
 end AiurTraceTests

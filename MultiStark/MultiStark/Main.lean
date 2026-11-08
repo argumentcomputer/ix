@@ -35,12 +35,13 @@ unsafe def main (args : List String) : IO Unit := do
     IO.FS.writeFile path (toJson snapshot).compress
     IO.eprintln s!"Wrote grouping snapshot {path}"
     return
-  let trace ← if mode == "export-trace" then do
+  let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode groups))
-  else pure none
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
+      compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+    pure (exported, some trace)
+  else pure (exported, none)
   let path := args[1]?.getD "/tmp/ix-recursion.ixa"
   Artifact.write path (← IO.ofExcept (Artifact.package exported MultiStark.modulus ZMod.val trace))
   IO.eprintln s!"Wrote {path}"

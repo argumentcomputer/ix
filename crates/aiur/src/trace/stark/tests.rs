@@ -6,6 +6,7 @@ use crate::{
   trace::TraceArtifact,
 };
 use serde_json::{Value as Json, json};
+mod depth;
 mod memo_cycle;
 mod parameters;
 mod partition;
@@ -1426,7 +1427,7 @@ fn gpu_population_proves_identically() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = super::gpu::DevicePlans::new(&backend);
+  let plans = gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
     .iter()
@@ -1450,7 +1451,7 @@ fn gpu_population_proves_identically() {
           retention,
         )
         .unwrap();
-      backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
+      backend.device_plans = Some(gpu::DevicePlans::new(&backend));
       let stage = backend.prepare_stage_1(&record, entry, &[3]).unwrap();
       assert_eq!(
         stage.cells(),
@@ -1470,5 +1471,44 @@ fn gpu_population_proves_identically() {
         "{device_circuits:?} with {rows} rows, {retention:?}"
       );
     }
+  }
+}
+
+/// GPU population of depth circuits (Track A, H1): exact, gap and external
+/// slots and the range tables' counting pass prove the same bytes as host
+/// population (follow-up G4).
+#[cfg(feature = "cuda")]
+#[test]
+fn gpu_depth_population_proves_identically() {
+  use multi_stark::batch::Retention;
+  let (program, trace) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let mut backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let plans = gpu::DevicePlans::new(&backend);
+  let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
+  assert!(plans.circuits[fib], "fib's gap slots run on the device");
+  let entry = "Depth::run";
+  let record = program.execute(entry, vec![12]).unwrap();
+  let output = record.output.clone();
+  for rows in [4, 64] {
+    backend.device_plans = None;
+    let host = backend
+      .prove_batch_stage_1(
+        entry,
+        &[12],
+        &output,
+        backend.generate_stage_1(&record, entry, &[12]).unwrap(),
+        rows,
+        Retention::Retain,
+      )
+      .unwrap();
+    backend.device_plans = Some(gpu::DevicePlans::new(&backend));
+    let stage = backend.prepare_stage_1(&record, entry, &[12]).unwrap();
+    let device = backend
+      .prove_stage_one(entry, &[12], &output, stage, rows, Retention::Retain)
+      .unwrap();
+    assert_eq!(device.to_bytes().unwrap(), host.to_bytes().unwrap());
   }
 }

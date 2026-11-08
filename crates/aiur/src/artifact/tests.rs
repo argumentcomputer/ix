@@ -48,7 +48,7 @@ fn sample() -> Package {
   let c = json!({"const": 18446744069414584320u64});
   let sum = json!({"add": [x, {"sub": [c, {"mul": [x, x]}]}]});
   let trace: TraceArtifact = serde_json::from_value(json!({
-    "version": 2, "modulus": 18446744069414584321u64,
+    "version": 3, "modulus": 18446744069414584321u64, "limbs": [16, 8],
     "functions": [{"name":"main","chip":"main","witnesses":4,"inputs":[0],
       "output":[1],"steps":[
         {"guard":c,"action":{"op":"assign","dest":[1],"values":[sum]}},
@@ -64,7 +64,12 @@ fn sample() -> Package {
     "chips": [{"name":"main","width":3,"activation":2,"inputs":[0],
       "output":[x],"constraints":[sum],
       "sends":[{"channel":"call","args":[x],"result":[1],"enable":c}],
-      "memory":[{"type":pair,"address":x,"values":[x, c],"enable":x}]}],
+      "memory":[{"type":pair,"address":x,"values":[x, c],"enable":x}],
+      "depth":{"column":1,"rank":7,"slots":[{"kind":"gap","column":0}]}},
+     {"name":"leaf","width":1,"activation":0,"inputs":[],"output":[],
+      "constraints":[],"sends":[{"channel":"call","args":[],"result":[],"enable":c}],
+      "memory":[],"depth":{"column":null,"rank":2,
+        "slots":[{"kind":"external","column":0}]}}],
     "groups": [{"name":"g","width":5,"activation":x,"constraints":[sum],
       "receive":[x],"sends":[{"enable":x,"args":[c]}],
       "members":[{"name":"main","columns":[0,1],"selector":4,
@@ -231,47 +236,6 @@ fn lean_fixture_is_canonical() {
   let package = Package::decode(bytes).unwrap();
   assert!(package.trace.as_ref().is_some_and(|t| t.groups.len() == 1));
   assert_eq!(package.encode(), bytes);
-}
-
-/// Transition evidence for the move from JSON to Ixon (PR #678): Lean's last
-/// JSON export of the grouping example decodes, through the retired serde
-/// path, to exactly the package its Ixon export holds. `AIUR_TRANSITION_PAIRS`
-/// adds `OLD.json=NEW.ixa` pairs (comma-separated), such as the IxVM and
-/// recursion artifacts, which are too large to commit. Delete this test and
-/// `fixtures/transition/` once the grouping fixture next changes.
-#[test]
-fn json_and_ixon_artifacts_decode_identically() {
-  #[derive(serde::Deserialize)]
-  #[serde(deny_unknown_fields)]
-  struct Json {
-    program: Program,
-    trace: Option<TraceArtifact>,
-  }
-  let compare = |json: &[u8], ixon: &[u8]| {
-    let mut decoder = serde_json::Deserializer::from_slice(json);
-    decoder.disable_recursion_limit();
-    let old = <Json as serde::Deserialize>::deserialize(&mut decoder).unwrap();
-    decoder.end().unwrap();
-    let new = Package::decode(ixon).unwrap();
-    assert_eq!(new, Package { program: old.program, trace: old.trace });
-    assert_eq!(new.encode(), ixon);
-  };
-  let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
-  compare(
-    include_bytes!(concat!(
-      env!("CARGO_MANIFEST_DIR"),
-      "/tests/fixtures/transition/grouping.json"
-    )),
-    &std::fs::read(format!("{fixtures}/grouping.ixa")).unwrap(),
-  );
-  for pair in
-    std::env::var("AIUR_TRANSITION_PAIRS").unwrap_or_default().split(',')
-  {
-    if let Some((json, ixon)) = pair.split_once('=') {
-      compare(&std::fs::read(json).unwrap(), &std::fs::read(ixon).unwrap());
-      eprintln!("{json} and {ixon} decode identically");
-    }
-  }
 }
 
 fn sample_invocation() -> Invocation {

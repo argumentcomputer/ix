@@ -65,17 +65,24 @@ struct Measured {
   #[serde(skip)]
   deferred: Vec<(Vec<Val>, u64)>,
   #[serde(skip)]
-  edges: Vec<(Vec<Val>, Vec<Val>)>,
+  edges: Vec<(Vec<Val>, Vec<Val>, u64)>,
   #[serde(skip)]
   own_counts: Vec<u64>,
+  // Each owned call's height ignoring calls deferred to other records.
+  #[serde(skip)]
+  own_heights: Vec<(Vec<Val>, u64)>,
 }
 
+/// Execute `worker`'s record. `heights` supplies the honest heights of its
+/// deferred calls (depth pass, design §9): none in the first pass, which
+/// measures base heights and offsets for [`aiur::execute::owned_heights`].
 fn record(
   program: &Program,
   spec: &Spec,
   worker: usize,
   function: usize,
   pool: &RecordPool,
+  heights: Option<&FxHashMap<Vec<Val>, u64>>,
 ) -> Result<(Execution<Field>, usize, f64), String> {
   let _span = tracing_texray::examine(tracing::info_span!(
     "aiur.distributed.execute",
@@ -120,6 +127,7 @@ fn record(
             owned,
             memory_start: stride * worker as u64,
             memory_end: stride * (worker as u64 + 1),
+            heights: heights.cloned(),
           },
           Some(&reservation),
         )
@@ -144,36 +152,6 @@ fn record(
       Err(super::PrepFailure::Resource(e)) => return Err(e.to_string()),
       Err(super::PrepFailure::Other(e)) => return Err(e),
     }
-  }
-}
-
-/// No deferred-call cycle may be hidden by splitting a record. Local cycles
-/// are caught by the interpreter; this checks the combined owned-call graph.
-fn acyclic(
-  nodes: usize,
-  edges: impl Iterator<Item = (usize, usize)>,
-) -> Result<(), String> {
-  let mut graph = vec![Vec::new(); nodes];
-  let mut incoming = vec![0usize; nodes];
-  for (a, b) in edges {
-    graph[a].push(b);
-    incoming[b] += 1;
-  }
-  let mut ready: Vec<_> = (0..nodes).filter(|&i| incoming[i] == 0).collect();
-  let mut count = 0;
-  while let Some(i) = ready.pop() {
-    count += 1;
-    for &j in &graph[i] {
-      incoming[j] -= 1;
-      if incoming[j] == 0 {
-        ready.push(j);
-      }
-    }
-  }
-  if count == nodes {
-    Ok(())
-  } else {
-    Err("recursive owned-call cycle crosses worker records".into())
   }
 }
 
@@ -232,7 +210,8 @@ pub(crate) fn run(
   let (package, digest) = aiur::artifact::Package::load(artifact)?;
   eprintln!("artifact {}: blake3 {digest}", artifact.display());
   let (program, trace) = package.traced()?;
-  let program = program.check_field::<Val>()?;
+  let mut program = program.check_field::<Val>()?;
+  program.track_depth(&trace)?;
   let plan = TracePlan::new(&program, trace)?;
   let options: Options = read_json(options_path)?;
   options.validate()?;
@@ -304,21 +283,25 @@ pub(crate) fn run(
       .into_par_iter()
       .map(|worker| {
         let (record, bytes, seconds) =
-          record(&program, &spec, worker, function, &pool)?;
-        let own_counts = spec.workers[worker]
+          record(&program, &spec, worker, function, &pool, None)?;
+        let (own_counts, own_heights) = spec.workers[worker]
           .owned
           .iter()
           .map(|key| {
             let args = program.field().decode(key)?;
-            Ok(
+            let height = record
+              .query_depth(function, &args)
+              .ok_or("missing owned query")?;
+            Ok((
               record
                 .queries
-                .get(&QueryInput { function, args })
+                .get(&QueryInput { function, args: args.clone() })
                 .ok_or("missing owned query")?
                 .multiplicity,
-            )
+              (args, height),
+            ))
           })
-          .collect::<Result<Vec<_>, String>>()?;
+          .collect::<Result<(Vec<_>, Vec<_>), String>>()?;
         Ok(Measured {
           shape: backend.record_shape(&record)?,
           queries: record.queries.len(),
@@ -326,13 +309,14 @@ pub(crate) fn run(
           record_bytes: bytes,
           execution_seconds: seconds,
           own_counts,
+          own_heights,
           deferred: record
             .deferred_calls()
             .map(|(k, n)| (k.to_vec(), n))
             .collect(),
           edges: record
-            .partition_edges()
-            .map(|(a, b)| (a.to_vec(), b.to_vec()))
+            .partition_offsets()
+            .map(|(a, b, w)| (a.to_vec(), b.to_vec(), w))
             .collect(),
         })
       })
@@ -341,6 +325,10 @@ pub(crate) fn run(
   let mut incoming =
     vec![FxHashMap::<Vec<Val>, u64>::default(); spec.workers.len()];
   let mut edges = Vec::new();
+  let mut base = FxHashMap::default();
+  for m in &measured {
+    base.extend(m.own_heights.iter().cloned());
+  }
   for worker in &measured {
     for (key, count) in &worker.deferred {
       let &(owner, _) = owners.get(key).ok_or("deferred call has no owner")?;
@@ -350,14 +338,30 @@ pub(crate) fn run(
         .filter(|&n| n < Val::ORDER_U64)
         .ok_or("deferred count overflow")?;
     }
-    for (a, b) in &worker.edges {
-      edges.push((
-        owners.get(a).ok_or("unknown caller owner")?.1,
-        owners.get(b).ok_or("unknown callee owner")?.1,
-      ));
+    for (a, b, w) in &worker.edges {
+      owners.get(a).ok_or("unknown caller owner")?;
+      owners.get(b).ok_or("unknown callee owner")?;
+      edges.push((a.clone(), b.clone(), *w));
     }
   }
-  acyclic(keys.len(), edges.into_iter())?;
+  // The owned-call graph must be acyclic: a cycle across records would be
+  // a memo cycle no single interpreter sees. Its longest paths are the
+  // owned calls' heights, which every record's replay needs (design §9).
+  let heights = aiur::execute::owned_heights(&base, &edges)?;
+  let deferred_heights = measured
+    .iter()
+    .map(|m| {
+      m.deferred
+        .iter()
+        .map(|(key, _)| {
+          Ok((
+            key.clone(),
+            *heights.get(key).ok_or("deferred call has no owner")?,
+          ))
+        })
+        .collect::<Result<FxHashMap<_, _>, String>>()
+    })
+    .collect::<Result<Vec<_>, String>>()?;
   for (i, worker) in spec.workers.iter().enumerate() {
     for (key, count) in worker.owned.iter().zip(&measured[i].own_counts) {
       let key = program.field().decode(key)?;
@@ -469,8 +473,23 @@ pub(crate) fn run(
       if cached != Some(worker) {
         // Release the previous record's matrices before replaying the next one.
         traces.clear();
-        let (mut record, _, _) =
-          record(&program, &spec, worker, function, &pool)?;
+        let (mut record, _, _) = record(
+          &program,
+          &spec,
+          worker,
+          function,
+          &pool,
+          Some(&deferred_heights[worker]),
+        )?;
+        // With its deferred calls' heights known, the replay recomputes
+        // its owned calls' heights; they must be the coordinator's.
+        for (key, _) in &measured[worker].own_heights {
+          if record.query_depth(function, key) != heights.get(key).copied() {
+            return Err(
+              "owned call height differs from the coordinator's".into(),
+            );
+          }
+        }
         for (key, count) in &incoming[worker] {
           record.absorb_deferred(function, key, *count)?;
         }
@@ -503,15 +522,4 @@ pub(crate) fn run(
   )?;
   println!("{report}");
   Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  #[test]
-  fn cross_record_cycles_and_shared_dags() {
-    assert!(acyclic(4, [(0, 1), (0, 2), (1, 3), (2, 3)].into_iter()).is_ok());
-    assert!(acyclic(3, [(0, 1), (1, 2), (2, 1)].into_iter()).is_err());
-    assert!(acyclic(1, [(0, 0)].into_iter()).is_err());
-  }
 }

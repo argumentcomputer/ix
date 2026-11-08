@@ -38,7 +38,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   eprintln!("artifact {}: blake3 {digest}", cli[1]);
   let (program, trace) = package.package.traced()?;
   let fixture: Fixture = serde_json::from_slice(&std::fs::read(&cli[2])?)?;
-  let program = program.check_field::<multi_stark::types::Val>()?;
+  let mut program = program.check_field::<multi_stark::types::Val>()?;
+  program.track_depth(&trace)?;
   let args = program.field().decode(&fixture.args)?;
   let expected = program.field().decode(&fixture.expected)?;
   assert!(program.program().functions.iter().all(|f| {

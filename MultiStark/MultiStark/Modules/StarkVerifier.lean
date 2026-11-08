@@ -623,6 +623,61 @@ module StarkVerifier {
       1
     }
 
+  -- `n <= 2^39` for a canonical `n`.
+  fn at_most_row_bound(n: Field) -> Field {
+      let b = Goldilocks::gl_to_bytes(n);
+      let high = UInt8::to_field(b[5]) + UInt8::to_field(b[6]) + UInt8::to_field(b[7]);
+      Fields::is_zero(high) * (UInt8::less_than(b[4], UInt8::BYTE_128) + Fields::is_zero(n - 549755813888))
+    }
+
+  -- A shard's rows: `2^ld` summed over its active circuits.
+  fn shard_rows(lds: Lists::List<UInt8::U8>) -> Field {
+      match (*(lds)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(ld, rest) => {  pow2(UInt8::to_field(ld)) + shard_rows(rest) } ,
+      }
+    }
+
+  -- The running total of a batch's rows stays at most 2^39, so that the
+  -- next shard's sum (each `ld <= 32`) cannot wrap the field.
+  fn batch_rows(headers: Lists::List<ProofDeserialize::ShardHeader>, acc: Field) -> Field {
+      match (*(headers)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(h, rest) => {
+          let ProofDeserialize::ShardHeader::Mk(_active, _cap, lds, _claims) = h;
+          let rows = acc + shard_rows(lds);
+          assert_eq!(at_most_row_bound(rows), 1);
+          batch_rows(rest, rows) } ,
+      }
+    }
+
+  -- Every circuit has fewer than 2^24 lookups.
+  fn lookups_ok(circuits: Lists::List<SystemDeserialize::SysCircuit>) -> Field {
+      match (*(circuits)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(circ, rest) => {
+          let SystemDeserialize::SysCircuit::Mk(_nodes, _node_count, _zeros, _md, lks, _k, _mw, _pw, _s2w) = circ;
+          let b = Goldilocks::gl_to_bytes(Lists::length(lks));
+          assert_eq!(UInt8::to_field(b[3]) + UInt8::to_field(b[4]) + UInt8::to_field(b[5]) +
+            UInt8::to_field(b[6]) + UInt8::to_field(b[7]), 0);
+          lookups_ok(rest) } ,
+      }
+    }
+
+  -- The bounds every verifier of these proofs enforces, mirroring Rust's
+  -- `validate_preamble`. The rows of a batch, summed over shards and active
+  -- circuits, are at most 2^39 (`MAX_BATCH_ROWS`): the depth pass (Track A,
+  -- H1) excludes memo cycles because a cycle needs `p / 2^24` rows. With every
+  -- circuit below 2^24 lookups, the lookup budget `claims + sum of height *
+  -- max(lookups, 1)` is then below `2^63 + claims < p`, so no unit consumer
+  -- count wraps the field.
+  fn assert_batch_bounds(sys: SystemDeserialize::Sys, headers: Lists::List<ProofDeserialize::ShardHeader>) -> Field {
+      let SystemDeserialize::Sys::Mk(_params, _tlimbs, circuits, _commit, _prep_indices) = sys;
+      assert_eq!(lookups_ok(circuits), 1);
+      let _rows = batch_rows(headers, 0);
+      1
+    }
+
   fn three_limbs(args: Lists::List<UInt64::U64>) -> (UInt64::U64, UInt64::U64, UInt64::U64) {
       let Lists::Node::Cons(a, r1) = (*(args));
       let Lists::Node::Cons(b, r2) = (*(r1));
@@ -733,6 +788,7 @@ module StarkVerifier {
   fn verify_batch(sys: SystemDeserialize::Sys, batch: ProofDeserialize::Batch) -> Lists::List<Lists::List<UInt64::U64>> {
       let ProofDeserialize::Batch::Mk(headers, messages, proofs) = batch;
       assert_eq!(assert_shard_count_ok(Lists::length(headers)), 1);
+      assert_eq!(assert_batch_bounds(sys, headers), 1);
       assert_eq!(Lists::length(proofs), Lists::length(headers));
       assert_eq!(assert_closure_pairs(messages, 0, 0), 1);
       let SystemDeserialize::Sys::Mk(_params, tlimbs, _circuits, commit, _prep_indices) = sys;

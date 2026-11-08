@@ -21,7 +21,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let (package, digest) = ExecutionPackage::load(path.as_ref())?;
   eprintln!("artifact {path}: blake3 {digest}");
   let (program, trace) = package.package.traced()?;
-  let program = program.check_field::<multi_stark::types::Val>()?;
+  let mut program = program.check_field::<multi_stark::types::Val>()?;
+  program.track_depth(&trace)?;
   let address = program.field().decode(&package.args)?;
   let hints = program.prepare_hints(&package.hints)?;
   let plan = TracePlan::new(&program, trace)?;

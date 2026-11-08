@@ -63,7 +63,10 @@ fn run_request<B: FieldBackend>(
   request: Request,
   field: B,
 ) -> Result<Vec<u8>, String> {
-  let program = program.check_with(field)?;
+  let mut program = program.check_with(field)?;
+  if let Some(artifact) = &trace {
+    program.track_depth(artifact)?;
+  }
   let record = match (request.args, request.flat_args) {
     (Some(args), None) => {
       let entry = program.entry(&request.entry)?;

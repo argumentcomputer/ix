@@ -3,9 +3,11 @@
 //!
 //! The verifier's program, artifact and fixed tables must come from the trusted
 //! compilation, not from the proof supplier. This Rust adapter and multi-stark
-//! are outside the Lean proof. In particular, the memoized semantics' acyclicity
-//! hypothesis is not discharged by a lookup argument.
-use super::{Polynomial, Trace, TracePlan};
+//! are outside the Lean proof. The lookup argument alone accepts cyclic memo
+//! tables; the exported circuits carry the depth pass (Track A, H1), whose
+//! acyclicity argument also needs every verifier to bound a batch's rows by
+//! [`MAX_BATCH_ROWS`].
+use super::{Polynomial, RangeCounts, Trace, TracePlan};
 use crate::{
   Execution,
   field::{FieldBackend, NativeField, PrimeField},
@@ -70,6 +72,15 @@ impl WitnessField for NativeField<Val> {
 
 pub type Proof = multi_stark::prover::Proof<GoldilocksBlake3Config>;
 pub type BatchProof = multi_stark::batch::BatchProof<GoldilocksBlake3Config>;
+
+/// The most rows one LogUp batch may hold, over every shard and active
+/// circuit (padded heights, which only over-count). The depth pass's
+/// acyclicity argument (Track A, H1) needs `MAX_BATCH_ROWS · 2^24 < p`:
+/// a memo cycle among `L` rows lowers depth words by `1 + gap ∈ [1, 2^24]`
+/// per row and must sum to a multiple of `p`, so it needs `L · 2^24 ≥ p`
+/// (`Depth.checkMemo_sound`, `Depth.goldilocks_characteristic`). Every
+/// verifier of these proofs enforces it, including the in-circuit ones.
+pub const MAX_BATCH_ROWS: u64 = 1 << 39;
 
 // Separate message namespaces; callable/type IDs fix the shape within each.
 const CALL: u64 = 1;
@@ -463,6 +474,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .collect()
   }
 
+  /// The public claim `[CALL, entry, args…, output…]`. A recursive entry's
+  /// claim also carries a depth word, which `args` must end with
+  /// ([`TracePlan::public_args`] gives the recorded one); the depth pass's
+  /// soundness holds for every value.
   pub fn claim(
     &self,
     entry: &str,
@@ -470,14 +485,21 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     output: &[B::Element],
   ) -> Result<Vec<Val>, String> {
     let id = self.plan.program.entry(entry)?.function;
-    self.plan.program.inputs[id].validate(args, self.plan.program.field)?;
-    self.plan.program.outputs[id].validate(output, self.plan.program.field)?;
     let chip = &self.plan.artifact.chips[self.plan.members[id]];
+    let (inputs, depth) = self.plan.entry_args(id, args);
+    self.plan.program.inputs[id].validate(inputs, self.plan.program.field)?;
+    self.plan.program.outputs[id].validate(output, self.plan.program.field)?;
+    if chip.depth.column.is_some() && depth.is_none() {
+      return Err(format!(
+        "{entry} is recursive: its public claim needs a depth word after its arguments"
+      ));
+    }
     Ok(
       [CALL, self.plan.callables[&chip.name] as u64]
         .into_iter()
         .map(Val::from_u64)
-        .chain(args.iter().copied().map(B::into_stark))
+        .chain(inputs.iter().copied().map(B::into_stark))
+        .chain(depth.map(B::into_stark))
         .chain(output.iter().copied().map(B::into_stark))
         .collect(),
     )
@@ -497,7 +519,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     if trace.matrices.len() != self.plan.artifact.chips.len() {
       return Err("trace matrix count mismatch".into());
     }
-    let table_counts = self.auxiliary_counts(record)?;
+    let table_counts = self.auxiliary_counts(record, &trace.ranges)?;
     let traces = self.convert_traces(record, trace, &table_counts)?;
     let (active, degrees) = self.trace_shape(&traces)?;
     self.check_shape(&active, &degrees)?;
@@ -548,9 +570,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
   }
 
+  /// Fixed-table counts: execution's uses of each map, plus population's
+  /// uses of the depth range tables (`ranges`), which execution never calls.
   fn auxiliary_counts(
     &self,
     record: &Execution<B>,
+    ranges: &RangeCounts,
   ) -> Result<Vec<Vec<u64>>, String> {
     let program = &self.plan.program.program;
     let counts = |mi: usize| {
@@ -571,6 +596,20 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     #[cfg(not(feature = "parallel"))]
     let table_counts =
       (0..program.maps.len()).map(counts).collect::<Result<_, _>>()?;
+    let mut table_counts: Vec<Vec<u64>> = table_counts;
+    for (table, range) in self.plan.depth.tables.iter().enumerate() {
+      let uses = ranges.table(table);
+      let counts = &mut table_counts[range.map - program.functions.len()];
+      if uses.len() > counts.len() {
+        return Err("depth range counts exceed their table".into());
+      }
+      for (count, &n) in counts.iter_mut().zip(uses) {
+        *count = count
+          .checked_add(n)
+          .filter(|&c| c < Val::ORDER_U64)
+          .ok_or("table count reaches field characteristic")?;
+      }
+    }
     if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
       return Err("ROM count reaches field characteristic".into());
     }
@@ -711,14 +750,16 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok((active, degrees))
   }
 
-  /// Match fixed domains and bound total unit lookup consumers below the
-  /// characteristic. Root caps cover every active matrix, including height 1.
+  /// Match fixed domains, bound total unit lookup consumers below the
+  /// characteristic and total rows by [`MAX_BATCH_ROWS`]. Root caps cover
+  /// every active matrix, including height 1.
   fn check_shape(&self, active: &[bool], degrees: &[u8]) -> Result<(), String> {
     if active.len() != self.system.circuits.len() || !active.contains(&true) {
       return Err("invalid circuit activation".into());
     }
     let mut degrees = degrees.iter();
     let mut budget = 1u64; // one public root
+    let mut rows = 0u64;
     for (circuit, &on) in self.system.circuits.iter().zip(active) {
       if !on {
         if circuit.preprocessed_height != 0 {
@@ -736,6 +777,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         && circuit.preprocessed_height as u64 != height
       {
         return Err("fixed table height mismatch".into());
+      }
+      rows += height;
+      if rows > MAX_BATCH_ROWS {
+        return Err("trace rows exceed the batch row bound (2^39)".into());
       }
       budget = height
         .checked_mul(circuit.num_lookups as u64)
