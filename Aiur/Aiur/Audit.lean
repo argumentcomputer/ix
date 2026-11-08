@@ -47,7 +47,11 @@ balanced LogUp lookups, which `checkMemo_sound` turns into a
 `Circuit.MemoDerivation`; that memo graph may be cyclic (a provided row
 `loop(0) = 42` balances `fn loop(x) { loop(x) }`). `memo_acyclic_sound` needs
 it acyclic, i.e. every proved call terminating, and nothing proves that, so
-acyclicity is a hypothesis of the end-to-end argument.
+acyclicity is a hypothesis of the end-to-end argument. The frozen statements
+that assume it are printed with `pp.proofs true`, so they name the memo graph
+that must be acyclic (`Classical.choice (… checkMemo_sound checked)`) rather
+than an elided `⋯`. `Plan.WellFormedActivation`, by contrast, is decided for
+every exported plan by the exporter (`Trace.exportPreparedPlan`).
 
 Trusted and unproved: the Rust lowering of the exported artifact into
 multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
@@ -337,7 +341,7 @@ info: @checkerMemo_acyclic_heap_sound : ∀ {F : Type} [inst : Field F] [inst_1 
     ∀ {rom : WireROM F} {name : String} {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
       {output : WireValue F} {rows : List (Circuit.WeightedRow F)}
       (checked : system.checkMemo rom { channel := name, args := wires, result := output } rows = Except.ok ()),
-      (Classical.choice ⋯).Acyclic →
+      (Classical.choice (Circuit.System.checkMemo_sound checked)).Acyclic →
         checkEntry program name = Except.ok () →
           DecodesValues program.enums wires (entryValues args) →
             WireValue.decode program.enums output = some result →
@@ -346,6 +350,7 @@ info: @checkerMemo_acyclic_heap_sound : ∀ {F : Type} [inst : Field F] [inst_1 
                   Represents (WireROM.decode program.enums rom) heap source result
 -/
 #guard_msgs in
+set_option pp.proofs true in
 #check @Aiur.checkerMemo_acyclic_heap_sound
 /-- info: 'Aiur.checkerMemo_acyclic_heap_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -471,7 +476,7 @@ info: @Generic.Specialized.checkerMemo_acyclic_heap_sound : ∀ {F : Type} [inst
         ∀ {rom : WireROM F} {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
           {output : WireValue F} {rows : List (Circuit.WeightedRow F)}
           (checked : system.checkMemo rom { channel := name, args := wires, result := output } rows = Except.ok ()),
-          (Classical.choice ⋯).Acyclic →
+          (Classical.choice (Circuit.System.checkMemo_sound checked)).Acyclic →
             DecodesValues q.program.enums wires (entryValues args) →
               WireValue.decode q.program.enums output = some result →
                 ∃ value heap,
@@ -479,6 +484,7 @@ info: @Generic.Specialized.checkerMemo_acyclic_heap_sound : ∀ {F : Type} [inst
                     Represents (WireROM.decode q.program.enums rom) heap value result
 -/
 #guard_msgs in
+set_option pp.proofs true in
 #check @Aiur.Generic.Specialized.checkerMemo_acyclic_heap_sound
 /-- info: 'Aiur.Generic.Specialized.checkerMemo_acyclic_heap_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -560,7 +566,7 @@ info: @Generic.Compiled.checkerMemo_acyclic_heap_sound : ∀ {F : Type} [inst : 
     ∀ {rom : WireROM F} {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)}
       {output : WireValue F} {rows : List (Circuit.WeightedRow F)}
       (checked : c.system.checkMemo rom { channel := name, args := wires, result := output } rows = Except.ok ()),
-      (Classical.choice ⋯).Acyclic →
+      (Classical.choice (Circuit.System.checkMemo_sound checked)).Acyclic →
         DecodesValues q.program.enums wires (entryValues args) →
           WireValue.decode q.program.enums output = some result →
             ∃ value heap,
@@ -568,6 +574,7 @@ info: @Generic.Compiled.checkerMemo_acyclic_heap_sound : ∀ {F : Type} [inst : 
                 Represents (WireROM.decode q.program.enums rom) heap value result
 -/
 #guard_msgs in
+set_option pp.proofs true in
 #check @Aiur.Generic.Compiled.checkerMemo_acyclic_heap_sound
 /-- info: 'Aiur.Generic.Compiled.checkerMemo_acyclic_heap_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -595,12 +602,13 @@ info: @Generic.Compiled.checkMemo_acyclic_sound : ∀ {F : Type} [inst : Field F
   (c : Generic.Compiled q) {rom : WireROM F} {args : List (SourceValue F)} {result : Value F}
   {wires : List (WireValue F)} {output : WireValue F} {rows : List (Circuit.WeightedRow F)}
   (checked : c.checkMemo rom { channel := name, args := wires, result := output } rows = Except.ok ()),
-  (Classical.choice ⋯).Acyclic →
+  (Classical.choice (Circuit.System.checkMemo_sound ((Generic.Compiled.checkMemo_iff c).mp checked).right)).Acyclic →
     DecodesValues q.program.enums wires (entryValues args) →
       WireValue.decode q.program.enums output = some result →
         ∃ value heap, s.EvalCall name args value ∧ Represents (WireROM.decode q.program.enums rom) heap value result
 -/
 #guard_msgs in
+set_option pp.proofs true in
 #check @Aiur.Generic.Compiled.checkMemo_acyclic_sound
 /-- info: 'Aiur.Generic.Compiled.checkMemo_acyclic_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -690,7 +698,7 @@ info: @Optimized.GenericArtifact.checkerMemo_acyclic_heap_sound : ∀ {F : Type}
       {output : WireValue F} {rows : List (Circuit.WeightedRow F)}
       (checked :
         compiled.system.checkMemo rom { channel := name, args := wires, result := output } rows = Except.ok ()),
-      (Classical.choice ⋯).Acyclic →
+      (Classical.choice (Circuit.System.checkMemo_sound checked)).Acyclic →
         DecodesValues prepared.program.enums wires (entryValues args) →
           WireValue.decode prepared.program.enums output = some result →
             ∃ value heap,
@@ -698,6 +706,7 @@ info: @Optimized.GenericArtifact.checkerMemo_acyclic_heap_sound : ∀ {F : Type}
                 Represents (WireROM.decode prepared.program.enums rom) heap value result
 -/
 #guard_msgs in
+set_option pp.proofs true in
 #check @Aiur.Optimized.GenericArtifact.checkerMemo_acyclic_heap_sound
 /--
 info: 'Aiur.Optimized.GenericArtifact.checkerMemo_acyclic_heap_sound' depends on axioms: [propext,
@@ -784,7 +793,8 @@ info: @Optimized.ModulesArtifact.checkMemo_acyclic_sound : ∀ {F : Type} [inst 
   (selected : prepared.find? name = some entry) {rom : WireROM F} {args : List (SourceValue F)} {result : Value F}
   {wires : List (WireValue F)} {output : WireValue F} {rows : List (Circuit.WeightedRow F)}
   (checked : compiled.checkMemo rom name wires output rows = Except.ok ()),
-  (Classical.choice ⋯).Acyclic →
+  (Classical.choice
+        (Circuit.System.checkMemo_sound (Optimized.ModulesArtifact.checkMemo_rows compiled selected checked))).Acyclic →
     DecodesValues compiled.specialized.program.enums wires (entryValues args) →
       WireValue.decode compiled.specialized.program.enums output = some result →
         ∃ value heap,
@@ -792,6 +802,7 @@ info: @Optimized.ModulesArtifact.checkMemo_acyclic_sound : ∀ {F : Type} [inst 
             Represents (WireROM.decode compiled.specialized.program.enums rom) heap value result
 -/
 #guard_msgs in
+set_option pp.proofs true in
 #check @Aiur.Optimized.ModulesArtifact.checkMemo_acyclic_sound
 /-- info: 'Aiur.Optimized.ModulesArtifact.checkMemo_acyclic_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
