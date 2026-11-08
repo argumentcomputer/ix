@@ -33,6 +33,7 @@ import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.SpecDigestRendering
 import Tests.Ix.InstanceSymbols
+import Tests.Ix.CheckedSource
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Eval
@@ -178,6 +179,9 @@ def registry : List Entry := [
   -- Instance symbols: the structural encoding agrees with the JSON form on every
   -- deployed program (`Aiur.Generic.Instance.symbol`).
   .runner "instance-symbols" .primary Tests.Ix.InstanceSymbols.run,
+  -- The checked IxVM source is the native preparation of `IxVM.program`
+  -- (`IxVM.Checked.source`, `IxVM.CheckedCheck`).
+  .runner "ixvm-checked-source" .primary Tests.Ix.CheckedSource.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -287,6 +291,7 @@ def required : List (String × String) := [
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
   ("instance-symbols", "primary"),
+  ("ixvm-checked-source", "primary"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),

@@ -16,3 +16,8 @@ lean_lib IxVM
 lean_exe ixvm where
   root := `IxVM.Main
   supportInterpreter := true
+
+/-- Writes, or with `--check` compares, the checked source's Lean files
+(`IxVM/IxVM/Checked/`). -/
+lean_exe «ixvm-checked» where
+  root := `IxVM.CheckedMain
