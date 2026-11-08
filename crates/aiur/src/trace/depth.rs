@@ -8,7 +8,8 @@
 //! height, the longest call path below it within its SCC
 //! ([`crate::execute`]). Population writes `d`, reads each enabled slot's
 //! callee height, splits a gap into limbs and counts the limbs' range-table
-//! uses. Like all population it is untrusted: the circuit and the lookup
+//! uses, and checks that an exact slot's callee is exactly one below its
+//! caller. Like all population it is untrusted: the circuit and the lookup
 //! argument check every word.
 use super::*;
 use crate::execute::Execution;
@@ -91,10 +92,24 @@ pub(super) struct SlotFill {
   pub(super) callees: Vec<usize>,
 }
 
-/// One circuit's depth columns. Exact slots need none.
+/// An exact slot's callee query. Exact slots add no column, but population
+/// checks that the callee's recorded height is the caller's minus one, so a
+/// slot the Lean planner misclassified fails here, by name, rather than as an
+/// unbalanced lookup at verification.
+struct ExactCheck {
+  channel: String,
+  enable: Polynomial,
+  /// The send's arguments without its final depth word: the callee query.
+  args: Vec<Polynomial>,
+  /// The functions whose rows the callee circuit holds.
+  callees: Vec<usize>,
+}
+
+/// One circuit's depth columns (exact slots need none), and its exact slots.
 pub(super) struct DepthFill {
   pub(super) column: Option<usize>,
   pub(super) slots: Vec<SlotFill>,
+  exact: Vec<ExactCheck>,
 }
 
 impl DepthFill {
@@ -211,6 +226,7 @@ impl DepthPlan {
         return Err(format!("{}: more depth slots than sends", chip.name));
       }
       let mut slots = vec![];
+      let mut exact = vec![];
       for (send, slot) in chip.sends.iter().zip(&depth.slots) {
         let kind = match *slot {
           DepthSlot::Plain => continue,
@@ -242,21 +258,25 @@ impl DepthPlan {
         {
           return Err(format!("{}: intra-SCC slot across SCCs", chip.name));
         }
-        let Some(kind) = kind else { continue };
         let Some((_, args)) = send.args.split_last() else {
           return Err(format!(
             "{}: depth slot without a depth word",
             chip.name
           ));
         };
-        slots.push(SlotFill {
-          kind,
-          enable: send.enable.clone(),
-          args: args.to_vec(),
-          callees: functions[chips[&send.channel]].clone(),
-        });
+        let (enable, args) = (send.enable.clone(), args.to_vec());
+        let callees = functions[chips[&send.channel]].clone();
+        match kind {
+          Some(kind) => slots.push(SlotFill { kind, enable, args, callees }),
+          None => exact.push(ExactCheck {
+            channel: send.channel.clone(),
+            enable,
+            args,
+            callees,
+          }),
+        }
       }
-      fills.push(DepthFill { column: depth.column, slots });
+      fills.push(DepthFill { column: depth.column, slots, exact });
     }
     Ok(Self { fills, limbs, tables, bits })
   }
@@ -277,6 +297,21 @@ impl DepthPlan {
     let fill = &self.fills[chip];
     if let Some(column) = fill.column {
       row[column] = field.from_u64(depth);
+    }
+    for check in &fill.exact {
+      if check.enable.eval(row, field) != field.one() {
+        continue;
+      }
+      buffer.clear();
+      buffer.extend(check.args.iter().map(|p| p.eval(row, field)));
+      let callee = callee_depth(record, &check.callees, buffer)?;
+      if callee.checked_add(1) != Some(depth) {
+        return Err(format!(
+          "exact depth slot into {}: callee height {callee}, caller height \
+           {depth}",
+          check.channel
+        ));
+      }
     }
     for slot in &fill.slots {
       if slot.enable.eval(row, field) != field.one() {

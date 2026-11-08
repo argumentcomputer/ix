@@ -120,6 +120,34 @@ fn honest_recursion_proves_through_every_slot_kind() {
   batch.verify_batch(entry, &[12], &record.output, &proof).unwrap();
 }
 
+/// A misclassified exact slot fails population with a clear error, rather
+/// than as an unbalanced lookup at verification: `fib(n)` calls `fib(n - 2)`
+/// two below itself.
+#[test]
+fn misclassified_exact_slot_fails_population() {
+  use crate::trace::DepthSlot;
+  let (program, mut trace) = depth_fixture();
+  let fib = trace.chips.iter_mut().find(|c| c.name == "Depth::fib").unwrap();
+  for slot in &mut fib.depth.slots {
+    if matches!(slot, DepthSlot::Gap { .. }) {
+      *slot = DepthSlot::Exact;
+    }
+  }
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let entry = "Depth::run";
+  let record = program.execute(entry, vec![12]).unwrap();
+  let backend = Backend::new(&plan, parameters()).unwrap();
+  let errors = [
+    plan.generate_reference(&record, entry, &[12], true).err(),
+    plan.generate(&record, entry, &[12], true).err(),
+    backend.generate(&record, entry, &[12]).err(),
+  ];
+  for error in errors {
+    let error = error.expect("population accepted a misclassified slot");
+    assert!(error.contains("exact depth slot into Depth::fib"), "{error}");
+  }
+}
+
 #[test]
 fn recursive_entry_claims_a_depth_word() {
   let (program, trace) = depth_fixture();
