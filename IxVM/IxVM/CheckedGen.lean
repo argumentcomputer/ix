@@ -1,4 +1,5 @@
 import IxVM.Program
+import Aiur.Generic.LookupFacts
 
 /-! # Rendering the checked IxVM source as Lean
 
@@ -204,6 +205,38 @@ def header (imports : List String) (doc : String) : String :=
 
 def footer : String := "end IxVM.Checked\n"
 
+/-- **The lookup facts**: for every function with no type parameters (named by
+its plain name), a theorem that the program resolves its name to its closure,
+proved by `Program.sourceFunction?_of_mem` from the function's index and one
+certificate that the names' keys are distinct (`decide +kernel` on natural
+numbers, no string comparison). Generic functions get no fact here. -/
+def lookup (prog : Program F) (fnNames : List String) : String := Id.run do
+  let mut facts : List String := []
+  let mut index := 0
+  for name in fnNames do
+    if let some f := prog.functions.find? (·.name == name) then
+      if f.typeParams.isEmpty && name.toList.head? != some '$' then
+        facts := facts ++ [s!"theorem Lookup.«{name}» : program.sourceFunction? {q name} =\n" ++
+          s!"    some \{ types := [], params := Fn.«{name}».params.map fun (n, t) => (n, (t.subst []).toCore),\n" ++
+          s!"           body := Fn.«{name}».body } :=\n" ++
+          s!"  Program.sourceFunction?_of_mem (f := Fn.«{name}») functionNames_nodup\n" ++
+          s!"    (List.getElem_mem (l := functions) (n := {index}) (by decide +kernel))\n" ++
+          s!"    (head_ne_of_bytes (by decide +kernel)) rfl\n"]
+    index := index + 1
+  return header ["IxVM.Checked", "Aiur.Generic.LookupFacts"] "The checked program's lookup facts." ++
+    "/-- The function names as numbers (`nameKey`). -/\n" ++
+    s!"def functionKeys : List Nat := {listLines (fnNames.map fun n => toString (nameKey n))}\n\n" ++
+    "/-- The keys are the names' keys: each name's key computed once. -/\n" ++
+    "theorem functionKeys_eq : functions.map (fun f => nameKey f.name) = functionKeys := by decide +kernel\n\n" ++
+    "theorem functionKeys_nodup : functionKeys.Nodup := by decide +kernel\n\n" ++
+    "/-- **The function names are distinct**, certified on their keys. -/\n" ++
+    "theorem functionNames_nodup : (functions.map (·.name)).Nodup :=\n" ++
+    "  nodup_of_nameKeys (by simpa only [List.map_map, Function.comp_def, functionKeys_eq] using functionKeys_nodup)\n\n" ++
+    "/-- **No map is named like a function.** -/\n" ++
+    "theorem mapKeys_fresh : ∀ m ∈ maps, nameKey m.name ∉ functions.map (fun f => nameKey f.name) := by\n" ++
+    "  rw [functionKeys_eq]; decide +kernel\n\n" ++
+    "\n".intercalate facts ++ "\n" ++ footer
+
 /-- The rendered files, as paths relative to the repository root, and their
 contents. -/
 def render (prepared : Aiur.Modules.Prepared IxVM.program) : List (System.FilePath × String) := Id.run do
@@ -236,6 +269,7 @@ def render (prepared : Aiur.Modules.Prepared IxVM.program) : List (System.FilePa
     "  structs := structs\n  tables := genericTables\n  maps := maps\n  aliases := aliases\n" ++
     "  consts := consts\n\n" ++ footer
   files := files ++ [(System.FilePath.mk "IxVM/IxVM/Checked/Program.lean", program)]
+  files := files ++ [(System.FilePath.mk "IxVM/IxVM/Checked/Lookup.lean", lookup prog fnNames)]
   return files
 
 end IxVM.CheckedGen
