@@ -779,8 +779,13 @@ validation. The well-founded operations' groups come last and share the
 context before the first of them, so their common dependencies are checked
 once. The specification digest commits to this order and its two boundaries
 (`Ix/SpecDigest/Schedule.lean`), and to what the circuit reads off a role's
-identity (its name, inertness, quotient kind and native rule), so every table
-the circuit renders is a function of the digest's bytes. A claim's walk checks a constant bound to a basis member or an
+identity (its name, inertness, quotient kind and native rule). `ix codegen`
+renders `KernelRoleSpec.lean` from the digest's bytes alone, read back and
+checked to re-encode to themselves (`IxVM.RoleSpecGen.renderFromBytes`), so
+every table the circuit holds is a function of those bytes; `ix codegen
+--check`, run on every PR by `tools/ixvm/check-formal.sh`, fails when the file
+and the digest drift apart, and the `spec-digest-rendering` test shows that
+mutated bytes or a mutated file are refused. A claim's walk checks a constant bound to a basis member or an
 operation under the context its group is validated in, whether or not the
 claim uses the role: the check is the group's own when it does, and admits
 nothing when it does not. Under the standard axiom policy this declines a
