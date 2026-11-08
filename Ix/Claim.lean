@@ -808,7 +808,8 @@ structure ElabClaim where
 
 namespace ElabClaim
 
-def VARIANT_ELAB_CLAIM : UInt64 := 11
+/-- `TagN(4, 0xE, 12)` (`E8 04`); variant 11 (`E8 03`) is reserved for `RoleTable`. -/
+def VARIANT_ELAB_CLAIM : UInt64 := 12
 
 def put (c : ElabClaim) : PutM Unit := do
   putTagN 4 Claim.FLAG_CLAIM VARIANT_ELAB_CLAIM

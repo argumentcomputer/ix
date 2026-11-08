@@ -268,6 +268,8 @@ pub struct Proof {
 /// - 8: Catalog claim (`E8 00`)
 /// - 9: Resource claim (`E8 01`)
 /// - 10: Binding claim (`E8 02`)
+/// - 11: RoleTable section (`E8 03`, handled in `role_table.rs`)
+/// - 12: Elab claim (`E8 04`, handled in `Ix/Claim.lean`)
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
 /// legacy 4 is `0xE4` and the role-bound 5 is `0xE5`. Checked claims still bind
@@ -285,6 +287,8 @@ pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
 pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
 pub const VARIANT_BINDING_CLAIM: u64 = 10;
+// VARIANT 11 = RoleTable (`E8 03`, handled in role_table.rs)
+pub const VARIANT_ELAB_CLAIM: u64 = 12;
 
 /// TagN flag for ZK proofs (0xF). Every variant is in rung 1, a single-byte
 /// tag (`0xF0`–`0xF7`), which uses every single byte; a later proof variant
