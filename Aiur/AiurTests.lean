@@ -38,6 +38,7 @@ import AiurTests.Propagation
 import AiurTests.CompilerIndex
 import AiurTests.Carry
 import AiurTests.Blake3
+import AiurTests.Blake3Vectors
 import AiurTests.U8
 import AiurTests.U64
 import AiurTests.U32
