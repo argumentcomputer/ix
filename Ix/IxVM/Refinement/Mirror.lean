@@ -261,4 +261,139 @@ theorem matchPattern_construct (t : Ty) (c : String) (ps : List (Pattern F)) (na
   · rw [matchListWith_map (matchPatternWith world.constant world.constDepth types heap) Subtype.val,
       List.attach_map_subtype_val]
 
+omit [Field F] [DecidableEq F] in
+@[simp] theorem instanceName_plain_some (name : String) : instanceName [] name (some []) = name := by
+  simp [instanceName, Instance.symbol]
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem instanceName_plain_none (name : String) : instanceName [] name none = name := by
+  simp [instanceName, Instance.symbol]
+
+/-! ## For generated mirrors
+
+A generated mirror (`IxVM.Refinement.Mirrors`) is a Lean function with fuel
+that runs one function's body on values and a heap. Its lemma `of_eval`
+inverts a derivation node by node with the lemmas below and evaluates the
+mirror on what it found. -/
+
+theorem EvalExpr.index_inv {e : Expr F} {i : Nat}
+    (h : EvalExpr world types locals (.index e i) before result after) :
+    ∃ input, EvalExpr world types locals e before input after ∧ projectValue input i = .ok result := by
+  cases h with | index value projected => exact ⟨_, value, projected⟩
+
+theorem EvalExpr.builtin_inv {op : Builtin} {es : List (Expr F)}
+    (h : EvalExpr world types locals (.builtin op es) before result after) :
+    ∃ values, EvalArgs world types locals es before values after ∧ op.apply values = .ok result := by
+  cases h with | builtin items applied => exact ⟨_, items, applied⟩
+
+theorem EvalExpr.repeat_inv {e : Expr F} {n : Nat}
+    (h : EvalExpr world types locals (.repeat e n) before result after) :
+    ∃ input, EvalExpr world types locals e before input after ∧ result = .tuple (List.replicate n input) := by
+  cases h with | «repeat» value => exact ⟨_, value, rfl⟩
+
+theorem EvalExpr.global_literal_inv {name : String} {t : Ty} {x : F}
+    (hc : world.constant name (t.subst types) = .ok (.literal x))
+    (h : EvalExpr world types locals (.global name (some t)) before result after) :
+    result = .field x ∧ after = before := by
+  obtain ⟨pattern, body, lookup, interpreted, value⟩ := h.global_inv
+  rw [hc] at lookup
+  cases lookup
+  simp only [Consts.toExpr, pure, Except.pure, Except.ok.injEq] at interpreted
+  subst interpreted
+  exact value.literal_inv
+
+/-- **A map call, as a mirror reads it**: the map's row for the arguments. -/
+def mapCall (tables : Aiur.Program F) (name : String) (args : List (SourceValue F))
+    (heap : Heap F) : Option (SourceValue F × Heap F) :=
+  match lookupMap tables name args with
+  | .ok row => some (row.toValue, heap)
+  | .error _ => none
+
+/-- **A map call returns some row** of the map for its arguments. -/
+theorem EvalFn.map_row {s : Source F} {name : String} (hfn : s.program.sourceFunction? name = none)
+    {args : List (SourceValue F)} (h : EvalFn s.world name args before result after) :
+    mapCall s.tables name args before = some (result, after) := by
+  cases looked : lookupMap s.tables name args with
+  | error e =>
+    cases h with
+    | intro p _ => simp [Source.world, sourceWorld, hfn, looked, bind, Except.bind] at p
+    | returned p _ => simp [Source.world, sourceWorld, hfn, looked, bind, Except.bind] at p
+  | ok row =>
+    obtain ⟨rfl, rfl⟩ := EvalFn.map_inv hfn looked h
+    simp [mapCall, looked]
+
+omit [Field F] in
+theorem matchPattern_literal_any (c : F) (v : SourceValue F) (heap : Heap F) :
+    world.matchPattern types heap (.literal c) v = .ok (if v = .field c then some [] else none) := by
+  cases v <;> simp [World.matchPattern, matchPatternWith, Aiur.Pattern.bindings, pure, Except.pure,
+    eq_comm]
+
+omit [Field F] in
+theorem selectArm_literal_inv {c : F} {b body : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (h : selectArm world types heap v ((.literal c, b) :: arms) = .ok (some (bs, body))) :
+    (v = .field c ∧ bs = [] ∧ body = b) ∨
+      (v ≠ .field c ∧ selectArm world types heap v arms = .ok (some (bs, body))) := by
+  rw [selectArm, matchPattern_literal_any] at h
+  by_cases hv : v = .field c
+  · simp only [hv, ite_true, bind, Except.bind, pure, Except.pure, Except.ok.injEq,
+      Option.some.injEq, Prod.mk.injEq] at h
+    exact .inl ⟨hv, h.1.symm, h.2.symm⟩
+  · simp only [hv, ite_false, bind, Except.bind] at h
+    exact .inr ⟨hv, h⟩
+
+omit [Field F] in
+theorem selectArm_wildcard_inv {b body : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (h : selectArm world types heap v ((.wildcard, b) :: arms) = .ok (some (bs, body))) :
+    bs = [] ∧ body = b := by
+  simp only [selectArm, matchPattern_wildcard, bind, Except.bind, pure, Except.pure,
+    Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+  exact ⟨h.1.symm, h.2.symm⟩
+
+omit [Field F] in
+theorem matchPattern_tuple_inv {ps : List (Pattern F)} {v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (h : world.matchPattern types heap (.tuple ps) v = .ok (some bs)) :
+    ∃ vs, v = .tuple vs ∧ ps.length = vs.length ∧
+      matchListWith (world.matchPattern types heap) ps vs = .ok (some bs) := by
+  cases v with
+  | tuple vs =>
+    rw [matchPattern_tuple] at h
+    split at h
+    · cases h
+    · rename_i hl
+      exact ⟨vs, rfl, by simpa using hl, h⟩
+  | _ => simp [World.matchPattern, matchPatternWith, pure, Except.pure] at h
+
+omit [Field F] in
+theorem matchPattern_array_inv {ps : List (Pattern F)} {v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (h : world.matchPattern types heap (.array ps) v = .ok (some bs)) :
+    ∃ vs, v = .tuple vs ∧ ps.length = vs.length ∧
+      matchListWith (world.matchPattern types heap) ps vs = .ok (some bs) := by
+  cases v with
+  | tuple vs =>
+    rw [matchPattern_array] at h
+    split at h
+    · cases h
+    · rename_i hl
+      exact ⟨vs, rfl, by simpa using hl, h⟩
+  | _ => simp [World.matchPattern, matchPatternWith, pure, Except.pure] at h
+
+omit [Field F] in
+theorem matchPattern_construct_inv {t : Ty} {c : String} {ps : List (Pattern F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (h : world.matchPattern types heap (.construct t c ps) v = .ok (some bs)) :
+    ∃ vs, v = .construct (constructorName types t) c vs ∧ ps.length = vs.length ∧
+      matchListWith (world.matchPattern types heap) ps vs = .ok (some bs) := by
+  cases v with
+  | construct name ctor vs =>
+    rw [matchPattern_construct] at h
+    split at h
+    · cases h
+    · rename_i hl
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at hl
+      obtain ⟨⟨rfl, rfl⟩, hlen⟩ := hl
+      exact ⟨vs, rfl, by simpa using hlen, h⟩
+  | _ => simp [World.matchPattern, matchPatternWith, pure, Except.pure] at h
+
 end Aiur.Generic.SourceSemantics
