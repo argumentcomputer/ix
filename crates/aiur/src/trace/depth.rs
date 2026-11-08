@@ -303,7 +303,7 @@ impl DepthPlan {
             counts.add(
               table,
               1 << width,
-              usize::try_from(limb).map_err(|_| "depth limb overflow")?,
+              usize::try_from(limb).map_err(|e| e.to_string())?,
             );
           }
         },
@@ -373,19 +373,18 @@ impl<B: FieldBackend> TracePlan<'_, B> {
       }
       let table = &record.queries.tables[f];
       let max = (0..table.len()).map(|q| table.depth(q)).max().unwrap_or(0);
-      let scc = if let Some(i) =
-        sccs.iter().position(|s| s.rank == chip.depth.rank)
-      {
-        &mut sccs[i]
-      } else {
-        sccs.push(SccStatistics {
-          rank: chip.depth.rank,
-          circuits: vec![],
-          rows: 0,
-          max_height: 0,
-        });
-        sccs.last_mut().unwrap()
-      };
+      let scc =
+        if let Some(i) = sccs.iter().position(|s| s.rank == chip.depth.rank) {
+          &mut sccs[i]
+        } else {
+          sccs.push(SccStatistics {
+            rank: chip.depth.rank,
+            circuits: vec![],
+            rows: 0,
+            max_height: 0,
+          });
+          sccs.last_mut().unwrap()
+        };
       if !scc.circuits.contains(&chip.name) {
         scc.circuits.push(chip.name.clone());
       }
