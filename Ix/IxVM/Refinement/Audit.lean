@@ -1055,6 +1055,23 @@ fun V ctx asm =>
 #guard_msgs in
 #print IxVM.Refinement.View.TypingCovers
 
+/--
+info: placeholder
+-/
+#guard_msgs in
+#print IxVM.Refinement.SafeConstant
+
+/--
+info: placeholder
+-/
+#guard_msgs in
+#print IxVM.Refinement.SafeMutConst
+
+example (c : Ixon.Constant) (e : Ixon.Expr) : IxVM.Refinement.IsProjFnAt c 0 e =
+    (∃ i f v, Ix.Kernel.Reader.unshare c e = .prj i f v ∧ Ix.Kernel.Reader.unshare c v = .var 0) := rfl
+example (c : Ixon.Constant) (n : Nat) (e : Ixon.Expr) : IxVM.Refinement.IsProjFnAt c (n + 1) e =
+    (∃ ct t b, Ix.Kernel.Reader.unshare c e = .lam ct t b ∧ IxVM.Refinement.IsProjFnAt c n b) := rfl
+
 example (a : Address) : IxVM.Refinement.treeRoot (.leaf a) = Ix.HostAdmission.Merkle.leaf a := rfl
 example : IxVM.Refinement.treeRoot .padding = Ix.HostAdmission.Merkle.padding := rfl
 example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeRoot (.node l r) =

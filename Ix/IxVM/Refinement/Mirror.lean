@@ -1,6 +1,7 @@
 import Ix.IxVM.Refinement.Exec
 import Aiur.Generic.LookupFacts
 import Aiur.Generic.NativeCompleteness
+import Aiur.Generic.Observe
 
 /-! # Mirror lemmas: reading a source derivation off a concrete body
 
@@ -44,6 +45,41 @@ theorem EvalExpr.load_inv {e : Expr F}
     (h : EvalExpr world types locals (.load e) before result after) :
     ∃ input, EvalExpr world types locals e before input after ∧ loadValue after input = .ok result := by
   cases h with | load pointer loaded => exact ⟨_, pointer, loaded⟩
+
+theorem EvalExpr.store_inv {e : Expr F}
+    (h : EvalExpr world types locals (.store e) before result after) :
+    ∃ input middle, EvalExpr world types locals e before input middle ∧
+      result = .ptr input.type middle.length ∧ after = middle ++ [input] := by
+  cases h with | store value => exact ⟨_, _, value, rfl, rfl⟩
+
+theorem EvalExpr.construct_inv {name : String} {args : Option (List Ty)} {ctor : String}
+    {es : List (Expr F)}
+    (h : EvalExpr world types locals (.construct name args ctor es) before result after) :
+    ∃ values, EvalArgs world types locals es before values after ∧
+      result = .construct (instanceName types name args) ctor values := by
+  cases h with | construct items => exact ⟨_, items, rfl⟩
+
+theorem ObsExpr.call_inv {name : String} {typeArgs : Option (List Ty)} {args : List (Expr F)}
+    {calls : List (Call F)}
+    (h : ObsExpr world types locals (.call name typeArgs args) before result after calls) :
+    ∃ values middle calls₁ calls₂,
+      ObsArgs world types locals args before values middle calls₁ ∧
+      ObsFn world (instanceName types name typeArgs) values middle result after calls₂ ∧
+      calls = calls₁ ++ ⟨instanceName types name typeArgs, values, middle⟩ :: calls₂ := by
+  cases h with | call arguments callee => exact ⟨_, _, _, _, arguments, callee, rfl⟩
+
+theorem ObsFn.function_inv {s : Source F} {name : String} {fn : SourceFunction F}
+    (hfn : s.program.sourceFunction? name = some fn) (free : ControlLower.hasControl fn.body = false)
+    {args : List (SourceValue F)} {calls : List (Call F)}
+    (h : ObsFn s.world name args before result after calls) :
+    ObsExpr s.world fn.types ((fn.params.map Prod.fst).zip args) fn.body before result after calls := by
+  cases h with
+  | intro prepared body =>
+    obtain ⟨rfl, rfl, rfl⟩ := Source.world_prepare_of_sourceFunction hfn prepared
+    exact body
+  | returned prepared body =>
+    obtain ⟨-, -, rfl⟩ := Source.world_prepare_of_sourceFunction hfn prepared
+    exact (OpenSource.EvalExit.hasControl (OpenSource.exit_of_closed body.erase) free).elim
 
 theorem EvalExpr.letValue_inv {pat : Pattern F} {e rest : Expr F}
     (h : EvalExpr world types locals (.letValue pat e rest) before result after) :

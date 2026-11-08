@@ -259,6 +259,10 @@ structure Ctx where
   given : List String
   /-- The given functions a function reaches. -/
   needs : String → List String
+  /-- Functions whose mirror definition has already been emitted. -/
+  defined : List String := []
+  /-- The function currently being rendered. -/
+  self : String := ""
 
 abbrev M := StateT Nat (Except String)
 
@@ -337,6 +341,8 @@ mutual
       let some g := plainCallee name targs | throw s!"generic call {name}"
       let (ls, vs, h') ← atoms ctx es h
       if isFunction ctx g then
+        if g != ctx.self && !ctx.defined.contains g then
+          throw s!"missing callee mirror {g}"
         return wrap ls s!"«{g}» k {h'} {" ".intercalate vs}"
       else
         return wrap ls s!"mapCall IxVM.Checked.source.tables {q g} {list vs} {h'}"
@@ -583,10 +589,6 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
           stack := (n, true) :: stack
           for c in (MirrorGen.calls f.body).eraseDups do
             if c != n && !seen.contains c then stack := (c, false) :: stack
-  -- recursive and back-edge functions are not proved by the generator; callers assume them
-  let recursive := order.filter fun n => match fnOf n with
-    | some f => (MirrorGen.calls f.body).any fun c => (fnOf c).isSome && order.idxOf n ≤ order.idxOf c
-    | none => false
   let reach (n : String) : List String := Id.run do
     let mut acc : List String := []
     let mut todo := [n]
@@ -599,6 +601,10 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
           acc := acc ++ [m]
           if let some f := fnOf m then todo := todo ++ (MirrorGen.calls f.body)
     return acc
+  -- recursive and mutually recursive functions are not proved by the generator; callers assume them
+  let recursive := order.filter fun n => match fnOf n with
+    | some f => (MirrorGen.calls f.body).any fun c => (fnOf c).isSome && (reach c).contains n
+    | none => false
   let needs (n : String) : List String :=
     recursive.filter fun g => g != n && (reach n).contains g
   let mut out := header ["Ix.IxVM.Refinement.Mirror", "IxVM.Checked.Lookup"] s!"Generated mirrors: {title}." ++
@@ -611,12 +617,14 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
     out := out ++ s!"theorem «{m}».none : IxVM.Checked.source.program.sourceFunction? {q m} = none :=\n" ++
       s!"  Program.sourceFunction?_of_key\n    (IxVM.Checked.mapKeys_fresh _ (List.getElem_mem (l := IxVM.Checked.maps) (n := {idx}) (by decide)))\n" ++
       "    (head_ne_of_bytes (by decide +kernel))\n\n"
-  let ctx : MirrorGen.Ctx := { prog, src, given := recursive, needs }
+  let mut defined : List String := []
   for n in order do
     let some f := fnOf n | continue
+    let ctx : MirrorGen.Ctx := { prog, src, given := recursive, needs, defined, self := n }
     match (MirrorGen.mirrorDef ctx f).run' 0 with
     | .error e => report := report ++ [s!"{n}: no mirror ({e})"]
     | .ok d =>
+      defined := defined ++ [n]
       out := out ++ d ++ "\n" ++ MirrorGen.completeDef f ++ "\n"
       if recursive.contains n then
         report := report ++ [s!"{n}: mirror only (recursive)"]

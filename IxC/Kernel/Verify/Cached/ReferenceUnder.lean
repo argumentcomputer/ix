@@ -13,10 +13,10 @@ The cached fold admits user axioms under the policy `allowUser`
 `.axiomDecl` under an eligible key it checks the header and type, declines a
 type that restates an axiom role's pinned specification, and installs the
 axiom. Reference acceptance (`Cached.AcceptsRef`, the pure fold at some fuel)
-had no such policy. This module gives it one, by the same rule:
+had no such policy. This module gives it one:
 
 * `checkUserAxiomDecl`: the user arm of the pure fold
-  (`Cached.checkUserAxiomDeclC` without the caches);
+  (`checkConstantVal`, then install as `.axiomInfo`);
 * `checkDeclUnder`, `checkDeclsPureUnder`: `checkDecl` and `checkDeclsPure`
   with that arm at a key the policy admits (`Cached.AxiomPolicy.admits`);
 * `Cached.AcceptsRefUnder policy`: the pure fold under `policy` at some fuel.
@@ -39,15 +39,11 @@ namespace Ix.Kernel
 variable {m : Type → Type} [Monad m] [MonadExcept (CheckError md) m]
 
 /-- **The pure fold's user axiom arm**: the header and type checked
-(`checkConstantVal`) and the axiom installed as `.axiomInfo`, unless its type
-restates an axiom role's pinned specification (`Cached.axiomRoleSpecHit?`),
-which declines. `Cached.checkUserAxiomDeclC` without the caches. -/
+(`checkConstantVal`) and the axiom installed as `.axiomInfo`. -/
 def checkUserAxiomDecl (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md) :
     m (Env md) := do
   let cvA ← checkConstantVal ops env cv
-  match Cached.axiomRoleSpecHit? cvA with
-  | some _ => throw (.notImplemented "user axiom restates the specification of an unbound axiom role")
-  | none => pure ⟨.axiomInfo cvA :: env.consts⟩
+  pure ⟨.axiomInfo cvA :: env.consts⟩
 
 /-- **The pure declaration checker under an axiom policy**: `checkDecl`, with
 the user arm at an `.axiomDecl` whose key the policy admits. -/

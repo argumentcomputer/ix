@@ -137,11 +137,12 @@ def Hashed (calls : List (Call IxVM.F)) (bytes : ByteArray) : Prop :=
 
 /-- **A second preimage the derivation hashed**: a byte string the derivation
 hashed (`Hashed`) that has the same pure BLAKE3 hash as data the view holds
-(`View.Preimage`) or as one of `extra` (the claim's bytes), and differs from
-it. -/
+(`View.Preimage`), as one of `extra` (the claim's bytes), or as another byte
+string the derivation hashed, and differs from it. -/
 def View.HashedCollision (V : View) (extra : List ByteArray) (calls : List (Call IxVM.F)) : Prop :=
   ∃ (x : Address) (held bytes : ByteArray),
-    (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x)) ∧
+    (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+      (Hashed calls held ∧ Address.blake3Pure held = x)) ∧
       Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x
 
 /-! ## What acceptance means -/

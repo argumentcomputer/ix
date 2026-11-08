@@ -136,10 +136,13 @@ def View.Stores (V : View) (a : Address) : Prop :=
   V.env.consts.contains a = true
 
 /-- **An authentic view**: every record, blob and the role table are stored
-under the pure BLAKE3 hash of their bytes. (A tree is authentic by
-construction: its root is computed.) -/
+under the pure BLAKE3 hash of their bytes, and every record is the canonical
+Ixon serialization of its decoded constant (`Ix.Cert.Stream.StoredCanonical`).
+(A tree is authentic by construction: its root is computed.) -/
 def View.Authentic (V : View) : Prop :=
-  (∀ a lc, V.env.consts.get? a = some lc → Address.blake3Pure lc.rawBytes = a) ∧
+  (∀ a lc, V.env.consts.get? a = some lc →
+    Address.blake3Pure lc.rawBytes = a ∧
+      ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes) ∧
   (∀ a bytes, V.env.blobs.get? a = some bytes → Address.blake3Pure bytes = a) ∧
   (∀ rb, V.env.roleBinding = some rb → Address.blake3Pure rb.bytes = rb.address)
 
@@ -430,15 +433,47 @@ def RevealLE : RevealConstantInfo → Ixon.ConstantInfo → Prop
 
 /-! ## Coverage -/
 
-/-- **A closed view**: every reference of a stored record resolves to a
-stored record or blob, a projection's block is stored, and the role table
-the view holds has its bound constants and evidence theorems stored. -/
+/-- A block member in the safe fragment: safe definitions, inductives,
+constructors and recursors (`Ix.Kernel.Reader.safetyDecline`). -/
+def SafeMutConst : Ixon.MutConst → Prop
+  | .defn d => d.safety = .safe
+  | .indc i => i.isUnsafe = false ∧ ∀ ctor ∈ i.ctors.toList, ctor.isUnsafe = false
+  | .recr r => r.isUnsafe = false
+
+/-- A constant record in the safe fragment (`Ix.Kernel.Reader.safetyDecline`,
+`Ix.Kernel.checkDecl` at `.verified`). -/
+def SafeConstant (c : Ixon.Constant) : Prop :=
+  match c.info with
+  | .defn d => d.safety = .safe
+  | .recr r => r.isUnsafe = false
+  | .axio a => a.isUnsafe = false
+  | .muts ms => ∀ m ∈ ms.toList, SafeMutConst m
+  | _ => True
+
+/-- Whether `e` in `c`, after `n` leading `λ` binders (through `share`), has
+body `.prj _ _ (.var 0)` (`Ix.Kernel.Reader.projRewrite`). -/
+def IsProjFnAt (c : Ixon.Constant) : Nat → Ixon.Expr → Prop
+  | 0, e =>
+    ∃ i f v, Ix.Kernel.Reader.unshare c e = .prj i f v ∧
+      Ix.Kernel.Reader.unshare c v = .var 0
+  | n + 1, e =>
+    ∃ ct t b, Ix.Kernel.Reader.unshare c e = .lam ct t b ∧ IsProjFnAt c n b
+
+/-- **A closed view**: every stored record is in the safe fragment, every
+reference of a stored record resolves to a stored record or blob, a
+projection's block is stored, and the role table the view holds is a valid
+role table admitted by IxC (`RoleTable.check`, `admitAxiomPolicy .allowUser`,
+`preludeFor`) whose bound constants and evidence theorems are stored. -/
 def View.Closed (V : View) : Prop :=
   (∀ a c, Ix.Cert.recordAt V.env a = some c →
-    (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
+    SafeConstant c ∧
+      (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
       V.env.consts.contains (Ix.Cert.ownerOf a c) = true) ∧
-  (∀ rb t, V.env.roleBinding = some rb → Ix.Kernel.RoleTable.ofBytes rb.bytes = some t →
-    ∀ a, BindingSeeds t a → V.env.consts.contains a = true)
+  (∀ rb, V.env.roleBinding = some rb →
+    ∃ t, Ix.Kernel.RoleTable.ofBytes rb.bytes = some t ∧ t.check = .ok () ∧
+      Ix.Kernel.Admission.admitAxiomPolicy .allowUser t = .ok () ∧
+      (∃ pre : Ix.Kernel.Reader.Prelude .anon, Ix.Kernel.Reader.preludeFor t = .ok pre) ∧
+      ∀ a, BindingSeeds t a → V.env.consts.contains a = true)
 
 /-- What a view must hold for a typing claim: it is closed, it holds the
 claim's role table, the assumption tree, if any, and the axioms tree, if any,
@@ -474,7 +509,8 @@ anything about it: the addresses the claim names are stored, the trees it
 names are held, and, for the typing and binding claims, the view is closed
 and holds the role table. -/
 def Covers (V : View) : Claim → Prop
-  | .eval ctx input output asm => V.TypingCovers ctx asm ∧ V.Stores input ∧ V.Stores output
+  | .eval ctx input output asm => V.TypingCovers ctx asm ∧ V.Stores input ∧ V.Stores output ∧
+      ∀ c d, Ix.Cert.recordAt V.env output = some c → c.info = .defn d → ∀ n, ¬ IsProjFnAt c n d.value
   | .check ctx a asm => V.TypingCovers ctx asm ∧ V.Stores a
   | .checkEnv ctx root asm => V.TypingCovers ctx asm ∧ V.HoldsTree root ∧
       ∀ leaves, V.LeavesAt root leaves → ∀ a ∈ leaves, V.Stores a
