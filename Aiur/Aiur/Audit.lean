@@ -50,16 +50,21 @@ it acyclic, i.e. every proved call terminating, and nothing proves that, so
 acyclicity is a hypothesis of the end-to-end argument. The frozen statements
 that assume it are printed with `pp.proofs true`, so they name the memo graph
 that must be acyclic (`Classical.choice (… checkMemo_sound checked)`) rather
-than an elided `⋯`. `Plan.WellFormedActivation`, by contrast, is decided for
-every exported plan by the exporter (`Trace.exportPreparedPlan`).
+than an elided `⋯`. These memo-check theorems are stated over the compiled
+typed circuits; none yet covers the grouped, activated circuits the prover
+commits to. `Plan.WellFormedActivation`, by contrast, is decided for every
+exported trace plan by the exporter (`Trace.exportPreparedPlan`).
 
 Trusted and unproved: the Rust lowering of the exported artifact into
 multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
 times multiplicity, trace-shard segment boundaries, fixed tables and claim
-encoding), multi-stark's STARK and FRI soundness, and the `.aiur` parser and
-artifact exporter. The library `Correctness` theorems relate Aiur library
-functions to Lean reference models (for example `Blake3.digest`); they are not
-proofs about the IxVM or MultiStark programs that call those functions.
+encoding), multi-stark's STARK and FRI soundness, the `aiur⟦ … ⟧` and
+`aiur_library%` elaborators, and the artifact exporter. The library
+`Correctness` theorems prove hand-written Lean models of the library functions
+(their byte and limb arithmetic) against Lean specifications such as
+`Blake3.digest`. No theorem evaluates the library's Aiur source, so they are
+not proofs about the Aiur library functions, nor about the IxVM or MultiStark
+programs that call them.
 -/
 
 namespace Aiur.Audit

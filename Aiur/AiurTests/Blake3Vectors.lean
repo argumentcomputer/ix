@@ -2,8 +2,9 @@ import Aiur.Library.Blake3.Correctness
 
 /-! # Known-answer vectors for the Lean BLAKE3 model
 
-`Aiur.Library.Blake3.digest` is the specification that the Aiur `Blake3`
-library is proved against (`Aiur/Aiur/Library/Blake3/Correctness.lean`). These
+`Aiur.Library.Blake3.digest` is the specification that the Lean models of the
+`Blake3` library are proved against (`Aiur/Aiur/Library/Blake3/Correctness.lean`;
+no theorem yet relates the Aiur source to those models). These
 are the official BLAKE3 test vectors (`test_vectors/test_vectors.json` in
 BLAKE3-team/BLAKE3 at 1.5.4): the input of length `n` is the bytes `i % 251`
 for `i < n`, and the expected value is the first 32 bytes of the `hash`
