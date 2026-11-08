@@ -41,8 +41,10 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- `groupOrder`'s closed terms and 54 for the schedule's checks. The decoder
 -- (`Ix/SpecDigest/Decode.lean`) is not reached. Externs, implemented_by,
 -- unsafe, csimp and every ruling are unchanged.
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7544 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7551 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]
