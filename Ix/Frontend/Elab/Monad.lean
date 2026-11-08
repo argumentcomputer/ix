@@ -20,6 +20,7 @@ public import IxC.Ixon.Types
 namespace Ix.Frontend.Elab
 
 open Ix.Frontend
+open Ix.Frontend.Parser
 
 /-! ## Structure & Typeclass Metadata Tables -/
 
@@ -54,7 +55,7 @@ structure InstanceEntry where
 /-! ## Pure Elaboration Environment (`IxElabEnv`) -/
 
 /-- Pure elaboration environment holding kernel constants, substructural contracts,
-    structure/class tables, and `IxImportMap`. -/
+    structure/class tables, declarative macro rules, and `IxImportMap`. -/
 structure IxElabEnv where
   consts           : NameMap Ix.ConstantInfo                                    := NameMap.empty
   constOrder       : List Ix.Name                                               := []
@@ -65,6 +66,7 @@ structure IxElabEnv where
   instances        : List InstanceEntry                                         := []
   instancesByClass : NameMap (List InstanceEntry)                               := NameMap.empty
   importMap        : IxImportMap                                                := IxImportMap.empty
+  macroRules       : List MacroRule                                             := []
   deriving Repr, Inhabited
 
 namespace IxElabEnv
@@ -73,7 +75,7 @@ def empty : IxElabEnv := {}
 
 @[inline] def bindEnv (env : IxElabEnv) (k : IxElabEnv → α) : α :=
   match env with
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
     consts.bindMap fun consts' =>
     Ix.Frontend.Parser.SyntaxStack.bindList constOrder fun constOrder' =>
     binderContracts.bindMap fun binderContracts' =>
@@ -82,7 +84,8 @@ def empty : IxElabEnv := {}
     classSet.bindSet fun classSet' =>
     Ix.Frontend.Parser.SyntaxStack.bindList instances fun instances' =>
     instancesByClass.bindMap fun instancesByClass' =>
-      k ⟨consts', constOrder', binderContracts', letContracts', structTable', classSet', instances', instancesByClass', importMap⟩
+    Ix.Frontend.Parser.SyntaxStack.bindList macroRules fun macroRules' =>
+      k ⟨consts', constOrder', binderContracts', letContracts', structTable', classSet', instances', instancesByClass', importMap, macroRules'⟩
 
 /-- Look up a constant in `consts`. -/
 def find? (env : IxElabEnv) (name : Ix.Name) : Option Ix.ConstantInfo :=
@@ -101,19 +104,19 @@ def isCtor (env : IxElabEnv) (name : Ix.Name) : Bool :=
 /-- Insert or update a constant in `env`, recording its insertion order. -/
 def addConst (env : IxElabEnv) (ci : Ix.ConstantInfo) : IxElabEnv :=
   match env with
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
     let name := (Expr.ConstantInfo.getCnstPure ci).name
     let constOrder1 := if consts.contains name then constOrder else name :: constOrder
     Ix.Frontend.Parser.SyntaxStack.bindList constOrder1 fun constOrder' =>
     (consts.insert name ci).bindMap fun consts' =>
-      ⟨consts', constOrder', binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩
+      ⟨consts', constOrder', binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩
 
 /-- Record substructural binder & return contracts for declaration `name`. -/
 def addContracts (env : IxElabEnv) (name : Ix.Name)
     (bcs : Array Ixon.BinderContract) (ret : Ixon.ValueContract)
     (lcs : Array Ixon.LetContract := #[]) : IxElabEnv :=
   match env with
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
     let binderContracts1 :=
       if bcs.isEmpty && ret == default then binderContracts
       else binderContracts.insert name (bcs, ret)
@@ -122,24 +125,35 @@ def addContracts (env : IxElabEnv) (name : Ix.Name)
       else letContracts.insert name lcs
     binderContracts1.bindMap fun binderContracts' =>
     letContracts1.bindMap fun letContracts' =>
-      ⟨consts, constOrder, binderContracts', letContracts', structTable, classSet, instances, instancesByClass, importMap⟩
+      ⟨consts, constOrder, binderContracts', letContracts', structTable, classSet, instances, instancesByClass, importMap, macroRules⟩
 
 /-- Register a `StructInfo` (and mark `classSet` if `info.isClass`). -/
 def addStructInfo (env : IxElabEnv) (info : StructInfo) : IxElabEnv :=
   match env with
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
     let classSet1 := if info.isClass then classSet.insert info.structName else classSet
     (structTable.insert info.structName info).bindMap fun structTable' =>
     classSet1.bindSet fun classSet' =>
-      ⟨consts, constOrder, binderContracts, letContracts, structTable', classSet', instances, instancesByClass, importMap⟩
+      ⟨consts, constOrder, binderContracts, letContracts, structTable', classSet', instances, instancesByClass, importMap, macroRules⟩
 
 /-- Register a global typeclass instance. -/
 def addInstance (env : IxElabEnv) (entry : InstanceEntry) : IxElabEnv :=
   match env with
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
     let prev := instancesByClass.get? entry.className |>.getD []
     (instancesByClass.insert entry.className (entry :: prev)).bindMap fun instancesByClass' =>
-      ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, entry :: instances, instancesByClass', importMap⟩
+      ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, entry :: instances, instancesByClass', importMap, macroRules⟩
+
+/-- Register a declarative `MacroRule` in `env`. -/
+def addMacroRule (env : IxElabEnv) (rule : MacroRule) : IxElabEnv :=
+  match env with
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
+    Ix.Frontend.Parser.SyntaxStack.bindList (rule :: macroRules) fun macroRules' =>
+      ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules'⟩
+
+/-- Register a list of `MacroRule`s in `env`. -/
+def addMacroRules (env : IxElabEnv) (rules : List MacroRule) : IxElabEnv :=
+  rules.foldl (fun acc r => acc.addMacroRule r) env
 
 /-- Convert `IxElabEnv.consts` into an `Ix.Environment` (`Std.HashMap Ix.Name Ix.ConstantInfo`),
     populating canonical 32-byte `Address` Merkle digests on every exported constant. -/
@@ -162,16 +176,16 @@ def ofIxEnvironment (ixEnv : Ix.Environment) : IxElabEnv :=
 
 /-- Update the `importMap` of an `IxElabEnv` strictly without projection chains. -/
 def withImportMap : IxElabEnv → IxImportMap → IxElabEnv
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, _⟩, importMap' =>
-    ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap'⟩
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, _, macroRules⟩, importMap' =>
+    ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap', macroRules⟩
 
 /-- Register an imported constant `ci` at content address `addr` so that both `#<addr>`
     and `map LocalName := #<addr>` resolve to `ci.getCnst.name`. -/
 def registerImportedConst (env : IxElabEnv) (addr : Address) (ci : Ix.ConstantInfo) : IxElabEnv :=
   match env.addConst ci with
-  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
+  | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap, macroRules⟩ =>
     let importMap' := importMap.insertName (Expr.ConstantInfo.getCnstPure ci).name addr
-    ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap'⟩
+    ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap', macroRules⟩
 
 end IxElabEnv
 
@@ -212,6 +226,12 @@ def addDecl (lctx : LocalContext) (d : LocalDecl) : LocalContext :=
 
 def findFVar? (lctx : LocalContext) (fvarId : Ix.Name) : Option LocalDecl :=
   lctx.byFVarId.get? fvarId
+
+abbrev find? (lctx : LocalContext) (fvarId : Ix.Name) : Option LocalDecl :=
+  lctx.byFVarId.get? fvarId
+
+abbrev decls (lctx : LocalContext) : List LocalDecl :=
+  lctx.revDecls.reverse
 
 def findUserName? (lctx : LocalContext) (userName : Ix.Name) : Option LocalDecl :=
   lctx.byUserName.get? userName
@@ -432,5 +452,11 @@ def observing? (act : IxElabM α) : IxElabM (Option α) := fun ctx saved =>
   match (act ctx).run saved with
   | .ok (a, st') => .ok (some a, st')
   | .error _     => .ok (none, saved)
+
+/-- Expand top-level declarative `MacroRule`s on `stx` up to `fuel` steps. -/
+def expandMacroM (fuel : Nat) (stx : Ix.Syntax) : IxElabM Ix.Syntax := do
+  let st ← get
+  if st.env.macroRules.isEmpty then return stx
+  else return expandTopMacroPure fuel st.env.macroRules stx
 
 end Ix.Frontend.Elab

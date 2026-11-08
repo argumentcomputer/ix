@@ -782,12 +782,14 @@ def typeTerm                : Ix.Name := mkKindTag 64
 def binOpTerm               : Ix.Name := mkKindTag 65
 def unaryOpTerm             : Ix.Name := mkKindTag 66
 def explicitTerm            : Ix.Name := mkKindTag 67
+def antiquotTerm            : Ix.Name := mkKindTag 137
+def macroCall               : Ix.Name := mkKindTag 138
 def levelLit                : Ix.Name := mkKindTag 68
 def levelAdd                : Ix.Name := mkKindTag 69
 def levelMax                : Ix.Name := mkKindTag 70
 def levelIMax               : Ix.Name := mkKindTag 71
 
--- Tactics
+-- Tactics & Structured Proofs
 def byTactic                : Ix.Name := mkKindTag 72
 def tacticSeq               : Ix.Name := mkKindTag 73
 def tacticIntro             : Ix.Name := mkKindTag 74
@@ -832,6 +834,29 @@ def tacticTrivial           : Ix.Name := mkKindTag 112
 def tacticContradiction     : Ix.Name := mkKindTag 113
 def tacticExfalso           : Ix.Name := mkKindTag 114
 def tacticDone              : Ix.Name := mkKindTag 115
+-- Wave 1 & 3: Calc, Recursive Destructuring (`rcases`/`obtain`/`rintro`), Context/Classical, & Decision Tactics
+def calcTerm                : Ix.Name := mkKindTag 118
+def calcStep                : Ix.Name := mkKindTag 119
+def tacticCalc              : Ix.Name := mkKindTag 120
+def rcasesPatWildcard       : Ix.Name := mkKindTag 121
+def rcasesPatIdent          : Ix.Name := mkKindTag 122
+def rcasesPatRfl            : Ix.Name := mkKindTag 123
+def rcasesPatTuple          : Ix.Name := mkKindTag 124
+def rcasesPatAlt            : Ix.Name := mkKindTag 125
+def tacticRintro            : Ix.Name := mkKindTag 126
+def tacticRcases            : Ix.Name := mkKindTag 127
+def tacticObtain            : Ix.Name := mkKindTag 128
+def tacticSuffices          : Ix.Name := mkKindTag 129
+def tacticSpecialize        : Ix.Name := mkKindTag 130
+def tacticClear             : Ix.Name := mkKindTag 131
+def tacticRevert            : Ix.Name := mkKindTag 132
+def tacticGeneralize        : Ix.Name := mkKindTag 133
+def tacticSubst             : Ix.Name := mkKindTag 134
+def tacticByCases           : Ix.Name := mkKindTag 135
+def tacticByContra          : Ix.Name := mkKindTag 136
+def tacticNormNum           : Ix.Name := mkKindTag 139
+def tacticRing              : Ix.Name := mkKindTag 140
+def tacticOmega             : Ix.Name := mkKindTag 141
 
 end SyntaxKind
 

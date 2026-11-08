@@ -110,7 +110,8 @@ def isCommandStart (tok : Ix.Syntax) : Bool :=
     kw == "deriving" || kw == "@" || kw == "#merge"
   | .ident _ _ (.str (.anonymous _) w _) _ =>
     w == "map" || w == "infixl" || w == "infixr" || w == "infix" ||
-    w == "prefix" || w == "postfix" || w == "notation"
+    w == "prefix" || w == "postfix" || w == "notation" ||
+    w == "syntax" || w == "macro" || w == "macro_rules"
   | _ => false
 
 /-- Parse a single inductive constructor `| ctorName binders* [: type]`. -/
@@ -232,6 +233,63 @@ def optWhereClauseFn : ParserFn := fun ctx s =>
           ) bodyStx
           s.pushSyntax wrappedBody
     | _ => s
+
+/-- Parse items of a `notation`, `syntax`, or `macro` pattern until `=>`, `↦`, or trailing `: cat`.
+    Structurally recursive on `fuel : Nat`. -/
+def parseNotationItemsLoop : Nat → IxParserContext → ParserState → ParserState
+  | 0, _, s => s
+  | fuel + 1, ctx, s =>
+    bindPeek ctx s fun tok? s =>
+      match tok? with
+      | none | some (.atom _ "=>") | some (.atom _ "↦") => s
+      | some (.atom _ ":") =>
+        (symbolFn ":" ctx s).bindState fun s =>
+          let s := s.popSyntax
+          (identFn ctx s).bindState fun s =>
+            if s.hasError then s else s.popSyntax
+      | some (.node _ k _) =>
+        if k == SyntaxKind.strLit then
+          (tokenFn ctx s).bindState fun s =>
+            parseNotationItemsLoop fuel ctx s
+        else
+          s
+      | some (.atom _ "(") =>
+        let pSz := s.stackSize
+        (symbolFn "(" ctx s).bindState fun s =>
+          let s := s.popSyntax
+          (identFn ctx s).bindState fun s =>
+            if s.hasError then s else
+            (optionalFn (seqFn (symbolFn ":") (orelseFn numLitFn identFn)) ctx s).bindState fun s =>
+              let s := s.popSyntax
+              (symbolFn ")" ctx s).bindState fun s =>
+                if s.hasError then s else
+                let idStx := s.stxStack.getD pSz
+                let s := s.shrinkStack pSz
+                let s := s.pushSyntax idStx
+                parseNotationItemsLoop fuel ctx s
+      | some (.ident ..) =>
+        let iSz := s.stackSize
+        (identFn ctx s).bindState fun s =>
+          bindPeek ctx s fun next? s =>
+            match next? with
+            | some (.atom _ ":") =>
+              let afterColonAttempt : ParserFn := fun c st =>
+                (symbolFn ":" c st).bindState fun st =>
+                  let st := st.popSyntax
+                  (orelseFn numLitFn identFn c st).bindState fun st =>
+                    if st.hasError then st else
+                    bindPeek c st fun afterCat? st =>
+                      match afterCat? with
+                      | some (.atom _ "=>") | some (.atom _ "↦") =>
+                        st.mkUnexpectedError "trailing category"
+                      | _ =>
+                        st.mkNode SyntaxKind.nullKind iSz
+              let plainVar : ParserFn := fun _ st => st
+              (tryOrElseFn afterColonAttempt plainVar ctx s).bindState fun s =>
+                parseNotationItemsLoop fuel ctx s
+            | _ =>
+              parseNotationItemsLoop fuel ctx s
+      | _ => s
 
 /-- Parse a `def`, `abbrev`, `theorem`/`lemma`, or `opaque` declaration after its modifiers. -/
 def parseValueDecl (kind : Ix.Name) : ParserFn := fun ctx s =>
@@ -506,11 +564,39 @@ def commandStep : Nat → ParserFn
                 word == "prefix" || word == "postfix" then
           let iniSz := s.stackSize
           (tokenFn ctx s).bindState fun s =>
-          (optionalFn (seqFn (symbolFn ":") numLitFn) ctx s).bindState fun s =>
+          (optionalFn (seqFn (symbolFn ":") (orelseFn numLitFn identFn)) ctx s).bindState fun s =>
           (strLitFn ctx s).bindState fun s =>
           (orelseFn (symbolFn "=>") (symbolFn "↦") ctx s).bindState fun s =>
-          (identFn ctx s).bindState fun s =>
+          (withPrecFn 0 termFn ctx s).bindState fun s =>
             s.mkNode SyntaxKind.notationDecl iniSz
+        else if word == "notation" || word == "syntax" then
+          let iniSz := s.stackSize
+          (tokenFn ctx s).bindState fun s =>
+          (optionalFn (seqFn (symbolFn ":") (orelseFn numLitFn identFn)) ctx s).bindState fun s =>
+            let itemsSz := s.stackSize
+            (parseNotationItemsLoop 64 ctx s).bindState fun s =>
+            (s.mkNode SyntaxKind.nullKind itemsSz).bindState fun s =>
+              if word == "syntax" then
+                s.mkNode SyntaxKind.notationDecl iniSz
+              else
+                (orelseFn (symbolFn "=>") (symbolFn "↦") ctx s).bindState fun s =>
+                (withPrecFn 0 termFn ctx s).bindState fun s =>
+                  s.mkNode SyntaxKind.notationDecl iniSz
+        else if word == "macro" then
+          let iniSz := s.stackSize
+          (tokenFn ctx s).bindState fun s =>
+          (optionalFn (seqFn (symbolFn ":") (orelseFn numLitFn identFn)) ctx s).bindState fun s =>
+            let itemsSz := s.stackSize
+            (parseNotationItemsLoop 64 ctx s).bindState fun s =>
+            (s.mkNode SyntaxKind.nullKind itemsSz).bindState fun s =>
+            (orelseFn (symbolFn "=>") (symbolFn "↦") ctx s).bindState fun s =>
+            (withPrecFn 0 termFn ctx s).bindState fun s =>
+              s.mkNode SyntaxKind.macroDecl iniSz
+        else if word == "macro_rules" then
+          let iniSz := s.stackSize
+          (tokenFn ctx s).bindState fun s =>
+          (many1Fn (matchAltFn termFn) ctx s).bindState fun s =>
+            s.mkNode SyntaxKind.macroDecl iniSz
         else
           s.mkUnexpectedError s!"unexpected identifier '{word}' at top level"
       | _ =>
@@ -518,46 +604,118 @@ def commandStep : Nat → ParserFn
 
 def commandFn : ParserFn := commandStep 64
 
-/-! ## Module Parser & Dynamic Operator Registration -/
+/-! ## Module Parser & Dynamic Operator / Notation / Macro Registration -/
 
-/-- If `cmd` is a `notationDecl` (`infixl:65 " ++ " => append`, `prefix:75 ...`, `postfix:80 ...`), update `env` with the new operator. -/
+/-- Decode an optional `: prec` node into a `Nat` precedence. -/
+def decodeOptPrec (optNode : Ix.Syntax) (defaultPrec : Nat := 65) : Nat :=
+  if Syntax.getNumArgs optNode < 2 then defaultPrec
+  else
+    let pNode := Syntax.getArg optNode 1
+    if Syntax.isOfKind pNode SyntaxKind.numLit then
+      (parseNatLiteral (Syntax.getAtomVal (Syntax.getArg pNode 0))).getD defaultPrec
+    else
+      let idStr := Name.toStringTotal (Syntax.getId pNode)
+      if idStr == "max" then maxPrec
+      else if idStr == "arg" then argPrec
+      else if idStr == "lead" then leadPrec
+      else if idStr == "min" then 0
+      else defaultPrec
+
+/-- Decode a `SyntaxKind.notationDecl` or `SyntaxKind.macroDecl` into `(Option NotationRule, List MacroRule)`. -/
+def decodeNotationOrMacroDecl (cmd : Ix.Syntax) : Option NotationRule × List MacroRule :=
+  let k := Syntax.getKind cmd
+  let args := Syntax.getArgs cmd
+  let kwStr := tokenText (Syntax.listGetD args.toList 0 .missing)
+  if (k == SyntaxKind.notationDecl && (kwStr == "notation" || kwStr == "syntax")) ||
+     (k == SyntaxKind.macroDecl && kwStr == "macro") then
+    let prec := decodeOptPrec (Syntax.listGetD args.toList 1 .missing) 65
+    let itemsNode := Syntax.listGetD args.toList 2 .missing
+    let rhsStx := Syntax.listGetD args.toList 4 .missing
+    let rawItems := (Syntax.getArgs itemsNode).toList
+    let rec buildItems : List Ix.Syntax → Nat → List NotationItem
+      | [], _ => []
+      | it :: rest, idx =>
+        let defaultVarPrec := if rest.isEmpty then prec else 0
+        if Syntax.isOfKind it SyntaxKind.strLit then
+          let strVal := Syntax.getAtomVal (Syntax.getArg it 0)
+          let splitSyms := (splitNotationLiteral strVal).map NotationItem.sym
+          splitSyms ++ buildItems rest (idx + 1)
+        else if Syntax.isOfKind it SyntaxKind.nullKind then
+          let vId := Syntax.getId (Syntax.getArg it 0)
+          let pNode := Syntax.getArg it 1
+          let vPrec :=
+            if Syntax.isOfKind pNode SyntaxKind.numLit then
+              (parseNatLiteral (Syntax.getAtomVal (Syntax.getArg pNode 0))).getD defaultVarPrec
+            else defaultVarPrec
+          .var vId vPrec :: buildItems rest (idx + 1)
+        else
+          let id := Syntax.getId it
+          let vId :=
+            if kwStr == "syntax" && (id == Name.simple "term" || id == Name.simple "ident") then
+              Name.simple s!"_arg_{idx}"
+            else id
+          .var vId defaultVarPrec :: buildItems rest (idx + 1)
+    let items := buildItems rawItems 0
+    let syms := items.filterMap fun | .sym s => some s | _ => none
+    let ruleName := Name.mkStr2 "_notation" (strIntercalatePure "_" syms)
+    let nRule : NotationRule := { ruleName, prec, items, rhs := rhsStx }
+    if kwStr == "syntax" || Syntax.isMissing rhsStx then
+      (some nRule, [])
+    else
+      let varAntiquots := items.filterMap fun
+        | .var vId _ =>
+          some (Syntax.mkNode SyntaxKind.antiquotTerm #[Syntax.mkSimpleAtom "$", Syntax.mkSimpleIdent vId])
+        | .sym _ => none
+      let patStx := Syntax.mkNode SyntaxKind.macroCall
+        (Array.mk (Syntax.mkSimpleIdent ruleName :: varAntiquots))
+      (some nRule, [{ pat := patStx, rhs := rhsStx }])
+  else if k == SyntaxKind.macroDecl && kwStr == "macro_rules" then
+    let altsNode := Syntax.listGetD args.toList 1 .missing
+    let mRules := (Syntax.getArgs altsNode).toList.filterMap fun altStx =>
+      if Syntax.isOfKind altStx SyntaxKind.matchAlt then
+        let pats := Syntax.getArgs (Syntax.getArg altStx 1)
+        let pat0 := Syntax.listGetD pats.toList 0 .missing
+        let rhs  := Syntax.getArg altStx 3
+        some ({ pat := pat0, rhs } : MacroRule)
+      else none
+    (none, mRules)
+  else
+    (none, [])
+
+/-- Update `IxParserEnv` when a `notationDecl` or `macroDecl` command is parsed. -/
 def updateParserEnvFromCommand (env : IxParserEnv) (cmd : Ix.Syntax) : IxParserEnv :=
-  if Syntax.isOfKind cmd SyntaxKind.notationDecl then
+  let k := Syntax.getKind cmd
+  if k == SyntaxKind.notationDecl || k == SyntaxKind.macroDecl then
     let args := Syntax.getArgs cmd
-    let fixStr := Syntax.getNameOrAtom args[0]?
-    let fixity : FixityKind :=
-      if fixStr == "infixr" then .infixr
-      else if fixStr == "infix" then .infixn
-      else if fixStr == "prefix" then .prefixOp
-      else if fixStr == "postfix" then .postfixOp
-      else .infixl
-    let prec : Nat := match args[1]? with
-      | some optNode =>
-        let numNode := Syntax.getArg optNode 1
-        match Syntax.getArg numNode 0 with
-        | .atom _ nStr => (parseNatLiteral nStr).getD 65
-        | _ => 65
-      | none => 65
-    let rawSym := match args[2]? with
-      | some strNode =>
-        match Syntax.getArg strNode 0 with
-        | .atom _ s => String.ofList (s.toList.filter (!isSpaceChar ·))
-        | _ => ""
-      | none => ""
-    let target := match args[4]? with
-      | some stx =>
-        let id := Syntax.getId stx
-        if Name.isAnonymous id then none else some id
-      | none => none
-    if rawSym.isEmpty then env
-    else env.addOperator { symbol := rawSym, kind := SyntaxKind.appTerm, fixity, prec, targetFn := target }
+    let kwStr := tokenText (Syntax.listGetD args.toList 0 .missing)
+    if kwStr == "infixl" || kwStr == "infixr" || kwStr == "infix" ||
+       kwStr == "prefix" || kwStr == "postfix" then
+      let fixity : FixityKind :=
+        if kwStr == "infixr" then .infixr
+        else if kwStr == "infix" then .infixn
+        else if kwStr == "prefix" then .prefixOp
+        else if kwStr == "postfix" then .postfixOp
+        else .infixl
+      let prec := decodeOptPrec (Syntax.listGetD args.toList 1 .missing) 65
+      let rawSym := match args[2]? with
+        | some strNode =>
+          match Syntax.getArg strNode 0 with
+          | .atom _ s => String.ofList (s.toList.filter (!isSpaceChar ·))
+          | _ => ""
+        | none => ""
+      let target := match args[4]? with
+        | some stx =>
+          let id := Syntax.getId stx
+          if Name.isAnonymous id then none else some id
+        | none => none
+      if rawSym.isEmpty then env
+      else env.addOperator { symbol := rawSym, kind := SyntaxKind.appTerm, fixity, prec, targetFn := target }
+    else
+      match (decodeNotationOrMacroDecl cmd).1 with
+      | some nRule => env.addNotation nRule
+      | none       => env
   else
     env
-where
-  Syntax.getNameOrAtom : Option Ix.Syntax → String
-    | some (.ident _ _ (.str (.anonymous _) s _) _) => s
-    | some (.atom _ s) => s
-    | _ => ""
 
 /-- Loop parsing top-level commands until EOI, accumulating `revCmds : List Ix.Syntax` in $O(1)$
     per command (avoiding $O(N^2)$ `Array.push` / `List.concat` in the kernel) and updating
@@ -578,7 +736,7 @@ def parseModuleLoop (inputCtx : InputContext) (env : IxParserEnv) (s : ParserSta
           | none =>
             let cmd := match s'.stxStack.rev with | x :: _ => x | [] => .missing
             let sClean := s'.shrinkStack iniSz
-            if Syntax.isOfKind cmd SyntaxKind.notationDecl then
+            if Syntax.isOfKind cmd SyntaxKind.notationDecl || Syntax.isOfKind cmd SyntaxKind.macroDecl then
               (updateParserEnvFromCommand env cmd).bindParserEnv fun env' =>
                 parseModuleLoop inputCtx env' sClean (cmd :: revCmds) fuel
             else

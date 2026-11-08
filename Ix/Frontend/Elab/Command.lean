@@ -675,6 +675,282 @@ def seedCorePreludeIfMissing (env : IxElabEnv) (modIdx : ModuleIndex) : IxElabEn
         fields := #[{ fieldName := Name.simple "coe", projFnName := coeFn, fieldIdx := 0 }]
       }
 
+  -- 11. On-demand seeding of Order (`LE`, `LT`, `GE`, `GT`), `Decidable` / `dite` / `ite`, `Subtype`, and `Sigma`
+  let rec stxNeedsWave2Prelude : Nat → Ix.Syntax → Bool × Bool × Bool
+    | 0, _ => (false, false, false)
+    | _ + 1, .ident _ _ id _ =>
+      let c := (Name.components id).headD ""
+      let ord := c == "LE" || c == "LT" || c == "GE" || c == "GT"
+      let dec := c == "Decidable" || c == "DecidableEq" || c == "dite" || c == "ite"
+      let sub := c == "Subtype" || c == "Sigma"
+      (ord, dec, sub)
+    | _, .atom _ v =>
+      let ord := v == "<" || v == "≤" || v == "<=" || v == ">" || v == "≥" || v == ">="
+      let dec := v == "if"
+      (ord, dec, false)
+    | f + 1, .node _ k as =>
+      let isIf := k == SyntaxKind.ifTerm
+      as.foldl (fun (o1, d1, s1) child =>
+        let (o2, d2, s2) := stxNeedsWave2Prelude f child
+        (o1 || o2, d1 || d2, s1 || s2)) (isIf, isIf, false)
+    | _, _ => (false, false, false)
+
+  let (needsOrder, needsDecidable, needsSubSigma) :=
+    modIdx.decls.foldl (fun (o1, d1, s1) decl =>
+      let (o2, d2, s2) := stxNeedsWave2Prelude 64 decl.stx
+      (o1 || o2, d1 || d2, s1 || s2)) (false, false, false)
+
+  if needsOrder || needsDecidable then
+    let zLvl := Level.mkZero
+    let leName := Name.simple "LE"
+    if !env.contains leName && !modIdx.declByName.contains leName then
+      let leApp0 := Expr.mkApp (Expr.mkConst leName #[uLvl]) (Expr.mkBVar 0)
+      let leRelTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "self") leApp0
+            (Expr.mkForallE (Name.simple "a") (Expr.mkBVar 1)
+              (Expr.mkForallE (Name.simple "b") (Expr.mkBVar 2) prop .default) .default)
+            .instImplicit) .implicit
+      env := env.addConst (.axiomInfo { cnst := { name := leName, levelParams := #[uName], type := Expr.mkForallE (Name.simple "α") typeU typeU .default }, isUnsafe := false })
+      env := env.addConst (.axiomInfo { cnst := { name := Name.mkStr2 "LE" "le", levelParams := #[uName], type := leRelTy }, isUnsafe := false })
+      env := env.addConst (.axiomInfo { cnst := { name := Name.mkStr2 "GE" "ge", levelParams := #[uName], type := leRelTy }, isUnsafe := false })
+      let instLENat := Name.simple "instLENat"
+      env := env.addConst (.axiomInfo { cnst := { name := instLENat, levelParams := #[], type := Expr.mkApp (Expr.mkConst leName #[zLvl]) natConst }, isUnsafe := false })
+      env := env.addInstance { instName := instLENat, className := leName }
+
+    let ltName := Name.simple "LT"
+    if !env.contains ltName && !modIdx.declByName.contains ltName then
+      let ltApp0 := Expr.mkApp (Expr.mkConst ltName #[uLvl]) (Expr.mkBVar 0)
+      let ltRelTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "self") ltApp0
+            (Expr.mkForallE (Name.simple "a") (Expr.mkBVar 1)
+              (Expr.mkForallE (Name.simple "b") (Expr.mkBVar 2) prop .default) .default)
+            .instImplicit) .implicit
+      env := env.addConst (.axiomInfo { cnst := { name := ltName, levelParams := #[uName], type := Expr.mkForallE (Name.simple "α") typeU typeU .default }, isUnsafe := false })
+      env := env.addConst (.axiomInfo { cnst := { name := Name.mkStr2 "LT" "lt", levelParams := #[uName], type := ltRelTy }, isUnsafe := false })
+      env := env.addConst (.axiomInfo { cnst := { name := Name.mkStr2 "GT" "gt", levelParams := #[uName], type := ltRelTy }, isUnsafe := false })
+      let instLTNat := Name.simple "instLTNat"
+      env := env.addConst (.axiomInfo { cnst := { name := instLTNat, levelParams := #[], type := Expr.mkApp (Expr.mkConst ltName #[zLvl]) natConst }, isUnsafe := false })
+      env := env.addInstance { instName := instLTNat, className := ltName }
+
+  if needsDecidable then
+    let decName := Name.simple "Decidable"
+    let isTrueName  := Name.mkStr2 "Decidable" "isTrue"
+    let isFalseName := Name.mkStr2 "Decidable" "isFalse"
+    if !env.contains decName && !modIdx.declByName.contains decName then
+      let decTy := Expr.mkForallE (Name.simple "p") prop type0 .default
+      let decApp1 := Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkBVar 1)
+      let isTrueTy :=
+        Expr.mkForallE (Name.simple "p") prop
+          (Expr.mkForallE (Name.simple "h") (Expr.mkBVar 0) decApp1 .default) .implicit
+      let isFalseTy :=
+        Expr.mkForallE (Name.simple "p") prop
+          (Expr.mkForallE (Name.simple "h") (Expr.mkApp (Expr.mkConst notName #[]) (Expr.mkBVar 0)) decApp1 .default) .implicit
+      let ivDec : Ix.InductiveVal := {
+        cnst := { name := decName, levelParams := #[], type := decTy }
+        numParams := 1, numIndices := 0, all := #[decName]
+        ctors := #[isTrueName, isFalseName], numNested := 0
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let cTrue : Ix.ConstructorVal := {
+        cnst := { name := isTrueName, levelParams := #[], type := isTrueTy }
+        induct := decName, cidx := 0, numParams := 1, numFields := 1, isUnsafe := false
+      }
+      let cFalse : Ix.ConstructorVal := {
+        cnst := { name := isFalseName, levelParams := #[], type := isFalseTy }
+        induct := decName, cidx := 1, numParams := 1, numFields := 1, isUnsafe := false
+      }
+      env := registerCanonicalInductiveBlock env #[(ivDec, #[cTrue, cFalse])]
+      env := { env with classSet := env.classSet.insert decName }
+
+    let diteName := Name.simple "dite"
+    if !env.contains diteName && !modIdx.declByName.contains diteName then
+      let decC := Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkBVar 0)
+      let tDom := Expr.mkForallE Name.mkAnon (Expr.mkBVar 1) (Expr.mkBVar 3) .default
+      let eDom := Expr.mkForallE Name.mkAnon (Expr.mkApp (Expr.mkConst notName #[]) (Expr.mkBVar 2)) (Expr.mkBVar 4) .default
+      let diteTy :=
+        Expr.mkForallE (Name.simple "α") sortU
+          (Expr.mkForallE (Name.simple "c") prop
+            (Expr.mkForallE (Name.simple "h") decC
+              (Expr.mkForallE (Name.simple "t") tDom
+                (Expr.mkForallE (Name.simple "e") eDom (Expr.mkBVar 4) .default) .default)
+              .instImplicit) .default) .implicit
+      let decOnC := Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkBVar 3)
+      let motive := Expr.mkLam (Name.simple "_") decOnC (Expr.mkBVar 5) .default
+      let casesCall := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Decidable" "casesOn") #[uLvl])
+        #[Expr.mkBVar 3, motive, Expr.mkBVar 2, Expr.mkBVar 1, Expr.mkBVar 0]
+      let diteVal :=
+        Expr.mkLam (Name.simple "α") sortU
+          (Expr.mkLam (Name.simple "c") prop
+            (Expr.mkLam (Name.simple "h") decC
+              (Expr.mkLam (Name.simple "t") tDom
+                (Expr.mkLam (Name.simple "e") eDom casesCall .default) .default)
+              .instImplicit) .default) .implicit
+      env := env.addConst (.defnInfo {
+        cnst := { name := diteName, levelParams := #[uName], type := diteTy }
+        value := diteVal, hints := .abbrev, safety := .safe, all := #[diteName]
+      })
+
+    let iteName := Name.simple "ite"
+    if !env.contains iteName && !modIdx.declByName.contains iteName then
+      let decC := Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkBVar 0)
+      let iteTy :=
+        Expr.mkForallE (Name.simple "α") sortU
+          (Expr.mkForallE (Name.simple "c") prop
+            (Expr.mkForallE (Name.simple "h") decC
+              (Expr.mkForallE (Name.simple "t") (Expr.mkBVar 2)
+                (Expr.mkForallE (Name.simple "e") (Expr.mkBVar 3) (Expr.mkBVar 4) .default) .default)
+              .instImplicit) .default) .implicit
+      let tLam := Expr.mkLam (Name.simple "_") (Expr.mkBVar 3) (Expr.mkBVar 2) .default
+      let eLam := Expr.mkLam (Name.simple "_") (Expr.mkApp (Expr.mkConst notName #[]) (Expr.mkBVar 3)) (Expr.mkBVar 1) .default
+      let diteCall := Expr.mkAppN (Expr.mkConst diteName #[uLvl])
+        #[Expr.mkBVar 4, Expr.mkBVar 3, Expr.mkBVar 2, tLam, eLam]
+      let iteVal :=
+        Expr.mkLam (Name.simple "α") sortU
+          (Expr.mkLam (Name.simple "c") prop
+            (Expr.mkLam (Name.simple "h") decC
+              (Expr.mkLam (Name.simple "t") (Expr.mkBVar 2)
+                (Expr.mkLam (Name.simple "e") (Expr.mkBVar 3) diteCall .default) .default)
+              .instImplicit) .default) .implicit
+      env := env.addConst (.defnInfo {
+        cnst := { name := iteName, levelParams := #[uName], type := iteTy }
+        value := iteVal, hints := .abbrev, safety := .safe, all := #[iteName]
+      })
+
+    let instDecTrue := Name.simple "instDecidableTrue"
+    if !env.contains instDecTrue && !modIdx.declByName.contains instDecTrue then
+      let trueC := Expr.mkConst truePropName #[]
+      env := env.addConst (.defnInfo {
+        cnst := { name := instDecTrue, levelParams := #[], type := Expr.mkApp (Expr.mkConst decName #[]) trueC }
+        value := Expr.mkAppN (Expr.mkConst isTrueName #[]) #[trueC, Expr.mkConst (Name.mkStr2 "True" "intro") #[]]
+        hints := .abbrev, safety := .safe, all := #[instDecTrue]
+      })
+      env := env.addInstance { instName := instDecTrue, className := decName }
+
+    let instDecFalse := Name.simple "instDecidableFalse"
+    if !env.contains instDecFalse && !modIdx.declByName.contains instDecFalse then
+      let falseC := Expr.mkConst falsePropName #[]
+      env := env.addConst (.defnInfo {
+        cnst := { name := instDecFalse, levelParams := #[], type := Expr.mkApp (Expr.mkConst decName #[]) falseC }
+        value := Expr.mkAppN (Expr.mkConst isFalseName #[]) #[falseC, Expr.mkLam (Name.simple "h") falseC (Expr.mkBVar 0) .default]
+        hints := .abbrev, safety := .safe, all := #[instDecFalse]
+      })
+      env := env.addInstance { instName := instDecFalse, className := decName }
+
+    let zLvl := Level.mkZero
+    let oneLvl := Level.mkSucc zLvl
+    let mkNatRelDecTy (relConst : Ix.Expr) : Ix.Expr :=
+      Expr.mkForallE (Name.simple "a") natConst
+        (Expr.mkForallE (Name.simple "b") natConst
+          (Expr.mkApp (Expr.mkConst decName #[])
+            (Expr.mkAppN relConst #[Expr.mkBVar 1, Expr.mkBVar 0])) .default) .default
+    let eqNatRel := Expr.mkApp (Expr.mkConst eqName #[oneLvl]) natConst
+    let leNatRel := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "LE" "le") #[zLvl]) #[natConst, Expr.mkConst (Name.simple "instLENat") #[]]
+    let geNatRel := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "GE" "ge") #[zLvl]) #[natConst, Expr.mkConst (Name.simple "instLENat") #[]]
+    let ltNatRel := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "LT" "lt") #[zLvl]) #[natConst, Expr.mkConst (Name.simple "instLTNat") #[]]
+    let gtNatRel := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "GT" "gt") #[zLvl]) #[natConst, Expr.mkConst (Name.simple "instLTNat") #[]]
+    let decNotTy :=
+      Expr.mkForallE (Name.simple "p") prop
+        (Expr.mkForallE (Name.simple "inst") (Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkBVar 0))
+          (Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkApp (Expr.mkConst notName #[]) (Expr.mkBVar 1)))
+          .instImplicit) .implicit
+    let decInstAxioms : List (Ix.Name × Ix.Expr) := [
+      (Name.simple "instDecidableNot",   decNotTy),
+      (Name.simple "instDecidableEqNat", mkNatRelDecTy eqNatRel),
+      (Name.simple "instDecidableLENat", mkNatRelDecTy leNatRel),
+      (Name.simple "instDecidableGENat", mkNatRelDecTy geNatRel),
+      (Name.simple "instDecidableLTNat", mkNatRelDecTy ltNatRel),
+      (Name.simple "instDecidableGTNat", mkNatRelDecTy gtNatRel)
+    ]
+    for (instNm, instTy) in decInstAxioms do
+      if !env.contains instNm && !modIdx.declByName.contains instNm then
+        env := env.addConst (.axiomInfo { cnst := { name := instNm, levelParams := #[], type := instTy }, isUnsafe := false })
+        env := env.addInstance { instName := instNm, className := decName }
+
+    let classDecName := Name.mkStr2 "Classical" "propDecidable"
+    if !env.contains classDecName && !modIdx.declByName.contains classDecName then
+      let classDecTy := Expr.mkForallE (Name.simple "p") prop (Expr.mkApp (Expr.mkConst decName #[]) (Expr.mkBVar 0)) .default
+      env := env.addConst (.axiomInfo { cnst := { name := classDecName, levelParams := #[], type := classDecTy }, isUnsafe := false })
+
+  if needsSubSigma then
+    let subName := Name.simple "Subtype"
+    if !env.contains subName && !modIdx.declByName.contains subName then
+      let subMk   := Name.mkStr2 "Subtype" "mk"
+      let subVal  := Name.mkStr2 "Subtype" "val"
+      let subProp := Name.mkStr2 "Subtype" "property"
+      let sortMax1U := Expr.mkSort (Level.mkMax (Level.mkSucc Level.mkZero) uLvl)
+      let predDom := Expr.mkForallE Name.mkAnon (Expr.mkBVar 0) prop .default
+      let subType :=
+        Expr.mkForallE (Name.simple "α") sortU
+          (Expr.mkForallE (Name.simple "p") predDom sortMax1U .default) .implicit
+      let subApp := Expr.mkAppN (Expr.mkConst subName #[uLvl]) #[Expr.mkBVar 3, Expr.mkBVar 2]
+      let subMkTy :=
+        Expr.mkForallE (Name.simple "α") sortU
+          (Expr.mkForallE (Name.simple "p") predDom
+            (Expr.mkForallE (Name.simple "val") (Expr.mkBVar 1)
+              (Expr.mkForallE (Name.simple "property") (Expr.mkApp (Expr.mkBVar 1) (Expr.mkBVar 0)) subApp .default)
+              .default) .implicit) .implicit
+      let ivSub : Ix.InductiveVal := {
+        cnst := { name := subName, levelParams := #[uName], type := subType }
+        numParams := 2, numIndices := 0, all := #[subName]
+        ctors := #[subMk], numNested := 0
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let cSubMk : Ix.ConstructorVal := {
+        cnst := { name := subMk, levelParams := #[uName], type := subMkTy }
+        induct := subName, cidx := 0, numParams := 2, numFields := 2, isUnsafe := false
+      }
+      env := registerCanonicalInductiveBlock env #[(ivSub, #[cSubMk])]
+      for p in generateStructProjections ivSub cSubMk #[subVal, subProp] false do
+        env := env.addConst (.defnInfo p)
+      env := env.addStructInfo {
+        structName := subName, ctorName := subMk, numParams := 2
+        fields := #[
+          { fieldName := Name.simple "val",      projFnName := subVal,  fieldIdx := 0 },
+          { fieldName := Name.simple "property", projFnName := subProp, fieldIdx := 1 }
+        ]
+      }
+
+    let sigName := Name.simple "Sigma"
+    if !env.contains sigName && !modIdx.declByName.contains sigName then
+      let sigMk  := Name.mkStr2 "Sigma" "mk"
+      let sigFst := Name.mkStr2 "Sigma" "fst"
+      let sigSnd := Name.mkStr2 "Sigma" "snd"
+      let typeV := Expr.mkSort (Level.mkSucc vLvl)
+      let typeMaxUV := Expr.mkSort (Level.mkSucc (Level.mkMax uLvl vLvl))
+      let famDom := Expr.mkForallE Name.mkAnon (Expr.mkBVar 0) typeV .default
+      let sigType :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "β") famDom typeMaxUV .default) .implicit
+      let sigApp := Expr.mkAppN (Expr.mkConst sigName #[uLvl, vLvl]) #[Expr.mkBVar 3, Expr.mkBVar 2]
+      let sigMkTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "β") famDom
+            (Expr.mkForallE (Name.simple "fst") (Expr.mkBVar 1)
+              (Expr.mkForallE (Name.simple "snd") (Expr.mkApp (Expr.mkBVar 1) (Expr.mkBVar 0)) sigApp .default)
+              .default) .implicit) .implicit
+      let ivSig : Ix.InductiveVal := {
+        cnst := { name := sigName, levelParams := #[uName, vName], type := sigType }
+        numParams := 2, numIndices := 0, all := #[sigName]
+        ctors := #[sigMk], numNested := 0
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let cSigMk : Ix.ConstructorVal := {
+        cnst := { name := sigMk, levelParams := #[uName, vName], type := sigMkTy }
+        induct := sigName, cidx := 0, numParams := 2, numFields := 2, isUnsafe := false
+      }
+      env := registerCanonicalInductiveBlock env #[(ivSig, #[cSigMk])]
+      for p in generateStructProjections ivSig cSigMk #[sigFst, sigSnd] false do
+        env := env.addConst (.defnInfo p)
+      env := env.addStructInfo {
+        structName := sigName, ctorName := sigMk, numParams := 2
+        fields := #[
+          { fieldName := Name.simple "fst", projFnName := sigFst, fieldIdx := 0 },
+          { fieldName := Name.simple "snd", projFnName := sigSnd, fieldIdx := 1 }
+        ]
+      }
+
   return env
 
 /-- Register the core Lean 4 `Init` arithmetic/order typeclass instance entries in `env.instances`. -/
@@ -1555,7 +1831,10 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
       let optTypeNode := Syntax.getArg cmd 6
       let ctx0 ← read
       let st0 ← get
-      let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups rawParamGroups optTypeNode
+      let optTypeExpanded :=
+        if st0.env.macroRules.isEmpty then optTypeNode
+        else expandTopMacroPure 8 st0.env.macroRules optTypeNode
+      let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups rawParamGroups optTypeExpanded
       let paramGroups := varGroups ++ autoGroups ++ rawParamGroups
 
       let (lvlParams, fullType, bcs) ← withReader (fun ctx => { ctx with
@@ -1607,7 +1886,10 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
       let optTypeNode := Syntax.getArg cmd 6
       let ctx0 ← read
       let st0 ← get
-      let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups rawParamBinders optTypeNode
+      let optTypeExpanded :=
+        if st0.env.macroRules.isEmpty then optTypeNode
+        else expandTopMacroPure 8 st0.env.macroRules optTypeNode
+      let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups rawParamBinders optTypeExpanded
       let paramGroups := varGroups ++ autoGroups ++ rawParamBinders
 
       let (finalLvls, finalType, finalVal, finalBcs, finalLcs) ← withReader (fun ctx => { ctx with
@@ -1784,6 +2066,7 @@ def elabModuleSchedule (sched : ModuleSchedule)
     (initEnv : IxElabEnv := IxElabEnv.empty)
     (seedPrelude : Bool := true) : Except ElabError IxElabEnv := do
   let baseEnv := initEnv.withImportMap (initEnv.importMap.merge sched.modIdx.importMap)
+  let baseEnv := baseEnv.addMacroRules sched.modIdx.macroRules.toList
   let baseEnv := if seedPrelude then seedCorePreludeIfMissing baseEnv sched.modIdx else baseEnv
   baseEnv.bindEnv fun baseEnv' => do
     let initState : ElabState := { env := baseEnv' }
@@ -1840,6 +2123,7 @@ structure DeclHint where
   letContracts    : Array Ixon.LetContract := #[]
   isInstance      : Bool := false
   className?      : Option Ix.Name := none
+  isSimp          : Bool := false
   deriving Repr, BEq
 
 /-- Collection of declaration hints keyed by full declaration name. -/
@@ -2016,10 +2300,11 @@ def checkBindersLam (checkTerm : List Ix.Name → Ix.Syntax → Ix.Expr → Bool
 /-- Verify in `O(|stx|)` (zero metavariables, zero `whnf`) that a closed De Bruijn expression `e`
     structurally matches surface syntax `stx` under `bvars : List Ix.Name`. -/
 def checkTermMatchesSyntax (fuel : Nat) (scope : ScopeSnapshot) (modIdx : ModuleIndex)
-    (env : IxElabEnv) (bvars : List Ix.Name) (stx : Ix.Syntax) (e : Ix.Expr) : Bool :=
+    (env : IxElabEnv) (bvars : List Ix.Name) (rawStx : Ix.Syntax) (e : Ix.Expr) : Bool :=
   match fuel with
   | 0 => false
   | fuel + 1 =>
+    let stx := if env.macroRules.isEmpty then rawStx else expandTopMacroPure 8 env.macroRules rawStx
     let e := stripMData e
     let checkSub (bv : List Ix.Name) (s : Ix.Syntax) (ex : Ix.Expr) : Bool :=
       checkTermMatchesSyntax fuel scope modIdx env bv s ex
@@ -2050,6 +2335,8 @@ def checkTermMatchesSyntax (fuel : Nat) (scope : ScopeSnapshot) (modIdx : Module
         checkSub bvars (Syntax.listGetD args.toList 1 .missing) e
       else if kind == SyntaxKind.holeTerm then
         true
+      else if kind == SyntaxKind.byTactic || kind == SyntaxKind.calcTerm then
+        !hasLooseBVarsAt e bvars.length
       else if kind == SyntaxKind.propTerm then
         match e with
         | .sort (.zero _) _ => true
@@ -2106,7 +2393,7 @@ def checkTermMatchesSyntax (fuel : Nat) (scope : ScopeSnapshot) (modIdx : Module
         | some (bvars', remBody) =>
           checkSub bvars' bodyStx remBody
         | none => false
-      else if kind == SyntaxKind.letTerm then
+      else if kind == SyntaxKind.letTerm || kind == SyntaxKind.haveTerm then
         let idStx   := Syntax.listGetD args.toList 1 .missing
         let optTy   := Syntax.listGetD args.toList 3 .missing
         let valStx  := Syntax.listGetD args.toList 5 .missing
@@ -2120,6 +2407,22 @@ def checkTermMatchesSyntax (fuel : Nat) (scope : ScopeSnapshot) (modIdx : Module
           checkSub bvars valStx val &&
           checkSub (nm :: bvars) bodyStx body
         | _ => false
+      else if kind == SyntaxKind.ifTerm then
+        match exprHeadConst? e with
+        | some cNm =>
+          (cNm == Name.simple "ite" || cNm == Name.simple "dite") && !hasLooseBVarsAt e bvars.length
+        | none => false
+      else if kind == SyntaxKind.anonCtor || kind == SyntaxKind.structInst || kind == SyntaxKind.matchTerm then
+        !hasLooseBVarsAt e bvars.length
+      else if kind == SyntaxKind.projTerm then
+        match e with
+        | .proj _ _ s _ => checkSub bvars (Syntax.listGetD args.toList 0 .missing) s
+        | .app _ _ _    => !hasLooseBVarsAt e bvars.length
+        | _             => false
+      else if kind == SyntaxKind.explicitTerm then
+        let innerIdx :=
+          if args.size >= 2 && Syntax.getAtomVal (Syntax.listGetD args.toList 0 .missing) == "@" then 1 else 0
+        checkSub bvars (Syntax.listGetD args.toList innerIdx .missing) e
       else if kind == SyntaxKind.typeAscription then
         let termStx := Syntax.listGetD args.toList 1 .missing
         checkSub bvars termStx e
@@ -2261,6 +2564,19 @@ def checkDeclMatchesSyntax (fuel : Nat) (modIdx : ModuleIndex) (env : IxElabEnv)
         if autoGroups.isEmpty then false
         else checkWithGroups (varGroups ++ autoGroups ++ rawParamGroups)
 
+/-- Check if `e` references a constant `target` within `fuel` steps. -/
+def exprRefsConst : Nat → Ix.Name → Ix.Expr → Bool
+  | 0, _, _ => false
+  | _, target, .const nm _ _ => nm == target
+  | fuel + 1, target, .app f a _ => exprRefsConst fuel target f || exprRefsConst fuel target a
+  | fuel + 1, target, .lam _ d b _ _ => exprRefsConst fuel target d || exprRefsConst fuel target b
+  | fuel + 1, target, .forallE _ d b _ _ => exprRefsConst fuel target d || exprRefsConst fuel target b
+  | fuel + 1, target, .letE _ t v b _ _ =>
+    exprRefsConst fuel target t || exprRefsConst fuel target v || exprRefsConst fuel target b
+  | fuel + 1, target, .proj _ _ s _ => exprRefsConst fuel target s
+  | fuel + 1, target, .mdata _ b _ => exprRefsConst fuel target b
+  | _, _, _ => false
+
 /-- Apply a verified `DeclHint` directly to `IxElabEnv` without running `elabValueSCC`. -/
 def applyVerifiedDeclHint (env : IxElabEnv) (decl : ModuleDecl) (hint : DeclHint) : IxElabEnv :=
   let cmd := decl.stx
@@ -2273,12 +2589,23 @@ def applyVerifiedDeclHint (env : IxElabEnv) (decl : ModuleDecl) (hint : DeclHint
     env.addConst (.axiomInfo ax)
   else
     let val := hint.value?.getD (Expr.mkBVar 0)
+    let certNm := Name.mkStr2 "_Ix" "decideCert"
+    let env :=
+      if !env.contains certNm && exprRefsConst 64 certNm val then
+        let propSort := Expr.mkSort Level.mkZero
+        let ty := Expr.mkForallE (Name.simple "p") propSort (Expr.mkBVar 0) .default
+        env.addConst (.axiomInfo { cnst := { name := certNm, levelParams := #[], type := ty }, isUnsafe := false })
+      else env
     let env := env.addContracts hint.fullName hint.binderContracts hint.retContract hint.letContracts
     let env :=
       if hint.isInstance then
         match hint.className? with
         | some clsNm => env.addInstance { instName := hint.fullName, className := clsNm }
         | none       => env
+      else env
+    let env :=
+      if hint.isSimp then
+        env.addInstance { instName := hint.fullName, className := Name.mkStr2 "_Ix" "simpLemma" }
       else env
     let ci : Ix.ConstantInfo := match hint.defKind with
       | .thm => .thmInfo {
@@ -2308,6 +2635,9 @@ def elabModuleScheduleWithHints (sched : ModuleSchedule) (hints : ElabHints)
     (seedPrelude : Bool := true) : Except ElabError IxElabEnv := do
   let baseEnv := initEnv.withImportMap (initEnv.importMap.merge sched.modIdx.importMap)
   let baseEnv := if seedPrelude then seedCorePreludeIfMissing baseEnv sched.modIdx else baseEnv
+  let baseEnv :=
+    if sched.modIdx.macroRules.isEmpty then baseEnv
+    else baseEnv.addMacroRules sched.modIdx.macroRules.toList
   baseEnv.bindEnv fun baseEnv' => do
     let initState : ElabState := { env := baseEnv' }
     let initCtx : ElabContext := { modIdx := sched.modIdx }
@@ -2362,6 +2692,9 @@ def elabModuleWithHints (moduleStx : Ix.Syntax) (hints : ElabHints)
     (seedPrelude : Bool := true) : Except String IxElabEnv := do
   let modIdx ← buildModuleIndex moduleStx
   let baseEnv := if seedPrelude then seedCorePreludeIfMissing initEnv modIdx else initEnv
+  let baseEnv :=
+    if modIdx.macroRules.isEmpty then baseEnv
+    else baseEnv.addMacroRules modIdx.macroRules.toList
   baseEnv.bindEnv fun baseEnv' =>
   hints.bindHints fun hints' => do
     match tryVerifyDeclsInOrder modIdx hints' baseEnv' modIdx.decls.toList with
@@ -2384,7 +2717,9 @@ def elabSourceWithHints (input : String) (hints : ElabHints)
 
 /-- Extract `ElabHints` from an already-elaborated `IxElabEnv` for all declarations in `modIdx`. -/
 def extractElabHintsFromEnv (modIdx : ModuleIndex) (env : IxElabEnv) : ElabHints :=
+  let simpSet := (env.instancesByClass.get? (Name.mkStr2 "_Ix" "simpLemma")).getD []
   modIdx.decls.toList.foldl (fun acc decl =>
+    let hasSimp := simpSet.any (fun e => e.instName == decl.fullName)
     match env.find? decl.fullName with
     | some (.axiomInfo aval) =>
       acc.insert {
@@ -2392,6 +2727,7 @@ def extractElabHintsFromEnv (modIdx : ModuleIndex) (env : IxElabEnv) : ElabHints
         levelParams := aval.cnst.levelParams
         type        := aval.cnst.type
         value?      := none
+        isSimp      := hasSimp
       }
     | some (.defnInfo dval) =>
       let (bcs, retC) := env.binderContracts.get? decl.fullName |>.getD (#[], {})
@@ -2406,6 +2742,7 @@ def extractElabHintsFromEnv (modIdx : ModuleIndex) (env : IxElabEnv) : ElabHints
         binderContracts := bcs
         retContract     := retC
         letContracts    := letCs
+        isSimp          := hasSimp
       }
     | some (.thmInfo tval) =>
       let (bcs, retC) := env.binderContracts.get? decl.fullName |>.getD (#[], {})
@@ -2420,6 +2757,7 @@ def extractElabHintsFromEnv (modIdx : ModuleIndex) (env : IxElabEnv) : ElabHints
         binderContracts := bcs
         retContract     := retC
         letContracts    := letCs
+        isSimp          := hasSimp
       }
     | some (.opaqueInfo oval) =>
       let (bcs, retC) := env.binderContracts.get? decl.fullName |>.getD (#[], {})
@@ -2434,6 +2772,7 @@ def extractElabHintsFromEnv (modIdx : ModuleIndex) (env : IxElabEnv) : ElabHints
         binderContracts := bcs
         retContract     := retC
         letContracts    := letCs
+        isSimp          := hasSimp
       }
     | _ => acc
   ) ElabHints.empty

@@ -697,7 +697,8 @@ where
 /-- Main bidirectional term elaborator, structurally recursive on `fuel : Nat`. -/
 def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
   | 0, stx, _ => throwElabError "elaborator fuel exhausted in term" (some stx)
-  | fuel + 1, stx, expectedType? => withRef stx do
+  | fuel + 1, stx0, expectedType? => withRef stx0 do
+    let stx ← expandMacroM 16 stx0
     let elabRec (s : Ix.Syntax) (exp? : Option Ix.Expr) : IxElabM Ix.Expr :=
       elabTerm fuel s exp?
     match stx with
@@ -1119,21 +1120,24 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             let lhsTyRaw ← inferType fuel lhs
             let lhsTy ← instantiateMVars 16 lhsTyRaw
             let rhs ← elabRec rhsStx (some lhsTy)
+            let lhsTyFinal ← instantiateMVars 16 lhsTy
             let uNorm ←
-              if lhsTy == natConst then
+              if lhsTyFinal == natConst then
                 pure (Level.mkSucc zLvl)
               else do
-                let u ← ensureSort 32 lhsTy
+                let u ← ensureSort 32 lhsTyFinal
                 pure (normalizeLevel u)
-            let relExpr := Expr.mkAppN (Expr.mkConst relName #[uNorm]) #[lhsTy, lhs, rhs]
+            let relExpr := Expr.mkAppN (Expr.mkConst relName #[uNorm]) #[lhsTyFinal, lhs, rhs]
             ensureHasKnownType fuel stx relExpr Expr.mkProp expectedType?
-          -- Zero-mvar fast path for homogeneous `Nat` typeclass operators (`+`, `^`, `≤`, `<`, `>`)
+          -- Zero-mvar fast path for homogeneous `Nat` typeclass operators (`+`, `^`, `≤`, `<`, `>`, `≥`)
           else if (sym == "+" && st.env.contains (Name.mkStr2 "HAdd" "hAdd") &&
                    st.env.contains (Name.simple "instHAdd") && st.env.contains (Name.simple "instAddNat")) ||
                   (sym == "^" && st.env.contains (Name.mkStr2 "HPow" "hPow") &&
                    st.env.contains (Name.simple "instHPow") && st.env.contains (Name.simple "instPowNat") &&
                    st.env.contains (Name.simple "instNatPowNat")) ||
                   ((sym == "≤" || sym == "<=") && st.env.contains (Name.mkStr2 "LE" "le") &&
+                   st.env.contains (Name.simple "instLENat")) ||
+                  ((sym == "≥" || sym == ">=") && st.env.contains (Name.mkStr2 "GE" "ge") &&
                    st.env.contains (Name.simple "instLENat")) ||
                   (sym == "<" && st.env.contains (Name.mkStr2 "LT" "lt") &&
                    st.env.contains (Name.simple "instLTNat")) ||
@@ -1142,8 +1146,9 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             let lhs ← elabRec lhsStx (if sym == "+" || sym == "^" then expectedType? else none)
             let lhsTyRaw ← inferType fuel lhs
             let lhsTy ← instantiateMVars 16 lhsTyRaw
-            if lhsTy == natConst then
-              let rhs ← elabRec rhsStx (some natConst)
+            let rhs ← elabRec rhsStx (some lhsTy)
+            let lhsTyFinal ← instantiateMVars 16 lhsTy
+            if lhsTyFinal == natConst then
               if sym == "+" then
                 let instAdd := Expr.mkConst (Name.simple "instAddNat") #[]
                 let instHAdd := Expr.mkAppN (Expr.mkConst (Name.simple "instHAdd") #[zLvl]) #[natConst, instAdd]
@@ -1161,6 +1166,10 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
                 let instLE := Expr.mkConst (Name.simple "instLENat") #[]
                 let leExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "LE" "le") #[zLvl]) #[natConst, instLE, lhs, rhs]
                 ensureHasKnownType fuel stx leExpr Expr.mkProp expectedType?
+              else if sym == "≥" || sym == ">=" then
+                let instLE := Expr.mkConst (Name.simple "instLENat") #[]
+                let geExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "GE" "ge") #[zLvl]) #[natConst, instLE, lhs, rhs]
+                ensureHasKnownType fuel stx geExpr Expr.mkProp expectedType?
               else if sym == "<" then
                 let instLT := Expr.mkConst (Name.simple "instLTNat") #[]
                 let ltExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "LT" "lt") #[zLvl]) #[natConst, instLT, lhs, rhs]
@@ -1184,6 +1193,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
                 | "*"  => if st.env.contains (Name.mkStr2 "Nat" "mul") then some (Name.mkStr2 "Nat" "mul") else none
                 | "/"  => if st.env.contains (Name.mkStr2 "Nat" "div") then some (Name.mkStr2 "Nat" "div") else none
                 | "%"  => if st.env.contains (Name.mkStr2 "Nat" "mod") then some (Name.mkStr2 "Nat" "mod") else none
+                | "^"  => if st.env.contains (Name.mkStr2 "Nat" "pow") then some (Name.mkStr2 "Nat" "pow") else none
                 | "==" => if st.env.contains (Name.mkStr2 "Nat" "beq") then some (Name.mkStr2 "Nat" "beq") else none
                 | "≤" | "<=" => if st.env.contains (Name.mkStr2 "Nat" "ble") then some (Name.mkStr2 "Nat" "ble") else none
                 | _    => none
@@ -1215,7 +1225,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
           | _   => Name.mkStr2 "Neg" "neg"
         let appStx := Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, argStx]
         elabRec appStx expectedType?
-      -- 3.19. Anonymous constructor `⟨a₁, ..., aₙ⟩` (`SyntaxKind.anonCtor`)
+      -- 3.19. Anonymous constructor `⟨a₁, ..., aₙ⟩` (`SyntaxKind.anonCtor`, with right-associative nesting)
       else if kind == SyntaxKind.anonCtor then
         let elemStxs := Syntax.getArgs (args.getD 1 .missing)
         match expectedType? with
@@ -1223,7 +1233,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
           throwElabError "anonymous constructor ⟨...⟩ requires a known expected type" (some stx)
         | some expTy =>
           let expTyWhnf ← whnf fuel expTy
-          let (headFn, _) := getAppFnArgs expTyWhnf
+          let (headFn, expArgs) := getAppFnArgs expTyWhnf
           let st ← get
           match headFn with
           | .const indName _ _ =>
@@ -1231,10 +1241,43 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             | some (.inductInfo ival) =>
               match ival.ctors[0]? with
               | some ctorName =>
-                let ctorIdStx := Syntax.mkSimpleIdent ctorName
-                let appStx := elemStxs.foldl (fun acc e =>
-                  Syntax.mkNode SyntaxKind.appTerm #[acc, e]) ctorIdStx
-                elabRec appStx (some expTyWhnf)
+                let numFields? := match st.env.find? ctorName with
+                  | some (.ctorInfo cval) => some cval.numFields
+                  | _ => none
+                let effectiveElems : Array Ix.Syntax :=
+                  match numFields? with
+                  | some nf =>
+                    if nf >= 2 && elemStxs.size > nf then
+                      let pre := elemStxs.extract 0 (nf - 1)
+                      let rest := elemStxs.extract (nf - 1) elemStxs.size
+                      let nestedAnon := Syntax.mkNode SyntaxKind.anonCtor
+                        #[Syntax.mkSimpleAtom "⟨", Syntax.mkNullNode rest, Syntax.mkSimpleAtom "⟩"]
+                      pre.push nestedAnon
+                    else
+                      elemStxs
+                  | none => elemStxs
+                let (ctorConst, ctorTy) ← mkConstWithFreshMVarLevels ctorName
+                let (ctorApplied, instGoals, afterParamsTy) ← insertImplicitArgs 16 ctorConst ctorTy []
+                let (_, ctorParamMVars) := getAppFnArgs ctorApplied
+                for (pMVar, expArg) in ctorParamMVars.zip (expArgs.extract 0 ival.numParams) do
+                  let _ ← isDefEq fuel pMVar expArg
+                let mut curFn := ctorApplied
+                let mut curTy := afterParamsTy
+                for eStx in effectiveElems do
+                  let curTyInst ← instantiateMVars 16 curTy
+                  let curTyWhnf ← whnf fuel curTyInst
+                  let (domTy, nextBody) ← match stripMData curTyWhnf with
+                    | .forallE _ d b _ _ => pure (betaReduceExpr d, b)
+                    | _ => throwElabError s!"too many arguments in ⟨...⟩ for '{Name.toStringTotal ctorName}'" (some stx)
+                  let fValExpr ← elabRec eStx (some domTy)
+                  curFn := Expr.mkApp curFn fValExpr
+                  curTy := instantiate1 nextBody fValExpr
+                for ig in instGoals do
+                  let igTy ← inferType fuel ig
+                  if let some iv ← synthInstance? 8 igTy then
+                    let _ ← isDefEq fuel ig iv
+                let res ← instantiateMVars 32 curFn
+                ensureHasType fuel stx res (some expTyWhnf)
               | none => throwElabError s!"inductive '{Name.toStringTotal indName}' has no constructors for ⟨...⟩" (some stx)
             | _ => throwElabError s!"expected inductive/structure type for ⟨...⟩, got '{Name.toStringTotal indName}'" (some stx)
           | _ => throwElabError "expected known inductive or structure type for ⟨...⟩" (some stx)
@@ -1246,13 +1289,18 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
           if Syntax.isNone withNode || Syntax.isMissing withNode then
             pure none
           else
-            let b ← elabRec withNode expectedType?
+            let bStx :=
+              if Syntax.isOfKind withNode SyntaxKind.nullKind then
+                Syntax.getArg withNode 0
+              else
+                withNode
+            let b ← elabRec bStx expectedType?
             pure (some b)
         let expTy ← match expectedType?, baseExpr? with
-          | some t, _ => whnf fuel t
-          | none, some b =>
+          | _, some b =>
             let bTy ← inferType fuel b
             whnf fuel bTy
+          | some t, none => whnf fuel t
           | none, none =>
             throwElabError "structure literal '{ ... }' requires an expected structure type" (some stx)
         let (headFn, expArgs) := getAppFnArgs expTy
@@ -1342,25 +1390,58 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let thenStx := if isDep then args.getD 5 .missing else args.getD 4 .missing
         let elseStx := if isDep then args.getD 7 .missing else args.getD 6 .missing
         let st ← get
-        if st.env.contains (Name.mkStr2 "Bool" "casesOn") && !isDep then
-          -- Lower boolean `if c then t else e` directly to `Bool.casesOn (motive := fun _ => T) c e t`
-          -- (since `Bool.false` has `cidx = 0` and `Bool.true` has `cidx = 1`!)
-          let boolTy := Expr.mkConst (Name.simple "Bool") #[]
-          let condExpr ← elabRec condStx (some boolTy)
+        if isDep then
+          let hId :=
+            let raw := Syntax.getId (args.getD 1 .missing)
+            if Name.isAnonymous raw then Name.simple "h" else raw
+          let condProp ← elabRec condStx (some Expr.mkProp)
+          let notCondProp := Expr.mkApp (Expr.mkConst (Name.simple "Not") #[]) condProp
           let branchTy ← match expectedType? with
             | some t => pure t
             | none =>
               let u ← mkFreshLevelMVar
               mkFreshExprMVar (Expr.mkSort u)
-          let thenExpr ← elabRec thenStx (some branchTy)
-          let elseExpr ← elabRec elseStx (some branchTy)
+          let thenLam ← withLocalDecl hId condProp .default default fun hFv _ => do
+            let tVal ← elabRec thenStx (some branchTy)
+            mkLambdaFVars #[hFv] tVal
+          let elseLam ← withLocalDecl hId notCondProp .default default fun hFv _ => do
+            let eVal ← elabRec elseStx (some branchTy)
+            mkLambdaFVars #[hFv] eVal
           let branchSort ← ensureSort 32 branchTy
-          let motive := Expr.mkLam (Name.simple "b") boolTy (liftLooseBVars branchTy 1) .default
-          let casesOnConst := Expr.mkConst (Name.mkStr2 "Bool" "casesOn") #[branchSort]
-          let res := Expr.mkAppN casesOnConst #[motive, condExpr, elseExpr, thenExpr]
+          let decTy := Expr.mkApp (Expr.mkConst (Name.simple "Decidable") #[]) condProp
+          let decInst ← match ← synthInstance? 8 decTy with
+            | some inst => pure inst
+            | none      => mkFreshExprMVar decTy
+          let diteConst := Expr.mkConst (Name.simple "dite") #[branchSort]
+          let res := Expr.mkAppN diteConst #[branchTy, condProp, decInst, thenLam, elseLam]
           ensureHasType fuel stx res expectedType?
+        else if st.env.contains (Name.mkStr2 "Bool" "casesOn") then
+          -- Try boolean `if c then t else e` (`Bool.casesOn (motive := fun _ => T) c e t`) first;
+          -- if `c` is a `Prop` rather than `Bool`, fall back to `ite`!
+          let boolAttempt? ← observing? do
+            let boolTy := Expr.mkConst (Name.simple "Bool") #[]
+            let condExpr ← elabRec condStx (some boolTy)
+            let branchTy ← match expectedType? with
+              | some t => pure t
+              | none =>
+                let u ← mkFreshLevelMVar
+                mkFreshExprMVar (Expr.mkSort u)
+            let thenExpr ← elabRec thenStx (some branchTy)
+            let elseExpr ← elabRec elseStx (some branchTy)
+            let branchSort ← ensureSort 32 branchTy
+            let motive := Expr.mkLam (Name.simple "b") boolTy (liftLooseBVars branchTy 1) .default
+            let casesOnConst := Expr.mkConst (Name.mkStr2 "Bool" "casesOn") #[branchSort]
+            let res := Expr.mkAppN casesOnConst #[motive, condExpr, elseExpr, thenExpr]
+            ensureHasType fuel stx res expectedType?
+          match boolAttempt? with
+          | some res => pure res
+          | none =>
+            let iteId := Syntax.mkSimpleIdent (Name.simple "ite")
+            let appStx := #[condStx, thenStx, elseStx].foldl
+              (fun acc a => Syntax.mkNode SyntaxKind.appTerm #[acc, a]) iteId
+            elabRec appStx expectedType?
         else
-          let iteId := Syntax.mkSimpleIdent (if isDep then Name.simple "dite" else Name.simple "ite")
+          let iteId := Syntax.mkSimpleIdent (Name.simple "ite")
           let appStx := #[condStx, thenStx, elseStx].foldl
             (fun acc a => Syntax.mkNode SyntaxKind.appTerm #[acc, a]) iteId
           elabRec appStx expectedType?
@@ -1417,23 +1498,47 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
               for ctorName in ival.ctors do
                 match st.env.find? ctorName with
                 | some (.ctorInfo cval) =>
-                  -- Find first matching alternative: either constructor pattern for `ctorName` or catch-all variable/`_`
+                  -- Find first matching alternative: either constructor pattern for `ctorName`,
+                  -- anonymous constructor pattern `⟨a, b, ...⟩` (when `ival.ctors.size == 1`), or catch-all variable/`_`
                   let matchedAlt? := alts.findSome? fun altStx =>
                     let pats := Syntax.getArgs (Syntax.getArg altStx 1)
                     let pat0 := pats.getD 0 .missing
                     let rhsStx := Syntax.getArg altStx 3
-                    match decodeConstructorPattern ctx.scope ctx.modIdx st.env pat0 with
-                    | some (patCtor, varNames) =>
-                      if patCtor == ctorName then some (some varNames, none, rhsStx)
-                      else none
-                    | none =>
-                      -- Catch-all variable or `_` pattern
-                      let catchVar :=
-                        if Syntax.isOfKind pat0 SyntaxKind.holeTerm || Syntax.getAtomVal pat0 == "_" then
-                          Name.mkAnon
-                        else
-                          Syntax.getId pat0
-                      some (none, some catchVar, rhsStx)
+                    if Syntax.isOfKind pat0 SyntaxKind.anonCtor && ival.ctors.size == 1 then
+                      let pElems := Syntax.getArgs (Syntax.getArg pat0 1)
+                      if cval.numFields >= 2 && pElems.size > cval.numFields then
+                        let preIds := (pElems.extract 0 (cval.numFields - 1)).map fun a =>
+                          if Syntax.isOfKind a SyntaxKind.holeTerm || Syntax.getAtomVal a == "_" then Name.mkAnon
+                          else Syntax.getId a
+                        let restElems := pElems.extract (cval.numFields - 1) pElems.size
+                        let tmpId := Name.simple s!"_anon_pat_{restElems.size}"
+                        let nestedPat := Syntax.mkNode SyntaxKind.anonCtor
+                          #[Syntax.mkSimpleAtom "⟨", Syntax.mkNullNode restElems, Syntax.mkSimpleAtom "⟩"]
+                        let nestedAlt := Syntax.mkNode SyntaxKind.matchAlt
+                          #[Syntax.mkSimpleAtom "|", Syntax.mkNullNode #[nestedPat],
+                            Syntax.mkSimpleAtom "=>", rhsStx]
+                        let nestedMatch := Syntax.mkNode SyntaxKind.matchTerm
+                          #[Syntax.mkSimpleAtom "match", Syntax.mkNullNode #[Syntax.mkSimpleIdent tmpId],
+                            Syntax.mkSimpleAtom "with", Syntax.mkNullNode #[nestedAlt]]
+                        some (some (preIds.push tmpId), none, nestedMatch)
+                      else
+                        let varNames := pElems.map fun a =>
+                          if Syntax.isOfKind a SyntaxKind.holeTerm || Syntax.getAtomVal a == "_" then Name.mkAnon
+                          else Syntax.getId a
+                        some (some varNames, none, rhsStx)
+                    else
+                      match decodeConstructorPattern ctx.scope ctx.modIdx st.env pat0 with
+                      | some (patCtor, varNames) =>
+                        if patCtor == ctorName then some (some varNames, none, rhsStx)
+                        else none
+                      | none =>
+                        -- Catch-all variable or `_` pattern
+                        let catchVar :=
+                          if Syntax.isOfKind pat0 SyntaxKind.holeTerm || Syntax.getAtomVal pat0 == "_" then
+                            Name.mkAnon
+                          else
+                            Syntax.getId pat0
+                        some (none, some catchVar, rhsStx)
                   match matchedAlt? with
                   | none =>
                     throwElabError s!"non-exhaustive match: missing case for constructor '{Name.toStringTotal ctorName}'" (some stx)

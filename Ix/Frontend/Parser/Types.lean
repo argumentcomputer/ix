@@ -379,7 +379,7 @@ def mkErrorAt (s : ParserState) (expected : String) (errPos : Nat) (iniSz : Nat)
 
 end ParserState
 
-/-! ## `IxParserEnv` & `IxParserContext` -/
+/-! ## `IxParserEnv`, Declarative `NotationRule` / `MacroRule`, & `IxParserContext` -/
 
 /-- User-defined or builtin operator descriptor for the Pratt expression parser. -/
 inductive FixityKind where
@@ -398,24 +398,148 @@ structure OperatorSpec where
   targetFn : Option Ix.Name := none
   deriving BEq, Repr, Inhabited
 
-/-- Pure parser environment holding token trie, reserved keywords, and operator tables. -/
+/-- A single item in a user-defined mixfix `notation` or `macro` pattern. -/
+inductive NotationItem where
+  | sym (token : String)
+  | var (name : Ix.Name) (prec : Nat := 0)
+  deriving BEq, Repr, Inhabited
+
+/-- A grammar rule registered by `notation`, `syntax`, or `macro` in `IxParserEnv`. -/
+structure NotationRule where
+  ruleName : Ix.Name
+  prec     : Nat := 65
+  items    : List NotationItem := []
+  rhs      : Ix.Syntax := .missing
+  deriving BEq, Repr, Inhabited
+
+/-- A declarative pattern-matching macro expansion rule (`Syntax → Ix.Syntax`). -/
+structure MacroRule where
+  pat : Ix.Syntax
+  rhs : Ix.Syntax
+  deriving BEq, Repr, Inhabited
+
+/-- Look up a bound syntax tree for `id` in `bindings`. -/
+def lookupSyntaxBinding (id : Ix.Name) : List (Ix.Name × Ix.Syntax) → Option Ix.Syntax
+  | [] => none
+  | (k, v) :: rest => if k == id then some v else lookupSyntaxBinding id rest
+
+/-- Substitute macro pattern bindings `(varName, replacementStx)` into a template `Syntax` tree.
+    Structurally recursive on `fuel : Nat`. -/
+def substSyntaxVars : Nat → List (Ix.Name × Ix.Syntax) → Ix.Syntax → Ix.Syntax
+  | 0, _, stx => stx
+  | fuel + 1, bindings, stx =>
+    match stx with
+    | .ident _ _ id _ =>
+      match lookupSyntaxBinding id bindings with
+      | some rep => rep
+      | none     => stx
+    | .node info kind args =>
+      if kind == SyntaxKind.antiquotTerm then
+        let varId := Syntax.getId (Syntax.listGetD args.toList 1 .missing)
+        match lookupSyntaxBinding varId bindings with
+        | some rep => rep
+        | none     => stx
+      else
+        let newArgs := args.toList.map (substSyntaxVars fuel bindings)
+        .node info kind (Array.mk newArgs)
+    | _ => stx
+
+/-- Match two syntax child lists pairwise using `matchOne` (structurally recursive on `ps : List Ix.Syntax`). -/
+def matchSyntaxChildren (matchOne : Ix.Syntax → Ix.Syntax → List (Ix.Name × Ix.Syntax) → Option (List (Ix.Name × Ix.Syntax))) :
+    List Ix.Syntax → List Ix.Syntax → List (Ix.Name × Ix.Syntax) → Option (List (Ix.Name × Ix.Syntax))
+  | [], sList, curAcc =>
+    match sList with
+    | [] => some curAcc
+    | _  => none
+  | pChild :: pRest, sList, curAcc =>
+    match sList with
+    | [] => none
+    | sChild :: sRest =>
+      match matchOne pChild sChild curAcc with
+      | some nextAcc => matchSyntaxChildren matchOne pRest sRest nextAcc
+      | none         => none
+
+/-- Match a surface `Syntax` node `stx` against a macro pattern `pat`, returning
+    `some bindings` if `stx` matches `pat`. Structurally recursive on `fuel : Nat`. -/
+def matchSyntaxPattern : Nat → Ix.Syntax → Ix.Syntax → List (Ix.Name × Ix.Syntax) →
+    Option (List (Ix.Name × Ix.Syntax))
+  | 0, _, _, _ => none
+  | fuel + 1, pat, stx, acc =>
+    match pat with
+    | .node _ pKind pArgs =>
+      if pKind == SyntaxKind.antiquotTerm then
+        let varId := Syntax.getId (Syntax.listGetD pArgs.toList 1 .missing)
+        if Name.isAnonymous varId then some acc
+        else some ((varId, stx) :: acc)
+      else
+        match stx with
+        | .node _ sKind sArgs =>
+          if pKind != sKind || !Nat.beq pArgs.size sArgs.size then none
+          else
+            if (pKind == SyntaxKind.macroCall || pKind == SyntaxKind.appTerm) &&
+               Nat.ble 1 pArgs.size then
+              let pHead := Syntax.listGetD pArgs.toList 0 .missing
+              let sHead := Syntax.listGetD sArgs.toList 0 .missing
+              let headOk : Option (List (Ix.Name × Ix.Syntax)) :=
+                match pHead, sHead with
+                | .ident _ _ pId _, .ident _ _ sId _ =>
+                  if pId == sId then some acc else none
+                | _, _ => matchSyntaxPattern fuel pHead sHead acc
+              match headOk with
+              | some acc1 =>
+                matchSyntaxChildren (matchSyntaxPattern fuel) (pArgs.toList.drop 1) (sArgs.toList.drop 1) acc1
+              | none => none
+            else
+              matchSyntaxChildren (matchSyntaxPattern fuel) pArgs.toList sArgs.toList acc
+        | _ => none
+    | .ident _ _ patId _ =>
+      if Name.isAnonymous patId then some acc
+      else some ((patId, stx) :: acc)
+    | .atom _ patVal =>
+      match stx with
+      | .atom _ stxVal => if patVal == stxVal then some acc else none
+      | _              => none
+    | .missing => some acc
+
+/-- Try matching `stx` against the first applicable `MacroRule` in `rules`. -/
+def expandOneMacroStep? : List MacroRule → Ix.Syntax → Option Ix.Syntax
+  | [], _ => none
+  | r :: rs, stx =>
+    match matchSyntaxPattern 64 r.pat stx [] with
+    | some bindings => some (substSyntaxVars 64 bindings r.rhs)
+    | none          => expandOneMacroStep? rs stx
+
+/-- Expand top-level macro matches on `stx` up to `fuel` steps. -/
+def expandTopMacroPure : Nat → List MacroRule → Ix.Syntax → Ix.Syntax
+  | 0, _, stx => stx
+  | fuel + 1, rules, stx =>
+    match rules with
+    | [] => stx
+    | _  =>
+      match expandOneMacroStep? rules stx with
+      | some stx' => expandTopMacroPure fuel rules stx'
+      | none      => stx
+
+/-- Pure parser environment holding token trie, reserved keywords, operators, and mixfix notations. -/
 structure IxParserEnv where
   tokens    : Trie String
   keywords  : Trie Bool
   operators : List OperatorSpec := []
+  notations : List NotationRule := []
   deriving Repr, Inhabited
 
 namespace IxParserEnv
 
-/-- Strictly destructure `env : IxParserEnv`, forcing its `tokens` and `keywords` tries
-    and `operators` spine once so they are never re-evaluated across token scans. -/
+/-- Strictly destructure `env : IxParserEnv`, forcing its `tokens` and `keywords` tries,
+    `operators`, and `notations` spines once so they are never re-evaluated across token scans. -/
 @[inline] def bindParserEnv (env : IxParserEnv) (k : IxParserEnv → α) : α :=
   match env with
-  | ⟨.node tv tch, .node kv kch, ops⟩ =>
+  | ⟨.node tv tch, .node kv kch, ops, nots⟩ =>
     SyntaxStack.bindList tch fun tch' =>
     SyntaxStack.bindList kch fun kch' =>
     SyntaxStack.bindList ops fun ops' =>
-      k ⟨.node tv tch', .node kv kch', ops'⟩
+    SyntaxStack.bindList nots fun nots' =>
+      k ⟨.node tv tch', .node kv kch', ops', nots'⟩
 
 end IxParserEnv
 

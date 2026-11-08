@@ -1233,6 +1233,280 @@ def runFrontendBenchmarks (testEnv : Lean.Environment) : IO String := do
 
   return "\n".intercalate report.toList
 
+/-! ## 12–14. Wave 1, Wave 2, and Wave 3 Mathlib Tactics, Surface Syntax, Macros & Decision Procedures -/
+
+def testWave1MathlibTacticsResult : Except String Bool := do
+  let src := "
+@[simp] theorem iff_self_custom (P : Prop) : P ↔ P :=
+  Iff.intro (fun h => h) (fun h => h)
+
+-- 1. Term-level and tactic-level `calc` chains (`=`, `↔`, `≤`, `<`, `_`)
+theorem calc_eq_chain (a b c d : Nat) (h1 : a = b) (h2 : b = c) (h3 : c = d) : a = d :=
+  calc
+    a = b := h1
+    _ = c := h2
+    _ = d := by exact h3
+
+theorem calc_iff_chain (P Q R : Prop) (h1 : P ↔ Q) (h2 : Q ↔ R) : P ↔ R := by
+  calc
+    P ↔ Q := h1
+    _ ↔ R := h2
+
+theorem calc_order_chain (a b c d : Nat) (h1 : a = b) (h2 : b < c) (h3 : c ≤ d) : a < d := by
+  calc
+    a = b := h1
+    _ < c := h2
+    _ ≤ d := h3
+
+-- 2. `rintro`, `rcases`, and `obtain` (tuples, alternation `|`, and `rfl` substitution)
+theorem rintro_and_swap (P Q : Prop) : P ∧ Q → Q ∧ P := by
+  rintro ⟨hp, hq⟩
+  exact And.intro hq hp
+
+theorem rintro_nested_and (P Q R : Prop) : P ∧ (Q ∧ R) → R ∧ P := by
+  rintro ⟨hp, hq, hr⟩
+  exact And.intro hr hp
+
+theorem rcases_or_comm (P Q : Prop) (h : P ∨ Q) : Q ∨ P := by
+  rcases h with hp | hq
+  · right
+    exact hp
+  · left
+    exact hq
+
+theorem rcases_rfl_subst (a b : Nat) (P : Nat → Prop) (h : a = b ∧ P a) : P b := by
+  rcases h with ⟨rfl, hpa⟩
+  exact hpa
+
+theorem obtain_exists_witness (P : Nat → Prop) (h : Exists (fun x => P x ∧ x = 7)) : P 7 := by
+  obtain ⟨w, hpw, rfl⟩ := h
+  exact hpw
+
+-- 3. `rw` and `simp` over `Iff` (`↔`) via `@propext`, plus `simp only` / `dsimp only`
+theorem rw_iff_in_goal (P Q R : Prop) (hPQ : P ↔ Q) (hQ : Q ∧ R) : P ∧ R := by
+  rw [hPQ]
+  exact hQ
+
+theorem rw_iff_symm_in_hyp (P Q : Prop) (hPQ : P ↔ Q) (hP : P) : Q := by
+  rw [hPQ] at hP
+  exact hP
+
+theorem simp_only_test (P Q : Prop) (hPQ : P ↔ Q) (hQ : Q) : P := by
+  simp only [hPQ]
+  exact hQ
+
+theorem dsimp_only_beta : (fun (x : Nat) => x) 42 = 42 := by
+  dsimp only
+  rfl
+
+-- 4. Context & Classical Tactics: `have`/`let` type inference, `suffices`, `specialize`,
+--    `clear`, `revert`, `generalize`, `subst`, `by_cases`, `by_contra`, `use`
+theorem have_let_infer_test (a : Nat) (h : a = 5) : a = 5 := by
+  let x := a
+  have hx := h
+  exact hx
+
+theorem suffices_by_and_from (P Q R : Prop) (h1 : P → Q) (h2 : Q → R) (hp : P) : R := by
+  suffices hq : Q by
+    exact h2 hq
+  suffices hp2 : P from h1 hp2
+  exact hp
+
+theorem specialize_clear_revert_test (P Q : Nat → Prop) (hAll : ∀ x : Nat, P x → Q x) (a : Nat) (ha : P a) : Q a := by
+  specialize hAll a ha
+  clear ha
+  revert a
+  intro b hb
+  exact hb
+
+theorem generalize_and_subst_test (a b : Nat) (P : Nat → Prop) (h : b = a) (hp : ∀ z : Nat, a + a = z → P z) : P (b + a) := by
+  subst h
+  generalize hgen : (a + a) = z
+  exact hp z hgen
+
+theorem by_cases_em (P : Prop) : P ∨ ¬ P := by
+  by_cases h : P
+  · left
+    exact h
+  · right
+    exact h
+
+theorem by_contra_dne (P : Prop) (h : ¬ ¬ P) : P := by
+  by_contra hnp
+  exact h hnp
+
+theorem use_witness_test : Exists (fun (n : Nat) => n = 10) := by
+  use 10
+"
+  let env ← elabSource src
+  let (ixonEnv, _) ← compileElabEnvToIxon env
+  let _ ← Ix.Resource.Addressed.checkResources ixonEnv {}
+  let expected := [
+    "calc_eq_chain", "calc_iff_chain", "calc_order_chain",
+    "rintro_and_swap", "rintro_nested_and", "rcases_or_comm",
+    "rcases_rfl_subst", "obtain_exists_witness",
+    "rw_iff_in_goal", "rw_iff_symm_in_hyp", "simp_only_test", "dsimp_only_beta",
+    "have_let_infer_test", "suffices_by_and_from", "specialize_clear_revert_test",
+    "generalize_and_subst_test", "by_cases_em", "by_contra_dne", "use_witness_test"
+  ]
+  for nm in expected do
+    if !env.contains (Name.simple nm) then
+      throw s!"missing expected Wave 1 declaration '{nm}'"
+  return true
+
+def testWave2SurfaceAndMacrosResult : Except String Bool := do
+  let src := "
+-- 1. Declarative `notation`, `macro`, and `macro_rules`
+notation:65 lhs \" +++ \" rhs => Nat.add lhs rhs
+macro \"double! \" x:term : term => `(Nat.add $x $x)
+syntax \"my_rfl_tac\" : tactic
+macro_rules
+  | `(tactic| my_rfl_tac) => `(tactic| rfl)
+
+def test_notation_and_macro (n : Nat) : Nat :=
+  (n +++ 3) +++ (double! n)
+
+theorem test_tactic_macro (n : Nat) : double! n = Nat.add n n := by
+  my_rfl_tac
+
+-- 2. Existential (`∃`) and bounded quantifiers (`∀ x > 0, ...`, `∃ n ≤ 10, ...`)
+def ExSurfaceProp : Prop :=
+  ∃ x : Nat, x = 5
+
+def ExMultiBinderProp : Prop :=
+  ∃ (x y : Nat), x = y
+
+def BoundedForallProp : Prop :=
+  ∀ x > 0, ∀ y ≤ x, y ≤ x
+
+def BoundedExistsProp : Prop :=
+  ∃ n > 0, n = 1
+
+theorem ex_surface_prove : ∃ n : Nat, n = 4 :=
+  ⟨4, Eq.refl 4⟩
+
+-- 3. Right-associative nested anonymous constructors `⟨a, b, c⟩`
+theorem nested_anon_ctor_and (P Q R : Prop) (hp : P) (hq : Q) (hr : R) : P ∧ Q ∧ R :=
+  ⟨hp, hq, hr⟩
+
+theorem nested_anon_ctor_exists : ∃ x : Nat, x = 2 ∧ 2 = x :=
+  ⟨2, Eq.refl 2, Eq.refl 2⟩
+
+-- 4. Centered-dot lambda placeholders `(· + 1)`
+def incFn : Nat → Nat := (Nat.add · 1)
+def addBothFn : Nat → Nat → Nat := (Nat.add · ·)
+
+theorem centered_dot_beta : incFn 5 = 6 := by
+  rfl
+
+-- 5. Structure spread `{ s with field := val }` and destructuring `let ⟨a, b⟩ := ...`
+structure PairNat where
+  fst : Nat
+  snd : Nat
+
+def updateFst (p : PairNat) (newFst : Nat) : PairNat :=
+  { p with fst := newFst }
+
+def sumPairDestruct (p : PairNat) : Nat :=
+  let ⟨a, b⟩ := p;
+  Nat.add a b
+
+theorem struct_spread_and_destruct_eq :
+    sumPairDestruct (updateFst ⟨1, 2⟩ 10) = 12 := by
+  rfl
+
+-- 6. Dependent `if h : c then t else e` (`@dite`) and propositional `if c then t else e`
+def depIfExample (p : Prop) [Decidable p] : Nat :=
+  if h : p then 1 else 0
+"
+  let env ← elabSource src
+  let (ixonEnv, _) ← compileElabEnvToIxon env
+  let _ ← Ix.Resource.Addressed.checkResources ixonEnv {}
+  let expected := [
+    "test_notation_and_macro", "test_tactic_macro",
+    "ExSurfaceProp", "ExMultiBinderProp", "BoundedForallProp", "BoundedExistsProp",
+    "ex_surface_prove", "nested_anon_ctor_and", "nested_anon_ctor_exists",
+    "incFn", "addBothFn", "centered_dot_beta",
+    "PairNat", "updateFst", "sumPairDestruct", "struct_spread_and_destruct_eq",
+    "depIfExample"
+  ]
+  for nm in expected do
+    if !env.contains (Name.simple nm) then
+      throw s!"missing expected Wave 2 declaration '{nm}'"
+  return true
+
+def testWave3DecisionAndHintsResult : Except String Bool := do
+  let src := "
+-- 1. `norm_num` on closed arithmetic & comparisons
+theorem norm_num_eq : 12 * 12 + 5 = 149 := by
+  norm_num
+
+theorem norm_num_lt : 2 ^ 5 + 3 < 40 := by
+  norm_num
+
+theorem norm_num_ne : 7 * 8 ≠ 55 := by
+  norm_num
+
+theorem norm_num_logic : (3 ≤ 3 ∧ 4 < 9) ∧ ¬ (5 < 2) := by
+  norm_num
+
+-- 2. `ring` on universal commutative semiring polynomial identities
+theorem ring_binomial_sq (x y : Nat) :
+    (x + y) * (x + y) = x * x + 2 * x * y + y * y := by
+  ring
+
+theorem ring_cube_identity (a b : Nat) :
+    (a + b) * (a * a + b * b) = a ^ 3 + a * b * b + b * a * a + b ^ 3 := by
+  ring
+
+theorem ring_comm_assoc (x y z : Nat) :
+    (x + y) + z * (x + 1) = z * x + (y + x) + z := by
+  ring
+
+-- 3. `omega` on linear arithmetic entailments & inequalities
+theorem omega_trans_strict (x y z : Nat) (h1 : x < y) (h2 : y ≤ z) : x < z + 1 := by
+  omega
+
+theorem omega_antisymm_eq (a b : Nat) (h1 : a ≤ b) (h2 : b ≤ a) : a = b := by
+  omega
+
+theorem omega_linear_combo (x y : Nat) (h1 : x + y ≤ 10) (h2 : y ≥ 6) : x ≤ 4 := by
+  omega
+"
+  let env ← elabSource src
+  let (ixonEnv, _) ← compileElabEnvToIxon env
+  let _ ← Ix.Resource.Addressed.checkResources ixonEnv {}
+  -- 4. Verify `generateElabHints` + `elabSourceWithHints` works on tactic-proved theorems (`SyntaxKind.byTactic`)!
+  let hints ← generateElabHints src
+  let hintedEnv ← elabSourceWithHints src hints
+  let (hintedIxon, _) ← compileElabEnvToIxon hintedEnv
+  for (addr, _) in ixonEnv.consts do
+    if !hintedIxon.consts.contains addr then
+      throw s!"Hinted Ixon.Env missing content-addressed constant {addr} on tactic module"
+  -- 5. Negative tests: verify `norm_num`, `ring`, and `omega` reject false goals!
+  if (elabSource "theorem bad_norm : 2 + 2 = 5 := by norm_num").isOk then
+    throw "norm_num accepted a false equality 2 + 2 = 5"
+  if (elabSource "theorem bad_ring (x y : Nat) : x + y = x + 2 * y := by ring").isOk then
+    throw "ring accepted a non-identity x + y = x + 2 * y"
+  if (elabSource "theorem bad_omega (x y : Nat) (h : x ≤ y) : y < x := by omega").isOk then
+    throw "omega accepted a satisfiable counterexample x ≤ y ⊢ y < x"
+  return true
+
+def testWave1MathlibTactics : Bool :=
+  match testWave1MathlibTacticsResult with
+  | .ok b => b
+  | .error _ => false
+
+def testWave2SurfaceAndMacros : Bool :=
+  match testWave2SurfaceAndMacrosResult with
+  | .ok b => b
+  | .error _ => false
+
+def testWave3DecisionAndHints : Bool :=
+  match testWave3DecisionAndHintsResult with
+  | .ok b => b
+  | .error _ => false
+
 /-! ## LSpec Test Suite & Compile-Time Verification -/
 
 def frontendSuite : TestSeq :=
@@ -1252,7 +1526,13 @@ def frontendSuite : TestSeq :=
     test "10. Advanced Frontend (where, let rec, auto-implicits, deriving, extends, @[simp], Coe, prefix/postfix)"
       testAdvancedFrontend ++
     test "11. IxVCS AST & Type-Aware Module Merge Engine (mergeSource2, mergeSource3, #merge, proof irrelevance)"
-      testIxVCSMergeEngine
+      testIxVCSMergeEngine ++
+    test "12. Wave 1 Mathlib Tactics (calc, rcases, obtain, rintro, Iff rw/simp, suffices, subst, by_cases, by_contra, use)"
+      testWave1MathlibTactics ++
+    test "13. Wave 2 Surface Idioms & Declarative Macros (∃, bounded ∀/∃, dite, ·, nested ⟨...⟩, spread, notation, macro_rules)"
+      testWave2SurfaceAndMacros ++
+    test "14. Wave 3 Decision Procedures (norm_num, ring, omega) & Tactic ElabHints Verification"
+      testWave3DecisionAndHints
   )
 
 def Tests.Ix.Frontend.suite : List TestSeq := [frontendSuite]
@@ -1282,6 +1562,18 @@ run_meta do
   | .ok true => pure ()
   | .ok false => throwError "testIxVCSMergeEngine returned false"
   | .error msg => throwError s!"testIxVCSMergeEngine failed: {msg}"
+  match testWave1MathlibTacticsResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testWave1MathlibTactics returned false"
+  | .error msg => throwError s!"testWave1MathlibTactics failed: {msg}"
+  match testWave2SurfaceAndMacrosResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testWave2SurfaceAndMacros returned false"
+  | .error msg => throwError s!"testWave2SurfaceAndMacros failed: {msg}"
+  match testWave3DecisionAndHintsResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testWave3DecisionAndHints returned false"
+  | .error msg => throwError s!"testWave3DecisionAndHints failed: {msg}"
   unless testImportMapAndElabClaim do
     throwError "testImportMapAndElabClaim failed"
   unless testFltPropositionElab do
@@ -1291,7 +1583,7 @@ run_meta do
   IO.println gateSummary
   unless gateOk do
     throwError "Closure Certification Gate failed!"
-  IO.println "✓ All 12 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
+  IO.println "✓ All 15 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
 
 def Tests.Ix.Frontend.runBenchmarksWithEnv (env : Lean.Environment) : IO UInt32 := do
   let stdout ← IO.getStdout

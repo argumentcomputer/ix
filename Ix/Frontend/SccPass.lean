@@ -119,6 +119,19 @@ def scanBinderArray (scanRec : NameSet → Ix.Syntax → Array Nat → Array Nat
     let loc' := names.foldl (fun s n => s.insert n) loc
     (loc', r')) (locals, refs)
 
+/-- Collect bound local identifiers from an `rcases` / `obtain` / `rintro` pattern `Syntax` tree. -/
+def collectRcasesPatLocals : Nat → Ix.Syntax → NameSet → NameSet
+  | 0, _, loc => loc
+  | fuel + 1, pat, loc =>
+    let k := Syntax.getKind pat
+    if k == SyntaxKind.rcasesPatIdent then
+      let id := Syntax.getId (Syntax.getArg pat 0)
+      if Name.isAnonymous id then loc else loc.insert id
+    else if k == SyntaxKind.rcasesPatWildcard || k == SyntaxKind.rcasesPatRfl then
+      loc
+    else
+      (Syntax.getArgs pat).toList.foldl (fun acc child => collectRcasesPatLocals fuel child acc) loc
+
 /-- Scan a term/type/tactic `Syntax` tree with lexical `scope` and bound local variables `locals`,
     accumulating indices of referenced module declarations in `refs`.
     Structurally recursive on `fuel : Nat`. -/
@@ -126,7 +139,10 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
     (isExtConst : Ix.Name → Bool) (isExtCtor : Ix.Name → Bool) :
     Nat → NameSet → Ix.Syntax → Array Nat → Array Nat
   | 0, _, _, refs => refs
-  | fuel + 1, locals, stx, refs =>
+  | fuel + 1, locals, stx0, refs =>
+    let stx :=
+      if modIdx.macroRules.isEmpty then stx0
+      else expandTopMacroPure 16 modIdx.macroRules.toList stx0
     let scanRec := scanSyntaxRefs scope modIdx isExtConst isExtCtor fuel
     match stx with
     | .missing | .atom _ _ => refs
@@ -271,13 +287,34 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
               else refs
             | _ => refs
           refs
-      -- 9. Tactic sequence: handle `intro`, `funext`, `ext`, `have`, `let`, `cases`/`induction`/`case` alternatives
+      -- 9. Tactic sequence: handle `intro`, `rintro`, `rcases`, `obtain`, `funext`, `ext`, `have`, `let`,
+      --    `suffices`, `generalize`, `by_cases`, `by_contra`, `cases`/`induction`/`case` alternatives
       else if kind == SyntaxKind.tacticSeq then
         let (_, refs') := args.foldl (fun (loc, r) tac =>
           let tk := Syntax.getKind tac
           if tk == SyntaxKind.tacticIntro || tk == SyntaxKind.tacticFunext || tk == SyntaxKind.tacticExt then
             let ids := (Syntax.getArgs (Syntax.getArg tac 1)).toList.map Syntax.getId
             let loc' := ids.foldl (fun s id => if Name.isAnonymous id then s else s.insert id) loc
+            (loc', r)
+          else if tk == SyntaxKind.tacticRintro then
+            let pats := (Syntax.getArgs (Syntax.getArg tac 1)).toList
+            let optTy := Syntax.getArg tac 2
+            let r := scanRec loc optTy r
+            let loc' := pats.foldl (fun s p => collectRcasesPatLocals 32 p s) loc
+            (loc', r)
+          else if tk == SyntaxKind.tacticRcases then
+            let targets := Syntax.getArg tac 1
+            let pat := Syntax.getArg tac 2
+            let r := scanRec loc targets r
+            let loc' := collectRcasesPatLocals 32 pat loc
+            (loc', r)
+          else if tk == SyntaxKind.tacticObtain then
+            let pat := Syntax.getArg tac 1
+            let optTy := Syntax.getArg tac 2
+            let val := Syntax.getArg tac 4
+            let r := scanRec loc optTy r
+            let r := scanRec loc val r
+            let loc' := collectRcasesPatLocals 32 pat loc
             (loc', r)
           else if tk == SyntaxKind.tacticHave || tk == SyntaxKind.tacticLet then
             let lId := Syntax.getId (Syntax.getArg tac 1)
@@ -286,6 +323,32 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
             let r := scanRec loc optTy r
             let r := scanRec loc val r
             let loc' := if Name.isAnonymous lId then loc else loc.insert lId
+            (loc', r)
+          else if tk == SyntaxKind.tacticSuffices then
+            let lId := Syntax.getId (Syntax.getArg tac 1)
+            let ty := Syntax.getArg tac 2
+            let body := Syntax.getArg tac 4
+            let r := scanRec loc ty r
+            let loc' := if Name.isAnonymous lId then loc else loc.insert lId
+            let r := scanRec loc' body r
+            (loc', r)
+          else if tk == SyntaxKind.tacticGeneralize then
+            let hId := Syntax.getId (Syntax.getArg tac 1)
+            let eStx := Syntax.getArg tac 2
+            let xId := Syntax.getId (Syntax.getArg tac 4)
+            let r := scanRec loc eStx r
+            let loc1 := if Name.isAnonymous xId then loc else loc.insert xId
+            let loc2 := if Name.isAnonymous hId then loc1 else loc1.insert hId
+            (loc2, r)
+          else if tk == SyntaxKind.tacticByCases then
+            let hId := Syntax.getId (Syntax.getArg tac 1)
+            let pStx := Syntax.getArg tac 2
+            let r := scanRec loc pStx r
+            let loc' := if Name.isAnonymous hId then loc else loc.insert hId
+            (loc', r)
+          else if tk == SyntaxKind.tacticByContra then
+            let hId := Syntax.getId (Syntax.getArg tac 1)
+            let loc' := if Name.isAnonymous hId then loc else loc.insert hId
             (loc', r)
           else
             (loc, scanRec loc tac r)
@@ -301,8 +364,16 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
         -- `rw [rules] [at hyp]`: scan only `rules` (`args[2]`), since `hyp` is a local hypothesis
         scanRec locals (args.getD 2 .missing) refs
       else if kind == SyntaxKind.tacticSimp || kind == SyntaxKind.tacticDSimp then
-        -- `simp [rules] [at hyp]`: scan only `rules` (`args[1]`)
-        scanRec locals (args.getD 1 .missing) refs
+        -- `simp [only] [rules] [at hyp]`: scan `rules` (`args[2]` if size >= 4 else `args[1]`)
+        let rulesNode := if args.size ≥ 4 then args.getD 2 .missing else args.getD 1 .missing
+        scanRec locals rulesNode refs
+      else if kind == SyntaxKind.tacticClear || kind == SyntaxKind.tacticRevert ||
+              kind == SyntaxKind.tacticSubst then
+        -- Arguments are local hypothesis names
+        refs
+      else if kind == SyntaxKind.tacticSpecialize then
+        -- `specialize h a₁ a₂ ...`: `args[1]` is local hyp `h`, `args[2]` is `nullKind` of term args
+        scanRec locals (args.getD 2 .missing) refs
       else
         -- Default: scan all child syntax nodes with the same `locals`
         args.toList.foldl (fun acc child =>

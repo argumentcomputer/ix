@@ -329,6 +329,7 @@ structure ModuleIndex where
   fieldToStruct : NameMap (Ix.Name × Nat)  := NameMap.empty
   auxToInd      : NameMap (Ix.Name × Nat)  := NameMap.empty
   importMap     : IxImportMap              := IxImportMap.empty
+  macroRules    : Array MacroRule          := #[]
   deriving Repr, Inhabited
 
 namespace ModuleIndex
@@ -420,11 +421,11 @@ def standardIndAuxSuffixes : List String :=
     into `ModuleIndex`'s `NameMap` tables (deferring `Array.mk revDecls.reverse` to `buildModuleIndex`). -/
 def ModuleIndex.registerDeclMaps (idx : ModuleIndex) (dIdx : Nat) (d : ModuleDecl) : ModuleIndex :=
   match idx with
-  | ⟨decls, declByName0, ctorToInd0, fieldToStruct0, auxToInd0, importMap⟩ =>
+  | ⟨decls, declByName0, ctorToInd0, fieldToStruct0, auxToInd0, importMap, macroRules⟩ =>
     let declByName := declByName0.insert d.fullName dIdx
     if d.kind != .ind && d.kind != .struct && d.kind != .cls then
       declByName.bindMap fun declByName' =>
-        ⟨decls, declByName', ctorToInd0, fieldToStruct0, auxToInd0, importMap⟩
+        ⟨decls, declByName', ctorToInd0, fieldToStruct0, auxToInd0, importMap, macroRules⟩
     else
       let ctorToInd := d.ctorNames.foldl (fun acc c => acc.insert c (d.fullName, dIdx)) ctorToInd0
       let fieldToStruct := d.fieldNames.foldl (fun acc f => acc.insert f (d.fullName, dIdx)) fieldToStruct0
@@ -436,7 +437,7 @@ def ModuleIndex.registerDeclMaps (idx : ModuleIndex) (dIdx : Nat) (d : ModuleDec
       ctorToInd.bindMap fun ctorToInd' =>
       fieldToStruct.bindMap fun fieldToStruct' =>
       auxToInd.bindMap fun auxToInd' =>
-        ⟨decls, declByName', ctorToInd', fieldToStruct', auxToInd', importMap⟩
+        ⟨decls, declByName', ctorToInd', fieldToStruct', auxToInd', importMap, macroRules⟩
 
 /-- Register a `ModuleDecl` and its constructors, fields, and auxiliaries into `ModuleIndex`. -/
 def ModuleIndex.registerDecl (idx : ModuleIndex) (d : ModuleDecl) : ModuleIndex :=
@@ -469,9 +470,9 @@ def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String
         match parseHexAddress hexStr with
         | some addr =>
           match modIdx with
-          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules⟩ =>
             return ⟨currScope, frames,
-              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.addImportedEnv addr⟩,
+              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.addImportedEnv addr, macroRules⟩,
               revDecls, declCount, anonCount⟩
         | none =>
           throw s!"invalid 64-hex-char content address '#{hexStr}' in import"
@@ -484,9 +485,9 @@ def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String
           match parseHexAddress hexStr with
           | some addr =>
             match modIdx with
-            | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+            | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules⟩ =>
               return ⟨currScope, frames,
-                ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.insertModulePin modName addr⟩,
+                ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.insertModulePin modName addr, macroRules⟩,
                 revDecls, declCount, anonCount⟩
           | none =>
             throw s!"invalid 64-hex-char content address '#{hexStr}' in import pin"
@@ -500,9 +501,9 @@ def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String
         match parseHexAddress hexStr with
         | some addr =>
           match modIdx with
-          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules⟩ =>
             return ⟨currScope, frames,
-              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.insertName symName addr⟩,
+              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.insertName symName addr, macroRules⟩,
               revDecls, declCount, anonCount⟩
         | none =>
           throw s!"invalid 64-hex-char content address '#{hexStr}' in map declaration"
@@ -639,8 +640,18 @@ def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String
         let modIdx' := modIdx.registerDeclMaps declCount decl
         InputContext.bindNat (declCount + 1) fun nextDeclCount' =>
           return ⟨currScope, frames, modIdx', decl :: revDecls, nextDeclCount', anonCount'⟩
+      else if k == SyntaxKind.notationDecl || k == SyntaxKind.macroDecl then
+        let (_, mRules) := decodeNotationOrMacroDecl cmd
+        if mRules.isEmpty then
+          return ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
+        else
+          match modIdx with
+          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules⟩ =>
+            return ⟨currScope, frames,
+              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules ++ Array.mk mRules⟩,
+              revDecls, declCount, anonCount⟩
       else
-        -- Ignore notationDecl or unknown commands in Pass 1
+        -- Ignore unknown commands in Pass 1
         return ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
 
 /-- Run Pass 1 over a parsed module `Syntax` node (`SyntaxKind.moduleKind`) to build `ModuleIndex`. -/
@@ -648,9 +659,9 @@ def buildModuleIndex (moduleStx : Ix.Syntax) : Except String ModuleIndex := do
   let cmds := Syntax.getArgs moduleStx
   let finalState ← cmds.toList.foldlM (fun st cmd => processCommandPass1 64 cmd st) {}
   match finalState.modIdx with
-  | ⟨_, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+  | ⟨_, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules⟩ =>
     let declList := match finalState.revDecls.reverse with | [] => [] | d :: ds => d :: ds
-    return ⟨Array.mk declList, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩
+    return ⟨Array.mk declList, declByName, ctorToInd, fieldToStruct, auxToInd, importMap, macroRules⟩
 
 /-! ## Lexical Name Resolution (`resolveIdentInScope`) -/
 

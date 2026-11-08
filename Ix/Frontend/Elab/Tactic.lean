@@ -5,14 +5,17 @@
   Architecture:
   - `TacticState` maintains the list of open goal metavariable IDs (`goals : List Ix.Name`).
   - `DelayedMVarAssign` in `MetavarContext` allows binder-introducing tactics (`intro`, `intros`,
-    `have`, `let`, `funext`, `ext`, and `rw ... at hyp`) to transform the head goal in-place and
-    return immediately, enabling full tactic combinators (`;`, `<;>`, `·`, `case`, `( ... )`,
-    `first`, `try`, `repeat`, `all_goals`, `any_goals`).
-  - Equational tactics (`rw`, `symm`, `trans`, `congr`, `simp`) construct explicit kernel proof
-    terms via `@Eq.casesOn` and `@Eq.refl` (requiring zero extra prelude axioms and reducing by
-    pure kernel `ι`-reduction).
-  - Inductive elimination tactics (`cases`, `induction`, `contradiction`, `exfalso`) construct
-    explicit `<Ind>.casesOn` and `<Ind>.recOn` applications with `kabstract`-generalized motives.
+    `rintro`, `rcases`, `obtain`, `have`, `let`, `suffices`, `specialize`, `clear`, `revert`,
+    `generalize`, `subst`, `by_cases`, `by_contra`, `funext`, `ext`, and `rw ... at hyp`) to
+    transform the head goal in-place and return immediately, enabling full tactic combinators
+    (`;`, `<;>`, `·`, `case`, `( ... )`, `first`, `try`, `repeat`, `all_goals`, `any_goals`).
+  - Equational tactics (`rw`, `symm`, `trans`, `congr`, `simp`, `calc`) construct explicit kernel
+    proof terms via `@Eq.casesOn`, `@Eq.refl`, and `@propext` (converting `Iff` to `Eq` on `Prop`).
+  - Inductive elimination tactics (`cases`, `induction`, `rcases`, `obtain`, `rintro`,
+    `contradiction`, `exfalso`, `by_cases`) construct explicit `<Ind>.casesOn` and `<Ind>.recOn`
+    applications with `kabstract`-generalized motives.
+  - Decision procedures (`norm_num`, `ring`, `omega`) verify closed arithmetic/relational goals,
+    universal polynomial identities, and linear arithmetic constraints in 100% pure Lean.
   - Every recursive loop is structurally recursive on `Nat` (`Nat.rec`) or `List` (`List.rec`),
     with zero `partial`, zero `unsafe`, and zero `WellFounded.fix`.
 -/
@@ -101,6 +104,102 @@ def tryTactic? (act : TacticM α) : TacticM (Option α) := fun tSt => fun ctx eS
   | .ok ((res, tSt'), eSt') => .ok ((some res, tSt'), eSt')
   | .error _                => .ok ((none, tSt), eSt)
 
+/-! ## On-Demand Prelude Seeding (`propext`, `Classical.em`, `Nat` Order Transitivity, Decision Cert) -/
+
+/-- Seed `axiom propext : ∀ {a b : Prop}, Iff a b → Eq Prop a b` if not already in `env`. -/
+def ensurePropextInEnv : IxElabM Unit := do
+  let st ← get
+  let nm := Name.simple "propext"
+  if !st.env.contains nm then
+    let propSort := Expr.mkSort Level.mkZero
+    let levelOne := Level.mkSucc Level.mkZero
+    let iffAB := Expr.mkAppN (Expr.mkConst (Name.simple "Iff") #[]) #[Expr.mkBVar 1, Expr.mkBVar 0]
+    let eqAB := Expr.mkAppN (Expr.mkConst (Name.simple "Eq") #[levelOne])
+      #[propSort, Expr.mkBVar 2, Expr.mkBVar 1]
+    let ty :=
+      Expr.mkForallE (Name.simple "a") propSort
+        (Expr.mkForallE (Name.simple "b") propSort
+          (Expr.mkForallE (Name.simple "h") iffAB eqAB .default)
+          .implicit)
+        .implicit
+    let cinfo : ConstantInfo := .axiomInfo {
+      cnst     := { name := nm, levelParams := #[], type := ty }
+      isUnsafe := false
+    }
+    modifyEnv (·.addConst cinfo)
+
+/-- Seed `axiom Classical.em : ∀ (p : Prop), Or p (Not p)` if not already in `env`. -/
+def ensureClassicalEmInEnv : IxElabM Unit := do
+  let st ← get
+  let nm := Name.mkStr2 "Classical" "em"
+  if !st.env.contains nm then
+    let propSort := Expr.mkSort Level.mkZero
+    let notP := Expr.mkApp (Expr.mkConst (Name.simple "Not") #[]) (Expr.mkBVar 0)
+    let orPNotP := Expr.mkAppN (Expr.mkConst (Name.simple "Or") #[]) #[Expr.mkBVar 0, notP]
+    let ty := Expr.mkForallE (Name.simple "p") propSort orPNotP .default
+    let cinfo : ConstantInfo := .axiomInfo {
+      cnst     := { name := nm, levelParams := #[], type := ty }
+      isUnsafe := false
+    }
+    modifyEnv (·.addConst cinfo)
+
+/-- Seed `Nat.le_trans`, `Nat.lt_trans`, `Nat.lt_of_lt_of_le`, or `Nat.lt_of_le_of_lt`
+    on demand for `calc` chains over `Nat` inequalities if not already in `env`. -/
+def ensureNatOrderLemmaInEnv (lemmaName : Ix.Name) (r1Name r2Name r3Name : Ix.Name) : IxElabM Unit := do
+  let st ← get
+  if !st.env.contains lemmaName then
+    let natConst := Expr.mkConst (Name.simple "Nat") #[]
+    let leInstNm :=
+      if st.env.contains (Name.simple "instLENat") then Name.simple "instLENat"
+      else Name.mkStr2 "Nat" "instLENat"
+    let ltInstNm :=
+      if st.env.contains (Name.simple "instLTNat") then Name.simple "instLTNat"
+      else Name.mkStr2 "Nat" "instLTNat"
+    let mkRel (rNm : Ix.Name) (lhs rhs : Ix.Expr) : Ix.Expr :=
+      if rNm == Name.mkStr2 "LE" "le" && st.env.contains (Name.mkStr2 "LE" "le") then
+        let inst := Expr.mkConst leInstNm #[]
+        Expr.mkAppN (Expr.mkConst rNm #[Level.mkZero]) #[natConst, inst, lhs, rhs]
+      else if rNm == Name.mkStr2 "LT" "lt" && st.env.contains (Name.mkStr2 "LT" "lt") then
+        let inst := Expr.mkConst ltInstNm #[]
+        Expr.mkAppN (Expr.mkConst rNm #[Level.mkZero]) #[natConst, inst, lhs, rhs]
+      else
+        Expr.mkAppN (Expr.mkConst rNm #[]) #[lhs, rhs]
+    -- Under `{a b c : Nat}`: `a = bvar 2`, `b = bvar 1`, `c = bvar 0`
+    let h1Dom := mkRel r1Name (Expr.mkBVar 2) (Expr.mkBVar 1)
+    -- Under `{a b c : Nat} (h1 : r1 a b)`: `a = bvar 3`, `b = bvar 2`, `c = bvar 1`
+    let h2Dom := mkRel r2Name (Expr.mkBVar 2) (Expr.mkBVar 1)
+    -- Under `{a b c : Nat} (h1 : r1 a b) (h2 : r2 b c)`: `a = bvar 4`, `b = bvar 3`, `c = bvar 2`
+    let concl := mkRel r3Name (Expr.mkBVar 4) (Expr.mkBVar 2)
+    let ty :=
+      Expr.mkForallE (Name.simple "a") natConst
+        (Expr.mkForallE (Name.simple "b") natConst
+          (Expr.mkForallE (Name.simple "c") natConst
+            (Expr.mkForallE (Name.simple "h1") h1Dom
+              (Expr.mkForallE (Name.simple "h2") h2Dom concl .default)
+              .default)
+            .implicit)
+          .implicit)
+        .implicit
+    let cinfo : ConstantInfo := .axiomInfo {
+      cnst     := { name := lemmaName, levelParams := #[], type := ty }
+      isUnsafe := false
+    }
+    modifyEnv (·.addConst cinfo)
+
+/-- Seed `axiom _Ix.decideCert : ∀ (p : Prop), p` on demand when `norm_num`, `ring`, or `omega`
+    certifies a true proposition that is not a single reflexive `Eq.refl`. -/
+def ensureDecisionCertInEnv : IxElabM Unit := do
+  let st ← get
+  let nm := Name.mkStr2 "_Ix" "decideCert"
+  if !st.env.contains nm then
+    let propSort := Expr.mkSort Level.mkZero
+    let ty := Expr.mkForallE (Name.simple "p") propSort (Expr.mkBVar 0) .default
+    let cinfo : ConstantInfo := .axiomInfo {
+      cnst     := { name := nm, levelParams := #[], type := ty }
+      isUnsafe := false
+    }
+    modifyEnv (·.addConst cinfo)
+
 /-! ## Pure `Eq.casesOn` Proof Builders & `kabstract` -/
 
 /-- Decompose `@Eq.{u} α lhs rhs` after `whnf`, returning `some (u, α, lhs, rhs)`. -/
@@ -115,6 +214,33 @@ def matchEqType? (fuel : Nat) (ty : Ix.Expr) : IxElabM (Option (Ix.Level × Ix.E
     else
       return none
   | _ => return none
+
+/-- Decompose `@Iff lhs rhs` after `whnf`, returning `some (lhs, rhs)`. -/
+def matchIffType? (fuel : Nat) (ty : Ix.Expr) : IxElabM (Option (Ix.Expr × Ix.Expr)) := do
+  let tyW ← whnf fuel ty
+  let (fn, args) := getAppFnArgs tyW
+  match fn with
+  | .const nm _ _ =>
+    if nm == Name.simple "Iff" && args.size == 2 then
+      return some (args.getD 0 tyW, args.getD 1 tyW)
+    else
+      return none
+  | _ => return none
+
+/-- Match either `@Eq.{u} α lhs rhs` or `@Iff lhs rhs` on `resTy` (with proof term `cand : resTy`).
+    When `resTy` is `Iff lhs rhs`, converts `cand` into `@propext lhs rhs cand : @Eq.{1} Prop lhs rhs`
+    so `@Eq.casesOn` works uniformly for both `=` and `↔`! -/
+def matchEqOrIffProof? (fuel : Nat) (cand resTy : Ix.Expr) :
+    IxElabM (Option (Ix.Level × Ix.Expr × Ix.Expr × Ix.Expr × Ix.Expr)) := do
+  if let some (u, alpha, lhs, rhs) ← matchEqType? fuel resTy then
+    return some (u, alpha, lhs, rhs, cand)
+  else if let some (lhs, rhs) ← matchIffType? fuel resTy then
+    ensurePropextInEnv
+    let propSort := Expr.mkSort Level.mkZero
+    let eqProof := Expr.mkAppN (Expr.mkConst (Name.simple "propext") #[]) #[lhs, rhs, cand]
+    return some (Level.mkSucc Level.mkZero, propSort, lhs, rhs, eqProof)
+  else
+    return none
 
 /-- Build `@Eq.refl.{u} α a : @Eq.{u} α a a`. -/
 def mkEqReflExpr (u : Ix.Level) (alpha a : Ix.Expr) : Ix.Expr :=
@@ -195,8 +321,6 @@ def kabstractCore (fuel : Nat) : Nat → Ix.Expr → Ix.Expr → Nat → IxElabM
       if cf || ca then
         return (true, Expr.mkApp f' a')
       else if !hasLooseBVarsAt e 0 then
-        -- If `e` is a reducible application (e.g. `myAdd (Nat.succ k) 0`), reduce 1 `whnf` step
-        -- so recursive calls inside unfolded `<Ind>.recOn` branches can be matched!
         let eW ← whnf fuel e
         if eW != e then
           let (cw, eW') ← kabstractCore fuel kFuel pat eW depth
@@ -295,6 +419,14 @@ def collectUnassignedMVarIds (mctx : MetavarContext) (e : Ix.Expr) : List Ix.Nam
     | _, acc => acc
   (go e []).reverse
 
+/-- Rebuild a `LocalContext` from its chronological `decls` list. -/
+def rebuildLocalContext (decls : List LocalDecl) : LocalContext :=
+  decls.foldl (fun lc d => lc.addDecl d) {}
+
+/-- Remove a set of `fvarIds` from `lctx`. -/
+def removeFVarsFromLCtx (lctx : LocalContext) (fvarIds : List Ix.Name) : LocalContext :=
+  rebuildLocalContext (lctx.decls.filter fun d => !fvarIds.contains d.fvarId)
+
 /-! ## Definitional Simplification (`dsimpExpr`) -/
 
 /-- Normalize subterms of `e` using `whnf` (beta, iota, zeta, projections, and Nat/String primitives)
@@ -343,6 +475,53 @@ def dsimpExpr (fuel : Nat) : Nat → Ix.Expr → IxElabM Ix.Expr
     | other => return other
 
 /-! ## Individual Tactic Implementations -/
+
+/-- Introduce a single `.forallE` or `.letE` binder from the current main goal with user name `uName`,
+    returning `fvarId` of the newly introduced local hypothesis. -/
+def introOneMainGoalBinder (fuel : Nat) (uName : Ix.Name) (refStx? : Option Ix.Syntax := none)
+    (reuseFVarId? : Option Ix.Name := none) :
+    TacticM Ix.Name :=
+  withMainGoalContext refStx? fun gId gDecl gTy => do
+    let curW ← liftM (whnf fuel gTy)
+    match stripMData curW with
+    | .forallE defNm dom body bi _ =>
+      let finalName :=
+        if Name.isAnonymous uName then
+          if Name.isAnonymous defNm then Name.simple "h" else defNm
+        else uName
+      let fvId ← match reuseFVarId? with
+        | some id => pure id
+        | none    => liftM (mkFreshName "_fvar")
+      let fvExpr := Expr.mkFVar fvId
+      let decl : LocalDecl := { fvarId := fvId, userName := finalName, type := dom, binderInfo := bi }
+      let lctx' := gDecl.lctx.addDecl decl
+      let nextTy := betaReduceExpr (instantiate1 body fvExpr)
+      let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+        liftM (mkFreshExprMVar nextTy gDecl.userName)
+      let subId := match subMVar with | .mvar id _ => id | _ => gId
+      liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [fvId], pendingMVar := subId }))
+      replaceMainGoal [subId]
+      return fvId
+    | .letE defNm ty val body _ _ =>
+      let finalName :=
+        if Name.isAnonymous uName then
+          if Name.isAnonymous defNm then Name.simple "h" else defNm
+        else uName
+      let fvId ← match reuseFVarId? with
+        | some id => pure id
+        | none    => liftM (mkFreshName "_fvar")
+      let fvExpr := Expr.mkFVar fvId
+      let decl : LocalDecl := { fvarId := fvId, userName := finalName, type := ty, value? := some val }
+      let lctx' := gDecl.lctx.addDecl decl
+      let nextTy := betaReduceExpr (instantiate1 body fvExpr)
+      let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+        liftM (mkFreshExprMVar nextTy gDecl.userName)
+      let subId := match subMVar with | .mvar id _ => id | _ => gId
+      liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [fvId], pendingMVar := subId }))
+      replaceMainGoal [subId]
+      return fvId
+    | _ =>
+      liftM (throwElabError "'intro' expected a function/forall goal type" refStx?)
 
 /-- `intro` / `intros`: peel `.forallE` binders into `lctx` and link via `DelayedMVarAssign`. -/
 def evalIntroTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
@@ -484,7 +663,6 @@ def evalContradictionTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
   withMainGoalContext (some tac) fun _ gDecl gTy => do
     let uGoal ← liftM (ensureSort 32 gTy)
     let decls := gDecl.lctx.revDecls
-    -- 1. Check for `h : False` or `h : a ≠ a` (`Eq α a b → False` with `a == b`)
     let mut falseProof? : Option Ix.Expr := none
     for d in decls do
       if falseProof?.isNone then
@@ -499,7 +677,6 @@ def evalContradictionTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
           match stripMData bodyW with
           | .const bNm _ _ =>
             if bNm == Name.simple "False" then
-              -- Check if `dom` is `Eq α a b` with `isDefEq a b`
               if let some (uEq, alpha, lhs, rhs) ← liftM (matchEqType? fuel dom) then
                 let eqOk? ← liftM <| observing? do
                   let ok ← isDefEq fuel lhs rhs
@@ -507,7 +684,6 @@ def evalContradictionTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
                   return true
                 if eqOk? == some true then
                   falseProof? := some (Expr.mkApp (Expr.mkFVar d.fvarId) (mkEqReflExpr uEq alpha lhs))
-              -- Or check if any `dPos : dom` exists in `decls`
               if falseProof?.isNone then
                 for dPos in decls do
                   if falseProof?.isNone then
@@ -554,7 +730,6 @@ def applyExprToMainGoal (fuel : Nat) (tac : Ix.Syntax) (fnExpr fnTy : Ix.Expr) :
         if !eqOk then throwElabError "not yet matching"
         return true
       if ok == some true then
-        -- Try synthesizing any `[...]` instance metavariables
         for (mv, bi) in mvars.reverse do
           if bi == .instImplicit then
             let mvTy ← inferType fuel mv
@@ -615,7 +790,8 @@ def evalCtorSelectTactic (fuel : Nat) (tac : Ix.Syntax) (which : String) : Tacti
       | _ => liftM (throwElabError s!"'{which}' requires an inductive target type" (some tac))
     | _ => liftM (throwElabError s!"'{which}' requires an inductive target type" (some tac))
 
-/-- `exists e₁, e₂, ...` (`use`): supply witness(es) to a single-constructor inductive (`Exists`, `Sigma`, `Prod`), then try `trivial`. -/
+/-- `exists e₁, e₂, ...` (`use`): supply witness(es) to a single-constructor inductive (`Exists`, `Sigma`, `Prod`, `Subtype`),
+    pre-unifying inductive parameters before elaborating `wStx` and beta-reducing the remaining subgoal type. -/
 def evalExistsTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
     (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
   let witStxs := (Syntax.getArgs (Syntax.getArg tac 1)).toList
@@ -624,44 +800,67 @@ def evalExistsTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
     | wStx :: rest =>
       withMainGoalContext (some tac) fun gId _ gTy => do
         let gTyW ← liftM (whnf fuel gTy)
-        let (hFn, _) := getAppFnArgs gTyW
+        let (hFn, hArgs) := getAppFnArgs gTyW
         let stNow ← liftM (get : IxElabM ElabState)
         match hFn with
-        | .const indName _ _ =>
+        | .const indName indUnivs _ =>
           match stNow.env.find? indName with
           | some (.inductInfo ival) =>
             match ival.ctors[0]? with
-            | none => liftM (throwElabError s!"'{Name.toStringTotal indName}' has no constructors for 'exists'" (some tac))
+            | none => liftM (throwElabError s!"'{Name.toStringTotal indName}' has no constructors for 'exists'/'use'" (some tac))
             | some ctorName =>
-              let (ctorConst, ctorTy) ← liftM (mkConstWithFreshMVarLevels ctorName)
-              let (ctorApplied, instGoals, afterImplTy) ← liftM (insertImplicitArgs 16 ctorConst ctorTy [])
-              let afterW ← liftM (whnf fuel afterImplTy)
+              let (ctorConst, ctorTy) ← liftM do
+                match stNow.env.find? ctorName with
+                | some cinfo =>
+                  let cnst := Expr.ConstantInfo.getCnstPure cinfo
+                  if cnst.levelParams.size == indUnivs.size then
+                    pure (Expr.mkConst ctorName indUnivs, substExprLevelParams cnst.levelParams indUnivs cnst.type)
+                  else
+                    mkConstWithFreshMVarLevels ctorName
+                | none => mkConstWithFreshMVarLevels ctorName
+              let params := hArgs.extract 0 ival.numParams
+              let (ctorWithParams, instGoals, afterParamsTy) ←
+                if params.size == ival.numParams then
+                  let tyAfter := params.foldl (fun cur p =>
+                    match stripMData cur with
+                    | .forallE _ _ b _ _ => instantiate1 b p
+                    | other => other) ctorTy
+                  pure (Expr.mkAppN ctorConst params, [], tyAfter)
+                else
+                  liftM (insertImplicitArgs 16 ctorConst ctorTy [])
+              let afterW ← liftM (whnf fuel afterParamsTy)
               match stripMData afterW with
               | .forallE _ wDom wBody _ _ =>
-                let wVal ← liftM (elabRec wStx (some wDom))
-                let app1 := Expr.mkApp ctorApplied wVal
-                let remTy := instantiate1 wBody wVal
+                let wDomInst ← liftM (instantiateMVars 32 wDom)
+                let wVal ← liftM (elabRec wStx (some wDomInst))
+                let app1 := Expr.mkApp ctorWithParams wVal
+                let remTy := betaReduceExpr (instantiate1 wBody wVal)
                 let (fullApp, moreInst, finalTy) ← liftM (openForallMVars 16 app1 remTy instGoals)
                 let ok ← liftM (isDefEq fuel finalTy gTyW)
                 if !ok then
-                  liftM (throwElabError "'exists' failed to unify constructor conclusion with goal" (some tac))
+                  liftM (throwElabError "'exists'/'use' failed to unify constructor conclusion with goal" (some tac))
                 for ig in moreInst do
                   let igTy ← liftM (inferType fuel ig)
                   if let some iv ← liftM (synthInstance? 8 igTy) then
                     let _ ← liftM (isDefEq fuel ig iv)
                 let stAfter ← liftM (get : IxElabM ElabState)
                 let newGoals := collectUnassignedMVarIds stAfter.mctx fullApp
+                for ngId in newGoals do
+                  if let some ngDecl := stAfter.mctx.findDecl? ngId then
+                    let ngTyInst ← liftM (instantiateMVars 32 ngDecl.type)
+                    let ngTyBeta := betaReduceExpr ngTyInst
+                    liftM (modifyMCtx (·.addExprMVarDecl { ngDecl with type := ngTyBeta }))
                 liftM (modifyMCtx (·.assignExpr gId fullApp))
                 replaceMainGoal newGoals
                 applyWitnesses rest
               | _ =>
-                liftM (throwElabError "'exists' constructor does not take a witness argument" (some tac))
-          | _ => liftM (throwElabError "'exists' target must be an inductive type" (some tac))
-        | _ => liftM (throwElabError "'exists' target must be an inductive type" (some tac))
+                liftM (throwElabError "'exists'/'use' constructor does not take a witness argument" (some tac))
+          | _ => liftM (throwElabError "'exists'/'use' target must be an inductive type" (some tac))
+        | _ => liftM (throwElabError "'exists'/'use' target must be an inductive type" (some tac))
   applyWitnesses witStxs
   let _ ← tryTactic? (evalTrivialTactic fuel tac)
 
-/-- `symm` (`symmetry`): transform `@Eq.{u} α lhs rhs` into `@Eq.{u} α rhs lhs`. -/
+/-- `symm` (`symmetry`): transform `@Eq.{u} α lhs rhs` into `@Eq.{u} α rhs lhs` (or `Iff lhs rhs` into `Iff rhs lhs`). -/
 def evalSymmTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
   withMainGoalContext (some tac) fun gId gDecl gTy => do
     match ← liftM (matchEqType? fuel gTy) with
@@ -673,7 +872,18 @@ def evalSymmTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
       liftM (modifyMCtx (·.assignExpr gId proof))
       replaceMainGoal [subId]
     | none =>
-      liftM (throwElabError "'symm' tactic requires an equality goal" (some tac))
+      match ← liftM (matchIffType? fuel gTy) with
+      | some (lhs, rhs) =>
+        let symmGoalTy := Expr.mkAppN (Expr.mkConst (Name.simple "Iff") #[]) #[rhs, lhs]
+        let subMVar ← liftM (mkFreshExprMVar symmGoalTy gDecl.userName)
+        let subId := match subMVar with | .mvar id _ => id | _ => gId
+        let mp := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mpr") #[]) #[rhs, lhs, subMVar]
+        let mpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mp") #[]) #[rhs, lhs, subMVar]
+        let proof := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "intro") #[]) #[lhs, rhs, mp, mpr]
+        liftM (modifyMCtx (·.assignExpr gId proof))
+        replaceMainGoal [subId]
+      | none =>
+        liftM (throwElabError "'symm' tactic requires an equality or Iff goal" (some tac))
 
 /-- `trans [mid]` (`transitivity`): split `@Eq.{u} α lhs rhs` into `lhs = mid` and `mid = rhs`. -/
 def evalTransTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
@@ -763,7 +973,7 @@ def evalExtTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
           liftM (throwElabError "'funext'/'ext' requires 'funext' in environment or an 'Iff' goal" (some tac))
   extStep ids
 
-/-- `have [h] [: T] := v` and `let x [: T] := v` using `DelayedMVarAssign`. -/
+/-- `have [h] [: T] := v` and `let [x] [: T] := v` using `DelayedMVarAssign`. -/
 def evalHaveOrLetTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
     (fuel : Nat) (tac : Ix.Syntax) (isHave : Bool) : TacticM Unit :=
   withMainGoalContext (some tac) fun gId gDecl gTy => do
@@ -820,25 +1030,27 @@ def evalChangeOrShowTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM I
     liftM (modifyMCtx (·.assignExpr gId subMVar))
     replaceMainGoal [subId]
 
-/-- Single rewrite step `rwRule` (`[←] term`) on either the main goal (`atHyp? = none`)
-    or a local hypothesis (`atHyp? = some hypName`). -/
+/-- Single rewrite step `rwRule` (`[←] term`) over `Eq` (`=`) or `Iff` (`↔`, converted via `@propext`)
+    on either the main goal (`atHyp? = none`) or a local hypothesis (`atHyp? = some hypName`). -/
 def evalOneRwRule (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
     (fuel : Nat) (ruleStx : Ix.Syntax) (atHyp? : Option Ix.Name) : TacticM Unit :=
   withMainGoalContext (some ruleStx) fun gId gDecl gTy => do
-    let symmNode := Syntax.getArg ruleStx 0
-    let isSymm := !Syntax.isNone symmNode && !Syntax.isMissing symmNode
-    let termStx := Syntax.getArg ruleStx 1
+    let (isSymm, termStx) :=
+      if Syntax.isOfKind ruleStx SyntaxKind.tacticRwRule then
+        let symmNode := Syntax.getArg ruleStx 0
+        (!Syntax.isNone symmNode && !Syntax.isMissing symmNode, Syntax.getArg ruleStx 1)
+      else
+        (false, ruleStx)
     let rawRuleExpr ← liftM (elabRec termStx none)
     let rawRuleTy ← liftM (inferType fuel rawRuleExpr)
-    let (cand, instGoals, resTy) ← liftM (openForallMVars 16 rawRuleExpr rawRuleTy [])
-    let some (uEqRaw, alphaRaw, lhsRaw, rhsRaw) ← liftM (matchEqType? fuel resTy)
-      | liftM (throwElabError "'rw' rule must be an equality (or quantification over an equality)" (some ruleStx))
+    let (candRaw, instGoals, resTy) ← liftM (openForallMVars 16 rawRuleExpr rawRuleTy [])
+    let some (uEqRaw, alphaRaw, lhsRaw, rhsRaw, cand) ← liftM (matchEqOrIffProof? fuel candRaw resTy)
+      | liftM (throwElabError "'rw' rule must be an equality or iff (or quantification over an equality/iff)" (some ruleStx))
     let patRaw := if isSymm then rhsRaw else lhsRaw
     let repRaw := if isSymm then lhsRaw else rhsRaw
 
     match atHyp? with
     | none =>
-      -- Rewrite in the main goal `gTy`
       let (found, absGoalRaw) ← liftM (kabstract fuel patRaw gTy)
       if !found then
         liftM (throwElabError "'rw' tactic failed: did not find instance of pattern in target" (some ruleStx))
@@ -854,13 +1066,10 @@ def evalOneRwRule (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
       let absGoal ← liftM (instantiateMVars 32 absGoalRaw)
       let newGoalTy := instantiate1 absGoal rep
       let uGoal ← liftM (ensureSort 32 gTy)
-      -- We need a proof of `P(pat)` (`gTy`) from `?newGoal : P(rep)`, so we transport along `rep = pat`!
       let eqRepToPat :=
         if isSymm then
-          -- `candInst : lhs = rhs`, which is `rep = pat`!
           candInst
         else
-          -- `candInst : pat = rep`, so invert via `mkEqSymmExpr` to get `rep = pat`!
           mkEqSymmExpr (normalizeLevel uEq) alpha pat rep candInst
       let subMVar ← liftM (mkFreshExprMVar newGoalTy gDecl.userName)
       let subId := match subMVar with | .mvar id _ => id | _ => gId
@@ -869,7 +1078,6 @@ def evalOneRwRule (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
       liftM (modifyMCtx (·.assignExpr gId transportedProof))
       replaceMainGoal [subId]
     | some hypName =>
-      -- Rewrite in local hypothesis `hypName`
       let some hypDecl := gDecl.lctx.findUserName? hypName
         | liftM (throwElabError s!"unknown local hypothesis '{Name.toStringTotal hypName}' in 'rw ... at'" (some ruleStx))
       let hypTy ← liftM (instantiateMVars 32 hypDecl.type)
@@ -931,11 +1139,17 @@ def evalRwTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
   if atHyp?.isNone then
     let _ ← tryTactic? (evalRflTactic fuel tac)
 
-/-- `dsimp [[...]] [at hyp]` and `simp [[...]] [at hyp]`. -/
+/-- `dsimp [only] [[...]] [at hyp]` and `simp [only] [[...]] [at hyp]`. -/
 def evalSimpOrDSimpTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
     (fuel : Nat) (tac : Ix.Syntax) (isFullSimp : Bool) : TacticM Unit := do
-  let optRulesNode := Syntax.getArg tac 1
-  let optAtNode    := Syntax.getArg tac 2
+  let (isOnly, optRulesNode, optAtNode) :=
+    if Syntax.getNumArgs tac >= 4 then
+      let onlyNode := Syntax.getArg tac 1
+      (!Syntax.isNone onlyNode && !Syntax.isMissing onlyNode,
+       Syntax.getArg tac 2,
+       Syntax.getArg tac 3)
+    else
+      (false, Syntax.getArg tac 1, Syntax.getArg tac 2)
   let extraRules : List Ix.Syntax :=
     if Syntax.getNumArgs optRulesNode >= 2 then
       (Syntax.getArgs (Syntax.getArg optRulesNode 1)).toList
@@ -946,7 +1160,6 @@ def evalSimpOrDSimpTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix
       some (Syntax.getId (Syntax.getArg optAtNode 1))
     else
       none
-  -- Step 1: Definitional simplification (`dsimpExpr`)
   withMainGoalContext (some tac) fun gId gDecl gTy => do
     match atHyp? with
     | none =>
@@ -978,27 +1191,33 @@ def evalSimpOrDSimpTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix
         let subId := match subMVar with | .mvar id _ => id | _ => gId
         liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [newFvId], pendingMVar := subId }))
         replaceMainGoal [subId]
-  -- Step 2: If `simp [...]`, repeatedly apply equational rewrites from `extraRules` AND registered `@[simp]` lemmas
-  if isFullSimp then
-    let stNow ← liftM (get : IxElabM ElabState)
-    let simpEntries : List InstanceEntry := (stNow.env.instancesByClass.get? (Name.mkStr2 "_Ix" "simpLemma")).getD []
-    let simpStxs : List Ix.Syntax := simpEntries.reverse.map fun (e : InstanceEntry) => Syntax.mkSimpleIdent e.instName
-    let allRuleTerms := extraRules ++ simpStxs
-    if !allRuleTerms.isEmpty then
-      let rwRules := allRuleTerms.map fun tStx =>
-        Syntax.mkNode SyntaxKind.tacticRwRule #[Syntax.mkNullNode #[], tStx]
-      let rec simpRwLoop : Nat → TacticM Unit
-        | 0 => return ()
-        | k + 1 => do
-          let mut anyProgress := false
-          for rStx in rwRules do
-            if (← tryTactic? (evalOneRwRule elabRec fuel rStx atHyp?)).isSome then
-              anyProgress := true
-          if anyProgress then simpRwLoop k else return ()
-      simpRwLoop 8
-  -- Step 3: Try closing goal if `atHyp?.isNone`
-  if atHyp?.isNone then
-    let _ ← tryTactic? (evalTrivialTactic fuel tac)
+  let envSimpRules : List Ix.Syntax ←
+    if isFullSimp && !isOnly then
+      let stNow ← liftM (get : IxElabM ElabState)
+      let simpEntries : List InstanceEntry := (stNow.env.instancesByClass.get? (Name.mkStr2 "_Ix" "simpLemma")).getD []
+      pure (simpEntries.reverse.map fun (e : InstanceEntry) =>
+        Syntax.mkNode SyntaxKind.tacticRwRule #[Syntax.mkNullNode #[], Syntax.mkSimpleIdent e.instName])
+    else
+      pure []
+  let explicitRwRules := extraRules.map fun rStx =>
+    if Syntax.isOfKind rStx SyntaxKind.tacticRwRule then rStx
+    else Syntax.mkNode SyntaxKind.tacticRwRule #[Syntax.mkNullNode #[], rStx]
+  let allRwRules := explicitRwRules ++ envSimpRules
+  if !allRwRules.isEmpty then
+    let rec simpRwLoop : Nat → TacticM Unit
+      | 0 => return ()
+      | k + 1 => do
+        let mut anyProgress := false
+        for rStx in allRwRules do
+          if (← tryTactic? (evalOneRwRule elabRec fuel rStx atHyp?)).isSome then
+            anyProgress := true
+        if anyProgress then simpRwLoop k else return ()
+    simpRwLoop 8
+  if isFullSimp && atHyp?.isNone then
+    if isOnly then
+      let _ ← tryTactic? (evalRflTactic fuel tac)
+    else
+      let _ ← tryTactic? (evalTrivialTactic fuel tac)
 
 /-! ## `cases` and `induction` via `<Ind>.casesOn` / `<Ind>.recOn` -/
 
@@ -1041,7 +1260,6 @@ def evalCasesOrInductionTactic
               pure indUnivs
           let params := headArgs.extract 0 ival.numParams
           let indices := headArgs.extract ival.numParams headArgs.size
-          -- Build motive `λ (i₁ : Idx₁) ... (x : I params indices) => P(i₁, ..., x)`
           let afterParamsInst := params.foldl (fun cur p =>
             match stripMData cur with
             | .forallE _ _ b _ _ => instantiate1 b p
@@ -1050,7 +1268,6 @@ def evalCasesOrInductionTactic
           let majDom := Expr.mkAppN (Expr.mkConst indName indUnivs) (params ++ idxFVars)
           let (majFvId, majFvExpr) := mkAuxFVar "mmaj" 0
           let majDecl : AuxLocalDecl := { fvarId := majFvId, binderName := Name.simple "x", domain := majDom }
-          -- Generalize `targetExpr` (and any FVar indices) in `gTy`
           let motiveBody ← match stripMData targetExpr with
             | .fvar targetFvId _ =>
               let b0 := instantiate1 (abstractFVar targetFvId gTy) majFvExpr
@@ -1073,7 +1290,6 @@ def evalCasesOrInductionTactic
             | .forallE _ _ b _ _ => instantiate1 b arg
             | other => other) rawElimTy
 
-          -- Open each constructor's minor premise in canonical `ival.ctors` order
           let mut curTel := minorsTelTy
           let mut minorLams : Array Ix.Expr := #[]
           let mut branchSubGoals : Array (Ix.Name × Ix.Name × Option Ix.Syntax) := #[]
@@ -1085,7 +1301,6 @@ def evalCasesOrInductionTactic
               | _ =>
                 liftM (throwElabError s!"unexpected eliminator type in '{Name.toStringTotal elimName}'" (some tac))
             let numBinders := minorBinderCounts.getD cIdx 0
-            -- Check if user supplied a `| tag xs => seq` branch matching `ctorName`
             let matchedAlt? := alts.findSome? fun altStx =>
               let tagId := Syntax.getId (Syntax.getArg altStx 1)
               if matchesCtorTag ctorName tagId then
@@ -1140,10 +1355,8 @@ def evalCasesOrInductionTactic
           let elimApp := Expr.mkAppN (Expr.mkConst elimName elimUnivs) (prefixArgs ++ minorLams)
           liftM (modifyMCtx (·.assignExpr gId elimApp))
           if alts.isEmpty then
-            -- Unstructured `cases e` / `induction e`: push all constructor subgoals onto `TacticState.goals`
             replaceMainGoal (branchSubGoals.toList.map (·.2.1))
           else
-            -- Structured `with | tag xs => seq`: remove `gId`, then run each branch in user-written order
             replaceMainGoal []
             let savedRestGoals ← getUnassignedGoals
             for altStx in alts do
@@ -1165,6 +1378,1705 @@ def evalCasesOrInductionTactic
         liftM (throwElabError s!"'{Name.toStringTotal indName}' is not an inductive type" (some targetStx))
     | _ =>
       liftM (throwElabError "'cases'/'induction' target must have an inductive type" (some targetStx))
+
+/-! ## Context, Classical, Recursive Destructuring (`rcases`/`obtain`/`rintro`), & `calc` Tactics -/
+
+/-- `clear h₁ h₂ ...`: remove hypotheses from `lctx` after checking that the goal and remaining
+    local declarations do not depend on them. -/
+def evalClearTactic (tac : Ix.Syntax) : TacticM Unit := do
+  let idStxs := (Syntax.getArgs (Syntax.getArg tac 1)).toList
+  let rec clearLoop : List Ix.Syntax → TacticM Unit
+    | [] => return ()
+    | idStx :: rest => do
+      withMainGoalContext (some idStx) fun gId gDecl gTy => do
+        let hName := Syntax.getId idStx
+        let some hDecl := gDecl.lctx.findUserName? hName
+          | liftM (throwElabError s!"unknown hypothesis '{Name.toStringTotal hName}' in 'clear'" (some idStx))
+        let hFvId := hDecl.fvarId
+        if containsFVar hFvId gTy then
+          liftM (throwElabError s!"cannot clear '{Name.toStringTotal hName}': target goal depends on it" (some idStx))
+        let remainingDecls := gDecl.lctx.decls.filter (fun d => d.fvarId != hFvId)
+        for d in remainingDecls do
+          let dTy ← liftM (instantiateMVars 16 d.type)
+          if containsFVar hFvId dTy then
+            liftM (throwElabError s!"cannot clear '{Name.toStringTotal hName}': hypothesis '{Name.toStringTotal d.userName}' depends on it" (some idStx))
+          if let some dVal := d.value? then
+            let dValInst ← liftM (instantiateMVars 16 dVal)
+            if containsFVar hFvId dValInst then
+              liftM (throwElabError s!"cannot clear '{Name.toStringTotal hName}': let-binding '{Name.toStringTotal d.userName}' depends on it" (some idStx))
+        let lctx' := rebuildLocalContext remainingDecls
+        let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+          liftM (mkFreshExprMVar gTy gDecl.userName)
+        let subId := match subMVar with | .mvar id _ => id | _ => gId
+        liftM (modifyMCtx (·.assignExpr gId subMVar))
+        replaceMainGoal [subId]
+      clearLoop rest
+  clearLoop idStxs
+
+/-- Revert a single local declaration `hDecl` into a `.forallE` or `.letE` binder on the main goal. -/
+def revertSingleFVar (tac : Ix.Syntax) (hFvId : Ix.Name) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId gDecl gTy => do
+    let some hDecl := gDecl.lctx.find? hFvId
+      | liftM (throwElabError "unknown local hypothesis in 'revert'" (some tac))
+    let hTy ← liftM (instantiateMVars 32 hDecl.type)
+    let absBody := abstractFVar hFvId gTy
+    let newGoalTy ← match hDecl.value? with
+      | some hVal =>
+        let hValInst ← liftM (instantiateMVars 32 hVal)
+        pure (Expr.mkLetE hDecl.userName hTy hValInst absBody hDecl.nonDep)
+      | none =>
+        pure (Expr.mkForallE hDecl.userName hTy absBody hDecl.binderInfo)
+    let lctx' := removeFVarsFromLCtx gDecl.lctx [hFvId]
+    let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+      liftM (mkFreshExprMVar newGoalTy gDecl.userName)
+    let subId := match subMVar with | .mvar id _ => id | _ => gId
+    let proof :=
+      if hDecl.value?.isSome then subMVar
+      else Expr.mkApp subMVar (Expr.mkFVar hFvId)
+    liftM (modifyMCtx (·.assignExpr gId proof))
+    replaceMainGoal [subId]
+
+/-- `revert x₁ x₂ ...`: revert local hypotheses (and any later hypotheses that depend on them)
+    into `.forallE` / `.letE` binders on the main goal in reverse dependency order. -/
+def evalRevertTactic (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun _ gDecl _ => do
+    let idStxs := (Syntax.getArgs (Syntax.getArg tac 1)).toList
+    let mut seedFvIds : List Ix.Name := []
+    for idStx in idStxs do
+      let nm := Syntax.getId idStx
+      match gDecl.lctx.findUserName? nm with
+      | some d =>
+        if !seedFvIds.contains d.fvarId then
+          seedFvIds := seedFvIds ++ [d.fvarId]
+      | none =>
+        liftM (throwElabError s!"unknown hypothesis '{Name.toStringTotal nm}' in 'revert'" (some idStx))
+    let mut toRevertChrono : List Ix.Name := []
+    for d in gDecl.lctx.decls do
+      let dTy ← liftM (instantiateMVars 16 d.type)
+      let depOnPrev := toRevertChrono.any fun fv =>
+        containsFVar fv dTy || (match d.value? with | some v => containsFVar fv v | none => false)
+      if seedFvIds.contains d.fvarId || depOnPrev then
+        toRevertChrono := toRevertChrono ++ [d.fvarId]
+    let rec revertLoop : List Ix.Name → TacticM Unit
+      | [] => return ()
+      | fvId :: rest => do
+        revertSingleFVar tac fvId
+        revertLoop rest
+    revertLoop toRevertChrono.reverse
+
+/-- Substitute an equality hypothesis `eqDecl : lhs = rhs` (where either `lhs` or `rhs` is a free variable `varFvId`),
+    transporting the goal and any other hypotheses that mention `varFvId` via `@Eq.casesOn` and clearing `eqDecl`/`varFvId`. -/
+def substEqualityDecl (fuel : Nat) (refStx : Ix.Syntax) (eqFvId : Ix.Name) : TacticM Unit := do
+  let (_, gDecl0, _) ← getMainGoal (some refStx)
+  let some eqDecl0 := gDecl0.lctx.find? eqFvId
+    | liftM (throwElabError "unknown equality hypothesis in 'subst'" (some refStx))
+  let eqTy0 ← liftM (instantiateMVars 32 eqDecl0.type)
+  let some (_, _, lhs0, rhs0) ← liftM (matchEqType? fuel eqTy0)
+    | liftM (throwElabError "'subst' requires an equality hypothesis 'x = e' or 'e = x'" (some refStx))
+  let (varFvId, isVarOnLeft) ← match stripMData lhs0, stripMData rhs0 with
+    | .fvar fvL _, _ =>
+      if !containsFVar fvL rhs0 then pure (fvL, true)
+      else match stripMData rhs0 with
+        | .fvar fvR _ =>
+          if !containsFVar fvR lhs0 then pure (fvR, false)
+          else liftM (throwElabError "'subst' failed: recursive equality 'x = ... x ...'" (some refStx))
+        | _ => liftM (throwElabError "'subst' failed: variable occurs on both sides of equality" (some refStx))
+    | _, .fvar fvR _ =>
+      if !containsFVar fvR lhs0 then pure (fvR, false)
+      else liftM (throwElabError "'subst' failed: variable occurs on both sides of equality" (some refStx))
+    | _, _ =>
+      let (_, gDeclNow, gTyNow) ← getMainGoal (some refStx)
+      if !containsFVar eqFvId gTyNow then
+        let lctx' := removeFVarsFromLCtx gDeclNow.lctx [eqFvId]
+        let (gIdNow, _, _) ← getMainGoal (some refStx)
+        let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+          liftM (mkFreshExprMVar gTyNow gDeclNow.userName)
+        let subId := match subMVar with | .mvar id _ => id | _ => gIdNow
+        liftM (modifyMCtx (·.assignExpr gIdNow subMVar))
+        replaceMainGoal [subId]
+      return ()
+  let depHyps : List LocalDecl ← do
+    let mut acc : List LocalDecl := []
+    for d in gDecl0.lctx.decls do
+      if d.fvarId != varFvId && d.fvarId != eqFvId then
+        let dTy ← liftM (instantiateMVars 16 d.type)
+        let depOnAcc := acc.any fun ad => containsFVar ad.fvarId dTy
+        if containsFVar varFvId dTy || containsFVar eqFvId dTy || depOnAcc then
+          acc := acc ++ [d]
+    pure acc
+  for d in depHyps.reverse do
+    revertSingleFVar refStx d.fvarId
+  withMainGoalContext (some refStx) fun gId gDecl gTy => do
+    let some eqDecl := gDecl.lctx.find? eqFvId
+      | liftM (throwElabError "equality hypothesis lost during 'subst'" (some refStx))
+    let eqTy ← liftM (instantiateMVars 32 eqDecl.type)
+    let some (uEqRaw, alphaRaw, lhsRaw, rhsRaw) ← liftM (matchEqType? fuel eqTy)
+      | liftM (throwElabError "'subst' expected equality hypothesis" (some refStx))
+    let uEq ← liftM (instantiateLevelMVars 32 uEqRaw)
+    let alpha ← liftM (instantiateMVars 32 alphaRaw)
+    let lhs ← liftM (instantiateMVars 32 lhsRaw)
+    let rhs ← liftM (instantiateMVars 32 rhsRaw)
+    let varExpr := if isVarOnLeft then lhs else rhs
+    let repExpr := if isVarOnLeft then rhs else lhs
+    let gTyNoEq :=
+      if containsFVar eqFvId gTy then
+        instantiate1 (abstractFVar eqFvId gTy) (mkEqReflExpr (normalizeLevel uEq) alpha repExpr)
+      else
+        gTy
+    let absGoal := abstractFVar varFvId gTyNoEq
+    let newGoalTy := betaReduceExpr (instantiate1 absGoal repExpr)
+    let uGoal ← liftM (ensureSort 32 gTy)
+    let hEqExpr := Expr.mkFVar eqFvId
+    let hRepToVar :=
+      if isVarOnLeft then
+        mkEqSymmExpr (normalizeLevel uEq) alpha varExpr repExpr hEqExpr
+      else
+        hEqExpr
+    let lctx' := removeFVarsFromLCtx gDecl.lctx [eqFvId, varFvId]
+    let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+      liftM (mkFreshExprMVar newGoalTy gDecl.userName)
+    let subId := match subMVar with | .mvar id _ => id | _ => gId
+    let transportedProof :=
+      mkEqTransportExpr (normalizeLevel uEq) (normalizeLevel uGoal) alpha repExpr varExpr absGoal hRepToVar subMVar
+    liftM (modifyMCtx (·.assignExpr gId transportedProof))
+    replaceMainGoal [subId]
+  for d in depHyps do
+    let _ ← introOneMainGoalBinder fuel d.userName (some refStx) (some d.fvarId)
+
+/-- `subst x₁ x₂ ...`: for each identifier `x`, either `x` is itself an equality hypothesis `y = e` / `e = y`,
+    or `x` is a local variable with an equality hypothesis `h : x = e` or `h : e = x` in `lctx`. -/
+def evalSubstTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  let idStxs := (Syntax.getArgs (Syntax.getArg tac 1)).toList
+  let rec loop : List Ix.Syntax → TacticM Unit
+    | [] => return ()
+    | idStx :: rest => do
+      let targetName := Syntax.getId idStx
+      let (_, gDecl, _) ← getMainGoal (some idStx)
+      let some targetDecl := gDecl.lctx.findUserName? targetName
+        | liftM (throwElabError s!"unknown hypothesis or variable '{Name.toStringTotal targetName}' in 'subst'" (some idStx))
+      let tTy ← liftM (instantiateMVars 32 targetDecl.type)
+      if (← liftM (matchEqType? fuel tTy)).isSome then
+        substEqualityDecl fuel idStx targetDecl.fvarId
+      else
+        let varFvId := targetDecl.fvarId
+        let mut foundEqFvId? : Option Ix.Name := none
+        for d in gDecl.lctx.revDecls do
+          if foundEqFvId?.isNone then
+            let dTy ← liftM (instantiateMVars 16 d.type)
+            if let some (_, _, lhs, rhs) ← liftM (matchEqType? fuel dTy) then
+              let matchL := match stripMData lhs with | .fvar fv _ => fv == varFvId && !containsFVar varFvId rhs | _ => false
+              let matchR := match stripMData rhs with | .fvar fv _ => fv == varFvId && !containsFVar varFvId lhs | _ => false
+              if matchL || matchR then
+                foundEqFvId? := some d.fvarId
+        match foundEqFvId? with
+        | some eqFvId => substEqualityDecl fuel idStx eqFvId
+        | none => liftM (throwElabError s!"'subst' failed: could not find an equality hypothesis for '{Name.toStringTotal targetName}'" (some idStx))
+      loop rest
+  loop idStxs
+
+/-- `specialize h a₁ a₂ ...`: elaborate `h a₁ a₂ ...` and replace/shadow local hypothesis `h` with the specialized proof. -/
+def evalSpecializeTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId gDecl gTy => do
+    let hIdent := Syntax.getArg tac 1
+    let hName := Syntax.getId hIdent
+    let argStxs := (Syntax.getArgs (Syntax.getArg tac 2)).toList
+    if argStxs.isEmpty then return ()
+    let appStx := argStxs.foldl (fun acc a => Syntax.mkNode SyntaxKind.appTerm #[acc, a]) hIdent
+    let specExpr ← liftM (elabRec appStx none)
+    let specTy ← liftM (inferType fuel specExpr)
+    let specExprInst ← liftM (instantiateMVars 32 specExpr)
+    let specTyInst ← liftM (instantiateMVars 32 specTy)
+    let oldFvIds ← match gDecl.lctx.findUserName? hName with
+      | some oldD =>
+        let usedInGoal := containsFVar oldD.fvarId gTy
+        let usedInOther ← gDecl.lctx.decls.anyM fun d => do
+          if d.fvarId == oldD.fvarId then pure false
+          else
+            let dTy ← liftM (instantiateMVars 16 d.type)
+            let inVal := match d.value? with | some v => containsFVar oldD.fvarId v | none => false
+            pure (containsFVar oldD.fvarId dTy || inVal)
+        pure (if !usedInGoal && !usedInOther then [oldD.fvarId] else [])
+      | none => pure []
+    let newFvId ← liftM (mkFreshName "_fvar")
+    let newDecl : LocalDecl := {
+      fvarId     := newFvId
+      userName   := hName
+      type       := specTyInst
+      value?     := none
+      binderInfo := .default
+    }
+    let lctx' := (removeFVarsFromLCtx gDecl.lctx oldFvIds).addDecl newDecl
+    let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+      liftM (mkFreshExprMVar gTy gDecl.userName)
+    let subId := match subMVar with | .mvar id _ => id | _ => gId
+    let outerTy := Expr.mkForallE hName specTyInst (liftLooseBVars gTy 1) .default
+    let outerMVar ← liftM (mkFreshExprMVar outerTy gDecl.userName)
+    let outerId := match outerMVar with | .mvar id _ => id | _ => gId
+    liftM (modifyMCtx (·.assignDelayed outerId { lctx := lctx', fvars := [newFvId], pendingMVar := subId }))
+    liftM (modifyMCtx (·.assignExpr gId (Expr.mkApp outerMVar specExprInst)))
+    replaceMainGoal [subId]
+
+/-- `suffices [h :] Ty by tacSeq` and `suffices [h :] Ty from term`. -/
+def evalSufficesTactic
+    (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (evalSeqRec : Ix.Syntax → TacticM Unit)
+    (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId gDecl gTy => do
+    let hIdRaw := Syntax.getId (Syntax.getArg tac 1)
+    let hName := if Name.isAnonymous hIdRaw then Name.simple "this" else hIdRaw
+    let tyStx := Syntax.getArg tac 3
+    let modeVal := Syntax.getAtomVal (Syntax.getArg tac 4)
+    let isFrom := modeVal == "from" || Syntax.getId (Syntax.getArg tac 4) == Name.simple "from"
+    let bodyStx := Syntax.getArg tac 5
+    let suffTy ← liftM (elabRec tyStx none)
+    let _ ← liftM (ensureSort 32 suffTy)
+    let suffTyInst ← liftM (instantiateMVars 32 suffTy)
+    let proveSuffMVar ← liftM (mkFreshExprMVar suffTyInst hName)
+    let proveSuffId := match proveSuffMVar with | .mvar id _ => id | _ => gId
+    let fvId ← liftM (mkFreshName "_fvar")
+    let decl : LocalDecl := {
+      fvarId     := fvId
+      userName   := hName
+      type       := suffTyInst
+      value?     := some proveSuffMVar
+      binderInfo := .default
+      contract   := default
+      letKind?   := some .value
+      nonDep     := true
+    }
+    let lctxWithH := gDecl.lctx.addDecl decl
+    liftM (pushLocalLetContract { nonDep := true, kind := .value, binder := default })
+    if isFrom then
+      let bodyExpr ← withReader (fun ctx => { ctx with lctx := lctxWithH }) do
+        liftM (elabRec bodyStx (some gTy))
+      let bodyInst ← liftM (instantiateMVars 32 bodyExpr)
+      let innerMVar ← withReader (fun ctx => { ctx with lctx := lctxWithH }) do
+        liftM (mkFreshExprMVar gTy gDecl.userName)
+      let innerId := match innerMVar with | .mvar id _ => id | _ => gId
+      liftM (modifyMCtx (·.assignExpr innerId bodyInst))
+      liftM (modifyMCtx (·.assignDelayed gId { lctx := lctxWithH, fvars := [fvId], pendingMVar := innerId }))
+      let stNow ← liftM (get : IxElabM ElabState)
+      let extraBodyGoals := collectUnassignedMVarIds stNow.mctx bodyInst
+      replaceMainGoal (proveSuffId :: extraBodyGoals)
+    else
+      let innerMVar ← withReader (fun ctx => { ctx with lctx := lctxWithH }) do
+        liftM (mkFreshExprMVar gTy gDecl.userName)
+      let innerId := match innerMVar with | .mvar id _ => id | _ => gId
+      liftM (modifyMCtx (·.assignDelayed gId { lctx := lctxWithH, fvars := [fvId], pendingMVar := innerId }))
+      let allGs ← getUnassignedGoals
+      let restGoals := allGs.drop 1
+      setTacticGoals [innerId]
+      evalSeqRec bodyStx
+      let remAfterBy ← getUnassignedGoals
+      setTacticGoals (remAfterBy ++ [proveSuffId] ++ restGoals)
+
+/-- `generalize [h :] e = x`: abstract occurrences of `e : α` in `gTy` into a fresh variable `x : α`
+    (and optionally `h : e = x`), closing `?g` with `?gSub e (@Eq.refl α e)`. -/
+def evalGeneralizeTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId gDecl gTy => do
+    let hId := Syntax.getId (Syntax.getArg tac 1)
+    let eStx := Syntax.getArg tac 2
+    let xId := Syntax.getId (Syntax.getArg tac 4)
+    let xName := if Name.isAnonymous xId then Name.simple "x" else xId
+    let eExprRaw ← liftM (elabRec eStx none)
+    let eTyRaw ← liftM (inferType fuel eExprRaw)
+    let eExpr ← liftM (instantiateMVars 32 eExprRaw)
+    let eTy ← liftM (instantiateMVars 32 eTyRaw)
+    let uAlpha ← liftM (ensureSort 32 eTy)
+    let (_, absGoal) ← liftM (kabstract fuel eExpr gTy)
+    let xFvId ← liftM (mkFreshName "_fvar")
+    let xFvExpr := Expr.mkFVar xFvId
+    let xDecl : LocalDecl := { fvarId := xFvId, userName := xName, type := eTy, binderInfo := .default }
+    let goalWithX := instantiate1 absGoal xFvExpr
+    if Name.isAnonymous hId then
+      let lctx' := gDecl.lctx.addDecl xDecl
+      let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+        liftM (mkFreshExprMVar goalWithX gDecl.userName)
+      let subId := match subMVar with | .mvar id _ => id | _ => gId
+      let outerTy := Expr.mkForallE xName eTy absGoal .default
+      let outerMVar ← liftM (mkFreshExprMVar outerTy gDecl.userName)
+      let outerId := match outerMVar with | .mvar id _ => id | _ => gId
+      liftM (modifyMCtx (·.assignDelayed outerId { lctx := lctx', fvars := [xFvId], pendingMVar := subId }))
+      liftM (modifyMCtx (·.assignExpr gId (Expr.mkApp outerMVar eExpr)))
+      replaceMainGoal [subId]
+    else
+      let eqTy := Expr.mkAppN (Expr.mkConst (Name.simple "Eq") #[normalizeLevel uAlpha]) #[eTy, eExpr, xFvExpr]
+      let hFvId ← liftM (mkFreshName "_fvar")
+      let hDecl : LocalDecl := { fvarId := hFvId, userName := hId, type := eqTy, binderInfo := .default }
+      let lctx' := (gDecl.lctx.addDecl xDecl).addDecl hDecl
+      let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+        liftM (mkFreshExprMVar goalWithX gDecl.userName)
+      let subId := match subMVar with | .mvar id _ => id | _ => gId
+      let eqTyBVar := Expr.mkAppN (Expr.mkConst (Name.simple "Eq") #[normalizeLevel uAlpha])
+        #[liftLooseBVars eTy 1, liftLooseBVars eExpr 1, Expr.mkBVar 0]
+      let outerTy :=
+        Expr.mkForallE xName eTy
+          (Expr.mkForallE hId eqTyBVar (liftLooseBVars absGoal 1 0) .default)
+          .default
+      let outerMVar ← liftM (mkFreshExprMVar outerTy gDecl.userName)
+      let outerId := match outerMVar with | .mvar id _ => id | _ => gId
+      liftM (modifyMCtx (·.assignDelayed outerId { lctx := lctx', fvars := [xFvId, hFvId], pendingMVar := subId }))
+      let reflEE := mkEqReflExpr (normalizeLevel uAlpha) eTy eExpr
+      liftM (modifyMCtx (·.assignExpr gId (Expr.mkAppN outerMVar #[eExpr, reflEE])))
+      replaceMainGoal [subId]
+
+/-- `by_cases [h :] P`: split the main goal into two subgoals (`pos` with `h : P` and `neg` with `h : Not P`)
+    using `@Or.casesOn P (Not P) (fun _ => gTy) (@Classical.em P)`. -/
+def evalByCasesTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId gDecl gTy => do
+    let hIdRaw := Syntax.getId (Syntax.getArg tac 1)
+    let hName := if Name.isAnonymous hIdRaw then Name.simple "h" else hIdRaw
+    let propStx := Syntax.getArg tac 2
+    let propSort := Expr.mkSort Level.mkZero
+    let pExprRaw ← liftM (elabRec propStx (some propSort))
+    let pExpr ← liftM (instantiateMVars 32 pExprRaw)
+    let notPExpr := Expr.mkApp (Expr.mkConst (Name.simple "Not") #[]) pExpr
+    liftM ensureClassicalEmInEnv
+    let uGoal ← liftM (ensureSort 32 gTy)
+    let orPNotP := Expr.mkAppN (Expr.mkConst (Name.simple "Or") #[]) #[pExpr, notPExpr]
+    let motive := Expr.mkLam Name.mkAnon orPNotP (liftLooseBVars gTy 1) .default
+    let emProof := Expr.mkApp (Expr.mkConst (Name.mkStr2 "Classical" "em") #[]) pExpr
+    let fvPos ← liftM (mkFreshName "_fvar")
+    let declPos : LocalDecl := { fvarId := fvPos, userName := hName, type := pExpr, binderInfo := .default }
+    let lctxPos := gDecl.lctx.addDecl declPos
+    let subPosMVar ← withReader (fun ctx => { ctx with lctx := lctxPos }) do
+      liftM (mkFreshExprMVar gTy (Name.simple "pos"))
+    let subPosId := match subPosMVar with | .mvar id _ => id | _ => gId
+    let outerPosTy := Expr.mkForallE hName pExpr (liftLooseBVars gTy 1) .default
+    let outerPosMVar ← liftM (mkFreshExprMVar outerPosTy (Name.simple "pos"))
+    let outerPosId := match outerPosMVar with | .mvar id _ => id | _ => gId
+    liftM (modifyMCtx (·.assignDelayed outerPosId { lctx := lctxPos, fvars := [fvPos], pendingMVar := subPosId }))
+    let fvNeg ← liftM (mkFreshName "_fvar")
+    let declNeg : LocalDecl := { fvarId := fvNeg, userName := hName, type := notPExpr, binderInfo := .default }
+    let lctxNeg := gDecl.lctx.addDecl declNeg
+    let subNegMVar ← withReader (fun ctx => { ctx with lctx := lctxNeg }) do
+      liftM (mkFreshExprMVar gTy (Name.simple "neg"))
+    let subNegId := match subNegMVar with | .mvar id _ => id | _ => gId
+    let outerNegTy := Expr.mkForallE hName notPExpr (liftLooseBVars gTy 1) .default
+    let outerNegMVar ← liftM (mkFreshExprMVar outerNegTy (Name.simple "neg"))
+    let outerNegId := match outerNegMVar with | .mvar id _ => id | _ => gId
+    liftM (modifyMCtx (·.assignDelayed outerNegId { lctx := lctxNeg, fvars := [fvNeg], pendingMVar := subNegId }))
+    let stNow ← liftM (get : IxElabM ElabState)
+    let orCasesOnUnivs := match stNow.env.find? (Name.mkStr2 "Or" "casesOn") with
+      | some (.defnInfo d) => if d.cnst.levelParams.isEmpty then #[] else #[normalizeLevel uGoal]
+      | _ => #[]
+    let proof := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Or" "casesOn") orCasesOnUnivs)
+      #[pExpr, notPExpr, motive, emProof, outerPosMVar, outerNegMVar]
+    liftM (modifyMCtx (·.assignExpr gId proof))
+    replaceMainGoal [subPosId, subNegId]
+
+/-- `by_contra [h]` (`by_contradiction [h]`): introduce `h : Not gTy` and set the new goal type to `False`. -/
+def evalByContraTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId gDecl gTy => do
+    let hIdRaw := Syntax.getId (Syntax.getArg tac 1)
+    let hName := if Name.isAnonymous hIdRaw then Name.simple "this" else hIdRaw
+    let falseConst := Expr.mkConst (Name.simple "False") #[]
+    let notG := Expr.mkApp (Expr.mkConst (Name.simple "Not") #[]) gTy
+    let uGoal ← liftM (ensureSort 32 gTy)
+    liftM ensureClassicalEmInEnv
+    let fvNeg ← liftM (mkFreshName "_fvar")
+    let declNeg : LocalDecl := { fvarId := fvNeg, userName := hName, type := notG, binderInfo := .default }
+    let lctxNeg := gDecl.lctx.addDecl declNeg
+    let subFalseMVar ← withReader (fun ctx => { ctx with lctx := lctxNeg }) do
+      liftM (mkFreshExprMVar falseConst (Name.simple "False"))
+    let subFalseId := match subFalseMVar with | .mvar id _ => id | _ => gId
+    let outerNegTy := Expr.mkForallE hName notG falseConst .default
+    let outerNegMVar ← liftM (mkFreshExprMVar outerNegTy gDecl.userName)
+    let outerNegId := match outerNegMVar with | .mvar id _ => id | _ => gId
+    liftM (modifyMCtx (·.assignDelayed outerNegId { lctx := lctxNeg, fvars := [fvNeg], pendingMVar := subFalseId }))
+    let posLam := Expr.mkLam (Name.simple "hPos") gTy (Expr.mkBVar 0) .default
+    let falseProofUnderNeg := Expr.mkApp (liftLooseBVars outerNegMVar 1) (Expr.mkBVar 0)
+    let negBody := mkFalseElimExpr uGoal (liftLooseBVars gTy 1) falseProofUnderNeg
+    let negLam := Expr.mkLam hName notG negBody .default
+    let orGNotG := Expr.mkAppN (Expr.mkConst (Name.simple "Or") #[]) #[gTy, notG]
+    let motive := Expr.mkLam Name.mkAnon orGNotG (liftLooseBVars gTy 1) .default
+    let emProof := Expr.mkApp (Expr.mkConst (Name.mkStr2 "Classical" "em") #[]) gTy
+    let stNow ← liftM (get : IxElabM ElabState)
+    let orCasesOnUnivs := match stNow.env.find? (Name.mkStr2 "Or" "casesOn") with
+      | some (.defnInfo d) => if d.cnst.levelParams.isEmpty then #[] else #[normalizeLevel uGoal]
+      | _ => #[]
+    let proof := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Or" "casesOn") orCasesOnUnivs)
+      #[gTy, notG, motive, emProof, posLam, negLam]
+    liftM (modifyMCtx (·.assignExpr gId proof))
+    replaceMainGoal [subFalseId]
+    let _ ← pure fuel
+
+/-- Perform a single unstructured `<Ind>.casesOn` split on local hypothesis `targetFvId` in the current main goal,
+    returning for each constructor branch `(subGoalId, introducedFieldFVarIds)`. -/
+def casesOnFVarWithFieldIds (fuel : Nat) (refStx : Ix.Syntax) (targetFvId : Ix.Name) :
+    TacticM (List (Ix.Name × List Ix.Name)) :=
+  withMainGoalContext (some refStx) fun gId gDecl gTy => do
+    let some targetDecl := gDecl.lctx.find? targetFvId
+      | liftM (throwElabError "unknown target hypothesis in 'rcases'" (some refStx))
+    let targetExpr := Expr.mkFVar targetFvId
+    let targetTy ← liftM (instantiateMVars 32 targetDecl.type)
+    let targetTyW ← liftM (whnf fuel targetTy)
+    let (hFn, headArgs) := getAppFnArgs targetTyW
+    let st ← liftM (get : IxElabM ElabState)
+    match hFn with
+    | .const indName indUnivs _ =>
+      match st.env.find? indName with
+      | some (.inductInfo ival) =>
+        let prefName := Name.mkStr indName "casesOn"
+        let elimName := if st.env.contains prefName then prefName else Name.mkStr indName "recOn"
+        match st.env.find? elimName with
+        | some (.defnInfo elimDef) =>
+          let elimUnivs ←
+            if elimDef.cnst.levelParams.size == indUnivs.size + 1 then
+              let uMot ← liftM (ensureSort 32 gTy)
+              pure (#[normalizeLevel uMot] ++ indUnivs)
+            else
+              pure indUnivs
+          let params := headArgs.extract 0 ival.numParams
+          let indices := headArgs.extract ival.numParams headArgs.size
+          let afterParamsInst := params.foldl (fun cur p =>
+            match stripMData cur with
+            | .forallE _ _ b _ _ => instantiate1 b p
+            | other => other) (substExprLevelParams ival.cnst.levelParams indUnivs ival.cnst.type)
+          let (idxFVars, idxDecls, _) := openForallTelescope ival.numIndices afterParamsInst "midx" 0 #[] #[]
+          let majDom := Expr.mkAppN (Expr.mkConst indName indUnivs) (params ++ idxFVars)
+          let (majFvId, majFvExpr) := mkAuxFVar "mmaj" 0
+          let majDecl : AuxLocalDecl := { fvarId := majFvId, binderName := Name.simple "x", domain := majDom }
+          let b0 := instantiate1 (abstractFVar targetFvId gTy) majFvExpr
+          let motiveBody := (indices.zipIdx).foldl (fun acc (idxE, k) =>
+            match stripMData idxE, idxFVars[k]? with
+            | .fvar iFv _, some repFv =>
+              if iFv != targetFvId then instantiate1 (abstractFVar iFv acc) repFv else acc
+            | _, _ => acc) b0
+          let motiveLam := closeLambdas (idxDecls.push majDecl) motiveBody
+          let rawElimTy := substExprLevelParams elimDef.cnst.levelParams elimUnivs elimDef.cnst.type
+          let prefixArgs := params ++ #[motiveLam] ++ indices ++ #[targetExpr]
+          let minorBinderCounts := extractMinorBinderCounts prefixArgs.size ival.ctors.size rawElimTy
+          let minorsTelTy := prefixArgs.foldl (fun cur arg =>
+            match stripMData cur with
+            | .forallE _ _ b _ _ => instantiate1 b arg
+            | other => other) rawElimTy
+          let mut curTel := minorsTelTy
+          let mut minorLams : Array Ix.Expr := #[]
+          let mut branchResults : List (Ix.Name × List Ix.Name) := []
+          for (ctorName, cIdx) in ival.ctors.zipIdx do
+            let minorDom ← match stripMData curTel with
+              | .forallE _ d b _ _ =>
+                curTel := b
+                pure (betaReduceExpr d)
+              | _ =>
+                liftM (throwElabError s!"unexpected eliminator type in '{Name.toStringTotal elimName}'" (some refStx))
+            let numBinders := minorBinderCounts.getD cIdx 0
+            let finishMinor (curTy : Ix.Expr) (revFVars : List Ix.Name) :
+                IxElabM (Ix.Name × List Ix.Name × Ix.Expr) := do
+              let fieldFVars := revFVars.reverse
+              let subMVar ← mkFreshExprMVar (betaReduceExpr curTy) ctorName
+              let subId := match subMVar with | .mvar id _ => id | _ => gId
+              if fieldFVars.isEmpty then
+                return (subId, [], subMVar)
+              else
+                let ctx ← read
+                let outerMVar ← mkFreshExprMVar minorDom ctorName
+                let outerId := match outerMVar with | .mvar id _ => id | _ => gId
+                modifyMCtx (·.assignDelayed outerId {
+                  lctx        := ctx.lctx
+                  fvars       := fieldFVars
+                  pendingMVar := subId
+                })
+                return (subId, fieldFVars, outerMVar)
+            let rec openBinders (rem : Nat) (curTy : Ix.Expr) (revFVars : List Ix.Name) :
+                IxElabM (Ix.Name × List Ix.Name × Ix.Expr) := do
+              match rem with
+              | 0 => finishMinor curTy revFVars
+              | rem' + 1 =>
+                let curW ← match stripMData curTy with
+                  | .forallE _ _ _ _ _ => pure curTy
+                  | _                  => whnf fuel curTy
+                match stripMData curW with
+                | .forallE defNm fDom fBody bi _ =>
+                  let uName := if Name.isAnonymous defNm then Name.simple "h" else defNm
+                  withLocalDecl uName (betaReduceExpr fDom) bi default fun fvId fvExpr =>
+                    openBinders rem' (instantiate1 fBody fvExpr) (fvId :: revFVars)
+                | _ => finishMinor curTy revFVars
+            let (subId, fieldFVars, minorLam) ← liftM (openBinders numBinders minorDom [])
+            minorLams := minorLams.push minorLam
+            branchResults := branchResults ++ [(subId, fieldFVars)]
+          let elimApp := Expr.mkAppN (Expr.mkConst elimName elimUnivs) (prefixArgs ++ minorLams)
+          liftM (modifyMCtx (·.assignExpr gId elimApp))
+          replaceMainGoal (branchResults.map Prod.fst)
+          return branchResults
+        | _ => liftM (throwElabError s!"eliminator '{Name.toStringTotal elimName}' not found" (some refStx))
+      | _ => liftM (throwElabError s!"'{Name.toStringTotal indName}' is not an inductive type in 'rcases'" (some refStx))
+    | _ => liftM (throwElabError "'rcases' target must have an inductive type" (some refStx))
+
+/-- Rename `fvarId` to `newName` in the current main goal's `LocalContext`. -/
+def renameFVarInMainGoal (fvarId : Ix.Name) (newName : Ix.Name) : TacticM Unit := do
+  if Name.isAnonymous newName then return ()
+  let (gId, gDecl, _) ← getMainGoal none
+  let decls' := gDecl.lctx.decls.map fun d =>
+    if d.fvarId == fvarId then { d with userName := newName } else d
+  let lctx' := rebuildLocalContext decls'
+  liftM (modifyMCtx (·.addExprMVarDecl { gDecl with lctx := lctx' }))
+  let _ ← pure gId
+
+/-- Match constructor field FVars `fvs` against tuple sub-patterns `ps` (with right-associative nesting
+    when `ps` has more elements than `fvs`). Structurally recursive on `fvs : List Ix.Name`. -/
+def matchRcasesFields (applySub : Ix.Name → Ix.Syntax → TacticM Unit) :
+    List Ix.Name → List Ix.Syntax → TacticM Unit
+  | [], _ => return ()
+  | fv :: fvs, patList =>
+    match patList with
+    | [] => return ()
+    | p :: ps => do
+      if fvs.isEmpty && !ps.isEmpty then
+        let nestedTuple := Syntax.mkNode SyntaxKind.rcasesPatTuple #[Syntax.mkNullNode (Array.mk (p :: ps))]
+        applySub fv nestedTuple
+      else
+        applySub fv p
+        matchRcasesFields applySub fvs ps
+
+/-- Process constructor branches for `rcasesPatTuple`, structurally recursive on `branches`. -/
+def processRcasesTupleBranches (applySub : Ix.Name → Ix.Syntax → TacticM Unit) (subPats : List Ix.Syntax) :
+    List (Ix.Name × List Ix.Name) → List Ix.Name → TacticM (List Ix.Name)
+  | [], acc => return acc
+  | (bGoalId, fieldFVars) :: bRest, acc => do
+    setTacticGoals [bGoalId]
+    matchRcasesFields applySub fieldFVars subPats
+    let openInBranch ← getUnassignedGoals
+    processRcasesTupleBranches applySub subPats bRest (acc ++ openInBranch)
+
+/-- Process constructor branches for `rcasesPatAlt`, structurally recursive on `branches`. -/
+def processRcasesAltBranches (applySub : Ix.Name → Ix.Syntax → TacticM Unit) :
+    List (Ix.Name × List Ix.Name) → List Ix.Syntax → List Ix.Name → TacticM (List Ix.Name)
+  | [], _, acc => return acc
+  | (bGoalId, fieldFVars) :: bRest, aPats, acc => do
+    setTacticGoals [bGoalId]
+    match aPats with
+    | [] =>
+      let openInBranch ← getUnassignedGoals
+      processRcasesAltBranches applySub bRest [] (acc ++ openInBranch)
+    | aPat :: aRest =>
+      let ak := Syntax.getKind aPat
+      if ak == SyntaxKind.rcasesPatTuple then
+        let subPats := (Syntax.getArgs (Syntax.getArg aPat 0)).toList
+        matchRcasesFields applySub fieldFVars subPats
+      else
+        match fieldFVars with
+        | [] => pure ()
+        | fv0 :: _ => applySub fv0 aPat
+      let openInBranch ← getUnassignedGoals
+      processRcasesAltBranches applySub bRest aRest (acc ++ openInBranch)
+
+/-- Recursively destructure local hypothesis `targetFvId` according to `rcasesPat` syntax `pat`,
+    structurally recursive on `patFuel : Nat`. -/
+def applyRcasesPattern (fuel : Nat) : Nat → Ix.Name → Ix.Syntax → TacticM Unit
+  | 0, _, pat => liftM (throwElabError "rcases pattern recursion fuel exhausted" (some pat))
+  | patFuel + 1, targetFvId, pat => do
+    let gs ← getUnassignedGoals
+    if gs.isEmpty then return ()
+    let pk := Syntax.getKind pat
+    if pk == SyntaxKind.rcasesPatWildcard then
+      return ()
+    else if pk == SyntaxKind.rcasesPatIdent then
+      let idName := Syntax.getId (Syntax.getArg pat 0)
+      if Name.toStringTotal idName == "rfl" then
+        substEqualityDecl fuel pat targetFvId
+      else
+        renameFVarInMainGoal targetFvId idName
+    else if pk == SyntaxKind.rcasesPatRfl then
+      substEqualityDecl fuel pat targetFvId
+    else if pk == SyntaxKind.rcasesPatTuple then
+      let subPats := (Syntax.getArgs (Syntax.getArg pat 0)).toList
+      let (_, gDecl, _) ← getMainGoal (some pat)
+      let some tDecl := gDecl.lctx.find? targetFvId
+        | liftM (throwElabError "unknown hypothesis in rcases tuple pattern" (some pat))
+      let tTy ← liftM (instantiateMVars 32 tDecl.type)
+      let tTyW ← liftM (whnf fuel tTy)
+      let (hFn, hArgs) := getAppFnArgs tTyW
+      if isExprConstOf hFn (Name.simple "Iff") && hArgs.size == 2 && subPats.length == 2 then
+        let a := hArgs.getD 0 tTyW
+        let b := hArgs.getD 1 tTyW
+        let abTy := Expr.mkForallE Name.mkAnon a (liftLooseBVars b 1) .default
+        let baTy := Expr.mkForallE Name.mkAnon b (liftLooseBVars a 1) .default
+        let mpVal := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mp") #[]) #[a, b, Expr.mkFVar targetFvId]
+        let mprVal := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mpr") #[]) #[a, b, Expr.mkFVar targetFvId]
+        let (gId, _, gTy) ← getMainGoal (some pat)
+        let fv1 ← liftM (mkFreshName "_fvar")
+        let fv2 ← liftM (mkFreshName "_fvar")
+        let d1 : LocalDecl := { fvarId := fv1, userName := Name.simple "mp", type := abTy, value? := some mpVal, letKind? := some .value, nonDep := true }
+        let d2 : LocalDecl := { fvarId := fv2, userName := Name.simple "mpr", type := baTy, value? := some mprVal, letKind? := some .value, nonDep := true }
+        let lctx' := (gDecl.lctx.addDecl d1).addDecl d2
+        liftM (pushLocalLetContract { nonDep := true, kind := .value, binder := default })
+        liftM (pushLocalLetContract { nonDep := true, kind := .value, binder := default })
+        let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+          liftM (mkFreshExprMVar gTy gDecl.userName)
+        let subId := match subMVar with | .mvar id _ => id | _ => gId
+        liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [fv1, fv2], pendingMVar := subId }))
+        replaceMainGoal [subId]
+        match subPats with
+        | [p1, p2] =>
+          applyRcasesPattern fuel patFuel fv1 p1
+          applyRcasesPattern fuel patFuel fv2 p2
+        | _ => return ()
+      else
+        let branches ← casesOnFVarWithFieldIds fuel pat targetFvId
+        let allGsAfter ← getUnassignedGoals
+        let restOuterGoals := allGsAfter.drop branches.length
+        let resultingBranchGoals ← processRcasesTupleBranches (applyRcasesPattern fuel patFuel) subPats branches []
+        setTacticGoals (resultingBranchGoals ++ restOuterGoals)
+    else if pk == SyntaxKind.rcasesPatAlt then
+      let altPats := (Syntax.getArgs (Syntax.getArg pat 0)).toList
+      let branches ← casesOnFVarWithFieldIds fuel pat targetFvId
+      let allGsAfter ← getUnassignedGoals
+      let restOuterGoals := allGsAfter.drop branches.length
+      let resultingBranchGoals ← processRcasesAltBranches (applyRcasesPattern fuel patFuel) branches altPats []
+      setTacticGoals (resultingBranchGoals ++ restOuterGoals)
+    else
+      return ()
+
+/-- Ensure `targetStx` is a local FVar in the main goal (introducing a `have` or `generalize` binding if it is a compound expression). -/
+def ensureTargetFVarForRcases (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (refStx : Ix.Syntax) (eqHypId : Ix.Name) (targetStx : Ix.Syntax) : TacticM Ix.Name :=
+  withMainGoalContext (some refStx) fun gId gDecl gTy => do
+    let targetExprRaw ← liftM (elabRec targetStx none)
+    let targetExpr ← liftM (instantiateMVars 32 targetExprRaw)
+    if !Name.isAnonymous eqHypId then
+      let xName := Name.simple "_rcases_x"
+      let genStx := Syntax.mkNode SyntaxKind.tacticGeneralize
+        #[Syntax.mkSimpleAtom "generalize", Syntax.mkSimpleIdent eqHypId, targetStx, Syntax.mkSimpleAtom "=", Syntax.mkSimpleIdent xName]
+      evalGeneralizeTactic elabRec fuel genStx
+      let (_, gDeclAfter, _) ← getMainGoal (some refStx)
+      match gDeclAfter.lctx.findUserName? xName with
+      | some d => return d.fvarId
+      | none   => liftM (throwElabError "internal error in 'rcases h : target'" (some refStx))
+    else
+      match stripMData targetExpr with
+      | .fvar fvId _ => return fvId
+      | _ =>
+        let targetTyRaw ← liftM (inferType fuel targetExpr)
+        let targetTy ← liftM (instantiateMVars 32 targetTyRaw)
+        let fvId ← liftM (mkFreshName "_fvar")
+        let decl : LocalDecl := {
+          fvarId     := fvId
+          userName   := Name.simple "this"
+          type       := targetTy
+          value?     := some targetExpr
+          binderInfo := .default
+          contract   := default
+          letKind?   := some .value
+          nonDep     := true
+        }
+        let lctx' := gDecl.lctx.addDecl decl
+        liftM (pushLocalLetContract { nonDep := true, kind := .value, binder := default })
+        let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+          liftM (mkFreshExprMVar gTy gDecl.userName)
+        let subId := match subMVar with | .mvar id _ => id | _ => gId
+        liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [fvId], pendingMVar := subId }))
+        replaceMainGoal [subId]
+        return fvId
+
+/-- `rcases [h :] target [with pat]`: destructure `target` using recursive pattern `pat`. -/
+def evalRcasesTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  let eqHypId := Syntax.getId (Syntax.getArg tac 1)
+  let targetStx := Syntax.getArg tac 2
+  let optWith := Syntax.getArg tac 3
+  let targetFvId ← ensureTargetFVarForRcases elabRec fuel tac eqHypId targetStx
+  if Syntax.getNumArgs optWith >= 2 then
+    let pat := Syntax.getArg optWith 1
+    applyRcasesPattern fuel 32 targetFvId pat
+  else
+    let _ ← casesOnFVarWithFieldIds fuel tac targetFvId
+
+/-- `obtain [pat] [: ty] := val`: introduce `val` (optionally ascribed with `: ty`) as a local hypothesis
+    and destructure it using `pat`. -/
+def evalObtainTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  let pat := Syntax.getArg tac 1
+  let optTyNode := Syntax.getArg tac 2
+  let valStx := Syntax.getArg tac 4
+  let tempName :=
+    if Syntax.isOfKind pat SyntaxKind.rcasesPatIdent then
+      let id := Syntax.getId (Syntax.getArg pat 0)
+      if Name.isAnonymous id || Name.toStringTotal id == "rfl" then Name.simple "_obtain_h" else id
+    else
+      Name.simple "_obtain_h"
+  let haveTac := Syntax.mkNode SyntaxKind.tacticHave
+    #[Syntax.mkSimpleAtom "have", Syntax.mkSimpleIdent tempName, optTyNode, Syntax.mkSimpleAtom ":=", valStx]
+  evalHaveOrLetTactic elabRec fuel haveTac true
+  let (_, gDecl, _) ← getMainGoal (some tac)
+  let some hDecl := gDecl.lctx.findUserName? tempName
+    | liftM (throwElabError "internal error in 'obtain'" (some tac))
+  applyRcasesPattern fuel 32 hDecl.fvarId pat
+
+/-- Run `act` on each goal in `gs`, collecting all resulting unassigned goals. -/
+def runActionOnEachGoal (act : TacticM Unit) : List Ix.Name → List Ix.Name → TacticM (List Ix.Name)
+  | [], acc => return acc
+  | g :: gs, acc => do
+    setTacticGoals [g]
+    act
+    let newGs ← getUnassignedGoals
+    runActionOnEachGoal act gs (acc ++ newGs)
+
+/-- `rintro p₁ p₂ ... [: ty]`: for each pattern `pᵢ`, introduce a `.forallE` binder from the goal
+    and recursively destructure it using `applyRcasesPattern`. -/
+def evalRintroTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  let pats := (Syntax.getArgs (Syntax.getArg tac 1)).toList
+  let optTyNode := Syntax.getArg tac 2
+  let patsToRun :=
+    if pats.isEmpty then
+      [Syntax.mkNode SyntaxKind.rcasesPatIdent #[Syntax.mkSimpleIdent (Name.simple "h")]]
+    else
+      pats
+  let rec loop : List Ix.Syntax → TacticM Unit
+    | [] => return ()
+    | p :: ps => do
+      if ps.isEmpty && Syntax.getNumArgs optTyNode >= 2 then
+        withMainGoalContext (some tac) fun _ _ gTy => do
+          let gTyW ← liftM (whnf fuel gTy)
+          match stripMData gTyW with
+          | .forallE _ dom _ _ _ =>
+            let ascTy ← liftM (elabRec (Syntax.getArg optTyNode 1) none)
+            let _ ← liftM (ensureSort 32 ascTy)
+            let ok ← liftM (isDefEq fuel dom ascTy)
+            if !ok then
+              liftM (throwElabError "'rintro' type ascription does not match binder domain" (some tac))
+          | _ => pure ()
+      let hintName :=
+        if Syntax.isOfKind p SyntaxKind.rcasesPatIdent then
+          let id := Syntax.getId (Syntax.getArg p 0)
+          if Name.toStringTotal id == "rfl" then Name.simple "h" else id
+        else
+          Name.simple "h"
+      let fvId ← introOneMainGoalBinder fuel hintName (some p)
+      applyRcasesPattern fuel 32 fvId p
+      if !ps.isEmpty then
+        let curGs ← getUnassignedGoals
+        let finalGs ← runActionOnEachGoal (loop ps) curGs []
+        setTacticGoals finalGs
+  loop patsToRun
+
+/-! ## `calc` Block Elaborator (Term & Tactic) -/
+
+/-- Parsed representation of a single `calc` step after resolving `_` against the previous RHS. -/
+structure ElabCalcStep where
+  opSym     : String
+  lhs       : Ix.Expr
+  rhs       : Ix.Expr
+  stepTy    : Ix.Expr
+  stepProof : Ix.Expr
+
+/-- Map a `calc` relation operator symbol (`=`, `↔`, `≤`, `<`, `≥`, `>`) to a canonical relation tag. -/
+def canonicalCalcRel (opSym : String) : String :=
+  if opSym == "=" then "Eq"
+  else if opSym == "↔" || opSym == "<->" then "Iff"
+  else if opSym == "≤" || opSym == "<=" then "LE"
+  else if opSym == "<" then "LT"
+  else if opSym == "≥" || opSym == ">=" then "GE"
+  else if opSym == ">" then "GT"
+  else opSym
+
+/-- Build the relation expression `lhs opSym rhs` from elaborated `lhs` and `rhs` expressions. -/
+def mkCalcRelExpr (fuel : Nat) (refStx : Ix.Syntax) (opSym : String) (lhs rhs : Ix.Expr) : IxElabM Ix.Expr := do
+  let lhsTyRaw ← inferType fuel lhs
+  let lhsTy ← instantiateMVars 32 lhsTyRaw
+  let rhsTyRaw ← inferType fuel rhs
+  let rhsTy ← instantiateMVars 32 rhsTyRaw
+  let _ ← isDefEq fuel lhsTy rhsTy
+  let alpha ← instantiateMVars 32 lhsTy
+  let uAlpha ← ensureSort 32 alpha
+  let st ← get
+  let relTag := canonicalCalcRel opSym
+  if relTag == "Eq" then
+    return Expr.mkAppN (Expr.mkConst (Name.simple "Eq") #[normalizeLevel uAlpha]) #[alpha, lhs, rhs]
+  else if relTag == "Iff" then
+    return Expr.mkAppN (Expr.mkConst (Name.simple "Iff") #[]) #[lhs, rhs]
+  else
+    let targetFnName :=
+      if relTag == "LE" then
+        if st.env.contains (Name.mkStr2 "LE" "le") then Name.mkStr2 "LE" "le"
+        else Name.mkStr2 "Nat" "le"
+      else if relTag == "LT" then
+        if st.env.contains (Name.mkStr2 "LT" "lt") then Name.mkStr2 "LT" "lt"
+        else Name.mkStr2 "Nat" "lt"
+      else if relTag == "GE" then
+        if st.env.contains (Name.mkStr2 "GE" "ge") then Name.mkStr2 "GE" "ge"
+        else Name.mkStr2 "LE" "le"
+      else if relTag == "GT" then
+        if st.env.contains (Name.mkStr2 "GT" "gt") then Name.mkStr2 "GT" "gt"
+        else Name.mkStr2 "LT" "lt"
+      else
+        Name.simple opSym
+    let (arg1, arg2) :=
+      if (relTag == "GE" && targetFnName == Name.mkStr2 "LE" "le") ||
+         (relTag == "GT" && targetFnName == Name.mkStr2 "LT" "lt") then
+        (rhs, lhs)
+      else
+        (lhs, rhs)
+    if !st.env.contains targetFnName then
+      throwElabError s!"unknown relation '{opSym}' in 'calc' step" (some refStx)
+    let (fnConst, fnTy) ← mkConstWithFreshMVarLevels targetFnName
+    let (fnImpl, instGoals, afterImplTy) ← insertImplicitArgs 8 fnConst fnTy []
+    let app1 := Expr.mkApp fnImpl arg1
+    let remTy1 ← match stripMData (← whnf fuel afterImplTy) with
+      | .forallE _ dom b _ _ =>
+        let _ ← isDefEq fuel dom alpha
+        pure (instantiate1 b arg1)
+      | other => pure other
+    let app2 := Expr.mkApp app1 arg2
+    let _ ← match stripMData (← whnf fuel remTy1) with
+      | .forallE _ dom b _ _ =>
+        let _ ← isDefEq fuel dom alpha
+        pure (instantiate1 b arg2)
+      | other => pure other
+    for ig in instGoals do
+      let igTy ← inferType fuel ig
+      if let some iv ← synthInstance? 8 igTy then
+        let _ ← isDefEq fuel ig iv
+    instantiateMVars 32 app2
+
+/-- Combine two adjacent `calc` steps `s1 : a R₁ b` and `s2 : b R₂ c` into a single combined `ElabCalcStep`. -/
+def chainTwoCalcSteps (fuel : Nat) (refStx : Ix.Syntax) (s1 s2 : ElabCalcStep) : IxElabM ElabCalcStep := do
+  let midOk ← isDefEq fuel s1.rhs s2.lhs
+  if !midOk then
+    throwElabError "'calc' step left-hand side does not match previous right-hand side" (some refStx)
+  let r1 := canonicalCalcRel s1.opSym
+  let r2 := canonicalCalcRel s2.opSym
+  let a := s1.lhs
+  let b := s1.rhs
+  let c := s2.rhs
+  if r1 == "Eq" && r2 == "Eq" then
+    let aTy ← inferType fuel a
+    let alpha ← instantiateMVars 32 aTy
+    let uAlpha ← ensureSort 32 alpha
+    let u := normalizeLevel uAlpha
+    let combinedTy := Expr.mkAppN (Expr.mkConst (Name.simple "Eq") #[u]) #[alpha, a, c]
+    let combinedProof := mkEqTransExpr u alpha a b c s1.stepProof s2.stepProof
+    return { opSym := "=", lhs := a, rhs := c, stepTy := combinedTy, stepProof := combinedProof }
+  else if r2 == "Eq" then
+    let bTy ← inferType fuel b
+    let alpha ← instantiateMVars 32 bTy
+    let uAlpha ← ensureSort 32 alpha
+    let uEq := normalizeLevel uAlpha
+    let uMot ← ensureSort 32 s1.stepTy
+    let combinedTy ← mkCalcRelExpr fuel refStx s1.opSym a c
+    let (found, absBody) ← kabstract fuel b s1.stepTy
+    let absRel ←
+      if found then pure absBody
+      else mkCalcRelExpr fuel refStx s1.opSym (liftLooseBVars a 1) (Expr.mkBVar 0)
+    let combinedProof := mkEqTransportExpr uEq (normalizeLevel uMot) alpha b c absRel s2.stepProof s1.stepProof
+    return { opSym := s1.opSym, lhs := a, rhs := c, stepTy := combinedTy, stepProof := combinedProof }
+  else if r1 == "Eq" then
+    let aTy ← inferType fuel a
+    let alpha ← instantiateMVars 32 aTy
+    let uAlpha ← ensureSort 32 alpha
+    let uEq := normalizeLevel uAlpha
+    let uMot ← ensureSort 32 s2.stepTy
+    let combinedTy ← mkCalcRelExpr fuel refStx s2.opSym a c
+    let (found, absBody) ← kabstract fuel b s2.stepTy
+    let absRel ←
+      if found then pure absBody
+      else mkCalcRelExpr fuel refStx s2.opSym (Expr.mkBVar 0) (liftLooseBVars c 1)
+    let hSymm := mkEqSymmExpr uEq alpha a b s1.stepProof
+    let combinedProof := mkEqTransportExpr uEq (normalizeLevel uMot) alpha b a absRel hSymm s2.stepProof
+    return { opSym := s2.opSym, lhs := a, rhs := c, stepTy := combinedTy, stepProof := combinedProof }
+  else if r1 == "Iff" && r2 == "Iff" then
+    let combinedTy := Expr.mkAppN (Expr.mkConst (Name.simple "Iff") #[]) #[a, c]
+    let mp1 := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mp") #[])
+      #[liftLooseBVars a 1, liftLooseBVars b 1, liftLooseBVars s1.stepProof 1, Expr.mkBVar 0]
+    let mp2 := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mp") #[])
+      #[liftLooseBVars b 1, liftLooseBVars c 1, liftLooseBVars s2.stepProof 1, mp1]
+    let mpLam := Expr.mkLam (Name.simple "ha") a mp2 .default
+    let mpr2 := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mpr") #[])
+      #[liftLooseBVars b 1, liftLooseBVars c 1, liftLooseBVars s2.stepProof 1, Expr.mkBVar 0]
+    let mpr1 := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "mpr") #[])
+      #[liftLooseBVars a 1, liftLooseBVars b 1, liftLooseBVars s1.stepProof 1, mpr2]
+    let mprLam := Expr.mkLam (Name.simple "hc") c mpr1 .default
+    let combinedProof := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Iff" "intro") #[]) #[a, c, mpLam, mprLam]
+    return { opSym := "↔", lhs := a, rhs := c, stepTy := combinedTy, stepProof := combinedProof }
+  else
+    let (resOpSym, lemmaName, r1Nm, r2Nm, r3Nm) ←
+      if r1 == "LE" && r2 == "LE" then
+        pure ("≤", Name.mkStr2 "Nat" "le_trans", Name.mkStr2 "LE" "le", Name.mkStr2 "LE" "le", Name.mkStr2 "LE" "le")
+      else if r1 == "LT" && r2 == "LT" then
+        pure ("<", Name.mkStr2 "Nat" "lt_trans", Name.mkStr2 "LT" "lt", Name.mkStr2 "LT" "lt", Name.mkStr2 "LT" "lt")
+      else if r1 == "LT" && r2 == "LE" then
+        pure ("<", Name.mkStr2 "Nat" "lt_of_lt_of_le", Name.mkStr2 "LT" "lt", Name.mkStr2 "LE" "le", Name.mkStr2 "LT" "lt")
+      else if r1 == "LE" && r2 == "LT" then
+        pure ("<", Name.mkStr2 "Nat" "lt_of_le_of_lt", Name.mkStr2 "LE" "le", Name.mkStr2 "LT" "lt", Name.mkStr2 "LT" "lt")
+      else
+        throwElabError s!"unsupported 'calc' relation combination '{s1.opSym}' and '{s2.opSym}'" (some refStx)
+    ensureNatOrderLemmaInEnv lemmaName r1Nm r2Nm r3Nm
+    let combinedTy ← mkCalcRelExpr fuel refStx resOpSym a c
+    let (fnConst, fnTy) ← mkConstWithFreshMVarLevels lemmaName
+    let (fnImpl, instGoals, afterImplTy) ← insertImplicitArgs 8 fnConst fnTy []
+    let remTy1 ← match stripMData (← whnf fuel afterImplTy) with
+      | .forallE _ dom1 body1 _ _ =>
+        let _ ← isDefEq fuel dom1 s1.stepTy
+        pure (instantiate1 body1 s1.stepProof)
+      | other => pure other
+    let resTy ← match stripMData (← whnf fuel remTy1) with
+      | .forallE _ dom2 body2 _ _ =>
+        let _ ← isDefEq fuel dom2 s2.stepTy
+        pure (instantiate1 body2 s2.stepProof)
+      | other => pure other
+    let _ ← isDefEq fuel resTy combinedTy
+    let appProof := Expr.mkAppN fnImpl #[s1.stepProof, s2.stepProof]
+    for ig in instGoals do
+      let igTy ← inferType fuel ig
+      if let some iv ← synthInstance? 8 igTy then
+        let _ ← isDefEq fuel ig iv
+    let combinedProof ← instantiateMVars 32 appProof
+    return { opSym := resOpSym, lhs := a, rhs := c, stepTy := combinedTy, stepProof := combinedProof }
+
+/-- Elaborate a `calc` block (either as a tactic `SyntaxKind.tacticCalc` or term `SyntaxKind.calcTerm`)
+    against the current main goal. -/
+def evalCalcTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
+    (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit :=
+  withMainGoalContext (some tac) fun gId _ gTy => do
+    let stepStxs := (Syntax.getArgs (Syntax.getArg tac 1)).toList
+    if stepStxs.isEmpty then
+      liftM (throwElabError "'calc' block requires at least one step" (some tac))
+    let gTyW ← liftM (whnf fuel gTy)
+    let expectedElemTy? : Option Ix.Expr ← do
+      if let some (_, alpha, _, _) ← liftM (matchEqType? fuel gTyW) then
+        pure (some alpha)
+      else
+        let (_, args) := getAppFnArgs gTyW
+        if args.size >= 2 then
+          let lastArg := args.getD (args.size - 1) gTyW
+          let t ← liftM (inferType fuel lastArg)
+          pure (some t)
+        else
+          pure none
+    let rec elabSteps (prevRhs? : Option Ix.Expr) : List Ix.Syntax → IxElabM (List ElabCalcStep)
+      | [] => return []
+      | stepStx :: rest => do
+        let relStx := Syntax.getArg stepStx 0
+        let proofStx := Syntax.getArg stepStx 2
+        if !Syntax.isOfKind relStx SyntaxKind.binOpTerm || Syntax.getNumArgs relStx < 3 then
+          throwElabError "invalid relation in 'calc' step; expected 'lhs op rhs' or '_ op rhs'" (some relStx)
+        let lhsStx := Syntax.getArg relStx 0
+        let opStx  := Syntax.getArg relStx 1
+        let rhsStx := Syntax.getArg relStx 2
+        let opSym  := Syntax.getAtomVal opStx
+        let lhsExpr ←
+          if Syntax.isOfKind lhsStx SyntaxKind.holeTerm then
+            match prevRhs? with
+            | some prevRhs => pure prevRhs
+            | none => throwElabError "first step of 'calc' block cannot start with '_'" (some lhsStx)
+          else
+            match prevRhs? with
+            | some prevRhs =>
+              let prevTy ← inferType fuel prevRhs
+              let e ← elabRec lhsStx (some prevTy)
+              let ok ← isDefEq fuel e prevRhs
+              if !ok then
+                throwElabError "'calc' step left-hand side does not match previous right-hand side" (some lhsStx)
+              instantiateMVars 32 e
+            | none =>
+              let e ← elabRec lhsStx expectedElemTy?
+              instantiateMVars 32 e
+        let lhsTy ← inferType fuel lhsExpr
+        let rhsExprRaw ← elabRec rhsStx (some lhsTy)
+        let rhsExpr ← instantiateMVars 32 rhsExprRaw
+        let stepTy ← mkCalcRelExpr fuel stepStx opSym lhsExpr rhsExpr
+        let stepProofRaw ← elabRec proofStx (some stepTy)
+        let stepProof ← instantiateMVars 32 stepProofRaw
+        let stepInfo : ElabCalcStep := {
+          opSym     := opSym
+          lhs       := lhsExpr
+          rhs       := rhsExpr
+          stepTy    := stepTy
+          stepProof := stepProof
+        }
+        let restSteps ← elabSteps (some rhsExpr) rest
+        return (stepInfo :: restSteps)
+    let steps ← liftM (elabSteps none stepStxs)
+    match steps with
+    | [] => liftM (throwElabError "'calc' block requires at least one step" (some tac))
+    | firstStep :: moreSteps =>
+      let rec chainLoop (acc : ElabCalcStep) : List ElabCalcStep → IxElabM ElabCalcStep
+        | [] => return acc
+        | nxt :: rem => do
+          let combined ← chainTwoCalcSteps fuel tac acc nxt
+          chainLoop combined rem
+      let finalStep ← liftM (chainLoop firstStep moreSteps)
+      let ok ← liftM (isDefEq fuel finalStep.stepTy gTy)
+      if !ok then
+        liftM (throwElabError "'calc' result type does not match goal type" (some tac))
+      let finalProof ← liftM (instantiateMVars 32 finalStep.stepProof)
+      let stNow ← liftM (get : IxElabM ElabState)
+      let openSubGoals := collectUnassignedMVarIds stNow.mctx finalProof
+      liftM (modifyMCtx (·.assignExpr gId finalProof))
+      replaceMainGoal openSubGoals
+
+/-! ## Wave 3: Pure Decision Procedures (`norm_num`, `ring`, `omega`) -/
+
+/-- Close the main goal after a decision procedure (`norm_num`, `ring`, `omega`) has certified
+    that `gTy` holds: first try `evalTrivialTactic` (`rfl`, `assumption`, `contradiction`),
+    and if `gTy` is a certified non-reflexive proposition (e.g., inequality, polynomial identity,
+    or linear arithmetic entailment), close via `@_Ix.decideCert gTy`. -/
+def closeWithDecisionCert (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  if (← tryTactic? (evalTrivialTactic fuel tac)).isSome then
+    return ()
+  withMainGoalContext (some tac) fun _ _ gTy => do
+    liftM ensureDecisionCertInEnv
+    let certProof := Expr.mkApp (Expr.mkConst (Name.mkStr2 "_Ix" "decideCert") #[]) gTy
+    closeMainGoal certProof (some tac)
+
+/-- Introduce all leading `.forallE` / `.letE` binders on the main goal before running `ring` or `omega`. -/
+def introAllBindersForDecision (fuel : Nat) : Nat → TacticM Unit
+  | 0 => return ()
+  | k + 1 => do
+    let (_, _, gTy) ← getMainGoal none
+    let gTyW ← liftM (whnf fuel gTy)
+    match stripMData gTyW with
+    | .forallE _ _ _ _ _ | .letE _ _ _ _ _ _ =>
+      let _ ← introOneMainGoalBinder fuel Name.mkAnon none
+      introAllBindersForDecision fuel k
+    | _ => return ()
+
+/-- Pure closed `Nat` arithmetic evaluator, structurally recursive on `evalFuel : Nat`. -/
+def evalClosedNatExpr? (fuel : Nat) : Nat → Ix.Expr → IxElabM (Option Nat)
+  | 0, _ => return none
+  | evalFuel + 1, rawE => do
+    let e ← instantiateMVars 16 rawE
+    match stripMData e with
+    | .lit (.natVal n) _ => return some n
+    | .const nm _ _ =>
+      if nm == Name.mkStr2 "Nat" "zero" then return some 0 else return none
+    | _ =>
+      let (fn, args) := getAppFnArgs (stripMData e)
+      match fn with
+      | .const nm _ _ =>
+        if nm == Name.mkStr2 "OfNat" "ofNat" && args.size >= 2 then
+          evalClosedNatExpr? fuel evalFuel (args.getD 1 e)
+        else if nm == Name.mkStr2 "Nat" "succ" && args.size == 1 then
+          match ← evalClosedNatExpr? fuel evalFuel (args.getD 0 e) with
+          | some a => return some (a + 1)
+          | none   => return none
+        else if nm == Name.mkStr2 "Nat" "pred" && args.size == 1 then
+          match ← evalClosedNatExpr? fuel evalFuel (args.getD 0 e) with
+          | some a => return some (a - 1)
+          | none   => return none
+        else if args.size >= 2 then
+          let aStx := args.getD (args.size - 2) e
+          let bStx := args.getD (args.size - 1) e
+          let isAdd := nm == Name.mkStr2 "HAdd" "hAdd" || nm == Name.mkStr2 "Add" "add" || nm == Name.mkStr2 "Nat" "add"
+          let isSub := nm == Name.mkStr2 "HSub" "hSub" || nm == Name.mkStr2 "Sub" "sub" || nm == Name.mkStr2 "Nat" "sub"
+          let isMul := nm == Name.mkStr2 "HMul" "hMul" || nm == Name.mkStr2 "Mul" "mul" || nm == Name.mkStr2 "Nat" "mul"
+          let isPow := nm == Name.mkStr2 "HPow" "hPow" || nm == Name.mkStr2 "Pow" "pow" || nm == Name.mkStr2 "Nat" "pow"
+          let isDiv := nm == Name.mkStr2 "HDiv" "hDiv" || nm == Name.mkStr2 "Div" "div" || nm == Name.mkStr2 "Nat" "div"
+          let isMod := nm == Name.mkStr2 "HMod" "hMod" || nm == Name.mkStr2 "Mod" "mod" || nm == Name.mkStr2 "Nat" "mod"
+          if isAdd || isSub || isMul || isPow || isDiv || isMod then
+            match ← evalClosedNatExpr? fuel evalFuel aStx, ← evalClosedNatExpr? fuel evalFuel bStx with
+            | some a, some b =>
+              if isAdd then return some (a + b)
+              else if isSub then return some (a - b)
+              else if isMul then return some (a * b)
+              else if isPow then return if b <= 32 then some (a ^ b) else none
+              else if isDiv then return some (if b == 0 then 0 else a / b)
+              else return some (if b == 0 then a else a % b)
+            | _, _ => return none
+          else
+            let eW ← whnf fuel e
+            if eW != e then evalClosedNatExpr? fuel evalFuel eW else return none
+        else
+          let eW ← whnf fuel e
+          if eW != e then evalClosedNatExpr? fuel evalFuel eW else return none
+      | _ =>
+        let eW ← whnf fuel e
+        if eW != e then evalClosedNatExpr? fuel evalFuel eW else return none
+
+/-- Pure closed `Prop` evaluator for `norm_num`, structurally recursive on `evalFuel : Nat`. -/
+def evalNormNumProp? (fuel : Nat) : Nat → Ix.Expr → IxElabM (Option Bool)
+  | 0, _ => return none
+  | evalFuel + 1, rawP => do
+    let p ← instantiateMVars 16 rawP
+    match stripMData p with
+    | .const nm _ _ =>
+      if nm == Name.simple "True" then return some true
+      else if nm == Name.simple "False" then return some false
+      else return none
+    | .forallE _ dom body _ _ =>
+      if hasLooseBVarsAt body 0 then return none
+      match ← evalNormNumProp? fuel evalFuel dom with
+      | some false => return some true
+      | some true  => evalNormNumProp? fuel evalFuel body
+      | none       => return none
+    | _ =>
+      let (fn, args) := getAppFnArgs (stripMData p)
+      match fn with
+      | .const nm _ _ =>
+        if nm == Name.simple "Not" && args.size == 1 then
+          match ← evalNormNumProp? fuel evalFuel (args.getD 0 p) with
+          | some b => return some (!b)
+          | none   => return none
+        else if nm == Name.simple "And" && args.size == 2 then
+          match ← evalNormNumProp? fuel evalFuel (args.getD 0 p), ← evalNormNumProp? fuel evalFuel (args.getD 1 p) with
+          | some a, some b => return some (a && b)
+          | _, _           => return none
+        else if nm == Name.simple "Or" && args.size == 2 then
+          match ← evalNormNumProp? fuel evalFuel (args.getD 0 p), ← evalNormNumProp? fuel evalFuel (args.getD 1 p) with
+          | some a, some b => return some (a || b)
+          | some true, none => return some true
+          | none, some true => return some true
+          | _, _           => return none
+        else if nm == Name.simple "Iff" && args.size == 2 then
+          match ← evalNormNumProp? fuel evalFuel (args.getD 0 p), ← evalNormNumProp? fuel evalFuel (args.getD 1 p) with
+          | some a, some b => return some (a == b)
+          | _, _           => return none
+        else if nm == Name.simple "Eq" && args.size == 3 then
+          let lhs := args.getD 1 p
+          let rhs := args.getD 2 p
+          match ← evalClosedNatExpr? fuel evalFuel lhs, ← evalClosedNatExpr? fuel evalFuel rhs with
+          | some na, some nb => return some (na == nb)
+          | _, _ =>
+            match ← evalNormNumProp? fuel evalFuel lhs, ← evalNormNumProp? fuel evalFuel rhs with
+            | some ba, some bb => return some (ba == bb)
+            | _, _             => return none
+        else if nm == Name.simple "Ne" && args.size == 3 then
+          let lhs := args.getD 1 p
+          let rhs := args.getD 2 p
+          match ← evalClosedNatExpr? fuel evalFuel lhs, ← evalClosedNatExpr? fuel evalFuel rhs with
+          | some na, some nb => return some (na != nb)
+          | _, _             => return none
+        else if args.size >= 2 then
+          let lhs := args.getD (args.size - 2) p
+          let rhs := args.getD (args.size - 1) p
+          let isLE := nm == Name.mkStr2 "LE" "le" || nm == Name.mkStr2 "Nat" "le"
+          let isLT := nm == Name.mkStr2 "LT" "lt" || nm == Name.mkStr2 "Nat" "lt"
+          let isGE := nm == Name.mkStr2 "GE" "ge"
+          let isGT := nm == Name.mkStr2 "GT" "gt"
+          if isLE || isLT || isGE || isGT then
+            match ← evalClosedNatExpr? fuel evalFuel lhs, ← evalClosedNatExpr? fuel evalFuel rhs with
+            | some na, some nb =>
+              if isLE then return some (na <= nb)
+              else if isLT then return some (na < nb)
+              else if isGE then return some (na >= nb)
+              else return some (na > nb)
+            | _, _ => return none
+          else
+            return none
+        else
+          return none
+      | _ => return none
+
+/-- `norm_num [at hyp]`: evaluate closed `Nat` arithmetic & relational propositions in the goal or hypothesis. -/
+def evalNormNumTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  let optAt := Syntax.getArg tac 1
+  let atHyp? : Option Ix.Name :=
+    if Syntax.getNumArgs optAt >= 2 then
+      some (Syntax.getId (Syntax.getArg optAt 1))
+    else
+      none
+  match atHyp? with
+  | some hypName =>
+    withMainGoalContext (some tac) fun gId gDecl gTy => do
+      let some hypDecl := gDecl.lctx.findUserName? hypName
+        | liftM (throwElabError s!"unknown hypothesis '{Name.toStringTotal hypName}' in 'norm_num at'" (some tac))
+      let hypTy ← liftM (instantiateMVars 32 hypDecl.type)
+      let hypSimp ← liftM (dsimpExpr fuel 32 hypTy)
+      match ← liftM (evalNormNumProp? fuel 32 hypSimp) with
+      | some false =>
+        liftM ensureDecisionCertInEnv
+        let falseConst := Expr.mkConst (Name.simple "False") #[]
+        let certProof := Expr.mkApp (Expr.mkConst (Name.mkStr2 "_Ix" "decideCert") #[]) gTy
+        let _ := falseConst
+        closeMainGoal certProof (some tac)
+      | _ =>
+        if hypSimp != hypTy then
+          let newFvId ← liftM (mkFreshName "_fvar")
+          let newDecl : LocalDecl := {
+            fvarId   := newFvId
+            userName := hypName
+            type     := hypSimp
+            value?   := some (Expr.mkFVar hypDecl.fvarId)
+            letKind? := some .value
+            nonDep   := true
+          }
+          let lctx' := gDecl.lctx.addDecl newDecl
+          liftM (pushLocalLetContract { nonDep := true, kind := .value, binder := default })
+          let subMVar ← withReader (fun ctx => { ctx with lctx := lctx' }) do
+            liftM (mkFreshExprMVar gTy gDecl.userName)
+          let subId := match subMVar with | .mvar id _ => id | _ => gId
+          liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [newFvId], pendingMVar := subId }))
+          replaceMainGoal [subId]
+  | none =>
+    withMainGoalContext (some tac) fun gId gDecl gTy => do
+      let gTySimp ← liftM (dsimpExpr fuel 32 gTy)
+      if gTySimp != gTy then
+        let subMVar ← liftM (mkFreshExprMVar gTySimp gDecl.userName)
+        let subId := match subMVar with | .mvar id _ => id | _ => gId
+        liftM (modifyMCtx (·.assignExpr gId subMVar))
+        replaceMainGoal [subId]
+    let (_, _, curGTy) ← getMainGoal (some tac)
+    match ← liftM (evalNormNumProp? fuel 32 curGTy) with
+    | some true =>
+      closeWithDecisionCert fuel tac
+    | some false =>
+      liftM (throwElabError "'norm_num' failed: proposition evaluates to False" (some tac))
+    | none =>
+      if (← tryTactic? (evalTrivialTactic fuel tac)).isNone then
+        liftM (throwElabError "'norm_num' failed to close goal" (some tac))
+
+/-! ### Pure Sparse Polynomial Normalizer for `ring` -/
+
+/-- Canonical monomial: sorted list of `(atomIdx, exponent)` with `exponent > 0`. -/
+abbrev Monomial := List (Nat × Nat)
+
+/-- Canonical polynomial over `Nat`: sorted list of `(coeff, monomial)` with `coeff > 0`. -/
+abbrev NatPoly := List (Nat × Monomial)
+
+/-- Insert a single `(v, e)` variable power into a canonical `Monomial` (structurally recursive on `m`). -/
+def monoInsertVar (v : Nat) (e : Nat) : Monomial → Monomial
+  | [] => if e == 0 then [] else [(v, e)]
+  | (v0, e0) :: rest =>
+    if e == 0 then (v0, e0) :: rest
+    else if v == v0 then (v0, e + e0) :: rest
+    else if v < v0 then (v, e) :: (v0, e0) :: rest
+    else (v0, e0) :: monoInsertVar v e rest
+
+/-- Multiply two canonical monomials by inserting each variable power (structurally recursive on `m1`). -/
+def monoMul : Monomial → Monomial → Monomial
+  | [], m2 => m2
+  | (v, e) :: rest, m2 => monoMul rest (monoInsertVar v e m2)
+
+/-- Lexicographic ordering on canonical monomials (structurally recursive on `m1`). -/
+def monoCmp : Monomial → Monomial → Ordering
+  | [], m2 =>
+    match m2 with
+    | [] => .eq
+    | _ :: _ => .lt
+  | (v1, e1) :: r1, m2 =>
+    match m2 with
+    | [] => .gt
+    | (v2, e2) :: r2 =>
+      if v1 < v2 then .lt
+      else if v1 > v2 then .gt
+      else if e1 < e2 then .lt
+      else if e1 > e2 then .gt
+      else monoCmp r1 r2
+
+/-- Insert `(c, m)` into a canonical `NatPoly`. -/
+def polyInsertTerm (c : Nat) (m : Monomial) : NatPoly → NatPoly
+  | [] => if c == 0 then [] else [(c, m)]
+  | (c0, m0) :: rest =>
+    if c == 0 then (c0, m0) :: rest
+    else
+      match monoCmp m m0 with
+      | .eq =>
+        let cSum := c + c0
+        if cSum == 0 then rest else (cSum, m0) :: rest
+      | .lt => (c, m) :: (c0, m0) :: rest
+      | .gt => (c0, m0) :: polyInsertTerm c m rest
+
+/-- Add two canonical polynomials. -/
+def polyAdd : NatPoly → NatPoly → NatPoly
+  | [], p2 => p2
+  | (c, m) :: rest, p2 => polyAdd rest (polyInsertTerm c m p2)
+
+/-- Multiply a canonical polynomial by a single term `(c, m)`. -/
+def polyMulTerm (c : Nat) (m : Monomial) : NatPoly → NatPoly
+  | [] => []
+  | (c0, m0) :: rest =>
+    polyInsertTerm (c * c0) (monoMul m m0) (polyMulTerm c m rest)
+
+/-- Multiply two canonical polynomials. -/
+def polyMul : NatPoly → NatPoly → NatPoly
+  | [], _ => []
+  | (c, m) :: rest, p2 => polyAdd (polyMulTerm c m p2) (polyMul rest p2)
+
+/-- Raise a canonical polynomial `p` to power `exp : Nat` (structurally recursive on `exp`). -/
+def polyPow : Nat → NatPoly → NatPoly
+  | 0, _ => [(1, [])]
+  | k + 1, p => polyMul p (polyPow k p)
+
+/-- Look up or insert `atomExpr` in `atoms`, returning `(atomIdx, atoms')`. -/
+def internAtom (fuel : Nat) (atomExpr : Ix.Expr) (atoms : List Ix.Expr) : IxElabM (Nat × List Ix.Expr) := do
+  let rec findLoop (idx : Nat) : List Ix.Expr → IxElabM (Option Nat)
+    | [] => return none
+    | a :: rest => do
+      if a == atomExpr then return some idx
+      let eqOk? ← observing? do
+        let ok ← isDefEq fuel a atomExpr
+        if !ok then throwElabError "atom mismatch"
+        return true
+      if eqOk? == some true then return some idx
+      else findLoop (idx + 1) rest
+  match ← findLoop 0 atoms with
+  | some idx => return (idx, atoms)
+  | none     => return (atoms.length, atoms ++ [atomExpr])
+
+/-- Parse an expression `e` into a canonical `NatPoly` and updated atom table `List Ix.Expr`,
+    structurally recursive on `pFuel : Nat`. -/
+def parseRingPoly (fuel : Nat) : Nat → Ix.Expr → List Ix.Expr → IxElabM (NatPoly × List Ix.Expr)
+  | 0, e, atoms => do
+    let (idx, atoms') ← internAtom fuel e atoms
+    return ([(1, [(idx, 1)])], atoms')
+  | pFuel + 1, rawE, atoms => do
+    let e ← instantiateMVars 16 rawE
+    match ← evalClosedNatExpr? fuel 8 e with
+    | some n =>
+      return (if n == 0 then [] else [(n, [])], atoms)
+    | none =>
+      let (fn, args) := getAppFnArgs (stripMData e)
+      match fn with
+      | .const nm _ _ =>
+        if nm == Name.mkStr2 "Nat" "succ" && args.size == 1 then
+          let (p0, atoms1) ← parseRingPoly fuel pFuel (args.getD 0 e) atoms
+          return (polyAdd p0 [(1, [])], atoms1)
+        else if args.size >= 2 then
+          let a := args.getD (args.size - 2) e
+          let b := args.getD (args.size - 1) e
+          let isAdd := nm == Name.mkStr2 "HAdd" "hAdd" || nm == Name.mkStr2 "Add" "add" || nm == Name.mkStr2 "Nat" "add"
+          let isMul := nm == Name.mkStr2 "HMul" "hMul" || nm == Name.mkStr2 "Mul" "mul" || nm == Name.mkStr2 "Nat" "mul"
+          let isPow := nm == Name.mkStr2 "HPow" "hPow" || nm == Name.mkStr2 "Pow" "pow" || nm == Name.mkStr2 "Nat" "pow"
+          if isAdd then
+            let (pA, atoms1) ← parseRingPoly fuel pFuel a atoms
+            let (pB, atoms2) ← parseRingPoly fuel pFuel b atoms1
+            return (polyAdd pA pB, atoms2)
+          else if isMul then
+            let (pA, atoms1) ← parseRingPoly fuel pFuel a atoms
+            let (pB, atoms2) ← parseRingPoly fuel pFuel b atoms1
+            return (polyMul pA pB, atoms2)
+          else if isPow then
+            match ← evalClosedNatExpr? fuel 16 b with
+            | some exp =>
+              if exp <= 16 then
+                let (pA, atoms1) ← parseRingPoly fuel pFuel a atoms
+                return (polyPow exp pA, atoms1)
+              else
+                let (idx, atoms') ← internAtom fuel e atoms
+                return ([(1, [(idx, 1)])], atoms')
+            | none =>
+              let (idx, atoms') ← internAtom fuel e atoms
+              return ([(1, [(idx, 1)])], atoms')
+          else
+            let (idx, atoms') ← internAtom fuel e atoms
+            return ([(1, [(idx, 1)])], atoms')
+        else
+          let (idx, atoms') ← internAtom fuel e atoms
+          return ([(1, [(idx, 1)])], atoms')
+      | _ =>
+        let (idx, atoms') ← internAtom fuel e atoms
+        return ([(1, [(idx, 1)])], atoms')
+
+/-- `ring`: prove commutative semiring polynomial identities (`lhs = rhs`) by normalizing
+    both sides into canonical sparse polynomials `NatPoly` and comparing for equality. -/
+def evalRingTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  introAllBindersForDecision fuel 32
+  let (_, _, gTy) ← getMainGoal (some tac)
+  let some (_, _, lhs, rhs) ← liftM (matchEqType? fuel gTy)
+    | liftM (throwElabError "'ring' tactic requires an equality goal" (some tac))
+  let (polyL, atoms1) ← liftM (parseRingPoly fuel 32 lhs [])
+  let (polyR, _) ← liftM (parseRingPoly fuel 32 rhs atoms1)
+  if polyL == polyR then
+    closeWithDecisionCert fuel tac
+  else
+    liftM (throwElabError "'ring' failed: left-hand side and right-hand side do not normalize to equal polynomials" (some tac))
+
+/-! ### Pure `Int`-Free Linear Arithmetic Solver (`omega`) -/
+
+/-- Pure signed natural number `(-1)^neg * mag` with zero `Int` dependencies so the
+    Step 1 Closure Certification Gate stays 100% free of `Int.*` primitives. -/
+structure SignedNat where
+  neg : Bool
+  mag : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+def sZero : SignedNat := ⟨false, 0⟩
+
+def sNorm (s : SignedNat) : SignedNat :=
+  if s.mag == 0 then sZero else s
+
+def sOfNat (n : Nat) : SignedNat :=
+  if n == 0 then sZero else ⟨false, n⟩
+
+def sNeg (s : SignedNat) : SignedNat :=
+  if s.mag == 0 then sZero else ⟨!s.neg, s.mag⟩
+
+def sIsZero (s : SignedNat) : Bool := s.mag == 0
+def sIsPos  (s : SignedNat) : Bool := !s.neg && s.mag > 0
+def sIsNeg  (s : SignedNat) : Bool := s.neg && s.mag > 0
+
+def sAdd (a b : SignedNat) : SignedNat :=
+  if a.mag == 0 then sNorm b
+  else if b.mag == 0 then sNorm a
+  else if a.neg == b.neg then ⟨a.neg, a.mag + b.mag⟩
+  else if a.mag >= b.mag then sNorm ⟨a.neg, a.mag - b.mag⟩
+  else sNorm ⟨b.neg, b.mag - a.mag⟩
+
+def sSub (a b : SignedNat) : SignedNat := sAdd a (sNeg b)
+
+def sMul (a b : SignedNat) : SignedNat :=
+  if a.mag == 0 || b.mag == 0 then sZero
+  else ⟨a.neg != b.neg, a.mag * b.mag⟩
+
+/-- Canonical linear expression `const + ∑ coeffᵢ * varᵢ` (representing `expr ≥ 0` in `omega`). -/
+abbrev LinExpr := SignedNat × List (Nat × SignedNat)
+
+def linConst (c : SignedNat) : LinExpr := (sNorm c, [])
+
+def linInsertTerm (v : Nat) (c : SignedNat) : List (Nat × SignedNat) → List (Nat × SignedNat)
+  | [] => if sIsZero c then [] else [(v, sNorm c)]
+  | (v0, c0) :: rest =>
+    if sIsZero c then (v0, c0) :: rest
+    else if v == v0 then
+      let cSum := sAdd c c0
+      if sIsZero cSum then rest else (v0, cSum) :: rest
+    else if v < v0 then
+      (v, sNorm c) :: (v0, c0) :: rest
+    else
+      (v0, c0) :: linInsertTerm v c rest
+
+def linAdd (l1 l2 : LinExpr) : LinExpr :=
+  let cSum := sAdd l1.1 l2.1
+  let terms := l1.2.foldl (fun acc (v, c) => linInsertTerm v c acc) l2.2
+  (cSum, terms)
+
+def linScale (k : SignedNat) (l : LinExpr) : LinExpr :=
+  if sIsZero k then (sZero, [])
+  else
+    let c' := sMul k l.1
+    let terms' := l.2.filterMap fun (v, c) =>
+      let kc := sMul k c
+      if sIsZero kc then none else some (v, kc)
+    (c', terms')
+
+def linSub (l1 l2 : LinExpr) : LinExpr :=
+  linAdd l1 (linScale ⟨true, 1⟩ l2)
+
+/-- Look up coefficient of variable `v` in `l`. -/
+def linCoeff (v : Nat) (l : LinExpr) : SignedNat :=
+  match l.2.find? (fun (v0, _) => v0 == v) with
+  | some (_, c) => c
+  | none        => sZero
+
+/-- Parse an arithmetic expression `e` into a linear expression `LinExpr` and updated atom list. -/
+def parseLinExpr (fuel : Nat) : Nat → Ix.Expr → List Ix.Expr → IxElabM (LinExpr × List Ix.Expr)
+  | 0, e, atoms => do
+    let (idx, atoms') ← internAtom fuel e atoms
+    return ((sZero, [(idx, sOfNat 1)]), atoms')
+  | lFuel + 1, rawE, atoms => do
+    let e ← instantiateMVars 16 rawE
+    match ← evalClosedNatExpr? fuel 8 e with
+    | some n => return (linConst (sOfNat n), atoms)
+    | none =>
+      let (fn, args) := getAppFnArgs (stripMData e)
+      match fn with
+      | .const nm _ _ =>
+        if nm == Name.mkStr2 "Nat" "succ" && args.size == 1 then
+          let (l0, atoms1) ← parseLinExpr fuel lFuel (args.getD 0 e) atoms
+          return (linAdd l0 (linConst (sOfNat 1)), atoms1)
+        else if args.size >= 2 then
+          let a := args.getD (args.size - 2) e
+          let b := args.getD (args.size - 1) e
+          let isAdd := nm == Name.mkStr2 "HAdd" "hAdd" || nm == Name.mkStr2 "Add" "add" || nm == Name.mkStr2 "Nat" "add"
+          let isSub := nm == Name.mkStr2 "HSub" "hSub" || nm == Name.mkStr2 "Sub" "sub" || nm == Name.mkStr2 "Nat" "sub"
+          let isMul := nm == Name.mkStr2 "HMul" "hMul" || nm == Name.mkStr2 "Mul" "mul" || nm == Name.mkStr2 "Nat" "mul"
+          if isAdd then
+            let (lA, atoms1) ← parseLinExpr fuel lFuel a atoms
+            let (lB, atoms2) ← parseLinExpr fuel lFuel b atoms1
+            return (linAdd lA lB, atoms2)
+          else if isSub then
+            let (lA, atoms1) ← parseLinExpr fuel lFuel a atoms
+            let (lB, atoms2) ← parseLinExpr fuel lFuel b atoms1
+            return (linSub lA lB, atoms2)
+          else if isMul then
+            match ← evalClosedNatExpr? fuel 8 a with
+            | some k =>
+              let (lB, atoms1) ← parseLinExpr fuel lFuel b atoms
+              return (linScale (sOfNat k) lB, atoms1)
+            | none =>
+              match ← evalClosedNatExpr? fuel 8 b with
+              | some k =>
+                let (lA, atoms1) ← parseLinExpr fuel lFuel a atoms
+                return (linScale (sOfNat k) lA, atoms1)
+              | none =>
+                let (idx, atoms') ← internAtom fuel e atoms
+                return ((sZero, [(idx, sOfNat 1)]), atoms')
+          else
+            let (idx, atoms') ← internAtom fuel e atoms
+            return ((sZero, [(idx, sOfNat 1)]), atoms')
+        else
+          let (idx, atoms') ← internAtom fuel e atoms
+          return ((sZero, [(idx, sOfNat 1)]), atoms')
+      | _ =>
+        let (idx, atoms') ← internAtom fuel e atoms
+        return ((sZero, [(idx, sOfNat 1)]), atoms')
+
+/-- Extract `LinExpr ≥ 0` constraints from a proposition `propExpr` (when `negated = false`,
+    extracts constraints implied by `propExpr`; when `negated = true`, extracts constraints
+    implied by `¬ propExpr`). Returns `(constraints, atoms')`. -/
+def extractLinearConstraints (fuel : Nat) :
+    Nat → Bool → Ix.Expr → List Ix.Expr → IxElabM (List LinExpr × List Ix.Expr)
+  | 0, _, _, atoms => return ([], atoms)
+  | cFuel + 1, negated, rawP, atoms => do
+    let p ← instantiateMVars 16 rawP
+    match stripMData p with
+    | .const nm _ _ =>
+      if nm == Name.simple "False" && !negated then
+        return ([linConst ⟨true, 1⟩], atoms)
+      else if nm == Name.simple "True" && negated then
+        return ([linConst ⟨true, 1⟩], atoms)
+      else
+        return ([], atoms)
+    | .forallE _ dom body _ _ =>
+      if !hasLooseBVarsAt body 0 then
+        let (fnB, _) := getAppFnArgs (stripMData body)
+        if isExprConstOf fnB (Name.simple "False") then
+          extractLinearConstraints fuel cFuel (!negated) dom atoms
+        else
+          return ([], atoms)
+      else
+        return ([], atoms)
+    | _ =>
+      let (fn, args) := getAppFnArgs (stripMData p)
+      match fn with
+      | .const nm _ _ =>
+        if nm == Name.simple "Not" && args.size == 1 then
+          extractLinearConstraints fuel cFuel (!negated) (args.getD 0 p) atoms
+        else if nm == Name.simple "And" && args.size == 2 && !negated then
+          let (c1, atoms1) ← extractLinearConstraints fuel cFuel false (args.getD 0 p) atoms
+          let (c2, atoms2) ← extractLinearConstraints fuel cFuel false (args.getD 1 p) atoms1
+          return (c1 ++ c2, atoms2)
+        else if nm == Name.simple "Or" && args.size == 2 && negated then
+          let (c1, atoms1) ← extractLinearConstraints fuel cFuel true (args.getD 0 p) atoms
+          let (c2, atoms2) ← extractLinearConstraints fuel cFuel true (args.getD 1 p) atoms1
+          return (c1 ++ c2, atoms2)
+        else if nm == Name.simple "Eq" && args.size == 3 then
+          let a := args.getD 1 p
+          let b := args.getD 2 p
+          let (lA, atoms1) ← parseLinExpr fuel 16 a atoms
+          let (lB, atoms2) ← parseLinExpr fuel 16 b atoms1
+          if !negated then
+            -- `a = b` implies `b - a ≥ 0` and `a - b ≥ 0`
+            return ([linSub lB lA, linSub lA lB], atoms2)
+          else
+            return ([], atoms2)
+        else if nm == Name.simple "Ne" && args.size == 3 then
+          let a := args.getD 1 p
+          let b := args.getD 2 p
+          if negated then
+            let (lA, atoms1) ← parseLinExpr fuel 16 a atoms
+            let (lB, atoms2) ← parseLinExpr fuel 16 b atoms1
+            return ([linSub lB lA, linSub lA lB], atoms2)
+          else
+            return ([], atoms)
+        else if args.size >= 2 then
+          let a := args.getD (args.size - 2) p
+          let b := args.getD (args.size - 1) p
+          let isLE := nm == Name.mkStr2 "LE" "le" || nm == Name.mkStr2 "Nat" "le"
+          let isLT := nm == Name.mkStr2 "LT" "lt" || nm == Name.mkStr2 "Nat" "lt"
+          let isGE := nm == Name.mkStr2 "GE" "ge"
+          let isGT := nm == Name.mkStr2 "GT" "gt"
+          if isLE || isLT || isGE || isGT then
+            let (lA, atoms1) ← parseLinExpr fuel 16 a atoms
+            let (lB, atoms2) ← parseLinExpr fuel 16 b atoms1
+            let one := linConst (sOfNat 1)
+            if isLE then
+              if !negated then
+                -- `a ≤ b` <=> `b - a ≥ 0`
+                return ([linSub lB lA], atoms2)
+              else
+                -- `¬ (a ≤ b)` <=> `a > b` <=> `a - b - 1 ≥ 0`
+                return ([linSub (linSub lA lB) one], atoms2)
+            else if isLT then
+              if !negated then
+                -- `a < b` <=> `b - a - 1 ≥ 0`
+                return ([linSub (linSub lB lA) one], atoms2)
+              else
+                -- `¬ (a < b)` <=> `a ≥ b` <=> `a - b ≥ 0`
+                return ([linSub lA lB], atoms2)
+            else if isGE then
+              if !negated then
+                -- `a ≥ b` <=> `a - b ≥ 0`
+                return ([linSub lA lB], atoms2)
+              else
+                -- `¬ (a ≥ b)` <=> `b - a - 1 ≥ 0`
+                return ([linSub (linSub lB lA) one], atoms2)
+            else
+              if !negated then
+                -- `a > b` <=> `a - b - 1 ≥ 0`
+                return ([linSub (linSub lA lB) one], atoms2)
+              else
+                -- `¬ (a > b)` <=> `b - a ≥ 0`
+                return ([linSub lB lA], atoms2)
+          else
+            return ([], atoms)
+        else
+          return ([], atoms)
+      | _ => return ([], atoms)
+
+/-- True if any constraint in `cs` is a constant contradiction `c ≥ 0` with `c < 0`. -/
+def hasContradictoryLinConstraint (cs : List LinExpr) : Bool :=
+  cs.any fun (c, terms) => terms.isEmpty && sIsNeg c
+
+/-- Eliminate variable `v` from `cs` using Fourier-Motzkin elimination. -/
+def fmEliminateVar (v : Nat) (cs : List LinExpr) : List LinExpr :=
+  let rec partition : List LinExpr → List (Nat × LinExpr) → List (Nat × LinExpr) → List LinExpr →
+      (List (Nat × LinExpr) × List (Nat × LinExpr) × List LinExpr)
+    | [], pos, neg, zero => (pos.reverse, neg.reverse, zero.reverse)
+    | l :: rest, pos, neg, zero =>
+      let cv := linCoeff v l
+      if sIsPos cv then partition rest ((cv.mag, l) :: pos) neg zero
+      else if sIsNeg cv then partition rest pos ((cv.mag, l) :: neg) zero
+      else partition rest pos neg (l :: zero)
+  let (pos, neg, zero) := partition cs [] [] []
+  let combined := pos.foldl (fun acc (cPos, lPos) =>
+    neg.foldl (fun acc2 (cNeg, lNeg) =>
+      if acc2.length >= 64 then acc2
+      else
+        let comb := linAdd (linScale (sOfNat cNeg) lPos) (linScale (sOfNat cPos) lNeg)
+        if acc2.contains comb then acc2 else acc2 ++ [comb]
+    ) acc
+  ) []
+  zero ++ combined
+
+/-- Bounded Fourier-Motzkin unsatisfiability check over variables `0 .. numVars - 1`. -/
+def fmIsUnsat (numVars : Nat) (initCs : List LinExpr) : Bool :=
+  let rec loop (v : Nat) (rem : Nat) (cs : List LinExpr) : Bool :=
+    if hasContradictoryLinConstraint cs then true
+    else match rem with
+      | 0 => hasContradictoryLinConstraint cs
+      | rem' + 1 => loop (v + 1) rem' (fmEliminateVar v cs)
+  loop 0 numVars initCs
+
+/-- `omega`: linear integer/natural arithmetic decision procedure via Fourier-Motzkin variable elimination. -/
+def evalOmegaTactic (fuel : Nat) (tac : Ix.Syntax) : TacticM Unit := do
+  introAllBindersForDecision fuel 32
+  let (_, gDecl, gTy) ← getMainGoal (some tac)
+  -- Collect linear constraints from all local hypotheses
+  let mut hypConstraints : List LinExpr := []
+  let mut atoms : List Ix.Expr := []
+  for d in gDecl.lctx.decls do
+    let dTy ← liftM (instantiateMVars 16 d.type)
+    let (cs, atoms') ← liftM (extractLinearConstraints fuel 8 false dTy atoms)
+    hypConstraints := hypConstraints ++ cs
+    atoms := atoms'
+  -- Check if the goal is an equality `a = b`: `omega` proves `a = b` iff BOTH `a > b` and `b > a` are unsat!
+  if let some (_, _, lhs, rhs) ← liftM (matchEqType? fuel gTy) then
+    let (lA, atoms1) ← liftM (parseLinExpr fuel 16 lhs atoms)
+    let (lB, atoms2) ← liftM (parseLinExpr fuel 16 rhs atoms1)
+    let one := linConst (sOfNat 1)
+    -- Every `Nat` atom `i` satisfies `xᵢ ≥ 0`
+    let nonNegCs := (List.range atoms2.length).map fun i => ((sZero, [(i, sOfNat 1)]) : LinExpr)
+    let baseCs := hypConstraints ++ nonNegCs
+    let gtCs := baseCs ++ [linSub (linSub lA lB) one]
+    let ltCs := baseCs ++ [linSub (linSub lB lA) one]
+    if fmIsUnsat atoms2.length gtCs && fmIsUnsat atoms2.length ltCs then
+      closeWithDecisionCert fuel tac
+    else
+      liftM (throwElabError "'omega' failed to prove equality goal" (some tac))
+  else
+    let (negGoalCs, atomsFinal) ← liftM (extractLinearConstraints fuel 8 true gTy atoms)
+    let nonNegCs := (List.range atomsFinal.length).map fun i => ((sZero, [(i, sOfNat 1)]) : LinExpr)
+    let allCs := hypConstraints ++ negGoalCs ++ nonNegCs
+    if fmIsUnsat atomsFinal.length allCs then
+      closeWithDecisionCert fuel tac
+    else
+      liftM (throwElabError "'omega' failed to find a linear arithmetic contradiction" (some tac))
 
 /-! ## Main Tactic Evaluator (`evalTactic`, `evalTacticSeq`) -/
 
@@ -1238,16 +3150,14 @@ def anyGoalsLoop (evalRec : Ix.Syntax → TacticM Unit) (innerTac : Ix.Syntax) :
 def evalTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) (fuel : Nat) :
     Nat → Ix.Syntax → TacticM Unit
   | 0, stx => liftM (throwElabError "tactic fuel exhausted" (some stx))
-  | tacFuel + 1, tac => do
+  | tacFuel + 1, rawTac => do
+    let tac ← liftM (expandMacroM 16 rawTac)
     let evalRec (s : Ix.Syntax) : TacticM Unit := evalTactic elabRec fuel tacFuel s
     let tk := Syntax.getKind tac
-    -- 1. `tacticSeq`: sequential execution `tac₁; tac₂; ...`
     if tk == SyntaxKind.tacticSeq then
       runTacticList evalRec (Syntax.getArgs tac).toList
-    -- 2. `( tacSeq )`
     else if tk == SyntaxKind.tacticParen then
       evalRec (Syntax.getArg tac 1)
-    -- 3. `tac₁ <;> tac₂` (`tacticAndThen`)
     else if tk == SyntaxKind.tacticAndThen then
       let lhsTac := Syntax.getArg tac 0
       let rhsTac := Syntax.getArg tac 2
@@ -1259,7 +3169,6 @@ def evalTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) (fue
       let subGoals ← getUnassignedGoals
       let resultingSubGoals ← runTacticOnEachGoal evalRec rhsTac subGoals []
       setTacticGoals (resultingSubGoals ++ restGoals)
-    -- 4. `· tacSeq` (`tacticFocus`)
     else if tk == SyntaxKind.tacticFocus then
       let subSeq := Syntax.getArg tac 1
       let (gId, _, _) ← getMainGoal (some tac)
@@ -1271,7 +3180,6 @@ def evalTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) (fue
       if !rem.isEmpty then
         liftM (throwElabError "focused tactic block '·' left unsolved goals" (some tac))
       setTacticGoals restGoals
-    -- 5. `case tag x₁ ... xₙ => tacSeq` (`tacticCase`)
     else if tk == SyntaxKind.tacticCase then
       let tagId := Syntax.getId (Syntax.getArg tac 1)
       let bIds := (Syntax.getArgs (Syntax.getArg tac 2)).toList.map Syntax.getId
@@ -1297,23 +3205,18 @@ def evalTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) (fue
       if !rem.isEmpty then
         liftM (throwElabError s!"'case {Name.toStringTotal tagId}' left unsolved goals" (some tac))
       setTacticGoals otherGoals
-    -- 6. `first | seq₁ | seq₂ ...` (`tacticFirst`)
     else if tk == SyntaxKind.tacticFirst then
       let branches := (Syntax.getArgs (Syntax.getArg tac 1)).toList
       tryFirstTacticBranches evalRec tac branches
-    -- 7. `try tac` (`tacticTry`)
     else if tk == SyntaxKind.tacticTry then
       let _ ← tryTactic? (evalRec (Syntax.getArg tac 1))
-    -- 8. `repeat tac` (`tacticRepeat`)
     else if tk == SyntaxKind.tacticRepeat then
       repeatTacticLoop evalRec (Syntax.getArg tac 1) 32
-    -- 9. `all_goals tac` (`tacticAllGoals`)
     else if tk == SyntaxKind.tacticAllGoals then
       let innerTac := Syntax.getArg tac 1
       let allGs ← getUnassignedGoals
       let resGs ← runTacticOnEachGoal evalRec innerTac allGs []
       setTacticGoals resGs
-    -- 10. `any_goals tac` (`tacticAnyGoals`)
     else if tk == SyntaxKind.tacticAnyGoals then
       let innerTac := Syntax.getArg tac 1
       let allGs ← getUnassignedGoals
@@ -1321,9 +3224,22 @@ def evalTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) (fue
       if !anyOk then
         liftM (throwElabError "'any_goals' failed on all goals" (some tac))
       setTacticGoals resGs
-    -- 11. Atomic tactics
     else if tk == SyntaxKind.tacticIntro then
       evalIntroTactic fuel tac
+    else if tk == SyntaxKind.tacticRintro then
+      evalRintroTactic elabRec fuel tac
+    else if tk == SyntaxKind.tacticRcases then
+      evalRcasesTactic elabRec fuel tac
+    else if tk == SyntaxKind.tacticObtain then
+      evalObtainTactic elabRec fuel tac
+    else if tk == SyntaxKind.tacticCalc || tk == SyntaxKind.calcTerm then
+      evalCalcTactic elabRec fuel tac
+    else if tk == SyntaxKind.tacticNormNum then
+      evalNormNumTactic fuel tac
+    else if tk == SyntaxKind.tacticRing then
+      evalRingTactic fuel tac
+    else if tk == SyntaxKind.tacticOmega then
+      evalOmegaTactic fuel tac
     else if tk == SyntaxKind.tacticExact then
       withMainGoalContext (some tac) fun gId _ gTy => do
         let termStx := Syntax.getArg tac 1
@@ -1380,6 +3296,22 @@ def evalTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) (fue
       evalHaveOrLetTactic elabRec fuel tac true
     else if tk == SyntaxKind.tacticLet then
       evalHaveOrLetTactic elabRec fuel tac false
+    else if tk == SyntaxKind.tacticSuffices then
+      evalSufficesTactic elabRec evalRec tac
+    else if tk == SyntaxKind.tacticSpecialize then
+      evalSpecializeTactic elabRec fuel tac
+    else if tk == SyntaxKind.tacticClear then
+      evalClearTactic tac
+    else if tk == SyntaxKind.tacticRevert then
+      evalRevertTactic tac
+    else if tk == SyntaxKind.tacticGeneralize then
+      evalGeneralizeTactic elabRec fuel tac
+    else if tk == SyntaxKind.tacticSubst then
+      evalSubstTactic fuel tac
+    else if tk == SyntaxKind.tacticByCases then
+      evalByCasesTactic elabRec tac
+    else if tk == SyntaxKind.tacticByContra then
+      evalByContraTactic fuel tac
     else if tk == SyntaxKind.tacticChange || tk == SyntaxKind.tacticShow then
       evalChangeOrShowTactic elabRec fuel tac
     else if tk == SyntaxKind.tacticRw then

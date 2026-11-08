@@ -504,9 +504,10 @@ def instantiateMVarsCore : Nat → Ix.Expr → IxElabM Ix.Expr
         | some d =>
           let inner ← instantiateMVarsCore fuel (Expr.mkMVar d.pendingMVar)
           let closed := mkLambdaFVarsList d.lctx d.fvars inner
-          if !hasExprOrLevelMVar inner then
-            modifyMCtx (·.assignExpr id closed)
-          return closed
+          let closed' ← if hasExprOrLevelMVar closed then instantiateMVarsCore fuel closed else pure closed
+          if !hasExprOrLevelMVar closed' then
+            modifyMCtx (·.assignExpr id closed')
+          return closed'
         | none => return e
     | .app f a _ =>
       let f' ← instantiateMVarsCore fuel f

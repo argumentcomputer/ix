@@ -1343,6 +1343,9 @@ theorem charsBeq_refl (cs : List Char) : charsBeq cs cs = true := by
 theorem strBeqPure_refl (s : String) : strBeqPure s s = true := by
   simp [strBeqPure, charsBeq_refl]
 
+@[simp] theorem forceNat_eq (n : Nat) (k : Nat → α) : forceNat n k = k n := by
+  cases n <;> rfl
+
 /-- `natCmpPure` is reflexive on any `n : Nat`. -/
 theorem natCmpPure_refl (n : Nat) : natCmpPure n n = .eq := by
   simp [natCmpPure]
