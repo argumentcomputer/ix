@@ -7,7 +7,7 @@ import Aiur.Optimized.Physical
 `Physical.Prepared.native_heap_sound` starts from a finite derivation. Over the
 certified depth pass of the same physical (ungrouped) circuits, the memo
 checker's acceptance and a row bound supply it: no acyclicity hypothesis is
-left. Grouping and activation over the depth system are Track A step A2.
+left. `Depth/Grouped.lean` does the same over the grouped, activated plan.
 -/
 
 namespace Aiur.Optimized.Physical
