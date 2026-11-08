@@ -17,6 +17,7 @@ pub mod address;
 pub mod env;
 pub mod name_table;
 pub mod prim_addrs;
+pub mod store;
 
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 pub type FxIndexSet<K> = IndexSet<K, FxBuildHasher>;

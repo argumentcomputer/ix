@@ -1,101 +1,142 @@
--- module
---
--- public section
---
---import Cli
---import Ix.Cronos
---import Ix.Common
---import Ix.CompileM
---import Ix.TransportM
---import Ix.Store
---import Ix.Address
---import Lean
---
----- ix store <lean file>
----- ix store get <address>
----- ix store remat <address> <address>
---def runStore (p : Cli.Parsed) : IO UInt32 := do
---  let source : String       := p.positionalArg! "source" |>.as! String
---  let mut cronos ← Cronos.new.clock "Lean-frontend"
---  Lean.setLibsPaths source
---  StoreIO.toIO Store.ensureStoreDir
---  let path := ⟨source⟩
---  let leanEnv ← Lean.runFrontend (← IO.FS.readFile path) path
---  cronos ← cronos.clock "Lean-frontend"
---  -- Start content-addressing
---  cronos ← cronos.clock "content-address"
---  let stt ← Ix.Compile.compileEnvIO leanEnv
---  stt.names.forM fun name (const, «meta») => do
---     IO.println <| s!"{name}:"
---     IO.println <| s!"  #{const}"
---     --IO.println <| s!"  {repr <| stt.store.find! const}"
---     --IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! const))}"
---     IO.println <| s!"  #{«meta»}"
---     --IO.println <| s!"  {repr <| stt.store.find! meta}"
---     --IO.println <| s!"  {hexOfBytes (Ixon.Serialize.put (stt.store.find! meta))}"
---  --stt.store.forM fun adr const => do
---  --   IO.println <| s!"adr' {adr}"
---  --   IO.println <| s!"const {repr const}"
---  --   let adr' <- StoreIO.toIO (writeConst const)
---  --   IO.println <| s!"adr' {adr}"
---  --   let const' <- StoreIO.toIO (readConst adr')
---  --   IO.println <| s!"const' {repr const'}"
---  cronos ← cronos.clock "content-address"
---  IO.println cronos.summary
---  return 0
---
---def runGet (p : Cli.Parsed) : IO UInt32 := do
---  let input : String       := p.positionalArg! "address" |>.as! String
---  let address : Address <- IO.ofExcept $
---    match Address.fromString input with
---    | .some a => .ok a
---    | .none => .error "bad address"
---  let const <- StoreIO.toIO (Store.readConst address)
---  IO.println <| s!"{repr const}"
---  return 0
---
---def runRemat (p : Cli.Parsed) : IO UInt32 := do
---  let cont : String       := p.positionalArg! "constantAddress" |>.as! String
---  let «meta» : String       := p.positionalArg! "metadataAddress" |>.as! String
---  let (c, m) <- IO.ofExcept $
---    match Address.fromString cont, Address.fromString «meta» with
---    | .some c, .some m => .ok (c, m)
---    | .none, _ => .error "bad address {cont}"
---    | _, .none => .error "bad address {meta}"
---  let cont <- StoreIO.toIO (Store.readConst c)
---  let «meta» <- StoreIO.toIO (Store.readConst m)
---  let ix := Ix.TransportM.rematerialize cont «meta»
---  IO.println <| s!"{repr ix}"
---  return 0
---
---def storeGetCmd : Cli.Cmd := `[Cli|
---  get VIA runGet;
---  "print a store entry"
---  ARGS:
---    address  : String; "Ix address"
---]
---
---def storeRematCmd : Cli.Cmd := `[Cli|
---  remat VIA runRemat;
---  "print a store entry"
---  ARGS:
---    constantAddress  : String; "Ix constant address"
---    metadataAddress  : String; "Ix metadata address"
---]
---
---def storeCmd : Cli.Cmd := `[Cli|
---  store VIA runStore;
---  "Interact with the Ix store"
---
---  FLAGS:
---    cron, "cronos"   : String; "enable Cronos timings"
---
---  ARGS:
---    source : String; "Source file input"
---
---  SUBCOMMANDS:
---    storeGetCmd;
---    storeRematCmd
---]
---
--- end
+/-
+  `ix store <subcommand>`: CLI interface to the principled `IxStore` / `IxPack`
+  content-addressed storage engine:
+  - `ix store stats`: Show hot cache, memory-mapped `.ixpack`, and loose object statistics.
+  - `ix store compact`: Compact all 1-level sharded loose objects into a single
+    memory-mapped `.ixpack` + `.ixidx` pair.
+  - `ix store put <file>`: Content-address `<file>` (`blake3`) and store it.
+  - `ix store get <address> [--out <file>] [--verify]`: Read an object from the store
+    (with optional cryptographic verification).
+  - `ix store ingest <ixe-file>`: Batch-pack all constants and blobs from an `.ixe`
+    environment into a single `.ixpack` + `.ixidx` pair (2 fsyncs total).
+-/
+module
+
+public import Cli
+public import Ix.Common
+public import Ix.Store
+public import Ix.Ixon
+
+public section
+
+open System (FilePath)
+
+namespace Ix.Cli.StoreCmd
+
+def runStoreStats (_p : Cli.Parsed) : IO UInt32 := do
+  let root ← StoreIO.toIO Store.storeDir
+  let st ← StoreIO.toIO Store.stats
+  IO.println s!"Store root:      {root}"
+  IO.println s!"Hot cache:       {st.hotEntries} objects"
+  IO.println s!"Packfiles:       {st.packCount} packs ({st.packedObjects} objects, {st.packedBytes} bytes)"
+  IO.println s!"Loose objects:   {st.looseObjects} objects ({st.looseBytes} bytes)"
+  return 0
+
+def runStoreCompact (_p : Cli.Parsed) : IO UInt32 := do
+  let (packed, packedBytes) ← StoreIO.toIO Store.compact
+  IO.println s!"Compacted {packed} loose object(s) ({packedBytes} bytes) into .ixpack"
+  return 0
+
+def runStorePut (p : Cli.Parsed) : IO UInt32 := do
+  let pathStr := p.positionalArg! "file" |>.as! String
+  let bytes ← IO.FS.readBinFile ⟨pathStr⟩
+  let addr ← StoreIO.toIO (Store.write bytes)
+  IO.println s!"{addr}"
+  return 0
+
+def runStoreGet (p : Cli.Parsed) : IO UInt32 := do
+  let addrStr := p.positionalArg! "address" |>.as! String
+  let some addr := Address.fromString addrStr
+    | do
+      p.printError s!"error: invalid 64-hex address '{addrStr}'"
+      return 1
+  let verify := p.hasFlag "verify"
+  let bytes ←
+    if verify then
+      StoreIO.toIO (Store.readVerified addr)
+    else
+      StoreIO.toIO (Store.read addr)
+  if let some outFlag := p.flag? "out" then
+    let outPath := outFlag.as! String
+    IO.FS.writeBinFile ⟨outPath⟩ bytes
+    IO.println s!"Wrote {bytes.size} bytes to {outPath}"
+  else
+    IO.println s!"{addr} ({bytes.size} bytes)"
+  return 0
+
+def runStoreIngest (p : Cli.Parsed) : IO UInt32 := do
+  let ixePath := p.positionalArg! "ixe" |>.as! String
+  let ixeBytes ← IO.FS.readBinFile ⟨ixePath⟩
+  let env : Ixon.Env ←
+    match Ixon.deEnv ixeBytes with
+    | .ok e => pure e
+    | .error err =>
+      p.printError s!"error: failed to decode '{ixePath}': {err}"
+      return 1
+  let mut entries : Array (Address × ByteArray) := #[]
+  for (addr, lc) in env.consts do
+    entries := entries.push (addr, lc.rawBytes)
+  for (addr, blob) in env.blobs do
+    entries := entries.push (addr, blob)
+  let (packId, written) ← StoreIO.toIO (Store.writePack entries)
+  IO.println s!"Ingested { entries.size } object(s) ({ written } newly packed) into pack {packId}"
+  return 0
+
+def storeStatsCmd : Cli.Cmd := `[Cli|
+  stats VIA runStoreStats;
+  "Show store statistics (hot cache, .ixpack files, and loose objects)"
+]
+
+def storeCompactCmd : Cli.Cmd := `[Cli|
+  compact VIA runStoreCompact;
+  "Compact all loose objects into a memory-mapped .ixpack + .ixidx packfile"
+]
+
+def storePutCmd : Cli.Cmd := `[Cli|
+  put VIA runStorePut;
+  "Content-address a file with BLAKE3 and write it to the store"
+
+  ARGS:
+    file : String; "File path to store"
+]
+
+def storeGetCmd : Cli.Cmd := `[Cli|
+  get VIA runStoreGet;
+  "Read an object by 64-hex address from the store"
+
+  FLAGS:
+    o, out : String; "Write raw object bytes to this file path"
+    "verify"; "Verify BLAKE3(bytes) == address on read"
+
+  ARGS:
+    address : String; "64-hex BLAKE3 content address"
+]
+
+def storeIngestCmd : Cli.Cmd := `[Cli|
+  ingest VIA runStoreIngest;
+  "Batch-pack all constants and blobs from an .ixe environment into an .ixpack"
+
+  ARGS:
+    ixe : String; "Path to .ixe environment file"
+]
+
+def runStore (p : Cli.Parsed) : IO UInt32 := do
+  p.printHelp
+  return 0
+
+end Ix.Cli.StoreCmd
+
+open Ix.Cli.StoreCmd in
+def storeCmd : Cli.Cmd := `[Cli|
+  store VIA runStore;
+  "Inspect, compact, and manage the content-addressed IxStore (.ixpack + loose shards)"
+
+  SUBCOMMANDS:
+    storeStatsCmd;
+    storeCompactCmd;
+    storePutCmd;
+    storeGetCmd;
+    storeIngestCmd
+]
+
+end

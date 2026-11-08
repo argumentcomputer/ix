@@ -26,18 +26,52 @@ def StoreIO.toIO (sio: StoreIO α) : IO α :=
 
 namespace Store
 
+/-- Summary statistics of the process-wide `IxStore` (hot cache, memory-mapped
+    `.ixpack` packfiles, and 1-level sharded loose objects). -/
+structure StoreStats where
+  hotEntries : UInt64
+  packCount : UInt64
+  packedObjects : UInt64
+  packedBytes : UInt64
+  looseObjects : UInt64
+  looseBytes : UInt64
+  deriving Repr, BEq, Inhabited
+
+@[extern "rs_store_root"]
+opaque rootDirFFI : IO String
+
+@[extern "rs_store_contains"]
+opaque containsFFI : @& Address → IO Bool
+
+@[extern "rs_store_write"]
+opaque writeFFI : @& ByteArray → IO Address
+
+@[extern "rs_store_write_at"]
+opaque writeAtFFI : @& Address → @& ByteArray → IO Unit
+
+@[extern "rs_store_write_pack"]
+opaque writePackFFI : @& Array (Address × ByteArray) → IO (Address × UInt64)
+
+@[extern "rs_store_read"]
+opaque readFFI : @& Address → IO ByteArray
+
+@[extern "rs_store_read_verified"]
+opaque readVerifiedFFI : @& Address → IO ByteArray
+
+@[extern "rs_store_compact"]
+opaque compactFFI : IO (UInt64 × UInt64)
+
+@[extern "rs_store_stats"]
+opaque statsFFI : IO StoreStats
+
 def getHomeDir : StoreIO FilePath := do
   match ← IO.getEnv "HOME" with
   | .some path => return ⟨path⟩
   | .none => throw .noHome
 
--- TODO: make this the default dir for the store, but customizable
-def storeDir : StoreIO FilePath := do
-  let home ← getHomeDir
-  let path := home / ".ix" / "store"
-  if !(<- path.pathExists) then
-    IO.toEIO .ioError (IO.FS.createDirAll path)
-  return path
+/-- Canonical store root (`$IX_STORE_DIR` or `~/.ix/store`). -/
+def storeDir : StoreIO FilePath :=
+  IO.toEIO .ioError (FilePath.mk <$> rootDirFFI)
 
 /-- `~/.ix/cache/<namespace>` holds wipeable, keyed indexes into the
 content-addressed store. Unlike `storeDir`, filenames here are caller-defined
@@ -49,47 +83,61 @@ def cacheDir (namespace' : String) : StoreIO FilePath := do
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path
 
+/-- 1-level sharded loose object path: `<store>/objects/<aa>/<62-hex>`. -/
 def storePath (addr: Address): StoreIO FilePath := do
   let store <- storeDir
   let hex := hexOfBytes addr.hash
   let s := hex.toSlice
   let dir1 := (s.take 2).toString
-  let dir2 := (s.drop 2 |>.take 2).toString
-  let dir3 := (s.drop 4 |>.take 2).toString
-  let file := (s.drop 6).toString
-  let path := store / dir1 / dir2 / dir3
+  let file := (s.drop 2).toString
+  let path := store / "objects" / dir1
   if !(<- path.pathExists) then
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path / file
 
-/-- Write `bytes` to `path` through a temporary name unique to this
-    process and moment, then rename: a reader never sees a partial object,
-    and concurrent writers of one object each move a complete copy into
-    place. -/
-private def publish (path : System.FilePath) (bytes : ByteArray) : IO Unit := do
-  let pid ← IO.Process.getPID
-  let stamp ← IO.monoNanosNow
-  let tmp := System.FilePath.mk s!"{path}.tmp.{pid}.{stamp}"
-  IO.FS.writeBinFile tmp bytes
-  IO.FS.rename tmp path
+/-- Check whether `addr` is present in the hot cache, any `.ixpack`, or the
+    loose object directory (`O(1)` in-memory or `stat()`). -/
+def contains (addr : Address) : StoreIO Bool :=
+  IO.toEIO .ioError (containsFFI addr)
 
-def write (bytes: ByteArray) : StoreIO Address := do
-  let addr  := Address.admissionHash bytes
-  let path <- storePath addr
-  let _ <- IO.toEIO .ioError (publish path bytes)
-  return addr
+/-- Hash `bytes` with `blake3`, short-circuit if already present in the hot
+    cache, any `.ixpack`, or loose object shards, and otherwise atomically
+    publish and cache the object. -/
+def write (bytes: ByteArray) : StoreIO Address :=
+  IO.toEIO .ioError (writeFFI bytes)
 
 /-- Persist `bytes` keyed by an explicit caller-supplied address. Used
     for content whose canonical key isn't `blake3(bytes)` — e.g.
     `AssumptionTree` blobs that key by merkle root, not by their Ixon
-    byte-serialization hash. -/
-def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit := do
-  let path <- storePath addr
-  IO.toEIO .ioError (publish path bytes)
+    byte-serialization hash. Short-circuits if `addr` is already present. -/
+def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit :=
+  IO.toEIO .ioError (writeAtFFI addr bytes)
 
-def read (a: Address) : StoreIO ByteArray := do
-  let path <- storePath a
-  IO.toEIO .ioError (IO.FS.readBinFile path)
+/-- Write a batch of `(Address, ByteArray)` objects into a single immutable,
+    memory-mapped `.ixpack` + `.ixidx` pair (2 fsyncs total regardless of
+    object count). Returns `(packId, writtenObjectCount)`. -/
+def writePack (entries : Array (Address × ByteArray)) : StoreIO (Address × UInt64) :=
+  IO.toEIO .ioError (writePackFFI entries)
+
+/-- Read `addr` from the in-memory hot cache, a memory-mapped `.ixpack`, or
+    the 1-level loose object shard. -/
+def read (a: Address) : StoreIO ByteArray :=
+  IO.toEIO .ioError (readFFI a)
+
+/-- Read `a` and verify `blake3(bytes) == a`. -/
+def readVerified (a : Address) : StoreIO ByteArray :=
+  IO.toEIO .ioError (readVerifiedFFI a)
+
+/-- Compact all loose objects in `objects/<aa>/<62-hex>` into a single
+    memory-mapped `.ixpack` + `.ixidx` and unlink the compacted loose files.
+    Returns `(packedCount, unlinkedCount)`. -/
+def compact : StoreIO (UInt64 × UInt64) :=
+  IO.toEIO .ioError compactFFI
+
+/-- Query statistics for the current store (`hotEntries`, `packCount`,
+    `packedObjects`, `packedBytes`, `looseObjects`, `looseBytes`). -/
+def stats : StoreIO StoreStats :=
+  IO.toEIO .ioError statsFFI
 
 end Store
 

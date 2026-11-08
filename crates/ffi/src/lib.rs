@@ -37,6 +37,7 @@ pub mod refcount;
 pub mod lean;
 pub mod lean_build;
 mod sha256;
+pub mod store;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

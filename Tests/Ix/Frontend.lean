@@ -14,6 +14,7 @@
 import Lean
 import LSpec
 import Ix.Frontend
+import Ix.Store
 import Ix.Meta
 import Ix.EnvScope
 import Ix.IxVM.Toplevel
@@ -1692,6 +1693,28 @@ run_meta do
   unless gateOk do
     throwError "Closure Certification Gate failed!"
   IO.println "✓ All 15 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
+
+def Tests.Ix.Frontend.runStoreEngineTest : IO Unit := do
+  let payloadA := "ix-store-loose-test-payload-alpha".toUTF8
+  let addrA ← StoreIO.toIO (Store.write payloadA)
+  let hasA ← StoreIO.toIO (Store.contains addrA)
+  unless hasA do
+    throw (IO.userError "testStoreEngine: Store.contains returned false for freshly written object")
+  let readA ← StoreIO.toIO (Store.readVerified addrA)
+  unless readA == payloadA do
+    throw (IO.userError "testStoreEngine: Store.readVerified payload mismatch")
+  let p1 := "ix-store-pack-entry-1".toUTF8
+  let p2 := "ix-store-pack-entry-2".toUTF8
+  let a1 := Address.blake3 p1
+  let a2 := Address.blake3 p2
+  let (_packId, _written) ← StoreIO.toIO (Store.writePack #[(a1, p1), (a2, p2)])
+  let r1 ← StoreIO.toIO (Store.readVerified a1)
+  let r2 ← StoreIO.toIO (Store.readVerified a2)
+  unless r1 == p1 && r2 == p2 do
+    throw (IO.userError "testStoreEngine: Store.writePack round-trip failed")
+  let st ← StoreIO.toIO Store.stats
+  unless st.hotEntries >= 3 do
+    throw (IO.userError s!"testStoreEngine: expected >= 3 hot entries, got {st.hotEntries}")
 
 def Tests.Ix.Frontend.runBenchmarksWithEnv (env : Lean.Environment) : IO UInt32 := do
   let stdout ← IO.getStdout

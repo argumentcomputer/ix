@@ -62,11 +62,10 @@ private def isAddressHex (s : String) : Bool :=
 private def lines (s : String) : List String :=
   (s.splitOn "\n").map (·.trimAscii.toString) |>.filter (!·.isEmpty)
 
-/-- Where `ix` keeps the object at `hex` in the store under `home`
+/-- Where `ix` keeps the loose object at `hex` in the store under `home`
     (`Ix.Store.storePath`). -/
 private def storeFile (home : System.FilePath) (hex : String) : System.FilePath :=
-  home / ".ix" / "store" / (hex.take 2).toString / ((hex.drop 2).take 2).toString /
-    ((hex.drop 4).take 2).toString / (hex.drop 6).toString
+  home / ".ix" / "store" / "objects" / (hex.take 2).toString / (hex.drop 2).toString
 
 /-- Run `ix` with `HOME` set to `home`, logging the command, its exit code
     and time, and on failure the end of its output. -/

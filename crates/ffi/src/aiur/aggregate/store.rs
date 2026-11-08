@@ -7,49 +7,30 @@ use ixon::Proof as IxonProof;
 use rustc_hash::FxHashMap;
 use std::{
   fs,
-  path::{Path, PathBuf},
+  path::Path,
   sync::Arc,
 };
-
-pub(super) fn store_path(root: &Path, address: &Address) -> PathBuf {
-  let hex = address.hex();
-  root.join(&hex[0..2]).join(&hex[2..4]).join(&hex[4..6]).join(&hex[6..])
-}
 
 pub(super) fn read_store(
   root: &Path,
   address: &Address,
 ) -> Result<Vec<u8>, String> {
-  let path = store_path(root, address);
-  fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))
+  let store = ix_common::store::IxStore::open(root)
+    .map_err(|error| format!("open store {}: {error}", root.display()))?;
+  store
+    .read(address)
+    .map_err(|error| format!("read {} in {}: {error}", address.hex(), root.display()))
 }
 
 pub(crate) fn write_store(
   root: &Path,
   bytes: &[u8],
 ) -> Result<Address, String> {
-  let address = Address::hash(bytes);
-  let path = store_path(root, &address);
-  let parent = path.parent().ok_or("store path has no parent")?;
-  fs::create_dir_all(parent)
-    .map_err(|error| format!("create {}: {error}", parent.display()))?;
-  // Published by rename so a reader never sees a partial object, and
-  // several writers of one object (other threads, other processes) each
-  // rename their own complete copy into place.
-  static WRITES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-  let temporary = parent.join(format!(
-    "{}.tmp.{}.{}",
-    address.hex(),
-    std::process::id(),
-    WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-  ));
-  fs::write(&temporary, bytes)
-    .map_err(|error| format!("write {}: {error}", temporary.display()))?;
-  fs::rename(&temporary, &path).map_err(|error| {
-    format!("publish {} -> {}: {error}", temporary.display(), path.display())
-  })?;
-  Ok(address)
+  let store = ix_common::store::IxStore::open(root)
+    .map_err(|error| format!("open store {}: {error}", root.display()))?;
+  store
+    .write(bytes)
+    .map_err(|error| format!("write to {}: {error}", root.display()))
 }
 
 pub(super) fn decode_wrapper(bytes: &[u8]) -> Result<IxonProof, String> {

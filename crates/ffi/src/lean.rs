@@ -361,6 +361,10 @@ lean_ffi::lean_inductive! {
 
   LeanPutResponse [ { num_obj: 2 } ];
   LeanGetResponse [ { num_obj: 3 } ];
+
+  // --- Store types ---
+
+  LeanStoreStats [ { num_64: 6 } ];
 }
 
 // =============================================================================

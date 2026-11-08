@@ -88,52 +88,29 @@ pub mod common {
     }
   }
 
-  /// Compute the content-addressed `~/.ix/store/<aa>/<bb>/<cc>/<rest>` path
-  /// matching `Store.storePath` in `Ix/Store.lean`.
-  pub fn store_path_for_hash(hash_hex: &str) -> Option<std::path::PathBuf> {
-    if hash_hex.len() != 64 || !hash_hex.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-      return None;
-    }
-    let hex = hash_hex.to_ascii_lowercase();
-    let store = ix_dir()?.join("store");
-    let dir1 = &hex[0..2];
-    let dir2 = &hex[2..4];
-    let dir3 = &hex[4..6];
-    let file = &hex[6..];
-    Some(store.join(dir1).join(dir2).join(dir3).join(file))
-  }
-
-  /// Atomically persist `bytes` into `~/.ix/store/<aa>/<bb>/<cc>/<rest>`.
+  /// Atomically persist `bytes` into the global `IxStore` (`~/.ix/store`).
   pub fn write_store_blob(
     hash_hex: &str,
     bytes: &[u8],
   ) -> std::io::Result<std::path::PathBuf> {
-    let path = store_path_for_hash(hash_hex).ok_or_else(|| {
+    let addr = ix_common::address::Address::from_hex(hash_hex).ok_or_else(|| {
       std::io::Error::new(
         std::io::ErrorKind::InvalidInput,
-        "invalid BLAKE3 hex hash or missing HOME",
+        "invalid BLAKE3 hex hash",
       )
     })?;
-    if let Some(parent) = path.parent() {
-      std::fs::create_dir_all(parent)?;
-    }
-    let pid = std::process::id();
-    let tmp_path = path.with_extension(format!("tmp.{pid}"));
-    std::fs::write(&tmp_path, bytes)?;
-    std::fs::rename(&tmp_path, &path)?;
-    Ok(path)
+    let store = ix_common::store::IxStore::global()
+      .map_err(|e| std::io::Error::other(e.to_string()))?;
+    store
+      .write_at(&addr, bytes)
+      .map_err(|e| std::io::Error::other(e.to_string()))?;
+    Ok(store.loose_path(&addr))
   }
 
-  /// Read and BLAKE3-verify a content-addressed blob from `~/.ix/store/`.
+  /// Read and BLAKE3-verify a content-addressed blob from the global `IxStore` (`~/.ix/store`).
   pub fn read_store_blob(hash_hex: &str) -> Option<Vec<u8>> {
-    let path = store_path_for_hash(hash_hex)?;
-    let bytes = std::fs::read(path).ok()?;
-    let actual = blake3::hash(&bytes);
-    if actual.to_hex().as_str().eq_ignore_ascii_case(hash_hex) {
-      Some(bytes)
-    } else {
-      None
-    }
+    let addr = ix_common::address::Address::from_hex(hash_hex)?;
+    let store = ix_common::store::IxStore::global().ok()?;
+    store.read_verified(&addr).ok()
   }
 }
