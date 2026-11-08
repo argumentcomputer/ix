@@ -423,7 +423,7 @@ pub(super) mod device {
   /// Canonical field constants shared by every encoded plan of a program.
   #[derive(Default)]
   pub(crate) struct Constants {
-    pub(crate) values: Vec<u64>,
+    pub values: Vec<u64>,
     index: FxHashMap<u64, u32>,
   }
   impl Constants {
@@ -447,10 +447,10 @@ pub(super) mod device {
   }
 
   pub(crate) struct Encoded {
-    pub(crate) code: Vec<u32>,
-    pub(crate) scratch: u32,
-    pub(crate) inputs: u32,
-    pub(crate) outputs: u32,
+    pub code: Vec<u32>,
+    pub scratch: u32,
+    pub inputs: u32,
+    pub outputs: u32,
   }
 
   impl<B: FieldBackend> FillPlan<B> {
