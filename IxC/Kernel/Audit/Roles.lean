@@ -19,7 +19,10 @@ formerly 59–63) and the `identity` kind are gone.
 Version 3 makes `Iff`, `Nonempty` and their constructors and recursors
 (23–28) blocks and gives the inert `sorryAx` (58) its type over `Bool` (4).
 Native definitions and their anchors occupy roles 59–102; their equations
-use `eqns`. Each line also records `Role.usedImplicitly`. -/
+use `eqns`. Each line also records `Role.usedImplicitly`.
+
+Version 4 makes `Nat.decEq`, `Nat.decLe`, `Int.decEq` and `Int.decLe` depend on the
+`of_decide_eq_*` roles (63 and 64), and `String.decEq` on 63. -/
 
 namespace Ix.Kernel.Audit
 
@@ -45,7 +48,7 @@ def roleLine (r : Role) : String :=
 
 end Ix.Kernel.Audit
 
-/-- info: 3 -/
+/-- info: 4 -/
 #guard_msgs in #eval Ix.Kernel.specVersion
 
 /--
