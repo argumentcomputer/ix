@@ -267,7 +267,8 @@ info: def IxVM.Refinement.View.HashedCollision : IxVM.Refinement.View →
   List ByteArray → List (Aiur.Generic.SourceSemantics.Call IxVM.F) → Prop :=
 fun V extra calls =>
   ∃ x held bytes,
-    (V.Preimage x held ∨ held ∈ extra ∧ Address.blake3Pure held = x) ∧
+    (V.Preimage x held ∨
+        held ∈ extra ∧ Address.blake3Pure held = x ∨ IxVM.Refinement.Hashed calls held ∧ Address.blake3Pure held = x) ∧
       IxVM.Refinement.Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x
 -/
 #guard_msgs in
@@ -414,7 +415,13 @@ fun V x =>
 info: def Ix.Claim.Covers : IxVM.Refinement.View → Ix.Claim → Prop :=
 fun V x =>
   match x with
-  | Ix.Claim.eval ctx input output asm => V.TypingCovers ctx asm ∧ V.Stores input ∧ V.Stores output
+  | Ix.Claim.eval ctx input output asm =>
+    V.TypingCovers ctx asm ∧
+      V.Stores input ∧
+        V.Stores output ∧
+          ∀ (c : Ixon.Constant) (d : Ixon.Definition),
+            Ix.Cert.recordAt V.env output = some c →
+              c.info = Ixon.ConstantInfo.defn d → ∀ (n : ℕ), ¬IxVM.Refinement.IsProjFnAt c n d.value
   | Ix.Claim.check ctx a asm => V.TypingCovers ctx asm ∧ V.Stores a
   | Ix.Claim.checkEnv ctx root asm =>
     V.TypingCovers ctx asm ∧
@@ -883,12 +890,7 @@ info: def Ix.Kernel.checkUserAxiomDecl : {md : Ix.Kernel.Mode} →
         Ix.Kernel.CheckerOps md m → Ix.Kernel.Env md → Ix.Kernel.ConstantVal md → m (Ix.Kernel.Env md) :=
 fun {md} {m} [Monad m] [MonadExcept (Ix.Kernel.CheckError md) m] ops env cv => do
   let cvA ← Ix.Kernel.checkConstantVal ops env cv
-  match Ix.Kernel.Cached.axiomRoleSpecHit? cvA with
-    | some val =>
-      throw
-        (Ix.Kernel.CheckError.notImplemented
-          [Ix.Kernel.MsgPart.text "user axiom restates the specification of an unbound axiom role"])
-    | none => pure { consts := Ix.Kernel.ConstantInfo.axiomInfo cvA :: env.consts }
+  pure { consts := Ix.Kernel.ConstantInfo.axiomInfo cvA :: env.consts }
 -/
 #guard_msgs in
 #print Ix.Kernel.checkUserAxiomDecl
@@ -1009,7 +1011,9 @@ fun V a => V.env.consts.contains a = true
 /--
 info: def IxVM.Refinement.View.Authentic : IxVM.Refinement.View → Prop :=
 fun V =>
-  (∀ (a : Address) (lc : Ixon.LazyConstant), V.env.consts.get? a = some lc → Address.blake3Pure lc.rawBytes = a) ∧
+  (∀ (a : Address) (lc : Ixon.LazyConstant),
+      V.env.consts.get? a = some lc →
+        Address.blake3Pure lc.rawBytes = a ∧ ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes) ∧
     (∀ (a : Address) (bytes : ByteArray), V.env.blobs.get? a = some bytes → Address.blake3Pure bytes = a) ∧
       ∀ (rb : Ixon.RoleBinding), V.env.roleBinding = some rb → Address.blake3Pure rb.bytes = rb.address
 -/
@@ -1032,12 +1036,17 @@ info: def IxVM.Refinement.View.Closed : IxVM.Refinement.View → Prop :=
 fun V =>
   (∀ (a : Address) (c : Ixon.Constant),
       Ix.Cert.recordAt V.env a = some c →
-        (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
-          V.env.consts.contains (Ix.Cert.ownerOf a c) = true) ∧
-    ∀ (rb : Ixon.RoleBinding) (t : Ix.Kernel.RoleTable),
+        IxVM.Refinement.SafeConstant c ∧
+          (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
+            V.env.consts.contains (Ix.Cert.ownerOf a c) = true) ∧
+    ∀ (rb : Ixon.RoleBinding),
       V.env.roleBinding = some rb →
-        Ix.Kernel.RoleTable.ofBytes rb.bytes = some t →
-          ∀ (a : Address), IxVM.Refinement.BindingSeeds t a → V.env.consts.contains a = true
+        ∃ t,
+          Ix.Kernel.RoleTable.ofBytes rb.bytes = some t ∧
+            t.check = Except.ok () ∧
+              Ix.Kernel.Admission.admitAxiomPolicy Ix.Kernel.Cached.AxiomPolicy.allowUser t = Except.ok () ∧
+                (∃ pre, Ix.Kernel.Reader.preludeFor t = Except.ok pre) ∧
+                  ∀ (a : Address), IxVM.Refinement.BindingSeeds t a → V.env.consts.contains a = true
 -/
 #guard_msgs in
 #print IxVM.Refinement.View.Closed
@@ -1056,13 +1065,25 @@ fun V ctx asm =>
 #print IxVM.Refinement.View.TypingCovers
 
 /--
-info: placeholder
+info: def IxVM.Refinement.SafeConstant : Ixon.Constant → Prop :=
+fun c =>
+  match c.info with
+  | Ixon.ConstantInfo.defn d => d.safety = Ix.DefinitionSafety.safe
+  | Ixon.ConstantInfo.recr r => r.isUnsafe = false
+  | Ixon.ConstantInfo.axio a => a.isUnsafe = false
+  | Ixon.ConstantInfo.muts ms => ∀ m ∈ ms.toList, IxVM.Refinement.SafeMutConst m
+  | x => True
 -/
 #guard_msgs in
 #print IxVM.Refinement.SafeConstant
 
 /--
-info: placeholder
+info: def IxVM.Refinement.SafeMutConst : Ixon.MutConst → Prop :=
+fun x =>
+  match x with
+  | Ixon.MutConst.defn d => d.safety = Ix.DefinitionSafety.safe
+  | Ixon.MutConst.indc i => i.isUnsafe = false ∧ ∀ ctor ∈ i.ctors.toList, ctor.isUnsafe = false
+  | Ixon.MutConst.recr r => r.isUnsafe = false
 -/
 #guard_msgs in
 #print IxVM.Refinement.SafeMutConst
