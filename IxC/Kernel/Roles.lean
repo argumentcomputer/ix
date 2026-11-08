@@ -941,7 +941,16 @@ def Role.block : Role → List Role
 
 /-- **The roles `r`'s specification mentions and its validation needs**,
 outside its own block. A role table that binds `r` binds these (and their
-blocks). -/
+blocks).
+
+They include the roles a native rule on `r` puts into its result. A decision's
+rule (IxVM's `dec_result`) answers `Decidable.isTrue p (of_decide_eq_true p d
+rfl)` or `Decidable.isFalse p (of_decide_eq_false p d rfl)`, so `Nat.decEq`,
+`Nat.decLe`, `Int.decEq` and `Int.decLe` need both `of_decide_eq_*` roles, and
+`String.decEq`, whose rule fires only on equal literals, needs
+`of_decide_eq_true`. `Decidable.isTrue` and `Decidable.isFalse` come with
+`Decidable`'s block; `Nat.decLt` and `Int.decLt` rewrite to `Nat.decLe` and
+`Int.decLe`, which carry the rest. -/
 def Role.deps : Role → List Role
   | .quot | .quotMk | .quotLift | .quotInd | .quotSound => [.eq]
   | .stringOfList => [.list, .char, .string]
@@ -969,8 +978,10 @@ def Role.deps : Role → List Role
   | .ofDecideEqFalse => [.decidable, .decidableDecide, .notProp, .bool, .eq]
   | .decidableDecide => [.decidable, .notProp, .bool, .eq]
   | .natLe => [.nat]
-  | .natDecEq => [.nat, .bool, .eq, .decidable, .decidableDecide, .natBeq]
-  | .natDecLe => [.nat, .bool, .eq, .decidable, .decidableDecide, .natLe, .natBle]
+  | .natDecEq => [.nat, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse,
+      .natBeq]
+  | .natDecLe => [.nat, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse,
+      .natLe, .natBle]
   | .natDecLt => [.nat, .eq, .decidable, .natLe, .natDecLe]
   | .intOfNat | .intNegSucc => [.nat]
   | .intNegOfNat => [.nat, .int, .eq]
@@ -986,14 +997,16 @@ def Role.deps : Role → List Role
   | .bitVec | .bitVecOfNat => [.nat]
   | .bitVecToNat => [.nat, .eq, .bitVec, .natMod, .natPow]
   | .bitVecUlt => [.nat, .bool, .eq, .bitVec, .natMod, .natPow, .natBle]
-  | .stringDecEq => [.string, .bool, .eq, .decidable, .decidableDecide]
+  | .stringDecEq => [.string, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue]
   | .stringToByteArray => [.string, .list, .char, .stringOfList, .eq, .byteArray]
   | .listAppend => [.list, .eq]
   | .stringAppend => [.string, .list, .char, .stringOfList, .eq, .listAppend]
   | .ifThenElse => [.decidable, .notProp, .eq]
   | .intLe => [.int]
-  | .intDecEq => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .natBeq]
-  | .intDecLe => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .intLe, .natBle]
+  | .intDecEq => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue,
+      .ofDecideEqFalse, .natBeq]
+  | .intDecLe => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue,
+      .ofDecideEqFalse, .intLe, .natBle]
   | .intDecLt => [.nat, .int, .eq, .decidable, .intLe, .intAdd, .intDecLe]
   | .intBmod => [.nat, .int, .eq, .ifThenElse, .intLe, .intAdd, .intSub, .intEdiv, .intEmod, .intDecLt]
   | .intBdiv => [.nat, .int, .eq, .ifThenElse, .intLe, .intAdd, .intEdiv, .intEmod, .intDecLt,
