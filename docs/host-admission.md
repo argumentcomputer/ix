@@ -55,7 +55,7 @@ Unknown tags, versions, object formats, truncations and trailing bytes refuse.
 The statement address is BLAKE3 of all canonical envelope bytes. Verification
 derives the current `Ix.SpecDigest.specDigest`; a stale proposed digest cannot
 change the checker's specification. Its frozen value (19436 bytes;
-specification version 3, encoding version 2) is guarded in
+specification version 4, encoding version 2) is guarded in
 `Ix.SpecDigest.Audit`, imported by both certificate and host audits. IxVM holds
 the same digest beside its rendered role specifications
 (`KernelRoleSpec.lean`), which `ix codegen` rebuilds from the digest's bytes

@@ -11,6 +11,9 @@ audit and the host-admission audit import this module. -/
 anchors, and `Role.usedImplicitly`. A change to the
 specification set changes these lines; it
 is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`).
+`specVersion` 4 makes the decision procedures depend on the `of_decide_eq_*`
+roles their native rules answer with (`Role.deps`): 9 more dependency entries,
+19436 bytes.
 
 `encodingVersion` 2 commits, beside the specifications, to what IxVM reads
 off each role's identity (its name, inertness, quotient kind and native rule)
