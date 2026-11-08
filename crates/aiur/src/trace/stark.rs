@@ -783,7 +783,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         return Err("trace rows exceed the batch row bound (2^39)".into());
       }
       budget = height
-        .checked_mul(circuit.num_lookups as u64)
+        .checked_mul(circuit.num_lookups.max(1) as u64)
         .and_then(|n| budget.checked_add(n))
         .filter(|&n| n < Val::ORDER_U64)
         .ok_or("lookup count reaches field characteristic")?;

@@ -662,7 +662,8 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     row: usize,
   ) -> Result<(), ExecutionError> {
     let Some(deferred) = &mut self.record.deferred else { return Ok(()) };
-    if function != deferred.function
+    if deferred.heights.is_none()
+      && function != deferred.function
       && let Some(dependencies) = deferred.dependencies.remove(&(function, row))
     {
       if let Some(parent) = self.frames.last() {
@@ -699,6 +700,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       profile.enter(function_id);
     }
     if let Some(deferred) = &mut self.record.deferred
+      && deferred.heights.is_none()
       && deferred.function == function_id
       && let Some(parent) = self.frames.last()
     {

@@ -201,7 +201,7 @@ impl DepthPlan {
       };
       limbs.push((width, table));
     }
-    if bits > 48 {
+    if bits > 24 {
       return Err("depth gap limbs too wide".into());
     }
     let mut functions = vec![vec![]; artifact.chips.len()];

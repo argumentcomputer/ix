@@ -897,6 +897,13 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       {
         return Err("query record is missing depth heights".into());
       }
+      if table
+        .depths()
+        .iter()
+        .any(|&d| !self.program.field.contains(d))
+      {
+        return Err("query record depth reaches field characteristic".into());
+      }
       for row in 0..table.len() {
         let output = table.output(row);
         if output.multiplicity == 0 {
