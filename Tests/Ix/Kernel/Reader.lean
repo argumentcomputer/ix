@@ -1003,7 +1003,7 @@ def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
   | .error e => (e.splitOn why).length > 1
   | .ok () => false
 
-#guard refuses { builtinTable with version := 4 } "version 4"
+#guard refuses { builtinTable with version := 5 } "version 5"
 #guard refuses { builtinTable with bound := builtinTable.bound.push (.nat, address 1) } "bound twice"
 #guard refuses (rebind [(.natAdd, bound .natSub)]) "bound to two roles"
 #guard refuses (drop builtinTable [.eqRefl]) "its block's"
