@@ -250,7 +250,7 @@ def RevealConstructorLE (info : RevealConstructorInfo) (c : Ixon.Constructor) : 
     OptEq info.params c.params ∧ OptEq info.fields c.fields ∧ OptEq info.typ (exprAddr c.typ)
 
 /-- Revealed definition fields hold of `d`. -/
-def RevealDefnLE (kind : Option Ixon.DefKind) (safety : Option Ixon.DefinitionSafety)
+def RevealDefnLE (kind : Option Ix.DefKind) (safety : Option Ix.DefinitionSafety)
     (lvls : Option UInt64) (typ value : Option Address) (d : Ixon.Definition) : Prop :=
   OptEq kind d.kind ∧ OptEq safety d.safety ∧ OptEq lvls d.lvls ∧
     OptEq typ (exprAddr d.typ) ∧ OptEq value (exprAddr d.value)
