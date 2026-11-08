@@ -148,7 +148,7 @@ impl Buffer {
     Ok(Self { device, pointer })
   }
   fn upload<T: Copy>(device: i32, data: &[T]) -> Result<Self, String> {
-    let buffer = Self::new(device, std::mem::size_of_val(data))?;
+    let buffer = Self::new(device, size_of_val(data))?;
     buffer.write(0, data)?;
     Ok(buffer)
   }
@@ -161,7 +161,7 @@ impl Buffer {
           self.device,
           self.pointer.cast::<u8>().add(offset).cast(),
           data.as_ptr().cast(),
-          std::mem::size_of_val(data),
+          size_of_val(data),
         )
       },
       "GPU population upload",
@@ -574,7 +574,7 @@ impl DeviceRecord {
           self.device,
           status.as_mut_ptr().cast(),
           error.as_ptr(),
-          std::mem::size_of::<AiurPopulationError>(),
+          size_of::<AiurPopulationError>(),
         )
       },
       "GPU population status",

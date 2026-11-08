@@ -1425,7 +1425,7 @@ fn gpu_population_proves_identically() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = super::gpu::DevicePlans::new(&backend);
+  let plans = gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
     .iter()
@@ -1449,7 +1449,7 @@ fn gpu_population_proves_identically() {
           retention,
         )
         .unwrap();
-      backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
+      backend.device_plans = Some(gpu::DevicePlans::new(&backend));
       let stage = backend.prepare_stage_1(&record, entry, &[3]).unwrap();
       assert_eq!(
         stage.cells(),
