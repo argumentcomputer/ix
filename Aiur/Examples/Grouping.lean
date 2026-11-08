@@ -76,8 +76,8 @@ def main (args : List String) : IO Unit := do
   let prepared ← IO.ofExcept (Modules.prepare source ["Grouped::run"])
   let exported ← IO.ofExcept prepared.exportExecution
   let compiled ← IO.ofExcept prepared.compileOptimized
-  let trace ← IO.ofExcept (Trace.exportPlan Library.U32.Goldilocks.modulus ZMod.val
-    compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode
+  let (exported, trace) ← IO.ofExcept (Trace.exportPlan Library.U32.Goldilocks.modulus ZMod.val
+    compiled.circuit.inlined.program compiled.circuit.artifact exported
     [("arithmetic_and_memory", ["Grouped::left", "Grouped::right", "Grouped::memory"])])
   let package ← IO.ofExcept (Artifact.package exported Library.U32.Goldilocks.modulus ZMod.val (some trace))
   let path := args.headD "/tmp/aiur-grouping.ixa"

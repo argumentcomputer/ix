@@ -3,6 +3,7 @@ import Aiur.Optimized.Activation
 import Aiur.Optimized.Physical
 import Aiur.Optimized.Grouping.Plan
 import Aiur.Optimized.EndToEnd
+import Aiur.Optimized.Depth
 import Aiur.Artifact
 
 /-! Ixon encoding of companion population plans and physical circuits: the
@@ -12,8 +13,10 @@ trace section of an artifact. The grammar is documented with its Rust reader,
 namespace Aiur.Trace
 open Optimized Aiur.Ixon Execution
 
-/-- The trace plan semantics version. -/
-def planVersion : Nat := 2
+/-- The trace plan semantics version. Version 3 adds the depth pass (Track A,
+H1): the gap limb widths, and per circuit its depth column, SCC rank and call
+slots. -/
+def planVersion : Nat := 3
 
 partial def putPolynomial (encode : F → Nat) : Polynomial F → PutM Unit
   | .const x => do u8 0; nat (encode x)
@@ -133,14 +136,76 @@ def exportGroups [Field F] [DecidableEq F] (encode : F → Nat) (groups : List (
     nat Artifact.formatVersion
     list groups (putGroup encode)
 
+/-! ## Depth pass (Track A, H1) -/
+
+/-- Gap limb widths, low limb first: `[16, 8]` (`k = 24`) whenever the field
+holds all `2^16` rows of the `range16` table. A smaller test field gets one
+limb that fits, so that no range table repeats a row; the acyclicity theorem
+needs a large field anyway (`Depth.goldilocks_characteristic`). -/
+def depthLimbs (modulus : Nat) : List Nat :=
+  if 2 ^ 16 ≤ modulus then [16, 8] else [Nat.log2 modulus]
+
+/-- The depth pass configuration of a prepared physical system: the untrusted
+planner's output (`Depth.planPrepared`), refused unless it certifies. A plan
+without a gap slot needs no limbs, so it adds no range maps or tables. -/
+def depthConfig [Field F] [DecidableEq F] (modulus : Nat) {artifact : Optimized.Artifact F}
+    (physical : Physical.Prepared artifact) : Except String Depth.Config := do
+  let cfg := Depth.planPrepared physical (depthLimbs modulus)
+  let cfg := if cfg.plans.any (fun (_, plan) => plan.slots.contains .gap) then cfg
+    else { cfg with limbs := [] }
+  unless Depth.certify cfg physical.system do
+    throw "the depth plan does not certify (Depth.Certified)"
+  return cfg
+
+/-- The execution bytecode with the depth pass's range maps and their tables
+(`Depth.rangeDecl`, `Depth.rangeTables`) appended, so that their callable IDs
+follow every original callable. Execution never calls them; witness
+population counts their uses. -/
+def depthBytecode [NatCast F] (cfg : Depth.Config) (bytecode : Execution.Bytecode F) :
+    Execution.Bytecode F :=
+  let widths := cfg.limbs.dedup
+  let base := bytecode.tables.length
+  { bytecode with
+    tables := bytecode.tables ++ widths.flatMap fun width =>
+      [⟨Depth.rangeInputs width, .tuple [.field], (List.range (2 ^ width)).map fun n => [(n : F)]⟩,
+       ⟨Depth.rangeUnits width, .tuple [], (List.range (2 ^ width)).map fun _ => []⟩]
+    maps := bytecode.maps ++ widths.zipIdx.map fun (width, i) =>
+      ⟨Depth.rangeName width, [.field], .tuple [], base + 2 * i, base + 2 * i + 1⟩ }
+
+/-- Each call slot's kind and first new column, in send order, as
+`Depth.compileChip` allocates them. -/
+def slotColumns (limbs : List Nat) : Nat → List Depth.SlotKind → List (Depth.SlotKind × Nat)
+  | _, [] => []
+  | column, kind :: rest => (kind, column) :: slotColumns limbs (column + kind.width limbs) rest
+
+/-- Population metadata of a depth chip, from its physical source chip: the
+depth column of a recursive chip, its SCC rank, and one slot per original
+send (the limb range checks follow those sends). -/
+def putDepth (cfg : Depth.Config) (source : Circuit.Chip F) : PutM Unit := do
+  let plan := cfg.plan source.name
+  option (if plan.recursive then some source.numVars else none) nat
+  nat (cfg.rank source.name)
+  list (slotColumns cfg.limbs (plan.base source) plan.slots) fun (kind, column) =>
+    match kind with
+    | .plain => u8 0
+    | .exact => u8 1
+    | .gap => do u8 2; nat column
+    | .external => do u8 3; nat column
+
 /-- The trace section of an artifact: population plans for every function,
-the activated physical circuits, and the checked function groups. -/
+the activated depth circuits (`Depth.system` of the physical circuits), and
+the checked function groups over them. It also returns `exported` with the
+range maps (`depthBytecode`), which the package must carry. -/
 def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
-    (bytecode : Execution.Bytecode F) (groups : List (String × List String) := []) :
-    Except String ByteArray := do
-  unless program.functions.length == artifact.layouts.length && program.functions.length == bytecode.functions.length do
+    (exported : Execution.Export F) (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
+  let original := exported.bytecode
+  unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
     throw "trace program/function count mismatch"
+  let cfg ← depthConfig modulus physical
+  let bytecode := depthBytecode cfg original
+  let system := Depth.system cfg physical.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
   let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
     else throw s!"unknown grouped callable {name}"
@@ -148,30 +213,35 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let mut packed : List (Grouping.Packed F id) := []
   for (name, names) in groups do
     let names := (names.map physical.representative).dedup
-    let chips := physical.system.chips.filter fun c =>
+    let chips := system.chips.filter fun c =>
       names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
     if chips.length < 2 then continue
     let group ← Grouping.compile name id chips
     used := used ++ chips.map (·.name)
     packed := packed ++ [⟨chips, group⟩]
-  let plan ← Grouping.preparePlan physical.system id packed
+  let plan ← Grouping.preparePlan system id packed
   -- The backend theorems (`grouped_activated_heap_sound` and its siblings) assume
   -- `plan.WellFormedActivation`; refuse to export a plan that does not meet it.
   unless decide plan.WellFormedActivation do
     throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
-  Ixon.run do
+  let trace ← Ixon.run do
     nat planVersion
     nat modulus
-    list ((program.functions.zip artifact.layouts).zip bytecode.functions) fun ((fn, layout), code) => do
+    nats cfg.limbs
+    list ((program.functions.zip artifact.layouts).zip original.functions) fun ((fn, layout), code) => do
       unless fn.name == code.name do throw "trace bytecode function order mismatch"
       putFunction encode program artifact.config fn layout (physical.representative fn.name) code
         (artifact.entries.contains fn.name)
-    list physical.system.chips (putChip encode)
+    list (system.chips.zip physical.system.chips) fun (chip, source) => do
+      putChip encode chip
+      putDepth cfg source
     list plan.groups fun p => putGroup encode p.checked.layout
+  return ({ exported with bytecode }, trace)
 
+/-- `exportPreparedPlan` after physical deduplication of `artifact`. -/
 def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
-    (program : Program F) (artifact : Optimized.Artifact F) (bytecode : Execution.Bytecode F)
-    (groups : List (String × List String) := []) : Except String ByteArray := do
-  exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) bytecode groups
+    (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+  exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
 
 end Aiur.Trace
