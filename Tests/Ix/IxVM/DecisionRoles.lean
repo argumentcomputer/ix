@@ -32,8 +32,9 @@ namespace Tests.Ix.IxVM.DecisionRoles
 open IxVM.ClaimHarness
 open Ix.Kernel (Role RoleTable)
 
-/-- `Array.extract_append._proof_1_1`. -/
-def leaf : Lean.Name := "Array.extract_append._proof_1_1".toName
+/-- `Array.extract_append._proof_1_1`, private to `Init.Data.Array.Extract`. -/
+def leaf : Lean.Name :=
+  .str (.str (.str (.num `_private.Init.Data.Array.Extract 0) "Array") "extract_append") "_proof_1_1"
 
 /-- The roles the leaf's check uses, which its binding must bind. -/
 def required : List Role := [.natDecEq, .ofDecideEqTrue, .ofDecideEqFalse]
