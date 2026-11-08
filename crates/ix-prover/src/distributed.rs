@@ -353,7 +353,12 @@ pub(crate) fn run(
     .map(|m| {
       m.deferred
         .iter()
-        .map(|(key, _)| Ok((key.clone(), *heights.get(key).ok_or("deferred call has no owner")?)))
+        .map(|(key, _)| {
+          Ok((
+            key.clone(),
+            *heights.get(key).ok_or("deferred call has no owner")?,
+          ))
+        })
         .collect::<Result<FxHashMap<_, _>, String>>()
     })
     .collect::<Result<Vec<_>, String>>()?;
@@ -480,7 +485,9 @@ pub(crate) fn run(
         // its owned calls' heights; they must be the coordinator's.
         for (key, _) in &measured[worker].own_heights {
           if record.query_depth(function, key) != heights.get(key).copied() {
-            return Err("owned call height differs from the coordinator's".into());
+            return Err(
+              "owned call height differs from the coordinator's".into(),
+            );
           }
         }
         for (key, count) in &incoming[worker] {
@@ -516,4 +523,3 @@ pub(crate) fn run(
   println!("{report}");
   Ok(())
 }
-

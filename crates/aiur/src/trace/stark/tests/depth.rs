@@ -96,11 +96,25 @@ fn honest_recursion_proves_through_every_slot_kind() {
   forged[ci].values[column] += Val::ONE;
   assert!(
     batch
-      .prove_batch_stage_1(entry, &[12], &record.output, forged, 8, Retention::Retain)
+      .prove_batch_stage_1(
+        entry,
+        &[12],
+        &record.output,
+        forged,
+        8,
+        Retention::Retain
+      )
       .is_err()
   );
   let proof = batch
-    .prove_batch_stage_1(entry, &[12], &record.output, stage, 8, Retention::Retain)
+    .prove_batch_stage_1(
+      entry,
+      &[12],
+      &record.output,
+      stage,
+      8,
+      Retention::Retain,
+    )
     .unwrap();
   assert!(proof.proofs.len() > 1);
   batch.verify_batch(entry, &[12], &record.output, &proof).unwrap();
@@ -131,13 +145,16 @@ fn recursive_entry_claims_a_depth_word() {
 fn owned_heights_are_longest_paths_over_records() {
   let base: FxHashMap<u32, u64> =
     [(0, 0), (1, 2), (2, 1), (3, 5)].into_iter().collect();
-  let heights = owned_heights(&base, &[(1, 0, 2), (2, 1, 2), (3, 0, 1)]).unwrap();
+  let heights =
+    owned_heights(&base, &[(1, 0, 2), (2, 1, 2), (3, 0, 1)]).unwrap();
   assert_eq!(heights[&0], 0);
   assert_eq!(heights[&1], 2);
   assert_eq!(heights[&2], 4);
   assert_eq!(heights[&3], 5);
   // A shared DAG is fine; a cycle, or an edge to an unowned call, is not.
-  assert!(owned_heights(&base, &[(0, 1, 1), (0, 2, 1), (1, 3, 1), (2, 3, 1)]).is_ok());
+  assert!(
+    owned_heights(&base, &[(0, 1, 1), (0, 2, 1), (1, 3, 1), (2, 3, 1)]).is_ok()
+  );
   assert!(owned_heights(&base, &[(0, 1, 1), (1, 2, 1), (2, 1, 1)]).is_err());
   assert!(owned_heights(&base, &[(0, 0, 1)]).is_err());
   assert!(owned_heights(&base, &[(0, 9, 1)]).is_err());

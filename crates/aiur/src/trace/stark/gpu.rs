@@ -681,7 +681,8 @@ impl DeviceRecord {
     for ci in counted {
       let circuit = self.circuits[ci].as_ref().expect("device circuit");
       // One row buffer per thread, at most 2^24 words in all.
-      let threads = (((1u64 << 24) / u64::from(circuit.width).max(1)) / 128 * 128)
+      let threads = (((1u64 << 24) / u64::from(circuit.width).max(1)) / 128
+        * 128)
         .clamp(128, 1 << 16);
       let rows = Buffer::new(
         self.device,

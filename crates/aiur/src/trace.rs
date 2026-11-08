@@ -472,7 +472,9 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     // A recursive circuit's call message ends with its depth word.
     let depth_words = |name: &str| {
       usize::from(
-        chips.get(name).is_some_and(|&c| artifact.chips[c].depth.column.is_some()),
+        chips
+          .get(name)
+          .is_some_and(|&c| artifact.chips[c].depth.column.is_some()),
       )
     };
     for chip in &artifact.chips {

@@ -350,22 +350,21 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let generate = |ci: usize| {
       #[cfg(feature = "trace-profile")]
       let start = std::time::Instant::now();
-      let result = if device.get(ci).copied().flatten().is_some()
-        || fixed.contains(&ci)
-      {
-        let (trace, lookups) = empty(ci);
-        Ok((trace, lookups, RangeCounts::default()))
-      } else if ci < functions {
-        self.function_witness::<LOOKUPS>(ci, record)
-      } else {
-        let trace = self.rom.witness(record, ci - fixed.end)?;
-        let lookups = if LOOKUPS {
-          self.auxiliary_lookups(ci, &trace)
+      let result =
+        if device.get(ci).copied().flatten().is_some() || fixed.contains(&ci) {
+          let (trace, lookups) = empty(ci);
+          Ok((trace, lookups, RangeCounts::default()))
+        } else if ci < functions {
+          self.function_witness::<LOOKUPS>(ci, record)
         } else {
-          empty(ci).1
+          let trace = self.rom.witness(record, ci - fixed.end)?;
+          let lookups = if LOOKUPS {
+            self.auxiliary_lookups(ci, &trace)
+          } else {
+            empty(ci).1
+          };
+          Ok((trace, lookups, RangeCounts::default()))
         };
-        Ok((trace, lookups, RangeCounts::default()))
-      };
       #[cfg(feature = "trace-profile")]
       profile.circuit(ci, start.elapsed());
       result
@@ -525,10 +524,13 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           .par_chunks_mut(width * ROW_BATCH)
           .zip(real_writers.par_chunks_mut(ROW_BATCH))
           .enumerate()
-          .try_fold(start, |(mut worker, mut ranges), (batch, (cells, lookups))| {
-            populate(&mut worker, &mut ranges, batch, cells, lookups)?;
-            Ok::<_, String>((worker, ranges))
-          })
+          .try_fold(
+            start,
+            |(mut worker, mut ranges), (batch, (cells, lookups))| {
+              populate(&mut worker, &mut ranges, batch, cells, lookups)?;
+              Ok::<_, String>((worker, ranges))
+            },
+          )
           .map(|state| state.map(|(_, ranges)| ranges))
           .try_reduce(RangeCounts::default, merge)?
       } else {

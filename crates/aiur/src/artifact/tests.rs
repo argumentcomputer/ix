@@ -238,7 +238,6 @@ fn lean_fixture_is_canonical() {
   assert_eq!(package.encode(), bytes);
 }
 
-
 fn sample_invocation() -> Invocation {
   Invocation {
     entry: "IxVM::verify_claim".into(),

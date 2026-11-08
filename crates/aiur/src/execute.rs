@@ -67,10 +67,8 @@ pub(crate) struct Deferred<F: Eq + std::hash::Hash> {
   // First owned calls reachable through a non-owned query, with offsets.
   // Cache hits must replay these dependencies even though they do not
   // execute the query.
-  dependencies: rustc_hash::FxHashMap<
-    (usize, usize),
-    rustc_hash::FxHashMap<Vec<F>, u64>,
-  >,
+  dependencies:
+    rustc_hash::FxHashMap<(usize, usize), rustc_hash::FxHashMap<Vec<F>, u64>>,
   heights: Option<rustc_hash::FxHashMap<Vec<F>, u64>>,
 }
 impl<F: Copy + Eq + std::hash::Hash> Deferred<F> {
@@ -140,7 +138,8 @@ pub fn owned_heights<K: Clone + Eq + std::hash::Hash>(
     pending[a] += 1;
   }
   let mut heights: Vec<u64> = keys.iter().map(|k| base[*k]).collect();
-  let mut ready: Vec<usize> = (0..keys.len()).filter(|&i| pending[i] == 0).collect();
+  let mut ready: Vec<usize> =
+    (0..keys.len()).filter(|&i| pending[i] == 0).collect();
   let mut done = 0;
   while let Some(b) = ready.pop() {
     done += 1;
@@ -183,7 +182,11 @@ impl<B: FieldBackend> Execution<B> {
   }
   /// The recorded height of a query of `function` in a finished record: the
   /// longest call path below it within its SCC (zero without a depth word).
-  pub fn query_depth(&self, function: usize, args: &[B::Element]) -> Option<u64> {
+  pub fn query_depth(
+    &self,
+    function: usize,
+    args: &[B::Element],
+  ) -> Option<u64> {
     let table = self.queries.tables.get(function)?;
     if table.static_map.is_some() {
       return None;

@@ -53,7 +53,10 @@ impl RangeCounts {
 
   /// Counts from one flat buffer holding every range table in turn.
   #[cfg(feature = "cuda")]
-  pub(super) fn from_flat(widths: impl Iterator<Item = u32>, flat: &[u64]) -> Self {
+  pub(super) fn from_flat(
+    widths: impl Iterator<Item = u32>,
+    flat: &[u64],
+  ) -> Self {
     let mut start = 0;
     Self(
       widths
@@ -117,7 +120,9 @@ pub(super) struct DepthPlan {
 
 /// The SCC of every function's circuit, or [`NO_SCC`]: what the executor
 /// needs to record honest heights ([`CheckedProgram::track_depth`]).
-pub(crate) fn function_sccs(artifact: &TraceArtifact) -> Result<Vec<u32>, String> {
+pub(crate) fn function_sccs(
+  artifact: &TraceArtifact,
+) -> Result<Vec<u32>, String> {
   let chips: FxHashMap<&str, &Chip> =
     artifact.chips.iter().map(|c| (c.name.as_str(), c)).collect();
   artifact
@@ -189,7 +194,10 @@ impl DepthPlan {
       functions[chip].push(f);
     }
     let recursive = |name: &str| {
-      chips.get(name).map(|&c| &artifact.chips[c]).and_then(|c| c.depth.column.map(|_| c))
+      chips
+        .get(name)
+        .map(|&c| &artifact.chips[c])
+        .and_then(|c| c.depth.column.map(|_| c))
     };
     let mut fills = vec![];
     for chip in &artifact.chips {
@@ -208,7 +216,9 @@ impl DepthPlan {
           DepthSlot::Plain => continue,
           DepthSlot::Exact => None,
           DepthSlot::Gap { column } => {
-            if column.checked_add(limbs.len()).is_none_or(|e| e > chip.activation)
+            if column
+              .checked_add(limbs.len())
+              .is_none_or(|e| e > chip.activation)
             {
               return Err(format!("{}: gap limbs out of bounds", chip.name));
             }
@@ -216,7 +226,10 @@ impl DepthPlan {
           },
           DepthSlot::External { column } => {
             if column >= chip.activation {
-              return Err(format!("{}: external depth out of bounds", chip.name));
+              return Err(format!(
+                "{}: external depth out of bounds",
+                chip.name
+              ));
             }
             Some(Kind::External(column))
           },
@@ -225,12 +238,16 @@ impl DepthPlan {
           format!("{}: depth slot into a circuit without depth", chip.name)
         })?;
         let intra = !matches!(kind, Some(Kind::External(_)));
-        if intra && (depth.column.is_none() || callee.depth.rank != depth.rank) {
+        if intra && (depth.column.is_none() || callee.depth.rank != depth.rank)
+        {
           return Err(format!("{}: intra-SCC slot across SCCs", chip.name));
         }
         let Some(kind) = kind else { continue };
         let Some((_, args)) = send.args.split_last() else {
-          return Err(format!("{}: depth slot without a depth word", chip.name));
+          return Err(format!(
+            "{}: depth slot without a depth word",
+            chip.name
+          ));
         };
         slots.push(SlotFill {
           kind,

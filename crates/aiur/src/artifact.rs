@@ -74,9 +74,9 @@ use crate::{
   ixon::{Reader, Writer},
   library::io::{Invocation, Stream, Streams},
   trace::{
-    Action, Chip, ChipDepth, ColumnWrite, DepthSlot, FunctionGroup, FunctionPlan, GroupLookup,
-    GroupMember, GroupWrite, MemoryLookup, Polynomial, PopulationStep, Send,
-    TraceArtifact,
+    Action, Chip, ChipDepth, ColumnWrite, DepthSlot, FunctionGroup,
+    FunctionPlan, GroupLookup, GroupMember, GroupWrite, MemoryLookup,
+    Polynomial, PopulationStep, Send, TraceArtifact,
   },
   value::IoType,
 };
