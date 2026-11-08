@@ -267,3 +267,100 @@ theorem Prepared.depth_grouped_activated_heap_sound_goldilocks_observed
     selected valid signed rooted outside bound (Depth.goldilocks_bound bits) checked arguments decoded
 
 end Aiur.Modules
+
+/-! ## Generic-level observed headlines
+
+The same conclusions at the level of `Physical.Prepared` and a generic
+artifact, for statements pinned to an elaborated `Generic.Source` rather than to
+`Modules.prepare`. -/
+
+namespace Aiur.Optimized
+
+variable {F : Type} [Field F] [DecidableEq F]
+
+/-- **The trace's memory**, decoded, for a generic artifact. -/
+abbrev GenericArtifact.traceROM {source : Generic.Source F} {entries : List String}
+    {specialized : Generic.Specialized source entries} (compiled : GenericArtifact specialized)
+    (rom : WidthROM F) : ROM F :=
+  (Circuit.Erasure.typedROM compiled.system rom).decode specialized.program.enums
+
+end Aiur.Optimized
+
+namespace Aiur.Optimized.Physical
+
+open Circuit
+
+variable {F : Type} [Field F] [DecidableEq F] {id : String → Except String Nat}
+
+/-- `Prepared.grouped_activated_native_heap_sound`, observed. -/
+theorem Prepared.grouped_activated_native_heap_sound_observed {source : Generic.Source F}
+    {entries : List String} {specialized : Generic.Specialized source entries}
+    (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
+    (plan : Grouping.Plan prepared.system id) (activated : plan.WellFormedActivation)
+    {name : String} (entry : name ∈ entries) {rom : WidthROM F} (valid : rom.Valid)
+    {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F}
+    (signed : Erasure.Signed compiled.system ⟨name, wires, output⟩)
+    (derived : plan.ActivatedDerives (Erasure.rawROM rom)
+      (Erasure.message compiled.system ⟨name, wires, output⟩))
+    (arguments : DecodesValues specialized.program.enums wires (entryValues args))
+    (decoded : output.decode specialized.program.enums = some result) :
+    ∃ value heap calls, Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
+      Represents (compiled.traceROM rom) heap value result ∧
+      Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
+  prepared.native_heap_sound_observed compiled entry valid signed
+    (plan.derives_sound (plan.activatedDerives_sound_plan activated derived)) arguments decoded
+
+/-- The generic-level observed headline without the derivation hypothesis:
+rows accepted by the grouped, activated memo checker over the certified depth
+pass, with at most `2^39` rows. -/
+theorem Prepared.depth_grouped_activated_native_heap_sound_observed {source : Generic.Source F}
+    {entries : List String} {specialized : Generic.Specialized source entries}
+    (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
+    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system)
+    (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
+    (activated : plan.WellFormedActivation)
+    {name : String} (entry : name ∈ entries) {rom : WidthROM F} (valid : rom.Valid)
+    {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F}
+    (signed : Erasure.Signed compiled.system ⟨name, wires, output⟩)
+    {root : Message F}
+    (rooted : Depth.erase cfg root = Erasure.message compiled.system ⟨name, wires, output⟩)
+    (outside : root.channel ∉ cfg.names)
+    {rows : List (WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
+    (arguments : DecodesValues specialized.program.enums wires (entryValues args))
+    (decoded : output.decode specialized.program.enums = some result) :
+    ∃ value heap calls, Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
+      Represents (compiled.traceROM rom) heap value result ∧
+      Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
+  prepared.native_heap_sound_observed compiled entry valid signed
+    (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
+    arguments decoded
+
+/-- The same over Goldilocks with `k = 24` (`cfg.bits = 24`). -/
+theorem Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed
+    {source : Generic.Source Library.U32.Goldilocks.F} {entries : List String}
+    {specialized : Generic.Specialized source entries}
+    (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
+    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system) (bits : cfg.bits = 24)
+    (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
+    (activated : plan.WellFormedActivation)
+    {name : String} (entry : name ∈ entries) {rom : WidthROM Library.U32.Goldilocks.F}
+    (valid : rom.Valid)
+    {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+    {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F}
+    (signed : Erasure.Signed compiled.system ⟨name, wires, output⟩)
+    {root : Message Library.U32.Goldilocks.F}
+    (rooted : Depth.erase cfg root = Erasure.message compiled.system ⟨name, wires, output⟩)
+    (outside : root.channel ∉ cfg.names)
+    {rows : List (WeightedRow Library.U32.Goldilocks.F)} (bound : rows.length ≤ 2 ^ 39)
+    (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
+    (arguments : DecodesValues specialized.program.enums wires (entryValues args))
+    (decoded : output.decode specialized.program.enums = some result) :
+    ∃ value heap calls, Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
+      Represents (compiled.traceROM rom) heap value result ∧
+      Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls :=
+  prepared.depth_grouped_activated_native_heap_sound_observed compiled certified plan activated entry
+    valid signed rooted outside bound (Depth.goldilocks_bound bits) checked arguments decoded
+
+end Aiur.Optimized.Physical
