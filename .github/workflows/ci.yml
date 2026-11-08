@@ -54,6 +54,10 @@ jobs:
       # default lib — fails CI. A push to main already passed the tests in
       # the merge queue; that run only exists to snapshot the build
       # products, so the tests are skipped there.
+      # lean-action runs `lake exe cache get` whenever the root manifest
+      # names Mathlib, whatever `auto-config` says. Aiur's proofs import
+      # Mathlib, so this job wants its oleans; the other two jobs build
+      # nothing that imports it.
       - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           build-args: "--wfail -v"
@@ -61,6 +65,7 @@ jobs:
           test-args: "--wfail"
           lint-args: "-- --wfail -v"
           use-github-cache: false
+          use-mathlib-cache: true
       # --wfail fails on any warning, `sorry` included. axiom_sweep then fails
       # if any declaration of the Aiur package depends on an axiom beyond
       # propext, Classical.choice and Quot.sound.
@@ -142,6 +147,7 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
+          use-mathlib-cache: false
       # A push to main already passed the lints and tests in the merge
       # queue; that run only builds, so the sticky disk holds the check,
       # clippy and test-binary artifacts the next PR run will fingerprint.
@@ -207,10 +213,12 @@ jobs:
           path: .lake
           key: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
+      # `ix` does not import Mathlib (see lean-test).
       - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           auto-config: false
           use-github-cache: false
+          use-mathlib-cache: false
       - name: Compile CUDA Rust targets
         run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda,ixvm/cuda,stark-verifier/cuda,ix-prover/cuda
       - name: Link separate Aiur CUDA hosts
