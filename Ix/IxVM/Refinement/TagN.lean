@@ -14,9 +14,9 @@ mirror). This module is the creative layer on top of it:
   `get_u64_le`, by induction on its byte count;
 * what the mirrors compute (`*_run`);
 * the refinements of IxC's `Ixon.getTagN 0`, `2` and `4` on the one- and two-byte
-  rungs (`getTagN0_refines`, `getTagN2_refines`, `getTagN4_refines`). The wide rungs
-  (`get_tagn_wide`: `get_u64_le` and `UInt64::add`) have generated mirrors and lemmas but no
-  refinement yet. -/
+  rungs (`getTagN{0,2,4}_refines_short`), and the 64-bit machinery of the wide rungs
+  (`getU64le_run`, `u64Add_value`). The wide rungs and the refinements on every header
+  are in `Ix.IxVM.Refinement.TagNWide`. -/
 
 namespace IxVM.Refinement.TagN
 
@@ -426,7 +426,7 @@ and the value the derivation returns as eight little-endian bytes, and the
 derivation's rest pointer holds the bytes IxC's reader did not consume. The
 heap is unchanged. Proved from the generated mirror lemma
 (`Mirrors.«IxonDeserialize::get_tagn0».of_eval`) and what the mirror computes. -/
-theorem getTagN0_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+theorem getTagN0_refines_short {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (narrow : ∀ b ∈ bytes.head?, b.toNat < 192)
     (ev : EvalFn W "IxonDeserialize::get_tagn0" [stream] heap r h') :
@@ -602,7 +602,7 @@ two-byte rungs**: on a stream whose first byte has low four bits below `12`
 (the codes the wide rungs do not use), every derivation agrees with IxC's
 reader on the same bytes: the flag, the value as eight little-endian bytes,
 the rest pointer at IxC's position, the heap unchanged. -/
-theorem getTagN4_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+theorem getTagN4_refines_short {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (narrow : ∀ b ∈ bytes.head?, b.toNat % 16 < 12)
     (ev : EvalFn W "IxonDeserialize::get_tagn4" [stream] heap r h') :
@@ -744,7 +744,7 @@ two-byte rungs**: on a stream whose first byte has low six bits below `48`
 (the codes the wide rungs do not use), every derivation agrees with IxC's
 reader on the same bytes: the flag, the value as eight little-endian bytes,
 the rest pointer at IxC's position, the heap unchanged. -/
-theorem getTagN2_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+theorem getTagN2_refines_short {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (narrow : ∀ b ∈ bytes.head?, b.toNat % 64 < 48)
     (ev : EvalFn W "IxonDeserialize::get_tagn2" [stream] heap r h') :
@@ -796,5 +796,219 @@ theorem getTagN2_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : 
         simp only [hflag, UInt64.toNat_ofNat', Nat.toUInt64_eq]
         rw [Nat.mod_eq_of_lt (show 32 + (b.toNat % 64 - 32) * 256 + lo.toNat < 2 ^ 64 by
           have := lo.toNat_lt; omega)]
+
+/-! ## Wide rungs: `get_u64_le` -/
+
+/-- A byte string as a little-endian number. -/
+def leValue : List UInt8 → Nat
+  | [] => 0
+  | b :: bs => b.toNat + 256 * leValue bs
+
+theorem leValue_lt : ∀ (bs : List UInt8), leValue bs < 256 ^ bs.length
+  | [] => by simp [leValue]
+  | b :: bs => by
+    have ih := leValue_lt bs
+    have hb := b.toNat_lt
+    simp only [leValue, List.length_cons, Nat.pow_succ]
+    generalize 256 ^ bs.length = P at *
+    generalize leValue bs = L at *
+    omega
+
+theorem u64Value_cons {b x : Nat} (hb : b < 256) :
+    u64Value (b + 256 * x) = .tuple [.field (b : F), .field ((x % 256 : Nat) : F),
+      .field ((x / 256 % 256 : Nat) : F), .field ((x / 65536 % 256 : Nat) : F),
+      .field ((x / 16777216 % 256 : Nat) : F), .field ((x / 4294967296 % 256 : Nat) : F),
+      .field ((x / 1099511627776 % 256 : Nat) : F),
+      .field ((x / 281474976710656 % 256 : Nat) : F)] := by
+  simp only [u64Value]
+  rw [show (b + 256 * x) % 256 = b by omega, show (b + 256 * x) / 256 % 256 = x % 256 by omega,
+    show (b + 256 * x) / 65536 % 256 = x / 256 % 256 by omega,
+    show (b + 256 * x) / 16777216 % 256 = x / 65536 % 256 by omega,
+    show (b + 256 * x) / 4294967296 % 256 = x / 16777216 % 256 by omega,
+    show (b + 256 * x) / 1099511627776 % 256 = x / 4294967296 % 256 by omega,
+    show (b + 256 * x) / 281474976710656 % 256 = x / 1099511627776 % 256 by omega,
+    show (b + 256 * x) / 72057594037927936 % 256 = x / 281474976710656 % 256 by omega]
+
+theorem natCast_succ_ne_zero {n : Nat} (hn : n < 1000) : (n : F) + 1 ≠ 0 := by
+  intro h
+  have h' : ((n + 1 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact h
+  have := IxVM.Checked.natCast_inj (by omega) (by omega) h'
+  omega
+
+/-- **`get_u64_le(stream, n)` reads `n` bytes**, little-endian, for `n ≤ 8`. -/
+theorem getU64le_run {heap : Heap F} : ∀ (n : Nat), n ≤ 8 → ∀ {bs : List UInt8} {stream : SourceValue F},
+    n ≤ bs.length → Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bs stream →
+    ∃ restPtr, Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bs.drop n) restPtr ∧
+      ∀ k, n + 1 ≤ k → Mirrors.«IxonDeserialize::get_u64_le» k heap stream (.field (n : F)) =
+        some (.tuple [u64Value (leValue (bs.take n)), restPtr], heap)
+  | 0, _, bs, stream, _, rep => by
+    refine ⟨stream, by simpa using rep, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp [Mirrors.«IxonDeserialize::get_u64_le», leValue, u64Value]
+  | n + 1, hn, bs, stream, hlen, rep => by
+    cases rep with
+    | nil cell => simp at hlen
+    | @cons b tl addr headVal tailPtr cell headRep tailRep =>
+      simp only [Aiur.Library.RepU8] at headRep
+      subst headRep
+      obtain ⟨restPtr, restRep, run⟩ :=
+        getU64le_run n (by omega) (bs := tl) (by simp at hlen; omega) tailRep
+      refine ⟨restPtr, by simpa using restRep, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      have hne := natCast_succ_ne_zero (n := n) (by omega)
+      have hrun := run k' (by omega)
+      have hb := b.toNat_lt
+      rw [show leValue (List.take (n + 1) (b :: tl)) = b.toNat + 256 * leValue (tl.take n) from rfl,
+        u64Value_cons hb]
+      simp [Mirrors.«IxonDeserialize::get_u64_le», hne, loadValue_cell cell, node_ctor, evalBinOp,
+        hrun, u64Value]
+
+/-! ## Wide rungs: 64-bit addition -/
+
+/-- The static map `UInt8::raw_sum_byte`. -/
+def sumByteMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[9]'(by decide)
+
+theorem sumByte_row {s : Nat} (hs : s < 768) :
+    lookupMap IxVM.Checked.source.tables "UInt8::raw_sum_byte" ([.field (s : F)] : List (SourceValue F)) =
+      .ok (.field ((s % 256 : Nat) : F)) := by
+  have member : sumByteMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.Checked.coreTables.mapRows sumByteMap =
+      IxVM.Checked.sumInputsTable.rows.zip IxVM.Checked.sumBytesTable.rows := by
+    simp only [Aiur.Program.mapRows, show sumByteMap.input = "UInt8::sum_inputs" from rfl,
+      show sumByteMap.output = "UInt8::sum_bytes" from rfl, IxVM.Checked.find_sumInputs,
+      IxVM.Checked.find_sumBytes]
+  have row : (⟨[.field (s : F)], .field ((s % 256 : Nat) : F)⟩ : MapEntry F) ∈
+      IxVM.Checked.coreTables.mapEntries sumByteMap := by
+    apply Aiur.mapEntry_mem_iff.mpr
+    rw [rows]
+    simp only [IxVM.Checked.sumInputsTable, IxVM.Checked.sumBytesTable, List.map_map]
+    have mem : (s, s % 256) ∈ IxVM.Checked.sumPairs := by
+      simp only [IxVM.Checked.sumPairs, Aiur.Library.Carry.rows]
+      exact List.mem_map.mpr ⟨s, List.mem_range.mpr hs, rfl⟩
+    convert mem_zip_map mem using 1
+    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
+  simpa [Constant.toValue, Value.mapAddress, show sumByteMap.name = "UInt8::raw_sum_byte" from rfl,
+    IxVM.Checked.source] using looked
+
+theorem two56_ne_zero : (256 : F) ≠ 0 := by decide
+
+theorem splitSum_run {s : Nat} (hs : s < 768) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt8::split_sum» (k + 1) h (.field (s : F)) =
+      some (.tuple [.field ((s % 256 : Nat) : F), .field ((s / 256 : Nat) : F)], h) := by
+  have e : (s : F) = ((s % 256 : Nat) : F) + 256 * ((s / 256 : Nat) : F) := by
+    have := congrArg (Nat.cast : Nat → F) (show s = s % 256 + 256 * (s / 256) by omega)
+    push_cast at this
+    exact this
+  have hdiv : ((s : F) - ((s % 256 : Nat) : F)) / 256 = ((s / 256 : Nat) : F) := by
+    rw [div_eq_iff two56_ne_zero, e]
+    ring
+  simp [Mirrors.«UInt8::split_sum», mapCall, sumByte_row hs, Constant.toValue, Value.mapAddress,
+    evalBinOp, two56_ne_zero, hdiv]
+
+theorem splitSum_run2 {a b : Nat} (hs : a + b < 768) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a : F) + (b : F))) =
+      some (.tuple [.field (((a + b) % 256 : Nat) : F), .field (((a + b) / 256 : Nat) : F)], h) := by
+  have := splitSum_run hs k h
+  push_cast at this
+  exact this
+
+theorem splitSum_run3 {a b c : Nat} (hs : a + b + c < 768) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a : F) + (b : F) + (c : F))) =
+      some (.tuple [.field (((a + b + c) % 256 : Nat) : F),
+        .field (((a + b + c) / 256 : Nat) : F)], h) := by
+  have := splitSum_run hs k h
+  push_cast at this
+  exact this
+
+
+/-- **`UInt64::add` on bytes**: given the ripple-carry digits `s` and carries `c` of
+`a + b`, the mirror returns them. -/
+theorem u64Add_run {a0 a1 a2 a3 a4 a5 a6 a7 b0 b1 b2 b3 b4 b5 b6 b7 : Nat}
+    {s0 s1 s2 s3 s4 s5 s6 s7 c1 c2 c3 c4 c5 c6 c7 c8 : Nat}
+    (ha0 : a0 < 256) (ha1 : a1 < 256) (ha2 : a2 < 256) (ha3 : a3 < 256)
+    (ha4 : a4 < 256) (ha5 : a5 < 256) (ha6 : a6 < 256) (ha7 : a7 < 256)
+    (hb0 : b0 < 256) (hb1 : b1 < 256) (hb2 : b2 < 256) (hb3 : b3 < 256)
+    (hb4 : b4 < 256) (hb5 : b5 < 256) (hb6 : b6 < 256) (hb7 : b7 < 256)
+    (hs0 : s0 < 256) (hs1 : s1 < 256) (hs2 : s2 < 256) (hs3 : s3 < 256)
+    (hs4 : s4 < 256) (hs5 : s5 < 256) (hs6 : s6 < 256) (hs7 : s7 < 256)
+    (h0 : a0 + b0 = s0 + 256 * c1) (h1 : a1 + b1 + c1 = s1 + 256 * c2)
+    (h2 : a2 + b2 + c2 = s2 + 256 * c3) (h3 : a3 + b3 + c3 = s3 + 256 * c4)
+    (h4 : a4 + b4 + c4 = s4 + 256 * c5) (h5 : a5 + b5 + c5 = s5 + 256 * c6)
+    (h6 : a6 + b6 + c6 = s6 + 256 * c7) (h7 : a7 + b7 + c7 = s7 + 256 * c8) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt64::add» (k + 2) h
+        (.tuple [.field (a0 : F), .field (a1 : F), .field (a2 : F), .field (a3 : F), .field (a4 : F),
+          .field (a5 : F), .field (a6 : F), .field (a7 : F)])
+        (.tuple [.field (b0 : F), .field (b1 : F), .field (b2 : F), .field (b3 : F), .field (b4 : F),
+          .field (b5 : F), .field (b6 : F), .field (b7 : F)]) =
+      some (.tuple [.tuple [.field (s0 : F), .field (s1 : F), .field (s2 : F), .field (s3 : F),
+        .field (s4 : F), .field (s5 : F), .field (s6 : F), .field (s7 : F)], .field (c8 : F)], h) := by
+  have e0 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a0 : F) + (b0 : F))) =
+      some (.tuple [.field (s0 : F), .field (c1 : F)], h) := by
+    rw [show s0 = (a0 + b0) % 256 by omega, show c1 = (a0 + b0) / 256 by omega]
+    exact splitSum_run2 (by omega) k h
+  have e1 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a1 : F) + (b1 : F) + (c1 : F))) =
+      some (.tuple [.field (s1 : F), .field (c2 : F)], h) := by
+    rw [show s1 = (a1 + b1 + c1) % 256 by omega, show c2 = (a1 + b1 + c1) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  have e2 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a2 : F) + (b2 : F) + (c2 : F))) =
+      some (.tuple [.field (s2 : F), .field (c3 : F)], h) := by
+    rw [show s2 = (a2 + b2 + c2) % 256 by omega, show c3 = (a2 + b2 + c2) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  have e3 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a3 : F) + (b3 : F) + (c3 : F))) =
+      some (.tuple [.field (s3 : F), .field (c4 : F)], h) := by
+    rw [show s3 = (a3 + b3 + c3) % 256 by omega, show c4 = (a3 + b3 + c3) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  have e4 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a4 : F) + (b4 : F) + (c4 : F))) =
+      some (.tuple [.field (s4 : F), .field (c5 : F)], h) := by
+    rw [show s4 = (a4 + b4 + c4) % 256 by omega, show c5 = (a4 + b4 + c4) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  have e5 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a5 : F) + (b5 : F) + (c5 : F))) =
+      some (.tuple [.field (s5 : F), .field (c6 : F)], h) := by
+    rw [show s5 = (a5 + b5 + c5) % 256 by omega, show c6 = (a5 + b5 + c5) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  have e6 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a6 : F) + (b6 : F) + (c6 : F))) =
+      some (.tuple [.field (s6 : F), .field (c7 : F)], h) := by
+    rw [show s6 = (a6 + b6 + c6) % 256 by omega, show c7 = (a6 + b6 + c6) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  have e7 : Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a7 : F) + (b7 : F) + (c7 : F))) =
+      some (.tuple [.field (s7 : F), .field (c8 : F)], h) := by
+    rw [show s7 = (a7 + b7 + c7) % 256 by omega, show c8 = (a7 + b7 + c7) / 256 by omega]
+    exact splitSum_run3 (by omega) k h
+  simp only [Mirrors.«UInt64::add», projectValue, toField_run, evalBinOp, e0, e1, e2, e3, e4, e5,
+    e6, e7, bind, Except.bind, pure, Except.pure, Option.bind, List.getElem?_cons_succ,
+    List.getElem?_cons_zero]
+
+set_option maxHeartbeats 4000000 in
+/-- **`UInt64::add` is 64-bit addition with a carry.** -/
+theorem u64Add_value {x y : Nat} (hx : x < 18446744073709551616) (hy : y < 18446744073709551616) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt64::add» (k + 2) h (u64Value x) (u64Value y) =
+      some (.tuple [u64Value ((x + y) % 18446744073709551616), .field (((x + y) / 18446744073709551616 : Nat) : F)], h) := by
+  have run := u64Add_run
+    (a0 := x % 256) (b0 := y % 256) (s0 := (x + y) % 18446744073709551616 % 256)
+    (a1 := x / 256 % 256) (b1 := y / 256 % 256) (s1 := (x + y) % 18446744073709551616 / 256 % 256)
+    (a2 := x / 65536 % 256) (b2 := y / 65536 % 256) (s2 := (x + y) % 18446744073709551616 / 65536 % 256)
+    (a3 := x / 16777216 % 256) (b3 := y / 16777216 % 256) (s3 := (x + y) % 18446744073709551616 / 16777216 % 256)
+    (a4 := x / 4294967296 % 256) (b4 := y / 4294967296 % 256) (s4 := (x + y) % 18446744073709551616 / 4294967296 % 256)
+    (a5 := x / 1099511627776 % 256) (b5 := y / 1099511627776 % 256) (s5 := (x + y) % 18446744073709551616 / 1099511627776 % 256)
+    (a6 := x / 281474976710656 % 256) (b6 := y / 281474976710656 % 256) (s6 := (x + y) % 18446744073709551616 / 281474976710656 % 256)
+    (a7 := x / 72057594037927936 % 256) (b7 := y / 72057594037927936 % 256) (s7 := (x + y) % 18446744073709551616 / 72057594037927936 % 256)
+    (c1 := (x % 256 + y % 256) / 256)
+    (c2 := (x % 65536 + y % 65536) / 65536)
+    (c3 := (x % 16777216 + y % 16777216) / 16777216)
+    (c4 := (x % 4294967296 + y % 4294967296) / 4294967296)
+    (c5 := (x % 1099511627776 + y % 1099511627776) / 1099511627776)
+    (c6 := (x % 281474976710656 + y % 281474976710656) / 281474976710656)
+    (c7 := (x % 72057594037927936 + y % 72057594037927936) / 72057594037927936)
+    (c8 := (x % 18446744073709551616 + y % 18446744073709551616) / 18446744073709551616)
+    (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)
+    (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)
+    (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)
+    (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) k h
+  rw [show (x % 18446744073709551616 + y % 18446744073709551616) / 18446744073709551616 =
+    (x + y) / 18446744073709551616 by omega] at run
+  simp only [u64Value]
+  rw [run]
+
 
 end IxVM.Refinement.TagN

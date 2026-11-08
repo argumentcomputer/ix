@@ -1,5 +1,5 @@
 import Ix.IxVM.Refinement.Statement
-import Ix.IxVM.Refinement.TagN
+import Ix.IxVM.Refinement.TagNWide
 import IxC.Kernel.Audit.Axioms
 
 /-! # The IxVM ↔ IxC refinement statement, frozen
@@ -53,7 +53,8 @@ run_meta do
       ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
       ``IxVM.Refinement.digestValue, ``Aiur.Generic.SourceSemantics.CallsInROM]),
     (``IxVM.Refinement.AxiomScopeIn, [``IxVM.Refinement.UserAxiomLeavesIn]),
-    (``IxVM.Refinement.TypingIn, [``IxVM.Refinement.AxiomScopeIn, ``IxVM.Refinement.LeavesInstalled]),
+    (``IxVM.Refinement.TypingIn, [``IxVM.Refinement.AxiomScopeIn, ``IxVM.Refinement.LeavesInstalled,
+      ``IxVM.Refinement.AssumedIn]),
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
       ``Ix.Claim.de, ``Ix.Claim.HoldsIn, ``IxVM.Refinement.View.HashedCollision]),
     (``IxVM.Refinement.Hashed, [``IxVM.Refinement.blake3Hash, ``IxVM.Refinement.byteStreamEnum]),
@@ -442,8 +443,10 @@ fun V ctx S asm Q =>
           V.binding? ctx.binding = some b ∧
             IxVM.Refinement.AxiomScopeIn V b ctx.axioms fun policy leaves =>
               IxVM.Refinement.AssumingIn V { binding := b, policy := policy, axioms := fun x => x ∈ leaves }
-                (fun a => S a ∨ a ∈ leaves)
-                (fun bnd envA ds => IxVM.Refinement.LeavesInstalled leaves ds ∧ Q bnd envA ds) asm)
+                (fun a => S a ∨ a ∈ leaves ∧ ¬IxVM.Refinement.AssumedIn V asm a)
+                (fun bnd envA ds =>
+                  IxVM.Refinement.LeavesInstalled leaves (IxVM.Refinement.AssumedIn V asm) ds ∧ Q bnd envA ds)
+                asm)
 -/
 #guard_msgs in
 #print IxVM.Refinement.TypingIn
@@ -475,11 +478,19 @@ fun V b leaves =>
 #print IxVM.Refinement.UserAxiomLeavesIn
 
 /--
-info: def IxVM.Refinement.LeavesInstalled : List Address → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
-fun leaves ds => ∀ a ∈ leaves, ∃ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, cv.name = Ix.Kernel.Key.id a
+info: def IxVM.Refinement.LeavesInstalled : List Address →
+  (Address → Prop) → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
+fun leaves assumed ds => ∀ a ∈ leaves, ¬assumed a → ∃ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, cv.name = Ix.Kernel.Key.id a
 -/
 #guard_msgs in
 #print IxVM.Refinement.LeavesInstalled
+
+/--
+info: def IxVM.Refinement.AssumedIn : IxVM.Refinement.View → Option Address → Address → Prop :=
+fun V asm a => ∃ r leaves, asm = some r ∧ V.LeavesAt r leaves ∧ a ∈ leaves
+-/
+#guard_msgs in
+#print IxVM.Refinement.AssumedIn
 
 /--
 info: def IxVM.Refinement.AssumingIn : IxVM.Refinement.View →
@@ -1041,29 +1052,28 @@ example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeImages (.node l r) =
 
 /-! ## Phase 3: the TagN slice
 
-The first refinement: every derivation of `IxonDeserialize::get_tagn0` on a
-stream whose first byte is below `192` agrees with IxC's `Ixon.getTagN 0` on
-the same bytes (`getTagN0_refines`; `getTagN2_refines` and `getTagN4_refines` for
-the two- and four-bit flags), proved from the checked source through
-its generated lookup facts (`IxVM.Checked.Lookup`), the generated mirrors
-and their lemmas (`Ix.IxVM.Refinement.Mirrors.TagN`, over the helper library
+The first refinement: every derivation of `IxonDeserialize::get_tagn0` agrees
+with IxC's `Ixon.getTagN 0` on the same bytes, on every header
+(`getTagN0_refines`; `getTagN2_refines` and `getTagN4_refines` for the two- and
+four-bit flags), proved from the checked source through its generated lookup
+facts (`IxVM.Checked.Lookup`), the generated mirrors and their lemmas
+(`Ix.IxVM.Refinement.Mirrors.TagN`, over the helper library
 `Ix.IxVM.Refinement.Mirror`) and the hand-written creative layer
-(`Ix.IxVM.Refinement.TagN`). Deterministic runs and their
+(`Ix.IxVM.Refinement.TagN`, `Ix.IxVM.Refinement.TagNWide`). Deterministic runs and their
 completeness for worlds without control syntax: `EvalFn.exec`. -/
 
 /--
 info: @IxVM.Refinement.TagN.getTagN0_refines : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
   {bytes : List UInt8},
   Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap bytes stream →
-    (∀ b ∈ bytes.head?, b.toNat < 192) →
-      Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn0" [stream] heap r h' →
-        h' = heap ∧
-          ∃ t n restPtr,
-            Ixon.getTagN 0 (IxVM.Refinement.TagN.start bytes) =
-                EStateM.Result.ok t { idx := n, bytes := { data := bytes.toArray } } ∧
-              t.flag = 0 ∧
-                Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop n bytes) restPtr ∧
-                  r = Aiur.Value.tuple [IxVM.Refinement.TagN.u64Value t.value.toNat, restPtr]
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn0" [stream] heap r h' →
+      h' = heap ∧
+        ∃ t n restPtr,
+          Ixon.getTagN 0 (IxVM.Refinement.TagN.start bytes) =
+              EStateM.Result.ok t { idx := n, bytes := { data := bytes.toArray } } ∧
+            t.flag = 0 ∧
+              Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop n bytes) restPtr ∧
+                r = Aiur.Value.tuple [IxVM.Refinement.TagN.u64Value t.value.toNat, restPtr]
 -/
 #guard_msgs in
 #check @IxVM.Refinement.TagN.getTagN0_refines
@@ -1304,4 +1314,4 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
   IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables IxVM.Checked.Lookup
   Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
-  Ix.IxVM.Refinement.TagN
+  Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide

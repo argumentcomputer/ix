@@ -60,8 +60,9 @@ specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
   (`UserAxiomLeavesIn`, as `KernelRoles::validate_user_axioms` checks);
   acceptance runs under `allowUser` over the seeds and every leaf, with every
   user axiom the accepted declarations install among the leaves
-  (`AxiomScopeIn`), and it installs every leaf as a user axiom
-  (`LeavesInstalled`; owner decision, 2026-11-08). IxVM type-checks every
+  (`AxiomScopeIn`), and it installs every leaf that is not also an assumption
+  as a user axiom (`LeavesInstalled`; owner decisions, 2026-11-08: an assumed
+  leaf stays conditional, like any assumption). IxVM type-checks every
   leaf only after Track A's A4 program changes, so this, like `eval`'s
   output check, is ahead of the deployed program until then. With
   `axioms = none` it is the strict fold;
@@ -246,18 +247,25 @@ def BindingIn (V : View) (spec b : Address) : Prop :=
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or
 not, as IxVM validates it (`KernelRoles::validate_user_axioms`): the view
 stores a safe axiom record at it, and the role table `b` binds no role to it.
-`LeavesInstalled` states, beside it, that IxC installs each leaf. -/
+`LeavesInstalled` states, beside it, that IxC installs each leaf that is not an
+assumption. -/
 def UserAxiomLeavesIn (V : View) (b : Binding) (leaves : List Address) : Prop :=
   ∀ a ∈ leaves,
     (∃ c ax, Ix.Cert.recordAt V.env a = some c ∧ c.info = .axio ax ∧ ax.isUnsafe = false) ∧
       ∀ t, Ix.Kernel.RoleTable.ofBytes b.bytes = some t → ∀ r, t.addressOf? r ≠ some a
 
-/-- **Every leaf is installed as a user axiom** in an accepting run: for each
-leaf, the declarations IxC accepts install a user axiom keyed by its address
-(owner decision, 2026-11-08: IxVM type-checks every leaf of the axioms tree,
-used or not). -/
-def LeavesInstalled (leaves : List Address) (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
-  ∀ a ∈ leaves, ∃ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, cv.name = .id a
+/-- **`a` is a leaf of the claim's assumption tree** in the view. -/
+def AssumedIn (V : View) (asm : Option Address) (a : Address) : Prop :=
+  ∃ r leaves, asm = some r ∧ V.LeavesAt r leaves ∧ a ∈ leaves
+
+/-- **Every leaf is installed as a user axiom** in an accepting run, unless it is
+assumed: for each leaf not `assumed`, the declarations IxC accepts install a user
+axiom keyed by its address (owner decisions, 2026-11-08: IxVM type-checks every
+leaf of the axioms tree, used or not, except a leaf that is also one of the
+claim's assumptions, which stays conditional like any assumption). -/
+def LeavesInstalled (leaves : List Address) (assumed : Address → Prop)
+    (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
+  ∀ a ∈ leaves, ¬ assumed a → ∃ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, cv.name = .id a
 
 /-- **The axiom scope of a typing claim** under the role table `b`: with no
 user axioms, `k` at the strict policy and no leaves; with the axioms tree `r`,
@@ -287,9 +295,9 @@ assumptions `asm`, under the context `ctx`, with `Q` of the accepting run:
   literal class (IxVM refuses validator 5);
 * if the context assumes its binding, given the `binding` claim for it: the
   view holds the role table with hash `ctx.binding`, and IxC accepts `S`
-  together with the axioms tree's leaves under it, in the context's axiom
-  scope, installing every leaf as a user axiom (`LeavesInstalled`), under
-  the assumptions `asm`. -/
+  together with the axioms tree's leaves that are not assumptions under it,
+  in the context's axiom scope, installing each of them as a user axiom
+  (`LeavesInstalled`), under the assumptions `asm`. -/
 def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Option Address)
     (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop :=
       fun _ _ _ => True) : Prop :=
@@ -297,8 +305,8 @@ def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Optio
     ((ctx.bindingAssumed = true → BindingIn V ctx.spec ctx.binding) →
       ∃ b, V.binding? ctx.binding = some b ∧
         AxiomScopeIn V b ctx.axioms fun policy leaves =>
-          AssumingIn V ⟨b, policy, (· ∈ leaves)⟩ (fun a => S a ∨ a ∈ leaves)
-            (fun bnd envA ds => LeavesInstalled leaves ds ∧ Q bnd envA ds) asm)
+          AssumingIn V ⟨b, policy, (· ∈ leaves)⟩ (fun a => S a ∨ (a ∈ leaves ∧ ¬ AssumedIn V asm a))
+            (fun bnd envA ds => LeavesInstalled leaves (AssumedIn V asm) ds ∧ Q bnd envA ds) asm)
 
 /-! ## Eval -/
 
