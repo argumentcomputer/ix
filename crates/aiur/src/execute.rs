@@ -181,15 +181,16 @@ impl<B: FieldBackend> Execution<B> {
       d.edges.iter().map(|((a, b), &w)| (a.as_slice(), b.as_slice(), w))
     })
   }
-  /// The recorded height of a completed query of `function`: the longest
-  /// call path below it within its SCC (zero without a depth word).
+  /// The recorded height of a query of `function` in a finished record: the
+  /// longest call path below it within its SCC (zero without a depth word).
   pub fn query_depth(&self, function: usize, args: &[B::Element]) -> Option<u64> {
     let table = self.queries.tables.get(function)?;
     if table.static_map.is_some() {
       return None;
     }
-    let row = table.lookup(args).1?;
-    (table.count(row) != 0).then(|| table.depth(row))
+    // After execution no query is pending; an owned call nobody in this
+    // record calls has count zero until its callers' counts arrive.
+    table.lookup(args).1.map(|row| table.depth(row))
   }
   /// A deferred call's height, as the coordinator supplied it.
   pub(crate) fn deferred_height(

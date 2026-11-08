@@ -478,8 +478,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           // Depth columns are computed from the circuit's own columns: fill
           // the depth circuit's row, then place it.
           let source = &mut worker.row;
+          let activation = self.plan.artifact.chips[chip].activation;
           source.clear();
-          source.resize(self.plan.artifact.chips[chip].width, field.zero());
+          source.resize(activation + 1, field.zero());
+          source[activation] = field.one();
           self.plan.fills[function]
             .fill(
               record,

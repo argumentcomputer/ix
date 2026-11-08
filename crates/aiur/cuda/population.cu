@@ -497,12 +497,13 @@ __device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, uint6
         if (value_of(guard, constants, scratch) == 1)
             row[column] = value_of(value, constants, scratch);
     }
-    // Depth columns, from the circuit columns just written.
-    const int32_t depth_status = fill_depth(f, callees, query, code, pc, row, ranges);
-    if (depth_status != 0) { fail(error, depth_status, 0, row_index); return false; }
-    // Placement: selector, group writes over the row, multiplicity.
+    // The selector, then the depth columns, from the circuit columns just
+    // written (slot enables read the selector).
     const uint32_t selector = code[pc++];
     row[selector] = 1;
+    const int32_t depth_status = fill_depth(f, callees, query, code, pc, row, ranges);
+    if (depth_status != 0) { fail(error, depth_status, 0, row_index); return false; }
+    // Placement: group writes over the row, multiplicity.
     const uint32_t group_writes = code[pc++];
     for (uint32_t g = 0; g < group_writes; ++g) {
         const uint32_t column = code[pc++];

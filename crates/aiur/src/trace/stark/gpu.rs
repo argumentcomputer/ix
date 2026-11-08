@@ -348,6 +348,8 @@ impl DevicePlans {
         let column = |c: usize| placement.columns[c];
         let Encoded { mut code, scratch, inputs, outputs } =
           fill.encode(&mut call, &mut hint, &column, &mut constants)?;
+        // The selector, which slot enables read.
+        code.push(u32::try_from(placement.selector).ok()?);
         // Depth section (Track A, H1): the depth column, then each gap or
         // external slot with its new columns, callees, enable and callee
         // query, over the circuit's own columns.
@@ -397,7 +399,6 @@ impl DevicePlans {
             code.extend(tokens);
           }
         }
-        code.push(u32::try_from(placement.selector).ok()?);
         code.push(u32::try_from(placement.writes.len()).ok()?);
         for write in &placement.writes {
           let mut tokens = vec![];
@@ -731,7 +732,6 @@ impl DeviceRecord {
   /// The depth range-table uses of the device rows.
   pub(super) fn ranges(&self) -> &RangeCounts {
     &self.ranges
-  }
   }
 
   /// The padded height of a device circuit, if `ci` is one.
