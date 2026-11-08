@@ -3,8 +3,10 @@
 //!
 //! The verifier's program, artifact and fixed tables must come from the trusted
 //! compilation, not from the proof supplier. This Rust adapter and multi-stark
-//! are outside the Lean proof. In particular, the memoized semantics' acyclicity
-//! hypothesis is not discharged by a lookup argument.
+//! are outside the Lean proof. The lookup argument alone accepts cyclic memo
+//! tables; the exported circuits carry the depth pass (Track A, H1), whose
+//! acyclicity argument also needs every verifier to bound a batch's rows by
+//! [`MAX_BATCH_ROWS`].
 use super::{Polynomial, RangeCounts, Trace, TracePlan};
 use crate::{
   Execution,

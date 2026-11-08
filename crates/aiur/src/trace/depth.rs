@@ -331,3 +331,78 @@ fn callee_depth<B: FieldBackend>(
     .find_map(|&f| record.deferred_height(f, args))
     .ok_or_else(|| "missing recorded callee height".into())
 }
+
+/// One SCC of recursive circuits in a record (follow-ups G1/G2).
+#[derive(Clone, Debug, Serialize)]
+pub struct SccStatistics {
+  pub rank: u64,
+  pub circuits: Vec<String>,
+  pub rows: usize,
+  /// The highest honest height: the longest call path within the SCC.
+  pub max_height: u64,
+}
+
+/// Depth-pass statistics of a record and its population: heights per SCC,
+/// and the largest gap limbs, whose widths bound a gap (`[16, 8]`: the gap
+/// is `lo + 2^16 hi`).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct DepthStatistics {
+  pub sccs: Vec<SccStatistics>,
+  pub limbs: Vec<usize>,
+  /// Per range table: its width and the largest limb counted in it.
+  pub max_limbs: Vec<(u32, Option<usize>)>,
+  pub gap_slot_uses: u64,
+}
+
+impl<B: FieldBackend> TracePlan<'_, B> {
+  /// Heights per SCC in `record` and the largest gap limbs `ranges` counted.
+  pub fn depth_statistics(
+    &self,
+    record: &Execution<B>,
+    ranges: &RangeCounts,
+  ) -> DepthStatistics {
+    let mut sccs: Vec<SccStatistics> = vec![];
+    for (f, &chip) in self.members.iter().enumerate() {
+      let chip = &self.artifact.chips[chip];
+      if chip.depth.column.is_none() {
+        continue;
+      }
+      let table = &record.queries.tables[f];
+      let max = (0..table.len()).map(|q| table.depth(q)).max().unwrap_or(0);
+      let scc = if let Some(i) =
+        sccs.iter().position(|s| s.rank == chip.depth.rank)
+      {
+        &mut sccs[i]
+      } else {
+        sccs.push(SccStatistics {
+          rank: chip.depth.rank,
+          circuits: vec![],
+          rows: 0,
+          max_height: 0,
+        });
+        sccs.last_mut().unwrap()
+      };
+      if !scc.circuits.contains(&chip.name) {
+        scc.circuits.push(chip.name.clone());
+      }
+      scc.rows += table.len();
+      scc.max_height = scc.max_height.max(max);
+    }
+    sccs.sort_by_key(|s| std::cmp::Reverse(s.max_height));
+    let max_limbs = self
+      .depth
+      .tables
+      .iter()
+      .enumerate()
+      .map(|(t, table)| {
+        (table.width, ranges.table(t).iter().rposition(|&n| n != 0))
+      })
+      .collect();
+    DepthStatistics {
+      sccs,
+      limbs: self.artifact.limbs.clone(),
+      max_limbs,
+      gap_slot_uses: ranges.table(0).iter().sum(),
+    }
+  }
+}

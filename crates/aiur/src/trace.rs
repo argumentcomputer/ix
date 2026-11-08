@@ -15,7 +15,7 @@ pub(crate) mod depth;
 mod plan;
 #[cfg(feature = "stark")]
 pub mod stark;
-pub use depth::RangeCounts;
+pub use depth::{DepthStatistics, RangeCounts, SccStatistics};
 #[cfg(test)]
 mod tests;
 
