@@ -22,29 +22,55 @@ numbers.
 
 namespace Aiur.Generic
 
-/-- A string's characters as a number: base `2^32 + 1` digits, each a
-character's code plus one. -/
-def keyOfChars : List Char → Nat
+/-- A byte string as a number: base `257` digits, each a byte plus one. -/
+def keyOfBytes : List UInt8 → Nat
   | [] => 0
-  | c :: cs => (c.toNat + 1) + 4294967297 * keyOfChars cs
+  | b :: bs => (b.toNat + 1) + 257 * keyOfBytes bs
 
-/-- **A name as a number.** -/
-def nameKey (s : String) : Nat := keyOfChars s.toList
+/-- **A name as a number**, from its UTF-8 bytes. The kernel reads a string
+literal's bytes directly; decoding its characters (`String.toList`) costs
+about a tenth of a second per name. -/
+def nameKey (s : String) : Nat := keyOfBytes s.toByteArray.data.toList
 
-theorem keyOfChars_injective : ∀ {a b : List Char}, keyOfChars a = keyOfChars b → a = b
+theorem keyOfBytes_injective : ∀ {a b : List UInt8}, keyOfBytes a = keyOfBytes b → a = b
   | [], [], _ => rfl
-  | [], c :: cs, h => by simp only [keyOfChars] at h; omega
-  | c :: cs, [], h => by simp only [keyOfChars] at h; omega
+  | [], c :: cs, h => by simp only [keyOfBytes] at h; omega
+  | c :: cs, [], h => by simp only [keyOfBytes] at h; omega
   | c :: cs, d :: ds, h => by
-    simp only [keyOfChars] at h
-    have hc : c.toNat < 2 ^ 32 := by rw [← Char.toNat_val]; exact UInt32.toNat_lt _
-    have hd : d.toNat < 2 ^ 32 := by rw [← Char.toNat_val]; exact UInt32.toNat_lt _
+    simp only [keyOfBytes] at h
+    have hc : c.toNat < 256 := c.toNat_lt
+    have hd : d.toNat < 256 := d.toNat_lt
     have h1 : c.toNat = d.toNat := by omega
-    have h2 : keyOfChars cs = keyOfChars ds := by omega
-    rw [Char.toNat_inj.mp h1, keyOfChars_injective h2]
+    have h2 : keyOfBytes cs = keyOfBytes ds := by omega
+    rw [UInt8.toNat_inj.mp h1, keyOfBytes_injective h2]
 
-theorem nameKey_injective {a b : String} (h : nameKey a = nameKey b) : a = b :=
-  String.toList_injective (keyOfChars_injective h)
+theorem nameKey_injective {a b : String} (h : nameKey a = nameKey b) : a = b := by
+  have hl := keyOfBytes_injective h
+  apply String.toByteArray_inj.mp
+  cases ha : a.toByteArray with
+  | mk da =>
+    cases hb : b.toByteArray with
+    | mk db =>
+      simp only [nameKey, ha, hb] at hl
+      cases da; cases db
+      simp only [Array.toList] at hl
+      rw [hl]
+
+/-- **A plain name**: a string whose first byte is not `$`'s does not start
+with `$`. -/
+theorem head_ne_of_bytes {s : String} (h : s.toByteArray.data.toList.head? ≠ some 36) :
+    s.toList.head? ≠ some '$' := by
+  intro hs
+  obtain ⟨cs, hcs⟩ : ∃ cs, s.toList = '$' :: cs := by
+    cases e : s.toList with
+    | nil => simp [e] at hs
+    | cons c cs => simp only [e, List.head?_cons, Option.some.injEq] at hs; exact ⟨cs, by rw [hs]⟩
+  have enc := String.utf8Encode_toList (b := s)
+  rw [hcs, List.utf8Encode_cons, List.utf8Encode_singleton] at enc
+  apply h
+  rw [← enc]
+  simp [String.utf8EncodeChar, ByteArray.append, List.toByteArray, ByteArray.data_append]
+  exact Or.inl (by decide)
 
 /-- **Distinct keys, distinct names.** -/
 theorem nodup_of_nameKeys {l : List String} (h : (l.map nameKey).Nodup) : l.Nodup :=
@@ -92,6 +118,30 @@ theorem Program.sourceFunction?_of_mem {p : Program F} (hd : (p.functions.map (�
     simpa [Instance.symbol] using this
   simp [Program.sourceFunction?, hsym, Except.toOption, Program.findFunction?_of_mem hd hf, htypes,
     arguments, pure, Except.pure, bind, Except.bind]
+
+/-- In a list whose keys miss `nameKey name`, `find?` by `name` finds nothing. -/
+theorem find?_none_of_key {α : Type} (key : α → String) {name : String} :
+    ∀ {l : List α}, nameKey name ∉ l.map (fun y => nameKey (key y)) →
+      l.find? (fun y => key y == name) = none
+  | [], _ => rfl
+  | y :: ys, hk => by
+    rw [List.map_cons, List.mem_cons, not_or] at hk
+    have hne : key y ≠ name := fun e => hk.1 (congrArg nameKey e).symm
+    rw [List.find?_cons_of_neg (by simpa using hne)]
+    exact find?_none_of_key key hk.2
+
+/-- **No function by that name**: a plain name whose key is not a function's
+key resolves to no closure (a map, at a call). -/
+theorem Program.sourceFunction?_of_key {p : Program F} {name : String}
+    (hkey : nameKey name ∉ p.functions.map (fun f => nameKey f.name))
+    (hplain : name.toList.head? ≠ some '$') : p.sourceFunction? name = none := by
+  have hsym : Instance.ofSymbol name = .ok ⟨name, []⟩ := by
+    have := Instance.ofSymbol_symbol ⟨name, []⟩ (fun _ => hplain)
+    simpa [Instance.symbol] using this
+  have hnone : p.findFunction? name = none := by
+    unfold Program.findFunction?
+    exact find?_none_of_key (fun g : Function F => g.name) hkey
+  simp [Program.sourceFunction?, hsym, Except.toOption, hnone, bind, Option.bind]
 
 /-- **What a successful call preparation returns**, read off the closure:
 the closure's type environment, its parameters bound to the arguments, and
