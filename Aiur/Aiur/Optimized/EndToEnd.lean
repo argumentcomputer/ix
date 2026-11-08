@@ -27,14 +27,23 @@ The depth pass removes that hypothesis (`Optimized.Depth`, `Depth/Grouped.lean`)
 grouped, activated plan, built over the certified depth pass of the physical
 circuits, with at most `2^39` rows: `Depth.acyclic` proves every such memo graph
 acyclic, so it unfolds to the finite derivation the theorems here start from.
+The exporter emits the depth pass: `Trace.exportPreparedPlan` exports
+`Depth.system cfg physical.system`, refusing a configuration that is not
+`Depth.Certified` and a plan that is not `Plan.WellFormedActivation`, with gap
+limbs `[16, 8]` or none (`cfg.bits ≤ 24`). Both verifiers enforce the row bound
+over the whole batch: Rust's `check_shape` and `validate_preamble`
+(`MAX_BATCH_ROWS`), and in circuit `StarkVerifier::assert_batch_bounds`.
 
 Also outside these theorems, and trusted: the Rust lowering of the exported
 artifact into multi-stark circuits (the CALL, ROM and memory-segment channel
 tags, activation times multiplicity, trace-shard segment boundaries, the fixed
-tables and the claim encoding), and for the depth theorems that an accepting
-proof yields rows `Grouping.Plan.checkMemo` accepts and that the verifiers
-enforce the `2^39` row bound; multi-stark's STARK and FRI soundness; and the
-`.aiur` parser and the artifact exporter.
+tables, including the depth range tables, and the claim encoding), and for the
+depth theorems that an accepting proof yields rows of its batch that
+`Grouping.Plan.checkMemo` accepts. Reading LogUp's field balance as those integer
+multiplicities needs the lookup budget below `p`: Rust bounds it directly, and the
+in-circuit verifiers check fewer than `2^24` lookups per circuit, which with the
+row bound keeps it below `2^63` plus the claims. Also trusted: multi-stark's
+STARK, FRI and LogUp soundness, and the `.aiur` parser and the artifact exporter.
 -/
 
 namespace Aiur

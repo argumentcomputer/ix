@@ -54,17 +54,25 @@ must be acyclic (`Classical.choice (… checkMemo_sound checked)`) rather than a
 elided `⋯`.
 
 Section 3a closes that gap for circuits compiled with the depth pass
-(`Optimized.Depth`, Track A). `Modules.Prepared.depth_grouped_activated_heap_sound`
-(and `…_goldilocks`) start from acceptance of `Grouping.Plan.checkMemo`, the memo
-checker over the grouped, activated plan the prover commits to, built over the
-certified depth pass of the physical circuits (`Depth.Certified`), with at most
-`2^39` rows. Acyclicity is proved, not assumed: every memo graph over a certified
-depth system with that many rows is acyclic (`Depth.acyclic`), given a field
-condition that Goldilocks meets for `k = 24` (`Depth.goldilocks_characteristic`).
-Both side conditions are decidable: the exporter already checks
-`Plan.WellFormedActivation`, and must check `Depth.Certified` once it emits the
-depth pass (Track A3). Until then, deployed artifacts are covered only by the
-derivation-assuming theorems.
+(`Optimized.Depth`, Track A), which the exporter emits.
+`Modules.Prepared.depth_grouped_activated_heap_sound` (and `…_goldilocks`) start
+from acceptance of `Grouping.Plan.checkMemo`, the memo checker over the grouped,
+activated plan the prover commits to, built over the certified depth pass of the
+physical circuits (`Depth.Certified`), with at most `2^39` rows. Acyclicity is
+proved, not assumed: every memo graph over a certified depth system with that many
+rows is acyclic (`Depth.acyclic`), given a field condition that Goldilocks meets
+for gap limbs of at most `k = 24` bits (`Depth.goldilocks_characteristic`).
+The exporter checks the decidable side conditions: `Trace.exportPreparedPlan`
+groups and exports `Depth.system cfg physical.system`, refuses a configuration
+that is not `Depth.Certified` (`Trace.depthConfig`, by `Depth.certify`) and a plan
+that is not `Plan.WellFormedActivation`, and uses gap limbs `[16, 8]`, or none when
+no call slot needs a gap, so `cfg.bits ≤ 24` as the `…_goldilocks` theorems take.
+The IxVM claim, recursive verifier and aggregation artifacts are exported this way.
+Both verifiers enforce the row bound over the whole batch (every shard and active
+circuit, padded heights): in Rust, `check_shape` and `validate_preamble`
+(`MAX_BATCH_ROWS = 2^39`); in circuit, `StarkVerifier::assert_batch_bounds`, called
+by `verify_batch` and `Aggregation::aggr_range_root`. The rows an accepting proof
+yields are rows of that batch, so the theorems' `rows.length ≤ 2^39` follows.
 
 Section 3b strengthens the headlines to observed derivations
 (`Generic.SourceSemantics.ObsFn`: the source semantics with every call recorded,
@@ -78,10 +86,15 @@ derivation.
 
 Trusted and unproved: the Rust lowering of the exported artifact into
 multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
-times multiplicity, trace-shard segment boundaries, fixed tables and claim
-encoding), including that an accepting proof yields rows `Plan.checkMemo`
-accepts and that the verifiers, in Rust and in circuit, enforce the `2^39` row
-bound over the whole batch; multi-stark's STARK and FRI soundness; the
+times multiplicity, trace-shard segment boundaries, fixed tables, including the
+depth range tables, and claim encoding), including that an accepting proof yields
+rows of its batch that `Plan.checkMemo` accepts. That step reads LogUp's field
+balance as the integer multiplicities `Plan.checkMemo` counts, which needs the
+lookup budget (claims plus height times `max(lookups, 1)` over the batch) below
+`p`: Rust bounds the sum itself (`check_shape`, `validate_preamble`); the
+in-circuit verifiers check that every circuit has fewer than `2^24` lookups,
+which with the `2^39` row bound keeps the sum below `2^63` plus the claims, under
+`p`. Also trusted: multi-stark's STARK, FRI and LogUp soundness; the
 `aiur⟦ … ⟧` and `aiur_library%` elaborators; and the artifact exporter. The library
 `Correctness` theorems prove hand-written Lean models of the library functions
 (their byte and limb arithmetic) against Lean specifications such as
@@ -1582,7 +1595,7 @@ info: @Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks : ∀ {id 
   (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
   {cfg : Optimized.Depth.Config},
   Optimized.Depth.Certified cfg physical.system →
-    cfg.bits = 24 →
+    cfg.bits ≤ 24 →
       ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
         plan.WellFormedActivation →
           ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
@@ -1852,7 +1865,7 @@ info: @Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed :
   (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
   {cfg : Optimized.Depth.Config},
   Optimized.Depth.Certified cfg physical.system →
-    cfg.bits = 24 →
+    cfg.bits ≤ 24 →
       ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
         plan.WellFormedActivation →
           ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
@@ -1964,7 +1977,7 @@ info: @Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_gol
   {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
   (prepared : Optimized.Physical.Prepared compiled.artifact) {cfg : Optimized.Depth.Config},
   Optimized.Depth.Certified cfg prepared.system →
-    cfg.bits = 24 →
+    cfg.bits ≤ 24 →
       ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
         plan.WellFormedActivation →
           ∀ {name : String},
