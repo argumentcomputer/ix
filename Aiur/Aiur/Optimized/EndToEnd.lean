@@ -19,12 +19,21 @@ row that depends on the call itself. That graph can be cyclic: for
 `fn loop(x) { loop(x) }`, a row stating `loop(0) = 42` balances its own
 lookup although no evaluation returns 42. `memo_acyclic_sound` needs the graph
 to be acyclic, which amounts to every proved call terminating; nothing proves
-it for a STARK, so it is a hypothesis of the end-to-end argument.
+it for these circuits, so it is a hypothesis of the theorems in this file.
+
+The depth pass removes that hypothesis (`Optimized.Depth`, `Depth/Grouped.lean`).
+`Modules.Prepared.depth_grouped_activated_heap_sound` starts from acceptance of
+`Grouping.Plan.checkMemo` (`Grouping/Memo.lean`), the memo checker over the
+grouped, activated plan, built over the certified depth pass of the physical
+circuits, with at most `2^39` rows: `Depth.acyclic` proves every such memo graph
+acyclic, so it unfolds to the finite derivation the theorems here start from.
 
 Also outside these theorems, and trusted: the Rust lowering of the exported
 artifact into multi-stark circuits (the CALL, ROM and memory-segment channel
 tags, activation times multiplicity, trace-shard segment boundaries, the fixed
-tables and the claim encoding), multi-stark's STARK and FRI soundness, and the
+tables and the claim encoding), and for the depth theorems that an accepting
+proof yields rows `Grouping.Plan.checkMemo` accepts and that the verifiers
+enforce the `2^39` row bound; multi-stark's STARK and FRI soundness; and the
 `.aiur` parser and the artifact exporter.
 -/
 
