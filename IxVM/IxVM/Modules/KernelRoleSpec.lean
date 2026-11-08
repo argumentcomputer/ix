@@ -16,11 +16,11 @@ set_option maxRecDepth 32768 in
 def kernelRoleSpec : Aiur.Modules.Program Nat := aiur⟦
 module KernelRoleSpec {
   inline fn spec_version() -> Field {
-      3
+      4
     }
 
   inline fn spec_digest() -> Bytes::AddressRef {
-      (&([UInt8::BYTE_66, UInt8::BYTE_224, UInt8::BYTE_92, UInt8::BYTE_190, UInt8::BYTE_195, UInt8::BYTE_97, UInt8::BYTE_119, UInt8::BYTE_40, UInt8::BYTE_244, UInt8::BYTE_30, UInt8::BYTE_11, UInt8::BYTE_173, UInt8::BYTE_93, UInt8::BYTE_75, UInt8::BYTE_183, UInt8::BYTE_173, UInt8::BYTE_33, UInt8::BYTE_69, UInt8::BYTE_102, UInt8::BYTE_241, UInt8::BYTE_69, UInt8::BYTE_163, UInt8::BYTE_150, UInt8::BYTE_69, UInt8::BYTE_76, UInt8::BYTE_13, UInt8::BYTE_175, UInt8::BYTE_157, UInt8::BYTE_21, UInt8::BYTE_104, UInt8::BYTE_45, UInt8::BYTE_81]))
+      (&([UInt8::BYTE_126, UInt8::BYTE_107, UInt8::BYTE_197, UInt8::BYTE_140, UInt8::BYTE_245, UInt8::BYTE_36, UInt8::BYTE_88, UInt8::BYTE_219, UInt8::BYTE_153, UInt8::BYTE_237, UInt8::BYTE_197, UInt8::BYTE_22, UInt8::BYTE_183, UInt8::BYTE_31, UInt8::BYTE_177, UInt8::BYTE_138, UInt8::BYTE_91, UInt8::BYTE_116, UInt8::BYTE_223, UInt8::BYTE_216, UInt8::BYTE_235, UInt8::BYTE_1, UInt8::BYTE_202, UInt8::BYTE_108, UInt8::BYTE_242, UInt8::BYTE_75, UInt8::BYTE_130, UInt8::BYTE_187, UInt8::BYTE_170, UInt8::BYTE_98, UInt8::BYTE_58, UInt8::BYTE_130]))
     }
 
   inline fn role_count() -> Field {
