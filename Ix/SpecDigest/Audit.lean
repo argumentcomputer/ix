@@ -21,13 +21,13 @@ encoding was 17727 bytes, with digest
 6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33; version 2
 adds 1700 bytes. -/
 
-/-- info: "19427 bytes" -/
+/-- info: "19436 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "84d3999ef8f830d2d0678f21d81730d2aee6f9a2cfd04c84d593b38f52eb7fae" -/
+/-- info: "42e05cbec3617728f41e0bad5d4bb7ad214566f145a396454c0daf9d15682d51" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a
