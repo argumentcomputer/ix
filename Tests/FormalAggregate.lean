@@ -201,6 +201,11 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
   let childBindingMember ← claimNode ctx (dir / "binding-member") .aggr bindingMember memberA
   let catalogOf (claims : Array Ix.Claim) : Ix.AssumptionTree :=
     (Ix.AssumptionTree.canonical (claims.map Ix.Claim.commit)).get!
+  -- The output missing a member keeps the member whose commit sorts last, so
+  -- the union's first comparison, against the other member, refuses it
+  -- whichever way the two claims' hashes order.
+  let kept := if compare memberA.claim.commit memberC.claim.commit == .gt then memberA.claim
+    else memberC.claim
   let catalogCases :
       Array (String × Node × Node × Array ByteArray × Array Ix.AssumptionTree × Ix.Claim × Bool) := #[
     ("shape 16 joins two member claims into a catalog", childA, childC,
@@ -211,8 +216,8 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
       #[Ix.Claim.ser catalogAC.claim, ser crossAB], #[catalogAC.members, catalogACB.members],
       catalogACB.claim, true),
     ("shape 16 rejects an output missing a member", childA, childC,
-      #[ser memberA, ser memberC], #[catalogOf #[memberA.claim]],
-      .catalog (catalogOf #[memberA.claim]).root, false),
+      #[ser memberA, ser memberC], #[catalogOf #[kept]],
+      .catalog (catalogOf #[kept]).root, false),
     ("shape 16 rejects a conditional member claim", childConditional, childC,
       #[ser conditionalA, ser memberC], #[catalogOf #[conditionalA.claim, memberC.claim]],
       .catalog (catalogOf #[conditionalA.claim, memberC.claim]).root, false),

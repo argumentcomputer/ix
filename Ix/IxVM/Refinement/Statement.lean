@@ -15,17 +15,15 @@ headline; nothing here proves the refinement. Frozen in
 ## The object
 
 `IxVM.Checked.source` (`IxVM/IxVM/Checked.lean`): the checked IxVM source
-for the entry `IxVM::verify_claim` alone, pinned as a Lean literal. It is
-what `Aiur.Modules.prepare IxVM.program [verifyClaim]` computes (the
-preparation `ixvm check-claim`, `export-claim` and `export-claim-trace`
-make): the modules linked, renamed and elaborated. Nothing in the statements
-runs the module frontend or the elaborator. The link to `IxVM.program` is a
-native check: the test suite `ixvm-checked-source` prepares `IxVM.program`
-and checks that its source is this one, and `lake exe ixvm/ixvm-checked
---check` that the files are its rendering. The deployed artifact is today
-exported from the native preparation, which that check equates with this
-constant; exporting it from the constant is a merge-time change to the
-exporter (Track A).
+for the entry `IxVM::verify_claim` alone, pinned as a Lean literal, from
+which `ixvm check-claim`, `export-claim` and `export-claim-trace` compile
+the deployed claim artifact. It is what `Aiur.Modules.prepare IxVM.program
+[verifyClaim]` computes: the modules linked, renamed and elaborated. Nothing
+in the statements or the claim exporter runs the module frontend or the
+elaborator. The link to `IxVM.program` is a native check: the test suite
+`ixvm-checked-source` prepares `IxVM.program` and checks that its source and
+exported bytecode are this one's, and `lake exe ixvm/ixvm-checked --check`
+that the files are its rendering.
 
 `verify_claim(digest: [Field; 8])` reads the claim's bytes on IO channel 0,
 checks that their BLAKE3 digest packs to `digest`, decodes the claim and
@@ -204,8 +202,9 @@ theorem SourceSound.run {P : List (Call IxVM.F) → Digest → Prop} (sound : So
 
 /-- **Circuit-level soundness for `P`** (the main circuit statement): for the
 checked source specialized for `verify_claim`, any optimized compilation and
-its physical deduplication, any depth configuration with 24-bit gap words
-that the depth pass certifies (`Depth.Certified`, as `Depth.plan` builds it),
+its physical deduplication, any depth configuration with gap words of at
+most 24 bits that the depth pass certifies (`Depth.Certified`, as
+`Depth.plan` builds it),
 any grouping plan over the depth pass with well-formed activation, any valid
 ROM, any signed message on `verify_claim`'s channel whose arguments decode to
 `d`, and any rows, at most `2^39` of them, that the grouped, activated memo
@@ -220,7 +219,7 @@ def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     {cfg : Aiur.Optimized.Depth.Config},
-    Aiur.Optimized.Depth.Certified cfg physical.system → cfg.bits = 24 →
+    Aiur.Optimized.Depth.Certified cfg physical.system → cfg.bits ≤ 24 →
     ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
     plan.WellFormedActivation →
     ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid →

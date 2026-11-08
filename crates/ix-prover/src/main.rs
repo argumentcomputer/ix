@@ -406,7 +406,9 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
       ));
     }
     let (program, trace) = package.traced()?;
-    programs.push(program.check_field::<Val>()?);
+    let mut program = program.check_field::<Val>()?;
+    program.track_depth(&trace)?;
+    programs.push(program);
     artifacts.push(trace);
   }
   let plans = programs

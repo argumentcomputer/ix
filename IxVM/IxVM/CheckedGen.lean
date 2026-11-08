@@ -535,11 +535,14 @@ def mirrorLemma (ctx : Ctx) (f : Function F) : M String := do
   let ps := f.params.map (var ·.1)
   let script ← prove ctx f.body "body" {} fun fs => pure (finalStep f.name fs)
   let ihs := String.join ((ctx.needs f.name).map fun g => s!" (ih{ctx.given.idxOf g} : «{g}».Complete)")
+  let (_, st) := (expr s!"IxVM.Checked.Fn.«{f.name}»" true f.body).run {}
+  let fnDefs := ", ".intercalate (s!"IxVM.Checked.Fn.«{f.name}»" ::
+    (List.range st.next).map fun i => s!"IxVM.Checked.Fn.«{f.name}».part{i}")
   return s!"theorem «{f.name}».of_eval{ihs} : «{f.name}».Complete := by\n" ++
     s!"  intro {" ".intercalate (ps ++ ["h", "h'", "r", "ev"])}\n" ++
     s!"  have body := ev.function_inv IxVM.Checked.Lookup.«{f.name}»\n" ++
-    s!"    (by simp [IxVM.Checked.Fn.«{f.name}», ControlLower.hasControl])\n" ++
-    s!"  simp only [IxVM.Checked.Fn.«{f.name}»] at body\n" ++
+    s!"    (by simp [{fnDefs}, ControlLower.hasControl])\n" ++
+    s!"  simp only [{fnDefs}] at body\n" ++
     "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
 
 /-- The calls of a body: functions and maps. -/
@@ -580,9 +583,10 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
           stack := (n, true) :: stack
           for c in (MirrorGen.calls f.body).eraseDups do
             if c != n && !seen.contains c then stack := (c, false) :: stack
-  -- recursive functions are not proved by the generator; callers assume them
+  -- recursive and back-edge functions are not proved by the generator; callers assume them
   let recursive := order.filter fun n => match fnOf n with
-    | some f => (MirrorGen.calls f.body).contains n | none => false
+    | some f => (MirrorGen.calls f.body).any fun c => (fnOf c).isSome && order.idxOf n ≤ order.idxOf c
+    | none => false
   let reach (n : String) : List String := Id.run do
     let mut acc : List String := []
     let mut todo := [n]

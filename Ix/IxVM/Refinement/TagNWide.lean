@@ -740,4 +740,158 @@ theorem getTagN2_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : 
     · exact (tailNone fun k _ => by
         exact wide_none_code (hh := 16) (by norm_num) (by omega) (by omega) k).elim
 
+/-! ## Arbitrary reader offsets -/
+
+theorem getU8_drop {bytes : List UInt8} {i j : Nat} {b : UInt8} {s' : Ixon.GetState}
+    (h : Ixon.getU8 { idx := j, bytes := ⟨(bytes.drop i).toArray⟩ } = .ok b s') :
+    s' = { idx := j + 1, bytes := ⟨(bytes.drop i).toArray⟩ } ∧
+      Ixon.getU8 { idx := i + j, bytes := ⟨bytes.toArray⟩ } =
+        .ok b { idx := i + (j + 1), bytes := ⟨bytes.toArray⟩ } := by
+  have hj : j < (bytes.drop i).length := by
+    unfold Ixon.getU8 at h
+    change EStateM.bind EStateM.get _ _ = _ at h
+    simp only [EStateM.bind, EStateM.get] at h
+    split at h
+    · rename_i hlt; simpa [ByteArray.size] using hlt
+    · cases h
+  rw [getU8_at hj] at h
+  cases h
+  refine ⟨rfl, ?_⟩
+  have hij : i + j < bytes.length := by simp at hj; omega
+  simpa [List.getElem_drop, Nat.add_assoc] using getU8_at hij
+
+theorem getTrimmed_drop (len : Nat) {bytes : List UInt8} {i j : Nat} {x : UInt64}
+    {s' : Ixon.GetState}
+    (h : Ixon.getU64TrimmedLEAux len { idx := j, bytes := ⟨(bytes.drop i).toArray⟩ } = .ok x s') :
+    s' = { idx := j + len, bytes := ⟨(bytes.drop i).toArray⟩ } ∧
+      Ixon.getU64TrimmedLEAux len { idx := i + j, bytes := ⟨bytes.toArray⟩ } =
+        .ok x { idx := i + (j + len), bytes := ⟨bytes.toArray⟩ } := by
+  induction len generalizing j x s' with
+  | zero =>
+    obtain ⟨rfl, rfl⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    exact ⟨by simp, by simp [Ixon.getU64TrimmedLEAux, pure, EStateM.pure]⟩
+  | succ len ih =>
+    obtain ⟨low, s1, hlow, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨high, s2, hhigh, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨rfl, rfl⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    obtain ⟨rfl, hlow'⟩ := getU8_drop hlow
+    obtain ⟨rfl, hhigh'⟩ := ih hhigh
+    refine ⟨by simp [Nat.add_assoc, Nat.add_comm 1 len], ?_⟩
+    simp [Ixon.getU64TrimmedLEAux, bind, EStateM.bind, hlow', hhigh', pure, EStateM.pure,
+      Nat.add_assoc, Nat.add_comm 1 len]
+
+theorem getTagNWide_drop {f : Nat} {flag : UInt8} {c : Nat} {bytes : List UInt8} {i j : Nat}
+    {t : Ixon.TagN} {s' : Ixon.GetState}
+    (h : Ixon.getTagNWide f flag c { idx := j, bytes := ⟨(bytes.drop i).toArray⟩ } = .ok t s') :
+    ∃ m, s' = { idx := m, bytes := ⟨(bytes.drop i).toArray⟩ } ∧
+      Ixon.getTagNWide f flag c { idx := i + j, bytes := ⟨bytes.toArray⟩ } =
+        .ok t { idx := i + m, bytes := ⟨bytes.toArray⟩ } := by
+  unfold Ixon.getTagNWide at h ⊢
+  by_cases h0 : c = 0
+  · rw [ite_eq_left h0] at h ⊢
+    obtain ⟨x, s1, hx, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨rfl, rfl⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    obtain ⟨rfl, hx'⟩ := getTrimmed_drop 2 hx
+    exact ⟨j + 2, rfl, by simp [bind, EStateM.bind, hx', pure, EStateM.pure]⟩
+  rw [ite_eq_right h0] at h ⊢
+  by_cases h1 : c = 1
+  · rw [ite_eq_left h1] at h ⊢
+    obtain ⟨x, s1, hx, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨rfl, rfl⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    obtain ⟨rfl, hx'⟩ := getTrimmed_drop 3 hx
+    exact ⟨j + 3, rfl, by simp [bind, EStateM.bind, hx', pure, EStateM.pure]⟩
+  rw [ite_eq_right h1] at h ⊢
+  by_cases h2 : c = 2
+  · rw [ite_eq_left h2] at h ⊢
+    obtain ⟨x, s1, hx, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨rfl, rfl⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    obtain ⟨rfl, hx'⟩ := getTrimmed_drop 4 hx
+    exact ⟨j + 4, rfl, by simp [bind, EStateM.bind, hx', pure, EStateM.pure]⟩
+  rw [ite_eq_right h2] at h ⊢
+  by_cases h3 : c = 3
+  · rw [ite_eq_left h3] at h ⊢
+    obtain ⟨x, s1, hx, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨rfl, hx'⟩ := getTrimmed_drop 8 hx
+    by_cases hlt : Ixon.tagNEnd5 f + x.toNat < 2 ^ 64
+    · rw [ite_eq_left hlt] at h
+      obtain ⟨rfl, rfl⟩ := Ixon.Verify.TagN.pure_ok_inv h
+      refine ⟨j + 8, rfl, ?_⟩
+      simp only [bind, EStateM.bind, hx', hlt, ↓reduceIte, pure, EStateM.pure]
+    · rw [ite_eq_right hlt] at h
+      exact (Ixon.Verify.TagN.throw_ok_false h).elim
+  · rw [ite_eq_right h3] at h
+    exact (Ixon.Verify.TagN.throw_ok_false h).elim
+
+/-- **Shifting `Ixon.getTagN` to an arbitrary offset `i`**: a read from `start (bytes.drop i)`
+that advances to `n` succeeds from `{ idx := i, bytes := ⟨bytes.toArray⟩ }` and advances to
+`i + n`. -/
+theorem getTagN_drop {f : Nat} {bytes : List UInt8} {i n : Nat} {t : Ixon.TagN}
+    (h : Ixon.getTagN f (start (bytes.drop i)) = .ok t { idx := n, bytes := ⟨(bytes.drop i).toArray⟩ }) :
+    Ixon.getTagN f { idx := i, bytes := ⟨bytes.toArray⟩ } =
+      .ok t { idx := i + n, bytes := ⟨bytes.toArray⟩ } := by
+  unfold start Ixon.getTagN at h
+  unfold Ixon.getTagN
+  obtain ⟨b, s1, hb, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+  obtain ⟨rfl, hb'⟩ := getU8_drop hb
+  rw [Nat.add_zero] at hb'
+  simp only at h
+  by_cases h1 : b.toNat % 2 ^ (8 - f) < 2 ^ (8 - f - 1)
+  · rw [ite_eq_left h1] at h
+    obtain ⟨rfl, hidx⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    cases hidx
+    simp [bind, EStateM.bind, hb', h1, pure, EStateM.pure]
+  rw [ite_eq_right h1] at h
+  by_cases h2 : b.toNat % 2 ^ (8 - f) - 2 ^ (8 - f - 1) < 2 ^ (8 - f - 2)
+  · rw [ite_eq_left h2] at h
+    obtain ⟨lo, s2, hlo, h⟩ := Ixon.Verify.TagN.bind_ok_inv h
+    obtain ⟨rfl, hidx⟩ := Ixon.Verify.TagN.pure_ok_inv h
+    obtain ⟨hs2, hlo'⟩ := getU8_drop hlo
+    rw [hs2] at hidx
+    cases hidx
+    simp [bind, EStateM.bind, hb', h1, h2, hlo', pure, EStateM.pure]
+  · rw [ite_eq_right h2] at h
+    obtain ⟨m, hm, hw⟩ := getTagNWide_drop h
+    cases hm
+    simp [bind, EStateM.bind, hb', h1, h2, hw]
+
+/-- **`getTagN0_refines` at an arbitrary reader offset `i`.** -/
+theorem getTagN0_refines_at {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+    {i : Nat} (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop i) stream)
+    (ev : EvalFn W "IxonDeserialize::get_tagn0" [stream] heap r h') :
+    h' = heap ∧ ∃ (t : Ixon.TagN) (n : Nat) (restPtr : SourceValue F),
+      Ixon.getTagN 0 { idx := i, bytes := ⟨bytes.toArray⟩ } =
+        .ok t { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
+      t.flag = 0 ∧
+      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop (i + n)) restPtr ∧
+      r = .tuple [u64Value t.value.toNat, restPtr] := by
+  obtain ⟨rfl, t, n, restPtr, hok, hflag, hrep, hr⟩ := getTagN0_refines rep ev
+  rw [List.drop_drop] at hrep
+  exact ⟨rfl, t, n, restPtr, getTagN_drop hok, hflag, hrep, hr⟩
+
+/-- **`getTagN4_refines` at an arbitrary reader offset `i`.** -/
+theorem getTagN4_refines_at {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+    {i : Nat} (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop i) stream)
+    (ev : EvalFn W "IxonDeserialize::get_tagn4" [stream] heap r h') :
+    h' = heap ∧ ∃ (t : Ixon.TagN) (n : Nat) (restPtr : SourceValue F),
+      Ixon.getTagN 4 { idx := i, bytes := ⟨bytes.toArray⟩ } =
+        .ok t { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
+      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop (i + n)) restPtr ∧
+      r = .tuple [.tuple [.field (t.flag.toNat : F), u64Value t.value.toNat], restPtr] := by
+  obtain ⟨rfl, t, n, restPtr, hok, hrep, hr⟩ := getTagN4_refines rep ev
+  rw [List.drop_drop] at hrep
+  exact ⟨rfl, t, n, restPtr, getTagN_drop hok, hrep, hr⟩
+
+/-- **`getTagN2_refines` at an arbitrary reader offset `i`.** -/
+theorem getTagN2_refines_at {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+    {i : Nat} (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop i) stream)
+    (ev : EvalFn W "IxonDeserialize::get_tagn2" [stream] heap r h') :
+    h' = heap ∧ ∃ (t : Ixon.TagN) (n : Nat) (restPtr : SourceValue F),
+      Ixon.getTagN 2 { idx := i, bytes := ⟨bytes.toArray⟩ } =
+        .ok t { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
+      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop (i + n)) restPtr ∧
+      r = .tuple [.tuple [.field (t.flag.toNat : F), u64Value t.value.toNat], restPtr] := by
+  obtain ⟨rfl, t, n, restPtr, hok, hrep, hr⟩ := getTagN2_refines rep ev
+  rw [List.drop_drop] at hrep
+  exact ⟨rfl, t, n, restPtr, getTagN_drop hok, hrep, hr⟩
+
 end IxVM.Refinement.TagN

@@ -43,6 +43,8 @@ import Tests.Ix.IxVM.BindingAnchors
 import Tests.Ix.IxVM.BindingFrontier
 import Tests.Ix.IxVM.TagN
 import Tests.Ix.IxVM.Codec
+import Tests.Ix.IxVM.UserAxioms
+import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
@@ -206,6 +208,11 @@ def registry : List Entry := [
   .runner "ixvm-codec" (.ci .ixvm) Tests.Ix.IxVM.Codec.run,
   -- Evaluation claims against Lean's own reduction and generated arithmetic.
   .env "ixvm-eval" (.ci .ixvm) Tests.Ix.IxVM.Eval.run,
+  -- Every leaf of a claim's axioms tree type-checked, used or not.
+  .runner "ixvm-user-axioms" (.ci .ixvm) Tests.Ix.IxVM.UserAxioms.run,
+  -- A decision's `of_decide_eq_*` roles bound by a compiled binding
+  -- (`Array.extract_append._proof_1_1`).
+  .env "ixvm-decision-roles" (.ci .ixvm) Tests.Ix.IxVM.DecisionRoles.run,
   -- Circular definitions, binding anchors and the lazy binding frontier.
   .runner "ixvm-definition-dependencies" (.ci .ixvm) Tests.Ix.IxVM.DefinitionDependencies.run,
   .runner "ixvm-binding-anchors" (.ci .ixvm) Tests.Ix.IxVM.BindingAnchors.run,
@@ -303,6 +310,8 @@ def required : List (String × String) := [
   ("ixvm-tagn", "ci:ixvm"),
   ("ixvm-codec", "ci:ixvm"),
   ("ixvm-eval", "ci:ixvm"),
+  ("ixvm-user-axioms", "ci:ixvm"),
+  ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),

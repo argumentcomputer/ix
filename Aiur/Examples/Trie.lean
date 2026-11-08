@@ -116,8 +116,8 @@ def main (args : List String) : IO Unit := do
   let prepared ← IO.ofExcept (Modules.prepare (source.toField F) ["Trie::run"])
   let execution ← IO.ofExcept prepared.exportExecution
   let compiled ← IO.ofExcept (prepared.compileOptimized {})
-  let trace ← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
-    compiled.circuit.artifact execution.bytecode)
+  let (execution, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+    compiled.circuit.inlined.program compiled.circuit.artifact execution)
   Artifact.write path (← IO.ofExcept (Artifact.execution execution modulus ZMod.val (some trace)
     [14, 4096, 17] [] #[]))
   IO.println s!"Exported {execution.bytecode.functions.length} functions to {path}"

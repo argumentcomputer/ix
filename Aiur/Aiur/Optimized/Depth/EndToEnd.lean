@@ -19,7 +19,7 @@ variable {F : Type} [Field F] [DecidableEq F]
 /-- Source evaluation from weighted rows accepted over `Depth.system cfg prepared.system`.
 `rooted` relates the public claim to the depth system's root: for a non-recursive
 entry they are equal. Over Goldilocks, `Depth.goldilocks_characteristic` discharges
-`characteristic` for `N = 2^39` and `cfg.bits = 24`. -/
+`characteristic` for `N = 2^39` and `cfg.bits ≤ 24`. -/
 theorem Prepared.depth_native_heap_sound {source : Generic.Source F} {entries : List String}
     {specialized : Generic.Specialized source entries} (compiled : GenericArtifact specialized)
     (prepared : Prepared compiled.artifact) {cfg : Depth.Config}

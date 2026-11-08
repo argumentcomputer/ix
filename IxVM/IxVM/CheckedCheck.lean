@@ -1,3 +1,4 @@
+import Aiur.Execution.Interface
 import IxVM.Checked
 import IxVM.CheckedGen
 
@@ -7,7 +8,9 @@ import IxVM.CheckedGen
 * `checkFiles`: the files under `IxVM/IxVM/Checked/` are the rendering of the
   native preparation;
 * `checkPreparation`: the preparation's source is `IxVM.Checked.source`
-  (program and static tables), and it selects exactly the entry. -/
+  (program and static tables), it selects exactly the entry, and exporting
+  execution bytecode from `IxVM.Checked.source` matches the preparation's
+  export. -/
 
 namespace IxVM.CheckedCheck
 
@@ -27,7 +30,11 @@ def checkPreparation : IO Bool := do
   let program := src.program == IxVM.Checked.program
   let tables := src.tables == IxVM.Checked.coreTables
   let entries := prepared.entries == [IxVM.Checked.entry]
-  IO.println s!"[ixvm-checked-source] program {program}, static tables {tables}, entries {entries}"
-  return program && tables && entries
+  let prepExport ← IO.ofExcept prepared.exportExecution
+  let chkExport ← IO.ofExcept (IxVM.Checked.source.exportExecution [IxVM.Checked.entry])
+  let exported := prepExport.bytecode == chkExport.bytecode &&
+    prepExport.interfaces == chkExport.interfaces
+  IO.println s!"[ixvm-checked-source] program {program}, static tables {tables}, entries {entries}, export {exported}"
+  return program && tables && entries && exported
 
 end IxVM.CheckedCheck

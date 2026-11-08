@@ -57,14 +57,14 @@ module IxVMCompat {
   }
 
   fn default_binding_addr() -> Bytes::AddressRef {
-      (&([UInt8::BYTE_31, UInt8::BYTE_85, UInt8::BYTE_77, UInt8::BYTE_180,
-             UInt8::BYTE_29, UInt8::BYTE_45, UInt8::BYTE_45, UInt8::BYTE_119,
-             UInt8::BYTE_193, UInt8::BYTE_226, UInt8::BYTE_45, UInt8::BYTE_253,
-             UInt8::BYTE_219, UInt8::BYTE_204, UInt8::BYTE_179, UInt8::BYTE_132,
-             UInt8::BYTE_203, UInt8::BYTE_39, UInt8::BYTE_130, UInt8::BYTE_190,
-             UInt8::BYTE_29, UInt8::BYTE_192, UInt8::BYTE_214, UInt8::BYTE_122,
-             UInt8::BYTE_139, UInt8::BYTE_43, UInt8::BYTE_225, UInt8::BYTE_95,
-             UInt8::BYTE_211, UInt8::BYTE_158, UInt8::BYTE_62, UInt8::BYTE_114]))
+      (&([UInt8::BYTE_125, UInt8::BYTE_248, UInt8::BYTE_114, UInt8::BYTE_219,
+             UInt8::BYTE_88, UInt8::BYTE_209, UInt8::BYTE_16, UInt8::BYTE_10,
+             UInt8::BYTE_222, UInt8::BYTE_13, UInt8::BYTE_186, UInt8::BYTE_87,
+             UInt8::BYTE_106, UInt8::BYTE_19, UInt8::BYTE_41, UInt8::BYTE_130,
+             UInt8::BYTE_217, UInt8::BYTE_59, UInt8::BYTE_191, UInt8::BYTE_159,
+             UInt8::BYTE_133, UInt8::BYTE_41, UInt8::BYTE_239, UInt8::BYTE_15,
+             UInt8::BYTE_55, UInt8::BYTE_161, UInt8::BYTE_113, UInt8::BYTE_187,
+             UInt8::BYTE_47, UInt8::BYTE_186, UInt8::BYTE_225, UInt8::BYTE_218]))
   }
 
   fn audit_div(a: KernelTypes::KLimbs, b: KernelTypes::KLimbs, expected_q: KernelTypes::KLimbs, expected_r: KernelTypes::KLimbs) -> () {

@@ -1,4 +1,5 @@
 import Ix.Cert.AcceptsUnder
+import IxC.Kernel.RoleEquations
 import IxC.Kernel.Verify.Cached.NormalizeRef
 import Ix.Claim
 import Ix.AssumptionTree
@@ -232,17 +233,29 @@ def BindingSeeds (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
   (∃ r, t.addressOf? r = some a) ∨
     ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
 
+/-- **The role specifications the pure declaration fold does not check on its
+own** (`IxC/Kernel/Roles.lean`, `IxC/Kernel/RoleEquations.lean`): no
+declaration mismatches an install-checked anchor
+(`Ix.Kernel.Declaration.anchorMismatch?`), and every role specified by
+definition equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some
+fuel in the installed environment. -/
+def BindingSpecs (_ : Binding) (envA : Ix.Kernel.Env .anon)
+    (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
+  (∀ d ∈ ds, d.anchorMismatch? = none) ∧
+    ∃ ev, ∀ r ∈ Ix.Kernel.Role.all, (r.spec (md := .anon)).kind = .eqns →
+      ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps .verified F) envA r ev = .ok ()
+
 /-- **The `binding` claim in a view** (`binding spec b`, validator 3): `spec`
 is IxC's specification digest; the view's role table with hash `b` is
 admitted by IxC, binds every role, and IxC's strict fold accepts the closure
-of its bound constants and evidence theorems under it, which checks each
-bound constant against its role's specification. -/
+of its bound constants and evidence theorems under it with `BindingSpecs`,
+which checks each bound constant against its role's specification. -/
 def BindingIn (V : View) (spec b : Address) : Prop :=
   Ix.SpecDigest.specDigest = .ok spec ∧
     ∃ bnd t, V.binding? b = some bnd ∧
       Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = .ok t ∧
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
-      AcceptsIn V (Scope.strict bnd) (BindingSeeds t)
+      AcceptsIn V (Scope.strict bnd) (BindingSeeds t) BindingSpecs
 
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or
 not, as IxVM validates it (`KernelRoles::validate_user_axioms`): the view
@@ -293,18 +306,18 @@ assumptions `asm`, under the context `ctx`, with `Q` of the accepting run:
 
 * `ctx.spec` is IxC's specification digest, and the context is not a
   literal class (IxVM refuses validator 5);
-* if the context assumes its binding, given the `binding` claim for it: the
-  view holds the role table with hash `ctx.binding`, and IxC accepts `S`
-  together with the axioms tree's leaves that are not assumptions under it,
-  in the context's axiom scope, installing each of them as a user axiom
-  (`LeavesInstalled`), under the assumptions `asm`. -/
+* the view holds the role table with hash `ctx.binding` and validates the
+  context's axiom scope (`AxiomScopeIn`), and if the context assumes its
+  binding, given the `binding` claim for it, IxC accepts `S` together with
+  the axioms tree's leaves that are not assumptions under it, installing each
+  of them as a user axiom (`LeavesInstalled`), under the assumptions `asm`. -/
 def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Option Address)
     (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop :=
       fun _ _ _ => True) : Prop :=
   Ix.SpecDigest.specDigest = .ok ctx.spec ∧ ctx.literalClass = false ∧
-    ((ctx.bindingAssumed = true → BindingIn V ctx.spec ctx.binding) →
-      ∃ b, V.binding? ctx.binding = some b ∧
-        AxiomScopeIn V b ctx.axioms fun policy leaves =>
+    ∃ b, V.binding? ctx.binding = some b ∧
+      AxiomScopeIn V b ctx.axioms fun policy leaves =>
+        ((ctx.bindingAssumed = true → BindingIn V ctx.spec ctx.binding) →
           AssumingIn V ⟨b, policy, (· ∈ leaves)⟩ (fun a => S a ∨ (a ∈ leaves ∧ ¬ AssumedIn V asm a))
             (fun bnd envA ds => LeavesInstalled leaves (AssumedIn V asm) ds ∧ Q bnd envA ds) asm)
 
@@ -326,11 +339,11 @@ def AddressKey (b : Binding) (a : Address) (k : Ix.Kernel.Key .anon) : Prop :=
 
 /-- **An `eval` claim's values, in the accepting run** (owner, 2026-11-08): the
 declarations give `input` a type and value and `output` a definition; the
-output has the input's universe count and type; and at some fuel IxC's
-reference normalizer (`Ix.Kernel.nfRef` at `.verified`, in the installed
-environment: IxVM's `eval_nf` on IxC's `whnf`) takes the input's value to
-exactly the output's value, up to binder metadata (`Expr.eraseMeta`), which
-IxVM's structural comparison does not see. The output is the input's
+output has the input's universe count and type, up to binder metadata; and at
+some fuel IxC's reference normalizer (`Ix.Kernel.nfRef` at `.verified`, in the
+installed environment: IxVM's `eval_nf` on IxC's `whnf`) takes the input's
+value to exactly the output's value, up to binder metadata (`Expr.eraseMeta`),
+which IxVM's structural comparison does not see. The output is the input's
 specific reduced form, not merely a definitionally equal term. -/
 def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .anon)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
@@ -338,7 +351,8 @@ def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .ano
     (hint : Ix.Kernel.ReducibilityHint),
     (∃ d ∈ ds, declValue? d = some (cvIn, vIn)) ∧ AddressKey b input cvIn.name ∧
     Ix.Kernel.Declaration.defnDecl cvOut vOut hint ∈ ds ∧ AddressKey b output cvOut.name ∧
-    cvOut.levelParams.length = cvIn.levelParams.length ∧ cvOut.type = cvIn.type ∧
+    cvOut.levelParams.length = cvIn.levelParams.length ∧
+    cvOut.type.eraseMeta = cvIn.type.eraseMeta ∧
     ∃ fuel vNf, Ix.Kernel.nfRef .verified envA fuel 0 vIn = .ok vNf ∧ vNf.eraseMeta = vOut.eraseMeta
 
 /-- **An `eval` claim's output record**: the view stores a safe standalone

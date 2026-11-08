@@ -242,6 +242,8 @@ impl LookupPlan {
 struct Worker<F> {
   scratch: Vec<F>,
   buffer: Vec<F>,
+  // A depth circuit's row, before placement.
+  row: Vec<F>,
   lookup_scratch: Vec<Val>,
   lookup_args: Vec<Val>,
 }
@@ -251,6 +253,7 @@ impl<F> Default for Worker<F> {
     Self {
       scratch: Default::default(),
       buffer: Default::default(),
+      row: Default::default(),
       lookup_scratch: Default::default(),
       lookup_args: Default::default(),
     }
@@ -274,7 +277,12 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     if self.gpu_lookup_only {
       Ok(self.witness_from_main(self.generate_stage_1(record, entry, args)?))
     } else {
-      self.generate_with::<true>(record, Some((entry, args)), &[])
+      self.generate_with::<true>(
+        record,
+        Some((entry, args)),
+        &[],
+        &RangeCounts::default(),
+      )
     }
   }
 
@@ -286,7 +294,16 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
-    Ok(self.generate_with::<false>(record, Some((entry, args)), &[])?.traces)
+    Ok(
+      self
+        .generate_with::<false>(
+          record,
+          Some((entry, args)),
+          &[],
+          &RangeCounts::default(),
+        )?
+        .traces,
+    )
   }
 
   /// A worker record may have no public entrypoint of its own. Its unresolved
@@ -295,16 +312,22 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     record: &Execution<B>,
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
-    Ok(self.generate_with::<false>(record, None, &[])?.traces)
+    Ok(
+      self
+        .generate_with::<false>(record, None, &[], &RangeCounts::default())?
+        .traces,
+    )
   }
 
   /// Circuits with a `device` height are populated on the GPU; their host
-  /// matrices are left empty.
+  /// matrices are left empty. `device_ranges` counts the depth range-table
+  /// uses of those device rows.
   pub(super) fn generate_with<const LOOKUPS: bool>(
     &self,
     record: &Execution<B>,
     root: Option<(&str, &[B::Element])>,
     device: &[Option<usize>],
+    device_ranges: &RangeCounts,
   ) -> Result<SystemWitness<Val>, String> {
     #[cfg(feature = "trace-profile")]
     let mut profile = super::profile::Phases::new();
@@ -314,33 +337,34 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     #[cfg(feature = "trace-profile")]
     profile.mark("validate_and_root");
-    let table_counts = self.auxiliary_counts(record)?;
-    #[cfg(feature = "trace-profile")]
-    profile.mark("auxiliary_counts");
+    let functions = self.members.len();
+    let fixed = functions..functions + self.tables.len();
+    let empty = |ci: usize| {
+      (
+        RowMajorMatrix::new(vec![], self.system.circuits[ci].main_width),
+        LookupValues::builder(0, &self.lookup_plans[ci].widths).finish(),
+      )
+    };
+    // Fixed tables come last: function population counts the uses of the
+    // depth pass's range tables, which execution never calls.
     let generate = |ci: usize| {
       #[cfg(feature = "trace-profile")]
       let start = std::time::Instant::now();
-      let result = if device.get(ci).copied().flatten().is_some() {
-        Ok((
-          RowMajorMatrix::new(vec![], self.system.circuits[ci].main_width),
-          LookupValues::builder(0, &self.lookup_plans[ci].widths).finish(),
-        ))
-      } else if ci < self.members.len() {
-        self.function_witness::<LOOKUPS>(ci, record)
-      } else {
-        let table = ci - self.members.len();
-        let trace = if let Some(table) = self.tables.get(table) {
-          table.witness(&table_counts)
+      let result =
+        if device.get(ci).copied().flatten().is_some() || fixed.contains(&ci) {
+          let (trace, lookups) = empty(ci);
+          Ok((trace, lookups, RangeCounts::default()))
+        } else if ci < functions {
+          self.function_witness::<LOOKUPS>(ci, record)
         } else {
-          self.rom.witness(record, table - self.tables.len())?
+          let trace = self.rom.witness(record, ci - fixed.end)?;
+          let lookups = if LOOKUPS {
+            self.auxiliary_lookups(ci, &trace)
+          } else {
+            empty(ci).1
+          };
+          Ok((trace, lookups, RangeCounts::default()))
         };
-        let lookups = if LOOKUPS {
-          self.auxiliary_lookups(ci, &trace)
-        } else {
-          LookupValues::builder(0, &self.lookup_plans[ci].widths).finish()
-        };
-        Ok((trace, lookups))
-      };
       #[cfg(feature = "trace-profile")]
       profile.circuit(ci, start.elapsed());
       result
@@ -354,9 +378,35 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let results = (0..self.system.circuits.len())
       .map(generate)
       .collect::<Result<Vec<_>, String>>()?;
-    let (traces, lookups): (Vec<_>, Vec<_>) = results.into_iter().unzip();
+    let mut ranges = device_ranges.clone();
+    let mut traces = Vec::with_capacity(results.len());
+    let mut lookups = Vec::with_capacity(results.len());
+    for (trace, lookup, counts) in results {
+      traces.push(trace);
+      lookups.push(lookup);
+      ranges = ranges.merge(counts);
+    }
     #[cfg(feature = "trace-profile")]
     profile.mark("populate_circuits");
+    let table_counts = self.auxiliary_counts(record, &ranges)?;
+    #[cfg(feature = "trace-profile")]
+    profile.mark("auxiliary_counts");
+    let table = |ci: usize| {
+      let trace = self.tables[ci - functions].witness(&table_counts);
+      let lookup =
+        if LOOKUPS { self.auxiliary_lookups(ci, &trace) } else { empty(ci).1 };
+      (ci, trace, lookup)
+    };
+    #[cfg(feature = "parallel")]
+    let tables: Vec<_> = fixed.clone().into_par_iter().map(table).collect();
+    #[cfg(not(feature = "parallel"))]
+    let tables: Vec<_> = fixed.clone().map(table).collect();
+    for (ci, trace, lookup) in tables {
+      traces[ci] = trace;
+      lookups[ci] = lookup;
+    }
+    #[cfg(feature = "trace-profile")]
+    profile.mark("fixed_tables");
     let (active, degrees) = self.trace_shape_with(&traces, device)?;
     self.check_shape(&active, &degrees)?;
     #[cfg(feature = "trace-profile")]
@@ -373,7 +423,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     ci: usize,
     record: &Execution<B>,
-  ) -> Result<(RowMajorMatrix<Val>, LookupValues<Val>), String> {
+  ) -> Result<(RowMajorMatrix<Val>, LookupValues<Val>, RangeCounts), String> {
     let mut rows = vec![];
     for &function in &self.members[ci] {
       rows.extend(
@@ -395,7 +445,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       &lookup_plan.widths,
     );
     let mut writers = builder.rows_mut();
+    let field = self.plan.program.field;
     let populate = |worker: &mut Worker<B::Element>,
+                    ranges: &mut RangeCounts,
                     batch: usize,
                     cells: &mut [Val],
                     lookups: &mut [LookupRowMut<'_, Val>]| {
@@ -406,23 +458,53 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         if output.multiplicity >= Val::ORDER_U64 {
           return Err("function count reaches field characteristic".into());
         }
-        let placement = &self.placements[self.plan.members[function]];
-        self.plan.fills[function]
-          .fill_into(
-            record,
-            (table.input(query), output),
-            &mut worker.scratch,
-            &mut worker.buffer,
-            |column, value| {
-              row[placement.columns[column]] = B::into_stark(value)
-            },
-          )
-          .map_err(|e| {
-            format!(
-              "{} query {query}: {e}",
-              self.plan.artifact.functions[function].name
+        let chip = self.plan.members[function];
+        let placement = &self.placements[chip];
+        let name = &self.plan.artifact.functions[function].name;
+        if self.plan.depth.fills[chip].is_empty() {
+          self.plan.fills[function]
+            .fill_into(
+              record,
+              (table.input(query), output),
+              &mut worker.scratch,
+              &mut worker.buffer,
+              |column, value| {
+                row[placement.columns[column]] = B::into_stark(value)
+              },
             )
-          })?;
+            .map_err(|e| format!("{name} query {query}: {e}"))?;
+        } else {
+          // Depth columns are computed from the circuit's own columns: fill
+          // the depth circuit's row, then place it.
+          let source = &mut worker.row;
+          let activation = self.plan.artifact.chips[chip].activation;
+          source.clear();
+          source.resize(activation + 1, field.zero());
+          source[activation] = field.one();
+          self.plan.fills[function]
+            .fill(
+              record,
+              (table.input(query), output),
+              &mut worker.scratch,
+              &mut worker.buffer,
+              source,
+            )
+            .and_then(|()| {
+              self.plan.depth.fill(
+                chip,
+                record,
+                table.depth(query),
+                source,
+                field,
+                &mut worker.buffer,
+                ranges,
+              )
+            })
+            .map_err(|e| format!("{name} query {query}: {e}"))?;
+          for (&column, &value) in placement.columns.iter().zip(source.iter()) {
+            row[column] = B::into_stark(value);
+          }
+        }
         placement.finish(row, output.multiplicity);
         if LOOKUPS {
           lookup_plan.fill(row, &[], worker, &mut lookups[i]);
@@ -434,47 +516,58 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let real_writers =
       if LOOKUPS { &mut writers[..rows.len()] } else { &mut [] };
     #[cfg(feature = "parallel")]
-    if LOOKUPS {
-      real_values
-        .par_chunks_mut(width * ROW_BATCH)
-        .zip(real_writers.par_chunks_mut(ROW_BATCH))
-        .enumerate()
-        .try_for_each_init(
-          Worker::<B::Element>::default,
-          |worker, (batch, (cells, lookups))| {
-            populate(worker, batch, cells, lookups)
-          },
-        )?;
-    } else {
-      real_values
-        .par_chunks_mut(width * ROW_BATCH)
-        .enumerate()
-        .try_for_each_init(
-          Worker::<B::Element>::default,
-          |worker, (batch, cells)| populate(worker, batch, cells, &mut []),
-        )?;
-    }
+    let ranges = {
+      let start = || (Worker::<B::Element>::default(), RangeCounts::default());
+      let merge = |a: RangeCounts, b| Ok::<_, String>(a.merge(b));
+      if LOOKUPS {
+        real_values
+          .par_chunks_mut(width * ROW_BATCH)
+          .zip(real_writers.par_chunks_mut(ROW_BATCH))
+          .enumerate()
+          .try_fold(
+            start,
+            |(mut worker, mut ranges), (batch, (cells, lookups))| {
+              populate(&mut worker, &mut ranges, batch, cells, lookups)?;
+              Ok::<_, String>((worker, ranges))
+            },
+          )
+          .map(|state| state.map(|(_, ranges)| ranges))
+          .try_reduce(RangeCounts::default, merge)?
+      } else {
+        real_values
+          .par_chunks_mut(width * ROW_BATCH)
+          .enumerate()
+          .try_fold(start, |(mut worker, mut ranges), (batch, cells)| {
+            populate(&mut worker, &mut ranges, batch, cells, &mut [])?;
+            Ok::<_, String>((worker, ranges))
+          })
+          .map(|state| state.map(|(_, ranges)| ranges))
+          .try_reduce(RangeCounts::default, merge)?
+      }
+    };
     #[cfg(not(feature = "parallel"))]
-    {
+    let ranges = {
       let mut worker = Worker::<B::Element>::default();
+      let mut ranges = RangeCounts::default();
       if LOOKUPS {
         for (batch, (cells, lookups)) in real_values
           .chunks_mut(width * ROW_BATCH)
           .zip(real_writers.chunks_mut(ROW_BATCH))
           .enumerate()
         {
-          populate(&mut worker, batch, cells, lookups)?;
+          populate(&mut worker, &mut ranges, batch, cells, lookups)?;
         }
       } else {
         for (batch, cells) in
           real_values.chunks_mut(width * ROW_BATCH).enumerate()
         {
-          populate(&mut worker, batch, cells, &mut [])?;
+          populate(&mut worker, &mut ranges, batch, cells, &mut [])?;
         }
       }
-    }
+      ranges
+    };
     drop(writers);
-    Ok((RowMajorMatrix::new(values, width), builder.finish()))
+    Ok((RowMajorMatrix::new(values, width), builder.finish(), ranges))
   }
 
   pub(super) fn auxiliary_lookups(

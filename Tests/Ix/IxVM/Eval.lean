@@ -149,6 +149,24 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   let (badEnv, badInput) := storeDef badEnv idType (.ref 0 #[]) #[badDep]
   r.add <| execute "ill-typed transitive dependency"
     (← witness badEnv badInput (withValue idOutput (.sort 0))) (some "")
+  -- The output declaration is checked as a `check` claim's target is. An
+  -- assumed dependency is not checked, so the normal form of a well-typed
+  -- input can be ill-typed: here `Prop`, from the assumed
+  -- `redexDep : idType := (fun (x : Type) => x) Prop`. The output,
+  -- `idType := Prop`, repeats the input's type and that normal form, so only
+  -- its own check refuses it. (The dependency is a redex so that it is not
+  -- the output itself, which would be an assumption.)
+  let (redexEnv, redexDep) := storeDef {} idType (.app (.leanLam (.sort 1) (.var 0)) (.sort 0))
+    #[] 0 #[.zero, .succ .zero]
+  let (redexEnv, redexInput) := storeDef redexEnv idType (.ref 0 #[]) #[redexDep]
+  let redexTree := Ix.AssumptionTree.canonical #[redexDep] |>.get!
+  r.add <| execute "ill-typed output under an assumed dependency"
+    (← witness redexEnv redexInput (withValue idOutput (.sort 0)) redexTree)
+    (some "inferred type is not def-eq to the expected type")
+  -- An assumed output would not be checked.
+  let outputTree := Ix.AssumptionTree.canonical #[(storeConstant env idOutput).2] |>.get!
+  r.add <| execute "output in assumptions" (← witness env input idOutput outputTree)
+    (some "output is an assumption")
   let (polyEnv, polyInput) := storeDef {} idType underBinder #[] 1 #[.var 0]
   r.add <| execute "universe-polymorphic normalization"
     (← witness polyEnv polyInput (definition idType idValue #[] 1 #[.var 0]))

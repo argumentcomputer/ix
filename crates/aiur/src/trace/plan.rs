@@ -408,26 +408,26 @@ impl<B: FieldBackend> FillPlan<B> {
 pub(super) mod device {
   use super::*;
 
-  pub const OP_ADD: u32 = 0;
-  pub const OP_SUB: u32 = 1;
-  pub const OP_MUL: u32 = 2;
-  pub const OP_SELECT: u32 = 3;
-  pub const OP_INVERSE: u32 = 4;
-  pub const OP_CHOICE: u32 = 5;
-  pub const OP_FAILURE: u32 = 6;
-  pub const OP_MAP: u32 = 7;
-  pub const OP_CALL: u32 = 8;
-  pub const OP_HINT: u32 = 9;
+  pub(crate) const OP_ADD: u32 = 0;
+  pub(crate) const OP_SUB: u32 = 1;
+  pub(crate) const OP_MUL: u32 = 2;
+  pub(crate) const OP_SELECT: u32 = 3;
+  pub(crate) const OP_INVERSE: u32 = 4;
+  pub(crate) const OP_CHOICE: u32 = 5;
+  pub(crate) const OP_FAILURE: u32 = 6;
+  pub(crate) const OP_MAP: u32 = 7;
+  pub(crate) const OP_CALL: u32 = 8;
+  pub(crate) const OP_HINT: u32 = 9;
   const CONSTANT: u32 = 0x8000_0000;
 
   /// Canonical field constants shared by every encoded plan of a program.
   #[derive(Default)]
-  pub struct Constants {
+  pub(crate) struct Constants {
     pub values: Vec<u64>,
     index: FxHashMap<u64, u32>,
   }
   impl Constants {
-    pub fn word(&mut self, value: u64) -> Option<u32> {
+    pub(crate) fn word(&mut self, value: u64) -> Option<u32> {
       if let Some(&i) = self.index.get(&value) {
         return Some(i | CONSTANT);
       }
@@ -441,12 +441,12 @@ pub(super) mod device {
 
   /// How a callable or hint site runs on the device.
   #[derive(Clone, Copy)]
-  pub enum Target {
+  pub(crate) enum Target {
     Map(u32),
     Call(u32),
   }
 
-  pub struct Encoded {
+  pub(crate) struct Encoded {
     pub code: Vec<u32>,
     pub scratch: u32,
     pub inputs: u32,
@@ -457,7 +457,7 @@ pub(super) mod device {
     /// The plan's kernels and column writes, writing physical `column`s, or
     /// `None` when a kernel needs host-only state: memory, or a callable or
     /// hint site without a device implementation.
-    pub fn encode(
+    pub(crate) fn encode(
       &self,
       call: &mut impl FnMut(usize) -> Option<Target>,
       hint: &mut impl FnMut(usize) -> Option<u32>,

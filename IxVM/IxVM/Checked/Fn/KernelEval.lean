@@ -81,7 +81,19 @@ def Fn.«KernelEval::run_eval» : Function F where
     (.letValue (.bind "expected") (.call "KernelEval::eval_output" (some []) [(.var "output"), (.var "nlvls"), (.var "ty")])
     (.letValue (.bind "result") (.call "KernelEval::eval_nf" (some []) [(.var "rc"), (.var "body"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])
     (.letValue .wildcard (.builtin (.assertEq { message := (some "Eval: result does not match output"), runtimeCheck := true }) [(.call "KernelCheck::kexpr_struct_eq" (some []) [(.var "result"), (.var "expected")]), (.literal 1)])
-    (.tuple [])))))))
+    (.call "KernelEval::check_output" (some []) [(.var "rc"), (.var "output"), (.var "asm")])))))))
+  isInline := false
+
+def Fn.«KernelEval::check_output» : Function F where
+  name := "KernelEval::check_output"
+  typeParams := []
+  params := [("rc", (.ptr (.named "KernelRoles::RoleCtxNode" []))), ("output", (.ptr (.array .field 32))), ("asm", (.named "Options::Option" [(.ptr (.array .field 32))]))]
+  result := (.tuple [])
+  body := (.matchValue (.var "asm") [((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "None" []),
+    (.call "KernelClaim::run_check_transitive" (some []) [(.var "rc"), (.var "output")])), ((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "Some" [(.bind "r")]),
+    (.letValue (.bind "asm_set") (.call "KernelClaim::addr_set_build" (some []) [(.call "KernelClaim::load_assumption_tree" (some []) [(.var "r")]), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" [])])
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "Eval: output is an assumption"), runtimeCheck := true }) [(.call "KernelClaim::addr_set_member" (some []) [(.var "output"), (.var "asm_set")]), (.literal 0)])
+    (.call "KernelClaim::env_walk" (some []) [(.var "rc"), (.var "output"), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" []), (.var "asm_set"), (.literal 0)]))))])
   isInline := false
 
 end IxVM.Checked

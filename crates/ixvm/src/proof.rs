@@ -33,7 +33,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   let (package, artifact) = Package::load(cli[2].as_ref())?;
   eprintln!("artifact {}: blake3 {artifact}", cli[2]);
-  let program = package.program.check_field::<Val>()?;
+  let mut program = package.program.check_field::<Val>()?;
+  if let Some(trace) = &package.trace {
+    program.track_depth(trace)?;
+  }
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "key" {
     let plan = TracePlan::new(

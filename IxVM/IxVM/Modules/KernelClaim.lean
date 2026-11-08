@@ -433,6 +433,35 @@ module KernelClaim {
       }
     }
 
+  -- Every leaf of a typing claim's axioms tree, used or not, is checked with
+  -- its closure, as the claim's own subjects are: under the claim's role
+  -- context, and under its assumptions when it has them (`env_walk` stops at an
+  -- assumed constant). `KernelRoles::validate_user_axioms` has already checked
+  -- that each leaf is a stored safe axiom the role table does not bind.
+  fn check_axiom_leaves(rc: KernelRoles::RoleCtx, axioms: Options::Option<Bytes::AddressRef>,
+                        asm: Options::Option<Bytes::AddressRef>) -> () {
+      match axioms {
+        Options::Option::None => {  () } ,
+        Options::Option::Some(ax_root) => {
+          let leaves = load_assumption_tree(ax_root);
+          match asm {
+            Options::Option::None => {  walk_leaves_transitive(rc, leaves) } ,
+            Options::Option::Some(r) => {
+              walk_axiom_leaves(rc, leaves, addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil)) } ,
+          } } ,
+      }
+    }
+
+  fn walk_axiom_leaves(rc: KernelRoles::RoleCtx, leaves: Lists::List<Bytes::AddressRef>,
+                       asm: RBTreeMap::RBTreeMap<Field>) -> () {
+      match (*(leaves)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(a, rest) => {
+          env_walk(rc, a, RBTreeMap::RBTreeMap::Nil, asm, 0);
+          walk_axiom_leaves(rc, rest, asm) } ,
+      }
+    }
+
   fn env_walk_all(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       match c {
@@ -1167,7 +1196,8 @@ module KernelClaim {
           let (output, s) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s);
           let Lists::Node::Nil = (*(rest));
-          KernelEval::run_eval(rc, input, output, asm) } ,
+          KernelEval::run_eval(rc, input, output, asm);
+          check_axiom_leaves(rc, axioms, asm) } ,
         4 => {
 
           let (binding, axioms, s) = get_claim_context(s);
@@ -1182,14 +1212,16 @@ module KernelClaim {
               let asm_set = addr_set_build(asm_leaves, RBTreeMap::RBTreeMap::Nil);
 
               env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 2) } ,
-          } } ,
+          };
+          check_axiom_leaves(rc, axioms, asm) } ,
         5 => {
           let (binding, axioms, s) = get_claim_context(s);
           let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
           let (root, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));
-          run_check_env(rc, root, asm) } ,
+          run_check_env(rc, root, asm);
+          check_axiom_leaves(rc, axioms, asm) } ,
         6 => {
           assert_eq!(UInt8::to_field(validator), 0, "claim: wrong validator identity");
           let (comm, s2) = IxonDeserialize::get_address(s);

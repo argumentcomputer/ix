@@ -53,7 +53,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     })
     .collect::<Result<_, &str>>()?;
   let start = Instant::now();
-  let program = program.check_field::<Val>()?;
+  let mut program = program.check_field::<Val>()?;
+  program.track_depth(&trace)?;
   let args = program.field().decode(&invocation.args)?;
   let hints = if invocation.entry.starts_with("IxVM::") {
     ixvm::prepare_streams(&program, &invocation.streams)?

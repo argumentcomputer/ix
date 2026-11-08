@@ -11,6 +11,9 @@ audit and the host-admission audit import this module. -/
 anchors, and `Role.usedImplicitly`. A change to the
 specification set changes these lines; it
 is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`).
+`specVersion` 4 makes the decision procedures depend on the `of_decide_eq_*`
+roles their native rules answer with (`Role.deps`): 9 more dependency entries,
+19436 bytes.
 
 `encodingVersion` 2 commits, beside the specifications, to what IxVM reads
 off each role's identity (its name, inertness, quotient kind and native rule)
@@ -21,13 +24,13 @@ encoding was 17727 bytes, with digest
 6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33; version 2
 adds 1700 bytes. -/
 
-/-- info: "19427 bytes" -/
+/-- info: "19436 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "84d3999ef8f830d2d0678f21d81730d2aee6f9a2cfd04c84d593b38f52eb7fae" -/
+/-- info: "7e6bc58cf52458db99edc516b71fb18a5b74dfd8eb01ca6cf24b82bbaa623a82" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a

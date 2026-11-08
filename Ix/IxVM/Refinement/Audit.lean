@@ -53,6 +53,9 @@ run_meta do
       ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
       ``IxVM.Refinement.digestValue, ``Aiur.Generic.SourceSemantics.CallsInROM]),
     (``IxVM.Refinement.AxiomScopeIn, [``IxVM.Refinement.UserAxiomLeavesIn]),
+    (``IxVM.Refinement.BindingIn, [``IxVM.Refinement.BindingSpecs]),
+    (``IxVM.Refinement.BindingSpecs, [``Ix.Kernel.Declaration.anchorMismatch?,
+      ``Ix.Kernel.eqnsCheck]),
     (``IxVM.Refinement.TypingIn, [``IxVM.Refinement.AxiomScopeIn, ``IxVM.Refinement.LeavesInstalled,
       ``IxVM.Refinement.AssumedIn]),
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
@@ -123,7 +126,7 @@ fun P =>
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
     Aiur.Optimized.Depth.Certified cfg physical.system →
-      cfg.bits = 24 →
+      cfg.bits ≤ 24 →
         ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
           plan.WellFormedActivation →
             ∀ {rom : Aiur.WidthROM IxVM.F},
@@ -438,15 +441,15 @@ info: def IxVM.Refinement.TypingIn : IxVM.Refinement.View →
 fun V ctx S asm Q =>
   Ix.SpecDigest.specDigest = Except.ok ctx.spec ∧
     ctx.literalClass = false ∧
-      ((ctx.bindingAssumed = true → IxVM.Refinement.BindingIn V ctx.spec ctx.binding) →
-        ∃ b,
-          V.binding? ctx.binding = some b ∧
-            IxVM.Refinement.AxiomScopeIn V b ctx.axioms fun policy leaves =>
+      ∃ b,
+        V.binding? ctx.binding = some b ∧
+          IxVM.Refinement.AxiomScopeIn V b ctx.axioms fun policy leaves =>
+            (ctx.bindingAssumed = true → IxVM.Refinement.BindingIn V ctx.spec ctx.binding) →
               IxVM.Refinement.AssumingIn V { binding := b, policy := policy, axioms := fun x => x ∈ leaves }
                 (fun a => S a ∨ a ∈ leaves ∧ ¬IxVM.Refinement.AssumedIn V asm a)
                 (fun bnd envA ds =>
                   IxVM.Refinement.LeavesInstalled leaves (IxVM.Refinement.AssumedIn V asm) ds ∧ Q bnd envA ds)
-                asm)
+                asm
 -/
 #guard_msgs in
 #print IxVM.Refinement.TypingIn
@@ -590,6 +593,19 @@ fun c =>
 #print IxVM.Refinement.IsRecursorRecord
 
 /--
+info: def IxVM.Refinement.BindingSpecs : Ix.Kernel.Admission.Binding →
+  Ix.Kernel.Env Ix.Kernel.Mode.anon → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
+fun x envA ds =>
+  (∀ d ∈ ds, d.anchorMismatch? = none) ∧
+    ∃ ev,
+      ∀ r ∈ Ix.Kernel.Role.all,
+        r.spec.kind = Ix.Kernel.SpecKind.eqns →
+          ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps Ix.Kernel.CheckMode.verified F) envA r ev = Except.ok ()
+-/
+#guard_msgs in
+#print IxVM.Refinement.BindingSpecs
+
+/--
 info: def IxVM.Refinement.BindingIn : IxVM.Refinement.View → Address → Address → Prop :=
 fun V spec b =>
   Ix.SpecDigest.specDigest = Except.ok spec ∧
@@ -598,6 +614,7 @@ fun V spec b =>
         Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = Except.ok t ∧
           (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
             IxVM.Refinement.AcceptsIn V (IxVM.Refinement.Scope.strict bnd) (IxVM.Refinement.BindingSeeds t)
+              IxVM.Refinement.BindingSpecs
 -/
 #guard_msgs in
 #print IxVM.Refinement.BindingIn
@@ -621,7 +638,7 @@ fun input output b envA ds =>
         Ix.Kernel.Declaration.defnDecl cvOut vOut hint ∈ ds ∧
           IxVM.Refinement.AddressKey b output cvOut.name ∧
             cvOut.levelParams.length = cvIn.levelParams.length ∧
-              cvOut.type = cvIn.type ∧
+              cvOut.type.eraseMeta = cvIn.type.eraseMeta ∧
                 ∃ fuel vNf,
                   Ix.Kernel.nfRef Ix.Kernel.CheckMode.verified envA fuel 0 vIn = Except.ok vNf ∧
                     vNf.eraseMeta = vOut.eraseMeta
@@ -881,7 +898,9 @@ fun {md} {m} [Monad m] [MonadExcept (Ix.Kernel.CheckError md) m] ops env cv => d
 /--
 info: def Ix.Kernel.nfRef : {md : Ix.Kernel.Mode} →
   Ix.Kernel.CheckMode → Ix.Kernel.Env md → ℕ → ℕ → Ix.Kernel.Expr md → Ix.Kernel.CheckM md (Ix.Kernel.Expr md) :=
-fun {md} mode env fuel depth e => Ix.Kernel.nfGo mode env fuel fuel depth e
+fun {md} mode env fuel depth e => do
+  let __do_lift ← Ix.Kernel.annotateCore mode env fuel depth e
+  Ix.Kernel.nfGo mode env fuel fuel depth __do_lift
 -/
 #guard_msgs in
 #print Ix.Kernel.nfRef
@@ -1303,6 +1322,9 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN0_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN2_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN4_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getTagN0_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getTagN2_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getTagN4_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getU64le_complete [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_tagn0».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«UInt64::add».of_eval [propext, Classical.choice, Quot.sound]

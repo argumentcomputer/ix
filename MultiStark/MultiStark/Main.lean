@@ -29,18 +29,20 @@ unsafe def main (args : List String) : IO Unit := do
   if mode == "grouping-snapshot" then
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
     let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.circuit.artifact)
-    let snapshot := Optimized.Grouping.Snapshot.capture compiled.circuit.artifact physical
+    let cfg ← IO.ofExcept (Trace.depthConfig MultiStark.modulus physical)
+    let snapshot := Optimized.Grouping.Snapshot.capture compiled.circuit.artifact physical cfg
       (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) groups
     let path := args[1]?.getD "/tmp/verifier-grouping.json"
     IO.FS.writeFile path (toJson snapshot).compress
     IO.eprintln s!"Wrote grouping snapshot {path}"
     return
-  let trace ← if mode == "export-trace" then do
+  let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode groups))
-  else pure none
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
+      compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+    pure (exported, some trace)
+  else pure (exported, none)
   let path := args[1]?.getD "/tmp/ix-recursion.ixa"
   Artifact.write path (← IO.ofExcept (Artifact.package exported MultiStark.modulus ZMod.val trace))
   IO.eprintln s!"Wrote {path}"

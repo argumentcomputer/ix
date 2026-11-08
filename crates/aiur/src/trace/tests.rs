@@ -50,7 +50,7 @@ pub(crate) fn activate(mut artifact: TraceArtifact) -> TraceArtifact {
       ])));
     }
   }
-  artifact.version = 2;
+  artifact.version = 3;
   artifact
 }
 

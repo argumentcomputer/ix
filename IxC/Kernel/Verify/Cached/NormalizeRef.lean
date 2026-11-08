@@ -58,10 +58,12 @@ mutual
     | _ + 1, _, e => pure e
 end
 
-/-- **The reference normalizer**: `nfGo` with `fuel` bounding both `whnf` and
-the recursion. -/
-def nfRef (mode : CheckMode) (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM md (Expr md) :=
-  nfGo mode env fuel fuel depth e
+/-- **The reference normalizer**: `nfGo` on the annotated form of `e`
+(`annotateCore`, which $\zeta$-reduces `letE` and populates sort-annotation
+metadata for `whnf`), with `fuel` bounding `annotateCore`, `whnf` and the
+recursion. -/
+def nfRef (mode : CheckMode) (env : Env md) (fuel depth : Nat) (e : Expr md) : CheckM md (Expr md) := do
+  nfGo mode env fuel fuel depth (← annotateCore mode env fuel depth e)
 
 /-- **Binder and let metadata erased**: every `lam`, `forallE` and `letE`
 carries the default metadata. -/

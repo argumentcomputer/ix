@@ -350,6 +350,30 @@ def Fn.«KernelClaim::walk_leaves_owned» : Function F where
     (.call "KernelClaim::walk_leaves_owned" (some []) [(.var "rc"), (.var "rest")])))])
   isInline := false
 
+def Fn.«KernelClaim::check_axiom_leaves» : Function F where
+  name := "KernelClaim::check_axiom_leaves"
+  typeParams := []
+  params := [("rc", (.ptr (.named "KernelRoles::RoleCtxNode" []))), ("axioms", (.named "Options::Option" [(.ptr (.array .field 32))])), ("asm", (.named "Options::Option" [(.ptr (.array .field 32))]))]
+  result := (.tuple [])
+  body := (.matchValue (.var "axioms") [((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "None" []),
+    (.tuple [])), ((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "Some" [(.bind "ax_root")]),
+    (.letValue (.bind "leaves") (.call "KernelClaim::load_assumption_tree" (some []) [(.var "ax_root")])
+    (.matchValue (.var "asm") [((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "None" []),
+    (.call "KernelClaim::walk_leaves_transitive" (some []) [(.var "rc"), (.var "leaves")])), ((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "Some" [(.bind "r")]),
+    (.call "KernelClaim::walk_axiom_leaves" (some []) [(.var "rc"), (.var "leaves"), (.call "KernelClaim::addr_set_build" (some []) [(.call "KernelClaim::load_assumption_tree" (some []) [(.var "r")]), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" [])])]))])))])
+  isInline := false
+
+def Fn.«KernelClaim::walk_axiom_leaves» : Function F where
+  name := "KernelClaim::walk_axiom_leaves"
+  typeParams := []
+  params := [("rc", (.ptr (.named "KernelRoles::RoleCtxNode" []))), ("leaves", (.ptr (.named "Lists::Node" [(.ptr (.array .field 32))]))), ("asm", (.named "RBTreeMap::RBTreeMap" [.field]))]
+  result := (.tuple [])
+  body := (.matchValue (.load (.var "leaves")) [((.construct (.named "Lists::Node" [(.ptr (.array .field 32))]) "Nil" []),
+    (.tuple [])), ((.construct (.named "Lists::Node" [(.ptr (.array .field 32))]) "Cons" [(.bind "a"), (.bind "rest")]),
+    (.letValue .wildcard (.call "KernelClaim::env_walk" (some []) [(.var "rc"), (.var "a"), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" []), (.var "asm"), (.literal 0)])
+    (.call "KernelClaim::walk_axiom_leaves" (some []) [(.var "rc"), (.var "rest"), (.var "asm")])))])
+  isInline := false
+
 def Fn.«KernelClaim::env_walk_all» : Function F where
   name := "KernelClaim::env_walk_all"
   typeParams := []
@@ -1021,23 +1045,26 @@ def Fn.«KernelClaim::run_claim» : Function F where
     (.letValue (.tuple [(.bind "output"), (.bind "s")]) (.call "IxonDeserialize::get_address" (some []) [(.var "s")])
     (.letValue (.tuple [(.bind "asm"), (.bind "rest")]) (.call "KernelClaim::get_opt_addr" (some []) [(.var "s")])
     (.letValue (.construct (.named "Lists::Node" [.field]) "Nil" []) (.load (.var "rest"))
-    (.call "KernelEval::run_eval" (some []) [(.var "rc"), (.var "input"), (.var "output"), (.var "asm")]))))))))), ((.literal 4),
+    (.letValue .wildcard (.call "KernelEval::run_eval" (some []) [(.var "rc"), (.var "input"), (.var "output"), (.var "asm")])
+    (.call "KernelClaim::check_axiom_leaves" (some []) [(.var "rc"), (.var "axioms"), (.var "asm")])))))))))), ((.literal 4),
     (.letValue (.tuple [(.bind "binding"), (.bind "axioms"), (.bind "s")]) (.call "KernelClaim::get_claim_context" (some []) [(.var "s")])
     (.letValue (.bind "rc") (.call "KernelRoles::load_role_ctx" (some []) [(.var "binding"), (.call "UInt8::to_field" (some []) [(.var "validator")]), (.var "axioms")])
     (.letValue (.tuple [(.bind "target"), (.bind "s2")]) (.call "IxonDeserialize::get_address" (some []) [(.var "s")])
     (.letValue (.tuple [(.bind "asm"), (.bind "rest")]) (.call "KernelClaim::get_opt_addr" (some []) [(.var "s2")])
     (.letValue (.construct (.named "Lists::Node" [.field]) "Nil" []) (.load (.var "rest"))
-    (.matchValue (.var "asm") [((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "None" []),
+    (.letValue .wildcard (.matchValue (.var "asm") [((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "None" []),
     (.call "KernelClaim::run_check_transitive" (some []) [(.var "rc"), (.var "target")])), ((.construct (.named "Options::Option" [(.ptr (.array .field 32))]) "Some" [(.bind "r")]),
     (.letValue (.bind "asm_leaves") (.call "KernelClaim::load_assumption_tree" (some []) [(.var "r")])
     (.letValue (.bind "asm_set") (.call "KernelClaim::addr_set_build" (some []) [(.var "asm_leaves"), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" [])])
-    (.call "KernelClaim::env_walk" (some []) [(.var "rc"), (.var "target"), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" []), (.var "asm_set"), (.literal 2)]))))]))))))), ((.literal 5),
+    (.call "KernelClaim::env_walk" (some []) [(.var "rc"), (.var "target"), (.construct "RBTreeMap::RBTreeMap" (some [.field]) "Nil" []), (.var "asm_set"), (.literal 2)]))))])
+    (.call "KernelClaim::check_axiom_leaves" (some []) [(.var "rc"), (.var "axioms"), (.var "asm")])))))))), ((.literal 5),
     (.letValue (.tuple [(.bind "binding"), (.bind "axioms"), (.bind "s")]) (.call "KernelClaim::get_claim_context" (some []) [(.var "s")])
     (.letValue (.bind "rc") (.call "KernelRoles::load_role_ctx" (some []) [(.var "binding"), (.call "UInt8::to_field" (some []) [(.var "validator")]), (.var "axioms")])
     (.letValue (.tuple [(.bind "root"), (.bind "s2")]) (.call "IxonDeserialize::get_address" (some []) [(.var "s")])
     (.letValue (.tuple [(.bind "asm"), (.bind "rest")]) (.call "KernelClaim::get_opt_addr" (some []) [(.var "s2")])
     (.letValue (.construct (.named "Lists::Node" [.field]) "Nil" []) (.load (.var "rest"))
-    (.call "KernelClaim::run_check_env" (some []) [(.var "rc"), (.var "root"), (.var "asm")]))))))), ((.literal 6),
+    (.letValue .wildcard (.call "KernelClaim::run_check_env" (some []) [(.var "rc"), (.var "root"), (.var "asm")])
+    (.call "KernelClaim::check_axiom_leaves" (some []) [(.var "rc"), (.var "axioms"), (.var "asm")])))))))), ((.literal 6),
     (.letValue .wildcard (.builtin (.assertEq { message := (some "claim: wrong validator identity"), runtimeCheck := true }) [(.call "UInt8::to_field" (some []) [(.var "validator")]), (.literal 0)])
     (.letValue (.tuple [(.bind "comm"), (.bind "s2")]) (.call "IxonDeserialize::get_address" (some []) [(.var "s")])
     (.letValue (.tuple [(.bind "info"), (.bind "rest")]) (.call "KernelClaim::get_reveal_info" (some []) [(.var "s2")])

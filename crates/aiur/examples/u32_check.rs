@@ -22,7 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let (package, digest) = Package::load(path.as_ref())?;
   eprintln!("artifact {path}: blake3 {digest}");
   let (program, trace) = package.traced()?;
-  let program = program.check()?;
+  let mut program = program.check()?;
+  program.track_depth(&trace)?;
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, program.field())?;
   let mut maps = MapOverrides::new();

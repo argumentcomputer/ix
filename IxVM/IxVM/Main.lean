@@ -159,6 +159,37 @@ unsafe def main (args : List String) : IO Unit := do
     | _ => "IxVM::verify_transitive"
   if profile then IO.eprintln s!"Phase initialization: {(← IO.monoMsNow) - totalStart}ms"
   IO.eprintln s!"IxVM program {IxVM.programDigest}"
+  if ["check-claim", "export-claim", "export-claim-trace", "grouping-snapshot"].contains mode then
+    let source := IxVM.Checked.source
+    let entries := [IxVM.Checked.entry]
+    let start ← IO.monoMsNow
+    IO.eprintln "Compiling bytecode from checked source..."
+    let exported ← IO.ofExcept (source.exportExecution entries)
+    IO.eprintln s!"Exported {exported.bytecode.functions.length} functions in {(← IO.monoMsNow) - start}ms."
+    if mode == "check-claim" then return
+    if mode == "grouping-snapshot" then
+      let specialized ← IO.ofExcept (Generic.specialize source entries)
+      let compiled ← IO.ofExcept (specialized.compileOptimized {})
+      let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.artifact)
+      let cfg ← IO.ofExcept (Trace.depthConfig modulus physical)
+      let snapshot := Optimized.Grouping.Snapshot.capture compiled.artifact physical cfg
+        (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) groups
+      let path := args[1]?.getD "/tmp/ixvm-grouping.json"
+      IO.FS.writeFile path (toJson snapshot).compress
+      IO.eprintln s!"Wrote grouping snapshot {path}"
+      return
+    let (exported, trace) ← if mode == "export-claim-trace" then do
+      IO.eprintln "Compiling claim circuits and witness population plans..."
+      let specialized ← IO.ofExcept (Generic.specialize source entries)
+      let compiled ← IO.ofExcept (specialized.compileOptimized {})
+      let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+        compiled.inlined.program compiled.artifact exported groups)
+      pure (exported, some trace)
+    else pure (exported, none)
+    let path := args[1]?.getD "/tmp/ix-claim.ixa"
+    Artifact.write path (← IO.ofExcept (Artifact.package exported modulus ZMod.val trace))
+    IO.eprintln s!"Wrote {path}"
+    return
   let source := IxVM.program
   IO.eprintln "Checking IxVM tables..."
   let start ← IO.monoMsNow
@@ -175,39 +206,20 @@ unsafe def main (args : List String) : IO Unit := do
   IO.eprintln s!"Checked in {(← IO.monoMsNow) - start}ms. Compiling bytecode..."
   let exported ← IO.ofExcept prepared.exportExecution
   IO.eprintln s!"Exported {exported.bytecode.functions.length} functions."
-  if mode == "check" || mode == "check-claim" then return
-  if mode == "grouping-snapshot" then
-    let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    let physical ← IO.ofExcept (Optimized.Physical.prepare compiled.circuit.artifact)
-    let snapshot := Optimized.Grouping.Snapshot.capture compiled.circuit.artifact physical
-      (exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)) groups
-    let path := args[1]?.getD "/tmp/ixvm-grouping.json"
-    IO.FS.writeFile path (toJson snapshot).compress
-    IO.eprintln s!"Wrote grouping snapshot {path}"
-    return
-  if mode == "export-claim" || mode == "export-claim-trace" then
-    let trace ← if mode == "export-claim-trace" then do
-      IO.eprintln "Compiling claim circuits and witness population plans..."
-      let compiled ← IO.ofExcept (prepared.compileOptimized {})
-      pure <| some (← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
-        compiled.circuit.artifact exported.bytecode groups))
-    else pure none
-    let path := args[1]?.getD "/tmp/ix-claim.ixa"
-    Artifact.write path (← IO.ofExcept (Artifact.package exported modulus ZMod.val trace))
-    IO.eprintln s!"Wrote {path}"
-    return
+  if mode == "check" then return
   let fixture ← IO.ofExcept (Fixture.decode (← IO.FS.readBinFile (← sourcePath "fixtures/nat-add-comm.ixf")))
   unless fixture.format == "ixon-v4" do throw (IO.userError "unsupported fixture format")
   IO.eprintln "Building typed hints..."
   let hints := fixtureHints fixture
   IO.eprintln s!"Preparing {hints.size} hint entries..."
   let hints ← IO.ofExcept (exported.prepareHints hints)
-  let trace ← if mode == "export-trace" then do
+  let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
-      compiled.circuit.artifact exported.bytecode groups))
-  else pure none
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+      compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+    pure (exported, some trace)
+  else pure (exported, none)
   IO.eprintln "Encoding execution package..."
   let package ← IO.ofExcept (Artifact.execution exported modulus ZMod.val trace
     fixture.address.toList fixture.invalidProof.address.toList hints)

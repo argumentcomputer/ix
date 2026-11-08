@@ -40,6 +40,9 @@ pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
   stride: usize,
   rows: Vec<Vec<B::Element>>,
   counts: Vec<u64>,
+  // Honest heights of a recursive function's rows (depth pass), when tracked.
+  track_depth: bool,
+  depths: Vec<u64>,
   chunk_shift: u32,
   chunk_mask: usize,
   hashes: Vec<u64>,
@@ -62,6 +65,8 @@ impl<B: FieldBackend> QueryTable<B> {
       budget: Default::default(),
       field,
       counts: vec![],
+      track_depth: false,
+      depths: vec![],
       static_map: None,
       input_width,
       output_width,
@@ -99,6 +104,31 @@ impl<B: FieldBackend> QueryTable<B> {
   #[cfg(feature = "cuda")]
   pub(crate) fn counts(&self) -> &[u64] {
     &self.counts
+  }
+
+  /// Each recorded row's height, or nothing when heights are not tracked.
+  #[cfg(feature = "cuda")]
+  pub(crate) fn depths(&self) -> &[u64] {
+    &self.depths
+  }
+
+  /// Number of recorded row heights (`0` when heights are not tracked).
+  pub(crate) fn depths_len(&self) -> usize {
+    self.depths.len()
+  }
+
+  /// A row's honest height: the longest call path below it within its SCC
+  /// (zero for untracked tables and static maps).
+  #[inline(always)]
+  pub(crate) fn depth(&self, row: usize) -> u64 {
+    self.depths.get(row).copied().unwrap_or(0)
+  }
+
+  #[inline(always)]
+  pub(crate) fn set_depth(&mut self, row: usize, depth: u64) {
+    if let Some(slot) = self.depths.get_mut(row) {
+      *slot = depth;
+    }
   }
 
   #[inline(always)]
@@ -169,6 +199,10 @@ impl<B: FieldBackend> QueryTable<B> {
     self.budget.vector(&self.hashes, 1)?;
     self.budget.hash::<usize>(self.index.len(), self.index.capacity())?;
     self.counts.push(0);
+    if self.track_depth {
+      self.budget.vector(&self.depths, 1)?;
+      self.depths.push(0);
+    }
     self.hashes.push(hash);
     let hashes = &self.hashes;
     self.index.insert_unique(hash, row, |&row| hashes[row]);
@@ -268,6 +302,12 @@ impl<B: FieldBackend> QueryMap<B> {
     Self {
       tables: widths.map(|(a, b)| QueryTable::new(a, b, field)).collect(),
       budget: Default::default(),
+    }
+  }
+  /// Track honest heights for the functions whose SCC `sccs` names.
+  pub(crate) fn track_depth(&mut self, sccs: &[u32]) {
+    for (table, &scc) in self.tables.iter_mut().zip(sccs) {
+      table.track_depth = scc != crate::trace::depth::NO_SCC;
     }
   }
   pub(crate) fn reserve_with(

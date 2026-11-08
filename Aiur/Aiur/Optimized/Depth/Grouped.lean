@@ -39,12 +39,12 @@ theorem plan_checkMemo_sound (certified : Certified cfg source)
     (graph.derives_of_acyclic (acyclic certified.facts graph (card.trans bound) characteristic))
     outside
 
-/-- The row bound with `k = 24` limbs fits Goldilocks. -/
-theorem goldilocks_bound (bits : cfg.bits = 24) :
+/-- The row bound with at most `k = 24` limb bits fits Goldilocks. -/
+theorem goldilocks_bound (bits : cfg.bits ≤ 24) :
     ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : Library.U32.Goldilocks.F) ≠ 0 := by
   intro n positive small
-  rw [bits] at small
-  exact goldilocks_characteristic n positive small
+  exact goldilocks_characteristic n positive
+    (small.trans (Nat.mul_le_mul_left _ (Nat.pow_le_pow_right (by norm_num) bits)))
 
 end Aiur.Optimized.Depth
 
@@ -119,13 +119,14 @@ theorem Prepared.depth_grouped_activated_heap_sound {program : Modules.Program F
     (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
     arguments decoded
 
-/-- The same over Goldilocks with `k = 24` (`cfg.bits = 24`, as `Depth.plan` builds it):
-the characteristic side condition is discharged. -/
+/-- The same over Goldilocks with at most `k = 24` limb bits (`cfg.bits ≤ 24`: the exporter
+uses `[16, 8]`, or no limbs when the plan has no gap slot): the characteristic side condition
+is discharged. -/
 theorem Prepared.depth_grouped_activated_heap_sound_goldilocks
     {program : Modules.Program Library.U32.Goldilocks.F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system) (bits : cfg.bits = 24)
+    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system) (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances}

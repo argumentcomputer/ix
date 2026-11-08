@@ -52,47 +52,114 @@ pub struct Partition<F> {
   pub owned: Vec<Vec<F>>,
   pub memory_start: u64,
   pub memory_end: u64,
+  /// The honest heights of the deferred calls, from [`owned_heights`]
+  /// over every record's first execution (depth pass, design §9). `None`
+  /// in that first execution, which leaves them out of its heights.
+  pub heights: Option<rustc_hash::FxHashMap<Vec<F>, u64>>,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Deferred<F: Eq + std::hash::Hash> {
   function: usize,
   calls: rustc_hash::FxHashMap<Vec<F>, u64>,
-  edges: rustc_hash::FxHashSet<(Vec<F>, Vec<F>)>,
-  // First owned calls reachable through a non-owned query. Cache hits must
-  // replay these dependencies even though they do not execute the query.
+  // Owned call to the first calls of `function` it reaches, each with the
+  // longest call path to it (its offset, in calls).
+  edges: rustc_hash::FxHashMap<(Vec<F>, Vec<F>), u64>,
+  // First owned calls reachable through a non-owned query, with offsets.
+  // Cache hits must replay these dependencies even though they do not
+  // execute the query.
   dependencies:
-    rustc_hash::FxHashMap<(usize, usize), rustc_hash::FxHashSet<Vec<F>>>,
+    rustc_hash::FxHashMap<(usize, usize), rustc_hash::FxHashMap<Vec<F>, u64>>,
+  heights: Option<rustc_hash::FxHashMap<Vec<F>, u64>>,
 }
 impl<F: Copy + Eq + std::hash::Hash> Deferred<F> {
+  /// Record that the open query `(function, row)` (arguments `source`)
+  /// reaches the call `target` of the deferrable function through `offset`
+  /// calls. Owned queries keep the longest offset per target as a
+  /// cross-record edge; others keep it until they return to their caller.
   fn dependency(
     &mut self,
     function: usize,
     row: usize,
     source: &[F],
     target: &[F],
+    offset: u64,
     budget: &crate::budget::Budget,
   ) -> Result<(), crate::budget::BudgetError> {
     if function == self.function {
       let edge = (source.to_vec(), target.to_vec());
-      if !self.edges.contains(&edge) {
+      if let Some(known) = self.edges.get_mut(&edge) {
+        *known = (*known).max(offset);
+      } else {
         budget.reserve(
-          (source.len() + target.len()).saturating_mul(size_of::<F>()) + 192,
+          (source.len() + target.len()).saturating_mul(size_of::<F>()) + 200,
         )?;
-        self.edges.insert(edge);
+        self.edges.insert(edge, offset);
       }
     } else {
       if !self.dependencies.contains_key(&(function, row)) {
         budget.reserve(256)?;
       }
-      let set = self.dependencies.entry((function, row)).or_default();
-      if !set.contains(target) {
-        budget.reserve(target.len().saturating_mul(size_of::<F>()) + 96)?;
-        set.insert(target.to_vec());
+      let map = self.dependencies.entry((function, row)).or_default();
+      if let Some(known) = map.get_mut(target) {
+        *known = (*known).max(offset);
+      } else {
+        budget.reserve(target.len().saturating_mul(size_of::<F>()) + 104)?;
+        map.insert(target.to_vec(), offset);
       }
     }
     Ok(())
   }
 }
+
+/// Every owned call's honest height across records (design §9). Each
+/// record's first execution gives `base`, an owned call's height ignoring
+/// the calls deferred to other records, and `edges`: an owned call `a`
+/// reaches the call `b` of the deferrable function, first on its path,
+/// through at most `offset` calls, all within one SCC. Heights then satisfy
+/// `height(a) = max(base(a), max height(b) + offset)` over `a`'s edges, which
+/// is the longest path in the owned-call graph. That graph must be acyclic;
+/// a cycle, like an edge to a call that no record owns, is an error.
+pub fn owned_heights<K: Clone + Eq + std::hash::Hash>(
+  base: &rustc_hash::FxHashMap<K, u64>,
+  edges: &[(K, K, u64)],
+) -> Result<rustc_hash::FxHashMap<K, u64>, String> {
+  let index: rustc_hash::FxHashMap<&K, usize> =
+    base.keys().enumerate().map(|(i, k)| (k, i)).collect();
+  let keys: Vec<&K> = base.keys().collect();
+  let mut callees = vec![vec![]; keys.len()];
+  let mut callers = vec![vec![]; keys.len()];
+  let mut pending = vec![0usize; keys.len()];
+  for (a, b, offset) in edges {
+    let (Some(&a), Some(&b)) = (index.get(a), index.get(b)) else {
+      return Err("owned-call edge to a call no record owns".into());
+    };
+    callees[a].push((b, *offset));
+    callers[b].push(a);
+    pending[a] += 1;
+  }
+  let mut heights: Vec<u64> = keys.iter().map(|k| base[*k]).collect();
+  let mut ready: Vec<usize> =
+    (0..keys.len()).filter(|&i| pending[i] == 0).collect();
+  let mut done = 0;
+  while let Some(b) = ready.pop() {
+    done += 1;
+    for &(c, offset) in &callees[b] {
+      let height = heights[c].checked_add(offset).ok_or("height overflow")?;
+      heights[b] = heights[b].max(height);
+    }
+    for &a in &callers[b] {
+      pending[a] -= 1;
+      if pending[a] == 0 {
+        ready.push(a);
+      }
+    }
+  }
+  if done != keys.len() {
+    return Err("recursive owned-call cycle crosses worker records".into());
+  }
+  Ok(keys.into_iter().cloned().zip(heights).collect())
+}
+
 impl<B: FieldBackend> Execution<B> {
   pub fn deferred_calls(&self) -> impl Iterator<Item = (&[B::Element], u64)> {
     self
@@ -103,10 +170,47 @@ impl<B: FieldBackend> Execution<B> {
   pub fn partition_edges(
     &self,
   ) -> impl Iterator<Item = (&[B::Element], &[B::Element])> {
-    self
-      .deferred
-      .iter()
-      .flat_map(|d| d.edges.iter().map(|(a, b)| (a.as_slice(), b.as_slice())))
+    self.partition_offsets().map(|(a, b, _)| (a, b))
+  }
+  /// The cross-record edges with their offsets, for [`owned_heights`].
+  pub fn partition_offsets(
+    &self,
+  ) -> impl Iterator<Item = (&[B::Element], &[B::Element], u64)> {
+    self.deferred.iter().flat_map(|d| {
+      d.edges.iter().map(|((a, b), &w)| (a.as_slice(), b.as_slice(), w))
+    })
+  }
+  /// The recorded height of a query of `function` in a finished record: the
+  /// longest call path below it within its SCC (zero without a depth word).
+  pub fn query_depth(
+    &self,
+    function: usize,
+    args: &[B::Element],
+  ) -> Option<u64> {
+    let table = self.queries.tables.get(function)?;
+    if table.static_map.is_some() {
+      return None;
+    }
+    // After execution no query is pending; an owned call nobody in this
+    // record calls has count zero until its callers' counts arrive.
+    table.lookup(args).1.map(|row| table.depth(row))
+  }
+  /// A deferred call's height, as the coordinator supplied it.
+  pub(crate) fn deferred_height(
+    &self,
+    function: usize,
+    args: &[B::Element],
+  ) -> Option<u64> {
+    let deferred = self.deferred.as_ref()?;
+    if deferred.function != function || !deferred.calls.contains_key(args) {
+      return None;
+    }
+    deferred.heights.as_ref()?.get(args).copied()
+  }
+  /// The function whose calls this record defers to other records, if any.
+  #[cfg(feature = "cuda")]
+  pub(crate) fn deferred_function(&self) -> Option<usize> {
+    self.deferred.as_ref().filter(|d| !d.calls.is_empty()).map(|d| d.function)
   }
   pub(crate) fn is_deferred(
     &self,
@@ -177,6 +281,8 @@ struct Frame<'a, F> {
   pc: usize,
   cursor: usize,
   destination: &'a [usize],
+  // The query's height so far: one more than its highest callee in its SCC.
+  depth: u64,
 }
 struct Machine<'a, 'p, B: FieldBackend> {
   #[cfg(feature = "function-profile")]
@@ -191,6 +297,8 @@ struct Machine<'a, 'p, B: FieldBackend> {
   hints: &'a [Vec<Option<HintSite<B::Element>>>],
   dispatch: &'a [Vec<dispatch::Dispatch<B::Element>>],
   ownership: Option<(usize, rustc_hash::FxHashSet<Vec<B::Element>>)>,
+  // Function SCCs of the depth circuits, when heights are recorded.
+  sccs: Option<&'a [u32]>,
 }
 
 enum Request {
@@ -402,6 +510,9 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       self.program.field,
     );
     queries.reserve_with(reservation);
+    if let Some(sccs) = &self.program.depth {
+      queries.track_depth(sccs);
+    }
     for map in &self.maps {
       queries.budget.reserve(map.rows().saturating_mul(size_of::<u64>()))?;
     }
@@ -433,6 +544,7 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       ownership: partition
         .as_ref()
         .map(|p| (p.function, p.owned.iter().cloned().collect())),
+      sccs: self.program.depth.as_deref(),
       record: Execution {
         hints: self.bindings.clone(),
         output: vec![],
@@ -444,6 +556,7 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
           calls: Default::default(),
           edges: Default::default(),
           dependencies: Default::default(),
+          heights: p.heights.clone(),
         }),
       },
     };
@@ -490,13 +603,21 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     if self.record.deferred.is_some() {
       self.propagate_dependencies(frame.function, frame.query)?;
     }
+    let intra = self
+      .frames
+      .last()
+      .is_some_and(|parent| self.intra(parent.function, frame.function));
     if let Some(parent) = self.frames.last_mut() {
       parent.write(frame.destination, &self.arguments);
+      if intra {
+        parent.depth = parent.depth.max(frame.depth.saturating_add(1));
+      }
     } else {
       self.record.output = self.arguments.clone();
     }
-    self.record.queries.tables[frame.function]
-      .finish(frame.query, &self.arguments);
+    let table = &mut self.record.queries.tables[frame.function];
+    table.finish(frame.query, &self.arguments);
+    table.set_depth(frame.query, frame.depth);
     self.spare_registers.push(frame.registers);
     #[cfg(feature = "function-profile")]
     if let Some(profile) = &mut self.profile {
@@ -525,6 +646,16 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     }
   }
 
+  /// Whether a call from `caller` to `callee` stays within an SCC of the
+  /// depth circuits, so that the callee's height bounds the caller's.
+  #[inline(always)]
+  fn intra(&self, caller: usize, callee: usize) -> bool {
+    self.sccs.is_some_and(|s| {
+      let scc = s.get(callee).copied().unwrap_or(crate::trace::depth::NO_SCC);
+      scc != crate::trace::depth::NO_SCC && s.get(caller) == Some(&scc)
+    })
+  }
+
   fn propagate_dependencies(
     &mut self,
     function: usize,
@@ -537,12 +668,13 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       if let Some(parent) = self.frames.last() {
         let source =
           self.record.queries.tables[parent.function].input(parent.query);
-        for target in &dependencies {
+        for (target, &offset) in &dependencies {
           deferred.dependency(
             parent.function,
             parent.query,
             source,
             target,
+            offset.saturating_add(1),
             &self.record.queries.budget,
           )?;
         }
@@ -577,9 +709,14 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         parent.query,
         source,
         &self.arguments,
+        1,
         &self.record.queries.budget,
       )?;
     }
+    let intra = self
+      .frames
+      .last()
+      .is_some_and(|parent| self.intra(parent.function, function_id));
     if let Some((callee, owned)) = &self.ownership
       && *callee == function_id
       && !owned.contains(&self.arguments)
@@ -597,6 +734,17 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         resource: None,
         message: "deferred count overflow".into(),
       })?;
+      // The owner's height bounds the caller's once the coordinator has
+      // supplied it; the first execution leaves deferred calls out.
+      if intra
+        && let Some(heights) = &self.record.deferred.as_ref().unwrap().heights
+      {
+        let height = *heights
+          .get(&self.arguments)
+          .ok_or_else(|| self.error("deferred call has no supplied height"))?;
+        let parent = self.frames.last_mut().unwrap();
+        parent.depth = parent.depth.max(height.saturating_add(1));
+      }
       return Ok(Request::Deferred);
     }
     let budget = &self.record.queries.budget;
@@ -612,6 +760,11 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         resource: None,
         message: "query multiplicity overflow".into(),
       })?;
+      if intra {
+        let height = table.depth(id);
+        let parent = self.frames.last_mut().unwrap();
+        parent.depth = parent.depth.max(height.saturating_add(1));
+      }
       if self.record.deferred.is_some() {
         self.propagate_dependencies(function_id, id)?;
       }
@@ -639,6 +792,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       pc: 0,
       cursor: 0,
       destination,
+      depth: 0,
     });
     Ok(Request::Started)
   }

@@ -16,8 +16,8 @@ def exportProgram (path : String) : IO Unit := do
   let prepared ← IO.ofExcept <| Modules.prepare source AiurU32Tests.entries
   let exported ← IO.ofExcept prepared.exportExecution
   let compiled ← IO.ofExcept prepared.compileOptimized
-  let trace ← IO.ofExcept <| Trace.exportPlan modulus ZMod.val compiled.circuit.inlined.program
-    compiled.circuit.artifact exported.bytecode
+  let (exported, trace) ← IO.ofExcept <| Trace.exportPlan modulus ZMod.val
+    compiled.circuit.inlined.program compiled.circuit.artifact exported
   Artifact.write path (← IO.ofExcept <| Artifact.package exported modulus ZMod.val (some trace))
   IO.println s!"Exported opaque u32 regression program to {path}."
 
