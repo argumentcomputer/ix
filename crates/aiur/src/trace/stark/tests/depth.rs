@@ -149,6 +149,45 @@ fn misclassified_exact_slot_fails_population() {
 }
 
 #[test]
+fn invalid_gap_and_limb_bounds_are_rejected() {
+  let (program, mut wide_trace) = depth_fixture();
+  wide_trace.limbs = vec![16, 16];
+  assert!(TracePlan::new(&program, wide_trace).is_err());
+
+  let (program, trace) = depth_fixture();
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let backend = Backend::new(&plan, parameters()).unwrap();
+  let entry = "Depth::run";
+  let fib = program.callable_id("Depth::fib").unwrap();
+
+  let mut non_positive = program.execute(entry, vec![2]).unwrap();
+  let row0 = non_positive.queries.tables[fib].lookup(&[0]).1.unwrap();
+  non_positive.queries.tables[fib].set_depth(row0, 1);
+  for error in [
+    plan.generate_reference(&non_positive, entry, &[2], true).err(),
+    plan.generate(&non_positive, entry, &[2], true).err(),
+    backend.generate(&non_positive, entry, &[2]).err(),
+  ] {
+    let error = error.expect("accepted non-positive depth step");
+    assert!(error.contains("callee is not below its caller"), "{error}");
+  }
+
+  let mut overflow = program.execute(entry, vec![2]).unwrap();
+  let row1 = overflow.queries.tables[fib].lookup(&[1]).1.unwrap();
+  let row2 = overflow.queries.tables[fib].lookup(&[2]).1.unwrap();
+  overflow.queries.tables[fib].set_depth(row1, (1 << 24) + 9);
+  overflow.queries.tables[fib].set_depth(row2, (1 << 24) + 10);
+  for error in [
+    plan.generate_reference(&overflow, entry, &[2], true).err(),
+    plan.generate(&overflow, entry, &[2], true).err(),
+    backend.generate(&overflow, entry, &[2]).err(),
+  ] {
+    let error = error.expect("accepted overflowing depth gap");
+    assert!(error.contains("exceeds 2^24"), "{error}");
+  }
+}
+
+#[test]
 fn recursive_entry_claims_a_depth_word() {
   let (program, trace) = depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();

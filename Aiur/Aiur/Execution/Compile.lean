@@ -228,6 +228,17 @@ def compile [NatCast F] [Zero F] [DecidableEq F] (program : Aiur.Program F)
 
 end Aiur.Execution
 
+namespace Aiur.Generic
+
+/-- Compile execution bytecode from a checked source and its entrypoints. -/
+def Source.compileExecution [NatCast F] [Zero F] [DecidableEq F]
+    (source : Source F) (entries : List String) : Except String (Execution.Bytecode F) := do
+  let specialized ← Generic.specialize source entries
+  let inlined ← Inlining.prepare specialized.program specialized.inlineNames entries
+  Execution.compile inlined.program entries
+
+end Aiur.Generic
+
 namespace Aiur.Modules
 
 /-- Reuse source preparation, specialization and mandatory inlining. -/

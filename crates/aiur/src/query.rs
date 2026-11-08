@@ -107,7 +107,7 @@ impl<B: FieldBackend> QueryTable<B> {
   }
 
   /// Each recorded row's height, or nothing when heights are not tracked.
-  #[cfg(feature = "cuda")]
+  /// Recorded row heights, in query order (empty when heights are not tracked).
   pub(crate) fn depths(&self) -> &[u64] {
     &self.depths
   }

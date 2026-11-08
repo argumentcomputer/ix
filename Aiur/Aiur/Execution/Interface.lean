@@ -67,6 +67,25 @@ structure Export (F : Type) where
 
 end Aiur.Execution
 
+namespace Aiur.Generic
+
+def Source.exportExecution [NatCast F] [Zero F] [DecidableEq F]
+    (source : Source F) (entries : List String) (opaqueNames : List String := []) :
+    Except String (Execution.Export F) := do
+  let code ← source.compileExecution entries
+  let program := source.program
+  let interfaces ← entries.mapM fun name => do
+    let some fn := program.findFunction? name
+      | throw s!"missing source entry {name}"
+    let inputs ← fn.params.mapM fun (_, type) =>
+      Execution.Compiler.need (Execution.IOType.ofSource program opaqueNames 1024 type)
+        s!"entry {name} has no public IO representation"
+    let output := Execution.IOType.ofSource program opaqueNames 1024 fn.result
+    return { name, inputs, output : Execution.Interface }
+  return ⟨code, interfaces, Execution.DataTypes.ofSource program opaqueNames⟩
+
+end Aiur.Generic
+
 namespace Aiur.Modules
 
 def Prepared.exportExecution [NatCast F] [Zero F] [DecidableEq F]

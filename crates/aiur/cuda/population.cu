@@ -320,7 +320,7 @@ __device__ int32_t fill_depth(const AiurFunction& f, const AiurCallee* callees, 
     const uint64_t depth = f.depths ? f.depths[query] : 0;
     if (depth_column != NO_COLUMN) {
         if (!f.depths) return ERROR_ENCODING;
-        row[depth_column] = depth;
+        row[depth_column] = canonicalize(depth);
     }
     const uint32_t slots = code[pc++];
     for (uint32_t s = 0; s < slots; ++s) {
@@ -351,10 +351,10 @@ __device__ int32_t fill_depth(const AiurFunction& f, const AiurCallee* callees, 
         const uint64_t height = callee->depths ? callee->depths[found] : 0;
         if (external) {
             if (columns != 1) return ERROR_ENCODING;
-            row[triples[0]] = height;
+            row[triples[0]] = canonicalize(height);
             continue;
         }
-        if (depth < height + 1) return ERROR_DEPTH;
+        if (depth <= height) return ERROR_DEPTH;
         uint64_t rest = depth - 1 - height;
         for (uint32_t i = 0; i < columns; ++i) {
             const uint32_t width = triples[3 * i + 1];
