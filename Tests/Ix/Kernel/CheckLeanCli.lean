@@ -213,6 +213,31 @@ private def check : IO Nat := do
       anonRows.stderr.contains "missing: unresolved")
       s!"unresolved name aborted the per-name rows\n{anonRows.stderr}"
     expect (← call #["--consts", "CliAlias0", "--json", results.toString, "--fail-out", failures.toString] #[]) 2
+    -- `--allow-declined`: record-check mode tolerates `decline` and `blocked`
+    -- (when no record was rejected), skips whole-artifact admission, still
+    -- fails with exit 3 / `rejected` on `reject`, and rejects host-statement output.
+    reset ()
+    let declinedOk ← call #["--allow-declined", "--consts",
+      String.intercalate "," [label "fidelityAxiom", "BlockedSubject"], "--json", results.toString] #[]
+    expect declinedOk 0
+    ensure ((← status (label "fidelityAxiom")) == some "ok" && (← status "BlockedSubject") == some "ok")
+      s!"--allow-declined did not mark declined/blocked rows ok: {← IO.FS.readFile results}"
+    reset ()
+    let declinedReject ← call #["--allow-declined", "--json", results.toString, "--json-name", "fixture"] #[]
+    expect declinedReject 3
+    ensure ((← status "fixture") == some "rejected")
+      s!"--allow-declined hid a kernel reject: {← IO.FS.readFile results}"
+    reset ()
+    calls.modify (· + 1)
+    let cleanDeclined ← IO.Process.output {
+      cmd := ix.toString,
+      args := #["check-lean", cleanPath.toString, "--allow-declined", "--json", results.toString],
+      env := neutral }
+    expect cleanDeclined 0
+    ensure ((← status "env") == some "ok" &&
+      cleanDeclined.stdout.contains "record check (--allow-declined); no whole-artifact receipt")
+      s!"--allow-declined whole run was not ok: {← IO.FS.readFile results}\n{cleanDeclined.stdout}"
+    expect (← call #["--allow-declined", "--host-store"] #[]) 2
     let count ← calls.get
     IO.println s!"check-lean CLI: {count} process controls; modes, exact aliases/cap, all five outcomes, fail-out, usage/infra exits, --json/--json-name/--per-const rows passed"
     return count
