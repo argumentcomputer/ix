@@ -68,6 +68,45 @@ theorem ObsExpr.call_inv {name : String} {typeArgs : Option (List Ty)} {args : L
       calls = calls₁ ++ ⟨instanceName types name typeArgs, values, middle⟩ :: calls₂ := by
   cases h with | call arguments callee => exact ⟨_, _, _, _, arguments, callee, rfl⟩
 
+theorem ObsExit.hasControl {target : ExitTarget} {calls : List (Call F)} {expr : Expr F}
+    (ev : ObsExit world types locals expr before target result after calls) :
+    ControlLower.hasControl expr = false → False := by
+  induction ev using ObsExit.rec
+    (motive_1 := fun _ _ _ _ _ _ _ _ => True)
+    (motive_2 := fun _ _ _ _ _ _ _ _ => True)
+    (motive_3 := fun _ _ _ _ _ _ _ => True)
+    (motive_5 := fun _ _ es _ _ _ _ _ _ =>
+      (∀ e ∈ es, ControlLower.hasControl e = false) → False) with
+  | exit | exitPayload | fromBlock => simp [ControlLower.hasControl]
+  | fromGlobal _ interpreted _ ih =>
+      intro _
+      exact ih (Consts.toExpr_closed _ interpreted).noControl
+  | fromBuiltin _ ih | fromUpdate _ ih | fromRecord _ ih | fromTuple _ ih | fromArray _ ih
+    | fromConstruct _ ih | fromConstructAs _ ih | fromCall _ ih =>
+      intro h
+      apply ih
+      simpa [ControlLower.hasControl, List.any_eq_false] using h
+  | fromMember _ ih | fromRepeat _ ih | fromIndex _ ih | fromSlice _ ih | fromProject _ ih
+    | fromStore _ ih | fromLoad _ ih | fromHint _ ih | fromNeg _ ih =>
+      simpa only [ControlLower.hasControl] using ih
+  | fromLetValue _ ih | binaryLeft _ ih | fromMatchValue _ ih =>
+      intro h
+      simp only [ControlLower.hasControl, Bool.or_eq_false_iff] at h
+      exact ih h.1
+  | letBody _ _ _ _ ih | binaryRight _ _ _ ih =>
+      intro h
+      simp only [ControlLower.hasControl, Bool.or_eq_false_iff] at h
+      exact ih h.2
+  | matchBody _ selected _ _ ih =>
+      intro h
+      obtain ⟨pat, member⟩ := selected_member selected
+      simp only [ControlLower.hasControl, Bool.or_eq_false_iff,
+        List.any_map, List.any_eq_false, Function.comp_def, id_eq] at h
+      exact ih (by simpa using h.2 _ member)
+  | head _ ih => rename_i h; exact ih (h _ (by simp))
+  | tail _ _ _ ih => rename_i h; exact ih (fun e he => h e (by simp [he]))
+  | _ => trivial
+
 theorem ObsFn.function_inv {s : Source F} {name : String} {fn : SourceFunction F}
     (hfn : s.program.sourceFunction? name = some fn) (free : ControlLower.hasControl fn.body = false)
     {args : List (SourceValue F)} {calls : List (Call F)}
@@ -79,7 +118,7 @@ theorem ObsFn.function_inv {s : Source F} {name : String} {fn : SourceFunction F
     exact body
   | returned prepared body =>
     obtain ⟨-, -, rfl⟩ := Source.world_prepare_of_sourceFunction hfn prepared
-    exact (OpenSource.EvalExit.hasControl (OpenSource.exit_of_closed body.erase) free).elim
+    exact (body.hasControl free).elim
 
 theorem EvalExpr.letValue_inv {pat : Pattern F} {e rest : Expr F}
     (h : EvalExpr world types locals (.letValue pat e rest) before result after) :
