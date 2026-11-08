@@ -1031,8 +1031,10 @@ with `Int.bmod` and `Int.bdiv`; `BitVec.toNat` and `BitVec.ult`; and `String.app
 `String.toByteArray`, `String.utf8ByteSize` with `Char.utf8Size`, and `String.back`)
 are roles, specified by their equations (`Spec.eqns`), with the anchors those
 equations need; and each role records whether the checker uses
-it implicitly (`Role.usedImplicitly`). -/
-def specVersion : Nat := 3
+it implicitly (`Role.usedImplicitly`). Version 4 makes the decision procedures
+(`Nat.decEq`, `Nat.decLe`, `Int.decEq`, `Int.decLe`, `String.decEq`) depend on the
+`of_decide_eq_*` roles their native rules answer with (`Role.deps`). -/
+def specVersion : Nat := 4
 
 /-- **The roles the checker uses implicitly**: those it introduces into a term
 with no referenced constant that determines them. They are the literals' types
