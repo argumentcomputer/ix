@@ -300,7 +300,11 @@ impl DepthPlan {
             let limb = rest & ((1 << width) - 1);
             rest >>= width;
             row[column + i] = field.from_u64(limb);
-            counts.add(table, 1 << width, limb as usize);
+            counts.add(
+              table,
+              1 << width,
+              usize::try_from(limb).map_err(|_| "depth limb overflow")?,
+            );
           }
         },
       }
