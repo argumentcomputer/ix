@@ -58,12 +58,12 @@ pub(super) const PLONK_VK: &[u8] =
 /// SHA-256 of the gnark PLONK verifying key, which a PLONK packet begins with.
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK_SHA256: &str =
-  "7123a80f9c56b25138ffe8ec47a53c6b0b22b64bf183380d63e5c80a7e3144a9";
+  "78d4ad2af7a510248071d484d8184bdf62d31e3421805b23b725b54c5643f040";
 
 /// SHA-256 of the exported recursive verifier description that both final
 /// circuits prove.
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "d5d07c29ad8c3c795146fe728f73e30812a344c6b62a8f32888033b1a6aba4bf";
+  "1964851792e31a40fdfcafb5ec0e5ac7fa76632614828b83946834e64e7383e5";
 
 /// The release Groth16 key comes from a development setup: whoever ran it can
 /// forge proofs, so it verifies only when development setups are accepted.
@@ -73,9 +73,9 @@ pub(super) const GROTH16_VK: &[u8] = include_bytes!(
 );
 /// SHA-256 of the gnark Groth16 verifying key, which a Groth16 packet begins with.
 pub(super) const GROTH16_VK_SHA256: &str =
-  "954d1d7ad6418ca64fbf8c8ea9041abacf822f748912e08089833cd27f13ce6d";
+  "542e9688b77c6b8fded02f13bc3eaafb692836ab59ff18c8e7cafe65cb34da9a";
 pub(super) const GROTH16_CIRCUIT_SHA256: &str =
-  "cf226140822f7579846ea188f74081a360da720e02525307d47b57006a774edb";
+  "cfc498275ccd65c485037eac2046084be997721e5adba5bf461b0f86651b2753";
 
 /// The setup class of the release Groth16 key, if `allow_development` admits it.
 pub(super) fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
