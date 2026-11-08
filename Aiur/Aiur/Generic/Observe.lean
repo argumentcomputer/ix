@@ -1,5 +1,6 @@
 import Aiur.Generic.SourceSemantics
 import Aiur.Modules.Correctness
+import Aiur.Memory.Cells
 
 /-! # Observed source evaluation
 
@@ -13,17 +14,22 @@ source semantics constructor for constructor; the only new datum is the call
 list, which every rule concatenates from its premises and the `call` rule
 extends with its own call.
 
-The refinement statement (`Ix.IxVM.Refinement.Statement`) reads off the calls
-the byte strings a derivation hashed: its collision escape must be one of
-them.
+The IxVM refinement statement (Track B, `Ix.IxVM.Refinement.Statement`) reads
+off the calls the byte strings a derivation hashed: its collision escape must
+be one of them. This module moved here from that branch unchanged, so that the
+backend headline can conclude it.
 
 * `ObsFn.erase`: an observed derivation is a derivation (the instrumentation
   adds no behaviour).
 * `EvalFn.observe`: every derivation has an observed counterpart.
+* `ObsFn.represented`, `ObsFn.callsInROM`: if every cell of the final heap is
+  a cell of a ROM (`HeapInROM`), every value the derivation handles, in
+  particular every argument of every recorded call, inline calls included, is
+  represented in that ROM relative to the heap at that point (`CallsInROM`).
+  The world must bind function parameters to the call's arguments
+  (`PreparesFromArgs`); `Source.world` does (`Source.world_preparesFromArgs`).
 
-Both are proved, by mutual induction. They are stated in the source
-semantics' namespace because they are about it; nothing here is specific to
-IxVM. -/
+All are proved by mutual induction; nothing here is specific to IxVM. -/
 
 namespace Aiur.Generic.SourceSemantics
 
@@ -35,6 +41,22 @@ structure Call (F : Type) where
   name : String
   args : List (SourceValue F)
   heap : Heap F
+/-! ## Calls carried by a ROM -/
+
+/-- **The calls are carried by a ROM**: every argument of every call is
+represented in `rom` relative to the heap at the call. -/
+def CallsInROM (rom : ROM F) (calls : List (Call F)) : Prop :=
+  ∀ c ∈ calls, ∀ v ∈ c.args, ∃ w, Aiur.Represents rom c.heap v w
+
+/-- A value represented in `rom` relative to `heap`. -/
+def Represented (rom : ROM F) (heap : Heap F) (value : SourceValue F) : Prop :=
+  ∃ target, Aiur.Represents rom heap value target
+
+/-- The world binds a function's parameters to the call's arguments. -/
+def PreparesFromArgs (world : World F) : Prop :=
+  ∀ name args types locals expr, world.prepare name args = .ok (types, locals, expr) →
+    ∀ binding ∈ locals, binding.2 ∈ args
+
 
 mutual
   /-- `EvalExpr` with its calls. -/
@@ -369,6 +391,731 @@ theorem EvalFn.observe {name : String} {args : List (SourceValue F)} {before aft
   | head _ ih => obtain ⟨c, h⟩ := ih; exact ⟨c, .head h⟩
   | tail _ _ ih₁ ih₂ => obtain ⟨c₁, h₁⟩ := ih₁; obtain ⟨c₂, h₂⟩ := ih₂; exact ⟨_, .tail h₁ h₂⟩
 
+section Representation
+
+variable {rom : ROM F} {heap : Heap F}
+
+theorem CallsInROM.nil : CallsInROM rom ([] : List (Call F)) := by simp [CallsInROM]
+
+theorem CallsInROM.append {left right : List (Call F)} (first : CallsInROM rom left)
+    (second : CallsInROM rom right) : CallsInROM rom (left ++ right) := by
+  intro c member
+  rcases List.mem_append.mp member with member | member
+  · exact first c member
+  · exact second c member
+
+theorem Represented.mono {value : SourceValue F} (holds : Represented rom heap value)
+    {larger : Heap F} (grows : heap <+: larger) : Represented rom larger value :=
+  let ⟨target, related⟩ := holds
+  ⟨target, related.mono grows⟩
+
+theorem Represented.ofPointerFree (value : SourceValue F) (free : value.pointerFree = true) :
+    Represented rom heap value :=
+  ⟨_, Aiur.Represents.of_pointerFree value free (fun _ => (0 : F))⟩
+
+theorem Represented.field (x : F) : Represented rom heap (.field x) := ⟨_, .field⟩
+
+private theorem represented_forall₂ :
+    ∀ {values : List (SourceValue F)}, (∀ v ∈ values, Represented rom heap v) →
+      ∃ targets, List.Forall₂ (Aiur.Represents rom heap) values targets
+  | [], _ => ⟨[], .nil⟩
+  | v :: vs, all => by
+      obtain ⟨target, related⟩ := all v List.mem_cons_self
+      obtain ⟨targets, rest⟩ := represented_forall₂ (fun w member => all w (List.mem_cons_of_mem _ member))
+      exact ⟨target :: targets, .cons related rest⟩
+
+private theorem forall₂_represented {values : List (SourceValue F)} {targets : List (Value F)}
+    (related : List.Forall₂ (Aiur.Represents rom heap) values targets) :
+    ∀ v ∈ values, Represented rom heap v := by
+  induction related with
+  | nil => simp
+  | cons head _ ih =>
+      intro v member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact ⟨_, head⟩
+      · exact ih v member
+
+theorem Represented.tuple_iff {values : List (SourceValue F)} :
+    Represented rom heap (.tuple values) ↔ ∀ v ∈ values, Represented rom heap v := by
+  constructor
+  · rintro ⟨target, related⟩
+    cases related with
+    | tuple items => exact forall₂_represented items
+  · intro all
+    obtain ⟨targets, related⟩ := represented_forall₂ all
+    exact ⟨_, .tuple related⟩
+
+theorem Represented.construct_iff {name ctor : String} {values : List (SourceValue F)} :
+    Represented rom heap (.construct name ctor values) ↔ ∀ v ∈ values, Represented rom heap v := by
+  constructor
+  · rintro ⟨target, related⟩
+    cases related with
+    | construct items => exact forall₂_represented items
+  · intro all
+    obtain ⟨targets, related⟩ := represented_forall₂ all
+    exact ⟨_, .construct related⟩
+
+theorem Represented.unit : Represented rom heap (.tuple [] : SourceValue F) :=
+  Represented.tuple_iff.mpr (by simp)
+
+theorem Represented.load {value result : SourceValue F} (holds : Represented rom heap value)
+    (loaded : loadValue heap value = .ok result) : Represented rom heap result := by
+  obtain ⟨target, related⟩ := holds
+  cases related with
+  | field => simp [loadValue, throw, throwThe, MonadExceptOf.throw] at loaded
+  | tuple => simp [loadValue, throw, throwThe, MonadExceptOf.throw] at loaded
+  | construct => simp [loadValue, throw, throwThe, MonadExceptOf.throw] at loaded
+  | ptr source cell contents =>
+      simp [loadValue, source, bind, Except.bind, pure, Except.pure] at loaded
+      subst loaded
+      exact ⟨_, contents⟩
+
+/-- A fresh cell of a heap whose cells are ROM cells is represented. -/
+theorem Represented.store {H middle : Heap F} {value : SourceValue F} (cells : HeapInROM rom H)
+    (grows : middle ++ [value] <+: H) :
+    Represented rom (middle ++ [value]) (.ptr value.type middle.length) := by
+  have found : H[middle.length]? = some value := heap_get_of_prefix grows (by simp)
+  obtain ⟨address, encoded, cell, related⟩ := cells middle.length value (Nat.zero_le _) found
+  have take : H.take (middle.length + 1) = middle ++ [value] := by
+    obtain ⟨rest, rfl⟩ := grows
+    rw [List.take_append_of_le_length (by simp)]
+    simp
+  rw [take] at related
+  exact ⟨_, .ptr (by simp) cell related⟩
+
+theorem Represented.project {value result : SourceValue F} {index : Nat}
+    (holds : Represented rom heap value) (projected : projectValue value index = .ok result) :
+    Represented rom heap result := by
+  cases value with
+  | tuple items =>
+      cases found : items[index]? with
+      | none => simp [projectValue, found, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at projected
+      | some item =>
+          simp [projectValue, found, bind, Except.bind, pure, Except.pure] at projected
+          subst projected
+          exact Represented.tuple_iff.mp holds _ (List.mem_of_getElem? found)
+  | field | ptr | construct => simp [projectValue, throw, throwThe, MonadExceptOf.throw] at projected
+
+theorem Represented.slice {value result : SourceValue F} {start : Nat} {stop : Option Nat}
+    (holds : Represented rom heap value) (sliced : sliceValue value start stop = .ok result) :
+    Represented rom heap result := by
+  cases value with
+  | tuple items =>
+      simp only [sliceValue] at sliced
+      split at sliced
+      · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at sliced
+      · simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at sliced
+        subst sliced
+        apply Represented.tuple_iff.mpr
+        intro v member
+        exact Represented.tuple_iff.mp holds v (List.mem_of_mem_drop (List.mem_of_mem_take member))
+  | field | ptr | construct => simp [sliceValue, throw, throwThe, MonadExceptOf.throw] at sliced
+
+theorem Represented.member {value result : SourceValue F} {types : Types} {field : FieldRef}
+    (holds : Represented rom heap value) (projected : memberValue types field value = .ok result) :
+    Represented rom heap result := by
+  cases value with
+  | construct actual ctor items =>
+      simp only [memberValue] at projected
+      split at projected
+      · simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at projected
+      · cases found : items[field.index]? with
+        | none => simp [found, throw, throwThe, MonadExceptOf.throw] at projected
+        | some item =>
+            simp [found, pure, Except.pure, bind, Except.bind] at projected
+            subst projected
+            exact Represented.construct_iff.mp holds _ (List.mem_of_getElem? found)
+  | field | ptr | tuple => simp [memberValue, throw, throwThe, MonadExceptOf.throw] at projected
+
+theorem Represented.builtin {op : Builtin} {values : List (SourceValue F)}
+    {result : SourceValue F} (all : ∀ v ∈ values, Represented rom heap v)
+    (applied : op.apply values = .ok result) : Represented rom heap result := by
+  cases op with
+  | ascribe =>
+      simp only [Builtin.apply] at applied
+      split at applied
+      · cases applied
+        exact all _ (by simp)
+      · cases applied
+  | debug =>
+      simp only [Builtin.apply, Except.ok.injEq] at applied
+      subst applied
+      exact Represented.unit
+  | assertEq message =>
+      simp only [Builtin.apply] at applied
+      split at applied
+      · simp only [evalAssertEq] at applied
+        split at applied
+        · split at applied
+          · cases applied
+            exact Represented.unit
+          · cases applied
+        · cases applied
+      · cases applied
+
+theorem Represented.neg {value result : SourceValue F}
+    (operation : evalNeg value = .ok result) : Represented rom heap result := by
+  cases value <;> simp only [evalNeg] at operation <;> cases operation
+  exact Represented.field _
+
+theorem Represented.binary {op : BinOp} {left right result : SourceValue F}
+    (operation : evalBinOp op left right = .ok result) : Represented rom heap result := by
+  cases left <;> cases right <;> simp only [evalBinOp] at operation <;> try cases operation
+  cases op <;> simp only at operation
+  all_goals first
+    | (cases operation; exact Represented.field _)
+    | (split at operation
+       · cases operation
+       · cases operation
+         exact Represented.field _)
+
+theorem Represented.order {head : RecordHead} {values : List (SourceValue F)}
+    (all : ∀ v ∈ values, Represented rom heap v) :
+    ∀ v ∈ head.order values (.tuple []), Represented rom heap v := by
+  intro v member
+  simp only [RecordHead.order, List.mem_map] at member
+  obtain ⟨slot, _, rfl⟩ := member
+  cases slot with
+  | none => exact Represented.unit
+  | some index =>
+      cases found : values[index]? with
+      | none => simp [found]; exact Represented.unit
+      | some value => simp [found]; exact all value (List.mem_of_getElem? found)
+
+/-! ### Updates -/
+
+private theorem mem_of_mapM_some {f : α → Option β} :
+    ∀ {xs : List α} {ys : List β}, xs.mapM f = some ys → ∀ y ∈ ys, ∃ x ∈ xs, f x = some y
+  | [], ys, mapped => by
+      simp only [List.mapM_nil, pure, Option.some.injEq] at mapped
+      subst mapped
+      simp
+  | x :: xs, ys, mapped => by
+      simp only [List.mapM_cons, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at mapped
+      obtain ⟨y, first, rest, mapped, rfl⟩ := mapped
+      intro z member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact ⟨x, List.mem_cons_self, first⟩
+      · obtain ⟨w, inside, same⟩ := mem_of_mapM_some mapped z member
+        exact ⟨w, List.mem_cons_of_mem _ inside, same⟩
+
+private theorem unpack_represented {types : Types} {step : UpdateStep} {value : SourceValue F}
+    {values : List (SourceValue F)} (holds : Represented rom heap value)
+    (unpacked : Update.unpack types step value = some values) : ∀ v ∈ values, Represented rom heap v := by
+  unfold Update.unpack at unpacked
+  split at unpacked
+  · split at unpacked
+    · cases unpacked
+      exact Represented.tuple_iff.mp holds
+    · cases unpacked
+  · split at unpacked
+    · cases unpacked
+      exact Represented.construct_iff.mp holds
+    · cases unpacked
+  · cases unpacked
+
+private theorem pack_represented {types : Types} {step : UpdateStep} {values : List (SourceValue F)}
+    (all : ∀ v ∈ values, Represented rom heap v) : Represented rom heap (Update.pack types step values) := by
+  unfold Update.pack
+  split
+  · exact Represented.tuple_iff.mpr all
+  · exact Represented.construct_iff.mpr all
+
+private theorem replace_represented {types : Types} :
+    ∀ (path : UpdatePath) (base replacement result : SourceValue F),
+      Represented rom heap base → Represented rom heap replacement →
+      Update.replace types path base replacement = some result → Represented rom heap result
+  | [], _, _, result, _, replacement, replaced => by
+      simp only [Update.replace, Option.some.injEq] at replaced
+      subst replaced
+      exact replacement
+  | step :: path, base, replacement, result, holds, replacing, replaced => by
+      simp only [Update.replace, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at replaced
+      obtain ⟨values, unpacked, updated, mapped, rfl⟩ := replaced
+      have parts := unpack_represented holds unpacked
+      apply pack_represented
+      intro v member
+      obtain ⟨⟨original, index⟩, inside, same⟩ := mem_of_mapM_some mapped v member
+      have source : Represented rom heap original := by
+        obtain ⟨_, _, same⟩ := List.mem_zipIdx inside
+        rw [same]
+        exact parts _ (List.getElem_mem _)
+      dsimp only at same
+      split at same
+      · exact replace_represented path original replacement v source replacing same
+      · cases same
+        exact source
+
+private theorem apply_represented {types : Types} :
+    ∀ (paths : List UpdatePath) (base : SourceValue F) (replacements : List (SourceValue F))
+      (result : SourceValue F), Represented rom heap base →
+      (∀ v ∈ replacements, Represented rom heap v) →
+      Update.apply types paths base replacements = some result → Represented rom heap result
+  | [], base, [], result, holds, _, applied => by
+      simp only [Update.apply, Option.some.injEq] at applied
+      subst applied
+      exact holds
+  | path :: paths, base, replacement :: rest, result, holds, all, applied => by
+      simp only [Update.apply, bind, Option.bind_eq_some_iff] at applied
+      obtain ⟨updated, replaced, applied⟩ := applied
+      exact apply_represented paths updated rest result
+        (replace_represented path base replacement updated holds (all _ List.mem_cons_self) replaced)
+        (fun v member => all v (List.mem_cons_of_mem _ member)) applied
+  | [], _, _ :: _, _, _, _, applied | _ :: _, _, [], _, _, _, applied => by
+      simp [Update.apply] at applied
+
+theorem Represented.update {types : Types} {paths : List UpdatePath} {values : List (SourceValue F)}
+    {result : SourceValue F} (all : ∀ v ∈ values, Represented rom heap v)
+    (updated : Update.value types paths values = .ok result) : Represented rom heap result := by
+  cases values with
+  | nil => simp [Update.value] at updated
+  | cons base replacements =>
+      simp only [Update.value] at updated
+      split at updated
+      · rename_i applied
+        cases updated
+        exact apply_represented paths base replacements _ (all base List.mem_cons_self)
+          (fun v member => all v (List.mem_cons_of_mem _ member)) applied
+      · cases updated
+
+/-! ### Patterns -/
+
+private theorem reorderBindings_values {V : Type} :
+    ∀ (names : List String) (positions : List Nat) (bindings ordered : List (String × V)),
+      reorderBindings names positions bindings = some ordered →
+      ∀ b ∈ ordered, ∃ b' ∈ bindings, b'.2 = b.2
+  | [], [], _, ordered, reordered => by
+      simp only [reorderBindings, Option.some.injEq] at reordered
+      subst reordered
+      simp
+  | name :: names, index :: positions, bindings, ordered, reordered => by
+      simp only [reorderBindings, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at reordered
+      obtain ⟨⟨first, value⟩, found, tail, rest, rfl⟩ := reordered
+      intro b member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact ⟨(first, value), List.mem_of_getElem? found, rfl⟩
+      · exact reorderBindings_values names positions bindings tail rest b member
+  | [], _ :: _, _, _, reordered | _ :: _, [], _, _, reordered => by
+      simp [reorderBindings] at reordered
+
+private theorem matchListWith_closed {P : SourceValue F → Prop}
+    {matchOne : A → SourceValue F → Except EvalError (Option (Environment F Nat))} :
+    ∀ (items : List A) (values : List (SourceValue F)) (bindings : Environment F Nat),
+      (∀ a ∈ items, ∀ v ∈ values, ∀ found, matchOne a v = .ok (some found) → ∀ b ∈ found, P b.2) →
+      matchListWith matchOne items values = .ok (some bindings) → ∀ b ∈ bindings, P b.2
+  | [], [], bindings, _, matched => by
+      simp only [matchListWith, pure, Except.pure, Except.ok.injEq, Option.some.injEq] at matched
+      subst matched
+      simp
+  | a :: items, v :: values, bindings, one, matched => by
+      simp only [matchListWith] at matched
+      obtain ⟨first, head, rest⟩ := except_bind_ok.mp matched
+      cases first with
+      | none => simp [pure, Except.pure] at rest
+      | some found =>
+          simp only at rest
+          obtain ⟨second, tail, finish⟩ := except_bind_ok.mp rest
+          cases second with
+          | none => simp [pure, Except.pure] at finish
+          | some others =>
+              simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at finish
+              subst finish
+              intro b member
+              rcases List.mem_append.mp member with member | member
+              · exact one a List.mem_cons_self v List.mem_cons_self found head b member
+              · exact matchListWith_closed items values others
+                  (fun a' ha v' hv => one a' (List.mem_cons_of_mem _ ha) v' (List.mem_cons_of_mem _ hv))
+                  tail b member
+  | [], _ :: _, _, _, matched | _ :: _, [], _, _, matched => by
+      simp [matchListWith, pure, Except.pure] at matched
+
+/-- Pattern bindings are parts of the matched value or of cells it points to. -/
+theorem matchPatternWith_closed {P : SourceValue F → Prop}
+    (tuples : ∀ values, P (.tuple values) → ∀ v ∈ values, P v)
+    (constructs : ∀ name ctor values, P (.construct name ctor values) → ∀ v ∈ values, P v)
+    (loads : ∀ v s, P v → loadValue heap v = .ok s → P s)
+    (constant : String → Ty → Except EvalError (Pattern F)) :
+    ∀ (depth : Nat) (types : Types) (pat : Pattern F) (value : SourceValue F)
+      (bindings : Environment F Nat),
+      P value → matchPatternWith constant depth types heap pat value = .ok (some bindings) →
+      ∀ b ∈ bindings, P b.2
+  | depth, types, .literal x, value, bindings, _, matched => by
+      have empty : bindings = [] := by
+        cases value <;> simp only [matchPatternWith, Aiur.Pattern.bindings, pure, Except.pure,
+          Except.ok.injEq] at matched
+        · split at matched
+          · simp at matched
+            first | exact matched | exact matched.symm
+          · cases matched
+        all_goals cases matched
+      subst empty
+      simp
+  | depth, types, .wildcard, value, bindings, _, matched => by
+      simp only [matchPatternWith, pure, Except.pure, Except.ok.injEq, Option.some.injEq] at matched
+      subst matched
+      simp
+  | depth, types, .bind name, value, bindings, holds, matched => by
+      simp only [matchPatternWith, pure, Except.pure, Except.ok.injEq, Option.some.injEq] at matched
+      subst matched
+      simpa using holds
+  | depth, types, .global name annotation, value, bindings, holds, matched => by
+      cases annotation with
+      | none => simp [matchPatternWith, throw, throwThe, MonadExceptOf.throw] at matched
+      | some type =>
+          cases depth with
+          | zero => simp [matchPatternWith, throw, throwThe, MonadExceptOf.throw] at matched
+          | succ depth =>
+              simp only [matchPatternWith] at matched
+              obtain ⟨body, _, matched⟩ := except_bind_ok.mp matched
+              exact matchPatternWith_closed tuples constructs loads constant depth [] body value
+                bindings holds matched
+  | depth, types, .load pat, value, bindings, holds, matched => by
+      simp only [matchPatternWith] at matched
+      obtain ⟨loaded, load, matched⟩ := except_bind_ok.mp matched
+      exact matchPatternWith_closed tuples constructs loads constant depth types pat loaded bindings
+        (loads value loaded holds load) matched
+  | depth, types, .orElse left right layout, value, bindings, holds, matched => by
+      simp only [matchPatternWith] at matched
+      obtain ⟨leftResult, leftMatched, rest⟩ := except_bind_ok.mp matched
+      cases leftResult with
+      | some found =>
+          have closed := matchPatternWith_closed tuples constructs loads constant depth types left
+            value found holds leftMatched
+          simp only [pure, Except.pure, bind, Except.bind] at rest
+          cases reordered : reorderBindings layout.names (List.range layout.names.length) found with
+          | none => simp [reordered, throw, throwThe, MonadExceptOf.throw] at rest
+          | some ordered =>
+              simp only [reordered, Except.ok.injEq, Option.some.injEq] at rest
+              subst rest
+              intro b member
+              obtain ⟨b', inside, same⟩ := reorderBindings_values _ _ _ _ reordered b member
+              rw [← same]
+              exact closed b' inside
+      | none =>
+          simp only at rest
+          obtain ⟨pair, mapped, rest⟩ := except_bind_ok.mp rest
+          cases rightMatched : matchPatternWith constant depth types heap right value with
+          | error e => simp [rightMatched, Except.map] at mapped
+          | ok result =>
+              simp only [rightMatched, Except.map, Except.ok.injEq] at mapped
+              subst mapped
+              cases result with
+              | none => simp [pure, Except.pure] at rest
+              | some found =>
+                  have closed := matchPatternWith_closed tuples constructs loads constant depth types
+                    right value found holds rightMatched
+                  simp only at rest
+                  cases reordered : reorderBindings layout.names layout.rightOrder found with
+                  | none => simp [reordered, throw, throwThe, MonadExceptOf.throw] at rest
+                  | some ordered =>
+                      simp only [reordered, pure, Except.pure, Except.ok.injEq, Option.some.injEq] at rest
+                      subst rest
+                      intro b member
+                      obtain ⟨b', inside, same⟩ := reorderBindings_values _ _ _ _ reordered b member
+                      rw [← same]
+                      exact closed b' inside
+  | depth, types, .tuple ps, value, bindings, holds, matched => by
+      cases value with
+      | tuple values =>
+          simp only [matchPatternWith] at matched
+          split at matched
+          · simp [pure, Except.pure, bind, Except.bind] at matched
+          · exact matchListWith_closed ps.attach values bindings
+              (fun pat _ v member found one => matchPatternWith_closed tuples constructs loads constant
+                depth types pat.val v found (tuples values holds v member) one) matched
+      | field | ptr | construct => simp [matchPatternWith, pure, Except.pure] at matched
+  | depth, types, .array ps, value, bindings, holds, matched => by
+      cases value with
+      | tuple values =>
+          simp only [matchPatternWith] at matched
+          split at matched
+          · simp [pure, Except.pure, bind, Except.bind] at matched
+          · exact matchListWith_closed ps.attach values bindings
+              (fun pat _ v member found one => matchPatternWith_closed tuples constructs loads constant
+                depth types pat.val v found (tuples values holds v member) one) matched
+      | field | ptr | construct => simp [matchPatternWith, pure, Except.pure] at matched
+  | depth, types, .repeat pat n, value, bindings, holds, matched => by
+      cases value with
+      | tuple values =>
+          simp only [matchPatternWith] at matched
+          split at matched
+          · simp [pure, Except.pure, bind, Except.bind] at matched
+          · exact matchListWith_closed (List.replicate n ()) values bindings
+              (fun _ _ v member found one => matchPatternWith_closed tuples constructs loads constant
+                depth types pat v found (tuples values holds v member) one) matched
+      | field | ptr | construct => simp [matchPatternWith, pure, Except.pure] at matched
+  | depth, types, .record head ps, value, bindings, holds, matched => by
+      cases value with
+      | construct name ctor values =>
+          simp only [matchPatternWith] at matched
+          split at matched
+          · simp [pure, Except.pure, bind, Except.bind] at matched
+          · split at matched
+            · simp [pure, Except.pure, bind, Except.bind] at matched
+            · exact matchListWith_closed _ values bindings
+                (fun child _ v member found one => by
+                  cases child with
+                  | none =>
+                      simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq] at one
+                      subst one
+                      simp
+                  | some pat =>
+                      exact matchPatternWith_closed tuples constructs loads constant depth types pat.val v
+                        found (constructs _ _ values holds v member) one) matched
+      | field | ptr | tuple => simp [matchPatternWith, pure, Except.pure] at matched
+  | depth, types, .construct t c ps, value, bindings, holds, matched => by
+      cases value with
+      | construct name ctor values =>
+          simp only [matchPatternWith] at matched
+          split at matched
+          · simp [pure, Except.pure, bind, Except.bind] at matched
+          · exact matchListWith_closed ps.attach values bindings
+              (fun pat _ v member found one => matchPatternWith_closed tuples constructs loads constant
+                depth types pat.val v found (constructs _ _ values holds v member) one) matched
+      | field | ptr | tuple => simp [matchPatternWith, pure, Except.pure] at matched
+  | depth, types, .constructAs params t c ps, value, bindings, holds, matched => by
+      cases value with
+      | construct name ctor values =>
+          simp only [matchPatternWith] at matched
+          split at matched
+          · simp [pure, Except.pure, bind, Except.bind] at matched
+          · exact matchListWith_closed ps.attach values bindings
+              (fun pat _ v member found one => matchPatternWith_closed tuples constructs loads constant
+                depth types pat.val v found (constructs _ _ values holds v member) one) matched
+      | field | ptr | tuple => simp [matchPatternWith, pure, Except.pure] at matched
+termination_by depth _ pat _ _ _ _ => (depth, sizeOf pat)
+decreasing_by
+  all_goals simp_wf
+  all_goals first | omega | skip
+  all_goals try have := List.sizeOf_lt_of_mem pat.property
+  all_goals try simp_all only [Pattern.tuple.sizeOf_spec, Pattern.array.sizeOf_spec,
+    Pattern.construct.sizeOf_spec, Pattern.constructAs.sizeOf_spec, Pattern.record.sizeOf_spec]
+  all_goals omega
+
+theorem Represented.matchPattern {world : World F} {types : Types}
+    {pattern : Pattern F} {value : SourceValue F} {bindings : Environment F Nat}
+    (holds : Represented rom heap value)
+    (matched : world.matchPattern types heap pattern value = .ok (some bindings)) :
+    ∀ b ∈ bindings, Represented rom heap b.2 :=
+  matchPatternWith_closed (P := Represented rom heap)
+    (fun _ whole => Represented.tuple_iff.mp whole)
+    (fun _ _ _ whole => Represented.construct_iff.mp whole)
+    (fun _ _ holds loaded => holds.load loaded)
+    world.constant world.constDepth types pattern value bindings holds matched
+
+theorem Represented.selectArm {world : World F} {types : Types}
+    {value : SourceValue F} (holds : Represented rom heap value) :
+    ∀ (arms : List (Pattern F × Expr F)) (bindings : Environment F Nat) (body : Expr F),
+      selectArm world types heap value arms = .ok (some (bindings, body)) →
+      ∀ b ∈ bindings, Represented rom heap b.2
+  | [], _, _, selected => by simp [SourceSemantics.selectArm, pure, Except.pure] at selected
+  | (pat, arm) :: arms, bindings, body, selected => by
+      simp only [SourceSemantics.selectArm] at selected
+      obtain ⟨result, matched, rest⟩ := except_bind_ok.mp selected
+      cases result with
+      | some found =>
+          simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at rest
+          obtain ⟨rfl, _⟩ := rest
+          exact Represented.matchPattern holds matched
+      | none => exact Represented.selectArm holds arms bindings body rest
+
+end Representation
+
+/-! ## Values of an observed derivation are represented -/
+
+section Observed
+
+variable {rom : ROM F}
+
+private theorem env_mono {locals : Environment F Nat} {heap larger : Heap F}
+    (env : ∀ b ∈ locals, Represented rom heap b.2) (grows : heap <+: larger) :
+    ∀ b ∈ locals, Represented rom larger b.2 :=
+  fun b member => (env b member).mono grows
+
+private theorem env_append {bindings locals : Environment F Nat} {heap : Heap F}
+    (first : ∀ b ∈ bindings, Represented rom heap b.2) (second : ∀ b ∈ locals, Represented rom heap b.2) :
+    ∀ b ∈ bindings ++ locals, Represented rom heap b.2 := by
+  intro b member
+  rcases List.mem_append.mp member with member | member
+  · exact first b member
+  · exact second b member
+
+/-- Along an observed derivation the heap only grows. When the final heap's
+cells are ROM cells, every value computed and every argument of every call is
+represented relative to the heap at that point. -/
+theorem ObsFn.represented (prepares : PreparesFromArgs world) {H : Heap F} (cells : HeapInROM rom H)
+    {name : String} {args : List (SourceValue F)} {before after : Heap F} {result : SourceValue F}
+    {calls : List (Call F)} (observed : ObsFn world name args before result after calls) :
+    before <+: after ∧ (after <+: H → (∀ v ∈ args, Represented rom before v) →
+      Represented rom after result ∧ CallsInROM rom calls) := by
+  induction observed using ObsFn.rec
+    (motive_1 := fun types locals expr before result after calls _ =>
+      before <+: after ∧ (after <+: H → (∀ b ∈ locals, Represented rom before b.2) →
+        Represented rom after result ∧ CallsInROM rom calls))
+    (motive_2 := fun types locals exprs before values after calls _ =>
+      before <+: after ∧ (after <+: H → (∀ b ∈ locals, Represented rom before b.2) →
+        (∀ v ∈ values, Represented rom after v) ∧ CallsInROM rom calls))
+    (motive_4 := fun types locals expr before target result after calls _ =>
+      before <+: after ∧ (after <+: H → (∀ b ∈ locals, Represented rom before b.2) →
+        Represented rom after result ∧ CallsInROM rom calls))
+    (motive_5 := fun types locals exprs before target result after calls _ =>
+      before <+: after ∧ (after <+: H → (∀ b ∈ locals, Represented rom before b.2) →
+        Represented rom after result ∧ CallsInROM rom calls)) with
+  | block _ ih => exact ih
+  | blockExit _ ih => exact ih
+  | literal => exact ⟨List.prefix_refl _, fun _ _ => ⟨Represented.field _, CallsInROM.nil⟩⟩
+  | var lookup =>
+      exact ⟨List.prefix_refl _, fun _ env =>
+        ⟨env _ (List.mem_of_find?_eq_some lookup), CallsInROM.nil⟩⟩
+  | global _ _ _ ih => exact ⟨ih.1, fun bound _ => ih.2 bound (by simp)⟩
+  | tuple _ ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.tuple_iff.mpr (ih.2 bound env).1, (ih.2 bound env).2⟩⟩
+  | array _ ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.tuple_iff.mpr (ih.2 bound env).1, (ih.2 bound env).2⟩⟩
+  | «repeat» _ ih =>
+      refine ⟨ih.1, fun bound env => ⟨?_, (ih.2 bound env).2⟩⟩
+      apply Represented.tuple_iff.mpr
+      intro v member
+      rw [List.eq_of_mem_replicate member]
+      exact (ih.2 bound env).1
+  | index _ projected ih =>
+      exact ⟨ih.1, fun bound env => ⟨(ih.2 bound env).1.project projected, (ih.2 bound env).2⟩⟩
+  | slice _ sliced ih =>
+      exact ⟨ih.1, fun bound env => ⟨(ih.2 bound env).1.slice sliced, (ih.2 bound env).2⟩⟩
+  | builtin _ applied ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.builtin (ih.2 bound env).1 applied, (ih.2 bound env).2⟩⟩
+  | update _ updated ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.update (ih.2 bound env).1 updated, (ih.2 bound env).2⟩⟩
+  | record _ ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.construct_iff.mpr (Represented.order (ih.2 bound env).1), (ih.2 bound env).2⟩⟩
+  | member _ projected ih =>
+      exact ⟨ih.1, fun bound env => ⟨(ih.2 bound env).1.member projected, (ih.2 bound env).2⟩⟩
+  | construct _ ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.construct_iff.mpr (ih.2 bound env).1, (ih.2 bound env).2⟩⟩
+  | constructAs _ ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.construct_iff.mpr (ih.2 bound env).1, (ih.2 bound env).2⟩⟩
+  | project _ projected ih =>
+      exact ⟨ih.1, fun bound env => ⟨(ih.2 bound env).1.project projected, (ih.2 bound env).2⟩⟩
+  | letValue _ matched _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound
+        (env_append (first.1.matchPattern matched) (env_mono env ih₁.1))
+      exact ⟨second.1, first.2.append second.2⟩
+  | store _ ih =>
+      refine ⟨ih.1.trans (List.prefix_append _ _), fun bound env => ?_⟩
+      have first := ih.2 ((List.prefix_append _ _).trans bound) env
+      exact ⟨Represented.store cells bound, first.2⟩
+  | load _ loaded ih =>
+      exact ⟨ih.1, fun bound env => ⟨(ih.2 bound env).1.load loaded, (ih.2 bound env).2⟩⟩
+  | hint _ _ ih =>
+      exact ⟨ih.1, fun bound env =>
+        ⟨Represented.ofPointerFree _ (Constant.toValue_pointerFree _), (ih.2 bound env).2⟩⟩
+  | neg _ operation ih =>
+      exact ⟨ih.1, fun bound env => ⟨Represented.neg operation, (ih.2 bound env).2⟩⟩
+  | binary _ _ operation ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound (env_mono env ih₁.1)
+      exact ⟨Represented.binary operation, first.2.append second.2⟩
+  | call _ _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound first.1
+      refine ⟨second.1, first.2.append ?_⟩
+      intro c member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact first.1
+      · exact second.2 c member
+  | matchValue _ selected _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound
+        (env_append (first.1.selectArm _ _ _ selected) (env_mono env ih₁.1))
+      exact ⟨second.1, first.2.append second.2⟩
+  | nil => exact ⟨List.prefix_refl _, fun _ _ => ⟨by simp, CallsInROM.nil⟩⟩
+  | cons _ _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound (env_mono env ih₁.1)
+      refine ⟨?_, first.2.append second.2⟩
+      intro v member
+      rcases List.mem_cons.mp member with rfl | member
+      · exact first.1.mono ih₂.1
+      · exact second.1 v member
+  | intro prepared _ ih =>
+      exact ⟨ih.1, fun bound args => ih.2 bound
+        (fun b member => args b.2 (prepares _ _ _ _ _ prepared b member))⟩
+  | returned prepared _ ih =>
+      exact ⟨ih.1, fun bound args => ih.2 bound
+        (fun b member => args b.2 (prepares _ _ _ _ _ prepared b member))⟩
+  | exit _ ih => exact ih
+  | exitPayload _ ih => exact ih
+  | fromBlock _ _ ih => exact ih
+  | fromGlobal _ _ _ ih => exact ⟨ih.1, fun bound _ => ih.2 bound (by simp)⟩
+  | fromTuple _ ih => exact ih
+  | fromArray _ ih => exact ih
+  | fromRepeat _ ih => exact ih
+  | fromIndex _ ih => exact ih
+  | fromSlice _ ih => exact ih
+  | fromBuiltin _ ih => exact ih
+  | fromUpdate _ ih => exact ih
+  | fromRecord _ ih => exact ih
+  | fromMember _ ih => exact ih
+  | fromConstruct _ ih => exact ih
+  | fromConstructAs _ ih => exact ih
+  | fromProject _ ih => exact ih
+  | fromLetValue _ ih => exact ih
+  | letBody _ matched _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound
+        (env_append (first.1.matchPattern matched) (env_mono env ih₁.1))
+      exact ⟨second.1, first.2.append second.2⟩
+  | fromStore _ ih => exact ih
+  | fromLoad _ ih => exact ih
+  | fromHint _ ih => exact ih
+  | fromNeg _ ih => exact ih
+  | binaryLeft _ ih => exact ih
+  | binaryRight _ _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound (env_mono env ih₁.1)
+      exact ⟨second.1, first.2.append second.2⟩
+  | fromCall _ ih => exact ih
+  | fromMatchValue _ ih => exact ih
+  | matchBody _ selected _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound
+        (env_append (first.1.selectArm _ _ _ selected) (env_mono env ih₁.1))
+      exact ⟨second.1, first.2.append second.2⟩
+  | head _ ih => exact ih
+  | tail _ _ ih₁ ih₂ =>
+      refine ⟨ih₁.1.trans ih₂.1, fun bound env => ?_⟩
+      have first := ih₁.2 (ih₂.1.trans bound) env
+      have second := ih₂.2 bound (env_mono env ih₁.1)
+      exact ⟨second.1, first.2.append second.2⟩
+
+/-- **The ROM carries the calls**: an observed derivation from the empty heap
+on pointer-free arguments, whose final heap's cells are ROM cells, has every
+argument of every recorded call represented in that ROM. -/
+theorem ObsFn.callsInROM (prepares : PreparesFromArgs world) {H : Heap F} (cells : HeapInROM rom H)
+    {name : String} {args : List (SourceValue F)} {result : SourceValue F} {calls : List (Call F)}
+    (free : ∀ v ∈ args, v.pointerFree = true)
+    (observed : ObsFn world name args [] result H calls) : CallsInROM rom calls :=
+  ((observed.represented prepares cells).2 (List.prefix_refl H)
+    (fun v member => Represented.ofPointerFree v (free v member))).2
+
+end Observed
+
 end Aiur.Generic.SourceSemantics
 
 namespace Aiur.Modules
@@ -398,3 +1145,31 @@ theorem Prepared.EvalFn.observe {p : Prepared program} {name : String} {args : L
   exact ⟨calls, entry, selected, h⟩
 
 end Aiur.Modules
+
+namespace Aiur.Generic
+
+open SourceSemantics
+
+variable {F : Type} [Field F] [DecidableEq F]
+
+/-- A source program's world binds a function's parameters to the call's
+arguments; a fixed map call binds nothing. -/
+theorem Source.world_preparesFromArgs (s : Source F) : PreparesFromArgs s.world := by
+  intro name args types locals expr prepared binding member
+  simp only [Source.world, sourceWorld] at prepared
+  cases found : s.program.sourceFunction? name with
+  | none =>
+      simp only [found] at prepared
+      obtain ⟨constant, _, finished⟩ := except_bind_ok.mp prepared
+      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at finished
+      obtain ⟨_, rfl, _⟩ := finished
+      cases member
+  | some fn =>
+      simp only [found, SourceFunction.prepare] at prepared
+      split at prepared
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at prepared
+        obtain ⟨_, rfl, _⟩ := prepared
+        exact (List.of_mem_zip member).2
+      · cases prepared
+
+end Aiur.Generic
