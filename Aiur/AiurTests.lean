@@ -2,6 +2,7 @@ import Aiur.Scalar
 import AiurTests.Circuit
 import AiurTests.Semantics
 import AiurTests.Memo
+import AiurTests.Depth
 import AiurTests.TupleRuntime
 import AiurTests.Enums
 import AiurTests.EnumEncoding
