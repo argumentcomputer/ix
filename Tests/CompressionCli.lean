@@ -1,5 +1,6 @@
 module
 public import Ix.Cli.Compression
+public import Ix.Cli.FormalAggregate
 
 public section
 namespace Tests.CompressionCli
@@ -26,6 +27,56 @@ private def rejects (home : System.FilePath) (args : Array String) (message : St
   let out ← invoke home args setupEnv
   unless out.exitCode != 0 && (out.stderr.splitOn message).length > 1 do
     throw <| IO.userError s!"expected rejection ({message}): {args}\n{out.stdout}\n{out.stderr}"
+
+/-- A recursive KZG proof of `Nat.add_comm`'s aggregate root under the bundled
+keys, a serialized `Ixon.Proof` with its claim (see `PROVENANCE.md` beside it). -/
+private def compressedFixture : System.FilePath :=
+  "Tests/Fixtures/Compression/nat-add-comm.ixon-proof"
+
+/-- The bundled release keys belong to the current formal backends.
+
+- `ix compress` without `--fixed-root` accepts the formal aggregation key: the
+  release has a layout (`.ixl`) for it, and a formal statement carries the
+  release's statement prefix, the checks it makes before proving. Another
+  IxVM backend's statement is refused.
+- `ix verify` accepts a compressed proof of a formal aggregate root under the
+  bundled keys, and refuses the same proof under another claim.
+
+The IxVM and aggregation artifacts are `IX_AIUR_ARTIFACT` and
+`IX_AGGR_ARTIFACT`, or the checkout's cached exports. -/
+def releaseAccepts (home : System.FilePath) : IO Unit := do
+  let ctx ← Ix.Cli.FormalAggregate.context default
+  let layout ← Ix.Cli.Compression.releaseRootLayout ctx.aggr.key
+  unless layout.extract 0 8 == "IXROOTL\x00".toUTF8 do
+    throw <| IO.userError "the release root layout is not an .ixl file"
+  let testHash := Address.blake3 "release".toUTF8
+  let claimCtx : Ix.ClaimContext := { spec := testHash, binding := testHash, axioms := none }
+  let claim := Ix.Claim.checkEnv claimCtx testHash none
+  Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
+    (Ix.Cli.FormalAggregate.statementBytes ctx claim)
+  let other := { ctx with
+    allowed := Aggr.allowedBlob ctx.ixvm.key (ctx.ixvm.index + 1) ctx.aggr.key ctx.aggr.index }
+  let refused ←
+    try
+      Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
+        (Ix.Cli.FormalAggregate.statementBytes other claim)
+      pure false
+    catch _ => pure true
+  unless refused do
+    throw <| IO.userError "the release accepted another backend's statement"
+  let bytes ← IO.FS.readBinFile ((← Ix.Cli.FormalAiur.repoRoot) / compressedFixture)
+  let fixture ← IO.ofExcept (Ixon.Proof.de bytes)
+  unless Ix.Cli.Compression.isCompressed fixture.proof do
+    throw <| IO.userError s!"{compressedFixture} is not a compressed proof"
+  let addr ← putProof home bytes
+  let out ← invoke home #["verify", toString addr]
+  unless out.exitCode == 0 && (out.stdout.splitOn "Aztec Ignition").length > 1 do
+    throw <| IO.userError s!"the bundled compressed proof did not verify:\n{out.stdout}\n{out.stderr}"
+  let moved ← putProof home (Ixon.Proof.ser { fixture with claim := claim })
+  let out ← invoke home #["verify", toString moved]
+  unless out.exitCode != 0 do
+    throw <| IO.userError s!"the bundled compressed proof verified another claim:\n{out.stdout}"
+  IO.println "compression CLI: the release keys accept the formal backends"
 
 public def run : IO Unit := do
   unless (← Ix.Cli.Compression.curve) == "bn254" do
@@ -106,6 +157,7 @@ public def run : IO Unit := do
     rejects home #["verify", toString unknownAddr] "other than the"
     rejects home #["verify", toString unknownAddr, "--dev-srs"] "other than the"
     IO.println "compression CLI: BN254 setup and proof rejection checks passed"
+    releaseAccepts home
   finally
     IO.FS.removeDirAll home
 

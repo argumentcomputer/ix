@@ -13,7 +13,9 @@ mod derive;
 mod development;
 pub(crate) use compress::StageConfig;
 pub use compress::{CompressConfig, CompressInput, compress};
-pub use derive::derive_recursive_vk;
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub use derive::final_schema;
+pub use derive::{ReleaseKeys, derive_recursive_vk, derive_release};
 pub use development::verify_with_development_verifier;
 mod final_proof;
 mod first;
@@ -33,6 +35,7 @@ pub use verifying_keys::release_root_layout;
 mod setup;
 pub use setup::{SetupClass, SetupConfig};
 mod statement;
+pub use statement::backend_prefix;
 mod storage;
 mod wrap;
 
@@ -51,6 +54,13 @@ pub fn check_claim(
   let words = statement::from_claims_bytes(statement)?;
   statement::bind_claim(claim, &words)?;
   Ok(words)
+}
+
+/// Check that `statement` belongs to `claim` and to the aggregation backend
+/// the bundled keys were derived for, as the default verifier requires.
+pub fn check_release_statement(claim: &[u8], statement: &[u8]) -> Result<()> {
+  let words = check_claim(claim, statement)?;
+  verifying_keys::check_release_prefix(&words)
 }
 
 /// Describe the inner KZG setup selected for a compression run.
@@ -122,7 +132,7 @@ pub fn write_root_input(
   proof: &[u8],
   claim: &[u8],
   statement: &[u8],
-  fixed_root: Option<&str>,
+  fixed_root: Option<&[u8]>,
 ) -> Result<()> {
   let words = check_claim(claim, statement)?;
   prepare_output(dir)?;
@@ -143,7 +153,7 @@ fn write_root(
   vk: &[u8],
   proof: &[u8],
   words: &statement::Statement,
-  fixed_root: Option<&str>,
+  fixed_root: Option<&[u8]>,
 ) -> Result<()> {
   fs::create_dir_all(dir)?;
   for (name, bytes) in compress::root_files(vk, proof, words, fixed_root)? {

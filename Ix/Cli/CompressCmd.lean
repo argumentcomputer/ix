@@ -54,9 +54,14 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   let vk ← match opts.rootVk with
     | some path => IO.FS.readBinFile path
     | none => pure ctx.aggr.key
+  -- Without an override the bundled keys apply: the backend must be theirs,
+  -- or compression would fail only after proving.
   let layout ← match opts.fixedRoot with
-    | some path => IO.FS.readFile path
-    | none => Compression.releaseRootLayout vk
+    | some path => IO.FS.readBinFile path
+    | none => do
+      let layout ← Compression.releaseRootLayout vk
+      Compression.checkReleaseStatement (Ix.Claim.ser wrapper.claim) statement
+      pure layout
   IO.eprintln s!"Normalizing aggregate root {addr} for compression."
   let root ← FormalAggregate.normalize ctx wrapper layout
   Compression.releaseGpuMemory

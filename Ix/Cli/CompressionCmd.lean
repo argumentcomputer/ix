@@ -40,7 +40,7 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
       claimLen := (FormalAggregate.outerClaim ctx .aggr wrapper.claim).size
     let layout ← Compression.rootLayout ctx.aggrArtifact
       ("[" ++ ",".intercalate rows.toList ++ "]") headroom.toUInt32 claimLen.toUInt32
-    IO.FS.writeFile out layout
+    IO.FS.writeBinFile out layout
     IO.println out
     return 0
   catch e =>
@@ -52,7 +52,7 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
     let (addr, wrapper) ← loadRoot (p.positionalArg! "proof" |>.as! String)
     let layoutPath := p.positionalArg! "layout" |>.as! String
     let out := p.positionalArg! "out" |>.as! String
-    let layout ← IO.FS.readFile layoutPath
+    let layout ← IO.FS.readBinFile layoutPath
     let ctx ← FormalAggregate.context p
     IO.eprintln s!"Normalizing aggregate root {addr} to {layoutPath}."
     let root ← FormalAggregate.normalize ctx wrapper layout
@@ -75,7 +75,7 @@ def layoutCmd : Cli.Cmd := `[Cli|
     headroom : Nat; "Extra doublings of every circuit's height beyond the largest execution (default 0)."
 
   ARGS:
-    out : String; "Output layout JSON file."
+    out : String; "Output layout file (`.ixl`, Ixon)."
     ...proofs : String; "Aggregate Ixon.Proof files or content addresses in the ix store."
 ]
 
@@ -89,8 +89,8 @@ def normalizeCmd : Cli.Cmd := `[Cli|
 
   ARGS:
     proof : String; "Aggregate Ixon.Proof file or content address in the ix store."
-    layout : String; "Layout JSON from `ix compress layout`."
-    out : String; "Empty output directory for root-vk.bin, root-proof.bin, root-claims.bin and fixed-root.json."
+    layout : String; "Layout file (`.ixl`) from `ix compress layout`."
+    out : String; "Empty output directory for root-vk.bin, root-proof.bin, root-claims.bin and fixed-root.ixl."
 ]
 
 /-- Download `url` to `path` through a `.part` file, resuming a partial one. -/

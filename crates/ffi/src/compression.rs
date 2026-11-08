@@ -23,9 +23,10 @@ fn aggregate(
   Ok((program.check_field::<Val>()?, trace))
 }
 
-fn optional(text: &LeanString<LeanBorrowed<'_>>) -> Option<String> {
-  let text = text.to_string();
-  (!text.is_empty()).then_some(text)
+/// An optional `.ixl` layout: empty means none.
+fn optional(bytes: &LeanByteArray<LeanBorrowed<'_>>) -> Option<Vec<u8>> {
+  let bytes = bytes.as_bytes();
+  (!bytes.is_empty()).then(|| bytes.to_vec())
 }
 
 #[unsafe(no_mangle)]
@@ -34,7 +35,7 @@ extern "C" fn rs_compression_run(
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
   statement: LeanByteArray<LeanBorrowed<'_>>,
-  fixed_root: LeanString<LeanBorrowed<'_>>,
+  fixed_root: LeanByteArray<LeanBorrowed<'_>>,
   dir: LeanString<LeanBorrowed<'_>>,
   cache_root: LeanString<LeanBorrowed<'_>>,
   dev_kzg_srs: bool,
@@ -151,13 +152,30 @@ extern "C" fn rs_compression_check_claim(
   }
 }
 
-/// The versioned normalization layout for the selected aggregation backend.
+/// Check that `statement` belongs to `claim` and to the aggregation backend
+/// the bundled verifying keys were derived for.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_check_release_statement(
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  statement: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match pipeline::check_release_statement(
+    claim.as_bytes(),
+    statement.as_bytes(),
+  ) {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
+  }
+}
+
+/// The versioned normalization layout (`.ixl` bytes) for the selected
+/// aggregation backend.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_release_root_layout(
   vk: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   match pipeline::release_root_layout(vk.as_bytes()) {
-    Ok(layout) => LeanIOResult::ok(LeanString::new(layout)),
+    Ok(layout) => LeanIOResult::ok(LeanByteArray::from_bytes(layout)),
     Err(error) => LeanIOResult::error_string(&error.to_string()),
   }
 }
@@ -199,7 +217,8 @@ extern "C" fn rs_compression_root_rows(
   }
 }
 
-/// The fixed layout holding every row-count array in the JSON array `rows`.
+/// The fixed layout (`.ixl` bytes) holding every row-count array in the JSON
+/// array `rows`.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_root_layout(
   aggr_artifact: LeanString<LeanBorrowed<'_>>,
@@ -207,7 +226,7 @@ extern "C" fn rs_compression_root_layout(
   headroom: u32,
   claim_len: u32,
 ) -> LeanIOResult<LeanOwned> {
-  let result = (|| -> Result<String, String> {
+  let result = (|| -> Result<Vec<u8>, String> {
     let executions: Vec<Vec<usize>> =
       serde_json::from_str(&rows.to_string()).map_err(|e| e.to_string())?;
     let first = executions.first().ok_or("no root executions to size")?;
@@ -231,10 +250,10 @@ extern "C" fn rs_compression_root_layout(
       claim_len as usize,
     )
     .map_err(|e| e.to_string())?;
-    Ok(layout.to_json())
+    Ok(layout.to_bytes())
   })();
   match result {
-    Ok(json) => LeanIOResult::ok(LeanString::new(&json)),
+    Ok(layout) => LeanIOResult::ok(LeanByteArray::from_bytes(&layout)),
     Err(e) => LeanIOResult::error_string(&e),
   }
 }
@@ -245,11 +264,11 @@ extern "C" fn rs_compression_normalize_root(
   aggr_artifact: LeanString<LeanBorrowed<'_>>,
   invocation: LeanByteArray<LeanBorrowed<'_>>,
   raw_proof: LeanByteArray<LeanBorrowed<'_>>,
-  layout: LeanString<LeanBorrowed<'_>>,
+  layout: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let result = (|| -> Result<Vec<u8>, String> {
     let layout =
-      FixedRoot::from_json(&layout.to_string()).map_err(|e| e.to_string())?;
+      FixedRoot::from_bytes(layout.as_bytes()).map_err(|e| e.to_string())?;
     let (program, trace) = aggregate(&aggr_artifact)?;
     let plan = TracePlan::new(&program, trace)?;
     let backend = Backend::for_batch(&plan, Parameters::default())?;
@@ -297,7 +316,7 @@ extern "C" fn rs_compression_write_root(
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
   statement: LeanByteArray<LeanBorrowed<'_>>,
-  fixed_root: LeanString<LeanBorrowed<'_>>,
+  fixed_root: LeanByteArray<LeanBorrowed<'_>>,
   dir: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   match pipeline::write_root_input(

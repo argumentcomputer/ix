@@ -14,9 +14,9 @@ interface Vm {
 
 contract IxPlonkVerifierTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-    /// SHA-256 of crates/proof-compression/verifying-keys/0.1/plonk-verifying-key.bin,
+    /// SHA-256 of crates/proof-compression/verifying-keys/0.2/plonk-verifying-key.bin,
     /// the key src/PlonkVerifier.sol is generated from.
-    string private constant RELEASE_KEY_SHA256 = "7123a80f9c56b25138ffe8ec47a53c6b0b22b64bf183380d63e5c80a7e3144a9";
+    string private constant RELEASE_KEY_SHA256 = "78d4ad2af7a510248071d484d8184bdf62d31e3421805b23b725b54c5643f040";
     IxPlonkVerifier private adapter;
     PlonkVerifier private plonk;
     bytes private proof;
@@ -24,7 +24,7 @@ contract IxPlonkVerifierTest {
     event log_named_uint(string key, uint256 value);
 
     function setUp() public {
-        string memory fixture = vm.readFile(string.concat(vm.projectRoot(), "/testdata/init.json"));
+        string memory fixture = vm.readFile(string.concat(vm.projectRoot(), "/testdata/nat-add-comm.json"));
         require(
             keccak256(bytes(vm.parseJsonString(fixture, ".verifyingKeySHA256"))) == keccak256(bytes(RELEASE_KEY_SHA256)),
             "fixture proof is not under the release PLONK key"
@@ -35,7 +35,7 @@ contract IxPlonkVerifierTest {
         adapter = new IxPlonkVerifier(IPlonkVerifier(address(plonk)));
     }
 
-    function testValidInitProof() public {
+    function testValidProof() public {
         bytes memory bytes_ = proof;
         uint256 start = gasleft();
         require(adapter.verify{gas: 2_000_000}(bytes_, digest), "valid proof rejected");

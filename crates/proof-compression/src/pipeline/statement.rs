@@ -64,6 +64,30 @@ pub(crate) fn bind_claim(claim: &[u8], statement: &Statement) -> Result<()> {
   Ok(())
 }
 
+/// The ten words every statement of an aggregation backend begins with, as
+/// `Aiur.buildClaim` and `Aggr.pubInput` lay them out: the call channel (1),
+/// the `ix_aggr` function index, and the packed digest of the backend
+/// identity `Aggr.allowedBlob`. That blob is the BLAKE3 digest of the IxVM
+/// key, the `verify_claim` index as a little-endian `u64`, the BLAKE3 digest
+/// of the aggregation key and the `ix_aggr` index.
+pub fn backend_prefix(
+  ixvm_key: &[u8],
+  ixvm_index: u64,
+  aggr_key: &[u8],
+  aggr_index: u64,
+) -> [u64; 10] {
+  let mut blob = Vec::with_capacity(80);
+  blob.extend_from_slice(blake3::hash(ixvm_key).as_bytes());
+  blob.extend_from_slice(&ixvm_index.to_le_bytes());
+  blob.extend_from_slice(blake3::hash(aggr_key).as_bytes());
+  blob.extend_from_slice(&aggr_index.to_le_bytes());
+  let mut prefix = [0; 10];
+  prefix[0] = 1;
+  prefix[1] = aggr_index;
+  prefix[2..].copy_from_slice(&packed(blake3::hash(&blob).as_bytes()));
+  prefix
+}
+
 fn usize_u64(value: usize) -> u64 {
   u64::try_from(value).expect("statement length fits in u64")
 }

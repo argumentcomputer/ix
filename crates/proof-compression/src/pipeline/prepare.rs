@@ -127,7 +127,7 @@ fn prepare_first(
   let fri = {
     let key = aiur::trace::stark::VerifyingKey::from_bytes(root_vk)?;
     let layout = verifying_keys::release_root_layout(root_vk)?;
-    root::verifier(&key, &FixedRoot::from_json(layout)?)?
+    root::verifier(&key, &FixedRoot::from_bytes(layout)?)?
   };
   let (manifest, parts, prepared) = first::setup(
     &fri,
