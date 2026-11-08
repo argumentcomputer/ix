@@ -1,4 +1,4 @@
-import Ix.Cert.Statement
+import Ix.Cert.AcceptsUnder
 import Ix.Claim
 import Ix.AssumptionTree
 import Ix.SpecDigest
@@ -9,8 +9,10 @@ import Ix.Address.Pure
 
 Track B, Phase 2 (`plans/ixvm-certification-gap.md`): the meaning of the
 claims `IxVM::verify_claim` accepts, stated over IxC's reference-level
-acceptance `Ix.Cert.IxonAcceptsRef` (decision D3). Definitions only. The
-statement over the IxVM program is in `Ix.IxVM.Refinement.Statement`.
+acceptance (decision D3): `Ix.Cert.IxonAcceptsRef`, and for claims that name
+user axioms its policy form `Ix.Cert.IxonAcceptsRefUnder .allowUser`.
+Definitions only. The statement over the IxVM program is in
+`Ix.IxVM.Refinement.Statement`.
 
 ## Views
 
@@ -18,13 +20,9 @@ A claim names addresses: constants, an assumption tree's root, a role
 table's hash. What it says depends on what those addresses resolve to, so the
 meaning is stated relative to a **view** (`View`): an Ixon environment (its
 records, blobs and role table) and the assumption trees a reader holds.
-`Ix.Claim.HoldsIn V c` is the claim's meaning in the view `V`.
-
-* `Ix.Claim.Holds c` is decision D2's form: **some** authentic view makes the
-  claim hold.
-* The collision corollary (`IxVMClaimSpecIn`, in the statement module) is
-  stated for **every** authentic view that covers the claim: the claim holds
-  in it, or a second preimage of data the view holds exists.
+`Ix.Claim.HoldsIn V c` is the claim's meaning in the view `V`. The main
+statement is about every authentic view that covers the claim; there is no
+existential form (decision D2 was revised; see the statement module).
 
 Acceptance in a view (`AcceptsIn`) uses only the view's records and blobs,
 except that it may supply recursor records the view lacks (`Draws`): IxC
@@ -39,9 +37,10 @@ them as unauthenticated advice.
 * `check ctx a asm`: IxC accepts the closure of `a` (`TypingIn`).
 * `checkEnv ctx root asm`: the tree at `root` has leaves, and IxC accepts the
   closure of all of them.
-* `eval ctx input output asm`: the typing of `input`, and the output record
-  is a safe definition. The value relation (`output`'s value is the normal
-  form of `input`'s) is not stated yet; see the review note.
+* `eval ctx input output asm`: IxC accepts the closure of `input` and
+  `output` together; the output record is a safe definition with the input's
+  universe count and type; and IxC's reference definitional equality holds
+  between the input's value and the output's at some fuel (`EvalValues`).
 * `reveal comm info`: the record at `comm` has every field `info` reveals
   (`RevealLE`).
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
@@ -49,22 +48,20 @@ them as unauthenticated advice.
   accepts the closure of the bound constants and evidence theorems under it.
 * `catalog`, `resource`: `False`. IxVM rejects both (no arm for variant 8;
   variant 9 asserts `0 = 1`), so `False` is the strongest true statement for
-  the IxVM theorem. They have no IxC meaning here.
+  the IxVM theorem.
 
 The typing claims (`check`, `checkEnv`, `eval`) carry, beside their context's
 specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
 
+* **user axioms** (`axioms = some r`): the view holds the tree at `r`, and
+  acceptance runs under `allowUser`, with every user axiom the accepted
+  declarations install among the tree's leaves (`AxiomScopeIn`). With
+  `axioms = none` it is the strict fold;
 * **assumptions** `some r`: the typing is conditional. If IxC accepts each
-  leaf of the tree at `r` in the view, it accepts the target.
+  leaf of the tree at `r` in the view, separately, it accepts the target;
 * **an assumed binding** (validator 4, `bindingAssumed`): conditional on the
-  `binding` claim for the context.
+  `binding` claim for the context;
 * **a literal class** (validator 5): `False`. IxVM refuses validator 5.
-* **user axioms** (`axioms = some _`): **no statement** (the typing part is
-  `ctx.axioms = none → …`). IxVM admits them (`KernelRoles::load_role_ctx`),
-  but IxC has no reference-level fold that admits user axioms
-  (`Ix.Kernel.Cached.AxiomPolicy.allowUser` exists only for the cached fold,
-  at fixed fuel), so there is nothing in D3's terms to state. See the review
-  note.
 -/
 
 namespace IxVM.Refinement
@@ -72,6 +69,7 @@ namespace IxVM.Refinement
 open Ix (Claim ClaimContext AssumptionTree RevealConstantInfo RevealMutConstInfo
   RevealConstructorInfo RevealRecursorRule)
 open Ix.Kernel.Admission (Binding Limits)
+open Ix.Kernel.Cached (AxiomPolicy)
 
 /-! ## Assumption trees -/
 
@@ -143,16 +141,6 @@ def View.Preimage (V : View) (x : Address) (bytes : ByteArray) : Prop :=
   (∃ rb, V.env.roleBinding = some rb ∧ rb.address = x ∧ rb.bytes = bytes) ∨
   (∃ t ∈ V.trees, bytes ∈ treeImages t ∧ Address.blake3Pure bytes = x)
 
-/-- **A second preimage of the view's data** (or of `extra`, such as a
-claim's bytes): another byte string with the same pure BLAKE3 hash as one the
-view holds. Every statement here that allows a collision allows only this
-kind, relative to data the reader holds; an unrelated collision always exists
-(by counting) and would make such a disjunct trivial. -/
-def View.Collision (V : View) (extra : List ByteArray) : Prop :=
-  ∃ (x : Address) (held other : ByteArray),
-    (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x)) ∧
-      other ≠ held ∧ Address.blake3Pure other = x
-
 /-! ## Acceptance in a view -/
 
 /-- A record of recursors only: a recursor, or a block whose members are all
@@ -172,14 +160,62 @@ def Draws (E E₀ : Ixon.Env) : Prop :=
     (E₀.consts.contains a = false ∧ ∃ c, lc.get? = some c ∧ IsRecursorRecord c)) ∧
   (∀ a bytes, E.blobs.get? a = some bytes → E₀.blobs.get? a = some bytes)
 
+/-- **What a typing claim is checked under**: the role table, the axiom
+policy, and the addresses user axioms may have (none under `strict`). -/
+structure Scope where
+  binding : Binding
+  policy : AxiomPolicy
+  axioms : Address → Prop
+
+/-- The strict scope of a role table: no user axiom. -/
+def Scope.strict (binding : Binding) : Scope := ⟨binding, .strict, fun _ => False⟩
+
+/-- Every user axiom of `ds` is keyed by an address `allowed` admits. -/
+def UserAxiomsWithin (allowed : Address → Prop) (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
+  ∀ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, ∃ a, allowed a ∧ cv.name = .id a
+
 /-- **IxC accepts the closure of the seeds `S` in the view `V`, under the
-role table `b`**: an environment drawn from the view stores every seed, and
-IxC's reference-level acceptance (`Ix.Cert.IxonAcceptsRef`, decision D3)
-holds for the compiled closure of `S` in it, at some resource limits. -/
-def AcceptsIn (V : View) (b : Binding) (S : Address → Prop) : Prop :=
+scope `σ`, and `Q` holds of the run**: an environment drawn from the view
+stores every seed, and IxC's reference-level acceptance under the scope's
+policy (`Ix.Cert.IxonAcceptsRefUnder`, unfolded so that `Q` can read the
+declarations) holds for the compiled closure of `S` in it, at some resource
+limits, with every user axiom in the scope. `Q` sees the role table, the
+installed environment and the declarations; `AcceptsIn.ixonAcceptsRefUnder`
+recovers `IxonAcceptsRefUnder`. -/
+def AcceptsIn (V : View) (σ : Scope) (S : Address → Prop)
+    (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop :=
+      fun _ _ _ => True) : Prop :=
   ∃ (E : Ixon.Env) (limits : Limits) (order : List Address) (envA : Ix.Kernel.Env .anon),
-    Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧
-      Ix.Cert.IxonAcceptsRef b limits E S order envA
+    Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧ Ix.Cert.ClosureOrder E S order ∧
+    ∃ t pre ev ds, Ix.Kernel.Admission.admitBinding Address.admissionHash σ.binding = .ok t ∧
+      Ix.Kernel.Admission.admitAxiomPolicy σ.policy t = .ok () ∧
+      Ix.Kernel.Reader.preludeFor t = .ok pre ∧
+      Ix.Kernel.Admission.prepareWith Address.admissionHash σ.binding pre limits
+        (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds) ∧
+      Ix.Kernel.Cached.AcceptsRefUnder σ.policy .verified ev ds.toList envA ∧
+      UserAxiomsWithin σ.axioms ds.toList ∧ Q σ.binding envA ds.toList
+
+/-- `AcceptsIn` is `Ix.Cert.IxonAcceptsRefUnder` in an environment drawn from
+the view, with more. -/
+theorem AcceptsIn.ixonAcceptsRefUnder {V : View} {σ : Scope} {S : Address → Prop}
+    {Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop}
+    (h : AcceptsIn V σ S Q) :
+    ∃ E limits order envA, Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧
+      Ix.Cert.IxonAcceptsRefUnder σ.policy σ.binding limits E S order envA := by
+  obtain ⟨E, limits, order, envA, draws, stored, closure, t, pre, ev, ds, admitted, policy,
+    prelude, prepared, accepted, -, -⟩ := h
+  exact ⟨E, limits, order, envA, draws, stored,
+    closure, t, pre, ev, ds, admitted, policy, prelude, prepared, accepted⟩
+
+/-- Under a strict scope, `AcceptsIn` is `Ix.Cert.IxonAcceptsRef` in an
+environment drawn from the view, with more. -/
+theorem AcceptsIn.ixonAcceptsRef {V : View} {b : Binding} {S : Address → Prop}
+    {Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop}
+    (h : AcceptsIn V (Scope.strict b) S Q) :
+    ∃ E limits order envA, Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧
+      Ix.Cert.IxonAcceptsRef b limits E S order envA := by
+  obtain ⟨E, limits, order, envA, draws, stored, accepted⟩ := h.ixonAcceptsRefUnder
+  exact ⟨E, limits, order, envA, draws, stored, Ix.Cert.ixonAcceptsRefUnder_strict.mp accepted⟩
 
 /-- **The seeds of a role table**: the constants it binds and the theorems
 its evidence names. -/
@@ -189,38 +225,78 @@ def BindingSeeds (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
 
 /-- **The `binding` claim in a view** (`binding spec b`, validator 3): `spec`
 is IxC's specification digest; the view's role table with hash `b` is
-admitted by IxC, binds every role, and IxC accepts the closure of its bound
-constants and evidence theorems under it, which checks each bound constant
-against its role's specification. -/
+admitted by IxC, binds every role, and IxC's strict fold accepts the closure
+of its bound constants and evidence theorems under it, which checks each
+bound constant against its role's specification. -/
 def BindingIn (V : View) (spec b : Address) : Prop :=
   Ix.SpecDigest.specDigest = .ok spec ∧
     ∃ bnd t, V.binding? b = some bnd ∧
       Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = .ok t ∧
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
-      AcceptsIn V bnd (BindingSeeds t)
+      AcceptsIn V (Scope.strict bnd) (BindingSeeds t)
+
+/-- **The axiom scope of a typing claim**: with no user axioms, `k` at the
+strict policy; with the axioms tree `r`, the view holds a tree at `r`, and
+for every such tree `k` at `allowUser`, with user axioms among its leaves. -/
+def AxiomScopeIn (V : View) : Option Address → (AxiomPolicy → (Address → Prop) → Prop) → Prop
+  | none, k => k .strict (fun _ => False)
+  | some r, k => V.HoldsTree r ∧ ∀ leaves, V.LeavesAt r leaves → k .allowUser (· ∈ leaves)
 
 /-- **Acceptance of `S` under the assumption tree `asm`**: unconditional for
 `none`; for `some r`, the view holds a tree at `r`, and for every such tree,
-if IxC accepts each of its leaves in the view, it accepts `S`. -/
-def AssumingIn (V : View) (b : Binding) (S : Address → Prop) : Option Address → Prop
-  | none => AcceptsIn V b S
+if IxC accepts each of its leaves separately in the view, it accepts `S`. -/
+def AssumingIn (V : View) (σ : Scope) (S : Address → Prop)
+    (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop) :
+    Option Address → Prop
+  | none => AcceptsIn V σ S Q
   | some r => V.HoldsTree r ∧
-      ∀ leaves, V.LeavesAt r leaves → (∀ a ∈ leaves, AcceptsIn V b (· = a)) → AcceptsIn V b S
+      ∀ leaves, V.LeavesAt r leaves → (∀ a ∈ leaves, AcceptsIn V σ (· = a)) → AcceptsIn V σ S Q
 
 /-- **The typing part of a typing claim**, about the seeds `S` with
-assumptions `asm`, under the context `ctx`:
+assumptions `asm`, under the context `ctx`, with `Q` of the accepting run:
 
 * `ctx.spec` is IxC's specification digest, and the context is not a
   literal class (IxVM refuses validator 5);
-* with no user axioms (`ctx.axioms = none`; see the module docstring for why
-  user axioms get no statement), and, if the context assumes its binding,
-  given the `binding` claim for it: the view holds the role table with hash
-  `ctx.binding`, and IxC accepts `S` under it, under the assumptions `asm`. -/
-def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Option Address) : Prop :=
+* if the context assumes its binding, given the `binding` claim for it: the
+  view holds the role table with hash `ctx.binding`, and IxC accepts `S`
+  under it, in the context's axiom scope, under the assumptions `asm`. -/
+def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Option Address)
+    (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop :=
+      fun _ _ _ => True) : Prop :=
   Ix.SpecDigest.specDigest = .ok ctx.spec ∧ ctx.literalClass = false ∧
-    (ctx.axioms = none →
-      (ctx.bindingAssumed = true → BindingIn V ctx.spec ctx.binding) →
-      ∃ b, V.binding? ctx.binding = some b ∧ AssumingIn V b S asm)
+    ((ctx.bindingAssumed = true → BindingIn V ctx.spec ctx.binding) →
+      ∃ b, V.binding? ctx.binding = some b ∧
+        AxiomScopeIn V ctx.axioms fun policy axioms => AssumingIn V ⟨b, policy, axioms⟩ S Q asm)
+
+/-! ## Eval -/
+
+/-- The type and value a declaration gives its constant: a definition's, a
+theorem's, or an opaque's (whose value the fold checks and then discards). -/
+def declValue? : Ix.Kernel.Declaration .anon →
+    Option (Ix.Kernel.ConstantVal .anon × Ix.Kernel.Expr .anon)
+  | .defnDecl cv value _ => some (cv, value)
+  | .thmDecl cv value => some (cv, value)
+  | .opaqueDecl cv value => some (cv, value)
+  | _ => none
+
+/-- **The kernel key of the record at `a`** under the role table `b`: the
+address itself, or the role the table binds to it. -/
+def AddressKey (b : Binding) (a : Address) (k : Ix.Kernel.Key .anon) : Prop :=
+  k = .id a ∨ ∃ t r, Ix.Kernel.RoleTable.ofBytes b.bytes = some t ∧ t.addressOf? r = some a ∧ k = .role r
+
+/-- **An `eval` claim's values, in the accepting run**: the declarations
+give `input` a type and value and `output` a definition; the output has the
+input's universe count and type; and IxC's reference definitional equality
+(`isDefEqCore` at `.verified`, in the installed environment, at some fuel)
+holds between the input's value and the output's. -/
+def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .anon)
+    (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
+  ∃ (cvIn cvOut : Ix.Kernel.ConstantVal .anon) (vIn vOut : Ix.Kernel.Expr .anon)
+    (hint : Ix.Kernel.ReducibilityHint),
+    (∃ d ∈ ds, declValue? d = some (cvIn, vIn)) ∧ AddressKey b input cvIn.name ∧
+    Ix.Kernel.Declaration.defnDecl cvOut vOut hint ∈ ds ∧ AddressKey b output cvOut.name ∧
+    cvOut.levelParams.length = cvIn.levelParams.length ∧ cvOut.type = cvIn.type ∧
+    ∃ fuel, Ix.Kernel.isDefEqCore .verified envA fuel 0 vIn vOut = .ok true
 
 /-- **An `eval` claim's output record**: the view stores a safe standalone
 definition (kind `defn`, safety `safe`) at `output`. -/
@@ -308,9 +384,12 @@ def View.Closed (V : View) : Prop :=
     ∀ a, BindingSeeds t a → V.env.consts.contains a = true)
 
 /-- What a view must hold for a typing claim: it is closed, it holds the
-claim's role table, and it holds the assumption tree, if any. -/
+claim's role table, the assumption tree, if any, and the axioms tree, if any,
+with each axiom stored. -/
 def View.TypingCovers (V : View) (ctx : ClaimContext) (asm : Option Address) : Prop :=
-  V.Closed ∧ (V.binding? ctx.binding).isSome = true ∧ ∀ r, asm = some r → V.HoldsTree r
+  V.Closed ∧ (V.binding? ctx.binding).isSome = true ∧ (∀ r, asm = some r → V.HoldsTree r) ∧
+    ∀ r, ctx.axioms = some r →
+      V.HoldsTree r ∧ ∀ leaves, V.LeavesAt r leaves → ∀ a ∈ leaves, V.Stores a
 
 end IxVM.Refinement
 
@@ -321,7 +400,9 @@ open IxVM.Refinement
 /-- **A claim's meaning in the view `V`**, in IxC terms (see the module
 docstring for each variant). -/
 def HoldsIn (V : View) : Claim → Prop
-  | .eval ctx input output asm => TypingIn V ctx (· = input) asm ∧ EvalOutputIn V output
+  | .eval ctx input output asm =>
+      TypingIn V ctx (fun a => a = input ∨ a = output) asm (EvalValues input output) ∧
+        EvalOutputIn V output
   | .check ctx a asm => TypingIn V ctx (· = a) asm
   | .checkEnv ctx root asm => V.HoldsTree root ∧
       ∀ leaves, V.LeavesAt root leaves → leaves ≠ [] ∧ TypingIn V ctx (· ∈ leaves) asm
@@ -331,10 +412,10 @@ def HoldsIn (V : View) : Claim → Prop
   | .resource _ _ => False
   | .binding spec b => BindingIn V spec b
 
-/-- **What a view must hold for the claim** before the collision corollary
-says anything about it: the addresses the claim names are stored, the trees
-it names are held, and, for the typing and binding claims, the view is
-closed and holds the role table. -/
+/-- **What a view must hold for the claim** before the main statement says
+anything about it: the addresses the claim names are stored, the trees it
+names are held, and, for the typing and binding claims, the view is closed
+and holds the role table. -/
 def Covers (V : View) : Claim → Prop
   | .eval ctx input output asm => V.TypingCovers ctx asm ∧ V.Stores input ∧ V.Stores output
   | .check ctx a asm => V.TypingCovers ctx asm ∧ V.Stores a
@@ -345,11 +426,5 @@ def Covers (V : View) : Claim → Prop
   | .binding _ b => V.Closed ∧ (V.binding? b).isSome = true
   | .catalog _ => True
   | .resource _ _ => True
-
-/-- **Decision D2's form**: some authentic view makes the claim hold. For a
-conditional claim this is weak: a view can be chosen in which a leaf is not
-accepted. See the review note. -/
-def Holds (c : Claim) : Prop :=
-  ∃ V : View, V.Authentic ∧ c.HoldsIn V
 
 end Ix.Claim
