@@ -22,6 +22,7 @@ public import Ix.ClaimContext
 public import Ix.Store
 public import Ix.Cli.CatalogCmd
 public import Ix.Aggr.Host
+public import Ix.Frontend
 
 public section
 
@@ -226,6 +227,43 @@ def claimBindingCmd : Cli.Cmd := `[Cli|
     binding : String; "32-byte hex binding hash of the role table (default: the default role table of the compiled Init)."
 ]
 
+/-! ## `ix claim elab` -/
+
+def runClaimElab (p : Cli.Parsed) : IO UInt32 := do
+  let some fileArg := p.positionalArg? "file"
+    | p.printError "error: must specify <file.ix>"; return 1
+  let filePath := fileArg.as! String
+  let asm ← match p.flag? "asm" with
+    | none => pure none
+    | some flag => do
+      let r ← addrOfHex! "asm" (flag.as! String)
+      pure (some r)
+  let ctx ← assumableContextOf p
+  let src ← IO.FS.readFile ⟨filePath⟩
+  match Ix.Frontend.mkElabClaimFromSource src ctx asm filePath with
+  | .error e =>
+    p.printError s!"error building ElabClaim: {e}"
+    return 1
+  | .ok (elabClaim, _, _, _) =>
+    let elabBytes := Ix.ElabClaim.ser elabClaim
+    let elabDigest ← StoreIO.toIO (Store.write elabBytes)
+    let _ ← persistClaim elabClaim.toCheckEnvClaim
+    IO.println (toString elabDigest)
+    return 0
+
+def claimElabCmd : Cli.Cmd := `[Cli|
+  "elab" VIA runClaimElab;
+  "Build and persist an `ElabClaim` (`Text -> Syntax -> Environment`) from a .ix/.lean source file via the pure Ix Frontend."
+
+  FLAGS:
+    asm : String; "32-byte hex address of an assumption-tree merkle root."
+    binding : String; "32-byte hex binding hash of the role table (default: the default role table of the compiled Init)."
+    "assume-binding"; "Assume the role binding meets the specifications."
+
+  ARGS:
+    file : String; "Path to the .ix or .lean source file."
+]
+
 /-! ## Top-level `ix claim` -/
 
 def runClaim (p : Cli.Parsed) : IO UInt32 := do
@@ -245,7 +283,8 @@ def claimCmd : Cli.Cmd := `[Cli|
     claimContainsCmd;
     claimEvalCmd;
     claimCatalogCmd;
-    claimBindingCmd
+    claimBindingCmd;
+    claimElabCmd
 ]
 
 end

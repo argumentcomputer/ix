@@ -101,10 +101,11 @@ def analyzeRecursiveField (indNames : Array Ix.Name) (numParams : Nat)
 def generateBlockRecursor (items : Array (Ix.InductiveVal × Array Ix.ConstructorVal))
     (targetIdx : Nat) : Option Ix.RecursorVal := do
   let (targetInd, _) ← items[targetIdx]?
+  let firstInd := (items.getD 0 (targetInd, #[])).1
   let indNames : Array Ix.Name := items.map (·.1.cnst.name)
   let nMotives := items.size
   let nParams := targetInd.numParams
-  let baseLevelParams := targetInd.cnst.levelParams
+  let baseLevelParams := firstInd.cnst.levelParams
   let indUnivs : Array Ix.Level := baseLevelParams.map Level.mkParam
 
   -- Peel `nParams` parameters from `targetInd.cnst.type`

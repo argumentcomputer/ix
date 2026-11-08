@@ -2787,4 +2787,92 @@ def generateElabHints (input : String) (fileName : String := "<input>")
   let env ← elabModuleSyntax stx initEnv seedPrelude
   return extractElabHintsFromEnv modIdx env
 
+/-- Scan leading `import <ModName>` declarations at the top of `input` using the pure lexer
+    (before full module parsing so imported operators and notations can be merged first). -/
+def scanLeadingModuleImportsLoop (ctx : IxParserContext) : Nat → ParserState → List Ix.Name → List Ix.Name
+  | 0, _, revAcc => revAcc.reverse
+  | fuel + 1, s, revAcc =>
+    bindPeek ctx s fun tok? s =>
+      match tok? with
+      | some (.atom _ "import") =>
+        let s1 := tokenFn ctx s
+        bindPeek ctx s1 fun nextTok? s2 =>
+          match nextTok? with
+          | some (.ident _ _ modName _) =>
+            let s3 := tokenFn ctx s2
+            bindPeek ctx s3 fun pinTok? s4 =>
+              match pinTok? with
+              | some (.atom _ "@") =>
+                let s5 := tokenFn ctx (tokenFn ctx s4)
+                scanLeadingModuleImportsLoop ctx fuel s5 (modName :: revAcc)
+              | _ =>
+                scanLeadingModuleImportsLoop ctx fuel s3 (modName :: revAcc)
+          | some (.node _ k _) =>
+            if k == SyntaxKind.hashRef then
+              scanLeadingModuleImportsLoop ctx fuel (tokenFn ctx s2) revAcc
+            else
+              revAcc.reverse
+          | _ => revAcc.reverse
+      | _ => revAcc.reverse
+
+def scanLeadingModuleImports (input : String) : List Ix.Name :=
+  let inputCtx := InputContext.mkInputContext input "<import-scan>"
+  let ctx : IxParserContext := { inputCtx, env := defaultParserEnv, prec := 0 }
+  scanLeadingModuleImportsLoop ctx 64 {} []
+
+/-- Topologically schedule and elaborate a multi-module DAG `modules : List (Ix.Name × String)`,
+    threading exported constants, structures, typeclass instances, declarative macros,
+    custom operators, and mixfix notations across `import` edges. -/
+def elabModuleDAG (modules : List (Ix.Name × String))
+    (initElabEnv : IxElabEnv := IxElabEnv.empty)
+    (initParserEnv : IxParserEnv := defaultParserEnv)
+    (seedPrelude : Bool := true) : Except String (IxElabEnv × IxParserEnv) := do
+  if modules.isEmpty then
+    return (initElabEnv, initParserEnv)
+  let modArr := Array.mk modules
+  let idxMap : NameMap Nat := (List.range modArr.size).foldl (fun acc i =>
+    let (nm, _) := arrayGetD modArr i (Name.mkAnon, "")
+    acc.insert nm i) NameMap.empty
+  let mut adjList : List (Array Nat) := []
+  let mut importsByMod : NameMap (List Ix.Name) := NameMap.empty
+  for (modName, src) in modules do
+    let imps := scanLeadingModuleImports src
+    importsByMod := importsByMod.insert modName imps
+    let mut row : List Nat := []
+    for impName in imps do
+      match idxMap.get? impName with
+      | some idx =>
+        if !row.contains idx then row := row ++ [idx]
+      | none =>
+        throw s!"unknown imported module '{Name.toStringTotal impName}' in module '{Name.toStringTotal modName}'"
+    adjList := adjList ++ [Array.mk row]
+  let adj := Array.mk adjList
+  let some cond := tarjanCondensation adj
+    | throw "module DAG Tarjan condensation fuel exhausted"
+  let mut doneMap : NameMap (IxElabEnv × IxParserEnv) := NameMap.empty
+  let mut finalElab := initElabEnv
+  let mut finalParser := initParserEnv
+  for comp in cond.comps.toList do
+    if comp.size != 1 then
+      let firstIdx := arrayGetD comp 0 0
+      let (cycName, _) := arrayGetD modArr firstIdx (Name.mkAnon, "")
+      throw s!"cyclic module import involving '{Name.toStringTotal cycName}'"
+    let u := arrayGetD comp 0 0
+    let uRow := arrayGetD adj u #[]
+    if uRow.toList.contains u then
+      let (selfName, _) := arrayGetD modArr u (Name.mkAnon, "")
+      throw s!"module '{Name.toStringTotal selfName}' cannot import itself"
+    let (modName, src) := arrayGetD modArr u (Name.mkAnon, "")
+    let imps := importsByMod.get? modName |>.getD []
+    let (mergedElab, mergedParser) := imps.foldl (fun (eAcc, pAcc) impNm =>
+      match doneMap.get? impNm with
+      | some (impE, impP) => (eAcc.merge impE, pAcc.merge impP)
+      | none              => (eAcc, pAcc)) (initElabEnv, initParserEnv)
+    let (stx, modParserEnv) ← parseModuleWithEnv src (Name.toStringTotal modName) mergedParser
+    let modElabEnv ← elabModuleSyntax stx mergedElab seedPrelude
+    doneMap := doneMap.insert modName (modElabEnv, modParserEnv)
+    finalElab := finalElab.merge modElabEnv
+    finalParser := finalParser.merge modParserEnv
+  return (finalElab, finalParser)
+
 end Ix.Frontend.Elab

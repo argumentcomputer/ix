@@ -9,7 +9,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{Request, Response};
+use crate::iroh::common::{GetResponse, Request, Response, write_store_blob};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
@@ -89,7 +89,27 @@ pub async fn connect(
   // Call `finish` to close the send side of the connection gracefully.
   send.finish().anyerr()?;
   let message = recv.read_to_end(READ_SIZE_LIMIT).await.anyerr()?;
-  let response = Response::from_bytes(&message);
+  let response = match Response::from_bytes(&message) {
+    Response::Get(get_res) if !get_res.is_err => {
+      let actual_hash =
+        blake3::hash(&get_res.bytes).to_hex().as_str().to_owned();
+      if !actual_hash.eq_ignore_ascii_case(&get_res.hash) {
+        Response::Get(GetResponse {
+          is_err: true,
+          message: format!(
+            "BLAKE3 hash mismatch: expected {}, got {}",
+            get_res.hash, actual_hash
+          ),
+          hash: get_res.hash,
+          bytes: vec![],
+        })
+      } else {
+        let _ = write_store_blob(&actual_hash, &get_res.bytes);
+        Response::Get(get_res)
+      }
+    },
+    other => other,
+  };
 
   // Close the connection, then wait for the endpoint to flush.
   conn.close(0u32.into(), b"done");

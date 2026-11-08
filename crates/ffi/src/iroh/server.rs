@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use iroh::{
-  Endpoint, RelayMode, SecretKey,
+  Endpoint, RelayMode,
   endpoint::{ConnectionError, presets},
 };
 use n0_error::StdResultExt;
@@ -12,7 +12,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
+use crate::iroh::common::{
+  GetResponse, PutResponse, Request, Response, load_or_create_secret_key,
+  read_store_blob, write_store_blob,
+};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
@@ -26,11 +29,7 @@ pub async fn serve() -> n0_error::Result<()> {
     .with(fmt::layer())
     .with(EnvFilter::new("info"))
     .init();
-  let secret_key = {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).expect("failed to generate random bytes");
-    SecretKey::from(bytes)
-  };
+  let secret_key = load_or_create_secret_key();
   println!("public key: {}", secret_key.public());
 
   // Build a `Endpoint`, which uses PublicKeys as node identifiers, uses QUIC for directly connecting to other nodes, and uses the relay protocol and relay servers to holepunch direct connections between nodes when there are NATs or firewalls preventing direct connections. If no direct connection can be made, packets are relayed over the relay servers.
@@ -113,6 +112,7 @@ pub async fn serve() -> n0_error::Result<()> {
         Request::Put(put_request) => {
           let hash =
             blake3::hash(&put_request.bytes).to_hex().as_str().to_owned();
+          let _ = write_store_blob(&hash, &put_request.bytes);
           store_clone.lock().unwrap().insert(hash.clone(), put_request.bytes);
           println!("received PUT request for bytes with hash {hash}");
           let message = format!("pinned hash {hash}\nat endpoint ID {me}");
@@ -123,20 +123,30 @@ pub async fn serve() -> n0_error::Result<()> {
             "received GET request for bytes with hash {}",
             get_request.hash
           );
-          if let Some(bytes) =
-            store_clone.lock().unwrap().get(&get_request.hash)
-          {
+          let cached =
+            store_clone.lock().unwrap().get(&get_request.hash).cloned();
+          let found = cached.or_else(|| {
+            let disk_bytes = read_store_blob(&get_request.hash)?;
+            store_clone
+              .lock()
+              .unwrap()
+              .insert(get_request.hash.clone(), disk_bytes.clone());
+            Some(disk_bytes)
+          });
+          if let Some(bytes) = found {
             let message =
               format!("retrieved bytes for hash {}", get_request.hash);
             Response::Get(GetResponse {
               is_err: false,
               message,
               hash: get_request.hash,
-              bytes: bytes.clone(),
+              bytes,
             })
           } else {
-            let message =
-              String::from("error: failed to retrieve bytes at {hash}");
+            let message = format!(
+              "error: failed to retrieve bytes at {}",
+              get_request.hash
+            );
             Response::Get(GetResponse {
               is_err: true,
               message,

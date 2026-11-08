@@ -144,6 +144,15 @@ def IxParserEnv.addNotation (env : IxParserEnv) (rule : NotationRule) : IxParser
   | ⟨tokens, keywords, operators, notations⟩ =>
     ⟨tokens, keywords, operators, rule :: notations⟩
 
+/-- Merge custom operators and notations from `imported` into `base`. -/
+def IxParserEnv.merge (base imported : IxParserEnv) : IxParserEnv :=
+  let env1 := imported.operators.foldr (fun op acc =>
+    if acc.operators.any (fun o => o.symbol == op.symbol && o.fixity == op.fixity) then acc
+    else acc.addOperator op) base
+  imported.notations.foldr (fun rule acc =>
+    if acc.notations.any (fun r => r.ruleName == rule.ruleName) then acc
+    else acc.addNotation rule) env1
+
 /-! ## Universe Level Parser (`levelFn`) -/
 
 /-- Parse an atomic universe level: numeric literal, identifier, or `( level )`. -/

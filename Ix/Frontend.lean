@@ -33,10 +33,13 @@ public import Ix.Frontend.Elab.Tactic
 public import Ix.Frontend.Elab.Term
 public import Ix.Frontend.Elab.Command
 public import Ix.Frontend.Merge
+public import Ix.Frontend.Format
 public import Ix.Claim
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileDriver
+public import Ix.DecompileM
+public import Ix.Cert.Compile
 public import Ix.Resource.Addressed
 
 @[expose] public section
@@ -44,6 +47,18 @@ public import Ix.Resource.Addressed
 namespace Ix.Frontend
 
 open Parser Elab
+
+/-- Hydrate an `IxElabEnv` from a compiled `Ixon.Env` (decompiling constants, reconstructing
+    `StructInfo` tables, and registering `Name -> Address` mappings in `importMap`). -/
+def IxElabEnv.ofIxonEnv (ixe : Ixon.Env) : IxElabEnv :=
+  let (rawConsts, _errs) := Ix.DecompileM.decompileAllParallel ixe
+  let initIxEnv : Ix.Environment :=
+    { consts := @Std.HashMap.emptyWithCapacity Ix.Name Ix.ConstantInfo Ix.Name.instBEq Ix.Name.instHashable rawConsts.size }
+  let ixEnv := rawConsts.fold (fun acc nm ci =>
+    { consts := acc.consts.insert (Name.rehash nm) (Expr.ConstantInfo.rehash ci) }) initIxEnv
+  let base := IxElabEnv.ofIxEnvironment ixEnv
+  let impMap := ixe.named.fold (fun acc nm named => acc.insertName nm named.addr) base.importMap
+  base.withImportMap impMap
 
 /-- Parse an Ix source string into a concrete syntax tree (`SyntaxKind.moduleKind`). -/
 def parseSource (input : String) (fileName : String := "<input>")
@@ -66,6 +81,14 @@ def compileElabEnvToIxon (elabEnv : IxElabEnv) :
     throw s!"compileElabEnvToIxon: {cenv.ungrounded.size} ungrounded constant(s), first: {firstErr}"
   return (ixonEnv, cenv)
 
+/-- Compile an elaborated `IxElabEnv` through the formally certified compiler (`Ix.Cert.compileReport`). -/
+def compileElabEnvCertified (elabEnv : IxElabEnv) :
+    Except String (Ixon.Env × Ix.Cert.Failures) := do
+  let (ixonEnv, failures) ← Ix.Cert.compileReport elabEnv.toIxEnvironment
+  if !failures.isEmpty then
+    throw s!"compileElabEnvCertified: {failures.toMap.size} failure(s) in Ix.Cert.compileReport"
+  return (ixonEnv, failures)
+
 /-- Parse, elaborate, canonicalize, and compile an Ix source string to `Ixon.Env` purely. -/
 def compileSourceToIxon (input : String)
     (fileName : String := "<input>")
@@ -77,6 +100,38 @@ def compileSourceToIxon (input : String)
   let elabEnv ← elabModuleSyntax stx initElabEnv seedPrelude
   let (ixonEnv, cenv) ← compileElabEnvToIxon elabEnv
   return (stx, elabEnv, ixonEnv, cenv)
+
+/-- Parse, elaborate, canonicalize, and compile an Ix source string through `Ix.Cert.compileReport`. -/
+def compileSourceCertified (input : String)
+    (fileName : String := "<input>")
+    (initElabEnv : IxElabEnv := IxElabEnv.empty)
+    (initParserEnv : IxParserEnv := defaultParserEnv)
+    (seedPrelude : Bool := true) :
+    Except String (Ix.Syntax × IxElabEnv × Ixon.Env × Ix.Cert.Failures) := do
+  let (stx, _pEnv) ← parseModuleWithEnv input fileName initParserEnv
+  let elabEnv ← elabModuleSyntax stx initElabEnv seedPrelude
+  let (ixonEnv, failures) ← compileElabEnvCertified elabEnv
+  return (stx, elabEnv, ixonEnv, failures)
+
+/-- Topologically elaborate a multi-module DAG and compile the resulting environment to `Ixon.Env`. -/
+def compileModuleDAGToIxon (modules : List (Ix.Name × String))
+    (initElabEnv : IxElabEnv := IxElabEnv.empty)
+    (initParserEnv : IxParserEnv := defaultParserEnv)
+    (seedPrelude : Bool := true) :
+    Except String (IxElabEnv × IxParserEnv × Ixon.Env × Ix.CompileM.CompileEnv) := do
+  let (elabEnv, parserEnv) ← elabModuleDAG modules initElabEnv initParserEnv seedPrelude
+  let (ixonEnv, cenv) ← compileElabEnvToIxon elabEnv
+  return (elabEnv, parserEnv, ixonEnv, cenv)
+
+/-- Topologically elaborate a multi-module DAG and compile through `Ix.Cert.compileReport`. -/
+def compileModuleDAGCertified (modules : List (Ix.Name × String))
+    (initElabEnv : IxElabEnv := IxElabEnv.empty)
+    (initParserEnv : IxParserEnv := defaultParserEnv)
+    (seedPrelude : Bool := true) :
+    Except String (IxElabEnv × IxParserEnv × Ixon.Env × Ix.Cert.Failures) := do
+  let (elabEnv, parserEnv) ← elabModuleDAG modules initElabEnv initParserEnv seedPrelude
+  let (ixonEnv, failures) ← compileElabEnvCertified elabEnv
+  return (elabEnv, parserEnv, ixonEnv, failures)
 
 /-- Parse, elaborate, canonicalize, compile to `Ixon.Env`, and run deterministic
     substructural resource checking (`Ix.Resource.Addressed.checkResources`). -/

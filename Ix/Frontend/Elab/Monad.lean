@@ -168,16 +168,101 @@ def toIxEnvironment (env : IxElabEnv) : Ix.Environment :=
       { consts := acc.consts.insert n' ci' }
     | none    => acc) init
 
-/-- Construct an `IxElabEnv` pre-populated from an existing `Ix.Environment`. -/
+/-- Peel `n` leading `.forallE` binders from `ty`. -/
+def peelForallBinders : Nat → Ix.Expr → Ix.Expr
+  | 0, ty => ty
+  | k + 1, .forallE _ _ b _ _ => peelForallBinders k b
+  | k + 1, .mdata _ b _ => peelForallBinders (k + 1) b
+  | _, ty => ty
+
+/-- Extract `numFields` field entries from a constructor type after parameters have been peeled. -/
+def extractCtorStructFields (consts : NameMap Ix.ConstantInfo) (structName : Ix.Name) :
+    Nat → Nat → Ix.Expr → List StructFieldInfo → Option (Array StructFieldInfo)
+  | 0, _, _, revAcc => some (Array.mk revAcc.reverse)
+  | rem + 1, idx, .mdata _ b _, revAcc =>
+    extractCtorStructFields consts structName (rem + 1) idx b revAcc
+  | rem + 1, idx, .forallE fNm _ b bi _, revAcc =>
+    let projFn := Name.append structName fNm
+    if consts.contains projFn then
+      let fInfo : StructFieldInfo := {
+        fieldName  := fNm
+        projFnName := projFn
+        fieldIdx   := idx
+        binderInfo := bi
+      }
+      extractCtorStructFields consts structName rem (idx + 1) b (fInfo :: revAcc)
+    else
+      none
+  | _, _, _, _ => none
+
+/-- Reconstruct `StructInfo` for a single-constructor non-recursive inductive in `consts`
+    when its field projection constants `<Struct>.<field>` are present. -/
+def reconstructStructInfo? (consts : NameMap Ix.ConstantInfo) (iv : Ix.InductiveVal) : Option StructInfo :=
+  if iv.all.size == 1 && !iv.isRec && iv.numIndices == 0 && iv.ctors.size == 1 then
+    let ctorName := iv.ctors.getD 0 Name.mkAnon
+    match consts.get? ctorName with
+    | some (.ctorInfo cv) =>
+      if cv.numFields == 0 then none
+      else
+        let fieldsTel := peelForallBinders cv.numParams cv.cnst.type
+        match extractCtorStructFields consts iv.cnst.name cv.numFields 0 fieldsTel [] with
+        | some fields =>
+          some {
+            structName := iv.cnst.name
+            ctorName   := ctorName
+            numParams  := cv.numParams
+            fields     := fields
+          }
+        | none => none
+    | _ => none
+  else
+    none
+
+/-- Construct an `IxElabEnv` pre-populated from an existing `Ix.Environment`,
+    reconstructing `StructInfo` tables for imported structures. -/
 def ofIxEnvironment (ixEnv : Ix.Environment) : IxElabEnv :=
-  ixEnv.consts.fold (fun acc _ ci =>
+  let env1 := ixEnv.consts.fold (fun acc _ ci =>
     acc.addConst (match ci with | _ => ci)) IxElabEnv.empty
-  |>.bindEnv id
+  let env2 := env1.constOrder.foldl (fun acc nm =>
+    match acc.consts.get? nm with
+    | some (.inductInfo iv) =>
+      match reconstructStructInfo? acc.consts iv with
+      | some sInfo => acc.addStructInfo sInfo
+      | none       => acc
+    | _ => acc) env1
+  env2.bindEnv id
 
 /-- Update the `importMap` of an `IxElabEnv` strictly without projection chains. -/
 def withImportMap : IxElabEnv → IxImportMap → IxElabEnv
   | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, _, macroRules⟩, importMap' =>
     ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap', macroRules⟩
+
+/-- Merge an imported `IxElabEnv` into `base`, preserving constants, contracts,
+    structures, typeclass instances, `importMap`, and declarative macro rules. -/
+def merge (base imported : IxElabEnv) : IxElabEnv :=
+  let env1 := imported.constOrder.reverse.foldl (fun acc nm =>
+    match imported.consts.get? nm with
+    | some ci =>
+      let acc1 := acc.addConst ci
+      match imported.binderContracts.get? nm with
+      | some (bcs, ret) =>
+        let lcs := imported.letContracts.get? nm |>.getD #[]
+        acc1.addContracts nm bcs ret lcs
+      | none =>
+        match imported.letContracts.get? nm with
+        | some lcs => acc1.addContracts nm #[] default lcs
+        | none     => acc1
+    | none => acc) base
+  let env2 := imported.structTable.toList.foldl (fun acc (_, sInfo) =>
+    if acc.structTable.contains sInfo.structName then acc
+    else acc.addStructInfo sInfo) env1
+  let env3 := imported.instances.reverse.foldl (fun acc entry =>
+    if acc.instances.any (fun e => e.instName == entry.instName) then acc
+    else acc.addInstance entry) env2
+  let env4 := env3.withImportMap (env3.importMap.merge imported.importMap)
+  let env5 := imported.macroRules.reverse.foldl (fun acc rule =>
+    acc.addMacroRule rule) env4
+  env5.bindEnv id
 
 /-- Register an imported constant `ci` at content address `addr` so that both `#<addr>`
     and `map LocalName := #<addr>` resolve to `ci.getCnst.name`. -/

@@ -1029,7 +1029,7 @@ def testIxVCSMergeEngine : Bool :=
 def checkClosureCertification (leanEnv : Lean.Environment) : Bool × String := Id.run do
   let parseClosure : List (Lean.Name × Lean.ConstantInfo) := Ix.EnvScope.collectDeps leanEnv [``parseSource]
   let elabClosure  : List (Lean.Name × Lean.ConstantInfo) :=
-    Ix.EnvScope.collectDeps leanEnv [``elabSource, ``elabSourceWithHints, ``mergeSource2, ``mergeSource3]
+    Ix.EnvScope.collectDeps leanEnv [``elabSource, ``elabSourceWithHints, ``mergeSource2, ``mergeSource3, ``formatSyntax, ``elabModuleDAG]
   let isBad (ci : Lean.ConstantInfo) : Option String :=
     match ci with
     | .defnInfo v =>
@@ -1507,6 +1507,108 @@ def testWave3DecisionAndHints : Bool :=
   | .ok b => b
   | .error _ => false
 
+def testTracksABCDResult : Except String Bool := do
+  -- 1. Track A (`Ix.Frontend.Format`): round-trip `formatModule` -> `parseSource` -> `elabSource`
+  let origSrc := "
+structure BoxNat : Type where
+  val : Nat
+
+def unbox (b : BoxNat) : Nat :=
+  BoxNat.val b
+
+theorem unbox_mk (n : Nat) : Eq (unbox (BoxNat.mk n)) n := by
+  rfl
+"
+  let (origStx, _) ← parseSource origSrc
+  let formatted := formatModule origStx
+  let (reparsedStx, _) ← parseSource formatted
+  let envOrig ← elabModuleSyntax origStx
+  let envReparsed ← elabModuleSyntax reparsedStx
+  let (ixonOrig, _) ← compileElabEnvToIxon envOrig
+  let (ixonReparsed, _) ← compileElabEnvToIxon envReparsed
+  for (addr, _) in ixonOrig.consts do
+    if !ixonReparsed.consts.contains addr then
+      throw s!"Track A formatModule round-trip lost content-addressed constant {addr}\nFormatted:\n{formatted}"
+
+  -- Also verify `formatMergeOutcome` renders `.#merge` stubs cleanly
+  let baseSrc := "def f (x : Nat) : Nat := x"
+  let leftSrc := "def f (x : Nat) : Nat := Nat.add x 1\ndef caller : Nat := f 5"
+  let rightSrc := "def f (x : Nat) : Nat := Nat.add x 2"
+  let outcome ← mergeSource3 baseSrc leftSrc rightSrc
+  let renderedMerge := formatMergeOutcome outcome
+  if (renderedMerge.splitOn "f.#merge._1").length < 2 then
+    throw s!"Track A formatMergeOutcome did not contain f.#merge._1:\n{renderedMerge}"
+  if (renderedMerge.splitOn "#merge").length < 2 then
+    throw s!"Track A formatMergeOutcome did not contain #merge block:\n{renderedMerge}"
+
+  -- 2. Track B (`elabModuleDAG` & `IxElabEnv.ofIxonEnv`): multi-module DAG + `.ixe` hydration
+  let modASrc := "
+structure PairNat : Type where
+  fst : Nat
+  snd : Nat
+
+def sumPair (p : PairNat) : Nat :=
+  Nat.add (PairNat.fst p) (PairNat.snd p)
+
+infixl:65 \" <+> \" => Nat.add
+"
+  let modBSrc := "
+import ModA
+
+def makeAndSum (a b : Nat) : Nat :=
+  sumPair (PairNat.mk (a <+> 1) b)
+
+theorem makeAndSum_eq : Eq (makeAndSum 2 3) 6 := by
+  rfl
+"
+  -- Pass modules in reverse order (`ModB` before `ModA`) to verify topological scheduling!
+  let (dagEnv, _) ← elabModuleDAG [
+    (Name.simple "ModB", modBSrc),
+    (Name.simple "ModA", modASrc)
+  ]
+  if !dagEnv.contains (Name.simple "makeAndSum_eq") then
+    throw "Track B elabModuleDAG missing 'makeAndSum_eq'"
+
+  -- Verify cyclic module imports are rejected
+  let cycRes := elabModuleDAG [
+    (Name.simple "ModX", "import ModY\ndef x : Nat := 1"),
+    (Name.simple "ModY", "import ModX\ndef y : Nat := 2")
+  ]
+  if cycRes.isOk then
+    throw "Track B elabModuleDAG failed to reject cyclic module imports"
+
+  -- Verify `.ixe` hydration via `IxElabEnv.ofIxonEnv` reconstructs constants and `structTable`
+  let (_, _, ixonA, _) ← compileSourceToIxon modASrc
+  let hydratedEnv := IxElabEnv.ofIxonEnv ixonA
+  if !hydratedEnv.structTable.contains (Name.simple "PairNat") then
+    throw "Track B IxElabEnv.ofIxonEnv failed to reconstruct PairNat in structTable"
+  let (stxDownstream, _) ← parseSource "def useHydrated (p : PairNat) : Nat := sumPair { p with fst := 10 }"
+  let envDownstream ← elabModuleSyntax stxDownstream hydratedEnv
+  if !envDownstream.contains (Name.simple "useHydrated") then
+    throw "Track B downstream module failed to elaborate against hydrated Ixon.Env"
+
+  -- 3. Track C (`compileSourceCertified` & `compileModuleDAGCertified`): bridge to `Ix.Cert.compileReport`
+  let (_, _, certIxe, certFailures) ← compileSourceCertified origSrc
+  if !certFailures.isEmpty then
+    throw s!"Track C compileSourceCertified had {certFailures.toMap.size} failures"
+  if certIxe.consts.isEmpty then
+    throw "Track C compileSourceCertified produced 0 Ixon constants"
+
+  let (_, _, dagCertIxe, dagCertFailures) ← compileModuleDAGCertified [
+    (Name.simple "ModB", modBSrc),
+    (Name.simple "ModA", modASrc)
+  ]
+  if !dagCertFailures.isEmpty then
+    throw s!"Track C compileModuleDAGCertified had {dagCertFailures.toMap.size} failures"
+  if dagCertIxe.consts.isEmpty then
+    throw "Track C compileModuleDAGCertified produced 0 Ixon constants"
+  return true
+
+def testTracksABCD : Bool :=
+  match testTracksABCDResult with
+  | .ok b => b
+  | .error _ => false
+
 /-! ## LSpec Test Suite & Compile-Time Verification -/
 
 def frontendSuite : TestSeq :=
@@ -1532,7 +1634,9 @@ def frontendSuite : TestSeq :=
     test "13. Wave 2 Surface Idioms & Declarative Macros (∃, bounded ∀/∃, dite, ·, nested ⟨...⟩, spread, notation, macro_rules)"
       testWave2SurfaceAndMacros ++
     test "14. Wave 3 Decision Procedures (norm_num, ring, omega) & Tactic ElabHints Verification"
-      testWave3DecisionAndHints
+      testWave3DecisionAndHints ++
+    test "15. Tracks A-C (Format Round-Trip, Multi-Module DAG & .ixe Hydration, Certified Compiler Bridge)"
+      testTracksABCD
   )
 
 def Tests.Ix.Frontend.suite : List TestSeq := [frontendSuite]
@@ -1574,6 +1678,10 @@ run_meta do
   | .ok true => pure ()
   | .ok false => throwError "testWave3DecisionAndHints returned false"
   | .error msg => throwError s!"testWave3DecisionAndHints failed: {msg}"
+  match testTracksABCDResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testTracksABCD returned false"
+  | .error msg => throwError s!"testTracksABCD failed: {msg}"
   unless testImportMapAndElabClaim do
     throwError "testImportMapAndElabClaim failed"
   unless testFltPropositionElab do
