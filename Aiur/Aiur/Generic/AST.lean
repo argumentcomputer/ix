@@ -15,7 +15,82 @@ inductive Ty where
   | ptr (target : Ty)
   | param (name : String)
   | named (name : String) (args : List Ty)
-  deriving Repr, BEq, Inhabited, Lean.ToExpr, Lean.ToJson, Lean.FromJson
+  deriving Repr, Inhabited, Lean.ToExpr, Lean.ToJson, Lean.FromJson
+
+mutual
+  /-- Structural equality of types. Hand-written, unlike a derived instance,
+  which would be a `partial def` for this nested type and so opaque to the
+  kernel and to proofs. `BEq Ty` is the instance this decision induces. -/
+  def Ty.decEq : (left right : Ty) → Decidable (left = right)
+    | .field, .field => .isTrue rfl
+    | .tuple xs, .tuple ys =>
+        match Ty.listDecEq xs ys with
+        | .isTrue h => .isTrue (congrArg Ty.tuple h)
+        | .isFalse h => .isFalse (fun eq => h (Ty.tuple.inj eq))
+    | .array x n, .array y m =>
+        match Ty.decEq x y with
+        | .isTrue h =>
+            if hn : n = m then .isTrue (by cases h; cases hn; rfl)
+            else .isFalse (fun eq => hn (Ty.array.inj eq).2)
+        | .isFalse h => .isFalse (fun eq => h (Ty.array.inj eq).1)
+    | .ptr x, .ptr y =>
+        match Ty.decEq x y with
+        | .isTrue h => .isTrue (congrArg Ty.ptr h)
+        | .isFalse h => .isFalse (fun eq => h (Ty.ptr.inj eq))
+    | .param x, .param y =>
+        if h : x = y then .isTrue (by cases h; rfl)
+        else .isFalse (fun eq => h (Ty.param.inj eq))
+    | .named x xs, .named y ys =>
+        if h : x = y then
+          match Ty.listDecEq xs ys with
+          | .isTrue hs => .isTrue (by cases h; cases hs; rfl)
+          | .isFalse hs => .isFalse (fun eq => hs (Ty.named.inj eq).2)
+        else .isFalse (fun eq => h (Ty.named.inj eq).1)
+    | .field, .tuple _ |
+      .field, .array _ _ |
+      .field, .ptr _ |
+      .field, .param _ |
+      .field, .named _ _ |
+      .tuple _, .field |
+      .tuple _, .array _ _ |
+      .tuple _, .ptr _ |
+      .tuple _, .param _ |
+      .tuple _, .named _ _ |
+      .array _ _, .field |
+      .array _ _, .tuple _ |
+      .array _ _, .ptr _ |
+      .array _ _, .param _ |
+      .array _ _, .named _ _ |
+      .ptr _, .field |
+      .ptr _, .tuple _ |
+      .ptr _, .array _ _ |
+      .ptr _, .param _ |
+      .ptr _, .named _ _ |
+      .param _, .field |
+      .param _, .tuple _ |
+      .param _, .array _ _ |
+      .param _, .ptr _ |
+      .param _, .named _ _ |
+      .named _ _, .field |
+      .named _ _, .tuple _ |
+      .named _ _, .array _ _ |
+      .named _ _, .ptr _ |
+      .named _ _, .param _ => .isFalse (by intro h; cases h)
+  termination_by left _ => sizeOf left
+
+  def Ty.listDecEq : (left right : List Ty) → Decidable (left = right)
+    | [], [] => .isTrue rfl
+    | [], _ :: _ => .isFalse (by intro h; cases h)
+    | _ :: _, [] => .isFalse (by intro h; cases h)
+    | x :: xs, y :: ys => match Ty.decEq x y, Ty.listDecEq xs ys with
+      | .isTrue h, .isTrue hs => .isTrue (by cases h; cases hs; rfl)
+      | .isFalse h, _ => .isFalse (fun eq => h (List.cons.inj eq).1)
+      | _, .isFalse h => .isFalse (fun eq => h (List.cons.inj eq).2)
+  termination_by left _ => sizeOf left
+end
+
+instance : DecidableEq Ty := Ty.decEq
+
 
 def Ty.subst (env : List (String × Ty)) : Ty → Ty
   | .field => .field
