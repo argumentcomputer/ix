@@ -238,12 +238,12 @@ theorem Prepared.depth_grouped_activated_heap_sound_observed {program : Modules.
     (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
     arguments decoded
 
-/-- The same over Goldilocks with `k = 24` (`cfg.bits = 24`). -/
+/-- The same over Goldilocks with at most `k = 24` limb bits (`cfg.bits ≤ 24`). -/
 theorem Prepared.depth_grouped_activated_heap_sound_goldilocks_observed
     {program : Modules.Program Library.U32.Goldilocks.F}
     (prepared : Modules.Prepared program) (compiled : ModulesArtifact prepared)
     (physical : Physical.Prepared compiled.circuit.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system) (bits : cfg.bits = 24)
+    {cfg : Depth.Config} (certified : Depth.Certified cfg physical.system) (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances}
@@ -337,12 +337,12 @@ theorem Prepared.depth_grouped_activated_native_heap_sound_observed {source : Ge
     (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
     arguments decoded
 
-/-- The same over Goldilocks with `k = 24` (`cfg.bits = 24`). -/
+/-- The same over Goldilocks with at most `k = 24` limb bits (`cfg.bits ≤ 24`). -/
 theorem Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed
     {source : Generic.Source Library.U32.Goldilocks.F} {entries : List String}
     {specialized : Generic.Specialized source entries}
     (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
-    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system) (bits : cfg.bits = 24)
+    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system) (bits : cfg.bits ≤ 24)
     (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
     (activated : plan.WellFormedActivation)
     {name : String} (entry : name ∈ entries) {rom : WidthROM Library.U32.Goldilocks.F}
