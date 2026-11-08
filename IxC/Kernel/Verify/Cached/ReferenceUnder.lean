@@ -81,9 +81,7 @@ theorem checkDeclUnder_of_userAxiom?_none (mode : CheckMode) (policy : Cached.Ax
       | false => rfl
       | true => simp [Declaration.userAxiom?, hk] at h
     have ha : policy.admits cv.name = false := Cached.AxiomPolicy.admits_of_not_eligible policy he
-    unfold checkDeclUnder
-    rw [ha]
-    rfl
+    simp [checkDeclUnder, ha]
   all_goals rfl
 
 theorem checkDeclsPureUnder_strict (mode : CheckMode) (ops : (CheckerOps md) m)
