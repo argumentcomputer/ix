@@ -1,5 +1,6 @@
 import Aiur.Generic.Frontend
 import Aiur.Generic.SymbolFacts
+import Aiur.Generic.LookupFacts
 import Aiur.Generic.Diagnostics
 import Aiur.Generic.SourceRules
 import Aiur.Generic.AliasFacts
