@@ -5,7 +5,7 @@ name: Benchmark main
 # parameter combination — the same command you can run locally, and the
 # same one the !benchmark PR workflow uses. Four job roles:
 #
-#   1. build     — compiles and caches `ix` and `bench-typecheck` once.
+#   1. build     — compiles and caches `ix` once.
 #   2. plan      — `ix bench ci matrix` prints the list of parameter
 #                  combinations to run. The list comes from the registry
 #                  (Ix/Cli/BenchCmd.lean) and each entry already carries
@@ -41,8 +41,8 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
-  # Build the `ix` and `bench-typecheck` binaries once and cache them;
-  # every later job restores them instead of rebuilding. They are built
+  # Build the `ix` binary once and cache it;
+  # every later job restores it instead of rebuilding. It is built
   # with native code generation for r8i, with caches and measured results
   # isolated from other hardware and compiler flags.
   build:

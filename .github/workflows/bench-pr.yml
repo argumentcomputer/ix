@@ -147,8 +147,8 @@ jobs:
             -f head-sha="$HEAD_SHA" \
             -f comment-body="$COMMENT_BODY"
 
-  # Select or build the PR's `ix` and `bench-typecheck` once, then
-  # publish them as a run-scoped
+  # Select or build the PR's `ix` once, then
+  # publish it as a run-scoped
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
