@@ -21,8 +21,14 @@ concurrency:
 jobs:
   # Each job has its own sticky cache, so the checks run independently. Lean
   # builds, tests, and lints share one job and one incremental build cache.
+  # A full build fills about 33 GB of the disk (Mathlib's checkout and
+  # oleans alone take 7.5 GB) and stale products accumulate on top, which
+  # filled the former 50 GB disk; RunsOn resets every cache below 5% free.
+  # The lineage name carries the size: RunsOn does not document growing the
+  # filesystem of a restored snapshot, so a new size starts a new lineage.
+  # https://runs-on.com/docs/runners/capabilities/sticky-disks/
   lean-test:
-    runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-lean-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4-100gb:100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
