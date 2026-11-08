@@ -7,6 +7,7 @@ import Aiur.CheckerCorrectness
 import Aiur.Generic
 import Aiur.Modules
 import Aiur.Optimized
+import Aiur.Optimized.Depth
 import Aiur.HeapMono
 import Aiur.StepLemmas
 import Aiur.Library.Carry
@@ -26,9 +27,9 @@ import Aiur.Library.Blake3.Goldilocks
 # Frozen Certification Audit for Aiur
 
 This module freezes the type signatures and audits the axiom footprints of all
-top-level compiler, checker, physical/grouped/activated backend, and standard
-library (`Carry`, `U8`, `U32`, `U64`, `Blake3`, `Goldilocks`) correctness
-theorems in `Aiur`.
+top-level compiler, checker, physical/grouped/activated backend, depth-pass
+(memo-cycle soundness), and standard library (`Carry`, `U8`, `U32`, `U64`,
+`Blake3`, `Goldilocks`) correctness theorems in `Aiur`.
 
 Every theorem audited here depends strictly on a subset of the standard Lean
 foundational axioms `[propext, Classical.choice, Quot.sound]`, with zero
@@ -46,20 +47,31 @@ that derivation. It gives at most rows that satisfy their constraints with
 balanced LogUp lookups, which `checkMemo_sound` turns into a
 `Circuit.MemoDerivation`; that memo graph may be cyclic (a provided row
 `loop(0) = 42` balances `fn loop(x) { loop(x) }`). `memo_acyclic_sound` needs
-it acyclic, i.e. every proved call terminating, and nothing proves that, so
-acyclicity is a hypothesis of the end-to-end argument. The frozen statements
-that assume it are printed with `pp.proofs true`, so they name the memo graph
-that must be acyclic (`Classical.choice (… checkMemo_sound checked)`) rather
-than an elided `⋯`. These memo-check theorems are stated over the compiled
-typed circuits; none yet covers the grouped, activated circuits the prover
-commits to. `Plan.WellFormedActivation`, by contrast, is decided for every
-exported trace plan by the exporter (`Trace.exportPreparedPlan`).
+it acyclic, i.e. every proved call terminating. The frozen statements that
+assume it are printed with `pp.proofs true`, so they name the memo graph that
+must be acyclic (`Classical.choice (… checkMemo_sound checked)`) rather than an
+elided `⋯`.
+
+Section 3a closes that gap for circuits compiled with the depth pass
+(`Optimized.Depth`, Track A). `Modules.Prepared.depth_grouped_activated_heap_sound`
+(and `…_goldilocks`) start from acceptance of `Grouping.Plan.checkMemo`, the memo
+checker over the grouped, activated plan the prover commits to, built over the
+certified depth pass of the physical circuits (`Depth.Certified`), with at most
+`2^39` rows. Acyclicity is proved, not assumed: every memo graph over a certified
+depth system with that many rows is acyclic (`Depth.acyclic`), given a field
+condition that Goldilocks meets for `k = 24` (`Depth.goldilocks_characteristic`).
+Both side conditions are decidable: the exporter already checks
+`Plan.WellFormedActivation`, and must check `Depth.Certified` once it emits the
+depth pass (Track A3). Until then, deployed artifacts are covered only by the
+derivation-assuming theorems.
 
 Trusted and unproved: the Rust lowering of the exported artifact into
 multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
 times multiplicity, trace-shard segment boundaries, fixed tables and claim
-encoding), multi-stark's STARK and FRI soundness, the `aiur⟦ … ⟧` and
-`aiur_library%` elaborators, and the artifact exporter. The library
+encoding), including that an accepting proof yields rows `Plan.checkMemo`
+accepts and that the verifiers, in Rust and in circuit, enforce the `2^39` row
+bound over the whole batch; multi-stark's STARK and FRI soundness; the
+`aiur⟦ … ⟧` and `aiur_library%` elaborators; and the artifact exporter. The library
 `Correctness` theorems prove hand-written Lean models of the library functions
 (their byte and limb arithmetic) against Lean specifications such as
 `Blake3.digest`. No theorem evaluates the library's Aiur source, so they are
@@ -1226,6 +1238,376 @@ info: @Modules.Prepared.grouped_activated_heap_sound : ∀ {F : Type} [inst : Fi
 /-- info: 'Aiur.Modules.Prepared.grouped_activated_heap_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Modules.Prepared.grouped_activated_heap_sound
+
+/-! ### 3a. Memo-Cycle Soundness: the Depth Pass and the Grouped, Activated Memo Checker -/
+
+/--
+info: @Circuit.CycleLength.no_cycle : ∀ {V F : Type} [inst : Field F] [DecidableEq V] {edge : V → V → Prop} {rows : Finset V}
+  {N B : ℕ},
+  (∀ (u v : V), edge u v → u ∈ rows) →
+    rows.card ≤ N →
+      ∀ (rank : V → ℕ) (depth : V → F),
+        (∀ (u v : V), edge u v → rank v < rank u ∨ rank v = rank u ∧ ∃ s, 0 < s ∧ s ≤ B ∧ depth v + ↑s = depth u) →
+          (∀ (n : ℕ), 0 < n → n ≤ N * B → ↑n ≠ 0) → ∀ (u : V), ¬Relation.TransGen edge u u
+-/
+#guard_msgs in
+#check @Aiur.Circuit.CycleLength.no_cycle
+/-- info: 'Aiur.Circuit.CycleLength.no_cycle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Circuit.CycleLength.no_cycle
+
+/--
+info: @Circuit.MemoDerivation.acyclic_of_steps : ∀ {F : Type} {rom : WireROM F} [inst : Field F] [inst_1 : DecidableEq F]
+  {system : Circuit.System F} {message : Circuit.Message F} (graph : Circuit.MemoDerivation system rom message)
+  {N B : ℕ},
+  graph.rows.card ≤ N →
+    ∀ (rank : Fin graph.size → ℕ) (depth : Fin graph.size → F),
+      (∀ (i : Fin graph.size) (j : Fin (graph.node i).premises.length),
+          rank (graph.target i j) < rank i ∨
+            rank (graph.target i j) = rank i ∧ ∃ s, 0 < s ∧ s ≤ B ∧ depth (graph.target i j) + ↑s = depth i) →
+        (∀ (n : ℕ), 0 < n → n ≤ N * B → ↑n ≠ 0) → graph.Acyclic
+-/
+#guard_msgs in
+#check @Aiur.Circuit.MemoDerivation.acyclic_of_steps
+/-- info: 'Aiur.Circuit.MemoDerivation.acyclic_of_steps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Circuit.MemoDerivation.acyclic_of_steps
+
+/--
+info: @Circuit.MemoDerivation.exists_of_balance : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {rom : WireROM F}
+  {system : Circuit.System F} {root : Circuit.Message F} (rules : List (Circuit.RuleInstance system rom × ℤ)),
+  (Circuit.Balance.accumulator (fun c => decide (system.MapClaim c)) root
+          (List.map (fun rule => (rule.1.claims, rule.2)) rules)).isZero =
+      true →
+    ∃ graph, graph.rows.card ≤ rules.length
+-/
+#guard_msgs in
+#check @Aiur.Circuit.MemoDerivation.exists_of_balance
+/-- info: 'Aiur.Circuit.MemoDerivation.exists_of_balance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Circuit.MemoDerivation.exists_of_balance
+
+/--
+info: @Optimized.Depth.compileChip_localRule : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  (cfg : Optimized.Depth.Config) (chip : Circuit.Chip F),
+  chip.wellFormed = true →
+    (∀ pair ∈ chip.sends.zip (cfg.plan chip.name).slots,
+        pair.2 = Optimized.Depth.SlotKind.plain ↔ cfg.recursive pair.1.channel = false) →
+      (cfg.plan chip.name).slots.length = chip.sends.length →
+        ∀ {rom : WireROM F} {root : Circuit.Message F} {premises : List (Circuit.Message F)},
+          (Optimized.Depth.compileChip cfg.limbs (cfg.plan chip.name) chip).LocalRule rom root premises →
+            ∃ main ranges,
+              premises = main ++ ranges ∧
+                chip.LocalRule rom (Optimized.Depth.erase cfg root) (List.map (Optimized.Depth.erase cfg) main) ∧
+                  ∀ check ∈ ranges, ∃ width ∈ cfg.limbs, check.channel = Optimized.Depth.rangeName width
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.compileChip_localRule
+/-- info: 'Aiur.Optimized.Depth.compileChip_localRule' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.compileChip_localRule
+
+/--
+info: @Optimized.Depth.compileChip_lift : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  (cfg : Optimized.Depth.Config) (chip : Circuit.Chip F),
+  chip.wellFormed = true →
+    (∀ pair ∈ chip.sends.zip (cfg.plan chip.name).slots,
+        pair.2 = Optimized.Depth.SlotKind.plain ↔ cfg.recursive pair.1.channel = false) →
+      (cfg.plan chip.name).slots.length = chip.sends.length →
+        ∀ (rom : WireROM F) (a b : Circuit.Var → F),
+          (∀ id < chip.numVars, a id = b id) →
+            ((Optimized.Depth.compileChip cfg.limbs (cfg.plan chip.name) chip).ValidAssignment rom b ↔
+                chip.ValidAssignment rom a) ∧
+              Optimized.Depth.erase cfg
+                    ((Optimized.Depth.compileChip cfg.limbs (cfg.plan chip.name) chip).conclusion b) =
+                  chip.conclusion a ∧
+                List.map (Optimized.Depth.erase cfg)
+                    (List.filterMap (Optimized.Depth.enabled b)
+                      (Optimized.Depth.mainSends cfg.limbs (Circuit.ArithExpr.var chip.numVars)
+                        ((cfg.plan chip.name).base chip) (chip.sends.zip (cfg.plan chip.name).slots))) =
+                  chip.requirements a
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.compileChip_lift
+/-- info: 'Aiur.Optimized.Depth.compileChip_lift' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.compileChip_lift
+
+/--
+info: @Optimized.Depth.rangeClaim : ∀ {F : Type} [inst : Field F] [DecidableEq F] {cfg : Optimized.Depth.Config}
+  {source : Circuit.System F},
+  Optimized.Depth.Facts cfg source →
+    ∀ {width : ℕ} {x : F},
+      width ∈ cfg.limbs →
+        (Optimized.Depth.system cfg source).MapClaim (Optimized.Depth.rangeMessage width x) → ∃ n < 2 ^ width, x = ↑n
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.rangeClaim
+/-- info: 'Aiur.Optimized.Depth.rangeClaim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.rangeClaim
+
+/--
+info: @Optimized.Depth.derives_erase : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {cfg : Optimized.Depth.Config}
+  {source : Circuit.System F} {rom : WireROM F},
+  Optimized.Depth.Facts cfg source →
+    ∀ {message : Circuit.Message F},
+      Circuit.Derives (Optimized.Depth.system cfg source) rom message →
+        message.channel ∉ cfg.names → Circuit.Derives source rom (Optimized.Depth.erase cfg message)
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.derives_erase
+/-- info: 'Aiur.Optimized.Depth.derives_erase' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.derives_erase
+
+/--
+info: @Optimized.Depth.acyclic : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {cfg : Optimized.Depth.Config}
+  {source : Circuit.System F} {rom : WireROM F},
+  Optimized.Depth.Facts cfg source →
+    ∀ {root : Circuit.Message F} (graph : Circuit.MemoDerivation (Optimized.Depth.system cfg source) rom root) {N : ℕ},
+      graph.rows.card ≤ N → (∀ (n : ℕ), 0 < n → n ≤ N * 2 ^ cfg.bits → ↑n ≠ 0) → graph.Acyclic
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.acyclic
+/-- info: 'Aiur.Optimized.Depth.acyclic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.acyclic
+
+/--
+info: @Optimized.Depth.checkMemo_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] {cfg : Optimized.Depth.Config}
+  {source : Circuit.System F} {rom : WireROM F},
+  Optimized.Depth.Certified cfg source →
+    ∀ {root : Circuit.Message F} {rows : List (Circuit.WeightedRow F)} {N : ℕ},
+      rows.length ≤ N →
+        (∀ (n : ℕ), 0 < n → n ≤ N * 2 ^ cfg.bits → ↑n ≠ 0) →
+          (Optimized.Depth.system cfg source).checkMemo rom root rows = Except.ok () →
+            root.channel ∉ cfg.names → Circuit.Derives source rom (Optimized.Depth.erase cfg root)
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.checkMemo_sound
+/-- info: 'Aiur.Optimized.Depth.checkMemo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.checkMemo_sound
+
+/--
+info: Optimized.Depth.goldilocks_characteristic : ∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.goldilocks_characteristic
+/-- info: 'Aiur.Optimized.Depth.goldilocks_characteristic' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.goldilocks_characteristic
+
+/--
+info: @Optimized.Grouping.Plan.checkMemo_rules : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Circuit.System F} {id : String → Except String ℕ} {plan : Optimized.Grouping.Plan source id},
+  plan.WellFormedActivation →
+    ∀ {rom : WireROM F} {root : Circuit.Message F} {rows : List (Circuit.WeightedRow F)},
+      plan.checkMemo rom root rows = Except.ok () →
+        ∃ rules,
+          rules.length ≤ rows.length ∧
+            (Circuit.Balance.accumulator (fun c => decide (source.MapClaim c)) root
+                  (List.map (fun rule => (rule.1.claims, rule.2)) rules)).isZero =
+              true
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Grouping.Plan.checkMemo_rules
+/-- info: 'Aiur.Optimized.Grouping.Plan.checkMemo_rules' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.Plan.checkMemo_rules
+
+/--
+info: @Optimized.Grouping.Plan.checkMemo_graph : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Circuit.System F} {id : String → Except String ℕ} {plan : Optimized.Grouping.Plan source id},
+  plan.WellFormedActivation →
+    ∀ {rom : WireROM F} {root : Circuit.Message F} {rows : List (Circuit.WeightedRow F)},
+      plan.checkMemo rom root rows = Except.ok () → ∃ graph, graph.rows.card ≤ rows.length
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Grouping.Plan.checkMemo_graph
+/-- info: 'Aiur.Optimized.Grouping.Plan.checkMemo_graph' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.Plan.checkMemo_graph
+
+/--
+info: @Optimized.Depth.plan_checkMemo_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {cfg : Optimized.Depth.Config} {source : Circuit.System F} {rom : WireROM F} {id : String → Except String ℕ},
+  Optimized.Depth.Certified cfg source →
+    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg source) id),
+      plan.WellFormedActivation →
+        ∀ {root : Circuit.Message F} {rows : List (Circuit.WeightedRow F)} {N : ℕ},
+          rows.length ≤ N →
+            (∀ (n : ℕ), 0 < n → n ≤ N * 2 ^ cfg.bits → ↑n ≠ 0) →
+              plan.checkMemo rom root rows = Except.ok () →
+                root.channel ∉ cfg.names → Circuit.Derives source rom (Optimized.Depth.erase cfg root)
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Depth.plan_checkMemo_sound
+/-- info: 'Aiur.Optimized.Depth.plan_checkMemo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.plan_checkMemo_sound
+
+/--
+info: @Optimized.Physical.Prepared.depth_native_heap_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Generic.Source F} {entries : List String} {specialized : Generic.Specialized source entries}
+  (compiled : Optimized.GenericArtifact specialized) (prepared : Optimized.Physical.Prepared compiled.artifact)
+  {cfg : Optimized.Depth.Config},
+  Optimized.Depth.Certified cfg prepared.system →
+    ∀ {name : String},
+      name ∈ entries →
+        ∀ {rom : WidthROM F},
+          rom.Valid →
+            ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+              Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
+                ∀ {root : Circuit.Message F},
+                  Optimized.Depth.erase cfg root =
+                      Circuit.Erasure.message compiled.system { channel := name, args := wires, result := output } →
+                    root.channel ∉ cfg.names →
+                      ∀ {rows : List (Circuit.WeightedRow F)} {N : ℕ},
+                        rows.length ≤ N →
+                          (∀ (n : ℕ), 0 < n → n ≤ N * 2 ^ cfg.bits → ↑n ≠ 0) →
+                            (Optimized.Depth.system cfg prepared.system).checkMemo (Circuit.Erasure.rawROM rom) root
+                                  rows =
+                                Except.ok () →
+                              DecodesValues specialized.program.enums wires (entryValues args) →
+                                WireValue.decode specialized.program.enums output = some result →
+                                  ∃ value heap,
+                                    Generic.SourceSemantics.EvalFn source.world name args [] value heap ∧
+                                      Represents
+                                        (WireROM.decode specialized.program.enums
+                                          (Circuit.Erasure.typedROM compiled.system rom))
+                                        heap value result
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Physical.Prepared.depth_native_heap_sound
+/-- info: 'Aiur.Optimized.Physical.Prepared.depth_native_heap_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Physical.Prepared.depth_native_heap_sound
+
+/--
+info: @Optimized.Physical.Prepared.depth_grouped_activated_heap_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {id : String → Except String ℕ} {source : Generic.Source F} {entries : List String}
+  {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
+  (prepared : Optimized.Physical.Prepared compiled.artifact) {cfg : Optimized.Depth.Config},
+  Optimized.Depth.Certified cfg prepared.system →
+    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg prepared.system) id),
+      plan.WellFormedActivation →
+        ∀ {name : String},
+          name ∈ entries →
+            ∀ {rom : WidthROM F},
+              rom.Valid →
+                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+                  Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
+                    ∀ {root : Circuit.Message F},
+                      Optimized.Depth.erase cfg root =
+                          Circuit.Erasure.message compiled.system { channel := name, args := wires, result := output } →
+                        root.channel ∉ cfg.names →
+                          ∀ {rows : List (Circuit.WeightedRow F)},
+                            rows.length ≤ 2 ^ 39 →
+                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
+                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                  DecodesValues specialized.program.enums wires (entryValues args) →
+                                    WireValue.decode specialized.program.enums output = some result →
+                                      ∃ value heap,
+                                        Generic.SourceSemantics.EvalFn source.world name args [] value heap ∧
+                                          Represents
+                                            (WireROM.decode specialized.program.enums
+                                              (Circuit.Erasure.typedROM compiled.system rom))
+                                            heap value result
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Physical.Prepared.depth_grouped_activated_heap_sound
+/--
+info: 'Aiur.Optimized.Physical.Prepared.depth_grouped_activated_heap_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
+#guard_msgs in
+#print axioms Aiur.Optimized.Physical.Prepared.depth_grouped_activated_heap_sound
+
+/--
+info: @Modules.Prepared.depth_grouped_activated_heap_sound : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {id : String → Except String ℕ} {program : Modules.Program F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config},
+  Optimized.Depth.Certified cfg physical.system →
+    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
+      plan.WellFormedActivation →
+        ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+          prepared.find? external = some entry →
+            ∀ {rom : WidthROM F},
+              rom.Valid →
+                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+                  Circuit.Erasure.Signed compiled.circuit.system
+                      { channel := entry.resolved.name, args := wires, result := output } →
+                    ∀ {root : Circuit.Message F},
+                      Optimized.Depth.erase cfg root =
+                          Circuit.Erasure.message compiled.circuit.system
+                            { channel := entry.resolved.name, args := wires, result := output } →
+                        root.channel ∉ cfg.names →
+                          ∀ {rows : List (Circuit.WeightedRow F)},
+                            rows.length ≤ 2 ^ 39 →
+                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
+                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                    WireValue.decode compiled.specialized.program.enums output = some result →
+                                      ∃ value heap,
+                                        prepared.EvalFn external args value heap ∧
+                                          Represents
+                                            (WireROM.decode compiled.specialized.program.enums
+                                              (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                            heap value result
+-/
+#guard_msgs in
+#check @Aiur.Modules.Prepared.depth_grouped_activated_heap_sound
+/-- info: 'Aiur.Modules.Prepared.depth_grouped_activated_heap_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Modules.Prepared.depth_grouped_activated_heap_sound
+
+/--
+info: @Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks : ∀ {id : String → Except String ℕ}
+  {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config},
+  Optimized.Depth.Certified cfg physical.system →
+    cfg.bits = 24 →
+      ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
+        plan.WellFormedActivation →
+          ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+            prepared.find? external = some entry →
+              ∀ {rom : WidthROM Library.U32.Goldilocks.F},
+                rom.Valid →
+                  ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+                    {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+                    Circuit.Erasure.Signed compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } →
+                      ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+                        Optimized.Depth.erase cfg root =
+                            Circuit.Erasure.message compiled.circuit.system
+                              { channel := entry.resolved.name, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Circuit.WeightedRow Library.U32.Goldilocks.F)},
+                              rows.length ≤ 2 ^ 39 →
+                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                    WireValue.decode compiled.specialized.program.enums output = some result →
+                                      ∃ value heap,
+                                        prepared.EvalFn external args value heap ∧
+                                          Represents
+                                            (WireROM.decode compiled.specialized.program.enums
+                                              (Circuit.Erasure.typedROM compiled.circuit.system rom))
+                                            heap value result
+-/
+#guard_msgs in
+#check @Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks
+/--
+info: 'Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
+#guard_msgs in
+#print axioms Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks
 
 /-! ### 4. Standard Library: Carry, U8, U32, U64, Blake3, and Goldilocks -/
 
