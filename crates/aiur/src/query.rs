@@ -112,6 +112,11 @@ impl<B: FieldBackend> QueryTable<B> {
     &self.depths
   }
 
+  /// Number of recorded row heights (`0` when heights are not tracked).
+  pub(crate) fn depths_len(&self) -> usize {
+    self.depths.len()
+  }
+
   /// A row's honest height: the longest call path below it within its SCC
   /// (zero for untracked tables and static maps).
   #[inline(always)]

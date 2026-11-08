@@ -436,11 +436,13 @@ impl<B: FieldBackend> TracePlan<'_, B> {
         (table.width, ranges.table(t).iter().rposition(|&n| n != 0))
       })
       .collect();
+    let table0_limbs =
+      self.depth.limbs.iter().filter(|&&(_, t)| t == 0).count().max(1) as u64;
     DepthStatistics {
       sccs,
       limbs: self.artifact.limbs.clone(),
       max_limbs,
-      gap_slot_uses: ranges.table(0).iter().sum(),
+      gap_slot_uses: ranges.table(0).iter().sum::<u64>() / table0_limbs,
     }
   }
 }

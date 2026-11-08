@@ -512,6 +512,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   ) -> Result<StageOne, String> {
     #[cfg(feature = "cuda")]
     if let Some(plans) = &self.device_plans {
+      self.plan.validate_record(record)?;
       let device = gpu::DeviceRecord::upload(self, plans, record, self.device)?;
       let heights: Vec<_> =
         (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();

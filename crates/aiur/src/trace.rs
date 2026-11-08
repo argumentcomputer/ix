@@ -857,7 +857,10 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     Ok(Trace { matrices, ranges })
   }
 
-  fn validate_record(&self, record: &Execution<B>) -> Result<(), String> {
+  pub(crate) fn validate_record(
+    &self,
+    record: &Execution<B>,
+  ) -> Result<(), String> {
     if !std::sync::Arc::ptr_eq(&record.hints.program, &self.program.program) {
       return Err("hint providers belong to another program".into());
     }
@@ -888,6 +891,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       }
       if table.static_map.is_some() {
         return Err("function record contains a static map".into());
+      }
+      if self.depth.fills[self.members[i]].column.is_some()
+        && table.depths_len() != table.len()
+      {
+        return Err("query record is missing depth heights".into());
       }
       for row in 0..table.len() {
         let output = table.output(row);

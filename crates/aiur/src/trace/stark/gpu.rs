@@ -26,6 +26,7 @@ const POLY_VAR: u32 = 1;
 const POLY_ADD: u32 = 2;
 const POLY_SUB: u32 = 3;
 const POLY_MUL: u32 = 4;
+const POLY_STACK: usize = 32;
 // A function without a depth column.
 const NO_COLUMN: u32 = u32::MAX;
 
@@ -255,6 +256,19 @@ fn polynomial(
   out: &mut Vec<u32>,
   column: &impl Fn(usize) -> usize,
 ) -> Option<()> {
+  polynomial_at(p, constants, out, column, 0)
+}
+
+fn polynomial_at(
+  p: &Polynomial,
+  constants: &mut Constants,
+  out: &mut Vec<u32>,
+  column: &impl Fn(usize) -> usize,
+  depth: usize,
+) -> Option<()> {
+  if depth >= POLY_STACK {
+    return None;
+  }
   match p {
     Polynomial::Const(value) => {
       out.extend([POLY_CONST, constants.word(*value)? & 0x7fff_ffff]);
@@ -263,8 +277,8 @@ fn polynomial(
       out.extend([POLY_VAR, u32::try_from(column(*c)).ok()?]);
     },
     Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
-      polynomial(&xs[0], constants, out, column)?;
-      polynomial(&xs[1], constants, out, column)?;
+      polynomial_at(&xs[0], constants, out, column, depth)?;
+      polynomial_at(&xs[1], constants, out, column, depth + 1)?;
       out.extend([
         match p {
           Polynomial::Add(_) => POLY_ADD,
