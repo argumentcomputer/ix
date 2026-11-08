@@ -53,9 +53,11 @@ them as unauthenticated advice.
 The typing claims (`check`, `checkEnv`, `eval`) carry, beside their context's
 specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
 
-* **user axioms** (`axioms = some r`): the view holds the tree at `r`, and
+* **user axioms** (`axioms = some r`): the view holds the tree at `r`; every
+  leaf, used or not, is a stored safe axiom the role table does not bind
+  (`UserAxiomLeavesIn`, as `KernelRoles::validate_user_axioms` checks); and
   acceptance runs under `allowUser`, with every user axiom the accepted
-  declarations install among the tree's leaves (`AxiomScopeIn`). With
+  declarations install among the leaves (`AxiomScopeIn`). With
   `axioms = none` it is the strict fold;
 * **assumptions** `some r`: the typing is conditional. If IxC accepts each
   leaf of the tree at `r` in the view, separately, it accepts the target;
@@ -235,12 +237,26 @@ def BindingIn (V : View) (spec b : Address) : Prop :=
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
       AcceptsIn V (Scope.strict bnd) (BindingSeeds t)
 
-/-- **The axiom scope of a typing claim**: with no user axioms, `k` at the
-strict policy; with the axioms tree `r`, the view holds a tree at `r`, and
-for every such tree `k` at `allowUser`, with user axioms among its leaves. -/
-def AxiomScopeIn (V : View) : Option Address → (AxiomPolicy → (Address → Prop) → Prop) → Prop
+/-- **Every leaf of a claim's axioms tree is a user axiom**, used or not, as
+IxVM validates it (`KernelRoles::validate_user_axioms`): the view stores a
+safe axiom record at it, and the role table `b` binds no role to it. IxVM does
+not type-check an axiom no checked constant uses, so this is a fact about the
+records, not an IxC install. -/
+def UserAxiomLeavesIn (V : View) (b : Binding) (leaves : List Address) : Prop :=
+  ∀ a ∈ leaves,
+    (∃ c ax, Ix.Cert.recordAt V.env a = some c ∧ c.info = .axio ax ∧ ax.isUnsafe = false) ∧
+      ∀ t, Ix.Kernel.RoleTable.ofBytes b.bytes = some t → ∀ r, t.addressOf? r ≠ some a
+
+/-- **The axiom scope of a typing claim** under the role table `b`: with no
+user axioms, `k` at the strict policy; with the axioms tree `r`, the view
+holds a tree at `r`, and for every such tree, each of its leaves is a user
+axiom (`UserAxiomLeavesIn`) and `k` holds at `allowUser`, with the installed
+user axioms among its leaves. -/
+def AxiomScopeIn (V : View) (b : Binding) :
+    Option Address → (AxiomPolicy → (Address → Prop) → Prop) → Prop
   | none, k => k .strict (fun _ => False)
-  | some r, k => V.HoldsTree r ∧ ∀ leaves, V.LeavesAt r leaves → k .allowUser (· ∈ leaves)
+  | some r, k => V.HoldsTree r ∧ ∀ leaves, V.LeavesAt r leaves →
+      UserAxiomLeavesIn V b leaves ∧ k .allowUser (· ∈ leaves)
 
 /-- **Acceptance of `S` under the assumption tree `asm`**: unconditional for
 `none`; for `some r`, the view holds a tree at `r`, and for every such tree,
@@ -266,7 +282,7 @@ def TypingIn (V : View) (ctx : ClaimContext) (S : Address → Prop) (asm : Optio
   Ix.SpecDigest.specDigest = .ok ctx.spec ∧ ctx.literalClass = false ∧
     ((ctx.bindingAssumed = true → BindingIn V ctx.spec ctx.binding) →
       ∃ b, V.binding? ctx.binding = some b ∧
-        AxiomScopeIn V ctx.axioms fun policy axioms => AssumingIn V ⟨b, policy, axioms⟩ S Q asm)
+        AxiomScopeIn V b ctx.axioms fun policy axioms => AssumingIn V ⟨b, policy, axioms⟩ S Q asm)
 
 /-! ## Eval -/
 

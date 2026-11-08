@@ -104,12 +104,19 @@ the program computes is a call to it: `Blake3::verify_bytes_against`
 nodes) and `KernelClaim::run_claim` (the claim's bytes). -/
 def blake3Hash : String := "Blake3::hash"
 
+/-- **The byte-stream enum** of the prepared program: the instance symbol of
+`Lists::Node<UInt8::U8>` (`UInt8::U8` is an opaque `Field`), the enum
+`Blake3::hash`'s parameter points to. The audit checks it against the
+prepared program. -/
+def byteStreamEnum : String := "${\"name\":\"Lists::Node\",\"types\":[\"field\"]}"
+
 /-- **A byte string the derivation hashed**: the input of one of its calls to
-`blake3Hash`, read off the heap at the call as a byte stream
-(`Aiur.Library.Bytes.RepByteStream`). -/
+`blake3Hash`, read off the heap at the call as a byte stream of
+`byteStreamEnum` (`Aiur.Library.Bytes.RepByteStream`): exactly the bytes
+`Blake3::hash` received. -/
 def Hashed (calls : List (Call IxVM.F)) (bytes : ByteArray) : Prop :=
-  ∃ c ∈ calls, c.name = blake3Hash ∧ ∃ (input : Aiur.SourceValue IxVM.F) (enumName : String),
-    c.args = [input] ∧ Aiur.Library.Bytes.RepByteStream enumName c.heap bytes.data.toList input
+  ∃ c ∈ calls, c.name = blake3Hash ∧ ∃ input : Aiur.SourceValue IxVM.F,
+    c.args = [input] ∧ Aiur.Library.Bytes.RepByteStream byteStreamEnum c.heap bytes.data.toList input
 
 /-- **A second preimage the derivation hashed**: a byte string the derivation
 hashed (`Hashed`) that has the same pure BLAKE3 hash as data the view holds
