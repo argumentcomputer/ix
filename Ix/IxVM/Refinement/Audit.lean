@@ -146,8 +146,7 @@ fun P =>
                                       Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world
                                           IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] [] value heap
                                           calls ∧
-                                        Aiur.Generic.SourceSemantics.CallsInROM (IxVM.Refinement.traceROM compiled rom)
-                                            calls ∧
+                                        Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧
                                           P calls d
 -/
 #guard_msgs in
@@ -177,8 +176,7 @@ fun P =>
                     ∃ value heap calls,
                       Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
                           [IxVM.Refinement.digestValue d] [] value heap calls ∧
-                        Aiur.Generic.SourceSemantics.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls ∧
-                          P calls d
+                        Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧ P calls d
 -/
 #guard_msgs in
 #print IxVM.Refinement.CircuitSoundAssuming
@@ -204,8 +202,8 @@ info: def IxVM.Refinement.ObservedHeadline : Prop :=
                     Aiur.WireValue.decode specialized.program.enums output = some result →
                       ∃ value heap calls,
                         Aiur.Generic.SourceSemantics.ObsFn s.world name args [] value heap calls ∧
-                          Aiur.Represents (IxVM.Refinement.traceROM compiled rom) heap value result ∧
-                            Aiur.Generic.SourceSemantics.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls
+                          Aiur.Represents (compiled.traceROM rom) heap value result ∧
+                            Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
 -/
 #guard_msgs in
 #print IxVM.Refinement.ObservedHeadline
@@ -228,18 +226,18 @@ fun {F} [Field F] [DecidableEq F] {s} {entries} {specialized} compiled {physical
 #print IxVM.Refinement.AcyclicDerivation
 
 /--
-info: @[reducible] def IxVM.Refinement.traceROM : {F : Type} →
+info: @[reducible] def Aiur.Optimized.GenericArtifact.traceROM : {F : Type} →
   [inst : Field F] →
     [inst_1 : DecidableEq F] →
-      {s : Aiur.Generic.Source F} →
+      {source : Aiur.Generic.Source F} →
         {entries : List String} →
-          {specialized : Aiur.Generic.Specialized s entries} →
+          {specialized : Aiur.Generic.Specialized source entries} →
             Aiur.Optimized.GenericArtifact specialized → Aiur.WidthROM F → Aiur.ROM F :=
-fun {F} [Field F] [DecidableEq F] {s} {entries} {specialized} compiled rom =>
+fun {F} [Field F] [DecidableEq F] {source} {entries} {specialized} compiled rom =>
   Aiur.WireROM.decode specialized.program.enums (Aiur.Circuit.Erasure.typedROM compiled.system rom)
 -/
 #guard_msgs in
-#print IxVM.Refinement.traceROM
+#print Aiur.Optimized.GenericArtifact.traceROM
 
 /--
 info: def Aiur.Generic.SourceSemantics.CallsInROM : {F : Type} →
