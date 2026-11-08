@@ -19,7 +19,10 @@ formerly 59–63) and the `identity` kind are gone.
 Version 3 makes `Iff`, `Nonempty` and their constructors and recursors
 (23–28) blocks and gives the inert `sorryAx` (58) its type over `Bool` (4).
 Native definitions and their anchors occupy roles 59–102; their equations
-use `eqns`. Each line also records `Role.usedImplicitly`. -/
+use `eqns`. Each line also records `Role.usedImplicitly`.
+
+Version 4 makes `Nat.decEq`, `Nat.decLe`, `Int.decEq` and `Int.decLe` depend on the
+`of_decide_eq_*` roles (63 and 64), and `String.decEq` on 63. -/
 
 namespace Ix.Kernel.Audit
 
@@ -45,7 +48,7 @@ def roleLine (r : Role) : String :=
 
 end Ix.Kernel.Audit
 
-/-- info: 3 -/
+/-- info: 4 -/
 #guard_msgs in #eval Ix.Kernel.specVersion
 
 /--
@@ -116,8 +119,8 @@ info: 0 Nat: block 4 block [0,1,2,3] deps [] implicit
 64 of_decide_eq_false: anchor 0 block [64] deps [59,65,62,4,8]
 65 Decidable.decide: eqns 0 3 eep block [65] deps [59,62,4,8]
 66 Nat.le: anchor 0 block [66] deps [0]
-67 Nat.decEq: eqns 0 1 e block [67] deps [0,4,8,59,65,46]
-68 Nat.decLe: eqns 0 1 e block [68] deps [0,4,8,59,65,66,47]
+67 Nat.decEq: eqns 0 1 e block [67] deps [0,4,8,59,65,63,64,46]
+68 Nat.decLe: eqns 0 1 e block [68] deps [0,4,8,59,65,63,64,66,47]
 69 Nat.decLt: eqns 0 1 e block [69] deps [0,8,59,66,68]
 70 Int: anchor 0 block [70,71,72] deps []
 71 Int.ofNat: anchor 0 block [70,71,72] deps [0]
@@ -136,7 +139,7 @@ info: 0 Nat: block 4 block [0,1,2,3] deps [] implicit
 84 BitVec.ofNat: anchor 0 block [83,84] deps [0]
 85 BitVec.toNat: eqns 0 1 e block [85] deps [0,8,83,49,45]
 86 BitVec.ult: eqns 0 1 e block [86] deps [0,4,8,83,49,45,47]
-87 String.decEq: eqns 0 1 e block [87] deps [37,4,8,59,65]
+87 String.decEq: eqns 0 1 e block [87] deps [37,4,8,59,65,63]
 88 ByteArray: anchor 0 block [88,89] deps []
 89 ByteArray.empty: anchor 0 block [88,89] deps []
 90 String.toByteArray: eqns 0 1 e block [90] deps [37,29,39,38,8,88]
@@ -144,8 +147,8 @@ info: 0 Nat: block 4 block [0,1,2,3] deps [] implicit
 92 String.append: eqns 0 1 e block [92] deps [37,29,39,38,8,91]
 93 ite: eqns 1 2 ee block [93] deps [59,62,8]
 94 Int.le: anchor 0 block [94] deps [70]
-95 Int.decEq: eqns 0 4 eeee block [95] deps [0,70,4,8,59,65,46]
-96 Int.decLe: eqns 0 4 eeee block [96] deps [0,70,4,8,59,65,94,47]
+95 Int.decEq: eqns 0 4 eeee block [95] deps [0,70,4,8,59,65,63,64,46]
+96 Int.decLe: eqns 0 4 eeee block [96] deps [0,70,4,8,59,65,63,64,94,47]
 97 Int.decLt: eqns 0 1 e block [97] deps [0,70,8,59,94,76,96]
 98 Int.bmod: eqns 0 1 e block [98] deps [0,70,8,93,94,76,77,80,81,97]
 99 Int.bdiv: eqns 0 1 e block [99] deps [0,70,8,93,94,76,80,81,97,67]

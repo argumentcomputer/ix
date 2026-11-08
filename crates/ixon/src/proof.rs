@@ -1224,7 +1224,7 @@ impl ClaimContext {
 /// canonical encoding of the role specifications. Pinned here and checked
 /// against the Lean value by the `claim` test suite.
 pub const SPEC_DIGEST_HEX: &str =
-  "84d3999ef8f830d2d0678f21d81730d2aee6f9a2cfd04c84d593b38f52eb7fae";
+  "7e6bc58cf52458db99edc516b71fb18a5b74dfd8eb01ca6cf24b82bbaa623a82";
 
 /// [`SPEC_DIGEST_HEX`] as an address.
 pub fn spec_digest() -> Address {

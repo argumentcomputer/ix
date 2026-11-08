@@ -16,11 +16,11 @@ set_option maxRecDepth 32768 in
 def kernelRoleSpec : Aiur.Modules.Program Nat := aiur⟦
 module KernelRoleSpec {
   inline fn spec_version() -> Field {
-      3
+      4
     }
 
   inline fn spec_digest() -> Bytes::AddressRef {
-      (&([UInt8::BYTE_132, UInt8::BYTE_211, UInt8::BYTE_153, UInt8::BYTE_158, UInt8::BYTE_248, UInt8::BYTE_248, UInt8::BYTE_48, UInt8::BYTE_210, UInt8::BYTE_208, UInt8::BYTE_103, UInt8::BYTE_143, UInt8::BYTE_33, UInt8::BYTE_216, UInt8::BYTE_23, UInt8::BYTE_48, UInt8::BYTE_210, UInt8::BYTE_174, UInt8::BYTE_230, UInt8::BYTE_249, UInt8::BYTE_162, UInt8::BYTE_207, UInt8::BYTE_208, UInt8::BYTE_76, UInt8::BYTE_132, UInt8::BYTE_213, UInt8::BYTE_147, UInt8::BYTE_179, UInt8::BYTE_143, UInt8::BYTE_82, UInt8::BYTE_235, UInt8::BYTE_127, UInt8::BYTE_174]))
+      (&([UInt8::BYTE_126, UInt8::BYTE_107, UInt8::BYTE_197, UInt8::BYTE_140, UInt8::BYTE_245, UInt8::BYTE_36, UInt8::BYTE_88, UInt8::BYTE_219, UInt8::BYTE_153, UInt8::BYTE_237, UInt8::BYTE_197, UInt8::BYTE_22, UInt8::BYTE_183, UInt8::BYTE_31, UInt8::BYTE_177, UInt8::BYTE_138, UInt8::BYTE_91, UInt8::BYTE_116, UInt8::BYTE_223, UInt8::BYTE_216, UInt8::BYTE_235, UInt8::BYTE_1, UInt8::BYTE_202, UInt8::BYTE_108, UInt8::BYTE_242, UInt8::BYTE_75, UInt8::BYTE_130, UInt8::BYTE_187, UInt8::BYTE_170, UInt8::BYTE_98, UInt8::BYTE_58, UInt8::BYTE_130]))
     }
 
   inline fn role_count() -> Field {
@@ -397,8 +397,8 @@ module KernelRoleSpec {
         41 => {  (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(62, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Nil)))))))))))))) } ,
         42 => {  (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Nil)))))))))))))) } ,
         43 => {  (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(62, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Nil))))))))))))))))) } ,
-        44 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(46, (&(Lists::Node::Nil)))))))))))))))))))) } ,
-        45 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(66, (&(Lists::Node::Cons(47, (&(Lists::Node::Nil))))))))))))))))))))))) } ,
+        44 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(63, (&(Lists::Node::Cons(64, (&(Lists::Node::Cons(46, (&(Lists::Node::Nil)))))))))))))))))))))))))) } ,
+        45 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(63, (&(Lists::Node::Cons(64, (&(Lists::Node::Cons(66, (&(Lists::Node::Cons(47, (&(Lists::Node::Nil))))))))))))))))))))))))))))) } ,
         46 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(66, (&(Lists::Node::Cons(68, (&(Lists::Node::Nil))))))))))))))))) } ,
         47 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(8, (&(Lists::Node::Nil))))))))))) } ,
         48 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(41, (&(Lists::Node::Cons(43, (&(Lists::Node::Cons(47, (&(Lists::Node::Nil))))))))))))))))))))))) } ,
@@ -412,13 +412,13 @@ module KernelRoleSpec {
         56 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(45, (&(Lists::Node::Cons(49, (&(Lists::Node::Cons(46, (&(Lists::Node::Cons(75, (&(Lists::Node::Nil)))))))))))))))))))))))))) } ,
         57 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(83, (&(Lists::Node::Cons(49, (&(Lists::Node::Cons(45, (&(Lists::Node::Nil))))))))))))))))) } ,
         58 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(83, (&(Lists::Node::Cons(49, (&(Lists::Node::Cons(45, (&(Lists::Node::Cons(47, (&(Lists::Node::Nil))))))))))))))))))))))) } ,
-        59 => {  (&(Lists::Node::Cons(37, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Nil))))))))))))))))) } ,
+        59 => {  (&(Lists::Node::Cons(37, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(63, (&(Lists::Node::Nil)))))))))))))))))))) } ,
         60 => {  (&(Lists::Node::Cons(37, (&(Lists::Node::Cons(29, (&(Lists::Node::Cons(39, (&(Lists::Node::Cons(38, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(88, (&(Lists::Node::Nil)))))))))))))))))))) } ,
         61 => {  (&(Lists::Node::Cons(29, (&(Lists::Node::Cons(8, (&(Lists::Node::Nil)))))))) } ,
         62 => {  (&(Lists::Node::Cons(37, (&(Lists::Node::Cons(29, (&(Lists::Node::Cons(39, (&(Lists::Node::Cons(38, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(91, (&(Lists::Node::Nil)))))))))))))))))))) } ,
         63 => {  (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(62, (&(Lists::Node::Cons(8, (&(Lists::Node::Nil))))))))))) } ,
-        64 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(46, (&(Lists::Node::Nil))))))))))))))))))))))) } ,
-        65 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(94, (&(Lists::Node::Cons(47, (&(Lists::Node::Nil)))))))))))))))))))))))))) } ,
+        64 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(63, (&(Lists::Node::Cons(64, (&(Lists::Node::Cons(46, (&(Lists::Node::Nil))))))))))))))))))))))))))))) } ,
+        65 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(4, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(65, (&(Lists::Node::Cons(63, (&(Lists::Node::Cons(64, (&(Lists::Node::Cons(94, (&(Lists::Node::Cons(47, (&(Lists::Node::Nil)))))))))))))))))))))))))))))))) } ,
         66 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(59, (&(Lists::Node::Cons(94, (&(Lists::Node::Cons(76, (&(Lists::Node::Cons(96, (&(Lists::Node::Nil))))))))))))))))))))))) } ,
         67 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(93, (&(Lists::Node::Cons(94, (&(Lists::Node::Cons(76, (&(Lists::Node::Cons(77, (&(Lists::Node::Cons(80, (&(Lists::Node::Cons(81, (&(Lists::Node::Cons(97, (&(Lists::Node::Nil)))))))))))))))))))))))))))))))) } ,
         68 => {  (&(Lists::Node::Cons(0, (&(Lists::Node::Cons(70, (&(Lists::Node::Cons(8, (&(Lists::Node::Cons(93, (&(Lists::Node::Cons(94, (&(Lists::Node::Cons(76, (&(Lists::Node::Cons(80, (&(Lists::Node::Cons(81, (&(Lists::Node::Cons(97, (&(Lists::Node::Cons(67, (&(Lists::Node::Nil)))))))))))))))))))))))))))))))) } ,
