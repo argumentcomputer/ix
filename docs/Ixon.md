@@ -1759,7 +1759,9 @@ specifications. The axioms field names further axioms, the leaves of a merkle
 tree, and the claim then holds in that theory extended by them. IxVM accepts
 a leaf only if it is a stored safe axiom record that the role table does not
 bind, and it typechecks every leaf with its closure, whether or not the
-claim's constants use it, under the claim's assumptions. The field is a
+claim's constants use it, under the claim's assumptions: a leaf the assumption
+tree also names is not checked, and the claim is conditional on it like on
+any assumption. The field is a
 separate commitment from `assumptions`, which names constants assumed
 well-typed and discharged by other claims; an axiom is never discharged by
 typing. A context is 65 bytes when there are no further axioms.

@@ -37,8 +37,11 @@ choices can still denote the same term.
 
 A claim that names user axioms (the context's axioms tree) also typechecks
 every leaf of that tree with its closure, whether or not the input or output
-uses it. This holds for `check` and `checkEnv` claims too. An assumed leaf is
-not checked, like any assumption.
+uses it. This holds for `check` and `checkEnv` claims too. A leaf that is also in
+the claim's assumption tree is not checked: like any assumption, the claim is
+conditional on it, and holds only if that leaf is accepted on its own. Sharded
+proving needs this, since a shard's assumptions can hold a user axiom that
+another shard owns and checks.
 
 The validator is `erased-lean-v2`, and the claim carries its context (the
 specification digest, the role binding's hash and the axioms beyond the
