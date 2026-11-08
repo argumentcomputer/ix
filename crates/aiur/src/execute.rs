@@ -203,6 +203,11 @@ impl<B: FieldBackend> Execution<B> {
     }
     deferred.heights.as_ref()?.get(args).copied()
   }
+  /// The function whose calls this record defers to other records, if any.
+  #[cfg(feature = "cuda")]
+  pub(crate) fn deferred_function(&self) -> Option<usize> {
+    self.deferred.as_ref().filter(|d| !d.calls.is_empty()).map(|d| d.function)
+  }
   pub(crate) fn is_deferred(
     &self,
     function: usize,

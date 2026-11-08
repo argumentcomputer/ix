@@ -13,7 +13,8 @@ use super::*;
 use crate::{
   Execution,
   trace::{
-    Action,
+    Action, RangeCounts,
+    depth::Kind as DepthKind,
     plan::device::{Constants, Encoded, Target},
   },
 };
@@ -25,6 +26,8 @@ const POLY_VAR: u32 = 1;
 const POLY_ADD: u32 = 2;
 const POLY_SUB: u32 = 3;
 const POLY_MUL: u32 = 4;
+// A function without a depth column.
+const NO_COLUMN: u32 = u32::MAX;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -33,6 +36,8 @@ struct AiurFunction {
   constants: *const u64,
   rows: *const u64,
   multiplicities: *const u64,
+  // Each query's height (depth pass), or null when untracked.
+  depths: *const u64,
   count: u64,
   first: u64,
   code_len: u32,
@@ -48,6 +53,7 @@ struct AiurFunction {
 struct AiurCallee {
   rows: *const u64,
   index: *const u32,
+  depths: *const u64,
   count: u64,
   mask: u32,
   inputs: u32,
@@ -114,6 +120,15 @@ unsafe extern "C" {
     rows: u64,
     height: u64,
     scratch: *mut u64,
+    error: *mut AiurPopulationError,
+  ) -> i32;
+  fn aiur_gpu_count_ranges(
+    device: i32,
+    circuit: *const AiurCircuit,
+    threads: u64,
+    rows: *mut u64,
+    scratch: *mut u64,
+    ranges: *mut u64,
     error: *mut AiurPopulationError,
   ) -> i32;
   fn aiur_gpu_error_string(status: i32) -> *const std::ffi::c_char;
@@ -195,6 +210,12 @@ pub(super) struct DevicePlans {
   /// Call targets: callee slot to function index.
   callees: Vec<usize>,
   pub(super) circuits: Vec<bool>,
+  /// Per circuit, the functions whose heights its depth slots read.
+  depth_callees: Vec<Vec<usize>>,
+  /// Per circuit, whether it has gap slots, whose limbs it counts.
+  gaps: Vec<bool>,
+  /// Words of the flat range-table count buffer.
+  range_words: usize,
 }
 
 fn map_kind(name: &str) -> Option<u32> {
@@ -232,17 +253,18 @@ fn polynomial(
   p: &Polynomial,
   constants: &mut Constants,
   out: &mut Vec<u32>,
+  column: &impl Fn(usize) -> usize,
 ) -> Option<()> {
   match p {
     Polynomial::Const(value) => {
       out.extend([POLY_CONST, constants.word(*value)? & 0x7fff_ffff]);
     },
-    Polynomial::Var(column) => {
-      out.extend([POLY_VAR, u32::try_from(*column).ok()?]);
+    Polynomial::Var(c) => {
+      out.extend([POLY_VAR, u32::try_from(column(*c)).ok()?]);
     },
     Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
-      polynomial(&xs[0], constants, out)?;
-      polynomial(&xs[1], constants, out)?;
+      polynomial(&xs[0], constants, out, column)?;
+      polynomial(&xs[1], constants, out, column)?;
       out.extend([
         match p {
           Polynomial::Add(_) => POLY_ADD,
@@ -285,12 +307,20 @@ impl DevicePlans {
     let mut constants = Constants::default();
     let mut callees = Vec::new();
     let mut slots = FxHashMap::default();
+    // Each range table's offset in the flat device count buffer.
+    let mut range_offsets = vec![];
+    let mut range_words = 0usize;
+    for table in &plan.depth.tables {
+      range_offsets.push(range_words);
+      range_words += 1 << table.width;
+    }
     let programs: Vec<_> = plan
       .fills
       .iter()
       .enumerate()
       .map(|(f, fill)| {
-        let placement = &backend.placements[plan.members[f]];
+        let chip = plan.members[f];
+        let placement = &backend.placements[chip];
         let steps = &plan.artifact.functions[f].steps;
         let mut call = |callable: usize| {
           if callable >= functions {
@@ -318,11 +348,60 @@ impl DevicePlans {
         let column = |c: usize| placement.columns[c];
         let Encoded { mut code, scratch, inputs, outputs } =
           fill.encode(&mut call, &mut hint, &column, &mut constants)?;
+        // Depth section (Track A, H1): the depth column, then each gap or
+        // external slot with its new columns, callees, enable and callee
+        // query, over the circuit's own columns.
+        let depth = &plan.depth.fills[chip];
+        code.push(match depth.column {
+          Some(c) => u32::try_from(column(c)).ok()?,
+          None => NO_COLUMN,
+        });
+        code.push(u32::try_from(depth.slots.len()).ok()?);
+        for slot in &depth.slots {
+          let columns: Vec<[usize; 3]> = match slot.kind {
+            DepthKind::Gap(first) => plan
+              .depth
+              .limbs
+              .iter()
+              .enumerate()
+              .map(|(i, &(width, table))| {
+                [column(first + i), width as usize, range_offsets[table]]
+              })
+              .collect(),
+            DepthKind::External(c) => vec![[column(c), 0, 0]],
+          };
+          code.push(u32::from(matches!(slot.kind, DepthKind::External(_))));
+          code.push(u32::try_from(columns.len()).ok()?);
+          for triple in columns {
+            for word in triple {
+              code.push(u32::try_from(word).ok()?);
+            }
+          }
+          code.push(u32::try_from(slot.callees.len()).ok()?);
+          for &callee in &slot.callees {
+            match call(callee)? {
+              Target::Call(id) => code.push(id),
+              Target::Map(_) => return None,
+            }
+          }
+          // The enable, then the callee query's arguments.
+          let mut tokens = vec![];
+          polynomial(&slot.enable, &mut constants, &mut tokens, &column)?;
+          code.push(u32::try_from(tokens.len() / 2).ok()?);
+          code.extend(tokens);
+          code.push(u32::try_from(slot.args.len()).ok()?);
+          for arg in &slot.args {
+            let mut tokens = vec![];
+            polynomial(arg, &mut constants, &mut tokens, &column)?;
+            code.push(u32::try_from(tokens.len() / 2).ok()?);
+            code.extend(tokens);
+          }
+        }
         code.push(u32::try_from(placement.selector).ok()?);
         code.push(u32::try_from(placement.writes.len()).ok()?);
         for write in &placement.writes {
           let mut tokens = vec![];
-          polynomial(&write.value, &mut constants, &mut tokens)?;
+          polynomial(&write.value, &mut constants, &mut tokens, &|c| c)?;
           code.push(u32::try_from(write.column).ok()?);
           code.push(u32::try_from(tokens.len() / 2).ok()?);
           code.extend(tokens);
@@ -337,7 +416,42 @@ impl DevicePlans {
         !members.is_empty() && members.iter().all(|&f| programs[f].is_some())
       })
       .collect();
-    Self { programs, constants: constants.values, callees, circuits }
+    // Functions whose heights each device circuit's depth slots read.
+    let depth_callees = backend
+      .members
+      .iter()
+      .map(|members| {
+        let mut read: Vec<usize> = members
+          .iter()
+          .flat_map(|&f| &plan.depth.fills[plan.members[f]].slots)
+          .flat_map(|slot| slot.callees.iter().copied())
+          .collect();
+        read.sort_unstable();
+        read.dedup();
+        read
+      })
+      .collect();
+    let gaps = backend
+      .members
+      .iter()
+      .map(|members| {
+        members.iter().any(|&f| {
+          plan.depth.fills[plan.members[f]]
+            .slots
+            .iter()
+            .any(|slot| matches!(slot.kind, DepthKind::Gap(_)))
+        })
+      })
+      .collect();
+    Self {
+      programs,
+      constants: constants.values,
+      callees,
+      circuits,
+      depth_callees,
+      gaps,
+      range_words,
+    }
   }
 }
 
@@ -347,6 +461,8 @@ pub(super) struct DeviceRecord {
   circuits: Vec<Option<AiurCircuit>>,
   heights: Vec<usize>,
   widths: Vec<usize>,
+  // Uses of the depth range tables by the device circuits' rows.
+  ranges: RangeCounts,
   _buffers: Vec<Buffer>,
 }
 // SAFETY: the raw pointers address device memory owned by `_buffers`.
@@ -417,14 +533,20 @@ impl DeviceRecord {
         return Err("function count reaches field characteristic".into());
       }
       let multiplicities = Buffer::upload(device, counts)?;
-      rows.insert(f, (buffer, multiplicities, stride));
+      let depths = table.depths();
+      let depths = if depths.is_empty() {
+        None
+      } else {
+        Some(Buffer::upload(device, &depths[..count])?)
+      };
+      rows.insert(f, (buffer, multiplicities, stride, depths));
     }
     // Callee input indexes.
     let mut callees = vec![];
     let mut indexes = vec![];
     for &f in &plans.callees {
       let (inputs, outputs) = tables[f].widths();
-      let (buffer, _, stride) = &rows[&f];
+      let (buffer, _, stride, depths) = &rows[&f];
       let count = tables[f].len();
       let size = (count.max(1) * 2).next_power_of_two();
       let mask =
@@ -448,6 +570,7 @@ impl DeviceRecord {
       callees.push(AiurCallee {
         rows: buffer.as_ptr(),
         index: index.as_ptr(),
+        depths: depths.as_ref().map_or(std::ptr::null(), |d| d.as_ptr()),
         count: count as u64,
         mask,
         inputs: inputs as u32,
@@ -462,8 +585,11 @@ impl DeviceRecord {
     let mut heights = vec![0; backend.system.circuits.len()];
     let mut widths = vec![0; backend.system.circuits.len()];
     let mut descriptors = vec![];
+    // A depth slot whose callee another record owns reads a supplied
+    // height the device does not hold: such circuits stay on the host.
+    let deferred = record.deferred_function();
     for (ci, &on) in plans.circuits.iter().enumerate() {
-      if !on {
+      if !on || deferred.is_some_and(|d| plans.depth_callees[ci].contains(&d)) {
         continue;
       }
       let mut members = vec![];
@@ -471,7 +597,7 @@ impl DeviceRecord {
       let mut circuit_scratch = 0;
       for &f in &backend.members[ci] {
         let program = plans.programs[f].as_ref().expect("encoded member");
-        let (buffer, multiplicities, stride) = &rows[&f];
+        let (buffer, multiplicities, stride, depths) = &rows[&f];
         let count = tables[f].len() as u64;
         members.push(AiurFunction {
           // SAFETY: offsets index the uploaded code.
@@ -479,6 +605,7 @@ impl DeviceRecord {
           constants: constants.as_ptr(),
           rows: buffer.as_ptr(),
           multiplicities: multiplicities.as_ptr(),
+          depths: depths.as_ref().map_or(std::ptr::null(), |d| d.as_ptr()),
           count,
           first,
           code_len: program.code.len() as u32,
@@ -512,16 +639,99 @@ impl DeviceRecord {
       widths[ci] = width;
       descriptors.push(member_buffer);
     }
+    let mut record = Self {
+      device,
+      circuits,
+      heights,
+      widths,
+      ranges: RangeCounts::default(),
+      _buffers: vec![],
+    };
+    record.ranges = record.count_ranges(backend, plans)?;
     buffers.push(code_buffer);
     buffers.push(constants);
-    for (_, (rows, multiplicities, _)) in rows {
+    for (_, (rows, multiplicities, _, depths)) in rows {
       buffers.push(rows);
       buffers.push(multiplicities);
+      buffers.extend(depths);
     }
     buffers.extend(indexes);
     buffers.push(callee_buffer);
     buffers.extend(descriptors);
-    Ok(Self { device, circuits, heights, widths, _buffers: buffers })
+    record._buffers = buffers;
+    Ok(record)
+  }
+
+  /// Uses of the depth range tables by the device circuits' rows, which
+  /// the host's fixed tables must count before any tile is generated:
+  /// one counting pass over every real row of each circuit with gap slots.
+  fn count_ranges<B: WitnessField>(
+    &self,
+    backend: &Backend<'_, '_, B>,
+    plans: &DevicePlans,
+  ) -> Result<RangeCounts, String> {
+    let counted: Vec<_> = (0..self.circuits.len())
+      .filter(|&ci| plans.gaps[ci] && self.circuits[ci].is_some())
+      .collect();
+    if counted.is_empty() || plans.range_words == 0 {
+      return Ok(RangeCounts::default());
+    }
+    let ranges = Buffer::upload(self.device, &vec![0u64; plans.range_words])?;
+    for ci in counted {
+      let circuit = self.circuits[ci].as_ref().expect("device circuit");
+      // One row buffer per thread, at most 2^24 words in all.
+      let threads = (((1u64 << 24) / u64::from(circuit.width).max(1)) / 128 * 128)
+        .clamp(128, 1 << 16);
+      let rows = Buffer::new(
+        self.device,
+        (threads * u64::from(circuit.width).max(1) * 8) as usize,
+      )?;
+      let scratch = Buffer::new(
+        self.device,
+        (threads * u64::from(circuit.scratch).max(1) * 8) as usize,
+      )?;
+      let error =
+        Buffer::upload(self.device, &[AiurPopulationError::default()])?;
+      // SAFETY: device pointers come from live buffers sized above.
+      check(
+        unsafe {
+          aiur_gpu_count_ranges(
+            self.device,
+            circuit,
+            threads,
+            rows.as_ptr(),
+            scratch.as_ptr(),
+            ranges.as_ptr(),
+            error.as_ptr(),
+          )
+        },
+        "GPU depth range counting",
+      )?;
+      self.check_error(ci, &error)?;
+    }
+    let mut flat = vec![0u64; plans.range_words];
+    // SAFETY: `ranges` holds `range_words` words.
+    check(
+      unsafe {
+        aiur_gpu_download(
+          self.device,
+          flat.as_mut_ptr().cast(),
+          ranges.as_ptr(),
+          flat.len() * 8,
+        )
+      },
+      "GPU depth range download",
+    )?;
+    Ok(RangeCounts::from_flat(
+      backend.plan.depth.tables.iter().map(|t| t.width),
+      &flat,
+    ))
+  }
+
+  /// The depth range-table uses of the device rows.
+  pub(super) fn ranges(&self) -> &RangeCounts {
+    &self.ranges
+  }
   }
 
   /// The padded height of a device circuit, if `ci` is one.
@@ -566,6 +776,11 @@ impl DeviceRecord {
       },
       "GPU population",
     )?;
+    self.check_error(ci, &error)
+  }
+
+  /// The first failure a population kernel recorded in `error`, if any.
+  fn check_error(&self, ci: usize, error: &Buffer) -> Result<(), String> {
     let mut status = [AiurPopulationError::default()];
     // SAFETY: `error` holds one value.
     check(
@@ -592,6 +807,7 @@ impl DeviceRecord {
           4 => "no table entry for map input",
           5 => "missing recorded callee",
           6 => "invalid hint input",
+          9 => "callee is not below its caller, or its depth gap is too wide",
           _ => "invalid device plan encoding",
         }
       ));

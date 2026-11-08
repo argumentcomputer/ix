@@ -129,7 +129,7 @@ fn recursive_entry_claims_a_depth_word() {
 
 #[test]
 fn owned_heights_are_longest_paths_over_records() {
-  let base: rustc_hash::FxHashMap<u32, u64> =
+  let base: FxHashMap<u32, u64> =
     [(0, 0), (1, 2), (2, 1), (3, 5)].into_iter().collect();
   let heights = owned_heights(&base, &[(1, 0, 2), (2, 1, 2), (3, 0, 1)]).unwrap();
   assert_eq!(heights[&0], 0);
@@ -175,7 +175,7 @@ fn deferred_heights_cross_records() {
   assert_eq!(first[0].query_depth(owned, &[6]), Some(1));
   assert_eq!(first[0].query_depth(owned, &[3]), Some(6));
   assert_eq!(first[1].query_depth(owned, &[5]), Some(3));
-  let mut base = rustc_hash::FxHashMap::default();
+  let mut base = FxHashMap::default();
   let mut edges = vec![];
   for (worker, record) in first.iter().enumerate() {
     for &n in &owners[worker] {
@@ -195,7 +195,7 @@ fn deferred_heights_cross_records() {
     first[worker]
       .deferred_calls()
       .map(|(key, _)| (key.to_vec(), heights[key]))
-      .collect::<rustc_hash::FxHashMap<_, _>>()
+      .collect::<FxHashMap<_, _>>()
   };
   let mut records = [execute(0, Some(supply(0))), execute(1, Some(supply(1)))];
   for (worker, record) in records.iter().enumerate() {

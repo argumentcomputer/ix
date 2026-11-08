@@ -72,7 +72,7 @@ fn prove(
 
 #[test]
 fn cyclic_memo_row_no_longer_forges_a_nonterminating_call() {
-  let (program, artifact) = super::depth::depth_fixture();
+  let (program, artifact) = depth::depth_fixture();
   // The honest executor refuses: the query is still in progress when it
   // recurses.
   let refused = program.execute(LOOP, vec![0]).unwrap_err();
@@ -103,7 +103,7 @@ fn cyclic_memo_row_no_longer_forges_a_nonterminating_call() {
 
 #[test]
 fn batch_verifier_rejects_the_cyclic_memo_row() {
-  let (program, artifact) = super::depth::depth_fixture();
+  let (program, artifact) = depth::depth_fixture();
   let plan = TracePlan::new(&program, artifact).unwrap();
   let backend = Backend::for_batch(&plan, parameters()).unwrap();
   for (rows, shards) in [(1, 1), (4, 2)] {
@@ -117,7 +117,8 @@ fn batch_verifier_rejects_the_cyclic_memo_row() {
         rows / shards,
         Retention::Retain,
       )
-      .unwrap_err();
+      .err()
+      .unwrap();
     assert!(error.contains("verification failed"), "{error}");
   }
 }

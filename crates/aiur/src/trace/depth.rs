@@ -51,30 +51,47 @@ impl RangeCounts {
     self
   }
 
+  /// Counts from one flat buffer holding every range table in turn.
+  #[cfg(feature = "cuda")]
+  pub(super) fn from_flat(widths: impl Iterator<Item = u32>, flat: &[u64]) -> Self {
+    let mut start = 0;
+    Self(
+      widths
+        .map(|width| {
+          let end = start + (1usize << width);
+          let counts = flat[start..end].to_vec();
+          start = end;
+          counts
+        })
+        .collect(),
+    )
+  }
+
   /// Uses of range table `table`, row by row (empty when unused).
   pub fn table(&self, table: usize) -> &[u64] {
     self.0.get(table).map_or(&[], Vec::as_slice)
   }
 }
 
-enum Kind {
+/// A slot's new columns: the first gap limb, or the external depth word.
+pub(super) enum Kind {
   Gap(usize),
   External(usize),
 }
 
-struct SlotFill {
-  kind: Kind,
-  enable: Polynomial,
+pub(super) struct SlotFill {
+  pub(super) kind: Kind,
+  pub(super) enable: Polynomial,
   /// The send's arguments without its final depth word: the callee query.
-  args: Vec<Polynomial>,
+  pub(super) args: Vec<Polynomial>,
   /// The functions whose rows the callee circuit holds.
-  callees: Vec<usize>,
+  pub(super) callees: Vec<usize>,
 }
 
-/// One circuit's depth columns.
+/// One circuit's depth columns. Exact slots need none.
 pub(super) struct DepthFill {
-  column: Option<usize>,
-  slots: Vec<SlotFill>,
+  pub(super) column: Option<usize>,
+  pub(super) slots: Vec<SlotFill>,
 }
 
 impl DepthFill {
@@ -93,7 +110,7 @@ pub(super) struct RangeTable {
 pub(super) struct DepthPlan {
   pub fills: Vec<DepthFill>,
   /// Per limb, low first: its width and its range table.
-  limbs: Vec<(u32, usize)>,
+  pub(super) limbs: Vec<(u32, usize)>,
   pub tables: Vec<RangeTable>,
   bits: u32,
 }
