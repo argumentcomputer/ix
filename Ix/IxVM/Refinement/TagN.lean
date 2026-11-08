@@ -1,23 +1,29 @@
-import Ix.IxVM.Refinement.Mirror
-import IxVM.Checked.Lookup
+import Ix.IxVM.Refinement.Mirrors.TagN
 import Ix.IxVM.Refinement.Statement
 
 /-! # The TagN slice: IxVM's TagN decoder against IxC's `Ixon.getTagN`
 
 Track B, Phase 3's first vertical slice (`plans/ixvm-certification-gap.md`).
-Mirror lemmas for the functions `IxonDeserialize::get_tagn0` calls, in the
-checked source's world, read off their bodies with the helper library
-(`Ix.IxVM.Refinement.Mirror`), and the refinement of `Ixon.getTagN 0`.
+The mechanical layer is generated (`Ix.IxVM.Refinement.Mirrors.TagN`: a
+mirror per function and its lemma `of_eval`, every derivation is a run of the
+mirror). This module is the creative layer on top of it:
 
-* Byte maps: `rawSub_row`, `rawAdd_row`, `fromField_row` (the static
-  tables' rows, from the table generator and `tablesChecked`), with the
-  facts that they are maps, not functions (`rawSub_none`, …).
-* Mirrors: `rawLt`, `lessThan`, `toField`. -/
+* the byte maps' rows (`rawSub_row`, `rawAdd_row`, `fromField_row`), from the
+  table generator and `tablesChecked`;
+* `getU64le_complete`: the lemma of the one recursive function,
+  `get_u64_le`, by induction on its byte count;
+* what the mirrors compute (`*_run`);
+* the refinements of IxC's `Ixon.getTagN 0`, `2` and `4` on the one- and two-byte
+  rungs (`getTagN0_refines`, `getTagN2_refines`, `getTagN4_refines`). The wide rungs
+  (`get_tagn_wide`: `get_u64_le` and `UInt64::add`) have generated mirrors and lemmas but no
+  refinement yet. -/
 
 namespace IxVM.Refinement.TagN
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM.Checked (F)
+
+set_option linter.unusedSimpArgs false
 
 /-- The checked source's world. -/
 abbrev W : World F := IxVM.Checked.source.world
@@ -107,140 +113,16 @@ theorem fromField_row {x : Nat} (hx : x < 256) :
   simpa [Constant.toValue, Value.mapAddress, show fromFieldMap.name = "UInt8::from_field" from rfl, IxVM.Checked.source]
     using looked
 
-/-! ## Maps are not functions -/
-
-theorem rawSub_none : IxVM.Checked.source.program.sourceFunction? "UInt8::raw_sub" = none :=
-  Program.sourceFunction?_of_key
-    (IxVM.Checked.mapKeys_fresh _ (List.getElem_mem (l := IxVM.Checked.maps) (n := 5) (by decide)))
-    (head_ne_of_bytes (by decide +kernel))
-
-theorem rawAdd_none : IxVM.Checked.source.program.sourceFunction? "UInt8::raw_add" = none :=
-  Program.sourceFunction?_of_key
-    (IxVM.Checked.mapKeys_fresh _ (List.getElem_mem (l := IxVM.Checked.maps) (n := 4) (by decide)))
-    (head_ne_of_bytes (by decide +kernel))
-
-theorem fromField_none : IxVM.Checked.source.program.sourceFunction? "UInt8::from_field" = none :=
-  Program.sourceFunction?_of_key
-    (IxVM.Checked.mapKeys_fresh _ (List.getElem_mem (l := IxVM.Checked.maps) (n := 0) (by decide)))
-    (head_ne_of_bytes (by decide +kernel))
-
-/-! ## Mirrors of the byte helpers -/
-
-theorem instanceName_plain (name : String) : instanceName [] name (some []) = name := by
-  simp [instanceName, Instance.symbol]
-
-/-- `UInt8::raw_lt(a, b)`: the borrow of `a - b`. -/
-theorem rawLt {a b : Nat} (ha : a < 256) (hb : b < 256) {h h' : Heap F} {r : SourceValue F}
-    (ev : EvalFn W "UInt8::raw_lt" [.field (a : F), .field (b : F)] h r h') :
-    r = .field ((if a < b then 1 else 0 : Nat) : F) ∧ h' = h := by
-  have body := ev.function_inv IxVM.Checked.Lookup.«UInt8::raw_lt»
-    (by simp [IxVM.Checked.Fn.«UInt8::raw_lt», ControlLower.hasControl])
-  simp only [IxVM.Checked.Fn.«UInt8::raw_lt»] at body
-  obtain ⟨input, middle, bindings, value, matched, rest⟩ := body.letValue_inv
-  obtain ⟨values, m1, args, callee⟩ := value.call_inv
-  obtain ⟨v1, vs, m2, rfl, e1, args⟩ := args.cons_inv
-  obtain ⟨v2, vs, m3, rfl, e2, args⟩ := args.cons_inv
-  obtain ⟨rfl, rfl⟩ := args.nil_inv
-  obtain ⟨l1, rfl⟩ := e1.var_inv
-  obtain ⟨l2, rfl⟩ := e2.var_inv
-  simp at l1 l2
-  subst l1 l2
-  rw [instanceName_plain] at callee
-  obtain ⟨rfl, rfl⟩ := callee.map_inv rawSub_none (rawSub_row ha hb)
-  simp [Constant.toValue, Value.mapAddress, matchPattern_tuple, matchListWith,
-    matchPattern_wildcard, matchPattern_bind, pure, Except.pure, bind, Except.bind] at matched
-  subst matched
-  obtain ⟨l, rfl⟩ := rest.var_inv
-  simp at l
-  subst l
-  simp
-
-/-- `UInt8::less_than(a, b)`: `1` if `a < b`, else `0`. -/
-theorem lessThan {a b : Nat} (ha : a < 256) (hb : b < 256) {h h' : Heap F} {r : SourceValue F}
-    (ev : EvalFn W "UInt8::less_than" [.field (a : F), .field (b : F)] h r h') :
-    r = .field ((if a < b then 1 else 0 : Nat) : F) ∧ h' = h := by
-  have body := ev.function_inv IxVM.Checked.Lookup.«UInt8::less_than»
-    (by simp [IxVM.Checked.Fn.«UInt8::less_than», ControlLower.hasControl])
-  simp only [IxVM.Checked.Fn.«UInt8::less_than»] at body
-  obtain ⟨values, m1, args, callee⟩ := body.call_inv
-  obtain ⟨v1, vs, m2, rfl, e1, args⟩ := args.cons_inv
-  obtain ⟨v2, vs, m3, rfl, e2, args⟩ := args.cons_inv
-  obtain ⟨rfl, rfl⟩ := args.nil_inv
-  obtain ⟨l1, rfl⟩ := e1.var_inv
-  obtain ⟨l2, rfl⟩ := e2.var_inv
-  simp at l1 l2
-  subst l1 l2
-  rw [instanceName_plain] at callee
-  exact rawLt ha hb callee
-
-/-- `UInt8::to_field(x)`: `x`. -/
-theorem toField {x : F} {h h' : Heap F} {r : SourceValue F}
-    (ev : EvalFn W "UInt8::to_field" [.field x] h r h') : r = .field x ∧ h' = h := by
-  have body := ev.function_inv IxVM.Checked.Lookup.«UInt8::to_field»
-    (by simp [IxVM.Checked.Fn.«UInt8::to_field», ControlLower.hasControl])
-  simp only [IxVM.Checked.Fn.«UInt8::to_field»] at body
-  obtain ⟨l, rfl⟩ := body.var_inv
-  simp at l
-  subst l
-  exact ⟨rfl, rfl⟩
-
-/-! ## Constants -/
-
-theorem global_literal {types : Types} {locals : Environment F Nat} {name : String} {x : F}
-    (hc : W.constant name .field = .ok (.literal x)) {before after : Heap F} {r : SourceValue F}
-    (h : EvalExpr W types locals (.global name (some .field)) before r after) :
-    r = .field x ∧ after = before := by
-  obtain ⟨pattern, body, lookup, interpreted, value⟩ := h.global_inv
-  simp only [Ty.subst, hc, Except.ok.injEq] at lookup
-  subst lookup
-  simp only [Consts.toExpr, pure, Except.pure, Except.ok.injEq] at interpreted
-  subst interpreted
-  exact value.literal_inv
-
-theorem byte0 : W.constant "UInt8::BYTE_0" .field = .ok (.literal 0) :=
-  eq_of_isLiteral (by decide +kernel)
-
-theorem byte128 : W.constant "UInt8::BYTE_128" .field = .ok (.literal 128) :=
-  eq_of_isLiteral (by decide +kernel)
-
 /-! ## The byte stream -/
 
 /-- `Lists::Node<UInt8::U8>`'s constructor name is the byte-stream enum. -/
 theorem node_ctor : constructorName [] (.named "Lists::Node" [.field]) = byteStreamEnum := by
   decide +kernel
 
-/-- **Reading a byte off the stream**: the `let Cons(byte, s) = load(stream)`
-every TagN reader starts with binds the head byte and the tail pointer. -/
-theorem readCons {locals : Environment F Nat} {stream : SourceValue F} {byte s : String}
-    {rest : Aiur.Generic.Expr F} {heap h' : Heap F} {r : SourceValue F} {bytes : List UInt8}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
-    (look : locals.find? (·.1 == "stream") = some ("stream", stream))
-    (ev : EvalExpr W [] locals (.letValue
-      (.construct (.named "Lists::Node" [.field]) "Cons" [.bind byte, .bind s])
-      (.load (.var "stream")) rest) heap r h') :
-    ∃ b tail tailPtr, bytes = b :: tail ∧
-      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap tail tailPtr ∧
-      EvalExpr W [] ([(byte, .field (b.toNat : F)), (s, tailPtr)] ++ locals) rest heap r h' := by
-  obtain ⟨input, middle, bindings, value, matched, body⟩ := ev.letValue_inv
-  obtain ⟨p, pointer, loaded⟩ := value.load_inv
-  obtain ⟨l, rfl⟩ := pointer.var_inv
-  rw [look] at l
-  simp only [Option.some.injEq, Prod.mk.injEq, true_and] at l
-  subst l
-  cases rep with
-  | nil cell =>
-    simp [loadValue, cell, Value.type, bind, Except.bind, pure, Except.pure] at loaded
-    subst loaded
-    simp [matchPattern_construct, node_ctor] at matched
-  | cons cell headRep tailRep =>
-    simp [loadValue, cell, Value.type, bind, Except.bind, pure, Except.pure] at loaded
-    subst loaded
-    simp only [Aiur.Library.RepU8] at headRep
-    subst headRep
-    simp [matchPattern_construct, node_ctor, matchListWith, matchPattern_bind, bind, Except.bind,
-      pure, Except.pure] at matched
-    subst matched
-    exact ⟨_, _, _, rfl, tailRep, body⟩
+theorem loadValue_cell {heap : Heap F} {addr : Nat} {c : String} {xs : List (SourceValue F)}
+    (cell : heap[addr]? = some (.construct byteStreamEnum c xs)) :
+    loadValue heap (.ptr (.enum byteStreamEnum) addr) = .ok (.construct byteStreamEnum c xs) := by
+  simp [loadValue, cell, Value.type, bind, Except.bind, pure, Except.pure]
 
 /-! ## Little-endian words -/
 
@@ -264,212 +146,6 @@ theorem u64Value_two {x y : Nat} (hx : x < 256) (hy : y < 256) :
     show (x + 256 * y) / 72057594037927936 % 256 = 0 by omega]
   simp
 
-/-- Arguments that are all `UInt8::BYTE_0` evaluate to zeros. -/
-theorem args_zeros {locals : Environment F Nat} :
-    ∀ {es : List (Aiur.Generic.Expr F)}, (∀ e ∈ es, e = .global "UInt8::BYTE_0" (some .field)) →
-      ∀ {vs : List (SourceValue F)} {before after : Heap F},
-        EvalArgs W [] locals es before vs after → vs = es.map (fun _ => .field 0) ∧ after = before
-  | [], _, _, _, _, h => by obtain ⟨rfl, rfl⟩ := h.nil_inv; exact ⟨rfl, rfl⟩
-  | e :: es, all, _, _, _, h => by
-    obtain ⟨v, vs, middle, rfl, head, tail⟩ := h.cons_inv
-    rw [all e (by simp)] at head
-    obtain ⟨rfl, rfl⟩ := global_literal byte0 head
-    obtain ⟨rfl, rfl⟩ := args_zeros (fun x hx => all x (by simp [hx])) tail
-    exact ⟨rfl, rfl⟩
-
-/-! ## The TagN readers -/
-
-/-- **`IxonDeserialize::get_tagn_tail(q, h, stream)` with `q < h`**: the
-two-byte rung, `2h + 256q + lo` for the next byte `lo`. -/
-theorem tagnTail_short {q hh : Nat} (hq : q < hh) (hh' : hh < 128) {stream r : SourceValue F}
-    {heap h' : Heap F} {bytes : List UInt8}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
-    (ev : EvalFn W "IxonDeserialize::get_tagn_tail" [.field (q : F), .field (hh : F), stream]
-      heap r h') :
-    h' = heap ∧ ∃ lo tail tailPtr, bytes = lo :: tail ∧
-      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap tail tailPtr ∧
-      r = .tuple [u64Value (2 * hh + q * 256 + lo.toNat), tailPtr] := by
-  have body := ev.function_inv IxVM.Checked.Lookup.«IxonDeserialize::get_tagn_tail»
-    (by simp [IxVM.Checked.Fn.«IxonDeserialize::get_tagn_tail», ControlLower.hasControl])
-  simp only [IxVM.Checked.Fn.«IxonDeserialize::get_tagn_tail»] at body
-  obtain ⟨input, middle, bindings, arm, value, selected, branch⟩ := body.matchValue_inv
-  -- the borrow of `q - h`
-  obtain ⟨values, m1, args, callee⟩ := value.call_inv
-  obtain ⟨v1, vs, m2, rfl, e1, args⟩ := args.cons_inv
-  obtain ⟨v2, vs, m3, rfl, e2, args⟩ := args.cons_inv
-  obtain ⟨rfl, rfl⟩ := args.nil_inv
-  obtain ⟨l1, rfl⟩ := e1.var_inv
-  obtain ⟨l2, rfl⟩ := e2.var_inv
-  simp at l1 l2
-  subst l1 l2
-  rw [instanceName_plain] at callee
-  obtain ⟨rfl, rfl⟩ := rawLt (by omega) (by omega) callee
-  clear e1 e2 callee
-  simp [hq, SourceSemantics.selectArm, matchPattern_literal, bind, Except.bind, pure, Except.pure] at selected
-  obtain ⟨rfl, rfl⟩ := selected
-  -- read the low byte
-  obtain ⟨lo, tail, tailPtr, rfl, tailRep, body⟩ := readCons rep (by simp) branch
-  refine ⟨?_, lo, tail, tailPtr, rfl, tailRep, ?_⟩ <;> clear rep
-  all_goals
-    obtain ⟨sum, m4, bnds, pairs, matched, rest⟩ := body.letValue_inv
-    obtain ⟨values, m5, args, callee⟩ := pairs.call_inv
-    obtain ⟨v1, vs, m6, rfl, e1, args⟩ := args.cons_inv
-    obtain ⟨v2, vs, m7, rfl, e2, args⟩ := args.cons_inv
-    obtain ⟨rfl, rfl⟩ := args.nil_inv
-    -- `to_field(lo)`
-    obtain ⟨ws, m8, wargs, wcallee⟩ := e1.call_inv
-    obtain ⟨w1, ws', m9, rfl, we1, wargs⟩ := wargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := wargs.nil_inv
-    obtain ⟨l3, rfl⟩ := we1.var_inv
-    simp at l3
-    subst l3
-    rw [instanceName_plain] at wcallee
-    obtain ⟨rfl, rfl⟩ := toField wcallee
-    -- `2 * h`
-    obtain ⟨x, y, m10, ex, ey, op⟩ := e2.binary_inv
-    obtain ⟨rfl, rfl⟩ := ex.literal_inv
-    obtain ⟨l4, rfl⟩ := ey.var_inv
-    simp at l4
-    subst l4
-    simp only [evalBinOp, Except.ok.injEq] at op
-    subst op
-    rw [instanceName_plain, show (2 : F) * (hh : F) = ((2 * hh : Nat) : F) by push_cast; ring]
-      at callee
-    obtain ⟨rfl, rfl⟩ := callee.map_inv rawAdd_none (rawAdd_row lo.toNat_lt (by omega))
-    simp [Constant.toValue, Value.mapAddress, matchPattern_tuple, matchListWith,
-      matchPattern_bind, pure, Except.pure, bind, Except.bind] at matched
-    subst matched
-    -- the result
-    obtain ⟨items, rargs, rfl⟩ := rest.tuple_inv
-    obtain ⟨word, ptr, m11, rfl, eword, rargs⟩ := rargs.cons_inv
-    obtain ⟨ptr', none', m12, rfl, eptr, rargs⟩ := rargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := rargs.nil_inv
-    obtain ⟨l5, rfl⟩ := eptr.var_inv
-    simp at l5
-    subst l5
-    obtain ⟨bytes8, wargs, rfl⟩ := eword.array_inv
-    obtain ⟨b0, bs, m13, rfl, eb0, wargs⟩ := wargs.cons_inv
-    obtain ⟨b1, bs, m14, rfl, eb1, wargs⟩ := wargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := args_zeros (by simp) wargs
-    obtain ⟨l6, rfl⟩ := eb0.var_inv
-    simp at l6
-    subst l6
-    -- `from_field(q + to_field(carry))`
-    obtain ⟨fs, m15, fargs, fcallee⟩ := eb1.call_inv
-    obtain ⟨f1, fs', m16, rfl, fe1, fargs⟩ := fargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := fargs.nil_inv
-    obtain ⟨x', y', m17, ex', ey', op'⟩ := fe1.binary_inv
-    obtain ⟨l7, rfl⟩ := ex'.var_inv
-    simp at l7
-    subst l7
-    obtain ⟨cs, m18, cargs, ccallee⟩ := ey'.call_inv
-    obtain ⟨c1, cs', m19, rfl, ce1, cargs⟩ := cargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := cargs.nil_inv
-    obtain ⟨l8, rfl⟩ := ce1.var_inv
-    simp at l8
-    subst l8
-    rw [instanceName_plain] at ccallee
-    obtain ⟨rfl, rfl⟩ := toField ccallee
-    simp only [evalBinOp, Except.ok.injEq] at op'
-    subst op'
-    rw [instanceName_plain, show ((q : Nat) : F) + (((lo.toNat + 2 * hh) / 256 : Nat) : F) =
-      ((q + (lo.toNat + 2 * hh) / 256 : Nat) : F) by push_cast; ring] at fcallee
-    have hlo := lo.toNat_lt
-    obtain ⟨rfl, rfl⟩ := fcallee.map_inv fromField_none (fromField_row (by omega))
-  · rfl
-  · rw [show 2 * hh + q * 256 + lo.toNat =
-        (lo.toNat + 2 * hh) % 256 + 256 * (q + (lo.toNat + 2 * hh) / 256) by omega,
-      u64Value_two (Nat.mod_lt _ (by omega)) (by omega)]
-    simp [Constant.toValue, Value.mapAddress]
-
-/-- **`IxonDeserialize::get_tagn0(stream)` on its one- and two-byte rungs**:
-a first byte `b` below `128` is the value; a first byte in `[128, 192)` and the
-next byte `lo` give `128 + 256 (b - 128) + lo`. The heap is unchanged. -/
-theorem tagn0 {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
-    (narrow : ∀ b ∈ bytes.head?, b.toNat < 192)
-    (ev : EvalFn W "IxonDeserialize::get_tagn0" [stream] heap r h') :
-    h' = heap ∧ ∃ b rest, bytes = b :: rest ∧
-      ((b.toNat < 128 ∧ ∃ restPtr, Aiur.Library.Bytes.RepByteStream byteStreamEnum heap rest restPtr ∧
-          r = .tuple [u64Value b.toNat, restPtr]) ∨
-        (128 ≤ b.toNat ∧ ∃ lo rest' restPtr, rest = lo :: rest' ∧
-          Aiur.Library.Bytes.RepByteStream byteStreamEnum heap rest' restPtr ∧
-          r = .tuple [u64Value (128 + (b.toNat - 128) * 256 + lo.toNat), restPtr])) := by
-  have body := ev.function_inv IxVM.Checked.Lookup.«IxonDeserialize::get_tagn0»
-    (by simp [IxVM.Checked.Fn.«IxonDeserialize::get_tagn0», ControlLower.hasControl])
-  simp only [IxVM.Checked.Fn.«IxonDeserialize::get_tagn0»] at body
-  obtain ⟨b, tail, tailPtr, rfl, tailRep, body⟩ := readCons rep (by simp) body
-  have hb := b.toNat_lt
-  have hnarrow : b.toNat < 192 := narrow b (by simp)
-  obtain ⟨input, middle, bindings, arm, value, selected, branch⟩ := body.matchValue_inv
-  -- `less_than(byte, BYTE_128)`
-  obtain ⟨values, m1, args, callee⟩ := value.call_inv
-  obtain ⟨v1, vs, m2, rfl, e1, args⟩ := args.cons_inv
-  obtain ⟨v2, vs, m3, rfl, e2, args⟩ := args.cons_inv
-  obtain ⟨rfl, rfl⟩ := args.nil_inv
-  obtain ⟨l1, rfl⟩ := e1.var_inv
-  simp at l1
-  subst l1
-  obtain ⟨rfl, rfl⟩ := global_literal byte128 e2
-  rw [instanceName_plain, show (128 : F) = ((128 : Nat) : F) by simp] at callee
-  obtain ⟨rfl, rfl⟩ := lessThan hb (by omega) callee
-  by_cases small : b.toNat < 128
-  · -- one byte
-    simp [small, SourceSemantics.selectArm, matchPattern_literal, bind, Except.bind, pure, Except.pure] at selected
-    obtain ⟨rfl, rfl⟩ := selected
-    obtain ⟨items, rargs, rfl⟩ := branch.tuple_inv
-    obtain ⟨word, ptr, m4, rfl, eword, rargs⟩ := rargs.cons_inv
-    obtain ⟨ptr', none', m5, rfl, eptr, rargs⟩ := rargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := rargs.nil_inv
-    obtain ⟨l2, rfl⟩ := eptr.var_inv
-    simp at l2
-    subst l2
-    obtain ⟨bytes8, wargs, rfl⟩ := eword.array_inv
-    obtain ⟨b0, bs, m6, rfl, eb0, wargs⟩ := wargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := args_zeros (by simp) wargs
-    obtain ⟨l3, rfl⟩ := eb0.var_inv
-    simp at l3
-    subst l3
-    refine ⟨rfl, b, tail, rfl, .inl ⟨small, tailPtr, tailRep, ?_⟩⟩
-    rw [show b.toNat = b.toNat + 256 * 0 by omega, u64Value_two hb (by omega)]
-    simp
-  · -- two bytes
-    have one_ne : (1 : F) ≠ 0 := one_ne_zero
-    simp [small, SourceSemantics.selectArm, matchPattern_literal, one_ne, bind, Except.bind, pure,
-      Except.pure] at selected
-    obtain ⟨rfl, rfl⟩ := selected
-    clear e1 e2 callee
-    obtain ⟨values, m4, targs, callee⟩ := branch.call_inv
-    obtain ⟨v1, vs, m5, rfl, t1, targs⟩ := targs.cons_inv
-    obtain ⟨v2, vs, m6, rfl, t2, targs⟩ := targs.cons_inv
-    obtain ⟨v3, vs, m7, rfl, t3, targs⟩ := targs.cons_inv
-    obtain ⟨rfl, rfl⟩ := targs.nil_inv
-    -- `to_field(byte) - 128`
-    obtain ⟨x, y, m8, ex, ey, op⟩ := t1.binary_inv
-    obtain ⟨ws, m9, wargs, wcallee⟩ := ex.call_inv
-    obtain ⟨w1, ws', m10, rfl, we1, wargs⟩ := wargs.cons_inv
-    obtain ⟨rfl, rfl⟩ := wargs.nil_inv
-    obtain ⟨l4, rfl⟩ := we1.var_inv
-    simp at l4
-    subst l4
-    rw [instanceName_plain] at wcallee
-    obtain ⟨rfl, rfl⟩ := toField wcallee
-    obtain ⟨rfl, rfl⟩ := ey.literal_inv
-    simp only [evalBinOp, Except.ok.injEq] at op
-    subst op
-    obtain ⟨rfl, rfl⟩ := t2.literal_inv
-    obtain ⟨l5, rfl⟩ := t3.var_inv
-    simp at l5
-    subst l5
-    rw [instanceName_plain,
-      show ((b.toNat : Nat) : F) - 128 = ((b.toNat - 128 : Nat) : F) by
-        rw [Nat.cast_sub (by omega)]; simp,
-      show (64 : F) = ((64 : Nat) : F) by simp] at callee
-    obtain ⟨rfl, lo, rest', restPtr, rfl, restRep, rfl⟩ :=
-      tagnTail_short (q := b.toNat - 128) (hh := 64) (by omega) (by omega) tailRep callee
-    refine ⟨rfl, b, lo :: rest', rfl, .inr ⟨by omega, lo, rest', restPtr, rfl, restRep, ?_⟩⟩
-    rw [show 2 * 64 + (b.toNat - 128) * 256 + lo.toNat = 128 + (b.toNat - 128) * 256 + lo.toNat by
-      omega]
 
 /-! ## IxC's reader on the same bytes -/
 
@@ -509,6 +185,237 @@ theorem getTagN0_two {b lo : UInt8} {rest : List UInt8} (lower : 128 ≤ b.toNat
     ite_false, show b.toNat - 128 < 64 by omega, ite_true, List.getElem_cons_zero]
   simp [EStateM.bind, read1, pure, EStateM.pure, Ixon.tagNEnd1, Nat.div_eq_of_lt hb]
 
+
+/-! ## `get_u64_le`, the recursive function -/
+
+/-- The byte count `get_u64_le` recurses on, as a number. -/
+def u64Measure : SourceValue F → Nat
+  | .field n => n.val
+  | _ => 0
+
+theorem u64Measure_dec {x y : SourceValue F} (hc : x ≠ .field 0)
+    (op : evalBinOp .sub x (.field 1) = .ok y) : u64Measure y < u64Measure x := by
+  cases x with
+  | field n =>
+    simp only [evalBinOp, Except.ok.injEq] at op
+    subst op
+    have hn : n ≠ 0 := fun e => hc (by rw [e])
+    have hv : n.val ≠ 0 := by rwa [ne_eq, ZMod.val_eq_zero]
+    have hsum : (n - 1) + 1 = n := by ring
+    have key := congrArg ZMod.val hsum
+    rw [ZMod.val_add, ZMod.val_one] at key
+    have hlt := ZMod.val_lt (n - 1)
+    simp only [u64Measure]
+    by_cases h : (n - 1).val + 1 < Aiur.Library.U32.Goldilocks.modulus
+    · rw [Nat.mod_eq_of_lt h] at key
+      omega
+    · have heq : (n - 1).val + 1 = Aiur.Library.U32.Goldilocks.modulus := by omega
+      rw [heq, Nat.mod_self] at key
+      omega
+  | _ => simp [evalBinOp] at op
+
+/-- **Every derivation of `get_u64_le` is a run of its mirror**, by strong
+induction on the byte count. The script is the generator's, with the
+recursive call taken from the induction hypothesis. -/
+theorem getU64le_complete : Mirrors.«IxonDeserialize::get_u64_le».Complete := by
+  suffices H : ∀ m, ∀ {x_stream x_num_bytes : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+      u64Measure x_num_bytes = m →
+      EvalFn W "IxonDeserialize::get_u64_le" [x_stream, x_num_bytes] h r h' →
+      ∃ k0, ∀ k ≥ k0, Mirrors.«IxonDeserialize::get_u64_le» k h x_stream x_num_bytes = some (r, h') by
+    intro x_stream x_num_bytes h h' r ev
+    exact H _ rfl ev
+  intro m
+  induction m using Nat.strong_induction_on with
+  | _ m ih =>
+  intro x_stream x_num_bytes h h' r hm ev
+  have body := ev.function_inv IxVM.Checked.Lookup.«IxonDeserialize::get_u64_le»
+    (by simp [IxVM.Checked.Fn.«IxonDeserialize::get_u64_le», ControlLower.hasControl])
+  simp only [IxVM.Checked.Fn.«IxonDeserialize::get_u64_le»] at body
+  obtain ⟨v1, m2, bs3, body4, d5, sel6, d7⟩ := body.matchValue_inv
+  obtain ⟨l8, rfl⟩ := d5.var_inv
+  simp at l8
+  subst l8
+  rcases selectArm_literal_inv sel6 with ⟨hc9, rfl, rfl⟩ | ⟨hc9, sel10⟩
+  · obtain ⟨vs11, args12, rfl⟩ := d7.tuple_inv
+    obtain ⟨v13, vs14, m15, rfl, d16, args17⟩ := args12.cons_inv
+    obtain ⟨v18, d19, rfl⟩ := d16.repeat_inv
+    obtain ⟨rfl, rfl⟩ := d19.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨v20, vs21, m22, rfl, d23, args24⟩ := args17.cons_inv
+    obtain ⟨l25, rfl⟩ := d23.var_inv
+    simp at l25
+    subst l25
+    obtain ⟨rfl, rfl⟩ := args24.nil_inv
+    refine ⟨1, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_u64_le», hc9]
+  · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel10
+    obtain ⟨v26, m27, bs28, d29, mt30, d31⟩ := d7.letValue_inv
+    obtain ⟨p32, d33, ld34⟩ := d29.load_inv
+    obtain ⟨l35, rfl⟩ := d33.var_inv
+    simp at l35
+    subst l35
+    obtain ⟨ys36, hp37, hl38, ml39⟩ := matchPattern_construct_inv mt30
+    rcases ys36 with _ | ⟨y40, _ | ⟨y41, _ | ⟨_, _⟩⟩⟩ <;> simp at hl38
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure,
+      Except.pure] at ml39
+    subst ml39
+    obtain ⟨v42, m43, bs44, d45, mt46, d47⟩ := d31.letValue_inv
+    obtain ⟨vs48, m49, args50, callee51⟩ := d45.call_inv
+    obtain ⟨v52, vs53, m54, rfl, d55, args56⟩ := args50.cons_inv
+    obtain ⟨l57, rfl⟩ := d55.var_inv
+    simp at l57
+    subst l57
+    obtain ⟨v58, vs59, m60, rfl, d61, args62⟩ := args56.cons_inv
+    obtain ⟨x63, y64, m65, d66, d67, op68⟩ := d61.binary_inv
+    obtain ⟨l69, rfl⟩ := d66.var_inv
+    simp at l69
+    subst l69
+    obtain ⟨rfl, rfl⟩ := d67.literal_inv
+    obtain ⟨rfl, rfl⟩ := args62.nil_inv
+    rw [instanceName_plain_some] at callee51
+    have dec : u64Measure v58 < m := by rw [← hm]; exact u64Measure_dec hc9 op68
+    obtain ⟨k70, hk71⟩ := ih _ dec rfl callee51
+    obtain ⟨ys72, hp73, hl74, ml75⟩ := matchPattern_tuple_inv mt46
+    rcases ys72 with _ | ⟨y76, _ | ⟨y77, _ | ⟨_, _⟩⟩⟩ <;> simp at hl74
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure,
+      Except.pure] at ml75
+    subst ml75
+    obtain ⟨v78, m79, bs80, d81, mt82, d83⟩ := d47.letValue_inv
+    obtain ⟨l84, rfl⟩ := d81.var_inv
+    simp at l84
+    subst l84
+    obtain ⟨ys85, hp86, hl87, ml88⟩ := matchPattern_array_inv mt82
+    rcases ys85 with _ | ⟨z0, _ | ⟨z1, _ | ⟨z2, _ | ⟨z3, _ | ⟨z4, _ | ⟨z5, _ | ⟨z6, _ | ⟨z7, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;>
+      simp at hl87
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure,
+      Except.pure] at ml88
+    subst ml88
+    obtain ⟨vs89, args90, rfl⟩ := d83.tuple_inv
+    obtain ⟨w91, ws92, m93, rfl, f94, args95⟩ := args90.cons_inv
+    obtain ⟨vs96, args97, rfl⟩ := f94.array_inv
+    obtain ⟨u0, us0, mu0, rfl, g0, args107⟩ := args97.cons_inv
+    obtain ⟨lu0, rfl⟩ := g0.var_inv
+    simp at lu0
+    subst lu0
+    obtain ⟨u1, us1, mu1, rfl, g1, args117⟩ := args107.cons_inv
+    obtain ⟨lu1, rfl⟩ := g1.var_inv
+    simp at lu1
+    subst lu1
+    obtain ⟨u2, us2, mu2, rfl, g2, args127⟩ := args117.cons_inv
+    obtain ⟨lu2, rfl⟩ := g2.var_inv
+    simp at lu2
+    subst lu2
+    obtain ⟨u3, us3, mu3, rfl, g3, args137⟩ := args127.cons_inv
+    obtain ⟨lu3, rfl⟩ := g3.var_inv
+    simp at lu3
+    subst lu3
+    obtain ⟨u4, us4, mu4, rfl, g4, args147⟩ := args137.cons_inv
+    obtain ⟨lu4, rfl⟩ := g4.var_inv
+    simp at lu4
+    subst lu4
+    obtain ⟨u5, us5, mu5, rfl, g5, args157⟩ := args147.cons_inv
+    obtain ⟨lu5, rfl⟩ := g5.var_inv
+    simp at lu5
+    subst lu5
+    obtain ⟨u6, us6, mu6, rfl, g6, args167⟩ := args157.cons_inv
+    obtain ⟨lu6, rfl⟩ := g6.var_inv
+    simp at lu6
+    subst lu6
+    obtain ⟨u7, us7, mu7, rfl, g7, args177⟩ := args167.cons_inv
+    obtain ⟨lu7, rfl⟩ := g7.var_inv
+    simp at lu7
+    subst lu7
+    obtain ⟨rfl, rfl⟩ := args177.nil_inv
+    obtain ⟨w98, ws99, m100, rfl, f101, args102⟩ := args95.cons_inv
+    obtain ⟨l103, rfl⟩ := f101.var_inv
+    simp at l103
+    subst l103
+    obtain ⟨rfl, rfl⟩ := args102.nil_inv
+    refine ⟨k70 + 1, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp (config := { decide := true, maxSteps := 10000000 }) [Mirrors.«IxonDeserialize::get_u64_le»,
+      hc9, ld34, hp37, op68, hk71 k' (by omega), hp73, hp86]
+
+/-! ## What the mirrors compute -/
+
+theorem rawLt_run {a b : Nat} (ha : a < 256) (hb : b < 256) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt8::raw_lt» (k + 1) h (.field (a : F)) (.field (b : F)) =
+      some (.field ((if a < b then 1 else 0 : Nat) : F), h) := by
+  simp [Mirrors.«UInt8::raw_lt», mapCall, rawSub_row ha hb, Constant.toValue, Value.mapAddress]
+
+theorem lessThan_run {a b : Nat} (ha : a < 256) (hb : b < 256) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt8::less_than» (k + 2) h (.field (a : F)) (.field (b : F)) =
+      some (.field ((if a < b then 1 else 0 : Nat) : F), h) := by
+  simp only [Mirrors.«UInt8::less_than»]
+  exact rawLt_run ha hb k h
+
+theorem toField_run (k : Nat) (h : Heap F) (x : SourceValue F) :
+    Mirrors.«UInt8::to_field» (k + 1) h x = some (x, h) := by
+  simp [Mirrors.«UInt8::to_field»]
+
+/-- **`get_tagn_tail(q, h, stream)` with `q < h`**: the two-byte rung,
+`2h + 256q + lo` for the stream's next byte `lo`. -/
+theorem tailShort_run {q hh : Nat} (hq : q < hh) (hh' : hh < 128) {heap : Heap F} {addr : Nat}
+    {lo : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons" [.field (lo.toNat : F), tailPtr]))
+    (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn_tail» (k + 2) heap (.field (q : F)) (.field (hh : F))
+        (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [u64Value (2 * hh + q * 256 + lo.toNat), tailPtr], heap) := by
+  have hlo := lo.toNat_lt
+  have hlt := rawLt_run (a := q) (b := hh) (by omega) (by omega) k heap
+  have hadd : lookupMap IxVM.Checked.source.tables "UInt8::raw_add"
+      ([.field (lo.toNat : F), .field (2 * (hh : F))] : List (SourceValue F)) =
+      .ok (.tuple [.field (((lo.toNat + 2 * hh) % 256 : Nat) : F),
+        .field (((lo.toNat + 2 * hh) / 256 : Nat) : F)]) := by
+    have := rawAdd_row (a := lo.toNat) (b := 2 * hh) hlo (by omega)
+    push_cast at this
+    exact this
+  have hff : lookupMap IxVM.Checked.source.tables "UInt8::from_field"
+      ([.field ((q : F) + (((lo.toNat + 2 * hh) / 256 : Nat) : F))] : List (SourceValue F)) =
+      .ok (.field ((q + (lo.toNat + 2 * hh) / 256 : Nat) : F)) := by
+    have := fromField_row (x := q + (lo.toNat + 2 * hh) / 256) (by omega)
+    push_cast at this ⊢
+    exact this
+  rw [show 2 * hh + q * 256 + lo.toNat =
+      (lo.toNat + 2 * hh) % 256 + 256 * (q + (lo.toNat + 2 * hh) / 256) by omega,
+    u64Value_two (Nat.mod_lt _ (by omega)) (by omega)]
+  simp [Mirrors.«IxonDeserialize::get_tagn_tail», hlt, hq, loadValue_cell cell, node_ctor, pure, Except.pure,
+    toField_run, evalBinOp, mapCall, hadd, hff, Constant.toValue, Value.mapAddress]
+
+/-- **`get_tagn0(stream)`, one byte**: a first byte below `128` is the value. -/
+theorem tagn0One_run {heap : Heap F} {addr : Nat} {b : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons" [.field (b.toNat : F), tailPtr]))
+    (small : b.toNat < 128) (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn0» (k + 3) heap (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [u64Value b.toNat, tailPtr], heap) := by
+  have hlt : Mirrors.«UInt8::less_than» (k + 2) heap (.field (b.toNat : F)) (.field 128) =
+      some (.field 1, heap) := by
+    have := lessThan_run (a := b.toNat) (b := 128) b.toNat_lt (by norm_num) k heap
+    simpa [small] using this
+  rw [show b.toNat = b.toNat + 256 * 0 by omega, u64Value_two b.toNat_lt (by norm_num)]
+  simp [Mirrors.«IxonDeserialize::get_tagn0», loadValue_cell cell, node_ctor, hlt]
+
+/-- **`get_tagn0(stream)`, two bytes**: a first byte `b` in `[128, 192)` and
+the next byte `lo` give `128 + 256 (b - 128) + lo`. -/
+theorem tagn0Two_run {heap : Heap F} {addr addr2 : Nat} {b lo : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons"
+      [.field (b.toNat : F), .ptr (.enum byteStreamEnum) addr2]))
+    (cell2 : heap[addr2]? = some (.construct byteStreamEnum "Cons" [.field (lo.toNat : F), tailPtr]))
+    (lower : 128 ≤ b.toNat) (upper : b.toNat < 192) (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn0» (k + 3) heap (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [u64Value (128 + (b.toNat - 128) * 256 + lo.toNat), tailPtr], heap) := by
+  have hlt : Mirrors.«UInt8::less_than» (k + 2) heap (.field (b.toNat : F)) (.field 128) =
+      some (.field 0, heap) := by
+    have := lessThan_run (a := b.toNat) (b := 128) b.toNat_lt (by norm_num) k heap
+    simpa [show ¬ b.toNat < 128 by omega] using this
+  have htail := tailShort_run (q := b.toNat - 128) (hh := 64) (by omega) (by norm_num) cell2 k
+  rw [Nat.cast_sub lower, show 2 * 64 + (b.toNat - 128) * 256 + lo.toNat =
+    128 + (b.toNat - 128) * 256 + lo.toNat by omega] at htail
+  simp only [Nat.cast_ofNat] at htail
+  simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_tagn0», loadValue_cell cell,
+    node_ctor, hlt, toField_run, evalBinOp, htail, loadValue_cell cell2]
+
 /-! ## The refinement -/
 
 /-- **IxVM's `get_tagn0` refines IxC's `Ixon.getTagN 0` on the one- and
@@ -517,8 +424,8 @@ of `bytes` whose first byte is below `192` (the codes the wide rungs do not
 use) is matched by IxC's reader on the same bytes: it succeeds with flag `0`
 and the value the derivation returns as eight little-endian bytes, and the
 derivation's rest pointer holds the bytes IxC's reader did not consume. The
-heap is unchanged. The wide rungs (a first byte from `192`, through
-`IxonDeserialize::get_tagn_wide`) are not covered here. -/
+heap is unchanged. Proved from the generated mirror lemma
+(`Mirrors.«IxonDeserialize::get_tagn0».of_eval`) and what the mirror computes. -/
 theorem getTagN0_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
     (narrow : ∀ b ∈ bytes.head?, b.toNat < 192)
@@ -527,15 +434,367 @@ theorem getTagN0_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : 
       Ixon.getTagN 0 (start bytes) = .ok t { idx := n, bytes := ⟨bytes.toArray⟩ } ∧ t.flag = 0 ∧
       Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop n) restPtr ∧
       r = .tuple [u64Value t.value.toNat, restPtr] := by
-  obtain ⟨rfl, b, rest, rfl, cases⟩ := tagn0 rep narrow ev
-  refine ⟨rfl, ?_⟩
-  rcases cases with ⟨small, restPtr, restRep, rfl⟩ | ⟨lower, lo, rest', restPtr, rfl, restRep, rfl⟩
-  · refine ⟨_, 1, restPtr, getTagN0_one small, rfl, by simpa using restRep, ?_⟩
-    simp only [UInt64.toNat_ofNat', Nat.toUInt64_eq]
-    rw [Nat.mod_eq_of_lt (by have := b.toNat_lt; omega)]
-  · have upper : b.toNat < 192 := narrow b (by simp)
-    refine ⟨_, 2, restPtr, getTagN0_two lower upper, rfl, by simpa using restRep, ?_⟩
-    simp only [UInt64.toNat_ofNat', Nat.toUInt64_eq]
-    rw [Nat.mod_eq_of_lt (by have := lo.toNat_lt; omega)]
+  obtain ⟨k0, hk0⟩ := Mirrors.«IxonDeserialize::get_tagn0».of_eval getU64le_complete ev
+  have run := hk0 (k0 + 3) (by omega)
+  cases rep with
+  | nil cell =>
+    simp [Mirrors.«IxonDeserialize::get_tagn0», loadValue_cell cell] at run
+  | @cons b rest addr headVal tailPtr cell headRep tailRep =>
+    simp only [Aiur.Library.RepU8] at headRep
+    subst headRep
+    have upper : b.toNat < 192 := narrow b (by simp)
+    by_cases small : b.toNat < 128
+    · rw [tagn0One_run cell small k0] at run
+      simp only [Option.some.injEq, Prod.mk.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      refine ⟨rfl, _, 1, tailPtr, getTagN0_one small, rfl, by simpa using tailRep, ?_⟩
+      simp only [UInt64.toNat_ofNat', Nat.toUInt64_eq]
+      rw [Nat.mod_eq_of_lt (by have := b.toNat_lt; omega)]
+    · cases tailRep with
+      | nil cell2 =>
+        have hlt : Mirrors.«UInt8::less_than» (k0 + 2) heap (.field (b.toNat : F)) (.field 128) =
+            some (.field 0, heap) := by
+          have := lessThan_run (a := b.toNat) (b := 128) b.toNat_lt (by norm_num) k0 heap
+          simpa [small] using this
+        have hrl : Mirrors.«UInt8::raw_lt» (k0 + 1) heap (.field ((b.toNat : F) - 128)) (.field 64) =
+            some (.field 1, heap) := by
+          have := rawLt_run (a := b.toNat - 128) (b := 64) (by omega) (by norm_num) k0 heap
+          rw [Nat.cast_sub (by omega)] at this
+          simpa [show b.toNat - 128 < 64 by omega] using this
+        simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_tagn0»,
+          loadValue_cell cell, node_ctor, hlt, toField_run, evalBinOp,
+          Mirrors.«IxonDeserialize::get_tagn_tail», hrl, loadValue_cell cell2] at run
+      | @cons lo rest' addr2 headVal2 tailPtr2 cell2 headRep2 tailRep2 =>
+        simp only [Aiur.Library.RepU8] at headRep2
+        subst headRep2
+        rw [tagn0Two_run cell cell2 (by omega) upper k0] at run
+        simp only [Option.some.injEq, Prod.mk.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        refine ⟨rfl, _, 2, tailPtr2, getTagN0_two (by omega) upper, rfl, by simpa using tailRep2, ?_⟩
+        simp only [UInt64.toNat_ofNat', Nat.toUInt64_eq]
+        rw [Nat.mod_eq_of_lt (by have := lo.toNat_lt; omega)]
+
+/-! ## `get_tagn4`: the four-bit flag -/
+
+/-- The static map `UInt8::raw_bit_decomposition`. -/
+def bitsMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[1]'(by decide)
+
+theorem bitDecomp_row {x : Nat} (hx : x < 256) :
+    lookupMap IxVM.Checked.source.tables "UInt8::raw_bit_decomposition"
+        ([.field (x : F)] : List (SourceValue F)) =
+      .ok (.tuple [.field ((x % 2 : Nat) : F), .field ((x / 2 % 2 : Nat) : F),
+        .field ((x / 4 % 2 : Nat) : F), .field ((x / 8 % 2 : Nat) : F),
+        .field ((x / 16 % 2 : Nat) : F), .field ((x / 32 % 2 : Nat) : F),
+        .field ((x / 64 % 2 : Nat) : F), .field ((x / 128 % 2 : Nat) : F)]) := by
+  have member : bitsMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.Checked.coreTables.mapRows bitsMap =
+      IxVM.Checked.byteInputsTable.rows.zip IxVM.Checked.byteBitsTable.rows := by
+    simp only [Aiur.Program.mapRows, show bitsMap.input = "UInt8::byte_inputs" from rfl,
+      show bitsMap.output = "UInt8::byte_bits" from rfl, IxVM.Checked.find_byteInputs,
+      IxVM.Checked.find_byteBits]
+  have row : (⟨[.field (x : F)], .tuple [.field ((x % 2 : Nat) : F), .field ((x / 2 % 2 : Nat) : F),
+      .field ((x / 4 % 2 : Nat) : F), .field ((x / 8 % 2 : Nat) : F),
+      .field ((x / 16 % 2 : Nat) : F), .field ((x / 32 % 2 : Nat) : F),
+      .field ((x / 64 % 2 : Nat) : F), .field ((x / 128 % 2 : Nat) : F)]⟩ : MapEntry F) ∈
+      IxVM.Checked.coreTables.mapEntries bitsMap := by
+    apply Aiur.mapEntry_mem_iff.mpr
+    rw [rows]
+    simp only [IxVM.Checked.byteInputsTable, IxVM.Checked.byteBitsTable, List.map_map]
+    convert mem_zip_map (List.mem_range.mpr hx) using 1
+    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf, List.range_succ]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
+  simpa [Constant.toValue, Value.mapAddress,
+    show bitsMap.name = "UInt8::raw_bit_decomposition" from rfl, IxVM.Checked.source] using looked
+
+/-- The value of the bit fields `x₀ + 2x₁ + 4x₂ (+ 8x₃)` a reader adds up. -/
+theorem bits_low {x : Nat} :
+    ((x % 2 : Nat) : F) + 2 * ((x / 2 % 2 : Nat) : F) + 4 * ((x / 4 % 2 : Nat) : F) =
+      ((x % 8 : Nat) : F) := by
+  rw [show x % 8 = x % 2 + 2 * (x / 2 % 2) + 4 * (x / 4 % 2) by omega]
+  push_cast
+  ring
+
+theorem bits_high {x : Nat} (hx : x < 256) :
+    ((x / 16 % 2 : Nat) : F) + 2 * ((x / 32 % 2 : Nat) : F) + 4 * ((x / 64 % 2 : Nat) : F) +
+      8 * ((x / 128 % 2 : Nat) : F) = ((x / 16 : Nat) : F) := by
+  have e : x / 16 = x / 16 % 2 + 2 * (x / 32 % 2) + 4 * (x / 64 % 2) + 8 * (x / 128 % 2) := by omega
+  rw [congrArg (Nat.cast : Nat → F) e]
+  push_cast
+  ring
+
+theorem bitDecomp_run {x : Nat} (hx : x < 256) (k : Nat) (h : Heap F) :
+    Mirrors.«UInt8::bit_decomposition» (k + 1) h (.field (x : F)) =
+      some (.tuple [.field ((x % 2 : Nat) : F), .field ((x / 2 % 2 : Nat) : F),
+        .field ((x / 4 % 2 : Nat) : F), .field ((x / 8 % 2 : Nat) : F),
+        .field ((x / 16 % 2 : Nat) : F), .field ((x / 32 % 2 : Nat) : F),
+        .field ((x / 64 % 2 : Nat) : F), .field ((x / 128 % 2 : Nat) : F)], h) := by
+  simp only [Mirrors.«UInt8::bit_decomposition», mapCall, bitDecomp_row hx]
+  simp [Constant.toValue, Value.mapAddress]
+
+/-- **`get_tagn4(stream)`, one byte**: a header byte whose low four bits are
+below `8` is the flag (its high four bits) and that value. -/
+theorem tagn4One_run {heap : Heap F} {addr : Nat} {b : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons" [.field (b.toNat : F), tailPtr]))
+    (small : b.toNat % 16 < 8) (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn4» (k + 3) heap (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [.tuple [.field ((b.toNat / 16 : Nat) : F), u64Value (b.toNat % 16)], tailPtr],
+        heap) := by
+  have hb := b.toNat_lt
+  have hbits := bitDecomp_run hb (k + 1) heap
+  have hb3 : b.toNat / 8 % 2 = 0 := by omega
+  have hff : lookupMap IxVM.Checked.source.tables "UInt8::from_field"
+      ([.field (((b.toNat % 2 : Nat) : F) + 2 * ((b.toNat / 2 % 2 : Nat) : F) +
+        4 * ((b.toNat / 4 % 2 : Nat) : F))] : List (SourceValue F)) =
+      .ok (.field ((b.toNat % 8 : Nat) : F)) := by
+    rw [bits_low]
+    exact fromField_row (by omega)
+  rw [show b.toNat % 16 = b.toNat % 8 + 256 * 0 by omega, u64Value_two (by omega) (by norm_num)]
+  simp [Mirrors.«IxonDeserialize::get_tagn4», loadValue_cell cell, node_ctor, hbits, evalBinOp,
+    bits_high hb, hb3, mapCall, hff, Constant.toValue, Value.mapAddress]
+
+/-- **`get_tagn4(stream)`, two bytes**: low four bits `p` in `[8, 12)` and the
+next byte `lo` give `8 + 256 (p - 8) + lo`. -/
+theorem tagn4Two_run {heap : Heap F} {addr addr2 : Nat} {b lo : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons"
+      [.field (b.toNat : F), .ptr (.enum byteStreamEnum) addr2]))
+    (cell2 : heap[addr2]? = some (.construct byteStreamEnum "Cons" [.field (lo.toNat : F), tailPtr]))
+    (lower : 8 ≤ b.toNat % 16) (upper : b.toNat % 16 < 12) (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn4» (k + 3) heap (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [.tuple [.field ((b.toNat / 16 : Nat) : F),
+        u64Value (8 + (b.toNat % 16 - 8) * 256 + lo.toNat)], tailPtr], heap) := by
+  have hb := b.toNat_lt
+  have hbits := bitDecomp_run hb (k + 1) heap
+  have hb3 : b.toNat / 8 % 2 = 1 := by omega
+  have htail := tailShort_run (q := b.toNat % 8) (hh := 4) (by omega) (by norm_num) cell2 k
+  rw [show 2 * 4 + b.toNat % 8 * 256 + lo.toNat = 8 + (b.toNat % 16 - 8) * 256 + lo.toNat by omega,
+    ← bits_low] at htail
+  simp only [Nat.cast_ofNat] at htail
+  simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_tagn4», loadValue_cell cell,
+    node_ctor, hbits, evalBinOp, bits_high hb, hb3, htail]
+
+/-- **IxC's `getTagN 4`, one byte**: low four bits below `8` are the value,
+the high four bits the flag. -/
+theorem getTagN4_one {b : UInt8} {rest : List UInt8} (small : b.toNat % 16 < 8) :
+    Ixon.getTagN 4 (start (b :: rest)) =
+      .ok ⟨(b.toNat / 16).toUInt8, (b.toNat % 16).toUInt64⟩
+        { idx := 1, bytes := ⟨(b :: rest).toArray⟩ } := by
+  have read := getU8_at (bytes := b :: rest) (i := 0) (by simp)
+  simp only [start, Ixon.getTagN, bind, EStateM.bind, read]
+  simp [small, pure, EStateM.pure]
+
+/-- **IxC's `getTagN 4`, two bytes**: low four bits `p` in `[8, 12)` and the
+next byte `lo` give `8 + 256 (p - 8) + lo`. -/
+theorem getTagN4_two {b lo : UInt8} {rest : List UInt8} (lower : 8 ≤ b.toNat % 16)
+    (upper : b.toNat % 16 < 12) :
+    Ixon.getTagN 4 (start (b :: lo :: rest)) =
+      .ok ⟨(b.toNat / 16).toUInt8, (8 + (b.toNat % 16 - 8) * 256 + lo.toNat).toUInt64⟩
+        { idx := 2, bytes := ⟨(b :: lo :: rest).toArray⟩ } := by
+  have read0 := getU8_at (bytes := b :: lo :: rest) (i := 0) (by simp)
+  have read1 := getU8_at (bytes := b :: lo :: rest) (i := 1) (by simp)
+  simp only [start, Ixon.getTagN, bind, EStateM.bind, read0, Nat.zero_add]
+  simp only [Nat.reduceSub, Nat.reducePow, show ¬ b.toNat % 16 < 8 by omega,
+    ite_false, show b.toNat % 16 - 8 < 4 by omega, ite_true, List.getElem_cons_zero]
+  simp [EStateM.bind, read1, pure, EStateM.pure, Ixon.tagNEnd1]
+
+set_option maxHeartbeats 2000000 in
+/-- **IxVM's `get_tagn4` refines IxC's `Ixon.getTagN 4` on the one- and
+two-byte rungs**: on a stream whose first byte has low four bits below `12`
+(the codes the wide rungs do not use), every derivation agrees with IxC's
+reader on the same bytes: the flag, the value as eight little-endian bytes,
+the rest pointer at IxC's position, the heap unchanged. -/
+theorem getTagN4_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
+    (narrow : ∀ b ∈ bytes.head?, b.toNat % 16 < 12)
+    (ev : EvalFn W "IxonDeserialize::get_tagn4" [stream] heap r h') :
+    h' = heap ∧ ∃ (t : Ixon.TagN) (n : Nat) (restPtr : SourceValue F),
+      Ixon.getTagN 4 (start bytes) = .ok t { idx := n, bytes := ⟨bytes.toArray⟩ } ∧
+      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop n) restPtr ∧
+      r = .tuple [.tuple [.field (t.flag.toNat : F), u64Value t.value.toNat], restPtr] := by
+  obtain ⟨k0, hk0⟩ := Mirrors.«IxonDeserialize::get_tagn4».of_eval getU64le_complete ev
+  have run := hk0 (k0 + 3) (by omega)
+  cases rep with
+  | nil cell =>
+    simp [Mirrors.«IxonDeserialize::get_tagn4», loadValue_cell cell] at run
+  | @cons b rest addr headVal tailPtr cell headRep tailRep =>
+    simp only [Aiur.Library.RepU8] at headRep
+    subst headRep
+    have hb := b.toNat_lt
+    have upper : b.toNat % 16 < 12 := narrow b (by simp)
+    have hflag : (b.toNat / 16).toUInt8.toNat = b.toNat / 16 := by
+      simp only [Nat.toUInt8_eq, UInt8.toNat_ofNat']
+      exact Nat.mod_eq_of_lt (by omega)
+    by_cases small : b.toNat % 16 < 8
+    · rw [tagn4One_run cell small k0] at run
+      simp only [Option.some.injEq, Prod.mk.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      refine ⟨rfl, _, 1, tailPtr, getTagN4_one small, by simpa using tailRep, ?_⟩
+      simp only [hflag, UInt64.toNat_ofNat', Nat.toUInt64_eq]
+      rw [Nat.mod_eq_of_lt (show b.toNat % 16 < 2 ^ 64 by omega)]
+    · cases tailRep with
+      | nil cell2 =>
+        have hbits := bitDecomp_run hb (k0 + 1) heap
+        have hb3 : b.toNat / 8 % 2 = 1 := by omega
+        have hrl : Mirrors.«UInt8::raw_lt» (k0 + 1) heap
+            (.field (((b.toNat % 2 : Nat) : F) + 2 * ((b.toNat / 2 % 2 : Nat) : F) +
+              4 * ((b.toNat / 4 % 2 : Nat) : F))) (.field 4) = some (.field 1, heap) := by
+          have := rawLt_run (a := b.toNat % 8) (b := 4) (by omega) (by norm_num) k0 heap
+          rw [← bits_low] at this
+          simpa [show b.toNat % 8 < 4 by omega] using this
+        simp (config := { decide := true, maxSteps := 10000000 }) [Mirrors.«IxonDeserialize::get_tagn4»,
+          loadValue_cell cell, node_ctor, hbits, evalBinOp, bits_high hb, hb3, Mirrors.«IxonDeserialize::get_tagn_tail», hrl,
+          loadValue_cell cell2] at run
+      | @cons lo rest' addr2 headVal2 tailPtr2 cell2 headRep2 tailRep2 =>
+        simp only [Aiur.Library.RepU8] at headRep2
+        subst headRep2
+        rw [tagn4Two_run cell cell2 (by omega) upper k0] at run
+        simp only [Option.some.injEq, Prod.mk.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        refine ⟨rfl, _, 2, tailPtr2, getTagN4_two (by omega) upper, by simpa using tailRep2, ?_⟩
+        simp only [hflag, UInt64.toNat_ofNat', Nat.toUInt64_eq]
+        rw [Nat.mod_eq_of_lt (show 8 + (b.toNat % 16 - 8) * 256 + lo.toNat < 2 ^ 64 by
+          have := lo.toNat_lt; omega)]
+
+/-! ## `get_tagn2`: the two-bit flag -/
+
+theorem bits_low5 {x : Nat} :
+    ((x % 2 : Nat) : F) + 2 * ((x / 2 % 2 : Nat) : F) + 4 * ((x / 4 % 2 : Nat) : F) +
+      8 * ((x / 8 % 2 : Nat) : F) + 16 * ((x / 16 % 2 : Nat) : F) = ((x % 32 : Nat) : F) := by
+  have e : x % 32 = x % 2 + 2 * (x / 2 % 2) + 4 * (x / 4 % 2) + 8 * (x / 8 % 2) + 16 * (x / 16 % 2) := by
+    omega
+  rw [congrArg (Nat.cast : Nat → F) e]
+  push_cast
+  ring
+
+theorem bits_high2 {x : Nat} (hx : x < 256) :
+    ((x / 64 % 2 : Nat) : F) + 2 * ((x / 128 % 2 : Nat) : F) = ((x / 64 : Nat) : F) := by
+  have e : x / 64 = x / 64 % 2 + 2 * (x / 128 % 2) := by omega
+  rw [congrArg (Nat.cast : Nat → F) e]
+  push_cast
+  ring
+
+/-- **`get_tagn2(stream)`, one byte**: low six bits below `32` are the value,
+the high two bits the flag. -/
+theorem tagn2One_run {heap : Heap F} {addr : Nat} {b : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons" [.field (b.toNat : F), tailPtr]))
+    (small : b.toNat % 64 < 32) (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn2» (k + 3) heap (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [.tuple [.field ((b.toNat / 64 : Nat) : F), u64Value (b.toNat % 64)], tailPtr],
+        heap) := by
+  have hb := b.toNat_lt
+  have hbits := bitDecomp_run hb (k + 1) heap
+  have hb5 : b.toNat / 32 % 2 = 0 := by omega
+  have hff : lookupMap IxVM.Checked.source.tables "UInt8::from_field"
+      ([.field (((b.toNat % 2 : Nat) : F) + 2 * ((b.toNat / 2 % 2 : Nat) : F) +
+        4 * ((b.toNat / 4 % 2 : Nat) : F) + 8 * ((b.toNat / 8 % 2 : Nat) : F) +
+        16 * ((b.toNat / 16 % 2 : Nat) : F))] : List (SourceValue F)) =
+      .ok (.field ((b.toNat % 32 : Nat) : F)) := by
+    rw [bits_low5]
+    exact fromField_row (by omega)
+  rw [show b.toNat % 64 = b.toNat % 32 + 256 * 0 by omega, u64Value_two (by omega) (by norm_num)]
+  simp [Mirrors.«IxonDeserialize::get_tagn2», loadValue_cell cell, node_ctor, hbits, evalBinOp,
+    bits_high2 hb, hb5, mapCall, hff, Constant.toValue, Value.mapAddress]
+
+/-- **`get_tagn2(stream)`, two bytes**: low six bits `p` in `[32, 48)` and the
+next byte `lo` give `32 + 256 (p - 32) + lo`. -/
+theorem tagn2Two_run {heap : Heap F} {addr addr2 : Nat} {b lo : UInt8} {tailPtr : SourceValue F}
+    (cell : heap[addr]? = some (.construct byteStreamEnum "Cons"
+      [.field (b.toNat : F), .ptr (.enum byteStreamEnum) addr2]))
+    (cell2 : heap[addr2]? = some (.construct byteStreamEnum "Cons" [.field (lo.toNat : F), tailPtr]))
+    (lower : 32 ≤ b.toNat % 64) (upper : b.toNat % 64 < 48) (k : Nat) :
+    Mirrors.«IxonDeserialize::get_tagn2» (k + 3) heap (.ptr (.enum byteStreamEnum) addr) =
+      some (.tuple [.tuple [.field ((b.toNat / 64 : Nat) : F),
+        u64Value (32 + (b.toNat % 64 - 32) * 256 + lo.toNat)], tailPtr], heap) := by
+  have hb := b.toNat_lt
+  have hbits := bitDecomp_run hb (k + 1) heap
+  have hb5 : b.toNat / 32 % 2 = 1 := by omega
+  have htail := tailShort_run (q := b.toNat % 32) (hh := 16) (by omega) (by norm_num) cell2 k
+  rw [show 2 * 16 + b.toNat % 32 * 256 + lo.toNat = 32 + (b.toNat % 64 - 32) * 256 + lo.toNat by
+    omega, ← bits_low5] at htail
+  simp only [Nat.cast_ofNat] at htail
+  simp (config := { decide := true }) [Mirrors.«IxonDeserialize::get_tagn2», loadValue_cell cell,
+    node_ctor, hbits, evalBinOp, bits_high2 hb, hb5, htail]
+
+/-- **IxC's `getTagN 2`, one byte**: low six bits below `32` are the value,
+the high two bits the flag. -/
+theorem getTagN2_one {b : UInt8} {rest : List UInt8} (small : b.toNat % 64 < 32) :
+    Ixon.getTagN 2 (start (b :: rest)) =
+      .ok ⟨(b.toNat / 64).toUInt8, (b.toNat % 64).toUInt64⟩
+        { idx := 1, bytes := ⟨(b :: rest).toArray⟩ } := by
+  have read := getU8_at (bytes := b :: rest) (i := 0) (by simp)
+  simp only [start, Ixon.getTagN, bind, EStateM.bind, read]
+  simp [small, pure, EStateM.pure]
+
+/-- **IxC's `getTagN 2`, two bytes**: low six bits `p` in `[32, 48)` and the
+next byte `lo` give `32 + 256 (p - 32) + lo`. -/
+theorem getTagN2_two {b lo : UInt8} {rest : List UInt8} (lower : 32 ≤ b.toNat % 64)
+    (upper : b.toNat % 64 < 48) :
+    Ixon.getTagN 2 (start (b :: lo :: rest)) =
+      .ok ⟨(b.toNat / 64).toUInt8, (32 + (b.toNat % 64 - 32) * 256 + lo.toNat).toUInt64⟩
+        { idx := 2, bytes := ⟨(b :: lo :: rest).toArray⟩ } := by
+  have read0 := getU8_at (bytes := b :: lo :: rest) (i := 0) (by simp)
+  have read1 := getU8_at (bytes := b :: lo :: rest) (i := 1) (by simp)
+  simp only [start, Ixon.getTagN, bind, EStateM.bind, read0, Nat.zero_add]
+  simp only [Nat.reduceSub, Nat.reducePow, show ¬ b.toNat % 64 < 32 by omega,
+    ite_false, show b.toNat % 64 - 32 < 16 by omega, ite_true, List.getElem_cons_zero]
+  simp [EStateM.bind, read1, pure, EStateM.pure, Ixon.tagNEnd1]
+
+set_option maxHeartbeats 2000000 in
+/-- **IxVM's `get_tagn2` refines IxC's `Ixon.getTagN 2` on the one- and
+two-byte rungs**: on a stream whose first byte has low six bits below `48`
+(the codes the wide rungs do not use), every derivation agrees with IxC's
+reader on the same bytes: the flag, the value as eight little-endian bytes,
+the rest pointer at IxC's position, the heap unchanged. -/
+theorem getTagN2_refines {stream r : SourceValue F} {heap h' : Heap F} {bytes : List UInt8}
+    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum heap bytes stream)
+    (narrow : ∀ b ∈ bytes.head?, b.toNat % 64 < 48)
+    (ev : EvalFn W "IxonDeserialize::get_tagn2" [stream] heap r h') :
+    h' = heap ∧ ∃ (t : Ixon.TagN) (n : Nat) (restPtr : SourceValue F),
+      Ixon.getTagN 2 (start bytes) = .ok t { idx := n, bytes := ⟨bytes.toArray⟩ } ∧
+      Aiur.Library.Bytes.RepByteStream byteStreamEnum heap (bytes.drop n) restPtr ∧
+      r = .tuple [.tuple [.field (t.flag.toNat : F), u64Value t.value.toNat], restPtr] := by
+  obtain ⟨k0, hk0⟩ := Mirrors.«IxonDeserialize::get_tagn2».of_eval getU64le_complete ev
+  have run := hk0 (k0 + 3) (by omega)
+  cases rep with
+  | nil cell =>
+    simp [Mirrors.«IxonDeserialize::get_tagn2», loadValue_cell cell] at run
+  | @cons b rest addr headVal tailPtr cell headRep tailRep =>
+    simp only [Aiur.Library.RepU8] at headRep
+    subst headRep
+    have hb := b.toNat_lt
+    have upper : b.toNat % 64 < 48 := narrow b (by simp)
+    have hflag : (b.toNat / 64).toUInt8.toNat = b.toNat / 64 := by
+      simp only [Nat.toUInt8_eq, UInt8.toNat_ofNat']
+      exact Nat.mod_eq_of_lt (by omega)
+    by_cases small : b.toNat % 64 < 32
+    · rw [tagn2One_run cell small k0] at run
+      simp only [Option.some.injEq, Prod.mk.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      refine ⟨rfl, _, 1, tailPtr, getTagN2_one small, by simpa using tailRep, ?_⟩
+      simp only [hflag, UInt64.toNat_ofNat', Nat.toUInt64_eq]
+      rw [Nat.mod_eq_of_lt (show b.toNat % 64 < 2 ^ 64 by omega)]
+    · cases tailRep with
+      | nil cell2 =>
+        have hbits := bitDecomp_run hb (k0 + 1) heap
+        have hb5 : b.toNat / 32 % 2 = 1 := by omega
+        have hrl : Mirrors.«UInt8::raw_lt» (k0 + 1) heap
+            (.field (((b.toNat % 2 : Nat) : F) + 2 * ((b.toNat / 2 % 2 : Nat) : F) +
+              4 * ((b.toNat / 4 % 2 : Nat) : F) + 8 * ((b.toNat / 8 % 2 : Nat) : F) +
+              16 * ((b.toNat / 16 % 2 : Nat) : F))) (.field 16) = some (.field 1, heap) := by
+          have := rawLt_run (a := b.toNat % 32) (b := 16) (by omega) (by norm_num) k0 heap
+          rw [← bits_low5] at this
+          simpa [show b.toNat % 32 < 16 by omega] using this
+        simp (config := { decide := true, maxSteps := 10000000 }) [Mirrors.«IxonDeserialize::get_tagn2»,
+          loadValue_cell cell, node_ctor, hbits, evalBinOp, bits_high2 hb, hb5,
+          Mirrors.«IxonDeserialize::get_tagn_tail», hrl, loadValue_cell cell2] at run
+      | @cons lo rest' addr2 headVal2 tailPtr2 cell2 headRep2 tailRep2 =>
+        simp only [Aiur.Library.RepU8] at headRep2
+        subst headRep2
+        rw [tagn2Two_run cell cell2 (by omega) upper k0] at run
+        simp only [Option.some.injEq, Prod.mk.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        refine ⟨rfl, _, 2, tailPtr2, getTagN2_two (by omega) upper, by simpa using tailRep2, ?_⟩
+        simp only [hflag, UInt64.toNat_ofNat', Nat.toUInt64_eq]
+        rw [Nat.mod_eq_of_lt (show 32 + (b.toNat % 64 - 32) * 256 + lo.toNat < 2 ^ 64 by
+          have := lo.toNat_lt; omega)]
 
 end IxVM.Refinement.TagN

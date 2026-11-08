@@ -1043,9 +1043,12 @@ example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeImages (.node l r) =
 
 The first refinement: every derivation of `IxonDeserialize::get_tagn0` on a
 stream whose first byte is below `192` agrees with IxC's `Ixon.getTagN 0` on
-the same bytes (`getTagN0_refines`), proved from the checked source through
-its generated lookup facts (`IxVM.Checked.Lookup`) and the mirror-lemma
-library (`Ix.IxVM.Refinement.Mirror`). Deterministic runs and their
+the same bytes (`getTagN0_refines`; `getTagN2_refines` and `getTagN4_refines` for
+the two- and four-bit flags), proved from the checked source through
+its generated lookup facts (`IxVM.Checked.Lookup`), the generated mirrors
+and their lemmas (`Ix.IxVM.Refinement.Mirrors.TagN`, over the helper library
+`Ix.IxVM.Refinement.Mirror`) and the hand-written creative layer
+(`Ix.IxVM.Refinement.TagN`). Deterministic runs and their
 completeness for worlds without control syntax: `EvalFn.exec`. -/
 
 /--
@@ -1288,8 +1291,11 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Checked.tablesChecked [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.source [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN0_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.TagN.tagn0 [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.TagN.tagnTail_short [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getTagN2_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getTagN4_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getU64le_complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_tagn0».of_eval [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Mirrors.«UInt64::add».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Aiur.Generic.SourceSemantics.EvalFn.exec [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.functionNames_nodup [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.Lookup.«IxonDeserialize::get_tagn0» [propext, Classical.choice, Quot.sound]
@@ -1297,4 +1303,5 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
   IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables IxVM.Checked.Lookup
-  Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.TagN
+  Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
+  Ix.IxVM.Refinement.TagN
