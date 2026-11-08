@@ -8,6 +8,7 @@ import Aiur.Generic
 import Aiur.Modules
 import Aiur.Optimized
 import Aiur.Optimized.Depth
+import Aiur.Optimized.Observed
 import Aiur.HeapMono
 import Aiur.StepLemmas
 import Aiur.Library.Carry
@@ -64,6 +65,16 @@ Both side conditions are decidable: the exporter already checks
 `Plan.WellFormedActivation`, and must check `Depth.Certified` once it emits the
 depth pass (Track A3). Until then, deployed artifacts are covered only by the
 derivation-assuming theorems.
+
+Section 3b strengthens the headlines to observed derivations
+(`Generic.SourceSemantics.ObsFn`: the source semantics with every call recorded,
+inline calls included). They add that every argument of every recorded call is
+represented in the trace's decoded ROM relative to the heap at the call
+(`CallsInROM`), so data a call received, such as a byte stream passed to the
+inline `Blake3::hash`, can be read off the memory table.
+`ModulesArtifact.grouped_activated_heap_sound_observed` is the assumption-based
+form; `Modules.Prepared.depth_grouped_activated_heap_sound_observed` needs no
+derivation.
 
 Trusted and unproved: the Rust lowering of the exported artifact into
 multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
@@ -1608,6 +1619,274 @@ info: 'Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks' depe
 -/
 #guard_msgs in
 #print axioms Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks
+
+/-! ### 3b. Observed Headlines: Calls Carried by the Trace's Memory -/
+
+/--
+info: @ROMEvalCall.realizeCells : ∀ {F : Type} {rom : ROM F} [inst : Field F] [inst_1 : DecidableEq F],
+  rom.Valid →
+    ∀ {program : Program F} {name : String} {args : List (Value F)} {result : Value F},
+      ROMEvalCall rom program name args result →
+        ∀ {heap : Heap F} {sources : List (SourceValue F)},
+          RepresentsArgs rom heap sources args →
+            ∃ source after,
+              EvalFn program name sources heap source after ∧
+                heap <+: after ∧ Represents rom after source result ∧ CellsInROM rom (List.length heap) after
+-/
+#guard_msgs in
+#check @Aiur.ROMEvalCall.realizeCells
+/-- info: 'Aiur.ROMEvalCall.realizeCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.ROMEvalCall.realizeCells
+
+/--
+info: @Generic.SourceSemantics.ObsFn.erase : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Generic.SourceSemantics.World F} {name : String} {args : List (SourceValue F)} {before after : Heap F}
+  {result : SourceValue F} {calls : List (Generic.SourceSemantics.Call F)},
+  Generic.SourceSemantics.ObsFn world name args before result after calls →
+    Generic.SourceSemantics.EvalFn world name args before result after
+-/
+#guard_msgs in
+#check @Aiur.Generic.SourceSemantics.ObsFn.erase
+/-- info: 'Aiur.Generic.SourceSemantics.ObsFn.erase' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Generic.SourceSemantics.ObsFn.erase
+
+/--
+info: @Generic.SourceSemantics.EvalFn.observe : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Generic.SourceSemantics.World F} {name : String} {args : List (SourceValue F)} {before after : Heap F}
+  {result : SourceValue F},
+  Generic.SourceSemantics.EvalFn world name args before result after →
+    ∃ calls, Generic.SourceSemantics.ObsFn world name args before result after calls
+-/
+#guard_msgs in
+#check @Aiur.Generic.SourceSemantics.EvalFn.observe
+/-- info: 'Aiur.Generic.SourceSemantics.EvalFn.observe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Generic.SourceSemantics.EvalFn.observe
+
+/--
+info: @Generic.SourceSemantics.ObsFn.represented : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Generic.SourceSemantics.World F} {rom : ROM F},
+  Generic.SourceSemantics.PreparesFromArgs world →
+    ∀ {H : Heap F},
+      HeapInROM rom H →
+        ∀ {name : String} {args : List (SourceValue F)} {before after : Heap F} {result : SourceValue F}
+          {calls : List (Generic.SourceSemantics.Call F)},
+          Generic.SourceSemantics.ObsFn world name args before result after calls →
+            before <+: after ∧
+              (after <+: H →
+                (∀ v ∈ args, Generic.SourceSemantics.Represented rom before v) →
+                  Generic.SourceSemantics.Represented rom after result ∧ Generic.SourceSemantics.CallsInROM rom calls)
+-/
+#guard_msgs in
+#check @Aiur.Generic.SourceSemantics.ObsFn.represented
+/-- info: 'Aiur.Generic.SourceSemantics.ObsFn.represented' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Generic.SourceSemantics.ObsFn.represented
+
+/--
+info: @Generic.SourceSemantics.ObsFn.callsInROM : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Generic.SourceSemantics.World F} {rom : ROM F},
+  Generic.SourceSemantics.PreparesFromArgs world →
+    ∀ {H : Heap F},
+      HeapInROM rom H →
+        ∀ {name : String} {args : List (SourceValue F)} {result : SourceValue F}
+          {calls : List (Generic.SourceSemantics.Call F)},
+          (∀ v ∈ args, Value.pointerFree v = true) →
+            Generic.SourceSemantics.ObsFn world name args [] result H calls →
+              Generic.SourceSemantics.CallsInROM rom calls
+-/
+#guard_msgs in
+#check @Aiur.Generic.SourceSemantics.ObsFn.callsInROM
+/-- info: 'Aiur.Generic.SourceSemantics.ObsFn.callsInROM' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Generic.SourceSemantics.ObsFn.callsInROM
+
+/--
+info: @Generic.Source.world_preparesFromArgs : ∀ {F : Type} [Field F] [inst : DecidableEq F] (s : Generic.Source F),
+  Generic.SourceSemantics.PreparesFromArgs s.world
+-/
+#guard_msgs in
+#check @Aiur.Generic.Source.world_preparesFromArgs
+/-- info: 'Aiur.Generic.Source.world_preparesFromArgs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Generic.Source.world_preparesFromArgs
+
+/--
+info: @Optimized.Physical.Prepared.native_heap_sound_observed : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {source : Generic.Source F} {entries : List String} {specialized : Generic.Specialized source entries}
+  (compiled : Optimized.GenericArtifact specialized) (prepared : Optimized.Physical.Prepared compiled.artifact)
+  {name : String},
+  name ∈ entries →
+    ∀ {rom : WidthROM F},
+      rom.Valid →
+        ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+          Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
+            Circuit.Derives prepared.system (Circuit.Erasure.rawROM rom)
+                (Circuit.Erasure.message compiled.system { channel := name, args := wires, result := output }) →
+              DecodesValues specialized.program.enums wires (entryValues args) →
+                WireValue.decode specialized.program.enums output = some result →
+                  ∃ value heap calls,
+                    Generic.SourceSemantics.ObsFn source.world name args [] value heap calls ∧
+                      Represents
+                          (WireROM.decode specialized.program.enums (Circuit.Erasure.typedROM compiled.system rom)) heap
+                          value result ∧
+                        Generic.SourceSemantics.CallsInROM
+                          (WireROM.decode specialized.program.enums (Circuit.Erasure.typedROM compiled.system rom))
+                          calls
+-/
+#guard_msgs in
+#check @Aiur.Optimized.Physical.Prepared.native_heap_sound_observed
+/-- info: 'Aiur.Optimized.Physical.Prepared.native_heap_sound_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Physical.Prepared.native_heap_sound_observed
+
+/--
+info: @Optimized.ModulesArtifact.grouped_activated_heap_sound_observed : ∀ {F : Type} [inst : Field F]
+  [inst_1 : DecidableEq F] {id : String → Except String ℕ} {program : Modules.Program F}
+  {prepared : Modules.Prepared program} (compiled : Optimized.ModulesArtifact prepared)
+  (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  (plan : Optimized.Grouping.Plan physical.system id),
+  plan.WellFormedActivation →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {rom : WidthROM F},
+          rom.Valid →
+            ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+              Circuit.Erasure.Signed compiled.circuit.system
+                  { channel := entry.resolved.name, args := wires, result := output } →
+                plan.ActivatedDerives (Circuit.Erasure.rawROM rom)
+                    (Circuit.Erasure.message compiled.circuit.system
+                      { channel := entry.resolved.name, args := wires, result := output }) →
+                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                    WireValue.decode compiled.specialized.program.enums output = some result →
+                      ∃ value heap calls,
+                        prepared.ObsFn external args value heap calls ∧
+                          Represents (compiled.traceROM rom) heap value result ∧
+                            Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
+-/
+#guard_msgs in
+#check @Aiur.Optimized.ModulesArtifact.grouped_activated_heap_sound_observed
+/--
+info: 'Aiur.Optimized.ModulesArtifact.grouped_activated_heap_sound_observed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
+#guard_msgs in
+#print axioms Aiur.Optimized.ModulesArtifact.grouped_activated_heap_sound_observed
+
+/--
+info: @Modules.Prepared.grouped_activated_heap_sound_observed : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {id : String → Except String ℕ} {program : Modules.Program F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  (plan : Optimized.Grouping.Plan physical.system id),
+  plan.WellFormedActivation →
+    ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+      prepared.find? external = some entry →
+        ∀ {rom : WidthROM F},
+          rom.Valid →
+            ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+              Circuit.Erasure.Signed compiled.circuit.system
+                  { channel := entry.resolved.name, args := wires, result := output } →
+                plan.ActivatedDerives (Circuit.Erasure.rawROM rom)
+                    (Circuit.Erasure.message compiled.circuit.system
+                      { channel := entry.resolved.name, args := wires, result := output }) →
+                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                    WireValue.decode compiled.specialized.program.enums output = some result →
+                      ∃ value heap calls,
+                        prepared.ObsFn external args value heap calls ∧
+                          Represents (compiled.traceROM rom) heap value result ∧
+                            Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
+-/
+#guard_msgs in
+#check @Aiur.Modules.Prepared.grouped_activated_heap_sound_observed
+/-- info: 'Aiur.Modules.Prepared.grouped_activated_heap_sound_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Modules.Prepared.grouped_activated_heap_sound_observed
+
+/--
+info: @Modules.Prepared.depth_grouped_activated_heap_sound_observed : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {id : String → Except String ℕ} {program : Modules.Program F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config},
+  Optimized.Depth.Certified cfg physical.system →
+    ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
+      plan.WellFormedActivation →
+        ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+          prepared.find? external = some entry →
+            ∀ {rom : WidthROM F},
+              rom.Valid →
+                ∀ {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F},
+                  Circuit.Erasure.Signed compiled.circuit.system
+                      { channel := entry.resolved.name, args := wires, result := output } →
+                    ∀ {root : Circuit.Message F},
+                      Optimized.Depth.erase cfg root =
+                          Circuit.Erasure.message compiled.circuit.system
+                            { channel := entry.resolved.name, args := wires, result := output } →
+                        root.channel ∉ cfg.names →
+                          ∀ {rows : List (Circuit.WeightedRow F)},
+                            rows.length ≤ 2 ^ 39 →
+                              (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
+                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                    WireValue.decode compiled.specialized.program.enums output = some result →
+                                      ∃ value heap calls,
+                                        prepared.ObsFn external args value heap calls ∧
+                                          Represents (compiled.traceROM rom) heap value result ∧
+                                            Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
+-/
+#guard_msgs in
+#check @Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_observed
+/--
+info: 'Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_observed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
+#guard_msgs in
+#print axioms Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_observed
+
+/--
+info: @Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed : ∀ {id : String → Except String ℕ}
+  {program : Modules.Program Library.U32.Goldilocks.F} (prepared : Modules.Prepared program)
+  (compiled : Optimized.ModulesArtifact prepared) (physical : Optimized.Physical.Prepared compiled.circuit.artifact)
+  {cfg : Optimized.Depth.Config},
+  Optimized.Depth.Certified cfg physical.system →
+    cfg.bits = 24 →
+      ∀ (plan : Optimized.Grouping.Plan (Optimized.Depth.system cfg physical.system) id),
+        plan.WellFormedActivation →
+          ∀ {external : String} {entry : Modules.Selection program prepared.environment.assembly.instances},
+            prepared.find? external = some entry →
+              ∀ {rom : WidthROM Library.U32.Goldilocks.F},
+                rom.Valid →
+                  ∀ {args : List (SourceValue Library.U32.Goldilocks.F)} {result : Value Library.U32.Goldilocks.F}
+                    {wires : List (WireValue Library.U32.Goldilocks.F)} {output : WireValue Library.U32.Goldilocks.F},
+                    Circuit.Erasure.Signed compiled.circuit.system
+                        { channel := entry.resolved.name, args := wires, result := output } →
+                      ∀ {root : Circuit.Message Library.U32.Goldilocks.F},
+                        Optimized.Depth.erase cfg root =
+                            Circuit.Erasure.message compiled.circuit.system
+                              { channel := entry.resolved.name, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Circuit.WeightedRow Library.U32.Goldilocks.F)},
+                              rows.length ≤ 2 ^ 39 →
+                                plan.checkMemo (Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                  DecodesValues compiled.specialized.program.enums wires (entryValues args) →
+                                    WireValue.decode compiled.specialized.program.enums output = some result →
+                                      ∃ value heap calls,
+                                        prepared.ObsFn external args value heap calls ∧
+                                          Represents (compiled.traceROM rom) heap value result ∧
+                                            Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
+-/
+#guard_msgs in
+#check @Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed
+/--
+info: 'Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+-/
+#guard_msgs in
+#print axioms Aiur.Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks_observed
 
 /-! ### 4. Standard Library: Carry, U8, U32, U64, Blake3, and Goldilocks -/
 
