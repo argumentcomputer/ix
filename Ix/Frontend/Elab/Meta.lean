@@ -85,8 +85,7 @@ where
 /-- Substitute `args` for loose `.bvar (depth + i)` (`i < args.size`, where `bvar depth`
     is replaced by `args[0]`), and lower loose `.bvar`s above `depth + args.size`. -/
 def instantiateRevAt (args : Array Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Expr :=
-  if !hasLooseBVarsAt e depth then e
-  else match e with
+  match e with
   | .bvar i _ =>
     if Nat.ble depth i then
       let idx := i - depth
@@ -94,7 +93,7 @@ def instantiateRevAt (args : Array Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Exp
       | some arg => liftLooseBVars arg depth
       | none     => Expr.mkBVar (i - args.size)
     else
-      Expr.mkBVar i
+      e
   | .app f a _       => Expr.mkApp (instantiateRevAt args f depth) (instantiateRevAt args a depth)
   | .lam nm t b bi _ => Expr.mkLam nm (instantiateRevAt args t depth) (instantiateRevAt args b (depth + 1)) bi
   | .forallE nm t b bi _ => Expr.mkForallE nm (instantiateRevAt args t depth) (instantiateRevAt args b (depth + 1)) bi
@@ -108,17 +107,16 @@ def instantiateRevAt (args : Array Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Exp
 def instantiateRev (body : Ix.Expr) (args : Array Ix.Expr) : Ix.Expr :=
   if args.isEmpty then body else instantiateRevAt args body 0
 
-/-- Substitute a single `arg` for loose `.bvar depth` in `e` without `Array` or proof terms. -/
+/-- Substitute a single `arg` for loose `.bvar depth` in `e` in a single O(N) pass. -/
 def instantiate1At (arg : Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Expr :=
-  if !hasLooseBVarsAt e depth then e
-  else match e with
+  match e with
   | .bvar i _ =>
     if Nat.beq i depth then
       liftLooseBVars arg depth
     else if Nat.ble (depth + 1) i then
       Expr.mkBVar (i - 1)
     else
-      Expr.mkBVar i
+      e
   | .app f a _       => Expr.mkApp (instantiate1At arg f depth) (instantiate1At arg a depth)
   | .lam nm t b bi _ => Expr.mkLam nm (instantiate1At arg t depth) (instantiate1At arg b (depth + 1)) bi
   | .forallE nm t b bi _ => Expr.mkForallE nm (instantiate1At arg t depth) (instantiate1At arg b (depth + 1)) bi
@@ -132,12 +130,12 @@ def instantiate1At (arg : Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Expr :=
 def instantiate1 (body : Ix.Expr) (arg : Ix.Expr) : Ix.Expr :=
   instantiate1At arg body 0
 
-/-- Replace free variable `fvarId` in `e` with `bvar depth` (lifting existing loose `bvar ≥ depth` by 1). -/
+/-- Replace free variable `fvarId` in `e` with `bvar depth` (lifting existing loose `bvar ≥ depth` by 1)
+    in a single O(N) pass. -/
 def abstractFVarAt (fvarId : Ix.Name) (e : Ix.Expr) (d : Nat) : Ix.Expr :=
-  if !containsFVar fvarId e && !hasLooseBVarsAt e d then e
-  else match e with
+  match e with
   | .bvar i _ =>
-    if Nat.ble d i then Expr.mkBVar (i + 1) else Expr.mkBVar i
+    if Nat.ble d i then Expr.mkBVar (i + 1) else e
   | .fvar n _ =>
     if n == fvarId then Expr.mkBVar d else e
   | .app f a _       => Expr.mkApp (abstractFVarAt fvarId f d) (abstractFVarAt fvarId a d)
@@ -151,6 +149,33 @@ def abstractFVarAt (fvarId : Ix.Name) (e : Ix.Expr) (d : Nat) : Ix.Expr :=
 
 def abstractFVar (fvarId : Ix.Name) (body : Ix.Expr) : Ix.Expr :=
   abstractFVarAt fvarId body 0
+
+/-- Find the 0-based index of `target` in `xs`. -/
+def findNameIdx? : List Ix.Name → Ix.Name → Nat → Option Nat
+  | [], _, _ => none
+  | x :: xs, target, idx =>
+    if x == target then some idx else findNameIdx? xs target (idx + 1)
+
+/-- Simultaneously abstract a reversed list of binder FVars `revFVars = [f_{k-1}, ..., f_0]`
+    (where `f_{k-1}` is innermost -> `bvar d`, and `f_0` is outermost -> `bvar (d + k - 1)`)
+    in a single O(N) pass. -/
+def abstractFVarsRevAt (revFVars : List Ix.Name) (numFVars : Nat) (e : Ix.Expr) (d : Nat) : Ix.Expr :=
+  if Nat.beq numFVars 0 then e else go e d
+where
+  go : Ix.Expr → Nat → Ix.Expr
+    | ex@(.bvar i _), c =>
+      if Nat.ble c i then Expr.mkBVar (i + numFVars) else ex
+    | ex@(.fvar n _), c =>
+      match findNameIdx? revFVars n 0 with
+      | some idx => Expr.mkBVar (c + idx)
+      | none     => ex
+    | .app f a _, c          => Expr.mkApp (go f c) (go a c)
+    | .lam nm t b bi _, c    => Expr.mkLam nm (go t c) (go b (c + 1)) bi
+    | .forallE nm t b bi _, c => Expr.mkForallE nm (go t c) (go b (c + 1)) bi
+    | .letE nm t v b nd _, c => Expr.mkLetE nm (go t c) (go v c) (go b (c + 1)) nd
+    | .proj nm i s _, c      => Expr.mkProj nm i (go s c)
+    | .mdata md x _, c       => Expr.mkMData md (go x c)
+    | other, _               => other
 
 /-- Replace simultaneous FVars `fvars[i]` with `vals[i]` in `e`. -/
 def replaceFVars (e : Ix.Expr) (fvars : Array Ix.Name) (vals : Array Ix.Expr) : Ix.Expr :=
@@ -183,56 +208,102 @@ where
     | .mdata md x _       => Expr.mkMData md (go x)
     | other               => other
 
+/-- Close a reversed list of non-let `LocalDecl`s around `absBody` in O(K) binder allocations,
+    abstracting each binder's domain type once against its outer prefix. -/
+def closeLambdaDeclsRev : List LocalDecl → List Ix.Name → Nat → Ix.Expr → Ix.Expr
+  | [], _, _, acc => acc
+  | decl :: restDecls, _ :: outerRevFVars, outerCount, acc =>
+    let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
+    let absDom := abstractFVarsRevAt outerRevFVars outerCount decl.type 0
+    let acc' := Expr.mkLamContract bName absDom acc decl.binderInfo decl.contract
+    closeLambdaDeclsRev restDecls outerRevFVars (outerCount - 1) acc'
+  | _, _, _, acc => acc
+
+/-- Close a reversed list of non-let `LocalDecl`s into a `.forallE` telescope in O(K) steps,
+    abstracting each binder's domain type once against its outer prefix. -/
+def closeForallDeclsRev (retContract : Ixon.ValueContract) :
+    List LocalDecl → List Ix.Name → Nat → Bool → Ix.Expr → Ix.Expr
+  | [], _, _, _, acc => acc
+  | decl :: restDecls, _ :: outerRevFVars, outerCount, isInnermost, acc =>
+    let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
+    let absDom := abstractFVarsRevAt outerRevFVars outerCount decl.type 0
+    let resContract : Ixon.ValueContract := if isInnermost then retContract else .shared
+    let acc' := Expr.mkForallContract bName absDom acc decl.binderInfo decl.contract resContract
+    closeForallDeclsRev retContract restDecls outerRevFVars (outerCount - 1) false acc'
+  | _, _, _, _, acc => acc
+
 /-- Close a list of FVar IDs into a telescope of `.lam` / `.letE` binders using `lctx`. -/
-def mkLambdaFVarsList (lctx : LocalContext) : List Ix.Name → Ix.Expr → Ix.Expr
-  | [], body => body
-  | fvarId :: rest, body =>
-    let acc := mkLambdaFVarsList lctx rest body
-    match lctx.findFVar? fvarId with
-    | none => acc
-    | some decl =>
-      let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
-      let absBody := abstractFVar fvarId acc
-      match decl.value? with
-      | some val =>
-        let letKind := decl.letKind?.getD .value
-        let nonDep := decl.nonDep || !containsFVar fvarId acc
-        Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
-      | none =>
-        Expr.mkLamContract bName decl.type absBody decl.binderInfo decl.contract
+def mkLambdaFVarsList (lctx : LocalContext) (fvars : List Ix.Name) (body : Ix.Expr) : Ix.Expr :=
+  let decls := fvars.filterMap lctx.findFVar?
+  if decls.all (·.value?.isNone) then
+    let revDecls := decls.reverse
+    let revIds := revDecls.map (·.fvarId)
+    let k := revIds.length
+    let absBody := abstractFVarsRevAt revIds k body 0
+    closeLambdaDeclsRev revDecls revIds (k - 1) absBody
+  else
+    let rec go : List Ix.Name → Ix.Expr → Ix.Expr
+      | [], b => b
+      | fvarId :: rest, b =>
+        let acc := go rest b
+        match lctx.findFVar? fvarId with
+        | none => acc
+        | some decl =>
+          let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
+          let absBody := abstractFVar fvarId acc
+          match decl.value? with
+          | some val =>
+            let letKind := decl.letKind?.getD .value
+            let nonDep := decl.nonDep || !containsFVar fvarId acc
+            Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
+          | none =>
+            Expr.mkLamContract bName decl.type absBody decl.binderInfo decl.contract
+    go fvars body
 
 /-- Close an array of FVar IDs into a telescope of `.lam` / `.letE` binders using `lctx`,
     attaching `ix.contract` metadata frames whenever a binder has non-default substructural contract. -/
 def mkLambdaFVars (fvars : Array Ix.Name) (body : Ix.Expr) : IxElabM Ix.Expr := do
+  if fvars.isEmpty then return body
   let ctx ← read
   return mkLambdaFVarsList ctx.lctx fvars.toList body
 
 /-- Close a list of FVar IDs into a telescope of `.forallE` / `.letE` binders using `lctx`. -/
-def mkForallFVarsList (lctx : LocalContext) (retContract : Ixon.ValueContract) :
-    List Ix.Name → Ix.Expr → Ix.Expr
-  | [], body => body
-  | fvarId :: rest, body =>
-    let acc := mkForallFVarsList lctx retContract rest body
-    let resContract : Ixon.ValueContract := match rest with
-      | [] => retContract
-      | _  => .shared
-    match lctx.findFVar? fvarId with
-    | none => acc
-    | some decl =>
-      let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
-      let absBody := abstractFVar fvarId acc
-      match decl.value? with
-      | some val =>
-        let letKind := decl.letKind?.getD .value
-        let nonDep := decl.nonDep || !containsFVar fvarId acc
-        Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
-      | none =>
-        Expr.mkForallContract bName decl.type absBody decl.binderInfo decl.contract resContract
+def mkForallFVarsList (lctx : LocalContext) (retContract : Ixon.ValueContract)
+    (fvars : List Ix.Name) (body : Ix.Expr) : Ix.Expr :=
+  let decls := fvars.filterMap lctx.findFVar?
+  if decls.all (·.value?.isNone) then
+    let revDecls := decls.reverse
+    let revIds := revDecls.map (·.fvarId)
+    let k := revIds.length
+    let absBody := abstractFVarsRevAt revIds k body 0
+    closeForallDeclsRev retContract revDecls revIds (k - 1) true absBody
+  else
+    let rec go : List Ix.Name → Ix.Expr → Ix.Expr
+      | [], b => b
+      | fvarId :: rest, b =>
+        let acc := go rest b
+        let resContract : Ixon.ValueContract := match rest with
+          | [] => retContract
+          | _  => .shared
+        match lctx.findFVar? fvarId with
+        | none => acc
+        | some decl =>
+          let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
+          let absBody := abstractFVar fvarId acc
+          match decl.value? with
+          | some val =>
+            let letKind := decl.letKind?.getD .value
+            let nonDep := decl.nonDep || !containsFVar fvarId acc
+            Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
+          | none =>
+            Expr.mkForallContract bName decl.type absBody decl.binderInfo decl.contract resContract
+    go fvars body
 
 /-- Close an array of FVar IDs into a telescope of `.forallE` / `.letE` binders using `lctx`,
     attaching `ix.contract` metadata frames for binder contracts and `retContract` on the innermost arrow. -/
 def mkForallFVars (fvars : Array Ix.Name) (body : Ix.Expr)
     (retContract : Ixon.ValueContract := .shared) : IxElabM Ix.Expr := do
+  if fvars.isEmpty then return body
   let ctx ← read
   return mkForallFVarsList ctx.lctx retContract fvars.toList body
 
@@ -489,19 +560,34 @@ def defaultUnassignedLevelMVars : Ix.Level → Ix.Level
   | .max x y _  => normalizeLevel (Level.mkMax (defaultUnassignedLevelMVars x) (defaultUnassignedLevelMVars y))
   | .imax x y _ => normalizeLevel (Level.mkIMax (defaultUnassignedLevelMVars x) (defaultUnassignedLevelMVars y))
 
-def defaultUnassignedExprLevelMVars : Ix.Expr → Ix.Expr
+/-- True if `e` contains any universe level metavariable (`.mvar`). -/
+def hasExprLevelMVar : Ix.Expr → Bool
+  | .sort u _          => hasLevelMVar u
+  | .const _ us _      => us.toList.any hasLevelMVar
+  | .app f a _         => hasExprLevelMVar f || hasExprLevelMVar a
+  | .lam _ t b _ _     => hasExprLevelMVar t || hasExprLevelMVar b
+  | .forallE _ t b _ _ => hasExprLevelMVar t || hasExprLevelMVar b
+  | .letE _ t v b _ _  => hasExprLevelMVar t || hasExprLevelMVar v || hasExprLevelMVar b
+  | .proj _ _ s _      => hasExprLevelMVar s
+  | .mdata _ x _       => hasExprLevelMVar x
+  | _                  => false
+
+def defaultUnassignedExprLevelMVarsCore : Ix.Expr → Ix.Expr
   | .sort u _           => Expr.mkSort (defaultUnassignedLevelMVars u)
   | c@(.const nm us _)  =>
     match us.toList with
     | []  => c
     | uls => Expr.mkConst nm (Array.mk (uls.map defaultUnassignedLevelMVars))
-  | .app f a _          => Expr.mkApp (defaultUnassignedExprLevelMVars f) (defaultUnassignedExprLevelMVars a)
-  | .lam nm t b bi _    => Expr.mkLam nm (defaultUnassignedExprLevelMVars t) (defaultUnassignedExprLevelMVars b) bi
-  | .forallE nm t b bi _ => Expr.mkForallE nm (defaultUnassignedExprLevelMVars t) (defaultUnassignedExprLevelMVars b) bi
-  | .letE nm t v b nd _ => Expr.mkLetE nm (defaultUnassignedExprLevelMVars t) (defaultUnassignedExprLevelMVars v) (defaultUnassignedExprLevelMVars b) nd
-  | .proj nm i s _      => Expr.mkProj nm i (defaultUnassignedExprLevelMVars s)
-  | .mdata md x _       => Expr.mkMData md (defaultUnassignedExprLevelMVars x)
+  | .app f a _          => Expr.mkApp (defaultUnassignedExprLevelMVarsCore f) (defaultUnassignedExprLevelMVarsCore a)
+  | .lam nm t b bi _    => Expr.mkLam nm (defaultUnassignedExprLevelMVarsCore t) (defaultUnassignedExprLevelMVarsCore b) bi
+  | .forallE nm t b bi _ => Expr.mkForallE nm (defaultUnassignedExprLevelMVarsCore t) (defaultUnassignedExprLevelMVarsCore b) bi
+  | .letE nm t v b nd _ => Expr.mkLetE nm (defaultUnassignedExprLevelMVarsCore t) (defaultUnassignedExprLevelMVarsCore v) (defaultUnassignedExprLevelMVarsCore b) nd
+  | .proj nm i s _      => Expr.mkProj nm i (defaultUnassignedExprLevelMVarsCore s)
+  | .mdata md x _       => Expr.mkMData md (defaultUnassignedExprLevelMVarsCore x)
   | other               => other
+
+def defaultUnassignedExprLevelMVars (e : Ix.Expr) : Ix.Expr :=
+  if !hasExprLevelMVar e then e else defaultUnassignedExprLevelMVarsCore e
 
 /-! ## Weak-Head Normal Form (`whnf`) -/
 
@@ -820,16 +906,45 @@ def inferType : Nat → Ix.Expr → IxElabM Ix.Expr
       | none =>
         throwElabError s!"unknown constant '{Name.toStringTotal nm}'"
     | .app f a _ =>
-      let fType ← inferType fuel f
-      let fTypeWhnf ← whnf fuel fType
-      match stripMData fTypeWhnf with
-      | .forallE _ _ body _ _ =>
-        return instantiate1 body a
+      -- Fast O(1) type extraction for fully-applied standard arithmetic & relational operators
+      let (headFn, appArgs) := getAppFnArgs e
+      match headFn with
+      | .const nm _ _ =>
+        if appArgs.size == 6 &&
+           (nm == Name.mkStr2 "HAdd" "hAdd" || nm == Name.mkStr2 "HSub" "hSub" ||
+            nm == Name.mkStr2 "HMul" "hMul" || nm == Name.mkStr2 "HDiv" "hDiv" ||
+            nm == Name.mkStr2 "HMod" "hMod" || nm == Name.mkStr2 "HPow" "hPow") then
+          return appArgs.getD 2 e
+        else if appArgs.size == 3 && nm == Name.mkStr2 "OfNat" "ofNat" then
+          return appArgs.getD 0 e
+        else if (appArgs.size == 3 && (nm == Name.simple "Eq" || nm == Name.simple "Ne")) ||
+                (appArgs.size == 4 &&
+                 (nm == Name.mkStr2 "LE" "le" || nm == Name.mkStr2 "LT" "lt" ||
+                  nm == Name.mkStr2 "GT" "gt" || nm == Name.mkStr2 "GE" "ge")) ||
+                (appArgs.size == 2 &&
+                 (nm == Name.simple "And" || nm == Name.simple "Or" || nm == Name.simple "Iff")) ||
+                (appArgs.size == 1 && nm == Name.simple "Not") then
+          return Expr.mkProp
+        else
+          let fType ← inferType fuel f
+          let fTypeWhnf ← whnf fuel fType
+          match stripMData fTypeWhnf with
+          | .forallE _ _ body _ _ =>
+            return instantiate1 body a
+          | _ =>
+            let codLvl ← mkFreshLevelMVar
+            let codTy ← mkFreshExprMVar (Expr.mkSort codLvl)
+            return codTy
       | _ =>
-        -- If `fTypeWhnf` is a metavariable `?m`, return a fresh codomain metavariable
-        let codLvl ← mkFreshLevelMVar
-        let codTy ← mkFreshExprMVar (Expr.mkSort codLvl)
-        return codTy
+        let fType ← inferType fuel f
+        let fTypeWhnf ← whnf fuel fType
+        match stripMData fTypeWhnf with
+        | .forallE _ _ body _ _ =>
+          return instantiate1 body a
+        | _ =>
+          let codLvl ← mkFreshLevelMVar
+          let codTy ← mkFreshExprMVar (Expr.mkSort codLvl)
+          return codTy
     | .lam nm dom body bi _ =>
       let domSort ← inferType fuel dom
       let _ ← whnf fuel domSort
@@ -1192,9 +1307,19 @@ def synthInstance? : Nat → Ix.Expr → IxElabM (Option Ix.Expr)
       let ctx ← read
       -- 1. Try local context hypotheses (e.g. `[inst : Add α]`)
       for decl in ctx.lctx.revDecls do
-        let mightMatch : Bool := match returnHeadConstName? 16 decl.type with
-          | some cName => cName == className
-          | none       => decl.binderInfo == .instImplicit
+        let mightMatch : Bool :=
+          if decl.binderInfo == .instImplicit then
+            match returnHeadConstName? 16 decl.type with
+            | some cName => cName == className
+            | none       => true
+          else
+            match stripMData decl.type with
+            | .const cName _ _ => cName == className
+            | .app _ _ _       =>
+              match getAppFn decl.type with
+              | .const cName _ _ => cName == className
+              | _                => false
+            | _ => false
         if mightMatch then
           let hit? ← observing? do
             let fvar := Expr.mkFVar decl.fvarId

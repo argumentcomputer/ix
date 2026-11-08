@@ -150,8 +150,18 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
               refs
           | _ => refs
     | .node _ kind args =>
+      -- 0. Fast path for leaf and non-binding expression nodes (avoids 15 `kind ==` checks)
+      if kind == SyntaxKind.numLit || kind == SyntaxKind.strLit ||
+         kind == SyntaxKind.charLit || kind == SyntaxKind.propTerm ||
+         kind == SyntaxKind.typeTerm || kind == SyntaxKind.binderPrefix ||
+         kind == SyntaxKind.valuePrefix || kind == SyntaxKind.holeTerm then
+        refs
+      else if kind == SyntaxKind.nullKind || kind == SyntaxKind.binOpTerm ||
+              kind == SyntaxKind.appTerm || kind == SyntaxKind.arrowTerm ||
+              kind == SyntaxKind.parenTerm then
+        args.toList.foldl (fun acc child => scanRec locals child acc) refs
       -- 1. `fun binders => body`
-      if kind == SyntaxKind.funTerm then
+      else if kind == SyntaxKind.funTerm then
         let binders := Syntax.getArgs (args.getD 1 .missing)
         let body := args.getD 3 .missing
         let (locals', refs') := scanBinderArray scanRec locals binders refs
@@ -611,16 +621,23 @@ def scheduleModuleDecls (modIdx : ModuleIndex)
   let baseAdj : Array (Array Nat) := Array.mk (explicitAdj.toList.zipIdx.map fun (nbrs, u) =>
     Array.mk (nbrs.toList.filter (· != u)))
   let fullAdj := addInstanceSchedulingEdges modIdx.decls deps baseAdj
-  match tarjanCondensation fullAdj with
-  | none =>
-    throw "internal error: Tarjan SCC condensation failed"
-  | some cond =>
-    let sccs : Array ScheduledSCC := Array.mk (cond.comps.toList.zipIdx.map fun (rawComp, sccIdx) =>
-      let orderedComp := sortSccBySigRefs rawComp deps
-      let kind := classifyScc modIdx explicitAdj orderedComp
-      { sccIdx, kind, declIdxs := orderedComp })
-    let _ := n
+  if fullAdj.toList.all (·.isEmpty) then
+    let sccs : Array ScheduledSCC := Array.mk ((List.range n).map fun sccIdx =>
+      let comp := #[sccIdx]
+      let kind := classifyScc modIdx explicitAdj comp
+      { sccIdx, kind, declIdxs := comp })
     return { modIdx, deps, explicitAdj, fullAdj, sccs }
+  else
+    match tarjanCondensation fullAdj with
+    | none =>
+      throw "internal error: Tarjan SCC condensation failed"
+    | some cond =>
+      let sccs : Array ScheduledSCC := Array.mk (cond.comps.toList.zipIdx.map fun (rawComp, sccIdx) =>
+        let orderedComp := sortSccBySigRefs rawComp deps
+        let kind := classifyScc modIdx explicitAdj orderedComp
+        { sccIdx, kind, declIdxs := orderedComp })
+      let _ := n
+      return { modIdx, deps, explicitAdj, fullAdj, sccs }
 
 /-- End-to-end Pass 1 + Pass 2 + Pass 3: parse `.ix` module syntax into a `ModuleSchedule`. -/
 def analyzeModuleSyntax (moduleStx : Ix.Syntax)

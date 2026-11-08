@@ -12,34 +12,59 @@ namespace Ix.Frontend.Parser
 
 /-! ## Character Predicates & Whitespace / Comment Scanners -/
 
+@[inline] def isSpaceNat (cn : Nat) : Bool :=
+  Nat.beq cn 32 || Nat.beq cn 10 || Nat.beq cn 9 || Nat.beq cn 13
+
+@[inline] def isDigitNat (cn : Nat) : Bool :=
+  Nat.ble 48 cn && Nat.ble cn 57
+
+@[inline] def isHexDigitNat (cn : Nat) : Bool :=
+  (Nat.ble 48 cn && Nat.ble cn 57) ||
+  (Nat.ble 97 cn && Nat.ble cn 102) ||
+  (Nat.ble 65 cn && Nat.ble cn 70)
+
+@[inline] def isLetterLikeNat (cn : Nat) : Bool :=
+  (Nat.ble 97 cn && Nat.ble cn 122) ||
+  (Nat.ble 65 cn && Nat.ble cn 90) ||
+  (Nat.ble 0x0391 cn && (
+    (Nat.ble cn 0x03C9 && (
+      (Nat.ble 0x03B1 cn && !Nat.beq cn 0x03BB) ||
+      (Nat.ble cn 0x03A9 && !Nat.beq cn 0x03A0 && !Nat.beq cn 0x03A3))) ||
+    (Nat.ble 0x2070 cn && (
+      Nat.ble cn 0x209F ||
+      (Nat.ble 0x2100 cn && Nat.ble cn 0x214F)))))
+
+@[inline] def isIdFirstNat (cn : Nat) : Bool :=
+  isLetterLikeNat cn || Nat.beq cn 95
+
+@[inline] def isIdRestNat (cn : Nat) : Bool :=
+  isLetterLikeNat cn || isDigitNat cn ||
+  Nat.beq cn 95 || Nat.beq cn 39 || Nat.beq cn 63 || Nat.beq cn 33
+
 def isSpaceChar (c : Char) : Bool :=
-  c == ' ' || c == '\t' || c == '\r' || c == '\n'
+  InputContext.bindNat c.val.toNat isSpaceNat
 
 def isDigitChar (c : Char) : Bool :=
-  '0' ≤ c && c ≤ '9'
+  InputContext.bindNat c.val.toNat isDigitNat
 
 def isHexDigitChar (c : Char) : Bool :=
-  ('0' ≤ c && c ≤ '9') || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+  InputContext.bindNat c.val.toNat isHexDigitNat
 
 def hexDigitVal (c : Char) : Nat :=
-  if '0' ≤ c && c ≤ '9' then c.toNat - '0'.toNat
-  else if 'a' ≤ c && c ≤ 'f' then c.toNat - 'a'.toNat + 10
-  else if 'A' ≤ c && c ≤ 'F' then c.toNat - 'A'.toNat + 10
-  else 0
+  InputContext.bindNat c.val.toNat fun cn =>
+    if Nat.ble 48 cn && Nat.ble cn 57 then cn - 48
+    else if Nat.ble 97 cn && Nat.ble cn 102 then cn - 87
+    else if Nat.ble 65 cn && Nat.ble cn 70 then cn - 55
+    else 0
 
 def isLetterLike (c : Char) : Bool :=
-  ('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') ||
-  -- Common mathematical / Greek / subscript / double-struck Unicode ranges used in Lean identifiers
-  (0x03B1 ≤ c.toNat && c.toNat ≤ 0x03C9 && c.toNat != 0x03BB) || -- α..ω except λ
-  (0x0391 ≤ c.toNat && c.toNat ≤ 0x03A9 && c.toNat != 0x03A0 && c.toNat != 0x03A3) ||
-  (0x2070 ≤ c.toNat && c.toNat ≤ 0x209F) || -- superscripts/subscripts ₀..₉
-  (0x2100 ≤ c.toNat && c.toNat ≤ 0x214F)    -- double-struck letters ℕ, ℤ, ℚ, ℝ, ℂ
+  InputContext.bindNat c.val.toNat isLetterLikeNat
 
 def isIdFirst (c : Char) : Bool :=
-  isLetterLike c || c == '_'
+  InputContext.bindNat c.val.toNat isIdFirstNat
 
 def isIdRest (c : Char) : Bool :=
-  isLetterLike c || isDigitChar c || c == '_' || c == '\'' || c == '?' || c == '!'
+  InputContext.bindNat c.val.toNat isIdRestNat
 
 /-- Skip to the end of a `--` line comment on a `List Char` tail in $O(1)$ per character. -/
 def skipLineCommentChars : List Char → Nat → Bool → (List Char × Nat × Bool)
@@ -118,11 +143,13 @@ def hasLeadingNewline (stx : Ix.Syntax) : Bool :=
 /-- Construct an `Ix.SourceInfo.original` given the precomputed `hasNl : Bool` from `skipWhitespaceChars`
     in $O(1)$ time and space (retaining no reference to the full source buffer `c.input`). -/
 def mkOriginalSourceInfoFast (hasNl : Bool) (tokStart tokStop : Nat) : Ix.SourceInfo :=
-  let leading : Ix.Substring :=
-    if hasNl then { str := "\n", startPos := 0, stopPos := 1 }
-    else { str := "", startPos := 0, stopPos := 0 }
+  InputContext.bindNat tokStart fun tokStart' =>
+  InputContext.bindNat tokStop fun tokStop' =>
   let trailing : Ix.Substring := { str := "", startPos := 0, stopPos := 0 }
-  .original leading tokStart trailing tokStop
+  if hasNl then
+    .original { str := "\n", startPos := 0, stopPos := 1 } tokStart' trailing tokStop'
+  else
+    .original { str := "", startPos := 0, stopPos := 0 } tokStart' trailing tokStop'
 
 /-- Construct an `Ix.SourceInfo.original` for a token spanning `[tokStart, tokStop)`
     with leading trivia `[leadStart, tokStart)` and trailing trivia `[tokStop, trailStop)`. -/
@@ -164,19 +191,33 @@ def scanNumberChars : List Char → Nat → (String × List Char × Nat)
 def scanNumberEnd (c : InputContext) (pos : Nat) : Nat :=
   (scanNumberChars (c.charsFrom pos) pos).2.2
 
+/-- Single-pass decimal digit parser (skipping `_` separators). -/
+def parseDecDigits : List Char → Nat → Bool → Option Nat
+  | [], acc, true  => some acc
+  | [], _, false   => none
+  | c :: cs, acc, seen =>
+    InputContext.bindNat c.val.toNat fun cn =>
+      if Nat.beq cn 95 then
+        parseDecDigits cs acc seen
+      else if isDigitNat cn then
+        InputContext.bindNat (acc * 10 + (cn - 48)) fun acc' =>
+          parseDecDigits cs acc' true
+      else
+        none
+
 /-- Parse the numeric value of a scanned number literal string. -/
 def parseNatLiteral (raw : String) : Option Nat :=
-  let cs := raw.toList.filter (· != '_')
-  match cs with
-  | '0' :: 'x' :: hex | '0' :: 'X' :: hex =>
+  match raw.toList with
+  | '0' :: 'x' :: rest | '0' :: 'X' :: rest =>
+    let hex := rest.filter (· != '_')
     if hex.isEmpty || !hex.all isHexDigitChar then none
     else some (hex.foldl (fun acc d => acc * 16 + hexDigitVal d) 0)
-  | '0' :: 'b' :: bin | '0' :: 'B' :: bin =>
+  | '0' :: 'b' :: rest | '0' :: 'B' :: rest =>
+    let bin := rest.filter (· != '_')
     if bin.isEmpty || !bin.all (fun ch => ch == '0' || ch == '1') then none
     else some (bin.foldl (fun acc d => acc * 2 + (if d == '1' then 1 else 0)) 0)
-  | dec =>
-    if dec.isEmpty || !dec.all isDigitChar then none
-    else some (dec.foldl (fun acc d => acc * 10 + (d.toNat - '0'.toNat)) 0)
+  | cs =>
+    parseDecDigits cs 0 false
 
 /-- Scan a string literal starting after the opening `"` on a `List Char` tail.
     Returns `some (decodedString, remainingChars, posAfterClosingQuote)` or `none`. -/
@@ -311,16 +352,10 @@ def isKeyword (env : IxParserEnv) (s : String) : Bool :=
 def mkScannedState (s : ParserState) (leadStart trailStop : Nat) (tok : Ix.Syntax) : ParserState :=
   match s with
   | ⟨⟨rev, len⟩, lhsPrec, _, _, _⟩ =>
-    let newLen := len + 1
-    let stack' : SyntaxStack :=
-      if Nat.beq newLen 0 then ⟨tok :: rev, 0⟩ else ⟨tok :: rev, newLen⟩
-    let cache' : TokenCacheEntry :=
-      if Nat.beq leadStart 0 && Nat.beq trailStop 0 then ⟨0, 0, tok⟩
-      else ⟨leadStart, trailStop, tok⟩
-    if Nat.beq trailStop 0 then
-      ⟨stack', lhsPrec, 0, cache', none⟩
-    else
-      ⟨stack', lhsPrec, trailStop, cache', none⟩
+    InputContext.bindNat (len + 1) fun newLen =>
+    InputContext.bindNat leadStart fun leadStart' =>
+    InputContext.bindNat trailStop fun trailStop' =>
+      ⟨⟨tok :: rev, newLen⟩, lhsPrec, trailStop', ⟨leadStart', trailStop', tok⟩, none⟩
 
 /-- Core token scanner: reads one token starting at `s.pos` with a SINGLE $O(\log N)$
     `c.charsFrom` lookup, scanning leading whitespace, the token body, and trailing
@@ -329,82 +364,94 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
   let c := ctx.inputCtx
   let leadStart := s.pos
   let leadChars := c.charsFrom leadStart
-  let (tokChars, tokStart, hasNl) := skipWhitespaceChars c.size (c.size - leadStart + 1) leadChars leadStart false
-  match tokChars with
-  | [] =>
-    s.setPos tokStart |>.mkEOIError
-  | ch :: restTokChars =>
-    -- 1. Content-hash reference `#<hex-digits>`
-    let isHashHex := ch == '#' && match restTokChars with | d :: _ => isHexDigitChar d | [] => false
-    if isHashHex then
-      let (afterHex, revHex, hexEnd) := scanDigitsChars isHexDigitChar restTokChars (tokStart + 1) []
-      let trailStop := skipHorizontalWhitespaceChars afterHex hexEnd
-      let info := mkOriginalSourceInfoFast hasNl tokStart hexEnd
-      let hexVal := String.ofList revHex.reverse
-      let tok := Syntax.mkNode SyntaxKind.hashRef #[Syntax.mkAtom info hexVal] info
-      mkScannedState s leadStart trailStop tok
-    -- 2. String literal `"..."`
-    else if ch == '"' then
-      match scanStringLitChars restTokChars (tokStart + 1) [] with
-      | some (decoded, afterStr, tokStop) =>
-        let trailStop := skipHorizontalWhitespaceChars afterStr tokStop
-        let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
-        let tok := Syntax.mkNode SyntaxKind.strLit #[Syntax.mkAtom info decoded] info
-        mkScannedState s leadStart trailStop tok
-      | none =>
-        s.setPos tokStart |>.mkUnexpectedError "unterminated string literal"
-    -- 3. Character literal `'c'` (only when not a prime inside an identifier)
-    else if ch == '\'' && (scanCharLitChars restTokChars (tokStart + 1)).isSome then
-      match scanCharLitChars restTokChars (tokStart + 1) with
-      | some (decodedChar, afterChar, tokStop) =>
-        let trailStop := skipHorizontalWhitespaceChars afterChar tokStop
-        let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
-        let tok := Syntax.mkNode SyntaxKind.charLit
-          #[Syntax.mkAtom info (String.singleton decodedChar)] info
-        mkScannedState s leadStart trailStop tok
-      | none =>
-        s.setPos tokStart |>.mkUnexpectedError "invalid character literal"
-    -- 4. Numeric literal `0..9`
-    else if isDigitChar ch then
-      let (rawNum, afterNum, tokStop) := scanNumberChars tokChars tokStart
-      match parseNatLiteral rawNum with
-      | some n =>
-        let trailStop := skipHorizontalWhitespaceChars afterNum tokStop
-        let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
-        let tok := Syntax.mkNode SyntaxKind.numLit #[Syntax.mkAtom info (toString n)] info
-        mkScannedState s leadStart trailStop tok
-      | none =>
-        s.setPos tokStart |>.mkUnexpectedError s!"invalid numeric literal '{rawNum}'"
-    -- 5. Identifier or keyword (including `#merge` / `foo.#merge._1`)
-    else if isIdFirst ch || ch == '«' ||
-            (ch == '#' && (scanOneIdentComponentChars tokChars tokStart).isSome) then
-      match scanHierarchicalIdentChars tokChars tokStart with
-      | some (name, firstCs, firstPart, afterIdent, tokStop, isSinglePart) =>
-        let trailStop := skipHorizontalWhitespaceChars afterIdent tokStop
-        let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
-        -- If it is a single unescaped component that matches a reserved keyword (or `#merge`), emit an `.atom`
-        let isSingleUnescaped := ch != '«' && isSinglePart
-        let tok :=
-          if isSingleUnescaped && (firstPart == "#merge" || isKeywordChars ctx.env firstCs) then
-            Syntax.mkAtom info firstPart
+  match skipWhitespaceChars c.size (c.size - leadStart + 1) leadChars leadStart false with
+  | (tokChars, rawTokStart, hasNl) =>
+    InputContext.bindNat rawTokStart fun tokStart =>
+      match tokChars with
+      | [] =>
+        s.setPos tokStart |>.mkEOIError
+      | ch :: restTokChars =>
+        InputContext.bindNat ch.val.toNat fun cn =>
+        -- 1. Content-hash reference `#<hex-digits>`
+        let isHashHex := Nat.beq cn 35 && match restTokChars with | d :: _ => isHexDigitChar d | [] => false
+        if isHashHex then
+          let (afterHex, revHex, hexEnd) := scanDigitsChars isHexDigitChar restTokChars (tokStart + 1) []
+          let trailStop := skipHorizontalWhitespaceChars afterHex hexEnd
+          let info := mkOriginalSourceInfoFast hasNl tokStart hexEnd
+          let hexVal := String.ofList revHex.reverse
+          let tok := Syntax.mkNode SyntaxKind.hashRef #[Syntax.mkAtom info hexVal] info
+          mkScannedState s leadStart trailStop tok
+        -- 2. String literal `"..."`
+        else if Nat.beq cn 34 then
+          match scanStringLitChars restTokChars (tokStart + 1) [] with
+          | some (decoded, afterStr, tokStop) =>
+            let trailStop := skipHorizontalWhitespaceChars afterStr tokStop
+            let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
+            let tok := Syntax.mkNode SyntaxKind.strLit #[Syntax.mkAtom info decoded] info
+            mkScannedState s leadStart trailStop tok
+          | none =>
+            s.setPos tokStart |>.mkUnexpectedError "unterminated string literal"
+        -- 3. Character literal `'c'` (only when not a prime inside an identifier)
+        else if Nat.beq cn 39 && (scanCharLitChars restTokChars (tokStart + 1)).isSome then
+          match scanCharLitChars restTokChars (tokStart + 1) with
+          | some (decodedChar, afterChar, tokStop) =>
+            let trailStop := skipHorizontalWhitespaceChars afterChar tokStop
+            let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
+            let tok := Syntax.mkNode SyntaxKind.charLit
+              #[Syntax.mkAtom info (String.singleton decodedChar)] info
+            mkScannedState s leadStart trailStop tok
+          | none =>
+            s.setPos tokStart |>.mkUnexpectedError "invalid character literal"
+        -- 4. Numeric literal `0..9`
+        else if isDigitNat cn then
+          let (rawNum, afterNum, tokStop) := scanNumberChars tokChars tokStart
+          let isSpecialBase := match restTokChars with
+            | 'x' :: _ | 'X' :: _ | 'b' :: _ | 'B' :: _ => true
+            | _ => false
+          if !isSpecialBase then
+            let trailStop := skipHorizontalWhitespaceChars afterNum tokStop
+            let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
+            let tok := Syntax.mkNode SyntaxKind.numLit #[Syntax.mkAtom info rawNum] info
+            mkScannedState s leadStart trailStop tok
           else
-            let rawSub : Ix.Substring := { str := firstPart, startPos := 0, stopPos := firstPart.utf8ByteSize }
-            Syntax.mkIdent info rawSub name
-        mkScannedState s leadStart trailStop tok
-      | none =>
-        s.setPos tokStart |>.mkUnexpectedError "invalid identifier"
-    -- 6. Operator / punctuation symbol from `ctx.env.tokens`
-    else
-      match Trie.matchPrefixList tokStart none tokChars ctx.env.tokens with
-      | some (sym, tokStop) =>
-        let symLen := tokStop - tokStart
-        let afterSym := tokChars.drop symLen
-        let trailStop := skipHorizontalWhitespaceChars afterSym tokStop
-        let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
-        let tok := Syntax.mkAtom info sym
-        mkScannedState s leadStart trailStop tok
-      | none =>
-        s.setPos tokStart |>.mkUnexpectedError s!"unexpected character '{ch}'"
+            match parseNatLiteral rawNum with
+            | some n =>
+              let trailStop := skipHorizontalWhitespaceChars afterNum tokStop
+              let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
+              let tok := Syntax.mkNode SyntaxKind.numLit #[Syntax.mkAtom info (toString n)] info
+              mkScannedState s leadStart trailStop tok
+            | none =>
+              s.setPos tokStart |>.mkUnexpectedError s!"invalid numeric literal '{rawNum}'"
+        -- 5. Identifier or keyword (including `#merge` / `foo.#merge._1`)
+        else if isIdFirstNat cn || Nat.beq cn 171 ||
+                (Nat.beq cn 35 && (scanOneIdentComponentChars tokChars tokStart).isSome) then
+          match scanHierarchicalIdentChars tokChars tokStart with
+          | some (name, firstCs, firstPart, afterIdent, tokStop, isSinglePart) =>
+            let trailStop := skipHorizontalWhitespaceChars afterIdent tokStop
+            let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
+            -- If it is a single unescaped component that matches a reserved keyword (or `#merge`), emit an `.atom`
+            let isSingleUnescaped := !Nat.beq cn 171 && isSinglePart
+            let tok :=
+              if isSingleUnescaped && (firstPart == "#merge" || isKeywordChars ctx.env firstCs) then
+                Syntax.mkAtom info firstPart
+              else
+                let rawSub : Ix.Substring := { str := firstPart, startPos := 0, stopPos := 0 }
+                Syntax.mkIdent info rawSub name
+            mkScannedState s leadStart trailStop tok
+          | none =>
+            s.setPos tokStart |>.mkUnexpectedError "invalid identifier"
+        -- 6. Operator / punctuation symbol from `ctx.env.tokens`
+        else
+          match Trie.matchPrefixList tokStart none tokChars ctx.env.tokens with
+          | some (sym, tokStop) =>
+            let symLen := tokStop - tokStart
+            let afterSym := tokChars.drop symLen
+            let trailStop := skipHorizontalWhitespaceChars afterSym tokStop
+            let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
+            let tok := Syntax.mkAtom info sym
+            mkScannedState s leadStart trailStop tok
+          | none =>
+            s.setPos tokStart |>.mkUnexpectedError s!"unexpected character '{ch}'"
 
 /-- Read one token using the single-token cache when `s.cache.startPos == s.pos`. -/
 def tokenFn (ctx : IxParserContext) (s : ParserState) : ParserState :=
@@ -413,9 +460,7 @@ def tokenFn (ctx : IxParserContext) (s : ParserState) : ParserState :=
     | ⟨stack, lhsPrec, pos, cache, err⟩ =>
       if Nat.beq cache.startPos pos then
         match stack.push cache.token with
-        | ⟨rev', len'⟩ =>
-          if Nat.beq cache.stopPos 0 then ⟨⟨rev', len'⟩, lhsPrec, 0, cache, err⟩
-          else ⟨⟨rev', len'⟩, lhsPrec, cache.stopPos, cache, err⟩
+        | ⟨rev', len'⟩ => ⟨⟨rev', len'⟩, lhsPrec, cache.stopPos, cache, err⟩
       else
         scanNextToken ctx s
 
@@ -699,7 +744,6 @@ def hashRefFn : ParserFn := fun ctx s =>
 def withPrecFn (prec : Nat) (p : ParserFn) : ParserFn := fun ctx s =>
   match ctx with
   | ⟨inputCtx, env, _⟩ =>
-    if Nat.beq prec 0 then p ⟨inputCtx, env, 0⟩ s
-    else p ⟨inputCtx, env, prec⟩ s
+    InputContext.bindNat prec fun prec' => p ⟨inputCtx, env, prec'⟩ s
 
 end Ix.Frontend.Parser

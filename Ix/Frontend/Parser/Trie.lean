@@ -20,32 +20,49 @@ namespace Trie
 /-- The empty trie. -/
 def empty : Trie α := .node none []
 
-/-- Look up or insert a child in a sorted `(Char × Trie α)` association list,
+/-- Force `c.val.toNat` to WHNF before binding it in `k`. -/
+@[inline] def bindCharNat (c : Char) (k : Nat → α) : α :=
+  match c.val.toNat with
+  | 0 => k 0
+  | m + 1 => k (m + 1)
+
+/-- Look up or insert a child for codepoint `cn` (`c`) in a sorted `(Char × Trie α)` association list,
     strictly forcing the updated child `Trie` and tail list before constructing nodes. -/
-def upsertChild (c : Char) (f : Option (Trie α) → Trie α) :
+def upsertChildNat (cn : Nat) (c : Char) (f : Option (Trie α) → Trie α) :
     List (Char × Trie α) → List (Char × Trie α)
   | [] =>
     match f none with
     | .node v ch => [(c, .node v ch)]
   | (k, t) :: rest =>
-    if c == k then
+    bindCharNat k fun kn =>
+    if Nat.beq cn kn then
       match f (some t) with
       | .node v ch => (k, .node v ch) :: rest
-    else if c < k then
+    else if Nat.ble (cn + 1) kn then
       match f none with
       | .node v ch => (c, .node v ch) :: (k, t) :: rest
     else
-      match upsertChild c f rest with
+      match upsertChildNat cn c f rest with
       | [] => [(k, t)]
       | hd :: tl => (k, t) :: hd :: tl
 
-/-- Find a child for character `c` in a sorted `(Char × Trie α)` association list. -/
-def findChild? (c : Char) : List (Char × Trie α) → Option (Trie α)
+/-- Look up or insert a child in a sorted `(Char × Trie α)` association list. -/
+@[inline] def upsertChild (c : Char) (f : Option (Trie α) → Trie α)
+    (children : List (Char × Trie α)) : List (Char × Trie α) :=
+  bindCharNat c fun cn => upsertChildNat cn c f children
+
+/-- Find a child for character codepoint `cn` in a sorted `(Char × Trie α)` association list. -/
+def findChildNat? (cn : Nat) : List (Char × Trie α) → Option (Trie α)
   | [] => none
   | (k, t) :: rest =>
-    if c == k then some t
-    else if c < k then none
-    else findChild? c rest
+    bindCharNat k fun kn =>
+    if Nat.beq cn kn then some t
+    else if Nat.ble (cn + 1) kn then none
+    else findChildNat? cn rest
+
+/-- Find a child for character `c` in a sorted `(Char × Trie α)` association list. -/
+@[inline] def findChild? (c : Char) (children : List (Char × Trie α)) : Option (Trie α) :=
+  bindCharNat c fun cn => findChildNat? cn children
 
 /-- Insert a character list key into the trie (structurally recursive on `List Char`),
     strictly forcing the updated children list before wrapping in `.node`. -/

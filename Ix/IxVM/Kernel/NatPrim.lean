@@ -592,11 +592,11 @@ def natPrim := ⟦
 
   -- Lit(Str) → ctor form with the delta step; other exprs unchanged.
   -- Mirror str_lit_to_ctor_app_or_self (Primitive.lean:3099).
-  fn str_lit_to_ctor_app_or_self(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
+  fn str_lit_to_ctor_app_or_self(rc: RoleCtx, e: KExpr) -> KExpr {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
-          KLiteral.Str(bs) => str_lit_delta_step(rc, str_lit_to_ctor(rc, bs), types),
+          KLiteral.Str(bs) => str_lit_delta_step(rc, str_lit_to_ctor(rc, bs), store(ListNode.Nil)),
           _ => e,
         },
       _ => e,
@@ -1069,47 +1069,48 @@ def natPrim := ⟦
   -- Binop dispatch by head address on two literal args.
   -- ============================================================================
   fn try_nat_binop_addr(rc: RoleCtx, head_addr: Addr, a: KLimbs, b: KLimbs) -> (G, KExpr) {
-    match role_is(rc, head_addr, role_nat_add()) {
-      1 => (1, mk_nat_lit(klimbs_normalize(klimbs_add(a, b)))),
+    let r = role_of(rc, head_addr);
+    match r - (role_nat_beq() + 1) {
+      0 => (1, mk_bool(rc, klimbs_eq(a, b))),
       _ =>
-      match role_is(rc, head_addr, role_nat_sub()) {
-        1 => (1, mk_nat_lit(klimbs_normalize(klimbs_sub(a, b)))),
+      match r - (role_nat_ble() + 1) {
+        0 => (1, mk_bool(rc, klimbs_le(a, b))),
         _ =>
-        match role_is(rc, head_addr, role_nat_mul()) {
-          1 => (1, mk_nat_lit(klimbs_normalize(klimbs_mul(a, b)))),
+        match r - (role_nat_add() + 1) {
+          0 => (1, mk_nat_lit(klimbs_normalize(klimbs_add(a, b)))),
           _ =>
-          match role_is(rc, head_addr, role_nat_div()) {
-            1 => (1, mk_nat_lit(klimbs_normalize(klimbs_div(a, b)))),
+          match r - (role_nat_sub() + 1) {
+            0 => (1, mk_nat_lit(klimbs_sub(a, b))),
             _ =>
-            match role_is(rc, head_addr, role_nat_mod()) {
-              1 => (1, mk_nat_lit(klimbs_normalize(klimbs_mod(a, b)))),
+            match r - (role_nat_mul() + 1) {
+              0 => (1, mk_nat_lit(klimbs_normalize(klimbs_mul(a, b)))),
               _ =>
-              match role_is(rc, head_addr, role_nat_gcd()) {
-                1 => (1, mk_nat_lit(klimbs_normalize(klimbs_gcd(a, b)))),
+              match r - (role_nat_div() + 1) {
+                0 => (1, mk_nat_lit(klimbs_normalize(klimbs_div(a, b)))),
                 _ =>
-                match role_is(rc, head_addr, role_nat_pow()) {
-                  1 => (1, mk_nat_lit(klimbs_normalize(klimbs_pow(a, b)))),
+                match r - (role_nat_mod() + 1) {
+                  0 => (1, mk_nat_lit(klimbs_normalize(klimbs_mod(a, b)))),
                   _ =>
-                  match role_is(rc, head_addr, role_nat_land()) {
-                    1 => (1, mk_nat_lit(klimbs_normalize(klimbs_land(a, b)))),
+                  match r - (role_nat_gcd() + 1) {
+                    0 => (1, mk_nat_lit(klimbs_normalize(klimbs_gcd(a, b)))),
                     _ =>
-                    match role_is(rc, head_addr, role_nat_lor()) {
-                      1 => (1, mk_nat_lit(klimbs_normalize(klimbs_lor(a, b)))),
+                    match r - (role_nat_pow() + 1) {
+                      0 => (1, mk_nat_lit(klimbs_normalize(klimbs_pow(a, b)))),
                       _ =>
-                      match role_is(rc, head_addr, role_nat_xor()) {
-                        1 => (1, mk_nat_lit(klimbs_normalize(klimbs_xor_op(a, b)))),
+                      match r - (role_nat_land() + 1) {
+                        0 => (1, mk_nat_lit(klimbs_normalize(klimbs_land(a, b)))),
                         _ =>
-                        match role_is(rc, head_addr, role_nat_shift_left()) {
-                          1 => (1, mk_nat_lit(klimbs_normalize(klimbs_shl(a, b)))),
+                        match r - (role_nat_lor() + 1) {
+                          0 => (1, mk_nat_lit(klimbs_normalize(klimbs_lor(a, b)))),
                           _ =>
-                          match role_is(rc, head_addr, role_nat_shift_right()) {
-                            1 => (1, mk_nat_lit(klimbs_normalize(klimbs_shr(a, b)))),
+                          match r - (role_nat_xor() + 1) {
+                            0 => (1, mk_nat_lit(klimbs_normalize(klimbs_xor_op(a, b)))),
                             _ =>
-                            match role_is(rc, head_addr, role_nat_beq()) {
-                              1 => (1, mk_bool(rc, klimbs_eq(a, b))),
+                            match r - (role_nat_shift_left() + 1) {
+                              0 => (1, mk_nat_lit(klimbs_normalize(klimbs_shl(a, b)))),
                               _ =>
-                              match role_is(rc, head_addr, role_nat_ble()) {
-                                1 => (1, mk_bool(rc, klimbs_le(a, b))),
+                              match r - (role_nat_shift_right() + 1) {
+                                0 => (1, mk_nat_lit(klimbs_normalize(klimbs_shr(a, b)))),
                                 _ => (0, store(KExprNode.BVar(0))),
                               },
                             },
@@ -1182,24 +1183,28 @@ def natPrim := ⟦
   -- unfolding into an n-deep succ tower. Non-matching inputs pass through.
   fn cleanup_nat_offset_major(rc: RoleCtx, e: KExpr) -> KExpr {
     match load(e) {
-      KExprNode.Lit(_) => e,
-      _ =>
-        match collect_spine(e) {
-          (head, args) =>
-            match load(head) {
-              KExprNode.Const(_, _) =>
-                match try_match_nat_add(rc, head, args) {
-                  (1, base, lit) =>
-                    let lit_norm = klimbs_normalize(lit);
-                    match klimbs_is_zero(lit_norm) {
-                      1 => e,
-                      _ => build_succ_offset(rc, base, lit_norm),
+      KExprNode.App(_, rhs) =>
+        match load(rhs) {
+          KExprNode.Lit(_) =>
+            match collect_spine(e) {
+              (head, args) =>
+                match load(head) {
+                  KExprNode.Const(_, _) =>
+                    match try_match_nat_add(rc, head, args) {
+                      (1, base, lit) =>
+                        let lit_norm = klimbs_normalize(lit);
+                        match klimbs_is_zero(lit_norm) {
+                          1 => e,
+                          _ => build_succ_offset(rc, base, lit_norm),
+                        },
+                      _ => e,
                     },
                   _ => e,
                 },
-              _ => e,
             },
+          _ => e,
         },
+      _ => e,
     }
   }
 
@@ -1286,13 +1291,11 @@ def natPrim := ⟦
   -- Top-level nat dispatch: unary (succ/pred) then binop.
   -- Caller must whnf spine args before matching Ctor / Lit / literal.
   -- ============================================================================
-  fn try_nat_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
-                          types: List‹KExpr›) -> (G, KExpr) {
+  fn try_nat_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
-    let is_pred = role_is(rc, head_addr, role_nat_pred());
-    let is_succ = role_is(rc, head_addr, role_nat_succ());
-    match is_succ {
-      1 =>
+    let r = role_of(rc, head_addr);
+    match r - (role_nat_succ() + 1) {
+      0 =>
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
@@ -1305,8 +1308,8 @@ def natPrim := ⟦
             },
         },
       _ =>
-        match is_pred {
-          1 =>
+        match r - (role_nat_pred() + 1) {
+          0 =>
             match u32_less_than(spine_len, 1) {
               1 => (0, store(KExprNode.BVar(0))),
               _ =>
@@ -1314,7 +1317,7 @@ def natPrim := ⟦
                 match try_extract_nat(rc, a0) {
                   (1, na) =>
                     let post = list_drop(spine, 1);
-                    (1, np_apply_spine(mk_nat_lit(klimbs_normalize(klimbs_dec(na))), post)),
+                    (1, np_apply_spine(mk_nat_lit(klimbs_dec(na)), post)),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
             },

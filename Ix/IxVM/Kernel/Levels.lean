@@ -838,58 +838,141 @@ def levels := ⟦
     }
   }
 
-  fn level_inst_params(l: KLevel, params: List‹KLevel›) -> KLevel {
+  fn level_has_param(l: KLevel) -> G {
     match load(l) {
-      KLevelNode.Zero => store(KLevelNode.Zero),
-      KLevelNode.Succ(u) => store(KLevelNode.Succ(level_inst_params(u, params))),
+      KLevelNode.Zero => 0,
+      KLevelNode.Param(_) => 1,
+      KLevelNode.Succ(u) => level_has_param(u),
       KLevelNode.Max(a, b) =>
-        level_max(level_inst_params(a, params), level_inst_params(b, params)),
+        match level_has_param(a) {
+          1 => 1,
+          _ => level_has_param(b),
+        },
       KLevelNode.IMax(a, b) =>
-        level_imax(level_inst_params(a, params), level_inst_params(b, params)),
-      KLevelNode.Param(i) => list_lookup(params, i),
+        match level_has_param(a) {
+          1 => 1,
+          _ => level_has_param(b),
+        },
+    }
+  }
+
+  fn level_list_has_param(lvls: List‹KLevel›) -> G {
+    match load(lvls) {
+      ListNode.Nil => 0,
+      ListNode.Cons(l, rest) =>
+        match level_has_param(l) {
+          1 => 1,
+          _ => level_list_has_param(rest),
+        },
+    }
+  }
+
+  fn expr_has_level_param(e: KExpr) -> G {
+    match load(e) {
+      KExprNode.BVar(_) => 0,
+      KExprNode.Lit(_) => 0,
+      KExprNode.Srt(l) => level_has_param(l),
+      KExprNode.Const(_, lvls) => level_list_has_param(lvls),
+      KExprNode.App(f, a) =>
+        match expr_has_level_param(f) {
+          1 => 1,
+          _ => expr_has_level_param(a),
+        },
+      KExprNode.Lam(ty, body) => expr_has_level_param_binder(ty, body),
+      KExprNode.Forall(ty, body) => expr_has_level_param_binder(ty, body),
+      KExprNode.Let(ty, val, body) => expr_has_level_param_let(ty, val, body),
+      KExprNode.Proj(_, _, e1) => expr_has_level_param(e1),
+    }
+  }
+
+  fn expr_has_level_param_binder(ty: KExpr, body: KExpr) -> G {
+    match expr_has_level_param(ty) {
+      1 => 1,
+      _ => expr_has_level_param(body),
+    }
+  }
+
+  fn expr_has_level_param_let(ty: KExpr, val: KExpr, body: KExpr) -> G {
+    match expr_has_level_param(ty) {
+      1 => 1,
+      _ =>
+        match expr_has_level_param(val) {
+          1 => 1,
+          _ => expr_has_level_param(body),
+        },
+    }
+  }
+
+  fn level_inst_params(l: KLevel, params: List‹KLevel›) -> KLevel {
+    match level_has_param(l) {
+      0 => l,
+      _ =>
+        match load(l) {
+          KLevelNode.Zero => l,
+          KLevelNode.Succ(u) => store(KLevelNode.Succ(level_inst_params(u, params))),
+          KLevelNode.Max(a, b) =>
+            level_max(level_inst_params(a, params), level_inst_params(b, params)),
+          KLevelNode.IMax(a, b) =>
+            level_imax(level_inst_params(a, params), level_inst_params(b, params)),
+          KLevelNode.Param(i) => list_lookup(params, i),
+        },
     }
   }
 
   fn level_list_inst(lvls: List‹KLevel›, params: List‹KLevel›) -> List‹KLevel› {
-    match load(lvls) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(l, rest) =>
-        store(ListNode.Cons(
-          level_inst_params(l, params),
-          level_list_inst(rest, params))),
+    match level_list_has_param(lvls) {
+      0 => lvls,
+      _ =>
+        match load(lvls) {
+          ListNode.Nil => lvls,
+          ListNode.Cons(l, rest) =>
+            store(ListNode.Cons(
+              level_inst_params(l, params),
+              level_list_inst(rest, params))),
+        },
     }
   }
 
   fn expr_inst_levels(e: KExpr, params: List‹KLevel›) -> KExpr {
-    -- Fast path: empty param list = identity. Common when caller's lvls
-    -- list is Nil (constants with no universe params).
+    -- Fast path: empty param list or level-param-free subtree = identity.
     match load(params) {
       ListNode.Nil => e,
+      _ =>
+        match expr_has_level_param(e) {
+          0 => e,
+          _ => expr_inst_levels_walk(e, params),
+        },
+    }
+  }
+
+  fn expr_inst_levels_step(e: KExpr, params: List‹KLevel›) -> KExpr {
+    match expr_has_level_param(e) {
+      0 => e,
       _ => expr_inst_levels_walk(e, params),
     }
   }
 
   fn expr_inst_levels_walk(e: KExpr, params: List‹KLevel›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => store(KExprNode.BVar(i)),
+      KExprNode.BVar(_) => e,
       KExprNode.Srt(l) =>
         store(KExprNode.Srt(level_inst_params(l, params))),
       KExprNode.Const(idx, lvls) =>
         store(KExprNode.Const(idx, level_list_inst(lvls, params))),
       KExprNode.App(f, a) =>
-        store(KExprNode.App(expr_inst_levels(f, params), expr_inst_levels(a, params))),
+        store(KExprNode.App(expr_inst_levels_step(f, params), expr_inst_levels_step(a, params))),
       KExprNode.Lam(ty, body) =>
-        store(KExprNode.Lam(expr_inst_levels(ty, params), expr_inst_levels(body, params))),
+        store(KExprNode.Lam(expr_inst_levels_step(ty, params), expr_inst_levels_step(body, params))),
       KExprNode.Forall(ty, body) =>
-        store(KExprNode.Forall(expr_inst_levels(ty, params), expr_inst_levels(body, params))),
+        store(KExprNode.Forall(expr_inst_levels_step(ty, params), expr_inst_levels_step(body, params))),
       KExprNode.Let(ty, val, body) =>
         store(KExprNode.Let(
-          expr_inst_levels(ty, params),
-          expr_inst_levels(val, params),
-          expr_inst_levels(body, params))),
-      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+          expr_inst_levels_step(ty, params),
+          expr_inst_levels_step(val, params),
+          expr_inst_levels_step(body, params))),
+      KExprNode.Lit(_) => e,
       KExprNode.Proj(tidx, fidx, e1) =>
-        store(KExprNode.Proj(tidx, fidx, expr_inst_levels(e1, params))),
+        store(KExprNode.Proj(tidx, fidx, expr_inst_levels_step(e1, params))),
     }
   }
 
@@ -897,40 +980,50 @@ def levels := ⟦
   -- Literal equality
   -- ============================================================================
 
+  -- Pointer-equality fast path with complete structural fallback (see Core.lean:45-50).
   fn klimbs_eq(a: KLimbs, b: KLimbs) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
-          _ => 0,
-        },
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(lb, rb) =>
-            let eq = u64_eq(la, lb);
-            match eq {
-              1 => klimbs_eq(ra, rb),
-              0 => 0,
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
+      _ =>
+        match load(a) {
+          ListNode.Nil =>
+            match load(b) {
+              ListNode.Nil => 1,
+              _ => 0,
+            },
+          ListNode.Cons(la, ra) =>
+            match load(b) {
+              ListNode.Nil => 0,
+              ListNode.Cons(lb, rb) =>
+                let eq = u64_eq(la, lb);
+                match eq {
+                  1 => klimbs_eq(ra, rb),
+                  0 => 0,
+                },
             },
         },
     }
   }
 
+  -- Pointer-equality fast path with complete structural fallback (see Core.lean:45-50).
   fn bytestream_eq(a: ByteStream, b: ByteStream) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
-          _ => 0,
-        },
-      ListNode.Cons(ba, ra) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(bb, rb) =>
-            match to_field(ba) - to_field(bb) {
-              0 => bytestream_eq(ra, rb),
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
+      _ =>
+        match load(a) {
+          ListNode.Nil =>
+            match load(b) {
+              ListNode.Nil => 1,
               _ => 0,
+            },
+          ListNode.Cons(ba, ra) =>
+            match load(b) {
+              ListNode.Nil => 0,
+              ListNode.Cons(bb, rb) =>
+                match to_field(ba) - to_field(bb) {
+                  0 => bytestream_eq(ra, rb),
+                  _ => 0,
+                },
             },
         },
     }

@@ -678,9 +678,8 @@ def seedCorePreludeIfMissing (env : IxElabEnv) (modIdx : ModuleIndex) : IxElabEn
   return env
 
 /-- Register the core Lean 4 `Init` arithmetic/order typeclass instance entries in `env.instances`. -/
-def registerLeanInitArithInstances (env : IxElabEnv) : IxElabEnv := Id.run do
-  let mut env := env
-  let entries : Array (Ix.Name × Ix.Name) := #[
+def registerLeanInitArithInstances (env : IxElabEnv) : IxElabEnv :=
+  let entries : List (Ix.Name × Ix.Name) := [
     (Name.simple "OfNat",  Name.simple "instOfNatNat"),
     (Name.simple "LE",     Name.simple "instLENat"),
     (Name.simple "LT",     Name.simple "instLTNat"),
@@ -690,10 +689,17 @@ def registerLeanInitArithInstances (env : IxElabEnv) : IxElabEnv := Id.run do
     (Name.simple "Pow",    Name.simple "instPowNat"),
     (Name.simple "HPow",   Name.simple "instHPow")
   ]
-  for (clsName, instName) in entries do
-    if !(env.instances.any fun e => e.className == clsName && e.instName == instName) then
-      env := env.addInstance { className := clsName, instName := instName }
-  return env
+  let rec go (e : IxElabEnv) : List (Ix.Name × Ix.Name) → IxElabEnv
+    | [] => e
+    | (clsName, instName) :: rest =>
+      e.bindEnv fun e' =>
+        let eNext :=
+          if e'.instances.any (fun entry => entry.className == clsName && entry.instName == instName) then
+            e'
+          else
+            e'.addInstance { className := clsName, instName := instName }
+        go eNext rest
+  go env entries
 
 /-- Seed Lean 4's `Init` arithmetic, order, numeral (`OfNat`), and inequality (`Ne`) typeclasses
     and `Nat` instances (`LE.le`, `LT.lt`, `GE.ge`, `GT.gt`, `HAdd.hAdd`, `HPow.hPow`, `OfNat.ofNat`)
@@ -717,8 +723,9 @@ def seedLeanInitArith (env : IxElabEnv) : IxElabEnv := Id.run do
   let natConst := Expr.mkConst natName #[]
 
   let addAxiomIfMissing (e : IxElabEnv) (nm : Ix.Name) (lvls : Array Ix.Name) (ty : Ix.Expr) : IxElabEnv :=
-    if e.contains nm then e
-    else e.addConst (.axiomInfo { cnst := { name := nm, levelParams := lvls, type := ty }, isUnsafe := false })
+    e.bindEnv fun e' =>
+      if e'.contains nm then e'
+      else e'.addConst (.axiomInfo { cnst := { name := nm, levelParams := lvls, type := ty }, isUnsafe := false })
 
   -- 0. `Nat : Type` and `Eq.{u} : {α : Sort u} → α → α → Prop`
   env := addAxiomIfMissing env natName #[] type0
@@ -881,14 +888,13 @@ def extractDeclAttributes (modsNode : Ix.Syntax) : Array Ix.Name :=
 
 /-- True if `id` is a single-component Greek (`α..ω`) or single lowercase ASCII (`a..z`) identifier
     eligible for Lean 4 auto-implicit parameter binding (`{α : _}`). -/
-def isAutoImplicitCandidate (id : Ix.Name) : Bool :=
-  match Name.components id with
-  | [s] =>
-    if s.length == 1 then
+def isAutoImplicitCandidate : Ix.Name → Bool
+  | .str (.anonymous _) s _ =>
+    if Nat.ble s.utf8ByteSize 2 then
       match s.toList with
       | [c] =>
         ('a' ≤ c && c ≤ 'z') ||
-        (0x03B1 ≤ c.toNat && c.toNat ≤ 0x03C9) -- Greek α (0x03B1) .. ω (0x03C9)
+        (Nat.ble 0x03B1 c.toNat && Nat.ble c.toNat 0x03C9) -- Greek α (0x03B1) .. ω (0x03C9)
       | _ => false
     else false
   | _ => false
@@ -907,7 +913,7 @@ def collectAutoImplicitGroups (scope : ScopeSnapshot) (modIdx : ModuleIndex)
     | f + 1 =>
       match stx with
       | .ident _ _ id _ =>
-        if !bound.contains id && isAutoImplicitCandidate id && !isKnownConst id && !acc.contains id then
+        if isAutoImplicitCandidate id && !bound.contains id && !isKnownConst id && !acc.contains id then
           acc ++ [id]
         else
           acc
@@ -1815,5 +1821,631 @@ def elabSource (input : String) (fileName : String := "<input>")
     (seedPrelude : Bool := true) : Except String IxElabEnv := do
   let (stx, _) ← parseModuleWithEnv input fileName
   elabModuleSyntax stx initEnv seedPrelude
+
+/-! ## Track 2: Certificate-Guided Elaboration (`ElabHints` / `elabModuleWithHints`) -/
+
+/-- Certificate hint for a single top-level declaration in `elabModuleWithHints`.
+    Supplies the candidate elaborated signature and body so the in-circuit elaborator
+    can verify structural alignment with the parsed `Ix.Syntax` AST in `O(|stx|)`
+    without metavariable unification (`isDefEq`), `whnf`, or typeclass search (`synthInstance?`). -/
+structure DeclHint where
+  fullName        : Ix.Name
+  levelParams     : Array Ix.Name := #[]
+  type            : Ix.Expr
+  value?          : Option Ix.Expr := none
+  defKind         : Ix.DefKind := .defn
+  hints           : Lean.ReducibilityHints := .regular 1
+  binderContracts : Array Ixon.BinderContract := #[]
+  retContract     : Ixon.ValueContract := {}
+  letContracts    : Array Ixon.LetContract := #[]
+  isInstance      : Bool := false
+  className?      : Option Ix.Name := none
+  deriving Repr, BEq
+
+/-- Collection of declaration hints keyed by full declaration name. -/
+structure ElabHints where
+  declHints : NameMap DeclHint := NameMap.empty
+
+namespace ElabHints
+
+def empty : ElabHints := {}
+
+@[inline] def bindHints (h : ElabHints) (k : ElabHints → α) : α :=
+  match h with
+  | ⟨declHints⟩ => declHints.bindMap fun dh' => k ⟨dh'⟩
+
+def insert (h : ElabHints) (d : DeclHint) : ElabHints :=
+  match h with
+  | ⟨declHints⟩ => (declHints.insert d.fullName d).bindMap fun dh' => ⟨dh'⟩
+
+def find? (h : ElabHints) (nm : Ix.Name) : Option DeclHint :=
+  h.declHints.get? nm
+
+end ElabHints
+
+/-- Lookup De Bruijn index of `nm` in `bvars` (`0` = innermost binder). -/
+def bvarIndexOf (nm : Ix.Name) : List Ix.Name → Nat → Option Nat
+  | [], _ => none
+  | b :: bs, idx => if b == nm then some idx else bvarIndexOf nm bs (idx + 1)
+
+/-- Extract the head constant name from a nested `.app` spine without allocating an array. -/
+def exprHeadConst? : Ix.Expr → Option Ix.Name
+  | .const nm _ _ => some nm
+  | .app f _ _    => exprHeadConst? f
+  | .mdata _ e _  => exprHeadConst? e
+  | _             => none
+
+/-- Peel the outermost two `.app` arguments `(fn, lhs, rhs)` without allocating an array. -/
+def peelApp2? : Ix.Expr → Option (Ix.Expr × Ix.Expr × Ix.Expr)
+  | .mdata _ e _ => peelApp2? e
+  | .app f rhs _ =>
+    match stripMData f with
+    | .app fn lhs _ => some (fn, lhs, rhs)
+    | _             => none
+  | _ => none
+
+/-- Check whether `fn` has a valid constant head for binary operator symbol `sym`,
+    returning `(matchesHead, swappedArgs)`. -/
+def checkBinOpHead (sym : String) (fn : Ix.Expr) : Bool × Bool :=
+  match exprHeadConst? fn with
+  | none => (false, false)
+  | some cName =>
+    if sym == "+" then
+      (cName == Name.mkStr2 "HAdd" "hAdd" || cName == Name.mkStr2 "Add" "add" || cName == Name.mkStr2 "Nat" "add", false)
+    else if sym == "-" then
+      (cName == Name.mkStr2 "HSub" "hSub" || cName == Name.mkStr2 "Sub" "sub" || cName == Name.mkStr2 "Nat" "sub", false)
+    else if sym == "*" then
+      (cName == Name.mkStr2 "HMul" "hMul" || cName == Name.mkStr2 "Mul" "mul" || cName == Name.mkStr2 "Nat" "mul", false)
+    else if sym == "/" then
+      (cName == Name.mkStr2 "HDiv" "hDiv" || cName == Name.mkStr2 "Div" "div" || cName == Name.mkStr2 "Nat" "div", false)
+    else if sym == "%" then
+      (cName == Name.mkStr2 "HMod" "hMod" || cName == Name.mkStr2 "Mod" "mod" || cName == Name.mkStr2 "Nat" "mod", false)
+    else if sym == "^" then
+      (cName == Name.mkStr2 "HPow" "hPow" || cName == Name.mkStr2 "Pow" "pow" || cName == Name.mkStr2 "Nat" "pow", false)
+    else if sym == "=" then
+      (cName == Name.simple "Eq", false)
+    else if sym == "≠" || sym == "!=" then
+      (cName == Name.simple "Ne", false)
+    else if sym == "≤" || sym == "<=" then
+      (cName == Name.mkStr2 "LE" "le" || cName == Name.mkStr2 "Nat" "ble", false)
+    else if sym == "<" then
+      (cName == Name.mkStr2 "LT" "lt" || cName == Name.mkStr2 "Nat" "blt", false)
+    else if sym == ">" then
+      if cName == Name.mkStr2 "GT" "gt" then (true, false)
+      else if cName == Name.mkStr2 "LT" "lt" then (true, true)
+      else (false, false)
+    else if sym == "≥" || sym == ">=" then
+      if cName == Name.mkStr2 "GE" "ge" then (true, false)
+      else if cName == Name.mkStr2 "LE" "le" then (true, true)
+      else (false, false)
+    else if sym == "∧" || sym == "/\\" then
+      (cName == Name.simple "And", false)
+    else if sym == "∨" || sym == "\\/" then
+      (cName == Name.simple "Or", false)
+    else if sym == "↔" || sym == "<->" then
+      (cName == Name.simple "Iff", false)
+    else if sym == "==" then
+      (cName == Name.mkStr2 "BEq" "beq" || cName == Name.mkStr2 "Nat" "beq", false)
+    else if sym == "&&" then
+      (cName == Name.simple "and" || cName == Name.mkStr2 "Bool" "and", false)
+    else if sym == "||" then
+      (cName == Name.simple "or" || cName == Name.mkStr2 "Bool" "or", false)
+    else if sym == "++" then
+      (cName == Name.mkStr2 "HAppend" "hAppend" || cName == Name.mkStr2 "List" "append" || cName == Name.mkStr2 "String" "append", false)
+    else
+      (false, false)
+
+/-- Match an explicit application `fnStx arg_1 ... arg_k` from outermost argument (`arg_k`) inward. -/
+def checkAppSpineMatches (checkTerm : List Ix.Name → Ix.Syntax → Ix.Expr → Bool)
+    (bvars : List Ix.Name) (fnStx : Ix.Syntax) :
+    List Ix.Syntax → Ix.Expr → Bool
+  | [], remFn => checkTerm bvars fnStx remFn
+  | lastArgStx :: prevArgStxs, e =>
+    match stripMData e with
+    | .app f a _ =>
+      checkTerm bvars lastArgStx a &&
+      checkAppSpineMatches checkTerm bvars fnStx prevArgStxs f
+    | _ => false
+
+/-- Peel `.forallE` binders for a single `ParsedBinderGroup`'s names `nms : List Ix.Name`. -/
+def peelGroupType (checkTerm : List Ix.Name → Ix.Syntax → Ix.Expr → Bool)
+    (bvarsAtGroupStart : List Ix.Name) (biExpected : Lean.BinderInfo) (typeStx? : Option Ix.Syntax) :
+    List Ix.Name → Bool → Option Ix.Expr → List Ix.Name → Ix.Expr → Option (List Ix.Name × Ix.Expr)
+  | [], _, _, curBvars, curTy => some (curBvars, curTy)
+  | nm :: nms, isFirst, firstDom?, curBvars, curTy =>
+    match stripMData curTy with
+    | .forallE _ dom cod bi _ =>
+      if bi != biExpected then none
+      else
+        let domOk :=
+          if isFirst then
+            match typeStx? with
+            | some tyStx => checkTerm bvarsAtGroupStart tyStx dom
+            | none       => true
+          else
+            match firstDom? with
+            | some d0 => dom == d0
+            | none    => true
+        if !domOk then none
+        else peelGroupType checkTerm bvarsAtGroupStart biExpected typeStx? nms false (some dom) (nm :: curBvars) cod
+    | _ => none
+
+/-- Peel `.forallE` binders corresponding to `groups : List ParsedBinderGroup` from `ty`. -/
+def checkBindersType (checkTerm : List Ix.Name → Ix.Syntax → Ix.Expr → Bool)
+    (bvars : List Ix.Name) :
+    List ParsedBinderGroup → Ix.Expr → Option (List Ix.Name × Ix.Expr)
+  | [], ty => some (bvars, ty)
+  | bg :: rest, ty =>
+    match peelGroupType checkTerm bvars bg.binderInfo bg.typeStx? bg.names.toList true none bvars ty with
+    | some (bvars', ty') => checkBindersType checkTerm bvars' rest ty'
+    | none               => none
+
+/-- Peel `.lam` binders for a single `ParsedBinderGroup`'s names `nms : List Ix.Name`. -/
+def peelGroupLam (checkTerm : List Ix.Name → Ix.Syntax → Ix.Expr → Bool)
+    (bvarsAtGroupStart : List Ix.Name) (biExpected : Lean.BinderInfo) (typeStx? : Option Ix.Syntax) :
+    List Ix.Name → Bool → Option Ix.Expr → List Ix.Name → Ix.Expr → Option (List Ix.Name × Ix.Expr)
+  | [], _, _, curBvars, curVal => some (curBvars, curVal)
+  | nm :: nms, isFirst, firstDom?, curBvars, curVal =>
+    match stripMData curVal with
+    | .lam _ dom body bi _ =>
+      if bi != biExpected then none
+      else
+        let domOk :=
+          if isFirst then
+            match typeStx? with
+            | some tyStx => checkTerm bvarsAtGroupStart tyStx dom
+            | none       => true
+          else
+            match firstDom? with
+            | some d0 => dom == d0
+            | none    => true
+        if !domOk then none
+        else peelGroupLam checkTerm bvarsAtGroupStart biExpected typeStx? nms false (some dom) (nm :: curBvars) body
+    | _ => none
+
+/-- Peel `.lam` binders corresponding to `groups : List ParsedBinderGroup` from `val`. -/
+def checkBindersLam (checkTerm : List Ix.Name → Ix.Syntax → Ix.Expr → Bool)
+    (bvars : List Ix.Name) :
+    List ParsedBinderGroup → Ix.Expr → Option (List Ix.Name × Ix.Expr)
+  | [], val => some (bvars, val)
+  | bg :: rest, val =>
+    match peelGroupLam checkTerm bvars bg.binderInfo bg.typeStx? bg.names.toList true none bvars val with
+    | some (bvars', val') => checkBindersLam checkTerm bvars' rest val'
+    | none                => none
+
+/-- Verify in `O(|stx|)` (zero metavariables, zero `whnf`) that a closed De Bruijn expression `e`
+    structurally matches surface syntax `stx` under `bvars : List Ix.Name`. -/
+def checkTermMatchesSyntax (fuel : Nat) (scope : ScopeSnapshot) (modIdx : ModuleIndex)
+    (env : IxElabEnv) (bvars : List Ix.Name) (stx : Ix.Syntax) (e : Ix.Expr) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel + 1 =>
+    let e := stripMData e
+    let checkSub (bv : List Ix.Name) (s : Ix.Syntax) (ex : Ix.Expr) : Bool :=
+      checkTermMatchesSyntax fuel scope modIdx env bv s ex
+    match stx with
+    | .missing => true
+    | .atom _ v =>
+      if v == "_" then true
+      else if v == "Prop" then
+        match e with | .sort (.zero _) _ => true | _ => false
+      else false
+    | .ident _ _ id _ =>
+      match bvarIndexOf id bvars 0 with
+      | some idx =>
+        match e with
+        | .bvar j _ => idx == j
+        | _         => false
+      | none =>
+        let resolved := resolveIdentInScope scope modIdx (fun n => env.contains n) id
+        match exprHeadConst? e with
+        | some cName => cName == resolved
+        | none       => false
+    | .node _ kind args =>
+      if kind == SyntaxKind.nullKind then
+        match args.toList with
+        | [single] => checkSub bvars single e
+        | _        => false
+      else if kind == SyntaxKind.parenTerm then
+        checkSub bvars (Syntax.listGetD args.toList 1 .missing) e
+      else if kind == SyntaxKind.holeTerm then
+        true
+      else if kind == SyntaxKind.propTerm then
+        match e with
+        | .sort (.zero _) _ => true
+        | _                 => false
+      else if kind == SyntaxKind.typeTerm || kind == SyntaxKind.sortTerm then
+        match e with
+        | .sort _ _ => true
+        | _         => false
+      else if kind == SyntaxKind.numLit then
+        let numStr := Syntax.getAtomVal (Syntax.listGetD args.toList 0 .missing)
+        match parseNatLiteral numStr with
+        | none => false
+        | some n =>
+          match e with
+          | .lit (.natVal m) _ => n == m
+          | .app (.app (.app (.const cNm _ _) _ _) (.lit (.natVal m) _) _) _ _ =>
+            cNm == Name.mkStr2 "OfNat" "ofNat" && n == m
+          | _ => false
+      else if kind == SyntaxKind.strLit then
+        let strVal := Syntax.getAtomVal (Syntax.listGetD args.toList 0 .missing)
+        match e with
+        | .lit (.strVal s) _ => s == strVal
+        | _                  => false
+      else if kind == SyntaxKind.hashRef then
+        let hexStr := Syntax.getAtomVal (Syntax.listGetD args.toList 0 .missing)
+        match parseHexAddress hexStr, exprHeadConst? e with
+        | some addr, some cName =>
+          Name.computeHash cName == addr || env.importMap.lookupName? cName == some addr
+        | _, _ => false
+      else if kind == SyntaxKind.arrowTerm then
+        let domStx := Syntax.listGetD args.toList 0 .missing
+        let codStx := Syntax.listGetD args.toList 3 .missing
+        match e with
+        | .forallE _ dom cod _ _ =>
+          checkSub bvars domStx dom &&
+          checkSub (Name.mkAnon :: bvars) codStx cod
+        | _ => false
+      else if kind == SyntaxKind.forallTerm then
+        let isKw := match Syntax.listGetD args.toList 0 .missing with
+          | .atom _ kw => kw == "forall" || kw == "∀"
+          | _          => false
+        let bindersNode := Syntax.listGetD args.toList (if isKw then 1 else 0) .missing
+        let bodyStx     := Syntax.listGetD args.toList (if isKw then 4 else 3) .missing
+        let groups := (Syntax.getArgs bindersNode).toList.map decodeBinderNode
+        match checkBindersType checkSub bvars groups e with
+        | some (bvars', remBody) =>
+          checkSub bvars' bodyStx remBody
+        | none => false
+      else if kind == SyntaxKind.funTerm then
+        let bindersNode := Syntax.listGetD args.toList 1 .missing
+        let bodyStx     := Syntax.listGetD args.toList 3 .missing
+        let groups := (Syntax.getArgs bindersNode).toList.map decodeBinderNode
+        match checkBindersLam checkSub bvars groups e with
+        | some (bvars', remBody) =>
+          checkSub bvars' bodyStx remBody
+        | none => false
+      else if kind == SyntaxKind.letTerm then
+        let idStx   := Syntax.listGetD args.toList 1 .missing
+        let optTy   := Syntax.listGetD args.toList 3 .missing
+        let valStx  := Syntax.listGetD args.toList 5 .missing
+        let bodyStx := Syntax.listGetD args.toList 7 .missing
+        let nm := match idStx with | .ident _ _ i _ => i | _ => Name.mkAnon
+        match e with
+        | .letE _ ty val body _ _ =>
+          let tyOk := if Syntax.isNone optTy || Syntax.isMissing optTy then true
+                      else checkSub bvars optTy ty
+          tyOk &&
+          checkSub bvars valStx val &&
+          checkSub (nm :: bvars) bodyStx body
+        | _ => false
+      else if kind == SyntaxKind.typeAscription then
+        let termStx := Syntax.listGetD args.toList 1 .missing
+        checkSub bvars termStx e
+      else if kind == SyntaxKind.binOpTerm then
+        let lhsStx := Syntax.listGetD args.toList 0 .missing
+        let opAtom := Syntax.listGetD args.toList 1 .missing
+        let rhsStx := Syntax.listGetD args.toList 2 .missing
+        let sym := Syntax.getAtomVal opAtom
+        if (sym == "≠" || sym == "!=") then
+          match peelApp2? e with
+          | some (fn, lhs, rhs) =>
+            let (okHead, _) := checkBinOpHead sym fn
+            okHead &&
+            checkSub bvars lhsStx lhs &&
+            checkSub bvars rhsStx rhs
+          | none =>
+            match e with
+            | .app (.const notNm _ _) innerEq _ =>
+              if notNm != Name.simple "Not" then false
+              else match peelApp2? innerEq with
+                | some (fn, lhs, rhs) =>
+                  exprHeadConst? fn == some (Name.simple "Eq") &&
+                  checkSub bvars lhsStx lhs &&
+                  checkSub bvars rhsStx rhs
+                | none => false
+            | _ => false
+        else
+          match peelApp2? e with
+          | some (fn, a1, a2) =>
+            let (okHead, swapped) := checkBinOpHead sym fn
+            if !okHead then false
+            else if swapped then
+              checkSub bvars lhsStx a2 &&
+              checkSub bvars rhsStx a1
+            else
+              checkSub bvars lhsStx a1 &&
+              checkSub bvars rhsStx a2
+          | none => false
+      else if kind == SyntaxKind.unaryOpTerm then
+        let opAtom := Syntax.listGetD args.toList 0 .missing
+        let argStx := Syntax.listGetD args.toList 1 .missing
+        let sym := Syntax.getAtomVal opAtom
+        match e with
+        | .app fn arg _ =>
+          let okHead := match exprHeadConst? fn with
+            | some cNm =>
+              (sym == "¬" && cNm == Name.simple "Not") ||
+              (sym == "!" && (cNm == Name.simple "not" || cNm == Name.mkStr2 "Bool" "not"))
+            | none => false
+          okHead && checkSub bvars argStx arg
+        | _ => false
+      else if kind == SyntaxKind.appTerm then
+        let fnStx   := Syntax.listGetD args.toList 0 .missing
+        let argStxs := (Syntax.getArgs (Syntax.listGetD args.toList 1 .missing)).toList
+        checkAppSpineMatches checkSub bvars fnStx argStxs.reverse e
+      else
+        false
+
+/-- Peel `.forallE` from `ty` and `.lam` from `val` for a single `ParsedBinderGroup`. -/
+def peelGroupTypeAndVal (fuel : Nat) (scope : ScopeSnapshot) (modIdx : ModuleIndex)
+    (env : IxElabEnv) (bvarsAtGroupStart : List Ix.Name) (biExpected : Lean.BinderInfo)
+    (typeStx? : Option Ix.Syntax) :
+    List Ix.Name → Bool → Option Ix.Expr → List Ix.Name → Ix.Expr → Ix.Expr → Option (List Ix.Name × Ix.Expr × Ix.Expr)
+  | [], _, _, curBvars, curTy, curVal => some (curBvars, curTy, curVal)
+  | nm :: nms, isFirst, firstDom?, curBvars, curTy, curVal =>
+    match stripMData curTy, stripMData curVal with
+    | .forallE _ domT codT biT _, .lam _ domV bodyV biV _ =>
+      if biT != biExpected || biV != biExpected || domT != domV then none
+      else
+        let domOk :=
+          if isFirst then
+            match typeStx? with
+            | some tyStx => checkTermMatchesSyntax fuel scope modIdx env bvarsAtGroupStart tyStx domT
+            | none       => true
+          else
+            match firstDom? with
+            | some d0 => domT == d0
+            | none    => true
+        if !domOk then none
+        else peelGroupTypeAndVal fuel scope modIdx env bvarsAtGroupStart biExpected typeStx? nms false (some domT) (nm :: curBvars) codT bodyV
+    | _, _ => none
+
+/-- Peel `.forallE` from `ty` and `.lam` from `val` simultaneously for top-level declaration parameters. -/
+def checkBindersTypeAndVal (fuel : Nat) (scope : ScopeSnapshot) (modIdx : ModuleIndex)
+    (env : IxElabEnv) (bvars : List Ix.Name) :
+    List ParsedBinderGroup → Ix.Expr → Ix.Expr → Option (List Ix.Name × Ix.Expr × Ix.Expr)
+  | [], ty, val => some (bvars, ty, val)
+  | bg :: rest, ty, val =>
+    match peelGroupTypeAndVal fuel scope modIdx env bvars bg.binderInfo bg.typeStx? bg.names.toList true none bvars ty val with
+    | some (bvars', ty', val') => checkBindersTypeAndVal fuel scope modIdx env bvars' rest ty' val'
+    | none                     => none
+
+/-- Verify in `O(|stx|)` that `hint : DeclHint` matches a single non-recursive `decl : ModuleDecl`. -/
+def checkDeclMatchesSyntax (fuel : Nat) (modIdx : ModuleIndex) (env : IxElabEnv)
+    (decl : ModuleDecl) (hint : DeclHint) : Bool :=
+  if decl.fullName != hint.fullName then false
+  else
+    let cmd := decl.stx
+    let k := Syntax.getKind cmd
+    let vPrefNode := Syntax.getArg cmd 5
+    let retContract := (decodeContractPrefix vPrefNode).toValueContract
+    if retContract != hint.retContract then false
+    else
+      let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
+      let rawParamGroups := (Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode
+      let optTypeNode := Syntax.getArg cmd 6
+      let explicitGroups := varGroups ++ rawParamGroups
+      let checkWithGroups (paramGroups : List ParsedBinderGroup) : Bool :=
+        if k == SyntaxKind.axiomDecl then
+          match hint.value? with
+          | some _ => false
+          | none =>
+            let checkSub (bv : List Ix.Name) (s : Ix.Syntax) (ex : Ix.Expr) : Bool :=
+              checkTermMatchesSyntax fuel decl.scope modIdx env bv s ex
+            match checkBindersType checkSub [] paramGroups hint.type with
+            | none => false
+            | some (bvars, remType) =>
+              if Syntax.isNone optTypeNode || Syntax.isMissing optTypeNode then false
+              else checkTermMatchesSyntax fuel decl.scope modIdx env bvars optTypeNode remType
+        else if Syntax.getNumArgs cmd == 8 || (k == SyntaxKind.instanceDecl && Syntax.getAtomVal (Syntax.getArg cmd 7) == "where") then
+          -- Pattern-matching defs and `instance ... where` desugar syntax; fall back to full elaborator
+          false
+        else
+          match hint.value? with
+          | none => false
+          | some fullVal =>
+            match checkBindersTypeAndVal fuel decl.scope modIdx env [] paramGroups hint.type fullVal with
+            | none => false
+            | some (bvars, remType, remVal) =>
+              let tyOk :=
+                if Syntax.isNone optTypeNode || Syntax.isMissing optTypeNode then true
+                else checkTermMatchesSyntax fuel decl.scope modIdx env bvars optTypeNode remType
+              let bodyStx := Syntax.getArg cmd 8
+              tyOk && checkTermMatchesSyntax fuel decl.scope modIdx env bvars bodyStx remVal
+      if checkWithGroups explicitGroups then
+        true
+      else
+        let autoGroups := collectAutoImplicitGroups decl.scope modIdx env varGroups rawParamGroups optTypeNode
+        if autoGroups.isEmpty then false
+        else checkWithGroups (varGroups ++ autoGroups ++ rawParamGroups)
+
+/-- Apply a verified `DeclHint` directly to `IxElabEnv` without running `elabValueSCC`. -/
+def applyVerifiedDeclHint (env : IxElabEnv) (decl : ModuleDecl) (hint : DeclHint) : IxElabEnv :=
+  let cmd := decl.stx
+  let k := Syntax.getKind cmd
+  if k == SyntaxKind.axiomDecl then
+    let ax : Ix.AxiomVal := {
+      cnst := { name := hint.fullName, levelParams := hint.levelParams, type := hint.type }
+      isUnsafe := false
+    }
+    env.addConst (.axiomInfo ax)
+  else
+    let val := hint.value?.getD (Expr.mkBVar 0)
+    let env := env.addContracts hint.fullName hint.binderContracts hint.retContract hint.letContracts
+    let env :=
+      if hint.isInstance then
+        match hint.className? with
+        | some clsNm => env.addInstance { instName := hint.fullName, className := clsNm }
+        | none       => env
+      else env
+    let ci : Ix.ConstantInfo := match hint.defKind with
+      | .thm => .thmInfo {
+          cnst  := { name := hint.fullName, levelParams := hint.levelParams, type := hint.type }
+          value := val
+          all   := #[hint.fullName]
+        }
+      | .opaq => .opaqueInfo {
+          cnst     := { name := hint.fullName, levelParams := hint.levelParams, type := hint.type }
+          value    := val
+          isUnsafe := false
+          all      := #[hint.fullName]
+        }
+      | .defn => .defnInfo {
+          cnst   := { name := hint.fullName, levelParams := hint.levelParams, type := hint.type }
+          value  := val
+          hints  := hint.hints
+          safety := .safe
+          all    := #[hint.fullName]
+        }
+    env.addConst ci
+
+/-- Elaborate a `ModuleSchedule` using `hints : ElabHints` for `O(|stx|)` certificate verification
+    on single non-recursive declarations, falling back to `elabValueSCC` when no hint is provided. -/
+def elabModuleScheduleWithHints (sched : ModuleSchedule) (hints : ElabHints)
+    (initEnv : IxElabEnv := IxElabEnv.empty)
+    (seedPrelude : Bool := true) : Except ElabError IxElabEnv := do
+  let baseEnv := initEnv.withImportMap (initEnv.importMap.merge sched.modIdx.importMap)
+  let baseEnv := if seedPrelude then seedCorePreludeIfMissing baseEnv sched.modIdx else baseEnv
+  baseEnv.bindEnv fun baseEnv' => do
+    let initState : ElabState := { env := baseEnv' }
+    let initCtx : ElabContext := { modIdx := sched.modIdx }
+    let declList := sched.modIdx.decls.toList
+    let act : IxElabM Unit := do
+      for scc in sched.sccs.toList do
+        let sccDecls := Array.mk (scc.declIdxs.toList.filterMap fun idx => Syntax.listGet? declList idx)
+        if !sccDecls.isEmpty then
+          let allInd := sccDecls.toList.all fun d => d.kind == .ind || d.kind == .struct || d.kind == .cls
+          if allInd then
+            elabInductiveSCC sccDecls
+          else
+            match scc.kind, sccDecls.toList with
+            | .singleNonRec, [decl] =>
+              match hints.find? decl.fullName with
+              | some hint =>
+                let stNow ← get
+                if checkDeclMatchesSyntax 128 sched.modIdx stNow.env decl hint then
+                  modifyEnv (fun env => applyVerifiedDeclHint env decl hint)
+                else
+                  throwElabError s!"ElabHint verification failed for declaration '{decl.fullName}'" (some decl.stx)
+              | none =>
+                elabValueSCC sccDecls false
+            | _, _ =>
+              elabValueSCC sccDecls (scc.kind != .singleNonRec)
+    let (_, finalState) ← IxElabM.run act initCtx initState
+    return finalState.env
+
+/-- Fast path: when all declarations in `modIdx.decls` are value/axiom declarations
+    supplied in `hints : ElabHints`, verify and apply them in source order in `O(|stx|)`
+    without running Pass 2 (`extractDeclDeps`) or Pass 3 (`scheduleModuleDecls`).
+    Returns `none` if any declaration is an inductive or lacks a hint in `hints`. -/
+def tryVerifyDeclsInOrder (modIdx : ModuleIndex) (hints : ElabHints) (env : IxElabEnv) :
+    List ModuleDecl → Option (Except String IxElabEnv)
+  | [] => some (.ok env)
+  | decl :: rest =>
+    if decl.kind == .ind || decl.kind == .struct || decl.kind == .cls then
+      none
+    else
+      match hints.find? decl.fullName with
+      | none => none
+      | some hint =>
+        if checkDeclMatchesSyntax 128 modIdx env decl hint then
+          (applyVerifiedDeclHint env decl hint).bindEnv fun env' =>
+            tryVerifyDeclsInOrder modIdx hints env' rest
+        else
+          some (.error s!"ElabHint verification failed for declaration '{decl.fullName}'")
+
+/-- Elaborate a parsed `Ix.Syntax` module AST with `hints : ElabHints`. -/
+def elabModuleWithHints (moduleStx : Ix.Syntax) (hints : ElabHints)
+    (initEnv : IxElabEnv := IxElabEnv.empty)
+    (seedPrelude : Bool := true) : Except String IxElabEnv := do
+  let modIdx ← buildModuleIndex moduleStx
+  let baseEnv := if seedPrelude then seedCorePreludeIfMissing initEnv modIdx else initEnv
+  baseEnv.bindEnv fun baseEnv' =>
+  hints.bindHints fun hints' => do
+    match tryVerifyDeclsInOrder modIdx hints' baseEnv' modIdx.decls.toList with
+    | some res => res
+    | none =>
+      let sched ← scheduleModuleDecls modIdx
+        (fun n => baseEnv'.contains n)
+        (fun n => baseEnv'.isCtor n)
+      match elabModuleScheduleWithHints sched hints' baseEnv' false with
+      | .ok env  => return env
+      | .error e => throw (toString e)
+
+/-- Parse and elaborate a `.ix` / `.lean` source string with `hints : ElabHints`. -/
+def elabSourceWithHints (input : String) (hints : ElabHints)
+    (fileName : String := "<input>")
+    (initEnv : IxElabEnv := IxElabEnv.empty)
+    (seedPrelude : Bool := true) : Except String IxElabEnv := do
+  let (stx, _) ← parseModuleWithEnv input fileName
+  elabModuleWithHints stx hints initEnv seedPrelude
+
+/-- Extract `ElabHints` from an already-elaborated `IxElabEnv` for all declarations in `modIdx`. -/
+def extractElabHintsFromEnv (modIdx : ModuleIndex) (env : IxElabEnv) : ElabHints :=
+  modIdx.decls.toList.foldl (fun acc decl =>
+    match env.find? decl.fullName with
+    | some (.axiomInfo aval) =>
+      acc.insert {
+        fullName    := decl.fullName
+        levelParams := aval.cnst.levelParams
+        type        := aval.cnst.type
+        value?      := none
+      }
+    | some (.defnInfo dval) =>
+      let (bcs, retC) := env.binderContracts.get? decl.fullName |>.getD (#[], {})
+      let letCs := env.letContracts.get? decl.fullName |>.getD #[]
+      acc.insert {
+        fullName        := decl.fullName
+        levelParams     := dval.cnst.levelParams
+        type            := dval.cnst.type
+        value?          := some dval.value
+        defKind         := .defn
+        hints           := dval.hints
+        binderContracts := bcs
+        retContract     := retC
+        letContracts    := letCs
+      }
+    | some (.thmInfo tval) =>
+      let (bcs, retC) := env.binderContracts.get? decl.fullName |>.getD (#[], {})
+      let letCs := env.letContracts.get? decl.fullName |>.getD #[]
+      acc.insert {
+        fullName        := decl.fullName
+        levelParams     := tval.cnst.levelParams
+        type            := tval.cnst.type
+        value?          := some tval.value
+        defKind         := .thm
+        hints           := .opaque
+        binderContracts := bcs
+        retContract     := retC
+        letContracts    := letCs
+      }
+    | some (.opaqueInfo oval) =>
+      let (bcs, retC) := env.binderContracts.get? decl.fullName |>.getD (#[], {})
+      let letCs := env.letContracts.get? decl.fullName |>.getD #[]
+      acc.insert {
+        fullName        := decl.fullName
+        levelParams     := oval.cnst.levelParams
+        type            := oval.cnst.type
+        value?          := some oval.value
+        defKind         := .opaq
+        hints           := .opaque
+        binderContracts := bcs
+        retContract     := retC
+        letContracts    := letCs
+      }
+    | _ => acc
+  ) ElabHints.empty
+
+/-- Out-of-circuit generator that runs full elaboration on `input` and produces `ElabHints`
+    for in-circuit `elabModuleWithHints` / `elabSourceWithHints` verification. -/
+def generateElabHints (input : String) (fileName : String := "<input>")
+    (initEnv : IxElabEnv := IxElabEnv.empty)
+    (seedPrelude : Bool := true) : Except String ElabHints := do
+  let (stx, _) ← parseModuleWithEnv input fileName
+  let modIdx ← buildModuleIndex stx
+  let env ← elabModuleSyntax stx initEnv seedPrelude
+  return extractElabHintsFromEnv modIdx env
 
 end Ix.Frontend.Elab

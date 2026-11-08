@@ -77,7 +77,11 @@ def whnf := ⟦
       KExprNode.App(f, a) =>
         match collect_spine(head) {
           (inner_head, inner_spine) =>
-            whnf_with_spine(rc, inner_head, list_concat(inner_spine, spine), types),
+            let full_spine = match load(spine) {
+              ListNode.Nil => inner_spine,
+              _ => list_concat(inner_spine, spine),
+            };
+            whnf_with_spine(rc, inner_head, full_spine, types),
         },
       KExprNode.Lam(ty, body) =>
         whnf_apply_beta(rc, spine, head, types),
@@ -100,7 +104,7 @@ def whnf := ⟦
     let inner_whnf = whnf(rc, inner, types);
     -- Str-literal re-expansion (mirror whnf_proj_head): a Proj over
     -- a Lit(Str) scrutinee needs the ctor form to pull fields.
-    let inner_exp = str_lit_to_ctor_app_or_self(rc, inner_whnf, types);
+    let inner_exp = str_lit_to_ctor_app_or_self(rc, inner_whnf);
     match collect_spine(inner_exp) {
       (inner_head, inner_args) =>
         match load(inner_head) {
@@ -157,7 +161,7 @@ def whnf := ⟦
   fn try_nat_dispatch_prewhnf(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
                                     types: List‹KExpr›) -> (G, KExpr) {
     let spine_w = whnf_spine(rc, spine, types);
-    @try_nat_dispatch(rc, head_addr, spine_w, types)
+    @try_nat_dispatch(rc, head_addr, spine_w)
   }
 
   -- Address-keyed primitive dispatch. Runs BEFORE KConstantInfo
@@ -312,7 +316,10 @@ def whnf := ⟦
   -- `apply_spine(head, spine)` fallbacks.
   fn whnf_const_head(rc: RoleCtx, addr: Addr, lvls: List‹KLevel›, head: KExpr,
                          spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
-    let prim = try_prim_dispatch(rc, addr, lvls, spine, types);
+    let prim = match prim_family(rc, addr) {
+      0 => (0, head),
+      _ => try_prim_dispatch(rc, addr, lvls, spine, types),
+    };
     match prim {
       (1, reduced) => whnf(rc, reduced, types),
       -- verdict 2: the reducer normalized the term to an already-stuck
@@ -325,9 +332,15 @@ def whnf := ⟦
     let ci = load(get_ci(addr));
     match ci {
       KConstantInfo.Defn(_, _, value, _, _) =>
-        let pd = try_reduce_projection_definition(value, spine);
-        match pd {
-          (1, reduced) => whnf(rc, reduced, types),
+        match projection_definition_info(value, 0) {
+          (1, _, _, _, _) =>
+            let pd = try_reduce_projection_definition(value, spine);
+            match pd {
+              (1, reduced) => whnf(rc, reduced, types),
+              _ =>
+                let body = expr_inst_levels(value, lvls);
+                whnf_with_spine(rc, body, spine, types),
+            },
           _ =>
             let body = expr_inst_levels(value, lvls);
             whnf_with_spine(rc, body, spine, types),
@@ -657,7 +670,7 @@ def whnf := ⟦
         let major_w = whnf_iota_major(rc, major_clean1, types);
         let major_clean2 = cleanup_nat_offset_major(rc, major_w);
         let major_nat = nat_lit_to_ctor_or_self(rc, major_clean2);
-        let major = str_lit_to_ctor_app_or_self(rc, major_nat, types);
+        let major = str_lit_to_ctor_app_or_self(rc, major_nat);
         match collect_spine_of_ctor(major) {
           (1, ctor_cidx, ctor_parent, ctor_args) =>
             -- The constructor must belong to the inductive THIS recursor
@@ -1004,7 +1017,12 @@ def whnf := ⟦
     match load(head) {
       KExprNode.App(_, _) =>
         match collect_spine(head) {
-          (h, s) => whnf_struct_core_spine(rc, h, list_concat(s, spine), types),
+          (h, s) =>
+            let full_spine = match load(spine) {
+              ListNode.Nil => s,
+              _ => list_concat(s, spine),
+            };
+            whnf_struct_core_spine(rc, h, full_spine, types),
         },
       KExprNode.Lam(_, _) =>
         match peel_beta(head, spine, store(ListNode.Nil)) {
@@ -1096,7 +1114,11 @@ def whnf := ⟦
       KExprNode.App(f, a) =>
         match collect_spine(head) {
           (inner_head, inner_spine) =>
-            whnf_nd_with_spine(rc, inner_head, list_concat(inner_spine, spine), types),
+            let full_spine = match load(spine) {
+              ListNode.Nil => inner_spine,
+              _ => list_concat(inner_spine, spine),
+            };
+            whnf_nd_with_spine(rc, inner_head, full_spine, types),
         },
       KExprNode.Lam(ty, body) =>
         whnf_nd_apply_beta(rc, spine, head, types),
@@ -1133,7 +1155,7 @@ def whnf := ⟦
                            spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
     let inner_whnf = whnf_nd(rc, inner, types);
     -- Same Str-literal re-expansion as whnf_proj_head.
-    let inner_exp = str_lit_to_ctor_app_or_self(rc, inner_whnf, types);
+    let inner_exp = str_lit_to_ctor_app_or_self(rc, inner_whnf);
     match collect_spine(inner_exp) {
       (inner_head, inner_args) =>
         match load(inner_head) {
@@ -1166,6 +1188,7 @@ def whnf := ⟦
     -- computations still reduce normally; open ones remain compact for lazy
     -- delta / offset comparison.
     let prim = match prim_family(rc, addr) {
+      0 => (0, head),
       1 =>
         let whole = apply_spine(head, spine);
         match expr_lbr(whole) {
@@ -1182,9 +1205,13 @@ def whnf := ⟦
     let ci = load(get_ci(addr));
     match ci {
       KConstantInfo.Defn(_, _, value, _, _) =>
-        let pd = try_reduce_projection_definition(value, spine);
-        match pd {
-          (1, reduced) => whnf_nd(rc, reduced, types),
+        match projection_definition_info(value, 0) {
+          (1, _, _, _, _) =>
+            let pd = try_reduce_projection_definition(value, spine);
+            match pd {
+              (1, reduced) => whnf_nd(rc, reduced, types),
+              _ => apply_spine(head, spine),
+            },
           _ => apply_spine(head, spine),
         },
       KConstantInfo.Quot(_, _, _) =>

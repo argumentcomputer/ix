@@ -33,9 +33,17 @@ structure InputContext where
 
 namespace InputContext
 
+/-- Force `n : Nat` to WHNF in the kernel via `Nat.casesOn` (`0` or `m + 1`) so `m` is bound
+    to the reduced `KLiteral.Nat (n - 1)` and `n` never accumulates unreduced arithmetic or
+    scanner thunks across recursive calls under call-by-name reduction. -/
+@[inline] def bindNat (n : Nat) (k : Nat → α) : α :=
+  match n with
+  | 0     => k 0
+  | m + 1 => k (Nat.succ m)
+
 /-- Build a balanced binary tree over `count` suffixes of `cs` in $O(N)$ steps,
     structurally recursive on `depth : Nat` (compiled directly to `Nat.rec`),
-    forcing `leftLen`, `leftTree`, and `rightTree` before constructing `.node`. -/
+    forcing `leftLen`, `rightLen`, `leftTree`, and `rightTree` before constructing `.node`. -/
 def buildCharSegTreeAux : Nat → Nat → List Char → (CharSegTree × List Char)
   | 0, _, cs => (.empty, cs)
   | depth + 1, count, cs =>
@@ -46,18 +54,14 @@ def buildCharSegTreeAux : Nat → Nat → List Char → (CharSegTree × List Cha
       | c :: cs' => (.leaf c (c :: cs'), cs')
       | []       => (.empty, [])
     else
-      let leftLen := count / 2
-      let rightLen := count - leftLen
+      bindNat (count / 2) fun leftLen =>
+      bindNat (count - leftLen) fun rightLen =>
       match buildCharSegTreeAux depth leftLen cs with
       | (leftTree, cs1) =>
         match buildCharSegTreeAux depth rightLen cs1 with
         | (rightTree, cs2) =>
           match leftTree, rightTree with
-          | lt, rt =>
-            if Nat.beq leftLen 0 then
-              (.node 0 lt rt, cs2)
-            else
-              (.node leftLen lt rt, cs2)
+          | lt, rt => (.node leftLen lt rt, cs2)
 
 /-- Look up character index `idx` in `CharSegTree` in $O(\log N)$ steps. -/
 def lookupSegTree : CharSegTree → Nat → Option (Char × List Char)
@@ -74,19 +78,32 @@ def lookupSegTree : CharSegTree → Nat → Option (Char × List Char)
 def countChars : List Char → Nat → Nat
   | [], cnt => cnt
   | _ :: cs, cnt =>
-    let cnt' := cnt + 1
-    if Nat.beq cnt' 0 then countChars cs 0 else countChars cs cnt'
+    bindNat (cnt + 1) fun cnt' => countChars cs cnt'
 
 /-- Construct an `InputContext` from a source string and optional file name. -/
 def mkInputContext (input : String) (fileName : String := "<input>") : InputContext :=
-  let chars := input.toList
-  let charCount := countChars chars 0
-  match buildCharSegTreeAux 20 charCount chars with
-  | (tree, _) =>
-    match tree with
-    | .empty => { fileName, input, chars, charCount, tree := .empty }
-    | .leaf c tl => { fileName, input, chars, charCount, tree := .leaf c tl }
-    | .node n l r => { fileName, input, chars, charCount, tree := .node n l r }
+  match input.toList with
+  | [] => { fileName, input, chars := [], charCount := 0, tree := .empty }
+  | c0 :: cs0 =>
+    let chars := c0 :: cs0
+    bindNat (countChars chars 0) fun charCount =>
+      match buildCharSegTreeAux 20 charCount chars with
+      | (tree, _) =>
+        match tree with
+        | .empty      => { fileName, input, chars, charCount, tree := .empty }
+        | .leaf c tl  => { fileName, input, chars, charCount, tree := .leaf c tl }
+        | .node n l r => { fileName, input, chars, charCount, tree := .node n l r }
+
+/-- Strictly destructure an `InputContext` once so its `charCount` and `CharSegTree`
+    are never re-evaluated across token scans under call-by-name reduction. -/
+@[inline] def bindInputCtx (c : InputContext) (k : InputContext → α) : α :=
+  match c with
+  | ⟨fileName, input, chars, charCount, tree⟩ =>
+    bindNat charCount fun charCount' =>
+      match tree with
+      | .empty      => k ⟨fileName, input, chars, charCount', .empty⟩
+      | .leaf ch tl => k ⟨fileName, input, chars, charCount', .leaf ch tl⟩
+      | .node n l r => k ⟨fileName, input, chars, charCount', .node n l r⟩
 
 /-- Total number of Unicode scalar characters in the input. -/
 def size (c : InputContext) : Nat :=
@@ -153,14 +170,12 @@ def isEmpty (s : SyntaxStack) : Bool := Nat.beq s.len 0
 def push (s : SyntaxStack) (stx : Ix.Syntax) : SyntaxStack :=
   match s with
   | ⟨rev, len⟩ =>
-    let len' := len + 1
-    if Nat.beq len' 0 then ⟨stx :: rev, 0⟩ else ⟨stx :: rev, len'⟩
+    InputContext.bindNat (len + 1) fun len' => ⟨stx :: rev, len'⟩
 
 def pop (s : SyntaxStack) : SyntaxStack :=
   match s with
   | ⟨_ :: xs, len⟩ =>
-    let len' := len - 1
-    if Nat.beq len' 0 then ⟨xs, 0⟩ else ⟨xs, len'⟩
+    InputContext.bindNat (len - 1) fun len' => ⟨xs, len'⟩
   | ⟨[], _⟩ => ⟨[], 0⟩
 
 def back (s : SyntaxStack) : Ix.Syntax :=
@@ -171,6 +186,12 @@ def back (s : SyntaxStack) : Ix.Syntax :=
 def getD (s : SyntaxStack) (i : Nat) : Ix.Syntax :=
   if Nat.ble s.len i then .missing
   else Syntax.listGetD s.rev (s.len - 1 - i) .missing
+
+/-- Force the outer spine of `xs : List α` to WHNF before passing to `k`. -/
+@[inline] def bindList (xs : List α) (k : List α → β) : β :=
+  match xs with
+  | []      => k []
+  | y :: ys => k (y :: ys)
 
 /-- Pop `n` elements from the top of `rev`, accumulating them in left-to-right order in `acc`. -/
 def popTopN : Nat → List Ix.Syntax → List Ix.Syntax → List Ix.Syntax × List Ix.Syntax
@@ -183,11 +204,10 @@ def shrink (s : SyntaxStack) (newSize : Nat) : SyntaxStack :=
   | ⟨rev, len⟩ =>
     if Nat.ble len newSize then ⟨rev, len⟩
     else
-      match popTopN (len - newSize) rev [] with
-      | (_, rest) =>
-        match rest with
-        | [] => if Nat.beq newSize 0 then ⟨[], 0⟩ else ⟨[], newSize⟩
-        | hd :: tl => if Nat.beq newSize 0 then ⟨hd :: tl, 0⟩ else ⟨hd :: tl, newSize⟩
+      InputContext.bindNat newSize fun newSize' =>
+        match popTopN (len - newSize') rev [] with
+        | (_, rest) =>
+          bindList rest fun rest' => ⟨rest', newSize'⟩
 
 def extract (s : SyntaxStack) (start stop : Nat) : Array Ix.Syntax :=
   let clampedStop := Nat.min stop s.len
@@ -195,7 +215,8 @@ def extract (s : SyntaxStack) (start stop : Nat) : Array Ix.Syntax :=
   else
     let afterStop := s.rev.drop (s.len - clampedStop)
     match popTopN (clampedStop - start) afterStop [] with
-    | (items, _) => Array.mk items
+    | (items, _) =>
+      bindList items fun items' => Array.mk items'
 
 end SyntaxStack
 
@@ -254,16 +275,10 @@ namespace ParserState
 def bindState (s : ParserState) (k : ParserState → α) : α :=
   match s with
   | ⟨⟨rev, len⟩, lhsPrec, pos, ⟨cStart, cStop, cTok⟩, err⟩ =>
-    let rev' : List Ix.Syntax := match rev with | [] => [] | x :: xs => x :: xs
-    let cache' : TokenCacheEntry :=
-      if Nat.beq cStart 0 && Nat.beq cStop 0 then ⟨0, 0, cTok⟩
-      else ⟨cStart, cStop, cTok⟩
-    let lhsPrec' : Nat := if Nat.beq lhsPrec 0 then 0 else lhsPrec
-    match len, pos, err with
-    | 0, 0, none => k ⟨⟨rev', 0⟩, lhsPrec', 0, cache', none⟩
-    | 0, p, none => k ⟨⟨rev', 0⟩, lhsPrec', p, cache', none⟩
-    | l, p, none => k ⟨⟨rev', l⟩, lhsPrec', p, cache', none⟩
-    | l, p, some e => k ⟨⟨rev', l⟩, lhsPrec', p, cache', some e⟩
+    SyntaxStack.bindList rev fun rev' =>
+    match err with
+    | none   => k ⟨⟨rev', len⟩, lhsPrec, pos, ⟨cStart, cStop, cTok⟩, none⟩
+    | some e => k ⟨⟨rev', len⟩, lhsPrec, pos, ⟨cStart, cStop, cTok⟩, some e⟩
 
 def hasError (s : ParserState) : Bool :=
   s.errorMsg.isSome
@@ -276,14 +291,14 @@ def restore (s : ParserState) (iniSz : Nat) (iniPos : Nat) : ParserState :=
   | ⟨stack, lhsPrec, _, cache, _⟩ =>
     match stack.shrink iniSz with
     | ⟨rev', len'⟩ =>
-      if Nat.beq iniPos 0 then ⟨⟨rev', len'⟩, lhsPrec, 0, cache, none⟩
-      else ⟨⟨rev', len'⟩, lhsPrec, iniPos, cache, none⟩
+      InputContext.bindNat iniPos fun iniPos' =>
+        ⟨⟨rev', len'⟩, lhsPrec, iniPos', cache, none⟩
 
 def setPos (s : ParserState) (newPos : Nat) : ParserState :=
   match s with
   | ⟨stack, lhsPrec, _, cache, err⟩ =>
-    if Nat.beq newPos 0 then ⟨stack, lhsPrec, 0, cache, err⟩
-    else ⟨stack, lhsPrec, newPos, cache, err⟩
+    InputContext.bindNat newPos fun newPos' =>
+      ⟨stack, lhsPrec, newPos', cache, err⟩
 
 def pushSyntax (s : ParserState) (stx : Ix.Syntax) : ParserState :=
   match s with
@@ -313,15 +328,12 @@ def mkNode (s : ParserState) (k : Ix.Name) (iniSz : Nat) : ParserState :=
       let count := stack.len - iniSz
       match SyntaxStack.popTopN count stack.rev [] with
       | (children, restRev) =>
-        let children' : List Ix.Syntax := match children with | [] => [] | x :: xs => x :: xs
-        let restRev' : List Ix.Syntax := match restRev with | [] => [] | x :: xs => x :: xs
-        let newLen := iniSz + 1
-        let newStack : SyntaxStack :=
-          if Nat.beq newLen 0 then
-            ⟨Syntax.mkNode k (Array.mk children') :: restRev', 0⟩
-          else
+        SyntaxStack.bindList children fun children' =>
+        SyntaxStack.bindList restRev fun restRev' =>
+        InputContext.bindNat (iniSz + 1) fun newLen =>
+          let newStack : SyntaxStack :=
             ⟨Syntax.mkNode k (Array.mk children') :: restRev', newLen⟩
-        ⟨newStack, lhsPrec, pos, cache, err⟩
+          ⟨newStack, lhsPrec, pos, cache, err⟩
 
 def mkTrailingNode (s : ParserState) (k : Ix.Name) (iniSz : Nat) (lhsPrec : Nat) : ParserState :=
   match s with
@@ -330,18 +342,13 @@ def mkTrailingNode (s : ParserState) (k : Ix.Name) (iniSz : Nat) (lhsPrec : Nat)
     let count := stack.len - baseSz
     match SyntaxStack.popTopN count stack.rev [] with
     | (children, restRev) =>
-      let children' : List Ix.Syntax := match children with | [] => [] | x :: xs => x :: xs
-      let restRev' : List Ix.Syntax := match restRev with | [] => [] | x :: xs => x :: xs
-      let newLen := baseSz + 1
-      let newStack : SyntaxStack :=
-        if Nat.beq newLen 0 then
-          ⟨Syntax.mkNode k (Array.mk children') :: restRev', 0⟩
-        else
+      SyntaxStack.bindList children fun children' =>
+      SyntaxStack.bindList restRev fun restRev' =>
+      InputContext.bindNat (baseSz + 1) fun newLen =>
+      InputContext.bindNat lhsPrec fun lhsPrec' =>
+        let newStack : SyntaxStack :=
           ⟨Syntax.mkNode k (Array.mk children') :: restRev', newLen⟩
-      if Nat.beq lhsPrec 0 then
-        ⟨newStack, 0, pos, cache, err⟩
-      else
-        ⟨newStack, lhsPrec, pos, cache, err⟩
+        ⟨newStack, lhsPrec', pos, cache, err⟩
 
 def setError (s : ParserState) (e : ParserError) : ParserState :=
   match s with
@@ -367,10 +374,8 @@ def mkErrorAt (s : ParserState) (expected : String) (errPos : Nat) (iniSz : Nat)
   | ⟨stack, lhsPrec, _, cache, _⟩ =>
     match (stack.shrink iniSz).push .missing with
     | ⟨rev', len'⟩ =>
-      if Nat.beq errPos 0 then
-        ⟨⟨rev', len'⟩, lhsPrec, 0, cache, some { pos := 0, expected := [expected] }⟩
-      else
-        ⟨⟨rev', len'⟩, lhsPrec, errPos, cache, some { pos := errPos, expected := [expected] }⟩
+      InputContext.bindNat errPos fun errPos' =>
+        ⟨⟨rev', len'⟩, lhsPrec, errPos', cache, some { pos := errPos', expected := [expected] }⟩
 
 end ParserState
 
@@ -399,6 +404,20 @@ structure IxParserEnv where
   keywords  : Trie Bool
   operators : List OperatorSpec := []
   deriving Repr, Inhabited
+
+namespace IxParserEnv
+
+/-- Strictly destructure `env : IxParserEnv`, forcing its `tokens` and `keywords` tries
+    and `operators` spine once so they are never re-evaluated across token scans. -/
+@[inline] def bindParserEnv (env : IxParserEnv) (k : IxParserEnv → α) : α :=
+  match env with
+  | ⟨.node tv tch, .node kv kch, ops⟩ =>
+    SyntaxStack.bindList tch fun tch' =>
+    SyntaxStack.bindList kch fun kch' =>
+    SyntaxStack.bindList ops fun ops' =>
+      k ⟨.node tv tch', .node kv kch', ops'⟩
+
+end IxParserEnv
 
 /-- Reader context for `ParserFn`. -/
 structure IxParserContext where

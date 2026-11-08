@@ -276,18 +276,18 @@ def binderIdentsFn : ParserFn :=
 /-- Look up a binary operator spec matching `sym` at or above `minPrec`. -/
 def findInfixOp? (env : IxParserEnv) (sym : String) (minPrec : Nat) : Option OperatorSpec :=
   env.operators.find? fun op =>
-    op.symbol == sym && op.prec ≥ minPrec &&
+    Nat.ble minPrec op.prec && op.symbol == sym &&
     (op.fixity == .infixl || op.fixity == .infixr || op.fixity == .infixn)
 
 /-- Look up a prefix operator spec matching `sym`. -/
 def findPrefixOp? (env : IxParserEnv) (sym : String) : Option OperatorSpec :=
   env.operators.find? fun op =>
-    op.symbol == sym && op.fixity == .prefixOp
+    op.fixity == .prefixOp && op.symbol == sym
 
 /-- Look up a postfix operator spec matching `sym` at or above `minPrec`. -/
 def findPostfixOp? (env : IxParserEnv) (sym : String) (minPrec : Nat) : Option OperatorSpec :=
   env.operators.find? fun op =>
-    op.symbol == sym && op.prec ≥ minPrec && op.fixity == .postfixOp
+    op.fixity == .postfixOp && Nat.ble minPrec op.prec && op.symbol == sym
 
 /-- Check if a token can start a function argument in juxtaposition `f a`. -/
 def canStartArg (env : IxParserEnv) : Ix.Syntax → Bool
@@ -313,6 +313,7 @@ def explicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
     let iniSz := s.stackSize
     (symbolFn "(" ctx s).bindState fun s =>
       if s.hasError then s else
+      let s := s.popSyntax
       (binderPrefixFn ctx s).bindState fun s =>
       (binderIdentsFn ctx s).bindState fun s =>
         if s.hasError then s else
@@ -320,8 +321,9 @@ def explicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
           let sAfterTy := match tok? with
             | some (.atom _ ":") =>
               (symbolFn ":" ctx s).bindState fun s =>
-              (valuePrefixFn ctx s).bindState fun s =>
-                withPrecFn 0 termRec ctx s
+                let s := s.popSyntax
+                (valuePrefixFn ctx s).bindState fun s =>
+                  withPrecFn 0 termRec ctx s
             | _ =>
               let s := s.pushSyntax (Syntax.mkNode SyntaxKind.valuePrefix #[])
               s.pushSyntax (Syntax.mkNullNode #[])
@@ -329,12 +331,7 @@ def explicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
             if s.hasError then s else
             (symbolFn ")" ctx s).bindState fun s =>
               if s.hasError then s else
-              let bPref := s.stxStack.getD (iniSz + 1)
-              let ids   := s.stxStack.getD (iniSz + 2)
-              let vPref := if Nat.beq s.stackSize (iniSz + 7) then s.stxStack.getD (iniSz + 4) else s.stxStack.getD (iniSz + 3)
-              let ty    := if Nat.beq s.stackSize (iniSz + 7) then s.stxStack.getD (iniSz + 5) else s.stxStack.getD (iniSz + 4)
-              let s := s.shrinkStack iniSz
-              s.pushSyntax (Syntax.mkNode SyntaxKind.explicitBinder #[bPref, ids, vPref, ty])
+              (s.popSyntax).mkNode SyntaxKind.explicitBinder iniSz
 
 /-- Parse an implicit binder `{0 α β : Type}` or `{α β}`. -/
 def implicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
@@ -342,6 +339,7 @@ def implicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
     let iniSz := s.stackSize
     (symbolFn "{" ctx s).bindState fun s =>
       if s.hasError then s else
+      let s := s.popSyntax
       (binderPrefixFn ctx s).bindState fun s =>
       (binderIdentsFn ctx s).bindState fun s =>
         if s.hasError then s else
@@ -349,8 +347,9 @@ def implicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
           let sAfterTy := match tok? with
             | some (.atom _ ":") =>
               (symbolFn ":" ctx s).bindState fun s =>
-              (valuePrefixFn ctx s).bindState fun s =>
-                withPrecFn 0 termRec ctx s
+                let s := s.popSyntax
+                (valuePrefixFn ctx s).bindState fun s =>
+                  withPrecFn 0 termRec ctx s
             | _ =>
               let s := s.pushSyntax (Syntax.mkNode SyntaxKind.valuePrefix #[])
               s.pushSyntax (Syntax.mkNullNode #[])
@@ -358,12 +357,7 @@ def implicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
             if s.hasError then s else
             (symbolFn "}" ctx s).bindState fun s =>
               if s.hasError then s else
-              let bPref := s.stxStack.getD (iniSz + 1)
-              let ids   := s.stxStack.getD (iniSz + 2)
-              let vPref := if Nat.beq s.stackSize (iniSz + 7) then s.stxStack.getD (iniSz + 4) else s.stxStack.getD (iniSz + 3)
-              let ty    := if Nat.beq s.stackSize (iniSz + 7) then s.stxStack.getD (iniSz + 5) else s.stxStack.getD (iniSz + 4)
-              let s := s.shrinkStack iniSz
-              s.pushSyntax (Syntax.mkNode SyntaxKind.implicitBinder #[bPref, ids, vPref, ty])
+              (s.popSyntax).mkNode SyntaxKind.implicitBinder iniSz
 
 /-- Parse a strict-implicit binder `⦃x : A⦄` or `{{x : A}}`. -/
 def strictImplicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
@@ -376,6 +370,7 @@ def strictImplicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
       let openSym := if closeSym == "}}" then "{{" else "⦃"
       (symbolFn openSym ctx s).bindState fun s =>
         if s.hasError then s else
+        let s := s.popSyntax
         (binderPrefixFn ctx s).bindState fun s =>
         (binderIdentsFn ctx s).bindState fun s =>
           if s.hasError then s else
@@ -383,8 +378,9 @@ def strictImplicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
             let sAfterTy := match tok? with
               | some (.atom _ ":") =>
                 (symbolFn ":" ctx s).bindState fun s =>
-                (valuePrefixFn ctx s).bindState fun s =>
-                  withPrecFn 0 termRec ctx s
+                  let s := s.popSyntax
+                  (valuePrefixFn ctx s).bindState fun s =>
+                    withPrecFn 0 termRec ctx s
               | _ =>
                 let s := s.pushSyntax (Syntax.mkNode SyntaxKind.valuePrefix #[])
                 s.pushSyntax (Syntax.mkNullNode #[])
@@ -392,12 +388,7 @@ def strictImplicitBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
               if s.hasError then s else
               (symbolFn closeSym ctx s).bindState fun s =>
                 if s.hasError then s else
-                let bPref := s.stxStack.getD (iniSz + 1)
-                let ids   := s.stxStack.getD (iniSz + 2)
-                let vPref := if Nat.beq s.stackSize (iniSz + 7) then s.stxStack.getD (iniSz + 4) else s.stxStack.getD (iniSz + 3)
-                let ty    := if Nat.beq s.stackSize (iniSz + 7) then s.stxStack.getD (iniSz + 5) else s.stxStack.getD (iniSz + 4)
-                let s := s.shrinkStack iniSz
-                s.pushSyntax (Syntax.mkNode SyntaxKind.strictImplicitBinder #[bPref, ids, vPref, ty])
+                (s.popSyntax).mkNode SyntaxKind.strictImplicitBinder iniSz
 
 /-- Parse an instance-implicit binder `[inst : Add α]` or `[Add α]`. -/
 def instBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
@@ -734,6 +725,18 @@ def matchAltFn (termRec : ParserFn) : ParserFn := fun ctx s =>
           (term0 ctx s).bindState fun s =>
             s.mkNode SyntaxKind.matchAlt iniSz
 
+/-- Attach `bVPref` and `bTy` to untyped `explicitBinder` nodes in a `∀ a b c : T, body` binder list. -/
+def attachTypeToBinders (bVPref bTy : Ix.Syntax) : List Ix.Syntax → List Ix.Syntax
+  | [] => []
+  | b :: bs =>
+    let b' := match b with
+      | .node info k ⟨[p0, p1, _, p3]⟩ =>
+        if k == SyntaxKind.explicitBinder && Syntax.isNone p3 then
+          .node info SyntaxKind.explicitBinder #[p0, p1, bVPref, bTy]
+        else b
+      | _ => b
+    b' :: attachTypeToBinders bVPref bTy bs
+
 /-- Parse a leading expression (atoms, binders, `fun`, `forall`, `let`, `let borrow`, `if`, `match`, `by`). -/
 def leadTermFn (termRec : ParserFn) (tacticFuel : Nat) : ParserFn := fun ctx s =>
   let term0 := withPrecFn 0 termRec
@@ -820,17 +823,14 @@ def leadTermFn (termRec : ParserFn) (tacticFuel : Nat) : ParserFn := fun ctx s =
                   match afterTyTok? with
                   | some (.atom _ ",") =>
                     -- `∀ a b c : T, body` -> attach `T` to untyped `explicitBinder`s in `bindersNode`!
-                    let kwTok := s.stxStack.getD iniSz
-                    let bindersNode := s.stxStack.getD (iniSz + 1)
-                    let bVPref := s.stxStack.getD (iniSz + 3)
-                    let bTy := s.stxStack.getD (iniSz + 4)
-                    let updatedBinders := (Syntax.getArgs bindersNode).map fun b =>
-                      if Syntax.isOfKind b SyntaxKind.explicitBinder && Syntax.isNone (Syntax.getArg b 3) then
-                        Syntax.mkNode SyntaxKind.explicitBinder #[Syntax.getArg b 0, Syntax.getArg b 1, bVPref, bTy]
-                      else b
-                    let s := s.shrinkStack iniSz
-                    let s := s.pushSyntax kwTok
-                    let s := s.pushSyntax (Syntax.mkNullNode updatedBinders)
+                    let s := match s.stxStack.rev with
+                      | bTy :: bVPref :: _ :: bindersNode :: kwTok :: restRev =>
+                        let updatedList := attachTypeToBinders bVPref bTy (Syntax.getArgs bindersNode).toList
+                        SyntaxStack.bindList updatedList fun updatedList' =>
+                        InputContext.bindNat (iniSz + 2) fun newLen =>
+                          let newBinders := Syntax.mkNullNode (Array.mk updatedList')
+                          ⟨⟨newBinders :: kwTok :: restRev, newLen⟩, s.lhsPrec, s.pos, s.cache, s.errorMsg⟩
+                      | _ => s
                     (symbolFn "," ctx s).bindState fun s =>
                     (valuePrefixFn ctx s).bindState fun s =>
                     (term0 ctx s).bindState fun s =>
@@ -1061,73 +1061,85 @@ def trailingTermLoop (termRec : ParserFn) (ctx : IxParserContext) (s : ParserSta
         match tok? with
         | none => s
         | some tok =>
-          -- 1. Field or index projection `.field` / `.0` (tightest binding, `maxPrec`)
-          if Syntax.getAtomVal tok == "." && Nat.ble (ctx.prec + 1) maxPrec then
-            let iniSz := s.stackSize
-            (symbolFn "." ctx s).bindState fun s =>
-            (orelseFn identFn numLitFn ctx s).bindState fun s =>
-              if s.hasError then s else
-              (s.mkTrailingNode SyntaxKind.projTerm iniSz maxPrec).bindState fun s =>
-                trailingTermLoop termRec ctx s fuel
-          -- 2. Non-dependent function arrow `A → !B` / `A -> ~B` (precedence `arrowPrec := 25`, right-assoc)
-          else if (Syntax.getAtomVal tok == "→" || Syntax.getAtomVal tok == "->") && Nat.ble ctx.prec arrowPrec then
-            let iniSz := s.stackSize
-            (tokenFn ctx s).bindState fun s =>
-            (valuePrefixFn ctx s).bindState fun s =>
-            (withPrecFn arrowPrec termRec ctx s).bindState fun s =>
-              if s.hasError then s else
-              (s.mkTrailingNode SyntaxKind.arrowTerm iniSz arrowPrec).bindState fun s =>
-                trailingTermLoop termRec ctx s fuel
-          -- 3. Registered binary infix operator
-          else
-            match findInfixOp? ctx.env (Syntax.getAtomVal tok) ctx.prec with
-            | some op =>
+          match tok with
+          | .atom _ sym =>
+            -- 1. Field or index projection `.field` / `.0` (tightest binding, `maxPrec`)
+            if sym == "." && Nat.ble (ctx.prec + 1) maxPrec then
+              let iniSz := s.stackSize
+              (symbolFn "." ctx s).bindState fun s =>
+              (orelseFn identFn numLitFn ctx s).bindState fun s =>
+                if s.hasError then s else
+                (s.mkTrailingNode SyntaxKind.projTerm iniSz maxPrec).bindState fun s =>
+                  trailingTermLoop termRec ctx s fuel
+            -- 2. Non-dependent function arrow `A → !B` / `A -> ~B` (precedence `arrowPrec := 25`, right-assoc)
+            else if (sym == "→" || sym == "->") && Nat.ble ctx.prec arrowPrec then
               let iniSz := s.stackSize
               (tokenFn ctx s).bindState fun s =>
-                let rhsMinPrec := match op.fixity with
-                  | .infixl => op.prec + 1
-                  | .infixr => op.prec
-                  | _       => op.prec + 1
-                (withPrecFn rhsMinPrec termRec ctx s).bindState fun s =>
-                  if s.hasError then s else
-                  let sNext :=
-                    if op.kind == SyntaxKind.appTerm then
-                      match op.targetFn with
-                      | some fnName =>
-                        let rhsStx := s.stxStack.back
-                        let s1 := s.shrinkStack (iniSz - 1)
-                        let lhsStx := s.stxStack.getD (iniSz - 1)
-                        let app1 := Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, lhsStx]
-                        let app2 := Syntax.mkNode SyntaxKind.appTerm #[app1, rhsStx]
-                        s1.pushSyntax app2
-                      | none => s.mkTrailingNode op.kind iniSz op.prec
-                    else
-                      s.mkTrailingNode op.kind iniSz op.prec
-                  sNext.bindState fun s =>
-                    trailingTermLoop termRec ctx s fuel
-            | none =>
-              match findPostfixOp? ctx.env (Syntax.getAtomVal tok) ctx.prec with
+              (valuePrefixFn ctx s).bindState fun s =>
+              (withPrecFn arrowPrec termRec ctx s).bindState fun s =>
+                if s.hasError then s else
+                (s.mkTrailingNode SyntaxKind.arrowTerm iniSz arrowPrec).bindState fun s =>
+                  trailingTermLoop termRec ctx s fuel
+            -- 3. Registered binary infix operator
+            else
+              match findInfixOp? ctx.env sym ctx.prec with
               | some op =>
                 let iniSz := s.stackSize
                 (tokenFn ctx s).bindState fun s =>
-                  let sNext := match op.targetFn with
-                    | some fnName =>
-                      let lhsStx := s.stxStack.getD (iniSz - 1)
-                      let s1 := s.shrinkStack (iniSz - 1)
-                      s1.pushSyntax (Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, lhsStx])
-                    | none => s
-                  sNext.bindState fun s =>
-                    trailingTermLoop termRec ctx s fuel
-              | none =>
-                -- 4. Juxtaposition application `f arg` when `ctx.prec < argPrec` (on the same line)
-                if Nat.ble (ctx.prec + 1) argPrec && !hasLeadingNewline tok && canStartArg ctx.env tok then
-                  let iniSz := s.stackSize
-                  (withPrecFn argPrec termRec ctx s).bindState fun s =>
+                  let rhsMinPrec := match op.fixity with
+                    | .infixl => op.prec + 1
+                    | .infixr => op.prec
+                    | _       => op.prec + 1
+                  (withPrecFn rhsMinPrec termRec ctx s).bindState fun s =>
                     if s.hasError then s else
-                    (s.mkTrailingNode SyntaxKind.appTerm iniSz argPrec).bindState fun s =>
+                    let sNext :=
+                      if op.kind == SyntaxKind.appTerm then
+                        match op.targetFn with
+                        | some fnName =>
+                          let rhsStx := s.stxStack.back
+                          let s1 := s.shrinkStack (iniSz - 1)
+                          let lhsStx := s.stxStack.getD (iniSz - 1)
+                          let app1 := Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, lhsStx]
+                          let app2 := Syntax.mkNode SyntaxKind.appTerm #[app1, rhsStx]
+                          s1.pushSyntax app2
+                        | none => s.mkTrailingNode op.kind iniSz op.prec
+                      else
+                        s.mkTrailingNode op.kind iniSz op.prec
+                    sNext.bindState fun s =>
                       trailingTermLoop termRec ctx s fuel
-                else
-                  s
+              | none =>
+                match findPostfixOp? ctx.env sym ctx.prec with
+                | some op =>
+                  let iniSz := s.stackSize
+                  (tokenFn ctx s).bindState fun s =>
+                    let sNext := match op.targetFn with
+                      | some fnName =>
+                        let lhsStx := s.stxStack.getD (iniSz - 1)
+                        let s1 := s.shrinkStack (iniSz - 1)
+                        s1.pushSyntax (Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, lhsStx])
+                      | none => s
+                    sNext.bindState fun s =>
+                      trailingTermLoop termRec ctx s fuel
+                | none =>
+                  -- 4. Juxtaposition application `f arg` when `ctx.prec < argPrec` (on the same line)
+                  if Nat.ble (ctx.prec + 1) argPrec && !hasLeadingNewline tok && canStartArg ctx.env tok then
+                    let iniSz := s.stackSize
+                    (withPrecFn argPrec termRec ctx s).bindState fun s =>
+                      if s.hasError then s else
+                      (s.mkTrailingNode SyntaxKind.appTerm iniSz argPrec).bindState fun s =>
+                        trailingTermLoop termRec ctx s fuel
+                  else
+                    s
+          | _ =>
+            -- Non-atom token (`.ident` or literal `.node`): skip operator lookups and check juxtaposition directly
+            if Nat.ble (ctx.prec + 1) argPrec && !hasLeadingNewline tok && canStartArg ctx.env tok then
+              let iniSz := s.stackSize
+              (withPrecFn argPrec termRec ctx s).bindState fun s =>
+                if s.hasError then s else
+                (s.mkTrailingNode SyntaxKind.appTerm iniSz argPrec).bindState fun s =>
+                  trailingTermLoop termRec ctx s fuel
+            else
+              s
 
 /-- Parse an expression at minimum precedence `ctx.prec`, structurally recursive on `fuel : Nat`. -/
 def termStep : Nat → ParserFn

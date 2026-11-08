@@ -422,20 +422,21 @@ def ModuleIndex.registerDeclMaps (idx : ModuleIndex) (dIdx : Nat) (d : ModuleDec
   match idx with
   | ⟨decls, declByName0, ctorToInd0, fieldToStruct0, auxToInd0, importMap⟩ =>
     let declByName := declByName0.insert d.fullName dIdx
-    let ctorToInd := d.ctorNames.foldl (fun acc c => acc.insert c (d.fullName, dIdx)) ctorToInd0
-    let fieldToStruct := d.fieldNames.foldl (fun acc f => acc.insert f (d.fullName, dIdx)) fieldToStruct0
-    let auxToInd :=
-      if d.kind == .ind || d.kind == .struct || d.kind == .cls then
+    if d.kind != .ind && d.kind != .struct && d.kind != .cls then
+      declByName.bindMap fun declByName' =>
+        ⟨decls, declByName', ctorToInd0, fieldToStruct0, auxToInd0, importMap⟩
+    else
+      let ctorToInd := d.ctorNames.foldl (fun acc c => acc.insert c (d.fullName, dIdx)) ctorToInd0
+      let fieldToStruct := d.fieldNames.foldl (fun acc f => acc.insert f (d.fullName, dIdx)) fieldToStruct0
+      let auxToInd :=
         standardIndAuxSuffixes.foldl
           (fun acc suf => acc.insert (Name.mkStr d.fullName suf) (d.fullName, dIdx))
           auxToInd0
-      else
-        auxToInd0
-    declByName.bindMap fun declByName' =>
-    ctorToInd.bindMap fun ctorToInd' =>
-    fieldToStruct.bindMap fun fieldToStruct' =>
-    auxToInd.bindMap fun auxToInd' =>
-      ⟨decls, declByName', ctorToInd', fieldToStruct', auxToInd', importMap⟩
+      declByName.bindMap fun declByName' =>
+      ctorToInd.bindMap fun ctorToInd' =>
+      fieldToStruct.bindMap fun fieldToStruct' =>
+      auxToInd.bindMap fun auxToInd' =>
+        ⟨decls, declByName', ctorToInd', fieldToStruct', auxToInd', importMap⟩
 
 /-- Register a `ModuleDecl` and its constructors, fields, and auxiliaries into `ModuleIndex`. -/
 def ModuleIndex.registerDecl (idx : ModuleIndex) (d : ModuleDecl) : ModuleIndex :=
@@ -636,9 +637,8 @@ def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String
             ctorNames  := ctorNames
             fieldNames := fieldNames }
         let modIdx' := modIdx.registerDeclMaps declCount decl
-        let nextDeclCount := declCount + 1
-        let nextDeclCount' := if Nat.beq nextDeclCount 0 then 0 else nextDeclCount
-        return ⟨currScope, frames, modIdx', decl :: revDecls, nextDeclCount', anonCount'⟩
+        InputContext.bindNat (declCount + 1) fun nextDeclCount' =>
+          return ⟨currScope, frames, modIdx', decl :: revDecls, nextDeclCount', anonCount'⟩
       else
         -- Ignore notationDecl or unknown commands in Pass 1
         return ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
@@ -687,8 +687,14 @@ def resolveNameCandidates (scope : ScopeSnapshot) (modIdx : ModuleIndex)
     (mapping the standard Mathlib/Lean unicode alias `ℕ` to `Nat` when `ℕ` is not locally declared). -/
 def resolveIdentInScope (scope : ScopeSnapshot) (modIdx : ModuleIndex)
     (isExtConst : Ix.Name → Bool := fun _ => false) (id : Ix.Name) : Ix.Name :=
-  match resolveNameCandidates scope modIdx isExtConst id with
-  | best :: _ => best
-  | []        => if id == Name.simple "ℕ" then Name.simple "Nat" else id
+  if (match scope.currNamespace with | .anonymous _ => true | _ => false) && scope.openDecls.isEmpty then
+    if id == Name.simple "ℕ" then
+      if modIdx.containsSymbol id || isExtConst id then id else Name.simple "Nat"
+    else
+      id
+  else
+    match resolveNameCandidates scope modIdx isExtConst id with
+    | best :: _ => best
+    | []        => if id == Name.simple "ℕ" then Name.simple "Nat" else id
 
 end Ix.Frontend

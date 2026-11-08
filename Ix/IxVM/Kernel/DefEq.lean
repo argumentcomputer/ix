@@ -305,9 +305,20 @@ def defEq := ⟦
   }
 
   fn k_is_def_eq_slow(rc: RoleCtx, a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    match @try_string_lit_pair(rc, a, b, types) {
-      1 => 1,
-      _ => k_is_def_eq_slow_nd(rc, a, b, types),
+    let has_str = match load(a) {
+      KExprNode.Lit(la) => match la { KLiteral.Str(_) => 1, _ => 0, },
+      _ => match load(b) {
+        KExprNode.Lit(lb) => match lb { KLiteral.Str(_) => 1, _ => 0, },
+        _ => 0,
+      },
+    };
+    match has_str {
+      0 => k_is_def_eq_slow_nd(rc, a, b, types),
+      _ =>
+        match @try_string_lit_pair(rc, a, b, types) {
+          1 => 1,
+          _ => k_is_def_eq_slow_nd(rc, a, b, types),
+        },
     }
   }
 

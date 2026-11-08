@@ -576,17 +576,21 @@ def parseModuleLoop (inputCtx : InputContext) (env : IxParserEnv) (s : ParserSta
           match s'.errorMsg with
           | some err => .error (ParserError.toString inputCtx err)
           | none =>
-            let cmd := s'.stxStack.back
-            let env' := updateParserEnvFromCommand env cmd
+            let cmd := match s'.stxStack.rev with | x :: _ => x | [] => .missing
             let sClean := s'.shrinkStack iniSz
-            parseModuleLoop inputCtx env' sClean (cmd :: revCmds) fuel
+            if Syntax.isOfKind cmd SyntaxKind.notationDecl then
+              (updateParserEnvFromCommand env cmd).bindParserEnv fun env' =>
+                parseModuleLoop inputCtx env' sClean (cmd :: revCmds) fuel
+            else
+              parseModuleLoop inputCtx env sClean (cmd :: revCmds) fuel
 
 /-- Parse a complete `.ix` / `.lean` source string into a `SyntaxKind.moduleKind` AST
     and the resulting `IxParserEnv`. 100% pure and deterministic (zero `IO`). -/
 def parseModuleWithEnv (input : String) (fileName : String := "<input>")
     (env : IxParserEnv := defaultParserEnv) : Except String (Ix.Syntax × IxParserEnv) :=
-  let inputCtx := InputContext.mkInputContext input fileName
-  parseModuleLoop inputCtx env {} [] (inputCtx.charCount + 16)
+  (InputContext.mkInputContext input fileName).bindInputCtx fun inputCtx =>
+  env.bindParserEnv fun env' =>
+    parseModuleLoop inputCtx env' {} [] (inputCtx.charCount + 16)
 
 /-- Parse a complete `.ix` / `.lean` source string into an `Ix.Syntax` tree. -/
 def parseModule (input : String) (fileName : String := "<input>")

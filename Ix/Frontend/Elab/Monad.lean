@@ -75,12 +75,14 @@ def empty : IxElabEnv := {}
   match env with
   | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
     consts.bindMap fun consts' =>
+    Ix.Frontend.Parser.SyntaxStack.bindList constOrder fun constOrder' =>
     binderContracts.bindMap fun binderContracts' =>
     letContracts.bindMap fun letContracts' =>
     structTable.bindMap fun structTable' =>
     classSet.bindSet fun classSet' =>
+    Ix.Frontend.Parser.SyntaxStack.bindList instances fun instances' =>
     instancesByClass.bindMap fun instancesByClass' =>
-      k ⟨consts', constOrder, binderContracts', letContracts', structTable', classSet', instances, instancesByClass', importMap⟩
+      k ⟨consts', constOrder', binderContracts', letContracts', structTable', classSet', instances', instancesByClass', importMap⟩
 
 /-- Look up a constant in `consts`. -/
 def find? (env : IxElabEnv) (name : Ix.Name) : Option Ix.ConstantInfo :=
@@ -101,7 +103,8 @@ def addConst (env : IxElabEnv) (ci : Ix.ConstantInfo) : IxElabEnv :=
   match env with
   | ⟨consts, constOrder, binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩ =>
     let name := (Expr.ConstantInfo.getCnstPure ci).name
-    let constOrder' := if consts.contains name then constOrder else name :: constOrder
+    let constOrder1 := if consts.contains name then constOrder else name :: constOrder
+    Ix.Frontend.Parser.SyntaxStack.bindList constOrder1 fun constOrder' =>
     (consts.insert name ci).bindMap fun consts' =>
       ⟨consts', constOrder', binderContracts, letContracts, structTable, classSet, instances, instancesByClass, importMap⟩
 

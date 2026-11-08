@@ -17,11 +17,24 @@ public import IxC.Ixon.Types.Contract
 
 namespace Ix.Frontend
 
+/-- Force a `Nat` to WHNF before binding it in a continuation `k` so call-by-name
+    kernel reduction (`KExprNode.Let`) does not duplicate unreduced projections. -/
+@[inline] def forceNat (n : Nat) (k : Nat → α) : α :=
+  match n with
+  | 0 => k 0
+  | m + 1 => k (m + 1)
+
 /-- Pure `Nat` total order using `Nat.ble` and `Nat.beq` (zero `Decidable` proof terms). -/
 @[inline] def natCmpPure (a b : Nat) : Ordering :=
-  if Nat.ble (a + 1) b then .lt
-  else if Nat.beq a b then .eq
+  forceNat a fun a' =>
+  forceNat b fun b' =>
+  if Nat.ble (a' + 1) b' then .lt
+  else if Nat.beq a' b' then .eq
   else .gt
+
+/-- Proof-free `BEq Char` instance avoiding `Char.decEq -> UInt32.decEq -> BitVec.decEq -> Fin.decEq`. -/
+scoped instance (priority := 2000) : BEq Char where
+  beq a b := Nat.beq a.val.toNat b.val.toNat
 
 /-- Structural byte-list equality on `List UInt8` (zero proof terms). -/
 def bytesBeq : List UInt8 → List UInt8 → Bool
@@ -35,8 +48,8 @@ def bytesCmp : List UInt8 → List UInt8 → Ordering
   | [], _ :: _       => .lt
   | _ :: _, []       => .gt
   | a :: as, b :: bs =>
-    let na := a.toNat
-    let nb := b.toNat
+    forceNat a.toNat fun na =>
+    forceNat b.toNat fun nb =>
     if Nat.ble (na + 1) nb then .lt
     else if Nat.ble (nb + 1) na then .gt
     else bytesCmp as bs
@@ -53,8 +66,8 @@ def charsCmp : List Char → List Char → Ordering
   | [], _ :: _       => .lt
   | _ :: _, []       => .gt
   | a :: as, b :: bs =>
-    let na := a.val.toNat
-    let nb := b.val.toNat
+    forceNat a.val.toNat fun na =>
+    forceNat b.val.toNat fun nb =>
     if Nat.ble (na + 1) nb then .lt
     else if Nat.ble (nb + 1) na then .gt
     else charsCmp as bs
@@ -691,131 +704,134 @@ end ParsedBinderContract
 
 namespace SyntaxKind
 
-def nullKind : Ix.Name := Name.simple "null"
-def missingKind : Ix.Name := Name.simple "missing"
-def identKind : Ix.Name := Name.simple "ident"
+@[inline] def mkKindTag (tag : Nat) : Ix.Name :=
+  Name.mkNat Name.mkAnon tag
+
+def nullKind                : Ix.Name := mkKindTag 1
+def missingKind             : Ix.Name := mkKindTag 2
+def identKind               : Ix.Name := mkKindTag 3
 
 -- Module & top-level commands
-def moduleKind        : Ix.Name := Name.mkStr2 "Ix" "module"
-def headerKind        : Ix.Name := Name.mkStr2 "Ix" "header"
-def importDecl        : Ix.Name := Name.mkStr2 "Ix" "importDecl"
-def hashImport        : Ix.Name := Name.mkStr2 "Ix" "hashImport"
-def buildMapDecl      : Ix.Name := Name.mkStr2 "Ix" "buildMapDecl"
-def namespaceDecl     : Ix.Name := Name.mkStr2 "Ix" "namespaceDecl"
-def sectionDecl       : Ix.Name := Name.mkStr2 "Ix" "sectionDecl"
-def endDecl           : Ix.Name := Name.mkStr2 "Ix" "endDecl"
-def openDecl          : Ix.Name := Name.mkStr2 "Ix" "openDecl"
-def variableDecl      : Ix.Name := Name.mkStr2 "Ix" "variableDecl"
-def universeDecl      : Ix.Name := Name.mkStr2 "Ix" "universeDecl"
-def mutualDecl        : Ix.Name := Name.mkStr2 "Ix" "mutualDecl"
-def mergeConflictDecl : Ix.Name := Name.mkStr2 "Ix" "mergeConflictDecl"
-def mergeArm          : Ix.Name := Name.mkStr2 "Ix" "mergeArm"
-def defDecl           : Ix.Name := Name.mkStr2 "Ix" "defDecl"
-def abbrevDecl        : Ix.Name := Name.mkStr2 "Ix" "abbrevDecl"
-def theoremDecl       : Ix.Name := Name.mkStr2 "Ix" "theoremDecl"
-def axiomDecl         : Ix.Name := Name.mkStr2 "Ix" "axiomDecl"
-def opaqueDecl        : Ix.Name := Name.mkStr2 "Ix" "opaqueDecl"
-def instanceDecl      : Ix.Name := Name.mkStr2 "Ix" "instanceDecl"
-def inductiveDecl     : Ix.Name := Name.mkStr2 "Ix" "inductiveDecl"
-def structureDecl     : Ix.Name := Name.mkStr2 "Ix" "structureDecl"
-def classDecl         : Ix.Name := Name.mkStr2 "Ix" "classDecl"
-def ctorDecl          : Ix.Name := Name.mkStr2 "Ix" "ctorDecl"
-def fieldDecl         : Ix.Name := Name.mkStr2 "Ix" "fieldDecl"
-def notationDecl      : Ix.Name := Name.mkStr2 "Ix" "notationDecl"
-def macroDecl         : Ix.Name := Name.mkStr2 "Ix" "macroDecl"
-def modifiersKind     : Ix.Name := Name.mkStr2 "Ix" "modifiers"
-def univParamsKind    : Ix.Name := Name.mkStr2 "Ix" "univParams"
+def moduleKind              : Ix.Name := mkKindTag 4
+def headerKind              : Ix.Name := mkKindTag 5
+def importDecl              : Ix.Name := mkKindTag 6
+def hashImport              : Ix.Name := mkKindTag 7
+def buildMapDecl            : Ix.Name := mkKindTag 8
+def namespaceDecl           : Ix.Name := mkKindTag 9
+def sectionDecl             : Ix.Name := mkKindTag 10
+def endDecl                 : Ix.Name := mkKindTag 11
+def openDecl                : Ix.Name := mkKindTag 12
+def variableDecl            : Ix.Name := mkKindTag 13
+def universeDecl            : Ix.Name := mkKindTag 14
+def mutualDecl              : Ix.Name := mkKindTag 15
+def mergeConflictDecl       : Ix.Name := mkKindTag 116
+def mergeArm                : Ix.Name := mkKindTag 117
+def defDecl                 : Ix.Name := mkKindTag 16
+def abbrevDecl              : Ix.Name := mkKindTag 17
+def theoremDecl             : Ix.Name := mkKindTag 18
+def axiomDecl               : Ix.Name := mkKindTag 19
+def opaqueDecl              : Ix.Name := mkKindTag 20
+def instanceDecl            : Ix.Name := mkKindTag 21
+def inductiveDecl           : Ix.Name := mkKindTag 22
+def structureDecl           : Ix.Name := mkKindTag 23
+def classDecl               : Ix.Name := mkKindTag 24
+def ctorDecl                : Ix.Name := mkKindTag 25
+def fieldDecl               : Ix.Name := mkKindTag 26
+def notationDecl            : Ix.Name := mkKindTag 27
+def macroDecl               : Ix.Name := mkKindTag 28
+def modifiersKind           : Ix.Name := mkKindTag 29
+def univParamsKind          : Ix.Name := mkKindTag 30
 
 -- Substructural contract nodes
-def binderPrefix      : Ix.Name := Name.mkStr3 "Ix" "contract" "binderPrefix"
-def valuePrefix       : Ix.Name := Name.mkStr3 "Ix" "contract" "valuePrefix"
-def explicitBinder    : Ix.Name := Name.mkStr2 "Ix" "explicitBinder"
-def implicitBinder    : Ix.Name := Name.mkStr2 "Ix" "implicitBinder"
-def strictImplicitBinder : Ix.Name := Name.mkStr2 "Ix" "strictImplicitBinder"
-def instBinder        : Ix.Name := Name.mkStr2 "Ix" "instBinder"
+def binderPrefix            : Ix.Name := mkKindTag 31
+def valuePrefix             : Ix.Name := mkKindTag 32
+def explicitBinder          : Ix.Name := mkKindTag 33
+def implicitBinder          : Ix.Name := mkKindTag 34
+def strictImplicitBinder    : Ix.Name := mkKindTag 35
+def instBinder              : Ix.Name := mkKindTag 36
 
 -- Terms & Universe Levels
-def hashRef           : Ix.Name := Name.mkStr2 "Ix" "hashRef"
-def numLit            : Ix.Name := Name.mkStr2 "Ix" "numLit"
-def strLit            : Ix.Name := Name.mkStr2 "Ix" "strLit"
-def charLit           : Ix.Name := Name.mkStr2 "Ix" "charLit"
-def appTerm           : Ix.Name := Name.mkStr2 "Ix" "app"
-def arrowTerm         : Ix.Name := Name.mkStr2 "Ix" "arrow"
-def forallTerm        : Ix.Name := Name.mkStr2 "Ix" "forall"
-def funTerm           : Ix.Name := Name.mkStr2 "Ix" "fun"
-def letTerm           : Ix.Name := Name.mkStr2 "Ix" "let"
-def letBorrowTerm     : Ix.Name := Name.mkStr2 "Ix" "letBorrow"
-def letRecTerm        : Ix.Name := Name.mkStr2 "Ix" "letRec"
-def haveTerm          : Ix.Name := Name.mkStr2 "Ix" "have"
-def ifTerm            : Ix.Name := Name.mkStr2 "Ix" "if"
-def matchTerm         : Ix.Name := Name.mkStr2 "Ix" "match"
-def matchAlt          : Ix.Name := Name.mkStr2 "Ix" "matchAlt"
-def projTerm          : Ix.Name := Name.mkStr2 "Ix" "proj"
-def anonCtor          : Ix.Name := Name.mkStr2 "Ix" "anonCtor"
-def structInst        : Ix.Name := Name.mkStr2 "Ix" "structInst"
-def structFieldAssign : Ix.Name := Name.mkStr2 "Ix" "structFieldAssign"
-def listLit           : Ix.Name := Name.mkStr2 "Ix" "listLit"
-def tupleTerm         : Ix.Name := Name.mkStr2 "Ix" "tuple"
-def parenTerm         : Ix.Name := Name.mkStr2 "Ix" "paren"
-def typeAscription    : Ix.Name := Name.mkStr2 "Ix" "typeAscription"
-def holeTerm          : Ix.Name := Name.mkStr2 "Ix" "hole"
-def sorryTerm         : Ix.Name := Name.mkStr2 "Ix" "sorry"
-def sortTerm          : Ix.Name := Name.mkStr2 "Ix" "sort"
-def propTerm          : Ix.Name := Name.mkStr2 "Ix" "prop"
-def typeTerm          : Ix.Name := Name.mkStr2 "Ix" "type"
-def binOpTerm         : Ix.Name := Name.mkStr2 "Ix" "binOp"
-def unaryOpTerm       : Ix.Name := Name.mkStr2 "Ix" "unaryOp"
-def explicitTerm      : Ix.Name := Name.mkStr2 "Ix" "explicit"
-def levelLit          : Ix.Name := Name.mkStr2 "Ix" "levelLit"
-def levelAdd          : Ix.Name := Name.mkStr2 "Ix" "levelAdd"
-def levelMax          : Ix.Name := Name.mkStr2 "Ix" "levelMax"
-def levelIMax         : Ix.Name := Name.mkStr2 "Ix" "levelIMax"
+def hashRef                 : Ix.Name := mkKindTag 37
+def numLit                  : Ix.Name := mkKindTag 38
+def strLit                  : Ix.Name := mkKindTag 39
+def charLit                 : Ix.Name := mkKindTag 40
+def appTerm                 : Ix.Name := mkKindTag 41
+def arrowTerm               : Ix.Name := mkKindTag 42
+def forallTerm              : Ix.Name := mkKindTag 43
+def funTerm                 : Ix.Name := mkKindTag 44
+def letTerm                 : Ix.Name := mkKindTag 45
+def letBorrowTerm           : Ix.Name := mkKindTag 46
+def letRecTerm              : Ix.Name := mkKindTag 47
+def haveTerm                : Ix.Name := mkKindTag 48
+def ifTerm                  : Ix.Name := mkKindTag 49
+def matchTerm               : Ix.Name := mkKindTag 50
+def matchAlt                : Ix.Name := mkKindTag 51
+def projTerm                : Ix.Name := mkKindTag 52
+def anonCtor                : Ix.Name := mkKindTag 53
+def structInst              : Ix.Name := mkKindTag 54
+def structFieldAssign       : Ix.Name := mkKindTag 55
+def listLit                 : Ix.Name := mkKindTag 56
+def tupleTerm               : Ix.Name := mkKindTag 57
+def parenTerm               : Ix.Name := mkKindTag 58
+def typeAscription          : Ix.Name := mkKindTag 59
+def holeTerm                : Ix.Name := mkKindTag 60
+def sorryTerm               : Ix.Name := mkKindTag 61
+def sortTerm                : Ix.Name := mkKindTag 62
+def propTerm                : Ix.Name := mkKindTag 63
+def typeTerm                : Ix.Name := mkKindTag 64
+def binOpTerm               : Ix.Name := mkKindTag 65
+def unaryOpTerm             : Ix.Name := mkKindTag 66
+def explicitTerm            : Ix.Name := mkKindTag 67
+def levelLit                : Ix.Name := mkKindTag 68
+def levelAdd                : Ix.Name := mkKindTag 69
+def levelMax                : Ix.Name := mkKindTag 70
+def levelIMax               : Ix.Name := mkKindTag 71
 
 -- Tactics
-def byTactic          : Ix.Name := Name.mkStr2 "Ix" "byTactic"
-def tacticSeq         : Ix.Name := Name.mkStr2 "Ix" "tacticSeq"
-def tacticIntro       : Ix.Name := Name.mkStr3 "Ix" "tactic" "intro"
-def tacticExact       : Ix.Name := Name.mkStr3 "Ix" "tactic" "exact"
-def tacticApply       : Ix.Name := Name.mkStr3 "Ix" "tactic" "apply"
-def tacticRefine      : Ix.Name := Name.mkStr3 "Ix" "tactic" "refine"
-def tacticRfl         : Ix.Name := Name.mkStr3 "Ix" "tactic" "rfl"
-def tacticRw          : Ix.Name := Name.mkStr3 "Ix" "tactic" "rw"
-def tacticRwRule      : Ix.Name := Name.mkStr3 "Ix" "tactic" "rwRule"
-def tacticCases       : Ix.Name := Name.mkStr3 "Ix" "tactic" "cases"
-def tacticInduction   : Ix.Name := Name.mkStr3 "Ix" "tactic" "induction"
-def tacticAlt         : Ix.Name := Name.mkStr3 "Ix" "tactic" "alt"
-def tacticHave        : Ix.Name := Name.mkStr3 "Ix" "tactic" "have"
-def tacticLet         : Ix.Name := Name.mkStr3 "Ix" "tactic" "let"
-def tacticChange      : Ix.Name := Name.mkStr3 "Ix" "tactic" "change"
-def tacticConstructor : Ix.Name := Name.mkStr3 "Ix" "tactic" "constructor"
-def tacticSimp        : Ix.Name := Name.mkStr3 "Ix" "tactic" "simp"
-def tacticDecide      : Ix.Name := Name.mkStr3 "Ix" "tactic" "decide"
-def tacticAssumption    : Ix.Name := Name.mkStr3 "Ix" "tactic" "assumption"
-def tacticSorry         : Ix.Name := Name.mkStr3 "Ix" "tactic" "sorry"
-def tacticAndThen       : Ix.Name := Name.mkStr3 "Ix" "tactic" "andThen"
-def tacticFocus         : Ix.Name := Name.mkStr3 "Ix" "tactic" "focus"
-def tacticCase          : Ix.Name := Name.mkStr3 "Ix" "tactic" "case"
-def tacticParen         : Ix.Name := Name.mkStr3 "Ix" "tactic" "paren"
-def tacticFirst         : Ix.Name := Name.mkStr3 "Ix" "tactic" "first"
-def tacticTry           : Ix.Name := Name.mkStr3 "Ix" "tactic" "try"
-def tacticRepeat        : Ix.Name := Name.mkStr3 "Ix" "tactic" "repeat"
-def tacticAllGoals      : Ix.Name := Name.mkStr3 "Ix" "tactic" "allGoals"
-def tacticAnyGoals      : Ix.Name := Name.mkStr3 "Ix" "tactic" "anyGoals"
-def tacticShow          : Ix.Name := Name.mkStr3 "Ix" "tactic" "show"
-def tacticLeft          : Ix.Name := Name.mkStr3 "Ix" "tactic" "left"
-def tacticRight         : Ix.Name := Name.mkStr3 "Ix" "tactic" "right"
-def tacticSplit         : Ix.Name := Name.mkStr3 "Ix" "tactic" "split"
-def tacticExists        : Ix.Name := Name.mkStr3 "Ix" "tactic" "exists"
-def tacticSymm          : Ix.Name := Name.mkStr3 "Ix" "tactic" "symm"
-def tacticTrans         : Ix.Name := Name.mkStr3 "Ix" "tactic" "trans"
-def tacticCongr         : Ix.Name := Name.mkStr3 "Ix" "tactic" "congr"
-def tacticFunext        : Ix.Name := Name.mkStr3 "Ix" "tactic" "funext"
-def tacticExt           : Ix.Name := Name.mkStr3 "Ix" "tactic" "ext"
-def tacticDSimp         : Ix.Name := Name.mkStr3 "Ix" "tactic" "dsimp"
-def tacticTrivial       : Ix.Name := Name.mkStr3 "Ix" "tactic" "trivial"
-def tacticContradiction : Ix.Name := Name.mkStr3 "Ix" "tactic" "contradiction"
-def tacticExfalso       : Ix.Name := Name.mkStr3 "Ix" "tactic" "exfalso"
-def tacticDone          : Ix.Name := Name.mkStr3 "Ix" "tactic" "done"
+def byTactic                : Ix.Name := mkKindTag 72
+def tacticSeq               : Ix.Name := mkKindTag 73
+def tacticIntro             : Ix.Name := mkKindTag 74
+def tacticExact             : Ix.Name := mkKindTag 75
+def tacticApply             : Ix.Name := mkKindTag 76
+def tacticRefine            : Ix.Name := mkKindTag 77
+def tacticRfl               : Ix.Name := mkKindTag 78
+def tacticRw                : Ix.Name := mkKindTag 79
+def tacticRwRule            : Ix.Name := mkKindTag 80
+def tacticCases             : Ix.Name := mkKindTag 81
+def tacticInduction         : Ix.Name := mkKindTag 82
+def tacticAlt               : Ix.Name := mkKindTag 83
+def tacticHave              : Ix.Name := mkKindTag 84
+def tacticLet               : Ix.Name := mkKindTag 85
+def tacticChange            : Ix.Name := mkKindTag 86
+def tacticConstructor       : Ix.Name := mkKindTag 87
+def tacticSimp              : Ix.Name := mkKindTag 88
+def tacticDecide            : Ix.Name := mkKindTag 89
+def tacticAssumption        : Ix.Name := mkKindTag 90
+def tacticSorry             : Ix.Name := mkKindTag 91
+def tacticAndThen           : Ix.Name := mkKindTag 92
+def tacticFocus             : Ix.Name := mkKindTag 93
+def tacticCase              : Ix.Name := mkKindTag 94
+def tacticParen             : Ix.Name := mkKindTag 95
+def tacticFirst             : Ix.Name := mkKindTag 96
+def tacticTry               : Ix.Name := mkKindTag 97
+def tacticRepeat            : Ix.Name := mkKindTag 98
+def tacticAllGoals          : Ix.Name := mkKindTag 99
+def tacticAnyGoals          : Ix.Name := mkKindTag 100
+def tacticShow              : Ix.Name := mkKindTag 101
+def tacticLeft              : Ix.Name := mkKindTag 102
+def tacticRight             : Ix.Name := mkKindTag 103
+def tacticSplit             : Ix.Name := mkKindTag 104
+def tacticExists            : Ix.Name := mkKindTag 105
+def tacticSymm              : Ix.Name := mkKindTag 106
+def tacticTrans             : Ix.Name := mkKindTag 107
+def tacticCongr             : Ix.Name := mkKindTag 108
+def tacticFunext            : Ix.Name := mkKindTag 109
+def tacticExt               : Ix.Name := mkKindTag 110
+def tacticDSimp             : Ix.Name := mkKindTag 111
+def tacticTrivial           : Ix.Name := mkKindTag 112
+def tacticContradiction     : Ix.Name := mkKindTag 113
+def tacticExfalso           : Ix.Name := mkKindTag 114
+def tacticDone              : Ix.Name := mkKindTag 115
 
 end SyntaxKind
 

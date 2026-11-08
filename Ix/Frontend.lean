@@ -153,6 +153,24 @@ def verifyElabClaimPure (claim : Ix.ElabClaim) (input : String)
   let envAddr ← hashIxonEnv ixonEnv
   return envAddr == claim.envAddr
 
+/-- Purely verify an `ElabClaim` against a source text string using certificate-guided
+    elaboration (`elabModuleWithHints`) for `O(|stx|)` zero-metavariable verification. -/
+def verifyElabClaimWithHintsPure (claim : Ix.ElabClaim) (input : String)
+    (hints : ElabHints)
+    (fileName : String := "<input>")
+    (initElabEnv : IxElabEnv := IxElabEnv.empty)
+    (initParserEnv : IxParserEnv := defaultParserEnv)
+    (seedPrelude : Bool := true) : Except String Bool := do
+  if hashSourceText input != claim.sourceAddr then
+    return false
+  let (stx, _pEnv) ← parseModuleWithEnv input fileName initParserEnv
+  if hashSyntax stx != claim.syntaxAddr then
+    return false
+  let elabEnv ← elabModuleWithHints stx hints initElabEnv seedPrelude
+  let (ixonEnv, _cenv) ← compileElabEnvToIxon elabEnv
+  let envAddr ← hashIxonEnv ixonEnv
+  return envAddr == claim.envAddr
+
 end Ix.Frontend
 
 end

@@ -587,8 +587,7 @@ def FermatLastTheorem : Prop :=
 
 /-- Exact human-readable source text of the Fermat's Last Theorem proposition from `FinalCheck.lean`. -/
 def fltSourceText : String :=
-  "axiom flt_pinned (n : ℕ) (hn : 3 ≤ n) (a b c : ℕ) (ha : 0 < a) (hb : 0 < b) (hc : 0 < c) : a ^ n + b ^ n ≠ c ^ n\n" ++
-  "def FermatLastTheorem : Prop := ∀ n : ℕ, n > 2 → ∀ a b c : ℕ, a ≠ 0 → b ≠ 0 → c ≠ 0 → a ^ n + b ^ n ≠ c ^ n"
+  "axiom flt_pinned (n : ℕ) (hn : 3 ≤ n) (a b c : ℕ) (ha : 0 < a) (hb : 0 < b) (hc : 0 < c) : a ^ n + b ^ n ≠ c ^ n\ndef FermatLastTheorem : Prop := ∀ n : ℕ, n > 2 → ∀ a b c : ℕ, a ≠ 0 → b ≠ 0 → c ≠ 0 → a ^ n + b ^ n ≠ c ^ n"
 
 /-- Focused `IxParserEnv` for fast kernel-level `rfl` reduction of `fltSourceText`. -/
 def fltKernelParserEnv : IxParserEnv :=
@@ -681,6 +680,46 @@ def kernelFltPropCheck : Bool :=
     okPinned && okDef
   | .error _ => false
 
+/-- Pre-built `ElabHints` certificate for `fltSourceText` (`flt_pinned` + `FermatLastTheorem`). -/
+def fltPropHints : Ix.Frontend.Elab.ElabHints :=
+  let (expPinnedTy, expFltVal) := mkExpectedFltExprs
+  let h0 := Ix.Frontend.Elab.ElabHints.empty
+  let h1 := h0.insert {
+    fullName    := Name.simple "flt_pinned"
+    levelParams := #[]
+    «type»      := expPinnedTy
+    value?      := none
+  }
+  h1.insert {
+    fullName    := Name.simple "FermatLastTheorem"
+    levelParams := #[]
+    «type»      := Ix.Frontend.Expr.mkProp
+    value?      := some expFltVal
+    defKind     := .defn
+    hints       := .regular 1
+  }
+
+/-- Pure kernel-level check that `fltSourceText` parses and verifies via `elabModuleWithHints`
+    (Track 2 certificate-guided `O(|stx|)` elaboration, zero metavariables) to `mkExpectedFltExprs`,
+    while rejecting tampered hints. -/
+def kernelFltHintedCheck : Bool :=
+  match do
+    let (stx, _) ← parseSource fltSourceText "<FinalCheck.ix>" fltKernelParserEnv
+    elabModuleWithHints stx fltPropHints (seedLeanInitArith IxElabEnv.empty) false
+  with
+  | .ok env =>
+    let (expPinnedTy, expFltVal) := mkExpectedFltExprs
+    let okPinned := match env.find? (Name.simple "flt_pinned") with
+      | some (.axiomInfo aval) => aval.cnst.type == expPinnedTy
+      | _ => false
+    let okDef := match env.find? (Name.simple "FermatLastTheorem") with
+      | some (.defnInfo dval) =>
+        dval.cnst.type == Ix.Frontend.Expr.mkProp &&
+        dval.value == expFltVal
+      | _ => false
+    okPinned && okDef
+  | .error _ => false
+
 /-- Host-level check that `fltSourceText` elaborates under the full `defaultParserEnv`
     and produces the exact expected Merkle `Address` digests. -/
 def testFltPropositionElab : Bool :=
@@ -737,17 +776,18 @@ def verifyFltIxonAddressParity (leanEnv : Lean.Environment) : IO (Bool × String
     s!"  • FermatLastTheorem (Ix.Frontend): #{ixFltDefAddr} (match={ixFltDefAddr == leanFltDefAddr})"
   return (ok, summary)
 
--- Verify `kernel_parse_reduces`, `kernel_scope_reduces`, `kernel_elab_reduces`, and `kernel_flt_prop_reduces`
--- directly in Lean's C++ kernel with `@Eq.refl Bool true` (bypassing redundant `Meta.isDefEq` unfolding).
+-- Verify `kernel_parse_reduces`, `kernel_scope_reduces`, `kernel_elab_reduces`, `kernel_flt_prop_reduces`,
+-- and `kernel_flt_hinted_reduces` directly in Lean's C++ kernel with `@Eq.refl Bool true`.
 run_meta do
   let boolTy := Lean.mkConst ``Bool
   let trueVal := Lean.mkConst ``Bool.true
   let eqReflTrue := Lean.mkApp2 (Lean.mkConst ``Eq.refl [Lean.Level.succ Lean.Level.zero]) boolTy trueVal
   for (thmName, lhsConst) in [
-    (`kernel_parse_reduces,    ``kernelParseCheck),
-    (`kernel_scope_reduces,    ``kernelScopeCheck),
-    (`kernel_elab_reduces,     ``kernelElabCheck),
-    (`kernel_flt_prop_reduces, ``kernelFltPropCheck)
+    (`kernel_parse_reduces,      ``kernelParseCheck),
+    (`kernel_scope_reduces,      ``kernelScopeCheck),
+    (`kernel_elab_reduces,       ``kernelElabCheck),
+    (`kernel_flt_prop_reduces,   ``kernelFltPropCheck),
+    (`kernel_flt_hinted_reduces, ``kernelFltHintedCheck)
   ] do
     let eqTy := Lean.mkApp3 (Lean.mkConst ``Eq [Lean.Level.succ Lean.Level.zero]) boolTy (Lean.mkConst lhsConst) trueVal
     Lean.addDecl (.thmDecl {
@@ -989,7 +1029,7 @@ def testIxVCSMergeEngine : Bool :=
 def checkClosureCertification (leanEnv : Lean.Environment) : Bool × String := Id.run do
   let parseClosure : List (Lean.Name × Lean.ConstantInfo) := Ix.EnvScope.collectDeps leanEnv [``parseSource]
   let elabClosure  : List (Lean.Name × Lean.ConstantInfo) :=
-    Ix.EnvScope.collectDeps leanEnv [``elabSource, ``mergeSource2, ``mergeSource3]
+    Ix.EnvScope.collectDeps leanEnv [``elabSource, ``elabSourceWithHints, ``mergeSource2, ``mergeSource3]
   let isBad (ci : Lean.ConstantInfo) : Option String :=
     match ci with
     | .defnInfo v =>
@@ -1140,7 +1180,8 @@ def runFrontendBenchmarks (testEnv : Lean.Environment) : IO String := do
     ("End-to-End Pure Parser (`parseSource`)",   `kernel_parse_reduces),
     ("End-to-End Pass 1 (`buildModuleIndex`)",   `kernel_scope_reduces),
     ("End-to-End 4-Pass Elab (`elabModuleSyntax`)", `kernel_elab_reduces),
-    ("AnthropicFLT Proposition (`flt_pinned` & `FermatLastTheorem`)", `kernel_flt_prop_reduces)
+    ("AnthropicFLT Proposition (`flt_pinned` & `FermatLastTheorem`)", `kernel_flt_prop_reduces),
+    ("AnthropicFLT Proposition Hinted (`elabModuleWithHints`)", `kernel_flt_hinted_reduces)
   ]
   let tShared0 ← IO.monoMsNow
   let targetNames := claimTargets.toArray.map Prod.snd ++ synthesizedPrimNames
@@ -1153,10 +1194,24 @@ def runFrontendBenchmarks (testEnv : Lean.Environment) : IO String := do
   for (lbl, targetName) in claimTargets do
     let tWitness0 ← IO.monoMsNow
     let targetAddr ← lookupAddr ixonEnv targetName
-    let closure := closureFrom ixonEnv targetAddr
-    let depLeaves : Array Address :=
-      closure.fold (init := #[]) fun acc a =>
-        if a == targetAddr then acc else acc.push a
+    -- Compute thin direct assumption frontier (matching `shardCheckEnvClaimTrees`)
+    let depLeaves : Array Address := Id.run do
+      let mut fs : Std.HashSet Address := {}
+      if let some c := ixonEnv.getConst? targetAddr then
+        let used := constIdxsOf c
+        for (r, i) in c.refs.zipIdx do
+          if used.contains i.toUInt64 && r != targetAddr && ixonEnv.consts.contains r then
+            fs := fs.insert r
+        let blockOpt : Option Address := match c.info with
+          | .iPrj p => some p.block
+          | .cPrj p => some p.block
+          | .rPrj p => some p.block
+          | .dPrj p => some p.block
+          | _ => none
+        if let some b := blockOpt then
+          if b != targetAddr && ixonEnv.consts.contains b then
+            fs := fs.insert b
+      return fs.toArray
     let some depTree := Ix.AssumptionTree.canonical depLeaves
       | throw (IO.userError s!"deps unexpectedly empty for {targetName}")
     let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert depTree.root depTree
@@ -1192,8 +1247,8 @@ def frontendSuite : TestSeq :=
     test "7. Programmable module import mapping & ElabClaim verification" testImportMapAndElabClaim ++
     test "8. Kernel-level reduction of parseSource, buildModuleIndex & elabModuleSyntax"
       (kernelParseCheck && kernelScopeCheck && kernelElabCheck) ++
-    test "9. Fermat's Last Theorem proposition (`flt_pinned` & `FermatLastTheorem`) elaboration"
-      (kernelFltPropCheck && testFltPropositionElab) ++
+    test "9. Fermat's Last Theorem proposition (`flt_pinned` & `FermatLastTheorem`) elaboration (unhinted & hinted)"
+      (kernelFltPropCheck && kernelFltHintedCheck && testFltPropositionElab) ++
     test "10. Advanced Frontend (where, let rec, auto-implicits, deriving, extends, @[simp], Coe, prefix/postfix)"
       testAdvancedFrontend ++
     test "11. IxVCS AST & Type-Aware Module Merge Engine (mergeSource2, mergeSource3, #merge, proof irrelevance)"

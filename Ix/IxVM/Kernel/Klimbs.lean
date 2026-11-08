@@ -75,13 +75,18 @@ def klimbs := ⟦
             let pair1 = u64_add(la, lb);
             match pair1 {
               (sum1, carry1) =>
-                let pair2 = u64_add(sum1, [u8_from_field_unsafe(carry), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-                match pair2 {
-                  (sum2, carry2) =>
-                    -- carry1, carry2 mutually exclusive: carry1=1 ⇒ sum1 ≤
-                    -- 2^64-2 ⇒ sum1 + carry_in ≤ 2^64-1 ⇒ carry2=0.
-                    let total_carry = to_field(carry1) + to_field(carry2);
-                    store(ListNode.Cons(sum2, klimbs_add_carry(ra, rb, total_carry))),
+                match carry {
+                  0 =>
+                    store(ListNode.Cons(sum1, klimbs_add_carry(ra, rb, to_field(carry1)))),
+                  _ =>
+                    let pair2 = u64_add(sum1, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+                    match pair2 {
+                      (sum2, carry2) =>
+                        -- carry1, carry2 mutually exclusive: carry1=1 ⇒ sum1 ≤
+                        -- 2^64-2 ⇒ sum1 + carry_in ≤ 2^64-1 ⇒ carry2=0.
+                        let total_carry = to_field(carry1) + to_field(carry2);
+                        store(ListNode.Cons(sum2, klimbs_add_carry(ra, rb, total_carry))),
+                    },
                 },
             },
         },
@@ -172,16 +177,25 @@ def klimbs := ⟦
             let pair1 = u64_sub_with_borrow(la, lb);
             match pair1 {
               (sum1, br1) =>
-                let pair2 = u64_sub_with_borrow(sum1, [u8_from_field_unsafe(borrow), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-                match pair2 {
-                  (sum2, br2) =>
-                    -- br1, br2 mutually exclusive: br1=1 ⇒ sum1 ≥ 1 ⇒
-                    -- sum1 - borrow ≥ 0 ⇒ br2=0.
-                    let total = br1 + br2;
-                    let rec_pair = klimbs_sub_borrow(ra, rb, total);
+                match borrow {
+                  0 =>
+                    let rec_pair = klimbs_sub_borrow(ra, rb, br1);
                     match rec_pair {
                       (rest_res, br_final) =>
-                        (store(ListNode.Cons(sum2, rest_res)), br_final),
+                        (store(ListNode.Cons(sum1, rest_res)), br_final),
+                    },
+                  _ =>
+                    let pair2 = u64_sub_with_borrow(sum1, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+                    match pair2 {
+                      (sum2, br2) =>
+                        -- br1, br2 mutually exclusive: br1=1 ⇒ sum1 ≥ 1 ⇒
+                        -- sum1 - borrow ≥ 0 ⇒ br2=0.
+                        let total = br1 + br2;
+                        let rec_pair = klimbs_sub_borrow(ra, rb, total);
+                        match rec_pair {
+                          (rest_res, br_final) =>
+                            (store(ListNode.Cons(sum2, rest_res)), br_final),
+                        },
                     },
                 },
             },
@@ -255,12 +269,16 @@ def klimbs := ⟦
   }
 
   -- Mirror: Nat.le. Returns 1 if a ≤ b, 0 otherwise.
-  -- Uses saturating sub: a ≤ b iff (a - b) saturates to 0.
+  -- Uses pointer-equality fast path + saturating sub without allocating normalized limbs.
   fn klimbs_le(a: KLimbs, b: KLimbs) -> G {
-    let diff = klimbs_sub(a, b);
-    match load(diff) {
-      ListNode.Nil => 1,
-      _ => 0,
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
+      _ =>
+        let (result, borrow) = klimbs_sub_borrow(a, b, 0);
+        match borrow {
+          1 => 1,
+          _ => klimbs_is_zero(result),
+        },
     }
   }
 
@@ -375,9 +393,13 @@ def klimbs := ⟦
   }
 
   fn klimbs_is_zero(x: KLimbs) -> G {
-    match load(klimbs_normalize(x)) {
+    match load(x) {
       ListNode.Nil => 1,
-      _ => 0,
+      ListNode.Cons(limb, rest) =>
+        match u64_is_zero(limb) {
+          1 => klimbs_is_zero(rest),
+          0 => 0,
+        },
     }
   }
 

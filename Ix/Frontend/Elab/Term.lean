@@ -234,16 +234,17 @@ def splitRootAndFields (n : Ix.Name) : Option (Ix.Name × List String) :=
   | root :: rest@(_ :: _) => some (Name.simple root, rest)
   | _ => none
 
-/-- Resolve and elaborate an identifier (with optional explicit `.{u, v}` levels). -/
-def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option (Array Ix.Level)) :
-    IxElabM Ix.Expr := withRef idStx do
+/-- Resolve and elaborate an identifier (with optional explicit `.{u, v}` levels),
+    returning both `(expr, type)` so callers never need to re-run `inferType`. -/
+def elabIdentWithLevelsAndType (fuel : Nat) (idStx : Ix.Syntax)
+    (explicitLvls? : Option (Array Ix.Level)) : IxElabM (Ix.Expr × Ix.Expr) := withRef idStx do
   let rawId := Syntax.getId idStx
   let ctx ← read
   let st ← get
   -- 1. Check local context for exact match
   match ctx.lctx.findUserName? rawId with
   | some decl =>
-    return Expr.mkFVar decl.fvarId
+    return (Expr.mkFVar decl.fvarId, decl.type)
   | none =>
     -- 2. Check if `rawId` is `localVar.field1.field2` where `localVar` is in `ctx.lctx`
     match splitRootAndFields rawId with
@@ -253,7 +254,8 @@ def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option
         let mut curExpr := Expr.mkFVar rootDecl.fvarId
         for fStr in fieldStrs do
           curExpr ← elabProjOnExpr fuel curExpr (Syntax.mkSimpleIdent (Name.simple fStr))
-        return curExpr
+        let curTy ← inferType fuel curExpr
+        return (curExpr, curTy)
       | none =>
         -- Fall through to global constant resolution
         let resolved := resolveIdentInScope ctx.scope ctx.modIdx (fun n => st.env.contains n) rawId
@@ -266,10 +268,12 @@ def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option
             | none => resolved
         if st.env.contains mappedResolved then
           match explicitLvls? with
-          | some lvls => return Expr.mkConst mappedResolved lvls
+          | some lvls =>
+            let cExpr := Expr.mkConst mappedResolved lvls
+            let cTy ← inferType fuel cExpr
+            return (cExpr, cTy)
           | none =>
-            let (cExpr, _) ← mkConstWithFreshMVarLevels mappedResolved
-            return cExpr
+            mkConstWithFreshMVarLevels mappedResolved
         else
           throwElabError s!"unknown identifier '{Name.toStringTotal rawId}'" (some idStx)
     | none =>
@@ -284,15 +288,24 @@ def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option
           | none => resolved
       if st.env.contains mappedResolved then
         match explicitLvls? with
-        | some lvls => return Expr.mkConst mappedResolved lvls
+        | some lvls =>
+          let cExpr := Expr.mkConst mappedResolved lvls
+          let cTy ← inferType fuel cExpr
+          return (cExpr, cTy)
         | none =>
-          let (cExpr, _) ← mkConstWithFreshMVarLevels mappedResolved
-          return cExpr
+          mkConstWithFreshMVarLevels mappedResolved
       else if (rawId == Name.simple "true" || rawId == Name.simple "false") &&
               st.env.contains (Name.mkStr2 "Bool" (Name.toStringTotal rawId)) then
-        return Expr.mkConst (Name.mkStr2 "Bool" (Name.toStringTotal rawId)) #[]
+        return (Expr.mkConst (Name.mkStr2 "Bool" (Name.toStringTotal rawId)) #[],
+                Expr.mkConst (Name.simple "Bool") #[])
       else
         throwElabError s!"unknown identifier '{Name.toStringTotal rawId}'" (some idStx)
+
+/-- Resolve and elaborate an identifier (with optional explicit `.{u, v}` levels). -/
+def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option (Array Ix.Level)) :
+    IxElabM Ix.Expr := do
+  let (e, _) ← elabIdentWithLevelsAndType fuel idStx explicitLvls?
+  return e
 
 /-! ## Implicit Argument Insertion & Expected Type Coercion -/
 
@@ -692,8 +705,8 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
       throwElabError "missing syntax node in term"
     -- 1. Bare identifier
     | .ident .. =>
-      let e ← elabIdentWithLevels fuel stx none
-      ensureHasType fuel stx e expectedType?
+      let (e, eTy) ← elabIdentWithLevelsAndType fuel stx none
+      ensureHasKnownType fuel stx e eTy expectedType?
     -- 2. Bare `true` / `false` atoms
     | .atom _ val =>
       if val == "true" || val == "false" then
@@ -831,19 +844,22 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let domStx    := args.getD 0 .missing
         let vPrefNode := args.getD 2 .missing
         let codStx    := args.getD 3 .missing
-        -- Check if `domStx` starts with a usage/value modifier in case of bare `A → !B`
+        let isExpProp : Bool := match expectedType? with
+          | some (.sort (.zero _) _) => true
+          | _ => false
         let domTy ← elabRec domStx none
         let _ ← ensureSortIfNotForall 32 domTy
         let retContract := (decodeContractPrefix vPrefNode).toValueContract
         let codTy ← withLocalDecl Name.mkAnon domTy .default default fun fvId _ => do
-          let cTy ← elabRec codStx none
-          let _ ← ensureSortIfNotForall 32 cTy
-          if containsFVar fvId cTy then
-            return abstractFVar fvId cTy
-          else
-            return cTy
+          let cTy ← elabRec codStx (if isExpProp then some Expr.mkProp else none)
+          if !isExpProp then
+            let _ ← ensureSortIfNotForall 32 cTy
+          return abstractFVar fvId cTy
         let arrowExpr := Expr.mkForallContract Name.mkAnon domTy codTy .default default retContract
-        ensureHasType fuel stx arrowExpr expectedType?
+        if isExpProp then
+          instantiateMVars 16 arrowExpr
+        else
+          ensureHasType fuel stx arrowExpr expectedType?
       -- 3.12. Dependent Pi `forall binders, vPref body` or `(binders) → vPref body` (`SyntaxKind.forallTerm`)
       else if kind == SyntaxKind.forallTerm then
         let isKw := match args[0]? with
@@ -853,12 +869,19 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let vPrefNode   := if isKw then args.getD 3 .missing else args.getD 2 .missing
         let bodyStx     := if isKw then args.getD 4 .missing else args.getD 3 .missing
         let retContract := (decodeContractPrefix vPrefNode).toValueContract
+        let isExpProp : Bool := match expectedType? with
+          | some (.sort (.zero _) _) => true
+          | _ => false
         let groups := (Syntax.getArgs bindersNode).toList.map decodeBinderNode
         let piExpr ← elabBinderGroups elabRec groups #[] fun fvars => do
-          let bodyTy ← elabRec bodyStx none
-          let _ ← ensureSortIfNotForall 32 bodyTy
+          let bodyTy ← elabRec bodyStx (if isExpProp then some Expr.mkProp else none)
+          if !isExpProp then
+            let _ ← ensureSortIfNotForall 32 bodyTy
           mkForallFVars fvars bodyTy retContract
-        ensureHasType fuel stx piExpr expectedType?
+        if isExpProp then
+          instantiateMVars 16 piExpr
+        else
+          ensureHasType fuel stx piExpr expectedType?
       -- 3.13. Lambda `fun binders => body` (`SyntaxKind.funTerm`)
       else if kind == SyntaxKind.funTerm then
         let bindersNode := args.getD 1 .missing
@@ -1086,6 +1109,8 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let st ← get
         match targetName? with
         | some targetName =>
+          let natConst := Expr.mkConst (Name.simple "Nat") #[]
+          let zLvl := Level.mkZero
           -- Special handling for `=` (`Eq`), `≠` (`Ne`)
           if (sym == "=" && st.env.contains (Name.simple "Eq")) ||
              (sym == "≠" && st.env.contains (Name.simple "Ne")) then
@@ -1094,10 +1119,61 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             let lhsTyRaw ← inferType fuel lhs
             let lhsTy ← instantiateMVars 16 lhsTyRaw
             let rhs ← elabRec rhsStx (some lhsTy)
-            let u ← ensureSort 32 lhsTy
-            let uNorm := normalizeLevel u
+            let uNorm ←
+              if lhsTy == natConst then
+                pure (Level.mkSucc zLvl)
+              else do
+                let u ← ensureSort 32 lhsTy
+                pure (normalizeLevel u)
             let relExpr := Expr.mkAppN (Expr.mkConst relName #[uNorm]) #[lhsTy, lhs, rhs]
             ensureHasKnownType fuel stx relExpr Expr.mkProp expectedType?
+          -- Zero-mvar fast path for homogeneous `Nat` typeclass operators (`+`, `^`, `≤`, `<`, `>`)
+          else if (sym == "+" && st.env.contains (Name.mkStr2 "HAdd" "hAdd") &&
+                   st.env.contains (Name.simple "instHAdd") && st.env.contains (Name.simple "instAddNat")) ||
+                  (sym == "^" && st.env.contains (Name.mkStr2 "HPow" "hPow") &&
+                   st.env.contains (Name.simple "instHPow") && st.env.contains (Name.simple "instPowNat") &&
+                   st.env.contains (Name.simple "instNatPowNat")) ||
+                  ((sym == "≤" || sym == "<=") && st.env.contains (Name.mkStr2 "LE" "le") &&
+                   st.env.contains (Name.simple "instLENat")) ||
+                  (sym == "<" && st.env.contains (Name.mkStr2 "LT" "lt") &&
+                   st.env.contains (Name.simple "instLTNat")) ||
+                  (sym == ">" && st.env.contains (Name.mkStr2 "GT" "gt") &&
+                   st.env.contains (Name.simple "instLTNat")) then
+            let lhs ← elabRec lhsStx (if sym == "+" || sym == "^" then expectedType? else none)
+            let lhsTyRaw ← inferType fuel lhs
+            let lhsTy ← instantiateMVars 16 lhsTyRaw
+            if lhsTy == natConst then
+              let rhs ← elabRec rhsStx (some natConst)
+              if sym == "+" then
+                let instAdd := Expr.mkConst (Name.simple "instAddNat") #[]
+                let instHAdd := Expr.mkAppN (Expr.mkConst (Name.simple "instHAdd") #[zLvl]) #[natConst, instAdd]
+                let addExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "HAdd" "hAdd") #[zLvl, zLvl, zLvl])
+                  #[natConst, natConst, natConst, instHAdd, lhs, rhs]
+                ensureHasKnownType fuel stx addExpr natConst expectedType?
+              else if sym == "^" then
+                let instNatPow := Expr.mkConst (Name.simple "instNatPowNat") #[]
+                let instPow := Expr.mkAppN (Expr.mkConst (Name.simple "instPowNat") #[zLvl]) #[natConst, instNatPow]
+                let instHPow := Expr.mkAppN (Expr.mkConst (Name.simple "instHPow") #[zLvl, zLvl]) #[natConst, natConst, instPow]
+                let powExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "HPow" "hPow") #[zLvl, zLvl, zLvl])
+                  #[natConst, natConst, natConst, instHPow, lhs, rhs]
+                ensureHasKnownType fuel stx powExpr natConst expectedType?
+              else if sym == "≤" || sym == "<=" then
+                let instLE := Expr.mkConst (Name.simple "instLENat") #[]
+                let leExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "LE" "le") #[zLvl]) #[natConst, instLE, lhs, rhs]
+                ensureHasKnownType fuel stx leExpr Expr.mkProp expectedType?
+              else if sym == "<" then
+                let instLT := Expr.mkConst (Name.simple "instLTNat") #[]
+                let ltExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "LT" "lt") #[zLvl]) #[natConst, instLT, lhs, rhs]
+                ensureHasKnownType fuel stx ltExpr Expr.mkProp expectedType?
+              else
+                let instLT := Expr.mkConst (Name.simple "instLTNat") #[]
+                let gtExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "GT" "gt") #[zLvl]) #[natConst, instLT, lhs, rhs]
+                ensureHasKnownType fuel stx gtExpr Expr.mkProp expectedType?
+            else
+              let fnIdStx := Syntax.mkSimpleIdent targetName
+              let appStx := Syntax.mkNode SyntaxKind.appTerm
+                #[Syntax.mkNode SyntaxKind.appTerm #[fnIdStx, lhsStx], rhsStx]
+              elabRec appStx expectedType?
           else
             -- Check if `targetName` exists in `st.env`; otherwise try common fallbacks (e.g. `Nat.add`, `And`, etc.)
             let actualFnName? : Option Ix.Name :=
@@ -1435,8 +1511,12 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let isExplicitAt :=
           Syntax.isOfKind fnStx SyntaxKind.explicitTerm &&
           Syntax.getAtomVal (Syntax.getArg fnStx 0) == "@"
-        let fnExpr ← elabRec fnStx none
-        let fnTy ← inferType fuel fnExpr
+        let (fnExpr, fnTy) ← match fnStx with
+          | .ident .. => elabIdentWithLevelsAndType fuel fnStx none
+          | _ => do
+            let e ← elabRec fnStx none
+            let t ← inferType fuel e
+            pure (e, t)
         let mut curFn := fnExpr
         let mut curTy := fnTy
         let mut pendingInstGoals : List Ix.Expr := []
