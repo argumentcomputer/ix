@@ -24,12 +24,21 @@ IxVM verifies the claim by:
 4. Comparing that normal form structurally with the decoded, erased output
    body. The proposed output is not reduced, and proof irrelevance does not
    make different results interchangeable.
+5. Typechecking the output declaration and its transitive dependencies, as a
+   `check` claim checks its target: under the claim's role binding, user
+   axioms and assumptions. The assumption tree cannot contain the output.
 
-Output typing follows from the checked input, the matching declared type,
-and type preservation of reduction. IxVM does not independently typecheck
-the output body. The output type must preserve the input's syntax after
-table resolution and erasure; a merely definitionally equal type is rejected.
-Different table layouts and sharing choices can still denote the same term.
+The output check does not rest on type preservation of reduction. An assumed
+dependency is not checked, so with assumptions the input's normal form can be
+ill-typed even though the input is well typed. The output type must preserve
+the input's syntax after table resolution and erasure; a merely
+definitionally equal type is rejected. Different table layouts and sharing
+choices can still denote the same term.
+
+A claim that names user axioms (the context's axioms tree) also typechecks
+every leaf of that tree with its closure, whether or not the input or output
+uses it. This holds for `check` and `checkEnv` claims too. An assumed leaf is
+not checked, like any assumption.
 
 The validator is `erased-lean-v2`, and the claim carries its context (the
 specification digest, the role binding's hash and the axioms beyond the
