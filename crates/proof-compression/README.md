@@ -37,8 +37,12 @@ development parameters. Final setup is independent: PLONK defaults to Ignition,
 while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
-[`0.1`](verifying-keys/0.1): one key per proof system, with the root layout,
-statement prefix and Ignition parameters they were derived for. `ix verify` selects the key by the proof's tag and requires
+[`0.2`](verifying-keys/0.2): one key per proof system, with the root layout,
+statement prefix and Ignition parameters they were derived for. They belong to
+the formal IxVM and aggregation backends under the default STARK parameters
+([STARK parameters](../../docs/stark-parameters.md)); see
+[Deriving the verifying keys](#deriving-the-verifying-keys) for how they are
+made. `ix verify` selects the key by the proof's tag and requires
 the packet's key identifier to name it; there is no catalog of alternatives.
 Bundled recursive KZG and PLONK proofs verify under Ignition. The release Groth16 key
 comes from a development setup, so Groth16 proving requires `--dev-final-srs`
@@ -110,16 +114,34 @@ install it.
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
 normalize the aggregate root using the versioned
-[version 0.1 layout](verifying-keys/0.1/layout.json).
-`--fixed-root` is an optional layout override. The default layout is the one
-shared by the saved Nat.add_comm, Init and Mathlib normalization runs; it has
-101 circuit heights, 18 claim elements and no additional headroom beyond those
-measured bounds. Its root verifier BLAKE3 is
-`f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc`.
+[version 0.2 layout](verifying-keys/0.2/root-layout.ixl).
+`--fixed-root` is an optional layout override from `ix compress layout`. The
+default layout holds the roots of `Nat.add_comm`'s aggregate under all four
+root shapes (a wrapped leaf, ordinary and structural joins of wrapped leaves,
+and joins of raw leaves), which need the same heights, with one more doubling
+of every circuit (`--headroom 1`). It has 139 circuit heights, 11 of them
+memory circuits, and 18 claim elements. Its root verifier is the formal
+aggregation key, BLAKE3
+`d286b37b8b9167fff7de272b70a577d1a8e5fb7ba66dd68488d3b79467820c02`.
 The default rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
 layout is a new release profile; compression does not resize it per proof.
 The profile supplies normalization bounds, not a bundled compression verifier.
+
+A layout file (`.ixl`, [`FixedRoot`](src/pipeline/root/fixed.rs)) is Ixon,
+written with `aiur::ixon`'s primitives, and its BLAKE3 digest is its identity;
+the release pins its own (`LAYOUT_BLAKE3`):
+
+```text
+layout = "IXROOTL\0" nat(1) list(nat(log_height))
+         list(nat(memory_width) nat(circuit)) nat(claim_len)
+```
+
+`nat` is Ixon's TagN integer and a `list` is its length followed by its
+items. Heights follow the aggregation key's circuit order; memory circuits are
+listed by ascending width. Decoding refuses another magic or version,
+out-of-range values and trailing bytes, so an accepted file re-encodes to
+itself.
 
 `ix compress` and `ix prove ... --compress` run every stage in the `ix`
 process through `pipeline::compress(CompressInput, &CompressConfig)`: FRI
@@ -165,6 +187,74 @@ cargo test -p ix-proof-compression --no-default-features --features parallel \
 cargo test -p ix-proof-compression --no-default-features --features parallel \
   --lib recursive::native_verifier::reuse_tests::recursive_witness_rejects_tampering_without_native_preverification -- --exact
 ```
+
+## Deriving the verifying keys
+
+A release follows from trusted inputs alone: the IxVM and aggregation keys,
+the root layout and the Ignition SRS. No proof is read. Derive a new version
+whenever one of them changes: an IxVM or aggregation circuit, the STARK
+parameters, or the layout. Version 0.2 was derived this way on a 64-core,
+495 GB host without a GPU, from the repository root in the dev shell (`ix` is
+`.lake/build/bin/ix`):
+
+```sh
+# The formal artifacts and their keys.
+lake build ix ixvm/ixvm multiStark/stark-export
+cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover \
+  --features parallel --bin ixvm-proof --bin stark-verifier --bin ix-prover
+lake env IxVM/.lake/build/bin/ixvm export-claim-trace ixvm.ixa
+lake env MultiStark/.lake/build/bin/stark-export export-trace aggregate.ixa --aggregate
+target/release/ixvm-proof key ixvm.ixa ixvm-key
+target/release/stark-verifier key aggregate.ixa aggr-key
+export IX_AIUR_ARTIFACT=$PWD/ixvm.ixa IX_AGGR_ARTIFACT=$PWD/aggregate.ixa
+
+# Nat.add_comm's aggregate root in each root shape: a wrapped leaf, joins of
+# wrapped leaves, structural joins, and joins of raw leaves. Each prints its
+# root's address last.
+printf 'theorem ixReleaseLayout : True := trivial\n' > env.lean
+lake env .lake/build/bin/ix compile --no-build --consts Nat.add_comm env.lean --out nat.ixe
+for n in 1 2 16; do ix shard nat.ixe --shards $n --out nat$n.ixes; done
+ix prove --aggregate --ixe nat.ixe --ixes nat1.ixes
+ix prove --aggregate --no-cache --ixe nat.ixe --ixes nat16.ixes
+ix prove --aggregate --no-cache --structural-above 0 --ixe nat.ixe --ixes nat16.ixes
+ix prove --aggregate --no-cache --direct-joins --ixe nat.ixe --ixes nat2.ixes
+
+# One layout for the four roots, with one more doubling of every circuit.
+ix compress layout --headroom 1 root-layout.ixl ROOT_ADDRESS...
+
+# The Ignition SRS under IX_PARAMS_DIR, checked against its pin. For a backend
+# the bundled keys do not cover yet, setup stops after this check.
+ix compress setup
+
+# The recursive key and the pins it fixes, then the PLONK key and a Groth16
+# development key (the final keys need Go 1.26.8 or later). Both publish their
+# caches where `ix compress` reads them.
+cargo run --release --locked -p ix-proof-compression --example release_keys -- \
+  ixvm-key aggr-key root-layout.ixl release ~/.ix/compression/cache
+cargo run --release --locked -p ix-proof-compression --features plonk,groth16 \
+  --example release_keys -- --finals ixvm-key aggr-key release/recursive-vk.bin \
+  release ~/.ix/compression/cache
+```
+
+The four roots of version 0.2 need the same heights, so the root wrap's
+execution depends on the aggregation program rather than on the root's shape;
+the doubling is headroom. The recursive key took 1,256 s and 99 GB of peak
+memory, and the PLONK and Groth16 keys 492 s (289 s and 203 s) and 15 GB.
+Compressing a root under the new keys then took 2,326 s and 389 GB; a PLONK
+or Groth16 proof of it, resuming that run, about 2 minutes more. The Groth16
+key comes from a fresh development setup and differs on every run.
+
+`release` then holds `root-layout.ixl`, `recursive-vk.bin`,
+`plonk-verifying-key.bin` and `groth16-development-verifying-key.bin`, and the
+tool prints every pin of `src/pipeline/verifying_keys.rs`. To publish them:
+
+1. Copy the four files to `verifying-keys/VERSION/`, and set `VERSION` and the
+   printed pins in `src/pipeline/verifying_keys.rs`.
+2. Regenerate the PLONK Solidity verifier and its test proof
+   ([`contracts/plonk`](../../contracts/plonk/README.md)).
+3. Compress the wrapped root (`ix compress ROOT_ADDRESS`), check the result
+   with `ix verify`, and replace the proof `lake test -- compression-cli`
+   verifies, `Tests/Fixtures/Compression/nat-add-comm.ixon-proof`, with it.
 
 ## Final PLONK
 
@@ -288,8 +378,11 @@ cargo test --release --locked -p ix-proof-compression --test integration \
 `tests/kzg_backend_parity.py` compares independent CPU/CUDA builds on small
 ordinary KZG proofs. Complete Init proofs, GPU tests, and sizing runs have
 substantial resource costs and are run separately from the small checks.
-The CLI tests cover setup selection, claim type checks, unsupported proof
-versions, and rejection of untrusted verifying keys.
+The CLI tests (`lake test -- compression-cli`) cover setup selection, claim
+type checks, unsupported proof versions, rejection of untrusted verifying
+keys, and the release keys' acceptance of the formal backends: the release
+layout and statement prefix for the formal aggregation key, and `ix verify` of
+a compressed `Nat.add_comm` root.
 
 Sizing and benchmark context is retained in the
 [benchmark comparison](../../docs/proof-benchmark-comparison.md) and

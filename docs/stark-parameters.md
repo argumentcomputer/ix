@@ -110,7 +110,8 @@ from the documentation and must never decode or build a key a verifier trusts.
 3. Every verifying key changes: the IxVM key, the recursion and aggregation
    keys, and the aggregation root key the compression release keys pin
    (`crates/proof-compression/verifying-keys`). Regenerate them, and the
-   cached proofs keyed by them.
+   cached proofs keyed by them; the compression keys become a new version
+   ([Deriving the verifying keys](../crates/proof-compression/README.md#deriving-the-verifying-keys)).
 4. Run `bash tools/ixvm/check-formal.sh`, which proves and verifies IxVM,
    recursion and aggregation under the new parameters.
 
