@@ -2,6 +2,7 @@ import Aiur.Trace.Compile
 import Aiur.Optimized.Activation
 import Aiur.Optimized.Physical
 import Aiur.Optimized.Grouping.Plan
+import Aiur.Optimized.EndToEnd
 import Aiur.Artifact
 
 /-! Ixon encoding of companion population plans and physical circuits: the
@@ -154,6 +155,10 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     used := used ++ chips.map (·.name)
     packed := packed ++ [⟨chips, group⟩]
   let plan ← Grouping.preparePlan physical.system id packed
+  -- The backend theorems (`grouped_activated_heap_sound` and its siblings) assume
+  -- `plan.WellFormedActivation`; refuse to export a plan that does not meet it.
+  unless decide plan.WellFormedActivation do
+    throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
   Ixon.run do
     nat planVersion
     nat modulus
