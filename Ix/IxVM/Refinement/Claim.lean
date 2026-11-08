@@ -1,4 +1,5 @@
 import Ix.Cert.AcceptsUnder
+import IxC.Kernel.Verify.Cached.NormalizeRef
 import Ix.Claim
 import Ix.AssumptionTree
 import Ix.SpecDigest
@@ -39,8 +40,9 @@ them as unauthenticated advice.
   closure of all of them.
 * `eval ctx input output asm`: IxC accepts the closure of `input` and
   `output` together; the output record is a safe definition with the input's
-  universe count and type; and IxC's reference definitional equality holds
-  between the input's value and the output's at some fuel (`EvalValues`).
+  universe count and type; and at some fuel IxC's reference normalizer
+  (`Ix.Kernel.nfRef`, IxVM's `eval_nf` on IxC's `whnf`) takes the input's value
+  to exactly the output's, up to binder metadata (`EvalValues`).
 * `reveal comm info`: the record at `comm` has every field `info` reveals
   (`RevealLE`).
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
@@ -300,11 +302,14 @@ address itself, or the role the table binds to it. -/
 def AddressKey (b : Binding) (a : Address) (k : Ix.Kernel.Key .anon) : Prop :=
   k = .id a ∨ ∃ t r, Ix.Kernel.RoleTable.ofBytes b.bytes = some t ∧ t.addressOf? r = some a ∧ k = .role r
 
-/-- **An `eval` claim's values, in the accepting run**: the declarations
-give `input` a type and value and `output` a definition; the output has the
-input's universe count and type; and IxC's reference definitional equality
-(`isDefEqCore` at `.verified`, in the installed environment, at some fuel)
-holds between the input's value and the output's. -/
+/-- **An `eval` claim's values, in the accepting run** (owner, 2026-11-08): the
+declarations give `input` a type and value and `output` a definition; the
+output has the input's universe count and type; and at some fuel IxC's
+reference normalizer (`Ix.Kernel.nfRef` at `.verified`, in the installed
+environment: IxVM's `eval_nf` on IxC's `whnf`) takes the input's value to
+exactly the output's value, up to binder metadata (`Expr.eraseMeta`), which
+IxVM's structural comparison does not see. The output is the input's
+specific reduced form, not merely a definitionally equal term. -/
 def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .anon)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
   ∃ (cvIn cvOut : Ix.Kernel.ConstantVal .anon) (vIn vOut : Ix.Kernel.Expr .anon)
@@ -312,7 +317,7 @@ def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .ano
     (∃ d ∈ ds, declValue? d = some (cvIn, vIn)) ∧ AddressKey b input cvIn.name ∧
     Ix.Kernel.Declaration.defnDecl cvOut vOut hint ∈ ds ∧ AddressKey b output cvOut.name ∧
     cvOut.levelParams.length = cvIn.levelParams.length ∧ cvOut.type = cvIn.type ∧
-    ∃ fuel, Ix.Kernel.isDefEqCore .verified envA fuel 0 vIn vOut = .ok true
+    ∃ fuel vNf, Ix.Kernel.nfRef .verified envA fuel 0 vIn = .ok vNf ∧ vNf.eraseMeta = vOut.eraseMeta
 
 /-- **An `eval` claim's output record**: the view stores a safe standalone
 definition (kind `defn`, safety `safe`) at `output`. -/
