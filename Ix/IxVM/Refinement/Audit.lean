@@ -1,4 +1,5 @@
 import Ix.IxVM.Refinement.Statement
+import Ix.IxVM.Refinement.TagN
 import IxC.Kernel.Audit.Axioms
 
 /-! # The IxVM ↔ IxC refinement statement, frozen
@@ -1040,6 +1041,65 @@ example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeImages (.node l r) =
     (ByteArray.mk #[1] ++ (IxVM.Refinement.treeRoot l).hash ++ (IxVM.Refinement.treeRoot r).hash) ::
       (IxVM.Refinement.treeImages l ++ IxVM.Refinement.treeImages r) := rfl
 
+/-! ## Phase 3: the TagN slice
+
+The first refinement: every derivation of `IxonDeserialize::get_tagn0` on a
+stream whose first byte is below `192` agrees with IxC's `Ixon.getTagN 0` on
+the same bytes (`getTagN0_refines`), proved from the checked source through
+its generated lookup facts (`IxVM.Checked.Lookup`) and the mirror-lemma
+library (`Ix.IxVM.Refinement.Mirror`). Deterministic runs and their
+completeness for worlds without control syntax: `EvalFn.exec`. -/
+
+/--
+info: @IxVM.Refinement.TagN.getTagN0_refines : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
+  {bytes : List UInt8},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap bytes stream →
+    (∀ b ∈ bytes.head?, b.toNat < 192) →
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn0" [stream] heap r h' →
+        h' = heap ∧
+          ∃ t n restPtr,
+            Ixon.getTagN 0 (IxVM.Refinement.TagN.start bytes) =
+                EStateM.Result.ok t { idx := n, bytes := { data := bytes.toArray } } ∧
+              t.flag = 0 ∧
+                Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop n bytes) restPtr ∧
+                  r = Aiur.Value.tuple [IxVM.Refinement.TagN.u64Value t.value.toNat, restPtr]
+-/
+#guard_msgs in
+#check @IxVM.Refinement.TagN.getTagN0_refines
+
+/--
+info: def IxVM.Refinement.TagN.u64Value : ℕ → Aiur.SourceValue IxVM.F :=
+fun n =>
+  Aiur.Value.tuple
+    [Aiur.Value.field ↑(n % 256), Aiur.Value.field ↑(n / 256 % 256), Aiur.Value.field ↑(n / 65536 % 256),
+      Aiur.Value.field ↑(n / 16777216 % 256), Aiur.Value.field ↑(n / 4294967296 % 256),
+      Aiur.Value.field ↑(n / 1099511627776 % 256), Aiur.Value.field ↑(n / 281474976710656 % 256),
+      Aiur.Value.field ↑(n / 72057594037927936 % 256)]
+-/
+#guard_msgs in
+#print IxVM.Refinement.TagN.u64Value
+
+/--
+info: def IxVM.Refinement.TagN.start : List UInt8 → Ixon.GetState :=
+fun bytes => { bytes := { data := bytes.toArray } }
+-/
+#guard_msgs in
+#print IxVM.Refinement.TagN.start
+
+/--
+info: @Aiur.Generic.SourceSemantics.EvalFn.exec : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F]
+  {world : Aiur.Generic.SourceSemantics.World F},
+  Aiur.Generic.SourceSemantics.ControlFree world →
+    ∀ {name : String} {args : List (Aiur.SourceValue F)} {before after : Aiur.Heap F} {result : Aiur.SourceValue F},
+      Aiur.Generic.SourceSemantics.EvalFn world name args before result after →
+        ∃ hs k0,
+          ∀ k ≥ k0,
+            ∀ (rest : Aiur.Generic.SourceSemantics.HintStream F),
+              Aiur.Generic.SourceSemantics.execFn world k name args before (hs ++ rest) = some (result, after, rest)
+-/
+#guard_msgs in
+#check @Aiur.Generic.SourceSemantics.EvalFn.exec
+
 /-! ## Theorems and axioms -/
 
 /--
@@ -1229,7 +1289,14 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms Ix.Kernel.nfGo_of_whnf_sort [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.tablesChecked [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.source [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.getTagN0_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.tagn0 [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.tagnTail_short [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Aiur.Generic.SourceSemantics.EvalFn.exec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Checked.functionNames_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Checked.Lookup.«IxonDeserialize::get_tagn0» [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
-  IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables
+  IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables IxVM.Checked.Lookup
+  Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.TagN
