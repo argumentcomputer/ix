@@ -6,7 +6,7 @@ import IxC.Kernel.Audit.Axioms
 `#print` freezes every statement (`def … : Prop`) of
 `Ix.IxVM.Refinement.Statement`, every definition they read from
 `Ix.IxVM.Refinement.Claim`, the observed semantics' records
-(`Ix.IxVM.Refinement.Observe`) and the policy forms of IxC's acceptance
+(`Aiur.Generic.Observe`) and the policy forms of IxC's acceptance
 (`Ix.Cert.IxonAcceptsRefUnder`, `Ix.Kernel.Cached.AcceptsRefUnder`) and IxC's
 reference normalizer (`Ix.Kernel.nfRef`, frozen by its equations); the
 structurally recursive tree functions are frozen by their equations.
@@ -45,11 +45,12 @@ run_meta do
     (``IxVM.Refinement.SourceSound, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.SourceSemantics.ObsFn, ``IxVM.Refinement.digestValue]),
     (``IxVM.Refinement.CircuitSound, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+      ``Aiur.Generic.Specialized, ``Aiur.Optimized.Depth.Certified, ``Aiur.Optimized.Depth.system,
+      ``Aiur.Optimized.Grouping.Plan.checkMemo, ``IxVM.Refinement.digestValue,
+      ``Aiur.Generic.SourceSemantics.CallsInROM]),
+    (``IxVM.Refinement.CircuitSoundAssuming, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
-      ``IxVM.Refinement.digestValue, ``IxVM.Refinement.CallsInROM]),
-    (``IxVM.Refinement.CircuitSoundUntied, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
-      ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
-      ``IxVM.Refinement.digestValue]),
+      ``IxVM.Refinement.digestValue, ``Aiur.Generic.SourceSemantics.CallsInROM]),
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
       ``Ix.Claim.de, ``Ix.Claim.HoldsIn, ``IxVM.Refinement.View.HashedCollision]),
     (``IxVM.Refinement.Hashed, [``IxVM.Refinement.blake3Hash, ``IxVM.Refinement.byteStreamEnum]),
@@ -60,7 +61,7 @@ run_meta do
     for n in needed do
       unless used.contains n do throwError "{statement} no longer names {n}"
   for statement in [``IxVM.Refinement.SourceSound, ``IxVM.Refinement.CircuitSound,
-      ``IxVM.Refinement.CircuitSoundUntied] do
+      ``IxVM.Refinement.CircuitSoundAssuming] do
     let some info := (← getEnv).find? statement | throwError "{statement} is missing"
     let used := info.value!.getUsedConstants
     for n in [``IxVM.program, ``Aiur.Modules.prepare] do
@@ -90,11 +91,11 @@ IxVM.Refinement.CircuitSound IxVM.Refinement.IxVMClaimSpecIn
 #print IxVM.Refinement.VerifyClaimCircuitSoundIn
 
 /--
-info: def IxVM.Refinement.VerifyClaimCircuitSoundInUntied : Prop :=
-IxVM.Refinement.CircuitSoundUntied IxVM.Refinement.IxVMClaimSpecIn
+info: def IxVM.Refinement.VerifyClaimCircuitSoundInAssuming : Prop :=
+IxVM.Refinement.CircuitSoundAssuming IxVM.Refinement.IxVMClaimSpecIn
 -/
 #guard_msgs in
-#print IxVM.Refinement.VerifyClaimCircuitSoundInUntied
+#print IxVM.Refinement.VerifyClaimCircuitSoundInAssuming
 
 /--
 info: def IxVM.Refinement.SourceSound : (List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop) →
@@ -116,29 +117,41 @@ fun P =>
   ∀ {id : String → Except String ℕ}
     {specialized : Aiur.Generic.Specialized IxVM.Checked.source [IxVM.Refinement.verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
-    (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
-    (plan : Aiur.Optimized.Grouping.Plan physical.system id),
-    plan.WellFormedActivation →
-      ∀ {rom : Aiur.WidthROM IxVM.F},
-        rom.Valid →
-          ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
-            {result : Aiur.Value IxVM.F},
-            Aiur.Circuit.Erasure.Signed compiled.system
-                { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
-              IxVM.Refinement.AcyclicDerivation compiled plan rom
-                  { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
-                Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
-                  Aiur.WireValue.decode specialized.program.enums output = some result →
-                    ∃ value heap calls,
-                      Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
-                          [IxVM.Refinement.digestValue d] [] value heap calls ∧
-                        IxVM.Refinement.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls ∧ P calls d
+    (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
+    Aiur.Optimized.Depth.Certified cfg physical.system →
+      cfg.bits = 24 →
+        ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
+          plan.WellFormedActivation →
+            ∀ {rom : Aiur.WidthROM IxVM.F},
+              rom.Valid →
+                ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
+                  {result : Aiur.Value IxVM.F},
+                  Aiur.Circuit.Erasure.Signed compiled.system
+                      { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+                    ∀ {root : Aiur.Circuit.Message IxVM.F},
+                      Aiur.Optimized.Depth.erase cfg root =
+                          Aiur.Circuit.Erasure.message compiled.system
+                            { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+                        root.channel ∉ cfg.names →
+                          ∀ {rows : List (Aiur.Circuit.WeightedRow IxVM.F)},
+                            rows.length ≤ 2 ^ 39 →
+                              plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                Aiur.DecodesValues specialized.program.enums wires
+                                    (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
+                                  Aiur.WireValue.decode specialized.program.enums output = some result →
+                                    ∃ value heap calls,
+                                      Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world
+                                          IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] [] value heap
+                                          calls ∧
+                                        Aiur.Generic.SourceSemantics.CallsInROM (IxVM.Refinement.traceROM compiled rom)
+                                            calls ∧
+                                          P calls d
 -/
 #guard_msgs in
 #print IxVM.Refinement.CircuitSound
 
 /--
-info: def IxVM.Refinement.CircuitSoundUntied : (List (Aiur.Generic.SourceSemantics.Call IxVM.F) →
+info: def IxVM.Refinement.CircuitSoundAssuming : (List (Aiur.Generic.SourceSemantics.Call IxVM.F) →
     IxVM.Refinement.Digest → Prop) →
   Prop :=
 fun P =>
@@ -161,10 +174,11 @@ fun P =>
                     ∃ value heap calls,
                       Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
                           [IxVM.Refinement.digestValue d] [] value heap calls ∧
-                        P calls d
+                        Aiur.Generic.SourceSemantics.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls ∧
+                          P calls d
 -/
 #guard_msgs in
-#print IxVM.Refinement.CircuitSoundUntied
+#print IxVM.Refinement.CircuitSoundAssuming
 
 /--
 info: def IxVM.Refinement.ObservedHeadline : Prop :=
@@ -188,7 +202,7 @@ info: def IxVM.Refinement.ObservedHeadline : Prop :=
                       ∃ value heap calls,
                         Aiur.Generic.SourceSemantics.ObsFn s.world name args [] value heap calls ∧
                           Aiur.Represents (IxVM.Refinement.traceROM compiled rom) heap value result ∧
-                            IxVM.Refinement.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls
+                            Aiur.Generic.SourceSemantics.CallsInROM (IxVM.Refinement.traceROM compiled rom) calls
 -/
 #guard_msgs in
 #print IxVM.Refinement.ObservedHeadline
@@ -225,11 +239,12 @@ fun {F} [Field F] [DecidableEq F] {s} {entries} {specialized} compiled rom =>
 #print IxVM.Refinement.traceROM
 
 /--
-info: def IxVM.Refinement.CallsInROM : {F : Type} → Aiur.ROM F → List (Aiur.Generic.SourceSemantics.Call F) → Prop :=
+info: def Aiur.Generic.SourceSemantics.CallsInROM : {F : Type} →
+  Aiur.ROM F → List (Aiur.Generic.SourceSemantics.Call F) → Prop :=
 fun {F} rom calls => ∀ c ∈ calls, ∀ v ∈ c.args, ∃ w, Aiur.Represents rom c.heap v w
 -/
 #guard_msgs in
-#print IxVM.Refinement.CallsInROM
+#print Aiur.Generic.SourceSemantics.CallsInROM
 
 /--
 info: def IxVM.Refinement.IxVMClaimSpecIn : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop :=
@@ -1087,17 +1102,23 @@ info: @IxVM.Refinement.SourceSound.run : ∀
 #check @IxVM.Refinement.SourceSound.run
 
 /--
-info: @IxVM.Refinement.circuitSoundUntied_of_sourceSound : ∀
+info: @IxVM.Refinement.circuitSoundAssuming_of_sourceSound : ∀
   {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop},
-  IxVM.Refinement.SourceSound P → IxVM.Refinement.CircuitSoundUntied P
+  IxVM.Refinement.SourceSound P → IxVM.Refinement.CircuitSoundAssuming P
 -/
 #guard_msgs in
-#check @IxVM.Refinement.circuitSoundUntied_of_sourceSound
+#check @IxVM.Refinement.circuitSoundAssuming_of_sourceSound
+
+/--
+info: @IxVM.Refinement.observedHeadline : IxVM.Refinement.ObservedHeadline
+-/
+#guard_msgs in
+#check @IxVM.Refinement.observedHeadline
 
 /--
 info: @IxVM.Refinement.circuitSound_of_sourceSound : ∀
   {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop},
-  IxVM.Refinement.ObservedHeadline → IxVM.Refinement.SourceSound P → IxVM.Refinement.CircuitSound P
+  IxVM.Refinement.SourceSound P → IxVM.Refinement.CircuitSound P
 -/
 #guard_msgs in
 #check @IxVM.Refinement.circuitSound_of_sourceSound
@@ -1181,12 +1202,15 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms Aiur.Generic.SourceSemantics.ObsFn.erase [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.SourceSound.eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.SourceSound.run [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.circuitSoundUntied_of_sourceSound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.circuitSoundAssuming_of_sourceSound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.circuitSound_of_sourceSound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.VerifyClaimSoundIn [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.VerifyClaimCircuitSoundIn [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.VerifyClaimCircuitSoundInUntied [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.VerifyClaimCircuitSoundInAssuming [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.ObservedHeadline [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.observedHeadline [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.verifyClaimCircuitSoundIn_of_soundIn [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.verifyClaimCircuitSoundInAssuming_of_soundIn [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Cert.ixonAcceptsRefUnder_strict [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_strict [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_iff_of_nil [propext, Classical.choice, Quot.sound]
@@ -1194,6 +1218,6 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Checked.tablesChecked [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.source [propext, Classical.choice, Quot.sound]
 
-#guard_module_axioms Ix.IxVM.Refinement.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
+#guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
   IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables

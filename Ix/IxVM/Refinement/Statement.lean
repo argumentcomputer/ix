@@ -1,8 +1,8 @@
 import Ix.IxVM.Refinement.Claim
-import Ix.IxVM.Refinement.Observe
+import Aiur.Generic.Observe
 import IxVM.Program
 import IxVM.Checked
-import Aiur.Optimized.EndToEnd
+import Aiur.Optimized.Observed
 import Aiur.Library.Bytes.Correctness
 
 /-! # The IxVM ↔ IxC refinement statement
@@ -34,15 +34,15 @@ checks it (`KernelClaim::run_claim`).
 ## The semantics
 
 The backend headline's Generic form
-(`Aiur.Optimized.Physical.Prepared.grouped_activated_native_heap_sound`)
-concludes `Generic.SourceSemantics.EvalFn source.world`: the source
-semantics of a checked source's world, from the empty heap. A `hint` there
+(`Aiur.Optimized.Physical.Prepared.native_heap_sound_observed`, Track A)
+concludes `Generic.SourceSemantics.ObsFn source.world`: the source semantics
+of a checked source's world, from the empty heap, with its calls recorded. A `hint` there
 (IO reads included: `ixvm.io.info`, `ixvm.io.read`, `ixvm.io.claim`, …)
 evaluates to any constant of its type, and two evaluations of one hint need
 not agree, so a statement over every derivation holds for every hint and IO
-world. The statements here range over its observed form,
-`Generic.SourceSemantics.ObsFn` (`Ix.IxVM.Refinement.Observe`): the same
-derivations with their calls recorded (`EvalFn.observe`, `ObsFn.erase`).
+world. The statements range over that observed form
+(`Aiur.Generic.Observe`): the derivations of `Generic.SourceSemantics.EvalFn`
+with their calls recorded (`EvalFn.observe`, `ObsFn.erase`).
 
 ## The statement (decision D2, revised by the owner, 2026-11-08)
 
@@ -72,15 +72,20 @@ the derivation itself hashed.
 
 * `SourceSound P`: every observed `verify_claim` derivation gives `P`. The
   obligation Phases 3 and 4 discharge.
-* `CircuitSoundUntied P`: from the circuit compiled from the checked source,
-  under the headline's hypotheses and the named acyclicity hypothesis
-  `AcyclicDerivation` (Track A), some observed derivation gives `P`. Proved
-  from `SourceSound P` (`circuitSoundUntied_of_sourceSound`). Its calls are
-  not tied to the trace.
-* `CircuitSound P`: as above, with every observed call's arguments
-  represented in the trace's ROM (`CallsInROM`), so the escape's byte string
-  is read off the trace. It needs the strengthened headline
-  `ObservedHeadline`, a named obligation (`circuitSound_of_sourceSound`).
+* `CircuitSound P` (the main circuit statement): from the circuit compiled
+  from the checked source, over the certified depth pass, rows the grouped,
+  activated memo checker accepts with at most `2^39` rows give an observed
+  derivation whose calls the trace's memory carries (`CallsInROM`), so the
+  escape's byte string is read off the trace; it gives `P`. No acyclicity is
+  assumed. Proved from `SourceSound P` (`circuitSound_of_sourceSound`),
+  through Track A's memo-checker soundness and observed headline.
+* `CircuitSoundAssuming P`: the same over circuits without the depth pass,
+  with the named acyclicity hypothesis `AcyclicDerivation` in place of the
+  memo checker. Proved from `SourceSound P` through the observed headline
+  (`observedHeadline`, the Phase 2 obligation `ObservedHeadline`, now
+  proved). The deployed circuit carries the depth columns only once Track A's
+  A3 (Rust depth columns) and A4 (program changes) land; until then this is
+  the form that matches it.
 -/
 
 
@@ -197,12 +202,58 @@ theorem SourceSound.run {P : List (Call IxVM.F) → Digest → Prop} (sound : So
 
 /-! ## Circuit level -/
 
-/-- **The acyclicity hypothesis** (Track A, `plans/acyclicity-options.md`
-§7.11). A STARK proof gives rows with balanced lookups, a memo table that may
-be cyclic (`Aiur.Circuit.MemoDerivation`); acyclicity of that table gives
-this finite derivation over the activated grouped circuits, which is what
-the backend headline assumes (`derived`). Track A's depth columns and rank
-lemma are to discharge it; until then it is a hypothesis. -/
+/-- **The trace's memory**, decoded: the ROM the headline represents values
+in. -/
+abbrev traceROM {F : Type} [Field F] [DecidableEq F] {s : Aiur.Generic.Source F}
+    {entries : List String} {specialized : Aiur.Generic.Specialized s entries}
+    (compiled : Aiur.Optimized.GenericArtifact specialized) (rom : Aiur.WidthROM F) : Aiur.ROM F :=
+  (Aiur.Circuit.Erasure.typedROM compiled.system rom).decode specialized.program.enums
+
+/-- **Circuit-level soundness for `P`** (the main circuit statement): for the
+checked source specialized for `verify_claim`, any optimized compilation and
+its physical deduplication, any depth configuration with 24-bit gap words
+that the depth pass certifies (`Depth.Certified`, as `Depth.plan` builds it),
+any grouping plan over the depth pass with well-formed activation, any valid
+ROM, any signed message on `verify_claim`'s channel whose arguments decode to
+`d`, and any rows, at most `2^39` of them, that the grouped, activated memo
+checker accepts for a root outside the depth pass's names that erases to that
+message: some observed derivation of `verify_claim(d)`, whose calls the
+trace's memory carries (`CallsInROM`), gives `P` of its calls. No acyclicity
+is assumed: the depth words make every accepted memo graph acyclic (Track A,
+`Depth.plan_checkMemo_sound`). -/
+def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
+  ∀ {id : String → Except String Nat}
+    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [verifyClaim]}
+    (compiled : Aiur.Optimized.GenericArtifact specialized)
+    (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
+    {cfg : Aiur.Optimized.Depth.Config},
+    Aiur.Optimized.Depth.Certified cfg physical.system → cfg.bits = 24 →
+    ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
+    plan.WellFormedActivation →
+    ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid →
+    ∀ (d : Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
+      {result : Aiur.Value IxVM.F},
+      Aiur.Circuit.Erasure.Signed compiled.system
+          { channel := verifyClaim, args := wires, result := output } →
+    ∀ {root : Aiur.Circuit.Message IxVM.F},
+      Aiur.Optimized.Depth.erase cfg root =
+          Aiur.Circuit.Erasure.message compiled.system
+            { channel := verifyClaim, args := wires, result := output } →
+      root.channel ∉ cfg.names →
+    ∀ {rows : List (Aiur.Circuit.WeightedRow IxVM.F)}, rows.length ≤ 2 ^ 39 →
+      plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = .ok () →
+      Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [digestValue d]) →
+      Aiur.WireValue.decode specialized.program.enums output = some result →
+      ∃ (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F) (calls : List (Call IxVM.F)),
+        Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim [digestValue d] []
+          value heap calls ∧
+          Aiur.Generic.SourceSemantics.CallsInROM (traceROM compiled rom) calls ∧ P calls d
+
+/-- **The acyclicity hypothesis** of the assumption-based form: the finite
+derivation of the root over the activated grouped circuits, which the
+assumption-based headline assumes (`derived`). A STARK proof gives rows with
+balanced lookups, a memo table that may be cyclic; `CircuitSound` replaces
+this hypothesis with the memo checker over the depth pass. -/
 def AcyclicDerivation {F : Type} [Field F] [DecidableEq F] {s : Aiur.Generic.Source F}
     {entries : List String} {specialized : Aiur.Generic.Specialized s entries}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
@@ -212,28 +263,12 @@ def AcyclicDerivation {F : Type} [Field F] [DecidableEq F] {s : Aiur.Generic.Sou
   plan.ActivatedDerives (Aiur.Circuit.Erasure.rawROM rom)
     (Aiur.Circuit.Erasure.message compiled.system root)
 
-/-- **The trace's memory**, decoded: the ROM the headline represents values
-in. -/
-abbrev traceROM {F : Type} [Field F] [DecidableEq F] {s : Aiur.Generic.Source F}
-    {entries : List String} {specialized : Aiur.Generic.Specialized s entries}
-    (compiled : Aiur.Optimized.GenericArtifact specialized) (rom : Aiur.WidthROM F) : Aiur.ROM F :=
-  (Aiur.Circuit.Erasure.typedROM compiled.system rom).decode specialized.program.enums
-
-/-- **The trace carries the calls**: every argument of every call is
-represented in the trace's memory (`Aiur.Represents`), so a byte stream a
-call received is read off the memory table's rows. -/
-def CallsInROM {F : Type} (rom : Aiur.ROM F) (calls : List (Call F)) : Prop :=
-  ∀ c ∈ calls, ∀ v ∈ c.args, ∃ w, Aiur.Represents rom c.heap v w
-
-/-- **Circuit-level soundness for `P`, not tied to the trace**: for the
-checked source specialized for `verify_claim`, any optimized compilation,
-its physical deduplication and any grouping plan with well-formed
-activation, any valid ROM, and any signed root message on `verify_claim`'s
-channel whose arguments decode to `d`: if `AcyclicDerivation` holds of the
-root, then some observed derivation of `verify_claim(d)` gives `P` of its
-calls. These are the Generic headline's hypotheses, with its `derived`
-named. -/
-def CircuitSoundUntied (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
+/-- **Circuit-level soundness for `P`, assuming acyclicity** (the secondary
+form, for circuits without the depth pass, as deployed until Track A's A3/A4
+land): as `CircuitSound`, over a grouping plan of the physical circuits
+themselves, with `AcyclicDerivation` of the root in place of the memo
+checker and the row bound. -/
+def CircuitSoundAssuming (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ {id : String → Except String Nat}
     {specialized : Aiur.Generic.Specialized IxVM.Checked.source [verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
@@ -250,43 +285,22 @@ def CircuitSoundUntied (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
       Aiur.WireValue.decode specialized.program.enums output = some result →
       ∃ (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F) (calls : List (Call IxVM.F)),
         Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim [digestValue d] []
-          value heap calls ∧ P calls d
+          value heap calls ∧
+          Aiur.Generic.SourceSemantics.CallsInROM (traceROM compiled rom) calls ∧ P calls d
 
-/-- **Circuit-level soundness for `P`, tied to the trace**: as
-`CircuitSoundUntied`, and the observed derivation's calls are carried by the
-trace's memory (`CallsInROM`). -/
-def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
-  ∀ {id : String → Except String Nat}
-    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [verifyClaim]}
-    (compiled : Aiur.Optimized.GenericArtifact specialized)
-    (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
-    (plan : Aiur.Optimized.Grouping.Plan physical.system id),
-    plan.WellFormedActivation →
-    ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid →
-    ∀ (d : Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
-      {result : Aiur.Value IxVM.F},
-      Aiur.Circuit.Erasure.Signed compiled.system
-          { channel := verifyClaim, args := wires, result := output } →
-      AcyclicDerivation compiled plan rom { channel := verifyClaim, args := wires, result := output } →
-      Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [digestValue d]) →
-      Aiur.WireValue.decode specialized.program.enums output = some result →
-      ∃ (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F) (calls : List (Call IxVM.F)),
-        Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim [digestValue d] []
-          value heap calls ∧ CallsInROM (traceROM compiled rom) calls ∧ P calls d
-
-/-- **The main statement at the circuit, tied to the trace.** -/
+/-- **The main statement at the circuit.** -/
 def VerifyClaimCircuitSoundIn : Prop :=
   CircuitSound IxVMClaimSpecIn
 
-/-- **The main statement at the circuit, not tied to the trace.** -/
-def VerifyClaimCircuitSoundInUntied : Prop :=
-  CircuitSoundUntied IxVMClaimSpecIn
+/-- **The main statement at the circuit, assuming acyclicity.** -/
+def VerifyClaimCircuitSoundInAssuming : Prop :=
+  CircuitSoundAssuming IxVMClaimSpecIn
 
-/-- **The backend obligation (named, not proved)**: the Generic headline
-`grouped_activated_native_heap_sound`, for every checked source, concluding
-an *observed* derivation whose calls the trace's memory carries, beside the
-result's representation it concludes today. Today's headline gives only
-`EvalFn`, with no tie between the derivation's calls and the rows. -/
+/-- **The observed headline, assuming acyclicity**, for every checked source:
+the Generic headline `grouped_activated_native_heap_sound`, concluding an
+*observed* derivation whose calls the trace's memory carries, beside the
+result's representation. Phase 2 named it as the backend obligation; Track A
+proved it (`observedHeadline`). -/
 def ObservedHeadline : Prop :=
   ∀ {F : Type} [Field F] [DecidableEq F] {id : String → Except String Nat}
     {s : Aiur.Generic.Source F} {entries : List String}
@@ -306,37 +320,50 @@ def ObservedHeadline : Prop :=
       ∃ (value : Aiur.SourceValue F) (heap : Aiur.Heap F) (calls : List (Call F)),
         Aiur.Generic.SourceSemantics.ObsFn s.world name args [] value heap calls ∧
           Aiur.Represents (traceROM compiled rom) heap value result ∧
-          CallsInROM (traceROM compiled rom) calls
+          Aiur.Generic.SourceSemantics.CallsInROM (traceROM compiled rom) calls
 
-/-- **The untied circuit statement follows from the source statement**
-through today's Generic headline and `EvalFn.observe`. -/
-theorem circuitSoundUntied_of_sourceSound {P : List (Call IxVM.F) → Digest → Prop}
-    (sound : SourceSound P) : CircuitSoundUntied P := by
-  intro id specialized compiled physical plan activated rom valid d wires output result signed
-    derived arguments decoded
-  obtain ⟨value, heap, evaluated, -⟩ :=
-    Aiur.Optimized.Physical.Prepared.grouped_activated_native_heap_sound compiled physical plan
-      activated (List.mem_singleton.mpr rfl) valid signed derived arguments decoded
-  obtain ⟨calls, observed, holds⟩ := sound.eval evaluated
-  exact ⟨value, heap, calls, observed, holds⟩
+/-- **The observed headline holds**: Track A's
+`Physical.Prepared.native_heap_sound_observed` on the derivation the plan's
+activated derivation gives. -/
+theorem observedHeadline : ObservedHeadline := by
+  intro F _ _ id s entries specialized compiled physical plan activated name entry rom valid args
+    result wires output signed derived arguments decoded
+  exact physical.native_heap_sound_observed compiled entry valid signed
+    (plan.derives_sound (plan.activatedDerives_sound_plan activated derived)) arguments decoded
 
-/-- **The tied circuit statement follows from the source statement and the
-backend obligation.** -/
+/-- **The circuit statement follows from the source statement**: Track A's
+memo-checker soundness over the depth pass (`Depth.plan_checkMemo_sound`,
+with Goldilocks' characteristic for 24-bit words) gives the finite
+derivation, and `Physical.Prepared.native_heap_sound_observed` an observed
+derivation whose calls the trace carries. -/
 theorem circuitSound_of_sourceSound {P : List (Call IxVM.F) → Digest → Prop}
-    (headline : ObservedHeadline) (sound : SourceSound P) : CircuitSound P := by
-  intro id specialized compiled physical plan activated rom valid d wires output result signed
-    derived arguments decoded
+    (sound : SourceSound P) : CircuitSound P := by
+  intro id specialized compiled physical cfg certified bits plan activated rom valid d wires output
+    result signed root rooted outside rows bound checked arguments decoded
   obtain ⟨value, heap, calls, observed, -, carried⟩ :=
-    headline compiled physical plan activated (List.mem_singleton.mpr rfl) valid signed derived
+    physical.native_heap_sound_observed compiled (List.mem_singleton.mpr rfl) valid signed
+      (rooted ▸ Aiur.Optimized.Depth.plan_checkMemo_sound certified plan activated bound
+        (Aiur.Optimized.Depth.goldilocks_bound bits) checked outside)
       arguments decoded
   exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed⟩
 
-theorem verifyClaimCircuitSoundInUntied_of_soundIn (sound : VerifyClaimSoundIn) :
-    VerifyClaimCircuitSoundInUntied :=
-  circuitSoundUntied_of_sourceSound sound
+/-- **The assumption-based circuit statement follows from the source
+statement** through `observedHeadline`. -/
+theorem circuitSoundAssuming_of_sourceSound {P : List (Call IxVM.F) → Digest → Prop}
+    (sound : SourceSound P) : CircuitSoundAssuming P := by
+  intro id specialized compiled physical plan activated rom valid d wires output result signed
+    derived arguments decoded
+  obtain ⟨value, heap, calls, observed, -, carried⟩ :=
+    observedHeadline compiled physical plan activated (List.mem_singleton.mpr rfl) valid signed
+      derived arguments decoded
+  exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed⟩
 
-theorem verifyClaimCircuitSoundIn_of_soundIn (headline : ObservedHeadline)
-    (sound : VerifyClaimSoundIn) : VerifyClaimCircuitSoundIn :=
-  circuitSound_of_sourceSound headline sound
+theorem verifyClaimCircuitSoundIn_of_soundIn (sound : VerifyClaimSoundIn) :
+    VerifyClaimCircuitSoundIn :=
+  circuitSound_of_sourceSound sound
+
+theorem verifyClaimCircuitSoundInAssuming_of_soundIn (sound : VerifyClaimSoundIn) :
+    VerifyClaimCircuitSoundInAssuming :=
+  circuitSoundAssuming_of_sourceSound sound
 
 end IxVM.Refinement
