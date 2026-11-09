@@ -1,0 +1,14 @@
+name = "ix-kernel-bridge"
+defaultTargets = ["IxKernelBridge"]
+packagesDir = "../../IxCC/.lake/packages"
+
+[[require]]
+name = "ix-ck"
+path = "../../IxCK"
+
+[[require]]
+name = "ix-cc"
+path = "../../IxCC"
+
+[[lean_lib]]
+name = "IxKernelBridge"
