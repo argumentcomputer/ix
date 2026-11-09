@@ -112,6 +112,7 @@ pub(super) struct DepthFill {
   exact: Vec<ExactCheck>,
 }
 
+#[cfg(feature = "stark")]
 impl DepthFill {
   pub(super) fn is_empty(&self) -> bool {
     self.column.is_none() && self.slots.is_empty()
@@ -121,6 +122,7 @@ impl DepthFill {
 /// A range table: the limb width and the map's callable index.
 pub(super) struct RangeTable {
   pub width: u32,
+  #[cfg_attr(not(feature = "stark"), allow(dead_code))]
   pub map: usize,
 }
 

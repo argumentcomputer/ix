@@ -40,10 +40,12 @@ tags, activation times multiplicity, trace-shard segment boundaries, the fixed
 tables, including the depth range tables, and the claim encoding), and for the
 depth theorems that an accepting proof yields rows of its batch that
 `Grouping.Plan.checkMemo` accepts. Reading LogUp's field balance as those integer
-multiplicities needs the lookup budget below `p`: Rust bounds it directly, and the
-in-circuit verifiers check fewer than `2^24` lookups per circuit, which with the
-row bound keeps it below `2^63` plus the claims. Also trusted: multi-stark's
-STARK, FRI and LogUp soundness, and the `.aiur` parser and the artifact exporter.
+multiplicities needs every send enable `enable ∈ {0, 1}` on every active row and
+the lookup budget below `p`: Rust bounds the sum directly, and the in-circuit
+verifiers check fewer than `2^24` lookups per circuit, which with the row bound
+keeps it below `2^63` plus the claims. Also trusted: multi-stark's STARK, FRI
+and LogUp soundness, and the `aiur⟦ … ⟧` and `aiur_library%` elaborators and the
+artifact exporter.
 -/
 
 namespace Aiur

@@ -337,3 +337,116 @@ fn deferred_heights_cross_records() {
     .unwrap();
   backend.verify_batch("Depth::top", &[6], &[7], &proof).unwrap();
 }
+
+/// A forged trace whose only imbalance is an out-of-range gap limb must be
+/// rejected: lo' = lo + 2^16, hi' = hi - 1 leaves the demanded callee depth
+/// word and every other message unchanged.
+#[test]
+fn out_of_range_gap_limb_is_rejected_by_verifier() {
+  use crate::trace::DepthSlot;
+  let (program, trace) = depth_fixture();
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let entry = "Depth::run";
+  let record = program.execute(entry, vec![12]).unwrap();
+  let output = record.output.clone();
+  let stage = backend.generate_stage_1(&record, entry, &[12]).unwrap();
+  let fib = program.callable_id("Depth::fib").unwrap();
+  let chip =
+    plan.artifact.chips.iter().find(|c| c.name == "Depth::fib").unwrap();
+  let column = chip
+    .depth
+    .slots
+    .iter()
+    .find_map(|s| match s {
+      DepthSlot::Gap { column } => Some(*column),
+      _ => None,
+    })
+    .unwrap();
+  assert_eq!(plan.artifact.limbs, [16, 8]);
+  let ci = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
+  let placement = &backend.placements[plan.members[fib]];
+  let (lo_col, hi_col) =
+    (placement.columns[column], placement.columns[column + 1]);
+  // Row 0 is fib(12), where both gap slots fire.
+  let lo = stage[ci].values[lo_col];
+  let hi = stage[ci].values[hi_col];
+  let mut forged = stage.clone();
+  forged[ci].values[lo_col] = lo + Val::from_u64(1 << 16);
+  forged[ci].values[hi_col] = hi - Val::ONE;
+  // Keep the range-table counts balanced, so that only the two out-of-range
+  // demands are left unmatched.
+  for (name, value) in [
+    ("<table:Depth::range16_inputs>", lo),
+    ("<table:Depth::range8_inputs>", hi),
+  ] {
+    let t = backend.names.iter().position(|n| n == name).unwrap();
+    assert_eq!(backend.system.circuits[t].main_width, 1);
+    let row = usize::try_from(value.as_canonical_u64()).unwrap();
+    assert!(forged[t].values[row] != Val::ZERO);
+    forged[t].values[row] -= Val::ONE;
+  }
+  let error = backend
+    .prove_batch_stage_1(entry, &[12], &output, forged, 8, Retention::Retain)
+    .err()
+    .expect("out-of-range gap limb accepted");
+  assert!(error.contains("verification failed"), "{error}");
+  backend
+    .prove_batch_stage_1(entry, &[12], &output, stage, 8, Retention::Retain)
+    .unwrap();
+}
+
+/// The row bound fires just above 2^39 rows and accepts just at or below it.
+#[test]
+fn row_bound_boundary() {
+  let (program, trace) = depth_fixture();
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let entry = "Depth::run";
+  let record = program.execute(entry, vec![12]).unwrap();
+  let output = record.output.clone();
+  let stage = backend.generate_stage_1(&record, entry, &[12]).unwrap();
+  let proof = backend
+    .prove_batch_stage_1(
+      entry,
+      &[12],
+      &output,
+      stage,
+      1 << 8,
+      Retention::Retain,
+    )
+    .unwrap();
+  let key =
+    VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
+  let claim = backend.claim(entry, &[12], &output).unwrap();
+  key.validate_preamble(&claim, &proof.preamble).unwrap();
+  let mut header = proof.preamble.headers[0].clone();
+  let max_log = u8::try_from(32 - parameters().log_blowup).unwrap();
+  let mut rows = 0u128;
+  let mut logs = header.log_degrees.clone().into_iter();
+  let mut new_logs = vec![];
+  for (circuit, &on) in backend.system.circuits.iter().zip(&header.active) {
+    if !on {
+      continue;
+    }
+    let log = logs.next().unwrap();
+    let log = if circuit.preprocessed_height == 0 { max_log } else { log };
+    rows += 1u128 << log;
+    new_logs.push(log);
+  }
+  header.log_degrees = new_logs;
+  let claims = header.claims.clone();
+  header.claims.clear();
+  let bound = 1u128 << 39;
+  let at_bound = usize::try_from(bound / rows).unwrap();
+  let preamble = |n: usize| {
+    let mut p = proof.preamble.clone();
+    p.headers = vec![header.clone(); n];
+    p.headers[0].claims = claims.clone();
+    p
+  };
+  key.validate_preamble(&claim, &preamble(at_bound)).unwrap();
+  let error =
+    key.validate_preamble(&claim, &preamble(at_bound + 1)).unwrap_err();
+  assert!(error.contains("2^39"), "{error}");
+}

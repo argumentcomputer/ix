@@ -72,12 +72,15 @@ jobs:
       - name: Check formal Aiur proofs, FFI, and IxVM packages
         run: |
           lake build --wfail aiur/Aiur ixvm/IxVM multiStark/MultiStark
-          lake build --wfail aiur/aiur_tests aiur/execution_tests aiur/trace_tests ixvm/ixvm \
+          lake build --wfail aiur/aiur_tests aiur/execution_tests aiur/trace_tests \
+            aiur/u32_tests aiur/library_tests ixvm/ixvm \
             multiStark/stark-export aiur/axiom_sweep
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
           Aiur/.lake/build/bin/aiur_tests
           Aiur/.lake/build/bin/execution_tests
           Aiur/.lake/build/bin/trace_tests
+          Aiur/.lake/build/bin/u32_tests
+          Aiur/.lake/build/bin/library_tests
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
@@ -111,6 +114,9 @@ jobs:
           diff lean-toolchain Models/SetTheory/lean-toolchain
       - name: Test Ix CLI
         if: github.event_name != 'push'
+        env:
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.ixa
+          IX_AGGR_ARTIFACT: ${{ runner.temp }}/formal/aggregate.ixa
         run: lake test --wfail -- --tier ci:cli
       - name: Test Ixon v4 contracts and consumers
         if: github.event_name != 'push'
@@ -133,7 +139,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:

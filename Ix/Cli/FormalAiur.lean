@@ -188,8 +188,9 @@ def hostOptions (p : Cli.Parsed) (shares : Nat := 1) : IO HostOptions := do
   let retention := ((p.flag? "retention").map (·.as! String)).getD "auto"
   unless #["auto", "retain", "regenerate"].contains retention do
     throw (IO.userError "--retention must be auto, retain or regenerate")
-  let gib := ((p.flag? "max-ram").orElse fun _ => p.flag? "ram-budget").map (·.as! Nat)
-  if gib == some 0 then throw (IO.userError "RAM budget must be positive")
+  let maxRam := (p.flag? "max-ram").map (·.as! Nat)
+  if maxRam == some 0 then throw (IO.userError "RAM budget must be positive")
+  let gib := maxRam.orElse fun _ => ((p.flag? "ram-budget").map (·.as! Nat)).filter (· != 0)
   let ram ← match gib with
     | some n => pure (n * 1024^3)
     | none => pure (((← resources).getObjValAs? Nat "available_bytes" |>.toOption.getD (8 * 1024^3)) * 85 / 100)
@@ -697,7 +698,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
         verifyWrapper path wrapper
         covered := covered.push wrapper.claim
         if p.hasFlag "record" then ShardProofIndex.writeAddress (← shardIndex) digest addr
-        IO.println s!"ok: proof {addr} verifies claim {digest}"
+        IO.println s!"ok: proof {addr} verifies claim {digest}: {wrapper.claim}"
         if expected.isEmpty then
           if let some ctx := Ix.Claim.context? wrapper.claim then
             if ctx.bindingAssumed then

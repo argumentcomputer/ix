@@ -5,7 +5,7 @@ import Aiur.Generic.SymbolFacts
 
 `List.find?` by a string key compares the key with every earlier entry, and
 the kernel compares string literals character by character: on the checked
-IxVM program (850 functions), one `findFunction?` lemma costs about two
+IxVM program (855 functions), one `findFunction?` lemma costs about two
 seconds of kernel time, and all of them half an hour. Here a lookup costs a
 membership proof (an index), and the names' distinctness is certified once by
 comparing natural-number keys (`nameKey`), which the kernel compares as
@@ -22,7 +22,9 @@ numbers.
 
 namespace Aiur.Generic
 
-/-- A byte string as a number: base `257` digits, each a byte plus one. -/
+/-- A byte string as a number: base `257` digits, each a byte plus one.
+Quadratic in the byte length `L` (`257 * keyOfBytes bs`), intended for short
+identifier names (`L ≤ 64`) rather than arbitrary data blobs. -/
 def keyOfBytes : List UInt8 → Nat
   | [] => 0
   | b :: bs => (b.toNat + 1) + 257 * keyOfBytes bs

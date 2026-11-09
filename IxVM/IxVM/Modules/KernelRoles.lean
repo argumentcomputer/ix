@@ -393,6 +393,12 @@ module KernelRoles {
           ()
     }
 
+  fn assert_type_pinned(ty: KernelTypes::KExpr, spec: KernelTypes::KExpr) -> () {
+      assert_eq!(KernelCheck::kexpr_struct_eq(ty, spec), 1,
+            "a bound role's type does not meet its specification");
+          ()
+    }
+
   fn assert_safe_role(ci: KernelTypes::KConstantInfo) -> () {
       assert_eq!(KernelCheck::is_unsafe_ci(ci), 0, "a bound role is unsafe");
       ()
@@ -401,7 +407,7 @@ module KernelRoles {
   fn validate_member(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
-      assert_type_meets(rc, KernelInfer::const_type_of(ci), KernelRoleSpec::role_type(tbl, r));
+      assert_type_pinned(KernelInfer::const_type_of(ci), KernelRoleSpec::role_type(tbl, r));
       match KernelRoleSpec::role_member_kind(r) {
         0 => {
           match ci {
@@ -464,7 +470,15 @@ module KernelRoles {
 
   fn validate_anchor(rc: RoleCtx, tbl: RoleTable, r: Field, ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
-      assert_type_meets(rc, KernelInfer::const_type_of(ci), KernelRoleSpec::role_type(tbl, r))
+      let ty = KernelInfer::const_type_of(ci);
+      let spec = KernelRoleSpec::role_type(tbl, r);
+      match r {
+        7 => {  assert_type_pinned(ty, spec) } ,
+        20 => {  assert_type_pinned(ty, spec) } ,
+        21 => {  assert_type_pinned(ty, spec) } ,
+        22 => {  assert_type_pinned(ty, spec) } ,
+        _ => {  assert_type_meets(rc, ty, spec) } ,
+      }
     }
 
   fn validate_standard_axiom(rc: RoleCtx, tbl: RoleTable, r: Field,
@@ -474,7 +488,7 @@ module KernelRoles {
           assert_eq!(u, 0, "a bound standard axiom is unsafe");
           KernelCheck::validate_expr_well_scoped(ty, 0, nlvls);
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
-          assert_type_meets(rc, ty, KernelRoleSpec::role_type(tbl, r)) } ,
+          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r)) } ,
       }
     }
 
@@ -485,7 +499,7 @@ module KernelRoles {
           assert_eq!(u, 0, "a bound inert axiom is unsafe");
           KernelCheck::validate_expr_well_scoped(ty, 0, nlvls);
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
-          assert_type_meets(rc, ty, KernelRoleSpec::role_type(tbl, r)) } ,
+          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r)) } ,
       }
     }
 
@@ -506,7 +520,7 @@ module KernelRoles {
               assert_eq!(0, 1, "a bound operation is not a safe definition");
               () } ,
           };
-          assert_type_meets(rc, ty, KernelRoleSpec::role_type(tbl, r));
+          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r));
           KernelClaim::run_check_transitive(rc, a);
           let ev = role_evidence(tbl, r);
           assert_eq!(Lists::length(ev), KernelRoleSpec::op_equation_count(r),

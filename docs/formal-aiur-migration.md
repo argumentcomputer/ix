@@ -54,17 +54,19 @@ activated circuits have a *finite* derivation of the claimed call
 
 - A STARK proof gives rows that satisfy their constraints with balanced LogUp
   lookups. `Circuit.System.checkMemo_sound` turns that into a
-  `Circuit.MemoDerivation`, a memo graph that may be cyclic: a provided row
-  `loop(0) = 42` balances `fn loop(x) { loop(x) }` although no evaluation
-  returns 42. `memo_acyclic_sound` needs the graph to be acyclic, which means
-  every proved call terminates. Nothing proves acyclicity for a STARK; it is a
-  hypothesis of the end-to-end argument.
+  `Circuit.MemoDerivation`, a memo graph that may be cyclic on uninstrumented
+  circuits: a provided row `loop(0) = 42` balances `fn loop(x) { loop(x) }`
+  although no evaluation returns 42. For circuits compiled with the certified
+  call-depth pass (`Optimized.Depth`, emitted by `Trace.exportPreparedPlan`),
+  `Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks` proves every
+  memo graph with at most `2^39` rows acyclic (`Depth.acyclic`), discharging the
+  memo-acyclicity obligation.
 - Trusted and unproved: the Rust lowering of the exported artifact into
   multi-stark circuits (`crates/aiur`: the CALL, ROM and memory-segment channel
   tags, activation times multiplicity, trace-shard segment boundaries, fixed
   tables and the claim encoding); multi-stark's STARK and FRI soundness at the
   configured parameters, and its CUDA prover's agreement with the CPU one; and
-  the `.aiur` parser and the artifact exporter.
+  the `aiur⟦ … ⟧` and `aiur_library%` elaborators and the artifact exporter.
 - The IxVM and MultiStark programs are ports checked by tests and
   reproducibility scripts, not proved equivalent to a specification. The
   library `Correctness` files and `IxVMRep` prove facts about hand-written Lean
@@ -325,9 +327,10 @@ see [the module layout](formal-aiur-modules.md)), and the port generators that
 reproduced them from pinned legacy sources are retired. The port's intentional
 differences from legacy IxVM are listed there; they are not a proof of
 equivalence to legacy IxVM.
-The compiler correctness proofs remain intact. Neither those proofs nor the
-port tests constitute a new formal proof of the cryptographic backend or
-discharge the existing memo-acyclicity hypothesis of the semantic model.
+The compiler correctness proofs remain intact, and the call-depth pass
+(`Optimized.Depth`) discharges the memo-acyclicity hypothesis of the semantic
+model under the `2^39` batch row bound; neither those proofs nor the port tests
+constitute a formal proof of the underlying STARK/FRI cryptographic backend.
 
 The retired legacy native execution crate (`crates/ixvm-legacy-native`), its
 `legacy-native` Cargo feature, the generated trace kernels

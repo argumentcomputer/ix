@@ -106,14 +106,16 @@ module KernelInferOnly {
                     "projection's structure type differs from the value's head");
                   let ind_ci = (*(Ingress::get_ci(head_addr)));
                   match ind_ci {
-                    KernelTypes::KConstantInfo::Induct(_, _, n_params, _, num_ctors, _,
+                    KernelTypes::KConstantInfo::Induct(ind_nlvls, _, n_params, _, num_ctors, _,
                                            block_addr, ind_idx) => {
 
                       assert_eq!(num_ctors, 1,
                         "projection on an inductive with more than one constructor");
                       let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, 0)));
                       match ctor_ci {
-                        KernelTypes::KConstantInfo::Ctor(_, ctor_ty, _, _, _, _, _, _) => {
+                        KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
+                          assert_eq!(ctor_nlvls, ind_nlvls,
+                            "projection's constructor universe count differs from its inductive's");
                           let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
                           let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
                           io_peel_field_loop(after_params, fidx, 0, struct_addr, e1) } ,

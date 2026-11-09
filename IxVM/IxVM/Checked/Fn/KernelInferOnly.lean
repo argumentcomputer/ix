@@ -97,13 +97,14 @@ def Fn.«KernelInferOnly::k_infer_only_core» : Function F where
     (.matchValue (.load (.var "head")) [((.construct (.named "KernelTypes::KExprNode" []) "Const" [(.bind "head_addr"), (.bind "lvls")]),
     (.letValue .wildcard (.builtin (.assertEq { message := (some "projection's structure type differs from the value's head"), runtimeCheck := true }) [(.call "Bytes::address_eq" (some []) [(.var "head_addr"), (.var "struct_addr")]), (.literal 1)])
     (.letValue (.bind "ind_ci") (.load (.call "Ingress::get_ci" (some []) [(.var "head_addr")]))
-    (.matchValue (.var "ind_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Induct" [.wildcard, .wildcard, (.bind "n_params"), .wildcard, (.bind "num_ctors"), .wildcard, (.bind "block_addr"), (.bind "ind_idx")]),
+    (.matchValue (.var "ind_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Induct" [(.bind "ind_nlvls"), .wildcard, (.bind "n_params"), .wildcard, (.bind "num_ctors"), .wildcard, (.bind "block_addr"), (.bind "ind_idx")]),
     (.letValue .wildcard (.builtin (.assertEq { message := (some "projection on an inductive with more than one constructor"), runtimeCheck := true }) [(.var "num_ctors"), (.literal 1)])
     (.letValue (.bind "ctor_ci") (.load (.call "Ingress::get_ci_cprj" (some []) [(.var "block_addr"), (.var "ind_idx"), (.literal 0)]))
-    (.matchValue (.var "ctor_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Ctor" [.wildcard, (.bind "ctor_ty"), .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, .wildcard]),
+    (.matchValue (.var "ctor_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Ctor" [(.bind "ctor_nlvls"), (.bind "ctor_ty"), .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, .wildcard]),
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "projection's constructor universe count differs from its inductive's"), runtimeCheck := true }) [(.var "ctor_nlvls"), (.var "ind_nlvls")])
     (.letValue (.bind "ctor_ty_inst") (.call "KernelLevels::expr_inst_levels" (some []) [(.var "ctor_ty"), (.var "lvls")])
     (.letValue (.bind "after_params") (.call "KernelInferOnly::io_peel_params_subst" (some []) [(.var "ctor_ty_inst"), (.var "args"), (.var "n_params")])
-    (.call "KernelInferOnly::io_peel_field_loop" (some []) [(.var "after_params"), (.var "fidx"), (.literal 0), (.var "struct_addr"), (.var "e1")]))))]))))]))))]))]))))])
+    (.call "KernelInferOnly::io_peel_field_loop" (some []) [(.var "after_params"), (.var "fidx"), (.literal 0), (.var "struct_addr"), (.var "e1")])))))]))))]))))]))]))))])
   isInline := true
 
 def Fn.«KernelInferOnly::ensure_sort_only» : Function F where

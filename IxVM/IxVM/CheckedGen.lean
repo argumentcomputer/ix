@@ -18,9 +18,10 @@ that literal from the native preparation:
 * `IxVM/IxVM/Checked/Program.lean`: the program, over those definitions and
   the table generator's tables (`IxVM.Checked.genericTables`).
 
-`lake exe ixvm/ixvm-checked` writes the files; `--check` compares them and
-checks that the literal is the native preparation
-(`IxVM.CheckedCheck`). The test suite runs the same checks. -/
+`lake exe ixvm/ixvm-checked` writes the files and `--check` compares the
+rendered files on disk; `IxVM.CheckedCheck` (run by the primary test suite
+`ixvm-checked-source`) checks both the rendered files and value equality of the
+literal and its exported execution bytecode with the native preparation. -/
 
 namespace IxVM.CheckedGen
 open Aiur.Generic

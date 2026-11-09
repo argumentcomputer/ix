@@ -525,8 +525,8 @@ module KernelCheck {
         _ => {
           let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, cidx)));
           match ctor_ci {
-            KernelTypes::KConstantInfo::Ctor(_, cty, c_block, c_ind_idx, c_cidx,
-                                c_np, c_nf, _) => {
+            KernelTypes::KConstantInfo::Ctor(c_nlvls, cty, c_block, c_ind_idx, c_cidx,
+                                c_np, c_nf, c_unsafe) => {
 
               assert_eq!(Bytes::address_eq(c_block, block_addr), 1,
                 "ctor belongs to a different block than its inductive");
@@ -534,8 +534,15 @@ module KernelCheck {
                 "ctor points at a different member of the block");
               assert_eq!(c_cidx, cidx,
                 "ctor's stored index differs from its position");
+              assert_eq!(c_nlvls, num_lvls,
+                "ctor universe count differs from the inductive's");
               assert_eq!(c_np, n_params,
                 "ctor parameter count differs from the inductive's");
+              assert_eq!(c_unsafe, is_unsafe,
+                "ctor safety differs from the inductive's");
+              validate_expr_well_scoped(cty, 0, num_lvls);
+              KernelInfer::k_ensure_sort(rc, cty, (&(Lists::Node::Nil)));
+              assert_safety(is_unsafe, cty);
               check_param_agreement(rc, ind_ty, cty, n_params);
               check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                           block_addr, ind_idx);
@@ -2412,18 +2419,30 @@ module KernelCheck {
       }
     }
 
-  fn muts_has_kind(members: Lists::List<Ixon::MutConst>, want_defn: Field) -> Field {
+  fn muts_has_kind(members: Lists::List<Ixon::MutConst>, kind: Field) -> Field {
       match (*(members)) {
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(m, rest) => {
           let hit = match m {
-            Ixon::MutConst::Defn(_) => {  want_defn } ,
-            Ixon::MutConst::Indc(_) => {  1 - want_defn } ,
-            Ixon::MutConst::Recr(_) => {  0 } ,
+            Ixon::MutConst::Indc(_) => {
+              match kind {
+                0 => {  1 } ,
+                _ => {  0 } ,
+              } } ,
+            Ixon::MutConst::Defn(_) => {
+              match kind {
+                1 => {  1 } ,
+                _ => {  0 } ,
+              } } ,
+            Ixon::MutConst::Recr(_) => {
+              match kind {
+                2 => {  1 } ,
+                _ => {  0 } ,
+              } } ,
           };
           match hit {
             1 => {  1 } ,
-            _ => {  muts_has_kind(rest, want_defn) } ,
+            _ => {  muts_has_kind(rest, kind) } ,
           } } ,
       }
     }
@@ -2434,9 +2453,11 @@ module KernelCheck {
         Ixon::Constant::Mk(info, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
-
-              assert_eq!(muts_has_kind(members, 1) * muts_has_kind(members, 0), 0,
+              let has_defn = muts_has_kind(members, 1);
+              assert_eq!(has_defn * muts_has_kind(members, 0), 0,
                 "mutual block mixes a definition member with inductives");
+              assert_eq!(has_defn * muts_has_kind(members, 2), 0,
+                "mutual block mixes a definition member with recursors");
               () } ,
             _ => {  () } ,
           } } ,
@@ -2510,8 +2531,12 @@ module KernelCheck {
           match ind_ci {
             KernelTypes::KConstantInfo::Induct(ind_nlvls, ind_ty, ind_n_params,
                                   ind_n_indices, _, ind_is_unsafe, _, _) => {
+              assert_eq!(nlvls, ind_nlvls,
+                "ctor universe count differs from its inductive's");
               assert_eq!(num_params, ind_n_params,
                 "ctor parameter count differs from its inductive's");
+              assert_eq!(u, ind_is_unsafe,
+                "ctor safety differs from its inductive's");
               check_param_agreement(rc, ind_ty, ty, ind_n_params);
               check_ctor_return_type(ty, num_params, ind_n_indices,
                                           num_fields, ind_nlvls, block_addr,

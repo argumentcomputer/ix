@@ -266,8 +266,8 @@ def registry : List Entry := [
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
   -- Compression CLI setup and proof-rejection checks, and the bundled release
-  -- keys' acceptance of the formal backends, run explicitly.
-  .runner "compression-cli" (.manual "compression CLI setup, proof-rejection and release-acceptance checks; needs `lake build ix`, and exports the IxVM and aggregation artifacts unless IX_AIUR_ARTIFACT and IX_AGGR_ARTIFACT name them") (do
+  -- keys' acceptance of the formal backends.
+  .runner "compression-cli" (.ci .cli) (do
     Tests.CompressionCli.run
     return 0)
 ]
@@ -307,6 +307,7 @@ def required : List (String × String) := [
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
+  ("compression-cli", "ci:cli"),
   ("ixvm-kernel-checks", "ci:ixvm"),
   ("ixvm-exploits", "ci:ixvm"),
   ("ixvm-arena", "ci:ixvm"),

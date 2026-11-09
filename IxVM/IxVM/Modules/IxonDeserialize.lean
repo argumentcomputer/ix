@@ -600,6 +600,37 @@ module IxonDeserialize {
       }
     }
 
+  fn assert_prj_empty_tables(
+    info: Ixon::ConstantInfo,
+    sharing: Lists::List<&Ixon::Expr>,
+    refs: Lists::List<Bytes::AddressRef>,
+    univs: Lists::List<&Ixon::Univ>
+  ) -> () {
+      match info {
+        Ixon::ConstantInfo::DPrj(_) => {
+          let Lists::Node::Nil = (*(sharing));
+          let Lists::Node::Nil = (*(refs));
+          let Lists::Node::Nil = (*(univs));
+          () } ,
+        Ixon::ConstantInfo::IPrj(_) => {
+          let Lists::Node::Nil = (*(sharing));
+          let Lists::Node::Nil = (*(refs));
+          let Lists::Node::Nil = (*(univs));
+          () } ,
+        Ixon::ConstantInfo::CPrj(_) => {
+          let Lists::Node::Nil = (*(sharing));
+          let Lists::Node::Nil = (*(refs));
+          let Lists::Node::Nil = (*(univs));
+          () } ,
+        Ixon::ConstantInfo::RPrj(_) => {
+          let Lists::Node::Nil = (*(sharing));
+          let Lists::Node::Nil = (*(refs));
+          let Lists::Node::Nil = (*(univs));
+          () } ,
+        _ => {  () } ,
+      }
+    }
+
   fn get_constant(stream: Bytes::Stream) -> (Ixon::Constant, Bytes::Stream) {
       let (tag, s) = get_tagn4(stream);
       let (flag, size) = tag;
@@ -607,6 +638,7 @@ module IxonDeserialize {
       let (sharing, s3) = get_sharing(s2);
       let (refs, s4) = get_refs(s3);
       let (univs, s5) = get_univs(s4);
+      assert_prj_empty_tables(info, sharing, refs, univs);
       (Ixon::Constant::Mk(info, sharing, refs, univs), s5)
     }
 }

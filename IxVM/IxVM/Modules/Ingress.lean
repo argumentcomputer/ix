@@ -126,6 +126,7 @@ module Ingress {
     }
 
   fn get_ci_dprj(dprj_addr: Bytes::AddressRef, idx: UInt64::U64, block_addr: Bytes::AddressRef) -> &KernelTypes::KConstantInfo {
+      KernelCheck::check_block_member_kinds(block_addr);
       let block_c = load_verified_constant(block_addr);
       match block_c {
         Ixon::Constant::Mk(info, sharing, refs, univs) => {

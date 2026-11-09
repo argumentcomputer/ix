@@ -369,7 +369,7 @@ module StarkVerifier {
       match (*(circuits)) {
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(circ, rest) => {
-          let SystemDeserialize::SysCircuit::Mk(nodes, _node_count, zeros, md, lks, k, mw, pw, s2w) = circ;
+          let SystemDeserialize::SysCircuit::Mk(nodes, _node_count, zeros, md, lks, k, mw, pw, ph, s2w) = circ;
 
           let ld8 = Lists::lookup(log_degrees, i);
           assert_eq!(UInt8::less_than(ld8, UInt8::BYTE_32), 1);
@@ -393,7 +393,9 @@ module StarkVerifier {
           assert_eq!(Fields::is_zero(Lists::length(prep_next) - pw), 1);
           let (isf, isl, ist, invv) = trace_selectors(zeta, l);
           let publics = build_publics(lch, fch, accp, naccp);
-          let inorm = Goldilocks::gl_inverse(pow2(l) * two_adic_gen(l));
+          let height = pow2(l);
+          assert_eq!((1 - Fields::is_zero(ph)) * (height - ph), 0);
+          let inorm = Goldilocks::gl_inverse(height * two_adic_gen(l));
           let comp = ood_composition(nodes, zeros, lks, k,
                                      main, main_next, prep, prep_next, s2row, s2next,
                                      publics, lch, fch, accp, naccp,
@@ -440,7 +442,10 @@ module StarkVerifier {
         Lists::Node::Cons(c, crest) => {
           let &Lists::Node::Cons(b, arest) = active;
           match b {
-            0 => {  select_active_circuits(crest, arest) } ,
+            0 => {
+              let SystemDeserialize::SysCircuit::Mk(_nodes, _node_count, _zeros, _md, _lks, _k, _mw, _pw, ph, _s2w) = c;
+              assert_eq!(ph, 0);
+              select_active_circuits(crest, arest) } ,
             _ => {  (&(Lists::Node::Cons(c, select_active_circuits(crest, arest)))) } ,
           } } ,
       }
@@ -452,7 +457,9 @@ module StarkVerifier {
         Lists::Node::Cons(p, prest) => {
           let &Lists::Node::Cons(b, arest) = active;
           match b {
-            0 => {  select_active_prep(prest, arest) } ,
+            0 => {
+              let SystemDeserialize::OptIdx::NoIdx = p;
+              select_active_prep(prest, arest) } ,
             _ => {  (&(Lists::Node::Cons(p, select_active_prep(prest, arest)))) } ,
           } } ,
       }
@@ -651,12 +658,12 @@ module StarkVerifier {
       }
     }
 
-  -- Every circuit has fewer than 2^24 lookups.
+  -- Every circuit has fewer than 2^24 lookups (already bounded by u16 lcount in read_sys_circuit).
   fn lookups_ok(circuits: Lists::List<SystemDeserialize::SysCircuit>) -> Field {
       match (*(circuits)) {
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(circ, rest) => {
-          let SystemDeserialize::SysCircuit::Mk(_nodes, _node_count, _zeros, _md, lks, _k, _mw, _pw, _s2w) = circ;
+          let SystemDeserialize::SysCircuit::Mk(_nodes, _node_count, _zeros, _md, lks, _k, _mw, _pw, _ph, _s2w) = circ;
           let b = Goldilocks::gl_to_bytes(Lists::length(lks));
           assert_eq!(UInt8::to_field(b[3]) + UInt8::to_field(b[4]) + UInt8::to_field(b[5]) +
             UInt8::to_field(b[6]) + UInt8::to_field(b[7]), 0);

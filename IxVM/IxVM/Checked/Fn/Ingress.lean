@@ -115,14 +115,15 @@ def Fn.«Ingress::get_ci_dprj» : Function F where
   typeParams := []
   params := [("dprj_addr", (.ptr (.array .field 32))), ("idx", (.array .field 8)), ("block_addr", (.ptr (.array .field 32)))]
   result := (.ptr (.named "KernelTypes::KConstantInfo" []))
-  body := (.letValue (.bind "block_c") (.call "Ingress::load_verified_constant" (some []) [(.var "block_addr")])
+  body := (.letValue .wildcard (.call "KernelCheck::check_block_member_kinds" (some []) [(.var "block_addr")])
+    (.letValue (.bind "block_c") (.call "Ingress::load_verified_constant" (some []) [(.var "block_addr")])
     (.matchValue (.var "block_c") [((.construct (.named "Ixon::Constant" []) "Mk" [(.bind "info"), (.bind "sharing"), (.bind "refs"), (.bind "univs")]),
     (.matchValue (.var "info") [((.construct (.named "Ixon::ConstantInfo" []) "Muts" [(.bind "members")]),
     (.letValue (.bind "mc") (.call "WordLists::lookup_u64" (some [(.named "Ixon::MutConst" [])]) [(.var "members"), (.var "idx")])
     (.matchValue (.var "mc") [((.construct (.named "Ixon::MutConst" []) "Defn" [(.bind "d")]),
     (.letValue (.bind "hint") (.call "Ingress::definition_hint" (some []) [(.var "dprj_addr"), (.var "d")])
     (.letValue (.bind "recur_addrs") (.call "Ingress::defn_member_recur_addrs" (some []) [(.var "d"), (.var "members"), (.var "block_addr")])
-    (.store (.call "Convert::convert_definition" (some []) [(.var "d"), (.var "sharing"), (.var "refs"), (.var "recur_addrs"), (.var "univs"), (.var "hint")])))))])))]))]))
+    (.store (.call "Convert::convert_definition" (some []) [(.var "d"), (.var "sharing"), (.var "refs"), (.var "recur_addrs"), (.var "univs"), (.var "hint")])))))])))]))])))
   isInline := false
 
 def Fn.«Ingress::get_ci_iprj» : Function F where

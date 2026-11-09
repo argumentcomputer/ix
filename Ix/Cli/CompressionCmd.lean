@@ -71,7 +71,9 @@ def layoutCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
     headroom : Nat; "Extra doublings of every circuit's height beyond the largest execution (default 0)."
 
   ARGS:
@@ -85,7 +87,9 @@ def normalizeCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
 
   ARGS:
     proof : String; "Aggregate Ixon.Proof file or content address in the ix store."
@@ -150,6 +154,7 @@ def setupCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
     "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of Ignition (not production-secure)."
     "plonk"; "Also build the PLONK circuit, keys and parameter exports into the PLONK cache."
 ]

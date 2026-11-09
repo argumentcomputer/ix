@@ -685,6 +685,31 @@ def Fn.«IxonDeserialize::get_constant_info» : Function F where
     (.call "IxonDeserialize::get_constant_info_by_variant" (some []) [(.call "UInt8::to_field" (some []) [(.index (.var "size") 0)]), (.var "stream")]))))])
   isInline := true
 
+def Fn.«IxonDeserialize::assert_prj_empty_tables» : Function F where
+  name := "IxonDeserialize::assert_prj_empty_tables"
+  typeParams := []
+  params := [("info", (.named "Ixon::ConstantInfo" [])), ("sharing", (.ptr (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]))), ("refs", (.ptr (.named "Lists::Node" [(.ptr (.array .field 32))]))), ("univs", (.ptr (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))])))]
+  result := (.tuple [])
+  body := (.matchValue (.var "info") [((.construct (.named "Ixon::ConstantInfo" []) "DPrj" [.wildcard]),
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) "Nil" []) (.load (.var "sharing"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.array .field 32))]) "Nil" []) (.load (.var "refs"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) "Nil" []) (.load (.var "univs"))
+    (.tuple []))))), ((.construct (.named "Ixon::ConstantInfo" []) "IPrj" [.wildcard]),
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) "Nil" []) (.load (.var "sharing"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.array .field 32))]) "Nil" []) (.load (.var "refs"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) "Nil" []) (.load (.var "univs"))
+    (.tuple []))))), ((.construct (.named "Ixon::ConstantInfo" []) "CPrj" [.wildcard]),
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) "Nil" []) (.load (.var "sharing"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.array .field 32))]) "Nil" []) (.load (.var "refs"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) "Nil" []) (.load (.var "univs"))
+    (.tuple []))))), ((.construct (.named "Ixon::ConstantInfo" []) "RPrj" [.wildcard]),
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) "Nil" []) (.load (.var "sharing"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.array .field 32))]) "Nil" []) (.load (.var "refs"))
+    (.letValue (.construct (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) "Nil" []) (.load (.var "univs"))
+    (.tuple []))))), (.wildcard,
+    (.tuple []))])
+  isInline := false
+
 def Fn.«IxonDeserialize::get_constant» : Function F where
   name := "IxonDeserialize::get_constant"
   typeParams := []
@@ -696,7 +721,8 @@ def Fn.«IxonDeserialize::get_constant» : Function F where
     (.letValue (.tuple [(.bind "sharing"), (.bind "s3")]) (.call "IxonDeserialize::get_sharing" (some []) [(.var "s2")])
     (.letValue (.tuple [(.bind "refs"), (.bind "s4")]) (.call "IxonDeserialize::get_refs" (some []) [(.var "s3")])
     (.letValue (.tuple [(.bind "univs"), (.bind "s5")]) (.call "IxonDeserialize::get_univs" (some []) [(.var "s4")])
-    (.tuple [(.construct "Ixon::Constant" (some []) "Mk" [(.var "info"), (.var "sharing"), (.var "refs"), (.var "univs")]), (.var "s5")])))))))
+    (.letValue .wildcard (.call "IxonDeserialize::assert_prj_empty_tables" (some []) [(.var "info"), (.var "sharing"), (.var "refs"), (.var "univs")])
+    (.tuple [(.construct "Ixon::Constant" (some []) "Mk" [(.var "info"), (.var "sharing"), (.var "refs"), (.var "univs")]), (.var "s5")]))))))))
   isInline := false
 
 end IxVM.Checked

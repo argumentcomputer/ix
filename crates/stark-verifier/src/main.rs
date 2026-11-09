@@ -259,22 +259,71 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(format!("accepted truncated stream {channel}").into());
       }
     }
-    let mut wrong = invocation.streams.clone();
-    let stream = wrong.0.iter_mut().find(|s| s.channel == 0).unwrap();
-    let bytes: Vec<_> =
-      stream.values.iter().map(|&v| u8::try_from(v).unwrap()).collect();
-    let mut proof = aiur::trace::stark::BatchProof::from_bytes(&bytes)?;
-    proof.proofs[0].stage_1_opened_values[0][0][0] +=
+    let proof_bytes: Vec<_> = invocation
+      .streams
+      .0
+      .iter()
+      .find(|s| s.channel == 0)
+      .unwrap()
+      .values
+      .iter()
+      .map(|&v| u8::try_from(v).unwrap())
+      .collect();
+    let base_proof = aiur::trace::stark::BatchProof::from_bytes(&proof_bytes)?;
+    let mut corrupted_opening = base_proof.clone();
+    corrupted_opening.proofs[0].stage_1_opened_values[0][0][0] +=
       multi_stark::types::ExtVal::ONE;
-    stream.values = proof.to_bytes()?.into_iter().map(u64::from).collect();
-    if stark_verifier::prepare(&program, &wrong)?
-      .execute(&invocation.entry, args.clone())
+    let mut widened_row = base_proof.clone();
+    widened_row.proofs[0].stage_1_opened_values[0][0]
+      .push(multi_stark::types::ExtVal::ZERO);
+    let mut tampered_claim = base_proof.clone();
+    tampered_claim.preamble.headers[0].claims[0][0] += Val::ONE;
+    let mut over_row_bound = base_proof.clone();
+    over_row_bound.preamble.headers[0].log_degrees[0] = 40;
+    for (label, bad_proof) in [
+      ("corrupted opening", corrupted_opening),
+      ("widened opening row", widened_row),
+      ("tampered shard claim", tampered_claim),
+      ("log_degree above 2^39 row bound", over_row_bound),
+    ] {
+      let mut wrong = invocation.streams.clone();
+      let stream = wrong.0.iter_mut().find(|s| s.channel == 0).unwrap();
+      stream.values =
+        bad_proof.to_bytes()?.into_iter().map(u64::from).collect();
+      if stark_verifier::prepare(&program, &wrong)?
+        .execute(&invocation.entry, args.clone())
+        .is_ok()
+      {
+        return Err(format!("accepted {label}").into());
+      }
+    }
+    let key_bytes: Vec<_> = invocation
+      .streams
+      .0
+      .iter()
+      .find(|s| s.channel == 1)
+      .unwrap()
+      .values
+      .iter()
+      .map(|&v| u8::try_from(v).unwrap())
+      .collect();
+    let (mut bad_system, cp, fp) = stark_key::from_bytes(&key_bytes)?;
+    bad_system.circuits[0].preprocessed_height = 2;
+    let bad_key = stark_key::to_bytes(&bad_system, cp, fp);
+    let mut wrong_streams = invocation.streams.clone();
+    wrong_streams.0.iter_mut().find(|s| s.channel == 1).unwrap().values =
+      bad_key.iter().map(|&b| u64::from(b)).collect();
+    let mut wrong_args =
+      program.field().decode(&stark_verifier::digest_words(&bad_key))?;
+    wrong_args.extend_from_slice(&args[8..]);
+    if stark_verifier::prepare(&program, &wrong_streams)?
+      .execute(&invocation.entry, wrong_args)
       .is_ok()
     {
-      return Err("accepted a corrupted opening".into());
+      return Err("accepted mismatched fixed-table height".into());
     }
     println!(
-      "honest proof accepted; wrong public digests, truncated streams and corrupted opening rejected"
+      "honest proof accepted; wrong public digests, truncated streams, corrupted/widened openings, tampered claims, row-bound overflow and fixed-height mismatch rejected"
     );
     return Ok(());
   }

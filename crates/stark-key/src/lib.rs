@@ -320,21 +320,27 @@ fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
 
 /// Recompute per-node degree multiples in node order (children precede parents
 /// in the compiled vector).
-fn recompute_degrees(nodes: &[Node<Val>]) -> Vec<u32> {
+fn recompute_degrees(nodes: &[Node<Val>]) -> Result<Vec<u32>, String> {
   let mut degrees: Vec<u32> = Vec::with_capacity(nodes.len());
+  let get = |degrees: &[u32], id: NodeId| -> Result<u32, String> {
+    degrees
+      .get(id.0 as usize)
+      .copied()
+      .ok_or_else(|| format!("node child id {} out of topological order", id.0))
+  };
   for node in nodes {
     let d = match *node {
       Node::Const(_) | Node::Public(_) | Node::IsTransition => 0,
       Node::Var(_) | Node::IsFirstRow | Node::IsLastRow => 1,
       Node::Add(a, b) | Node::Sub(a, b) => {
-        degrees[a.0 as usize].max(degrees[b.0 as usize])
+        get(&degrees, a)?.max(get(&degrees, b)?)
       },
-      Node::Mul(a, b) => degrees[a.0 as usize] + degrees[b.0 as usize],
-      Node::Neg(a) => degrees[a.0 as usize],
+      Node::Mul(a, b) => get(&degrees, a)? + get(&degrees, b)?,
+      Node::Neg(a) => get(&degrees, a)?,
     };
     degrees.push(d);
   }
-  degrees
+  Ok(degrees)
 }
 
 fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
@@ -368,23 +374,30 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     lookups.push(Lookup { multiplicity, args });
   }
 
-  let degrees = recompute_degrees(&nodes);
+  let degrees = recompute_degrees(&nodes)?;
+  let check_id = |id: NodeId| -> Result<usize, String> {
+    let idx = id.0 as usize;
+    if idx < nodes.len() {
+      Ok(idx)
+    } else {
+      Err(format!("node id {} out of bounds ({})", id.0, nodes.len()))
+    }
+  };
   // The graph's own max degree covers only the user roots (the serialized
   // `max_constraint_degree` is the combined user + analytic-logUp value).
-  let user_max_degree = zeros
-    .iter()
-    .map(|z| degrees[usize::try_from(z.0).expect("node id")])
-    .max()
-    .unwrap_or(0);
+  let mut user_max_degree = 0;
+  for &z in &zeros {
+    user_max_degree = user_max_degree.max(degrees[check_id(z)?]);
+  }
   // The lookup prefix is exactly the nodes interned while compiling the
   // lookup expressions, all of which are reachable from (and bounded by)
   // the lookup roots — children always precede parents.
-  let lookup_prefix_len = lookups
-    .iter()
-    .flat_map(|l| std::iter::once(l.multiplicity).chain(l.args.iter().copied()))
-    .map(|id| id.0 as usize + 1)
-    .max()
-    .unwrap_or(0);
+  let mut lookup_prefix_len = 0;
+  for l in &lookups {
+    for id in std::iter::once(l.multiplicity).chain(l.args.iter().copied()) {
+      lookup_prefix_len = lookup_prefix_len.max(check_id(id)? + 1);
+    }
+  }
   let graph = ConstraintGraph {
     nodes,
     degrees,
@@ -629,5 +642,24 @@ mod tests {
     // Stronger parameters than the floor decode.
     from_bytes(&with_header(4, 101)).unwrap();
     from_bytes(&with_header(5, 16)).unwrap();
+  }
+
+  #[test]
+  fn rejects_out_of_bounds_node_ids() {
+    let (cp, fp) = floor_parameters();
+    let mut system = test_system(cp, fp);
+    let bad_id =
+      NodeId(u32::try_from(system.circuits[0].graph.nodes.len()).unwrap() + 5);
+    system.circuits[0].graph.zeros[0] = bad_id;
+    let bytes = to_bytes(&system, cp, fp);
+    let err = from_bytes(&bytes).err().expect("accepted out-of-bounds zero id");
+    assert!(err.contains("out of bounds"), "{err}");
+
+    let mut system = test_system(cp, fp);
+    system.circuits[0].graph.nodes[0] = Node::Neg(NodeId(0));
+    let bytes = to_bytes(&system, cp, fp);
+    let err =
+      from_bytes(&bytes).err().expect("accepted non-topological child id");
+    assert!(err.contains("out of topological order"), "{err}");
   }
 }

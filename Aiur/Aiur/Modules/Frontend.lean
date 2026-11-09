@@ -125,8 +125,7 @@ private def normalizeStep (moduleNames localTypes : List String) (recur : Syntax
     let localConstructor := candidates.find? fun c =>
       [``genericConstructor, ``genericConstructorArgs, ``genericConstructorPattern,
         ``genericConstructorPatternArgs].contains c.getKind &&
-        localTypes.contains (c[0].getId.toString) &&
-        !(moduleNames.contains (c[0].getId.toString))
+        localTypes.contains (c[0].getId.toString)
     if let some chosen := localConstructor then return ← recur chosen
     let chosen := candidates.find? fun c => [``qualifiedValue, ``qualifiedCall, ``qualifiedPattern,
       ``qualifiedPatternArgs, ``qualifiedGenericCall, ``qualifiedType].contains c.getKind
@@ -161,8 +160,8 @@ private def normalizeStep (moduleNames localTypes : List String) (recur : Syntax
     let parts ← pathParts s[0]
     let first := (← parseRef 128 parts.head!).name
     -- An unknown qualifier may be supplied by a separately parsed fragment.
-    -- Only types declared in this module can start local constructor paths.
-    let isModule := moduleNames.contains first || !localTypes.contains first
+    -- Only types declared in this module can start two-segment constructor paths.
+    let isModule := !localTypes.contains first || (moduleNames.contains first && parts.length > 2)
     let constructor := parts.length > (if isModule then 2 else 1)
     let inPattern := k == ``qualifiedPattern || k == ``qualifiedPatternArgs
     let hasArgs := k == ``qualifiedCall || k == ``qualifiedPatternArgs
@@ -179,7 +178,7 @@ private def normalizeStep (moduleNames localTypes : List String) (recur : Syntax
     return node (if inPattern then ``globalPattern else ``globalExpr) #[atom "::",identifier name]
   if [``constructorExpr, ``constructorCall, ``constructorPattern, ``constructorPatternArgs].contains k then
     let head ← readName s[0]
-    if moduleNames.contains head || !localTypes.contains head then
+    if !localTypes.contains head then
       let full := head ++ "::" ++ (← readName s[2])
       if k == ``constructorCall then return node ``call #[identifier full,s[3],s[4],s[5]]
       if k == ``constructorPatternArgs then throw "a const pattern does not take arguments"

@@ -64,9 +64,10 @@ quarters of a 32-CPU merge-tests runner's memory, so it stays manual.
 `binding-proof-cli` (`ci:compiler-closures`) runs `aggregate-binding-reuse`'s
 flow without its two aggregates: the binding proof, the shard proofs that
 assume it, their composition with it, and the refusals without it; the
-aggregation circuit's handling of the binding is tested in `ix-aggr`
-(primary). Its proving budget is 64 GiB, so it runs in the merge queue, on a
-32-CPU runner, rather than in every pull request's `lean-test`.
+aggregation circuit's handling of the binding is tested in
+`formal-aggregate-tests` (`tools/ixvm/check-formal.sh`). Its proving budget is
+64 GiB, so it runs in the merge queue, on a 32-CPU runner, rather than in every
+pull request's `lean-test`.
 
 `aggregate-toolchains` is also manual: it proves the committed library fixtures
 from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each
@@ -207,3 +208,4 @@ Each entry below says what replaced the suite, or why it was dropped.
 **Replaced:**
 
 - **`record-decoding`.** Its refusals moved into `kernel-record-check` (primary): orphan, noncanonical and oversized records, phase precedence, and a cache beside bad bytes. `kernel-check-ixe` passes host-decoded records straight to the certified step, so these refusals aren't covered by a proof. The parallel decoder's agreement with the serial one is proved (`Ix.RoleBinding.RecordDecoding.parallel_eq`, `recordStore_eq_parallel`).
+- **`aiur-hashes`, `multi-stark`, `recursive-verifier`, and `ixvm-subst-boundaries`.** These drove the retired `Ix.Aiur.Protocol` in-Lean bytecode interpreter and legacy `aiur_circuit%` generated Rust modules. Their coverage moved to `u32_tests`, `library_tests` + `library_check` (BLAKE3 0..4097 bytes, U64 and byte gadgets), `formal-aggregate-tests`, `stark-verifier test` (digest, truncation, opening, width, claim, row-bound and fixed-height rejections), and the `ci:ixvm` suites against the compiled formal IxVM artifact.

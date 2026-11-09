@@ -30,6 +30,9 @@ pub(crate) fn proof(
   proof: &BatchProof,
   mut result: Value,
 ) -> Result<Value, String> {
+  backend
+    .verify_batch(entry, args, &[], proof)
+    .map_err(|e| format!("generated proof failed verification: {e}"))?;
   let key = backend.verifying_key_bytes()?;
   let claims =
     stark_verifier::claims_bytes(&[backend.claim(entry, args, &[])?]);

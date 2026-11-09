@@ -447,11 +447,20 @@ pub(crate) fn put_type(w: &mut Writer, ty: &Type) {
   }
 }
 
+const MAX_TYPE_DEPTH: usize = 256;
+
 pub(crate) fn ty(r: &mut Reader<'_>) -> Result<Type, String> {
+  ty_depth(r, 0)
+}
+
+fn ty_depth(r: &mut Reader<'_>, depth: usize) -> Result<Type, String> {
+  if depth > MAX_TYPE_DEPTH {
+    return Err("type nesting exceeds maximum depth".into());
+  }
   Ok(match r.tag("type", 4)? {
     0 => Type::Field,
-    1 => Type::Tuple { items: r.list(ty)? },
-    2 => Type::Ptr { target: Box::new(ty(r)?) },
+    1 => Type::Tuple { items: r.list(|r| ty_depth(r, depth + 1))? },
+    2 => Type::Ptr { target: Box::new(ty_depth(r, depth + 1)?) },
     _ => Type::Enum { name: r.string()? },
   })
 }
@@ -488,17 +497,29 @@ fn put_io_type(w: &mut Writer, ty: &IoType) {
 }
 
 fn io_type(r: &mut Reader<'_>) -> Result<IoType, String> {
+  io_type_depth(r, 0)
+}
+
+fn io_type_depth(r: &mut Reader<'_>, depth: usize) -> Result<IoType, String> {
+  if depth > MAX_TYPE_DEPTH {
+    return Err("IO type nesting exceeds maximum depth".into());
+  }
   Ok(match r.tag("IO type", 5)? {
     0 => IoType::Field,
-    1 => IoType::Tuple { items: r.list(io_type)? },
-    2 => IoType::Array { element: Box::new(io_type(r)?), length: r.usize()? },
+    1 => IoType::Tuple { items: r.list(|r| io_type_depth(r, depth + 1))? },
+    2 => IoType::Array {
+      element: Box::new(io_type_depth(r, depth + 1)?),
+      length: r.usize()?,
+    },
     3 => IoType::Struct {
       name: r.string()?,
-      fields: r.list(|r| Ok((r.string()?, io_type(r)?)))?,
+      fields: r.list(|r| Ok((r.string()?, io_type_depth(r, depth + 1)?)))?,
     },
     _ => IoType::Enum {
       name: r.string()?,
-      constructors: r.list(|r| Ok((r.string()?, r.list(io_type)?)))?,
+      constructors: r.list(|r| {
+        Ok((r.string()?, r.list(|r| io_type_depth(r, depth + 1))?))
+      })?,
     },
   })
 }

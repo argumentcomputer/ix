@@ -454,18 +454,23 @@ def Fn.«KernelCheck::check_inductive_shape_ctors» : Function F where
   body := (.matchValue (.binary .sub (.var "num_ctors") (.var "cidx")) [((.literal 0),
     (.tuple [])), (.wildcard,
     (.letValue (.bind "ctor_ci") (.load (.call "Ingress::get_ci_cprj" (some []) [(.var "block_addr"), (.var "ind_idx"), (.var "cidx")]))
-    (.matchValue (.var "ctor_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Ctor" [.wildcard, (.bind "cty"), (.bind "c_block"), (.bind "c_ind_idx"), (.bind "c_cidx"), (.bind "c_np"), (.bind "c_nf"), .wildcard]),
+    (.matchValue (.var "ctor_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Ctor" [(.bind "c_nlvls"), (.bind "cty"), (.bind "c_block"), (.bind "c_ind_idx"), (.bind "c_cidx"), (.bind "c_np"), (.bind "c_nf"), (.bind "c_unsafe")]),
     (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor belongs to a different block than its inductive"), runtimeCheck := true }) [(.call "Bytes::address_eq" (some []) [(.var "c_block"), (.var "block_addr")]), (.literal 1)])
     (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor points at a different member of the block"), runtimeCheck := true }) [(.var "c_ind_idx"), (.var "ind_idx")])
     (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor's stored index differs from its position"), runtimeCheck := true }) [(.var "c_cidx"), (.var "cidx")])
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor universe count differs from the inductive's"), runtimeCheck := true }) [(.var "c_nlvls"), (.var "num_lvls")])
     (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor parameter count differs from the inductive's"), runtimeCheck := true }) [(.var "c_np"), (.var "n_params")])
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor safety differs from the inductive's"), runtimeCheck := true }) [(.var "c_unsafe"), (.var "is_unsafe")])
+    (.letValue .wildcard (.call "KernelCheck::validate_expr_well_scoped" (some []) [(.var "cty"), (.literal 0), (.var "num_lvls")])
+    (.letValue .wildcard (.call "KernelInfer::k_ensure_sort" (some []) [(.var "rc"), (.var "cty"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])
+    (.letValue .wildcard (.call "KernelCheck::assert_safety" (some []) [(.var "is_unsafe"), (.var "cty")])
     (.letValue .wildcard (.call "KernelCheck::check_param_agreement" (some []) [(.var "rc"), (.var "ind_ty"), (.var "cty"), (.var "n_params")])
     (.letValue .wildcard (.call "KernelCheck::check_ctor_return_type" (some []) [(.var "cty"), (.var "c_np"), (.var "n_indices"), (.var "c_nf"), (.var "num_lvls"), (.var "block_addr"), (.var "ind_idx")])
     (.letValue .wildcard (.call "KernelCheck::check_field_universes" (some []) [(.var "rc"), (.var "cty"), (.var "c_np"), (.var "ind_level")])
     (.letValue .wildcard (.matchValue (.var "is_unsafe") [((.literal 0),
     (.call "KernelCheck::check_positivity" (some []) [(.var "rc"), (.var "cty"), (.var "c_np"), (.var "block_addr"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])), (.wildcard,
     (.tuple []))])
-    (.call "KernelCheck::check_inductive_shape_ctors" (some []) [(.var "rc"), (.var "ind_ty"), (.var "n_params"), (.var "n_indices"), (.var "num_ctors"), (.var "num_lvls"), (.var "block_addr"), (.var "ind_idx"), (.var "ind_level"), (.var "is_unsafe"), (.binary .add (.var "cidx") (.literal 1))]))))))))))])))])
+    (.call "KernelCheck::check_inductive_shape_ctors" (some []) [(.var "rc"), (.var "ind_ty"), (.var "n_params"), (.var "n_indices"), (.var "num_ctors"), (.var "num_lvls"), (.var "block_addr"), (.var "ind_idx"), (.var "ind_level"), (.var "is_unsafe"), (.binary .add (.var "cidx") (.literal 1))])))))))))))))))])))])
   isInline := false
 
 def Fn.«KernelCheck::check_parent_inductive_shape» : Function F where
@@ -1855,17 +1860,23 @@ def Fn.«KernelCheck::peel_n_lams_collect» : Function F where
 def Fn.«KernelCheck::muts_has_kind» : Function F where
   name := "KernelCheck::muts_has_kind"
   typeParams := []
-  params := [("members", (.ptr (.named "Lists::Node" [(.named "Ixon::MutConst" [])]))), ("want_defn", .field)]
+  params := [("members", (.ptr (.named "Lists::Node" [(.named "Ixon::MutConst" [])]))), ("kind", .field)]
   result := .field
   body := (.matchValue (.load (.var "members")) [((.construct (.named "Lists::Node" [(.named "Ixon::MutConst" [])]) "Nil" []),
     (.literal 0)), ((.construct (.named "Lists::Node" [(.named "Ixon::MutConst" [])]) "Cons" [(.bind "m"), (.bind "rest")]),
-    (.letValue (.bind "hit") (.matchValue (.var "m") [((.construct (.named "Ixon::MutConst" []) "Defn" [.wildcard]),
-    (.var "want_defn")), ((.construct (.named "Ixon::MutConst" []) "Indc" [.wildcard]),
-    (.binary .sub (.literal 1) (.var "want_defn"))), ((.construct (.named "Ixon::MutConst" []) "Recr" [.wildcard]),
-    (.literal 0))])
+    (.letValue (.bind "hit") (.matchValue (.var "m") [((.construct (.named "Ixon::MutConst" []) "Indc" [.wildcard]),
+    (.matchValue (.var "kind") [((.literal 0),
+    (.literal 1)), (.wildcard,
+    (.literal 0))])), ((.construct (.named "Ixon::MutConst" []) "Defn" [.wildcard]),
+    (.matchValue (.var "kind") [((.literal 1),
+    (.literal 1)), (.wildcard,
+    (.literal 0))])), ((.construct (.named "Ixon::MutConst" []) "Recr" [.wildcard]),
+    (.matchValue (.var "kind") [((.literal 2),
+    (.literal 1)), (.wildcard,
+    (.literal 0))]))])
     (.matchValue (.var "hit") [((.literal 1),
     (.literal 1)), (.wildcard,
-    (.call "KernelCheck::muts_has_kind" (some []) [(.var "rest"), (.var "want_defn")]))])))])
+    (.call "KernelCheck::muts_has_kind" (some []) [(.var "rest"), (.var "kind")]))])))])
   isInline := false
 
 def Fn.«KernelCheck::check_block_member_kinds» : Function F where
@@ -1876,8 +1887,10 @@ def Fn.«KernelCheck::check_block_member_kinds» : Function F where
   body := (.letValue (.bind "c") (.call "Ingress::load_verified_constant" (some []) [(.var "block_addr")])
     (.matchValue (.var "c") [((.construct (.named "Ixon::Constant" []) "Mk" [(.bind "info"), .wildcard, .wildcard, .wildcard]),
     (.matchValue (.var "info") [((.construct (.named "Ixon::ConstantInfo" []) "Muts" [(.bind "members")]),
-    (.letValue .wildcard (.builtin (.assertEq { message := (some "mutual block mixes a definition member with inductives"), runtimeCheck := true }) [(.binary .mul (.call "KernelCheck::muts_has_kind" (some []) [(.var "members"), (.literal 1)]) (.call "KernelCheck::muts_has_kind" (some []) [(.var "members"), (.literal 0)])), (.literal 0)])
-    (.tuple []))), (.wildcard,
+    (.letValue (.bind "has_defn") (.call "KernelCheck::muts_has_kind" (some []) [(.var "members"), (.literal 1)])
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "mutual block mixes a definition member with inductives"), runtimeCheck := true }) [(.binary .mul (.var "has_defn") (.call "KernelCheck::muts_has_kind" (some []) [(.var "members"), (.literal 0)])), (.literal 0)])
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "mutual block mixes a definition member with recursors"), runtimeCheck := true }) [(.binary .mul (.var "has_defn") (.call "KernelCheck::muts_has_kind" (some []) [(.var "members"), (.literal 2)])), (.literal 0)])
+    (.tuple []))))), (.wildcard,
     (.tuple []))]))]))
   isInline := false
 
@@ -1931,14 +1944,16 @@ def Fn.«KernelCheck::check_const» : Function F where
     (.letValue .wildcard (.call "KernelCheck::assert_safety" (some []) [(.var "u"), (.var "ty")])
     (.letValue (.bind "ind_ci") (.load (.call "KernelCheck::ctor_parent_ind_ci" (some []) [(.var "block_addr"), (.var "ind_idx")]))
     (.matchValue (.var "ind_ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Induct" [(.bind "ind_nlvls"), (.bind "ind_ty"), (.bind "ind_n_params"), (.bind "ind_n_indices"), .wildcard, (.bind "ind_is_unsafe"), .wildcard, .wildcard]),
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor universe count differs from its inductive's"), runtimeCheck := true }) [(.var "nlvls"), (.var "ind_nlvls")])
     (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor parameter count differs from its inductive's"), runtimeCheck := true }) [(.var "num_params"), (.var "ind_n_params")])
+    (.letValue .wildcard (.builtin (.assertEq { message := (some "ctor safety differs from its inductive's"), runtimeCheck := true }) [(.var "u"), (.var "ind_is_unsafe")])
     (.letValue .wildcard (.call "KernelCheck::check_param_agreement" (some []) [(.var "rc"), (.var "ind_ty"), (.var "ty"), (.var "ind_n_params")])
     (.letValue .wildcard (.call "KernelCheck::check_ctor_return_type" (some []) [(.var "ty"), (.var "num_params"), (.var "ind_n_indices"), (.var "num_fields"), (.var "ind_nlvls"), (.var "block_addr"), (.var "ind_idx")])
     (.letValue (.bind "ind_level") (.call "KernelCheck::get_result_sort_level" (some []) [(.var "rc"), (.var "ind_ty"), (.binary .add (.var "ind_n_params") (.var "ind_n_indices")), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])
     (.letValue .wildcard (.call "KernelCheck::check_field_universes" (some []) [(.var "rc"), (.var "ty"), (.var "num_params"), (.var "ind_level")])
     (.matchValue (.var "ind_is_unsafe") [((.literal 0),
     (.call "KernelCheck::check_positivity" (some []) [(.var "rc"), (.var "ty"), (.var "num_params"), (.var "block_addr"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])), (.wildcard,
-    (.tuple []))])))))))])))))), ((.construct (.named "KernelTypes::KConstantInfo" []) "Rec" [(.bind "nlvls"), (.bind "ty"), .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, (.bind "rec_block"), .wildcard]),
+    (.tuple []))])))))))))])))))), ((.construct (.named "KernelTypes::KConstantInfo" []) "Rec" [(.bind "nlvls"), (.bind "ty"), .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, .wildcard, (.bind "rec_block"), .wildcard]),
     (.letValue .wildcard (.call "KernelCheck::validate_expr_well_scoped" (some []) [(.var "ty"), (.literal 0), (.var "nlvls")])
     (.letValue .wildcard (.call "KernelInfer::k_ensure_sort" (some []) [(.var "rc"), (.var "ty"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])
     (.letValue .wildcard (.call "KernelCheck::assert_safety" (some []) [(.var "u"), (.var "ty")])

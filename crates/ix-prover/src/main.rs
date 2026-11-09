@@ -399,15 +399,19 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
   let mut programs = Vec::new();
   let mut artifacts = Vec::new();
   for artifact in &config.artifacts {
-    let (package, digest) = aiur::artifact::Package::load(&artifact.path)?;
+    let expected = aiur::artifact::Digest::from_hex(&artifact.digest)?;
+    let (bytes, digest) = aiur::artifact::read(&artifact.path)?;
     eprintln!("artifact {}: blake3 {digest}", artifact.path.display());
-    if digest != aiur::artifact::Digest::from_hex(&artifact.digest)? {
+    if digest != expected {
       return Err(format!(
         "artifact {} has digest {digest}, but the configuration names {}",
         artifact.path.display(),
         artifact.digest
       ));
     }
+    let package = aiur::artifact::Package::decode(&bytes).map_err(|e| {
+      format!("invalid artifact {}: {e}", artifact.path.display())
+    })?;
     let (program, trace) = package.traced()?;
     let mut program = program.check_field::<Val>()?;
     program.track_depth(&trace)?;

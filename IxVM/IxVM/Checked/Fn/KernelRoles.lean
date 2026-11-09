@@ -431,6 +431,15 @@ def Fn.«KernelRoles::assert_type_meets» : Function F where
     (.tuple []))
   isInline := false
 
+def Fn.«KernelRoles::assert_type_pinned» : Function F where
+  name := "KernelRoles::assert_type_pinned"
+  typeParams := []
+  params := [("ty", (.ptr (.named "KernelTypes::KExprNode" []))), ("spec", (.ptr (.named "KernelTypes::KExprNode" [])))]
+  result := (.tuple [])
+  body := (.letValue .wildcard (.builtin (.assertEq { message := (some "a bound role's type does not meet its specification"), runtimeCheck := true }) [(.call "KernelCheck::kexpr_struct_eq" (some []) [(.var "ty"), (.var "spec")]), (.literal 1)])
+    (.tuple []))
+  isInline := false
+
 def Fn.«KernelRoles::assert_safe_role» : Function F where
   name := "KernelRoles::assert_safe_role"
   typeParams := []
@@ -446,7 +455,7 @@ def Fn.«KernelRoles::validate_member» : Function F where
   params := [("rc", (.ptr (.named "KernelRoles::RoleCtxNode" []))), ("tbl", (.ptr (.named "KernelRoles::RoleTableNode" []))), ("r", .field), ("a", (.ptr (.array .field 32))), ("ci", (.named "KernelTypes::KConstantInfo" []))]
   result := (.tuple [])
   body := (.letValue .wildcard (.call "KernelRoles::assert_safe_role" (some []) [(.var "ci")])
-    (.letValue .wildcard (.call "KernelRoles::assert_type_meets" (some []) [(.var "rc"), (.call "KernelInfer::const_type_of" (some []) [(.var "ci")]), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])
+    (.letValue .wildcard (.call "KernelRoles::assert_type_pinned" (some []) [(.call "KernelInfer::const_type_of" (some []) [(.var "ci")]), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])
     (.matchValue (.call "KernelRoleSpec::role_member_kind" (some []) [(.var "r")]) [((.literal 0),
     (.matchValue (.var "ci") [((.construct (.named "KernelTypes::KConstantInfo" []) "Induct" [.wildcard, .wildcard, .wildcard, .wildcard, (.bind "nctors"), .wildcard, .wildcard, .wildcard]),
     (.letValue .wildcard (.builtin (.assertEq { message := (some "a bound inductive has the wrong number of constructors"), runtimeCheck := true }) [(.var "nctors"), (.call "KernelRoleSpec::role_ctor_count" (some []) [(.var "r")])])
@@ -494,7 +503,14 @@ def Fn.«KernelRoles::validate_anchor» : Function F where
   params := [("rc", (.ptr (.named "KernelRoles::RoleCtxNode" []))), ("tbl", (.ptr (.named "KernelRoles::RoleTableNode" []))), ("r", .field), ("ci", (.named "KernelTypes::KConstantInfo" []))]
   result := (.tuple [])
   body := (.letValue .wildcard (.call "KernelRoles::assert_safe_role" (some []) [(.var "ci")])
-    (.call "KernelRoles::assert_type_meets" (some []) [(.var "rc"), (.call "KernelInfer::const_type_of" (some []) [(.var "ci")]), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])]))
+    (.letValue (.bind "ty") (.call "KernelInfer::const_type_of" (some []) [(.var "ci")])
+    (.letValue (.bind "spec") (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])
+    (.matchValue (.var "r") [((.literal 7),
+    (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.var "spec")])), ((.literal 20),
+    (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.var "spec")])), ((.literal 21),
+    (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.var "spec")])), ((.literal 22),
+    (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.var "spec")])), (.wildcard,
+    (.call "KernelRoles::assert_type_meets" (some []) [(.var "rc"), (.var "ty"), (.var "spec")]))]))))
   isInline := false
 
 def Fn.«KernelRoles::validate_standard_axiom» : Function F where
@@ -506,7 +522,7 @@ def Fn.«KernelRoles::validate_standard_axiom» : Function F where
     (.letValue .wildcard (.builtin (.assertEq { message := (some "a bound standard axiom is unsafe"), runtimeCheck := true }) [(.var "u"), (.literal 0)])
     (.letValue .wildcard (.call "KernelCheck::validate_expr_well_scoped" (some []) [(.var "ty"), (.literal 0), (.var "nlvls")])
     (.letValue .wildcard (.call "KernelInfer::k_ensure_sort" (some []) [(.var "rc"), (.var "ty"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])
-    (.call "KernelRoles::assert_type_meets" (some []) [(.var "rc"), (.var "ty"), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])))))])
+    (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])))))])
   isInline := false
 
 def Fn.«KernelRoles::validate_inert_axiom» : Function F where
@@ -518,7 +534,7 @@ def Fn.«KernelRoles::validate_inert_axiom» : Function F where
     (.letValue .wildcard (.builtin (.assertEq { message := (some "a bound inert axiom is unsafe"), runtimeCheck := true }) [(.var "u"), (.literal 0)])
     (.letValue .wildcard (.call "KernelCheck::validate_expr_well_scoped" (some []) [(.var "ty"), (.literal 0), (.var "nlvls")])
     (.letValue .wildcard (.call "KernelInfer::k_ensure_sort" (some []) [(.var "rc"), (.var "ty"), (.store (.construct "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) "Nil" []))])
-    (.call "KernelRoles::assert_type_meets" (some []) [(.var "rc"), (.var "ty"), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])))))])
+    (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])))))])
   isInline := false
 
 def Fn.«KernelRoles::role_evidence» : Function F where
@@ -540,7 +556,7 @@ def Fn.«KernelRoles::validate_op» : Function F where
     (.tuple [])), (.wildcard,
     (.letValue .wildcard (.builtin (.assertEq { message := (some "a bound operation is not a safe definition"), runtimeCheck := true }) [(.literal 0), (.literal 1)])
     (.tuple [])))])
-    (.letValue .wildcard (.call "KernelRoles::assert_type_meets" (some []) [(.var "rc"), (.var "ty"), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])
+    (.letValue .wildcard (.call "KernelRoles::assert_type_pinned" (some []) [(.var "ty"), (.call "KernelRoleSpec::role_type" (some []) [(.var "tbl"), (.var "r")])])
     (.letValue .wildcard (.call "KernelClaim::run_check_transitive" (some []) [(.var "rc"), (.var "a")])
     (.letValue (.bind "ev") (.call "KernelRoles::role_evidence" (some []) [(.var "tbl"), (.var "r")])
     (.letValue .wildcard (.builtin (.assertEq { message := (some "an operation's evidence does not match its equations"), runtimeCheck := true }) [(.call "Lists::length" (some [(.named "KernelRoles::RoleEvidence" [])]) [(.var "ev")]), (.call "KernelRoleSpec::op_equation_count" (some []) [(.var "r")])])

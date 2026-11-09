@@ -26,7 +26,9 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."
     "aiur-artifact" : String; "Trusted formal IxVM artifact; otherwise compile/cache local sources."
+    "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
     "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 0, which lets the planner choose the largest shards within the RAM budget and, on CUDA, the device cell budget AIUR_TRACE_SHARD_MAX_CELLS, default 1.5e9). Small caps multiply recursive verification work."
     "retention" : String; "Aiur: auto, retain or regenerate (default auto)."
     "ixe" : String;  "Path to the serialized environment whose shards were proven. It must carry the role binding the shard claims are relative to."

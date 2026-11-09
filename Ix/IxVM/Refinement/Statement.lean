@@ -19,8 +19,9 @@ for the entry `IxVM::verify_claim` alone, pinned as a Lean literal, from
 which `ixvm check-claim`, `export-claim` and `export-claim-trace` compile
 the deployed claim artifact. It is what `Aiur.Modules.prepare IxVM.program
 [verifyClaim]` computes: the modules linked, renamed and elaborated. Nothing
-in the statements or the claim exporter runs the module frontend or the
-elaborator. The link to `IxVM.program` is a native check: the test suite
+in the statements or the claim exporter runs the module frontend or the DSL
+elaborators (`Source.world` uses the kernel-computable `Generic.elaborateConst`
+for consts). The link to `IxVM.program` is a native check: the test suite
 `ixvm-checked-source` prepares `IxVM.program` and checks that its source and
 exported bytecode are this one's, and `lake exe ixvm/ixvm-checked --check`
 that the files are its rendering.
@@ -42,16 +43,17 @@ world. The statements range over that observed form
 (`Aiur.Generic.Observe`): the derivations of `Generic.SourceSemantics.EvalFn`
 with their calls recorded (`EvalFn.observe`, `ObsFn.erase`).
 
-## The statement (decision D2, revised by the owner, 2026-11-08)
+## The statement (decision D2)
 
 `VerifyClaimSoundIn`: for every observed `verify_claim` derivation on `d`,
 every claim byte string whose digest packs to `d`, and every authentic view
 that covers the claim, the claim holds in the view, **or the derivation
-hashed a second preimage** of the claim's bytes or of data the view holds
-(`View.HashedCollision`): a byte string passed to the program's BLAKE3
-(`Blake3::hash`) in that derivation, with the same pure BLAKE3 hash as the
-data and different from it. Fooling a reader therefore requires computing a
-second preimage of the reader's data.
+hashed a second preimage** of the claim's bytes or of data the view holds, or a
+preimage of the zero padding address (`View.HashedCollision`): a byte string
+passed to the program's BLAKE3 (`Blake3::hash`) in that derivation, with the
+same pure BLAKE3 hash as the data and different from it (or a held or hashed
+preimage of `Ix.HostAdmission.Merkle.padding`). Fooling a reader therefore
+requires computing a second preimage of the reader's data or a preimage of zero.
 
 **D2's existential form is false** in this semantics, so it is not stated.
 It said that some environment, addressed by BLAKE3, is accepted by IxC for
@@ -81,9 +83,7 @@ the derivation itself hashed.
   with the named acyclicity hypothesis `AcyclicDerivation` in place of the
   memo checker. Proved from `SourceSound P` through the observed headline
   (`observedHeadline`, the Phase 2 obligation `ObservedHeadline`, now
-  proved). The deployed circuit carries the depth columns only once Track A's
-  A3 (Rust depth columns) and A4 (program changes) land; until then this is
-  the form that matches it.
+  proved).
 -/
 
 
@@ -135,15 +135,20 @@ def Hashed (calls : List (Call IxVM.F)) (bytes : ByteArray) : Prop :=
   ∃ c ∈ calls, c.name = blake3Hash ∧ ∃ input : Aiur.SourceValue IxVM.F,
     c.args = [input] ∧ Aiur.Library.Bytes.RepByteStream byteStreamEnum c.heap bytes.data.toList input
 
-/-- **A second preimage the derivation hashed**: a byte string the derivation
-hashed (`Hashed`) that has the same pure BLAKE3 hash as data the view holds
-(`View.Preimage`), as one of `extra` (the claim's bytes), or as another byte
-string the derivation hashed, and differs from it. -/
+/-- **A second preimage the derivation hashed, or a preimage of the zero
+padding address**: a byte string the derivation hashed (`Hashed`) that has the
+same pure BLAKE3 hash as data the view holds (`View.Preimage`), as one of
+`extra` (the claim's bytes), or as another byte string the derivation hashed,
+and differs from it; or a byte string held by the view or hashed by the
+derivation whose pure BLAKE3 hash is `Ix.HostAdmission.Merkle.padding` (the
+zero address). -/
 def View.HashedCollision (V : View) (extra : List ByteArray) (calls : List (Call IxVM.F)) : Prop :=
-  ∃ (x : Address) (held bytes : ByteArray),
+  (∃ (x : Address) (held bytes : ByteArray),
     (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
       (Hashed calls held ∧ Address.blake3Pure held = x)) ∧
-      Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x
+      Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x) ∨
+  ∃ bytes, (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ Hashed calls bytes) ∧
+    Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
 
 /-! ## What acceptance means -/
 
@@ -257,10 +262,9 @@ def AcyclicDerivation {F : Type} [Field F] [DecidableEq F] {s : Aiur.Generic.Sou
     (Aiur.Circuit.Erasure.message compiled.system root)
 
 /-- **Circuit-level soundness for `P`, assuming acyclicity** (the secondary
-form, for circuits without the depth pass, as deployed until Track A's A3/A4
-land): as `CircuitSound`, over a grouping plan of the physical circuits
-themselves, with `AcyclicDerivation` of the root in place of the memo
-checker and the row bound. -/
+form, for circuits without the depth pass): as `CircuitSound`, over a grouping
+plan of the physical circuits themselves, with `AcyclicDerivation` of the root
+in place of the memo checker and the row bound. -/
 def CircuitSoundAssuming (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ {id : String → Except String Nat}
     {specialized : Aiur.Generic.Specialized IxVM.Checked.source [verifyClaim]}

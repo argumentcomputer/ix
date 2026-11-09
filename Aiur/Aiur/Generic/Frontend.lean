@@ -362,8 +362,10 @@ partial def lowerFunction (enums : List EnumDecl) (aliases : List AliasDecl)
   let body ← if generic || s.getKind == ``functionStatements then
       if s[8 + offset].getArgs.isEmpty then pure (.tuple []) else expr ps s[8 + offset][0]
     else expr ps s[8 + offset]
+  let fnName ← readName s[1]
+  if fnName == "hint" then throw "'hint' is a reserved built-in expression and cannot name a function"
   return {
-    name := ← readName s[1], typeParams := ps, params := inputs
+    name := fnName, typeParams := ps, params := inputs
     result := ← type ps s[6 + offset]
     body := destructuring.foldr (fun (pat, n) b => .letValue pat (.var n) b) body
   }

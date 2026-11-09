@@ -61,7 +61,8 @@ run_meta do
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
       ``Ix.Claim.de, ``Ix.Claim.HoldsIn, ``IxVM.Refinement.View.HashedCollision]),
     (``IxVM.Refinement.Hashed, [``IxVM.Refinement.blake3Hash, ``IxVM.Refinement.byteStreamEnum]),
-    (``IxVM.Refinement.EvalValues, [``Ix.Kernel.nfRef, ``Ix.Kernel.Expr.eraseMeta])]
+    (``IxVM.Refinement.EvalValues, [``Ix.Kernel.annotateCore, ``Ix.Kernel.isDefEqCore,
+      ``Ix.Kernel.Expr.eraseMeta])]
   for (statement, needed) in names do
     let some info := (← getEnv).find? statement | throwError "{statement} is missing"
     let used := info.value!.getUsedConstants
@@ -266,10 +267,14 @@ fun calls d =>
 info: def IxVM.Refinement.View.HashedCollision : IxVM.Refinement.View →
   List ByteArray → List (Aiur.Generic.SourceSemantics.Call IxVM.F) → Prop :=
 fun V extra calls =>
-  ∃ x held bytes,
-    (V.Preimage x held ∨
-        held ∈ extra ∧ Address.blake3Pure held = x ∨ IxVM.Refinement.Hashed calls held ∧ Address.blake3Pure held = x) ∧
-      IxVM.Refinement.Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x
+  (∃ x held bytes,
+      (V.Preimage x held ∨
+          held ∈ extra ∧ Address.blake3Pure held = x ∨
+            IxVM.Refinement.Hashed calls held ∧ Address.blake3Pure held = x) ∧
+        IxVM.Refinement.Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x) ∨
+    ∃ bytes,
+      (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ IxVM.Refinement.Hashed calls bytes) ∧
+        Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
 -/
 #guard_msgs in
 #print IxVM.Refinement.View.HashedCollision
@@ -534,19 +539,48 @@ fun V σ S Q =>
   ∃ E limits order envA,
     IxVM.Refinement.Draws E V.env ∧
       (∀ (a : Address), S a → E.consts.contains a = true) ∧
-        Ix.Cert.ClosureOrder E S order ∧
-          ∃ t pre ev ds,
-            Ix.Kernel.Admission.admitBinding Address.admissionHash σ.binding = Except.ok t ∧
+        ∃ t pre ev ds,
+          Ix.Kernel.Admission.admitBinding Address.admissionHash σ.binding = Except.ok t ∧
+            Ix.Cert.ClosureOrderAt t E S order ∧
               Ix.Kernel.Admission.admitAxiomPolicy σ.policy t = Except.ok () ∧
                 Ix.Kernel.Reader.preludeFor t = Except.ok pre ∧
                   Ix.Kernel.Admission.prepareWith Address.admissionHash σ.binding pre limits (Ix.Cert.recordsOf E order)
                         (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) =
                       Except.ok (ev, ds) ∧
-                    Ix.Kernel.Cached.AcceptsRefUnder σ.policy Ix.Kernel.CheckMode.verified ev ds.toList envA ∧
-                      IxVM.Refinement.UserAxiomsWithin σ.axioms ds.toList ∧ Q σ.binding envA ds.toList
+                    Ix.Kernel.Cached.AcceptsRefUnder σ.policy Ix.Kernel.CheckMode.verified ev
+                        (List.map IxVM.Refinement.thmToOpaqueDefn ds.toList) envA ∧
+                      IxVM.Refinement.TheoremsInProp envA ds.toList ∧
+                        IxVM.Refinement.UserAxiomsWithin σ.axioms ds.toList ∧ Q σ.binding envA ds.toList
 -/
 #guard_msgs in
 #print IxVM.Refinement.AcceptsIn
+
+/--
+info: def IxVM.Refinement.thmToOpaqueDefn : {md : Ix.Kernel.Mode} → Ix.Kernel.Declaration md → Ix.Kernel.Declaration md :=
+fun {md} x =>
+  match x with
+  | Ix.Kernel.Declaration.thmDecl cv value =>
+    match cv.name with
+    | base.aux d => Ix.Kernel.Declaration.thmDecl cv value
+    | x => Ix.Kernel.Declaration.defnDecl cv value Ix.Kernel.ReducibilityHint.opaque
+  | d => d
+-/
+#guard_msgs in
+#print IxVM.Refinement.thmToOpaqueDefn
+
+/--
+info: def IxVM.Refinement.TheoremsInProp : {md : Ix.Kernel.Mode} →
+  Ix.Kernel.Env md → List (Ix.Kernel.Declaration md) → Prop :=
+fun {md} envA ds =>
+  ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md),
+    Ix.Kernel.Declaration.thmDecl cv value ∈ ds →
+      ∃ F tA stype u,
+        (Ix.Kernel.fueledOps Ix.Kernel.CheckMode.verified F).annotate envA 0 cv.type = Except.ok tA ∧
+          (Ix.Kernel.fueledOps Ix.Kernel.CheckMode.verified F).inferType envA 0 tA = Except.ok stype ∧
+            (Ix.Kernel.fueledOps Ix.Kernel.CheckMode.verified F).ensureSort envA 0 stype = Except.ok u ∧ u.isZero = true
+-/
+#guard_msgs in
+#print IxVM.Refinement.TheoremsInProp
 
 /--
 info: structure IxVM.Refinement.Scope : Type
@@ -646,9 +680,10 @@ fun input output b envA ds =>
           IxVM.Refinement.AddressKey b output cvOut.name ∧
             cvOut.levelParams.length = cvIn.levelParams.length ∧
               cvOut.type.eraseMeta = cvIn.type.eraseMeta ∧
-                ∃ fuel vNf,
-                  Ix.Kernel.nfRef Ix.Kernel.CheckMode.verified envA fuel 0 vIn = Except.ok vNf ∧
-                    vNf.eraseMeta = vOut.eraseMeta
+                ∃ fuel vInA vOutA,
+                  Ix.Kernel.annotateCore Ix.Kernel.CheckMode.verified envA fuel 0 vIn = Except.ok vInA ∧
+                    Ix.Kernel.annotateCore Ix.Kernel.CheckMode.verified envA fuel 0 vOut = Except.ok vOutA ∧
+                      Ix.Kernel.isDefEqCore Ix.Kernel.CheckMode.verified envA fuel 0 vInA vOutA = Except.ok true
 -/
 #guard_msgs in
 #print IxVM.Refinement.EvalValues
@@ -1032,24 +1067,68 @@ fun V x bytes =>
 #print IxVM.Refinement.View.Preimage
 
 /--
+info: def IxVM.Refinement.AnchorPinned : Ix.Kernel.Env Ix.Kernel.Mode.anon → Ix.Kernel.Role → Prop :=
+fun envA r =>
+  ∀ (n : ℕ) (ty : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
+    r.spec = Ix.Kernel.Spec.anchor n ty →
+      ∃ ci,
+        envA.find? (Ix.Kernel.Key.role r) = some ci ∧
+          ci.toConstantVal.levelParams = List.range n ∧ ci.toConstantVal.type.eraseMeta = ty.eraseMeta
+-/
+#guard_msgs in
+#print IxVM.Refinement.AnchorPinned
+
+/--
 info: def IxVM.Refinement.View.Closed : IxVM.Refinement.View → Prop :=
 fun V =>
   (∀ (a : Address) (c : Ixon.Constant),
       Ix.Cert.recordAt V.env a = some c →
         IxVM.Refinement.SafeConstant c ∧
-          (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
-            V.env.consts.contains (Ix.Cert.ownerOf a c) = true) ∧
+          IxVM.Refinement.ConstantExprsClosed V.env c ∧
+            (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
+              V.env.consts.contains (Ix.Cert.ownerOf a c) = true) ∧
     ∀ (rb : Ixon.RoleBinding),
       V.env.roleBinding = some rb →
         ∃ t,
           Ix.Kernel.RoleTable.ofBytes rb.bytes = some t ∧
             t.check = Except.ok () ∧
-              Ix.Kernel.Admission.admitAxiomPolicy Ix.Kernel.Cached.AxiomPolicy.allowUser t = Except.ok () ∧
-                (∃ pre, Ix.Kernel.Reader.preludeFor t = Except.ok pre) ∧
-                  ∀ (a : Address), IxVM.Refinement.BindingSeeds t a → V.env.consts.contains a = true
+              (∃ pre, Ix.Kernel.Reader.preludeFor t = Except.ok pre) ∧
+                (∀ (a : Address), IxVM.Refinement.BindingSeeds t a → V.env.consts.contains a = true) ∧
+                  ∀ (r : Ix.Kernel.Role),
+                    r.spec.kind = Ix.Kernel.SpecKind.anchor →
+                      ∀ (a : Address),
+                        t.addressOf? r = some a →
+                          IxVM.Refinement.AcceptsIn V
+                            (IxVM.Refinement.Scope.strict { address := rb.address, bytes := rb.bytes }) (fun x => x = a)
+                            fun x envA x_1 => IxVM.Refinement.AnchorPinned envA r
 -/
 #guard_msgs in
 #print IxVM.Refinement.View.Closed
+
+/--
+info: def IxVM.Refinement.ConstantExprsClosed : Ixon.Env → Ixon.Constant → Prop :=
+fun ixe c =>
+  (∀ e ∈ c.info.exprs ++ c.sharing.toList, e.leanFragment = true ∧ IxVM.Refinement.ExprRefsClosed ixe c false e) ∧
+    ∀ e ∈ c.info.exprs,
+      (¬∃ d n, c.info = Ixon.ConstantInfo.defn d ∧ e = d.value ∧ IxVM.Refinement.IsProjFnAt c n d.value) →
+        IxVM.Refinement.ExprRefsClosed ixe c true (Ix.Kernel.Reader.unshare c e)
+-/
+#guard_msgs in
+#print IxVM.Refinement.ConstantExprsClosed
+
+/--
+info: def IxVM.Refinement.DirectProjTarget : Ixon.Env → Ixon.Constant → UInt64 → Prop :=
+fun ixe c idx =>
+  ∃ r cr cb ind ctor,
+    c.refs[idx.toNat]? = some r ∧
+      Ix.Cert.recordAt ixe r = some cr ∧
+        Ix.Cert.recordAt ixe (Ix.Cert.ownerOf r cr) = some cb ∧
+          cb.info = Ixon.ConstantInfo.muts #[Ixon.MutConst.indc ind] ∧
+            ind.indices = 0 ∧
+              ind.ctors = #[ctor] ∧ IxVM.Refinement.noArgRecur false (Ix.Kernel.Reader.unshare cb ctor.typ) = true
+-/
+#guard_msgs in
+#print IxVM.Refinement.DirectProjTarget
 
 /--
 info: def IxVM.Refinement.View.TypingCovers : IxVM.Refinement.View → Ix.ClaimContext → Option Address → Prop :=
@@ -1059,7 +1138,12 @@ fun V ctx asm =>
       (∀ (r : Address), asm = some r → V.HoldsTree r) ∧
         ∀ (r : Address),
           ctx.axioms = some r →
-            V.HoldsTree r ∧ ∀ (leaves : List Address), V.LeavesAt r leaves → ∀ a ∈ leaves, V.Stores a
+            V.HoldsTree r ∧
+              (∀ (rb : Ixon.RoleBinding) (t : Ix.Kernel.RoleTable),
+                  V.env.roleBinding = some rb →
+                    Ix.Kernel.RoleTable.ofBytes rb.bytes = some t →
+                      Ix.Kernel.Admission.admitAxiomPolicy Ix.Kernel.Cached.AxiomPolicy.allowUser t = Except.ok ()) ∧
+                ∀ (leaves : List Address), V.LeavesAt r leaves → ∀ a ∈ leaves, V.Stores a
 -/
 #guard_msgs in
 #print IxVM.Refinement.View.TypingCovers
@@ -1263,33 +1347,33 @@ info: @IxVM.Refinement.circuitSound_of_sourceSound : ∀
 #check @IxVM.Refinement.circuitSound_of_sourceSound
 
 /--
-info: @IxVM.Refinement.AcceptsIn.ixonAcceptsRefUnder : ∀ {V : IxVM.Refinement.View} {σ : IxVM.Refinement.Scope}
+info: @IxVM.Refinement.AcceptsIn.acceptsRefUnder : ∀ {V : IxVM.Refinement.View} {σ : IxVM.Refinement.Scope}
   {S : Address → Prop}
   {Q :
     Ix.Kernel.Admission.Binding →
       Ix.Kernel.Env Ix.Kernel.Mode.anon → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop},
   IxVM.Refinement.AcceptsIn V σ S Q →
-    ∃ E limits order envA,
-      IxVM.Refinement.Draws E V.env ∧
-        (∀ (a : Address), S a → E.consts.contains a = true) ∧
-          Ix.Cert.IxonAcceptsRefUnder σ.policy σ.binding limits E S order envA
+    ∃ ev ds envA,
+      Ix.Kernel.Cached.AcceptsRefUnder σ.policy Ix.Kernel.CheckMode.verified ev
+          (List.map IxVM.Refinement.thmToOpaqueDefn ds) envA ∧
+        IxVM.Refinement.TheoremsInProp envA ds ∧ IxVM.Refinement.UserAxiomsWithin σ.axioms ds ∧ Q σ.binding envA ds
 -/
 #guard_msgs in
-#check @IxVM.Refinement.AcceptsIn.ixonAcceptsRefUnder
+#check @IxVM.Refinement.AcceptsIn.acceptsRefUnder
 
 /--
-info: @IxVM.Refinement.AcceptsIn.ixonAcceptsRef : ∀ {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
+info: @IxVM.Refinement.AcceptsIn.acceptsRef : ∀ {V : IxVM.Refinement.View} {b : Ix.Kernel.Admission.Binding}
   {S : Address → Prop}
   {Q :
     Ix.Kernel.Admission.Binding →
       Ix.Kernel.Env Ix.Kernel.Mode.anon → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop},
   IxVM.Refinement.AcceptsIn V (IxVM.Refinement.Scope.strict b) S Q →
-    ∃ E limits order envA,
-      IxVM.Refinement.Draws E V.env ∧
-        (∀ (a : Address), S a → E.consts.contains a = true) ∧ Ix.Cert.IxonAcceptsRef b limits E S order envA
+    ∃ ev ds envA,
+      Ix.Kernel.Cached.AcceptsRef Ix.Kernel.CheckMode.verified ev (List.map IxVM.Refinement.thmToOpaqueDefn ds) envA ∧
+        IxVM.Refinement.TheoremsInProp envA ds ∧ Q b envA ds
 -/
 #guard_msgs in
-#check @IxVM.Refinement.AcceptsIn.ixonAcceptsRef
+#check @IxVM.Refinement.AcceptsIn.acceptsRef
 
 /--
 info: @Ix.Cert.ixonAcceptsRefUnder_strict : ∀ {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}

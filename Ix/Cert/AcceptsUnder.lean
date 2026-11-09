@@ -17,6 +17,33 @@ namespace Ix.Cert
 open Ix.Kernel (Env)
 open Ix.Kernel.Admission (Limits Binding)
 
+/-- **An edge the fold follows that the references do not show**, under the role
+table `t`: `GroundEdge` parameterized by `t` instead of the default table. -/
+def GroundEdgeAt (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) (a b : Address) : Prop :=
+  ixe.consts.contains b = true ∧
+    ∃ s, t.addressOf? s = some b ∧
+      ((∃ r p, t.addressOf? r = some p ∧ s ∈ groundRoles r ∧
+          (p = a ∨ ∃ c, recordAt ixe p = some c ∧ ownerOf p c = a)) ∨
+        ∃ c, recordAt ixe a = some c ∧ s ∈ literalRoles c)
+
+/-- `a` is in the compiled closure of the seed addresses `S` under the role table `t`. -/
+inductive CompiledReachAt (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) (S : Address → Prop) :
+    Address → Prop
+  | seed {a : Address} : S a → ixe.consts.contains a = true → CompiledReachAt t ixe S a
+  | step {a b : Address} : CompiledReachAt t ixe S a → RecordEdge ixe a b → CompiledReachAt t ixe S b
+  | ground {a b : Address} : CompiledReachAt t ixe S a → GroundEdgeAt t ixe a b →
+      CompiledReachAt t ixe S b
+  | recursor {a b : Address} : CompiledReachAt t ixe S a → RecursorEdge ixe a b →
+      CompiledReachAt t ixe S b
+
+/-- `order` lists the compiled closure of `S` under the role table `t`, each record once,
+and no record before one it references. -/
+structure ClosureOrderAt (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) (S : Address → Prop)
+    (order : List Address) : Prop where
+  nodup : order.Nodup
+  complete : ∀ a, a ∈ order ↔ CompiledReachAt t ixe S a
+  ordered : order.Pairwise fun a b => ¬ RecordRef ixe a b
+
 /-- **Ixon acceptance at the reference level under an axiom policy**:
 `IxonAcceptsRef`, with the role table admitted under `policy` and the pure
 fold run under `policy`. -/

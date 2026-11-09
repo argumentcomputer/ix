@@ -148,8 +148,9 @@ module Convert {
             convert_expr(body, sharing, refs, recur_addrs, univs)))) } ,
 
         Ixon::Expr::Share(idx) => {
-          let Lists::Node::Cons(e, _) = (*(Lists::drop(sharing, UInt64::to_field(idx))));
-          convert_expr(e, sharing, refs, recur_addrs, univs) } ,
+          let n = UInt64::to_field(idx);
+          let Lists::Node::Cons(e, _) = (*(Lists::drop(sharing, n)));
+          convert_expr(e, Lists::take(sharing, n), refs, recur_addrs, univs) } ,
       }
     }
 

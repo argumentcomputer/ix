@@ -158,4 +158,103 @@ theorem plan_checkMemo_rejects (rom : WireROM Rat) (root : Message Rat)
 #guard_msgs in
 #print axioms Physical.Prepared.depth_native_heap_sound
 
+/-! ### Terminating recursion and the grouped `Plan.checkMemo` path -/
+
+/-- `count(0) = 7`, `count(x) = count(x - 1)` otherwise. Columns: `x`, `r`, `s` (`s = 1` when recursing). -/
+def countChip : Chip Rat := {
+  name := "count"
+  inputs := [⟨.field, [0]⟩]
+  output := ⟨.field, [.var 1]⟩
+  numVars := 3
+  constraints := [
+    .mul (.var 2) (.sub (.var 2) (.const 1)),
+    .mul (.sub (.const 1) (.var 2)) (.var 0),
+    .mul (.sub (.const 1) (.var 2)) (.sub (.var 1) (.const 7))]
+  sends := [⟨"count", [⟨.field, [.sub (.var 0) (.const 1)]⟩], ⟨.field, [1]⟩, .var 2⟩]
+  memory := [] }
+
+def countSys : System Rat := ⟨[countChip], [], [], []⟩
+
+def countCfgE : Depth.Config :=
+  { limbs := [], plans := [("count", { recursive := true, slots := [.exact] })], ranks := [("count", 0)] }
+
+def countCfgG : Depth.Config :=
+  { limbs := [2], plans := [("count", { recursive := true, slots := [.gap] })], ranks := [("count", 0)] }
+
+theorem countCertE : Depth.Certified countCfgE countSys := by decide +kernel
+theorem countCertG : Depth.Certified countCfgG countSys := by decide +kernel
+
+def countPlanOf (cfg : Depth.Config) : Grouping.Plan (Depth.system cfg countSys) (fun _ => .ok 0) :=
+  ⟨(Depth.system cfg countSys).chips, [], fun chip member => by
+      simp only [Depth.system, countSys, List.map_cons, List.map_nil, List.mem_singleton] at member
+      subst member
+      rfl,
+    by simp, fun chip member => Or.inl member⟩
+
+def countRootE : Message Rat := ⟨"count", [⟨.field, [1]⟩, ⟨.field, [1]⟩], ⟨.field, [7]⟩⟩
+
+def countRowsE : List (WeightedRow Rat) :=
+  [ ⟨⟨"count", [1, 7, 1, 1, 1]⟩, 1⟩, ⟨⟨"count", [0, 7, 0, 0, 1]⟩, 1⟩ ]
+
+example : (countPlanOf countCfgE).checkMemo ⟨[]⟩ countRootE countRowsE = .ok () := by decide +kernel
+
+def countRootG : Message Rat := ⟨"count", [⟨.field, [1]⟩, ⟨.field, [3]⟩], ⟨.field, [7]⟩⟩
+
+def countRowsG (lo : Rat) : List (WeightedRow Rat) :=
+  [ ⟨⟨"count", [1, 7, 1, 3, lo, 1]⟩, 1⟩, ⟨⟨"count", [0, 7, 0, 0, 0, 1]⟩, 1⟩ ]
+
+example : (countPlanOf countCfgG).checkMemo ⟨[]⟩ countRootG (countRowsG 2) = .ok () := by decide +kernel
+example : (countPlanOf countCfgG).checkMemo ⟨[]⟩ countRootG (countRowsG 5) ≠ .ok () := by decide +kernel
+example : (countPlanOf countCfgE).checkMemo ⟨[]⟩ ⟨"count", [⟨.field, [1]⟩, ⟨.field, [1]⟩], ⟨.field, [9]⟩⟩ countRowsE ≠ .ok () := by
+  decide +kernel
+
+def countPadRow : Row Rat := ⟨"count", [0, 0, 0, 0, 0]⟩
+
+example : (countPlanOf countCfgE).checkMemo ⟨[]⟩ countRootE (countRowsE ++ [⟨countPadRow, 0⟩]) = .ok () := by decide +kernel
+example : (countPlanOf countCfgE).checkMemo ⟨[]⟩ countRootE (countRowsE ++ [⟨countPadRow, 3⟩]) ≠ .ok () := by decide +kernel
+
+def otherChip : Chip Rat := {
+  name := "other"
+  inputs := [⟨.field, [0]⟩]
+  output := ⟨.field, [.var 0]⟩
+  numVars := 1
+  constraints := []
+  sends := []
+  memory := [] }
+
+def groupedSys : System Rat := ⟨[countChip, otherChip], [], [], []⟩
+
+def groupedCfg : Depth.Config :=
+  { limbs := []
+    plans := [("count", { recursive := true, slots := [.exact] }), ("other", {})]
+    ranks := [("count", 0), ("other", 0)] }
+
+def groupedId (name : String) : Except String Nat :=
+  if name == "count" then .ok 0 else if name == "other" then .ok 1 else .error s!"unknown {name}"
+
+def checkGroupedCases : Bool :=
+  match (do
+    unless Depth.certify groupedCfg groupedSys do throw "not certified"
+    let system := Depth.system groupedCfg groupedSys
+    let checked ← Grouping.compile "g" groupedId system.chips
+    let plan ← Grouping.preparePlan system groupedId [⟨system.chips, checked⟩]
+    let g := checked.layout
+    let some m := g.members.find? (·.name == "count") | throw "no member"
+    let row (a : List Rat) : Row Rat :=
+      ⟨g.name, (List.range g.width).map fun v => (m.embedding v).denote (fun i => a.getD i 0)⟩
+    let honest : List (WeightedRow Rat) := [⟨row [1, 7, 1, 1], 1⟩, ⟨row [0, 7, 0, 0], 1⟩]
+    let pad : Row Rat := ⟨g.name, List.replicate g.width 0⟩
+    let wrong : Message Rat := ⟨"count", [⟨.field, [1]⟩, ⟨.field, [1]⟩], ⟨.field, [9]⟩⟩
+    let skewed : List (WeightedRow Rat) := [⟨row [1, 7, 1, 5], 1⟩, ⟨row [0, 7, 0, 0], 1⟩]
+    let skewedRoot : Message Rat := ⟨"count", [⟨.field, [1]⟩, ⟨.field, [5]⟩], ⟨.field, [7]⟩⟩
+    return (plan.checkMemo ⟨[]⟩ countRootE honest).isOk &&
+      (plan.checkMemo ⟨[]⟩ countRootE (honest ++ [⟨pad, 0⟩])).isOk &&
+      !(plan.checkMemo ⟨[]⟩ countRootE (honest ++ [⟨pad, 3⟩])).isOk &&
+      !(plan.checkMemo ⟨[]⟩ wrong honest).isOk &&
+      !(plan.checkMemo ⟨[]⟩ skewedRoot skewed).isOk : Except String Bool) with
+  | .ok b => b
+  | .error _ => false
+
+#guard checkGroupedCases
+
 end AiurDepthTests

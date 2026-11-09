@@ -26,7 +26,7 @@ module SystemDeserialize {
 
   enum SysLookup { Mk(Field, Lists::List<Field>) }
 
-  enum SysCircuit { Mk(Lists::List<SysNode>, Field, Lists::List<Field>, Field, Lists::List<SysLookup>, Field, Field, Field, Field) }
+  enum SysCircuit { Mk(Lists::List<SysNode>, Field, Lists::List<Field>, Field, Lists::List<SysLookup>, Field, Field, Field, Field, Field) }
 
   enum SysParams { Mk(Field, Field, Field, Field, Field, Field, Field) }
 
@@ -246,7 +246,7 @@ module SystemDeserialize {
       let ccl = Goldilocks::gl_to_bytes(zcount + s2w);
       let s2wl = Goldilocks::gl_to_bytes(s2w);
       let kl = Goldilocks::gl_to_bytes(k);
-      (SysCircuit::Mk(nodes, ncount, zeros, md, lks, k, mw, pw, s2w),
+      (SysCircuit::Mk(nodes, ncount, zeros, md, lks, k, mw, pw, ph, s2w),
        [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
     }
 

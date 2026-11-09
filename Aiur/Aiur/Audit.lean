@@ -89,13 +89,15 @@ multi-stark circuits (CALL, ROM and memory-segment channel tags, activation
 times multiplicity, trace-shard segment boundaries, fixed tables, including the
 depth range tables, and claim encoding), including that an accepting proof yields
 rows of its batch that `Plan.checkMemo` accepts. That step reads LogUp's field
-balance as the integer multiplicities `Plan.checkMemo` counts, which needs the
-lookup budget (claims plus height times `max(lookups, 1)` over the batch) below
-`p`: Rust bounds the sum itself (`check_shape`, `validate_preamble`); the
-in-circuit verifiers check that every circuit has fewer than `2^24` lookups,
-which with the `2^39` row bound keeps the sum below `2^63` plus the claims, under
-`p`. Also trusted: multi-stark's STARK, FRI and LogUp soundness; the
-`aiur⟦ … ⟧` and `aiur_library%` elaborators; and the artifact exporter. The library
+balance as the integer multiplicities `Plan.checkMemo` counts, which needs every
+send enable `enable ∈ {0, 1}` on every active row (emitted by `Optimized/Compile`
+choice equations and `LookupGuards` exclusive scopes) and the lookup budget
+(claims plus height times `max(lookups, 1)` over the batch) below `p`: Rust
+bounds the sum itself (`check_shape`, `validate_preamble`); the in-circuit
+verifiers check that every circuit has fewer than `2^24` lookups, which with the
+`2^39` row bound keeps the sum below `2^63` plus the claims, under `p`. Also
+trusted: multi-stark's STARK, FRI and LogUp soundness; the `aiur⟦ … ⟧` and
+`aiur_library%` elaborators; and the artifact exporter. The library
 `Correctness` theorems prove hand-written Lean models of the library functions
 (their byte and limb arithmetic) against Lean specifications such as
 `Blake3.digest`. No theorem evaluates the library's Aiur source, so they are

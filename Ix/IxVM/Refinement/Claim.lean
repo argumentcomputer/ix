@@ -41,9 +41,9 @@ them as unauthenticated advice.
   closure of all of them.
 * `eval ctx input output asm`: IxC accepts the closure of `input` and
   `output` together; the output record is a safe definition with the input's
-  universe count and type; and at some fuel IxC's reference normalizer
-  (`Ix.Kernel.nfRef`, IxVM's `eval_nf` on IxC's `whnf`) takes the input's value
-  to exactly the output's, up to binder metadata (`EvalValues`).
+  universe count and type; and at some fuel in the accepted environment their
+  annotated values are definitionally equal (`Ix.Kernel.isDefEqCore` at
+  `.verified`, `EvalValues`).
 * `reveal comm info`: the record at `comm` has every field `info` reveals
   (`RevealLE`).
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
@@ -62,11 +62,8 @@ specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
   acceptance runs under `allowUser` over the seeds and every leaf, with every
   user axiom the accepted declarations install among the leaves
   (`AxiomScopeIn`), and it installs every leaf that is not also an assumption
-  as a user axiom (`LeavesInstalled`; owner decisions, 2026-11-08: an assumed
-  leaf stays conditional, like any assumption). IxVM type-checks every
-  leaf only after Track A's A4 program changes, so this, like `eval`'s
-  output check, is ahead of the deployed program until then. With
-  `axioms = none` it is the strict fold;
+  as a user axiom (`LeavesInstalled`: an assumed leaf stays conditional, like
+  any assumption). With `axioms = none` it is the strict fold;
 * **assumptions** `some r`: the typing is conditional. If IxC accepts each
   leaf of the tree at `r` in the view, separately, it accepts the target;
 * **an assumed binding** (validator 4, `bindingAssumed`): conditional on the
@@ -187,48 +184,77 @@ def Scope.strict (binding : Binding) : Scope := ⟨binding, .strict, fun _ => Fa
 def UserAxiomsWithin (allowed : Address → Prop) (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
   ∀ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, ∃ a, allowed a ∧ cv.name = .id a
 
+/-- A non-auxiliary theorem declaration as an `.opaque`-hinted definition
+declaration, so the reference fold unfolds theorem bodies at delta and iota
+majors as Lean 4.34.1 and IxVM do (`KernelWhnf::whnf_iota_major`,
+`KernelDefEq::is_def_eq_delta`). -/
+def thmToOpaqueDefn {md : Ix.Kernel.Mode} :
+    Ix.Kernel.Declaration md → Ix.Kernel.Declaration md
+  | .thmDecl cv value =>
+    match cv.name with
+    | .aux _ _ => .thmDecl cv value
+    | _ => .defnDecl cv value .opaque
+  | d => d
+
+/-- Every theorem declaration in `ds` has a `Prop` (`Sort 0`) type in `envA`,
+matching `Ix.Kernel.checkThmVal`'s proposition check before `thmToOpaqueDefn`
+installs non-auxiliary theorems as `.opaque`-hinted definitions. -/
+def TheoremsInProp {md : Ix.Kernel.Mode} (envA : Ix.Kernel.Env md)
+    (ds : List (Ix.Kernel.Declaration md)) : Prop :=
+  ∀ cv value, Ix.Kernel.Declaration.thmDecl cv value ∈ ds →
+    ∃ F tA stype u,
+      (Ix.Kernel.fueledOps .verified F).annotate envA 0 cv.type = .ok tA ∧
+      (Ix.Kernel.fueledOps .verified F).inferType envA 0 tA = .ok stype ∧
+      (Ix.Kernel.fueledOps .verified F).ensureSort envA 0 stype = .ok u ∧
+      u.isZero = true
+
 /-- **IxC accepts the closure of the seeds `S` in the view `V`, under the
 scope `σ`, and `Q` holds of the run**: an environment drawn from the view
 stores every seed, and IxC's reference-level acceptance under the scope's
-policy (`Ix.Cert.IxonAcceptsRefUnder`, unfolded so that `Q` can read the
-declarations) holds for the compiled closure of `S` in it, at some resource
+policy (`Ix.Kernel.Cached.AcceptsRefUnder`, with non-auxiliary theorems
+installed as `.opaque`-hinted definitions and `TheoremsInProp` so theorem
+majors unfold as in Lean 4.34.1 and IxVM) holds for the compiled closure of `S`
+under the admitted role table (`Ix.Cert.ClosureOrderAt`), at some resource
 limits, with every user axiom in the scope. `Q` sees the role table, the
-installed environment and the declarations; `AcceptsIn.ixonAcceptsRefUnder`
-recovers `IxonAcceptsRefUnder`. -/
+installed environment and the declarations; `AcceptsIn.acceptsRefUnder` and
+`AcceptsIn.acceptsRef` recover `AcceptsRefUnder` and `AcceptsRef`. -/
 def AcceptsIn (V : View) (σ : Scope) (S : Address → Prop)
     (Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop :=
       fun _ _ _ => True) : Prop :=
   ∃ (E : Ixon.Env) (limits : Limits) (order : List Address) (envA : Ix.Kernel.Env .anon),
-    Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧ Ix.Cert.ClosureOrder E S order ∧
+    Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧
     ∃ t pre ev ds, Ix.Kernel.Admission.admitBinding Address.admissionHash σ.binding = .ok t ∧
+      Ix.Cert.ClosureOrderAt t E S order ∧
       Ix.Kernel.Admission.admitAxiomPolicy σ.policy t = .ok () ∧
       Ix.Kernel.Reader.preludeFor t = .ok pre ∧
       Ix.Kernel.Admission.prepareWith Address.admissionHash σ.binding pre limits
         (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds) ∧
-      Ix.Kernel.Cached.AcceptsRefUnder σ.policy .verified ev ds.toList envA ∧
+      Ix.Kernel.Cached.AcceptsRefUnder σ.policy .verified ev (ds.toList.map thmToOpaqueDefn) envA ∧
+      TheoremsInProp envA ds.toList ∧
       UserAxiomsWithin σ.axioms ds.toList ∧ Q σ.binding envA ds.toList
 
-/-- `AcceptsIn` is `Ix.Cert.IxonAcceptsRefUnder` in an environment drawn from
-the view, with more. -/
-theorem AcceptsIn.ixonAcceptsRefUnder {V : View} {σ : Scope} {S : Address → Prop}
+/-- `AcceptsIn` gives `Ix.Kernel.Cached.AcceptsRefUnder` on the prepared
+declarations (with `thmToOpaqueDefn`), together with `TheoremsInProp`,
+`UserAxiomsWithin`, and `Q`. -/
+theorem AcceptsIn.acceptsRefUnder {V : View} {σ : Scope} {S : Address → Prop}
     {Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop}
     (h : AcceptsIn V σ S Q) :
-    ∃ E limits order envA, Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧
-      Ix.Cert.IxonAcceptsRefUnder σ.policy σ.binding limits E S order envA := by
-  obtain ⟨E, limits, order, envA, draws, stored, closure, t, pre, ev, ds, admitted, policy,
-    prelude, prepared, accepted, -, -⟩ := h
-  exact ⟨E, limits, order, envA, draws, stored,
-    closure, t, pre, ev, ds, admitted, policy, prelude, prepared, accepted⟩
+    ∃ ev ds envA,
+      Ix.Kernel.Cached.AcceptsRefUnder σ.policy .verified ev (ds.map thmToOpaqueDefn) envA ∧
+      TheoremsInProp envA ds ∧ UserAxiomsWithin σ.axioms ds ∧ Q σ.binding envA ds := by
+  obtain ⟨_, _, _, envA, -, -, _, _, ev, ds, -, -, -, -, -, accepted, thms, within, q⟩ := h
+  exact ⟨ev, ds.toList, envA, accepted, thms, within, q⟩
 
-/-- Under a strict scope, `AcceptsIn` is `Ix.Cert.IxonAcceptsRef` in an
-environment drawn from the view, with more. -/
-theorem AcceptsIn.ixonAcceptsRef {V : View} {b : Binding} {S : Address → Prop}
+/-- Under a strict scope, `AcceptsIn` gives `Ix.Kernel.Cached.AcceptsRef` on the
+prepared declarations (with `thmToOpaqueDefn`). -/
+theorem AcceptsIn.acceptsRef {V : View} {b : Binding} {S : Address → Prop}
     {Q : Binding → Ix.Kernel.Env .anon → List (Ix.Kernel.Declaration .anon) → Prop}
     (h : AcceptsIn V (Scope.strict b) S Q) :
-    ∃ E limits order envA, Draws E V.env ∧ (∀ a, S a → E.consts.contains a = true) ∧
-      Ix.Cert.IxonAcceptsRef b limits E S order envA := by
-  obtain ⟨E, limits, order, envA, draws, stored, accepted⟩ := h.ixonAcceptsRefUnder
-  exact ⟨E, limits, order, envA, draws, stored, Ix.Cert.ixonAcceptsRefUnder_strict.mp accepted⟩
+    ∃ ev ds envA,
+      Ix.Kernel.Cached.AcceptsRef .verified ev (ds.map thmToOpaqueDefn) envA ∧
+      TheoremsInProp envA ds ∧ Q b envA ds := by
+  obtain ⟨ev, ds, envA, accepted, thms, -, q⟩ := h.acceptsRefUnder
+  exact ⟨ev, ds, envA, Ix.Kernel.Cached.acceptsRefUnder_strict.mp accepted, thms, q⟩
 
 /-- **The seeds of a role table**: the constants it binds and the theorems
 its evidence names. -/
@@ -276,9 +302,9 @@ def AssumedIn (V : View) (asm : Option Address) (a : Address) : Prop :=
 
 /-- **Every leaf is installed as a user axiom** in an accepting run, unless it is
 assumed: for each leaf not `assumed`, the declarations IxC accepts install a user
-axiom keyed by its address (owner decisions, 2026-11-08: IxVM type-checks every
-leaf of the axioms tree, used or not, except a leaf that is also one of the
-claim's assumptions, which stays conditional like any assumption). -/
+axiom keyed by its address (IxVM type-checks every leaf of the axioms tree, used
+or not, except a leaf that is also one of the claim's assumptions, which stays
+conditional like any assumption). -/
 def LeavesInstalled (leaves : List Address) (assumed : Address → Prop)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
   ∀ a ∈ leaves, ¬ assumed a → ∃ cv ∈ Ix.Kernel.userAxiomsOfDecls ds, cv.name = .id a
@@ -340,14 +366,11 @@ address itself, or the role the table binds to it. -/
 def AddressKey (b : Binding) (a : Address) (k : Ix.Kernel.Key .anon) : Prop :=
   k = .id a ∨ ∃ t r, Ix.Kernel.RoleTable.ofBytes b.bytes = some t ∧ t.addressOf? r = some a ∧ k = .role r
 
-/-- **An `eval` claim's values, in the accepting run** (owner, 2026-11-08): the
-declarations give `input` a type and value and `output` a definition; the
-output has the input's universe count and type, up to binder metadata; and at
-some fuel IxC's reference normalizer (`Ix.Kernel.nfRef` at `.verified`, in the
-installed environment: IxVM's `eval_nf` on IxC's `whnf`) takes the input's
-value to exactly the output's value, up to binder metadata (`Expr.eraseMeta`),
-which IxVM's structural comparison does not see. The output is the input's
-specific reduced form, not merely a definitionally equal term. -/
+/-- **An `eval` claim's values, in the accepting run**: the declarations give
+`input` a type and value and `output` a definition; the output has the input's
+universe count and type, up to binder metadata; and at some fuel in the
+installed environment their annotated values are definitionally equal
+(`Ix.Kernel.annotateCore` and `Ix.Kernel.isDefEqCore` at `.verified`). -/
 def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .anon)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
   ∃ (cvIn cvOut : Ix.Kernel.ConstantVal .anon) (vIn vOut : Ix.Kernel.Expr .anon)
@@ -356,7 +379,10 @@ def EvalValues (input output : Address) (b : Binding) (envA : Ix.Kernel.Env .ano
     Ix.Kernel.Declaration.defnDecl cvOut vOut hint ∈ ds ∧ AddressKey b output cvOut.name ∧
     cvOut.levelParams.length = cvIn.levelParams.length ∧
     cvOut.type.eraseMeta = cvIn.type.eraseMeta ∧
-    ∃ fuel vNf, Ix.Kernel.nfRef .verified envA fuel 0 vIn = .ok vNf ∧ vNf.eraseMeta = vOut.eraseMeta
+    ∃ fuel vInA vOutA,
+      Ix.Kernel.annotateCore .verified envA fuel 0 vIn = .ok vInA ∧
+      Ix.Kernel.annotateCore .verified envA fuel 0 vOut = .ok vOutA ∧
+      Ix.Kernel.isDefEqCore .verified envA fuel 0 vInA vOutA = .ok true
 
 /-- **An `eval` claim's output record**: the view stores a safe standalone
 definition (kind `defn`, safety `safe`) at `output`. -/
@@ -459,29 +485,100 @@ def IsProjFnAt (c : Ixon.Constant) : Nat → Ixon.Expr → Prop
   | n + 1, e =>
     ∃ ct t b, Ix.Kernel.Reader.unshare c e = .lam ct t b ∧ IsProjFnAt c n b
 
-/-- **A closed view**: every stored record is in the safe fragment, every
-reference of a stored record resolves to a stored record or blob, a
-projection's block is stored, and the role table the view holds is a valid
-role table admitted by IxC (`RoleTable.check`, `admitAxiomPolicy .allowUser`,
-`preludeFor`) whose bound constants and evidence theorems are stored. -/
+/-- Whether `e` has no `.recur` inside an application argument (`inArg = true`). -/
+def noArgRecur (inArg : Bool) : Ixon.Expr → Bool
+  | .recur _ _ => !inArg
+  | .app fn arg => noArgRecur inArg fn && noArgRecur true arg
+  | .lam _ ty body | .all _ _ ty body => noArgRecur inArg ty && noArgRecur inArg body
+  | .letE _ ty val body => noArgRecur inArg ty && noArgRecur inArg val && noArgRecur inArg body
+  | .prj _ _ val => noArgRecur inArg val
+  | _ => true
+
+/-- Whether reference `idx` of `c` resolves in `ixe` to a single, non-nested,
+index-free one-constructor inductive block (`Ix.Kernel.nativeParts?` installs a
+projection table for it). -/
+def DirectProjTarget (ixe : Ixon.Env) (c : Ixon.Constant) (idx : UInt64) : Prop :=
+  ∃ r cr cb ind ctor,
+    c.refs[idx.toNat]? = some r ∧
+    Ix.Cert.recordAt ixe r = some cr ∧
+    Ix.Cert.recordAt ixe (Ix.Cert.ownerOf r cr) = some cb ∧
+    cb.info = .muts #[.indc ind] ∧
+    ind.indices = 0 ∧
+    ind.ctors = #[ctor] ∧
+    noArgRecur false (Ix.Kernel.Reader.unshare cb ctor.typ) = true
+
+/-- Typed reference resolution and structure-projection target check for an
+expression of `c` in `ixe`: `.ref` and `.prj` indices resolve to constant
+records (and to `DirectProjTarget` when `directProj = true`), and `.nat` and
+`.str` indices resolve to literal blobs. -/
+def ExprRefsClosed (ixe : Ixon.Env) (c : Ixon.Constant) (directProj : Bool) :
+    Ixon.Expr → Prop
+  | .ref idx _ => ∃ r, c.refs[idx.toNat]? = some r ∧ ixe.consts.contains r = true
+  | .prj idx _ val =>
+    (∃ r, c.refs[idx.toNat]? = some r ∧ ixe.consts.contains r = true) ∧
+      (directProj = true → DirectProjTarget ixe c idx) ∧
+      ExprRefsClosed ixe c directProj val
+  | .str idx | .nat idx => ∃ r, c.refs[idx.toNat]? = some r ∧ ixe.blobs.contains r = true
+  | .app fn arg => ExprRefsClosed ixe c directProj fn ∧ ExprRefsClosed ixe c directProj arg
+  | .lam _ ty body | .all _ _ ty body =>
+    ExprRefsClosed ixe c directProj ty ∧ ExprRefsClosed ixe c directProj body
+  | .letE _ ty val body =>
+    ExprRefsClosed ixe c directProj ty ∧ ExprRefsClosed ixe c directProj val ∧
+      ExprRefsClosed ixe c directProj body
+  | _ => True
+
+/-- Every expression of `c` is in the Lean contract fragment (`leanFragment`),
+resolves its references by kind (`ExprRefsClosed`), and outside projection
+functions (`IsProjFnAt`) projects only from direct structures. -/
+def ConstantExprsClosed (ixe : Ixon.Env) (c : Ixon.Constant) : Prop :=
+  (∀ e ∈ c.info.exprs ++ c.sharing.toList,
+    e.leanFragment = true ∧ ExprRefsClosed ixe c false e) ∧
+  ∀ e ∈ c.info.exprs,
+    (¬ ∃ d n, c.info = .defn d ∧ e = d.value ∧ IsProjFnAt c n d.value) →
+      ExprRefsClosed ixe c true (Ix.Kernel.Reader.unshare c e)
+
+/-- Whether `envA` installs a constant at `.role r` whose universe parameters and
+type (up to binder metadata) match `r`'s `.anchor` specification. -/
+def AnchorPinned (envA : Ix.Kernel.Env .anon) (r : Ix.Kernel.Role) : Prop :=
+  ∀ n ty, r.spec (md := .anon) = .anchor n ty →
+    ∃ ci, envA.find? (.role r) = some ci ∧
+      ci.toConstantVal.levelParams = List.range n ∧
+      ci.toConstantVal.type.eraseMeta = ty.eraseMeta
+
+/-- **A closed view**: every stored record is in the safe fragment
+(`SafeConstant`) and the Lean contract fragment with well-typed reference kinds
+and direct structure projections (`ConstantExprsClosed`), every reference of a
+stored record resolves to a stored record or blob, a projection's block is
+stored, and the role table the view holds is a valid role table admitted by IxC
+(`RoleTable.check`, `preludeFor`, which pins the prelude roles) whose bound
+constants and evidence theorems are stored and whose `.anchor` roles are
+accepted by IxC with their pinned specification types (`AnchorPinned`) in the
+view. Because `SafeConstant` restricts to the safe fragment, whole-environment
+`checkEnv` claims whose leaves include `unsafe` or `partial` constants are
+outside `Covers`. -/
 def View.Closed (V : View) : Prop :=
   (∀ a c, Ix.Cert.recordAt V.env a = some c →
-    SafeConstant c ∧
+    SafeConstant c ∧ ConstantExprsClosed V.env c ∧
       (∀ r ∈ c.refs.toList, V.env.consts.contains r = true ∨ V.env.blobs.contains r = true) ∧
       V.env.consts.contains (Ix.Cert.ownerOf a c) = true) ∧
   (∀ rb, V.env.roleBinding = some rb →
     ∃ t, Ix.Kernel.RoleTable.ofBytes rb.bytes = some t ∧ t.check = .ok () ∧
-      Ix.Kernel.Admission.admitAxiomPolicy .allowUser t = .ok () ∧
       (∃ pre : Ix.Kernel.Reader.Prelude .anon, Ix.Kernel.Reader.preludeFor t = .ok pre) ∧
-      ∀ a, BindingSeeds t a → V.env.consts.contains a = true)
+      (∀ a, BindingSeeds t a → V.env.consts.contains a = true) ∧
+      ∀ r, (r.spec (md := .anon)).kind = .anchor → ∀ a, t.addressOf? r = some a →
+        AcceptsIn V (Scope.strict ⟨rb.address, rb.bytes⟩) (· = a) fun _ envA _ =>
+          AnchorPinned envA r)
 
 /-- What a view must hold for a typing claim: it is closed, it holds the
 claim's role table, the assumption tree, if any, and the axioms tree, if any,
-with each axiom stored. -/
+with the role table admitted under `allowUser` and each axiom stored. -/
 def View.TypingCovers (V : View) (ctx : ClaimContext) (asm : Option Address) : Prop :=
   V.Closed ∧ (V.binding? ctx.binding).isSome = true ∧ (∀ r, asm = some r → V.HoldsTree r) ∧
     ∀ r, ctx.axioms = some r →
-      V.HoldsTree r ∧ ∀ leaves, V.LeavesAt r leaves → ∀ a ∈ leaves, V.Stores a
+      V.HoldsTree r ∧
+        (∀ rb t, V.env.roleBinding = some rb → Ix.Kernel.RoleTable.ofBytes rb.bytes = some t →
+          Ix.Kernel.Admission.admitAxiomPolicy .allowUser t = .ok ()) ∧
+        ∀ leaves, V.LeavesAt r leaves → ∀ a ∈ leaves, V.Stores a
 
 end IxVM.Refinement
 
