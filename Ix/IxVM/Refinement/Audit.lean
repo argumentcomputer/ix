@@ -1373,7 +1373,7 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms Ix.Kernel.Cached.AcceptsRefUnder.unique [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDeclsFromUnder_append [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.nfRef_deterministic [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Expr.eraseMeta_idem [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Expr.eraseMeta_idem [propext]
 #guard_kernel_axioms Ix.Cert.ixonAcceptsRef_of_under_nil [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.functionNames_nodup [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Checked.Lookup.«IxonDeserialize::get_tagn0» [propext, Classical.choice, Quot.sound]

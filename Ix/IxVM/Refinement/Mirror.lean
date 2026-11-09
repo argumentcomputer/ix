@@ -517,4 +517,187 @@ theorem matchPattern_construct_inv {t : Ty} {c : String} {ps : List (Pattern F)}
       exact ⟨vs, rfl, by simpa using hlen, h⟩
   | _ => simp [World.matchPattern, matchPatternWith, pure, Except.pure] at h
 
+/-- **A pattern that denotes a constant value `u` with no bindings.** -/
+def MatchesConst (world : World F) (types : Types) (p : Pattern F) (u : SourceValue F) : Prop :=
+  ∀ (heap : Heap F) (v : SourceValue F),
+    world.matchPattern types heap p v = .ok (if v = u then some [] else none)
+
+/-- **A list of constant patterns denoting `us` elementwise.** -/
+def MatchesConstList (world : World F) (types : Types) :
+    List (Pattern F) → List (SourceValue F) → Prop
+  | [], [] => True
+  | p :: ps, u :: us => MatchesConst world types p u ∧ MatchesConstList world types ps us
+  | _, _ => False
+
+omit [Field F] in
+theorem MatchesConst.literal (c : F) :
+    MatchesConst world types (.literal c) (.field c) :=
+  fun heap v => matchPattern_literal_any c v heap
+
+omit [Field F] in
+theorem MatchesConst.global {s : Source F} {name : String} {t : Ty} {c : F}
+    (hc : s.world.constant name (t.subst types) = .ok (.literal c)) :
+    MatchesConst s.world types (.global name (some t)) (.field c) := by
+  intro heap v
+  unfold World.matchPattern
+  change matchPatternWith s.world.constant (s.program.consts.length + 1) types heap
+    (.global name (some t)) v = _
+  rw [matchPatternWith]
+  simp only [hc, bind, Except.bind]
+  rw [matchPatternWith]
+  cases v <;> simp [Aiur.Pattern.bindings, pure, Except.pure, eq_comm]
+
+omit [Field F] in
+theorem MatchesConstList.length :
+    ∀ {ps : List (Pattern F)} {us : List (SourceValue F)},
+      MatchesConstList world types ps us → ps.length = us.length
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, ⟨_, h⟩ => congrArg Nat.succ h.length
+
+omit [Field F] in
+theorem MatchesConstList.matchListWith :
+    ∀ {ps : List (Pattern F)} {us : List (SourceValue F)},
+      MatchesConstList world types ps us →
+      ∀ (heap : Heap F) (vs : List (SourceValue F)),
+        SourceSemantics.matchListWith (world.matchPattern types heap) ps vs =
+          .ok (if vs = us then some [] else none)
+  | [], [], _, _, [] => rfl
+  | [], [], _, _, _ :: _ => rfl
+  | _ :: _, _ :: _, _, _, [] => rfl
+  | p :: ps, u :: us, ⟨hp, hps⟩, heap, v :: vs => by
+      simp only [SourceSemantics.matchListWith, hp heap v, hps.matchListWith heap vs,
+        bind, Except.bind, pure, Except.pure, List.cons.injEq]
+      by_cases hv : v = u
+      · by_cases hvs : vs = us <;> simp [hv, hvs]
+      · simp [hv]
+
+omit [Field F] in
+theorem MatchesConst.tuple {ps : List (Pattern F)} {us : List (SourceValue F)}
+    (h : MatchesConstList world types ps us) :
+    MatchesConst world types (.tuple ps) (.tuple us) := by
+  intro heap v
+  cases v with
+  | tuple vs =>
+    rw [matchPattern_tuple, h.matchListWith heap vs]
+    by_cases hlen : (ps.length != vs.length) = true
+    · have hne : vs ≠ us := by
+        intro heq; subst heq; exact absurd h.length (by simpa using hlen)
+      simp [hlen, hne]
+    · simp [hlen]
+  | _ => simp [World.matchPattern, matchPatternWith, pure, Except.pure]
+
+omit [Field F] in
+theorem MatchesConst.array {ps : List (Pattern F)} {us : List (SourceValue F)}
+    (h : MatchesConstList world types ps us) :
+    MatchesConst world types (.array ps) (.tuple us) := by
+  intro heap v
+  cases v with
+  | tuple vs =>
+    rw [matchPattern_array, h.matchListWith heap vs]
+    by_cases hlen : (ps.length != vs.length) = true
+    · have hne : vs ≠ us := by
+        intro heq; subst heq; exact absurd h.length (by simpa using hlen)
+      simp [hlen, hne]
+    · simp [hlen]
+  | _ => simp [World.matchPattern, matchPatternWith, pure, Except.pure]
+
+omit [Field F] in
+theorem selectArm_const_inv {p : Pattern F} {u : SourceValue F} {b body : Expr F}
+    {arms : List (Pattern F × Expr F)} {v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (hp : MatchesConst world types p u)
+    (h : selectArm world types heap v ((p, b) :: arms) = .ok (some (bs, body))) :
+    (v = u ∧ bs = [] ∧ body = b) ∨
+      (v ≠ u ∧ selectArm world types heap v arms = .ok (some (bs, body))) := by
+  rw [selectArm, hp heap v] at h
+  by_cases hv : v = u
+  · simp only [hv, ite_true, bind, Except.bind, pure, Except.pure, Except.ok.injEq,
+      Option.some.injEq, Prod.mk.injEq] at h
+    exact .inl ⟨hv, h.1.symm, h.2.symm⟩
+  · simp only [hv, ite_false, bind, Except.bind] at h
+    exact .inr ⟨hv, h⟩
+
+/-- **A flat pattern** (`.bind` or `.wildcard`) always succeeds on every value. -/
+def IsFlatPattern : Pattern F → Prop
+  | .bind _ => True
+  | .wildcard => True
+  | _ => False
+
+/-- **A list of flat patterns.** -/
+def IsFlatPatternList : List (Pattern F) → Prop
+  | [] => True
+  | p :: ps => IsFlatPattern p ∧ IsFlatPatternList ps
+
+omit [Field F] in
+theorem IsFlatPattern.matchPattern {p : Pattern F} (hp : IsFlatPattern p)
+    (v : SourceValue F) (heap : Heap F) :
+    ∃ bs, world.matchPattern types heap p v = .ok (some bs) := by
+  cases p <;> try contradiction
+  · exact ⟨_, matchPattern_wildcard v heap⟩
+  · exact ⟨_, matchPattern_bind _ v heap⟩
+
+omit [Field F] in
+theorem IsFlatPatternList.matchListWith :
+    ∀ {ps : List (Pattern F)} {vs : List (SourceValue F)},
+      IsFlatPatternList ps → ps.length = vs.length →
+      ∀ (heap : Heap F), ∃ bs,
+        SourceSemantics.matchListWith (world.matchPattern types heap) ps vs = .ok (some bs)
+  | [], [], _, _, _ => ⟨[], rfl⟩
+  | _ :: _, v :: _, ⟨hp, hps⟩, hlen, heap => by
+      obtain ⟨bs1, h1⟩ := hp.matchPattern (world := world) (types := types) v heap
+      obtain ⟨bs2, h2⟩ := hps.matchListWith (Nat.succ.inj hlen) heap
+      refine ⟨bs1 ++ bs2, ?_⟩
+      simp [SourceSemantics.matchListWith, h1, h2, bind, Except.bind, pure, Except.pure]
+
+/-- **Branch on a constructor with `n` fields** (`matchValue` on `.construct`). -/
+def matchConstruct {α : Type} (name ctor : String) :
+    Nat → SourceValue F → (List (SourceValue F) → α) → α → α
+  | n, .construct name' ctor' vs, onMatch, onMiss =>
+      if name' = name ∧ ctor' = ctor ∧ vs.length = n then onMatch vs else onMiss
+  | _, _, _, onMiss => onMiss
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem matchConstruct_construct {α : Type} (name ctor : String) (n : Nat)
+    (name' ctor' : String) (vs : List (SourceValue F))
+    (onMatch : List (SourceValue F) → α) (onMiss : α) :
+    matchConstruct name ctor n (.construct name' ctor' vs) onMatch onMiss =
+      if name' = name ∧ ctor' = ctor ∧ vs.length = n then onMatch vs else onMiss := rfl
+
+omit [Field F] in
+theorem selectArm_construct_inv {t : Ty} {c : String} {ps : List (Pattern F)}
+    {b body : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (hflat : IsFlatPatternList ps)
+    (h : selectArm world types heap v ((.construct t c ps, b) :: arms) = .ok (some (bs, body))) :
+    (∃ vs, v = .construct (constructorName types t) c vs ∧ ps.length = vs.length ∧
+      matchListWith (world.matchPattern types heap) ps vs = .ok (some bs) ∧ body = b) ∨
+    ((∀ {α : Type} (onMatch : List (SourceValue F) → α) (onMiss : α),
+        matchConstruct (constructorName types t) c ps.length v onMatch onMiss = onMiss) ∧
+      selectArm world types heap v arms = .ok (some (bs, body))) := by
+  rw [selectArm] at h
+  cases hm : world.matchPattern types heap (.construct t c ps) v with
+  | error e => simp [hm, bind, Except.bind] at h
+  | ok opt =>
+    cases opt with
+    | some bindings =>
+      simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq,
+        Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨vs, hv, hlen, hml⟩ := matchPattern_construct_inv hm
+      exact .inl ⟨vs, hv, hlen, hml, rfl⟩
+    | none =>
+      simp only [hm, bind, Except.bind] at h
+      refine .inr ⟨fun {α} onMatch onMiss => ?_, h⟩
+      cases v with
+      | construct name' ctor' vs =>
+        unfold matchConstruct
+        by_cases hc : name' = constructorName types t ∧ ctor' = c ∧ vs.length = ps.length
+        · obtain ⟨hname, hctor, hlen⟩ := hc
+          rw [matchPattern_construct] at hm
+          simp only [hname, hctor, hlen, bne_self_eq_false, Bool.false_or] at hm
+          obtain ⟨bs', hbs'⟩ := hflat.matchListWith (world := world) (types := types) hlen.symm heap
+          rw [hbs'] at hm
+          cases hm
+        · simp [hc]
+      | _ => rfl
+
 end Aiur.Generic.SourceSemantics
