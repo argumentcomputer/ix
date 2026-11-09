@@ -309,13 +309,13 @@ partial def constPat (ctx : Ctx) : Pattern F → M (String × String)
   | .tuple ps => do
     let items ← ps.mapM (constPat ctx)
     let vs := items.map (s!"({·.1})")
-    let prf := items.foldr (fun (_, hp) acc => s!"⟨{hp}, {acc}⟩") "trivial"
-    return (s!".tuple {list vs}", s!"MatchesConst.tuple {prf}")
+    let prf := items.foldr (fun (_, hp) acc => s!".cons ({hp}) ({acc})") ".nil"
+    return (s!"Value.tuple {list vs}", s!"MatchesConst.tuple ({prf})")
   | .array ps => do
     let items ← ps.mapM (constPat ctx)
     let vs := items.map (s!"({·.1})")
-    let prf := items.foldr (fun (_, hp) acc => s!"⟨{hp}, {acc}⟩") "trivial"
-    return (s!".tuple {list vs}", s!"MatchesConst.array {prf}")
+    let prf := items.foldr (fun (_, hp) acc => s!".cons ({hp}) ({acc})") ".nil"
+    return (s!"Value.tuple {list vs}", s!"MatchesConst.array ({prf})")
   | _ => throw "match arm pattern"
 
 mutual
@@ -613,7 +613,7 @@ mutual
       let hc ← fresh "hc"; let sel' ← fresh "sel"
       let first ← prove ctx b db { fs with rw := fs.rw ++ [hc] } k
       let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
-      return [s!"rcases selectArm_const_inv ({hpat}) {sel} with ⟨{hc}, rfl, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+      return [s!"rcases selectArm_const_inv {sel} ({hpat}) with ⟨{hc}, rfl, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
         bullet first ++ bullet second
 end
 

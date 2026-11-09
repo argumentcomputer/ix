@@ -523,11 +523,12 @@ def MatchesConst (world : World F) (types : Types) (p : Pattern F) (u : SourceVa
     world.matchPattern types heap p v = .ok (if v = u then some [] else none)
 
 /-- **A list of constant patterns denoting `us` elementwise.** -/
-def MatchesConstList (world : World F) (types : Types) :
-    List (Pattern F) → List (SourceValue F) → Prop
-  | [], [] => True
-  | p :: ps, u :: us => MatchesConst world types p u ∧ MatchesConstList world types ps us
-  | _, _ => False
+inductive MatchesConstList (world : World F) (types : Types) :
+    List (Pattern F) → List (SourceValue F) → Prop where
+  | nil : MatchesConstList world types [] []
+  | cons {p : Pattern F} {u : SourceValue F} {ps : List (Pattern F)} {us : List (SourceValue F)} :
+      MatchesConst world types p u → MatchesConstList world types ps us →
+      MatchesConstList world types (p :: ps) (u :: us)
 
 omit [Field F] in
 theorem MatchesConst.literal (c : F) :
@@ -548,24 +549,28 @@ theorem MatchesConst.global {s : Source F} {name : String} {t : Ty} {c : F}
   cases v <;> simp [Aiur.Pattern.bindings, pure, Except.pure, eq_comm]
 
 omit [Field F] in
-theorem MatchesConstList.length :
-    ∀ {ps : List (Pattern F)} {us : List (SourceValue F)},
-      MatchesConstList world types ps us → ps.length = us.length
-  | [], [], _ => rfl
-  | _ :: _, _ :: _, ⟨_, h⟩ => congrArg Nat.succ h.length
+theorem MatchesConstList.length {ps : List (Pattern F)} {us : List (SourceValue F)}
+    (h : MatchesConstList world types ps us) : ps.length = us.length := by
+  induction h with
+  | nil => rfl
+  | cons _ _ ih => exact congrArg Nat.succ ih
 
 omit [Field F] in
-theorem MatchesConstList.matchListWith :
-    ∀ {ps : List (Pattern F)} {us : List (SourceValue F)},
-      MatchesConstList world types ps us →
-      ∀ (heap : Heap F) (vs : List (SourceValue F)),
-        SourceSemantics.matchListWith (world.matchPattern types heap) ps vs =
-          .ok (if vs = us then some [] else none)
-  | [], [], _, _, [] => rfl
-  | [], [], _, _, _ :: _ => rfl
-  | _ :: _, _ :: _, _, _, [] => rfl
-  | p :: ps, u :: us, ⟨hp, hps⟩, heap, v :: vs => by
-      simp only [SourceSemantics.matchListWith, hp heap v, hps.matchListWith heap vs,
+theorem MatchesConstList.matchListWith {ps : List (Pattern F)} {us : List (SourceValue F)}
+    (h : MatchesConstList world types ps us) (heap : Heap F) :
+    ∀ vs : List (SourceValue F),
+      SourceSemantics.matchListWith (world.matchPattern types heap) ps vs =
+        .ok (if vs = us then some [] else none) := by
+  induction h with
+  | nil =>
+    intro vs
+    cases vs <;> rfl
+  | @cons p u ps us hp _ ih =>
+    intro vs
+    cases vs with
+    | nil => rfl
+    | cons v vs =>
+      simp only [SourceSemantics.matchListWith, hp heap v, ih vs,
         bind, Except.bind, pure, Except.pure, List.cons.injEq]
       by_cases hv : v = u
       · by_cases hvs : vs = us <;> simp [hv, hvs]
@@ -604,8 +609,9 @@ theorem MatchesConst.array {ps : List (Pattern F)} {us : List (SourceValue F)}
 omit [Field F] in
 theorem selectArm_const_inv {p : Pattern F} {u : SourceValue F} {b body : Expr F}
     {arms : List (Pattern F × Expr F)} {v : SourceValue F} {heap : Heap F}
-    {bs : Environment F Nat} (hp : MatchesConst world types p u)
-    (h : selectArm world types heap v ((p, b) :: arms) = .ok (some (bs, body))) :
+    {bs : Environment F Nat}
+    (h : selectArm world types heap v ((p, b) :: arms) = .ok (some (bs, body)))
+    (hp : MatchesConst world types p u) :
     (v = u ∧ bs = [] ∧ body = b) ∨
       (v ≠ u ∧ selectArm world types heap v arms = .ok (some (bs, body))) := by
   rw [selectArm, hp heap v] at h
