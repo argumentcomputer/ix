@@ -6,12 +6,12 @@ The gnark key fixes the complete wrapper circuit, including both inner pairing
 obligations. BN254 uses Ethereum's BN254 precompiles.
 
 `src/PlonkVerifier.sol` is gnark's own Solidity export of the bundled release
-key, `crates/proof-compression/verifying-keys/0.2/plonk-verifying-key.bin`.
+key, `crates/proof-compression/verifying-keys/0.3/plonk-verifying-key.bin`.
 Regenerate it from the repository root whenever that key changes:
 
 ```sh
 go -C tools/gnark run ./cmd/solidity -system plonk \
-  -key ../../crates/proof-compression/verifying-keys/0.2/plonk-verifying-key.bin \
+  -key ../../crates/proof-compression/verifying-keys/0.3/plonk-verifying-key.bin \
   -out ../../contracts/plonk/src/PlonkVerifier.sol
 ```
 

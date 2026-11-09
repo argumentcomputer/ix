@@ -14,9 +14,9 @@ interface Vm {
 
 contract IxPlonkVerifierTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-    /// SHA-256 of crates/proof-compression/verifying-keys/0.2/plonk-verifying-key.bin,
+    /// SHA-256 of crates/proof-compression/verifying-keys/0.3/plonk-verifying-key.bin,
     /// the key src/PlonkVerifier.sol is generated from.
-    string private constant RELEASE_KEY_SHA256 = "78d4ad2af7a510248071d484d8184bdf62d31e3421805b23b725b54c5643f040";
+    string private constant RELEASE_KEY_SHA256 = "b12a6c7ffda3adcef019c3ce100fc1d03a66097e40987225a1818cafed762f43";
     IxPlonkVerifier private adapter;
     PlonkVerifier private plonk;
     bytes private proof;

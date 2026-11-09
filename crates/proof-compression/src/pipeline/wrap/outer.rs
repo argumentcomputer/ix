@@ -893,7 +893,7 @@ mod tests {
   fn ignition_verifier_rejects_substituted_inner_pairing_keys()
   -> storage::Result<()> {
     let mut vk = VerifyingKey::from_bytes(include_bytes!(
-      "../../../verifying-keys/0.2/recursive-vk.bin"
+      "../../../verifying-keys/0.3/recursive-vk.bin"
     ))?;
     vk.check_setup_class(SetupClass::Ignition)?;
     let development = Srs::unsafe_dev_setup(2, b"substituted-inner-keys");

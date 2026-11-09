@@ -12,7 +12,7 @@ use super::{
 use crate::kzg::{Srs, VerifierParams};
 
 /// Version of the bundled verifying keys and the layout they were derived for.
-const VERSION: &str = "0.2";
+const VERSION: &str = "0.3";
 
 /// Log2 of the first KZG stage's partition height the keys were derived for.
 pub(super) const FIRST_LOG_HEIGHT: usize = 24;
@@ -20,62 +20,62 @@ pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 /// Serialized aggregation backend key whose roots the layout normalizes: the
 /// formal aggregation program under `aiur::trace::stark::Parameters::DEFAULT`.
 const ROOT_VK_BLAKE3: &str =
-  "d286b37b8b9167fff7de272b70a577d1a8e5fb7ba66dd68488d3b79467820c02";
+  "f6d00e0451de46e218aa17a93924ae8714d87c7ebe61301470fccc55b409b44e";
 /// The root layout (`.ixl`, see `FixedRoot`) and its content address.
 const LAYOUT: &[u8] =
-  include_bytes!("../../verifying-keys/0.2/root-layout.ixl");
+  include_bytes!("../../verifying-keys/0.3/root-layout.ixl");
 const LAYOUT_BLAKE3: &str =
-  "708e3b5d7494d3657e78c104d15a276df89299cc589b4444fa1b4ade80cdd928";
+  "d5817b2acf708e901d81cf27dff53a3bfe2e0be8704fd023f3c394484afe0485";
 
 /// Backend and entrypoint words of the aggregation program, the statement
 /// prefix every compressed claim of this release carries
 /// ([`statement::backend_prefix`] of the IxVM and aggregation keys).
 pub(super) const STATEMENT_PREFIX: [u64; 10] = [
-  1, 0, 860334012, 1220120966, 1187167253, 3205439471, 3112596009, 4264259287,
-  80555980, 4021139237,
+  1, 0, 2745045187, 3484230291, 1932183560, 3896061441, 1995940351, 2501828570,
+  1794737524, 3355008152,
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.2/recursive-vk.bin");
+  include_bytes!("../../verifying-keys/0.3/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
-  "81ca053b35d43bf4d17447e8c21749ad74d24573abc367da5682b4bb6506c7fd";
+  "25e785599ee246a08052bd15cae3ca8bef9501b181f886d8e8e7bf2d23e90fbe";
 /// The identifier a recursive KZG packet begins with.
 pub(super) const RECURSIVE_VK_ID: &str =
-  "2546e82d4da4c117e5f545223d623f162e9601f7d72dd6132f3b2335bc9d2634";
+  "140532a4f04e5537f03c613ca622cf311f7c0f15c73d1537465375fa041056d4";
 
 /// Identity of the first stage's FRI verifier plan for the bundled backend
 /// and layout, half of its fixed-cache identity. Independent of the KZG setup.
 pub(super) const FIRST_PLAN_ID: &str =
-  "82dfa4c4a13a4c5f743e6a662dea693a0adfaa5d6302cead56077d1e63efaad3";
+  "2f29328ca018b01d1a17cb7b69eacb19c460b92d35478dd4d477e6b9fac0c106";
 /// Identity of the recursive stage's verifier frontend over the first stage
 /// under Ignition, half of its fixed-cache identity.
 pub(super) const RECURSIVE_FRONTEND_ID: &str =
-  "050bf45b9b729c0839d4b31f72b2115676218d2cab666e350b89569bc121e66b";
+  "764d2baf9b01c0956c9f11e4f9c7ba61032a8984b0e202bee929822e8520b3d8";
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.2/plonk-verifying-key.bin");
+  include_bytes!("../../verifying-keys/0.3/plonk-verifying-key.bin");
 /// SHA-256 of the gnark PLONK verifying key, which a PLONK packet begins with.
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK_SHA256: &str =
-  "78d4ad2af7a510248071d484d8184bdf62d31e3421805b23b725b54c5643f040";
+  "b12a6c7ffda3adcef019c3ce100fc1d03a66097e40987225a1818cafed762f43";
 
 /// SHA-256 of the exported recursive verifier description that both final
 /// circuits prove.
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "1964851792e31a40fdfcafb5ec0e5ac7fa76632614828b83946834e64e7383e5";
+  "28f594d120a90c52c5207799461e9e3aa44d24803d3a5f2c35a5ca7bb67e7d35";
 
 /// The release Groth16 key comes from a development setup: whoever ran it can
 /// forge proofs, so it verifies only when development setups are accepted.
 #[cfg(any(feature = "groth16", test))]
 pub(super) const GROTH16_VK: &[u8] = include_bytes!(
-  "../../verifying-keys/0.2/groth16-development-verifying-key.bin"
+  "../../verifying-keys/0.3/groth16-development-verifying-key.bin"
 );
 /// SHA-256 of the gnark Groth16 verifying key, which a Groth16 packet begins with.
 pub(super) const GROTH16_VK_SHA256: &str =
-  "542e9688b77c6b8fded02f13bc3eaafb692836ab59ff18c8e7cafe65cb34da9a";
+  "d8cb6cfd97e5712471cd443b243e109560b018eef454208e69d6dae861cf994e";
 pub(super) const GROTH16_CIRCUIT_SHA256: &str =
-  "cfc498275ccd65c485037eac2046084be997721e5adba5bf461b0f86651b2753";
+  "d717c2ffdaa9b40dbfe9a53877a5d77d4e33c8ea7c5d8d7de4e9e5f125549c0e";
 
 /// The setup class of the release Groth16 key, if `allow_development` admits it.
 pub(super) fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
