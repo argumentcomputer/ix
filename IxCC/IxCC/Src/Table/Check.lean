@@ -20,6 +20,74 @@ structure Config where
   inlineCap : Nat := 256
   deriving Inhabited
 
+/-- Maximum expanded tree nodes inspected in table check types and small bodies
+(guards against exponential `share` DAG blowup). -/
+def maxTermNodes : Nat := 100000
+
+/-- Maximum expanded tree nodes for definition/proof bodies in `checkEqn` and
+`checkAxiomWalk` (`sum-loop`'s unshared tree has 1.68M nodes). -/
+def maxBodyNodes : Nat := 5000000
+
+/-- The standard Lean axioms (`propext`, `Quot.sound`, `Classical.choice`) as
+256-bit big-endian address pins (`Pinned.addrNat`). -/
+def standardAxiomPins : List Nat :=
+  [ 0x209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34,
+    0x9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a,
+    0xcfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40 ]
+
+def isStandardAxiom (p : Program) (c : CId) : Bool :=
+  match p.decl? c with
+  | some (.axio true _ _) => standardAxiomPins.contains (Pinned.addrNat (p.addr c))
+  | _ => false
+
+def declTerms : Decl → List Term
+  | .defn _ _ _ t v => [t, v]
+  | .induct _ _ _ _ t _ => [t]
+  | .ctor _ _ _ _ _ _ t => [t]
+  | .recr _ _ _ _ _ _ _ _ rules t => t :: rules.map (·.rhs)
+  | .quot _ _ t => [t]
+  | .axio _ _ t => [t]
+
+def collectTermsConsts : List Term → Nat → List CId → Option (Nat × List CId)
+  | [], b, acc => some (b, acc)
+  | t :: ts, b, acc => do
+    let (b1, acc1) ← t.constsBudget b acc
+    collectTermsConsts ts b1 acc1
+
+def checkAxiomWalk (p : Program) : Nat → List CId → List CId → Bool
+  | 0, _ :: _, _ => false
+  | _, [], _ => true
+  | fuel + 1, c :: todo, seen =>
+    if seen.contains c then
+      checkAxiomWalk p fuel todo seen
+    else
+      match p.decl? c with
+      | none => false
+      | some d =>
+        let okDecl := match d with
+          | .axio .. => isStandardAxiom p c
+          | _ => true
+        if !okDecl then false
+        else
+          match collectTermsConsts (declTerms d) maxBodyNodes [] with
+          | none => false
+          | some (_, refs) =>
+            let newRefs := refs.filter (fun r => !seen.contains r && !todo.contains r)
+            checkAxiomWalk p fuel (newRefs ++ todo) (c :: seen)
+
+/-- Verify that the transitive constant closure of `thm` in `p` contains no
+`Decl.axio` outside the standard Lean axioms (`propext`, `Quot.sound`,
+`Classical.choice`). -/
+def checkAxiomClosure (p : Program) (thm : CId) : Except String Unit :=
+  let allStandard := (List.range p.size).all fun c =>
+    match p.decl? c with
+    | some (.axio ..) => isStandardAxiom p c
+    | _ => true
+  if allStandard || checkAxiomWalk p (p.size * 2 + 16) [thm] [] then
+    .ok ()
+  else
+    throw "theorem depends on a non-standard axiom or exceeds closure budget"
+
 /-! ## `eqn` -/
 
 /-- Peel exactly the equation header; remaining lambdas are internal syntax. -/
@@ -64,8 +132,12 @@ def equationBody (p : Program) (f thm : CId) (tf vf rhs : Term)
 def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
   let some (n, tf, vf) := safeDefn? p f
     | throw "eqn: the subject is not a safe definition"
-  let some (.defn .thm .safe n' tθ _) := p.decl? thm
+  let some (.defn .thm .safe n' tθ _vθ) := p.decl? thm
     | throw "eqn: the equation is not a safe theorem"
+  unless tf.nodesLe maxTermNodes && vf.nodesLe maxBodyNodes &&
+      tθ.nodesLe maxTermNodes do
+    throw "eqn: term exceeds node budget"
+  checkAxiomClosure p thm
   unless n == n' do throw "eqn: universe parameter counts differ"
   let (binders, body) := tθ.pis
   let some (b, lhs, rhs) := eqApp? p body
@@ -89,10 +161,13 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
 admissibility and acyclicity are checked by `Table.Build`. -/
 def checkCsimp (p : Program) (f g thm : CId) : Except String Resolve := do
   unless p.resource.isNone do throw "csimp: resource-bound replacement is unsupported"
-  let some (n, tf, _) := safeDefn? p f
+  let some (n, tf, _vf) := safeDefn? p f
     | throw "csimp: the subject is not a safe definition"
-  let some (.defn .thm .safe n' tθ _) := p.decl? thm
+  let some (.defn .thm .safe n' tθ _vθ) := p.decl? thm
     | throw "csimp: the theorem is not a safe theorem"
+  unless tf.nodesLe maxTermNodes && tθ.nodesLe maxTermNodes do
+    throw "csimp: term exceeds node budget"
+  checkAxiomClosure p thm
   unless n == n' do throw "csimp: universe parameter counts differ"
   unless g != f do throw "csimp: the target is the subject"
   let some (ty, lhs, rhs) := eqApp? p tθ
@@ -161,13 +236,17 @@ def checkCaseMinors (np ni m total : Nat) (argAt : Nat → Term) :
 
 /-- Check `case T` with key `T.casesOn` (§4.1). Returns the recursor. -/
 def checkCase (p : Program) (key : CId) : Except String Resolve := do
-  let some (n, _, value) := safeDefn? p key
+  let some (n, ty, value) := safeDefn? p key
     | throw "case: the key is not a safe definition"
+  unless ty.nodesLe maxTermNodes && value.nodesLe maxTermNodes do
+    throw "case: term exceeds node budget"
   let (binders, body) := value.lams
   let (head, args) := body.spine
   let .const r us := head | throw "case: the body is not a recursor spine"
-  let some (.recr _ _ rl np nmot nmin ni _ rules _) := p.decl? r
+  let some (.recr _ _ rl np nmot nmin ni _ rules rty) := p.decl? r
     | throw "case: the head is not a recursor"
+  unless rty.nodesLe maxTermNodes && rules.all (fun rule => rule.rhs.nodesLe maxTermNodes) do
+    throw "case: recursor exceeds node budget"
   unless nmot == 1 do throw "case: mutual casesOn stays on δ"
   unless rl == n && us == paramUnivs n do throw "case: recursor levels are not the key's"
   unless rules.length == nmin do throw "case: rules and minors differ"
@@ -191,13 +270,16 @@ def checkCase (p : Program) (key : CId) : Except String Resolve := do
 /-! ## `lazy`, `inline`, `prim` -/
 
 def checkLazy (p : Program) (f : CId) (arity : Nat) : Except String Unit := do
-  let some (_, _, value) := safeDefn? p f | throw "lazy: not a safe definition"
+  let some (_, ty, value) := safeDefn? p f | throw "lazy: not a safe definition"
+  unless ty.nodesLe maxTermNodes && value.nodesLe maxTermNodes do
+    throw "lazy: term exceeds node budget"
   unless arity ≥ 1 && value.lamCount ≥ arity do throw "lazy: too few leading λs"
 
 def checkInline (p : Program) (f : CId) (cap : Nat) : Except String Unit := do
-  let some (_, _, value) := safeDefn? p f | throw "inline: not a safe definition"
+  let some (_, ty, value) := safeDefn? p f | throw "inline: not a safe definition"
+  unless ty.nodesLe maxTermNodes do throw "inline: type exceeds node budget"
+  unless cap ≤ maxTermNodes && value.nodesLe cap do throw "inline: over the size cap"
   if value.mentions f then throw "inline: self-referential"
-  unless value.nodes ≤ cap do throw "inline: over the size cap"
 
 /-- `Nat → Nat → Nat`, `Nat → Nat → Bool` or `Nat → Nat` over the pinned
 types, by the operation's arity and result. -/
@@ -216,6 +298,7 @@ def checkPrim (p : Program) (f : CId) (op : PrimOp) (enabled : List PrimOp) :
   let expected := if op.arity == 1 then Term.pi {} {} nat result
     else Term.pi {} {} nat (Term.pi {} {} nat result)
   let some d := p.decl? f | throw "prim: missing declaration"
+  unless d.type.nodesLe maxTermNodes do throw "prim: type exceeds node budget"
   unless d.type.eqv expected do throw s!"prim: {op.name} does not have the primitive type"
 
 /-! ## Derived `RecKind` -/
@@ -229,15 +312,18 @@ field, or a proof; `ordinary` otherwise (and where `when` fails). Lean's
 large-elimination criterion makes the non-index fields propositions whenever
 the recursor can eliminate into a relevant motive. -/
 def deriveRecKind (p : Program) (r : CId) : Option RecKind := do
-  let .recr _ _ _ _ _ _ _ ind rules _ ← p.decl? r | none
+  let .recr _ _ _ _ _ _ _ ind rules recTy ← p.decl? r | none
+  unless recTy.nodesLe maxTermNodes && rules.all (fun rule => rule.rhs.nodesLe maxTermNodes) do none
   if rules.isEmpty then return .empty
   let .induct _ _ _ _ indTy _ ← p.decl? ind | none
+  unless indTy.nodesLe maxTermNodes do none
   let .sort u := indTy.pis.2 | return .ordinary
   let some us := p.majorUnivs r | return .ordinary
   let when := ((zeroCond u).inst us).dedup
   if when == .never || rules.length != 1 then return .ordinary
   let rule ← rules.head?
   let .ctor _ _ _ _ np nf ctorTy ← p.decl? rule.ctor | none
+  unless ctorTy.nodesLe maxTermNodes do none
   let (_, result) := ctorTy.pis
   let indices := (result.spine.2.map (·.1)).drop np
   let fields := (List.range nf).map fun j =>

@@ -185,6 +185,10 @@ def equiv (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Array 
         (expected {if want.fir then "equal" else "different"})\n{aa.fir.render}\n-- plain --\n{ap.fir.render}"
       expect a (cfg == want.cfg) s!"{ann.name}/{ra.name}: Cfg {if cfg then "equal" else "differs"}\n{aa.cfg.render}\n-- plain --\n{ap.cfg.render}"
       expect a (obj == want.object) s!"{ann.name}/{ra.name}: object {if obj then "equal" else "differs"}"
+      expect a (Own.Plain.contractProgramDomain aa.fir) s!"{ann.name}/{ra.name}: contractProgramDomain refused"
+      expect a (Own.Plain.contractProgramDomain ap.fir) s!"{plain.name}/{rp.name}: contractProgramDomain refused"
+      expect a (Own.Plain.selectRcPolicy aa.fir == .zeroRc) s!"{ann.name}/{ra.name}: expected .zeroRc"
+      expect a (Own.Plain.selectRcPolicy ap.fir == .zeroRc) s!"{plain.name}/{rp.name}: expected .zeroRc"
       if fir && cfg && obj then same := same + 1
   out := out.push s!"equiv: {same} annotated roots compile to the plain twin's Fir, Cfg and object"
   if declinedPairs > 0 then
@@ -197,6 +201,12 @@ def erasure (a : Assert) (m : Family) : IO (Array String) := do
     for r in f.roots do
       if r.decline.isSome then continue
       let (_, art) ← compileRoot m f r.name
+      expect a (Own.Plain.contractProgramDomain art.fir) s!"{f.name}/{r.name}: contractProgramDomain refused"
+      expect a (Own.Plain.checkContractPlainMap art.fir (Own.Plain.Program.canonical art.fir).bodies)
+        s!"{f.name}/{r.name}: checkContractPlainMap refused"
+      let expectedPolicy : Own.Plain.RcPolicy := if noAlloc f.name then .zeroRc else .plainRc
+      expect a (Own.Plain.selectRcPolicy art.fir == expectedPolicy)
+        s!"{f.name}/{r.name}: selectRcPolicy {repr (Own.Plain.selectRcPolicy art.fir)}, expected {repr expectedPolicy}"
       if noAlloc f.name then
         expectEq a (Counters.staticAllocs art.cfg) 0 s!"{f.name}/{r.name}: alloc in the Cfg\n{art.cfg.render}"
         n := n + 1
@@ -204,7 +214,7 @@ def erasure (a : Assert) (m : Family) : IO (Array String) := do
   let (_, art) ← compileRoot m (← fixtureOf m "OS03b-annotated") "entry"
   let text := art.fir.render
   expect a (!(text.splitOn "natMul").length > 1) s!"OS03b-annotated: the erased `cube n` is computed\n{text}"
-  return #[s!"erasure: {n} scalar roots allocate nothing in Cfg; OS-03b's erased `cube n` is not computed"]
+  return #[s!"erasure: {n} scalar roots allocate nothing in Cfg (all select .zeroRc; OS16-plain selects .plainRc); OS-03b's erased `cube n` is not computed"]
 
 /-- Every case with a word, through the Cfg stepper. -/
 def counters (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Array String) := do
@@ -329,8 +339,59 @@ def cx1 (a : Assert) (m : Family) : IO (Array String) := do
     | .ok _ => "compiled"
     | .error e => s!"{e.stage.name}: {e.code}"
   expectEq a neg "relevance: relevance-C1" "OS01-plain with `0 n` written on a used n"
+  -- OS16-plain (`build`, `revAcc`, `sumL`, `entry`): unannotated selects `.plainRc`,
+  -- annotating list parameters/lets with `1` (linear), `!` (unique), and `~` / `let borrow` switches to `.zeroRc`
+  let f16 ← fixtureOf m "OS16-plain"
+  let (_, art16) ← compileRoot m f16 "entry"
+  let fir16 := art16.fir
+  expect a (Own.Plain.programDomain fir16) "OS16-plain: programDomain refused"
+  expect a (Own.Plain.contractProgramDomain fir16) "OS16-plain: contractProgramDomain refused"
+  expect a (Own.Plain.selectRcPolicy fir16 == .plainRc) "OS16-plain: expected .plainRc on unannotated list functions"
+  let heapFunIds := (List.range fir16.size).filter fun fid =>
+    match fir16.fun? fid with
+    | some fd => Own.Plain.codeAllocsOrProjs fir16.known fd.body
+    | none => false
+  expect a (heapFunIds.length >= 2) "OS16-plain: expected heap-touching list functions"
+  -- Partially annotating only the first heap function keeps `.plainRc` while passing `contractProgramDomain`
+  let firstHeapId := heapFunIds.headD 0
+  let partialFir16 : Fir.Program := match fir16.fun? firstHeapId with
+    | some fd =>
+      { fir16 with
+        funs := fir16.funs.insert firstHeapId
+          { fd with result := .unique, contracts := fd.params.map fun _ => { value := .unique } } }
+    | none => fir16
+  expect a (!Own.Plain.programDomain partialFir16) "OS16 partial: programDomain accepted unique contracts"
+  expect a (Own.Plain.contractProgramDomain partialFir16) "OS16 partial: contractProgramDomain refused"
+  expect a (Own.Plain.selectRcPolicy partialFir16 == .plainRc) "OS16 partial: expected .plainRc with remaining .many heap functions"
+  -- Annotating all heap functions with `1` (`build`), `!` (`revAcc`), and `~` + `let borrow` (`sumL`) selects `.zeroRc`
+  let annotateFun (idx : Nat) (fd : Fir.Fun) : Fir.Fun :=
+    if !Own.Plain.codeAllocsOrProjs fir16.known fd.body then fd
+    else match idx % 3 with
+      | 0 => { fd with
+          contracts := fd.params.map fun _ => Ixon.V3.BinderContract.linear,
+          letContracts := fd.letContracts.map fun (v, _) => (v, { nonDep := true, binder := .linear }) }
+      | 1 => { fd with
+          result := .unique,
+          contracts := fd.params.map fun _ => { value := .unique },
+          letContracts := fd.letContracts.map fun (v, _) => (v, { nonDep := true, binder := { value := .unique } }) }
+      | _ => { fd with
+          result := .localShared,
+          contracts := fd.params.map fun _ => { value := .localShared },
+          letContracts := (if fd.letContracts.isEmpty then [(0, Ixon.V3.LetContract.borrow true)]
+            else fd.letContracts.map fun (v, _) => (v, Ixon.V3.LetContract.borrow true)) }
+  let annotatedFuns := (List.range fir16.size).foldl (fun acc fid =>
+    match acc.get? fid with
+    | some fd => acc.insert fid (annotateFun fid fd)
+    | none => acc) fir16.funs
+  let annotatedFir16 : Fir.Program := { fir16 with funs := annotatedFuns }
+  expect a (!Own.Plain.programDomain annotatedFir16) "OS16 annotated: programDomain accepted non-.many contracts"
+  expect a (Own.Plain.contractProgramDomain annotatedFir16) "OS16 annotated: contractProgramDomain refused"
+  expect a (Own.Plain.checkContractPlainMap annotatedFir16 (Own.Plain.Program.canonical annotatedFir16).bodies)
+    "OS16 annotated: checkContractPlainMap refused"
+  expect a (Own.Plain.selectRcPolicy annotatedFir16 == .zeroRc)
+    "OS16 annotated: selectRcPolicy did not switch from .plainRc to .zeroRc"
   return #["cx1: OS-03 compiles; the plain twin with `0 _n` written compiles to OS-03's object; \
-    a used `0 n` is rejected with relevance: relevance-C1"]
+    a used `0 n` is rejected with relevance: relevance-C1; OS-16 switches from .plainRc to .zeroRc under 1/!/~ contracts"]
 
 def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   IO.println "tests-own"

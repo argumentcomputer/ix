@@ -16,7 +16,7 @@ theorem physical_return (admission : CodeAdmission F bodies P config pairs funct
     PhysicalCode F P config pairs main clock sourceJoins (.ret arg) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    imm sourceLookup before heap
   exact before.return_result admission.scopedProgram admission.consuming
     (Public.Spec.rawSource config P pairs) main sourceLookup heap clock callers
 
@@ -24,7 +24,7 @@ theorem physical_trap (admission : CodeAdmission F bodies P config pairs functio
     PhysicalCode F P config pairs main clock sourceJoins .trap := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    imm sourceLookup before heap
   exact before.trap_result admission.scopedProgram admission.consuming
     (Public.Spec.rawSource config P pairs) main sourceLookup heap clock callers
 
@@ -37,7 +37,7 @@ theorem physical_declare {j : Fir.JoinId} {params : List Fir.Var} {rec : Bool}
     PhysicalCode F P config pairs main clock sourceJoins (.jp j params rec body cont) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    imm sourceLookup before heap
   rw [Fir.eval_jp]
   exact next sourceEnv H addresses external live sourceEnv ownedEnv roots ((j, live) :: joins)
     _ sourceFunction function source target memory context base bump limit regionBytes slots lists

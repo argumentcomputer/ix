@@ -81,7 +81,7 @@ def lirOf (C : CProgram) : IO (IxCC.Rt.Lowered × X86.Memory) := do
 def natMax : Nat := 2 ^ 63 - 1
 
 def values : List Nat :=
-  [0, 1, 2, 3, 5, 62, 63, 64, 65, 2 ^ 31, 2 ^ 32, 2 ^ 62 - 1, 2 ^ 62, 2 ^ 62 + 1, natMax - 1, natMax]
+  [0, 1, 2, 3, 4, 5, 62, 63, 64, 65, 2 ^ 31, 2 ^ 32, 2 ^ 62 - 1, 2 ^ 62, 2 ^ 62 + 1, natMax - 1, natMax]
 
 /-- Second operands of `natShl` and `natPow` (the exact oracle computes
 `a · 2^b` and `a^b`). -/
@@ -275,6 +275,31 @@ def bigEdge : CProgram := cfgProg
     { params := ps [1], term := .ret (v 1) },
     { term := .ret (n 0) }]]
 
+/-- Squaring a variable (`natMul [v 0, v 0]`) uses the `ya == yb` fast-path without `.udiv`. -/
+def sqProg : FProgram :=
+  prog [([0], .bind 10 (.prim .natMul [v 0, v 0]) (.ret (v 10)))]
+
+def mul2Prog : FProgram :=
+  prog [([0], .bind 10 (.prim .natMul [n 2, v 0]) (.ret (v 10)))]
+
+def div1Prog : FProgram :=
+  prog [([0], .bind 10 (.prim .natDiv [v 0, n 1]) (.ret (v 10)))]
+
+def mod1Prog : FProgram :=
+  prog [([0], .bind 10 (.prim .natMod [v 0, n 1]) (.ret (v 10)))]
+
+def div4Prog : FProgram :=
+  prog [([0], .bind 10 (.prim .natDiv [v 0, n 4]) (.ret (v 10)))]
+
+def mod4Prog : FProgram :=
+  prog [([0], .bind 10 (.prim .natMod [v 0, n 4]) (.ret (v 10)))]
+
+def hasUdiv (f : Lir.Func) : Bool :=
+  f.blocks.any fun b => b.body.any fun
+    | .assign _ (.bin .udiv _ _ _) => true
+    | .assign _ (.bin .urem _ _ _) => true
+    | _ => false
+
 def declines : List (String × CProgram × String) :=
   [("a string literal", cfgOf (prog [([0], .bind 1 (.arg (.lit (.str "s"))) (.ret (v 1)))]), "rt.string"),
    ("a Nat constructor cell", cfgOf (prog [([0], .bind 1 (.ctor (info natS) [v 0]) (.ret (v 1)))]), "rt.layout"),
@@ -326,6 +351,42 @@ def handWritten (a : Assert) : IO (Array String) := do
   -- critical edges were split: more blocks than Cfg's, and the output has none left
   let (lc, _) ← lirOf critical
   expect a (lc.program.funcs[1]!.blocks.size == 4) s!"critical: f1 has {lc.program.funcs[1]!.blocks.size} blocks, expected 4 (two split edges)"
+  -- squaring fast-path (ya == yb): no udiv in lowered function, exact boundary at 3037000499
+  let (lsq, msq) ← lirOf (cfgOf sqProg)
+  checkLir a lsq "sqProg"
+  expect a (!hasUdiv lsq.program.funcs[0]!) "sqProg: lowered natMul [v 0, v 0] still contains udiv"
+  for x in [0, 1, 2, 3, 65535, 3037000498, 3037000499, 3037000500, 3037000501, 2 ^ 32, natMax] do
+    let r ← runLir lsq 0 1000 [x] msq
+    expect a (outcomeWord r == some (expected .natMul [x, x]))
+      s!"sqProg {x}: Lir {lirOutcome r}, expected {expected .natMul [x, x]}"
+  expect a (outcomeWord (← runLir lsq 0 1000 [3037000499] msq) == some (Rt.natWord (3037000499 * 3037000499)))
+    "sqProg 3037000499: expected some (natWord (3037000499 * 3037000499))"
+  expect a ((← runLir lsq 0 1000 [3037000500] msq) matches .resource .natOverflow)
+    "sqProg 3037000500: expected natOverflow"
+  -- mul2 fast-path (w == 5): no udiv in lowered function, exact boundary at 0x3fffffffffffffff
+  let (lm2, mm2) ← lirOf (cfgOf mul2Prog)
+  checkLir a lm2 "mul2Prog"
+  expect a (!hasUdiv lm2.program.funcs[0]!) "mul2Prog: lowered natMul [n 2, v 0] still contains udiv"
+  for x in [0, 1, 2, 3, 4, 0x3ffffffffffffffe, 0x3fffffffffffffff, 0x4000000000000000, 0x4000000000000001, natMax] do
+    let r ← runLir lm2 0 1000 [x] mm2
+    expect a (outcomeWord r == some (expected .natMul [2, x]))
+      s!"mul2Prog {x}: Lir {lirOutcome r}, expected {expected .natMul [2, x]}"
+  expect a (outcomeWord (← runLir lm2 0 1000 [0x3fffffffffffffff] mm2) == some (Rt.natWord (2 * 0x3fffffffffffffff)))
+    "mul2Prog 0x3fffffffffffffff: expected some (natWord (2 * 0x3fffffffffffffff))"
+  expect a ((← runLir lm2 0 1000 [0x4000000000000000] mm2) matches .resource .natOverflow)
+    "mul2Prog 0x4000000000000000: expected natOverflow"
+  -- divMod by 1 (w == 3) and 4 (w == 9) fast-paths: no udiv/urem in lowered functions
+  for (label, P, op, q) in [("div1Prog", div1Prog, Lam.Prim.natDiv, 1),
+                            ("mod1Prog", mod1Prog, Lam.Prim.natMod, 1),
+                            ("div4Prog", div4Prog, Lam.Prim.natDiv, 4),
+                            ("mod4Prog", mod4Prog, Lam.Prim.natMod, 4)] do
+    let (ldm, mdm) ← lirOf (cfgOf P)
+    checkLir a ldm label
+    expect a (!hasUdiv ldm.program.funcs[0]!) s!"{label}: lowered function still contains udiv/urem"
+    for x in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 2 ^ 62 - 1, 2 ^ 62, natMax - 1, natMax] do
+      let r ← runLir ldm 0 1000 [x] mdm
+      expect a (outcomeWord r == some (expected op [x, q]))
+        s!"{label} {x}: Lir {lirOutcome r}, expected {expected op [x, q]}"
   -- declines
   for (label, C, code) in declines do
     match Rt.lower {} C with

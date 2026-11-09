@@ -27,8 +27,10 @@ namespace IxCC.X86
 
 inductive Mnemonic where
   | add | or | and | sub | xor | cmp | test
-  | shl | shr | sar
-  | mov | movzx | lea | imul | div
+  | not | neg
+  | shl | shr | sar | rol | ror
+  | bswap
+  | mov | movzx | movsx | movsxd | lea | imul | mul | div
   | setcc (condition : Condition) | cmovcc (condition : Condition)
   | push | pop
   | call | jmp | jcc (condition : Condition) | ret
@@ -133,6 +135,34 @@ def ImmKind.norm : ImmKind → Word → Word
   | .imm16, value => signExtend16 value.toUInt16
   | .imm32, value => signExtend32 value.toUInt32
   | .imm64, value => value
+
+/-- Sign-extend the low `width` bits to 64 bits. -/
+def Width.signExtend (width : Width) (value : Word) : Word :=
+  let v := width.truncate value
+  match width with
+  | .w8 => signExtend8 v.toUInt8
+  | .w16 => signExtend16 v.toUInt16
+  | .w32 => signExtend32 v.toUInt32
+  | .w64 => v
+
+/-- Reverse the bytes of the low `width` bits (`BSWAP` at `.w32` and `.w64`). -/
+def Width.bswap (width : Width) (value : Word) : Word :=
+  let v := width.truncate value
+  let b0 := v &&& 0xff
+  let b1 := (v >>> 8) &&& 0xff
+  let b2 := (v >>> 16) &&& 0xff
+  let b3 := (v >>> 24) &&& 0xff
+  let b4 := (v >>> 32) &&& 0xff
+  let b5 := (v >>> 40) &&& 0xff
+  let b6 := (v >>> 48) &&& 0xff
+  let b7 := (v >>> 56) &&& 0xff
+  match width with
+  | .w8 => b0
+  | .w16 => (b0 <<< 8) ||| b1
+  | .w32 => (b0 <<< 24) ||| (b1 <<< 16) ||| (b2 <<< 8) ||| b3
+  | .w64 =>
+      (b0 <<< 56) ||| (b1 <<< 48) ||| (b2 <<< 40) ||| (b3 <<< 32) |||
+        (b4 <<< 24) ||| (b5 <<< 16) ||| (b6 <<< 8) ||| b7
 
 inductive ArgKind where
   | reg | mem | imm8 | imm16 | imm32 | imm64 | rel32
@@ -272,10 +302,20 @@ def mulFlags (width : Width) (left right : Word) : Flags :=
     (left.toBitVec.setWidth width.bits) (right.toBitVec.setWidth width.bits)
   { carry := some overflow, overflow := some overflow }
 
+/-- One-operand unsigned MUL (`F7 /4`) sets CF = OF = whether the high half
+of the product is nonzero; SF and ZF are undefined. -/
+def umulFlags (high : Nat) : Flags :=
+  let overflow := decide (high != 0)
+  { carry := some overflow, overflow := some overflow }
+
 end ByteEval
 
 inductive ShiftOp where
   | shl | shr | sar
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
+
+inductive RotateOp where
+  | rol | ror
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
 /-- The count a shift uses: the low five bits, or six at width 64. -/
@@ -291,6 +331,23 @@ def ShiftOp.apply (operation : ShiftOp) (width : Width) (value : Word) (count : 
   | .shr => bits >>> count
   | .sar => bits.sshiftRight count
 
+@[simp] theorem ShiftOp.apply_zero (operation : ShiftOp) (width : Width) (value : Word) :
+    operation.apply width value 0 = value.toBitVec.setWidth width.bits := by
+  cases operation <;> simp [ShiftOp.apply]
+
+/-- The rotated low `width` bits (`ROL`/`ROR`). -/
+def RotateOp.apply (operation : RotateOp) (width : Width) (value : Word) (count : Nat) : BitVec width.bits :=
+  let bits := value.toBitVec.setWidth width.bits
+  let r := count % width.bits
+  if r == 0 then bits
+  else
+    match operation with
+    | .rol => (bits <<< r) ||| (bits >>> (width.bits - r))
+    | .ror => (bits >>> r) ||| (bits <<< (width.bits - r))
+
+@[simp] theorem RotateOp.apply_zero (operation : RotateOp) (width : Width) (value : Word) :
+    operation.apply width value 0 = value.toBitVec.setWidth width.bits := rfl
+
 namespace ByteEval
 
 /-- SHL/SHR/SAR flags (SDM, SAL/SAR/SHL/SHR) for a masked count. For a
@@ -298,10 +355,11 @@ nonzero count CF is the last bit shifted out, SF and ZF follow the result,
 and OF is defined only for a one-bit shift. CF is left undefined once the
 count reaches the width (the SDM leaves it undefined for SHL and SHR; the
 model does so for SAR too). A zero count leaves every flag unchanged on
-the processor; the model makes them undefined, which removes behaviours
-but adds none, since reading an undefined flag faults. -/
-def shiftFlags (operation : ShiftOp) (width : Width) (value : Word) (count : Nat) : Flags :=
-  if count == 0 then {}
+the processor (`before`); when `before` is omitted (`{}`), the flag-free
+table semantics leaves them undefined, which refines any processor flags
+since reading an undefined flag faults. -/
+def shiftFlags (operation : ShiftOp) (width : Width) (value : Word) (count : Nat) (before : Flags := {}) : Flags :=
+  if count == 0 then before
   else
     let bits := value.toBitVec.setWidth width.bits
     let result := operation.apply width value count
@@ -319,6 +377,48 @@ def shiftFlags (operation : ShiftOp) (width : Width) (value : Word) (count : Nat
         | .sar => some false
       else none
     { carry, zero := some (result == 0), sign := some result.msb, overflow }
+
+@[simp] theorem evalShift_zero_flags (operation : ShiftOp) (width : Width) (value : Word) (before : Flags) :
+    shiftFlags operation width value 0 before = before := rfl
+
+/-- ROL/ROR flags (SDM, RCL/RCR/ROL/ROR) for a masked count. When the effective
+rotation `count % width.bits` is zero (including `count = 0`), no rotation bits
+are moved (`before`); otherwise CF is the bit rotated into the carry (LSB of
+result for ROL, MSB of result for ROR) and OF is defined for a one-bit rotate.
+SF and ZF are unaffected. -/
+def rotateFlags (operation : RotateOp) (width : Width) (value : Word) (count : Nat) (before : Flags := {}) : Flags :=
+  if count % width.bits == 0 then before
+  else
+    let result := operation.apply width value count
+    let carry : Bool :=
+      match operation with
+      | .rol => result.getLsbD 0
+      | .ror => result.msb
+    let overflow : Option Bool :=
+      if count == 1 then
+        some (match operation with
+          | .rol => result.msb ^^ carry
+          | .ror => result.msb ^^ result.getLsbD (width.bits - 2))
+      else none
+    { before with carry := some carry, overflow }
+
+@[simp] theorem evalRotate_zero_flags (operation : RotateOp) (width : Width) (value : Word) (before : Flags) :
+    rotateFlags operation width value 0 before = before := by
+  simp [rotateFlags]
+
+/-- Flag refinement: every flag defined in `model` has the same value in `hw`. -/
+def Flags.Refines (model hw : Flags) : Prop :=
+  ∀ f b, model.get f = some b → hw.get f = some b
+
+theorem evalShift_zero_flags_refines (operation : ShiftOp) (width : Width) (value : Word) (before : Flags) :
+    Flags.Refines (shiftFlags operation width value 0) (shiftFlags operation width value 0 before) := by
+  intro f b h
+  cases f <;> simp [shiftFlags, Flags.get] at h
+
+theorem evalRotate_zero_flags_refines (operation : RotateOp) (width : Width) (value : Word) (before : Flags) :
+    Flags.Refines (rotateFlags operation width value 0) (rotateFlags operation width value 0 before) := by
+  intro f b h
+  cases f <;> simp [rotateFlags, Flags.get] at h
 
 end ByteEval
 

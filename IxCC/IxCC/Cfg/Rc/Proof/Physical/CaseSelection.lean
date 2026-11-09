@@ -13,9 +13,9 @@ def ownCase (key : Key.CtorKey) : List Own.Plain.Alt â†’ Option Own.Plain.Code â
   | .mk tag body :: rest, default => if tag = key then some body else ownCase key rest default
 
 theorem firCase_lower (key : Key.CtorKey) (live : List Fir.Var) (joins : Own.Plain.Joins)
-    (alts : List Fir.Alt) (default : Option Fir.Code) :
-    ownCase key (Own.Plain.lowerAlts live joins alts) (Own.Plain.lowerOpt live joins default) =
-      (firCase key alts default).map (Own.Plain.lowerCode live joins) := by
+    (alts : List Fir.Alt) (default : Option Fir.Code) (imm : List Fir.Var) :
+    ownCase key (Own.Plain.lowerAlts live joins alts imm) (Own.Plain.lowerOpt live joins default imm) =
+      (firCase key alts default).map (fun c => Own.Plain.lowerCode live joins c imm) := by
   induction alts with
   | nil => cases default <;> rfl
   | cons alt rest ih =>

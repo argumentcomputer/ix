@@ -296,13 +296,22 @@ A checked program refines its Fir program up to heap isomorphism. When the
 checker rejects the optimised output, the plain dup/drop output is used.
 
 The first plain-RC implementation lives in `Own.Plain` and `Own.Rc`.
-`Plain.checkPlainMap` conservatively requires the complete proposed function
-map to equal the canonical producer's map, including its trie shape. It checks
-all numbered callees, lexical scopes, arities, ordinary shared contracts,
-scanned constructor fields and fieldless resolved Boolean pins. Calls execute
-that same checked map. A proposal outside this domain is explicitly declined.
-This is the initial checker; the general ownership optimizations above remain
-later work.
+In the top-level compiler and claim/SIP verifiers
+(`Own.Plain.selectRcPolicyForSrc`), `--rc auto` inspects whether the
+relevance-erased `Src.Prog` is zero-RC (`zeroRcProgram`); if so, it selects
+`.zeroRc` and uses the immortal backend (`Recheck.run`). A rooted program outside
+the plain-RC domain (`programDomain`) also selects `.zeroRc`, so that policy names
+the immortal backend and does not imply the program needs no reference counts.
+Other programs (or `--rc on`) route through the bounded plain-RC replay path
+(`Recheck.RcReplay.run`). On the plain-RC route, `Plain.checkPlainMap` (and
+`Plain.checkContractPlainMap`, which validates against explicit per-parameter
+borrow and return-ownership contracts) conservatively requires the complete
+proposed function map to equal the canonical producer's map, including its trie
+shape. It checks all numbered callees, lexical scopes, arities, ordinary shared
+contracts, scanned constructor fields and fieldless resolved Boolean pins. Calls
+execute that same checked map. A proposal outside this domain is explicitly
+declined. This is the initial checker; the general ownership optimizations above
+remain later work.
 
 `Plain.checked_program_refines` proves Fir-relative execution from concrete
 input denotations and exact external/root/heap-edge counts. Successful results

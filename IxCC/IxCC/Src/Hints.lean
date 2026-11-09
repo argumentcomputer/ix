@@ -121,7 +121,31 @@ def ofK1Json (j : Json) : Except String Hints := do
       name? := (str e "definition").toOption }
   return { roots, proposals, resource := ← resourceOfJson j }
 
+/-- Linear scan outside string literals, rejecting exponents, fractions and number
+tokens over 32 digits. `Lean.Json.parse` materialises an exponent as a `Nat` and
+panics, uncatchably, on `1e100000000000`. -/
+def checkJsonChars : Bool → Bool → Nat → List Char → Except String Unit
+  | _, _, _, [] => .ok ()
+  | true, true, _, _ :: cs => checkJsonChars true false 0 cs
+  | true, false, _, '\\' :: cs => checkJsonChars true true 0 cs
+  | true, false, _, '"' :: cs => checkJsonChars false false 0 cs
+  | true, false, _, _ :: cs => checkJsonChars true false 0 cs
+  | false, _, _, '"' :: cs => checkJsonChars true false 0 cs
+  | false, _, digits, c :: cs =>
+    if c.isDigit then
+      if digits ≥ 32 then .error "number token too long"
+      else checkJsonChars false false (digits + 1) cs
+    else if digits > 0 && (c == 'e' || c == 'E' || c == '.') then
+      .error "scientific or fractional number"
+    else
+      checkJsonChars false false 0 cs
+
+/-- Run before parsing any untrusted JSON (certificates and the equations sidecar). -/
+def checkJsonText (text : String) : Except String Unit :=
+  checkJsonChars false false 0 text.toList
+
 def ofK1String (text : String) : Except String Hints := do
+  checkJsonText text
   ofK1Json (← Json.parse text)
 
 end Hints

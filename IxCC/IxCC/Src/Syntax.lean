@@ -439,6 +439,50 @@ def nodes : Term → Nat
   | .proj _ _ e => e.nodes + 1
   | _ => 1
 
+/-- Remaining node budget after visiting `t`, or `none` if `t`'s tree expansion
+exceeds `b` nodes. Structural over `t`, short-circuiting as soon as the budget
+is exhausted so shared DAGs cannot cause exponential walks. -/
+def nodesBudget : Term → Nat → Option Nat
+  | _, 0 => none
+  | .app f a _ _, b + 1 => do
+    let b1 ← nodesBudget f b
+    nodesBudget a b1
+  | .lam _ d t, b + 1 | .pi _ _ d t, b + 1 => do
+    let b1 ← nodesBudget d b
+    nodesBudget t b1
+  | .letE _ _ t v body, b + 1 => do
+    let b1 ← nodesBudget t b
+    let b2 ← nodesBudget v b1
+    nodesBudget body b2
+  | .proj _ _ e, b + 1 =>
+    nodesBudget e b
+  | _, b + 1 => some b
+
+/-- Whether `t`'s tree expansion has at most `cap` nodes. -/
+def nodesLe (t : Term) (cap : Nat) : Bool :=
+  (nodesBudget t (cap + 1)).isSome
+
+/-- Collect constant IDs referenced in `t` within a node budget `b`, returning
+`none` if the tree expansion of `t` exceeds `b` nodes. -/
+def constsBudget : Term → Nat → List CId → Option (Nat × List CId)
+  | _, 0, _ => none
+  | .const c _, b + 1, acc =>
+    some (b, if acc.contains c then acc else c :: acc)
+  | .app f a _ _, b + 1, acc => do
+    let (b1, acc1) ← constsBudget f b acc
+    constsBudget a b1 acc1
+  | .lam _ d t, b + 1, acc | .pi _ _ d t, b + 1, acc => do
+    let (b1, acc1) ← constsBudget d b acc
+    constsBudget t b1 acc1
+  | .letE _ _ t v body, b + 1, acc => do
+    let (b1, acc1) ← constsBudget t b acc
+    let (b2, acc2) ← constsBudget v b1 acc1
+    constsBudget body b2 acc2
+  | .proj s _ e, b + 1, acc =>
+    let acc' := if acc.contains s then acc else s :: acc
+    constsBudget e b acc'
+  | _, b + 1, acc => some (b, acc)
+
 /-- The universe arguments of a Π-telescope's `i`-th binder domain head
 (structural: no array indexing). -/
 def domainUnivs? : Nat → Term → Option (List Univ)

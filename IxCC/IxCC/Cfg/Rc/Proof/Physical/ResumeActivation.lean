@@ -12,18 +12,18 @@ return instruction are restored from concrete receipts after arbitrary
 callee heap growth; no execution of the caller continuation is assumed. -/
 theorem resume_activation {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)}
     {lp : Lir.Program} {H copied : Heap} {addresses : AddressMap}
-    {external : Nat → Nat} {held roots : List RVal} {live : List Fir.Var}
+    {external : Nat → Nat} {held roots : List RVal} {live : List Fir.Var} {imm : List Fir.Var}
     {ρf : Fir.Env} {ρo : Own.Env} {joins : Own.Plain.Joins}
     {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     (before : Own.Plain.State (Own.Plain.signatures F) H (holdRoots external held)
-      live ρf ρo roots joins Jf Jo)
+      live ρf ρo roots joins Jf Jo imm)
     (copiedSize : copied.size = H.size)
     (copies : ∀ value, H.value? value = copied.value? value)
     {bound : Nat} {function : Cfg.Fun} {source : Cfg.Frame} {saved : Lir.Frame}
     (frame : FrameState P pairs lp addresses copied.size bound function source saved)
     {x : Nat} {cont : Fir.Code} (destination : saved.dsts = [x]) (real : x < bound)
     (layout : ∀ value, At F P {source with env := source.env.insert x value}
-      (ρo.insert x value) Jo (Own.Plain.lowerCode (live ++ [x]) joins cont))
+      (ρo.insert x value) Jo (Own.Plain.lowerCode (live ++ [x]) joins cont imm))
     (fused : ∀ value block, function.blocks[source.blk]? = some block →
       Rt.Proof.FusedDone (tablesOf P pairs) function block {source with env := source.env.insert x value})
     (fresh : x ∉ live)
@@ -39,7 +39,7 @@ theorem resume_activation {F : Fir.Program} {P : Program} {pairs : List (Nat × 
     Activation F P pairs lp returned.heap returned.addresses (holdRoots external held)
       (live ++ [x]) (ρf.insert x logical) (ρo.insert x returned.value)
       (roots ++ [returned.value]) joins Jf Jo cont bound function
-      {source with env := source.env.insert x returned.value} resumed ∧
+      {source with env := source.env.insert x returned.value} resumed imm ∧
     HeapState P pairs returned.heap returned.addresses returned.memory (holdRoots external held)
       (roots ++ [returned.value]) context base returned.bump limit regionBytes returned.slots returned.lists ∧
     HeapState P pairs returned.heap returned.addresses returned.memory external

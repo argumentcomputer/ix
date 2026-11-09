@@ -19,14 +19,14 @@ theorem primitive_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
-    {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
+    {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
     {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
     {x : Nat} {op : Lam.Prim} {args : List Fir.Arg} {body : Fir.Code}
     {sourceFd : Fir.Fun} {fd : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (sourceLookup : F.fun? source.fn = some sourceFd)
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
       live sourceEnv ownedEnv roots joins sourceJoins ownedJoins (.bind x (.prim op args) body)
-      sourceFd.vars fd source target)
+      sourceFd.vars fd source target imm)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
     (heap : HeapState P pairs H addresses mem external roots context base bump limit regionBytes slots lists)
@@ -41,7 +41,8 @@ theorem primitive_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
       Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
         (live ++ [x]) (sourceEnv.insert x logical) (ownedEnv.insert x value) (roots ++ [value])
         joins sourceJoins ownedJoins body sourceFd.vars fd
-        {source with rest := tail, env := source.env.insert x value} after ∧
+        {source with rest := tail, env := source.env.insert x value} after
+        (Own.Plain.nextImm imm x (.prim op args)) ∧
       HeapState P pairs H addresses mem external (roots ++ [value])
         context base bump limit regionBytes slots lists) ∨
     Sem.Fails (Lir.semStep (Public.Spec.sourceStage P functions main))
@@ -63,7 +64,8 @@ theorem primitive_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
       ownedEnv H (.fir (.prim op args)) = .ok (value, H) := by
     simp [Own.evalRhs, arguments, result, Sem.Result.map]
   have atBind : At F P source ownedEnv ownedJoins
-      (.bind x (.prim op args) (Own.Plain.lowerCode (live ++ [x]) joins body)) := before.layout
+      (.bind x (.prim op args) (Own.Plain.lowerCode (live ++ [x]) joins body
+        (Own.Plain.nextImm imm x (.prim op args)))) := before.layout
   obtain ⟨tail, head, continuation⟩ := atBind.bind_continuation
   have sub := before.lexical.1
   have fullEffect : Own.evalRhs .rc P.base.tables source.env H (.fir (.prim op args)) =
@@ -78,7 +80,10 @@ theorem primitive_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
   · have balance : Own.Rc.Balance H external (roots ++ [value]) :=
       Own.Plain.balance_append_comm (show Own.Rc.Balance H external ([value] ++ roots) from
         Own.Plain.balance_immediate before.canonical.counts immediate)
-    have nextState := before.canonical.bind x fresh den balance (fun _ _ => rfl)
+    have hargs_imm : Own.Plain.ImmEnv ownedEnv (Own.Plain.argVars args) :=
+      Own.Plain.immEnv_argVars arguments (Own.Plain.primResult_args_immediate denArgs primitive)
+    have nextState := before.canonical.bind_prim x op args fresh argsScope hargs_imm immediate
+      den balance (fun _ _ => rfl)
     have unchanged : Own.Rc.holdRoots external (roots ++ [value]) = Own.Rc.holdRoots external roots := by
       funext location
       simp [Own.Rc.holdRoots, Own.Rc.refsIn_append, Own.Rc.refsIn, immediate location]

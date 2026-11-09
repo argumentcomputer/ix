@@ -15,7 +15,7 @@ theorem case_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : 
     PhysicalCode F P config pairs main clock sourceJoins (.case x alts default) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    imm sourceLookup before heap
   rw [Fir.eval_case]
   cases lookup : sourceEnv.get? x with
   | none => simp only [lookup, Sem.Result.ofOption, Sem.Result.bind]; trivial

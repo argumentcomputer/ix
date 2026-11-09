@@ -491,6 +491,25 @@ theorem sat_sim : ∀ {cx : Cx} {h : Head} {q : Profile} {args : List Src.Term.A
         exact hbind.lvl_ge (by rw [List.getElem?_eq_getElem hi]; simpa using e)
       rw [hbind.cx_eq]
       exact he.minorsLt.lookup_none hge sig
+  | cx, _, _, _, _, .casesUnbox (c := c) (r := r) (np := np) (nmin := nmin) (ni := ni)
+      (refs := refs) (l := l) (body := body) hres hd hbind hk hl hu hbody,
+      _, _, hlen, ρ, ρ', ls, ls', he, hag, hag' => by
+    refine (bind_sim hbind he hag (K := fun ss k => Src.fire S.p k (.cases c) ls' ss)
+      (X := .tick body) fun ss ys hrs he' => ?_).congr
+      (fun k => by rw [map_fst_zipIdx _ (fun ⟨_, _⟩ => rfl)]) (fun k => rfl)
+    have hl' : ss.length = np + 1 + ni + 1 + nmin := by
+      rw [← hrs.length, hbind.refs_length]; simpa [headArity, hres, hd] using hlen
+    refine cases_unbox_form wf hlt hres hd hk hu he' (by rw [hbind.cx_eq]; exact hag) hag'
+      (FormArgs.of_forall2 hrs) hl' hl (fun sig => ?_) hbody
+    have hge : cx.depth ≤ l := by
+      have hi : np + 1 + ni < refs.length := by
+        refine Nat.lt_of_not_le fun hge => ?_
+        rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none hge] at hl
+        cases hl
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi] at hl
+      exact hbind.lvl_ge (by rw [List.getElem?_eq_getElem hi]; simpa using hl)
+    rw [hbind.cx_eq]
+    exact he.minorsLt.lookup_none hge sig
   | _, _, _, _, _, .casesOrd (cx' := cx') (c := c) (r := r) (np := np) (nmin := nmin) (ni := ni) (l := l)
       (alts := alts) hres hd hbind hk hl hu halts, _, _, hlen, ρ, ρ', ls, ls', he, hag, hag' => by
     refine (bind_sim hbind he hag (K := fun ss k => Src.fire S.p k (.cases c) ls' ss)

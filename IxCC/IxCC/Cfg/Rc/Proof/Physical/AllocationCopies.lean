@@ -9,19 +9,20 @@ token per argument occurrence. Repeated variables remain repeated fields;
 immediates participate in the argument list without changing heap counts. -/
 theorem allocation_copy_tokens
     {H : Heap} {external : Nat → Nat} {held roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live : List Fir.Var} {imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     (before : Tokens H external held live ρf ρo roots)
-    (args : List Fir.Arg) (scope : args.all (Own.Plain.argIn live) = true) :
+    (args : List Fir.Arg) (scope : args.all (Own.Plain.argIn live) = true)
+    (himm : Own.Plain.ImmEnv ρo imm) :
     ∃ fields sourceValues copied,
       Own.evalArgs ρo args = some fields ∧
       Fir.evalArgs ρf args = some sourceValues ∧
-      Own.Plain.evalActions ρo H (Own.Plain.copies args) = .ok copied ∧
+      Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok copied ∧
       Tokens copied external (fields ++ held) live ρf ρo roots ∧
       (∀ root, H.value? root = copied.value? root) := by
   obtain ⟨fields, sourceValues, arguments, sourceArgs, _⟩ :=
     Own.Plain.args_den before.den args scope
   obtain ⟨copied, actions, balance, preserved⟩ :=
-    Own.Plain.copies_sound ρo H args before.balance
+    Own.Plain.copies_heapArgs_sound ρo H args himm before.balance
       (Own.Plain.argsOwned_of_scope before.den before.exactRoots scope) arguments
   refine ⟨fields, sourceValues, copied, arguments, sourceArgs, actions,
     ⟨before.den.transport before.exactRoots (fun root _ => preserved root),

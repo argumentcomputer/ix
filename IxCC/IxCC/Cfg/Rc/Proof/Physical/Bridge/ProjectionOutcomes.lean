@@ -17,7 +17,7 @@ theorem fieldless_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (next : PhysicalCode F P config pairs main clock sourceJoins body) :
     PhysicalCode F P config pairs main clock sourceJoins (.bind x (.ctor ctor args) body) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFd fd
-    source target mem context base bump limit regionBytes slots lists callers sourceLookup before heap
+    source target mem context base bump limit regionBytes slots lists callers imm sourceLookup before heap
   rw [Fir.eval_bind_ctor]
   rcases Own.Plain.fir_rhs_pure F sourceEnv (.ctor ctor args) with stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial
@@ -43,7 +43,7 @@ theorem projection_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (next : PhysicalCode F P config pairs main clock sourceJoins body) :
     PhysicalCode F P config pairs main clock sourceJoins (.bind x (.proj y key i) body) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFd fd
-    source target mem context base bump limit regionBytes slots lists callers sourceLookup before heap
+    source target mem context base bump limit regionBytes slots lists callers imm sourceLookup before heap
   rw [Fir.eval_bind_proj]
   rcases Own.Plain.fir_rhs_pure F sourceEnv (.proj y key i) with stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial
@@ -51,7 +51,7 @@ theorem projection_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     rcases projection_activation admitted.scopedProgram
         (Public.Spec.rawSource config P pairs) main sourceLookup before heap evaluation callers
         with success | failed
-    · obtain ⟨value, H', mem', tail, after, _, _, trace, activation, ready, size, values⟩ := success
+    · obtain ⟨value, H', mem', tail, charge, after, _, trace, activation, ready, size, values⟩ := success
       have preserved : Own.Plain.ExternalPreserved H H' external := by
         intro root logical _ den
         change H'.value? root = some logical

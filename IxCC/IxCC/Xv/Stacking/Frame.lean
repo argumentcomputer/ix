@@ -135,17 +135,19 @@ def cellOk (l : FrameLayout) (o : Nat) : Bool :=
 
 /-- The recheck-path validator of a proposed layout (05 §6). -/
 def check (a : Facts) (l : FrameLayout) : Bool :=
+  decide (l.size + slack ≤ maxFrame) &&
   l.slotOff.length == a.slots &&
+  decide (l.saveOff.length ≤ (saves a).length) &&
   decide (a.outArgs ≤ l.outArgs) &&
   decide (8 * l.outArgs ≤ l.size) &&
-  l.cells.all l.cellOk &&
-  decide l.cells.Nodup &&
-  decide l.saved.Nodup &&
-  l.saved.all (saves a).contains &&
-  (saves a).all l.saved.contains &&
   (!a.calls || l.size != 0) &&
   (l.size == 0 || (l.size + 8) % 16 == 0) &&
-  decide (l.size + slack ≤ maxFrame)
+  l.saved.all (saves a).contains &&
+  (saves a).all l.saved.contains &&
+  decide l.saved.Nodup &&
+  l.cells.all l.cellOk &&
+  decide (8 * l.cells.length ≤ l.size) &&
+  decide l.cells.Nodup
 
 /-- The untrusted oracle: outgoing arguments at the bottom, then the slots
 in index order, then the saves, rounded up so that `rsp` is 16-aligned at a
@@ -186,8 +188,8 @@ structure Sound (a : Facts) (l : FrameLayout) : Prop where
 theorem check_sound {a : Facts} {l : FrameLayout} (h : l.check a = true) : l.Sound a := by
   simp only [check, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true,
     Bool.or_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨covers, outArgs⟩, fit⟩, cells⟩, distinct⟩, savesDistinct⟩, sub⟩, sup⟩, calls⟩,
-    aligned16⟩, bounded⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨bounded, covers⟩, _⟩, outArgs⟩, fit⟩, calls⟩, aligned16⟩, sub⟩, sup⟩,
+    savesDistinct⟩, cells⟩, _⟩, distinct⟩ := h
   refine ⟨covers, outArgs, fit, ?_, ?_, distinct, savesDistinct, ?_, ?_, ?_, bounded⟩
   · intro o member
     have ok := cells o member

@@ -100,4 +100,30 @@ example : sizeAfter { steps := [.shrink [1, 1],
     loop = sizeAfter { steps := [.shrink [1, 1]] } loop := by
   decide +kernel
 
+/-- A small local continuation `let rhs := λ _. 1` applied as a saturated head
+call across multiple `case` arms. -/
+def sharedCont : Lam.Program := prog
+  [ .lam .strict {} (.letE { nonDep := true } (.lam .strict {} (lit 1))
+      (.case (v 1)
+        [ .mk natZ 0 (.app (v 0) .box .strict),
+          .mk natS 1 (.case (v 0)
+            [ .mk natZ 0 (.app (v 1) .box .strict),
+              .mk natS 1 (v 0) ] none) ] none)) ]
+
+/-- Residual `(fns, apps)` counts after running `cert` on `L`. -/
+def residualAfter (cert : Anf.Pipeline.Cert) (L : Lam.Program) : Option (Nat × Nat) :=
+  match Pipeline.run cert L with
+  | .ok P =>
+    let r := Anf.Pipeline.residual P
+    some (r.fns.length, r.apps.length)
+  | .error _ => none
+
+set_option maxRecDepth 100000 in
+/-- P1 keeps the multi-use local `.fn` and its two `.app` sites; one P2 round
+β-inlines the small local `.fn` at both saturated head-call sites, leaving
+zero residual `.fn` or `.app` nodes. -/
+example : residualAfter {} sharedCont = some (1, 1) ∧
+    residualAfter { steps := [.shrink [1]] } sharedCont = some (0, 0) := by
+  decide +kernel
+
 end IxCCTests.Anf.KernelEval

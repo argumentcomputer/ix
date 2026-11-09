@@ -1,12 +1,50 @@
 {
   "format": "ixcc/x86-reference-readiness/1",
-  "reviewed_at": "2026-09-09",
+  "reviewed_at": "2026-11-08",
   "model": {
     "repository": "https://github.com/rems-project/sail-x86-from-acl2",
     "revision": "0c6c023dccc7c20d8d9dbfc481f01d9bb49d62bf",
     "archive": "https://codeload.github.com/rems-project/sail-x86-from-acl2/tar.gz/0c6c023dccc7c20d8d9dbfc481f01d9bb49d62bf",
     "sha256": "3b4df2a26433915a8b8789cd7f4240dda82835a6bad7b8d118535e2557d0c6f6",
     "view": { "set64bit": 1, "app_view": 1 }
+  },
+  "reference_models": {
+    "sail_x86": {
+      "repository": "https://github.com/rems-project/sail-x86-from-acl2",
+      "revision": "0c6c023dccc7c20d8d9dbfc481f01d9bb49d62bf",
+      "sha256": "3b4df2a26433915a8b8789cd7f4240dda82835a6bad7b8d118535e2557d0c6f6",
+      "view": { "set64bit": 1, "app_view": 1 }
+    },
+    "aws_lnsym": {
+      "repository": "https://github.com/awslabs/LNSym",
+      "upstream_hol_light": "https://github.com/aws/s2n-bignum",
+      "view": "x86_64 user-space application view"
+    }
+  },
+  "table_summary": {
+    "source": "IxCC/X86/Table/Rows.lean",
+    "total_op_rows": 243,
+    "non_branch_condition_expanded_rows": 228,
+    "standalone_non_control_rows": 230,
+    "control_rows": 13,
+    "mnemonic_constructors": 31,
+    "non_control_mnemonic_constructors": 27,
+    "mnemonics": [
+      "add", "or", "and", "sub", "xor", "cmp", "test",
+      "not", "neg",
+      "shl", "shr", "sar", "rol", "ror",
+      "bswap",
+      "mov", "movzx", "movsx", "movsxd", "lea", "imul", "mul", "div",
+      "setcc", "cmovcc",
+      "push", "pop",
+      "call", "jmp", "jcc", "ret"
+    ],
+    "widths": ["w8", "w16", "w32", "w64"],
+    "conditions": [
+      "eq", "ne", "unsignedLt", "unsignedLe", "unsignedGt",
+      "unsignedGe", "signedLt", "signedLe", "signedGt", "signedGe"
+    ],
+    "encoding_classes": ["MR", "RM", "MI", "MI8", "M", "MC", "OI", "O", "RMI", "RMI8", "D32", "ZO"]
   },
   "status": {
     "archive_verified": true,
@@ -17,20 +55,459 @@
     "reference_agreement_proved": false
   },
   "coverage": [
-    { "forms": ["mov-reg", "store"], "file": "model/move.sail", "function": "x86_mov_op_en_mr" },
-    { "forms": ["load32", "load64"], "file": "model/move.sail", "function": "x86_mov_op_en_rm" },
-    { "forms": ["mov-imm"], "file": "model/move.sail", "function": "x86_mov_op_en_oi" },
-    { "forms": ["lea"], "file": "model/move.sail", "function": "x86_lea" },
-    { "forms": ["load8", "load16"], "file": "model/move.sail", "function": "x86_movzx" },
-    { "forms": ["alu-reg", "cmp-reg"], "file": "model/arith_and_logic.sail", "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_g" },
-    { "forms": ["alu-imm", "cmp-imm"], "file": "model/arith_and_logic.sail", "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_i" },
-    { "forms": ["imul"], "file": "model/multiply.sail", "function": "x86_imul_op_en_rm" },
-    { "forms": ["push"], "file": "model/push_and_pop.sail", "function": "x86_push_general_register" },
-    { "forms": ["pop"], "file": "model/push_and_pop.sail", "function": "x86_pop_general_register" },
-    { "forms": ["jump", "tail-call"], "file": "model/jump_and_loop.sail", "function": "x86_near_jmp_op_en_d" },
-    { "forms": ["conditional-branch"], "file": "model/conditional.sail", "function": "x86_two_byte_jcc" },
-    { "forms": ["call", "runtime-call"], "file": "model/subroutine.sail", "function": "x86_call_e8_op_en_m" },
-    { "forms": ["ret"], "file": "model/subroutine.sail", "function": "x86_ret" }
+    {
+      "forms": ["mov-reg", "store", "mov-mr"],
+      "mnemonics": ["mov"],
+      "op_en": ["MR"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["88 /r", "89 /r"],
+      "rows": 4,
+      "file": "model/move.sail",
+      "function": "x86_mov_op_en_mr",
+      "lnsym": {
+        "module": "X86/Instructions/MOV.lean",
+        "definition": "exec_mov_mr",
+        "s2n_bignum": "x86/proofs/base.ml:MOV"
+      }
+    },
+    {
+      "forms": ["load8", "load16", "load32", "load64", "mov-rm"],
+      "mnemonics": ["mov"],
+      "op_en": ["RM"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["8A /r", "8B /r"],
+      "rows": 4,
+      "file": "model/move.sail",
+      "function": "x86_mov_op_en_rm",
+      "lnsym": {
+        "module": "X86/Instructions/MOV.lean",
+        "definition": "exec_mov_rm",
+        "s2n_bignum": "x86/proofs/base.ml:MOV"
+      }
+    },
+    {
+      "forms": ["mov-imm", "mov-oi"],
+      "mnemonics": ["mov"],
+      "op_en": ["OI"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["B0+rb ib", "B8+rw iw", "B8+rd id", "REX.W B8+rd io"],
+      "rows": 4,
+      "file": "model/move.sail",
+      "function": "x86_mov_op_en_oi",
+      "lnsym": {
+        "module": "X86/Instructions/MOV.lean",
+        "definition": "exec_mov_oi",
+        "s2n_bignum": "x86/proofs/base.ml:MOV"
+      }
+    },
+    {
+      "forms": ["mov-mi"],
+      "mnemonics": ["mov"],
+      "op_en": ["MI"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["C6 /0 ib", "C7 /0 iw", "C7 /0 id"],
+      "rows": 4,
+      "file": "model/move.sail",
+      "function": "x86_mov_op_en_mi",
+      "lnsym": {
+        "module": "X86/Instructions/MOV.lean",
+        "definition": "exec_mov_mi",
+        "s2n_bignum": "x86/proofs/base.ml:MOV"
+      }
+    },
+    {
+      "forms": ["load8", "load16", "movzx"],
+      "mnemonics": ["movzx"],
+      "op_en": ["RM"],
+      "widths": ["w32 (src: w8)", "w32 (src: w16)", "w64 (src: w8)", "w64 (src: w16)"],
+      "opcodes": ["0F B6 /r", "0F B7 /r", "REX.W 0F B6 /r", "REX.W 0F B7 /r"],
+      "rows": 4,
+      "file": "model/move.sail",
+      "function": "x86_movzx",
+      "lnsym": {
+        "module": "X86/Instructions/MOVZX.lean",
+        "definition": "exec_movzx",
+        "s2n_bignum": "x86/proofs/base.ml:MOVZX"
+      }
+    },
+    {
+      "forms": ["movsx"],
+      "mnemonics": ["movsx"],
+      "op_en": ["RM"],
+      "widths": ["w16 (src: w8)", "w32 (src: w8)", "w64 (src: w8)", "w32 (src: w16)", "w64 (src: w16)"],
+      "opcodes": ["66 0F BE /r", "0F BE /r", "REX.W 0F BE /r", "0F BF /r", "REX.W 0F BF /r"],
+      "rows": 5,
+      "file": "model/move.sail",
+      "function": "x86_movsx",
+      "lnsym": {
+        "module": "X86/Instructions/MOVSX.lean",
+        "definition": "exec_movsx",
+        "s2n_bignum": "x86/proofs/base.ml:MOVSX"
+      }
+    },
+    {
+      "forms": ["movsxd"],
+      "mnemonics": ["movsxd"],
+      "op_en": ["RM"],
+      "widths": ["w64 (src: w32)"],
+      "opcodes": ["REX.W 63 /r"],
+      "rows": 1,
+      "file": "model/move.sail",
+      "function": "x86_movsxd",
+      "lnsym": {
+        "module": "X86/Instructions/MOVSX.lean",
+        "definition": "exec_movsxd",
+        "s2n_bignum": "x86/proofs/base.ml:MOVSXD"
+      }
+    },
+    {
+      "forms": ["lea"],
+      "mnemonics": ["lea"],
+      "op_en": ["RM"],
+      "widths": ["w64"],
+      "opcodes": ["REX.W 8D /r"],
+      "rows": 1,
+      "file": "model/move.sail",
+      "function": "x86_lea",
+      "lnsym": {
+        "module": "X86/Instructions/LEA.lean",
+        "definition": "exec_lea",
+        "s2n_bignum": "x86/proofs/base.ml:LEA"
+      }
+    },
+    {
+      "forms": ["alu-reg", "cmp-reg", "arith-mr"],
+      "mnemonics": ["add", "or", "and", "sub", "xor", "cmp"],
+      "op_en": ["MR"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["00/01 /r", "08/09 /r", "20/21 /r", "28/29 /r", "30/31 /r", "38/39 /r"],
+      "rows": 24,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_g",
+      "lnsym": {
+        "module": "X86/Instructions/Arith.lean",
+        "definition": "exec_alu_mr",
+        "s2n_bignum": "x86/proofs/base.ml:ADD,OR,AND,SUB,XOR,CMP"
+      }
+    },
+    {
+      "forms": ["alu-rm", "cmp-rm", "arith-rm"],
+      "mnemonics": ["add", "or", "and", "sub", "xor", "cmp"],
+      "op_en": ["RM"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["02/03 /r", "0A/0B /r", "22/23 /r", "2A/2B /r", "32/33 /r", "3A/3B /r"],
+      "rows": 24,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_g_e",
+      "lnsym": {
+        "module": "X86/Instructions/Arith.lean",
+        "definition": "exec_alu_rm",
+        "s2n_bignum": "x86/proofs/base.ml:ADD,OR,AND,SUB,XOR,CMP"
+      }
+    },
+    {
+      "forms": ["alu-imm", "cmp-imm", "arith-mi", "arith-mi8"],
+      "mnemonics": ["add", "or", "and", "sub", "xor", "cmp"],
+      "op_en": ["MI", "MI8"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["80 /d ib", "81 /d iw/id", "83 /d ib (d in 0,1,4,5,6,7)"],
+      "rows": 42,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_i",
+      "lnsym": {
+        "module": "X86/Instructions/Arith.lean",
+        "definition": "exec_alu_mi",
+        "s2n_bignum": "x86/proofs/base.ml:ADD,OR,AND,SUB,XOR,CMP"
+      }
+    },
+    {
+      "forms": ["not", "not-m"],
+      "mnemonics": ["not"],
+      "op_en": ["M"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["F6 /2", "F7 /2"],
+      "rows": 4,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_not",
+      "lnsym": {
+        "module": "X86/Instructions/NOT.lean",
+        "definition": "exec_not",
+        "s2n_bignum": "x86/proofs/base.ml:NOT"
+      }
+    },
+    {
+      "forms": ["neg", "neg-m"],
+      "mnemonics": ["neg"],
+      "op_en": ["M"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["F6 /3", "F7 /3"],
+      "rows": 4,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_neg",
+      "lnsym": {
+        "module": "X86/Instructions/NEG.lean",
+        "definition": "exec_neg",
+        "s2n_bignum": "x86/proofs/base.ml:NEG"
+      }
+    },
+    {
+      "forms": ["test-mr"],
+      "mnemonics": ["test"],
+      "op_en": ["MR"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["84 /r", "85 /r"],
+      "rows": 4,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_g",
+      "lnsym": {
+        "module": "X86/Instructions/TEST.lean",
+        "definition": "exec_test_mr",
+        "s2n_bignum": "x86/proofs/base.ml:TEST"
+      }
+    },
+    {
+      "forms": ["test-mi"],
+      "mnemonics": ["test"],
+      "op_en": ["MI"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["F6 /0 ib", "F7 /0 iw/id"],
+      "rows": 4,
+      "file": "model/arith_and_logic.sail",
+      "function": "x86_add_adc_sub_sbb_or_and_xor_cmp_test_e_i",
+      "lnsym": {
+        "module": "X86/Instructions/TEST.lean",
+        "definition": "exec_test_mi",
+        "s2n_bignum": "x86/proofs/base.ml:TEST"
+      }
+    },
+    {
+      "forms": ["shl-mi", "shr-mi", "sar-mi", "shl-mc", "shr-mc", "sar-mc"],
+      "mnemonics": ["shl", "shr", "sar"],
+      "op_en": ["MI", "MC"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["C0 /4,/5,/7 ib", "C1 /4,/5,/7 ib", "D2 /4,/5,/7", "D3 /4,/5,/7"],
+      "rows": 24,
+      "file": "model/rotate_and_shift.sail",
+      "function": "x86_sal_sar_shl_shr_rcl_rcr_rol_ror",
+      "lnsym": {
+        "module": "X86/Instructions/Shift.lean",
+        "definition": "exec_shl_shr_sar",
+        "s2n_bignum": "x86/proofs/base.ml:SHL,SHR,SAR"
+      }
+    },
+    {
+      "forms": ["rol-mi", "ror-mi", "rol-mc", "ror-mc"],
+      "mnemonics": ["rol", "ror"],
+      "op_en": ["MI", "MC"],
+      "widths": ["w8", "w16", "w32", "w64"],
+      "opcodes": ["C0 /0,/1 ib", "C1 /0,/1 ib", "D2 /0,/1", "D3 /0,/1"],
+      "rows": 16,
+      "file": "model/rotate_and_shift.sail",
+      "function": "x86_sal_sar_shl_shr_rcl_rcr_rol_ror",
+      "lnsym": {
+        "module": "X86/Instructions/Rotate.lean",
+        "definition": "exec_rol_ror",
+        "s2n_bignum": "x86/proofs/base.ml:ROL,ROR"
+      }
+    },
+    {
+      "forms": ["bswap", "bswap-o"],
+      "mnemonics": ["bswap"],
+      "op_en": ["O"],
+      "widths": ["w32", "w64"],
+      "opcodes": ["0F C8+rd", "REX.W 0F C8+rd"],
+      "rows": 2,
+      "file": "model/exchange.sail",
+      "function": "x86_bswap",
+      "lnsym": {
+        "module": "X86/Instructions/BSWAP.lean",
+        "definition": "exec_bswap",
+        "s2n_bignum": "x86/proofs/base.ml:BSWAP"
+      }
+    },
+    {
+      "forms": ["imul", "imul-rm"],
+      "mnemonics": ["imul"],
+      "op_en": ["RM"],
+      "widths": ["w16", "w32", "w64"],
+      "opcodes": ["0F AF /r"],
+      "rows": 3,
+      "file": "model/multiply.sail",
+      "function": "x86_imul_op_en_rm",
+      "lnsym": {
+        "module": "X86/Instructions/IMUL.lean",
+        "definition": "exec_imul_rm",
+        "s2n_bignum": "x86/proofs/base.ml:IMUL"
+      }
+    },
+    {
+      "forms": ["imul-rmi8", "imul-rmi"],
+      "mnemonics": ["imul"],
+      "op_en": ["RMI8", "RMI"],
+      "widths": ["w16", "w32", "w64"],
+      "opcodes": ["6B /r ib", "69 /r iw/id"],
+      "rows": 6,
+      "file": "model/multiply.sail",
+      "function": "x86_imul_op_en_rmi",
+      "lnsym": {
+        "module": "X86/Instructions/IMUL.lean",
+        "definition": "exec_imul_rmi",
+        "s2n_bignum": "x86/proofs/base.ml:IMUL3"
+      }
+    },
+    {
+      "forms": ["mul", "mul-m"],
+      "mnemonics": ["mul"],
+      "op_en": ["M"],
+      "widths": ["w32", "w64"],
+      "opcodes": ["F7 /4", "REX.W F7 /4"],
+      "rows": 2,
+      "file": "model/multiply.sail",
+      "function": "x86_mul",
+      "lnsym": {
+        "module": "X86/Instructions/MUL.lean",
+        "definition": "exec_mul",
+        "s2n_bignum": "x86/proofs/base.ml:MUL"
+      }
+    },
+    {
+      "forms": ["div", "div-m"],
+      "mnemonics": ["div"],
+      "op_en": ["M"],
+      "widths": ["w32", "w64"],
+      "opcodes": ["F7 /6", "REX.W F7 /6"],
+      "rows": 2,
+      "file": "model/divide.sail",
+      "function": "x86_div",
+      "lnsym": {
+        "module": "X86/Instructions/DIV.lean",
+        "definition": "exec_div",
+        "s2n_bignum": "x86/proofs/base.ml:DIV"
+      }
+    },
+    {
+      "forms": ["setcc"],
+      "mnemonics": ["setcc"],
+      "op_en": ["M"],
+      "widths": ["w8"],
+      "conditions": ["eq", "ne", "unsignedLt", "unsignedLe", "unsignedGt", "unsignedGe", "signedLt", "signedLe", "signedGt", "signedGe"],
+      "opcodes": ["0F 90+cc /0"],
+      "rows": 10,
+      "file": "model/conditional.sail",
+      "function": "x86_setcc",
+      "lnsym": {
+        "module": "X86/Instructions/SETcc.lean",
+        "definition": "exec_setcc",
+        "s2n_bignum": "x86/proofs/base.ml:SETCC"
+      }
+    },
+    {
+      "forms": ["cmovcc"],
+      "mnemonics": ["cmovcc"],
+      "op_en": ["RM"],
+      "widths": ["w16", "w32", "w64"],
+      "conditions": ["eq", "ne", "unsignedLt", "unsignedLe", "unsignedGt", "unsignedGe", "signedLt", "signedLe", "signedGt", "signedGe"],
+      "opcodes": ["0F 40+cc /r"],
+      "rows": 30,
+      "file": "model/conditional.sail",
+      "function": "x86_cmovcc",
+      "lnsym": {
+        "module": "X86/Instructions/CMOVcc.lean",
+        "definition": "exec_cmovcc",
+        "s2n_bignum": "x86/proofs/base.ml:CMOVCC"
+      }
+    },
+    {
+      "forms": ["push"],
+      "mnemonics": ["push"],
+      "op_en": ["O"],
+      "widths": ["w64"],
+      "opcodes": ["50+rd"],
+      "rows": 1,
+      "file": "model/push_and_pop.sail",
+      "function": "x86_push_general_register",
+      "lnsym": {
+        "module": "X86/Instructions/Stack.lean",
+        "definition": "exec_push",
+        "s2n_bignum": "x86/proofs/base.ml:PUSH"
+      }
+    },
+    {
+      "forms": ["pop"],
+      "mnemonics": ["pop"],
+      "op_en": ["O"],
+      "widths": ["w64"],
+      "opcodes": ["58+rd"],
+      "rows": 1,
+      "file": "model/push_and_pop.sail",
+      "function": "x86_pop_general_register",
+      "lnsym": {
+        "module": "X86/Instructions/Stack.lean",
+        "definition": "exec_pop",
+        "s2n_bignum": "x86/proofs/base.ml:POP"
+      }
+    },
+    {
+      "forms": ["jump", "tail-call", "jmp"],
+      "mnemonics": ["jmp"],
+      "op_en": ["D32"],
+      "widths": ["w64"],
+      "opcodes": ["E9 cd"],
+      "rows": 1,
+      "file": "model/jump_and_loop.sail",
+      "function": "x86_near_jmp_op_en_d",
+      "lnsym": {
+        "module": "X86/Instructions/Control.lean",
+        "definition": "exec_jmp",
+        "s2n_bignum": "x86/proofs/base.ml:JMP"
+      }
+    },
+    {
+      "forms": ["conditional-branch", "jcc"],
+      "mnemonics": ["jcc"],
+      "op_en": ["D32"],
+      "widths": ["w64"],
+      "conditions": ["eq", "ne", "unsignedLt", "unsignedLe", "unsignedGt", "unsignedGe", "signedLt", "signedLe", "signedGt", "signedGe"],
+      "opcodes": ["0F 80+cc cd"],
+      "rows": 10,
+      "file": "model/conditional.sail",
+      "function": "x86_two_byte_jcc",
+      "lnsym": {
+        "module": "X86/Instructions/Control.lean",
+        "definition": "exec_jcc",
+        "s2n_bignum": "x86/proofs/base.ml:JCC"
+      }
+    },
+    {
+      "forms": ["call", "runtime-call"],
+      "mnemonics": ["call"],
+      "op_en": ["D32"],
+      "widths": ["w64"],
+      "opcodes": ["E8 cd"],
+      "rows": 1,
+      "file": "model/subroutine.sail",
+      "function": "x86_call_e8_op_en_m",
+      "lnsym": {
+        "module": "X86/Instructions/Control.lean",
+        "definition": "exec_call",
+        "s2n_bignum": "x86/proofs/base.ml:CALL"
+      }
+    },
+    {
+      "forms": ["ret"],
+      "mnemonics": ["ret"],
+      "op_en": ["ZO"],
+      "widths": ["w64"],
+      "opcodes": ["C3"],
+      "rows": 1,
+      "file": "model/subroutine.sail",
+      "function": "x86_ret",
+      "lnsym": {
+        "module": "X86/Instructions/Control.lean",
+        "definition": "exec_ret",
+        "s2n_bignum": "x86/proofs/base.ml:RET"
+      }
+    }
   ],
   "pseudo_forms": {
     "alloc-frame": "alu-imm: SUB RSP",
@@ -38,13 +515,96 @@
     "spill": "store: RBP minus slot displacement",
     "reload": "load64: RBP minus slot displacement"
   },
+  "reference_vectors": [
+    {
+      "mnemonic": "not",
+      "width": "w64",
+      "form": "M",
+      "bytes": [72, 247, 208],
+      "asm": "not rax",
+      "rax_in": "0x0123456789abcdef",
+      "rax_out": "0xfedcba9876543210",
+      "flags": "unchanged"
+    },
+    {
+      "mnemonic": "neg",
+      "width": "w64",
+      "form": "M",
+      "bytes": [72, 247, 216],
+      "asm": "neg rax",
+      "rax_in": "0x0000000000000001",
+      "rax_out": "0xffffffffffffffff",
+      "flags": { "cf": true, "zf": false, "sf": true, "of": false }
+    },
+    {
+      "mnemonic": "mul",
+      "width": "w64",
+      "form": "M",
+      "bytes": [72, 247, 227],
+      "asm": "mul rbx",
+      "rax_in": "0xffffffffffffffff",
+      "rbx_in": "0x0000000000000002",
+      "rax_out": "0xfffffffffffffffe",
+      "rdx_out": "0x0000000000000001",
+      "flags": { "cf": true, "of": true }
+    },
+    {
+      "mnemonic": "movsx",
+      "width": "w64",
+      "src": "w8",
+      "form": "RM",
+      "bytes": [72, 15, 190, 195],
+      "asm": "movsx rax, bl",
+      "rbx_in": "0x0000000000000080",
+      "rax_out": "0xffffffffffffff80"
+    },
+    {
+      "mnemonic": "movsxd",
+      "width": "w64",
+      "src": "w32",
+      "form": "RM",
+      "bytes": [72, 99, 195],
+      "asm": "movsxd rax, ebx",
+      "rbx_in": "0x0000000080000000",
+      "rax_out": "0xffffffff80000000"
+    },
+    {
+      "mnemonic": "bswap",
+      "width": "w64",
+      "form": "O",
+      "bytes": [72, 15, 200],
+      "asm": "bswap rax",
+      "rax_in": "0x0102030405060708",
+      "rax_out": "0x0807060504030201"
+    },
+    {
+      "mnemonic": "rol",
+      "width": "w64",
+      "form": "MI",
+      "bytes": [72, 193, 192, 8],
+      "asm": "rol rax, 8",
+      "rax_in": "0x0123456789abcdef",
+      "rax_out": "0x23456789abcdef01",
+      "flags": { "cf": true }
+    },
+    {
+      "mnemonic": "ror",
+      "width": "w64",
+      "form": "MI",
+      "bytes": [72, 193, 200, 8],
+      "asm": "ror rax, 8",
+      "rax_in": "0x0123456789abcdef",
+      "rax_out": "0xef0123456789abcd",
+      "flags": { "cf": true }
+    }
+  ],
   "adapter_route": {
     "compiler": "https://github.com/rems-project/sail",
     "backend": "sail_lean_backend",
     "support_library": "https://github.com/rems-project/lean-sail",
     "compiler_revision": null,
     "support_revision": null,
-    "target_lean": "leanprover/lean4:v4.33.0",
+    "target_lean": "leanprover/lean4:v4.34.1",
     "next": "Establish model/compiler compatibility, pin compiler and support library, generate and kernel-check the adapter, then compare the emitted subset."
   }
 }

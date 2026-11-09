@@ -483,6 +483,8 @@ import IxCC.Recheck.Proof.Object
 import IxCC.Recheck.Proof.Soundness
 import IxCC.Cli
 import IxCC.Aiur
+import IxCC.CompileClaim
+import IxCC.Ring0
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

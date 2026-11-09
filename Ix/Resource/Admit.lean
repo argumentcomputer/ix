@@ -86,6 +86,7 @@ def relevance (program : Program) (limits : Limits := {}) : Except Error (Array 
     let d := program.declarations[i]!
     let scan ← runCheck limits do
       let type ← scanExpr program limits.depth d.type
+      if d.kind == .theorem then return type
       match d.body with
       | none => return type
       | some value => return type.merge (← scanExpr program limits.depth value)
@@ -183,6 +184,7 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
       let d := program.declarations[i]!
       let checked : Except Error Unit := match d.kind with
         | .definition => checkDefinition program i limits
+        | .theorem => .ok ()
         | .assumption =>
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")

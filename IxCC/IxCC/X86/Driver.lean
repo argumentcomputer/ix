@@ -72,6 +72,10 @@ def inLir (a : Word) : Bool :=
 def inStack (a : Word) : Bool :=
   decide (D.sp.toNat - 56 - D.budget.toNat ≤ a.toNat) && decide (a.toNat < D.sp.toNat + 8)
 
+/-- The loaded `.text` bytes `[base, base + textSize)`. -/
+def inText (textSize : Nat) (a : Word) : Bool :=
+  decide (D.base.toNat ≤ a.toNat) && decide (a.toNat < D.base.toNat + textSize)
+
 /-- The process's mapping: the region and the call stack. -/
 def mapped (a : Word) : Bool := D.inRegion a || D.inStack a
 
@@ -126,6 +130,70 @@ structure Ok (textSize : Nat) : Prop where
   apart : D.sp.toNat + 8 ≤ D.region.toNat ∨ D.region.toNat + D.size.toNat + 56 + D.budget.toNat ≤ D.sp.toNat
   /-- The caller returns outside the text. -/
   retOut : textSize ≤ (D.ret - D.base).toNat
+
+/-- **The canonical user-space driver contract**: extends `Driver.Ok` with
+`.text` disjointness from the writable `inRegion` and `inStack` windows (W^X
+under unified instruction/data memory) and canonical lower-half user-space
+bounds (`< 2 ^ 47`) for the region, call stack, loaded `.text` and caller
+return address. -/
+structure CanonicalOk (textSize : Nat) : Prop extends D.Ok textSize where
+  /-- The loaded `.text` segment `[base, base + textSize)` is disjoint from
+  both `inRegion` and `inStack`. -/
+  textApart :
+    (D.base.toNat + textSize ≤ D.region.toNat ∨ D.region.toNat + D.size.toNat ≤ D.base.toNat) ∧
+    (D.base.toNat + textSize ≤ D.sp.toNat - 56 - D.budget.toNat ∨ D.sp.toNat + 8 ≤ D.base.toNat)
+  /-- Canonical 48-bit lower-half user-space bounds (`< 2 ^ 47`). -/
+  below47 :
+    D.region.toNat + D.size.toNat + 56 + D.budget.toNat < 2 ^ 47 ∧
+    D.sp.toNat + 8 ≤ 2 ^ 47 ∧
+    D.base.toNat + textSize < 2 ^ 47
+  /-- The caller return address is in canonical lower-half user space. -/
+  retBelow47 : D.ret.toNat < 2 ^ 47
+
+theorem CanonicalOk.text_disjoint_mapped {textSize : Nat} (hD : D.CanonicalOk textSize)
+    (a : Word) (ht : D.inText textSize a = true) : D.mapped a = false := by
+  have hta := hD.textApart
+  simp only [inText, Bool.and_eq_true, decide_eq_true_eq] at ht
+  simp only [mapped, inRegion, inStack, Bool.or_eq_false_iff, Bool.and_eq_false_iff, decide_eq_false_iff_not]
+  omega
+
+theorem CanonicalOk.mapped_below47 {textSize : Nat} (hD : D.CanonicalOk textSize)
+    (a : Word) (hm : D.mapped a = true) : a.toNat < 2 ^ 47 := by
+  have hb := hD.below47
+  simp only [mapped, inRegion, inStack, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hm
+  omega
+
+theorem CanonicalOk.text_below47 {textSize : Nat} (hD : D.CanonicalOk textSize)
+    (a : Word) (ht : D.inText textSize a = true) : a.toNat < 2 ^ 47 := by
+  have hb := hD.below47
+  simp only [inText, Bool.and_eq_true, decide_eq_true_eq] at ht
+  omega
+
+/-- **The canonical user-space contract can be kept**: for any object whose
+`.text` fits in 32-bit displacement range (`textSize ≤ 2 ^ 32`), a driver
+with `.text` at `0`, a 64 MiB region at `2 ^ 32`, an 8 MiB stack budget,
+`rsp = 2 ^ 40 + 8` and caller return address `2 ^ 46` satisfies `CanonicalOk`. -/
+theorem exists_canonicalOk {textSize : Nat} (hn : textSize ≤ 2 ^ 32) :
+    ∃ D : Driver, D.CanonicalOk textSize := by
+  refine ⟨{ base := 0, region := 2 ^ 32, size := 2 ^ 26, budget := 2 ^ 23, sp := 2 ^ 40 + 8,
+            ret := 2 ^ 46,
+            init := fun _ => 0, flags := {}, other := fun _ => 0 }, ?_⟩
+  have hbase : (0 : Word).toNat = 0 := rfl
+  have hreg : (2 ^ 32 : Word).toNat = 2 ^ 32 := by decide
+  have hsize : (2 ^ 26 : Word).toNat = 2 ^ 26 := by decide
+  have hbud : (2 ^ 23 : Word).toNat = 2 ^ 23 := by decide
+  have hsp : (2 ^ 40 + 8 : Word).toNat = 2 ^ 40 + 8 := by decide
+  have hret : (2 ^ 46 - 0 : Word).toNat = 2 ^ 46 := by decide
+  refine ⟨⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, .inr (by decide), ?_⟩,
+    ⟨.inl ?_, .inl ?_⟩, ⟨by decide, by decide, ?_⟩, by decide⟩
+  · show textSize ≤ (2 ^ 46 - 0 : Word).toNat
+    omega
+  · show (0 : Word).toNat + textSize ≤ (2 ^ 32 : Word).toNat
+    omega
+  · show (0 : Word).toNat + textSize ≤ (2 ^ 40 + 8 : Word).toNat - 56 - (2 ^ 23 : Word).toNat
+    omega
+  · show (0 : Word).toNat + textSize < 2 ^ 47
+    omega
 
 end Driver
 

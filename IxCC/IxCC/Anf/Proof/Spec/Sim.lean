@@ -206,7 +206,7 @@ theorem spec_sim (hglob : GlobRel P Q) {n : Nat}
 
 theorem fixedAt_spec {r : Walk.Redirect} {d : Nat} {as : List Atom} (h : Walk.fixedAt r d as = true) :
     as.length = r.fixedArgs.length ∧ ∀ (i : Nat) (a : Atom) (f : Opd), as[i]? = some a →
-      r.fixedArgs[i]? = some (some f) → a = .var (d - 1 - i) := by
+      r.fixedArgs[i]? = some (some f) → a = .var (d - 1 - i) ∨ (f = .box ∧ a = .box) := by
   unfold Walk.fixedAt at h
   simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
   obtain ⟨hl, hall⟩ := h
@@ -216,8 +216,11 @@ theorem fixedAt_spec {r : Walk.Redirect} {d : Nat} {as : List Atom} (h : Walk.fi
     rw [List.getElem?_zip_eq_some, List.getElem?_zipIdx, ha]
     exact ⟨by simp, hf⟩
   have := hall _ hmem
-  simp only [Option.isNone_some, Bool.false_or] at this
-  exact Atom.beq_eq this
+  simp only [Option.isNone_some, Bool.false_or, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq,
+    Option.some.injEq] at this
+  rcases this with h1 | ⟨h1, h2⟩
+  · exact .inl (Atom.beq_eq h1)
+  · exact .inr ⟨h1, Atom.beq_eq h2⟩
 
 theorem redirectArgs_spec {r : Walk.Redirect} {os os' : List Opd} (h : Walk.redirectArgs r os = some os') :
     r.holes.mapM (fun h => match h with
@@ -297,16 +300,21 @@ theorem red_sim {n : Nat} (hspec : ∀ D : Site, D.Ok P Q → SpecSim P Q n D) {
     · -- a masked argument is the activation's
       obtain ⟨hi, -, -⟩ := hD.roots i o hl
       obtain ⟨a, ha⟩ : ∃ a, as[i]? = some a := ⟨_, List.getElem?_eq_getElem (by omega)⟩
-      have hav := hasv i a _ ha (site_fixedArgs D hi hl)
-      subst hav
-      obtain ⟨v, hv, hvi⟩ := evalAtoms_get hvc ha
-      rw [hroots i o hl, hvi]
-      have hiρ : i < ρ.length := by
-        have := hsρ.length_le; simp at this; omega
-      have := lvl_rev_suffix hsρ (show i < vs.length by omega)
-      rw [lvl_val hiρ] at this
-      simp only [Atom.eval] at hv
-      rw [← this, hv]
+      rcases hasv i a _ ha (site_fixedArgs D hi hl) with rfl | ⟨hbox, rfl⟩
+      · obtain ⟨v, hv, hvi⟩ := evalAtoms_get hvc ha
+        rw [hroots i o hl, hvi]
+        have hiρ : i < ρ.length := by
+          have := hsρ.length_le; simp at this; omega
+        have := lvl_rev_suffix hsρ (show i < vs.length by omega)
+        rw [lvl_val hiρ] at this
+        simp only [Atom.eval] at hv
+        rw [← this, hv]
+      · have ho : o = .box := site_mapOpd_eq_box hD hl hbox
+        subst ho
+        obtain ⟨v, hv, hvi⟩ := evalAtoms_get hvc ha
+        simp only [Atom.eval, Option.some.injEq] at hv
+        subst hv
+        rw [hvi]; rfl
     · -- a level hole is passed on
       obtain ⟨v, w, hv, hw, hm⟩ := hlv k l hk
       refine ⟨v, w, hv, ?_, hprs _ hm⟩

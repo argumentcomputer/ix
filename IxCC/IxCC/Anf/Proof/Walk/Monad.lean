@@ -32,9 +32,13 @@ theorem run_throw_ok {α : Type} {e : String} {s : Fires} {r : α × Fires}
 
 theorem run_fire_ok {f : Fires → Fires} {s : Fires} {r : Unit × Fires} (h : (fire f).run s = .ok r) :
     r = ((), f s) := by
-  simp only [fire, StateT.run_modify] at h
-  cases h
-  rfl
+  change (if (f s).total > maxFires then
+    (.error "walk: rule firing budget exhausted" : Except String (Unit × Fires))
+    else .ok ((), f s)) = .ok r at h
+  split at h
+  · cases h
+  · cases h
+    rfl
 
 theorem run_map_ok {α β : Type} {g : α → β} {x : M α} {s s' : Fires} {b : β}
     (h : (g <$> x).run s = .ok (b, s')) : ∃ a, x.run s = .ok (a, s') ∧ g a = b := by

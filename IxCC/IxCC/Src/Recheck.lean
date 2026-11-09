@@ -34,7 +34,12 @@ def annotation (p : Program) (ann : Relevance.Ann) :
   | .ok p =>
     match Relevance.check p ann with
     | .error errs => .error (.relevance errs)
-    | .ok checked => .ok (Lazify.run p checked.keys, checked)
+    | .ok checked =>
+      let canonErrs :=
+        if p.known.eq.isNone && p.known.nat.isNone && p.known.bool.isNone then []
+        else Relevance.checkCanonical p ann checked
+      if !canonErrs.isEmpty then .error (.relevance canonErrs.toArray)
+      else .ok (Lazify.run p checked.keys, checked)
 
 /-- The front end's recheck path on a program (with its table) and an
 annotation. -/

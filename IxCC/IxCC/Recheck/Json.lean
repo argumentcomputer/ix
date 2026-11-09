@@ -1,5 +1,6 @@
 import IxCC.Recheck.Cert
 import IxCC.Recheck.Err
+import IxCC.Src.Hints
 import Lean.Data.Json.Basic
 import Lean.Data.Json.Parser
 import Lean.Data.Json.Printer
@@ -45,6 +46,21 @@ def getArr (j : Json) : Dec (List Json) := (·.toList) <$> j.getArr?
 def listOf {α : Type} (f : Json → Dec α) (j : Json) : Dec (List α) := do (← getArr j).mapM f
 def nats (j : Json) : Dec (List Nat) := listOf getNat j
 def field (j : Json) (k : String) : Dec Json := j.getObjVal? k
+
+/-- Maximum constant/global index allowed as a `NatMap` or table key in a certificate. -/
+def maxNatMapKey : Nat := 1000000
+
+/-- Maximum middle-end steps allowed in a certificate. -/
+def maxMidSteps : Nat := 64
+
+def natKey? (j : Json) : Dec Nat := do
+  let k ← getNat j
+  if k ≤ maxNatMapKey then pure k
+  else throw s!"certificate key {k} exceeds maximum {maxNatMapKey}"
+
+/-- Reject hostile number tokens before `Lean.Json.parse` (see `Src.Hints.checkJsonText`). -/
+def checkJsonText (text : String) : Except String Unit :=
+  Src.Hints.checkJsonText text
 
 /-- A pair `[a, b]`. -/
 def pair {α β : Type} (f : Json → Dec α) (g : Json → Dec β) (j : Json) : Dec (α × β) := do
@@ -98,9 +114,9 @@ def termKey : Src.TermKey → Json
 
 def termKey? (j : Json) : Dec Src.TermKey := do
   match ← getArr j with
-  | [.str "v", c] => .value <$> getNat c
-  | [.str "q", c] => .eqn <$> getNat c
-  | [.str "u", r, i] => return .rule (← getNat r) (← getNat i)
+  | [.str "v", c] => .value <$> natKey? c
+  | [.str "q", c] => .eqn <$> natKey? c
+  | [.str "u", r, i] => return .rule (← natKey? r) (← natKey? i)
   | _ => throw s!"bad TermKey {j.compress}"
 
 def tag : Src.Relevance.Tag → Json
@@ -124,9 +140,9 @@ def ann (a : Src.Relevance.Ann) : Json :=
 def ann? (j : Json) : Dec Src.Relevance.Ann := do
   let consts ← listOf (fun e => do
     match ← getArr e with
-    | [c, r, ps] => return (← getNat c, ({ result := ← rel? r, params := ← listOf rel? ps } : Src.Relevance.ConstRel))
+    | [c, r, ps] => return (← natKey? c, ({ result := ← rel? r, params := ← listOf rel? ps } : Src.Relevance.ConstRel))
     | _ => throw s!"bad ConstRel {e.compress}") (← field j "consts")
-  let ctors ← listOf (pair getNat fun fs => do
+  let ctors ← listOf (pair natKey? fun fs => do
     return ({ fields := ← listOf fieldClass? fs } : Src.Relevance.CtorRel)) (← field j "ctors")
   let nodes ← listOf (pair termKey? (listOf tag?)) (← field j "nodes")
   return { consts := Src.NatMap.ofList consts, ctors := Src.NatMap.ofList ctors, nodes }
@@ -145,8 +161,8 @@ def entry : Src.Table.Entry → Json
 def entry? (j : Json) : Dec Src.Table.Entry := do
   match ← getArr j with
   | [.str "prim", .str op] => .prim <$> primOp? op
-  | [.str "csimp", g, thm] => return .csimp (← getNat g) (← getNat thm)
-  | [.str "eqn", thm] => .eqn <$> getNat thm
+  | [.str "csimp", g, thm] => return .csimp (← natKey? g) (← natKey? thm)
+  | [.str "eqn", thm] => .eqn <$> natKey? thm
   | [.str "case"] => pure .case
   | _ => throw s!"bad table entry {j.compress}"
 
@@ -159,11 +175,11 @@ def table (t : Src.Table.TableCert) : Json :=
     ("opaqueByValue", arr (t.opaqueByValue.map nat))]
 
 def table? (j : Json) : Dec Src.Table.TableCert := do
-  return { resolve := ← listOf (pair getNat entry?) (← field j "resolve")
-           recKind := ← nats (← field j "recKind")
-           lazy := ← listOf (pair getNat getNat) (← field j "lazy")
-           inline := ← nats (← field j "inline")
-           opaqueByValue := ← nats (← field j "opaqueByValue") }
+  return { resolve := ← listOf (pair natKey? entry?) (← field j "resolve")
+           recKind := ← listOf natKey? (← field j "recKind")
+           lazy := ← listOf (pair natKey? natKey?) (← field j "lazy")
+           inline := ← listOf natKey? (← field j "inline")
+           opaqueByValue := ← listOf natKey? (← field j "opaqueByValue") }
 
 /-! ## The middle end -/
 
@@ -176,12 +192,20 @@ def step : Anf.Pipeline.Step → Json
 
 def step? (j : Json) : Dec Anf.Pipeline.Step := do
   match ← getArr j with
-  | [.str "P2", rounds] => .shrink <$> nats rounds
-  | [.str "P3", r] => .inline <$> listOf (pair getNat nats) r
+  | [.str "P2", rounds] =>
+    let c ← nats rounds
+    unless Anf.Shrink.checkCert c do
+      throw "P2 shrink certificate exceeds round or global bounds"
+    return .shrink c
+  | [.str "P3", r] =>
+    let rd ← listOf (pair natKey? (listOf natKey?)) r
+    unless Anf.Inline.checkCert rd do
+      throw "P3 inline certificate exceeds bounds or contains self-inlining"
+    return .inline rd
   | [.str "P4", inv, ds] =>
     let decisions ← listOf (fun d => do
       match ← getArr d with
-      | [a, b, m] => return ({ caller := ← getNat a, callee := ← getNat b, mask := ← listOf getBool m } :
+      | [a, b, m] => return ({ caller := ← natKey? a, callee := ← natKey? b, mask := ← listOf getBool m } :
           Anf.Specialize.Decision)
       | _ => throw s!"bad P4 decision {d.compress}") ds
     return .specialize { inv := ← getNat inv, decisions }
@@ -194,7 +218,13 @@ def mid (c : Anf.Pipeline.Cert) : Json :=
 
 def mid? (j : Json) : Dec Anf.Pipeline.Cert := do
   let (caseOfCase, smallJoin) ← pair getNat getNat (← field j "shrink")
-  return { shrink := { caseOfCase, smallJoin }, steps := ← listOf step? (← field j "steps") }
+  let shrink : Anf.Shrink.Params := { caseOfCase, smallJoin }
+  unless shrink.checkCert do
+    throw "shrink parameters exceed maximum bounds"
+  let steps ← listOf step? (← field j "steps")
+  unless steps.length ≤ maxMidSteps do
+    throw s!"middle-end step count {steps.length} exceeds maximum {maxMidSteps}"
+  return { shrink, steps }
 
 /-! ## The backend -/
 
@@ -290,7 +320,7 @@ def Cert.toText (c : Cert) : String := (CertJson.cert c).compress
 
 /-- Parse a certificate; a malformed one is a `cert.parse` error. -/
 def Cert.ofText (text : String) : Except Err Cert :=
-  match Lean.Json.parse text >>= CertJson.cert? with
+  match (CertJson.checkJsonText text >>= fun () => Lean.Json.parse text >>= CertJson.cert?) with
   | .ok c => .ok c
   | .error m => .error { stage := .cert, code := "cert.parse", message := m }
 

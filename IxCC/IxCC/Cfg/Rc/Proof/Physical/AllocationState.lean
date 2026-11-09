@@ -11,23 +11,23 @@ copy-prefix result identifies the intermediate heap; it is not a simulation
 premise. Physical increment traces independently establish or fail that prefix. -/
 theorem allocation_state_after
     {functions : Own.Plain.Signatures} {H copied : Heap} {external : Nat → Nat}
-    {fields held roots : List RVal} {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {fields held roots : List RVal} {live : List Fir.Var} {imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
-    (before : Own.Plain.State functions H (holdRoots external held) live ρf ρo roots joins Jf Jo)
+    (before : Own.Plain.State functions H (holdRoots external held) live ρf ρo roots joins Jf Jo imm)
     (tables : Own.Tables) (ctor : Fir.CtorInfo) (args : List Fir.Arg) (x : Fir.Var)
     (fresh : x ∉ live) (scope : args.all (Own.Plain.argIn live) = true)
     (arguments : Own.evalArgs ρo args = some fields) (arity : fields.length = ctor.arity)
     (positive : 0 < ctor.arity)
-    (copies : Own.Plain.evalActions ρo H (Own.Plain.copies args) = .ok copied) :
+    (copies : Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok copied) :
     ∃ sourceValues, Fir.evalArgs ρf args = some sourceValues ∧
       let allocated := copied.alloc .rc {ctor, fields}
       Own.Plain.evalRhs tables ρo copied (.ctor ctor args) = .ok allocated ∧
       Own.Plain.State functions allocated.2 (holdRoots external held) (live ++ [x])
         (ρf.insert x (.ctor ctor sourceValues)) (ρo.insert x allocated.1)
-        (roots ++ [allocated.1]) joins Jf Jo ∧
+        (roots ++ [allocated.1]) joins Jf Jo imm ∧
       (∀ value logical, Own.Proof.Den H value logical → Own.Proof.Den allocated.2 value logical) := by
   obtain ⟨actualFields, _, actualHeap, fieldArgs, _, copyEffect, copiedTokens, preserved⟩ :=
-    allocation_copy_tokens (Tokens.ofState before) args scope
+    allocation_copy_tokens (Tokens.ofState before) args scope before.immOk
   have sameFields : actualFields = fields := Option.some.inj (fieldArgs.symm.trans arguments)
   subst actualFields
   have sameHeap : actualHeap = copied := Sem.Result.ok.inj (copyEffect.symm.trans copies)

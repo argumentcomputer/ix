@@ -101,6 +101,7 @@ theorem FactOk.suffix {ρ ρ₂ : List Val} (hs : ρ <:+ ρ₂) {l : Nat} :
     ∀ {f : Fact}, FactOk Q Valid ρ l f → FactOk Q Valid ρ₂ l f
   | .ctor _ _, ⟨w, ws, hw, hws, hc⟩ => ⟨w, ws, Opd.val_suffix hs hw, opds_suffix hs hws, hc⟩
   | .succ _, ⟨m, hl, hy⟩ => ⟨m, Opd.val_suffix hs hl, Opd.val_suffix hs hy⟩
+  | .prim _ _, ⟨w, ws, hw, hws, hp⟩ => ⟨w, ws, Opd.val_suffix hs hw, opds_suffix hs hws, hp⟩
   | .glob _, ⟨gd, hg, hps, ha, hl⟩ => ⟨gd, hg, hps, ha, Opd.val_suffix hs hl⟩
   | .pap _ _, ⟨gd, ws, hg, hws, ha, hlt, hl⟩ =>
     ⟨gd, ws, hg, opds_suffix hs hws, ha, hlt, Opd.val_suffix hs hl⟩

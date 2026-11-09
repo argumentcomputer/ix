@@ -1,5 +1,6 @@
 import IxCC.Cfg.Rc.Proof.Physical.CopyStep
 import IxCC.Cfg.Rc.Proof.Prefix
+import IxCC.Own.Plain.Proof.Scope
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
@@ -135,7 +136,54 @@ theorem copy_prefix
           words, finished, values⟩
       · exact .inr failed
 
-
-
+theorem copy_heapArgs_prefix
+    {P : Program} {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
+    {imm : List Fir.Var} (args : List Fir.Arg) {first : Nat} {tail : List Cfg.Instr}
+    {source : Cfg.Frame} {target : Lir.Frame}
+    (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
+    (head : source.rest = encodePrefix P.base.size first (Own.Plain.copies (Own.Plain.heapArgs imm args)) ++ tail)
+    {function : Cfg.Fun} (sourceLookup : (consumed P pairs).fun? source.fn = some function)
+    {H : Heap} {external : Nat → Nat} {held roots : List RVal}
+    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    (before : Tokens H external held live ρf ρo roots)
+    (himm : Own.Plain.ImmEnv ρo imm)
+    (scope : args.all (Own.Plain.argIn live) = true)
+    {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
+    {slots : List Slot} {lists : Nat → List Lir.Word}
+    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+      context base bump limit slots lists)
+    {bound : Nat}
+    (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
+    (absent : ∀ dummy, first ≤ dummy → ρo.get? dummy = none)
+    (running : target.dsts = []) (callers : List Lir.Frame) :
+    (∃ fields H' mem' final,
+      Own.evalArgs ρo args = some fields ∧
+      Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok H' ∧
+      Tokens H' external (fields ++ held) live ρf ρo roots ∧
+      AllocatorReady H' addresses mem' (holdRoots external (roots ++ (fields ++ held)))
+        context base bump limit slots lists ∧
+      Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
+        {mem, ctx := context, stack := target :: callers} (2 * (Own.Plain.copies (Own.Plain.heapArgs imm args)).length)
+        {mem := mem', ctx := context, stack := final :: callers} ∧
+      ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) {source with rest := tail} final ∧
+      FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo final.env ∧
+      final.dsts = [] ∧ (∀ root, H.value? root = H'.value? root)) ∨
+    Sem.Fails (Lir.semStep (Public.Spec.sourceStage P functions main))
+      {mem, ctx := context, stack := target :: callers} := by
+  rcases copy_prefix functions main (Own.Plain.heapArgs imm args) cursor head sourceLookup before
+      (Own.Plain.heapArgs_scope imm scope) ready registers absent running callers with success | failure
+  · obtain ⟨heapFields, H', mem', final, heapArgsEval, actions, tokens, restored, trace, next,
+      words, finished, values⟩ := success
+    obtain ⟨fields, _, arguments, _, _⟩ := Own.Plain.args_den before.den args scope
+    obtain ⟨heapFields', hheap, hrefs, _⟩ := Own.Plain.evalArgs_heapArgs himm arguments
+    have heq : heapFields' = heapFields := Option.some.inj (hheap.symm.trans heapArgsEval)
+    subst heapFields'
+    have reorder : ∀ location, refsIn location (heapFields ++ held) = refsIn location (fields ++ held) := by
+      intro location
+      simp only [refsIn_append, ← hrefs location]
+    exact .inl ⟨fields, H', mem', final, arguments, actions,
+      Tokens.held_congr tokens reorder, ready_held_congr restored reorder, trace, next,
+      words, finished, values⟩
+  · exact .inr failure
 
 end IxCC.Cfg.Rc.Native

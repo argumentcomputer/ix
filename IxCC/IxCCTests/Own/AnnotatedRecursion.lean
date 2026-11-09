@@ -219,6 +219,18 @@ def runFixture (dir : FilePath) (variant : String) (phaseOne := false) : IO Unit
     need (Own.Plain.funDomain first && !Own.Plain.funDomain len &&
       !Own.Plain.programDomain fir && !Own.Plain.checkPlainMap fir decoded)
       "annotated Plain domain refusal must remain the erased len contract boundary"
+    need (Own.Plain.contractFunDomain first && Own.Plain.contractFunDomain len &&
+      Own.Plain.contractProgramDomain fir && Own.Plain.checkContractPlainMap fir decoded &&
+      Own.Plain.selectRcPolicy fir == .plainRc)
+      "contract-aware Plain domain must accept OS-04 erased len and select plainRc while xs is unannotated .many"
+    let zeroRcFir : Fir.Program :=
+      { fir with
+        funs := (fir.funs.insert 0 { first with contracts := first.params.map fun _ => { value := .localShared } })
+          |>.insert 1 { len with contracts := [Ixon.V3.BinderContract.erased, { value := .localShared }] } }
+    need (Own.Plain.contractProgramDomain zeroRcFir &&
+      Own.Plain.checkContractPlainMap zeroRcFir decoded &&
+      Own.Plain.selectRcPolicy zeroRcFir == .zeroRc)
+      "annotating OS-04 list binders with ~ local borrow must switch selectRcPolicy to zeroRc"
     let own := Own.immortal fir
     need (Own.checkImmortal own) "actual Phase1 Own image must pass its production checker"
     for n in inputs do

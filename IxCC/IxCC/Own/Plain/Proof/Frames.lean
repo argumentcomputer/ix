@@ -16,15 +16,15 @@ theorem balance_resume {H : Heap} {external : Nat → Nat} {held active : List R
   balance_append_comm (balance_hold.mpr h)
 
 theorem State.resume {functions : Signatures} {H Hcall H' : Heap} {external : Nat → Nat}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
     {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
-    (h : State functions H external live ρf ρo roots joins Jf Jo)
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
     (x : Fir.Var) {v : RVal} {w : Fir.Val} (hx : x ∉ live)
     (hcopy : ∀ root, H.value? root = Hcall.value? root)
     (hd : Proof.Den H' v w) (hb : Balance H' (holdRoots external roots) [v])
     (hreturn : ExternalPreserved Hcall H' (holdRoots external roots)) :
     State functions H' external (live ++ [x]) (ρf.insert x w) (ρo.insert x v)
-      (roots ++ [v]) joins Jf Jo ∧
+      (roots ++ [v]) joins Jf Jo imm ∧
       ExternalPreserved H H' external := by
   refine ⟨h.bind x hx hd (balance_resume hb) ?_, ?_⟩
   · intro root hm

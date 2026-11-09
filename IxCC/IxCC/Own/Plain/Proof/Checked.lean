@@ -10,13 +10,21 @@ set_option autoImplicit false
 namespace IxCC.Own.Plain
 open Rc
 
-theorem canonical_call_refines {F : Fir.Program} (domain : programDomain F = true)
+theorem canonical_contract_call_refines {F : Fir.Program} (domain : contractProgramDomain F = true)
     (pins : checkBoolPins F = true) (k : Nat) {f : Fir.FunId} (hf : f < F.size)
     {H : Heap} {external : Nat → Nat} {vs : List RVal} {ws : List Fir.Val}
     (hd : Sem.Forall2 (Proof.Den H) vs ws) (hb : Balance H external vs) :
     ResultRel H external (Fir.evalCall F k f ws) (evalCall (Program.canonical F) k f vs H) :=
   call_of_smaller_clocks domain
     (fun j _ => canonical_refines domain (checkBoolPins_sound pins) j) hf hd hb
+
+theorem canonical_call_refines {F : Fir.Program} (domain : programDomain F = true)
+    (pins : checkBoolPins F = true) (k : Nat) {f : Fir.FunId} (hf : f < F.size)
+    {H : Heap} {external : Nat → Nat} {vs : List RVal} {ws : List Fir.Val}
+    (hd : Sem.Forall2 (Proof.Den H) vs ws) (hb : Balance H external vs) :
+    ResultRel H external (Fir.evalCall F k f ws) (evalCall (Program.canonical F) k f vs H) :=
+  canonical_contract_call_refines (programDomain_implies_contractProgramDomain domain)
+    pins k hf hd hb
 
 theorem checked_body_refines {F : Fir.Program} {f : Fir.FunId} {proposal : Code}
     (checked : checkPlainFunction F f proposal = true)
@@ -34,7 +42,8 @@ theorem checked_body_refines {F : Fir.Program} {f : Fir.FunId} {proposal : Code}
   subst fd'
   obtain ⟨fresh, scope, code⟩ := (checkBody_iff ..).mp hbody
   rw [← code]
-  exact canonical_refines (checkFunction_domain hs.2) (checkBoolPins_sound hs.1) k fd.body
+  exact canonical_refines (programDomain_implies_contractProgramDomain (checkFunction_domain hs.2))
+    (checkBoolPins_sound hs.1) k fd.body
     (state_entry (signatures F) H external (fd.params.map (·.1)) vs ws hd
       (by simpa using arity) fresh hb) scope
 

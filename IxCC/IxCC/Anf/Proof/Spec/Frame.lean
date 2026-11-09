@@ -300,6 +300,46 @@ theorem lookup_cons {β : Type} (l l' : Nat) (o : β) (m : List (Nat × β)) :
   · have : (l' == l) = false := by simp [h]
     rw [this, if_neg h]
 
+theorem prologue_m : ∀ {ls : List Nat} {m m' : List (Nat × Opd)} {t : Nat} {pro : List Bind},
+    prologue P defs m t ls = .ok (pro, m') → MLvl m →
+    MLvl m' ∧ ∀ j, (m.lookup j).isSome ∨ j ∈ ls → (m'.lookup j).isSome
+  | [], _, _, _, _, h, hm => by
+    rw [prologue.eq_1] at h; cases h
+    exact ⟨hm, fun j hj => hj.elim id (by simp)⟩
+  | l :: ls, m, _, t, _, h, hm => by
+    obtain ⟨b, bs, rfl, -, hrest⟩ := prologue_cons_inv h
+    obtain ⟨hm', hms⟩ := prologue_m hrest (fun p hp => by
+      rcases List.mem_cons.1 hp with rfl | hp
+      · exact ⟨_, rfl⟩
+      · exact hm p hp)
+    refine ⟨hm', fun j hj => hms j ?_⟩
+    rw [lookup_cons]
+    by_cases he : j = l
+    · rw [if_pos he]; exact .inl rfl
+    · rw [if_neg he]
+      rcases hj with hj | hj
+      · exact .inl hj
+      · rcases List.mem_cons.1 hj with hj | hj
+        · exact absurd hj he
+        · exact .inr hj
+
+theorem site_mapOpd_eq_box {D : Site} (hD : D.Ok P Q) {i : Nat} {o : Opd}
+    (hl : D.roots.lookup i = some o) (hbox : mapOpd D.defs D.m o = .box) : o = .box := by
+  obtain ⟨-, hcov, -⟩ := hD.roots i o hl
+  have hm0 : MLvl D.m0 := fun p hp => by
+    obtain ⟨⟨l, h⟩, -, rfl⟩ := List.mem_map.1 hp; exact ⟨h, rfl⟩
+  obtain ⟨hm, hms⟩ := prologue_m hD.pro hm0
+  cases o with
+  | box => rfl
+  | lit _ => cases hbox
+  | lvl l =>
+    have ha : Avail D.defs D.m (.lvl l) := by
+      rcases hcov with ⟨h, hmem⟩ | hn | hlit
+      · exact .inl (hms l (.inl (lookup_isSome_of_mem (List.mem_map.2 ⟨(l, h), hmem, rfl⟩))))
+      · exact .inl (hms l (.inr (mem_sortNats.2 hn)))
+      · exact .inr hlit
+    exact absurd hbox (mapOpd_ne_box hm ha)
+
 /-- **The prologue's frame**: from a level map related to the caller's
 levels at the site, the prologue evaluates to values related to the levels
 it rebuilds, and maps every level hole and every needed level. -/

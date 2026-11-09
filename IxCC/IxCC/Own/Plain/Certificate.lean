@@ -99,4 +99,15 @@ def admit (F : Fir.Program) (j : Json) : Except String Program := do
 def ofText (F : Fir.Program) (text : String) : Except String Program := do
   admit F (← Json.parse text)
 
+/-- Contract-aware certificate admission: decodes the candidate body map against
+`F` and checks `checkContractPlainMap F bodies`, admitting all frontend binder
+and let contract annotations (`0`, `1`, `&`, `*`, `!`, `~`, `let borrow`). -/
+def admitContract (F : Fir.Program) (j : Json) : Except String Program := do
+  let bodies ← decode F j
+  if checkContractPlainMap F bodies then return { source := F, bodies }
+  else throw "own.cert.check: ownership proposal or source domain refused"
+
+def ofTextContract (F : Fir.Program) (text : String) : Except String Program := do
+  admitContract F (← Json.parse text)
+
 end IxCC.Own.Plain.Certificate

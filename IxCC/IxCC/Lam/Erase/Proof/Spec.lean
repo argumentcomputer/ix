@@ -241,6 +241,17 @@ inductive SatR : Cx → Head → Profile → List Src.Term.Arg → Term → Prop
           | .index i => (refs.getD (np + 1 + i) .box).level?
           | .proof => none) body →
       SatR cx (.cases c) q args (wrapLets lets (.tick body))
+  | casesUnbox {cx cx' : Cx} {c r : CId} {q : Profile} {args : List Src.Term.Arg}
+      {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Src.Rule}
+      {ty : Src.Term} {lets : List Term} {refs : List Ref} {l j : Nat} {body : Term} :
+      I.resolve.get? c = some (.case r) →
+      I.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty) →
+      BindR cx (args.zipIdx.map fun (a, i) => (a, decide (np + 1 + ni + 1 ≤ i))) lets refs cx' →
+      I.kindAt r q = some .ordinary → refs.getD (np + 1 + ni) .box = .lvl l →
+      I.unbox? ind q = some j →
+      MinorR cx' (refs.getD (np + 1 + ni + 1 + 0) .box)
+        ((List.range (unboxFields I ind)).map fun i => if i == j then some l else none) body →
+      SatR cx (.cases c) q args (wrapLets lets (.tick body))
   | casesOrd {cx cx' : Cx} {c r : CId} {q : Profile} {args : List Src.Term.Arg}
       {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId} {rules : List Src.Rule}
       {ty : Src.Term} {lets : List Term} {refs : List Ref} {l : Nat} {alts : List Alt} :

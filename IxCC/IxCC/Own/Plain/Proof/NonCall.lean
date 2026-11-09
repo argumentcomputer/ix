@@ -58,19 +58,19 @@ theorem fir_rhs_pure (F : Fir.Program) (ρ : Fir.Env) (rhs : Fir.Rhs) :
   | call f args => exact Or.inl rfl
 
 theorem nonCall_refines {functions : Signatures} {H : Heap} {external : Nat → Nat}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
     {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
-    (h : State functions H external live ρf ρo roots joins Jf Jo)
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
     (P : Program) (k : Nat) (x : Fir.Var) (rhs : Fir.Rhs) (body : Fir.Code)
     (hpins : BoolPinsOk P.source) (hx : x ∉ live)
     (hs : rhsIn functions live rhs = true) (hn : ∀ f args, rhs ≠ .call f args)
     (ih : ∀ w v H',
       State functions H' external (live ++ [x]) (ρf.insert x w) (ρo.insert x v)
-        (roots ++ [v]) joins Jf Jo →
+        (roots ++ [v]) joins Jf Jo (nextImm imm x rhs) →
       ResultRel H' external (Fir.eval P.source k (ρf.insert x w) Jf body)
-        (eval P k (ρo.insert x v) Jo H' (lowerCode (live ++ [x]) joins body))) :
+        (eval P k (ρo.insert x v) Jo H' (lowerCode (live ++ [x]) joins body (nextImm imm x rhs)))) :
     ResultRel H external (Fir.eval P.source k ρf Jf (.bind x rhs body))
-      (eval P k ρo Jo H (lowerCode live joins (.bind x rhs body))) := by
+      (eval P k ρo Jo H (lowerCode live joins (.bind x rhs body) imm)) := by
   rcases fir_rhs_pure P.source ρf rhs with hstuck | ⟨w, hw⟩
   · rw [Fir.eval_bindRhs P.source k ρf Jf x rhs body hn, hstuck]
     exact .stuck

@@ -15,18 +15,18 @@ open Rc
 open IxCC.Sem (Result)
 
 section
-variable {F : Fir.Program} (domain : programDomain F = true) (pins : BoolPinsOk F)
+variable {F : Fir.Program} (domain : contractProgramDomain F = true) (pins : BoolPinsOk F)
 variable {k : Nat} (smaller : ∀ j, j < k → AtClock F j)
 include domain pins smaller
 
 mutual
-theorem eval_refines {H : Heap} {external : Nat → Nat} {live : List Fir.Var}
+theorem eval_refines {H : Heap} {external : Nat → Nat} {live imm : List Fir.Var}
     {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {joins : Joins}
     (Jf : List Fir.JEntry) {Jo : List JEntry} (c : Fir.Code)
-    (state : State (signatures F) H external live ρf ρo owned joins Jf Jo)
+    (state : State (signatures F) H external live ρf ρo owned joins Jf Jo imm)
     (scope : scopeOk (signatures F) live (stackArities Jf) c = true) :
     ResultRel H external (Fir.eval F k ρf Jf c)
-      (eval (Program.canonical F) k ρo Jo H (lowerCode live joins c)) := by
+      (eval (Program.canonical F) k ρo Jo H (lowerCode live joins c imm)) := by
   match c with
   | .bind x r c' =>
     have parts : x ∉ live ∧ rhsIn (signatures F) live r = true ∧
@@ -96,20 +96,20 @@ theorem eval_refines {H : Heap} {external : Nat → Nat} {live : List Fir.Var}
       simp only [Program.canonical, hfields]
       exact evalAlts_refines Jf key alts d state parts.2.1 parts.2.2
   | .ret a =>
-    exact return_refines (Program.canonical F) k ρf ρo Jf Jo H live joins a
-      state.env state.roots state.counts scope
+    exact return_refines (Program.canonical F) k ρf ρo Jf Jo H live imm joins a
+      state.env state.roots state.distinct state.immOk state.counts scope
   | .tcall f args =>
     have hs : (signatures F).lookup f = some args.length ∧ args.all (argIn live) = true := by
       simpa [scopeOk, Bool.and_eq_true] using scope
     obtain ⟨fd, hf, _, _⟩ := signatures_lookup hs.1
     obtain ⟨H', vs, ws, _, _, hfRun, hoRun, hb, hd, hp⟩ :=
-      tailCall_transfer (Program.canonical F) k ρf ρo Jf Jo H live joins f args
-        state.env state.roots state.counts hs.2
+      tailCall_transfer (Program.canonical F) k ρf ρo Jf Jo H live imm joins f args
+        state.env state.roots state.distinct state.immOk state.counts hs.2
     change Fir.eval F k ρf Jf (.tcall f args) = Fir.evalCall F k f ws at hfRun
     rw [hfRun, hoRun]
     exact (call_of_smaller_clocks domain smaller hf hd hb).preheap (ExternalPreserved.of_values hp)
   | .trap =>
-    exact trap_refines (Program.canonical F) k ρf ρo Jf Jo H live joins state.roots state.counts
+    exact trap_refines (Program.canonical F) k ρf ρo Jf Jo H live imm joins state.roots state.counts
 termination_by c.size + Fir.jweight Jf
 decreasing_by
   all_goals simp_wf
@@ -118,15 +118,15 @@ decreasing_by
     | (simp only [Fir.Code.size, Fir.jweight, Fir.JEntry.weight, Bool.false_eq_true, ↓reduceIte]; omega)
     | (simp only [Fir.Code.size] at this ⊢; omega)
 
-theorem evalAlts_refines {H : Heap} {external : Nat → Nat} {live : List Fir.Var}
+theorem evalAlts_refines {H : Heap} {external : Nat → Nat} {live imm : List Fir.Var}
     {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {joins : Joins}
     (Jf : List Fir.JEntry) {Jo : List JEntry} (key : Key.CtorKey)
     (alts : List Fir.Alt) (d : Option Fir.Code)
-    (state : State (signatures F) H external live ρf ρo owned joins Jf Jo)
+    (state : State (signatures F) H external live ρf ρo owned joins Jf Jo imm)
     (ha : scopeAlts (signatures F) live (stackArities Jf) alts = true)
     (hd : scopeOpt (signatures F) live (stackArities Jf) d = true) :
     ResultRel H external (Fir.evalAlts F k ρf Jf key alts d)
-      (evalAlts (Program.canonical F) k ρo Jo H key (lowerAlts live joins alts) (lowerOpt live joins d)) := by
+      (evalAlts (Program.canonical F) k ρo Jo H key (lowerAlts live joins alts imm) (lowerOpt live joins d imm)) := by
   match alts, d with
   | [], some c =>
     rw [Fir.evalAlts_nil]
@@ -156,12 +156,12 @@ decreasing_by
 end
 end
 
-theorem canonical_refines {F : Fir.Program} (domain : programDomain F = true)
+theorem canonical_refines {F : Fir.Program} (domain : contractProgramDomain F = true)
     (pins : BoolPinsOk F) : ∀ k, AtClock F k := by
   intro k
   induction k using Nat.strongRecOn with
   | ind k ih =>
-    intro H external live ρf ρo owned joins Jf Jo c state scope
+    intro H external live ρf ρo owned joins Jf Jo imm c state scope
     exact eval_refines domain pins ih Jf c state scope
 
 end IxCC.Own.Plain

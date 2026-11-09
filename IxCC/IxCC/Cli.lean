@@ -1,4 +1,5 @@
 import IxCC.Recheck
+import IxCC.Recheck.Rc.Produce
 import IxCC.Anf.Print
 import IxCC.Fir.Print
 import IxCC.Cfg.Print
@@ -9,10 +10,10 @@ import IxCC.Xv.Print
 
 ```text
 ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o
-    [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]...
-    [--stats] [--no-typecheck]
+    [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE]
+    [--dump-ir LEVEL]... [--stats] [--no-typecheck]
 ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
-    [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
+    [--rc off|on|auto] [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
 ```
 
 `compile` runs ingress, `produce` and `Recheck.run` and writes the ELF
@@ -38,6 +39,23 @@ namespace IxCC.Cli
 
 open System IxCC.Recheck
 
+/-- Reference-counting compilation mode (`--rc off|on|auto`). -/
+inductive RcMode where
+  | off
+  | on
+  | auto
+  deriving DecidableEq, Repr, Inhabited
+
+namespace RcMode
+
+def parse : String → Option RcMode
+  | "off" => some .off
+  | "on" => some .on
+  | "auto" => some .auto
+  | _ => none
+
+end RcMode
+
 structure Options where
   command : String := ""
   closure : Option FilePath := none
@@ -50,15 +68,16 @@ structure Options where
   dumps : List String := []
   stats : Bool := false
   typecheck : Bool := true
+  rc : RcMode := .off
   deriving Inhabited
 
 def usage : String :=
   "\n".intercalate [
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
-    "      [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats] [--no-typecheck]",
+    "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats] [--no-typecheck]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
-    "      [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
+    "      [--rc off|on|auto] [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
     "dump levels: lam anf fir cfg lir xv xl all"]
 
 def dumpLevels : List String := ["lam", "anf", "fir", "cfg", "lir", "xv", "xl"]
@@ -68,6 +87,10 @@ def parseRest (o : Options) : List String → Except String Options
   | "--equations" :: f :: rest => parseRest { o with equations := some f } rest
   | "--root" :: n :: rest => parseRest { o with roots := o.roots ++ [n] } rest
   | "-o" :: f :: rest => parseRest { o with out := some f } rest
+  | "--rc" :: m :: rest =>
+    match RcMode.parse m with
+    | some mode => parseRest { o with rc := mode } rest
+    | none => throw s!"unknown --rc mode {m}"
   | "--cert" :: f :: rest => parseRest { o with cert := some f } rest
   | "--emit-cert" :: f :: rest => parseRest { o with emitCert := some f } rest
   | "--signatures" :: f :: rest => parseRest { o with signatures := some f } rest
@@ -154,16 +177,40 @@ def readInputs (o : Options) : ExceptT Err IO (ByteArray × Lean.Json) := do
   let text ← (IO.FS.readFile eqs).toBaseIO >>= fun
     | .ok t => pure t
     | .error e => throw (cliErr "cli.read" s!"{eqs}: {e}")
-  let json ← match Lean.Json.parse text with
+  let json ← match (Src.Hints.checkJsonText text >>= fun () => Lean.Json.parse text) with
     | .ok j => pure j
     | .error e => throw { stage := .ingress, code := "hints", message := s!"{eqs}: {e}" }
   pure (bytes, json)
+
+/-- Either a zero-RC (`ixcc/cert/1`) or plain-RC (`ixcc/rc-cert/2`) certificate. -/
+inductive CliCert where
+  | zeroRc (cert : Cert)
+  | plainRc (cert : RcReplay.Cert)
+
+def CliCert.toText : CliCert → String
+  | .zeroRc c => c.toText
+  | .plainRc c => c.toText
+
+def CliCert.base : CliCert → Cert
+  | .zeroRc c => c
+  | .plainRc c => c.base
 
 def readCert (f : FilePath) : ExceptT Err IO Cert := do
   let text ← (IO.FS.readFile f).toBaseIO >>= fun
     | .ok t => pure t
     | .error e => throw (cliErr "cli.read" s!"{f}: {e}")
   ExceptT.mk (pure (Cert.ofText text))
+
+def readCliCert (f : FilePath) : ExceptT Err IO CliCert := do
+  let text ← (IO.FS.readFile f).toBaseIO >>= fun
+    | .ok t => pure t
+    | .error e => throw (cliErr "cli.read" s!"{f}: {e}")
+  if text.trimAscii.toString.startsWith "[\"ixcc/rc-cert/2\"" then
+    match RcReplay.Cert.ofText text with
+    | .ok c => pure (.plainRc c)
+    | .error m => throw { stage := .cert, code := "cert.parse", message := m }
+  else
+    ExceptT.mk (pure ((Cert.ofText text).map .zeroRc))
 
 def write (f : FilePath) (write : IO Unit) : ExceptT Err IO Unit := do
   match ← write.toBaseIO with
@@ -183,15 +230,34 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   let ((bytes, json), tRead) ← timed (readInputs o)
   let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots o.typecheck)
   let cfg := Config.forInput {} inp
-  let ((cert, outcomes), tProduce) ← timed do
+  let ((cliCert, outcomes), tProduce) ← timed do
     match o.cert with
-    | some f => pure (← readCert f, none)
+    | some f => pure (← readCliCert f, none)
     | none =>
-      let p ← lift fun _ => produceWith cfg inp
-      pure (p.cert, some p.alloc)
-  let (a, tRun) ← timed (lift fun _ => run cfg inp.program cert)
+      match o.rc with
+      | .off =>
+        let p ← lift fun _ => produceWith cfg inp
+        pure (.zeroRc p.cert, some p.alloc)
+      | .on =>
+        let p ← lift fun _ => RcReplay.produceWith cfg inp
+        pure (.plainRc p.cert, some p.alloc)
+      | .auto =>
+        let front ← lift fun _ => RcReplay.produceFir cfg inp
+        match Own.Plain.selectRcPolicyForSrc front.src front.fir with
+        | .zeroRc =>
+          let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
+          pure (.zeroRc p.cert, some p.alloc)
+        | .plainRc =>
+          let p ← lift fun _ => RcReplay.finishPlainRcCert cfg front
+          pure (.plainRc p.cert, some p.alloc)
+  let (a, tRun) ← timed do
+    match cliCert with
+    | .zeroRc cert => lift fun _ => run cfg inp.program cert
+    | .plainRc rcCert =>
+      let rcArt ← lift fun _ => RcReplay.run cfg inp.program rcCert
+      lift fun _ => rcArt.toRecheckArtifact rcCert
   if let some f := o.out then write f (IO.FS.writeBinFile f a.object)
-  if let some f := o.emitCert then write f (IO.FS.writeFile f (cert.toText ++ "\n"))
+  if let some f := o.emitCert then write f (IO.FS.writeFile f (cliCert.toText ++ "\n"))
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))
   for l in o.dumps do
     IO.println s!"== {l} =="
@@ -200,7 +266,8 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     IO.println s!"certificate accepted: object {a.object.size} bytes, text {a.backend.encoded.text.size} bytes, \
       exports {a.roots.map (·.symbol)}"
   if o.stats then
-    let certBytes := cert.toText.utf8ByteSize
+    let cert := cliCert.base
+    let certBytes := cliCert.toText.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
     IO.println s!"time: read {tRead} ms, ingress {tIngress} ms, {producer} {tProduce} ms, run {tRun} ms"
     IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \

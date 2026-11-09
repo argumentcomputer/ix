@@ -7,6 +7,9 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 
 ## Direction and process
 
+- [Reviewer guide](reviewer-guide.md): top-down audit path across the end-to-end
+  soundness theorems, TCB and axiom fences, Produce-and-Recheck split, compiler
+  passes, Ring-0 PCC, and commit structure.
 - [Workspaces and recovery](workspaces-and-recovery.md): recovery checkpoints,
   workspace retirement and validation.
 

@@ -1,4 +1,5 @@
 import IxCCTests.Anf.Support
+import IxCCTests.Anf.KernelEval
 import IxCC.Anf.Pipeline
 import IxCCTests.Src.Bench
 
@@ -232,6 +233,18 @@ def k1 (a : Assert) : IO (Array String) := do
   return out
 
 def run (a : Assert) : IO (Array String) := do
+  -- Multi-use small local `.fn` whose occurrences are all saturated head calls:
+  -- P1 emits 1 `.fn` and 2 `.app`s; the pipeline β-inlines both leaving 0 `.fn`s.
+  let p1 ← IO.ofExcept (Anf.convert KernelEval.sharedCont)
+  let c1 := (shapeOf p1 0).counts
+  expect a (c1.fns == 1 && c1.apps == 2)
+    s!"sharedCont P1: expected 1 fn and 2 apps, got fn {c1.fns} app {c1.apps}"
+  let tr ← IO.ofExcept (Anf.Pipeline.produce {} KernelEval.sharedCont)
+  let final := ((tr.stages.getLast?).map (·.2)).getD default
+  let cf := (shapeOf final 0).counts
+  expect a (cf.fns == 0 && cf.apps == 0 && (shapeOf final 0).firstOrder)
+    s!"sharedCont final: expected 0 fns and 0 apps, got fn {cf.fns} app {cf.apps}"
+  replay a "sharedCont" KernelEval.sharedCont tr final
   let mut out := #[]
   for name in benchNames do
     out := out ++ (← bench a name)

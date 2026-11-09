@@ -19,13 +19,13 @@ theorem Activation.return_value
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List Own.RVal}
-    {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env}
+    {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env}
     {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
     {arg : Fir.Arg} {sourceFunction : Fir.Fun} {function : Cfg.Fun}
     {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
       live sourceEnv ownedEnv roots joins sourceJoins ownedJoins (.ret arg)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -58,7 +58,7 @@ theorem Activation.return_value
   have frameArgs : Own.evalArgs source.env [arg] = some [value] := by
     simp [Own.evalArgs, frameValue]
   have prefixLayout : At F P source ownedEnv ownedJoins (Own.Plain.actionPrefix
-      (Own.Plain.copies [arg] ++ Own.Plain.drops [] live) (.ret arg)) := before.layout
+      (Own.Plain.transferActions imm [] live [arg]) (.ret arg)) := before.layout
   obtain ⟨first, tail, head, returnLayout, absent⟩ :=
     checked_prefix_cursor checked prefixLayout sourceLookup before.frame.words
   obtain ⟨fd, scopeNames, params, acc, next, supply, lower, lookup, range, layout, cursor,
@@ -75,8 +75,9 @@ theorem Activation.return_value
     (Tokens.ofState (external := external) (held := []) before.canonical) lexical
   have initialReady : AllocatorReady H addresses memory (holdRoots external (roots ++ []))
       context base bump limit slots lists := by simpa only [List.append_nil] using heap.ready
-  rcases transfer_prefix functions main [arg] [] live before.frame.cursor head before.frame.lookup
-      initialTokens scopeArgs initialReady before.frame.words absent before.running callers with success | failure
+  rcases transfer_prefix functions main [arg] imm [] live before.frame.cursor head before.frame.lookup
+      initialTokens (ImmEnv.sub before.canonical.immOk lexical) scopeArgs initialReady
+      before.frame.words absent before.running callers with success | failure
   · obtain ⟨fields, logicals, kept, afterHeap, afterMemory, afterSlots, afterLists, final, cost,
       actualArgs, actualSourceArgs, actions, tokens, den, ready, trace, afterCursor, words,
       running, subset, preserved, externalPreserved⟩ := success

@@ -32,15 +32,48 @@ theorem EnvRoots.den_member {H : Heap} {live : List Fir.Var}
   exact Plain.den_member hd hm
 
 theorem State.bind_den {functions : Signatures} {H H' : Heap} {external : Nat → Nat}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
     {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
-    (h : State functions H external live ρf ρo roots joins Jf Jo)
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
     (x : Fir.Var) {v : RVal} {w : Fir.Val} (hx : x ∉ live)
     (hd : Proof.Den H' v w) (hb : Balance H' external (roots ++ [v]))
     (hp : ∀ root value, Proof.Den H root value → Proof.Den H' root value) :
     State functions H' external (live ++ [x]) (ρf.insert x w) (ρo.insert x v)
-      (roots ++ [v]) joins Jf Jo := by
+      (roots ++ [v]) joins Jf Jo imm := by
   apply h.bind x hx hd hb
+  intro root hm
+  obtain ⟨value, hd⟩ := h.roots.den_member h.env hm
+  exact hd.trans (hp root value hd).symm
+
+theorem State.bind_den_rhs {functions : Signatures} {H H' : Heap} {external : Nat → Nat}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
+    (x : Fir.Var) (r : Fir.Rhs) {v : RVal} {w : Fir.Val} (hx : x ∉ live)
+    (himm : isImmRhs imm r = true → ImmVal v)
+    (hd : Proof.Den H' v w) (hb : Balance H' external (roots ++ [v]))
+    (hp : ∀ root value, Proof.Den H root value → Proof.Den H' root value)
+    (hnotPrim : ∀ op args, r ≠ .prim op args := by intro op args h; cases h) :
+    State functions H' external (live ++ [x]) (ρf.insert x w) (ρo.insert x v)
+      (roots ++ [v]) joins Jf Jo (nextImm imm x r) := by
+  apply h.bind_rhs x r hx himm hd hb _ hnotPrim
+  intro root hm
+  obtain ⟨value, hd⟩ := h.roots.den_member h.env hm
+  exact hd.trans (hp root value hd).symm
+
+theorem State.bind_den_prim {functions : Signatures} {H H' : Heap} {external : Nat → Nat}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
+    (x : Fir.Var) (op : Lam.Prim) (args : List Fir.Arg) {v : RVal} {w : Fir.Val} (hx : x ∉ live)
+    (hs : args.all (argIn live) = true)
+    (hargs : ImmEnv ρo (argVars args))
+    (himm : ImmVal v)
+    (hd : Proof.Den H' v w) (hb : Balance H' external (roots ++ [v]))
+    (hp : ∀ root value, Proof.Den H root value → Proof.Den H' root value) :
+    State functions H' external (live ++ [x]) (ρf.insert x w) (ρo.insert x v)
+      (roots ++ [v]) joins Jf Jo (nextImm imm x (.prim op args)) := by
+  apply h.bind_prim x op args hx hs hargs himm hd hb
   intro root hm
   obtain ⟨value, hd⟩ := h.roots.den_member h.env hm
   exact hd.trans (hp root value hd).symm

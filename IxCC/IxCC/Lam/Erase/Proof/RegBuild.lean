@@ -238,7 +238,8 @@ theorem reg_casesForm (cx : Cx) (c r : CId) (q : Profile) (args : List Src.Term.
     · split
       · exact CSound.decline_bind
       · split
-        · exact CSound.decline_bind
+        · exact CSound.bind (reg_minorApp hrec cx' _ _) fun body =>
+            CSound.pure fun _ hm hb => RegT.wrapLets hb (.tick hm)
         · refine CSound.bind (reg_refTerm hrec cx' _) fun scrut =>
             CSound.bind (CSound.mapM_all (P := fun a T => AltReg T a) fun x _ => ?_) fun alts =>
               CSound.bind (CSound.pure (R := fun b _ => b = (scrut.case alts none).tick)

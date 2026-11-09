@@ -590,6 +590,11 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     -- by aggregation (`ix_aggr` shape 16), never by one IxVM run.
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
+  | .compile .. =>
+    -- A compile claim is formed and verified by the IxCC certificate checker
+    -- (`compile-v1`), never by an IxVM circuit run.
+    throw "compile claims have no IxVM witness; they are verified by the \
+IxCC certificate checker"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 

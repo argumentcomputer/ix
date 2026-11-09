@@ -60,7 +60,7 @@ def inc : Func where
 /-- Drop one token using dead parents as a bounded-storage continuation.
 Precondition: every reachable dynamic cell has 1..31 fully scanned fields,
 class=fields+1, and the ownership balance invariant. No recursive calls.
-The continuation relation is specified in INTERFACE.md; its proof is open. -/
+Whole-operation memory simulation and reclamation are proved in `Rt.Rc.Proof`. -/
 def dec : Func where
   name := "rt_rc_dec"
   params := [0]

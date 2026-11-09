@@ -7,6 +7,8 @@ the partial `head`, and a printed result in place of the unused `val test`;
 see `VARIANT.md`.
 -/
 
+set_option backward.match.sparseCases false
+
 namespace Queue
 
 inductive Q (α : Type) where

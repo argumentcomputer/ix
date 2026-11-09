@@ -26,6 +26,8 @@ structure World where
   boxMk : CId
   wrap : CId
   wrapMk : CId
+  wrapRec : CId
+  wrapCases : CId
   isNatCases : CId
   emptyCases : CId
   dec : CId
@@ -50,6 +52,11 @@ def world : World := Id.run do
   let (b1, wrap) := bld.add (.induct true 0 0 0 ty [])
   let (b1, wrapMk) := b1.add (.ctor true 0 wrap 0 0 1 (.pi {} {} natT (.const wrap [])))
   bld := b1.setDecl wrap (.induct true 0 0 0 ty [wrapMk])
+  let (b1, wrapRec) := bld.add (.recr true false 1 0 1 1 0 wrap
+    [{ ctor := wrapMk, fields := 1, rhs := lams 3 (appM (.var 1) [(.var 0, .strict)]) }] ty)
+  bld := { b1 with recKind := b1.recKind.set! wrapRec (some .ordinary) }
+  let (b1, wrapCases) := bld.add (.defn .defn .safe 1 ty (lams 3 (.natLit 0)))
+  bld := { b1 with resolve := b1.resolve.set! wrapCases (some (.case wrapRec)) }
   -- `casesOn` keys for the subsingleton `IsNat` and the empty type.
   let (b1, isNatCases) := bld.add (.defn .defn .safe 1 ty (lams 4 (.natLit 0)))
   bld := { b1 with resolve := b1.resolve.set! isNatCases (some (.case b.isNatRec)) }
@@ -75,8 +82,8 @@ def world : World := Id.run do
       (.var 1, .strict)])))
   bld := { b1 with lazy := b1.lazy.set! myIte (some 3)
                    known := { b1.known with decIsFalse := some decF, decIsTrue := some decT } }
-  return { bld, b, box, boxMk, wrap, wrapMk, isNatCases, emptyCases, dec, decF, decT, decRec,
-           decCases, loop, ident, myIte }
+  return { bld, b, box, boxMk, wrap, wrapMk, wrapRec, wrapCases, isNatCases, emptyCases, dec, decF,
+           decT, decRec, decCases, loop, ident, myIte }
 
 def c (id : CId) : Term := .const id []
 def lit (n : Nat) : Term := .natLit n
@@ -162,6 +169,17 @@ def run (a : Assert) : IO (Array String) := do
   t := t1
   expect a (eu.lam.ctors.all (·.key != .src w.wrapMk)) "an unboxed constructor has no table row"
   let (t1, _) ← accepted a w "unboxed value" (lam (app (c w.wrapMk) [n0])) natArgs t
+  t := t1
+  let (t1, eu2) ← accepted a w "unboxed structure casesOn"
+    (lam (appM (.const w.wrapCases [.zero]) [motive,
+      (app (c w.wrapMk) [app (c b.add) [n0, lit 2]], .strict),
+      (lam (app (c b.add) [n0, lit 1]), .strict)])) natArgs t
+  t := t1
+  expect a (eu2.lam.ctors.all (·.key != .src w.wrapMk))
+    "an unboxed structure casesOn registers no constructor table row"
+  let (t1, _) ← accepted a w "unboxed structure casesOn with a non-λ minor"
+    (lam (appM (.const w.wrapCases [.zero]) [motive,
+      (app (c w.wrapMk) [n0], .strict), (c w.ident, .strict)])) natArgs t
   t := t1
   -- casesOn: ordinary (λ and non-λ minors, over-applied), subsingleton, empty.
   let (t1, _) ← accepted a w "Nat.casesOn"

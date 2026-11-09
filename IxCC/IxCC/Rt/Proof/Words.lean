@@ -274,6 +274,111 @@ theorem natMul_word {p q : Nat} {a b : Word} (ha : natWord p = some a) (hb : nat
     · rw [UInt64.toNat_or, hprod]
       exact even_or_one _
 
+/-- A word is `5` exactly when it is the word of two. -/
+theorem natWord_eq_five {p : Nat} {a : Word} (ha : natWord p = some a) : a = 5 ↔ p = 2 := by
+  have ha' := natWord_toNat ha
+  constructor
+  · intro h; subst h; simp at ha'; omega
+  · intro h; subst h; exact UInt64.toNat_inj.mp (by simpa using ha')
+
+theorem natMul2_word {q : Nat} {b : Word} (hb : natWord q = some b)
+    (hok : ¬ (0x7fffffffffffffff : Word) < b) :
+    natWord (2 * q) = some (2 * b - 1) := by
+  have hb' := natWord_toNat hb
+  have hmax : (0x7fffffffffffffff : Word).toNat = 9223372036854775807 := rfl
+  have h2 : (2 : Word).toNat = 2 := rfl
+  have h1 : (1 : Word).toNat = 1 := rfl
+  have hq : q ≤ 4611686018427387903 := by
+    rw [UInt64.lt_iff_toNat_lt, hb', hmax] at hok
+    omega
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  have h2b : (2 * b).toNat = 2 * (2 * q + 1) := by
+    rw [UInt64.toNat_mul, h2, hb', Nat.mod_eq_of_lt (by omega)]
+  rw [sub_toNat_of_le (by rw [h2b, h1]; omega), h2b, h1]
+  omega
+
+theorem natMul2_addr_word {q : Nat} {b : Word} (hb : natWord q = some b)
+    (hok : ¬ (0x7fffffffffffffff : Word) < b) :
+    natWord (2 * q) = some (b + b * X86.Scale.one.word + Lir.dispWord (-1)) := by
+  have hb' := natWord_toNat hb
+  have hmax : (0x7fffffffffffffff : Word).toNat = 9223372036854775807 := rfl
+  have hq : q ≤ 4611686018427387903 := by
+    rw [UInt64.lt_iff_toNat_lt, hb', hmax] at hok
+    omega
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  have hscale : X86.Scale.one.word = 1 := rfl
+  have hdisp : (Lir.dispWord (-1)).toNat = 18446744073709551615 := rfl
+  have hbb : (b + b * 1).toNat = 4 * q + 2 := by
+    rw [UInt64.mul_one, UInt64.toNat_add, hb', Nat.mod_eq_of_lt (by omega)]
+    omega
+  rw [hscale, UInt64.toNat_add, hbb, hdisp]
+  omega
+
+/-- A word is `7` exactly when it is the word of three. -/
+theorem natWord_eq_seven {p : Nat} {a : Word} (ha : natWord p = some a) : a = 7 ↔ p = 3 := by
+  have ha' := natWord_toNat ha
+  constructor
+  · intro h; subst h; simp at ha'; omega
+  · intro h; subst h; exact UInt64.toNat_inj.mp (by simpa using ha')
+
+theorem natMul3_word {q : Nat} {b : Word} (hb : natWord q = some b)
+    (hok : ¬ (0x5555555555555555 : Word) < b) :
+    natWord (3 * q) = some (3 * b - 2) := by
+  have hb' := natWord_toNat hb
+  have hmax : (0x5555555555555555 : Word).toNat = 6148914691236517205 := rfl
+  have h3 : (3 : Word).toNat = 3 := rfl
+  have h2 : (2 : Word).toNat = 2 := rfl
+  have hq : q ≤ 3074457345618258602 := by
+    rw [UInt64.lt_iff_toNat_lt, hb', hmax] at hok
+    omega
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  have h3b : (3 * b).toNat = 3 * (2 * q + 1) := by
+    rw [UInt64.toNat_mul, h3, hb', Nat.mod_eq_of_lt (by omega)]
+  rw [sub_toNat_of_le (by rw [h3b, h2]; omega), h3b, h2]
+  omega
+
+theorem natMul3_addr_word {q : Nat} {b : Word} (hb : natWord q = some b)
+    (hok : ¬ (0x5555555555555555 : Word) < b) :
+    natWord (3 * q) = some (b + b * X86.Scale.two.word + Lir.dispWord (-2)) := by
+  have hb' := natWord_toNat hb
+  have hmax : (0x5555555555555555 : Word).toNat = 6148914691236517205 := rfl
+  have h2 : (2 : Word).toNat = 2 := rfl
+  have hq : q ≤ 3074457345618258602 := by
+    rw [UInt64.lt_iff_toNat_lt, hb', hmax] at hok
+    omega
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  have hscale : X86.Scale.two.word = 2 := rfl
+  have hdisp : (Lir.dispWord (-2)).toNat = 18446744073709551614 := rfl
+  have hb2 : (b * 2).toNat = (2 * q + 1) * 2 := by
+    rw [UInt64.toNat_mul, hb', h2, Nat.mod_eq_of_lt (by omega)]
+  have hbb2 : (b + b * 2).toNat = 6 * q + 3 := by
+    rw [UInt64.toNat_add, hb', hb2, Nat.mod_eq_of_lt (by omega)]
+    omega
+  rw [hscale, UInt64.toNat_add, hbb2, hdisp]
+  omega
+
+theorem natMulSq_word {p q : Nat} {a b : Word} (ha : natWord p = some a) (hb : natWord q = some b)
+    (hab : a = b) (hok : ¬ (0x16a09e667 : Word) < a) :
+    natWord (p * q) = some (((a >>> (1 : Word)) * (a - (1 : Word))) ||| 1) := by
+  have ha' := natWord_toNat ha
+  have hb' := natWord_toNat hb
+  subst hab
+  have hpq : p = q := by omega
+  subst hpq
+  have hmax : (0x16a09e667 : Word).toNat = 6074000999 := rfl
+  have hp : p ≤ 3037000499 := by
+    rw [UInt64.lt_iff_toNat_lt, ha', hmax] at hok
+    omega
+  have hu : (a >>> 1).toNat = p := by
+    rw [UInt64.toNat_shiftRight, ha']; simp [Nat.shiftRight_eq_div_pow]; omega
+  have ht : (a - 1).toNat = 2 * p := sub_one_toNat ha
+  have hpp : p * p ≤ 3037000499 * 3037000499 := Nat.mul_le_mul hp hp
+  have hprod : ((a >>> (1 : Word)) * (a - (1 : Word))).toNat = 2 * (p * p) := by
+    rw [UInt64.toNat_mul, hu, ht, Nat.mul_left_comm p 2 p, Nat.mod_eq_of_lt (by omega)]
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  rw [UInt64.toNat_or, hprod]
+  exact even_or_one _
+
 /-! ## Division and remainder -/
 
 theorem untag_toNat {p : Nat} {a : Word} (ha : natWord p = some a) : (a >>> 1).toNat = p := by
@@ -308,6 +413,51 @@ theorem natWord_eq_one {q : Nat} {b : Word} (hb : natWord q = some b) : b = 1 �
   constructor
   · intro h; subst h; simp at hb'; omega
   · intro h; subst h; exact UInt64.toNat_inj.mp (by simpa using hb')
+
+/-- A word is `3` exactly when it is the word of one. -/
+theorem natWord_eq_three {q : Nat} {b : Word} (hb : natWord q = some b) : b = 3 ↔ q = 1 := by
+  have hb' := natWord_toNat hb
+  constructor
+  · intro h; subst h; simp at hb'; omega
+  · intro h; subst h; exact UInt64.toNat_inj.mp (by simpa using hb')
+
+/-- A word is `9` exactly when it is the word of four. -/
+theorem natWord_eq_nine {q : Nat} {b : Word} (hb : natWord q = some b) : b = 9 ↔ q = 4 := by
+  have hb' := natWord_toNat hb
+  constructor
+  · intro h; subst h; simp at hb'; omega
+  · intro h; subst h; exact UInt64.toNat_inj.mp (by simpa using hb')
+
+theorem natDiv2_word {p : Nat} {a : Word} (ha : natWord p = some a) :
+    natWord (p / 2) = some ((a >>> 1) ||| 1) := by
+  have hp := natWord_lt ha
+  have hlt : p / 2 < 2 ^ 63 := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hp
+  refine natWord_iff.2 ⟨hlt, ?_⟩
+  rw [UInt64.toNat_or, untag_toNat ha]
+  exact or_one p
+
+theorem natMod2_word {p : Nat} {a : Word} (ha : natWord p = some a) :
+    natWord (p % 2) = some (a &&& 3) := by
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  rw [UInt64.toNat_and, show (UInt64.toNat 3) = 2 ^ 2 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod, natWord_toNat ha]
+  omega
+
+theorem natDiv4_word {p : Nat} {a : Word} (ha : natWord p = some a) :
+    natWord (p / 4) = some ((a >>> 2) ||| 1) := by
+  have hp := natWord_lt ha
+  have hlt : p / 4 < 2 ^ 63 := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hp
+  refine natWord_iff.2 ⟨hlt, ?_⟩
+  rw [UInt64.toNat_or, UInt64.toNat_shiftRight, natWord_toNat ha]
+  simp [Nat.shiftRight_eq_div_pow]
+  rw [or_one]
+  congr 2
+  omega
+
+theorem natMod4_word {p : Nat} {a : Word} (ha : natWord p = some a) :
+    natWord (p % 4) = some (a &&& 7) := by
+  refine natWord_iff.2 ⟨by omega, ?_⟩
+  rw [UInt64.toNat_and, show (UInt64.toNat 7) = 2 ^ 3 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod, natWord_toNat ha]
+  omega
 
 /-! ## Comparisons -/
 

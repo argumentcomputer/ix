@@ -27,20 +27,20 @@ theorem dens_transport {H H' : Heap} {vs : List RVal} {ws : List Fir.Val}
 
 theorem tailCall_transfer (P : Program) (k : Nat) (ρf : Fir.Env) (ρo : Own.Env)
     (Jf : List Fir.JEntry) (Jo : List JEntry) (H : Heap)
-    (live : List Fir.Var) (joins : Joins) (f : Fir.FunId) (args : List Fir.Arg)
+    (live imm : List Fir.Var) (joins : Joins) (f : Fir.FunId) (args : List Fir.Arg)
     {external : Nat → Nat} {roots : List RVal}
-    (he : EnvDen H live ρf ρo) (hr : EnvRoots ρo live roots)
+    (he : EnvDen H live ρf ρo) (hr : EnvRoots ρo live roots) (hdn : live.Nodup)
+    (himm : ImmEnv ρo imm)
     (hb : Balance H external roots) (hs : args.all (argIn live) = true) :
     ∃ H' vs ws,
       Own.evalArgs ρo args = some vs ∧ Fir.evalArgs ρf args = some ws ∧
       Fir.eval P.source k ρf Jf (.tcall f args) = Fir.evalCall P.source k f ws ∧
-      eval P k ρo Jo H (lowerCode live joins (.tcall f args)) = evalCall P k f vs H' ∧
+      eval P k ρo Jo H (lowerCode live joins (.tcall f args) imm) = evalCall P k f vs H' ∧
       Balance H' external vs ∧ Sem.Forall2 (Proof.Den H') vs ws ∧
       ∀ root, ExternalRoot external root → H.value? root = H'.value? root := by
   obtain ⟨vs, ws, hvo, hwf, hd⟩ := args_den he args hs
   obtain ⟨H', kept, hrun, hk, hb', _, hv, hext⟩ :=
-    transfer_sound P k ρo Jo H live [] args (.tcall f args) hr hb
-      (argsOwned_of_scope he hr hs) hvo
+    transfer_sound P k ρo Jo H live imm [] args (.tcall f args) hr hdn himm hb hs hvo
   have hk' : kept = [] := by
     simpa [EnvRoots, retained_empty, Own.evalArgs] using hk.symm
   subst kept

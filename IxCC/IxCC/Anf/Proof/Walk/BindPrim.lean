@@ -27,6 +27,49 @@ theorem NoDead.fn_body {live : List Bool} {ps : List Ixon.V3.BinderContract} {fb
     rw [getElem?_replicate_append] at hi
     simpa [Bind.occ] using h i' hi
 
+private theorem knownPrim_sound {facts : Src.NatMap Fact} {ρ' : List Val}
+    (hf : FactsOk Q Valid facts ρ') {p : Lam.Prim} {os : List Opd} {ws : List Val}
+    (hws : os.mapM (·.val ρ') = some ws) :
+    ∀ {d : Nat} {o : Opd}, Walk.knownPrim facts p os d = some o →
+      ∃ w, o.val ρ' = some w ∧ primResult Q.known p ws = .ok w
+  | 0, _, h => by simp [Walk.knownPrim] at h
+  | l + 1, o, h => by
+    simp only [Walk.knownPrim] at h
+    cases hl : facts.get? l with
+    | none => rw [hl] at h; exact knownPrim_sound hf hws h
+    | some f =>
+      rw [hl] at h
+      have hok := hf l f hl
+      cases f with
+      | prim p' os' =>
+        dsimp only at h
+        split at h
+        · next hhit =>
+          simp only [decide_eq_true_eq] at hhit
+          obtain ⟨rfl, rfl⟩ := hhit
+          simp only [Option.some.injEq] at h
+          subst h
+          obtain ⟨w, ws', hw, hws', hpr⟩ := hok
+          rw [hws] at hws'; cases hws'
+          exact ⟨w, hw, hpr⟩
+        · exact knownPrim_sound hf hws h
+      | succ y =>
+        dsimp only at h
+        split at h
+        · next hhit =>
+          simp only [decide_eq_true_eq] at hhit
+          obtain ⟨rfl, rfl⟩ := hhit
+          simp only [Option.some.injEq] at h
+          subst h
+          obtain ⟨m, hw, hy⟩ := hok
+          have h1 : (Opd.lit (.nat 1)).val ρ' = some (.lit (.nat 1)) := rfl
+          have hws' : ws = [.lit (.nat m), .lit (.nat 1)] := by
+            simp [List.mapM_cons, hy, h1] at hws; exact hws.symm
+          subst hws'
+          exact ⟨.lit (.nat (m + 1)), hw, rfl⟩
+        · exact knownPrim_sound hf hws h
+      | ctor _ _ | glob _ | pap _ _ => exact knownPrim_sound hf hws h
+
 theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {p : Lam.Prim} {as : List Atom} {body : Exp} {k : Kont}
     {out : Exp} {s s' : Fires}
@@ -100,21 +143,21 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     | con => simp [natArgs] at hu
     | box => simp [natArgs] at hu
   have hsuccFacts : ∀ u, primResult P.known p vs = .ok u →
-      FactsOk Q Valid (match (match p, os with
-        | .natAdd, [y, .lit (.nat 1)] => some (Fact.succ y)
-        | _, _ => none) with
-        | some f => here.facts.insert here.d f
-        | none => here.facts) (u :: ρ') := by
+      FactsOk Q Valid (here.facts.insert here.d (Walk.primFact p os)) (u :: ρ') := by
     intro u hu
+    refine hf.insert' hd ?_
+    have hsucc' : ∀ y, p = .natAdd → os = [y, .lit (.nat 1)] → FactOk Q Valid (u :: ρ') here.d (.succ y) :=
+      fun y hp hos => hsucc y u hp hos hu
+    have hprim : FactOk Q Valid (u :: ρ') here.d (.prim p os) :=
+      ⟨u, ws, lvl_top hd u, opds_suffix (List.suffix_cons _ _) hws, by
+        rw [hctx.known]; unfold primResult; rw [hnat]; exact hu⟩
+    revert hsucc' hprim
+    unfold Walk.primFact
+    generalize p = p', os = os'
+    intro hsucc' hprim
     split
-    · next f hf' =>
-      split at hf'
-      · next y =>
-        simp only [Option.some.injEq] at hf'
-        subst hf'
-        exact hf.insert' hd (hsucc y u rfl rfl hu)
-      · cases hf'
-    · exact hf.push u
+    · next y => exact hsucc' y rfl rfl
+    · exact hprim
   split at h2
   · -- folded to a literal
     next m0 hfold =>
@@ -158,12 +201,26 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       exact hemit h3 hsuccFacts
   · -- not folded
     split at h2
-    · next hc =>
-      simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      exact hdead hc.2 (run_fire_then h2)
-    · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
-      obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
-      exact hemit h3 hsuccFacts
+    · next o hkp =>
+      have hkp' : Walk.knownPrim here.facts p os here.d = some o := by
+        split at hkp
+        · exact hkp
+        · cases hkp
+      obtain ⟨w, hw, hpr⟩ := knownPrim_sound hf hws hkp'
+      have hprP : primResult P.known p vs = .ok w := by
+        rw [← hctx.known]; unfold primResult; rw [← hnat]; exact hpr
+      rcases primResult_cases P.known p vs with hst | ⟨u, hu, hlu⟩
+      · rw [hprP] at hst; cases hst
+      · rw [hprP] at hu; cases hu
+        exact skip_sim hW (run_fire_then h2) (hctx.push hV) henv hJ hd hdj hf hnd hk
+          (.inr ⟨w, fun k => by rw [hsrc, hprP], .inl (.opd hw (WV.lit_or_con hlu))⟩)
+    · split at h2
+      · next hc =>
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        exact hdead hc.2 (run_fire_then h2)
+      · obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
+        obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
+        exact hemit h3 hsuccFacts
 
 theorem walkBind_fn (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env}
     {here : Here} {c : Ixon.V3.LetContract} {ps : List Ixon.V3.BinderContract} {fb : Exp} {body : Exp}

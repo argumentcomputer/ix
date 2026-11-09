@@ -8,15 +8,15 @@ namespace IxCC.Recheck.RcReplay
 theorem backTyped_parts {cfg : Config} {f : Front} {root : Ixon.Address} {c : Recheck.Cert} {xv : Xv.VProgram}
     {xl : Xv.LProgram} {stacked : Xv.Stacking.Stacked} {program : X86.Program} {exports : List (String × X86.BlockId)}
     (h : backTyped cfg f root c = .ok (xv, xl, stacked, program, exports)) :
-    Xv.Select.select f.lowered.program = .ok xv ∧ Xv.Validate.run cfg.env xv c.alloc = .ok xl ∧
-      Backend.lay xl ({ Recheck.backendConfig cfg f.lowered root c with reps := f.reps }) = .ok (stacked, program, exports) := by
+    Xv.Select.select f.lowered.program = .ok xv ∧ Xv.Validate.run (f.env cfg.env) xv c.alloc = .ok xl ∧
+      Backend.lay xl ({ Recheck.backendConfig cfg f.lowered root c with reps := f.reps, env := f.env cfg.env }) = .ok (stacked, program, exports) := by
   unfold backTyped at h
   simp only [bind, Except.bind, Except.mapError] at h
   cases hs : Xv.Select.select f.lowered.program with
   | error e => simp [hs] at h
   | ok xv' =>
     simp only [hs] at h
-    cases hv : Xv.Validate.program cfg.env xv' c.alloc with
+    cases hv : Xv.Validate.program (f.env cfg.env) xv' c.alloc with
     | error e => simp [hv] at h
     | ok u =>
       simp only [hv] at h
@@ -24,7 +24,7 @@ theorem backTyped_parts {cfg : Config} {f : Front} {root : Ixon.Address} {c : Re
       | error e => simp [ha] at h
       | ok xl' =>
         simp only [ha] at h
-        cases hl : Backend.lay xl' ({ Recheck.backendConfig cfg f.lowered root c with reps := f.reps }) with
+        cases hl : Backend.lay xl' ({ Recheck.backendConfig cfg f.lowered root c with reps := f.reps, env := f.env cfg.env }) with
         | error e => simp [hl] at h
         | ok r =>
           obtain ⟨st, pr, ex⟩ := r
@@ -43,7 +43,8 @@ def finalConfig (cfg : Config) (f : Front) : Config :=
 
 def emittedConfig (cfg : Config) (f : Front) (c : Recheck.Cert) : Backend.Config :=
   { Recheck.backendConfig (finalConfig cfg f) f.lowered
-      ((f.src.roots.head?.map (·.1)).getD default) c with reps := f.reps }
+      ((f.src.roots.head?.map (·.1)).getD default) c with
+    reps := f.reps, env := f.env (finalConfig cfg f).env }
 
 /-- The replay path emits the exact selected and validated program, with its
 additional raw-word drop representation and the actual certificate layouts. -/
@@ -51,7 +52,7 @@ theorem run_parts {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact}
     (accepted : run cfg P c = .ok a) :
     runFront cfg P c = .ok a.front ∧ ∃ xv : Xv.VProgram, ∃ xl : Xv.LProgram,
       Xv.Select.select a.front.lowered.program = .ok xv ∧
-      Xv.Validate.run cfg.env xv c.base.alloc = .ok xl ∧
+      Xv.Validate.run (a.front.env cfg.env) xv c.base.alloc = .ok xl ∧
       Backend.emit xl (emittedConfig cfg a.front c.base) = .ok a.backend ∧
       Backend.SymbolsApart a.backend := by
   unfold run at accepted

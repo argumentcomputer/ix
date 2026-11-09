@@ -21,13 +21,33 @@ namespace IxCC.Anf.Shrink
 /-- Rounds per global, in id order (missing entries mean none). -/
 abbrev Cert := List Nat
 
+/-- Maximum shrink rounds per global allowed in a certificate. -/
+def maxCertRounds : Nat := 64
+
+/-- Maximum globals listed in a shrink certificate. -/
+def maxCertGlobals : Nat := 100000
+
+/-- Maximum case-of-case threshold allowed in certificate parameters. -/
+def maxCertCaseOfCase : Nat := 512
+
+/-- Maximum small-join threshold allowed in certificate parameters. -/
+def maxCertSmallJoin : Nat := 64
+
 /-- The bounds the rules read (certificate data). -/
 structure Params where
   /-- The largest alternative case-of-case copies. -/
-  caseOfCase : Nat := 64
+  caseOfCase : Nat := 512
   /-- Join points of at most this many nodes are inlined at every jump. -/
   smallJoin : Nat := 24
   deriving Repr, Inhabited
+
+/-- Check that shrink parameters in an untrusted certificate are within bounds. -/
+def Params.checkCert (p : Params) : Bool :=
+  p.caseOfCase ≤ maxCertCaseOfCase && p.smallJoin ≤ maxCertSmallJoin
+
+/-- Check that a shrink round-count certificate is within bounds. -/
+def checkCert (cert : Cert) : Bool :=
+  cert.length ≤ maxCertGlobals && cert.all (· ≤ maxCertRounds)
 
 structure Budgets where
   /-- Rounds per global per invocation. -/

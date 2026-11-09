@@ -97,13 +97,19 @@ theorem Mono.untag' (a : Lir.Arg) : Mono (untag a) := by
 theorem Mono.divMod' (x : Nat) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) :
     Mono (divMod x o zero a b) := by
   unfold divMod
-  split
-  · split
-    · mono
-    · apply Mono.bind' (Mono.untag' _); intro _; mono
-  · apply Mono.bind' (Mono.untag' _); intro _
-    apply Mono.bind' (Mono.untag' _); intro _
-    mono
+  repeat (first
+    | with_reducible exact Mono.pure' _
+    | with_reducible exact Mono.emit' _
+    | with_reducible exact Mono.freshReg'
+    | with_reducible exact Mono.check' _ _
+    | with_reducible exact Mono.throw' _
+    | with_reducible exact Mono.untag' _
+    | with_reducible apply Mono.bind'
+    | with_reducible intro _
+    | split
+    | unfold assign
+    | unfold temp
+    | unfold bin)
 
 theorem primitive_mono (f : Fir.FunId) (T : Tables) (x : Nat) (op : Lam.Prim) (las : List Lir.Arg) :
     Mono (primitive f T x op las) := by

@@ -10,8 +10,8 @@ public import Ix.Claim
 public section
 
 open LSpec SlimCheck Gen
-open Ix (RevealConstructorInfo RevealRecursorRule RevealMutConstInfo RevealConstantInfo Claim
-         DefKind DefinitionSafety QuotKind)
+open Ix (RevealConstructorInfo RevealRecursorRule RevealMutConstInfo RevealConstantInfo
+         CompilePolicy CompileClaim Claim DefKind DefinitionSafety QuotKind)
 open Tests.Gen.Ixon (genAddress genUInt64Small genDefKind genDefinitionSafety genQuotKindNew
                       genSmallArray)
 
@@ -102,6 +102,16 @@ def genCheckEnvContext : Gen Ix.ClaimContext :=
       if klass then { ctx with literalClass := true } else { ctx with bindingAssumed := assumed })
     <$> genClaimContext <*> genBool <*> genBool
 
+def genCompilePolicy : Gen CompilePolicy :=
+  frequency [
+    (1, pure .immortal),
+    (1, pure .zeroRc),
+    (1, pure .plainRc),
+  ]
+
+def genCompileClaim : Gen CompileClaim :=
+  CompileClaim.mk <$> genAddress <*> genAddress <*> genCompilePolicy <*> genUInt64Small <*> genAddress
+
 def genClaim : Gen Claim :=
   frequency [
     (10, Claim.eval     <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
@@ -112,6 +122,7 @@ def genClaim : Gen Claim :=
     (10, Claim.binding  <$> genAddress <*> genAddress),
     (10, Claim.catalog  <$> genAddress),
     (10, Claim.resource <$> genAddress <*> genAddress),
+    (10, Claim.compile  <$> genCompileClaim),
   ]
 
 /-! ## Shrinkable instances -/
@@ -151,6 +162,7 @@ instance : Shrinkable Claim where
     | .catalog m => [.checkEnv default m none]
     | .resource _ _ => []
     | .binding _ _ => []
+    | .compile _ => []
 
 /-! ## SampleableExt instances -/
 

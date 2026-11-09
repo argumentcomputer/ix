@@ -67,6 +67,11 @@ structure Binding where
   deriving BEq, Repr, Inhabited
 
 structure State where
+  /-- Opt-in conversion cache for a single immutable Program. Only the fresh
+  definition-checking entry point enables it; mixed-program typing actions
+  leave it disabled. Entries record completed reductions, never pending ones. -/
+  resourceWhnfMemoEnabled : Bool := false
+  resourceWhnfMemo : Array (Expr × Expr) := #[]
   bindings : Array Binding := #[]
   /-- Root 0 has no parent. Every new parent precedes its child. -/
   parents : Array (Option ScopeId) := #[none]

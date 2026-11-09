@@ -334,6 +334,20 @@ theorem satR_wf : ∀ {cx : Cx} {h : Head} {q : Profile} {args : List Src.Term.A
         | box => rw [hg] at hs; cases hs
         | name _ => rw [hg] at hs; cases hs
       | proof => cases hs
+  | _, _, _, _, _, .casesUnbox _ _ hb _ hmaj _ hm, hcx, _, hr => by
+    obtain ⟨hrl, hrb⟩ := RegT.wrapLets_inv hr
+    have hB := bindR_wf hb hcx hrl
+    refine hB.wrap ?_
+    cases hrb with
+    | tick hrb =>
+      simp only [Term.WF]
+      refine minorR_wf hm (hB.cxOk hcx) (fun l hl => hB.refsLt l (mem_of_getD_lvl hl))
+        (fun l hl => ?_) hrb
+      obtain ⟨i, _, hs⟩ := List.mem_map.1 hl
+      split at hs
+      · cases hs
+        exact hB.refsLt _ (mem_of_getD_lvl hmaj)
+      · cases hs
   | _, _, _, _, _, .casesOrd _ _ hb _ hmaj _ halts, hcx, _, hr => by
     obtain ⟨hrl, hrb⟩ := RegT.wrapLets_inv hr
     have hB := bindR_wf hb hcx hrl

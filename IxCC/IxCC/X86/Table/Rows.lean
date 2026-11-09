@@ -63,9 +63,40 @@ def zeroExtendSem (source : Width) : SemIn → Except SemFault SemOut
   | ⟨[value], _⟩ => .ok { results := [source.truncate value] }
   | _ => .ok { results := [] }
 
+def signExtendSem (source : Width) : SemIn → Except SemFault SemOut
+  | ⟨[value], _⟩ => .ok { results := [source.signExtend value] }
+  | _ => .ok { results := [] }
+
+def notSem : SemIn → Except SemFault SemOut
+  | ⟨[value], _⟩ => .ok { results := [~~~value] }
+  | _ => .ok { results := [] }
+
+def negSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[value], _⟩ =>
+      .ok { results := [0 - value]
+            flags := ByteEval.aluFlags .sub width 0 value }
+  | _ => .ok { results := [] }
+
+def bswapSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[value], _⟩ => .ok { results := [width.bswap value] }
+  | _ => .ok { results := [] }
+
 def mulSem (width : Width) : SemIn → Except SemFault SemOut
   | ⟨[left, right], _⟩ =>
       .ok { results := [left * right], flags := ByteEval.mulFlags width left right }
+  | _ => .ok { results := [] }
+
+/-- Widening unsigned `mul`: `rdx:rax := factor * rax` at `width`. Sets `CF`
+and `OF` to whether the high half `rdx` is nonzero; `ZF` and `SF` are
+undefined. -/
+def umulSem (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[factor, low], _⟩ =>
+      let product := (width.truncate factor).toNat * (width.truncate low).toNat
+      let lowOut := UInt64.ofNat (product % 2 ^ width.bits)
+      let highOut := UInt64.ofNat (product / 2 ^ width.bits)
+      .ok { results := []
+            implicit := [lowOut, highOut]
+            flags := ByteEval.umulFlags (product / 2 ^ width.bits) }
   | _ => .ok { results := [] }
 
 def jccSem (condition : Condition) : SemIn → Except SemFault SemOut
@@ -87,6 +118,14 @@ def shiftSem (operation : ShiftOp) (width : Width) : SemIn → Except SemFault S
       let count := shiftCount width count
       .ok { results := [⟨(operation.apply width value count).setWidth 64⟩]
             flags := ByteEval.shiftFlags operation width value count }
+  | _ => .ok { results := [] }
+
+/-- A rotation of the destination by an imm8 or `cl` count. -/
+def rotateSem (operation : RotateOp) (width : Width) : SemIn → Except SemFault SemOut
+  | ⟨[value, count], _⟩ =>
+      let count := shiftCount width count
+      .ok { results := [⟨(operation.apply width value count).setWidth 64⟩]
+            flags := ByteEval.rotateFlags operation width value count }
   | _ => .ok { results := [] }
 
 /-- Unsigned `div`: the dividend is `rdx:rax` at the width, the divisor the
@@ -133,6 +172,10 @@ def allUndefined : Flag → FlagEffect := fun _ => .undefined
 def mulEffect : Flag → FlagEffect
   | .cf | .of => .set
   | .zf | .sf => .undefined
+
+def rotateEffect : Flag → FlagEffect
+  | .cf | .of => .set
+  | .zf | .sf => .unchanged
 
 /-! ## Row families -/
 
@@ -249,6 +292,52 @@ def movzxDesc (width source : Width) : OpDesc :=
         byteRM := source == .w8 }
     mnemonic := "movzx" }
 
+/-- `movsx r, r/m8` (0F BE) and `movsx r, r/m16` (0F BF). -/
+def movsxDesc (width source : Width) : OpDesc :=
+  { slots := [regSlot width .write, rmSlot source .read]
+    sem := signExtendSem source
+    enc := sized width
+      { map := .x0F
+        opcode := if source == .w8 then 0xbe else 0xbf
+        modrm := .reg
+        byteRM := source == .w8 }
+    mnemonic := "movsx" }
+
+/-- `movsxd r64, r/m32` (REX.W + 63 /r). -/
+def movsxdDesc (width : Width) : OpDesc :=
+  { slots := [regSlot width .write, rmSlot .w32 .read]
+    sem := signExtendSem .w32
+    enc := sized width { opcode := 0x63, modrm := .reg }
+    mnemonic := "movsxd" }
+
+/-- `not r/m` (F6/F7 /2). -/
+def notDesc (width : Width) : OpDesc :=
+  { slots := [rmSlot width .readWrite]
+    sem := notSem
+    enc := sized width
+      { opcode := if width == .w8 then 0xf6 else 0xf7
+        modrm := .digit 2
+        byteRM := width == .w8 }
+    mnemonic := "not" }
+
+/-- `neg r/m` (F6/F7 /3). -/
+def negDesc (width : Width) : OpDesc :=
+  { slots := [rmSlot width .readWrite]
+    sem := negSem width
+    flagsOut := allSet
+    enc := sized width
+      { opcode := if width == .w8 then 0xf6 else 0xf7
+        modrm := .digit 3
+        byteRM := width == .w8 }
+    mnemonic := "neg" }
+
+/-- `bswap r32` (0F C8+rd) and `bswap r64` (REX.W + 0F C8+rd). -/
+def bswapDesc (width : Width) : OpDesc :=
+  { slots := [regSlot width .readWrite]
+    sem := bswapSem width
+    enc := sized width { map := .x0F, opcode := 0xc8, emb := .regLow3 }
+    mnemonic := "bswap" }
+
 /-- `lea r, m` (8D); the memory slot contributes its address. -/
 def leaDesc (width : Width) : OpDesc :=
   { slots := [regSlot width .write, ⟨[.mem], width, .address⟩]
@@ -333,6 +422,48 @@ def shiftDesc (operation : ShiftOp) (width : Width) : OpEn → OpDesc
             imm := .imm8
             byteRM := width == .w8 }
         mnemonic := operation.name }
+
+def _root_.IxCC.X86.RotateOp.digit : RotateOp → Nat
+  | .rol => 0
+  | .ror => 1
+
+def _root_.IxCC.X86.RotateOp.name : RotateOp → String
+  | .rol => "rol"
+  | .ror => "ror"
+
+/-- `rol`/`ror r/m, imm8` (C0/C1 /0,/1) and `r/m, cl` (D2/D3 /0,/1, with `cl`
+implicit). -/
+def rotateDesc (operation : RotateOp) (width : Width) : OpEn → OpDesc
+  | .MC =>
+      { slots := [rmSlot width .readWrite]
+        implicit := [⟨.rcx, .w8, .read⟩]
+        sem := rotateSem operation width
+        flagsOut := rotateEffect
+        enc := sized width
+          { opcode := if width == .w8 then 0xd2 else 0xd3
+            modrm := .digit operation.digit
+            byteRM := width == .w8 }
+        mnemonic := operation.name }
+  | _ =>
+      { slots := [rmSlot width .readWrite, immSlot .imm8 width]
+        sem := rotateSem operation width
+        flagsOut := rotateEffect
+        enc := sized width
+          { opcode := if width == .w8 then 0xc0 else 0xc1
+            modrm := .digit operation.digit
+            imm := .imm8
+            byteRM := width == .w8 }
+        mnemonic := operation.name }
+
+/-- Unsigned widening `mul r/m` (F7 /4): implicit `rax` (factor and low half)
+and `rdx` (high half) at the width. -/
+def umulDesc (width : Width) : OpDesc :=
+  { slots := [rmSlot width .read]
+    implicit := [⟨.rax, width, .readWrite⟩, ⟨.rdx, width, .write⟩]
+    sem := umulSem width
+    flagsOut := mulEffect
+    enc := sized width { opcode := 0xf7, modrm := .digit 4 }
+    mnemonic := "mul" }
 
 /-- Unsigned `div r/m` (F7 /6): implicit `rax` and `rdx` at the width. -/
 def divDesc (width : Width) : OpDesc :=
@@ -448,14 +579,22 @@ def desc (o : Op) : OpDesc :=
   | .sub => arithDesc subArith o.w o.form
   | .xor => arithDesc xorArith o.w o.form
   | .cmp => arithDesc cmpArith o.w o.form
+  | .not => notDesc o.w
+  | .neg => negDesc o.w
   | .mov => movDesc o.w o.form
   | .movzx => movzxDesc o.w o.src
+  | .movsx => movsxDesc o.w o.src
+  | .movsxd => movsxdDesc o.w
   | .lea => leaDesc o.w
   | .imul => imulDesc o.w o.form
+  | .mul => umulDesc o.w
   | .test => testDesc o.w o.form
   | .shl => shiftDesc .shl o.w o.form
   | .shr => shiftDesc .shr o.w o.form
   | .sar => shiftDesc .sar o.w o.form
+  | .rol => rotateDesc .rol o.w o.form
+  | .ror => rotateDesc .ror o.w o.form
+  | .bswap => bswapDesc o.w
   | .div => divDesc o.w
   | .setcc condition => setccDesc condition
   | .cmovcc condition => cmovDesc condition o.w
@@ -478,11 +617,19 @@ def Op.rows : List Op :=
   arith.flatMap (fun mn => widths.map fun w => { mn, w, form := .MI }) ++
   arith.flatMap (fun mn => ([.w16, .w32, .w64] : List Width).map fun w => { mn, w, form := .MI8 }) ++
   widths.map (fun w => { mn := .mov, w, form := .MR }) ++
-  [{ mn := .mov, w := .w32, form := .RM }, { mn := .mov, w := .w64, form := .RM }] ++
+  widths.map (fun w => { mn := .mov, w, form := .RM }) ++
   widths.map (fun w => { mn := .mov, w, form := .OI }) ++
   widths.map (fun w => { mn := .mov, w, form := .MI }) ++
   [{ mn := .movzx, w := .w32, form := .RM, src := .w8 },
     { mn := .movzx, w := .w32, form := .RM, src := .w16 },
+    { mn := .movzx, w := .w64, form := .RM, src := .w8 },
+    { mn := .movzx, w := .w64, form := .RM, src := .w16 },
+    { mn := .movsx, w := .w16, form := .RM, src := .w8 },
+    { mn := .movsx, w := .w32, form := .RM, src := .w8 },
+    { mn := .movsx, w := .w64, form := .RM, src := .w8 },
+    { mn := .movsx, w := .w32, form := .RM, src := .w16 },
+    { mn := .movsx, w := .w64, form := .RM, src := .w16 },
+    { mn := .movsxd, w := .w64, form := .RM, src := .w32 },
     { mn := .lea, w := .w64, form := .RM }] ++
   ([.w16, .w32, .w64] : List Width).flatMap (fun w =>
     [{ mn := .imul, w, form := .RM }, { mn := .imul, w, form := .RMI8 }, { mn := .imul, w, form := .RMI }]) ++
@@ -491,10 +638,14 @@ def Op.rows : List Op :=
   Condition.all.map (fun condition => { mn := .jcc condition, w := .w64, form := .D32 }) ++
   [{ mn := .ret, w := .w64, form := .ZO }] ++
   arith.flatMap (fun mn => widths.map fun w => { mn, w, form := .RM }) ++
+  widths.map (fun w => { mn := .not, w, form := .M }) ++
+  widths.map (fun w => { mn := .neg, w, form := .M }) ++
   widths.map (fun w => { mn := .test, w, form := .MR }) ++
   widths.map (fun w => { mn := .test, w, form := .MI }) ++
-  ([.shl, .shr, .sar] : List Mnemonic).flatMap (fun mn =>
+  ([.shl, .shr, .sar, .rol, .ror] : List Mnemonic).flatMap (fun mn =>
     widths.flatMap fun w => [{ mn, w, form := .MI }, { mn, w, form := .MC }]) ++
+  ([.w32, .w64] : List Width).map (fun w => { mn := .bswap, w, form := .O }) ++
+  ([.w32, .w64] : List Width).map (fun w => { mn := .mul, w, form := .M }) ++
   ([.w32, .w64] : List Width).map (fun w => { mn := .div, w, form := .M }) ++
   Condition.all.map (fun condition => { mn := .setcc condition, w := .w8, form := .M }) ++
   Condition.all.flatMap (fun condition =>
@@ -507,6 +658,7 @@ def Op.jccRel32 (condition : Condition) : Op := { mn := .jcc condition, w := .w6
 def Op.retZO : Op := { mn := .ret, w := .w64, form := .ZO }
 
 /-- Rows the backend selects by name. -/
+def Op.mulM (width : Width) : Op := { mn := .mul, w := width, form := .M }
 def Op.divM (width : Width) : Op := { mn := .div, w := width, form := .M }
 def Op.setccM (condition : Condition) : Op := { mn := .setcc condition, w := .w8, form := .M }
 def Op.cmovRM (condition : Condition) (width : Width) : Op := { mn := .cmovcc condition, w := width, form := .RM }

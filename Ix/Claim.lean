@@ -174,10 +174,28 @@ structure ClaimContext where
   literalClass : Bool := false
   deriving BEq, Repr, Inhabited
 
+/-- Memory-management policy under which an x86-64 ELF object was compiled. -/
+inductive CompilePolicy where
+  | immortal
+  | zeroRc
+  | plainRc
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+/-- Asserts that `target` in the Ixon environment with Merkle root `env`
+compiles under `policy` with ABI parameter count `abiArity` to an x86-64 ELF64
+object whose BLAKE3 digest is `elfHash`. -/
+structure CompileClaim where
+  env      : Address
+  target   : Address
+  policy   : CompilePolicy
+  abiArity : UInt64
+  elfHash  : Address
+  deriving BEq, Repr, Inhabited, DecidableEq
+
 /--
 A claim that can be proven.
 
-Eight variants in five families:
+Nine variants in six families:
 
 - **Typechecking claims** (`eval`, `check`, `checkEnv`): assert that a
   constant evaluates, a constant is well-typed, or every constant in an env
@@ -203,6 +221,12 @@ Eight variants in five families:
   each bound constant meets its specification in `spec`. It discharges the
   condition of the typing claims that assume their binding
   (`ClaimContext.bindingAssumed`), once per aggregate.
+- **`compile`**: certified compilation claim asserting that `target` in the
+  environment with Merkle root `env` compiles under `policy` with ABI parameter
+  count `abiArity` to an x86-64 ELF64 object with BLAKE3 digest `elfHash`
+  (tag 11, 2-byte header `E8 03`, object format `04`, validator `06`, followed
+  by `env` (32B), `target` (32B), `policy` (1B), `putTagN 0 0 abiArity`, and
+  `elfHash` (32B)).
 
 A `catalog` claim is formed only by aggregation (`ix_aggr` shape 16), from
 unconditional `checkEnv` claims (validator `erased-lean-v2` or
@@ -228,7 +252,69 @@ inductive Claim where
   /-- The role table with hash `binding` binds every role, and each bound
   constant meets its specification in the set with digest `spec`. -/
   | binding (spec binding : Address)
+  /-- Certified compilation claim connecting an environment Merkle root `env`
+  and target constant `target` under `policy` and `abiArity` to `elfHash`. -/
+  | compile (c : CompileClaim)
   deriving BEq, Repr, Inhabited
+
+-- ============================================================================
+-- CompilePolicy and CompileClaim serialization
+-- ============================================================================
+
+namespace CompilePolicy
+
+def toUInt8 : CompilePolicy → UInt8
+  | .immortal => 0
+  | .zeroRc   => 1
+  | .plainRc  => 2
+
+def put (p : CompilePolicy) : PutM Unit :=
+  putU8 p.toUInt8
+
+def get : GetM CompilePolicy := do
+  match (← getU8) with
+  | 0 => return .immortal
+  | 1 => return .zeroRc
+  | 2 => return .plainRc
+  | v => throw s!"CompilePolicy.get: invalid {v}"
+
+instance : Serialize CompilePolicy where
+  put := put
+  get := get
+
+instance : ToString CompilePolicy where
+  toString
+    | .immortal => "immortal"
+    | .zeroRc   => "zeroRc"
+    | .plainRc  => "plainRc"
+
+end CompilePolicy
+
+namespace CompileClaim
+
+def put (c : CompileClaim) : PutM Unit := do
+  Serialize.put c.env
+  Serialize.put c.target
+  CompilePolicy.put c.policy
+  putTagN 0 0 c.abiArity
+  Serialize.put c.elfHash
+
+def get : GetM CompileClaim := do
+  let env ← Serialize.get
+  let target ← Serialize.get
+  let policy ← CompilePolicy.get
+  let abiArity ← getTagN0Value
+  let elfHash ← Serialize.get
+  return { env, target, policy, abiArity, elfHash }
+
+instance : Serialize CompileClaim where
+  put := put
+  get := get
+
+instance : ToString CompileClaim where
+  toString c := s!"CompileClaim({c.env}, {c.target}, {c.policy}, {c.abiArity}, {c.elfHash})"
+
+end CompileClaim
 
 -- ============================================================================
 -- RevealConstructorInfo serialization
@@ -538,13 +624,17 @@ end RevealConstantInfo
 
 namespace Claim
 
--- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
+-- TagN (`f = 4`) value dispatch (variants 2–10 mirror crates/ixon/src/proof.rs;
+-- variant 11 `compile` is Lean-only for IxCC).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
--- so catalog is `E8 00`, resource `E8 01` and binding `E8 02` on the
--- wire. The `.ixe` header also uses flag 0xE, with the format version as the value
+-- so catalog is `E8 00`, resource `E8 01`, binding `E8 02`, and compile
+-- `E8 03` (followed by scope `04 06`, `env` (32B), `target` (32B),
+-- `policy` (1B), `putTagN 0 0 abiArity`, and `elfHash` (32B)) on the wire.
+-- The `.ixe` header also uses flag 0xE, with the format version as the value
 -- (`0xE4` for version 4, the same byte as the check claim tag).
--- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7).
+-- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7 for variants 0–7, and
+-- two-byte tag `F8 00` for variant 8 `compile`).
 
 def FLAG_CLAIM : UInt8 := 0xE
 def FLAG_PROOF : UInt8 := 0xF
@@ -559,6 +649,7 @@ def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
 def VARIANT_RESOURCE_CLAIM   : UInt64 := 9
 def VARIANT_BINDING_CLAIM    : UInt64 := 10
+def VARIANT_COMPILE_CLAIM    : UInt64 := 11
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
 def VARIANT_CHECK_PROOF      : UInt64 := 1
@@ -568,6 +659,7 @@ def VARIANT_CONTAINS_PROOF   : UInt64 := 4
 def VARIANT_CATALOG_PROOF    : UInt64 := 5
 def VARIANT_RESOURCE_PROOF   : UInt64 := 6
 def VARIANT_BINDING_PROOF    : UInt64 := 7
+def VARIANT_COMPILE_PROOF    : UInt64 := 8
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
     (some). Mirrors `put_opt_addr` in crates/ixon/src/proof.rs. -/
@@ -598,18 +690,21 @@ def getOptAddr : GetM (Option Address) := do
   for its context does;
 - `5`, erased-lean-v2-class: a `checkEnv` claim relative to a literal class
   instead of one binding (`ClaimContext.literalClass`): its typing holds
-  under every binding of that class that meets the specifications. -/
+  under every binding of that class that meets the specifications;
+- `6`, compile-v1: `compile`. -/
 def VALIDATOR_STRUCTURAL : UInt8 := 0
 def VALIDATOR_ERASED_LEAN_RETIRED : UInt8 := 1
 def VALIDATOR_RESOURCE : UInt8 := 2
 def VALIDATOR_ERASED_LEAN : UInt8 := 3
 def VALIDATOR_ERASED_LEAN_ASSUMED : UInt8 := 4
 def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
+def VALIDATOR_COMPILE_V1 : UInt8 := 6
 
 def validatorForVariant (variant : UInt64) : UInt8 :=
   if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then
     VALIDATOR_STRUCTURAL
   else if variant == VARIANT_RESOURCE_CLAIM then VALIDATOR_RESOURCE
+  else if variant == VARIANT_COMPILE_CLAIM then VALIDATOR_COMPILE_V1
   else VALIDATOR_ERASED_LEAN
 
 /-- Whether claims of variant `variant` may assume their binding: `check`
@@ -626,6 +721,7 @@ def variantOf : Claim → UInt64
   | .catalog .. => VARIANT_CATALOG_CLAIM
   | .resource .. => VARIANT_RESOURCE_CLAIM
   | .binding .. => VARIANT_BINDING_CLAIM
+  | .compile .. => VARIANT_COMPILE_CLAIM
 
 /-- The validator a claim's scope names: its variant's,
     erased-lean-v2-assumed for a `check` or `checkEnv` claim that assumes
@@ -703,6 +799,8 @@ def putPayload : Claim → PutM Unit
     -- A two-byte claim tag: `E8 02` on the wire.
     Serialize.put spec
     Serialize.put bound
+  | .compile c =>
+    CompileClaim.put c
 
 /-- Read the bytes after the scope of the claim variant `variant`;
     `validator` is what the scope said (`getScope`). -/
@@ -735,6 +833,8 @@ def getPayload (variant : UInt64) (validator : UInt8) : GetM Claim := do
     return .resource (← Serialize.get) (← Serialize.get)
   else if variant == VARIANT_BINDING_CLAIM then
     return .binding (← Serialize.get) (← Serialize.get)
+  else if variant == VARIANT_COMPILE_CLAIM then
+    return .compile (← CompileClaim.get)
   else
     throw s!"Claim.get: invalid claim variant {variant}"
 
@@ -749,6 +849,10 @@ def get : GetM Claim := do
     throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
   let validator ← getScope tag.value
   getPayload tag.value validator
+
+instance : Serialize Claim where
+  put := put
+  get := get
 
 def ser (c : Claim) : ByteArray := runPut (put c)
 def de (bytes : ByteArray) : Except String Claim := runGetExact get bytes
@@ -785,6 +889,7 @@ instance : ToString Claim where
     | .catalog m => s!"Catalog({m})"
     | .resource root profile => s!"Resource({root}, {profile})"
     | .binding spec bound => s!"Binding({bound} meets spec {spec})"
+    | .compile cc => s!"Compile({cc.env}, {cc.target}, {cc.policy}, {cc.abiArity}, {cc.elfHash})"
 
 end Claim
 
@@ -816,6 +921,7 @@ def variantOf : Ix.Claim → UInt64
   | .catalog ..  => Ix.Claim.VARIANT_CATALOG_PROOF
   | .resource .. => Ix.Claim.VARIANT_RESOURCE_PROOF
   | .binding ..  => Ix.Claim.VARIANT_BINDING_PROOF
+  | .compile ..  => Ix.Claim.VARIANT_COMPILE_PROOF
 
 def put (p : Proof) : PutM Unit := do
   putTagN 4 Ix.Claim.FLAG_PROOF (variantOf p.claim)
@@ -828,13 +934,17 @@ def get : GetM Proof := do
   let tag ← getTagN 4
   if tag.flag != Ix.Claim.FLAG_PROOF then
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
-  if tag.value > Ix.Claim.VARIANT_BINDING_PROOF then
+  if tag.value > Ix.Claim.VARIANT_COMPILE_PROOF then
     throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
   let validator ← Ix.Claim.getScope (tag.value + 3)
   let claim ← Ix.Claim.getPayload (tag.value + 3) validator
   let lenTag ← getTagN 0
   let bytes ← getBytes lenTag.value.toNat
   pure { claim, proof := bytes }
+
+instance : Serialize Proof where
+  put := put
+  get := get
 
 def ser (p : Proof) : ByteArray := runPut (put p)
 def de (bytes : ByteArray) : Except String Proof := runGetExact get bytes

@@ -24,14 +24,14 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
       (List.range P.base.size) = .ok funcs) (main : Nat)
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {held roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live : List Fir.Var} {imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     {x f : Nat} {args : List Fir.Arg} {cont : Fir.Code} {sourceFunction : Fir.Fun}
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs
       (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
       (holdRoots external held) live ρf ρo roots joins Jf Jo (.bind x (.call f args) cont)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -43,14 +43,14 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
       ∃ sourceTail saved targetEnv offset originalFd block consumedFd,
       F.fun? f = some calleeSource ∧
       Own.evalArgs ρo args = some fields ∧ Fir.evalArgs ρf args = some logical ∧
-      Own.Plain.evalActions ρo H (Own.Plain.copies args) = .ok copied ∧
+      Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok copied ∧
       copied.size = H.size ∧ (∀ value, H.value? value = copied.value? value) ∧
       Own.Plain.State (Own.Plain.signatures F) copied (holdRoots external (fields ++ held))
-        live ρf ρo roots joins Jf Jo ∧
+        live ρf ρo roots joins Jf Jo imm ∧
       FrameState P pairs lp addresses copied.size sourceFunction.vars function
         {source with rest := sourceTail} saved ∧ saved.dsts = [x] ∧
       (∀ value, At F P {source with rest := sourceTail, env := source.env.insert x value}
-        (ρo.insert x value) Jo (Own.Plain.lowerCode (live ++ [x]) joins cont)) ∧
+        (ρo.insert x value) Jo (Own.Plain.lowerCode (live ++ [x]) joins cont imm)) ∧
       (∀ value block, function.blocks[source.blk]? = some block →
         Rt.Proof.FusedDone (tablesOf P pairs) function block
           {source with rest := sourceTail, env := source.env.insert x value}) ∧
@@ -71,7 +71,7 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
       HeapState P pairs copied addresses mem' (holdRoots external (roots ++ held)) fields
         context base bump limit regionBytes slots lists ∧
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := target :: callers}
-        (2 * (Own.Plain.copies args).length + 1)
+        (2 * (Own.Plain.copies (Own.Plain.heapArgs imm args)).length + 1)
         (Lir.atState mem' context f offset 0 targetEnv (saved :: callers)) ∧
       step P (.run {source with rest := .bind x (.fir (.call f args)) :: sourceTail}
         sourceCallers copied) =
@@ -96,8 +96,8 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
   have programSize : P.base.size = F.size :=
     generate_size (checkProgram_parts (checkScopedProgram_parts checked).1).2
   have range : f < P.base.size := by simpa only [programSize] using sourceRange
-  have initialLayout : At F P source ρo Jo (Own.Plain.actionPrefix (Own.Plain.copies args)
-      (.bind x (.call f args) (Own.Plain.lowerCode (live ++ [x]) joins cont))) := before.layout
+  have initialLayout : At F P source ρo Jo (Own.Plain.actionPrefix (Own.Plain.copies (Own.Plain.heapArgs imm args))
+      (.bind x (.call f args) (Own.Plain.lowerCode (live ++ [x]) joins cont imm))) := before.layout
   obtain ⟨first, tail, head, callLayout, absent⟩ :=
     checked_prefix_cursor checked initialLayout sourceLookup before.frame.words
   have ordinary : reserved P.base.size (.bind x (.fir (.call f args))) = false := by
@@ -115,16 +115,16 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
     have equal : original = fields := Option.some.inj
       ((Cfg.Proof.evalArgs_sub lexical originalArgs).symm.trans frameArgs)
     subst original
-    have copies : Own.Plain.evalActions ρo H (Own.Plain.copies args) = .ok copied := by
+    have copies : Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok copied := by
       rw [copies_eval_sub lexical (Tokens.present (Tokens.ofState before.canonical))
-        args scopeParts.2.1.2 H]
+        (Own.Plain.heapArgs imm args) (Own.Plain.heapArgs_scope imm scopeParts.2.1.2) H]
       exact actions
     have suspendedState : Own.Plain.State (Own.Plain.signatures F) copied
-        (holdRoots external (fields ++ held)) live ρf ρo roots joins Jf Jo :=
+        (holdRoots external (fields ++ held)) live ρf ρo roots joins Jf Jo imm :=
       ⟨before.canonical.env.transport before.canonical.roots (fun value _ => preserved value),
         before.canonical.roots, framedState.counts, before.canonical.distinct,
         before.canonical.stack.transport (fun value _ => preserved value),
-        before.canonical.views, before.canonical.scope⟩
+        before.canonical.views, before.canonical.scope, before.canonical.immSub, before.canonical.immOk⟩
     have balance : Balance copied (holdRoots external (roots ++ held)) fields := by
       intro location
       have counted := framedState.counts location
@@ -200,7 +200,7 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
         cases middle
         simp_all [Lir.atState]
       rw [same] at trace₂
-      exact .inr ⟨2 * (Own.Plain.copies args).length + cost, terminal, resource,
+      exact .inr ⟨2 * (Own.Plain.copies (Own.Plain.heapArgs imm args)).length + cost, terminal, resource,
         trace₁.trans trace₂, failed⟩
   · exact .inr failure
 

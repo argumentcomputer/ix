@@ -17,15 +17,15 @@ theorem jump_transfer_prefix
     {source : Cfg.Frame} {target : Lir.Frame}
     (cursor : ConsumedCursor P pairs (Public.Spec.sourceStage P functions main) source target)
     {signatures : Own.Plain.Signatures} {H : Heap} {external : Nat → Nat} {held roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
-    (before : Own.Plain.State signatures H (holdRoots external held) live ρf ρo roots joins Jf Jo)
+    (before : Own.Plain.State signatures H (holdRoots external held) live ρf ρo roots joins Jf Jo imm)
     (j : Fir.JoinId) (args : List Fir.Arg) {ef : Fir.JEntry} {restf : List Fir.JEntry}
     (lookup : Fir.lookupJ j Jf = some (ef, restf))
     (scope : args.all (Own.Plain.argIn live) = true) (arity : args.length = ef.params.length)
     {first : Nat} {tail : List Cfg.Instr}
     (head : source.rest = encodePrefix P.base.size first
-      (Own.Plain.copies args ++ Own.Plain.drops ((joins.lookup j).getD []) live) ++ tail)
+      (Own.Plain.transferActions imm ((joins.lookup j).getD []) live args) ++ tail)
     {function : Cfg.Fun} (sourceLookup : (consumed P pairs).fun? source.fn = some function)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -43,7 +43,7 @@ theorem jump_transfer_prefix
       Own.evalArgs ρo args = some fields ∧ Fir.evalArgs ρf args = some logical ∧
       fields.length = eo.params.length ∧
       Own.Plain.evalActions ρo H
-        (Own.Plain.copies args ++ Own.Plain.drops captured live) = .ok H' ∧
+        (Own.Plain.transferActions imm captured live args) = .ok H' ∧
       Own.Plain.State signatures H' (holdRoots external held) (captured ++ ef.params)
         (Fir.bindAll ef.env ef.params logical) (Own.bindAll eo.env eo.params fields) (kept ++ fields)
         (if ef.isRec then (ef.id, captured) :: older else older) (ef.after restf) (eo.after resto) ∧
@@ -65,10 +65,10 @@ theorem jump_transfer_prefix
       entryScope, tailDen, tailViews, tailScope⟩ :=
     Own.Plain.lookup_ready before.stack before.views before.scope lookup
   have prefixHead : source.rest = encodePrefix P.base.size first
-      (Own.Plain.copies args ++ Own.Plain.drops captured live) ++ tail := by
+      (Own.Plain.transferActions imm captured live args) ++ tail := by
     simpa only [captureLookup, Option.getD_some] using head
-  rcases transfer_prefix functions main args captured live cursor prefixHead sourceLookup
-      (Tokens.ofState before) scope ready registers absent running callers with success | failure
+  rcases transfer_prefix functions main args imm captured live cursor prefixHead sourceLookup
+      (Tokens.ofState before) before.immOk scope ready registers absent running callers with success | failure
   · obtain ⟨fields, logical, kept, H', mem', slots', lists', final, cost, arguments,
       sourceArgs, actions, tokens, den, restored, trace, next, words, finished,
       subset, preserved, externalValues⟩ := success

@@ -190,6 +190,32 @@ def run : IO Unit := do
       resolved.addresses[resolved.program.fields[0]!.typeRef.toNat]? == some nominal &&
       resolved.program.fields[0]!.contract == .unique do
     throw <| IO.userError "field rule did not come from the addressed constructor"
+  let duoType := Ixon.Expr.all ⟨.many, .shared⟩ .shared (.sort 1)
+    (.all ⟨.many, .shared⟩ .shared (.sort 1) (.sort 1))
+  let duoCtorType := Ixon.Expr.all ⟨.erased, .shared⟩ .shared (.sort 1)
+    (.all ⟨.erased, .shared⟩ .shared (.sort 1)
+      (.all ⟨.many, .unique⟩ .unique (.var 1)
+        (.all ⟨.many, .unique⟩ .unique (.var 1)
+          (.app (.app (.recur 0 #[]) (.var 3)) (.var 2)))))
+  let duoBlock : Constant := {
+    info := .muts #[.indc ⟨false, 0, 2, 0, duoType,
+      #[⟨false, 0, 0, 2, 2, duoCtorType⟩]⟩]
+    sharing := #[], refs := #[], univs := #[.zero, .succ .zero] }
+  let (duoEnv, duoBlockAddr) := store base duoBlock
+  let (duoEnv, duoNominal) := store duoEnv (Addressed.wrapper (.iPrj ⟨0, duoBlockAddr⟩))
+  let (duoEnv, _) := store duoEnv (Addressed.constructorWrapper duoBlockAddr 0 0)
+  let duoApplied := Ixon.Expr.app (.app (.ref 1 #[]) (.ref 0 #[])) (.ref 0 #[])
+  let duoProjector : Constant := {
+    info := .defn ⟨.defn, .safe, 0,
+      .all ⟨.linear, .unique⟩ .unique duoApplied (.ref 0 #[]),
+      .lam ⟨.linear, .unique⟩ duoApplied (.prj 1 0 (.var 0))⟩
+    sharing := #[], refs := #[unit, duoNominal], univs := #[] }
+  let (duoEnv, _) := store duoEnv duoProjector
+  let duoResolved ← get "parameterized field rules" (Addressed.checkResources duoEnv profile)
+  unless duoResolved.program.fields.size == 2 &&
+      duoResolved.program.fields[0]!.binders == 2 &&
+      duoResolved.program.fields[1]!.binders == 3 do
+    throw <| IO.userError "parameterized structure did not derive binder-indexed field rules"
   IO.println "Addressed resources: integrity, profile codecs, fixtures, fields, and dependency checks passed"
 
 end Tests.ResourceAddressed

@@ -671,10 +671,7 @@
             "lean-run",
             "constant"
           ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
+          "decline": null,
           "note": "constants: k^3",
           "cases": [
             {
@@ -716,10 +713,7 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
+          "decline": null,
           "cases": [
             {
               "args": [
@@ -1225,10 +1219,7 @@
             "lean-run",
             "constant"
           ],
-          "decline": {
-            "stage": "alloc",
-            "code": "alloc.fallback"
-          },
+          "decline": null,
           "note": "C(66, 33) has a word but c (n - i) does not before the division: status 3 is allowed",
           "generate": {
             "seed": 20,

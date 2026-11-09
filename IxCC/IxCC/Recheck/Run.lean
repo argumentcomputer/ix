@@ -166,20 +166,40 @@ def checkSymbols (exports : List Xv.Stacking.Export) : Except Err Unit :=
 
 /-! ## The passes -/
 
+/-- Validate middle-end certificate bounds (shrink rounds/params, inline sites, step count). -/
+def checkMidStep : Anf.Pipeline.Step → Bool
+  | .shrink c => Anf.Shrink.checkCert c
+  | .inline r => Anf.Inline.checkCert r
+  | .specialize _ => true
+  | .prune => true
+
+def checkMidCert (m : Anf.Pipeline.Cert) : Except Err Unit :=
+  if !m.shrink.checkCert || m.steps.length > 64 || !m.steps.all checkMidStep then
+    .error { stage := .anf, code := "anf.replay", message := "middle-end certificate exceeds resource bounds" }
+  else
+    .ok ()
+
 /-- The front end on the certificate: the table, the annotation, `Lazify`. -/
 def front (cfg : Config) (P : Src.Program) (c : Cert) :
     Except Err (Src.Program × Src.Relevance.Checked) := do
+  checkMidCert c.mid
   let table ← (Src.Table.ofCert cfg.table P c.table).mapError fun msg =>
     { stage := .table, code := "table.entry", message := msg }
-  match Src.Recheck.annotation { P with table } c.relevance with
-  | .ok r => pure r
-  | .error (.install msg) => throw { stage := .relevance, code := "relevance-S1", message := msg }
-  | .error (.relevance errs) =>
-    let p := { P with table }
-    let first := errs[0]?.map (·.rule) |>.getD "S1"
+  let (src, checked) ← match Src.Recheck.annotation { P with table } c.relevance with
+    | .ok r => pure r
+    | .error (.install msg) => throw { stage := .relevance, code := "relevance-S1", message := msg }
+    | .error (.relevance errs) =>
+      let p := { P with table }
+      let first := errs[0]?.map (·.rule) |>.getD "S1"
+      throw { stage := .relevance, code := s!"relevance-{first}"
+              message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p)) }
+    | .error (.table msg) => throw { stage := .table, code := "table.entry", message := msg }
+  let canonErrs := Src.Relevance.checkCanonical src c.relevance checked
+  unless canonErrs.isEmpty do
+    let first := canonErrs.head?.map (·.rule) |>.getD "S1"
     throw { stage := .relevance, code := s!"relevance-{first}"
-            message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p)) }
-  | .error (.table msg) => throw { stage := .table, code := "table.entry", message := msg }
+            message := "; ".intercalate (canonErrs.take 8 |>.map (·.render src)) }
+  pure (src, checked)
 
 /-- Lam through Cfg on the certificate's middle-end decisions. -/
 def middle (c : Cert) (lam : Lam.Program) : Except Err (Anf.Program × Fir.Program × Own.Program × Cfg.Program) := do

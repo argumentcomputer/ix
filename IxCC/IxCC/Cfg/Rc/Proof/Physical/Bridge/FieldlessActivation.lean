@@ -12,7 +12,7 @@ theorem fieldless_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
-    {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
+    {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
     {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
     {x : Nat} {ctor : Fir.CtorInfo} {args : List Fir.Arg} {body : Fir.Code}
     (zero : ctor.arity = 0)
@@ -20,7 +20,7 @@ theorem fieldless_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
     (sourceLookup : F.fun? source.fn = some sourceFd)
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
       live sourceEnv ownedEnv roots joins sourceJoins ownedJoins (.bind x (.ctor ctor args) body)
-      sourceFd.vars fd source target)
+      sourceFd.vars fd source target imm)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
     (heap : HeapState P pairs H addresses mem external roots context base bump limit regionBytes slots lists)
@@ -35,7 +35,8 @@ theorem fieldless_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
       Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
         (live ++ [x]) (sourceEnv.insert x logical) (ownedEnv.insert x (.ctor0 ctor)) (roots ++ [.ctor0 ctor])
         joins sourceJoins ownedJoins body sourceFd.vars fd
-        {source with rest := tail, env := source.env.insert x (.ctor0 ctor)} after ∧
+        {source with rest := tail, env := source.env.insert x (.ctor0 ctor)} after
+        (Own.Plain.nextImm imm x (.ctor ctor args)) ∧
       HeapState P pairs H addresses mem external (roots ++ [.ctor0 ctor])
         context base bump limit regionBytes slots lists) ∨
     Sem.Fails (Lir.semStep (Public.Spec.sourceStage P functions main))
@@ -55,7 +56,8 @@ theorem fieldless_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
   subst logical
   have fieldless : ctor.fieldless = true := by simp [Fir.CtorInfo.fieldless, zero]
   have atBind : At F P source ownedEnv ownedJoins
-      (.bind x (.ctor ctor []) (Own.Plain.lowerCode (live ++ [x]) joins body)) := before.layout
+      (.bind x (.ctor ctor []) (Own.Plain.lowerCode (live ++ [x]) joins body
+        (Own.Plain.nextImm imm x (.ctor ctor [])))) := before.layout
   obtain ⟨tail, head, continuation⟩ := atBind.bind_continuation
   have pureRhs : PureRhs (Own.immRhs (.ctor ctor [])) := fieldless
   have effect : Own.evalRhs .rc P.base.tables source.env H (Own.immRhs (.ctor ctor [])) =
@@ -69,7 +71,8 @@ theorem fieldless_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Co
     have balance : Own.Rc.Balance H external (roots ++ [.ctor0 ctor]) :=
       Own.Plain.balance_append_comm (show Own.Rc.Balance H external ([.ctor0 ctor] ++ roots) from
         Own.Plain.balance_immediate before.canonical.counts immediate)
-    have nextState := before.canonical.bind x fresh (Own.Proof.den_ctor0 H ctor) balance (fun _ _ => rfl)
+    have nextState := before.canonical.bind_rhs x (.ctor ctor []) fresh (fun _ => immediate)
+      (Own.Proof.den_ctor0 H ctor) balance (fun _ _ => rfl)
     have unchanged : Own.Rc.holdRoots external (roots ++ [.ctor0 ctor]) = Own.Rc.holdRoots external roots := by
       funext location
       simp [Own.Rc.holdRoots, Own.Rc.refsIn_append, Own.Rc.refsIn]

@@ -16,11 +16,12 @@ def PhysicalCode (F : Fir.Program) (P : Program) (config : Rt.Config)
     (sourceFunction : Fir.Fun) (function : Cfg.Fun)
     (source : Cfg.Frame) (target : Lir.Frame) (memory : X86.Memory)
     (context base bump limit : Lir.Word) (regionBytes : Nat)
-    (slots : List Slot) (lists : Nat → List Lir.Word) (callers : List Lir.Frame),
+    (slots : List Slot) (lists : Nat → List Lir.Word) (callers : List Lir.Frame)
+    {imm : List Fir.Var},
     F.fun? source.fn = some sourceFunction →
     Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external live sourceEnv ownedEnv roots joins sourceJoins ownedJoins
-      code sourceFunction.vars function source target →
+      code sourceFunction.vars function source target imm →
     HeapState P pairs H addresses memory external roots context base bump limit regionBytes slots lists →
     ResultAt P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external context base limit regionBytes clock
@@ -34,7 +35,7 @@ theorem PhysicalAtClock.code {F : Fir.Program} {P : Program} {config : Rt.Config
     PhysicalCode F P config pairs main clock sourceJoins code := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    imm sourceLookup before heap
   exact all H addresses external live sourceEnv ownedEnv roots joins sourceJoins ownedJoins
     code sourceFunction function source target memory context base bump limit regionBytes slots
     lists callers sourceLookup before heap
@@ -45,7 +46,7 @@ theorem PhysicalAtClock.of_code {F : Fir.Program} {P : Program} {config : Rt.Con
     PhysicalAtClock F P config pairs main clock := by
   intro H addresses external live sourceEnv ownedEnv roots joins sourceJoins ownedJoins code
     sourceFunction function source target memory context base bump limit regionBytes slots lists
-    callers sourceLookup before heap
+    callers imm sourceLookup before heap
   exact all sourceJoins code H addresses external live sourceEnv ownedEnv roots joins ownedJoins
     sourceFunction function source target memory context base bump limit regionBytes slots lists
     callers sourceLookup before heap

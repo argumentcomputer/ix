@@ -1,4 +1,5 @@
 import IxCC.Ixon.V3.Source
+import IxCC.Ixon.V3.Validate
 import IxCC.Tools.Check
 
 namespace IxCCTests.IxonV3
@@ -112,6 +113,50 @@ def handoff (root : System.FilePath) : IO Nat := do
     else
       require ((ResourceClaim.decode raw).toOption.isNone) s!"accepted non-resource claim {name}"
     assertions := assertions + 2
+  -- Parameterized two-parameter structure (`PProd` shape) and dependent structure (`Sigma` shape)
+  let duoProg : Resource.Program := {
+    declarations := #[
+      { type := .sort 0, kind := .typeConstructor }, -- 0: A
+      { type := .sort 0, kind := .typeConstructor }, -- 1: B
+      { type := .all ⟨.many, .shared⟩ .shared (.sort 1)
+          (.all ⟨.many, .shared⟩ .shared (.sort 1) (.sort 1)),
+        kind := .typeConstructor },                  -- 2: Duo
+      { type := .all ⟨.erased, .shared⟩ .shared (.sort 1)
+          (.all ⟨.erased, .shared⟩ .shared (.sort 1)
+            (.all ⟨.linear, .unique⟩ .shared (.var 1)
+              (.all ⟨.linear, .unique⟩ .unique (.var 1)
+                (.app (.app (.ref 2 #[]) (.var 3)) (.var 2))))),
+        kind := .assumption },                       -- 3: Duo.mk
+      -- 4: project fst of Duo A B (must have type A, not B)
+      { type := .all ⟨.linear, .unique⟩ .unique (.app (.app (.ref 2 #[]) (.ref 0 #[])) (.ref 1 #[])) (.ref 0 #[]),
+        body := some (.lam ⟨.linear, .unique⟩ (.app (.app (.ref 2 #[]) (.ref 0 #[])) (.ref 1 #[])) (.prj 2 0 (.var 0))) },
+      -- 5: project snd of Duo A B (must have type B, not A)
+      { type := .all ⟨.linear, .unique⟩ .unique (.app (.app (.ref 2 #[]) (.ref 0 #[])) (.ref 1 #[])) (.ref 1 #[]),
+        body := some (.lam ⟨.linear, .unique⟩ (.app (.app (.ref 2 #[]) (.ref 0 #[])) (.ref 1 #[])) (.prj 2 1 (.var 0))) },
+      -- 6: wrong return type (B instead of A) for fst must fail
+      { type := .all ⟨.linear, .unique⟩ .unique (.app (.app (.ref 2 #[]) (.ref 0 #[])) (.ref 1 #[])) (.ref 1 #[]),
+        body := some (.lam ⟨.linear, .unique⟩ (.app (.app (.ref 2 #[]) (.ref 0 #[])) (.ref 1 #[])) (.prj 2 0 (.var 0))) }
+    ]
+    fields := #[
+      { typeRef := 2, index := 0, binders := 2, type := .var 1, contract := .unique },
+      { typeRef := 2, index := 1, binders := 3, type := .var 1, contract := .unique }
+    ]
+    projections := #[
+      { typeRef := 2, constructor := 3, params := 2, fields := 2 }
+    ]
+  }
+  require ((Resource.checkDefinition duoProg 4).isOk) "rejected parameterized structure fst projection"
+  require ((Resource.checkDefinition duoProg 5).isOk) "rejected parameterized structure snd projection"
+  require ((Resource.checkDefinition duoProg 6).toOption.isNone) "accepted parameterized structure swapped parameter projection"
+  assertions := assertions + 3
+  -- Recursive annotated closure with `PProd` `.brecOn` projections and equation theorem (`OS-04`)
+  let annotatedBytes ← IO.FS.readBinFile "fixtures/ownership/historical/annotated-recursion-cb68/Annotated.ixe"
+  let annotatedEnv ← IO.ofExcept (decodeAnonymousEnv annotatedBytes)
+  let annotatedProfile := standardProfile annotatedEnv
+  let annotatedResolved ← IO.ofExcept (Resource.Addressed.checkResources annotatedEnv annotatedProfile)
+  require (annotatedResolved.program.fields.any (fun f => f.binders > 0))
+    "expected parameterized PProd field rules in Annotated.ixe"
+  assertions := assertions + 2
   return assertions + 2
 
 end IxCCTests.IxonV3

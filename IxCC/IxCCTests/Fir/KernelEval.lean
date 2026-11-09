@@ -36,7 +36,7 @@ def summary (A : Anf.Program) : Option (Nat × Nat × Nat × Nat × Nat) :=
 /-- The summaries the kernel checks, by bench entry (computed natively). -/
 def expected : List (String × Anf.Program × Nat × Nat × Nat × Nat × Nat) :=
   [("fib", Artifacts.fib, 2, 6, 12, 0, 31),
-   ("sum-loop", Artifacts.sumLoop, 2, 4, 8, 1, 71),
+   ("sum-loop", Artifacts.sumLoop, 2, 4, 7, 1, 71),
    ("ackermann", Artifacts.ackermann, 2, 6, 11, 2, 22),
    ("tak", Artifacts.tak, 2, 6, 15, 1, 73),
    ("gcd", Artifacts.gcd, 2, 4, 6, 1, 31)]
@@ -107,7 +107,7 @@ set_option maxRecDepth 100000 in
 example : summary Artifacts.fib = some (2, 6, 12, 0, 31) := by decide +kernel
 
 set_option maxRecDepth 100000 in
-example : summary Artifacts.sumLoop = some (2, 4, 8, 1, 71) := by decide +kernel
+example : summary Artifacts.sumLoop = some (2, 4, 7, 1, 71) := by decide +kernel
 
 set_option maxRecDepth 100000 in
 example : summary Artifacts.ackermann = some (2, 6, 11, 2, 22) := by decide +kernel

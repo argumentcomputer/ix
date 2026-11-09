@@ -1,9 +1,9 @@
 import IxCC.Own.Heap
 
-/-! H1 groundwork: checked count-only operations on the existing abstract
-heap. Final decrements deliberately decline: freeing requires the exact-token
-invariant and an iterative field-release worklist. These definitions preserve
-the existing immortal API and do not yet extend Own's syntax or evaluator. -/
+/-! Checked count-only operations on the abstract heap (`SameBodies`,
+`changeCount`, `inc`, `decShared`). Final decrements of a single reference return
+`none` here and are handled by the iterative field-release worklist and
+exact-token semantics in `Own.Rc.Release` and `Own.Plain`. -/
 
 set_option autoImplicit false
 

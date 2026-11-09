@@ -13,6 +13,10 @@ inductive DeclKind where
   | assumption
   | constructor
   | typeConstructor
+  /-- A safe theorem. Its proof is erased computation that no backend runs,
+  so admission checks no resource obligation in it. Its statement still takes
+  part in relevance, and callers still use it as an interface. -/
+  | theorem
   deriving BEq, Repr, Inhabited
 
 structure Declaration where
@@ -22,12 +26,25 @@ structure Declaration where
   deriving BEq, Repr, Inhabited
 
 /-- Checked transparent fields. The adapter derives these from the addressed
-constructor interface; an unknown projection has no default resource rule. -/
+constructor interface; an unknown projection has no default resource rule.
+`binders` is zero for closed field types and otherwise counts the leading
+constructor telescope binders (`params + index`) over which `type` is open. -/
 structure Field where
   typeRef : UInt64
   index : UInt64
   type : Expr
   contract : ValueContract
+  binders : Nat := 0
+  deriving BEq, Repr, Inhabited
+
+/-- Canonical projection reduction for a safe, single-constructor structure.
+The addressed adapter supplies the owner and constructor together; a field
+number alone never authorizes a projection reduction. -/
+structure ProjectionInfo where
+  typeRef : UInt64
+  constructor : UInt64
+  params : Nat
+  fields : Nat
   deriving BEq, Repr, Inhabited
 
 structure Program where
@@ -39,7 +56,11 @@ structure Program where
   requires a profile assumption instead of ordinary lambda checking. -/
   auxiliary : Array (Nat × Expr) := #[]
   sharing : Array Expr := #[]
+  /-- Precomputed unshared expansion and loose de Bruijn bound for each `sharing`
+  entry, or `none` if the entry contains `.recur` or exceeds expansion depth. -/
+  sharingInfo : Array (Option (Expr × Nat)) := #[]
   fields : Array Field := #[]
+  projections : Array ProjectionInfo := #[]
   natType : Option Expr := none
   stringType : Option Expr := none
   /-- Types whose shared views have a checked, duplicable representation.
@@ -75,10 +96,71 @@ def literalType (type : Option Expr) : CheckM Expr :=
 def checkedIndex (n : Nat) : CheckM UInt64 :=
   if n < UInt64.size then pure n.toUInt64 else throw (.unsupported "readVariable index overflow")
 
+/-- Strict upper bound on loose de Bruijn variable indices in an unshared `e`,
+or `none` if `e` contains `.share` or `.recur`. When this returns `some bound`
+and `bound ≤ cutoff`, neither `shift` at `cutoff` nor `substitute` at
+`depth = cutoff` modifies `e`. -/
+def unsharedBVarBound : Expr → Option Nat
+  | .var idx => some (idx.toNat + 1)
+  | .sort _ | .ref .. | .nat _ | .str _ => some 0
+  | .recur .. | .share _ => none
+  | .prj _ _ v => unsharedBVarBound v
+  | .app f a => do
+    let fb ← unsharedBVarBound f
+    let ab ← unsharedBVarBound a
+    some (max fb ab)
+  | .lam _ t b | .all _ _ t b => do
+    let tb ← unsharedBVarBound t
+    let bb ← unsharedBVarBound b
+    some (max tb (bb - 1))
+  | .letE _ t v b => do
+    let tb ← unsharedBVarBound t
+    let vb ← unsharedBVarBound v
+    let bb ← unsharedBVarBound b
+    some (max tb (max vb (bb - 1)))
+
+def expandSharingEntry (info : Array (Option (Expr × Nat))) :
+    Nat → Expr → Option (Expr × Nat)
+  | 0, _ => none
+  | fuel + 1, e =>
+    match e with
+    | .var idx => some (e, idx.toNat + 1)
+    | .sort _ | .ref .. | .nat _ | .str _ => some (e, 0)
+    | .recur .. => none
+    | .share idx => info[idx.toNat]?.join
+    | .prj t i v => do
+      let (v', vb) ← expandSharingEntry info fuel v
+      some (.prj t i v', vb)
+    | .app f a => do
+      let (f', fb) ← expandSharingEntry info fuel f
+      let (a', ab) ← expandSharingEntry info fuel a
+      some (.app f' a', max fb ab)
+    | .lam c t b => do
+      let (t', tb) ← expandSharingEntry info fuel t
+      let (b', bb) ← expandSharingEntry info fuel b
+      some (.lam c t' b', max tb (bb - 1))
+    | .all c r t b => do
+      let (t', tb) ← expandSharingEntry info fuel t
+      let (b', bb) ← expandSharingEntry info fuel b
+      some (.all c r t' b', max tb (bb - 1))
+    | .letE c t v b => do
+      let (t', tb) ← expandSharingEntry info fuel t
+      let (v', vb) ← expandSharingEntry info fuel v
+      let (b', bb) ← expandSharingEntry info fuel b
+      some (.letE c t' v' b', max tb (max vb (bb - 1)))
+
+def computeSharingInfo (sharing : Array Expr) : Array (Option (Expr × Nat)) := Id.run do
+  let mut info : Array (Option (Expr × Nat)) := Array.mkEmpty sharing.size
+  for e in sharing do
+    info := info.push (expandSharingEntry info 64 e)
+  return info
+
 def shift (program : Program) : Nat → Expr → Nat → Nat → CheckM Expr
   | 0, _, _, _ => throw .budget
   | fuel + 1, e, amount, cutoff => do
     tick
+    if let some bound := unsharedBVarBound e then
+      if amount == 0 || bound ≤ cutoff then return e
     match e with
     | .var idx =>
       if idx.toNat < cutoff then return e
@@ -96,7 +178,10 @@ def shift (program : Program) : Nat → Expr → Nat → Nat → CheckM Expr
         (← shift program fuel val amount cutoff)
         (← shift program fuel body amount (cutoff + 1))
     | .prj t i val => return .prj t i (← shift program fuel val amount cutoff)
-    | .share idx => shift program fuel (← expansion program idx) amount cutoff
+    | .share idx =>
+      if let some (some (expanded, bound)) := program.sharingInfo[idx.toNat]? then
+        if amount == 0 || bound ≤ cutoff then return expanded
+      shift program fuel (← expansion program idx) amount cutoff
     | .recur .. => throw (.unsupported "unresolved recursive reference")
     | _ => return e
 
@@ -104,6 +189,8 @@ def substitute (program : Program) : Nat → Expr → Expr → Nat → CheckM Ex
   | 0, _, _, _ => throw .budget
   | fuel + 1, e, value, depth => do
     tick
+    if let some bound := unsharedBVarBound e then
+      if bound ≤ depth then return e
     match e with
     | .var idx =>
       if idx.toNat == depth then shift program fuel value depth 0
@@ -123,9 +210,22 @@ def substitute (program : Program) : Nat → Expr → Expr → Nat → CheckM Ex
         (← substitute program fuel val value depth)
         (← substitute program fuel body value (depth + 1))
     | .prj t i val => return .prj t i (← substitute program fuel val value depth)
-    | .share idx => substitute program fuel (← expansion program idx) value depth
+    | .share idx =>
+      if let some (some (expanded, bound)) := program.sharingInfo[idx.toNat]? then
+        if bound ≤ depth then return expanded
+      substitute program fuel (← expansion program idx) value depth
     | .recur .. => throw (.unsupported "unresolved recursive reference")
     | _ => return e
+
+def splitApp (program : Program) :
+    Nat → Expr → List Expr → CheckM (Expr × List Expr)
+  | 0, _, _ => throw .budget
+  | fuel + 1, e, args => do
+    tick
+    match e with
+    | .app fn arg => splitApp program fuel fn (arg :: args)
+    | .share index => splitApp program fuel (← expansion program index) args
+    | _ => return (e, args)
 
 /-- This reduction is only for resource interfaces. The ordinary typechecker
 separately validates universes, dependent types, and definitional equality. -/
@@ -134,21 +234,41 @@ def whnf (program : Program) : Nat → Expr → CheckM Expr
   | fuel + 1, e => do
     tick
     match e with
-    | .share idx => whnf program fuel (← expansion program idx)
-    | .letE _ _ value body =>
-      whnf program fuel (← substitute program fuel body value 0)
-    | .app fn arg =>
-      let fn ← whnf program fuel fn
-      match fn with
-      | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
-      | _ => return .app fn arg
-    | .ref idx _ =>
-      let d ← declaration program idx
-      match d.body with
-      | some body => whnf program fuel body
-      | none => return e
+    | .var _ | .sort _ | .nat _ | .str _ | .lam .. | .all .. => return e
     | .recur .. => throw (.unsupported "unresolved recursive reference")
-    | _ => return e
+    | _ =>
+      if (← get).resourceWhnfMemoEnabled then
+        if let some (_, value) := (← get).resourceWhnfMemo.find? (·.1 == e) then return value
+      let reduce : Unit → CheckM Expr := fun _ => do
+        match e with
+        | .share idx => whnf program fuel (← expansion program idx)
+        | .letE _ _ value body =>
+          whnf program fuel (← substitute program fuel body value 0)
+        | .app fn arg =>
+          let fn ← whnf program fuel fn
+          match fn with
+          | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
+          | _ => return .app fn arg
+        | .ref idx _ =>
+          let d ← declaration program idx
+          match d.body with
+          | some body => whnf program fuel body
+          | none => return e
+        | .prj typeRef field value =>
+          let value ← whnf program fuel value
+          let (head, args) ← splitApp program fuel value []
+          if let .ref constructor _ := head then
+            if let some info := program.projections.find? fun info =>
+                info.typeRef == typeRef && info.constructor == constructor then
+              if field.toNat < info.fields && args.length == info.params + info.fields then
+                return ← whnf program fuel args[info.params + field.toNat]!
+          return .prj typeRef field value
+        | .recur .. => throw (.unsupported "unresolved recursive reference")
+        | _ => return e
+      let result ← reduce ()
+      if (← get).resourceWhnfMemoEnabled then
+        modify fun s => { s with resourceWhnfMemo := s.resourceWhnfMemo.push (e, result) }
+      return result
 
 def compatible (program : Program) : Nat → Expr → Expr → CheckM Bool
   | 0, _, _ => throw .budget
@@ -158,6 +278,7 @@ def compatible (program : Program) : Nat → Expr → Expr → CheckM Bool
     if left == right then return true
     let left ← whnf program fuel left
     let right ← whnf program fuel right
+    if left == right then return true
     match left, right with
     | .all c r a b, .all c' r' a' b' =>
       if c != c' || r != r' then return false
@@ -208,6 +329,37 @@ def readVariable (ctx : Context) (fuel : Nat) (index : UInt64) (uses : Uses) : C
     place := some id
     owned := if b.owner.unique then .unique else .shared }
 
+def fieldRule (program : Program) (typeRef index : UInt64) : CheckM Field :=
+  match program.fields.find? (fun f => f.typeRef == typeRef && f.index == index) with
+  | some field => pure field
+  | none => throw (.unsupported "projection has no checked field rule")
+
+/-- Instantiate a checked field rule against the projected aggregate and its
+reduced nominal type application. Closed field rules need no type inspection;
+open rules substitute type parameters and earlier projections from outermost
+constructor binder to innermost. -/
+def fieldType (program : Program) (fuel : Nat) (field : Field)
+    (value valueType : Expr) : CheckM Expr := do
+  if field.binders == 0 then return field.type
+  let index := field.index.toNat
+  if index > field.binders then
+    throw (.unsupported "projection field rule has inconsistent binder count")
+  let params := field.binders - index
+  let valueType ← whnf program fuel valueType
+  let (head, args) ← splitApp program fuel valueType []
+  match head with
+  | .ref ref _ =>
+    unless ref == field.typeRef && args.length == params do
+      throw .typeMismatch
+  | _ => throw .typeMismatch
+  let priors := (List.range index).map fun i => Expr.prj field.typeRef i.toUInt64 value
+  let values := args ++ priors
+  let mut result := field.type
+  for offset in [0:values.length] do
+    let depth := values.length - 1 - offset
+    result ← substitute program fuel result values[offset]! depth
+  return result
+
 /-- Resolve a borrow place without charging a consumption. Every projection
 must have a checked field rule; all projected loans suspend the whole root. -/
 def place (ctx : Context) : Nat → Expr → CheckM Value
@@ -223,13 +375,14 @@ def place (ctx : Context) : Nat → Expr → CheckM Value
       return value
     | .share idx => place ctx fuel (← expansion ctx.program idx)
     | .prj t i value =>
+      let rawValue := value
       let value ← place ctx fuel value
-      let some field := ctx.program.fields.find? (fun f => f.typeRef == t && f.index == i)
-        | throw (.unsupported "projection has no checked field rule")
+      let field ← fieldRule ctx.program t i
+      let type ← fieldType ctx.program fuel field rawValue value.type
       let duplicable ← if field.contract.owned == .shared then pure true
-        else isShareable ctx.program fuel field.type
+        else isShareable ctx.program fuel type
       return { value with
-        type := field.type
+        type
         duplicable
         owned := if value.owned == .unique && field.contract.owned == .unique then .unique else .shared }
     | _ => throw .invalidPlace
@@ -254,10 +407,11 @@ def typeOf : Nat → Context → Expr → CheckM Expr
     | .sort _ | .all .. => return .sort 0
     | .nat _ => literalType ctx.program.natType
     | .str _ => literalType ctx.program.stringType
-    | .prj typeRef index _ =>
-      let some field := ctx.program.fields.find? (fun f => f.typeRef == typeRef && f.index == index)
-        | throw (.unsupported "projection has no checked field rule")
-      return field.type
+    | .prj typeRef index value =>
+      let field ← fieldRule ctx.program typeRef index
+      if field.binders == 0 then return field.type
+      let valueType ← typeOf fuel ctx value
+      fieldType ctx.program fuel field value valueType
     | .app fn arg =>
       let (_, _, _, codomain) ← arrow ctx.program fuel (← typeOf fuel ctx fn)
       substitute ctx.program fuel codomain arg 0
@@ -273,16 +427,6 @@ def typeOf : Nat → Context → Expr → CheckM Expr
       let type ← typeOf fuel { ctx with vars := ctx.vars.push id } body
       modify fun s => { s with bindings := before.bindings }
       substitute ctx.program fuel type initializer 0
-
-def splitApp (program : Program) :
-    Nat → Expr → List Expr → CheckM (Expr × List Expr)
-  | 0, _, _ => throw .budget
-  | fuel + 1, e, args => do
-    tick
-    match e with
-    | .app fn arg => splitApp program fuel fn (arg :: args)
-    | .share index => splitApp program fuel (← expansion program index) args
-    | _ => return (e, args)
 
 def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
     (expected : Option (Expr × ValueContract)) (value : Value) : CheckM Value := do
@@ -442,13 +586,14 @@ def analyze : Nat → Context → Expr → Option (Expr × ValueContract) →
         let type ← substitute ctx.program fuel output.type initializer 0
         pure { output with type }
       | .prj typeRef index value => do
+        let rawValue := value
         let value ← analyze fuel ctx value none destination grade
-        let some field := ctx.program.fields.find? (fun f => f.typeRef == typeRef && f.index == index)
-          | throw (.unsupported "projection has no checked field rule")
+        let field ← fieldRule ctx.program typeRef index
+        let type ← fieldType ctx.program fuel field rawValue value.type
         let duplicable ← if field.contract.owned == .shared then pure true
-          else isShareable ctx.program fuel field.type
+          else isShareable ctx.program fuel type
         pure { value with
-          type := field.type
+          type
           duplicable
           owned := if value.owned == .unique && field.contract.owned == .unique then .unique else .shared }
       | .app fn arg => do
@@ -511,7 +656,7 @@ def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : 
     let _ ← analyze limits.depth { program, scope } body
       (some (declaration.type, .shared)) scope .linear
     pure ()
-  match action.run { remaining := limits.steps } with
+  match action.run { remaining := limits.steps, resourceWhnfMemoEnabled := true } with
   | .ok _ _ => pure ()
   | .error error _ => throw error
 

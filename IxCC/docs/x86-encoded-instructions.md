@@ -12,11 +12,11 @@ One declarative table drives the typed machine, the byte machine, the
 encoder and the decoder
 ([`Table/`](../IxCC/X86/Table/Op.lean)). A row `Op` is a mnemonic, an
 operand width, an SDM encoding class (`OpEn`: MR, RM, MI, MI8, M, MC, OI, O,
-RMI, RMI8, D32, ZO) and, for `movzx`, a source width. `desc : Op → OpDesc`
+RMI, RMI8, D32, ZO) and, for `movzx`, `movsx` and `movsxd`, a source width. `desc : Op → OpDesc`
 gives each row:
 
 - its operand slots (kinds, width, and read/write/address role), its
-  implicit register operands (`div`'s `rax`/`rdx`, a shift's `cl`) and
+  implicit register operands (`mul`/`div`'s `rax`/`rdx`, a shift/rotate's `cl`) and
   implicit stack traffic;
 - one semantic function `sem`, which both machines call;
 - per-flag output effects (`set`, `undefined` or `unchanged`) and the flags
@@ -27,10 +27,12 @@ gives each row:
 - an encoding descriptor (operand-size prefix, REX.W, opcode map, opcode,
   ModRM use, register-in-opcode, immediate size and byte-register fields).
 
-The table has 205 rows under 247 decoder keys: `add`/`or`/`and`/`sub`/`xor`/
-`cmp` in MR, RM, MI and MI8 forms, `test` (MR, MI), `shl`/`shr`/`sar` by imm8
-(MI) and by `cl` (MC), `mov`, `movzx`, `lea`, `imul` (RM, RMI, RMI8),
-unsigned `div` (M, widths 32 and 64), `setcc` and `cmovcc` for all ten
+The table has 243 rows across 31 mnemonics: `add`/`or`/`and`/`sub`/`xor`/
+`cmp` in MR, RM, MI and MI8 forms, `test` (MR, MI), `not` and `neg` (M),
+`shl`/`shr`/`sar`/`rol`/`ror` by imm8 (MI) and by `cl` (MC), `mov` (including
+8- and 16-bit widths), `movzx` (including `.w64`), `movsx`, `movsxd`, `bswap`
+(widths 32 and 64), `lea`, `imul` (RM, RMI, RMI8), unsigned `mul` and `div`
+(M, widths 32 and 64), `setcc` and `cmovcc` for all ten
 conditions, `push`, `pop`, and the control rows. A shift's CF is its last
 bit shifted out and its OF is defined only for a one-bit shift; a count of
 zero leaves the processor's flags unchanged, which the model makes undefined
@@ -78,7 +80,7 @@ the table facts: `table_injective` (decoder keys are distinct),
 `table_reachable` (every row is found from its own encoding),
 `table_shaped` (slots match the encoding class), `table_bounded` (every
 encoding fits 15 bytes) and `Encode.table_flagsFree` (linear rows read no
-flags). At 205 rows they take 8.8 s to check. None of them shows that a
+flags). At 243 rows they are kernel-checked by `decide`. None of them shows that a
 row's opcode is the one the processor uses; the hardware and LLVM gates test
 that.
 
@@ -180,14 +182,15 @@ The [`check-x86-hardware`](../IxCCTests/Scripts/CheckX86Hardware.lean) gate enum
 flags) and each kind combination of its slots it generates register,
 address (SIB and displacement holes, disp8 and disp32 edges including ±2³¹)
 and immediate edge cases, plus an unmapped-address fault per memory slot,
-with input flags all clear, all set or random. It adds shift counts 0, 1,
+with input flags all clear, all set or random. It adds shift and rotate counts 0, 1,
 each width ± 1, the masks and wrapped counts (by imm8 and by a noisy `cl`),
 `div` with zero divisors, quotient overflow and in-range quotients (the
 divisor in `rax`, `rdx` or elsewhere, or in memory), fused `cmp`/`test`
 pairs into `setcc` and each `cmovcc` width, branches after every `cmp` and
 `test` form including memory operands, `jb`/`je` after `add`/`sub`, and
-JMP, CALL and RET recipes. It currently runs 53,279 cases natively (1,382
-expected memory faults and 256 `#DE`s) and compares exit, all sixteen
+JMP, CALL and RET recipes. It currently runs 63,475 cases natively (62,195 base
+cases plus 1,280 `.rol`/`.ror` count-corner cases; 1,633
+expected memory faults and 243 `#DE`s) and compares exit, all sixteen
 registers, model-defined flags, changed page bytes and faults (memory faults
 as SIGSEGV or SIGBUS, `#DE` as SIGFPE) with `ByteEval`; `llvm-mc` must decode
 every case to the same instruction lengths, mnemonics and encodings.

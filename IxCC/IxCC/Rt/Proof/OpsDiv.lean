@@ -33,6 +33,30 @@ theorem mod_word0 {p : Nat} {wa : Word} (h : natWord p = some wa) :
 theorem div_word0 {p : Nat} : natWord (if (0 : Nat) = 0 then 0 else p / 0) = some 1 := by
   simp; exact natWord_of_lt (by decide)
 
+theorem div1_word {p : Nat} {wa : Word} (hwa : natWord p = some wa) :
+    natWord (if (1 : Nat) = 0 then 0 else p / 1) = some wa := by
+  simpa using hwa
+
+theorem mod1_word {p : Nat} :
+    natWord (if (1 : Nat) = 0 then p else p % 1) = some 1 := by
+  simp [Nat.mod_one]; exact natWord_of_lt (by decide)
+
+theorem div2_word {p : Nat} {wa : Word} (hwa : natWord p = some wa) :
+    natWord (if (2 : Nat) = 0 then 0 else p / 2) = some ((wa >>> 1) ||| 1) := by
+  simpa using natDiv2_word hwa
+
+theorem mod2_word {p : Nat} {wa : Word} (hwa : natWord p = some wa) :
+    natWord (if (2 : Nat) = 0 then p else p % 2) = some (wa &&& 3) := by
+  simpa using natMod2_word hwa
+
+theorem div4_word {p : Nat} {wa : Word} (hwa : natWord p = some wa) :
+    natWord (if (4 : Nat) = 0 then 0 else p / 4) = some ((wa >>> 2) ||| 1) := by
+  simpa using natDiv4_word hwa
+
+theorem mod4_word {p : Nat} {wa : Word} (hwa : natWord p = some wa) :
+    natWord (if (4 : Nat) = 0 then p else p % 4) = some (wa &&& 7) := by
+  simpa using natMod4_word hwa
+
 theorem div_word {p q : Nat} {wa wb : Word} (hwa : natWord p = some wa) (hwb : natWord q = some wb) (hq : q ≠ 0) :
     natWord (if q = 0 then 0 else p / q) = some ((wa >>> 1) / (wb >>> 1) + (wa >>> 1) / (wb >>> 1) + 1) := by
   simp only [hq, ↓reduceIte]; exact natDiv_word hwa hwb hq
@@ -67,40 +91,110 @@ theorem prim_natDiv {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       subst hq0
       exact ⟨_, _, by (simp only [lir_eval]; try rfl), div_word0, by simp, fun y hy hyx => by regs_ne⟩
     · have hw' : (wbi == 1) = false := by simpa using hw
-      cases la with
-      | v ya =>
+      by_cases hw3 : wbi = 3
+      · subst hw3
         lower_run at hrun
-        simp only [hw', Bool.false_eq_true, ↓reduceIte] at hrun
+        simp only [hw', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
         lower_run at hrun
         subst hrun
-        refine prim2_sim (ss := [.assign st.fresh (.bin .shr .w64 (.v ya) (.imm 1)),
-            .assign (st.fresh + 1) (.bin .udiv .w64 (.v st.fresh) (.imm (wbi >>> 1))),
-            .assign x (.addr { base := some (.v (st.fresh + 1)), index := some (st.fresh + 1, .one), disp := 1 })])
-          hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
-          (fun p q => if q = 0 then 0 else p / q) hsem ?_
+        refine prim2_sim (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops
+          hlive (by decide) (fun p q => if q = 0 then 0 else p / q) hsem ?_
         intro ρl mem p q wa wb ha hb hwa hwb hra _
         simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
         subst hb
-        have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
-        have ha' : ρl[ya]? = some wa := ha
-        have hya := hra ya rfl
-        exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ha', untag_ne_zero hwb hq, ↓reduceIte, if_neg,
-          UInt64.mul_one]; try rfl), div_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
-      | imm wai =>
-        lower_run at hrun
-        simp only [hw', Bool.false_eq_true, ↓reduceIte] at hrun
-        lower_run at hrun
-        subst hrun
-        refine prim2_sim (ss := [.assign st.fresh (.bin .udiv .w64 (.imm (wai >>> 1)) (.imm (wbi >>> 1))),
-            .assign x (.addr { base := some (.v st.fresh), index := some (st.fresh, .one), disp := 1 })])
-          hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
-          (fun p q => if q = 0 then 0 else p / q) hsem ?_
-        intro ρl mem p q wa wb ha hb hwa hwb _ _
-        simp only [Lir.Arg.eval_imm, Option.some.injEq] at ha hb
-        subst ha hb
-        have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
-        exact ⟨_, _, by (simp (disch := omega) only [lir_eval, untag_ne_zero hwb hq, ↓reduceIte, if_neg,
-          UInt64.mul_one]; try rfl), div_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
+        have hq1 : q = 1 := (natWord_eq_three hwb).1 rfl
+        subst hq1
+        exact ⟨_, _, by (simp only [lir_eval, ha]; try rfl), div1_word hwa, by simp, fun y hy hyx => by regs_ne⟩
+      · have hw3' : (wbi == 3) = false := by simpa using hw3
+        by_cases hw5 : wbi = 5
+        · subst hw5
+          cases la with
+          | v ya =>
+            lower_run at hrun
+            simp only [hw', hw3', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
+            lower_run at hrun
+            subst hrun
+            refine prim2_sim (ss := [.assign st.fresh (.bin .shr .w64 (.v ya) (.imm 1)),
+                .assign x (.bin .or .w64 (.v st.fresh) (.imm 1))])
+              hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+              (fun p q => if q = 0 then 0 else p / q) hsem ?_
+            intro ρl mem p q wa wb ha hb hwa hwb hra _
+            simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
+            subst hb
+            have hq2 : q = 2 := (natWord_eq_five hwb).1 rfl
+            subst hq2
+            have ha' : ρl[ya]? = some wa := ha
+            have hya := hra ya rfl
+            exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ha', ↓reduceIte, if_neg]; try rfl),
+              div2_word hwa, by simp, fun y hy hyx => by regs_ne⟩
+          | imm wai =>
+            lower_run at hrun
+            simp only [hw', hw3', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
+            lower_run at hrun
+            subst hrun
+            refine prim2_sim (ss := [.assign x (.bin .or .w64 (.imm (wai >>> 1)) (.imm 1))])
+              hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+              (fun p q => if q = 0 then 0 else p / q) hsem ?_
+            intro ρl mem p q wa wb ha hb hwa hwb _ _
+            simp only [Lir.Arg.eval_imm, Option.some.injEq] at ha hb
+            subst ha hb
+            have hq2 : q = 2 := (natWord_eq_five hwb).1 rfl
+            subst hq2
+            exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ↓reduceIte, if_neg]; try rfl),
+              div2_word hwa, by simp, fun y hy hyx => by regs_ne⟩
+        · have hw5' : (wbi == 5) = false := by simpa using hw5
+          by_cases hw9 : wbi = 9
+          · subst hw9
+            lower_run at hrun
+            simp only [hw', hw3', hw5', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
+            lower_run at hrun
+            subst hrun
+            refine prim2_sim (ss := [.assign st.fresh (.bin .shr .w64 la (.imm 2)),
+                .assign x (.bin .or .w64 (.v st.fresh) (.imm 1))])
+              hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+              (fun p q => if q = 0 then 0 else p / q) hsem ?_
+            intro ρl mem p q wa wb ha hb hwa hwb hra _
+            simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
+            subst hb
+            have hq4 : q = 4 := (natWord_eq_nine hwb).1 rfl
+            subst hq4
+            exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ha, show (2 &&& 63 : Word) = 2 from rfl, ↓reduceIte]; try rfl),
+              div4_word hwa, by simp, fun y hy hyx => by regs_ne⟩
+          · have hw9' : (wbi == 9) = false := by simpa using hw9
+            cases la with
+            | v ya =>
+              lower_run at hrun
+              simp only [hw', hw3', hw5', hw9', Bool.false_eq_true, ↓reduceIte] at hrun
+              lower_run at hrun
+              subst hrun
+              refine prim2_sim (ss := [.assign st.fresh (.bin .shr .w64 (.v ya) (.imm 1)),
+                  .assign (st.fresh + 1) (.bin .udiv .w64 (.v st.fresh) (.imm (wbi >>> 1))),
+                  .assign x (.addr { base := some (.v (st.fresh + 1)), index := some (st.fresh + 1, .one), disp := 1 })])
+                hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+                (fun p q => if q = 0 then 0 else p / q) hsem ?_
+              intro ρl mem p q wa wb ha hb hwa hwb hra _
+              simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
+              subst hb
+              have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
+              have ha' : ρl[ya]? = some wa := ha
+              have hya := hra ya rfl
+              exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ha', untag_ne_zero hwb hq, ↓reduceIte, if_neg,
+                UInt64.mul_one]; try rfl), div_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
+            | imm wai =>
+              lower_run at hrun
+              simp only [hw', hw3', hw5', hw9', Bool.false_eq_true, ↓reduceIte] at hrun
+              lower_run at hrun
+              subst hrun
+              refine prim2_sim (ss := [.assign st.fresh (.bin .udiv .w64 (.imm (wai >>> 1)) (.imm (wbi >>> 1))),
+                  .assign x (.addr { base := some (.v st.fresh), index := some (st.fresh, .one), disp := 1 })])
+                hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+                (fun p q => if q = 0 then 0 else p / q) hsem ?_
+              intro ρl mem p q wa wb ha hb hwa hwb _ _
+              simp only [Lir.Arg.eval_imm, Option.some.injEq] at ha hb
+              subst ha hb
+              have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
+              exact ⟨_, _, by (simp (disch := omega) only [lir_eval, untag_ne_zero hwb hq, ↓reduceIte, if_neg,
+                UInt64.mul_one]; try rfl), div_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
   | v yb =>
     cases la with
     | v ya =>
@@ -181,40 +275,85 @@ theorem prim_natMod {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       subst hq0
       exact ⟨_, _, by (simp only [lir_eval, ha]; try rfl), mod_word0 hwa, by simp, fun y hy hyx => by regs_ne⟩
     · have hw' : (wbi == 1) = false := by simpa using hw
-      cases la with
-      | v ya =>
+      by_cases hw3 : wbi = 3
+      · subst hw3
         lower_run at hrun
-        simp only [hw', Bool.false_eq_true, ↓reduceIte] at hrun
+        simp only [hw', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
         lower_run at hrun
         subst hrun
-        refine prim2_sim (ss := [.assign st.fresh (.bin .shr .w64 (.v ya) (.imm 1)),
-            .assign (st.fresh + 1) (.bin .urem .w64 (.v st.fresh) (.imm (wbi >>> 1))),
-            .assign x (.addr { base := some (.v (st.fresh + 1)), index := some (st.fresh + 1, .one), disp := 1 })])
-          hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
-          (fun p q => if q = 0 then p else p % q) hsem ?_
+        refine prim2_sim (ss := [.assign x (.arg (.imm 1))]) hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops
+          hlive (by decide) (fun p q => if q = 0 then p else p % q) hsem ?_
         intro ρl mem p q wa wb ha hb hwa hwb hra _
         simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
         subst hb
-        have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
-        have ha' : ρl[ya]? = some wa := ha
-        have hya := hra ya rfl
-        exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ha', untag_ne_zero hwb hq, ↓reduceIte, if_neg,
-          UInt64.mul_one]; try rfl), mod_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
-      | imm wai =>
-        lower_run at hrun
-        simp only [hw', Bool.false_eq_true, ↓reduceIte] at hrun
-        lower_run at hrun
-        subst hrun
-        refine prim2_sim (ss := [.assign st.fresh (.bin .urem .w64 (.imm (wai >>> 1)) (.imm (wbi >>> 1))),
-            .assign x (.addr { base := some (.v st.fresh), index := some (st.fresh, .one), disp := 1 })])
-          hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
-          (fun p q => if q = 0 then p else p % q) hsem ?_
-        intro ρl mem p q wa wb ha hb hwa hwb _ _
-        simp only [Lir.Arg.eval_imm, Option.some.injEq] at ha hb
-        subst ha hb
-        have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
-        exact ⟨_, _, by (simp (disch := omega) only [lir_eval, untag_ne_zero hwb hq, ↓reduceIte, if_neg,
-          UInt64.mul_one]; try rfl), mod_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
+        have hq1 : q = 1 := (natWord_eq_three hwb).1 rfl
+        subst hq1
+        exact ⟨_, _, by (simp only [lir_eval]; try rfl), mod1_word, by simp, fun y hy hyx => by regs_ne⟩
+      · have hw3' : (wbi == 3) = false := by simpa using hw3
+        by_cases hw5 : wbi = 5
+        · subst hw5
+          lower_run at hrun
+          simp only [hw', hw3', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
+          lower_run at hrun
+          subst hrun
+          refine prim2_sim (ss := [.assign x (.bin .and .w64 la (.imm 3))]) hF hH hC ho (by simp [Lir.Stmt.isCall])
+            hsup hx hops hlive (by decide) (fun p q => if q = 0 then p else p % q) hsem ?_
+          intro ρl mem p q wa wb ha hb hwa hwb hra _
+          simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
+          subst hb
+          have hq2 : q = 2 := (natWord_eq_five hwb).1 rfl
+          subst hq2
+          exact ⟨_, _, by (simp only [lir_eval, ha]; try rfl), mod2_word hwa, by simp, fun y hy hyx => by regs_ne⟩
+        · have hw5' : (wbi == 5) = false := by simpa using hw5
+          by_cases hw9 : wbi = 9
+          · subst hw9
+            lower_run at hrun
+            simp only [hw', hw3', hw5', Bool.false_eq_true, beq_self_eq_true, ↓reduceIte] at hrun
+            lower_run at hrun
+            subst hrun
+            refine prim2_sim (ss := [.assign x (.bin .and .w64 la (.imm 7))]) hF hH hC ho (by simp [Lir.Stmt.isCall])
+              hsup hx hops hlive (by decide) (fun p q => if q = 0 then p else p % q) hsem ?_
+            intro ρl mem p q wa wb ha hb hwa hwb hra _
+            simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
+            subst hb
+            have hq4 : q = 4 := (natWord_eq_nine hwb).1 rfl
+            subst hq4
+            exact ⟨_, _, by (simp only [lir_eval, ha]; try rfl), mod4_word hwa, by simp, fun y hy hyx => by regs_ne⟩
+          · have hw9' : (wbi == 9) = false := by simpa using hw9
+            cases la with
+            | v ya =>
+              lower_run at hrun
+              simp only [hw', hw3', hw5', hw9', Bool.false_eq_true, ↓reduceIte] at hrun
+              lower_run at hrun
+              subst hrun
+              refine prim2_sim (ss := [.assign st.fresh (.bin .shr .w64 (.v ya) (.imm 1)),
+                  .assign (st.fresh + 1) (.bin .urem .w64 (.v st.fresh) (.imm (wbi >>> 1))),
+                  .assign x (.addr { base := some (.v (st.fresh + 1)), index := some (st.fresh + 1, .one), disp := 1 })])
+                hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+                (fun p q => if q = 0 then p else p % q) hsem ?_
+              intro ρl mem p q wa wb ha hb hwa hwb hra _
+              simp only [Lir.Arg.eval_imm, Option.some.injEq] at hb
+              subst hb
+              have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
+              have ha' : ρl[ya]? = some wa := ha
+              have hya := hra ya rfl
+              exact ⟨_, _, by (simp (disch := omega) only [lir_eval, ha', untag_ne_zero hwb hq, ↓reduceIte, if_neg,
+                UInt64.mul_one]; try rfl), mod_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
+            | imm wai =>
+              lower_run at hrun
+              simp only [hw', hw3', hw5', hw9', Bool.false_eq_true, ↓reduceIte] at hrun
+              lower_run at hrun
+              subst hrun
+              refine prim2_sim (ss := [.assign st.fresh (.bin .urem .w64 (.imm (wai >>> 1)) (.imm (wbi >>> 1))),
+                  .assign x (.addr { base := some (.v st.fresh), index := some (st.fresh, .one), disp := 1 })])
+                hF hH hC ho (by simp [Lir.Stmt.isCall]) hsup hx hops hlive (by decide)
+                (fun p q => if q = 0 then p else p % q) hsem ?_
+              intro ρl mem p q wa wb ha hb hwa hwb _ _
+              simp only [Lir.Arg.eval_imm, Option.some.injEq] at ha hb
+              subst ha hb
+              have hq : q ≠ 0 := fun h => hw ((natWord_eq_one hwb).2 h)
+              exact ⟨_, _, by (simp (disch := omega) only [lir_eval, untag_ne_zero hwb hq, ↓reduceIte, if_neg,
+                UInt64.mul_one]; try rfl), mod_word hwa hwb hq, by simp, fun y hy hyx => by regs_ne⟩
   | v yb =>
     cases la with
     | v ya =>

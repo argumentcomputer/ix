@@ -420,6 +420,9 @@
   "IxCC.Cfg.Semantics",
   "IxCC.Cfg.Syntax",
   "IxCC.Cfg.WellFormed",
+  "IxCC.CompileClaim",
+  "IxCC.CompileClaim.Proof",
+  "IxCC.Compiler.Proof",
   "IxCC.Fir.Lower",
   "IxCC.Fir.Proof.Corr",
   "IxCC.Fir.Proof.Correct",
@@ -620,6 +623,7 @@
   "IxCC.Own.Rc.Release",
   "IxCC.Own.Semantics",
   "IxCC.Own.Syntax",
+  "IxCC.Recheck",
   "IxCC.Recheck.Cert",
   "IxCC.Recheck.Err",
   "IxCC.Recheck.Json",
@@ -634,6 +638,7 @@
   "IxCC.Recheck.Proof.Soundness",
   "IxCC.Recheck.Rc.Bytes",
   "IxCC.Recheck.Rc.Linked",
+  "IxCC.Recheck.Rc.Produce",
   "IxCC.Recheck.Rc.Proof.Back",
   "IxCC.Recheck.Rc.Proof.Exports",
   "IxCC.Recheck.Rc.Proof.FrontLanguage",
@@ -656,6 +661,8 @@
   "IxCC.Recheck.Rc.View",
   "IxCC.Recheck.Readback",
   "IxCC.Recheck.Run",
+  "IxCC.Ring0",
+  "IxCC.Ring0.Proof",
   "IxCC.Rt.Backend",
   "IxCC.Rt.Layout",
   "IxCC.Rt.Lower",
@@ -978,6 +985,7 @@
   "IxCC.X86.Table.Safe",
   "IxCC.X86.Types",
   "IxCC.X86.Width",
+  "IxCC.X86.WordRegion",
   "IxCC.Xv.Alloc.AllSlots",
   "IxCC.Xv.Alloc.Apply",
   "IxCC.Xv.Alloc.Driver",
@@ -1547,7 +1555,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "e1dff426: rename to IxCC; vendor the Aiur reference as IxCC.Vendor.Ix.* with its declarations under the IxCC.Vendor namespace (the 7 Aiur fences name IxCC.Vendor.Aiur.*, axioms unchanged); preserve all 5353 assertions and runtime coverage",
+ "2026-11-09: add CompileClaim, Compiler, Ring0, Reentry, and DriverSession axiom fences; rename the Ring-0 frame theorems",
  "axiom_sha256":
- "8632071603377f4623b354fdd11bfee563c511ecfb9adb7e33edee49c3e6a90d",
- "axiom_count": 5353}
+ "a1ec26a28daa9e6ba62f0c1bbb5a8a03a23c2315f5e340f0a7259585eeaafd1a",
+ "axiom_count": 5406}

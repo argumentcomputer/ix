@@ -1,5 +1,6 @@
 import IxCC.Xv.Operands
 import IxCC.Xv.WellFormed
+import IxCC.Xv.XlSemantics
 
 /-!
 # Analyses for the allocator (untrusted)
@@ -50,12 +51,27 @@ structure Info where
   liveOut : Array (Std.HashSet VReg)
   /-- Registers live after some call. -/
   crossCall : Std.HashSet VReg
+  /-- For each register live across some call, the registers clobbered or
+  overwritten by those calls. -/
+  callClobbers : Std.HashMap VReg (List X86.GPR) := {}
+  /-- Per-register per-block liveness intervals `(blockId, firstPos, lastPos)`. -/
+  spans : Std.HashMap VReg (Array (Nat × Nat × Nat)) := {}
   weight : Std.HashMap VReg Nat
   /-- The register of a register's first fixed use. -/
   fixedHint : Std.HashMap VReg X86.GPR
   /-- Whether a block is a loop header (the target of a back edge). -/
   header : Array Bool
   deriving Inhabited
+
+/-- Whether `u` and `v` have overlapping liveness intervals in any block. -/
+def Info.interferes (info : Info) (u v : VReg) : Bool :=
+  if u == v then true
+  else
+    let su := info.spans.getD u #[]
+    let sv := info.spans.getD v #[]
+    su.any fun (b, l1, r1) =>
+      sv.any fun (b', l2, r2) =>
+        b == b' && l1 ≤ r2 && l2 ≤ r1
 
 /-- The live set at the top of block `b`, given the live set at its end. -/
 def liveTop (b : Block VReg) (out : Std.HashSet VReg) : Std.HashSet VReg := Id.run do
@@ -106,7 +122,7 @@ def spillWeight (depth : Nat) (o : Operand VReg) : Nat :=
     | _ => 0
   hot + def_ + con
 
-def analyse (f : Func VReg) : Info := Id.run do
+def analyse (f : Func VReg) (env : Option Xl.Env := none) : Info := Id.run do
   let n := f.blocks.size
   let g := f.skeleton
   let order := g.rpo
@@ -134,10 +150,21 @@ def analyse (f : Func VReg) : Info := Id.run do
       if top.size != liveIn[b]!.size || out.size != liveOut[b]!.size then changed := true
       liveIn := liveIn.set! b top
       liveOut := liveOut.set! b out
-  -- Registers live across calls; weights; fixed hints.
+  -- Registers live across calls; call clobbers; block spans; weights; fixed hints.
   let mut crossCall : Std.HashSet VReg := {}
+  let mut callClobbers : Std.HashMap VReg (List X86.GPR) := {}
+  let mut spans : Std.HashMap VReg (Array (Nat × Nat × Nat)) := {}
   let mut weight : Std.HashMap VReg Nat := {}
   let mut fixedHint : Std.HashMap VReg X86.GPR := {}
+  let touch (lo hi : Std.HashMap VReg Nat) (x : VReg) (pos : Nat) :
+      Std.HashMap VReg Nat × Std.HashMap VReg Nat :=
+    let lo := match lo[x]? with
+      | some p => if pos < p then lo.insert x pos else lo
+      | none => lo.insert x pos
+    let hi := match hi[x]? with
+      | some p => if pos > p then hi.insert x pos else hi
+      | none => hi.insert x pos
+    (lo, hi)
   for b in order do
     let block := f.blocks[b]!
     let nb := block.body.size
@@ -148,15 +175,42 @@ def analyse (f : Func VReg) : Info := Id.run do
       let i := nb - 1 - k
       let ops := opsAt block i
       for x in opDefs ops do live := live.erase x
-      if let .call .. := block.body[i]! then
-        for x in live do crossCall := crossCall.insert x
+      if let .call g .. := block.body[i]! then
+        let baseClob := match env with
+          | some e => e.clobbers g
+          | none => X86.SysV.callerSaved.toList
+        for x in live do
+          crossCall := crossCall.insert x
+          let mut clob := callClobbers.getD x []
+          for r in baseClob do
+            if !clob.contains r then clob := r :: clob
+          for o in ops do
+            if let .fixed r := o.con then
+              if (o.kind == .define || o.v != x) && !clob.contains r then
+                clob := r :: clob
+          callClobbers := callClobbers.insert x clob
       for x in opUses ops do live := live.insert x
+    let mut lo : Std.HashMap VReg Nat := {}
+    let mut hi : Std.HashMap VReg Nat := {}
+    for x in liveIn[b]! do (lo, hi) := touch lo hi x 0
+    for x in block.params do (lo, hi) := touch lo hi x 0
     for i in [:nb + 1] do
       for o in opsAt block i do
+        (lo, hi) := touch lo hi o.v (i + 1)
         weight := weight.insert o.v (weight.getD o.v 0 + spillWeight depth[b]! o)
         if let .fixed r := o.con then
           if o.kind == .use && !fixedHint.contains o.v then fixedHint := fixedHint.insert o.v r
-  return { order, preds, depth, liveIn, liveOut, crossCall, weight, fixedHint, header }
+    for x in block.term.edgeUses do (lo, hi) := touch lo hi x (nb + 1)
+    for x in liveOut[b]! do (lo, hi) := touch lo hi x (nb + 1)
+    for e in block.term.edges do
+      if let some succ := f.blocks[e.target]? then
+        for p in succ.params do
+          (lo, hi) := touch lo hi p nb
+          (lo, hi) := touch lo hi p (nb + 1)
+    for (x, l) in lo.toList do
+      let r := hi.getD x l
+      spans := spans.insert x ((spans.getD x #[]).push (b, l, r))
+  return { order, preds, depth, liveIn, liveOut, crossCall, callClobbers, spans, weight, fixedHint, header }
 
 /-- For each register used in block `b`, the positions of its uses (edge
 arguments at the terminator's position). -/

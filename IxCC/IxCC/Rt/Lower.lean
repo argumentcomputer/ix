@@ -291,6 +291,22 @@ def divMod (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Ar
   match b with
   | .imm w =>
     if w == 1 then assign x (.arg (zero a))
+    else if w == 3 then
+      match o with
+      | .udiv => assign x (.arg a)
+      | _ => assign x (.arg (.imm 1))
+    else if w == 5 then
+      match o with
+      | .udiv => do
+        let u ← untag a
+        assign x (.bin .or .w64 u (.imm 1))
+      | _ => assign x (.bin .and .w64 a (.imm 3))
+    else if w == 9 then
+      match o with
+      | .udiv => do
+        let u ← bin .shr a (.imm 2)
+        assign x (.bin .or .w64 u (.imm 1))
+      | _ => assign x (.bin .and .w64 a (.imm 7))
     else do
       let u ← untag a
       let q ← bin o u (.imm (w >>> 1))
@@ -322,16 +338,41 @@ def primitive (f : FunId) (T : Tables) (x : VReg) (op : Lam.Prim) (as : List Lir
     assign x (.select .ult .w64 a b (.imm 1) r)
   | .natMul, [a, b] =>
     -- p · 2q, checked by division (Lir has no carry-out multiply)
-    let u ← untag a
-    let t ← bin .sub b (.imm 1)
-    let p ← bin .mul u t
-    let u1 ← temp (.select .eq .w64 u (.imm 0) (.imm 1) u)
-    let q ← bin .udiv p u1
-    let c1 ← temp (.test .ne .w64 q t)
-    let c2 ← temp (.test .ne .w64 u (.imm 0))
-    let c ← bin .and c1 c2
-    check .natOverflow fun ok bad => .br .ne c (.imm 0) bad ok
-    assign x (.bin .or .w64 p (.imm 1))
+    let mulGen := do
+      let u ← untag a
+      let t ← bin .sub b (.imm 1)
+      let p ← bin .mul u t
+      let u1 ← temp (.select .eq .w64 u (.imm 0) (.imm 1) u)
+      let q ← bin .udiv p u1
+      let c1 ← temp (.test .ne .w64 q t)
+      let c2 ← temp (.test .ne .w64 u (.imm 0))
+      let c ← bin .and c1 c2
+      check .natOverflow fun ok bad => .br .ne c (.imm 0) bad ok
+      assign x (.bin .or .w64 p (.imm 1))
+    match a with
+    | .imm w =>
+      if w == 5 then do
+        check .natOverflow fun ok bad => .br .ugt b (.imm 0x7fffffffffffffff) bad ok
+        match b with
+        | .imm wb => assign x (.arg (.imm (2 * wb - 1)))
+        | .v y => assign x (.addr { base := some (.v y), index := some (y, .one), disp := -1 })
+      else if w == 7 then do
+        check .natOverflow fun ok bad => .br .ugt b (.imm 0x5555555555555555) bad ok
+        match b with
+        | .imm wb => assign x (.arg (.imm (3 * wb - 2)))
+        | .v y => assign x (.addr { base := some (.v y), index := some (y, .two), disp := -2 })
+      else mulGen
+    | .v ya =>
+      match b with
+      | .v yb =>
+        if ya == yb then do
+          check .natOverflow fun ok bad => .br .ugt (.v ya) (.imm 0x16a09e667) bad ok
+          let u ← bin .shr (.v ya) (.imm 1)
+          let t ← bin .sub (.v ya) (.imm 1)
+          let p ← bin .mul u t
+          assign x (.bin .or .w64 p (.imm 1))
+        else mulGen
+      | _ => mulGen
   | .natDiv, [a, b] => divMod x .udiv (fun _ => .imm 1) a b
   | .natMod, [a, b] => divMod x .urem id a b
   | .natBeq, [a, b] => bool .eq a b

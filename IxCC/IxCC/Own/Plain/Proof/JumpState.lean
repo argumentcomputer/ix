@@ -49,7 +49,8 @@ theorem jump_state {functions : Signatures} {H H' : Heap} {external : Nat → Na
   have htail' := htail.reframe (owned' := kept ++ vs) (fun _ hm => List.mem_append_left _ hm)
   refine ⟨?_, ?_⟩
   · refine ⟨?_, ?_, balance_append_comm hb, fresh_nodup_append hc.captured_nodup hs.1,
-      StackDen.after hentry' htail', ?_, StackScope.after hs hsTail⟩
+      StackDen.after hentry' htail', ?_, StackScope.after hs hsTail,
+      (by intro x hx; cases hx), (by intro x hx; cases hx)⟩
     · simpa only [he.params] using henv.bindAll ef.params hargs' hlen
     · simpa only [he.params] using hroots.bindAll ef.params vs hlen hs.1
     · have hf : fresh captured eo.params = true := by simpa only [he.params] using hs.1

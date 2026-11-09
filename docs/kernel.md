@@ -495,8 +495,8 @@ block*. It says nothing about meaning. Unsafe inductives still decline.
 
 **Records** are Ixon v4 constant payloads ([Ixon](Ixon.md), [Ixon v4](Ixon-v4.md)):
 TagN integers, and a sharing table per constant. The reader consumes decoded
-constants (`Ix.Ixon.Types`) and never sees the integer code; only the byte
-stage (`Ix/Ixon/{Codec,Bounded/*,Canonical,WireCheck}.lean`) and its proofs
+constants (`IxCK.Ixon.Types`) and never sees the integer code; only the byte
+stage (`IxCK/Ixon/{Codec,Bounded/*,Canonical,WireCheck}.lean`) and its proofs
 (`IxCK/Ixon/Verify`, including the TagN laws in `IxCK/Ixon/Verify/TagN.lean`) do.
 
 **Sharing tables.** In Ixon v4 the table the compiler writes is canonical:
@@ -881,33 +881,33 @@ Project-level execution constructs are admitted only as named by
 
 | Construct | Where | Why admitted |
 | --- | --- | --- |
-| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name`, `Ix.Kernel.Key` | cached hashes and packed data; a compiler feature, trusted with the compiler |
-| project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
+| `@[computed_field]` overrides | `IxCK.Kernel.Level`, `IxCK.Kernel.Expr`, `IxCK.Kernel.Name`, `IxCK.Kernel.Key` | cached hashes and packed data; a compiler feature, trusted with the compiler |
+| project `@[csimp]` | `IxCK.Kernel` | each replacement theorem depends on the standard axioms only |
 | the codec's TagN `@[csimp]` twins (`getTagN_eq_fast`, `putTagN_eq_fast`) | `IxCK.Ixon.Codec` (also `Ixon.Audit.rulings`) | the reader and writer at a fixed flag width with their powers folded; each theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
-| `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxCK/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
-| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
+| `IxCK.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxCK/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
+| elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `IxCK.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
 | `Address.admissionHash` `implemented_by` `Address.blake3`, with its three Rust externs | `Ix/Address/Admission.lean` (root library; `assumedSubstitutions`, for `Ixon.Authenticated` only) | an explicit, owner-approved assumption that the Rust BLAKE3 equals pure BLAKE3 |
 
 Import allowlists (`IxCK/Kernel/Audit/Roots.lean`):
 
-- `kernelImportAllowlist`: `Init`, `Std`, `Ix.Kernel` (the checker and
-  Ix's Ixon boundary), `Ix.Address.Core`, `Ix.Ixon.Types`. It fences
+- `kernelImportAllowlist`: `Init`, `Std`, `IxCK.Kernel` (the checker and
+  Ix's Ixon boundary), `IxCK.Address.Core`, `IxCK.Ixon.Types`. It fences
   the reader, the record store, the projection writer and the pure Ixon
   types.
 - `importAllowlist` (the certified API's closure, rooted at
-  `Ix.Kernel.Admission`): the above plus exactly `Ix.Ixon.{Codec, Wire,
+  `IxCK.Kernel.Admission`): the above plus exactly `IxCK.Ixon.{Codec, Wire,
   WireCheck, Bounded.Constant, Bounded.Universe, Canonical}`, without the
   entry's theorem and audit modules and the kernel's audits
   (`importDenylist`; `kernelImportDenylist` likewise keeps
-  `Ix.Kernel.Admission` and `Ix.Kernel.Audit` out of the kernel-side list).
+  `IxCK.Kernel.Admission` and `IxCK.Kernel.Audit` out of the kernel-side list).
   No projection hashing, block order, `Ix.Address.Pure`,
   proof module or `Lean` (outside `elaborationImports`).
 - `proofImportAllowlist` (the theorem modules): `importAllowlist` plus
-  `Ix.Ixon.Bounded.Size`, `Ix.Ixon.Verify`, the theorem module and
+  `IxCK.Ixon.Bounded.Size`, `IxCK.Ixon.Verify`, the theorem module and
   `Lean`.
-- `elaborationImports`: below `Ix.Kernel.BasisGen` only `Init`, `Std`,
-  `Lean` and `Ix.Kernel`.
+- `elaborationImports`: below `IxCK.Kernel.BasisGen` only `Init`, `Std`,
+  `Lean` and `IxCK.Kernel`.
 
 `Std` is admitted for its maps and their lemmas, as the kernel uses them.
 
@@ -1004,7 +1004,7 @@ When `lean-toolchain` changes, by hand or by the toolchain bot
 Mathlib tag but regenerates nothing), the change also does the following.
 
 1. **Toolchains.** `lean-toolchain`, `Benchmarks/Compile/lean-toolchain`,
-   `IxCK/lean-toolchain` and `Models/SetTheory/lean-toolchain` name the
+   `IxCK/lean-toolchain`, `IxCC/lean-toolchain` and `Models/SetTheory/lean-toolchain` name the
    same release (CI's `lean-test` job compares them). The model's `mathlib`
    `rev` in `Models/SetTheory/lakefile.toml` is Mathlib's tag for that
    release; after changing it, `lake -d Models/SetTheory update mathlib`

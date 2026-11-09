@@ -246,9 +246,22 @@ theorem sound_casesForm (cx : Cx) (c r : CId) (q : Profile) (args : List Src.Ter
       · exact Sound.decline_bind
       · next hmaj =>
         split
-        · exact Sound.decline_bind
+        · next j hu =>
+          refine Sound.bind (sound_minorApp hrec cx' _ _) fun body =>
+            Sound.pure fun _ hm hb => ?_
+          generalize hmj : refs.getD (np + 1 + ni) Ref.box = major at hm hmaj
+          cases major with
+          | box => exact absurd rfl hmaj
+          | lvl l => exact .casesUnbox hres hd hb hk hmj hu hm
+          | name _ =>
+            obtain ⟨x, hx⟩ := hb.getD_name_zipIdx hmj
+            simp only [decide_eq_true_eq] at hx
+            omega
         · next hu =>
-          have hu' : I.unbox? ind q = none := by simpa using hu
+          have hu' : I.unbox? ind q = none := by
+            cases h : I.unbox? ind q with
+            | none => rfl
+            | some j => exact (hu j h).elim
           refine Sound.bind (sound_refTerm hrec cx' _) fun scrut =>
             Sound.bind (sound_alts (I := I) (cx := cx') (r := r) (q := q) (ind := ind) (refs := refs)
               (mbase := np + 1 + ni + 1) (fun rule j => ?_) rules 0) fun alts =>

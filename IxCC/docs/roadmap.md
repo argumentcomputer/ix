@@ -1,6 +1,6 @@
 # IxCC roadmap
 
-Reviewed 2026-10-08 against the `dd7863c` baseline and the current integration tree. This page owns priorities,
+Reviewed 2026-11-09 against the current integration tree. This page owns priorities,
 delivery state and acceptance criteria. [Compiler design](compiler-design.md)
 explains the architecture; [development and validation](development-plan.md) explains
 how to land a change; the [documentation guide](README.md) indexes contracts
@@ -26,7 +26,7 @@ The target theorem:
 The theorem is stated first against the published source evaluator, then
 against the model of ix-certified's `Ix.Kernel`.
 
-## Current state (2026-10-08)
+## Current state (2026-11-09)
 
 Phase 1's scalar pipeline is implemented: Src evaluation through checked
 erasure, middle-end transformations, register allocation and ELF emission.
@@ -116,8 +116,8 @@ preserved on `jcb/ixby-archive`, with their former gates and measurements.
 
 | Component | Scope |
 | --- | --- |
-| Scalar compiler | Src-to-ELF recheck path, `Recheck.sound`, certificate/artifact checks and native pipeline suites |
-| Bounded plain RC | Separate `Recheck.RcReplay` API; exact ownership/certificate replay, ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
+| Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`), `Ring0` (`verifyRing0Sip_sound`), certificate/artifact checks and native pipeline suites |
+| Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); exact ownership/certificate replay (`checkPlainMap` / `checkContractPlainMap`), ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
 | [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, catalog-v2 admission, erased typing, resource admission, claim binding |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Aiur target](aiur-backend.md) | Pinned bytecode vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs |
@@ -229,7 +229,7 @@ and correspondence to executed runtime remain explicit trust boundaries.
 | Source | Ixon (v4 since 2026-10-03) is the only input. Written contracts are lower bounds. The compiler honours them exactly, and may infer stronger guarantees (unique, local, borrowed, erased, one-shot) only when a proved checker certifies them; inferred facts never change Ixon bytes or addresses. |
 | Semantic anchor | Stated against the source evaluator first, then `Ix.Kernel`'s model: an accepted equation theorem holds in the model, so replacements it justifies are sound. |
 | Recursion and replacements | Compiled through kernel-checked equation theorems (`f.eq_def`, `@[csimp]`) collected in an unfolding table, not by recovering structure from `brecOn` or `WellFounded.fix`. `partial` and `unsafe` definitions are rejected; `implemented_by` compiles the reference body. |
-| Erasure | An untrusted relevance annotation checked by a proved structural checker. A wrong but consistent annotation can only make a compile fail, never produce a wrong result. |
+| Erasure | An untrusted relevance annotation. `Recheck.front` decides it with the structural checker (`Relevance.check`, proved in `Relevance.Proof.check_sound`) and with `Relevance.checkCanonical`, which re-derives each position's class from the declaration types and refuses an irrelevant tag it cannot justify. `Relevance.annotate` is not re-run on the recheck path, and `checkCanonical` has no theorem yet. |
 | Middle end | Clocked big-step semantics for functional IRs, with a fuel-indexed logical relation and heuristic-parametric passes. Forward simulations below. |
 | Ownership | Untrusted RC, borrow and reuse passes; one proved ownership checker; fallback to plain RC. Ixon resource admission is a diagnostic gate, not a proof premise. |
 | Backend | Rule-based selection with one lemma per rule; an untrusted linear-scan allocator with a proved validator; a private internal calling convention with SysV at exports; fall-through layout; the existing E1/E2/ELF. |

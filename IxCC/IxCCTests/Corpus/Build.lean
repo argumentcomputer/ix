@@ -453,7 +453,9 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
   need ((← sha256 src) == f.source.sha256) s!"{label}: {src} changed since the closure was built"
   need (f.allowConstructs.isEmpty || f.roots.all (·.decline.isSome))
     s!"{label}: `allow_constructs` is for fixtures whose roots are all declined"
-  scanSource src f.allowConstructs
+  let sharedAllowed := (m.fixtures.filter fun g =>
+    g.source.path == f.source.path && g.roots.all (·.decline.isSome)).flatMap (·.allowConstructs)
+  scanSource src sharedAllowed
   need (!f.source.license.isEmpty && !f.source.variant.isEmpty) s!"{label}: no licence or variant"
   let ixe ← IO.FS.readBinFile (dir / f.closure.path)
   need ((← sha256 (dir / f.closure.path)) == f.closure.sha256 && some ixe.size == f.closure.bytes)

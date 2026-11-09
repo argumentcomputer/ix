@@ -16,14 +16,14 @@ open IxCC.Sem (Result)
 def AtClock (F : Fir.Program) (k : Nat) : Prop :=
   ∀ {H : Heap} {external : Nat → Nat} {live : List Fir.Var}
     {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {joins : Joins}
-    {Jf : List Fir.JEntry} {Jo : List JEntry} (c : Fir.Code),
-    State (signatures F) H external live ρf ρo owned joins Jf Jo →
+    {Jf : List Fir.JEntry} {Jo : List JEntry} {imm : List Fir.Var} (c : Fir.Code),
+    State (signatures F) H external live ρf ρo owned joins Jf Jo imm →
     scopeOk (signatures F) live (stackArities Jf) c = true →
     ResultRel H external (Fir.eval F k ρf Jf c)
-      (eval (Program.canonical F) k ρo Jo H (lowerCode live joins c))
+      (eval (Program.canonical F) k ρo Jo H (lowerCode live joins c imm))
 
 theorem call_of_smaller_clocks {F : Fir.Program} {k : Nat}
-    (domain : programDomain F = true) (ih : ∀ j, j < k → AtClock F j)
+    (domain : contractProgramDomain F = true) (ih : ∀ j, j < k → AtClock F j)
     {f : Fir.FunId} (hf : f < F.size) {H : Heap} {external : Nat → Nat}
     {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
     (hb : Balance H external vs) :
@@ -36,7 +36,7 @@ theorem call_of_smaller_clocks {F : Fir.Program} {k : Nat}
   | some fd =>
     rw [Fir.evalCall_eq, hfd, canonical_call hfd]
     simp only [Result.ofOption, Result.bind_ok, Fir.callFun, callFun]
-    obtain ⟨_, freshParams, scopeBody⟩ := programDomain_function domain hf hfd
+    obtain ⟨_, freshParams, scopeBody⟩ := contractProgramDomain_function domain hf hfd
     by_cases hl : ws.length = fd.params.length
     · have hl' : vs.length = fd.params.length := hd.length.trans hl
       simp only [hl, hl', ↓reduceIte]

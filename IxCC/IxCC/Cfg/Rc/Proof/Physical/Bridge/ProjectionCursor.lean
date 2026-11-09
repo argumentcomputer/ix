@@ -92,7 +92,9 @@ theorem projection_frame {P : Cfg.Rc.Program} {pairs : List (Nat × Cfg.Fun)} {l
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} 0
         {mem, ctx := context, stack := after :: callers} ∧
       FrameState P pairs lp addresses H.size bound fd
-        {source with rest := tail, env := source.env.insert x value} after) ∨
+        {source with rest := tail, env := source.env.insert x value} after ∧
+      ∀ block, fd.blocks[source.blk]? = some block →
+        FusedDone (tablesOf P pairs) fd block {source with rest := tail, env := source.env.insert x value}) ∨
     Sem.Fails (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} := by
   obtain ⟨actual, rest, accepted, remaining, position⟩ := before.cursor.next head
   have same : actual = .bind x (.proj y key i) := by
@@ -103,10 +105,16 @@ theorem projection_frame {P : Cfg.Rc.Program} {pairs : List (Nat × Cfg.Fun)} {l
   rcases projection_cursor (source := {source with rest := .bind x (.proj y key i) :: rest})
       before.lookup position physical compatible ordered before.words before.compatible before.bounded
       rfl real effect context callers with success | failed
-  · obtain ⟨after, running', trace, next, words, ctors, bounded, _⟩ := success
-    refine .inl ⟨after, running', ?_, ⟨before.lookup, ⟨rest, remaining, next⟩, words, bounded, ctors⟩⟩
-    rw [initial, state_eq (s := {mem, ctx := context, stack := after :: callers}) rfl running']
-    exact trace
+  · obtain ⟨after, running', trace, next, words, ctors, bounded, fused⟩ := success
+    refine .inl ⟨after, running', ?_, ⟨before.lookup, ⟨rest, remaining, next⟩, words, bounded, ctors⟩, ?_⟩
+    · rw [initial, state_eq (s := {mem, ctx := context, stack := after :: callers}) rfl running']
+      exact trace
+    · intro block blockLookup init cond a b isFused empty
+      have tailEmpty : tail = [] := empty
+      rw [tailEmpty] at remaining
+      have restEmpty : rest = [] := by
+        simpa only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] using remaining.symm
+      exact fused block blockLookup init cond a b isFused restEmpty
   · exact .inr (by rw [initial]; exact failed)
 
 

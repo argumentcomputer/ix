@@ -106,12 +106,12 @@ theorem step_correct (p : Shrink.Params) :
   | .shrink c, P, Q, _, hw, h => Shrink.Proof.run_refines hw h
   | .inline r, P, Q, _, hw, h => by
     simp only [Step.run] at h
-    cases hr : Inline.round P r with
-    | error e => rw [hr] at h; cases h
-    | ok x =>
-      rw [hr] at h
-      cases h
+    obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
+    unfold checkGlobalNodes at hc
+    split at hc
+    · cases hc
       exact Inline.Proof.round_refines hw hr
+    · cases hc
   | .specialize c, P, Q, hs, hw, h => by
     rcases hs with hs | hs
     · exact hs.elim

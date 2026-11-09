@@ -139,6 +139,109 @@ def viewOf (T : List Lam.CtorInfo) (tys : Nat → Option (Sig × FoTy)) (r : Nat
   | none => some none
   | some (sig, ty) => (o.bind (tagify T sig ty)).map some
 
+mutual
+
+/-- A first-order source observation tree at a readback type, relabelled by
+constructor tag: a `Nat`, or a constructor whose table entry and signature
+field types recursively relabel its fields. -/
+def treeTagify (T : List Lam.CtorInfo) (sig : Sig) : FoTy → Obs → Option Obs
+  | .nat, .nat n => some (.nat n)
+  | .ind i, .ctor cid fs =>
+    match Fir.CtorInfo.ofKey T (.src cid) with
+    | some c =>
+      match sig.ctor? i c.tag with
+      | some tys => (treeTagifyList T sig tys fs).map (.ctor c.tag)
+      | none => none
+    | none => none
+  | _, _ => none
+
+/-- Recursive field-list relabelling for `treeTagify`. -/
+def treeTagifyList (T : List Lam.CtorInfo) (sig : Sig) : List FoTy → List Obs → Option (List Obs)
+  | [], [] => some []
+  | ty :: tys, o :: os =>
+    match treeTagify T sig ty o, treeTagifyList T sig tys os with
+    | some o', some os' => some (o' :: os')
+    | _, _ => none
+  | _, _ => none
+
+end
+
+/-- The tree view of the front half: at a root with a readback type, the
+source observation tree relabelled by `treeTagify` (a result it rejects is
+stuck); at a root without one, nothing. -/
+def treeViewOf (T : List Lam.CtorInfo) (tys : Nat → Option (Sig × FoTy)) (r : Nat) (o : Option Obs) :
+    Option (Option Obs) :=
+  match tys r with
+  | none => some none
+  | some (sig, ty) => (o.bind (treeTagify T sig ty)).map some
+
+theorem treeTagify_nat (T : List Lam.CtorInfo) (sig : Sig) (o : Obs) :
+    treeTagify T sig .nat o = tagify T sig .nat o := by
+  cases o <;> rfl
+
+theorem treeTagify_ctor0 (T : List Lam.CtorInfo) (sig : Sig) (ty : FoTy) (cid : Nat) :
+    treeTagify T sig ty (.ctor cid []) = tagify T sig ty (.ctor cid []) := by
+  cases ty with
+  | nat => rfl
+  | ind i =>
+    simp only [treeTagify, tagify]
+    cases Fir.CtorInfo.ofKey T (.src cid) with
+    | none => rfl
+    | some c =>
+      cases h : sig.ctor? i c.tag with
+      | none => simp [h]
+      | some tys =>
+        cases tys with
+        | nil => simp [h, treeTagifyList]
+        | cons t ts => simp [h, treeTagifyList]
+
+theorem treeTagify_of_tagify {T : List Lam.CtorInfo} {sig : Sig} {ty : FoTy} {o o' : Obs}
+    (h : tagify T sig ty o = some o') : treeTagify T sig ty o = some o' := by
+  cases ty with
+  | nat => rw [treeTagify_nat]; exact h
+  | ind i =>
+    cases o with
+    | nat _ | word _ | bytes _ => simp [tagify] at h
+    | ctor cid fs =>
+      cases fs with
+      | nil => rw [treeTagify_ctor0]; exact h
+      | cons _ _ => simp [tagify] at h
+
+theorem viewOf_eq_treeViewOf_of_tagify {T : List Lam.CtorInfo} {tys : Nat → Option (Sig × FoTy)}
+    {r : Nat} {o : Option Obs} {o' : Obs} (h : viewOf T tys r o = some (some o')) :
+    treeViewOf T tys r o = some (some o') := by
+  unfold viewOf at h
+  unfold treeViewOf
+  cases hty : tys r with
+  | none => rw [hty] at h; cases h
+  | some st =>
+    obtain ⟨sig, ty⟩ := st
+    rw [hty] at h
+    cases o with
+    | none => simp at h
+    | some v =>
+      simp only [Option.bind_some, Option.map_eq_some_iff, Option.some.injEq] at h ⊢
+      obtain ⟨_, ht, rfl⟩ := h
+      exact ⟨_, treeTagify_of_tagify ht, rfl⟩
+
+theorem viewOf_eq_treeViewOf_nat {T : List Lam.CtorInfo} {tys : Nat → Option (Sig × FoTy)}
+    {r : Nat} {sig : Sig} (h : tys r = some (sig, .nat)) (o : Option Obs) :
+    viewOf T tys r o = treeViewOf T tys r o := by
+  simp only [viewOf, treeViewOf, h]
+  cases o with
+  | none => rfl
+  | some v => simp [treeTagify_nat]
+
+theorem viewOf_eq_treeViewOf_ctor0 (T : List Lam.CtorInfo) (tys : Nat → Option (Sig × FoTy))
+    (r cid : Nat) :
+    viewOf T tys r (some (.ctor cid [])) = treeViewOf T tys r (some (.ctor cid [])) := by
+  simp only [viewOf, treeViewOf]
+  cases tys r with
+  | none => rfl
+  | some st =>
+    obtain ⟨sig, ty⟩ := st
+    simp [treeTagify_ctor0]
+
 /-- The entries of a lowered program: one per root, in export order. -/
 def entriesOf (C : Cfg.Program) (roots : List (Lir.FunId × String)) (tys : Nat → Option (Sig × FoTy)) :
     List Entry :=
@@ -382,6 +485,281 @@ theorem view_observe {C : Cfg.Program} {ctx : Word} {tys : Nat → Option (Sig �
     simp only [Option.map_eq_some_iff, Option.bind_eq_some_iff] at hview
     obtain ⟨o', ⟨o₀, ho₀, ht⟩, rfl⟩ := hview
     exact (tagify_value (T := tables C) hv hheap ho₀ ht).2.1 fuel
+
+theorem treeTagifyList_fields {T : Tables} {Pw : List Word} {H : Own.Heap} {k : Nat} {sig : Sig}
+    (ih : ∀ {v : Own.RVal} {w : Word} {fv : Fir.Val} {ty : FoTy} {o o' : Obs},
+      ValRel T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
+      treeTagify T.ctors sig ty o = some o' → Typed sig H ty v ∧ Fir.readback fv = some o') :
+    ∀ {vs : List Own.RVal} {fvs : List Fir.Val} {tys : List FoTy} {os os' : List Obs},
+      (∀ (j : Nat) (v : Own.RVal), vs[j]? = some v → ∃ w, ValRel T Pw v w) →
+      Own.toFirList H k vs = some fvs → Fir.obsList fvs = some os →
+      treeTagifyList T.ctors sig tys os = some os' →
+      tys.length = vs.length ∧
+        (∀ (j : Nat) (t : FoTy) (v : Own.RVal), tys[j]? = some t → vs[j]? = some v → Typed sig H t v) ∧
+        Fir.readbackList fvs = some os'
+  | [], fvs, tys, os, os', _, hfvs, hos, ht => by
+    simp only [Own.toFirList, Option.some.injEq] at hfvs
+    subst hfvs
+    simp only [Fir.obsList, Option.some.injEq] at hos
+    subst hos
+    cases tys with
+    | nil =>
+      simp only [treeTagifyList, Option.some.injEq] at ht
+      subst ht
+      exact ⟨rfl, fun _ _ _ h => by simp at h, rfl⟩
+    | cons _ _ => simp [treeTagifyList] at ht
+  | v :: vs, fvs, tys, os, os', hvs, hfvs, hos, ht => by
+    simp only [Own.toFirList] at hfvs
+    cases hfv : Own.toFir H k v with
+    | none => simp [hfv] at hfvs
+    | some fv =>
+      cases hfvs' : Own.toFirList H k vs with
+      | none => simp [hfv, hfvs'] at hfvs
+      | some fvs' =>
+        simp only [hfv, hfvs', Option.some.injEq] at hfvs
+        subst hfvs
+        simp only [Fir.obsList] at hos
+        cases ho : Fir.obsV fv with
+        | none => simp [ho] at hos
+        | some o =>
+          cases hos' : Fir.obsList fvs' with
+          | none => simp [ho, hos'] at hos
+          | some os₀ =>
+            simp only [ho, hos', Option.some.injEq] at hos
+            subst hos
+            cases tys with
+            | nil => simp [treeTagifyList] at ht
+            | cons ty tys' =>
+              simp only [treeTagifyList] at ht
+              cases hto : treeTagify T.ctors sig ty o with
+              | none => simp [hto] at ht
+              | some o' =>
+                cases htos : treeTagifyList T.ctors sig tys' os₀ with
+                | none => simp [hto, htos] at ht
+                | some os₁ =>
+                  simp only [hto, htos, Option.some.injEq] at ht
+                  subst ht
+                  obtain ⟨w, hvw⟩ := hvs 0 v rfl
+                  obtain ⟨hty, hrb⟩ := ih hvw hfv ho hto
+                  obtain ⟨hlen, htyped, hrbs⟩ := treeTagifyList_fields ih
+                    (fun j v' hj => hvs (j + 1) v' hj) hfvs' hos' htos
+                  refine ⟨by simp [hlen], ?_, by simp [Fir.readbackList, hrb, hrbs]⟩
+                  intro j t v' htj hvj
+                  cases j with
+                  | zero =>
+                    simp only [List.getElem?_cons_zero, Option.some.injEq] at htj hvj
+                    subst htj hvj
+                    exact hty
+                  | succ j =>
+                    simp only [List.getElem?_cons_succ] at htj hvj
+                    exact htyped j t v' htj hvj
+
+/-- **The recursive tree observation bridge at fuel `k`**: a Cfg value
+related to a word under the heap invariant whose Fir denotation at fuel `k`
+is relabelled by `treeTagify` is `Typed` at the readback type, and both
+`Fir.readback` and `Rt.readback` at fuel `k` return the relabelled tree. -/
+theorem treeTagify_toFir {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory}
+    {sig : Sig} (hheap : HeapInv T Pw H ctx m) :
+    ∀ (k : Nat) {v : Own.RVal} {w : Word} {fv : Fir.Val} {ty : FoTy} {o o' : Obs},
+      ValRel T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
+      treeTagify T.ctors sig ty o = some o' →
+      Typed sig H ty v ∧ Fir.readback fv = some o' ∧ readback sig k m ty w = some o' := by
+  have hcore : ∀ (k : Nat) {v : Own.RVal} {w : Word} {fv : Fir.Val} {ty : FoTy} {o o' : Obs},
+      ValRel T Pw v w → Own.toFir H k v = some fv → Fir.obsV fv = some o →
+      treeTagify T.ctors sig ty o = some o' →
+      Typed sig H ty v ∧ Fir.readback fv = some o' := by
+    intro k
+    induction k with
+    | zero =>
+      intro v w fv ty o o' hv hfv ho ht
+      cases v with
+      | lit l =>
+        cases l with
+        | str s => exact absurd hv id
+        | nat n =>
+          simp only [Own.toFir, Option.some.injEq] at hfv
+          subst hfv
+          simp only [Fir.obsV, Option.some.injEq] at ho
+          subst ho
+          cases ty with
+          | nat =>
+            simp only [treeTagify, Option.some.injEq] at ht
+            subst ht
+            exact ⟨.nat, rfl⟩
+          | ind i => simp [treeTagify] at ht
+      | ctor0 c =>
+        simp only [Own.toFir, Option.some.injEq] at hfv
+        subst hfv
+        obtain ⟨rfl, hc, hf⟩ := hv
+        simp only [Fir.obsV] at ho
+        split at ho
+        · rename_i cid hkey
+          simp only [Fir.obsList, Option.map_some, Option.some.injEq] at ho
+          subst ho
+          rw [treeTagify_ctor0] at ht
+          cases ty with
+          | nat => simp [tagify] at ht
+          | ind i =>
+            simp only [tagify] at ht
+            rw [← hkey, hc.table] at ht
+            simp only at ht
+            split at ht
+            · rename_i hsig
+              simp only [Option.some.injEq] at ht
+              subst ht
+              have har : (c.arity == 0) = true := hf
+              refine ⟨.ctor0 hsig, ?_⟩
+              simp only [Fir.readback, List.length_nil]
+              rw [if_pos (by simpa using har)]
+              rfl
+            · cases ht
+        · cases ho
+      | erased =>
+        simp only [Own.toFir, Option.some.injEq] at hfv
+        subst hfv
+        simp [Fir.obsV] at ho
+      | loc ℓ => simp [Own.toFir] at hfv
+    | succ k ih =>
+      intro v w fv ty o o' hv hfv ho ht
+      cases v with
+      | lit l =>
+        cases l with
+        | str s => exact absurd hv id
+        | nat n =>
+          simp only [Own.toFir, Option.some.injEq] at hfv
+          subst hfv
+          simp only [Fir.obsV, Option.some.injEq] at ho
+          subst ho
+          cases ty with
+          | nat =>
+            simp only [treeTagify, Option.some.injEq] at ht
+            subst ht
+            exact ⟨.nat, rfl⟩
+          | ind i => simp [treeTagify] at ht
+      | ctor0 c =>
+        simp only [Own.toFir, Option.some.injEq] at hfv
+        subst hfv
+        obtain ⟨rfl, hc, hf⟩ := hv
+        simp only [Fir.obsV] at ho
+        split at ho
+        · rename_i cid hkey
+          simp only [Fir.obsList, Option.map_some, Option.some.injEq] at ho
+          subst ho
+          rw [treeTagify_ctor0] at ht
+          cases ty with
+          | nat => simp [tagify] at ht
+          | ind i =>
+            simp only [tagify] at ht
+            rw [← hkey, hc.table] at ht
+            simp only at ht
+            split at ht
+            · rename_i hsig
+              simp only [Option.some.injEq] at ht
+              subst ht
+              have har : (c.arity == 0) = true := hf
+              refine ⟨.ctor0 hsig, ?_⟩
+              simp only [Fir.readback, List.length_nil]
+              rw [if_pos (by simpa using har)]
+              rfl
+            · cases ht
+        · cases ho
+      | erased =>
+        simp only [Own.toFir, Option.some.injEq] at hfv
+        subst hfv
+        simp [Fir.obsV] at ho
+      | loc ℓ =>
+        obtain ⟨bump, limit, hA⟩ := hheap
+        simp only [Own.toFir, Own.Heap.cell?] at hfv
+        split at hfv
+        · rename_i rc mode b hcell
+          obtain ⟨fvs, hfvs, rfl⟩ := Option.map_eq_some_iff.1 hfv
+          obtain ⟨-, hca, -, -⟩ := hA.cell hv hcell
+          have hlen_fvs := toFirList_length hfvs
+          simp only [Fir.obsV] at ho
+          split at ho
+          · rename_i cid hkey
+            obtain ⟨os, hos, rfl⟩ := Option.map_eq_some_iff.1 ho
+            cases ty with
+            | nat => simp [treeTagify] at ht
+            | ind i =>
+              simp only [treeTagify] at ht
+              rw [← hkey, hca.ctor.table] at ht
+              simp only at ht
+              cases hsig : sig.ctor? i b.ctor.tag with
+              | none => simp [hsig] at ht
+              | some tys =>
+                simp only [hsig] at ht
+                obtain ⟨os', htos, rfl⟩ := Option.map_eq_some_iff.1 ht
+                have hfields : ∀ (j : Nat) (v' : Own.RVal), b.fields[j]? = some v' → ∃ w', ValRel T Pw v' w' := by
+                  intro j v' hj
+                  obtain ⟨w', -, hvw'⟩ := hca.fields j v' hj
+                  exact ⟨w', hvw'⟩
+                obtain ⟨hlen_tys, htyped, hrb_list⟩ := treeTagifyList_fields ih hfields hfvs hos htos
+                refine ⟨.cell hcell hsig hlen_tys htyped, ?_⟩
+                simp only [Fir.readback, hrb_list, Option.map_some]
+                have har : (b.ctor.arity == fvs.length) = true := by
+                  rw [beq_iff_eq, hlen_fvs, hca.arity]
+                rw [if_pos har]
+          · cases ho
+        · cases hfv
+  intro k v w fv ty o o' hv hfv ho ht
+  obtain ⟨hty, hrb⟩ := hcore k hv hfv ho ht
+  refine ⟨hty, hrb, ?_⟩
+  rw [readback_toFir hheap k hty hv, hfv, Option.bind_some, hrb]
+
+/-- **The recursive tree observation bridge** (Cfg → Lir): a Cfg value
+related to a word under the heap invariant whose observation `treeTagify`
+relabels at a readback type is `Typed` at that type and reads back as the
+relabelling in Own and at every runtime fuel at least `H.size + 1`. -/
+theorem treeTagify_value {T : Tables} {Pw : List Word} {H : Own.Heap} {ctx : Word} {m : X86.Memory}
+    {v : Own.RVal} {w : Word} {sig : Sig} {ty : FoTy} {o o' : Obs}
+    (hv : ValRel T Pw v w) (hheap : HeapInv T Pw H ctx m) (ho : Own.obsV (v, H) = some o)
+    (ht : treeTagify T.ctors sig ty o = some o') :
+    Typed sig H ty v ∧ (∀ fuel, H.size + 1 ≤ fuel → readback sig fuel m ty w = some o') ∧
+      H.readback v = some o' := by
+  simp only [Own.obsV, Own.Heap.value?, Option.bind_eq_some_iff] at ho
+  obtain ⟨fv, hfv, ho⟩ := ho
+  obtain ⟨hty, hrb, -⟩ := treeTagify_toFir hheap (H.size + 1) hv hfv ho ht
+  refine ⟨hty, fun fuel hfuel => ?_, ?_⟩
+  · have hfv' := Own.Proof.toFir_ext (Own.Proof.Ext.refl H) hfuel hfv
+    exact (treeTagify_toFir hheap fuel hv hfv' ho ht).2.2
+  · simp [Own.Heap.readback, Own.Heap.value?, hfv, hrb]
+
+/-- **The final result through `Rt.result_readback` for recursive constructor
+trees**: a Cfg result related by `Res` whose observation `treeTagify` accepts
+at the root's readback type is `Typed` at it, and the runtime's readback at
+every fuel `≥ H.size + 1` (in particular Own's fuel `H.size + 1`) is Own's
+readback, the relabelled observation tree. -/
+theorem result_treeView {P : Cfg.Program} {ctx : Word} {v : Own.RVal} {H : Own.Heap} {vals : List Word}
+    {m : X86.Memory} {sig : Sig} {ty : FoTy} {o o' : Obs} (hres : Res P ctx (v, H) (vals, m))
+    (ho : Own.obsV (v, H) = some o) (ht : treeTagify P.ctors sig ty o = some o') :
+    Typed sig H ty v ∧ ∃ w, vals = [w] ∧
+      (∀ fuel, H.size + 1 ≤ fuel → readback sig fuel m ty w = some o') ∧
+      readback sig (H.size + 1) m ty w = H.readback v ∧ H.readback v = some o' := by
+  obtain ⟨Pw, w, hw, hv, hheap⟩ := hres
+  obtain ⟨hty, hfuel, hrb⟩ := treeTagify_value (T := tables P) hv hheap ho ht
+  exact ⟨hty, w, hw, hfuel, (hfuel (H.size + 1) (Nat.le_refl _)).trans hrb.symm, hrb⟩
+
+/-- The tree view's report for a final Cfg result is the entry's read-back
+observation of the related Lir result at any fuel `≥ H.size + 1`. -/
+theorem treeView_observe {C : Cfg.Program} {ctx : Word} {tys : Nat → Option (Sig × FoTy)} {r : Nat}
+    {v : Own.RVal × Own.Heap} {vals : List Word} {m : X86.Memory} {o : Option Obs} (f p fuel : Nat)
+    (hres : Res C ctx v (vals, m)) (hfuel : v.2.size + 1 ≤ fuel)
+    (hview : treeViewOf C.ctors tys r (Own.obsV v) = some o) :
+    ({ fn := f, params := p, ty := tys r } : Entry).observe fuel vals m = o := by
+  obtain ⟨Pw, w, hw, hv, hheap⟩ := hres
+  simp only at hw hv hheap
+  subst hw
+  unfold treeViewOf at hview
+  unfold Entry.observe
+  cases hty : tys r with
+  | none => rw [hty] at hview; simp only [Option.some.injEq] at hview; exact hview
+  | some st =>
+    obtain ⟨sig, ty⟩ := st
+    rw [hty] at hview
+    simp only [Option.map_eq_some_iff, Option.bind_eq_some_iff] at hview
+    obtain ⟨o', ⟨o₀, ho₀, ht⟩, rfl⟩ := hview
+    exact (treeTagify_value (T := tables C) hv hheap ho₀ ht).2.1 fuel hfuel
 
 /-! ## Cfg → Lir on every input -/
 

@@ -109,4 +109,93 @@ theorem compose_traced {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (
     Sem.TRefines f.source obj :=
   Sem.Refines.ofPure ((front_refines h hok hreg).trans hback)
 
+/-! ## Non-vacuity of `Front.GoesWrong` and `compile_sound` -/
+
+/-- By clock monotonicity of `CheckedProgram`, two successful evaluations on
+the same input at any clocks return the same value. -/
+theorem Front.eval_unique {f : Front} {i : Nat × List Nat} {k₁ k₂ : Nat}
+    {v₁ v₂ : Lang.Val CheckedProgram}
+    (h₁ : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k₁ = .ok v₁)
+    (h₂ : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k₂ = .ok v₂) :
+    v₁ = v₂ := by
+  have heq := (Lang.mono (⟨f.src, f.checked⟩ : CheckedProgram) i).eq_of_ne_timeout
+    (by rw [h₁]; simp) (by rw [h₂]; simp)
+  rw [h₁, h₂] at heq
+  exact Sem.Result.ok.inj heq
+
+/-- **Non-vacuity of `Front.GoesWrong`**: whenever `CheckedProgram`
+evaluates to `.ok v` on input `i` and `f.view i.1 (Lang.obs v) = some o`,
+the source does not go wrong (`¬ f.GoesWrong i`). -/
+theorem Front.not_goesWrong_of_eval {f : Front} {i : Nat × List Nat} {k : Nat}
+    {v : Lang.Val CheckedProgram} {o : Option Obs}
+    (heval : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k = .ok v)
+    (hview : f.view i.1 (Lang.obs v) = some o) :
+    ¬ f.GoesWrong i := by
+  rintro ⟨k', hgw | ⟨v', heval', hnone⟩⟩
+  · have hne : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k' ≠ .timeout := by
+      intro ht; rw [ht] at hgw; exact hgw
+    have heq := (Lang.mono (⟨f.src, f.checked⟩ : CheckedProgram) i).eq_of_ne_timeout
+      hne (by rw [heval]; simp)
+    rw [heval] at heq
+    rw [heq] at hgw
+    exact hgw
+  · have hv := Front.eval_unique heval heval'
+    subst hv
+    rw [hview] at hnone
+    cases hnone
+
+/-- **Non-vacuity at a `Nat` root**: whenever `CheckedProgram` evaluates to
+`.ok v` with `Lang.obs v = some (.nat n)` at a root with readback type
+`Nat`, `f.view` reports `some (some (.nat n))` and `¬ f.GoesWrong i`. -/
+theorem Front.not_goesWrong_of_nat {f : Front} {i : Nat × List Nat} {k : Nat}
+    {v : Lang.Val CheckedProgram} {n : Nat}
+    (hty : f.tys i.1 = some ({}, .nat))
+    (heval : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k = .ok v)
+    (hobs : Lang.obs v = some (.nat n)) :
+    f.view i.1 (Lang.obs v) = some (some (.nat n)) ∧ ¬ f.GoesWrong i := by
+  have hview : f.view i.1 (Lang.obs v) = some (some (.nat n)) := by
+    rw [hobs]
+    exact view_nat hty n
+  exact ⟨hview, Front.not_goesWrong_of_eval heval hview⟩
+
+/-- **Non-vacuity at a field-less constructor**: whenever `CheckedProgram`
+evaluates to `.ok v` with `Lang.obs v = some (.ctor cid [])` matching the
+root's inductive signature, `f.view` reports `some (some (.ctor c.tag []))`
+and `¬ f.GoesWrong i`. -/
+theorem Front.not_goesWrong_of_ctor0 {f : Front} {i : Nat × List Nat} {k : Nat}
+    {v : Lang.Val CheckedProgram} {sig : Rt.Sig} {idx : Nat} {cid : Src.CId} {c : Fir.CtorInfo}
+    (hty : f.tys i.1 = some (sig, .ind idx))
+    (hc : Fir.CtorInfo.ofKey f.cfg.ctors (.src cid) = some c)
+    (hsig : sig.ctor? idx c.tag = some [])
+    (heval : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k = .ok v)
+    (hobs : Lang.obs v = some (.ctor cid [])) :
+    f.view i.1 (Lang.obs v) = some (some (.ctor c.tag [])) ∧ ¬ f.GoesWrong i := by
+  have hview : f.view i.1 (Lang.obs v) = some (some (.ctor c.tag [])) := by
+    rw [hobs]
+    exact view_ctor0 hty hc hsig
+  exact ⟨hview, Front.not_goesWrong_of_eval heval hview⟩
+
+/-- **Non-vacuous `compile_sound`**: when `CheckedProgram` evaluates to
+`.ok v` with `f.view i.1 (Lang.obs v) = some o`, the `f.GoesWrong i`
+disjunct of `compile_sound` is discharged, the object never goes wrong, and
+every value `w` the object returns has `Lang.obs w = o`. -/
+theorem compile_sound_of_eval {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (h : runLir cfg P c = .ok f) {M : Rt.Model}
+    (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)
+    {O : Type} [Lang (Nat × List Nat) O] {obj : O} (hback : Sem.Refines (f.loaded M) obj)
+    {i : Nat × List Nat} {k_src : Nat} {v : Lang.Val CheckedProgram} {o : Option Obs}
+    (heval : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k_src = .ok v)
+    (hview : f.view i.1 (Lang.obs v) = some o) :
+    ¬ f.GoesWrong i ∧
+    (∀ k, ¬ (Lang.run obj i k).GoesWrong) ∧
+    (∀ k w, Lang.run obj i k = .ok w → Lang.obs w = o) := by
+  have hngw := Front.not_goesWrong_of_eval heval hview
+  refine ⟨hngw, compile_safe h hok hreg hback hngw, fun k w hw => ?_⟩
+  rcases compile_sound h hok hreg hback hw with ⟨k', v', heval', hview'⟩ | hgw
+  · have hv := Front.eval_unique heval heval'
+    subst hv
+    rw [hview] at hview'
+    exact (Option.some.inj hview').symm
+  · exact absurd hgw hngw
+
 end IxCC.Recheck

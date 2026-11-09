@@ -10,7 +10,7 @@ variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
   {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
   (functions : Nat → Lir.Func) (main : Nat)
   {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List Own.RVal}
-  {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env}
+  {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env}
   {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
   {sourceFunction : Fir.Fun} {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
   {memory : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
@@ -21,7 +21,7 @@ include checked consuming
 theorem Activation.return_result {arg : Fir.Arg}
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
       live sourceEnv ownedEnv roots joins sourceJoins ownedJoins (.ret arg)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     (heap : HeapState P pairs H addresses memory external roots
       context base bump limit regionBytes slots lists)
@@ -60,7 +60,7 @@ theorem Activation.return_result {arg : Fir.Arg}
 theorem Activation.trap_result
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
       live sourceEnv ownedEnv roots joins sourceJoins ownedJoins .trap
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     (heap : HeapState P pairs H addresses memory external roots
       context base bump limit regionBytes slots lists)

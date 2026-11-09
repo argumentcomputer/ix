@@ -41,7 +41,7 @@ theorem eval_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
         (eval_physical admission main clock smaller sourceJoins cont)
     | call f args =>
       intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
-        function source target memory context base bump limit regionBytes slots lists callers
+        function source target memory context base bump limit regionBytes slots lists callers imm
         sourceLookup before heap
       exact call_result admission main clock smaller before sourceLookup heap callers
         (eval_physical admission main clock smaller sourceJoins cont)
@@ -62,7 +62,7 @@ theorem eval_physical {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
   | .ret arg => exact physical_return admission arg
   | .tcall f args =>
     intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
-      function source target memory context base bump limit regionBytes slots lists callers
+      function source target memory context base bump limit regionBytes slots lists callers imm
       sourceLookup before heap
     exact tail_result admission main clock smaller before sourceLookup heap callers
   | .trap => exact physical_trap admission

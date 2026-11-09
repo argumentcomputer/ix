@@ -20,4 +20,15 @@ theorem checked_program_refines {F : Fir.Program} {candidate : Src.NatMap Code}
   rw [bound]
   exact canonical_call_refines domain pins k hf hd hb
 
+theorem checked_contract_program_refines {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkContractPlainMap F candidate = true) (k : Nat)
+    {f : Fir.FunId} (hf : f < F.size) {H : Heap} {external : Nat → Nat}
+    {vs : List RVal} {ws : List Fir.Val} (hd : Sem.Forall2 (Proof.Den H) vs ws)
+    (hb : Balance H external vs) :
+    ResultRel H external (Fir.evalCall F k f ws)
+      (evalCall { source := F, bodies := candidate } k f vs H) := by
+  obtain ⟨domain, pins, bound⟩ := checkContractPlainMap_parts checked
+  rw [bound]
+  exact canonical_contract_call_refines domain pins k hf hd hb
+
 end IxCC.Own.Plain

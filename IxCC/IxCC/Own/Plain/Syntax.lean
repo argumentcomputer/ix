@@ -46,37 +46,80 @@ def drops (captured : List Var) : List Var → List Action
   | [] => []
   | x :: xs => if captured.contains x then drops captured xs else .dec x :: drops captured xs
 
-def transfer (live captured : List Var) (args : List Arg) (k : Code) : Code :=
-  actionPrefix (copies args ++ drops captured live) k
+def isImmArg (imm : List Var) : Arg → Bool
+  | .var x => imm.contains x
+  | _ => true
+
+def isImmRhs (imm : List Var) : Rhs → Bool
+  | .prim .. => true
+  | .ctor c _ => c.arity == 0
+  | .arg a => isImmArg imm a
+  | .proj y _ _ => imm.contains y
+  | .call .. => false
+
+def argVars : List Arg → List Var
+  | [] => []
+  | .var x :: as => x :: argVars as
+  | _ :: as => argVars as
+
+def nextImm (imm : List Var) (x : Var) (r : Rhs) : List Var :=
+  match r with
+  | .prim _ args => imm ++ argVars args ++ [x]
+  | _ => if isImmRhs imm r then imm ++ [x] else imm
+
+def heapArgs (imm : List Var) : List Arg → List Arg
+  | [] => []
+  | a :: as => if isImmArg imm a then heapArgs imm as else a :: heapArgs imm as
+
+/-- Duplicate variable occurrences only when already retained (`seen`), moving
+the first occurrence of each non-captured variable argument. -/
+def moveCopies (seen : List Var) : List Arg → List Action
+  | [] => []
+  | .var x :: as =>
+    if seen.contains x then .inc x 1 :: moveCopies seen as
+    else moveCopies (x :: seen) as
+  | _ :: as => moveCopies seen as
+
+def transferActions (imm captured live : List Var) (args : List Arg) : List Action :=
+  moveCopies (captured ++ imm) (heapArgs imm args) ++
+    drops ((captured ++ imm) ++ argVars (heapArgs imm args)) live
+
+def transfer (live imm captured : List Var) (args : List Arg) (k : Code) : Code :=
+  actionPrefix (transferActions imm captured live args) k
 
 abbrev Joins := List (JoinId × List Var)
 
 mutual
-def lowerCode (live : List Var) (joins : Joins) : Fir.Code → Code
+def lowerCode (live : List Var) (joins : Joins) (c : Fir.Code) (imm : List Var := []) : Code :=
+  match c with
   | .bind x r k =>
-    let next := lowerCode (live ++ [x]) joins k
+    let next := lowerCode (live ++ [x]) joins k (nextImm imm x r)
     match r with
-    | .arg a => actionPrefix (copies [a]) (.bind x r next)
-    | .ctor _ args | .call _ args => actionPrefix (copies args) (.bind x r next)
-    | .proj .. => .bind x r (.act (.inc x 1) next)
+    | .arg a => actionPrefix (copies (heapArgs imm [a])) (.bind x r next)
+    | .ctor _ args | .call _ args => actionPrefix (copies (heapArgs imm args)) (.bind x r next)
+    | .proj y _ _ =>
+      if imm.contains y then .bind x r next
+      else .bind x r (.act (.inc x 1) next)
     | .prim .. => .bind x r next
   | .jp j ps rec body k =>
     .jp j ps live rec
       (lowerCode (live ++ ps) (if rec then (j, live) :: joins else joins) body)
-      (lowerCode live ((j, live) :: joins) k)
-  | .jmp j args => transfer live ((joins.lookup j).getD []) args (.jmp j args)
-  | .case x alts dflt => .case x (lowerAlts live joins alts) (lowerOpt live joins dflt)
-  | .ret a => transfer live [] [a] (.ret a)
-  | .tcall f args => transfer live [] args (.tcall f args)
-  | .trap => actionPrefix (drops [] live) .trap
+      (lowerCode live ((j, live) :: joins) k imm)
+  | .jmp j args => transfer live imm ((joins.lookup j).getD []) args (.jmp j args)
+  | .case x alts dflt => .case x (lowerAlts live joins alts imm) (lowerOpt live joins dflt imm)
+  | .ret a => transfer live imm [] [a] (.ret a)
+  | .tcall f args => transfer live imm [] args (.tcall f args)
+  | .trap => transfer live imm [] [] .trap
 
-def lowerAlts (live : List Var) (joins : Joins) : List Fir.Alt → List Alt
+def lowerAlts (live : List Var) (joins : Joins) (alts : List Fir.Alt) (imm : List Var := []) : List Alt :=
+  match alts with
   | [] => []
-  | .mk key body :: alts => .mk key (lowerCode live joins body) :: lowerAlts live joins alts
+  | .mk key body :: rest => .mk key (lowerCode live joins body imm) :: lowerAlts live joins rest imm
 
-def lowerOpt (live : List Var) (joins : Joins) : Option Fir.Code → Option Code
+def lowerOpt (live : List Var) (joins : Joins) (dflt : Option Fir.Code) (imm : List Var := []) : Option Code :=
+  match dflt with
   | none => none
-  | some c => some (lowerCode live joins c)
+  | some c => some (lowerCode live joins c imm)
 end
 
 /-! Missing join labels use an empty capture list only to keep this structural
@@ -109,31 +152,35 @@ theorem erase_prefix (as : List Action) (k : Code) : eraseCode (actionPrefix as 
   | nil => rfl
   | cons a as ih => simpa [actionPrefix, eraseCode] using ih
 
-theorem erase_transfer (live captured : List Var) (args : List Arg) (k : Code) :
-    eraseCode (transfer live captured args k) = eraseCode k := erase_prefix ..
+theorem erase_transfer (live imm captured : List Var) (args : List Arg) (k : Code) :
+    eraseCode (transfer live imm captured args k) = eraseCode k := erase_prefix ..
 
 mutual
 theorem erase_lowerCode (live : List Var) (joins : Joins) :
-    ∀ c, eraseCode (lowerCode live joins c) = c
-  | .bind x r k => by
-    cases r <;> simp [lowerCode, erase_prefix, eraseCode, erase_lowerCode]
-  | .jp j ps rec body k => by
+    ∀ c (imm : List Var), eraseCode (lowerCode live joins c imm) = c
+  | .bind x r k, imm => by
+    cases r with
+    | proj y _ _ =>
+      dsimp only [lowerCode]
+      cases imm.contains y <;> simp [eraseCode, erase_lowerCode]
+    | _ => simp [lowerCode, erase_prefix, eraseCode, erase_lowerCode]
+  | .jp j ps rec body k, imm => by
     simp [lowerCode, eraseCode, erase_lowerCode]
-  | .jmp j args => by simp [lowerCode, erase_transfer, eraseCode]
-  | .case x alts dflt => by simp [lowerCode, eraseCode, erase_lowerAlts, erase_lowerOpt]
-  | .ret a => by simp [lowerCode, erase_transfer, eraseCode]
-  | .tcall f args => by simp [lowerCode, erase_transfer, eraseCode]
-  | .trap => by simp [lowerCode, erase_prefix, eraseCode]
+  | .jmp j args, imm => by simp [lowerCode, erase_transfer, eraseCode]
+  | .case x alts dflt, imm => by simp [lowerCode, eraseCode, erase_lowerAlts, erase_lowerOpt]
+  | .ret a, imm => by simp [lowerCode, erase_transfer, eraseCode]
+  | .tcall f args, imm => by simp [lowerCode, erase_transfer, eraseCode]
+  | .trap, imm => by simp [lowerCode, erase_transfer, eraseCode]
 
 theorem erase_lowerAlts (live : List Var) (joins : Joins) :
-    ∀ alts, eraseAlts (lowerAlts live joins alts) = alts
-  | [] => rfl
-  | .mk key body :: alts => by simp [lowerAlts, eraseAlts, erase_lowerCode, erase_lowerAlts]
+    ∀ alts (imm : List Var), eraseAlts (lowerAlts live joins alts imm) = alts
+  | [], _ => rfl
+  | .mk key body :: alts, imm => by simp [lowerAlts, eraseAlts, erase_lowerCode, erase_lowerAlts]
 
 theorem erase_lowerOpt (live : List Var) (joins : Joins) :
-    ∀ dflt, eraseOpt (lowerOpt live joins dflt) = dflt
-  | none => rfl
-  | some c => by simp [lowerOpt, eraseOpt, erase_lowerCode]
+    ∀ dflt (imm : List Var), eraseOpt (lowerOpt live joins dflt imm) = dflt
+  | none, _ => rfl
+  | some c, imm => by simp [lowerOpt, eraseOpt, erase_lowerCode]
 end
 
 

@@ -1,4 +1,7 @@
 import IxCC.Recheck.Proof.Compile
+import IxCC.Compiler.Proof
+import IxCC.CompileClaim.Proof
+import IxCC.Ring0.Proof
 
 /-! The actual compiler statements expose the existing native BLAKE3 dependency
 through ingress and production. The separate replay fences retain their exact
@@ -52,3 +55,162 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
  Blake3.HasherOps.hash._native.native_decide.ax_1✝]
 -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_bytes
+
+/-- info: 'IxCC.Recheck.sound_of_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.sound_of_eval
+
+/-- info: 'IxCC.Recheck.recheckWithContracts_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.recheckWithContracts_sound
+
+/-- info: 'IxCC.Recheck.compileWithContracts_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Recheck.compileWithContracts_sound
+
+/-- info: 'IxCC.Compiler.recheck_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compiler.recheck_sound
+
+/-- info: 'IxCC.Compiler.compileInput_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.compileInput_sound
+
+/-- info: 'IxCC.Compiler.compile_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.compile_sound
+
+/-- info: 'IxCC.Compiler.produceAuto_zeroRc_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.produceAuto_zeroRc_sound
+
+/-- info: 'IxCC.Compiler.produceAuto_plainRc_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.produceAuto_plainRc_sound
+
+/-- info: 'IxCC.Compiler.compileAuto_zeroRc_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.compileAuto_zeroRc_sound
+
+/-- info: 'IxCC.Compiler.compileAuto_plainRc_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.compileAuto_plainRc_sound
+
+/-- info: 'IxCC.CompileClaim.ofPayloadBytes_toPayloadBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.ofPayloadBytes_toPayloadBytes
+
+/-- info: 'IxCC.CompileClaim.ofClaimBytes_toClaimBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.ofClaimBytes_toClaimBytes
+
+/-- info: 'IxCC.CompileClaim.checkClaim_ok_iff' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.checkClaim_ok_iff
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_immortal_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_immortal_sound
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_zeroRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_zeroRc_sound
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_plainRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_plainRc_sound
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_immortal_sound
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_zeroRc_sound
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_plainRc_sound
+
+/-- info: 'IxCC.X86.Mnemonic.all_unprivileged' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.X86.Mnemonic.all_unprivileged
+
+/-- info: 'IxCC.Ring0.op_rows_no_privileged_opcode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.op_rows_no_privileged_opcode
+
+/-- info: 'IxCC.Ring0.op_rows_direct_control_and_unprivileged' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.op_rows_direct_control_and_unprivileged
+
+/-- info: 'IxCC.Ring0.op_row_no_indirect_branch' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.op_row_no_indirect_branch
+
+/-- info: 'IxCC.Ring0.table_index_direct_control_and_unprivileged' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.table_index_direct_control_and_unprivileged
+
+/-- info: 'IxCC.Ring0.stream_check_cfi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.stream_check_cfi
+
+/-- info: 'IxCC.Ring0.stream_run_framePreserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.stream_run_framePreserved
+
+/-- info: 'IxCC.Ring0.byteEval_run_framePreserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.byteEval_run_framePreserved
+
+/-- info: 'IxCC.Ring0.session_runCalls_preserves_unmapped' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.session_runCalls_preserves_unmapped
+
+/-- info: 'IxCC.Ring0.text_preserved_of_canonicalOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.text_preserved_of_canonicalOk
+
+/-- info: 'IxCC.Ring0.external_realizes_preserved' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.external_realizes_preserved
+
+/-- info: 'IxCC.Ring0.kernelTablesPreserved_of_session_runCalls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.kernelTablesPreserved_of_session_runCalls
+
+/-- info: 'IxCC.Ring0.verifyRing0Sip_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.verifyRing0Sip_sound
+
+/-- info: 'IxCC.Ring0.verifyBytesRing0Sip_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Ring0.verifyBytesRing0Sip_sound
+
+/-- info: 'IxCC.Ring0.admittedRing0Sip_call_not_goesWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.admittedRing0Sip_call_not_goesWrong
+
+/-- info: 'IxCC.Ring0.multi_sip_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.multi_sip_frame
+
+/-- info: 'IxCC.Ring0.multi_sip_wordRegion_preserved' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.multi_sip_wordRegion_preserved
+
+/-- info: 'IxCC.Ring0.pairwiseDisjointSips_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.pairwiseDisjointSips_frame

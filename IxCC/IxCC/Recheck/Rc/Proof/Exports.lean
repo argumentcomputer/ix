@@ -124,7 +124,7 @@ interface. Roots retain tagged-Nat default representations. -/
 theorem run_root {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact}
     (accepted : run cfg P c = .ok a) {xv : Xv.VProgram} {xl : Xv.LProgram}
     (selected : Xv.Select.select a.front.lowered.program = .ok xv)
-    (validated : Xv.Validate.run cfg.env xv c.base.alloc = .ok xl)
+    (validated : Xv.Validate.run (a.front.env cfg.env) xv c.base.alloc = .ok xl)
     {r fn : Nat} {symbol : String} (root : a.front.lowered.roots[r]? = some (fn, symbol)) :
     ∃ xf, xl.funcs[fn]? = some xf ∧ xf.conv = .sysvExport symbol ∧
       xf.params.length = Recheck.cfgParams a.front.cfg.base fn ∧
@@ -147,7 +147,7 @@ theorem run_root {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact}
 theorem run_init {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact}
     (accepted : run cfg P c = .ok a) {xv : Xv.VProgram} {xl : Xv.LProgram}
     (selected : Xv.Select.select a.front.lowered.program = .ok xv)
-    (validated : Xv.Validate.run cfg.env xv c.base.alloc = .ok xl) :
+    (validated : Xv.Validate.run (a.front.env cfg.env) xv c.base.alloc = .ok xl) :
     ∃ xf, xl.funcs[a.front.lowered.init]? = some xf ∧
       xf.conv = .sysvExport Rt.Procs.initSymbol ∧ xf.params.length = 2 ∧
       (emittedConfig cfg a.front c.base).reps a.front.lowered.init = some [.word, .word] := by
@@ -162,7 +162,7 @@ word, never through the tagged-Nat entry conversion. -/
 theorem run_drop {cfg : Config} {P : Src.Program} {c : Cert} {a : Artifact}
     (accepted : run cfg P c = .ok a) {xv : Xv.VProgram} {xl : Xv.LProgram}
     (selected : Xv.Select.select a.front.lowered.program = .ok xv)
-    (validated : Xv.Validate.run cfg.env xv c.base.alloc = .ok xl) :
+    (validated : Xv.Validate.run (a.front.env cfg.env) xv c.base.alloc = .ok xl) :
     ∃ xf, xl.funcs[a.front.drop]? = some xf ∧ xf.conv = .sysvExport "cx_drop" ∧
       xf.params.length = 1 ∧ (emittedConfig cfg a.front c.base).reps a.front.drop = some [.word] := by
   have native := (runFront_native (run_parts accepted).1).2

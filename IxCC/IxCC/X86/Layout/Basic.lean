@@ -59,7 +59,9 @@ def reach (m : NatMap Block) : Nat → NatSet → List Nat → NatSet
   | fuel + 1, seen, frontier =>
       let fresh := frontier.filter (!seen.contains ·)
       let seen := fresh.foldl (fun s b => s.insert b) seen
-      let next := fresh.flatMap fun b => ((m.get? b).map fun blk => blk.targets.map UInt32.toNat).getD []
+      let dedupFresh := (fresh.foldl (init := (({} : NatSet), [])) fun (s, acc) b =>
+        if s.contains b then (s, acc) else (s.insert b, b :: acc)).2.reverse
+      let next := dedupFresh.flatMap fun b => ((m.get? b).map fun blk => blk.targets.map UInt32.toNat).getD []
       reach m fuel seen next
 
 /-- The blocks reachable from the program entry and the roots. -/

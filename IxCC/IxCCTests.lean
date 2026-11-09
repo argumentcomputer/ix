@@ -19,6 +19,7 @@ import IxCCTests.Own.Plain.Suite
 import IxCCTests.Pipeline.ShrinkSuite
 import IxCCTests.Recheck.Run
 import IxCCTests.Recheck.KernelSlow
+import IxCCTests.Ring0
 
 /-! Test and proof collection. The complete proof/fence target is registered
 separately as `IxCCTests.Proofs`; runtime suites are compiled and run

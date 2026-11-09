@@ -202,7 +202,37 @@ theorem zeroExtendSem_rel (src : Width) {x : Option Width} (hx : AtWidth src x) 
     (hl : outs.length ≤ 1) {vs₁ vs₂ : List Word} (h : RelW [x] vs₁ vs₂) (obs : ByteEval.Flags) :
     SemRelW outs [] (Table.zeroExtendSem src ⟨vs₁, obs⟩) (Table.zeroExtendSem src ⟨vs₂, obs⟩) := by
   obtain ⟨a₁, a₂, rfl, rfl, ha⟩ := h.one
-  exact ⟨rfl, rfl, ResW.one (fun v _ => by rw [ha.truncate hx]) hl, ResW.nil _ _⟩
+  exact ⟨rfl, rfl, ResW.one (fun _ _ => by rw [ha.truncate hx]) hl, ResW.nil _ _⟩
+
+theorem signExtendSem_rel (src : Width) {x : Option Width} (hx : AtWidth src x) (outs : List Width)
+    (hl : outs.length ≤ 1) {vs₁ vs₂ : List Word} (h : RelW [x] vs₁ vs₂) (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.signExtendSem src ⟨vs₁, obs⟩) (Table.signExtendSem src ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, a₂, rfl, rfl, ha⟩ := h.one
+  exact ⟨rfl, rfl, ResW.one (fun _ _ => by simp only [Width.signExtend, ha.truncate hx]) hl, ResW.nil _ _⟩
+
+theorem notSem_rel (outs : List Width) {vs₁ vs₂ : List Word} (h : RelW [none] vs₁ vs₂)
+    (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.notSem ⟨vs₁, obs⟩) (Table.notSem ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, a₂, rfl, rfl, ha⟩ := h.one
+  simp only [TruncEq] at ha
+  subst ha
+  exact ⟨rfl, rfl, ResW.same _ _, ResW.nil _ _⟩
+
+theorem negSem_rel (w : Width) (outs : List Width) {vs₁ vs₂ : List Word} (h : RelW [none] vs₁ vs₂)
+    (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.negSem w ⟨vs₁, obs⟩) (Table.negSem w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, a₂, rfl, rfl, ha⟩ := h.one
+  simp only [TruncEq] at ha
+  subst ha
+  exact ⟨rfl, rfl, ResW.same _ _, ResW.nil _ _⟩
+
+theorem bswapSem_rel (w : Width) (outs : List Width) {vs₁ vs₂ : List Word} (h : RelW [none] vs₁ vs₂)
+    (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.bswapSem w ⟨vs₁, obs⟩) (Table.bswapSem w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, a₂, rfl, rfl, ha⟩ := h.one
+  simp only [TruncEq] at ha
+  subst ha
+  exact ⟨rfl, rfl, ResW.same _ _, ResW.nil _ _⟩
 
 theorem mulSem_rel (w : Width) {x y : Option Width} (hx : AtWidth w x) (hy : AtWidth w y)
     {outs : List Width} (houts : ∀ v ∈ outs, v = w) (hl : outs.length ≤ 1) {vs₁ vs₂ : List Word}
@@ -214,8 +244,18 @@ theorem mulSem_rel (w : Width) {x y : Option Width} (hx : AtWidth w x) (hy : AtW
   refine ⟨mulFlags_congr w ha' hb', rfl, ResW.one (fun v hv => ?_) hl, ResW.nil _ _⟩
   rw [houts v hv, Encode.truncate_mul, ha', hb', ← Encode.truncate_mul]
 
+theorem umulSem_rel (w : Width) {x : Option Width} (hx : AtWidth w x) (outs imps : List Width)
+    {vs₁ vs₂ : List Word} (h : RelW [x, none] vs₁ vs₂) (obs : ByteEval.Flags) :
+    SemRelW outs imps (Table.umulSem w ⟨vs₁, obs⟩) (Table.umulSem w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, b₁, a₂, b₂, rfl, rfl, ha, hb⟩ := h.two
+  simp only [TruncEq] at hb
+  subst hb
+  have ha' := ha.truncate hx
+  simp only [Table.umulSem, ha']
+  exact ⟨rfl, rfl, fun _ _ _ => rfl, ResW.same _ _⟩
+
 theorem shiftSem_rel (op : ShiftOp) (w : Width) {y : Option Width} (hy : AtWidth w y) {outs : List Width}
-    (houts : ∀ v ∈ outs, v = w) (hl : outs.length ≤ 1) {vs₁ vs₂ : List Word} (h : RelW [none, y] vs₁ vs₂)
+    (_houts : ∀ v ∈ outs, v = w) (_hl : outs.length ≤ 1) {vs₁ vs₂ : List Word} (h : RelW [none, y] vs₁ vs₂)
     (obs : ByteEval.Flags) :
     SemRelW outs [] (Table.shiftSem op w ⟨vs₁, obs⟩) (Table.shiftSem op w ⟨vs₂, obs⟩) := by
   obtain ⟨a₁, b₁, a₂, b₂, rfl, rfl, ha, hb⟩ := h.two
@@ -225,8 +265,18 @@ theorem shiftSem_rel (op : ShiftOp) (w : Width) {y : Option Width} (hy : AtWidth
   simp only [Table.shiftSem, hc]
   exact ⟨rfl, rfl, ResW.same _ _, ResW.nil _ _⟩
 
+theorem rotateSem_rel (op : RotateOp) (w : Width) {y : Option Width} (hy : AtWidth w y) (outs : List Width)
+    {vs₁ vs₂ : List Word} (h : RelW [none, y] vs₁ vs₂) (obs : ByteEval.Flags) :
+    SemRelW outs [] (Table.rotateSem op w ⟨vs₁, obs⟩) (Table.rotateSem op w ⟨vs₂, obs⟩) := by
+  obtain ⟨a₁, b₁, a₂, b₂, rfl, rfl, ha, hb⟩ := h.two
+  simp only [TruncEq] at ha
+  subst ha
+  have hc := shiftCount_congr w (hb.truncate hy)
+  simp only [Table.rotateSem, hc]
+  exact ⟨rfl, rfl, ResW.same _ _, ResW.nil _ _⟩
+
 theorem divSem_rel (w : Width) {x : Option Width} (hx : AtWidth w x) (outs : List Width) {imps : List Width}
-    (himps : ∀ v ∈ imps, v = w) {vs₁ vs₂ : List Word} (h : RelW [x, none, none] vs₁ vs₂)
+    (_himps : ∀ v ∈ imps, v = w) {vs₁ vs₂ : List Word} (h : RelW [x, none, none] vs₁ vs₂)
     (obs : ByteEval.Flags) :
     SemRelW outs imps (Table.divSem w ⟨vs₁, obs⟩) (Table.divSem w ⟨vs₂, obs⟩) := by
   obtain ⟨a₁, b₁, c₁, a₂, b₂, c₂, rfl, rfl, ha, hb, hc⟩ := h.three
@@ -306,6 +356,21 @@ theorem sem_rel (o : Op) (hstack : (desc o).stack = .none) {vs₁ vs₂ : List W
     simp only [rowInWidths, desc, arithDesc_implicit, List.filter_nil, List.map_nil, List.append_nil,
       implicitOutWidths] at h ⊢
     exact arith_rel _ w form h obs
+  case not =>
+    simp only [rowInWidths, desc, Table.notDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
+      List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte,
+      List.filter_nil, List.map_nil, List.append_nil] at h ⊢
+    exact notSem_rel _ h obs
+  case neg =>
+    simp only [rowInWidths, desc, Table.negDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
+      List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte,
+      List.filter_nil, List.map_nil, List.append_nil] at h ⊢
+    exact negSem_rel w _ h obs
+  case bswap =>
+    simp only [rowInWidths, desc, Table.bswapDesc, inWidths, outWidths, implicitOutWidths, Table.regSlot,
+      List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte,
+      List.filter_nil, List.map_nil, List.append_nil] at h ⊢
+    exact bswapSem_rel w _ h obs
   case mov =>
     cases form <;>
     simp only [rowInWidths, desc, Table.movDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
@@ -317,6 +382,16 @@ theorem sem_rel (o : Op) (hstack : (desc o).stack = .none) {vs₁ vs₂ : List W
       Table.regSlot, List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte, Bool.false_eq_true,
       List.filter_nil, List.map_nil, List.append_nil] at h ⊢
     exact zeroExtendSem_rel src (aw src) _ (by simp) h obs
+  case movsx =>
+    simp only [rowInWidths, desc, Table.movsxDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
+      Table.regSlot, List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte, Bool.false_eq_true,
+      List.filter_nil, List.map_nil, List.append_nil] at h ⊢
+    exact signExtendSem_rel src (aw src) _ (by simp) h obs
+  case movsxd =>
+    simp only [rowInWidths, desc, Table.movsxdDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
+      Table.regSlot, List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte, Bool.false_eq_true,
+      List.filter_nil, List.map_nil, List.append_nil] at h ⊢
+    exact signExtendSem_rel .w32 (aw .w32) _ (by simp) h obs
   case lea =>
     simp only [rowInWidths, desc, Table.leaDesc, inWidths, outWidths, implicitOutWidths, Table.regSlot,
       List.filterMap_cons, List.filterMap_nil, Role.writes, ↓reduceIte, Bool.false_eq_true,
@@ -330,6 +405,11 @@ theorem sem_rel (o : Op) (hstack : (desc o).stack = .none) {vs₁ vs₂ : List W
     first
     | exact mulSem_rel w (aw w) (aw w) (by simp) (by simp) h obs
     | exact mulSem_rel w (an w) (aw w) (by simp) (by simp) h obs
+  case mul =>
+    simp only [rowInWidths, desc, Table.umulDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
+      List.filterMap_cons, List.filterMap_nil, Role.writes, Role.reads, ↓reduceIte, Bool.false_eq_true,
+      List.filter_cons, List.filter_nil, List.map_cons, List.map_nil, List.cons_append, List.nil_append] at h ⊢
+    exact umulSem_rel w (aw w) _ _ h obs
   case test =>
     cases form <;>
     simp only [rowInWidths, desc, Table.testDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
@@ -345,13 +425,22 @@ theorem sem_rel (o : Op) (hstack : (desc o).stack = .none) {vs₁ vs₂ : List W
     first
     | exact shiftSem_rel _ w (aw w) (by simp) (by simp) h obs
     | exact shiftSem_rel _ w (an w) (by simp) (by simp) h obs
+  case rol | ror =>
+    cases form <;>
+    simp only [rowInWidths, desc, Table.rotateDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
+      Table.immSlot, List.filterMap_cons, List.filterMap_nil, Role.writes, Role.reads, ↓reduceIte,
+      Bool.false_eq_true, List.filter_cons, List.filter_nil, List.map_cons, List.map_nil, List.append_nil,
+      List.cons_append, List.nil_append] at h ⊢ <;>
+    first
+    | exact rotateSem_rel _ w (aw w) _ h obs
+    | exact rotateSem_rel _ w (an w) _ h obs
   case div =>
     simp only [rowInWidths, desc, Table.divDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,
       List.filterMap_cons, List.filterMap_nil, Role.writes, Role.reads, ↓reduceIte, Bool.false_eq_true,
       List.filter_cons, List.filter_nil, List.map_cons, List.map_nil, List.cons_append, List.nil_append] at h ⊢
     exact divSem_rel w (aw w) _ (by simp) h obs
   case setcc c =>
-    simp only [rowInWidths, desc, Table.setccDesc, outWidths, implicitOutWidths]
+    simp only [desc, Table.setccDesc, outWidths, implicitOutWidths]
     exact setccSem_rel c _ _ obs
   case cmovcc c =>
     simp only [rowInWidths, desc, Table.cmovDesc, inWidths, outWidths, implicitOutWidths, Table.rmSlot,

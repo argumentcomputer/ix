@@ -66,6 +66,16 @@ def Front.view (f : Front) : Nat → Option Obs → Option (Option Obs) := Rt.vi
 /-- The checked source viewed at the roots' readback types. -/
 def Front.source (f : Front) : Sem.Viewed CheckedProgram := ⟨⟨f.src, f.checked⟩, f.view⟩
 
+/-- The tree view of the front half's results: by constructor tag across
+recursive first-order constructor trees at the roots' readback types
+(`Rt.treeViewOf`). -/
+def Front.treeView (f : Front) : Nat → Option Obs → Option (Option Obs) :=
+  Rt.treeViewOf f.cfg.ctors f.tys
+
+/-- The checked source viewed at the roots' readback types through
+`Front.treeView`. -/
+def Front.treeSource (f : Front) : Sem.Viewed CheckedProgram := ⟨⟨f.src, f.checked⟩, f.treeView⟩
+
 /-- The lowered program loaded into machine `M`, its roots read back at
 their types. -/
 def Front.loaded (f : Front) (M : Rt.Model) : Rt.Loaded := Rt.Loaded.ofLowered f.cfg f.lowered f.tys M
@@ -190,6 +200,63 @@ theorem view_bool {f : Front} {r : Nat} (h : f.tys r = some (boolSig f.cfg, .ind
       List.getElem?_cons_zero, List.getElem?_replicate, hlt, if_true]
   simp only [Front.view, Rt.viewOf, h, Option.bind_some, Rt.tagify, hc, hsig, if_true, Option.map_some]
 
+/-- At an inductive root whose constructor has no fields in the signature,
+the view reports that constructor by its table tag. -/
+theorem view_ctor0 {f : Front} {r : Nat} {sig : Rt.Sig} {idx : Nat}
+    (h : f.tys r = some (sig, .ind idx)) {cid : Src.CId} {c : Fir.CtorInfo}
+    (hc : Fir.CtorInfo.ofKey f.cfg.ctors (.src cid) = some c)
+    (hsig : sig.ctor? idx c.tag = some []) :
+    f.view r (some (.ctor cid [])) = some (some (.ctor c.tag [])) := by
+  simp [Front.view, Rt.viewOf, h, Rt.tagify, hc, hsig]
+
+/-- Wherever `Front.view` (`Rt.tagify`) accepts a source observation, it
+agrees with `Front.treeView` (`Rt.treeTagify`). -/
+theorem Front.view_eq_treeView_of_tagify {f : Front} {r : Nat} {o : Option Obs} {o' : Obs}
+    (h : f.view r o = some (some o')) :
+    f.view r o = f.treeView r o ∧ f.treeView r o = some (some o') := by
+  have ht := Rt.viewOf_eq_treeViewOf_of_tagify h
+  exact ⟨h.trans ht.symm, ht⟩
+
+/-- At a `Nat` root, `Front.view` and `Front.treeView` agree on every
+observation. -/
+theorem Front.view_eq_treeView_nat {f : Front} {r : Nat} {sig : Rt.Sig}
+    (h : f.tys r = some (sig, .nat)) (o : Option Obs) :
+    f.view r o = f.treeView r o :=
+  Rt.viewOf_eq_treeViewOf_nat h o
+
+/-- On any field-less constructor observation, `Front.view` and
+`Front.treeView` agree at every root. -/
+theorem Front.view_eq_treeView_ctor0 (f : Front) (r : Nat) (cid : Src.CId) :
+    f.view r (some (.ctor cid [])) = f.treeView r (some (.ctor cid [])) :=
+  Rt.viewOf_eq_treeViewOf_ctor0 f.cfg.ctors f.tys r cid
+
+/-- At a `Nat` root, `Front.treeView` reports a `Nat` result as itself. -/
+theorem treeView_nat {f : Front} {r : Nat} (h : f.tys r = some ({}, .nat)) (n : Nat) :
+    f.treeView r (some (.nat n)) = some (some (.nat n)) := by
+  rw [← Front.view_eq_treeView_nat h]
+  exact view_nat h n
+
+/-- At an inductive root, `Front.treeView` reports any constructor whose
+fields are accepted by `Rt.treeTagifyList` by its table tag and relabelled
+fields. -/
+theorem treeView_ctor {f : Front} {r : Nat} {sig : Rt.Sig} {idx : Nat}
+    (h : f.tys r = some (sig, .ind idx)) {cid : Src.CId} {c : Fir.CtorInfo}
+    {tys : List Rt.FoTy} {fs fs' : List Obs}
+    (hc : Fir.CtorInfo.ofKey f.cfg.ctors (.src cid) = some c)
+    (hsig : sig.ctor? idx c.tag = some tys)
+    (hfs : Rt.treeTagifyList f.cfg.ctors sig tys fs = some fs') :
+    f.treeView r (some (.ctor cid fs)) = some (some (.ctor c.tag fs')) := by
+  simp [Front.treeView, Rt.treeViewOf, h, Rt.treeTagify, hc, hsig, hfs]
+
+/-- `runLir` preserves the constructor table from `Anf` to `Cfg`, so
+`Front.treeView` uses the same constructor table as `Anf`. -/
+theorem runLir_ctors {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (h : runLir cfg P c = .ok f) :
+    f.cfg.ctors = f.anf.ctors := by
+  obtain ⟨-, -, -, hfir, hown, hcfg, -, -⟩ := runLir_spec h
+  have hc : f.cfg.ctors = f.fir.ctors := by rw [hcfg, hown]; rfl
+  exact hc.trans (Fir.Proof.lower_fields hfir).2.2.1
+
 /-! ## The front theorem -/
 
 /-- The checked source refines into Cfg (`erase_refines`, the middle end,
@@ -203,6 +270,13 @@ theorem front_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : r
     rfl
   exact (Lam.Erase.Proof.erase_refines her).trans
     ((Anf.Pipeline.Proof.run_correct hanf).trans (Cfg.ofAnf_correct hofAnf))
+
+/-- Under `Front.treeView`, the checked source refines `Cfg` viewed through
+`Front.treeView`. -/
+theorem front_treeSource_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (h : runLir cfg P c = .ok f) :
+    Sem.Refines f.treeSource (⟨f.cfg, f.treeView⟩ : Sem.Viewed Cfg.Program) :=
+  Sem.Viewed.refines (front_cfg h) f.treeView
 
 /-- **The front half refines** (M2.7): for every program `Recheck.runLir`
 accepts and every model region `cx_init` accepts, the lowered program

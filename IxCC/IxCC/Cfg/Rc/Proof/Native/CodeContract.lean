@@ -39,11 +39,12 @@ def PhysicalAtClock (F : Fir.Program) (P : Program) (config : Rt.Config)
     (code : Fir.Code) (sourceFunction : Fir.Fun) (function : Cfg.Fun)
     (source : Cfg.Frame) (target : Lir.Frame) (memory : X86.Memory)
     (context base bump limit : Lir.Word) (regionBytes : Nat)
-    (slots : List Slot) (lists : Nat → List Lir.Word) (callers : List Lir.Frame),
+    (slots : List Slot) (lists : Nat → List Lir.Word) (callers : List Lir.Frame)
+    {imm : List Fir.Var},
     F.fun? source.fn = some sourceFunction →
     Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external live sourceEnv ownedEnv roots joins sourceJoins ownedJoins
-      code sourceFunction.vars function source target →
+      code sourceFunction.vars function source target imm →
     HeapState P pairs H addresses memory external roots context base bump limit regionBytes slots lists →
     ResultAt P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external context base limit regionBytes clock

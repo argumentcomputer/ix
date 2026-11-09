@@ -53,6 +53,35 @@ theorem primResult_immediate {F : Fir.Program} {H : Heap}
             exact ⟨.ctor0 info, by simp [hpin, ctor0Of, hi, hfieldless, Result.ofOption],
               Proof.den_ctor0 H _, by intro l; simp⟩
 
+theorem natArgs_immediate : ∀ {vs : List RVal} {ns : List Nat},
+    Own.natArgs vs = some ns → ∀ v ∈ vs, ∀ l, v ≠ .loc l
+  | [], _, _, v, hv => by simp at hv
+  | v :: vs, ns, h, u, hu => by
+    cases v with
+    | lit lit =>
+      cases lit with
+      | nat n =>
+        simp only [Own.natArgs, Option.map_eq_some_iff] at h
+        obtain ⟨ns', hns', rfl⟩ := h
+        rcases List.mem_cons.mp hu with rfl | hu
+        · intro l hloc; cases hloc
+        · exact natArgs_immediate hns' u hu
+      | str _ => simp [Own.natArgs] at h
+    | loc _ | ctor0 _ | erased => simp [Own.natArgs] at h
+
+theorem primResult_args_immediate {F : Fir.Program} {H : Heap}
+    {op : Lam.Prim} {vs : List RVal} {ws : List Fir.Val} {w : Fir.Val}
+    (hargs : Sem.Forall2 (Proof.Den H) vs ws)
+    (hresult : Fir.primResult F op ws = .ok w) :
+    ∀ v ∈ vs, ∀ l, v ≠ .loc l := by
+  unfold Fir.primResult at hresult
+  have hnat := Values.natArgs_den hargs
+  cases hn : Fir.natArgs ws with
+  | none => simp [hn] at hresult
+  | some ns =>
+    rw [hn] at hnat
+    exact natArgs_immediate hnat
+
 theorem balance_immediate {H : Heap} {external : Nat → Nat}
     {roots : List RVal} {v : RVal}
     (hb : Balance H external roots) (hv : ∀ l, v ≠ .loc l) :
@@ -68,9 +97,9 @@ theorem primitive_owned (P : Program) (k : Nat) (ρ : Own.Env) (J : List JEntry)
     (hr : Fir.primResult P.source op ws = .ok w) :
     ∃ v, eval P k ρ J H (.bind x (.prim op args) c) =
         eval P k (ρ.insert x v) J H c ∧
-      Proof.Den H v w ∧ Balance H external (v :: roots) := by
+      Proof.Den H v w ∧ Balance H external (v :: roots) ∧ (∀ l, v ≠ .loc l) := by
   obtain ⟨v, hv, hden, himm⟩ := primResult_immediate hpins hd hr
-  refine ⟨v, ?_, hden, balance_immediate hb himm⟩
+  refine ⟨v, ?_, hden, balance_immediate hb himm, himm⟩
   rw [eval_bindRhs P k ρ J H x (.prim op args) c (by intro f as h; cases h)]
   have he : evalRhs P.tables ρ H (.prim op args) = .ok (v, H) := by
     simp [evalRhs, Own.evalRhs, ha, Program.tables, hv, Result.map]

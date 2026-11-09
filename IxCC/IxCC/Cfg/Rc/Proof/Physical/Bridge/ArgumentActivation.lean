@@ -16,28 +16,29 @@ theorem argument_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
-    {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
+    {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
     {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
     {x : Nat} {arg : Fir.Arg} {body : Fir.Code}
     {sourceFd : Fir.Fun} {fd : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (sourceLookup : F.fun? source.fn = some sourceFd)
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses external
       live sourceEnv ownedEnv roots joins sourceJoins ownedJoins (.bind x (.arg arg) body)
-      sourceFd.vars fd source target)
+      sourceFd.vars fd source target imm)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
     (heap : HeapState P pairs H addresses mem external roots context base bump limit regionBytes slots lists)
     {logical : Fir.Val} (evaluation : Fir.evalRhs F sourceEnv (.arg arg) = .ok logical)
     (callers : List Lir.Frame) :
     (∃ value H' mem' tail charge after,
-      Own.Plain.evalActions ownedEnv H (Own.Plain.copies [arg]) = .ok H' ∧
+      Own.Plain.evalActions ownedEnv H (Own.Plain.copies (Own.Plain.heapArgs imm [arg])) = .ok H' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} charge
         {mem := mem', ctx := context, stack := after :: callers} ∧
       Activation F P pairs (Public.Spec.sourceStage P functions main) H' addresses external
         (live ++ [x]) (sourceEnv.insert x logical) (ownedEnv.insert x value) (roots ++ [value])
         joins sourceJoins ownedJoins body sourceFd.vars fd
-        {source with rest := tail, env := source.env.insert x value} after ∧
+        {source with rest := tail, env := source.env.insert x value} after
+        (Own.Plain.nextImm imm x (.arg arg)) ∧
       HeapState P pairs H' addresses mem' external (roots ++ [value])
         context base bump limit regionBytes slots lists ∧
       H'.size = H.size ∧ (∀ root, H.value? root = H'.value? root)) ∨
@@ -57,14 +58,16 @@ theorem argument_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
   have original : Tokens H external [] live sourceEnv ownedEnv roots := Tokens.ofState before.canonical
   have tokens := Tokens.extend original sub
   have prefixAt : At F P source ownedEnv ownedJoins
-      (Own.Plain.actionPrefix (Own.Plain.copies [arg])
-        (.bind x (.arg arg) (Own.Plain.lowerCode (live ++ [x]) joins body))) := before.layout
+      (Own.Plain.actionPrefix (Own.Plain.copies (Own.Plain.heapArgs imm [arg]))
+        (.bind x (.arg arg) (Own.Plain.lowerCode (live ++ [x]) joins body
+          (Own.Plain.nextImm imm x (.arg arg))))) := before.layout
   obtain ⟨first, bindingTail, prefixHead, atBind, absent⟩ :=
     checked_prefix_cursor checked prefixAt sourceLookup before.frame.words
   have ready : AllocatorReady H addresses mem (Own.Rc.holdRoots external (roots ++ []))
       context base bump limit slots lists := by simpa using heap.ready
-  rcases copy_prefix functions main [arg] before.frame.cursor prefixHead before.frame.lookup tokens
-      argsScope ready before.frame.words absent before.running callers with copied | failed
+  rcases copy_heapArgs_prefix functions main [arg] before.frame.cursor prefixHead before.frame.lookup tokens
+      (ImmEnv.sub before.canonical.immOk sub) argsScope ready before.frame.words absent
+      before.running callers with copied | failed
   · obtain ⟨fields, H', mem', middle, frameArgs, frameCopies, afterTokens, afterReady, prefixTrace,
       prefixCursor, words, middleRunning, values⟩ := copied
     have fullArg : Own.evalArg source.env arg = some value := Cfg.Proof.evalArg_sub sub lexicalArg
@@ -72,8 +75,10 @@ theorem argument_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
       simpa [Own.evalArgs, fullArg] using frameArgs.symm
     subst fields
     have copiedSize : H'.size = H.size := actions_size frameCopies
-    have lexicalCopies : Own.Plain.evalActions ownedEnv H (Own.Plain.copies [arg]) = .ok H' := by
-      rw [copies_eval_sub sub (Tokens.present original) [arg] argsScope H]
+    have lexicalCopies : Own.Plain.evalActions ownedEnv H
+        (Own.Plain.copies (Own.Plain.heapArgs imm [arg])) = .ok H' := by
+      rw [copies_eval_sub sub (Tokens.present original) (Own.Plain.heapArgs imm [arg])
+        (Own.Plain.heapArgs_scope imm argsScope) H]
       exact frameCopies
     have middleFrame : FrameState P pairs (Public.Spec.sourceStage P functions main)
         addresses H'.size sourceFd.vars fd {source with rest := bindingTail} middle :=
@@ -94,8 +99,10 @@ theorem argument_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
         change H'.value? value = some logical
         rw [← values value]
         exact den
-      have state := before.canonical.bind x fresh den' balance (fun root _ => values root)
-      refine .inl ⟨value, H', mem', tail, 2 * (Own.Plain.copies [arg]).length + charge, after,
+      have himm_rhs : Own.Plain.isImmRhs imm (.arg arg) = true → Own.Plain.ImmVal value :=
+        fun hr => Own.Plain.immVal_of_isImmArg before.canonical.immOk hr lexicalArg
+      have state := before.canonical.bind_rhs x (.arg arg) fresh himm_rhs den' balance (fun root _ => values root)
+      refine .inl ⟨value, H', mem', tail, 2 * (Own.Plain.copies (Own.Plain.heapArgs imm [arg])).length + charge, after,
         lexicalCopies, prefixTrace.trans trace,
         ⟨state, continuation value, frame, bodyScope, running, fused⟩,
         ⟨by simpa using afterReady, actions_heapOk heap.ordered frameCopies,

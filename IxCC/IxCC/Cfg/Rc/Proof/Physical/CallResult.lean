@@ -16,14 +16,14 @@ theorem call_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : 
     (admission : CodeAdmission F bodies P config pairs functions) (main clock : Nat)
     (smaller : ∀ next, next < clock → PhysicalAtClock F P config pairs main next)
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live : List Fir.Var} {imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     {x f : Nat} {args : List Fir.Arg} {cont : Fir.Code} {sourceFunction : Fir.Fun}
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs
       (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
       external live ρf ρo roots joins Jf Jo (.bind x (.call f args) cont)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -104,7 +104,7 @@ theorem call_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : 
         rw [result] at execution
         simp only [Sem.Result.bind]
         rcases execution with ⟨cost, terminal, calleeTrace, trapped⟩ | failed
-        · exact .inl ⟨2 * (Own.Plain.copies args).length + 1 + cost, terminal,
+        · exact .inl ⟨2 * (Own.Plain.copies (Own.Plain.heapArgs imm args)).length + 1 + cost, terminal,
             trace.trans calleeTrace, trapped⟩
         · exact .inr (fails_prefix trace failed)
       | stuck => trivial

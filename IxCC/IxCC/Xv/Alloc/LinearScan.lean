@@ -59,6 +59,7 @@ structure Cfg where
 
 structure St where
   homes : Std.HashMap VReg Loc := {}
+  slotOwners : Array (List VReg) := #[]
   nextSlot : Nat := 0
   cycleSlot : Option Nat := none
   saveSlot : Option Nat := none
@@ -87,8 +88,20 @@ def homeOf (v : VReg) : M Loc := do
   match (← get).homes[v]? with
   | some l => pure l
   | none =>
-      modifyGet fun s =>
-        (.slot s.nextSlot, { s with homes := s.homes.insert v (.slot s.nextSlot), nextSlot := s.nextSlot + 1 })
+      let cfg ← read
+      let s ← get
+      if !cfg.chaos.enabled then
+        if let some k := (List.range s.nextSlot).find? fun k =>
+            match s.slotOwners[k]? with
+            | some os => !os.isEmpty && os.all fun u => !cfg.info.interferes u v
+            | none => false then
+          let owners := v :: s.slotOwners[k]!
+          set { s with homes := s.homes.insert v (.slot k), slotOwners := s.slotOwners.set! k owners }
+          return .slot k
+      let k := s.nextSlot
+      let owners := (s.slotOwners ++ Array.replicate (k + 1 - s.slotOwners.size) []).set! k [v]
+      set { s with homes := s.homes.insert v (.slot k), slotOwners := owners, nextSlot := k + 1 }
+      return .slot k
 
 def srcIn (s : RState) (v : VReg) : M Loc :=
   match s.reg[v]? with
@@ -113,21 +126,32 @@ def nextUse (b : Label) (i : Nat) (v : VReg) : M Nat := do
 
 def weightOf (v : VReg) : M Nat := do return (← read).info.weight.getD v 1
 
-/-- A register preference order: callee-saved first for values live across
-calls. -/
-def orderFor (acrossCall : Bool) : M (List X86.GPR) := do
-  let o := (← read).order
+/-- A register preference order: un-clobbered, callee-saved and RC-saved
+registers first for values live across calls. -/
+def orderFor (acrossCall : Bool) (v : Option VReg := none) : M (List X86.GPR) := do
+  let cfg ← read
+  let o := cfg.order
   if acrossCall then
-    return o.filter calleeSavedRegs.contains ++ o.filter (!calleeSavedRegs.contains ·)
+    let base := if cfg.chaos.shuffle then
+        o.filter calleeSavedRegs.contains ++
+          o.filter rcSavedRegs.contains ++
+          o.filter (fun r => !calleeSavedRegs.contains r && !rcSavedRegs.contains r)
+      else crossCallOrder
+    let clob := match v with
+      | some u => cfg.info.callClobbers.getD u []
+      | none => []
+    if clob.isEmpty then return base
+    else return base.filter (!clob.contains ·) ++ base.filter clob.contains
   return o
 
 /-- The first register satisfying `ok`: the hint if it does (unless chaos
 ignores it), then the first `regLimit` of the order, then any. -/
-def pickReg (ok : X86.GPR → Bool) (hint : Option X86.GPR) (acrossCall : Bool) : M (Option X86.GPR) := do
+def pickReg (ok : X86.GPR → Bool) (hint : Option X86.GPR) (acrossCall : Bool)
+    (v : Option VReg := none) : M (Option X86.GPR) := do
   let cfg ← read
   if let some h := hint then
     if ok h && !(← chance cfg.chaos.ignoreHint) then return some h
-  let base ← orderFor acrossCall
+  let base ← orderFor acrossCall v
   match (base.take cfg.chaos.regLimit).find? ok with
   | some r => return some r
   | none => return base.find? ok
@@ -210,11 +234,11 @@ def evict (ok : X86.GPR → Bool) : P (Option X86.GPR) := do
 
 /-- A register free for the instruction (nothing needs it during or after),
 or an evicted one. -/
-def grab (hint : Option X86.GPR) (acrossCall : Bool) : P X86.GPR := do
+def grab (hint : Option X86.GPR) (acrossCall : Bool) (v : Option VReg := none) : P X86.GPR := do
   let p ← get
   let ok (r : X86.GPR) : Bool :=
     p.needMid[ix r]!.isNone && p.after[ix r]!.isNone && !p.blocked[ix r]! && !p.fixedReg[ix r]!
-  match ← pickReg ok hint acrossCall with
+  match ← pickReg ok hint acrossCall v with
   | some r => return r
   | none =>
       match ← evict fun _ => true with
@@ -223,39 +247,47 @@ def grab (hint : Option X86.GPR) (acrossCall : Bool) : P X86.GPR := do
 
 /-- A register for a late definition: free after the instruction, possibly
 holding a use that dies here. -/
-def grabLate (hint : Option X86.GPR) (acrossCall : Bool) (preferDying : Bool) : P (Option X86.GPR) := do
+def grabLate (hint : Option X86.GPR) (acrossCall : Bool) (preferDying : Bool)
+    (v : Option VReg := none) : P (Option X86.GPR) := do
   let p ← get
   let ok (r : X86.GPR) : Bool := p.after[ix r]!.isNone && !p.blocked[ix r]! && !p.fixedReg[ix r]!
   let dying := scratch.filter fun r => ok r && p.needMid[ix r]!.isSome
   if preferDying && hint.isNone then
     if let some r := dying.head? then return some r
-  match ← pickReg ok hint acrossCall with
+  match ← pickReg ok hint acrossCall v with
   | some r => return some r
   | none => evict fun _ => true
 
-/-- Whether a call later in block `b` clobbers `r` while `u` is live across
-it: then `u` must leave `r` before that call anyway. -/
+/-- Whether a call later in block `b` clobbers or overwrites `r` while `u` is
+live across it: then `u` must leave `r` before that call anyway. -/
 def leavesBeforeCall (b : Label) (i : Nat) (u : VReg) (r : X86.GPR) : M Bool := do
   let cfg ← read
   let body := cfg.f.blocks[b]!.body
   for c in [i + 1:body.size] do
     if let .call g .. := body[c]! then
-      if (cfg.env.clobbers g).contains r then return ← liveAfter b c u
+      let ops := (body[c]!).operands
+      let fixedOverwrite := ops.any fun o =>
+        match o.con with
+        | .fixed qr => qr == r && (o.kind == .define || o.v != u)
+        | _ => false
+      if (cfg.env.clobbers g).contains r || fixedOverwrite then return ← liveAfter b c u
   return false
 
 /-- Give a definition its hinted register `h` when the value there would
-have to leave before the next call anyway: move it now to a free
-callee-saved register, which costs the same move and saves a copy into `h`
-later. -/
+have to leave before the next call anyway: move it now to a free register
+that survives `u`'s calls, which costs the same move and saves a copy into
+`h` later. -/
 def vacate (h : X86.GPR) : P Unit := do
+  let cfg ← read
   let p ← get
   let some u := p.after[ix h]! | return
   unless p.st.get h == some u && !p.blocked[ix h]! && !p.fixedReg[ix h]! do return
   unless ← leavesBeforeCall p.b p.i u h do return
+  let uClob := cfg.info.callClobbers.getD u []
   let ok (q : X86.GPR) : Bool :=
     p.needMid[ix q]!.isNone && p.after[ix q]!.isNone && !p.blocked[ix q]! && !p.fixedReg[ix q]! &&
-      calleeSavedRegs.contains q
-  if let some q ← pickReg ok none true then
+      (calleeSavedRegs.contains q || !uClob.contains q)
+  if let some q ← pickReg ok none true (some u) then
     addMove (.reg q) (.reg h)
     modify fun p =>
       { p with needMid := p.needMid.set! (ix q) (some u), after := (p.after.set! (ix q) (some u)).set! (ix h) none }
@@ -263,8 +295,10 @@ def vacate (h : X86.GPR) : P Unit := do
 def hintFor (v : VReg) : M (Option X86.GPR) := do
   let cfg ← read
   if let some r := (← get).hints[v]? then return some r
-  if cfg.info.crossCall.contains v then return none
-  return cfg.info.fixedHint[v]?
+  if let some r := cfg.info.fixedHint[v]? then
+    if !cfg.info.crossCall.contains v || !(cfg.info.callClobbers.getD v []).contains r then
+      return some r
+  return none
 
 /-- Allocate one instruction (or terminator) with operands `ops` and
 clobbered registers `clob`; returns the operands' locations and leaves the
@@ -354,7 +388,7 @@ def allocAt (b : Label) (i : Nat) (ops : List (Operand VReg)) (clob : List X86.G
       let ok (q : X86.GPR) : Bool :=
         p.needMid[ix q]!.isNone && p.after[ix q]!.isNone && !p.blocked[ix q]! && !p.fixedReg[ix q]!
       let dest ← if ← chance cfg.chaos.extraSpill then pure none
-        else pickReg ok (← hintFor u) (!clob.isEmpty || cfg.info.crossCall.contains u)
+        else pickReg ok (← hintFor u) (!clob.isEmpty || cfg.info.crossCall.contains u) (some u)
       match dest with
       | some q =>
           addMove (.reg q) (.reg r)
@@ -383,7 +417,9 @@ def allocAt (b : Label) (i : Nat) (ops : List (Operand VReg)) (clob : List X86.G
           -- A definition bound for a fixed register (a dividend for `rax`)
           -- goes there now if it is free: the copy it costs replaces the
           -- one its fixed use would need.
-          let fixedHint := if cfg.info.crossCall.contains x then none else cfg.info.fixedHint[x]?
+          let fixedHint := match cfg.info.fixedHint[x]? with
+            | some r => if !across || !(cfg.info.callClobbers.getD x []).contains r then some r else none
+            | none => none
           let inPlace := match inPlace, fixedHint with
             | some r, some h =>
                 let p' := p
@@ -393,7 +429,7 @@ def allocAt (b : Label) (i : Nat) (ops : List (Operand VReg)) (clob : List X86.G
           let r ← match inPlace with
             | some r => pure r
             | none => do
-                let r ← grab ((← hintFor x).orElse fun _ => st.reg[a]?) across
+                let r ← grab ((← hintFor x).orElse fun _ => st.reg[a]?) across (some x)
                 addMove (.reg r) (← srcIn st a)
                 pure r
           modify fun p => { p with needMid := p.needMid.set! (ix r) (some a), after := p.after.set! (ix r) (some x) }
@@ -402,7 +438,7 @@ def allocAt (b : Label) (i : Nat) (ops : List (Operand VReg)) (clob : List X86.G
       | .reg | .any =>
           let srcCell := isMove && (locs[0]!.map Loc.isCell).getD false
           if o.pos == .early then
-            let r ← grab (← hintFor x) across
+            let r ← grab (← hintFor x) across (some x)
             modify fun p => { p with after := p.after.set! (ix r) (some x) }
             locs := locs.set! j (some (.reg r))
           else if o.con == .any && !srcCell && (← chance cfg.chaos.homeDef) then
@@ -412,7 +448,7 @@ def allocAt (b : Label) (i : Nat) (ops : List (Operand VReg)) (clob : List X86.G
             let hint ← hintFor x
             let hint := if isMove && hint.isNone then st.reg[opsA[0]!.v]? else hint
             if let some h := hint then vacate h
-            match ← grabLate hint across (hint.isNone && !across) with
+            match ← grabLate hint across (hint.isNone && !across) (some x) with
             | some r =>
                 modify fun p => { p with after := p.after.set! (ix r) (some x) }
                 locs := locs.set! j (some (.reg r))
@@ -514,15 +550,18 @@ def decideEntry (s : Label) (X : RState) (args : List VReg) : M RState := do
   for (p, a) in block.params.zip args do
     if !live.contains p then continue
     let chaos ← chance cfg.chaos.entryHome
+    let cross := cfg.info.crossCall.contains p
+    let hint ← hintFor p
     match X.reg[a]? with
     | some r =>
-        if E.isFree r && !chaos then E := E.put p r
+        if E.isFree r && !chaos then
+          E := E.put p r
         else
-          match ← if chaos then pure none else pickReg E.isFree ((← get).hints[p]?) false with
+          match ← if chaos then pure none else pickReg E.isFree hint cross (some p) with
           | some q => E := E.put p q
           | none => E := { E with home := E.home.insert p }
     | none =>
-        match ← if chaos then pure none else pickReg E.isFree ((← get).hints[p]?) false with
+        match ← if chaos then pure none else pickReg E.isFree hint cross (some p) with
         | some q => E := E.put p q
         | none => E := { E with home := E.home.insert p }
   return E
@@ -637,7 +676,7 @@ def allocBlock (b : Label) : M Unit := do
 def run (env : Xl.Env) (f : Func VReg) (chaos : Chaos := {}) : Except String Output := do
   let n := f.blocks.size
   if n == 0 then throw "a function without blocks"
-  let info := analyse f
+  let info := analyse f (some env)
   if info.order.size != n then throw "unreachable blocks"
   let rng0 := mix64 (chaos.seed + 0x5eed)
   let order := if chaos.shuffle then

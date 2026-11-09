@@ -2,7 +2,7 @@ import IxCCTests.Recheck.Artifacts.SumLoop
 import IxCCTests.Recheck.Kernel.Support
 
 /-! The whole recheck path on the `sum-loop` bench-k1 artifact in the kernel
-(M1.K1): `Recheck.run` gives the object's 2,016 bytes the native run writes.
+(M1.K1): `Recheck.run` gives the object's 1,952 bytes the native run writes.
 Manual (about 35 s and 8 GB after a one-minute artifact): `lake build
 IxCCTests.Recheck.KernelSlow`. -/
 

@@ -82,6 +82,8 @@ inductive Fact where
   | ctor (c : Key.CtorKey) (fs : List Opd)
   /-- `x = y + 1`, from a successful `natAdd [y, 1]`. -/
   | succ (y : Opd)
+  /-- `primResult p os = .ok x`, from a successful `prim p os`. -/
+  | prim (p : Lam.Prim) (os : List Opd)
   /-- The closure of function global `g`. -/
   | glob (g : GlobalId)
   /-- An under-saturated application of function global `g`. -/
@@ -164,7 +166,7 @@ structure Cfg where
   /-- P3: callees whose calls and CAF values are inlined. -/
   inline : List GlobalId := []
   /-- Case-of-case copies alternatives of at most this many nodes. -/
-  caseOfCaseBound : Nat := 64
+  caseOfCaseBound : Nat := 512
   /-- Non-recursive join points of at most this many nodes are inlined at
   their jumps. -/
   smallJoin : Nat := 24
@@ -186,7 +188,15 @@ inductive Kont where
 
 instance : Inhabited Kont := ⟨.ret⟩
 
-def fire (f : Fires → Fires) : M Unit := modify f
+/-- Rule firings allowed in one walk of one global: three times the highest total
+any whole corpus program reaches (2,674). Each firing re-walks at most one inlined
+body, so this bounds a walk on code that duplicates itself exponentially. -/
+def maxFires : Nat := 8192
+
+/-- Count a rule firing, refusing the walk once its budget is spent. -/
+def fire (f : Fires → Fires) : M Unit := fun s =>
+  if (f s).total > maxFires then .error "walk: rule firing budget exhausted"
+  else .ok ((), f s)
 
 def resolve (env : Env) : Atom → M Opd
   | .var i =>
@@ -230,6 +240,23 @@ def fold (p : Lam.Prim) (os : List Opd) : Option Src.PrimResult :=
     | .lit (.nat n) :: os => (lits os).map (n :: ·)
     | _ => none
   (lits os).bind p.sem
+
+/-- A target level that already holds `prim p os`. -/
+def knownPrim (facts : Src.NatMap Fact) (p : Lam.Prim) (os : List Opd) : Nat → Option Opd
+  | 0 => none
+  | l + 1 =>
+    match facts.get? l with
+    | some (.prim p' os') =>
+      if decide (p' = p ∧ os' = os) then some (.lvl l) else knownPrim facts p os l
+    | some (.succ y) =>
+      if decide (p = .natAdd ∧ os = [y, .lit (.nat 1)]) then some (.lvl l) else knownPrim facts p os l
+    | _ => knownPrim facts p os l
+
+/-- The fact a successful `prim p os` records at its level. -/
+def primFact (p : Lam.Prim) (os : List Opd) : Fact :=
+  match p, os with
+  | .natAdd, [y, .lit (.nat 1)] => .succ y
+  | p, os => .prim p os
 
 /-- The alternative a known constructor selects: `(true, body)` for an
 alternative (fields bound), `(false, body)` for the default. -/
@@ -310,7 +337,8 @@ itself (`d`: the source depth, one per variable in scope), as P4's
 fixed-parameter checker requires of every call it redirects. -/
 def fixedAt (r : Redirect) (d : Nat) (as : List Atom) : Bool :=
   as.length == r.fixedArgs.length &&
-    (as.zipIdx.zip r.fixedArgs).all fun ((a, i), f) => f.isNone || a == .var (d - 1 - i)
+    (as.zipIdx.zip r.fixedArgs).all fun ((a, i), f) =>
+      f.isNone || a == .var (d - 1 - i) || (f == some .box && a == .box)
 
 /-- Field levels `d … d + n - 1`, in order. -/
 def fieldOpds (d n : Nat) : List Opd := (List.range n).map fun i => .lvl (d + i)
@@ -381,9 +409,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         else emit (.proj cc i (xo.atom here.d)) none
     | .prim p as => do
       let os ← resolveList env as
-      let succ := match p, os with
-        | .natAdd, [y, .lit (.nat 1)] => some (Fact.succ y)
-        | _, _ => none
+      let fact := some (primFact p os)
       match (if C.shrink then fold p os else none) with
       | some (.nat n) => do fire fun f => { f with fold := f.fold + 1 }; skip (.opd (.lit (.nat n)))
       | some (.bool v) =>
@@ -391,10 +417,13 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         | some key => do
           fire fun f => { f with fold := f.fold + 1 }
           if dead then skip (.opd .box) else emit (.con key []) (some (.ctor key []))
-        | none => emit (.prim p (atoms here.d os)) succ
+        | none => emit (.prim p (atoms here.d os)) fact
       | none =>
-        if dead then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
-        else emit (.prim p (atoms here.d os)) succ
+        match (if C.shrink then knownPrim here.facts p os here.d else none) with
+        | some o => do fire fun f => { f with fold := f.fold + 1 }; skip (.opd o)
+        | none =>
+          if dead then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
+          else emit (.prim p (atoms here.d os)) fact
     | .glob g =>
       match P.global? g with
       | some gd =>
@@ -480,7 +509,9 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
     | .fn ps fb =>
       let n := ps.length
       if dead then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
-      else if C.shrink && body.occ 0 == 1 && body.headOcc 0 1 == 1 then skip (.fn env.σ n fb)
+      else if C.shrink && body.occ 0 == body.headOcc 0 1 &&
+          (body.occ 0 == 1 || body.occ 0 == body.headOcc 0 n) then
+        skip (.fn env.σ n fb)
       else do
         let fb' ← walk C fuel { σ := entsOf (paramOpds here.d n) ++ env.σ }
           { here with d := here.d + n, dj := 0 } fb .ret
@@ -514,7 +545,8 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
       else throw s!"walk: jump to join point #{j} with {os.length} arguments"
     | some (.mk (some l) σj jσj n r b) =>
       let (m, inner) := stripTicks b
-      if C.shrink && !r && os.length == n && b.nodes ≤ C.smallJoin then do
+      if C.shrink && !r && os.length == n &&
+          (b.nodes ≤ C.smallJoin || (n == 1 && b.headOcc 0 1 > 0)) then do
         fire fun f => { f with joinSmall := f.joinSmall + 1 }
         return .tick (← walk C fuel { σ := entsOf os.reverse ++ σj, jσ := jσj } here b k)
       let hit := if C.shrink && !r && n == 1 then

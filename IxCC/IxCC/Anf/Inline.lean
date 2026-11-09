@@ -27,6 +27,18 @@ abbrev Round := List (GlobalId × List GlobalId)
 
 abbrev Cert := List Round
 
+/-- Maximum caller entries in an inline round certificate. -/
+def maxCertGlobals : Nat := 100000
+
+/-- Maximum callees per caller in an inline round certificate. -/
+def maxCertCallees : Nat := 64
+
+/-- Check that an inline round certificate is within bounds and free of self-inlining. -/
+def checkCert (r : Round) : Bool :=
+  r.length ≤ maxCertGlobals &&
+  r.all fun (caller, callees) =>
+    callees.length ≤ maxCertCallees && callees.all (· != caller)
+
 /-- One round. -/
 def round (P : Program) (r : Round) : Except String (Program × Walk.Fires) := do
   let rs ← P.globalList.mapM fun (g, gd) => do
@@ -77,10 +89,34 @@ def recursive (P : Program) : Std.HashSet GlobalId := Id.run do
     if (reachable edges P.size g).contains g then out := out.insert g
   return out
 
+mutual
+
+/-- Whether `e` contains a local `.fn` or higher-order `.app`. -/
+def hasFnOrApp : Exp → Bool
+  | .bind _ b e => bindHasFnOrApp b || hasFnOrApp e
+  | .join _ _ b e => hasFnOrApp b || hasFnOrApp e
+  | .case _ alts d => altsHasFnOrApp alts || optHasFnOrApp d
+  | .tick e => hasFnOrApp e
+  | .jump .. | .ret _ | .trap => false
+
+def bindHasFnOrApp : Bind → Bool
+  | .fn .. | .app .. => true
+  | _ => false
+
+def altsHasFnOrApp : List Alt → Bool
+  | [] => false
+  | .mk _ _ b :: as => hasFnOrApp b || altsHasFnOrApp as
+
+def optHasFnOrApp : Option Exp → Bool
+  | none => false
+  | some e => hasFnOrApp e
+
+end
+
 /-- Whether the default oracle inlines `g`. -/
 def inlinable (B : Budgets) (recs : Std.HashSet GlobalId) (gd : GDef) (g : GlobalId) : Bool :=
   !recs.contains g &&
-  (gd.ps.isEmpty || gd.body.nodes ≤ B.size ||
+  (gd.ps.isEmpty || gd.body.nodes ≤ B.size || hasFnOrApp gd.body ||
     (match gd.key with
      | .byName .. | .wrapper .. => true
      | _ => false))

@@ -24,14 +24,14 @@ theorem tail_activation {config : Rt.Config} {F : Fir.Program}
     (lowered : Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
       (List.range P.base.size) = .ok funcs) (main : Nat)
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     {f : Nat} {args : List Fir.Arg} {sourceFunction : Fir.Fun}
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs
       (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H addresses
       external live ρf ρo roots joins Jf Jo (.tcall f args)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -42,7 +42,7 @@ theorem tail_activation {config : Rt.Config} {F : Fir.Program}
     (∃ calleeSource fields logical afterHeap mem' slots' lists' consumedFd after final cost,
       F.fun? f = some calleeSource ∧
       Own.evalArgs ρo args = some fields ∧ Fir.evalArgs ρf args = some logical ∧
-      Own.Plain.evalActions ρo H (Own.Plain.copies args ++ Own.Plain.drops [] live) = .ok afterHeap ∧
+      Own.Plain.evalActions ρo H (Own.Plain.transferActions imm [] live args) = .ok afterHeap ∧
       afterHeap.size = H.size ∧ Own.Plain.ExternalPreserved H afterHeap external ∧
       HeapHistory H.size addresses afterHeap.size addresses ∧
       Activation F P pairs lp afterHeap addresses external (calleeSource.params.map Prod.fst)
@@ -63,7 +63,7 @@ theorem tail_activation {config : Rt.Config} {F : Fir.Program}
     Own.Plain.args_den before.canonical.env args scope.2
   have lexical := before.lexical.1
   have prefixLayout : At F P source ρo Jo (Own.Plain.actionPrefix
-      (Own.Plain.copies args ++ Own.Plain.drops [] live) (.tcall f args)) := before.layout
+      (Own.Plain.transferActions imm [] live args) (.tcall f args)) := before.layout
   obtain ⟨first, tail, head, tailLayout, absent⟩ :=
     checked_prefix_cursor checked prefixLayout sourceLookup before.frame.words
   have entryLayout := tailLayout
@@ -81,8 +81,9 @@ theorem tail_activation {config : Rt.Config} {F : Fir.Program}
     (Tokens.ofState (external := external) (held := []) before.canonical) lexical
   have initialReady : AllocatorReady H addresses mem (holdRoots external (roots ++ []))
       context base bump limit slots lists := by simpa only [List.append_nil] using heap.ready
-  rcases transfer_prefix (Public.Spec.rawSource config P pairs) main args [] live before.frame.cursor
-      head before.frame.lookup initialTokens scope.2 initialReady before.frame.words absent
+  rcases transfer_prefix (Public.Spec.rawSource config P pairs) main args imm [] live before.frame.cursor
+      head before.frame.lookup initialTokens (ImmEnv.sub before.canonical.immOk lexical)
+      scope.2 initialReady before.frame.words absent
       before.running callers with success | failure
   · obtain ⟨fields, logical, kept, afterHeap, mem', slots', lists', final, cost,
       frameArgs, sourceArgs, actions, tokens, den, ready, trace₁, afterCursor, words,
@@ -97,8 +98,8 @@ theorem tail_activation {config : Rt.Config} {F : Fir.Program}
         Option.some.injEq] using exactRoots.symm
     subst kept
     have effect : Own.Plain.evalActions ρo H
-        (Own.Plain.copies args ++ Own.Plain.drops [] live) = .ok afterHeap := by
-      rw [transfer_eval_sub [] live lexical
+        (Own.Plain.transferActions imm [] live args) = .ok afterHeap := by
+      rw [transfer_eval_sub imm [] live lexical
         (Tokens.present (Tokens.ofState (external := external) (held := []) before.canonical))
         args scope.2 H]
       exact actions

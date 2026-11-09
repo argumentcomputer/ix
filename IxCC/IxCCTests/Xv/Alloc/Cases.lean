@@ -258,4 +258,116 @@ def threeResults : Func VReg := { params := [0], results := 1, blocks := #[
 #guard (IxCC.Xv.Alloc.LinearScan.run {} threeResults).toBool == false
 #guard (IxCC.Xv.Alloc.AllSlots.run threeResults).toBool == false
 
+/-! ## Block-parameter hints and call-clobber awareness -/
+
+def cmpMR : X86.Op := Select.row .cmp .w64 .MR
+def shlMC : X86.Op := Select.row .shl .w64 .MC
+
+/-- Loop parameter `v2` is live across `.call 1 [2] [3]` while its initial
+argument `v0` remains live in caller-saved `rdi`; `decideEntry` places `v2` in
+callee-saved `rbx` on entry with zero spills. -/
+def crossCallParamLoop : Func VReg := { params := [0], results := 1, blocks := #[
+  { term := .jmp ⟨1, [0]⟩ },
+  { params := [2], term := .jcc cmpMR [.r 2, .r 0] [] .unsignedLt ⟨2, []⟩ ⟨3, []⟩ },
+  { body := #[.call 1 [2] [3], .op addMR [4] [.r 3, .r 2], .op (Select.row .add .w64 .MI8) [5] [.r 4, .i 1]]
+    term := .jmp ⟨1, [5]⟩ },
+  { term := .ret [2] }] }
+
+def crossCallParamProg : VProgram := { funcs := #[crossCallParamLoop, double], main := 0 }
+
+#guard match IxCC.Xv.Alloc.LinearScan.run {} crossCallParamLoop with
+  | .ok o => o.numSlots == 0 && o.blocks[1]!.cert.contains (.reg .rbx, [2])
+  | .error _ => false
+#guard match IxCC.Xv.Alloc.run {} crossCallParamProg with
+  | .ok r => r.outcomes.all (fun | .scan => true | _ => false) && (differential crossCallParamProg r.program {} [5] 0).toBool
+  | .error _ => false
+
+/-- Loop parameter `v2` has a fixed use in `rcx` (shift count) and its initial
+argument `v0` remains live in `rdi`; `decideEntry` consults `hintFor` and
+places `v2` directly in `rcx`. -/
+def fixedHintParamLoop : Func VReg := { params := [0], results := 1, blocks := #[
+  { term := .jmp ⟨1, [0]⟩ },
+  { params := [2]
+    body := #[.op shlMC [3] [.r 0, .r 2]]
+    term := .jcc cmpMR [.r 3, .r 0] [] .unsignedLt ⟨2, []⟩ ⟨3, []⟩ },
+  { term := .jmp ⟨1, [3]⟩ },
+  { term := .ret [3] }] }
+
+#guard match IxCC.Xv.Alloc.LinearScan.run {} fixedHintParamLoop with
+  | .ok o => o.numSlots == 0 && o.blocks[1]!.cert.contains (.reg .rcx, [2])
+  | .error _ => false
+
+/-- An RC-wrapper-like environment where callee `1` (`rc_marker_dec`) clobbers
+only `rax, rcx, rdx, rsi, rdi, r11`, preserving `r8, r9, r10` in addition to
+callee-saved `rbx, r12, r13, r14`. -/
+def rcDecEnv : Xl.Env :=
+  { clobbers := fun _ => [.rax, .rcx, .rdx, .rsi, .rdi, .r11] }
+
+/-- Seven values (`v1 … v7`) live across `.call 1 [0] [8]`: linear scan places
+them in `rbx, r12, r13, r14, r8, r9, r10` with zero stack slots and zero spills. -/
+def rcSevenLive : Func VReg :=
+  let movImm := Select.row .mov .w32 .OI
+  let defs := (List.range 7).map fun k => Inst.op movImm [k + 1] [.i (UInt64.ofNat (k + 1))]
+  let sums := (List.range 7).map fun k => Inst.op addMR [k + 9] [.r (k + 8), .r (k + 1)]
+  { params := [0], results := 1, blocks := #[
+    { body := defs.toArray ++ #[.call 1 [0] [8]] ++ sums.toArray
+      term := .ret [15] }] }
+
+def rcSevenProg : VProgram := { funcs := #[rcSevenLive, double], main := 0 }
+
+#guard match IxCC.Xv.Alloc.LinearScan.run rcDecEnv rcSevenLive with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 && (Validate.func rcDecEnv 0 rcSevenLive o).toBool
+  | .error _ => false
+#guard match IxCC.Xv.Alloc.run rcDecEnv rcSevenProg with
+  | .ok r => r.outcomes.all (fun | .scan => true | _ => false) &&
+      (differential rcSevenProg r.program rcDecEnv [10] 0).toBool
+  | .error _ => false
+
+/-- An `rc_marker_inc1`-like environment where callee `1` clobbers only
+`rax, r11`, preserving `rcx` across the call so `hintFor` keeps `v1`'s fixed
+`rcx` shift-count hint. -/
+def rcIncEnv : Xl.Env :=
+  { clobbers := fun _ => [.rax, .r11] }
+
+def incFixedHint : Func VReg :=
+  let movImm := Select.row .mov .w32 .OI
+  { params := [0], results := 1, blocks := #[
+    { body := #[.op movImm [1] [.i 3], .call 1 [0] [2], .op shlMC [3] [.r 2, .r 1]]
+      term := .ret [3] }] }
+
+#guard match IxCC.Xv.Alloc.LinearScan.run rcIncEnv incFixedHint with
+  | .ok o => o.numSlots == 0 && o.counts.spills == 0 &&
+      o.blocks[0]!.locs[0]! == [.reg .rcx] && (Validate.func rcIncEnv 0 incFixedHint o).toBool
+  | .error _ => false
+
+/-! ## Spill-slot reuse across non-interfering live ranges -/
+
+/-- A diamond where each branch (`b1` and `b2`) has 14 simultaneously live
+values (forcing 1 spill in `b1` and 1 spill in `b2`). Because the spilled
+values in `b1` and `b2` have disjoint liveness spans, `homeOf` reuses `.slot 0`
+in both branches (`numSlots == 1`). -/
+def disjointBranchSpills : Func VReg :=
+  let movImm := Select.row .mov .w32 .OI
+  let arm (base : Nat) : Block VReg :=
+    let defs := (List.range 14).map fun k => Inst.op movImm [base + k] [.i (UInt64.ofNat (k + 1))]
+    let sums := (List.range 13).map fun k =>
+      Inst.op addMR [base + 14 + k] [.r (if k == 0 then base else base + 13 + k), .r (base + k + 1)]
+    { body := (defs ++ sums).toArray, term := .jmp ⟨3, [base + 26]⟩ }
+  { params := [0], results := 1, blocks := #[
+    { term := .jcc cmpMR [.r 0, .i 0] [] .eq ⟨1, []⟩ ⟨2, []⟩ },
+    arm 10,
+    arm 50,
+    { params := [90], term := .ret [90] }] }
+
+def disjointBranchProg : VProgram := { funcs := #[disjointBranchSpills], main := 0 }
+
+#guard match IxCC.Xv.Alloc.LinearScan.run {} disjointBranchSpills with
+  | .ok o => o.numSlots == 1 && (Validate.func {} 0 disjointBranchSpills o).toBool
+  | .error _ => false
+#guard match IxCC.Xv.Alloc.run {} disjointBranchProg with
+  | .ok r => r.outcomes.all (fun | .scan => true | _ => false) &&
+      (differential disjointBranchProg r.program {} [0] 0).toBool &&
+      (differential disjointBranchProg r.program {} [1] 0).toBool
+  | .error _ => false
+
 end IxCCTests.Xv.Alloc.Cases

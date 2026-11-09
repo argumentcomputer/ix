@@ -13,12 +13,12 @@ theorem allocation_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (next : PhysicalCode F P config pairs main clock sourceJoins cont) :
     PhysicalCode F P config pairs main clock sourceJoins (.bind x (.ctor ctor args) cont) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
-    function source target memory context base bump limit regionBytes slots lists callers
+    function source target memory context base bump limit regionBytes slots lists callers imm
     sourceLookup before heap
   have empty : holdRoots external [] = external := by funext location; simp [holdRoots, refsIn]
   have framed : Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses (holdRoots external []) live sourceEnv ownedEnv roots joins sourceJoins ownedJoins
-      (.bind x (.ctor ctor args) cont) sourceFunction.vars function source target := by
+      (.bind x (.ctor ctor args) cont) sourceFunction.vars function source target imm := by
     simpa only [empty] using before
   have initial : HeapState P pairs H addresses memory external (roots ++ [])
       context base bump limit regionBytes slots lists := by simpa only [List.append_nil] using heap

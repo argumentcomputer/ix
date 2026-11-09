@@ -5457,18 +5457,16 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
-          "note": "17 constructors: the wildcard `match` keeps its alternatives as closures (a completeness gap)",
+          "decline": null,
+          "note": "17 constructors: the wildcard `match` inlines its higher-order recursor and matcher helpers",
           "cases": [
             {
               "args": [
                 7,
                 2
               ],
-              "value": "23"
+              "value": "23",
+              "machine": true
             }
           ]
         }
@@ -5512,18 +5510,16 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
-          "note": "125 constructors, the most an inductive of this shape has within the decoder budget; declined as `tags17`",
+          "decline": null,
+          "note": "125 constructors, the most an inductive of this shape has within the decoder budget",
           "cases": [
             {
               "args": [
                 7,
                 2
               ],
-              "value": "131"
+              "value": "131",
+              "machine": true
             }
           ]
         }

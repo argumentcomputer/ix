@@ -15,10 +15,11 @@ structure Activation (F : Fir.Program) (P : Program) (pairs : List (Nat × Cfg.F
     (live : List Fir.Var) (sourceEnv : Fir.Env) (ownedEnv : Own.Env) (roots : List Own.RVal)
     (joins : Own.Plain.Joins) (sourceJoins : List Fir.JEntry) (ownedJoins : List Own.Plain.JEntry)
     (code : Fir.Code) (bound : Nat) (function : Cfg.Fun)
-    (source : Cfg.Frame) (target : Lir.Frame) : Prop where
+    (source : Cfg.Frame) (target : Lir.Frame)
+    (imm : List Fir.Var := []) : Prop where
   canonical : Own.Plain.State (Own.Plain.signatures F) H external live sourceEnv ownedEnv roots
-    joins sourceJoins ownedJoins
-  layout : At F P source ownedEnv ownedJoins (Own.Plain.lowerCode live joins code)
+    joins sourceJoins ownedJoins imm
+  layout : At F P source ownedEnv ownedJoins (Own.Plain.lowerCode live joins code imm)
   frame : FrameState P pairs lp addresses H.size bound function source target
   scope : Own.Plain.scopeOk (Own.Plain.signatures F) live (Own.Plain.stackArities sourceJoins) code = true
   running : target.dsts = []
@@ -40,11 +41,11 @@ structure HeapState (P : Program) (pairs : List (Nat × Cfg.Fun))
 
 theorem Activation.lexical {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)}
     {lp : Lir.Program} {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
-    {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
+    {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
     {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
     {code : Fir.Code} {bound : Nat} {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs lp H addresses external live sourceEnv ownedEnv roots
-      joins sourceJoins ownedJoins code bound function source target) :
+      joins sourceJoins ownedJoins code bound function source target imm) :
     EnvSub ownedEnv source.env ∧
     FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ownedEnv target.env ∧
     Own.Plain.EnvBounded H.size ownedEnv ∧
@@ -57,12 +58,12 @@ All heap facts, physical registers, actual cursor and fused receipt remain
 the same; the saved join carries the exact captured source environment. -/
 theorem Activation.declare {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun)}
     {lp : Lir.Program} {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat}
-    {live : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
+    {live imm : List Fir.Var} {sourceEnv : Fir.Env} {ownedEnv : Own.Env} {roots : List Own.RVal}
     {joins : Own.Plain.Joins} {sourceJoins : List Fir.JEntry} {ownedJoins : List Own.Plain.JEntry}
     {j : Fir.JoinId} {params : List Fir.Var} {rec : Bool} {body cont : Fir.Code}
     {bound : Nat} {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs lp H addresses external live sourceEnv ownedEnv roots
-      joins sourceJoins ownedJoins (.jp j params rec body cont) bound function source target) :
+      joins sourceJoins ownedJoins (.jp j params rec body cont) bound function source target imm) :
     let sourceEntry : Fir.JEntry :=
       {id := j, charged := false, env := sourceEnv, params, body, isRec := rec}
     let ownedEntry : Own.Plain.JEntry := {
@@ -71,7 +72,7 @@ theorem Activation.declare {F : Fir.Program} {P : Program} {pairs : List (Nat ×
       isRec := rec }
     Activation F P pairs lp H addresses external live sourceEnv ownedEnv roots
       ((j, live) :: joins) (sourceEntry :: sourceJoins) (ownedEntry :: ownedJoins)
-      cont bound function source target := by
+      cont bound function source target imm := by
   have scopeFacts := before.scope
   simp only [Own.Plain.scopeOk, Bool.and_eq_true, decide_eq_true_eq, and_assoc] at scopeFacts
   obtain ⟨_, fresh, bodyScope, contScope⟩ := scopeFacts

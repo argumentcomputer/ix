@@ -243,6 +243,15 @@ def minorSig (r : CId) (q : Profile) (j : Nat) : List Mode :=
 
 def hasName (ms : List Mode) : Bool := ms.any (· == .name)
 
+/-- The field count of the single constructor of `ind`. -/
+def unboxFields (ind : CId) : Nat :=
+  match I.ctorsOf ind with
+  | [k] =>
+    match I.decl? k with
+    | some (.ctor _ _ _ _ _ nf _) => nf
+    | _ => 0
+  | _ => 0
+
 /-- The case alternative of rule `j` of `r` at the recursor profile `q`: its
 key and kept arity, registered in the constructor table, and the level of
 each field (kept fields bound by the alternative from level `base`). -/
@@ -340,8 +349,10 @@ def casesForm (cx : Cx) (key r : CId) (q : Profile) (args : List Src.Term.Arg) :
       let major := refs.getD (np + 1 + ni) .box
       if major matches .box then
         decline "erase-C4" "an ordinary eliminator with an irrelevant major" r
-      if (I.unbox? ind q).isSome then
-        decline "erase-unbox-elim" "an eliminator of an unboxed structure" r
+      if let some j := I.unbox? ind q then
+        let fields := (List.range (unboxFields I ind)).map fun i =>
+          if i == j then major.level? else none
+        return wrapLets lets (.tick (← minorApp rec cx' (minor 0) fields))
       let scrut ← refTerm rec cx' major
       let alts ← (rules.zipIdx).mapM fun (rule, j) => do
         let (k, arity, fields) ← ruleAlt I r q cx'.depth ind j rule

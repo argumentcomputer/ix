@@ -81,10 +81,6 @@
         "Decline.composeClosure"
       ],
       "protocol": "stdin",
-      "allow_constructs": [
-        "partial",
-        "unsafe"
-      ],
       "closure": {
         "path": "closures.ixe",
         "sha256": "03277aafbf8d8a15f6c39b938d0944e596e0fa9a3c9ac7e10c5c474967904ee0",
@@ -148,10 +144,6 @@
         "Decline.mulN"
       ],
       "protocol": "stdin",
-      "allow_constructs": [
-        "partial",
-        "unsafe"
-      ],
       "closure": {
         "path": "loops.ixe",
         "sha256": "09859593b8b75e8bb061ce3b9f4c17684f8ca2dd3f6920ad14c9736cb7b997bc",
@@ -177,12 +169,23 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
-          "note": "nested `for` loops (Phase 2, P8)",
-          "cases": []
+          "decline": null,
+          "note": "nested `for` loops (compiled via `.box` specialization and CPS matcher inlining)",
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "25",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0"
+            }
+          ]
         },
         {
           "name": "Decline.mulN",
@@ -192,12 +195,25 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "alloc",
-            "code": "alloc.fallback"
-          },
-          "note": "WRONG DECLINE (MT.2 finding 1): a `for` loop reading a parameter specialises into an 8-argument loop function, beyond the internal convention's 7 argument registers; allocation fails, nothing earlier declines it",
-          "cases": []
+          "decline": null,
+          "note": "a `for` loop reading a parameter besides its counter (compiled via spill-slot reuse and clobber-aware LinearScan)",
+          "cases": [
+            {
+              "args": [
+                3,
+                4
+              ],
+              "value": "81",
+              "machine": true
+            },
+            {
+              "args": [
+                5,
+                0
+              ],
+              "value": "1"
+            }
+          ]
         }
       ]
     },
@@ -214,10 +230,6 @@
         "Decline.stringLength"
       ],
       "protocol": "stdin",
-      "allow_constructs": [
-        "partial",
-        "unsafe"
-      ],
       "closure": {
         "path": "strings.ixe",
         "sha256": "9347da68dc91a18b922abe68064dfcb163b6514b3965b711d633efca56cce1ee",
@@ -265,10 +277,6 @@
         "Decline.withPanic"
       ],
       "protocol": "stdin",
-      "allow_constructs": [
-        "partial",
-        "unsafe"
-      ],
       "closure": {
         "path": "panic.ixe",
         "sha256": "363e1499567e2ef52190381ade722bb9aeb34d14e321c3b28b8137387d0978bb",
@@ -318,10 +326,6 @@
         "Decline.fiveAndProof"
       ],
       "protocol": "stdin",
-      "allow_constructs": [
-        "partial",
-        "unsafe"
-      ],
       "closure": {
         "path": "params.ixe",
         "sha256": "fe776f5e5859bcea03b9ac904603e2192e7c354d92439a138bc84d7dab2effb1",
@@ -401,10 +405,6 @@
         "Decline.subtypeMatch"
       ],
       "protocol": "stdin",
-      "allow_constructs": [
-        "partial",
-        "unsafe"
-      ],
       "closure": {
         "path": "erase.ixe",
         "sha256": "d6c7141305143fbd948b25443c5251a2c757856142a3c78eb37dc944616a55bc",
@@ -445,12 +445,23 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "erase",
-            "code": "erase-unbox-elim"
-          },
+          "decline": null,
           "note": "a match on a structure with one field",
-          "cases": []
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0"
+            }
+          ]
         },
         {
           "name": "Decline.subtypeMatch",
@@ -460,12 +471,23 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "erase",
-            "code": "erase-unbox-elim"
-          },
+          "decline": null,
           "note": "a match on a `Subtype`",
-          "cases": []
+          "cases": [
+            {
+              "args": [
+                5
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                0
+              ],
+              "value": "0"
+            }
+          ]
         }
       ]
     },

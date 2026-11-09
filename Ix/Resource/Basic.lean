@@ -80,6 +80,8 @@ structure State where
   /-- Root 0 has no parent. Every new parent precedes its child. -/
   parents : Array (Option ScopeId) := #[none]
   remaining : Nat := 100000
+  resourceWhnfMemoEnabled : Bool := false
+  resourceWhnfMemo : Array (Ixon.Expr × Ixon.Expr) := #[]
   deriving BEq, Repr, Inhabited
 
 abbrev CheckM := EStateM Error State

@@ -539,6 +539,17 @@ theorem wrap_sat {h : Head} {c : CId} {q : Profile} {body : Term} (hh : S.I.head
     exact (cases_sub_form wf hlt hres hd hk he' (by rw [hprof]; exact hag) hag hfa
       (by simpa using hl) (fun i _ a => hnn i a) (fun i l _ sig => by rw [hmin]; simp)
       (wf.subMinor hd (S.kindAt_sub hk)) hbody).congr (fun k => rfl) (fun k => hev k)
+  | @casesUnbox _ _ c' r _ _ _ _ _ np _ nmin ni _ _ _ _ _ l _ body' hres
+      hd hbind hk hl hu hbody =>
+    subst hargs hcx
+    have hlc : xs.length = np + 1 + ni + 1 + nmin := by simpa [headArity, hres, hd] using hlen
+    obtain ⟨ys, hev, he', _, hfa, _, hprof, hmin⟩ := wrap_bind (P := S.L) (n := xs.length) hxv
+      hbind (by rw [map_fst_zipIdx _ (fun ⟨_, _⟩ => rfl), List.take_of_length_le (by simp)]) ls
+      (.tick body')
+    rw [List.take_of_length_le (by simp)] at hfa
+    exact (cases_unbox_form wf hlt hres hd hk hu he' (by rw [hprof]; exact hag) hag hfa
+      (by simpa using hlc) hl (fun sig => by rw [hmin]; simp)
+      hbody).congr (fun k => rfl) (fun k => hev k)
   | @casesOrd _ cx' c' r _ _ _ _ _ np _ nmin ni _ _ _ _ _ l alts hres
       hd hbind hk hl hu halts =>
     subst hargs hcx

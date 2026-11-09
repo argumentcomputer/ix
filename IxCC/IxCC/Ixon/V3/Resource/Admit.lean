@@ -75,7 +75,7 @@ def relevance (program : Program) (limits : Limits := {}) : Except Error (Array 
     let d := program.declarations[i]!
     let scan ← runCheck limits do
       let type ← scanExpr program limits.depth d.type
-      match d.body with
+      match if d.kind == .theorem then none else d.body with
       | none => return type
       | some value => return type.merge (← scanExpr program limits.depth value)
     if scan.annotated then
@@ -176,7 +176,7 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")
         | .constructor => runCheck limits (checkConstructorType program limits.depth d.type false false)
-        | .typeConstructor => .ok ()
+        | .typeConstructor | .theorem => .ok ()
       checked.mapError (⟨some i, ·⟩)
 
 end IxCC.Ixon.V3.Resource

@@ -8,24 +8,29 @@ starts accepting one of these programs, or declines it differently, the
 suite fails and the manifest is updated with the new behaviour.
 
 [`src/Decline.lean`](src/Decline.lean) holds the declined roots, compiled as
-closures by theme (one declined at ingress hides only its own roots; it uses
-`partial` and `unsafe` on purpose). [`src/Symbols.lean`](src/Symbols.lean)
-holds roots that compile alone and collide when compiled together.
+closures by theme (`admit` uses `partial` and `unsafe` on purpose under
+`allow_constructs`; `nestedFor`, `mulN`, `unboxMatch` and `subtypeMatch` now
+compile and run cases). [`src/Symbols.lean`](src/Symbols.lean) holds roots
+that compile alone and collide when compiled together.
 
 ## Codes a source reaches
 
 | `stage: code` | Root | Why |
 | --- | --- | --- |
-| `fir: fir.closures` | `applyArg`, `composeClosure`, `nestedFor` | a function argument applied; a closure composed with itself per iteration; nested `for` loops (Phase 2, P8) |
+| `fir: fir.closures` | `applyArg`, `composeClosure` | a function argument applied; a closure composed with itself per iteration |
 | `admit: unsupported` | `withPanic`, `stringLength` | a string literal in a relevant position (`panic!`'s message; `String.length` reaches the `String` library). Until the Ixon v4 refreeze, `stringLength`'s closure exceeded a count budget of the v3 decoder (`ingress: decode`); the v4 closure is within them |
 | `rt: rt.params` | `six`, `fiveAndType`, `fiveAndProof` | six parameters; an erased type or proof parameter counts |
 | `erase: erase-minor` | `recMinor` | `Nat.rec` with a variable minor premise (S25) |
-| `erase: erase-unbox-elim` | `unboxMatch`, `subtypeMatch` | a match on a one-field structure or a `Subtype` |
 | `admit: opaque` | `useOpaque`, `usePartial` | an `opaque` constant; a `partial def` (Lean adds it as an opaque constant, so `admit: partial` is not reached) |
 | `admit: unsafe` | `useUnsafe` | an `unsafe def` |
 | `admit: relevant-axiom` | `useChoice` | `Classical.choice` in a relevant position |
-| `alloc: alloc.fallback` | `mulN` | **a wrong decline** (MT.2 finding 1): a `for` loop that reads a parameter specialises into a loop function of 8 arguments, beyond the internal convention's 7 argument registers; nothing before allocation declines it |
 | `stacking: stacking.symbols` | `A_b` with `A.b`, `_x_y_` with `«x-y»`, `β` with `α`, `root_init` with `init` | `Rt.symbolOf` maps every character but an ASCII letter, digit or `_` to `_` (`«x-y»` → `cx__x_y_`, `α` → `cx__`) and `init` to `root_init` |
+
+**Previously declined, now compiled with cases:** `nestedFor` (nested `for`
+loops, compiled via `.box` specialization and CPS matcher inlining), `mulN`
+(a `for` loop reading a parameter besides its counter, compiled via spill-slot
+reuse and clobber-aware `LinearScan`), and `unboxMatch` / `subtypeMatch`
+(single-field structure and `Subtype` match unboxing in `Lam.Erase`).
 
 Elsewhere: `relevance: relevance-C2` (`phase1-scalar`'s
 `typeFormerPolymorphism`); `ingress: decode` for 255 fields and 126

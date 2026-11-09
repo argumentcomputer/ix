@@ -97,7 +97,8 @@ def displacement (mode : Nat) : Parser Imm32 :=
   else fail
 
 /-- A memory operand after its ModRM byte. RIP-relative addressing (mode 0,
-rm 5 without SIB) and the mode-0 R13 base hole are rejected. -/
+rm 5 without SIB), the mode-0 R13 base hole and non-zero SIB scale bits
+without an index are rejected. -/
 def memory (rex : Rex) (modrm : UInt8) : Parser MemAddr := do
   let mode := modMode modrm
   if mode == 3 then fail
@@ -105,8 +106,8 @@ def memory (rex : Rex) (modrm : UInt8) : Parser MemAddr := do
     let sib ← byte
     let index ← lift (index rex.x (modReg sib))
     let scale ← lift (scale (modMode sib))
-    let scale := if index.isSome then scale else .one
-    if mode == 0 && modRM sib == 5 then
+    if index.isNone && scale != .one then fail
+    else if mode == 0 && modRM sib == 5 then
       if rex.b then fail
       else do
         let value ← readLE 4
@@ -121,6 +122,49 @@ def memory (rex : Rex) (modrm : UInt8) : Parser MemAddr := do
     let base ← lift (register rex.b (modRM modrm))
     let displacement ← displacement mode
     pure { base := some base, displacement }
+
+/-- Every memory operand accepted by `memory` has canonical SIB scaling. -/
+theorem memory_canonical {rex : Rex} {modrm : UInt8} {input rest : List UInt8} {addr : MemAddr}
+    (parsed : memory rex modrm input = some (addr, rest)) : addr.canonical = true := by
+  unfold memory at parsed
+  split at parsed
+  · cases parsed
+  · split at parsed
+    · rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨sib, s1⟩, _, parsed⟩
+      rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨idx, s2⟩, _, parsed⟩
+      rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨sc, s3⟩, _, parsed⟩
+      dsimp only at parsed
+      split at parsed
+      · cases parsed
+      · rename_i hcanon
+        have hcan : (idx.isSome || sc == .one) = true := by
+          cases idx <;> cases sc <;> simp_all
+        split at parsed
+        · split at parsed
+          · cases parsed
+          · rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨val, s4⟩, _, parsed⟩
+            cases parsed
+            exact hcan
+        · rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨b, s4⟩, _, parsed⟩
+          rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨d, s5⟩, _, parsed⟩
+          cases parsed
+          exact hcan
+    · split at parsed
+      · cases parsed
+      · split at parsed
+        · cases parsed
+        · rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨b, s1⟩, _, parsed⟩
+          rcases Option.bind_eq_some_iff.mp parsed with ⟨⟨d, s2⟩, _, parsed⟩
+          cases parsed
+          rfl
+
+/-- Any `MemAddr` decoded by `memory` with `index = none` has `scale = .one`. -/
+theorem memory_noIndex_scale_one {rex : Rex} {modrm : UInt8} {input rest : List UInt8} {addr : MemAddr}
+    (parsed : memory rex modrm input = some (addr, rest)) (noIndex : addr.index = none) :
+    addr.scale = .one := by
+  have h := memory_canonical parsed
+  simp [MemAddr.canonical, noIndex] at h
+  exact h
 
 /-- An immediate field, sign-extended to its canonical 64-bit value. -/
 def immediate : ImmKind → Parser (Option Word)

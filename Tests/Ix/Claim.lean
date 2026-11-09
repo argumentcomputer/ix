@@ -15,8 +15,14 @@ open Ix (RevealConstructorInfo RevealRecursorRule RevealConstantInfo Claim)
 
 def claimSerde (c : Claim) : Bool :=
   let bytes := Claim.ser c
-  match runGet Claim.get bytes with
-  | .ok c' => c == c'
+  match Claim.de bytes, runGet Claim.get bytes with
+  | .ok c1, .ok c2 => c == c1 && c == c2
+  | _, _ => false
+
+def proofSerde (p : Ixon.Proof) : Bool :=
+  let bytes := Ixon.Proof.ser p
+  match Ixon.Proof.de bytes with
+  | .ok p' => p'.claim == p.claim && p'.proof == p.proof
   | .error _ => false
 
 /-! ## Unit tests -/
@@ -73,6 +79,16 @@ def claimUnits : TestSeq :=
     (.defn none none none none none)))
   ++ test "Reveal quot" (claimSerde (.reveal addr1
     (.quot (some .type) (some 1) (some addr2))))
+  -- Compile claims
+  ++ test "Compile immortal roundtrip" (claimSerde (.compile
+    { env := addr1, target := addr2, policy := .immortal, abiArity := 2, elfHash := addr3 }))
+  ++ test "Compile zeroRc roundtrip" (claimSerde (.compile
+    { env := addr1, target := addr2, policy := .zeroRc, abiArity := 3, elfHash := addr3 }))
+  ++ test "Compile plainRc roundtrip" (claimSerde (.compile
+    { env := addr1, target := addr2, policy := .plainRc, abiArity := 1, elfHash := addr3 }))
+  ++ test "Compile proof roundtrip" (proofSerde
+    { claim := .compile { env := addr1, target := addr2, policy := .zeroRc, abiArity := 2, elfHash := addr3 }
+      proof := ⟨#[0x10, 0x20, 0x30]⟩ })
 
 /-! ## Byte-level encoding tests
 
@@ -128,6 +144,26 @@ def claimEncodingTests : TestSeq :=
   -- Contains: tag + scope + two addresses = 67
   ++ test "Contains tag byte is 0xE7" (containsBytes.data[0]! == 0xE7)
   ++ test "Contains size is 67" (containsBytes.size == 67)
+  -- Compile: deterministic 102-byte wire vector shared with IxCC.CompileClaim
+  ++ (let envHash : Address := ⟨ByteArray.mk (Array.replicate 32 0x11)⟩
+      let target : Address := ⟨ByteArray.mk (Array.replicate 32 0x22)⟩
+      let elfHash : Address := ⟨ByteArray.mk (Array.replicate 32 0x33)⟩
+      let cc : Ix.CompileClaim :=
+        { env := envHash, target := target, policy := .plainRc, abiArity := 3, elfHash := elfHash }
+      let compileBytes := Claim.ser (.compile cc)
+      let expectedCompileBytes : ByteArray :=
+        ByteArray.mk (#[0xE8, 0x03, 0x04, 0x06]
+          ++ Array.replicate 32 0x11
+          ++ Array.replicate 32 0x22
+          ++ #[0x02, 0x03]
+          ++ Array.replicate 32 0x33)
+      test "Compile wire header is E8 03 04 06"
+        (compileBytes.extract 0 4 == ⟨#[0xE8, 0x03, 0x04, 0x06]⟩)
+      ++ test "Compile wire size is 102" (compileBytes.size == 102)
+      ++ test "Compile wire matches deterministic 102-byte vector"
+           (compileBytes == expectedCompileBytes)
+      ++ test "Compile deterministic vector roundtrips via Claim.de"
+           ((Claim.de compileBytes).toOption == some (.compile cc)))
 
 /-! ## Catalog claim: wire pin + Rust digest parity
 

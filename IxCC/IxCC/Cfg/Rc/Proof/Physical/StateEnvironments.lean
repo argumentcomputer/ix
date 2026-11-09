@@ -9,14 +9,15 @@ open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc
 the same owned roots and saved join environments. Extra stale entries are
 represented by the frame invariant and acquire no ownership. -/
 theorem state_extend {functions : Own.Plain.Signatures} {H : Heap} {external : Nat → Nat}
-    {held roots : List RVal} {live : List Fir.Var} {ρf : Fir.Env} {lexical actual : Own.Env}
+    {held roots : List RVal} {live imm : List Fir.Var} {ρf : Fir.Env} {lexical actual : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
-    (before : Own.Plain.State functions H (holdRoots external held) live ρf lexical roots joins Jf Jo)
+    (before : Own.Plain.State functions H (holdRoots external held) live ρf lexical roots joins Jf Jo imm)
     (sub : EnvSub lexical actual) :
-    Own.Plain.State functions H (holdRoots external held) live ρf actual roots joins Jf Jo := by
+    Own.Plain.State functions H (holdRoots external held) live ρf actual roots joins Jf Jo imm := by
   have tokens := Tokens.extend (Tokens.ofState before) sub
   have agree := env_agree_live sub (Tokens.present (Tokens.ofState before))
-  refine ⟨tokens.den, tokens.exactRoots, tokens.balance, tokens.distinct, before.stack, ?_, before.scope⟩
+  refine ⟨tokens.den, tokens.exactRoots, tokens.balance, tokens.distinct, before.stack, ?_, before.scope,
+    before.immSub, ImmEnv.sub before.immOk sub⟩
   cases before.views with
   | nil => exact .nil _ _
   | cons view tail =>

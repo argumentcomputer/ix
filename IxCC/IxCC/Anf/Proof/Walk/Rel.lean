@@ -59,6 +59,8 @@ def FactOk (ρ' : List Val) (l : Nat) : Fact → Prop
   | .ctor c fs => ∃ w ws, (Opd.lvl l).val ρ' = some w ∧ fs.mapM (·.val ρ') = some ws ∧
       w.asCtor Q.known = some (c, ws)
   | .succ y => ∃ m, (Opd.lvl l).val ρ' = some (.lit (.nat (m + 1))) ∧ y.val ρ' = some (.lit (.nat m))
+  | .prim p os => ∃ w ws, (Opd.lvl l).val ρ' = some w ∧ os.mapM (·.val ρ') = some ws ∧
+      primResult Q.known p ws = .ok w
   | .glob g => ∃ gd, Q.global? g = some gd ∧ gd.ps ≠ [] ∧
       (∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.prog.arity? g = some gd.ps.length) ∧
       (Opd.lvl l).val ρ' = some (.clos [] gd.ps.length gd.body [])

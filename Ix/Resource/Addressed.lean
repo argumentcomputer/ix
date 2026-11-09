@@ -127,7 +127,10 @@ def constructorWrapper (block : Address) (index ctor : UInt64) : Constant :=
 
 def definition (d : Definition) : Declaration := {
   type := d.typ, body := some d.value
-  kind := if d.safety == .safe then .definition else .assumption }
+  kind := match d.safety, d.kind with
+    | .safe, .thm => .theorem
+    | .safe, _ => .definition
+    | _, _ => .assumption }
 
 def recursor (d : Recursor) : Declaration := {
   type := d.typ, kind := .assumption }
@@ -226,20 +229,32 @@ def closed (program : Program) : Nat → Nat → Ixon.Expr → CheckM Bool
     | .prj _ _ v => closed program fuel depth v
     | _ => return true
 
-/-- Initial transparent projection rule: a single constructor with no
-parameters/indices, closed field types, and unrestricted field quantities.
-Finite-use and dependent fields require a richer elimination rule. Omitting
-a rule makes every attempted resource projection fail closed. -/
-def fields (program : Program) (limits : Limits) (typeId ctorId : UInt64) (count : Nat) :
+/-- Transparent projection rule for single-constructor structures without
+indices, including parameterized and dependent structures (`PProd`, `Prod`,
+`Sigma`, `Subtype`, etc.) whose fields have unrestricted (`many`) quantity.
+Finite-use fields require a richer elimination rule. Omitting a rule makes
+every attempted resource projection fail closed. -/
+def fields (program : Program) (limits : Limits) (typeId ctorId : UInt64) (params count : Nat) :
     Except Error (Array Field) := runCheck limits do
   let mut type := (← declaration program ctorId).type
+  for _ in [:params] do
+    type ← whnf program limits.depth type
+    let .all _ _ _ body := type | throw (.unsupported "constructor parameter telescope")
+    type := body
   let mut fields := #[]
   for i in [:count] do
     type ← whnf program limits.depth type
     let .all input _ domain body := type | throw (.unsupported "constructor field telescope")
-    unless input.uses == .many && (← closed program limits.depth 0 domain) do
+    let binderCount := params + i
+    unless input.uses == .many && (← closed program limits.depth binderCount domain) do
       throw (.unsupported "dependent or finite-use projection field")
-    fields := fields.push { typeRef := typeId, index := i.toUInt64, type := domain, contract := input.value }
+    let closedField ← closed program limits.depth 0 domain
+    fields := fields.push {
+      typeRef := typeId
+      index := i.toUInt64
+      binders := if closedField then 0 else binderCount
+      type := domain
+      contract := input.value }
     type := body
   return fields
 
@@ -257,7 +272,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     constants := constants.insert address constant
   let mut pending : Array Pending := #[]
   let mut groups : Array (Array Address) := #[]
-  let mut fieldSpecs : Array (Address × Address × Nat) := #[]
+  let mut fieldSpecs : Array (Address × Address × Nat × Nat) := #[]
   for (address, _) in entries do
     let constant := constants[address]!
     match constant.info with
@@ -293,8 +308,8 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
             pending := pending.push ⟨ctorAddr, constant, addresses,
               { type := ctor.typ, kind := if ctor.isUnsafe then .assumption else .constructor }, #[]⟩
             group := group.push ctorAddr
-            if !ind.isUnsafe && !ctor.isUnsafe && ind.params == 0 && ind.indices == 0 && ind.ctors.size == 1 then
-              fieldSpecs := fieldSpecs.push (member, ctorAddr, ctor.fields.toNat)
+            if !ind.isUnsafe && !ctor.isUnsafe && ind.indices == 0 && ind.ctors.size == 1 then
+              fieldSpecs := fieldSpecs.push (member, ctorAddr, ind.params.toNat, ctor.fields.toNat)
           if ind.isUnsafe then
             -- Unsafe nominal representations need an explicit profile assumption.
             let k := pending.size - ind.ctors.size - 1
@@ -354,11 +369,17 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       throw "resource adapter: literal type must be a checked nominal type"
     pure (Ixon.Expr.ref i #[])
   program := { program with
+    sharingInfo := computeSharingInfo program.sharing
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
     shareableTypes := shareable, choices }
-  for (typeAddr, ctorAddr, count) in fieldSpecs do
-    if let .ok derived := fields program profile.limits (← index indices typeAddr) (← index indices ctorAddr) count then
+  for (typeAddr, ctorAddr, params, count) in fieldSpecs do
+    let typeId ← index indices typeAddr
+    let ctorId ← index indices ctorAddr
+    program := { program with
+      projections := program.projections.push {
+        typeRef := typeId, constructor := ctorId, params, fields := count } }
+    if let .ok derived := fields program profile.limits typeId ctorId params count then
       program := { program with fields := program.fields ++ derived }
   return {
     program, addresses, profileAddress

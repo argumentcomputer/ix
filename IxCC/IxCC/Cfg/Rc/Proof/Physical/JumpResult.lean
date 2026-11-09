@@ -18,7 +18,7 @@ theorem jump_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : 
     PhysicalCode F P config pairs main clock sourceJoins (.jmp j args) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
-    sourceLookup before heap
+    imm sourceLookup before heap
   rw [Fir.eval_jmp]
   cases found : Fir.lookupJ j sourceJoins with
   | none => simp only [found, Sem.Result.ofOption, Sem.Result.bind]; trivial
@@ -35,7 +35,7 @@ theorem jump_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : 
         have empty : holdRoots external [] = external := by funext location; simp [holdRoots, refsIn]
         have framed : Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
             H addresses (holdRoots external []) live sourceEnv ownedEnv roots joins sourceJoins ownedJoins
-            (.jmp j args) sourceFunction.vars function source target := by simpa only [empty] using before
+            (.jmp j args) sourceFunction.vars function source target imm := by simpa only [empty] using before
         have initial : HeapState P pairs H addresses memory external (roots ++ [])
             context base bump limit regionBytes slots lists := by simpa only [List.append_nil] using heap
         rcases jump_activation checked consuming (Public.Spec.rawSource config P pairs) main framed

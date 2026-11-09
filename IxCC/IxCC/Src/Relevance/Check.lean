@@ -547,4 +547,324 @@ def check (p : Program) (ann : Ann) : Except (Array RelError) Checked :=
       if acc.contains c then acc else c :: acc) |>.reverse
     .ok { keys := s.keys.reverse, reached, instances, consts := ann.consts, ctors := ann.ctors }
 
+namespace Check.Canonical
+
+open IxCC.Ixon
+
+def instUniv (us : List Univ) : Univ → Univ
+  | .zero => .zero
+  | .succ u => .succ (instUniv us u)
+  | .max a b => .max (instUniv us a) (instUniv us b)
+  | .imax a b => .imax (instUniv us a) (instUniv us b)
+  | .var i => us.getD i.toNat .zero
+
+def liftTerm (byN : Nat) : Nat → Term → Term
+  | _, .sort u => .sort u
+  | _, .const c us => .const c us
+  | _, .natLit n => .natLit n
+  | _, .strLit s => .strLit s
+  | k, .var i => if i >= k then .var (i + byN) else .var i
+  | k, .app f a m r => .app (liftTerm byN k f) (liftTerm byN k a) m r
+  | k, .lam b d t => .lam b (liftTerm byN k d) (liftTerm byN (k + 1) t)
+  | k, .pi b r d t => .pi b r (liftTerm byN k d) (liftTerm byN (k + 1) t)
+  | k, .letE c r t v b => .letE c r (liftTerm byN k t) (liftTerm byN k v) (liftTerm byN (k + 1) b)
+  | k, .proj s i e => .proj s i (liftTerm byN k e)
+
+def substTerm (arg : Term) : Nat → Term → Term
+  | _, .sort u => .sort u
+  | _, .const c us => .const c us
+  | _, .natLit n => .natLit n
+  | _, .strLit s => .strLit s
+  | k, .var i =>
+    if i == k then liftTerm k 0 arg
+    else if i > k then .var (i - 1)
+    else .var i
+  | k, .app f a m r => .app (substTerm arg k f) (substTerm arg k a) m r
+  | k, .lam b d t => .lam b (substTerm arg k d) (substTerm arg (k + 1) t)
+  | k, .pi b r d t => .pi b r (substTerm arg k d) (substTerm arg (k + 1) t)
+  | k, .letE c r t v b => .letE c r (substTerm arg k t) (substTerm arg k v) (substTerm arg (k + 1) b)
+  | k, .proj s i e => .proj s i (substTerm arg k e)
+
+def instUnivsTerm (us : List Univ) : Term → Term
+  | .var i => .var i
+  | .sort u => .sort (instUniv us u)
+  | .const c vs => .const c (vs.map (instUniv us))
+  | .app f a m r => .app (instUnivsTerm us f) (instUnivsTerm us a) m r
+  | .lam b d t => .lam b (instUnivsTerm us d) (instUnivsTerm us t)
+  | .pi b r d t => .pi b r (instUnivsTerm us d) (instUnivsTerm us t)
+  | .letE c r t v b => .letE c r (instUnivsTerm us t) (instUnivsTerm us v) (instUnivsTerm us b)
+  | .proj s i e => .proj s i (instUnivsTerm us e)
+  | .natLit n => .natLit n
+  | .strLit s => .strLit s
+
+def betaApps : Term → List (Term × Mode × Rel) → Term
+  | t, [] => t
+  | .lam _ _ body, (a, _, _) :: rest => betaApps (substTerm a 0 body) rest
+  | t, args => Term.mkApps t args
+
+def whnfType (p : Program) : Nat → Term → Term
+  | 0, t => t
+  | fuel + 1, .letE _ _ _ v body => whnfType p fuel (substTerm v 0 body)
+  | fuel + 1, t =>
+    let (head, args) := t.spine
+    match head with
+    | .lam .. =>
+      if args.isEmpty then t
+      else whnfType p fuel (betaApps head args)
+    | .const c us =>
+      match p.decl? c with
+      | some (.defn .defn .safe _ _ val) =>
+        whnfType p fuel (betaApps (instUnivsTerm us val) args)
+      | _ => t
+    | _ => t
+
+def isTypeFormerP (p : Program) (ctx : List (Term × Option Univ)) : Nat → Term → Bool
+  | 0, _ => false
+  | fuel + 1, t =>
+    match whnfType p 8 t with
+    | .sort _ => true
+    | .pi _ _ d body => isTypeFormerP p ((d, none) :: ctx) fuel body
+    | _ => false
+
+def applyPis (p : Program) : Nat → Term → List Term.Arg → Option Univ
+  | 0, _, _ => none
+  | _ + 1, .sort u, [] => some u
+  | k + 1, .pi _ _ _ body, (a, _, _) :: rest =>
+    applyPis p k (substTerm a 0 body) rest
+  | k + 1, ty, rest =>
+    let ty' := whnfType p 4 ty
+    if ty' == ty then none else applyPis p k ty' rest
+
+def univClosed : Univ → Bool
+  | .zero => true
+  | .succ u => univClosed u
+  | .max a b | .imax a b => univClosed a && univClosed b
+  | .var _ => false
+
+/-- The sort of a fully applied structure field whose type ends in a closed sort.
+Only closed sorts qualify: a field's universe parameters are the structure's,
+which a projection does not name. -/
+def projFieldSort? (p : Program) (s i nargs : Nat) : Option Univ := do
+  let k ← onlyCtor? p s
+  let .ctor _ _ _ _ np _ cty ← p.decl? k | none
+  let (_, fieldTy) ← cty.pis.1[np + i]?
+  let (ps, concl) := fieldTy.pis
+  let .sort u := concl | none
+  if ps.length == nargs && univClosed u then some u else none
+
+def inferTypeSort (p : Program) (ctx : List (Term × Option Univ)) : Nat → Term → Option Univ
+  | 0, _ => none
+  | fuel + 1, t =>
+    match t with
+    | .sort u => some (.succ u)
+    | .pi _ _ d body => do
+      let s1 ← inferTypeSort p ctx fuel d
+      let dSort : Option Univ :=
+        match (whnfType p 8 d).pis.2 with
+        | .sort u => some u
+        | _ => none
+      let s2 ← inferTypeSort p ((d, dSort) :: ctx) fuel body
+      some (.imax s1 s2)
+    | .letE _ _ _ v body => inferTypeSort p ctx fuel (substTerm v 0 body)
+    | _ =>
+      let (head, args) := t.spine
+      match head with
+      | .var idx =>
+        match ctx[idx]? with
+        | some (varTy, u?) =>
+          if args.isEmpty then u?
+          else applyPis p 16 (liftTerm (idx + 1) 0 varTy) args
+        | _ => none
+      | .const c us =>
+        match p.decl? c with
+        | some d =>
+          let (pis, concl) := d.type.pis
+          match concl with
+          | .sort u =>
+            if args.length == pis.length then some (instUniv us u)
+            else
+              match d with
+              | .defn .defn .safe _ _ val =>
+                inferTypeSort p ctx fuel (betaApps (instUnivsTerm us val) args)
+              | _ => none
+          | _ =>
+            match d with
+            | .defn .defn .safe _ _ val =>
+              inferTypeSort p ctx fuel (betaApps (instUnivsTerm us val) args)
+            | _ => none
+        | none => none
+      | .proj s i _ => projFieldSort? p s i args.length
+      | _ => none
+
+def classifyDomain (p : Program) (ctx : List (Term × Option Univ)) (b : Binder) (dom : Term) : Option Rel :=
+  match inferTypeSort p ctx 16 dom with
+  | some s =>
+    let w := (zeroCond s).dedup
+    if w != .never then some (.proof w)
+    else if isTypeFormerP p ctx 16 dom then some .type
+    else if b.contract.uses == .erased then some .type
+    else some .rel
+  | none =>
+    if b.contract.uses == .erased then some .type else none
+
+def classifyTelescope (p : Program) (ctx : List (Term × Option Univ)) :
+    Nat → Term → List (Binder × Option Rel) × Option Rel
+  | 0, _ => ([], none)
+  | fuel + 1, .pi b _ d body =>
+    let r := classifyDomain p ctx b d
+    let dSort : Option Univ :=
+      match (whnfType p 8 d).pis.2 with
+      | .sort u => some u
+      | _ => none
+    let (rs, concl) := classifyTelescope p ((d, dSort) :: ctx) fuel body
+    ((b, r) :: rs, concl)
+  | _ + 1, concl =>
+    ([], classifyDomain p ctx {} concl)
+
+/-- Whether a certificate's class for a position agrees with the declaration
+types. A binder written `erased` must be irrelevant (C0 fixes that per instance,
+so any irrelevant class will do). Where the position cannot be classified, an
+irrelevant tag needs another justification: `covered` says C1 or C2 already
+constrains it; otherwise it must be relevant. -/
+def tagOk (b : Binder) (exp? : Option Rel) (covered : Bool) (actual : Rel) : Bool :=
+  if b.contract.uses == .erased then actual != .rel
+  else
+    match exp? with
+    | some exp => actual == exp
+    | none => covered || actual == .rel
+
+/-- The argument tags of a spine. C2 also compares the first `covered` arguments
+with a checked record (a constant's parameter classes, a β-redex's binders); past
+those, only the argument's type can justify an irrelevant tag. -/
+def checkSpineArgs (p : Program) (ctx : List (Term × Option Univ)) :
+    Nat → Term → List Term.Arg → Bool
+  | _, _, [] => true
+  | covered, fnTy, (a, _, r) :: rest =>
+    match whnfType p 8 fnTy with
+    | .pi b _ d body =>
+      tagOk b (classifyDomain p ctx b d) (covered > 0) r &&
+        checkSpineArgs p ctx (covered - 1) (substTerm a 0 body) rest
+    | _ =>
+      (covered > 0 || r == .rel) && checkSpineArgs p ctx (covered - 1) fnTy rest
+
+/-- All arguments relevant: for heads whose callee is unknown here and which C2
+does not constrain (projections, `let`s). -/
+def argsRelevant (args : List Term.Arg) : Bool :=
+  args.all fun (_, _, r) => r == .rel
+
+/-- Arguments left over after a β-redex's binders are consumed: C2 covers only the
+binders, so they are judged against the head the reduced body applies. `inner`
+counts as covered because the body's own walk already checks those arguments. -/
+def checkReducedSpine (p : Program) (ctx : List (Term × Option Univ)) (t : Term)
+    (extra : List Term.Arg) : Bool :=
+  extra.isEmpty ||
+    let (head, inner) := t.spine
+    match head with
+    | .const c us =>
+      match p.decl? c with
+      | some d => checkSpineArgs p ctx inner.length (instUnivsTerm us d.type) (inner ++ extra)
+      | none => false
+    | .var idx =>
+      match ctx[idx]? with
+      | some (varTy, _) => checkSpineArgs p ctx inner.length (liftTerm (idx + 1) 0 varTy) (inner ++ extra)
+      | none => false
+    | _ => argsRelevant extra
+
+def checkTermBinders (p : Program) (ann : Ann) (ctx : List (Term × Option Univ)) :
+    Term → List Term.Arg → Bool
+  | .app f a m r, args =>
+    let okA := if r.alwaysIrr then true else checkTermBinders p ann ctx a []
+    okA && checkTermBinders p ann ctx f ((a, m, r) :: args)
+  | .lam b d body, args =>
+    let n := (lamRels (.lam b d body)).length
+    let okSpine := checkSpineArgs p ctx n (.pi b {} d body) (args.take n) &&
+      checkReducedSpine p ctx (betaApps (.lam b d body) (args.take n)) (args.drop n)
+    let okB := tagOk b (classifyDomain p ctx b d) true b.rel
+    let dSort : Option Univ :=
+      match (whnfType p 8 d).pis.2 with
+      | .sort u => some u
+      | _ => none
+    if b.propWhen == .always then okSpine && okB
+    else okSpine && okB && checkTermBinders p ann ((d, dSort) :: ctx) body []
+  | .letE lc r ty val body, args =>
+    let lb : Binder := { contract := lc.binder }
+    let okR := tagOk lb (classifyDomain p ctx lb ty) true r
+    let tySort : Option Univ :=
+      match (whnfType p 8 ty).pis.2 with
+      | .sort u => some u
+      | _ => none
+    let okVal := if r.alwaysIrr then true else checkTermBinders p ann ctx val []
+    argsRelevant args && okR && okVal && checkTermBinders p ann ((ty, tySort) :: ctx) body []
+  | .const c us, args =>
+    match p.decl? c with
+    | some d =>
+      let covered := ((ann.constRel? c).map (·.params.length)).getD 0
+      checkSpineArgs p ctx covered (instUnivsTerm us d.type) args
+    | none => false
+  | .var idx, args =>
+    match ctx[idx]? with
+    | some (varTy, _) => checkSpineArgs p ctx 0 (liftTerm (idx + 1) 0 varTy) args
+    | none => false
+  | .proj _ _ e, args => argsRelevant args && checkTermBinders p ann ctx e []
+  | _, args => argsRelevant args
+
+end Check.Canonical
+
+open Check Check.Canonical in
+/-- Verify that the relevance certificate's parameter counts, constant/constructor
+records, and runtime binder/argument classifications match the canonical
+re-derivation from the declaration types in `p`. -/
+def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
+  let okConsts := ann.consts.toList.all fun (c, cr) =>
+    match p.decl? c with
+    | some d =>
+      let (ps, res) := classifyTelescope p [] (d.type.piCount + 1) d.type
+      let okPrim := match p.table.resolveOf c with
+        | some (.prim op) => cr.result == .rel && cr.params == List.replicate op.arity .rel
+        | _ => true
+      okPrim &&
+      cr.params.length == ps.length &&
+      (cr.params.zip ps).all (fun (actual, (b, exp)) =>
+        tagOk b exp false actual) &&
+      (match res with | some e => cr.result == e | none => true)
+    | none => false
+  let okCtors := ann.ctors.toList.all fun (c, kr) =>
+    match p.decl? c with
+    | some (.ctor _ _ _ _ np nf ty) =>
+      let (ps, _) := classifyTelescope p [] (ty.piCount + 1) ty
+      let flds := ps.drop np
+      let okWithConst := match ann.constRel? c with
+        | some cr => (cr.params.drop np).map FieldClass.ofRel == kr.fields
+        | none => true
+      okWithConst &&
+      kr.fields.length == nf &&
+      flds.length == nf &&
+      (kr.fields.zip flds).all (fun (actual, (b, exp)) =>
+        if b.contract.uses == .erased then actual != .keep
+        else match exp with | some e => actual == FieldClass.ofRel e | none => actual == .keep)
+    | _ => false
+  let okReached := ch.reached.all fun c =>
+    match ann.constRel? c with
+    | none => false
+    | some cr =>
+      let valTerms : List Term :=
+        match p.table.resolveOf c with
+        | some (.eqn _ body) => [body]
+        | none =>
+          match p.decl? c with
+          | some (.defn .defn .safe _ _ v) => [v]
+          | some (.defn .opaq .safe _ _ v) => if p.table.isOpaqueByValue c then [v] else []
+          | _ => []
+        | _ => []
+      let ruleTerms : List Term :=
+        match p.decl? c with
+        | some (.recr _ _ _ _ _ _ _ _ rules _) => rules.map (·.rhs)
+        | _ => []
+      (valTerms.all fun t =>
+        ((lamRels t).zip cr.params).all (fun (b, r) => b == r) &&
+        checkTermBinders p ann [] t []) &&
+      (ruleTerms.all fun t => checkTermBinders p ann [] t [])
+  if okConsts && okCtors && okReached then []
+  else [RelError.of "S1" "non-canonical relevance annotation"]
+
 end IxCC.Src.Relevance

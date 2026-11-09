@@ -12,9 +12,9 @@ open Rc
 open IxCC.Sem (Result)
 
 theorem constructor_step {functions : Signatures} {H : Heap} {external : Nat → Nat}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
     {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
-    (h : State functions H external live ρf ρo roots joins Jf Jo)
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
     (P : Program) (k : Nat) (x : Fir.Var) (ctor : Fir.CtorInfo) (args : List Fir.Arg) (body : Fir.Code)
     {w : Fir.Val} (hx : x ∉ live) (hs : args.all (argIn live) = true)
     (hw : Fir.evalRhs P.source ρf (.ctor ctor args) = .ok w) :
@@ -25,7 +25,7 @@ theorem constructor_step {functions : Signatures} {H : Heap} {external : Nat →
       simpa [Fir.evalRhs, hf, harity] using hw
     subst w
     have hvlen : vs.length = ctor.arity := hd.length.trans harity
-    obtain ⟨Hcopy, hcopy, hbcopy, hvalues⟩ := copies_sound ρo H args h.counts
+    obtain ⟨Hcopy, hcopy, hbcopy, hvalues⟩ := copies_heapArgs_sound ρo H args h.immOk h.counts
       (argsOwned_of_scope h.env h.roots hs) ho
     have hp : ∀ root value, Proof.Den H root value → Proof.Den Hcopy root value := by
       intro root value hd
@@ -43,7 +43,8 @@ theorem constructor_step {functions : Signatures} {H : Heap} {external : Nat →
       have hb' : Balance Hcopy external (roots ++ [.ctor0 ctor]) :=
         balance_append_comm (show Balance Hcopy external ([.ctor0 ctor] ++ roots) from
           balance_immediate hb (by intro l; simp))
-      refine ⟨.ctor0 ctor, Hcopy, ?_, h.bind_den x hx hresult hb' hp, hp⟩
+      refine ⟨.ctor0 ctor, Hcopy, ?_,
+        h.bind_den_rhs x (.ctor ctor args) hx (fun _ => by intro l; simp) hresult hb' hp, hp⟩
       simp only [lowerCode]
       rw [eval_actionPrefix, hcopy, Result.bind_ok]
       rw [eval_bindRhs P k ρo Jo Hcopy x (.ctor ctor args) _ (by intro f as he; cases he)]
@@ -58,7 +59,10 @@ theorem constructor_step {functions : Signatures} {H : Heap} {external : Nat →
       have hp' : ∀ root value, Proof.Den H root value → Proof.Den allocated.2 root value := by
         intro root value hd
         exact hpreserve root value (hp root value hd)
-      refine ⟨allocated.1, allocated.2, ?_, h.bind_den x hx hresult (balance_resume hb) hp', hp'⟩
+      have himm_rhs : isImmRhs imm (.ctor ctor args) = true → ImmVal allocated.1 :=
+        fun hr => False.elim (hz (by simpa [isImmRhs] using hr))
+      refine ⟨allocated.1, allocated.2, ?_,
+        h.bind_den_rhs x (.ctor ctor args) hx himm_rhs hresult (balance_resume hb) hp', hp'⟩
       simp only [lowerCode]
       rw [eval_actionPrefix, hcopy, Result.bind_ok]
       rw [eval_bindRhs P k ρo Jo Hcopy x (.ctor ctor args) _ (by intro f as he; cases he)]
@@ -67,9 +71,9 @@ theorem constructor_step {functions : Signatures} {H : Heap} {external : Nat →
 
 
 theorem nonCall_step {functions : Signatures} {H : Heap} {external : Nat → Nat}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
     {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
-    (h : State functions H external live ρf ρo roots joins Jf Jo)
+    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
     (P : Program) (k : Nat) (x : Fir.Var) (rhs : Fir.Rhs) (body : Fir.Code)
     {w : Fir.Val} (hpins : BoolPinsOk P.source) (hx : x ∉ live)
     (hs : rhsIn functions live rhs = true)

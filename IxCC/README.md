@@ -21,12 +21,17 @@ The design combines three ideas:
 
 ## Status
 
-Reviewed 2026-10-08. The Phase 1 scalar pipeline is implemented, from Src
-through register allocation to ELF. `Recheck.sound` proves the accepted
-recheck path correct relative to the source evaluator and the native driver
-model; the connection to Lean's denotation remains open. See the
+Reviewed 2026-11-09. The Phase 1 scalar pipeline and bounded plain-RC compiler
+are implemented, from Src through register allocation and the Lir RC runtime to
+ELF (`--rc auto|on|off`). `Recheck.sound`, `Recheck.RcReplay.sound`,
+`Compiler.compile_sound`, `CompileClaim`, and `Ring0` (`verifyRing0Sip_sound`)
+prove the accepted recheck, replay, and claim-verification paths correct
+relative to the source evaluator and the native driver model; the connection to
+Lean's denotation remains open. See the
 [roadmap](docs/roadmap.md) for scope and remaining work. Main includes:
-- the scalar compiler, certificate rechecker, proof fences and native suites;
+- the scalar and bounded plain-RC compiler (`Compiler.Proof`, `CompileClaim`,
+  `Ring0`), certificate rechecker (`Recheck`, `Recheck.RcReplay`), proof fences
+  and native suites;
 - [Ixon v4 ingress](docs/ixon-v4.md) (through the Ixon v4 codec of ix's `IxCK`
   package);
 - the x86 target model with its certified

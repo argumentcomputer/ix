@@ -17,12 +17,12 @@ theorem case_activation
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (switches : Rt.checkSwitches P.base = .ok ()) {lp : Lir.Program}
     {H : Own.Heap} {addresses : AddressMap} {external : Nat → Nat} {roots : List Own.RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     {x : Fir.Var} {alts : List Fir.Alt} {default : Option Fir.Code}
     {sourceFunction : Fir.Fun} {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs lp H addresses external live ρf ρo roots joins Jf Jo
-      (.case x alts default) sourceFunction.vars function source target)
+      (.case x alts default) sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {logical : Fir.Val} (sourceValue : ρf.get? x = some logical)
     {key : Key.CtorKey} {logicalFields : List Fir.Val}
@@ -34,7 +34,7 @@ theorem case_activation
     (callers : List Lir.Frame) :
     (∃ after final cost,
       Activation F P pairs lp H addresses external live ρf ρo roots joins Jf Jo body
-        sourceFunction.vars function after final ∧
+        sourceFunction.vars function after final imm ∧
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := target :: callers} cost
         {mem, ctx := context, stack := final :: callers} ∧
       after.fn = source.fn ∧ body.size < (Fir.Code.case x alts default).size) ∨
@@ -52,8 +52,8 @@ theorem case_activation
   have constructor : value.asCtor (tablesOf P pairs).known H = some (key, fields) := by
     rw [known]
     exact ownCtor
-  have chosen : ownCase key (Own.Plain.lowerAlts live joins alts) (Own.Plain.lowerOpt live joins default) =
-      some (Own.Plain.lowerCode live joins body) := by rw [firCase_lower, selected]; rfl
+  have chosen : ownCase key (Own.Plain.lowerAlts live joins alts imm) (Own.Plain.lowerOpt live joins default imm) =
+      some (Own.Plain.lowerCode live joins body imm) := by rw [firCase_lower, selected]; rfl
   obtain ⟨fd, _, _, _, _, _, _, lookup, range, _⟩ := before.layout
   have programSize : P.base.size = F.size := generate_size (checkProgram_parts (checkScopedProgram_parts checked).1).2
   have nativeRange : source.fn < P.base.size := by simpa only [programSize] using range

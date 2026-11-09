@@ -1733,11 +1733,12 @@ and proof statement. A claim with another object format is rejected with
 | 8 | `0xE8 0x00` | Catalog claim | 1 addr (members root over member claim digests) |
 | 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
 | 10 | `0xE8 0x02` | Binding claim | 2 addr (specification digest, binding hash) |
+| 11 | `0xE8 0x03` | Compile claim (Lean / IxCC) | 2 addr (env root, target) + 1B policy + N0 abiArity + 1 addr (elfHash) |
 
 The claim payloads in this table follow the two scope bytes. Reveal and
 Contains require validator `0`; Eval, Catalog and Binding require validator
 `3`; Check takes validator `3` or `4`; CheckEnv takes `3`, `4` or `5`;
-Resource requires validator `2`.
+Resource requires validator `2`; Compile requires validator `6` (`compile-v1`).
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
@@ -1808,6 +1809,7 @@ the multi-byte-tag path.
 | 5 | `0xF5` | Catalog proof | claim payload + N0 length + opaque ZK bytes |
 | 6 | `0xF6` | Resource proof wrapper | claim payload + N0 length + opaque proof bytes |
 | 7 | `0xF7` | Binding proof | claim payload + N0 length + opaque ZK bytes |
+| 8 | `0xF8 0x00` | Compile proof wrapper (Lean / IxCC) | claim payload + N0 length + opaque proof bytes |
 
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
@@ -1984,12 +1986,28 @@ E8 02                 -- N4(0xE, 10) (Binding): two-byte TagN rung
 ```
 Total: 68 bytes.
 
+**Compile claim** (`0xE8 0x03`, 3 addresses + policy + `abiArity`):
+```
+E8 03                 -- N4(0xE, 11) (Compile): two-byte TagN rung
+04 06                 -- object format 4, compile-v1
+[32 bytes]            -- env Merkle root
+[32 bytes]            -- target constant address
+[1 byte]              -- policy (0 = immortal, 1 = zeroRc, 2 = plainRc)
+[N0]                  -- abiArity (1 byte when < 128)
+[32 bytes]            -- elfHash (BLAKE3 of x86-64 ELF64 object)
+```
+Total: 102 bytes (for 1-byte `abiArity`).
+
 A Check or CheckEnv claim that assumes its binding is the validator-3 layout
 with `04 04` (object format 4, erased-lean-v2-assumed) as its scope bytes.
 
-The claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the canonical
-bytes and BLAKE3 digest of one claim of every variant; its headers and scope
-bytes match the claim examples above. `lake exe ixon-v4-tests` compares the file
+The cross-language claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the
+canonical bytes and BLAKE3 digest of one claim of every variant shared between
+the Rust and Lean codecs (`eval` through `binding`, plus the `check` and
+`checkEnv` validator-4 and validator-5 forms); its headers and scope bytes match
+the claim examples above. Lean-only `compile` claims (`0xE8 0x03`, scope
+`04 06`) are tested alongside them in `Tests/Ix/ClaimsV4.lean` and
+`Tests/Ix/Claim.lean`. `lake exe ixon-v4-tests` compares `claims.tsv`
 with the serializers' output, and `--export-fixtures` regenerates it under
 `ixon-v4-fixtures/` in the scratch directory `$IX_IXON_V4_DIR` (default
 `/tmp`).

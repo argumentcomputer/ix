@@ -21,13 +21,13 @@ theorem jump_activation
     {pairs : List (Nat × Cfg.Fun)} (consuming : consumeAll P = .ok pairs)
     (functions : Nat → Lir.Func) (main : Nat)
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {held roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     {j : Fir.JoinId} {args : List Fir.Arg} {sourceFunction : Fir.Fun}
     {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses
       (holdRoots external held) live ρf ρo roots joins Jf Jo (.jmp j args)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction)
     {entry : Fir.JEntry} {rest : List Fir.JEntry}
     (lookup : Fir.lookupJ j Jf = some (entry, rest)) (arity : args.length = entry.params.length)
@@ -66,7 +66,7 @@ theorem jump_activation
       simpa only [Own.Plain.scopeOk, Bool.and_eq_true] using before.scope
     exact parts.2
   have initialLayout : At F P source ρo Jo (Own.Plain.actionPrefix
-      (Own.Plain.copies args ++ Own.Plain.drops ((joins.lookup j).getD []) live) (.jmp j args)) := before.layout
+      (Own.Plain.transferActions imm ((joins.lookup j).getD []) live args) (.jmp j args)) := before.layout
   obtain ⟨first, tail, head, edgeLayout, absent⟩ :=
     checked_prefix_cursor checked initialLayout sourceLookup before.frame.words
   have tailEmpty : tail = [] := by

@@ -30,7 +30,7 @@ set_option maxRecDepth 100000 in
 example : summary Fir.Artifacts.fib = some (5, 37, 108, 2, 9) := by decide +kernel
 
 set_option maxRecDepth 100000 in
-example : summary Fir.Artifacts.sumLoop = some (5, 38, 104, 3, 10) := by decide +kernel
+example : summary Fir.Artifacts.sumLoop = some (5, 36, 104, 3, 9) := by decide +kernel
 
 set_option maxRecDepth 100000 in
 example : summary Fir.Artifacts.ackermann = some (5, 38, 106, 4, 9) := by decide +kernel

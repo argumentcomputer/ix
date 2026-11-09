@@ -305,6 +305,7 @@ theorem known_sound {K : Lam.Known} (hK : Q.known = K) {here : Here} {ρ' : List
         obtain ⟨m, hl', hy⟩ := hok
         rw [hw] at hl'; cases hl'
         exact ⟨[.lit (.nat m)], by simp [hy], by simp [Val.asCtor, hc']⟩
+      | prim p os => cases h
       | glob g => cases h
       | pap g as => cases h
 
@@ -344,6 +345,7 @@ theorem knownHead_sound {here : Here} {ρ' : List Val} (hf : FactsOk Q Valid her
         exact ⟨gd, ws, hg, hws, ha, hlt, rfl⟩
       | ctor _ _ => cases h
       | succ _ => cases h
+      | prim _ _ => cases h
 
 /-- `tick^m e` charges `m` times. -/
 theorem eval_ticks (k : Nat) (ρ : List Val) (J : List JClo) :

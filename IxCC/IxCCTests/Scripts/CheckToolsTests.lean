@@ -88,6 +88,10 @@ private def lexerTests : IO Unit := do
   let found ← checked (externs (← checked (scan externInput)))
   need (found == [("ffi_first", "first"), ("ffi_second", "second"), ("ffi_second", "Qualified.third")])
     "extern declaration/attribute inventory changed"
+  rejects "trailing quoted extern attribute target" "unsupported attribute-command target" do
+    discard (checked (externs (← checked (scan "attribute [extern \"ffi\"] ok «quoted»\n"))))
+  rejects "trailing quoted csimp attribute target" "unsupported csimp attribute target" do
+    discard (checked (csimps (← checked (scan "theorem ok : @f = @g := rfl\nattribute [csimp] ok «quoted»\n"))))
   rejects "unsupported extern" "unrecognized extern declaration" do
     let _ ← checked (externs (← checked (scan "@[extern \"unaccounted\"] theorem unsupported : True := by trivial")))
   rejects "implicit extern" "explicit symbol" do

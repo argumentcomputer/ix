@@ -297,11 +297,13 @@ theorem tree_ok : ∀ (fuel : Nat) {E : List Nat} {t : Trees} {o : Opd}, InRange
         obtain ⟨rfl, -⟩ := heq
         exact ⟨ht, Ext.refl _, trivial⟩
       | str s =>
-        rw [tree.eq_4 _ _ _ _ _ _ _ (by intro _ e; cases e) (by intro _ e; cases e)] at heq
+        rw [tree.eq_4] at heq
         exact holeOf_ok ho ht heq
     | box =>
-      rw [tree.eq_4 _ _ _ _ _ _ _ (by intro _ e; cases e) (by intro _ e; cases e)] at heq
-      exact holeOf_ok ho ht heq
+      rw [tree.eq_5] at heq
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, -⟩ := heq
+      exact ⟨ht, Ext.refl _, trivial⟩
     | lvl l =>
       have hl : l < ρ.length := ho
       rw [tree.eq_3] at heq

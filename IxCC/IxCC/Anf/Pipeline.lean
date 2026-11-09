@@ -43,9 +43,19 @@ structure Cert where
   steps : List Step := []
   deriving Inhabited
 
+/-- Nodes one global may hold after an inlining step: thirty times the largest global
+in the corpus (2,115). Inlining a callee doubles a mutually recursive pair each round
+with one firing, so the walk's firing budget alone does not bound certificate rounds. -/
+def maxGlobalNodes : Nat := 65536
+
+/-- Refuse a program holding a global over `maxGlobalNodes`. -/
+def checkGlobalNodes (P : Program) : Except String Program :=
+  if P.globalList.all fun (_, gd) => decide (gd.body.nodes ≤ maxGlobalNodes) then .ok P
+  else .error "inline: a global exceeds the node budget"
+
 def Step.run (p : Shrink.Params) : Step → Program → Except String Program
   | .shrink c, P => Shrink.run p c P
-  | .inline r, P => (Inline.round P r).map (·.1)
+  | .inline r, P => Inline.round P r >>= fun x => checkGlobalNodes x.1
   | .specialize c, P => Specialize.run c P
   | .prune, P => pure (Prune.run P)
 
@@ -86,11 +96,13 @@ def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
   steps := steps.push (.shrink c); stages := stages.push ("P2", P)
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)
-  for phase in [0:2] do
-    if phase == 1 then
+  for phase in [0:4] do
+    if phase > 0 then
       -- P4, then P2
-      let sc := Specialize.produce B.spec 0 P
-      P ← Specialize.run sc P
+      let sc := Specialize.produce B.spec (phase - 1) P
+      let P4 ← Specialize.run sc P
+      if phase > 1 && P4.size == P.size then break
+      P := P4
       steps := steps.push (.specialize sc); stages := stages.push ("P4", P)
       let (c, P2, f) ← Shrink.produce B.shrink P
       P := P2; fires := fires.add f

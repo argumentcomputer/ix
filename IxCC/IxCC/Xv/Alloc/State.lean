@@ -122,4 +122,14 @@ def defaultOrder : List X86.GPR :=
 
 def calleeSavedRegs : List X86.GPR := [.rbx, .r12, .r13, .r14]
 
+/-- Caller-saved registers preserved by the plain-RC runtime wrappers
+(`rc_marker_inc1`, `rc_marker_dec`, `rc_publish_*`). -/
+def rcSavedRegs : List X86.GPR := [.r8, .r9, .r10]
+
+/-- Preference order for values live across calls: callee-saved first, then
+RC-wrapper-saved (`r8`, `r9`, `r10`), then `rcx`, `rdx` (preserved by
+`rc_marker_inc1`), then `rsi`, `rdi`, `rax`, `r11`. -/
+def crossCallOrder : List X86.GPR :=
+  [.rbx, .r12, .r13, .r14, .r8, .r9, .r10, .rcx, .rdx, .rsi, .rdi, .rax, .r11]
+
 end IxCC.Xv.Alloc

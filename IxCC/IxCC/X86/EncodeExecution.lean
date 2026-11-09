@@ -38,6 +38,7 @@ theorem single_of_linear {instruction : Instr} (linear : linearInstruction instr
   simp only [Instr.freeFrame, Instr.ofRow, aluImmRow]
   split <;> rfl
 
+set_option maxRecDepth 16384 in
 /-- Every listed linear row declares no input flags. -/
 theorem table_flagsFree : Op.rows.all (fun o => !o.linear || (desc o).flagsIn.isEmpty) = true := by decide
 

@@ -72,7 +72,7 @@ inductive Def where
 itself (parameter `i` is level `i`; `e` is under `d` binders). -/
 def fixedArgs (mask : List Bool) (d : Nat) (as : List Atom) : Bool :=
   as.length == mask.length &&
-  (as.zipIdx.zip mask).all fun ((a, i), m) => !m || a == .var (d - 1 - i)
+  (as.zipIdx.zip mask).all fun ((a, i), m) => !m || a == .var (d - 1 - i) || a == .box
 
 mutual
 
@@ -188,7 +188,8 @@ def tree (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
         let (t, _) := trees P defs fkey inv fuel (t.need l) frees
         (t, .glob (.lam fkey [inv, idx]))
       | _ => t.holeOf o
-    | o => t.holeOf o
+    | .lit (.str _) => t.holeOf o
+    | .box => (t, .con (.src 0) [])
 
 def trees (P : Program) (defs : Src.NatMap Def) (fkey : Key.GKey) (inv : Nat) :
     Nat → Trees → List Opd → Trees × List Key.ArgKey

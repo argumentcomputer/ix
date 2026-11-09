@@ -38,8 +38,28 @@ theorem zeroExtendSem_ok (source : Width) (input : SemIn) : ∃ out, zeroExtendS
   unfold zeroExtendSem
   split <;> exact ⟨_, rfl⟩
 
+theorem signExtendSem_ok (source : Width) (input : SemIn) : ∃ out, signExtendSem source input = .ok out := by
+  unfold signExtendSem
+  split <;> exact ⟨_, rfl⟩
+
+theorem notSem_ok (input : SemIn) : ∃ out, notSem input = .ok out := by
+  unfold notSem
+  split <;> exact ⟨_, rfl⟩
+
+theorem negSem_ok (width : Width) (input : SemIn) : ∃ out, negSem width input = .ok out := by
+  unfold negSem
+  split <;> exact ⟨_, rfl⟩
+
+theorem bswapSem_ok (width : Width) (input : SemIn) : ∃ out, bswapSem width input = .ok out := by
+  unfold bswapSem
+  split <;> exact ⟨_, rfl⟩
+
 theorem mulSem_ok (width : Width) (input : SemIn) : ∃ out, mulSem width input = .ok out := by
   unfold mulSem
+  split <;> exact ⟨_, rfl⟩
+
+theorem umulSem_ok (width : Width) (input : SemIn) : ∃ out, umulSem width input = .ok out := by
+  unfold umulSem
   split <;> exact ⟨_, rfl⟩
 
 theorem testSem_ok (width : Width) (input : SemIn) : ∃ out, testSem width input = .ok out := by
@@ -49,6 +69,11 @@ theorem testSem_ok (width : Width) (input : SemIn) : ∃ out, testSem width inpu
 theorem shiftSem_ok (operation : ShiftOp) (width : Width) (input : SemIn) :
     ∃ out, shiftSem operation width input = .ok out := by
   unfold shiftSem
+  split <;> exact ⟨_, rfl⟩
+
+theorem rotateSem_ok (operation : RotateOp) (width : Width) (input : SemIn) :
+    ∃ out, rotateSem operation width input = .ok out := by
+  unfold rotateSem
   split <;> exact ⟨_, rfl⟩
 
 /-- `div` succeeds under its precondition: a nonzero divisor above the high
@@ -100,15 +125,22 @@ unconditionally. -/
 theorem Op.safe_ok (o : Op) (input : SemIn) (safe : (desc o).safe input = true) :
     ∃ out, (desc o).sem input = .ok out := by
   cases hmn : o.mn <;> cases hform : o.form <;>
-    simp only [desc, hmn, hform, arithDesc, movDesc, movzxDesc, leaDesc, imulDesc, testDesc, shiftDesc, divDesc,
+    simp only [desc, hmn, hform, arithDesc, notDesc, negDesc, movDesc, movzxDesc, movsxDesc, movsxdDesc,
+      leaDesc, imulDesc, umulDesc, testDesc, shiftDesc, rotateDesc, bswapDesc, divDesc,
       setccDesc, cmovDesc, pushDesc, popDesc, callDesc, jmpDesc, retDesc, jccDesc] at safe ⊢
   all_goals first
     | exact Arith.sem_ok _ _ _
+    | exact notSem_ok _
+    | exact negSem_ok _ _
     | exact moveSem_ok _
     | exact zeroExtendSem_ok _ _
+    | exact signExtendSem_ok _ _
     | exact mulSem_ok _ _
+    | exact umulSem_ok _ _
     | exact testSem_ok _ _
     | exact shiftSem_ok _ _ _
+    | exact rotateSem_ok _ _ _
+    | exact bswapSem_ok _ _
     | exact divSem_ok _ _ safe
     | exact setccSem_ok _ _ safe
     | exact cmovSem_ok _ _ safe

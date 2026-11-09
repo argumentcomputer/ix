@@ -14,13 +14,13 @@ import edges:
 
   1. CHECKER→THEORY: no module of the checker (`KernelLayout.Part.checker`:
      the flattened implementation, `Cached/*`, `Frontend/*`) imports
-     `Ix.Kernel.{Verify,SetTheory,Model,SetModel,Semantics,Term}.*`.
+     `IxCK.Kernel.{Verify,SetTheory,Model,SetModel,Semantics,Term}.*`.
   2. BASE→MODEL: no base module (everything outside the model lane
      `IxCK/Kernel/Model{,/*}` and the capstone assembly `MainTheorem`,
      `Verify/Cached{,/*}`) imports the model lane.
   3. THE RULES FENCE: `IxCK/Kernel/Rules/*` and `IxCK/Kernel/Model/Rules/*`
      (except `Model.Rules.Recompose`) do not directly import
-     `Ix.Kernel.{Core,TypeChecker,CoreIO,DeclCheck,Checker*}` or `Cached*`.
+     `IxCK.Kernel.{Core,TypeChecker,CoreIO,DeclCheck,Checker*}` or `Cached*`.
   4. THE RULES CLOSURE: the elaboration closure of those modules (direct
      imports, then `public import`s) reaches exactly the five recorded
      doors (`rulesClosureDoors`). A new door is a regression; a door no

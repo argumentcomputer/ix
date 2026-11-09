@@ -28,6 +28,17 @@ def fixtures : Array (String × Ix.Claim) :=
      ("binding", .binding ctx.spec ctx.binding),
      ("check_env_class", .checkEnv klass a asm) ]
 
+/-- Lean-only `Claim.compile` fixture exercised by the strict envelope and
+    proof-wrapper checks below (`claims.tsv` holds only the cross-language
+    variants shared with `crates/ixon/src/proof.rs`). -/
+def compileFixture : String × Ix.Claim :=
+  ("compile", .compile
+    { env := ⟨ByteArray.mk (Array.replicate 32 0x11)⟩
+      target := ⟨ByteArray.mk (Array.replicate 32 0x22)⟩
+      policy := .plainRc
+      abiArity := 3
+      elfHash := ⟨ByteArray.mk (Array.replicate 32 0x33)⟩ })
+
 /-- The variants whose claims may assume their binding (validator 4). -/
 def mayAssume (claim : Ix.Claim) : Bool :=
   Ix.Claim.variantMayAssume (Ix.Claim.variantOf claim)
@@ -43,7 +54,7 @@ def run : IO Unit := do
   unless expected == fixtureText do
     throw <| IO.userError "claim fixture differs from its producer; regenerate it with \
       `lake exe ixon-v4-tests --export-fixtures`"
-  for (_, claim) in fixtures do
+  for (_, claim) in fixtures.push compileFixture do
     let bytes := Ix.Claim.ser claim
     unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "claim roundtrip"
     for n in [:bytes.size] do
@@ -84,10 +95,12 @@ def run : IO Unit := do
     let decoded ← IO.ofExcept (Ixon.Proof.de proofBytes)
     unless decoded.claim == claim && decoded.proof == proof.proof do throw <| IO.userError "proof roundtrip"
     unless (Ixon.Proof.de (proofBytes.push 0)).toOption.isNone do throw <| IO.userError "trailing proof bytes accepted"
-    -- Every proof variant is below 8 (a one-byte header), so the proof's
-    -- object-format byte is byte 1.
-    unless proofBytes[1]! == Ixon.Env.OBJECT_FORMAT do throw <| IO.userError "proof scope offset"
-    unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
+    -- Proof variants 0–7 use a one-byte header (`0xF0`–`0xF7`), while proof
+    -- variant 8 (`compile`) uses the two-byte header `F8 00`.
+    let proofHeader := if Ixon.Proof.variantOf claim >= 8 then 2 else 1
+    unless proofBytes[proofHeader]! == Ixon.Env.OBJECT_FORMAT do
+      throw <| IO.userError "proof scope offset"
+    unless (Ixon.Proof.de (proofBytes.set! proofHeader 3)).toOption.isNone do
       throw <| IO.userError "proof with version 3 object format accepted"
   let (base, unit) := Tests.ResourceAddressed.unitEnv
   let (env, _) := Tests.ResourceAddressed.store base (Tests.ResourceAddressed.identity unit)

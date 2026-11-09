@@ -159,7 +159,7 @@
    "imports": ["IxCCTests.Xv.Alloc.Support", "IxCCTests.Support.Rng"]},
   "IxCCTests.X86.DriverSession.Main":
   {"path": "IxCCTests/X86/DriverSession/Main.lean",
-   "imports": ["IxCCTests.X86.DriverSession.Controls"]},
+   "imports": ["IxCCTests.X86.DriverSession.Controls", "IxCCTests.Ring0"]},
   "IxCCTests.X86.DriverSession.Controls":
   {"path": "IxCCTests/X86/DriverSession/Controls.lean",
    "imports": ["IxCC.X86.DriverSession"]},
@@ -444,6 +444,9 @@
     "IxCCTests.Src.Bench"]},
   "IxCCTests.Rt.Cases":
   {"path": "IxCCTests/Rt/Cases.lean", "imports": ["IxCCTests.Rt.Support"]},
+  "IxCCTests.Ring0":
+  {"path": "IxCCTests/Ring0.lean",
+   "imports": ["IxCC.Ring0", "IxCCTests.Pipeline.Support"]},
   "IxCCTests.Recheck.Stages":
   {"path": "IxCCTests/Recheck/Stages.lean",
    "imports": ["IxCC.Recheck.Run", "IxCCTests.Rt.Kernel"]},
@@ -454,7 +457,8 @@
     "IxCCTests.Recheck.Kernel",
     "IxCCTests.Recheck.Audit",
     "IxCCTests.Lir.Gen",
-    "IxCC.Lir.SplitEdges"]},
+    "IxCC.Lir.SplitEdges",
+    "IxCC.Recheck.Rc.Replay"]},
   "IxCCTests.Recheck.ReadbackMain":
   {"path": "IxCCTests/Recheck/ReadbackMain.lean",
    "imports": ["IxCCTests.Recheck.Readback"]},
@@ -702,7 +706,8 @@
    ["IxCCTests.Pipeline.Support",
     "IxCCTests.Rt.Differential",
     "IxCCTests.Rt.Cases",
-    "IxCCTests.Lam.Differential"]},
+    "IxCCTests.Lam.Differential",
+    "IxCC.CompileClaim"]},
   "IxCCTests.Own.Verdicts":
   {"path": "IxCCTests/Own/Verdicts.lean",
    "imports": ["IxCCTests.Corpus.Build"]},
@@ -880,7 +885,8 @@
    "imports": ["IxCC.Ixon.V3.Validate", "IxCC.Tools.Check"]},
   "IxCCTests.IxonV3.Handoff":
   {"path": "IxCCTests/IxonV3/Handoff.lean",
-   "imports": ["IxCC.Ixon.V3.Source", "IxCC.Tools.Check"]},
+   "imports":
+   ["IxCC.Ixon.V3.Source", "IxCC.Ixon.V3.Validate", "IxCC.Tools.Check"]},
   "IxCCTests.IxonV3.Fixtures":
   {"path": "IxCCTests/IxonV3/Fixtures.lean",
    "imports": ["IxCC.Ixon.V3.Resource.Admit"]},
@@ -2976,7 +2982,11 @@
     "IxCC.Lam.Erase.Proof.WFProg"]},
   "IxCCTests.Fences.Compile":
   {"path": "IxCCTests/Fences/Compile.lean",
-   "imports": ["IxCC.Recheck.Proof.Compile"]},
+   "imports":
+   ["IxCC.Recheck.Proof.Compile",
+    "IxCC.Compiler.Proof",
+    "IxCC.CompileClaim.Proof",
+    "IxCC.Ring0.Proof"]},
   "IxCCTests.Fences.CfgProof":
   {"path": "IxCCTests/Fences/CfgProof.lean",
    "imports": ["IxCC.Cfg.Proof.Fuel"]},
@@ -3280,7 +3290,10 @@
   "IxCCTests.Anf.Shapes":
   {"path": "IxCCTests/Anf/Shapes.lean",
    "imports":
-   ["IxCCTests.Anf.Support", "IxCC.Anf.Pipeline", "IxCCTests.Src.Bench"]},
+   ["IxCCTests.Anf.Support",
+    "IxCCTests.Anf.KernelEval",
+    "IxCC.Anf.Pipeline",
+    "IxCCTests.Src.Bench"]},
   "IxCCTests.Anf.Run":
   {"path": "IxCCTests/Anf/Run.lean",
    "imports":
@@ -3447,7 +3460,8 @@
     "IxCCTests.Own.Plain.Suite",
     "IxCCTests.Pipeline.ShrinkSuite",
     "IxCCTests.Recheck.Run",
-    "IxCCTests.Recheck.KernelSlow"]},
+    "IxCCTests.Recheck.KernelSlow",
+    "IxCCTests.Ring0"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
    "imports": ["IxCC.Xv.Semantics", "IxCC.Lir.Operands"]},
@@ -3795,7 +3809,8 @@
   {"path": "IxCC/Xv/Alloc/Output.lean", "imports": ["IxCC.Xv.Syntax"]},
   "IxCC.Xv.Alloc.Liveness":
   {"path": "IxCC/Xv/Alloc/Liveness.lean",
-   "imports": ["IxCC.Xv.Operands", "IxCC.Xv.WellFormed"]},
+   "imports":
+   ["IxCC.Xv.Operands", "IxCC.Xv.WellFormed", "IxCC.Xv.XlSemantics"]},
   "IxCC.Xv.Alloc.LinearScan":
   {"path": "IxCC/Xv/Alloc/LinearScan.lean", "imports": ["IxCC.Xv.Alloc.State"]},
   "IxCC.Xv.Alloc.Driver":
@@ -4958,6 +4973,24 @@
   "IxCC.Rt.Backend":
   {"path": "IxCC/Rt/Backend.lean",
    "imports": ["IxCC.Rt.Lower", "IxCC.Backend"]},
+  "IxCC.Ring0.Proof":
+  {"path": "IxCC/Ring0/Proof.lean",
+   "imports":
+   ["IxCC.Ring0",
+    "IxCC.CompileClaim.Proof",
+    "IxCC.X86.Proof.DriverSession",
+    "IxCC.Rt.Proof.Mem"]},
+  "IxCC.Ring0":
+  {"path": "IxCC/Ring0.lean",
+   "imports":
+   ["IxCC.CompileClaim",
+    "IxCC.X86.Driver",
+    "IxCC.X86.DriverSession",
+    "IxCC.X86.WordRegion",
+    "IxCC.X86.StreamPermissions",
+    "IxCC.X86.StreamSpec",
+    "IxCC.X86.Table.Op",
+    "IxCC.X86.Table.Index"]},
   "IxCC.Recheck.Run":
   {"path": "IxCC/Recheck/Run.lean",
    "imports":
@@ -5155,6 +5188,7 @@
    "imports":
    ["IxCC.Recheck.Cert",
     "IxCC.Recheck.Err",
+    "IxCC.Src.Hints",
     "Lean.Data.Json.Basic",
     "Lean.Data.Json.Parser",
     "Lean.Data.Json.Printer",
@@ -5188,7 +5222,8 @@
     "IxCC.Recheck.Cert",
     "IxCC.Recheck.Run",
     "IxCC.Recheck.Produce",
-    "IxCC.Recheck.Json"]},
+    "IxCC.Recheck.Json",
+    "IxCC.Own.Plain.Certificate"]},
   "IxCC.Own.WellFormed":
   {"path": "IxCC/Own/WellFormed.lean",
    "imports": ["IxCC.Own.Immortal", "IxCC.Fir.WellFormed"]},
@@ -5255,7 +5290,10 @@
    "imports": ["IxCC.Own.Plain.Semantics", "IxCC.Sem.Agrees"]},
   "IxCC.Own.Plain.Proof.Transfers":
   {"path": "IxCC/Own/Plain/Proof/Transfers.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Drops"]},
+   "imports":
+   ["IxCC.Own.Plain.Proof.Drops",
+    "IxCC.Own.Plain.Proof.CaptureRoots",
+    "IxCC.Own.Plain.Proof.Scope"]},
   "IxCC.Own.Plain.Proof.Terminals":
   {"path": "IxCC/Own/Plain/Proof/Terminals.lean",
    "imports":
@@ -5346,7 +5384,10 @@
     "IxCC.Own.Proof.Heap"]},
   "IxCC.Own.Plain.Proof.Prefixes":
   {"path": "IxCC/Own/Plain/Proof/Prefixes.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Actions", "IxCC.Own.Plain.Proof.Unfold"]},
+   "imports":
+   ["IxCC.Own.Plain.Proof.Actions",
+    "IxCC.Own.Plain.Proof.Environment",
+    "IxCC.Own.Plain.Proof.Unfold"]},
   "IxCC.Own.Plain.Proof.NonCall":
   {"path": "IxCC/Own/Plain/Proof/NonCall.lean",
    "imports":
@@ -5866,11 +5907,37 @@
   "IxCC.Fir.Lower":
   {"path": "IxCC/Fir/Lower.lean",
    "imports": ["IxCC.Fir.Syntax", "IxCC.Anf.WellFormed", "IxCC.Anf.Census"]},
+  "IxCC.Compiler.Proof":
+  {"path": "IxCC/Compiler/Proof.lean",
+   "imports":
+   ["IxCC.Recheck",
+    "IxCC.Recheck.Proof.Compile",
+    "IxCC.Recheck.Rc.Produce",
+    "IxCC.Recheck.Rc.Proof.ObjectSound",
+    "IxCC.Own.Plain.Proof.Language",
+    "IxCC.Own.Plain.Proof.Certificate"]},
+  "IxCC.CompileClaim.Proof":
+  {"path": "IxCC/CompileClaim/Proof.lean",
+   "imports":
+   ["IxCC.CompileClaim",
+    "IxCC.Compiler.Proof",
+    "IxCC.Recheck.Proof.Soundness",
+    "IxCC.Recheck.Rc.Proof.ObjectSound"]},
+  "IxCC.CompileClaim":
+  {"path": "IxCC/CompileClaim.lean",
+   "imports":
+   ["IxCC.Recheck",
+    "IxCC.Recheck.Linked",
+    "IxCC.Recheck.Rc.Produce",
+    "IxCC.Recheck.Rc.Linked",
+    "IxCC.Recheck.Rc.Bytes",
+    "IxCC.Ixon.PureHash"]},
   "IxCC.Cli.Main": {"path": "IxCC/Cli/Main.lean", "imports": ["IxCC.Cli"]},
   "IxCC.Cli":
   {"path": "IxCC/Cli.lean",
    "imports":
    ["IxCC.Recheck",
+    "IxCC.Recheck.Rc.Produce",
     "IxCC.Anf.Print",
     "IxCC.Fir.Print",
     "IxCC.Cfg.Print",
@@ -6280,7 +6347,9 @@
   "IxCC.Cfg.Rc.Proof.Physical.CopyPrefix":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/CopyPrefix.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.CopyStep", "IxCC.Cfg.Rc.Proof.Prefix"]},
+   ["IxCC.Cfg.Rc.Proof.Physical.CopyStep",
+    "IxCC.Cfg.Rc.Proof.Prefix",
+    "IxCC.Own.Plain.Proof.Scope"]},
   "IxCC.Cfg.Rc.Proof.Physical.ConsumedSwitch":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ConsumedSwitch.lean",
    "imports":
@@ -6514,7 +6583,8 @@
     "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
     "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
     "IxCC.Cfg.Rc.Proof.Ordinary",
-    "IxCC.Own.Plain.Proof.Projection"]},
+    "IxCC.Own.Plain.Proof.Projection",
+    "IxCC.Own.Plain.Proof.Scalars"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/Projection.lean",
    "imports":
@@ -8119,4 +8189,6 @@
     "IxCC.Recheck.Proof.Object",
     "IxCC.Recheck.Proof.Soundness",
     "IxCC.Cli",
-    "IxCC.Aiur"]}}}
+    "IxCC.Aiur",
+    "IxCC.CompileClaim",
+    "IxCC.Ring0"]}}}

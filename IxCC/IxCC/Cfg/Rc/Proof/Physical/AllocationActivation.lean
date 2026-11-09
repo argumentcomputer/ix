@@ -20,13 +20,13 @@ theorem allocation_activation
     (checked : checkScopedProgram F bodies P = true)
     {pairs : List (Nat × Cfg.Fun)} (functions : Nat → Lir.Func) (main : Nat)
     {H : Heap} {addresses : AddressMap} {external : Nat → Nat} {held roots : List RVal}
-    {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
+    {live : List Fir.Var} {imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
     {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
     {x : Fir.Var} {ctor : Fir.CtorInfo} {args : List Fir.Arg} {cont : Fir.Code}
     {sourceFunction : Fir.Fun} {function : Cfg.Fun} {source : Cfg.Frame} {target : Lir.Frame}
     (before : Activation F P pairs (Public.Spec.sourceStage P functions main) H addresses
       (holdRoots external held) live ρf ρo roots joins Jf Jo (.bind x (.ctor ctor args) cont)
-      sourceFunction.vars function source target)
+      sourceFunction.vars function source target imm)
     (sourceLookup : F.fun? source.fn = some sourceFunction) (positive : 0 < ctor.arity)
     {mem : X86.Memory} {context base bump limit : Lir.Word} {regionBytes : Nat}
     {slots : List Slot} {lists : Nat → List Lir.Word}
@@ -35,17 +35,17 @@ theorem allocation_activation
     (callers : List Lir.Frame) :
     (∃ fields logical copied address next mem' slots' lists' after final,
       Own.evalArgs ρo args = some fields ∧ Fir.evalArgs ρf args = some logical ∧
-      Own.Plain.evalActions ρo H (Own.Plain.copies args) = .ok copied ∧
+      Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok copied ∧
       let allocated := copied.alloc .rc {ctor, fields}
       Own.Plain.evalRhs {ctors := F.ctors, known := F.known} ρo copied (.ctor ctor args) = .ok allocated ∧
       Activation F P pairs (Public.Spec.sourceStage P functions main) allocated.2
         (placeFresh addresses copied.size address) (holdRoots external held) (live ++ [x])
         (ρf.insert x (.ctor ctor logical)) (ρo.insert x allocated.1) (roots ++ [allocated.1])
-        joins Jf Jo cont sourceFunction.vars function after final ∧
+        joins Jf Jo cont sourceFunction.vars function after final imm ∧
       HeapState P pairs allocated.2 (placeFresh addresses copied.size address) mem' external
         ((roots ++ [allocated.1]) ++ held) context base next limit regionBytes slots' lists' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
-        {mem, ctx := context, stack := target :: callers} (2 * (Own.Plain.copies args).length + 2)
+        {mem, ctx := context, stack := target :: callers} (2 * (Own.Plain.copies (Own.Plain.heapArgs imm args)).length + 2)
         {mem := mem', ctx := context, stack := final :: callers} ∧
       copied.size = H.size ∧ after.fn = source.fn ∧
       (∀ value logical, Own.Proof.Den H value logical → Own.Proof.Den allocated.2 value logical)) ∨
@@ -60,13 +60,19 @@ theorem allocation_activation
       ctor.fieldKinds.all (fun kind => decide (kind = .shared)) = true := by
     simpa only [Own.Plain.rhsIn, Bool.and_eq_true, decide_eq_true_eq, and_assoc] using rhsScope
   have scope := rhsFacts.2.1
-  have initialLayout : At F P source ρo Jo (Own.Plain.actionPrefix (Own.Plain.copies args)
-      (.bind x (.ctor ctor args) (Own.Plain.lowerCode (live ++ [x]) joins cont))) := before.layout
+  have nextImmEq : Own.Plain.nextImm imm x (.ctor ctor args) = imm := by
+    simp [Own.Plain.nextImm, Own.Plain.isImmRhs, Nat.ne_of_gt positive]
+  have initialLayout : At F P source ρo Jo (Own.Plain.actionPrefix (Own.Plain.copies (Own.Plain.heapArgs imm args))
+      (.bind x (.ctor ctor args) (Own.Plain.lowerCode (live ++ [x]) joins cont imm))) := by
+    have layout := before.layout
+    dsimp only [Own.Plain.lowerCode] at layout
+    rw [nextImmEq] at layout
+    exact layout
   obtain ⟨first, bindingTail, prefixHead, bindingLayout, absent⟩ :=
     checked_prefix_cursor checked initialLayout sourceLookup before.frame.words
   obtain ⟨tail, bindingHead, _⟩ := bind_layout bindingLayout .erased
   have bindingHead' : bindingTail = .bind x (.alloc ctor args .shared) :: tail := bindingHead
-  have head : source.rest = encodePrefix P.base.size first (Own.Plain.copies args) ++
+  have head : source.rest = encodePrefix P.base.size first (Own.Plain.copies (Own.Plain.heapArgs imm args)) ++
       .bind x (.alloc ctor args .shared) :: tail := by rw [bindingHead'] at prefixHead; exact prefixHead
   have real := checked_binding_real checked bindingLayout sourceLookup
     (by simp [Own.immRhs, reserved])
@@ -90,7 +96,7 @@ theorem allocation_activation
     have activation : Activation F P pairs (Public.Spec.sourceStage P functions main) allocated.2
         (placeFresh addresses copied.size address) (holdRoots external held) (live ++ [x])
         (ρf.insert x (.ctor ctor logical)) (ρo.insert x allocated.1) (roots ++ [allocated.1])
-        joins Jf Jo cont sourceFunction.vars function after final :=
+        joins Jf Jo cont sourceFunction.vars function after final imm :=
       ⟨canonical, actualLayout, frame, contScope, running, fused⟩
     have arity : fields.length = ctor.arity := (Own.evalArgs_length ρo arguments).trans rhsFacts.1
     have frameArgs := Cfg.Proof.evalArgs_sub before.lexical.1 arguments

@@ -66,7 +66,7 @@ def negatives (F : Fir.Program) (j : Json) : IO Unit := do
   refused F "extra-envelope-field" (.arr (xs.push (.str "extra")))
   refused F "missing-complete-map" (.arr #[xs[0]!, .arr #[.str "leaf"]])
   for kind in ["remove-action", "inc-count", "dec-variable", "extra-map-node",
-      "extra-action-field", "wrong-control-shape"] do
+      "extra-action-field", "wrong-control-shape", "negative-natural", "wrong-scalar-type"] do
     let some corrupted := mutateFirst (rewrite kind) 4096 j |
       throw (IO.userError s!"control {kind} did not actually mutate the certificate")
     refused F kind corrupted
@@ -84,8 +84,7 @@ def syntheticControls : IO Unit := do
   let j := Own.Plain.Certificate.encode candidate.bodies
   let _ ← IO.ofExcept (Own.Plain.Certificate.admit F j)
   for kind in ["capture-remove", "capture-duplicate", "capture-order", "branch-remove",
-      "branch-extra", "default-remove", "occupied-entry-null", "empty-entry-code",
-      "negative-natural", "wrong-scalar-type"] do
+      "branch-extra", "default-remove", "occupied-entry-null", "empty-entry-code"] do
     let some corrupted := mutateFirst (rewrite kind) 4096 j |
       throw (IO.userError s!"synthetic control {kind} did not mutate")
     unless corrupted != j do throw (IO.userError s!"synthetic control {kind} was a no-op")

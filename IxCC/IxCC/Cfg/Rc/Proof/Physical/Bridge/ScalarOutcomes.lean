@@ -18,7 +18,7 @@ theorem primitive_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (next : PhysicalCode F P config pairs main clock sourceJoins body) :
     PhysicalCode F P config pairs main clock sourceJoins (.bind x (.prim op args) body) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFd fd
-    source target mem context base bump limit regionBytes slots lists callers sourceLookup before heap
+    source target mem context base bump limit regionBytes slots lists callers imm sourceLookup before heap
   rw [Fir.eval_bind_prim]
   rcases Own.Plain.fir_rhs_pure F sourceEnv (.prim op args) with stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial
@@ -44,7 +44,7 @@ theorem argument_result {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (next : PhysicalCode F P config pairs main clock sourceJoins body) :
     PhysicalCode F P config pairs main clock sourceJoins (.bind x (.arg arg) body) := by
   intro H addresses external live sourceEnv ownedEnv roots joins ownedJoins sourceFd fd
-    source target mem context base bump limit regionBytes slots lists callers sourceLookup before heap
+    source target mem context base bump limit regionBytes slots lists callers imm sourceLookup before heap
   rw [Fir.eval_bind_arg]
   rcases Own.Plain.fir_rhs_pure F sourceEnv (.arg arg) with stuck | ⟨logical, evaluation⟩
   · rw [stuck]; trivial

@@ -8,8 +8,8 @@ and on every IH argument of every rule `rhs` (design note 01 §4.4). A mode
 matters only where its argument is relevant, so a level-conditional argument
 (D18) gets its mode like any other; arguments irrelevant at every instance
 are not entered. It never changes a class or a major, and it touches only
-modes, so the erased program is unchanged (`Lazify.erase_eq`). It runs after
-the relevance check, on the checked runtime terms.
+modes (no theorem yet states what this preserves). It runs after the relevance
+check, on the checked runtime terms.
 
 Kernel-evaluable (D17, on the recheck path as a re-run pass): the term walk
 is a mutual structural recursion over `Term`, a spine's by-name positions are

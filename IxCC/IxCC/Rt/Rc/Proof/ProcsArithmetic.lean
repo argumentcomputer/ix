@@ -1,7 +1,7 @@
 import IxCC.Rt.Rc.Procs
 
-/-! Arithmetic obligations for the scratch procedures, not whole-operation
-memory simulation. The latter remains an explicit promotion gate. -/
+/-! Arithmetic obligations for the RC runtime procedures (`Rt.Rc.Procs`),
+consumed by the whole-operation memory simulation proofs in `Rt.Rc.Proof`. -/
 namespace IxCC.Rt.Rc.Procs
 
 theorem increment_encoding {refs : Nat} (hpos : 0 < refs)

@@ -15,6 +15,7 @@ def Cert.toText (c : Cert) : String :=
   (Json.arr #[.str "ixcc/rc-cert/2", CertJson.cert c.base, c.own]).compress
 
 def Cert.ofText (text : String) : Except String Cert := do
+  CertJson.checkJsonText text
   let json ← Json.parse text
   match (← json.getArr?).toList with
   | [.str "ixcc/rc-cert/2", base, own] => return { base := ← CertJson.cert? base, own }
@@ -33,6 +34,12 @@ structure Front where
 
 def Front.reps (f : Front) : Lir.FunId → Option (List Xv.Stacking.ArgRep) :=
   (⟨f.lowered, f.drop⟩ : Cfg.Rc.Public.Lowered).reps
+
+def Front.layout (f : Front) : Cfg.Rc.Native.Layout :=
+  ⟨f.cfg.base.size, f.cfg.base.ctors.filter (fun c => c.arity > 0)⟩
+
+def Front.env (f : Front) (base : Xv.Xl.Env) : Xv.Xl.Env :=
+  f.layout.env base
 
 def runFront (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Front := do
   let (src, checked) ← Recheck.front cfg P c.base
@@ -59,10 +66,10 @@ def backTyped (cfg : Config) (f : Front) (root : Ixon.Address) (c : Recheck.Cert
     Except Err (Xv.VProgram × Xv.LProgram × Xv.Stacking.Stacked × X86.Program ×
       List (String × X86.BlockId)) := do
   let xv ← (Xv.Select.select f.lowered.program).mapError Err.ofSelect
-  (Xv.Validate.program cfg.env xv c.alloc).mapError Err.ofValidate
+  (Xv.Validate.program (f.env cfg.env) xv c.alloc).mapError Err.ofValidate
   let xl ← (Xv.Alloc.applyProgram xv c.alloc).mapError fun message =>
     { stage := .alloc, code := "alloc.apply", message }
-  let backendCfg := { Recheck.backendConfig cfg f.lowered root c with reps := f.reps }
+  let backendCfg := { Recheck.backendConfig cfg f.lowered root c with reps := f.reps, env := f.env cfg.env }
   let (stacked, program, exports) ← (Backend.lay xl backendCfg).mapError Err.ofBackend
   return (xv, xl, stacked, program, exports)
 

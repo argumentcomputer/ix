@@ -131,18 +131,51 @@ theorem drops_eval_sub {lexical actual : Own.Env} (captured live : List Fir.Var)
   evalActions_agree lexical actual _
     (fun action member => env_agree_live sub present _ (drops_variables captured live action member)) H
 
-theorem transfer_eval_sub {lexical actual : Own.Env} (captured live : List Fir.Var)
+theorem moveCopies_variables {live : List Fir.Var} (seen : List Fir.Var) (args : List Fir.Arg)
+    (scope : args.all (Own.Plain.argIn live) = true) :
+    ∀ action ∈ Own.Plain.moveCopies seen args, actionVariable action ∈ live := by
+  induction args generalizing seen with
+  | nil => simp [Own.Plain.moveCopies]
+  | cons arg args ih =>
+    have parts : Own.Plain.argIn live arg = true ∧ args.all (Own.Plain.argIn live) = true := by
+      simpa only [List.all_cons, Bool.and_eq_true] using scope
+    cases arg with
+    | var x =>
+      dsimp only [Own.Plain.moveCopies]
+      cases seen.contains x with
+      | false =>
+        rw [if_neg Bool.false_ne_true]
+        exact ih (x :: seen) parts.2
+      | true =>
+        rw [if_pos rfl]
+        intro action member
+        rcases List.mem_cons.mp member with rfl | member
+        · simpa [actionVariable, Own.Plain.argIn] using parts.1
+        · exact ih seen parts.2 action member
+    | lit _ => exact ih seen parts.2
+    | erased => exact ih seen parts.2
+
+theorem ImmEnv.sub {lexical actual : Own.Env} {imm : List Fir.Var}
+    (h : Own.Plain.ImmEnv lexical imm) (sub : EnvSub lexical actual) :
+    Own.Plain.ImmEnv actual imm := by
+  intro x hx
+  obtain ⟨v, hv, himm⟩ := h x hx
+  exact ⟨v, sub x v hv, himm⟩
+
+theorem transfer_eval_sub {lexical actual : Own.Env} (imm captured live : List Fir.Var)
     (sub : EnvSub lexical actual)
     (present : ∀ x ∈ live, ∃ value, lexical.get? x = some value)
     (args : List Fir.Arg) (scope : args.all (Own.Plain.argIn live) = true) (H : Heap) :
-    Own.Plain.evalActions lexical H (Own.Plain.copies args ++ Own.Plain.drops captured live) =
-      Own.Plain.evalActions actual H (Own.Plain.copies args ++ Own.Plain.drops captured live) := by
+    Own.Plain.evalActions lexical H (Own.Plain.transferActions imm captured live args) =
+      Own.Plain.evalActions actual H (Own.Plain.transferActions imm captured live args) := by
   apply evalActions_agree
   intro action member
   apply env_agree_live sub present
   rcases List.mem_append.mp member with member | member
-  · exact copies_variables args scope action member
-  · exact drops_variables captured live action member
+  · exact moveCopies_variables (captured ++ imm) (Own.Plain.heapArgs imm args)
+      (Own.Plain.heapArgs_scope imm scope) action member
+  · exact drops_variables ((captured ++ imm) ++ Own.Plain.argVars (Own.Plain.heapArgs imm args))
+      live action member
 
 
 

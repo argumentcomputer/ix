@@ -152,6 +152,8 @@ def externs (tokens : Array Token) : Except String (List (String × String)) := 
           declarations := (symbol.text, tokens[after]!.text) :: declarations
           count := count + 1
           after := after + 1
+        if after < tokens.size && tokens[after]!.line == tokens[finish]!.line then
+          throw s!"line {token.line}: unsupported attribute-command target"
         if count == 0 then throw s!"line {token.line}: missing attribute-command names"
   return declarations.reverse
 
@@ -214,6 +216,8 @@ def csimps (tokens : Array Token) : Except String (List CSimp) := do
         result := ⟨name, replaces, replacement⟩ :: result
         count := count + 1
         after := after + 1
+      if after < tokens.size && tokens[after]!.line == tokens[finish]!.line then
+        throw s!"line {token.line}: unsupported csimp attribute target"
       if count == 0 then throw s!"line {token.line}: missing csimp attribute names"
   return result.reverse
 

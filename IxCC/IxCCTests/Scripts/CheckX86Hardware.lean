@@ -402,9 +402,10 @@ def cases : Array Case := Id.run do
         if o.argsOk args then
           let registers := (registersFor n).set! (registerIndex .rbx) 0x40300000
           out := out.push (rowCase (rowName o ++ "-fault") n o args registers (place := false))
-  -- Shifts: every count class, by imm8 and by `cl` (whose high bits are
-  -- noise), into register and memory destinations.
-  for o in Op.rows.filter fun o => o.mn == .shl || o.mn == .shr || o.mn == .sar do
+  -- Shifts and rotates: every count class, by imm8 and by `cl` (whose high
+  -- bits are noise), into register and memory destinations.
+  for o in Op.rows.filter fun o =>
+      o.mn == .shl || o.mn == .shr || o.mn == .sar || o.mn == .rol || o.mn == .ror do
     for count in shiftCounts do
       for target in ([.reg .rax, .reg .rsi, .reg .r9, .reg .rcx, .mem { base := some .rbx, displacement := 8 }] : List Arg) do
         let args := if o.form == .MC then [target] else [target, .imm (ImmKind.imm8.norm count)]

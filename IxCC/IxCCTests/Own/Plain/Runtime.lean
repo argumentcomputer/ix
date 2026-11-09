@@ -49,6 +49,123 @@ private def source : Fir.Program :=
 private def expect (condition : Bool) (message : String) : IO Unit :=
   unless condition do throw (IO.userError message)
 
+private def nilInfo : Fir.CtorInfo :=
+  { key := .src 834, tag := 0, nobj := 0, fieldKinds := [] }
+private def consInfo : Fir.CtorInfo :=
+  { key := .src 835, tag := 1, nobj := 2, fieldKinds := [.shared, .shared] }
+
+-- `buildList (1 n : Nat) (! acc : List Nat) : ! List Nat`
+private def buildListFun : Fir.Fun :=
+  { key := .const 840 [],
+    params := [(0, .tobj), (1, .tobj)],
+    result := .unique,
+    contracts := [.linear, { value := .unique }],
+    body := .case 0
+      [ .mk (.src 832) (.ret (.var 1)),
+        .mk (.src 833)
+          (.bind 2 (.proj 0 (.src 833) 0)
+            (.bind 3 (.ctor consInfo [.var 2, .var 1])
+              (.tcall 0 [.var 2, .var 3]))) ]
+      none }
+
+-- `lenErased (0 α) (~ xs : List α) : Nat`
+private def lenErasedFun : Fir.Fun :=
+  { key := .const 841 [],
+    params := [(0, .tobj), (1, .tobj)],
+    contracts := [.erased, { value := .localShared }],
+    body := .case 1
+      [ .mk nilInfo.key (.ret (.lit (.nat 0))),
+        .mk consInfo.key
+          (.bind 2 (.proj 1 consInfo.key 1)
+            (.bind 3 (.call 1 [.erased, .var 2])
+              (.bind 4 (.prim .natAdd [.var 3, .lit (.nat 1)])
+                (.ret (.var 4))))) ]
+      none }
+
+-- `linCons (1 xs : List Nat) : List Nat`
+private def linConsFun : Fir.Fun :=
+  { key := .const 842 [],
+    params := [(0, .tobj)],
+    contracts := [.linear],
+    body := .bind 1 (.arg (.lit (.nat 42)))
+      (.bind 2 (.ctor consInfo [.var 1, .var 0])
+        (.ret (.var 2))) }
+
+-- `affHead (& xs : List Nat) : Nat`
+private def affHeadFun : Fir.Fun :=
+  { key := .const 843 [],
+    params := [(0, .tobj)],
+    contracts := [.affine],
+    body := .case 0
+      [ .mk nilInfo.key (.ret (.lit (.nat 0))),
+        .mk consInfo.key (.bind 1 (.proj 0 consInfo.key 0) (.ret (.var 1))) ]
+      none }
+
+-- `borrowLen (~ xs : List Nat) : ~ Nat` with `let borrow (~ v) := xs`
+private def borrowLenFun : Fir.Fun :=
+  { key := .const 844 [],
+    params := [(0, .tobj)],
+    result := .localShared,
+    contracts := [{ value := .localShared }],
+    letContracts := [(1, Ixon.V3.LetContract.borrow true)],
+    body := .bind 1 (.arg (.var 0))
+      (.jp 0 [2, 3] true
+        (.case 2
+          [ .mk nilInfo.key (.ret (.var 3)),
+            .mk consInfo.key
+              (.bind 4 (.proj 2 consInfo.key 1)
+                (.bind 5 (.prim .natAdd [.var 3, .lit (.nat 1)])
+                  (.jmp 0 [.var 4, .var 5]))) ]
+          none)
+        (.jmp 0 [.var 1, .lit (.nat 0)])) }
+
+-- `revUnique (! xs : List Nat) (! acc : List Nat) : ! List Nat`
+private def revUniqueFun : Fir.Fun :=
+  { key := .const 845 [],
+    params := [(0, .tobj), (1, .tobj)],
+    result := .unique,
+    contracts := [{ value := .unique }, { value := .unique }],
+    body := .case 0
+      [ .mk nilInfo.key (.ret (.var 1)),
+        .mk consInfo.key
+          (.bind 2 (.proj 0 consInfo.key 0)
+            (.bind 3 (.proj 0 consInfo.key 1)
+              (.bind 4 (.ctor consInfo [.var 2, .var 1])
+                (.tcall 5 [.var 3, .var 4])))) ]
+      none }
+
+-- `entry (n : Nat) : Nat` exercising all 6 annotated list functions
+private def contractEntryFun : Fir.Fun :=
+  { key := .const 846 [],
+    params := [(0, .tobj)],
+    body := .bind 1 (.ctor nilInfo [])
+      (.bind 2 (.call 0 [.var 0, .var 1])
+        (.bind 3 (.call 5 [.var 2, .var 1])
+          (.bind 4 (.call 2 [.var 3])
+            (.bind 5 (.call 1 [.erased, .var 4])
+              (.bind 6 (.call 3 [.var 4])
+                (.bind 7 (.call 4 [.var 4])
+                  (.bind 8 (.prim .natAdd [.var 5, .var 6])
+                    (.bind 9 (.prim .natAdd [.var 8, .var 7])
+                      (.ret (.var 9)))))))))) }
+
+private def contractListSource : Fir.Program :=
+  { funs := Src.NatMap.ofDense [
+      buildListFun, lenErasedFun, linConsFun, affHeadFun,
+      borrowLenFun, revUniqueFun, contractEntryFun],
+    size := 7,
+    exports := [6],
+    ctors := [
+      { key := .src 832, tag := 0, arity := 0 },
+      { key := .src 833, tag := 1, arity := 1 },
+      { key := nilInfo.key, tag := 0, arity := 0 },
+      { key := consInfo.key, tag := 1, arity := 2 } ],
+    known := { natZero := some (.src 832), natSucc := some (.src 833) } }
+
+private def contractListManySource : Fir.Program :=
+  { contractListSource with
+    funs := contractListSource.funs.insert 5 { revUniqueFun with result := .shared, contracts := [.many, .many] } }
+
 private def expectedLeaf (seed : Nat) : Fir.Val := .ctor leafInfo [.lit (.nat seed)]
 private def expectedPair (seed : Nat) : Fir.Val :=
   .ctor pairInfo [expectedLeaf seed, expectedLeaf seed]
@@ -125,6 +242,33 @@ def run : IO Unit := do
           releaseOutput "recursive join" value heap
         | _ => throw (IO.userError s!"recursive join: expected success n={n},clock={clock}")
       clockCases := clockCases + 1
-  IO.println s!"plain ownership runtime: 9 complete-value cases, {clockCases} clock controls, alias counts and final release passed"
+  -- Contract-annotated list suite (`0`, `1`, `&`, `~`, `let borrow`, `!` vs `.many`).
+  let contractBodies := (Program.canonical contractListSource).bodies
+  expect (!programDomain contractListSource) "annotated list suite unexpectedly passed narrow programDomain"
+  expect (contractProgramDomain contractListSource) "contractProgramDomain rejected annotated list suite"
+  expect (checkContractPlainMap contractListSource contractBodies) "checkContractPlainMap rejected canonical annotated list map"
+  expect (!checkContractPlainMap contractListSource (contractBodies.insert 2 .trap)) "checkContractPlainMap accepted corrupted callee"
+  expect (selectRcPolicy contractListSource == .zeroRc) "selectRcPolicy failed to select .zeroRc for fully annotated list suite"
+  expect (contractProgramDomain contractListManySource) "contractProgramDomain rejected mixed list suite"
+  expect (selectRcPolicy contractListManySource == .plainRc) "selectRcPolicy failed to select .plainRc when revMany is unannotated"
+  let contractProg : Program := { source := contractListSource, bodies := contractBodies }
+  let mut contractRuns := 0
+  for n in [0, 1, 3, 6] do
+    let expectedVal : Fir.Val := .lit (.nat (2 * n + 44))
+    let srcOut := Fir.evalCall contractListSource 128 6 [.lit (.nat n)]
+    let ownOut := evalCall contractProg 128 6 [.lit (.nat n)] {}
+    expect (sameOutcome srcOut ownOut) s!"contract list entry({n}): Fir/Own.Plain mismatch"
+    match ownOut with
+    | .ok (v, heap) =>
+      expect (heap.value? v == some expectedVal) s!"contract list entry({n}): unexpected value"
+      expect (heap.size == 2 * n + 1) s!"contract list entry({n}): expected {2 * n + 1} allocated cons cells, got {heap.size}"
+      expect (heap.cells.all (· == .dead)) s!"contract list entry({n}): live cell leaked after consuming entry"
+    | _ => throw (IO.userError s!"contract list entry({n}): expected .ok")
+    for clock in List.range (4 * n + 12) do
+      expect (sameOutcome (Fir.evalCall contractListSource clock 6 [.lit (.nat n)])
+        (evalCall contractProg clock 6 [.lit (.nat n)] {}))
+        s!"contract list entry({n}): clock mismatch at {clock}"
+      contractRuns := contractRuns + 1
+  IO.println s!"plain ownership runtime: 9 complete-value cases, {clockCases} clock controls, {contractRuns} contract-annotated list controls, alias counts and final release passed"
 
 end IxCCTests.Own.Plain.Runtime
