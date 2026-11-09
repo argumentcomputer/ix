@@ -266,6 +266,9 @@ fn prove(
     };
     let borrowed = wide.is_some();
     let batch = wide.unwrap_or(narrow);
+    report["execution_statistics"] =
+      serde_json::to_value(backend.execution_statistics(&record))
+        .map_err(|e| e.to_string())?;
     report["plan"] = serde_json::to_value(&batch).map_err(|e| e.to_string())?;
     report["lane"] = lane.into();
     report["device"] = effective_device.into();

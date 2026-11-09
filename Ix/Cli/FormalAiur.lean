@@ -7,6 +7,7 @@ public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
 public import Ix.AiurArtifact
+public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
 public import Ix.Benchmark.Results
 public import Ix.TracingTexray
@@ -380,12 +381,18 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
       let path := dir / "proof"
       let input := invocation witness.input witness.inputIOBuffer
       let code ← runHost binary artifactPath mode input path.toString options
-      if mode == "execute" then return { code }
       let reportPath := System.FilePath.mk (path.toString ++ ".report.json")
       let report ← if ← reportPath.pathExists then
           IO.ofExcept (Json.parse (← IO.FS.readFile reportPath)) else pure Json.null
+      if code == 0 && (report.getObjVal? "execution_statistics").toOption.isNone then
+        throw (IO.userError "successful execution returned no circuit statistics")
+      let report ← IO.ofExcept (Aiur.enrichExecutionReport report)
       if let some flag := p.flag? "stats-out" then
         IO.FS.writeFile (flag.as! String) report.pretty
+      else if (p.variableArgsAs! String).size == 1 || p.hasFlag "claim" || p.hasFlag "shard" then
+        if let .ok raw := report.getObjVal? "execution_statistics" then
+          Aiur.printStats (Aiur.computeStats (← IO.ofExcept (Aiur.ExecutionMeasurements.fromJson raw)))
+      if mode == "execute" then return { code, report }
       let fit := (report.getObjVal? "plan" >>= fun j => j.getObjValAs? Bool "fits").toOption.getD false
       if code != 0 || !fit then return { code := if code == 0 then 75 else code, report }
       if mode != "prove" then return { code, report }
@@ -554,14 +561,18 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
     if let some flag := p.flag? "json" then
       let constants := results.foldl (fun n (_, parts) => parts.foldl (· + ·.constants) n) 0
       let leaves := results.foldl (fun n (_, parts) => n + parts.size) 0
+      let costs := results.flatMap fun (_, parts) => parts.map fun part =>
+        (part.result.report.getObjValAs? Nat "fft-cost").toOption
+      let fftFields := if costs.all Option.isSome then
+          [("fft-cost", toJson (costs.foldl (fun n c => n + c.getD 0) 0))] else []
       let secs := elapsedMs.toFloat / 1000.0
       let throughput := if elapsedMs > 0 then constants.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
       Ix.Benchmark.Results.writeRow (flag.as! String) name
         (if failures == 0 then "ok" else "rejected")
-        [("constants", toJson constants), ("shards", toJson leaves),
+        (fftFields ++ [("constants", toJson constants), ("shards", toJson leaves),
          ("check-time", Ix.Benchmark.Results.jsonRound 3 secs),
          ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
-         ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))]
+         ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))])
       if failures != 0 then return Ix.Benchmark.Results.exitRejected
     return if failures == 0 then 0 else 1
   if mode == "prove" then withController p #[(artifactPath, "ixvm")] options jobs drive
@@ -592,7 +603,7 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
   let options ← hostOptions p (if prove && !p.hasFlag "exec-only" then 1 else jobs)
   let artifactPath ← if p.hasFlag "plan-only" then pure "" else artifact p
   let mode := if prove && !p.hasFlag "exec-only" then "prove"
-    else if prove || p.hasFlag "ram-budget" || p.hasFlag "stats-out" then "plan" else "execute"
+    else if prove || p.hasFlag "ram-budget" then "plan" else "execute"
   let binary ← if p.hasFlag "plan-only" then pure ""
     else rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST" options.device
   match ixe, manifest with

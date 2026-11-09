@@ -2,6 +2,7 @@ module
 
 public import Ix.Cli.FormalAiur
 public import Ix.IxVM.ClaimHarness
+public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
 
 /-!
@@ -26,7 +27,9 @@ only:
   literals and IO reads scan.
 
 `$IX_TEST_OUTPUT_DIR`, when set, keeps the case files, so that a failing case
-can be rerun alone with `ixvm-proof test <artifact> <file>`.
+can be rerun alone with `ixvm-proof test <artifact> <file>`. Cases with FFT
+pins also request a `.stats.json` sidecar from the host with `--stats-out`.
+Lean computes and checks the costs from those raw measurements.
 -/
 
 public section
@@ -78,6 +81,8 @@ structure Case where
   /-- For an acceptance: a function of the program the execution must call,
   such as the native rule a case targets. -/
   exercises : Option String := none
+  /-- Exact rounded FFT-work surrogate of the accepted execution. -/
+  expectedFftCost : Option Nat := none
   witness : ClaimWitness
 
 /-- The case for `claim` over `env`, with the assumption trees its roots name. -/
@@ -120,6 +125,7 @@ structure OpenFile where
   handle : IO.FS.Handle
   cases : Nat
   size : Nat
+  fftPins : Array (String × Nat) := #[]
 
 structure Runner where
   suite : String
@@ -130,7 +136,7 @@ structure Runner where
   limit : Nat
   maxCases : Nat
   current : IO.Ref (Option OpenFile)
-  tasks : IO.Ref (Array (System.FilePath × Task (Except IO.Error IO.Process.Output)))
+  tasks : IO.Ref (Array (System.FilePath × Array (String × Nat) × Task (Except IO.Error IO.Process.Output)))
   labels : IO.Ref (Std.HashSet String)
   broken : IO.Ref Nat
 
@@ -140,12 +146,15 @@ private def Runner.flush (r : Runner) : IO Unit := do
   r.current.set none
   file.handle.write Ix.AiurInvocation.casesTrailer
   file.handle.flush
+  let mut args := #["test", r.artifact, file.path.toString]
+  unless file.fftPins.isEmpty do
+    args := args ++ #["--stats-out", (file.path.withExtension "stats.json").toString]
   let tasks ← r.tasks.get
   if tasks.size ≥ r.jobs then
-    let _ ← IO.wait tasks[tasks.size - r.jobs]!.2
+    let _ ← IO.wait tasks[tasks.size - r.jobs]!.2.2
   let task ← IO.asTask (prio := .dedicated)
-    (IO.Process.output { cmd := r.host, args := #["test", r.artifact, file.path.toString] })
-  r.tasks.modify (·.push (file.path, task))
+    (IO.Process.output { cmd := r.host, args })
+  r.tasks.modify (·.push (file.path, file.fftPins, task))
 
 /-- A case that could not be built: reported, and fails the suite. -/
 def Runner.fail (r : Runner) (message : String) : IO Unit := do
@@ -154,6 +163,8 @@ def Runner.fail (r : Runner) (message : String) : IO Unit := do
 
 /-- Write `c` to the current case file. -/
 def Runner.add (r : Runner) (c : Case) : IO Unit := do
+  if c.expectedFftCost.isSome && !c.accept then
+    return ← r.fail s!"FFT pin on rejection case {c.label}"
   if (← r.labels.get).contains c.label then
     return ← r.fail s!"two cases are labelled {c.label}"
   r.labels.modify (·.insert c.label)
@@ -165,7 +176,10 @@ def Runner.add (r : Runner) (c : Case) : IO Unit := do
       handle.write Ix.AiurInvocation.casesHeader
       pure { path, handle, cases := 0, size := 0 }
   file.handle.write c.encode
-  let file := { file with cases := file.cases + 1, size := file.size + c.size }
+  let fftPins := match c.expectedFftCost with
+    | some cost => file.fftPins.push (c.label, cost)
+    | none => file.fftPins
+  let file := { file with cases := file.cases + 1, size := file.size + c.size, fftPins }
   r.current.set (some file)
   if file.size ≥ r.limit || file.cases ≥ r.maxCases then r.flush
 
@@ -177,8 +191,8 @@ def Runner.build (r : Runner) (c : Except String Case) : IO Unit :=
 
 /-- Run the cases `body` adds through the IxVM program (`ixvm-proof test`).
 Every case runs; the result is `0` when every case was built and every verdict
-is the expected one. The host prints one line per case: its verdict, the error
-that rejected it, and its execution time. -/
+and FFT cost are the expected ones. The host reports verdicts and execution
+times; Lean computes and checks costs from the raw statistics. -/
 def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
     (limit : Nat := 4_000_000) (maxCases : Nat := 200) : IO UInt32 := do
   let artifact ← programArtifact
@@ -197,16 +211,29 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
     try body r catch e => r.fail s!"building the cases failed: {e}"
     r.flush
     let mut failed := 0
-    for (path, task) in ← r.tasks.get do
+    for (path, pins, task) in ← r.tasks.get do
       let out ← IO.ofExcept (← IO.wait task)
       IO.print out.stdout
       unless out.exitCode == 0 do
         failed := failed + 1
         IO.eprintln s!"[{suite}] {path}: {out.stderr.trimAscii}"
+      unless pins.isEmpty do
+        try
+          let raw ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (path.withExtension "stats.json")))
+          for (label, expected) in pins do
+            let measurements ← IO.ofExcept (raw.getObjVal? label >>= Aiur.ExecutionMeasurements.fromJson)
+            let actual := (Aiur.computeStats measurements).roundedFftCost
+            IO.println s!"FFT {label}: {actual} (expected {expected})"
+            unless actual == expected do
+              failed := failed + 1
+              IO.eprintln s!"FAILED {label}: FFT cost {actual}, expected {expected}"
+        catch e =>
+          failed := failed + 1
+          IO.eprintln s!"[{suite}] {path}: invalid or missing FFT statistics: {e}"
     let broken ← r.broken.get
     IO.println s!"[{suite}] {(← r.labels.get).size} claims in {(← r.tasks.get).size} files, \
       {(← IO.monoMsNow) - started} ms; {broken} cases not built, \
-      {failed} files with unexpected verdicts"
+      {failed} verdict, statistics or FFT-pin failures"
     return if failed == 0 && broken == 0 then 0 else 1
   match ← IO.getEnv "IX_TEST_OUTPUT_DIR" with
   | some dir => go (System.FilePath.mk dir / "ixvm")

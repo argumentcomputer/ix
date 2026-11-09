@@ -33,11 +33,13 @@ pub mod planning;
 #[cfg(feature = "trace-profile")]
 mod profile;
 mod rom;
+mod statistics;
 mod tables;
 #[cfg(test)]
 mod tests;
 mod witness;
 pub use batch::{StageOne, StreamPlan, VerifyingKey};
+pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.

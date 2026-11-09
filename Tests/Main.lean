@@ -36,6 +36,7 @@ import Tests.Ix.InstanceSymbols
 import Tests.Ix.CheckedSource
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.IxVM
+import Tests.Ix.AiurStatistics
 import Tests.Ix.IxVM.Eval
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
@@ -120,6 +121,7 @@ def registry : List Entry := [
   .suiteIO "exact-sharing" .primary (concurrently (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite)),
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
+  .suite "aiur-statistics" .primary Tests.Ix.AiurStatistics.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   -- the compile's named refusal of ungrounded input (the IO pipeline and the pure compile)
   .suite "ground-unit" .primary Tests.Ix.Compile.GroundRefusal.suite,
@@ -196,7 +198,7 @@ def registry : List Entry := [
   -- artifact; `Tests.Ix.IxVM.Harness`), each verdict pinned: the only
   -- evidence, until the refinement proof lands, that the program rejects
   -- what it must.
-  -- Kernel verdicts on compiled Lean constants, the binding claim and a shard.
+  -- Kernel verdicts and exact FFT costs for constants, the binding claim and a shard.
   .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
   -- Prover-authored malformed Ixon, each exploit with its controls.
   .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
@@ -284,6 +286,7 @@ def required : List (String × String) := [
   ("kernel-reader-roundtrip", "primary"),
   ("kernel-bundle-evidence", "primary"),
   ("resource-hints", "primary"),
+  ("aiur-statistics", "primary"),
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),
   ("prim-addrs", "primary"),

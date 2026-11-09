@@ -1,5 +1,5 @@
 //! Bytecode benchmark of an exported Aiur artifact: execution, trace and
-//! optional proving timings, and every circuit's shape and FFT cost.
+//! optional proving timings, and raw circuit measurements for Lean's FFT cost reporting.
 use aiur::{
   artifact::{Package, decode_groups},
   field::FieldBackend,
@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let mut function_rows = vec![];
   let mut cached_record = None;
   let mut initial_execute = None;
+  let mut execution_statistics = None;
   let iterations = if counts_only { 1 } else { samples + 2 };
   for sample in 0..iterations {
     let (record, execute) = if let Some(record) = cached_record.take() {
@@ -129,6 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       );
     }
     if sample == samples + 1 {
+      execution_statistics = Some(backend.execution_statistics(&record));
       for (i, (shape, matrix)) in
         backend.statistics().iter().zip(&witness.traces).enumerate()
       {
@@ -136,13 +138,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         row["index"] = json!(i);
         row["height"] = json!(matrix.height());
         row["cells"] = json!(matrix.values.len());
-        row["fft_cost"] = json!(fft_cost(
-          shape.stage1_width,
-          shape.stage2_width,
-          shape.quotient_degree,
-          matrix.height(),
-          parameters.log_blowup
-        ));
         circuits.push(row);
       }
     }
@@ -183,31 +178,13 @@ fn main() -> Result<(), Box<dyn Error>> {
       cached_record = Some(record);
     }
   }
-  let report = json!({"backend":"new-bytecode","parameters":parameters,"thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"reused_execution":reuse_execution,"initial_execute_seconds":initial_execute,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
+  let mut report = json!({"backend":"new-bytecode","parameters":parameters,"thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"reused_execution":reuse_execution,"initial_execute_seconds":initial_execute,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
+  if let Some(statistics) = execution_statistics {
+    report["execution_statistics"] = serde_json::to_value(statistics)?;
+  }
   std::fs::write(&cli[3], serde_json::to_vec_pretty(&report)?)?;
   println!("Wrote {}", cli[3]);
   Ok(())
-}
-
-/// The Goldilocks FFT model of the retired `Aiur.Statistics.fftCost`: two
-/// extension limbs, inverse/forward trace transforms, and quotient
-/// transforms. This is a work estimate, not elapsed time; height is already
-/// padded.
-#[allow(clippy::cast_precision_loss)] // Approximate work, not an exact cell count.
-fn fft_cost(
-  stage1: usize,
-  stage2: usize,
-  quotient_degree: usize,
-  height: usize,
-  log_blowup: usize,
-) -> f64 {
-  let transform = |n: usize| {
-    if n == 0 { 0.0 } else { n as f64 * f64::from(n.max(2).ilog2()) }
-  };
-  let blowup = 1usize << log_blowup;
-  (blowup + 1) as f64 * (stage1 + stage2) as f64 * transform(height)
-    + 2.0 * transform(quotient_degree * height)
-    + (2 * quotient_degree) as f64 * transform(blowup * height)
 }
 
 /// Optional process-local control for comparing allocation-heavy small runs.

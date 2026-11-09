@@ -65,6 +65,28 @@ fn main() -> Result<(), Box<dyn Error>> {
   if mode == "test" {
     // Every case runs, so that one report names every unexpected verdict.
     let cases = load_cases(cli[3].as_ref())?;
+    let stats_path =
+      match &cli[4..] {
+        [] => None,
+        [flag, path] if flag == "--stats-out" => Some(path),
+        _ => return Err(
+          "usage: ixvm-proof test ARTIFACT CASES.ixt [--stats-out STATS.json]"
+            .into(),
+        ),
+      };
+    let plan = if stats_path.is_some() {
+      Some(TracePlan::new(
+        &program,
+        package.trace.ok_or("statistics require an artifact with circuits")?,
+      )?)
+    } else {
+      None
+    };
+    let backend = plan
+      .as_ref()
+      .map(|plan| Backend::for_batch_verification(plan, Parameters::default()))
+      .transpose()?;
+    let mut statistics = serde_json::Map::new();
     let mut failed = Vec::new();
     for case in cases {
       let args = program.field().decode(&case.invocation.args)?;
@@ -72,6 +94,16 @@ fn main() -> Result<(), Box<dyn Error>> {
       let result = ixvm::prepare_streams(&program, &case.invocation.streams)?
         .execute(&case.invocation.entry, args);
       let seconds = start.elapsed().as_secs_f64();
+      if let (Some(backend), Ok(record)) = (&backend, &result)
+        && statistics
+          .insert(
+            case.label.clone(),
+            serde_json::to_value(backend.execution_statistics(record))?,
+          )
+          .is_some()
+      {
+        return Err(format!("duplicate case label: {}", case.label).into());
+      }
       let error = result.as_ref().err().map(ToString::to_string);
       let reached = match (&result, &case.exercises) {
         (Ok(record), Some(name)) => record.queries.keys().any(|query| {
@@ -107,6 +139,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         failed.push(case.label);
       }
     }
+    if let Some(path) = stats_path {
+      serde_json::to_writer(std::fs::File::create(path)?, &statistics)?;
+    }
     if !failed.is_empty() {
       return Err(
         format!("{} unexpected verdicts: {}", failed.len(), failed.join("; "))
@@ -128,9 +163,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !result.output.is_empty() {
       return Err("claim verifier returned a value".into());
     }
+    let seconds = start.elapsed().as_secs_f64();
+    if let Some(path) = cli.get(4) {
+      let plan = TracePlan::new(
+        &program,
+        package.trace.ok_or("statistics require an artifact with circuits")?,
+      )?;
+      let backend =
+        Backend::for_batch_verification(&plan, Parameters::default())?;
+      let report = serde_json::json!({"execution_statistics": backend.execution_statistics(&result), "execution_seconds": seconds});
+      serde_json::to_writer(
+        std::fs::File::create(format!("{path}.report.json"))?,
+        &report,
+      )?;
+    }
     println!(
       "verified claim in {:.3}s ({} queries, {} instructions)",
-      start.elapsed().as_secs_f64(),
+      seconds,
       result.queries.len(),
       result.instructions
     );
@@ -189,13 +238,13 @@ fn main() -> Result<(), Box<dyn Error>> {
   let batch = backend.plan_batch(&record, &options)?;
   let mut report = serde_json::json!({"plan":batch, "artifact_digest":artifact.to_string(), "execution_seconds":execute,
     "queries":record.queries.len(), "instructions":record.instructions,
-    "circuits":backend.statistics(), "parameters":backend.parameters(),
+    "execution_statistics":backend.execution_statistics(&record), "parameters":backend.parameters(),
     "conjectured_security_bits":backend.parameters().conjectured_bits(),
     "verified":false});
   let report_path = format!("{path}.report.json");
   std::fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
   if mode == "plan" {
-    report.as_object_mut().unwrap().remove("circuits");
+    report.as_object_mut().unwrap().remove("execution_statistics");
     println!("{}", report);
     return Ok(());
   }
@@ -244,7 +293,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   report["proof_bytes"] = raw.len().into();
   report["key_digest"] = blake3::hash(&key).to_hex().to_string().into();
   std::fs::write(report_path, serde_json::to_vec_pretty(&report)?)?;
-  report.as_object_mut().unwrap().remove("circuits");
+  report.as_object_mut().unwrap().remove("execution_statistics");
   println!("{}", report);
   Ok(())
 }

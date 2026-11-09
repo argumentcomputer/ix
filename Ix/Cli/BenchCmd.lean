@@ -309,8 +309,9 @@ def backendSpecs : List BackendSpec := [
     envs := some ["ISLB"],
     testbeds := [("execute", "aiur-sharded-env-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss",
-                             "constants", "shards"])],
+                             "constants", "shards", "fft-cost"])],
     thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
+                   ("fft-cost", "0.05", "_"),
                    ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
                    ("peak-rss", "0.10", "_")] },
   { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
@@ -767,7 +768,7 @@ is not a benchmark run"
     -- runner's RAM from its static block-shape score (`--max-ram 100`),
     -- then check every leaf of the manifest against the same budget. The
     -- check writes the env-keyed row itself (`--json`): check-time,
-    -- throughput, peak-rss, constants, shards. The shard step is
+    -- throughput, peak-rss, constants, shards and FFT cost. The shard step is
     -- deterministic setup, not part of the measured window.
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
     let ix ← resolveBin repo "ix"

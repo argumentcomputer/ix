@@ -38,6 +38,10 @@ def testStagePrefix : TestSeq :=
   ++ test "phase spans pass through"
       (dropStagePrefix "phase-stark-stage1-commit"
         == "phase-stark-stage1-commit")
+  ++ test "formal Aiur FFT costs are tracked and thresholded"
+      ((backendSpecs.find? (·.name == "aiur-sharded-env")).any fun backend =>
+        (backend.metrics.lookup "execute").any (·.contains "fft-cost") &&
+        backend.thresholds.contains ("fft-cost", "0.05", "_"))
   ++ test "aiur join pair is registered for dashboard filtering"
       ((backendSpecs.find? (·.name == "aiur")).any fun backend =>
         (backend.benchmarkNames "prove").contains

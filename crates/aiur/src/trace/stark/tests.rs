@@ -434,6 +434,27 @@ fn fixture() -> (CheckedProgram, TraceArtifact) {
 }
 
 #[test]
+fn execution_statistics_report_raw_rows_fixed_heights_and_cache_hits() {
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let backend = Backend::for_batch_verification(&plan, parameters()).unwrap();
+  let record = program.execute("root", vec![3]).unwrap();
+  let stats = backend.execution_statistics(&record);
+  assert_eq!(stats.log_blowup, 1);
+  assert_eq!(stats.extension_degree, 2);
+  let rows: Vec<_> =
+    stats.circuits.iter().map(|c| (c.rows, c.cache_hits)).collect();
+  // root and leaf each run once; the fixed table has 4 rows (3 used in
+  // its definition); store+load share one ROM row with multiplicity 2.
+  assert_eq!(rows, vec![(1, 0), (1, 0), (4, 0), (1, 1)]);
+  assert_eq!(stats.circuits[3].shape.name, "<ROM:1>");
+  let serialized = serde_json::to_value(stats).unwrap();
+  assert_eq!(serialized["circuits"][2]["preprocessed_height"], 4);
+  assert!(serialized["circuits"][0]["stage1_width"].is_number());
+  assert!(serialized["circuits"][0].get("fft_cost").is_none());
+}
+
+#[test]
 fn proves_calls_fixed_maps_and_rom_and_verifies_without_record() {
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact.clone())).unwrap();

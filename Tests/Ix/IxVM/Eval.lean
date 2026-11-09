@@ -54,15 +54,89 @@ private def witness (env : Ixon.Env) (input : Address) (out : Ixon.Constant)
     | some t => ({} : Std.HashMap Address Ix.AssumptionTree).insert t.root t
   IO.ofExcept (buildClaimWitness env (.eval evalCtx input output (tree.map (·.root))) trees)
 
-/-- The case for an evaluation claim: accepted when `error` is `none`; otherwise
-rejected, by an error containing `error` unless it is empty. The legacy suite
-also pinned each accepted claim's FFT cost, which the formal program has no
-analogue of. -/
+/-- Exact whole-claim FFT costs for successful evaluations. -/
+private def evalFftCosts : List (String × Nat) := [
+  ("identity", 226_248_972),
+  ("beta", 227_082_285),
+  ("zeta", 227_060_557),
+  ("reduction under lambda", 227_112_749),
+  ("delta", 228_267_090),
+  ("theorem body", 227_123_688),
+  ("opaque body", 227_123_688),
+  ("mutual definition projection", 227_917_877),
+  ("assumed dependency still unfolds", 229_223_924),
+  ("input type need not be normalized", 227_139_318),
+  ("universe-polymorphic normalization", 227_121_969),
+  ("open sharing under binder", 228_376_803),
+  ("normalization in lambda domain", 227_209_432),
+  ("normalization in Pi domain and dependent codomain", 227_202_208),
+  ("capture-avoiding beta under nested binders", 227_398_801),
+  ("preserves theorem reference", 227_537_672),
+  ("preserves opaque reference", 227_489_714),
+
+  ("Tests.Ix.IxVM.Eval.Fixtures.arithmetic", 393_734_896),
+  ("Tests.Ix.IxVM.Eval.Fixtures.listResult", 412_997_370),
+  ("Tests.Ix.IxVM.Eval.Fixtures.recurResult", 445_988_842),
+  ("Tests.Ix.IxVM.Eval.Fixtures.projResult", 261_121_519),
+  ("Tests.Ix.IxVM.Eval.Fixtures.stringResult", 5_319_980_595),
+  ("command claim after bundle transport", 395_802_819),
+
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.indexedZip", 1_675_625_782),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.dependentBuild", 723_550_867),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.mutualEven", 486_472_226),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.mutualOdd", 484_600_104),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.nestedTree", 412_340_157),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.higherOrder", 599_199_975),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.largeArithmetic", 2_684_469_706),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.limbPredecessor", 276_876_891),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.dependentCast", 707_215_617),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.neutralApplication", 227_705_566),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.neutralProjection", 238_323_815),
+  ("Lean differential: Tests.Ix.IxVM.Eval.Fixtures.dependentProjection", 363_312_262),
+  ("well-founded recursion through accessibility proofs", 1_722_649_399),
+  ("compact symbolic Nat offset beyond 32 bits", 324_153_650),
+  ("symbolic Nat addition exposes zero after argument reduction", 381_406_214),
+
+  ("generated arithmetic 0, seed 1230526029", 3_673_397_386),
+  ("generated arithmetic 1, seed 5227010138933557030", 3_679_750_646),
+  ("generated arithmetic 2, seed 9740023657447289539", 3_686_104_583),
+  ("generated arithmetic 3, seed 312873973889897908", 3_676_691_041),
+  ("generated arithmetic 4, seed 14324766925872067785", 3_677_722_509),
+  ("generated arithmetic 5, seed 5865597085624116754", 3_687_073_422),
+  ("generated arithmetic 6, seed 8838574616595545567", 3_674_747_202),
+  ("generated arithmetic 7, seed 5951150478550409152", 3_681_881_935),
+  ("generated arithmetic 8, seed 13867390926732686213", 3_671_737_568),
+  ("generated arithmetic 9, seed 3876320172222402110", 3_683_544_857),
+  ("generated arithmetic 10, seed 9199945194732150587", 3_682_537_761),
+  ("generated arithmetic 11, seed 13341985934152315148", 3_668_997_642),
+  ("generated arithmetic 12, seed 16617329689835589249", 3_648_108_359),
+  ("generated arithmetic 13, seed 88728717077797802", 3_633_268_783),
+  ("generated arithmetic 14, seed 1948624928862008023", 3_676_242_252),
+  ("generated arithmetic 15, seed 6240852391080220056", 3_681_509_852),
+  ("generated arithmetic 16, seed 15042951194288734653", 3_635_521_942),
+  ("generated arithmetic 17, seed 6069444241543887446", 2_675_246_216),
+  ("generated arithmetic 18, seed 9883539672627336371", 3_679_373_871),
+  ("generated arithmetic 19, seed 4057147670932478308", 3_272_708_389),
+  ("generated arithmetic 20, seed 5561980989402630457", 3_639_708_046),
+  ("generated arithmetic 21, seed 215210223919765058", 3_681_071_850),
+  ("generated arithmetic 22, seed 7293824100597899471", 2_671_968_738),
+  ("generated arithmetic 23, seed 2714453358506657904", 3_270_674_461),
+]
+
+/-- Every accepted evaluation must have an exact FFT pin. Rejections are
+checked by verdict and error; a missing acceptance pin fails the suite. -/
 private def execute (name : String) (w : ClaimWitness) (error : Option String := none) :
-    Tests.Ix.IxVM.Case :=
-  { label := s!"eval {if error.isNone then "accepts" else "rejects"} {name}"
+    Except String Tests.Ix.IxVM.Case := do
+  let expectedFftCost : Option Nat ← if error.isNone then
+      match evalFftCosts.lookup name with
+      | some cost => pure (some cost)
+      | none => throw s!"missing evaluation FFT pin: {name}"
+    else pure none
+  return {
+    label := s!"eval {if error.isNone then "accepts" else "rejects"} {name}"
     accept := error.isNone
     rejectsWith := error.bind fun e => if e.isEmpty then none else some e
+    expectedFftCost
     witness := w }
 
 -- Bypass host parsing so malformed and unauthenticated constants reach Aiur.
@@ -90,64 +164,64 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       ("zeta", Ixon.Expr.leanLet false idType idValue (.var 0)),
       ("reduction under lambda", underBinder)] do
     let (env, input) := storeDef {} idType value
-    r.add <| execute label (← witness env input idOutput)
+    r.build <| execute label (← witness env input idOutput)
   let (env, dep) := storeDef {} idType beta
   let (env, input) := storeDef env idType (.ref 0 #[]) #[dep]
-  r.add <| execute "delta" (← witness env input idOutput)
+  r.build <| execute "delta" (← witness env input idOutput)
   let (axiomEnv, axiomInput) := storeConstant {} { idOutput with info := .axio ⟨false, 0, idType⟩ }
-  r.add <| execute "input without a body"
+  r.build <| execute "input without a body"
     (← witness axiomEnv axiomInput idOutput) (some "")
   for (label, kind) in [("theorem body", Ix.DefKind.thm), ("opaque body", .opaq)] do
     let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, beta⟩, #[], #[], #[.zero]⟩
     let (fixture, a) := storeConstant {} c
     let fixture := { fixture with anonHints := fixture.anonHints.insert a .opaque }
-    r.add <| execute label (← witness fixture a idOutput)
-    r.add <| execute s!"output must be an ordinary definition (input with a {label})"
+    r.build <| execute label (← witness fixture a idOutput)
+    r.build <| execute s!"output must be an ordinary definition (input with a {label})"
       (← witness env input c) (some "output must be a definition")
   for safety in [Ix.DefinitionSafety.unsaf, .part] do
     let c : Ixon.Constant := ⟨.defn ⟨.defn, safety, 0, idType, idValue⟩, #[], #[], #[.zero]⟩
     let (fixture, a) := storeConstant {} c
-    r.add <| execute s!"{repr safety} subject" (← witness fixture a idOutput)
+    r.build <| execute s!"{repr safety} subject" (← witness fixture a idOutput)
       (some "unsafe or partial")
-    r.add <| execute s!"{repr safety} output" (← witness env input c)
+    r.build <| execute s!"{repr safety} output" (← witness env input c)
       (some "unsafe or partial output")
   let block : Ixon.Constant :=
     ⟨.muts #[.defn ⟨.defn, .safe, 0, idType, beta⟩], #[], #[], #[.zero]⟩
   let (fixture, ba) := storeConstant {} block
   let projection : Ixon.Constant := ⟨.dPrj ⟨0, ba⟩, #[], #[], #[]⟩
   let (fixture, pa) := storeConstant fixture projection
-  r.add <| execute "mutual definition projection" (← witness fixture pa idOutput)
+  r.build <| execute "mutual definition projection" (← witness fixture pa idOutput)
   let tree := Ix.AssumptionTree.canonical #[dep] |>.get!
-  r.add <| execute "assumed dependency still unfolds" (← witness env input idOutput tree)
+  r.build <| execute "assumed dependency still unfolds" (← witness env input idOutput tree)
   let selfTree := Ix.AssumptionTree.canonical #[input] |>.get!
-  r.add <| execute "subject in assumptions" (← witness env input idOutput selfTree)
+  r.build <| execute "subject in assumptions" (← witness env input idOutput selfTree)
     (some "input is an assumption")
-  r.add <| execute "wrong output" (← witness env input (withValue idOutput (.sort 0)))
+  r.build <| execute "wrong output" (← witness env input (withValue idOutput (.sort 0)))
     (some "result does not match")
-  r.add <| execute "unreduced output" (← witness env input (withValue idOutput beta))
+  r.build <| execute "unreduced output" (← witness env input (withValue idOutput beta))
     (some "result does not match")
-  r.add <| execute "universe count mismatch"
+  r.build <| execute "universe count mismatch"
     (← witness env input (definition idType idValue #[] 1)) (some "universe parameter count")
-  r.add <| execute "correct value with a false declared type"
+  r.build <| execute "correct value with a false declared type"
     (← witness env input (definition (.sort 0) idValue)) (some "output type does not match")
   -- Convertible types are deliberately insufficient: preserve the input's type
   -- structurally, rather than silently changing the output wrapper's contract.
   let aliasTy := Ixon.Expr.leanLet false (.sort 0) idType (.var 0)
-  r.add <| execute "convertible but different output type"
+  r.build <| execute "convertible but different output type"
     (← witness env input (definition aliasTy idValue)) (some "output type does not match")
   let (aliasEnv, aliasInput) := storeDef {} aliasTy beta
-  r.add <| execute "input type need not be normalized"
+  r.build <| execute "input type need not be normalized"
     (← witness aliasEnv aliasInput (definition aliasTy idValue))
   let (badEnv, badInput) := storeDef {} (.sort 0) idValue
   let w ← witness badEnv badInput (definition (.sort 0) idValue)
-  r.add <| execute "ill-typed input with matching output"
+  r.build <| execute "ill-typed input with matching output"
     w (some "")
   let badSelf := Ix.AssumptionTree.canonical #[badInput] |>.get!
-  r.add <| execute "assumptions cannot waive input typechecking"
+  r.build <| execute "assumptions cannot waive input typechecking"
     (← witness badEnv badInput idOutput badSelf) (some "")
   let (badEnv, badDep) := storeDef {} idType (.sort 0)
   let (badEnv, badInput) := storeDef badEnv idType (.ref 0 #[]) #[badDep]
-  r.add <| execute "ill-typed transitive dependency"
+  r.build <| execute "ill-typed transitive dependency"
     (← witness badEnv badInput (withValue idOutput (.sort 0))) (some "")
   -- The output declaration is checked as a `check` claim's target is. An
   -- assumed dependency is not checked, so the normal form of a well-typed
@@ -160,29 +234,29 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
     #[] 0 #[.zero, .succ .zero]
   let (redexEnv, redexInput) := storeDef redexEnv idType (.ref 0 #[]) #[redexDep]
   let redexTree := Ix.AssumptionTree.canonical #[redexDep] |>.get!
-  r.add <| execute "ill-typed output under an assumed dependency"
+  r.build <| execute "ill-typed output under an assumed dependency"
     (← witness redexEnv redexInput (withValue idOutput (.sort 0)) redexTree)
     (some "inferred type is not def-eq to the expected type")
   -- An assumed output would not be checked.
   let outputTree := Ix.AssumptionTree.canonical #[(storeConstant env idOutput).2] |>.get!
-  r.add <| execute "output in assumptions" (← witness env input idOutput outputTree)
+  r.build <| execute "output in assumptions" (← witness env input idOutput outputTree)
     (some "output is an assumption")
   let (polyEnv, polyInput) := storeDef {} idType underBinder #[] 1 #[.var 0]
-  r.add <| execute "universe-polymorphic normalization"
+  r.build <| execute "universe-polymorphic normalization"
     (← witness polyEnv polyInput (definition idType idValue #[] 1 #[.var 0]))
   let shared := { (withValue idOutput (.leanLam (.sort 0) (.leanLam (.var 0) (.share 0)))) with
     sharing := #[.var 0] }
-  r.add <| execute "open sharing under binder" (← witness env input shared)
+  r.build <| execute "open sharing under binder" (← witness env input shared)
   let propLet := Ixon.Expr.leanLet false (.sort 1) (.sort 0) (.var 0)
   let (binderEnv, binderInput) := storeDef {} idType
     (.leanLam propLet (.leanLam (.var 0) (.var 0))) #[] 0 #[.zero, .succ .zero]
-  r.add <| execute "normalization in lambda domain"
+  r.build <| execute "normalization in lambda domain"
     (← witness binderEnv binderInput idOutput)
   let propBeta := fun p => Ixon.Expr.app (.leanLam (.sort 0) (.var 0)) p
   let pi := Ixon.Expr.leanAll propLet
     (.leanAll (propBeta (.var 0)) (propBeta (.var 1)))
   let (piEnv, piInput) := storeDef {} (.sort 0) pi #[] 0 #[.zero, .succ .zero]
-  r.add <| execute "normalization in Pi domain and dependent codomain"
+  r.build <| execute "normalization in Pi domain and dependent codomain"
     (← witness piEnv piInput (definition (.sort 0) idType))
   let captureTy := Ixon.Expr.leanAll (.sort 0)
     (.leanAll (.var 0) (.leanAll (.var 1) (.var 2)))
@@ -191,11 +265,11 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   let captureNF := Ixon.Expr.leanLam (.sort 0)
     (.leanLam (.var 0) (.leanLam (.var 1) (.var 1)))
   let (captureEnv, captureInput) := storeDef {} captureTy captureBody
-  r.add <| execute "capture-avoiding beta under nested binders"
+  r.build <| execute "capture-avoiding beta under nested binders"
     (← witness captureEnv captureInput (definition captureTy captureNF))
   let captured := Ixon.Expr.leanLam (.sort 0)
     (.leanLam (.var 0) (.leanLam (.var 1) (.var 0)))
-  r.add <| execute "captured variable with the same type"
+  r.build <| execute "captured variable with the same type"
     (← witness captureEnv captureInput (definition captureTy captured)) (some "result does not match")
   for (label, kind) in [("theorem reference", Ix.DefKind.thm), ("opaque reference", .opaq)] do
     let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, idValue⟩, #[], #[], #[.zero]⟩
@@ -204,10 +278,10 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
     let fixture := { fixture with anonHints := fixture.anonHints.insert a .opaque |>.insert b .opaque }
     let (fixture, subject) := storeDef fixture idType (.ref 0 #[]) #[a]
     let expected := definition idType (.ref 0 #[]) #[a]
-    r.add <| execute s!"preserves {label}" (← witness fixture subject expected)
-    r.add <| execute s!"does not unfold {label}"
+    r.build <| execute s!"preserves {label}" (← witness fixture subject expected)
+    r.build <| execute s!"does not unfold {label}"
       (← witness fixture subject idOutput) (some "result does not match")
-    r.add <| execute s!"does not replace {label} by an equivalent proof"
+    r.build <| execute s!"does not replace {label} by an equivalent proof"
       (← witness fixture subject { expected with refs := #[b] }) (some "result does not match")
   for (name, c) in [
       ("free variable", withValue idOutput (.var 0)),
@@ -218,12 +292,12 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       ("free variable through sharing", { (withValue idOutput (.share 0)) with sharing := #[.var 0] }),
       ("output axiom", { idOutput with info := .axio ⟨false, 0, idType⟩ }),
       ("output projection", projection), ("output block", block)] do
-    r.add <| execute name (rawWitness env input (Ixon.ser c)) (some "")
+    r.build <| execute name (rawWitness env input (Ixon.ser c)) (some "")
   let outputBytes := Ixon.ser idOutput
-  r.add <| execute "trailing output bytes"
+  r.build <| execute "trailing output bytes"
     (rawWitness env input (outputBytes.push 0)) (some "Ingress::load_verified_constant")
   for n in [:outputBytes.size] do
-    r.add <| execute s!"truncated output at {n}"
+    r.build <| execute s!"truncated output at {n}"
       (rawWitness env input (outputBytes.extract 0 n)) (some "")
   let w ← witness env input idOutput
   let cb := Ix.Claim.ser (.eval evalCtx input (Address.blake3 outputBytes) none)
@@ -232,8 +306,8 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       ("trailing claim bytes", cb.push 0)] do
     let digest := packedDigestKey (Address.blake3 bytes)
     let io := w.inputIOBuffer.extend 0 digest (bytes.data.map .ofUInt8)
-    r.add <| execute label { w with input := digest, inputIOBuffer := io } (some "")
-  r.add <| execute "unauthenticated output bytes"
+    r.build <| execute label { w with input := digest, inputIOBuffer := io } (some "")
+  r.build <| execute "unauthenticated output bytes"
     (rawWitness env input (Ixon.ser (withValue idOutput (.sort 0)))
       (some (Address.blake3 outputBytes))) (some "")
 
@@ -371,12 +445,12 @@ def compiledTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO U
       else if b == ``Fixtures.nine then natOutput env 9
       else if b == ``Fixtures.listExpected then listOutput env
       else pure (env, raw)
-    r.add <| execute (toString a) (← witness fixture input obj)
+    r.build <| execute (toString a) (← witness fixture input obj)
     if a == ``Fixtures.arithmetic then
-      r.add <| execute "unreduced OfNat output"
+      r.build <| execute "unreduced OfNat output"
         (← witness env input raw) (some "result does not match")
       let (fixture, wrongObj) ← natOutput env 9
-      r.add <| execute "wrong result with the same type"
+      r.build <| execute "wrong result with the same type"
         (← witness fixture input wrongObj) (some "result does not match")
 
 private def compileClosure (leanEnv : Lean.Environment) (names : Array Lean.Name) :
@@ -426,10 +500,10 @@ def difficultTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO 
         (expected == .lit (.natVal n))
     let input ← lookupAddr env name
     let (fixture, obj) ← compiledOutput base env info.levelParams info.type expected
-    r.add <| execute s!"Lean differential: {name}" (← witness fixture input obj)
+    r.build <| execute s!"Lean differential: {name}" (← witness fixture input obj)
     if let some (_, n) := numeric.find? (fun p => p.1 == name) then
       let (fixture, wrong) ← natOutput env (n + 1)
-      r.add <| execute s!"incorrect result: {name}"
+      r.build <| execute s!"incorrect result: {name}"
         (← witness fixture input wrong) (some "result does not match")
   -- The elaborator deliberately wraps this accessibility proof in opaqueId.
   -- A kernel-reduction claim must respect that boundary, even though native
@@ -439,16 +513,16 @@ def difficultTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO 
   let opaqueId ← lookupAddr env ``Lean.opaqueId
   seq := seq ++ test "generated WF fixture contains the opaqueId dependency"
     ((closureFrom env input).contains opaqueId)
-  r.add <| execute "opaque accessibility proof blocks kernel evaluation"
+  r.build <| execute "opaque accessibility proof blocks kernel evaluation"
     (← witness fixture input output) (some "result does not match")
   -- This explicit proof does expose constructors to Acc.rec. Meta keeps its
   -- theorem heads opaque, so pin the independent triangular-number answer.
   let input ← lookupAddr env ``Fixtures.wellFoundedSum
   let (fixture, output) ← natOutput env 21
-  r.add <| execute "well-founded recursion through accessibility proofs"
+  r.build <| execute "well-founded recursion through accessibility proofs"
     (← witness fixture input output)
   let (fixture, wrong) ← natOutput env 22
-  r.add <| execute "incorrect well-founded recursion result"
+  r.build <| execute "incorrect well-founded recursion result"
     (← witness fixture input wrong) (some "result does not match")
   -- Open Nat offset must remain compact; unfolding Nat.add's implementation
   -- here would expand billions of successors or leave a different normal form.
@@ -460,10 +534,10 @@ def difficultTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO 
     (.leanLam (.ref 0 #[]) (.app (.app (.ref 1 #[]) (.var 0)) (.nat 2)))
     #[nat, add, literal] 0 #[]
   let input ← lookupAddr env ``Fixtures.openOffset
-  r.add <| execute "compact symbolic Nat offset beyond 32 bits"
+  r.build <| execute "compact symbolic Nat offset beyond 32 bits"
     (← witness fixture input output)
   let input ← lookupAddr env ``Fixtures.openZero
-  r.add <| execute "symbolic Nat addition exposes zero after argument reduction"
+  r.build <| execute "symbolic Nat addition exposes zero after argument reduction"
     (← witness env input (definition natArrow (.leanLam (.ref 0 #[]) (.var 0)) #[nat] 0 #[]))
   return seq
 
@@ -527,9 +601,9 @@ def differentialTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : 
     let env := phases.compileEnv.storeConst input c
     let env := { env with blobs := cache.blobs, anonHints := env.anonHints.insert input (.regular 0) }
     let (fixture, output) ← compiledOutput cache env [] ty nf
-    r.add <| execute label (← witness fixture input output)
+    r.build <| execute label (← witness fixture input output)
     let (fixture, wrong) ← natOutput fixture (answer + 1)
-    r.add <| execute s!"mutated output: {label}"
+    r.build <| execute s!"mutated output: {label}"
       (← witness fixture input wrong) (some "result does not match")
   seq := seq ++ test "generated corpus covers add/mul/sub/let/beta/div/mod"
     (state.coverage.all (· > 0))
@@ -591,7 +665,7 @@ def commandTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO Te
     blobs := outputBundle.blobs.fold (fun m k v => m.insert k v) inputBundle.blobs
     anonHints := outputBundle.anonHints.fold (fun m k v => m.insert k v) inputBundle.anonHints }
   let w ← IO.ofExcept (buildClaimWitness transported claim)
-  r.add (execute "command claim after bundle transport" w)
+  r.build (execute "command claim after bundle transport" w)
   return seq
 
 /-- Every evaluation claim through the IxVM program, and the Lean oracles
@@ -605,6 +679,10 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     let generated ← differentialTests leanEnv r
     let command ← commandTests leanEnv r
     oracles.set (difficult ++ generated ++ command)
+    let labels ← r.labels.get
+    for (name, _) in evalFftCosts do
+      unless labels.contains s!"eval accepts {name}" do
+        r.fail s!"unused evaluation FFT pin: {name}"
   let lean ← lspecIO (.ofList [("ixvm-eval oracles", [← oracles.get])]) []
   return if code == 0 && lean == 0 then 0 else 1
 
