@@ -49,9 +49,13 @@ resource validator also reach
 `Blake3.HasherOps.hash._native.native_decide.ax_1`. This is an inventory of
 existing dependencies, not a new axiom or an assumption added to `run`.
 
-The seven exact [compiler-bridge fences](../IxCCTests/Fences/Compile.lean)
-record `propext`, `Classical.choice`, `Quot.sound`, and the existing
-`Blake3.HasherOps.hash._native.native_decide.ax_1` dependency. Mentioning the
+The exact [compiler-bridge fences](../IxCCTests/Fences/Compile.lean)
+record only `propext`, `Classical.choice`, and `Quot.sound` for program-level
+soundness theorems (`Recheck.sound_of_eval`, `verifyProgram_*_sound`,
+`verifyRing0Sip_sound`), and additionally record the existing
+`Blake3.HasherOps.hash._native.native_decide.ax_1` dependency for byte-level
+and ingress-calling theorems (`compile_sound`, `verifyBytes_*_sound`,
+`verifyBytesRing0Sip_sound`). Mentioning the
 actual ingress/producer in these statements exposes that dependency; no native
 axiom declaration was added and the replay fences are unchanged. The guarantees
 retain `X86.Driver.Ok` and the source `GoesWrong` qualification. They apply to

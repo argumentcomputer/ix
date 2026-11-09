@@ -286,4 +286,8 @@ theorem encodeK_eq (checked : Checked) : encodeK checked = encode checked := by
             exact ih patched relocations
         · rfl
 
+/-- Compiled code runs the array-backed `encode` in place of `encodeK`. -/
+@[csimp] theorem encodeK_csimp : @encodeK = @encode :=
+  funext encodeK_eq
+
 end IxCC.X86.Encode

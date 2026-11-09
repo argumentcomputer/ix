@@ -90,7 +90,10 @@ def rel? (j : Json) : Dec Src.Rel :=
   | .str "t" => pure .type
   | _ => do
     match ← getArr j with
-    | [.str "p", w] => .proof <$> propWhen? w
+    | [.str "p", w] =>
+      let pw ← propWhen? w
+      if pw == .never then throw "non-canonical proof .never"
+      else pure (.proof pw)
     | _ => throw s!"bad Rel {j.compress}"
 
 def fieldClass : Src.Relevance.FieldClass → Json
@@ -104,7 +107,10 @@ def fieldClass? (j : Json) : Dec Src.Relevance.FieldClass :=
   | .str "t" => pure .type
   | _ => do
     match ← getArr j with
-    | [.str "p", w] => .proof <$> propWhen? w
+    | [.str "p", w] =>
+      let pw ← propWhen? w
+      if pw == .never then throw "non-canonical proof .never"
+      else pure (.proof pw)
     | _ => throw s!"bad FieldClass {j.compress}"
 
 def termKey : Src.TermKey → Json
@@ -273,10 +279,14 @@ def blockOut? (j : Json) : Dec Xv.Alloc.BlockOut := do
              cert := ← listOf (pair loc? nats) cert }
   | _ => throw "bad allocation block"
 
+def maxAllocSlots : Nat := 4096
+
 def output (o : Xv.Alloc.Output) : Json := arr [nat o.numSlots, arr (o.blocks.map blockOut)]
 
 def output? (j : Json) : Dec Xv.Alloc.Output := do
   let (numSlots, blocks) ← pair getNat (listOf blockOut?) j
+  if numSlots > maxAllocSlots then
+    throw s!"alloc numSlots {numSlots} exceeds limit {maxAllocSlots}"
   return { numSlots, blocks }
 
 def frame (l : Xv.Stacking.FrameLayout) : Json :=
@@ -323,5 +333,10 @@ def Cert.ofText (text : String) : Except Err Cert :=
   match (CertJson.checkJsonText text >>= fun () => Lean.Json.parse text >>= CertJson.cert?) with
   | .ok c => .ok c
   | .error m => .error { stage := .cert, code := "cert.parse", message := m }
+
+#guard (CertJson.rel? (CertJson.arr [CertJson.str "p", CertJson.str "n"])).isOk == false
+#guard (CertJson.fieldClass? (CertJson.arr [CertJson.str "p", CertJson.str "n"])).isOk == false
+#guard (CertJson.output? (CertJson.arr [CertJson.nat 4097, CertJson.arr []])).isOk == false
+#guard (CertJson.output? (CertJson.arr [CertJson.nat 4096, CertJson.arr []])).isOk == true
 
 end IxCC.Recheck

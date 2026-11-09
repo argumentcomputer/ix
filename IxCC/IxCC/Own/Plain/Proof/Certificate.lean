@@ -72,25 +72,37 @@ theorem ofText_parts {F : Fir.Program} {text : String} {P : Program}
     ∃ j, Json.parse text = .ok j ∧ admit F j = .ok P ∧
       P.source = F ∧ checkPlainMap F P.bodies = true := by
   unfold ofText at accepted
-  cases hp : Json.parse text with
+  cases hc : Src.Hints.checkJsonText text with
   | error e =>
-    simp only [hp, bind, Except.bind] at accepted
+    simp only [hc, bind, Except.bind] at accepted
     cases accepted
-  | ok j =>
-    simp only [hp, bind, Except.bind] at accepted
-    exact ⟨j, rfl, accepted, admit_parts accepted⟩
+  | ok _ =>
+    simp only [hc, bind, Except.bind] at accepted
+    cases hp : Json.parse text with
+    | error e =>
+      simp only [hp] at accepted
+      cases accepted
+    | ok j =>
+      simp only [hp] at accepted
+      exact ⟨j, rfl, accepted, admit_parts accepted⟩
 
 theorem ofTextContract_parts {F : Fir.Program} {text : String} {P : Program}
     (accepted : ofTextContract F text = .ok P) :
     ∃ j, Json.parse text = .ok j ∧ admitContract F j = .ok P ∧
       P.source = F ∧ checkContractPlainMap F P.bodies = true := by
   unfold ofTextContract at accepted
-  cases hp : Json.parse text with
+  cases hc : Src.Hints.checkJsonText text with
   | error e =>
-    simp only [hp, bind, Except.bind] at accepted
+    simp only [hc, bind, Except.bind] at accepted
     cases accepted
-  | ok j =>
-    simp only [hp, bind, Except.bind] at accepted
-    exact ⟨j, rfl, accepted, admitContract_parts accepted⟩
+  | ok _ =>
+    simp only [hc, bind, Except.bind] at accepted
+    cases hp : Json.parse text with
+    | error e =>
+      simp only [hp] at accepted
+      cases accepted
+    | ok j =>
+      simp only [hp] at accepted
+      exact ⟨j, rfl, accepted, admitContract_parts accepted⟩
 
 end IxCC.Own.Plain.Certificate

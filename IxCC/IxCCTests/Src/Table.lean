@@ -145,6 +145,32 @@ def mutations (a : Assert) (l : Loaded) : IO Unit := do
     expect a (!isOk (Table.checkLazy p f (lams + 1))) "lazy mutation: arity beyond the λs"
   | none => expect a false "lazy: no accepted rows"
 
+/-- Regressions for N7 (`checkAxiomClosure` across `.induct`/`.recr`) and N10 (`checkJsonText`
+depth/size bounds). -/
+def regressions (a : Assert) (l : Loaded) : IO Unit := do
+  let p := l.program
+  let (_, addThm) ← eqnNamed l "Nat.add"
+  -- N7: `checkAxiomClosure` accepts `Nat.add.eq_def`, and rejects a non-standard axiom
+  -- reachable behind an `.induct` or `.recr` declaration.
+  expect a (isOk (Table.checkAxiomClosure p addThm)) "N7: Nat.add.eq_def axiom closure accepted"
+  let (pAx, badAx) := withConst p (.axio false 0 (.sort .zero))
+  let (pInd, indId) := withConst pAx (.induct true 0 0 0 (.sort (.succ .zero)) [badAx])
+  let (pIndThm, indThm) := withConst pInd (.defn .thm .safe 0 (.const indId []) (.natLit 0))
+  expect a (!isOk (Table.checkAxiomClosure pIndThm indThm))
+    "N7: non-standard axiom behind .induct ctors rejected by checkAxiomClosure"
+  let badRule : Rule := { ctor := badAx, fields := 0, rhs := .natLit 0 }
+  let (pRec, recId) := withConst pAx (.recr true false 1 0 1 1 0 0 [badRule] (.sort .zero))
+  let (pRecThm, recThm) := withConst pRec (.defn .thm .safe 0 (.sort .zero) (.const recId [.zero]))
+  expect a (!isOk (Table.checkAxiomClosure pRecThm recThm))
+    "N7: non-standard axiom behind .recr rules rejected by checkAxiomClosure"
+  -- N10: `Hints.checkJsonText` rejects nesting > 512 and accepts nesting ≤ 512.
+  let okDepth := String.ofList (List.replicate 512 '[') ++ String.ofList (List.replicate 512 ']')
+  let badDepth := String.ofList (List.replicate 513 '[') ++ String.ofList (List.replicate 513 ']')
+  let quotedBrackets := "\"" ++ String.ofList (List.replicate 600 '[') ++ "\""
+  expect a (isOk (Hints.checkJsonText okDepth)) "N10: JSON nesting depth 512 accepted"
+  expect a (!isOk (Hints.checkJsonText badDepth)) "N10: JSON nesting depth 513 rejected"
+  expect a (isOk (Hints.checkJsonText quotedBrackets)) "N10: quoted brackets do not increase JSON depth"
+
 def run (a : Assert) : IO Unit := do
   let k1 ← loadK1
   packCounts a k1 "k1.ixe" 40
@@ -152,6 +178,7 @@ def run (a : Assert) : IO Unit := do
   expectEq a k1.tableStats.primAccepted.size 12 "k1.ixe: prim entries"
   expectEq a k1.tableStats.lazyAccepted.size 11 "k1.ixe: lazy entries"
   mutations a k1
+  regressions a k1
   for (name, eqns, cases) in [("fib", 2, 1), ("sum-loop", 34, 22), ("ackermann", 34, 21),
       ("tak", 5, 5), ("gcd", 7, 9)] do
     let l ← loadBench name

@@ -13,7 +13,7 @@ namespace IxCC.Src
 inductive NatMap (α : Type) where
   | leaf
   | node (value : Option α) (zero one : NatMap α)
-  deriving Inhabited, Repr
+  deriving BEq, DecidableEq, Inhabited, Repr
 
 namespace NatMap
 

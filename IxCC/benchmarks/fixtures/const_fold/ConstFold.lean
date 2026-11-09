@@ -7,7 +7,6 @@ the upstream `unsafe def main` is replaced by a pure `entry` and a safe
 `main` that prints its result in the upstream format; the definitions above
 `entry` are unchanged. See `VARIANT.md`.
 -/
-set_option backward.match.sparseCases false
 
 inductive Expr
 | Var : Nat → Expr

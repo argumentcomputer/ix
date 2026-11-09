@@ -1,5 +1,6 @@
 import IxCC.Own.Plain.Check
 import IxCC.Recheck.Json
+import IxCC.Src.Hints
 
 set_option autoImplicit false
 namespace IxCC.Own.Plain.Certificate
@@ -97,6 +98,7 @@ def admit (F : Fir.Program) (j : Json) : Except String Program := do
   else throw "own.cert.check: ownership proposal or source domain refused"
 
 def ofText (F : Fir.Program) (text : String) : Except String Program := do
+  Src.Hints.checkJsonText text
   admit F (← Json.parse text)
 
 /-- Contract-aware certificate admission: decodes the candidate body map against
@@ -108,6 +110,7 @@ def admitContract (F : Fir.Program) (j : Json) : Except String Program := do
   else throw "own.cert.check: ownership proposal or source domain refused"
 
 def ofTextContract (F : Fir.Program) (text : String) : Except String Program := do
+  Src.Hints.checkJsonText text
   admitContract F (← Json.parse text)
 
 end IxCC.Own.Plain.Certificate

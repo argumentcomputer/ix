@@ -134,6 +134,35 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
                    alloc := r.outs, frames := layouts, order }
          tableDiags, tableStats, fires := trace.fires, stages := trace.stages, alloc := r.outcomes }
 
+/-- Verify that `rel` is the exact canonical relevance annotation produced by
+`Src.Relevance.annotate` on the theorem-validated table built from `tableCert`
+(independent of `inp.hints`). -/
+def checkCanonicalRelevance (cfg : Config) (inp : Input)
+    (tableCert : Src.Table.TableCert) (rel : Src.Relevance.Ann) : Bool :=
+  match Src.Table.ofCert cfg.table inp.program tableCert with
+  | .error _ => false
+  | .ok table =>
+    match Src.Relevance.annotate inp.env { inp.program with table } with
+    | .ok ann => decide (ann = rel)
+    | .error _ => false
+
+theorem checkCanonicalRelevance_iff (cfg : Config) (inp : Input)
+    (tableCert : Src.Table.TableCert) (rel : Src.Relevance.Ann) :
+    checkCanonicalRelevance cfg inp tableCert rel = true ↔
+      ∃ table,
+        Src.Table.ofCert cfg.table inp.program tableCert = .ok table ∧
+        Src.Relevance.annotate inp.env { inp.program with table } = .ok rel := by
+  unfold checkCanonicalRelevance
+  cases htab : Src.Table.ofCert cfg.table inp.program tableCert with
+  | error _ =>
+    simp
+  | ok table =>
+    simp only [Except.ok.injEq, exists_eq_left']
+    cases hann : Src.Relevance.annotate inp.env { inp.program with table } with
+    | error _ => simp
+    | ok ann =>
+      simp [eq_comm]
+
 /-- `produce` (D17): the certificate. -/
 def produce (cfg : Config) (inp : Input) : Except Err Cert :=
   (·.cert) <$> produceWith cfg inp

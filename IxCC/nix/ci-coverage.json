@@ -1555,7 +1555,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-09: add CompileClaim, Compiler, Ring0, Reentry, and DriverSession axiom fences; rename the Ring-0 frame theorems",
+ "2026-11-09: add Stage A/B, Driver, Ring0, CompileClaim, Table, Lazify, and encodeK_csimp axiom fences",
  "axiom_sha256":
- "a1ec26a28daa9e6ba62f0c1bbb5a8a03a23c2315f5e340f0a7259585eeaafd1a",
- "axiom_count": 5406}
+ "e7050d1dd9c1903b089456d5853a07e03dbd715016e0dddd3b5f2408d0652284",
+ "axiom_count": 5435}

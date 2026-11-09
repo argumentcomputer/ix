@@ -431,17 +431,76 @@ def verifiedTextSize? (sip : Ring0Sip) (P : Src.Program) : Option Nat :=
       | .error _ => none
     | .error _ => none
 
+/-- Verify `sip.claim` against `P` and `sip.certText` in a single certificate
+replay pass and return `some a.backend.encoded.text.size` on success, or `none`
+on failure (`N11`). -/
+def verifyProgramWithTextSize? (sip : Ring0Sip) (P : Src.Program) : Option Nat :=
+  if sip.claim.checkWellFormed then
+    match P.roots.head? with
+    | some (rootAddr, _) =>
+      if rootAddr == sip.claim.target then
+        match sip.claim.policy with
+        | .immortal =>
+          match Recheck.Cert.ofText sip.certText with
+          | .ok cert =>
+            match Recheck.run sip.cfg P cert with
+            | .ok a =>
+              match a.roots.head? with
+              | some root =>
+                if CompileClaim.checkImmortalRoot a.src root &&
+                    (root.params == sip.claim.abiArity) &&
+                    (Ixon.Address.blake3Pure a.object == sip.claim.elfHash) then
+                  some a.backend.encoded.text.size
+                else none
+              | none => none
+            | .error _ => none
+          | .error _ => none
+        | .zeroRc =>
+          match Recheck.Cert.ofText sip.certText with
+          | .ok cert =>
+            match Recheck.runWithContracts sip.cfg P cert with
+            | .ok a =>
+              match a.roots.head? with
+              | some root =>
+                if CompileClaim.checkImmortalRoot a.src root &&
+                    (Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc) &&
+                    (root.params == sip.claim.abiArity) &&
+                    (Ixon.Address.blake3Pure a.object == sip.claim.elfHash) then
+                  some a.backend.encoded.text.size
+                else none
+              | none => none
+            | .error _ => none
+          | .error _ => none
+        | .plainRc =>
+          match Recheck.RcReplay.Cert.ofText sip.certText with
+          | .ok cert =>
+            match Recheck.RcReplay.run sip.cfg P cert with
+            | .ok a =>
+              match a.roots.head? with
+              | some root =>
+                if CompileClaim.checkPlainRcRoot a.front.src root &&
+                    (root.params == sip.claim.abiArity) &&
+                    (Ixon.Address.blake3Pure a.backend.object == sip.claim.elfHash) then
+                  some a.backend.encoded.text.size
+                else none
+              | none => none
+            | .error _ => none
+          | .error _ => none
+      else none
+    | none => none
+  else none
+
 /-- Verify a `Ring0Sip`'s compilation claim AND its canonical driver contract
-(`sip.driver.checkCanonical textSize`) against an ingested `Src.Program` (`A3-9`). -/
+(`sip.driver.checkCanonical textSize`) against an ingested `Src.Program` in a
+single certificate replay pass (`A3-9`, `N11`). -/
 def verifyProgram (sip : Ring0Sip) (P : Src.Program) : Bool :=
-  CompileClaim.verifyProgram sip.cfg P sip.claim sip.certText &&
-  match sip.verifiedTextSize? P with
+  match sip.verifyProgramWithTextSize? P with
   | some textSize => sip.driver.checkCanonical textSize
   | none => false
 
 /-- Verify a `Ring0Sip`'s compilation claim and canonical driver contract from
 raw `.ixe` environment bytes and sidecar equations JSON.
-Defaults `typecheck := true` (`S4`, `A3-2`). -/
+Defaults `typecheck := true` (`S4`, `A3-2`) and enforces canonical relevance (`Stage A`). -/
 def verifyBytes (sip : Ring0Sip) (envBytes : ByteArray) (equations : Lean.Json)
     (typecheck : Bool := true) : Bool :=
   match Recheck.ingress envBytes equations
@@ -449,6 +508,7 @@ def verifyBytes (sip : Ring0Sip) (envBytes : ByteArray) (equations : Lean.Json)
   | .error _ => false
   | .ok input =>
     (input.env.root == sip.claim.env) &&
+    CompileClaim.checkCertCanonicalRelevance sip.cfg input sip.claim.policy sip.certText &&
     sip.verifyProgram input.program
 
 end Ring0Sip

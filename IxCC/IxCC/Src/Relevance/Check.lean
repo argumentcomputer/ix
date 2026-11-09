@@ -165,7 +165,11 @@ def err (ctx : Ctx) (rule : String) (msg : String) (const : Option CId := none) 
 /-- S1: every parameter a condition names is below the level count. -/
 def pwOk (lvls : Nat) (c : PropWhen) : Bool := c.params.all (· < lvls)
 
-def relOk (lvls : Nat) (r : Rel) : Bool := pwOk lvls r.irrWhen
+def relOk (lvls : Nat) : Rel → Bool
+  | .rel => true
+  | .proof .never => false
+  | .proof w => pwOk lvls w
+  | .type => true
 
 def relName : Rel → String
   | .rel => "relevant"
@@ -727,11 +731,12 @@ so any irrelevant class will do). Where the position cannot be classified, an
 irrelevant tag needs another justification: `covered` says C1 or C2 already
 constrains it; otherwise it must be relevant. -/
 def tagOk (b : Binder) (exp? : Option Rel) (covered : Bool) (actual : Rel) : Bool :=
-  if b.contract.uses == .erased then actual != .rel
-  else
-    match exp? with
-    | some exp => actual == exp
-    | none => covered || actual == .rel
+  actual != .proof .never &&
+    if b.contract.uses == .erased then actual.alwaysIrr
+    else
+      match exp? with
+      | some exp => actual == exp
+      | none => covered || actual == .rel
 
 /-- The argument tags of a spine. C2 also compares the first `covered` arguments
 with a checked record (a constant's parameter classes, a β-redex's binders); past
@@ -742,7 +747,8 @@ def checkSpineArgs (p : Program) (ctx : List (Term × Option Univ)) :
   | covered, fnTy, (a, _, r) :: rest =>
     match whnfType p 8 fnTy with
     | .pi b _ d body =>
-      tagOk b (classifyDomain p ctx b d) (covered > 0) r &&
+      let b' : Binder := if covered > 0 then b else {}
+      tagOk b' (classifyDomain p ctx b' d) (covered > 0) r &&
         checkSpineArgs p ctx (covered - 1) (substTerm a 0 body) rest
     | _ =>
       (covered > 0 || r == .rel) && checkSpineArgs p ctx (covered - 1) fnTy rest
@@ -751,6 +757,67 @@ def checkSpineArgs (p : Program) (ctx : List (Term × Option Univ)) :
 does not constrain (projections, `let`s). -/
 def argsRelevant (args : List Term.Arg) : Bool :=
   args.all fun (_, _, r) => r == .rel
+
+def peelSubstPis (p : Program) : List Term → Term → Option Term
+  | [], ty =>
+    match whnfType p 8 ty with
+    | .pi _ _ d _ => some d
+    | _ => none
+  | a :: rest, ty =>
+    match whnfType p 8 ty with
+    | .pi _ _ _ body => peelSubstPis p rest (substTerm a 0 body)
+    | _ => none
+
+def applyTypeArgs (p : Program) : Term → List Term.Arg → Option Term
+  | ty, [] => some ty
+  | ty, (a, _, _) :: rest =>
+    match whnfType p 8 ty with
+    | .pi _ _ _ body => applyTypeArgs p (substTerm a 0 body) rest
+    | _ => none
+
+def inferSimpleType (p : Program) (ctx : List (Term × Option Univ)) : Nat → Term → Option Term
+  | 0, _ => none
+  | fuel + 1, .letE _ _ _ v body => inferSimpleType p ctx fuel (substTerm v 0 body)
+  | fuel + 1, t =>
+    let (head, args) := t.spine
+    let headTy? : Option Term :=
+      match head with
+      | .var idx => ctx[idx]?.map fun (varTy, _) => liftTerm (idx + 1) 0 varTy
+      | .const c us => (p.decl? c).map fun d => instUnivsTerm us d.type
+      | .proj s i e => do
+        let k ← onlyCtor? p s
+        let .ctor _ lvls _ _ np nf ctorTy ← p.decl? k | none
+        if i ≥ nf then none else
+        let flds := (List.range i).map (Term.proj s · e)
+        match inferSimpleType p ctx fuel e with
+        | some eTy =>
+          let (sHead, sArgs) := (whnfType p 8 eTy).spine
+          match sHead with
+          | .const s' us =>
+            if s' == s && sArgs.length ≥ np then
+              peelSubstPis p ((sArgs.take np).map (·.1) ++ flds) (instUnivsTerm us ctorTy)
+            else if lvls == 0 then
+              peelSubstPis p (List.replicate np (.natLit 0) ++ flds) ctorTy
+            else none
+          | _ =>
+            if lvls == 0 then peelSubstPis p (List.replicate np (.natLit 0) ++ flds) ctorTy
+            else none
+        | none =>
+          if lvls == 0 then peelSubstPis p (List.replicate np (.natLit 0) ++ flds) ctorTy
+          else none
+      | _ => none
+    match headTy? with
+    | some hTy => applyTypeArgs p hTy args
+    | none => none
+
+/-- Arguments of a β-redex against its leading λ binders. -/
+def checkBetaArgs (p : Program) (ctx : List (Term × Option Univ)) :
+    Term → List Term.Arg → Bool
+  | _, [] => true
+  | .lam b d body, (a, _, r) :: rest =>
+    tagOk b (classifyDomain p ctx b d) false r &&
+      checkBetaArgs p ctx (substTerm a 0 body) rest
+  | _, _ => false
 
 /-- Arguments left over after a β-redex's binders are consumed: C2 covers only the
 binders, so they are judged against the head the reduced body applies. `inner`
@@ -768,6 +835,10 @@ def checkReducedSpine (p : Program) (ctx : List (Term × Option Univ)) (t : Term
       match ctx[idx]? with
       | some (varTy, _) => checkSpineArgs p ctx inner.length (liftTerm (idx + 1) 0 varTy) (inner ++ extra)
       | none => false
+    | .proj s i e =>
+      match inferSimpleType p ctx 8 (.proj s i e) with
+      | some fieldTy => checkSpineArgs p ctx inner.length fieldTy (inner ++ extra)
+      | none => argsRelevant extra
     | _ => argsRelevant extra
 
 def checkTermBinders (p : Program) (ann : Ann) (ctx : List (Term × Option Univ)) :
@@ -777,9 +848,9 @@ def checkTermBinders (p : Program) (ann : Ann) (ctx : List (Term × Option Univ)
     okA && checkTermBinders p ann ctx f ((a, m, r) :: args)
   | .lam b d body, args =>
     let n := (lamRels (.lam b d body)).length
-    let okSpine := checkSpineArgs p ctx n (.pi b {} d body) (args.take n) &&
+    let okSpine := checkBetaArgs p ctx (.lam b d body) (args.take n) &&
       checkReducedSpine p ctx (betaApps (.lam b d body) (args.take n)) (args.drop n)
-    let okB := tagOk b (classifyDomain p ctx b d) true b.rel
+    let okB := tagOk b (classifyDomain p ctx b d) false b.rel
     let dSort : Option Univ :=
       match (whnfType p 8 d).pis.2 with
       | .sort u => some u
@@ -788,7 +859,7 @@ def checkTermBinders (p : Program) (ann : Ann) (ctx : List (Term × Option Univ)
     else okSpine && okB && checkTermBinders p ann ((d, dSort) :: ctx) body []
   | .letE lc r ty val body, args =>
     let lb : Binder := { contract := lc.binder }
-    let okR := tagOk lb (classifyDomain p ctx lb ty) true r
+    let okR := tagOk lb (classifyDomain p ctx lb ty) false r
     let tySort : Option Univ :=
       match (whnfType p 8 ty).pis.2 with
       | .sort u => some u
@@ -805,7 +876,13 @@ def checkTermBinders (p : Program) (ann : Ann) (ctx : List (Term × Option Univ)
     match ctx[idx]? with
     | some (varTy, _) => checkSpineArgs p ctx 0 (liftTerm (idx + 1) 0 varTy) args
     | none => false
-  | .proj _ _ e, args => argsRelevant args && checkTermBinders p ann ctx e []
+  | .proj s i e, args =>
+    let okArgs :=
+      if args.isEmpty then true
+      else match inferSimpleType p ctx 8 (.proj s i e) with
+        | some fieldTy => checkSpineArgs p ctx 0 fieldTy args
+        | none => argsRelevant args
+    okArgs && checkTermBinders p ann ctx e []
   | _, args => argsRelevant args
 
 end Check.Canonical
@@ -826,7 +903,7 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
       cr.params.length == ps.length &&
       (cr.params.zip ps).all (fun (actual, (b, exp)) =>
         tagOk b exp false actual) &&
-      (match res with | some e => cr.result == e | none => true)
+      (match res with | some e => cr.result == e | none => cr.result == .rel)
     | none => false
   let okCtors := ann.ctors.toList.all fun (c, kr) =>
     match p.decl? c with
@@ -840,8 +917,9 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
       kr.fields.length == nf &&
       flds.length == nf &&
       (kr.fields.zip flds).all (fun (actual, (b, exp)) =>
-        if b.contract.uses == .erased then actual != .keep
-        else match exp with | some e => actual == FieldClass.ofRel e | none => actual == .keep)
+        actual != .proof .never &&
+          if b.contract.uses == .erased then actual.alwaysDropped
+          else match exp with | some e => actual == FieldClass.ofRel e | none => actual == .keep)
     | _ => false
   let okReached := ch.reached.all fun c =>
     match ann.constRel? c with

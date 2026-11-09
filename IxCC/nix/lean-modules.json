@@ -5142,7 +5142,8 @@
     "IxCC.Recheck.Linked",
     "IxCC.Backend.Proof.Exports",
     "IxCC.Backend.Proof.Funcs",
-    "IxCC.Rt.Proof.Roots"]},
+    "IxCC.Rt.Proof.Roots",
+    "IxCC.Src.Relevance.Proof.Sound"]},
   "IxCC.Recheck.Proof.Object":
   {"path": "IxCC/Recheck/Proof/Object.lean",
    "imports": ["IxCC.Recheck.Proof.Back", "IxCC.Recheck.Proof.Sound"]},
@@ -5502,7 +5503,7 @@
   {"path": "IxCC/Own/Plain/Check.lean", "imports": ["IxCC.Own.Plain.Program"]},
   "IxCC.Own.Plain.Certificate":
   {"path": "IxCC/Own/Plain/Certificate.lean",
-   "imports": ["IxCC.Own.Plain.Check", "IxCC.Recheck.Json"]},
+   "imports": ["IxCC.Own.Plain.Check", "IxCC.Recheck.Json", "IxCC.Src.Hints"]},
   "IxCC.Own.Kind": {"path": "IxCC/Own/Kind.lean", "imports": []},
   "IxCC.Own.Immortal":
   {"path": "IxCC/Own/Immortal.lean", "imports": ["IxCC.Own.Syntax"]},

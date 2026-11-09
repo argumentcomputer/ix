@@ -135,6 +135,232 @@ theorem ofClaimBytes_toClaimBytes {c : CompileClaim} (hwf : c.WellFormed) :
   rw [Ixon.runGet_eq_ok_of_spec (getClaimM_spec hwf)]
   rfl
 
+/-- Canonical address reader inversion: every accepted 32-byte address slice equals `a.hash`. -/
+theorem address_get_canonical :
+    Ixon.GetCanonical (Ixon.Serialize.get : Ixon.GetM Ixon.Address) (fun a => a.hash) := by
+  intro pre rest a st' h
+  change (do
+    let bytes ← Ixon.getBytes 32
+    match Ixon.Address.ofBytes? bytes with
+    | some a => return a
+    | none => throw "internal: getBytes returned a non-32-byte address").run
+      ⟨pre ++ rest, pre.size⟩ = .ok (a, st') at h
+  simp only [StateT.run_bind] at h
+  cases hb : (Ixon.getBytes 32).run ⟨pre ++ rest, pre.size⟩ with
+  | error err => rw [hb] at h; contradiction
+  | ok res =>
+    rcases res with ⟨bytes, mid⟩
+    rw [hb] at h
+    simp only [bind, Except.bind] at h
+    obtain ⟨suffix, hrest, hmid⟩ := Ixon.getBytes_canonical 32 pre rest hb
+    cases haddr : Ixon.Address.ofBytes? bytes with
+    | none => rw [haddr] at h; contradiction
+    | some a' =>
+      rw [haddr] at h
+      cases h
+      unfold Ixon.Address.ofBytes? at haddr
+      split at haddr <;> cases haddr
+      exact ⟨suffix, hrest, hmid⟩
+
+theorem CompilePolicy.toUInt8_ofUInt8? {b : UInt8} {p : CompilePolicy}
+    (h : CompilePolicy.ofUInt8? b = some p) : p.toUInt8 = b := by
+  unfold CompilePolicy.ofUInt8? at h
+  split at h <;> cases h <;> rfl
+
+/-- Converse payload reader specification: every successful `getPayloadM` parse
+yields a well-formed `CompileClaim` and consumes its exact `toPayloadBytes` prefix. -/
+theorem getPayloadM_canonical (pre rest : ByteArray) {c : CompileClaim} {st' : Ixon.GetState}
+    (h : getPayloadM.run ⟨pre ++ rest, pre.size⟩ = .ok (c, st')) :
+    c.WellFormed ∧
+      ∃ suffix,
+        rest = c.toPayloadBytes ++ suffix ∧
+        st' = ⟨pre ++ rest, pre.size + c.toPayloadBytes.size⟩ := by
+  unfold getPayloadM at h
+  simp only [StateT.run_bind] at h
+  cases henv : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre ++ rest, pre.size⟩ with
+  | error e => rw [henv] at h; contradiction
+  | ok r1 =>
+    rcases r1 with ⟨env, st1⟩
+    rw [henv] at h
+    simp only [bind, Except.bind] at h
+    obtain ⟨rest1, hrest1, hst1⟩ := address_get_canonical pre rest henv
+    let pre1 := pre ++ env.hash
+    have hst1' : st1 = ⟨pre1 ++ rest1, pre1.size⟩ := by
+      rw [hst1]; simp [pre1, hrest1, ByteArray.append_assoc]
+    rw [hst1'] at h
+    cases htarget : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre1 ++ rest1, pre1.size⟩ with
+    | error e => rw [htarget] at h; contradiction
+    | ok r2 =>
+      rcases r2 with ⟨target, st2⟩
+      rw [htarget] at h
+      dsimp only at h
+      obtain ⟨rest2, hrest2, hst2⟩ := address_get_canonical pre1 rest1 htarget
+      let pre2 := pre1 ++ target.hash
+      have hst2' : st2 = ⟨pre2 ++ rest2, pre2.size⟩ := by
+        rw [hst2]; simp [pre2, hrest2, ByteArray.append_assoc]
+      rw [hst2'] at h
+      cases hpol : Ixon.getU8.run ⟨pre2 ++ rest2, pre2.size⟩ with
+      | error e => rw [hpol] at h; contradiction
+      | ok r3 =>
+        rcases r3 with ⟨polByte, st3⟩
+        rw [hpol] at h
+        dsimp only at h
+        obtain ⟨rest3, hrest3, hst3⟩ := Ixon.getU8_canonical pre2 rest2 hpol
+        cases hpolOpt : CompilePolicy.ofUInt8? polByte with
+        | none =>
+          rw [hpolOpt] at h
+          change Except.error _ = Except.ok (c, st') at h
+          contradiction
+        | some policy =>
+          rw [hpolOpt] at h
+          change (do
+            let arityTag ← Ixon.getTag0
+            let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
+            pure ({ env, target, policy, abiArity := arityTag.size.toNat, elfHash } : CompileClaim)).run st3 =
+              .ok (c, st') at h
+          simp only [StateT.run_bind] at h
+          have hpolEq : policy.toUInt8 = polByte := CompilePolicy.toUInt8_ofUInt8? hpolOpt
+          let pre3 := pre2 ++ Ixon.u8Bytes polByte
+          have hst3' : st3 = ⟨pre3 ++ rest3, pre3.size⟩ := by
+            rw [hst3]; simp [pre3, hrest3, ByteArray.append_assoc]
+          rw [hst3'] at h
+          cases harity : Ixon.getTag0.run ⟨pre3 ++ rest3, pre3.size⟩ with
+          | error e => rw [harity] at h; contradiction
+          | ok r4 =>
+            rcases r4 with ⟨arityTag, st4⟩
+            rw [harity] at h
+            simp only [bind, Except.bind] at h
+            obtain ⟨rest4, hrest4, hst4⟩ := Ixon.getTag0_canonical pre3 rest3 harity
+            let pre4 := pre3 ++ Ixon.tag0Bytes arityTag
+            have hst4' : st4 = ⟨pre4 ++ rest4, pre4.size⟩ := by
+              rw [hst4]; simp [pre4, hrest4, ByteArray.append_assoc]
+            rw [hst4'] at h
+            cases helf : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre4 ++ rest4, pre4.size⟩ with
+            | error e => rw [helf] at h; contradiction
+            | ok r5 =>
+              rcases r5 with ⟨elfHash, st5⟩
+              rw [helf] at h
+              change Except.ok ({ env, target, policy, abiArity := arityTag.size.toNat, elfHash }, st5) =
+                Except.ok (c, st') at h
+              cases h
+              obtain ⟨suffix, hrest5, hst5⟩ := address_get_canonical pre4 rest4 helf
+              have hwf : ({ env, target, policy, abiArity := arityTag.size.toNat, elfHash } : CompileClaim).WellFormed :=
+                arityTag.size.toNat_lt
+              have htagEq : (⟨UInt64.ofNat arityTag.size.toNat⟩ : Ixon.Tag0) = arityTag := by
+                rcases arityTag with ⟨sz⟩
+                simp [UInt64.ofNat_toNat]
+              refine ⟨hwf, suffix, ?_, ?_⟩
+              · rw [hrest1, hrest2, hrest3, hrest4, hrest5]
+                simp [toPayloadBytes, hpolEq, ByteArray.append_assoc]
+              · rw [hst5]
+                simp [pre4, pre3, pre2, pre1, hrest1, hrest2, hrest3, hrest4, hrest5,
+                  toPayloadBytes, hpolEq, ByteArray.append_assoc, Nat.add_assoc]
+
+private theorem byteArray_eq_empty_of_size_zero {bs : ByteArray} (h : bs.size = 0) :
+    bs = ByteArray.empty := by
+  rcases bs with ⟨data⟩
+  have hdata : data = #[] := Array.eq_empty_of_size_eq_zero h
+  subst hdata
+  rfl
+
+private theorem runGet_toOption_some {α : Type} {m : Ixon.GetM α} {bs : ByteArray} {a : α}
+    (h : (Ixon.runGet m bs).toOption = some a) :
+    ∃ st, m.run ⟨bs, 0⟩ = .ok (a, st) ∧ st.idx = st.bytes.size := by
+  unfold Ixon.runGet at h
+  cases hrun : m.run ⟨bs, 0⟩ with
+  | error e => rw [hrun] at h; cases h
+  | ok res =>
+    rcases res with ⟨a', st⟩
+    rw [hrun] at h
+    simp only [bind, Except.bind] at h
+    split at h
+    · cases h
+    · rename_i htrail
+      cases h
+      simp only [bne_iff_ne, ne_eq, Decidable.not_not] at htrail
+      exact ⟨st, rfl, htrail⟩
+
+/-- Decoding payload bytes recovers a well-formed `CompileClaim` whose canonical
+encoding equals `bs` (`N13`). -/
+theorem toPayloadBytes_ofPayloadBytes (bs : ByteArray) (c : CompileClaim)
+    (h : ofPayloadBytes bs = some c) :
+    c.toPayloadBytes = bs ∧ c.WellFormed := by
+  obtain ⟨st, hrun, htrail⟩ := runGet_toOption_some h
+  have hrun' : getPayloadM.run ⟨ByteArray.empty ++ bs, ByteArray.empty.size⟩ = .ok (c, st) := by
+    simpa [ByteArray.empty_append, ByteArray.size_empty] using hrun
+  obtain ⟨hwf, suffix, hbs, hst⟩ := getPayloadM_canonical ByteArray.empty bs hrun'
+  simp only [ByteArray.empty_append, ByteArray.size_empty, Nat.zero_add] at hst
+  subst hst
+  have hsufSize : suffix.size = 0 := by
+    have := congrArg ByteArray.size hbs
+    simp only [ByteArray.size_append] at this htrail
+    omega
+  have hsufEmpty : suffix = ByteArray.empty := byteArray_eq_empty_of_size_zero hsufSize
+  subst hsufEmpty
+  rw [ByteArray.append_empty] at hbs
+  exact ⟨hbs.symm, hwf⟩
+
+/-- Decoding full wire-envelope claim bytes recovers a well-formed `CompileClaim`
+whose canonical wire encoding equals `bs` (`N13`). -/
+theorem toClaimBytes_ofClaimBytes (bs : ByteArray) (c : CompileClaim)
+    (h : ofClaimBytes bs = some c) :
+    c.toClaimBytes = bs ∧ c.WellFormed := by
+  obtain ⟨st2, hrun, htrail⟩ := runGet_toOption_some h
+  unfold getClaimM at hrun
+  simp only [StateT.run_bind] at hrun
+  have hinit : (⟨bs, 0⟩ : Ixon.GetState) = ⟨ByteArray.empty ++ bs, ByteArray.empty.size⟩ := by
+    simp [ByteArray.empty_append, ByteArray.size_empty]
+  rw [hinit] at hrun
+  cases hhdr : (Ixon.getBytes 4).run ⟨ByteArray.empty ++ bs, ByteArray.empty.size⟩ with
+  | error e => rw [hhdr] at hrun; cases hrun
+  | ok r1 =>
+    rcases r1 with ⟨hdr, st1⟩
+    rw [hhdr] at hrun
+    simp only [bind, Except.bind] at hrun
+    obtain ⟨rest1, hbs, hst1⟩ := Ixon.getBytes_canonical 4 ByteArray.empty bs hhdr
+    split at hrun
+    · cases hrun
+    · rename_i hhdrEq
+      simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hhdrEq
+      subst hhdrEq
+      have hst1' : st1 = ⟨validatorHeader ++ rest1, validatorHeader.size⟩ := by
+        rw [hst1]; simp [hbs, ByteArray.empty_append]
+      rw [hst1'] at hrun
+      obtain ⟨hwf, suffix, hrest1, hst2⟩ := getPayloadM_canonical validatorHeader rest1 hrun
+      subst hst2
+      have hsufSize : suffix.size = 0 := by
+        have := congrArg ByteArray.size hrest1
+        simp only [ByteArray.size_append] at this htrail
+        omega
+      have hsufEmpty : suffix = ByteArray.empty := byteArray_eq_empty_of_size_zero hsufSize
+      subst hsufEmpty
+      rw [ByteArray.append_empty] at hrest1
+      rw [hrest1] at hbs
+      exact ⟨hbs.symm, hwf⟩
+
+/-- For any `Nat` observation, `Rt.tagify` at `.nat` succeeds with `some (.nat n)` (`N4`). -/
+theorem isImmortalViewType_nat_tagify (T : List Lam.CtorInfo) (sig : Rt.Sig) (n : Nat) :
+    Rt.tagify T sig .nat (.nat n) = some (.nat n) :=
+  rfl
+
+/-- If `isImmortalViewType sig (.ind idx) = true`, every constructor entry at
+valid tag `c.tag < ctors.length` has empty field-type list `[]`, so `Rt.tagify`
+at `(.ind idx)` on `(.ctor cid [])` succeeds with `some (.ctor c.tag [])` (`N4`). -/
+theorem isImmortalViewType_ctor0_tagify {T : List Lam.CtorInfo} {sig : Rt.Sig}
+    {idx : Nat} {ctors : List (List Rt.FoTy)} {cid : Src.CId} {c : Fir.CtorInfo}
+    (hview : isImmortalViewType sig (.ind idx) = true)
+    (hind : sig.inds[idx]? = some ctors)
+    (hc : Fir.CtorInfo.ofKey T (.src cid) = some c)
+    (htag : c.tag < ctors.length) :
+    Rt.tagify T sig (.ind idx) (.ctor cid []) = some (.ctor c.tag []) := by
+  simp only [isImmortalViewType, hind, Bool.and_eq_true, List.all_eq_true,
+    List.isEmpty_iff] at hview
+  have hmem : ctors[c.tag] ∈ ctors := List.getElem_mem htag
+  have hempty : ctors[c.tag] = [] := hview.2 _ hmem
+  have hctor : sig.ctor? idx c.tag = some [] := by
+    simp [Rt.Sig.ctor?, hind, htag, hempty]
+  simp [Rt.tagify, hc, hctor]
+
 /-- Soundness of `CompileClaim.verifyProgram` under `.immortal` policy, backed by
 `Recheck.sound`, `Recheck.object_refines`, `Recheck.run_front`, and `checkImmortalRoot`. -/
 theorem verifyProgram_immortal_sound {cfg : Recheck.Config} {P : Src.Program}
@@ -149,7 +375,7 @@ theorem verifyProgram_immortal_sound {cfg : Recheck.Config} {P : Src.Program}
       Recheck.run cfg P cert = .ok a ∧
       Recheck.front cfg P cert = .ok (a.src, a.checked) ∧
       a.roots.head? = some root ∧
-      rootParamsAllNat a.src root.const = true ∧
+      rootParamsAllNat a.src root = true ∧
       root.ty = some (sig, ty) ∧
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
@@ -221,7 +447,7 @@ theorem verifyProgram_zeroRc_sound {cfg : Recheck.Config} {P : Src.Program}
       Own.Plain.selectRcPolicyForSrc a.src a.front.fir = .zeroRc ∧
       Own.Plain.checkContractPlainMap a.front.fir (Own.Plain.Program.canonical a.front.fir).bodies = true ∧
       a.roots.head? = some root ∧
-      rootParamsAllNat a.src root.const = true ∧
+      rootParamsAllNat a.src root = true ∧
       root.ty = some (sig, ty) ∧
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
@@ -298,7 +524,7 @@ theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
       Recheck.RcReplay.run cfg P cert = .ok a ∧
       Recheck.front cfg P cert.base = .ok (a.front.src, a.front.checked) ∧
       a.roots.head? = some root ∧
-      rootParamsAllNat a.front.src root.const = true ∧
+      rootParamsAllNat a.front.src root = true ∧
       root.ty = some (sig, ty) ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.backend.object = c.elfHash ∧
@@ -358,7 +584,9 @@ theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.immortal` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
-`Src.Resource.validate`, `Recheck.front`, and `verifyProgram_immortal_sound`. -/
+`Src.Resource.validate`, `Src.Ingress.ofEnv` (`Recheck.ingress_parts`), canonical relevance
+(`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
+and `verifyProgram_immortal_sound`. -/
 theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
     (hpol : c.policy = .immortal)
@@ -370,13 +598,26 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
       (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      (∃ rawHints chosen rawProg,
+        Src.Hints.ofK1Json equations = .ok rawHints ∧
+        Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
+        chosen.isEmpty = false ∧
+        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.run cfg inp.program cert = .ok a ∧
       Recheck.front cfg inp.program cert = .ok (a.src, a.checked) ∧
+      (∃ table installed,
+        Src.Table.ofCert cfg.table inp.program cert.table = .ok table ∧
+        Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance ∧
+        Src.Relevance.install { inp.program with table } cert.relevance = .ok installed ∧
+        Src.Relevance.check installed cert.relevance = .ok a.checked ∧
+        Src.Relevance.Proof.WellAnnotated installed cert.relevance a.checked ∧
+        a.src = Src.Lazify.run installed a.checked.keys) ∧
       a.roots.head? = some root ∧
-      rootParamsAllNat a.src root.const = true ∧
+      rootParamsAllNat a.src root = true ∧
       root.ty = some (sig, ty) ∧
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
@@ -396,18 +637,31 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨henv_b, hprog⟩ := hver
+    obtain ⟨⟨henv_b, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
-    obtain ⟨hdec, htc, hres, _⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
       hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
       verifyProgram_immortal_sound hpol hprog
-    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres,
-      henv, hhead, hcert, hrun, hfront, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
+    simp only [checkCertCanonicalRelevance, hpol, hcert] at hcanonRel
+    obtain ⟨table₀, htab₀, hann⟩ :=
+      (Recheck.checkCanonicalRelevance_iff cfg inp cert.table cert.relevance).mp hcanonRel
+    obtain ⟨table, installed, htab, hinst, hchk, hwa, hlaz⟩ :=
+      Recheck.front_wellAnnotated hfront
+    have htabEq : table₀ = table := by
+      rw [htab₀] at htab
+      cases htab
+      rfl
+    subst htabEq
+    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
+      henv, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
+      hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.zeroRc` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
-`Src.Resource.validate`, `Recheck.front`, and `verifyProgram_zeroRc_sound`. -/
+`Src.Resource.validate`, `Src.Ingress.ofEnv` (`Recheck.ingress_parts`), canonical relevance
+(`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
+and `verifyProgram_zeroRc_sound`. -/
 theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
     (hpol : c.policy = .zeroRc)
@@ -419,16 +673,29 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
       (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      (∃ rawHints chosen rawProg,
+        Src.Hints.ofK1Json equations = .ok rawHints ∧
+        Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
+        chosen.isEmpty = false ∧
+        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.runWithContracts cfg inp.program cert = .ok a ∧
       Recheck.run cfg inp.program cert = .ok a ∧
       Recheck.front cfg inp.program cert = .ok (a.src, a.checked) ∧
+      (∃ table installed,
+        Src.Table.ofCert cfg.table inp.program cert.table = .ok table ∧
+        Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance ∧
+        Src.Relevance.install { inp.program with table } cert.relevance = .ok installed ∧
+        Src.Relevance.check installed cert.relevance = .ok a.checked ∧
+        Src.Relevance.Proof.WellAnnotated installed cert.relevance a.checked ∧
+        a.src = Src.Lazify.run installed a.checked.keys) ∧
       Own.Plain.selectRcPolicyForSrc a.src a.front.fir = .zeroRc ∧
       Own.Plain.checkContractPlainMap a.front.fir (Own.Plain.Program.canonical a.front.fir).bodies = true ∧
       a.roots.head? = some root ∧
-      rootParamsAllNat a.src root.const = true ∧
+      rootParamsAllNat a.src root = true ∧
       root.ty = some (sig, ty) ∧
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
@@ -449,19 +716,31 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨henv_b, hprog⟩ := hver
+    obtain ⟨⟨henv_b, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
-    obtain ⟨hdec, htc, hres, _⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrunC, hrun, hfront,
       hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
       verifyProgram_zeroRc_sound hpol hprog
-    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres,
-      henv, hhead, hcert, hrunC, hrun, hfront, hrcPol, hcheckMap, hahead,
-      hnatParams, hty, htyOk, hparams, hhash, hsem⟩
+    simp only [checkCertCanonicalRelevance, hpol, hcert] at hcanonRel
+    obtain ⟨table₀, htab₀, hann⟩ :=
+      (Recheck.checkCanonicalRelevance_iff cfg inp cert.table cert.relevance).mp hcanonRel
+    obtain ⟨table, installed, htab, hinst, hchk, hwa, hlaz⟩ :=
+      Recheck.front_wellAnnotated hfront
+    have htabEq : table₀ = table := by
+      rw [htab₀] at htab
+      cases htab
+      rfl
+    subst htabEq
+    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
+      henv, hhead, hcert, hrunC, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
+      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.plainRc` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
-`Src.Resource.validate`, `Recheck.front`, and `verifyProgram_plainRc_sound`. -/
+`Src.Resource.validate`, `Src.Ingress.ofEnv` (`Recheck.ingress_parts`), canonical relevance
+(`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
+and `verifyProgram_plainRc_sound`. -/
 theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
     (hpol : c.policy = .plainRc)
@@ -473,13 +752,26 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
       (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      (∃ rawHints chosen rawProg,
+        Src.Hints.ofK1Json equations = .ok rawHints ∧
+        Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
+        chosen.isEmpty = false ∧
+        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
       Recheck.RcReplay.Cert.ofText certText = .ok cert ∧
       Recheck.RcReplay.run cfg inp.program cert = .ok a ∧
       Recheck.front cfg inp.program cert.base = .ok (a.front.src, a.front.checked) ∧
+      (∃ table installed,
+        Src.Table.ofCert cfg.table inp.program cert.base.table = .ok table ∧
+        Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.base.relevance ∧
+        Src.Relevance.install { inp.program with table } cert.base.relevance = .ok installed ∧
+        Src.Relevance.check installed cert.base.relevance = .ok a.front.checked ∧
+        Src.Relevance.Proof.WellAnnotated installed cert.base.relevance a.front.checked ∧
+        a.front.src = Src.Lazify.run installed a.front.checked.keys) ∧
       a.roots.head? = some root ∧
-      rootParamsAllNat a.front.src root.const = true ∧
+      rootParamsAllNat a.front.src root = true ∧
       root.ty = some (sig, ty) ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.backend.object = c.elfHash ∧
@@ -502,13 +794,24 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨henv_b, hprog⟩ := hver
+    obtain ⟨⟨henv_b, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
-    obtain ⟨hdec, htc, hres, _⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
       hnatParams, hty, hparams, hhash, hsem⟩ :=
       verifyProgram_plainRc_sound hpol hprog
-    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres,
-      henv, hhead, hcert, hrun, hfront, hahead, hnatParams, hty, hparams, hhash, hsem⟩
+    simp only [checkCertCanonicalRelevance, hpol, hcert] at hcanonRel
+    obtain ⟨table₀, htab₀, hann⟩ :=
+      (Recheck.checkCanonicalRelevance_iff cfg inp cert.base.table cert.base.relevance).mp hcanonRel
+    obtain ⟨table, installed, htab, hinst, hchk, hwa, hlaz⟩ :=
+      Recheck.front_wellAnnotated hfront
+    have htabEq : table₀ = table := by
+      rw [htab₀] at htab
+      cases htab
+      rfl
+    subst htabEq
+    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
+      henv, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
+      hahead, hnatParams, hty, hparams, hhash, hsem⟩
 
 end IxCC.CompileClaim

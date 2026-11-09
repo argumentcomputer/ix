@@ -187,21 +187,26 @@ def isImmortalViewType (sig : Rt.Sig) : Rt.FoTy → Bool
     | some ctors => !ctors.isEmpty && ctors.all List.isEmpty
     | none => false
 
-/-- Check that a root declaration in `src` is monomorphic (`d.lvls == 0`) and every
-parameter in its Π-telescope has domain `Nat`, matching the `(Nat × List Nat)` ABI
-of `CheckedProgram` and `X86.Linked`. -/
-def rootParamsAllNat (src : Src.Program) (rootId : Src.CId) : Bool :=
-  match src.decl? rootId with
+/-- Check that `dom` is the `Nat` constant in `src`. -/
+def isNatType (src : Src.Program) (dom : Src.Term) : Bool :=
+  some dom == src.known.nat.map (Src.Term.const · [])
+
+/-- Check that a root declaration in `src` is monomorphic (`d.lvls == 0`), its
+Π-telescope length matches `root.params`, and every parameter in its Π-telescope
+has domain `Nat`, matching the `(Nat × List Nat)` ABI of `CheckedProgram` and
+`X86.Linked`. -/
+def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
+  match src.decl? root.const with
   | some d =>
     d.lvls == 0 &&
-      d.type.pis.1.all fun (_, dom) =>
-        some dom == src.known.nat.map (Src.Term.const · [])
+      d.type.pis.1.length == root.params &&
+      (d.type.pis.1.take root.params).all fun (_, dom) => isNatType src dom
   | none => false
 
 /-- Check that a root on the `.immortal` / `.zeroRc` path has all-`Nat` parameters
 and a non-vacuous scalar/enum readback type (`isImmortalViewType`). -/
 def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
-  rootParamsAllNat src root.const &&
+  rootParamsAllNat src root &&
     match root.ty with
     | some (sig, ty) => isImmortalViewType sig ty
     | none => false
@@ -209,7 +214,7 @@ def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
 /-- Check that a root on the `.plainRc` path has all-`Nat` parameters and a
 discovered first-order readback signature (`root.ty.isSome`). -/
 def checkPlainRcRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
-  rootParamsAllNat src root.const && root.ty.isSome
+  rootParamsAllNat src root && root.ty.isSome
 
 /-- Verify a `CompileClaim` against an ingested `Src.Program` and serialized
 certificate `certText` using pure BLAKE3 (`Ixon.Address.blake3Pure`). -/
@@ -276,15 +281,32 @@ def selectTargetRoots (cfg : Recheck.Config) (equations : Lean.Json) (target : I
         | _ => []
     | .error _ => []
 
+/-- Verify that the serialized certificate's relevance annotation equals the
+canonical output of `Src.Relevance.annotate` on `inp.env` and the validated
+table (`Stage A`). -/
+def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
+    (policy : CompilePolicy) (certText : String) : Bool :=
+  match policy with
+  | .immortal | .zeroRc =>
+    match Recheck.Cert.ofText certText with
+    | .ok cert => Recheck.checkCanonicalRelevance cfg inp cert.table cert.relevance
+    | .error _ => false
+  | .plainRc =>
+    match Recheck.RcReplay.Cert.ofText certText with
+    | .ok cert => Recheck.checkCanonicalRelevance cfg inp cert.base.table cert.base.relevance
+    | .error _ => false
+
 /-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
 JSON, and serialized certificate `certText`. Defaults to `typecheck := true` so
-`Ixon.V3.Tc.checkEnv` validates the decoded environment at ingress (`S4`, `A1-6`). -/
+`Ixon.V3.Tc.checkEnv` validates the decoded environment at ingress (`S4`, `A1-6`)
+and `checkCertCanonicalRelevance` validates canonical relevance (`Stage A`). -/
 def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
     (c : CompileClaim) (certText : String) (typecheck : Bool := true) : Bool :=
   let roots := selectTargetRoots cfg equations c.target
   match Recheck.ingress envBytes equations roots typecheck with
   | .ok inp =>
     (inp.env.root == c.env) &&
+      checkCertCanonicalRelevance cfg inp c.policy certText &&
       verifyProgram cfg inp.program c certText
   | .error _ => false
 

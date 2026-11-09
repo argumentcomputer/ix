@@ -340,8 +340,9 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
   -- the project's own csimp theorems are inventoried the same way
   withFile regression csimpTheorem do
     rejects "unlisted project csimp" "project csimp inventory drifted" check
+    let existingCsimps ← arrField originalLedger "csimp_theorems"
     let listed ← replaceField originalLedger "csimp_theorems"
-      (Json.arr #[csimpRecord "IxCC/AuditRegression.lean"])
+      (Json.arr (existingCsimps ++ #[csimpRecord "IxCC/AuditRegression.lean"]))
     withFile (root / "docs/trusted-externs.json") listed.compress check
   for token in ["axiom", "sorry", "native_decide"] do
     withFile regression s!"{token} injected\n" do

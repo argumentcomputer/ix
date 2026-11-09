@@ -156,6 +156,113 @@ def levelExact (a : Assert) : IO Unit := do
       "keeps is decided at the constructor value's levels"
   | .error es => expect a false s!"readback check: {es.map (·.rule)}"
 
+/-- Regressions for N1 (non-canonical `proof .never`) and N2 (`checkCanonical`
+soundness on erased binders, internal `.pi` binders, and multi-binder β-redexes). -/
+def regressions (a : Assert) : IO Unit := do
+  let b := base.2
+  let (p, b, _) := withRoot (lam (app (c b.add) [.var 0, app (c b.succ) [.var 0]]))
+  let ann := annOf p (rootKeys p)
+  -- N1: `.proof .never` rejected by `check` (`relOk`).
+  expectRule a p (setConst ann b.add { result := .proof .never, params := [] }) "S1"
+    "N1: ConstRel result proof .never"
+  expectRule a p (setConst ann b.add { result := .rel, params := [.proof .never, .rel] }) "S1"
+    "N1: ConstRel param proof .never"
+  let (pLamNever, _, _) := withRoot (lam (.var 0) { rel := .proof .never })
+  expectRule a pLamNever (annOf pLamNever (rootKeys pLamNever)) "S1"
+    "N1: lam binder proof .never"
+  let (pArgNever, _, _) := withRoot (lam (appM (lam (.natLit 0)) [(.var 0, .irrWhen .never)]))
+  expectRule a pArgNever (annOf pArgNever (rootKeys pArgNever)) "S1"
+    "N1: app arg proof .never"
+  -- Minimal well-typed program for `checkCanonical` tests (N1/N2):
+  -- CId 0 is `Nat : Sort 1`, CId 1 is `zero : Nat`, CId 2 is `root`.
+  let natT : Term := .const 0 []
+  let zeroT : Term := .const 1 []
+  let mkCanon (lvls : Nat) (rTy rVal : Term) (rootRel : ConstRel) : Program × Ann × Checked := Id.run do
+    let mut bld : Builder := {}
+    let (b1, natId) := bld.add (.induct true 0 0 0 (.sort (.succ .zero)) [])
+    bld := b1
+    let (b1, zeroId) := bld.add (.ctor true 0 natId 0 0 0 (.const natId []))
+    bld := b1
+    bld := bld.setDecl natId (.induct true 0 0 0 (.sort (.succ .zero)) [zeroId])
+    let (b1, rootId) := bld.add (.defn .defn .safe lvls rTy rVal)
+    bld := b1
+    let prog := bld.program #[rootId]
+    let ann : Ann := {
+      consts := NatMap.ofList [
+        (natId, { result := .type, params := [] }),
+        (zeroId, { result := .rel, params := [] }),
+        (rootId, rootRel)
+      ]
+      ctors := NatMap.ofList [(zeroId, { fields := [] })]
+      nodes := [(.value rootId, rVal.tagOrder)]
+    }
+    let ch : Checked := {
+      consts := ann.consts
+      ctors := ann.ctors
+      keys := [.value rootId]
+      reached := [rootId]
+      instances := []
+    }
+    (prog, ann, ch)
+  -- Baseline canonical acceptance: `fun (x : Nat) => x`.
+  let (pBase, annBase, chBase) := mkCanon 0
+    (.pi {} {} natT natT)
+    (.lam {} natT (.var 0))
+    { result := .rel, params := [.rel] }
+  expect a (checkCanonical pBase annBase chBase).isEmpty "N2: baseline canonical accepted"
+  -- N1 in `checkCanonical`: erased binder annotated `.proof .never` rejected.
+  let (pErasedNever, annErasedNever, chErasedNever) := mkCanon 0
+    (.pi { contract := .erased } {} natT natT)
+    (.lam { contract := .erased, rel := .proof .never } natT zeroT)
+    { result := .rel, params := [.proof .never] }
+  expect a (!(checkCanonical pErasedNever annErasedNever chErasedNever).isEmpty)
+    "N1: erased binder with proof .never rejected by checkCanonical"
+  -- N2.1: erased binder with conditional `.proof (.allZero [0])` rejected by `checkCanonical`,
+  -- while unconditional `Rel.prf` is accepted.
+  let (pErasedCond, annErasedCond, chErasedCond) := mkCanon 1
+    (.pi { contract := .erased } {} (.sort (.var 0)) natT)
+    (.lam { contract := .erased, rel := .proof zeroAt0 } (.sort (.var 0)) zeroT)
+    { result := .rel, params := [.proof zeroAt0] }
+  expect a (!(checkCanonical pErasedCond annErasedCond chErasedCond).isEmpty)
+    "N2: erased binder with conditional proof (.allZero [0]) rejected by checkCanonical"
+  let (pErasedPrf, annErasedPrf, chErasedPrf) := mkCanon 1
+    (.pi { contract := .erased } {} (.sort (.var 0)) natT)
+    (.lam { contract := .erased, rel := Rel.prf } (.sort (.var 0)) zeroT)
+    { result := .rel, params := [Rel.prf] }
+  expect a (checkCanonical pErasedPrf annErasedPrf chErasedPrf).isEmpty
+    "N2: erased binder with unconditional proof accepted by checkCanonical"
+  -- N2.3: internal `.pi` erased binder without C2 coverage (`covered == 0`) on a local function
+  -- `f : (x :erased Nat) → Nat` rejects an irrelevant argument.
+  let fnTy := Term.pi { contract := .erased } {} natT natT
+  let (pUncov, annUncov, chUncov) := mkCanon 0
+    (.pi {} {} fnTy natT)
+    (.lam {} fnTy (appM (.var 0) [(irrArg, .irr)]))
+    { result := .rel, params := [.rel] }
+  expect a (!(checkCanonical pUncov annUncov chUncov).isEmpty)
+    "N2: internal .pi erased binder without C2 coverage rejects irrelevant arg"
+  -- N2.4: multi-binder β-redex checks the second binder against the second argument.
+  let beta2Bad := appM (.lam {} natT (.lam {} natT (.var 1))) [(zeroT, .strict), (irrArg, .irr)]
+  let (pBetaBad, annBetaBad, chBetaBad) := mkCanon 0
+    (.pi {} {} natT natT)
+    (.lam {} natT beta2Bad)
+    { result := .rel, params := [.rel] }
+  expect a (!(checkCanonical pBetaBad annBetaBad chBetaBad).isEmpty)
+    "N2: multi-binder beta-redex with irrelevant second arg rejected by checkCanonical"
+  let beta2Ok := appM (.lam {} natT (.lam {} natT (.var 1))) [(zeroT, .strict), (zeroT, .strict)]
+  let (pBetaOk, annBetaOk, chBetaOk) := mkCanon 0
+    (.pi {} {} natT natT)
+    (.lam {} natT beta2Ok)
+    { result := .rel, params := [.rel] }
+  expect a (checkCanonical pBetaOk annBetaOk chBetaOk).isEmpty
+    "N2: multi-binder beta-redex with relevant second arg accepted by checkCanonical"
+  -- N2.5: constant with unresolved return sort (`classifyTermType = none`) and non-`.rel` result rejected.
+  let (pUnres, annUnres, chUnres) := mkCanon 1
+    (.pi {} {} (.sort (.var 0)) (.var 0))
+    (.lam {} (.sort (.var 0)) zeroT)
+    { result := Rel.prf, params := [.rel] }
+  expect a (!(checkCanonical pUnres annUnres chUnres).isEmpty)
+    "N2: unresolved result sort with non-.rel result rejected by checkCanonical"
+
 def run (a : Assert) : IO Unit := do
   -- Baseline: λ x. add x (succ x).
   let b := base.2
@@ -223,5 +330,6 @@ def run (a : Assert) : IO Unit := do
   | .ok ch => expect a (!ch.reached.contains b.nat) "an irrelevant reference is not reached"
   | .error es => expect a false s!"irrelevant reference: {es.map (·.rule)}"
   levelExact a
+  regressions a
 
 end IxCCTests.Src.Relevance.Checker

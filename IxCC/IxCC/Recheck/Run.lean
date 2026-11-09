@@ -170,7 +170,7 @@ def checkSymbols (exports : List Xv.Stacking.Export) : Except Err Unit :=
 def checkMidStep : Anf.Pipeline.Step → Bool
   | .shrink c => Anf.Shrink.checkCert c
   | .inline r => Anf.Inline.checkCert r
-  | .specialize _ => true
+  | .specialize c => c.decisions.length ≤ 64 && c.decisions.all (fun d => d.mask.length ≤ 64)
   | .prune => true
 
 def checkMidCert (m : Anf.Pipeline.Cert) : Except Err Unit :=
@@ -185,21 +185,15 @@ def front (cfg : Config) (P : Src.Program) (c : Cert) :
   checkMidCert c.mid
   let table ← (Src.Table.ofCert cfg.table P c.table).mapError fun msg =>
     { stage := .table, code := "table.entry", message := msg }
-  let (src, checked) ← match Src.Recheck.annotation { P with table } c.relevance with
-    | .ok r => pure r
-    | .error (.install msg) => throw { stage := .relevance, code := "relevance-S1", message := msg }
-    | .error (.relevance errs) =>
-      let p := { P with table }
-      let first := errs[0]?.map (·.rule) |>.getD "S1"
-      throw { stage := .relevance, code := s!"relevance-{first}"
-              message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p)) }
-    | .error (.table msg) => throw { stage := .table, code := "table.entry", message := msg }
-  let canonErrs := Src.Relevance.checkCanonical src c.relevance checked
-  unless canonErrs.isEmpty do
-    let first := canonErrs.head?.map (·.rule) |>.getD "S1"
+  match Src.Recheck.annotation { P with table } c.relevance with
+  | .ok r => pure r
+  | .error (.install msg) => throw { stage := .relevance, code := "relevance-S1", message := msg }
+  | .error (.relevance errs) =>
+    let p := { P with table }
+    let first := errs[0]?.map (·.rule) |>.getD "S1"
     throw { stage := .relevance, code := s!"relevance-{first}"
-            message := "; ".intercalate (canonErrs.take 8 |>.map (·.render src)) }
-  pure (src, checked)
+            message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p)) }
+  | .error (.table msg) => throw { stage := .table, code := "table.entry", message := msg }
 
 /-- Lam through Cfg on the certificate's middle-end decisions. -/
 def middle (c : Cert) (lam : Lam.Program) : Except Err (Anf.Program × Fir.Program × Own.Program × Cfg.Program) := do

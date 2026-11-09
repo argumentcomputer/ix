@@ -269,9 +269,25 @@ end IxCC.Src.Ingress
 
 namespace IxCC.Src
 
+private def pinAddr (hex : String) : Ixon.Address :=
+  (Ixon.Address.fromString hex).getD default
+
+private def resolveKnown (p : Program) : Known :=
+  { nat := p.lookup (pinAddr "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc")
+    natZero := p.lookup (pinAddr "eeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46")
+    natSucc := p.lookup (pinAddr "42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6")
+    natRec := p.lookup (pinAddr "c8322e03d558f85a8edc7fe68524013880ad0bbcb7dc890136d247154b230992")
+    bool := p.lookup (pinAddr "e6eba3c8b4d19f6a1076b39fa89aec61dccbb960f83d9a62e6acf35a69c9a0a4")
+    boolTrue := p.lookup (pinAddr "a29a636176cf1135d077eb074798f9007c78e7801383e9cff363bae5edf05762")
+    boolFalse := p.lookup (pinAddr "dda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63e")
+    eq := p.lookup (pinAddr "c37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea9f7578a207")
+    decIsFalse := p.lookup (pinAddr "8cc0e1360c1b29108dab3d6172e7fce8a9aa9640daa4bbe99ba1305d9623624b")
+    decIsTrue := p.lookup (pinAddr "363d071182be414e1a58599b83f5e19f9b873723054f4287ba69705aafef27da") }
+
 /-- Ingress from a typed input (decoded and Tc-checked, no resource gate). -/
 def ofTyped {bytes : ByteArray} (input : Ixon.V3.TypedInput bytes)
-    (roots : Array Ixon.Address) : Except String Program :=
-  Ingress.ofEnv input.env roots
+    (roots : Array Ixon.Address) : Except String Program := do
+  let p ← Ingress.ofEnv input.env roots
+  return { p with known := resolveKnown p }
 
 end IxCC.Src

@@ -3,6 +3,7 @@ import IxCC.Recheck.Linked
 import IxCC.Backend.Proof.Exports
 import IxCC.Backend.Proof.Funcs
 import IxCC.Rt.Proof.Roots
+import IxCC.Src.Relevance.Proof.Sound
 
 /-!
 # What `Recheck.run` made, part by part
@@ -23,6 +24,52 @@ in the Xl program, taking its Cfg function's parameters, and is not
 set_option autoImplicit false
 
 namespace IxCC.Recheck
+
+/-- If `front` succeeds, the table certificate validates, the relevance
+annotation installs cleanly, the relevance checker succeeds and witnesses
+`Src.Relevance.Proof.WellAnnotated`, and `src` is `Src.Lazify.run` on the
+installed program. -/
+theorem front_wellAnnotated {cfg : Config} {P : Src.Program} {c : Cert}
+    {src : Src.Program} {checked : Src.Relevance.Checked}
+    (h : front cfg P c = .ok (src, checked)) :
+    ∃ table installed,
+      Src.Table.ofCert cfg.table P c.table = .ok table ∧
+      Src.Relevance.install { P with table } c.relevance = .ok installed ∧
+      Src.Relevance.check installed c.relevance = .ok checked ∧
+      Src.Relevance.Proof.WellAnnotated installed c.relevance checked ∧
+      src = Src.Lazify.run installed checked.keys := by
+  unfold front at h
+  simp only [bind, Except.bind, Except.mapError] at h
+  cases hm : checkMidCert c.mid with
+  | error e => simp [hm] at h
+  | ok u =>
+    simp only [hm] at h
+    cases htab : Src.Table.ofCert cfg.table P c.table with
+    | error e => simp [htab] at h
+    | ok table =>
+      simp only [htab] at h
+      cases hann : Src.Recheck.annotation { P with table } c.relevance with
+      | error err =>
+        rw [hann] at h
+        cases err <;> cases h
+      | ok res =>
+        rw [hann] at h
+        cases h
+        unfold Src.Recheck.annotation at hann
+        cases hinst : Src.Relevance.install { P with table } c.relevance with
+        | error e => simp [hinst] at hann
+        | ok installed =>
+          simp only [hinst] at hann
+          cases hchk : Src.Relevance.check installed c.relevance with
+          | error errs =>
+            rw [hchk] at hann
+            cases hann
+          | ok chk =>
+            rw [hchk] at hann
+            dsimp only at hann
+            split at hann <;> (try split at hann) <;> cases hann <;>
+              exact ⟨table, installed, rfl, hinst, hchk,
+                Src.Relevance.Proof.check_sound hchk, rfl⟩
 
 theorem sharedSymbol?_nodup : ∀ {es : List Xv.Stacking.Export}, sharedSymbol? es = none → (es.map (·.symbol)).Nodup
   | [], _ => List.nodup_nil

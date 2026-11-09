@@ -7,7 +7,6 @@ the upstream `main` is replaced by a pure `entry` and a `main` that
 prints its result in the upstream format; the definitions above `entry`
 are unchanged. See `VARIANT.md`.
 -/
-set_option backward.match.sparseCases false
 
 /-
 Copyright (c) 2017 Microsoft Corporation. All rights reserved.

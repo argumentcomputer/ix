@@ -203,15 +203,9 @@ def Program.funParamSigs (P : Program) (f : Fir.FunId) : List Own.PSig :=
     (fd.params.zipIdx).map fun ((_, rep), i) =>
       PSig.ofBinderContract (fd.contracts.getD i {}) rep
 
-/-- Contract-aware RC policy selection incorporating `src` contracts.
-When a rooted program carries explicit ownership/borrowing/linearity contracts
-outside the unannotated `Own.Plain.programDomain`, `.plainRc` admission would
-reject the program, so `selectRcPolicyForSrc` selects `.zeroRc`. -/
+/-- Contract-aware RC policy selection incorporating `src` contracts. -/
 def selectRcPolicyForSrc (src : Src.Program) (P : Fir.Program) : RcPolicy :=
-  if !src.roots.isEmpty && !programDomain P then
-    .zeroRc
-  else
-    selectRcPolicy (enrichFirContracts src P)
+  selectRcPolicy (enrichFirContracts src P)
 
 end IxCC.Own.Plain
 

@@ -69,6 +69,7 @@ structure Options where
   stats : Bool := false
   typecheck : Bool := true
   rc : RcMode := .off
+  rcExplicit : Bool := false
   deriving Inhabited
 
 def usage : String :=
@@ -89,7 +90,7 @@ def parseRest (o : Options) : List String → Except String Options
   | "-o" :: f :: rest => parseRest { o with out := some f } rest
   | "--rc" :: m :: rest =>
     match RcMode.parse m with
-    | some mode => parseRest { o with rc := mode } rest
+    | some mode => parseRest { o with rc := mode, rcExplicit := true } rest
     | none => throw s!"unknown --rc mode {m}"
   | "--cert" :: f :: rest => parseRest { o with cert := some f } rest
   | "--emit-cert" :: f :: rest => parseRest { o with emitCert := some f } rest
@@ -112,6 +113,7 @@ def parse : List String → Except String Options
       if o.closure.isNone then throw "no closure given"
       if o.equations.isNone then throw "no --equations sidecar given"
       if cmd == "compile" && o.out.isNone then throw "no -o output given"
+      if cmd == "compile" && o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
       pure o
     else throw s!"unknown command {cmd}"
@@ -232,7 +234,12 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   let cfg := Config.forInput {} inp
   let ((cliCert, outcomes), tProduce) ← timed do
     match o.cert with
-    | some f => pure (← readCliCert f, none)
+    | some f =>
+      let cc ← readCliCert f
+      unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
+        throw { stage := .relevance, code := "relevance-canonical",
+                message := "certificate relevance annotation does not match canonical annotator output" }
+      pure (cc, none)
     | none =>
       match o.rc with
       | .off =>
@@ -256,7 +263,11 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     | .plainRc rcCert =>
       let rcArt ← lift fun _ => RcReplay.run cfg inp.program rcCert
       lift fun _ => rcArt.toRecheckArtifact rcCert
-  if let some f := o.out then write f (IO.FS.writeBinFile f a.object)
+  if let some f := o.out then
+    write f do
+      let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
+      IO.FS.writeBinFile tmp a.object
+      IO.FS.rename tmp f
   if let some f := o.emitCert then write f (IO.FS.writeFile f (cliCert.toText ++ "\n"))
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))
   for l in o.dumps do
@@ -270,6 +281,9 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     let certBytes := cliCert.toText.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
     IO.println s!"time: read {tRead} ms, ingress {tIngress} ms, {producer} {tProduce} ms, run {tRun} ms"
+    if o.rc == .auto && o.cert.isNone then
+      let polName := match cliCert with | .zeroRc _ => "zero-rc" | .plainRc _ => "plain-rc"
+      IO.println s!"rc policy: {polName}"
     IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
       {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
       {cert.alloc.length} allocations, {cert.frames.length} frame layouts"

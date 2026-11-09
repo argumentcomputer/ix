@@ -25,7 +25,7 @@ inductive TermKey where
   | eqn (c : CId)
   /-- Rule `j` of recursor `r`. -/
   | rule (r : CId) (j : Nat)
-  deriving BEq, Hashable, Repr, Inhabited
+  deriving BEq, DecidableEq, Hashable, Repr, Inhabited
 
 namespace Program
 

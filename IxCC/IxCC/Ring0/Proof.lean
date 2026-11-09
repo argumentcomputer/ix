@@ -824,6 +824,10 @@ structure Ring0Safety (sip : Ring0Sip) (checkedProg : CheckedProgram)
   cfi_inText :
     ∀ state next, X86.ByteEval.step encoded.text sip.driver.base state = .ok next →
       sip.driver.inText encoded.text.size state.rip = true
+  runTo_framePreserved :
+    ∀ stop fuel state final,
+      X86.ObjectEval.runTo encoded.text sip.driver.base stop fuel state = .ok final →
+      FramePreserved state.core.memory final.core.memory
   initCall_frame :
     ∀ k w mem', linked.initCall k = .ok (w, mem') →
       ∀ addr, sip.driver.mapped addr = false → mem'.readByte addr = sip.driver.init addr
@@ -856,7 +860,7 @@ def AdmittedRing0Sip (sip : Ring0Sip) (P : Src.Program) : Prop :=
       Recheck.run sip.cfg P cert = .ok a ∧
       Recheck.front sip.cfg P cert = .ok (a.src, a.checked) ∧
       a.roots.head? = some root ∧
-      CompileClaim.rootParamsAllNat a.src root.const = true ∧
+      CompileClaim.rootParamsAllNat a.src root = true ∧
       root.ty = some (sig, ty) ∧
       CompileClaim.isImmortalViewType sig ty = true ∧
       root.params = sip.claim.abiArity ∧
@@ -877,7 +881,7 @@ def AdmittedRing0Sip (sip : Ring0Sip) (P : Src.Program) : Prop :=
       Own.Plain.selectRcPolicyForSrc a.src a.front.fir = .zeroRc ∧
       Own.Plain.checkContractPlainMap a.front.fir (Own.Plain.Program.canonical a.front.fir).bodies = true ∧
       a.roots.head? = some root ∧
-      CompileClaim.rootParamsAllNat a.src root.const = true ∧
+      CompileClaim.rootParamsAllNat a.src root = true ∧
       root.ty = some (sig, ty) ∧
       CompileClaim.isImmortalViewType sig ty = true ∧
       root.params = sip.claim.abiArity ∧
@@ -896,7 +900,7 @@ def AdmittedRing0Sip (sip : Ring0Sip) (P : Src.Program) : Prop :=
       Recheck.RcReplay.run sip.cfg P cert = .ok a ∧
       Recheck.front sip.cfg P cert.base = .ok (a.front.src, a.front.checked) ∧
       a.roots.head? = some root ∧
-      CompileClaim.rootParamsAllNat a.front.src root.const = true ∧
+      CompileClaim.rootParamsAllNat a.front.src root = true ∧
       root.ty = some (sig, ty) ∧
       root.params = sip.claim.abiArity ∧
       Ixon.Address.blake3Pure a.backend.object = sip.claim.elfHash ∧
@@ -934,6 +938,8 @@ theorem ring0Safety_of_parts {sip : Ring0Sip} {checkedProg : CheckedProgram}
     have hbase64 : sip.driver.base.toNat + encoded.text.size ≤ 2 ^ 64 := by
       have := hCanon.below47.2.2; omega
     exact step_rip_inText sip.driver hbase64 hstep
+  runTo_framePreserved _ _ _ _ hrun :=
+    IxCC.Ring0.runTo_framePreserved hrun
   initCall_frame k w mem' hinit addr hunm := by
     have hOk : linked.driver.Ok encoded.text.size := hdriver ▸ hCanon.toOk
     have h := (initCall_preserves_unmapped hOk hinit).2.2 addr (hdriver ▸ hunm)
@@ -954,6 +960,82 @@ theorem ring0Safety_of_parts {sip : Ring0Sip} {checkedProg : CheckedProgram}
     · intro kpt hkpt
       exact kernelTablesPreserved_of_session_runCalls (s := s) hOk' (hs ▸ hkpt) hcalls
 
+/-- Single-pass `Ring0Sip.verifyProgram` is logically equivalent to
+`CompileClaim.verifyProgram` together with `sip.driver.checkCanonical` on
+`sip.verifiedTextSize? P` (`N11`). -/
+theorem verifyProgramRing0Sip_iff (sip : Ring0Sip) (P : Src.Program) :
+    sip.verifyProgram P = true ↔
+      CompileClaim.verifyProgram sip.cfg P sip.claim sip.certText = true ∧
+      (match sip.verifiedTextSize? P with
+       | some textSize => sip.driver.checkCanonical textSize
+       | none => false) = true := by
+  unfold Ring0Sip.verifyProgram Ring0Sip.verifyProgramWithTextSize?
+    CompileClaim.verifyProgram Ring0Sip.verifiedTextSize?
+  cases hwf : sip.claim.checkWellFormed
+  · simp
+  · simp only [Bool.true_and, ite_true]
+    cases hhead : P.roots.head? with
+    | none => simp
+    | some pair =>
+      rcases pair with ⟨rootAddr, rootId⟩
+      simp only
+      by_cases htarget : (rootAddr == sip.claim.target) = true
+      · simp only [htarget, ite_true]
+        cases hpol : sip.claim.policy with
+        | immortal =>
+          simp only
+          cases hcert : Recheck.Cert.ofText sip.certText with
+          | error _ => simp
+          | ok cert =>
+            simp only
+            cases hrun : Recheck.run sip.cfg P cert with
+            | error _ => simp
+            | ok a =>
+              simp only
+              cases hahead : a.roots.head? with
+              | none => simp
+              | some root =>
+                simp only
+                cases hcond : (CompileClaim.checkImmortalRoot a.src root &&
+                  (root.params == sip.claim.abiArity) &&
+                  (Ixon.Address.blake3Pure a.object == sip.claim.elfHash)) <;> simp
+        | zeroRc =>
+          simp only
+          cases hcert : Recheck.Cert.ofText sip.certText with
+          | error _ => simp
+          | ok cert =>
+            simp only
+            cases hrun : Recheck.runWithContracts sip.cfg P cert with
+            | error _ => simp
+            | ok a =>
+              simp only
+              cases hahead : a.roots.head? with
+              | none => simp
+              | some root =>
+                simp only
+                cases hcond : (CompileClaim.checkImmortalRoot a.src root &&
+                  (Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc) &&
+                  (root.params == sip.claim.abiArity) &&
+                  (Ixon.Address.blake3Pure a.object == sip.claim.elfHash)) <;> simp
+        | plainRc =>
+          simp only
+          cases hcert : Recheck.RcReplay.Cert.ofText sip.certText with
+          | error _ => simp
+          | ok cert =>
+            simp only
+            cases hrun : Recheck.RcReplay.run sip.cfg P cert with
+            | error _ => simp
+            | ok a =>
+              simp only
+              cases hahead : a.roots.head? with
+              | none => simp
+              | some root =>
+                simp only
+                cases hcond : (CompileClaim.checkPlainRcRoot a.front.src root &&
+                  (root.params == sip.claim.abiArity) &&
+                  (Ixon.Address.blake3Pure a.backend.object == sip.claim.elfHash)) <;> simp
+      · simp [htarget]
+
 /-- **End-to-End Ring-0 Certified-Compilation Admission Theorem (`verifyRing0Sip_sound`)**:
 Any `Ring0Sip` that passes `sip.verifyProgram P = true` (under `.immortal`,
 `.zeroRc`, or `.plainRc` policy) satisfies the non-vacuous `AdmittedRing0Sip sip P`
@@ -961,9 +1043,7 @@ Any `Ring0Sip` that passes `sip.verifyProgram P = true` (under `.immortal`,
 theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
     (hver : sip.verifyProgram P = true) :
     AdmittedRing0Sip sip P := by
-  unfold Ring0Sip.verifyProgram at hver
-  rw [Bool.and_eq_true] at hver
-  rcases hver with ⟨hclaimVer, hcanonCheck⟩
+  obtain ⟨hclaimVer, hcanonCheck⟩ := (verifyProgramRing0Sip_iff sip P).mp hver
   unfold AdmittedRing0Sip
   cases hpol : sip.claim.policy with
   | immortal =>
@@ -1013,11 +1093,16 @@ theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
       hnatParams, hty, hparams, hhash, hCanon, hsemD.1,
       ring0Safety_of_parts rfl hCanon hhash hstream hsemD.2⟩
 
+theorem verifyProgramRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
+    (hver : sip.verifyProgram P = true) :
+    AdmittedRing0Sip sip P :=
+  verifyRing0Sip_sound hver
+
 /-- **Byte-Level Ring-0 Certified-Compilation Admission Theorem (`verifyBytesRing0Sip_sound`)**:
 Any `Ring0Sip` that passes `sip.verifyBytes envBytes equations typecheck = true`
-yields an ingested `Recheck.Input` with `typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`
-and `Src.Resource.validate inp.program = .ok ()` whose program satisfies the
-non-vacuous `AdmittedRing0Sip sip inp.program`. -/
+yields an ingested `Recheck.Input` with `typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`,
+`Src.Resource.validate inp.program = .ok ()`, and canonical relevance (`Stage A`),
+whose program satisfies the non-vacuous `AdmittedRing0Sip sip inp.program`. -/
 theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
     {equations : Lean.Json} {typecheck : Bool}
     (hver : sip.verifyBytes envBytes equations typecheck = true) :
@@ -1028,6 +1113,7 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
       (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
       Src.Resource.validate inp.program = .ok () ∧
       inp.env.root = sip.claim.env ∧
+      CompileClaim.checkCertCanonicalRelevance sip.cfg inp sip.claim.policy sip.certText = true ∧
       AdmittedRing0Sip sip inp.program := by
   unfold Ring0Sip.verifyBytes at hver
   cases hing : Recheck.ingress envBytes equations
@@ -1036,7 +1122,7 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
   | ok inp =>
     simp only [hing, Bool.and_eq_true, beq_iff_eq] at hver
     obtain ⟨hdec, htc, hres, _⟩ := Recheck.ingress_parts hing
-    exact ⟨inp, rfl, hdec, htc, hres, hver.1, verifyRing0Sip_sound hver.2⟩
+    exact ⟨inp, rfl, hdec, htc, hres, hver.1.1, hver.1.2, verifyRing0Sip_sound hver.2⟩
 
 /-- What a SIP's certificate determines on `P`: the checked source, its `view` and
 `GoesWrong`, the checked stream and the linked object. -/
@@ -1096,6 +1182,9 @@ def Ring0Artifact.Safe (A : Ring0Artifact) (sip : Ring0Sip) : Prop :=
     (∀ k w, Lang.run A.linked i k = .ok w →
       ∃ k' v, Lang.run A.checkedProg i k' = .ok v ∧
         A.view i.1 (Lang.obs v) = some w)) ∧
+  (∀ stop fuel state final,
+    X86.ObjectEval.runTo A.encoded.text sip.driver.base stop fuel state = .ok final →
+    FramePreserved state.core.memory final.core.memory) ∧
   (∀ (D_peer : X86.Driver), DisjointDrivers sip.driver D_peer →
     ∀ r ns bytes k w mem', A.linked.rootCall r ns bytes k = .ok (w, mem') →
       ∀ addr, D_peer.mapped addr = true → mem'.readByte addr = bytes addr) ∧
@@ -1107,7 +1196,8 @@ def Ring0Artifact.Safe (A : Ring0Artifact) (sip : Ring0Sip) : Prop :=
 theorem Ring0Artifact.safe_of_ring0Safety {sip : Ring0Sip} {A : Ring0Artifact}
     (hsafe : Ring0Safety sip A.checkedProg A.view A.GoesWrong A.program A.encoded A.linked) :
     A.Safe sip := by
-  refine ⟨hsafe.driver_eq, hsafe.canonicalOk, hsafe.elfHash_eq, hsafe.streamValid, ?_, ?_, ?_⟩
+  refine ⟨hsafe.driver_eq, hsafe.canonicalOk, hsafe.elfHash_eq, hsafe.streamValid, ?_,
+    hsafe.runTo_framePreserved, ?_, ?_⟩
   · intro i hnotGW
     have hsem := hsafe.semantics i
     refine ⟨hsem.2.1 hnotGW, ?_⟩
@@ -1255,5 +1345,77 @@ theorem pairwiseDisjointSips_frame {sips : List X86.Driver}
     have hmem : sips[i] ∈ sips := List.getElem_mem hi
     have hdisj := hfamily.2 sips[i] hmem addr hk
     exact hunm addr (hs ▸ hdisj)
+
+/-- **Admitted SIP Step/Run Frame Theorem (`N3`)**:
+For any SIP passing `sip.verifyProgram P = true`, its unique artifact `A`
+(`sip.artifact? P = some A`) satisfies `FramePreserved` across any single step
+and any multi-step `runTo` execution. -/
+theorem admittedRing0Sip_step_frame {sip : Ring0Sip} {P : Src.Program}
+    (hver : sip.verifyProgram P = true) :
+    ∃ A : Ring0Artifact,
+      sip.artifact? P = some A ∧
+      A.Safe sip ∧
+      (∀ state next,
+        X86.ByteEval.step A.encoded.text sip.driver.base state = .ok next →
+        FramePreserved state.core.memory next.core.memory) ∧
+      (∀ stop fuel state final,
+        X86.ObjectEval.runTo A.encoded.text sip.driver.base stop fuel state = .ok final →
+        FramePreserved state.core.memory final.core.memory) := by
+  obtain ⟨A, hart, hsafe⟩ := admittedRing0Sip_call_not_goesWrong hver
+  exact ⟨A, hart, hsafe,
+    fun _ _ hstep => byteEval_step_framePreserved hstep,
+    hsafe.2.2.2.2.2.1⟩
+
+/-- **Admitted Two-SIP Coexistence & Frame Theorem (`N3`)**:
+Connecting `sip₁.verifyProgram P₁ = true` and `sip₂.verifyProgram P₂ = true`
+with `DisjointDrivers sip₁.driver sip₂.driver` and `DisjointFromKernel` directly
+to `CoexistingSipPair` and `multi_sip_frame`. -/
+theorem admittedRing0Sip_multi_sip_frame {sip₁ sip₂ : Ring0Sip} {P₁ P₂ : Src.Program}
+    {kernelPageTables : Word → Bool}
+    (hver₁ : sip₁.verifyProgram P₁ = true)
+    (hver₂ : sip₂.verifyProgram P₂ = true)
+    (hdisj : DisjointDrivers sip₁.driver sip₂.driver)
+    (hker₁ : DisjointFromKernel sip₁.driver kernelPageTables)
+    (hker₂ : DisjointFromKernel sip₂.driver kernelPageTables) :
+    ∃ (A₁ A₂ : Ring0Artifact),
+      sip₁.artifact? P₁ = some A₁ ∧
+      sip₂.artifact? P₂ = some A₂ ∧
+      A₁.Safe sip₁ ∧
+      A₂.Safe sip₂ ∧
+      CoexistingSipPair A₁.linked.driver A₂.linked.driver kernelPageTables
+        A₁.encoded.text.size A₂.encoded.text.size ∧
+      ∀ (drop₁ drop₂ : String) (inputs₁ inputs₂ inputs₃ : List X86.DriverSession.Input)
+        (bytes₀ : Word → UInt8) (k₁ k₂ k₃ : Nat)
+        (out₁ out₂ out₃ : X86.DriverSession.Output),
+        let s₁ : X86.DriverSession.Session := ⟨A₁.linked, drop₁⟩
+        let s₂ : X86.DriverSession.Session := ⟨A₂.linked, drop₂⟩
+        s₁.runCalls inputs₁ bytes₀ k₁ = .ok out₁ →
+        s₂.runCalls inputs₂ out₁.bytes k₂ = .ok out₂ →
+        s₁.runCalls inputs₃ out₂.bytes k₃ = .ok out₃ →
+        (∀ addr, sip₂.driver.mapped addr = true → out₁.bytes addr = bytes₀ addr) ∧
+        (∀ addr, sip₁.driver.mapped addr = true → out₂.bytes addr = out₁.bytes addr) ∧
+        (∀ addr, sip₂.driver.mapped addr = true → out₃.bytes addr = out₂.bytes addr) ∧
+        (∀ addr, sip₁.driver.inText A₁.encoded.text.size addr = true → out₁.bytes addr = bytes₀ addr) ∧
+        (∀ addr, sip₂.driver.inText A₂.encoded.text.size addr = true → out₂.bytes addr = out₁.bytes addr) ∧
+        (∀ addr, sip₁.driver.inText A₁.encoded.text.size addr = true → out₃.bytes addr = out₂.bytes addr) ∧
+        (∀ addr, kernelPageTables addr = true →
+          out₁.bytes addr = bytes₀ addr ∧
+          out₂.bytes addr = bytes₀ addr ∧
+          out₃.bytes addr = bytes₀ addr) := by
+  obtain ⟨A₁, hart₁, hsafe₁⟩ := admittedRing0Sip_call_not_goesWrong hver₁
+  obtain ⟨A₂, hart₂, hsafe₂⟩ := admittedRing0Sip_call_not_goesWrong hver₂
+  have hdrv₁ : A₁.linked.driver = sip₁.driver := hsafe₁.1
+  have hdrv₂ : A₂.linked.driver = sip₂.driver := hsafe₂.1
+  have hco : CoexistingSipPair A₁.linked.driver A₂.linked.driver kernelPageTables
+      A₁.encoded.text.size A₂.encoded.text.size :=
+    { ok₁ := hdrv₁ ▸ hsafe₁.2.1
+      ok₂ := hdrv₂ ▸ hsafe₂.2.1
+      disjoint := hdrv₁ ▸ hdrv₂ ▸ hdisj
+      kernel₁ := hdrv₁ ▸ hker₁
+      kernel₂ := hdrv₂ ▸ hker₂ }
+  refine ⟨A₁, A₂, hart₁, hart₂, hsafe₁, hsafe₂, hco, ?_⟩
+  intro drop₁ drop₂ inputs₁ inputs₂ inputs₃ bytes₀ k₁ k₂ k₃ out₁ out₂ out₃ s₁ s₂ hrun₁ hrun₂ hrun₃
+  have hframe := multi_sip_frame (s₁ := s₁) (s₂ := s₂) hco hrun₁ hrun₂ hrun₃
+  simpa [s₁, s₂, hdrv₁, hdrv₂] using hframe
 
 end IxCC.Ring0

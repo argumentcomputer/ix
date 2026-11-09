@@ -48,11 +48,22 @@ def declTerms : Decl → List Term
   | .quot _ _ t => [t]
   | .axio _ _ t => [t]
 
+def declExtraConsts : Decl → List CId
+  | .induct _ _ _ _ _ ctors => ctors
+  | .ctor _ _ ind _ _ _ _ => [ind]
+  | .recr _ _ _ _ _ _ _ ind rules _ => ind :: rules.map (·.ctor)
+  | _ => []
+
 def collectTermsConsts : List Term → Nat → List CId → Option (Nat × List CId)
   | [], b, acc => some (b, acc)
   | t :: ts, b, acc => do
     let (b1, acc1) ← t.constsBudget b acc
     collectTermsConsts ts b1 acc1
+
+def declAxiomOk (p : Program) (c : CId) (d : Decl) : Bool :=
+  decide (c < p.size) && match d with
+    | .axio .. => isStandardAxiom p c
+    | _ => true
 
 def checkAxiomWalk (p : Program) : Nat → List CId → List CId → Bool
   | 0, _ :: _, _ => false
@@ -64,12 +75,9 @@ def checkAxiomWalk (p : Program) : Nat → List CId → List CId → Bool
       match p.decl? c with
       | none => false
       | some d =>
-        let okDecl := match d with
-          | .axio .. => isStandardAxiom p c
-          | _ => true
-        if !okDecl then false
+        if !declAxiomOk p c d then false
         else
-          match collectTermsConsts (declTerms d) maxBodyNodes [] with
+          match collectTermsConsts (declTerms d) maxBodyNodes (declExtraConsts d) with
           | none => false
           | some (_, refs) =>
             let newRefs := refs.filter (fun r => !seen.contains r && !todo.contains r)
@@ -79,7 +87,7 @@ def checkAxiomWalk (p : Program) : Nat → List CId → List CId → Bool
 `Decl.axio` outside the standard Lean axioms (`propext`, `Quot.sound`,
 `Classical.choice`). -/
 def checkAxiomClosure (p : Program) (thm : CId) : Except String Unit :=
-  let allStandard := (List.range p.size).all fun c =>
+  let allStandard := decide (thm < p.size) && (List.range p.size).all fun c =>
     match p.decl? c with
     | some (.axio ..) => isStandardAxiom p c
     | _ => true
@@ -87,6 +95,100 @@ def checkAxiomClosure (p : Program) (thm : CId) : Except String Unit :=
     .ok ()
   else
     throw "theorem depends on a non-standard axiom or exceeds closure budget"
+
+/-- A constant in `p` is within bounds and, if an axiom, is a standard Lean axiom. -/
+def AxiomDeclOk (p : Program) (c : CId) : Prop :=
+  c < p.size ∧ (match p.decl? c with | some (.axio ..) => isStandardAxiom p c = true | _ => True)
+
+theorem checkAxiomWalk_todo_sound {p : Program} :
+    ∀ (fuel : Nat) (todo seen : List CId),
+      checkAxiomWalk p fuel todo seen = true →
+      (∀ s ∈ seen, AxiomDeclOk p s) →
+      ∀ c ∈ todo, AxiomDeclOk p c
+  | 0, [], _, _, _, _, hmem => by cases hmem
+  | 0, _ :: _, _, h, _, _, _ => by simp [checkAxiomWalk] at h
+  | fuel + 1, [], _, _, _, _, hmem => by cases hmem
+  | fuel + 1, x :: rest, seen, h, hseen, c, hmem => by
+    simp only [checkAxiomWalk] at h
+    by_cases hxs : seen.contains x = true
+    · simp only [hxs, ↓reduceIte] at h
+      rcases List.mem_cons.1 hmem with rfl | hrest
+      · exact hseen c (List.contains_iff_mem.1 hxs)
+      · exact checkAxiomWalk_todo_sound fuel rest seen h hseen c hrest
+    · simp only [hxs, Bool.false_eq_true, ↓reduceIte] at h
+      cases hd : p.decl? x with
+      | none => rw [hd] at h; cases h
+      | some d =>
+        rw [hd] at h
+        dsimp only at h
+        cases hok : declAxiomOk p x d with
+        | false =>
+          rw [hok] at h
+          cases h
+        | true =>
+          rw [hok] at h
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+          cases hcol : collectTermsConsts (declTerms d) maxBodyNodes (declExtraConsts d) with
+          | none => rw [hcol] at h; cases h
+          | some pair =>
+            rcases pair with ⟨_, refs⟩
+            rw [hcol] at h
+            dsimp only at h
+            unfold declAxiomOk at hok
+            obtain ⟨h1, h2⟩ := Bool.and_eq_true_iff.1 hok
+            have hxok : AxiomDeclOk p x := by
+              refine ⟨of_decide_eq_true h1, ?_⟩
+              rw [hd]
+              cases d <;> simp_all
+            have hseen' : ∀ s ∈ x :: seen, AxiomDeclOk p s := by
+              intro s hs
+              rcases List.mem_cons.1 hs with rfl | hs
+              · exact hxok
+              · exact hseen s hs
+            rcases List.mem_cons.1 hmem with rfl | hrest
+            · exact hxok
+            · exact checkAxiomWalk_todo_sound fuel _ (x :: seen) h hseen' c
+                (List.mem_append_right _ hrest)
+
+theorem checkAxiomWalk_head_sound {p : Program} {fuel : Nat} {c : CId} {rest : List CId}
+    (h : checkAxiomWalk p fuel (c :: rest) [] = true) :
+    c < p.size ∧ (match p.decl? c with | some (.axio ..) => isStandardAxiom p c = true | _ => True) :=
+  checkAxiomWalk_todo_sound fuel (c :: rest) [] h (fun _ hs => by cases hs) c List.mem_cons_self
+
+theorem checkAxiomClosure_sound {p : Program} {thm : CId}
+    (h : checkAxiomClosure p thm = .ok ()) :
+    thm < p.size ∧ (match p.decl? thm with | some (.axio ..) => isStandardAxiom p thm = true | _ => True) := by
+  unfold checkAxiomClosure at h
+  dsimp only at h
+  split at h
+  · next hcond =>
+    rcases Bool.or_eq_true_iff.1 hcond with hall | hwalk
+    · obtain ⟨hlt, hrng⟩ := Bool.and_eq_true_iff.1 hall
+      have hlt' : thm < p.size := of_decide_eq_true hlt
+      have hmem : thm ∈ List.range p.size := List.mem_range.2 hlt'
+      have hstd := List.all_eq_true.1 hrng thm hmem
+      refine ⟨hlt', ?_⟩
+      cases hd : p.decl? thm with
+      | none => trivial
+      | some d =>
+        rw [hd] at hstd
+        cases d <;> simp_all
+    · exact checkAxiomWalk_head_sound hwalk
+  · cases h
+
+def checkAxiomClosureRoots (p : Program) : Bool :=
+  p.roots.all fun (_, c) => (checkAxiomClosure p c).isOk
+
+theorem checkAxiomClosure_roots {p : Program} (h : checkAxiomClosureRoots p = true)
+    {a : Ixon.Address} {c : CId} (hroot : (a, c) ∈ p.roots) :
+    c < p.size ∧ (match p.decl? c with | some (.axio ..) => isStandardAxiom p c = true | _ => True) := by
+  have hc := List.all_eq_true.1 h (a, c) hroot
+  dsimp only [Except.isOk, Except.toBool] at hc
+  cases hcl : checkAxiomClosure p c with
+  | error _ => rw [hcl] at hc; cases hc
+  | ok u =>
+    cases u
+    exact checkAxiomClosure_sound hcl
 
 /-! ## `eqn` -/
 

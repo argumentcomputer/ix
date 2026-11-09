@@ -115,7 +115,13 @@ theorem step_correct (p : Shrink.Params) :
   | .specialize c, P, Q, hs, hw, h => by
     rcases hs with hs | hs
     · exact hs.elim
-    · exact hs c P Q hw h
+    · simp only [Step.run] at h
+      obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
+      unfold checkGlobalNodes at hc
+      split at hc
+      · cases hc
+        exact hs c P Q hw hspec
+      · cases hc
   | .prune, P, Q, _, hw, h => by
     simp only [Step.run] at h
     cases h

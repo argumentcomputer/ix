@@ -43,9 +43,10 @@ structure Cert where
   steps : List Step := []
   deriving Inhabited
 
-/-- Nodes one global may hold after an inlining step: thirty times the largest global
-in the corpus (2,115). Inlining a callee doubles a mutually recursive pair each round
-with one firing, so the walk's firing budget alone does not bound certificate rounds. -/
+/-- Nodes one global may hold after an inlining or specialization step: thirty times the
+largest global in the corpus (2,115). Inlining a callee doubles a mutually recursive pair
+each round with one firing, so the walk's firing budget alone does not bound certificate
+rounds. -/
 def maxGlobalNodes : Nat := 65536
 
 /-- Refuse a program holding a global over `maxGlobalNodes`. -/
@@ -56,7 +57,7 @@ def checkGlobalNodes (P : Program) : Except String Program :=
 def Step.run (p : Shrink.Params) : Step → Program → Except String Program
   | .shrink c, P => Shrink.run p c P
   | .inline r, P => Inline.round P r >>= fun x => checkGlobalNodes x.1
-  | .specialize c, P => Specialize.run c P
+  | .specialize c, P => Specialize.run c P >>= checkGlobalNodes
   | .prune, P => pure (Prune.run P)
 
 def Step.name : Step → String

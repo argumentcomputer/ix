@@ -297,11 +297,14 @@ checker rejects the optimised output, the plain dup/drop output is used.
 
 The first plain-RC implementation lives in `Own.Plain` and `Own.Rc`.
 In the top-level compiler and claim/SIP verifiers
-(`Own.Plain.selectRcPolicyForSrc`), `--rc auto` inspects whether the
-relevance-erased `Src.Prog` is zero-RC (`zeroRcProgram`); if so, it selects
-`.zeroRc` and uses the immortal backend (`Recheck.run`). A rooted program outside
-the plain-RC domain (`programDomain`) also selects `.zeroRc`, so that policy names
-the immortal backend and does not imply the program needs no reference counts.
+(`Recheck.RcReplay.selectRcPolicyForSrc` in `IxCC/Recheck/Rc/Produce.lean`),
+`--rc auto` enriches the lowered `Fir.Program` with contracts from the
+relevance-erased `Src.Program` (`enrichFirContracts`, propagating `.many`
+defaults to unannotated functions) and inspects whether the resulting program is
+zero-RC (`zeroRcProgram`); if so, it selects `.zeroRc` and uses the immortal
+backend (`Recheck.run`). When `selectRcPolicyForSrc` selects `.plainRc` for a
+program outside the plain-RC domain (`!programDomain P`), `produceAuto` falls
+back to `.immortal` (`Recheck.produce`).
 Other programs (or `--rc on`) route through the bounded plain-RC replay path
 (`Recheck.RcReplay.run`). On the plain-RC route, `Plain.checkPlainMap` (and
 `Plain.checkContractPlainMap`, which validates against explicit per-parameter

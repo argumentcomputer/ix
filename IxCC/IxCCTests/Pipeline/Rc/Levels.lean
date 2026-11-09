@@ -219,8 +219,32 @@ private def synthZeroRcProg : Fir.Program :=
 private def synthDupPlainRcProg : Fir.Program :=
   mkTestProg [buildMixedFun, lamDupHelperFun]
 
+private def partialConstDupPlainRcProg : Fir.Program :=
+  mkTestProg [buildMixedFun, dupUnannotatedHeapFun]
+
+private def rootedTestSrc : Src.Program :=
+  { (default : Src.Program) with roots := [(default, 950)] }
+
+private def mkAliasChainBody (n : Nat) (dup : Bool) : Fir.Code :=
+  let rhs : Fir.Rhs :=
+    if dup then .ctor consInfo [.var n, .var n]
+    else .ctor consInfo [.var n, .lit (.nat 0)]
+  let base : Fir.Code := .bind (n + 1) rhs (.ret (.var (n + 1)))
+  (List.range n).foldr (fun i k => .bind (i + 1) (.arg (.var i)) k) base
+
+private def mkAliasChainProg (n : Nat) (dup : Bool) : Fir.Program :=
+  let helper : Fir.Fun :=
+    { key := .lam (.const 950 []) [0, 3]
+      params := [(0, .tobj)]
+      body := mkAliasChainBody n dup
+      contracts := [] }
+  mkTestProg [buildMixedFun, helper]
+
 example : Own.Plain.selectRcPolicy synthZeroRcProg = .zeroRc := by decide +kernel
 example : Own.Plain.selectRcPolicy synthDupPlainRcProg = .plainRc := by decide +kernel
+example : Own.Plain.selectRcPolicy partialConstDupPlainRcProg = .plainRc := by decide +kernel
+example : Own.Plain.selectRcPolicy (mkAliasChainProg 64 false) = .zeroRc := by decide +kernel
+example : Own.Plain.selectRcPolicy (mkAliasChainProg 64 true) = .plainRc := by decide +kernel
 
 private def enrichedSynthProg : Fir.Program :=
   Own.Plain.enrichFirContracts default synthZeroRcProg
@@ -230,6 +254,9 @@ example : (enrichedSynthProg.fun? 4).map (·.contracts) =
 example : (enrichedSynthProg.fun? 5).map (·.contracts) =
     some [{ value := .localShared }, .many] := by decide +kernel
 example : Own.Plain.selectRcPolicyForSrc default synthZeroRcProg = .zeroRc := by decide +kernel
+example : Own.Plain.selectRcPolicyForSrc rootedTestSrc synthZeroRcProg = .zeroRc := by decide +kernel
+example : Own.Plain.selectRcPolicyForSrc rootedTestSrc synthDupPlainRcProg = .plainRc := by decide +kernel
+example : Own.Plain.selectRcPolicyForSrc rootedTestSrc partialConstDupPlainRcProg = .plainRc := by decide +kernel
 
 private def setPiContracts : List Ixon.V3.BinderContract → Src.Term → Src.Term
   | c :: cs, .pi b r d body => .pi { b with contract := c } r d (setPiContracts cs body)
@@ -308,6 +335,23 @@ def run (logs : System.FilePath) : IO Unit := do
     (Own.Plain.selectRcPolicyForSrc default synthZeroRcProg == .zeroRc)
   check "duplicating synthesized helper selects .plainRc"
     (Own.Plain.selectRcPolicyForSrc default synthDupPlainRcProg == .plainRc)
+  check "rooted partially-annotated program with duplicating helper selects .plainRc"
+    (Own.Plain.selectRcPolicyForSrc rootedTestSrc synthDupPlainRcProg == .plainRc)
+  check "rooted partially-annotated program with duplicating .const selects .plainRc"
+    (Own.Plain.selectRcPolicyForSrc rootedTestSrc partialConstDupPlainRcProg == .plainRc)
+  let chainZero := mkAliasChainProg 400 false
+  let chainPlain := mkAliasChainProg 400 true
+  let t0 ← IO.monoMsNow
+  let polZero := Own.Plain.selectRcPolicy chainZero
+  let polPlain := Own.Plain.selectRcPolicy chainPlain
+  let t1 ← IO.monoMsNow
+  check "400-let affine alias chain selects .zeroRc" (polZero == .zeroRc)
+  check "400-let duplicating alias chain selects .plainRc" (polPlain == .plainRc)
+  check s!"400-let alias chain selectRcPolicy took {t1 - t0} ms (expected < 50 ms)" (t1 - t0 < 50)
+  check "Certificate.ofText rejects scientific notation before Json.parse"
+    (!(Own.Plain.Certificate.ofText default "[1e100000000000]").isOk)
+  check "Certificate.ofTextContract rejects scientific notation before Json.parse"
+    (!(Own.Plain.Certificate.ofTextContract default "[1e100000000000]").isOk)
   verifyMixedScalarRealSource
   let mut report : List String := []
   for name in IxCCTests.Recheck.Rc.Fixtures.roots do

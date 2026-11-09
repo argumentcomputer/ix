@@ -214,3 +214,94 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 
 /-- info: 'IxCC.Ring0.pairwiseDisjointSips_frame' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.pairwiseDisjointSips_frame
+
+/-- info: 'IxCC.X86.Encode.encodeK_csimp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Encode.encodeK_csimp
+
+/-- info: 'IxCC.X86.Driver.checkOk_iff' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Driver.checkOk_iff
+
+/-- info: 'IxCC.X86.Driver.checkCanonical_iff' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Driver.checkCanonical_iff
+
+/-- info: 'IxCC.X86.Driver.exists_canonicalOk' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Driver.exists_canonicalOk
+
+/-- info: 'IxCC.X86.Driver.CanonicalOk.text_disjoint_mapped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Driver.CanonicalOk.text_disjoint_mapped
+
+/-- info: 'IxCC.X86.Driver.CanonicalOk.mapped_below47' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Driver.CanonicalOk.mapped_below47
+
+/-- info: 'IxCC.X86.Driver.CanonicalOk.text_below47' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Driver.CanonicalOk.text_below47
+
+/-- info: 'IxCC.Recheck.sound_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.sound_nat
+
+/-- info: 'IxCC.Recheck.sound_ctor0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.sound_ctor0
+
+/-- info: 'IxCC.Recheck.compile_sound_of_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.compile_sound_of_eval
+
+/-- info: 'IxCC.Own.Plain.Certificate.admitWithContracts_lower_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitWithContracts_lower_refines
+
+/-- info: 'IxCC.Recheck.Rc.contract_source_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Rc.contract_source_refines
+
+/-- info: 'IxCC.Ring0.objectEval_exec_framePreserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.objectEval_exec_framePreserved
+
+/-- info: 'IxCC.Ring0.session_run_preserves_unmapped' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.session_run_preserves_unmapped
+
+/-- info: 'IxCC.Ring0.external_wordAt_preserved' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Ring0.external_wordAt_preserved
+
+/-- info: 'IxCC.Ring0.kernelTablesPreserved_of_session_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.kernelTablesPreserved_of_session_run
+
+/-- info: 'IxCC.Recheck.checkCanonicalRelevance_iff' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Recheck.checkCanonicalRelevance_iff
+
+/-- info: 'IxCC.Recheck.front_wellAnnotated' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.front_wellAnnotated
+
+/-- info: 'IxCC.Src.Table.checkAxiomClosure_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.checkAxiomClosure_sound
+
+/-- info: 'IxCC.Src.Table.checkAxiomClosure_roots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.checkAxiomClosure_roots
+
+/-- info: 'IxCC.Src.Table.ofCert_ok_props' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.ofCert_ok_props
+
+/-- info: 'IxCC.Src.Table.buildResolve_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.buildResolve_sound
+
+/-- info: 'IxCC.Src.Lazify.lazifyTerm_eqv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.lazifyTerm_eqv
+
+/-- info: 'IxCC.CompileClaim.toPayloadBytes_ofPayloadBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.toPayloadBytes_ofPayloadBytes
+
+/-- info: 'IxCC.CompileClaim.toClaimBytes_ofClaimBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.toClaimBytes_ofClaimBytes
+
+/-- info: 'IxCC.CompileClaim.isImmortalViewType_nat_tagify' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.isImmortalViewType_nat_tagify
+
+/-- info: 'IxCC.CompileClaim.isImmortalViewType_ctor0_tagify' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.isImmortalViewType_ctor0_tagify
+
+/-- info: 'IxCC.Ring0.admittedRing0Sip_step_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.admittedRing0Sip_step_frame
+
+/-- info: 'IxCC.Ring0.admittedRing0Sip_multi_sip_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.admittedRing0Sip_multi_sip_frame

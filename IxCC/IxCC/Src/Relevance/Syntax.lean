@@ -60,20 +60,20 @@ end FieldClass
 
 structure CtorRel where
   fields : List FieldClass
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- A constant's own class and its leading Π telescope's binder classes,
 over the constant's universe parameters. -/
 structure ConstRel where
   result : Rel
   params : List Rel
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 inductive Tag where
   | lam (r : Rel) (pw : PropWhen)
   | arg (r : Rel)
   | letE (r : Rel)
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- The annotation, kernel-evaluable (D17): records keyed by `CId`, and each
 runtime term's tags as a list in `tagOrder`. -/
@@ -81,7 +81,7 @@ structure Ann where
   consts : NatMap ConstRel := .leaf
   ctors : NatMap CtorRel := .leaf
   nodes : List (TermKey × List Tag) := []
-  deriving Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 namespace Ann
 

@@ -117,4 +117,141 @@ def run (p : Program) : List TermKey → Program
   | [] => p
   | key :: keys => run (step p key) keys
 
+/-! ## Preservation properties -/
+
+theorem univ_beq_refl : ∀ u : Ixon.Univ, (u == u) = true
+  | .zero => rfl
+  | .succ u => univ_beq_refl u
+  | .max a b => by show (a == a && b == b) = true; rw [univ_beq_refl a, univ_beq_refl b]; rfl
+  | .imax a b => by show (a == a && b == b) = true; rw [univ_beq_refl a, univ_beq_refl b]; rfl
+  | .var i => show (i == i) = true from BEq.rfl
+
+instance : ReflBEq Ixon.Univ := ⟨fun {u} => univ_beq_refl u⟩
+
+theorem _root_.IxCC.Src.Term.eqv_refl : ∀ t : Term, t.eqv t = true
+  | .var _ => BEq.rfl
+  | .sort u => univ_beq_refl u
+  | .const _ us => by simp [Term.eqv]
+  | .app f a _ _ => by simp [Term.eqv, Term.eqv_refl f, Term.eqv_refl a]
+  | .lam _ d t => by simp [Term.eqv, Term.eqv_refl d, Term.eqv_refl t]
+  | .pi _ _ d t => by simp [Term.eqv, Term.eqv_refl d, Term.eqv_refl t]
+  | .letE _ _ t v b => by simp [Term.eqv, Term.eqv_refl t, Term.eqv_refl v, Term.eqv_refl b]
+  | .proj _ _ e => by simp [Term.eqv, Term.eqv_refl e]
+  | .natLit _ => BEq.rfl
+  | .strLit _ => BEq.rfl
+
+mutual
+
+theorem term_eqv (p : Program) : ∀ t : Term, (term p t).eqv t = true
+  | .app f a m r => by
+    unfold term
+    dsimp only [Term.eqv]
+    rw [spine_eqv p _ f _]
+    cases r.alwaysIrr <;> simp [Term.eqv_refl a, term_eqv p a]
+  | .lam b d t => by
+    unfold term
+    simp [Term.eqv, Term.eqv_refl d, term_eqv p t]
+  | .letE c r ty v b => by
+    unfold term
+    dsimp only [Term.eqv]
+    rw [Term.eqv_refl ty, term_eqv p b]
+    cases r.alwaysIrr <;> simp [Term.eqv_refl v, term_eqv p v]
+  | .proj s i e => by
+    unfold term
+    simp [Term.eqv, term_eqv p e]
+  | .var i => Term.eqv_refl (.var i)
+  | .sort u => Term.eqv_refl (.sort u)
+  | .const c us => Term.eqv_refl (.const c us)
+  | .pi b r d t => Term.eqv_refl (.pi b r d t)
+  | .natLit n => Term.eqv_refl (.natLit n)
+  | .strLit s => Term.eqv_refl (.strLit s)
+termination_by structural t => t
+
+theorem spine_eqv (p : Program) (ranges : List (Nat × Nat)) :
+    ∀ (t : Term) (i : Nat), (spine p ranges i t).eqv t = true
+  | .app f a m r, i => by
+    unfold spine
+    dsimp only [Term.eqv]
+    rw [spine_eqv p ranges f (i - 1)]
+    cases r.alwaysIrr <;> simp [Term.eqv_refl a, term_eqv p a]
+  | .lam b d t, _ => by
+    unfold spine
+    simp [Term.eqv, Term.eqv_refl d, term_eqv p t]
+  | .letE c r ty v b, _ => by
+    unfold spine
+    dsimp only [Term.eqv]
+    rw [Term.eqv_refl ty, term_eqv p b]
+    cases r.alwaysIrr <;> simp [Term.eqv_refl v, term_eqv p v]
+  | .proj s j e, _ => by
+    unfold spine
+    simp [Term.eqv, term_eqv p e]
+  | .var j, _ => Term.eqv_refl (.var j)
+  | .sort u, _ => Term.eqv_refl (.sort u)
+  | .const c us, _ => Term.eqv_refl (.const c us)
+  | .pi b r d t, _ => Term.eqv_refl (.pi b r d t)
+  | .natLit n, _ => Term.eqv_refl (.natLit n)
+  | .strLit s, _ => Term.eqv_refl (.strLit s)
+termination_by structural t => t
+
+end
+
+theorem lazifyTerm_eqv (p : Program) (t : Term) : (term p t).eqv t = true :=
+  term_eqv p t
+
+theorem _root_.IxCC.Src.Program.setTerm_size (p : Program) (key : TermKey) (t : Term) :
+    (p.setTerm key t).size = p.size := by
+  unfold Program.setTerm
+  split <;> try split
+  all_goals try split
+  all_goals try split
+  all_goals rfl
+
+theorem _root_.IxCC.Src.Program.setTerm_roots (p : Program) (key : TermKey) (t : Term) :
+    (p.setTerm key t).roots = p.roots := by
+  unfold Program.setTerm
+  split <;> try split
+  all_goals try split
+  all_goals try split
+  all_goals rfl
+
+theorem _root_.IxCC.Src.Program.setTerm_table_recKind (p : Program) (key : TermKey) (t : Term) :
+    (p.setTerm key t).table.recKind = p.table.recKind := by
+  unfold Program.setTerm
+  split <;> try split
+  all_goals try split
+  all_goals try split
+  all_goals rfl
+
+theorem step_size (p : Program) (key : TermKey) : (step p key).size = p.size := by
+  unfold step
+  split <;> try split
+  all_goals try split
+  all_goals first | rfl | exact p.setTerm_size _ _
+
+theorem step_roots (p : Program) (key : TermKey) : (step p key).roots = p.roots := by
+  unfold step
+  split <;> try split
+  all_goals try split
+  all_goals first | rfl | exact p.setTerm_roots _ _
+
+theorem step_table_recKind (p : Program) (key : TermKey) :
+    (step p key).table.recKind = p.table.recKind := by
+  unfold step
+  split <;> try split
+  all_goals try split
+  all_goals first | rfl | exact p.setTerm_table_recKind _ _
+
+theorem run_size (p : Program) : ∀ keys : List TermKey, (run p keys).size = p.size
+  | [] => rfl
+  | key :: keys => (run_size (step p key) keys).trans (step_size p key)
+
+theorem run_roots (p : Program) : ∀ keys : List TermKey, (run p keys).roots = p.roots
+  | [] => rfl
+  | key :: keys => (run_roots (step p key) keys).trans (step_roots p key)
+
+theorem run_table_recKind (p : Program) :
+    ∀ keys : List TermKey, (run p keys).table.recKind = p.table.recKind
+  | [] => rfl
+  | key :: keys => (run_table_recKind (step p key) keys).trans (step_table_recKind p key)
+
 end IxCC.Src.Lazify
