@@ -143,6 +143,25 @@ theorem Program.sourceFunction?_of_key {p : Program F} {name : String}
     exact find?_none_of_key (fun g : Function F => g.name) hkey
   simp [Program.sourceFunction?, hsym, Except.toOption, hnone, bind, Option.bind]
 
+/-- **Every closure `sourceFunction?` returns has the body of some function in
+the program.** -/
+theorem Program.sourceFunction?_body_mem {p : Program F} {name : String} {sf : SourceFunction F}
+    (h : p.sourceFunction? name = some sf) :
+    ∃ f ∈ p.functions, sf.body = f.body := by
+  unfold Program.sourceFunction? at h
+  cases h1 : (Instance.ofSymbol name).toOption with
+  | none => simp [h1] at h
+  | some key =>
+    cases h2 : p.findFunction? key.name with
+    | none => simp [h1, h2] at h
+    | some fn =>
+      cases h3 : (arguments fn.typeParams key.types).toOption with
+      | none => simp [h1, h2, h3] at h
+      | some types =>
+        simp only [h1, h2, h3, bind, Option.bind, pure, Option.some.injEq] at h
+        subst h
+        exact ⟨fn, List.mem_of_find?_eq_some h2, rfl⟩
+
 /-- **What a successful call preparation returns**, read off the closure:
 the closure's type environment, its parameters bound to the arguments, and
 its body. -/

@@ -28,6 +28,15 @@ set_option linter.unusedSimpArgs false
 /-- The checked source's world. -/
 abbrev W : World F := IxVM.Checked.source.world
 
+/-- **No function of the checked IxVM program uses `control` syntax.** -/
+theorem noControl : IxVM.Checked.functions.all (fun f => !ControlLower.hasControl f.body) = true := by
+  decide +kernel
+
+/-- **The checked IxVM world is `ControlFree`**, so `EvalFn.exec` applies to
+every function in `W`. -/
+theorem controlFree : ControlFree W :=
+  Source.controlFree IxVM.Checked.source noControl
+
 /-! ## Rows of the byte maps -/
 
 theorem mem_zip_map {α β γ : Type} {l : List α} {f : α → β} {g : α → γ} {x : α} (hx : x ∈ l) :

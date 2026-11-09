@@ -112,6 +112,107 @@ theorem checkDeclsPureUnder_of_nil (mode : CheckMode) (policy : Cached.AxiomPoli
     checkDeclsPureUnder mode policy ops ev ds = checkDeclsPure mode ops ev ds :=
   foldlM_checkDeclUnder_of_nil mode policy ops ev ds Env.empty hnone
 
+/-! ## Fuel monotonicity, determinism and composition -/
+
+theorem checkUserAxiomDecl_datF {mode : CheckMode} (env : Env md) (cv : ConstantVal md) (F : Nat) :
+    (checkUserAxiomDecl (fueledOpsM mode) env cv).val F =
+      checkUserAxiomDecl (fueledOps mode F) env cv := by
+  unfold checkUserAxiomDecl
+  rw [FueledM.atF_bind, checkConstantVal_datF]
+  rfl
+
+theorem checkDeclUnder_datF {mode : CheckMode} {policy : Cached.AxiomPolicy} {ev : Evidences md}
+    (env : Env md) (d : Declaration md) (F : Nat) :
+    (checkDeclUnder mode policy (fueledOpsM mode) ev env d).val F =
+      checkDeclUnder mode policy (fueledOps mode F) ev env d := by
+  unfold checkDeclUnder
+  cases d with
+  | axiomDecl cv =>
+    dsimp only
+    split
+    · exact checkUserAxiomDecl_datF env cv F
+    · exact checkDecl_datF env (.axiomDecl cv) F
+  | _ => exact checkDecl_datF env _ F
+
+/-- **The pure user-axiom arm is monotone in its fuel.** -/
+theorem checkUserAxiomDecl_mono {mode : CheckMode} {F F' : Nat} (hle : F ≤ F')
+    {env env' : Env md} {cv : ConstantVal md}
+    (h : checkUserAxiomDecl (fueledOps mode F) env cv = .ok env') :
+    checkUserAxiomDecl (fueledOps mode F') env cv = .ok env' := by
+  rw [← checkUserAxiomDecl_datF] at h ⊢
+  exact (checkUserAxiomDecl (fueledOpsM mode) env cv).property hle h
+
+/-- **The pure declaration checker under any axiom policy is monotone in its
+fuel.** -/
+theorem checkDeclUnder_mono {mode : CheckMode} {policy : Cached.AxiomPolicy} {ev : Evidences md}
+    {F F' : Nat} (hle : F ≤ F') {env env' : Env md} {d : Declaration md}
+    (h : checkDeclUnder mode policy (fueledOps mode F) ev env d = .ok env') :
+    checkDeclUnder mode policy (fueledOps mode F') ev env d = .ok env' := by
+  rw [← checkDeclUnder_datF] at h ⊢
+  exact (checkDeclUnder mode policy (fueledOpsM mode) ev env d).property hle h
+
+/-- **The pure fold under any axiom policy, from any environment, is monotone
+in its fuel.** -/
+theorem checkDeclsFromUnder_mono {mode : CheckMode} {policy : Cached.AxiomPolicy} {ev : Evidences md}
+    {F F' : Nat} (hle : F ≤ F') {ds : List (Declaration md)} {env env' : Env md}
+    (h : ds.foldlM (checkDeclUnder mode policy (fueledOps mode F) ev) env = .ok env') :
+    ds.foldlM (checkDeclUnder mode policy (fueledOps mode F') ev) env = .ok env' := by
+  have hF : ∀ G, (ds.foldlM (checkDeclUnder mode policy (fueledOpsM mode) ev) env).val G =
+      ds.foldlM (checkDeclUnder mode policy (fueledOps mode G) ev) env := by
+    intro G
+    rw [foldlM_atF]
+    simp only [checkDeclUnder_datF]
+  rw [← hF] at h ⊢
+  exact (ds.foldlM (checkDeclUnder mode policy (fueledOpsM mode) ev) env).property hle h
+
+theorem checkDeclsPureUnder_mono {mode : CheckMode} {policy : Cached.AxiomPolicy} {ev : Evidences md}
+    {F F' : Nat} (hle : F ≤ F') {ds : List (Declaration md)} {env : Env md}
+    (h : checkDeclsPureUnder mode policy (fueledOps mode F) ev ds = .ok env) :
+    checkDeclsPureUnder mode policy (fueledOps mode F') ev ds = .ok env :=
+  checkDeclsFromUnder_mono hle h
+
+/-- **Two accepting runs of `checkDeclUnder`, at any two fuels, install the
+same environment.** -/
+theorem checkDeclUnder_deterministic {mode : CheckMode} {policy : Cached.AxiomPolicy}
+    {ev : Evidences md} {F₁ F₂ : Nat} {env e₁ e₂ : Env md} {d : Declaration md}
+    (h₁ : checkDeclUnder mode policy (fueledOps mode F₁) ev env d = .ok e₁)
+    (h₂ : checkDeclUnder mode policy (fueledOps mode F₂) ev env d = .ok e₂) : e₁ = e₂ := by
+  have h := checkDeclUnder_mono (Nat.le_max_left F₁ F₂) h₁
+  rw [checkDeclUnder_mono (Nat.le_max_right F₁ F₂) h₂] at h
+  exact (Except.ok.inj h).symm
+
+/-- **Two accepting runs of the pure fold under any policy, at any two fuels,
+install the same environment.** -/
+theorem checkDeclsFromUnder_deterministic {mode : CheckMode} {policy : Cached.AxiomPolicy}
+    {ev : Evidences md} {F₁ F₂ : Nat} {ds : List (Declaration md)} {env e₁ e₂ : Env md}
+    (h₁ : ds.foldlM (checkDeclUnder mode policy (fueledOps mode F₁) ev) env = .ok e₁)
+    (h₂ : ds.foldlM (checkDeclUnder mode policy (fueledOps mode F₂) ev) env = .ok e₂) : e₁ = e₂ := by
+  have h := checkDeclsFromUnder_mono (Nat.le_max_left F₁ F₂) h₁
+  rw [checkDeclsFromUnder_mono (Nat.le_max_right F₁ F₂) h₂] at h
+  exact (Except.ok.inj h).symm
+
+/-- **Stepping the pure fold under an axiom policy** by one declaration at its
+own fuel. -/
+theorem checkDeclsFromUnder_cons {mode : CheckMode} {policy : Cached.AxiomPolicy}
+    {ev : Evidences md} {F₁ F₂ : Nat} {d : Declaration md} {ds : List (Declaration md)}
+    {env₀ env₁ env₂ : Env md}
+    (h₁ : checkDeclUnder mode policy (fueledOps mode F₁) ev env₀ d = .ok env₁)
+    (h₂ : ds.foldlM (checkDeclUnder mode policy (fueledOps mode F₂) ev) env₁ = .ok env₂) :
+    (d :: ds).foldlM (checkDeclUnder mode policy (fueledOps mode (max F₁ F₂)) ev) env₀ = .ok env₂ := by
+  rw [List.foldlM_cons, checkDeclUnder_mono (Nat.le_max_left F₁ F₂) h₁]
+  exact checkDeclsFromUnder_mono (Nat.le_max_right F₁ F₂) h₂
+
+/-- **Composing two fuel-bounded declaration segments** under an axiom policy
+at `max F₁ F₂`. -/
+theorem checkDeclsFromUnder_append {mode : CheckMode} {policy : Cached.AxiomPolicy}
+    {ev : Evidences md} {F₁ F₂ : Nat} {ds₁ ds₂ : List (Declaration md)}
+    {env₀ env₁ env₂ : Env md}
+    (h₁ : ds₁.foldlM (checkDeclUnder mode policy (fueledOps mode F₁) ev) env₀ = .ok env₁)
+    (h₂ : ds₂.foldlM (checkDeclUnder mode policy (fueledOps mode F₂) ev) env₁ = .ok env₂) :
+    (ds₁ ++ ds₂).foldlM (checkDeclUnder mode policy (fueledOps mode (max F₁ F₂)) ev) env₀ = .ok env₂ := by
+  rw [List.foldlM_append, checkDeclsFromUnder_mono (Nat.le_max_left F₁ F₂) h₁]
+  exact checkDeclsFromUnder_mono (Nat.le_max_right F₁ F₂) h₂
+
 namespace Cached
 
 /-- **Reference acceptance under an axiom policy**: the pure fold under
@@ -120,6 +221,16 @@ accept is conditional on the user axioms of `ds` (`userAxiomsOfDecls`). -/
 def AcceptsRefUnder (policy : AxiomPolicy) (μ : CheckMode) (ev : Evidences md)
     (ds : List (Declaration md)) (env : Env md) : Prop :=
   ∃ F, checkDeclsPureUnder μ policy (fueledOps μ F) ev ds = .ok env
+
+/-- **A reference accept under any policy determines its environment.** -/
+theorem AcceptsRefUnder.unique {policy : AxiomPolicy} {μ : CheckMode} {ev : Evidences md}
+    {ds : List (Declaration md)} {env₁ env₂ : Env md}
+    (h₁ : AcceptsRefUnder policy μ ev ds env₁)
+    (h₂ : AcceptsRefUnder policy μ ev ds env₂) : env₁ = env₂ := by
+  obtain ⟨F₁, h₁⟩ := h₁
+  obtain ⟨F₂, h₂⟩ := h₂
+  unfold checkDeclsPureUnder at h₁ h₂
+  exact checkDeclsFromUnder_deterministic h₁ h₂
 
 /-- **At `strict`, reference acceptance under the policy is `AcceptsRef`.** -/
 theorem acceptsRefUnder_strict {μ : CheckMode} {ev : Evidences md} {ds : List (Declaration md)}

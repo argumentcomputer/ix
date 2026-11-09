@@ -43,4 +43,22 @@ theorem ixonAcceptsRefUnder_strict {binding : Binding} {limits : Limits} {ixe : 
     exact ⟨closure, t, pre, ev, ds, admitted, rfl, prelude, prepared,
       Ix.Kernel.Cached.acceptsRefUnder_strict.mpr accepted⟩
 
+/-- **An `IxonAcceptsRefUnder` whose prepared declarations contain no user
+axioms is an `IxonAcceptsRef`.** -/
+theorem ixonAcceptsRef_of_under_nil {policy : Ix.Kernel.Cached.AxiomPolicy} {binding : Binding}
+    {limits : Limits} {ixe : Ixon.Env} {S : Address → Prop} {order : List Address}
+    {envA : Env .anon}
+    (h : IxonAcceptsRefUnder policy binding limits ixe S order envA)
+    (hnone : ∀ t pre ev ds,
+      Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok t →
+      Ix.Kernel.Reader.preludeFor t = .ok pre →
+      Ix.Kernel.Admission.prepareWith Address.admissionHash binding pre limits (recordsOf ixe order)
+        (blobsOf ixe order) (hintsOf ixe) = .ok (ev, ds) →
+      Ix.Kernel.userAxiomsOfDecls ds.toList = []) :
+    IxonAcceptsRef binding limits ixe S order envA := by
+  rcases h with ⟨closure, t, pre, ev, ds, admitted, -, prelude, prepared, accepted⟩
+  exact ⟨closure, t, pre, ev, ds, admitted, prelude, prepared,
+    (Ix.Kernel.Cached.acceptsRefUnder_iff_of_nil (hnone t pre ev ds admitted prelude prepared)).mp
+      accepted⟩
+
 end Ix.Cert

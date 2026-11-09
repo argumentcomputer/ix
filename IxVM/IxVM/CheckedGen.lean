@@ -355,6 +355,33 @@ mutual
     | .index x i =>
       let (ls, v, h') ← atom ctx x h
       return wrap ls s!"match projectValue {v} {i} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .project x i =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match projectValue {v} {i} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .slice x a b =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match sliceValue {v} {a} {opt toString b} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .member x f =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match memberValue [] {fieldRef f} {v} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .neg x =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match evalNeg {v} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .store x =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"some (.ptr {v}.type {h'}.length, {h'} ++ [{v}])"
+    | .construct name targs ctor es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"some (.construct (instanceName [] {q name} {opt (fun ts => list (ts.map ty)) targs}) {q ctor} {list vs}, {h'})"
+    | .constructAs _ t ctor es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"some (.construct (constructorName [] {ty t}) {q ctor} {list vs}, {h'})"
+    | .record head es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"some (.construct (constructorName [] {ty head.type}) structConstructor (({recordHead head} : RecordHead).order {list vs} (.tuple [])), {h'})"
+    | .update ps es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"match Update.value [] {list (ps.map fun p => list (p.map updateStep))} {list vs} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
     | .builtin op es =>
       let (ls, vs, h') ← atoms ctx es h
       return wrap ls s!"match Builtin.apply {builtin op} {list vs} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
@@ -455,6 +482,38 @@ mutual
       let p ← fresh "p"; let dp ← fresh "d"; let pr ← fresh "pr"
       return [s!"obtain ⟨{p}, {dp}, {pr}⟩ := {d}.index_inv"] ++
         (← prove ctx x dp { fs with rw := fs.rw ++ [pr] } k)
+    | .project x _ =>
+      let p ← fresh "p"; let dp ← fresh "d"; let pr ← fresh "pr"
+      return [s!"obtain ⟨{p}, {dp}, {pr}⟩ := {d}.project_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [pr] } k)
+    | .slice x _ _ =>
+      let p ← fresh "p"; let dp ← fresh "d"; let sl ← fresh "sl"
+      return [s!"obtain ⟨{p}, {dp}, {sl}⟩ := {d}.slice_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [sl] } k)
+    | .member x _ =>
+      let p ← fresh "p"; let dp ← fresh "d"; let mb ← fresh "mb"
+      return [s!"obtain ⟨{p}, {dp}, {mb}⟩ := {d}.member_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [mb] } k)
+    | .neg x =>
+      let p ← fresh "p"; let dp ← fresh "d"; let ng ← fresh "ng"
+      return [s!"obtain ⟨{p}, {dp}, {ng}⟩ := {d}.neg_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [ng] } k)
+    | .store x =>
+      let p ← fresh "v"; let m ← fresh "m"; let dp ← fresh "d"
+      return [s!"obtain ⟨{p}, {m}, {dp}, rfl, rfl⟩ := {d}.store_inv"] ++ (← prove ctx x dp fs k)
+    | .construct _ _ _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.construct_inv"] ++ (← proveArgs ctx es a fs k)
+    | .constructAs _ _ _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.constructAs_inv"] ++ (← proveArgs ctx es a fs k)
+    | .record _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.record_inv"] ++ (← proveArgs ctx es a fs k)
+    | .update _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"; let up ← fresh "up"
+      return [s!"obtain ⟨{vs}, {a}, {up}⟩ := {d}.update_inv"] ++
+        (← proveArgs ctx es a { fs with rw := fs.rw ++ [up] } k)
     | .builtin _ es =>
       let vs ← fresh "vs"; let a ← fresh "args"; let ap ← fresh "ap"
       return [s!"obtain ⟨{vs}, {a}, {ap}⟩ := {d}.builtin_inv"] ++

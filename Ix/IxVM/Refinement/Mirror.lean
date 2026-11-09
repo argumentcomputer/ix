@@ -356,6 +356,52 @@ theorem EvalExpr.index_inv {e : Expr F} {i : Nat}
     ∃ input, EvalExpr world types locals e before input after ∧ projectValue input i = .ok result := by
   cases h with | index value projected => exact ⟨_, value, projected⟩
 
+theorem EvalExpr.project_inv {e : Expr F} {i : Nat}
+    (h : EvalExpr world types locals (.project e i) before result after) :
+    ∃ input, EvalExpr world types locals e before input after ∧ projectValue input i = .ok result := by
+  cases h with | project value projected => exact ⟨_, value, projected⟩
+
+theorem EvalExpr.slice_inv {e : Expr F} {a : Nat} {b : Option Nat}
+    (h : EvalExpr world types locals (.slice e a b) before result after) :
+    ∃ input, EvalExpr world types locals e before input after ∧ sliceValue input a b = .ok result := by
+  cases h with | slice value sliced => exact ⟨_, value, sliced⟩
+
+theorem EvalExpr.member_inv {e : Expr F} {field : FieldRef}
+    (h : EvalExpr world types locals (.member e field) before result after) :
+    ∃ input, EvalExpr world types locals e before input after ∧
+      memberValue types field input = .ok result := by
+  cases h with | member value projected => exact ⟨_, value, projected⟩
+
+theorem EvalExpr.neg_inv {e : Expr F}
+    (h : EvalExpr world types locals (.neg e) before result after) :
+    ∃ input, EvalExpr world types locals e before input after ∧ evalNeg input = .ok result := by
+  cases h with | neg value negated => exact ⟨_, value, negated⟩
+
+theorem EvalExpr.constructAs_inv {ps : List String} {t : Ty} {ctor : String} {es : List (Expr F)}
+    (h : EvalExpr world types locals (.constructAs ps t ctor es) before result after) :
+    ∃ values, EvalArgs world types locals es before values after ∧
+      result = .construct (constructorName types t) ctor values := by
+  cases h with | constructAs items => exact ⟨_, items, rfl⟩
+
+theorem EvalExpr.record_inv {head : RecordHead} {es : List (Expr F)}
+    (h : EvalExpr world types locals (.record head es) before result after) :
+    ∃ values, EvalArgs world types locals es before values after ∧
+      result = .construct (constructorName types head.type) structConstructor
+        (head.order values (.tuple [])) := by
+  cases h with | record items => exact ⟨_, items, rfl⟩
+
+theorem EvalExpr.update_inv {paths : List UpdatePath} {es : List (Expr F)}
+    (h : EvalExpr world types locals (.update paths es) before result after) :
+    ∃ values, EvalArgs world types locals es before values after ∧
+      Update.value types paths values = .ok result := by
+  cases h with | update items updated => exact ⟨_, items, updated⟩
+
+theorem EvalExpr.hint_inv {t : Ty} {key : Expr F} {channel : String}
+    (h : EvalExpr world types locals (.hint t key channel) before result after) :
+    ∃ input value, EvalExpr world types locals key before input after ∧
+      world.typed (t.subst types).toCore value = true ∧ result = value.toValue := by
+  cases h with | hint evaluated typed => exact ⟨_, _, evaluated, typed, rfl⟩
+
 theorem EvalExpr.builtin_inv {op : Builtin} {es : List (Expr F)}
     (h : EvalExpr world types locals (.builtin op es) before result after) :
     ∃ values, EvalArgs world types locals es before values after ∧ op.apply values = .ok result := by
