@@ -14,8 +14,10 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive` of the pre-merge
 - [Workspaces and recovery](workspaces-and-recovery.md): recovery checkpoints,
   workspace retirement and validation.
 
-- [Roadmap](roadmap.md): mission, current state, phases, benchmark rungs and
-  decisions.
+- [Roadmap](roadmap.md): mission, current state, milestones across all tracks,
+  benchmark rungs and the decision register.
+- [End-to-end certification](end-to-end.md): the theorems the plan aims at for
+  the x86 and Aiur back ends, the spine they share, and what each trusts.
 - [Compiler design](compiler-design.md): the pipeline, its
   semantics, ownership and runtime design, backend, and trust obligations.
 - [Development and validation](development-plan.md): landing work,
@@ -33,8 +35,13 @@ unless a line says so.
   fixed-width integers, arrays, strings, library structures, the root and
   claim interface, state-machine effects.
 - [Bignums](bignum-design.md): the limb library compiled by IxCC.
-- [Certification depth](certification-design.md): the front-end theorem,
-  source safety, stage L and stage K.
+- [Certification](certification-design.md): grounding IxCC in Ixon and IxCK:
+  the chain link by link, the premises discharged by proofs, the spine's
+  milestones, the first grounded fragment, and the earlier items CD1–CD4.
+- [Evaluator interface](evaluator-interface.md): SrcEval as a versioned
+  contract and the Src image, what the Aiur evaluator route needs first.
+- [Hardening](hardening-design.md): resource bounds for the verifier against
+  dishonest input.
 
 ## Source boundary
 
@@ -56,9 +63,10 @@ unless a line says so.
   [machine-readable pin](x86-reference-model.json): the Sail x86 candidate and
   the plan for agreement.
 
-## Aiur target
+## Legacy Aiur bytecode model
 
-- [Backend overview](aiur-backend.md),
+Frozen; neither Aiur route of the plan uses it ([status](aiur-backend.md#status-in-the-plan)).
+- [Overview](aiur-backend.md),
   [wire format](aiur-wire.md), [semantics](aiur-semantics.md),
   [static checks](aiur-static.md), [counter analysis](aiur-counter-analysis.md),
   [memory AIR](aiur-memory-air.md) and [rank AIR](aiur-rank-air.md).

@@ -12,6 +12,16 @@ relation it needs can be built only for a very small fragment. Source adequacy a
 kernel model, the target theorem of [IxCC's roadmap](../../IxCC/docs/roadmap.md) and open
 item S8 of IxCC's [certification design](../../IxCC/docs/certification-design.md), remains open.
 
+**Not the route.** Its approach, a simulation of the source evaluator by kernel reduction,
+cannot reach recursion and cannot pass type arguments, numerals, instance methods or `match`
+as Lean elaborates them (below). IxCC's plan replaces it by a denotational relation over
+IxCK's strong models
+([certification design](../../IxCC/docs/certification-design.md#modelskernelbridge-not-the-route)).
+The package stays, with its gate, as a record of the approach until that relation covers the
+first grounded fragment; its layer that reads a literal's denotation off a reduction may be
+reused; then the package and its gate are removed (a default, open decision DO-12 in the
+[roadmap](../../IxCC/docs/roadmap.md#open-decisions)).
+
 The package lives outside IxCC's production import root, so `IxCC` never imports IxCK's
 model tier.
 

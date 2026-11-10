@@ -169,7 +169,7 @@ Fixture identity is recorded under `fixtures/rc/real-source`; the current
 accepted baseline still uses its historical producer. The final Phase 1.5 gate, producer
 review and refreeze are separate from this test promotion. See
 [development commands](development-plan.md) and the
-[roadmap](roadmap.md#current-state-2026-11-09) for the remaining integration gates.
+[roadmap](roadmap.md#current-state-2026-11-10) for the remaining integration gates.
 
 ### Suite costs
 

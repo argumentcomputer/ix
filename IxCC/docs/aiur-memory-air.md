@@ -1,5 +1,8 @@
 # Aiur memory AIR extraction
 
+*Part of the [legacy Aiur bytecode model](aiur-backend.md#status-in-the-plan), which
+neither Aiur route of the plan uses; frozen, to be retired or re-pinned.*
+
 [`AIR.Memory.coherent`](../IxCC/Aiur/AIR/Memory/Projection.lean)
 derives one coherent witness heap from the memory-table polynomials, distinct
 bucket identities, and table heights below the Goldilocks characteristic.

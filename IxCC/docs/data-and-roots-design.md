@@ -190,7 +190,10 @@ or certified inference. (c) Trust Lean's C array runtime. Rejected, as in DR2.
 **Recommendation: (b).**
 
 **Proof obligation.** Per primitive, a conservativity lemma against the
-reference body (on `toList`); an Own rule for in-place `update` of a unique
+reference body (on `toList`), stated at the SrcEval level and independent of
+the heap invariant, so that the x86 runtime and an evaluator's write-once
+memory both rest on it and the [spine](certification-design.md#sp-2-widening)
+gains one adequacy case per primitive; an Own rule for in-place `update` of a unique
 array; the heap invariant gains array cells (size, capacity, elements, raw
 bytes for `ByteArray`), with one lemma per runtime procedure (growth,
 copy-on-share); readback of `ByteArray` results.
@@ -276,12 +279,19 @@ SrcEval is stuck on them.
 **Decided (2026-11-10):** (a), with the interpretation recorded in the claim
 (decision 2 of 2026-11-10 in the [roadmap](roadmap.md#decisions-of-2026-11-10));
 (c) remains available to a target, such as IxCK, that wants a statement
-without interpretations. (b) is not planned.
+without interpretations. (b) is not planned. How this reads against the
+[grounded statement](end-to-end.md) is to be confirmed (DC-2 in the
+[roadmap](roadmap.md#decisions-to-confirm)); the default reading is that
+recorded interpretations stay in compile claims as statements relative to the
+interpretation, kept separate in the table and the image from evaluation
+through a stored value (`opaqueByValue`), and that both are excluded from the
+grounded statement, since IxCK's model keeps no value law for opaques.
 
 **Proof obligation.** For (a): SrcEval and the table check accept an
-interpreted opaque only through the recorded entry; the stage-2 statements
-of the [certification design](certification-design.md) quantify over models
-that agree with the interpretation. Hash-map functional correctness is not
+interpreted opaque only through the recorded entry; a compile claim's statement
+relative to the interpretation quantifies over the models that agree with
+it; the grounded statements of the
+[certification design](certification-design.md) exclude interpreted opaques. Hash-map functional correctness is not
 the compiler's obligation: it compiles the library's code, whatever it
 computes.
 
@@ -365,7 +375,10 @@ descriptor: per parameter and for the result, a first-order type over the
 environment's inductives by address (`Nat`, an inductive, `ByteArray`, a
 fixed-width word), plus the interpretation entries of DR5 and the selected
 policy. A verifier then knows how to call the object without recomputing
-anything from the certificate.
+anything from the certificate. Composition with the proofs that discharge the
+grounded statement's premises needs two more fields, planned earlier in SP-0
+of the [certification design](certification-design.md#sp-0-same-bytes-and-the-conditional-statement):
+the role table and the digest of the checked source program's image.
 
 **Proof obligation.** `verifyBytes_*_sound` state their conclusion at the
 descriptor's types; the descriptor must equal what `Recheck.Root` discovers,

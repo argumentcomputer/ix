@@ -144,10 +144,13 @@ Three layers, of which the third is the hard one.
 3. **SrcEval computes the Lean definitions.** Layer 1 speaks about the Lean
    functions; layer 2 about SrcEval running the library's Ixon image. Linking
    them is source adequacy for this one program, which no theorem provides
-   today ([certification design](certification-design.md), S8). The planned
-   route is the stage-L translator (CD3 there) applied to the library's
-   closure, which is small, first order and monomorphic. The fallback is a
-   direct proof per routine by symbolic evaluation of `Src.run`.
+   today ([certification design](certification-design.md), S8). Two routes:
+   the stage-L translator (CD3 there, now a side product scheduled when this
+   library needs it) applied to the library's closure, which is small, first
+   order and monomorphic; or the spine's grounded adequacy once its fragment
+   covers the library's data, which gives the statement in IxCK's models
+   instead of about the Lean functions. The fallback is a direct proof per
+   routine by symbolic evaluation of `Src.run`.
 
 With the three layers, `Rt.lower`'s data refinement for each `Nat` primitive
 takes as premise "the linked slow path maps representations of `a` and `b`
@@ -174,8 +177,15 @@ only when layer 3 is proved.
   [Bootstrap and trust](compiler-design.md#bootstrap-and-trust)), not new
   trust. `Recheck.run` evaluates program `Nat`s only when constant folding.
 - IxCK's literal extensions, and its `pow` cap, concern kernel evaluation;
-  denotations are unaffected. They enter only the stage-2 adequacy proof,
-  where each `Nat` primitive's meaning must equal its denotation.
+  denotations are unaffected. They enter only the adequacy proof, where each
+  `Nat` primitive's meaning must equal its denotation.
+- The IxVM workstream already has in-circuit `Nat` arithmetic over its
+  field (limbs, with division checked from a hinted quotient and remainder),
+  and its planned evaluator circuit will have its own. The library shares its
+  specification (`toNat` and the per-routine statements of layer 1) with that
+  arithmetic, and where the algorithms coincide (schoolbook, Algorithm D with
+  a checked quotient estimate) their correctness proofs, rather than
+  duplicating them.
 - Native tests compare against Lean-compiled programs, whose `Nat` is GMP:
   a test oracle, not a premise.
 
@@ -188,8 +198,9 @@ hardware-differential gate.
 ## Dependencies
 
 DR1 (cells with scalar payload), DR2 (raw words and the word primitives), DR3
-(arrays, uniqueness), DR1 again for static cells, and CD3 of the
-certification design for layer 3.
+(arrays, uniqueness), DR1 again for static cells, and a layer-3 route
+(CD3 of the certification design, or the spine's adequacy widened to the
+library).
 
 ## Size [estimate]
 

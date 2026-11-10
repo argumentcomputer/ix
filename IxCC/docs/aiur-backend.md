@@ -1,4 +1,32 @@
-# Aiur backend: trace, wire, execution, and static assignments
+# Legacy Aiur bytecode model: trace, wire, execution, and static assignments
+
+## Status in the plan
+
+**Legacy; frozen.** This page and the six beside it
+([wire](aiur-wire.md), [semantics](aiur-semantics.md),
+[static checks](aiur-static.md), [counter analysis](aiur-counter-analysis.md),
+[memory AIR](aiur-memory-air.md), [rank AIR](aiur-rank-air.md)) describe a
+verifier-side model of an earlier Aiur *bytecode*, pinned from an earlier ix
+revision and vendored into `IxCC/Vendor`. Nothing lowers into it, and neither
+Aiur route of the plan uses it:
+- the **evaluator route** runs IxCC's source evaluator inside a fixed circuit
+  written in formal Aiur, built and proved on the IxVM side; IxCC supplies the
+  evaluator contract and the image ([evaluator interface](evaluator-interface.md));
+- the **per-program route**, later, lowers Fir to *formal* Aiur, whose compiler
+  theorem is generic over programs; that package is external work, not yet in
+  this repository, and is not this bytecode
+  ([end-to-end certification](end-to-end.md)).
+
+The model gets no new work. The formal Aiur package supersedes or contradicts
+all of it: its own circuit model and memoisation checker, its certified
+acyclicity, a semantics at the source level with no bytecode, and its own
+artifact format. It is retired when the certified-IxVM work lands, with its
+tests, fences, tools, fixtures, the `ixcc-aiur` check and its ledger scopes
+([roadmap](roadmap.md#repository-and-landing), DO-14). One idea in it, deriving
+the memory's functionality from the memory polynomials, may be worth passing
+on to formal Aiur's owners. The description below is of the code as it is.
+
+## The model
 
 The initial Aiur implementation provides a pinned pure target vocabulary and
 a checked logical-trace interface. It proves that active, balanced lookup

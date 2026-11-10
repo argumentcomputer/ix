@@ -87,8 +87,12 @@ missing model-adequacy proof. Eliminating native hashing from ingress would not
 by itself prove source adequacy.
 
 The stronger theorem relating an input closure to the certified kernel's
-model additionally needs authenticated decoding, accepted environment typing,
-the intended equation/table interpretation and the Src evaluator's adequacy.
-Those obligations belong to the staged certified-kernel integration. Phase
-1.5 scopes this work; it does not assert that theorem or weaken any existing
-fence to accommodate it.
+model is planned as the grounded statement of
+[end-to-end certification](end-to-end.md). It takes as premises that IxCK
+accepts the environment with the claim's root address and that the checked
+source program is faithful to IxCK's reading of it, both discharged outside
+IxCC (by IxVM proofs or a native kernel run), and adds the unfolding table's
+validity in the model and SrcEval's adequacy with progress
+([certification design](certification-design.md)). IxCC's own type checking
+contributes nothing to it. This boundary does not assert that theorem or
+weaken any existing fence to accommodate it.

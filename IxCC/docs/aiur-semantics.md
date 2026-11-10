@@ -1,5 +1,8 @@
 # Aiur witness-heap bytecode execution
 
+*Part of the [legacy Aiur bytecode model](aiur-backend.md#status-in-the-plan), which
+neither Aiur route of the plan uses; frozen, to be retired or re-pinned.*
+
 Checked bytecode rows now give concrete execution meaning to the
 [logical-trace derivation](aiur-backend.md). For a fixed pinned
 `IxCC.Vendor.Aiur.Bytecode.Toplevel`, `Trace.Validated.public_bytecode` proves:

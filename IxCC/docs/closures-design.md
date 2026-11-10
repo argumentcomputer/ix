@@ -1,7 +1,15 @@
 # Higher-order code: closed-world defunctionalisation
 
-Written 2026-11-09. **Status: planned (Phase 2).** Only the lines marked
-*implemented* describe code that exists; everything else is design. The
+Written 2026-11-09. **Status: in progress (Phase 2).** Milestone 1 (the
+defunctionalisation modules and their cheap proofs, outside the production
+pipeline) was started on 2026-11-10 at the owner's request, for the native
+route's generality; it is not yet in this tree. Only the lines marked
+*implemented* describe code that exists; everything else is design.
+
+**Place in the plan.** P8 is below SrcEval, so it adds nothing to the
+[spine](end-to-end.md#the-shared-spine)'s obligations, and the Aiur evaluator
+route does not need it: the evaluator has closures natively. It serves the x86
+route, where Fir must be first order. The
 [roadmap](roadmap.md) owns scheduling and exit criteria; the
 [compiler design](compiler-design.md) owns the pipeline contracts and the
 [pass identifiers](compiler-design.md#pass-identifiers) used here.

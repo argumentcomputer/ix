@@ -1,5 +1,8 @@
 # Canonical Aiur bytecode, version 1
 
+*Part of the [legacy Aiur bytecode model](aiur-backend.md#status-in-the-plan), which
+neither Aiur route of the plan uses; frozen, to be retired or re-pinned.*
+
 `aiur-bytecode/1` gives the complete pinned `IxCC.Vendor.Aiur.Bytecode.Toplevel` a
 canonical binary representation and BLAKE3 content root. The implementation
 is [IxCC.Aiur.Wire](../IxCC/Aiur/Wire.lean). It preserves every

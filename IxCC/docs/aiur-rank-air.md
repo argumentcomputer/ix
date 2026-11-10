@@ -1,5 +1,8 @@
 # Aiur rank AIR extraction
 
+*Part of the [legacy Aiur bytecode model](aiur-backend.md#status-in-the-plan), which
+neither Aiur route of the plan uses; frozen, to be retired or re-pinned.*
+
 [`Rank.ordered_message_of_balance`](../IxCC/Aiur/AIR/Rank/Sound.lean)
 proves that an ordered call's provider has a strictly larger natural rank.
 Its premises retain normalized scalar-u16 lookup balance, the demand-count

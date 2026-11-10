@@ -1,5 +1,8 @@
 # Aiur unit-counter analyzer soundness
 
+*Part of the [legacy Aiur bytecode model](aiur-backend.md#status-in-the-plan), which
+neither Aiur route of the plan uses; frozen, to be retired or re-pinned.*
+
 [`CounterAnalysis.find_body`](../IxCC/Aiur/CounterAnalysis/Sound.lean)
 proves universal soundness of the pinned `UnitCounter.find?` against the
 actual [`OracleEval.Body`](aiur-semantics.md) relation. Given the exact

@@ -2,8 +2,11 @@
 
 The certified compiler of [ix](../README.md), implemented in Lean 4. It
 compiles Ixon v4, ix's content-addressed Lean kernel terms, to x86-64. The
-goal is certified native code that competes with Lean → Clang. IxCC is the
-project's Lean namespace.
+goal is end-to-end certification for two back ends, grounded in Ixon and the
+certified kernel IxCK: native x86 code that competes with Lean → Clang, and
+Aiur, first through a fixed evaluator circuit that runs IxCC's source
+evaluator inside a proof system ([end-to-end certification](docs/end-to-end.md)).
+IxCC is the project's Lean namespace.
 
 The design combines three ideas:
 
@@ -12,7 +15,9 @@ The design combines three ideas:
   may prove stronger guarantees where a checker certifies them. They drive
   erasure, reference counting, borrowing and in-place reuse.
 - **Kernel-anchored correctness.** Compiled results are meant to equal the
-  Lean definition's value in every model of the checked environment.
+  claimed constant's value in every strong model of the environment the
+  certified kernel accepts, with that acceptance and the faithfulness of the
+  compiled source to the kernel's reading as premises discharged by proofs.
   Recursion and library replacements go through kernel-checked equation
   theorems.
 - **Untrusted heuristics, proved checkers.** Register allocation, reference-
@@ -21,7 +26,7 @@ The design combines three ideas:
 
 ## Status
 
-Reviewed 2026-11-09. The Phase 1 scalar pipeline and bounded plain-RC compiler
+Reviewed 2026-11-10. The Phase 1 scalar pipeline and bounded plain-RC compiler
 are implemented, from Src through register allocation and the Lir RC runtime to
 ELF (`--rc auto|on|off`). `Recheck.sound`, `Recheck.RcReplay.sound`,
 `Compiler.compile_sound`, `CompileClaim`, and `Ring0` (`verifyRing0Sip_sound`)
@@ -29,7 +34,9 @@ prove the accepted recheck, replay, and claim-verification paths correct
 relative to the source evaluator, run on the checked source the front end builds
 from the certificate, and the native driver model, on inputs where that source
 does not go wrong. Neither the front end's semantic faithfulness to the ingested
-program nor the connection to Lean's denotation is proved.
+program nor the connection to Lean's denotation is proved. The plan to close
+both, the *spine* shared by the two back ends, is in the
+[certification design](docs/certification-design.md).
 
 **What compiles today.** First-order Lean programs over `Nat` (below 2^63 at
 run time; a larger value is a resource failure) and inductive types, with
@@ -48,8 +55,8 @@ the checked source, which the front end builds from the certificate, is
 semantically faithful to the ingested program is not proved, and neither is
 that it means the Lean definition.
 
-The [roadmap](docs/roadmap.md) states the fragment exactly and plans the
-way to a generally useful certified compiler, with two flagship targets.
+The [roadmap](docs/roadmap.md) states the fragment exactly, plans the way to
+end-to-end certification for both back ends, and keeps the decision register.
 Main includes:
 - the scalar and bounded plain-RC compiler (`Compiler.Proof`, `CompileClaim`,
   `Ring0`), certificate rechecker (`Recheck`, `Recheck.RcReplay`), proof fences
@@ -59,8 +66,8 @@ Main includes:
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
   [stream/ELF layer](docs/x86-stream-objects.md);
-- a verifier-side model of [Aiur](docs/aiur-backend.md) bytecode, pinned from
-  an earlier ix revision; no IxCC IR lowers to it yet.
+- a legacy verifier-side model of an earlier [Aiur](docs/aiur-backend.md)
+  bytecode, frozen; neither Aiur route of the plan uses it.
 
 Phase 1.5's resource-checker work, final producer repin and consumer integration
 remain incomplete. New upstream Lean-to-Ixon certification provides interfaces
@@ -94,7 +101,8 @@ and build troubleshooting.
 ## Documentation
 
 Start with the [documentation guide](docs/README.md):
-- [Roadmap](docs/roadmap.md): mission, phases, benchmark rungs and decisions.
+- [Roadmap](docs/roadmap.md): mission, milestones, benchmark rungs and the decision register.
+- [End-to-end certification](docs/end-to-end.md): the theorems for the x86 and Aiur back ends, and what each trusts.
 - [Compiler design](docs/compiler-design.md): the pipeline and its correctness boundary.
 - [Trust ledger](docs/trusted-extern-ledger.md): remaining assumptions.
 

@@ -1,5 +1,8 @@
 # Checked Aiur static assignments
 
+*Part of the [legacy Aiur bytecode model](aiur-backend.md#status-in-the-plan), which
+neither Aiur route of the plan uses; frozen, to be retired or re-pinned.*
+
 [`Static.validate`](../IxCC/Aiur/Static/Check.lean) accepts a pinned
 bytecode toplevel, an advice policy, a logical trace, one natural rank per
 row, and local replay tapes. Successful validation returns a

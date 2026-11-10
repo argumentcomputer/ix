@@ -146,7 +146,11 @@ is defined.
 | Phase 0 … 5 | Delivery phases | [roadmap](roadmap.md#phases) |
 | IxOS-0 … IxOS-4, IxCK-1 … IxCK-3 | Steps of the two flagship targets | [roadmap](roadmap.md#flagship-targets) |
 | DR1 … DR9 | Items of the data, roots and effects design | [data, roots and effects](data-and-roots-design.md) |
-| CD1 … CD4 | Items of the certification-depth design | [certification design](certification-design.md) |
+| CD1 … CD4 | Items of the 2026-11-09 certification plan, now redistributed | [certification design](certification-design.md) |
+| SP-0 … SP-2, SP-A, SP-N | The spine's milestones | [certification design](certification-design.md#the-spines-work), [roadmap](roadmap.md#milestones) |
+| EV-0 … EV-2 | The evaluator interface's milestones | [evaluator interface](evaluator-interface.md) |
+| AR-1, AR-2; XB-1, XB-2; HD-0 … HD-3; RL-1 … RL-4 | Milestones of the Aiur routes, the x86 back half, hardening, and repository and landing | [roadmap](roadmap.md#milestones) |
+| DC-1 … DC-3, DO-1 … DO-22 | Decisions to confirm and open decisions | [roadmap](roadmap.md#decisions) |
 | Stage A | The byte-level verifiers' requirement that the certificate's relevance annotation equal `Src.Relevance.annotate`'s output on the certificate's table (`Recheck.checkCanonicalRelevance`) | this table |
 | S0, S1, S2 (x86) | Steps of the Sail reference-model route | [x86 reference model](x86-reference-model.md) |
 | S1–S12, N1–N14, `B*-*`, `R*-*` | Findings of the 2026-11 reviews | Each document that cites one says what the finding is |
@@ -174,8 +178,8 @@ statement is established in two stages:
 
 Code comments call the first stage *stage S* and the second *stage K*. A
 third route, *stage L*, states per program that the compiled code computes
-the Lean function itself; it is planned first, with stage K as research
-([certification design](certification-design.md)).
+the Lean function itself; the plan leads with stage K and keeps stage L as a
+side product (to confirm; [certification design](certification-design.md)).
 
 **What is proved (Phase 1, stage 1).** `Recheck.sound`
 (`IxCC/Recheck/Proof/Soundness.lean`) states the correctness
@@ -604,7 +608,7 @@ checked against the admitted closure.
 | `case T` | `T.casesOn` becomes a primitive case. |
 | `inline f` | Unfold matchers and `@[inline]`/`@[macro_inline]` definitions. |
 | `lazy f` | Pass arguments by name (`ite`, `dite`, `cond`, `Bool.or`, …). |
-| `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a stage-2 obligation, [certification design](certification-design.md#cd4-stage-k-semantic-adequacy-s8)). |
+| `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a lemma of the spine's SP-0, [certification design](certification-design.md#sp-0-same-bytes-and-the-conditional-statement)). |
 
 In the model, an accepted equation theorem forces its two sides to denote the
 same value, so every table entry preserves meaning. When an equation is
@@ -853,12 +857,15 @@ exit criterion. The [roadmap](roadmap.md#plan) orders them.
 
 | Extension | Status | Design |
 | --- | --- | --- |
-| Higher-order code: P8 defunctionalisation, P9 | Planned (Phase 2) | [Closures](closures-design.md) |
+| Higher-order code: P8 defunctionalisation, P9 | In progress (Phase 2: P8 milestone 1) | [Closures](closures-design.md) |
 | Heap completion: scalar fields, large and static objects, reuse, ownership checker | In progress (Phase 2) | [Data, roots and effects](data-and-roots-design.md#dr1-heap-completion) |
 | Fixed-width integers, `Int`, arrays, byte arrays, strings, library structures | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md) |
 | Structured roots, the byte ABI, the claim's ABI descriptor, state-machine effects | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md#dr6-structured-roots-and-the-byte-abi) |
 | Bignums: a limb library compiled by IxCC | Planned (Phase 4) | [Bignums](bignum-design.md) |
-| Front-end theorem, shape typing, stage L, stage K | Planned and research (track C) | [Certification depth](certification-design.md) |
+| End-to-end certification: the shared spine (same bytes and the conditional statement, adequacy and progress), the x86 and Aiur routes | Planned and research (the spine) | [End-to-end](end-to-end.md), [certification](certification-design.md) |
+| The evaluator contract and the Src image for the Aiur evaluator route | Planned (first) | [Evaluator interface](evaluator-interface.md) |
+| Shape typing, stage L | Planned, off the critical path | [Certification](certification-design.md) |
+| Resource bounds for the verifier against dishonest input | Planned | [Hardening](hardening-design.md) |
 | Scale and usability | Planned (Phase 5) | [below](#scale-and-usability) |
 
 ## Scale and usability
