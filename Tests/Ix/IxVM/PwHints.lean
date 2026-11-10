@@ -2,6 +2,7 @@ import Ix.IxVM.PwCheck
 import Ix.IxVM.ClaimHarness
 import Ix.Shard.Environment
 import Ix.KernelCheck.Step
+import Tests.Ix.IxVM.Harness
 
 /-!
 # The binder-data annotator (D2)
@@ -142,6 +143,68 @@ def run : IO UInt32 := do
   catch e =>
     IO.eprintln s!"[ixvm-pw-hints] FAILED: {e}"
     return 1
+
+/-! ## Through the circuit
+
+`ixvm-pw-circuit` runs a check claim of `def idPoly.{u} : (α : Sort u) → α → α
+:= fun α a => a` through the program with its honest data (accepted), with a
+wrong datum at the type's outer binder and at the value's inner binder (each
+rejected where the circuit validates it), and with the value's block dropped
+(a host error naming the missing key). It runs once the program reads the
+binder data (its source names `ixvm.pw`); before that it reports a skip. -/
+
+def idPolyType : Ixon.Expr := all (.sort 0) arrowEntry
+def idPolyValue : Ixon.Expr := lam (.sort 0) (lam (.var 0) (.var 0))
+
+def idPoly : Ixon.Constant where
+  info := .defn { kind := .defn, safety := .safe, lvls := 1, typ := idPolyType, value := idPolyValue }
+  sharing := #[]
+  refs := #[]
+  univs := #[.var 0]
+
+/-- Every record's blocks, from a witness's channel-7 streams. -/
+def blocksOf (io : Aiur.IOBuffer) : Except String (Array (Address × Array Block)) := do
+  let mut out := #[]
+  for ((ch, key), info) in io.map do
+    unless ch.n == channel && key.size == 32 do continue
+    let a : Address := ⟨⟨key.map (·.val.toUInt8)⟩⟩
+    out := out.push (a, ← decode ((io.data.getD ch #[]).extract info.idx (info.idx + info.len)))
+  return out
+
+/-- `c` with the blocks of the record at `a` changed by `f`. -/
+def tamper (c : Tests.Ix.IxVM.Case) (a : Address) (f : Array Block → Array Block) :
+    Except String Tests.Ix.IxVM.Case := do
+  let io := c.witness.inputIOBuffer
+  let tables := (← blocksOf io).map fun (b, bs) => if b == a then (b, f bs) else (b, bs)
+  let io := (seed (stripHints io) tables).1
+  return { c with witness := { c.witness with inputIOBuffer := io } }
+
+/-- `nodes` with the node at `i` replaced, in the block `(ekind, eidx)`. -/
+def setNodeAt (ekind eidx i : Nat) (n : Node) (bs : Array Block) : Array Block :=
+  bs.map fun b => if b.ekind == ekind && b.eidx == eidx then { b with nodes := b.nodes.set! i n } else b
+
+def circuitCases : Except String (Array Tests.Ix.IxVM.Builder) := do
+  let ctx ← _root_.Ix.ClaimContext.ofDefaultTable
+  let addr := Address.blake3 (Ixon.ser idPoly)
+  let env := ({} : Ixon.Env).storeConst addr idPoly
+  let env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
+  let honest ← Tests.Ix.IxVM.Case.ofClaim "pw: idPoly with the kernel's data" env (.check ctx addr none)
+  let wrongType ← tamper honest addr (setNodeAt 0 0 0 never)
+  let wrongValue ← tamper honest addr (setNodeAt 0 1 1 always)
+  let dropped ← tamper honest addr (·.filter fun b => !(b.ekind == 0 && b.eidx == 1))
+  return #[
+    fun _ => pure honest,
+    fun _ => pure { wrongType with label := "pw: idPoly, type's outer binder never", accept := false },
+    fun _ => pure { wrongValue with label := "pw: idPoly, value's inner binder always zero", accept := false },
+    fun _ => pure { dropped with label := "pw: idPoly, the value's data missing", accept := false,
+                                 rejectsWith := some "missing hint data: ixvm.pw at record" }]
+
+def circuit : IO UInt32 := do
+  let sources ← Tests.Ix.IxVM.programSources
+  unless sources.any (fun (_, text) => (text.splitOn "\"ixvm.pw\"").length > 1) do
+    IO.println "[ixvm-pw-circuit] skipped: the program does not read the binder data yet"
+    return 0
+  Tests.Ix.IxVM.runCases "ixvm-pw-circuit" (← IO.ofExcept circuitCases)
 
 /-! ## The corpus measurement -/
 
