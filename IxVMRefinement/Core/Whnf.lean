@@ -260,7 +260,7 @@ theorem applyBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
     -- the consumed list is short: L0's bound, through `Lists::length`'s own calls
     obtain ⟨rom, hrv, hmemo⟩ := good.2.2.2
     have hlt := length_lt hrv hmemo ev81
-      (by intro x hx; simp only [List.mem_cons] at hx; rcases hx with rfl | hx <;> simp [hx]) hcons
+      (by intro x hx; rcases List.mem_cons.mp hx with rfl | hx; exacts [by simp, by simp [hx]]) hcons
     have hclen : ((As.take Ts.length).reverse ++ []).length = Ts.length := by simp; omega
     rw [hclen] at hlt
     have hn : Ts.length = 1 := by
