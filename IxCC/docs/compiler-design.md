@@ -446,6 +446,17 @@ constructor at Lam and Anf (at the depth budget and one level past it, through
 the middle end's replay, a shrink step and the back end), and on a walk whose
 copy brings it to its depth budget and one step past it.
 
+*Known gap.* The depth budgets bound recursion on term structure, not recursion
+along a list whose length the certificate controls. One such traversal is known
+to overflow an 8 MiB stack: `Recheck.checkCanonicalRelevance` compares the
+certificate's annotation with the re-derived one by `decide (ann = rel)`, and the
+compiled list equality it uses takes a stack frame per element. A 560-byte
+closure whose honest certificate is 2.6 MB (about 133,000 elements) aborts
+`ixcc check-cert` under `LEAN_STACK_SIZE_KB=8192`; with a 16 MiB stack or the
+executable's default it is checked normally. The byte-level verifiers make the
+same call. The other list traversals on the verifier path have not been audited
+for this.
+
 **Work.** Under shrink, the census counts read at each binding walk the rest of
 its body, so a round reads up to the global's depth times its nodes. The walk
 therefore charges every step before taking it (`Walk.stepCost`: one, plus the
