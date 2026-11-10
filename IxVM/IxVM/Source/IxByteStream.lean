@@ -23,11 +23,18 @@ def read_byte_stream := aiur_fn⟦
     }
 ⟧
 
+  -- A stream of fewer than 2^32 bytes. `read_byte_stream` builds exactly `len` bytes by its own
+  -- recursion, so the bound is a range check of `len` (the comparison checks both operands below
+  -- 2^32). This replaces a walk of the stream (`WordLists::depth_checked`, one row per byte), which
+  -- was needed while the stream was unconstrained advice that could be cyclic (#648); the formal
+  -- program has no unconstrained calls.
+
 def read_finite_byte_stream := aiur_fn⟦
   fn read_finite_byte_stream(channel: Field, idx: Field, len: Field) -> Bytes::Stream {
-      let bytes = read_byte_stream(channel, idx, len);
-      WordLists::depth_checked(bytes);
-      bytes
+      match UInt32::less_than_fields(0, len) {
+        0 => {  (&(Lists::Node::Nil)) } ,
+        _ => {  read_byte_stream(channel, idx, len) } ,
+      }
     }
 ⟧
 
