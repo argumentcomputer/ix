@@ -1,8 +1,8 @@
 //! Executor selection. With feature `native`, a loaded program runs on the
 //! native executor generated from exactly that program, if one is linked
-//! (`crates/formal-generated`) and the program has no depth circuits;
-//! otherwise, or with `IX_PROVER_EXECUTOR=interpreter`, on the interpreter.
-//! Both produce identical records.
+//! (`crates/formal-generated`); otherwise, or with
+//! `IX_PROVER_EXECUTOR=interpreter`, on the interpreter. Both produce
+//! identical records, including the call heights depth circuits read.
 use crate::Field;
 use aiur::{Execution, ExecutionError, hints::PreparedHints};
 use record_pool::RecordReservation;
@@ -37,12 +37,8 @@ impl Executor {
         ));
       },
     }
-    // Generated kernels do not record call heights, which depth circuits
-    // read, so a program that records them runs on the interpreter.
     #[cfg(feature = "native")]
-    if !program.records_depth()
-      && let Some(kernel) = Kernel::matching(program)
-    {
+    if let Some(kernel) = Kernel::matching(program) {
       return Ok(Self::Native(kernel));
     }
     #[cfg(not(feature = "native"))]

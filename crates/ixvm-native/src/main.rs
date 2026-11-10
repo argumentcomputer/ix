@@ -17,10 +17,6 @@ use aiur::native::record_diff;
 use multi_stark::types::Val;
 use std::{error::Error, time::Instant};
 
-/// Why `prove` refuses a program with depth circuits.
-const DEPTH: &str = "generated executors do not record call heights, so their \
-  records cannot be proven against a program with depth circuits";
-
 fn median(mut samples: Vec<f64>) -> f64 {
   samples.sort_by(f64::total_cmp);
   samples[samples.len() / 2]
@@ -50,9 +46,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let trace = package.trace.ok_or("package has no circuits")?;
     let mut program = program;
     program.track_depth(&trace)?;
-    if program.records_depth() {
-      return Err(DEPTH.into());
-    }
     return prove(&program, trace, cli.get(3).ok_or(usage)?);
   }
   if mode == "advice" {

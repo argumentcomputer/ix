@@ -74,8 +74,7 @@ opaque Program.identity (program : @& Program) : IO ByteArray
 
 /-- The executor `program` runs on (`interpreter`, or a linked native
 executor such as `native-ixvm`), the fingerprint a native executor generated
-from it carries, and whether it records call heights for depth circuits,
-which keeps it on the interpreter. -/
+from it carries, and whether it records call heights for depth circuits. -/
 @[extern "rs_formal_program_executor"]
 opaque Program.executor (program : @& Program) : IO (String × String × Bool)
 

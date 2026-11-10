@@ -175,9 +175,12 @@ generated from, `ix` reports it and runs the interpreter, or fails under
 Executor selection (`crates/ix-prover/src/executor.rs`) happens once per
 loaded artifact. With `native`, a program runs on the kernel whose
 fingerprint matches its own (`native-ixvm`, `native-verifier` or
-`native-aggregation`), or on the interpreter if none matches. Generated
-kernels do not record call heights, so a program whose trace has depth
-circuits (`CheckedProgram::track_depth`) always runs on the interpreter.
+`native-aggregation`), or on the interpreter if none matches. For a
+program whose trace has depth circuits (`CheckedProgram::track_depth`), the
+runtime records each query's call height as the interpreter does: it keeps
+a stack of the pending queries' SCCs and heights, raised by finished and
+cached callees in the same SCC, so generated code is the same with or
+without depth circuits.
 `IX_PROVER_EXECUTOR=interpreter` forces the interpreter. A job whose map
 overrides disagree with their tables fails to bind its kernel and runs on
 the interpreter. Single-claim reports (`crates/ix-prover/src/tools.rs`) name

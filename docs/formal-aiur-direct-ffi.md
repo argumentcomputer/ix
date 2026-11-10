@@ -200,8 +200,8 @@ binary encodings:
   of the population description, polynomials as trees;
   `compiled_fingerprint` covers it with the compiled ABI and seed contracts.
 
-Generated kernels do not record call heights, so a program whose trace has
-depth circuits runs on the interpreter (`Executor::select`).
+Generated kernels record call heights for depth circuits in the runtime,
+so the fingerprints do not cover the trace's SCCs.
 
 ## Formalization boundary
 

@@ -221,8 +221,7 @@ extern "C" fn rs_formal_program_identity(
 
 /// `Ix.FormalProver.Program.executor : @& Program → IO (String × String × Bool)`:
 /// the executor the program runs on, its native fingerprint, and whether it
-/// records call heights for depth circuits, which keeps it on the
-/// interpreter.
+/// records call heights for depth circuits.
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_program_executor(
   program: Borrowed<'_, FormalProgram>,

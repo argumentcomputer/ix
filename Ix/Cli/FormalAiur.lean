@@ -193,14 +193,13 @@ def generatedName : FormalProver.Target → String
 was generated from exactly the selected program: under `IX_FORMAL_NATIVE=1`
 a stale executor is an error, otherwise it is reported. A stale executor is
 never used: the program runs on the interpreter, which produces identical
-records and proofs. A program with depth circuits always runs on the
-interpreter, since generated executors do not record call heights. -/
+records and proofs. -/
 def checkExecutor (target : FormalProver.Target) (s : Selected) : IO Unit := do
   if (← IO.getEnv "IX_PROVER_EXECUTOR") == some "interpreter" then return
   let name := generatedName target
   unless (← FormalProver.executors).contains s!"native-{name}" do return
-  let (executor, fingerprint, depth) ← s.program.executor
-  if executor == s!"native-{name}" || depth then return
+  let (executor, fingerprint, _) ← s.program.executor
+  if executor == s!"native-{name}" then return
   let message := s!"the linked native {name} executor was generated from a different \
     program than {s.path} (native fingerprint {fingerprint}), so it runs on the interpreter. \
     Rebuild `ix` (`lake build ix`) to generate it for the current programs."
