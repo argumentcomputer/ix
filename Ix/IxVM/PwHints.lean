@@ -238,6 +238,8 @@ structure KernelEnv where
   owners : Array Address
   installed : Nat
   refused : Nat
+  /-- why each refused record was refused (the first reason) -/
+  failures : Array (Address × String) := #[]
 
 /-- The index of `env`, as `Ix.Kernel.mkFEnv` builds it (the newest
 constant of a key wins; counters from the oldest), by a loop rather than
@@ -255,11 +257,12 @@ def reindex (env : Ix.Kernel.Env .anon) : Ix.Kernel.FEnv .anon := Id.run do
 /-- One declaration through phase A of IxC's fold; on failure, the
 environment as it was. -/
 def installDecl (ev : Ix.Kernel.Evidences .anon) (fe : Ix.Kernel.FEnv .anon) (pos : Nat)
-    (d : Ix.Kernel.Declaration .anon) : Ix.Kernel.FEnv .anon × Nat × Bool :=
+    (d : Ix.Kernel.Declaration .anon) :
+    Ix.Kernel.FEnv .anon × Nat × Option (Ix.Kernel.CheckError .anon) :=
   let before := fe.env
   match Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev (pos, fe, #[]) d {} with
-  | .ok ((pos', fe', _), _) => (fe', pos', true)
-  | .error _ => (reindex before, pos + 1, false)
+  | .ok ((pos', fe', _), _) => (fe', pos', none)
+  | .error (e, _) => (reindex before, pos + 1, some e)
 
 /-- A record's member types (an inductive's constructors included) as
 axioms, with their keys and level counts: what the data need of a record the
@@ -301,36 +304,43 @@ as it was. Partial and unsafe records go through the typing tier. A record
 the kernel does not install gets its member types as axioms
 (`memberAxioms`). Returns the environment, the declarations installed and the
 records refused. -/
-def install (s : Setup) (addresses : Array Address) : Ix.Kernel.FEnv .anon × Nat × Nat := Id.run do
+def install (s : Setup) (addresses : Array Address) :
+    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
   let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
   let mut st : Ix.Kernel.Reader.State .anon := {}
   let mut pos := 0
   let mut ok := 0
-  let mut bad := 0
+  let mut failures : Array (Address × String) := #[]
   for a in addresses do
-    let mut failed := false
+    let mut failure : Option String := none
     let mut unread := false
     match s.tierRead a with
     | some (.ok d) =>
       let (fe', err) := Benchmarks.Kernel.CheckIxeStep.stepTier fe fe d
       fe := fe'
-      if err.isSome then failed := true else ok := ok + 1
-    | some (.error _) => failed := true
+      match err with
+      | some e => failure := some (Benchmarks.Kernel.CheckIxeStep.tierOutcome d.safety e).2
+      | none => ok := ok + 1
+    | some (.error e) => failure := some (Benchmarks.Kernel.CheckIxeStep.readOutcome e).2
     | none =>
       match s.read st a with
-      | .error _ => failed := true
+      | .error e => failure := some (Benchmarks.Kernel.CheckIxeStep.readOutcome e).2
       | .ok rd =>
         st := st.commit rd
         -- a recursor record reads with its block: if the block was not
         -- installed, its recursors are not either
         if rd.decls.isEmpty then unread := true
         for d in rd.decls do
-          let (fe', pos', good) := installDecl s.evidence fe pos d
+          let (fe', pos', err) := installDecl s.evidence fe pos d
           fe := fe'
           pos := pos'
-          if good then ok := ok + 1 else failed := true
-    if failed then bad := bad + 1
-    if failed || unread then
+          match err with
+          | none => ok := ok + 1
+          | some e =>
+            if failure.isNone then
+              failure := some (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
+    if let some why := failure then failures := failures.push (a, why)
+    if failure.isSome || unread then
       if let some c := s.store[a]? then
         for d in memberAxioms s.cx a c do
           let fresh := match d with
@@ -340,7 +350,7 @@ def install (s : Setup) (addresses : Array Address) : Ix.Kernel.FEnv .anon × Na
             let (fe', pos', _) := installDecl s.evidence fe pos d
             fe := fe'
             pos := pos'
-  return (fe, ok, bad)
+  return (fe, ok, failures)
 
 /-- The kernel's environment for a view. -/
 def KernelEnv.ofView (v : View) : Except String KernelEnv := do
@@ -370,8 +380,8 @@ def KernelEnv.ofView (v : View) : Except String KernelEnv := do
       unless (roots oc).isEmpty do owners := owners.push o
   let first := pre.records.map (·.1)
   let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ owners)
-  let (fe, installed, refused) := install s addresses
-  return { setup := s, fe, owners, installed, refused }
+  let (fe, installed, failures) := install s addresses
+  return { setup := s, fe, owners, installed, refused := failures.size, failures }
 
 /-! ## The walk
 
