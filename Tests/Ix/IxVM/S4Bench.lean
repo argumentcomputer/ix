@@ -176,17 +176,17 @@ def moduleShard (env : Lean.Environment) (pre : Lean.Name) : IO (Unit → Except
   for (n, _) in env.constants.toList do
     if let some i := env.getModuleIdxFor? n then
       if pre.isPrefixOf env.header.moduleNames[i.toNat]! then names := names.push n
-  let names := names.qsort Lean.Name.lt
-  let ixonEnv ← loadSharedIxonEnv names env
+  let sorted := names.qsort Lean.Name.lt
+  let ixonEnv ← loadSharedIxonEnv sorted env
   let mut keys : Std.HashSet Address := {}
-  for n in names do
+  for n in sorted do
     if let some a := ixonEnv.getAddr? (Ix.Name.fromLeanName n) then
       if let some c := ixonEnv.getConst? a then keys := keys.insert (groupOf a c.info)
   let mut owned : Array Address := #[]
   for (a, lc) in ixonEnv.consts do
     if let some c := lc.get? then
       if keys.contains (groupOf a c.info) then owned := owned.push a
-  IO.println s!"[ixvm-s4-bench] module shard {pre}: {names.size} declarations, {owned.size} owned of \
+  IO.println s!"[ixvm-s4-bench] module shard {pre}: {sorted.size} declarations, {owned.size} owned of \
     {ixonEnv.consts.size} in the closure"
   return fun _ => do
     if owned.isEmpty then throw s!"the module shard {pre} selected nothing"
@@ -276,6 +276,12 @@ def modelled : List String := ["Option", "List", "IxVMInd.Even", "IxVMInd.Tree",
 generated records followed by the block's own `indDecl`), from the ingress of
 its closure: the block's `InductiveVal`, the closure's size, the number of
 declarations, and the block's. -/
+/-- Is `d` an inductive declaration that declares `seed`? -/
+def declaresInductive (seed : Lean.Name) (d : Ix.Kernel.Declaration .source) : Bool :=
+  match d with
+  | .indDecl .. => d.names.any (Ix.RoleEvidence.toLeanName · == seed)
+  | _ => false
+
 def blockDecls (env : Lean.Environment) (seed : Lean.Name) :
     IO (Lean.InductiveVal × Nat × Nat × Array (Ix.Kernel.Declaration .source)) := do
   let some (.inductInfo v) := env.find? seed | throw (IO.userError s!"{seed} is not an inductive")
@@ -288,9 +294,7 @@ def blockDecls (env : Lean.Environment) (seed : Lean.Name) :
   -- the block's own declaration names its types, constructors and recursors;
   -- the modeller's records are keyed by derivations of those names (a
   -- recursor's `R._model` and `R._model.iota_j`, a constructor's `C._model`)
-  let some blockDecl := decls.find? fun d => match d with
-      | .indDecl .. => d.names.any (Ix.RoleEvidence.toLeanName · == seed)
-      | _ => false
+  let some blockDecl := decls.find? (declaresInductive seed)
     | throw (IO.userError s!"{seed}: no inductive declaration in the ingress")
   let blockNames := blockDecl.names.map Ix.RoleEvidence.toLeanName
   let ours := decls.filter fun d => d.names.any fun k =>
@@ -372,20 +376,20 @@ Lean as its types and constructors; Lean's kernel generates its recursor. -/
 def convDecl : Ix.Kernel.Declaration .source → Except String Lean.Declaration
   | .defnDecl cv v h => do
     let name := Ix.RoleEvidence.toLeanName cv.name
-    return .defnDecl { name, levelParams := cv.levelParams.map lpName, type := ← convExpr cv.type,
-      value := ← convExpr v, hints := convHint h, safety := .safe, all := [name] }
+    return .defnDecl { name, levelParams := cv.levelParams.map lpName, type := (← convExpr cv.type),
+      value := (← convExpr v), hints := convHint h, safety := .safe, all := [name] }
   | .thmDecl cv v => do
     let name := Ix.RoleEvidence.toLeanName cv.name
-    return .thmDecl { name, levelParams := cv.levelParams.map lpName, type := ← convExpr cv.type,
-      value := ← convExpr v, all := [name] }
+    return .thmDecl { name, levelParams := cv.levelParams.map lpName, type := (← convExpr cv.type),
+      value := (← convExpr v), all := [name] }
   | .indDecl block nP => do
     let tys := block.filterMap fun ci => match ci with | .indInfo cv _ => some cv | _ => none
     let ctors := block.filterMap fun ci => match ci with | .ctorInfo cv _ _ => some cv | _ => none
     let [ty] := tys | throw s!"generated block with {tys.length} types"
     let ctors ← ctors.mapM fun c => do
-      return ({ name := Ix.RoleEvidence.toLeanName c.name, type := ← convExpr c.type } : Lean.Constructor)
+      return ({ name := Ix.RoleEvidence.toLeanName c.name, type := (← convExpr c.type) } : Lean.Constructor)
     return .inductDecl (ty.levelParams.map lpName) nP
-      [{ name := Ix.RoleEvidence.toLeanName ty.name, type := ← convExpr ty.type, ctors }] false
+      [{ name := Ix.RoleEvidence.toLeanName ty.name, type := (← convExpr ty.type), ctors }] false
   | _ => throw "unexpected generated record kind"
 
 def isAuxKey : Ix.Kernel.Key .source → Bool
