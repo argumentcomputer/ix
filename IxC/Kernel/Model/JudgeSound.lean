@@ -9,7 +9,7 @@ import IxC.Kernel.Verify.InferLeaves
 public section
 
 /-!
-# What the model tier needs of a judgement package (lane l5)
+# What the model tier needs of a judgement package
 
 The value-kind harvests (`Model/Harvest.lean`) read the runs a declaration
 record carries through five facts and nothing else: the annotation's scoping

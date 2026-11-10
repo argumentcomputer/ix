@@ -5,7 +5,7 @@ public import IxC.Kernel.CoreDefs
 @[expose] public section
 
 /-!
-# The transport kit: free-variable renaming and environment extension (lane l5)
+# The transport kit: free-variable renaming and environment extension
 
 What the rules' transport (`Rules/Transport.lean`) reads of its two moves:
 

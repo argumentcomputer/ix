@@ -6,7 +6,7 @@ import IxC.Kernel.Semantics.Frame
 public section
 
 /-!
-# An accepted subject reads (lane l5)
+# An accepted subject reads
 
 `acceptedReads_of` (`Model/Tiers.lean`) over derivations: what inference at the
 full grade derives, the reading reads. Used by the derivation package's

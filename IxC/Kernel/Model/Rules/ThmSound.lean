@@ -10,7 +10,7 @@ import IxC.Kernel.Verify.Leaves
 public section
 
 /-!
-# The theorem-unfolding rule is sound (S2's N1, lane l5)
+# The theorem-unfolding rule is sound
 
 `Red.deltaThm` replaces a theorem constant by its stored value. The model keeps
 no equation between a theorem's leaf and its value's reading, so the rule
@@ -23,7 +23,7 @@ inference).
 
 This keeps the kernel's own rules inputs (`RulesInputs.ofEnvModelM`) as they are:
 the kernel stores a theorem's raw value, which need not read, so it could not
-supply S2's `thm_val` input.
+supply a model input equating a theorem's value with its leaf.
 -/
 
 namespace Ix.Kernel.Model.Rules

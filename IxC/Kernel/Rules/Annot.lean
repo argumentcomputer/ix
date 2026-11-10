@@ -5,7 +5,7 @@ public import IxC.Kernel.CoreDefs
 @[expose] public section
 
 /-!
-# The annotation pass, relationally (lane l5)
+# The annotation pass, relationally
 
 `annotateBody` (`Core.lean:2000`) as a relation: `Annot d e e'` says `e'` is an
 annotation of `e` at depth `d`. The pass is structural except at three places,

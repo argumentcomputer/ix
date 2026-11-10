@@ -1069,7 +1069,7 @@ the annotate link), and the harvest is the species with the erasure
 link read **directly** off the exposed equation — no `denote_install`,
 no `defn_eq`/`thm_ok` detour. -/
 
-/-- **The `opaque` harvest over a judgement package** (lane l5): the proof
+/-- **The `opaque` harvest over a judgement package**: the proof
 below, with every run read through `JudgeSound`. `harvestOpaque` is its kernel
 instance; the rules tier's derivations give another. -/
 theorem harvestOpaqueJ {J : Judgements md}

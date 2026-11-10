@@ -18,14 +18,14 @@ import all IxC.Kernel.PropWhen
 public section
 
 /-!
-# The derivation package (lane l5, obligation L5)
+# The derivation package
 
 `rulesJ` is the judgement package of the rules tier: annotation is `Annot`
 (`Rules/Annot.lean`), inference is `Infer` at the full grade, conversion is
 `DefEq`, a sort check is a reduction to a sort, the proposition test is a level
 that is zero under every assignment, and a theorem is stored with its annotated
-value (decision D11). It is the package the records an IxVM refinement produces
-are stated over.
+value (so that the value can be read in the model). It is the package the records
+an IxVM refinement produces are stated over.
 
 `judgeSound_rulesJ` discharges `JudgeSound` at any model whose rules inputs hold,
 from the derivations' soundness (`Rules.infer_sound`, `Rules.defeq_sound`) and
