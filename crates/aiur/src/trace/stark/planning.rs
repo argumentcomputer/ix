@@ -42,7 +42,7 @@ pub struct Options {
   /// Prove with this layout instead of planning one. A planned layout is
   /// the one host population gets, whatever the population placement; a
   /// forced one is proven with the configured placement as given.
-  pub layout: Option<super::streaming::BatchLayout>,
+  pub layout: Option<streaming::BatchLayout>,
   /// A JSON file holding a [`super::streaming::BatchLayout`], or a proof
   /// report whose `plan.layout` holds one; [`Options::read`] loads it into
   /// `layout`.
@@ -80,9 +80,10 @@ impl Options {
     if let Some(path) = result.layout_file.take() {
       result.layout = Some(read_layout(&path)?);
     }
-    result.max_ram_bytes = Some(result.max_ram_bytes.unwrap_or_else(|| {
-      available_memory().map(|n| n / 100 * 85).unwrap_or(8 << 30)
-    }));
+    result.max_ram_bytes =
+      Some(result.max_ram_bytes.unwrap_or_else(|| {
+        available_memory().map_or(8 << 30, |n| n / 100 * 85)
+      }));
     result.validate()?;
     Ok(result)
   }
@@ -120,7 +121,7 @@ impl Options {
   /// The layout to prove with, if the caller fixed one.
   pub fn forced_layout(
     &self,
-  ) -> Result<Option<super::streaming::BatchLayout>, String> {
+  ) -> Result<Option<streaming::BatchLayout>, String> {
     match (&self.layout, &self.layout_file) {
       (Some(layout), _) => Ok(Some(layout.clone())),
       (None, Some(path)) => read_layout(path).map(Some),
@@ -141,9 +142,7 @@ impl Options {
 
 /// Read a layout file: a bare [`super::streaming::BatchLayout`], or a JSON
 /// object holding one at `layout` or `plan.layout` (a proof report).
-pub fn read_layout(
-  path: &str,
-) -> Result<super::streaming::BatchLayout, String> {
+pub fn read_layout(path: &str) -> Result<streaming::BatchLayout, String> {
   let value: serde_json::Value = serde_json::from_slice(
     &std::fs::read(path).map_err(|e| format!("{path}: {e}"))?,
   )
@@ -243,7 +242,7 @@ pub struct BatchPlan {
   #[serde(default)]
   pub device_budget_bytes: Option<u64>,
   #[serde(default, skip_serializing_if = "Option::is_none")]
-  pub layout: Option<super::streaming::BatchLayout>,
+  pub layout: Option<streaming::BatchLayout>,
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
   pub population: Vec<PopulationStatistics>,
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -783,6 +782,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       rows /= 2;
     }
   }
+
+  #[cfg_attr(not(feature = "cuda"), allow(clippy::unnecessary_wraps))]
 
   pub(super) fn device_budget(
     &self,

@@ -350,9 +350,8 @@ impl DepthPlan {
   }
 }
 
-/// The recorded height of the callee query `args` of a slot: from whichever
-/// of the callee circuit's functions recorded it, or from the deferred
-/// heights when another record owns it.
+/// The recorded height of the callee query `args` of a slot, from whichever
+/// of the callee circuit's functions recorded it.
 fn callee_depth<B: FieldBackend>(
   record: &Execution<B>,
   callees: &[usize],
@@ -367,10 +366,7 @@ fn callee_depth<B: FieldBackend>(
       return Ok(table.depth(id));
     }
   }
-  callees
-    .iter()
-    .find_map(|&f| record.deferred_height(f, args))
-    .ok_or_else(|| "missing recorded callee height".into())
+  Err("missing recorded callee height".into())
 }
 
 /// One SCC of recursive circuits in a record (follow-ups G1/G2).

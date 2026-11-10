@@ -36,6 +36,7 @@ impl Entry {
   }
 
   #[inline(always)]
+  #[allow(clippy::cast_possible_truncation)] // The tag keeps the low 32 bits of the folded hash.
   pub(crate) fn tag(hash: u64) -> u32 {
     (hash ^ (hash >> 32)) as u32
   }
@@ -241,7 +242,7 @@ impl<B: FieldBackend> QueryTable<B> {
     );
     let row = self.len();
     let entry = Entry::new(
-      self.budget.row(row, self.stride * std::mem::size_of::<B::Element>())?,
+      self.budget.row(row, self.stride * size_of::<B::Element>())?,
       hash,
     );
     if row & self.chunk_mask == 0 {
@@ -323,19 +324,17 @@ impl<B: FieldBackend> QueryTable<B> {
   }
 
   pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
-    let word = std::mem::size_of::<B::Element>();
+    let word = size_of::<B::Element>();
     let payload = self.rows.iter().map(Vec::len).sum::<usize>() * word;
     let vectors = self.rows.iter().map(Vec::capacity).sum::<usize>() * word
-      + self.rows.capacity() * std::mem::size_of::<Vec<B::Element>>()
+      + self.rows.capacity() * size_of::<Vec<B::Element>>()
       + self.counts.capacity() * 8
-      + self.dense_index.capacity() * std::mem::size_of::<usize>()
+      + self.dense_index.capacity() * size_of::<usize>()
       + self.static_map.as_ref().map_or(0, |map| map.counts.len() * 8);
     let index = if self.index.capacity() == 0 {
       0
     } else {
-      self.index.capacity().next_power_of_two()
-        * (std::mem::size_of::<Entry>() + 1)
-        + 16
+      self.index.capacity().next_power_of_two() * (size_of::<Entry>() + 1) + 16
     };
     (payload, vectors, index)
   }

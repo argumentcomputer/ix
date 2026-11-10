@@ -51,8 +51,12 @@ impl Budget {
   /// `row_bytes` each. A table beyond [`MAX_ROWS`] rows is a resource error,
   /// reservation or not, as if it had exceeded its record budget.
   #[inline(always)]
-  pub fn row(&self, row: usize, row_bytes: usize) -> Result<u32, BudgetError> {
-    u32::try_from(row).map_err(|_| {
+  pub(crate) fn row(
+    &self,
+    row: usize,
+    row_bytes: usize,
+  ) -> Result<u32, BudgetError> {
+    u32::try_from(row).ok().ok_or_else(|| {
       let row_bytes = row_bytes.max(1);
       BudgetError::Exceeded {
         bytes: row.saturating_add(1).saturating_mul(row_bytes),
@@ -83,8 +87,8 @@ impl Budget {
         .saturating_add(additional)
         .max(values.capacity().saturating_mul(2))
         .max(8);
-      self.reserve(capacity.saturating_mul(std::mem::size_of::<T>()))?;
-      let old = values.capacity().saturating_mul(std::mem::size_of::<T>());
+      self.reserve(capacity.saturating_mul(size_of::<T>()))?;
+      let old = values.capacity().saturating_mul(size_of::<T>());
       values.reserve_exact(capacity - values.len());
       reservation.release(old);
     }
@@ -105,7 +109,7 @@ impl Budget {
         .saturating_add(1)
         .next_power_of_two()
         .saturating_mul(4)
-        .saturating_mul(std::mem::size_of::<T>() + 1);
+        .saturating_mul(size_of::<T>() + 1);
       self.reserve(bytes)?;
       replaced =
         ReplacedAllocation { reservation: self.0.clone(), bytes: *charged };

@@ -409,7 +409,7 @@ impl<B: FieldBackend> FillPlan<B> {
     &self,
     program: &CheckedProgram<B>,
     plan: &FunctionPlan,
-  ) -> super::describe::FunctionDescription {
+  ) -> describe::FunctionDescription {
     use super::describe::{
       FunctionDescription, HintSite, KernelDescription, NodeDescription as N,
       Operand, WriteDescription,

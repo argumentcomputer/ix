@@ -5,7 +5,11 @@ use multi_stark::{p3_field::PrimeField64, types::Val};
 use serde_json::Value;
 use std::path::Path;
 
-pub fn report(output: &Path, kind: Kind, report: &Value) -> Result<(), String> {
+pub(crate) fn report(
+  output: &Path,
+  kind: Kind,
+  report: &Value,
+) -> Result<(), String> {
   let path = match kind {
     Kind::Ixvm => {
       std::path::PathBuf::from(format!("{}.report.json", output.display()))
@@ -22,7 +26,7 @@ pub fn report(output: &Path, kind: Kind, report: &Value) -> Result<(), String> {
 /// (an IxVM proof file, or a recursive proof's directory), and with
 /// `export_input` the invocation of a verifier over it.
 #[allow(clippy::too_many_arguments)]
-pub fn proof(
+pub(crate) fn proof(
   output: &Path,
   export_input: bool,
   kind: Kind,

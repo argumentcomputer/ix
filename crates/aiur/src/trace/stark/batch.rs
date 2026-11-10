@@ -528,7 +528,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         let start = std::time::Instant::now();
         let (supplied, witness) = receiver
           .recv()
-          .map_err(|_| "shard population worker stopped".to_owned())?;
+          .map_err(|e| format!("shard population worker stopped: {e}"))?;
         stall += start.elapsed();
         if supplied != shard {
           return Err(format!(
@@ -546,7 +546,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let consumed = consume();
       producer
         .join()
-        .map_err(|_| "shard population worker panicked".to_owned())?;
+        .ok()
+        .ok_or_else(|| "shard population worker panicked".to_owned())?;
       Ok::<_, String>(consumed)
     })?;
     Ok(Streamed { proof: proof?, stall, pipelined: true })
@@ -605,7 +606,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }
       active.push(height != 0);
       if height != 0 {
-        degrees.push(height.ilog2() as u8);
+        degrees.push(
+          u8::try_from(height.ilog2())
+            .map_err(|e| format!("trace height: {e}"))?,
+        );
       }
     }
     self.check_shape(&active, &degrees)

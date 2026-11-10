@@ -2,17 +2,8 @@ use super::*;
 use multi_stark::batch::Retention;
 
 fn grouped() -> (CheckedProgram, TraceArtifact) {
-  #[derive(serde::Deserialize)]
-  struct Package {
-    program: Program,
-    trace: TraceArtifact,
-  }
-  let package: Package = serde_json::from_str(include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/grouping.json"
-  )))
-  .unwrap();
-  (package.program.check().unwrap(), package.trace)
+  let Traced { program, trace } = grouping_fixture();
+  (program.check().unwrap(), trace)
 }
 
 #[test]
@@ -78,7 +69,7 @@ fn fixed_log_heights_prove_one_all_active_shard() {
   let rows = backend.record_rows(&record).unwrap();
   let logs: Vec<u8> = rows
     .iter()
-    .map(|&n| n.max(1).next_power_of_two().ilog2() as u8 + 1)
+    .map(|&n| u8::try_from(n.max(1).next_power_of_two().ilog2()).unwrap() + 1)
     .collect();
   let options = planning::Options {
     fixed_log_heights: Some(logs.clone()),

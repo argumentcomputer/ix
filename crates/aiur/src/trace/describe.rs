@@ -200,7 +200,9 @@ impl PopulationDescription {
     }
     fn operands(w: &mut Writer, values: &[Operand]) {
       w.usize(values.len());
-      values.iter().for_each(|&v| operand(w, v));
+      for &v in values {
+        operand(w, v);
+      }
     }
     // A tree in pre-order: 0 const, 1 var, 2 add, 3 sub, 4 mul.
     fn polynomial(w: &mut Writer, p: &Polynomial) {
@@ -251,7 +253,9 @@ impl PopulationDescription {
         N::Choice { tests } => {
           w.u8(5);
           w.usize(tests.len());
-          tests.iter().for_each(|t| operands(w, t));
+          for t in tests {
+            operands(w, t);
+          }
         },
         N::Failure { differences } => {
           w.u8(6);
@@ -458,6 +462,8 @@ pub trait ExternalReads {
 /// Arithmetic modulo a prime below 2^64 on canonical words.
 #[derive(Clone, Copy, Debug)]
 pub struct Modulus(pub u64);
+// Each result is reduced below the modulus, a `u64`.
+#[allow(clippy::cast_possible_truncation)]
 impl Modulus {
   pub fn add(self, a: u64, b: u64) -> u64 {
     ((u128::from(a) + u128::from(b)) % u128::from(self.0)) as u64

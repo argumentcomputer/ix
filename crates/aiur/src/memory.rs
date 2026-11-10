@@ -79,18 +79,16 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
   }
 
   pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
-    let payload = self.words.len() * std::mem::size_of::<F>();
-    let vectors = self.words.capacity() * std::mem::size_of::<F>()
-      + self.slots.capacity() * std::mem::size_of::<Slot>()
+    let payload = self.words.len() * size_of::<F>();
+    let vectors = self.words.capacity() * size_of::<F>()
+      + self.slots.capacity() * size_of::<Slot>()
       + self.buckets.iter().map(Vec::capacity).sum::<usize>()
-        * std::mem::size_of::<usize>()
-      + self.buckets.capacity() * std::mem::size_of::<Vec<usize>>();
+        * size_of::<usize>()
+      + self.buckets.capacity() * size_of::<Vec<usize>>();
     let index = if self.index.capacity() == 0 {
       0
     } else {
-      self.index.capacity().next_power_of_two()
-        * (std::mem::size_of::<Entry>() + 1)
-        + 16
+      self.index.capacity().next_power_of_two() * (size_of::<Entry>() + 1) + 16
     };
     (payload, vectors, index)
   }
@@ -203,10 +201,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     }
     let index = self.slots.len();
     let entry = Entry::new(
-      self.budget.row(
-        index,
-        std::mem::size_of_val(words) + std::mem::size_of::<Slot>(),
-      )?,
+      self.budget.row(index, size_of_val(words) + size_of::<Slot>())?,
       hash,
     );
     self.budget.vector(&mut self.words, words.len())?;

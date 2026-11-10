@@ -40,14 +40,12 @@ fn read<const N: usize>(
 fn all_metadata(advice: &impl StreamAdvice<F>) -> Vec<HintEntry> {
   let key = Type::Field;
   let mut entries =
-    advice.metadata("info", key.clone(), None, |_, _| true, false).unwrap();
+    advice.metadata("info", &key, None, |_, _| true, false).unwrap();
   entries.extend(
-    advice
-      .metadata("claim", key.clone(), Some(0), |c, _| c == 0, false)
-      .unwrap(),
+    advice.metadata("claim", &key, Some(0), |c, _| c == 0, false).unwrap(),
   );
   entries
-    .extend(advice.metadata("tag", key, None, |c, _| c == 3, true).unwrap());
+    .extend(advice.metadata("tag", &key, None, |c, _| c == 3, true).unwrap());
   entries
 }
 
@@ -188,9 +186,9 @@ fn value_hints_require_one_field() {
   let advice = Advice::from_streams(FIELD, &streams).unwrap();
   let reference = streams.prepare(FIELD).unwrap();
   let compact =
-    advice.metadata("tag", Type::Field, None, |_, _| true, true).unwrap_err();
+    advice.metadata("tag", &Type::Field, None, |_, _| true, true).unwrap_err();
   let expected = reference
-    .metadata("tag", Type::Field, None, |_, _| true, true)
+    .metadata("tag", &Type::Field, None, |_, _| true, true)
     .unwrap_err();
   assert_eq!(compact, expected);
 }

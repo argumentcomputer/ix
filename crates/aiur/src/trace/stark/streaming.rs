@@ -8,6 +8,27 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 const MAX_SHARDS: usize = 65_536;
+
+/// One population thread's reusable buffers.
+struct Scratch<F> {
+  scratch: Vec<F>,
+  buffer: Vec<F>,
+  /// A depth circuit's own row, before placement.
+  source: Vec<F>,
+  /// Gap limb counts of rows whose counts were already taken.
+  ranges: RangeCounts,
+}
+
+impl<F> Default for Scratch<F> {
+  fn default() -> Self {
+    Self {
+      scratch: Vec::new(),
+      buffer: Vec::new(),
+      source: Vec::new(),
+      ranges: RangeCounts::default(),
+    }
+  }
+}
 /// Circuits listed by name in a [`PopulationReport`].
 const TOP_CIRCUITS: usize = 15;
 
@@ -304,8 +325,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let domain_log = 32usize
       .checked_sub(self.parameters.log_blowup)
       .ok_or("invalid commitment blowup")?;
-    let domain_rows =
-      1usize.checked_shl(domain_log as u32).ok_or("trace domain overflow")?;
+    let domain_rows = u32::try_from(domain_log)
+      .ok()
+      .and_then(|log| 1usize.checked_shl(log))
+      .ok_or("trace domain overflow")?;
     let mut pieces = Vec::new();
     for (ci, &n) in rows.iter().enumerate() {
       if self.fixed_circuit(ci) || n == 0 {
@@ -418,7 +441,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         }
         active.push(slice.height != 0);
         if slice.height != 0 {
-          degrees.push(slice.height.ilog2() as u8);
+          degrees.push(
+            u8::try_from(slice.height.ilog2())
+              .map_err(|e| format!("trace height: {e}"))?,
+          );
         }
         lookup_budget += slice.height as u128
           * self.system.circuits[ci].num_lookups.max(1) as u128;
@@ -447,6 +473,83 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     Ok(())
   }
 
+  /// Fill function `function`'s query `query` into its depth circuit's own
+  /// row `source`, depth columns included, counting its gap limbs in
+  /// `ranges`. Depth columns are computed from the circuit's own columns,
+  /// so the row is built here and placed by the caller.
+  fn fill_depth_source(
+    &self,
+    record: &Execution<B>,
+    function: usize,
+    query: usize,
+    (scratch, buffer): (&mut Vec<B::Element>, &mut Vec<B::Element>),
+    source: &mut Vec<B::Element>,
+    ranges: &mut RangeCounts,
+  ) -> Result<(), String> {
+    let table = &record.queries.tables[function];
+    let output = table.output(query);
+    let chip = self.plan.members[function];
+    let field = self.plan.program.field;
+    let activation = self.plan.artifact.chips[chip].activation;
+    source.clear();
+    source.resize(activation + 1, field.zero());
+    source[activation] = field.one();
+    self.plan.fills[function].fill(
+      record,
+      (table.input(query), output),
+      scratch,
+      buffer,
+      source,
+    )?;
+    self.plan.depth.fill(
+      chip,
+      record,
+      table.depth(query),
+      source,
+      field,
+      buffer,
+      ranges,
+    )
+  }
+
+  /// The depth range tables' uses over the whole record: the gap limbs of
+  /// every row of a circuit with gap slots. Fixed tables are committed in
+  /// the first shard, before the rows that use them are populated, so their
+  /// counts come from this pass over the record.
+  fn depth_ranges(&self, record: &Execution<B>) -> Result<RangeCounts, String> {
+    let gapped: Vec<usize> = (0..self.plan.artifact.functions.len())
+      .filter(|&f| {
+        self.plan.depth.fills[self.plan.members[f]]
+          .slots
+          .iter()
+          .any(|slot| matches!(slot.kind, crate::trace::depth::Kind::Gap(_)))
+      })
+      .collect();
+    let count = |&function: &usize| {
+      let mut ranges = RangeCounts::default();
+      let mut scratch = Scratch::default();
+      let name = &self.plan.artifact.functions[function].name;
+      for query in 0..record.queries.tables[function].len() {
+        self
+          .fill_depth_source(
+            record,
+            function,
+            query,
+            (&mut scratch.scratch, &mut scratch.buffer),
+            &mut scratch.source,
+            &mut ranges,
+          )
+          .map_err(|error| format!("{name} query {query}: {error}"))?;
+      }
+      Ok::<_, String>(ranges)
+    };
+    #[cfg(feature = "parallel")]
+    let counts = gapped.par_iter().map(count).collect::<Result<Vec<_>, _>>()?;
+    #[cfg(not(feature = "parallel"))]
+    let counts = gapped.iter().map(count).collect::<Result<Vec<_>, _>>()?;
+    Ok(counts.into_iter().fold(RangeCounts::default(), RangeCounts::merge))
+  }
+
   pub fn prepare_incremental<'r>(
     &self,
     record: &'r Execution<B>,
@@ -471,7 +574,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     Ok(PreparedRecord {
       record,
-      counts: self.auxiliary_counts(record)?,
+      counts: self.auxiliary_counts(record, &self.depth_ranges(record)?)?,
       members,
       rows: self.record_rows(record)?,
       #[cfg(feature = "cuda")]
@@ -604,7 +707,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     time.allocation = allocation.elapsed();
     let filling = Instant::now();
     if ci < self.members.len() {
-      let fill = |scratch: &mut (Vec<B::Element>, Vec<B::Element>),
+      let fill = |scratch: &mut Scratch<B::Element>,
                   (offset, row): (usize, &mut [Val])| {
         let index = slice.first + offset;
         let members = prepared
@@ -620,23 +723,39 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         if output.multiplicity >= Val::ORDER_U64 {
           return Err("function count reaches field characteristic".into());
         }
-        let placement = &self.placements[self.plan.members[member.function]];
-        self.plan.fills[member.function]
-          .fill_into(
-            prepared.record,
-            (table.input(query), output),
-            &mut scratch.0,
-            &mut scratch.1,
-            |column, value| {
-              row[placement.columns[column]] = B::into_stark(value)
-            },
-          )
-          .map_err(|error| {
-            format!(
-              "{} query {query}: {error}",
-              self.plan.artifact.functions[member.function].name
+        let chip = self.plan.members[member.function];
+        let placement = &self.placements[chip];
+        let name = &self.plan.artifact.functions[member.function].name;
+        if self.plan.depth.fills[chip].is_empty() {
+          self.plan.fills[member.function]
+            .fill_into(
+              prepared.record,
+              (table.input(query), output),
+              &mut scratch.scratch,
+              &mut scratch.buffer,
+              |column, value| {
+                row[placement.columns[column]] = B::into_stark(value)
+              },
             )
-          })?;
+            .map_err(|error| format!("{name} query {query}: {error}"))?;
+        } else {
+          // `prepare_incremental` counted every gap limb already; this
+          // row's counts go to the thread's discarded sink.
+          let Scratch { scratch, buffer, source, ranges } = scratch;
+          self
+            .fill_depth_source(
+              prepared.record,
+              member.function,
+              query,
+              (scratch, buffer),
+              source,
+              ranges,
+            )
+            .map_err(|error| format!("{name} query {query}: {error}"))?;
+          for (&column, &value) in placement.columns.iter().zip(source.iter()) {
+            row[column] = B::into_stark(value);
+          }
+        }
         placement.finish(row, output.multiplicity);
         Ok::<_, String>(())
       };
@@ -648,14 +767,14 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       {
         let busy = std::sync::atomic::AtomicU64::new(0);
         real.par_chunks_mut(width * 32).enumerate().try_for_each_init(
-          || (Vec::new(), Vec::new()),
+          Scratch::default,
           |scratch, (batch, cells)| {
             let start = Instant::now();
             for (i, row) in cells.chunks_mut(width).enumerate() {
               fill(scratch, (batch * 32 + i, row))?;
             }
             busy.fetch_add(
-              start.elapsed().as_nanos() as u64,
+              u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
               std::sync::atomic::Ordering::Relaxed,
             );
             Ok::<_, String>(())
@@ -666,7 +785,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       }
       #[cfg(not(feature = "parallel"))]
       {
-        let mut scratch = (Vec::new(), Vec::new());
+        let mut scratch = Scratch::default();
         for row in real.chunks_mut(width).enumerate() {
           fill(&mut scratch, row)?;
         }
@@ -920,7 +1039,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       if batch.fits
         || limit <= 1
         || batch.device_budget_bytes.is_some_and(|n| {
-          self.device_peak(0, 0, batch.device_record_bytes, 0) > n as u128
+          self.device_peak(0, 0, batch.device_record_bytes, 0) > u128::from(n)
         })
       {
         return Ok(batch);
@@ -929,11 +1048,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         && batch.device_budget_bytes.is_some_and(|n| {
           batch.device_peak_bytes > n
             && self.device_peak(
-              batch.shard_cells as u128,
-              batch.shard_cells as u128,
+              u128::from(batch.shard_cells),
+              u128::from(batch.shard_cells),
               batch.device_record_bytes,
               0,
-            ) <= n as u128
+            ) <= u128::from(n)
         })
       {
         height_limit = Some(batch.max_rows / 2);
@@ -1027,7 +1146,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       if plan.fits
         || cap == 1
         || device_budget.is_some_and(|n| {
-          self.device_peak(0, 0, plan.device_record_bytes, 0) > n as u128
+          self.device_peak(0, 0, plan.device_record_bytes, 0) > u128::from(n)
         })
       {
         return Ok(plan);
@@ -1078,19 +1197,22 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       .map(|(ci, _)| self.committed_width(ci))
       .max()
       .unwrap_or(0);
-    let minimum_cells = batch.shard_cells as u128 + largest_row;
+    let minimum_cells = u128::from(batch.shard_cells) + largest_row;
     batch.device_cells = options.device_cells()?;
     batch.device_budget_bytes = self.device_budget(options)?;
-    batch.fits &= batch.device_cells.is_none_or(|n| minimum_cells <= n as u128)
+    batch.fits &= batch
+      .device_cells
+      .is_none_or(|n| minimum_cells <= u128::from(n))
       && batch.device_budget_bytes.is_none_or(|n| batch.device_peak_bytes <= n);
     if batch.fits {
       return Ok(None);
     }
-    batch.shard_cells = minimum_cells.min(u64::MAX as u128) as u64;
+    batch.shard_cells = u64::try_from(minimum_cells).unwrap_or(u64::MAX);
     batch.candidates.push(planning::PlanCandidate::from(&batch));
     Ok(Some(batch))
   }
 
+  #[cfg_attr(not(feature = "cuda"), allow(clippy::unnecessary_wraps))]
   fn plan_layout(
     &self,
     record: &Execution<B>,
@@ -1102,10 +1224,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   ) -> Result<planning::BatchPlan, String> {
     use planning::RetentionPolicy;
     let margin = |n: u128| n.saturating_mul(5).div_ceil(4);
-    let bounded = |n: u128| n.min(u64::MAX as u128) as u64;
+    let bounded = |n: u128| u64::try_from(n).unwrap_or(u64::MAX);
     let metadata = (layout.shards.len()
       * self.system.circuits.len()
-      * std::mem::size_of::<CircuitSlice>()) as u128
+      * size_of::<CircuitSlice>()) as u128
       + self.members.iter().map(|m| m.len() as u128 * 32).sum::<u128>()
       + self
         .plan
@@ -1199,9 +1321,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
               c.graph.lookups.iter().map(|l| l.args.len()).sum();
             h as u128
               * ((c.num_lookups + args) as u128 * 8
-                + std::mem::size_of::<
-                  multi_stark::lookup::LookupRowMut<'_, Val>,
-                >() as u128)
+                + size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>()
+                  as u128)
           })
           .sum()
       };
@@ -1222,7 +1343,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       if gpu::release_enabled() { u128::from(device_record_bytes) } else { 0 };
     #[cfg(not(feature = "cuda"))]
     let release_copy = 0u128;
-    let base = resident as u128 + metadata + release_copy;
+    let base = u128::from(resident) + metadata + release_copy;
     let regenerated_peak = margin(base + generation.max(proving));
     let retained_peak = if layout.shards.len() == 1 {
       regenerated_peak
@@ -1233,7 +1354,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       _ if self.requires_regeneration(layout.shards.len()) => {
         RetentionPolicy::Regenerate
       },
-      RetentionPolicy::Auto if retained_peak <= budget as u128 => {
+      RetentionPolicy::Auto if retained_peak <= u128::from(budget) => {
         RetentionPolicy::Retain
       },
       RetentionPolicy::Auto => RetentionPolicy::Regenerate,
@@ -1259,7 +1380,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let pipelined_peak = peak + margin(lookahead);
     let pipelined = pipeline != Some(false)
       && supplies >= 2
-      && pipelined_peak <= budget as u128;
+      && pipelined_peak <= u128::from(budget);
     let peak = if pipelined { pipelined_peak } else { peak };
     Ok(planning::BatchPlan {
       max_rows,
@@ -1269,8 +1390,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       stage1_cells: bounded(stage1_cells),
       generation_peak_bytes: bounded(margin(base + generation)),
       proving_peak_bytes: bounded(peak),
-      fits: peak <= budget as u128,
-      suggested_parts: usize::try_from(peak.div_ceil(budget as u128))
+      fits: peak <= u128::from(budget),
+      suggested_parts: usize::try_from(peak.div_ceil(u128::from(budget)))
         .unwrap_or(usize::MAX)
         .max(1),
       shard_cells: bounded(shard_cells),

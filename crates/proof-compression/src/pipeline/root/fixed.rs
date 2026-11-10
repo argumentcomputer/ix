@@ -374,8 +374,15 @@ mod tests {
     ))?;
     let program = package.program.check()?;
     let plan = TracePlan::new(&program, package.trace)?;
-    let backend =
-      Backend::for_batch(&plan, Parameters { log_blowup: 1, num_queries: 2 })?;
+    let backend = Backend::for_batch(
+      &plan,
+      Parameters {
+        log_blowup: 1,
+        num_queries: 2,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 0,
+      },
+    )?;
     let key = AiurVerifyingKey::from_bytes(&backend.verifying_key_bytes()?)?;
     let config = || {
       GoldilocksBlake3Config::new(

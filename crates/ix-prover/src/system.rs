@@ -129,8 +129,11 @@ impl Program {
 
   /// The trace plan, built on first use and shared afterwards.
   pub fn plan(&self) -> Result<Arc<Plan>, String> {
-    let mut slot =
-      self.0.plan.lock().map_err(|_| "trace plan lock poisoned")?;
+    let mut slot = self
+      .0
+      .plan
+      .lock()
+      .map_err(|e| format!("trace plan lock poisoned: {e}"))?;
     if let Some(plan) = &*slot {
       return Ok(Arc::clone(plan));
     }
@@ -311,7 +314,8 @@ fn slot<K: std::hash::Hash + Eq, T>(
   map: &Mutex<HashMap<K, Slot<T>>>,
   key: K,
 ) -> Result<Slot<T>, String> {
-  let mut map = map.lock().map_err(|_| "registry lock poisoned")?;
+  let mut map =
+    map.lock().map_err(|e| format!("registry lock poisoned: {e}"))?;
   Ok(Arc::clone(map.entry(key).or_default()))
 }
 
@@ -319,7 +323,8 @@ fn get_or_init<T: Clone>(
   slot: &Slot<T>,
   init: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-  let mut value = slot.lock().map_err(|_| "registry entry lock poisoned")?;
+  let mut value =
+    slot.lock().map_err(|e| format!("registry entry lock poisoned: {e}"))?;
   if let Some(value) = &*value {
     return Ok(value.clone());
   }

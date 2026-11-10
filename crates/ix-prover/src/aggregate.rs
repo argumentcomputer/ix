@@ -42,7 +42,7 @@ const FORMAL_CALL_CHANNEL: u64 = 1;
 pub const IXVM_MAGIC: &[u8] = b"IXAIUR2\0";
 pub const AGGR_MAGIC: &[u8] = b"IXAGGR2\0";
 
-type Element = <Field as aiur::field::FieldBackend>::Element;
+type Element = <Field as FieldBackend>::Element;
 
 /// A formal proof as the controller holds it: raw `BatchProof` bytes, the
 /// system that proves it, and its trace-shard count.
@@ -210,7 +210,7 @@ impl Formal {
   fn execute_streams(
     &self,
     streams: &Streams<'_>,
-    args: Vec<u64>,
+    args: &[u64],
     reservation: &RecordReservation,
   ) -> Result<(Vec<Element>, Execution<Field>), PrepareFailure> {
     let program = self.systems[1].program().checked();
@@ -445,7 +445,7 @@ impl Backend for Formal {
       program,
       Kind::Ixvm,
       IXVM_ENTRY.to_owned(),
-      args,
+      &args,
       &advice,
       reservation,
       report,
@@ -499,7 +499,7 @@ impl Backend for Formal {
       },
     };
     let args = self.public_input(&spec.statement.claim_bytes);
-    let (args, record) = self.execute_streams(&streams, args, reservation)?;
+    let (args, record) = self.execute_streams(&streams, &args, reservation)?;
     Ok(Staged::Executed { args, record: Box::new(record) })
   }
 
@@ -578,7 +578,7 @@ impl Backend for Formal {
     );
     let args = self.public_input(&root.statement.claim_bytes);
     let (args, record) = self
-      .execute_streams(&streams, args, reservation)
+      .execute_streams(&streams, &args, reservation)
       .map_err(String::from)?;
     self.prove(lane, ChildKind::Aggr, &record, AGGR_ENTRY, &args)
   }
@@ -616,7 +616,7 @@ impl Backend for Formal {
     };
     let args = self.public_input(output);
     let (args, record) = self
-      .execute_streams(&streams, args, reservation)
+      .execute_streams(&streams, &args, reservation)
       .map_err(String::from)?;
     drop(streams);
     let proof =
@@ -905,7 +905,7 @@ pub fn normalize_root(
     .map_err(|e| format!("record admission: {e:?}"))?
     .ok_or("record pool refused admission")?;
   let (args, record) = backend
-    .execute_streams(&streams, backend.public_input(claim), &reservation)
+    .execute_streams(&streams, &backend.public_input(claim), &reservation)
     .map_err(String::from)?;
   drop(streams);
   let lanes = backend.lanes(1)?;
