@@ -111,6 +111,8 @@ replace the merge build's snapshot for the same queue ref. Its `main` push
 runs still refresh the default-branch baseline. The workflows still duplicate
 some compilation; the [build and cache design](ci-build-cache-design.md)
 describes the proposed common producer.
+The [CI and benchmark follow up work](ci-benchmark-followups.md) tracks the
+trial's validation and the remaining implementation work.
 
 Pushes to `ix.ci-merge-tests` run Merge tests against the pushed commit to
 validate the upgraded RunsOn cache behavior. The branch filter does not enable
