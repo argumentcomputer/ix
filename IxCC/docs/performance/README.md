@@ -1,5 +1,15 @@
 # Performance
 
+## Current reports
+
+Measured on this tree; each report says how to reproduce it.
+
+| Report | Question and scope |
+| --- | --- |
+| [SrcEval step counts](src-steps-2026-11-10/README.md) | Charged steps (the [unit](../source-steps.md)), their parts and the least clock of every case of the six registered corpus families that the corpus suite runs at the source level, including the benchmark fixtures; raw `ixcc/src-steps/1` lines. |
+
+## Historical reports
+
 > **Historical record.** The compiler code, fixtures, runners and documents
 > it describes left main on 2026-09-29 when the compiler was rebuilt; links
 > to them point to branch `jcb/ixby-archive` of the pre-merge

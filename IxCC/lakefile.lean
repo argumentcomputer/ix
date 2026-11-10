@@ -50,6 +50,12 @@ diagnostics and the bench-k1 entries. -/
 lean_exe «tests-src» where
   root := `IxCCTests.Src.Main
 
+/- SrcEval step counts (`docs/source-steps.md`): a closure's root on `Nat`
+arguments after `ixcc`'s front end, or every case of a corpus manifest; one
+JSON object per run. -/
+lean_exe «src-steps» where
+  root := `IxCCTests.Src.StepsMain
+
 /- Src rows over the 60 s budget: `ack 3 10`, `fib 30` without primitives. -/
 lean_exe «tests-src-slow» where
   root := `IxCCTests.Src.SlowMain

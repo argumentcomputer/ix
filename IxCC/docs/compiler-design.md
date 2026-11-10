@@ -618,6 +618,11 @@ Rejected: `partial` and `unsafe` definitions, and extern opaques that are not
 admitted as ledgered runtime services. `implemented_by` compiles the
 reference body.
 
+SrcEval's clock bounds the nesting depth of its charged rules (δ, β, ι,
+`case`, forcing a by-name slot, `Quot.lift`), not their number. The unit of
+SrcEval's work, one charged rule application, is defined in
+[Source steps](source-steps.md), with its counter and the `src-steps` tool.
+
 ## Relevance and erasure
 
 **The annotation.** Each binder, argument, let, constructor field and

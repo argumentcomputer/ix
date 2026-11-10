@@ -76,9 +76,11 @@ Frozen; neither Aiur route of the plan uses it ([status](aiur-backend.md#status-
 - [Trusted-extern ledger](trusted-extern-ledger.md) and its
   [machine-readable form](trusted-externs.json): native interfaces,
   specification assumptions and the build and seed supply chain.
+- [Source steps](source-steps.md): the unit of SrcEval work (charged rule
+  applications), its counter and the `src-steps` tool.
 - [Benchmark design](benchmark-plan.md): comparison rules and rows; the
   [first-wave fixtures](../benchmarks/fixtures/README.md) and the optional
   [measurement runner](../benchmarks/runner/README.md).
-- [Performance reports](performance/README.md): historical measurements of
-  the retired pipeline.
+- [Performance reports](performance/README.md): SrcEval step counts on the
+  committed fixtures, and historical measurements of the retired pipeline.
 - [2026-09-09 review](review-2026-09-09.md): a historical snapshot.

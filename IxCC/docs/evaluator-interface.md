@@ -1,8 +1,7 @@
 # Evaluator interface: SrcEval as a contract, and the Src image
 
-Written 2026-11-10. **Status: planned** (EV-0 to EV-2 in the
-[roadmap](roadmap.md#milestones)); EV-0's step counter is being ported to this
-branch.
+Written 2026-11-10. **Status:** EV-0 implemented ([source steps](source-steps.md));
+EV-1 and EV-2 planned ([roadmap](roadmap.md#milestones)).
 
 ## What exists today
 
@@ -50,7 +49,11 @@ program the grounded theorem speaks of.
 
 ## EV-0. Step counts
 
-**In progress.** The common unit of cost between IxCC's evaluator and IxVM's
+**Implemented**, as [source steps](source-steps.md) describes: the unit, the
+counter (`IxCCTests/Src/Steps.lean`), the `src-steps` tool, three pinned rows in
+`tests-src`, and the tables of every committed corpus family and benchmark
+fixture ([performance/src-steps-2026-11-10](performance/src-steps-2026-11-10/README.md)).
+The IxVM workstream's four families wait for their closures. The common unit of cost between IxCC's evaluator and IxVM's
 kernel is one SrcEval step: one application of a charged rule. Because the
 clock is a depth bound, counting needs a separate counter.
 

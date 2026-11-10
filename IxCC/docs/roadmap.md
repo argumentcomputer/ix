@@ -164,8 +164,9 @@ hosted CI or cold-store timing. Final producer and fixture refreeze gates
 remain open.
 
 The later consumer regressions are installed and pass focused execution.
-The source suite now runs 8,520 assertions, including nine discriminating
-resource-bound `csimp` controls. Authentic historical OS04 annotated/plain
+The source suite now runs 8,529 assertions, including nine discriminating
+resource-bound `csimp` controls and pinned SrcEval step counts
+([source steps](source-steps.md)). Authentic historical OS04 annotated/plain
 recursion adds 36 complete Src/Fir/Own observations and 48 counted ownership
 assertions. The annotated case uses checked immortal Own and retains its
 explicit plain-RC erased-contract refusal; the plain twin uses checked plain
@@ -332,7 +333,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | Id | Content | Depends on | Exit test | Size [estimate] and basis | Owner | The neighbouring workstream can rely on |
 | --- | --- | --- | --- | --- | --- | --- |
 | RL-2 | Adapt to the certified-IxVM work when it lands: merge `main`, rename pass, re-recorded digests, inventories and ledger | that work landing | the root build and all 16 `ixcc-*` checks pass on the merge | days to two weeks: the last merge of `main` took about a day | IxCC | — |
-| EV-0 | SrcEval step counts (a counting twin of SrcEval; the clock is a depth bound): in progress | — | K1 tables and the IxVM experiment's families, reproducible | about 0.4k lines; days | IxCC | the common unit for its first measurement |
+| EV-0 | SrcEval step counts (a counting twin of SrcEval; the clock is a depth bound): implemented ([source steps](source-steps.md): `src-steps`, pinned rows in `tests-src`, the tables of every committed family); the IxVM experiment's families wait for their closures | — | K1 tables and the IxVM experiment's families, reproducible | about 0.4k lines; days | IxCC | the common unit for its first measurement |
 | EV-1 | The evaluator contract, version 1: version, rule anchors, changelog, pin check; closed-term entry points | — | entries agree with `Src.run` on K1; an unversioned change fails the pin check | 0.3–0.6k lines and documents; weeks | IxCC | a frozen SrcEval to prove the circuit against, and a differential oracle |
 | EV-2 | The image, version 1, with shared subterms: format, deterministic producer, round trip, interfaces (role table, readback to Ixon, budgets) | EV-1 | theorems fenced; round trip over every committed closure in a gate; byte-identical images on two machines; digests committed | codec 0.5k, proofs 1–2k, interfaces 0.5–1.5k; 1–3 months (IxCC's Aiur wire format, 1.3k with proofs) | IxCC | a stable program identity and the circuit's input format |
 | SP-0 | Same bytes and the conditional statement: role-bound environments read; pure BLAKE3 on the whole verifier path and the provable Blake3 axiom removed; pinned identities from the role table; the claim binds the environment root, target, role table and image digest; the faithfulness clauses and the conditional x86 and evaluator statements, with adequacy as an explicit hypothesis; the table, primitive and readback lemmas in every strong model | — | the conditional statements fenced; byte-level fences on the standard axioms only; role-bound K1 fixtures verify under the new claim format | 6–13k lines; 2–4 months (IxCK's reader 1.3k and IxCC's ingress 0.3k for the reading; the lemma estimates of the certification design) | IxCC | IxCC reads the same bytes as its claims, under the same hash and role table; the `eqn`/`csimp` and primitive lemmas for its own discharge path |

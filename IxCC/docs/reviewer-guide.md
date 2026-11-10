@@ -139,7 +139,7 @@ lake build IxCC IxCCTests ixcc \
   check-x86-encoder check-x86-bytes check-x86-streams check-x86-object x86-object-fixture \
   check-trusted-externs check-tools-tests check-build-graph check-steps check-x86-hardware \
   tests-rt-rc tests-cfg-rc tests-driver-session tests-pipeline-rc tests-rc-certificate \
-  tests-pipeline corpus certified-census tests-corpus check-backend check-regalloc tests-src \
+  tests-pipeline corpus certified-census tests-corpus check-backend check-regalloc tests-src src-steps \
   tests-rt check-xv-select tests-lam tests-fir check-lir tests-anf tests-own tests-own-plain \
   tests-shrink tests-relevance tests-recheck tests-recheck-readback \
   gen-src-artifacts gen-recheck-artifacts

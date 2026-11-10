@@ -96,8 +96,24 @@ def sidecarName (h : Src.Hints) (a : Ixon.Address) : Option String :=
   | some (_, n) => n
   | none => (h.proposals.find? (·.subject == a)).bind (·.name?)
 
-/-- The producer: every oracle, run natively (see the module note). -/
-def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
+/-- What the producer's front half makes: the unfolding table it built from the
+sidecar's proposals (with the builder's diagnostics and statistics), the
+relevance oracle's annotation, and the checked source with its relevance
+evidence. -/
+structure ProducedSource where
+  table : Src.Table
+  tableDiags : Array Src.Diag
+  tableStats : Src.Table.Stats
+  ann : Src.Relevance.Ann
+  src : Src.Program
+  checked : Src.Relevance.Checked
+
+/-- The producer's front half: the table built from the sidecar's proposals
+and validated, the relevance oracle, the annotation installed and checked
+(`Src.Recheck.annotation`: tiers S and C, the canonical check, `Lazify`), and
+the admission policy. Its `src` is the program SrcEval runs; `produceWith`
+continues from it. -/
+def produceSource (cfg : Config) (inp : Input) : Except Err ProducedSource := do
   let P := inp.program
   let (table, tableDiags, tableStats) := Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
@@ -116,6 +132,11 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   | .error diags =>
     let d := diags[0]?.getD (Src.Diag.of "admit" "rejected")
     throw { Err.ofDiag .admit d with message := "; ".intercalate (diags.toList.map fun d => (splitCode d.render).2) }
+  pure { table, tableDiags, tableStats, ann, src, checked }
+
+/-- The producer: every oracle, run natively (see the module note). -/
+def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
+  let ⟨table, tableDiags, tableStats, ann, src, checked⟩ ← produceSource cfg inp
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }

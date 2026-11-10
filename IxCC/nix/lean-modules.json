@@ -29,6 +29,7 @@
   "tests-cfg-rc": {"roots": ["IxCCTests.Cfg.Rc.Main"], "kind": "lean_exe"},
   "tests-anf": {"roots": ["IxCCTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["IxCCTests.Aiur.Main"], "kind": "lean_exe"},
+  "src-steps": {"roots": ["IxCCTests.Src.StepsMain"], "kind": "lean_exe"},
   "refreeze-ixon":
   {"roots": ["IxCCTests.Scripts.RefreezeIxon"], "kind": "lean_exe"},
   "pin-src-tables":
@@ -184,6 +185,18 @@
   "IxCCTests.Src.StuckEval":
   {"path": "IxCCTests/Src/StuckEval.lean",
    "imports": ["IxCCTests.Src.Support"]},
+  "IxCCTests.Src.StepsTool":
+  {"path": "IxCCTests/Src/StepsTool.lean",
+   "imports":
+   ["IxCCTests.Src.Steps", "IxCCTests.Corpus.Manifest", "IxCCTests.Src.Bench"]},
+  "IxCCTests.Src.StepsMain":
+  {"path": "IxCCTests/Src/StepsMain.lean",
+   "imports": ["IxCCTests.Src.StepsTool"]},
+  "IxCCTests.Src.Steps":
+  {"path": "IxCCTests/Src/Steps.lean",
+   "imports": ["IxCCTests.Src.Support", "IxCC.Recheck.Produce"]},
+  "IxCCTests.Src.StepCounts":
+  {"path": "IxCCTests/Src/StepCounts.lean", "imports": ["IxCCTests.Src.Steps"]},
   "IxCCTests.Src.SortPoly":
   {"path": "IxCCTests/Src/SortPoly.lean",
    "imports": ["IxCCTests.Src.StuckEval", "IxCCTests.Fixtures.SortPoly"]},
@@ -203,7 +216,8 @@
     "IxCCTests.Src.Diagnostics",
     "IxCCTests.Src.Bench",
     "IxCCTests.Src.SortPoly",
-    "IxCCTests.Src.ResourceCsimp"]},
+    "IxCCTests.Src.ResourceCsimp",
+    "IxCCTests.Src.StepCounts"]},
   "IxCCTests.Src.Rules":
   {"path": "IxCCTests/Src/Rules.lean",
    "imports": ["IxCCTests.Src.Support", "IxCC.Src.Lazify"]},
@@ -3482,6 +3496,7 @@
     "IxCCTests.Xv.Alloc.Run",
     "IxCCTests.Backend.Run",
     "IxCCTests.Src.Run",
+    "IxCCTests.Src.StepsTool",
     "IxCCTests.Src.Relevance.Run",
     "IxCCTests.Lam.Run",
     "IxCCTests.Lam.KernelK1",
