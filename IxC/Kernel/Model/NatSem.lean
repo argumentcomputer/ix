@@ -153,18 +153,30 @@ theorem natOpV_bin_of_clauses (m : EnvModel V env)
 
 /-! ## `Nat.add`, the worked example -/
 
-/-- `Nat.add` on literal values (`natOpV_add`'s mirror). -/
-theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
+/-- **`Nat.add`'s two recurrences, at values**: `add x 0 = x` and
+`add x (succ y) = succ (add x y)` for `x`, `y` in the stored `Nat`. -/
+theorem natAdd_clauses (m : EnvModel V env) (hops : NatOps m φ)
     (hnh : NatHeads m φ) (hval : AcvalValid m)
     {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
     (hf : env.find? Ix.Kernel.natAddName = some (.defnInfo cv v hint))
     (ρ : Nat → V) :
-    ∀ a b : Nat,
+    (∀ x : V,
+      x ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) →
       SetTheory.app (SetTheory.app
-          (interp V ρ (m.acval Ix.Kernel.natAddName φ))
-          (interp V ρ (natLit m φ a)))
-        (interp V ρ (natLit m φ b))
-      = interp V ρ (natLit m φ (a + b)) := by
+          (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x)
+        (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
+      = x) ∧
+    (∀ x y : V,
+      x ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) →
+      y ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) →
+      SetTheory.app (SetTheory.app
+          (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x)
+        (SetTheory.app
+          (interp V ρ (m.acval Ix.Kernel.natSuccName φ)) y)
+      = SetTheory.app
+          (interp V ρ (m.acval Ix.Kernel.natSuccName φ))
+          (SetTheory.app (SetTheory.app
+            (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x) y)) := by
   obtain ⟨hg, -⟩ := hops Ix.Kernel.natAddName (by (cases md <;> decide)) cv v hint hf
   obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
   obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natAddName
@@ -259,6 +271,23 @@ theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
       acval_interp_closedC m Ix.Kernel.natAddName φ _ ρ,
       acval_interp_closedC m Ix.Kernel.natSuccName φ _ ρ] at h
     exact h
+  exact ⟨h0, hS⟩
+
+/-- `Nat.add` on literal values (`natOpV_add`'s mirror). -/
+theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
+    (hnh : NatHeads m φ) (hval : AcvalValid m)
+    {cv : ConstantVal md} {v : Expr md} {hint : ReducibilityHint}
+    (hf : env.find? Ix.Kernel.natAddName = some (.defnInfo cv v hint))
+    (ρ : Nat → V) :
+    ∀ a b : Nat,
+      SetTheory.app (SetTheory.app
+          (interp V ρ (m.acval Ix.Kernel.natAddName φ))
+          (interp V ρ (natLit m φ a)))
+        (interp V ρ (natLit m φ b))
+      = interp V ρ (natLit m φ (a + b)) := by
+  obtain ⟨hg, -⟩ := hops Ix.Kernel.natAddName (by (cases md <;> decide)) cv v hint hf
+  obtain ⟨hs, -, -⟩ := Ix.Kernel.natOpGuard_inv hg
+  obtain ⟨h0, hS⟩ := natAdd_clauses m hops hnh hval hf ρ
   refine natOpV_bin_of_clauses m (fun a b => a + b) (fun a => ?_)
     (fun a b ih => ?_)
   · exact h0 (interp V ρ (natLit m φ a))

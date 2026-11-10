@@ -124,6 +124,51 @@ def natBinOpNames : List (Key md) :=
   [natAddName, natSubName, natMulName, natPowName, natBeqName, natBleName] ++
     natDivModNames
 
+/-! ## `Nat` offsets
+
+IxVM reads a `Nat` term as an offset `base + k` through literals, `Nat.succ` and
+`Nat.add _ (lit m)`, and keeps `Nat.add b (lit k)` stuck rather than unfolding
+`Nat.add`. The rules `Red.natAddSucc`, `Red.natAddZero` and `DefEq.natOffset`
+describe those moves; the three definitions below are what they read. -/
+
+/-- **The stored `Nat.add`, as the offset rules read it**: a level-monomorphic
+definition of type `Nat → Nat → Nat` whose outer binder's datum is `never` (its
+codomain `Nat → Nat` is never a proposition). The rules read the first argument's
+membership in `Nat` off that binder. -/
+def natAddTyOk : Option (ConstantInfo md) → Bool
+  | some (.defnInfo cv _ _) =>
+    cv.levelParams.isEmpty &&
+    (match cv.type with
+     | .forallE d₁ (.forallE d₂ c _) mb =>
+       d₁ == .const natName [] && d₂ == .const natName [] && c == .const natName [] &&
+         mb.pw.isNever
+     | _ => false)
+  | _ => false
+
+/-- `b + k` as the offset moves write it: `b` itself at `k = 0`, else
+`Nat.add b (lit k)`. -/
+def natAddLit (b : Expr md) (k : Nat) : Expr md :=
+  if k = 0 then b else .app (.app (.const natAddName []) b) (.lit (.natVal k))
+
+/-- One offset step over `x`, whose own offset is `o`: `(bₓ, kₓ + n)` when `x` has
+the offset `(bₓ, kₓ)`, else `(x, n)`. -/
+def natOffsetStep (x : Expr md) (o : Option (Expr md × Nat)) (n : Nat) : Expr md × Nat :=
+  match o with
+  | some (b, k) => (b, k + n)
+  | none => (x, n)
+
+/-- **The `Nat` offset of a term**, a split `(base, k)` read syntactically: a literal
+`n` is `(lit 0, n)`; `Nat.succ x` is one step of `1` over `x`, and
+`Nat.add x (lit m)` one step of `m` (`natOffsetStep`). Any other term has none.
+The heads' level lists are not read. -/
+def natOffsetOf : Expr md → Option (Expr md × Nat)
+  | .lit (.natVal n) => some (.lit (.natVal 0), n)
+  | .app (.const c _) x =>
+    if c = natSuccName then some (natOffsetStep x (natOffsetOf x) 1) else none
+  | .app (.app (.const c _) x) (.lit (.natVal m)) =>
+    if c = natAddName then some (natOffsetStep x (natOffsetOf x) m) else none
+  | _ => none
+
 mutual
 
 /-- **Reduction**: the head steps of `whnfCore` and the `whnf` loop,
@@ -149,6 +194,11 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   clause, `Core.lean:1004-1006`: `whnf pe`). -/
   | projArg {d : Nat} {sn : Key md} {i : Nat} {e e' : Expr md} :
       Red env d e e' → Red env d (.proj sn i e) (.proj sn i e')
+  /-- **Reduction of an application's argument.** Not a move of the checker,
+  whose head steps never enter an argument; IxVM's stuck forms keep reduced
+  arguments (the stuck `Nat.add x (lit k)` keeps `x` head-normalized). -/
+  | appArg {d : Nat} {f a a' : Expr md} :
+      Red env d a a' → Red env d (.app f a) (.app f a')
   /-- **β at a fired gate** (`Core.lean:989-990`, `betaGateFires` at
   `.verified`): a λ whose validated annotation datum is `.never`
   reduces with no certificate — the graph-regime licence
@@ -228,6 +278,21 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       Red env d b wb → rawNatLit? wb = some n₂ →
       natOpResult c n₁ n₂ = some r →
       Red env d (.app (.app (.const c []) a) b) r
+  /-- **An offset's successor step**: `Nat.add b (lit (k + 1))` is the successor
+  of `b + k` (`natAddLit`). IxVM rewrites a recursor's major this way, before and
+  after head-normalizing it, so that ι meets `Nat.succ`. The head's level list
+  is not read. -/
+  | natAddSucc {d : Nat} {us : List Level} {b : Expr md} {k : Nat} :
+      natLitSupported env = true → natAddTyOk (env.find? natAddName) = true →
+      Red env d (.app (.app (.const natAddName us) b) (.lit (.natVal (k + 1))))
+        (.app (.const natSuccName []) (natAddLit b k))
+  /-- **Adding zero**: `Nat.add b a`, with `a` reducing to a zero reading, is
+  `b`. IxVM's stuck `Nat.add` form at a zero offset. The head's level list is
+  not read. -/
+  | natAddZero {d : Nat} {us : List Level} {b a w : Expr md} :
+      natLitSupported env = true → natAddTyOk (env.find? natAddName) = true →
+      Red env d a w → rawNatLit? w = some 0 →
+      Red env d (.app (.app (.const natAddName us) b) a) b
   /-- **The structural projection** `proj_i (ctor p⃗ x⃗) ↦ x_i`
   (`whnfCoreBody`'s `.proj` clause, `Core.lean:1013-1030`), driven by
   the projection table, fired under the entry's guard, and certified
@@ -441,6 +506,13 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   | natSucc {d : Nat} {k : Nat} {x : Expr md} :
       DefEq env d (.lit (.natVal k)) x →
       DefEq env d (.lit (.natVal (k + 1))) (.app (.const natSuccName []) x)
+  /-- **Equal offsets** (`natOffsetOf`): both sides split as `base + k` at the
+  same `k`, and the bases are definitionally equal. IxVM's offset test in
+  conversion. A base is a subterm of its side, or the closed literal `0`. -/
+  | natOffset {d : Nat} {a b ba bb : Expr md} {k : Nat} :
+      natLitSupported env = true → natAddTyOk (env.find? natAddName) = true →
+      natOffsetOf a = some (ba, k) → natOffsetOf b = some (bb, k) →
+      DefEq env d ba bb → DefEq env d a b
   /-- ∀-congruence (`Core.lean:1627-1643`): domains, then bodies opened
   with the RIGHT domain, then the annotation agreement and equal input
   contracts. The result contracts are not compared. -/
