@@ -22,9 +22,12 @@ certificates on pin-free programs through every program-level and byte-level
 verifier, Stage A in `check-cert`, the erased-typing default, the root signature
 checks, the specialisation bound, the reachability dedupe, the `--rc auto`
 immortal fallback, and the middle end's budgets on the inline amplifier and
-other over-budget steps; the root result shapes (`RootShape`: the view accepts every result
-of the shape a root's declared type describes, and SrcEval's results on the ABI fixture's roots are
-of it); and every verifier entry point on the crashing inputs and on generated deep
+other over-budget steps; the root result shapes (`RootShape`: the view and the shape view accept
+every result of the shape a root's declared type describes, also at roots compiled alone, whose
+objects return each constructor and whose claims `verifyBytes` accepts; SrcEval's results on the
+ABI fixture's roots are of it; the shape view rejects an ill-typed root's constructor of
+another type, which the view relabels; and the plain-RC view accepts the constructor trees of a
+plain-RC root's declared type); and every verifier entry point on the crashing inputs and on generated deep
 and wide inputs in a child process whose Lean stack is 8 MiB (`--stack-8mib`). -/
 
 namespace IxCCTests.Recheck.Run
@@ -215,6 +218,10 @@ def main (args : List String) : IO UInt32 := do
       return #[← Hostile.budgets a, ← Hostile.shrinkWork a, ← Hostile.inlineAmplifier a]
     part a "root result shapes: totality of the view on the shapes, SrcEval results of the shape" do
       return (← RootShape.abi a).push (← RootShape.pinFree a)
+    part a "roots compiled alone: every result constructor has a row; the shape view" do
+      return (← RootShape.aloneCases a).push (← RootShape.illTyped a)
+    part a "plain-RC roots: the view accepts the constructor trees of the declared type" do
+      RootShape.plainRc a
     part a "every verifier on an 8 MiB stack (FA follow-up, item 1)" (Deep.stackPart a)
     part a "Select.select against Select.run on generated Lir" (selection a count)
     part a "recheck artifacts equal a fresh ingress, produce and run" (artifacts a)

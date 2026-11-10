@@ -297,10 +297,10 @@ def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
 and a scalar/enum readback type (`isImmortalViewType`), so that the value clause
 observes its result. For a root it accepts, the view rejects a source result
 only if the result is not of the shape the root's declared type describes
-(`Recheck.ResultShape`; on the pinned-`Bool` route, also if a pinned `Bool`
-constructor has no row): `Recheck.Artifact.goesWrong_immortalRoot`,
-`verifyProgram_immortal_rootShape`. Nothing proves that SrcEval returns a
-result of that shape. -/
+(`Recheck.ResultShape`): `Recheck.Artifact.goesWrong_immortalRoot`,
+`verifyProgram_immortal_rootShape`; the shape view rejects exactly those
+results (`Recheck.ShapeClaim`, `verifyProgram_immortal_shape`). Nothing
+proves that SrcEval returns a result of that shape. -/
 def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
   rootParamsAllNat src root &&
     match root.ty with

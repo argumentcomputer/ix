@@ -103,18 +103,19 @@ def SGrows (st st' : St) : Prop :=
     ∀ s, P.size ≤ s → s < st.prog.size → st'.prog.global? s = st.prog.global? s
 
 /-- A later state of a caller's rewrite keeps every global of an earlier
-one, and its constructors and roots. -/
+one, its pinned constructors, its roots and its constructor table. -/
 def Grows (st st' : St) : Prop :=
   st.prog.size ≤ st'.prog.size ∧ (∀ s, s < st.prog.size → st'.prog.global? s = st.prog.global? s) ∧
-    st'.prog.known = st.prog.known ∧ st'.prog.roots = st.prog.roots
+    st'.prog.known = st.prog.known ∧ st'.prog.roots = st.prog.roots ∧
+    st'.prog.ctors = st.prog.ctors
 
 variable {P Q}
 
-theorem Grows.refl (st : St) : Grows st st := ⟨Nat.le_refl _, fun _ _ => rfl, rfl, rfl⟩
+theorem Grows.refl (st : St) : Grows st st := ⟨Nat.le_refl _, fun _ _ => rfl, rfl, rfl, rfl⟩
 
 theorem Grows.trans {st₁ st₂ st₃ : St} (h₁ : Grows st₁ st₂) (h₂ : Grows st₂ st₃) : Grows st₁ st₃ :=
   ⟨Nat.le_trans h₁.1 h₂.1, fun s hlt => by rw [h₂.2.1 s (Nat.lt_of_lt_of_le hlt h₁.1), h₁.2.1 s hlt],
-    h₂.2.2.1.trans h₁.2.2.1, h₂.2.2.2.trans h₁.2.2.2⟩
+    h₂.2.2.1.trans h₁.2.2.1, h₂.2.2.2.1.trans h₁.2.2.2.1, h₂.2.2.2.2.trans h₁.2.2.2.2⟩
 
 theorem Grows.sgrows {st st' : St} (h : Grows st st') : SGrows P st st' :=
   ⟨h.1, fun s _ hlt => h.2.1 s hlt⟩
@@ -133,7 +134,7 @@ theorem Pre.of_grows {st st' : St} (h : Grows st st') (hp : Pre P Q st') : Pre P
 
 /-- A state whose program only changed its fresh-function counter. -/
 theorem Grows.of_prog {st st' : St} (h : st'.prog = st.prog) : Grows st st' :=
-  ⟨by rw [h]; exact Nat.le_refl _, fun _ _ => by rw [h], by rw [h], by rw [h]⟩
+  ⟨by rw [h]; exact Nat.le_refl _, fun _ _ => by rw [h], by rw [h], by rw [h], by rw [h]⟩
 
 /-! ## Programs rebuilt from their global list -/
 

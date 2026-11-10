@@ -313,6 +313,9 @@ expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Anf.Shrink.Proof.run_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Shrink.Proof.run_global
 
+/-- info: 'IxCC.Anf.Shrink.Proof.run_ctors' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Shrink.Proof.run_ctors
+
 /-- info: 'IxCC.Anf.Shrink.Proof.run_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Shrink.Proof.run_refines
 
@@ -321,6 +324,9 @@ expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Anf.Inline.Proof.round_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Inline.Proof.round_global
+
+/-- info: 'IxCC.Anf.Inline.Proof.round_ctors' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Inline.Proof.round_ctors
 
 /-- info: 'IxCC.Anf.Inline.Proof.round_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Inline.Proof.round_refines
@@ -2449,3 +2455,6 @@ expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Anf.Specialize.Proof.run_known' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Specialize.Proof.run_known
+
+/-- info: 'IxCC.Anf.Specialize.Proof.run_ctors' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Specialize.Proof.run_ctors

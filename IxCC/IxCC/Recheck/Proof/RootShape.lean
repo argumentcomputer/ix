@@ -2,6 +2,7 @@ import IxCC.CompileClaim
 import IxCC.Recheck.Proof.Sound
 import IxCC.Recheck.Linked
 import IxCC.Anf.Proof.Spec.Run
+import IxCC.Lam.Erase.Proof.RegBody
 
 /-! # The results an immortal root's declared type describes
 
@@ -26,21 +27,26 @@ view rejects no such result.
 * **Totality** (`tagify_resultShape`, `Front.view_resultShape`): at a root
   whose readback type passes `isImmortalViewType`, `Rt.tagify` maps every
   observation of a result shape to a `ViewShape` observation, which reads back
-  from its word. On the `Nat` route and the enumeration route (readback type
-  from `Readback.discover`) this needs nothing more. On the pinned-`Bool` route
-  it needs both pinned `Bool` constructors to have a row in the program's
-  constructor table (`BoolRows`), which `checkImmortalRoot` does not check: a
-  program that never constructs or matches one of them has no row for it.
+  from its word. On the pinned-`Bool` route this needs both pinned `Bool`
+  constructors to have a row in the program's constructor table (`BoolRows`),
+  which erasure registers for every root returning the pinned `Bool`
+  (`erase_boolRow`) and the middle and back ends keep (`pipeline_ctors`):
+  `Front.boolRows`.
 * **The view's rejections** (`Front.goesWrong_resultShape`,
   `Artifact.goesWrong_immortalRoot`): for a root that `checkImmortalRoot`
   accepts, the case of `Front.GoesWrong` where the view rejects the result
-  happens only when the result is not of the root's result shape (or, on the
-  `Bool` route, when a pinned `Bool` constructor has no row). On the `Nat`
-  route the view rejects exactly the results that are not of the shape
+  happens only when the result is not of the root's result shape. On the
+  `Nat` route the view rejects exactly the results that are not of the shape
   (`Front.view_none_iff_nat`). On the other routes the converse fails: the
   view relabels a field-less constructor by its table tag and does not check
   which inductive it belongs to, so it accepts a constructor of another
   enumeration whose tag the signature lists.
+* **The shape view** (`Front.shapeView`, `Front.ShapeGoesWrong`): the view
+  restricted to the root's result shape. On every route it rejects exactly
+  the results off the shape (`Front.shapeView_none_iff`,
+  `Front.shapeGoesWrong_iff`), and the guarantees stated with the view imply
+  the same guarantees stated with it (`Front.sound_shape`, `Front.safe_shape`,
+  `Artifact.shapeClaim`).
 
 Not proved: that SrcEval on a well-typed root returns a result of its shape.
 That is type preservation for SrcEval, which no theorem states. -/
@@ -536,6 +542,147 @@ theorem runLir_boolKnown {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
   rw [hk, erase_known her]
   exact ⟨rfl, rfl⟩
 
+/-! ## The rows of the pinned `Bool` -/
+
+theorem step_ctors (prm : Anf.Shrink.Params) :
+    ∀ (s : Anf.Pipeline.Step) (P Q : Anf.Program), P.WF → s.run prm P = .ok Q → Q.ctors = P.ctors
+  | .shrink c, P, Q, _, h => by
+    simp only [Anf.Pipeline.Step.run] at h
+    split at h
+    · obtain ⟨x, hs, hc⟩ := Lam.ModesOk.bind_ok h
+      rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+      exact Anf.Shrink.Proof.run_ctors hs
+    · cases h
+  | .inline r, P, Q, _, h => by
+    simp only [Anf.Pipeline.Step.run] at h
+    split at h
+    · obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
+      rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+      exact Anf.Inline.Proof.round_ctors hr
+    · cases h
+  | .specialize c, P, Q, hw, h => by
+    simp only [Anf.Pipeline.Step.run] at h
+    obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
+    rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+    obtain ⟨st, hi, hQ⟩ := Anf.Specialize.Proof.run_inv hw hspec
+    exact Anf.Specialize.Proof.run_ctors hw hi hQ
+  | .prune, P, Q, _, h => by
+    simp only [Anf.Pipeline.Step.run] at h
+    cases h
+    rfl
+
+theorem steps_ctors (prm : Anf.Shrink.Params) : ∀ (steps : List Anf.Pipeline.Step) (P Q : Anf.Program),
+    P.WF → steps.foldlM (fun P s => s.run prm P) P = .ok Q → Q.ctors = P.ctors
+  | [], P, Q, _, h => by
+    simp only [List.foldlM_nil] at h
+    cases h
+    rfl
+  | s :: steps, P, Q, hw, h => by
+    simp only [List.foldlM_cons] at h
+    obtain ⟨P1, h1, h2⟩ := Lam.ModesOk.bind_ok h
+    have hw1 := (Anf.Pipeline.Proof.step_correct prm s P P1 (.inr Anf.Pipeline.Proof.spec_correct)
+      hw h1).1
+    exact (steps_ctors prm steps P1 Q hw1 h2).trans (step_ctors prm s P P1 hw h1)
+
+/-- The middle end keeps the Lam program's constructor table. -/
+theorem pipeline_ctors {cert : Anf.Pipeline.Cert} {L : Lam.Program} {Q : Anf.Program}
+    (h : Anf.Pipeline.run cert L = .ok Q) : Q.ctors = L.ctors := by
+  unfold Anf.Pipeline.run at h
+  obtain ⟨P, h1, h2⟩ := Lam.ModesOk.bind_ok h
+  obtain ⟨P0, h0, hc⟩ := Lam.ModesOk.bind_ok h1
+  obtain ⟨L', hl, h0⟩ := Lam.ModesOk.bind_ok h0
+  rw [← Anf.Pipeline.Proof.checkLamNodes_ok hl] at h0
+  have hP : P = P0 := Anf.Pipeline.Proof.checkGlobalNodes_ok hc
+  rw [hP] at h2
+  exact (steps_ctors cert.shrink cert.steps P0 Q (Anf.Pipeline.Proof.convert_wf h0) h2).trans
+    (Anf.Convert.Proof.convert_spec h0).2.2.2.1
+
+/-- A key of the table relation erasure ends with has a row in the table it
+emits. -/
+theorem ofKey_of_tabOf {I : Lam.Erase.Input} {s : Lam.Erase.St}
+    (hinv : Lam.Erase.Proof.CtorInv I s) {c : Src.CId} {n : Nat}
+    (h : Lam.Erase.Proof.tabOf s (.src c) n) :
+    (Fir.CtorInfo.ofKey (s.ctorOrder.reverse.filterMap s.ctors.get?) (.src c)).isSome := by
+  obtain ⟨c', info, hc', hk, -⟩ := h
+  cases hk
+  have hmem : info ∈ s.ctorOrder.reverse.filterMap s.ctors.get? :=
+    List.mem_filterMap.2 ⟨c, List.mem_reverse.2 ((hinv.order c).2 (by rw [hc']; rfl)), hc'⟩
+  have hkey := (hinv.rows c info hc').1
+  simp only [Fir.CtorInfo.ofKey, Option.isSome_map]
+  exact List.find?_isSome.2 ⟨info, hmem, by simp [hkey]⟩
+
+/-- A pinned `Bool` constructor is among the constructors whose rows a root
+returning the pinned `Bool` needs. -/
+theorem mem_resultCtors_bool {I : Lam.Erase.Input} {c B k : Src.CId} {d : Src.Decl}
+    (hd : I.decl? c = some d) (hres : d.type.pis.2 = .const B []) (hB : I.known.bool = some B)
+    (hk : I.known.boolFalse = some k ∨ I.known.boolTrue = some k) :
+    k ∈ Lam.Erase.resultCtors I c := by
+  unfold Lam.Erase.resultCtors
+  rw [hd]
+  dsimp only
+  rw [hres]
+  apply List.mem_append_left
+  simp only [Src.Term.spine, Src.Term.spine.go, hB, beq_self_eq_true, ↓reduceIte]
+  rcases hk with hk | hk <;> simp [hk]
+
+/-- **Erasure gives both pinned `Bool` constructors a row** at a program with
+a root returning the pinned `Bool`: each has a row in the Lam table. -/
+theorem erase_boolRow {p : Src.Program} {ch : Src.Relevance.Checked} {L : Lam.Program}
+    {st : Lam.Erase.Stats} (h : Lam.erase p ch = .ok (L, st)) {addr : Ixon.Address}
+    {c : Src.CId} (hroot : (addr, c) ∈ p.roots) (hb : BoolResult p c) {k : Src.CId}
+    (hk : p.known.boolFalse = some k ∨ p.known.boolTrue = some k) :
+    (Fir.CtorInfo.ofKey L.ctors (.src k)).isSome := by
+  have wf := Lam.Erase.Proof.erase_progWF h
+  obtain ⟨s, -, -, -, hctors, hinv, -, -, hrows⟩ := Lam.Erase.Proof.erase_reg h
+  obtain ⟨B, hB, -, hres⟩ := hb
+  obtain ⟨d, hd, hpis⟩ := resultType?_some hres
+  have hmem : k ∈ (Lam.Erase.Input.ofProgram p ch).roots.flatMap
+      (Lam.Erase.resultCtors (Lam.Erase.Input.ofProgram p ch)) :=
+    List.mem_flatMap.2 ⟨c, List.mem_map.2 ⟨(addr, c), hroot, rfl⟩,
+      mem_resultCtors_bool (I := Lam.Erase.Input.ofProgram p ch) hd hpis hB hk⟩
+  -- the pinned constructor `k`: no fields, and not a pinned `Decidable` one
+  obtain ⟨sf, lv, B', cidx, np, nf, ty, hdk⟩ : ∃ sf lv B' cidx np nf ty,
+      (Lam.Erase.Input.ofProgram p ch).decl? k = some (.ctor sf lv B' cidx np nf ty) := by
+    rcases hk with hk' | hk'
+    · obtain ⟨sf, lv, B', np, ty, hdk, -⟩ := wf.boolFalse hk'
+      exact ⟨sf, lv, B', 0, np, 0, ty, hdk⟩
+    · obtain ⟨sf, lv, B', np, ty, hdk, -⟩ := wf.boolTrue hk'
+      exact ⟨sf, lv, B', 1, np, 0, ty, hdk⟩
+  have hne : ∀ d, ((Lam.Erase.Input.ofProgram p ch).known.decIsFalse = some d ∨
+      (Lam.Erase.Input.ofProgram p ch).known.decIsTrue = some d) → d ≠ k := by
+    intro d hdd e
+    subst e
+    exact wf.decOther hdd (by rcases hk with h | h; exact .inl h; exact .inr (.inl h)) hdk hdk rfl
+  have halias : (Lam.Erase.Input.ofProgram p ch).alias k = k :=
+    Lam.Erase.Proof.alias_of_notDec (fun d h => hne d (.inl h)) (fun d h => hne d (.inr h))
+  obtain ⟨n, hn⟩ := hrows k hmem _ _ _ _ _ _ _ hdk
+  rw [halias] at hn
+  rw [hctors]
+  exact ofKey_of_tabOf hinv hn
+
+/-- **A root returning the pinned `Bool` has rows for both pinned `Bool`
+constructors** in the front half's Cfg table, when either is pinned (the
+pins come together). -/
+theorem Front.boolRows {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
+    (h : runLir cfg P cert = .ok f) {r : Nat} {addr : Ixon.Address} {c : Src.CId}
+    (hr : f.src.roots[r]? = some (addr, c)) (hb : BoolResult f.src c) {k : Src.CId}
+    (hk : f.src.known.boolFalse = some k ∨ f.src.known.boolTrue = some k) :
+    BoolRows f.src f.cfg := by
+  obtain ⟨-, ⟨st, her⟩, hanf, -, -, -, -, -⟩ := runLir_spec h
+  have hct : f.cfg.ctors = f.lam.ctors := (runLir_ctors h).trans (pipeline_ctors hanf)
+  have hroot : (addr, c) ∈ f.src.roots := List.mem_of_getElem? hr
+  have wf := Lam.Erase.Proof.erase_progWF her
+  obtain ⟨F, T, hF, hT⟩ : ∃ F T, f.src.known.boolFalse = some F ∧ f.src.known.boolTrue = some T := by
+    rcases hk with hk | hk
+    · obtain ⟨_, _, _, _, _, _, t, ht, _⟩ := wf.boolFalse hk
+      exact ⟨k, t, hk, ht⟩
+    · obtain ⟨_, _, _, _, _, _, f', hf', _⟩ := wf.boolTrue hk
+      exact ⟨f', k, hf', hk⟩
+  unfold BoolRows boolRows?
+  rw [hF, hT, hct]
+  simp only [Bool.and_eq_true]
+  exact ⟨erase_boolRow her hroot hb (.inl hF), erase_boolRow her hroot hb (.inr hT)⟩
+
 /-! ## At a root of the front half -/
 
 theorem Front.tys_root {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
@@ -546,14 +693,29 @@ theorem Front.tys_root {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
 /-- **Totality at a root, through the view.** At root `r` of the front half,
 naming constant `c`, with a readback type that passes `isImmortalViewType`,
 the view maps every observation of `c`'s result shape to a `ViewShape`
-observation (on the pinned-`Bool` route, when both pinned constructors have a
-row). -/
+observation. -/
 theorem Front.view_resultShape {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
     (h : runLir cfg P cert = .ok f) {r : Nat} {addr : Ixon.Address} {c : Src.CId}
     (hr : f.src.roots[r]? = some (addr, c)) {sig : Rt.Sig} {ty : Rt.FoTy}
     (hty : f.tys r = some (sig, ty)) (hview : CompileClaim.isImmortalViewType sig ty = true)
-    {o : Obs} (hs : ResultShape f.src c o) (hb : BoolResult f.src c → BoolRows f.src f.cfg) :
+    {o : Obs} (hs : ResultShape f.src c o) :
     ∃ w, f.view r (some o) = some (some w) ∧ ViewShape sig ty w := by
+  -- the pinned-`Bool` route's rows: erasure registers both
+  have hb : BoolResult f.src c → BoolRows f.src f.cfg := fun hB => by
+    cases hs with
+    | bool _ _ _ hk => exact Front.boolRows h hr hB hk
+    | nat n hN hres =>
+      obtain ⟨B, _, hBN, hres'⟩ := hB
+      rw [hres] at hres'
+      cases hres'
+      exact absurd hN hBN
+    | enum hres hhead hIN hIB _ _ =>
+      obtain ⟨B, hB, _, hres'⟩ := hB
+      rw [hres] at hres'
+      cases hres'
+      simp only [Src.Term.spine, Src.Term.spine.go, Src.Term.const.injEq] at hhead
+      obtain ⟨rfl, -⟩ := hhead
+      exact absurd hB hIB
   have hty' := hty
   rw [Front.tys_root h hr] at hty'
   obtain ⟨w, hw, hvs⟩ := tagify_resultShape hty' hview (runLir_boolKnown h) hs hb
@@ -562,8 +724,7 @@ theorem Front.view_resultShape {cfg : Config} {P : Src.Program} {cert : Cert} {f
 
 /-- **The view rejects only results off the root's shape.** At such a root,
 `Front.GoesWrong` holds only if SrcEval gets stuck or traps, or returns a
-result that is not of `c`'s result shape, or (pinned-`Bool` route only) a
-pinned `Bool` constructor has no row in the constructor table. -/
+result that is not of `c`'s result shape. -/
 theorem Front.goesWrong_resultShape {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
     (h : runLir cfg P cert = .ok f) {r : Nat} {addr : Ixon.Address} {c : Src.CId}
     (hr : f.src.roots[r]? = some (addr, c)) {sig : Rt.Sig} {ty : Rt.FoTy}
@@ -571,19 +732,14 @@ theorem Front.goesWrong_resultShape {cfg : Config} {P : Src.Program} {cert : Cer
     {ns : List Nat} (hgw : f.GoesWrong (r, ns)) :
     (∃ k, (Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) (r, ns) k).GoesWrong) ∨
       ∃ k v, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) (r, ns) k = .ok v ∧
-        (¬ ResultShapeOpt f.src c (Lang.obs v) ∨ (BoolResult f.src c ∧ ¬ BoolRows f.src f.cfg)) := by
+        ¬ ResultShapeOpt f.src c (Lang.obs v) := by
   obtain ⟨k, hk | ⟨v, hv, hnone⟩⟩ := hgw
   · exact .inl ⟨k, hk⟩
   · refine .inr ⟨k, v, hv, ?_⟩
-    by_cases hbr : BoolResult f.src c ∧ ¬ BoolRows f.src f.cfg
-    · exact .inr hbr
-    · left
-      rintro ⟨o, ho, hs⟩
-      have hb : BoolResult f.src c → BoolRows f.src f.cfg := fun hB =>
-        Decidable.byContradiction fun hn => hbr ⟨hB, hn⟩
-      obtain ⟨w, hw, _⟩ := Front.view_resultShape h hr hty hview hs hb
-      rw [ho, hw] at hnone
-      cases hnone
+    rintro ⟨o, ho, hs⟩
+    obtain ⟨w, hw, _⟩ := Front.view_resultShape h hr hty hview hs
+    rw [ho, hw] at hnone
+    cases hnone
 
 /-- **On the `Nat` route the view rejects exactly the results off the
 shape**: at a root returning the pinned `Nat`, the view rejects an
@@ -625,6 +781,138 @@ theorem Front.view_none_iff_nat {cfg : Config} {P : Src.Program} {cert : Cert} {
       | ctor _ _ => simp [Front.view, Rt.viewOf, hty, Rt.tagify]
       | bytes _ => simp [Front.view, Rt.viewOf, hty, Rt.tagify]
 
+/-! ## The shape view
+
+On the `Bool` and enumeration routes `Front.view` relabels a field-less
+constructor by its table tag without checking that it belongs to the root's
+result type, so it also accepts a constructor of another inductive whose tag
+the signature lists, and the last case of `Front.GoesWrong` (the view rejects
+the result) misses such a result. The shape view first asks that the
+observation be of the root's result shape (`resultShape?`), then views it as
+`Front.view` does. Its rejections are exactly the results off the shape
+(`Front.shapeView_none_iff`), and the guarantees stated with `Front.view`
+imply the same guarantees stated with it (`Front.sound_shape`,
+`Front.safe_shape`). `Front.view` itself is left as it is: the theorems stated
+with it also describe what the object returns where SrcEval returns a value
+of another type. -/
+
+/-- **The shape view** at root `r`: `Front.view` on an observation of the
+result shape of the constant `r` names, and a rejection (`none`) of any other
+observation or at an index with no root. -/
+def Front.shapeView (f : Front) (r : Nat) (ov : Option Obs) : Option (Option Obs) :=
+  match f.src.roots[r]?, ov with
+  | some (_, c), some o => if resultShape? f.src c o then f.view r (some o) else none
+  | _, _ => none
+
+/-- **The source goes wrong for the shape view**: SrcEval is stuck or traps
+at some clock, or returns a value the shape view rejects. -/
+def Front.ShapeGoesWrong (f : Front) (i : Nat × List Nat) : Prop :=
+  ∃ k, (Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k).GoesWrong ∨
+    ∃ v, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k = .ok v ∧
+      f.shapeView i.1 (Lang.obs v) = none
+
+/-- What the shape view accepts, the view accepts alike, and it is of the
+shape of the root's result. -/
+theorem Front.shapeView_some {f : Front} {r : Nat} {ov : Option Obs} {w : Option Obs}
+    (h : f.shapeView r ov = some w) :
+    f.view r ov = some w ∧ ∃ addr c o, f.src.roots[r]? = some (addr, c) ∧ ov = some o ∧
+      ResultShape f.src c o := by
+  unfold Front.shapeView at h
+  split at h
+  · next addr c o hr =>
+    split at h
+    · next hs => exact ⟨h, addr, c, o, by rw [hr], rfl, (resultShape?_iff _ _ _).1 hs⟩
+    · cases h
+  · cases h
+
+/-- On the root's result shape the shape view is the view. -/
+theorem Front.shapeView_of_shape {f : Front} {r : Nat} {addr : Ixon.Address} {c : Src.CId}
+    (hr : f.src.roots[r]? = some (addr, c)) {o : Obs} (hs : ResultShape f.src c o) :
+    f.shapeView r (some o) = f.view r (some o) := by
+  simp only [Front.shapeView, hr, (resultShape?_iff _ _ _).2 hs, ↓reduceIte]
+
+/-- Off the root's result shape the shape view rejects. -/
+theorem Front.shapeView_off_shape {f : Front} {r : Nat} {addr : Ixon.Address} {c : Src.CId}
+    (hr : f.src.roots[r]? = some (addr, c)) {ov : Option Obs} (hs : ¬ ResultShapeOpt f.src c ov) :
+    f.shapeView r ov = none := by
+  cases hw : f.shapeView r ov with
+  | none => rfl
+  | some w =>
+    obtain ⟨-, addr', c', o, hr', rfl, hs'⟩ := Front.shapeView_some hw
+    rw [hr] at hr'
+    cases hr'
+    exact absurd ⟨o, rfl, hs'⟩ hs
+
+/-- A source that goes wrong for the view goes wrong for the shape view. -/
+theorem Front.goesWrong_shape {f : Front} {i : Nat × List Nat} (h : f.GoesWrong i) :
+    f.ShapeGoesWrong i := by
+  obtain ⟨k, hk | ⟨v, hv, hnone⟩⟩ := h
+  · exact ⟨k, .inl hk⟩
+  · refine ⟨k, .inr ⟨v, hv, ?_⟩⟩
+    cases hw : f.shapeView i.1 (Lang.obs v) with
+    | none => rfl
+    | some w =>
+      rw [(Front.shapeView_some hw).1] at hnone
+      cases hnone
+
+/-- **The shape view rejects exactly the results off the shape**: at root `r`
+of the front half, naming constant `c`, with a readback type that passes
+`isImmortalViewType` (the `Nat`, pinned-`Bool` and enumeration routes), the
+shape view rejects an observation iff it is not of `c`'s result shape. -/
+theorem Front.shapeView_none_iff {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
+    (h : runLir cfg P cert = .ok f) {r : Nat} {addr : Ixon.Address} {c : Src.CId}
+    (hr : f.src.roots[r]? = some (addr, c)) {sig : Rt.Sig} {ty : Rt.FoTy}
+    (hty : f.tys r = some (sig, ty)) (hview : CompileClaim.isImmortalViewType sig ty = true)
+    (ov : Option Obs) :
+    f.shapeView r ov = none ↔ ¬ ResultShapeOpt f.src c ov := by
+  constructor
+  · rintro hnone ⟨o, rfl, hs⟩
+    obtain ⟨w, hw, -⟩ := Front.view_resultShape h hr hty hview hs
+    rw [Front.shapeView_of_shape hr hs, hw] at hnone
+    cases hnone
+  · exact Front.shapeView_off_shape hr
+
+/-- **The source goes wrong for the shape view exactly when SrcEval gets
+stuck or traps, or returns a result off the root's shape** (at such a root). -/
+theorem Front.shapeGoesWrong_iff {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front}
+    (h : runLir cfg P cert = .ok f) {r : Nat} {addr : Ixon.Address} {c : Src.CId}
+    (hr : f.src.roots[r]? = some (addr, c)) {sig : Rt.Sig} {ty : Rt.FoTy}
+    (hty : f.tys r = some (sig, ty)) (hview : CompileClaim.isImmortalViewType sig ty = true)
+    (ns : List Nat) :
+    f.ShapeGoesWrong (r, ns) ↔
+      (∃ k, (Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) (r, ns) k).GoesWrong) ∨
+        ∃ k v, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) (r, ns) k = .ok v ∧
+          ¬ ResultShapeOpt f.src c (Lang.obs v) := by
+  constructor
+  · rintro ⟨k, hk | ⟨v, hv, hnone⟩⟩
+    · exact .inl ⟨k, hk⟩
+    · exact .inr ⟨k, v, hv, (Front.shapeView_none_iff h hr hty hview _).1 hnone⟩
+  · rintro (⟨k, hk⟩ | ⟨k, v, hv, hs⟩)
+    · exact ⟨k, .inl hk⟩
+    · exact ⟨k, .inr ⟨v, hv, (Front.shapeView_none_iff h hr hty hview _).2 hs⟩⟩
+
+/-- **Soundness on the shape view**, from soundness on the view: a value the
+object returns is the shape view of a value SrcEval returns, or the source
+goes wrong for the shape view. -/
+theorem Front.sound_shape {f : Front} {i : Nat × List Nat} {w : Option Obs}
+    (h : (∃ k' v, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k' = .ok v ∧
+      f.view i.1 (Lang.obs v) = some w) ∨ f.GoesWrong i) :
+    (∃ k' v, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k' = .ok v ∧
+      f.shapeView i.1 (Lang.obs v) = some w) ∨ f.ShapeGoesWrong i := by
+  rcases h with ⟨k', v, hv, hview⟩ | hg
+  · cases hw : f.shapeView i.1 (Lang.obs v) with
+    | none => exact .inr ⟨k', .inr ⟨v, hv, hw⟩⟩
+    | some w' =>
+      rw [(Front.shapeView_some hw).1] at hview
+      cases hview
+      exact .inl ⟨k', v, hv, hw⟩
+  · exact .inr (Front.goesWrong_shape hg)
+
+/-- **Safety on the shape view**, from safety on the view. -/
+theorem Front.safe_shape {f : Front} {i : Nat × List Nat} {Q : Prop}
+    (h : ¬ f.GoesWrong i → Q) (hs : ¬ f.ShapeGoesWrong i) : Q :=
+  h fun hg => hs (Front.goesWrong_shape hg)
+
 /-! ## At the root a claim names -/
 
 theorem rootsOf_get_const {cfg : Config} {p : Src.Program} {C : Cfg.Program} {l : Rt.Lowered} :
@@ -649,28 +937,25 @@ theorem rootsOf_get_const {cfg : Config} {p : Src.Program} {C : Cfg.Program} {l 
 
 /-- **At root 0 of artifact `a` with root record `root`, the source goes wrong
 only off the root's shape**: SrcEval gets stuck or traps, or returns a result
-that is not of `root.const`'s result shape, or (pinned-`Bool` route only) a
-pinned `Bool` constructor has no row in the constructor table. -/
+that is not of `root.const`'s result shape. -/
 def RootWrongOffShape (a : Artifact) (root : Root) : Prop :=
   ∀ ns : List Nat, a.front.GoesWrong (0, ns) →
     (∃ k, (Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k).GoesWrong) ∨
       ∃ k v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k = .ok v ∧
-        (¬ ResultShapeOpt a.src root.const (Lang.obs v) ∨
-          (BoolResult a.src root.const ∧ ¬ BoolRows a.src a.cfg))
+        ¬ ResultShapeOpt a.src root.const (Lang.obs v)
 
-/-- **The view's rejections at an immortal root.** For an artifact of
-`Recheck.run` whose first root passes `checkImmortalRoot`, the source goes
-wrong at that root only off the root's shape (`RootWrongOffShape`). -/
-theorem Artifact.goesWrong_immortalRoot {cfg : Config} {P : Src.Program} {cert : Cert}
+/-- At the first root of an artifact of `Recheck.run`, when it passes
+`checkImmortalRoot`: the front half, the source root it names, and its
+readback type, which passes `isImmortalViewType`. -/
+theorem Artifact.immortalRoot {cfg : Config} {P : Src.Program} {cert : Cert}
     {a : Artifact} (hrun : run cfg P cert = .ok a) {root : Root}
     (hhead : a.roots.head? = some root) (hok : CompileClaim.checkImmortalRoot a.src root = true) :
-    RootWrongOffShape a root := by
-  intro ns hgw
+    runLir cfg P cert = .ok a.front ∧ (∃ addr, a.src.roots[0]? = some (addr, root.const)) ∧
+      ∃ sig ty, a.front.tys 0 = some (sig, ty) ∧ CompileClaim.isImmortalViewType sig ty = true := by
   obtain ⟨f, hf, hsrc, hch, hlam, hanf, hfir, hown, hcfg, hlow, hroots⟩ := run_runLir hrun
   have hfront : a.front = f := by
     cases f
     simp only [Artifact.front, hsrc, hch, hlam, hanf, hfir, hown, hcfg, hlow]
-  rw [hfront] at hgw
   rw [hroots, List.head?_eq_getElem?] at hhead
   obtain ⟨j, addr, fx, fn, sym, hrow, hrty⟩ := rootsOf_get_const hhead
   simp only [List.getElem?_zip_eq_some] at hrow
@@ -682,10 +967,53 @@ theorem Artifact.goesWrong_immortalRoot {cfg : Config} {P : Src.Program} {cert :
   | some st =>
     obtain ⟨sig, ty⟩ := st
     rw [hty] at hok
-    have htys : f.tys 0 = some (sig, ty) := by
-      rw [Front.tys_root hf hsrc0, ← hrty, hty]
-    have := Front.goesWrong_resultShape hf hsrc0 htys hok hgw
-    rw [hsrc, hch, hcfg]
-    exact this
+    refine ⟨by rw [hfront]; exact hf, ⟨addr, by rw [hsrc]; exact hsrc0⟩, sig, ty, ?_, hok⟩
+    rw [hfront, Front.tys_root hf hsrc0, ← hrty, hty]
+
+/-- **The view's rejections at an immortal root.** For an artifact of
+`Recheck.run` whose first root passes `checkImmortalRoot`, the source goes
+wrong at that root only off the root's shape (`RootWrongOffShape`). -/
+theorem Artifact.goesWrong_immortalRoot {cfg : Config} {P : Src.Program} {cert : Cert}
+    {a : Artifact} (hrun : run cfg P cert = .ok a) {root : Root}
+    (hhead : a.roots.head? = some root) (hok : CompileClaim.checkImmortalRoot a.src root = true) :
+    RootWrongOffShape a root := by
+  intro ns hgw
+  obtain ⟨hf, ⟨addr, hsrc0⟩, sig, ty, htys, hview⟩ := Artifact.immortalRoot hrun hhead hok
+  exact Front.goesWrong_resultShape hf hsrc0 htys hview hgw
+
+/-- **The guarantees at root 0 of artifact `a`, on the shape view**, for its
+object linked with driver `D`: a value the object returns is the shape view
+of a value SrcEval returns, or the source goes wrong for the shape view; if
+the source does not go wrong for the shape view, the object goes wrong at no
+clock; and the source goes wrong for the shape view exactly when SrcEval gets
+stuck or traps, or returns a result off `root.const`'s result shape. -/
+def ShapeClaim (a : Artifact) (root : Root) (D : X86.Driver) : Prop :=
+  ∀ ns : List Nat,
+    (∀ k w, Lang.run (a.linked D) (0, ns) k = .ok w →
+      (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k' = .ok v ∧
+        a.front.shapeView 0 (Lang.obs v) = some w) ∨ a.front.ShapeGoesWrong (0, ns)) ∧
+    (¬ a.front.ShapeGoesWrong (0, ns) → ∀ k, ¬ (Lang.run (a.linked D) (0, ns) k).GoesWrong) ∧
+    (a.front.ShapeGoesWrong (0, ns) ↔
+      (∃ k, (Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k).GoesWrong) ∨
+        ∃ k v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k = .ok v ∧
+          ¬ ResultShapeOpt a.src root.const (Lang.obs v))
+
+/-- **The shape-view guarantees at an immortal root**, from the guarantees on
+the view (`Recheck.sound`, or the zero-RC path's) at root 0. -/
+theorem Artifact.shapeClaim {cfg : Config} {P : Src.Program} {cert : Cert}
+    {a : Artifact} (hrun : run cfg P cert = .ok a) {root : Root}
+    (hhead : a.roots.head? = some root) (hok : CompileClaim.checkImmortalRoot a.src root = true)
+    (D : X86.Driver)
+    (hview : ∀ ns : List Nat,
+      (∀ k w, Lang.run (a.linked D) (0, ns) k = .ok w →
+        (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k' = .ok v ∧
+          a.front.view 0 (Lang.obs v) = some w) ∨ a.front.GoesWrong (0, ns)) ∧
+      (¬ a.front.GoesWrong (0, ns) → ∀ k, ¬ (Lang.run (a.linked D) (0, ns) k).GoesWrong)) :
+    ShapeClaim a root D := by
+  obtain ⟨hf, ⟨addr, hsrc0⟩, sig, ty, htys, hvt⟩ := Artifact.immortalRoot hrun hhead hok
+  intro ns
+  exact ⟨fun k w hw => Front.sound_shape (f := a.front) (i := (0, ns)) ((hview ns).1 k w hw),
+    Front.safe_shape (f := a.front) (i := (0, ns)) (hview ns).2,
+    Front.shapeGoesWrong_iff hf hsrc0 htys hvt ns⟩
 
 end IxCC.Recheck

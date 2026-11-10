@@ -3,6 +3,7 @@ import IxCC.Compiler.Proof
 import IxCC.Recheck.Proof.Soundness
 import IxCC.Recheck.Rc.Proof.ObjectSound
 import IxCC.Recheck.Proof.RootShape
+import IxCC.Recheck.Rc.Proof.RootTree
 
 /-! # `CompileClaim.Proof`: Wire Roundtrip & End-to-End Soundness Theorems
 
@@ -971,7 +972,10 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
 On the immortal and zero-RC paths the claim's root passes `checkImmortalRoot`,
 so the last case of `a.front.GoesWrong` (the view rejects the result) happens
 there only when the result is not of the root's result shape
-(`Recheck.RootWrongOffShape`, `Recheck.Artifact.goesWrong_immortalRoot`). -/
+(`Recheck.RootWrongOffShape`, `Recheck.Artifact.goesWrong_immortalRoot`). On
+the shape view the same guarantees hold, and its last case is exactly a
+result off the shape (`Recheck.ShapeClaim`, `verifyProgram_immortal_shape`
+and its `.zeroRc` and `verifyBytes` forms). -/
 
 /-- Under `.immortal`, `verifyProgram`'s artifact goes wrong at the claim's
 root only off the root's result shape. -/
@@ -1051,6 +1055,138 @@ theorem verifyBytes_zeroRc_rootShape {cfg : Recheck.Config} {envBytes : ByteArra
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
     obtain ⟨cert, a, root, h⟩ := verifyProgram_zeroRc_rootShape hpol hver.2
+    exact ⟨inp, cert, a, root, rfl, h⟩
+
+/-- Under `.immortal`, `verifyProgram`'s artifact has the shape-view
+guarantees at the claim's root, for every driver the object's text admits. -/
+theorem verifyProgram_immortal_shape {cfg : Recheck.Config} {P : Src.Program}
+    {c : CompileClaim} {certText : String}
+    (hpol : c.policy = .immortal)
+    (hver : verifyProgram cfg P c certText = true) :
+    ∃ (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.Cert.ofText certText = .ok cert ∧
+      Recheck.run cfg P cert = .ok a ∧
+      a.roots.head? = some root ∧
+      checkImmortalRoot a.src root = true ∧
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
+  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, hrun, _, hahead, hnat, hty, hview, -, -, hsem⟩ :=
+    verifyProgram_immortal_sound hpol hver
+  have hok : checkImmortalRoot a.src root = true := by
+    simp [checkImmortalRoot, hnat, hty, hview]
+  exact ⟨cert, a, root, hcert, hrun, hahead, hok, fun D hD =>
+    Recheck.Artifact.shapeClaim hrun hahead hok D fun ns =>
+      ⟨((hsem D hD).2 (0, ns)).1, ((hsem D hD).2 (0, ns)).2.1⟩⟩
+
+/-- Under `.zeroRc`, `verifyProgram`'s artifact has the shape-view
+guarantees at the claim's root, for every driver the object's text admits. -/
+theorem verifyProgram_zeroRc_shape {cfg : Recheck.Config} {P : Src.Program}
+    {c : CompileClaim} {certText : String}
+    (hpol : c.policy = .zeroRc)
+    (hver : verifyProgram cfg P c certText = true) :
+    ∃ (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.Cert.ofText certText = .ok cert ∧
+      Recheck.run cfg P cert = .ok a ∧
+      a.roots.head? = some root ∧
+      checkImmortalRoot a.src root = true ∧
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
+  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, _, hrun, _, _, _, hahead, hnat, hty, hview, -, -,
+    hsem⟩ := verifyProgram_zeroRc_sound hpol hver
+  have hok : checkImmortalRoot a.src root = true := by
+    simp [checkImmortalRoot, hnat, hty, hview]
+  exact ⟨cert, a, root, hcert, hrun, hahead, hok, fun D hD =>
+    Recheck.Artifact.shapeClaim hrun hahead hok D fun ns =>
+      ⟨((hsem D hD).2.2 (0, ns)).1, ((hsem D hD).2.2 (0, ns)).2.1⟩⟩
+
+/-- Under `.immortal`, `verifyBytes`'s artifact (on the ingested program) has
+the shape-view guarantees at the claim's root. -/
+theorem verifyBytes_immortal_shape {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    (hpol : c.policy = .immortal)
+    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.Cert.ofText certText = .ok cert ∧
+      Recheck.run cfg inp.program cert = .ok a ∧
+      a.roots.head? = some root ∧
+      checkImmortalRoot a.src root = true ∧
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
+  unfold verifyBytes at hver
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  | error e => simp [hing] at hver
+  | ok inp =>
+    simp only [hing, Bool.and_eq_true] at hver
+    obtain ⟨cert, a, root, h⟩ := verifyProgram_immortal_shape hpol hver.2
+    exact ⟨inp, cert, a, root, rfl, h⟩
+
+/-- Under `.zeroRc`, `verifyBytes`'s artifact (on the ingested program) has
+the shape-view guarantees at the claim's root. -/
+theorem verifyBytes_zeroRc_shape {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    (hpol : c.policy = .zeroRc)
+    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.Cert.ofText certText = .ok cert ∧
+      Recheck.run cfg inp.program cert = .ok a ∧
+      a.roots.head? = some root ∧
+      checkImmortalRoot a.src root = true ∧
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
+  unfold verifyBytes at hver
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  | error e => simp [hing] at hver
+  | ok inp =>
+    simp only [hing, Bool.and_eq_true] at hver
+    obtain ⟨cert, a, root, h⟩ := verifyProgram_zeroRc_shape hpol hver.2
+    exact ⟨inp, cert, a, root, rfl, h⟩
+
+/-! ## The view's rejections at a plain-RC claim's root
+
+On the plain-RC path the claim's root passes `checkPlainRcRoot`, so the last
+case of the plain-RC `GoesWrong` (the view rejects the result) happens there
+only when the result is not of the root's plain-RC shape: the constructor
+trees of its declared first-order type, or its `ResultShape` for a root
+returning the pinned `Nat` or `Bool` (`Recheck.RcReplay.RootWrongOffPlainShape`,
+`Recheck.RcReplay.Artifact.goesWrong_plainRoot`). -/
+
+/-- Under `.plainRc`, `verifyProgram`'s artifact goes wrong at the claim's
+root only off the root's plain-RC shape. -/
+theorem verifyProgram_plainRc_rootShape {cfg : Recheck.Config} {P : Src.Program}
+    {c : CompileClaim} {certText : String}
+    (hpol : c.policy = .plainRc)
+    (hver : verifyProgram cfg P c certText = true) :
+    ∃ (cert : Recheck.RcReplay.Cert) (a : Recheck.RcReplay.Artifact) (root : Recheck.Root),
+      Recheck.RcReplay.Cert.ofText certText = .ok cert ∧
+      Recheck.RcReplay.run cfg P cert = .ok a ∧
+      a.roots.head? = some root ∧
+      checkPlainRcRoot a.front.src root = true ∧
+      Recheck.RcReplay.RootWrongOffPlainShape a root := by
+  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, hrun, _, hahead, hnat, hty, -⟩ :=
+    verifyProgram_plainRc_sound hpol hver
+  have hok : checkPlainRcRoot a.front.src root = true := by
+    simp [checkPlainRcRoot, hnat, hty]
+  exact ⟨cert, a, root, hcert, hrun, hahead, hok,
+    Recheck.RcReplay.Artifact.goesWrong_plainRoot hrun hahead hok⟩
+
+/-- Under `.plainRc`, `verifyBytes`'s artifact (on the ingested program) goes
+wrong at the claim's root only off the root's plain-RC shape. -/
+theorem verifyBytes_plainRc_rootShape {cfg : Recheck.Config} {envBytes : ByteArray}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    (hpol : c.policy = .plainRc)
+    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    ∃ (inp : Recheck.Input) (cert : Recheck.RcReplay.Cert) (a : Recheck.RcReplay.Artifact)
+      (root : Recheck.Root),
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.RcReplay.Cert.ofText certText = .ok cert ∧
+      Recheck.RcReplay.run cfg inp.program cert = .ok a ∧
+      a.roots.head? = some root ∧
+      checkPlainRcRoot a.front.src root = true ∧
+      Recheck.RcReplay.RootWrongOffPlainShape a root := by
+  unfold verifyBytes at hver
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  | error e => simp [hing] at hver
+  | ok inp =>
+    simp only [hing, Bool.and_eq_true] at hver
+    obtain ⟨cert, a, root, h⟩ := verifyProgram_plainRc_rootShape hpol hver.2
     exact ⟨inp, cert, a, root, rfl, h⟩
 
 end IxCC.CompileClaim

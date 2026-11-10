@@ -15,8 +15,9 @@ callee-saved registers and `rsp`, decodes the result in C, and dumps the
 object area so that `Rt.readback` reads the same value in Lean.
 
 Arity 6 (`nat6`, `bool6`, `tri6`) is declined with `rt: rt.params`: the
-entry wrapper passes five arguments. The compiler's own readback type covers
-`Nat` and `Bool` only (`Recheck.rootTy`); the suite reads `Tri` results with
-the manifest's `ctors`.
+entry wrapper passes five arguments. The compiler's readback type (`Recheck.rootTy`)
+is `Nat`, the pinned `Bool`'s, or for `Tri` the one discovery finds (three
+field-less constructors, the manifest's `ctors`, which the suite checks), also
+for a root compiled alone.
 
 Licence: Apache-2.0 OR MIT (original programs).

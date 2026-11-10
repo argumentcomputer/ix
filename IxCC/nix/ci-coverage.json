@@ -655,6 +655,7 @@
   "IxCC.Recheck.Rc.Proof.ReleaseCore",
   "IxCC.Recheck.Rc.Proof.Replay",
   "IxCC.Recheck.Rc.Proof.RetainedReplay",
+  "IxCC.Recheck.Rc.Proof.RootTree",
   "IxCC.Recheck.Rc.Proof.Roots",
   "IxCC.Recheck.Rc.Proof.SourceFir",
   "IxCC.Recheck.Rc.Proof.SourceSound",
@@ -1558,7 +1559,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-10: result shapes at immortal roots; every certificate list capped in program quantities, with loop forms for the allocation validator's list operations",
+ "2026-11-10: rows for every constructor of a root's result type; the shape view; constructor trees at plain-RC roots",
  "axiom_sha256":
- "2926fa2533aaaded998760b6011615dd83d553cdec45ef8d9d61bfa7fd59fa9e",
- "axiom_count": 5483}
+ "f00ffc33a092400a02502713ef410f547d593da92b7ce09a47e9f1c1bf98aeb5",
+ "axiom_count": 5528}

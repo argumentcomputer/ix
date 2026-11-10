@@ -204,9 +204,18 @@ keeps it. At a root that `checkImmortalRoot` accepts, the view accepts every
 result of the shape the root's declared type describes (a `Nat`, a pinned
 `Bool` constructor, or a constructor of the result enumeration:
 `Recheck.ResultShape`), so the third case means a result off that shape
-(`Recheck.Artifact.goesWrong_immortalRoot`; on the pinned-`Bool` route, when
-both pinned constructors have a row in the constructor table). That SrcEval
-returns a result of that shape is not proved.
+(`Recheck.Artifact.goesWrong_immortalRoot`). Erasure registers a
+constructor-table row for every constructor a root's result can hold, so
+this holds for a root compiled alone too. The converse fails for the view,
+which relabels by table tag a constructor of another type; the shape view
+(`Recheck.Front.shapeView`) accepts only results of the shape, and the same
+three clauses hold with it, its third case being exactly a result off the
+shape (`Recheck.ShapeClaim`). At a root that `checkPlainRcRoot` accepts, the
+plain-RC view accepts every constructor tree of the root's declared
+first-order type (`Recheck.PlainShape`), so there too the third case
+means a result off that shape
+(`Recheck.RcReplay.Artifact.goesWrong_plainRoot`). That SrcEval returns a
+result of that shape is not proved: that is type preservation for SrcEval.
 
 Only the root's result is observed, read back at its first-order type;
 Phase 1 programs are scalar and pure. The theorem uses only the three

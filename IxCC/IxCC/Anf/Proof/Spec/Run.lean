@@ -58,13 +58,14 @@ structure RunInv (P Q : Program) (st : St) : Prop where
   ok : StOk P st
   known : st.prog.known = P.known
   roots : st.prog.roots = P.roots
+  ctors : st.prog.ctors = P.ctors
   glob : ∀ g gd, P.global? g = some gd → ∃ gd', st.prog.global? g = some gd' ∧ gd'.ps = gd.ps ∧
     (gd'.body = gd.body ∨ ∃ (defs : Src.NatMap Def) (stb : St),
       (∀ args : List Val, args.length = gd.ps.length → DefsOk P defs args.reverse) ∧ SGrows P stb st ∧
       (Pre P Q stb → RwE P Q defs gd.ps.length gd.body gd'.body))
 
 theorem runInv_init (hw : P.WF) : RunInv P Q { prog := P } :=
-  ⟨⟨hw, Nat.le_refl _⟩, rfl, rfl, fun g gd h => ⟨gd, h, rfl, .inl rfl⟩⟩
+  ⟨⟨hw, Nat.le_refl _⟩, rfl, rfl, rfl, fun g gd h => ⟨gd, h, rfl, .inl rfl⟩⟩
 
 /-- One caller's step keeps the invariant. -/
 theorem runInv_step (hw : P.WF) {inv : Nat} {key : Key.GKey} {D : List (GlobalId × List Bool)} {fuel : Nat}
@@ -95,11 +96,13 @@ theorem runInv_step (hw : P.WF) {inv : Nat} {key : Key.GKey} {D : List (GlobalId
     have hne : (s == f) = false := by
       rw [beq_eq_false_iff_ne]; exact fun e => Nat.lt_irrefl _ (Nat.lt_of_lt_of_le (e ▸ hflt) hs)
     cases st1.prog.global? s <;> simp [hne]
-  refine ⟨⟨withGlobals_wf _ _, by simp only [hsize]; exact hs1.2⟩, ?_, ?_, fun g gdP hgP => ?_⟩
+  refine ⟨⟨withGlobals_wf _ _, by simp only [hsize]; exact hs1.2⟩, ?_, ?_, ?_, fun g gdP hgP => ?_⟩
   · show st1.prog.known = P.known
     rw [hg1.2.2.1]; exact hi.known
   · show st1.prog.roots = P.roots
-    rw [hg1.2.2.2]; exact hi.roots
+    rw [hg1.2.2.2.1]; exact hi.roots
+  · show st1.prog.ctors = P.ctors
+    rw [hg1.2.2.2.2]; exact hi.ctors
   · obtain ⟨gd', hgd', hps, hbody⟩ := hi.glob g gdP hgP
     have hglt : g < st.prog.size := Nat.lt_of_lt_of_le (hw.1 g gdP hgP) hi.ok.2
     have hg1' : st1.prog.global? g = some gd' := by rw [hg1.2.1 g hglt]; exact hgd'
@@ -160,6 +163,9 @@ theorem run_globRel : GlobRel P Q := fun g gd hg hps => by
   · exact .xc .nil .nil hc
 
 theorem run_known : Q.known = P.known := by rw [hQ]; exact hi.known
+
+/-- P4 keeps the constructor table. -/
+theorem run_ctors : Q.ctors = P.ctors := by rw [hQ]; exact hi.ctors
 
 /-- **P4's output satisfies the walk's hypotheses**: valid configurations
 read the input, calls and global values of the input's ids simulate one

@@ -1,6 +1,7 @@
 import IxCCTests.Corpus.Manifest
 import IxCCTests.Corpus.Budget
 import IxCCTests.Pipeline.Levels
+import IxCCTests.Recheck.RootShape
 import IxCC.Anf.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
@@ -111,13 +112,11 @@ def judge (a : Assert) (label level : String) (want : Want) (allow : List String
       expect a (obs == v) s!"{label}: reads back {obs}, expected {v}"
       pure false
 
-/-- The readback type the suite reads a root's result at: the compiler's
-(`Nat`, `Bool`), or for an `enum` result one inductive of field-less
-constructors (Phase 1's `rootTy` reads enums back as nothing). -/
-def resultTy (r : Root) (ty : Option (Rt.Sig × Rt.FoTy)) : Option (Rt.Sig × Rt.FoTy) :=
-  match r.result, r.ctors with
-  | "enum", some n => some ({ inds := [List.replicate n []] }, .ind 0)
-  | _, _ => ty
+/-- The readback type of an `enum` result of `n` constructors: one inductive
+of `n` field-less constructors. The suite reads every result at the
+compiler's readback type (`Recheck.rootTy`), which must be this one for an
+`enum` root, compiled alone or not. -/
+def enumTy (n : Nat) : Rt.Sig × Rt.FoTy := ({ inds := [List.replicate n []] }, .ind 0)
 
 /-- The word levels' region and the machines' stack budget for a case. -/
 def caseRegion (cs : Case) : Nat := cs.region.getD IxCCTests.Rt.defaultSize
@@ -134,9 +133,10 @@ def nativeStack (cs : Case) : Nat := cs.stack.getD (1 <<< 28)
 def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label : String) (r : Root)
     (c : Levels.Compiled) (t : IO.Ref Tally) : IO (Array String) := do
   let levels := Levels.levelNames c
-  let some root0 := c.art.roots.head? | throw (IO.userError s!"{label}: no root")
-  let root := { root0 with ty := resultTy r root0.ty }
-  let c := { c with art := { c.art with roots := root :: c.art.roots.drop 1 } }
+  let some root := c.art.roots.head? | throw (IO.userError s!"{label}: no root")
+  if r.result == "enum" then
+    expect a (root.ty == r.ctors.map enumTy)
+      s!"{label}: readback type {repr root.ty}, expected {repr (r.ctors.map enumTy)}"
   expectEq a root.params r.params s!"{label}: parameters"
   let mut times : Array (String × Nat) := levels.toArray.map (·, 0)
   for cs in r.cases do
@@ -256,6 +256,13 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
     let (lines, ms) ← timed (Budget.survey a)
     IO.println s!"  middle-end budgets: {(← a.get) - before} assertions, {ms} ms"
     for l in lines do IO.println s!"    {l}"
+    -- roots returning each constructor of their result type, compiled alone
+    if let some nt := native then
+      let before ← a.get
+      let (lines, ms) ← timed (IxCCTests.Recheck.RootShape.nativeAlone a nt)
+      IO.println s!"  result constructors of roots compiled alone, natively: {(← a.get) - before} \
+        assertions, {ms} ms"
+      for l in lines do IO.println s!"    {l}"
 
 /-- The middle end's and the backend's input for a root `produce` declines:
 Anf after the middle end, Lir and Xv (as `ixcc --dump-ir` prints them),
@@ -327,9 +334,7 @@ def observe (o : Options) (work : FilePath) : IO Unit := do
         | .error e => IO.println s!"{r.name}\t-\t-\t-\t-\tdeclined {e.stage.name}: {e.code}"
         | .ok (cert, art) =>
           let c ← Levels.assemble r.name cert art
-          let some root0 := c.art.roots.head? | continue
-          let root := { root0 with ty := resultTy r root0.ty }
-          let c := { c with art := { c.art with roots := root :: c.art.roots.drop 1 } }
+          let some root := c.art.roots.head? | continue
           let exe ← native.mapM fun nt => link nt s!"observe_{r.name.replace "." "_"}" c.art.object root.symbol
           for cs in r.cases do
             let noWord := cs.args.any (· ≥ limit)

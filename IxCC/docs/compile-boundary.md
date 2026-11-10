@@ -66,11 +66,22 @@ retain `X86.Driver.Ok` and the source `GoesWrong` qualification. On the
 immortal and zero-RC paths the root checks (`checkImmortalRoot`) narrow its
 view-rejection case: at the claim's root the view accepts every result of the
 shape the root's declared type describes (`Recheck.ResultShape`), so that case
-means a result off the shape, or, on the pinned-`Bool` route, a pinned `Bool`
-constructor with no row in the constructor table
-(`verifyProgram_immortal_rootShape`, `verifyBytes_immortal_rootShape` and their
-`.zeroRc` forms). The stuck and trap cases remain, and nothing proves that
-SrcEval returns a result of the shape. The guarantees apply to
+means a result off the shape (`verifyProgram_immortal_rootShape`,
+`verifyBytes_immortal_rootShape` and their `.zeroRc` forms). Erasure gives
+every constructor a root's result can hold a row in the constructor table, so
+a root compiled alone has a complete readback signature (`Recheck.Front.boolRows`
+for the pinned `Bool`). The same guarantees stated with the shape view
+(`Recheck.Front.shapeView`, the view restricted to the root's result shape)
+have a view-rejection case that is exactly a result off the shape
+(`Recheck.ShapeClaim`, `verifyProgram_immortal_shape`,
+`verifyBytes_immortal_shape` and their `.zeroRc` forms); the view itself also
+relabels, by table tag, a constructor of another type. On the plain-RC path
+(`checkPlainRcRoot`) the view accepts every constructor tree of the root's
+declared first-order type, so its view-rejection case means a result off that
+shape (`Recheck.PlainShape`, `verifyProgram_plainRc_rootShape`,
+`verifyBytes_plainRc_rootShape`). The stuck and trap cases remain, and
+nothing proves that SrcEval returns a result of the shape: that is type
+preservation for SrcEval, which is not proved. The guarantees apply to
 both choices of the compiler's `typecheck` flag; neither choice supplies the
 missing model-adequacy proof. Eliminating native hashing from ingress would not
 by itself prove source adequacy.

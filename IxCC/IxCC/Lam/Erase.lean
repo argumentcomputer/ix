@@ -189,6 +189,78 @@ def loop : Nat → M Unit
         set { s with front := back.reverse, back := [] }
         loop fuel
 
+/-! ## The rows a root's result needs
+
+Erasure registers a constructor's row where a term constructs, matches or
+projects it, so a program that never builds one constructor of its root's
+result type has no row for it, and the readback of that result type (the
+pinned `Bool`'s, or one found by discovery, which needs a row for every
+constructor) is incomplete. After the queue is empty, erasure registers the
+rows of every constructor a root's result can hold that has none. A key
+that already has a row keeps it, so a program whose table was complete is
+erased as before. -/
+
+/-- The constants heading a type's application spine and, recursively, its
+arguments' (to depth `fuel`). -/
+def typeHeads : Nat → Src.Term → List CId
+  | 0, _ => []
+  | fuel + 1, t =>
+    match t.spine with
+    | (.const c _, args) => c :: args.flatMap fun (a, _, _) => typeHeads fuel a
+    | _ => []
+
+/-- The field types of constructor `k`: its Π-telescope after the
+parameters. -/
+def fieldTypes (k : CId) : List Src.Term :=
+  match I.decl? k with
+  | some (.ctor _ _ _ _ np _ ty) => (ty.pis.1.drop np).map (·.2)
+  | _ => []
+
+/-- The inductives reachable from the constants `todo`: each inductive among
+them and, in turn, among the heads of its constructors' field types, within
+`fuel` steps (readback discovery visits no inductive outside this set). -/
+def resultInds : Nat → List CId → List CId → List CId
+  | 0, _, seen => seen
+  | _ + 1, [], seen => seen
+  | fuel + 1, t :: todo, seen =>
+    if seen.contains t then resultInds fuel todo seen
+    else
+      match I.decl? t with
+      | some (.induct _ _ _ _ _ ctors) =>
+        resultInds fuel (todo ++ ctors.flatMap fun k => (fieldTypes I k).flatMap (typeHeads 128))
+          (t :: seen)
+      | _ => resultInds fuel todo seen
+
+/-- The constructors whose rows root `c`'s result needs: the pinned `Bool`
+constructors when `c` returns the pinned `Bool`, and the constructors of every
+inductive its result can hold, except the pinned `Nat` (its values are
+literals) and an unboxed structure (which has no row). -/
+def resultCtors (c : CId) : List CId :=
+  match I.decl? c with
+  | none => []
+  | some d =>
+    let res := d.type.pis.2
+    let pins := match res.spine.1 with
+      | .const B _ =>
+        if I.known.bool == some B then [I.known.boolFalse, I.known.boolTrue].filterMap id else []
+      | _ => []
+    pins ++ (resultInds I 1024 (typeHeads 128 res) []).flatMap fun t =>
+      if I.known.nat == some t || (I.unbox? t []).isSome then [] else I.ctorsOf t
+
+/-- Register constructor `k`'s row (its key, index and kept-field count)
+unless its key has one. -/
+def registerResultRow (k : CId) : M Unit := do
+  let some (.ctor _ _ _ cidx _ nf _) := I.decl? k | pure ()
+  if ((← get).ctors.get? (I.alias k)).isSome then pure ()
+  else registerCtor (I.alias k) cidx (I.keptCount k [] nf)
+
+/-- `registerResultRow` on each constructor of a list. -/
+def registerRows : List CId → M Unit
+  | [] => pure ()
+  | k :: ks => do
+    registerResultRow I k
+    registerRows ks
+
 /-- The global of a root at the empty profile (every universe parameter
 zero, as `Src.run` instantiates it): a constant with a δ body, or the
 wrapper of a special head. -/
@@ -216,6 +288,7 @@ def run : M (List GlobalId) := do
     unless I.kept s [] 0 do decline "erase-pin" "Nat.succ's field is not kept" s
   let roots ← I.roots.mapM (rootId I)
   loop I loopFuel
+  registerRows I (I.roots.flatMap (resultCtors I))
   return roots
 
 end

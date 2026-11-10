@@ -132,6 +132,30 @@ checker's soundness. Expected messages are preserved verbatim. -/
 /-- info: 'IxCC.Lam.Erase.Proof.erase_reg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_reg
 
+/-! Registering the rows a root's result needs: a row for each constructor,
+and nothing else of the state changes. -/
+
+/-- info: 'IxCC.Lam.Erase.Proof.csound_registerResultRow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.csound_registerResultRow
+
+/-- info: 'IxCC.Lam.Erase.Proof.csound_registerRows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.csound_registerRows
+
+/-- info: 'IxCC.Lam.Erase.Proof.CtorsOnly.refl' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.CtorsOnly.refl
+
+/-- info: 'IxCC.Lam.Erase.Proof.CtorsOnly.trans' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.CtorsOnly.trans
+
+/-- info: 'IxCC.Lam.Erase.Proof.registerCtor_ctorsOnly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.registerCtor_ctorsOnly
+
+/-- info: 'IxCC.Lam.Erase.Proof.registerResultRow_ctorsOnly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.registerResultRow_ctorsOnly
+
+/-- info: 'IxCC.Lam.Erase.Proof.registerRows_ctorsOnly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.registerRows_ctorsOnly
+
 /-! Erasure's output is well formed. -/
 
 /-- info: 'IxCC.Lam.Erase.Proof.erase_wellFormed' depends on axioms: [propext, Classical.choice, Quot.sound] -/

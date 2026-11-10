@@ -150,14 +150,23 @@ without the stuck and view-mismatch cases. Two causes remain:
   [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int), whose
   erased proof shapes cannot see.
 
-**Done for the immortal path's roots.** The view half is proved: at a root
+**Done for the roots of every path.** The view half is proved: at a root
 that `checkImmortalRoot` accepts, the view reads back every result of the
 shape the root's declared type describes (`Recheck.ResultShape`: a `Nat`, a
 pinned `Bool` constructor, or a constructor of the result enumeration;
-`Recheck.tagify_resultShape`), so the view-mismatch case is SrcEval returning a
-result off that shape (pinned-`Bool` roots also need both `Bool` constructors
-in the constructor table). Preservation even for these result types is not
-within reach without this design: canonical forms for an enumeration is the
+`Recheck.Front.view_resultShape`), so the view-mismatch case is SrcEval
+returning a result off that shape. Erasure registers a row for every
+constructor a root's result can hold (`Lam.Erase.resultCtors`), which the
+pinned-`Bool` route needs (`Recheck.Front.boolRows`) and discovery needs for a
+root compiled alone. The view also accepts some results off the shape (it
+relabels a constructor of another type by its table tag), so the guarantees
+are restated with the shape view, which accepts exactly the results of the
+shape (`Recheck.Front.shapeView_none_iff`, `Recheck.ShapeClaim`). At a root
+that `checkPlainRcRoot` accepts, the plain-RC view reads every constructor
+tree of the root's declared first-order type (`Recheck.TreeShape`,
+`Recheck.RcReplay.Front.view_plainShape`); there the converse and the heap
+readback of the shape are not proved. Preservation, even for these result
+types, is not proved and is not within reach without this design: canonical forms for an enumeration is the
 easy last step, but showing that the result has the root's type needs a typing
 relation for Src values, a soundness theorem for `Tc.checkEnv` giving it for
 the ingested declarations, CD1 clauses 2 and 3 to carry it to `a.src`, and

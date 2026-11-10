@@ -110,7 +110,7 @@ theorem erase_wellFormed {p : Src.Program} {ch : Src.Relevance.Checked} {L : Pro
     {st : Erase.Stats} (h : erase p ch = .ok (L, st)) : Lam.WellFormed L := by
   have wf := erase_progWF h
   obtain ⟨s, hrun, hids, hprog, hknown, hsucc, hroots⟩ := erase_spec_run h
-  obtain ⟨s', hrun', hglob, hsize, hctors, hinv, hsurj, hreg⟩ := erase_reg h
+  obtain ⟨s', hrun', hglob, hsize, hctors, hinv, hsurj, hreg, -⟩ := erase_reg h
   rw [hrun] at hrun'
   injection hrun' with hrun'
   injection hrun' with _ hss

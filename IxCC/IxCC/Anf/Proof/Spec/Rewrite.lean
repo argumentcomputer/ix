@@ -131,7 +131,7 @@ theorem create_goal {inv : Nat} {fkey : Key.GKey} {defs : Src.NatMap Def} {d : N
   have hnew : (addSpec st0 spec).prog.global? st0.prog.size = some spec := by
     rw [hget, List.getElem?_append_right (by omega), hgl]; simp
   refine ⟨⟨withGlobals_wf _ _, by rw [hsize]; have := hst.2; omega⟩, ⟨by rw [hsize]; omega,
-    fun s hlt => ?_, rfl, rfl⟩, fun hg hfix hpre => ?_⟩
+    fun s hlt => ?_, rfl, rfl, rfl⟩, fun hg hfix hpre => ?_⟩
   · rw [hget, List.getElem?_append_left (by omega), globalList_get hst.1]
   · refine ⟨inv, fkey, gd, mask, t, keys, roots, spec, hg, hfix, hsite, hb, ⟨spec, ?_, rfl, rfl⟩, rfl⟩
     rw [hpre st0.prog.size hst.2 (by rw [hsize]; omega)]

@@ -466,6 +466,9 @@
   {"path": "IxCCTests/Recheck/RootShape.lean",
    "imports":
    ["IxCCTests.Recheck.Hostile",
+    "IxCCTests.Recheck.Rc.Fixtures",
+    "IxCCTests.Rt.Native",
+    "IxCC.Recheck.Rc.Produce",
     "IxCC.Recheck.Proof.RootShape",
     "IxCC.Lam.Erase.Proof.Correct"]},
   "IxCCTests.Recheck.ReadbackMain":
@@ -3154,6 +3157,7 @@
    ["IxCCTests.Corpus.Manifest",
     "IxCCTests.Corpus.Budget",
     "IxCCTests.Pipeline.Levels",
+    "IxCCTests.Recheck.RootShape",
     "IxCC.Anf.Print",
     "IxCC.Lir.Print",
     "IxCC.Xv.Print"]},
@@ -5066,6 +5070,14 @@
   {"path": "IxCC/Recheck/Rc/Proof/Roots.lean",
    "imports":
    ["IxCC.Recheck.Rc.Proof.Exports", "IxCC.Recheck.Rc.Proof.FrontLanguage"]},
+  "IxCC.Recheck.Rc.Proof.RootTree":
+  {"path": "IxCC/Recheck/Rc/Proof/RootTree.lean",
+   "imports":
+   ["IxCC.Recheck.Proof.RootShape",
+    "IxCC.Recheck.Rc.Proof.Roots",
+    "IxCC.Recheck.Rc.Proof.SourceSound",
+    "IxCC.Recheck.Rc.Proof.Parts",
+    "IxCC.Cfg.Rc.Proof.Ordinary"]},
   "IxCC.Recheck.Rc.Proof.RetainedReplay":
   {"path": "IxCC/Recheck/Rc/Proof/RetainedReplay.lean",
    "imports":
@@ -5176,7 +5188,8 @@
    ["IxCC.CompileClaim",
     "IxCC.Recheck.Proof.Sound",
     "IxCC.Recheck.Linked",
-    "IxCC.Anf.Proof.Spec.Run"]},
+    "IxCC.Anf.Proof.Spec.Run",
+    "IxCC.Lam.Erase.Proof.RegBody"]},
   "IxCC.Recheck.Proof.Parts":
   {"path": "IxCC/Recheck/Proof/Parts.lean",
    "imports":
@@ -5966,7 +5979,8 @@
     "IxCC.Compiler.Proof",
     "IxCC.Recheck.Proof.Soundness",
     "IxCC.Recheck.Rc.Proof.ObjectSound",
-    "IxCC.Recheck.Proof.RootShape"]},
+    "IxCC.Recheck.Proof.RootShape",
+    "IxCC.Recheck.Rc.Proof.RootTree"]},
   "IxCC.CompileClaim":
   {"path": "IxCC/CompileClaim.lean",
    "imports":

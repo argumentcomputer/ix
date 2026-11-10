@@ -82,6 +82,14 @@ theorem round_global {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f))
   rw [hrs']
   exact get?_ofList_globalList P (after P r) g
 
+/-- A successful round keeps the constructor table. -/
+theorem round_ctors {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f)) :
+    Q.ctors = P.ctors := by
+  unfold round at h
+  obtain ⟨rs, -, h⟩ := Lam.ModesOk.bind_ok h
+  cases h
+  rfl
+
 /-- **P3 is correct**: every round the oracle asks for refines its input,
 and keeps its ids `0 … size - 1`. -/
 theorem round_refines (h0 : P.WF) {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f)) :

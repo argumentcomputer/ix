@@ -206,6 +206,8 @@ theorem erase_spec_run {p : Src.Program} {ch : Src.Relevance.Checked} {L : Progr
         (do
           let roots ← List.mapM (rootId (Input.ofProgram p ch)) (Input.ofProgram p ch).roots
           loop (Input.ofProgram p ch) loopFuel
+          registerRows (Input.ofProgram p ch)
+            ((Input.ofProgram p ch).roots.flatMap (resultCtors (Input.ofProgram p ch)))
           pure roots : M (List GlobalId)).run s₀ = .ok (roots, s) → s₀ = {} →
         IdsOk s ∧ ProgR (Input.ofProgram p ch) (fun key g => keyOf s key = some g)
             { globals := s.globals, size := s.next, roots,
@@ -218,11 +220,14 @@ theorem erase_spec_run {p : Src.Program} {ch : Src.Relevance.Checked} {L : Progr
       intro s₀ hk e h0
       subst h0
       obtain ⟨rs, s_r, er, e'⟩ := Sound.bind_run e
-      obtain ⟨_, s_l, el, ep⟩ := Sound.bind_run e'
+      obtain ⟨_, s_l, el, e''⟩ := Sound.bind_run e'
+      obtain ⟨_, s_w, ew, ep⟩ := Sound.bind_run e''
       simp only [StateT.run_pure] at ep
       injection ep with ep
       injection ep with hrs hs
       subst hrs hs
+      -- registering the result rows changes only the constructor table
+      obtain ⟨cs, co, rfl⟩ := registerRows_ctorsOnly _ ew
       obtain ⟨hgr, hroots⟩ := Sound.mapM (P := fun c g G => RootR (Input.ofProgram p ch) G c g)
         (fun c _ => sound_rootId _ c) _ _ s_r er
       have hinv : LoopInv (Input.ofProgram p ch) s_r := by

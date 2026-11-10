@@ -199,15 +199,18 @@ theorem reg_rootId (c : CId) : CSound I (rootId I c) fun _ _ => True := by
 end
 
 /-- **The constructor table of an erased program**: a successful erasure
-ends in a state whose table keeps its invariant and has a row for every
-constructor key of every global body. -/
+ends in a state whose table keeps its invariant, has a row for every
+constructor key of every global body, and has a row for every constructor
+a root's result can hold (`resultCtors`). -/
 theorem erase_reg {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
     {st : Erase.Stats} (h : erase p ch = .ok (L, st)) :
     ∃ s : St, (Erase.run (Input.ofProgram p ch)).run {} = .ok (L.roots, s) ∧
       L.globals = s.globals ∧ L.size = s.next ∧
       L.ctors = s.ctorOrder.reverse.filterMap s.ctors.get? ∧
       CtorInv (Input.ofProgram p ch) s ∧ IdsSurj s ∧
-      ∀ g gl, L.global? g = some gl → RegT (tabOf s) gl.body := by
+      (∀ g gl, L.global? g = some gl → RegT (tabOf s) gl.body) ∧
+      ∀ k ∈ (Input.ofProgram p ch).roots.flatMap (resultCtors (Input.ofProgram p ch)),
+        HasRow (Input.ofProgram p ch) k (tabOf s) := by
   have wf := erase_progWF h
   unfold erase at h
   dsimp only at h
@@ -226,13 +229,18 @@ theorem erase_reg {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
     have main : ∀ (s₀ : St), (do
         let roots ← List.mapM (rootId (Input.ofProgram p ch)) (Input.ofProgram p ch).roots
         loop (Input.ofProgram p ch) loopFuel
+        registerRows (Input.ofProgram p ch)
+          ((Input.ofProgram p ch).roots.flatMap (resultCtors (Input.ofProgram p ch)))
         pure roots : M (List GlobalId)).run s₀ = .ok (roots, s) → s₀ = {} →
         CtorInv (Input.ofProgram p ch) s ∧ IdsSurj s ∧
-          ∀ g gl, s.globals.get? g = some gl → RegT (tabOf s) gl.body := by
+          (∀ g gl, s.globals.get? g = some gl → RegT (tabOf s) gl.body) ∧
+          ∀ k ∈ (Input.ofProgram p ch).roots.flatMap (resultCtors (Input.ofProgram p ch)),
+            HasRow (Input.ofProgram p ch) k (tabOf s) := by
       intro s₀ e h0
       subst h0
       obtain ⟨rs, s_r, er, e'⟩ := Sound.bind_run e
-      obtain ⟨_, s_l, el, ep⟩ := Sound.bind_run e'
+      obtain ⟨_, s_l, el, e''⟩ := Sound.bind_run e'
+      obtain ⟨_, s_w, ew, ep⟩ := Sound.bind_run e''
       simp only [StateT.run_pure] at ep
       injection ep with ep
       injection ep with _ hs
@@ -240,12 +248,16 @@ theorem erase_reg {p : Src.Program} {ch : Src.Relevance.Checked} {L : Program}
       obtain ⟨hg_r, -⟩ := CSound.mapM_all (P := fun _ _ => True)
         (fun c _ => reg_rootId (Input.ofProgram p ch) c) {} rs s_r er
       obtain ⟨_, hinv, hglob, hsurj⟩ := reg_loop (Input.ofProgram p ch) wf loopFuel s_r s_l el
+      obtain ⟨hg_w, hrows⟩ := csound_registerRows (Input.ofProgram p ch) _ s_l _ s_w ew
       have hgr : GlobReg s_r := by
         intro g gl hgl
         rw [hg_r.globals] at hgl
         simp [NatMap.get?] at hgl
-      exact ⟨hinv (hg_r.inv (CtorInv.empty _)), hsurj (hg_r.surj fun g hg => by cases hg),
-        fun g gl hgl => hglob hgr g gl hgl _ fun _ _ h => h⟩
+      exact ⟨hg_w.inv (hinv (hg_r.inv (CtorInv.empty _))),
+        hg_w.surj (hsurj (hg_r.surj fun g hg => by cases hg)),
+        fun g gl hgl => hglob hgr g gl (by rw [← hg_w.globals]; exact hgl) _
+          fun _ _ h => tabOf_grows hg_w h,
+        hrows _ fun _ _ h => h⟩
     split at hrun
     · next s₁ hs =>
       by_cases hkept : (Input.ofProgram p ch).kept s₁ [] 0 = true

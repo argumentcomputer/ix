@@ -424,6 +424,89 @@ theorem rowMatches_spec {p : Src.Program} {C : Cfg.Program} {shapes : List Shape
     · cases h
   · cases h
 
+/-- What `rowMatches` checks of each constructor of the row's inductive, with
+its fields: the constructor's field shapes at the row's instance, its one
+row in the constructor table with its tag, and the signature row's entry at
+that tag, which lists the field shapes' indices in `shapes`. -/
+theorem rowMatches_fields {p : Src.Program} {C : Cfg.Program} {shapes : List Shape} {shape : Shape}
+    {row : List (List Rt.FoTy)} (h : rowMatches p C shapes shape row = true) :
+    ∃ ind ls args nl np ty keys, shape = .ind ind ls args ∧
+      p.decl? ind = some (.induct true nl np 0 ty keys) ∧
+      ∀ key tag, (key, tag) ∈ keys.zipIdx →
+        ∃ fields emitted fts, fieldShapes p shape key = .ok (tag, fields) ∧
+          C.ctors.filter (fun r => r.key == .src key) = [emitted] ∧ emitted.tag = tag ∧
+          fields.mapM (shapeRef shapes) = some fts ∧ row[tag]? = some fts := by
+  unfold rowMatches at h
+  simp only [Id.run, bind, pure] at h
+  split at h
+  · next ind ls args =>
+    split at h
+    · next nl np ty keys hd =>
+      split at h
+      · refine ⟨ind, ls, args, nl, np, ty, keys, rfl, hd, ?_⟩
+        split at h
+        · next r hr =>
+          have := forIn_some_false hr ?_
+          · subst this; cases h
+          · intro x
+            obtain ⟨key, tag⟩ := x
+            simp only
+            split
+            · split
+              · split
+                · split
+                  · split
+                    · exact .inl rfl
+                    · exact .inr rfl
+                  · exact .inr rfl
+                · exact .inr rfl
+              · exact .inr rfl
+            · exact .inr rfl
+        · next hn =>
+          intro key tag hk
+          refine forIn_all_of_none (fun x => ∃ fields emitted fts,
+            fieldShapes p (.ind ind ls args) x.1 = .ok (x.2, fields) ∧
+            C.ctors.filter (fun r => r.key == .src x.1) = [emitted] ∧ emitted.tag = x.2 ∧
+              fields.mapM (shapeRef shapes) = some fts ∧ row[x.2]? = some fts) hn ?_ ?_ (key, tag) hk
+          · intro x hx
+            obtain ⟨key, tag⟩ := x
+            simp only at hx
+            split at hx
+            · next sourceTag fields hfs =>
+              split at hx
+              · next emitted hfilter =>
+                split at hx
+                · next hc =>
+                  split at hx
+                  · next fts hm =>
+                    split at hx
+                    · next hr =>
+                      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+                      refine ⟨fields, emitted, fts, ?_, hfilter, hc.1.2, hm, by simpa using hr⟩
+                      rw [hfs, hc.1.1]
+                    · cases hx
+                  · cases hx
+                · cases hx
+              · cases hx
+            · cases hx
+          · intro x
+            obtain ⟨key, tag⟩ := x
+            simp only
+            split
+            · split
+              · split
+                · split
+                  · split
+                    · exact .inl rfl
+                    · exact .inr rfl
+                  · exact .inr rfl
+                · exact .inr rfl
+              · exact .inr rfl
+            · exact .inr rfl
+      · cases h
+    · cases h
+  · cases h
+
 theorem discoverRaw_root {p : Src.Program} {C : Cfg.Program} {c : Src.CId} {q : Candidate}
     (h : discoverRaw p C c = .ok q) :
     ∃ d, p.decl? c = some d ∧ shape? p 128 [] [] d.type.pis.2 = some q.root := by

@@ -289,4 +289,67 @@ theorem sound_registerBool (I : Input) : Sound (registerBool I) fun _ _ => True 
     · exact Sound.bind (sound_registerCtor _ _ _) fun _ => Sound.pure fun _ _ => trivial
     · exact Sound.pure fun _ => trivial
 
+/-! ## Registering the rows a root's result needs -/
+
+/-- A step that changes only the constructor table. -/
+def CtorsOnly (s s' : St) : Prop :=
+  ∃ (cs : NatMap CtorInfo) (co : List CId), s' = { s with ctors := cs, ctorOrder := co }
+
+theorem CtorsOnly.refl (s : St) : CtorsOnly s s := ⟨s.ctors, s.ctorOrder, rfl⟩
+
+theorem CtorsOnly.trans {s₁ s₂ s₃ : St} (h₁ : CtorsOnly s₁ s₂) (h₂ : CtorsOnly s₂ s₃) :
+    CtorsOnly s₁ s₃ := by
+  obtain ⟨cs, co, rfl⟩ := h₁
+  obtain ⟨cs', co', rfl⟩ := h₂
+  exact ⟨cs', co', rfl⟩
+
+theorem registerCtor_ctorsOnly {c : CId} {tag arity : Nat} {s s' : St} {u : Unit}
+    (e : (registerCtor c tag arity).run s = .ok (u, s')) : CtorsOnly s s' := by
+  unfold registerCtor at e
+  rw [StateT.run_bind] at e
+  simp only [StateT.run_get, pure_bind] at e
+  cases h : s.ctors.get? c with
+  | some info =>
+    rw [h] at e
+    dsimp only at e
+    by_cases hc : (info.tag == tag && info.arity == arity) = true
+    · simp only [hc, ↓reduceIte, StateT.run_pure] at e
+      cases e
+      exact CtorsOnly.refl s
+    · simp only [hc, Bool.false_eq_true, ↓reduceIte] at e
+      exact ((Sound.decline (Q := fun _ _ => False) s _ _ e).2 (fun _ _ => True)
+        fun _ _ _ => trivial).elim
+  | none =>
+    rw [h] at e
+    simp only [StateT.run_set] at e
+    cases e
+    exact ⟨_, _, rfl⟩
+
+theorem registerResultRow_ctorsOnly (I : Input) {k : CId} {s s' : St} {u : Unit}
+    (e : (registerResultRow I k).run s = .ok (u, s')) : CtorsOnly s s' := by
+  unfold registerResultRow at e
+  split at e
+  · rw [StateT.run_bind] at e
+    simp only [StateT.run_get, pure_bind] at e
+    split at e
+    · simp only [StateT.run_pure] at e
+      cases e
+      exact CtorsOnly.refl s
+    · exact registerCtor_ctorsOnly e
+  · simp only [StateT.run_pure] at e
+    cases e
+    exact CtorsOnly.refl s
+
+/-- `registerRows` changes only the constructor table. -/
+theorem registerRows_ctorsOnly (I : Input) : ∀ {ks : List CId} {s s' : St} {u : Unit},
+    (registerRows I ks).run s = .ok (u, s') → CtorsOnly s s'
+  | [], s, s', u, e => by
+    simp only [registerRows, StateT.run_pure] at e
+    cases e
+    exact CtorsOnly.refl s
+  | k :: ks, s, s', u, e => by
+    simp only [registerRows] at e
+    obtain ⟨_, s₁, e₁, e₂⟩ := Sound.bind_run e
+    exact (registerResultRow_ctorsOnly I e₁).trans (registerRows_ctorsOnly I e₂)
+
 end IxCC.Lam.Erase.Proof

@@ -484,3 +484,124 @@ readback-discovery facts they rest on (`IxCC.Recheck.Readback`). -/
 
 /-- info: 'IxCC.Ring0.verifyRing0Sip_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.verifyRing0Sip_rootShape
+
+/-! The rows of a root's result type (erasure registers them; the middle and back
+ends keep the table), the shape view at immortal roots, and constructor trees at
+plain-RC roots (`IxCC.Recheck.Rc.Proof.RootTree`). -/
+
+/-- info: 'IxCC.Recheck.Readback.rowMatches_fields' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.rowMatches_fields
+
+/-- info: 'IxCC.Recheck.step_ctors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.step_ctors
+
+/-- info: 'IxCC.Recheck.steps_ctors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.steps_ctors
+
+/-- info: 'IxCC.Recheck.pipeline_ctors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.pipeline_ctors
+
+/-- info: 'IxCC.Recheck.ofKey_of_tabOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.ofKey_of_tabOf
+
+/-- info: 'IxCC.Recheck.mem_resultCtors_bool' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.mem_resultCtors_bool
+
+/-- info: 'IxCC.Recheck.erase_boolRow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.erase_boolRow
+
+/-- info: 'IxCC.Recheck.Front.boolRows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.boolRows
+
+/-- info: 'IxCC.Recheck.Front.shapeView_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.shapeView_some
+
+/-- info: 'IxCC.Recheck.Front.shapeView_of_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.shapeView_of_shape
+
+/-- info: 'IxCC.Recheck.Front.shapeView_off_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.shapeView_off_shape
+
+/-- info: 'IxCC.Recheck.Front.goesWrong_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.goesWrong_shape
+
+/-- info: 'IxCC.Recheck.Front.shapeView_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.shapeView_none_iff
+
+/-- info: 'IxCC.Recheck.Front.shapeGoesWrong_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.shapeGoesWrong_iff
+
+/-- info: 'IxCC.Recheck.Front.sound_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.sound_shape
+
+/-- info: 'IxCC.Recheck.Front.safe_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.safe_shape
+
+/-- info: 'IxCC.Recheck.Artifact.immortalRoot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Artifact.immortalRoot
+
+/-- info: 'IxCC.Recheck.Artifact.shapeClaim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Artifact.shapeClaim
+
+/-- info: 'IxCC.Recheck.treeShape_view' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.treeShape_view
+
+/-- info: 'IxCC.Recheck.treeShapes_view' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.treeShapes_view
+
+/-- info: 'IxCC.Recheck.discover_treeView' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.discover_treeView
+
+/-- info: 'IxCC.Recheck.RcReplay.runFront_ctors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.runFront_ctors
+
+/-- info: 'IxCC.Recheck.RcReplay.runFront_boolKnown' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.runFront_boolKnown
+
+/-- info: 'IxCC.Recheck.RcReplay.Front.boolRows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.Front.boolRows
+
+/-- info: 'IxCC.Recheck.RcReplay.isImmortalViewType_boolSig' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.isImmortalViewType_boolSig
+
+/-- info: 'IxCC.Recheck.RcReplay.treeView_flat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.treeView_flat
+
+/-- info: 'IxCC.Recheck.RcReplay.Front.view_plainShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.Front.view_plainShape
+
+/-- info: 'IxCC.Recheck.RcReplay.Front.goesWrong_plainShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.Front.goesWrong_plainShape
+
+/-- info: 'IxCC.Recheck.RcReplay.Artifact.goesWrong_plainRoot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.Artifact.goesWrong_plainRoot
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_immortal_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_immortal_shape
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_zeroRc_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_zeroRc_shape
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_shape' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_immortal_shape
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_shape' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_zeroRc_shape
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_plainRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_plainRc_rootShape
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_rootShape' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_plainRc_rootShape

@@ -211,6 +211,13 @@ theorem run_global {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
   rw [hgs']
   exact get?_ofList_globalList P0 (fun g gd => iter P0 p gd (cert.getD g 0)) g
 
+/-- A successful re-run keeps the constructor table. -/
+theorem run_ctors {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) : Q.ctors = P0.ctors := by
+  unfold run at h
+  obtain ⟨gs, -, h⟩ := Lam.ModesOk.bind_ok h
+  cases h
+  rfl
+
 /-- **P2 is correct**: for every certificate the re-run accepts, the
 output refines the input, and keeps its ids `0 … size - 1`. -/
 theorem run_refines (h0 : P0.WF) {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :

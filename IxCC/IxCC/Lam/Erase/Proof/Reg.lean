@@ -300,6 +300,41 @@ theorem csound_registerBool (I : Input) (wf : ProgWF I) :
           (fun d h => hne d (.inr h)), by rw [hnf]; rfl⟩) fun _ => CSound.pure fun _ _ => trivial
     · exact CSound.pure fun _ => trivial
 
+/-- Constructor `k`, if it is one, has a row in `T` (under its aliased key). -/
+def HasRow (I : Input) (k : CId) (T : CTab) : Prop :=
+  ∀ sf lv ind cidx np nf ty, I.decl? k = some (.ctor sf lv ind cidx np nf ty) →
+    ∃ n, T (.src (I.alias k)) n
+
+/-- `registerResultRow` leaves a row for its constructor. -/
+theorem csound_registerResultRow (I : Input) (k : CId) :
+    CSound I (registerResultRow I k) fun _ T => HasRow I k T := by
+  unfold registerResultRow
+  split
+  · next sf lv ind cidx np nf ty hd =>
+    refine CSound.get_bind fun s₀ a s' e => ?_
+    by_cases hs : (s₀.ctors.get? (I.alias k)).isSome = true
+    · simp only [hs, ↓reduceIte, StateT.run_pure] at e
+      cases e
+      obtain ⟨info, hinfo⟩ := Option.isSome_iff_exists.1 hs
+      exact ⟨CGrows.refl I _, fun T hT _ _ _ _ _ _ _ _ =>
+        ⟨info.arity, hT _ _ ⟨_, info, hinfo, rfl, rfl⟩⟩⟩
+    · simp only [hs, Bool.false_eq_true, ↓reduceIte] at e
+      obtain ⟨g, h⟩ := csound_registerCtor I (I.alias k) cidx (I.keptCount k [] nf)
+        ⟨k, sf, lv, ind, cidx, np, nf, ty, hd, rfl, rfl⟩ s₀ a s' e
+      exact ⟨g, fun T hT _ _ _ _ _ _ _ _ => ⟨_, h T hT⟩⟩
+  · next hnot =>
+    exact CSound.pure fun T sf lv ind cidx np nf ty hd => absurd hd (hnot sf lv ind cidx np nf ty)
+
+/-- `registerRows` leaves a row for each of its constructors. -/
+theorem csound_registerRows (I : Input) : ∀ ks : List CId,
+    CSound I (registerRows I ks) fun _ T => ∀ k ∈ ks, HasRow I k T
+  | [] => CSound.pure fun _ _ h => by cases h
+  | k :: ks => by
+    simp only [registerRows]
+    exact CSound.bind (csound_registerResultRow I k) fun _ =>
+      (csound_registerRows I ks).imp fun _ T hks hk k' hk' =>
+        (List.mem_cons.1 hk').elim (fun e => by subst e; exact hk) (hks k')
+
 /-! ## Constructor keys in terms -/
 
 /-- Every constructor key of `t` has a row in `T`. -/
