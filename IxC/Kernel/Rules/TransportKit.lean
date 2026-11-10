@@ -449,6 +449,32 @@ theorem cons {c : ConstantInfo md} (hfresh : env.find? c.name = none)
     exact h
   tables := fun hT => find?_cons_ne (hnt hT)
 
+theorem find?_append_of_fresh {new : List (ConstantInfo md)} {k : Key md}
+    (h : ∀ c ∈ new, c.name ≠ k) : (⟨new ++ env.consts⟩ : Env md).find? k = env.find? k := by
+  simp only [Env.find?, List.find?_append]
+  have hn : new.find? (·.name == k) = none := by
+    rw [List.find?_eq_none]
+    intro c hc
+    simpa using h c hc
+  rw [hn]
+  rfl
+
+/-- **A declaration step extends**: the new constants are fresh, and none is the
+projection table of a structure already stored (a table is installed with its
+structure). -/
+theorem append {new : List (ConstantInfo md)}
+    (hfresh : ∀ c ∈ new, env.find? c.name = none)
+    (hnt : ∀ c ∈ new, ∀ {T : Key md} {cv : ConstantVal md} {caps : IndCaps md},
+      env.find? T = some (.indInfo cv caps) → c.name ≠ projTableName T) :
+    EnvExt env ⟨new ++ env.consts⟩ where
+  find := fun {k} {_} h => by
+    rw [find?_append_of_fresh (fun c hc e => by
+      have := hfresh c hc
+      rw [e, h] at this
+      exact nomatch this)]
+    exact h
+  tables := fun hT => find?_append_of_fresh (fun c hc => hnt c hc hT)
+
 theorem findProj? (h : EnvExt env env') {sn : Key md} {i : Nat} {entry : ProjEntry md}
     (hp : env.findProj? sn i = some entry) : env'.findProj? sn i = some entry := by
   unfold Env.findProj? at hp ⊢
