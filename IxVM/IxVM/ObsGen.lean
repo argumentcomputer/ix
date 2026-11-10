@@ -1,4 +1,5 @@
 import IxVM.ProofGen
+import IxVM.ExprPath
 
 /-! # Generated path lemmas for observed derivations
 
@@ -167,6 +168,16 @@ structure St where
   /-- Variable lookups weighted by the environment's length (each costs a `simp` over it). -/
   lookups : Nat := 0
   maxLookups : Nat := 3000
+  /-- The function: its name, its Lean constant, its body (for positions). -/
+  fname : String := ""
+  leanName : String := ""
+  body : Option (Expr F) := none
+  /-- Whether `let`-bound matches are inverted as segments (`segmented`). -/
+  segment : Bool := false
+  /-- Segments generated so far: position, name, and rendered declarations. -/
+  segs : Array (List Nat × String × String) := #[]
+  /-- Inside a segment: no nested segments. -/
+  inSeg : Bool := false
 
 abbrev M := StateT St (Except String)
 
@@ -380,11 +391,65 @@ def bullet : List String → List String
   | [] => []
   | l :: ls => ("· " ++ l) :: ls.map ("  " ++ ·)
 
+def uniqueName (taken : Array String) (base : String) : String := Id.run do
+  if !taken.contains base then return base
+  for i in [1:100000] do
+    if !taken.contains s!"{base}_{i}" then return s!"{base}_{i}"
+  return base
+
+/-- The leaf: the call list's equation, then the path's constructor (of the inductive `ind`). -/
+def leaf (ind : String) (segs : List Seg) : M (List String) := do
+  let hcName ← fresh "hc"
+  let s ← get
+  if s.ctors.size ≥ s.maxPaths then throw "too many paths"
+  if s.path.facts.size > 150 then throw "too many facts on a path"
+  let p := s.path
+  let lemmas := ["List.append_assoc", "List.cons_append", "List.nil_append", "List.append_nil",
+    "instanceName_plain_none", "instanceName_plain_some"] ++ p.lemmas.toList
+  let callsT := renderSegs p.subst segs
+  let kept := p.facts.filter fun (_, _, _, subj) => match subj with
+    | some v => match v.resolve p.subst with | .v _ => true | _ => false
+    | none => true
+  let p := { p with facts := kept.push (hcName, [.s s!"calls = {callsT}"],
+    s!"(by first | rfl | simp only [{", ".intercalate lemmas.eraseDups}])", none) }
+  let binders := p.binders.toList.filter fun (n, _) => (p.subst.lookup n).isNone
+  -- the constructor's name: the arm tokens, made unique
+  let base := sanitize ("_".intercalate p.tokens.toList)
+  let name := uniqueName (s.ctors.map (·.name)) base
+  let fields := p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})"
+  let bs := binders.map fun (n, t) => s!"({n} : {t})"
+  let text := s!"  | {name}" ++
+    (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
+    String.join (fields.map ("\n      " ++ ·))
+  modify fun s => { s with ctors := s.ctors.push { name, text } }
+  let norm := if p.stored then
+      let hs := p.hyps.toList
+      [s!"try simp only [Value.type, List.map_cons, List.map_nil] at {" ".intercalate hs} ⊢"]
+    else []
+  let holes := String.join (binders.map fun _ => " _")
+  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr)
+  return norm ++ [s!"exact {ind}.{name}{holes}{proofs}"]
+
 /-! ## Inversion -/
 
 abbrev Env := List (String × T)
 
 abbrev K := List Seg → M (List String)
+
+/-- Functions whose `let`-bound matches are inverted as segments: the match's paths
+become their own inductive (`«f».Seg<i>`, with its theorem `«f».seg<i>`), and the
+function's paths continue once after it, instead of once per arm. -/
+def segmented : List String :=
+  ["KernelWhnf::red_rec", "KernelWhnf::whnf_nd_const_head", "KernelCheck::check_recursor_canonical_full"]
+
+/-- A `let`-bound match of several arms, outside any segment, in a monomorphic function
+whose `let`-bound matches are segmented. -/
+def segmentable (x : Expr F) : M Bool := do
+  let s ← get
+  unless s.segment && !s.inSeg && s.typeParam.isNone && s.body.isSome do return false
+  match x with
+  | .matchValue _ arms => return arms.length ≥ 2
+  | _ => return false
 
 mutual
   /-- Invert derivation `d` of `e` (input heap `hin`; destinations `dv`, `dh`),
@@ -548,6 +613,7 @@ mutual
         k segs
       return [s!"obtain ⟨{x}, {c}, {d'}, {tp}, rfl⟩ := {d}.hint_inv"] ++ rest
     | .letValue pat x b =>
+      if ← segmentable x then return ← letSegment e pat x b d env hin dv dh k
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
       let bs ← fresh "bs"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dx ← fresh "d"; let mt ← fresh "mt"; let db ← fresh "d"
@@ -567,6 +633,62 @@ mutual
     | .global _ none => throw "unannotated global"
     | .record _ _ => throw "record expression"
     | .control _ _ => throw "control"
+
+  /-- `let pat = x; b` with `x` a match: the derivation of `x` is inverted by the
+  segment's theorem (generated once per position), and `b` once, after it. The
+  segment is stated over the whole local environment, entry by entry, in the
+  evaluation's order (`bindings ++ locals`, as the generator's `binds ++ env`), so
+  that the derivation of `x` instantiates it by unification alone. -/
+  partial def letSegment (e : Expr F) (pat : Pattern F) (x b : Expr F) (d : String) (env : Env)
+      (hin dv dh : T) (k : K) : M (List String) := do
+    let s ← get
+    let some body := s.body | throw "segment without a body"
+    let some pos := body.find? e | throw "segment position"
+    let pos := pos ++ [0]
+    let names := env.map (·.1)
+    let segName ← match s.segs.find? (·.1 == pos) with
+      | some (_, n, _) => pure n
+      | none => genSegment pos names x
+    let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
+    let bs ← fresh "bs"; let c1 ← binder "cs" "List (Call F)"; let c2 ← fresh "c"
+    let dx ← fresh "d"; let mt ← fresh "mt"; let db ← fresh "d"; let sg ← fresh "sg"
+    addFact sg ([.s s!"«{s.fname}».{segName}"] ++ (env.map fun (_, t) => [Piece.s " ", .t t]).flatten ++
+      [.s " ", .t hin, .s " ", .t (.v v), .s " ", .t (.v m), .s s!" {c1}"]) sg
+    let (pl, binds) ← patInv (.v v) pat mt (.v m)
+    let rest ← if ← isDead then pure pl else
+      pure (pl ++ (← inv b db (binds ++ env) (.v m) dv dh fun s2 => k ([.sub c1] ++ s2)))
+    return [s!"obtain ⟨{v}, {m}, {bs}, {c1}, {c2}, {dx}, {mt}, {db}, rfl⟩ := {d}.letValue_inv",
+      s!"have {sg} := «{s.fname}».{segName.decapitalize} {dx}", s!"clear {dx}"] ++ rest
+
+  /-- The segment at `pos`: its inductive and theorem, over the local environment `names`. -/
+  partial def genSegment (pos : List Nat) (names : List String) (x : Expr F) : M String := do
+    let saved ← get
+    let segName := s!"Seg{saved.segs.size + 1}"
+    let es := names.zipIdx.map fun (n, i) => s!"e{i}_{sanitize n}"
+    set { saved with path := {}, ctors := #[], params := es ++ ["h", "r", "h'", "calls"], inSeg := true }
+    let script ← inv x "d0" (names.zip (es.map .v)) (.v "h") (.v "r") (.v "h'")
+      (leaf s!"«{saved.fname}».{segName}")
+    let st ← get
+    let lean := saved.leanName
+    let ebind := if es.isEmpty then "" else s!"({" ".intercalate es} : SourceValue F) "
+    let eimpl := if es.isEmpty then "" else s!"\{{" ".intercalate es} : SourceValue F} "
+    let eargs := String.join (es.map (" " ++ ·))
+    let locals := list ((names.zip es).map fun (n, e) => s!"({q n}, {e})")
+    let ind := s!"/-- The `let`-bound match of `{saved.fname}` at `{pos}`: one constructor per combination of selected arms. -/\n" ++
+      s!"inductive «{saved.fname}».{segName} {ebind}(h : Heap F) (r : SourceValue F) (h' : Heap F)\n" ++
+      "    (calls : List (Call F)) : Prop where\n" ++
+      "\n".intercalate (st.ctors.toList.map (·.text)) ++ "\n"
+    let thm := s!"/-- **Every observed derivation of the `let`-bound match of `{saved.fname}` at `{pos}` takes one of its paths.** -/\n" ++
+      s!"theorem «{saved.fname}».{segName.decapitalize} {eimpl}\{h h' : Heap F} \{r : SourceValue F}\n" ++
+      s!"    \{calls : List (Call F)}\n" ++
+      s!"    (d0 : ObsExpr W [] {locals} (Expr.sub {lean}.body {list (pos.map toString)}) h r h' calls) :\n" ++
+      s!"    «{saved.fname}».{segName}{eargs} h r h' calls := by\n" ++
+      s!"  simp only [Expr.sub, Expr.childAt, Expr.children, {lean}, List.map_cons, List.map_nil] at d0\n" ++
+      "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
+    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs,
+      work := st.work, lookups := st.lookups,
+      segs := saved.segs.push (pos, segName, ind ++ "\n" ++ thm) }
+    return segName
 
   partial def invArgs (es : List (Expr F)) (a : String) (env : Env) (hin : T)
       (items : List String) (dh : T) (k : K) : M (List String) := do
@@ -709,44 +831,6 @@ end
 
 /-! ## One function -/
 
-def uniqueName (taken : Array String) (base : String) : String := Id.run do
-  if !taken.contains base then return base
-  for i in [1:100000] do
-    if !taken.contains s!"{base}_{i}" then return s!"{base}_{i}"
-  return base
-
-/-- The leaf: the call list's equation, then the path's constructor. -/
-def leaf (fname : String) (segs : List Seg) : M (List String) := do
-  let hcName ← fresh "hc"
-  let s ← get
-  if s.ctors.size ≥ s.maxPaths then throw "too many paths"
-  if s.path.facts.size > 150 then throw "too many facts on a path"
-  let p := s.path
-  let lemmas := ["List.append_assoc", "List.cons_append", "List.nil_append", "List.append_nil",
-    "instanceName_plain_none", "instanceName_plain_some"] ++ p.lemmas.toList
-  let callsT := renderSegs p.subst segs
-  let kept := p.facts.filter fun (_, _, _, subj) => match subj with
-    | some v => match v.resolve p.subst with | .v _ => true | _ => false
-    | none => true
-  let p := { p with facts := kept.push (hcName, [.s s!"calls = {callsT}"],
-    s!"(by first | rfl | simp only [{", ".intercalate lemmas.eraseDups}])", none) }
-  let binders := p.binders.toList.filter fun (n, _) => (p.subst.lookup n).isNone
-  -- the constructor's name: the arm tokens, made unique
-  let base := sanitize ("_".intercalate p.tokens.toList)
-  let name := uniqueName (s.ctors.map (·.name)) base
-  let fields := p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})"
-  let bs := binders.map fun (n, t) => s!"({n} : {t})"
-  let text := s!"  | {name}" ++
-    (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
-    String.join (fields.map ("\n      " ++ ·))
-  modify fun s => { s with ctors := s.ctors.push { name, text } }
-  let norm := if p.stored then
-      let hs := p.hyps.toList
-      [s!"try simp only [Value.type, List.map_cons, List.map_nil] at {" ".intercalate hs} ⊢"]
-    else []
-  let holes := String.join (binders.map fun _ => " _")
-  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr)
-  return norm ++ [s!"exact «{fname}».Path.{name}{holes}{proofs}"]
 
 /-- Functions L4 needs whose paths multiply (a `let` bound to a match): generated under
 larger caps, at a larger module cost. -/
@@ -763,11 +847,12 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
   let ps := f.params.map fun (n, _) => "x_" ++ n
   let params := ps ++ ["h", "r", "h'", "calls"]
   let env : Env := (f.params.map (·.1)).zip (ps.map .v)
-  let body : M (List String) :=
-    inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf f.name)
-  let maxLookups := if generous.contains f.name then 40000 else 3000
-  let (script, st) ← body.run { counter := 1, params, src := some src, typeParam := tp, maxLookups }
   let leanName := s!"IxVM.{functionName f.name}"
+  let body : M (List String) :=
+    inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf s!"«{f.name}».Path")
+  let maxLookups := if generous.contains f.name then 40000 else 3000
+  let (script, st) ← body.run { counter := 1, params, src := some src, typeParam := tp, maxLookups,
+    fname := f.name, leanName, body := some f.body, segment := segmented.contains f.name }
   -- a generic function is stated at its instance `t_<param>`
   let (tbind, targ, tibind, symbol, lookupThm, lookupDecl) := match tp with
     | none => ("", "", "", q f.name, s!"{leanName}.lookup", "")
@@ -797,7 +882,8 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
     s!"    (by simp [{leanName}, ControlLower.hasControl]) ev\n" ++
     s!"  simp only [{leanName}] at d0\n" ++
     "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
-  let text := lookupDecl ++ ind ++ "\n" ++ thm
+  let segTexts := String.join (st.segs.toList.map fun (_, _, t) => t ++ "\n")
+  let text := lookupDecl ++ segTexts ++ ind ++ "\n" ++ thm
   if text.length > maxChars then throw s!"too large: {text.length / 1000} KB"
   return (text, st.names, st.abbrevs, st.ctors.size)
 
@@ -876,7 +962,7 @@ def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
       s!"Generated path lemmas: `{g}` functions, part {i}." ++
       "\n".intercalate texts.toList ++ "\n" ++ fileFooter
     files := files ++ [(dir / s!"{modName}.lean", body)]
-  let namesText := fileHeader ["IxVMRefinement.Core.Obs", "IxVM.Lookup"]
+  let namesText := fileHeader ["IxVMRefinement.Core.Obs", "IxVM.Lookup", "IxVM.ExprPath"]
       "Generated path lemmas: the world and the instance names they normalize." ++
     "/-- The prepared source's world. -/\nabbrev W : World F := IxVM.source.world\n\n" ++
     "namespace Names\n\n" ++
