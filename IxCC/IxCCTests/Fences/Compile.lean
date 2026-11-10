@@ -2,6 +2,7 @@ import IxCC.Recheck.Proof.Compile
 import IxCC.Compiler.Proof
 import IxCC.CompileClaim.Proof
 import IxCC.Ring0.Proof
+import IxCC.Src.Proof.Lazify
 
 /-! The actual compiler statements expose the existing native BLAKE3 dependency
 through ingress and production. The separate replay fences retain their exact
@@ -293,6 +294,21 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.Src.Table.checkAxiomClosure_roots' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.checkAxiomClosure_roots
 
+/-- info: 'IxCC.Src.Table.checkAxiomWalk_closed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Table.checkAxiomWalk_closed
+
+/-- info: 'IxCC.Src.Term.constsBudget_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Term.constsBudget_sound
+
+/-! Statement pin: this fails to elaborate if `checkAxiomClosure_sound` loses its
+closure conclusion. -/
+
+example {p : IxCC.Src.Program} {thm c : IxCC.Src.CId}
+    (h : IxCC.Src.Table.checkAxiomClosure p thm = .ok ())
+    (hr : IxCC.Src.Table.AxiomReach p thm c) (hc : c < p.size) :
+    IxCC.Src.Table.AxiomDeclOk p c :=
+  (IxCC.Src.Table.checkAxiomClosure_sound h).2 c hr hc
+
 /-- info: 'IxCC.Src.Table.ofCert_ok_props' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.ofCert_ok_props
 
@@ -302,20 +318,56 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.Src.Lazify.lazifyTerm_eqv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Lazify.lazifyTerm_eqv
 
+/-- info: 'IxCC.Src.Lazify.term_modeEq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.term_modeEq
+
+/-- info: 'IxCC.Src.Lazify.spine_modeEq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.spine_modeEq
+
+/-- info: 'IxCC.Src.Lazify.ihs_modeEq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.ihs_modeEq
+
+/-- info: 'IxCC.Src.Lazify.setTerm_modeEq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.setTerm_modeEq
+
+/-- info: 'IxCC.Src.Lazify.step_modeEq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.step_modeEq
+
+/-- info: 'IxCC.Src.Lazify.run_modeEq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.run_modeEq
+
+/-- info: 'IxCC.Src.Lazify.run_termOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Lazify.run_termOf
+
+/-- info: 'IxCC.Src.Program.ModeEq.termOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Program.ModeEq.termOf
+
+/-! Statement pin: `Lazify.run` is `Program.ModeEq` to its input for every key list. -/
+
+example (p : IxCC.Src.Program) (keys : List IxCC.Src.TermKey) :
+    IxCC.Src.Program.ModeEq p (IxCC.Src.Lazify.run p keys) :=
+  IxCC.Src.Lazify.run_modeEq p keys
+
 /-- info: 'IxCC.CompileClaim.toPayloadBytes_ofPayloadBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.toPayloadBytes_ofPayloadBytes
 
 /-- info: 'IxCC.CompileClaim.toClaimBytes_ofClaimBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.toClaimBytes_ofClaimBytes
 
-/-- info: 'IxCC.CompileClaim.isImmortalViewType_nat_tagify' depends on axioms: [propext] -/
-#guard_msgs in #print axioms IxCC.CompileClaim.isImmortalViewType_nat_tagify
-
-/-- info: 'IxCC.CompileClaim.isImmortalViewType_ctor0_tagify' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.CompileClaim.isImmortalViewType_ctor0_tagify
-
 /-- info: 'IxCC.Ring0.admittedRing0Sip_step_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.admittedRing0Sip_step_frame
 
 /-- info: 'IxCC.Ring0.admittedRing0Sip_multi_sip_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.admittedRing0Sip_multi_sip_frame
+
+/-- info: 'IxCC.Ring0.admittedRing0Sip_call_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.admittedRing0Sip_call_frame
+
+/-- info: 'IxCC.Ring0.callRunsInFrame_of_ne_stuck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.callRunsInFrame_of_ne_stuck
+
+/-- info: 'IxCC.Ring0.linked_call_ne_stuck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.linked_call_ne_stuck
+
+/-- info: 'IxCC.Ring0.linked_run_call_ne_stuck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.linked_run_call_ne_stuck

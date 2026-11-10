@@ -15,7 +15,7 @@ no table) and a certificate, and re-runs every pass on the certificate's
 decisions, validating what the producer searched for:
 
 ```text
-P ─Table.ofCert (V)→ ─install + Relevance.check (V)→ ─Lazify (P)→ ─Lam.erase (P)→ Lam
+P ─Table.ofCert (V)→ ─install + Relevance.check + checkCanonical (V)→ ─Lazify (P)→ ─Lam.erase (P)→ Lam
   ─Anf.Pipeline.run c.mid (P: P1, then P2/P3/P4/prune on the certificate's decisions)→ Anf
   ─Fir.lower (P)→ ─Own.immortal (P)→ ─Cfg.lower (P)→ Cfg ─roots (≤ 5 parameters)→
   ─switches (check)→ ─Rt.lower (P, with edge splitting)→ Lir ─Select.select (P)→ Xv
@@ -26,10 +26,13 @@ P ─Table.ofCert (V)→ ─install + Relevance.check (V)→ ─Lazify (P)→ �
 
 No search runs here: the annotator, `Table.build`, `Admit`, the middle end's
 oracles, linear scan and the layout oracles are `produce`'s. A certificate
-that a validator refuses is a rejection naming its stage and code; one it
-accepts gives code as correct as any other it would accept (the passes'
-theorems quantify over the certificate). `Recheck.sound` (M2.8) is stated of
-this function.
+that a validator refuses is a rejection naming its stage and code. For one it
+accepts, the passes' theorems (which quantify over the certificate) relate
+the object to SrcEval on the checked source `a.src` that the certificate's
+table and annotation produce, up to that source going wrong; no theorem
+relates `a.src` semantically to `P` (open item S6), so nothing proves that two
+accepted certificates give code that agrees. `Recheck.sound` (M2.8) is stated
+of this function.
 
 **Kernel style.** `runLir` is the front half, up to the lowered Lir program
 (what M2.7's front theorem, `Recheck.front_refines`, is stated of);

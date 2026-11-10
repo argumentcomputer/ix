@@ -3001,7 +3001,8 @@
    ["IxCC.Recheck.Proof.Compile",
     "IxCC.Compiler.Proof",
     "IxCC.CompileClaim.Proof",
-    "IxCC.Ring0.Proof"]},
+    "IxCC.Ring0.Proof",
+    "IxCC.Src.Proof.Lazify"]},
   "IxCCTests.Fences.CfgProof":
   {"path": "IxCCTests/Fences/CfgProof.lean",
    "imports": ["IxCC.Cfg.Proof.Fuel"]},
@@ -3193,10 +3194,6 @@
   "IxCCTests.Corpus.CertifiedCensus":
   {"path": "IxCCTests/Corpus/CertifiedCensus.lean",
    "imports": ["IxCCTests.Corpus.Manifest"]},
-  "IxCCTests.Corpus.Budget":
-  {"path": "IxCCTests/Corpus/Budget.lean",
-   "imports":
-   ["IxCCTests.Corpus.Manifest", "IxCCTests.Src.Support", "IxCC.Recheck"]},
   "IxCCTests.Corpus.Build":
   {"path": "IxCCTests/Corpus/Build.lean",
    "imports":
@@ -3205,6 +3202,10 @@
     "IxCC.Tools.Census",
     "IxCC.Tools.SourceScan",
     "IxCC.Recheck.Produce"]},
+  "IxCCTests.Corpus.Budget":
+  {"path": "IxCCTests/Corpus/Budget.lean",
+   "imports":
+   ["IxCCTests.Corpus.Manifest", "IxCCTests.Src.Support", "IxCC.Recheck"]},
   "IxCCTests.Corpus.Artifacts.Tuple":
   {"path": "IxCCTests/Corpus/Artifacts/Tuple.lean",
    "imports": ["IxCC.Recheck.Run"]},
@@ -4229,6 +4230,9 @@
   "IxCC.Src.Proof.Mono":
   {"path": "IxCC/Src/Proof/Mono.lean",
    "imports": ["IxCC.Src.Proof.Unfold", "IxCC.Sem.Agrees"]},
+  "IxCC.Src.Proof.Lazify":
+  {"path": "IxCC/Src/Proof/Lazify.lean",
+   "imports": ["IxCC.Src.Lazify", "IxCC.Src.Proof.NatMap"]},
   "IxCC.Src.Prim":
   {"path": "IxCC/Src/Prim.lean", "imports": ["IxCC.Src.Syntax"]},
   "IxCC.Src.Pinned":

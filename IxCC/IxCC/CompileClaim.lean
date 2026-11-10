@@ -28,8 +28,9 @@ object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
      running `Ixon.V3.Tc.checkEnv` during `Recheck.ingress`.
    - `verifyProgram` requires `c.abiArity < 2 ^ 64`, verifies that the target root
      declaration is monomorphic with all-`Nat` parameters (`rootParamsAllNat`),
-     and requires a non-vacuous readback type (`isImmortalViewType` on the
-     `.immortal` and `.zeroRc` paths; `root.ty.isSome` on the `.plainRc` path).
+     and requires a readback type, so the value clause observes the root's result
+     (`isImmortalViewType` on the `.immortal` and `.zeroRc` paths; `root.ty.isSome`
+     on the `.plainRc` path).
    - `.zeroRc` verification uses `Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc`
      (matching `produceAuto` and `produce`), and `makeClaim` / `produce` avoid
      redundant re-ingress and double recheck.
@@ -260,8 +261,11 @@ def ofClaimBytes (bs : ByteArray) : Option CompileClaim :=
 def commit (c : CompileClaim) : Ixon.Address :=
   Ixon.Address.blake3Pure c.toClaimBytes
 
-/-- Check that a readback type is a scalar (`Nat`) or a nullary-constructor enum
-supported by `Rt.tagify` (`Front.view` on the `.immortal` / `.zeroRc` path). -/
+/-- Check that a readback type is a scalar (`Nat`) or an enumeration whose
+signature row lists only field-less constructors: the shapes `Rt.tagify`
+(`Front.view` on the `.immortal` / `.zeroRc` path) can read back. No theorem
+states that `Rt.tagify` succeeds on every value of such a type: a constructor
+must also be in the table with a tag inside the row (`Recheck.view_ctor0`). -/
 def isImmortalViewType (sig : Rt.Sig) : Rt.FoTy → Bool
   | .nat => true
   | .ind idx =>
@@ -286,7 +290,8 @@ def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
   | none => false
 
 /-- Check that a root on the `.immortal` / `.zeroRc` path has all-`Nat` parameters
-and a non-vacuous scalar/enum readback type (`isImmortalViewType`). -/
+and a scalar/enum readback type (`isImmortalViewType`), so that the value clause
+observes its result. -/
 def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
   rootParamsAllNat src root &&
     match root.ty with

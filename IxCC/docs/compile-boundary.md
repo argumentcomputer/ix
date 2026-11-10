@@ -14,7 +14,11 @@ including `cfg.forInput` and the returned certificate. `compiled_sound` derives
 the existing return, safe-source and divergence guarantees for that emitted
 object. `compile_bytes` identifies the returned bytes with the replayed object.
 These statements remain relative to the checked source stored in the artifact;
-they do not identify its denotation with a certified kernel environment.
+they do not identify its denotation with a certified kernel environment. Nor do
+they relate that checked source semantically to the ingested program: the front
+end (`Table.ofCert`, the relevance annotation and its checks, `Lazify.run`)
+builds it, and the theorems state that the front end ran and how, not what it
+preserves (open item S6).
 
 The implementation composes `compile = ingress; produce; run`. The current
 hashing boundaries are:
@@ -23,7 +27,7 @@ hashing boundaries are:
 | --- | --- | --- |
 | `V3.decodeAnonymousEnv` | `Address.blake3Pure`, including the canonical constant-root Merkle fold | Authenticating Ixon objects, blobs and the closure root |
 | `V3.Tc.checkEnv` | `Address.blake3` and `Blake3.Rust.Hasher` | Rechecking materialized object/blob hashes; constructing projection addresses, expression/universe nodes, context and reduction-cache keys |
-| `Recheck.produceWith` relevance annotation | The same erased typechecker's expressions and conversion | An untrusted oracle whose output is checked by the relevance checker |
+| `Recheck.produceWith` relevance annotation; `Recheck.checkCanonicalRelevance` | The same erased typechecker's expressions and conversion | In `produce`, a proposal the relevance checks then decide. On the byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) `checkCanonicalRelevance` re-runs `Src.Relevance.annotate` on `(inp.env, cert.table)` and requires the certificate's annotation to equal its output, so the annotator is on their acceptance path. It has no correctness theorem: S1's closure on those paths rests on it annotating honest programs correctly |
 | `Src.Resource.validateContext` | `Address.blake3Pure` plus the codec's pure framing operations | Binding raw effective profile bytes and checked equation selections to actual Src declarations; no resource-safety claim |
 | Separate `V3.validate` / resource-claim API | Native resource profile, object and claim commitments, plus erased typing | Diagnostic addressed admission; not called by `Recheck.compile` or assumed by `Recheck.sound` |
 

@@ -26,8 +26,10 @@ are implemented, from Src through register allocation and the Lir RC runtime to
 ELF (`--rc auto|on|off`). `Recheck.sound`, `Recheck.RcReplay.sound`,
 `Compiler.compile_sound`, `CompileClaim`, and `Ring0` (`verifyRing0Sip_sound`)
 prove the accepted recheck, replay, and claim-verification paths correct
-relative to the source evaluator and the native driver model; the connection to
-Lean's denotation remains open.
+relative to the source evaluator, run on the checked source the front end builds
+from the certificate, and the native driver model, on inputs where that source
+does not go wrong. Neither the front end's semantic faithfulness to the ingested
+program nor the connection to Lean's denotation is proved.
 
 **What compiles today.** First-order Lean programs over `Nat` (below 2^63 at
 run time; a larger value is a resource failure) and inductive types, with
@@ -42,7 +44,9 @@ arrays, byte arrays, strings, bignums and IO are not supported.
 checked source program, unless that source goes wrong (gets stuck, traps or
 returns a value its type does not read back), under the x86, loader and
 driver assumptions of the [trust ledger](docs/trusted-extern-ledger.md). That
-the checked source means the Lean definition is not proved.
+the checked source, which the front end builds from the certificate, is
+semantically faithful to the ingested program is not proved, and neither is
+that it means the Lean definition.
 
 The [roadmap](docs/roadmap.md) states the fragment exactly and plans the
 way to a generally useful certified compiler, with two flagship targets.

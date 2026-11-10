@@ -23,7 +23,7 @@ Serialized Ixon.Env (.ixe) + Unfolding Equations + Certificate Bundle
                                                IxCC/CompileClaim.lean, IxCC/Ring0.lean)
 ```
 
-In `Recheck.front`, the checker validates the unfolding table (`Table.ofCert`, enforcing a standard-axiom allowlist of `propext`, `Classical.choice`, and `Quot.sound` on `eqn` and `csimp` replacements while `Tc.checkEnv` typechecks the environment), checks the certificate's relevance annotation with `Relevance.check` and `Relevance.checkCanonical` (inside `Src.Recheck.annotation`, on every program whatever its pinned identities; it re-derives each position's class from the declaration types and refuses any irrelevant tag it cannot justify; on byte-level verification paths (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, and `ixcc check-cert`), `Recheck.checkCanonicalRelevance` additionally re-runs `Src.Relevance.annotate` on `(inp.env, cert.table)` and requires exact equality with `cert.relevance`), and runs `Lazify.run` to produce `a.src` (`Relevance.Proof.check_sound` states what `Relevance.check` establishes; `checkCanonical` and `Lazify.run` have no semantic theorem). From `Lam.erase` through ELF emission, every middle-end and backend heuristic pass (inlining, specialization, ownership lowering, linear-scan register allocation, frame layout, and block ordering) is either proved correct for all bounded certificate steps or validated by a proved checker (`Xv.Validate.program_sound`, `FrameLayout.check_sound`, `Order.check_sound`, `ELF.check_sound`). The middle end's replay refuses a certificate step, with an ordinary error, as soon as it passes the node and work budgets in [`IxCC/Anf/Budget.lean`](../IxCC/Anf/Budget.lean) (the walk's copies, each global and the whole program, a specialisation step's work), so the copying, memory and walk depth of a step stay within fixed bounds whatever the certificate asks for.
+In `Recheck.front`, the checker validates the unfolding table (`Table.ofCert`; each `eqn` and `csimp` theorem may reach no axiom other than `propext`, `Classical.choice` and `Quot.sound` through the program's reference graph, `Src.Table.checkAxiomClosure_sound`, while `Tc.checkEnv` typechecks the environment), checks the certificate's relevance annotation with `Relevance.check` and `Relevance.checkCanonical` (inside `Src.Recheck.annotation`, on every program whatever its pinned identities; it re-derives each position's class from the declaration types and refuses any irrelevant tag it cannot justify; on byte-level verification paths (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, and `ixcc check-cert`), `Recheck.checkCanonicalRelevance` additionally re-runs `Src.Relevance.annotate` on `(inp.env, cert.table)` and requires exact equality with `cert.relevance`), and runs `Lazify.run` to produce `a.src`. `Relevance.Proof.check_sound` states what `Relevance.check` establishes, and `Src.Lazify.run_modeEq` that `Lazify.run` changes nothing but application modes; neither is a semantic statement, and `checkCanonical` and `annotate` have no theorem. No theorem relates `a.src` to the ingested program semantically (the front end is outside the proof chain, open item S6), so every soundness theorem below is relative to SrcEval on `a.src` and says nothing on an input where it goes wrong. From `Lam.erase` through ELF emission, every middle-end and backend heuristic pass (inlining, specialization, ownership lowering, linear-scan register allocation, frame layout, and block ordering) is either proved correct for all bounded certificate steps or validated by a proved checker (`Xv.Validate.program_sound`, `FrameLayout.check_sound`, `Order.check_sound`, `ELF.check_sound`). The middle end's replay refuses a certificate step, with an ordinary error, as soon as it passes the node and work budgets in [`IxCC/Anf/Budget.lean`](../IxCC/Anf/Budget.lean) (the walk's copies, each global and the whole program, a specialisation step's work), so the copying, memory and walk depth of a step stay within fixed bounds whatever the certificate asks for.
 
 ---
 
@@ -36,8 +36,8 @@ Start with the modules that state what `IxCC` proves from serialized source byte
 1. **[`IxCC/CompileClaim.lean`](../IxCC/CompileClaim.lean), [`IxCC/CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean) & [`Ix/Claim.lean`](../../Ix/Claim.lean)**
    - Connects `Ix`'s Blake3-committed `CompileClaim` (tag `13`, wire header `E8 05 04 06`) to machine-checked x86-64 execution across all three memory policies (`.immortal`, `.zeroRc`, `.plainRc`).
    - Key definitions and theorems:
-     - `verifyProgram`, `verifyBytes`, and `checkClaim_ok_iff`: Verifies that the `Ixon.Env` Merkle root matches `c.env`, the emitted ELF64 `.o` bytes hash to `c.elfHash`, the environment typechecks (`typecheck := true` by default), the target root has `Nat` parameters and an observable return type, and the certified checker accepts the certificate for the claimed policy and ABI arity.
-     - `verifyProgram_immortal_sound`, `verifyProgram_zeroRc_sound`, `verifyProgram_plainRc_sound`, and their byte-level counterparts `verifyBytes_immortal_sound`, `verifyBytes_zeroRc_sound`, and `verifyBytes_plainRc_sound`: End-to-end soundness from `Ixon.Env` / `ByteArray` inputs to linked x86-64 object execution (`X86.Linked`, `a.linked D`, `ELFRead.parse`, `ByteEval.step`) under `X86.Driver.Ok`.
+     - `verifyProgram`, `verifyBytes`, and `checkClaim_ok_iff`: `verifyBytes` (and `checkClaim`) decodes the `.ixe` bytes, verifies that the `Ixon.Env` Merkle root matches `c.env` and that the environment typechecks (`typecheck := true` by default), requires the certificate's annotation to be `Src.Relevance.annotate`'s (Stage A), and runs `verifyProgram` on the ingested program. `verifyProgram` takes no environment: it verifies that the target root has `Nat` parameters and an observable return type, that the certified checker accepts the certificate for the claimed policy and ABI arity, and that the emitted ELF64 `.o` bytes hash to `c.elfHash`.
+     - `verifyProgram_immortal_sound`, `verifyProgram_zeroRc_sound`, `verifyProgram_plainRc_sound`, and their byte-level counterparts `verifyBytes_immortal_sound`, `verifyBytes_zeroRc_sound`, and `verifyBytes_plainRc_sound`: End-to-end soundness from `Ixon.Env` / `ByteArray` inputs to linked x86-64 object execution (`X86.Linked`, `a.linked D`, `ELFRead.parse`, `ByteEval.step`) under `X86.Driver.Ok`, relative to SrcEval on the checked source `a.src`: an object result is the source's value or `a.front.GoesWrong` holds on that input, which no theorem rules out.
 2. **[`IxCC/Compiler/Proof.lean`](../IxCC/Compiler/Proof.lean), [`IxCC/Recheck/Proof/Soundness.lean`](../IxCC/Recheck/Proof/Soundness.lean) & [`IxCC/Recheck/Proof/Sound.lean`](../IxCC/Recheck/Proof/Sound.lean)**
    - Top-level compiler composition theorems: `Compiler.compile_sound`, `Recheck.compile_sound`, `Recheck.compile_safe`, `Recheck.compileWithContracts_sound`, `Recheck.sound`, and `Recheck.sound_of_eval` (with inductive tree observation via `Rt.treeTagify` on the immortal path and `Rt.Rc.Procs.Readback.treeView` on the RC path, backed by `Rt.readback` and `toFir_liveFuel`).
 3. **[`IxCC/Recheck/Rc/Proof/ObjectSound.lean`](../IxCC/Recheck/Rc/Proof/ObjectSound.lean) & [`IxCC/Recheck/Rc/Proof/Reentry.lean`](../IxCC/Recheck/Rc/Proof/Reentry.lean)**
@@ -47,7 +47,8 @@ Start with the modules that state what `IxCC` proves from serialized source byte
    - Formalizes Ring-0 certified-compilation admission and model-level Software-Isolated Process (SIP) frame invariants (see explicit assumptions in the `IxCC.Ring0` module documentation for unmodeled CPL0 hardware hazards including interrupts/IST, hardware exceptions, page-table walks, MMIO, and speculation):
      - `X86.Mnemonic.all_unprivileged`, `op_rows_no_privileged_opcode` & `stream_check_cfi`: Shows that the 31 `Mnemonic` constructors in the emitter/decoder vocabulary exclude privileged mnemonics, that none of the 243 `Op` rows uses a privileged opcode (`syscall`/`sysret`/`hlt`/`cli`/`sti`/`lgdt`/`lidt`/`ltr`/`wrmsr`/`rdmsr`), and that `Stream.check` enforces `.D32` direct relative branch offsets and `.text` bounds (`ByteEval.step` requires `rip` within `.text`; `ret` pops its return address from the stack).
      - `session_runCalls_preserves_unmapped`, `text_preserved_of_canonicalOk`, and `kernelTablesPreserved_of_session_runCalls`: Conditional model-level frame preservation theorems showing that runs succeeding under `Driver.Ok` / `CanonicalOk` preserve bytes outside `D.mapped` (including disjoint `KernelPageTables` word regions).
-     - `verifyRing0Sip_sound`, `verifyBytesRing0Sip_sound`, `multi_sip_frame`, and `pairwiseDisjointSips_frame`: Concrete artifact-witness admission theorems and conditional disjoint-driver frame non-interference in the byte-memory model.
+     - `verifyRing0Sip_sound`, `verifyBytesRing0Sip_sound`, `multi_sip_frame`, and `pairwiseDisjointSips_frame`: Concrete artifact-witness admission theorems and conditional disjoint-driver frame non-interference in the byte-memory model (the frame theorems assume every run returns `.ok` and hold for any object under a canonical driver).
+     - `admittedRing0Sip_call_not_goesWrong` and `admittedRing0Sip_call_frame`: what admission adds, for one call from `cx_init` on an input where the source does not go wrong: the call never faults in the model, so its byte runs leave every byte outside the writable map unchanged at every clock.
 
 ---
 
@@ -59,7 +60,7 @@ Verify the axiom footprint and specification boundaries of `IxCC`:
    - **Program-level soundness theorems** (`Recheck.sound`, `RcReplay.sound`, `verifyProgram_*_sound`, `verifyRing0Sip_sound`, `recycled_session`) depend **only** on the 3 standard Lean axioms (`propext`, `Classical.choice`, `Quot.sound`).
    - **Byte-level soundness theorems** that call `Recheck.ingress` (`verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`, `Compiler.compile_sound`, `Recheck.compileWithContracts_sound`, `checkClaim_ok_iff`) additionally depend on the ledger-tracked native Blake3 evaluation axiom (`Blake3.HasherOps.hash._native.native_decide.ax_1`), as documented in [`docs/compile-boundary.md`](compile-boundary.md).
    - Zero `sorry` and zero `native_decide` in `IxCC/`.
-   - [`IxCCTests/Fences.lean`](../IxCCTests/Fences.lean) (aggregating [`IxCCTests/Fences/Front.lean`](../IxCCTests/Fences/Front.lean), [`IxCCTests/Fences/BackHalf.lean`](../IxCCTests/Fences/BackHalf.lean), [`IxCCTests/Fences/Compile.lean`](../IxCCTests/Fences/Compile.lean), [`IxCCTests/Fences/OwnPlain.lean`](../IxCCTests/Fences/OwnPlain.lean), [`IxCCTests/Fences/RcPromotion.lean`](../IxCCTests/Fences/RcPromotion.lean), [`IxCCTests/Fences/X86.lean`](../IxCCTests/Fences/X86.lean), etc.): 5,406 exact `#guard_msgs in #print axioms` assertions enforced by `.lake/build/bin/check-build-graph`.
+   - [`IxCCTests/Fences.lean`](../IxCCTests/Fences.lean) (aggregating [`IxCCTests/Fences/Front.lean`](../IxCCTests/Fences/Front.lean), [`IxCCTests/Fences/BackHalf.lean`](../IxCCTests/Fences/BackHalf.lean), [`IxCCTests/Fences/Compile.lean`](../IxCCTests/Fences/Compile.lean), [`IxCCTests/Fences/OwnPlain.lean`](../IxCCTests/Fences/OwnPlain.lean), [`IxCCTests/Fences/RcPromotion.lean`](../IxCCTests/Fences/RcPromotion.lean), [`IxCCTests/Fences/X86.lean`](../IxCCTests/Fences/X86.lean), etc.): 5,449 exact `#guard_msgs in #print axioms` assertions, counted and digested in [`nix/ci-coverage.json`](../nix/ci-coverage.json) and checked by `.lake/build/bin/check-build-graph`.
    - [`docs/trusted-externs.json`](trusted-externs.json) and [trusted-extern-ledger.md](trusted-extern-ledger.md): Enforced by `.lake/build/bin/check-trusted-externs`.
 2. **Top of the TCB (Source Semantics & Ixon Ingress)**:
    - [`IxCC/Src/Semantics.lean`](../IxCC/Src/Semantics.lean) & [`IxCC/Src/Ingress.lean`](../IxCC/Src/Ingress.lean): `Src.Ingress.ofEnv` and the big-step operational semantics `SrcEval` on `a.src` form the top of the trusted specification boundary (source adequacy against `Ix.Kernel`'s model remains open; see [compile-boundary.md](compile-boundary.md)).
@@ -116,27 +117,109 @@ The changes on `jcb/ixck-ixcc-merge` span eight functional areas:
    - `Own.Plain` contract-domain checking (`checkContractPlainMap`), static zero-RC policy selection (`zeroRcProgram`), terminal move-transfer (`transferActions`), `.prim`/`.proj` immediate RC elision (`imm`), and narrowed RC runtime clobbers.
 6. **Single-Pass `RcReplay.produce`, `--rc auto|on|off`, `recycled_session` & `Compiler.Proof`**
    - Single-pass `RcReplay.produce`, automatic RC policy selection with immortal fallback, Lir-level multi-call heap-recycling session soundness (`recycled_session`), and top-level `Compiler.Proof` theorems.
-7. **`CompileClaim` (Tag 11) & Byte-Level ELF64 Soundness Theorems**
+7. **`CompileClaim` (Tag 13) & Byte-Level ELF64 Soundness Theorems**
    - `CompileClaim` in `Ix/Claim.lean` and program/byte-level ELF64 verification and soundness theorems in `IxCC/CompileClaim.lean` and `IxCC/CompileClaim/Proof.lean`.
 8. **Ring-0 Admission & Model-Level Multi-SIP Frame Preservation**
    - Ring-0 admission (`verifyRing0Sip_sound`, `verifyBytesRing0Sip_sound`), disjoint word-region preservation (`kernelTablesPreserved_of_session_runCalls`), and model-level multi-SIP frame non-interference (`multi_sip_frame`) in `IxCC/Ring0.lean`, `IxCC/Ring0/Proof.lean`, and `IxCCTests/Ring0.lean`.
 
 ---
 
-## 4. Quick Verification Commands
+## 4. Verification Commands
 
-From `IxCC/`:
+These are the commands of IxCC's 16 required checks, as [`nix/checks.nix`](../nix/checks.nix) runs them; `nix build .#checks.x86_64-linux.ixcc-<name>` from ix's root runs one hermetically (see [ci.md](ci.md)). From `IxCC/`, in ix's development shell (`nix develop`). `CC` is a C compiler (`--cc "$CC"` links the objects with the C drivers and runs them natively; x86-64 Linux only, and without it the suites run every Lean level and skip the native runs), and `LLVM_MC` an `llvm-mc` binary (see `x86-hardware` below). `rc-native` and `x86-hardware` are x86-64 Linux only.
 
 ```bash
-# 1. Build the compiler and full test/proof suite
-lake build IxCC IxCCTests
+# build, proofs: the library, every executable, and the complete proof and fence collection
+# (IxCCTests imports IxCCTests.Proofs, so building it checks every exact axiom fence)
+lake build IxCC IxCCTests ixcc \
+  tests-ixon-v3 check-ixon-v3 check-ixon-v3-catalog census tests-aiur check-aiur \
+  check-x86-encoder check-x86-bytes check-x86-streams check-x86-object x86-object-fixture \
+  check-trusted-externs check-tools-tests check-build-graph check-steps check-x86-hardware \
+  tests-rt-rc tests-cfg-rc tests-driver-session tests-pipeline-rc tests-rc-certificate \
+  tests-pipeline corpus certified-census tests-corpus check-backend check-regalloc tests-src \
+  tests-rt check-xv-select tests-lam tests-fir check-lir tests-anf tests-own tests-own-plain \
+  tests-shrink tests-relevance tests-recheck tests-recheck-readback
+bin=.lake/build/bin
 
-# 2. Verify build-graph import manifest and exact axiom assertions
-lake build check-build-graph && .lake/build/bin/check-build-graph
+# ixon-v3
+$bin/tests-ixon-v3
+$bin/check-ixon-v3 fixtures/ixon-v4/handoff/accepted.ixe fixtures/ixon-v4/handoff/profile.bin \
+  fixtures/ixon-v4/handoff/accepted.claim
+$bin/check-ixon-v3-catalog fixtures/ixon-v4/catalog/fat.ixc
+$bin/check-ixon-v3-catalog fixtures/ixon-v4/catalog/chunked.ixc fixtures/ixon-v4/catalog/chunked.ixc/members.json
 
-# 3. Verify trusted-extern supply-chain ledger
-lake build check-trusted-externs && .lake/build/bin/check-trusted-externs
+# census: each report must equal its reviewed baseline
+$bin/census fixtures/ixon-v4/k1/k1.ixe --names fixtures/ixon-v4/k1/equations.json --out census.json
+diff -u fixtures/ixon-v4/k1/census.json census.json
+for name in fib sum-loop ackermann tak gcd; do
+  $bin/census fixtures/ixon-v4/bench-k1/$name.ixe \
+    --names fixtures/ixon-v4/bench-k1/$name.equations.json --out $name.census.json
+  diff -u fixtures/ixon-v4/bench-k1/$name.census.json $name.census.json
+done
 
-# 4. Run DriverSession & Ring-0 Multi-SIP executable suite
-lake build tests-driver-session && .lake/build/bin/tests-driver-session
+# aiur
+$bin/tests-aiur
+$bin/check-aiur --root .
+
+# x86-encoder-decoder, x86-byte-execution, x86-stream-objects, x86-elf-object
+$bin/check-x86-encoder --objdump "$(command -v objdump)"
+$bin/check-x86-bytes
+$bin/check-x86-streams
+# (--cc and --harness: x86-64 Linux only, for the native link and run)
+$bin/check-x86-object --fixture $bin/x86-object-fixture --readelf "$(command -v readelf)" \
+  --objdump "$(command -v objdump)" --cc "$CC" --harness fixtures/x86/native_harness.c
+
+# trusted-extern-ledger (the integrity pins, required-check inventory, hygiene scan and
+# other inventories of the trust ledger), and the auditor's own rejection paths
+$bin/check-trusted-externs
+$bin/check-tools-tests
+
+# build-graph: the module manifest, import hygiene, and the proof and fence inventory
+$bin/check-build-graph --root .
+
+# rc-runtime
+mkdir -p rc-logs
+$bin/tests-rt-rc controls
+$bin/tests-rt-rc deep
+$bin/tests-cfg-rc
+$bin/tests-driver-session
+$bin/tests-pipeline-rc levels rc-logs/levels
+$bin/tests-pipeline-rc counters rc-logs/counters
+
+# rc-native (x86-64 Linux)
+$bin/tests-rt-rc native rc-logs/runtime
+$bin/tests-rc-certificate fresh rc-logs/certificate
+$bin/tests-pipeline-rc native rc-logs/levels-native
+$bin/tests-pipeline-rc negative rc-logs/negative
+
+# suites (the check runs these concurrently; each must exit 0)
+$bin/tests-pipeline --cc "$CC"
+$bin/corpus check
+$bin/certified-census --self-test
+$bin/tests-corpus --cc "$CC"
+$bin/check-backend --cc "$CC"
+$bin/check-regalloc
+$bin/tests-src
+$bin/tests-rt --cc "$CC"
+$bin/check-xv-select
+$bin/tests-lam
+$bin/tests-fir
+$bin/check-lir
+$bin/tests-anf
+$bin/tests-own --cc "$CC"
+$bin/tests-own-plain
+$bin/tests-shrink
+$bin/tests-relevance
+$bin/tests-recheck
+$bin/tests-recheck-readback
+
+# x86-steps
+$bin/check-steps
+
+# x86-hardware (x86-64 Linux). LLVM_MC is an llvm-mc binary: ix's development shell does not put
+# one on PATH; the Nix check uses nixpkgs' llvmPackages.llvm (its bin/llvm-mc).
+"$CC" -O1 -o hw_diff_harness fixtures/x86/hw_diff_harness.c
+$bin/check-x86-hardware --harness ./hw_diff_harness --llvm-mc "$LLVM_MC"
 ```
+
+The Nix checks run these against the tracked source tree in the store and write their outputs (`census.json`, `rc-logs/`, `hw_diff_harness`) in the build directory; run locally, they write them in `IxCC/`.

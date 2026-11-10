@@ -39,7 +39,10 @@ documents (see [Planned extensions](#planned-extensions)).
 - **Executable semantics.** Every IR has an executable, clocked semantics, so
   it can be tested differentially before and alongside its proofs.
 - **No new axioms.** Public theorems use only `propext`, `Classical.choice`
-  and `Quot.sound`, each with an exact fence. Runtime services, the ISA model
+  and `Quot.sound`, each with an exact fence; theorems that mention ingress or
+  the producer (`verifyBytes_*_sound`, `Compiler.compile_sound`, …) also show
+  the existing native Blake3 evaluation axiom, recorded in the trust ledger
+  ([compile boundary](compile-boundary.md)). Runtime services, the ISA model
   and build inputs are recorded in the trust ledger.
 
 ## Correctness statement

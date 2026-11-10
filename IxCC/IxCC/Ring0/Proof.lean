@@ -23,9 +23,11 @@ Proves:
    outside `D.mapped` bit-for-bit.
    - Note (`A3-2`, `A3-5`, `A3-6`): These frame theorems are conditional
      preservation lemmas over runs that succeed (`.ok`) in `X86.Memory` (where
-     stores outside `D.mapped` fail `Memory.write?`). Static absence of model
-     faults (`¬ GoesWrong`) for admitted SIPs is established by
-     `verifyRing0Sip_sound` and `admittedRing0Sip_call_not_goesWrong`.
+     stores outside `D.mapped` fail `Memory.write?`); they hold for any object.
+     Absence of model faults for admitted SIPs, on source-safe inputs
+     (`¬ GoesWrong i`) and for one call from `cx_init`, is established by
+     `verifyRing0Sip_sound` and `admittedRing0Sip_call_not_goesWrong`;
+     `admittedRing0Sip_call_frame` combines the two for that call.
 3. **Non-Vacuous Certified-Compilation Admission (`AdmittedRing0Sip` & `verifyRing0Sip_sound`)**:
    `AdmittedRing0Sip sip P` explicitly binds the parsed certificate `cert` and
    the rechecked artifact `a` (`Recheck.run` / `Recheck.runWithContracts` /
@@ -797,13 +799,27 @@ theorem kernelTablesPreserved_of_session_run {s : X86.DriverSession.Session}
 
 /-! ## 3. Non-Vacuous Ring-0 Certified-Compilation Admission (`S2`, `S3`, `A3-1`, `A3-2`, `A6-1`, `A6-5`) -/
 
-/-- Concrete Ring-0 safety properties for a rechecked artifact's `CheckedProgram`,
-`view`, `GoesWrong`, `program`, `encoded`, and `linked = a.linked sip.driver`:
-packages unconditional `sip.driver.CanonicalOk encoded.text.size`, semantic
-refinement of `CheckedProgram`, absence of model faults/traps (`¬ GoesWrong`)
-at every clock `k` on valid source inputs, software resource-guard termination
-on divergence, `Stream.Valid` decoded instruction/terminator structure, and
-frame preservation of all unmapped memory, `.text`, and `KernelRegionLayout`. -/
+/-- Ring-0 properties of a rechecked artifact's `CheckedProgram`, `view`,
+`GoesWrong`, `program`, `encoded`, and `linked = a.linked sip.driver`. The fields
+differ in what they rest on:
+
+- **The compiled artifact** (false for arbitrary bytes): `elfHash_eq`,
+  `streamValid` (the encoded stream decodes as the checked program), and
+  `semantics` (value refinement of `CheckedProgram` up to `GoesWrong`, no model
+  fault or trap at any clock on an input with `¬ GoesWrong`, and divergence
+  ending in a timeout or a resource guard).
+- **The admission's driver check** (`canonicalOk`, with `driver_eq`):
+  `cfi_inText` holds for any text under a driver with `CanonicalOk`
+  (`step_rip_inText`), and `initCall_frame`, `rootCall_frame` and
+  `session_frame` hold for any object under such a driver, for runs that return
+  `.ok`.
+- **The byte model alone**: `runTo_framePreserved` holds for any bytes, base,
+  clock and state (`IxCC.Ring0.runTo_framePreserved`): the model faults on a
+  store outside the writable map, so a run that does not fault preserves the
+  frame. It says nothing about admission.
+
+What admission adds to the frame is the absence of a fault on a source-safe
+input, for one call: `admittedRing0Sip_call_frame`. -/
 structure Ring0Safety (sip : Ring0Sip) (checkedProg : CheckedProgram)
     (view : Nat → Option Obs → Option (Option Obs))
     (GoesWrong : (Nat × List Nat) → Prop)
@@ -1101,8 +1117,14 @@ theorem verifyProgramRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
 /-- **Byte-Level Ring-0 Certified-Compilation Admission Theorem (`verifyBytesRing0Sip_sound`)**:
 Any `Ring0Sip` that passes `sip.verifyBytes envBytes equations typecheck = true`
 yields an ingested `Recheck.Input` with `typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`,
-`Src.Resource.validate inp.program = .ok ()`, and canonical relevance (`Stage A`),
-whose program satisfies the non-vacuous `AdmittedRing0Sip sip inp.program`. -/
+`Src.Resource.validate inp.program = .ok ()`, `inp.program` built by
+`Src.Ingress.ofEnv` from `inp.env` and the selected roots (`Recheck.ingress_parts`), and
+canonical relevance (`Stage A`): the certificate's table passes `Src.Table.ofCert` and its
+annotation is exactly `Src.Relevance.annotate inp.env { inp.program with table }`
+(`Recheck.checkCanonicalRelevance_iff`, for the certificate `sip.certText` parses to under
+the claim's policy). Its program satisfies the non-vacuous `AdmittedRing0Sip sip inp.program`.
+As for `CompileClaim.verifyBytes_*_sound`, these facts bind `a.src` to
+`(inp.env, cert.table)`; they do not relate it semantically to `inp.program` (S6). -/
 theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
     {equations : Lean.Json} {typecheck : Bool}
     (hver : sip.verifyBytes envBytes equations typecheck = true) :
@@ -1112,8 +1134,27 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
       (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      (∃ rawHints chosen rawProg,
+        Src.Hints.ofK1Json equations = .ok rawHints ∧
+        Recheck.selectRoots rawHints.roots
+          (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) = .ok chosen ∧
+        chosen.isEmpty = false ∧
+        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with known := Src.Pinned.known rawProg,
+                                     resource := inp.hints.resource }) ∧
       inp.env.root = sip.claim.env ∧
       CompileClaim.checkCertCanonicalRelevance sip.cfg inp sip.claim.policy sip.certText = true ∧
+      (match sip.claim.policy with
+       | .immortal | .zeroRc =>
+         ∃ (cert : Recheck.Cert) (table : Src.Table),
+           Recheck.Cert.ofText sip.certText = .ok cert ∧
+           Src.Table.ofCert sip.cfg.table inp.program cert.table = .ok table ∧
+           Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance
+       | .plainRc =>
+         ∃ (cert : Recheck.RcReplay.Cert) (table : Src.Table),
+           Recheck.RcReplay.Cert.ofText sip.certText = .ok cert ∧
+           Src.Table.ofCert sip.cfg.table inp.program cert.base.table = .ok table ∧
+           Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.base.relevance) ∧
       AdmittedRing0Sip sip inp.program := by
   unfold Ring0Sip.verifyBytes at hver
   cases hing : Recheck.ingress envBytes equations
@@ -1121,8 +1162,47 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
   | error _ => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true, beq_iff_eq] at hver
-    obtain ⟨hdec, htc, hres, _⟩ := Recheck.ingress_parts hing
-    exact ⟨inp, rfl, hdec, htc, hres, hver.1.1, hver.1.2, verifyRing0Sip_sound hver.2⟩
+    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
+    have hcanon := hver.1.2
+    have hann :
+        (match sip.claim.policy with
+         | .immortal | .zeroRc =>
+           ∃ (cert : Recheck.Cert) (table : Src.Table),
+             Recheck.Cert.ofText sip.certText = .ok cert ∧
+             Src.Table.ofCert sip.cfg.table inp.program cert.table = .ok table ∧
+             Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance
+         | .plainRc =>
+           ∃ (cert : Recheck.RcReplay.Cert) (table : Src.Table),
+             Recheck.RcReplay.Cert.ofText sip.certText = .ok cert ∧
+             Src.Table.ofCert sip.cfg.table inp.program cert.base.table = .ok table ∧
+             Src.Relevance.annotate inp.env { inp.program with table } =
+               .ok cert.base.relevance) := by
+      unfold CompileClaim.checkCertCanonicalRelevance at hcanon
+      cases hpol : sip.claim.policy <;> simp only [hpol] at hcanon ⊢
+      · cases hcert : Recheck.Cert.ofText sip.certText with
+        | error _ => simp [hcert] at hcanon
+        | ok cert =>
+          simp only [hcert] at hcanon
+          obtain ⟨table, htab, hann⟩ :=
+            (Recheck.checkCanonicalRelevance_iff sip.cfg inp cert.table cert.relevance).mp hcanon
+          exact ⟨cert, table, rfl, htab, hann⟩
+      · cases hcert : Recheck.Cert.ofText sip.certText with
+        | error _ => simp [hcert] at hcanon
+        | ok cert =>
+          simp only [hcert] at hcanon
+          obtain ⟨table, htab, hann⟩ :=
+            (Recheck.checkCanonicalRelevance_iff sip.cfg inp cert.table cert.relevance).mp hcanon
+          exact ⟨cert, table, rfl, htab, hann⟩
+      · cases hcert : Recheck.RcReplay.Cert.ofText sip.certText with
+        | error _ => simp [hcert] at hcanon
+        | ok cert =>
+          simp only [hcert] at hcanon
+          obtain ⟨table, htab, hann⟩ :=
+            (Recheck.checkCanonicalRelevance_iff sip.cfg inp cert.base.table
+              cert.base.relevance).mp hcanon
+          exact ⟨cert, table, rfl, htab, hann⟩
+    exact ⟨inp, rfl, hdec, htc, hres, hingProg, hver.1.1, hver.1.2, hann,
+      verifyRing0Sip_sound hver.2⟩
 
 /-- What a SIP's certificate determines on `P`: the checked source, its `view` and
 `GoesWrong`, the checked stream and the linked object. -/
@@ -1171,7 +1251,10 @@ noncomputable def Ring0Sip.artifact? (sip : Ring0Sip) (P : Src.Program) : Option
    input, the source produces a value `v` with `view i.1 (Lang.obs v) = some w`.
 3. **Conditional frames.** A `rootCall` that returns `.ok` preserves every byte of a
    disjoint peer, and a `Session.runCalls` that returns `.ok` preserves any disjoint
-   `KernelRegionLayout`. -/
+   `KernelRegionLayout`; these hold for any object under a driver with
+   `CanonicalOk`. The `runTo` conjunct holds for any bytes and any driver
+   (`runTo_framePreserved`). Neither says the runs do not fault; for one call on
+   a source-safe input that is `admittedRing0Sip_call_frame`. -/
 def Ring0Artifact.Safe (A : Ring0Artifact) (sip : Ring0Sip) : Prop :=
   A.linked.driver = sip.driver ∧
   sip.driver.CanonicalOk A.encoded.text.size ∧
@@ -1210,17 +1293,22 @@ theorem Ring0Artifact.safe_of_ring0Safety {sip : Ring0Sip} {A : Ring0Artifact}
   · intro kpt hkpt drop inputs bytes k output hcalls
     exact (hsafe.session_frame drop inputs bytes k output hcalls).2.2 kpt hkpt
 
-/-- **Admitted SIPs do not fault (`S3`, `A3-2`, `A6-5`).** A SIP passing
-`sip.verifyProgram P` has the artifact its certificate determines
-(`Ring0Sip.artifact?`), and that artifact satisfies `Ring0Artifact.Safe`. The
-objects are functions of `sip` and `P`, and the certificate in `sip` decides the
-checked source only within what the front end accepts: its relevance annotation
-must pass `Relevance.check` and `Relevance.checkCanonical`, which `Recheck.front`
-runs on every program (so a retag that makes `GoesWrong` hold on a program with no
-pinned identities is refused, `IxCCTests.Recheck.Hostile.pinFree`), and its table
-entries `Table.ofCert`. No theorem yet states that `GoesWrong` is the same for every
-certificate these checks accept; `Ring0Sip.verifyBytes` also requires the
-annotation to be the canonical annotator's output (Stage A). -/
+/-- **Admitted SIPs do not fault on source-safe inputs (`S3`, `A3-2`, `A6-5`).**
+A SIP passing `sip.verifyProgram P` has the artifact its certificate determines
+(`Ring0Sip.artifact?`), and that artifact satisfies `Ring0Artifact.Safe`: on an
+input with `¬ A.GoesWrong i`, the linked call from `cx_init` never faults or traps
+in the model, at any clock. Nothing is said about an input on which the source
+goes wrong, or about state carried between calls.
+
+The objects are functions of `sip` and `P`, and the certificate in `sip` decides the
+checked source, and so `GoesWrong`, only within what the front end accepts: its
+relevance annotation must pass `Relevance.check` and `Relevance.checkCanonical`,
+which `Recheck.front` runs on every program, and its table entries must pass
+`Table.ofCert`. (R1's hostile retag of a program with no pinned identities, which
+made `GoesWrong` hold, is refused: `IxCCTests.Recheck.Hostile.pinFree`.) No theorem
+states that `GoesWrong` is the same for every certificate these checks accept;
+`Ring0Sip.verifyBytes` also requires the annotation to be the canonical annotator's
+output (Stage A). -/
 theorem admittedRing0Sip_call_not_goesWrong {sip : Ring0Sip} {P : Src.Program}
     (hver : sip.verifyProgram P = true) :
     ∃ A : Ring0Artifact, sip.artifact? P = some A ∧ A.Safe sip := by
@@ -1355,7 +1443,11 @@ theorem pairwiseDisjointSips_frame {sips : List X86.Driver}
 /-- **Admitted SIP Step/Run Frame Theorem (`N3`)**:
 For any SIP passing `sip.verifyProgram P = true`, its unique artifact `A`
 (`sip.artifact? P = some A`) satisfies `FramePreserved` across any single step
-and any multi-step `runTo` execution. -/
+and any multi-step `runTo` execution that does not fault. Both frame conjuncts
+are facts of the byte model that hold for any bytes (`byteEval_step_framePreserved`,
+`runTo_framePreserved`); they add nothing about admission. What admission adds,
+that a call's byte runs do not fault on a source-safe input, is
+`admittedRing0Sip_call_frame`. -/
 theorem admittedRing0Sip_step_frame {sip : Ring0Sip} {P : Src.Program}
     (hver : sip.verifyProgram P = true) :
     ∃ A : Ring0Artifact,
@@ -1371,6 +1463,119 @@ theorem admittedRing0Sip_step_frame {sip : Ring0Sip} {P : Src.Program}
   exact ⟨A, hart, hsafe,
     fun _ _ hstep => byteEval_step_framePreserved hstep,
     hsafe.2.2.2.2.2.1⟩
+
+/-- The byte run of the exported call `name` from `core₀` (the `runTo` inside
+`ObjectEval.call`), at clock `k`: the object has a text section, the symbol and
+a readable return slot, the run reaches clock `k` or the return address without
+a byte-machine fault, and the state it reaches leaves every byte that
+`core₀.memory` does not mark writable unchanged (`FramePreserved`). -/
+def CallRunsInFrame (bytes : ByteArray) (name : String) (base : Word) (core₀ : Core)
+    (flags : X86.ByteEval.Flags) (k : Nat) : Prop :=
+  ∃ (text : ByteArray) (offset : Nat) (retAddr : Word) (final : X86.ByteEval.State),
+    X86.ELFRead.text? bytes = some text ∧
+    X86.ELF.symbol? bytes name = some offset ∧
+    core₀.memory.read64? (core₀.readReg .rsp) = .ok retAddr ∧
+    X86.ObjectEval.runTo text base retAddr k ⟨core₀, base + UInt64.ofNat offset, flags⟩ =
+      .ok final ∧
+    FramePreserved core₀.memory final.core.memory
+
+/-- A call that is not `stuck` ran its bytes without a fault, in its frame. -/
+theorem callRunsInFrame_of_ne_stuck {bytes : ByteArray} {name : String} {base : Word}
+    {core₀ : Core} {flags : X86.ByteEval.Flags} {k : Nat}
+    (h : X86.ObjectEval.call bytes name base core₀ flags k ≠ .stuck) :
+    CallRunsInFrame bytes name base core₀ flags k := by
+  unfold X86.ObjectEval.call at h
+  cases h1 : X86.ELFRead.text? bytes with
+  | none => rw [h1] at h; exact absurd rfl h
+  | some text =>
+    rw [h1] at h
+    cases h2 : X86.ELF.symbol? bytes name with
+    | none => rw [h2] at h; exact absurd rfl h
+    | some offset =>
+      rw [h2] at h
+      cases h3 : core₀.memory.read64? (core₀.readReg .rsp) with
+      | error _ => rw [h3] at h; exact absurd rfl h
+      | ok retAddr =>
+        rw [h3] at h
+        simp only at h
+        cases hrun : X86.ObjectEval.runTo text base retAddr k
+            ⟨core₀, base + UInt64.ofNat offset, flags⟩ with
+        | error _ => rw [hrun] at h; exact absurd rfl h
+        | ok final =>
+          exact ⟨text, offset, retAddr, final, h1, h2, h3, hrun,
+            runTo_framePreserved hrun⟩
+
+/-- A linked call on in-range arguments that is not `stuck`: neither `cx_init`'s
+call nor, after it returns, the root's call is `stuck`. -/
+theorem linked_call_ne_stuck {L : X86.Linked} {r : X86.Linked.Root} {ns : List Nat} {k : Nat}
+    (hns : ∀ n ∈ ns, n < 2 ^ 64) (h : L.call r ns k ≠ .stuck) :
+    L.initCall k ≠ .stuck ∧ ∀ v, L.initCall k = .ok v → L.rootCall r ns v.2.bytes k ≠ .stuck := by
+  have hall : ns.all (· < 2 ^ 64) = true := List.all_eq_true.2 fun n hn => decide_eq_true (hns n hn)
+  unfold X86.Linked.call at h
+  simp only [hall, ↓reduceIte] at h
+  refine ⟨fun hs => h (by rw [hs]; rfl), fun v hv hs => h ?_⟩
+  rw [hv, Result.bind_ok, hs]
+  rfl
+
+/-- A run of root `r` that does not go wrong made its call (on the first
+`root.params` arguments) without it being `stuck`. -/
+theorem linked_run_call_ne_stuck {L : X86.Linked} {r : Nat} {root : X86.Linked.Root}
+    {ns : List Nat} {k : Nat} (hr : L.roots[r]? = some root) (hlen : root.params ≤ ns.length)
+    (h : ¬ (Lang.run L (r, ns) k).GoesWrong) :
+    L.call root (ns.take root.params) k ≠ .stuck := by
+  rw [X86.Linked.lang_run] at h
+  unfold X86.Linked.run at h
+  simp only [hr] at h
+  unfold Sem.entryRun at h
+  intro hs
+  by_cases heq : ns.length = root.params
+  · simp only [heq, ↓reduceIte] at h
+    rw [List.take_of_length_le (by omega)] at hs
+    rw [hs] at h
+    exact h trivial
+  · have hlt : ¬ ns.length < root.params := by omega
+    simp only [heq, hlt, ↓reduceIte, hs] at h
+    exact h trivial
+
+/-- **What admission buys for the frame of one call.** For a SIP passing
+`sip.verifyProgram P`, its artifact `A` (`sip.artifact? P = some A`, with
+`A.Safe sip`) satisfies, on every source-safe input `(r, ns)` (`¬ A.GoesWrong`)
+whose root takes at most `ns.length` arguments and whose arguments fit a word,
+at every clock `k`: `cx_init`'s byte run, and the root's byte run from the
+bytes `cx_init` returns, reach clock `k` or return without a byte-machine fault,
+and the state each reaches leaves every byte outside the call's writable map
+unchanged (`CallRunsInFrame`). There is no `.ok` premise: the absence of a
+fault comes from admission (`admittedRing0Sip_call_not_goesWrong`), and frame
+preservation of a run without a fault is the model's (`runTo_framePreserved`,
+which holds for any bytes). It covers one call from `cx_init`, not a session,
+and the model, not the hardware (`Ring0.lean`'s hardware assumptions). -/
+theorem admittedRing0Sip_call_frame {sip : Ring0Sip} {P : Src.Program}
+    (hver : sip.verifyProgram P = true) :
+    ∃ A : Ring0Artifact, sip.artifact? P = some A ∧ A.Safe sip ∧
+      ∀ (r : Nat) (root : X86.Linked.Root) (ns : List Nat),
+        A.linked.roots[r]? = some root → root.params ≤ ns.length → (∀ n ∈ ns, n < 2 ^ 64) →
+        ¬ A.GoesWrong (r, ns) → ∀ k,
+          CallRunsInFrame A.linked.object A.linked.init sip.driver.base
+              (sip.driver.core [sip.driver.size, sip.driver.budget] sip.driver.initBytes)
+              sip.driver.flags k ∧
+          ∀ w mem, A.linked.initCall k = .ok (w, mem) →
+            CallRunsInFrame A.linked.object root.symbol sip.driver.base
+              (sip.driver.core ((ns.take root.params).map UInt64.ofNat) mem.bytes)
+              sip.driver.flags k := by
+  obtain ⟨A, hart, hsafe⟩ := admittedRing0Sip_call_not_goesWrong hver
+  refine ⟨A, hart, hsafe, fun r root ns hr hlen hns hsrc k => ?_⟩
+  have hdrv : A.linked.driver = sip.driver := hsafe.1
+  have hnot := (hsafe.2.2.2.2.1 (r, ns) hsrc).1 k
+  have hcall := linked_run_call_ne_stuck hr hlen hnot
+  obtain ⟨hinit, hroot⟩ :=
+    linked_call_ne_stuck (fun n hn => hns n (List.mem_of_mem_take hn)) hcall
+  refine ⟨?_, fun w mem hok => ?_⟩
+  · have := callRunsInFrame_of_ne_stuck hinit
+    rw [hdrv] at this
+    exact this
+  · have := callRunsInFrame_of_ne_stuck (hroot (w, mem) hok)
+    rw [hdrv] at this
+    exact this
 
 /-- **Admitted Two-SIP Coexistence & Frame Theorem (`N3`)**:
 Connecting `sip₁.verifyProgram P₁ = true` and `sip₂.verifyProgram P₂ = true`

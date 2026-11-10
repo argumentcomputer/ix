@@ -30,14 +30,25 @@ three policies (`.immortal`, `.zeroRc`, `.plainRc`):
      its pinned identities), then `Lazify.run`.
    - Note (stage S): `CheckedProgram` evaluates `a.src` after table installation,
      relevance annotation recheck, and `Lazify` under `SrcEval` (`Lam.Erase.Proof`).
-     These theorems state that `front` ran, not what it preserves: connecting its
-     result semantically back to raw `Ixon.V3` kernel reduction is stage K's
-     obligation, not stage S's, and is open.
+     These theorems state that `front` ran, not what it preserves. The byte-level
+     `verifyBytes_*_sound` also state how `a.src` was built from `inp.program`
+     (`Table.ofCert`, the annotation equal to `Relevance.annotate`'s output,
+     `install`, `check`, `WellAnnotated`, `Lazify.run`, which changes only
+     application modes: `Lazify.run_modeEq`). None of these relates `a.src` to
+     `inp.program` semantically (open item S6), and nothing relates either to the
+     kernel's meaning of `c.target` (open item S8). The value clause is relative
+     to SrcEval on `a.src` and disjoined with `a.front.GoesWrong`, which no
+     theorem bounds.
 
 3. **Observable Roots & `Nat`-Parameter ABI (`S7`, `A1-3`, `A6-8`)**:
-   - `verifyProgram` rejects roots with `root.ty = none`, non-`Nat` parameter domains
-     (`rootParamsAllNat`), or non-scalar/non-enum return types on the immortal/`.zeroRc`
-     paths (`isImmortalViewType`), preventing vacuous satisfaction via `Front.GoesWrong`. -/
+   - `verifyProgram` rejects roots with `root.ty = none`, a declaration whose
+     Π-telescope length is not `root.params` or whose parameters are not `Nat`
+     (`rootParamsAllNat`), and, on the immortal/`.zeroRc` paths, return types
+     other than `Nat` or an enumeration of field-less constructors
+     (`isImmortalViewType`). These checks make the value clause observe the
+     root's result (a root without a readback type observes nothing). They do
+     not bound `Front.GoesWrong`: no theorem shows that `Rt.tagify` reads back
+     every value of the root's type, or that SrcEval on `a.src` returns one. -/
 
 set_option autoImplicit false
 
@@ -486,29 +497,6 @@ theorem toClaimBytes_ofClaimBytes (bs : ByteArray) (c : CompileClaim)
       rw [ByteArray.append_empty] at hrest1
       rw [hrest1] at hbs
       exact ⟨hbs.symm, hwf⟩
-
-/-- For any `Nat` observation, `Rt.tagify` at `.nat` succeeds with `some (.nat n)` (`N4`). -/
-theorem isImmortalViewType_nat_tagify (T : List Lam.CtorInfo) (sig : Rt.Sig) (n : Nat) :
-    Rt.tagify T sig .nat (.nat n) = some (.nat n) :=
-  rfl
-
-/-- If `isImmortalViewType sig (.ind idx) = true`, every constructor entry at
-valid tag `c.tag < ctors.length` has empty field-type list `[]`, so `Rt.tagify`
-at `(.ind idx)` on `(.ctor cid [])` succeeds with `some (.ctor c.tag [])` (`N4`). -/
-theorem isImmortalViewType_ctor0_tagify {T : List Lam.CtorInfo} {sig : Rt.Sig}
-    {idx : Nat} {ctors : List (List Rt.FoTy)} {cid : Src.CId} {c : Fir.CtorInfo}
-    (hview : isImmortalViewType sig (.ind idx) = true)
-    (hind : sig.inds[idx]? = some ctors)
-    (hc : Fir.CtorInfo.ofKey T (.src cid) = some c)
-    (htag : c.tag < ctors.length) :
-    Rt.tagify T sig (.ind idx) (.ctor cid []) = some (.ctor c.tag []) := by
-  simp only [isImmortalViewType, hind, Bool.and_eq_true, List.all_eq_true,
-    List.isEmpty_iff] at hview
-  have hmem : ctors[c.tag] ∈ ctors := List.getElem_mem htag
-  have hempty : ctors[c.tag] = [] := hview.2 _ hmem
-  have hctor : sig.ctor? idx c.tag = some [] := by
-    simp [Rt.Sig.ctor?, hind, htag, hempty]
-  simp [Rt.tagify, hc, hctor]
 
 /-- Soundness of `CompileClaim.verifyProgram` under `.immortal` policy, backed by
 `Recheck.sound`, `Recheck.object_refines`, `Recheck.run_front`, and `checkImmortalRoot`. -/

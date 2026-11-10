@@ -15,7 +15,8 @@ checkers, and layout structures for Ring-0 **Software-Isolated Processes (SIPs)*
 coexisting in a single shared x86-64 address space.
 
 Proof-heavy frame lemmas, end-to-end admission soundness (`verifyRing0Sip_sound`),
-the non-faulting theorem `admittedRing0Sip_call_not_goesWrong` and the conditional
+the non-faulting theorem `admittedRing0Sip_call_not_goesWrong`, its frame
+consequence for one call `admittedRing0Sip_call_frame`, and the conditional
 frame theorems (`multi_sip_frame`, `pairwiseDisjointSips_frame`) live in
 `IxCC.Ring0.Proof` (`A8-5`).
 
@@ -60,8 +61,10 @@ frame theorems (`multi_sip_frame`, `pairwiseDisjointSips_frame`) live in
    - One `CR3` maps every SIP's data writable, so hardware does not fault on a
      store into a peer the way the model does. Confinement therefore rests on the
      model never faulting: `admittedRing0Sip_call_not_goesWrong` establishes that
-     for one call on a source-safe input. It says nothing about an input on which
-     the source is stuck, or about state carried between calls.
+     for one call on a source-safe input, and `admittedRing0Sip_call_frame` states
+     its consequence for that call's byte runs (no fault, so every byte outside
+     the writable map is unchanged at every clock). It says nothing about an input
+     on which the source is stuck, or about state carried between calls.
 -/
 
 set_option autoImplicit false

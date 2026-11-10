@@ -868,6 +868,7 @@
   "IxCC.Src.NatMap",
   "IxCC.Src.Pinned",
   "IxCC.Src.Prim",
+  "IxCC.Src.Proof.Lazify",
   "IxCC.Src.Proof.Mono",
   "IxCC.Src.Proof.NatMap",
   "IxCC.Src.Proof.Spine",
@@ -1556,7 +1557,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-09 review fixes (FA): fences for produceAuto_immortal_sound and compileAuto_immortal_sound",
+ "2026-11-09 review fixes (FD): closure, Lazify mode, Ring-0 call-frame fences; unused N4 lemmas removed",
  "axiom_sha256":
- "3e15640c7837fac4d1aca3e9872d9aaf767602b8d5adbff2ae9ef02fc359705c",
- "axiom_count": 5437}
+ "ea561d0eb8e717e30b4ae49c0fe026a0e43fd39e7c82bc5a49bdf6998245a319",
+ "axiom_count": 5449}
