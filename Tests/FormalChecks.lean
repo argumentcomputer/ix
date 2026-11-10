@@ -6,7 +6,9 @@ import Tests.FormalChecks.Ranges
 /-!
 The formal backend's check drivers, run by `Scripts/CheckFormal.lean`:
 
-- `controller`: resident proving and cross-record IxVM proofs;
+- `controller`: the aggregate controller's record-ceiling failure, structural
+  fold, composed verdict, resume and claims-only proving (`--pipeline` for the
+  full recursive aggregation, on CUDA lanes with `--devices`);
 - `checking`: shared manifest execution, planning budgets and split accounting;
 - `cuda`: grouped, sharded CPU/CUDA proof and key parity (`--cpu-only` for the
   CPU controls);
