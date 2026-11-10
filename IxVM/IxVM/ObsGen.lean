@@ -51,6 +51,8 @@ inductive T where
   | snoc (heap x : T)
   /-- `(head a₁ … aₙ)`. -/
   | app (head : String) (args : List T)
+  /-- `.tuple (List.replicate n x)`. -/
+  | rep (n : Nat) (x : T)
   deriving Inhabited, BEq
 
 partial def T.resolveN (s : List (String × T)) : Nat → T → T
@@ -64,6 +66,7 @@ partial def T.resolveN (s : List (String × T)) : Nat → T → T
   | fuel, .ptr x h => .ptr (T.resolveN s fuel x) (T.resolveN s fuel h)
   | fuel, .snoc h x => .snoc (T.resolveN s fuel h) (T.resolveN s fuel x)
   | fuel, .app f xs => .app f (xs.map (T.resolveN s fuel))
+  | fuel, .rep n x => .rep n (T.resolveN s fuel x)
 
 /-- Apply a path's substitution (a variable is replaced at most 10000 times deep). -/
 def T.resolve (s : List (String × T)) (t : T) : T := T.resolveN s 10000 t
@@ -73,6 +76,7 @@ partial def T.mentions (n : String) : T → Bool
   | .field _ => false
   | .tuple xs | .ctor _ _ xs | .app _ xs => xs.any (T.mentions n)
   | .ptr x h | .snoc h x => T.mentions n x || T.mentions n h
+  | .rep _ x => T.mentions n x
 
 mutual
   partial def T.render : T → String
@@ -83,6 +87,7 @@ mutual
     | .ptr x h => s!"(.ptr {T.tyOf x} ({T.render h}).length)"
     | .snoc h x => s!"({T.render h} ++ [{T.render x}])"
     | .app f xs => "(" ++ " ".intercalate (f :: xs.map T.render) ++ ")"
+    | .rep n x => s!"(.tuple (List.replicate {n} {T.render x}))"
 
   /-- The `Value.type` of a term, in `simp only [Value.type]` normal form. -/
   partial def T.tyOf : T → String
@@ -90,7 +95,8 @@ mutual
     | .tuple xs => s!"(.tuple {list (xs.map T.tyOf)})"
     | .ctor e _ _ => s!"(.enum {e})"
     | .ptr x _ => s!"(.ptr {T.tyOf x})"
-    | t => s!"(Value.type {T.render t})"
+    | .rep n x => s!"(.tuple (List.map Value.type (List.replicate {n} ({T.render x} : SourceValue F))))"
+    | t => s!"(Value.type ({T.render t} : SourceValue F))"
 end
 
 /-- A fact template: text and terms. -/
@@ -147,7 +153,7 @@ structure St where
   path : Path := {}
   ctors : Array Ctor := #[]
   /-- Name lemmas: short name, statement. -/
-  names : Array (String × String) := #[]
+  names : Array (String × String × String) := #[]
   /-- Name abbreviations: identifier, literal, and the instance it names. -/
   abbrevs : Array (String × String × String) := #[]
   /-- The variables a path never replaces: the parameters, `h`, `r`, `h'`, `calls`. -/
@@ -250,7 +256,7 @@ def nameLemma (lhs lit pretty inst : String) : M (String × String) := do
   let n := s!"n{(hash lhs).toNat}"
   let s ← get
   unless s.names.any (·.1 == n) do
-    set { s with names := s.names.push (n, s!"{lhs} = {term}") }
+    set { s with names := s.names.push (n, s!"{lhs} = {term}", "by decide +kernel") }
   return (term, s!"Names.{n}")
 
 /-- A type in the source's notation. -/
@@ -303,19 +309,27 @@ def ctorName (t : Ty) : M (String × String) := do
     | _ => ""
   nameLemma s!"constructorName [] {ty t}" lit (tyStr t) inst
 
-def constField (n : String) (t : Ty) : M String := do
+/-- A literal constant: its value, and the name of its lookup fact (proved once, by
+the kernel, in the names module). -/
+def constField (n : String) (t : Ty) : M (String × String) := do
   let some src := (← get).src | throw "no source"
+  unless (← get).typeParam.isNone do throw "constant in a generic function"
   match src.world.constant n (t.subst []) with
-  | .ok (.literal c) => return field c
+  | .ok (.literal c) =>
+    let stmt := s!"W.constant {q n} (Generic.Ty.subst [] {ty t}) = .ok (.literal ({field c} : F))"
+    let l := s!"c{(hash stmt).toNat}"
+    let s ← get
+    unless s.names.any (·.1 == l) do
+      set { s with names := s.names.push (l, stmt, "eq_of_isLiteral (by decide +kernel)") }
+    return (field c, s!"Names.{l}")
   | _ => throw s!"const {n} is not a literal"
 
 /-- A constant pattern: its value and a `MatchesConst` proof. -/
 partial def constPat? : Pattern F → M (Option (T × String))
   | .literal c => return some (.field (field c), s!"MatchesConst.literal {field c}")
   | .global n (some t) => do
-    let c ← constField n t
-    return some (.field c,
-      s!"MatchesConst.global (c := ({c} : F)) (eq_of_isLiteral (by decide +kernel))")
+    let (c, l) ← constField n t
+    return some (.field c, s!"MatchesConst.global {l}")
   | .tuple ps => do
     let mut items := #[]
     for p in ps do
@@ -389,11 +403,10 @@ mutual
       assign dh hin
       return [s!"obtain ⟨rfl, rfl, rfl⟩ := {d}.literal_inv"] ++ (← k [])
     | .global n (some t) =>
-      let c ← constField n t
+      let (c, l) ← constField n t
       assign dv (.field c)
       assign dh hin
-      return [s!"obtain ⟨rfl, rfl, rfl⟩ := {d}.global_literal_inv (x := ({c} : F)) " ++
-        "(eq_of_isLiteral (by decide +kernel))"] ++ (← k [])
+      return [s!"obtain ⟨rfl, rfl, rfl⟩ := {d}.global_literal_inv {l}"] ++ (← k [])
     | .tuple es | .array es =>
       let vs ← fresh "vs"; let a ← fresh "a"
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
@@ -505,7 +518,7 @@ mutual
       return [s!"obtain ⟨{p}, {d'}, {pr}⟩ := {d}.neg_inv"] ++ rest
     | .repeat x n =>
       let p ← binder "v" "SourceValue F"; let d' ← fresh "d"
-      assign dv (.app "Value.tuple" [.app s!"List.replicate {n}" [.v p]])
+      assign dv (.rep n (.v p))
       return [s!"obtain ⟨{p}, {d'}, rfl⟩ := {d}.repeat_inv"] ++ (← inv x d' env hin (.v p) dh k)
     | .update paths es =>
       let vs ← fresh "vs"; let a ← fresh "a"; let up ← fresh "up"
@@ -729,7 +742,7 @@ def leaf (fname : String) (segs : List Seg) : M (List String) := do
 
 /-- The path inductive and the inversion theorem of one function. -/
 def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (maxChars : Nat := 100000) :
-    Except String (String × Array (String × String) × Array (String × String × String) × Nat) := do
+    Except String (String × Array (String × String × String) × Array (String × String × String) × Nat) := do
   if f.typeParams.length > 1 then throw "several type parameters"
   if f.name.startsWith "$" then throw "internal function"
   if ControlLower.hasControl f.body then throw "control"
@@ -796,14 +809,14 @@ def group (name : String) : String :=
   sanitize ((name.splitOn "::").head!)
 
 abbrev Result :=
-  Except String (String × Array (String × String) × Array (String × String × String) × Nat)
+  Except String (String × Array (String × String × String) × Array (String × String × String) × Nat)
 
 /-- **The generated files** from each function's result: the names module, one
 module per chunk of a group, and the index module with the generator's report. -/
 def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
     List (System.FilePath × String) := Id.run do
   let dir : System.FilePath := "Ix/IxVM/Refinement/Obs"
-  let mut names : Array (String × String) := #[]
+  let mut names : Array (String × String × String) := #[]
   let mut abbrevs : Array (String × String × String) := #[]
   let mut report : Array String := #[]
   -- group → chunks (each: function texts, lines)
@@ -855,8 +868,8 @@ def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
       s!"/-- The instance `{n}`. -/\nabbrev «{n}» : String := {q lit}\n\n" ++
       (if inst.isEmpty then "" else
         s!"theorem «{n}».symbol : ({inst}).symbol = «{n}» := by decide +kernel\n\n")) ++
-    String.join (names.toList.map fun (n, st) =>
-      s!"theorem {n} : {st} := by decide +kernel\n\n") ++
+    String.join (names.toList.map fun (n, st, prf) =>
+      s!"theorem {n} : {st} := {prf}\n\n") ++
     "end Names\n\n" ++ fileFooter
   let index := "\n".intercalate (modules.toList.map (s!"import Ix.IxVM.Refinement.Obs." ++ ·)) ++
     "\n\n/-! # Generated path lemmas\n\n" ++
