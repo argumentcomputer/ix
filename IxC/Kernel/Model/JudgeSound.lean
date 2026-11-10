@@ -57,7 +57,7 @@ structure JudgeSound (J : Judgements md) {env : Env md} (m : EnvModel V env) : P
   frame : ∀ φ, InferFrameJ J m φ
 
 /-- **The kernel's runs keep scoping** at a well-formed environment. -/
-theorem judgeFrames_runJ {μ : CheckMode} {env : Env md} (hwf : EnvWF env) (F : Nat) :
+theorem judgeFrames_runJ {μ : CheckMode} {env : Env md} (F : Nat) :
     JudgeFrames (runJ μ F) env where
   annot_syntax := fun hann hf hb => annotate_syntax hann hf hb
   annot_wscoped := fun hann hw => annotateCore_WScoped F _ hann hw
@@ -75,7 +75,7 @@ theorem inferFrame_runJ {μ : CheckMode} {env : Env md} (hwf : EnvWF env) (F : N
 fold's invariant. -/
 theorem judgeSound_runJ {μ : CheckMode} (hμ : μ.verifiedChecks = true) {env : Env md}
     (mp : EnvModelM V μ env) (F : Nat) : JudgeSound (runJ μ F) mp.base2 where
-  toJudgeFrames := judgeFrames_runJ mp.base2.wf F
+  toJudgeFrames := judgeFrames_runJ F
   accepted := fun φ _ _ _ h hws hb hL => acceptedReads_of mp.base2 φ h hws hb hL
   infer := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
   defeq := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
