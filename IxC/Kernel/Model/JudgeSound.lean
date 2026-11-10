@@ -112,7 +112,7 @@ fold's invariant. -/
 theorem judgeSound_runJ {μ : CheckMode} (hμ : μ.verifiedChecks = true) {env : Env md}
     (mp : EnvModelM V μ env) (F : Nat) : JudgeSound (runJ μ F) mp.base2 where
   annot_syntax := fun hann hf hb => annotate_syntax hann hf hb
-  accepted := fun φ h hws hb hL => acceptedReads_of mp.base2 φ h hws hb hL
+  accepted := fun φ _ _ _ h hws hb hL => acceptedReads_of mp.base2 φ h hws hb hL
   infer := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
   defeq := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
   reads := fun φ => inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
