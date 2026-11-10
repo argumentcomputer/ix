@@ -497,8 +497,8 @@ def check_witness := aiur_fn⟦
           s } ,
         1 => {
           let (n, s2) = get_count(s);
-          let (end, s3) = walk_path(block, s2, n);
-          assert_eq!(Bytes::address_eq(end, x), 1, "model advice: a dependency path ends elsewhere");
+          let (stop, s3) = walk_path(block, s2, n);
+          assert_eq!(Bytes::address_eq(stop, x), 1, "model advice: a dependency path ends elsewhere");
           s3 } ,
         2 => {
           let (n, s2) = get_count(s);
@@ -786,12 +786,12 @@ def check_family := aiur_fn⟦
               let rec_addrs = family_recs(rec_block);
               let n_recs = Lists::length(rec_addrs);
               let (rec_models, s8) = get_addrs(s7, n_recs);
-              let from = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
-              let to = Lists::concat(type_models, Lists::concat(ctor_models, rec_models));
-              members_val(type_addrs, type_models, from, to, aset);
-              members_val(ctor_addrs, ctor_models, from, to, aset);
-              members_val(rec_addrs, rec_models, from, to, aset);
-              let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, from, to, aset, s8,
+              let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
+              let dst = Lists::concat(type_models, Lists::concat(ctor_models, rec_models));
+              members_val(type_addrs, type_models, src, dst, aset);
+              members_val(ctor_addrs, ctor_models, src, dst, aset);
+              members_val(rec_addrs, rec_models, src, dst, aset);
+              let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
                                   n_recs, 0, np);
               let Lists::Node::Nil = (*(s9));
               () } ,
@@ -905,14 +905,14 @@ def muts_recr_count := aiur_fn⟦
 
 def members_val := aiur_fn⟦
   fn members_val(members: Lists::List<Bytes::AddressRef>, models: Lists::List<Bytes::AddressRef>,
-                 from: Lists::List<Bytes::AddressRef>, to: Lists::List<Bytes::AddressRef>,
+                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                  aset: RBTreeMap::RBTreeMap<Field>) -> () {
       match (*(members)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(m, rest) => {
           let Lists::Node::Cons(md, mrest) = (*(models));
-          member_val(m, md, from, to, aset);
-          members_val(rest, mrest, from, to, aset) } ,
+          member_val(m, md, src, dst, aset);
+          members_val(rest, mrest, src, dst, aset) } ,
       }
     }
 ⟧
@@ -922,14 +922,14 @@ def members_val := aiur_fn⟦
 
 def member_val := aiur_fn⟦
   fn member_val(member: Bytes::AddressRef, model: Bytes::AddressRef,
-                from: Lists::List<Bytes::AddressRef>, to: Lists::List<Bytes::AddressRef>,
+                src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                 aset: RBTreeMap::RBTreeMap<Field>) -> () {
       assert_eq!(KernelClaim::addr_set_member(model, aset), 1, "model advice: a model that is not advice");
       let (nl, ty) = ci_lvls_type((*(Ingress::get_ci(member))));
       match (*(Ingress::get_ci(model))) {
         KernelTypes::KConstantInfo::Defn(nlm, mty, _, _, _) => {
           assert_eq!(nl, nlm, "model level parameters mismatch");
-          assert_eq!(KernelCheck::kexpr_struct_eq(rename(ty, from, to), mty), 1,
+          assert_eq!(KernelCheck::kexpr_struct_eq(rename(ty, src, dst), mty), 1,
             "model type mismatch");
           () } ,
       }
@@ -949,34 +949,34 @@ def ci_lvls_type := aiur_fn⟦
   -- The block renaming: every member of the block and of its recursor family to its model.
 
 def rename := aiur_fn⟦
-  fn rename(e: KernelTypes::KExpr, from: Lists::List<Bytes::AddressRef>,
-            to: Lists::List<Bytes::AddressRef>) -> KernelTypes::KExpr {
+  fn rename(e: KernelTypes::KExpr, src: Lists::List<Bytes::AddressRef>,
+            dst: Lists::List<Bytes::AddressRef>) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::Const(a, ls) => {
-          (&(KernelTypes::KExprNode::Const(rename_addr(a, from, to), ls))) } ,
+          (&(KernelTypes::KExprNode::Const(rename_addr(a, src, dst), ls))) } ,
         KernelTypes::KExprNode::App(f, x) => {
-          (&(KernelTypes::KExprNode::App(rename(f, from, to), rename(x, from, to)))) } ,
+          (&(KernelTypes::KExprNode::App(rename(f, src, dst), rename(x, src, dst)))) } ,
         KernelTypes::KExprNode::Lam(t, b) => {
-          (&(KernelTypes::KExprNode::Lam(rename(t, from, to), rename(b, from, to)))) } ,
+          (&(KernelTypes::KExprNode::Lam(rename(t, src, dst), rename(b, src, dst)))) } ,
         KernelTypes::KExprNode::Forall(t, b) => {
-          (&(KernelTypes::KExprNode::Forall(rename(t, from, to), rename(b, from, to)))) } ,
+          (&(KernelTypes::KExprNode::Forall(rename(t, src, dst), rename(b, src, dst)))) } ,
         KernelTypes::KExprNode::Let(t, v, b) => {
-          (&(KernelTypes::KExprNode::Let(rename(t, from, to), rename(v, from, to),
-                                          rename(b, from, to)))) } ,
+          (&(KernelTypes::KExprNode::Let(rename(t, src, dst), rename(v, src, dst),
+                                          rename(b, src, dst)))) } ,
         KernelTypes::KExprNode::Proj(s, i, x) => {
-          (&(KernelTypes::KExprNode::Proj(rename_addr(s, from, to), i, rename(x, from, to)))) } ,
+          (&(KernelTypes::KExprNode::Proj(rename_addr(s, src, dst), i, rename(x, src, dst)))) } ,
         _ => {  e } ,
       }
     }
 ⟧
 
 def rename_addr := aiur_fn⟦
-  fn rename_addr(a: Bytes::AddressRef, from: Lists::List<Bytes::AddressRef>,
-                 to: Lists::List<Bytes::AddressRef>) -> Bytes::AddressRef {
-      match (*(from)) {
+  fn rename_addr(a: Bytes::AddressRef, src: Lists::List<Bytes::AddressRef>,
+                 dst: Lists::List<Bytes::AddressRef>) -> Bytes::AddressRef {
+      match (*(src)) {
         Lists::Node::Nil => {  a } ,
         Lists::Node::Cons(f, frest) => {
-          let Lists::Node::Cons(t, trest) = (*(to));
+          let Lists::Node::Cons(t, trest) = (*(dst));
           match Bytes::address_eq(a, f) {
             1 => {  t } ,
             _ => {  rename_addr(a, frest, trest) } ,
@@ -986,12 +986,12 @@ def rename_addr := aiur_fn⟦
 ⟧
 
 def rename_list := aiur_fn⟦
-  fn rename_list(es: Lists::List<KernelTypes::KExpr>, from: Lists::List<Bytes::AddressRef>,
-                 to: Lists::List<Bytes::AddressRef>) -> Lists::List<KernelTypes::KExpr> {
+  fn rename_list(es: Lists::List<KernelTypes::KExpr>, src: Lists::List<Bytes::AddressRef>,
+                 dst: Lists::List<Bytes::AddressRef>) -> Lists::List<KernelTypes::KExpr> {
       match (*(es)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(e, rest) => {
-          (&(Lists::Node::Cons(rename(e, from, to), rename_list(rest, from, to)))) } ,
+          (&(Lists::Node::Cons(rename(e, src, dst), rename_list(rest, src, dst)))) } ,
       }
     }
 ⟧
@@ -1005,7 +1005,7 @@ def rename_list := aiur_fn⟦
 def check_recs := aiur_fn⟦
   fn check_recs(rc: KernelRoles::RoleCtx, type_addrs: Lists::List<Bytes::AddressRef>,
                 recs: Lists::List<Bytes::AddressRef>, models: Lists::List<Bytes::AddressRef>,
-                from: Lists::List<Bytes::AddressRef>, to: Lists::List<Bytes::AddressRef>,
+                src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                 aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream,
                 n_recs: Field, k: Field, np: Field) -> Bytes::Stream {
       match (*(recs)) {
@@ -1021,8 +1021,8 @@ def check_recs := aiur_fn⟦
                 "modeled recursor has fewer motives than its block has types");
               check_rec_motive(ty, (((rnp + nmot) + nmin) + ni) + 1, rnp + k);
               check_carriers(ty, rnp, type_addrs);
-              let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, from, to, aset, s);
-              check_recs(rc, type_addrs, rest, mrest, from, to, aset, s2, n_recs, k + 1, np) } ,
+              let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, src, dst, aset, s);
+              check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np) } ,
           } } ,
       }
     }
@@ -1068,7 +1068,7 @@ def check_carriers_go := aiur_fn⟦
 def check_rules := aiur_fn⟦
   fn check_rules(rc: KernelRoles::RoleCtx, rm: Bytes::AddressRef, nl: Field, ty: KernelTypes::KExpr,
                  rp: Field, ni: Field, rules: Lists::List<KernelTypes::KRecRule>,
-                 from: Lists::List<Bytes::AddressRef>, to: Lists::List<Bytes::AddressRef>,
+                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                  aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream) -> Bytes::Stream {
       let (iaddr, ilvls, pins) = rec_major_pins(ty, rp, ni);
       match (*(Ingress::get_ci(iaddr))) {
@@ -1076,7 +1076,7 @@ def check_rules := aiur_fn⟦
           assert_eq!(Lists::length(rules), inct,
             "recursor rule count differs from its major's constructor count");
           check_rules_go(rc, rm, nl, ty, rp, ni, rules, iblock, iidx, inp, ilvls, pins,
-                         from, to, aset, s, 0) } ,
+                         src, dst, aset, s, 0) } ,
       }
     }
 ⟧
@@ -1086,7 +1086,7 @@ def check_rules_go := aiur_fn⟦
                     rp: Field, ni: Field, rules: Lists::List<KernelTypes::KRecRule>,
                     iblock: Bytes::AddressRef, iidx: Field, inp: Field,
                     ilvls: Lists::List<KernelTypes::KLevel>, pins: Lists::List<KernelTypes::KExpr>,
-                    from: Lists::List<Bytes::AddressRef>, to: Lists::List<Bytes::AddressRef>,
+                    src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                     aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream, j: Field) -> Bytes::Stream {
       match (*(rules)) {
         Lists::Node::Nil => {  s } ,
@@ -1100,11 +1100,11 @@ def check_rules_go := aiur_fn⟦
                   assert_eq!(cnp, inp, "constructor parameter count differs from its inductive's");
                   assert_eq!(rnf, cnf, "rule field count mismatch");
                   check_iota_rule(rc, rm, nl, ty, rp, ni, rhs, cprj, cty, cnp, cnf, ilvls, pins,
-                                  t, from, to, aset) } ,
+                                  t, src, dst, aset) } ,
               } } ,
           };
           check_rules_go(rc, rm, nl, ty, rp, ni, rest, iblock, iidx, inp, ilvls, pins,
-                         from, to, aset, s2, j + 1) } ,
+                         src, dst, aset, s2, j + 1) } ,
       }
     }
 ⟧
@@ -1119,7 +1119,7 @@ def check_iota_rule := aiur_fn⟦
                      cprj: Bytes::AddressRef, cty: KernelTypes::KExpr, cnp: Field, cnf: Field,
                      ilvls: Lists::List<KernelTypes::KLevel>, pins: Lists::List<KernelTypes::KExpr>,
                      t: Bytes::AddressRef,
-                     from: Lists::List<Bytes::AddressRef>, to: Lists::List<Bytes::AddressRef>,
+                     src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                      aset: RBTreeMap::RBTreeMap<Field>) -> () {
       let mi = rp + ni;
       let d = rp + cnf;
@@ -1155,8 +1155,8 @@ def check_iota_rule := aiur_fn⟦
               assert_eq!(KernelCheck::spec_params_ptr_eq(Lists::take(largs, rp), bvars_desc(d, rp)), 1,
                 "iota statement prefix mismatch");
               let major = Lists::lookup(largs, mi);
-              let cren = rename_addr(cprj, from, to);
-              let pins_ren = rename_list(pins, from, to);
+              let cren = rename_addr(cprj, src, dst);
+              let pins_ren = rename_list(pins, src, dst);
               let pins_d = lift_list(pins_ren, cnf);
               let expected = KernelWhnf::apply_spine((&(KernelTypes::KExprNode::Const(cren, ilvls))),
                 Lists::concat(pins_d, bvars_desc(cnf, cnf)));
@@ -1164,7 +1164,7 @@ def check_iota_rule := aiur_fn⟦
               -- the constructor's telescope at the comparands (renamed): its fields and the
               -- canonical index tuple
               let cty_l = KernelLevels::expr_inst_levels(cty, ilvls);
-              let crest = inst_params(rename(cty_l, from, to), pins_ren);
+              let crest = inst_params(rename(cty_l, src, dst), pins_ren);
               let (cres, _) = peel_collect(crest, cnf, (&(Lists::Node::Nil)));
               let (chead, cargs) = KernelTypes::collect_spine(cres);
               match (*(chead)) {
@@ -1174,7 +1174,7 @@ def check_iota_rule := aiur_fn⟦
               assert_eq!(defeq_list_ok(rc, Lists::take(Lists::drop(largs, rp), ni), Lists::drop(cargs, cnp), ctx), 1,
                 "iota statement index mismatch");
               -- the statement's domains: the renamed recursor's prefix, the constructor's fields
-              defeq_tele(rc, tty, rename(ty_r, from, to), rp, (&(Lists::Node::Nil)));
+              defeq_tele(rc, tty, rename(ty_r, src, dst), rp, (&(Lists::Node::Nil)));
               defeq_tele(rc, KernelCheck::peel_n_foralls(tty, rp), crest, cnf, Lists::drop(ctx, cnf));
               -- the public side: the comparands inhabit the constructor's parameter domains,
               -- and the rule's λ-domains are the recursor's prefix and the fields
@@ -1183,7 +1183,7 @@ def check_iota_rule := aiur_fn⟦
               let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs, ty_r, rp, (&(Lists::Node::Nil)));
               let (_, _) = defeq_lam_tele(rc, rhs_rp, crest_p, cnf, lctx);
               -- the right side: the rule applied to the opened variables
-              let rhs_app = KernelWhnf::apply_spine(rename(rhs, from, to), bvars_desc(d, d));
+              let rhs_app = KernelWhnf::apply_spine(rename(rhs, src, dst), bvars_desc(d, d));
               assert_eq!(KernelDefEq::k_is_def_eq(rc, rhs_s, rhs_app, ctx), 1, "iota statement mismatch");
               -- both sides inhabit the equation's type slot, the slot the equation's sort
               let tl = KernelInfer::k_infer(rc, lhs, ctx);
