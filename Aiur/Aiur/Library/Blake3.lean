@@ -24,6 +24,7 @@ module Blake3 {
   enum LayerNode { Push(Layer, Digest), Nil }
   type Layer = &LayerNode;
   enum MaybeDigest { None, Some(Digest) }
+  enum BlockRead { Full([U32; 16], ByteStream), Short }
   inline fn iv() -> [U32; 8] {
     [
       UInt32::from_bytes([UInt8::BYTE_103, UInt8::BYTE_230, UInt8::BYTE_9, UInt8::BYTE_106]),
@@ -39,7 +40,7 @@ module Blake3 {
 
   inline fn hash(input: ByteStream) -> [U32; 8] {
     let IV = iv();
-    compress_layer(compress_chunks(input, &(Lists::Node::Nil), 0, 0, &([UInt8::BYTE_0; 8]), &(IV), &(LayerNode::Nil)))
+    compress_layer(hash_blocks(input, 0, &([UInt8::BYTE_0; 8]), &(IV), &(LayerNode::Nil)))
   }
 
   fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) -> () {
@@ -92,6 +93,129 @@ module Blake3 {
         match last {
           MaybeDigest::None => { compress_layer(new_merkle) },
           MaybeDigest::Some(last) => { compress_layer(&(LayerNode::Push(new_merkle, last))) },
+        } },
+    }
+  }
+
+  -- `Full(words, rest)` if `input` has 64 bytes or more: the first 64 as 16 little-endian words (as
+  -- `bytes_to_block` packs them) and the stream after them; `Short` if it has fewer. One row per call: a
+  -- match 64 deep, one level per byte, each level written on one line.
+  fn take_block(input: ByteStream) -> BlockRead {
+    match *(input) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b0, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b1, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b2, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b3, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b4, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b5, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b6, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b7, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b8, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b9, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b10, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b11, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b12, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b13, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b14, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b15, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b16, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b17, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b18, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b19, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b20, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b21, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b22, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b23, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b24, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b25, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b26, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b27, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b28, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b29, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b30, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b31, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b32, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b33, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b34, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b35, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b36, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b37, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b38, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b39, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b40, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b41, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b42, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b43, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b44, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b45, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b46, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b47, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b48, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b49, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b50, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b51, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b52, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b53, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b54, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b55, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b56, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b57, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b58, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b59, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b60, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b61, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b62, l) => {
+    match *(l) { Lists::Node::Nil => { BlockRead::Short }, Lists::Node::Cons(b63, l) => {
+      BlockRead::Full([
+        UInt32::from_bytes([b0, b1, b2, b3]),
+        UInt32::from_bytes([b4, b5, b6, b7]),
+        UInt32::from_bytes([b8, b9, b10, b11]),
+        UInt32::from_bytes([b12, b13, b14, b15]),
+        UInt32::from_bytes([b16, b17, b18, b19]),
+        UInt32::from_bytes([b20, b21, b22, b23]),
+        UInt32::from_bytes([b24, b25, b26, b27]),
+        UInt32::from_bytes([b28, b29, b30, b31]),
+        UInt32::from_bytes([b32, b33, b34, b35]),
+        UInt32::from_bytes([b36, b37, b38, b39]),
+        UInt32::from_bytes([b40, b41, b42, b43]),
+        UInt32::from_bytes([b44, b45, b46, b47]),
+        UInt32::from_bytes([b48, b49, b50, b51]),
+        UInt32::from_bytes([b52, b53, b54, b55]),
+        UInt32::from_bytes([b56, b57, b58, b59]),
+        UInt32::from_bytes([b60, b61, b62, b63])
+      ], l)
+    }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, }
+    }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, }
+    }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, }
+    }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, } }, }
+  }
+
+  -- BLAKE3's chunk loop a block at a time: while the stream has 64 bytes left, one row reads them
+  -- (`take_block`) and compresses them. `block_no` blocks of the current chunk are done. A block is
+  -- its chunk's first at `block_no` 0, and its last at 15 or when no byte follows it; then its
+  -- chaining value joins the tree, as the root if it is also the first chunk's. The last 0 to 63 bytes
+  -- go to the byte loop (`compress_chunks`) from the same chunk state; only the empty input reaches it
+  -- with no byte.
+  fn hash_blocks(input: ByteStream, block_no: Field, chunk_count: &U64, cv: &[U32; 8], layer: Layer) -> Layer {
+    match take_block(input) {
+      BlockRead::Short => {
+        compress_chunks(input, &(Lists::Node::Nil), 0, 64 * block_no, chunk_count, cv, layer) },
+      BlockRead::Full(block, rest) => {
+        let CHUNK_START = 1;
+        let CHUNK_END = 2;
+        let ROOT = 8;
+        let empty = match *(rest) { Lists::Node::Nil => { 1 }, _ => { 0 }, };
+        let at15 = Fields::is_zero(block_no - 15);
+        let start_flag = Fields::is_zero(block_no);
+        let end_flag = empty + at15 - empty * at15;
+        let root_flag = empty * UInt64::is_zero(*(chunk_count));
+        let flags = CHUNK_START * start_flag + CHUNK_END * end_flag + ROOT * root_flag;
+        let digest = compress_init(*(cv), block, *(chunk_count), 64, flags);
+        match (empty, at15) {
+          (1, _) => { &(LayerNode::Push(layer, digest)) },
+          (_, 1) => {
+            let IV = iv();
+            hash_blocks(rest, 0, &(UInt64::wrapping_succ(*(chunk_count))), &(IV), &(LayerNode::Push(layer, digest))) },
+          (_, _) => { hash_blocks(rest, block_no + 1, chunk_count, &(digest), layer) },
         } },
     }
   }

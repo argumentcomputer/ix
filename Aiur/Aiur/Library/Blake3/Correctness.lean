@@ -23,6 +23,9 @@ This module establishes:
    `verify_bytes_against_iff`). The models are written by hand after the Aiur
    source; no theorem here evaluates that source, so these are statements about
    the models and the specification, not about the `Blake3` Aiur functions.
+
+The model of `Blake3::hash` itself (its block loop, byte loop and tree) and the theorem that it
+computes `Blake3.Pure.digest` are in `Aiur.Library.Blake3.BlockLoop` (`hash_model_spec`).
 -/
 namespace Aiur.Library.Blake3
 

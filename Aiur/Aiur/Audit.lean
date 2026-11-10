@@ -23,6 +23,7 @@ import Aiur.Library.RBTreeMap.Correctness
 import Aiur.Library.IxVMRep
 import Aiur.Library.Blake3.Correctness
 import Aiur.Library.Blake3.Goldilocks
+import Aiur.Library.Blake3.BlockLoop
 
 /-!
 # Frozen Certification Audit for Aiur
@@ -100,7 +101,10 @@ trusted: multi-stark's STARK, FRI and LogUp soundness; the `aiur⟦ … ⟧` and
 `aiur_library%` elaborators; and the artifact exporter. The library
 `Correctness` theorems prove hand-written Lean models of the library functions
 (their byte and limb arithmetic) against Lean specifications such as
-`Blake3.digest`. No theorem evaluates the library's Aiur source, so they are
+`Blake3.Pure.digest`; `Blake3.hash_model_spec` proves the model of
+`Blake3::hash` (its block loop, byte loop and level-by-level tree) equal to
+`Blake3.Pure.digest`, through the tree lemma `Blake3.Pure.mergeLevels_chunkOutputs`.
+No theorem evaluates the library's Aiur source, so they are
 not proofs about the Aiur library functions, nor about the IxVM or MultiStark
 programs that call them.
 -/
@@ -3061,6 +3065,79 @@ info: @Library.Blake3.verify_bytes_against_iff : ∀ {F : Type} [inst : Field F]
 /-- info: 'Aiur.Library.Blake3.Goldilocks.u64_compatible' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.Blake3.Goldilocks.u64_compatible
+
+/--
+info: Blake3.Pure.mergeLevels_chunkOutputs : ∀ (counter : ℕ) (input : List UInt8),
+  Blake3.Pure.mergeLevels (Blake3.Pure.chunkOutputs counter input) = Blake3.Pure.subtree counter input
+-/
+#guard_msgs in
+#check @Blake3.Pure.mergeLevels_chunkOutputs
+/-- info: 'Blake3.Pure.mergeLevels_chunkOutputs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Blake3.Pure.mergeLevels_chunkOutputs
+
+/--
+info: Blake3.Pure.digest_eq_mergeLevels : ∀ (input : List UInt8),
+  Blake3.Pure.digest input = (Blake3.Pure.mergeLevels (Blake3.Pure.chunkOutputs 0 input)).rootHash
+-/
+#guard_msgs in
+#check @Blake3.Pure.digest_eq_mergeLevels
+/-- info: 'Blake3.Pure.digest_eq_mergeLevels' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Blake3.Pure.digest_eq_mergeLevels
+
+/--
+info: Library.Blake3.compress_layer_spec : ∀ (outputs : List Blake3.Pure.Output),
+  2 ≤ outputs.length →
+    Blake3.Pure.cvBytes (Library.Blake3.compressLayer (List.map Blake3.Pure.Output.chainingValue outputs)) =
+      (Blake3.Pure.mergeLevels outputs).rootHash
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.compress_layer_spec
+/-- info: 'Aiur.Library.Blake3.compress_layer_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.compress_layer_spec
+
+/--
+info: Library.Blake3.hashBlocks_chunks : ∀ (input : List UInt8) (c : ℕ) (layer : List Blake3.Pure.CV),
+  0 < input.length →
+    0 < c + (input.length - 1) / 1024 →
+      c + (input.length - 1) / 1024 < 2 ^ 64 →
+        Library.Blake3.hashBlocks input 0 c.toUInt64 Blake3.Pure.iv layer =
+          layer ++ List.map Blake3.Pure.Output.chainingValue (Blake3.Pure.chunkOutputs c input)
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.hashBlocks_chunks
+/-- info: 'Aiur.Library.Blake3.hashBlocks_chunks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.hashBlocks_chunks
+
+/--
+info: Library.Blake3.hash_model_spec : ∀ (input : List UInt8),
+  Blake3.Pure.NativeInput input → Blake3.Pure.cvBytes (Library.Blake3.hashModel input) = Blake3.Pure.digest input
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.hash_model_spec
+/-- info: 'Aiur.Library.Blake3.hash_model_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.hash_model_spec
+
+/--
+info: @Library.Blake3.verify_bytes_against_model_iff : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F →
+    ∀ (bytes : List UInt8),
+      Blake3.Pure.NativeInput bytes →
+        ∀ (expected : Blake3.Pure.Digest),
+          Library.Blake3.addressToFields F (Blake3.Pure.cvBytes (Library.Blake3.hashModel bytes)) =
+              Library.Blake3.addressToFields F expected ↔
+            Blake3.Pure.digest bytes = expected
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.verify_bytes_against_model_iff
+/-- info: 'Aiur.Library.Blake3.verify_bytes_against_model_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.verify_bytes_against_model_iff
+
 
 /-! ### 5. Heap Monotonicity (`Aiur.HeapMono`) -/
 
