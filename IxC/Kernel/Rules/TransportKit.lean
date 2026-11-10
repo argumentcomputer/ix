@@ -252,13 +252,16 @@ theorem renFV_strLitToConstructor (s : String) :
   | nil => rfl
   | cons c cs ih => simp only [List.foldr, renFV, ih]
 
+theorem natOpResult_map_renFV (c : Key md) (a b : Nat) :
+    (natOpResult c a b).map (renFV ρ) = natOpResult c a b := by
+  simp only [natOpResult, apply_ite (Option.map (renFV ρ)), Option.map_some, Option.map_none,
+    renFV]
+
 theorem renFV_of_natOpResult {c : Key md} {a b : Nat} {r : Expr md}
     (h : natOpResult c a b = some r) : r.renFV ρ = r := by
-  unfold natOpResult at h
-  repeat' (split at h)
-  all_goals first
-    | (obtain rfl := Option.some.inj h; rfl)
-    | exact nomatch h
+  have := natOpResult_map_renFV (ρ := ρ) c a b
+  rw [h] at this
+  exact Option.some.inj this
 
 theorem fvarLeaves_sub_renFV {a b : Expr md} (h : ∀ l ∈ a.fvarLeaves, l ∈ b.fvarLeaves) :
     ∀ l ∈ (a.renFV ρ).fvarLeaves, l ∈ (b.renFV ρ).fvarLeaves := by
