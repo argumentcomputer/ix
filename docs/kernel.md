@@ -809,6 +809,12 @@ which no constant may use (`axiom_standing`, the one place a standard axiom
 is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
 `Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
 claim that uses them depends on `Lean.trustCompiler`, which is declined.
+As IxC's logical tier checks only safe declarations, a `check` or `checkEnv`
+claim certifies only constants in Lean's logic: IxVM refuses a seed (the
+target, an owned leaf) whose record, or the block it projects from, is unsafe
+or `partial` (`KernelClaim::assert_claimable`), and no safe constant
+references one (`assert_safety`). The claim builders leave such constants out
+of their seed and owned lists (the claim formats in [Ixon](Ixon.md)).
 A `check` or `checkEnv` claim may instead assume its binding (validator
 `4`, `ClaimContext.bindingAssumed`): it reads roles through the same table
 but validates no group, and a walk leaves a bound basis member or operation

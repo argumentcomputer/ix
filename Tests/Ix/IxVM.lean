@@ -14,7 +14,9 @@ constants are the primitive reductions of `IxVMPrim`, the performance shapes of
 compiler's mutual and auxiliary shapes (`Tests.Ix.Compile.Mutual`), the string
 reductions (`Tests.Ix.Kernel.StringReduction`) and closures from `Init`.
 Each pins a regression that once rejected it; the comments in
-`Tests.Ix.IxVMFixtures` name them.
+`Tests.Ix.IxVMFixtures` name them. Every one is in Lean's logic: a claim on an
+unsafe or partial constant (`IxVMInd.UnsafeSquash`, an `_unsafe_rec`
+companion) is refused at its seed (`ixvm-claim-safety`).
 
 The claims assume their role binding (validator 4), as an aggregate's claims
 do; `validatingCheckEntries` validate the roles their proofs use (validator
@@ -85,7 +87,6 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.IdxTeleB.rec", 275_838_996),
   ("IxVMInd.SoloA.rec", 268_039_240),
   ("IxVMInd.SoloB.rec", 268_039_240),
-  ("IxVMInd.UnsafeSquash", 230_270_294),
   ("IxVMInd.Tree", 229_589_149),
   ("IxVMInd.Tree.rec", 246_850_970),
   ("IxVMInd.DedupM", 234_837_691),
@@ -93,7 +94,6 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.DepthM", 232_333_143),
   ("IxVMInd.DepthM.rec", 250_487_417),
   ("String.Internal.append", 3_241_748_142),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec", 3_593_777_628),
   ("Lean.Syntax.rec", 3_325_916_867),
   ("IxVMInd.AuxTie", 379_183_518),
   ("IxVMInd.AuxTie.rec", 441_527_888),

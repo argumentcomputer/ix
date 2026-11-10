@@ -792,6 +792,113 @@ end Claim
 
 end Ix
 
+/-! ## Seeds in Lean's logic
+
+A typing claim (`check`, `checkEnv`) certifies its seeds, the `check` target
+and the `checkEnv` owned leaves, only in Lean's logic (decision D20). IxVM
+refuses a seed whose record, or the block it projects from, is unsafe or
+partial (`KernelClaim::assert_claimable`): Lean's kernel accepts an unsafe
+constant of any type, `False` included, and a `partial` block (Lean's
+`_unsafe_rec` companions) may refer to itself. The test is the reader's safety
+policy (`Ix.Kernel.Reader.safetyDeclineOf`, `readInductive`, `readRecord`).
+The claim builders leave such constants out of seed and owned lists. A safe
+constant never references one (`KernelCheck::assert_safety`), so an owned set
+stays closed under the claim walk when they are left out. -/
+
+namespace Ixon
+
+/-- A definition record outside Lean's logic: an unsafe or partial `def`, or an
+unsafe opaque. A theorem never is, and a `partial` opaque (the face of a
+`partial def`) is not (`Ingress::defn_is_unsafe_ci`). -/
+def Definition.outsideLogic (d : Definition) : Bool :=
+  match d.kind with
+  | .defn => d.safety != .safe
+  | .opaq => d.safety == .unsaf
+  | .thm => false
+
+/-- A block member outside Lean's logic: such a definition, an unsafe inductive
+or one with an unsafe constructor, or an unsafe recursor. -/
+def MutConst.outsideLogic : MutConst → Bool
+  | .defn d => d.outsideLogic
+  | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
+  | .recr r => r.isUnsafe
+
+/-- A record outside Lean's logic (`KernelClaim::record_unsafe`): such a
+definition, an unsafe axiom or recursor, or a block holding a member outside
+it. A projection record never is by itself; its block is tested
+(`Env.outsideLogicAt`). -/
+def Constant.outsideLogic (c : Constant) : Bool :=
+  match c.info with
+  | .defn d => d.outsideLogic
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .muts ms => ms.any (·.outsideLogic)
+  | _ => false
+
+/-- The block a projection record at `addr` projects from; `addr` for any other
+record. -/
+def Constant.ownerAt (addr : Address) (c : Constant) : Address :=
+  match c.info with
+  | .iPrj p => p.block
+  | .cPrj p => p.block
+  | .rPrj p => p.block
+  | .dPrj p => p.block
+  | _ => addr
+
+/-- `addr` is a seed no typing claim may name (`KernelClaim::assert_claimable`):
+its record, or the block it projects from, is outside Lean's logic. An address
+`env` holds no record for is not; IxVM refuses it when it loads it. -/
+def Env.outsideLogicAt (env : Env) (addr : Address) : Bool :=
+  match env.getConst? addr with
+  | none => false
+  | some c =>
+    c.outsideLogic || ((env.getConst? (c.ownerAt addr)).map (·.outsideLogic)).getD false
+
+/-- The addresses of `env`'s records outside Lean's logic
+(`Constant.outsideLogic`), each record parsed once. The constant `c` at `a` is
+outside it (`outsideLogicAt`) exactly when this set holds `c.ownerAt a`. -/
+def Env.outsideLogicRecords (env : Env) : Std.HashSet Address :=
+  env.consts.fold (init := {}) fun s addr lc =>
+    match lc.get? with
+    | some c => if c.outsideLogic then s.insert addr else s
+    | none => s
+
+/-- `addrs` without the constants outside Lean's logic (`outsideLogicAt`), in
+order; each block record is parsed once. -/
+def Env.dropOutsideLogic (env : Env) (addrs : Array Address) : Array Address := Id.run do
+  let mut blocks : Std.HashMap Address Bool := {}
+  let mut out : Array Address := #[]
+  for a in addrs do
+    match env.getConst? a with
+    | none => out := out.push a
+    | some c =>
+      let o := c.ownerAt a
+      let mut outside := c.outsideLogic
+      if !outside && o != a then
+        match blocks.get? o with
+        | some v => outside := v
+        | none =>
+          let v := ((env.getConst? o).map (·.outsideLogic)).getD false
+          blocks := blocks.insert o v
+          outside := v
+      unless outside do out := out.push a
+  return out
+
+/-- The addresses of `env`'s constants in Lean's logic, in `env.consts` order:
+all but those `outsideLogicAt` sets aside, each record parsed once. -/
+def Env.inLogicConsts (env : Env) : Array Address := Id.run do
+  let mut aside : Std.HashSet Address := {}
+  let mut entries : Array (Address × Address) := #[]
+  for (addr, lc) in env.consts do
+    match lc.get? with
+    | none => entries := entries.push (addr, addr)
+    | some c =>
+      if c.outsideLogic then aside := aside.insert addr
+      entries := entries.push (addr, c.ownerAt addr)
+  return entries.filterMap fun (a, o) => if aside.contains o then none else some a
+
+end Ixon
+
 -- ============================================================================
 -- Ixon.Proof — wraps a Claim with its opaque ZK proof bytes.
 -- Mirrors `Proof` in `crates/ixon/src/proof.rs`. Lives under flag 0xF (vs claims
