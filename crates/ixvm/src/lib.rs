@@ -9,6 +9,7 @@ use aiur::{
 
 pub mod fixture;
 mod io;
+mod pw;
 
 /// Prepare a production claim witness using immutable IO arenas.
 pub fn prepare_streams<'a, B: FieldBackend>(
@@ -20,6 +21,9 @@ pub fn prepare_streams<'a, B: FieldBackend>(
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, program.field())?;
   aiur::library::u64::register(&mut channels, program.field())?;
+  // the binder data of the conversion (D2), from IO channel 7
+  let table = std::sync::Arc::new(pw::Table::from_streams(streams)?);
+  pw::register(program.field(), table, &mut channels)?;
   arenas.register_read::<1>(io::READ_CHANNEL, true, &mut channels)?;
   let address = Type::Tuple { items: vec![Type::Field; 32] };
   let address_key = Type::Tuple { items: vec![Type::Field, address] };

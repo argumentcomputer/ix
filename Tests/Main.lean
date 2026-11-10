@@ -50,6 +50,7 @@ import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
+import Tests.Ix.IxVM.PwHints
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -233,6 +234,10 @@ def registry : List Entry := [
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
   .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
+  -- The binder data (D2) a witness carries for the conversion: hand-made records
+  -- with known data, the host-side check (coverage, the kernel's values), tampering.
+  .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
+  .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
   -- real inductive blocks and recursor records (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
@@ -341,6 +346,7 @@ def required : List (String × String) := [
   ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
+  ("ixvm-pw-hints", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
