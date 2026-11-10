@@ -198,8 +198,49 @@ def is_inductive_prop := aiur_fn⟦
       let result = peel_n_alls_whnf(rc, ind_ty_inst, n_skip, types);
 
       match (*(result)) {
-        KernelTypes::KExprNode::Srt(l) => {  KernelLevels::level_equal(l, (&(KernelTypes::KLevelNode::Zero))) } ,
+        KernelTypes::KExprNode::Srt(l) => {
+          match KernelLevels::level_equal(l, (&(KernelTypes::KLevelNode::Zero))) {
+            1 => {  1 } ,
+            _ => {
+              assert_eq!(level_may_be_nonzero(l), 1,
+                "projection: the structure's sort is zero, but not recognized as zero");
+              0 } ,
+          } } ,
       }
+    }
+⟧
+
+  -- A positive certificate for a 0 answer of `level_equal(l, 0)` (RULES-GAP exact
+  -- site 1): `l` is nonzero at some valuation (its zero-ness is not `ifAllZero []`).
+  -- With it, "the structure is data" is a fact, not an absence of proof.
+
+def level_may_be_nonzero := aiur_fn⟦
+  fn level_may_be_nonzero(l: KernelTypes::KLevel) -> Field {
+      match (*(l)) {
+        KernelTypes::KLevelNode::Zero => {  0 } ,
+        KernelTypes::KLevelNode::Succ(_) => {  1 } ,
+        KernelTypes::KLevelNode::Param(_) => {  1 } ,
+        KernelTypes::KLevelNode::Max(a, b) => {
+          match level_may_be_nonzero(a) {
+            1 => {  1 } ,
+            _ => {  level_may_be_nonzero(b) } ,
+          } } ,
+        KernelTypes::KLevelNode::IMax(_, b) => {  level_may_be_nonzero(b) } ,
+      }
+    }
+⟧
+
+  -- Infer.proj's shape premises (both grades): the structure has no indices (D5:
+  -- `.proj` on an indexed family is rejected), the scrutinee's type has exactly the
+  -- structure's parameters, and its level list has the structure's length.
+
+def proj_shape_ok := aiur_fn⟦
+  fn proj_shape_ok(n_indices: Field, args: Lists::List<KernelTypes::KExpr>, n_params: Field,
+                   lvls: Lists::List<KernelTypes::KLevel>, n_lvls: Field) -> () {
+      assert_eq!(n_indices, 0, "projection on an indexed family");
+      assert_eq!(Lists::length(args), n_params, "projection: the structure type's argument count");
+      assert_eq!(Lists::length(lvls), n_lvls, "projection: the structure type's level count");
+      ()
     }
 ⟧
 
@@ -291,6 +332,7 @@ def k_infer_proj := aiur_fn⟦
 
                   assert_eq!(num_ctors, 1,
                     "projection on an inductive with more than one constructor");
+                  proj_shape_ok(n_indices, args, n_params, lvls, ind_nlvls);
                   let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, 0)));
                   match ctor_ci {
                     KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {

@@ -63,16 +63,39 @@ def red_beta := aiur_fn⟦
     }
 ⟧
 
+  -- Red.proj. Fires only when the constructor belongs to the projected structure, the
+  -- structure has one constructor and no indices (D5), the field exists, the
+  -- constructor application has exactly `nparams + nfields` arguments and the right
+  -- number of levels, and the structure's sort at those levels is never zero. At a
+  -- never-zero structure the rule's `FireSem` guard is vacuous and every slot of the
+  -- licensed `Certs` walk is a `.never` skip, so no certificate is needed; a
+  -- projection out of a possibly-`Prop` structure is left stuck (completeness only).
+
 def red_proj := aiur_fn⟦
   fn red_proj(rc: KernelRoles::RoleCtx, struct_addr: Bytes::AddressRef, fidx: Field, scrut: KernelTypes::KExpr,
               types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       match KernelTypes::collect_spine(scrut) {
         (head, args) => {
           match (*(head)) {
-            KernelTypes::KExprNode::Const(caddr, _) => {
+            KernelTypes::KExprNode::Const(caddr, clvls) => {
               match (*(Ingress::get_ci(caddr))) {
-                KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, nparams, _, _) => {
-                  (1, Lists::lookup(args, nparams + fidx)) } ,
+                KernelTypes::KConstantInfo::Ctor(cnl, _, cblock, cind, _, nparams, nfields, _) => {
+                  match (*(Ingress::get_ci(struct_addr))) {
+                    KernelTypes::KConstantInfo::Induct(snl, sty, snp, sni, snc, _, sblock, sidx) => {
+                      let owner = (Bytes::address_eq(cblock, sblock) * Fields::is_zero(cind - sidx)) * Fields::is_zero(snl - cnl);
+                      let shape = (Fields::is_zero(sni) * Fields::is_zero(snc - 1)) * Fields::is_zero(snp - nparams);
+                      let arity = Fields::is_zero(Lists::length(args) - (nparams + nfields))
+                                  * Fields::is_zero(Lists::length(clvls) - cnl);
+                      match ((owner * shape) * arity) * UInt32::less_than_fields(fidx, nfields) {
+                        1 => {
+                          match type_sort_never(sty, snp, clvls) {
+                            1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
+                            _ => {  (0, scrut) } ,
+                          } } ,
+                        _ => {  (0, scrut) } ,
+                      } } ,
+                    _ => {  (0, scrut) } ,
+                  } } ,
                 _ => {  (0, scrut) } ,
               } } ,
             _ => {  (0, scrut) } ,
@@ -81,11 +104,41 @@ def red_proj := aiur_fn⟦
     }
 ⟧
 
+  -- Whether the sort a stored type former's telescope ends in, after `n` binders and
+  -- at the levels `lvls`, is never zero (`level_is_not_zero`, IxC's `isNeverZero`).
+  -- A type that is not syntactically such a telescope answers 0.
+
+def type_sort_never := aiur_fn⟦
+  fn type_sort_never(ty: KernelTypes::KExpr, n: Field, lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(ty)) {
+        KernelTypes::KExprNode::Forall(_, body) => {
+          match n {
+            0 => {  0 } ,
+            _ => {  type_sort_never(body, n - 1, lvls) } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(l) => {
+          match n {
+            0 => {  KernelLevels::level_is_not_zero(KernelLevels::level_inst_params(l, lvls)) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
 def red_unfold := aiur_fn⟦
   inline fn red_unfold(ci: KernelTypes::KConstantInfo, lvls: Lists::List<KernelTypes::KLevel>) -> (Field, KernelTypes::KExpr) {
       match ci {
-        KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {  (1, KernelLevels::expr_inst_levels(value, lvls)) } ,
-        KernelTypes::KConstantInfo::Thm(_, _, value) => {  (2, KernelLevels::expr_inst_levels(value, lvls)) } ,
+        KernelTypes::KConstantInfo::Defn(nl, _, value, _, _) => {
+          match Lists::length(lvls) - nl {
+            0 => {  (1, KernelLevels::expr_inst_levels(value, lvls)) } ,
+            _ => {  (0, value) } ,
+          } } ,
+        KernelTypes::KConstantInfo::Thm(nl, _, value) => {
+          match Lists::length(lvls) - nl {
+            0 => {  (2, KernelLevels::expr_inst_levels(value, lvls)) } ,
+            _ => {  (0, value) } ,
+          } } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
@@ -284,8 +337,8 @@ def whnf_const_head := aiur_fn⟦
         _ => {
       let ci = (*(Ingress::get_ci(addr)));
       match ci {
-        KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {
-          let pd = try_reduce_projection_definition(value, spine);
+        KernelTypes::KConstantInfo::Defn(nl, _, value, _, _) => {
+          let pd = try_reduce_projection_definition(value, nl, lvls, spine);
           match pd {
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             _ => {
@@ -302,9 +355,9 @@ def whnf_const_head := aiur_fn⟦
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
           } } ,
-        KernelTypes::KConstantInfo::Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
+        KernelTypes::KConstantInfo::Rec(rnl, rec_ty, nparams, nindices, nmotives, nminors,
                             rules, k_flag, _, _, _) => {
-          match red_rec(rc, rec_ty, lvls, head, spine, nparams, nindices, nmotives, nminors,
+          match red_rec(rc, rnl, rec_ty, lvls, head, spine, nparams, nindices, nmotives, nminors,
                         rules, k_flag, types) {
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             (2, stuck) => {  stuck } ,
@@ -323,16 +376,18 @@ def whnf_const_head := aiur_fn⟦
   -- in place; 3 the K reduct (both callers continue it with full `whnf`).
 
 def red_rec := aiur_fn⟦
-  fn red_rec(rc: KernelRoles::RoleCtx, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>,
+  fn red_rec(rc: KernelRoles::RoleCtx, nlvls: Field, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>,
              head: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>,
              nparams: Field, nindices: Field, nmotives: Field, nminors: Field,
              rules: Lists::List<KernelTypes::KRecRule>, k_flag: Field,
              types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match Lists::length(lvls) - nlvls {
+        0 => {
       let k_pre = match k_flag {
         1 => {
           match se_parent_addr(rec_ty, ((nparams + nmotives) + nminors) + nindices) {
             (_, rec_parent) => {
-              try_k_synth_iota(rc, lvls, spine, nparams, nmotives,
+              try_k_synth_iota(rc, rec_ty, lvls, spine, nparams, nmotives,
                                   nminors, nindices, rules,
                                   rec_parent, types) } ,
           } } ,
@@ -359,22 +414,24 @@ def red_rec := aiur_fn⟦
               } } ,
             _ => {  (0, head) } ,
           } } ,
+      } } ,
+        _ => {  (0, head) } ,
       }
     }
 ⟧
 
 def try_reduce_projection_definition := aiur_fn⟦
-  fn try_reduce_projection_definition(value: KernelTypes::KExpr,
+  fn try_reduce_projection_definition(value: KernelTypes::KExpr, nl: Field, lvls: Lists::List<KernelTypes::KLevel>,
                                             spine: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       match projection_definition_info(value, 0) {
         (1, arity, struct_addr, field, struct_arg_idx) => {
-          match UInt32::less_than_fields(Lists::length(spine), arity) {
-            1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-            _ => {
+          match (1 - UInt32::less_than_fields(Lists::length(spine), arity)) * Fields::is_zero(Lists::length(lvls) - nl) {
+            1 => {
               let target_arg = Lists::lookup(spine, struct_arg_idx);
               let proj_expr = (&(KernelTypes::KExprNode::Proj(struct_addr, field, target_arg)));
               let post = Lists::drop(spine, arity);
               (1, apply_spine(proj_expr, post)) } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
@@ -425,7 +482,8 @@ def nat_lit_to_ctor_or_self := aiur_fn⟦
 ⟧
 
 def try_k_synth_iota := aiur_fn⟦
-  fn try_k_synth_iota(rc: KernelRoles::RoleCtx, lvls: Lists::List<KernelTypes::KLevel>, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_k_synth_iota(rc: KernelRoles::RoleCtx, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>,
+                            spine: Lists::List<KernelTypes::KExpr>,
                             nparams: Field, nmotives: Field, nminors: Field, nindices: Field,
                             rules: Lists::List<KernelTypes::KRecRule>,
                             rec_parent: Bytes::AddressRef, types: Lists::List<KernelTypes::KExpr>)
@@ -433,22 +491,18 @@ def try_k_synth_iota := aiur_fn⟦
       match (*(rules)) {
         Lists::Node::Cons(r, _) => {
           match r {
-            KernelTypes::KRecRule::Mk(cidx, _rfields, rrhs) => {
+            KernelTypes::KRecRule::Mk(cidx, _rfields, _rrhs) => {
               let major_idx = nparams + nmotives + nminors + nindices;
 
               match UInt32::less_than_fields(major_idx, Lists::length(spine)) {
                 0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                 _ => {
                   let raw_major = Lists::lookup(spine, major_idx);
-                  match k_synth_gate(rc, raw_major, cidx, nparams, rec_parent, types) {
-                    0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                    _ => {
-                      let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
-                      let pmm_end = nparams + nmotives + nminors;
-                      let pmm = Lists::take(spine, pmm_end);
-                      let post_major = Lists::drop(spine, major_idx + 1);
-                      let r1 = apply_spine(rhs_lvled, pmm);
-                      (1, apply_spine(r1, post_major)) } ,
+                  match k_synth_fab(rc, raw_major, cidx, nparams, rec_parent, types) {
+                    (1, fab) => {
+                      red_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
+                               rules, rec_parent, fab, types) } ,
+                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                   } } ,
               } } ,
           } } ,
@@ -457,36 +511,47 @@ def try_k_synth_iota := aiur_fn⟦
     }
 ⟧
 
-def k_synth_gate := aiur_fn⟦
-  fn k_synth_gate(rc: KernelRoles::RoleCtx, raw_major: KernelTypes::KExpr, cidx: Field, nparams: Field,
-                        rec_parent: Bytes::AddressRef, types: Lists::List<KernelTypes::KExpr>) -> Field {
+  -- Red.rescueK: the major's type is the recursor's inductive; `fab` is the first
+  -- rule's constructor applied to that type's parameters; the major's type is
+  -- definitionally equal to `fab`'s, and both types are propositions, so `fab` and
+  -- the major are definitionally equal by proof irrelevance (DefEq.proofIrrel: both
+  -- sorts zero). ι then fires on `fab` (`red_iota`).
+
+def k_synth_fab := aiur_fn⟦
+  fn k_synth_fab(rc: KernelRoles::RoleCtx, raw_major: KernelTypes::KExpr, cidx: Field, nparams: Field,
+                 rec_parent: Bytes::AddressRef, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       let major_ty = KernelInfer::k_infer(rc, raw_major, types);
       let major_ty_w = whnf(rc, major_ty, types);
       match KernelTypes::collect_spine(major_ty_w) {
         (ty_head, ty_args) => {
           match (*(ty_head)) {
             KernelTypes::KExprNode::Const(ind_addr, ctor_us) => {
-
               match Bytes::address_eq(ind_addr, rec_parent) {
-                0 => {  0 } ,
-                _ => {
-                  let ind_ci = (*(Ingress::get_ci(ind_addr)));
-                  match ind_ci {
+                1 => {
+                  match (*(Ingress::get_ci(ind_addr))) {
                     KernelTypes::KConstantInfo::Induct(_, _, _, _, _, _, ind_block, ind_idx) => {
                       let cprj = KernelCheck::projection_addr_ctor(ind_idx, cidx, ind_block);
-                      let ctor_head = (&(KernelTypes::KExprNode::Const(cprj, ctor_us)));
-                      let params = Lists::take(ty_args, nparams);
-                      let ctor_app = apply_spine(ctor_head, params);
-                      let ctor_ty = KernelInfer::k_infer(rc, ctor_app, types);
-                      KernelDefEq::k_is_def_eq(rc, major_ty_w, ctor_ty, types) } ,
-                    _ => {  0 } ,
+                      let fab = apply_spine((&(KernelTypes::KExprNode::Const(cprj, ctor_us))),
+                                            Lists::take(ty_args, nparams));
+                      let fab_ty = KernelInfer::k_infer(rc, fab, types);
+                      match KernelDefEq::k_is_def_eq(rc, major_ty_w, fab_ty, types) {
+                        1 => {
+                          match KernelDefEq::is_prop_type(rc, major_ty, types) {
+                            1 => {  (KernelDefEq::is_prop_type(rc, fab_ty, types), fab) } ,
+                            _ => {  (0, fab) } ,
+                          } } ,
+                        _ => {  (0, fab) } ,
+                      } } ,
+                    _ => {  (0, raw_major) } ,
                   } } ,
+                _ => {  (0, raw_major) } ,
               } } ,
-            _ => {  0 } ,
+            _ => {  (0, raw_major) } ,
           } } ,
       }
     }
 ⟧
+
 
 def replace_spine_major := aiur_fn⟦
   fn replace_spine_major(spine: Lists::List<KernelTypes::KExpr>, major_idx: Field, major_w: KernelTypes::KExpr)
@@ -565,47 +630,130 @@ def red_iota := aiur_fn⟦
               nparams: Field, nmotives: Field, nminors: Field, nindices: Field,
               rules: Lists::List<KernelTypes::KRecRule>, rec_parent: Bytes::AddressRef,
               major: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      match collect_spine_of_ctor(major) {
-        (1, ctor_cidx, ctor_parent, ctor_args) => {
+      match KernelTypes::collect_spine(major) {
+        (mh, margs) => {
+          match (*(mh)) {
+            KernelTypes::KExprNode::Const(caddr, clvls) => {
+              match (*(Ingress::get_ci(caddr))) {
+                KernelTypes::KConstantInfo::Ctor(cnl, cty, cblock, cind, cidx, cnp, cnf, _) => {
 
-          assert_eq!(Bytes::address_eq(ctor_parent, rec_parent), 1,
-            "iota: major's constructor belongs to a different inductive");
-          match find_rule(rules, ctor_cidx) {
-            (1, rfields, rrhs) => {
-              let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
-              let pmm_end = nparams + nmotives + nminors;
-              let pmm = Lists::take(spine, pmm_end);
-              let ctor_fields_len = Lists::length(ctor_args);
-              let field_start = ctor_fields_len - rfields;
-              let field_args = Lists::drop(ctor_args, field_start);
-              let post_major = Lists::drop(spine, (pmm_end + nindices) + 1);
-              let r1 = apply_spine(rhs_lvled, pmm);
-              let r2 = apply_spine(r1, field_args);
-              (1, apply_spine(r2, post_major)) } ,
+                  assert_eq!(Bytes::address_eq(KernelDefEq::compute_iprj_addr(cblock, cind), rec_parent), 1,
+                    "iota: major's constructor belongs to a different inductive");
+                  match find_rule(rules, cidx) {
+                    (1, rfields, rrhs) => {
+                      let shape = (Fields::is_zero(Lists::length(margs) - (cnp + cnf)) * Fields::is_zero(rfields - cnf))
+                                  * Fields::is_zero(Lists::length(clvls) - cnl);
+                      let pmm_end = nparams + nmotives + nminors;
+                      let major_idx = pmm_end + nindices;
+                      match shape {
+                        1 => {
+                          match iota_cmp(rc, KernelLevels::expr_inst_levels(rec_ty, lvls), Lists::take(spine, major_idx),
+                                         major_idx, cty, clvls, cnp, margs, nindices, types) {
+                            1 => {
+                              let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
+                              let r1 = apply_spine(rhs_lvled, Lists::take(spine, pmm_end));
+                              let r2 = apply_spine(r1, Lists::drop(margs, cnp));
+                              (1, apply_spine(r2, Lists::drop(spine, major_idx + 1))) } ,
+                            _ => {  (0, major) } ,
+                          } } ,
+                        _ => {  (0, major) } ,
+                      } } ,
+                    _ => {  (0, major) } ,
+                  } } ,
+                _ => {  (0, major) } ,
+              } } ,
             _ => {  (0, major) } ,
           } } ,
-        _ => {  (0, major) } ,
       }
     }
 ⟧
 
-def collect_spine_of_ctor := aiur_fn⟦
-  fn collect_spine_of_ctor(e: KernelTypes::KExpr) -> (Field, Field, Bytes::AddressRef, Lists::List<KernelTypes::KExpr>) {
-      match KernelTypes::collect_spine(e) {
-        (head, args) => {
-          match (*(head)) {
-            KernelTypes::KExprNode::Const(addr, _) => {
-              let ci = (*(Ingress::get_ci(addr)));
-              match ci {
-                KernelTypes::KConstantInfo::Ctor(_, _, block_addr, ind_idx, cidx, _, _, _) => {
-                  (1, cidx, KernelDefEq::compute_iprj_addr(block_addr, ind_idx), args) } ,
-                _ => {  (0, 0, (&([UInt8::BYTE_0; 32])), (&(Lists::Node::Nil))) } ,
+  -- Red.iota's comparisons (never skipped): the constructor's levels against the
+  -- levels of the major's domain in the recursor's type (the rule's level comparands),
+  -- the constructor's parameters against that domain's parameters (the parameter
+  -- comparison; the domain's parameters are the recursor's parameter arguments), and,
+  -- for an indexed family, the constructor type's residual indices against the
+  -- domain's (the recursor's index arguments).
+
+def iota_cmp := aiur_fn⟦
+  fn iota_cmp(rc: KernelRoles::RoleCtx, rec_ty_i: KernelTypes::KExpr, pre: Lists::List<KernelTypes::KExpr>,
+              major_idx: Field, cty: KernelTypes::KExpr, clvls: Lists::List<KernelTypes::KLevel>, cnp: Field,
+              margs: Lists::List<KernelTypes::KExpr>, nindices: Field,
+              types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match pi_peel(rec_ty_i, pre, (&(Lists::Node::Nil)), major_idx) {
+        (1, md) => {
+          match KernelTypes::collect_spine(md) {
+            (mdh, mda) => {
+              match (*(mdh)) {
+                KernelTypes::KExprNode::Const(_, mlvls) => {
+                  match KernelDefEq::level_list_eq(clvls, mlvls) {
+                    1 => {
+                      match KernelDefEq::de_args(rc, Lists::take(margs, cnp), Lists::take(mda, cnp), types) {
+                        1 => {
+                          match nindices {
+                            0 => {  1 } ,
+                            _ => {
+                              match pi_residual(KernelLevels::expr_inst_levels(cty, clvls), margs, (&(Lists::Node::Nil))) {
+                                (1, res) => {
+                                  match KernelTypes::collect_spine(res) {
+                                    (_, ra) => {  KernelDefEq::de_args(rc, Lists::drop(ra, cnp), Lists::drop(mda, cnp), types) } ,
+                                  } } ,
+                                _ => {  0 } ,
+                              } } ,
+                          } } ,
+                        _ => {  0 } ,
+                      } } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
               } } ,
-            _ => {  (0, 0, (&([UInt8::BYTE_0; 32])), (&(Lists::Node::Nil))) } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- The `n`-th binder domain of the telescope `t`, its earlier binders instantiated
+  -- by `args` (`subs_rev` accumulates them, innermost first). Tag 0: `t` is not such
+  -- a telescope.
+
+def pi_peel := aiur_fn⟦
+  fn pi_peel(t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>, subs_rev: Lists::List<KernelTypes::KExpr>,
+             n: Field) -> (Field, KernelTypes::KExpr) {
+      match (*(t)) {
+        KernelTypes::KExprNode::Forall(dom, body) => {
+          match n {
+            0 => {  (1, KernelInfer::inst_subs(dom, subs_rev)) } ,
+            _ => {
+              match (*(args)) {
+                Lists::Node::Cons(a, rest) => {
+                  pi_peel(body, rest, (&(Lists::Node::Cons(a, subs_rev))), n - 1) } ,
+                Lists::Node::Nil => {  (0, t) } ,
+              } } ,
+          } } ,
+        _ => {  (0, t) } ,
+      }
+    }
+⟧
+
+  -- The codomain of the telescope `t` after all of `args` (`piResidual`). Tag 0: `t`
+  -- has fewer binders than `args`.
+
+def pi_residual := aiur_fn⟦
+  fn pi_residual(t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>,
+                 subs_rev: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match (*(args)) {
+        Lists::Node::Nil => {  (1, KernelInfer::inst_subs(t, subs_rev)) } ,
+        Lists::Node::Cons(a, rest) => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(_, body) => {
+              pi_residual(body, rest, (&(Lists::Node::Cons(a, subs_rev)))) } ,
+            _ => {  (0, t) } ,
           } } ,
       }
     }
 ⟧
+
 
 def find_rule := aiur_fn⟦
   fn find_rule(rules: Lists::List<KernelTypes::KRecRule>, cidx: Field) -> (Field, Field, KernelTypes::KExpr) {
@@ -631,55 +779,109 @@ def try_struct_eta_iota := aiur_fn⟦
                                  types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       match (*(rules)) {
         Lists::Node::Nil => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-        Lists::Node::Cons(r, rest) => {
+        Lists::Node::Cons(_, rest) => {
           match (*(rest)) {
             Lists::Node::Cons(_, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
             Lists::Node::Nil => {
-              match r {
-                KernelTypes::KRecRule::Mk(_, nf, rhs) => {
-                  let skip = ((nparams + nmotives) + nminors) + nindices;
-                  match se_parent_addr(rec_ty, skip) {
-                    (0, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                    (_, parent) => {
-                      let ci = (*(Ingress::get_ci(parent)));
-                      match ci {
-                        KernelTypes::KConstantInfo::Induct(_, _, _, ind_nidx, num_ctors,
-                                               _, _, _) => {
-                          match num_ctors - 1 {
+              let skip = ((nparams + nmotives) + nminors) + nindices;
+              match se_parent_addr(rec_ty, skip) {
+                (0, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                (_, parent) => {
+                  match (*(Ingress::get_ci(parent))) {
+                    KernelTypes::KConstantInfo::Induct(_, ind_ty, ind_np, ind_nidx, num_ctors, _, block, idx) => {
+                      match Fields::is_zero(num_ctors - 1) * Fields::is_zero(ind_nidx) {
+                        1 => {
+                          match struct_is_rec(parent) {
                             0 => {
-                              match ind_nidx {
-                                0 => {
-                                  match struct_is_rec(parent) {
-                                    1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                                    _ => {
-                                      let major = Lists::lookup(spine, skip);
-
-                                      match UInt32::less_than_fields(Lists::length(types),
-                                          KernelSubst::expr_lbr(major)) {
-                                        1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                                        _ => {
-                                          let major_ty = KernelInfer::k_infer(rc, major, types);
-                                          match KernelDefEq::is_prop_type(rc, major_ty, types) {
-                                            1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                                            _ => {
-                                              let rhs_inst = KernelLevels::expr_inst_levels(rhs, lvls);
-                                              let pmm = Lists::take(spine,
-                                                (nparams + nmotives) + nminors);
-                                              let after_pmm = apply_spine(rhs_inst, pmm);
-                                              let with_projs = apply_n_projs(
-                                                after_pmm, parent, major, nf, 0);
-                                              let post = Lists::drop(spine, skip + 1);
-                                              (1, apply_spine(with_projs, post)) } ,
-                                          } } ,
-                                      } } ,
+                              let major = Lists::lookup(spine, skip);
+                              match UInt32::less_than_fields(Lists::length(types), KernelSubst::expr_lbr(major)) {
+                                1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                                _ => {
+                                  match eta_iota_fab(rc, ind_ty, ind_np, block, idx, parent, major, types) {
+                                    (1, fab) => {
+                                      red_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
+                                               rules, parent, fab, types) } ,
+                                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                                   } } ,
-                                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                               } } ,
                             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                           } } ,
                         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                       } } ,
+                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                   } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Red.rescueEta: the major's type head-normalizes to the structure `parent` at
+  -- exactly its parameters; the structure's sort at the type's levels is never zero
+  -- (`capsNeverZero`, D4: no structure-η ι at `Sort u` structures); `fab` is the
+  -- constructor applied to the type's parameters and the major's projections. The
+  -- rule's final `DefEq fab major` is DefEq.structEta, whose comparisons are
+  -- reflexive here (`fab`'s parameters are the type's, its fields the major's
+  -- projections) and whose unlicensed `Certs` of the type's arguments are checked
+  -- (`certs_all`). ι then fires on `fab` (`red_iota`).
+
+def eta_iota_fab := aiur_fn⟦
+  fn eta_iota_fab(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, ind_np: Field,
+                  block: Bytes::AddressRef, idx: Field, parent: Bytes::AddressRef,
+                  major: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      let major_ty_w = whnf(rc, KernelInfer::k_infer(rc, major, types), types);
+      match KernelTypes::collect_spine(major_ty_w) {
+        (th, targs) => {
+          match (*(th)) {
+            KernelTypes::KExprNode::Const(taddr, tus) => {
+              match Bytes::address_eq(taddr, parent) * Fields::is_zero(Lists::length(targs) - ind_np) {
+                1 => {
+                  match type_sort_never(ind_ty, ind_np, tus) {
+                    1 => {
+                      match certs_all(rc, KernelLevels::expr_inst_levels(ind_ty, tus), targs, (&(Lists::Node::Nil)), types) {
+                        1 => {
+                          match (*(Ingress::get_ci_cprj(block, idx, 0))) {
+                            KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, nf, _) => {
+                              let cprj = KernelCheck::projection_addr_ctor(idx, 0, block);
+                              let fab0 = apply_spine((&(KernelTypes::KExprNode::Const(cprj, tus))), targs);
+                              (1, apply_n_projs(fab0, parent, major, nf, 0)) } ,
+                            _ => {  (0, major) } ,
+                          } } ,
+                        _ => {  (0, major) } ,
+                      } } ,
+                    _ => {  (0, major) } ,
+                  } } ,
+                _ => {  (0, major) } ,
+              } } ,
+            _ => {  (0, major) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The unlicensed telescope certificate (`Certs env d false`): each argument's
+  -- io-inferred type is definitionally equal to its binder's domain, the domains
+  -- instantiated along the spine; a telescope that is not syntactically a ∀ is
+  -- head-normalized first.
+
+def certs_all := aiur_fn⟦
+  fn certs_all(rc: KernelRoles::RoleCtx, t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>,
+               subs_rev: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(args)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(a, rest) => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(dom, cod) => {
+              let ta = KernelInferOnly::k_infer_only(rc, a, types);
+              match KernelDefEq::k_is_def_eq(rc, ta, KernelInfer::inst_subs(dom, subs_rev), types) {
+                1 => {  certs_all(rc, cod, rest, (&(Lists::Node::Cons(a, subs_rev))), types) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {
+              let t_w = whnf(rc, KernelInfer::inst_subs(t, subs_rev), types);
+              match (*(t_w)) {
+                KernelTypes::KExprNode::Forall(_, _) => {  certs_all(rc, t_w, args, (&(Lists::Node::Nil)), types) } ,
+                _ => {  0 } ,
               } } ,
           } } ,
       }
@@ -727,10 +929,30 @@ def struct_is_rec := aiur_fn⟦
   fn struct_is_rec(parent: Bytes::AddressRef) -> Field {
       let ci = (*(Ingress::get_ci(parent)));
       match ci {
-        KernelTypes::KConstantInfo::Induct(_, _, n_params, _, num_ctors, _, block, idx) => {
+        KernelTypes::KConstantInfo::Induct(_, _, _, _, _, _, block, _) => {
           let members = struct_block_member_addrs(parent, block);
-          struct_scan_ctors(block, idx, num_ctors, n_params, members, 0) } ,
+          struct_scan_members(members, members) } ,
         _ => {  1 } ,
+      }
+    }
+⟧
+
+  -- D6 (Lean's `is_rec`, a block-level flag): whether any constructor of any inductive
+  -- member of the block mentions a member of the block.
+
+def struct_scan_members := aiur_fn⟦
+  fn struct_scan_members(ms: Lists::List<Bytes::AddressRef>, members: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(ms)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(m, rest) => {
+          match (*(Ingress::get_ci(m))) {
+            KernelTypes::KConstantInfo::Induct(_, _, n_params, _, num_ctors, _, block, idx) => {
+              match struct_scan_ctors(block, idx, num_ctors, n_params, members, 0) {
+                1 => {  1 } ,
+                _ => {  struct_scan_members(rest, members) } ,
+              } } ,
+            _ => {  struct_scan_members(rest, members) } ,
+          } } ,
       }
     }
 ⟧
@@ -916,13 +1138,17 @@ def whnf_struct_core_const := aiur_fn⟦
                                    spine: Lists::List<KernelTypes::KExpr>,
                                    types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(Ingress::get_ci(addr))) {
-        KernelTypes::KConstantInfo::Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
-                            rules, _k, _unsafe, _block, _ridx) => {
-          match try_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
-                  rules, types, head,
-                  KernelCheck::rec_to_parent_addr(rec_ty, nparams, nmotives, nminors,
-                    nindices)) {
-            (1, reduced) => {  whnf_struct_core(rc, reduced, types) } ,
+        KernelTypes::KConstantInfo::Rec(rnl, rec_ty, nparams, nindices, nmotives, nminors,
+                            rules, _, _, _, _) => {
+          match Lists::length(lvls) - rnl {
+            0 => {
+              match try_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
+                      rules, types, head,
+                      KernelCheck::rec_to_parent_addr(rec_ty, nparams, nmotives, nminors,
+                        nindices)) {
+                (1, reduced) => {  whnf_struct_core(rc, reduced, types) } ,
+                _ => {  apply_spine(head, spine) } ,
+              } } ,
             _ => {  apply_spine(head, spine) } ,
           } } ,
         _ => {  apply_spine(head, spine) } ,
@@ -1012,8 +1238,8 @@ def whnf_nd_const_head := aiur_fn⟦
         _ => {
       let ci = (*(Ingress::get_ci(addr)));
       match ci {
-        KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {
-          let pd = try_reduce_projection_definition(value, spine);
+        KernelTypes::KConstantInfo::Defn(nl, _, value, _, _) => {
+          let pd = try_reduce_projection_definition(value, nl, lvls, spine);
           match pd {
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
@@ -1024,9 +1250,9 @@ def whnf_nd_const_head := aiur_fn⟦
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
           } } ,
-        KernelTypes::KConstantInfo::Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
+        KernelTypes::KConstantInfo::Rec(rnl, rec_ty, nparams, nindices, nmotives, nminors,
                             rules, k_flag, _, _, _) => {
-          match red_rec(rc, rec_ty, lvls, head, spine, nparams, nindices, nmotives, nminors,
+          match red_rec(rc, rnl, rec_ty, lvls, head, spine, nparams, nindices, nmotives, nminors,
                         rules, k_flag, types) {
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
             (2, stuck) => {  stuck } ,

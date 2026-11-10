@@ -672,7 +672,7 @@ def is_unit_like_type := aiur_fn⟦
                           match cci {
                             KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, nfields, _) => {
                               match nfields {
-                                0 => {  1 } ,
+                                0 => {  1 - KernelWhnf::struct_is_rec(addr) } ,
                                 _ => {  0 } ,
                               } } ,
                             _ => {  0 } ,
