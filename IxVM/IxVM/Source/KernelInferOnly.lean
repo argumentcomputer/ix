@@ -114,11 +114,12 @@ def k_infer_only_core := aiur_fn⟦
                     "projection's structure type differs from the value's head");
                   let ind_ci = (*(Ingress::get_ci(head_addr)));
                   match ind_ci {
-                    KernelTypes::KConstantInfo::Induct(ind_nlvls, _, n_params, _, num_ctors, _,
+                    KernelTypes::KConstantInfo::Induct(ind_nlvls, ind_ty, n_params, n_indices, num_ctors, _,
                                            block_addr, ind_idx) => {
 
                       assert_eq!(num_ctors, 1,
                         "projection on an inductive with more than one constructor");
+                      KernelInfer::proj_shape_ok(n_indices, args, n_params, lvls, ind_nlvls);
                       let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, 0)));
                       match ctor_ci {
                         KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
@@ -126,7 +127,9 @@ def k_infer_only_core := aiur_fn⟦
                             "projection's constructor universe count differs from its inductive's");
                           let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
                           let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
-                          io_peel_field_loop(after_params, fidx, 0, struct_addr, e1) } ,
+                          let field_ty = io_peel_field_loop(after_params, fidx, 0, struct_addr, e1);
+                          io_prop_field_guard(rc, KernelInfer::is_inductive_prop(rc, ind_ty, lvls, n_params, types), field_ty, types);
+                          field_ty } ,
                       } } ,
                   } } ,
               } } ,
@@ -145,6 +148,23 @@ def ensure_sort_only := aiur_fn⟦
           match (*(ty_whnf)) {
             KernelTypes::KExprNode::Srt(l) => {  l } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Infer.proj's `FireSem` premise at the io grade (RULES-GAP G7): at a `Prop`
+  -- structure the projected field's type is a proposition. (Full inference runs the
+  -- same guard in `k_infer_proj`; the io grade used to rely on that earlier run.)
+
+def io_prop_field_guard := aiur_fn⟦
+  fn io_prop_field_guard(rc: KernelRoles::RoleCtx, is_prop: Field, field_ty: KernelTypes::KExpr,
+                         types: Lists::List<KernelTypes::KExpr>) -> () {
+      match is_prop {
+        0 => {  () } ,
+        _ => {
+          assert_eq!(KernelLevels::level_equal(ensure_sort_only(rc, field_ty, types), (&(KernelTypes::KLevelNode::Zero))), 1,
+            "projection on a Prop structure: field is not a Prop");
+          () } ,
       }
     }
 ⟧

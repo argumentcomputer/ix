@@ -307,24 +307,12 @@ def k_is_def_eq_struct_safe := aiur_fn⟦
           } } ,
         KernelTypes::KExprNode::Lam(ty_a, body_a) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Lam(ty_b, body_b) => {
-              match k_is_def_eq(rc, ty_a, ty_b, types) {
-                1 => {
-                  let inner = (&(Lists::Node::Cons(ty_a, types)));
-                  k_is_def_eq(rc, body_a, body_b, inner) } ,
-                _ => {  0 } ,
-              } } ,
+            KernelTypes::KExprNode::Lam(ty_b, body_b) => {  de_binder(rc, ty_a, body_a, ty_b, body_b, types) } ,
             _ => {  0 } ,
           } } ,
         KernelTypes::KExprNode::Forall(ty_a, body_a) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Forall(ty_b, body_b) => {
-              match k_is_def_eq(rc, ty_a, ty_b, types) {
-                1 => {
-                  let inner = (&(Lists::Node::Cons(ty_a, types)));
-                  k_is_def_eq(rc, body_a, body_b, inner) } ,
-                _ => {  0 } ,
-              } } ,
+            KernelTypes::KExprNode::Forall(ty_b, body_b) => {  de_binder(rc, ty_a, body_a, ty_b, body_b, types) } ,
             _ => {  0 } ,
           } } ,
         _ => {  0 } ,
@@ -336,31 +324,41 @@ def k_is_def_eq_slow2 := aiur_fn⟦
   fn k_is_def_eq_slow2(rc: KernelRoles::RoleCtx, orig_a: KernelTypes::KExpr, orig_b: KernelTypes::KExpr,
                               aw: KernelTypes::KExpr, bw: KernelTypes::KExpr,
                               types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match de_rescue_tier(rc, aw, bw, types) {
+        (1, eq) => {  eq } ,
+        _ => {
+          match lazy_delta_loop(rc, aw, bw, 16, types) {
+            (1, _, _) => {  1 } ,
+            (_, fa, fb) => {  slow2_after_delta(rc, orig_a, orig_b,
+                                     fa, fb, types) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The rescue tier, shared by `k_is_def_eq_slow2` and the eager fallback: proof
+  -- irrelevance, unit-like types, structure η both ways, then the `Nat` offsets.
+  -- `(1, r)`: decided with answer `r`; `(0, 0)`: undecided.
+
+def de_rescue_tier := aiur_fn⟦
+  fn de_rescue_tier(rc: KernelRoles::RoleCtx, aw: KernelTypes::KExpr, bw: KernelTypes::KExpr,
+                    types: Lists::List<KernelTypes::KExpr>) -> (Field, Field) {
       match try_proof_irrel(rc, aw, bw, types) {
-            1 => {  1 } ,
+        1 => {  (1, 1) } ,
+        _ => {
+          match try_unit_like(rc, aw, bw, types) {
+            1 => {  (1, 1) } ,
             _ => {
-              match try_unit_like(rc, aw, bw, types) {
-                1 => {  1 } ,
+              match try_eta_struct(rc, aw, bw, types) {
+                1 => {  (1, 1) } ,
                 _ => {
-                  match try_eta_struct(rc, aw, bw, types) {
-                    1 => {  1 } ,
-                    _ => {
-                      match try_eta_struct(rc, bw, aw, types) {
-                        1 => {  1 } ,
-                        _ => {
-                          match try_def_eq_nat(rc, aw, bw, types) {
-                            (1, eq) => {  eq } ,
-                            _ => {
-                          match lazy_delta_loop(rc, aw, bw, 16, types) {
-                            (1, _, _) => {  1 } ,
-                            (_, fa, fb) => {  slow2_after_delta(rc, orig_a, orig_b,
-                                                     fa, fb, types) } ,
-                          } } ,
-                          } } ,
-                      } } ,
+                  match try_eta_struct(rc, bw, aw, types) {
+                    1 => {  (1, 1) } ,
+                    _ => {  try_def_eq_nat(rc, aw, bw, types) } ,
                   } } ,
               } } ,
-          }
+          } } ,
+      }
     }
 ⟧
 
@@ -389,15 +387,8 @@ def try_same_proj_head_app := aiur_fn⟦
           0 => {  match (*(ah)) {
             KernelTypes::KExprNode::Proj(sa, ia, ea) => {  match (*(bh)) {
               KernelTypes::KExprNode::Proj(sb, ib, eb) => {
-                match Bytes::address_eq(sa, sb) {
-                  1 => {  match ia - ib {
-
-                    0 => {  match k_is_def_eq(rc, ea, eb, types) {
-                      1 => {  de_args(rc, aa, ba, types) } ,
-                      _ => {  0 } ,
-                    } } ,
-                    _ => {  0 } ,
-                  } } ,
+                match de_proj(rc, sa, ia, ea, sb, ib, eb, types) {
+                  1 => {  de_args(rc, aa, ba, types) } ,
                   _ => {  0 } ,
                 } } ,
               _ => {  0 } ,
@@ -544,30 +535,14 @@ def slow2_eager_fallback := aiur_fn⟦
   fn slow2_eager_fallback(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       let aw = KernelWhnf::whnf(rc, a, types);
       let bw = KernelWhnf::whnf(rc, b, types);
-      match try_proof_irrel(rc, aw, bw, types) {
+      match de_rescue_tier(rc, aw, bw, types) {
+        (1, eq) => {  eq } ,
+        _ => {
+          match try_eta_swap(rc, aw, bw, types) {
             1 => {  1 } ,
-            _ => {
-              match try_unit_like(rc, aw, bw, types) {
-                1 => {  1 } ,
-                _ => {
-                  match try_eta_struct(rc, aw, bw, types) {
-                    1 => {  1 } ,
-                    _ => {
-                      match try_eta_struct(rc, bw, aw, types) {
-                        1 => {  1 } ,
-                        _ => {
-                          match try_def_eq_nat(rc, aw, bw, types) {
-                            (1, eq) => {  eq } ,
-                            _ => {
-                              match try_eta_swap(rc, aw, bw, types) {
-                                1 => {  1 } ,
-                                _ => {  k_is_def_eq_struct(rc, aw, bw, types) } ,
-                              } } ,
-                          } } ,
-                      } } ,
-                  } } ,
-              } } ,
-          }
+            _ => {  k_is_def_eq_struct(rc, aw, bw, types) } ,
+          } } ,
+      }
     }
 ⟧
 
@@ -697,7 +672,7 @@ def is_unit_like_type := aiur_fn⟦
                           match cci {
                             KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, nfields, _) => {
                               match nfields {
-                                0 => {  1 } ,
+                                0 => {  1 - KernelWhnf::struct_is_rec(addr) } ,
                                 _ => {  0 } ,
                               } } ,
                             _ => {  0 } ,
@@ -802,24 +777,12 @@ def k_is_def_eq_struct_go := aiur_fn⟦
           } } ,
         KernelTypes::KExprNode::Lam(ta, ba) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Lam(tb, bb) => {
-              match k_is_def_eq(rc, ta, tb, types) {
-                0 => {  0 } ,
-                _ => {
-                  let types2 = (&(Lists::Node::Cons(ta, types)));
-                  k_is_def_eq(rc, ba, bb, types2) } ,
-              } } ,
+            KernelTypes::KExprNode::Lam(tb, bb) => {  de_binder(rc, ta, ba, tb, bb, types) } ,
             _ => {  try_eta_expand(rc, ta, ba, b, types) } ,
           } } ,
         KernelTypes::KExprNode::Forall(ta, ba) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Forall(tb, bb) => {
-              match k_is_def_eq(rc, ta, tb, types) {
-                0 => {  0 } ,
-                _ => {
-                  let types2 = (&(Lists::Node::Cons(ta, types)));
-                  k_is_def_eq(rc, ba, bb, types2) } ,
-              } } ,
+            KernelTypes::KExprNode::Forall(tb, bb) => {  de_binder(rc, ta, ba, tb, bb, types) } ,
             _ => {  0 } ,
           } } ,
         KernelTypes::KExprNode::Let(_, _, _) => {
@@ -842,17 +805,38 @@ def k_is_def_eq_struct_go := aiur_fn⟦
         KernelTypes::KExprNode::Proj(struct_a, fidx_a, ea) => {
           match (*(b)) {
             KernelTypes::KExprNode::Proj(struct_b, fidx_b, eb) => {
-
-              match Bytes::address_eq(struct_a, struct_b) {
-                1 => {
-                  match fidx_a - fidx_b {
-                    0 => {  k_is_def_eq(rc, ea, eb, types) } ,
-                    _ => {  0 } ,
-                  } } ,
-                _ => {  0 } ,
-              } } ,
+              de_proj(rc, struct_a, fidx_a, ea, struct_b, fidx_b, eb, types) } ,
             _ => {  0 } ,
           } } ,
+      }
+    }
+⟧
+
+  -- The congruence steps, shared by the tiers. `de_binder`: DefEq.lam / DefEq.forallE
+  -- (by symmetry: both bodies open under the left domain). `de_proj`: DefEq.proj.
+
+def de_binder := aiur_fn⟦
+  fn de_binder(rc: KernelRoles::RoleCtx, ty_a: KernelTypes::KExpr, body_a: KernelTypes::KExpr,
+               ty_b: KernelTypes::KExpr, body_b: KernelTypes::KExpr,
+               types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match k_is_def_eq(rc, ty_a, ty_b, types) {
+        1 => {  k_is_def_eq(rc, body_a, body_b, (&(Lists::Node::Cons(ty_a, types)))) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def de_proj := aiur_fn⟦
+  fn de_proj(rc: KernelRoles::RoleCtx, struct_a: Bytes::AddressRef, fidx_a: Field, ea: KernelTypes::KExpr,
+             struct_b: Bytes::AddressRef, fidx_b: Field, eb: KernelTypes::KExpr,
+             types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match Bytes::address_eq(struct_a, struct_b) {
+        1 => {
+          match fidx_a - fidx_b {
+            0 => {  k_is_def_eq(rc, ea, eb, types) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
       }
     }
 ⟧
@@ -1083,15 +1067,9 @@ def delta_unfold := aiur_fn⟦
         (head, spine) => {
           match (*(head)) {
             KernelTypes::KExprNode::Const(addr, lvls) => {
-              let ci = (*(Ingress::get_ci(addr)));
-              match ci {
-                KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {
-                  let body = KernelLevels::expr_inst_levels(value, lvls);
-                  (1, KernelWhnf::apply_spine(body, spine)) } ,
-                KernelTypes::KConstantInfo::Thm(_, _, value) => {
-                  let body = KernelLevels::expr_inst_levels(value, lvls);
-                  (1, KernelWhnf::apply_spine(body, spine)) } ,
-                _ => {  (0, e) } ,
+              match KernelWhnf::red_unfold((*(Ingress::get_ci(addr))), lvls) {
+                (0, _) => {  (0, e) } ,
+                (_, body) => {  (1, KernelWhnf::apply_spine(body, spine)) } ,
               } } ,
             _ => {  (0, e) } ,
           } } ,
