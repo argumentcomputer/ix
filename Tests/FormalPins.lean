@@ -14,8 +14,9 @@ open Ix.Cli Ix.Cli.FormalAiur
 
 def run (root : String) : IO Unit := do
   let registry ← Ix.FormalProver.Registry.new
-  let #[ixvmSelected, aggrSelected] ← compiledPrograms registry
-      #[ixvmProgram, aggregationProgram] (checkExecutors := false)
+  -- The packages `IX_AIUR_ARTIFACT` and `IX_AGGR_ARTIFACT` name, or the
+  -- checkout's cached ones.
+  let #[ixvmSelected, aggrSelected] ← selectAll default registry #[.ixvm, .aggregation]
     | throw (IO.userError "expected the IxVM and aggregation programs")
   let ixvmSystem ← ixvmSelected.system
   let aggrSystem ← aggrSelected.system
