@@ -485,18 +485,95 @@ aggregating their members' check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
+/-! ## Seeds that use an inert axiom
+
+An inert axiom (`Ix.Kernel.Role.inert`: `sorryAx` and Lean's compiler-trust
+axioms) installs nothing and may have no model, so no typing claim certifies
+one: IxVM refuses a seed its binding binds to an inert role
+(`KernelClaim::assert_claimable`), and refuses any constant whose walk meets a
+use of one (`KernelRoles::assert_ref_allowed`). The claim builders therefore
+leave out every constant that uses an inert axiom, the axioms themselves
+included, as they leave out the constants outside Lean's logic. A constant
+left in uses none, and so references none of those left out: an owned set
+stays closed under the claim walk. -/
+
+/-- The addresses `env`'s role binding binds to an inert role, under the default
+    table when `env` carries no binding (as `withDefaultRoleBinding` binds it); none
+    when the binding does not decode. -/
+def inertRoleAddrs (env : Ixon.Env) : Std.HashSet Address :=
+  let bytes := match env.roleBinding with
+    | some b => some b.bytes
+    | none => Ix.Kernel.Reader.defaultTableBytes.toOption
+  match bytes.bind Ix.Kernel.RoleTable.ofBytes with
+  | none => {}
+  | some t => t.bound.foldl (fun s (r, a) => if r.inert then s.insert a else s) {}
+
+/-- The walk edges of the record `c`: the references it uses as constants
+    (`constIdxsOf`) and, for a projection, its block. These are the edges the
+    claim walk follows (`KernelClaim::walk_refs_transitive`; `walk_edges` in
+    `crates/ixon/src/shard_claim.rs`). -/
+def walkEdges (c : Ixon.Constant) : Array Address := Id.run do
+  let used := constIdxsOf c
+  let mut out : Array Address := #[]
+  for (r, i) in c.refs.zipIdx do
+    if used.contains i.toUInt64 then out := out.push r
+  match c.info with
+  | .iPrj p | .cPrj p => out := out.push p.block
+  | .rPrj p | .dPrj p => out := out.push p.block
+  | _ => pure ()
+  return out
+
+/-- **The constants of `env` that use an inert axiom**: the axioms its binding
+    binds to inert roles, and every constant whose walk edges reach one,
+    transitively. Empty, without a pass over `env`, when it stores none of the
+    inert axioms. -/
+def inertUsers (env : Ixon.Env) : Std.HashSet Address := Id.run do
+  let roots := (inertRoleAddrs env).toArray.filter env.consts.contains
+  if roots.isEmpty then return {}
+  let mut users : Std.HashMap Address (Array Address) := {}
+  for (a, lc) in env.consts do
+    let some c := lc.get? | continue
+    for e in walkEdges c do
+      users := if users.contains e then users.modify e (·.push a) else users.insert e #[a]
+  let mut seen : Std.HashSet Address := roots.foldl (·.insert ·) {}
+  let mut stack := roots
+  repeat
+    match stack.back? with
+    | none => break
+    | some a =>
+      stack := stack.pop
+      for u in users.getD a #[] do
+        unless seen.contains u do
+          seen := seen.insert u
+          stack := stack.push u
+  return seen
+
+/-- `addrs` without the seeds no typing claim may name, in order: those outside
+    Lean's logic (`Ixon.Env.dropOutsideLogic`) and those that use an inert axiom
+    (`inertUsers`). -/
+def dropUnclaimable (env : Ixon.Env) (addrs : Array Address) : Array Address :=
+  let inert := inertUsers env
+  (env.dropOutsideLogic addrs).filter (!inert.contains ·)
+
+/-- The constants of `env` a typing claim may name, in `env.consts` order: those
+    in Lean's logic (`Ixon.Env.inLogicConsts`) that use no inert axiom. -/
+def claimableConsts (env : Ixon.Env) : Array Address :=
+  let inert := inertUsers env
+  env.inLogicConsts.filter (!inert.contains ·)
+
 /-- The owned constants a shard claim may name: `owned` without those outside
     Lean's logic (unsafe or partial, or projected from such a block;
-    `Ixon.Env.outsideLogicAt`), which IxVM refuses as seeds
-    (`KernelClaim::assert_claimable`). The rest stays closed under the claim
-    walk: a safe constant references no unsafe one (`KernelCheck::assert_safety`),
-    so no walk from it reaches what is left out. -/
+    `Ixon.Env.outsideLogicAt`) and those that use an inert axiom (`inertUsers`),
+    which IxVM refuses as seeds or on their walks. The rest stays closed under
+    the claim walk: a safe constant references no unsafe one
+    (`KernelCheck::assert_safety`), and a constant that uses no inert axiom
+    references none that does, so no walk from it reaches what is left out. -/
 def claimableOwned (env : Ixon.Env) (owned : Array Address) : Except String (Array Address) := do
   if owned.isEmpty then throw "shardCheckEnvClaim: empty owned set"
-  let kept := env.dropOutsideLogic owned
+  let kept := dropUnclaimable env owned
   if kept.isEmpty then
     throw s!"shardCheckEnvClaim: all {owned.size} owned constant(s) are unsafe or partial, \
-      outside Lean's logic; IxVM certifies none of them"
+      outside Lean's logic, or use an inert axiom; IxVM certifies none of them"
   pure kept
 
 /-- The shard claim over `owned`, already `claimableOwned`, under the bound
@@ -581,12 +658,12 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
   return (claim, { funcName := `verify_claim
                    input := digestKey, inputIOBuffer := ioBuffer })
 
-/-- Canonical merkle tree over every const address in `env` in Lean's logic
-    (`Ixon.Env.inLogicConsts`): the owned tree of a `checkEnv` claim on the
-    whole of `env`, which leaves out the unsafe and partial constants IxVM
-    refuses as seeds. -/
+/-- Canonical merkle tree over every const address of `env` a claim may name
+    (`claimableConsts`): the owned tree of a `checkEnv` claim on the whole of
+    `env`, which leaves out the unsafe and partial constants and those that use
+    an inert axiom, which IxVM refuses. -/
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
-  Ix.AssumptionTree.canonical env.inLogicConsts
+  Ix.AssumptionTree.canonical (claimableConsts env)
 
 /-- Subject-only `verify_const` witness. -/
 def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWitness := do

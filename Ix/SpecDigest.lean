@@ -98,8 +98,9 @@ def encodingVersion : Nat := 2
 /-- **The inert axioms** (`Role.inert`): `sorryAx` and Lean's compiler-trust
 axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`),
 tolerated as declarations and never usable. IxVM validates each against its
-type (`validate_inert_axiom`) and refuses every constant that uses one
-(`KernelRoles::assert_ref_allowed`). IxC's checker installs nothing for
+type (`validate_inert_axiom`), refuses every constant that uses one
+(`KernelRoles::assert_ref_allowed`) and refuses each as a claim's seed
+(`KernelClaim::assert_claimable`). IxC's checker installs nothing for
 `sorryAx` and declines any use of it; it declines the compiler-trust axioms'
 declarations themselves. -/
 def inert (r : Role) : Bool := r.inert

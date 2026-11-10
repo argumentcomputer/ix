@@ -32,7 +32,7 @@
 //!   full dependency closure of `owned` — see `Env::bfs_closure` — even
 //!   though only the strict-membership set gets checked.
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::constant::{
   Constant, ConstantInfo, DefKind, Definition, Inductive, MutConst, Recursor,
@@ -221,20 +221,79 @@ pub fn outside_logic_at(env: &Env, addr: &Address) -> bool {
   env.get_const(block).is_some_and(|b| record_outside_logic(&b))
 }
 
+/// The constants of `env` that use an inert axiom: the axioms its role binding
+/// binds to inert roles ([`crate::role_table::Role::is_inert`]: `sorryAx` and
+/// Lean's compiler-trust axioms), and every constant whose walk edges
+/// ([`walk_edges`]) reach one, transitively. IxVM refuses each as a claim
+/// seed: an inert axiom itself (`KernelClaim::assert_claimable`), any other
+/// because its walk meets a use (`KernelRoles::assert_ref_allowed`). Empty
+/// when `env` carries no binding, one that does not decode, or none of the
+/// inert axioms.
+///
+/// Mirror of `IxVM.ClaimHarness.inertUsers` (`Ix/IxVM/ClaimHarness.lean`),
+/// which reads the default table when `env` carries no binding.
+pub fn inert_users(env: &Env) -> FxHashSet<Address> {
+  let Some(binding) = &env.role_binding else {
+    return FxHashSet::default();
+  };
+  let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
+  else {
+    return FxHashSet::default();
+  };
+  let roots: Vec<Address> = table
+    .bound
+    .iter()
+    .filter(|(r, a)| r.is_inert() && env.consts.get(a).is_some())
+    .map(|(_, a)| a.clone())
+    .collect();
+  if roots.is_empty() {
+    return FxHashSet::default();
+  }
+  let mut users: FxHashMap<Address, Vec<Address>> = FxHashMap::default();
+  for entry in &env.consts {
+    let a = entry.key().clone();
+    let Ok(c) = entry.value().get() else {
+      continue;
+    };
+    let mut edges = Vec::new();
+    walk_edges(&c, &mut edges);
+    for e in edges {
+      users.entry(e).or_default().push(a.clone());
+    }
+  }
+  let mut seen: FxHashSet<Address> = roots.iter().cloned().collect();
+  let mut stack = roots;
+  while let Some(a) = stack.pop() {
+    if let Some(us) = users.get(&a) {
+      for u in us {
+        if seen.insert(u.clone()) {
+          stack.push(u.clone());
+        }
+      }
+    }
+  }
+  seen
+}
+
 /// Build the shard `CheckEnv` claim under `ctx`: root over the (sorted) owned
 /// set, assumptions over the thin frontier. Returns the claim plus the
 /// frontier leaves (the caller ships the asm tree it commits to).
-/// The owned constants outside Lean's logic ([`outside_logic_at`]) are left
-/// out, as the Lean builder (`IxVM.ClaimHarness.claimableOwned`) leaves them:
-/// IxVM refuses them as seeds, and no constant in Lean's logic references
-/// one, so the rest stays walk-closed. `None` when no owned constant is left.
+/// The owned constants outside Lean's logic ([`outside_logic_at`]) and those
+/// that use an inert axiom ([`inert_users`]) are left out, as the Lean builder
+/// (`IxVM.ClaimHarness.claimableOwned`) leaves them: IxVM refuses them, and no
+/// constant left in references one, so the rest stays walk-closed. `None` when
+/// no owned constant is left.
 pub fn shard_check_env_claim(
   ctx: &ClaimContext,
   env: &Env,
   owned: &[Address],
 ) -> Option<(Claim, Vec<Address>)> {
-  let owned: Vec<Address> =
-    owned.iter().filter(|a| !outside_logic_at(env, a)).cloned().collect();
+  let inert = inert_users(env);
+  let owned: Vec<Address> = owned
+    .iter()
+    .filter(|a| !outside_logic_at(env, a) && !inert.contains(*a))
+    .cloned()
+    .collect();
   let mut owned_sorted: Vec<Address> = owned.clone();
   owned_sorted.sort_unstable();
   let root = merkle_root_canonical(&owned_sorted)?;
@@ -529,6 +588,47 @@ mod tests {
     assert_eq!(f1, f2);
     assert_eq!(f1, vec![b]);
     assert!(shard_check_env_claim(&ctx, &env, &[ax, block, proj]).is_none());
+  }
+
+  /// The constants that use an inert axiom (the axiom the binding binds to
+  /// `sorryAx`, and `u`, which references it) are left out of the owned tree;
+  /// a set of only those has no claim.
+  #[test]
+  fn claim_leaves_out_inert_axiom_users() {
+    use crate::env::RoleBinding;
+    use crate::role_table::{Role, RoleTable};
+    let (mut env, a, b, _, _) = chain_env();
+    let ax = Address::hash(b"sorry-axiom");
+    env.store_const(ax.clone(), const_with_refs(vec![]));
+    let u = Address::hash(b"uses-sorry");
+    env.store_const(u.clone(), const_with_refs(vec![ax.clone()]));
+    let bytes = RoleTable {
+      version: 5,
+      bound: vec![(Role::SorryAx, ax.clone())],
+      evidence: vec![],
+    }
+    .to_bytes()
+    .unwrap();
+    env.role_binding =
+      Some(RoleBinding { address: Address::hash(&bytes), bytes: bytes.into() });
+    let inert = inert_users(&env);
+    assert!(inert.contains(&ax) && inert.contains(&u));
+    assert!(!inert.contains(&a) && !inert.contains(&b));
+    let ctx = ClaimContext {
+      spec: crate::proof::spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+      binding_assumed: false,
+      literal_class: false,
+    };
+    let (with_inert, f1) =
+      shard_check_env_claim(&ctx, &env, &[a.clone(), ax.clone(), u.clone()])
+        .unwrap();
+    let (without, f2) =
+      shard_check_env_claim(&ctx, &env, std::slice::from_ref(&a)).unwrap();
+    assert_eq!(with_inert, without);
+    assert_eq!(f1, f2);
+    assert!(shard_check_env_claim(&ctx, &env, &[ax, u]).is_none());
   }
 
   #[test]

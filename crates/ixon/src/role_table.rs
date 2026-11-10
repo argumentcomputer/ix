@@ -19,6 +19,12 @@ macro_rules! roles {
     impl Role {
       pub const ALL: [Self; 108] = [$(Self::$role),+];
       pub const fn index(self) -> u8 { self as u8 }
+      /// The inert axiom roles: `sorryAx` and Lean's compiler-trust axioms. A
+      /// binding names each, no claim certifies one, and no accepted constant
+      /// uses one. Mirror of IxC's `Role.inert`.
+      pub const fn is_inert(self) -> bool {
+        matches!(self, Self::SorryAx | Self::TrustCompiler | Self::OfReduceBool | Self::OfReduceNat)
+      }
       pub fn from_index(index: u8) -> Option<Self> {
         Self::ALL.get(usize::from(index)).copied()
       }

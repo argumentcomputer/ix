@@ -279,6 +279,22 @@ def role_index_of := aiur_fn⟦
     }
 ⟧
 
+def role_is_inert := aiur_fn⟦
+  fn role_is_inert(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
+      -- 1 when the binding binds `a` to an inert role (specification kind 4: `sorryAx` and
+      -- Lean's compiler-trust axioms), 0 otherwise.
+      let r1 = role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {
+          match KernelRoleSpec::role_spec_kind(r1 - 1) - 4 {
+            0 => {  1 } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
 def role_is := aiur_fn⟦
   fn role_is(rc: RoleCtx, a: Bytes::AddressRef, r: Field) -> Field {
       match role_index_of(rc, a) - (r + 1) {

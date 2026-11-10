@@ -67,10 +67,10 @@ over one is certified against the bound constants themselves.
 **The compiler-trust axioms.** `Lean.trustCompiler`, `Lean.ofReduceBool` and
 `Lean.ofReduceNat` are inert roles (`Role.inert`), so that a role
 binding names them and a claim over Lean's `Init` lists no user axiom for
-them. Native evaluation is outside the certified theory: IxVM tolerates their
-declarations, as it tolerates `sorryAx`'s, and refuses every constant that
-uses one. This checker is stricter: it declines their declarations as
-non-standard axioms, so it accepts nothing that declares or uses one. In
+them. Native evaluation is outside the certified theory: IxVM, as for
+`sorryAx`, refuses every constant that uses one and refuses each as a claim's
+seed, so none enters an environment a claim certifies. This checker declines
+their declarations as non-standard axioms. In
 Lean's `Init`, `Lean.reduceBool` and `Lean.reduceNat` use
 `Lean.trustCompiler`, so neither checker accepts them, nor the two axioms
 whose types mention them.
@@ -1115,8 +1115,9 @@ def Role.usedImplicitly : Role → Bool
 (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`). A binding
 names each, so a stream may declare it, but it installs nothing and no
 accepted constant uses it. This checker tolerates `sorryAx`'s declaration and
-declines the others' (non-standard axioms); IxVM tolerates all four
-declarations and refuses every use (`KernelRoles::axiom_standing`). The
+declines the others' (non-standard axioms); IxVM refuses each as a claim's
+seed (`KernelClaim::assert_claimable`) and refuses every use
+(`KernelRoles::axiom_standing`). The
 specification digest commits to this flag (`Ix.SpecDigest.inert`). -/
 def Role.inert : Role → Bool
   | .sorryAx | .trustCompiler | .ofReduceBool | .ofReduceNat => Bool.true
