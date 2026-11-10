@@ -1,9 +1,12 @@
 import IxVMRefinement.Core.Whnf
 import IxVMRefinement.Obs.KernelDefEq
+import IxVMRefinement.Core.StructEq
 
 /-! # The step lemmas of the `is_def_eq` fast path
 
-`k_is_def_eq` at closed terms, through `k_is_def_eq_core` and
+`k_is_def_eq` at closed terms: a `1` from its structural-identity
+precheck `kexpr_struct_eq` is `DefEq.refl` (`IxVMRefinement.Core.StructEq`);
+otherwise through `k_is_def_eq_core` and
 `k_is_def_eq_ordered` to `try_def_eq_app` (same-head spine congruence) and
 `de_args` (pairwise, calling back into `k_is_def_eq`): a nonzero answer is
 `DefEq`. The slow tiers and the lowering rebase are not taken in the fragment
@@ -25,29 +28,10 @@ set_option linter.unreachableTactic false
 
 /-! ## Helpers -/
 
-theorem RepK.bvar_of_load {h : Heap F} {t : IxVMKExpr F} {p x : SourceValue F}
-    (rep : RepK h t p) (hl : loadValue h p = .ok (.construct kexprEnum "BVar" [x])) :
-    ∃ i, t = .bvar i ∧ x = .field i := by
-  cases rep with
-  | bvar cell =>
-    rw [loadValue_enum_cell cell] at hl
-    injection hl with hv; injection hv with _ _ hargs; injection hargs with hx _
-    exact ⟨_, rfl, hx.symm⟩
-  | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ | forallE cell _ _
-  | letE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
-    rw [loadValue_enum_cell cell] at hl
-    injection hl with hv; injection hv with _ hc _
-    exact absurd hc (by decide)
-
 theorem Tr.bvar_det {κ : Bytes.Address → Ix.Kernel.Key .anon} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {i : F} {E₁ E₂ : KExpr}
     (h₁ : Tr κ d Γ k (.bvar i) E₁) (h₂ : Tr κ d Γ k (.bvar i) E₂) : E₁ = E₂ := by
   cases h₁ <;> cases h₂ <;> first | rfl | omega
-
-theorem evalBinOp_sub_inv {x y r : SourceValue F} (h : evalBinOp .sub x y = .ok r) :
-    ∃ a b, x = .field a ∧ y = .field b ∧ r = .field (a - b) := by
-  cases x <;> cases y <;> simp [evalBinOp] at h
-  exact ⟨_, _, rfl, rfl, h.symm⟩
 
 /-- A call to a function the fragment does not call. -/
 theorem outside_absurd {c : Ctx} {calls : List (Call F)} (good : Good c calls) {n : String}
@@ -200,23 +184,34 @@ theorem defEqCore_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   exact (ih _ _ _ _ _ _ (by lenlt) ev1).defEqOrdered rfl _ _ _ _ rfl
     (good.sub (by memsub) (by lenlt)) hr d Γ A B hA hB
 
-theorem defEq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem defEq_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" args h r h' calls) (ih : IH c calls) :
     DefEqSpec c args h r calls := by
-  intro rc a b types hargs good hr d Γ A B hA hB
+  intro rc a b types hargs good hr d Γ A B hA' hB'
   subst hargs
-  rcases Obs.«KernelDefEq::k_is_def_eq».obs ev with
-    ⟨m2, cs12, v15, v16, m18, cs26, m38, cs46, cs74, m103, ev28, ev48, ev14, rfl, ev76, rfl⟩ |
-    ⟨v1, m2, cs12, v15, v16, m18, cs26, m38, cs46, cs123, ev28, ev48, ev14, -, ev125, rfl⟩
-  · -- `0 => k_is_def_eq_core(rc, a, b, &Nil)`
-    have extb := ev28.heap_extends.trans (ev48.heap_extends.trans ev14.heap_extends)
-    exact (ih _ _ _ _ _ _ (by lenlt) ev76).defEqCore rfl _ _ _ _ rfl
+  cases Obs.«KernelDefEq::k_is_def_eq».obs ev with
+  | n1 m2 cs13 ev15 _ _ _ =>
+    -- `kexpr_struct_eq(a, b) = 1 => 1`: structurally identical sides
+    obtain ⟨ta, rta, tta⟩ := hA'
+    obtain ⟨tb, rtb, ttb⟩ := hB'
+    obtain rfl := structEq_sound c hA _ (Nat.lt_succ_self _) ev15 ta tb rta rtb d Γ 0 A B tta ttb
+    exact .refl
+  | other_n0 v1 m2 cs13 m44 cs54 v57 v58 m60 cs68 m80 cs88 cs116 m145 ev15 _ ev70 ev90 ev56
+      hm ev118 hc =>
+    -- `lbr_max = 0 => k_is_def_eq_core(rc, a, b, &Nil)`
+    subst hc hm
+    have extb := ev15.heap_extends.trans
+      (ev70.heap_extends.trans (ev90.heap_extends.trans ev56.heap_extends))
+    exact (ih _ _ _ _ _ _ (by lenlt) ev118).defEqCore rfl _ _ _ _ rfl
       (good.sub (by memsub) (by lenlt)) hr d Γ A B
-      (RepEk.mono (extb.trans (Heap.Extends.snoc _ _)) hA)
-      (RepEk.mono (extb.trans (Heap.Extends.snoc _ _)) hB)
-  · -- `_ => k_def_eq_rebase(…)`: not taken in the fragment
-    exact (outside_absurd (n := "KernelDefEq::k_def_eq_rebase") (args := [rc, a, b, types, v1])
-      (heap := m2) good (by simp) (by simp [nativeNames])).elim
+      (RepEk.mono (extb.trans (Heap.Extends.snoc _ _)) hA')
+      (RepEk.mono (extb.trans (Heap.Extends.snoc _ _)) hB')
+  | other_other v1 m2 cs13 v43 m44 cs54 v57 v58 m60 cs68 m80 cs88 cs165 ev15 _ ev70 ev90 ev56
+      _ ev167 hc =>
+    -- `_ => k_def_eq_rebase(…)`: not taken in the fragment
+    subst hc
+    exact (outside_absurd (n := "KernelDefEq::k_def_eq_rebase")
+      (args := [rc, a, b, types, v43]) (heap := m44) good (by simp) (by simp [nativeNames])).elim
 
 end IxVM.Refinement.Core

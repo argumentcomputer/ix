@@ -45,7 +45,7 @@ theorem core_sound (c : Ctx) (hA : Assumed c) :
     peel := fun hn => by subst hn; exact peel_step c ev ih
     collect := fun hn => by subst hn; exact collect_step c hA ev ih
     instLevels := fun hn => by subst hn; exact instLevels_step ev
-    defEq := fun hn => by subst hn; exact defEq_step c ev ih
+    defEq := fun hn => by subst hn; exact defEq_step c hA ev ih
     defEqCore := fun hn => by subst hn; exact defEqCore_step c ev ih
     defEqOrdered := fun hn => by subst hn; exact defEqOrdered_step c ev ih
     tryApp := fun hn => by subst hn; exact tryApp_step c hA ev ih
@@ -154,4 +154,4 @@ end IxVM.Refinement.Core
 
 #guard_module_axioms IxVMRefinement.Core.Obs IxVMRefinement.Core.Rep
   IxVMRefinement.Core.Specs IxVMRefinement.Core.Bound IxVMRefinement.Core.Whnf
-  IxVMRefinement.Core.DefEq
+  IxVMRefinement.Core.StructEq IxVMRefinement.Core.DefEq
