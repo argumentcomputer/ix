@@ -228,6 +228,23 @@ def declLine : Ix.Kernel.Declaration .source → String
 def modelled : List String := ["Option", "List", "IxVMInd.Even", "IxVMInd.Tree", "Lean.Syntax",
   "Lean.Meta.Grind.Arith.Linear.RingIneqCnstr"]
 
+/-- The Source-mode declarations of the block of `seed` (the modeller's
+generated records followed by the block's own `indDecl`), from the ingress of
+its closure: the block's `InductiveVal`, the closure's size, the number of
+declarations, and the block's. -/
+def blockDecls (env : Lean.Environment) (seed : Lean.Name) :
+    IO (Lean.InductiveVal × Nat × Nat × Array (Ix.Kernel.Declaration .source)) := do
+  let some (.inductInfo v) := env.find? seed | throw (IO.userError s!"{seed} is not an inductive")
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure env (v.all.toArray.push seed))
+  let ienv := Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 8
+  let blocks := Tests.Ix.Kernel.SourceIngressStep.condense ienv true
+  let decls ← match Ix.LeanIngress.leanIngress ienv blocks with
+    | .ok ds => pure ds
+    | .error e => throw (IO.userError s!"ingress: {e}")
+  let ours := decls.filter fun d => d.names.any fun k =>
+    v.all.contains (Ix.RoleEvidence.toLeanName k.base)
+  return (v, closed.length, decls.size, ours)
+
 def census (env : Lean.Environment) : IO UInt32 := do
   let mut counts : Std.HashMap (String × String) Nat := {}
   let mut lines : Array String := #[]
@@ -249,25 +266,124 @@ def census (env : Lean.Environment) : IO UInt32 := do
   -- the modeller's records for the chosen blocks, through the Source-mode ingress
   let mut failed := 0
   for t in modelled do
-    let seed := nameOfString t
     try
-      let some (.inductInfo v) := env.find? seed | throw (IO.userError s!"{t} is not an inductive")
-      let seeds := v.all.toArray.push seed
-      let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure env seeds)
-      let ienv := Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 8
-      let blocks := Tests.Ix.Kernel.SourceIngressStep.condense ienv true
-      let decls ← match Ix.LeanIngress.leanIngress ienv blocks with
-        | .ok ds => pure ds
-        | .error e => throw (IO.userError s!"ingress: {e}")
-      let members := v.all.map toString
-      let ours := decls.filter fun d => d.names.any fun k =>
-        members.contains (toString k.base.toName)
-      IO.println s!"MODEL {t}: {closed.length} constants in the closure, {decls.size} declarations, \
-        {ours.size} for the block"
+      let (v, closure, total, ours) ← blockDecls env (nameOfString t)
+      IO.println s!"MODEL {t}: {closure} constants in the closure, {total} declarations, \
+        {ours.size} for the block ({v.all.length} types)"
       for d in ours do IO.println s!"MODEL {t}: {declLine d}"
     catch e =>
       failed := failed + 1
       IO.eprintln s!"[ixvm-s4-census] {t}: {e}"
   return if failed == 0 then 0 else 1
+
+/-! ## Candidate (a), prototyped: IxVM checks the modeller's records
+
+The records the in-process modeller generates for a block (Source mode, keys
+are Lean names) are converted to Lean declarations, added through Lean's
+kernel (`Environment.addDeclCore`, which also generates the tag's and the
+auxiliary family's recursors), compiled to Ixon by the certified compiler,
+and checked by the deployed IxVM program as one shard that owns them all,
+with everything else assumed. That is the "certification tax" candidate (a)
+pays per block; the modeled install's own pins (`Inductives/Modeled.lean`)
+are not part of it. -/
+
+/-- A Source-mode level parameter's Lean name. -/
+def lpName (i : Nat) : Lean.Name := .mkSimple s!"u_{i}"
+
+def convLevel : Ix.Kernel.Level → Lean.Level
+  | .zero => .zero
+  | .succ u => .succ (convLevel u)
+  | .max u v => .max (convLevel u) (convLevel v)
+  | .imax u v => .imax (convLevel u) (convLevel v)
+  | .param i => .param (lpName i)
+
+partial def convExpr : Ix.Kernel.Expr .source → Except String Lean.Expr
+  | .bvar i => pure (.bvar i)
+  | .fvar .. => throw "free variable in a generated record"
+  | .sort u => pure (.sort (convLevel u))
+  | .const k us => pure (.const (Ix.RoleEvidence.toLeanName k) (us.map convLevel))
+  | .app f a => return .app (← convExpr f) (← convExpr a)
+  | .lam t b _ => return .lam `x (← convExpr t) (← convExpr b) .default
+  | .forallE t b _ => return .forallE `x (← convExpr t) (← convExpr b) .default
+  | .letE t v b _ => return .letE `x (← convExpr t) (← convExpr v) (← convExpr b) false
+  | .lit (.natVal n) => pure (.lit (.natVal n))
+  | .lit (.strVal s) => pure (.lit (.strVal s))
+  | .proj s i e => return .proj (Ix.RoleEvidence.toLeanName s) i (← convExpr e)
+
+def convHint : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
+  | .opaque => .opaque
+  | .abbrev => .abbrev
+  | .regular h => .regular h.toUInt32
+
+/-- A generated record as a Lean declaration. An inductive record is given to
+Lean as its types and constructors; Lean's kernel generates its recursor. -/
+def convDecl : Ix.Kernel.Declaration .source → Except String Lean.Declaration
+  | .defnDecl cv v h => do
+    let name := Ix.RoleEvidence.toLeanName cv.name
+    return .defnDecl { name, levelParams := cv.levelParams.map lpName, type := ← convExpr cv.type,
+      value := ← convExpr v, hints := convHint h, safety := .safe, all := [name] }
+  | .thmDecl cv v => do
+    let name := Ix.RoleEvidence.toLeanName cv.name
+    return .thmDecl { name, levelParams := cv.levelParams.map lpName, type := ← convExpr cv.type,
+      value := ← convExpr v, all := [name] }
+  | .indDecl block nP => do
+    let tys := block.filterMap fun ci => match ci with | .indInfo cv _ => some cv | _ => none
+    let ctors := block.filterMap fun ci => match ci with | .ctorInfo cv _ _ => some cv | _ => none
+    let [ty] := tys | throw s!"generated block with {tys.length} types"
+    let ctors ← ctors.mapM fun c => do
+      return ({ name := Ix.RoleEvidence.toLeanName c.name, type := ← convExpr c.type } : Lean.Constructor)
+    return .inductDecl (ty.levelParams.map lpName) nP
+      [{ name := Ix.RoleEvidence.toLeanName ty.name, type := ← convExpr ty.type, ctors }] false
+  | _ => throw "unexpected generated record kind"
+
+def isAuxKey : Ix.Kernel.Key .source → Bool
+  | .aux .. => true
+  | _ => false
+
+/-- The Lean names a converted declaration adds, recursors included. -/
+def addedNames : Lean.Declaration → List Lean.Name
+  | .defnDecl v => [v.name]
+  | .thmDecl v => [v.name]
+  | .inductDecl _ _ tys _ => tys.flatMap fun t => t.name :: (t.name ++ `rec) :: t.ctors.map (·.name)
+  | _ => []
+
+def modelTargets : List String := ["IxVMInd.Even", "Lean.Meta.Grind.Arith.Linear.RingIneqCnstr",
+  "IxVMInd.Tree", "Lean.Syntax"]
+
+def modelProbe (env : Lean.Environment) : IO UInt32 := do
+  let mut lenv := env
+  let mut groups : Array (String × List Lean.Name) := #[]
+  let mut failed := 0
+  for t in modelTargets do
+    try
+      let (_, _, _, ours) ← blockDecls env (nameOfString t)
+      let gen := ours.filter fun d => d.names.all isAuxKey
+      let mut names : List Lean.Name := []
+      let mut e := lenv
+      for d in gen do
+        let ld ← IO.ofExcept ((convDecl d).mapError fun s => s!"{declLine d}: {s}")
+        match e.addDeclCore 0 4096 ld none with
+        | .ok e' =>
+          e := e'
+          names := names ++ addedNames ld
+        | .error ex =>
+          throw (IO.userError s!"Lean's kernel refused {declLine d}: {← (ex.toMessageData {}).toString}")
+      lenv := e
+      IO.println s!"MODELCHECK {t}: Lean's kernel accepted {gen.size} generated records ({names.length} constants)"
+      groups := groups.push (t, names)
+    catch ex =>
+      failed := failed + 1
+      IO.eprintln s!"[ixvm-s4-model] {t}: {ex}"
+  if groups.isEmpty then return 1
+  let all := groups.toList.flatMap (·.2)
+  let ixonEnv ← loadSharedIxonEnv all.toArray lenv
+  let mut cases : Array (Unit → Except String Case) := #[]
+  for (t, names) in groups do
+    cases := cases.push fun _ => do
+      let owned ← declOwned ixonEnv names
+      let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
+      return { label := s!"s4 model {t} ({owned.size} owned)", accept := true, witness }
+  let rc ← runStats "ixvm-s4-model" cases
+  return if failed == 0 then rc else 1
 
 end Tests.Ix.IxVM.S4Bench

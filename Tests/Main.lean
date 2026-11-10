@@ -226,6 +226,7 @@ def registry : List Entry := [
   -- inductive census and the in-process modeller's records. Not a gate.
   .env "ixvm-s4-bench" (.manual "lane s4 measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
   .env "ixvm-s4-census" (.manual "lane s4 inductive census and modeller records") Tests.Ix.IxVM.S4Bench.census,
+  .env "ixvm-s4-model" (.manual "lane s4 candidate (a) prototype; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.modelProbe,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
