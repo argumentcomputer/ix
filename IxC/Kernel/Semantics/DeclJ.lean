@@ -114,6 +114,28 @@ inductive DivModCertsJ (J : Judgements md) (env : Env md) (c : Key md) (annVal :
       DivModCertsJ J env c annVal srest prest →
       DivModCertsJ J env c annVal ((hyps, eqE) :: srest) (proof :: prest)
 
+/-- One row of `DivModCertsJ`, as a predicate on a statement and its proof: the
+shape of `CertRunFacts` (`Verify/DivModInv.lean`) over a package. -/
+def CertRowJ (J : Judgements md) (env : Env md) (c : Key md) (annVal : Expr md)
+    (st : List (Expr md) × Expr md) (proof : Expr md) : Prop :=
+  divModCertGuard env c annVal st.1 st.2 proof = true ∧
+  ∃ appliedA tp,
+    J.annot env 4 (divModCertApplied
+      (Expr.substConstAll c annVal proof)
+      (st.1.map (Expr.substConst0 c annVal))) appliedA ∧
+    J.infer env 4 appliedA tp ∧
+    J.defeq env 4 tp (Expr.substConst0 c annVal st.2)
+
+/-- The relation's rows, pairwise (the form the model tier destructures). -/
+theorem certRuns_of_divModCertsJ {J : Judgements md} {env : Env md} {c : Key md}
+    {annVal : Expr md} :
+    ∀ {stmts : List (List (Expr md) × Expr md)} {proofs : List (Expr md)},
+      DivModCertsJ J env c annVal stmts proofs →
+      CertRuns (CertRowJ J env c annVal) stmts proofs
+  | _, _, .nil => .nil
+  | _, _, .cons hg hann hinf hde rest =>
+    .cons ⟨hg, _, _, hann, hinf, hde⟩ (certRuns_of_divModCertsJ rest)
+
 /-- `DivModCertRun` over a package. -/
 def DivModCertRunJ (J : Judgements md) (env env₂ : Env md) (c : Key md) (value' : Expr md) :
     Prop :=

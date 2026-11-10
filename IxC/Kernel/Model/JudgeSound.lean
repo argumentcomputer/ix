@@ -39,12 +39,10 @@ universe w
 
 variable {V : Type w} [SetTheory V]
 
-/-- **What the harvests need of a judgement package at a model.** -/
-structure JudgeSound (J : Judgements md) {env : Env md} (m : EnvModel V env) : Prop where
-  /-- an annotation of a closed, bounded term is closed and bounded -/
-  annot_syntax : ∀ {e e' : Expr md}, J.annot env 0 e e' →
-    e.hasFvar = false → e.looseBVarsBounded 0 = true →
-    e'.hasFvar = false ∧ e'.looseBVarsBounded 0 = true
+/-- **What the harvests need of a judgement package at a model**: the scoping of
+its outputs (`JudgeFrames`) and the four model facts. -/
+structure JudgeSound (J : Judgements md) {env : Env md} (m : EnvModel V env) : Prop
+    extends JudgeFrames J env where
   /-- an accepted subject reads -/
   accepted : ∀ (φ : LevelParam → Nat) {d : Nat} {e t : Expr md}, J.infer env d e t →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true → Expr.LeavesBounded e →
@@ -55,24 +53,26 @@ structure JudgeSound (J : Judgements md) {env : Env md} (m : EnvModel V env) : P
   defeq : ∀ φ, DefEqClaimJ J m φ
   /-- an accepted subject's inferred type reads -/
   reads : ∀ φ, InferReadsJ J m φ
-  /-- the inferred type's scoping -/
-  wscoped : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e → Expr.WScoped d t
-  bounded : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e →
-    e.looseBVarsBounded 0 = true → Expr.LeavesBounded e → t.looseBVarsBounded 0 = true
-  leaves : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e →
-    ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves
+
+/-- **The kernel's runs keep scoping** at a well-formed environment. -/
+theorem judgeFrames_runJ {μ : CheckMode} {env : Env md} (hwf : EnvWF env) (F : Nat) :
+    JudgeFrames (runJ μ F) env where
+  annot_syntax := fun hann hf hb => annotate_syntax hann hf hb
+  annot_wscoped := fun hann hw => annotateCore_WScoped F _ hann hw
+  annot_bounded := fun hann hb => annotateCore_looseBVars F _ hann hb
+  annot_leaves := fun hann hw hb => annotateCore_leaves_sub F _ hann hw hb
+  wscoped := fun h hw => inferTypeCore_WScoped hwf F h hw
+  bounded := fun h hw hb hL => inferTypeCore_looseBVars hwf F h hw hb hL
+  leaves := fun h hw => inferTypeCore_fvarLeaves hwf F h hw
 
 /-- **The kernel's instance**: the runs at fuel `F` satisfy the package, at the
 fold's invariant. -/
 theorem judgeSound_runJ {μ : CheckMode} (hμ : μ.verifiedChecks = true) {env : Env md}
     (mp : EnvModelM V μ env) (F : Nat) : JudgeSound (runJ μ F) mp.base2 where
-  annot_syntax := fun hann hf hb => annotate_syntax hann hf hb
+  toJudgeFrames := judgeFrames_runJ mp.base2.wf F
   accepted := fun φ _ _ _ h hws hb hL => acceptedReads_of mp.base2 φ h hws hb hL
   infer := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
   defeq := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
   reads := fun φ => inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
-  wscoped := fun h hw => inferTypeCore_WScoped mp.base2.wf F h hw
-  bounded := fun h hw hb hL => inferTypeCore_looseBVars mp.base2.wf F h hw hb hL
-  leaves := fun h hw => inferTypeCore_fvarLeaves mp.base2.wf F h hw
 
 end Ix.Kernel.Model

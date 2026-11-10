@@ -125,9 +125,10 @@ one currency too coarse for a P leaf, generalized. -/
 /-- **The standard-axiom branch, discharged.**  The leaf is the layer's
 own constant in both halves, so every syntactic obligation is `rfl` or
 a `const` clause, and the whole content is the membership. -/
-theorem axiomStd (hμ : μ.verifiedChecks = true)
-    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
-    (hcv : ConstantValRun μ F env cv type')
+theorem axiomStdJ {J : Judgements md}
+    (mp : EnvModelM V μ env) (hJ : JudgeSound J mp.base2) (hbits : AxiomBitsJ J env)
+    {cv : ConstantVal md} {type' : Expr md}
+    (hcv : ConstantValRunJ J env cv type')
     (hok : Ix.Kernel.stdAxiomOk env ⟨cv.name, cv.levelParams, type'⟩
       = true) :
     Nonempty (EnvModelM V μ
@@ -135,7 +136,7 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
   have hcv' := hcv
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv'
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann hitf hlbt
+  obtain ⟨htf', hbt'⟩ := hJ.annot_syntax hann hitf hlbt
   have hfresh : env.find? cv.name = none :=
     Option.isNone_iff_eq_none.mp hfind
   obtain ⟨stype, usort, hst, hens⟩ := hrunT
@@ -148,12 +149,12 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
     · intro tbl heq; exact nomatch heq
     · intro cv2 caps heq; exact nomatch heq
   by_cases hn : cv.name = propextName
-  · refine harvestAxiom (V := V) hμ mp hcv
+  · refine harvestAxiomJ (V := V) mp hJ hcv
       (A := fun _ => .const .propext []) (fun _ => trivial)
       (fun _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => by simp)
       (fun _ _ => by simp) ?_
     intro ψ ta hta ρ
-    exact propext_mem hμ mp hok hn hst ψ ta hta ρ
+    exact propext_mem hbits mp hok hn hst ψ ta hta ρ
   · by_cases hn2 : cv.name = choiceName
     · -- the pin fixes the axiom's one level parameter, so both the v1
       -- witness and the P leaf read only `ψ uN`
@@ -166,7 +167,7 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
         refine hp uN ?_
         rw [hlpA, show choiceA.levelParams = [uN] from rfl]
         exact List.Mem.head _
-      refine harvestAxiom (V := V) hμ mp hcv
+      refine harvestAxiomJ (V := V) mp hJ hcv
         (A := fun ψ => .const .choice [ψ uN])
         (fun _ => trivial)
         (fun _ _ => rfl)
@@ -175,12 +176,22 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
           rw [huN ψ₁ ψ₂ hp])
         (fun _ _ => by simp) (fun _ _ => by simp) ?_
       intro ψ ta hta ρ
-      exact choice_mem hμ mp hok hn2 hst ψ ta hta ρ
+      exact choice_mem hbits mp hok hn2 hst ψ ta hta ρ
     · exfalso
       unfold Ix.Kernel.stdAxiomOk at hok
       rw [show (⟨cv.name, cv.levelParams, type'⟩ : ConstantVal md).name
         = cv.name from rfl] at hok
       rw [if_neg hn, if_neg hn2] at hok
       exact nomatch hok
+
+/-- The kernel's standard-axiom branch: `axiomStdJ` at the fold's runs. -/
+theorem axiomStd (hμ : μ.verifiedChecks = true)
+    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
+    (hcv : ConstantValRun μ F env cv type')
+    (hok : Ix.Kernel.stdAxiomOk env ⟨cv.name, cv.levelParams, type'⟩
+      = true) :
+    Nonempty (EnvModelM V μ
+      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) :=
+  axiomStdJ mp (judgeSound_runJ hμ mp F) (axiomBits_runJ hμ F) hcv hok
 
 end Ix.Kernel.Model

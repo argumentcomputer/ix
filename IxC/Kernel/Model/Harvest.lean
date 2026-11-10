@@ -162,18 +162,18 @@ theorem natHeads_cons_fresh (mp : EnvModelM V μ env)
   simpa only [e1, e2, e3] using this
 
 /-- **The `defn` harvest** (see the module docstring). -/
-theorem harvestDefn (hμ : μ.verifiedChecks = true)
-    (mp : EnvModelM V μ env)
+theorem harvestDefnJ {J : Judgements md}
+    (mp : EnvModelM V μ env) (hJ : JudgeSound J mp.base2)
     {cv : ConstantVal md} {value : Expr md} {hint : ReducibilityHint}
     {env₂ : Env md}
-    (hR : DeclDefnRun μ F env cv value hint env₂) :
+    (hR : DeclDefnRunJ J env cv value hint env₂) :
     Nonempty (EnvModelM V μ env₂) := by
   obtain ⟨type', value', hcv, hvfr, rfl, hnatc, hdmc⟩ := hR
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv
   obtain ⟨hvlb, hvhf, hannv, hvp, hvr, ⟨vtype, hvrun, hvde⟩⟩ := hvfr
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann hitf hlbt
-  obtain ⟨hvf', hbv'⟩ := annotate_syntax hannv hvhf hvlb
+  obtain ⟨htf', hbt'⟩ := hJ.annot_syntax hann hitf hlbt
+  obtain ⟨hvf', hbv'⟩ := hJ.annot_syntax hannv hvhf hvlb
   have hfresh : env.find? cv.name = none :=
     Option.isNone_iff_eq_none.mp hfind
   -- the scoping packages of the primed forms
@@ -195,7 +195,7 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
   have hAex : ∀ ψ : LevelParam → Nat,
       ∃ va, denoteMeta mp.base2.acval env ψ 0 value' = some va := by
     intro ψ
-    exact acceptedReads_of mp.base2 ψ hvrun hwv hbv' hLv
+    exact hJ.accepted ψ hvrun hwv hbv' hLv
   let A : (LevelParam → Nat) → AnnotTerm :=
     fun ψ => (denoteMeta mp.base2.acval env ψ 0 value').getD default
   have hA : ∀ ψ : LevelParam → Nat,
@@ -209,7 +209,7 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
   have hTex : ∀ ψ : LevelParam → Nat,
       ∃ ta, denoteMeta mp.base2.acval env ψ 0 type' = some ta := by
     intro ψ
-    exact acceptedReads_of mp.base2 ψ hst hwt hbt' hLt
+    exact hJ.accepted ψ hst hwt hbt' hLt
   let Ta : (LevelParam → Nat) → AnnotTerm :=
     fun ψ => (denoteMeta mp.base2.acval env ψ 0 type').getD default
   have hTa : ∀ ψ : LevelParam → Nat,
@@ -219,10 +219,9 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
     show _ = some ((denoteMeta mp.base2.acval env ψ 0 type').getD default)
     simp [hta]
   -- the claims and the reads, per assignment
-  have hclaims := fun ψ =>
-    checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hreads : ∀ ψ, InferReads mp.base2 μ ψ F :=
-    fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
+  have hclaims : ∀ ψ, True ∧ True ∧ DefEqClaimJ J mp.base2 ψ ∧ InferClaimJ J mp.base2 ψ :=
+    fun ψ => ⟨trivial, trivial, hJ.defeq ψ, hJ.infer ψ⟩
+  have hreads : ∀ ψ, InferReadsJ J mp.base2 ψ := hJ.reads
   -- the value's rows: gradings and the membership at its own type
   have hrowsV : ∀ ψ : LevelParam → Nat, ∃ vta,
       denoteMeta mp.base2.acval env ψ 0 vtype = some vta ∧
@@ -281,11 +280,11 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
     obtain ⟨sta, hsta, htE, -, -⟩ := hrowsT ψ
     -- vtype's scoping package
     have hwvt : Expr.WScoped 0 vtype :=
-      inferTypeCore_WScoped mp.base2.wf F hvrun hwv
+      hJ.wscoped hvrun hwv
     have hbvt : vtype.looseBVarsBounded 0 = true :=
-      inferTypeCore_looseBVars mp.base2.wf F hvrun hwv hbv' hLv
+      hJ.bounded hvrun hwv hbv' hLv
     have hnlvt : vtype.fvarLeaves = [] := by
-      have hsub := inferTypeCore_fvarLeaves mp.base2.wf F hvrun hwv
+      have hsub := hJ.leaves hvrun hwv
       cases hh : vtype.fvarLeaves with
       | nil => rfl
       | cons l ls =>
@@ -459,7 +458,7 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
       obtain ⟨hSelfBin, hSelfUn⟩ := natSelfHead_install (φ := φ) mp
         hcmem hfresh hpin hsE hTa hTok hA2
         (fun ψ ρ => ⟨hAok ψ ρ, hAvalid ψ ρ⟩) hmemA
-      exact natOps_install (J := runJ μ F) mp ((hclaims φ).2.2.1) (mp.nat_ops φ)
+      exact natOps_install mp ((hclaims φ).2.2.1) (mp.nat_ops φ)
         hcmem hfresh hlpcv hsE hg2 hdeps₂ hruns hA hAclosed hvf' hbv'
         hSelfBin hSelfUn _ rfl
     · exact natOps_cons_fresh mp (mp.nat_ops φ)
@@ -474,8 +473,8 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
     · obtain ⟨hgenv, _, -, hcerts⟩ := hdmc hno
       exact divMod_install mp (mp.div_mod φ) mp.eq_law
         (fun {d} {e} {t} hrun hw hb hL =>
-          acceptedReads_of mp.base2 φ hrun hw hb hL)
-        (hreads φ) ((hclaims φ).2.2.2) ((hclaims φ).2.2.1)
+          hJ.accepted φ hrun hw hb hL)
+        hJ.toJudgeFrames (hreads φ) ((hclaims φ).2.2.2) ((hclaims φ).2.2.1)
         (List.contains_iff_mem.mp hno) hfresh hgenv hcerts
         hA hAclosed hvf' hbv'
         hTa (fun ψ ρ => by
@@ -511,6 +510,16 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
       (c₀ := .defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
+
+/-- The kernel's `defn` harvest: `harvestDefnJ` at the fold's runs (the
+certificate run read as `DivModCertsJ`, `declDefnRun_runJ`). -/
+theorem harvestDefn (hμ : μ.verifiedChecks = true)
+    (mp : EnvModelM V μ env)
+    {cv : ConstantVal md} {value : Expr md} {hint : ReducibilityHint}
+    {env₂ : Env md}
+    (hR : DeclDefnRun μ F env cv value hint env₂) :
+    Nonempty (EnvModelM V μ env₂) :=
+  harvestDefnJ mp (judgeSound_runJ hμ mp F) (declDefnRun_runJ hR)
 
 /-! ## The `thm` mirror (batch H2, T1)
 

@@ -75,4 +75,27 @@ variable {V : Type w} [SetTheory V]
     denoteMeta m.acval env φ d e = some ea →
     ∃ ta, denoteMeta m.acval env φ d t = some ta
 
+/-- **The scoping a package's outputs keep** (model-free): an annotation keeps its
+input's scope, bound and leaves; an inferred type keeps its subject's. The kernel's
+runs satisfy it at a well-formed environment (`judgeFrames_runJ`,
+`Model/JudgeSound.lean`). -/
+structure JudgeFrames (J : Judgements md) (env : Env md) : Prop where
+  /-- an annotation of a closed, bounded term is closed and bounded -/
+  annot_syntax : ∀ {e e' : Expr md}, J.annot env 0 e e' →
+    e.hasFvar = false → e.looseBVarsBounded 0 = true →
+    e'.hasFvar = false ∧ e'.looseBVarsBounded 0 = true
+  annot_wscoped : ∀ {d : Nat} {e e' : Expr md}, J.annot env d e e' →
+    Expr.WScoped d e → Expr.WScoped d e'
+  annot_bounded : ∀ {d : Nat} {e e' : Expr md}, J.annot env d e e' →
+    e.looseBVarsBounded 0 = true → e'.looseBVarsBounded 0 = true
+  annot_leaves : ∀ {d : Nat} {e e' : Expr md}, J.annot env d e e' →
+    Expr.WScoped d e → e.looseBVarsBounded 0 = true →
+    ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves
+  /-- the inferred type's scoping -/
+  wscoped : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e → Expr.WScoped d t
+  bounded : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e →
+    e.looseBVarsBounded 0 = true → Expr.LeavesBounded e → t.looseBVarsBounded 0 = true
+  leaves : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e →
+    ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves
+
 end Ix.Kernel.Model
