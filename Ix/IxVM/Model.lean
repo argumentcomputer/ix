@@ -471,6 +471,21 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
 
 /-! ## Attaching the models -/
 
+/-- `env` with an empty payload for every inductive block that has none: a
+mutual or nested block the modeller could not model (or one without its
+recursor family) is then refused by the circuit (`KernelModeled`, "no model
+advice") rather than by a witness that lacks data. A native block's payload is
+never read. -/
+def withEmptyPayloads (env : Ixon.Env) : Ixon.Env := Id.run do
+  let mut env := env
+  for (a, lc) in env.consts do
+    if env.models.contains a then continue
+    if let some c := lc.get? then
+      if let .muts ms := c.info then
+        if ms.any (fun m => match m with | .indc _ => true | _ => false) then
+          env := { env with models := env.models.insert a ByteArray.empty }
+  return env
+
 /-- What the attach step did, per block: the advice's record count and outside
 references by witness kind, or why the block has no model. -/
 structure Report where
@@ -505,7 +520,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
       | _ => acc) #[]
     extra := extra.insert b recBlocks
     if shape.order.size > 1 || shape.recs.size > shape.order.size then roots := roots.push b
-  if roots.isEmpty then return ({ env with modelsAttached := true }, {})
+  if roots.isEmpty then return ({ withEmptyPayloads env with modelsAttached := true }, {})
   let store : Ixon.CheckOrder.RecordStore := records.foldl (fun m (a, c) => m.insert a c) {}
   let look (a : Address) : Option Ixon.Constant := store[a]? <|> cx.store a
   let owners : Std.HashSet Address :=
@@ -542,7 +557,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
         report := { report with
           blocks := report.blocks.push (a, .ok (adv.records.size, adv.layout.witnesses.map fun (x, k, _) => (x, k))),
           advice := report.advice.push (a, adv) }
-  return ({ env with modelsAttached := true }, report)
+  return ({ withEmptyPayloads env with modelsAttached := true }, report)
 
 def generate (env : Ixon.Env) : Except String Ixon.Env := (·.1) <$> generateReport env
 

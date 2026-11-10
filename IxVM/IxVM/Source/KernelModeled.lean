@@ -459,7 +459,13 @@ def read_payload := aiur_fn⟦
   fn read_payload(block: Bytes::AddressRef) -> Bytes::Stream {
       let raw = (*(block));
       let (idx, len) = IxVMCompat::io_get_info(7, raw);
-      IxByteStream::read_finite_byte_stream(7, idx, len)
+      let s = IxByteStream::read_finite_byte_stream(7, idx, len);
+      match (*(s)) {
+        Lists::Node::Nil => {
+          assert_eq!(0, 1, "no model advice for a mutual or nested block");
+          s } ,
+        _ => {  s } ,
+      }
     }
 ⟧
 

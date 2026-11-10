@@ -58,8 +58,9 @@ def withoutModels (env : Ixon.Env) : Ixon.Env :=
 def digestUnchanged (env : Ixon.Env) (names : List Lean.Name) : IO Bool := do
   let bare := withoutModels env
   let mut ok := true
-  if env.models.size < 2 then
-    IO.eprintln s!"[ixvm-model-advice] only {env.models.size} modeled blocks got a payload"
+  let payloads := (env.models.toList.filter fun (_, p) => p.size > 0).length
+  if payloads < 2 then
+    IO.eprintln s!"[ixvm-model-advice] only {payloads} modeled blocks got a payload"
     ok := false
   unless env.consts.size == bare.consts.size &&
       env.consts.keys.all bare.consts.contains do
@@ -87,7 +88,7 @@ def digestUnchanged (env : Ixon.Env) (names : List Lean.Name) : IO Bool := do
     IO.eprintln "[ixvm-model-advice] the shard claim differs"
     ok := false
   let digest := Address.blake3 (Ix.Claim.ser c)
-  IO.println s!"[ixvm-model-advice] {env.models.size} payloads; {names.length} check claims and \
+  IO.println s!"[ixvm-model-advice] {payloads} payloads; {names.length} check claims and \
     the shard claim over them agree with and without models (shard digest {digest})"
   return ok
 
