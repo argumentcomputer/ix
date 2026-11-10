@@ -5,6 +5,7 @@
 //! checks and proof inspection, on the program and system handles of
 //! [`system`]. The `ix` CLI links it through FFI.
 pub mod aggregate;
+pub mod codegen;
 mod executor;
 mod output;
 pub mod protocol;
@@ -29,7 +30,7 @@ pub fn load_program(path: &std::path::Path) -> Result<system::Program, String> {
 }
 
 /// Names the executors this build links: `interpreter`, plus the generated
-/// native kernels with feature `native`.
+/// native executors with feature `native`.
 pub fn executors() -> &'static [&'static str] {
   executor::Executor::available()
 }

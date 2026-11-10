@@ -2,7 +2,7 @@
 //! from exactly this package's program and runtime ABI.
 //!
 //! `ixvm-native compare PACKAGE INPUT [RUNS]`: execute one IxVM invocation
-//! (the `input.json` the prover host receives) with the interpreter and with
+//! (an Ixon `.ixi` invocation, as the prover host receives it) with the interpreter and with
 //! the generated kernel, require identical records, and report both times.
 //!
 //! `ixvm-native prove PACKAGE INPUT`: also prove both records under one plan
@@ -17,11 +17,9 @@ use aiur::native::record_diff;
 use multi_stark::types::Val;
 use std::{error::Error, time::Instant};
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: Option<aiur::trace::TraceArtifact>,
-}
+/// Why `prove` refuses a program with depth circuits.
+const DEPTH: &str = "generated executors do not record call heights, so their \
+  records cannot be proven against a program with depth circuits";
 
 fn median(mut samples: Vec<f64>) -> f64 {
   samples.sort_by(f64::total_cmp);
@@ -33,11 +31,12 @@ fn main() -> Result<(), Box<dyn Error>> {
   let usage = "usage: ixvm-native bind PACKAGE | compare|prove|advice PACKAGE INPUT \
      [RUNS]";
   let mode = cli.get(1).ok_or(usage)?.as_str();
-  let package: Package =
-    aiur::decode_artifact(&std::fs::read(cli.get(2).ok_or(usage)?)?)?;
+  let (package, _) = aiur::artifact::Package::load(std::path::Path::new(
+    cli.get(2).ok_or(usage)?,
+  ))?;
   let program = package.program.check_field::<Val>()?;
   if mode == "bind" {
-    program.prepare_hints(&[])?.bind_native::<ixvm_native::Ixvm>()?;
+    program.prepare_hints(&[])?.bind_native::<formal_generated::Ixvm>()?;
     let plan = program.native_plan();
     println!(
       "bound: {} functions, {} dispatch entries, fingerprint {}",
@@ -48,11 +47,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Ok(());
   }
   if mode == "prove" {
-    return prove(
-      &program,
-      package.trace.ok_or("package has no circuits")?,
-      cli.get(3).ok_or(usage)?,
-    );
+    let trace = package.trace.ok_or("package has no circuits")?;
+    let mut program = program;
+    program.track_depth(&trace)?;
+    if program.records_depth() {
+      return Err(DEPTH.into());
+    }
+    return prove(&program, trace, cli.get(3).ok_or(usage)?);
   }
   if mode == "advice" {
     return advice(&program, cli.get(3).ok_or(usage)?);
@@ -62,14 +63,16 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   let runs: usize = cli.get(4).map_or(Ok(3), |s| s.parse())?;
   let invocation: aiur::library::io::Invocation =
-    serde_json::from_slice(&std::fs::read(cli.get(3).ok_or(usage)?)?)?;
+    aiur::library::io::Invocation::load(std::path::Path::new(
+      cli.get(3).ok_or(usage)?,
+    ))?;
   let args = program.field().decode(&invocation.args)?;
   let hints = ixvm::prepare_streams(&program, &invocation.streams)?;
   let start = Instant::now();
-  hints.bind_native::<ixvm_native::Ixvm>()?;
+  hints.bind_native::<formal_generated::Ixvm>()?;
   let first_bind = start.elapsed().as_secs_f64();
   let start = Instant::now();
-  let native = hints.bind_native::<ixvm_native::Ixvm>()?;
+  let native = hints.bind_native::<formal_generated::Ixvm>()?;
   let bind = start.elapsed().as_secs_f64();
   let (mut interpreted, mut generated) = (vec![], vec![]);
   let mut summary = None;
@@ -141,13 +144,14 @@ fn prove(
   let backend =
     Backend::for_batch_on_device(&plan, Parameters::default(), None)?;
   let invocation: aiur::library::io::Invocation =
-    serde_json::from_slice(&std::fs::read(input)?)?;
+    aiur::library::io::Invocation::load(std::path::Path::new(input))?;
   let entry = invocation.entry.as_str();
   let args = program.field().decode(&invocation.args)?;
   let hints = ixvm::prepare_streams(program, &invocation.streams)?;
   let interpreted = hints.execute(entry, args.clone())?;
-  let generated =
-    hints.bind_native::<ixvm_native::Ixvm>()?.execute(entry, args.clone())?;
+  let generated = hints
+    .bind_native::<formal_generated::Ixvm>()?
+    .execute(entry, args.clone())?;
   record_diff(&interpreted, &generated)?;
   // One plan for both: it depends on resident memory as well as the record.
   let batch = backend.plan_batch(&interpreted, &Options::default())?;
@@ -188,7 +192,7 @@ fn advice(program: &Program, input: &str) -> Result<(), Box<dyn Error>> {
   use aiur::{library::advice::Advice, native::outcome_diff};
   let start = Instant::now();
   let invocation: aiur::library::io::Invocation =
-    serde_json::from_slice(&std::fs::read(input)?)?;
+    aiur::library::io::Invocation::load(std::path::Path::new(input))?;
   let parse = start.elapsed().as_secs_f64();
   let (entry, streams) = (&invocation.entry, &invocation.streams);
   let field = program.field();
@@ -244,7 +248,7 @@ fn advice(program: &Program, input: &str) -> Result<(), Box<dyn Error>> {
   outcome_diff(&expected, &compact.execute(entry, args.clone()))
     .map_err(|e| format!("compact interpreter: {e}"))?;
   let compact_interpreted = start.elapsed().as_secs_f64();
-  let native = compact.bind_native::<ixvm_native::Ixvm>()?;
+  let native = compact.bind_native::<formal_generated::Ixvm>()?;
   let start = Instant::now();
   outcome_diff(&expected, &native.execute(entry, args))
     .map_err(|e| format!("compact native: {e}"))?;

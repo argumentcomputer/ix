@@ -219,6 +219,45 @@ extern "C" fn rs_formal_program_identity(
   io(|| Ok(LeanByteArray::from_bytes(program.get().0.identity())))
 }
 
+/// `Ix.FormalProver.Program.executor : @& Program → IO (String × String × Bool)`:
+/// the executor the program runs on, its native fingerprint, and whether it
+/// records call heights for depth circuits, which keeps it on the
+/// interpreter.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_program_executor(
+  program: Borrowed<'_, FormalProgram>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let program = &program.get().0;
+    Ok(LeanProd::new(
+      LeanString::new(program.executor_name()),
+      LeanProd::new(
+        LeanString::new(program.native_fingerprint()),
+        LeanOwned::box_usize(usize::from(program.checked().records_depth())),
+      ),
+    ))
+  })
+}
+
+/// `Ix.FormalProver.Program.codegen : @& Program → (name : @& String) →
+/// (cuda : Bool) → IO (Array (String × String))`: the generated files of the
+/// formal program `name` (`ix_prover::codegen`), as paths relative to the
+/// generated directory with their contents.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_program_codegen(
+  program: Borrowed<'_, FormalProgram>,
+  name: LeanString<LeanBorrowed<'_>>,
+  cuda: bool,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let files =
+      ix_prover::codegen::sources(&program.get().0, name.as_str(), cuda)?;
+    Ok(records::lean_array(files.iter().map(|(path, contents)| {
+      LeanProd::new(LeanString::new(path), LeanString::new(contents))
+    })))
+  })
+}
+
 /// `Ix.FormalProver.Registry.system : @& Registry → @& Program →
 /// @& ProtocolParameters → IO System`: the program's verifying system under
 /// the parameters, prepared once per registry.

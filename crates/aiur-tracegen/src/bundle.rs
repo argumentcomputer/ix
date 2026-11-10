@@ -1,15 +1,19 @@
-//! Build-script support for compiled trace bundles.
+//! Sources and build-script support for compiled trace bundles.
 //!
-//! A bundle crate depends on `aiur` with `cuda` and on `multi-stark` (for
-//! its CUDA field header), and calls [`build`] from `build.rs`. It then
-//! includes `$OUT_DIR/bundle.rs`, which defines
+//! [`sources`] renders a bundle as files for one directory: a CUDA
+//! unit per compiled circuit and `bundle.rs`, the Rust binding. A bundle
+//! crate depends on `aiur` with `cuda` and on `multi-stark` (for its CUDA
+//! field header), calls [`build`] on that directory from `build.rs`, and
+//! includes `bundle.rs`, which defines
 //! `pub static BUNDLE: aiur::trace::stark::compiled::Bundle`.
 //!
-//! The artifact path comes from an environment variable; Cargo reruns the
-//! build when the variable, the file or the selection change. Objects are
-//! cached in `OUT_DIR` under a key covering the nvcc version, its path and
-//! flags, the field header and the unit source, as the legacy CUDA build does.
-use crate::cuda::{Emitted, Selection, emit};
+//! Objects are cached in `OUT_DIR` under a key covering the nvcc version,
+//! its path and flags, the field header and the unit source, as the legacy
+//! CUDA build does.
+use crate::{
+  Described,
+  cuda::{CompiledCircuit, Selection, emit},
+};
 use std::{
   env,
   fmt::Write as _,
@@ -17,15 +21,48 @@ use std::{
   process::Command,
 };
 
+/// The file name of a bundle's Rust binding.
+pub const BINDING: &str = "bundle.rs";
+
+/// The source files of the bundle `tag` for `described`, as (file name,
+/// contents) pairs: every supported circuit's unit and the binding. Every
+/// file starts with `preamble`, which must consist of `//` comment lines,
+/// followed by the population fingerprint.
+pub fn sources(
+  described: &Described,
+  tag: &str,
+  preamble: &str,
+) -> Result<Vec<(String, String)>, String> {
+  if preamble.lines().any(|line| !line.starts_with("//")) {
+    return Err("the preamble must consist of `//` comment lines".into());
+  }
+  let emitted = emit(described, &Selection::All, tag)?;
+  let header = format!(
+    "{preamble}// Population fingerprint {} (compiled ABI {}).\n",
+    described.fingerprint,
+    aiur::trace::describe::COMPILED_ABI_VERSION
+  );
+  let mut files = Vec::with_capacity(emitted.circuits.len() + 1);
+  for c in &emitted.circuits {
+    files.push((c.file.clone(), format!("{header}{}", c.source)));
+  }
+  let binding = binding(
+    tag,
+    &described.program,
+    &described.fingerprint,
+    &emitted.circuits,
+    &emitted.skipped,
+  );
+  files.push((BINDING.to_owned(), format!("{header}{binding}")));
+  Ok(files)
+}
+
 /// What a bundle crate compiles.
 pub struct Config<'a> {
-  /// Distinguishes this bundle's symbols from others in the same binary.
+  /// The bundle's tag, as given to [`sources`].
   pub tag: &'a str,
-  /// Names the exported execution package.
-  pub artifact_variable: &'a str,
-  /// Optionally selects circuits: unset or `all` compiles every supported
-  /// circuit, otherwise a JSON array of circuit names.
-  pub selection_variable: &'a str,
+  /// The directory [`sources`] was written to.
+  pub directory: &'a Path,
 }
 
 fn rerun_env(name: &str) -> Option<String> {
@@ -33,46 +70,47 @@ fn rerun_env(name: &str) -> Option<String> {
   env::var(name).ok()
 }
 
-/// Generates, compiles and links the bundle; writes `$OUT_DIR/bundle.rs`.
+/// Compiles and links the bundle's units, and writes their `ptxas -v`
+/// report to `$OUT_DIR/<tag>.ptxas`, which the binding includes.
 pub fn build(config: &Config<'_>) {
   if let Err(error) = try_build(config) {
     panic!("compiled trace bundle {}: {error}", config.tag);
   }
 }
 
+/// A unit of a bundle directory: its file name and source.
+struct Unit {
+  file: String,
+  source: String,
+}
+
 fn try_build(config: &Config<'_>) -> Result<(), String> {
   let out =
     PathBuf::from(env::var_os("OUT_DIR").ok_or("Cargo did not set OUT_DIR")?);
-  let artifact = rerun_env(config.artifact_variable).ok_or_else(|| {
-    format!("{} must name the exported artifact", config.artifact_variable)
-  })?;
-  println!("cargo:rerun-if-changed={artifact}");
-  let selection = match rerun_env(config.selection_variable).as_deref() {
-    None | Some("" | "all") => Selection::All,
-    Some(names) => {
-      Selection::Named(serde_json::from_str(names).map_err(|e| {
-        format!(
-          "{} must be `all` or a JSON array: {e}",
-          config.selection_variable
-        )
-      })?)
-    },
-  };
-  let bytes = std::fs::read(&artifact)
-    .map_err(|e| format!("cannot read {artifact}: {e}"))?;
-  let described = crate::describe(&bytes)?;
-  let emitted = emit(&described, &selection, config.tag)?;
+  let directory = config.directory;
+  println!("cargo:rerun-if-changed={}", directory.display());
+  let mut units = vec![];
+  for entry in std::fs::read_dir(directory)
+    .map_err(|e| format!("{}: {e}", directory.display()))?
+  {
+    let path = entry.map_err(|e| e.to_string())?.path();
+    if path.extension().is_some_and(|e| e == "cu") {
+      println!("cargo:rerun-if-changed={}", path.display());
+      let file = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| format!("{}: not a UTF-8 name", path.display()))?
+        .to_owned();
+      let source = std::fs::read_to_string(&path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+      units.push(Unit { file, source });
+    }
+  }
+  units.sort_by(|a, b| a.file.cmp(&b.file));
   let library = format!("aiur_tracegen_{}", config.tag);
-  let ptxas = compile(&out, &emitted, &library)?;
-  let rust = binding(
-    config.tag,
-    &described.program,
-    &described.fingerprint,
-    &emitted,
-    &ptxas,
-  );
-  std::fs::write(out.join("bundle.rs"), rust).map_err(|e| e.to_string())?;
-  std::fs::write(out.join("ptxas.txt"), &ptxas).map_err(|e| e.to_string())?;
+  let ptxas = compile(&out, &units, &library)?;
+  std::fs::write(out.join(format!("{}.ptxas", config.tag)), &ptxas)
+    .map_err(|e| e.to_string())?;
   Ok(())
 }
 
@@ -80,12 +118,12 @@ fn binding(
   tag: &str,
   program: &aiur::Program,
   fingerprint: &str,
-  emitted: &Emitted,
-  ptxas: &str,
+  circuits: &[CompiledCircuit],
+  skipped: &[(String, String)],
 ) -> String {
   let mut s = String::new();
   s.push_str("unsafe extern \"C\" {\n");
-  for c in &emitted.circuits {
+  for c in circuits {
     let _ = writeln!(
       s,
       "fn {}(device: i32, circuit: *const ::core::ffi::c_void, callees: *const u32, \
@@ -105,7 +143,7 @@ fn binding(
     abi = aiur::trace::describe::COMPILED_ABI_VERSION,
     program = aiur::trace::describe::program_identity(program),
   );
-  for c in &emitted.circuits {
+  for c in circuits {
     let _ = writeln!(
       s,
       "::aiur::trace::stark::compiled::CompiledCircuit {{ name: {:?}, members: &{:?}, \
@@ -114,10 +152,13 @@ fn binding(
     );
   }
   s.push_str("],\nskipped: &[");
-  for (name, reason) in &emitted.skipped {
+  for (name, reason) in skipped {
     let _ = writeln!(s, "({name:?}, {reason:?}),");
   }
-  let _ = writeln!(s, "],\nptxas: {ptxas:?},\n}};");
+  let _ = writeln!(
+    s,
+    "],\nptxas: include_str!(concat!(env!(\"OUT_DIR\"), \"/{tag}.ptxas\")),\n}};"
+  );
   s
 }
 
@@ -173,7 +214,7 @@ fn architectures() -> Result<Vec<String>, String> {
 /// links it. Returns the `ptxas -v` report of every unit.
 fn compile(
   out: &Path,
-  emitted: &Emitted,
+  units: &[Unit],
   library: &str,
 ) -> Result<String, String> {
   for name in ["NVCC", "CUDA_HOME", "CUDA_PATH"] {
@@ -221,15 +262,15 @@ fn compile(
     &std::fs::read(&header)
       .map_err(|e| format!("{}: {e}", header.display()))?,
   );
-  let jobs: Vec<_> = emitted
-    .circuits
+  let jobs: Vec<_> = units
     .iter()
-    .map(|c| {
+    .map(|u| {
       let mut hash = key.clone();
-      hash.update(c.source.as_bytes());
+      hash.update(u.source.as_bytes());
+      let name = u.file.strip_suffix(".cu").unwrap_or(&u.file);
       let stem =
-        out.join(format!("{}-{}", c.symbol, &hash.finalize().to_hex()[..32]));
-      (c, stem)
+        out.join(format!("{name}-{}", &hash.finalize().to_hex()[..32]));
+      (u, stem)
     })
     .collect();
   let workers =
@@ -242,8 +283,8 @@ fn compile(
           let mut results = vec![];
           loop {
             let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let Some((circuit, stem)) = jobs.get(i) else { break };
-            results.push(unit(&nvcc, &flags, &include, circuit, stem));
+            let Some((u, stem)) = jobs.get(i) else { break };
+            results.push(unit(&nvcc, &flags, &include, u, stem));
           }
           results
         })
@@ -256,10 +297,10 @@ fn compile(
   });
   results.into_iter().collect::<Result<Vec<_>, _>>()?;
   let mut report = String::new();
-  for (circuit, stem) in &jobs {
+  for (u, stem) in &jobs {
     let log =
       std::fs::read_to_string(stem.with_extension("ptxas")).unwrap_or_default();
-    let _ = writeln!(report, "== {} ({})", circuit.name, circuit.symbol);
+    let _ = writeln!(report, "== {}", u.file);
     for line in log.lines().filter(|l| {
       (l.contains("ptxas info") && !l.contains("Compiling entry"))
         || l.contains("bytes stack frame")
@@ -290,7 +331,7 @@ fn unit(
   nvcc: &std::ffi::OsStr,
   flags: &[String],
   include: &Path,
-  circuit: &crate::cuda::CompiledCircuit,
+  u: &Unit,
   stem: &Path,
 ) -> Result<(), String> {
   let object = stem.with_extension("o");
@@ -298,7 +339,7 @@ fn unit(
     return Ok(());
   }
   let source = stem.with_extension("cu");
-  std::fs::write(&source, &circuit.source).map_err(|e| e.to_string())?;
+  std::fs::write(&source, &u.source).map_err(|e| e.to_string())?;
   let output = Command::new(nvcc)
     .args(flags)
     .arg("-I")
@@ -313,7 +354,7 @@ fn unit(
     let _ = std::fs::remove_file(&object);
     return Err(format!(
       "nvcc failed for {} ({}): {}",
-      circuit.name,
+      u.file,
       source.display(),
       String::from_utf8_lossy(&output.stderr)
     ));

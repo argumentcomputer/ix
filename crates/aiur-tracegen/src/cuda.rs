@@ -17,7 +17,7 @@
 //! synchronizes the calling thread's default stream. `callees[j]`
 //! indexes `circuit->callees` for the `j`th name in
 //! [`CompiledCircuit::callees`].
-use crate::{Artifact, ClosedForm, closed::closed_forms, hints::WordHint};
+use crate::{ClosedForm, Described, closed::closed_forms, hints::WordHint};
 use aiur::trace::{
   Polynomial,
   describe::{
@@ -42,7 +42,7 @@ pub struct CompiledCircuit {
   pub source: String,
 }
 
-/// The circuits compiled from an artifact, and why the others were not.
+/// The circuits compiled from a description, and why the others were not.
 #[derive(Clone, Debug, Default)]
 pub struct Emitted {
   pub circuits: Vec<CompiledCircuit>,
@@ -64,20 +64,20 @@ pub const SYMBOL_PREFIX: &str = "aiur_tracegen";
 /// Emits the selected circuits. `tag` distinguishes the launcher symbols of
 /// bundles linked into one binary.
 pub fn emit(
-  artifact: &Artifact,
+  described: &Described,
   selection: &Selection,
   tag: &str,
 ) -> Result<Emitted, String> {
   if !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
     return Err("bundle tag must be an identifier".into());
   }
-  let d = &artifact.description;
+  let d = &described.description;
   if d.modulus != 0xffff_ffff_0000_0001 {
     return Err("compiled writers require the Goldilocks field".into());
   }
-  let closed = closed_forms(&artifact.program);
+  let closed = closed_forms(&described.program);
   for (map, description) in d.maps.iter().enumerate() {
-    if artifact.program.maps.get(map).map(|m| &m.name)
+    if described.program.maps.get(map).map(|m| &m.name)
       != Some(&description.name)
     {
       return Err("map description does not match the program".into());

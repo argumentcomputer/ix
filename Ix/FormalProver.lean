@@ -72,6 +72,21 @@ opaque Registry.system (registry : @& Registry) (program : @& Program)
 @[extern "rs_formal_program_identity"]
 opaque Program.identity (program : @& Program) : IO ByteArray
 
+/-- The executor `program` runs on (`interpreter`, or a linked native
+executor such as `native-ixvm`), the fingerprint a native executor generated
+from it carries, and whether it records call heights for depth circuits,
+which keeps it on the interpreter. -/
+@[extern "rs_formal_program_executor"]
+opaque Program.executor (program : @& Program) : IO (String × String × Bool)
+
+/-- The generated sources of the formal program `name` (`ixvm`, `verifier`
+or `aggregation`): its native executor, and with `cuda` its compiled trace
+writers, as paths relative to the generated directory with their contents
+(`ix_prover::codegen`). -/
+@[extern "rs_formal_program_codegen"]
+opaque Program.codegen (program : @& Program) (name : @& String) (cuda : Bool) :
+  IO (Array (String × String))
+
 /-- The certified programs the linked compiler builds. -/
 inductive Target where
   | ixvm | verifier | aggregation

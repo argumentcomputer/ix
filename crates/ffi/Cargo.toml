@@ -40,17 +40,15 @@ serde = { version = "1.0.219", features = ["derive"] }
 
 [features]
 default = []
-# Generated native executors for the formal IxVM, recursive verifier and
-# aggregation artifacts named by AIUR_IXVM_ARTIFACT, AIUR_VERIFIER_ARTIFACT
-# and AIUR_AGGREGATION_ARTIFACT (see `formalNativeArtifacts` in
-# lakefile.lean). Without it the formal prover runs every job on the
-# interpreter, which produces identical records.
-formal-native = ["ix-prover/native"]
 parallel = ["aiur/parallel", "ix-proof-compression/parallel", "ix-prover/parallel"]
 cuda = ["aiur/cuda", "ix-proof-compression/cuda", "ix-prover/cuda"]
-# Compiled CUDA trace writers for the formal IxVM artifact; needs CUDA and
-# AIUR_IXVM_ARTIFACT, as formal-native does.
-formal-compiled-trace = ["cuda", "ix-prover/compiled-trace"]
+# The native executors that `lake build ix` generates from the certified
+# formal programs into .lake/build/formal-generated. Without it the formal
+# prover runs every job on the interpreter, which produces identical records.
+native-executors = ["ix-prover/native"]
+# Also the generated compiled CUDA trace writers for formal IxVM; needs nvcc
+# and sources generated for a CUDA build.
+formal-compiled-trace = ["cuda", "native-executors", "ix-prover/compiled-trace"]
 cuda-trace-codegen = ["cuda"]
 # Final proof systems, which link the gnark Go archive.
 plonk = ["ix-proof-compression/plonk"]

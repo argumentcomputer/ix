@@ -173,25 +173,24 @@ separate prover executable.
 
 ### Native executors and build order
 
-The generated native executors (`crates/ixvm-native`,
-`crates/stark-verifier-native`) are compiled from the compiled packages
-(`AIUR_IXVM_ARTIFACT`, `AIUR_VERIFIER_ARTIFACT`, `AIUR_AGGREGATION_ARTIFACT`),
-but compiling them needs a built `ix`, and `ix` links the Rust archive. The
-kernels are therefore the optional `formal-native` feature of `ix-ffi`:
+`lake build ix` generates the native executors before Cargo runs
+([code generation](formal-aiur-codegen.md)):
 
-1. `lake build ix` without artifacts links the interpreter only.
-2. `ix prepare` compiles the programs into the cache and records their
-   absolute paths in `.lake/aiur/native-kernels.env`.
-3. The next `lake build ix` reads that file, enables `formal-native`, passes
-   the three variables to Cargo and adds the artifacts' contents to the
-   archive's Lake trace, so a recompiled artifact rebuilds its kernel.
+1. `ix_rs`, the Rust archive without generated code, and `formal-codegen`,
+   a Lean executable that links it and the certified compiler, are built.
+2. `formal_generated` runs `formal-codegen`, which selects the IxVM,
+   recursive verifier and aggregation packages from the artifact cache,
+   compiling misses in process, and writes their executors (and in a CUDA
+   build their trace writers) to `.lake/build/formal-generated`.
+3. `ix_rs_net` builds `ix-ffi` with `native-executors`, and
+   `crates/formal-generated` compiles the generated files into `ix`.
 
-Setting all three `AIUR_*_ARTIFACT` variables overrides the file;
-`IX_FORMAL_NATIVE=0` builds without kernels and `IX_FORMAL_NATIVE=1` fails if
-they are unavailable. Kernels are only an optimization: a kernel runs a job
-only for an artifact whose program has exactly its fingerprint, and the
-interpreter produces identical records and proofs. `ix prepare` prints which
-executors are linked, and check and prove reports name the `executor`. See
+Executors are only an optimization: an executor runs a job only for a
+program with exactly its fingerprint and no depth circuits, and the
+interpreter produces identical records and proofs. A selected program that
+differs from the one its executor was generated from is reported, or
+rejected under `IX_FORMAL_NATIVE=1`. `ix prepare` prints which executors
+are linked, and check and prove reports name the `executor`. See
 [native execution](formal-aiur-native-execution.md).
 
 `ixvm-proof` and `stark-verifier` remain as reference drivers for the check

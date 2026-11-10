@@ -1,0 +1,12 @@
+[package]
+name = "aiur-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust source for native executors of checked Aiur programs"
+
+[dependencies]
+aiur = { path = "../aiur", features = ["native"] }
+
+[lints]
+workspace = true
