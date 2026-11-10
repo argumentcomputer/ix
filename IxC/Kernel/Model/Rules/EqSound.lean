@@ -88,7 +88,8 @@ theorem Red.eqProof_sound (hin : RulesInputs V m φ) {d : Nat} {a b p T ta tb sT
   obtain ⟨r3, br, h3, hbr, rfl⟩ := denoteMeta_app_inv hSa
   obtain ⟨r2, ar, h2, har, rfl⟩ := denoteMeta_app_inv h3
   obtain ⟨Er, Tr, h1, hTr, rfl⟩ := denoteMeta_app_inv h2
-  obtain rfl : ar = aa := Option.some.inj (har.symm.trans haa)
+  have hara : ar = aa := Option.some.inj (har.symm.trans haa)
+  subst ar
   -- the stored `Eq` is the pinned one, and its reading is the leaf
   have hci : ci = eqA := by
     rw [(m.basis_pinned eqName ci hfE (by (cases md <;> decide))).1]
