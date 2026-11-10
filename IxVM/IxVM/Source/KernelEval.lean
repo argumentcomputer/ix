@@ -66,9 +66,9 @@ def eval_output := aiur_fn⟦
       assert_eq!(safety, Ixon::DefinitionSafety::Safe, "Eval: unsafe or partial output");
       assert_eq!(UInt64::to_field(lvls), nlvls, "Eval: universe parameter count mismatch");
       let no_recur = (&(Lists::Node::Nil));
-      let output_type = Convert::convert_expr(ty, sharing, refs, no_recur, univs);
+      let output_type = Convert::convert_root(ty, sharing, refs, no_recur, univs);
       assert_eq!(KernelCheck::kexpr_struct_eq(output_type, input_type), 1, "Eval: output type does not match input");
-      Convert::convert_expr(value, sharing, refs, no_recur, univs)
+      Convert::convert_root(value, sharing, refs, no_recur, univs)
     }
 ⟧
 
