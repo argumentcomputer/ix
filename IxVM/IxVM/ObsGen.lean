@@ -172,7 +172,7 @@ structure St where
   fname : String := ""
   leanName : String := ""
   body : Option (Expr F) := none
-  /-- Whether `let`-bound matches are inverted as segments (`segmented`). -/
+  /-- Whether `let`-bound matches are inverted as segments (`unsegmented`). -/
   segment : Bool := false
   /-- Segments generated so far: position, name, and rendered declarations. -/
   segs : Array (List Nat × String × String) := #[]
@@ -439,11 +439,12 @@ abbrev K := List Seg → M (List String)
 /-- A match of at least this many arms is a table (`invArms`). -/
 def tableArms : Nat := 16
 
-/-- Functions whose `let`-bound matches are inverted as segments: the match's paths
-become their own inductive (`«f».Seg<i>`, with its theorem `«f».seg<i>`), and the
-function's paths continue once after it, instead of once per arm. -/
-def segmented : List String :=
-  ["KernelWhnf::red_rec", "KernelWhnf::whnf_nd_const_head", "KernelCheck::check_recursor_canonical_full"]
+/-- **Segments.** In a monomorphic function, a `let` bound to a match of several arms is
+inverted by a theorem of its own: the match's paths become an inductive (`«f».Seg<i>`,
+with its theorem `«f».seg<i>`), and the function's paths continue once after it, with
+the fact `«f».Seg<i> env h v m cs`, instead of once per arm. The functions listed here
+are inverted without segments. -/
+def unsegmented : List String := []
 
 /-- A `let`-bound match of several arms, outside any segment, in a monomorphic function
 whose `let`-bound matches are segmented. -/
@@ -863,7 +864,7 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
   let body : M (List String) :=
     inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf s!"«{f.name}».Path")
   let maxLookups := if generous.contains f.name then 40000 else 3000
-  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := segmented.contains f.name }
+  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := !unsegmented.contains f.name }
   let (script, st) ← body.run init
   -- a generic function is stated at its instance `t_<param>`
   let (tbind, targ, tibind, symbol, lookupThm, lookupDecl) := match tp with
