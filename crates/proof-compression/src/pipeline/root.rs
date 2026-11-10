@@ -135,11 +135,7 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
     .chain(layout.custom_traces.iter().map(|(height, _, _)| height))
     .max()
     .unwrap();
-  let outer_log_blowup = {
-    use multi_stark::config::StarkGenericConfig;
-    native_key.fri_stage_config().log_blowup()
-  };
-  let log_lde = largest_trace.ilog2() as usize + outer_log_blowup;
+  let log_lde = largest_trace.ilog2() as usize + cp.log_blowup;
   eprintln!(
     "Largest outer LDE: 2^{log_lde}; {} computation traces",
     layout.main_heights.len()
@@ -154,7 +150,7 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   // process memory limit when running the prover.
   let base_lde_bytes = layout
     .trace_field_bytes
-    .checked_mul(1usize << outer_log_blowup)
+    .checked_mul(1usize << cp.log_blowup)
     .ok_or("LDE size overflow")?;
   eprintln!(
     "Advice + fixed LDE bytes (not total prover memory): {base_lde_bytes}"

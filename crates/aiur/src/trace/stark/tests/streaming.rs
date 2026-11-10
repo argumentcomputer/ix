@@ -106,7 +106,7 @@ fn fixed_log_heights_prove_one_all_active_shard() {
   let key =
     VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
   let claims = [backend.claim(entry, &[3], &record.output).unwrap()];
-  key.validate_preamble(&claims, &proof.preamble).unwrap();
+  key.validate_preamble(&claims[0], &proof.preamble).unwrap();
   key.verify(&claims, &proof).unwrap();
   let ci = rows.iter().position(|&n| n > 2).unwrap();
   let mut small = logs.clone();
