@@ -104,9 +104,9 @@ def Names.addr (nm : Names) (k : Key .anon) : Except String Address :=
   | some a => .ok a
   | none => match k with
     | .id a => .ok a
-    | .role r => match nm.roles[r]? with
+    | .role r => (match nm.roles[r]? with
       | some a => .ok a
-      | none => .error s!"role {repr r} is not bound"
+      | none => .error s!"role {repr r} is not bound")
     | .aux .. => .error s!"generated key {k} is referenced before it is encoded"
 
 def liftExcept {α} (x : Except String α) : EncM α := match x with
@@ -169,7 +169,7 @@ def encDefinition (nm : Names) (cv : ConstantVal .anon) (value : Expr .anon) (ki
       let t ← encExpr nm lps (fun _ => none) cv.type
       let v ← encExpr nm lps (fun _ => none) value
       pure (t, v) : EncM _).run {}
-  let c : Ixon.Constant := ⟨.defn { kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v },
+  let c : Ixon.Constant := ⟨.defn { kind := kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v },
     #[], s.refs, s.univs⟩
   let a := addressOf c
   return { records := #[(a, c)], keys := #[(cv.name, a)], blobs := s.blobs,
@@ -227,7 +227,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       | some (.sort .zero) => true
       | _ => false
     let k := isProp && ctors.length == 1 && ctors.all (fun (_, _, cF) => cF == 0)
-    let recR : Ixon.Recursor := { k, isUnsafe := false, lvls := rlps.length.toUInt64,
+    let recR : Ixon.Recursor := { k := k, isUnsafe := false, lvls := rlps.length.toUInt64,
       params := nP.toUInt64, indices := (mI - rP).toUInt64, motives := 1,
       minors := ctors.length.toUInt64, typ := rtyp, rules := rrules }
     let recC : Ixon.Constant := ⟨.recr recR, #[], rs.refs, rs.univs⟩
@@ -325,15 +325,41 @@ partial def pathTo (parent : Std.HashMap Address (Address × Nat)) (root x : Add
 def putAddr (b : ByteArray) (a : Address) : ByteArray := b ++ a.hash
 def putN (b : ByteArray) (n : Nat) : ByteArray := Aiur.Ixon.tagN0 b n.toUInt64
 
+/-- A payload, structured (`KernelModeled`'s layout): the recursor family
+record, the advice records, the witnessed outside references (address, kind,
+dependency path), the models of the types, constructors and recursors, and the
+`iota_j` theorems. `adviceCount` overrides the advice count written (tests). -/
+structure Payload where
+  recBlock : Address
+  advice : Array Address
+  witnesses : Array (Address × Nat × List Nat)
+  typeModels : Array Address
+  ctorModels : Array Address
+  recModels : Array Address
+  iotas : Array Address
+  adviceCount : Option Nat := none
+  deriving Inhabited
+
+def Payload.ser (p : Payload) : ByteArray := Id.run do
+  let mut b := putAddr ByteArray.empty p.recBlock
+  b := putN b (p.adviceCount.getD p.advice.size)
+  for a in p.advice do b := putAddr b a
+  b := putN b p.witnesses.size
+  for (x, kind, steps) in p.witnesses do
+    b := (putAddr b x).push kind.toUInt8
+    unless kind == 0 do b := steps.foldl putN (putN b steps.length)
+  for a in p.typeModels ++ p.ctorModels ++ p.recModels ++ p.iotas do b := putAddr b a
+  return b
+
 /-- One block's advice, ready to attach. -/
 structure BlockAdvice where
-  payload : ByteArray
+  layout : Payload
   records : Array (Address × Ixon.Constant)
   hints : Array (Address × Lean.ReducibilityHints)
   blobs : Array (Address × ByteArray)
   deps : Array Address
-  /-- the outside references, by witness kind (basis, closure, container recursor) -/
-  outside : Array (Address × Nat)
+
+def BlockAdvice.payload (a : BlockAdvice) : ByteArray := a.layout.ser
 
 /-- The reader's keys for the public members of block `b` and of its recursor
 family, with the family record and each recursor's rule count. -/
@@ -364,9 +390,9 @@ def familyKeys (cx : Ix.Kernel.Reader.Ctx .anon) (b : Address) (bc : Ixon.Consta
   let #[rb] := owners | throw s!"the recursor family spans {owners.size} records"
   let some rbc := cx.store rb | throw "the recursor family record is missing"
   let recRefs : Array (Nat × Nat) := match rbc.info with
-    | .muts rms => (rms.zipIdx).map fun (m, j) => match m with
+    | .muts rms => (rms.zipIdx).map fun (m, j) => (match m with
       | .recr rr => (j, rr.rules.size)
-      | _ => (j, 0)
+      | _ => (j, 0))
     | .recr rr => #[(0, rr.rules.size)]
     | _ => #[]
   let mut recs := #[]
@@ -382,7 +408,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     Except String BlockAdvice := do
   let fk ← familyKeys cx b bc shape
   let roles : Std.HashMap Ix.Kernel.Role Address := table.bound.foldl (fun m (r, a) => m.insert r a) {}
-  let mut nm : Names := { roles }
+  let mut nm : Names := { roles := roles }
   let mut records : Array (Address × Ixon.Constant) := #[]
   let mut hints : Array (Address × Lean.ReducibilityHints) := #[]
   let mut blobs : Array (Address × ByteArray) := #[]
@@ -394,8 +420,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     blobs := blobs ++ e.blobs
     nm := { nm with gen := e.keys.foldl (fun m (k, x) => m.insert k x) nm.gen }
   let aset : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
-  let store : Std.HashMap Address Ixon.Constant := records.foldl (fun m (a, c) => m.insert a c) {}
-  -- outside references: used references neither advice nor a projection of an advice block
+  -- outside references: used references that are not advice
   let mut outside : Array Address := #[]
   for (_, c) in records do
     let used := usedIdxs c
@@ -407,50 +432,41 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
   let roleOf (x : Address) : Option Nat := do
     let (r, _) ← table.bound.find? (·.2 == x)
     Ix.Kernel.Role.all.idxOf? r
-  let mut wbytes := ByteArray.empty
   let mut deps : Array Address := (records.map (·.1)).push fk.recBlock
-  let mut kinds : Array (Address × Nat) := #[]
+  let mut witnesses : Array (Address × Nat × List Nat) := #[]
   for x in outside do
-    wbytes := putAddr wbytes x
     if let some steps := pathTo parent b x then
-      wbytes := steps.foldl putN (putN (wbytes.push 1) steps.length)
-      kinds := kinds.push (x, 1)
+      witnesses := witnesses.push (x, 1, steps)
     else if (roleOf x).any basisRoleAllowed then
-      wbytes := wbytes.push 0
-      kinds := kinds.push (x, 0)
+      witnesses := witnesses.push (x, 0, [])
     else
       -- a container's recursor: a recursor of a block in the closure
-      let ref? : Option (ConstRef Address) := match look x with
-        | some c => match c.info with
-          | .recr _ => some (.member x 0)
-          | .rPrj p => some (.member p.block p.idx.toNat)
-          | _ => none
-        | none => none
+      let ref? : Option (ConstRef Address) := (look x).bind fun c => match c.info with
+        | .recr _ => some (.member x 0)
+        | .rPrj p => some (.member p.block p.idx.toNat)
+        | _ => none
       let some ref := ref? | throw s!"outside reference {x} is neither in the closure nor a basis role"
       let some entry := cx.index.recs[ref]? | throw s!"outside recursor {x} is not indexed"
       let some steps := pathTo parent b entry.block
         | throw s!"outside recursor {x} eliminates a block outside the closure"
-      wbytes := steps.foldl putN (putN (wbytes.push 2) steps.length)
+      witnesses := witnesses.push (x, 2, steps)
       deps := deps.push x
-      kinds := kinds.push (x, 2)
   -- the member models and the iota theorems, in the circuit's order
   let modelOf (k : Key .anon) : Except String Address :=
     match nm.gen[auxKey k .model]? with
     | some a => pure a
     | none => throw s!"no model for {k}"
-  let mut mbytes := ByteArray.empty
-  for k in fk.types do mbytes := putAddr mbytes (← modelOf k)
-  for k in fk.ctors do mbytes := putAddr mbytes (← modelOf k)
-  for (k, _) in fk.recs do mbytes := putAddr mbytes (← modelOf k)
+  let typeModels ← fk.types.mapM modelOf
+  let ctorModels ← fk.ctors.mapM modelOf
+  let recModels ← fk.recs.mapM (modelOf ·.1)
+  let mut iotas : Array Address := #[]
   for (k, n) in fk.recs do
     for j in [0:n] do
       let some t := nm.gen[auxKey (auxKey k .model) (.iota j)]? | throw s!"no iota_{j} for {k}"
-      mbytes := putAddr mbytes t
-  let mut payload := putAddr ByteArray.empty fk.recBlock
-  payload := records.foldl (fun p (a, _) => putAddr p a) (putN payload records.size)
-  payload := putN payload outside.size ++ wbytes ++ mbytes
-  let _ := store
-  return { payload, records, hints, blobs, deps, outside := kinds }
+      iotas := iotas.push t
+  let layout : Payload := { recBlock := fk.recBlock, advice := records.map (·.1), witnesses,
+                            typeModels, ctorModels, recModels, iotas }
+  return { layout, records, hints, blobs, deps }
 
 /-! ## Attaching the models -/
 
@@ -458,6 +474,8 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
 references by witness kind, or why the block has no model. -/
 structure Report where
   blocks : Array (Address × Except String (Nat × Array (Address × Nat))) := #[]
+  /-- the advice attached, per block (tests corrupt it) -/
+  advice : Array (Address × BlockAdvice) := #[]
 
 /-- The models of every mutual or nested inductive block of `env` the kernel's
 reader models, attached as records and prover-side indexes, with a report.
@@ -466,9 +484,9 @@ an unsafe block) get no model, and IxVM rejects them. -/
 def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .anon := id) :
     Except String (Ixon.Env × Report) := do
   let table ← match env.roleBinding with
-    | some b => match Ix.Kernel.RoleTable.ofBytes b.bytes with
+    | some b => (match Ix.Kernel.RoleTable.ofBytes b.bytes with
       | some t => pure t
-      | none => throw "the environment's role binding does not decode"
+      | none => throw "the environment's role binding does not decode")
     | none => Ix.Kernel.Reader.defaultTable
   let pre ← Ix.Kernel.Reader.preludeFor table
   let mut records : Array (Address × Ixon.Constant) := #[]
@@ -520,7 +538,9 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
           unless env.blobs.contains ba do env := { env with modelBlobs := env.modelBlobs.insert ba bytes }
         env := { env with models := env.models.insert a adv.payload,
                           modelDeps := env.modelDeps.insert a adv.deps }
-        report := { report with blocks := report.blocks.push (a, .ok (adv.records.size, adv.outside)) }
+        report := { report with
+          blocks := report.blocks.push (a, .ok (adv.records.size, adv.layout.witnesses.map fun (x, k, _) => (x, k))),
+          advice := report.advice.push (a, adv) }
   return ({ env with modelsAttached := true }, report)
 
 def generate (env : Ixon.Env) : Except String Ixon.Env := (·.1) <$> generateReport env

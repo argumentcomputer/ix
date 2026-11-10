@@ -107,7 +107,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let digestOk ← digestUnchanged env names
   -- the control: the same environment with the tweaked models
   let (tweaked, _) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false } tweakProofs)
-  let differ := tweaked.models.toList.any fun (b, p) => env.models[b]? != some p
+  let differ := tweaked.models.toList.any fun (b, p) => (env.models[b]?.map (·.data)) != some p.data
   unless differ do IO.eprintln "[ixvm-model-advice] the tweaked models have the same payloads"
   let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun _ => do
     let some target := e.getAddr? (Ix.Name.fromLeanName n)
@@ -118,6 +118,44 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     (names.map (mkCase tweaked "a different valid model"))
   let rc ← runCases "ixvm-model-advice" cases.toArray
   return if digestOk && differ && rc == 0 then 0 else 1
+
+/-- The environment of an `.ixe` file under the default role table, without models. -/
+def loadIxe (path : String) : IO Ixon.Env := do
+  let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))
+  IO.ofExcept (withRoleTable env (← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes))
+
+private def groupOf (a : Address) (ci : Ixon.ConstantInfo) : Address :=
+  match ci with
+  | .iPrj p | .cPrj p | .rPrj p | .dPrj p => p.block
+  | _ => a
+
+/-- `ixvm-model-coverage`: every modeled block of an `.ixe` file (`IX_MODEL_IXE`)
+checked through the modeled route, one `CheckEnv` claim per block owning the
+block, its recursor family record and their projections, the frontier and the
+binding assumed. A block without a payload is a failure. -/
+def coverage (_ : Lean.Environment) : IO UInt32 := do
+  let some path ← IO.getEnv "IX_MODEL_IXE"
+    | IO.eprintln "[ixvm-model-coverage] set IX_MODEL_IXE to an .ixe file"; return 1
+  let env ← loadIxe path
+  let (env, rep) ← IO.ofExcept (IxVM.Model.generateReport { env with modelsAttached := false })
+  let mut none := 0
+  for (b, r) in rep.blocks do
+    if let .error e := r then
+      none := none + 1
+      IO.eprintln s!"[ixvm-model-coverage] block {b} has no model: {e}"
+  let mut groups : Std.HashMap Address (Array Address) := {}
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then
+      let g := groupOf a c.info
+      groups := groups.insert g ((groups.getD g #[]).push a)
+  let cases : Array Builder := rep.advice.map fun (b, adv) => fun _ => do
+    let owned := groups.getD b #[] ++ groups.getD adv.layout.recBlock #[]
+    let (_, witness) ← buildShardCheckEnvWitness env owned (assumeBinding := true)
+    return { label := s!"model coverage: block {b} ({owned.size} owned, {adv.records.size} advice records)",
+             accept := true, witness }
+  IO.println s!"[ixvm-model-coverage] {rep.blocks.size} modeled blocks, {rep.advice.size} with a payload"
+  let rc ← runCases "ixvm-model-coverage" cases (jobs := 6)
+  return if rc == 0 && none == 0 then 0 else 1
 
 /-- `ixvm-model-report`: the advice per modeled block of an `.ixe` file. -/
 def report (_ : Lean.Environment) : IO UInt32 := do
