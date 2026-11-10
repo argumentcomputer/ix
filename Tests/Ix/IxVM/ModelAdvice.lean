@@ -121,8 +121,21 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
       | throw s!"{n} is not in the Ixon environment"
     let ctx ← Ix.ClaimContext.ofEnv e true
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
+  -- no advice under user axioms: `Even` with an unused, well-typed `axiom ax : Prop`
+  let underAxiom : Builder := fun _ => do
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+    let a := Address.blake3 (Ixon.ser ax)
+    let e := env.storeConst a ax
+    let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
+    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString "IxVMInd.Even"))
+      | throw "IxVMInd.Even is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv e true
+    Case.ofClaim "check IxVMInd.Even under a user axiom (no model advice)" e
+      (.check { ctx with axioms := some axioms.root } target none)
+      (({} : Std.HashMap _ _).insert axioms.root axioms) (accept := false)
+      (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
-    (names.map (mkCase tweaked "a different valid model"))
+    (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom]
   let rc ← runCases "ixvm-model-advice" cases.toArray
   return if digestOk && differ && rc == 0 then 0 else 1
 
@@ -163,6 +176,85 @@ def coverage (_ : Lean.Environment) : IO UInt32 := do
   IO.println s!"[ixvm-model-coverage] {rep.blocks.size} modeled blocks, {rep.advice.size} with a payload"
   let rc ← runCases "ixvm-model-coverage" cases (jobs := 6)
   return if rc == 0 && none == 0 then 0 else 1
+
+/-- The `refs` indices a record projects at (`.prj`). -/
+private partial def prjIdxsExpr : Ixon.Expr → Std.HashSet Nat
+  | .prj i _ inner => (prjIdxsExpr inner).insert i.toNat
+  | .app a b | .lam _ a b | .all _ _ a b => (prjIdxsExpr a).union (prjIdxsExpr b)
+  | .letE _ t v b => ((prjIdxsExpr t).union (prjIdxsExpr v)).union (prjIdxsExpr b)
+  | _ => {}
+
+private def prjIdxs (c : Ixon.Constant) : Std.HashSet Nat := Id.run do
+  let mut out : Std.HashSet Nat := {}
+  for e in c.sharing do out := out.union (prjIdxsExpr e)
+  let ofDefn (d : Ixon.Definition) := (prjIdxsExpr d.typ).union (prjIdxsExpr d.value)
+  let ofRecr (r : Ixon.Recursor) := r.rules.foldl
+    (fun acc rule => acc.union (prjIdxsExpr rule.rhs)) (prjIdxsExpr r.typ)
+  let ofIndc (i : Ixon.Inductive) := i.ctors.foldl
+    (fun acc ctor => acc.union (prjIdxsExpr ctor.typ)) (prjIdxsExpr i.typ)
+  match c.info with
+  | .defn d => out := out.union (ofDefn d)
+  | .recr r => out := out.union (ofRecr r)
+  | .axio a => out := out.union (prjIdxsExpr a.typ)
+  | .quot q => out := out.union (prjIdxsExpr q.typ)
+  | .muts members =>
+    for m in members do
+      out := out.union <| match m with
+        | .defn d => ofDefn d
+        | .indc i => ofIndc i
+        | .recr r => ofRecr r
+  | _ => pure ()
+  return out
+
+/-- `ixvm-model-proj`: what refusing `.proj` at modeled blocks costs an `.ixe`
+file (`IX_MODEL_IXE`): the records that project at a type of a mutual or nested
+block, and every record whose dependency closure reaches one of them. -/
+def projUse (_ : Lean.Environment) : IO UInt32 := do
+  let some path ← IO.getEnv "IX_MODEL_IXE"
+    | IO.eprintln "[ixvm-model-proj] set IX_MODEL_IXE to an .ixe file"; return 1
+  let env ← loadIxe path
+  let (_, rep) ← IO.ofExcept (IxVM.Model.generateReport { env with modelsAttached := false })
+  let modeled : Std.HashSet Address := rep.blocks.foldl (fun s (b, _) => s.insert b) {}
+  let mut store : Std.HashMap Address Ixon.Constant := {}
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then store := store.insert a c
+  let modeledType (r : Address) : Bool := match store[r]? with
+    | some c => match c.info with
+      | .iPrj p => modeled.contains p.block
+      | _ => false
+    | none => false
+  -- direct users, and the reverse edges of the claim walk (used references, projection to block)
+  let mut direct : Array Address := #[]
+  let mut rev : Std.HashMap Address (Array Address) := {}
+  for (a, c) in store.toList do
+    if (prjIdxs c).toList.any fun i => (c.refs[i]?.map modeledType).getD false then
+      direct := direct.push a
+    let used := IxVM.Model.usedIdxs c
+    let mut srcs : Array Address := #[]
+    if let some b := IxVM.Model.projectionBlock? c then srcs := srcs.push b
+    for (r, j) in c.refs.zipIdx do
+      if used.contains j then srcs := srcs.push r
+    for s in srcs do rev := rev.insert s ((rev.getD s #[]).push a)
+  let mut seen : Std.HashSet Address := direct.foldl (·.insert ·) {}
+  let mut queue := direct
+  let mut head := 0
+  while head < queue.size do
+    let a := queue[head]!
+    head := head + 1
+    for d in rev.getD a #[] do
+      unless seen.contains d do
+        seen := seen.insert d
+        queue := queue.push d
+  let named (xs : Array Address) : Array String :=
+    xs.filterMap fun x => env.addrToName[x]?.map toString
+  let directNames := named direct
+  let allNames := named queue
+  IO.println s!"[ixvm-model-proj] {modeled.size} modeled blocks; {direct.size} records project at \
+    one of their types ({directNames.size} named constants); {queue.size} records reach one \
+    ({allNames.size} named constants) of {store.size} records ({env.addrToName.size} named)"
+  for n in directNames.qsort (· < ·) do IO.println s!"DIRECT {n}"
+  for n in (allNames.qsort (· < ·)).toList.take 200 do IO.println s!"REACH {n}"
+  return 0
 
 /-- `ixvm-model-report`: the advice per modeled block of an `.ixe` file. -/
 def report (_ : Lean.Environment) : IO UInt32 := do

@@ -233,6 +233,7 @@ def registry : List Entry := [
   .env "ixvm-model-advice" (.ci .ixvm) Tests.Ix.IxVM.ModelAdvice.run,
   .env "ixvm-model-report" (.manual "lane dc: model advice per block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
   .env "ixvm-model-coverage" (.manual "lane dc: every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
+  .env "ixvm-model-proj" (.manual "lane dc: records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,
   -- Execution with every assertion checked gives the circuit's verdict on a witness;
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
