@@ -639,31 +639,54 @@ def projection_block := aiur_fn⟦
 
   -- A container's recursor the model uses (`pack_j` is the container's recursor at a
   -- constant motive): a recursor of the block `iblock` in the closure, checked here (the
-  -- claim walk does not reach it) by its block's own route, native or modeled. Its record
-  -- (the family record, for a member of one) uses only that block's references, its
-  -- members, and the members of the blocks its references project from: all in the
-  -- closure of a block the modeled block depends on, so none depends on that block.
+  -- claim walk does not reach it) by its block's own route, native or modeled. Its
+  -- references are checked once the payload's witnessed set is known
+  -- (`container_recs_refs`).
 
 def check_container_rec := aiur_fn⟦
   fn check_container_rec(rc: KernelRoles::RoleCtx, x: Bytes::AddressRef, iblock: Bytes::AddressRef) -> () {
       assert_eq!(Bytes::address_eq(rec_family_block(x), iblock), 1,
         "model advice: a container recursor of another block");
       KernelClaim::run_check(rc, x);
-      let c0 = Ingress::load_verified_constant(x);
-      let c = match c0 {
-        Ixon::Constant::Mk(info, _, _, _) => {
-          match info {
-            Ixon::ConstantInfo::RPrj(_) => {  Ingress::load_verified_constant(projection_block(c0)) } ,
-            _ => {  c0 } ,
-          } } ,
-      };
+      ()
+    }
+⟧
+
+  -- Every recursor among the outside references: its record (the family record, for a
+  -- member of one) uses only its block's references, its block's members, members of
+  -- the blocks those references project from, and witnessed outside references (the
+  -- closure of the modeled block). So none depends on the modeled block.
+
+def container_recs_refs := aiur_fn⟦
+  fn container_recs_refs(xs: Lists::List<Bytes::AddressRef>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+      match (*(xs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(x, rest) => {
+          let c0 = Ingress::load_verified_constant(x);
+          match c0 {
+            Ixon::Constant::Mk(info, _, _, _) => {
+              match info {
+                Ixon::ConstantInfo::Recr(_) => {  container_refs_check(x, c0, wset) } ,
+                Ixon::ConstantInfo::RPrj(_) => {
+                  container_refs_check(x, Ingress::load_verified_constant(projection_block(c0)), wset) } ,
+                _ => {  () } ,
+              } } ,
+          };
+          container_recs_refs(rest, wset) } ,
+      }
+    }
+⟧
+
+def container_refs_check := aiur_fn⟦
+  fn container_refs_check(x: Bytes::AddressRef, c: Ixon::Constant, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+      let iblock = rec_family_block(x);
       let ib = Ingress::load_verified_constant(iblock);
       match c {
         Ixon::Constant::Mk(_, _, refs, _) => {
           match ib {
             Ixon::Constant::Mk(_, _, irefs, _) => {
               container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, iblock, irefs,
-                                KernelClaim::const_idxs_of(ib)) } ,
+                                KernelClaim::const_idxs_of(ib), wset) } ,
           } } ,
       }
     }
@@ -672,7 +695,7 @@ def check_container_rec := aiur_fn⟦
 def container_refs_ok := aiur_fn⟦
   fn container_refs_ok(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
                        iblock: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
-                       iused: Lists::List<Field>) -> () {
+                       iused: Lists::List<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
@@ -683,14 +706,18 @@ def container_refs_ok := aiur_fn⟦
                 _ => {
                   match is_projection_of(r, iblock) {
                     1 => {  1 } ,
-                    _ => {  projection_of_ref_block(r, irefs, iused) } ,
+                    _ => {
+                      match projection_of_ref_block(r, irefs, iused) {
+                        1 => {  1 } ,
+                        _ => {  KernelClaim::addr_set_member(r, wset) } ,
+                      } } ,
                   } } ,
               };
               assert_eq!(ok, 1, "model advice: a container recursor references outside its block");
               () } ,
             _ => {  () } ,
           };
-          container_refs_ok(rest, used, i + 1, iblock, irefs, iused) } ,
+          container_refs_ok(rest, used, i + 1, iblock, irefs, iused, wset) } ,
       }
     }
 ⟧
@@ -902,6 +929,7 @@ def check_family := aiur_fn⟦
       let (n_w, s4) = get_count(s3);
       let (outside, s5) = check_witnesses(rc, block, s4, n_w);
       let wset = KernelClaim::addr_set_build(outside, RBTreeMap::RBTreeMap::Nil);
+      container_recs_refs(outside, wset);
       check_advice_records(rc, advice, aset, wset);
       let bc = Ingress::load_verified_constant(block);
       match bc {

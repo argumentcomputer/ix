@@ -436,13 +436,12 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
   let roleOf (x : Address) : Option Nat := do
     let (r, _) ← table.bound.find? (·.2 == x)
     Ix.Kernel.Role.all.idxOf? r
-  let mut deps : Array Address := (records.map (·.1)).push fk.recBlock
-  let mut witnesses : Array (Address × Nat × List Nat × List Nat) := #[]
-  for x in outside do
+  -- the witness of one outside reference: (address, kind, path, extra)
+  let classify (x : Address) : Except String (Address × Nat × List Nat × List Nat) := do
     if let some steps := pathFrom x then
-      witnesses := witnesses.push (x, 1, steps, [])
+      return (x, 1, steps, [])
     else if (roleOf x).any basisRoleAllowed then
-      witnesses := witnesses.push (x, 0, [], [])
+      return (x, 0, [], [])
     else if let some (pb, idx, c1) := (look x).bind (fun c => match c.info with
         | .iPrj p => some (p.block, p.idx.toNat, 0)
         | .cPrj p => some (p.block, p.idx.toNat, p.cidx.toNat + 1)
@@ -450,7 +449,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       -- a type or constructor of a block in the closure (its block's walk checks it)
       let some steps := pathFrom pb
         | throw s!"outside projection {x} is of a block outside the closure"
-      witnesses := witnesses.push (x, 3, steps, [idx, c1])
+      return (x, 3, steps, [idx, c1])
     else
       -- a container's recursor: a recursor of a block in the closure
       let ref? : Option (ConstRef Address) := (look x).bind fun c => match c.info with
@@ -461,8 +460,48 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       let some entry := cx.index.recs[ref]? | throw s!"outside recursor {x} is not indexed"
       let some steps := pathFrom entry.block
         | throw s!"outside recursor {x} eliminates a block outside the closure"
-      witnesses := witnesses.push (x, 2, steps, [])
-      deps := deps.push x
+      return (x, 2, steps, [])
+  let mut deps : Array Address := (records.map (·.1)).push fk.recBlock
+  let mut witnesses : Array (Address × Nat × List Nat × List Nat) := #[]
+  for x in outside do
+    let w ← classify x
+    witnesses := witnesses.push w
+    if w.2.1 == 2 then deps := deps.push x
+  -- the references of a container's recursor family that the circuit cannot place by
+  -- the container's block alone (`KernelModeled::container_refs_ok`: the block's
+  -- references, its members, members of the blocks its used references project
+  -- from) are witnessed too (Array.mk's List under a nested container)
+  let mut extra : Array Address := #[]
+  for (x, k, _, _) in witnesses do
+    unless k == 2 do continue
+    let some xc := look x | continue
+    let pr : Option Ixon.Constant × Option (ConstRef Address) := match xc.info with
+      | .rPrj p => (look p.block, some (.member p.block p.idx.toNat))
+      | _ => (some xc, some (.member x 0))
+    let (fam?, ref?) := pr
+    let some fam := fam? | continue
+    let some ref := ref? | continue
+    let some entry := cx.index.recs[ref]? | continue
+    let some ibc := look entry.block | continue
+    let iused := usedIdxs ibc
+    let irefBlocks : Array Address := ibc.refs.zipIdx.filterMap fun (q, j) =>
+      if iused.contains j then (look q).bind projectionBlock? else none
+    let used := usedIdxs fam
+    for (r, j) in fam.refs.zipIdx do
+      unless used.contains j do continue
+      if ibc.refs.contains r || outside.contains r || extra.contains r then continue
+      let rc? := look r
+      if (rc?.bind projectionBlock?) == some entry.block then continue
+      let icBlock : Option Address := rc?.bind fun c => match c.info with
+        | .iPrj p => some p.block
+        | .cPrj p => some p.block
+        | _ => none
+      if icBlock.any irefBlocks.contains then continue
+      extra := extra.push r
+  for x in extra do
+    let w ← classify x
+    witnesses := witnesses.push w
+    if w.2.1 == 2 then deps := deps.push x
   -- the member models and the iota theorems, in the circuit's order
   let modelOf (k : Key .anon) : Except String Address :=
     match nm.gen[auxKey k .model]? with
