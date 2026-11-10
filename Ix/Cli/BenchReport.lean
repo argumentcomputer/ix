@@ -856,6 +856,13 @@ def parseError (msg : String) : IO UInt32 := do
     h.flush
   return 2
 
+structure ParsedCommand where
+  matrix : Array Json
+  envs : Array String
+  summary : String
+  passthrough : Array String
+  fresh : Bool
+
 /-- Parse a `!benchmark` command into the runs it schedules — locally a
     dry-run preview (`ix bench ci parse --comment "!benchmark ixvm-ooc"` prints
     the summary and run list), in CI the matrix generator. The text comes
@@ -867,8 +874,8 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all)
-                 [KEY=VALUE …]
+      !benchmark ([ixvm [execute|prove|compress]] [ixvm-ooc] [compile] [decompile] | all)
+                 [fresh] [KEY=VALUE …]
       (at least one backend or `all` is required)
       BENCH_CONSTANTS=all|none|a,b (constant rows; default all. A shared
                                     constant runs in its own env; any other
@@ -876,17 +883,15 @@ def parseError (msg : String) : IO UInt32 := do
                                     naming where it lives.)
       BENCH_ENVS=all|none|a,b      (env rows: case-insensitive registry
                                     envs; default InitStd)
-      BENCH_PROVE=1                (ixvm: also prove each constant row end
-                                    to end; env rows stay execution-only)
-      BENCH_COMPRESS=kzg           (ixvm: also compress each root to KZG
-                                    with development parameters; implies
-                                    BENCH_PROVE)
       RUST_LOG=… / RUSTFLAGS=… / IX_COMPILE_DEMOTE=…
                                     (passthrough; IX_COMPILE_DEMOTE reaches
                                     the measured `ix compile`, but emits the
-                                    same `.ixe`; caches are SHA-keyed, so a
-                                    knob on an already measured SHA replays
-                                    the cached row)
+                                    same `.ixe`; caches are SHA-keyed, so
+                                    `fresh` remeasures a knob on one SHA)
+
+    The ixvm subcommand defaults to execute. Prove adds proving and root
+    verification to constant rows; compress also adds KZG compression and
+    verification with development parameters. Env rows stay execution-only.
 
     Each scheduled cell is (backend, env) for an env with a selected
     constant row (on a backend with constant rows) or a selected env row;
@@ -899,11 +904,10 @@ def parseError (msg : String) : IO UInt32 := do
     command, like a typo'd backend.
 
     The comparison prints in the comment only; PR runs never upload to
-    bencher, so the canonical baseline is untouched. -/
-def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
-  let body ← match p.flag? "comment" with
-    | some f => pure (f.as! String)
-    | none => pure ((← IO.getEnv "COMMENT_BODY").getD "")
+    bencher, so the canonical baseline is untouched. `fresh` bypasses
+    stored benchmark products and baseline results while retaining
+    dependency caches. -/
+def parseCommand (body : String) : Except String ParsedCommand := do
   let lines := (body.splitOn "\n").map (·.replace "\r" "")
   let isCmd := fun (l : String) => (l.splitOn "!benchmark").length > 1
   let cmd := (lines.find? isCmd).getD ""
@@ -918,7 +922,24 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
+  let mut ixvmMode : Ix.Cli.BenchCmd.IxvmMode := .execute
+  let mut modeSet := false
+  let mut afterIxvm := false
+  let mut fresh := false
   for t in toks.map (·.toLower) do
+    if t == "fresh" then
+      fresh := true
+      continue
+    if let some mode := Ix.Cli.BenchCmd.IxvmMode.parse? t then
+      if !afterIxvm then
+        throw s!"`{t}` must follow `ixvm`: !benchmark ixvm {t}"
+      if modeSet then
+        throw "select only one ixvm subcommand: execute, prove, or compress"
+      ixvmMode := mode
+      modeSet := true
+      afterIxvm := false
+      continue
+    afterIxvm := t == "ixvm"
     let requested := if t == "all"
       then Ix.Cli.BenchCmd.backendSpecs.filter (·.disabled.isNone)
       else (Ix.Cli.BenchCmd.findBackend t).toList
@@ -926,11 +947,11 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     -- typo'd backend silently running the default would report numbers
     -- the commenter never asked for.
     if requested.isEmpty then
-      return ← parseError s!"unknown token `{t}` in the benchmark command \
+      throw s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
         {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
           (·.disabled.isNone)).map (·.name))} — \
-        or `all`)"
+        or `all` / `fresh`; ixvm accepts execute, prove, or compress)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -940,8 +961,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     if !skipped.isEmpty then
       let reasons := ", ".intercalate <| skipped.toList.map fun b =>
         s!"{b.name} ({b.disabled.getD "disabled in CI"})"
-      return ← parseError s!"no requested benchmark backend is enabled in CI: {reasons}"
-    return ← parseError s!"`!benchmark` needs a backend: one or more of \
+      throw s!"no requested benchmark backend is enabled in CI: {reasons}"
+    throw s!"`!benchmark` needs a backend: one or more of \
       {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
         (·.disabled.isNone)).map (·.name))}, or `all`"
 
@@ -969,21 +990,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       match key.trimAscii.toString with
       | "BENCH_ENVS" => envsVal := some val
       | "BENCH_CONSTANTS" => constantsVal := some val
-      | "BENCH_PROVE" =>
-        if val != "1" && val != "0" then
-          return ← parseError s!"BENCH_PROVE must be 1 or 0, got `{val}`"
-        passthrough := passthrough.push s!"BENCH_PROVE={val}"
-      | "BENCH_COMPRESS" =>
-        if val != "kzg" then
-          return ← parseError s!"BENCH_COMPRESS supports only `kzg`, got `{val}`"
-        passthrough := passthrough.push s!"BENCH_COMPRESS={val}"
+      | "BENCH_PROVE" | "BENCH_COMPRESS" =>
+        throw "use `!benchmark ixvm execute|prove|compress` to select stages"
       | k =>
         if ["RUST_LOG", "RUSTFLAGS", "IX_COMPILE_DEMOTE"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
-          return ← parseError s!"unknown config key `{k}` in the \
-            benchmark command (expected BENCH_ENVS / BENCH_CONSTANTS / BENCH_PROVE / \
-            BENCH_COMPRESS, \
+          throw s!"unknown config key `{k}` in the \
+            benchmark command (expected BENCH_ENVS / BENCH_CONSTANTS, \
             or passthrough: RUST_LOG, RUSTFLAGS, IX_COMPILE_DEMOTE)"
     | [] => continue
 
@@ -1001,7 +1015,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | some e =>
         if !envRows.contains e.name then envRows := envRows.push e.name
       | none =>
-        return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
+        throw s!"unknown env `{tok}` in BENCH_ENVS \
           (expected all, none, or a registry env: {", ".intercalate registryEnvs})"
 
   -- BENCH_CONSTANTS selects constant rows: `all` (the default), `none`,
@@ -1017,10 +1031,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | some c => constantRows := constantRows.push (n, c.env)
       | none =>
         if envRows.size != 1 then
-          return ← parseError s!"BENCH_CONSTANTS: `{n}` is not a shared \
+          throw s!"BENCH_CONSTANTS: `{n}` is not a shared \
             benchmark constant; name the env it lives in with a single-env \
             BENCH_ENVS"
         constantRows := constantRows.push (n, envRows[0]!)
+
+  if ixvmMode != .execute && constantRows.isEmpty then
+    throw s!"ixvm {ixvmMode.name} requires at least one constant row; env rows are execution-only"
 
   -- One cell per (backend, env) with anything selected: the env's
   -- constant rows (on a backend with constant rows) and its env row.
@@ -1035,11 +1052,12 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       if !allEnvs.contains e then allEnvs := allEnvs.push e
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
+         ("mode", Json.str (if b.name == "ixvm" && !cs.isEmpty then ixvmMode.name else "execute")),
          ("constants", Json.str (if cs.isEmpty then "none" else ",".intercalate cs.toList)),
          ("env-row", Json.str (if envRow then "1" else "0")),
          ("label", Json.str s!"{b.name}-{e}")]
   if entries.isEmpty then
-    return ← parseError "the command selects no rows: BENCH_CONSTANTS and \
+    throw "the command selects no rows: BENCH_CONSTANTS and \
       BENCH_ENVS select nothing the requested backends measure"
   -- Registry order for the compile stage's matrix.
   allEnvs := registryEnvs.toArray.filter allEnvs.contains
@@ -1050,30 +1068,40 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   for b in skipped do
     summary := summary ++
       s!" · skipped `{b.name}` ({b.disabled.getD "disabled in the registry"})"
-  -- The proving stages ride the passthrough env to the jobs; the summary
-  -- names them as stages, not as raw settings.
-  let staged := fun (k : String) => passthrough.contains s!"{k}=1" || passthrough.contains s!"{k}=kzg"
-  if staged "BENCH_COMPRESS" then summary := summary ++ " · stages `execute+prove+compress`"
-  else if staged "BENCH_PROVE" then summary := summary ++ " · stages `execute+prove`"
-  let shownEnv := passthrough.filter fun kv => !kv.startsWith "BENCH_PROVE=" && !kv.startsWith "BENCH_COMPRESS="
-  if !shownEnv.isEmpty then
-    summary := summary ++ " · env: `" ++ " ".intercalate shownEnv.toList ++ "`"
+  if backends.any (·.name == "ixvm") then
+    summary := summary ++ s!" · ixvm `{ixvmMode.name}`"
+  if ixvmMode == .compress then summary := summary ++ " · stages `execute+prove+compress`"
+  else if ixvmMode == .prove then summary := summary ++ " · stages `execute+prove`"
+  if fresh then
+    summary := summary ++ " · baseline `fresh` (benchmark products rebuilt, bencher bypassed)"
+  if !passthrough.isEmpty then
+    summary := summary ++ " · env: `" ++ " ".intercalate passthrough.toList ++ "`"
 
+  return { matrix := entries, envs := allEnvs, summary, passthrough, fresh }
+
+def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
+  let body ← match p.flag? "comment" with
+    | some f => pure (f.as! String)
+    | none => pure ((← IO.getEnv "COMMENT_BODY").getD "")
+  let parsed ← match parseCommand body with
+    | .ok parsed => pure parsed
+    | .error message => return ← parseError message
   -- `envs` drives the workflow's compile stage: every requested env is
   -- compiled exactly once — the `.ixe` artifact the prover runs restore,
   -- AND the measured row the compile run reuses as its PR side instead
   -- of compiling a second time.
   if let some outPath := ← IO.getEnv "GITHUB_OUTPUT" then
     let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
-    h.putStr <| s!"matrix={(Json.arr entries).compress}\n"
-      ++ s!"envs={(Json.arr (allEnvs.map Json.str)).compress}\n"
-      ++ s!"config-summary={summary}\n"
+    h.putStr <| s!"matrix={(Json.arr parsed.matrix).compress}\n"
+      ++ s!"envs={(Json.arr (parsed.envs.map Json.str)).compress}\n"
+      ++ s!"fresh={if parsed.fresh then 1 else 0}\n"
+      ++ s!"config-summary={parsed.summary}\n"
       ++ "passthrough-env<<PTENV\n"
-      ++ "\n".intercalate passthrough.toList
-      ++ (if passthrough.isEmpty then "" else "\n") ++ "PTENV\n"
+      ++ "\n".intercalate parsed.passthrough.toList
+      ++ (if parsed.passthrough.isEmpty then "" else "\n") ++ "PTENV\n"
     h.flush
-  IO.println summary
-  IO.println (Json.arr entries).pretty
+  IO.println parsed.summary
+  IO.println (Json.arr parsed.matrix).pretty
   return 0
 
 end Ix.Cli.BenchReport

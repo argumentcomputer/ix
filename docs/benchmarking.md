@@ -66,7 +66,7 @@ ix bench run --backend ixvm-ooc --env InitStd
 ix bench run --backend ixvm --env InitStd --constants Nat.add_comm --no-env-row
 
 # Also prove, aggregate, verify and KZG-compress the constant rows:
-ix bench run --backend ixvm --env InitStd --no-env-row --compress kzg
+ix bench run --backend ixvm --mode compress --env InitStd --no-env-row
 
 # Change something, run again, and diff against your previous run
 # (runs save baselines under .lake/benches/<cell>{,.prev}.json — the same
@@ -166,8 +166,8 @@ and, if selected, its env row.
 |---|---|---|---|
 | `ixvm` | constant | formal Aiur execution of the certified IxVM claim verifier, no proving: `execute-time` (the texray `aiur/execute` span around binding and executing the claim), `check-time` (the whole `ix check` process, adding the env load, program load and claim construction), `peak-rss` (the texray tree sampler over that process) | `ix check --ixe <env>.ixe <name>` |
 | `ixvm` | env | the same execution over the whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `check-time`, `peak-rss`, `execute-time` (summed over shards), `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
-| `ixvm` | constant, `BENCH_PROVE=1` | the constant proven end to end on the controller, after its execution: `ix shard extract` writes a one-constant env and `ix shard --shards 2` splits it (setup, untimed; aggregation needs a join), then `ix prove --aggregate --trace-shards --fresh` proves both shards and aggregates them into a root (`prove-time`, `prove-peak-rss`, `prove-proof-size`), and `ix verify --aggregate` checks the root (`verify-time`) | `ix prove --ixe <one>.ixe --ixes <one>.ixes --aggregate` |
-| `ixvm` | constant, `BENCH_COMPRESS=kzg` | also compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`); implies `BENCH_PROVE=1` | `ix compress <root> --dev-kzg-srs` |
+| `ixvm prove` | constant | the constant proven end to end on the controller, after its execution: `ix shard extract` writes a one-constant env and `ix shard --shards 2` splits it (setup, untimed; aggregation needs a join), then `ix prove --aggregate --trace-shards --fresh` proves both shards and aggregates them into a root (`prove-time`, `prove-peak-rss`, `prove-proof-size`), and `ix verify --aggregate` checks the root (`verify-time`) | `ix prove --ixe <one>.ixe --ixes <one>.ixes --aggregate` |
+| `ixvm compress` | constant | executes and proves the constant, then compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`) | `ix compress <root> --dev-kzg-srs` |
 | `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxC`) over each constant's full closure, user axioms admitted as the `ixvm` claim context admits them: `check-time` wraps only the check — the env loads once, outside every row's timed window, and the rows share that process, so they report no peak RSS of their own | `ix check-lean --anon --allow-user-axioms --consts-file` |
 | `ixvm-ooc` | env | the same kernel over the whole env, plus the per-constant attribution CSV the compare drill-down reads. An env with user axioms gets a `conditional` verdict (it holds only under the axioms listed); its row is measured and uploaded like an `ok` one | `ix check-lean --anon --allow-user-axioms --per-const` |
 | `compile` | env | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
@@ -180,8 +180,8 @@ Proving applies to constant rows only: an env row stays execution-only
 (whole-env proving is too slow for CI), and `ix bench run` says so when
 both are selected. Each stage's measures are stage-qualified bencher
 measures with their own plots, and the PR comment gives each stage its own
-table. `ix bench run --prove` and `--compress kzg` are the same switches as
-the variables. bench-main measures execution only.
+table. Locally, `ix bench run --backend ixvm --mode prove` and `--mode compress`
+select the same stages as the PR subcommands. bench-main measures execution only.
 
 The `compile` benchmark switches from the uncertified Rust compiler to the
 certified default in this change. Certified uploads use the distinct
@@ -196,8 +196,7 @@ reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/READ
 and [kernel.md](kernel.md). It is separate from the compiler and `ixvm-ooc` benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
-Formal Aiur proving has no `ix bench` backend; `ixvm` measures execution
-only. Whole-environment GPU proving runs are benchmarked by
+Whole-environment GPU proving runs are benchmarked by
 hand as described in
 [aiur-gpu-proving.md](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run).
 `ix check` reads its compiled programs from `IX_AIUR_CACHE` (default
@@ -260,21 +259,30 @@ directly, outside the registry.
 ## `!benchmark` grammar
 
 ```
-!benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all)
-           [KEY=VALUE …]
+!benchmark ([ixvm [execute|prove|compress]] [ixvm-ooc] [compile] [decompile] | all)
+           [fresh] [KEY=VALUE …]
 BENCH_CONSTANTS=all            # constant rows: all (default), none, or
                                # comma names; a shared constant runs in its
                                # own env, any other name needs a single-env
                                # BENCH_ENVS naming its env
 BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs
                                # (case-insensitive; default InitStd)
-BENCH_PROVE=1                  # ixvm: also prove each constant row end to
-                               # end (env rows stay execution-only)
-BENCH_COMPRESS=kzg             # ixvm: also compress each root to KZG
-                               # (implies BENCH_PROVE)
 RUST_LOG=info                  # passthrough env (allowlist:
                                # RUST_LOG, RUSTFLAGS, IX_COMPILE_DEMOTE)
 ```
+
+`ixvm execute` measures execution, `ixvm prove` also proves and verifies each
+constant, and `ixvm compress` additionally KZG-compresses and verifies the
+root. Bare `ixvm` and `all` default to execution. A mode immediately follows
+`ixvm`, so backends can be combined as `!benchmark ixvm compress ixvm-ooc`.
+Prove and compress require constant rows; whole-env rows remain execution-only.
+
+Add `fresh` to any request, for example `!benchmark ixvm compress fresh`, to
+bypass Bencher baseline results and persistent benchmark-product caches.
+Both revisions' binaries and `.ixe` files are built in this run, and every
+measurement is rerun. A cached head `ix` may parse the command before the
+measured binary is rebuilt. Cargo and package dependency caches remain
+available; fresh results are passed between jobs as run-scoped artifacts.
 
 ### The PR comment
 
@@ -287,7 +295,7 @@ headline metric (at most four) is one column whose cell reads
 `base → PR (Δ%)`, with ⚠️ for a regression and 🟢 for an improvement past
 ±3%; the backend's other metrics sit in one collapsed block, and an
 `ixvm-ooc` env row adds its per-constant attribution drill-down. A run with
-`BENCH_PROVE=1` or `BENCH_COMPRESS=kzg` names its stages in the header line
+`ixvm prove` or `ixvm compress` names its stages in the header line
 (`stages execute+prove+compress`) and adds one table per stage under the
 `ixvm` table (`#### ixvm · prove`, `#### ixvm · compress`), with the
 constant rows that ran it. `ix bench compare` renders a single cell with the
@@ -318,8 +326,8 @@ input box can't hold newlines:
 
 The allowlisted `IX_COMPILE_DEMOTE` setting tunes the Rust compiler used by
 older base checkouts; it does not tune the certified compiler. The `.ixe` and
-compile-row caches are keyed by commit and env, so a compile setting on an
-already benchmarked commit replays the cached row.
+compile-row caches are keyed by commit and env, so add `fresh` to remeasure
+a compile setting on an already benchmarked commit.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it. PR runs never upload to bencher, so the comparison
@@ -378,6 +386,10 @@ the cell's rows and their sources as an artifact. `assemble` runs `ix bench
 report` over every cell without write privileges, and `comment` replaces the initial comment. Only `announce`
 and `comment` hold write tokens, and neither checks out or runs PR code. Runs
 seed the run artifacts from persistent head/base-SHA caches when they hit.
+`fresh` bypasses these caches and the Bencher baseline, rebuilding measured
+products while retaining dependency caches.
+An ixvm cell requesting prove or compress reruns its base measurements:
+bench-main's execution-only results cannot supply those stages.
 Every `ix bench run`, the base side's included, goes through the PR head's
 `.github/scripts/memory-cap`.
 

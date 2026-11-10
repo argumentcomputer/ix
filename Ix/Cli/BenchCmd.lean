@@ -140,9 +140,9 @@ def backendSpecs : List BackendSpec := [
   -- it. The env row shards the env with `ix shard --max-ram 100` (setup,
   -- outside the measured window), then one `ix check --ixes` executes
   -- every shard's claim across all cores; its `execute-time` sums the
-  -- shards' spans; `shards` counts the partition. With BENCH_PROVE=1 a
+  -- shards' spans; `shards` counts the partition. In prove mode a
   -- constant row also proves the constant end to end (`runIxvmProve`), and
-  -- with BENCH_COMPRESS=kzg compresses the root; env rows stay
+  -- in compress mode it also compresses the root to KZG; env rows stay
   -- execution-only, since whole-env proving is too slow for CI.
   { name := "ixvm", testbed := "ixvm",
     constantMetrics := ["execute-time", "check-time", "peak-rss"],
@@ -447,11 +447,23 @@ def addFields (out name : String) (fields : List (String × Lean.Json)) : IO Uni
   let row := (rows.getObjVal? name).toOption.getD (Lean.Json.mkObj [])
   writeEntry out name (fields.foldl (fun r (k, v) => r.setObjVal! k v) row)
 
-/-- The proving stages a constant row may add to its execution. -/
-structure Stages where
-  prove : Bool := false
-  /-- Compress the aggregate root to KZG (implies `prove`). -/
-  compress : Bool := false
+/-- Each mode includes the preceding stages: execution, proving, then KZG compression. -/
+inductive IxvmMode where
+  | execute
+  | prove
+  | compress
+  deriving BEq, Repr, Inhabited
+
+def IxvmMode.parse? : String → Option IxvmMode
+  | "execute" => some .execute
+  | "prove" => some .prove
+  | "compress" => some .compress
+  | _ => none
+
+def IxvmMode.name : IxvmMode → String
+  | .execute => "execute"
+  | .prove => "prove"
+  | .compress => "compress"
 
 /-- The shards a proven constant's env is split into: aggregation needs a
     join, so one shard has no root. -/
@@ -461,12 +473,12 @@ def proveShards : Nat := 2
     a one-constant env and split that into `proveShards` shards (setup,
     unmeasured), prove them and aggregate them into a root on the
     controller (`prove-*`), verify the root (`verify-time`), and with
-    `compress` compress the root to KZG with development parameters
+    compress mode compress the root to KZG with development parameters
     (`compress-*`) and verify that (`compress-verify-time`). Each stage is
     its own spawn, timed by its wall clock and the texray tree sampler. A
     kill marks the row `oom` or `crash`, keeping what was measured; returns
     whether every stage succeeded. -/
-def runIxvmProve (ix ixe out name : String) (stages : Stages) : IO Bool := do
+def runIxvmProve (ix ixe out name : String) (mode : IxvmMode) : IO Bool := do
   let slug := String.ofList (name.toList.map fun c => if c.isAlphanum then c else '_')
   let dir := s!"{out}.prove/{slug}"
   IO.FS.createDirAll dir
@@ -495,7 +507,7 @@ def runIxvmProve (ix ixe out name : String) (stages : Stages) : IO Bool := do
     #["verify", "--aggregate", "--ixe", one, "--ixes", manifest, root]
   if !(← stage "verify" exit) then return false
   addFields out name [("verify-time", jsonRound 6 seconds)]
-  if !stages.compress then return true
+  if mode != .compress then return true
   let (exit, seconds, peak, stdout) ← runCaptured ix
     #["compress", root, "--dev-kzg-srs", "--fresh", "--out", s!"{dir}/compression"]
   if !(← stage "compress" exit) then return false
@@ -530,17 +542,16 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := if spec.hasConstants
     then parseConstants env ((p.flag? "constants").map (·.as! String)) else #[]
   let envRow := !p.hasFlag "no-env-row"
-  -- `--prove` / BENCH_PROVE=1 and `--compress kzg` / BENCH_COMPRESS=kzg
-  -- add proving stages to the ixvm constant rows; other backends ignore
-  -- them, so one BENCH_PROVE applies across a run's cells.
-  let compressWith := ((p.flag? "compress").map (·.as! String)).getD
-    ((← IO.getEnv "BENCH_COMPRESS").getD "")
-  if compressWith != "" && compressWith != "kzg" then
-    p.printError s!"error: --compress / BENCH_COMPRESS supports only `kzg`, got `{compressWith}`"
+  let modeName := ((p.flag? "mode").map (·.as! String)).getD "execute"
+  let some mode := IxvmMode.parse? modeName
+    | p.printError s!"error: unknown mode `{modeName}` (expected execute, prove, or compress)"
+      return exitUsage
+  if mode != .execute && backend != "ixvm" then
+    p.printError s!"error: `{modeName}` is only supported by the ixvm backend"
     return exitUsage
-  let stages : Stages := {
-    compress := compressWith == "kzg"
-    prove := compressWith == "kzg" || p.hasFlag "prove" || (← IO.getEnv "BENCH_PROVE") == some "1" }
+  if mode != .execute && names.isEmpty then
+    p.printError s!"error: ixvm {modeName} requires at least one constant row; env rows are execution-only"
+    return exitUsage
   let mut proveFailures := 0
   IO.eprintln s!"[bench] run {backend}-{env}: {names.size} constant row(s){if envRow then " + env row" else ""}"
 
@@ -600,7 +611,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "ixvm" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     runIxvmConstants ix ixe out names
-    if stages.prove then
+    if mode != .execute then
       if envRow then
         IO.eprintln s!"[bench] proving covers constant rows only; the {env} env row stays execution-only"
       for name in names do
@@ -609,7 +620,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         let status := (rows.getObjVal? name).toOption.map fun row =>
           ((row.getObjVal? "status").toOption.bind (·.getStr?.toOption)).getD "ok"
         if status != some "ok" then continue
-        if !(← runIxvmProve ix ixe out name stages) then proveFailures := proveFailures + 1
+        if !(← runIxvmProve ix ixe out name mode) then proveFailures := proveFailures + 1
     if envRow then runIxvmEnv ix ixe out env
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
@@ -636,8 +647,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     env          : String; "Benchmark env from the registry (default: InitStd)"
     constants    : String; "Constant rows: `all` (default: the env's shared constants), `none`, or comma-separated names (same grammar as the tools' --consts). Ignored by backends without constant rows."
     "no-env-row";          "Skip the env row (the whole-env measurement)"
-    prove;                 "ixvm: also prove each constant row end to end (extract, shard, prove and aggregate, verify); same as BENCH_PROVE=1"
-    compress     : String; "ixvm: also compress each constant row's root (`kzg`, with development parameters) and verify it; implies --prove; same as BENCH_COMPRESS=kzg"
+    mode         : String; "ixvm: execute (default), prove (execution, proving, aggregation and verification), or compress (also KZG compression with development parameters and verification). Env rows stay execution-only."
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"

@@ -138,6 +138,77 @@ def testDrillDown : TestSeq := .individualIO "a drill-down without op counters r
     && (text.splitOn "cost").length == 1
   return (ok, 0, 0, if ok then none else some text)) .done
 
-def suite : List TestSeq := [testRows, testCells, testReport, testRowKinds, testDrillDown]
+open Ix.Cli.BenchReport in
+def testCommands : TestSeq :=
+  let modes := fun command => (parseCommand command).toOption.map fun parsed =>
+    parsed.matrix.map fun cell =>
+      let field := fun key => (cell.getObjValAs? String key).toOption.getD ""
+      (field "backend", field "env", field "mode")
+  let selected := " BENCH_CONSTANTS=Nat.add_comm BENCH_ENVS=none"
+  let rejects := fun command => (parseCommand command).toOption.isNone
+  test "bare ixvm defaults to execution"
+    (modes ("!benchmark ixvm" ++ selected) == some #[ ("ixvm", "InitStd", "execute") ])
+  ++ test "ixvm execute selects execution"
+    (modes ("!benchmark ixvm execute" ++ selected) == some #[ ("ixvm", "InitStd", "execute") ])
+  ++ test "ixvm prove selects proving"
+    (modes ("!benchmark ixvm prove" ++ selected) == some #[ ("ixvm", "InitStd", "prove") ])
+  ++ test "ixvm compress selects compression"
+    (modes ("!benchmark ixvm compress" ++ selected) == some #[ ("ixvm", "InitStd", "compress") ])
+  ++ test "the ixvm mode does not apply to other backends"
+    (modes ("!benchmark ixvm compress ixvm-ooc" ++ selected) ==
+      some #[ ("ixvm", "InitStd", "compress"), ("ixvm-ooc", "InitStd", "execute") ])
+  ++ test "env-only ixvm cells stay execution-only"
+    (modes "!benchmark ixvm prove BENCH_CONSTANTS=Nat.add_comm BENCH_ENVS=Mathlib" ==
+      some #[ ("ixvm", "InitStd", "prove"), ("ixvm", "Mathlib", "execute") ])
+  ++ test "all defaults every cell to execution"
+    ((modes "!benchmark all").any (·.all fun (_, _, mode) => mode == "execute"))
+  ++ test "all can include an explicit ixvm mode"
+    ((modes "!benchmark all ixvm compress").any fun cells =>
+      cells.any (fun (backend, _, mode) => backend == "ixvm" && mode == "compress") &&
+      cells.all (fun (backend, _, mode) => backend == "ixvm" || mode == "execute"))
+  ++ test "backend and subcommand names are case-insensitive"
+    (modes ("!benchmark IXVM PROVE" ++ selected) == some #[ ("ixvm", "InitStd", "prove") ])
+  ++ test "a mode must follow ixvm"
+    (["!benchmark prove ixvm", "!benchmark ixvm-ooc prove", "!benchmark all compress"].all rejects)
+  ++ test "conflicting or repeated modes are rejected"
+    (["!benchmark ixvm prove compress", "!benchmark ixvm prove ixvm compress"].all rejects)
+  ++ test "a misspelled mode is rejected"
+    (rejects "!benchmark ixvm proev")
+  ++ test "proving and compression require constant rows"
+    (["!benchmark ixvm prove BENCH_CONSTANTS=none",
+      "!benchmark ixvm compress BENCH_CONSTANTS=none"].all rejects)
+  ++ test "stage environment settings are rejected inline and on later lines"
+    (["!benchmark ixvm BENCH_PROVE=1", "!benchmark ixvm BENCH_COMPRESS=kzg",
+      "!benchmark ixvm\nBENCH_PROVE=1", "!benchmark ixvm\nBENCH_COMPRESS=kzg"].all rejects)
+  ++ test "compress reports the complete pipeline and only forwards unrelated settings"
+    ((parseCommand "!benchmark ixvm compress RUST_LOG=debug").toOption.any fun parsed =>
+      (parsed.summary.splitOn "stages `execute+prove+compress`").length == 2 &&
+      parsed.passthrough == #["RUST_LOG=debug"])
+  ++ test "fresh applies to every backend and retains the ixvm mode"
+    ((parseCommand "!benchmark ixvm compress ixvm-ooc fresh").toOption.any fun parsed =>
+      parsed.fresh && parsed.passthrough.isEmpty &&
+      (parsed.summary.splitOn "baseline `fresh`").length == 2 &&
+      parsed.matrix.all (fun cell =>
+        (cell.getObjValAs? String "mode").toOption ==
+          some (if (cell.getObjValAs? String "backend").toOption == some "ixvm"
+            then "compress" else "execute")))
+  ++ test "fresh is case-insensitive and works with all"
+    ((parseCommand "!benchmark all FRESH").toOption.any (·.fresh))
+  ++ test "ordinary requests retain cache reuse"
+    ((parseCommand "!benchmark ixvm execute").toOption.any (!·.fresh))
+  ++ test "fresh alone does not select a backend"
+    (rejects "!benchmark fresh")
+
+def testRunMode : TestSeq := .individualIO "invalid run modes fail before starting measured tools" none (do
+  let mut ok := true
+  for args in [["--backend", "ixvm", "--mode", "unknown"],
+               ["--backend", "ixvm-ooc", "--mode", "prove"],
+               ["--backend", "ixvm", "--mode", "compress", "--constants", "none"]] do
+    let (_, code) ← IO.FS.withIsolatedStreams (benchRunCmd.validate args)
+    ok := ok && code == 2
+  return (ok, 0, 0, none)) .done
+
+def suite : List TestSeq :=
+  [testRows, testCells, testReport, testRowKinds, testDrillDown, testCommands, testRunMode]
 
 end Tests.Ix.BenchMeasures
