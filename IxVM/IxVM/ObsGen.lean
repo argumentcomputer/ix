@@ -164,6 +164,8 @@ structure St where
   typeParam : Option String := none
   /-- Inversion steps taken, against a budget. -/
   work : Nat := 0
+  /-- Variable lookups weighted by the environment's length (each costs a `simp` over it). -/
+  lookups : Nat := 0
 
 abbrev M := StateT St (Except String)
 
@@ -394,6 +396,9 @@ mutual
     match e with
     | .var n =>
       let some t := env.lookup n | throw s!"unbound variable {n}"
+      let s ← get
+      if s.lookups + env.length > 3000 then throw "too costly (variable lookups)"
+      set { s with lookups := s.lookups + env.length }
       let l ← fresh "l"
       assign dv t
       assign dh hin
@@ -714,6 +719,7 @@ def leaf (fname : String) (segs : List Seg) : M (List String) := do
   let hcName ← fresh "hc"
   let s ← get
   if s.ctors.size ≥ s.maxPaths then throw "too many paths"
+  if s.path.facts.size > 150 then throw "too many facts on a path"
   let p := s.path
   let lemmas := ["List.append_assoc", "List.cons_append", "List.nil_append", "List.append_nil",
     "instanceName_plain_none", "instanceName_plain_some"] ++ p.lemmas.toList
