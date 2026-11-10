@@ -63,7 +63,8 @@ theorem inj (hT : Transport ρ δ ok env env') {i j : Nat} (h : ρ i = ρ j) : i
 
 /-- Opening a binder at an admissible depth commutes with the transport. -/
 theorem renFV_open (hT : Transport ρ δ ok env env') {d : Nat} (hd : ok d) (b ty : Expr md) :
-    (b.instantiate1 (.fvar d ty)).renFV ρ = (b.renFV ρ).instantiate1 (.fvar (δ d) (ty.renFV ρ)) := by
+    (b.instantiate1 (.fvar d ty)).renFV ρ =
+      (b.renFV ρ).instantiate1 (.fvar (δ d) (ty.renFV ρ)) := by
   rw [renFV_instantiate1]
   show (b.renFV ρ).instantiate1 (.fvar (ρ d) (ty.renFV ρ)) 0 = _
   rw [hT.open_eq hd]
@@ -74,7 +75,8 @@ theorem renFV_fvar_open (hT : Transport ρ δ ok env env') {d : Nat} (hd : ok d)
   rw [hT.open_eq hd]
 
 /-- A level instantiation of a closed (or unrenamed) stored term is fixed. -/
-theorem fix_of (hT : Transport ρ δ ok env env') {e : Expr md} (hc : StoreClosed env → e.hasFvar = false)
+theorem fix_of (hT : Transport ρ δ ok env env') {e : Expr md}
+    (hc : StoreClosed env → e.hasFvar = false)
     (lps : List LevelParam) (us : List Level) :
     (e.instantiateLevelParams lps us).renFV ρ = e.instantiateLevelParams lps us := by
   rcases hT.store with hid | hs
@@ -360,8 +362,8 @@ theorem defEq_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
       (by rw [isUnitLikeTy_renFV]; exact hT.ext.isUnitLikeTy_mono hua)
       (infer_tr hT htb hd) (red_tr hT hwtb hd)
       (by rw [isUnitLikeTy_renFV]; exact hT.ext.isUnitLikeTy_mono hub)
-  | _, _, _, .structEta (cvT := cvT) htb hwtb hhead hctor hlen hthead hind heta hetaCtor hresT hresc htlen hlv
-      hlps hslots hus hcerts hproj hparams hfields, hd => by
+  | _, _, _, .structEta (cvT := cvT) htb hwtb hhead hctor hlen hthead hind heta hetaCtor hresT
+      hresc htlen hlv hlps hslots hus hcerts hproj hparams hfields, hd => by
     have hcs := certs_tr hT hcerts hd
     rw [hT.fixType (cv := cvT) hind rfl, ← getAppArgs_renFV] at hcs
     have hp := defEqList_tr hT hparams hd
@@ -491,9 +493,10 @@ theorem weaken {env env' : Env md} (h : EnvExt env env') :
   store := .inl fun _ => rfl
 
 /-- **Top weakening (W2)**: the variables from `p` on move up by `g`, at the depths
-from `p`, over an environment whose stored terms are closed. -/
-theorem lift {env : Env md} (hs : StoreClosed env) (p g : Nat) :
-    Transport (fun i => if i < p then i else i + g) (fun d => d + g) (fun d => p ≤ d) env env where
+from `p`, along an extension of an environment whose stored terms are closed. -/
+theorem lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env) (p g : Nat) :
+    Transport (fun i => if i < p then i else i + g) (fun d => d + g) (fun d => p ≤ d) env env'
+    where
   mono := fun {i j} hij =>
     show (if i < p then i else i + g) < (if j < p then j else j + g) by
       by_cases hi : i < p <;> by_cases hj : j < p <;> simp [hi, hj] <;> omega
@@ -504,7 +507,7 @@ theorem lift {env : Env md} (hs : StoreClosed env) (p g : Nat) :
   lt := fun {D i} (h : p ≤ D) (hi : i < D) =>
     show (if i < p then i else i + g) < D + g by
       by_cases hip : i < p <;> simp [hip] <;> omega
-  ext := EnvExt.refl env
+  ext := hx
   store := .inr hs
 
 end Transport
@@ -525,5 +528,64 @@ theorem Red.weaken {env env' : Env md} (h : EnvExt env env') {d : Nat} {e e' : E
     (hi : Red env d e e') : Red env' d e e' := by
   have := red_tr (Transport.weaken h) hi trivial
   simpa only [renFV_of_id (fun _ => rfl)] using this
+
+/-- The renaming `lift` uses fixes a term whose free variables are below `p`. -/
+theorem renFV_lift_of_wscoped {p g : Nat} :
+    ∀ {e : Expr md} {D : Nat}, D ≤ p → e.wscopedB D = true →
+      e.renFV (fun i => if i < p then i else i + g) = e := by
+  intro e
+  induction e with
+  | fvar i ty ih =>
+    intro D hD h
+    simp only [Expr.wscopedB, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨h1, h2⟩ := h
+    have hip : i < p := Nat.lt_of_lt_of_le h1 hD
+    show Expr.fvar (if i < p then i else i + g) (ty.renFV _) = _
+    rw [if_pos hip, ih (Nat.le_of_lt hip) h2]
+  | app f a ihf iha =>
+    intro D hD h
+    simp only [Expr.wscopedB, Bool.and_eq_true] at h
+    simp only [renFV, ihf hD h.1, iha hD h.2]
+  | lam ty b m iht ihb =>
+    intro D hD h
+    simp only [Expr.wscopedB, Bool.and_eq_true] at h
+    simp only [renFV, iht hD h.1, ihb hD h.2]
+  | forallE ty b m iht ihb =>
+    intro D hD h
+    simp only [Expr.wscopedB, Bool.and_eq_true] at h
+    simp only [renFV, iht hD h.1, ihb hD h.2]
+  | letE ty v b l iht ihv ihb =>
+    intro D hD h
+    simp only [Expr.wscopedB, Bool.and_eq_true] at h
+    simp only [renFV, iht hD h.1.1, ihv hD h.1.2, ihb hD h.2]
+  | proj s i e ih =>
+    intro D hD h
+    simp only [Expr.wscopedB] at h
+    simp only [renFV, ih hD h]
+  | bvar | sort | const | lit => intro _ _ _; rfl
+
+/-- **W2 for inference**: a derivation at depth `p` (IxVM's lowered context),
+weakened along an extension, holds at depth `p + g` with the variables opened
+from `p` on moved up by `g`. A subject scoped below `p` is unchanged
+(`renFV_lift_of_wscoped`). -/
+theorem Infer.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
+    {g' : Grade} {p g : Nat} {e t : Expr md} (hi : Infer env g' p e t) :
+    Infer env' g' (p + g) (e.renFV (fun i => if i < p then i else i + g))
+      (t.renFV (fun i => if i < p then i else i + g)) :=
+  infer_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
+
+/-- **W2 for conversion.** -/
+theorem DefEq.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
+    {p g : Nat} {a b : Expr md} (hi : DefEq env p a b) :
+    DefEq env' (p + g) (a.renFV (fun i => if i < p then i else i + g))
+      (b.renFV (fun i => if i < p then i else i + g)) :=
+  defEq_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
+
+/-- **W2 for reduction.** -/
+theorem Red.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
+    {p g : Nat} {e e' : Expr md} (hi : Red env p e e') :
+    Red env' (p + g) (e.renFV (fun i => if i < p then i else i + g))
+      (e'.renFV (fun i => if i < p then i else i + g)) :=
+  red_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
 
 end Ix.Kernel.Rules
