@@ -632,23 +632,32 @@ def projection_block := aiur_fn⟦
 ⟧
 
   -- A container's recursor the model uses (`pack_j` is the container's recursor at a
-  -- constant motive): a native recursor of the block `iblock` in the closure, whose used
-  -- references are that block's members or its own references. Checked here: the claim
-  -- walk does not reach it.
+  -- constant motive): a recursor of the block `iblock` in the closure, checked here (the
+  -- claim walk does not reach it) by its block's own route, native or modeled. Its record
+  -- (the family record, for a member of one) uses only that block's references, its
+  -- members, and the members of the blocks its references project from: all in the
+  -- closure of a block the modeled block depends on, so none depends on that block.
 
 def check_container_rec := aiur_fn⟦
   fn check_container_rec(rc: KernelRoles::RoleCtx, x: Bytes::AddressRef, iblock: Bytes::AddressRef) -> () {
       assert_eq!(Bytes::address_eq(rec_family_block(x), iblock), 1,
         "model advice: a container recursor of another block");
-      assert_eq!(block_is_modeled(iblock), 0, "model advice: a container recursor of a modeled block");
       KernelClaim::run_check(rc, x);
-      let c = Ingress::load_verified_constant(x);
+      let c0 = Ingress::load_verified_constant(x);
+      let c = match c0 {
+        Ixon::Constant::Mk(info, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::RPrj(_) => {  Ingress::load_verified_constant(projection_block(c0)) } ,
+            _ => {  c0 } ,
+          } } ,
+      };
       let ib = Ingress::load_verified_constant(iblock);
       match c {
         Ixon::Constant::Mk(_, _, refs, _) => {
           match ib {
             Ixon::Constant::Mk(_, _, irefs, _) => {
-              container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, iblock, irefs) } ,
+              container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, iblock, irefs,
+                                KernelClaim::const_idxs_of(ib)) } ,
           } } ,
       }
     }
@@ -656,7 +665,8 @@ def check_container_rec := aiur_fn⟦
 
 def container_refs_ok := aiur_fn⟦
   fn container_refs_ok(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
-                       iblock: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>) -> () {
+                       iblock: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
+                       iused: Lists::List<Field>) -> () {
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
@@ -664,13 +674,52 @@ def container_refs_ok := aiur_fn⟦
             1 => {
               let ok = match KernelCheck::addr_list_contains(irefs, r) {
                 1 => {  1 } ,
-                _ => {  is_projection_of(r, iblock) } ,
+                _ => {
+                  match is_projection_of(r, iblock) {
+                    1 => {  1 } ,
+                    _ => {  projection_of_ref_block(r, irefs, iused) } ,
+                  } } ,
               };
               assert_eq!(ok, 1, "model advice: a container recursor references outside its block");
               () } ,
             _ => {  () } ,
           };
-          container_refs_ok(rest, used, i + 1, iblock, irefs) } ,
+          container_refs_ok(rest, used, i + 1, iblock, irefs, iused) } ,
+      }
+    }
+⟧
+
+  -- Is `r` a type or constructor of the block one of `irefs` projects from?
+
+def projection_of_ref_block := aiur_fn⟦
+  fn projection_of_ref_block(r: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
+                             iused: Lists::List<Field>) -> Field {
+      let c = Ingress::load_verified_constant(r);
+      match c {
+        Ixon::Constant::Mk(info, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::IPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def ref_projects_from := aiur_fn⟦
+  fn ref_projects_from(irefs: Lists::List<Bytes::AddressRef>, iused: Lists::List<Field>, i: Field,
+                       block: Bytes::AddressRef) -> Field {
+      match (*(irefs)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(q, rest) => {
+          let hit = match KernelClaim::g_list_has(iused, i) {
+            1 => {  is_projection_of(q, block) } ,
+            _ => {  0 } ,
+          };
+          match hit {
+            1 => {  1 } ,
+            _ => {  ref_projects_from(rest, iused, i + 1, block) } ,
+          } } ,
       }
     }
 ⟧
