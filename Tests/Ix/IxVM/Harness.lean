@@ -229,6 +229,9 @@ def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
       fallbacks={stats.fallbacks} inherited={stats.inherited} refused={stats.refused} \
       annotate_ms={t1 - t0} \
       check_ms={(← IO.monoMsNow) - t1}"
+    -- the rerun repeats the build only when the case kept its environment
+    -- (`Case.env`); without it the rerun types with the witness's records alone
+    let same := same || c.env.consts.isEmpty
     if rep.ok && same then return none
     for s in rep.samples do IO.eprintln s!"[{suite}] PW {c.label}: {s}"
     return some s!"PW {c.label}: binder data incomplete, not the kernel's, or not deterministic"
