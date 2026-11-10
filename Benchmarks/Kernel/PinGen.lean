@@ -51,8 +51,9 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    (`Reader.evidenceOf`) and must give the closed proofs; then the dependency
    closure of every bound constant is checked record by record
    (`CheckIxeStep.checkLoop`, the environment check's own step) under the
-   generated table and its evidence. The run fails unless every bound
-   constant's record is accepted (a basis block matches its specification up
+   generated table and its evidence, but for the compiler-trust roles
+   (`uncheckedRoles`), which the fold accepts nothing of. The run fails unless
+   every other bound constant's record is accepted (a basis block matches its specification up
    to `canon`, the literal support has its exact types, the structural `Nat`
    operations are certified by their recurrences and the well-founded ones by
    the evidence) and both literal capabilities hold in the final
@@ -87,6 +88,16 @@ namespace Benchmarks.Kernel.PinGen
 open Ix.Kernel (ConstRef LevelParam Role)
 open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
+
+/-- **The roles whose records the fold is not asked to accept**: Lean's
+compiler-trust constants. The checker declines `Lean.trustCompiler`, an inert
+axiom, as a non-standard axiom; `Lean.reduceBool` and `Lean.reduceNat` use it;
+the types of the inert `Lean.ofReduceBool` and `Lean.ofReduceNat` mention
+those two. No accepted constant uses any of them, so their records and
+closures are left out of the checked closure. The table binds them by Lean
+name like every other role. -/
+def uncheckedRoles : List Role :=
+  [.trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat]
 
 /-- The prelude's declarations, in upstream con-leche's prelude order (its
 `pins/<toolchain>.prelude.ndjson`): each group's roles. -/
@@ -588,7 +599,7 @@ def run (args : List String) : IO UInt32 := do
       roots ++ entries.filterMap (fun | .proof address => some address | .defeq => none)
     else roots
   let checkRoots := equationRoots ++ (preRecords.map (·.1)) ++ (bound.filterMap fun (r, _) =>
-    (refOfRole[r]?).map (·.block))
+    if uncheckedRoles.contains r then none else (refOfRole[r]?).map (·.block))
   let ordered := closure s.store s.extra checkRoots
   IO.eprintln s!"pin-gen: checking the closure, {ordered.size} records"
   let rows ← IO.mkRef (#[] : Array Row)
@@ -603,6 +614,9 @@ def run (args : List String) : IO UInt32 := do
     rows.foldl (fun m r => m.insert r.address (r.outcome, r.reason)) {}
   let mut bad := 0
   for (r, _) in bound do
+    if uncheckedRoles.contains r then
+      IO.eprintln s!"pin-gen: bound {repr r}: not checked (compiler trust)"
+      continue
     let some ref := refOfRole[r]? | continue
     let verdict := outcomeOf[ref.block]?
     match verdict with

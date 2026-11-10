@@ -17,7 +17,7 @@ macro_rules! roles {
     pub enum Role { $($role),+ }
 
     impl Role {
-      pub const ALL: [Self; 103] = [$(Self::$role),+];
+      pub const ALL: [Self; 108] = [$(Self::$role),+];
       pub const fn index(self) -> u8 { self as u8 }
       pub fn from_index(index: u8) -> Option<Self> {
         Self::ALL.get(usize::from(index)).copied()
@@ -134,6 +134,11 @@ roles! {
   CharUtf8Size => "Char.utf8Size",
   StringUtf8ByteSize => "String.utf8ByteSize",
   StringBack => "String.back",
+  TrustCompiler => "Lean.trustCompiler",
+  ReduceBool => "Lean.reduceBool",
+  ReduceNat => "Lean.reduceNat",
+  OfReduceBool => "Lean.ofReduceBool",
+  OfReduceNat => "Lean.ofReduceNat",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

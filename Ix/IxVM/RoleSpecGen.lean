@@ -336,9 +336,9 @@ def ctorCount (src : Source) (r : Role) : Except String Nat := do
     | _, _ => pure ()
   pure count
 
-/-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 the inert
-axiom `sorryAx` (the row's `inert`: tolerated as a declaration, never
-usable), 5 definition specified by its equations. -/
+/-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 an inert axiom
+(the row's `inert`: `sorryAx` or one of Lean's compiler-trust axioms, tolerated
+as a declaration, never usable), 5 definition specified by its equations. -/
 def specKind (src : Source) (r : Role) : Nat :=
   match (src.row r).spec with
   | .block _ => 0
@@ -432,7 +432,7 @@ def namedRoles : List Role :=
   [.nat, .natZero, .natSucc, .bool, .boolFalse, .boolTrue, .eq, .eqRefl,
    .listNil, .listCons, .quot, .quotMk, .quotLift, .quotInd, .quotSound,
    .string, .stringOfList, .char, .charOfNat, .natAdd, .propext, .choice,
-   .sorryAx, .decidableIsTrue, .decidableIsFalse, .ofDecideEqTrue, .ofDecideEqFalse,
+   .decidableIsTrue, .decidableIsFalse, .ofDecideEqTrue, .ofDecideEqFalse,
    .natLe, .natDecLe, .int, .intOfNat, .intNegSucc, .bitVecOfNat, .byteArrayEmpty,
    .intLe, .intDecLe]
 

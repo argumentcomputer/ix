@@ -69,7 +69,7 @@ def mutants : Except String (List (String × Bool × Bool)) := do
 
 end Ix.SpecDigest.Audit
 
-/-- info: "72 groups; well-founded from 33, equations from 41" -/
+/-- info: "77 groups; well-founded from 38, equations from 46" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.Schedule.current with
   | .ok s => s!"{s.groups.length} groups; well-founded from {s.firstWellFounded}, equations from {s.firstEquation}"

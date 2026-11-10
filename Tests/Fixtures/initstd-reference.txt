@@ -5,7 +5,9 @@
 # `ix compile-lean Benchmarks/Compile/CompileInitStd.lean` writes:
 # the certified compile with its report checks and the default role binding.
 # `ix check-lean <artifact> --anon`, strict as every entry is by default, must
-# admit every role the default table binds and refuse none, pass
+# admit every role the default table binds but the five compiler-trust
+# roles (Lean.trustCompiler, Lean.reduceBool, Lean.reduceNat, Lean.ofReduceBool,
+# Lean.ofReduceNat), whose records it refuses, pass
 # `lean-kernel-passed` of `lean-kernel-checked` constants, and refuse exactly the
 # `lean-kernel-refused` addresses (the names are for the reader): it declines
 # the non-standard axiom `Lean.trustCompiler` and blocks the four
