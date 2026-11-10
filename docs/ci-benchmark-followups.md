@@ -19,13 +19,11 @@ design is separate work, not a prerequisite for the trial push.
   different history. Refresh the relevant refs and reconcile the histories
   before updating that PR. Do not treat this branch as a direct continuation
   of its published tip.
-- [ ] For a separate trial, publish to `ix.ci-merge-tests`, the remote branch
-  named in [Merge tests' push trigger](../.github/workflows/merge-tests.yml).
-  The local branch name is `ci-merge-tests`; pushing under that name would
-  not exercise this trigger. The maintainer runs:
+- [ ] For a separate trial, push to `ci-merge-tests`, the branch named in
+  [Merge tests' push trigger](../.github/workflows/merge-tests.yml):
 
   ```sh
-  git push -u origin HEAD:refs/heads/ix.ci-merge-tests
+  git push origin ci-merge-tests
   ```
 
 `InitStd-exec.ixes` is a generated, untracked shard manifest. It is not part
@@ -54,7 +52,7 @@ check names.
 ## Validate benchmark modes and fresh runs
 
 - [ ] Start with one constant, using
-  `BENCH_CONSTANTS=Nat.add_comm BENCH_ENVS=none`, and exercise
+  `BENCH_CONSTANTS=Nat.add_comm`, and exercise
   `!benchmark ixvm execute`, `!benchmark ixvm prove`, and
   `!benchmark ixvm compress fresh`. Verify that compress includes execution,
   proving, aggregation, root verification, KZG compression, and compressed

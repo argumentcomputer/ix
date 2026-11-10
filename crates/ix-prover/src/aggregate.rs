@@ -6,7 +6,13 @@
 //! A claim's witness is rebuilt from the environment and must reproduce the
 //! controller's statement, so every leaf also checks the Rust fold against
 //! `ixon`. Aggregation advice comes from [`aggregate_controller::streams`].
-use std::{path::PathBuf, sync::Arc};
+use std::{
+  path::PathBuf,
+  sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+  },
+};
 
 use aggregate_controller::{
   Backend, BackendSlot, ChildProof, ExtraNode, Identity, PrepareFailure,
@@ -102,10 +108,11 @@ pub struct LaneConfig {
   pub options: Options,
 }
 
-/// What a lane run proved: the verified root, or with `claims_only` each
-/// proven claim's shard id and proof address.
+/// What a lane run proved: the verified root and the trace shards of the claim
+/// proofs the run made (claims reused from the index or cache count none), or
+/// with `claims_only` each proven claim's shard id and proof address.
 pub enum LaneResult {
-  Root(Address),
+  Root(Address, usize),
   Claims(Vec<(u32, Address)>),
 }
 
@@ -129,6 +136,8 @@ pub struct Formal {
   shared_devices: bool,
   threads_per_prover: usize,
   workspace: usize,
+  /// Trace shards of every claim proof this backend made.
+  claim_trace_shards: AtomicUsize,
 }
 
 impl Formal {
@@ -187,6 +196,7 @@ impl Formal {
         == Ok("1"),
       threads_per_prover: (cores / lanes.max(1)).max(1),
       workspace,
+      claim_trace_shards: AtomicUsize::new(0),
     })
   }
 
@@ -299,6 +309,11 @@ impl Formal {
         batch.pipelined.then_some(&lane.feed),
       )
     })?;
+    if matches!(kind, ChildKind::Ixvm) {
+      self
+        .claim_trace_shards
+        .fetch_add(run.proof.proofs.len(), Ordering::Relaxed);
+    }
     eprintln!(
       "[lanes] {} proof: {} trace shards, trace {:.1}s, proving {:.1}s, population stall {:.1}s{}",
       match kind {
@@ -804,7 +819,10 @@ pub fn prove_lanes(
   controller.binding_proof = config.binding_proof.clone();
   let text = lanes::run(&controller, &backend, env, &config.manifest)?;
   if !config.claims_only {
-    return Ok(LaneResult::Root(store_address(text.trim())?));
+    return Ok(LaneResult::Root(
+      store_address(text.trim())?,
+      backend.claim_trace_shards.load(Ordering::Relaxed),
+    ));
   }
   text
     .lines()

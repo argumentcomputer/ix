@@ -118,7 +118,7 @@ describes the proposed common producer.
 The [CI and benchmark follow up work](ci-benchmark-followups.md) tracks the
 trial's validation and the remaining implementation work.
 
-Pushes to `ix.ci-merge-tests` run Merge tests against the pushed commit to
+Pushes to `ci-merge-tests` run Merge tests against the pushed commit to
 validate the upgraded RunsOn cache behavior. The branch filter does not enable
 merge tests on other pushes. PR result comments remain specific to authorized
 `!merge-tests` dispatches.

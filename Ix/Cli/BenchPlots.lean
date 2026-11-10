@@ -1,12 +1,4 @@
 /-
-    | "ixvm", "prove-time"       => "IxVM Prove Time (prove + aggregate)"
-  | "ixvm", "prove-peak-rss"   => "IxVM Prove Peak RAM Usage"
-  | "ixvm", "prove-proof-size" => "IxVM Aggregate Root Proof Size"
-  | "ixvm", "verify-time"      => "IxVM Root Verify Time"
-  | "ixvm", "compress-time"    => "IxVM KZG Compress Time"
-  | "ixvm", "compress-peak-rss" => "IxVM KZG Compress Peak RAM Usage"
-  | "ixvm", "compress-proof-size" => "IxVM KZG Proof Size"
-  | "ixvm", "compress-verify-time" => "IxVM KZG Verify Time"
 `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (workload, measure) that bench-main.yml tracks,
   with one line per benchmark row (a constant or env name) on the current
@@ -68,9 +60,18 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile-lean", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile-lean", "peak-rss"           => "Ix Decompile Peak RAM Usage"
   | "ixvm", "execute-time"     => "IxVM Execute Time"
-  | "ixvm", "check-time"       => "IxVM Check Time"
   | "ixvm", "peak-rss"         => "IxVM Check Peak RAM Usage"
   | "ixvm", "shards"           => "IxVM Env Shards"
+  | "ixvm", "fft-cost"         => "IxVM FFT Cost"
+  | "ixvm", "prove-time"       => "IxVM Prove Time (prove + aggregate)"
+  | "ixvm", "prove-peak-rss"   => "IxVM Prove Peak RAM Usage"
+  | "ixvm", "prove-proof-size" => "IxVM Aggregate Root Proof Size"
+  | "ixvm", "prove-trace-shards" => "IxVM Claim Proof Trace Shards"
+  | "ixvm", "verify-time"      => "IxVM Root Verify Time"
+  | "ixvm", "compress-time"    => "IxVM KZG Compress Time"
+  | "ixvm", "compress-peak-rss" => "IxVM KZG Compress Peak RAM Usage"
+  | "ixvm", "compress-proof-size" => "IxVM KZG Proof Size"
+  | "ixvm", "compress-verify-time" => "IxVM KZG Verify Time"
   | "ixvm-ooc", "check-time"   => "IxVM OOC (IxC) Check Time"
   | "ixvm-ooc", "throughput"   => "IxVM OOC (IxC) Check Throughput"
   | "ixvm-ooc", "peak-rss"     => "IxVM OOC (IxC) Check Peak RAM Usage"
@@ -92,7 +93,9 @@ def unitsFor (slug : String) : Option String :=
   else if slug.endsWith "peak-rss" || slug.endsWith "proof-size" then some "bytes (B)" else
   [("file-size", "bytes (B)"),
    ("constants", "constants"),
-   ("shards", "shards"),
+   ("shards", "env shards"),
+   ("prove-trace-shards", "trace shards"),
+   ("fft-cost", "FFT work"),
    ("throughput", "constants / second")].lookup slug
 
 /-- Dashboard group order (compile first, then decompile, IxVM execution,

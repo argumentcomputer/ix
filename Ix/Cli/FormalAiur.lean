@@ -573,6 +573,7 @@ private def runManifest (p : Cli.Parsed) (ixvm : Option Selected) (options : Hos
   -- `ix bench run --backend aiur-sharded-env`; its peak covers the prover.
   if p.hasFlag "json" then TracingTexray.startSampler
   let start ← IO.monoMsNow
+  let batchStart ← IO.monoNanosNow
   let results ← boundedMap jobs selected fun members k => do
     let options := options.forWave jobs members
     let mut pending := #[(view.shards[k]!, ownedOf.getD k #[])]
@@ -600,6 +601,9 @@ private def runManifest (p : Cli.Parsed) (ixvm : Option Selected) (options : Hos
         if result.code != 0 && !p.hasFlag "keep-going" then pending := #[]
     return (k, settled)
   let elapsedMs := (← IO.monoMsNow) - start
+  if let some flag := p.flag? "batch-time" then
+    let seconds := ((← IO.monoNanosNow) - batchStart).toFloat / 1e9
+    IO.FS.writeFile (flag.as! String) (toJson seconds).compress
   let failures := results.foldl (fun n (_, parts) => n + parts.countP (·.result.code != 0)) 0
   let (refinements, measured) := Ix.Shard.Check.refinementsOfRuns view.shards.size
     (results.map fun (k, parts) => (k, parts.map fun r => (r.blocks, r.result.peak)))

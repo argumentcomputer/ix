@@ -42,18 +42,20 @@ def metricKind (metric : String) : String :=
   else if metric.endsWith "-time" then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
            "throughput"].contains metric then "count"
-  else if ["constants", "shards"].contains metric then "int"
+  else if ["constants", "shards"].contains metric || metric.endsWith "-shards" then "int"
   else "auto"
 
 /-- Display label for a metric column. Keys stay the bencher measure slugs
     (renaming one would orphan its threshold/history); only the table
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
     plots it as "Environment Size"; `peak-rss` reads better as plain RAM;
+    `shards` names the env partition, apart from a proof's `trace-shards`;
     `throughput` carries its unit here because the runs print bare
     magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size"
   else if metric == "throughput" then "throughput (const/s)"
+  else if metric == "shards" then "env-shards"
   else metric.replace "peak-rss" "peak-ram"
 
 /-- Group a digit string by thousands: `"105492"` → `"105,492"`. -/
@@ -143,10 +145,26 @@ def rowNames (rows : Json) : Array String :=
 def badness (deltaPct : Float) (metric : String) : Float :=
   if higherIsBetter metric then -deltaPct else deltaPct
 
+/-- `(factor ≥ 1, direction word)` for the ratio annotation; wording follows
+    the metric kind ("1.15× slower" is meaningless for a byte metric). -/
+def ratio (mainV prV : Float) (metric : String) : Option (Float × String) :=
+  if mainV <= 0.0 || prV <= 0.0 then none else
+  let grew := prV >= mainV
+  let factor := if grew then prV / mainV else mainV / prV
+  if higherIsBetter metric then
+    some (factor, if grew then "faster" else "slower")
+  else
+    let words := match metricKind metric with
+      | "seconds" => ("slower", "faster")
+      | "bytes" => ("larger", "smaller")
+      | _ => ("more", "fewer")
+    some (factor, if grew then words.1 else words.2)
+
 /-- One side of a metric cell: the value, or the row's failure for a
     metric the failure prevented. `none` when the side has no such row or
     no value. A kill can leave real partial measurements, which still
-    render; OOM is a capacity kill, CRASH a fault in the tool. -/
+    render. An OOM is a capacity kill; any other kill is a failure of the
+    tool. -/
 def sideText (rows : Json) (name metric : String) : Option String :=
   if !(rowNames rows).contains name then none else
   let status := rowStatus rows name
@@ -154,252 +172,34 @@ def sideText (rows : Json) (name metric : String) : Option String :=
   match rowNum rows name metric with
   | some v => some (human (some v) metric)
   | none =>
-    if status == "oom" then some "OOM"
-    else if status == "crash" then some "💥 CRASH"
+    if status == "oom" then some "❌ OOM"
+    else if status == "crash" then some "❌ failed"
     else none
 
-/-- A metric cell, `base → PR (Δ%)`, marked ⚠️ (regression) or 🟢
-    (improvement) when the badness-signed Δ% passes `threshold`; with the
-    flags (regressed, improved). Empty when neither side has the metric. -/
-def metricCell (base pr : Json) (name metric : String) (threshold : Float) :
-    String × Bool × Bool :=
+/-- A metric's three cells, `base | PR | Δ%`, the Δ% marked ⚠️
+    (regression) or 🟢 (improvement) when its badness-signed value passes
+    `threshold`, and with the change as a factor (`1.10× slower`) from 1.05×
+    on; with the flags (regressed, improved). All three are empty
+    when neither side has the metric, and Δ% is `n/a` when only one does. -/
+def metricCells (base pr : Json) (name metric : String) (threshold : Float) :
+    Array String × Bool × Bool :=
   let b := sideText base name metric
   let p := sideText pr name metric
-  if b.isNone && p.isNone then ("", false, false) else
-  let text := s!"{b.getD "—"} → {p.getD "—"}"
+  if b.isNone && p.isNone then (#["", "", ""], false, false) else
+  let sides := #[b.getD "—", p.getD "—"]
   match rowNum base name metric, rowNum pr name metric with
   | some bv, some pv =>
-    if bv == 0.0 then (text, false, false) else
+    if bv == 0.0 then (sides.push "n/a", false, false) else
     let dp := (pv - bv) / bv * 100.0
     let bad := badness dp metric
     let mark := if bad > threshold then " ⚠️" else if bad < -threshold then " 🟢" else ""
-    (s!"{text} ({if dp >= 0.0 then "+" else ""}{fmtF dp 1}%){mark}",
+    -- The ratio only when it adds signal beyond the percentage.
+    let factor := match ratio bv pv metric with
+      | some (f, word) => if f >= 1.05 then s!" ({fmtF f 2}× {word})" else ""
+      | none => ""
+    (sides.push s!"{if dp >= 0.0 then "+" else ""}{fmtF dp 1}%{factor}{mark}",
       bad > threshold, bad < -threshold)
-  | _, _ => (text, false, false)
-
-/-! ## Per-constant drill-down (ixvm-ooc `--per-const` attribution CSVs) -/
-
-/-- One entry of a `--per-const` attribution CSV: the
-    aggregated measurements of one constant's (or Muts block's) check. -/
-structure PerConstEntry where
-  nanos : Float := 0
-  cost : Float := 0
-  subst : Float := 0
-  whnf : Float := 0
-  defEq : Float := 0
-  natArith : Float := 0
-  intern : Float := 0
-
-/-- Split one CSV line whose FIRST field may be minimally quoted (names
-    like `«term_,_»`); the remaining fields are plain numerics. -/
-private def splitPerConstLine (line : String) : Option (String × Array String) :=
-  if line.startsWith "\"" then
-    -- Scan for the closing quote, un-escaping doubled quotes.
-    let chars := line.toList.drop 1
-    let rec go (cs : List Char) (acc : String) : Option (String × String) :=
-      match cs with
-      | '"' :: '"' :: rest => go rest (acc.push '"')
-      | '"' :: ',' :: rest => some (acc, String.ofList rest)
-      | '"' :: [] => some (acc, "")
-      | c :: rest => go rest (acc.push c)
-      | [] => none
-    match go chars "" with
-    | some (name, rest) => some (name, (rest.splitOn ",").toArray)
-    | none => none
-  else
-    match line.splitOn "," with
-    | name :: rest => some (name, rest.toArray)
-    | [] => none
-
-/-- Parse an attribution CSV into name → summed entry (structurally
-    equivalent constants can share a first-registered name; summing keeps
-    the join total-preserving). Column order comes from the Rust writer:
-    `name,addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost`. -/
-def readPerConstCsv (path : String) : IO (Std.HashMap String PerConstEntry) := do
-  let mut out : Std.HashMap String PerConstEntry := {}
-  let content ← IO.FS.readFile path
-  for rawLine in content.splitOn "\n" do
-    -- CRLF tolerance: a trailing '\r' would silently zero the last field.
-    let line :=
-      if rawLine.endsWith "\r" then (rawLine.dropEnd 1).toString
-      else rawLine
-    if line.isEmpty || line.startsWith "name," then continue
-    let some (name, fs) := splitPerConstLine line | continue
-    if fs.size < 10 then continue
-    let num := fun (i : Nat) => (fs[i]!.toNat?.getD 0).toFloat
-    let row : PerConstEntry := {
-      nanos := num 2, subst := num 4, whnf := num 5, defEq := num 6
-      natArith := num 7, intern := num 8, cost := num 9 }
-    let acc := out.get? name |>.getD {}
-    out := out.insert name {
-      nanos := acc.nanos + row.nanos, cost := acc.cost + row.cost
-      subst := acc.subst + row.subst, whnf := acc.whnf + row.whnf
-      defEq := acc.defEq + row.defEq, natArith := acc.natArith + row.natArith
-      intern := acc.intern + row.intern }
-  return out
-
-/-- One delta cell in the drill-down tables, styled like the main compare
-    table: signed percent, and ⚠️ / 🟢 past `threshold` percent
-    (badness-signed, so 🟢 marks improvements). -/
-private def fmtDeltaCell (mainV prV : Float) (metric : String)
-    (threshold : Float := 3.0) : String :=
-  if mainV <= 0 then "n/a" else Id.run do
-    let dp := (prV - mainV) / mainV * 100.0
-    let mut s := (if dp >= 0 then "+" else "") ++ fmtF dp 1 ++ "%"
-    let bad := badness dp metric
-    if bad > threshold then s := s ++ " ⚠️"
-    else if bad < -threshold then s := s ++ " 🟢"
-    return s
-
-private def fmtMs (nanos : Float) : String :=
-  let ms := nanos / 1e6
-  if ms >= 1000 then s!"{fmtF (ms / 1000) 2}s"
-  else if ms >= 10 then s!"{fmtF ms 0}ms"
-  else s!"{fmtF ms 1}ms"
-
-private def fmtPct (x : Float) : String :=
-  (if x >= 0 then "+" else "") ++ fmtF (x * 100) 1 ++ "%"
-
-/-- The counter whose relative change best explains a mover — model-free
-    "why" hint next to the wall-time delta. Counters with tiny volumes on
-    both sides (< 20 events) are skipped as ratio noise, and a best delta
-    under 5% is not worth naming. -/
-private def moverDriver (m pr : PerConstEntry) : String :=
-  let cands := #[
-    ("subst", m.subst, pr.subst), ("whnf", m.whnf, pr.whnf),
-    ("def_eq", m.defEq, pr.defEq), ("nat_arith", m.natArith, pr.natArith),
-    ("intern", m.intern, pr.intern)]
-  let scored := cands.filterMap fun (n, a, b) =>
-    if a < 20 && b < 20 then none
-    else
-      let base := if a < 1 then 1.0 else a
-      some (n, (b - base) / base)
-  let best := scored.foldl (init := none) fun acc x =>
-    match acc with
-    | none => some x
-    | some y => if x.2.abs > y.2.abs then some x else acc
-  match best with
-  | some (n, d) => if d.abs < 0.05 then "—" else s!"{n} {fmtPct d}"
-  | none => "—"
-
-/-- Render the top-movers drill-down from two per-constant attribution
-    CSVs (`--per-const`).
-
-    **Entry scope.** An entry is one constant's (or Muts block's) OWN
-    check inside the whole-env run: dependencies are lazily ingressed and
-    trusted — each checked in its own entry — but the ingress of the
-    closure slice the check consults is charged to the entry (the env is
-    cleared per item). Entries therefore sum to the whole-env totals with
-    no double counting, and a change to a shared dependency surfaces in
-    every consumer entry it affects. This is NOT the full-closure scope of
-    the headline table's curated `--consts` measurements (which re-check
-    the whole closure) — the same name can be
-    seconds there and milliseconds here.
-
-    Movers split into two classes with different evidence quality:
-
-    - **cost movers** — the predicted cost moved: |Δcost| ≥ `costFloorRel`
-      of the constant's base-side cost, OR ≥ `costFloorAbs` outright (so a
-      big constant moving a lot of real cost at a small percentage still
-      enters). Ranked by percent change — pathologies first. The op
-      counters are far more stable than wall time but NOT bit-deterministic
-      under parallel checking: worker→item assignment varies uids, and
-      uid-keyed hash iteration order perturbs a few order-sensitive kernel
-      paths. A Mathlib A/A run measured drift on 0.7% of constants,
-      envelope ≈ 13% relative and 0.27e9 absolute — hence the 15% / 1e9
-      defaults. (`--workers 1` runs are exactly reproducible when
-      precision matters.)
-    - **time-only movers** — wall time moved (≥ `floorMs` and `floorRel`)
-      but cost did not. On an A/A run this is pure scheduling/cache noise;
-      on an A/B it can also be allocator or locality effects a counter
-      can't see. Reported second, clearly labeled. -/
-def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
-    (topN : Nat := 10)
-    (floorMs : Float := 10.0) (floorRel : Float := 0.03)
-    (costFloorRel : Float := 0.15) (costFloorAbs : Float := 1e9) :
-    IO String := do
-  let main ← readPerConstCsv mainCsv
-  let pr ← readPerConstCsv prCsv
-  let mut behavior : Array (String × PerConstEntry × PerConstEntry × Float) := #[]
-  let mut timeOnly : Array (String × PerConstEntry × PerConstEntry × Float) := #[]
-  let mut sumMain := 0.0
-  let mut sumPr := 0.0
-  let mut sumCostMain := 0.0
-  let mut sumCostPr := 0.0
-  let mut removed := 0
-  let mut removedNs := 0.0
-  for (name, m) in main do
-    sumMain := sumMain + m.nanos
-    sumCostMain := sumCostMain + m.cost
-    match pr.get? name with
-    | some p =>
-      let dc := p.cost - m.cost
-      let d := p.nanos - m.nanos
-      if dc.abs >= 5e7
-        && (dc.abs >= costFloorRel * m.cost || dc.abs >= costFloorAbs)
-      then
-        -- Store the RELATIVE deltas: sections rank by percent change.
-        behavior := behavior.push (name, m, p, dc / max m.cost 1.0)
-      else if d.abs >= floorMs * 1e6 && d.abs >= floorRel * m.nanos then
-        timeOnly := timeOnly.push (name, m, p, d / max m.nanos 1.0)
-    | none => removed := removed + 1; removedNs := removedNs + m.nanos
-  let mut added := 0
-  let mut addedNs := 0.0
-  for (name, p) in pr do
-    sumPr := sumPr + p.nanos
-    sumCostPr := sumCostPr + p.cost
-    if !main.contains name then
-      added := added + 1; addedNs := addedNs + p.nanos
-  let totalDelta :=
-    if sumMain > 0 then fmtPct ((sumPr - sumMain) / sumMain) else "n/a"
-  let totalCostDelta :=
-    if sumCostMain > 0
-    then fmtPct ((sumCostPr - sumCostMain) / sumCostMain) else "n/a"
-  -- A kernel that reports no op counters (`ix check-lean` writes them as
-  -- zero) leaves wall time as the only evidence, so its movers are not
-  -- labelled noise and the cost columns are dropped.
-  let counted := sumCostMain > 0 || sumCostPr > 0
-  let movers :=
-    if counted then s!"Σ cost {totalCostDelta}; \
-      {behavior.size} cost mover(s), {timeOnly.size} time-only mover(s)"
-    else s!"{timeOnly.size} mover(s)"
-  let mut out := s!"<details><summary>per-constant drill-down — \
-    Σ check {fmtMs sumMain} → {fmtMs sumPr} ({totalDelta}); {movers}"
-  if added > 0 || removed > 0 then
-    out := out ++ s!"; {added} added ({fmtMs addedNs}), \
-      {removed} removed ({fmtMs removedNs})"
-  out := out ++ "</summary>\n\n"
-  out := out ++ "_Each entry is one constant's own check within the \
-    whole-env run (deps ingress lazily; each dep is checked in its own \
-    entry; entries sum to the env) — not the full-closure scope of the \
-    headline `--consts` measurements._\n\n"
-  let section_ := fun (title : String)
-      (rows : Array (String × PerConstEntry × PerConstEntry × Float)) =>
-    if rows.isEmpty then ""
-    else Id.run do
-      let mut s := s!"**{title}**\n\n\
-        | constant | {baseLabel} | PR | Δtime |"
-      s := s ++ (if counted then " Δcost | driver |\n|---|---|---|---|---|---|\n"
-        else "\n|---|---|---|---|\n")
-      for (name, m, p, _) in rows do
-        let dtime := fmtDeltaCell m.nanos p.nanos "check-time"
-        s := s ++ s!"| `{name}` | {fmtMs m.nanos} | {fmtMs p.nanos} | {dtime} |"
-        s := s ++ (if counted then
-          s!" {fmtDeltaCell m.cost p.cost "cycles"} | {moverDriver m p} |\n" else "\n")
-      s ++ "\n"
-  let tSorted := timeOnly.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
-  if !counted then
-    out := out ++ section_ "Time movers" (tSorted.extract 0 topN)
-    return out ++ "</details>"
-  let bSorted := behavior.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
-  out := out ++ section_ "Cost regressions (counter-backed)"
-    (bSorted.filter (fun a => a.2.2.2 > 0) |>.extract 0 topN)
-  out := out ++ section_ "Cost improvements (counter-backed)"
-    (bSorted.filter (fun a => a.2.2.2 < 0) |>.extract 0 topN)
-  out := out ++ section_
-    "Time-only movers (cost flat — scheduling/locality noise)"
-    (tSorted.extract 0 (min topN 5))
-  return out ++ "</details>"
+  | _, _ => (sides.push "n/a", false, false)
 
 /-- One measured cell, (backend, env): both sides' rows, where the base
     side came from, and the hosts that measured each side. -/
@@ -411,71 +211,65 @@ structure Cell where
   baseSource : String := ""
   baseHardware : String := ""
   prHardware : String := ""
-  /-- The ixvm-ooc env row's attribution CSVs, when both sides have one. -/
-  attribution : Option (String × String) := none
 
 /-- The rows of a cell in display order: the env row, then its constants
     (shared constants in registry order, then any others by name). The
-    flag marks the env row; an env with constants but no env row still
-    gets its bold label row. -/
+    flag marks the env row, present only when measured. -/
 def Cell.rows (c : Cell) : Array (String × Bool) := Id.run do
   let names := (rowNames c.base ++ rowNames c.pr).foldl
     (fun acc n => if acc.contains n then acc else acc.push n) #[]
   let shared := Ix.BenchConstants.benchConstants.map (·.name)
   let constants := (shared.filter fun n => names.contains n && n != c.env)
     ++ ((names.filter fun n => n != c.env && !shared.contains n).qsort (· < ·))
-  if names.contains c.env || !constants.isEmpty then
-    return #[(c.env, true)] ++ constants.map ((·, false))
-  return #[]
+  let envRow := if names.contains c.env then #[(c.env, true)] else #[]
+  return envRow ++ constants.map ((·, false))
 
-/-- The measures a row of this kind carries: the env columns for an env
-    row; the constant columns and every stage's measures for a constant
-    row. A tool can write more (the ixvm-ooc constant rows share their
-    process's peak RSS), but only these are shown and compared. -/
-def rowMetrics (spec : Ix.Cli.BenchCmd.BackendSpec) (isEnv : Bool) :
-    List String :=
-  if isEnv then spec.envMetrics
-  else spec.constantMetrics ++ (spec.stages.map (·.2)).flatten
-
-/-- The headline columns of a backend's table (at most four) and the
-    secondary metrics its details block shows: the backend's columns that
-    some row of `cells` has a value for, in registry order. -/
-def columnsOf (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell) :
+/-- The headline columns of one row kind's table (at most four) and the
+    secondary metrics its details block shows: the kind's measures that
+    some of `rows` has a value for, in registry order. -/
+def columnsOf (metrics : List String) (rows : Array (Cell × String)) :
     List String × List String :=
-  let present := spec.metrics.filter fun m => cells.any fun c =>
-    c.rows.any fun (name, isEnv) => (rowMetrics spec isEnv).contains m
-      && ((rowNum c.base name m).isSome || (rowNum c.pr name m).isSome)
+  let present := metrics.filter fun m => rows.any fun (c, name) =>
+    (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
   (present.take 4, present.drop 4)
 
-/-- One backend's table over its cells: env rows in bold, each followed
-    by its constant rows, one `base → PR (Δ%)` column per headline metric;
-    the secondary metrics in one collapsed block; the ixvm-ooc attribution
-    drill-down per env. -/
+/-- One backend's tables over its cells, one per row kind: the env rows,
+    then the constant rows, then one table per proving stage the constant rows ran. Each
+    metric is a `base`, `PR` and `Δ%` column; past four, a kind's metrics
+    sit in one collapsed block. -/
 def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     (threshold : Float) (baseLabel : String) : IO String := do
-  let (headline, secondary) := columnsOf spec cells
   let order := Ix.Cli.BenchCmd.envSpecs.map (·.name)
   let cells := cells.qsort fun a b => order.idxOf a.env < order.idxOf b.env
-  let label := fun (c : Cell) (name : String) (isEnv : Bool) =>
-    if isEnv then s!"**{c.env}**" else s!"`{name}`"
-  let table := fun (metrics : List String) (stage : String) => Id.run do
+  let envRows := (cells.filter fun c => (c.rows.find? (·.2)).isSome).map fun c => (c, c.env)
+  let constantRows := cells.flatMap fun c =>
+    (c.rows.filter (!·.2)).map fun (name, _) => (c, name)
+  -- A stage table names its stage once, on its time column (`prove-time`);
+  -- its other measures drop the prefix (`peak-ram`, not `prove-peak-ram`).
+  let table := fun (rows : Array (Cell × String)) (head : String) (label : String → String)
+      (metrics : List String) (stage : String) => Id.run do
     let shown := fun (m : String) =>
-      metricLabel (if !stage.isEmpty && m.startsWith (stage ++ "-")
-        then (m.drop (stage.length + 1)).toString else m)
-    let head := #["row"] ++ metrics.toArray.map shown
+      let rest := (m.drop (stage.length + 1)).toString
+      metricLabel (if stage.isEmpty || !m.startsWith (stage ++ "-") || rest == "time"
+        then m else rest)
+    let header := #[head] ++ (metrics.toArray.map fun m =>
+      #[s!"{shown m} ({baseLabel})", s!"{shown m} (PR)", "Δ%"]).flatten
     let mut lines := #[
-      "| " ++ " | ".intercalate head.toList ++ " |",
-      "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
-    for c in cells do
-      for (name, isEnv) in c.rows do
-        -- A stage table holds constant rows only; their env keeps its label.
-        let blank := !stage.isEmpty && isEnv
-        if blank && c.rows.size == 1 then continue
-        let cols := metrics.toArray.map fun m =>
-          if blank || !(rowMetrics spec isEnv).contains m then ""
-          else (metricCell c.base c.pr name m threshold).1
-        lines := lines.push ("| " ++ " | ".intercalate (label c name isEnv :: cols.toList) ++ " |")
+      "| " ++ " | ".intercalate header.toList ++ " |",
+      "|" ++ "|".intercalate (header.toList.map fun _ => "---") ++ "|"]
+    for (c, name) in rows do
+      let cols := (metrics.toArray.map fun m => (metricCells c.base c.pr name m threshold).1).flatten
+      lines := lines.push ("| " ++ " | ".intercalate (label name :: cols.toList) ++ " |")
     return lines
+  -- A kind's headline table and, past four metrics, its collapsed block.
+  let kind := fun (rows : Array (Cell × String)) (head : String) (label : String → String)
+      (metrics : List String) => Id.run do
+    let (headline, secondary) := columnsOf metrics rows
+    let mut out := table rows head label headline ""
+    if !secondary.isEmpty then
+      out := out ++ #["", "<details><summary>more metrics</summary>", ""]
+        ++ table rows head label secondary "" ++ #["", "</details>"]
+    return out
   let mut rows := 0
   let mut regressed := 0
   let mut improved := 0
@@ -484,7 +278,9 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     for (name, isEnv) in c.rows do
       if !(rowNames c.base ++ rowNames c.pr).contains name then continue
       rows := rows + 1
-      let flags := (rowMetrics spec isEnv).map fun m => (metricCell c.base c.pr name m threshold).2
+      let metrics := if isEnv then spec.envMetrics
+        else spec.constantMetrics ++ (spec.stages.map (·.2)).flatten
+      let flags := metrics.map fun m => (metricCells c.base c.pr name m threshold).2
       if flags.any (·.1) then regressed := regressed + 1
       if flags.any (·.2) then improved := improved + 1
       if rowStatus c.base name == "rejected" then
@@ -507,19 +303,18 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
       s!"_⚠️ no {baseLabel}-side results (base run failed — see the workflow logs)._"
   else if cells.all (fun c => (rowNames c.pr).isEmpty) then
     out := out.push "" |>.push "_⚠️ no PR-side results (see the workflow logs)._"
-  out := out.push "" ++ table headline ""
-  if !secondary.isEmpty then
-    out := out ++ #["", "<details><summary>more metrics</summary>", ""]
-      ++ table secondary "" ++ #["", "</details>"]
-  -- One table per proving stage the constant rows ran.
+  if !envRows.isEmpty then
+    out := out ++ #["", s!"#### `{spec.name}` · envs", ""]
+      ++ kind envRows "env" id spec.envMetrics
+  if !constantRows.isEmpty then
+    out := out ++ #["", s!"#### `{spec.name}` · constants", ""]
+      ++ kind constantRows "constant" (s!"`{·}`") spec.constantMetrics
   for (stage, metrics) in spec.stages do
-    let ran := cells.any fun c => c.rows.any fun (name, isEnv) =>
-      !isEnv && metrics.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
-    if ran then
-      out := out ++ #["", s!"#### `{spec.name}` · {stage}", ""] ++ table metrics stage
-  for c in cells do
-    if let some (baseCsv, prCsv) := c.attribution then
-      out := out ++ #["", s!"**{c.env}**", "", ← renderPerConstMovers baseCsv prCsv baseLabel]
+    let ran := constantRows.filter fun (c, name) =>
+      metrics.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
+    if !ran.isEmpty then
+      out := out ++ #["", s!"#### `{spec.name}` · {stage}", ""]
+        ++ table ran "constant" (s!"`{·}`") metrics stage
   return "\n".intercalate out.toList
 
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -540,16 +335,8 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD 3.0
   let mainSrc := (p.flag? "base-source").map (·.as! String) |>.getD mainPath
   let baseLabel := (p.flag? "base-label").map (·.as! String) |>.getD "main"
-  -- Per-constant attribution drill-down: rendered whenever an attribution
-  -- CSV (`--per-const`, written by the ixvm-ooc env row) sits next to
-  -- BOTH results files.
-  let mainAttrib := mainPath ++ ".perconst.csv"
-  let prAttrib := prPath ++ ".perconst.csv"
-  let attribution := if (← System.FilePath.pathExists mainAttrib)
-      && (← System.FilePath.pathExists prAttrib)
-    then some (mainAttrib, prAttrib) else none
   let cell : Cell := {
-    backend, env, base := ← readRows mainPath, pr := ← readRows prPath, attribution }
+    backend, env, base := ← readRows mainPath, pr := ← readRows prPath }
   let table := s!"{baseLabel} from: {mainSrc}\n\n" ++
     (← renderBackend spec #[cell] threshold baseLabel)
   match p.flag? "out" with
@@ -560,8 +347,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
 /-! ## report -/
 
 /-- A cell directory as the PR workflow writes it: `base.json`, `pr.json`
-    (either may be missing), the attribution CSVs next to them, and
-    `meta.json` with `backend`, `env`, `base-source`, `base-hardware` and
+    (either may be missing) and `meta.json` with `backend`, `env`, `base-source`, `base-hardware` and
     `pr-hardware`. -/
 def readCell (dir : System.FilePath) : IO (Option Cell) := do
   let metaJson ← readRows (dir / "meta.json").toString
@@ -570,14 +356,11 @@ def readCell (dir : System.FilePath) : IO (Option Cell) := do
   if str "backend" == "" then return none
   let basePath := (dir / "base.json").toString
   let prPath := (dir / "pr.json").toString
-  let attribution := if (← System.FilePath.pathExists (basePath ++ ".perconst.csv"))
-      && (← System.FilePath.pathExists (prPath ++ ".perconst.csv"))
-    then some (basePath ++ ".perconst.csv", prPath ++ ".perconst.csv") else none
   return some {
     backend := str "backend", env := str "env"
     base := ← readRows basePath, pr := ← readRows prPath
     baseSource := str "base-source", baseHardware := str "base-hardware"
-    prHardware := str "pr-hardware", attribution }
+    prHardware := str "pr-hardware" }
 
 /-- The distinct non-empty values, in first-seen order. -/
 def distinct (xs : Array String) : Array String :=
@@ -883,6 +666,10 @@ structure ParsedCommand where
                                     naming where it lives.)
       BENCH_ENVS=all|none|a,b      (env rows: case-insensitive registry
                                     envs; default InitStd)
+      Setting either key selects exactly what it names: the other key then
+      defaults to `none`, and the defaults above apply only when neither
+      is set. With neither set, `ixvm prove` and `ixvm compress` select
+      only `Nat.add_comm`.
       RUST_LOG=… / RUSTFLAGS=… / IX_COMPILE_DEMOTE=…
                                     (passthrough; IX_COMPILE_DEMOTE reaches
                                     the measured `ix compile`, but emits the
@@ -1001,15 +788,25 @@ def parseCommand (body : String) : Except String ParsedCommand := do
             or passthrough: RUST_LOG, RUSTFLAGS, IX_COMPILE_DEMOTE)"
     | [] => continue
 
+  -- With neither key set, the default selection is every shared constant
+  -- and the InitStd env row, or only `Nat.add_comm` when ixvm proves: CPU
+  -- proving of the larger constants outlasts the job timeout. Setting one
+  -- key selects only what it names.
+  let neither := envsVal.isNone && constantsVal.isNone
+  let proving := ixvmMode != .execute
+  let envsSel := envsVal.getD (if neither && !proving then "InitStd" else "none")
+  let constantsSel := constantsVal.getD
+    (if !neither then "none" else if proving then "Nat.add_comm" else "all")
+
   -- BENCH_ENVS selects env rows: `all`, `none`, or registry env names
-  -- (case-insensitive). Default: InitStd.
+  -- (case-insensitive).
   let registryEnvs := Ix.Cli.BenchCmd.envSpecs.map (·.name)
   let mut envRows : Array String := #[]
-  match (envsVal.getD "InitStd").toLower with
+  match envsSel.toLower with
   | "all" => envRows := registryEnvs.toArray
   | "none" => pure ()
   | _ =>
-    for tok in (envsVal.getD "InitStd").splitOn "," do
+    for tok in envsSel.splitOn "," do
       let tok := tok.trimAscii.toString
       match Ix.Cli.BenchCmd.findEnv tok with
       | some e =>
@@ -1022,11 +819,11 @@ def parseCommand (body : String) : Except String ParsedCommand := do
   -- or names. A shared constant runs in its own env; any other name needs
   -- BENCH_ENVS to name exactly one env, where it then runs.
   let mut constantRows : Array (String × String) := #[]
-  match (constantsVal.getD "all").toLower with
+  match constantsSel.toLower with
   | "all" => constantRows := Ix.BenchConstants.benchConstants.map fun c => (c.name, c.env)
   | "none" => pure ()
   | _ =>
-    for n in Ix.Cli.ConstsFile.parseCommaList (constantsVal.getD "") do
+    for n in Ix.Cli.ConstsFile.parseCommaList constantsSel do
       match Ix.BenchConstants.benchConstants.find? (·.name == n) with
       | some c => constantRows := constantRows.push (n, c.env)
       | none =>
@@ -1063,7 +860,7 @@ def parseCommand (body : String) : Except String ParsedCommand := do
   allEnvs := registryEnvs.toArray.filter allEnvs.contains
 
   let names := " ".intercalate (backends.map (·.name)).toList
-  let mut summary := s!"backends `{names}` · constants `{constantsVal.getD "all"}` · \
+  let mut summary := s!"backends `{names}` · constants `{constantsSel}` · \
     env rows `{if envRows.isEmpty then "none" else ",".intercalate envRows.toList}`"
   for b in skipped do
     summary := summary ++

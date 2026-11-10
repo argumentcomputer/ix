@@ -2,9 +2,8 @@
   Tests for the benchmark registry's row kinds: a backend's constant rows
   are the shared constants, each in its own env, and its env rows are the
   registry envs; both kinds plot on the backend's one testbed. The
-  PR-comment renderer marks each cell past ±3% and groups a cell's rows
-  under its env, and its per-constant drill-down ranks wall-time movers
-  when the kernel reports no op counters.
+  PR-comment renderer marks each cell past ±3% and tables env rows and
+  constant rows separately.
 -/
 
 module
@@ -60,50 +59,87 @@ def rowsOf (rows : List (String × List (String × Nat)) ) (status : List (Strin
 open Ix.Cli.BenchReport in
 def testCells : TestSeq :=
   let cell := fun (b p : Nat) (metric : String) =>
-    metricCell (rowsOf [("Nat.add_comm", [(metric, b)])])
+    metricCells (rowsOf [("Nat.add_comm", [(metric, b)])])
       (rowsOf [("Nat.add_comm", [(metric, p)])]) "Nat.add_comm" metric 3.0
   test "a slower run past 3% is a regression"
     (let (text, bad, good) := cell 100 110 "check-time"
-     text.endsWith "(+10.0%) ⚠️" && bad && !good)
+     text == #["1m 40.0s", "1m 50.0s", "+10.0% (1.10× slower) ⚠️"] && bad && !good)
   ++ test "a faster run past 3% is an improvement"
     (let (text, bad, good) := cell 100 96 "check-time"
-     text.endsWith "(-4.0%) 🟢" && !bad && good)
+     text[2]! == "-4.0% 🟢" && !bad && good)
   ++ test "a change within 3% is unmarked"
     (let (text, bad, good) := cell 100 102 "check-time"
-     text.endsWith "(+2.0%)" && !bad && !good)
+     text[2]! == "+2.0%" && !bad && !good)
+  ++ test "a change of 5% or more names its factor in the metric's terms"
+    ((cell 100 50 "check-time").1[2]! == "-50.0% (2.00× faster) 🟢"
+      && (metricCells (rowsOf [("Nat.add_comm", [("prove-proof-size", 100)])])
+        (rowsOf [("Nat.add_comm", [("prove-proof-size", 120)])])
+        "Nat.add_comm" "prove-proof-size" 3.0).1[2]! == "+20.0% (1.20× larger) ⚠️")
+  ++ test "trace shards render as counts and more of them is a regression"
+    ((metricCells (rowsOf [("Nat.add_comm", [("prove-trace-shards", 4)])])
+      (rowsOf [("Nat.add_comm", [("prove-trace-shards", 6)])])
+      "Nat.add_comm" "prove-trace-shards" 3.0).1 == #["4", "6", "+50.0% (1.50× more) ⚠️"])
   ++ test "higher throughput is an improvement"
     ((cell 100 110 "throughput").2.2)
   ++ test "a rejected row renders ❌"
-    ((metricCell (rowsOf [("Nat.add_comm", [("check-time", 1)])])
+    ((metricCells (rowsOf [("Nat.add_comm", [("check-time", 1)])])
       (rowsOf [("Nat.add_comm", [])] [("Nat.add_comm", "rejected")])
-      "Nat.add_comm" "check-time" 3.0).1.endsWith "→ ❌")
+      "Nat.add_comm" "check-time" 3.0).1 == #["1.000 s", "❌", "n/a"])
+  ++ test "a crashed row renders a generic failure"
+    ((metricCells (rowsOf [("Nat.add_comm", [("check-time", 1)])])
+      (rowsOf [("Nat.add_comm", [])] [("Nat.add_comm", "crash")])
+      "Nat.add_comm" "check-time" 3.0).1 == #["1.000 s", "❌ failed", "n/a"])
+  ++ test "an OOM row keeps its measured stages and marks the ones it lost"
+    (let base := rowsOf [("Nat.add_comm", [("execute-time", 1), ("prove-time", 30)])]
+     let pr := rowsOf [("Nat.add_comm", [("execute-time", 1)])] [("Nat.add_comm", "oom")]
+     (metricCells base pr "Nat.add_comm" "execute-time" 3.0).1[2]! == "+0.0%"
+       && (metricCells base pr "Nat.add_comm" "prove-time" 3.0).1 == #["30.000 s", "❌ OOM", "n/a"])
   ++ test "the env row leads, then its constants in registry order"
     ({ backend := "ixvm", env := "InitStd"
        base := rowsOf [("Std.HashMap", []), ("InitStd", []), ("Nat.add_comm", [])] : Cell }.rows
       == #[("InitStd", true), ("Nat.add_comm", false), ("Std.HashMap", false)])
-  ++ test "constants without an env row still get their env's label row"
+  ++ test "constants without an env row get no env label row"
     ({ backend := "ixvm", env := "InitStd", pr := rowsOf [("Nat.add_comm", [])] : Cell }.rows
-      == #[("InitStd", true), ("Nat.add_comm", false)])
+      == #[("Nat.add_comm", false)])
 
 open Ix.Cli.BenchReport in
-def testReport : TestSeq := .individualIO "ixvm report: one table, env row first, stages on demand" none (do
+def testReport : TestSeq := .individualIO "ixvm report: an env table, then a constant table, stages on demand" none (do
   let some spec := findBackend "ixvm" | return (false, 0, 0, none)
-  let base := rowsOf [("InitStd", [("check-time", 50), ("execute-time", 40)]),
-    ("Nat.add_comm", [("check-time", 3), ("execute-time", 1)])]
-  let pr := rowsOf [("InitStd", [("check-time", 60), ("execute-time", 41)]),
-    ("Nat.add_comm", [("check-time", 3), ("execute-time", 1)])]
+  let base := rowsOf [("InitStd", [("execute-time", 40)]), ("Nat.add_comm", [("execute-time", 1)])]
+  let pr := rowsOf [("InitStd", [("execute-time", 41)]), ("Nat.add_comm", [("execute-time", 1)])]
   let plain ← renderBackend spec #[{ backend := "ixvm", env := "InitStd", base, pr }] 3.0 "main"
   let lines := plain.splitOn "\n"
-  let envAt := lines.findIdx? (·.startsWith "| **InitStd** |")
+  let envAt := lines.findIdx? (·.startsWith "| InitStd |")
   let constAt := lines.findIdx? (·.startsWith "| `Nat.add_comm` |")
-  let proved := rowsOf [("Nat.add_comm", [("check-time", 3), ("prove-time", 30)])]
+  let envHead := lines.findIdx? (· == "#### `ixvm` · envs")
+  let constHead := lines.findIdx? (· == "#### `ixvm` · constants")
+  let proved := rowsOf [("Nat.add_comm", [("execute-time", 1), ("prove-time", 30)])]
   let staged ← renderBackend spec
     #[{ backend := "ixvm", env := "InitStd", base := proved, pr := proved }] 3.0 "main"
   let ok := plain.startsWith "### `ixvm`"
-    && (match envAt, constAt with | some e, some c => e < c | _, _ => false)
+    && (match envHead, envAt, constHead, constAt with
+      | some eh, some e, some ch, some c => eh < e && e < ch && ch < c
+      | _, _, _, _ => false)
+    && (plain.splitOn "| env | execute-time (main)").length == 2
+    && (plain.splitOn "| constant | execute-time (main)").length == 2
     && (plain.splitOn "· prove").length == 1
     && (staged.splitOn "#### `ixvm` · prove").length == 2
+    && (staged.splitOn "| prove-time (main) | prove-time (PR) | Δ% | peak-ram (main) |").length == 2
+    && (plain.splitOn "check-time").length == 1
   return (ok, 0, 0, if ok then none else some plain)) .done
+
+open Ix.Cli.BenchReport in
+def testFftCost : TestSeq := .individualIO "ixvm tables show the FFT cost on both row kinds" none (do
+  let some spec := findBackend "ixvm" | return (false, 0, 0, none)
+  let rows := fun (env c : Nat) => rowsOf [
+    ("InitStd", [("execute-time", 40), ("peak-rss", 1), ("shards", 12), ("fft-cost", env)]),
+    ("Nat.add_comm", [("execute-time", 1), ("peak-rss", 1), ("fft-cost", c)])]
+  let text ← renderBackend spec
+    #[{ backend := "ixvm", env := "InitStd", base := rows 100000000000 390000000, pr := rows 100000000000 400000000 }]
+    3.0 "main"
+  let ok := (text.splitOn "| env-shards (main) | env-shards (PR) | Δ% | fft-cost (main) |").length == 2
+    && (text.splitOn "| `Nat.add_comm` | 1.000 s | 1.000 s | +0.0% | 1 B | 1 B | +0.0% | 390.00M | 400.00M | +2.6% |").length == 2
+  return (ok, 0, 0, if ok then none else some text)) .done
 
 open Ix.Cli.BenchReport in
 def testRowKinds : TestSeq := .individualIO "a row shows and compares only its kind's measures" none (do
@@ -115,28 +151,13 @@ def testRowKinds : TestSeq := .individualIO "a row shows and compares only its k
   let oocText ← renderBackend ooc
     #[{ backend := "ixvm-ooc", env := "InitStd", base := shared, pr := grew }] 3.0 "main"
   let some ixvm := findBackend "ixvm" | return (false, 0, 0, none)
-  let consts := rowsOf [("Nat.add_comm", [("check-time", 3), ("execute-time", 1)])]
+  let consts := rowsOf [("Nat.add_comm", [("execute-time", 1)])]
   let ixvmText ← renderBackend ixvm
     #[{ backend := "ixvm", env := "InitStd", base := consts, pr := consts }] 3.0 "main"
   let ok := (oocText.splitOn "0 with regressions").length == 2
     && (oocText.splitOn "peak-ram").length == 1
     && (ixvmText.splitOn "shards").length == 1
   return (ok, 0, 0, if ok then none else some (oocText ++ "\n" ++ ixvmText))) .done
-
-open Ix.Cli.BenchReport in
-def testDrillDown : TestSeq := .individualIO "a drill-down without op counters ranks time movers" none (do
-  let dir ← IO.FS.createTempDir
-  let header := "name,addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost\n"
-  let csv := fun (nanos : Nat) => header ++ s!"Nat.add,00,1,{nanos},0,0,0,0,0,0,0\nEq,01,1,1000,0,0,0,0,0,0,0\n"
-  IO.FS.writeFile (dir / "base.csv") (csv 100000000)
-  IO.FS.writeFile (dir / "pr.csv") (csv 150000000)
-  let text ← renderPerConstMovers (dir / "base.csv").toString (dir / "pr.csv").toString
-  IO.FS.removeDirAll dir
-  let ok := (text.splitOn "1 mover(s)").length == 2
-    && (text.splitOn "**Time movers**").length == 2
-    && (text.splitOn "| `Nat.add` | 100ms | 150ms | +50.0% ⚠️ |").length == 2
-    && (text.splitOn "cost").length == 1
-  return (ok, 0, 0, if ok then none else some text)) .done
 
 open Ix.Cli.BenchReport in
 def testCommands : TestSeq :=
@@ -198,6 +219,27 @@ def testCommands : TestSeq :=
     ((parseCommand "!benchmark ixvm execute").toOption.any (!·.fresh))
   ++ test "fresh alone does not select a backend"
     (rejects "!benchmark fresh")
+  ++ test "with neither key set, every shared constant and the InitStd env row run"
+    ((parseCommand "!benchmark ixvm").toOption.any fun parsed =>
+      parsed.matrix.any (fun cell => (cell.getObjValAs? String "env-row").toOption == some "1")
+      && parsed.matrix.size == 2)
+  ++ test "BENCH_CONSTANTS alone selects no env rows"
+    ((parseCommand "!benchmark ixvm BENCH_CONSTANTS=Nat.add_comm").toOption.any fun parsed =>
+      parsed.matrix.size == 1 &&
+      parsed.matrix.all (fun cell => (cell.getObjValAs? String "env-row").toOption == some "0"))
+  ++ test "BENCH_ENVS alone selects no constant rows"
+    ((parseCommand "!benchmark ixvm\nBENCH_ENVS=Mathlib").toOption.any fun parsed =>
+      parsed.matrix.size == 1 &&
+      parsed.matrix.all (fun cell => (cell.getObjValAs? String "constants").toOption == some "none"))
+  ++ test "proving with only env rows selected is rejected"
+    (rejects "!benchmark ixvm prove BENCH_ENVS=InitStd")
+  ++ test "proving with neither key set selects only Nat.add_comm"
+    (["!benchmark ixvm prove", "!benchmark ixvm compress"].all fun c =>
+      modes c == some #[ ("ixvm", "InitStd", c.splitOn " " |>.getLast!) ] &&
+      (parseCommand c).toOption.any fun parsed =>
+        parsed.matrix.all (fun cell =>
+          (cell.getObjValAs? String "constants").toOption == some "Nat.add_comm" &&
+          (cell.getObjValAs? String "env-row").toOption == some "0"))
 
 def testRunMode : TestSeq := .individualIO "invalid run modes fail before starting measured tools" none (do
   let mut ok := true
@@ -209,6 +251,6 @@ def testRunMode : TestSeq := .individualIO "invalid run modes fail before starti
   return (ok, 0, 0, none)) .done
 
 def suite : List TestSeq :=
-  [testRows, testCells, testReport, testRowKinds, testDrillDown, testCommands, testRunMode]
+  [testRows, testCells, testReport, testFftCost, testRowKinds, testCommands, testRunMode]
 
 end Tests.Ix.BenchMeasures

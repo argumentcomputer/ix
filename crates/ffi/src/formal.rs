@@ -422,9 +422,10 @@ extern "C" fn rs_formal_prove_lanes(
       &aggr.get().0,
     )?;
     Ok(match result {
-      LaneResult::Root(address) => {
+      LaneResult::Root(address, claim_trace_shards) => {
         let root = LeanLaneResult::alloc(0);
         root.set_obj(0, records::lean_address(&address));
+        root.set_obj(1, LeanOwned::box_usize(claim_trace_shards));
         root
       },
       LaneResult::Claims(claims) => {

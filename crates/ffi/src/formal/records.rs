@@ -40,7 +40,7 @@ lean_ffi::lean_inductive! {
   /// `claimsOnly`, `assumeBinding`.
   LeanLaneConfig [ { num_obj: 10, num_8: 4 } ];
   LeanLaneResult [
-    { num_obj: 1 },  // root
+    { num_obj: 2 },  // root: `address`, `claimTraceShards`
     { num_obj: 1 },  // claims
   ];
   /// `manifest` … `options` (ten objects); `planOnly`, `useCache`,

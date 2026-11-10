@@ -368,6 +368,14 @@ lean_exe «sharing-family-normalize» where
 lean_exe «sharing-scratch» where
   root := `Benchmarks.SharingScratch
 
+/-- One constant's IxVM benchmark row: execution and, with `--mode prove`, its
+aggregate proof and root verification, measured in one process
+(`Benchmarks/IxVM.lean`). `ix bench run --backend ixvm` runs it per constant. -/
+lean_exe «bench-ixvm» where
+  root := `Benchmarks.IxVM
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs_net]
+
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 

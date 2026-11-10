@@ -40,9 +40,8 @@
 #
 # For each matrix entry the job runs `ix bench run` twice: once on the PR
 # checkout, once for the base side. The base side comes from bencher.dev
-# (`ix bench fetch-main`) only on FULL coverage (and, for an ixvm-ooc env row, a cached
-# attribution CSV); anything less — base SHA not uploaded, partial
-# coverage, an ixvm-ooc attribution cache miss, or `fresh` — triggers a full
+# (`ix bench fetch-main`) only on FULL coverage; anything less — base SHA
+# not uploaded, partial coverage, or `fresh` — triggers a full
 # local base-SHA rerun whose rows take priority over bencher's.
 #
 # The issue_comment run only checks that the commenter is an org
@@ -206,13 +205,13 @@ jobs:
         with:
           auto-config: false
           build: ${{ steps.bins.outputs.cache-hit != 'true' }}
-          build-args: ix
+          build-args: ix bench-ixvm
           use-github-cache: false
       - if: steps.bins.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/bin
-          cp .lake/build/bin/ix ~/.local/bin/
-          chmod +x ~/.local/bin/ix
+          cp .lake/build/bin/ix .lake/build/bin/bench-ixvm ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-ixvm
       - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Parse the !benchmark command from an env var (never
       # inline-interpolated); unknown tokens fall off the allowlist.
@@ -234,9 +233,9 @@ jobs:
       - name: Build fresh benchmark binaries
         if: steps.parse.outputs.fresh == '1'
         run: |
-          lake build ix
-          cp .lake/build/bin/ix ~/.local/bin/
-          chmod +x ~/.local/bin/ix
+          lake build ix bench-ixvm
+          cp .lake/build/bin/ix .lake/build/bin/bench-ixvm ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-ixvm
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -256,7 +255,7 @@ jobs:
           key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ steps.target.outputs.revision }}
       - name: Package run binaries
         run: |
-          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar ix
+          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar ix bench-ixvm
           tar -C "$IX_AIUR_CACHE" -cf benchmark-aiur-cache.tar .
       - name: Upload run binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -658,19 +657,6 @@ jobs:
                echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::fetch-main: permanent config error (exit $rc) — check backendSpecs testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
-      # Base-side attribution CSV for the ixvm-ooc drill-down: bench-main cached
-      # the base SHA's CSV by (SHA, cell) — bencher itself stores metric
-      # rows only. Restored BEFORE the base-run decision so a miss can
-      # force one (ixvm-ooc's base run is cheap; a re-run beats
-      # a silently absent drill-down).
-      - name: Restore base-side attribution CSV (ixvm-ooc)
-        id: perconst
-        if: matrix.params.backend == 'ixvm-ooc' && matrix.params['env-row'] == '1' && env.FRESH != '1'
-        continue-on-error: true
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: bench.json.perconst.csv
-          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # The host that measured the base SHA's rows on main, recorded by
       # bench-main next to its bencher upload. Only a bencher-sourced base side
       # uses it; a base run in this job is labelled with this runner instead.
@@ -682,27 +668,17 @@ jobs:
           path: bench-hardware.txt
           key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # The final base-run decision — every base-side step gates on THIS
-      # step. A base run, whatever triggered it (bencher miss or partial, or
-      # an ixvm-ooc attribution-CSV cache miss), is always a FULL
-      # rerun whose rows take priority over bencher's.
+      # step. A base run, whatever triggered it (a bencher miss or partial
+      # coverage), is always a FULL rerun whose rows take priority over
+      # bencher's.
       - name: Decide base run
         id: decide
         env:
           BENCHER_RUN_BASE: ${{ steps.bencher.outputs.run-base }}
           BENCHER_SOURCE: ${{ steps.bencher.outputs.source }}
-          PERCONST_HIT: ${{ steps.perconst.outputs.cache-hit }}
         run: |
-          rb="$BENCHER_RUN_BASE"
-          src="$BENCHER_SOURCE"
-          if [ "$BACKEND" = ixvm-ooc ] && [ "$ENV_ROW" = 1 ] \
-            && [ "$PERCONST_HIT" != "true" ] \
-            && [ "$rb" != true ]; then
-            echo "ixvm-ooc attribution CSV not cached — full fresh base run"
-            rb=true
-            src="base run @ ${BASE_SHA::7} (ixvm-ooc attribution cache miss)"
-          fi
-          echo "run-base=$rb" >> "$GITHUB_OUTPUT"
-          echo "source=$src" >> "$GITHUB_OUTPUT"
+          echo "run-base=$BENCHER_RUN_BASE" >> "$GITHUB_OUTPUT"
+          echo "source=$BENCHER_SOURCE" >> "$GITHUB_OUTPUT"
       - name: Checkout base (bencher data missing or partial)
         if: steps.decide.outputs.run-base == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -771,6 +747,7 @@ jobs:
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
               mv ~/.local/bin/ix base/.lake/build/bin/ 2>/dev/null || true
+              mv ~/.local/bin/bench-ixvm base/.lake/build/bin/ 2>/dev/null || true
               [ -x base/.lake/build/bin/ix ] && cached=true
             fi
           fi
@@ -795,6 +772,17 @@ jobs:
         uses: $/.github/actions/log-cpu
         with:
           label: Base benchmark binary build CPU
+      # A base from before `bench-ixvm` has no such target; its ixvm constant
+      # rows then report no base column.
+      - name: Choose base targets
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        id: base-targets
+        run: |
+          if grep -q 'lean_exe «bench-ixvm»' base/lakefile.lean; then
+            echo "args=ix bench-ixvm" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=ix" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build base (ix)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
@@ -802,7 +790,7 @@ jobs:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix"
+          build-args: ${{ steps.base-targets.outputs.args }}
           use-github-cache: false
       # The base `ix` loads its programs from IX_AIUR_CACHE too: a fresh base
       # build fills it, and so does a cached base's bench-aiur entry, but a
@@ -872,26 +860,9 @@ jobs:
             else
               mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
             fi
-            # The ixvm-ooc env row writes a per-constant attribution CSV next to its
-            # results file; carry it to the base-side main.json so `ix bench
-            # compare` finds the pair and renders the drill-down (bencher
-            # cannot supply it — it stores metric rows only).
-            if [ -f "$GITHUB_WORKSPACE/base.json.perconst.csv" ]; then
-              mv "$GITHUB_WORKSPACE/base.json.perconst.csv" \
-                 "$GITHUB_WORKSPACE/main.json.perconst.csv"
-            fi
           fi
 
       # ---------- results ----------
-      # A base-run-produced attribution CSV (moved to main.json's side in
-      # the merge step) wins; the cached one only fills the gap.
-      - name: Place base-side attribution CSV
-        if: matrix.params.backend == 'ixvm-ooc'
-        run: |
-          if [ ! -f "$GITHUB_WORKSPACE/main.json.perconst.csv" ] \
-            && [ -f bench.json.perconst.csv ]; then
-            mv bench.json.perconst.csv "$GITHUB_WORKSPACE/main.json.perconst.csv"
-          fi
       # The cell's rows, both sides, and where they came from; `assemble`
       # renders every cell into the one comment.
       - name: Bundle cell results
@@ -907,7 +878,6 @@ jobs:
             from="$GITHUB_WORKSPACE/${side%%:*}.json"
             to="$cell/${side##*:}.json"
             [ -f "$from" ] && cp "$from" "$to"
-            [ -f "$from.perconst.csv" ] && cp "$from.perconst.csv" "$to.perconst.csv"
           done
           # Label each side with the host that measured it. The PR compile
           # row comes from the compile job, and a bencher-sourced base side
