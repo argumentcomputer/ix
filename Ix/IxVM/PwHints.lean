@@ -56,8 +56,9 @@ needs more. Occurrences under the same enclosing binders are memoized.
 ## The witness
 
 The data travel in the claim's IO, never in the claim, its digest or the
-`.ixe`: channel 7, one stream per record, keyed by the record's 32 address
-bytes, its values the record's conversions:
+`.ixe`: channel 8 (channel 7 holds `IxVM.Model`'s payloads), one stream per
+record, keyed by the record's 32 address bytes, its values the record's
+conversions:
 
 ```text
 values = nblocks (ekind eidx variant nnodes node*)*
@@ -78,7 +79,7 @@ open Benchmarks.Kernel.CheckIxeStep (Setup Hints)
 abbrev KExpr := Ix.Kernel.Expr .anon
 
 /-- The IO channel of the binder data. -/
-def channel : Nat := 7
+def channel : Nat := 8
 
 /-- The datum of one numbered node. -/
 inductive Node where

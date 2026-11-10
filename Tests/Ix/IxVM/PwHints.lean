@@ -162,7 +162,7 @@ def idPoly : Ixon.Constant where
   refs := #[]
   univs := #[.var 0]
 
-/-- Every record's blocks, from a witness's channel-7 streams. -/
+/-- Every record's blocks, from a witness's channel-8 streams. -/
 def blocksOf (io : Aiur.IOBuffer) : Except String (Array (Address × Array Block)) := do
   let mut out := #[]
   for ((ch, key), info) in io.map do

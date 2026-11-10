@@ -8,7 +8,7 @@ public section
 # Checking a witness's binder data (host side)
 
 Two checks of the data `IxVM.PwHints.annotate` writes on a witness's
-channel 7, over every record the witness carries on channel 2:
+channel 8, over every record the witness carries on channel 2:
 
 * **Coverage.** The conversion of every root of every record, as IxVM
   converts it (`plans/ixvmc/cx/REPORT.md`, "D2 hint interface": roots at
@@ -63,7 +63,7 @@ def Report.add (a b : Report) : Report :=
 /-- The blocks a witness carries, by `(rec, ekind, eidx, variant)`. -/
 abbrev Table := Std.HashMap (Address × Nat × Nat × Nat) (Array Node)
 
-/-- The witness's channel-7 streams, decoded. -/
+/-- The witness's channel-8 streams, decoded. -/
 def tableOf (io : Aiur.IOBuffer) : Except String Table := do
   let mut t : Table := {}
   for ((ch, key), info) in io.map do
