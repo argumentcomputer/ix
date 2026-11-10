@@ -279,6 +279,17 @@ def assert_proj_allowed := aiur_fn⟦
     }
 ⟧
 
+  -- The structure's constructor, at a native block only: the projection sites call this
+  -- in place of `Ingress::get_ci_cprj`, memoized per structure, so the gate adds nothing to
+  -- their rows.
+
+def proj_ctor := aiur_fn⟦
+  fn proj_ctor(block: Bytes::AddressRef, ind_idx: Field) -> &KernelTypes::KConstantInfo {
+      assert_proj_allowed(block);
+      Ingress::get_ci_cprj(block, ind_idx, 0)
+    }
+⟧
+
 def ind_is_modeled := aiur_fn⟦
   fn ind_is_modeled(ind_addr: Bytes::AddressRef) -> Field {
       match (*(Ingress::get_ci(ind_addr))) {

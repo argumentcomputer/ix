@@ -510,12 +510,14 @@ Blocks whose reading or encoding fails (a decline or a rejection of the reader,
 an unsafe block) get no model, and IxVM rejects them. -/
 def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .anon := id) :
     Except String (Ixon.Env × Report) := do
-  let table ← match env.roleBinding with
-    | some b => (match Ix.Kernel.RoleTable.ofBytes b.bytes with
-      | some t => pure t
-      | none => throw "the environment's role binding does not decode")
-    | none => Ix.Kernel.Reader.defaultTable
-  let pre ← Ix.Kernel.Reader.preludeFor table
+  -- an environment whose binding or prelude does not read gets no model (its claims
+  -- are decided without one: a modeled block in them is refused)
+  let fallback := ({ withEmptyPayloads env with modelsAttached := true }, ({} : Report))
+  let table? : Option Ix.Kernel.RoleTable := match env.roleBinding with
+    | some b => Ix.Kernel.RoleTable.ofBytes b.bytes
+    | none => Ix.Kernel.Reader.defaultTable.toOption
+  let some table := table? | return fallback
+  let .ok (pre : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor table | return fallback
   let mut records : Array (Address × Ixon.Constant) := #[]
   for (a, lc) in env.consts do
     if let some c := lc.get? then records := records.push (a, c)
