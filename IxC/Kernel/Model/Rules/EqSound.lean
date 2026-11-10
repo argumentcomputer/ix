@@ -65,7 +65,7 @@ theorem Red.eqProof_sound (hin : RulesInputs V m φ) {d : Nat} {a b p T ta tb sT
     (sp : InferSemFull m φ d p (.app (.app (.app (.const eqName [u]) T) a) b))
     (sa : InferSemFull m φ d a ta) (sda : DefEqSem m φ d ta T)
     (sb : InferSemFull m φ d b tb) (sdb : DefEqSem m φ d tb T)
-    (sT : InferSemFull m φ d T sT) (sred : RedSem m φ d sT (.sort v))
+    (sTT : InferSemFull m φ d T sT) (sred : RedSem m φ d sT (.sort v))
     (hv : ∀ φ : LevelParam → Nat, Level.eval φ v = Level.eval φ u) :
     RedSem m φ d a b := by
   intro hfa Δa aa hCa haa _
@@ -99,7 +99,7 @@ theorem Red.eqProof_sound (hin : RulesInputs V m φ) {d : Nat} {a b p T ta tb sT
   obtain rfl := Option.some.inj h1
   -- the typings
   obtain ⟨hfta, hsubta, tar, htar, -, hgta, hmemA⟩ := sa hfa hCa haa
-  obtain ⟨hfsT, hsubsT, sTr, hsTr, hgT, hgsT, hmemT⟩ := sT hfT hCT hTr
+  obtain ⟨hfsT, hsubsT, sTr, hsTr, hgT, hgsT, hmemT⟩ := sTT hfT hCT hTr
   obtain ⟨hftb, hsubtb, tbr, htbr, hgB, hgtb, hmemB⟩ := sb hfb hCb hbr
   have heqA := sda hfta hfT (hCa.of_subset hsubta) hCT htar hTr hgta hgT
   have heqB := sdb hftb hfT (hCb.of_subset hsubtb) hCT htbr hTr hgtb hgT

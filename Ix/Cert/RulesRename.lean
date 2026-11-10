@@ -104,8 +104,8 @@ theorem comparands_good {rl : RecRule md} (hrl : rl.Good P) (lps : List LevelPar
 /-! ## A typed subject is good
 
 The equality-reflection rule (`Red.eqProof`) types a proof term its subject does not
-contain; its renaming needs that term's goodness, which its inference gives: every
-constant it mentions is stored, and its leaves are the subject's. -/
+contain; its renaming needs that term's goodness: `infer_good` below (moved here,
+ahead of the renaming), with the subject's leaves (`leaves_good`). -/
 
 /-- A good term's leaves carry good types. -/
 theorem leaves_good : ∀ {e : Expr md}, e.Good P → ∀ l ∈ e.fvarLeaves, l.2.Good P := by
@@ -142,84 +142,85 @@ theorem leaves_good : ∀ {e : Expr md}, e.Good P → ∀ l ∈ e.fvarLeaves, l.
     exact ih he.2 l hl
   | bvar | sort | const | lit => intro _ l hl; simp [Expr.fvarLeaves] at hl
 
-/-- Instantiation keeps only keys of the instantiated term. -/
+
+/-- Instantiation keeps every key of the instantiated term. -/
 theorem good_of_instantiate1 {v : Expr md} :
-    ∀ {b : Expr md} {k : Nat}, (b.instantiate1 v k).Good P → b.Good P := by
-  intro b
-  induction b with
+    ∀ (e : Expr md) (k : Nat), (e.instantiate1 v k).Good P → e.Good P := by
+  intro e
+  induction e with
   | bvar => intros; trivial
-  | fvar => intro k h; exact h
-  | sort | const | lit => intro k h; exact h
-  | app f a ihf iha => intro k h; exact ⟨ihf h.1, iha h.2⟩
-  | lam ty b _ iht ihb | forallE ty b _ iht ihb => intro k h; exact ⟨iht h.1, ihb h.2⟩
-  | letE t w b _ iht ihw ihb => intro k h; exact ⟨iht h.1, ihw h.2.1, ihb h.2.2⟩
-  | proj s i e ih => intro k h; exact ⟨h.1, ih h.2⟩
+  | fvar i t _ => intro k h; simpa [Expr.instantiate1] using h
+  | sort => intros; trivial
+  | const n us => intro k h; simpa [Expr.instantiate1] using h
+  | app a b iha ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iha k h.1, ihb k h.2⟩
+  | lam t b m iht ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
+  | forallE t b m iht ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
+  | letE t v' b l iht ihv ihb =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨iht k h.1, ihv k h.2.1, ihb (k + 1) h.2.2⟩
+  | lit l => intro k h; simpa [Expr.instantiate1] using h
+  | proj s i e ih =>
+    intro k h
+    simp only [Expr.instantiate1, Expr.Good] at h
+    exact ⟨h.1, ih k h.2⟩
 
-mutual
-
-/-- **A subject inference accepts is good**, when its leaves' types are. -/
-theorem infer_good (hR : Renaming P f env env') :
+/-- **A term typed at the full grade is good**, when every key the environment
+answers is good, every role is allowed, and the term's free variables carry good
+types. Full-grade typing checks every subterm: constants are found, projections
+go through a stored table, and binder domains are typed. -/
+theorem infer_good (found : ∀ (k : Key md) (c : ConstantInfo md), env.find? k = some c → k.Good P)
+    (roles : P.All) :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → g = .full →
       (∀ l ∈ e.fvarLeaves, l.2.Good P) → e.Good P
   | _, _, _, _, .sort, _, _ => trivial
   | _, _, _, _, .fvar (idx := idx) (ty := ty) _, _, hl => hl (idx, ty) (by simp [Expr.fvarLeaves])
-  | _, _, _, _, .const (n := n) (ci := ci) hf _ _, _, _ => hR.found n ci hf
+  | _, _, _, _, .const hf _ _, _, _ => found _ _ hf
   | _, _, _, _, .natLit _, _, _ => trivial
-  | _, _, _, _, .strLit _, _, _ => hR.roles.str
-  | _, _, _, _, .forallE (d := d) (ty := ty) (body := body) hs _ hbs _ _, hg, hl => by
-    have hty : ty.Good P := infer_good hR hs hg (fun l h => hl l (by simp [Expr.fvarLeaves, h]))
-    refine ⟨hty, good_of_instantiate1 (v := .fvar d ty) (k := 0) (infer_good hR hbs hg ?_)⟩
-    intro l h
-    rcases Expr.fvarLeaves_instantiate1 body 0 h with h2 | h2
-    · exact hl l (by simp [Expr.fvarLeaves, h2])
-    · simp only [Expr.fvarLeaves, List.mem_cons] at h2
-      rcases h2 with rfl | h2
+  | _, _, _, _, .strLit _, _, _ => roles.str
+  | _, _, _, _, .forallE hs _ hbs _ _, hg, hl => by
+    have hty := infer_good found roles hs hg
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
+    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbs hg fun l h => ?_)⟩
+    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
+    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
+    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
+      rcases h' with rfl | h'
       · exact hty
-      · exact hl l (by simp [Expr.fvarLeaves, h2])
-  | _, _, _, _, .lam (d := d) (ty := ty) (body := body) hs _ hbt _ _ _ _, hg, hl => by
-    have hty : ty.Good P :=
-      infer_good hR (hs hg) rfl (fun l h => hl l (by simp [Expr.fvarLeaves, h]))
-    refine ⟨hty, good_of_instantiate1 (v := .fvar d ty) (k := 0) (infer_good hR hbt hg ?_)⟩
-    intro l h
-    rcases Expr.fvarLeaves_instantiate1 body 0 h with h2 | h2
-    · exact hl l (by simp [Expr.fvarLeaves, h2])
-    · simp only [Expr.fvarLeaves, List.mem_cons] at h2
-      rcases h2 with rfl | h2
+      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
+  | _, _, _, _, .lam hs _ hbt _ _ _ _, hg, hl => by
+    have hty := infer_good found roles (hs hg) rfl
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
+    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbt hg fun l h => ?_)⟩
+    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
+    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
+    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
+      rcases h' with rfl | h'
       · exact hty
-      · exact hl l (by simp [Expr.fvarLeaves, h2])
+      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
   | _, _, _, _, .app htf _ hta _, hg, hl =>
-    ⟨infer_good hR htf hg (fun l h => hl l (by simp [Expr.fvarLeaves, h])),
-      infer_good hR hta hg (fun l h => hl l (by simp [Expr.fvarLeaves, h]))⟩
+    ⟨infer_good found roles htf hg
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h)),
+     infer_good found roles hta hg
+      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h))⟩
   | _, _, _, _, .appSkip _ _ _, hg, _ => nomatch hg
-  | _, _, _, _, .proj (sn := sn) htpe _ _ hent _ _ _, hg, hl => by
-    refine ⟨?_, infer_good hR htpe hg (fun l h => hl l (by simpa [Expr.fvarLeaves] using h))⟩
+  | _, _, _, _, .proj htpe _ _ hent _ _ _, hg, hl => by
+    refine ⟨?_, infer_good found roles htpe hg (fun l h => hl l (by simpa [Expr.fvarLeaves] using h))⟩
     unfold Env.findProj? at hent
-    cases h : env.find? (projTableName sn) with
-    | none => rw [h] at hent; simp at hent
-    | some c => exact hR.found _ c h
+    split at hent
+    · rename_i tbl htbl
+      simpa [projTableName, auxKey] using found _ _ htbl
+    · exact nomatch hent
 
-theorem infer_good_red : ∀ {d : Nat} {e e' : Expr md}, Red env d e e' → True
-  | _, _, _, _ => trivial
-
-theorem infer_good_defeq : ∀ {d : Nat} {a b : Expr md}, DefEq env d a b → True
-  | _, _, _, _ => trivial
-
-theorem infer_good_certs :
-    ∀ {d : Nat} {lic : Bool} {ty : Expr md} {args : List (Expr md)},
-      Certs env d lic ty args → True
-  | _, _, _, _, _ => trivial
-
-theorem infer_good_defEqList :
-    ∀ {d : Nat} {as bs : List (Expr md)}, DefEqList env d as bs → True
-  | _, _, _, _ => trivial
-
-theorem infer_good_etaProjCerts :
-    ∀ {d : Nat} {T : Key md} {us' : List Level} {targs : List (Expr md)} {b : Expr md}
-      {lpsT : List LevelParam} {idxs : List Nat},
-      EtaProjCerts env d T us' targs b lpsT idxs → True
-  | _, _, _, _, _, _, _, _ => trivial
-
-end
 
 /-! ## The renaming -/
 
@@ -285,7 +286,8 @@ theorem red_rename (hR : Renaming P f env env') :
     exact key
   | _, _, _, .eqProof (b := b) (p := p) (T := T) hhead hfE hp hwp hbp hlp ha hda hb hdb hT
       hred hv, he => by
-    have hpg : p.Good P := infer_good hR hp rfl (fun l hl => leaves_good he l (hlp l hl))
+    have hpg : p.Good P :=
+      infer_good hR.found hR.roles hp rfl (fun l hl => leaves_good he l (hlp l hl))
     obtain ⟨gS, iS⟩ := infer_rename hR hp hpg
     have hTg : T.Good P := gS.1.1.2
     have hbg : b.Good P := gS.2
@@ -693,85 +695,5 @@ theorem etaProjCerts_rename (hR : Renaming P f env env') :
       (by simpa using hcerts') (etaProjCerts_rename hR hrest hT ht hb)
 
 end
-
-/-! ## Typed terms are good -/
-
-/-- Instantiation keeps every key of the instantiated term. -/
-theorem good_of_instantiate1 {v : Expr md} :
-    ∀ (e : Expr md) (k : Nat), (e.instantiate1 v k).Good P → e.Good P := by
-  intro e
-  induction e with
-  | bvar => intros; trivial
-  | fvar i t _ => intro k h; simpa [Expr.instantiate1] using h
-  | sort => intros; trivial
-  | const n us => intro k h; simpa [Expr.instantiate1] using h
-  | app a b iha ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iha k h.1, ihb k h.2⟩
-  | lam t b m iht ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
-  | forallE t b m iht ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iht k h.1, ihb (k + 1) h.2⟩
-  | letE t v' b l iht ihv ihb =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨iht k h.1, ihv k h.2.1, ihb (k + 1) h.2.2⟩
-  | lit l => intro k h; simpa [Expr.instantiate1] using h
-  | proj s i e ih =>
-    intro k h
-    simp only [Expr.instantiate1, Expr.Good] at h
-    exact ⟨h.1, ih k h.2⟩
-
-/-- **A term typed at the full grade is good**, when every key the environment
-answers is good, every role is allowed, and the term's free variables carry good
-types. Full-grade typing checks every subterm: constants are found, projections
-go through a stored table, and binder domains are typed. -/
-theorem infer_good (found : ∀ (k : Key md) (c : ConstantInfo md), env.find? k = some c → k.Good P)
-    (roles : P.All) :
-    ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → g = .full →
-      (∀ l ∈ e.fvarLeaves, l.2.Good P) → e.Good P
-  | _, _, _, _, .sort, _, _ => trivial
-  | _, _, _, _, .fvar (idx := idx) (ty := ty) _, _, hl => hl (idx, ty) (by simp [Expr.fvarLeaves])
-  | _, _, _, _, .const hf _ _, _, _ => found _ _ hf
-  | _, _, _, _, .natLit _, _, _ => trivial
-  | _, _, _, _, .strLit _, _, _ => roles.str
-  | _, _, _, _, .forallE hs _ hbs _ _, hg, hl => by
-    have hty := infer_good found roles hs hg
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
-    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbs hg fun l h => ?_)⟩
-    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
-    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
-    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
-      rcases h' with rfl | h'
-      · exact hty
-      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
-  | _, _, _, _, .lam hs _ hbt _ _ _ _, hg, hl => by
-    have hty := infer_good found roles (hs hg) rfl
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h))
-    refine ⟨hty, good_of_instantiate1 _ 0 (infer_good found roles hbt hg fun l h => ?_)⟩
-    rcases Expr.fvarLeaves_instantiate1 _ 0 h with h' | h'
-    · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h')
-    · simp only [Expr.fvarLeaves, List.mem_cons] at h'
-      rcases h' with rfl | h'
-      · exact hty
-      · exact hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h')
-  | _, _, _, _, .app htf _ hta _, hg, hl =>
-    ⟨infer_good found roles htf hg
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inl h)),
-     infer_good found roles hta hg
-      (fun l h => hl l (by simp only [Expr.fvarLeaves, List.mem_append]; exact Or.inr h))⟩
-  | _, _, _, _, .appSkip _ _ _, hg, _ => nomatch hg
-  | _, _, _, _, .proj htpe _ _ hent _ _ _, hg, hl => by
-    refine ⟨?_, infer_good found roles htpe hg (fun l h => hl l (by simpa [Expr.fvarLeaves] using h))⟩
-    unfold Env.findProj? at hent
-    split at hent
-    · rename_i tbl htbl
-      simpa [projTableName, auxKey] using found _ _ htbl
-    · exact nomatch hent
 
 end Ix.Cert.RulesRename
