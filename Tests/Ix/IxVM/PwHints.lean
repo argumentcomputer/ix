@@ -260,10 +260,12 @@ def diag (env : Lean.Environment) : IO UInt32 := do
   let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
   let mut rootErrors : Array String := #[]
   let mut fallbackRecords : Array (String × Nat) := #[]
+  let mut inheritedRecords : Array (String × Nat) := #[]
   for a in k.owners do
     let some c := k.setup.store[a]? | continue
-    let (_, fb) := annotateRecord k core a c
+    let (_, fb, inh) := annotateRecord k core a c
     if fb > 0 then fallbackRecords := fallbackRecords.push (nameOf a, fb)
+    if inh > 0 then inheritedRecords := inheritedRecords.push (nameOf a, inh)
     let n := memberCount c
     let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
       if i < n then some (k.setup.cx.memberKey (.member a i)) else none
@@ -279,6 +281,9 @@ def diag (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[ixvm-pw-diag] records with fallbacks: {fallbackRecords.size}"
   for (n, fb) in (fallbackRecords.qsort (fun a b => a.2 > b.2)).extract 0 40 do
     IO.println s!"  fallbacks {fb}: {n}"
+  IO.println s!"[ixvm-pw-diag] records with data from their declared types: {inheritedRecords.size}"
+  for (n, k) in inheritedRecords.extract 0 20 do
+    IO.println s!"  inherited {k}: {n}"
   IO.println s!"[ixvm-pw-diag] roots the kernel's pass refuses: {rootErrors.size}"
   for (why, n) in (histogram rootErrors).extract 0 30 do
     IO.println s!"  root {n}: {why}"
