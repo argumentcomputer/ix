@@ -107,6 +107,289 @@ theorem ObsArgs.cons_inv {e : Expr F} {es : List (Expr F)} {values : List (Sourc
       ObsArgs world types locals es middle vs after calls₂ ∧ calls = calls₁ ++ calls₂ := by
   cases h with | cons head tail => exact ⟨_, _, _, _, _, rfl, head, tail, rfl⟩
 
+theorem ObsExpr.global_literal_inv {name : String} {t : Ty} {x : F}
+    (hc : world.constant name (t.subst types) = .ok (.literal x))
+    (h : ObsExpr world types locals (.global name (some t)) before result after calls) :
+    result = .field x ∧ after = before ∧ calls = [] := by
+  cases h with
+  | global lookup interpreted value =>
+    rw [hc] at lookup
+    cases lookup
+    simp only [Consts.toExpr, pure, Except.pure, Except.ok.injEq] at interpreted
+    subst interpreted
+    exact value.literal_inv
+
+theorem ObsExpr.array_inv {es : List (Expr F)}
+    (h : ObsExpr world types locals (.array es) before result after calls) :
+    ∃ values, ObsArgs world types locals es before values after calls ∧
+      result = .tuple values := by
+  cases h with | array items => exact ⟨_, items, rfl⟩
+
+theorem ObsExpr.repeat_inv {e : Expr F} {n : Nat}
+    (h : ObsExpr world types locals (.repeat e n) before result after calls) :
+    ∃ input, ObsExpr world types locals e before input after calls ∧
+      result = .tuple (List.replicate n input) := by
+  cases h with | «repeat» value => exact ⟨_, value, rfl⟩
+
+theorem ObsExpr.index_inv {e : Expr F} {i : Nat}
+    (h : ObsExpr world types locals (.index e i) before result after calls) :
+    ∃ input, ObsExpr world types locals e before input after calls ∧
+      projectValue input i = .ok result := by
+  cases h with | index value projected => exact ⟨_, value, projected⟩
+
+theorem ObsExpr.project_inv {e : Expr F} {i : Nat}
+    (h : ObsExpr world types locals (.project e i) before result after calls) :
+    ∃ input, ObsExpr world types locals e before input after calls ∧
+      projectValue input i = .ok result := by
+  cases h with | project value projected => exact ⟨_, value, projected⟩
+
+theorem ObsExpr.slice_inv {e : Expr F} {a : Nat} {b : Option Nat}
+    (h : ObsExpr world types locals (.slice e a b) before result after calls) :
+    ∃ input, ObsExpr world types locals e before input after calls ∧
+      sliceValue input a b = .ok result := by
+  cases h with | slice value sliced => exact ⟨_, value, sliced⟩
+
+theorem ObsExpr.member_inv {e : Expr F} {field : FieldRef}
+    (h : ObsExpr world types locals (.member e field) before result after calls) :
+    ∃ input, ObsExpr world types locals e before input after calls ∧
+      memberValue types field input = .ok result := by
+  cases h with | member value projected => exact ⟨_, value, projected⟩
+
+theorem ObsExpr.neg_inv {e : Expr F}
+    (h : ObsExpr world types locals (.neg e) before result after calls) :
+    ∃ input, ObsExpr world types locals e before input after calls ∧
+      evalNeg input = .ok result := by
+  cases h with | neg value operation => exact ⟨_, value, operation⟩
+
+theorem ObsExpr.constructAs_inv {ps : List String} {t : Ty} {ctor : String} {es : List (Expr F)}
+    (h : ObsExpr world types locals (.constructAs ps t ctor es) before result after calls) :
+    ∃ values, ObsArgs world types locals es before values after calls ∧
+      result = .construct (constructorName types t) ctor values := by
+  cases h with | constructAs items => exact ⟨_, items, rfl⟩
+
+theorem ObsExpr.update_inv {paths : List UpdatePath} {es : List (Expr F)}
+    (h : ObsExpr world types locals (.update paths es) before result after calls) :
+    ∃ values, ObsArgs world types locals es before values after calls ∧
+      Update.value types paths values = .ok result := by
+  cases h with | update items updated => exact ⟨_, items, updated⟩
+
+theorem ObsExpr.hint_inv {t : Ty} {key : Expr F} {channel : String}
+    (h : ObsExpr world types locals (.hint t key channel) before result after calls) :
+    ∃ input value, ObsExpr world types locals key before input after calls ∧
+      world.typed (t.subst types).toCore value = true ∧ result = value.toValue := by
+  cases h with | hint key typed => exact ⟨_, _, key, typed, rfl⟩
+
+omit [Field F] in
+theorem Builtin.ascribe_inv {t : Ty} {v r : SourceValue F}
+    (h : (Builtin.ascribe t).apply [v] = .ok r) : r = v := by
+  have hv : (Builtin.ascribe t).apply [v] = .ok v := rfl
+  rw [hv] at h
+  cases h
+  rfl
+
+omit [Field F] in
+theorem Builtin.debug_inv {m : String} {vs : List (SourceValue F)} {r : SourceValue F}
+    (h : (Builtin.debug m).apply vs = .ok r) : r = .tuple [] := by
+  have hv : (Builtin.debug m).apply vs = .ok (.tuple []) := rfl
+  rw [hv] at h
+  cases h
+  rfl
+
+omit [Field F] in
+theorem Builtin.assertEq_inv {a : Assertion} {x y r : SourceValue F}
+    (h : (Builtin.assertEq a).apply [x, y] = .ok r) : x = y ∧ r = .tuple [] := by
+  have hv : (Builtin.assertEq a).apply [x, y] = evalAssertEq a x y := rfl
+  rw [hv, evalAssertEq_ok] at h
+  exact ⟨h.2.1, h.2.2⟩
+
+/-! ## Arm selection and patterns, one step at a time
+
+The generated path lemmas (`Ix.IxVM.Refinement.Obs`) select arms in order
+(`selectArm_cons_inv`: the arm's pattern matched, or it did not and a later
+arm was selected) and invert a pattern node by node. -/
+
+omit [Field F] in
+theorem selectArm_cons_inv {p : Pattern F} {b : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat} {body : Expr F}
+    (h : selectArm world types heap v ((p, b) :: arms) = .ok (some (bs, body))) :
+    (world.matchPattern types heap p v = .ok (some bs) ∧ body = b) ∨
+      (world.matchPattern types heap p v = .ok none ∧
+        selectArm world types heap v arms = .ok (some (bs, body))) := by
+  rw [selectArm] at h
+  cases hm : world.matchPattern types heap p v with
+  | error e => simp [hm, bind, Except.bind] at h
+  | ok opt =>
+    cases opt with
+    | some bindings =>
+      simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq,
+        Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact .inl ⟨rfl, rfl⟩
+    | none =>
+      simp only [hm, bind, Except.bind] at h
+      exact .inr ⟨rfl, h⟩
+
+omit [Field F] in
+theorem selectArm_nil_inv {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    {body : Expr F} (h : selectArm world types heap v [] = .ok (some (bs, body))) : False := by
+  simp [SourceSemantics.selectArm] at h
+
+omit [Field F] in
+theorem matchPattern_bind_inv {n : String} {v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (h : world.matchPattern types heap (.bind n) v = .ok (some bs)) :
+    bs = [(n, v)] := by
+  rw [matchPattern_bind] at h
+  cases h
+  rfl
+
+omit [Field F] in
+theorem matchPattern_wildcard_inv {v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (h : world.matchPattern types heap .wildcard v = .ok (some bs)) :
+    bs = [] := by
+  rw [matchPattern_wildcard] at h
+  cases h
+  rfl
+
+omit [Field F] in
+theorem matchPattern_bind_none {n : String} {v : SourceValue F} {heap : Heap F}
+    (h : world.matchPattern types heap (.bind n) v = .ok none) : False := by
+  rw [matchPattern_bind] at h
+  cases h
+
+omit [Field F] in
+theorem matchPattern_wildcard_none {v : SourceValue F} {heap : Heap F}
+    (h : world.matchPattern types heap .wildcard v = .ok none) : False := by
+  rw [matchPattern_wildcard] at h
+  cases h
+
+omit [Field F] in
+theorem MatchesConst.some_inv {p : Pattern F} {u v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (hp : MatchesConst world types p u)
+    (h : world.matchPattern types heap p v = .ok (some bs)) : v = u ∧ bs = [] := by
+  rw [hp heap v] at h
+  split at h
+  · rename_i hv
+    cases h
+    exact ⟨hv, rfl⟩
+  · cases h
+
+omit [Field F] in
+theorem MatchesConst.none_inv {p : Pattern F} {u v : SourceValue F} {heap : Heap F}
+    (hp : MatchesConst world types p u) (h : world.matchPattern types heap p v = .ok none) :
+    v ≠ u := by
+  intro hv
+  rw [hp heap v] at h
+  split at h
+  · cases h
+  · rename_i hne
+    exact hne hv
+
+omit [Field F] in
+theorem matchPattern_tuple_tuple_inv {ps : List (Pattern F)} {us : List (SourceValue F)}
+    {heap : Heap F} {bs : Environment F Nat}
+    (h : world.matchPattern types heap (.tuple ps) (.tuple us) = .ok (some bs)) :
+    matchListWith (world.matchPattern types heap) ps us = .ok (some bs) := by
+  rw [matchPattern_tuple] at h
+  split at h
+  · cases h
+  · exact h
+
+omit [Field F] in
+theorem matchPattern_load_inv {p : Pattern F} {v : SourceValue F} {heap : Heap F}
+    {bs : Environment F Nat} (h : world.matchPattern types heap (.load p) v = .ok (some bs)) :
+    ∃ u, loadValue heap v = .ok u ∧ world.matchPattern types heap p u = .ok (some bs) := by
+  unfold World.matchPattern at h
+  rw [matchPatternWith] at h
+  cases hl : loadValue heap v with
+  | error e => simp [hl, bind, Except.bind] at h
+  | ok u =>
+    simp only [hl, bind, Except.bind] at h
+    exact ⟨u, hl, h⟩
+
+omit [Field F] in
+/-- A flat constructor pattern that did not match: the value is no such constructor. -/
+theorem matchPattern_construct_none {t : Ty} {c : String} {ps : List (Pattern F)}
+    {v : SourceValue F} {heap : Heap F} (hflat : IsFlatPatternList ps)
+    (h : world.matchPattern types heap (.construct t c ps) v = .ok none) :
+    ∀ vs : List (SourceValue F), vs.length = ps.length →
+      v ≠ .construct (constructorName types t) c vs := by
+  intro vs hlen hv
+  subst hv
+  rw [matchPattern_construct] at h
+  simp only [hlen, bne_self_eq_false, Bool.false_or] at h
+  obtain ⟨bs', hbs'⟩ := hflat.matchListWith (world := world) (types := types) hlen.symm heap
+  rw [hbs'] at h
+  cases h
+
+omit [Field F] in
+/-- A flat tuple pattern that did not match: the value is no such tuple. -/
+theorem matchPattern_tuple_none {ps : List (Pattern F)} {v : SourceValue F} {heap : Heap F}
+    (hflat : IsFlatPatternList ps) (h : world.matchPattern types heap (.tuple ps) v = .ok none) :
+    ∀ vs : List (SourceValue F), vs.length = ps.length → v ≠ .tuple vs := by
+  intro vs hlen hv
+  subst hv
+  rw [matchPattern_tuple] at h
+  simp only [hlen, bne_self_eq_false] at h
+  obtain ⟨bs', hbs'⟩ := hflat.matchListWith (world := world) (types := types) hlen.symm heap
+  rw [hbs'] at h
+  cases h
+
+omit [Field F] [DecidableEq F] in
+theorem matchListWith_nil_inv {A : Type}
+    {f : A → SourceValue F → Except EvalError (Option (Environment F Nat))}
+    {vs : List (SourceValue F)} {bs : Environment F Nat}
+    (h : matchListWith f [] vs = .ok (some bs)) : vs = [] ∧ bs = [] := by
+  cases vs with
+  | nil =>
+    have hv : matchListWith f [] ([] : List (SourceValue F)) = .ok (some []) := rfl
+    rw [hv] at h
+    cases h
+    exact ⟨rfl, rfl⟩
+  | cons v vs =>
+    have hv : matchListWith f [] (v :: vs) = .ok none := rfl
+    rw [hv] at h
+    cases h
+
+omit [Field F] [DecidableEq F] in
+theorem matchListWith_cons_cons_inv {A : Type}
+    {f : A → SourceValue F → Except EvalError (Option (Environment F Nat))}
+    {p : A} {ps : List A} {v : SourceValue F} {vs : List (SourceValue F)} {bs : Environment F Nat}
+    (h : matchListWith f (p :: ps) (v :: vs) = .ok (some bs)) :
+    ∃ b1 b2, f p v = .ok (some b1) ∧ matchListWith f ps vs = .ok (some b2) ∧
+      bs = b1 ++ b2 := by
+  rw [matchListWith] at h
+  cases h1 : f p v with
+  | error e => simp [h1, bind, Except.bind] at h
+  | ok o =>
+    cases o with
+    | none => simp [h1, bind, Except.bind, pure, Except.pure] at h
+    | some b1 =>
+      cases h2 : matchListWith f ps vs with
+      | error e => simp [h1, h2, bind, Except.bind] at h
+      | ok o2 =>
+        cases o2 with
+        | none => simp [h1, h2, bind, Except.bind, pure, Except.pure] at h
+        | some b2 =>
+          simp only [h1, h2, bind, Except.bind, pure, Except.pure] at h
+          cases h
+          exact ⟨b1, b2, rfl, rfl, rfl⟩
+
+omit [Field F] [DecidableEq F] in
+theorem matchListWith_cons_inv {A : Type}
+    {f : A → SourceValue F → Except EvalError (Option (Environment F Nat))}
+    {p : A} {ps : List A} {vs : List (SourceValue F)} {bs : Environment F Nat}
+    (h : matchListWith f (p :: ps) vs = .ok (some bs)) :
+    ∃ v vs' b1 b2, vs = v :: vs' ∧ f p v = .ok (some b1) ∧
+      matchListWith f ps vs' = .ok (some b2) ∧ bs = b1 ++ b2 := by
+  cases vs with
+  | nil =>
+    have hv : matchListWith f (p :: ps) ([] : List (SourceValue F)) = .ok none := rfl
+    rw [hv] at h
+    cases h
+  | cons v vs =>
+    obtain ⟨b1, b2, h1, h2, rfl⟩ := matchListWith_cons_cons_inv h
+    exact ⟨v, vs, b1, b2, rfl, h1, h2, rfl⟩
+
 /-! ## Arm selection -/
 
 omit [Field F] in
