@@ -5,8 +5,11 @@ public import IxC.Kernel.Rules.NatOffset
 import IxC.Kernel.Model.Rules.RedSoundKit
 import IxC.Kernel.Model.Rules.DefEqSoundKit
 import IxC.Kernel.Model.CtxOkKit
-import IxC.Kernel.Model.NatStep
+import IxC.Kernel.Model.NatAddRec
+import IxC.Kernel.Semantics.LitStep
+import IxC.Kernel.Model.Annot.ValidSpine
 import IxC.Kernel.Verify.InstLevels
+import IxC.Kernel.Verify.Subst
 
 public section
 
@@ -35,7 +38,7 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Key ConstantInfo ConstantVal ReducibilityHint)
+open Ix.Kernel (Env Expr Key ConstantInfo ConstantVal ReducibilityHint BinderMeta)
 open Ix.Kernel.Rules
 
 universe w
@@ -137,6 +140,73 @@ theorem interp_natLitAV (ρ : Nat → V) (za sa : AnnotTerm) :
   | 0 => rfl
   | n + 1 => congrArg (SetTheory.app (interp V ρ sa)) (interp_natLitAV ρ za sa n)
 
+/-! ## Literals -/
+
+/-- The numeral spine at the plain assignment's `Nat` leaves. -/
+def natLitR (m : EnvModel V env) (φ : LevelParam → Nat) (n : Nat) : AnnotTerm :=
+  natLitAV (m.acval natZeroName φ) (m.acval natSuccName φ) n
+
+/-- A literal reads to the spine. -/
+theorem denoteMeta_natLitR (hs : natLitSupported env = true) (d n : Nat) :
+    denoteMeta m.acval env φ d (.lit (.natVal n)) = some (natLitR m φ n) := by
+  rw [denoteMeta_natLit hs, show Level.substFn φ [] [] = φ from funext fun _ => rfl]
+  rfl
+
+/-- Numerals are graded members of `Nat` (`natLit_factsAV` at the stored heads). -/
+theorem natLitR_facts (hin : RulesInputs V m φ) (hs : natLitSupported env = true)
+    (ρ : Nat → V) (n : Nat) :
+    WellDenotedV V ρ (natLitR m φ n) ∧
+      interp V ρ (natLitR m φ n) ∈ˢ interp V ρ (m.acval natName φ) := by
+  obtain ⟨hz, hsucc⟩ := hin.nat_heads hs ρ
+  rw [show Level.substFn φ [] [] = φ from funext fun _ => rfl] at hz hsucc
+  have h := natLit_factsAV (V := V) (za := m.acval natZeroName φ)
+    (sa := m.acval natSuccName φ) (natA := m.acval natName φ)
+    (m.acval_wellDenoted _ _ ρ) (m.acval_wellDenoted _ _ ρ) hz hsucc n
+  exact ⟨⟨h.1, AnnotValid_natLitAV (hin.leaf_valid _ _ ρ) (hin.leaf_valid _ _ ρ) n⟩, h.2⟩
+
+/-- Whatever `rawNatLit?` accepts reads to the numeral it reports. -/
+theorem denoteMeta_rawNatLitR (hs : natLitSupported env = true) {w : Expr md} {n : Nat}
+    (h : Ix.Kernel.rawNatLit? w = some n) (d : Nat) :
+    denoteMeta m.acval env φ d w = some (natLitR m φ n) := by
+  obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN, hlpZ, hlpS, -⟩ :=
+    Ix.Kernel.natLitSupported_inv hs
+  match w, h with
+  | .lit (.natVal k), h =>
+    obtain rfl : k = n := Option.some.inj h
+    exact denoteMeta_natLitR hs d k
+  | .const c [], h =>
+    simp only [Ix.Kernel.rawNatLit?] at h
+    split at h
+    · next hc =>
+      subst hc
+      obtain rfl : (0 : Nat) = n := Option.some.inj h
+      exact denoteMeta_leaf hfZ
+        (show (ConstantInfo.ctorInfo cv0 i0 j0).toConstantVal.levelParams = [] from hlpZ)
+    · exact nomatch h
+
+/-- The pinned type `Nat → Nat → Nat`, read at its binder data. -/
+theorem denoteMeta_natBinTy (hs : natLitSupported env = true) (mb₁ mb₂ : BinderMeta) :
+    denoteMeta m.acval env φ 0 (.forallE (.const natName [])
+        (.forallE (.const natName []) (.const natName []) mb₂) mb₁) =
+      some (.pi 0 (pwBit φ mb₁.pw) (m.acval natName φ)
+        (.pi 0 (pwBit φ mb₂.pw) (m.acval natName φ) (m.acval natName φ))) := by
+  obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN, hlpZ, hlpS, -⟩ :=
+    Ix.Kernel.natLitSupported_inv hs
+  have hN : ∀ d : Nat, denoteMeta m.acval env φ d (.const natName []) =
+      some (m.acval natName φ) := fun d =>
+    denoteMeta_leaf hfN
+      (show (ConstantInfo.indInfo cvN caps).toConstantVal.levelParams = [] from hlpN)
+  rw [denoteMeta_forallE, hN]
+  rw [show (Expr.forallE (.const natName []) (.const natName []) mb₂ : Expr md).instantiate1
+        (.fvar 0 (.const natName [])) = .forallE (.const natName []) (.const natName []) mb₂
+      from Ix.Kernel.Expr.instantiate1_eq_self (by simp [Ix.Kernel.Expr.looseBVarsBounded])]
+  rw [denoteMeta_forallE, hN]
+  rw [show (Expr.const natName [] : Expr md).instantiate1 (.fvar 1 (.const natName [])) =
+        .const natName []
+      from Ix.Kernel.Expr.instantiate1_eq_self (by simp [Ix.Kernel.Expr.looseBVarsBounded])]
+  rw [hN]
+  rfl
+
 /-! ## The stored heads -/
 
 /-- A stored constant without level parameters reads only at no level arguments, to
@@ -153,7 +223,7 @@ theorem denoteMeta_levelless_inv {d : Nat} {c : Key md} {ci : ConstantInfo md}
   · next hlen =>
     have hus : us = [] := List.eq_nil_of_length_eq_zero (hlen.trans (by simp [hlp]))
     subst hus
-    exact ⟨rfl, (Option.some.inj ((denoteMeta_levelless_const hf hlp).symm.trans h)).symm⟩
+    exact ⟨rfl, (Option.some.inj ((denoteMeta_leaf hf hlp).symm.trans h)).symm⟩
   · exact nomatch h0
 
 /-- The successor's leaf: read, and a function from `Nat` to `Nat` in the graph
@@ -170,9 +240,9 @@ theorem natSucc_leaf (hin : RulesInputs V m φ) (hs : natLitSupported env = true
     Ix.Kernel.natLitSupported_inv hs
   have hlp : (ConstantInfo.ctorInfo cv1 i1 j1).toConstantVal.levelParams = [] := hlpS
   refine ⟨fun h => denoteMeta_levelless_inv hfS hlp h,
-    fun d => denoteMeta_levelless_const hfS hlp, fun ρ => ?_⟩
+    fun d => denoteMeta_leaf hfS hlp, fun ρ => ?_⟩
   have h := (hin.nat_heads hs ρ).2
-  rw [Ix.Kernel.Model.substFn_nil] at h
+  rw [show Level.substFn φ [] [] = φ from funext fun _ => rfl] at h
   exact h
 
 /-- **The stored `Nat.add`, as the offset rules read it** (`natAddTyOk`): a
@@ -190,9 +260,6 @@ theorem natAdd_head (hin : RulesInputs V m φ) (hs : natLitSupported env = true)
       (b₂ = 0 → ∀ x, x ∈ˢ interp V ρ (m.acval natName φ) →
         interp V ρ (m.acval natName φ) ∈ˢ (univZero : V)) := by
   obtain ⟨n, v, hint, mb₁, mb₂, hf, hnev⟩ := natAddTyOk_inv ht
-  obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN, hlpZ, hlpS, -⟩ :=
-    Ix.Kernel.natLitSupported_inv hs
-  have hlpN' : (ConstantInfo.indInfo cvN caps).toConstantVal.levelParams = [] := hlpN
   refine ⟨⟨_, v, hint, hf, rfl⟩, pwBit φ mb₁.pw, pwBit φ mb₂.pw,
     pwBit_ne_zero_of_isNever hnev φ, fun ρ => ?_⟩
   -- the stored type's reading
@@ -206,10 +273,11 @@ theorem natAdd_head (hin : RulesInputs V m φ) (hs : natLitSupported env = true)
         mb₁) = some ta := by
     rw [← hT]
     exact hta
-  have hta0 := denoteMeta_pinnedBinTy m φ (mb₁ := mb₁) (mb₂ := mb₂) hfN hlpN' hfN hlpN'
+  have hta0 := denoteMeta_natBinTy (m := m) (φ := φ) hs mb₁ mb₂
   obtain rfl := Option.some.inj (hta'.symm.trans hta0)
   have hm := hmem ρ
-  simp only [Ix.Kernel.ConstantInfo.toConstantVal, Ix.Kernel.Model.substFn_nil] at hm
+  simp only [Ix.Kernel.ConstantInfo.toConstantVal,
+    show Level.substFn φ [] [] = φ from funext fun _ => rfl] at hm
   refine ⟨?_, ?_⟩
   · rw [interp_pi] at hm
     have hfib : (fun x => interp V (cons x ρ)
@@ -219,9 +287,9 @@ theorem natAdd_head (hin : RulesInputs V m φ) (hs : natLitSupported env = true)
       funext x
       rw [interp_pi]
       congr 1
-      · exact acval_interp_closedC m _ φ _ ρ
+      · exact leaf_interp_closed m _ φ _ ρ
       · funext y
-        exact acval_interp_closedC m _ φ _ ρ
+        exact leaf_interp_closed m _ φ _ ρ
     rw [hfib] at hm
     exact hm
   · intro hz x hx
@@ -229,8 +297,8 @@ theorem natAdd_head (hin : RulesInputs V m φ) (hs : natLitSupported env = true)
     rw [AnnotValid_pi] at hv
     have hinner := hv.2.1 x hx
     rw [AnnotValid_pi] at hinner
-    have h := hinner.2.2 hz x (by rw [acval_interp_closedC m _ φ (cons x ρ) ρ]; exact hx)
-    rwa [acval_interp_closedC m _ φ _ ρ] at h
+    have h := hinner.2.2 hz x (by rw [leaf_interp_closed m _ φ (cons x ρ) ρ]; exact hx)
+    rwa [leaf_interp_closed m _ φ _ ρ] at h
 
 /-- **An applied `Nat.add`, read and graded**: the head has no level arguments and
 reads to the leaf, and the first argument lies in `Nat` (`slotTransfer` at the
@@ -265,14 +333,14 @@ theorem natAdd_succPow (hin : RulesInputs V m φ) (hs : natLitSupported env = tr
     (hf : env.find? natAddName = some (.defnInfo cv v hint)) (ρ : Nat → V) {x : V}
     (hx : x ∈ˢ interp V ρ (m.acval natName φ)) (n : Nat) :
     SetTheory.app (SetTheory.app (interp V ρ (m.acval natAddName φ)) x)
-        (interp V ρ (natLit m φ n)) =
+        (interp V ρ (natLitR m φ n)) =
       succPow (interp V ρ (m.acval natSuccName φ)) x n := by
-  obtain ⟨h0, hS⟩ := natAdd_clauses m hin.nat_ops hin.nat_heads hin.leaf_valid hf ρ
+  obtain ⟨h0, hS⟩ := natAdd_clauses m hin.nat_ops hin.nat_heads hf ρ
   induction n with
   | zero => exact h0 x hx
   | succ n ih =>
-    have h1 := hS x (interp V ρ (natLit m φ n)) hx
-      (natLit_mem m hin.nat_heads hin.leaf_valid hs ρ n)
+    have h1 := hS x (interp V ρ (natLitR m φ n)) hx
+      (natLitR_facts hin hs ρ n).2
     rw [ih] at h1
     exact h1
 
@@ -297,15 +365,15 @@ theorem natAddLit_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = tru
   | succ k =>
     rw [natAddLit_succ]
     have key : ∀ ρ : Nat → V, Sat V Δa ρ →
-        WellDenotedV V ρ (.app (.app (m.acval natAddName φ) ba) (natLit m φ (k + 1))) ∧
-        interp V ρ (.app (.app (m.acval natAddName φ) ba) (natLit m φ (k + 1))) ∈ˢ
+        WellDenotedV V ρ (.app (.app (m.acval natAddName φ) ba) (natLitR m φ (k + 1))) ∧
+        interp V ρ (.app (.app (m.acval natAddName φ) ba) (natLitR m φ (k + 1))) ∈ˢ
           interp V ρ (m.acval natName φ) := by
       intro ρ hρ
       have hAm := (hhead ρ).1
       have hAb : SetTheory.app (interp V ρ (m.acval natAddName φ)) (interp V ρ ba) ∈ˢ
           piR b₂ (interp V ρ (m.acval natName φ)) (fun _ => interp V ρ (m.acval natName φ)) :=
         app_mem_piR_pos hb₁ hAm (hbN ρ hρ)
-      have hLk := natLit_facts m hin.nat_heads hin.leaf_valid hs ρ (k + 1)
+      have hLk := natLitR_facts hin hs ρ (k + 1)
       refine ⟨⟨?_, ?_⟩, ?_⟩
       · rw [WellDenoted_app, WellDenoted_app]
         exact ⟨⟨m.acval_wellDenoted _ _ ρ, (hgb ρ hρ).1, b₁, _, _, hAm, hbN ρ hρ,
@@ -315,10 +383,10 @@ theorem natAddLit_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = tru
         exact ⟨⟨hin.leaf_valid _ _ ρ, (hgb ρ hρ).2⟩, hLk.1.2⟩
       · rw [interp_app]
         exact app_mem_piR hAb hLk.2 (hhead ρ).2
-    refine ⟨.app (.app (m.acval natAddName φ) ba) (natLit m φ (k + 1)), ?_,
+    refine ⟨.app (.app (m.acval natAddName φ) ba) (natLitR m φ (k + 1)), ?_,
       fun ρ hρ => (key ρ hρ).1, fun ρ hρ => ⟨(key ρ hρ).2, ?_⟩⟩
-    · rw [denoteMeta_app, denoteMeta_app, denoteMeta_levelless_const hfA hlp, hba,
-        denoteMeta_natLit_spine m hs d (k + 1)]
+    · rw [denoteMeta_app, denoteMeta_app, denoteMeta_leaf hfA hlp, hba,
+        denoteMeta_natLitR hs d (k + 1)]
       rfl
     · exact natAdd_succPow hin hs hfA ρ (hbN ρ hρ) (k + 1)
 
@@ -335,8 +403,8 @@ theorem Red.natAddSucc_sound (hin : RulesInputs V m φ) {d : Nat} {us : List Lev
   obtain ⟨⟨cv, v, hint, hfA, -⟩, -⟩ := natAdd_head hin hs ht
   obtain ⟨-, hKs, hS⟩ := natSucc_leaf hin hs
   obtain ⟨rfl, ba, la, hba, hla, rfl, hbN⟩ := natAdd_app_inv hin hs ht hea hg
-  obtain rfl : la = natLit m φ (k + 1) :=
-    Option.some.inj (hla.symm.trans (denoteMeta_natLit_spine m hs d (k + 1)))
+  obtain rfl : la = natLitR m φ (k + 1) :=
+    Option.some.inj (hla.symm.trans (denoteMeta_natLitR hs d (k + 1)))
   have hfb : Frame d b := hf.app_fn.app_arg
   obtain ⟨hgAb, -⟩ := Graded.app hg
   obtain ⟨-, hgb⟩ := Graded.app hgAb
@@ -371,8 +439,8 @@ theorem Red.natAddZero_sound (hin : RulesInputs V m φ) {d : Nat} {us : List Lev
   obtain ⟨hgAb, hga⟩ := Graded.app hg
   obtain ⟨-, hgb⟩ := Graded.app hgAb
   obtain ⟨-, -, wa, hwa, -, heqw⟩ := hw hf.app_arg hC.app_arg haa hga
-  obtain rfl : wa = natLit m φ 0 :=
-    Option.some.inj (hwa.symm.trans (denoteMeta_rawNatLit m hs hn d))
+  obtain rfl : wa = natLitR m φ 0 :=
+    Option.some.inj (hwa.symm.trans (denoteMeta_rawNatLitR hs hn d))
   refine ⟨hf.app_fn.app_arg, fun l hl => by simp [Expr.fvarLeaves, hl], ba, hba, hgb,
     fun ρ hρ => ?_⟩
   rw [interp_app, interp_app, heqw ρ hρ]
@@ -398,11 +466,11 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
   intro b k h d Δa ea hf hC hea hg
   rcases natOffsetOf_some h with ⟨rfl, rfl⟩ | ⟨us, x, rfl, hx⟩ | ⟨us, x, n, rfl, hx⟩
   · -- a literal: `succᵏ 0`
-    obtain rfl : ea = natLit m φ k :=
-      Option.some.inj (hea.symm.trans (denoteMeta_natLit_spine m hs d k))
-    exact ⟨frame_natLit d 0, fun l hl => by simp [Expr.fvarLeaves] at hl, natLit m φ 0,
-      denoteMeta_natLit_spine m hs d 0,
-      fun ρ _ => (natLit_facts m hin.nat_heads hin.leaf_valid hs ρ 0).1,
+    obtain rfl : ea = natLitR m φ k :=
+      Option.some.inj (hea.symm.trans (denoteMeta_natLitR hs d k))
+    exact ⟨frame_natLit d 0, fun l hl => by simp [Expr.fvarLeaves] at hl, natLitR m φ 0,
+      denoteMeta_natLitR hs d 0,
+      fun ρ _ => (natLitR_facts hin hs ρ 0).1,
       fun ρ _ => interp_natLitAV ρ (m.acval natZeroName φ) (m.acval natSuccName φ) k⟩
   · -- `Nat.succ x`
     obtain ⟨fa, xa, hfa, hxa, rfl⟩ := denoteMeta_app_inv hea
@@ -421,8 +489,8 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
       rw [interp_app, succPow_one]
   · -- `Nat.add x (lit n)`
     obtain ⟨-, xa, la, hxa, hla, rfl, hxN⟩ := natAdd_app_inv hin hs ht hea hg
-    obtain rfl : la = natLit m φ n :=
-      Option.some.inj (hla.symm.trans (denoteMeta_natLit_spine m hs d n))
+    obtain rfl : la = natLitR m φ n :=
+      Option.some.inj (hla.symm.trans (denoteMeta_natLitR hs d n))
     obtain ⟨hgAx, -⟩ := Graded.app hg
     obtain ⟨-, hgx⟩ := Graded.app hgAx
     have hfx : Frame d x := hf.app_fn.app_arg
@@ -430,7 +498,7 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
     have hsubx : LeavesSub x (.app (.app (.const natAddName us) x) (.lit (.natVal n))) :=
       fun l hl => by simp [Expr.fvarLeaves, hl]
     have hadd : ∀ ρ : Nat → V, Sat V Δa ρ →
-        interp V ρ (.app (.app (m.acval natAddName φ) xa) (natLit m φ n)) =
+        interp V ρ (.app (.app (m.acval natAddName φ) xa) (natLitR m φ n)) =
           succPow (interp V ρ (m.acval natSuccName φ)) (interp V ρ xa) n :=
       fun ρ hρ => natAdd_succPow hin hs hfA ρ (hxN ρ hρ) n
     rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
