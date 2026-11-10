@@ -2,6 +2,7 @@ import Ix.IxVM.Refinement.Exec
 import Aiur.Generic.LookupFacts
 import Aiur.Generic.NativeCompleteness
 import Aiur.Generic.Observe
+import Aiur.Generic.TypeFacts
 
 /-! # Mirror lemmas: reading a source derivation off a concrete body
 
@@ -337,12 +338,35 @@ theorem matchPattern_construct (t : Ty) (c : String) (ps : List (Pattern F)) (na
       List.attach_map_subtype_val]
 
 omit [Field F] [DecidableEq F] in
-@[simp] theorem instanceName_plain_some (name : String) : instanceName [] name (some []) = name := by
+@[simp] theorem instanceName_plain_some (types : Types) (name : String) :
+    instanceName types name (some []) = name := by
   simp [instanceName, Instance.symbol]
 
 omit [Field F] [DecidableEq F] in
-@[simp] theorem instanceName_plain_none (name : String) : instanceName [] name none = name := by
+@[simp] theorem instanceName_plain_none (types : Types) (name : String) :
+    instanceName types name none = name := by
   simp [instanceName, Instance.symbol]
+
+omit [Field F] [DecidableEq F] in
+theorem instanceName_some_one (types : Types) (name : String) (t : Ty) :
+    instanceName types name (some [t]) = (Instance.mk name [t.subst types]).symbol := rfl
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem subst_param_singleton (tp : String) (t : Ty) :
+    (Ty.param tp).subst [(tp, t)] = t := by
+  simp [Ty.subst, List.lookup]
+
+omit [Field F] [DecidableEq F] in
+theorem Program.sourceFunction?_of_mem_one {p : Program F} (hd : (p.functions.map (·.name)).Nodup)
+    {f : Function F} (hf : f ∈ p.functions) {tp : String} (htypes : f.typeParams = [tp]) (t : Ty) :
+    p.sourceFunction? (Instance.mk f.name [t]).symbol =
+      some { types := [(tp, t)],
+             params := f.params.map fun (n, pt) => (n, (pt.subst [(tp, t)]).toCore),
+             body := f.body } := by
+  have hsym : Instance.ofSymbol (Instance.mk f.name [t]).symbol = .ok ⟨f.name, [t]⟩ :=
+    Instance.ofSymbol_symbol_of_ne_nil ⟨f.name, [t]⟩ (by simp)
+  simp [Program.sourceFunction?, hsym, Except.toOption, Program.findFunction?_of_mem hd hf, htypes,
+    arguments, pure, Except.pure, bind, Except.bind]
 
 /-! ## For generated mirrors
 
@@ -704,6 +728,226 @@ theorem selectArm_construct_inv {t : Ty} {c : String} {ps : List (Pattern F)}
           rw [hbs'] at hm
           cases hm
         · simp [hc]
+      | _ => rfl
+
+omit [Field F] in
+theorem selectArm_bind_inv {n : String} {b body : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (h : selectArm world types heap v ((.bind n, b) :: arms) = .ok (some (bs, body))) :
+    bs = [(n, v)] ∧ body = b := by
+  simp only [selectArm, matchPattern_bind, bind, Except.bind, pure, Except.pure,
+    Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+  exact ⟨h.1.symm, h.2.symm⟩
+
+/-- **Branch on a tuple with `n` fields** (`matchValue` on `.tuple`). -/
+def matchTuple {α : Type} :
+    Nat → SourceValue F → (List (SourceValue F) → α) → α → α
+  | n, .tuple vs, onMatch, onMiss =>
+      if vs.length = n then onMatch vs else onMiss
+  | _, _, _, onMiss => onMiss
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem matchTuple_tuple {α : Type} (n : Nat) (vs : List (SourceValue F))
+    (onMatch : List (SourceValue F) → α) (onMiss : α) :
+    matchTuple n (.tuple vs) onMatch onMiss =
+      if vs.length = n then onMatch vs else onMiss := rfl
+
+omit [Field F] in
+theorem selectArm_tuple_inv {ps : List (Pattern F)}
+    {b body : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (hflat : IsFlatPatternList ps)
+    (h : selectArm world types heap v ((.tuple ps, b) :: arms) = .ok (some (bs, body))) :
+    (∃ vs, v = .tuple vs ∧ ps.length = vs.length ∧
+      matchListWith (world.matchPattern types heap) ps vs = .ok (some bs) ∧ body = b) ∨
+    ((∀ {α : Type} (onMatch : List (SourceValue F) → α) (onMiss : α),
+        matchTuple ps.length v onMatch onMiss = onMiss) ∧
+      selectArm world types heap v arms = .ok (some (bs, body))) := by
+  rw [selectArm] at h
+  cases hm : world.matchPattern types heap (.tuple ps) v with
+  | error e => simp [hm, bind, Except.bind] at h
+  | ok opt =>
+    cases opt with
+    | some bindings =>
+      simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq,
+        Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨vs, hv, hlen, hml⟩ := matchPattern_tuple_inv hm
+      exact .inl ⟨vs, hv, hlen, hml, rfl⟩
+    | none =>
+      simp only [hm, bind, Except.bind] at h
+      refine .inr ⟨fun {α} onMatch onMiss => ?_, h⟩
+      cases v with
+      | tuple vs =>
+        unfold matchTuple
+        by_cases hc : vs.length = ps.length
+        · rw [matchPattern_tuple] at hm
+          simp only [hc, bne_self_eq_false] at hm
+          obtain ⟨bs', hbs'⟩ := hflat.matchListWith (world := world) (types := types) hc.symm heap
+          rw [hbs'] at hm
+          cases hm
+        · simp [hc]
+      | _ => rfl
+
+/-- **Branch on a literal-headed tuple** `.tuple (.literal c :: ps)` (`matchValue`). -/
+def matchLitTuple {α : Type} (c : F) :
+    Nat → SourceValue F → (List (SourceValue F) → α) → α → α
+  | n, .tuple (v0 :: vs), onMatch, onMiss =>
+      if v0 = .field c ∧ vs.length = n then onMatch vs else onMiss
+  | _, _, _, onMiss => onMiss
+
+omit [Field F] in
+@[simp] theorem matchLitTuple_tuple_field {α : Type} (c : F) (n : Nat)
+    (vs : List (SourceValue F)) (onMatch : List (SourceValue F) → α) (onMiss : α) :
+    matchLitTuple c n (.tuple (.field c :: vs)) onMatch onMiss =
+      if vs.length = n then onMatch vs else onMiss := by
+  simp [matchLitTuple]
+
+omit [Field F] [DecidableEq F] in
+@[congr] theorem matchConstruct_congr {α : Type} (name ctor : String) (n : Nat)
+    {v v' : SourceValue F} (onMatch : List (SourceValue F) → α) (onMiss : α)
+    (hv : v = v') :
+    matchConstruct name ctor n v onMatch onMiss =
+      matchConstruct name ctor n v' onMatch onMiss := by
+  rw [hv]
+
+omit [Field F] [DecidableEq F] in
+@[congr] theorem matchTuple_congr {α : Type} (n : Nat)
+    {v v' : SourceValue F} (onMatch : List (SourceValue F) → α) (onMiss : α)
+    (hv : v = v') :
+    matchTuple n v onMatch onMiss = matchTuple n v' onMatch onMiss := by
+  rw [hv]
+
+omit [Field F] in
+@[congr] theorem matchLitTuple_congr {α : Type} (c : F) (n : Nat)
+    {v v' : SourceValue F} (onMatch : List (SourceValue F) → α) (onMiss : α)
+    (hv : v = v') :
+    matchLitTuple c n v onMatch onMiss = matchLitTuple c n v' onMatch onMiss := by
+  rw [hv]
+
+/-- **Bind an `Except` result into `Option`**, with short-circuiting `@[congr]`. -/
+def bindOk {ε α : Type} (x : Except ε (SourceValue F)) (f : SourceValue F → Option α) : Option α :=
+  match x with
+  | .ok v => f v
+  | .error _ => none
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem bindOk_ok {ε α : Type} (v : SourceValue F) (f : SourceValue F → Option α) :
+    bindOk (.ok v : Except ε (SourceValue F)) f = f v := rfl
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem bindOk_error {ε α : Type} (e : ε) (f : SourceValue F → Option α) :
+    bindOk (.error e : Except ε (SourceValue F)) f = none := rfl
+
+omit [Field F] [DecidableEq F] in
+@[congr] theorem bindOk_congr {ε α : Type} {x x' : Except ε (SourceValue F)}
+    (f : SourceValue F → Option α) (hx : x = x') :
+    bindOk x f = bindOk x' f := by
+  rw [hx]
+
+/-- **Unpack a `cons` cell in `onMatch`**, with short-circuiting `@[congr]`. -/
+def bindCons {α : Type} (vs : List (SourceValue F))
+    (f : SourceValue F → List (SourceValue F) → Option α) : Option α :=
+  match vs with
+  | v :: vs' => f v vs'
+  | [] => none
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem bindCons_cons {α : Type} (v : SourceValue F) (vs : List (SourceValue F))
+    (f : SourceValue F → List (SourceValue F) → Option α) :
+    bindCons (v :: vs) f = f v vs := rfl
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem bindCons_nil {α : Type} (f : SourceValue F → List (SourceValue F) → Option α) :
+    bindCons ([] : List (SourceValue F)) f = none := rfl
+
+omit [Field F] [DecidableEq F] in
+@[congr] theorem bindCons_congr {α : Type} {vs vs' : List (SourceValue F)}
+    (f : SourceValue F → List (SourceValue F) → Option α) (hvs : vs = vs') :
+    bindCons vs f = bindCons vs' f := by
+  rw [hvs]
+
+/-- **Read `n` elements from a heap-allocated `Lists::Node<field>` list.** -/
+def readStreamBytes : Nat → Heap F → SourceValue F → Option (List (SourceValue F) × SourceValue F)
+  | 0, _, s => some ([], s)
+  | n + 1, h, s =>
+    bindOk (loadValue h s) fun v =>
+      matchConstruct (constructorName [] (.named "Lists::Node" [.field])) "Cons" 2 v
+        (fun vs => bindCons vs fun b vs => bindCons vs fun s' _ =>
+          (readStreamBytes n h s').map fun p => (b :: p.1, p.2))
+        none
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem readStreamBytes_zero (h : Heap F) (s : SourceValue F) :
+    readStreamBytes 0 h s = some ([], s) := rfl
+
+omit [Field F] [DecidableEq F] in
+@[simp] theorem readStreamBytes_succ (n : Nat) (h : Heap F) (s : SourceValue F) :
+    readStreamBytes (n + 1) h s =
+      bindOk (loadValue h s) fun v =>
+        matchConstruct (constructorName [] (.named "Lists::Node" [.field])) "Cons" 2 v
+          (fun vs => bindCons vs fun b vs => bindCons vs fun s' _ =>
+            (readStreamBytes n h s').map fun p => (b :: p.1, p.2))
+          none := rfl
+
+omit [Field F] in
+theorem selectArm_litTuple_inv {c : F} {ps : List (Pattern F)}
+    {b body : Expr F} {arms : List (Pattern F × Expr F)}
+    {v : SourceValue F} {heap : Heap F} {bs : Environment F Nat}
+    (hflat : IsFlatPatternList ps)
+    (h : selectArm world types heap v ((.tuple (.literal c :: ps), b) :: arms) = .ok (some (bs, body))) :
+    (∃ vs, v = .tuple (.field c :: vs) ∧ ps.length = vs.length ∧
+      matchListWith (world.matchPattern types heap) ps vs = .ok (some bs) ∧ body = b) ∨
+    ((∀ {α : Type} (onMatch : List (SourceValue F) → α) (onMiss : α),
+        matchLitTuple c ps.length v onMatch onMiss = onMiss) ∧
+      selectArm world types heap v arms = .ok (some (bs, body))) := by
+  rw [selectArm] at h
+  cases hm : world.matchPattern types heap (.tuple (.literal c :: ps)) v with
+  | error e => simp [hm, bind, Except.bind] at h
+  | ok opt =>
+    cases opt with
+    | some bindings =>
+      simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq,
+        Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨vs0, rfl, hlen0, hml0⟩ := matchPattern_tuple_inv hm
+      cases vs0 with
+      | nil => simp at hlen0
+      | cons v0 vs =>
+        simp only [List.length_cons, Nat.succ.injEq] at hlen0
+        simp only [matchListWith, matchPattern_literal_any, bind, Except.bind] at hml0
+        by_cases hv0 : v0 = .field c
+        · subst hv0
+          simp only [↓reduceIte] at hml0
+          cases hml : matchListWith (world.matchPattern types heap) ps vs with
+          | error e => simp [hml] at hml0
+          | ok opt' =>
+            cases opt' with
+            | none => simp [hml] at hml0
+            | some bs' =>
+              simp only [hml, pure, Except.pure, List.nil_append, Except.ok.injEq,
+                Option.some.injEq] at hml0
+              subst hml0
+              exact .inl ⟨vs, rfl, hlen0, hml, rfl⟩
+        · simp [hv0, pure, Except.pure] at hml0
+    | none =>
+      simp only [hm, bind, Except.bind] at h
+      refine .inr ⟨fun {α} onMatch onMiss => ?_, h⟩
+      cases v with
+      | tuple vs0 =>
+        cases vs0 with
+        | nil => rfl
+        | cons v0 vs =>
+          unfold matchLitTuple
+          by_cases hc : v0 = .field c ∧ vs.length = ps.length
+          · obtain ⟨rfl, hlen⟩ := hc
+            rw [matchPattern_tuple] at hm
+            simp only [List.length_cons, hlen, bne_self_eq_false,
+              matchListWith, matchPattern_literal_any, bind, Except.bind] at hm
+            obtain ⟨bs', hbs'⟩ := hflat.matchListWith (world := world) (types := types) hlen.symm heap
+            rw [hbs'] at hm
+            simp [pure, Except.pure] at hm
+          · simp [hc]
       | _ => rfl
 
 end Aiur.Generic.SourceSemantics

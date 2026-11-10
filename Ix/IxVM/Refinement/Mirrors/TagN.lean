@@ -89,7 +89,7 @@ def «UInt8::split_sum» : Nat → Heap F → SourceValue F → Option (SourceVa
           match evalBinOp .div v4 (.field 256) with
             | .ok z => some (z, h5)
             | .error _ => none)
-        some (.tuple [x_byte, v2], h3)))
+        some ((.tuple [x_byte, v2] : SourceValue F), h3)))
 
 /-- Every derivation of `UInt8::split_sum` is a run of its mirror. -/
 abbrev «UInt8::split_sum».Complete : Prop :=
@@ -325,8 +325,8 @@ def «UInt64::add» : Nat → Heap F → SourceValue F → SourceValue F → Opt
                                                 match v108 with
                                                   | .tuple [x_s7, x_c8] =>
                                                     (do
-                                                      let (v124, h125) ← some (.tuple [x_s0, x_s1, x_s2, x_s3, x_s4, x_s5, x_s6, x_s7], h109)
-                                                      some (.tuple [v124, x_c8], h125))
+                                                      let (v124, h125) ← some ((.tuple [x_s0, x_s1, x_s2, x_s3, x_s4, x_s5, x_s6, x_s7] : SourceValue F), h109)
+                                                      some ((.tuple [v124, x_c8] : SourceValue F), h125))
                                                   | _ => none)
                                             | _ => none)
                                       | _ => none)
@@ -373,6 +373,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k51, hk52⟩ := «UInt8::split_sum».of_eval callee9
   obtain ⟨ys53, hp54, hl55, ml56⟩ := matchPattern_tuple_inv mt4
   rcases ys53 with _ | ⟨y57, _ | ⟨y58, _ | ⟨_, _⟩⟩⟩ <;> simp at hl55
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp54
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml56
   subst ml56
   obtain ⟨v59, m60, bs61, d62, mt63, d64⟩ := d5.letValue_inv
@@ -411,6 +412,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k128, hk129⟩ := «UInt8::split_sum».of_eval callee68
   obtain ⟨ys130, hp131, hl132, ml133⟩ := matchPattern_tuple_inv mt63
   rcases ys130 with _ | ⟨y134, _ | ⟨y135, _ | ⟨_, _⟩⟩⟩ <;> simp at hl132
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp131
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml133
   subst ml133
   obtain ⟨v136, m137, bs138, d139, mt140, d141⟩ := d64.letValue_inv
@@ -449,6 +451,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k205, hk206⟩ := «UInt8::split_sum».of_eval callee145
   obtain ⟨ys207, hp208, hl209, ml210⟩ := matchPattern_tuple_inv mt140
   rcases ys207 with _ | ⟨y211, _ | ⟨y212, _ | ⟨_, _⟩⟩⟩ <;> simp at hl209
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp208
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml210
   subst ml210
   obtain ⟨v213, m214, bs215, d216, mt217, d218⟩ := d141.letValue_inv
@@ -487,6 +490,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k282, hk283⟩ := «UInt8::split_sum».of_eval callee222
   obtain ⟨ys284, hp285, hl286, ml287⟩ := matchPattern_tuple_inv mt217
   rcases ys284 with _ | ⟨y288, _ | ⟨y289, _ | ⟨_, _⟩⟩⟩ <;> simp at hl286
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp285
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml287
   subst ml287
   obtain ⟨v290, m291, bs292, d293, mt294, d295⟩ := d218.letValue_inv
@@ -525,6 +529,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k359, hk360⟩ := «UInt8::split_sum».of_eval callee299
   obtain ⟨ys361, hp362, hl363, ml364⟩ := matchPattern_tuple_inv mt294
   rcases ys361 with _ | ⟨y365, _ | ⟨y366, _ | ⟨_, _⟩⟩⟩ <;> simp at hl363
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp362
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml364
   subst ml364
   obtain ⟨v367, m368, bs369, d370, mt371, d372⟩ := d295.letValue_inv
@@ -563,6 +568,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k436, hk437⟩ := «UInt8::split_sum».of_eval callee376
   obtain ⟨ys438, hp439, hl440, ml441⟩ := matchPattern_tuple_inv mt371
   rcases ys438 with _ | ⟨y442, _ | ⟨y443, _ | ⟨_, _⟩⟩⟩ <;> simp at hl440
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp439
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml441
   subst ml441
   obtain ⟨v444, m445, bs446, d447, mt448, d449⟩ := d372.letValue_inv
@@ -601,6 +607,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k513, hk514⟩ := «UInt8::split_sum».of_eval callee453
   obtain ⟨ys515, hp516, hl517, ml518⟩ := matchPattern_tuple_inv mt448
   rcases ys515 with _ | ⟨y519, _ | ⟨y520, _ | ⟨_, _⟩⟩⟩ <;> simp at hl517
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp516
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml518
   subst ml518
   obtain ⟨v521, m522, bs523, d524, mt525, d526⟩ := d449.letValue_inv
@@ -639,6 +646,7 @@ theorem «UInt64::add».of_eval : «UInt64::add».Complete := by
   obtain ⟨k590, hk591⟩ := «UInt8::split_sum».of_eval callee530
   obtain ⟨ys592, hp593, hl594, ml595⟩ := matchPattern_tuple_inv mt525
   rcases ys592 with _ | ⟨y596, _ | ⟨y597, _ | ⟨_, _⟩⟩⟩ <;> simp at hl594
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp593
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml595
   subst ml595
   obtain ⟨vs598, args599, rfl⟩ := d526.tuple_inv
@@ -692,8 +700,8 @@ def «IxonDeserialize::get_u64_le» : Nat → Heap F → SourceValue F → Sourc
   | k + 1, h, x_stream, x_num_bytes =>
     if x_num_bytes = .field 0 then
       (do
-        let (v9, h10) ← some (.tuple (List.replicate 8 (.field 0)), h)
-        some (.tuple [v9, x_stream], h10))
+        let (v9, h10) ← some ((.tuple (List.replicate 8 (.field 0)) : SourceValue F), h)
+        some ((.tuple [v9, x_stream] : SourceValue F), h10))
     else
       (do
         let (v0, h1) ← match loadValue h x_stream with
@@ -713,8 +721,8 @@ def «IxonDeserialize::get_u64_le» : Nat → Heap F → SourceValue F → Sourc
                     match x_rest_bytes with
                       | .tuple [x_r0, x_r1, x_r2, x_r3, x_r4, x_r5, x_r6, _] =>
                         (do
-                          let (v6, h7) ← some (.tuple [x_byte, x_r0, x_r1, x_r2, x_r3, x_r4, x_r5, x_r6], h3)
-                          some (.tuple [v6, x_s2], h7))
+                          let (v6, h7) ← some ((.tuple [x_byte, x_r0, x_r1, x_r2, x_r3, x_r4, x_r5, x_r6] : SourceValue F), h3)
+                          some ((.tuple [v6, x_s2] : SourceValue F), h7))
                       | _ => none
                   | _ => none)
             else none
@@ -746,11 +754,11 @@ def «IxonDeserialize::get_tagn_wide» : Nat → Heap F → SourceValue F → So
               | .tuple [x_x, x_s] =>
                 (do
                   let (v30, h31) ← (do
-                    let (v32, h33) ← some (.tuple [x_r0, x_r1, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)], h29)
+                    let (v32, h33) ← some ((.tuple [x_r0, x_r1, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h29)
                     «UInt64::add» k h33 x_x v32)
                   match v30 with
                     | .tuple [x_value, _] =>
-                      some (.tuple [x_value, x_s], h31)
+                      some ((.tuple [x_value, x_s] : SourceValue F), h31)
                     | _ => none)
               | _ => none)
         else
@@ -761,11 +769,11 @@ def «IxonDeserialize::get_tagn_wide» : Nat → Heap F → SourceValue F → So
                 | .tuple [x_x, x_s] =>
                   (do
                     let (v24, h25) ← (do
-                      let (v26, h27) ← some (.tuple [x_r0, x_r1, (.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)], h23)
+                      let (v26, h27) ← some ((.tuple [x_r0, x_r1, (.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h23)
                       «UInt64::add» k h27 x_x v26)
                     match v24 with
                       | .tuple [x_value, _] =>
-                        some (.tuple [x_value, x_s], h25)
+                        some ((.tuple [x_value, x_s] : SourceValue F), h25)
                       | _ => none)
                 | _ => none)
           else
@@ -776,11 +784,11 @@ def «IxonDeserialize::get_tagn_wide» : Nat → Heap F → SourceValue F → So
                   | .tuple [x_x, x_s] =>
                     (do
                       let (v18, h19) ← (do
-                        let (v20, h21) ← some (.tuple [x_r0, x_r1, (.field 1), (.field 1), (.field 0), (.field 0), (.field 0), (.field 0)], h17)
+                        let (v20, h21) ← some ((.tuple [x_r0, x_r1, (.field 1), (.field 1), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h17)
                         «UInt64::add» k h21 x_x v20)
                       match v18 with
                         | .tuple [x_value, _] =>
-                          some (.tuple [x_value, x_s], h19)
+                          some ((.tuple [x_value, x_s] : SourceValue F), h19)
                         | _ => none)
                   | _ => none)
             else
@@ -791,7 +799,7 @@ def «IxonDeserialize::get_tagn_wide» : Nat → Heap F → SourceValue F → So
                     | .tuple [x_x, x_s] =>
                       (do
                         let (v8, h9) ← (do
-                          let (v10, h11) ← some (.tuple [x_r0, x_r1, (.field 1), (.field 1), (.field 1), (.field 0), (.field 0), (.field 0)], h7)
+                          let (v10, h11) ← some ((.tuple [x_r0, x_r1, (.field 1), (.field 1), (.field 1), (.field 0), (.field 0), (.field 0)] : SourceValue F), h7)
                           «UInt64::add» k h11 x_x v10)
                         match v8 with
                           | .tuple [x_value, x_carry] =>
@@ -801,7 +809,7 @@ def «IxonDeserialize::get_tagn_wide» : Nat → Heap F → SourceValue F → So
                                 match Builtin.apply (.assertEq { message := (some "TagN value exceeds UInt64"), runtimeCheck := true }) [v14, (.field 0)] with
                                   | .ok z => some (z, h15)
                                   | .error _ => none)
-                              some (.tuple [x_value, x_s], h13))
+                              some ((.tuple [x_value, x_s] : SourceValue F), h13))
                           | _ => none)
                     | _ => none)
               else
@@ -861,6 +869,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
     obtain ⟨k71, hk72⟩ := ih0 callee59
     obtain ⟨ys73, hp74, hl75, ml76⟩ := matchPattern_tuple_inv mt54
     rcases ys73 with _ | ⟨y77, _ | ⟨y78, _ | ⟨_, _⟩⟩⟩ <;> simp at hl75
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp74
     simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml76
     subst ml76
     obtain ⟨v79, m80, bs81, d82, mt83, d84⟩ := d55.letValue_inv
@@ -897,6 +906,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
     obtain ⟨k144, hk145⟩ := «UInt64::add».of_eval callee88
     obtain ⟨ys146, hp147, hl148, ml149⟩ := matchPattern_tuple_inv mt83
     rcases ys146 with _ | ⟨y150, _ | ⟨y151, _ | ⟨_, _⟩⟩⟩ <;> simp at hl148
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp147
     simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml149
     subst ml149
     obtain ⟨vs152, args153, rfl⟩ := d84.tuple_inv
@@ -926,6 +936,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
       obtain ⟨k189, hk190⟩ := ih0 callee177
       obtain ⟨ys191, hp192, hl193, ml194⟩ := matchPattern_tuple_inv mt172
       rcases ys191 with _ | ⟨y195, _ | ⟨y196, _ | ⟨_, _⟩⟩⟩ <;> simp at hl193
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp192
       simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml194
       subst ml194
       obtain ⟨v197, m198, bs199, d200, mt201, d202⟩ := d173.letValue_inv
@@ -962,6 +973,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
       obtain ⟨k262, hk263⟩ := «UInt64::add».of_eval callee206
       obtain ⟨ys264, hp265, hl266, ml267⟩ := matchPattern_tuple_inv mt201
       rcases ys264 with _ | ⟨y268, _ | ⟨y269, _ | ⟨_, _⟩⟩⟩ <;> simp at hl266
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp265
       simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml267
       subst ml267
       obtain ⟨vs270, args271, rfl⟩ := d202.tuple_inv
@@ -991,6 +1003,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
         obtain ⟨k307, hk308⟩ := ih0 callee295
         obtain ⟨ys309, hp310, hl311, ml312⟩ := matchPattern_tuple_inv mt290
         rcases ys309 with _ | ⟨y313, _ | ⟨y314, _ | ⟨_, _⟩⟩⟩ <;> simp at hl311
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp310
         simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml312
         subst ml312
         obtain ⟨v315, m316, bs317, d318, mt319, d320⟩ := d291.letValue_inv
@@ -1027,6 +1040,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
         obtain ⟨k380, hk381⟩ := «UInt64::add».of_eval callee324
         obtain ⟨ys382, hp383, hl384, ml385⟩ := matchPattern_tuple_inv mt319
         rcases ys382 with _ | ⟨y386, _ | ⟨y387, _ | ⟨_, _⟩⟩⟩ <;> simp at hl384
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp383
         simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml385
         subst ml385
         obtain ⟨vs388, args389, rfl⟩ := d320.tuple_inv
@@ -1056,6 +1070,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
           obtain ⟨k425, hk426⟩ := ih0 callee413
           obtain ⟨ys427, hp428, hl429, ml430⟩ := matchPattern_tuple_inv mt408
           rcases ys427 with _ | ⟨y431, _ | ⟨y432, _ | ⟨_, _⟩⟩⟩ <;> simp at hl429
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp428
           simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml430
           subst ml430
           obtain ⟨v433, m434, bs435, d436, mt437, d438⟩ := d409.letValue_inv
@@ -1092,6 +1107,7 @@ theorem «IxonDeserialize::get_tagn_wide».of_eval (ih0 : «IxonDeserialize::get
           obtain ⟨k498, hk499⟩ := «UInt64::add».of_eval callee442
           obtain ⟨ys500, hp501, hl502, ml503⟩ := matchPattern_tuple_inv mt437
           rcases ys500 with _ | ⟨y504, _ | ⟨y505, _ | ⟨_, _⟩⟩⟩ <;> simp at hl502
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp501
           simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml503
           subst ml503
           obtain ⟨v506, m507, bs508, d509, mt510, d511⟩ := d438.letValue_inv
@@ -1162,6 +1178,7 @@ theorem «UInt8::raw_lt».of_eval : «UInt8::raw_lt».Complete := by
   have hm22 := callee9.map_row «UInt8::raw_sub».none
   obtain ⟨ys23, hp24, hl25, ml26⟩ := matchPattern_tuple_inv mt4
   rcases ys23 with _ | ⟨y27, _ | ⟨y28, _ | ⟨_, _⟩⟩⟩ <;> simp at hl25
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp24
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml26
   subst ml26
   obtain ⟨l29, rfl⟩ := d5.var_inv
@@ -1203,8 +1220,8 @@ def «IxonDeserialize::get_tagn_tail» : Nat → Heap F → SourceValue F → So
                                 | .ok z => some (z, h19)
                                 | .error _ => none)
                             mapCall IxVM.Checked.source.tables "UInt8::from_field" [v16] h17)
-                          some (.tuple [x_v0, v14, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)], h15))
-                        some (.tuple [v12, x_s], h13))
+                          some ((.tuple [x_v0, v14, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h15))
+                        some ((.tuple [v12, x_s] : SourceValue F), h13))
                     | _ => none)
               else none
             | _ => none)
@@ -1249,6 +1266,7 @@ theorem «IxonDeserialize::get_tagn_tail».of_eval (ih0 : «IxonDeserialize::get
     subst l36
     obtain ⟨ys37, hp38, hl39, ml40⟩ := matchPattern_construct_inv mt31
     rcases ys37 with _ | ⟨y41, _ | ⟨y42, _ | ⟨_, _⟩⟩⟩ <;> simp at hl39
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp38
     simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml40
     subst ml40
     obtain ⟨v43, m44, bs45, d46, mt47, d48⟩ := d32.letValue_inv
@@ -1273,6 +1291,7 @@ theorem «IxonDeserialize::get_tagn_tail».of_eval (ih0 : «IxonDeserialize::get
     have hm82 := callee52.map_row «UInt8::raw_add».none
     obtain ⟨ys83, hp84, hl85, ml86⟩ := matchPattern_tuple_inv mt47
     rcases ys83 with _ | ⟨y87, _ | ⟨y88, _ | ⟨_, _⟩⟩⟩ <;> simp at hl85
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp84
     simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml86
     subst ml86
     obtain ⟨vs89, args90, rfl⟩ := d48.tuple_inv
@@ -1434,9 +1453,9 @@ def «IxonDeserialize::get_tagn4» : Nat → Heap F → SourceValue F → Option
                           let (v28, h29) ← (do
                             let (v30, h31) ← (do
                               let (v32, h33) ← mapCall IxVM.Checked.source.tables "UInt8::from_field" [x_low] h17
-                              some (.tuple [v32, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)], h33))
-                            some (.tuple [x_flag, v30], h31))
-                          some (.tuple [v28, x_s], h29))
+                              some ((.tuple [v32, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h33))
+                            some ((.tuple [x_flag, v30] : SourceValue F), h31))
+                          some ((.tuple [v28, x_s] : SourceValue F), h29))
                       else
                         if x_b3 = .field 1 then
                           (do
@@ -1444,8 +1463,8 @@ def «IxonDeserialize::get_tagn4» : Nat → Heap F → SourceValue F → Option
                             match v24 with
                               | .tuple [x_value, x_rest] =>
                                 (do
-                                  let (v26, h27) ← some (.tuple [x_flag, x_value], h25)
-                                  some (.tuple [v26, x_rest], h27))
+                                  let (v26, h27) ← some ((.tuple [x_flag, x_value] : SourceValue F), h25)
+                                  some ((.tuple [v26, x_rest] : SourceValue F), h27))
                               | _ => none)
                         else
                           none))
@@ -1470,6 +1489,7 @@ theorem «IxonDeserialize::get_tagn4».of_eval (ih0 : «IxonDeserialize::get_u64
   subst l9
   obtain ⟨ys10, hp11, hl12, ml13⟩ := matchPattern_construct_inv mt4
   rcases ys10 with _ | ⟨y14, _ | ⟨y15, _ | ⟨_, _⟩⟩⟩ <;> simp at hl12
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp11
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml13
   subst ml13
   obtain ⟨v16, m17, bs18, d19, mt20, d21⟩ := d5.letValue_inv
@@ -1483,6 +1503,7 @@ theorem «IxonDeserialize::get_tagn4».of_eval (ih0 : «IxonDeserialize::get_u64
   obtain ⟨k32, hk33⟩ := «UInt8::bit_decomposition».of_eval callee25
   obtain ⟨ys34, hp35, hl36, ml37⟩ := matchPattern_array_inv mt20
   rcases ys34 with _ | ⟨y38, _ | ⟨y39, _ | ⟨y40, _ | ⟨y41, _ | ⟨y42, _ | ⟨y43, _ | ⟨y44, _ | ⟨y45, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl36
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp35
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml37
   subst ml37
   obtain ⟨v46, m47, bs48, d49, mt50, d51⟩ := d21.letValue_inv
@@ -1594,6 +1615,7 @@ theorem «IxonDeserialize::get_tagn4».of_eval (ih0 : «IxonDeserialize::get_u64
       obtain ⟨k243, hk244⟩ := «IxonDeserialize::get_tagn_tail».of_eval ih0 callee225
       obtain ⟨ys245, hp246, hl247, ml248⟩ := matchPattern_tuple_inv mt220
       rcases ys245 with _ | ⟨y249, _ | ⟨y250, _ | ⟨_, _⟩⟩⟩ <;> simp at hl247
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp246
       simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml248
       subst ml248
       obtain ⟨vs251, args252, rfl⟩ := d221.tuple_inv
@@ -1677,9 +1699,9 @@ def «IxonDeserialize::get_tagn2» : Nat → Heap F → SourceValue F → Option
                           let (v28, h29) ← (do
                             let (v30, h31) ← (do
                               let (v32, h33) ← mapCall IxVM.Checked.source.tables "UInt8::from_field" [x_low] h9
-                              some (.tuple [v32, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)], h33))
-                            some (.tuple [x_flag, v30], h31))
-                          some (.tuple [v28, x_s], h29))
+                              some ((.tuple [v32, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h33))
+                            some ((.tuple [x_flag, v30] : SourceValue F), h31))
+                          some ((.tuple [v28, x_s] : SourceValue F), h29))
                       else
                         if x_b5 = .field 1 then
                           (do
@@ -1687,8 +1709,8 @@ def «IxonDeserialize::get_tagn2» : Nat → Heap F → SourceValue F → Option
                             match v24 with
                               | .tuple [x_value, x_rest] =>
                                 (do
-                                  let (v26, h27) ← some (.tuple [x_flag, x_value], h25)
-                                  some (.tuple [v26, x_rest], h27))
+                                  let (v26, h27) ← some ((.tuple [x_flag, x_value] : SourceValue F), h25)
+                                  some ((.tuple [v26, x_rest] : SourceValue F), h27))
                               | _ => none)
                         else
                           none))
@@ -1713,6 +1735,7 @@ theorem «IxonDeserialize::get_tagn2».of_eval (ih0 : «IxonDeserialize::get_u64
   subst l9
   obtain ⟨ys10, hp11, hl12, ml13⟩ := matchPattern_construct_inv mt4
   rcases ys10 with _ | ⟨y14, _ | ⟨y15, _ | ⟨_, _⟩⟩⟩ <;> simp at hl12
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp11
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml13
   subst ml13
   obtain ⟨v16, m17, bs18, d19, mt20, d21⟩ := d5.letValue_inv
@@ -1726,6 +1749,7 @@ theorem «IxonDeserialize::get_tagn2».of_eval (ih0 : «IxonDeserialize::get_u64
   obtain ⟨k32, hk33⟩ := «UInt8::bit_decomposition».of_eval callee25
   obtain ⟨ys34, hp35, hl36, ml37⟩ := matchPattern_array_inv mt20
   rcases ys34 with _ | ⟨y38, _ | ⟨y39, _ | ⟨y40, _ | ⟨y41, _ | ⟨y42, _ | ⟨y43, _ | ⟨y44, _ | ⟨y45, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl36
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp35
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml37
   subst ml37
   obtain ⟨v46, m47, bs48, d49, mt50, d51⟩ := d21.letValue_inv
@@ -1837,6 +1861,7 @@ theorem «IxonDeserialize::get_tagn2».of_eval (ih0 : «IxonDeserialize::get_u64
       obtain ⟨k243, hk244⟩ := «IxonDeserialize::get_tagn_tail».of_eval ih0 callee225
       obtain ⟨ys245, hp246, hl247, ml248⟩ := matchPattern_tuple_inv mt220
       rcases ys245 with _ | ⟨y249, _ | ⟨y250, _ | ⟨_, _⟩⟩⟩ <;> simp at hl247
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp246
       simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml248
       subst ml248
       obtain ⟨vs251, args252, rfl⟩ := d221.tuple_inv
@@ -1908,8 +1933,8 @@ def «IxonDeserialize::get_tagn0» : Nat → Heap F → SourceValue F → Option
               let (v2, h3) ← «UInt8::less_than» k h1 x_byte (.field 128)
               if v2 = .field 1 then
                 (do
-                  let (v8, h9) ← some (.tuple [x_byte, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)], h3)
-                  some (.tuple [v8, x_s], h9))
+                  let (v8, h9) ← some ((.tuple [x_byte, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h3)
+                  some ((.tuple [v8, x_s] : SourceValue F), h9))
               else
                 if v2 = .field 0 then
                   (do
@@ -1941,6 +1966,7 @@ theorem «IxonDeserialize::get_tagn0».of_eval (ih0 : «IxonDeserialize::get_u64
   subst l9
   obtain ⟨ys10, hp11, hl12, ml13⟩ := matchPattern_construct_inv mt4
   rcases ys10 with _ | ⟨y14, _ | ⟨y15, _ | ⟨_, _⟩⟩⟩ <;> simp at hl12
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp11
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml13
   subst ml13
   obtain ⟨v16, m17, bs18, body19, d20, sel21, d22⟩ := d5.matchValue_inv

@@ -22,9 +22,11 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln s!"[ixvm-checked --check] {path} STALE: run `lake exe ixvm/ixvm-checked` and commit the result"
         ok := false
     else
-      if let some dir := path.parent then IO.FS.createDirAll dir
-      IO.FS.writeFile path text
-      IO.println s!"[ixvm-checked] wrote {path}"
+      let existing ← try pure (some (← IO.FS.readFile path)) catch _ => pure none
+      if existing != some text then
+        if let some dir := path.parent then IO.FS.createDirAll dir
+        IO.FS.writeFile path text
+        IO.println s!"[ixvm-checked] wrote {path}"
   let rendered := files.map (·.1.toString)
   let fnDir : System.FilePath := "IxVM/IxVM/Checked/Fn"
   if ← fnDir.pathExists then
