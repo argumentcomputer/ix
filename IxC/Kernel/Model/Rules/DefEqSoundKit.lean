@@ -195,7 +195,7 @@ theorem denoteMeta_open_rename {acval : Key md → (LevelParam → Nat) → Anno
 validated reading. -/
 theorem acval_const_congr' {m : EnvModel V env} (hap : AcvalParams m)
     {d : Nat} {n : Key md} {us us' : List Level} {aa ba : AnnotTerm}
-    (hlev : Level.isEquivList us us' = some true)
+    (hlev : ∀ φ, Level.EvalEqList φ us us')
     (hda : denoteMeta m.acval env φ d (.const n us) = some aa)
     (hdb : denoteMeta m.acval env φ d (.const n us') = some ba) :
     aa = ba := by
@@ -210,8 +210,7 @@ theorem acval_const_congr' {m : EnvModel V env} (hap : AcvalParams m)
       · rw [← Option.some.inj hda, ← Option.some.inj hdb]
         refine hap n ci hf _ _ ?_
         intro p _
-        exact Level.substFn_of_evalEqList _
-          (Level.isEquivList_sound hlev φ) p
+        exact Level.substFn_of_evalEqList _ (hlev φ) p
       · exact nomatch hdb
     · exact nomatch hda
 
@@ -657,7 +656,7 @@ theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr md}
     {u : Level} {Δa : List AnnotTerm} {aa : AnnotTerm}
     (hta : InferSemIO m φ d a ta) (htta : InferSemIO m φ d ta tta)
     (hu : RedSem m φ d tta (.sort u))
-    (hu0 : Level.isEquiv u .zero = some true)
+    (hu0 : ∀ φ, Level.eval φ u = 0)
     (hfa : Frame d a) (hCa : CtxOk m φ d Δa a)
     (hda : denoteMeta m.acval env φ d a = some aa)
     (hokA : Graded V Δa aa)
@@ -670,7 +669,7 @@ theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr md}
   obtain ⟨-, -, sa, hsa, -, heq⟩ := hu hftta hCtta httaa hokttaa
   rw [denoteMeta_sort] at hsa
   obtain rfl : sa = AnnotTerm.sort (u.eval φ) := (Option.some.inj hsa).symm
-  have h0 : Level.eval φ u = 0 := Ix.Kernel.Level.isEquiv_sound hu0 φ
+  have h0 : Level.eval φ u = 0 := hu0 φ
   have hT := hmemT ρ hρ
   rw [heq ρ hρ, interp_sort, h0] at hT
   exact mem_univ_zero hT (hmemA ρ hρ)

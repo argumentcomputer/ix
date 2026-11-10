@@ -365,7 +365,8 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     (hi : i < entry.numFields)
     (hlen : e.getAppArgs.length = entry.numParams + entry.numFields)
     (hus : us.length = entry.levelParams.length)
-    (hfire : entry.fireOk us = true)
+    (hfire : Level.isEquiv entry.structSort .zero = some true →
+      ∀ ψ, Level.eval ψ (Level.subst entry.levelParams us entry.fieldSort) = 0)
     (hctor : env.find? entry.ctor = some (.ctorInfo cvC nP nF))
     (hcerts : CertsSem m φ d true
       (cvC.type.instantiateLevelParams cvC.levelParams us) e.getAppArgs) :
@@ -465,6 +466,6 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     vs.getD (entry.numParams + i) default, hfvd, hokArg, fun σ hσ => ?_⟩
   have hfit : TeleFit V σ TCa (vs.map (interp V σ)) (interp V σ resta) :=
     teleFit_of_teleFitPA (by rw [← hspa.length]; exact hpc) (hfitA σ hσ)
-  rw [hveq, hB (towerGuardAt_of_fireOk hO5 hfire) σ vs _ hlenVs (hgvp σ hσ) hfit]
+  rw [hveq, hB (towerGuardAt_of_sem hO5 hfire) σ vs _ hlenVs (hgvp σ hσ) hfit]
 
 end Ix.Kernel.Model.Rules

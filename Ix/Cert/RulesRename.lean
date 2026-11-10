@@ -164,7 +164,7 @@ theorem red_rename (hR : Renaming P f env env') :
       (entry := entry.mapKeys f) (cvC := cvC.mapKeys f)
       (by rw [hR.rel.findProj? hsn, hent]; rfl) (head_map hhead) hi
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus
-      (by rw [ProjEntry.fireOk_mapKeys]; exact hfire) (hR.find hctor)
+      hfire (hR.find hctor)
       (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
     rw [Expr.getAppArgs_mapKeys, List.getD_map_bvar] at key
     exact key
@@ -309,7 +309,13 @@ theorem red_rename (hR : Renaming P f env env') :
       (by rw [ConstantVal.mapKeys_type, ← Expr.mapKeys_piResult, ← Expr.mapKeys_getAppFn, hres]; rfl)
       (hR.find hind) itm rtmaj (head_map hthead)
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hlv
-      (by rw [RecRule.mapKeys_ctor, andRescueSlots_ren hR.rel hrlG.1]; exact hslots)
+      (fun j hj => by
+        obtain ⟨e, hfe, hct, hnP, hnF, hfire⟩ := hslots j hj
+        have h := hR.rel.findProj? (T := andName) hand j
+        simp only [Key.map_role] at h
+        refine ⟨e.mapKeys f, by rw [h, hfe]; rfl, ?_, hnP, hnF, hfire⟩
+        rw [RecRule.mapKeys_ctor, ← hct]
+        rfl)
       (by rw [hfab, Expr.mapKeys_mkAppN, List.map_append, Expr.getAppArgs_mapKeys]; rfl)
       (by rw [Expr.wscopedB_mapKeys]; exact hws) (by rw [Expr.looseBVarsBounded_mapKeys]; exact hb)
       (by rw [fvarLeaves_all_contains_ren hR.rel.inj hfabG he]; exact hlv')
@@ -474,7 +480,7 @@ theorem infer_rename (hR : Renaming P f env env') :
       (Expr.Good.getAppArgs gte) hpe, ?_⟩
     have key := Infer.proj (env := env') it rte (head_map hhead)
       (by rw [hR.rel.findProj? hsn, hent]; rfl)
-      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus hprop
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus (by exact hprop)
     simpa [Expr.getAppArgs_mapKeys] using key
 
 /-- **A telescope certificate, renamed.** -/
