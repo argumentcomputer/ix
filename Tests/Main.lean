@@ -42,6 +42,7 @@ import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.IxVM.BindingAnchors
 import Tests.Ix.IxVM.BindingFrontier
+import Tests.Ix.IxVM.S4Bench
 import Tests.Ix.IxVM.TagN
 import Tests.Ix.IxVM.Codec
 import Tests.Ix.IxVM.UserAxioms
@@ -221,6 +222,10 @@ def registry : List Entry := [
   .runner "ixvm-binding-frontier" (.ci .ixvm) Tests.Ix.IxVM.BindingFrontier.run,
   -- A constant byte out of range is refused.
   .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
+  -- Lane s4 measurements (spike S4): declaration costs, a Std shard, the
+  -- inductive census and the in-process modeller's records. Not a gate.
+  .env "ixvm-s4-bench" (.manual "lane s4 measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
+  .env "ixvm-s4-census" (.manual "lane s4 inductive census and modeller records") Tests.Ix.IxVM.S4Bench.census,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).

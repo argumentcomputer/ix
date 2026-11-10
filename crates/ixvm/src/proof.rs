@@ -87,6 +87,12 @@ fn main() -> Result<(), Box<dyn Error>> {
       .map(|plan| Backend::for_batch_verification(plan, Parameters::default()))
       .transpose()?;
     let mut statistics = serde_json::Map::new();
+    // Measurement aid (lane s4, not a gate): with IXVM_FUNCTION_STATS set,
+    // `--stats-out S` also writes `S.functions.json`, the memo rows and cache
+    // hits of every function an accepted case called. A circuit's rows are the
+    // sum of its member functions' rows. Circuit statistics are unchanged.
+    let function_stats = std::env::var_os("IXVM_FUNCTION_STATS").is_some();
+    let mut functions = serde_json::Map::new();
     let mut failed = Vec::new();
     for case in cases {
       let args = program.field().decode(&case.invocation.args)?;
@@ -103,6 +109,26 @@ fn main() -> Result<(), Box<dyn Error>> {
           .is_some()
       {
         return Err(format!("duplicate case label: {}", case.label).into());
+      }
+      if function_stats
+        && stats_path.is_some()
+        && let Ok(record) = &result
+      {
+        let mut rows: std::collections::BTreeMap<usize, (u64, u64)> =
+          std::collections::BTreeMap::new();
+        for (key, output) in record.queries.iter() {
+          let entry = rows.entry(key.function).or_default();
+          entry.0 += 1;
+          entry.1 += output.multiplicity.saturating_sub(1);
+        }
+        let list: Vec<_> = rows
+          .into_iter()
+          .map(|(f, (r, h))| {
+            serde_json::json!({"name": program.callable_name(f).unwrap_or("?"),
+              "rows": r, "cache_hits": h})
+          })
+          .collect();
+        functions.insert(case.label.clone(), serde_json::Value::Array(list));
       }
       let error = result.as_ref().err().map(ToString::to_string);
       let reached = match (&result, &case.exercises) {
@@ -141,6 +167,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if let Some(path) = stats_path {
       serde_json::to_writer(std::fs::File::create(path)?, &statistics)?;
+      if function_stats {
+        serde_json::to_writer(
+          std::fs::File::create(format!("{path}.functions.json"))?,
+          &functions,
+        )?;
+      }
     }
     if !failed.is_empty() {
       return Err(
