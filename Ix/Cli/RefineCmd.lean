@@ -29,7 +29,7 @@ namespace Ix.Cli.RefineCmd
 def resolveBudget (p : Cli.Parsed) : IO Nat := do
   if let some g := (p.flag? "max-ram").map (·.as! Nat) then
     if g > 0 then return g
-  let available := ((← FormalAiur.resources).getObjValAs? Nat "available_bytes").toOption.getD 0
+  let available := (← FormalAiur.resources).availableBytes.getD 0
   let gib := available * 85 / 100 / 1024^3
   if gib == 0 then
     throw (IO.userError "cannot detect available memory; pass --max-ram G")

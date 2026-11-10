@@ -2,14 +2,14 @@
   `ix prepare`
 
   Readies the default backend once per source revision, so later commands
-  start immediately and from any directory: exports the certified IxVM,
-  recursive verifier and aggregation artifacts into the checkout's cache, and
+  start immediately and from any directory: compiles the certified IxVM,
+  recursive verifier and aggregation packages into the checkout's cache, and
   records them in `.lake/aiur/native-kernels.env`. The formal prover runs
   inside `ix`; the next `lake build ix` compiles native executors generated
   from these artifacts into it (see `formalNativeArtifacts` in
   `lakefile.lean`). Until then jobs run on the interpreter, with identical
-  records and proofs. An artifact is exported only when its exporter or
-  the digest of the program it embeds changed.
+  records and proofs. A package is compiled only when the linked compiler or
+  the digest of its program changed.
 -/
 module
 public import Cli
@@ -24,9 +24,9 @@ def runPrepareCmd (p : Cli.Parsed) : IO UInt32 := do
   let root ← FormalAiur.repoRoot
   IO.println s!"checkout {root}"
   let absolute (path : String) : IO String := return (← IO.FS.realPath path).toString
-  let ixvm ← absolute (← FormalAiur.artifact p)
-  let verifier ← absolute (← FormalAiur.verifierArtifact p)
-  let aggregation ← absolute (← FormalAggregate.artifact p)
+  let ixvm ← absolute (← FormalAiur.artifactPath p)
+  let verifier ← absolute (← FormalAiur.verifierArtifactPath p)
+  let aggregation ← absolute (← FormalAiur.aggregationArtifactPath p)
   IO.println s!"ixvm artifact {ixvm}"
   IO.println s!"verifier artifact {verifier}"
   IO.println s!"aggregation artifact {aggregation}"
@@ -45,12 +45,12 @@ end Ix.Cli.PrepareCmd
 open Ix.Cli.PrepareCmd in
 def prepareCmd : Cli.Cmd := `[Cli|
   prepare VIA runPrepareCmd;
-  "Export the default backend's certified artifacts ahead of time and select them for its native executors"
+  "Compile the default backend's certified artifacts ahead of time and select them for its native executors"
 
   FLAGS:
-    "aiur-artifact" : String; "Use this trusted IxVM artifact instead of exporting one."
+    "aiur-artifact" : String; "Use this trusted IxVM artifact instead of compiling one."
     "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
-    "aggr-artifact" : String; "Use this trusted aggregation artifact instead of exporting one."
+    "aggr-artifact" : String; "Use this trusted aggregation artifact instead of compiling one."
     "aggr-artifact-digest" : String; "Refuse an aggregation artifact whose BLAKE3 digest is not this one."
-    "verifier-artifact" : String; "Use this trusted recursive verifier artifact instead of exporting one."
+    "verifier-artifact" : String; "Use this trusted recursive verifier artifact instead of compiling one."
 ]

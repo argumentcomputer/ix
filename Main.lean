@@ -1,4 +1,5 @@
 import Ix.Cli.AddrOfCmd
+import Ix.FormalCompiler
 import Ix.Cli.AggregateCmd
 import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd

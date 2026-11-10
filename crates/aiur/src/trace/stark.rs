@@ -8,6 +8,7 @@
 //! acyclicity argument also needs every verifier to bound a batch's rows by
 //! [`MAX_BATCH_ROWS`].
 use super::{Polynomial, RangeCounts, Trace, TracePlan};
+use crate::shared::Shared;
 use crate::{
   Execution,
   field::{FieldBackend, NativeField, PrimeField},
@@ -174,7 +175,7 @@ pub struct CircuitStatistics {
 /// the compiler, circuit export and ordinary execution remain field generic.
 pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   id: u64,
-  plan: &'p TracePlan<'a, B>,
+  plan: Shared<'p, TracePlan<'a, B>>,
   system: System<GoldilocksBlake3Config>,
   key: ProverKey<GoldilocksBlake3Config>,
   names: Vec<String>,
@@ -244,7 +245,7 @@ fn degree(e: &Expr<Val>) -> usize {
 
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   pub fn new(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::new_with_rom_layout(plan, parameters, RomLayout::Vectorized)
@@ -261,7 +262,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Batch proofs close contiguous memory ranges through authenticated
   /// boundary messages. A standalone proof uses the original first-row rule.
   pub fn for_batch(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::for_batch_with_rom_layout(plan, parameters, RomLayout::Vectorized)
@@ -279,7 +280,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Prover-only lookup settings must not affect these operations. Use the CPU
   /// host binary when verification must not initialize the CUDA backend.
   pub fn for_batch_verification(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::for_batch_verification_with_rom_layout(
@@ -290,7 +291,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn for_batch_verification_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -302,7 +303,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Prover-only lookup settings are ignored; proving, verification, witness
   /// generation and key export fail closed on the returned backend.
   pub fn for_statistics(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::assemble(
@@ -321,7 +322,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// placement policy so resource planning matches [`Self::for_batch_on_device`]
   /// without committing preprocessed fixed tables.
   pub fn for_planning(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
@@ -341,7 +342,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
   /// silently running a different backend. Device placement does not change keys.
   pub fn for_batch_on_device(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
@@ -353,7 +354,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// backend.
   #[doc(hidden)]
   pub fn new_below_floor(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::new_below_floor_with_rom_layout(
@@ -366,7 +367,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// [`Self::new_with_rom_layout`] without the security floor, for tests.
   #[doc(hidden)]
   pub fn new_below_floor_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -378,7 +379,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// trust a key or proof from such a backend.
   #[doc(hidden)]
   pub fn for_batch_below_floor(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::for_batch_below_floor_with_rom_layout(
@@ -390,7 +391,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   #[doc(hidden)]
   pub fn for_batch_below_floor_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -398,7 +399,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn with_memory_policy(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     rom_layout: RomLayout,
@@ -407,7 +408,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn build(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     rom_layout: RomLayout,
@@ -435,7 +436,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn assemble(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     rom_layout: RomLayout,
@@ -467,16 +468,17 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
           .into(),
       );
     }
+    let plan: Shared<'p, TracePlan<'a, B>> = plan.into();
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
     }
-    let rom = rom::Rom::new(plan, rom_layout);
+    let rom = rom::Rom::new(&plan, rom_layout);
     let mut inputs = vec![];
     let mut names = vec![];
-    let placements = grouping::build(plan, &rom, &mut inputs, &mut names)?;
+    let placements = grouping::build(&plan, &rom, &mut inputs, &mut names)?;
     let function_circuits = inputs.len();
     let tables = tables::fixed_tables(
-      plan,
+      &plan,
       &mut inputs,
       &mut names,
       parameters.log_blowup,

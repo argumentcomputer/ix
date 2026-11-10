@@ -6,8 +6,10 @@ accepted.
 
 The closure starts from the acceptance entry points (`ix verify`, formal,
 aggregate and catalog, and the checks `ix prove` and `ix aggregate` apply to
-the roots the aggregate controller returns) and from the code that exports
-the certified artifacts the verifying keys are taken from. It follows every constant referenced by a
+the roots the aggregate controller returns) and from the code that compiles
+the certified programs the verifying keys are taken from: the compiler
+linked into `ix`, which the selection code reaches through
+`FormalProver.compiler?`, and the standalone exporters. It follows every constant referenced by a
 type, a value, a constructor or recursor, an `@[implemented_by]` target, and
 the `_unsafe_rec` definition the compiler runs for recursive definitions.
 Constants of the toolchain (`Init`, `Std`, `Lean`, `Lake`) end the walk:
@@ -231,7 +233,13 @@ def groups : Array Group := #[
       `Ix.Cli.FormalAiur.compiledArtifact,
       `Ix.Cli.FormalAiur.artifact,
       `Ix.Cli.FormalAiur.aggregationArtifact,
-      `Ix.Cli.FormalAiur.verifierArtifact] },
+      `Ix.Cli.FormalAiur.verifierArtifact,
+      `Ix.Cli.FormalAiur.artifactPath,
+      `Ix.Cli.FormalAiur.aggregationArtifactPath,
+      `Ix.Cli.FormalAiur.verifierArtifactPath] },
+  { label := "linked-compiler", imports := #[`Ix.FormalCompiler]
+    roots := #[`Ix.FormalCompiler.compile, `Ix.FormalCompiler.digest,
+      `Ix.FormalCompiler.identity] },
   { label := "ixvm-exporter", imports := #[`IxVM.Main], roots := #[`main] },
   { label := "stark-exporter", imports := #[`MultiStark.Main], roots := #[`main] }]
 

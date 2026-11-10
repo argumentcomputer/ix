@@ -359,7 +359,7 @@ fn encode<B: WitnessField>(
   backend: &Backend<'_, '_, B>,
   include: impl Fn(usize) -> bool,
 ) -> (Vec<Option<Program>>, Constants, Vec<usize>) {
-  let plan = backend.plan;
+  let plan = &*backend.plan;
   let program = plan.program.program();
   let functions = program.functions.len();
   let mut constants = Constants::default();
@@ -431,7 +431,7 @@ fn host_steps<B: WitnessField>(
 ) -> Vec<(HostCause, String)> {
   let maps = &backend.plan.program.program().maps;
   let mut causes = vec![];
-  if has_depth(backend.plan, f) {
+  if has_depth(&backend.plan, f) {
     causes.push((HostCause::Depth, "depth".to_owned()));
   }
   for step in &backend.plan.artifact.functions[f].steps {

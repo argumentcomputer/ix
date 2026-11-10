@@ -13,8 +13,9 @@
 # the binding-proof check, the coverage audit (`auditAggregateConstants`),
 # the public input (`Aggr.allowedBlob`, `Aggr.pubInput`), the wrapper check
 # (`verifyWrapper`), and the export and caching of the certified artifacts
-# that fix the verifying keys (`compiledArtifact` and the `ixvm` and
-# `stark-export` exporters with their Aiur sources). `lake exe verify-path`
+# that fix the verifying keys (`compiledArtifact`, the compiler linked into
+# `ix` (`Ix.FormalCompiler`), and the `ixvm` and `stark-export` exporters
+# with their Aiur sources). `lake exe verify-path`
 # (Tests/VerifyPath.lean) hashes the kernel declarations of every constant
 # reachable from those entry points, outside the Lean toolchain, plus the
 # Aiur source bundles, and this script compares the result with the pin in
@@ -40,7 +41,7 @@ cd "$(dirname "$0")/.."
 
 pin=tools/verify-path.fingerprint
 lake build verify-path +Ix.Cli.CatalogAggregate +Ix.Cli.FormalAggregate +Ix.Cli.FormalAiur \
-  +Ix.Cli.VerifyCmd +IxVM.Main +MultiStark.Main >/dev/null
+  +Ix.Cli.VerifyCmd +Ix.FormalCompiler +IxVM.Main +MultiStark.Main >/dev/null
 actual=$(mktemp)
 trap 'rm -f "$actual"' EXIT
 lake exe verify-path > "$actual"

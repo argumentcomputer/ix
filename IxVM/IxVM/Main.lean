@@ -1,5 +1,6 @@
 import IxVM
 import IxVM.FunctionGroups
+import IxVM.Package
 import Aiur.Artifact
 import Aiur.Optimized.Program
 import Aiur.Trace.Export
@@ -165,7 +166,16 @@ unsafe def main (args : List String) : IO Unit := do
     | _ => "IxVM::verify_transitive"
   if profile then IO.eprintln s!"Phase initialization: {(← IO.monoMsNow) - totalStart}ms"
   IO.eprintln s!"IxVM program {IxVM.programDigest}"
-  if ["check-claim", "export-claim", "export-claim-trace", "grouping-snapshot"].contains mode then
+  if mode == "export-claim" || mode == "export-claim-trace" then
+    let trace := mode == "export-claim-trace"
+    IO.eprintln (if trace then "Compiling claim bytecode, circuits and witness population plans..."
+      else "Compiling claim bytecode...")
+    let package ← IxVM.compilePackage groups trace
+    let path := args[1]?.getD "/tmp/ix-claim.ixa"
+    Artifact.write path package
+    IO.eprintln s!"Wrote {path}"
+    return
+  if mode == "check-claim" || mode == "grouping-snapshot" then
     let source := IxVM.source
     let entries := [IxVM.entry]
     let start ← IO.monoMsNow
@@ -183,16 +193,6 @@ unsafe def main (args : List String) : IO Unit := do
       let path := args[1]?.getD "/tmp/ixvm-grouping.json"
       IO.FS.writeFile path (toJson snapshot).compress
       IO.eprintln s!"Wrote grouping snapshot {path}"
-      return
-    let (exported, trace) ← if mode == "export-claim-trace" then do
-      IO.eprintln "Compiling claim circuits and witness population plans..."
-      let (exported, trace) ← Trace.exportPlanParallel modulus ZMod.val source entries exported groups
-      pure (exported, some trace)
-    else pure (exported, none)
-    let path := args[1]?.getD "/tmp/ix-claim.ixa"
-    let pkg ← IO.ofExcept (Artifact.package exported modulus ZMod.val trace)
-    Artifact.write path pkg
-    IO.eprintln s!"Wrote {path} (blake3: {blake3Hex pkg})"
     return
   let source := IxVM.source
   IO.eprintln "Checking IxVM entrypoints..."

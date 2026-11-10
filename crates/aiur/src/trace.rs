@@ -353,7 +353,7 @@ pub struct PopulationTimings {
 
 /// A checked plan is tied to the immutable checked execution program.
 pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
-  program: &'a CheckedProgram<B>,
+  program: crate::shared::Shared<'a, CheckedProgram<B>>,
   artifact: TraceArtifact,
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
@@ -371,9 +371,11 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
 
 impl<'a, B: FieldBackend> TracePlan<'a, B> {
   pub fn new(
-    program: &'a CheckedProgram<B>,
+    program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
     mut artifact: TraceArtifact,
   ) -> Result<Self, String> {
+    let shared = program.into();
+    let program = &*shared;
     if artifact.version != 3 || artifact.modulus != program.field.modulus() {
       return Err("trace version or field mismatch".into());
     }
@@ -576,15 +578,15 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           .into(),
       );
     }
-    Ok(Self { program, artifact, callables, members, fills, depth })
+    Ok(Self { program: shared, artifact, callables, members, fills, depth })
   }
 
   pub fn artifact(&self) -> &TraceArtifact {
     &self.artifact
   }
 
-  pub fn program(&self) -> &'a CheckedProgram<B> {
-    self.program
+  pub fn program(&self) -> &CheckedProgram<B> {
+    &self.program
   }
 
   /// The chip that represents each function, by function index.

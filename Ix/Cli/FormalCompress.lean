@@ -24,10 +24,9 @@ returns the raw normalized proof. -/
 def normalize (p : Cli.Parsed) (ctx : Context) (wrapper : Ixon.Proof) (layout : ByteArray) :
     IO ByteArray := do
   let options ← hostOptions p
-  let config := Json.mkObj [
-    ("ixvm_artifact", toJson ctx.ixvmArtifact), ("aggr_artifact", toJson ctx.aggrArtifact),
-    ("device", toJson options.device), ("options", options.json)]
-  FormalProver.normalizeRoot config.compress layout (Ix.Claim.ser wrapper.claim) wrapper.proof
+  FormalProver.normalizeRoot ctx.ixvmSystem ctx.aggrSystem
+    { device := options.device, options := options.job } layout
+    (Ix.Claim.ser wrapper.claim) wrapper.proof
 
 end Ix.Cli.FormalCompress
 end

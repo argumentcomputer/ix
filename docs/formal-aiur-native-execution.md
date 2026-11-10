@@ -170,23 +170,25 @@ The formal prover (`crates/ix-prover`) runs inside `ix` as part of the Rust
 static library. Its feature `native` enables all three kernels together;
 `ix-ffi`'s `formal-native` feature turns it on.
 
-`ix prepare` (`Ix/Cli/PrepareCmd.lean`) exports the certified IxVM,
-recursive verifier and aggregation artifacts into the checkout's cache and
-records their paths in `.lake/aiur/native-kernels.env`. Each artifact is
-exported only when its exporter or sources changed; `--aiur-artifact`,
-`--verifier-artifact` and `--aggr-artifact` supply trusted ones instead.
-The next `lake build ix` reads that file (`formalNativeArtifacts` in
+`ix prepare` (`Ix/Cli/PrepareCmd.lean`) compiles the certified IxVM,
+recursive verifier and aggregation programs in process into the checkout's
+cache and records their paths in `.lake/aiur/native-kernels.env`. Each
+program is compiled only when the linked compiler or its program changed;
+`--aiur-artifact`, `--verifier-artifact` and `--aggr-artifact` supply trusted
+ones instead. The next `lake build ix` reads that file (`formalNativeArtifacts` in
 `lakefile.lean`) and builds the library with `formal-native` and the three
 `AIUR_*_ARTIFACT` variables. All three variables may instead be set in the
 environment. `IX_FORMAL_NATIVE=0` builds without kernels, and
-`IX_FORMAL_NATIVE=1` fails the build if the artifacts are missing. Exporting
-needs a built `ix`, so the kernels cannot be part of the first build; until
-the rebuild, every job runs on the interpreter.
+`IX_FORMAL_NATIVE=1` fails the build if the artifacts are missing.
+Compiling them needs a built `ix`, so the kernels cannot be part of the
+first build; until the rebuild, every job runs on the interpreter.
 
 Executor selection (`crates/ix-prover/src/executor.rs`) happens once per
 loaded artifact. With `native`, a program runs on the kernel whose
 fingerprint matches its own (`native-ixvm`, `native-verifier` or
-`native-aggregation`), or on the interpreter if none matches.
+`native-aggregation`), or on the interpreter if none matches. Generated
+kernels do not record call heights, so a program whose trace has depth
+circuits (`CheckedProgram::track_depth`) always runs on the interpreter.
 `IX_PROVER_EXECUTOR=interpreter` forces the interpreter. A job whose map
 overrides disagree with their tables fails to bind its kernel and runs on
 the interpreter. Single-claim reports (`crates/ix-prover/src/tools.rs`) name

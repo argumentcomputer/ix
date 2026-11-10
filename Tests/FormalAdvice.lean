@@ -67,14 +67,14 @@ structure Node where
   kind : ChildKind
   wrapper : Ixon.Proof
 
-def streamsChild (ctx : Context) (s : Streams) (slot : Nat) (node : Node) : IO Streams := do
+def streamsChild (ctx : Keys) (s : Streams) (slot : Nat) (node : Node) : IO Streams := do
   let s := s.vk node.kind (if node.kind == .ixvm then ctx.ixvm.key else ctx.aggr.key)
   return s.child slot (← rawProof node.kind node.wrapper.proof)
     (MultiStark.serializeClaims #[outerClaim ctx node.kind node.wrapper.claim])
 
 /-- A wrap/pair witness as streams, with the manifest fold semantics the
 independent verifier checks. -/
-def streamsAdvice (ctx : Context) (left : Node) (right : Option Node)
+def streamsAdvice (ctx : Keys) (left : Node) (right : Option Node)
     (output : CheckEnvTrees) (structural : Bool) : IO Streams := do
   let shape := match right with
     | none => shapeCode (left.kind, none)
@@ -102,7 +102,7 @@ def dischargedStatement (child : CheckEnvTrees) : CheckEnvTrees :=
 /-- A binding discharge (`ix_aggr` shapes 13 and 14) as streams: the child
 that assumes its binding in slot 0, the IxVM proof of the `binding` claim in
 slot 1, the output claim, and the preimages of both children's claims. -/
-def streamsDischarge (ctx : Context) (child : Node) (bindingWrapper : Ixon.Proof)
+def streamsDischarge (ctx : Keys) (child : Node) (bindingWrapper : Ixon.Proof)
     (output : CheckEnvTrees) : IO Streams := do
   let mut s ← streamsChild ctx
     (({} : Streams).identity ctx.allowed (dischargeShapeCode child.kind)) 0 child
@@ -118,7 +118,7 @@ def streamsDischarge (ctx : Context) (child : Node) (bindingWrapper : Ixon.Proof
 plan's advice for it (`CatalogPlan.advice`): both children, each an
 `ix_aggr` proof wrapper from `proofs`, the output claim, the preimages and
 the trees. `none` for a member. -/
-def streamsCatalog (ctx : Context) (plan : CatalogPlan) (members : Array CatalogMember)
+def streamsCatalog (ctx : Keys) (plan : CatalogPlan) (members : Array CatalogMember)
     (proofs : Array (Option Ixon.Proof)) (i : Nat) : IO (Option (Nat × Streams)) := do
   let some (shape, preimages, trees) := plan.advice members i | return none
   let mut s := ({} : Streams).identity ctx.allowed shape

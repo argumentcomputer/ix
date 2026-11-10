@@ -46,6 +46,9 @@ unsafe extern "C" {
 /// call to the `BaseIO Unit` ABI (which returns `Unit` = `lean_box(0)`).
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_lean_set_thread_stack_size(size: usize) -> LeanOwned {
+  // SAFETY: a plain call into the Lean runtime with no Lean objects, which
+  // lean-ffi does not wrap; it only records the size used for threads the
+  // runtime spawns later.
   unsafe {
     lean_internal_set_thread_stack_size(size);
   }
