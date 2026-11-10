@@ -2,6 +2,7 @@ module
 
 import IxC.Kernel.Semantics.DeclIndRun
 public import IxC.Kernel.Model.ProjInstall
+import IxC.Kernel.Model.JudgeSound
 public section
 
 /-!
@@ -191,7 +192,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
         absurd (hnostore hmem hrecs n hnb _ hf) (fun h => h)
     -- the member fold, both tiers
     obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
-      indMembersPM memberEtaLaw memberUnitLaw _ mp hbnNon
+      indMembersPM memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F) _ mp hbnNon
         (fun cv caps₂ hmm => by
           obtain ⟨rfl, -⟩ := ConstantInfo.indInfo.inj
             (hsingle hIfilt (List.mem_filter.mp hmm).1 rfl)
@@ -199,7 +200,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
               obtain rfl : cvC.name = C := Option.some.inj hC
               exact hCblockN,
             fun _ h0 => hpf0 h0⟩)
-        hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
+        (indMembersRun_runJ hmem) (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
     -- the recursor group
     obtain ⟨mp₂, hI₂, hIA₂⟩ :=
       indRecs hμ memberEtaLaw memberUnitLaw mp₁ hI₁ hIA₁
@@ -286,10 +287,10 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       fun n cvS capsS hnb hf _ =>
         absurd (hnostore hmem hrecs n hnb _ hf) (fun h => h)
     obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
-      indMembersPM memberEtaLaw memberUnitLaw _ mp hbnNon
+      indMembersPM memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F) _ mp hbnNon
         (fun cv caps₂ _ => ⟨etaPins_empty,
           ⟨fun h => absurd h (by (cases md <;> decide)), fun h => absurd h (by (cases md <;> decide))⟩⟩)
-        hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
+        (indMembersRun_runJ hmem) (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
     obtain ⟨mp₂, -, -⟩ :=
       indRecs hμ memberEtaLaw memberUnitLaw mp₁ hI₁ hIA₁
         hbnRec (hallGen hmem) hEC₁ hBP₁ hrecs

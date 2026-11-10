@@ -5,6 +5,7 @@ public import IxC.Kernel.Semantics.IndRecsCore
 public import IxC.Kernel.Model.Swap
 import IxC.Kernel.Model.IndMembers
 import IxC.Kernel.Model.Capstone
+import IxC.Kernel.Model.JudgeSound
 public section
 
 /-!
@@ -174,7 +175,8 @@ theorem indRecs (hμ : μ.verifiedChecks = true)
   · exact ⟨mp, hI, hIA⟩
   -- the provisioning, at both tiers
   obtain ⟨mS, hIS, hIAS, hECS, hBPS⟩ :=
-    provisionRecsPM hetaP hunitP recs mp hbn hprov hI hIA hEC hBP
+    provisionRecsPM hetaP hunitP (fun _ => judgeFrames_runJ F) recs mp hbn
+      (provisionRecsRun_runJ hprov) hI hIA hEC hBP
   -- every block member is stored in the provisional environment
   have hnames : ∀ n, blockNames.contains n = true →
       (envSelf.find? n).isSome = true := by

@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Semantics.EnvFacts
 public import IxC.Kernel.Semantics.DeclIndRun
+public import IxC.Kernel.Semantics.DeclIndJ
 public import IxC.Kernel.Semantics.IndBlockFacts
 import IxC.Kernel.Verify.Extend.Block
 
@@ -219,11 +220,14 @@ three facts — the S5 finding's discipline: when an install and a
 relation both prove a preservation fact, prove it at the relation. -/
 
 /-- **The three model-free conclusions of a block-member install.** -/
-theorem memberInstallInv {μ : CheckMode} {F : Nat}
+theorem memberInstallInv {μ : CheckMode} {J : Judgements md}
     {blockNames : List (Key md)} {env : Env md} {cval : TConstVal md}
     (hwfE : EnvWF env)
     {cv cvA : ConstantVal md} {c₀ : ConstantInfo md}
-    (hmv : MemberValRun μ F env blockNames cv cvA)
+    (hmv : MemberValRunJ J env blockNames cv cvA)
+    -- an annotation of a closed, bounded type is closed and bounded
+    (hsyn : ∀ {e e' : Expr md}, J.annot env 0 e e' → e.hasFvar = false →
+      e.looseBVarsBounded 0 = true → e'.hasFvar = false ∧ e'.looseBVarsBounded 0 = true)
     (hI : BlockInstalledTT blockNames env cval)
     (hbn : blockNames.contains cvA.name = true)
     (hpins : ∀ caps, c₀ = .indInfo cvA caps →
@@ -246,7 +250,7 @@ theorem memberInstallInv {μ : CheckMode} {F : Nat}
     id hmv
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr, -⟩ :=
     hcv
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann hitf hlbt
+  obtain ⟨htf', hbt'⟩ := hsyn hann hitf hlbt
   have hnameA : cvA.name = cv.name := by rw [hcvA]
   have hlpsA : cvA.levelParams = cv.levelParams := by rw [hcvA]
   have htypeA : cvA.type = type' := by rw [hcvA]
