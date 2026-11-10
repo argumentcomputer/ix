@@ -1,6 +1,7 @@
 module
 public import Ix.Aggr.Host
 public import Ix.Ixon
+public import Ix.IxVM.ClaimSeeds
 
 /-! Content-addressed aggregate wrappers and their environment interpretation. -/
 
