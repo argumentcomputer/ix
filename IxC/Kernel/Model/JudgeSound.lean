@@ -111,13 +111,13 @@ structure JudgeSound (J : Judgements md) {env : Env md} (m : EnvModel V env) : P
 fold's invariant. -/
 theorem judgeSound_runJ {μ : CheckMode} (hμ : μ.verifiedChecks = true) {env : Env md}
     (mp : EnvModelM V μ env) (F : Nat) : JudgeSound (runJ μ F) mp.base2 where
-  annot_syntax hann hf hb := annotate_syntax hann hf hb
-  accepted φ h hws hb hL := acceptedReads_of mp.base2 φ h hws hb hL
-  infer φ := (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
-  defeq φ := (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
-  reads φ := inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
-  wscoped h hw := inferTypeCore_WScoped mp.base2.wf F h hw
-  bounded h hw hb hL := inferTypeCore_looseBVars mp.base2.wf F h hw hb hL
-  leaves h hw := inferTypeCore_fvarLeaves mp.base2.wf F h hw
+  annot_syntax := fun hann hf hb => annotate_syntax hann hf hb
+  accepted := fun φ h hws hb hL => acceptedReads_of mp.base2 φ h hws hb hL
+  infer := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
+  defeq := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
+  reads := fun φ => inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
+  wscoped := fun h hw => inferTypeCore_WScoped mp.base2.wf F h hw
+  bounded := fun h hw hb hL => inferTypeCore_looseBVars mp.base2.wf F h hw hb hL
+  leaves := fun h hw => inferTypeCore_fvarLeaves mp.base2.wf F h hw
 
 end Ix.Kernel.Model
