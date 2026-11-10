@@ -2706,10 +2706,71 @@ def check_block_member_kinds := aiur_fn⟦
               let has_defn = muts_has_kind(members, 1);
               assert_eq!(has_defn * muts_has_kind(members, 0), 0,
                 "mutual block mixes a definition member with inductives");
+              let (n_unsafe, n_all) = muts_safety_counts(members, 0, 0);
+              assert_eq!(n_unsafe * (n_all - n_unsafe), 0,
+                "mutual block mixes safe members with unsafe or partial ones");
               assert_eq!(has_defn * muts_has_kind(members, 2), 0,
                 "mutual block mixes a definition member with recursors");
               () } ,
             _ => {  () } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- One safety per block (D20): Lean's `inductDecl` and mutual definitions carry one
+  -- flag for the whole block, so a safe seed reaches no unsafe or partial co-member
+  -- through its block. Counts the block's constants (members and constructors) and
+  -- those outside the logic (`Ingress::defn_is_unsafe_ci` on definitions, the flag
+  -- elsewhere), as `KernelClaim::muts_unsafe` reads them.
+
+def muts_safety_counts := aiur_fn⟦
+  fn muts_safety_counts(ms: Lists::List<Ixon::MutConst>, u: Field, n: Field) -> (Field, Field) {
+      match (*(ms)) {
+        Lists::Node::Nil => {  (u, n) } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            Ixon::MutConst::Defn(d) => {
+              match d {
+                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                  muts_safety_counts(rest, u + Ingress::defn_is_unsafe_ci(kind, safety), n + 1) } ,
+              } } ,
+            Ixon::MutConst::Indc(ind) => {
+              match ind {
+                Ixon::Inductive::Mk(is_unsafe, _, _, _, _, ctors) => {
+                  let iu = match is_unsafe {
+                    0 => {  0 } ,
+                    _ => {  1 } ,
+                  };
+                  let (cu, cn) = ctors_safety_counts(ctors, 0, 0);
+                  muts_safety_counts(rest, u + iu + cu, n + 1 + cn) } ,
+              } } ,
+            Ixon::MutConst::Recr(r) => {
+              match r {
+                Ixon::Recursor::Mk(_, is_unsafe, _, _, _, _, _, _, _) => {
+                  let ru = match is_unsafe {
+                    0 => {  0 } ,
+                    _ => {  1 } ,
+                  };
+                  muts_safety_counts(rest, u + ru, n + 1) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def ctors_safety_counts := aiur_fn⟦
+  fn ctors_safety_counts(cs: Lists::List<Ixon::Constructor>, u: Field, n: Field) -> (Field, Field) {
+      match (*(cs)) {
+        Lists::Node::Nil => {  (u, n) } ,
+        Lists::Node::Cons(c, rest) => {
+          match c {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+              let cu = match is_unsafe {
+                0 => {  0 } ,
+                _ => {  1 } ,
+              };
+              ctors_safety_counts(rest, u + cu, n + 1) } ,
           } } ,
       }
     }
