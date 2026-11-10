@@ -83,12 +83,14 @@ def k_infer_only_core := aiur_fn⟦
         KernelTypes::KExprNode::Lam(ty, body, bl) => {
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let body_ty = k_infer_only(rc, body, types2);
+          lam_datum_ok(rc, body, body_ty, bl, types2);
           (&(KernelTypes::KExprNode::Forall(ty, body_ty, bl))) } ,
 
-        KernelTypes::KExprNode::Forall(ty, body, _) => {
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           let u1 = ensure_sort_only(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let u2 = ensure_sort_only(rc, body, types2);
+          forall_datum_ok(u2, bl);
           (&(KernelTypes::KExprNode::Srt(KernelLevels::level_imax(u1, u2)))) } ,
 
         KernelTypes::KExprNode::Let(_, val, body) => {
@@ -134,6 +136,35 @@ def k_infer_only_core := aiur_fn⟦
                   } } ,
               } } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Infer.forallE's datum premise (both grades): the binder's datum is the zero-ness of
+  -- the body's sort (`zeronessOf v = mb.pw`).
+
+def forall_datum_ok := aiur_fn⟦
+  inline fn forall_datum_ok(v: KernelTypes::KLevel, bl: KernelTypes::KLevel) -> () {
+      assert_eq!(KernelLevels::pw_eq(v, bl), 1, "a binder's datum is not its codomain sort's zero-ness");
+      ()
+    }
+⟧
+
+  -- Infer.lam's datum premises (both grades), once per λ-chain: at a λ whose body is a
+  -- λ, the two data agree; at the innermost λ, the datum is the zero-ness of the sort of
+  -- the body's type, computed at the io grade.
+
+def lam_datum_ok := aiur_fn⟦
+  inline fn lam_datum_ok(rc: KernelRoles::RoleCtx, body: KernelTypes::KExpr, body_ty: KernelTypes::KExpr,
+                         bl: KernelTypes::KLevel, types2: Lists::List<KernelTypes::KExpr>) -> () {
+      match (*(body)) {
+        KernelTypes::KExprNode::Lam(_, _, inner) => {
+          assert_eq!(KernelLevels::pw_eq(bl, inner), 1, "a lambda's datum differs from its inner lambda's");
+          () } ,
+        _ => {
+          assert_eq!(KernelLevels::pw_eq(ensure_sort_only(rc, body_ty, types2), bl), 1,
+            "a lambda's datum is not the zero-ness of its body type's sort");
+          () } ,
       }
     }
 ⟧

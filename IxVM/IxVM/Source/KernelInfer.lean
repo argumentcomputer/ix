@@ -98,12 +98,14 @@ def k_infer_core := aiur_fn⟦
           k_ensure_sort(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let body_ty = k_infer(rc, body, types2);
+          KernelInferOnly::lam_datum_ok(rc, body, body_ty, bl, types2);
           (&(KernelTypes::KExprNode::Forall(ty, body_ty, bl))) } ,
 
-        KernelTypes::KExprNode::Forall(ty, body, _) => {
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           let u1 = k_ensure_sort(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let u2 = k_ensure_sort(rc, body, types2);
+          KernelInferOnly::forall_datum_ok(u2, bl);
           (&(KernelTypes::KExprNode::Srt(KernelLevels::level_imax(u1, u2)))) } ,
 
         KernelTypes::KExprNode::Let(ty, val, body) => {  k_infer_let_start(rc, ty, val, body, types) } ,
