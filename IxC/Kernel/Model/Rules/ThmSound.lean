@@ -94,7 +94,7 @@ theorem Red.deltaThm_sound (hin : RulesInputs V m φ) {d : Nat} {n : Key md}
   obtain ⟨-, -, sa, hsa, -, heqS⟩ := sred hfs hCs hsta hgS
   rw [denoteMeta_sort] at hsa
   obtain rfl : sa = AnnotTerm.sort (u.eval φ) := (Option.some.inj hsa).symm
-  refine ⟨hfv, fun l hl => by rw [hnl] at hl; cases hl, va, hva, hgV, fun ρ hρ => ?_⟩
+  refine ⟨hfv, (fun l hl => by rw [hnl] at hl; cases hl), va, hva, hgV, fun ρ hρ => ?_⟩
   have hT0 := hmemT ρ hρ
   rw [heqS ρ hρ, interp_sort, hz φ] at hT0
   have h1 : interp V ρ va ∈ˢ interp V ρ ta := heqT ρ hρ ▸ hmemV ρ hρ
