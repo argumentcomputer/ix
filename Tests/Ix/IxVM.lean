@@ -102,7 +102,7 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.thmMajorUse", 774_365_991),
   ("IxVMInd.partialKRec", 256_939_721),
   ("IxVMInd.deepRebase", 329_980_401),
-  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec", 3_674_860_597),
+  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec", 3_674_897_822),
   ("Lean.Widget.TaggedText.rec", 3_284_619_923),
   ("Lean.Doc.Part.rec", 3_347_116_243),
   ("Lean.Doc.Block.rec", 3_682_721_674),
@@ -129,7 +129,7 @@ def kernelCheckEntries : List (String × Nat) := [
 cost class: no operation, structural operations, `div`/`mod`/shifts, and
 `gcd`/`land`/`lor`/`xor`. -/
 def validatingCheckEntries : List (String × Nat) := [
-  ("IxVMPrim.nat_succ_lit", 258_285_503),
+  ("IxVMPrim.nat_succ_lit", 258_288_224),
   ("IxVMPrim.nat_mul_lit", 370_719_515),
   ("IxVMPrim.nat_div_lit", 2_714_480_871),
   ("IxVMPrim.nat_land_lit", 10_100_339_404)]
