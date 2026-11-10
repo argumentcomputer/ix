@@ -19,6 +19,11 @@ model is witness data. Two properties are tested here:
   with every `iota_j` proof rewritten (`let _ : Nat := 0; p`), so that every
   theorem record, and with it the advice set, has another address. The circuit
   must accept the same claims with it.
+* **No advice under user axioms** (third part): a claim whose axioms tree is
+  not empty gets no model advice ("model advice: a claim with user axioms").
+  The environments above declare Lean's compiler-trust axioms, which the
+  default table binds as inert roles, so their claims name no user axiom and
+  are accepted.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
