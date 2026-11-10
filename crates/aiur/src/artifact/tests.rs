@@ -418,23 +418,35 @@ fn content_addressed_names_are_checked() {
   std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// Lean's committed fixtures are version 1: they still decode, and their
-/// values survive re-encoding, which writes canonical version 2.
+/// Version 1 copies of Lean's fixtures still decode, and re-encoding them
+/// writes exactly the version 2 bytes Lean's writer produced for the same
+/// programs.
 #[test]
 fn version_1_fixtures_still_decode() {
   let grouping = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/grouping.ixa"
+    "/tests/fixtures/grouping.v1.ixa"
   ));
   let depth = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/depth.ixa"
+    "/tests/fixtures/depth.v1.ixa"
   ));
-  for bytes in [&grouping[..], &depth[..]] {
+  let lean = [
+    &include_bytes!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/fixtures/grouping.ixa"
+    ))[..],
+    &include_bytes!(concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/tests/fixtures/depth.ixa"
+    ))[..],
+  ];
+  for (bytes, lean) in [&grouping[..], &depth[..]].into_iter().zip(lean) {
     assert_eq!(bytes[8], 1);
     let package = Package::decode(bytes).unwrap();
     let encoded = package.encode();
     assert_eq!(encoded[8], 2);
+    assert_eq!(encoded, lean);
     let decoded = Package::decode(&encoded).unwrap();
     assert_eq!(decoded, package);
     assert_eq!(decoded.encode(), encoded);
