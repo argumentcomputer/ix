@@ -19,7 +19,7 @@ pub(crate) enum Executor {
 /// The generated native executors compiled into this prover.
 #[cfg(feature = "native")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kernel {
+pub(crate) enum Kernel {
   Ixvm,
   Verifier,
   Aggregation,
