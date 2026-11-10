@@ -253,6 +253,7 @@ def registry : List Entry := [
   -- A wrong datum is rejected and a missing one a host error, through the program
   -- (runs once the program reads the data).
   .runner "ixvm-pw-circuit" (.ci .ixvm) Tests.Ix.IxVM.PwHints.circuit,
+  .runner "ixvm-pw-fixture" (.manual "rewrite the dev fixture with its binder data; IX_PW_FIXTURE, IX_PW_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
