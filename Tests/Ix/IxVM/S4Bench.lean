@@ -272,16 +272,16 @@ def declLine : Ix.Kernel.Declaration .source → String
 def modelled : List String := ["Option", "List", "IxVMInd.Even", "IxVMInd.Tree", "Lean.Syntax",
   "Lean.Meta.Grind.Arith.Linear.RingIneqCnstr"]
 
-/-- The Source-mode declarations of the block of `seed` (the modeller's
-generated records followed by the block's own `indDecl`), from the ingress of
-its closure: the block's `InductiveVal`, the closure's size, the number of
-declarations, and the block's. -/
 /-- Is `d` an inductive declaration that declares `seed`? -/
 def declaresInductive (seed : Lean.Name) (d : Ix.Kernel.Declaration .source) : Bool :=
   match d with
   | .indDecl .. => d.names.any (Ix.RoleEvidence.toLeanName · == seed)
   | _ => false
 
+/-- The Source-mode declarations of the block of `seed` (the modeller's
+generated records followed by the block's own `indDecl`), from the ingress of
+its closure: the block's `InductiveVal`, the closure's size, the number of
+declarations, and the block's. -/
 def blockDecls (env : Lean.Environment) (seed : Lean.Name) :
     IO (Lean.InductiveVal × Nat × Nat × Array (Ix.Kernel.Declaration .source)) := do
   let some (.inductInfo v) := env.find? seed | throw (IO.userError s!"{seed} is not an inductive")
@@ -375,21 +375,31 @@ def convHint : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
 Lean as its types and constructors; Lean's kernel generates its recursor. -/
 def convDecl : Ix.Kernel.Declaration .source → Except String Lean.Declaration
   | .defnDecl cv v h => do
-    let name := Ix.RoleEvidence.toLeanName cv.name
-    return .defnDecl { name, levelParams := cv.levelParams.map lpName, type := (← convExpr cv.type),
-      value := (← convExpr v), hints := convHint h, safety := .safe, all := [name] }
+    let n := Ix.RoleEvidence.toLeanName cv.name
+    let ty ← convExpr cv.type
+    let val ← convExpr v
+    let dv : Lean.DefinitionVal := {
+      name := n, levelParams := cv.levelParams.map lpName, type := ty, value := val,
+      hints := convHint h, safety := .safe, all := [n] }
+    return .defnDecl dv
   | .thmDecl cv v => do
-    let name := Ix.RoleEvidence.toLeanName cv.name
-    return .thmDecl { name, levelParams := cv.levelParams.map lpName, type := (← convExpr cv.type),
-      value := (← convExpr v), all := [name] }
+    let n := Ix.RoleEvidence.toLeanName cv.name
+    let ty ← convExpr cv.type
+    let val ← convExpr v
+    let tv : Lean.TheoremVal := {
+      name := n, levelParams := cv.levelParams.map lpName, type := ty, value := val, all := [n] }
+    return .thmDecl tv
   | .indDecl block nP => do
     let tys := block.filterMap fun ci => match ci with | .indInfo cv _ => some cv | _ => none
-    let ctors := block.filterMap fun ci => match ci with | .ctorInfo cv _ _ => some cv | _ => none
-    let [ty] := tys | throw s!"generated block with {tys.length} types"
-    let ctors ← ctors.mapM fun c => do
-      return ({ name := Ix.RoleEvidence.toLeanName c.name, type := (← convExpr c.type) } : Lean.Constructor)
-    return .inductDecl (ty.levelParams.map lpName) nP
-      [{ name := Ix.RoleEvidence.toLeanName ty.name, type := (← convExpr ty.type), ctors }] false
+    let cvs := block.filterMap fun ci => match ci with | .ctorInfo cv _ _ => some cv | _ => none
+    let [t] := tys | throw s!"generated block with {tys.length} types"
+    let mut ctors : List Lean.Constructor := []
+    for c in cvs do
+      let cty ← convExpr c.type
+      ctors := ctors ++ [{ name := Ix.RoleEvidence.toLeanName c.name, type := cty }]
+    let tty ← convExpr t.type
+    let it : Lean.InductiveType := { name := Ix.RoleEvidence.toLeanName t.name, type := tty, ctors := ctors }
+    return .inductDecl (t.levelParams.map lpName) nP [it] false
   | _ => throw "unexpected generated record kind"
 
 def isAuxKey : Ix.Kernel.Key .source → Bool
