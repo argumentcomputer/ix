@@ -170,7 +170,11 @@ admission. Their provenance is recorded in the
 [historical fixture directory](../fixtures/ownership/historical/annotated-recursion-cb68/README.md).
 
 The required Lam suite also checks sixteen synthetic evaluation-order cases
-through `Src.Recheck.run`, lazification and erasure. Checked direct cases demand
+through table and relevance rechecking, lazification and erasure. Their
+placeholder types justify no irrelevant tag, so they run through the recheck
+path without `Relevance.checkCanonical` (the test-only `recheckNoCanonical`),
+and the suite asserts separately that the production `Src.Recheck.run`
+either accepts each or refuses it only through `checkCanonical`. Checked direct cases demand
 only the selected minor and dispatch before evaluating an extra argument;
 ordinary wrappers evaluate their strict arguments before entering the body.
 Both evaluators must match explicit value, trap or timeout expectations at two
@@ -256,33 +260,81 @@ verifiers the claimant also chooses the program. Without bounds one certified
 step could ask for work and recursion far beyond its input: a single `inline`
 step on a 1.1 KB closure asked for about 16.8 million copied bindings and made
 `ixcc check-cert` abort with a stack overflow (review of 2026-11-09, item 2).
-The replay therefore refuses a step, with an ordinary `anf.replay` error, as
-soon as it passes one of these budgets ([`IxCC/Anf/Budget.lean`](../IxCC/Anf/Budget.lean)):
+The checker therefore refuses an input or a step, with an ordinary error
+(`anf.replay` in the middle end), as soon as it passes one of these fixed
+budgets ([`Anf/Budget.lean`](../IxCC/Anf/Budget.lean),
+[`Anf/Walk.lean`](../IxCC/Anf/Walk.lean),
+[`Anf/Specialize.lean`](../IxCC/Anf/Specialize.lean),
+[`Src/Ingress.lean`](../IxCC/Src/Ingress.lean),
+[`Lam/Erase.lean`](../IxCC/Lam/Erase.lean)):
 
 | Budget | Bounds | Value | Largest committed value | Headroom |
 | --- | --- | --- | --- | --- |
-| `maxGlobalNodes` | one global, after P1 and after every step, and after every shrink round | 65,536 | 2,507 | 26× |
-| `maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 4,935 | 212× |
-| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, β-reduced local functions, inlined join points, case-of-case alternatives | 65,536 | 1,583 (inline), 2,860 (shrink) | 22× |
+| `Src.Ingress.depthBudget` | the depth of each ingested expression, share expansions included | 4,096 | 256 | 16× |
+| `Lam.Erase.termFuel` | erasure's nesting, checked again because erasure also walks the bodies the unfolding table substitutes | 4,096 | not surveyed | — |
+| `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 2,256 | 7.3× |
+| `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 2,507 | 6.5× |
+| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 4,935 | 212× |
+| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, β-reduced local functions, inlined join points, case-of-case alternatives | 8,192 | 1,583 (inline), 2,860 (shrink) | 5.2×, 2.9× |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 500 | 16× |
-| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 1,615,803 | 41× |
+| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 572,520 | 17× |
+| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 2,642,755 | 17× |
+| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 2,166,288 | 31× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
 
-The counts stop early (`Exp.nodesUpTo` walks a worklist and stops past its
-cap), so checking a budget costs no more than the budget. The largest values are
-measured by `tests-corpus`, which replays the honest certificate of every
-committed program step by step (every root of every corpus family, and `k1.ixe`,
-`src-sortpoly`, `src-diag`, the ownership fixtures and the RC real-source
-closure with all their roots: 158 programs) and fails if any reaches its budget.
+The certificate's shape is bounded as well (`Recheck.checkMidCert`, `Recheck.CertJson`,
+`Src.Hints.checkJsonText`): at most 64 middle-end steps, 64 shrink rounds per
+global, 64 callees per inlining caller, 64 specialisation decisions with masks of at
+most 64 parameters, case-of-case and small-join thresholds of at most 512 and
+64, and JSON nested at most 512 deep. A specialisation site counts its value
+trees only up to `Specialize.maxTreeWork` (8,192) before charging them.
 
-A walk's native recursion depth is at most its input's nodes plus its copies,
-so a refused step needs at most about 130,000 walk frames: `ixcc check-cert`
-refuses R1's amplifiers within an 8 MiB Lean stack (`LEAN_STACK_SIZE_KB=8192`).
-The front end before the middle end is not bounded this way: a closure whose P1
-output holds a 65,535-node global needs more than 8 MiB (and at most 16 MiB) of
-stack before the size check refuses it. Under shrink, the census counts read at
-each binding walk the rest of its body, so one shrink round on a global of `n`
-nodes still costs up to order `n²` steps.
+The counts stop early (`Exp.nodesUpTo` and `lamNodesUpTo` walk a worklist and
+stop past their cap; a walk's charges stop at the budget left), so checking a
+budget costs no more than the budget. The largest values are measured by
+`tests-corpus`, which replays the honest certificate of every committed program
+step by step (every root of every corpus family, and `k1.ixe`, `src-sortpoly`,
+`src-diag`, the ownership fixtures and the RC real-source closure with all their
+roots: 158 programs reach the middle end, 20 more are declined before it) and
+fails if any value reaches its budget.
+
+**Native stack.** A Lean program runs `main` on a thread whose stack is
+`LEAN_STACK_SIZE_KB` (`ulimit -s` does not change it). The `ixcc` executable's
+default is far above 8 MiB; the budgets were set from 8 MiB measurements so
+that the verifier entry points fit a host thread of 8 MiB. Measured on 8 MiB stacks: the front end
+(installation, the relevance checks, `checkCanonical`, `Lazify`) survives terms
+32,768 deep, and erasure overflows at about 8,960 nested constructors (14,080
+nested applications), which `depthBudget` and `termFuel` keep it to less than
+half of; P1 converts a 32,767-node Lam global and overflows on a 65,535-node
+one; a walk recurses once per binding of its global and of what it copies,
+survives 18,831 bindings and overflows at 19,078, and `maxGlobalNodes` with
+`maxCopy` keep it to (16,384 + 8,192) / 2 = 12,288 bindings (1.5× headroom,
+measured on chains of bindings); Fir to x86 has run on 37,000-node globals.
+That headroom does not hold for every constructor: a walk over nested
+single-alternative `case`s (one node per level; erasure's `casesForm` emits
+`tick (case …)`, two) overflows an 8 MiB stack from about 13,000 levels of the
+first shape and below 12,286 of the second, while the global and copy budgets
+allow 24,575 and 12,286 levels (2026-11-09 integration review, FV-1). The `ixcc` executable's
+default stack is not affected.
+`tests-recheck` runs every verifier entry point in a child process with
+`LEAN_STACK_SIZE_KB=8192` on R1's amplifiers and on generated deep and wide
+inputs at and past each budget. The program-level verifiers
+(`CompileClaim.verifyProgram`, `checkClaimProgram`, `Ring0Sip.verifyProgram`,
+`Recheck.run`) take a `Src.Program` that is assumed to come from ingress; one
+built some other way is not depth-checked.
+
+**Work.** Under shrink, the census counts read at each binding walk the rest of
+its body, so a round on a global of `n` nodes reads up to order `n²` nodes. The
+walk therefore charges every step before taking it (`Walk.stepCost`: one, plus
+the environment entries its atoms resolve and the join point it looks up, and
+under shrink the nodes of the expression it stands on, the body of a jump's
+target and the levels the known-primitive search reads), refuses past
+`maxWalkWork`, and the inline and shrink steps refuse once their walks' work
+passes `maxStepWork`. A certificate holds at most 64 steps, so the middle end's
+charged walk work is at most 64 × 45,000,000. The back end after the middle end
+(Fir to x86) has no work budget and is superlinear in nested `case`s: one
+16,384-node global of nested single-alternative cases takes the verifier about
+20 s (2026-11-09 integration review, FV-2).
 
 ## Source semantics and replacements
 
@@ -573,19 +625,21 @@ compiler has seen. The certified kernel's executable closure is about 1,270
 definitions for the checker and about 1,870 with admission and the Ixon
 reader, before the parts of `Init` and `Std` it uses (grep counts, upper
 bounds, 2026-11-09 IXCC-ROUTE review). The largest committed programs fit
-the budgets with headroom between 16× and 326× ([Middle-end
-budgets](#middle-end-budgets)), but they are small.
+the budgets with headroom between 2.9× and 326× ([Middle-end
+budgets](#middle-end-budgets)), but they are small: a global of more than
+16,384 nodes, or a term more than 4,096 deep, is refused today whatever the
+certificate.
 
 **Current state.**
-- *Implemented.* The middle-end budgets above are fixed constants,
-  independent of the input's size. A step may hold at most 64
+- *Implemented.* The budgets above are fixed constants, independent of the
+  input's size, set from 8 MiB stack measurements. A step may hold at most 64
   specialisation decisions with masks of at most 64 parameters
   ([`Recheck/Run.lean:173`](../IxCC/Recheck/Run.lean)).
-- The front end before the middle end has no node budget (see the budget
-  section above).
+- The front end before the middle end is bounded by depth (`depthBudget`,
+  `termFuel`) and, before P1, by `maxLamNodes`.
 - Reported superlinear steps (2026-11-08 review, not re-measured at this
-  head): a shrink round costs up to order `n²` in a global's size (census
-  reads, above); one walk round was about quadratic (16,000 bindings in
+  head): a shrink round reads up to order `n²` nodes in a global's size (census
+  reads, above; now charged to the walk's work budget); one walk round was about quadratic (16,000 bindings in
   25.6 s); `encodeK`, which kernel evaluation of the recheck runs (native
   code runs `encode` through `encodeK_csimp`), is quadratic in the program's
   text; `selectRcPolicy` was cubic in let-alias chains; frame `Nodup`

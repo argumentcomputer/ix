@@ -1556,8 +1556,7 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
- "baseline":
- "2026-11-09 review fixes (FD): closure, Lazify mode, Ring-0 call-frame fences; unused N4 lemmas removed",
+ "baseline": "dc5273a05: fix round integrated (FA, FA2, FB, FC, FD)",
  "axiom_sha256":
  "ea561d0eb8e717e30b4ae49c0fe026a0e43fd39e7c82bc5a49bdf6998245a319",
  "axiom_count": 5449}

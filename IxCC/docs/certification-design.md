@@ -29,14 +29,20 @@ What is not proved:
 - **S6.** `a.src` is what the front end built from the ingested program: the
   unfolding table installed, the certificate's relevance annotation
   installed and checked, by-name modes set by `Lazify`
-  ([`Recheck/Run.lean:183`](../IxCC/Recheck/Run.lean),
-  [`Src/Recheck.lean:30-45`](../IxCC/Src/Recheck.lean)). No theorem relates
-  `a.src` to the ingested program. `Relevance.check` has a soundness theorem
+  ([`Recheck/Run.lean:186`](../IxCC/Recheck/Run.lean),
+  [`Src/Recheck.lean:32-45`](../IxCC/Src/Recheck.lean)). No theorem relates
+  `a.src` semantically to the ingested program. What is proved about the
+  front end is syntactic: `Relevance.check` has a soundness theorem
   (`check_sound`, [`Src/Relevance/Proof/Sound.lean:533`](../IxCC/Src/Relevance/Proof/Sound.lean));
+  `checkAxiomClosure_sound`
+  ([`Src/Table/Check.lean:440`](../IxCC/Src/Table/Check.lean)) says that no
+  constant reachable from an `eqn` or `csimp` theorem in the program's
+  reference graph (`AxiomReach`) is an axiom other than the standard three;
+  and `Src.Lazify.run_modeEq`
+  ([`Src/Proof/Lazify.lean:527`](../IxCC/Src/Proof/Lazify.lean)) says that
+  `Lazify.run` changes nothing but application modes.
   `Relevance.checkCanonical` ([`Src/Relevance/Check.lean:894`](../IxCC/Src/Relevance/Check.lean))
-  has none; `checkAxiomClosure_sound`
-  ([`Src/Table/Check.lean:158`](../IxCC/Src/Table/Check.lean)) covers the
-  theorem constant only (2026-11-09 review B1-4).
+  has no theorem, and nothing composes these facts into `Recheck.sound`.
 - **S8.** Nothing relates SrcEval to the meaning of the Lean definition.
   ix's [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is a
   conditional simulation lemma: given a user-supplied relation between Src
@@ -79,7 +85,9 @@ statement.
 
 ## C1. The front-end theorem (S6)
 
-**Status: planned.**
+**Status: planned.** Two parts are proved already, as standalone lemmas not
+yet composed into a corollary: the axiom-closure part of clause 2
+(`checkAxiomClosure_sound`) and clause 4 (`Src.Lazify.run_modeEq`).
 
 **Statement.** For an ingested program `P`, a table `T` and an annotation
 `A` that `Recheck.front` accepts with result `a.src`:

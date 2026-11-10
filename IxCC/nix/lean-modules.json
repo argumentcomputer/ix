@@ -560,8 +560,6 @@
    ["IxCCTests.Recheck.Kernel.Fib",
     "IxCCTests.Recheck.Kernel.Tak",
     "IxCCTests.Recheck.Kernel.Gcd"]},
-  "IxCCTests.Recheck.Deep":
-  {"path": "IxCCTests/Recheck/Deep.lean", "imports": ["IxCCTests.Recheck.Hostile"]},
   "IxCCTests.Recheck.Hostile":
   {"path": "IxCCTests/Recheck/Hostile.lean",
    "imports":
@@ -572,6 +570,9 @@
     "IxCC.X86.Layout.Basic",
     "IxCCTests.IxonV3.TypingFixtures",
     "IxCCTests.Src.Support"]},
+  "IxCCTests.Recheck.Deep":
+  {"path": "IxCCTests/Recheck/Deep.lean",
+   "imports": ["IxCCTests.Recheck.Hostile"]},
   "IxCCTests.Recheck.Audit":
   {"path": "IxCCTests/Recheck/Audit.lean",
    "imports": ["IxCC.Recheck.Run", "IxCC.Anf.Semantics", "Lean"]},

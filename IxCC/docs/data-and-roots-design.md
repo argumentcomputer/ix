@@ -70,7 +70,8 @@ string literals (D4) and large `Nat` literals (bignums) reuse it.
 **Proof obligation.** Generalise `Plain.checked_program_refines` to "a
 program the Own checker accepts refines its Fir program up to heap
 isomorphism", relative to Fir's semantics; extend the Cfg.Rc and Rt.Rc data
-refinement (heap invariant, `ObjAt`) to scalar fields, reuse, the
+refinement (the heap invariant `HeapState`, with `AllocatorReady` and
+`HeapCtorOk`) to scalar fields, reuse, the
 uniqueness test and immortal read-only cells, and the ELF writer to a
 read-only data section under the existing object checks. It composes into
 `Recheck.RcReplay.sound` with unchanged statement.
@@ -309,7 +310,7 @@ Compile claims require level-monomorphic roots with all-`Nat` parameters,
 and results that are scalars or field-less enumerations on the immortal and
 zero-RC policies, or first-order constructor trees found by
 `Readback.discover` on the plain-RC policy
-([`CompileClaim.lean:187-226`](../IxCC/CompileClaim.lean)).
+([`CompileClaim.lean:269-304`](../IxCC/CompileClaim.lean)).
 
 **Options.**
 - (a) **A byte ABI**: a root may take `ByteArray` arguments and return a
@@ -349,13 +350,16 @@ limit no longer binds, because one argument can carry a structure.
 **Status: planned** (Phase 3).
 
 **Current state.** `CompileClaim` holds `env`, `target`, `policy`,
-`abiArity` and `elfHash` ([`CompileClaim.lean:95-101`](../IxCC/CompileClaim.lean)).
+`abiArity` and `elfHash` ([`CompileClaim.lean:98-103`](../IxCC/CompileClaim.lean)).
 The verifier recomputes the root's readback type from the program and checks
-it; the claim itself does not carry the ABI. Two encoding defects are open
-(2026-11-09 review B4-2: IxCC and ix encode `abiArity` differently from 128
-up; B4-3: the claim reuses a tag of the role-binding section).
+it; the claim itself does not carry the ABI. The two encoding defects the
+2026-11-09 review found are fixed: IxCC and ix now encode `abiArity` with the
+same Ixon v4 `N0` code (B4-2), and the compile claim has its own tag, 13
+(`E8 05`), instead of the role-binding section's 11 (B4-3). The decoders
+still accept any arity below 2^64; a verifier refuses one that is not the
+root's parameter count.
 
-**Design.** Fix B4-2 and B4-3 first. Then replace `abiArity` with an ABI
+**Design.** With B4-2 and B4-3 fixed, replace `abiArity` with an ABI
 descriptor: per parameter and for the result, a first-order type over the
 environment's inductives by address (`Nat`, an inductive, `ByteArray`, a
 fixed-width word), plus the interpretation entries of D5 and the selected

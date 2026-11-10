@@ -83,7 +83,7 @@ hosted CI or cold-store timing. Final producer and fixture refreeze gates
 remain open.
 
 The later consumer regressions are installed and pass focused execution.
-The source suite now runs 8,514 assertions, including nine discriminating
+The source suite now runs 8,520 assertions, including nine discriminating
 resource-bound `csimp` controls. Authentic historical OS04 annotated/plain
 recursion adds 36 complete Src/Fir/Own observations and 48 counted ownership
 assertions. The annotated case uses checked immortal Own and retains its
@@ -91,9 +91,10 @@ explicit plain-RC erased-contract refusal; the plain twin uses checked plain
 RC Own. These fixtures supplement the required consumer coverage; they do
 not replace the selected producer's paired matrix or final family refreeze.
 
-The Lam suite additionally passes 118 evaluation-order assertions, bringing
-its local default run to 26,168 assertions. Sixteen synthetic cases pass actual
-table/relevance rechecking, lazification and erasure before independently
+The Lam suite additionally passes 134 evaluation-order assertions; its default
+run has 28,188 assertions. Sixteen synthetic cases pass actual
+table/relevance rechecking (without `checkCanonical`, which their placeholder
+types cannot satisfy), lazification and erasure before independently
 checking Src and Lam outcomes. They distinguish direct-case demand, strict
 wrappers and overapplication order, while retaining the separate resource
 profile compatibility and final producer obligations.
@@ -269,7 +270,7 @@ data:
   **strings** ([D4](data-and-roots-design.md#d4-strings)),
   **library structures and interpreted opaques** ([D5](data-and-roots-design.md#d5-library-structures-and-opaque-constants)).
 - **Roots**: the byte ABI ([R1](data-and-roots-design.md#r1-structured-roots-and-the-byte-abi)),
-  the claim's ABI descriptor with the encoding fixes of the 2026-11-09
+  the claim's ABI descriptor, on the encoding as fixed after the 2026-11-09
   review ([R2](data-and-roots-design.md#r2-what-the-compile-claim-binds)),
   monomorphic roots ([R3](data-and-roots-design.md#r3-universe-polymorphism-and-type-parameters-at-roots)),
   state-machine roots ([E1](data-and-roots-design.md#e1-effects-and-io)).

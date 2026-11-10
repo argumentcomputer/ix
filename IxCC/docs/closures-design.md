@@ -73,7 +73,7 @@ always remove.
 **Why B (inside C) fits IxCC.**
 1. **The world is closed.** The compiler's input is an address-closed Ixon
    closure, and compile-claim roots take only `Nat` parameters
-   (`rootParamsAllNat`, [`CompileClaim.lean:202`](../IxCC/CompileClaim.lean)).
+   (`rootParamsAllNat`, [`CompileClaim.lean:284`](../IxCC/CompileClaim.lean)).
    Every closure a run can build therefore comes from a λ or a function
    global of the program, so a dispatcher over every closure key of an arity
    is complete without any analysis.
@@ -236,7 +236,7 @@ checker is needed; a wrong fact costs speed only.
   The other constructs reuse the existing compatibility lemmas.
 - **Composition.** P8 is one more step of the middle end, so it composes
   into `Anf.Pipeline.run_correct`
-  ([`Anf/Proof/Pass/Pipeline.lean:159`](../IxCC/Anf/Proof/Pass/Pipeline.lean)).
+  ([`Anf/Proof/Pass/Pipeline.lean:166`](../IxCC/Anf/Proof/Pass/Pipeline.lean)).
   Its output satisfies `Fir.lower`'s precondition, so `Fir.convert_correct`
   ([`Fir/Proof/Correct.lean:171`](../IxCC/Fir/Proof/Correct.lean)) is
   unchanged. Roots take and return first-order values, where the relation is

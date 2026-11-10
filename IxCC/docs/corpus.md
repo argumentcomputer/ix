@@ -19,7 +19,7 @@ ix.
 
 ## The manifest
 
-A manifest describes one family. Paths are relative to the repository root
+A manifest describes one family. Paths are relative to `IxCC/`
 (`directory`, `source_root`) or to those directories.
 
 | Field | Kind | Meaning |
@@ -272,7 +272,7 @@ What a refreeze needs:
   wire revision; the codec pin `2dd96055` no longer has `Ix/Tc`);
 - the pinned toolchain's `lean` on `PATH` (`nix develop`).
 
-The commands, in order, from the repository root, with `lake build` of the
+The commands, in order, from `IxCC/`, with `lake build` of the
 tools first:
 
 ```sh

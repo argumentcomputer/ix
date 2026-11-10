@@ -105,9 +105,11 @@ no producer and changes no production parser. Keep its historical provenance
 distinct from final selected-producer acceptance and family refreeze.
 
 For consumer case, wrapper and overapplication order, build `tests-lam` once
-and run `.lake/build/bin/tests-lam --only evaluation-order`. Its 118 assertions
-check sixteen synthetic cases through actual table/relevance rechecking,
-lazification and erasure, with independent Src/Lam outcomes at two clocks.
+and run `.lake/build/bin/tests-lam --only evaluation-order`. Its 134 assertions
+check sixteen synthetic cases through actual table/relevance rechecking
+(without `checkCanonical`, which their placeholder types cannot satisfy; the
+production recheck's verdict on each is asserted separately), lazification
+and erasure, with independent Src/Lam outcomes at two clocks.
 The same part runs in default `tests-lam` and the required Nix `suites` check.
 It does not establish arbitrary resource-profile compatibility or producer
 admission. Run the complete `tests-lam` suite after changing this gate.
@@ -139,7 +141,7 @@ Run the portable Lir and driver-model controls:
 .lake/build/bin/tests-pipeline-rc counters plans/rc-validation/run-1/counters
 ```
 
-On x86-64 Linux, from the repository root with `cc`, `timeout` and `sha256sum`
+On x86-64 Linux, from `IxCC/` with `cc`, `timeout` and `sha256sum`
 available, run the native and fresh-process gates with a new log directory:
 
 ```sh
