@@ -475,10 +475,7 @@ mod tests {
     env.store_const(
       proj.clone(),
       Constant::with_tables(
-        ConstantInfo::DPrj(DefinitionProj {
-          idx: 0,
-          block: block.clone(),
-        }),
+        ConstantInfo::DPrj(DefinitionProj { idx: 0, block: block.clone() }),
         Vec::new(),
         Vec::new(),
         Vec::new(),
