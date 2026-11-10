@@ -263,9 +263,12 @@ def commit (c : CompileClaim) : Ixon.Address :=
 
 /-- Check that a readback type is a scalar (`Nat`) or an enumeration whose
 signature row lists only field-less constructors: the shapes `Rt.tagify`
-(`Front.view` on the `.immortal` / `.zeroRc` path) can read back. No theorem
-states that `Rt.tagify` succeeds on every value of such a type: a constructor
-must also be in the table with a tag inside the row (`Recheck.view_ctor0`). -/
+(`Front.view` on the `.immortal` / `.zeroRc` path) can read back. At a root
+readback type that passes it, `Rt.tagify` maps every result of the root's
+declared shape (`Recheck.ResultShape`) to an observation that reads back
+(`Recheck.tagify_resultShape`, `Recheck.readback_iff_viewShape`); on the
+pinned-`Bool` route only when both pinned `Bool` constructors have a row in the
+constructor table (`Recheck.BoolRows`), which this check does not require. -/
 def isImmortalViewType (sig : Rt.Sig) : Rt.FoTy → Bool
   | .nat => true
   | .ind idx =>
@@ -280,7 +283,8 @@ def isNatType (src : Src.Program) (dom : Src.Term) : Bool :=
 /-- Check that a root declaration in `src` is monomorphic (`d.lvls == 0`), its
 Π-telescope length matches `root.params`, and every parameter in its Π-telescope
 has domain `Nat`, matching the `(Nat × List Nat)` ABI of `CheckedProgram` and
-`X86.Linked`. -/
+`X86.Linked`. It says nothing about the result type; that is `root.ty`'s
+(`isImmortalViewType`, `checkPlainRcRoot`). -/
 def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
   match src.decl? root.const with
   | some d =>
@@ -291,7 +295,12 @@ def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
 
 /-- Check that a root on the `.immortal` / `.zeroRc` path has all-`Nat` parameters
 and a scalar/enum readback type (`isImmortalViewType`), so that the value clause
-observes its result. -/
+observes its result. For a root it accepts, the view rejects a source result
+only if the result is not of the shape the root's declared type describes
+(`Recheck.ResultShape`; on the pinned-`Bool` route, also if a pinned `Bool`
+constructor has no row): `Recheck.Artifact.goesWrong_immortalRoot`,
+`verifyProgram_immortal_rootShape`. Nothing proves that SrcEval returns a
+result of that shape. -/
 def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
   rootParamsAllNat src root &&
     match root.ty with
@@ -299,7 +308,8 @@ def checkImmortalRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
     | none => false
 
 /-- Check that a root on the `.plainRc` path has all-`Nat` parameters and a
-discovered first-order readback signature (`root.ty.isSome`). -/
+discovered first-order readback signature (`root.ty.isSome`). No theorem says
+which source results that signature's view accepts. -/
 def checkPlainRcRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
   rootParamsAllNat src root && root.ty.isSome
 

@@ -62,7 +62,15 @@ and ingress-calling theorems (`compile_sound`, `verifyBytes_*_sound`,
 `verifyBytesRing0Sip_sound`). Mentioning the
 actual ingress/producer in these statements exposes that dependency; no native
 axiom declaration was added and the replay fences are unchanged. The guarantees
-retain `X86.Driver.Ok` and the source `GoesWrong` qualification. They apply to
+retain `X86.Driver.Ok` and the source `GoesWrong` qualification. On the
+immortal and zero-RC paths the root checks (`checkImmortalRoot`) narrow its
+view-rejection case: at the claim's root the view accepts every result of the
+shape the root's declared type describes (`Recheck.ResultShape`), so that case
+means a result off the shape, or, on the pinned-`Bool` route, a pinned `Bool`
+constructor with no row in the constructor table
+(`verifyProgram_immortal_rootShape`, `verifyBytes_immortal_rootShape` and their
+`.zeroRc` forms). The stuck and trap cases remain, and nothing proves that
+SrcEval returns a result of the shape. The guarantees apply to
 both choices of the compiler's `typecheck` flag; neither choice supplies the
 missing model-adequacy proof. Eliminating native hashing from ingress would not
 by itself prove source adequacy.

@@ -1580,6 +1580,26 @@ theorem admittedRing0Sip_call_frame {sip : Ring0Sip} {P : Src.Program}
     rw [hdrv] at this
     exact this
 
+/-- **The view's rejections at an admitted SIP's root.** Under the immortal or
+zero-RC policy, the artifact a SIP passing `sip.verifyProgram P` is admitted
+with goes wrong at its claim's root only if SrcEval gets stuck or traps, or
+returns a result off the shape the root's declared type describes, or (pinned
+`Bool` result) a pinned `Bool` constructor has no row
+(`Recheck.RootWrongOffShape`, `CompileClaim.verifyProgram_immortal_rootShape`). -/
+theorem verifyRing0Sip_rootShape {sip : Ring0Sip} {P : Src.Program}
+    (hver : sip.verifyProgram P = true)
+    (hpol : sip.claim.policy = .immortal ∨ sip.claim.policy = .zeroRc) :
+    ∃ (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
+      Recheck.Cert.ofText sip.certText = .ok cert ∧
+      Recheck.run sip.cfg P cert = .ok a ∧
+      a.roots.head? = some root ∧
+      CompileClaim.checkImmortalRoot a.src root = true ∧
+      Recheck.RootWrongOffShape a root := by
+  have hclaim := ((verifyProgramRing0Sip_iff sip P).mp hver).1
+  rcases hpol with h | h
+  · exact CompileClaim.verifyProgram_immortal_rootShape h hclaim
+  · exact CompileClaim.verifyProgram_zeroRc_rootShape h hclaim
+
 /-- **Admitted Two-SIP Coexistence & Frame Theorem**:
 Connecting `sip₁.verifyProgram P₁ = true` and `sip₂.verifyProgram P₂ = true`
 with `DisjointDrivers sip₁.driver sip₂.driver` and `DisjointFromKernel` directly

@@ -200,7 +200,13 @@ its ELF symbol, run on the byte machine) satisfies three clauses:
 it traps, or it returns a value that the root's view does not accept at
 the root's result type. Lean's typing excludes the third case, but the
 recheck path does no type checking and readback goes by tag, so stage 1
-keeps it.
+keeps it. At a root that `checkImmortalRoot` accepts, the view accepts every
+result of the shape the root's declared type describes (a `Nat`, a pinned
+`Bool` constructor, or a constructor of the result enumeration:
+`Recheck.ResultShape`), so the third case means a result off that shape
+(`Recheck.Artifact.goesWrong_immortalRoot`; on the pinned-`Bool` route, when
+both pinned constructors have a row in the constructor table). That SrcEval
+returns a result of that shape is not proved.
 
 Only the root's result is observed, read back at its first-order type;
 Phase 1 programs are scalar and pure. The theorem uses only the three

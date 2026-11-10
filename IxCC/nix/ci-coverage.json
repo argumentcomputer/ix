@@ -635,6 +635,7 @@
   "IxCC.Recheck.Proof.Front",
   "IxCC.Recheck.Proof.Object",
   "IxCC.Recheck.Proof.Parts",
+  "IxCC.Recheck.Proof.RootShape",
   "IxCC.Recheck.Proof.Sound",
   "IxCC.Recheck.Proof.Soundness",
   "IxCC.Recheck.Rc.Bytes",
@@ -1556,7 +1557,8 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
- "baseline": "FA4: recursion along lists bounded; kernel artifacts gated",
+ "baseline":
+ "2026-11-10 root result shapes (FD): totality of the immortal view on result shapes, readback-discovery facts",
  "axiom_sha256":
- "ea561d0eb8e717e30b4ae49c0fe026a0e43fd39e7c82bc5a49bdf6998245a319",
- "axiom_count": 5449}
+ "2926fa2533aaaded998760b6011615dd83d553cdec45ef8d9d61bfa7fd59fa9e",
+ "axiom_count": 5483}

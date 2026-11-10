@@ -460,7 +460,14 @@
     "IxCC.Lir.SplitEdges",
     "IxCC.Recheck.Rc.Replay",
     "IxCCTests.Recheck.Hostile",
-    "IxCCTests.Recheck.Deep"]},
+    "IxCCTests.Recheck.Deep",
+    "IxCCTests.Recheck.RootShape"]},
+  "IxCCTests.Recheck.RootShape":
+  {"path": "IxCCTests/Recheck/RootShape.lean",
+   "imports":
+   ["IxCCTests.Recheck.Hostile",
+    "IxCC.Recheck.Proof.RootShape",
+    "IxCC.Lam.Erase.Proof.Correct"]},
   "IxCCTests.Recheck.ReadbackMain":
   {"path": "IxCCTests/Recheck/ReadbackMain.lean",
    "imports": ["IxCCTests.Recheck.Readback"]},
@@ -5163,6 +5170,13 @@
   "IxCC.Recheck.Proof.Sound":
   {"path": "IxCC/Recheck/Proof/Sound.lean",
    "imports": ["IxCC.Recheck.Proof.Front"]},
+  "IxCC.Recheck.Proof.RootShape":
+  {"path": "IxCC/Recheck/Proof/RootShape.lean",
+   "imports":
+   ["IxCC.CompileClaim",
+    "IxCC.Recheck.Proof.Sound",
+    "IxCC.Recheck.Linked",
+    "IxCC.Anf.Proof.Spec.Run"]},
   "IxCC.Recheck.Proof.Parts":
   {"path": "IxCC/Recheck/Proof/Parts.lean",
    "imports":
@@ -5951,7 +5965,8 @@
    ["IxCC.CompileClaim",
     "IxCC.Compiler.Proof",
     "IxCC.Recheck.Proof.Soundness",
-    "IxCC.Recheck.Rc.Proof.ObjectSound"]},
+    "IxCC.Recheck.Rc.Proof.ObjectSound",
+    "IxCC.Recheck.Proof.RootShape"]},
   "IxCC.CompileClaim":
   {"path": "IxCC/CompileClaim.lean",
    "imports":

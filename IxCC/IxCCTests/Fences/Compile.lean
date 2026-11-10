@@ -371,3 +371,116 @@ example (p : IxCC.Src.Program) (keys : List IxCC.Src.TermKey) :
 
 /-- info: 'IxCC.Ring0.linked_run_call_ne_stuck' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.linked_run_call_ne_stuck
+
+/-! Result shapes at the roots a claim names (`IxCC.Recheck.Proof.RootShape`), with the
+readback-discovery facts they rest on (`IxCC.Recheck.Readback`). -/
+
+/-- info: 'IxCC.Recheck.Readback.Shape.eq_of_beq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.Shape.eq_of_beq
+
+/-- info: 'IxCC.Recheck.Readback.Shape.eq_of_beqList' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.Shape.eq_of_beqList
+
+/-- info: 'IxCC.Recheck.Readback.Shape.beq_refl' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.Shape.beq_refl
+
+/-- info: 'IxCC.Recheck.Readback.Shape.beqList_refl' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.Shape.beqList_refl
+
+/-- info: 'IxCC.Recheck.Readback.forIn_none_all' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.forIn_none_all
+
+/-- info: 'IxCC.Recheck.Readback.shape?_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.shape?_head
+
+/-- info: 'IxCC.Recheck.Readback.forIn_all_of_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.forIn_all_of_none
+
+/-- info: 'IxCC.Recheck.Readback.forIn_some_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.forIn_some_false
+
+/-- info: 'IxCC.Recheck.Readback.rowMatches_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.rowMatches_spec
+
+/-- info: 'IxCC.Recheck.Readback.discoverRaw_root' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Recheck.Readback.discoverRaw_root
+
+/-- info: 'IxCC.Recheck.resultShape?_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.resultShape?_iff
+
+/-- info: 'IxCC.Recheck.toNat_shiftRight_one_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.toNat_shiftRight_one_lt
+
+/-- info: 'IxCC.Recheck.readback_iff_viewShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.readback_iff_viewShape
+
+/-- info: 'IxCC.Recheck.resultType?_some' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.resultType?_some
+
+/-- info: 'IxCC.Recheck.some_beq_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.some_beq_false
+
+/-- info: 'IxCC.Recheck.tagify_bool' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.tagify_bool
+
+/-- info: 'IxCC.Recheck.discover_enum_tagify' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.discover_enum_tagify
+
+/-- info: 'IxCC.Recheck.tagify_resultShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.tagify_resultShape
+
+/-- info: 'IxCC.Recheck.erase_known' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Recheck.erase_known
+
+/-- info: 'IxCC.Recheck.step_known' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.step_known
+
+/-- info: 'IxCC.Recheck.steps_known' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.steps_known
+
+/-- info: 'IxCC.Recheck.pipeline_known' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.pipeline_known
+
+/-- info: 'IxCC.Recheck.runLir_boolKnown' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.runLir_boolKnown
+
+/-- info: 'IxCC.Recheck.Front.tys_root' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.tys_root
+
+/-- info: 'IxCC.Recheck.Front.view_resultShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.view_resultShape
+
+/-- info: 'IxCC.Recheck.Front.goesWrong_resultShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.goesWrong_resultShape
+
+/-- info: 'IxCC.Recheck.Front.view_none_iff_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.view_none_iff_nat
+
+/-- info: 'IxCC.Recheck.rootsOf_get_const' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Recheck.rootsOf_get_const
+
+/-- info: 'IxCC.Recheck.Artifact.goesWrong_immortalRoot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Artifact.goesWrong_immortalRoot
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_immortal_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_immortal_rootShape
+
+/-- info: 'IxCC.CompileClaim.verifyProgram_zeroRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_zeroRc_rootShape
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_rootShape' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_immortal_rootShape
+
+/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_rootShape' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_zeroRc_rootShape
+
+/-- info: 'IxCC.Ring0.verifyRing0Sip_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ring0.verifyRing0Sip_rootShape
