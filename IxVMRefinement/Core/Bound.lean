@@ -5,9 +5,10 @@ import Mathlib.Data.List.Forall2
 
 /-! # The size bound: a list IxVM measures as a field element is short
 
-D14. `Lists::length` returns a field element, and IxVM branches on it (`whnf_apply_beta`
-compares the number of consumed arguments with `0` and `1`), so the soundness of such a
-branch needs the list's length to be below the field's characteristic. The circuit bounds
+D14. `Lists::length` returns a field element, and IxVM computes with it (`red_iota` splits
+a constructor's arguments at `Lists::length(ctor_args) - rfields`; before lane cx's
+restructure β compared the number of consumed arguments with `0` and `1`), so the soundness
+of such a step needs the list's length to be below the field's characteristic. The circuit bounds
 *distinct memoized calls* (L0's `MemoCallsAtMost … (2^39)`), not calls counted with
 repetition. The bridge (`length_lt`): the derivation of `Lists::length` on a list of length
 `n` makes `n + 1` calls to itself, on the list's suffixes; their arguments are lists of

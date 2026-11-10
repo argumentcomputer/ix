@@ -132,7 +132,8 @@ theorem withSpine_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
   subst hargs
   rcases Obs.«KernelWhnf::whnf_with_spine».obs ev with
     ⟨f, a, m, cs, ih', is, cs', v, m', cs'', ld, ev1, ev2, ev3, rfl⟩ |
-    ⟨ty, b, cs, ld, ev1, rfl⟩ |
+    ⟨ty, b, m, cs, red, rest, cs', ld, ev1, ev2, rfl⟩ |
+    ⟨ty, b, v, m, cs, cs', ld, ev1, ev2, rfl⟩ |
     ⟨ad, lv, cs, ld, ev1, rfl⟩ |
     ⟨_, _, _, _, _, _, _, ld, -, -, -⟩ |
     ⟨_, _, _, _, ld, -, -⟩ |
@@ -149,9 +150,16 @@ theorem withSpine_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
     refine ⟨E', hE', ?_⟩
     rw [← K.mkAppN_append]
     exact hred
-  · -- `Lam(ty, body) => whnf_apply_beta(rc, spine, head, types)`
-    exact (ih _ _ _ _ _ _ (by lenlt) ev1).applyBeta rfl _ _ _ _ rfl
-      (good.sub (by memsub) (by lenlt)) d Γ H As hH hAs
+  · -- `Lam`, `red_beta(rc, head, spine, types)`, `(1, reduct, rest) => whnf_with_spine(rc, reduct, rest, types)`
+    obtain ⟨E, Bs, hE, hBs, hred1⟩ := (ih _ _ _ _ _ _ (by lenlt) ev1).redBeta rfl _ _ _ _ rfl
+      d Γ H As hH hAs _ _ rfl
+    obtain ⟨E', hE', hred2⟩ := (ih _ _ _ _ _ _ (by lenlt) ev2).withSpine rfl _ _ _ _ rfl
+      (good.sub (by memsub) (by lenlt)) d Γ E Bs hE hBs
+    exact ⟨E', hE', .trans hred1 hred2⟩
+  · -- `Lam`, `_ => apply_spine(head, spine)`
+    have ext := ev1.heap_extends
+    exact ⟨_, (ih _ _ _ _ _ _ (by lenlt) ev2).applySpine rfl _ _ rfl d Γ H As
+      (RepEk.mono ext hH) (RepSpine.mono ext hAs), .refl⟩
   · -- `Const(addr, lvls) => whnf_const_head(rc, addr, lvls, head, spine, types)`
     obtain ⟨t, rt, tt⟩ := hH
     obtain ⟨a, ls, rfl, ha, hls⟩ := RepK.const_of_load rt ld
@@ -205,111 +213,84 @@ theorem peel_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     exact ⟨_, _, _, [], _, rfl, rfl, by simp, by simp, by simpa using hL, by simpa using hCs,
       by simpa using hAs⟩
 
-/-! ## `whnf_apply_beta` -/
+/-! ## `red_beta` -/
 
-theorem field_lit_eq {n m : Nat} {x : F} (hn : n < 2 ^ 39) (hm : m < 2 ^ 39)
-    (h1 : ((n : F)) = x) (h2 : x = (m : F)) : n = m :=
-  natCast_lt_inj hn hm (h1.trans h2)
-
-/-- **The common prefix of `whnf_apply_beta`**: `peel_beta(lam, spine, &Nil)`
-gives a `λ`-telescope `Ts` of the head and the consumed arguments, and
-`Lists::length` of them is `|Ts|`. -/
-theorem applyBeta_prefix (c : Ctx) (hA : Assumed c) {calls : List (Call F)} (ih : IH c calls)
-    {lam sp deep cons rest n : SourceValue F} {h m2 m68 : Heap F} {cs13 cs79 : List (Call F)}
-    (ev15 : ObsFn W "KernelWhnf::peel_beta" [lam, sp, .ptr (.enum kexprListEnum) h.length]
-      (h ++ [.construct kexprListEnum "Nil" []]) (.tuple [deep, cons, rest]) m2 cs13)
-    (hlt : cs13.length < calls.length) (ev81 : ObsFn W lengthName [cons] m2 n m68 cs79)
+/-- **`peel_beta(lam, spine, &Nil)`**, which opens `red_beta`: a `λ`-telescope `Ts`
+of the head, its body at depth `|Ts|`, the consumed arguments reversed, and the rest
+of the spine. -/
+theorem peel_nil (c : Ctx) {calls : List (Call F)} (ih : IH c calls)
+    {lam sp deep cons rest : SourceValue F} {h m2 : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::peel_beta" [lam, sp, .ptr (.enum kexprListEnum) h.length]
+      (h ++ [.construct kexprListEnum "Nil" []]) (.tuple [deep, cons, rest]) m2 cs)
+    (hlt : cs.length < calls.length)
     {d : Nat} {Γ : Nat → KExpr} {L : KExpr} {As : List KExpr}
     (hL : RepE c.κ d Γ h L lam) (hAs : RepSpine c.κ d Γ h As sp) :
-    ∃ Ts D, L = K.lams Ts D ∧ Ts.length ≤ As.length ∧ Ts.length ≤ cs13.length ∧
-      RepEk c.κ d Γ (0 + Ts.length) m2 D deep ∧
-      RepSpine c.κ d Γ m2 ((As.take Ts.length).reverse ++ []) cons ∧
-      RepSpine c.κ d Γ m2 (As.drop Ts.length) rest ∧ n = .field (Ts.length : F) := by
-  obtain ⟨deep', cons', rest', Ts, D, hres, rfl, hlenA, hlenC, hD, hcons, hrest⟩ :=
-    (ih _ _ _ _ _ _ hlt ev15).peel rfl _ _ _ rfl d Γ 0 L As []
+    ∃ Ts D, L = K.lams Ts D ∧ Ts.length ≤ As.length ∧
+      RepEk c.κ d Γ Ts.length m2 D deep ∧
+      RepSpine c.κ d Γ m2 (As.take Ts.length).reverse cons ∧
+      RepSpine c.κ d Γ m2 (As.drop Ts.length) rest := by
+  obtain ⟨deep', cons', rest', Ts, D, hres, rfl, hlenA, -, hD, hcons, hrest⟩ :=
+    (ih _ _ _ _ _ _ hlt ev).peel rfl _ _ _ rfl d Γ 0 L As []
       (RepEk.mono (Heap.Extends.snoc _ _) hL) (RepSpine.mono (Heap.Extends.snoc _ _) hAs)
       (RepSpine.store_nil _)
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hres
   obtain ⟨rfl, rfl, rfl⟩ := hres
-  have hlv := hA.length _ _ _ _ _ ev81 d Γ _ hcons
-  have hclen : ((As.take Ts.length).reverse ++ []).length = Ts.length := by simp; omega
-  rw [hclen] at hlv
-  exact ⟨Ts, D, rfl, hlenA, hlenC, hD, hcons, hrest, hlv⟩
+  rw [Nat.zero_add] at hD
+  rw [List.append_nil] at hcons
+  exact ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩
 
-theorem applyBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h h' : Heap F}
+/-- `red_beta`: the consumed arguments are matched structurally (lane cx), so no
+count is read as a field element. -/
+theorem redBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelWhnf::whnf_apply_beta" args h r h' calls) (ih : IH c calls) :
-    ApplyBetaSpec c args h r h' calls := by
-  intro rc sp lam types hargs good d Γ L As hL hAs
+    (ev : ObsFn W "KernelWhnf::red_beta" args h r h' calls) (ih : IH c calls) :
+    RedBetaSpec c args h r h' := by
+  intro rc lam sp types hargs d Γ L As hL hAs x y hr
   subst hargs
-  rcases Obs.«KernelWhnf::whnf_apply_beta».obs ev with
-    ⟨m2, cs13, m34, deep, cons, rest, m68, cs79, cs97, rfl, ev15, ev81, ev99, rfl⟩ |
-    ⟨m2, cs13, m34, deep, cons, rest, m68, cs79, v122, m123, cs133, v137, m147, cs155, cs182, rfl,
-      ev15, ev81, ev157, ev135, ev184, rfl⟩ |
-    ⟨m2, cs13, m34, deep, cons, rest, v67, m68, cs79, v222, m223, cs233, cs262, rfl, ev15, ev81,
-      -, -, ev235, ev264, rfl⟩
-  · -- `0 => apply_spine(lam, spine)`
-    obtain ⟨Ts, D, rfl, hlenA, hlenC, hD, hcons, hrest, hlv⟩ :=
-      applyBeta_prefix c hA ih ev15 (by lenlt) ev81 hL hAs
-    have ext := (Heap.Extends.snoc _ _).trans (ev15.heap_extends.trans ev81.heap_extends)
-    exact ⟨_, (ih _ _ _ _ _ _ (by lenlt) ev99).applySpine rfl _ _ rfl d Γ _ As
-      (RepEk.mono ext hL) (RepSpine.mono ext hAs), .refl⟩
-  · -- `1 => whnf_with_spine(rc, expr_inst1(deep, lookup(consumed, 0), 0), rest, types)`
-    obtain ⟨Ts, D, rfl, hlenA, hlenC, hD, hcons, hrest, hlit⟩ :=
-      applyBeta_prefix c hA ih ev15 (by lenlt) ev81 hL hAs
-    -- the consumed list is short: L0's bound, through `Lists::length`'s own calls
-    obtain ⟨rom, hrv, hmemo⟩ := good.2.2.2
-    have hlt := length_lt hrv hmemo ev81
-      (by intro x hx; rcases List.mem_cons.mp hx with rfl | hx; exacts [by simp, by simp [hx]]) hcons
-    have hclen : ((As.take Ts.length).reverse ++ []).length = Ts.length := by simp; omega
-    rw [hclen] at hlt
+  rcases Obs.«KernelWhnf::red_beta».obs ev with
+    ⟨_, _, _, _, _, _, -, -, -, rfl, -, -⟩ |
+    ⟨m2, cs13, m34, deep, cons, rest, a, more, v, m163, cs171, rfl, ev15, ld78, ld142, rfl, ev173,
+      rfl, rfl⟩ |
+    ⟨m2, cs13, m34, deep, cons, rest, a, more, w1, w2, v, m238, cs246, rfl, ev15, ld78, ld142, rfl,
+      ev248, rfl, rfl⟩
+  · -- `Nil => (0, lam, spine)`: not tag `1`
+    simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq] at hr
+    exact absurd hr.1 (by decide)
+  · -- `Cons(a, more)`, `Nil => (1, expr_inst1(deep, a, 0), rest)`: one `Red.betaGate`
+    cases hr
+    obtain ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩ := peel_nil c ih ev15 (by lenlt) hL hAs
+    obtain ⟨A1, Cs, hc, hA1, hCs⟩ := RepList.cons_of_load hcons ld78
+    obtain rfl := RepList.nil_of_load hCs ld142
     have hn : Ts.length = 1 := by
-      injection hlit with hlit
-      exact field_lit_eq (m := 1) hlt (by norm_num) hlit.symm (by decide)
+      have := congrArg List.length hc
+      simp only [List.length_reverse, List.length_take, List.length_cons, List.length_nil] at this
+      omega
     obtain ⟨T1, rfl⟩ : ∃ T1, Ts = [T1] := by
       rcases Ts with _ | ⟨T1, _ | ⟨_, _⟩⟩
       · simp at hn
       · exact ⟨T1, rfl⟩
       · simp at hn
-    obtain ⟨A1, As'', rfl⟩ : ∃ A1 As'', As = A1 :: As'' := by
-      rcases As with _ | ⟨A1, As''⟩
+    obtain ⟨A0, As', rfl⟩ : ∃ A0 As', As = A0 :: As' := by
+      rcases As with _ | ⟨A0, As'⟩
       · simp at hlenA
-      · exact ⟨A1, As'', rfl⟩
-    have extg := ev81.heap_extends
-    have hcons1 := hcons
-    simp at hcons1
-    have hA1 := hA.lookup0 _ _ _ _ _ ev157 d Γ A1 [] (RepSpine.mono extg hcons1)
-    have extk := ev157.heap_extends
-    have hD1 := hD
-    simp at hD1
-    have hbody := hA.inst1 _ _ _ _ _ _ ev135 d Γ D A1 (RepEk.mono (extg.trans extk) hD1) hA1
-    have hrest1 := hrest
-    simp at hrest1
-    obtain ⟨E', hE', hred⟩ := (ih _ _ _ _ _ _ (by lenlt) ev184).withSpine rfl _ _ _ _ rfl
-      (good.sub (by memsub) (by lenlt)) d Γ _ As'' hbody
-      (RepSpine.mono (extg.trans (extk.trans ev135.heap_extends)) hrest1)
-    refine ⟨E', hE', ?_⟩
-    show Red c.env d (K.mkAppN (.app (.lam T1 D nb) A1) As'') E'
-    exact .trans (K.red_mkAppN As'' (.betaGate nb_isNever)) hred
-  · -- `_ => whnf_with_spine(rc, expr_inst_many(deep, consumed, 0), rest, types)`
-    obtain ⟨Ts, D, rfl, hlenA, hlenC, hD, hcons, hrest, hlv⟩ :=
-      applyBeta_prefix c hA ih ev15 (by lenlt) ev81 hL hAs
-    have extg := ev81.heap_extends
-    have hclen : ((As.take Ts.length).reverse ++ []).length = Ts.length := by simp; omega
-    have hDn := hD
-    rw [show 0 + Ts.length = ((As.take Ts.length).reverse ++ []).length by rw [hclen]; simp]
-      at hDn
-    have hbody := hA.instMany _ _ _ _ _ _ ev235 d Γ D _ (RepEk.mono extg hDn)
-      (RepSpine.mono extg hcons)
-    obtain ⟨E', hE', hred⟩ := (ih _ _ _ _ _ _ (by lenlt) ev264).withSpine rfl _ _ _ _ rfl
-      (good.sub (by memsub) (by lenlt)) d Γ _ _ hbody
-      (RepSpine.mono (extg.trans ev235.heap_extends) hrest)
-    refine ⟨E', hE', ?_⟩
+      · exact ⟨A0, As', rfl⟩
+    have hAeq : A0 = A1 := by simpa using hc
+    rw [← hAeq] at hA1
+    simp at hD hrest
+    refine ⟨_, _, hA.inst1 _ _ _ _ _ _ ev173 d Γ D A0 hD hA1,
+      RepSpine.mono ev173.heap_extends hrest, ?_⟩
+    show Red c.env d (K.mkAppN (.app (.lam T1 D nb) A0) As') (K.mkAppN (D.instantiate1 A0) As')
+    exact K.red_mkAppN As' (.betaGate nb_isNever)
+  · -- `Cons(a, more)`, `Cons(_, _) => (1, expr_inst_many(deep, consumed, 0), rest)`: the chain
+    cases hr
+    obtain ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩ := peel_nil c ih ev15 (by lenlt) hL hAs
+    have hclen : (As.take Ts.length).reverse.length = Ts.length := by simp; omega
+    rw [← hclen] at hD
+    refine ⟨_, _, hA.instMany _ _ _ _ _ _ ev248 d Γ D _ hD hcons,
+      RepSpine.mono ev248.heap_extends hrest, ?_⟩
     have hchain := K.red_beta_chain (env := c.env) (d := d) (As.take Ts.length) Ts D
       (As.drop Ts.length) (by simp; omega)
-    rw [List.take_append_drop] at hchain
-    simp only [List.append_nil] at hred
-    exact .trans hchain hred
+    rwa [List.take_append_drop] at hchain
 
 /-! ## `whnf_const_head` -/
 
@@ -355,10 +336,20 @@ theorem constHead_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
     obtain ⟨y, hy⟩ := hA.tryProjDef _ _ _ _ _ _ ev222 d Γ V (hV d Γ)
     simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq] at hy
     exact absurd hy.1 (by decide)
-  | other_Defn_other v1 m2 cs12 m140 p cs153 w1 w2 value w3 w4 v209 m210 cs220 v301 m302 cs312
-      cs334 ev14 ev155 ld ev222 ev314 ev336 hc =>
-    -- `Defn(_, _, value, _, _)`, `_ => whnf_with_spine(rc, expr_inst_levels(value, lvls), spine, types)`
+  | other_Defn_other_n1_bind v1 m2 cs12 m140 p cs153 w1 w2 value w3 w4 v209 m210 cs220 m302 cs313
+      body cs353 ev14 ev155 ld ev222 ev315 ev355 hc =>
+    -- `Defn(_, _, value, _, _)`, `_`, `red_unfold(ci, lvls)`, `(1, body) =>
+    -- whnf_with_spine(rc, body, spine, types)`; `red_unfold`'s `Defn` arm is
+    -- `(1, expr_inst_levels(value, lvls))`
     subst hc
+    rcases Obs.«KernelWhnf::red_unfold».obs ev315 with
+      ⟨_, _, _, _, _, v49, m58, cs66, hv, he, ev314, rfl, rfl⟩ |
+      ⟨_, _, _, _, _, _, hne, -, -, -, -, -⟩ | ⟨_, hne, -, -, -, -, -⟩
+    rotate_left
+    · exact (hne _ (by rfl) rfl).elim
+    · exact (hne _ (by rfl) rfl).elim
+    cases hv
+    cases he
     have extp := ev14.heap_extends
     have ha1 := Bytes.repAddressRef_heapMono₂ addrTy extp ha
     have hci := ci_rep hA good ev155 (by simp) (by memsub) (by lenlt) ha1
@@ -370,10 +361,18 @@ theorem constHead_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
     have ext3 := extp.trans (extg.trans extj)
     obtain ⟨rfl, rfl⟩ := (ih _ _ _ _ _ _ (by lenlt) ev314).instLevels rfl _ _ rfl
       (repList_heapMono₂ klevelListEnum repIxVMKUniv_heapMono₂ ext3 hls)
-    obtain ⟨E', hE', hred2⟩ := (ih _ _ _ _ _ _ (by lenlt) ev336).withSpine rfl _ _ _ _ rfl
+    obtain ⟨E', hE', hred2⟩ := (ih _ _ _ _ _ _ (by lenlt) ev355).withSpine rfl _ _ _ _ rfl
       (good.sub (by memsub) (by lenlt)) d Γ V As (RepEc.mono extj hV d Γ)
       (RepSpine.mono ext3 hAs)
     exact ⟨E', hE', .trans hδ hred2⟩
+  | other_Defn_other_other v1 m2 cs12 m140 p cs153 w1 w2 value w3 w4 v209 m210 cs220 v301 m302
+      cs313 cs395 ev14 ev155 ld ev222 ev315 ev397 hc =>
+    -- `Defn`, `_`, `_ => apply_spine(head, spine)`: the stuck form is a reduct too
+    subst hc
+    have ext := ev14.heap_extends.trans
+      (ev155.heap_extends.trans (ev222.heap_extends.trans ev315.heap_extends))
+    exact ⟨_, (ih _ _ _ _ _ _ (by lenlt) ev397).applySpine rfl _ _ rfl d Γ _ As
+      (RepEk.mono ext hhd) (RepSpine.mono ext hAs), .refl⟩
   | other_Thm v1 m2 cs12 m140 p cs153 w1 w2 w3 cs398 ev14 ev155 ld ev400 hc =>
     -- `Thm(_, _, _) => apply_spine(head, spine)`
     subst hc

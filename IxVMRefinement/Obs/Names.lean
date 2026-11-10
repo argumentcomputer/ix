@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Obs
 import IxVM.Lookup
+import IxVM.ExprPath
 
 /-! Generated path lemmas: the world and the instance names they normalize.
 
@@ -509,8 +510,6 @@ theorem n6682477127133607924 : instanceName [] "Lists::length" (some [(.ptr (.na
 theorem n4825454920124213627 : instanceName [] "Lists::drop" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::drop<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n5459665738436230359 : instanceName [] "Lists::length" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::length<&KernelTypes::KLevelNode>» := by decide +kernel
-
-theorem n6610484583606465244 : constructorName [] (.named "KernelInfer::InferLetEnvNode" []) = "KernelInfer::InferLetEnvNode" := by decide +kernel
 
 theorem n9644275015669645019 : constructorName [] (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::Node<&KernelTypes::KExprNode>» := by decide +kernel
 
