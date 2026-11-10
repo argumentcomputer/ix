@@ -207,7 +207,7 @@ theorem majorToCtor_bridge (hw : WhnfBridge env fuel)
       · exact structEtaCertWith_bridge hw hd hio hinf hwh hse
       · exact proofIrrel_bridge hw hio hpirr
   · exact .rescueAnd hfr hfj hpi hfT (inferTypeIO_bridge hio hinf) (hw hwh) hfn
-      hlen hlps hslots rfl hsc1 hsc2 hsc3 (iotaCerts_bridge hd hio hcerts)
+      hlen hlps (andRescueSlots_sem hslots) rfl hsc1 hsc2 hsc3 (iotaCerts_bridge hd hio hcerts)
       (inferTypeIO_bridge hio htf) (hd hdq) (proofIrrel_bridge hw hio hpirr)
 
 /-- `prepareMajor` ⇒ a `Red` chain (`prepareMajorFueled_ind` with the
@@ -281,7 +281,7 @@ theorem whnfCore_bridge_succ (hwc : WhnfCoreBridge env fuel)
     rcases hcase with rfl | ⟨us, entry, hfn, hfp, hi, hlen, hus, hfire, hcont, hcert⟩
     · exact .refl
     · obtain ⟨cvC, nP, nF, hc, hcerts⟩ := projCertAt_bridge hd hio hcert
-      exact .trans hR (.trans (.proj hfp hfn hi hlen hus hfire hc hcerts) (hwc hcont))
+      exact .trans hR (.trans (.proj hfp hfn hi hlen hus (fireOk_sem hfire) hc hcerts) (hwc hcont))
 
 /-- One `whnfStep` under a bridged continuation is a `Red` chain
 (`whnfStep_inv`: `whnfCore`, then acceleration or δ into `k`, or the

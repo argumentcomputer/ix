@@ -902,7 +902,7 @@ theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
     (hthead : tmaj.getAppFn = .const andName ust)
     (hlen : tmaj.getAppArgs.length = cnP)
     (hlv : cvj.levelParams.length = ust.length)
-    (hslots : Ix.Kernel.andRescueSlots env rl.ctor cnP ust = true)
+    (hslots : Ix.Kernel.Rules.AndRescueSlotsSem env rl.ctor cnP ust)
     (hfab : fab = Expr.mkAppN (.const rl.ctor ust)
       (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major]))
     (hws : fab.wscopedB d = true) (hb : fab.looseBVarsBounded 0 = true)
@@ -941,7 +941,7 @@ theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
   obtain ⟨hfJ, hCJ⟩ := frame_of_not_hasFvar (m := m) (Δa := Δa) hnfJ hbdJ hCM.1
   -- the two pinned slots are stored tower entries; their head data
   -- carries the former's level parameters (`TowerEntryLaw`)
-  have hslot := Ix.Kernel.andRescueSlots_inv hslots
+  have hslot := hslots
   obtain ⟨entry0, hfe0, hctor0, hnP0, -, -⟩ := hslot 0 (by decide)
   obtain ⟨-, -, -, ⟨cvT0, capsT0, hfT0s, hlpsT0, -⟩, -, cvC0, hfC0, hlpsC0, -, -⟩ :=
     hin.tower_ok andName 0 entry0 hfe0
@@ -974,7 +974,7 @@ theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
       rw [hind] at hfTj
       exact (Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hfTj)).1.symm
     have hlpe : entry.levelParams = cvT.levelParams := by rw [← hlpsTj, hcvTj]
-    have hgj : TowerGuardAt φ entry ust := towerGuardAt_of_fireOk hO5j hfire
+    have hgj : TowerGuardAt φ entry ust := towerGuardAt_of_sem hO5j hfire
     obtain ⟨⟨Ta, hTa, hA⟩, -⟩ := hlawj ust (by rw [hlpe]; exact hlenus2)
     have hTad := (towerEntry_tele_at_depth hfe hTa).1
     have hlenVs : tsa.length = entry.numParams := by

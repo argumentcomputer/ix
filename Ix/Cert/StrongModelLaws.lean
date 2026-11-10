@@ -1,5 +1,6 @@
 import Ix.Cert.Composition
 import Ix.Cert.ConversionValues
+import IxC.Kernel.Verify.Rules.Defs
 
 /-! # Strong models satisfy the Source laws
 
@@ -138,7 +139,7 @@ theorem _root_.Ix.Cert.ProjStep.red {sn : Key md} {i : Nat} {e e' : Ix.Kernel.Ex
     (h : ProjStep env sn i e e') : Red env 0 e e' := by
   obtain ⟨-, u, entry, us, cvC, nP, nF, rfl, hent, hhead, hi, hlen, hus, hfire, hctor, hcerts,
     rfl⟩ := h
-  exact Red.proj hent hhead hi hlen hus hfire hctor hcerts
+  exact Red.proj hent hhead hi hlen hus (Ix.Kernel.Rules.fireOk_sem hfire) hctor hcerts
 
 /-- A structure-η step at a stored family is a conversion (`DefEq.structEta`). -/
 theorem _root_.Ix.Cert.StructEtaStep.defEq {T : Key md} {cvT : Ix.Kernel.ConstantVal md} {caps : IndCaps md}

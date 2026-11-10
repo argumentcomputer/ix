@@ -44,7 +44,7 @@ one per layer of plan 8.2:
 | L2 levels | `L2` = `Levels` | `level_leq`/`level_equal` sound for `Level.eval` with no depth hypothesis, and exact at zero |
 | L3 term operations | `L3` | given `Levels`, `Terms`: substitution and lifting refine the kernel's |
 | L4 core | `L4` | given L1 to L3, `Core`: whnf, conversion and inference refine `Rules.Red`, `DefEq`, `Infer` |
-| L5 declarations | `L5` | given L1 to L4, `Decls`: each accepted declaration's install preserves `EnvModelOk` |
+| L5 declarations | `L5` | given L1 to L4, `Decls`: each accepted declaration's install preserves an invariant giving `EnvModelOk` |
 | L6 claims and roles | `L6` | given L1, `ClaimPhase`: an in-scope claim's run walked the closure of its seeds under the default table |
 | L7 assembly | `L7` | given L1, L5, L6: the source-level statement |
 
@@ -244,7 +244,7 @@ inductive Annotates : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon → Prop
       Annotates ty' ty → Annotates b' b → Annotates (.forallE ty' b' m') (.forallE ty b m)
   | proj {s : Ix.Kernel.Key .anon} {i : Nat} {e' e : Ix.Kernel.Expr .anon} :
       Annotates e' e → Annotates (.proj s i e') (.proj s i e)
-  | letE {e' ty v b : Ix.Kernel.Expr .anon} {m : Ix.Kernel.BinderMeta} :
+  | letE {e' ty v b : Ix.Kernel.Expr .anon} {m : Ix.Kernel.LetMeta} :
       Annotates e' (b.instantiate1 v) → Annotates e' (.letE ty v b m)
 
 /-- An annotation of a constant is the constant. -/
@@ -274,8 +274,9 @@ inductive Installs : List (Ix.Kernel.Declaration .anon) → Ix.Kernel.Env .anon 
       {env env₂ : Ix.Kernel.Env .anon} :
       Installs ds env → InstallStep env d env₂ → Installs (ds ++ [d]) env₂
 
-/-- `a` holds a block record: its claim covers the block's members, which
-`Installs` stores. -/
+/-- `a` holds a block record in `E` (in `ConsistentRead`, the records the run
+loaded, so a supplemented recursor record cannot stand in for a seed): the
+claim covers the block's members, which `Installs` stores. -/
 def IsBlockAt (E : Ixon.Env) (a : Address) : Prop :=
   ∃ c ms, Ix.Cert.recordAt E a = some c ∧ c.info = .muts ms
 
@@ -298,7 +299,7 @@ def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
     Ix.Kernel.Admission.defaultBinding = .ok b ∧ LoadedBy calls E₀ ∧ Draws E E₀ ∧
     ReadIn b E seeds ev ds ∧ Installs ds.toList env ∧
-    (∀ a ∈ seeds, IsBlockAt E a ∨ SeedStored b ds env a) ∧
+    (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
     ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)
 
 /-- **What a verify_claim derivation establishes** (plan 8.1): for every claim
@@ -331,7 +332,7 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
           env.find? k = some ci ∧
           cv.type ≠ .const Ix.Kernel.falseName [] ∧
           ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] := by
-  obtain ⟨b, -, E, -, ds, env, -, -, -, -, -, hseeds, hmodel⟩ := h
+  obtain ⟨b, E, -, -, ds, env, -, -, -, -, -, hseeds, hmodel⟩ := h
   have hcons : Ix.Kernel.Consistent env := Ix.Kernel.consistent_of_model V (hmodel V)
   refine ⟨b, E, ds, env, hcons, fun a ha => ?_⟩
   rcases hseeds a ha with hblock | ⟨k, cv, ci, hkey, hname, hdecl, hfind, -, hann⟩
@@ -391,7 +392,8 @@ structure Seams where
   /-- (L3, L4) In the kernel environment `env` read from the Ixon records `E`, at
   opening depth `depth` and under `binders` local binders, the IxVM value `v` (a
   `KernelTypes::KExpr`) represents the kernel term `t` (whose loose bound
-  variables are the local binders). -/
+  variables are the local binders). Lane S2 (PM-A, PM-L): it pairs each binder with
+  a validated `pw` datum, and holds up to semantically equal levels. -
   term : Ixon.Env → Ix.Kernel.Env .anon → (depth binders : Nat) →
     Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → Ix.Kernel.Expr .anon → Prop
   /-- (L4) The role context `rc` (`KernelRoles::RoleCtx`) and the context list
@@ -480,7 +482,19 @@ on represented inputs, every bounded derivation of `whnf(e) = e'` gives
 (nothing is claimed for `0`), and of `infer(e) = t` gives
 `Rules.Infer env .full d e t`, unless the derivation hashed a collision with the
 records `env` was read from (`Ingress::get_ci` reloads records inside the
-core). -/
+core).
+
+`Rules.*` is the rules tier with lane S2's additions (`plans/ixvmc/s2/RULES-GAP.md`
+section 3: `Red.deltaThm`, `Red.appArg`, the `Nat` and offset rules,
+`DefEq.proofIrrelTy`, `structEtaTy`, `unitLikeTy`, `Red.roleEqn`, ...), whose
+soundness reads three new `RulesInputs` fields: `thm_val` (`ThmVal`, from L5's
+invariant), `nat_ops` (already an `EnvModelM` field) and `role_eqns` (from
+`eqnsCheck` on the validated role definitions, L5 with L6's role check). The
+statement is over the program as it ships: under S2's PM-C option (A), the
+assumed one, IxVM computes the rules' certificates at maybe-`Prop` binders, and
+`Core` is proved of that program. Under option (B), see the S1 report: `Core`
+would take a typing derivation of each subject as a further premise and the
+kernel would owe subject reduction for the rules. -/
 def Core : Prop :=
   ∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (d : Nat) (rc types : Aiur.SourceValue IxVM.F)
     (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)),
@@ -503,17 +517,47 @@ def Core : Prop :=
 /-- **Obligation L4** (core), given L1 to L3. -/
 def L4 : Prop := Records S → Levels → Terms S → Core S
 
-/-- **L5's content: each accepted declaration preserves the model** (against
-`Ix.Kernel.Model.declStep_preserves`'s invariant `EnvModelOk`): if a bounded
-derivation checked the declaration `d` against `env`, then `d` installs into
-some `env₂` by shape, and in every set theory the kernel's fold invariant at
-`env` gives it at `env₂`. -/
+/-- **Lane S2's `thm_val`** (`RULES-GAP.md` section 3), the new `RulesInputs`
+field `Red.deltaThm` reads: every stored theorem's value reads, is graded, and
+interprets as its constant's leaf, at every assignment. The environment model
+keeps no such equation today (the kernel never unfolds a theorem,
+`Model/Annot/Laws.lean:775-787`). L5 maintains it at each theorem's install
+(the value's inference gives its reading and membership in a type that is
+`Prop` at every valuation). Note: the kernel's install stores a theorem's raw
+record value (`Semantics.DeclThmRun`), whose reading this needs to be the
+annotated one. -/
+def ThmVal {V : Type u} [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
+    (m : Ix.Kernel.Model.EnvModel V env) : Prop :=
+  ∀ (ψ : Ix.Kernel.LevelParam → Nat) (cv : Ix.Kernel.ConstantVal .anon)
+    (value : Ix.Kernel.Expr .anon),
+    Ix.Kernel.ConstantInfo.thmInfo cv value ∈ env.consts →
+      ∃ va, Ix.Kernel.Model.denoteMeta m.acval env ψ 0 value = some va ∧
+        (∀ ρ : Nat → V, Ix.Kernel.Model.WellDenotedV V ρ va) ∧
+        ∀ ρ : Nat → V, Ix.Kernel.Semantics.interp V ρ va =
+          Ix.Kernel.Semantics.interp V ρ (m.acval cv.name ψ)
+
+/-- **L5's content: each accepted declaration preserves an invariant that
+gives the model** (against `Ix.Kernel.Model.declStep_preserves`): there is an
+invariant, holding at the empty environment and giving the kernel's fold
+invariant `EnvModelOk` (hence a model, `model_of_envModelOk`), such that if a
+bounded derivation checked the declaration `d` against `env`, then `d` installs
+into some `env₂` by shape, and in every set theory the invariant at `env` gives
+it at `env₂`.
+
+L5 chooses the invariant. It must carry what the soundness of L4's rules reads
+at each prefix (`Rules.RulesInputs`, from `EnvModelM` by `RulesInputs.ofSem`),
+including S2's three new fields: `ThmVal`, `role_eqns` and `nat_ops`; so the
+expected invariant is `EnvModelOk` with an `EnvModelM` that also satisfies
+`ThmVal` and `role_eqns`. -/
 def Decls : Prop :=
-  ∀ (calls : List (Call IxVM.F)) (env : Ix.Kernel.Env .anon) (d : Ix.Kernel.Declaration .anon),
-    Bounded calls → S.Checked calls env d →
-      ∃ env₂, InstallStep env d env₂ ∧
-        ∀ (V : Type u) [Ix.Kernel.SetTheory V],
-          Ix.Kernel.Model.EnvModelOk V .verified env → Ix.Kernel.Model.EnvModelOk V .verified env₂
+  ∃ Inv : (V : Type u) → [Ix.Kernel.SetTheory V] → Ix.Kernel.Env .anon → Prop,
+    (∀ (V : Type u) [Ix.Kernel.SetTheory V], Inv V Ix.Kernel.Env.empty) ∧
+    (∀ (V : Type u) [Ix.Kernel.SetTheory V] (env : Ix.Kernel.Env .anon),
+      Inv V env → Ix.Kernel.Model.EnvModelOk V .verified env) ∧
+    ∀ (calls : List (Call IxVM.F)) (env : Ix.Kernel.Env .anon) (d : Ix.Kernel.Declaration .anon),
+      Bounded calls → S.Checked calls env d →
+        ∃ env₂, InstallStep env d env₂ ∧
+          ∀ (V : Type u) [Ix.Kernel.SetTheory V], Inv V env → Inv V env₂
 
 /-- **Obligation L5** (declarations), given L1 to L4. -/
 def L5 : Prop := Records S → Levels → Terms S → Core S → Decls.{u} S
@@ -543,8 +587,9 @@ def L6 : Prop := Records S → ClaimPhase S
 /-- **Obligation L7** (assembly, the `IxVM` module): from L1, L5 and L6, the
 source-level statement. Its job: read the walked closure with the kernel's
 reader (`ReadIn`), order the checked declarations by the reading, produce
-`Seams.Checked` for each at its prefix, fold `Decls` from `envModelOk_empty` to a
-model (`model_of_envModelOk`), and place the seeds (`SeedStored`). -/
+`Seams.Checked` for each at its prefix, fold `Decls`'s invariant from the empty environment to a
+model (through `EnvModelOk` and `model_of_envModelOk`), and place the seeds
+(`SeedStored`). -/
 def L7 : Prop := Records S → Decls.{u} S → ClaimPhase S → SourceSoundBounded ConsistencySpec.{u}
 
 end IxVM.Consistency

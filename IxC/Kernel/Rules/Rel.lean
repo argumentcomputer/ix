@@ -62,10 +62,13 @@ levels' values under every assignment (`Level.eval`, `Level.EvalEqList`),
 or a value of `0`.  The bridge derives each from the checker's test
 (`Level.isEquiv_sound`, `Level.isEquivList_sound`), so the relation stays
 a superset of the run, and a producer that decides levels another way
-(a complete procedure) can supply the premise directly.  The one
-remaining fueled test, `Infer.proj`'s `Level.isEquiv entry.structSort
-.zero = some true`, sits in negative position: a producer only assumes
-it, and its other case is the stored entry's O5 bound.
+(a complete procedure) can supply the premise directly.  The tower
+guard (`ProjEntry.fireOk`, read by `Red.proj`, and through
+`andRescueSlots` by `Red.rescueAnd`; `Infer.proj`'s own guard is the same
+test) is `FireSem`: its positive test is semantic, and its one remaining
+fueled test, the stored entry's `Level.isEquiv entry.structSort .zero =
+some true`, sits in negative position, so a producer only assumes it;
+its other case is the entry's O5 bound.
 
 Scoping (`WScoped`, `looseBVarsBounded`, `LeavesBounded`, `CtxOk`) and
 readability (`denoteMeta … = some _`) are NOT part of the inductive;
@@ -95,6 +98,24 @@ inductive Grade where
   | full
   | io
   deriving DecidableEq, Repr
+
+/-- **A tower entry's `Prop` guard, read semantically** (`ProjEntry.fireOk`,
+`CoreDefs.lean:1044`, with its positive test semantic): if the stored
+structure sort passes the checker's zero test, the field's guard level at
+the use's levels is zero under every assignment.  The negative-position
+test is the stored entry's; its other case is the entry's O5 bound
+(`TowerO5`). -/
+def FireSem (entry : ProjEntry md) (us : List Level) : Prop :=
+  Level.isEquiv entry.structSort .zero = some true →
+    ∀ φ, Level.eval φ (Level.subst entry.levelParams us entry.fieldSort) = 0
+
+/-- **`andRescueSlots`, with each slot's guard read semantically**
+(`CoreDefs.lean:1056-1066`): the two tower entries of `And` are stored,
+name the rule's constructor at the major's parameter count, and pass
+`FireSem` at the levels `ust`. -/
+def AndRescueSlotsSem (env : Env md) (ctor : Key md) (nP : Nat) (ust : List Level) : Prop :=
+  ∀ j, j < 2 → ∃ e : ProjEntry md, env.findProj? andName j = some e ∧
+    e.ctor = ctor ∧ e.numParams = nP ∧ e.numFields = 2 ∧ FireSem e ust
 
 /-- The fourteen binary `Nat` operations `reduceNat` accelerates
 (`Core.lean:180-183`; official `reduce_nat`, `type_checker.cpp:639-668`):
@@ -184,7 +205,7 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       i < entry.numFields →
       e.getAppArgs.length = entry.numParams + entry.numFields →
       us.length = entry.levelParams.length →
-      entry.fireOk us = true →
+      FireSem entry us →
       env.find? entry.ctor = some (.ctorInfo cvC nP nF) →
       Certs env d true (cvC.type.instantiateLevelParams cvC.levelParams us)
         e.getAppArgs →
@@ -310,7 +331,7 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       tmaj.getAppFn = .const andName ust →
       tmaj.getAppArgs.length = cnP →
       cvj.levelParams.length = ust.length →
-      andRescueSlots env rl.ctor cnP ust = true →
+      AndRescueSlotsSem env rl.ctor cnP ust →
       fab = Expr.mkAppN (.const rl.ctor ust)
         (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major]) →
       fab.wscopedB d = true → fab.looseBVarsBounded 0 = true →
@@ -583,8 +604,7 @@ inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop 
       env.findProj? sn i = some entry →
       te.getAppArgs.length = entry.numParams →
       us.length = entry.levelParams.length →
-      (Level.isEquiv entry.structSort .zero = some true →
-        ∀ φ, Level.eval φ (Level.subst entry.levelParams us entry.fieldSort) = 0) →
+      FireSem entry us →
       Infer env g d (.proj sn i pe) (entry.typeAt us te.getAppArgs pe)
 
 /-- **The telescope certificate** (`iotaCerts`, `Core.lean:230-244`):

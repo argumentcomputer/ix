@@ -706,21 +706,6 @@ theorem Infer.appSkip_sound {d : Nat}
     exact (sound_app V (hokf ρ hρ).1 (hoka ρ hρ).1 (hf2 ρ hρ)
       (ha2 ρ hρ) (hcod0 ρ hρ)).2
 
-/-- The `Prop` guard at a valuation from `Infer.proj`'s semantic premise
-and the entry's O5 bound: `towerGuardAt_of` with the field's zero value
-read directly instead of through the checker's zero test. -/
-theorem towerGuardAt_of_sem {entry : ProjEntry md} {us : List Level}
-    {ψ : LevelParam → Nat} (hO5 : TowerO5 entry)
-    (hg : Level.isEquiv entry.structSort .zero = some true →
-      ∀ φ, Level.eval φ (Level.subst entry.levelParams us entry.fieldSort) = 0) :
-    TowerGuardAt ψ entry us := by
-  intro hs
-  by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
-  · have h1 := hg (beq_iff_eq.mp hp) ψ
-    rw [Level.eval_subst] at h1
-    exact h1
-  · exact hO5 (by simpa using hp) _ hs
-
 /-- `inferProjStep_of_claims` / `inferProjStepIO_of_claims`
 (`Steps/ProjRows.lean:71`, `:160`): the tower law's typing clause. -/
 theorem Infer.proj_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
