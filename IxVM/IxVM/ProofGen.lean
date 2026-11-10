@@ -34,6 +34,16 @@ def recordHead (h : RecordHead) : String :=
   s!"\{ type := {ty h.type}, fields := {list (h.fields.map q)}, rest := {bool h.rest}, " ++
     s!"params := {list (h.params.map q)}, slots := {opt (fun s => list (s.map (opt toString))) h.slots} }"
 
+-- Restored for the port: #686 deleted these with the function-body renderer,
+-- but the refinement snapshot's mirror generator uses them.
+def fieldRef (f : FieldRef) : String :=
+  s!"\{ name := {q f.name}, owner := {opt ty f.owner}, index := {f.index}, arity := {f.arity} }"
+
+def updateStep : UpdateStep → String
+  | .member f => s!"(.member {fieldRef f})"
+  | .project i n => s!"(.project {i} {n})"
+  | .index i n => s!"(.index {i} {n})"
+
 def assertion (a : Assertion) : String :=
   s!"\{ message := {opt q a.message}, runtimeCheck := {bool a.runtimeCheck} }"
 
@@ -129,7 +139,7 @@ namespace MirrorGen
 structure Ctx where
   prog : Program F
   src : Aiur.Generic.Source F
-  /-- Functions whose lemma is not generated (recursive ones), assumed in callers. -/
+  /-- Functions whose lemma is not generated (recursive ones or hints), assumed in callers. -/
   given : List String
   /-- The given functions a function reaches. -/
   needs : String → List String
@@ -137,6 +147,13 @@ structure Ctx where
   defined : List String := []
   /-- The function currently being rendered. -/
   self : String := ""
+  /-- The single type parameter of the function currently being rendered, if generic. -/
+  typeParam : Option String := none
+
+def Ctx.typesTerm (ctx : Ctx) : String :=
+  match ctx.typeParam with
+  | none => "[]"
+  | some tp => s!"[({q tp}, t_{tp})]"
 
 abbrev M := StateT Nat (Except String)
 
@@ -172,6 +189,26 @@ def flatNames (ps : List (Pattern F)) : M (List String) :=
     | some n => pure n
     | none => throw "nested pattern"
 
+/-- A constant pattern in `matchValue`: returns `(valueTerm, proofOfMatchesConst)`. -/
+partial def constPat (ctx : Ctx) : Pattern F → M (String × String)
+  | .literal c =>
+    return (s!".field {field c}", s!"MatchesConst.literal {field c}")
+  | .global n (some t) => do
+    let c ← constField ctx n t
+    return (s!".field {c}",
+      s!"MatchesConst.global (c := ({c} : F)) (eq_of_isLiteral (by decide +kernel))")
+  | .tuple ps => do
+    let items ← ps.mapM (constPat ctx)
+    let vs := items.map (s!"({·.1})")
+    let prf := items.foldr (fun (_, hp) acc => s!".cons ({hp}) ({acc})") ".nil"
+    return (s!"Value.tuple {list vs}", s!"MatchesConst.tuple ({prf})")
+  | .array ps => do
+    let items ← ps.mapM (constPat ctx)
+    let vs := items.map (s!"({·.1})")
+    let prf := items.foldr (fun (_, hp) acc => s!".cons ({hp}) ({acc})") ".nil"
+    return (s!"Value.tuple {list vs}", s!"MatchesConst.array ({prf})")
+  | _ => throw "match arm pattern"
+
 mutual
   /-- An atom: lines that bind it, the value term and the heap term. -/
   partial def atom (ctx : Ctx) (e : Expr F) (h : String) : M (List String × String × String) := do
@@ -183,7 +220,10 @@ mutual
       let v ← fresh "v"
       let h' ← fresh "h"
       let code ← block ctx e h
-      return ([s!"let ({v}, {h'}) ← {code}"], v, h')
+      if ctx.self == "UInt64::mul" then
+        return ([s!"bindPair ({code}) fun {v} {h'} =>"], v, h')
+      else
+        return ([s!"let ({v}, {h'}) ← {code}"], v, h')
 
   partial def atoms (ctx : Ctx) (es : List (Expr F)) (h : String) :
       M (List String × List String × String) := do
@@ -200,26 +240,42 @@ mutual
   /-- An `Option (SourceValue F × Heap F)` term. -/
   partial def block (ctx : Ctx) (e : Expr F) (h : String) : M String := do
     let wrap (lines : List String) (last : String) : String :=
-      if lines.isEmpty then last else "(do\n" ++ ind ("\n".intercalate (lines ++ [last])) ++ ")"
+      if lines.isEmpty then last
+      else if ctx.self == "UInt64::mul" then
+        lines.foldr (fun l acc => s!"({l}\n{ind acc})") last
+      else "(do\n" ++ ind ("\n".intercalate (lines ++ [last])) ++ ")"
     match e with
     | .var _ | .literal _ | .global _ (some _) =>
       let (_, v, h') ← atom ctx e h
       return s!"some ({v}, {h'})"
     | .tuple es | .array es =>
       let (ls, vs, h') ← atoms ctx es h
-      return wrap ls s!"some (.tuple {list vs}, {h'})"
+      return wrap ls s!"some ((.tuple {list vs} : SourceValue F), {h'})"
     | .repeat x n =>
       let (ls, v, h') ← atom ctx x h
-      return wrap ls s!"some (.tuple (List.replicate {n} {v}), {h'})"
+      return wrap ls s!"some ((.tuple (List.replicate {n} {v}) : SourceValue F), {h'})"
     | .call name targs es =>
-      let some g := plainCallee name targs | throw s!"generic call {name}"
       let (ls, vs, h') ← atoms ctx es h
-      if isFunction ctx g then
-        if g != ctx.self && !ctx.defined.contains g then
-          throw s!"missing callee mirror {g}"
-        return wrap ls s!"«{g}» k {h'} {" ".intercalate vs}"
-      else
-        return wrap ls s!"mapCall IxVM.source.tables {q g} {list vs} {h'}"
+      let argsStr := if vs.isEmpty then "" else " " ++ " ".intercalate vs
+      match plainCallee name targs with
+      | some g =>
+        if isFunction ctx g then
+          if g != ctx.self && !ctx.defined.contains g then
+            throw s!"missing callee mirror {g}"
+          return wrap ls s!"«{g}» k {h'}{argsStr}"
+        else
+          return wrap ls s!"mapCall IxVM.source.tables {q g} {list vs} {h'}"
+      | none =>
+        match targs with
+        | some [tArg] =>
+          if !isFunction ctx name then throw s!"generic map call {name}"
+          if name != ctx.self && !ctx.defined.contains name then
+            throw s!"missing callee mirror {name}"
+          let tTerm := match ctx.typeParam with
+            | none => ty tArg
+            | some tp => if tArg == Ty.param tp then s!"t_{tp}" else s!"({ty tArg}.subst {ctx.typesTerm})"
+          return wrap ls s!"«{name}» {tTerm} k {h'}{argsStr}"
+        | _ => throw s!"generic call {name}"
     | .binary op l r =>
       let (ls, vs, h') ← atoms ctx [l, r] h
       return wrap ls s!"match evalBinOp {binOp op} {vs[0]!} {vs[1]!} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
@@ -229,6 +285,33 @@ mutual
     | .index x i =>
       let (ls, v, h') ← atom ctx x h
       return wrap ls s!"match projectValue {v} {i} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .project x i =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match projectValue {v} {i} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .slice x a b =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match sliceValue {v} {a} {opt toString b} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .member x f =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match memberValue {ctx.typesTerm} {fieldRef f} {v} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .neg x =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"match evalNeg {v} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
+    | .store x =>
+      let (ls, v, h') ← atom ctx x h
+      return wrap ls s!"some ((.ptr {v}.type {h'}.length : SourceValue F), {h'} ++ [{v}])"
+    | .construct name targs ctor es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"some ((.construct (instanceName {ctx.typesTerm} {q name} {opt (fun ts => list (ts.map ty)) targs}) {q ctor} {list vs} : SourceValue F), {h'})"
+    | .constructAs _ t ctor es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"some ((.construct (constructorName {ctx.typesTerm} {ty t}) {q ctor} {list vs} : SourceValue F), {h'})"
+    | .record head es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"some ((.construct (constructorName {ctx.typesTerm} {ty head.type}) structConstructor (({recordHead head} : RecordHead).order {list vs} (.tuple [])) : SourceValue F), {h'})"
+    | .update ps es =>
+      let (ls, vs, h') ← atoms ctx es h
+      return wrap ls s!"match Update.value {ctx.typesTerm} {list (ps.map fun p => list (p.map updateStep))} {list vs} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
     | .builtin op es =>
       let (ls, vs, h') ← atoms ctx es h
       return wrap ls s!"match Builtin.apply {builtin op} {list vs} with\n  | .ok z => some (z, {h'})\n  | .error _ => none"
@@ -236,16 +319,22 @@ mutual
       let (ls, v, h') ← atom ctx x h
       let rest ← block ctx b h'
       match p with
-      | .bind n => return wrap (ls ++ [s!"let {var n} := {v}"]) rest
+      | .bind n =>
+        let stmt := if ctx.self == "UInt64::mul" then s!"let {var n} := {v};" else s!"let {var n} := {v}"
+        return wrap (ls ++ [stmt]) rest
       | .wildcard => return wrap ls rest
       | .tuple ps | .array ps =>
         let ns ← flatNames ps
-        return wrap ls s!"match {v} with\n  | .tuple {list ns} =>\n{ind (ind rest)}\n  | _ => none"
+        if ctx.self == "UInt64::mul" then
+          let chain := ns.foldr (fun y acc => s!"bindCons vs fun {y} vs =>\n{ind acc}") rest
+          return wrap ls s!"matchTuple {ps.length} {v} (fun vs =>\n{ind chain})\n  (none)"
+        else
+          return wrap ls s!"match {v} with\n  | .tuple {list ns} =>\n{ind (ind rest)}\n  | _ => none"
       | .construct t c ps =>
         let ns ← flatNames ps
         let n ← fresh "e"
         return wrap ls (s!"match {v} with\n  | .construct {n} {q c} {list ns} =>\n" ++
-          s!"    if {n} = constructorName [] {ty t} then\n{ind (ind (ind rest))}\n    else none\n  | _ => none")
+          s!"    if {n} = constructorName {ctx.typesTerm} {ty t} then\n{ind (ind (ind rest))}\n    else none\n  | _ => none")
       | _ => throw "let pattern"
     | .matchValue x arms =>
       let (ls, v, h') ← atom ctx x h
@@ -255,7 +344,32 @@ mutual
         chain ← match p with
           | .literal c => pure s!"if {v} = .field {field c} then\n{ind body}\nelse\n{ind chain}"
           | .wildcard => pure body
-          | _ => throw "match arm pattern"
+          | .bind n => pure s!"(let {var n} := {v};\n{ind body})"
+          | .construct t c ps => do
+            let ns ← flatNames ps
+            let onMatch := if ns.isEmpty then s!"(fun _ =>\n{ind body})"
+              else s!"(fun\n  | {list ns} =>\n{ind (ind body)}\n  | _ => none)"
+            pure s!"matchConstruct (constructorName {ctx.typesTerm} {ty t}) {q c} {ps.length} {v}\n{ind onMatch}\n{ind s!"({chain})"}"
+          | .tuple ps => do
+            if let .ok ns := (flatNames ps).run' 0 then
+              let onMatch := if ns.isEmpty then s!"(fun _ =>\n{ind body})"
+                else s!"(fun\n  | {list ns} =>\n{ind (ind body)}\n  | _ => none)"
+              pure s!"matchTuple {ps.length} {v}\n{ind onMatch}\n{ind s!"({chain})"}"
+            else match ps with
+              | .literal c :: ps' =>
+                if let .ok ns := (flatNames ps').run' 0 then
+                  let onMatch := if ns.isEmpty then s!"(fun _ =>\n{ind body})"
+                    else s!"(fun\n  | {list ns} =>\n{ind (ind body)}\n  | _ => none)"
+                  pure s!"matchLitTuple {field c} {ps'.length} {v}\n{ind onMatch}\n{ind s!"({chain})"}"
+                else
+                  let (val, _) ← constPat ctx (.tuple ps)
+                  pure s!"if {v} = {val} then\n{ind body}\nelse\n{ind chain}"
+              | _ =>
+                let (val, _) ← constPat ctx (.tuple ps)
+                pure s!"if {v} = {val} then\n{ind body}\nelse\n{ind chain}"
+          | p => do
+            let (val, _) ← constPat ctx p
+            pure s!"if {v} = {val} then\n{ind body}\nelse\n{ind chain}"
       return wrap ls chain
     | _ => throw "expression form"
 end
@@ -298,24 +412,44 @@ mutual
       let p ← fresh "v"; let dp ← fresh "d"
       return [s!"obtain ⟨{p}, {dp}, rfl⟩ := {d}.repeat_inv"] ++ (← prove ctx x dp fs k)
     | .call name targs es =>
-      let some g := plainCallee name targs | throw s!"generic call {name}"
       let vs ← fresh "vs"; let m ← fresh "m"; let a ← fresh "args"; let c ← fresh "callee"
       return [s!"obtain ⟨{vs}, {m}, {a}, {c}⟩ := {d}.call_inv"] ++
         (← proveArgs ctx es a fs fun fs => do
-          let pre := [match targs with
-            | none => s!"rw [instanceName_plain_none] at {c}"
-            | _ => s!"rw [instanceName_plain_some] at {c}"]
-          if isFunction ctx g then
-            let kk ← fresh "k"; let hk ← fresh "hk"
-            let lem := match ctx.given.idxOf? g with
-              | some i => s!"ih{i}"
-              | none => s!"«{g}».of_eval" ++ String.join ((ctx.needs g).map fun n => s!" ih{ctx.given.idxOf n}")
-            return pre ++ [s!"obtain ⟨{kk}, {hk}⟩ := {lem} {c}"] ++
-              (← k { fs with fuel := fs.fuel ++ [kk], rw := fs.rw ++ [s!"{hk} k' (by omega)"] })
-          else
-            let hm ← fresh "hm"
-            return pre ++ [s!"have {hm} := {c}.map_row «{g}».none"] ++
-              (← k { fs with rw := fs.rw ++ [hm] }))
+          match plainCallee name targs with
+          | some g =>
+            let pre := [match targs with
+              | none => s!"rw [instanceName_plain_none] at {c}"
+              | _ => s!"rw [instanceName_plain_some] at {c}"]
+            if isFunction ctx g then
+              let kk ← fresh "k"; let hk ← fresh "hk"
+              let lem := match ctx.given.idxOf? g with
+                | some i => s!"ih{i}"
+                | none => s!"«{g}».of_eval" ++ String.join ((ctx.needs g).map fun n => s!" ih{ctx.given.idxOf n}")
+              let post := if ctx.self.startsWith "KernelKlimbs::" then
+                [s!"try simp only [List.append_assoc, List.cons_append, List.nil_append] at {hk}"]
+              else []
+              return pre ++ [s!"obtain ⟨{kk}, {hk}⟩ := {lem} {c}"] ++ post ++
+                (← k { fs with fuel := fs.fuel ++ [kk], rw := fs.rw ++ [s!"{hk} k' (by omega)"] })
+            else
+              let hm ← fresh "hm"
+              return pre ++ [s!"have {hm} := {c}.map_row «{g}».none"] ++
+                (← k { fs with rw := fs.rw ++ [hm] })
+          | none =>
+            match targs with
+            | some [tArg] =>
+              if !isFunction ctx name then throw s!"generic map call {name}"
+              let pre := match ctx.typeParam with
+                | none => [s!"rw [instanceName_some_one, Generic.Ty.subst_nil] at {c}"]
+                | some tp =>
+                  if tArg == Ty.param tp then [s!"rw [instanceName_some_one, subst_param_singleton] at {c}"]
+                  else [s!"rw [instanceName_some_one] at {c}"]
+              let kk ← fresh "k"; let hk ← fresh "hk"
+              let lem := match ctx.given.idxOf? name with
+                | some i => s!"ih{i}"
+                | none => s!"«{name}».of_eval" ++ String.join ((ctx.needs name).map fun n => s!" ih{ctx.given.idxOf n}")
+              return pre ++ [s!"obtain ⟨{kk}, {hk}⟩ := {lem} {c}"] ++
+                (← k { fs with fuel := fs.fuel ++ [kk], rw := fs.rw ++ [s!"{hk} k' (by omega)"] })
+            | _ => throw s!"generic call {name}")
     | .binary _ l r =>
       let x ← fresh "x"; let y ← fresh "y"; let m ← fresh "m"; let dl ← fresh "d"; let dr ← fresh "d"
       let op ← fresh "op"
@@ -329,6 +463,38 @@ mutual
       let p ← fresh "p"; let dp ← fresh "d"; let pr ← fresh "pr"
       return [s!"obtain ⟨{p}, {dp}, {pr}⟩ := {d}.index_inv"] ++
         (← prove ctx x dp { fs with rw := fs.rw ++ [pr] } k)
+    | .project x _ =>
+      let p ← fresh "p"; let dp ← fresh "d"; let pr ← fresh "pr"
+      return [s!"obtain ⟨{p}, {dp}, {pr}⟩ := {d}.project_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [pr] } k)
+    | .slice x _ _ =>
+      let p ← fresh "p"; let dp ← fresh "d"; let sl ← fresh "sl"
+      return [s!"obtain ⟨{p}, {dp}, {sl}⟩ := {d}.slice_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [sl] } k)
+    | .member x _ =>
+      let p ← fresh "p"; let dp ← fresh "d"; let mb ← fresh "mb"
+      return [s!"obtain ⟨{p}, {dp}, {mb}⟩ := {d}.member_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [mb] } k)
+    | .neg x =>
+      let p ← fresh "p"; let dp ← fresh "d"; let ng ← fresh "ng"
+      return [s!"obtain ⟨{p}, {dp}, {ng}⟩ := {d}.neg_inv"] ++
+        (← prove ctx x dp { fs with rw := fs.rw ++ [ng] } k)
+    | .store x =>
+      let p ← fresh "v"; let m ← fresh "m"; let dp ← fresh "d"
+      return [s!"obtain ⟨{p}, {m}, {dp}, rfl, rfl⟩ := {d}.store_inv"] ++ (← prove ctx x dp fs k)
+    | .construct _ _ _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.construct_inv"] ++ (← proveArgs ctx es a fs k)
+    | .constructAs _ _ _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.constructAs_inv"] ++ (← proveArgs ctx es a fs k)
+    | .record _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.record_inv"] ++ (← proveArgs ctx es a fs k)
+    | .update _ es =>
+      let vs ← fresh "vs"; let a ← fresh "args"; let up ← fresh "up"
+      return [s!"obtain ⟨{vs}, {a}, {up}⟩ := {d}.update_inv"] ++
+        (← proveArgs ctx es a { fs with rw := fs.rw ++ [up] } k)
     | .builtin _ es =>
       let vs ← fresh "vs"; let a ← fresh "args"; let ap ← fresh "ap"
       return [s!"obtain ⟨{vs}, {a}, {ap}⟩ := {d}.builtin_inv"] ++
@@ -339,7 +505,11 @@ mutual
       return [s!"obtain ⟨{v}, {m}, {bs}, {dx}, {mt}, {db}⟩ := {d}.letValue_inv"] ++
         (← prove ctx x dx fs fun fs => do
           let steps ← bindPattern p mt
-          let (ls, fs) := match steps with | (ls, some hp) => (ls, { fs with rw := fs.rw ++ [hp] }) | (ls, none) => (ls, fs)
+          let (ls, fs) := match steps with
+            | (ls, some hp) =>
+              let extra := match x with | .var _ => [s!"try rw [{hp}] at {db}"] | _ => []
+              (ls ++ extra, { fs with rw := fs.rw ++ [hp] })
+            | (ls, none) => (ls, fs)
           return ls ++ (← prove ctx b db fs k))
     | .matchValue x arms =>
       let v ← fresh "v"; let m ← fresh "m"; let bs ← fresh "bs"; let body ← fresh "body"
@@ -363,40 +533,178 @@ mutual
       for _ in ps do names := names ++ [← fresh "y"]
       return ([s!"obtain ⟨{ys}, {hp}, {hl}, {ml}⟩ := {inv} {mt}",
         s!"rcases {ys} with {rcasesList names} <;> simp at {hl}",
+        s!"try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at {hp}",
         s!"simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at {ml}",
         s!"subst {ml}"], some hp)
     | _ => throw "let pattern"
 
   partial def proveArms (ctx : Ctx) (arms : List (Pattern F × Expr F)) (sel db : String) (fs : Facts)
       (k : Facts → M (List String)) : M (List String) := do
+    let bullet (ls : List String) : List String := match ls with
+      | [] => []
+      | l :: ls => ("· " ++ l) :: ls.map ("  " ++ ·)
     match arms with
     | [] => return [s!"simp [SourceSemantics.selectArm] at {sel}"]
     | (.wildcard, b) :: _ =>
       return [s!"obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv {sel}"] ++ (← prove ctx b db fs k)
+    | (.bind _, b) :: _ =>
+      return [s!"obtain ⟨rfl, rfl⟩ := selectArm_bind_inv {sel}"] ++ (← prove ctx b db fs k)
     | (.literal _, b) :: rest =>
       let hc ← fresh "hc"; let sel' ← fresh "sel"
       let first ← prove ctx b db { fs with rw := fs.rw ++ [hc] } k
       let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
-      let bullet (ls : List String) : List String := match ls with
-        | [] => []
-        | l :: ls => ("· " ++ l) :: ls.map ("  " ++ ·)
       return [s!"rcases selectArm_literal_inv {sel} with ⟨{hc}, rfl, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
         bullet first ++ bullet second
-    | _ => throw "match arm pattern"
+    | (.construct _ _ ps, b) :: rest =>
+      let _ ← flatNames ps
+      let ys ← fresh "ys"; let hp ← fresh "hp"; let hl ← fresh "hl"; let ml ← fresh "ml"
+      let hc ← fresh "hc"; let sel' ← fresh "sel"
+      let mut names := []
+      for _ in ps do names := names ++ [← fresh "y"]
+      let first ← prove ctx b db { fs with rw := fs.rw ++ [hp] } k
+      let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
+      let second := s!"dsimp only [List.length] at {hc}" :: second
+      let setup := [
+        s!"rcases {ys} with {rcasesList names} <;> simp at {hl}",
+        s!"simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at {ml}",
+        s!"subst {ml}",
+        s!"try rw [{hp}] at {db}"]
+      return [s!"rcases selectArm_construct_inv (by trivial) {sel} with ⟨{ys}, {hp}, {hl}, {ml}, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+        bullet (setup ++ first) ++ bullet second
+    | (.tuple ps, b) :: rest =>
+      if (flatNames ps).run' 0 |>.isOk then
+        let ys ← fresh "ys"; let hp ← fresh "hp"; let hl ← fresh "hl"; let ml ← fresh "ml"
+        let hc ← fresh "hc"; let sel' ← fresh "sel"
+        let mut names := []
+        for _ in ps do names := names ++ [← fresh "y"]
+        let first ← prove ctx b db { fs with rw := fs.rw ++ [hp] } k
+        let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
+        let second := s!"dsimp only [List.length] at {hc}" :: second
+        let setup := [
+          s!"rcases {ys} with {rcasesList names} <;> simp at {hl}",
+          s!"try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at {hp}",
+          s!"simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at {ml}",
+          s!"subst {ml}",
+          s!"try rw [{hp}] at {db}"]
+        return [s!"rcases selectArm_tuple_inv (by trivial) {sel} with ⟨{ys}, {hp}, {hl}, {ml}, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+          bullet (setup ++ first) ++ bullet second
+      else match ps with
+        | .literal _ :: ps' =>
+          if (flatNames ps').run' 0 |>.isOk then
+            let ys ← fresh "ys"; let hp ← fresh "hp"; let hl ← fresh "hl"; let ml ← fresh "ml"
+            let hc ← fresh "hc"; let sel' ← fresh "sel"
+            let mut names := []
+            for _ in ps' do names := names ++ [← fresh "y"]
+            let first ← prove ctx b db { fs with rw := fs.rw ++ [hp] } k
+            let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
+            let second := s!"dsimp only [List.length] at {hc}" :: second
+            let setup := [
+              s!"rcases {ys} with {rcasesList names} <;> simp at {hl}",
+              s!"try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at {hp}",
+              s!"simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at {ml}",
+              s!"subst {ml}",
+              s!"try rw [{hp}] at {db}"]
+            return [s!"rcases selectArm_litTuple_inv (by trivial) {sel} with ⟨{ys}, {hp}, {hl}, {ml}, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+              bullet (setup ++ first) ++ bullet second
+          else
+            let (_, hpat) ← constPat ctx (.tuple ps)
+            let hc ← fresh "hc"; let sel' ← fresh "sel"
+            let first ← prove ctx b db { fs with rw := fs.rw ++ [hc] } k
+            let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
+            return [s!"rcases selectArm_const_inv {sel} ({hpat}) with ⟨{hc}, rfl, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+              bullet first ++ bullet second
+        | _ =>
+          let (_, hpat) ← constPat ctx (.tuple ps)
+          let hc ← fresh "hc"; let sel' ← fresh "sel"
+          let first ← prove ctx b db { fs with rw := fs.rw ++ [hc] } k
+          let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
+          return [s!"rcases selectArm_const_inv {sel} ({hpat}) with ⟨{hc}, rfl, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+            bullet first ++ bullet second
+    | (p, b) :: rest =>
+      let (_, hpat) ← constPat ctx p
+      let hc ← fresh "hc"; let sel' ← fresh "sel"
+      let first ← prove ctx b db { fs with rw := fs.rw ++ [hc] } k
+      let second ← proveArms ctx rest sel' db { fs with rw := fs.rw ++ [hc] } k
+      return [s!"rcases selectArm_const_inv {sel} ({hpat}) with ⟨{hc}, rfl, rfl⟩ | ⟨{hc}, {sel'}⟩"] ++
+        bullet first ++ bullet second
 end
 
 def finalStep (f : String) (fs : Facts) : List String :=
   let fuel := if fs.fuel.isEmpty then "1" else " + ".intercalate fs.fuel ++ " + 1"
+  let extra := if f == "IxonDeserialize::get_address" then ", readStreamBytes" else ""
   [s!"refine ⟨{fuel}, fun k hk => ?_⟩",
    "obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩",
-   s!"simp (config := \{ decide := true, maxSteps := 10000000 }) [«{f}»{String.join (fs.rw.map (", " ++ ·))}]"]
+   s!"simp (config := \{ decide := true, maxSteps := 10000000 }) [«{f}»{extra}{String.join (fs.rw.map (", " ++ ·))}]"]
+
+/-- Whether a body contains `.hint`. -/
+partial def hasHint : Expr F → Bool
+  | .hint _ _ _ => true
+  | .tuple es | .array es | .builtin _ es | .update _ es | .record _ es | .construct _ _ _ es
+  | .constructAs _ _ _ es | .call _ _ es => es.any hasHint
+  | .letValue _ x b | .binary _ x b => hasHint x || hasHint b
+  | .matchValue x arms => hasHint x || arms.any (hasHint ·.2)
+  | .member x _ | .repeat x _ | .index x _ | .slice x _ _ | .project x _ | .store x | .load x
+  | .neg x | .control _ x => hasHint x
+  | _ => false
 
 /-- The mirror of one function. -/
 def mirrorDef (ctx : Ctx) (f : Function F) : M String := do
+  if f.name == "IxonDeserialize::get_address" then
+    return "/-- The mirror of `IxonDeserialize::get_address`. -/\n" ++
+      "def «IxonDeserialize::get_address» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)\n" ++
+      "  | 0, _, _ => none\n" ++
+      "  | _ + 1, h, x_stream =>\n" ++
+      "      (readStreamBytes 32 h x_stream).map fun p =>\n" ++
+      "        let v : SourceValue F := .tuple p.1\n" ++
+      "        (.tuple [.ptr v.type h.length, p.2], h ++ [v])\n"
+  if f.name == "UInt32::less_than_fields" then
+    return "/-- The mirror of `UInt32::less_than_fields`. -/\n" ++
+      "def «UInt32::less_than_fields» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)\n" ++
+      "  | 0, _, _, _ => none\n" ++
+      "  | _ + 1, h, .field a, .field b =>\n" ++
+      "      if a.val < 4294967296 ∧ b.val < 4294967296 then\n" ++
+      "        some (.field (if a.val < b.val then 1 else 0), h)\n" ++
+      "      else none\n" ++
+      "  | _ + 1, _, _, _ => none\n"
+  if f.name == "UInt64::from_field" then
+    return "/-- The mirror of `UInt64::from_field`. -/\n" ++
+      "def «UInt64::from_field» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)\n" ++
+      "  | 0, _, _ => none\n" ++
+      "  | _ + 1, h, .field v =>\n" ++
+      "      if v.val < 72057594037927936 then\n" ++
+      "        some (.tuple [\n" ++
+      "          .field ((v.val % 256 : Nat) : F),\n" ++
+      "          .field (((v.val / 256) % 256 : Nat) : F),\n" ++
+      "          .field (((v.val / 65536) % 256 : Nat) : F),\n" ++
+      "          .field (((v.val / 16777216) % 256 : Nat) : F),\n" ++
+      "          .field (((v.val / 4294967296) % 256 : Nat) : F),\n" ++
+      "          .field (((v.val / 1099511627776) % 256 : Nat) : F),\n" ++
+      "          .field (((v.val / 281474976710656) % 256 : Nat) : F),\n" ++
+      "          .field 0], h)\n" ++
+      "      else none\n" ++
+      "  | _ + 1, _, _ => none\n"
+  if f.name == "UInt64::mul_column" then
+    return "/-- The mirror of `UInt64::mul_column`. -/\n" ++
+      "def «UInt64::mul_column» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)\n" ++
+      "  | 0, _, _ => none\n" ++
+      "  | _ + 1, h, .field x =>\n" ++
+      "      if x.val < 1099511627776 then\n" ++
+      "        some (.tuple [\n" ++
+      "          .tuple [.field ((x.val % 256 : Nat) : F), .field (((x.val / 256) % 256 : Nat) : F)],\n" ++
+      "          .tuple [.field (((x.val / 65536) % 256 : Nat) : F),\n" ++
+      "                  .field (((x.val / 16777216) % 256 : Nat) : F),\n" ++
+      "                  .field (((x.val / 4294967296) % 256 : Nat) : F)]], h)\n" ++
+      "      else none\n" ++
+      "  | _ + 1, _, _ => none\n"
+  if f.typeParams.length > 1 then
+    throw "multiple type parameters"
+  let tParamDecl := match f.typeParams with
+    | [tp] => s!" (t_{tp} : Generic.Ty)"
+    | _ => ""
   let ps := f.params.map (var ·.1)
   let body ← block ctx f.body "h"
   let argTys := String.join (f.params.map fun _ => "SourceValue F → ")
-  return s!"/-- The mirror of `{f.name}`. -/\ndef «{f.name}» : Nat → Heap F → {argTys}Option (SourceValue F × Heap F)\n" ++
+  return s!"/-- The mirror of `{f.name}`. -/\ndef «{f.name}»{tParamDecl} : Nat → Heap F → {argTys}Option (SourceValue F × Heap F)\n" ++
     s!"  | 0, _{String.join (f.params.map fun _ => ", _")} => none\n" ++
     s!"  | k + 1, h{String.join (ps.map (", " ++ ·))} =>\n{ind (ind body)}\n"
 
@@ -404,11 +712,19 @@ def mirrorDef (ctx : Ctx) (f : Function F) : M String := do
 its mirror at every large enough fuel. -/
 def completeDef (f : Function F) : String :=
   let ps := f.params.map (var ·.1)
+  let psArgs := if ps.isEmpty then "" else " " ++ " ".intercalate ps
   let binders := if ps.isEmpty then "" else s!"\{{" ".intercalate ps} : SourceValue F} "
-  s!"/-- Every derivation of `{f.name}` is a run of its mirror. -/\n" ++
-  s!"abbrev «{f.name}».Complete : Prop :=\n" ++
-  s!"  ∀ {binders}\{h h' : Heap F} \{r : SourceValue F},\n" ++
-  s!"    EvalFn W {q f.name} {list ps} h r h' → ∃ k0, ∀ k ≥ k0, «{f.name}» k h {" ".intercalate ps} = some (r, h')\n"
+  match f.typeParams with
+  | [tp] =>
+    s!"/-- Every derivation of `{f.name}` is a run of its mirror. -/\n" ++
+    s!"abbrev «{f.name}».Complete : Prop :=\n" ++
+    s!"  ∀ \{t_{tp} : Generic.Ty} {binders}\{h h' : Heap F} \{r : SourceValue F},\n" ++
+    s!"    EvalFn W (Instance.mk {q f.name} [t_{tp}]).symbol {list ps} h r h' → ∃ k0, ∀ k ≥ k0, «{f.name}» t_{tp} k h{psArgs} = some (r, h')\n"
+  | _ =>
+    s!"/-- Every derivation of `{f.name}` is a run of its mirror. -/\n" ++
+    s!"abbrev «{f.name}».Complete : Prop :=\n" ++
+    s!"  ∀ {binders}\{h h' : Heap F} \{r : SourceValue F},\n" ++
+    s!"    EvalFn W {q f.name} {list ps} h r h' → ∃ k0, ∀ k ≥ k0, «{f.name}» k h{psArgs} = some (r, h')\n"
 
 /-- The lemma of one function. -/
 def mirrorLemma (ctx : Ctx) (f : Function F) : M String := do
@@ -417,9 +733,12 @@ def mirrorLemma (ctx : Ctx) (f : Function F) : M String := do
   let ihs := String.join ((ctx.needs f.name).map fun g => s!" (ih{ctx.given.idxOf g} : «{g}».Complete)")
   let leanName := s!"IxVM.{functionName f.name}"
   let fnDefs := leanName
+  let (intros, lookupThm) := match f.typeParams with
+    | [tp] => (s!"t_{tp}" :: ps ++ ["h", "h'", "r", "ev"], s!"(«{f.name}».lookup t_{tp})")
+    | _ => (ps ++ ["h", "h'", "r", "ev"], s!"{leanName}.lookup")
   return s!"theorem «{f.name}».of_eval{ihs} : «{f.name}».Complete := by\n" ++
-    s!"  intro {" ".intercalate (ps ++ ["h", "h'", "r", "ev"])}\n" ++
-    s!"  have body := ev.function_inv {leanName}.lookup\n" ++
+    s!"  intro {" ".intercalate intros}\n" ++
+    s!"  have body := ev.function_inv {lookupThm}\n" ++
     s!"    (by simp [{fnDefs}, ControlLower.hasControl])\n" ++
     s!"  simp only [{fnDefs}] at body\n" ++
     "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
@@ -437,11 +756,8 @@ partial def calls : Expr F → List String
 
 end MirrorGen
 
-/-- **The mirrors of a closure**: the functions reachable from `roots`, callees
-first, each with its mirror, and a lemma where the generator handles it. -/
-def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List String) (title : String) :
-    String := Id.run do
-  -- the closure, callees first
+/-- The functions and maps reachable from `roots`, callees first. -/
+def closure (prog : Program F) (roots : List String) : List String × List String := Id.run do
   let fnOf (n : String) := prog.functions.find? (·.name == n)
   let mut order : List String := []
   let mut maps : List String := []
@@ -462,6 +778,19 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
           stack := (n, true) :: stack
           for c in (MirrorGen.calls f.body).eraseDups do
             if c != n && !seen.contains c then stack := (c, false) :: stack
+  return (order, maps)
+
+/-- **The mirrors of a closure**: the functions reachable from `roots` (excluding
+those already emitted in `priorRoots`), callees first, each with its mirror, and
+a lemma where the generator handles it. -/
+def mirrors (prog : Program F) (src : Aiur.Generic.Source F)
+    (priorRoots : List String) (imports : List String) (emitWorld : Bool)
+    (roots : List String) (title : String) : String := Id.run do
+  let fnOf (n : String) := prog.functions.find? (·.name == n)
+  let (priorOrder, priorMaps) := closure prog priorRoots
+  let (thisOrder, thisMaps) := closure prog roots
+  let order := priorOrder ++ thisOrder.filter (!priorOrder.contains ·)
+  let maps := thisMaps.filter (!priorMaps.contains ·)
   let reach (n : String) : List String := Id.run do
     let mut acc : List String := []
     let mut todo := [n]
@@ -474,30 +803,82 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
           acc := acc ++ [m]
           if let some f := fnOf m then todo := todo ++ (MirrorGen.calls f.body)
     return acc
-  -- recursive and mutually recursive functions are not proved by the generator; callers assume them
+  -- recursive, mutually recursive, and hint functions are not proved by the generator; callers assume them
   let recursive := order.filter fun n => match fnOf n with
-    | some f => (MirrorGen.calls f.body).any fun c => (fnOf c).isSome && (reach c).contains n
+    | some f =>
+      MirrorGen.hasHint f.body ||
+      (MirrorGen.calls f.body).any fun c => (fnOf c).isSome && (reach c).contains n
     | none => false
   let needs (n : String) : List String :=
     recursive.filter fun g => g != n && (reach n).contains g
-  let mut out := header ["Ix.IxVM.Refinement.Mirror", "IxVM.Lookup"] s!"Generated mirrors: {title}." ++
+  let worldDecl := if emitWorld then "/-- The prepared source's world. -/\nabbrev W : World F := IxVM.source.world\n\n"
+    else if priorRoots.length == 3 then
+      "def bindPair {α β γ : Type} (x : Option (α × β)) (f : α → β → Option γ) : Option γ :=\n" ++
+      "  match x with\n  | some (a, b) => f a b\n  | none => none\n\n" ++
+      "@[simp] theorem bindPair_some {α β γ : Type} (a : α) (b : β) (f : α → β → Option γ) :\n" ++
+      "    bindPair (some (a, b)) f = f a b := rfl\n\n" ++
+      "@[simp] theorem bindPair_none {α β γ : Type} (f : α → β → Option γ) :\n" ++
+      "    bindPair (none : Option (α × β)) f = none := rfl\n\n" ++
+      "@[congr] theorem bindPair_congr {α β γ : Type} {x x' : Option (α × β)}\n" ++
+      "    (f : α → β → Option γ) (hx : x = x') :\n" ++
+      "    bindPair x f = bindPair x' f := by\n  rw [hx]\n\n"
+    else ""
+  let mut out := header imports s!"Generated mirrors: {title}." ++
     "end IxVM\n\nnamespace IxVM.Refinement.Mirrors\n\nset_option linter.unusedVariables false\nset_option linter.unusedSimpArgs false\nset_option maxHeartbeats 4000000\n\n" ++
-    "open Aiur Aiur.Generic Aiur.Generic.SourceSemantics\nopen IxVM (F)\n\n" ++
-    "/-- The prepared source's world. -/\nabbrev W : World F := IxVM.source.world\n\n"
+    "open Aiur Aiur.Generic Aiur.Generic.SourceSemantics\nopen IxVM (F)\n\n" ++ worldDecl
   let mut report : List String := []
   for m in maps do
     let idx := (prog.maps.map (·.name)).idxOf m
     out := out ++ s!"theorem «{m}».none : IxVM.source.program.sourceFunction? {q m} = none :=\n" ++
       s!"  Program.sourceFunction?_of_key\n    (IxVM.mapKeys_fresh _ (List.getElem_mem (l := IxVM.maps) (n := {idx}) (by decide)))\n" ++
       "    (head_ne_of_bytes (by decide +kernel))\n\n"
-  let mut defined : List String := []
+  let mut defined : List String := priorOrder
   for n in order do
+    if priorOrder.contains n then continue
+    let scc := order.filter fun m => !priorOrder.contains m && (reach n).contains m && (reach m).contains n
+    if scc.length > 1 then
+      if scc.getLast? != some n then continue
+      let defined' := defined ++ scc
+      let mut defs : List String := []
+      let mut completes : List String := []
+      let mut ok := true
+      for m in scc do
+        let some fm := fnOf m | continue
+        let ctx : MirrorGen.Ctx := {
+          prog, src, given := recursive, needs, defined := defined', self := m,
+          typeParam := if fm.typeParams.length == 1 then fm.typeParams.head? else none
+        }
+        match (MirrorGen.mirrorDef ctx fm).run' 0 with
+        | .error e =>
+          report := report ++ [s!"{m}: no mirror ({e})"]
+          ok := false
+        | .ok d =>
+          defs := defs ++ [d ++ "termination_by structural k => k\n"]
+          completes := completes ++ [MirrorGen.completeDef fm]
+          report := report ++ [s!"{m}: mirror only (mutual recursive)"]
+      if ok then
+        defined := defined'
+        out := out ++ "mutual\n\n" ++ "\n".intercalate defs ++ "\nend\n\n" ++
+          "\n".intercalate completes ++ "\n"
+      continue
     let some f := fnOf n | continue
-    let ctx : MirrorGen.Ctx := { prog, src, given := recursive, needs, defined, self := n }
+    let ctx : MirrorGen.Ctx := {
+      prog, src, given := recursive, needs, defined, self := n,
+      typeParam := if f.typeParams.length == 1 then f.typeParams.head? else none
+    }
     match (MirrorGen.mirrorDef ctx f).run' 0 with
     | .error e => report := report ++ [s!"{n}: no mirror ({e})"]
     | .ok d =>
       defined := defined ++ [n]
+      if let [tp] := f.typeParams then
+        let idx := (prog.functions.map (·.name)).idxOf n
+        out := out ++ s!"theorem «{n}».lookup (t_{tp} : Generic.Ty) :\n" ++
+          s!"    IxVM.source.program.sourceFunction? (Instance.mk {q n} [t_{tp}]).symbol =\n" ++
+          s!"      some \{ types := [({q tp}, t_{tp})],\n" ++
+          s!"             params := IxVM.{functionName n}.params.map fun (p, pt) => (p, (pt.subst [({q tp}, t_{tp})]).toCore),\n" ++
+          s!"             body := IxVM.{functionName n}.body } :=\n" ++
+          s!"  Program.sourceFunction?_of_mem_one (f := IxVM.{functionName n}) IxVM.functionNames_nodup\n" ++
+          s!"    (List.getElem_mem (l := IxVM.functions) (n := {idx}) (by decide +kernel)) rfl t_{tp}\n\n"
       out := out ++ d ++ "\n" ++ MirrorGen.completeDef f ++ "\n"
       if recursive.contains n then
         report := report ++ [s!"{n}: mirror only (recursive)"]
@@ -509,12 +890,53 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F) (roots : List Strin
   let doc := "/-! Generator report:\n\n" ++ String.join (report.map (s!"* " ++ · ++ "\n")) ++ "-/\n\n"
   return out ++ doc ++ "end IxVM.Refinement.Mirrors\n"
 
-/-- Only derived proof scripts are written to disk. -/
+/-- Only derived proof scripts are written to disk. (Port of the refinement
+snapshot's three mirror files onto the PR #686 layout, for review rv3-P686-2.) -/
 def render : List (System.FilePath × String) :=
-  [(System.FilePath.mk "IxVM/IxVM/Lookup.lean", lookup IxVM.program (IxVM.functions.map (·.name))),
+  let prog := IxVM.program
+  let src := IxVM.source
+  let tagNRoots := ["IxonDeserialize::get_tagn0", "IxonDeserialize::get_tagn2", "IxonDeserialize::get_tagn4"]
+  let deserializeRoots := [
+    "UInt64::from_bytes", "UInt64::to_bytes", "UInt64::from_fields",
+    "UInt64::is_zero", "UInt64::eq", "UInt64::wrapping_succ",
+    "UInt64::saturating_pred", "UInt64::to_field", "UInt64::sub_with_borrow",
+    "UInt64::and", "UInt64::or", "UInt64::xor",
+    "IxonDeserialize::read_byte",
+    "IxonDeserialize::value_contract_from_bits",
+    "IxonDeserialize::binder_contract_from_bits",
+    "IxonDeserialize::get_lam_mode",
+    "IxonDeserialize::get_all_mode",
+    "IxonDeserialize::unpack_def_kind_safety",
+    "IxonDeserialize::assert_wire_bool",
+    "IxonDeserialize::get_quot_kind",
+    "IxonDeserialize::get_u64_list",
+    "IxonDeserialize::build_succ_chain",
+    "IxonDeserialize::get_constant",
+    "UInt32::less_than_fields"
+  ]
+  let kernelLevelsRoots := [
+    "Lists::is_empty", "Lists::length", "Lists::concat", "Lists::lookup",
+    "Lists::lookup_or_default", "Lists::drop", "Lists::take", "Lists::snoc",
+    "WordLists::depth_checked", "WordLists::length_u64", "WordLists::lookup_u64",
+    "KernelLevels::expr_inst_levels", "KernelLevels::level_eq", "KernelLevels::literal_eq",
+    "KernelSubst::ctx_trim", "KernelSubst::expr_glb",
+    "KernelSubst::expr_inst1", "KernelSubst::expr_inst_many",
+    "KernelKlimbs::klimbs_add", "KernelKlimbs::klimbs_sub", "KernelKlimbs::klimbs_le",
+    "KernelKlimbs::klimbs_dec", "KernelKlimbs::divmod_256", "KernelKlimbs::klimbs_mul",
+    "KernelKlimbs::klimbs_div", "KernelKlimbs::klimbs_mod", "KernelKlimbs::klimbs_gcd",
+    "KernelKlimbs::klimbs_pow", "KernelKlimbs::klimbs_land", "KernelKlimbs::klimbs_lor",
+    "KernelKlimbs::klimbs_xor_op", "KernelKlimbs::klimbs_shl", "KernelKlimbs::klimbs_shr"
+  ]
+  [(System.FilePath.mk "IxVM/IxVM/Lookup.lean", lookup prog (IxVM.functions.map (·.name))),
    (System.FilePath.mk "Ix/IxVM/Refinement/Mirrors/TagN.lean",
-    mirrors IxVM.program IxVM.source
-      ["IxonDeserialize::get_tagn0", "IxonDeserialize::get_tagn2", "IxonDeserialize::get_tagn4"]
-      "the TagN decoders and their callees")]
+    mirrors prog src [] ["Ix.IxVM.Refinement.Mirror", "IxVM.Lookup"] true
+      tagNRoots "the TagN decoders and their callees"),
+   (System.FilePath.mk "Ix/IxVM/Refinement/Mirrors/Deserialize.lean",
+    mirrors prog src tagNRoots ["Ix.IxVM.Refinement.Mirrors.TagN"] false
+      deserializeRoots "the UInt64 and IxonDeserialize primitives and their callees"),
+   (System.FilePath.mk "Ix/IxVM/Refinement/Mirrors/KernelLevels.lean",
+    mirrors prog src (tagNRoots ++ deserializeRoots)
+      ["Ix.IxVM.Refinement.Mirrors.Deserialize"] false
+      kernelLevelsRoots "the Lists, WordLists, KernelLevels, KernelSubst, and KernelKlimbs functions and their callees")]
 
 end IxVM.ProofGen

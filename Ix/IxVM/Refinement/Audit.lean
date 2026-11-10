@@ -1,5 +1,6 @@
 import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.TagNWide
+import Ix.IxVM.Refinement.Deserialize
 import IxC.Kernel.Audit.Axioms
 
 /-! # The IxVM ↔ IxC refinement statement, frozen
@@ -1447,11 +1448,42 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_tagn0».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«UInt64::add».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Aiur.Generic.SourceSemantics.EvalFn.exec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Aiur.Generic.Source.controlFree [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Aiur.Generic.SourceSemantics.execFn_unique_of_runs [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.TagN.controlFree [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.AcceptsRefUnder.unique [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.checkDeclsFromUnder_append [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.nfRef_deterministic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Expr.eraseMeta_idem [propext]
+#guard_kernel_axioms Ix.Cert.ixonAcceptsRef_of_under_nil [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.functionNames_nodup [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.IxonDeserialize.get_tagn0.lookup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.u64BytesMeasure_dec [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getU64List_complete [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.u64IsZero_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.u64Eq_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.u64ToField_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.u64SaturatingPred_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.u64WrappingSucc_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getQuotKind_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.unpackDefKindSafety_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.readByte_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.assertWireBool_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getQuotKind_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.unpackDefKindSafety_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_all_mode».of_eval [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_lam_mode».of_eval [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
   IxVM.Source IxVM.Static IxVM.Program IxVM.Tables IxVM.Lookup
   Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
-  Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
+  Ix.IxVM.Refinement.Mirrors.Deserialize Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
+  Ix.IxVM.Refinement.Deserialize

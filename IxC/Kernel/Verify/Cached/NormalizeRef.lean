@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.TypeChecker
+import IxC.Kernel.Verify.Mono
 
 @[expose] public section
 
@@ -86,5 +87,128 @@ theorem nfGo_of_whnf_sort {mode : CheckMode} {env : Env md} {fuel budget depth :
     (h : whnf mode env fuel depth e = .ok (.sort u)) :
     nfGo mode env fuel (budget + 2) depth e = .ok (.sort u) := by
   simp [nfGo, nfSpine, h, bind, Except.bind, pure, Except.pure]
+
+/-! ## Metadata erasure and fuel monotonicity -/
+
+@[simp] theorem Expr.eraseMeta_idem (e : Expr md) : e.eraseMeta.eraseMeta = e.eraseMeta := by
+  induction e <;> simp [Expr.eraseMeta, *]
+
+theorem nfGo_nfSpine_mono {mode : CheckMode} {env : Env md} {f f' : Nat} (hf : f ≤ f') :
+    ∀ {b b' : Nat}, b ≤ b' →
+      (∀ {depth : Nat} {e r : Expr md},
+        nfGo mode env f b depth e = .ok r → nfGo mode env f' b' depth e = .ok r) ∧
+      (∀ {depth : Nat} {e r : Expr md},
+        nfSpine mode env f b depth e = .ok r → nfSpine mode env f' b' depth e = .ok r)
+  | 0, _, _ =>
+    ⟨fun h => by simp [nfGo, throw, throwThe, MonadExceptOf.throw] at h,
+     fun h => by simp [nfSpine, throw, throwThe, MonadExceptOf.throw] at h⟩
+  | b + 1, 0, hb => absurd hb (by omega)
+  | b + 1, b' + 1, hb => by
+    have ⟨ihGo, ihSpine⟩ :=
+      nfGo_nfSpine_mono (mode := mode) (env := env) hf (Nat.le_of_succ_le_succ hb)
+    refine ⟨fun {depth e r} h => ?_, fun {depth e r} h => ?_⟩
+    · rw [nfGo.eq_def] at h ⊢
+      dsimp only [Bind.bind, Except.bind] at h ⊢
+      cases hw : whnf mode env f depth e with
+      | error err => rw [hw] at h; exact nomatch h
+      | ok w =>
+        rw [hw] at h
+        rw [whnf_mono hf hw]
+        dsimp only at h ⊢
+        cases w with
+        | lam ty body mb =>
+          dsimp only at h ⊢
+          cases hty : nfGo mode env f b depth ty with
+          | error err => rw [hty] at h; exact nomatch h
+          | ok ty' =>
+            rw [hty] at h
+            rw [ihGo hty]
+            dsimp only at h ⊢
+            cases hbody : nfGo mode env f b (depth + 1) (body.instantiate1 (.fvar depth ty)) with
+            | error err => rw [hbody] at h; exact nomatch h
+            | ok body' =>
+              rw [hbody] at h
+              rw [ihGo hbody]
+              exact h
+        | forallE ty body mb =>
+          dsimp only at h ⊢
+          cases hty : nfGo mode env f b depth ty with
+          | error err => rw [hty] at h; exact nomatch h
+          | ok ty' =>
+            rw [hty] at h
+            rw [ihGo hty]
+            dsimp only at h ⊢
+            cases hbody : nfGo mode env f b (depth + 1) (body.instantiate1 (.fvar depth ty)) with
+            | error err => rw [hbody] at h; exact nomatch h
+            | ok body' =>
+              rw [hbody] at h
+              rw [ihGo hbody]
+              exact h
+        | _ => exact ihSpine h
+    · cases e with
+      | app fn a =>
+        rw [nfSpine.eq_def] at h ⊢
+        dsimp only [Bind.bind, Except.bind] at h ⊢
+        cases hfn : nfSpine mode env f b depth fn with
+        | error err => rw [hfn] at h; exact nomatch h
+        | ok fn' =>
+          rw [hfn] at h
+          rw [ihSpine hfn]
+          dsimp only at h ⊢
+          cases ha : nfGo mode env f b depth a with
+          | error err => rw [ha] at h; exact nomatch h
+          | ok a' =>
+            rw [ha] at h
+            rw [ihGo ha]
+            exact h
+      | proj s i p =>
+        rw [nfSpine.eq_def] at h ⊢
+        dsimp only [Bind.bind, Except.bind] at h ⊢
+        cases hp : nfGo mode env f b depth p with
+        | error err => rw [hp] at h; exact nomatch h
+        | ok p' =>
+          rw [hp] at h
+          rw [ihGo hp]
+          exact h
+      | _ =>
+        rw [nfSpine.eq_def] at h ⊢
+        exact h
+
+/-- **`nfGo` is monotone in both `whnf` fuel and recursion budget.** -/
+theorem nfGo_mono {mode : CheckMode} {env : Env md} {f f' b b' : Nat}
+    (hf : f ≤ f') (hb : b ≤ b') {depth : Nat} {e r : Expr md}
+    (h : nfGo mode env f b depth e = .ok r) :
+    nfGo mode env f' b' depth e = .ok r :=
+  (nfGo_nfSpine_mono hf hb).1 h
+
+/-- **`nfSpine` is monotone in both `whnf` fuel and recursion budget.** -/
+theorem nfSpine_mono {mode : CheckMode} {env : Env md} {f f' b b' : Nat}
+    (hf : f ≤ f') (hb : b ≤ b') {depth : Nat} {e r : Expr md}
+    (h : nfSpine mode env f b depth e = .ok r) :
+    nfSpine mode env f' b' depth e = .ok r :=
+  (nfGo_nfSpine_mono hf hb).2 h
+
+/-- **The reference normalizer is monotone in its fuel.** -/
+theorem nfRef_mono {mode : CheckMode} {env : Env md} {f f' : Nat} (hf : f ≤ f')
+    {depth : Nat} {e r : Expr md} (h : nfRef mode env f depth e = .ok r) :
+    nfRef mode env f' depth e = .ok r := by
+  unfold nfRef at h ⊢
+  dsimp only [Bind.bind, Except.bind] at h ⊢
+  cases ha : annotateCore mode env f depth e with
+  | error err => rw [ha] at h; exact nomatch h
+  | ok a =>
+    rw [ha] at h
+    rw [annotateCore_mono hf ha]
+    exact nfGo_mono hf hf h
+
+/-- **Two accepting runs of `nfRef`, at any two fuels, return the same normal
+form.** -/
+theorem nfRef_deterministic {mode : CheckMode} {env : Env md} {f₁ f₂ depth : Nat}
+    {e r₁ r₂ : Expr md}
+    (h₁ : nfRef mode env f₁ depth e = .ok r₁)
+    (h₂ : nfRef mode env f₂ depth e = .ok r₂) : r₁ = r₂ := by
+  have h := nfRef_mono (Nat.le_max_left f₁ f₂) h₁
+  rw [nfRef_mono (Nat.le_max_right f₁ f₂) h₂] at h
+  exact (Except.ok.inj h).symm
 
 end Ix.Kernel
