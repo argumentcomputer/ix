@@ -108,7 +108,7 @@ theorem collision_mono {V : View} {calls₁ calls₂ : List (Call F)}
     · exact .inr (hashed_mono hsub hp)
 
 theorem Good.sub {c : Ctx} {calls₁ calls₂ : List (Call F)} (g : Good c calls₂)
-    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (hlen : calls₁.length ≤ calls₂.length) :
+    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (_hlen : calls₁.length ≤ calls₂.length) :
     Good c calls₁ :=
   ⟨fun h => g.1 (collision_mono hsub h), fun cl hcl => g.2.1 cl (hsub cl hcl),
     fun cl hcl => g.2.2.1 cl (hsub cl hcl),

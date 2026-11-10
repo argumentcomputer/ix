@@ -94,7 +94,7 @@ theorem cell_represented {rom : ROM F} {h : Heap F} {en c : String} {addr : Nat}
   rw [cell] at src
   cases src
   obtain ⟨ws, rfl, items⟩ := represents_construct_inv rep
-  exact ⟨address, ws, mem, items, rfl⟩
+  exact ⟨address, ws, mem, items, by simp [Value.type]⟩
 
 /-- **In a valid ROM, a value represents lists of one length only.** -/
 theorem spine_length_eq {rom : ROM F} (valid : rom.Valid) {en : String} {h₁ h₂ : Heap F}
