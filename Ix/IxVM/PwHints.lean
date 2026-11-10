@@ -344,10 +344,18 @@ def install (s : Setup) (addresses : Array Address) : Ix.Kernel.FEnv .anon × Na
 
 /-- The kernel's environment for a view. -/
 def KernelEnv.ofView (v : View) : Except String KernelEnv := do
-  let table ← match v.table.bind Ix.Kernel.RoleTable.ofBytes with
-    | some t => pure t
-    | none => Ix.Kernel.Reader.defaultTable
-  let pre : Ix.Kernel.Reader.Prelude .anon ← Ix.Kernel.Reader.preludeFor table
+  -- the witness's role table and its prelude; a table that does not decode
+  -- or whose prelude does not read (a malformed binding, which the circuit
+  -- refuses) falls back to the default one, so that every key is answered
+  let fallbackTable ← Ix.Kernel.Reader.defaultTable
+  let given := (v.table.bind Ix.Kernel.RoleTable.ofBytes).getD fallbackTable
+  let chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon ←
+    match Ix.Kernel.Reader.preludeFor (md := .anon) given with
+    | .ok pre => pure (given, pre)
+    | .error _ => do
+      let pre ← Ix.Kernel.Reader.preludeFor (md := .anon) fallbackTable
+      pure (fallbackTable, pre)
+  let (table, pre) := chosen
   let store : Ixon.CheckOrder.RecordStore :=
     v.records.foldl (fun m (a, c) => m.insert a c) {}
   let hints := Hints.ofStore store v.hints

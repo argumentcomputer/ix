@@ -111,8 +111,8 @@ def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
 reads, when its witness carries none: a suite that builds its IO by hand gets
 them as `IxVM.ClaimHarness`'s builders give them. -/
 def Case.withPwHints (c : Case) : Except String Case := do
-  let some claim := IxVM.PwHints.claimOf c.witness.inputIOBuffer c.witness.input | return c
-  let io ← IxVM.PwHints.withHints claim c.witness.inputIOBuffer
+  let some claim := _root_.IxVM.PwHints.claimOf c.witness.inputIOBuffer c.witness.input | return c
+  let io ← _root_.IxVM.PwHints.withHints claim c.witness.inputIOBuffer
   return { c with witness := { c.witness with inputIOBuffer := io } }
 
 /-! ## The case file
@@ -204,20 +204,20 @@ the conversion asks for answered, every datum the kernel's
 data, deterministic. Prints one `PW` line; returns the failure, if any. -/
 def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
   let io := c.witness.inputIOBuffer
-  unless IxVM.PwHints.hasHints io do return none
+  unless _root_.IxVM.PwHints.hasHints io do return none
   let t0 ← IO.monoMsNow
-  let again := IxVM.PwHints.annotate (IxVM.PwHints.stripHints io)
+  let again := _root_.IxVM.PwHints.annotate (_root_.IxVM.PwHints.stripHints io)
   let rerun ← match again with
     | .ok (io', stats) => do
-      let same := match IxVM.PwHints.tableOf io', IxVM.PwHints.tableOf io with
+      let same := match _root_.IxVM.PwHints.tableOf io', _root_.IxVM.PwHints.tableOf io with
         | .ok a, .ok b => a.size == b.size && a.toList.all fun (k, v) => b[k]? == some v
         | _, _ => false
       pure (some (stats, same))
     | .error _ => pure none
   let t1 ← IO.monoMsNow
-  match IxVM.PwHints.check io, rerun with
+  match _root_.IxVM.PwHints.check io, rerun with
   | .ok rep, some (stats, same) =>
-    let (values, blocks, extra) := IxVM.PwHints.streamCounts io
+    let (values, blocks, extra) := _root_.IxVM.PwHints.streamCounts io
     IO.println s!"PW {c.label}: {rep.render} values={values} blocks={blocks} \
       variants>0={extra} binders={stats.binders} shares={stats.shares} \
       fallbacks={stats.fallbacks} refused={stats.refused} annotate_ms={t1 - t0} \
