@@ -131,8 +131,8 @@ theorem axiomStdJ {J : Judgements md}
     (hcv : ConstantValRunJ J env cv type')
     (hok : Ix.Kernel.stdAxiomOk env ⟨cv.name, cv.levelParams, type'⟩
       = true) :
-    Nonempty (EnvModelM V μ
-      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) := by
+    ∃ mp₂ : EnvModelM V μ ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩,
+      ModelExt mp mp₂ := by
   have hcv' := hcv
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv'
@@ -192,6 +192,7 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
       = true) :
     Nonempty (EnvModelM V μ
       ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) :=
-  axiomStdJ mp (judgeSound_runJ hμ mp F) (axiomBits_runJ hμ F) hcv hok
+  let ⟨mp₂, _⟩ := axiomStdJ mp (judgeSound_runJ hμ mp F) (axiomBits_runJ hμ F) hcv hok
+  ⟨mp₂⟩
 
 end Ix.Kernel.Model

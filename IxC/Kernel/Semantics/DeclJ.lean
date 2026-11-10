@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Semantics.DeclRun
 public import IxC.Kernel.Verify.DivModInv
+public import IxC.Kernel.Semantics.DeclEta
 
 @[expose] public section
 
@@ -289,5 +290,74 @@ theorem declRun_runJ {μ : CheckMode} {F : Nat}
   | basisDecl kind => exact h
   | indDecl block nP => exact h
   | quotDecl k cv => exact h
+
+
+/-! ## The η half over a package
+
+`declEtaStepRun` reads only the records' freshness guards and cons shapes, which
+`DeclRunJ` keeps; the same proof at any package. -/
+
+/-- **The fold's η-closure half, over a package.** -/
+theorem declEtaStepRunJ {J : Judgements md}
+    {Ind : List (ConstantInfo md) → Nat → Env md → Prop}
+    {env : Env md} {d : Declaration md} {env₂ : Env md}
+    (hind : ∀ {block : List (ConstantInfo md)} {nP : Nat} {envI : Env md},
+      Ind block nP envI → EtaFamiliesClosed envI)
+    (hE : EtaFamiliesClosed env)
+    (h : DeclRunJ J Ind env d env₂) : EtaFamiliesClosed env₂ := by
+  cases d with
+  | defnDecl cv value hint =>
+    obtain ⟨type', value', hcv, -, rfl, -, -⟩ := h
+    exact EtaFamiliesClosed.cons_nonind hE
+      (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
+  | thmDecl cv value =>
+    obtain ⟨type', value', hcv, -, -, rfl⟩ := h
+    exact EtaFamiliesClosed.cons_nonind hE
+      (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
+  | opaqueDecl cv value =>
+    obtain ⟨type', value', hcv, -, rfl⟩ := h
+    exact EtaFamiliesClosed.cons_nonind hE
+      (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
+  | axiomDecl cv =>
+    -- the `Quot.sound` arm (task #293) installs nothing
+    rcases h with ⟨-, rfl⟩ | h
+    · exact hE
+    obtain ⟨type', hcv, harm⟩ := h
+    have hfresh : env.find? cv.name = none :=
+      Option.isNone_iff_eq_none.mp hcv.1
+    rcases harm with ⟨-, rfl⟩ | ⟨-, -, -, -, rfl⟩
+    · exact EtaFamiliesClosed.cons_nonind hE hfresh
+        (fun _ _ heq => nomatch heq)
+    · exact hE
+  | basisDecl kind =>
+    exact basisInstallRun_etaClosed kind.declsA h.2
+      (basisIndOk_declsA kind) hE
+  | quotDecl k cv =>
+    -- the quotient package's `type` record installs the pinned block;
+    -- its other records install nothing (task #293)
+    cases k with
+    | type => exact basisInstallRun_etaClosed _ h.2 (basisIndOk_declsA .quotK) hE
+    | _ => exact (show env₂ = env from h) ▸ hE
+  | indDecl block nP =>
+    -- a block the fold recognises as a pinned one installs the pin
+    -- (task #293)
+    simp only [DeclRunJ] at h
+    split at h
+    · exact basisInstallRun_etaClosed _ h.2 (basisIndOk_declsA _) hE
+    · exact hind h
+
+
+/-! ## A declaration stream over a package -/
+
+/-- **A stream of declaration records over a package**: each declaration's
+record at the environment the previous ones built. The inductive kind's payload
+is a parameter, read at the step's own environment. -/
+inductive DeclsRunJ (J : Judgements md)
+    (Ind : Env md → List (ConstantInfo md) → Nat → Env md → Prop) :
+    Env md → List (Declaration md) → Env md → Prop where
+  | nil {env : Env md} : DeclsRunJ J Ind env [] env
+  | cons {env env₁ env₂ : Env md} {d : Declaration md} {ds : List (Declaration md)} :
+      DeclRunJ J (Ind env) env d env₁ → DeclsRunJ J Ind env₁ ds env₂ →
+      DeclsRunJ J Ind env (d :: ds) env₂
 
 end Ix.Kernel.Semantics

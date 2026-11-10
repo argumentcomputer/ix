@@ -2,6 +2,7 @@ module
 
 import IxC.Kernel.Model.Capstone
 public import IxC.Kernel.Model.JudgeSound
+public import IxC.Kernel.Model.ThmVal
 import IxC.Kernel.Model.NatEqs
 public import IxC.Kernel.Model.DivModCert
 public import IxC.Kernel.Model.NatEqs
@@ -167,7 +168,7 @@ theorem harvestDefnJ {J : Judgements md}
     {cv : ConstantVal md} {value : Expr md} {hint : ReducibilityHint}
     {env₂ : Env md}
     (hR : DeclDefnRunJ J env cv value hint env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
   obtain ⟨type', value', hcv, hvfr, rfl, hnatc, hdmc⟩ := hR
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv
@@ -314,7 +315,7 @@ theorem harvestDefnJ {J : Judgements md}
         (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
         ψ 0 e hcb h
   -- assemble
-  refine ⟨(declStep_preserves_of_cons mp
+  refine plainExt mp (declStep_preserves_of_cons mp
     (c₀ := .defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint)
     (A := A) hfresh
     (ConsHead.ofFresh
@@ -330,7 +331,7 @@ theorem harvestDefnJ {J : Judgements md}
         (denoteMeta_erase mp.base2.acval_erase 0 value' (hA ψ)))
       hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq)) hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_) hfresh
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -519,7 +520,8 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
     {env₂ : Env md}
     (hR : DeclDefnRun μ F env cv value hint env₂) :
     Nonempty (EnvModelM V μ env₂) :=
-  harvestDefnJ mp (judgeSound_runJ hμ mp F) (declDefnRun_runJ hR)
+  let ⟨mp₂, _⟩ := harvestDefnJ mp (judgeSound_runJ hμ mp F) (declDefnRun_runJ hR)
+  ⟨mp₂⟩
 
 /-! ## The `thm` mirror (batch H2, T1)
 
@@ -548,10 +550,13 @@ species, and the P invariant stores no is-a-proposition field.  They
 are destructured away with `-`. -/
 theorem harvestThmJ {J : Judgements md}
     (mp : EnvModelM V μ env) (hJ : JudgeSound J mp.base2)
-    {cv : ConstantVal md} {value : Expr md} {env₂ : Env md}
-    (hR : DeclThmRunJ J env cv value env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
-  obtain ⟨type', value', hcv, -, hvfr, rfl⟩ := hR
+    {cv : ConstantVal md} {value type' value' : Expr md}
+    (hcv : ConstantValRunJ J env cv type') (hvfr : ValueFrontRunJ J env cv value type' value') :
+    ∃ (A : (LevelParam → Nat) → AnnotTerm)
+      (mp₂ : EnvModelM V μ
+        ⟨.thmInfo ⟨cv.name, cv.levelParams, type'⟩ (J.thmValue value value') :: env.consts⟩),
+      mp₂.base2.acval = acvalWith mp.base2.acval cv.name A ∧
+      ∀ ψ, denoteMeta mp.base2.acval env ψ 0 value' = some (A ψ) := by
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv
   obtain ⟨hvlb, hvhf, hannv, hvp, hvr, ⟨vtype, hvrun, hvde⟩⟩ := hvfr
@@ -695,7 +700,7 @@ theorem harvestThmJ {J : Judgements md}
         (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
         ψ 0 e hcb h
   -- assemble
-  refine ⟨(declStep_preserves_of_cons mp
+  refine leafWith (declStep_preserves_of_cons mp
     (c₀ := .thmInfo ⟨cv.name, cv.levelParams, type'⟩ (J.thmValue value value'))
     (A := A) hfresh
     (ConsHead.ofFresh
@@ -709,7 +714,7 @@ theorem harvestThmJ {J : Judgements md}
         (denoteMeta_erase mp.base2.acval_erase 0 value' (hA ψ)))
       hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq)) hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_) hA
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -788,8 +793,10 @@ theorem harvestThm (hμ : μ.verifiedChecks = true)
     (mp : EnvModelM V μ env)
     {cv : ConstantVal md} {value : Expr md} {env₂ : Env md}
     (hR : DeclThmRun μ F env cv value env₂) :
-    Nonempty (EnvModelM V μ env₂) :=
-  harvestThmJ mp (judgeSound_runJ hμ mp F) hR
+    Nonempty (EnvModelM V μ env₂) := by
+  obtain ⟨type', value', hcv, -, hvfr, rfl⟩ := hR
+  obtain ⟨_, mp₂, _⟩ := harvestThmJ mp (judgeSound_runJ hμ mp F) hcv hvfr
+  exact ⟨mp₂⟩
 
 /-! ## The `opaque` kind: the H2 SKIP, since unlocked
 
@@ -887,8 +894,8 @@ theorem harvestAxiomJ {J : Judgements md}
     (hmemA : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval env ψ 0 type' = some ta →
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta) :
-    Nonempty (EnvModelM V μ
-      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) := by
+    ∃ mp₂ : EnvModelM V μ ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩,
+      ModelExt mp mp₂ := by
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv
   obtain ⟨htf', hbt'⟩ := hJ.annot_syntax hann hitf hlbt
@@ -947,7 +954,7 @@ theorem harvestAxiomJ {J : Judgements md}
         (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
         ψ 0 e hcb h
   -- assemble
-  refine ⟨(declStep_preserves_of_cons mp
+  refine plainExt mp (declStep_preserves_of_cons mp
     (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
     (A := A) hfresh
     (ConsHead.ofFresh
@@ -960,7 +967,7 @@ theorem harvestAxiomJ {J : Judgements md}
       hAvclosed hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq))
     hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_) hfresh
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -1049,7 +1056,9 @@ theorem harvestAxiom (hμ : μ.verifiedChecks = true)
       ∀ ρ : Nat → V, interp V ρ (A ψ) ∈ˢ interp V ρ ta) :
     Nonempty (EnvModelM V μ
       ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) :=
-  harvestAxiomJ mp (judgeSound_runJ hμ mp F) hcv hAvclosed hAclosed hAparams hAok hAvalid hmemA
+  let ⟨mp₂, _⟩ :=
+    harvestAxiomJ mp (judgeSound_runJ hμ mp F) hcv hAvclosed hAclosed hAparams hAok hAvalid hmemA
+  ⟨mp₂⟩
 
 /-! ## The `opaque` kind, unlocked (the exposed leaf equation)
 
@@ -1067,7 +1076,7 @@ theorem harvestOpaqueJ {J : Judgements md}
     (mp : EnvModelM V μ env) (hJ : JudgeSound J mp.base2)
     {cv : ConstantVal md} {value : Expr md} {env₂ : Env md}
     (hR : DeclOpaqueRunJ J env cv value env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
   obtain ⟨type', value', hcv, hvfr, rfl⟩ := hR
   obtain ⟨hfind, hnres, hpshape, hnd, hlbt, hitf, hann, htp, htr,
     hrunT⟩ := hcv
@@ -1212,7 +1221,7 @@ theorem harvestOpaqueJ {J : Judgements md}
         (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
         ψ 0 e hcb h
   -- assemble
-  refine ⟨(declStep_preserves_of_cons mp
+  refine plainExt mp (declStep_preserves_of_cons mp
     (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
     (A := A) hfresh
     (ConsHead.ofFresh
@@ -1227,7 +1236,7 @@ theorem harvestOpaqueJ {J : Judgements md}
       hnres (fun _ heq => nomatch heq)
       (fun _ _ _ _ heq => nomatch heq))
     hAclosed
-    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_).choose⟩
+    hAparams hAok hAvalid ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_) hfresh
   · -- `htyReads`
     intro ψ
     show ∃ ta, denoteMeta (acvalWith mp.base2.acval cv.name A)
@@ -1305,6 +1314,7 @@ theorem harvestOpaque (hμ : μ.verifiedChecks = true)
     {cv : ConstantVal md} {value : Expr md} {env₂ : Env md}
     (hR : DeclOpaqueRun μ F env cv value env₂) :
     Nonempty (EnvModelM V μ env₂) :=
-  harvestOpaqueJ mp (judgeSound_runJ hμ mp F) hR
+  let ⟨mp₂, _⟩ := harvestOpaqueJ mp (judgeSound_runJ hμ mp F) hR
+  ⟨mp₂⟩
 
 end Ix.Kernel.Model

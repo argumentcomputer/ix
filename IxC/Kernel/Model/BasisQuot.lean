@@ -175,8 +175,8 @@ theorem bitAgree_quotMkA (ψ : LevelParam → Nat) :
 theorem extendQuot (mp : EnvModelM V μ env)
     (hfresh : env.find? quotName = none)
     (hwf : EnvWF ⟨quotA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨quotA :: env.consts⟩) := by
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+    ConsLeaf mp quotA := by
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .quot [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -210,11 +210,11 @@ theorem extendQuotMk (mp : EnvModelM V μ env)
     (hQ : env.find? quotName = some quotA)
     (hfresh : env.find? quotMkName = none)
     (hwf : EnvWF ⟨quotMkA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨quotMkA :: env.consts⟩) := by
+    ConsLeaf mp quotMkA := by
   have hty := fun ψ =>
     denoteMeta_quotMkA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .quotMk [ψ uN]) ψ hQ
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .quotMk [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -764,11 +764,11 @@ theorem extendQuotInd (mp : EnvModelM V μ env)
     (hM : env.find? quotMkName = some quotMkA)
     (hfresh : env.find? quotIndA.name = none)
     (hwf : EnvWF ⟨quotIndA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨quotIndA :: env.consts⟩) := by
+    ConsLeaf mp quotIndA := by
   have hty := fun ψ =>
     denoteMeta_quotIndA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .quotInd [ψ uN]) ψ hQ hM
-  refine nonempty_of_exists (declStep_preserves_of_basis_rec_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_rec_cons mp
     (A := fun ψ => AnnotTerm.const .quotInd [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -1134,11 +1134,11 @@ theorem extendQuotSound (mp : EnvModelM V μ env)
     (hE : env.find? eqName = some eqA)
     (hfresh : env.find? quotSoundA.name = none)
     (hwf : EnvWF ⟨quotSoundA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨quotSoundA :: env.consts⟩) := by
+    ConsLeaf mp quotSoundA := by
   have hty := fun ψ =>
     denoteMeta_quotSoundA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .quotSound [ψ uN]) ψ hQ hM hE
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .quotSound [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -2227,14 +2227,14 @@ theorem extendQuotLift (mp : EnvModelM V μ env)
     (hE : env.find? eqName = some eqA)
     (hfresh : env.find? quotLiftA.name = none)
     (hwf : EnvWF ⟨quotLiftA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨quotLiftA :: env.consts⟩) := by
+    ConsLeaf mp quotLiftA := by
   have hty := fun ψ =>
     denoteMeta_quotLiftA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .quotLift [ψ uN, ψ vN]) ψ hQ hE
   have hz : ∀ ψ : LevelParam → Nat,
       pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [vN]) = 0 ↔ ψ vN = 0 :=
     fun ψ => pwBit_ifAllZero_single ψ vN
-  refine nonempty_of_exists (declStep_preserves_of_basis_rec_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_rec_cons mp
     (A := fun ψ => AnnotTerm.const .quotLift [ψ uN, ψ vN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -2289,7 +2289,7 @@ theorem declBasisPB_quotK {env₁ : Env md} (mp : EnvModelM V μ env)
     (hEq : env.find? eqName = some eqA)
     (h : Ix.Kernel.Semantics.BasisInstallRun env
       Ix.Kernel.BasisKind.quotK.declsA env₁) :
-    Nonempty (EnvModelM V μ env₁) := by
+    ∃ mp₂ : EnvModelM V μ env₁, ModelExt mp mp₂ := by
   rw [show Ix.Kernel.BasisKind.quotK.declsA
     = [quotA, quotMkA, quotLiftA, quotIndA, quotSoundA] from rfl] at h
   obtain ⟨h1, h2, h3, h4, h5, hnil⟩ := h
@@ -2304,7 +2304,7 @@ theorem declBasisPB_quotK {env₁ : Env md} (mp : EnvModelM V μ env)
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
         | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
-  obtain ⟨mp1⟩ := extendQuot mp hf1  hwf1
+  obtain ⟨_, mp1, hac1⟩ := extendQuot mp hf1  hwf1
   have hQ1 : (⟨quotA :: env.consts⟩ : Env md).find? quotName
       = some quotA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
@@ -2337,7 +2337,7 @@ theorem declBasisPB_quotK {env₁ : Env md} (mp : EnvModelM V μ env)
             { pw := .ifAllZero [uN] })
           { pw := .ifAllZero [uN] } from rfl]
     simp [Expr.constsResolve, hf]
-  obtain ⟨mp2⟩ := extendQuotMk mp1 hQ1 hf2  hwf2
+  obtain ⟨_, mp2, hac2⟩ := extendQuotMk mp1 hQ1 hf2  hwf2
   have hQ2 : (⟨quotMkA :: quotA :: env.consts⟩ : Env md).find? quotName
       = some quotA := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hQ1
@@ -2410,7 +2410,7 @@ theorem declBasisPB_quotK {env₁ : Env md} (mp : EnvModelM V μ env)
           simp [Expr.constsResolve, quotLiftRule, hfE], rfl,
           fun lvls pins heqf => nomatch heqf⟩
       · exact nomatch hr'
-  obtain ⟨mp3⟩ := extendQuotLift mp2 hQ2 hM2 hE2 hf3  hwf3
+  obtain ⟨_, mp3, hac3⟩ := extendQuotLift mp2 hQ2 hM2 hE2 hf3  hwf3
   have hQ3 : (⟨quotLiftA :: quotMkA :: quotA :: env.consts⟩
       : Env md).find? quotName = some quotA := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hQ2
@@ -2478,7 +2478,7 @@ theorem declBasisPB_quotK {env₁ : Env md} (mp : EnvModelM V μ env)
           simp [Expr.constsResolve, quotIndRule, hfQ, hfM], rfl,
           fun lvls pins heqf => nomatch heqf⟩
       · exact nomatch hr'
-  obtain ⟨mp4⟩ := extendQuotInd mp3 hQ3 hM3 hf4  hwf4
+  obtain ⟨_, mp4, hac4⟩ := extendQuotInd mp3 hQ3 hM3 hf4  hwf4
   have hQ4 : (⟨quotIndA :: quotLiftA :: quotMkA :: quotA
       :: env.consts⟩ : Env md).find? quotName = some quotA := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hQ3
@@ -2538,7 +2538,8 @@ theorem declBasisPB_quotK {env₁ : Env md} (mp : EnvModelM V μ env)
               { pw := .ifAllZero [] })
             { pw := .ifAllZero [] } from rfl]
     simp [Expr.constsResolve, hfQ, hfM, hfE]
-  exact extendQuotSound mp4 hQ4 hM4 hE4 hf5  hwf5
+  obtain ⟨_, mp5, hac5⟩ := extendQuotSound mp4 hQ4 hM4 hE4 hf5  hwf5
+  exact ⟨mp5, ((((((ModelExt.refl (mp₁ := mp)).plain hac1 hf1).plain hac2 hf2).plain hac3 hf3).plain hac4 hf4).plain hac5 hf5)⟩
 
 end Quot
 

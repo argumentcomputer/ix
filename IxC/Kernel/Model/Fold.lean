@@ -103,12 +103,12 @@ theorem basisStepPB_of : (BasisStepPB (md := md)) V μ := by
   intro env mp kind env₂ h
   obtain ⟨hEq, hchain⟩ := h
   cases kind with
-  | eqK => exact declBasisPB_eqK mp hchain
-  | natK => exact declBasisPB_natK mp hchain
-  | punitK => exact declBasisPB_punitK mp hchain
-  | emptyK => exact declBasisPB_emptyK mp hchain
-  | falseK => exact declBasisPB_falseK mp hchain
-  | quotK => exact declBasisPB_quotK mp (hEq rfl) hchain
+  | eqK => exact (declBasisPB_eqK mp hchain).elim fun mp₂ _ => ⟨mp₂⟩
+  | natK => exact (declBasisPB_natK mp hchain).elim fun mp₂ _ => ⟨mp₂⟩
+  | punitK => exact (declBasisPB_punitK mp hchain).elim fun mp₂ _ => ⟨mp₂⟩
+  | emptyK => exact (declBasisPB_emptyK mp hchain).elim fun mp₂ _ => ⟨mp₂⟩
+  | falseK => exact (declBasisPB_falseK mp hchain).elim fun mp₂ _ => ⟨mp₂⟩
+  | quotK => exact (declBasisPB_quotK mp (hEq rfl) hchain).elim fun mp₂ _ => ⟨mp₂⟩
 
 /-- The inductive kind's whole step — **no longer routed** (task #161,
 IND TIER part 10): `indStepPB_of` below discharges it.  The definition
