@@ -121,8 +121,21 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
       | throw s!"{n} is not in the Ixon environment"
     let ctx ← Ix.ClaimContext.ofEnv e true
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
+  -- no advice under user axioms: `Even` with an unused, well-typed `axiom ax : Prop`
+  let underAxiom : Builder := fun _ => do
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+    let a := Address.blake3 (Ixon.ser ax)
+    let e := env.storeConst a ax
+    let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
+    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString "IxVMInd.Even"))
+      | throw "IxVMInd.Even is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv e true
+    Case.ofClaim "check IxVMInd.Even under a user axiom (no model advice)" e
+      (.check { ctx with axioms := some axioms.root } target none)
+      (({} : Std.HashMap _ _).insert axioms.root axioms) (accept := false)
+      (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
-    (names.map (mkCase tweaked "a different valid model"))
+    (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom]
   let rc ← runCases "ixvm-model-advice" cases.toArray
   return if digestOk && differ && rc == 0 then 0 else 1
 

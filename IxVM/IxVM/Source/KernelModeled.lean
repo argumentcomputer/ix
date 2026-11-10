@@ -919,6 +919,16 @@ def check_modeled_block := aiur_fn⟦
 
 def check_family := aiur_fn⟦
   fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
+      -- No model advice under user axioms: the claim's axioms tree is empty, so every axiom
+      -- this claim checks, the advice's and the block closure's, is standard or inert, and
+      -- no accepted constant uses an inert one. The role binding binds Lean's compiler-trust
+      -- axioms as inert roles, so a claim over Lean's `Init` lists no user axiom.
+      match KernelRoles::role_ctx_axioms(rc) {
+        RBTreeMap::RBTreeMap::Nil => {  () } ,
+        RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
+          assert_eq!(0, 1, "model advice: a claim with user axioms");
+          () } ,
+      };
       let s0 = read_payload(block);
       let (rb, s1) = IxonDeserialize::get_address(s0);
       assert_eq!(Bytes::address_eq(rb, rec_block), 1,
