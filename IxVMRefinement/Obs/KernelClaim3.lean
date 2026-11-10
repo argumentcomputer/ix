@@ -17,6 +17,83 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The `let`-bound match of `KernelClaim::get_reveal_info` at `[1, 1, 1, 1, 1, 1, 9, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelClaim::get_reveal_info».Seg1 (e0_b8 e1_mask_hi e2_b0 e3_b1 e4_b2 e5_b3 e6_b4 e7_b5 e8_b6 e9_b7 e10_mask_lo e11_mask e12_s e13_variant e14_s e15_stream : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n0
+      (m2012 : Heap F)
+      (hv2005 : e2_b0 = (.field 0))
+      (he2010 : r = (.tuple [(.ptr (.enum Names.«Lists::Node<([Field; 8], KernelClaim::RevealMutConstInfo)>») (h).length), e12_s]))
+      (hm2020 : m2012 = (h ++ [(.construct Names.«Lists::Node<([Field; 8], KernelClaim::RevealMutConstInfo)>» "Nil" [])]))
+      (he2031 : h' = m2012)
+      (hc2032 : calls = [])
+  | n1
+      (m2039 : Heap F) (cs2049 : List (Call F)) (x_count : SourceValue F) (x_s2 : SourceValue F) (cs2076 : List (Call F))
+      (hne2033 : (e2_b0 : SourceValue F) ≠ (.field 0))
+      (hv2037 : e2_b0 = (.field 1))
+      (ev2051 : ObsFn W "IxonDeserialize::get_tagn0" [e12_s] h (.tuple [x_count, x_s2]) m2039 cs2049)
+      (ev2078 : ObsFn W "KernelClaim::get_mut_entry_list_inner" [x_s2, x_count] m2039 r h' cs2076)
+      (hc2095 : calls = ((⟨"IxonDeserialize::get_tagn0", [e12_s], h⟩ : Call F) :: (cs2049 ++ ((⟨"KernelClaim::get_mut_entry_list_inner", [x_s2, x_count], m2039⟩ : Call F) :: cs2076))))
+
+/-- **Every observed derivation of the `let`-bound match of `KernelClaim::get_reveal_info` at `[1, 1, 1, 1, 1, 1, 9, 0]` takes one of its paths.** -/
+theorem «KernelClaim::get_reveal_info».seg1 {e0_b8 e1_mask_hi e2_b0 e3_b1 e4_b2 e5_b3 e6_b4 e7_b5 e8_b6 e9_b7 e10_mask_lo e11_mask e12_s e13_variant e14_s e15_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)}
+    (d0 : ObsExpr W [] [("b8", e0_b8), ("mask_hi", e1_mask_hi), ("b0", e2_b0), ("b1", e3_b1), ("b2", e4_b2), ("b3", e5_b3), ("b4", e6_b4), ("b5", e7_b5), ("b6", e8_b6), ("b7", e9_b7), ("mask_lo", e10_mask_lo), ("mask", e11_mask), ("s", e12_s), ("variant", e13_variant), ("s", e14_s), ("stream", e15_stream)] (Expr.sub IxVM.KernelClaim.get_reveal_info.body [1, 1, 1, 1, 1, 1, 9, 0]) h r h' calls) :
+    «KernelClaim::get_reveal_info».Seg1 e0_b8 e1_mask_hi e2_b0 e3_b1 e4_b2 e5_b3 e6_b4 e7_b5 e8_b6 e9_b7 e10_mask_lo e11_mask e12_s e13_variant e14_s e15_stream h r h' calls := by
+  simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelClaim.get_reveal_info, List.map_cons, List.map_nil] at d0
+  obtain ⟨v1992, m1993, bs1994, body1995, c1996, c1997, d1998, sel1999, d2000, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l2001, rfl, rfl⟩ := d1998.var_inv
+  simp at l2001
+  subst l2001
+  rcases selectArm_cons_inv sel1999 with ⟨mt2002, rfl⟩ | ⟨nm2003, sel2004⟩
+  · obtain ⟨hv2005, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt2002
+    obtain ⟨vs2006, a2007, rfl⟩ := d2000.tuple_inv
+    obtain ⟨v2008, vs2011, m2012, c2013, c2014, rfl, d2015, a2016, rfl⟩ := a2007.cons_inv
+    obtain ⟨v2017, m2018, d2019, rfl, hm2020⟩ := d2015.store_inv
+    obtain ⟨vs2021, a2022, hres2023⟩ := d2019.construct_inv
+    rw [Names.n11366054579103077952] at hres2023
+    subst hres2023
+    obtain ⟨rfl, rfl, rfl⟩ := a2022.nil_inv
+    obtain ⟨v2009, vs2024, m2025, c2026, c2027, rfl, d2028, a2029, rfl⟩ := a2016.cons_inv
+    obtain ⟨l2030, rfl, rfl⟩ := d2028.var_inv
+    simp at l2030
+    subst l2030
+    obtain ⟨rfl, rfl, rfl⟩ := a2029.nil_inv
+    try simp only [Value.type, List.map_cons, List.map_nil] at hv2005 hm2020 ⊢
+    exact «KernelClaim::get_reveal_info».Seg1.n0 _ hv2005 rfl hm2020 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne2033 := MatchesConst.none_inv (MatchesConst.literal 0) nm2003
+    rcases selectArm_cons_inv sel2004 with ⟨mt2034, rfl⟩ | ⟨nm2035, sel2036⟩
+    · obtain ⟨hv2037, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt2034
+      obtain ⟨v2038, m2039, bs2040, c2041, c2042, d2043, mt2044, d2045, rfl⟩ := d2000.letValue_inv
+      obtain ⟨vs2046, m2047, c2048, cs2049, a2050, ev2051, rfl⟩ := d2043.call_inv
+      rw [instanceName_plain_some] at ev2051
+      obtain ⟨v2052, vs2053, m2054, c2055, c2056, rfl, d2057, a2058, rfl⟩ := a2050.cons_inv
+      obtain ⟨l2059, rfl, rfl⟩ := d2057.var_inv
+      simp at l2059
+      subst l2059
+      obtain ⟨rfl, rfl, rfl⟩ := a2058.nil_inv
+      obtain ⟨vs2060, hv2061, -, ml2062⟩ := matchPattern_tuple_inv mt2044
+      subst hv2061
+      obtain ⟨x_count, vs2063, b2064, b2065, rfl, mt2066, ml2067, rfl⟩ := matchListWith_cons_inv ml2062
+      obtain rfl := matchPattern_bind_inv mt2066
+      obtain ⟨x_s2, vs2068, b2069, b2070, rfl, mt2071, ml2072, rfl⟩ := matchListWith_cons_inv ml2067
+      obtain rfl := matchPattern_bind_inv mt2071
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml2072
+      obtain ⟨vs2073, m2074, c2075, cs2076, a2077, ev2078, rfl⟩ := d2045.call_inv
+      rw [instanceName_plain_some] at ev2078
+      obtain ⟨v2079, vs2081, m2082, c2083, c2084, rfl, d2085, a2086, rfl⟩ := a2077.cons_inv
+      obtain ⟨l2087, rfl, rfl⟩ := d2085.var_inv
+      simp at l2087
+      subst l2087
+      obtain ⟨v2080, vs2088, m2089, c2090, c2091, rfl, d2092, a2093, rfl⟩ := a2086.cons_inv
+      obtain ⟨l2094, rfl, rfl⟩ := d2092.var_inv
+      simp at l2094
+      subst l2094
+      obtain ⟨rfl, rfl, rfl⟩ := a2093.nil_inv
+      exact «KernelClaim::get_reveal_info».Seg1.n1 _ _ _ _ _ hne2033 hv2037 ev2051 ev2078 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne2096 := MatchesConst.none_inv (MatchesConst.literal 1) nm2035
+      exact (selectArm_nil_inv sel2036).elim
+
 /-- The evaluation paths of `KernelClaim::get_reveal_info`: one constructor per combination of selected arms. -/
 inductive «KernelClaim::get_reveal_info».Path (x_stream : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
@@ -145,33 +222,19 @@ inductive «KernelClaim::get_reveal_info».Path (x_stream : SourceValue F) (h : 
       (he1952 : r = (.tuple [(.construct "KernelClaim::RevealConstantInfo" "DPrj" [x_idx, x_block]), x_s_1937]))
       (he1985 : h' = m1905)
       (hc1986 : calls = ((⟨"IxonDeserialize::read_byte", [x_stream], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonDeserialize::get_tagn0", [x_s], m2⟩ : Call F) :: (cs47 ++ ((⟨"UInt8::bit_decomposition", [v86], m37⟩ : Call F) :: (cs83 ++ ((⟨"UInt8::bit_decomposition", [v163], m73⟩ : Call F) :: (cs160 ++ ((⟨"UInt8::to_field", [x_variant], m150⟩ : Call F) :: (cs245 ++ ((⟨"KernelClaim::get_opt_u64_masked", [x_b0, x_s_61], m234⟩ : Call F) :: (cs1871 ++ ((⟨"KernelClaim::get_opt_addr_masked", [x_b1, x_s_1893], m1861⟩ : Call F) :: cs1915))))))))))))))
-  | n8_n0
-      (m2 : Heap F) (cs12 : List (Call F)) (x_variant : SourceValue F) (x_s : SourceValue F) (m37 : Heap F) (cs47 : List (Call F)) (x_mask : SourceValue F) (x_s_61 : SourceValue F) (m73 : Heap F) (cs83 : List (Call F)) (v86 : SourceValue F) (x_b1 : SourceValue F) (x_b2 : SourceValue F) (x_b3 : SourceValue F) (x_b4 : SourceValue F) (x_b5 : SourceValue F) (x_b6 : SourceValue F) (x_b7 : SourceValue F) (m150 : Heap F) (cs160 : List (Call F)) (v163 : SourceValue F) (x_b8 : SourceValue F) (w186 : SourceValue F) (w187 : SourceValue F) (w188 : SourceValue F) (w189 : SourceValue F) (w190 : SourceValue F) (w191 : SourceValue F) (w192 : SourceValue F) (m234 : Heap F) (cs245 : List (Call F)) (m2019 : Heap F)
+  | n8
+      (m2 : Heap F) (cs12 : List (Call F)) (x_variant : SourceValue F) (x_s : SourceValue F) (m37 : Heap F) (cs47 : List (Call F)) (x_mask : SourceValue F) (x_s_61 : SourceValue F) (m73 : Heap F) (cs83 : List (Call F)) (v86 : SourceValue F) (x_b0 : SourceValue F) (x_b1 : SourceValue F) (x_b2 : SourceValue F) (x_b3 : SourceValue F) (x_b4 : SourceValue F) (x_b5 : SourceValue F) (x_b6 : SourceValue F) (x_b7 : SourceValue F) (m150 : Heap F) (cs160 : List (Call F)) (v163 : SourceValue F) (x_b8 : SourceValue F) (w186 : SourceValue F) (w187 : SourceValue F) (w188 : SourceValue F) (w189 : SourceValue F) (w190 : SourceValue F) (w191 : SourceValue F) (w192 : SourceValue F) (m234 : Heap F) (cs245 : List (Call F)) (m2098 : Heap F) (cs2100 : List (Call F)) (x_components : SourceValue F) (x_s_2109 : SourceValue F)
       (ev14 : ObsFn W "IxonDeserialize::read_byte" [x_stream] h (.tuple [x_variant, x_s]) m2 cs12)
       (ev49 : ObsFn W "IxonDeserialize::get_tagn0" [x_s] m2 (.tuple [x_mask, x_s_61]) m37 cs47)
       (pr95 : projectValue (x_mask : SourceValue F) 0 = .ok v86)
-      (ev85 : ObsFn W "UInt8::bit_decomposition" [v86] m37 (.tuple [(.field 0), x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7]) m73 cs83)
+      (ev85 : ObsFn W "UInt8::bit_decomposition" [v86] m37 (.tuple [x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7]) m73 cs83)
       (pr172 : projectValue (x_mask : SourceValue F) 1 = .ok v163)
       (ev162 : ObsFn W "UInt8::bit_decomposition" [v163] m73 (.tuple [x_b8, w186, w187, w188, w189, w190, w191, w192]) m150 cs160)
       (ev247 : ObsFn W "UInt8::to_field" [x_variant] m150 (.field 8) m234 cs245)
-      (hm2027 : m2019 = (m234 ++ [(.construct Names.«Lists::Node<([Field; 8], KernelClaim::RevealMutConstInfo)>» "Nil" [])]))
-      (he2051 : r = (.tuple [(.construct "KernelClaim::RevealConstantInfo" "Muts" [(.ptr (.enum Names.«Lists::Node<([Field; 8], KernelClaim::RevealMutConstInfo)>») (m234).length)]), x_s_61]))
-      (he2076 : h' = m2019)
-      (hc2077 : calls = ((⟨"IxonDeserialize::read_byte", [x_stream], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonDeserialize::get_tagn0", [x_s], m2⟩ : Call F) :: (cs47 ++ ((⟨"UInt8::bit_decomposition", [v86], m37⟩ : Call F) :: (cs83 ++ ((⟨"UInt8::bit_decomposition", [v163], m73⟩ : Call F) :: (cs160 ++ ((⟨"UInt8::to_field", [x_variant], m150⟩ : Call F) :: cs245))))))))))
-  | n8_n1
-      (m2 : Heap F) (cs12 : List (Call F)) (x_variant : SourceValue F) (x_s : SourceValue F) (m37 : Heap F) (cs47 : List (Call F)) (x_mask : SourceValue F) (x_s_61 : SourceValue F) (m73 : Heap F) (cs83 : List (Call F)) (v86 : SourceValue F) (x_b1 : SourceValue F) (x_b2 : SourceValue F) (x_b3 : SourceValue F) (x_b4 : SourceValue F) (x_b5 : SourceValue F) (x_b6 : SourceValue F) (x_b7 : SourceValue F) (m150 : Heap F) (cs160 : List (Call F)) (v163 : SourceValue F) (x_b8 : SourceValue F) (w186 : SourceValue F) (w187 : SourceValue F) (w188 : SourceValue F) (w189 : SourceValue F) (w190 : SourceValue F) (w191 : SourceValue F) (w192 : SourceValue F) (m234 : Heap F) (cs245 : List (Call F)) (m1993 : Heap F) (m2084 : Heap F) (cs2094 : List (Call F)) (x_count : SourceValue F) (x_s2 : SourceValue F) (cs2121 : List (Call F)) (x_components : SourceValue F) (x_s_2143 : SourceValue F)
-      (ev14 : ObsFn W "IxonDeserialize::read_byte" [x_stream] h (.tuple [x_variant, x_s]) m2 cs12)
-      (ev49 : ObsFn W "IxonDeserialize::get_tagn0" [x_s] m2 (.tuple [x_mask, x_s_61]) m37 cs47)
-      (pr95 : projectValue (x_mask : SourceValue F) 0 = .ok v86)
-      (ev85 : ObsFn W "UInt8::bit_decomposition" [v86] m37 (.tuple [(.field 1), x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7]) m73 cs83)
-      (pr172 : projectValue (x_mask : SourceValue F) 1 = .ok v163)
-      (ev162 : ObsFn W "UInt8::bit_decomposition" [v163] m73 (.tuple [x_b8, w186, w187, w188, w189, w190, w191, w192]) m150 cs160)
-      (ev247 : ObsFn W "UInt8::to_field" [x_variant] m150 (.field 8) m234 cs245)
-      (ev2096 : ObsFn W "IxonDeserialize::get_tagn0" [x_s_61] m234 (.tuple [x_count, x_s2]) m2084 cs2094)
-      (ev2123 : ObsFn W "KernelClaim::get_mut_entry_list_inner" [x_s2, x_count] m2084 (.tuple [x_components, x_s_2143]) m1993 cs2121)
-      (he2158 : r = (.tuple [(.construct "KernelClaim::RevealConstantInfo" "Muts" [x_components]), x_s_2143]))
-      (he2183 : h' = m1993)
-      (hc2184 : calls = ((⟨"IxonDeserialize::read_byte", [x_stream], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonDeserialize::get_tagn0", [x_s], m2⟩ : Call F) :: (cs47 ++ ((⟨"UInt8::bit_decomposition", [v86], m37⟩ : Call F) :: (cs83 ++ ((⟨"UInt8::bit_decomposition", [v163], m73⟩ : Call F) :: (cs160 ++ ((⟨"UInt8::to_field", [x_variant], m150⟩ : Call F) :: (cs245 ++ ((⟨"IxonDeserialize::get_tagn0", [x_s_61], m234⟩ : Call F) :: (cs2094 ++ ((⟨"KernelClaim::get_mut_entry_list_inner", [x_s2, x_count], m2084⟩ : Call F) :: cs2121))))))))))))))
+      (sg2105 : «KernelClaim::get_reveal_info».Seg1 x_b8 (.tuple [x_b8, w186, w187, w188, w189, w190, w191, w192]) x_b0 x_b1 x_b2 x_b3 x_b4 x_b5 x_b6 x_b7 (.tuple [x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7]) x_mask x_s_61 x_variant x_s x_stream m234 (.tuple [x_components, x_s_2109]) m2098 cs2100)
+      (he2124 : r = (.tuple [(.construct "KernelClaim::RevealConstantInfo" "Muts" [x_components]), x_s_2109]))
+      (he2149 : h' = m2098)
+      (hc2150 : calls = ((⟨"IxonDeserialize::read_byte", [x_stream], h⟩ : Call F) :: (cs12 ++ ((⟨"IxonDeserialize::get_tagn0", [x_s], m2⟩ : Call F) :: (cs47 ++ ((⟨"UInt8::bit_decomposition", [v86], m37⟩ : Call F) :: (cs83 ++ ((⟨"UInt8::bit_decomposition", [v163], m73⟩ : Call F) :: (cs160 ++ ((⟨"UInt8::to_field", [x_variant], m150⟩ : Call F) :: (cs245 ++ cs2100)))))))))))
 
 /-- **Every observed derivation of `KernelClaim::get_reveal_info` takes one of its paths.** -/
 theorem «KernelClaim::get_reveal_info».obs {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1082,105 +1145,33 @@ theorem «KernelClaim::get_reveal_info».obs {x_stream : SourceValue F} {h h' : 
                   rcases selectArm_cons_inv sel1858 with ⟨mt1988, rfl⟩ | ⟨nm1989, sel1990⟩
                   · obtain ⟨hv1991, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 8) mt1988
                     subst hv1991
-                    obtain ⟨v1992, m1993, bs1994, c1995, c1996, d1997, mt1998, d1999, rfl⟩ := d241.letValue_inv
-                    obtain ⟨v2000, m2001, bs2002, body2003, c2004, c2005, d2006, sel2007, d2008, rfl⟩ := d1997.matchValue_inv
-                    obtain ⟨l2009, rfl, rfl⟩ := d2006.var_inv
-                    simp at l2009
-                    subst l2009
-                    rcases selectArm_cons_inv sel2007 with ⟨mt2010, rfl⟩ | ⟨nm2011, sel2012⟩
-                    · obtain ⟨hv2013, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt2010
-                      subst hv2013
-                      obtain ⟨vs2014, a2015, rfl⟩ := d2008.tuple_inv
-                      obtain ⟨v2016, vs2018, m2019, c2020, c2021, rfl, d2022, a2023, rfl⟩ := a2015.cons_inv
-                      obtain ⟨v2024, m2025, d2026, rfl, hm2027⟩ := d2022.store_inv
-                      obtain ⟨vs2028, a2029, hres2030⟩ := d2026.construct_inv
-                      rw [Names.n11366054579103077952] at hres2030
-                      subst hres2030
-                      obtain ⟨rfl, rfl, rfl⟩ := a2029.nil_inv
-                      obtain ⟨v2017, vs2031, m2032, c2033, c2034, rfl, d2035, a2036, rfl⟩ := a2023.cons_inv
-                      obtain ⟨l2037, rfl, rfl⟩ := d2035.var_inv
-                      simp at l2037
-                      subst l2037
-                      obtain ⟨rfl, rfl, rfl⟩ := a2036.nil_inv
-                      have ml2038 := matchPattern_tuple_tuple_inv mt1998
-                      obtain ⟨b2039, b2040, mt2041, ml2042, rfl⟩ := matchListWith_cons_cons_inv ml2038
-                      obtain rfl := matchPattern_bind_inv mt2041
-                      obtain ⟨b2043, b2044, mt2045, ml2046, rfl⟩ := matchListWith_cons_cons_inv ml2042
-                      obtain rfl := matchPattern_bind_inv mt2045
-                      obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml2046
-                      obtain ⟨vs2047, a2048, rfl⟩ := d1999.tuple_inv
-                      obtain ⟨v2049, vs2052, m2053, c2054, c2055, rfl, d2056, a2057, rfl⟩ := a2048.cons_inv
-                      obtain ⟨vs2058, a2059, hres2060⟩ := d2056.construct_inv
-                      rw [instanceName_plain_some] at hres2060
-                      subst hres2060
-                      obtain ⟨v2061, vs2062, m2063, c2064, c2065, rfl, d2066, a2067, rfl⟩ := a2059.cons_inv
-                      obtain ⟨l2068, rfl, rfl⟩ := d2066.var_inv
-                      simp at l2068
-                      subst l2068
-                      obtain ⟨rfl, rfl, rfl⟩ := a2067.nil_inv
-                      obtain ⟨v2050, vs2069, m2070, c2071, c2072, rfl, d2073, a2074, rfl⟩ := a2057.cons_inv
-                      obtain ⟨l2075, rfl, rfl⟩ := d2073.var_inv
-                      simp at l2075
-                      subst l2075
-                      obtain ⟨rfl, rfl, rfl⟩ := a2074.nil_inv
-                      try simp only [Value.type, List.map_cons, List.map_nil] at ev14 ev49 pr95 ev85 pr172 ev162 ev247 hne543 hne1039 hne1223 hne1407 hne1591 hne1723 hne1855 hne1987 hm2027 ⊢
-                      exact «KernelClaim::get_reveal_info».Path.n8_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 ev49 pr95 ev85 pr172 ev162 ev247 hm2027 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                    · have hne2078 := MatchesConst.none_inv (MatchesConst.literal 0) nm2011
-                      rcases selectArm_cons_inv sel2012 with ⟨mt2079, rfl⟩ | ⟨nm2080, sel2081⟩
-                      · obtain ⟨hv2082, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt2079
-                        subst hv2082
-                        obtain ⟨v2083, m2084, bs2085, c2086, c2087, d2088, mt2089, d2090, rfl⟩ := d2008.letValue_inv
-                        obtain ⟨vs2091, m2092, c2093, cs2094, a2095, ev2096, rfl⟩ := d2088.call_inv
-                        rw [instanceName_plain_some] at ev2096
-                        obtain ⟨v2097, vs2098, m2099, c2100, c2101, rfl, d2102, a2103, rfl⟩ := a2095.cons_inv
-                        obtain ⟨l2104, rfl, rfl⟩ := d2102.var_inv
-                        simp at l2104
-                        subst l2104
-                        obtain ⟨rfl, rfl, rfl⟩ := a2103.nil_inv
-                        obtain ⟨vs2105, hv2106, -, ml2107⟩ := matchPattern_tuple_inv mt2089
-                        subst hv2106
-                        obtain ⟨x_count, vs2108, b2109, b2110, rfl, mt2111, ml2112, rfl⟩ := matchListWith_cons_inv ml2107
-                        obtain rfl := matchPattern_bind_inv mt2111
-                        obtain ⟨x_s2, vs2113, b2114, b2115, rfl, mt2116, ml2117, rfl⟩ := matchListWith_cons_inv ml2112
-                        obtain rfl := matchPattern_bind_inv mt2116
-                        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml2117
-                        obtain ⟨vs2118, m2119, c2120, cs2121, a2122, ev2123, rfl⟩ := d2090.call_inv
-                        rw [instanceName_plain_some] at ev2123
-                        obtain ⟨v2124, vs2126, m2127, c2128, c2129, rfl, d2130, a2131, rfl⟩ := a2122.cons_inv
-                        obtain ⟨l2132, rfl, rfl⟩ := d2130.var_inv
-                        simp at l2132
-                        subst l2132
-                        obtain ⟨v2125, vs2133, m2134, c2135, c2136, rfl, d2137, a2138, rfl⟩ := a2131.cons_inv
-                        obtain ⟨l2139, rfl, rfl⟩ := d2137.var_inv
-                        simp at l2139
-                        subst l2139
-                        obtain ⟨rfl, rfl, rfl⟩ := a2138.nil_inv
-                        obtain ⟨vs2140, hv2141, -, ml2142⟩ := matchPattern_tuple_inv mt1998
-                        subst hv2141
-                        obtain ⟨x_components, vs2144, b2145, b2146, rfl, mt2147, ml2148, rfl⟩ := matchListWith_cons_inv ml2142
-                        obtain rfl := matchPattern_bind_inv mt2147
-                        obtain ⟨x_s_2143, vs2149, b2150, b2151, rfl, mt2152, ml2153, rfl⟩ := matchListWith_cons_inv ml2148
-                        obtain rfl := matchPattern_bind_inv mt2152
-                        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml2153
-                        obtain ⟨vs2154, a2155, rfl⟩ := d1999.tuple_inv
-                        obtain ⟨v2156, vs2159, m2160, c2161, c2162, rfl, d2163, a2164, rfl⟩ := a2155.cons_inv
-                        obtain ⟨vs2165, a2166, hres2167⟩ := d2163.construct_inv
-                        rw [instanceName_plain_some] at hres2167
-                        subst hres2167
-                        obtain ⟨v2168, vs2169, m2170, c2171, c2172, rfl, d2173, a2174, rfl⟩ := a2166.cons_inv
-                        obtain ⟨l2175, rfl, rfl⟩ := d2173.var_inv
-                        simp at l2175
-                        subst l2175
-                        obtain ⟨rfl, rfl, rfl⟩ := a2174.nil_inv
-                        obtain ⟨v2157, vs2176, m2177, c2178, c2179, rfl, d2180, a2181, rfl⟩ := a2164.cons_inv
-                        obtain ⟨l2182, rfl, rfl⟩ := d2180.var_inv
-                        simp at l2182
-                        subst l2182
-                        obtain ⟨rfl, rfl, rfl⟩ := a2181.nil_inv
-                        exact «KernelClaim::get_reveal_info».Path.n8_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 ev49 pr95 ev85 pr172 ev162 ev247 ev2096 ev2123 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                      · have hne2185 := MatchesConst.none_inv (MatchesConst.literal 1) nm2080
-                        exact (selectArm_nil_inv sel2081).elim
-                  · have hne2186 := MatchesConst.none_inv (MatchesConst.literal 8) nm1989
+                    obtain ⟨v2097, m2098, bs2099, cs2100, c2101, d2102, mt2103, d2104, rfl⟩ := d241.letValue_inv
+                    have sg2105 := «KernelClaim::get_reveal_info».seg1 d2102
+                    clear d2102
+                    obtain ⟨vs2106, hv2107, -, ml2108⟩ := matchPattern_tuple_inv mt2103
+                    subst hv2107
+                    obtain ⟨x_components, vs2110, b2111, b2112, rfl, mt2113, ml2114, rfl⟩ := matchListWith_cons_inv ml2108
+                    obtain rfl := matchPattern_bind_inv mt2113
+                    obtain ⟨x_s_2109, vs2115, b2116, b2117, rfl, mt2118, ml2119, rfl⟩ := matchListWith_cons_inv ml2114
+                    obtain rfl := matchPattern_bind_inv mt2118
+                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml2119
+                    obtain ⟨vs2120, a2121, rfl⟩ := d2104.tuple_inv
+                    obtain ⟨v2122, vs2125, m2126, c2127, c2128, rfl, d2129, a2130, rfl⟩ := a2121.cons_inv
+                    obtain ⟨vs2131, a2132, hres2133⟩ := d2129.construct_inv
+                    rw [instanceName_plain_some] at hres2133
+                    subst hres2133
+                    obtain ⟨v2134, vs2135, m2136, c2137, c2138, rfl, d2139, a2140, rfl⟩ := a2132.cons_inv
+                    obtain ⟨l2141, rfl, rfl⟩ := d2139.var_inv
+                    simp at l2141
+                    subst l2141
+                    obtain ⟨rfl, rfl, rfl⟩ := a2140.nil_inv
+                    obtain ⟨v2123, vs2142, m2143, c2144, c2145, rfl, d2146, a2147, rfl⟩ := a2130.cons_inv
+                    obtain ⟨l2148, rfl, rfl⟩ := d2146.var_inv
+                    simp at l2148
+                    subst l2148
+                    obtain ⟨rfl, rfl, rfl⟩ := a2147.nil_inv
+                    exact «KernelClaim::get_reveal_info».Path.n8 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 ev49 pr95 ev85 pr172 ev162 ev247 sg2105 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · have hne2151 := MatchesConst.none_inv (MatchesConst.literal 8) nm1989
                     exact (selectArm_nil_inv sel1990).elim
 
 /-- The evaluation paths of `KernelClaim::expr_addr`: one constructor per combination of selected arms. -/
