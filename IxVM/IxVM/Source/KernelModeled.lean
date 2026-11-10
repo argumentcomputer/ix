@@ -138,7 +138,12 @@ def ctors_nested := aiur_fn⟦
           match cci {
             KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, np, _, _) => {
               let body = KernelCheck::peel_n_foralls(cty, np);
-              match nested_scan(body, mems) {
+              -- most constructors mention no member: one pass of `se_mentions`, no loads
+              let found = match KernelWhnf::se_mentions(body, mems) {
+                0 => {  0 } ,
+                _ => {  nested_scan(body, mems) } ,
+              };
+              match found {
                 1 => {  1 } ,
                 _ => {  ctors_nested(block, pos, n_ctors, mems, cidx + 1) } ,
               } } ,
@@ -160,8 +165,9 @@ def nested_scan := aiur_fn⟦
               match KernelWhnf::se_addr_in(h, mems) {
                 1 => {  0 } ,
                 _ => {
-                  match addr_is_inductive(h) {
-                    1 => {  nested_mentions(args, mems) } ,
+                  -- the arguments first: `addr_is_inductive` loads the head
+                  match nested_mentions(args, mems) {
+                    1 => {  addr_is_inductive(h) } ,
                     _ => {  0 } ,
                   } } ,
               } } ,
