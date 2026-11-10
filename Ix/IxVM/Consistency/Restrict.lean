@@ -74,11 +74,11 @@ theorem eq_of_name_eq {l : List (ConstantInfo .anon)} (hnd : (l.map (·.name)).N
   | cons c l ih =>
     intro x y hx hy hxy
     rw [List.map_cons, List.nodup_cons] at hnd
-    rcases List.mem_cons.mp hx with rfl | hx <;> rcases List.mem_cons.mp hy with rfl | hy
+    rcases List.mem_cons.mp hx with rfl | hx' <;> rcases List.mem_cons.mp hy with rfl | hy'
     · rfl
-    · exact absurd (List.mem_map.mpr ⟨y, hy, hxy.symm⟩) hnd.1
-    · exact absurd (List.mem_map.mpr ⟨x, hx, hxy⟩) hnd.1
-    · exact ih hnd.2 hx hy hxy
+    · exact absurd (List.mem_map.mpr ⟨y, hy', hxy.symm⟩) hnd.1
+    · exact absurd (List.mem_map.mpr ⟨x, hx', hxy⟩) hnd.1
+    · exact ih hnd.2 hx' hy' hxy
 
 /-- **With distinct names, the sub-environment has the environment's projection
 tables** (a table is not a model-family constant). -/
