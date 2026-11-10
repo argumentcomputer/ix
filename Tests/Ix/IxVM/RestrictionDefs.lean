@@ -21,9 +21,11 @@ namespace Tests.Ix.IxVM.RestrictionDefs
 
 universe u
 
+set_option bootstrap.inductiveCheckResultingUniverse false in
 /-- A one-constructor, field-less, index-free inductive at `Sort u` (structure-like; a
 proposition at `u = 0`, like `PUnit`). The `structure` command refuses a possibly-`Prop`
-result sort, so it is declared as an inductive. -/
+result sort, so it is declared as an inductive, with the resulting-universe check off
+as core declares `PUnit` (Lean 4.34.1 refuses it otherwise). -/
 inductive PU : Sort u where
   | mk : PU
 
