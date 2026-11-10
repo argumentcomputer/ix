@@ -681,6 +681,28 @@ fn unique<'a>(names: impl Iterator<Item = &'a str>) -> Result<(), String> {
   Ok(())
 }
 impl Program {
+  /// Make execution check every equality assertion, including those exported
+  /// with `runtime_check: false` (`constrain_eq!`). The circuit and the
+  /// semantics enforce those assertions; ordinary execution omits them
+  /// (`dead_code::eliminate` replaces each with a no-op, together with the
+  /// arithmetic that only feeds it). With every assertion checked, execution
+  /// fails exactly where the semantics has no derivation for the same inputs
+  /// and hint answers. Returns the number of assertions this enabled.
+  pub fn enforce_deferred_assertions(&mut self) -> usize {
+    let mut enabled = 0;
+    for function in &mut self.functions {
+      for op in &mut function.code {
+        if let Instruction::AssertEq { runtime_check, .. } = op
+          && !*runtime_check
+        {
+          *runtime_check = true;
+          enabled += 1;
+        }
+      }
+    }
+    enabled
+  }
+
   pub fn check(self) -> Result<CheckedProgram, String> {
     let field = PrimeField::new(self.modulus)?;
     self.check_with(field)

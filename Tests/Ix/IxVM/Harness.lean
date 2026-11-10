@@ -30,6 +30,18 @@ only:
 can be rerun alone with `ixvm-proof test <artifact> <file>`. Cases with FFT
 pins also request a `.stats.json` sidecar from the host with `--stats-out`.
 Lean computes and checks the costs from those raw measurements.
+
+## Circuit verdict
+
+Ordinary execution skips the assertions the program exports with
+`runtimeCheck := false` (`constrain_eq!`: the `u32`/`u64` gadgets' range and
+recomposition checks, `KernelNatPrim`'s `split_u32`), which only the circuit
+enforces. In circuit-verdict mode (`$IX_AIUR_CIRCUIT_VERDICT=1`, or a suite's
+`circuit := some true`) the host checks every assertion, so a case's verdict is
+the circuit's on the case's witness. The host acknowledges the mode in its
+output; a case file whose host did not is a failure, so that a stale host
+cannot pass a suite in the wrong mode. A suite can pin either mode with
+`circuit`; otherwise it follows the environment variable.
 -/
 
 public section
@@ -133,6 +145,8 @@ structure Runner where
   dir : System.FilePath
   artifact : String
   host : String
+  /-- Circuit-verdict mode: the host checks every assertion. -/
+  circuit : Bool := false
   jobs : Nat
   limit : Nat
   maxCases : Nat
@@ -140,6 +154,17 @@ structure Runner where
   tasks : IO.Ref (Array (System.FilePath × Array (String × Nat) × Task (Except IO.Error IO.Process.Output)))
   labels : IO.Ref (Std.HashSet String)
   broken : IO.Ref Nat
+
+/-- The host's switch for circuit-verdict mode. -/
+def circuitVerdictVar : String := "IX_AIUR_CIRCUIT_VERDICT"
+
+/-- The number of assertions the host says it enabled for circuit-verdict
+mode, from its acknowledgement line. -/
+def circuitAcknowledgement (stdout : String) : Option Nat :=
+  (stdout.splitOn "\n").findSome? fun line =>
+    match line.trimAscii.toString.splitOn " " with
+    | "circuit" :: "verdict:" :: n :: _ => n.toNat?
+    | _ => none
 
 /-- Close the current file and run it. -/
 private def Runner.flush (r : Runner) : IO Unit := do
@@ -153,8 +178,9 @@ private def Runner.flush (r : Runner) : IO Unit := do
   let tasks ← r.tasks.get
   if tasks.size ≥ r.jobs then
     let _ ← IO.wait tasks[tasks.size - r.jobs]!.2.2
+  let env := #[(circuitVerdictVar, if r.circuit then some "1" else none)]
   let task ← IO.asTask (prio := .dedicated)
-    (IO.Process.output { cmd := r.host, args })
+    (IO.Process.output { cmd := r.host, args, env })
   r.tasks.modify (·.push (file.path, file.fftPins, task))
 
 /-- A case that could not be built: reported, and fails the suite. -/
@@ -195,9 +221,13 @@ Every case runs; the result is `0` when every case was built and every verdict
 and FFT cost are the expected ones. The host reports verdicts and execution
 times; Lean computes and checks costs from the raw statistics. -/
 def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
-    (limit : Nat := 4_000_000) (maxCases : Nat := 200) : IO UInt32 := do
+    (limit : Nat := 4_000_000) (maxCases : Nat := 200) (circuit : Option Bool := none) :
+    IO UInt32 := do
   let artifact ← programArtifact
   let host ← programHost
+  let circuit ← match circuit with
+    | some c => pure c
+    | none => do pure ((← IO.getEnv circuitVerdictVar) == some "1")
   let go (dir : System.FilePath) : IO UInt32 := do
     IO.FS.createDirAll dir
     let started ← IO.monoMsNow
@@ -206,8 +236,8 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
     let labels ← IO.mkRef {}
     let broken ← IO.mkRef 0
     let r : Runner := {
-      suite := suite, dir := dir, artifact := artifact, host := host, jobs := jobs,
-      limit := limit, maxCases := maxCases, current := current, tasks := tasks,
+      suite := suite, dir := dir, artifact := artifact, host := host, circuit := circuit,
+      jobs := jobs, limit := limit, maxCases := maxCases, current := current, tasks := tasks,
       labels := labels, broken := broken }
     try body r catch e => r.fail s!"building the cases failed: {e}"
     r.flush
@@ -218,6 +248,15 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
       unless out.exitCode == 0 do
         failed := failed + 1
         IO.eprintln s!"[{suite}] {path}: {out.stderr.trimAscii}"
+      if circuit then
+        match circuitAcknowledgement out.stdout with
+        | some 0 =>
+          failed := failed + 1
+          IO.eprintln s!"[{suite}] {path}: the host enabled no deferred assertion"
+        | some _ => pure ()
+        | none =>
+          failed := failed + 1
+          IO.eprintln s!"[{suite}] {path}: the host did not acknowledge circuit-verdict mode"
       unless pins.isEmpty do
         try
           let raw ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (path.withExtension "stats.json")))
@@ -232,8 +271,9 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
           failed := failed + 1
           IO.eprintln s!"[{suite}] {path}: invalid or missing FFT statistics: {e}"
     let broken ← r.broken.get
-    IO.println s!"[{suite}] {(← r.labels.get).size} claims in {(← r.tasks.get).size} files, \
-      {(← IO.monoMsNow) - started} ms; {broken} cases not built, \
+    let mode := if circuit then "circuit verdict" else "execution verdict"
+    IO.println s!"[{suite}] {(← r.labels.get).size} claims in {(← r.tasks.get).size} files \
+      ({mode}), {(← IO.monoMsNow) - started} ms; {broken} cases not built, \
       {failed} verdict, statistics or FFT-pin failures"
     return if failed == 0 && broken == 0 then 0 else 1
   match ← IO.getEnv "IX_TEST_OUTPUT_DIR" with
@@ -244,8 +284,9 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
 abbrev Builder := Unit → Except String Case
 
 /-- Run `cases`, building each as it is written. -/
-def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 8) : IO UInt32 :=
-  withRunner suite (jobs := jobs) fun r => do
+def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 8)
+    (circuit : Option Bool := none) : IO UInt32 :=
+  withRunner suite (jobs := jobs) (circuit := circuit) fun r => do
     IO.println s!"[{suite}] {cases.size} claims through the IxVM program"
     for build in cases do r.build (build ())
 

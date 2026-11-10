@@ -199,11 +199,10 @@ mod tests {
     ]))
     .unwrap();
     let deferred = source.clone().check().unwrap();
-    for op in &mut source.functions[0].code {
-      if let Instruction::AssertEq { runtime_check, .. } = op {
-        *runtime_check = true;
-      }
-    }
+    // Both assertions are deferred; enforcing them restores the circuit's
+    // verdict in execution, and a second call finds nothing left to enable.
+    assert_eq!(source.enforce_deferred_assertions(), 2);
+    assert_eq!(source.enforce_deferred_assertions(), 0);
     let checked = source.check().unwrap();
     assert!(deferred.execution_functions[0].code.iter().all(|op| !matches!(
       op,
