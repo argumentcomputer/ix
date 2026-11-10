@@ -26,9 +26,10 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   `ClosureOrderAt`, `preludeFor`, `prepareWith`, the trusted component of plan
   8.1), installed declaration by declaration (`Installs`, `InstallStep`);
 * contains each claimed constant at its key, with an annotation of the type the
-  reader gives it (`SeedStored`, `Annotates`). A seed outside Lean's logic (an
-  unsafe or `partial` record, `OutsideLogicAt`) is set aside: the reader declines
-  it, and Lean's kernel accepts an unsafe constant of any type;
+  reader gives it (`SeedStored`, `Annotates`). Every seed is in Lean's logic:
+  IxVM refuses a claim whose seed record, or its block, is unsafe or `partial`
+  (decision D20, `KernelClaim::assert_claimable`; `OutsideLogicAt`), and L6
+  carries the refusal (`ClaimPhase`);
 * has a claimed sub-environment (`claimedEnv`: without the model families'
   auxiliary constants) with a model in every set theory:
   `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
@@ -49,7 +50,7 @@ one per layer of plan 8.2:
 | L3 term operations | `L3` | given `Levels`, `Terms`: substitution and lifting refine the kernel's |
 | L4 core | `L4` | given L1 to L3, `Core`: whnf, conversion and inference refine `Rules.Red`, `DefEq`, `Infer` |
 | L5 declarations | `L5` | given L1 to L4, `Decls`: each accepted declaration's install preserves an invariant giving `EnvModelOk` |
-| L6 claims and roles | `L6` | given L1, `ClaimPhase`: an in-scope claim's run walked the closure of its seeds under the default table |
+| L6 claims and roles | `L6` | given L1, `ClaimPhase`: an in-scope claim's run refused seeds outside Lean's logic and walked the closure of its seeds under the default table |
 | L7 assembly | `L7` | given L1, L5, L6: the source-level statement |
 
 Layers communicate through `Seams`, the representation relations the layer
@@ -306,7 +307,8 @@ def InLogicMut : Ixon.MutConst → Prop
 or `partial` definition, an unsafe opaque, an unsafe axiom, recursor or
 inductive, nor a block holding one (`Ix.Kernel.Reader.safetyDeclineOf`,
 `readInductive`, `readRecord`). The reader declines the others, and must:
-Lean's kernel accepts an unsafe constant of any type, `False` included. -/
+Lean's kernel accepts an unsafe constant of any type, `False` included. IxVM
+refuses a claim whose seed is not in Lean's logic (`OutsideLogicAt`, D20). -/
 def InLogic (c : Ixon.Constant) : Prop :=
   match c.info with
   | .defn d => Ix.Kernel.Reader.safetyDecline d = none
@@ -316,9 +318,10 @@ def InLogic (c : Ixon.Constant) : Prop :=
   | _ => True
 
 /-- **`a` holds a record outside Lean's logic** in `E`: the record, or the block
-it projects from, is not `InLogic`. IxVM type-checks such constants and keeps
-safe constants from referencing them (`KernelCheck::is_unsafe_ci`,
-`assert_safety`); the consistency conclusion is about the others. -/
+it projects from, is not `InLogic`. IxVM refuses a `check` or `checkEnv` claim
+with such a seed (decision D20, `KernelClaim::assert_claimable`: its `record_unsafe`
+is exactly `¬ InLogic`), which L6's `ClaimPhase` states; it keeps safe constants
+from referencing unsafe ones (`KernelCheck::is_unsafe_ci`, `assert_safety`). -/
 def OutsideLogicAt (E : Ixon.Env) (a : Address) : Prop :=
   ∃ c, Ix.Cert.recordAt E a = some c ∧
     (¬ InLogic c ∨ ∃ cb, Ix.Cert.recordAt E (Ix.Cert.ownerOf a c) = some cb ∧ ¬ InLogic cb)
@@ -342,18 +345,18 @@ def claimedEnv (env : Ix.Kernel.Env .anon) : Ix.Kernel.Env .anon :=
   ⟨env.consts.filter fun ci => !isModelAux ci⟩
 
 /-- **The consistency conclusion**: an environment read from the records the run
-loaded, under the default role table, from the claim's seeds in Lean's logic,
-storing every such claimed constant with its type, whose claimed sub-environment
-(`claimedEnv`: without the model families' auxiliary constants, which the run
-checks as advice) has a model in every set theory. A seed whose loaded record is
-outside Lean's logic (`OutsideLogicAt`) is set aside, as a block seed is (its
-members are stored). -/
+loaded, under the default role table, from the claim's seeds, storing every
+claimed constant with its type, whose claimed sub-environment (`claimedEnv`:
+without the model families' auxiliary constants, which the run checks as advice)
+has a model in every set theory. A block seed is covered by its members, which
+are stored. Every seed is in Lean's logic: IxVM refuses the others (D20, carried
+by L6). -/
 def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
   ∃ (b : Binding) (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
     Ix.Kernel.Admission.defaultBinding = .ok b ∧ LoadedBy calls E₀ ∧ Draws E E₀ ∧
-    ReadIn b E (fun a => a ∈ seeds ∧ ¬ OutsideLogicAt E₀ a) ev ds ∧ Installs ds.toList env ∧
-    (∀ a ∈ seeds, IsBlockAt E₀ a ∨ OutsideLogicAt E₀ a ∨ SeedStored b ds env a) ∧
+    ReadIn b E (fun a => a ∈ seeds) ev ds ∧ Installs ds.toList env ∧
+    (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
     ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V (claimedEnv env))
 
 /-- **What a verify_claim derivation establishes** (plan 8.1): for every claim
@@ -373,13 +376,12 @@ def Milestone : Prop := CircuitSound ConsistencySpec.{u}
 
 /-- **No claimed constant has type `False`**, in every set theory: the read
 environment is consistent (`Ix.Kernel.Consistent`), and every claimed constant
-that is not a block and is in Lean's logic has a reader's type, and a stored type, other than
-`False`. -/
+that is not a block has a reader's type, and a stored type, other than `False`. -/
 theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
     {calls : List (Call IxVM.F)} {seeds : List Address} (h : ConsistentRead.{u} calls seeds) :
     ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
       (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
-      ∀ a ∈ seeds, IsBlockAt E a ∨ OutsideLogicAt E a ∨
+      ∀ a ∈ seeds, IsBlockAt E a ∨
         ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon)
           (ci : Ix.Kernel.ConstantInfo .anon),
           AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
@@ -389,9 +391,8 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
   obtain ⟨b, E, -, -, ds, env, -, -, -, -, -, hseeds, hmodel⟩ := h
   have hcons : Ix.Kernel.Consistent (claimedEnv env) := Ix.Kernel.consistent_of_model V (hmodel V)
   refine ⟨b, E, ds, env, hcons, fun a ha => ?_⟩
-  rcases hseeds a ha with hblock | hout | ⟨k, cv, ci, hkey, hname, hdecl, hfind, -, hann⟩
+  rcases hseeds a ha with hblock | ⟨k, cv, ci, hkey, hname, hdecl, hfind, -, hann⟩
   · exact Or.inl hblock
-  · exact Or.inr (Or.inl hout)
   · have hmem0 : ci ∈ env.consts := List.mem_of_find?_eq_some hfind
     have hname' : ci.name = k := by
       have := List.find?_some hfind
@@ -404,7 +405,7 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
       List.mem_filter.mpr ⟨hmem0, by simp [hnaux]⟩
     have hci : ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] :=
       fun hf => hcons ci hmem hf
-    refine Or.inr (Or.inr ⟨k, cv, ci, hkey, hname, hdecl, hfind, fun hf => ?_, hci⟩)
+    refine Or.inr ⟨k, cv, ci, hkey, hname, hdecl, hfind, fun hf => ?_, hci⟩
     rw [hf] at hann
     exact hci hann.const_inv
 
@@ -417,7 +418,7 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
     W.HashedCollision [bytes] calls ∨
       ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
         (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
-        ∀ a ∈ seeds, IsBlockAt E a ∨ OutsideLogicAt E a ∨
+        ∀ a ∈ seeds, IsBlockAt E a ∨
           ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon)
             (ci : Ix.Kernel.ConstantInfo .anon),
             AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
@@ -468,7 +469,13 @@ structure Seams where
   /-- (L6 → L7) The derivation's claim phase, under the role table `t`, walked
   the closure of `seeds` in the loaded records `E` and checked every constant of
   that closure and of the table's role closure (`KernelClaim::run_check_transitive`,
-  `run_check_env`, `KernelRoles::load_role_ctx`). -/
+  `run_check_env`, `KernelRoles::load_role_ctx`). L7 reads the walked closure with
+  the kernel's reader (`ReadIn`), which declines a record outside Lean's logic, so
+  the instance L7 uses must also say that every walked record is in Lean's logic:
+  the seeds by the claim's refusal (`ClaimPhase`), the others by `assert_safety`
+  (a safe constant references none outside) and by a uniform-safety check on
+  every walked block (lane dc; without it a safe seed can reach an unsafe member
+  of a mixed block). -/
   Walked : List (Call IxVM.F) → Ix.Kernel.RoleTable → Ixon.Env → List Address → Prop
   /-- (L7 → L5; S4 fixes it with the rebuilt declaration checker) The
   derivation contains IxVM's accepting checks of every constant the declaration
@@ -626,12 +633,15 @@ def Decls : Prop :=
 /-- **Obligation L5** (declarations), given L1 to L4. -/
 def L5 : Prop := Records S → Levels → Terms S → Core S → Decls.{u} S
 
-/-- **L6's content: an in-scope claim's run walked the closure of its seeds**
-(`KernelClaim`, `KernelRoles`, `KernelRoleSpec`): for a bounded `verify_claim`
-derivation, every claim byte string with the public digest that decodes to an
-in-scope claim, and every reader's view of its seeds, the run hashed a collision,
-or the default role table admits and the run walked the closure of the seeds in
-records it loaded (`Seams.Walked`). -/
+/-- **L6's content: an in-scope claim's run refused seeds outside Lean's logic
+and walked the closure of its seeds** (`KernelClaim`, `KernelRoles`,
+`KernelRoleSpec`): for a bounded `verify_claim` derivation, every claim byte
+string with the public digest that decodes to an in-scope claim, and every
+reader's view of its seeds, the run hashed a collision, or the default role table
+admits, no seed's loaded record or block is unsafe or `partial` (the refusal of
+decision D20, `KernelClaim::assert_claimable`, which runs after the context loads
+and before any walk; both records are loaded, so they are in `LoadedBy calls E₀`),
+and the run walked the closure of the seeds in records it loaded (`Seams.Walked`). -/
 def ClaimPhase : Prop :=
   ∀ (d : Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
     (calls : List (Call IxVM.F)),
@@ -643,7 +653,7 @@ def ClaimPhase : Prop :=
         ∃ (b : Binding) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env),
           Ix.Kernel.Admission.defaultBinding = .ok b ∧
           Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-          LoadedBy calls E₀ ∧ S.Walked calls t E₀ seeds
+          LoadedBy calls E₀ ∧ (∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a) ∧ S.Walked calls t E₀ seeds
 
 /-- **Obligation L6** (claims and roles), given L1. -/
 def L6 : Prop := Records S → ClaimPhase S
