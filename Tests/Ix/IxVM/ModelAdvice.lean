@@ -105,6 +105,12 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     return 1
   let env ← loadSharedIxonEnv names.toArray lenv
   let digestOk ← digestUnchanged env names
+  -- why a modeled block has no model, if one has none
+  let (_, rep0) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false })
+  for (b, r) in rep0.blocks do
+    match r with
+    | .error e => IO.eprintln s!"[ixvm-model-advice] block {b} has no model: {e}"
+    | .ok (n, outside) => IO.println s!"[ixvm-model-advice] block {b}: {n} advice records, {outside.size} outside references"
   -- the control: the same environment with the tweaked models
   let (tweaked, _) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false } tweakProofs)
   let differ := tweaked.models.toList.any fun (b, p) => (env.models[b]?.map (·.data)) != some p.data

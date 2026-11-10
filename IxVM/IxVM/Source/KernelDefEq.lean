@@ -689,9 +689,9 @@ def is_unit_like_type := aiur_fn⟦
               match ci {
                 KernelTypes::KConstantInfo::Induct(_, _, _, n_indices, num_ctors, _, block, idx) => {
 
-                  -- D7: no unit-like conversion at a member of a mutual or nested
-                  -- block (the kernel grants it only from a model theorem)
-                  match n_indices + KernelModeled::block_is_modeled(block) {
+                  -- D7: no unit-like conversion at a member of a mutual block (the kernel
+                  -- grants it only from a model theorem; a field-less type is never nested)
+                  match n_indices + KernelModeled::block_is_multi(block) {
                     0 => {
                       match num_ctors - 1 {
                         0 => {

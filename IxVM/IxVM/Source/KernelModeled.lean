@@ -103,6 +103,28 @@ def block_is_modeled := aiur_fn⟦
     }
 ⟧
 
+  -- Two or more types: the gate the structure-eta and unit-like sites need (a one-type
+  -- nested block's structure is recursive, which `KernelWhnf::struct_is_rec`'s scan finds,
+  -- and a field-less constructor has no nested occurrence).
+
+def block_is_multi := aiur_fn⟦
+  fn block_is_multi(block: Bytes::AddressRef) -> Field {
+      let c = Ingress::load_verified_constant(block);
+      match c {
+        Ixon::Constant::Mk(info, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::Muts(members) => {
+              match muts_indc_count(members) {
+                0 => {  0 } ,
+                1 => {  0 } ,
+                _ => {  1 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
 def ctors_nested := aiur_fn⟦
   fn ctors_nested(block: Bytes::AddressRef, pos: Field, n_ctors: Field,
                   mems: Lists::List<Bytes::AddressRef>, cidx: Field) -> Field {
@@ -269,9 +291,23 @@ def ind_is_modeled := aiur_fn⟦
   -- levels and prefix arguments. 1 at a native recursor.
 
 def fire_ok := aiur_fn⟦
-  fn fire_ok(rc: KernelRoles::RoleCtx, head: KernelTypes::KExpr, us: Lists::List<KernelTypes::KLevel>,
-             spine: Lists::List<KernelTypes::KExpr>, major: KernelTypes::KExpr,
-             types: Lists::List<KernelTypes::KExpr>) -> Field {
+  inline fn fire_ok(rc: KernelRoles::RoleCtx, nmot: Field, head: KernelTypes::KExpr,
+                    us: Lists::List<KernelTypes::KLevel>, spine: Lists::List<KernelTypes::KExpr>,
+                    major: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match nmot - 1 {
+        0 => {  1 } ,
+        _ => {  fire_compare(rc, head, us, spine, major, types) } ,
+      }
+    }
+⟧
+
+  -- A recursor with several motives is a modeled family's: a native recursor has one
+  -- (`KernelCheck::check_const`), a modeled family two or more (`check_recs`).
+
+def fire_compare := aiur_fn⟦
+  fn fire_compare(rc: KernelRoles::RoleCtx, head: KernelTypes::KExpr, us: Lists::List<KernelTypes::KLevel>,
+                  spine: Lists::List<KernelTypes::KExpr>, major: KernelTypes::KExpr,
+                  types: Lists::List<KernelTypes::KExpr>) -> Field {
       match (*(head)) {
         KernelTypes::KExprNode::Const(raddr, _) => {
           match block_is_modeled(rec_family_block(raddr)) {
@@ -1017,6 +1053,8 @@ def check_recs := aiur_fn⟦
               assert_eq!(kf, 0, "modeled recursor declares K");
               assert_eq!(rnp, np, "modeled recursor parameter count differs from its block's");
               assert_eq!(nmot, n_recs, "modeled recursor family record is not one complete family");
+              assert_eq!(UInt32::less_than_fields(1, nmot), 1,
+                "a modeled recursor family with one motive");
               assert_eq!(UInt32::less_than_fields(Lists::length(type_addrs), nmot + 1), 1,
                 "modeled recursor has fewer motives than its block has types");
               check_rec_motive(ty, (((rnp + nmot) + nmin) + ni) + 1, rnp + k);

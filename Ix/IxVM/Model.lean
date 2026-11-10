@@ -519,8 +519,8 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
   for a in ordered do
     let some c := store[a]? | continue
     match Ix.Kernel.Reader.readRecord cx st a c with
-    | .error _ =>
-      if rootSet.contains a then report := { report with blocks := report.blocks.push (a, .error "the reader declines or rejects the block") }
+    | .error why =>
+      if rootSet.contains a then report := { report with blocks := report.blocks.push (a, .error s!"the reader: {why}") }
     | .ok r =>
       st := st.commit r
       unless rootSet.contains a do continue

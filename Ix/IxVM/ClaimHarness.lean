@@ -155,23 +155,28 @@ private def collectCertifiedClosure (roots : Array Lean.Name)
   return deps
 
 /-- `roots` with the recursors of every mutual or nested inductive family in
-    their dependency closure: IxVM's modeled route validates such a block
-    together with its whole recursor family (`KernelModeled::check_family`),
-    and the model advice is generated from it (`IxVM.Model`). -/
+    their dependency closure and, when there is one, the recursors of every
+    inductive in that closure (a nested block's containers among them): IxVM's
+    modeled route validates such a block together with its whole recursor
+    family (`KernelModeled::check_family`), and the model advice is generated
+    from it, using the containers' recursors (`IxVM.Model`). -/
 def withModeledRecursors (roots : Array Lean.Name) (leanEnv : Lean.Environment) :
     Array Lean.Name := Id.run do
   let mut roots := roots
-  for _ in [0:4] do
+  for _ in [0:6] do
     let deps := Lean.collectDependenciesMany roots leanEnv.constants
+    let modeled := deps.any fun (_, ci) => match ci with
+      | .inductInfo v => v.all.length > 1 || v.numNested > 0
+      | _ => false
+    unless modeled do break
     let mut more : Array Lean.Name := #[]
     for (_, ci) in deps do
       if let .inductInfo v := ci then
-        if v.all.length > 1 || v.numNested > 0 then
-          let names := v.all.map Lean.mkRecName ++
-            (List.range v.numNested).map fun i => Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
-          for r in names do
-            if leanEnv.constants.contains r && !roots.contains r && !more.contains r then
-              more := more.push r
+        let names := v.all.map Lean.mkRecName ++
+          (List.range v.numNested).map fun i => Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
+        for r in names do
+          if leanEnv.constants.contains r && !roots.contains r && !more.contains r then
+            more := more.push r
     if more.isEmpty then break
     roots := roots ++ more
   return roots
