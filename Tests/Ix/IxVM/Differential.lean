@@ -3,6 +3,7 @@ import Ix.ClaimContext
 import Ix.CompileCertified
 import Lean.Replay
 import Ix.EnvScope
+import Ix.Shard.Environment
 import Tests.Ix.IxVM.Harness
 
 /-!
@@ -130,5 +131,169 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     Lean-accepted check targets {targets.size}, IxVM-checked {chosen.size}, \
     Lean replay {if leanOk then "ok" else "REJECTED"}, IxVM divergences {if code == 0 then 0 else 1}+"
   return if code == 0 && leanOk then 0 else 1
+
+/-! ## On sharded `checkEnv` claims
+
+Checking every constant as its own claim carries the constant's whole closure
+in each witness, so a corpus the size of `Init` takes hours. The shard form
+judges the corpus the way `ix check` and `ix prove` do: one `checkEnv` claim per
+shard of a `.ixes` partition, its frontier assumed. A shard's verdict is its
+owned constants' verdict. A shard IxVM rejects is bisected by blocks, down to
+the single blocks it rejects (or to the smallest set whose halves each pass,
+an interaction), and only those are reported per constant.
+
+Inputs, from the environment:
+- `IX_DIFF_IXE`, `IX_DIFF_IXES`: the compiled corpus and its partition;
+- `IX_DIFF_REPORT`: the `ix-formal-run/1` report of
+  `IX_AIUR_CIRCUIT_VERDICT=1 ix check --ixe … --ixes … --assume-binding --keep-going`
+  on them (the IxVM verdict per shard, under the circuit verdict), or a
+  comma-separated list of reports over disjoint `--shards` ranges;
+- `IX_DIFF_LEAN=skip` (optional): no Lean verdicts, for a corpus that passed
+  Lean's kernel when it was built (Mathlib): the run then reports IxVM's
+  acceptance and the constants of the blocks it rejects;
+- `IX_DIFF_OUT`: a directory for `table.tsv` (one row per named constant:
+  name, address, shard, IxVM verdict, Lean verdict) and `summary.txt`.
+
+Lean's verdict is the kernel's replay of the named constants' closure, as in
+the per-constant form. A constant is a divergence when IxVM's verdict differs
+from Lean's; `unsafe` and `partial` constants, which replay does not check, are
+`lean-skipped` and not compared, and names the test binary lacks are
+`lean-absent`. With `IX_DIFF_LEAN=skip` every IxVM rejection is reported. -/
+
+def ixToLeanName : Ix.Name → Lean.Name
+  | .anonymous _ => .anonymous
+  | .str p s _ => .str (ixToLeanName p) s
+  | .num p n _ => .num (ixToLeanName p) n
+
+/-- IxVM's verdict on one owned set, under the circuit verdict: `ok` when the
+program accepts the shard claim. -/
+def shardAccepted (env : Ixon.Env) (label : String) (owned : Array Address) : IO Bool := do
+  let code ← Tests.Ix.IxVM.runCases "ixvm-differential (bisect)" (circuit := some true) #[fun _ => do
+    let (_, witness) ← buildShardCheckEnvWitness env owned (assumeBinding := true)
+    return { label, accept := true, witness }]
+  return code == 0
+
+/-- The blocks of a rejected block list that IxVM rejects on their own, by
+halving; when both halves pass, the whole list is reported (an interaction). -/
+partial def bisect (env : Ixon.Env) (k : Nat) (blocks : Array Address) (owned : Array Address) :
+    IO (Array (Array Address)) := do
+  if blocks.size ≤ 1 then return #[blocks]
+  let half := blocks.size / 2
+  let parts := #[blocks.extract 0 half, blocks.extract half blocks.size]
+  let owners := Ix.Shard.partitionOwned env owned parts
+  let mut out := #[]
+  for (part, i) in parts.zipIdx do
+    let mine := owners[i]!
+    if mine.isEmpty then continue
+    unless (← shardAccepted env s!"shard {k} part {part.size} blocks from {part[0]!}" mine) do
+      out := out ++ (← bisect env k part mine)
+  return if out.isEmpty then #[blocks] else out
+
+def runShards (leanEnv : Lean.Environment) : IO UInt32 := do
+  let need (v : String) : IO String := do
+    let some x ← IO.getEnv v | throw (IO.userError s!"{v} is not set")
+    pure x
+  let ixe ← need "IX_DIFF_IXE"
+  let ixes ← need "IX_DIFF_IXES"
+  let reportPath ← need "IX_DIFF_REPORT"
+  let outDir := System.FilePath.mk (← need "IX_DIFF_OUT")
+  IO.FS.createDirAll outDir
+  let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
+  let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile ixes))
+  let owners := Ix.Shard.ownedConstsPer env view.shards
+  -- IxVM: the status of every part of every leaf of the report.
+  let mut leaves : Array Lean.Json := #[]
+  for path in reportPath.splitOn "," do
+    let report ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile path))
+    leaves := leaves ++ (← IO.ofExcept (report.getObjValAs? (Array Lean.Json) "leaves"))
+  let mut rejectedShards : Array Nat := #[]
+  let mut seen : Std.HashSet Nat := {}
+  for leaf in leaves do
+    let k ← IO.ofExcept (leaf.getObjValAs? Nat "shard")
+    seen := seen.insert k
+    let parts ← IO.ofExcept (leaf.getObjValAs? (Array Lean.Json) "parts")
+    let ok := parts.all fun p => (p.getObjValAs? Nat "status").toOption == some 0
+    unless ok do rejectedShards := rejectedShards.push k
+  let missing := (List.range view.shards.size).filter (!seen.contains ·)
+  unless missing.isEmpty do
+    throw (IO.userError s!"the report has no verdict for shards {missing}")
+  IO.println s!"[ixvm-differential] {view.shards.size} shards, {owners.foldl (· + ·.size) 0} owned \
+    constants; IxVM rejected shards {rejectedShards}"
+  -- Bisect the rejected shards.
+  let mut rejectedBlocks : Std.HashSet Address := {}
+  let mut interactions : Array (Nat × Nat) := #[]
+  for k in rejectedShards do
+    let found ← bisect env k view.shards[k]! owners[k]!
+    for bs in found do
+      if bs.size > 1 then interactions := interactions.push (k, bs.size)
+      for b in bs do rejectedBlocks := rejectedBlocks.insert b
+  -- The block each owned constant belongs to, and its shard.
+  let blockOf (a : Address) : Address :=
+    match env.getConst? a with
+    | some c =>
+      match (c.info : Ixon.ConstantInfo) with
+      | .iPrj p => p.block
+      | .cPrj p => p.block
+      | .rPrj p => p.block
+      | .dPrj p => p.block
+      | _ => a
+    | none => a
+  let mut shardOf : Std.HashMap Address Nat := {}
+  for (owned, k) in owners.zipIdx do
+    for a in owned do shardOf := shardOf.insert a k
+  -- Lean: a replay of the named constants' closure, unless `IX_DIFF_LEAN=skip`.
+  let names : Array (Lean.Name × Address) := env.named.toArray.map fun (n, named) => (ixToLeanName n, named.addr)
+  let skipLean := (← IO.getEnv "IX_DIFF_LEAN") == some "skip"
+  let started ← IO.monoMsNow
+  let mut leanTable : Std.HashMap String String := {}
+  let mut leanOk := true
+  unless skipLean do
+    let present := names.filter fun (n, _) => leanEnv.constants.contains n
+    let closure := Ix.EnvScope.collectSelectedDeps leanEnv (present.map (·.1)).toList
+    let (lean, replayed) ← leanVerdicts leanEnv closure
+    leanOk := match replayed with | .ok _ => true | .error _ => false
+    if let .error e := replayed then
+      IO.eprintln s!"[ixvm-differential] Lean replay rejected a corpus constant: {e}"
+    for (n, _) in closure do
+      leanTable := leanTable.insert n.toString
+        (if lean.getD n false then (if leanOk then "accept" else "accept?") else "lean-skipped")
+    IO.println s!"[ixvm-differential] Lean verdicts for {leanTable.size} constants in \
+      {(← IO.monoMsNow) - started} ms: {if leanOk then "replay ok" else "REPLAY REJECTED"}"
+  -- Join.
+  let mut rows : Array String := #["name\taddress\tshard\tixvm\tlean"]
+  let mut divergences : Array String := #[]
+  let mut skipped := 0
+  let mut absent := 0
+  let mut compared := 0
+  let mut notOwned := 0
+  for (n, a) in names do
+    let shard := shardOf.get? a
+    let shardS := match shard with | some k => toString k | none => "-"
+    if shard.isNone then notOwned := notOwned + 1
+    let ixvm := match shard with
+      | none => "not-owned"
+      | some k => if rejectedShards.contains k && rejectedBlocks.contains (blockOf a) then "reject"
+        else "accept"
+    let leanV := if skipLean then "not-checked" else leanTable.getD n.toString "lean-absent"
+    match leanV with
+    | "lean-skipped" => skipped := skipped + 1
+    | "lean-absent" => absent := absent + 1
+    | "not-checked" =>
+      if ixvm == "reject" then divergences := divergences.push s!"{n}\t{a}\t{ixvm}\t{leanV}"
+    | _ =>
+      compared := compared + 1
+      if ixvm != "not-owned" && leanV != "accept?" && ixvm != leanV then
+        divergences := divergences.push s!"{n}\t{a}\t{ixvm}\t{leanV}"
+    rows := rows.push s!"{n}\t{a}\t{shardS}\t{ixvm}\t{leanV}"
+  IO.FS.writeFile (outDir / "table.tsv") ("\n".intercalate rows.toList ++ "\n")
+  let summary := s!"shards {view.shards.size}; named constants {names.size} ({notOwned} not owned by a shard); compared {compared}; \
+    lean-skipped {skipped}; lean-absent {absent}; IxVM-rejected shards {rejectedShards.size}; \
+    interaction sets {interactions.size}; \
+    {if skipLean then "IxVM-rejected constants" else "divergences"} {divergences.size}; Lean replay \
+    {if skipLean then "not run" else if leanOk then "ok" else "rejected"}"
+  IO.FS.writeFile (outDir / "summary.txt") (summary ++ "\n" ++ "\n".intercalate divergences.toList ++ "\n")
+  IO.println s!"[ixvm-differential] summary: {summary}"
+  for d in divergences.toList.take 20 do IO.println s!"  DIVERGENCE {d}"
+  return if divergences.isEmpty && leanOk && interactions.isEmpty then 0 else 1
 
 end Tests.Ix.IxVM.Differential

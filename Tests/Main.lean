@@ -236,6 +236,7 @@ def registry : List Entry := [
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
   -- real inductive blocks and recursor records (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
+  .env "ixvm-differential-shards" (.manual "a sharded corpus: an ix check report against Lean's kernel, rejected shards bisected; IX_DIFF_IXE, IX_DIFF_IXES, IX_DIFF_REPORT, IX_DIFF_OUT") Tests.Ix.IxVM.Differential.runShards,
   .env "ixvm-mutator" (.manual "mutated blocks and recursors; IX_MUT_MODULES, IX_MUT_BUDGET, IX_MUT_SEED") Tests.Ix.IxVM.Mutator.run,
   -- Lane s4 measurements (spike S4): declaration costs, a Std shard, the
   -- inductive census and the in-process modeller's records. Not a gate.
