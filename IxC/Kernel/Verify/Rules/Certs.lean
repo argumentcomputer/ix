@@ -108,9 +108,9 @@ theorem proofIrrel_bridge (hw : WhnfBridge env fuel) (hio : InferIOBridge env fu
   · exact .unitLike (inferTypeIO_bridge hio hta) (hw hwta) hua
       (inferTypeIO_bridge hio htb) (hw hwtb) hub
   · exact .proofIrrel (inferTypeIO_bridge hio hta)
-      (inferTypeIO_bridge hio hsta) (hw hwsta) huT
+      (inferTypeIO_bridge hio hsta) (hw hwsta) (isEquiv_zero_sound huT)
       (inferTypeIO_bridge hio htb) (inferTypeIO_bridge hio hstb)
-      (hw hwstb) hvT
+      (hw hwstb) (isEquiv_zero_sound hvT)
 
 /-- `propIrrel` ⇒ `DefEq.proofFast` or `DefEq.proofIrrel`
 (`propIrrel_inv`). -/
@@ -122,9 +122,9 @@ theorem propIrrel_bridge (hw : WhnfBridge env fuel) (hio : InferIOBridge env fue
     ⟨ta, sta, uT, tb, stb, vT, hta, hsta, hwsta, huT, htb, hstb, hwstb, hvT⟩
   · exact .proofFast hfa hfb
   · exact .proofIrrel (inferTypeIO_bridge hio hta)
-      (inferTypeIO_bridge hio hsta) (hw hwsta) huT
+      (inferTypeIO_bridge hio hsta) (hw hwsta) (isEquiv_zero_sound huT)
       (inferTypeIO_bridge hio htb) (inferTypeIO_bridge hio hstb)
-      (hw hwstb) hvT
+      (hw hwstb) (isEquiv_zero_sound hvT)
 
 /-- **The η certificate's per-field telescope certificates**, at a
 projection-function family: the `towerSlotsAll = false →` conjunct of
@@ -171,7 +171,7 @@ theorem structEtaCertWith_bridge (hw : WhnfBridge env fuel)
     hlps, hslots, hus, hcertT, -, hpar, -, hfields⟩ :=
     structEtaCertWith_inv h
   exact .structEta (inferTypeIO_bridge hio htb) (hw hwtb) hfn hfc hlen hwfn hfT
-    heta hctor hresT hresc hplen hulen hlps hslots hus
+    heta hctor hresT hresc hplen hulen hlps hslots (Level.isEquivList_sound hus)
     (iotaCerts_bridge hd hio hcertT)
     (structEtaCertWith_projCerts_bridge hd hio hwfn hfT h)
     (defEqList_bridge hd hpar) (defEqList_bridge hd hfields)
@@ -254,7 +254,7 @@ theorem defeqSpine_bridge (hd : DefEqBridge env fuel)
     (h : defeqSpineFueled .verified env fuel d a b = .ok true) :
     DefEq env d a b := by
   obtain ⟨n, us, us', ha, hb, -, hus, hl⟩ := defeqSpine_inv h
-  exact .constSpine ha hb hus (defEqList_bridge hd hl)
+  exact .constSpine ha hb (Level.isEquivList_sound hus) (defEqList_bridge hd hl)
 
 /-- `boolTrueShortcut` ⇒ `DefEq.boolTrue`. -/
 theorem boolTrueShortcut_bridge (hw : WhnfBridge env fuel)

@@ -98,9 +98,9 @@ theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr md} {c : K
     (hrule : rules.find? (fun r' => r'.ctor == cj) = some rl)
     (hmlen : major.getAppArgs.length = rl.ctorParams + rl.nfields)
     (hfire : rl.fire ≠ .inert)
-    (hlv : Level.isEquivList usj
+    (hlv : ∀ φ, Level.EvalEqList φ usj
       (Ix.Kernel.recFireComparands rl cv.levelParams us cvj.levelParams
-        e.getAppArgs rP).1 = some true)
+        e.getAppArgs rP).1)
     (hparams : rl.compareParams = true →
       DefEqListSem m φ d (major.getAppArgs.take rl.ctorParams)
         (Ix.Kernel.recFireComparands rl cv.levelParams us cvj.levelParams
@@ -208,8 +208,9 @@ theorem Red.iota_sound (hin : RulesInputs V m φ) {d : Nat} {e : Expr md} {c : K
       = Level.substFn φ cvj.levelParams
           (Ix.Kernel.recFireComparands rl cv.levelParams us cvj.levelParams
             [] rP).1 := by
-    rw [recFireComparands_fst_nil] at hlv
-    exact Ix.Kernel.Level.substFn_congr (Ix.Kernel.Level.isEquivList_sound hlv φ)
+    have hlvφ := hlv φ
+    rw [recFireComparands_fst_nil] at hlvφ
+    exact Ix.Kernel.Level.substFn_congr hlvφ
   -- the fired equation and the transported grading, at each valuation
   have hmain : ∀ ρ : Nat → V, Sat V Δa ρ →
       interp V ρ (AnnotTerm.mkAppN

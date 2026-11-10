@@ -103,4 +103,12 @@ theorem inferIO_bridge_zero : InferIOBridge env 0 := by
   rw [inferTypeCoreIO_zero] at h
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
+/-- The checker's fixed-fuel zero test, read as the semantic premise the
+`proofIrrel` and `Infer.proj` rules take (`Rules/Rel.lean`, "Level premises
+are semantic"). -/
+theorem isEquiv_zero_sound {l : Level} (h : Level.isEquiv l .zero = some true) :
+    ∀ φ, Level.eval φ l = 0 := fun φ => by
+  have := Level.isEquiv_sound h φ
+  simpa [Level.eval] using this
+
 end Ix.Kernel.Rules

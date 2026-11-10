@@ -129,7 +129,8 @@ theorem _root_.Ix.Cert.IotaStep.red {c : Key md} {cv : Ix.Kernel.ConstantVal md}
     (h : IotaStep env c cv mI rP rules rl e e') : Red env 0 e e' := by
   obtain ⟨-, us, major, cj, usj, cvj, cnP, cnF, residual, hhead, hlen, hus, hmajor, hmhead, hctor,
     hrule, hmlen, hfire, hlv, hparams, hcertR, hcertC, hres, hidx, rfl⟩ := h
-  exact Red.iota hhead hfind hlen hus hmajor hmhead hctor hrule hmlen hfire hlv hparams hcertR
+  exact Red.iota hhead hfind hlen hus hmajor hmhead hctor hrule hmlen hfire
+    (Ix.Kernel.Level.isEquivList_sound hlv) hparams hcertR
     hcertC hres hidx
 
 /-- A projection step is a reduction (`Red.proj`). -/
@@ -146,7 +147,7 @@ theorem _root_.Ix.Cert.StructEtaStep.defEq {T : Key md} {cvT : Ix.Kernel.Constan
   obtain ⟨-, -, tb, wtb, c, us, cvc, cnP, cnF, us', htb, hwtb, hhead, hctor, hlen, hthead, heta,
     hetaCtor, hresT, hresc, htlen, hlv, hlps, hslots, hus, hcerts, hproj, hparams, hfields⟩ := h
   exact DefEq.structEta htb hwtb hhead hctor hlen hthead hT heta hetaCtor hresT hresc htlen hlv
-    hlps hslots hus hcerts hproj hparams hfields
+    hlps hslots (Ix.Kernel.Level.isEquivList_sound hus) hcerts hproj hparams hfields
 
 /-- A unit-like step at a stored family is a conversion (`DefEq.structUnit`). -/
 theorem _root_.Ix.Cert.StructUnitStep.defEq {T : Key md} {cvT : Ix.Kernel.ConstantVal md} {caps : IndCaps md}

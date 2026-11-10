@@ -200,7 +200,7 @@ official `try_eq_const_app`): both heads the same constant at
 equivalent levels, the spines pairwise. -/
 theorem DefEq.constSpine {d : Nat} {a b : Expr md} {n : Key md} {us us' : List Level}
     (ha : a.getAppFn = .const n us) (hb : b.getAppFn = .const n us')
-    (hus : Level.isEquivList us us' = some true)
+    (hus : ∀ φ, Level.EvalEqList φ us us')
     (hargs : DefEqList env d a.getAppArgs b.getAppArgs) :
     DefEq env d a b :=
   .spine (by rw [ha, hb]; exact .const hus) hargs

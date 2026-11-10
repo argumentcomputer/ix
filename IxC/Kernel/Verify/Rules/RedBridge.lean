@@ -239,12 +239,12 @@ theorem iotaRec_bridge (hw : WhnfBridge env fuel)
     prepareMajor_bridge hw hd hio ⟨cv, mI, rP, hfc⟩ hprep
   by_cases hne : mI = rP
   · exact .iota (residual := .bvar 0) hfn hfc hlen hlvl hmaj hmfn hfj hrule hml
-      hplain hlev (fun hc => defEqList_bridge hd (hpeq hc))
+      hplain (Level.isEquivList_sound hlev) (fun hc => defEqList_bridge hd (hpeq hc))
       (iotaCerts_bridge hd hio hcerts) (iotaCerts_bridge hd hio hmcerts)
       (fun hc => absurd hne hc) (fun hc => absurd hne hc)
   · obtain ⟨residual, hres, hdl⟩ := iotaIndexOk_inv hidx hne
     exact .iota hfn hfc hlen hlvl hmaj hmfn hfj hrule hml
-      hplain hlev (fun hc => defEqList_bridge hd (hpeq hc))
+      hplain (Level.isEquivList_sound hlev) (fun hc => defEqList_bridge hd (hpeq hc))
       (iotaCerts_bridge hd hio hcerts) (iotaCerts_bridge hd hio hmcerts)
       (fun _ => hres) (fun _ => defEqList_bridge hd hdl)
 

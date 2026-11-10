@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.CoreDefs
+public import IxC.Kernel.Verify.Level
 
 @[expose] public section
 
@@ -52,6 +53,19 @@ every rule is sound on its own.  No mode index: the relation describes
 the `.verified` checker (`betaGate = verifiedChecks = true`), so the
 β gate reads `mb.pw.isNever` outright and every telescope walk the
 fire paths run is licensed.
+
+**Level premises are semantic.**  Where the checker runs its fixed-fuel
+level test (`Level.isEquiv`/`isEquivList … = some true`, which answers
+`none` on deep levels it cannot decide in `defaultFuel` steps), the rule
+asks for what the soundness proof reads off that test: equality of the
+levels' values under every assignment (`Level.eval`, `Level.EvalEqList`),
+or a value of `0`.  The bridge derives each from the checker's test
+(`Level.isEquiv_sound`, `Level.isEquivList_sound`), so the relation stays
+a superset of the run, and a producer that decides levels another way
+(a complete procedure) can supply the premise directly.  The one
+remaining fueled test, `Infer.proj`'s `Level.isEquiv entry.structSort
+.zero = some true`, sits in negative position: a producer only assumes
+it, and its other case is the stored entry's O5 bound.
 
 Scoping (`WScoped`, `looseBVarsBounded`, `LeavesBounded`, `CtxOk`) and
 readability (`denoteMeta … = some _`) are NOT part of the inductive;
@@ -195,9 +209,9 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       rules.find? (fun r' => r'.ctor == cj) = some rl →
       major.getAppArgs.length = rl.ctorParams + rl.nfields →
       rl.fire ≠ .inert →
-      Level.isEquivList usj
+      (∀ φ, Level.EvalEqList φ usj
         (recFireComparands rl cv.levelParams us cvj.levelParams
-          e.getAppArgs rP).1 = some true →
+          e.getAppArgs rP).1) →
       (rl.compareParams = true →
         DefEqList env d (major.getAppArgs.take rl.ctorParams)
           (recFireComparands rl cv.levelParams us cvj.levelParams
@@ -345,9 +359,11 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   continuation (`:1537-1577`), and the string-literal expansion. -/
   | redL {d : Nat} {a a' b : Expr md} :
       Red env d a a' → DefEq env d a' b → DefEq env d a b
-  /-- Two sorts (`Core.lean:1581`). -/
+  /-- Two sorts (`Core.lean:1581`) at levels equal under every assignment
+  (the checker's `Level.isEquiv u v = some true`, read by
+  `Level.isEquiv_sound`). -/
   | sort {d : Nat} {u v : Level} :
-      Level.isEquiv u v = some true → DefEq env d (.sort u) (.sort v)
+      (∀ φ, Level.eval φ u = Level.eval φ v) → DefEq env d (.sort u) (.sort v)
   /-- Two free variables of the same index (`Core.lean:1618-1620`).  The
   annotations are NOT compared, as the checker does not compare them:
   at a well-formed call `CtxOk` pins every opened variable's
@@ -355,10 +371,11 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   the relation has no `trans` (see the inductive's docstring). -/
   | fvar {d i : Nat} {ty₁ ty₂ : Expr md} :
       DefEq env d (.fvar i ty₁) (.fvar i ty₂)
-  /-- Two constants of the same name at equivalent levels
-  (`Core.lean:1621-1626`). -/
+  /-- Two constants of the same name at levels pointwise equal under every
+  assignment (`Core.lean:1621-1626`; the checker's
+  `Level.isEquivList us us' = some true`, read by `Level.isEquivList_sound`). -/
   | const {d : Nat} {n : Key md} {us us' : List Level} :
-      Level.isEquivList us us' = some true →
+      (∀ φ, Level.EvalEqList φ us us') →
       DefEq env d (.const n us) (.const n us')
   /-- The packed zero against `Nat.zero` (`Core.lean:1586-1591`; no
   support guard is read there). -/
@@ -418,9 +435,9 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
   model licenses that (every proof is the point). -/
   | proofIrrel {d : Nat} {a ta tta b tb ttb : Expr md} {u v : Level} :
       Infer env .io d a ta → Infer env .io d ta tta →
-      Red env d tta (.sort u) → Level.isEquiv u .zero = some true →
+      Red env d tta (.sort u) → (∀ φ, Level.eval φ u = 0) →
       Infer env .io d b tb → Infer env .io d tb ttb →
-      Red env d ttb (.sort v) → Level.isEquiv v .zero = some true →
+      Red env d ttb (.sort v) → (∀ φ, Level.eval φ v = 0) →
       DefEq env d a b
   /-- **Unit-likeness** (`proofIrrel`'s first arm, `Core.lean:287-294`):
   both sides' io-inferred types head-normalise to the basis unit type. -/
@@ -454,7 +471,7 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       cvc.levelParams = cvT.levelParams →
       (towerSlotsAll env T caps.etaFields ||
         recSlotsAll env T caps.etaFields) = true →
-      Level.isEquivList us us' = some true →
+      (∀ φ, Level.EvalEqList φ us us') →
       Certs env d false (cvT.type.instantiateLevelParams cvT.levelParams us')
         wtb.getAppArgs →
       (towerSlotsAll env T caps.etaFields = false →
@@ -567,8 +584,7 @@ inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop 
       te.getAppArgs.length = entry.numParams →
       us.length = entry.levelParams.length →
       (Level.isEquiv entry.structSort .zero = some true →
-        Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
-          = some true) →
+        ∀ φ, Level.eval φ (Level.subst entry.levelParams us entry.fieldSort) = 0) →
       Infer env g d (.proj sn i pe) (entry.typeAt us te.getAppArgs pe)
 
 /-- **The telescope certificate** (`iotaCerts`, `Core.lean:230-244`):
