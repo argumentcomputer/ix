@@ -307,6 +307,22 @@ theorem ci_rep {c : Ctx} (hA : Assumed c) {calls cs : List (Call F)} (good : Goo
   obtain ⟨⟨lc, hst⟩, hfrag⟩ := good.2.1 _ hmem rfl addr a rfl ha
   exact hA.getCI _ _ _ _ _ ev a ha hfrag (load_escape hst (good.sub hsub hlen).1)
 
+/-- `Lists::length` of the empty level list is `0`, and allocates nothing. -/
+theorem length_levels_nil {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W Obs.Names.«Lists::length<&KernelTypes::KLevelNode>» [l] h r h' cs)
+    (hl : RepList klevelListEnum RepIxVMKUniv h [] l) : r = .field 0 ∧ h' = h := by
+  have ev' : ObsFn W (Instance.mk "Lists::length" [klevelTy]).symbol [l] h r h' cs := by
+    rw [Obs.Names.«Lists::length<&KernelTypes::KLevelNode>».symbol]; exact ev
+  have henum : (Instance.mk "Lists::Node" [klevelTy]).symbol = klevelListEnum :=
+    Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol
+  cases hl with
+  | nil cell =>
+    rcases Obs.«Lists::length».obs ev' with ⟨ld, hr, hh, -⟩ | ⟨w, rest, x, m, cs', ld, -, -, -, -⟩
+    · exact ⟨hr, hh⟩
+    · rw [henum, loadValue_enum_cell cell] at ld
+      injection ld with hv; injection hv with _ hc _
+      exact absurd hc (by decide)
+
 theorem constHead_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_const_head" args h r h' calls) (ih : IH c calls) :
@@ -326,28 +342,32 @@ theorem constHead_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
     obtain ⟨y, hy⟩ := hA.tryPrim _ _ _ _ _ _ _ _ _ ev14 (good.sub (by memsub) (by lenlt)).2.2.1
     simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq] at hy
     exact absurd hy.1 (by decide)
-  | other_Defn_n1_bind v1 m2 cs12 m140 p cs153 w1 w2 value w3 w4 m210 cs220 x cs270 ev14 ev155
+  | other_Defn_n1_bind v1 m2 cs12 m140 p cs153 nl w2 value w3 w4 m210 cs220 x cs270 ev14 ev155
       ld ev222 ev272 hc =>
     -- `Defn`, `(1, reduced) => whnf(rc, reduced, types)`: not taken on a represented value
     subst hc
     have ha1 := Bytes.repAddressRef_heapMono₂ addrTy ev14.heap_extends ha
     have hci := ci_rep hA good ev155 (by simp) (by memsub) (by lenlt) ha1
     obtain ⟨cvv, V, hn, hfind, hlp, hV⟩ := hci.defn _ _ _ _ _ ld
-    obtain ⟨y, hy⟩ := hA.tryProjDef _ _ _ _ _ _ ev222 d Γ V (hV d Γ)
+    obtain ⟨y, hy⟩ := hA.tryProjDef _ _ _ _ _ _ _ _ ev222 d Γ V (hV d Γ)
     simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq] at hy
     exact absurd hy.1 (by decide)
-  | other_Defn_other_n1_bind v1 m2 cs12 m140 p cs153 w1 w2 value w3 w4 v209 m210 cs220 m302 cs313
+  | other_Defn_other_n1_bind v1 m2 cs12 m140 p cs153 nl w2 value w3 w4 v209 m210 cs220 m302 cs313
       body cs353 ev14 ev155 ld ev222 ev315 ev355 hc =>
-    -- `Defn(_, _, value, _, _)`, `_`, `red_unfold(ci, lvls)`, `(1, body) =>
-    -- whnf_with_spine(rc, body, spine, types)`; `red_unfold`'s `Defn` arm is
-    -- `(1, expr_inst_levels(value, lvls))`
+    -- `Defn(nl, _, value, _, _)`, `_`, `red_unfold(ci, lvls)`, `(1, body) =>
+    -- whnf_with_spine(rc, body, spine, types)`; `red_unfold`'s `Defn` arm checks the level
+    -- count, `Lists::length(lvls) - nl` (`0` here: `(1, expr_inst_levels(value, lvls))`)
     subst hc
     rcases Obs.«KernelWhnf::red_unfold».obs ev315 with
-      ⟨_, _, _, _, _, v49, m58, cs66, hv, he, ev314, rfl, rfl⟩ |
-      ⟨_, _, _, _, _, _, hne, -, -, -, -, -⟩ | ⟨_, hne, -, -, -, -, -⟩
+      ⟨_, _, _, _, _, x54, m56, cs65, v84, m93, cs101, hv, evL, -, he, ev314, rfl, rfl⟩ |
+      ⟨_, _, _, _, _, _, _, _, _, -, -, -, -, he, -, -⟩ |
+      ⟨_, _, _, _, _, _, _, _, _, hne, -, -, -, -, -, -, -⟩ |
+      ⟨_, _, _, _, _, _, _, hne, -, -, -, -, -, -, -⟩ | ⟨_, hne, -, -, -, -, -⟩
     rotate_left
-    · exact (hne _ (by rfl) rfl).elim
-    · exact (hne _ (by rfl) rfl).elim
+    · -- the count differs: `(0, value)`, not tag `1`
+      simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq] at he
+      exact absurd he.1 (by decide)
+    all_goals first | exact (hne _ (by rfl) rfl).elim | skip
     cases hv
     cases he
     have extp := ev14.heap_extends
@@ -359,8 +379,9 @@ theorem constHead_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
       .delta (K.unfold_const_head As hfind hlp)
     have extj := ev222.heap_extends
     have ext3 := extp.trans (extg.trans extj)
-    obtain ⟨rfl, rfl⟩ := (ih _ _ _ _ _ _ (by lenlt) ev314).instLevels rfl _ _ rfl
-      (repList_heapMono₂ klevelListEnum repIxVMKUniv_heapMono₂ ext3 hls)
+    have hls3 := repList_heapMono₂ klevelListEnum repIxVMKUniv_heapMono₂ ext3 hls
+    obtain ⟨-, rfl⟩ := length_levels_nil evL hls3
+    obtain ⟨rfl, rfl⟩ := (ih _ _ _ _ _ _ (by lenlt) ev314).instLevels rfl _ _ rfl hls3
     obtain ⟨E', hE', hred2⟩ := (ih _ _ _ _ _ _ (by lenlt) ev355).withSpine rfl _ _ _ _ rfl
       (good.sub (by memsub) (by lenlt)) d Γ V As (RepEc.mono extj hV d Γ)
       (RepSpine.mono ext3 hAs)

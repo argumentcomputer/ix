@@ -539,11 +539,11 @@ inductive «KernelEval::eval_output».Path (x_output x_nlvls x_input_type : Sour
       (ev184 : ObsFn W "UInt64::to_field" [x_lvls] m2 v171 m174 cs182)
       (heq200 : (v171 : SourceValue F) = x_nlvls)
       (hm212 : m202 = (m174 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
-      (ev229 : ObsFn W "Convert::convert_expr" [x_ty, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs] m202 v216 m217 cs227)
+      (ev229 : ObsFn W "Convert::convert_root" [x_ty, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs] m202 v216 m217 cs227)
       (ev294 : ObsFn W "KernelCheck::kexpr_struct_eq" [v216, x_input_type] m217 v281 m284 cs292)
       (heq317 : (v281 : SourceValue F) = (.field 1))
-      (ev323 : ObsFn W "Convert::convert_expr" [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs] m284 r h' cs321)
-      (hc364 : calls = ((⟨"Ingress::load_verified_constant", [x_output], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt64::to_field", [x_lvls], m2⟩ : Call F) :: (cs182 ++ ((⟨"Convert::convert_expr", [x_ty, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs], m202⟩ : Call F) :: (cs227 ++ ((⟨"KernelCheck::kexpr_struct_eq", [v216, x_input_type], m217⟩ : Call F) :: (cs292 ++ ((⟨"Convert::convert_expr", [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs], m284⟩ : Call F) :: cs321))))))))))
+      (ev323 : ObsFn W "Convert::convert_root" [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs] m284 r h' cs321)
+      (hc364 : calls = ((⟨"Ingress::load_verified_constant", [x_output], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt64::to_field", [x_lvls], m2⟩ : Call F) :: (cs182 ++ ((⟨"Convert::convert_root", [x_ty, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs], m202⟩ : Call F) :: (cs227 ++ ((⟨"KernelCheck::kexpr_struct_eq", [v216, x_input_type], m217⟩ : Call F) :: (cs292 ++ ((⟨"Convert::convert_root", [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m174).length), x_univs], m284⟩ : Call F) :: cs321))))))))))
 
 /-- **Every observed derivation of `KernelEval::eval_output` takes one of its paths.** -/
 theorem «KernelEval::eval_output».obs {x_output x_nlvls x_input_type : SourceValue F} {h h' : Heap F} {r : SourceValue F}

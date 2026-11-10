@@ -280,8 +280,8 @@ structure Assumed (c : Ctx) : Prop where
   /-- The fragment (by reading `projection_definition_info`: tag `1` needs a `Proj`
   node, which no represented term has): the shortcut does not fire on a
   represented value. -/
-  tryProjDef : ∀ value sp h r h' calls,
-    ObsFn W "KernelWhnf::try_reduce_projection_definition" [value, sp] h r h' calls →
+  tryProjDef : ∀ value nl lvls sp h r h' calls,
+    ObsFn W "KernelWhnf::try_reduce_projection_definition" [value, nl, lvls, sp] h r h' calls →
     ∀ d Γ V, RepE c.κ d Γ h V value → ∃ x, r = .tuple [.field 0, x]
   /-- L1 (decoder, `Convert`, the kernel's reader, BLAKE3): if every byte string
   the load hashed to the address is the view's data there, the loaded constant

@@ -234,11 +234,6 @@ abbrev «WordLists::lookup_u64<Ixon::MutConst>» : String := "${\"name\":\"WordL
 
 theorem «WordLists::lookup_u64<Ixon::MutConst>».symbol : (Instance.mk "WordLists::lookup_u64" [(.named "Ixon::MutConst" [])]).symbol = «WordLists::lookup_u64<Ixon::MutConst>» := by decide +kernel
 
-/-- The instance `WordLists::depth_checked<Field>`. -/
-abbrev «WordLists::depth_checked<Field>» : String := "${\"name\":\"WordLists::depth_checked\",\"types\":[\"field\"]}"
-
-theorem «WordLists::depth_checked<Field>».symbol : (Instance.mk "WordLists::depth_checked" [.field]).symbol = «WordLists::depth_checked<Field>» := by decide +kernel
-
 /-- The instance `WordLists::length_u64<[Field; 8]>`. -/
 abbrev «WordLists::length_u64<[Field; 8]>» : String := "${\"name\":\"WordLists::length_u64\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}"
 
@@ -298,11 +293,6 @@ theorem «Lists::lookup<&[Field; 32]>».symbol : (Instance.mk "Lists::lookup" [(
 abbrev «Lists::drop<&Ixon::Expr>» : String := "${\"name\":\"Lists::drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Expr\"}}}}]}"
 
 theorem «Lists::drop<&Ixon::Expr>».symbol : (Instance.mk "Lists::drop" [(.ptr (.named "Ixon::Expr" []))]).symbol = «Lists::drop<&Ixon::Expr>» := by decide +kernel
-
-/-- The instance `Lists::take<&Ixon::Expr>`. -/
-abbrev «Lists::take<&Ixon::Expr>» : String := "${\"name\":\"Lists::take\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Expr\"}}}}]}"
-
-theorem «Lists::take<&Ixon::Expr>».symbol : (Instance.mk "Lists::take" [(.ptr (.named "Ixon::Expr" []))]).symbol = «Lists::take<&Ixon::Expr>» := by decide +kernel
 
 /-- The instance `Lists::Node<KernelTypes::KRecRule>`. -/
 abbrev «Lists::Node<KernelTypes::KRecRule>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KernelTypes::KRecRule\"}}]}"
@@ -617,8 +607,6 @@ theorem n4965618738193198699 : instanceName [] "WordLists::lookup_u64" (some [(.
 
 theorem n17406749417574904446 : constructorName [] (.named "KernelClaim::RevealConstantInfo" []) = "KernelClaim::RevealConstantInfo" := by decide +kernel
 
-theorem n8937318257740674702 : instanceName [] "WordLists::depth_checked" (some [.field]) = Names.«WordLists::depth_checked<Field>» := by decide +kernel
-
 theorem n7126347638910987197 : instanceName [] "WordLists::length_u64" (some [(.array .field 8)]) = Names.«WordLists::length_u64<[Field; 8]>» := by decide +kernel
 
 theorem n18223928145028035135 : constructorName [] (.named "Ixon::LetContract" []) = "Ixon::LetContract" := by decide +kernel
@@ -690,8 +678,6 @@ theorem n13032184727759391638 : instanceName [] "Lists::lookup" (some [(.ptr (.n
 theorem n16119986092388975791 : instanceName [] "Lists::lookup" (some [(.ptr (.array .field 32))]) = Names.«Lists::lookup<&[Field; 32]>» := by decide +kernel
 
 theorem n10967839274657083673 : instanceName [] "Lists::drop" (some [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::drop<&Ixon::Expr>» := by decide +kernel
-
-theorem n8694234675158229759 : instanceName [] "Lists::take" (some [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::take<&Ixon::Expr>» := by decide +kernel
 
 theorem n5758466586006354762 : instanceName [] "Lists::Node" (some [(.named "KernelTypes::KRecRule" [])]) = Names.«Lists::Node<KernelTypes::KRecRule>» := by decide +kernel
 
