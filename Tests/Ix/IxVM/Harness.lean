@@ -99,13 +99,17 @@ structure Case where
   /-- Exact rounded FFT-work surrogate of the accepted execution. -/
   expectedFftCost : Option Nat := none
   witness : ClaimWitness
+  /-- The environment the witness was built from, when known: the binder-data
+  annotator and its check read it to type the witness's records
+  (`IxVM.PwHints.View.support`). -/
+  env : Ixon.Env := {}
 
 /-- The case for `claim` over `env`, with the assumption trees its roots name. -/
 def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) (accept : Bool := true)
     (rejectsWith : Option String := none) : Except String Case := do
   let witness ← buildClaimWitness env claim trees
-  return { label, accept, rejectsWith, witness }
+  return { label, accept, rejectsWith, witness, env := ← withDefaultRoleBinding env }
 
 /-- `c` with the binder data (D2, `IxVM.PwHints`) its claim's conversion
 reads, when its witness carries none: a suite that builds its IO by hand gets
@@ -113,7 +117,7 @@ them as `IxVM.ClaimHarness`'s builders give them. -/
 def Case.withPwHints (c : Case) : Except String Case := do
   if _root_.IxVM.PwHints.hasHints c.witness.inputIOBuffer then return c
   let some claim := _root_.IxVM.PwHints.claimOf c.witness.inputIOBuffer c.witness.input | return c
-  let io ← _root_.IxVM.PwHints.withHints claim c.witness.inputIOBuffer
+  let io ← _root_.IxVM.PwHints.withHints claim c.witness.inputIOBuffer c.env
   return { c with witness := { c.witness with inputIOBuffer := io } }
 
 /-! ## The case file
@@ -207,7 +211,7 @@ def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
   let io := c.witness.inputIOBuffer
   unless _root_.IxVM.PwHints.hasHints io do return none
   let t0 ← IO.monoMsNow
-  let again := _root_.IxVM.PwHints.annotate (_root_.IxVM.PwHints.stripHints io)
+  let again := _root_.IxVM.PwHints.annotate (_root_.IxVM.PwHints.stripHints io) c.env
   let rerun ← match again with
     | .ok (io', stats) => do
       let same := match _root_.IxVM.PwHints.tableOf io', _root_.IxVM.PwHints.tableOf io with
@@ -216,7 +220,7 @@ def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
       pure (some (stats, same))
     | .error _ => pure none
   let t1 ← IO.monoMsNow
-  match _root_.IxVM.PwHints.check io, rerun with
+  match _root_.IxVM.PwHints.check io c.env, rerun with
   | .ok rep, some (stats, same) =>
     let (values, blocks, extra) := _root_.IxVM.PwHints.streamCounts io
     IO.println s!"PW {c.label}: {rep.render} values={values} blocks={blocks} \
