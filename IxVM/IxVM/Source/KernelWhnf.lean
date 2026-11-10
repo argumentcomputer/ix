@@ -35,19 +35,58 @@ def peel_beta := aiur_fn⟦
     }
 ⟧
 
-def whnf_apply_beta := aiur_fn⟦
-  fn whnf_apply_beta(rc: KernelRoles::RoleCtx, spine: Lists::List<KernelTypes::KExpr>, lam: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+  -- Rule-shaped core (lane cx). Each kernel rule IxVM uses has one step function,
+  -- called by all three head normalizers (`whnf`, `whnf_struct_core`, `whnf_nd`):
+  --   `red_beta`   Red.beta / Red.betaGate, one step per consumed argument;
+  --   `red_proj`   Red.proj, the scrutinee already reduced by the caller (Red.projArg);
+  --   `red_unfold` Red.delta (definitions) and Red.deltaThm (theorems);
+  --   `red_iota`   Red.iota on a prepared major (`try_iota` prepares it);
+  --   `red_rec`    the recursor dispatch: K (Red.rescueK), ι, structure-η ι (Red.rescueEta).
+  -- A step function returns a tag (0 = no move) and the one-step reduct; the caller
+  -- chains it (Red.trans, Red.appFn) and picks the normalizer that continues.
+
+def red_beta := aiur_fn⟦
+  fn red_beta(rc: KernelRoles::RoleCtx, lam: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>,
+              types: Lists::List<KernelTypes::KExpr>)
+              -> (Field, KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
       match peel_beta(lam, spine, (&(Lists::Node::Nil))) {
         (deep, consumed, rest) => {
-          match Lists::length(consumed) {
-            0 => {  apply_spine(lam, spine) } ,
-            1 => {
-              let body2 = KernelSubst::expr_inst1(deep, Lists::lookup(consumed, 0), 0);
-              whnf_with_spine(rc, body2, rest, types) } ,
-            _ => {
-              let body2 = KernelSubst::expr_inst_many(deep, consumed, 0);
-              whnf_with_spine(rc, body2, rest, types) } ,
+          match (*(consumed)) {
+            Lists::Node::Nil => {  (0, lam, spine) } ,
+            Lists::Node::Cons(a, more) => {
+              match (*(more)) {
+                Lists::Node::Nil => {  (1, KernelSubst::expr_inst1(deep, a, 0), rest) } ,
+                Lists::Node::Cons(_, _) => {  (1, KernelSubst::expr_inst_many(deep, consumed, 0), rest) } ,
+              } } ,
           } } ,
+      }
+    }
+⟧
+
+def red_proj := aiur_fn⟦
+  fn red_proj(rc: KernelRoles::RoleCtx, struct_addr: Bytes::AddressRef, fidx: Field, scrut: KernelTypes::KExpr,
+              types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match KernelTypes::collect_spine(scrut) {
+        (head, args) => {
+          match (*(head)) {
+            KernelTypes::KExprNode::Const(caddr, _) => {
+              match (*(Ingress::get_ci(caddr))) {
+                KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, nparams, _, _) => {
+                  (1, Lists::lookup(args, nparams + fidx)) } ,
+                _ => {  (0, scrut) } ,
+              } } ,
+            _ => {  (0, scrut) } ,
+          } } ,
+      }
+    }
+⟧
+
+def red_unfold := aiur_fn⟦
+  inline fn red_unfold(ci: KernelTypes::KConstantInfo, lvls: Lists::List<KernelTypes::KLevel>) -> (Field, KernelTypes::KExpr) {
+      match ci {
+        KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {  (1, KernelLevels::expr_inst_levels(value, lvls)) } ,
+        KernelTypes::KConstantInfo::Thm(_, _, value) => {  (2, KernelLevels::expr_inst_levels(value, lvls)) } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
 ⟧
@@ -61,7 +100,10 @@ def whnf_with_spine := aiur_fn⟦
               whnf_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(ty, body) => {
-          whnf_apply_beta(rc, spine, head, types) } ,
+          match red_beta(rc, head, spine, types) {
+            (1, reduct, rest) => {  whnf_with_spine(rc, reduct, rest, types) } ,
+            _ => {  apply_spine(head, spine) } ,
+          } } ,
         KernelTypes::KExprNode::Const(addr, lvls) => {
           whnf_const_head(rc, addr, lvls, head, spine, types) } ,
         KernelTypes::KExprNode::Let(_, val, body) => {
@@ -80,32 +122,11 @@ def whnf_proj_head := aiur_fn⟦
       let inner_whnf = whnf(rc, inner, types);
 
       let inner_exp = KernelNatPrim::str_lit_to_ctor_app_or_self(rc, inner_whnf, types);
-      match KernelTypes::collect_spine(inner_exp) {
-        (inner_head, inner_args) => {
-          match (*(inner_head)) {
-            KernelTypes::KExprNode::Const(_, _) => {
-              match (*(whnf_get_ctor_or_none(inner_head))) {
-                KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, nparams, _, _) => {
-                  let field = Lists::lookup(inner_args, nparams + fidx);
-                  whnf_with_spine(rc, field, spine, types) } ,
-                _ => {
-                  let stuck = (&(KernelTypes::KExprNode::Proj(struct_addr, fidx, inner_whnf)));
-                  apply_spine(stuck, spine) } ,
-              } } ,
-            _ => {
-              let stuck = (&(KernelTypes::KExprNode::Proj(struct_addr, fidx, inner_whnf)));
-              apply_spine(stuck, spine) } ,
-          } } ,
-      }
-    }
-⟧
-
-def whnf_get_ctor_or_none := aiur_fn⟦
-  fn whnf_get_ctor_or_none(head: KernelTypes::KExpr) -> &KernelTypes::KConstantInfo {
-      match (*(head)) {
-        KernelTypes::KExprNode::Const(addr, _) => {  Ingress::get_ci(addr) } ,
+      match red_proj(rc, struct_addr, fidx, inner_exp, types) {
+        (1, field) => {  whnf_with_spine(rc, field, spine, types) } ,
         _ => {
-          (&(KernelTypes::KConstantInfo::Axiom(0, (&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero))))), 0))) } ,
+          let stuck = (&(KernelTypes::KExprNode::Proj(struct_addr, fidx, inner_whnf)));
+          apply_spine(stuck, spine) } ,
       }
     }
 ⟧
@@ -268,8 +289,10 @@ def whnf_const_head := aiur_fn⟦
           match pd {
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             _ => {
-              let body = KernelLevels::expr_inst_levels(value, lvls);
-              whnf_with_spine(rc, body, spine, types) } ,
+              match red_unfold(ci, lvls) {
+                (1, body) => {  whnf_with_spine(rc, body, spine, types) } ,
+                _ => {  apply_spine(head, spine) } ,
+              } } ,
           } } ,
 
         KernelTypes::KConstantInfo::Thm(_, _, _) => {  apply_spine(head, spine) } ,
@@ -279,47 +302,63 @@ def whnf_const_head := aiur_fn⟦
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
           } } ,
-        KernelTypes::KConstantInfo::Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
-                            rules, k_flag, _unsafe, _block, _ridx) => {
-
-          let k_skip = ((nparams + nmotives) + nminors) + nindices;
-          let k_pre = match k_flag {
-            1 => {
-
-              match se_parent_addr(rec_ty, k_skip) {
-                (_, rec_parent) => {
-                  try_k_synth_iota(rc, lvls, spine, nparams, nmotives,
-                                      nminors, nindices, rules,
-                                      rec_parent, types) } ,
-              } } ,
-            _ => {  (0, head) } ,
-          };
-          match k_pre {
-            (1, k_reduct) => {  k_reduct } ,
-            _ => {
-          let iota = try_iota(rc, lvls, spine, nparams, nmotives, nminors,
-                                   nindices, rules, types, head,
-                                   KernelCheck::rec_to_parent_addr(rec_ty, nparams, nmotives,
-                                     nminors, nindices));
-          match iota {
+        KernelTypes::KConstantInfo::Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
+                            rules, k_flag, _, _, _) => {
+          match red_rec(rc, rec_ty, lvls, head, spine, nparams, nindices, nmotives, nminors,
+                        rules, k_flag, types) {
             (1, reduced) => {  whnf(rc, reduced, types) } ,
-            (2, stuck) => {
-              match k_flag {
-
-                1 => {  stuck } ,
-                _ => {
-
-                  match try_struct_eta_iota(rc, rec_ty, lvls, spine, nparams,
-                          nmotives, nminors, nindices, rules, types) {
-                    (1, r) => {  whnf(rc, r, types) } ,
-                    _ => {  stuck } ,
-                  } } ,
-              } } ,
+            (2, stuck) => {  stuck } ,
+            (3, k_reduct) => {  whnf(rc, k_reduct, types) } ,
             _ => {  apply_spine(head, spine) } ,
-          } } ,
           } } ,
         _ => {  apply_spine(head, spine) } ,
       } } ,
+      }
+    }
+⟧
+
+  -- The recursor dispatch, shared by `whnf` and `whnf_nd`: K first when the record's
+  -- K flag is set, else ι; when ι is stuck and the K flag is clear, structure-η ι.
+  -- Tags: 0 no move; 1 ι or structure-η ι reduct; 2 stuck, with the prepared major
+  -- in place; 3 the K reduct (both callers continue it with full `whnf`).
+
+def red_rec := aiur_fn⟦
+  fn red_rec(rc: KernelRoles::RoleCtx, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>,
+             head: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>,
+             nparams: Field, nindices: Field, nmotives: Field, nminors: Field,
+             rules: Lists::List<KernelTypes::KRecRule>, k_flag: Field,
+             types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      let k_pre = match k_flag {
+        1 => {
+          match se_parent_addr(rec_ty, ((nparams + nmotives) + nminors) + nindices) {
+            (_, rec_parent) => {
+              try_k_synth_iota(rc, lvls, spine, nparams, nmotives,
+                                  nminors, nindices, rules,
+                                  rec_parent, types) } ,
+          } } ,
+        _ => {  (0, head) } ,
+      };
+      match k_pre {
+        (1, k_reduct) => {  (3, k_reduct) } ,
+        _ => {
+          let iota = try_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors,
+                              nindices, rules, types, head,
+                              KernelCheck::rec_to_parent_addr(rec_ty, nparams, nmotives,
+                                nminors, nindices));
+          match iota {
+            (1, reduced) => {  (1, reduced) } ,
+            (2, stuck) => {
+              match k_flag {
+                1 => {  (2, stuck) } ,
+                _ => {
+                  match try_struct_eta_iota(rc, rec_ty, lvls, spine, nparams,
+                          nmotives, nminors, nindices, rules, types) {
+                    (1, r) => {  (1, r) } ,
+                    _ => {  (2, stuck) } ,
+                  } } ,
+              } } ,
+            _ => {  (0, head) } ,
+          } } ,
       }
     }
 ⟧
@@ -409,8 +448,7 @@ def try_k_synth_iota := aiur_fn⟦
                       let pmm = Lists::take(spine, pmm_end);
                       let post_major = Lists::drop(spine, major_idx + 1);
                       let r1 = apply_spine(rhs_lvled, pmm);
-                      let r3 = apply_spine(r1, post_major);
-                      (1, whnf(rc, r3, types)) } ,
+                      (1, apply_spine(r1, post_major)) } ,
                   } } ,
               } } ,
           } } ,
@@ -468,10 +506,8 @@ def whnf_iota_major := aiur_fn⟦
         (h, sp) => {
           match (*(h)) {
             KernelTypes::KExprNode::Const(addr, lvls) => {
-              match (*(Ingress::get_ci(addr))) {
-                KernelTypes::KConstantInfo::Thm(_, _, value) => {
-                  let body = KernelLevels::expr_inst_levels(value, lvls);
-                  whnf_iota_major(rc, whnf_with_spine(rc, body, sp, types), types) } ,
+              match red_unfold((*(Ingress::get_ci(addr))), lvls) {
+                (2, body) => {  whnf_iota_major(rc, whnf_with_spine(rc, body, sp, types), types) } ,
                 _ => {  w } ,
               } } ,
             _ => {  w } ,
@@ -480,8 +516,13 @@ def whnf_iota_major := aiur_fn⟦
     }
 ⟧
 
+  -- ι with the major's preparation (the `Red` premise on the major): the linear
+  -- `Nat.rec` fold, the `Nat.add` offset rewrite, `whnf` with theorem unfolding, the
+  -- literal-to-constructor step. The firing itself is `red_iota`. Tags: 0 no move;
+  -- 1 the reduct; 2 stuck, with the prepared major in place.
+
 def try_iota := aiur_fn⟦
-  fn try_iota(rc: KernelRoles::RoleCtx, lvls: Lists::List<KernelTypes::KLevel>, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_iota(rc: KernelRoles::RoleCtx, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>, spine: Lists::List<KernelTypes::KExpr>,
                     nparams: Field, nmotives: Field, nminors: Field, nindices: Field,
                     rules: Lists::List<KernelTypes::KRecRule>, types: Lists::List<KernelTypes::KExpr>,
                     head: KernelTypes::KExpr, rec_parent: Bytes::AddressRef) -> (Field, KernelTypes::KExpr) {
@@ -501,36 +542,49 @@ def try_iota := aiur_fn⟦
           let major_w = whnf_iota_major(rc, major_clean1, types);
           let major_clean2 = KernelNatPrim::cleanup_nat_offset_major(rc, major_w);
           let major = nat_lit_to_ctor_or_self(rc, major_clean2);
-          match collect_spine_of_ctor(major) {
-            (1, ctor_cidx, ctor_parent, ctor_args) => {
-
-              assert_eq!(Bytes::address_eq(ctor_parent, rec_parent), 1,
-                "iota: major's constructor belongs to a different inductive");
-              let rule = find_rule(rules, ctor_cidx);
-              match rule {
-                (0, _, _) => {
-
-                  let new_spine = replace_spine_major(spine, major_idx, major_w);
-                  (2, apply_spine(head, new_spine)) } ,
-                (1, rfields, rrhs) => {
-                  let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
-                  let pmm_end = nparams + nmotives + nminors;
-                  let pmm = Lists::take(spine, pmm_end);
-                  let ctor_fields_len = Lists::length(ctor_args);
-                  let field_start = ctor_fields_len - rfields;
-                  let field_args = Lists::drop(ctor_args, field_start);
-                  let post_major = Lists::drop(spine, major_idx + 1);
-                  let r1 = apply_spine(rhs_lvled, pmm);
-                  let r2 = apply_spine(r1, field_args);
-                  let r3 = apply_spine(r2, post_major);
-                  (1, r3) } ,
-              } } ,
+          match red_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
+                         rules, rec_parent, major, types) {
+            (1, r3) => {  (1, r3) } ,
             _ => {
-
               let new_spine = replace_spine_major(spine, major_idx, major_w);
               (2, apply_spine(head, new_spine)) } ,
           } } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Red.iota on a prepared major: the rule for the major's constructor fires on the
+  -- recursor's parameters, motives and minors, the constructor's fields and the
+  -- arguments after the major. Tag 0: no rule matches (or the major is no
+  -- constructor application).
+
+def red_iota := aiur_fn⟦
+  fn red_iota(rc: KernelRoles::RoleCtx, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>,
+              spine: Lists::List<KernelTypes::KExpr>,
+              nparams: Field, nmotives: Field, nminors: Field, nindices: Field,
+              rules: Lists::List<KernelTypes::KRecRule>, rec_parent: Bytes::AddressRef,
+              major: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match collect_spine_of_ctor(major) {
+        (1, ctor_cidx, ctor_parent, ctor_args) => {
+
+          assert_eq!(Bytes::address_eq(ctor_parent, rec_parent), 1,
+            "iota: major's constructor belongs to a different inductive");
+          match find_rule(rules, ctor_cidx) {
+            (1, rfields, rrhs) => {
+              let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
+              let pmm_end = nparams + nmotives + nminors;
+              let pmm = Lists::take(spine, pmm_end);
+              let ctor_fields_len = Lists::length(ctor_args);
+              let field_start = ctor_fields_len - rfields;
+              let field_args = Lists::drop(ctor_args, field_start);
+              let post_major = Lists::drop(spine, (pmm_end + nindices) + 1);
+              let r1 = apply_spine(rhs_lvled, pmm);
+              let r2 = apply_spine(r1, field_args);
+              (1, apply_spine(r2, post_major)) } ,
+            _ => {  (0, major) } ,
+          } } ,
+        _ => {  (0, major) } ,
       }
     }
 ⟧
@@ -830,15 +884,9 @@ def whnf_struct_core_spine := aiur_fn⟦
             (h, s) => {  whnf_struct_core_spine(rc, h, Lists::concat(s, spine), types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(_, _) => {
-          match peel_beta(head, spine, (&(Lists::Node::Nil))) {
-            (deep, consumed, rest) => {
-              match Lists::length(consumed) {
-                0 => {  apply_spine(head, spine) } ,
-                1 => {  whnf_struct_core_spine(rc,
-                       KernelSubst::expr_inst1(deep, Lists::lookup(consumed, 0), 0), rest, types) } ,
-                _ => {  whnf_struct_core_spine(rc,
-                       KernelSubst::expr_inst_many(deep, consumed, 0), rest, types) } ,
-              } } ,
+          match red_beta(rc, head, spine, types) {
+            (1, reduct, rest) => {  whnf_struct_core_spine(rc, reduct, rest, types) } ,
+            _ => {  apply_spine(head, spine) } ,
           } } ,
         KernelTypes::KExprNode::Let(_, val, body) => {
           whnf_struct_core_spine(rc, KernelSubst::expr_inst1(body, val, 0), spine, types) } ,
@@ -856,18 +904,9 @@ def whnf_struct_core_proj := aiur_fn⟦
                                   spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>,
                                   original: KernelTypes::KExpr) -> KernelTypes::KExpr {
       let inner_w = whnf_struct_core(rc, inner, types);
-      match KernelTypes::collect_spine(inner_w) {
-        (ih, ia) => {
-          match (*(ih)) {
-            KernelTypes::KExprNode::Const(_, _) => {
-              match (*(whnf_get_ctor_or_none(ih))) {
-                KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, nparams, _, _) => {
-                  whnf_struct_core_spine(rc, Lists::lookup(ia, nparams + fidx),
-                                          spine, types) } ,
-                _ => {  apply_spine(original, spine) } ,
-              } } ,
-            _ => {  apply_spine(original, spine) } ,
-          } } ,
+      match red_proj(rc, struct_addr, fidx, inner_w, types) {
+        (1, field) => {  whnf_struct_core_spine(rc, field, spine, types) } ,
+        _ => {  apply_spine(original, spine) } ,
       }
     }
 ⟧
@@ -879,7 +918,7 @@ def whnf_struct_core_const := aiur_fn⟦
       match (*(Ingress::get_ci(addr))) {
         KernelTypes::KConstantInfo::Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
                             rules, _k, _unsafe, _block, _ridx) => {
-          match try_iota(rc, lvls, spine, nparams, nmotives, nminors, nindices,
+          match try_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
                   rules, types, head,
                   KernelCheck::rec_to_parent_addr(rec_ty, nparams, nmotives, nminors,
                     nindices)) {
@@ -920,7 +959,10 @@ def whnf_nd_with_spine := aiur_fn⟦
               whnf_nd_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(ty, body) => {
-          whnf_nd_apply_beta(rc, spine, head, types) } ,
+          match red_beta(rc, head, spine, types) {
+            (1, reduct, rest) => {  whnf_nd_with_spine(rc, reduct, rest, types) } ,
+            _ => {  apply_spine(head, spine) } ,
+          } } ,
         KernelTypes::KExprNode::Const(addr, lvls) => {
           whnf_nd_const_head(rc, addr, lvls, head, spine, types) } ,
         KernelTypes::KExprNode::Let(_, val, body) => {
@@ -933,46 +975,17 @@ def whnf_nd_with_spine := aiur_fn⟦
     }
 ⟧
 
-def whnf_nd_apply_beta := aiur_fn⟦
-  fn whnf_nd_apply_beta(rc: KernelRoles::RoleCtx, spine: Lists::List<KernelTypes::KExpr>, lam: KernelTypes::KExpr,
-                              types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
-      match peel_beta(lam, spine, (&(Lists::Node::Nil))) {
-        (deep, consumed, rest) => {
-          match Lists::length(consumed) {
-            0 => {  apply_spine(lam, spine) } ,
-            1 => {
-              let body2 = KernelSubst::expr_inst1(deep, Lists::lookup(consumed, 0), 0);
-              whnf_nd_with_spine(rc, body2, rest, types) } ,
-            _ => {
-              let body2 = KernelSubst::expr_inst_many(deep, consumed, 0);
-              whnf_nd_with_spine(rc, body2, rest, types) } ,
-          } } ,
-      }
-    }
-⟧
-
 def whnf_nd_proj_head := aiur_fn⟦
   fn whnf_nd_proj_head(rc: KernelRoles::RoleCtx, struct_addr: Bytes::AddressRef, fidx: Field, inner: KernelTypes::KExpr,
                              spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       let inner_whnf = whnf_nd(rc, inner, types);
 
       let inner_exp = KernelNatPrim::str_lit_to_ctor_app_or_self(rc, inner_whnf, types);
-      match KernelTypes::collect_spine(inner_exp) {
-        (inner_head, inner_args) => {
-          match (*(inner_head)) {
-            KernelTypes::KExprNode::Const(_, _) => {
-              match (*(whnf_get_ctor_or_none(inner_head))) {
-                KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, nparams, _, _) => {
-                  let field = Lists::lookup(inner_args, nparams + fidx);
-                  whnf_nd_with_spine(rc, field, spine, types) } ,
-                _ => {
-                  let stuck = (&(KernelTypes::KExprNode::Proj(struct_addr, fidx, inner_whnf)));
-                  apply_spine(stuck, spine) } ,
-              } } ,
-            _ => {
-              let stuck = (&(KernelTypes::KExprNode::Proj(struct_addr, fidx, inner_whnf)));
-              apply_spine(stuck, spine) } ,
-          } } ,
+      match red_proj(rc, struct_addr, fidx, inner_exp, types) {
+        (1, field) => {  whnf_nd_with_spine(rc, field, spine, types) } ,
+        _ => {
+          let stuck = (&(KernelTypes::KExprNode::Proj(struct_addr, fidx, inner_whnf)));
+          apply_spine(stuck, spine) } ,
       }
     }
 ⟧
@@ -1011,41 +1024,14 @@ def whnf_nd_const_head := aiur_fn⟦
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
           } } ,
-        KernelTypes::KConstantInfo::Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
-                            rules, k_flag, _unsafe, _block, _ridx) => {
-
-          let k_skip = ((nparams + nmotives) + nminors) + nindices;
-          let k_pre = match k_flag {
-            1 => {
-              match se_parent_addr(rec_ty, k_skip) {
-                (_, rec_parent) => {
-                  try_k_synth_iota(rc, lvls, spine, nparams, nmotives,
-                                      nminors, nindices, rules,
-                                      rec_parent, types) } ,
-              } } ,
-            _ => {  (0, head) } ,
-          };
-          match k_pre {
-            (1, k_reduct) => {  k_reduct } ,
-            _ => {
-          let iota = try_iota(rc, lvls, spine, nparams, nmotives, nminors,
-                                   nindices, rules, types, head,
-                                   KernelCheck::rec_to_parent_addr(rec_ty, nparams, nmotives,
-                                     nminors, nindices));
-          match iota {
+        KernelTypes::KConstantInfo::Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
+                            rules, k_flag, _, _, _) => {
+          match red_rec(rc, rec_ty, lvls, head, spine, nparams, nindices, nmotives, nminors,
+                        rules, k_flag, types) {
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
-            (2, stuck) => {
-              match k_flag {
-                1 => {  stuck } ,
-                _ => {
-                  match try_struct_eta_iota(rc, rec_ty, lvls, spine, nparams,
-                          nmotives, nminors, nindices, rules, types) {
-                    (1, r) => {  whnf_nd(rc, r, types) } ,
-                    _ => {  stuck } ,
-                  } } ,
-              } } ,
+            (2, stuck) => {  stuck } ,
+            (3, k_reduct) => {  whnf(rc, k_reduct, types) } ,
             _ => {  apply_spine(head, spine) } ,
-          } } ,
           } } ,
         _ => {  apply_spine(head, spine) } ,
       } } ,

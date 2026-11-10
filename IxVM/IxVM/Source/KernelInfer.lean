@@ -10,18 +10,6 @@ namespace IxVM
 
 aiur_module KernelInfer where
 
-aiur_decls⟦
-module KernelInfer {
-  enum InferLetEnvNode {
-      Id(Lists::List<KernelTypes::KExpr>, Field),
-      Local(KernelTypes::KExpr, Field, InferLetEnv),
-      Let(KernelTypes::KExpr, KernelTypes::KExpr, InferLetEnv, Field)
-    }
-
-  type InferLetEnv = &InferLetEnvNode;
-}
-⟧
-
 def types_lookup := aiur_fn⟦
   fn types_lookup(types: Lists::List<KernelTypes::KExpr>, i: Field) -> KernelTypes::KExpr {
       let ty = Lists::lookup(types, i);
@@ -132,181 +120,18 @@ def k_infer_let_start := aiur_fn⟦
                               types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       k_ensure_sort(rc, ty, types);
       k_check(rc, val, ty, types);
-      let depth = Lists::length(types);
-      let env = (&(InferLetEnvNode::Id(types, depth)));
-      k_infer_let_env(rc, body, (&(InferLetEnvNode::Let(ty, val, env, depth))), types, depth)
+      k_infer(rc, KernelSubst::expr_inst1(body, val, 0), types)
     }
 ⟧
 
-def infer_let_var_type := aiur_fn⟦
-  inline fn infer_let_var_type(env: InferLetEnv, i: Field,
-                               types: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
-      let (ty, created) = infer_let_lookup_type(env, i);
-      KernelSubst::expr_lift(ty, depth - created, 0)
-    }
-⟧
+  -- The delayed substitution of an application spine (no list length is read as a
+  -- field element: the empty substitution is matched structurally).
 
-def infer_let_lookup_type := aiur_fn⟦
-  fn infer_let_lookup_type(env: InferLetEnv, i: Field) -> (KernelTypes::KExpr, Field) {
-      match (*(env)) {
-        InferLetEnvNode::Id(types, origin) => {  (types_lookup(types, i), origin) } ,
-        InferLetEnvNode::Local(ty, introduced, outer) => {  match i {
-          0 => {  (ty, introduced - 1) } ,
-          _ => {  infer_let_lookup_type(outer, i - 1) } ,
-        } } ,
-        InferLetEnvNode::Let(ty, _, outer, created) => {  match i {
-          0 => {  (ty, created) } ,
-          _ => {  infer_let_lookup_type(outer, i - 1) } ,
-        } } ,
-      }
-    }
-⟧
-
-def infer_let_var_value := aiur_fn⟦
-  inline fn infer_let_var_value(env: InferLetEnv, i: Field, depth: Field) -> KernelTypes::KExpr {
-      let (value, created) = infer_let_lookup_value(env, i);
-      KernelSubst::expr_lift(value, depth - created, 0)
-    }
-⟧
-
-def infer_let_lookup_value := aiur_fn⟦
-  fn infer_let_lookup_value(env: InferLetEnv, i: Field) -> (KernelTypes::KExpr, Field) {
-      match (*(env)) {
-        InferLetEnvNode::Id(_, origin) => {  ((&(KernelTypes::KExprNode::BVar(i))), origin) } ,
-        InferLetEnvNode::Local(_, introduced, outer) => {  match i {
-          0 => {  ((&(KernelTypes::KExprNode::BVar(0))), introduced) } ,
-          _ => {  infer_let_lookup_value(outer, i - 1) } ,
-        } } ,
-        InferLetEnvNode::Let(_, value, outer, created) => {  match i {
-          0 => {  (infer_let_materialize(value, outer, created, 0), created) } ,
-          _ => {  infer_let_lookup_value(outer, i - 1) } ,
-        } } ,
-      }
-    }
-⟧
-
-def infer_let_materialize := aiur_fn⟦
-  fn infer_let_materialize(e: KernelTypes::KExpr, env: InferLetEnv, depth: Field, cutoff: Field) -> KernelTypes::KExpr {
-      match UInt32::less_than_fields(cutoff, KernelSubst::expr_lbr(e)) {
-        0 => {  e } ,
-        _ => {  match (*(e)) {
-          KernelTypes::KExprNode::BVar(i) => {  match UInt32::less_than_fields(i, cutoff) {
-            1 => {  e } ,
-            _ => {  KernelSubst::expr_lift(infer_let_var_value(env, i - cutoff, depth), cutoff, 0) } ,
-          } } ,
-          KernelTypes::KExprNode::App(f, a) => {  (&(KernelTypes::KExprNode::App(
-            infer_let_materialize(f, env, depth, cutoff), infer_let_materialize(a, env, depth, cutoff)))) } ,
-          KernelTypes::KExprNode::Lam(ty, body) => {  (&(KernelTypes::KExprNode::Lam(
-            infer_let_materialize(ty, env, depth, cutoff), infer_let_materialize(body, env, depth, cutoff + 1)))) } ,
-          KernelTypes::KExprNode::Forall(ty, body) => {  (&(KernelTypes::KExprNode::Forall(
-            infer_let_materialize(ty, env, depth, cutoff), infer_let_materialize(body, env, depth, cutoff + 1)))) } ,
-          KernelTypes::KExprNode::Let(ty, val, body) => {  (&(KernelTypes::KExprNode::Let(
-            infer_let_materialize(ty, env, depth, cutoff), infer_let_materialize(val, env, depth, cutoff),
-            infer_let_materialize(body, env, depth, cutoff + 1)))) } ,
-          KernelTypes::KExprNode::Proj(addr, i, val) => {  (&(KernelTypes::KExprNode::Proj(addr, i,
-            infer_let_materialize(val, env, depth, cutoff)))) } ,
-          _ => {  e } ,
-        } } ,
-      }
-    }
-⟧
-
-def k_infer_let_env := aiur_fn⟦
-  fn k_infer_let_env(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, env: InferLetEnv, types: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
-      match KernelSubst::expr_lbr(e) {
-        0 => {  k_infer(rc, e, (&(Lists::Node::Nil))) } ,
-        _ => {  match (*(e)) {
-
-          KernelTypes::KExprNode::App(_, _) => {  match infer_let_local_cutoff(env) {
-            0 => {  k_infer_let_env_core(rc, e, env, types, depth) } ,
-            cutoff => {  match KernelSubst::has_bvar_in_range(e, 0, cutoff) {
-              1 => {  k_infer_let_env_core(rc, e, env, types, depth) } ,
-              0 => {  k_infer_let_env_rebase(rc, e, env, types, depth) } ,
-            } } ,
-          } } ,
-          _ => {  k_infer_let_env_core(rc, e, env, types, depth) } ,
-        } } ,
-      }
-    }
-⟧
-
-def infer_let_local_cutoff := aiur_fn⟦
-  fn infer_let_local_cutoff(env: InferLetEnv) -> Field {
-      match (*(env)) {
-        InferLetEnvNode::Id(_, _) => {  0 } ,
-        InferLetEnvNode::Local(_, _, _) => {  1 } ,
-        InferLetEnvNode::Let(_, _, outer, _) => {  match infer_let_local_cutoff(outer) {
-          0 => {  0 } ,
-          n => {  n + 1 } ,
-        } } ,
-      }
-    }
-⟧
-
-def k_infer_let_env_rebase := aiur_fn⟦
-  fn k_infer_let_env_rebase(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, env: InferLetEnv,
-                            types: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
-      let (outer, removed, locals) = infer_let_drop_unused(env, KernelSubst::expr_glb(e, 0));
-      let subject = KernelSubst::expr_lower(e, removed, 0);
-      let context = Lists::drop(types, locals);
-      let ty = k_infer_let_env_core(rc, subject, outer, context, depth - locals);
-      KernelSubst::expr_lift(ty, locals, 0)
-    }
-⟧
-
-def infer_let_drop_unused := aiur_fn⟦
-  fn infer_let_drop_unused(env: InferLetEnv, count: Field) -> (InferLetEnv, Field, Field) {
-      match count {
-        0 => {  (env, 0, 0) } ,
-        _ => {  match (*(env)) {
-          InferLetEnvNode::Let(_, _, outer, _) => {
-            let (rest, removed, locals) = infer_let_drop_unused(outer, count - 1);
-            (rest, removed + 1, locals) } ,
-          InferLetEnvNode::Local(_, _, outer) => {
-            let (rest, removed, locals) = infer_let_drop_unused(outer, count - 1);
-            (rest, removed + 1, locals + 1) } ,
-          _ => {  (env, 0, 0) } ,
-        } } ,
-      }
-    }
-⟧
-
-def k_infer_let_env_core := aiur_fn⟦
-  fn k_infer_let_env_core(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, env: InferLetEnv,
-                          types: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
-      match (*(e)) {
-          KernelTypes::KExprNode::BVar(i) => {  infer_let_var_type(env, i, types, depth) } ,
-          KernelTypes::KExprNode::Lam(ty, body) => {
-            let dom = infer_let_materialize(ty, env, depth, 0);
-            k_ensure_sort(rc, dom, types);
-            let inner_types = (&(Lists::Node::Cons(dom, types)));
-            let inner_env = (&(InferLetEnvNode::Local(dom, depth + 1, env)));
-            let body_ty = k_infer_let_env(rc, body, inner_env, inner_types, depth + 1);
-            (&(KernelTypes::KExprNode::Forall(dom, body_ty))) } ,
-          KernelTypes::KExprNode::Forall(ty, body) => {
-            let dom = infer_let_materialize(ty, env, depth, 0);
-            let u1 = k_ensure_sort(rc, dom, types);
-            let inner_types = (&(Lists::Node::Cons(dom, types)));
-            let inner_env = (&(InferLetEnvNode::Local(dom, depth + 1, env)));
-            let bt = k_infer_let_env(rc, body, inner_env, inner_types, depth + 1);
-            let KernelTypes::KExprNode::Srt(u2) = (*(KernelWhnf::whnf(rc, bt, inner_types)));
-            (&(KernelTypes::KExprNode::Srt(KernelLevels::level_imax(u1, u2)))) } ,
-          KernelTypes::KExprNode::Let(ty, val, body) => {
-            let dom = infer_let_materialize(ty, env, depth, 0);
-            k_ensure_sort(rc, dom, types);
-            let val_ty = k_infer_let_env(rc, val, env, types, depth);
-            assert_eq!(KernelDefEq::k_is_def_eq(rc, val_ty, dom, types), 1, "delayed let value type mismatch");
-            k_infer_let_env(rc, body, (&(InferLetEnvNode::Let(dom, val, env, depth))), types, depth) } ,
-          KernelTypes::KExprNode::App(f, a) => {
-            let ft = k_infer_let_env(rc, f, env, types, depth);
-            let KernelTypes::KExprNode::Forall(dom, cod) = (*(KernelWhnf::whnf(rc, ft, types)));
-            let arg_ty = k_infer_let_env(rc, a, env, types, depth);
-            assert_eq!(KernelDefEq::k_is_def_eq(rc, arg_ty, dom, types), 1, "delayed application type mismatch");
-            match KernelSubst::has_bvar_in_range(cod, 0, 1) {
-              0 => {  KernelSubst::expr_lower(cod, 1, 1) } ,
-              _ => {  KernelSubst::expr_inst1(cod, infer_let_materialize(a, env, depth, 0), 0) } ,
-            } } ,
-          _ => {  k_infer(rc, infer_let_materialize(e, env, depth, 0), types) } ,
+def inst_subs := aiur_fn⟦
+  inline fn inst_subs(e: KernelTypes::KExpr, subs_rev: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match (*(subs_rev)) {
+        Lists::Node::Nil => {  e } ,
+        Lists::Node::Cons(_, _) => {  KernelSubst::expr_inst_many(e, subs_rev, 0) } ,
       }
     }
 ⟧
@@ -317,25 +142,16 @@ def k_infer_app_spine_loop := aiur_fn⟦
                                   types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(args)) {
         Lists::Node::Nil => {
-          match Lists::length(subs_rev) {
-            0 => {  t } ,
-            _ => {  KernelSubst::expr_inst_many(t, subs_rev, 0) } ,
-          } } ,
+          inst_subs(t, subs_rev) } ,
         Lists::Node::Cons(a, rest) => {
           match (*(t)) {
             KernelTypes::KExprNode::Forall(dom, cod) => {
-              let dom_subst = match Lists::length(subs_rev) {
-                0 => {  dom } ,
-                _ => {  KernelSubst::expr_inst_many(dom, subs_rev, 0) } ,
-              };
+              let dom_subst = inst_subs(dom, subs_rev);
               k_check(rc, a, dom_subst, types);
               k_infer_app_spine_loop(rc, cod, rest,
                 (&(Lists::Node::Cons(a, subs_rev))), types) } ,
             _ => {
-              let t_concrete = match Lists::length(subs_rev) {
-                0 => {  t } ,
-                _ => {  KernelSubst::expr_inst_many(t, subs_rev, 0) } ,
-              };
+              let t_concrete = inst_subs(t, subs_rev);
               let t_w = KernelWhnf::whnf(rc, t_concrete, types);
               match (*(t_w)) {
                 KernelTypes::KExprNode::Forall(dom, cod) => {
