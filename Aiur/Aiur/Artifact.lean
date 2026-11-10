@@ -10,6 +10,14 @@ them for the Rust hosts (`aiur::artifact`, which documents the grammar):
 * a grouping holds checked function groups alone (`Trace.exportGroups`), to
   replace a package's.
 
+The writers emit `formatVersion` 2, which stores structure once: a program's
+distinct table rows precede its tables, which name rows by index
+(`Execution.rowPool`), and the distinct polynomial nodes of a trace section or
+grouping precede it, which names each polynomial by its root node
+(`Trace.withNodes`). Both pools list entries in first-reference order, so an
+artifact has one encoding. The Rust reader also accepts version 1, which
+writes rows and polynomial trees inline.
+
 An artifact's identity is the BLAKE3 digest of its file. The Aiur package has
 no BLAKE3, so the hosts compute it: Rust on every load, and `ix` when it
 caches or admits an artifact (`Ix.AiurArtifact`). -/
@@ -20,8 +28,8 @@ open Aiur.Ixon Execution
 def packageMagic : ByteArray := "IXAIURP\x00".toUTF8
 def executionMagic : ByteArray := "IXAIURX\x00".toUTF8
 def groupsMagic : ByteArray := "IXAIURG\x00".toUTF8
-/-- The artifact grammar's version, shared by every magic. -/
-def formatVersion : Nat := 1
+/-- The artifact grammar's version that the writers emit, shared by every magic. -/
+def formatVersion : Nat := 2
 /-- The conventional file extension. -/
 def extension : String := "ixa"
 
