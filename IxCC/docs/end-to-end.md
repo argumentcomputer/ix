@@ -134,6 +134,12 @@ natively, only that check's code joins it, and it is proved.
 The certificate is not trusted: once every table entry is valid in the model
 and progress holds, any accepted certificate yields the same denotation.
 
+*Not covered:* what the usage, ownership and locality contracts guarantee.
+Resource guarantees are outside this theorem; on this route the compiler acts
+on a contract only where its own ownership checker verified it, and the
+source-level resource theorem is planned separately ([resource
+soundness](resource-soundness-design.md)).
+
 ### Aiur, form (i): the fixed evaluator circuit (first)
 
 **Planned; the circuit is the IxVM workstream's.** One formal-Aiur program,
@@ -170,6 +176,11 @@ toolchain derivation of E's key; the aggregation layer and in-circuit verifier
 until they are proved. No instruction-set, loader or driver model. IxCC's x86
 pipeline is not on this route.
 
+*Not covered:* resource guarantees. The evaluator runs over write-once
+memory, so the contracts optimise nothing there; whatever they promise about a
+program rests on the planned source-level resource theorem alone ([resource
+soundness](resource-soundness-design.md)).
+
 ### Aiur, form (ii): per-program compilation (later)
 
 **Research; designed, not scheduled.** A lowering from Fir to formal Aiur with a
@@ -205,6 +216,9 @@ of the formal-Aiur program (the external compiler theorem) ⇒ a Fir run (the
 new backward simulation) ⇒ SrcEval on `a.src` (today's forward simulations)
 ⇒ the spine. It adds per-program trust in the toolchain's key derivation
 until a formal key derivation exists.
+
+*Not covered:* resource guarantees, as on the evaluator route ([resource
+soundness](resource-soundness-design.md)).
 
 The legacy Aiur model in this tree (the [legacy model](aiur-backend.md) docs,
 `IxCC/Aiur`, about 5.8k lines, and the vendored snapshot, about 3.5k) checks a

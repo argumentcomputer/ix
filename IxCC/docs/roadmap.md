@@ -333,6 +333,12 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
 - **Side products.** Shape typing (CD2) for confinement without semantics and
   for typing Fir for formal Aiur; stage L (CD3) for the bignum library and the
   IxOS monitor. Neither grounds anything in IxCK.
+- **Resource soundness (RE).** What usage, ownership and locality
+  annotations guarantee, a theorem of its own that the kernel-model grounding
+  cannot supply: the resource checker's confirmed hole closed (RE-0), IxCC's
+  ownership checker verifying the annotations it acts on (RE-1, Phase 2), an
+  instrumented source evaluator and a first-fragment theorem (RE-2), widening
+  (RE-3) ([below](#resource-soundness)).
 
 ### Milestones
 
@@ -519,6 +525,35 @@ and HD-3 (no recursion over input-sized data) after it. On the proof-system
 routes a hostile input costs the prover, not the verifier. IxCK's typing core
 is exponential on certain chains of `let`; its fix belongs to the IxVM
 workstream and matters here only if IxCC's verifier runs IxCK itself.
+
+### Resource soundness
+
+Usage (`0 1 &`), ownership (`!`) and locality (`~`, `let borrow`)
+annotations are checked today by ix's resource checker, an executable
+analysis with no stated semantics and no soundness theorem; the kernel's model
+reads no contract; no IxCC theorem takes the checker's acceptance as a
+premise. IxCC re-checks erasure itself and gives the other annotations no
+run-time meaning yet, so nothing compiled depends on them. The owner decided
+(2026-11-14) that source annotations are untrusted hints, verified by IxCC's
+own ownership checker wherever the compiler acts on them, and that resource
+soundness is a theorem of its own about an instrumented source evaluator
+([resource soundness design](resource-soundness-design.md)).
+
+| Id | Content | Depends on | Exit test | Size [estimate] | State |
+| --- | --- | --- | --- | --- | --- |
+| RE-0 | Close the confirmed hole: result contracts re-labelled through a theorem the checker does not analyse and a cast | — | the relabelling programs refused, as regression tests | small | In progress (with the resource checker's owners) |
+| RE-1 | IxCC's ownership checker verifies written unique and borrow contracts at both ends (a unique parameter at every call, a unique result at every return, a borrow where it is used); in-place update only on verified uniqueness | Phase 2's ownership checker (DR1) | the relabelling programs get no in-place update even with the hole re-opened; annotated K2/K3 twins verified | 2–4k lines beyond the checker itself | Planned (Phase 2) |
+| RE-2 | An instrumented source evaluator (reference counts, regions, a use counter per binding) that refines SrcEval; a resource checker on the Src program actually evaluated; the property of each annotation, on a first-order fragment | EV-1 | the refinement and the properties fenced; verdicts compared with ix's checker on the ownership suite | 8–20k lines | Planned |
+| RE-3 | Widening: closures as cells, eliminators, recursion through equations, locality with tail calls | RE-2; P8 | per item | per item | Planned |
+
+*Depends on:* Phase 2 for RE-1; the evaluator contract (EV-1) for RE-2, which
+instruments it and checks the same Src program the spine grounds; not on the
+spine's adequacy work. For a source-level statement to survive the kernel's
+conversion, result contracts must become part of a type's identity, as input
+contracts already are: a decision for the kernel's owners (DO-24). *For the
+native route:* in-place update, elided reference counting and stack allocation
+only where RE-1 verified. *For the evaluator route:* write-once memory has
+nothing to optimise; the annotations mean something there only through RE-2.
 
 ### Repository and landing
 
@@ -729,6 +764,33 @@ The owner also decided, on the same day:
 - **P8 now**: Phase 2's closures were started at the owner's request, for the
   native route's generality, although the evaluator route does not need them.
 
+### Decisions of 2026-11-13 and 2026-11-14
+
+- **Byte compatibility first** (2026-11-13): byte compatibility between IxCC
+  and the kernel's artifacts is the spine's first milestone, and IxCC will read
+  role-bound environments.
+- **Root arity** (2026-11-13): for closures, the end-to-end theorems are
+  stated for inputs no longer than the source root's declared parameter
+  count, with the compiled arity pinned to it.
+- **Source annotations are untrusted hints** (2026-11-14): IxCC's own
+  ownership checker, on IxCC's intermediate representation, is the soundness
+  basis for anything the compiler does with ownership: a unique parameter is
+  verified at every call and a unique result at every return, and a borrow and
+  a local value are verified where they are used, as erasure is re-checked
+  today. The source-level resource check stays as a front-end diagnostic. A
+  source uniqueness annotation selects in-place update only through that
+  verification, never by being trusted ([resource
+  soundness](resource-soundness-design.md#layer-1-annotations-are-untrusted-hints-ixccs-ownership-checker-verifies-them)).
+- **Resource soundness is its own theorem** (2026-11-14), with its own place in
+  the certification plan; the kernel-model grounding cannot supply it, since
+  the model sees no contracts. It is operational: for each annotation, a
+  usage-soundness property of an instrumented source evaluator (a heap with
+  reference counts, regions, and a use counter per binding), checked on the
+  program actually evaluated or compiled, starting with a first-order
+  fragment. On the route that runs the evaluator in a proof system, which has
+  no ownership level below it, this theorem is what gives annotations a
+  meaning ([resource soundness](resource-soundness-design.md#layer-2-a-source-level-resource-theorem)).
+
 ### Decisions to confirm
 
 | Id | Question | Options | Default | Why | Cost to change later |
@@ -736,6 +798,7 @@ The owner also decided, on the same day:
 | DC-1 | The order of the certification routes (decision 3) | (a) stage L first, as decided; (b) the kernel-model route leads (SP-A, SP-1), stage L becomes a side product; (c) both at equal priority | (b) | Stage L relates the object to a host Lean function and does not ground anything in IxCK or apply to a term inside an environment; the IxVM workstream's critical path is adequacy | Low: stage L has not started; reverting later costs the spike's months |
 | DC-2 | How decision 2 reads against the grounded statement | (a) interpretations allowed in compile claims as statements relative to the interpretation, kept separate in table and image from evaluation through a stored value (`opaqueByValue`), and both excluded from the grounded statement; the evaluator route refuses both for discharging axioms; (b) add an opaque value law to IxCK and state grounded results over models restricted to it; (c) no interpretations: targets avoid opaques | (a) | IxCK's model keeps no value equation for opaques, so neither kind holds in every strong model; an evaluation axiom must hold in every model, so a relative statement cannot discharge one. This also strains the IxVM workstream's plan to accept stored-value evaluation in its evaluator | Low now (nothing implemented); meanwhile code that reaches an allowlisted opaque (today `Lean.opaqueId`) cannot be discharged; (b) later restricts every grounded statement that uses it |
 | DC-3 | IxCC's guarantees conditional on kernel acceptance supplied externally (an IxVM typing proof or a native IxCK run) and on faithfulness supplied by the party holding the kernel's reading, rather than on IxCC's own type checking; and then the per-claim typing flag and the erased type checker | (a) as stated, the flag removed from claims' meaning and the checker kept only in untrusted production (the relevance annotator, early diagnostics), off the verifier path; (b) as stated, the checker kept on the verifier path as an optional filter; (c) prove the erased checker sound instead | (a) | A soundness proof for 12,700 lines of checker costs about what IxCK's own verification cost, and acceptance is already proved for IxCK; typing dominates verification time (51.7 s of 51.8 s on the committed scalar closure) and is unbounded per closure | Medium: the byte-level Stage A re-derivation uses the checker's expressions and conversion, so retiring it means porting or dropping that check |
+| DC-4 | Does IxCC obtain type information (for the relevance annotator, `checkCanonical` and the byte-level re-derivation) by calling the certified kernel instead of its own erased checker? Under assessment | (a) call IxCK and delete the erased checker; (b) keep the erased checker in untrusted production only (DC-3's default) | (a) if the assessment finds IxCK's inference answers those queries at acceptable cost | One type checker instead of two, and the proved one; (a) deletes the erased checker rather than merely moving it off the verifier path | Medium: IxCC's dependency on IxCK grows beyond its codec, and IxCK's typing cost (its blow-up on chains of `let`) enters the producer |
 
 ### Open decisions
 
@@ -763,6 +826,11 @@ The owner also decided, on the same day:
 | DO-20 | The regenerated closures are larger (this repository's root selection adds recursors, whole logical units and checker support) | accept; add a plain-dependency closure to `ix` for IxCC | Accept | A second closure semantics in `ix` would be maintained for fixtures only; the larger closures pass ingestion and the suites unchanged | Low; kernel-evaluated recheck tests may slow |
 | DO-21 | Does the image the evaluator reads keep subterms shared? | a flat tree; a DAG with each distinct subterm once | The shared form for the evaluator, with the tree form as the specification of content | A flat image is about 6 times the closure for a small program and about 21 times for the one-megabyte closures, measured outside this tree, and a circuit hashes all it reads | Medium: a second canonical-order argument in the codec proofs |
 | DO-22 | Universe profiles in the image: one term per constant and profile, as the IxVM workstream asked, or Src's one level-polymorphic term with level-exact conditions | per profile; per constant | Per constant, the reader deciding the level conditions at concrete levels | Smaller; it is what SrcEval reads; the decision is one scan of a short list | Low before the format is frozen |
+| DO-23 | Are roots η-expanded to their declared type's arity? Under exploration | η-expand; keep roots as written, with the compiled arity pinned to the declared parameter count (2026-11-13) | Keep the pin until the exploration reports | The arity decision of 2026-11-13 already fixes what the theorems quantify over | Low |
+| DO-24 | Result contracts in a type's identity, so that a source-level resource statement survives the kernel's conversion (a decision for the kernel's owners, in IxCK and the IxVM kernel) | compare result contracts in conversion; forbid non-default result contracts wherever conversion can see them | Compare them in conversion, as input contracts already are | It closes the class of hole the resource checker's confirmed hole belongs to, as Idris 2 did for multiplicities; RE-1 does not need it | Medium for the kernels: a result contract on λ nodes, or λs checked against their expected ∀ |
+| DO-25 | When IxCC's ownership checker cannot verify a written contract on an internal function | refuse the program; compile as if the contract were absent | Refuse, with a diagnostic naming the contract (D16: contracts honoured exactly) | Dropping is sound for memory in a closed-world compile but silently discards what the source asked for | Low |
+| DO-26 | Which arguments an erased parameter erases (ix's checker erases wherever the head's type exposes an erased binder; IxCC only at constant and β-redex heads) | IxCC decides relevance from the head's type at every application; ix's checker grades erased only where IxCC erases | IxCC widens, with its relevance checker's rule extended | Erasing more evaluates less, and the kernel already forces a λ reaching an erased variable to have an erased binder | Low |
+| DO-27 | When the source-level resource theorem (RE-2) is scheduled | after EV-1, in parallel with RE-1; on demand, when a claim on the evaluator route first states a resource property | On demand, with RE-1 first | The native route's memory safety needs RE-1 only; on the evaluator route annotations optimise nothing | Low |
 
 ## Coordination
 

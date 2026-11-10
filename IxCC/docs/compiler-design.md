@@ -154,6 +154,7 @@ is defined.
 | Stage A | The byte-level verifiers' requirement that the certificate's relevance annotation equal `Src.Relevance.annotate`'s output on the certificate's table (`Recheck.checkCanonicalRelevance`) | this table |
 | S0, S1, S2 (x86) | Steps of the Sail reference-model route | [x86 reference model](x86-reference-model.md) |
 | S1–S12, N1–N14, `B*-*`, `R*-*` | Findings of the 2026-11 reviews | Each document that cites one says what the finding is |
+| RE-0 … RE-3; DC-4, DO-23 … DO-27 | Resource-soundness milestones; decision-register entries added on 2026-11-14 | [resource soundness](resource-soundness-design.md), [roadmap](roadmap.md#decisions) |
 
 ## Correctness statement
 
@@ -769,6 +770,21 @@ None of these effects is implemented yet. Today a written contract can make
 a binder irrelevant (`0`), and the contracts decide whether `--rc auto`
 selects the zero-RC policy, as described above; they do not change the RC
 operations the plain route places.
+
+**Source contracts are untrusted hints** (owner, 2026-11-14). The usage,
+ownership and locality contracts written in Lean source are checked upstream
+only by ix's resource checker, which has no soundness theorem, and the
+kernel's model reads none of them. Nothing in the table above may rest on
+them: the ownership checker verifies each written contract as a lower bound
+on IxCC's own representation before the compiler acts on it (a unique
+parameter at every call, a unique result at every return, a borrow and a
+local value where they are used), as the relevance checker re-checks erasure
+today, and a contract it cannot verify is refused (the default of
+an open decision, DO-25 in the [roadmap](roadmap.md#open-decisions)). In
+particular a source uniqueness annotation selects in-place update only through that
+verification. The source-level check stays a front-end diagnostic; the
+source-level resource theorem is planned separately ([resource
+soundness](resource-soundness-design.md)).
 
 ## Runtime
 

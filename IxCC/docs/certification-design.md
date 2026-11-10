@@ -568,3 +568,15 @@ confirm, [roadmap](roadmap.md#open-decisions)).
   either progress for the monitor's fragment (SP-1's, once the fragment covers
   the monitor's data) or CD2; CD3 on the monitor's `step` makes its behaviour
   the Lean function's.
+
+## Resources are not in the kernel's model
+
+The spine grounds *meaning*: IxCK's model reads no usage, ownership or
+locality contract, so no statement in it can say that a linear binding is
+consumed once, that a unique value is unaliased or that a local value does not
+escape. Resource soundness is therefore a separate, operational theorem about
+an instrumented source evaluator, with IxCC's ownership checker as the
+soundness basis for what the native compiler does with ownership (the owner's
+decisions of 2026-11-14). It is planned in the [resource soundness
+design](resource-soundness-design.md) and is not part of the end-to-end
+statements.

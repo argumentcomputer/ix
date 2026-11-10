@@ -42,6 +42,9 @@ unless a line says so.
   contract and the Src image, what the Aiur evaluator route needs first.
 - [Hardening](hardening-design.md): resource bounds for the verifier against
   dishonest input.
+- [Resource soundness](resource-soundness-design.md): what usage, ownership
+  and locality annotations guarantee, the ownership checker that verifies them
+  and the instrumented-evaluator theorem.
 
 ## Source boundary
 
