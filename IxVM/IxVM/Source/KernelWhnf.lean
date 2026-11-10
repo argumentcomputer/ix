@@ -54,38 +54,64 @@ def red_beta := aiur_fn⟦
               -> (Field, KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
       match peel_beta(lam, spine, (&(Lists::Node::Nil))) {
         (deep, consumed, rest) => {
-          match (*(consumed)) {
-            Lists::Node::Nil => {  red_beta_cert(rc, lam, spine, types) } ,
-            Lists::Node::Cons(a, more) => {
-              match (*(more)) {
-                Lists::Node::Nil => {  (1, KernelSubst::expr_inst1(deep, a, 0), rest) } ,
-                Lists::Node::Cons(_, _) => {  (1, KernelSubst::expr_inst_many(deep, consumed, 0), rest) } ,
+          match beta_more(rc, deep, rest, consumed, types) {
+            (deep2, consumed2, rest2) => {
+              match (*(consumed2)) {
+                Lists::Node::Nil => {  (0, lam, spine) } ,
+                Lists::Node::Cons(a, more) => {
+                  match (*(more)) {
+                    Lists::Node::Nil => {  (1, KernelSubst::expr_inst1(deep2, a, 0), rest2) } ,
+                    Lists::Node::Cons(_, _) => {  (1, KernelSubst::expr_inst_many(deep2, consumed2, 0), rest2) } ,
+                  } } ,
               } } ,
           } } ,
       }
     }
 ⟧
 
-  -- Fix A at β. `peel_beta` consumes arguments only at λs whose datum is never
-  -- (Red.betaGate); a λ whose datum may be zero takes one certified step (Red.beta): the
-  -- argument's io-grade type is definitionally equal to the domain. Otherwise no move.
+  -- Fix A at β. `peel_beta` consumes arguments while the λs' data are never
+  -- (Red.betaGate). Where it stops at a λ whose datum may be zero with arguments left,
+  -- `peel_beta_cert` goes on: each such λ needs its certificate (Red.beta: the argument's
+  -- io-grade type is definitionally equal to the domain, instantiated by the arguments
+  -- already consumed); it stops at the first certificate that fails. The consumed
+  -- arguments are substituted at once.
 
-def red_beta_cert := aiur_fn⟦
-  fn red_beta_cert(rc: KernelRoles::RoleCtx, lam: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>,
-                   types: Lists::List<KernelTypes::KExpr>)
-                   -> (Field, KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+def beta_more := aiur_fn⟦
+  inline fn beta_more(rc: KernelRoles::RoleCtx, deep: KernelTypes::KExpr, rest: Lists::List<KernelTypes::KExpr>,
+                      consumed: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>)
+                      -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KExpr>) {
+      match (*(rest)) {
+        Lists::Node::Nil => {  (deep, consumed, rest) } ,
+        Lists::Node::Cons(_, _) => {
+          match (*(deep)) {
+            KernelTypes::KExprNode::Lam(_, _, _) => {  peel_beta_cert(rc, deep, rest, consumed, types) } ,
+            _ => {  (deep, consumed, rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+def peel_beta_cert := aiur_fn⟦
+  fn peel_beta_cert(rc: KernelRoles::RoleCtx, lam: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>,
+                    acc: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>)
+                    -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KExpr>) {
       match (*(lam)) {
-        KernelTypes::KExprNode::Lam(ty, body, _) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           match (*(spine)) {
             Lists::Node::Cons(a, rest) => {
-              let ta = KernelInferOnly::k_infer_only(rc, a, types);
-              match KernelDefEq::k_is_def_eq(rc, ta, ty, types) {
-                1 => {  (1, KernelSubst::expr_inst1(body, a, 0), rest) } ,
-                _ => {  (0, lam, spine) } ,
+              let ok = match KernelLevels::level_is_not_zero(bl) {
+                1 => {  1 } ,
+                _ => {
+                  let ta = KernelInferOnly::k_infer_only(rc, a, types);
+                  KernelDefEq::k_is_def_eq(rc, ta, KernelInfer::inst_subs(ty, acc), types) } ,
+              };
+              match ok {
+                1 => {  peel_beta_cert(rc, body, rest, (&(Lists::Node::Cons(a, acc))), types) } ,
+                _ => {  (lam, acc, spine) } ,
               } } ,
-            Lists::Node::Nil => {  (0, lam, spine) } ,
+            Lists::Node::Nil => {  (lam, acc, spine) } ,
           } } ,
-        _ => {  (0, lam, spine) } ,
+        _ => {  (lam, acc, spine) } ,
       }
     }
 ⟧
