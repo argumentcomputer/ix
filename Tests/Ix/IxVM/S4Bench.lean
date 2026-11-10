@@ -166,6 +166,33 @@ def stdShard (env : Lean.Environment) (base : Lean.Name) (pre : List String) :
     return { label := s!"s4 std shard {".".intercalate pre} of {base} ({owned.size} owned)",
              accept := true, witness }
 
+/-- A module shard: every constant declared in a module whose name begins
+with `pre` (and, when `only` is given, whose own name begins with it too),
+grouped by shard group, checked with the frontier assumed and the binding
+validated. The production pipeline's shards are of this size (hundreds to
+thousands of owned constants). -/
+def moduleShard (env : Lean.Environment) (pre : Lean.Name) : IO (Unit → Except String Case) := do
+  let mut names : Array Lean.Name := #[]
+  for (n, _) in env.constants.toList do
+    if let some i := env.getModuleIdxFor? n then
+      if pre.isPrefixOf env.header.moduleNames[i.toNat]! then names := names.push n
+  let names := names.qsort Lean.Name.lt
+  let ixonEnv ← loadSharedIxonEnv names env
+  let mut keys : Std.HashSet Address := {}
+  for n in names do
+    if let some a := ixonEnv.getAddr? (Ix.Name.fromLeanName n) then
+      if let some c := ixonEnv.getConst? a then keys := keys.insert (groupOf a c.info)
+  let mut owned : Array Address := #[]
+  for (a, lc) in ixonEnv.consts do
+    if let some c := lc.get? then
+      if keys.contains (groupOf a c.info) then owned := owned.push a
+  IO.println s!"[ixvm-s4-bench] module shard {pre}: {names.size} declarations, {owned.size} owned of \
+    {ixonEnv.consts.size} in the closure"
+  return fun _ => do
+    if owned.isEmpty then throw s!"the module shard {pre} selected nothing"
+    let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
+    return { label := s!"s4 std module shard {pre} ({owned.size} owned)", accept := true, witness }
+
 def bench (env : Lean.Environment) : IO UInt32 := do
   let present := targets.filter fun (label, ns, r) =>
     let missing := (r :: ns).map nameOfString |>.filter (!env.constants.contains ·)
@@ -198,6 +225,9 @@ def bench (env : Lean.Environment) : IO UInt32 := do
   for pre in [["Std", "DHashMap", "Internal", "AssocList"], ["Std"]] do
     try cases := cases.push (← stdShard env base pre)
     catch e => IO.eprintln s!"[ixvm-s4-bench] Std shard {pre}: {e}"
+  for pre in [`Std.Data.HashMap, `Std.Data.DHashMap] do
+    try cases := cases.push (← moduleShard env pre)
+    catch e => IO.eprintln s!"[ixvm-s4-bench] module shard {pre}: {e}"
   runStats "ixvm-s4-bench" cases
 
 /-! ## The census -/
@@ -255,8 +285,16 @@ def blockDecls (env : Lean.Environment) (seed : Lean.Name) :
   let decls ← match Ix.LeanIngress.leanIngress ienv blocks with
     | .ok ds => pure ds
     | .error e => throw (IO.userError s!"ingress: {e}")
+  -- the block's own declaration names its types, constructors and recursors;
+  -- the modeller's records are keyed by derivations of those names (a
+  -- recursor's `R._model` and `R._model.iota_j`, a constructor's `C._model`)
+  let some blockDecl := decls.find? fun d => match d with
+      | .indDecl .. => d.names.any (Ix.RoleEvidence.toLeanName · == seed)
+      | _ => false
+    | throw (IO.userError s!"{seed}: no inductive declaration in the ingress")
+  let blockNames := blockDecl.names.map Ix.RoleEvidence.toLeanName
   let ours := decls.filter fun d => d.names.any fun k =>
-    v.all.contains (Ix.RoleEvidence.toLeanName k.base)
+    blockNames.contains (Ix.RoleEvidence.toLeanName k.base)
   return (v, closed.length, decls.size, ours)
 
 def census (env : Lean.Environment) : IO UInt32 := do
