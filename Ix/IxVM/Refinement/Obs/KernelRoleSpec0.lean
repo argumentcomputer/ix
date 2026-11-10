@@ -29,8 +29,8 @@ inductive «KernelRoleSpec::spec_version».Path (h : Heap F) (r : SourceValue F)
 theorem «KernelRoleSpec::spec_version».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::spec_version" [] h r h' calls) :
     «KernelRoleSpec::spec_version».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.spec_version.lookup
-    (by simp [IxVM.KernelRoleSpec.spec_version, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.spec_version.lookup
+    (by simp [IxVM.KernelRoleSpec.spec_version, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.spec_version] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::spec_version».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -47,75 +47,75 @@ inductive «KernelRoleSpec::spec_digest».Path (h : Heap F) (r : SourceValue F) 
 theorem «KernelRoleSpec::spec_digest».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::spec_digest" [] h r h' calls) :
     «KernelRoleSpec::spec_digest».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.spec_digest.lookup
-    (by simp [IxVM.KernelRoleSpec.spec_digest, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.spec_digest.lookup
+    (by simp [IxVM.KernelRoleSpec.spec_digest, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.spec_digest] at d0
   obtain ⟨v1, m2, d3, rfl, hm4⟩ := d0.store_inv
   obtain ⟨vs6, a7, rfl⟩ := d3.array_inv
   obtain ⟨v8, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a7.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv (x := (126 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c12431479008142518037
   obtain ⟨v9, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (107 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c2972478563898343647
   obtain ⟨v10, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (197 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c8473220030909417633
   obtain ⟨v11, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (140 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c14308732269399290837
   obtain ⟨v12, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (245 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c15475934101966716593
   obtain ⟨v13, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (36 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c15316874658082287075
   obtain ⟨v14, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (88 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c10621487201023178060
   obtain ⟨v15, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a81.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv (x := (219 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv Names.c12078453186527600422
   obtain ⟨v16, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a87.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv (x := (153 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv Names.c907872797159080482
   obtain ⟨v17, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a93.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv (x := (237 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv Names.c9390766616873225889
   obtain ⟨v18, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a99.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv (x := (197 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv Names.c8473220030909417633
   obtain ⟨v19, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a105.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv (x := (22 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv Names.c3398454881945391472
   obtain ⟨v20, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a111.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv (x := (183 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv Names.c16005606417746861297
   obtain ⟨v21, vs118, m119, c120, c121, rfl, d122, a123, rfl⟩ := a117.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv (x := (31 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv Names.c8574265568953773051
   obtain ⟨v22, vs124, m125, c126, c127, rfl, d128, a129, rfl⟩ := a123.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv (x := (177 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv Names.c10006766132832736802
   obtain ⟨v23, vs130, m131, c132, c133, rfl, d134, a135, rfl⟩ := a129.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv (x := (138 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv Names.c9355855287278031025
   obtain ⟨v24, vs136, m137, c138, c139, rfl, d140, a141, rfl⟩ := a135.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d140.global_literal_inv (x := (91 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d140.global_literal_inv Names.c7622204403842064372
   obtain ⟨v25, vs142, m143, c144, c145, rfl, d146, a147, rfl⟩ := a141.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d146.global_literal_inv (x := (116 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d146.global_literal_inv Names.c1376625633660784660
   obtain ⟨v26, vs148, m149, c150, c151, rfl, d152, a153, rfl⟩ := a147.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d152.global_literal_inv (x := (223 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d152.global_literal_inv Names.c2737361722335721789
   obtain ⟨v27, vs154, m155, c156, c157, rfl, d158, a159, rfl⟩ := a153.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv (x := (216 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv Names.c7790843951552845064
   obtain ⟨v28, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a159.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv (x := (235 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv Names.c13295614243464629966
   obtain ⟨v29, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a165.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv Names.c3167744620027602021
   obtain ⟨v30, vs172, m173, c174, c175, rfl, d176, a177, rfl⟩ := a171.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv (x := (202 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv Names.c5203595819173520885
   obtain ⟨v31, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a177.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv (x := (108 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv Names.c7824431214770816588
   obtain ⟨v32, vs184, m185, c186, c187, rfl, d188, a189, rfl⟩ := a183.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv (x := (242 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv Names.c3811768741262977426
   obtain ⟨v33, vs190, m191, c192, c193, rfl, d194, a195, rfl⟩ := a189.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv (x := (75 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv Names.c16113614968983643409
   obtain ⟨v34, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a195.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv (x := (130 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv Names.c16182748909402436911
   obtain ⟨v35, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a201.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d206.global_literal_inv (x := (187 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d206.global_literal_inv Names.c1957414861934845478
   obtain ⟨v36, vs208, m209, c210, c211, rfl, d212, a213, rfl⟩ := a207.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d212.global_literal_inv (x := (170 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d212.global_literal_inv Names.c8530062502854149805
   obtain ⟨v37, vs214, m215, c216, c217, rfl, d218, a219, rfl⟩ := a213.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d218.global_literal_inv (x := (98 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d218.global_literal_inv Names.c9105205870158891191
   obtain ⟨v38, vs220, m221, c222, c223, rfl, d224, a225, rfl⟩ := a219.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d224.global_literal_inv (x := (58 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d224.global_literal_inv Names.c14404688178232268464
   obtain ⟨v39, vs226, m227, c228, c229, rfl, d230, a231, rfl⟩ := a225.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d230.global_literal_inv (x := (130 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d230.global_literal_inv Names.c16182748909402436911
   obtain ⟨rfl, rfl, rfl⟩ := a231.nil_inv
   try simp only [Value.type, List.map_cons, List.map_nil] at hm4 ⊢
   exact «KernelRoleSpec::spec_digest».Path.run rfl hm4 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -132,8 +132,8 @@ inductive «KernelRoleSpec::role_count».Path (h : Heap F) (r : SourceValue F) (
 theorem «KernelRoleSpec::role_count».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_count" [] h r h' calls) :
     «KernelRoleSpec::role_count».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_count.lookup
-    (by simp [IxVM.KernelRoleSpec.role_count, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_count.lookup
+    (by simp [IxVM.KernelRoleSpec.role_count, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_count] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_count».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -150,8 +150,8 @@ inductive «KernelRoleSpec::group_count».Path (h : Heap F) (r : SourceValue F) 
 theorem «KernelRoleSpec::group_count».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::group_count" [] h r h' calls) :
     «KernelRoleSpec::group_count».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.group_count.lookup
-    (by simp [IxVM.KernelRoleSpec.group_count, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.group_count.lookup
+    (by simp [IxVM.KernelRoleSpec.group_count, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.group_count] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::group_count».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -168,8 +168,8 @@ inductive «KernelRoleSpec::first_well_founded_group».Path (h : Heap F) (r : So
 theorem «KernelRoleSpec::first_well_founded_group».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::first_well_founded_group" [] h r h' calls) :
     «KernelRoleSpec::first_well_founded_group».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.first_well_founded_group.lookup
-    (by simp [IxVM.KernelRoleSpec.first_well_founded_group, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.first_well_founded_group.lookup
+    (by simp [IxVM.KernelRoleSpec.first_well_founded_group, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.first_well_founded_group] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::first_well_founded_group».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -186,8 +186,8 @@ inductive «KernelRoleSpec::first_equation_group».Path (h : Heap F) (r : Source
 theorem «KernelRoleSpec::first_equation_group».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::first_equation_group" [] h r h' calls) :
     «KernelRoleSpec::first_equation_group».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.first_equation_group.lookup
-    (by simp [IxVM.KernelRoleSpec.first_equation_group, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.first_equation_group.lookup
+    (by simp [IxVM.KernelRoleSpec.first_equation_group, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.first_equation_group] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::first_equation_group».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -204,8 +204,8 @@ inductive «KernelRoleSpec::role_nat».Path (h : Heap F) (r : SourceValue F) (h'
 theorem «KernelRoleSpec::role_nat».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_nat" [] h r h' calls) :
     «KernelRoleSpec::role_nat».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_nat.lookup
-    (by simp [IxVM.KernelRoleSpec.role_nat, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_nat.lookup
+    (by simp [IxVM.KernelRoleSpec.role_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_nat».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -222,8 +222,8 @@ inductive «KernelRoleSpec::role_nat_zero».Path (h : Heap F) (r : SourceValue F
 theorem «KernelRoleSpec::role_nat_zero».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_nat_zero" [] h r h' calls) :
     «KernelRoleSpec::role_nat_zero».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_nat_zero.lookup
-    (by simp [IxVM.KernelRoleSpec.role_nat_zero, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_nat_zero.lookup
+    (by simp [IxVM.KernelRoleSpec.role_nat_zero, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_zero] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_nat_zero».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -240,8 +240,8 @@ inductive «KernelRoleSpec::role_nat_succ».Path (h : Heap F) (r : SourceValue F
 theorem «KernelRoleSpec::role_nat_succ».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_nat_succ" [] h r h' calls) :
     «KernelRoleSpec::role_nat_succ».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_nat_succ.lookup
-    (by simp [IxVM.KernelRoleSpec.role_nat_succ, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_nat_succ.lookup
+    (by simp [IxVM.KernelRoleSpec.role_nat_succ, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_succ] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_nat_succ».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -258,8 +258,8 @@ inductive «KernelRoleSpec::role_bool».Path (h : Heap F) (r : SourceValue F) (h
 theorem «KernelRoleSpec::role_bool».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_bool" [] h r h' calls) :
     «KernelRoleSpec::role_bool».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_bool.lookup
-    (by simp [IxVM.KernelRoleSpec.role_bool, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_bool.lookup
+    (by simp [IxVM.KernelRoleSpec.role_bool, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_bool] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_bool».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -276,8 +276,8 @@ inductive «KernelRoleSpec::role_bool_false».Path (h : Heap F) (r : SourceValue
 theorem «KernelRoleSpec::role_bool_false».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_bool_false" [] h r h' calls) :
     «KernelRoleSpec::role_bool_false».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_bool_false.lookup
-    (by simp [IxVM.KernelRoleSpec.role_bool_false, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_bool_false.lookup
+    (by simp [IxVM.KernelRoleSpec.role_bool_false, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_bool_false] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_bool_false».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -294,8 +294,8 @@ inductive «KernelRoleSpec::role_bool_true».Path (h : Heap F) (r : SourceValue 
 theorem «KernelRoleSpec::role_bool_true».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_bool_true" [] h r h' calls) :
     «KernelRoleSpec::role_bool_true».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_bool_true.lookup
-    (by simp [IxVM.KernelRoleSpec.role_bool_true, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_bool_true.lookup
+    (by simp [IxVM.KernelRoleSpec.role_bool_true, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_bool_true] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_bool_true».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -312,8 +312,8 @@ inductive «KernelRoleSpec::role_eq».Path (h : Heap F) (r : SourceValue F) (h' 
 theorem «KernelRoleSpec::role_eq».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_eq" [] h r h' calls) :
     «KernelRoleSpec::role_eq».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_eq.lookup
-    (by simp [IxVM.KernelRoleSpec.role_eq, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_eq.lookup
+    (by simp [IxVM.KernelRoleSpec.role_eq, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_eq] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_eq».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -330,8 +330,8 @@ inductive «KernelRoleSpec::role_eq_refl».Path (h : Heap F) (r : SourceValue F)
 theorem «KernelRoleSpec::role_eq_refl».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_eq_refl" [] h r h' calls) :
     «KernelRoleSpec::role_eq_refl».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_eq_refl.lookup
-    (by simp [IxVM.KernelRoleSpec.role_eq_refl, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_eq_refl.lookup
+    (by simp [IxVM.KernelRoleSpec.role_eq_refl, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_eq_refl] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_eq_refl».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -348,8 +348,8 @@ inductive «KernelRoleSpec::role_list_nil».Path (h : Heap F) (r : SourceValue F
 theorem «KernelRoleSpec::role_list_nil».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_list_nil" [] h r h' calls) :
     «KernelRoleSpec::role_list_nil».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_list_nil.lookup
-    (by simp [IxVM.KernelRoleSpec.role_list_nil, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_list_nil.lookup
+    (by simp [IxVM.KernelRoleSpec.role_list_nil, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_list_nil] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_list_nil».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -366,8 +366,8 @@ inductive «KernelRoleSpec::role_list_cons».Path (h : Heap F) (r : SourceValue 
 theorem «KernelRoleSpec::role_list_cons».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_list_cons" [] h r h' calls) :
     «KernelRoleSpec::role_list_cons».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_list_cons.lookup
-    (by simp [IxVM.KernelRoleSpec.role_list_cons, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_list_cons.lookup
+    (by simp [IxVM.KernelRoleSpec.role_list_cons, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_list_cons] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_list_cons».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -384,8 +384,8 @@ inductive «KernelRoleSpec::role_quot».Path (h : Heap F) (r : SourceValue F) (h
 theorem «KernelRoleSpec::role_quot».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_quot" [] h r h' calls) :
     «KernelRoleSpec::role_quot».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_quot.lookup
-    (by simp [IxVM.KernelRoleSpec.role_quot, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_quot.lookup
+    (by simp [IxVM.KernelRoleSpec.role_quot, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_quot».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -402,8 +402,8 @@ inductive «KernelRoleSpec::role_quot_mk».Path (h : Heap F) (r : SourceValue F)
 theorem «KernelRoleSpec::role_quot_mk».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_quot_mk" [] h r h' calls) :
     «KernelRoleSpec::role_quot_mk».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_quot_mk.lookup
-    (by simp [IxVM.KernelRoleSpec.role_quot_mk, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_quot_mk.lookup
+    (by simp [IxVM.KernelRoleSpec.role_quot_mk, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_mk] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_quot_mk».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -420,8 +420,8 @@ inductive «KernelRoleSpec::role_quot_lift».Path (h : Heap F) (r : SourceValue 
 theorem «KernelRoleSpec::role_quot_lift».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_quot_lift" [] h r h' calls) :
     «KernelRoleSpec::role_quot_lift».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_quot_lift.lookup
-    (by simp [IxVM.KernelRoleSpec.role_quot_lift, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_quot_lift.lookup
+    (by simp [IxVM.KernelRoleSpec.role_quot_lift, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_lift] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_quot_lift».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -438,8 +438,8 @@ inductive «KernelRoleSpec::role_quot_ind».Path (h : Heap F) (r : SourceValue F
 theorem «KernelRoleSpec::role_quot_ind».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_quot_ind" [] h r h' calls) :
     «KernelRoleSpec::role_quot_ind».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_quot_ind.lookup
-    (by simp [IxVM.KernelRoleSpec.role_quot_ind, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_quot_ind.lookup
+    (by simp [IxVM.KernelRoleSpec.role_quot_ind, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_ind] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_quot_ind».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -456,8 +456,8 @@ inductive «KernelRoleSpec::role_quot_sound».Path (h : Heap F) (r : SourceValue
 theorem «KernelRoleSpec::role_quot_sound».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_quot_sound" [] h r h' calls) :
     «KernelRoleSpec::role_quot_sound».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_quot_sound.lookup
-    (by simp [IxVM.KernelRoleSpec.role_quot_sound, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_quot_sound.lookup
+    (by simp [IxVM.KernelRoleSpec.role_quot_sound, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_quot_sound] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_quot_sound».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -474,8 +474,8 @@ inductive «KernelRoleSpec::role_string».Path (h : Heap F) (r : SourceValue F) 
 theorem «KernelRoleSpec::role_string».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_string" [] h r h' calls) :
     «KernelRoleSpec::role_string».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_string.lookup
-    (by simp [IxVM.KernelRoleSpec.role_string, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_string.lookup
+    (by simp [IxVM.KernelRoleSpec.role_string, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_string] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_string».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -492,8 +492,8 @@ inductive «KernelRoleSpec::role_string_of_list».Path (h : Heap F) (r : SourceV
 theorem «KernelRoleSpec::role_string_of_list».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_string_of_list" [] h r h' calls) :
     «KernelRoleSpec::role_string_of_list».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_string_of_list.lookup
-    (by simp [IxVM.KernelRoleSpec.role_string_of_list, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_string_of_list.lookup
+    (by simp [IxVM.KernelRoleSpec.role_string_of_list, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_string_of_list] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_string_of_list».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -510,8 +510,8 @@ inductive «KernelRoleSpec::role_char».Path (h : Heap F) (r : SourceValue F) (h
 theorem «KernelRoleSpec::role_char».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_char" [] h r h' calls) :
     «KernelRoleSpec::role_char».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_char.lookup
-    (by simp [IxVM.KernelRoleSpec.role_char, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_char.lookup
+    (by simp [IxVM.KernelRoleSpec.role_char, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_char] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_char».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -528,8 +528,8 @@ inductive «KernelRoleSpec::role_char_of_nat».Path (h : Heap F) (r : SourceValu
 theorem «KernelRoleSpec::role_char_of_nat».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_char_of_nat" [] h r h' calls) :
     «KernelRoleSpec::role_char_of_nat».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_char_of_nat.lookup
-    (by simp [IxVM.KernelRoleSpec.role_char_of_nat, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_char_of_nat.lookup
+    (by simp [IxVM.KernelRoleSpec.role_char_of_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_char_of_nat] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_char_of_nat».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -546,8 +546,8 @@ inductive «KernelRoleSpec::role_nat_add».Path (h : Heap F) (r : SourceValue F)
 theorem «KernelRoleSpec::role_nat_add».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_nat_add" [] h r h' calls) :
     «KernelRoleSpec::role_nat_add».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_nat_add.lookup
-    (by simp [IxVM.KernelRoleSpec.role_nat_add, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_nat_add.lookup
+    (by simp [IxVM.KernelRoleSpec.role_nat_add, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_add] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_nat_add».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -564,8 +564,8 @@ inductive «KernelRoleSpec::role_propext».Path (h : Heap F) (r : SourceValue F)
 theorem «KernelRoleSpec::role_propext».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_propext" [] h r h' calls) :
     «KernelRoleSpec::role_propext».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_propext.lookup
-    (by simp [IxVM.KernelRoleSpec.role_propext, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_propext.lookup
+    (by simp [IxVM.KernelRoleSpec.role_propext, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_propext] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_propext».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -582,8 +582,8 @@ inductive «KernelRoleSpec::role_choice».Path (h : Heap F) (r : SourceValue F) 
 theorem «KernelRoleSpec::role_choice».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_choice" [] h r h' calls) :
     «KernelRoleSpec::role_choice».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_choice.lookup
-    (by simp [IxVM.KernelRoleSpec.role_choice, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_choice.lookup
+    (by simp [IxVM.KernelRoleSpec.role_choice, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_choice] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_choice».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -600,8 +600,8 @@ inductive «KernelRoleSpec::role_sorry_ax».Path (h : Heap F) (r : SourceValue F
 theorem «KernelRoleSpec::role_sorry_ax».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_sorry_ax" [] h r h' calls) :
     «KernelRoleSpec::role_sorry_ax».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_sorry_ax.lookup
-    (by simp [IxVM.KernelRoleSpec.role_sorry_ax, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_sorry_ax.lookup
+    (by simp [IxVM.KernelRoleSpec.role_sorry_ax, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_sorry_ax] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_sorry_ax».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -618,8 +618,8 @@ inductive «KernelRoleSpec::role_decidable_is_true».Path (h : Heap F) (r : Sour
 theorem «KernelRoleSpec::role_decidable_is_true».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_decidable_is_true" [] h r h' calls) :
     «KernelRoleSpec::role_decidable_is_true».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_decidable_is_true.lookup
-    (by simp [IxVM.KernelRoleSpec.role_decidable_is_true, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_decidable_is_true.lookup
+    (by simp [IxVM.KernelRoleSpec.role_decidable_is_true, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_decidable_is_true] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_decidable_is_true».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -636,8 +636,8 @@ inductive «KernelRoleSpec::role_decidable_is_false».Path (h : Heap F) (r : Sou
 theorem «KernelRoleSpec::role_decidable_is_false».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_decidable_is_false" [] h r h' calls) :
     «KernelRoleSpec::role_decidable_is_false».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_decidable_is_false.lookup
-    (by simp [IxVM.KernelRoleSpec.role_decidable_is_false, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_decidable_is_false.lookup
+    (by simp [IxVM.KernelRoleSpec.role_decidable_is_false, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_decidable_is_false] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_decidable_is_false».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -654,8 +654,8 @@ inductive «KernelRoleSpec::role_of_decide_eq_true».Path (h : Heap F) (r : Sour
 theorem «KernelRoleSpec::role_of_decide_eq_true».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_of_decide_eq_true" [] h r h' calls) :
     «KernelRoleSpec::role_of_decide_eq_true».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_of_decide_eq_true.lookup
-    (by simp [IxVM.KernelRoleSpec.role_of_decide_eq_true, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_of_decide_eq_true.lookup
+    (by simp [IxVM.KernelRoleSpec.role_of_decide_eq_true, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_of_decide_eq_true] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_of_decide_eq_true».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -672,8 +672,8 @@ inductive «KernelRoleSpec::role_of_decide_eq_false».Path (h : Heap F) (r : Sou
 theorem «KernelRoleSpec::role_of_decide_eq_false».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_of_decide_eq_false" [] h r h' calls) :
     «KernelRoleSpec::role_of_decide_eq_false».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_of_decide_eq_false.lookup
-    (by simp [IxVM.KernelRoleSpec.role_of_decide_eq_false, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_of_decide_eq_false.lookup
+    (by simp [IxVM.KernelRoleSpec.role_of_decide_eq_false, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_of_decide_eq_false] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_of_decide_eq_false».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -690,8 +690,8 @@ inductive «KernelRoleSpec::role_nat_le».Path (h : Heap F) (r : SourceValue F) 
 theorem «KernelRoleSpec::role_nat_le».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_nat_le" [] h r h' calls) :
     «KernelRoleSpec::role_nat_le».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_nat_le.lookup
-    (by simp [IxVM.KernelRoleSpec.role_nat_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_nat_le.lookup
+    (by simp [IxVM.KernelRoleSpec.role_nat_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_le] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_nat_le».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -708,8 +708,8 @@ inductive «KernelRoleSpec::role_nat_dec_le».Path (h : Heap F) (r : SourceValue
 theorem «KernelRoleSpec::role_nat_dec_le».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_nat_dec_le" [] h r h' calls) :
     «KernelRoleSpec::role_nat_dec_le».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_nat_dec_le.lookup
-    (by simp [IxVM.KernelRoleSpec.role_nat_dec_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_nat_dec_le.lookup
+    (by simp [IxVM.KernelRoleSpec.role_nat_dec_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_nat_dec_le] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_nat_dec_le».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -726,8 +726,8 @@ inductive «KernelRoleSpec::role_int».Path (h : Heap F) (r : SourceValue F) (h'
 theorem «KernelRoleSpec::role_int».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_int" [] h r h' calls) :
     «KernelRoleSpec::role_int».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_int.lookup
-    (by simp [IxVM.KernelRoleSpec.role_int, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_int.lookup
+    (by simp [IxVM.KernelRoleSpec.role_int, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_int] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_int».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -744,8 +744,8 @@ inductive «KernelRoleSpec::role_int_of_nat».Path (h : Heap F) (r : SourceValue
 theorem «KernelRoleSpec::role_int_of_nat».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_int_of_nat" [] h r h' calls) :
     «KernelRoleSpec::role_int_of_nat».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_int_of_nat.lookup
-    (by simp [IxVM.KernelRoleSpec.role_int_of_nat, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_int_of_nat.lookup
+    (by simp [IxVM.KernelRoleSpec.role_int_of_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_int_of_nat] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_int_of_nat».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -762,8 +762,8 @@ inductive «KernelRoleSpec::role_int_neg_succ».Path (h : Heap F) (r : SourceVal
 theorem «KernelRoleSpec::role_int_neg_succ».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_int_neg_succ" [] h r h' calls) :
     «KernelRoleSpec::role_int_neg_succ».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_int_neg_succ.lookup
-    (by simp [IxVM.KernelRoleSpec.role_int_neg_succ, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_int_neg_succ.lookup
+    (by simp [IxVM.KernelRoleSpec.role_int_neg_succ, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_int_neg_succ] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_int_neg_succ».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -780,8 +780,8 @@ inductive «KernelRoleSpec::role_bit_vec_of_nat».Path (h : Heap F) (r : SourceV
 theorem «KernelRoleSpec::role_bit_vec_of_nat».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_bit_vec_of_nat" [] h r h' calls) :
     «KernelRoleSpec::role_bit_vec_of_nat».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_bit_vec_of_nat.lookup
-    (by simp [IxVM.KernelRoleSpec.role_bit_vec_of_nat, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_bit_vec_of_nat.lookup
+    (by simp [IxVM.KernelRoleSpec.role_bit_vec_of_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_bit_vec_of_nat] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_bit_vec_of_nat».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -798,8 +798,8 @@ inductive «KernelRoleSpec::role_byte_array_empty».Path (h : Heap F) (r : Sourc
 theorem «KernelRoleSpec::role_byte_array_empty».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_byte_array_empty" [] h r h' calls) :
     «KernelRoleSpec::role_byte_array_empty».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_byte_array_empty.lookup
-    (by simp [IxVM.KernelRoleSpec.role_byte_array_empty, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_byte_array_empty.lookup
+    (by simp [IxVM.KernelRoleSpec.role_byte_array_empty, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_byte_array_empty] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_byte_array_empty».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -816,8 +816,8 @@ inductive «KernelRoleSpec::role_int_le».Path (h : Heap F) (r : SourceValue F) 
 theorem «KernelRoleSpec::role_int_le».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_int_le" [] h r h' calls) :
     «KernelRoleSpec::role_int_le».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_int_le.lookup
-    (by simp [IxVM.KernelRoleSpec.role_int_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_int_le.lookup
+    (by simp [IxVM.KernelRoleSpec.role_int_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_int_le] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_int_le».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -834,8 +834,8 @@ inductive «KernelRoleSpec::role_int_dec_le».Path (h : Heap F) (r : SourceValue
 theorem «KernelRoleSpec::role_int_dec_le».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_int_dec_le" [] h r h' calls) :
     «KernelRoleSpec::role_int_dec_le».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_int_dec_le.lookup
-    (by simp [IxVM.KernelRoleSpec.role_int_dec_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_int_dec_le.lookup
+    (by simp [IxVM.KernelRoleSpec.role_int_dec_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_int_dec_le] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_int_dec_le».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -1365,8 +1365,8 @@ inductive «KernelRoleSpec::role_levels».Path (x_r : SourceValue F) (h : Heap F
 theorem «KernelRoleSpec::role_levels».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_levels" [x_r] h r h' calls) :
     «KernelRoleSpec::role_levels».Path x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_levels.lookup
-    (by simp [IxVM.KernelRoleSpec.role_levels, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_levels.lookup
+    (by simp [IxVM.KernelRoleSpec.role_levels, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_levels] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1786,8 +1786,8 @@ inductive «KernelRoleSpec::role_member_kind».Path (x_r : SourceValue F) (h : H
 theorem «KernelRoleSpec::role_member_kind».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_member_kind" [x_r] h r h' calls) :
     «KernelRoleSpec::role_member_kind».Path x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_member_kind.lookup
-    (by simp [IxVM.KernelRoleSpec.role_member_kind, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_member_kind.lookup
+    (by simp [IxVM.KernelRoleSpec.role_member_kind, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_member_kind] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1941,8 +1941,8 @@ inductive «KernelRoleSpec::role_ctor_of».Path (x_r : SourceValue F) (h : Heap 
 theorem «KernelRoleSpec::role_ctor_of».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_ctor_of" [x_r] h r h' calls) :
     «KernelRoleSpec::role_ctor_of».Path x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_ctor_of.lookup
-    (by simp [IxVM.KernelRoleSpec.role_ctor_of, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_ctor_of.lookup
+    (by simp [IxVM.KernelRoleSpec.role_ctor_of, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_ctor_of] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2085,8 +2085,8 @@ inductive «KernelRoleSpec::role_ctor_count».Path (x_r : SourceValue F) (h : He
 theorem «KernelRoleSpec::role_ctor_count».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_ctor_count" [x_r] h r h' calls) :
     «KernelRoleSpec::role_ctor_count».Path x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.role_ctor_count.lookup
-    (by simp [IxVM.KernelRoleSpec.role_ctor_count, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_ctor_count.lookup
+    (by simp [IxVM.KernelRoleSpec.role_ctor_count, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.role_ctor_count] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2330,8 +2330,8 @@ inductive «KernelRoleSpec::op_equation_count».Path (x_r : SourceValue F) (h : 
 theorem «KernelRoleSpec::op_equation_count».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::op_equation_count" [x_r] h r h' calls) :
     «KernelRoleSpec::op_equation_count».Path x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.op_equation_count.lookup
-    (by simp [IxVM.KernelRoleSpec.op_equation_count, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.op_equation_count.lookup
+    (by simp [IxVM.KernelRoleSpec.op_equation_count, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.op_equation_count] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2506,8 +2506,8 @@ inductive «KernelRoleSpec::op_evidence_is_proof».Path (x_r : SourceValue F) (h
 theorem «KernelRoleSpec::op_evidence_is_proof».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::op_evidence_is_proof" [x_r] h r h' calls) :
     «KernelRoleSpec::op_evidence_is_proof».Path x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelRoleSpec.op_evidence_is_proof.lookup
-    (by simp [IxVM.KernelRoleSpec.op_evidence_is_proof, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.op_evidence_is_proof.lookup
+    (by simp [IxVM.KernelRoleSpec.op_evidence_is_proof, ControlLower.hasControl]) ev
   simp only [IxVM.KernelRoleSpec.op_evidence_is_proof] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv

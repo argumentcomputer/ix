@@ -235,8 +235,8 @@ inductive «KernelNatPrim::int_bdiv_prim».Path (x_rc x_sa x_a x_m : SourceValue
 theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::int_bdiv_prim" [x_rc, x_sa, x_a, x_m] h r h' calls) :
     «KernelNatPrim::int_bdiv_prim».Path x_rc x_sa x_a x_m h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.int_bdiv_prim.lookup
-    (by simp [IxVM.KernelNatPrim.int_bdiv_prim, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.int_bdiv_prim.lookup
+    (by simp [IxVM.KernelNatPrim.int_bdiv_prim, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.int_bdiv_prim] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -374,21 +374,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
           obtain ⟨v322, vs324, m325, c326, c327, rfl, d328, a329, rfl⟩ := a320.cons_inv
           obtain ⟨vs330, a331, rfl⟩ := d328.array_inv
           obtain ⟨v332, vs340, m341, c342, c343, rfl, d344, a345, rfl⟩ := a331.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d344.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d344.global_literal_inv Names.c1350107512230497446
           obtain ⟨v333, vs346, m347, c348, c349, rfl, d350, a351, rfl⟩ := a345.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d350.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d350.global_literal_inv Names.c9173999864893739538
           obtain ⟨v334, vs352, m353, c354, c355, rfl, d356, a357, rfl⟩ := a351.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d356.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d356.global_literal_inv Names.c9173999864893739538
           obtain ⟨v335, vs358, m359, c360, c361, rfl, d362, a363, rfl⟩ := a357.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d362.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d362.global_literal_inv Names.c9173999864893739538
           obtain ⟨v336, vs364, m365, c366, c367, rfl, d368, a369, rfl⟩ := a363.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d368.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d368.global_literal_inv Names.c9173999864893739538
           obtain ⟨v337, vs370, m371, c372, c373, rfl, d374, a375, rfl⟩ := a369.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d374.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d374.global_literal_inv Names.c9173999864893739538
           obtain ⟨v338, vs376, m377, c378, c379, rfl, d380, a381, rfl⟩ := a375.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d380.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d380.global_literal_inv Names.c9173999864893739538
           obtain ⟨v339, vs382, m383, c384, c385, rfl, d386, a387, rfl⟩ := a381.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d386.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+          obtain ⟨rfl, rfl, rfl⟩ := d386.global_literal_inv Names.c9173999864893739538
           obtain ⟨rfl, rfl, rfl⟩ := a387.nil_inv
           obtain ⟨v323, vs388, m389, c390, c391, rfl, d392, a393, rfl⟩ := a329.cons_inv
           obtain ⟨v394, m395, d396, rfl, hm397⟩ := d392.store_inv
@@ -474,21 +474,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
               obtain ⟨v565, vs567, m568, c569, c570, rfl, d571, a572, rfl⟩ := a563.cons_inv
               obtain ⟨vs573, a574, rfl⟩ := d571.array_inv
               obtain ⟨v575, vs583, m584, c585, c586, rfl, d587, a588, rfl⟩ := a574.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d587.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d587.global_literal_inv Names.c3167744620027602021
               obtain ⟨v576, vs589, m590, c591, c592, rfl, d593, a594, rfl⟩ := a588.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d593.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d593.global_literal_inv Names.c9173999864893739538
               obtain ⟨v577, vs595, m596, c597, c598, rfl, d599, a600, rfl⟩ := a594.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d599.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d599.global_literal_inv Names.c9173999864893739538
               obtain ⟨v578, vs601, m602, c603, c604, rfl, d605, a606, rfl⟩ := a600.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d605.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d605.global_literal_inv Names.c9173999864893739538
               obtain ⟨v579, vs607, m608, c609, c610, rfl, d611, a612, rfl⟩ := a606.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d611.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d611.global_literal_inv Names.c9173999864893739538
               obtain ⟨v580, vs613, m614, c615, c616, rfl, d617, a618, rfl⟩ := a612.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d617.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d617.global_literal_inv Names.c9173999864893739538
               obtain ⟨v581, vs619, m620, c621, c622, rfl, d623, a624, rfl⟩ := a618.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d623.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d623.global_literal_inv Names.c9173999864893739538
               obtain ⟨v582, vs625, m626, c627, c628, rfl, d629, a630, rfl⟩ := a624.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d629.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d629.global_literal_inv Names.c9173999864893739538
               obtain ⟨rfl, rfl, rfl⟩ := a630.nil_inv
               obtain ⟨v566, vs631, m632, c633, c634, rfl, d635, a636, rfl⟩ := a572.cons_inv
               obtain ⟨v637, m638, d639, rfl, hm640⟩ := d635.store_inv
@@ -531,21 +531,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
             obtain ⟨v704, vs706, m707, c708, c709, rfl, d710, a711, rfl⟩ := a702.cons_inv
             obtain ⟨vs712, a713, rfl⟩ := d710.array_inv
             obtain ⟨v714, vs722, m723, c724, c725, rfl, d726, a727, rfl⟩ := a713.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d726.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d726.global_literal_inv Names.c1350107512230497446
             obtain ⟨v715, vs728, m729, c730, c731, rfl, d732, a733, rfl⟩ := a727.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d732.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d732.global_literal_inv Names.c9173999864893739538
             obtain ⟨v716, vs734, m735, c736, c737, rfl, d738, a739, rfl⟩ := a733.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d738.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d738.global_literal_inv Names.c9173999864893739538
             obtain ⟨v717, vs740, m741, c742, c743, rfl, d744, a745, rfl⟩ := a739.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d744.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d744.global_literal_inv Names.c9173999864893739538
             obtain ⟨v718, vs746, m747, c748, c749, rfl, d750, a751, rfl⟩ := a745.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d750.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d750.global_literal_inv Names.c9173999864893739538
             obtain ⟨v719, vs752, m753, c754, c755, rfl, d756, a757, rfl⟩ := a751.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d756.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d756.global_literal_inv Names.c9173999864893739538
             obtain ⟨v720, vs758, m759, c760, c761, rfl, d762, a763, rfl⟩ := a757.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d762.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d762.global_literal_inv Names.c9173999864893739538
             obtain ⟨v721, vs764, m765, c766, c767, rfl, d768, a769, rfl⟩ := a763.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d768.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d768.global_literal_inv Names.c9173999864893739538
             obtain ⟨rfl, rfl, rfl⟩ := a769.nil_inv
             obtain ⟨v705, vs770, m771, c772, c773, rfl, d774, a775, rfl⟩ := a711.cons_inv
             obtain ⟨v776, m777, d778, rfl, hm779⟩ := d774.store_inv
@@ -631,21 +631,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
                 obtain ⟨v947, vs949, m950, c951, c952, rfl, d953, a954, rfl⟩ := a945.cons_inv
                 obtain ⟨vs955, a956, rfl⟩ := d953.array_inv
                 obtain ⟨v957, vs965, m966, c967, c968, rfl, d969, a970, rfl⟩ := a956.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d969.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d969.global_literal_inv Names.c3167744620027602021
                 obtain ⟨v958, vs971, m972, c973, c974, rfl, d975, a976, rfl⟩ := a970.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d975.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d975.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v959, vs977, m978, c979, c980, rfl, d981, a982, rfl⟩ := a976.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d981.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d981.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v960, vs983, m984, c985, c986, rfl, d987, a988, rfl⟩ := a982.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d987.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d987.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v961, vs989, m990, c991, c992, rfl, d993, a994, rfl⟩ := a988.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d993.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d993.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v962, vs995, m996, c997, c998, rfl, d999, a1000, rfl⟩ := a994.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d999.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d999.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v963, vs1001, m1002, c1003, c1004, rfl, d1005, a1006, rfl⟩ := a1000.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1005.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1005.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v964, vs1007, m1008, c1009, c1010, rfl, d1011, a1012, rfl⟩ := a1006.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1011.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1011.global_literal_inv Names.c9173999864893739538
                 obtain ⟨rfl, rfl, rfl⟩ := a1012.nil_inv
                 obtain ⟨v948, vs1013, m1014, c1015, c1016, rfl, d1017, a1018, rfl⟩ := a954.cons_inv
                 obtain ⟨v1019, m1020, d1021, rfl, hm1022⟩ := d1017.store_inv
@@ -728,21 +728,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
             obtain ⟨v1182, vs1184, m1185, c1186, c1187, rfl, d1188, a1189, rfl⟩ := a1180.cons_inv
             obtain ⟨vs1190, a1191, rfl⟩ := d1188.array_inv
             obtain ⟨v1192, vs1200, m1201, c1202, c1203, rfl, d1204, a1205, rfl⟩ := a1191.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1204.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1204.global_literal_inv Names.c1350107512230497446
             obtain ⟨v1193, vs1206, m1207, c1208, c1209, rfl, d1210, a1211, rfl⟩ := a1205.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1210.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1210.global_literal_inv Names.c9173999864893739538
             obtain ⟨v1194, vs1212, m1213, c1214, c1215, rfl, d1216, a1217, rfl⟩ := a1211.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1216.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1216.global_literal_inv Names.c9173999864893739538
             obtain ⟨v1195, vs1218, m1219, c1220, c1221, rfl, d1222, a1223, rfl⟩ := a1217.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1222.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1222.global_literal_inv Names.c9173999864893739538
             obtain ⟨v1196, vs1224, m1225, c1226, c1227, rfl, d1228, a1229, rfl⟩ := a1223.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1228.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1228.global_literal_inv Names.c9173999864893739538
             obtain ⟨v1197, vs1230, m1231, c1232, c1233, rfl, d1234, a1235, rfl⟩ := a1229.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1234.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1234.global_literal_inv Names.c9173999864893739538
             obtain ⟨v1198, vs1236, m1237, c1238, c1239, rfl, d1240, a1241, rfl⟩ := a1235.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1240.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1240.global_literal_inv Names.c9173999864893739538
             obtain ⟨v1199, vs1242, m1243, c1244, c1245, rfl, d1246, a1247, rfl⟩ := a1241.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d1246.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d1246.global_literal_inv Names.c9173999864893739538
             obtain ⟨rfl, rfl, rfl⟩ := a1247.nil_inv
             obtain ⟨v1183, vs1248, m1249, c1250, c1251, rfl, d1252, a1253, rfl⟩ := a1189.cons_inv
             obtain ⟨v1254, m1255, d1256, rfl, hm1257⟩ := d1252.store_inv
@@ -828,21 +828,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
                 obtain ⟨v1425, vs1427, m1428, c1429, c1430, rfl, d1431, a1432, rfl⟩ := a1423.cons_inv
                 obtain ⟨vs1433, a1434, rfl⟩ := d1431.array_inv
                 obtain ⟨v1435, vs1443, m1444, c1445, c1446, rfl, d1447, a1448, rfl⟩ := a1434.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1447.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1447.global_literal_inv Names.c3167744620027602021
                 obtain ⟨v1436, vs1449, m1450, c1451, c1452, rfl, d1453, a1454, rfl⟩ := a1448.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1453.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1453.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v1437, vs1455, m1456, c1457, c1458, rfl, d1459, a1460, rfl⟩ := a1454.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1459.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1459.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v1438, vs1461, m1462, c1463, c1464, rfl, d1465, a1466, rfl⟩ := a1460.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1465.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1465.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v1439, vs1467, m1468, c1469, c1470, rfl, d1471, a1472, rfl⟩ := a1466.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1471.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1471.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v1440, vs1473, m1474, c1475, c1476, rfl, d1477, a1478, rfl⟩ := a1472.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1477.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1477.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v1441, vs1479, m1480, c1481, c1482, rfl, d1483, a1484, rfl⟩ := a1478.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1483.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1483.global_literal_inv Names.c9173999864893739538
                 obtain ⟨v1442, vs1485, m1486, c1487, c1488, rfl, d1489, a1490, rfl⟩ := a1484.cons_inv
-                obtain ⟨rfl, rfl, rfl⟩ := d1489.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                obtain ⟨rfl, rfl, rfl⟩ := d1489.global_literal_inv Names.c9173999864893739538
                 obtain ⟨rfl, rfl, rfl⟩ := a1490.nil_inv
                 obtain ⟨v1426, vs1491, m1492, c1493, c1494, rfl, d1495, a1496, rfl⟩ := a1432.cons_inv
                 obtain ⟨v1497, m1498, d1499, rfl, hm1500⟩ := d1495.store_inv
@@ -885,21 +885,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
               obtain ⟨v1564, vs1566, m1567, c1568, c1569, rfl, d1570, a1571, rfl⟩ := a1562.cons_inv
               obtain ⟨vs1572, a1573, rfl⟩ := d1570.array_inv
               obtain ⟨v1574, vs1582, m1583, c1584, c1585, rfl, d1586, a1587, rfl⟩ := a1573.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1586.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1586.global_literal_inv Names.c1350107512230497446
               obtain ⟨v1575, vs1588, m1589, c1590, c1591, rfl, d1592, a1593, rfl⟩ := a1587.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1592.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1592.global_literal_inv Names.c9173999864893739538
               obtain ⟨v1576, vs1594, m1595, c1596, c1597, rfl, d1598, a1599, rfl⟩ := a1593.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1598.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1598.global_literal_inv Names.c9173999864893739538
               obtain ⟨v1577, vs1600, m1601, c1602, c1603, rfl, d1604, a1605, rfl⟩ := a1599.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1604.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1604.global_literal_inv Names.c9173999864893739538
               obtain ⟨v1578, vs1606, m1607, c1608, c1609, rfl, d1610, a1611, rfl⟩ := a1605.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1610.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1610.global_literal_inv Names.c9173999864893739538
               obtain ⟨v1579, vs1612, m1613, c1614, c1615, rfl, d1616, a1617, rfl⟩ := a1611.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1616.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1616.global_literal_inv Names.c9173999864893739538
               obtain ⟨v1580, vs1618, m1619, c1620, c1621, rfl, d1622, a1623, rfl⟩ := a1617.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1622.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1622.global_literal_inv Names.c9173999864893739538
               obtain ⟨v1581, vs1624, m1625, c1626, c1627, rfl, d1628, a1629, rfl⟩ := a1623.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d1628.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d1628.global_literal_inv Names.c9173999864893739538
               obtain ⟨rfl, rfl, rfl⟩ := a1629.nil_inv
               obtain ⟨v1565, vs1630, m1631, c1632, c1633, rfl, d1634, a1635, rfl⟩ := a1571.cons_inv
               obtain ⟨v1636, m1637, d1638, rfl, hm1639⟩ := d1634.store_inv
@@ -985,21 +985,21 @@ theorem «KernelNatPrim::int_bdiv_prim».obs {x_rc x_sa x_a x_m : SourceValue F}
                   obtain ⟨v1807, vs1809, m1810, c1811, c1812, rfl, d1813, a1814, rfl⟩ := a1805.cons_inv
                   obtain ⟨vs1815, a1816, rfl⟩ := d1813.array_inv
                   obtain ⟨v1817, vs1825, m1826, c1827, c1828, rfl, d1829, a1830, rfl⟩ := a1816.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1829.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1829.global_literal_inv Names.c3167744620027602021
                   obtain ⟨v1818, vs1831, m1832, c1833, c1834, rfl, d1835, a1836, rfl⟩ := a1830.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1835.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1835.global_literal_inv Names.c9173999864893739538
                   obtain ⟨v1819, vs1837, m1838, c1839, c1840, rfl, d1841, a1842, rfl⟩ := a1836.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1841.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1841.global_literal_inv Names.c9173999864893739538
                   obtain ⟨v1820, vs1843, m1844, c1845, c1846, rfl, d1847, a1848, rfl⟩ := a1842.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1847.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1847.global_literal_inv Names.c9173999864893739538
                   obtain ⟨v1821, vs1849, m1850, c1851, c1852, rfl, d1853, a1854, rfl⟩ := a1848.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1853.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1853.global_literal_inv Names.c9173999864893739538
                   obtain ⟨v1822, vs1855, m1856, c1857, c1858, rfl, d1859, a1860, rfl⟩ := a1854.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1859.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1859.global_literal_inv Names.c9173999864893739538
                   obtain ⟨v1823, vs1861, m1862, c1863, c1864, rfl, d1865, a1866, rfl⟩ := a1860.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1865.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1865.global_literal_inv Names.c9173999864893739538
                   obtain ⟨v1824, vs1867, m1868, c1869, c1870, rfl, d1871, a1872, rfl⟩ := a1866.cons_inv
-                  obtain ⟨rfl, rfl, rfl⟩ := d1871.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+                  obtain ⟨rfl, rfl, rfl⟩ := d1871.global_literal_inv Names.c9173999864893739538
                   obtain ⟨rfl, rfl, rfl⟩ := a1872.nil_inv
                   obtain ⟨v1808, vs1873, m1874, c1875, c1876, rfl, d1877, a1878, rfl⟩ := a1814.cons_inv
                   obtain ⟨v1879, m1880, d1881, rfl, hm1882⟩ := d1877.store_inv
@@ -1035,8 +1035,8 @@ inductive «KernelNatPrim::np_apply_spine».Path (x_head x_spine : SourceValue F
 theorem «KernelNatPrim::np_apply_spine».obs {x_head x_spine : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::np_apply_spine" [x_head, x_spine] h r h' calls) :
     «KernelNatPrim::np_apply_spine».Path x_head x_spine h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.np_apply_spine.lookup
-    (by simp [IxVM.KernelNatPrim.np_apply_spine, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.np_apply_spine.lookup
+    (by simp [IxVM.KernelNatPrim.np_apply_spine, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.np_apply_spine] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1333,8 +1333,8 @@ inductive «KernelNatPrim::try_nat_binop_addr».Path (x_rc x_op x_a x_b : Source
 theorem «KernelNatPrim::try_nat_binop_addr».obs {x_rc x_op x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_nat_binop_addr" [x_rc, x_op, x_a, x_b] h r h' calls) :
     «KernelNatPrim::try_nat_binop_addr».Path x_rc x_op x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_nat_binop_addr.lookup
-    (by simp [IxVM.KernelNatPrim.try_nat_binop_addr, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_nat_binop_addr.lookup
+    (by simp [IxVM.KernelNatPrim.try_nat_binop_addr, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_nat_binop_addr] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1834,8 +1834,8 @@ inductive «KernelNatPrim::try_match_nat_add».Path (x_rc x_head x_args : Source
 theorem «KernelNatPrim::try_match_nat_add».obs {x_rc x_head x_args : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_match_nat_add" [x_rc, x_head, x_args] h r h' calls) :
     «KernelNatPrim::try_match_nat_add».Path x_rc x_head x_args h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_match_nat_add.lookup
-    (by simp [IxVM.KernelNatPrim.try_match_nat_add, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_match_nat_add.lookup
+    (by simp [IxVM.KernelNatPrim.try_match_nat_add, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_match_nat_add] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2089,8 +2089,8 @@ inductive «KernelNatPrim::build_succ_offset».Path (x_rc x_base x_lit : SourceV
 theorem «KernelNatPrim::build_succ_offset».obs {x_rc x_base x_lit : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::build_succ_offset" [x_rc, x_base, x_lit] h r h' calls) :
     «KernelNatPrim::build_succ_offset».Path x_rc x_base x_lit h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.build_succ_offset.lookup
-    (by simp [IxVM.KernelNatPrim.build_succ_offset, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.build_succ_offset.lookup
+    (by simp [IxVM.KernelNatPrim.build_succ_offset, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.build_succ_offset] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv
@@ -2100,21 +2100,21 @@ theorem «KernelNatPrim::build_succ_offset».obs {x_rc x_base x_lit : SourceValu
   obtain ⟨v16, vs18, m19, c20, c21, rfl, d22, a23, rfl⟩ := a14.cons_inv
   obtain ⟨vs24, a25, rfl⟩ := d22.array_inv
   obtain ⟨v26, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a25.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv Names.c3167744620027602021
   obtain ⟨v27, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a39.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c9173999864893739538
   obtain ⟨v28, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c9173999864893739538
   obtain ⟨v29, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c9173999864893739538
   obtain ⟨v30, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c9173999864893739538
   obtain ⟨v31, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c9173999864893739538
   obtain ⟨v32, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c9173999864893739538
   obtain ⟨v33, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c9173999864893739538
   obtain ⟨rfl, rfl, rfl⟩ := a81.nil_inv
   obtain ⟨v17, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a23.cons_inv
   obtain ⟨v88, m89, d90, rfl, hm91⟩ := d86.store_inv
@@ -2336,8 +2336,8 @@ inductive «KernelNatPrim::cleanup_nat_offset_major».Path (x_rc x_e : SourceVal
 theorem «KernelNatPrim::cleanup_nat_offset_major».obs {x_rc x_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, x_e] h r h' calls) :
     «KernelNatPrim::cleanup_nat_offset_major».Path x_rc x_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.cleanup_nat_offset_major.lookup
-    (by simp [IxVM.KernelNatPrim.cleanup_nat_offset_major, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.cleanup_nat_offset_major.lookup
+    (by simp [IxVM.KernelNatPrim.cleanup_nat_offset_major, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.cleanup_nat_offset_major] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2511,8 +2511,8 @@ inductive «KernelNatPrim::mk_nat_offset_stuck».Path (x_rc x_base_w x_n x_post 
 theorem «KernelNatPrim::mk_nat_offset_stuck».obs {x_rc x_base_w x_n x_post : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::mk_nat_offset_stuck" [x_rc, x_base_w, x_n, x_post] h r h' calls) :
     «KernelNatPrim::mk_nat_offset_stuck».Path x_rc x_base_w x_n x_post h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.mk_nat_offset_stuck.lookup
-    (by simp [IxVM.KernelNatPrim.mk_nat_offset_stuck, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.mk_nat_offset_stuck.lookup
+    (by simp [IxVM.KernelNatPrim.mk_nat_offset_stuck, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.mk_nat_offset_stuck] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2710,8 +2710,8 @@ inductive «KernelNatPrim::is_nat_succ_ih_step».Path (x_rc x_step : SourceValue
 theorem «KernelNatPrim::is_nat_succ_ih_step».obs {x_rc x_step : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::is_nat_succ_ih_step" [x_rc, x_step] h r h' calls) :
     «KernelNatPrim::is_nat_succ_ih_step».Path x_rc x_step h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.is_nat_succ_ih_step.lookup
-    (by simp [IxVM.KernelNatPrim.is_nat_succ_ih_step, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.is_nat_succ_ih_step.lookup
+    (by simp [IxVM.KernelNatPrim.is_nat_succ_ih_step, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.is_nat_succ_ih_step] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv

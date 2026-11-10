@@ -32,8 +32,8 @@ inductive «WordLists::checked_depth_succ».Path (x_depth : SourceValue F) (h : 
 theorem «WordLists::checked_depth_succ».obs {x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "WordLists::checked_depth_succ" [x_depth] h r h' calls) :
     «WordLists::checked_depth_succ».Path x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.WordLists.checked_depth_succ.lookup
-    (by simp [IxVM.WordLists.checked_depth_succ, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.WordLists.checked_depth_succ.lookup
+    (by simp [IxVM.WordLists.checked_depth_succ, ControlLower.hasControl]) ev
   simp only [IxVM.WordLists.checked_depth_succ] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, a10, ap11⟩ := d6.builtin_inv
@@ -58,5 +58,170 @@ theorem «WordLists::checked_depth_succ».obs {x_depth : SourceValue F} {h h' : 
   subst l56
   obtain ⟨rfl, rfl, rfl⟩ := d54.literal_inv
   exact «WordLists::checked_depth_succ».Path.run _ _ _ ev25 heq47 rfl op55 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+
+/-- The program resolves `WordLists::depth_checked` at each instance to its closure. -/
+theorem «WordLists::depth_checked».lookup (t_T : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "WordLists::depth_checked" [t_T]).symbol =
+      some { types := [("T", t_T)],
+             params := IxVM.WordLists.depth_checked.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
+             body := IxVM.WordLists.depth_checked.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.depth_checked) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 90) (by decide +kernel)) rfl t_T
+
+/-- The evaluation paths of `WordLists::depth_checked`: one constructor per combination of selected arms. -/
+inductive «WordLists::depth_checked».Path (t_T : Generic.Ty) (x_list : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld12 : loadValue h x_list = .ok (.construct (Instance.mk "Lists::Node" [t_T]).symbol "Nil" []))
+      (he20 : r = (.field 0))
+      (he21 : h' = h)
+      (hc22 : calls = [])
+  | Cons
+      (w30 : SourceValue F) (x_rest : SourceValue F) (v41 : SourceValue F) (m42 : Heap F) (cs52 : List (Call F)) (cs66 : List (Call F))
+      (ld12 : loadValue h x_list = .ok (.construct (Instance.mk "Lists::Node" [t_T]).symbol "Cons" [w30, x_rest]))
+      (ev54 : ObsFn W (Instance.mk "WordLists::depth_checked" [t_T]).symbol [x_rest] h v41 m42 cs52)
+      (ev68 : ObsFn W "WordLists::checked_depth_succ" [v41] m42 r h' cs66)
+      (hc77 : calls = ((⟨(Instance.mk "WordLists::depth_checked" [t_T]).symbol, [x_rest], h⟩ : Call F) :: (cs52 ++ ((⟨"WordLists::checked_depth_succ", [v41], m42⟩ : Call F) :: cs66))))
+
+/-- **Every observed derivation of `WordLists::depth_checked` takes one of its paths.** -/
+theorem «WordLists::depth_checked».obs {t_T : Generic.Ty} {x_list : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "WordLists::depth_checked" [t_T]).symbol [x_list] h r h' calls) :
+    «WordLists::depth_checked».Path t_T x_list h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («WordLists::depth_checked».lookup t_T)
+    (by simp [IxVM.WordLists.depth_checked, ControlLower.hasControl]) ev
+  simp only [IxVM.WordLists.depth_checked] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld12⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv18
+    subst hv18
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
+    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+    exact «WordLists::depth_checked».Path.Nil ld12 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne23 := matchPattern_construct_none (by trivial) nm15
+    simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne23
+    rcases selectArm_cons_inv sel16 with ⟨mt24, rfl⟩ | ⟨nm25, sel26⟩
+    · obtain ⟨vs27, hv28, -, ml29⟩ := matchPattern_construct_inv mt24
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv28
+      subst hv28
+      obtain ⟨w30, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml29
+      obtain rfl := matchPattern_wildcard_inv mt34
+      obtain ⟨x_rest, vs36, b37, b38, rfl, mt39, ml40, rfl⟩ := matchListWith_cons_inv ml35
+      obtain rfl := matchPattern_bind_inv mt39
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml40
+      obtain ⟨v41, m42, bs43, c44, c45, d46, mt47, d48, rfl⟩ := d9.letValue_inv
+      obtain ⟨vs49, m50, c51, cs52, a53, ev54, rfl⟩ := d46.call_inv
+      rw [instanceName_some_one, subst_param_singleton] at ev54
+      obtain ⟨v55, vs56, m57, c58, c59, rfl, d60, a61, rfl⟩ := a53.cons_inv
+      obtain ⟨l62, rfl, rfl⟩ := d60.var_inv
+      simp at l62
+      subst l62
+      obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
+      obtain rfl := matchPattern_bind_inv mt47
+      obtain ⟨vs63, m64, c65, cs66, a67, ev68, rfl⟩ := d48.call_inv
+      rw [instanceName_plain_some] at ev68
+      obtain ⟨v69, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a67.cons_inv
+      obtain ⟨l76, rfl, rfl⟩ := d74.var_inv
+      simp at l76
+      subst l76
+      obtain ⟨rfl, rfl, rfl⟩ := a75.nil_inv
+      exact «WordLists::depth_checked».Path.Cons _ _ _ _ _ _ ld12 ev54 ev68 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+    · have hne78 := matchPattern_construct_none (by trivial) nm25
+      simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne78
+      exact (selectArm_nil_inv sel26).elim
+
+/-- The program resolves `WordLists::lookup_u64` at each instance to its closure. -/
+theorem «WordLists::lookup_u64».lookup (t_T : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "WordLists::lookup_u64" [t_T]).symbol =
+      some { types := [("T", t_T)],
+             params := IxVM.WordLists.lookup_u64.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
+             body := IxVM.WordLists.lookup_u64.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.lookup_u64) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
+
+/-- The evaluation paths of `WordLists::lookup_u64`: one constructor per combination of selected arms. -/
+inductive «WordLists::lookup_u64».Path (t_T : Generic.Ty) (x_list x_idx : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n1
+      (x_v : SourceValue F) (x_rest : SourceValue F) (m27 : Heap F) (cs37 : List (Call F))
+      (ld11 : loadValue h x_list = .ok (.construct (Instance.mk "Lists::Node" [t_T]).symbol "Cons" [x_v, x_rest]))
+      (ev39 : ObsFn W "UInt64::is_zero" [x_idx] h (.field 1) m27 cs37)
+      (he63 : r = x_v)
+      (he64 : h' = m27)
+      (hc65 : calls = ((⟨"UInt64::is_zero", [x_idx], h⟩ : Call F) :: cs37))
+  | n0
+      (x_v : SourceValue F) (x_rest : SourceValue F) (m27 : Heap F) (cs37 : List (Call F)) (cs74 : List (Call F)) (v78 : SourceValue F) (m87 : Heap F) (cs95 : List (Call F))
+      (ld11 : loadValue h x_list = .ok (.construct (Instance.mk "Lists::Node" [t_T]).symbol "Cons" [x_v, x_rest]))
+      (ev39 : ObsFn W "UInt64::is_zero" [x_idx] h (.field 0) m27 cs37)
+      (ev97 : ObsFn W "UInt64::saturating_pred" [x_idx] m27 v78 m87 cs95)
+      (ev76 : ObsFn W (Instance.mk "WordLists::lookup_u64" [t_T]).symbol [x_rest, v78] m87 r h' cs74)
+      (hc106 : calls = ((⟨"UInt64::is_zero", [x_idx], h⟩ : Call F) :: (cs37 ++ ((⟨"UInt64::saturating_pred", [x_idx], m27⟩ : Call F) :: (cs95 ++ ((⟨(Instance.mk "WordLists::lookup_u64" [t_T]).symbol, [x_rest, v78], m87⟩ : Call F) :: cs74))))))
+
+/-- **Every observed derivation of `WordLists::lookup_u64` takes one of its paths.** -/
+theorem «WordLists::lookup_u64».obs {t_T : Generic.Ty} {x_list x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "WordLists::lookup_u64" [t_T]).symbol [x_list, x_idx] h r h' calls) :
+    «WordLists::lookup_u64».Path t_T x_list x_idx h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («WordLists::lookup_u64».lookup t_T)
+    (by simp [IxVM.WordLists.lookup_u64, ControlLower.hasControl]) ev
+  simp only [IxVM.WordLists.lookup_u64] at d0
+  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨p9, d10, ld11⟩ := d6.load_inv
+  obtain ⟨l12, rfl, rfl⟩ := d10.var_inv
+  simp at l12
+  subst l12
+  obtain ⟨vs13, hv14, -, ml15⟩ := matchPattern_construct_inv mt7
+  rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv14
+  subst hv14
+  obtain ⟨x_v, vs16, b17, b18, rfl, mt19, ml20, rfl⟩ := matchListWith_cons_inv ml15
+  obtain rfl := matchPattern_bind_inv mt19
+  obtain ⟨x_rest, vs21, b22, b23, rfl, mt24, ml25, rfl⟩ := matchListWith_cons_inv ml20
+  obtain rfl := matchPattern_bind_inv mt24
+  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml25
+  obtain ⟨v26, m27, bs28, c29, c30, d31, mt32, d33, rfl⟩ := d8.letValue_inv
+  obtain ⟨vs34, m35, c36, cs37, a38, ev39, rfl⟩ := d31.call_inv
+  rw [instanceName_plain_some] at ev39
+  obtain ⟨v40, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a38.cons_inv
+  obtain ⟨l47, rfl, rfl⟩ := d45.var_inv
+  simp at l47
+  subst l47
+  obtain ⟨rfl, rfl, rfl⟩ := a46.nil_inv
+  obtain rfl := matchPattern_bind_inv mt32
+  obtain ⟨v48, m49, bs50, body51, c52, c53, d54, sel55, d56, rfl⟩ := d33.matchValue_inv
+  obtain ⟨l57, rfl, rfl⟩ := d54.var_inv
+  simp at l57
+  subst l57
+  rcases selectArm_cons_inv sel55 with ⟨mt58, rfl⟩ | ⟨nm59, sel60⟩
+  · obtain ⟨hv61, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt58
+    subst hv61
+    obtain ⟨l62, rfl, rfl⟩ := d56.var_inv
+    simp at l62
+    subst l62
+    exact «WordLists::lookup_u64».Path.n1 _ _ _ _ ld11 ev39 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne66 := MatchesConst.none_inv (MatchesConst.literal 1) nm59
+    rcases selectArm_cons_inv sel60 with ⟨mt67, rfl⟩ | ⟨nm68, sel69⟩
+    · obtain ⟨hv70, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt67
+      subst hv70
+      obtain ⟨vs71, m72, c73, cs74, a75, ev76, rfl⟩ := d56.call_inv
+      rw [instanceName_some_one, subst_param_singleton] at ev76
+      obtain ⟨v77, vs79, m80, c81, c82, rfl, d83, a84, rfl⟩ := a75.cons_inv
+      obtain ⟨l85, rfl, rfl⟩ := d83.var_inv
+      simp at l85
+      subst l85
+      obtain ⟨v78, vs86, m87, c88, c89, rfl, d90, a91, rfl⟩ := a84.cons_inv
+      obtain ⟨vs92, m93, c94, cs95, a96, ev97, rfl⟩ := d90.call_inv
+      rw [instanceName_plain_some] at ev97
+      obtain ⟨v98, vs99, m100, c101, c102, rfl, d103, a104, rfl⟩ := a96.cons_inv
+      obtain ⟨l105, rfl, rfl⟩ := d103.var_inv
+      simp at l105
+      subst l105
+      obtain ⟨rfl, rfl, rfl⟩ := a104.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a91.nil_inv
+      exact «WordLists::lookup_u64».Path.n0 _ _ _ _ _ _ _ _ ld11 ev39 ev97 ev76 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+    · have hne107 := MatchesConst.none_inv (MatchesConst.literal 0) nm68
+      exact (selectArm_nil_inv sel69).elim
 
 end IxVM.Refinement.Obs

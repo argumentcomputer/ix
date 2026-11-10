@@ -36,8 +36,8 @@ inductive «Ingress::load_verified_constant».Path (x_addr : SourceValue F) (h :
 theorem «Ingress::load_verified_constant».obs {x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::load_verified_constant" [x_addr] h r h' calls) :
     «Ingress::load_verified_constant».Path x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.load_verified_constant.lookup
-    (by simp [IxVM.Ingress.load_verified_constant, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.load_verified_constant.lookup
+    (by simp [IxVM.Ingress.load_verified_constant, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.load_verified_constant] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -139,8 +139,8 @@ inductive «Ingress::definition_hint».Path (x_addr x_d : SourceValue F) (h : He
 theorem «Ingress::definition_hint».obs {x_addr x_d : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::definition_hint" [x_addr, x_d] h r h' calls) :
     «Ingress::definition_hint».Path x_addr x_d h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.definition_hint.lookup
-    (by simp [IxVM.Ingress.definition_hint, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.definition_hint.lookup
+    (by simp [IxVM.Ingress.definition_hint, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.definition_hint] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -197,15 +197,15 @@ inductive «Ingress::load_constant_hint».Path (x_addr : SourceValue F) (h : Hea
       (ld37 : loadValue h x_addr = .ok v28)
       (ev27 : ObsFn W "Blake3::address_to_fields" [v28] h v9 m17 cs25)
       (he39 : h' = m17)
-      (ty4 : W.typed (Generic.Ty.toCore (Generic.Ty.subst .field [])) k2 = true)
+      (ty4 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] .field)) k2 = true)
       (hc40 : calls = ((⟨"Blake3::address_to_fields", [v28], h⟩ : Call F) :: cs25))
 
 /-- **Every observed derivation of `Ingress::load_constant_hint` takes one of its paths.** -/
 theorem «Ingress::load_constant_hint».obs {x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::load_constant_hint" [x_addr] h r h' calls) :
     «Ingress::load_constant_hint».Path x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.load_constant_hint.lookup
-    (by simp [IxVM.Ingress.load_constant_hint, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.load_constant_hint.lookup
+    (by simp [IxVM.Ingress.load_constant_hint, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.load_constant_hint] at d0
   obtain ⟨x1, k2, d3, ty4, rfl⟩ := d0.hint_inv
   obtain ⟨vs6, a7, rfl⟩ := d3.tuple_inv
@@ -240,8 +240,8 @@ inductive «Ingress::load_verified_blob».Path (x_addr : SourceValue F) (h : Hea
 theorem «Ingress::load_verified_blob».obs {x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::load_verified_blob" [x_addr] h r h' calls) :
     «Ingress::load_verified_blob».Path x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.load_verified_blob.lookup
-    (by simp [IxVM.Ingress.load_verified_blob, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.load_verified_blob.lookup
+    (by simp [IxVM.Ingress.load_verified_blob, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.load_verified_blob] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -342,8 +342,8 @@ inductive «Ingress::defn_is_unsafe_ci».Path (x_kind x_safety : SourceValue F) 
 theorem «Ingress::defn_is_unsafe_ci».obs {x_kind x_safety : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::defn_is_unsafe_ci" [x_kind, x_safety] h r h' calls) :
     «Ingress::defn_is_unsafe_ci».Path x_kind x_safety h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.defn_is_unsafe_ci.lookup
-    (by simp [IxVM.Ingress.defn_is_unsafe_ci, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.defn_is_unsafe_ci.lookup
+    (by simp [IxVM.Ingress.defn_is_unsafe_ci, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.defn_is_unsafe_ci] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -427,8 +427,8 @@ inductive «Ingress::defn_member_recur_addrs».Path (x_d x_members x_block_addr 
 theorem «Ingress::defn_member_recur_addrs».obs {x_d x_members x_block_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::defn_member_recur_addrs" [x_d, x_members, x_block_addr] h r h' calls) :
     «Ingress::defn_member_recur_addrs».Path x_d x_members x_block_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.defn_member_recur_addrs.lookup
-    (by simp [IxVM.Ingress.defn_member_recur_addrs, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.defn_member_recur_addrs.lookup
+    (by simp [IxVM.Ingress.defn_member_recur_addrs, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.defn_member_recur_addrs] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -499,7 +499,7 @@ inductive «Ingress::get_ci».Path (x_addr : SourceValue F) (h : Heap F) (r : So
       (ev93 : ObsFn W "Ingress::definition_hint" [x_addr, (.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136])] m2 v80 m81 cs91)
       (ev176 : ObsFn W "Ingress::defn_is_unsafe_ci" [x_kind, x_safety] m81 (.field 0) m163 cs174)
       (hm200 : m111 = (m163 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
-      (he208 : r = (.ptr (Value.type v204) (m205).length))
+      (he208 : r = (.ptr (Value.type (v204 : SourceValue F)) (m205).length))
       (hm207 : h' = (m205 ++ [v204]))
       (ev214 : ObsFn W "Convert::convert_definition" [(.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136]), x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m163).length), x_univs, v80] m111 v204 m205 cs212)
       (hc263 : calls = ((⟨"Ingress::load_verified_constant", [x_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::definition_hint", [x_addr, (.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136])], m2⟩ : Call F) :: (cs91 ++ ((⟨"Ingress::defn_is_unsafe_ci", [x_kind, x_safety], m81⟩ : Call F) :: (cs174 ++ ((⟨"Convert::convert_definition", [(.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136]), x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m163).length), x_univs, v80], m111⟩ : Call F) :: cs212))))))))
@@ -511,14 +511,14 @@ inductive «Ingress::get_ci».Path (x_addr : SourceValue F) (h : Heap F) (r : So
       (hne264 : (v162 : SourceValue F) ≠ (.field 0))
       (hm271 : m111 = (m285 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Cons" [x_addr, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m163).length)])]))
       (hm293 : m285 = (m163 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
-      (he301 : r = (.ptr (Value.type v297) (m298).length))
+      (he301 : r = (.ptr (Value.type (v297 : SourceValue F)) (m298).length))
       (hm300 : h' = (m298 ++ [v297]))
       (ev307 : ObsFn W "Convert::convert_definition" [(.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136]), x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m285).length), x_univs, v80] m111 v297 m298 cs305)
       (hc356 : calls = ((⟨"Ingress::load_verified_constant", [x_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::definition_hint", [x_addr, (.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136])], m2⟩ : Call F) :: (cs91 ++ ((⟨"Ingress::defn_is_unsafe_ci", [x_kind, x_safety], m81⟩ : Call F) :: (cs174 ++ ((⟨"Convert::convert_definition", [(.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w134, w135, w136]), x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m285).length), x_univs, v80], m111⟩ : Call F) :: cs305))))))))
   | Axio
       (m2 : Heap F) (cs12 : List (Call F)) (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_axio : SourceValue F) (v370 : SourceValue F) (m371 : Heap F) (cs378 : List (Call F)) (m408 : Heap F)
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_addr] h (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Axio" [x_axio]), x_sharing, x_refs, x_univs]) m2 cs12)
-      (he374 : r = (.ptr (Value.type v370) (m371).length))
+      (he374 : r = (.ptr (Value.type (v370 : SourceValue F)) (m371).length))
       (hm373 : h' = (m371 ++ [v370]))
       (hm416 : m408 = (m2 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
       (ev380 : ObsFn W "Convert::convert_axiom" [x_axio, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m2).length), x_univs] m408 v370 m371 cs378)
@@ -526,7 +526,7 @@ inductive «Ingress::get_ci».Path (x_addr : SourceValue F) (h : Heap F) (r : So
   | Quot
       (m2 : Heap F) (cs12 : List (Call F)) (x_sharing : SourceValue F) (x_refs : SourceValue F) (x_univs : SourceValue F) (x_quot : SourceValue F) (v440 : SourceValue F) (m441 : Heap F) (cs448 : List (Call F)) (m478 : Heap F)
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_addr] h (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Quot" [x_quot]), x_sharing, x_refs, x_univs]) m2 cs12)
-      (he444 : r = (.ptr (Value.type v440) (m441).length))
+      (he444 : r = (.ptr (Value.type (v440 : SourceValue F)) (m441).length))
       (hm443 : h' = (m441 ++ [v440]))
       (hm486 : m478 = (m2 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
       (ev450 : ObsFn W "Convert::convert_quotient" [x_quot, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m2).length), x_univs] m478 v440 m441 cs448)
@@ -560,7 +560,7 @@ inductive «Ingress::get_ci».Path (x_addr : SourceValue F) (h : Heap F) (r : So
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_addr] h (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Recr" [x_recr]), x_sharing, x_refs, x_univs]) m2 cs12)
       (hm842 : m832 = (m856 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Cons" [x_addr, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m2).length)])]))
       (hm864 : m856 = (m2 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
-      (he872 : r = (.ptr (Value.type v868) (m869).length))
+      (he872 : r = (.ptr (Value.type (v868 : SourceValue F)) (m869).length))
       (hm871 : h' = (m869 ++ [v868]))
       (ev878 : ObsFn W "Convert::convert_recursor" [x_recr, x_addr, (.field 0), x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m856).length), x_univs] m832 v868 m869 cs876)
       (hc934 : calls = ((⟨"Ingress::load_verified_constant", [x_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Convert::convert_recursor", [x_recr, x_addr, (.field 0), x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m856).length), x_univs], m832⟩ : Call F) :: cs876))))
@@ -569,8 +569,8 @@ inductive «Ingress::get_ci».Path (x_addr : SourceValue F) (h : Heap F) (r : So
 theorem «Ingress::get_ci».obs {x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::get_ci" [x_addr] h r h' calls) :
     «Ingress::get_ci».Path x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.get_ci.lookup
-    (by simp [IxVM.Ingress.get_ci, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.get_ci.lookup
+    (by simp [IxVM.Ingress.get_ci, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.get_ci] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1069,7 +1069,7 @@ inductive «Ingress::get_ci_dprj».Path (x_dprj_addr x_idx x_block_addr : Source
       (ev115 : ObsFn W Names.«WordLists::lookup_u64<Ixon::MutConst>» [x_members, x_idx] m24 (.construct "Ixon::MutConst" "Defn" [x_d]) m103 cs113)
       (ev166 : ObsFn W "Ingress::definition_hint" [x_dprj_addr, x_d] m103 v153 m154 cs164)
       (ev196 : ObsFn W "Ingress::defn_member_recur_addrs" [x_d, x_members, x_block_addr] m154 v183 m184 cs194)
-      (he225 : r = (.ptr (Value.type v221) (m222).length))
+      (he225 : r = (.ptr (Value.type (v221 : SourceValue F)) (m222).length))
       (hm224 : h' = (m222 ++ [v221]))
       (ev231 : ObsFn W "Convert::convert_definition" [x_d, x_sharing, x_refs, v183, x_univs, v153] m184 v221 m222 cs229)
       (hc280 : calls = ((⟨"KernelCheck::check_block_member_kinds", [x_block_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::load_verified_constant", [x_block_addr], m2⟩ : Call F) :: (cs34 ++ ((⟨Names.«WordLists::lookup_u64<Ixon::MutConst>», [x_members, x_idx], m24⟩ : Call F) :: (cs113 ++ ((⟨"Ingress::definition_hint", [x_dprj_addr, x_d], m103⟩ : Call F) :: (cs164 ++ ((⟨"Ingress::defn_member_recur_addrs", [x_d, x_members, x_block_addr], m154⟩ : Call F) :: (cs194 ++ ((⟨"Convert::convert_definition", [x_d, x_sharing, x_refs, v183, x_univs, v153], m184⟩ : Call F) :: cs229))))))))))))
@@ -1078,8 +1078,8 @@ inductive «Ingress::get_ci_dprj».Path (x_dprj_addr x_idx x_block_addr : Source
 theorem «Ingress::get_ci_dprj».obs {x_dprj_addr x_idx x_block_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::get_ci_dprj" [x_dprj_addr, x_idx, x_block_addr] h r h' calls) :
     «Ingress::get_ci_dprj».Path x_dprj_addr x_idx x_block_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.get_ci_dprj.lookup
-    (by simp [IxVM.Ingress.get_ci_dprj, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.get_ci_dprj.lookup
+    (by simp [IxVM.Ingress.get_ci_dprj, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.get_ci_dprj] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1229,7 +1229,7 @@ inductive «Ingress::get_ci_iprj».Path (x_block_addr x_idx : SourceValue F) (h 
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_block_addr] h (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Muts" [x_members]), x_sharing, x_refs, x_univs]) m2 cs12)
       (ev93 : ObsFn W "Ingress::muts_member_at" [x_members, x_idx] m2 (.construct "Ixon::MutConst" "Indc" [x_ind]) m81 cs91)
       (ev144 : ObsFn W "Ingress::build_recur_addrs" [x_members, x_block_addr] m81 v131 m132 cs142)
-      (he165 : r = (.ptr (Value.type v161) (m162).length))
+      (he165 : r = (.ptr (Value.type (v161 : SourceValue F)) (m162).length))
       (hm164 : h' = (m162 ++ [v161]))
       (ev171 : ObsFn W "Convert::convert_inductive" [x_ind, x_block_addr, x_idx, x_sharing, x_refs, v131, x_univs] m132 v161 m162 cs169)
       (hc228 : calls = ((⟨"Ingress::load_verified_constant", [x_block_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::muts_member_at", [x_members, x_idx], m2⟩ : Call F) :: (cs91 ++ ((⟨"Ingress::build_recur_addrs", [x_members, x_block_addr], m81⟩ : Call F) :: (cs142 ++ ((⟨"Convert::convert_inductive", [x_ind, x_block_addr, x_idx, x_sharing, x_refs, v131, x_univs], m132⟩ : Call F) :: cs169))))))))
@@ -1238,8 +1238,8 @@ inductive «Ingress::get_ci_iprj».Path (x_block_addr x_idx : SourceValue F) (h 
 theorem «Ingress::get_ci_iprj».obs {x_block_addr x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::get_ci_iprj" [x_block_addr, x_idx] h r h' calls) :
     «Ingress::get_ci_iprj».Path x_block_addr x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.get_ci_iprj.lookup
-    (by simp [IxVM.Ingress.get_ci_iprj, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.get_ci_iprj.lookup
+    (by simp [IxVM.Ingress.get_ci_iprj, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.get_ci_iprj] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1368,7 +1368,7 @@ inductive «Ingress::get_ci_cprj».Path (x_block_addr x_idx x_cidx : SourceValue
       (ev93 : ObsFn W "Ingress::muts_member_at" [x_members, x_idx] m2 (.construct "Ixon::MutConst" "Indc" [(.construct "Ixon::Inductive" "Mk" [w147, w148, w149, w150, w151, x_ctors])]) m81 cs91)
       (ev195 : ObsFn W "Convert::ctor_at" [x_ctors, x_cidx] m81 v182 m183 cs193)
       (ev225 : ObsFn W "Ingress::build_recur_addrs" [x_members, x_block_addr] m183 v212 m213 cs223)
-      (he246 : r = (.ptr (Value.type v242) (m243).length))
+      (he246 : r = (.ptr (Value.type (v242 : SourceValue F)) (m243).length))
       (hm245 : h' = (m243 ++ [v242]))
       (ev252 : ObsFn W "Convert::convert_constructor" [v182, x_block_addr, x_idx, x_sharing, x_refs, v212, x_univs] m213 v242 m243 cs250)
       (hc309 : calls = ((⟨"Ingress::load_verified_constant", [x_block_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::muts_member_at", [x_members, x_idx], m2⟩ : Call F) :: (cs91 ++ ((⟨"Convert::ctor_at", [x_ctors, x_cidx], m81⟩ : Call F) :: (cs193 ++ ((⟨"Ingress::build_recur_addrs", [x_members, x_block_addr], m183⟩ : Call F) :: (cs223 ++ ((⟨"Convert::convert_constructor", [v182, x_block_addr, x_idx, x_sharing, x_refs, v212, x_univs], m213⟩ : Call F) :: cs250))))))))))
@@ -1377,8 +1377,8 @@ inductive «Ingress::get_ci_cprj».Path (x_block_addr x_idx x_cidx : SourceValue
 theorem «Ingress::get_ci_cprj».obs {x_block_addr x_idx x_cidx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::get_ci_cprj" [x_block_addr, x_idx, x_cidx] h r h' calls) :
     «Ingress::get_ci_cprj».Path x_block_addr x_idx x_cidx h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.get_ci_cprj.lookup
-    (by simp [IxVM.Ingress.get_ci_cprj, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.get_ci_cprj.lookup
+    (by simp [IxVM.Ingress.get_ci_cprj, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.get_ci_cprj] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1543,7 +1543,7 @@ inductive «Ingress::get_ci_rprj».Path (x_block_addr x_idx : SourceValue F) (h 
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_block_addr] h (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Muts" [x_members]), x_sharing, x_refs, x_univs]) m2 cs12)
       (ev93 : ObsFn W "Ingress::muts_member_at" [x_members, x_idx] m2 (.construct "Ixon::MutConst" "Recr" [x_r]) m81 cs91)
       (ev144 : ObsFn W "Ingress::build_recur_addrs" [x_members, x_block_addr] m81 v131 m132 cs142)
-      (he165 : r = (.ptr (Value.type v161) (m162).length))
+      (he165 : r = (.ptr (Value.type (v161 : SourceValue F)) (m162).length))
       (hm164 : h' = (m162 ++ [v161]))
       (ev171 : ObsFn W "Convert::convert_recursor" [x_r, x_block_addr, x_idx, x_sharing, x_refs, v131, x_univs] m132 v161 m162 cs169)
       (hc228 : calls = ((⟨"Ingress::load_verified_constant", [x_block_addr], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::muts_member_at", [x_members, x_idx], m2⟩ : Call F) :: (cs91 ++ ((⟨"Ingress::build_recur_addrs", [x_members, x_block_addr], m81⟩ : Call F) :: (cs142 ++ ((⟨"Convert::convert_recursor", [x_r, x_block_addr, x_idx, x_sharing, x_refs, v131, x_univs], m132⟩ : Call F) :: cs169))))))))
@@ -1552,8 +1552,8 @@ inductive «Ingress::get_ci_rprj».Path (x_block_addr x_idx : SourceValue F) (h 
 theorem «Ingress::get_ci_rprj».obs {x_block_addr x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::get_ci_rprj" [x_block_addr, x_idx] h r h' calls) :
     «Ingress::get_ci_rprj».Path x_block_addr x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.get_ci_rprj.lookup
-    (by simp [IxVM.Ingress.get_ci_rprj, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.get_ci_rprj.lookup
+    (by simp [IxVM.Ingress.get_ci_rprj, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.get_ci_rprj] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1695,8 +1695,8 @@ inductive «Ingress::muts_member_at».Path (x_members x_idx : SourceValue F) (h 
 theorem «Ingress::muts_member_at».obs {x_members x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::muts_member_at" [x_members, x_idx] h r h' calls) :
     «Ingress::muts_member_at».Path x_members x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.muts_member_at.lookup
-    (by simp [IxVM.Ingress.muts_member_at, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.muts_member_at.lookup
+    (by simp [IxVM.Ingress.muts_member_at, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.muts_member_at] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1785,8 +1785,8 @@ inductive «Ingress::projection_addr».Path (x_members x_block_addr x_idx : Sour
 theorem «Ingress::projection_addr».obs {x_members x_block_addr x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::projection_addr" [x_members, x_block_addr, x_idx] h r h' calls) :
     «Ingress::projection_addr».Path x_members x_block_addr x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.projection_addr.lookup
-    (by simp [IxVM.Ingress.projection_addr, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.projection_addr.lookup
+    (by simp [IxVM.Ingress.projection_addr, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.projection_addr] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2066,8 +2066,8 @@ inductive «Ingress::build_recur_addrs».Path (x_members x_block_addr : SourceVa
 theorem «Ingress::build_recur_addrs».obs {x_members x_block_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::build_recur_addrs" [x_members, x_block_addr] h r h' calls) :
     «Ingress::build_recur_addrs».Path x_members x_block_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.build_recur_addrs.lookup
-    (by simp [IxVM.Ingress.build_recur_addrs, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.build_recur_addrs.lookup
+    (by simp [IxVM.Ingress.build_recur_addrs, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.build_recur_addrs] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -2110,8 +2110,8 @@ inductive «Ingress::build_recur_addrs_walk».Path (x_all_members x_block_addr x
 theorem «Ingress::build_recur_addrs_walk».obs {x_all_members x_block_addr x_cur x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Ingress::build_recur_addrs_walk" [x_all_members, x_block_addr, x_cur, x_idx] h r h' calls) :
     «Ingress::build_recur_addrs_walk».Path x_all_members x_block_addr x_cur x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.Ingress.build_recur_addrs_walk.lookup
-    (by simp [IxVM.Ingress.build_recur_addrs_walk, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Ingress.build_recur_addrs_walk.lookup
+    (by simp [IxVM.Ingress.build_recur_addrs_walk, ControlLower.hasControl]) ev
   simp only [IxVM.Ingress.build_recur_addrs_walk] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv

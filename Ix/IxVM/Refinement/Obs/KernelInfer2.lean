@@ -111,8 +111,8 @@ inductive «KernelInfer::try_dec_dispatch».Path (x_rc x_head_addr x_op x_head_l
 theorem «KernelInfer::try_dec_dispatch».obs {x_rc x_head_addr x_op x_head_lvls x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::try_dec_dispatch" [x_rc, x_head_addr, x_op, x_head_lvls, x_spine, x_types] h r h' calls) :
     «KernelInfer::try_dec_dispatch».Path x_rc x_head_addr x_op x_head_lvls x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.try_dec_dispatch.lookup
-    (by simp [IxVM.KernelInfer.try_dec_dispatch, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.try_dec_dispatch.lookup
+    (by simp [IxVM.KernelInfer.try_dec_dispatch, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.try_dec_dispatch] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -362,8 +362,8 @@ inductive «KernelInfer::dec_rewrite_lt_to_le».Path (x_rc x_spine x_types : Sou
 theorem «KernelInfer::dec_rewrite_lt_to_le».obs {x_rc x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::dec_rewrite_lt_to_le" [x_rc, x_spine, x_types] h r h' calls) :
     «KernelInfer::dec_rewrite_lt_to_le».Path x_rc x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.dec_rewrite_lt_to_le.lookup
-    (by simp [IxVM.KernelInfer.dec_rewrite_lt_to_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.dec_rewrite_lt_to_le.lookup
+    (by simp [IxVM.KernelInfer.dec_rewrite_lt_to_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.dec_rewrite_lt_to_le] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -682,8 +682,8 @@ inductive «KernelInfer::dec_nat».Path (x_rc x_is_le x_head_addr x_head_lvls x_
 theorem «KernelInfer::dec_nat».obs {x_rc x_is_le x_head_addr x_head_lvls x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::dec_nat" [x_rc, x_is_le, x_head_addr, x_head_lvls, x_spine, x_types] h r h' calls) :
     «KernelInfer::dec_nat».Path x_rc x_is_le x_head_addr x_head_lvls x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.dec_nat.lookup
-    (by simp [IxVM.KernelInfer.dec_nat, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.dec_nat.lookup
+    (by simp [IxVM.KernelInfer.dec_nat, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.dec_nat] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1409,8 +1409,8 @@ inductive «KernelInfer::dec_rewrite_int_lt_to_le».Path (x_rc x_spine x_types :
 theorem «KernelInfer::dec_rewrite_int_lt_to_le».obs {x_rc x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::dec_rewrite_int_lt_to_le" [x_rc, x_spine, x_types] h r h' calls) :
     «KernelInfer::dec_rewrite_int_lt_to_le».Path x_rc x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.dec_rewrite_int_lt_to_le.lookup
-    (by simp [IxVM.KernelInfer.dec_rewrite_int_lt_to_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.dec_rewrite_int_lt_to_le.lookup
+    (by simp [IxVM.KernelInfer.dec_rewrite_int_lt_to_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.dec_rewrite_int_lt_to_le] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1508,21 +1508,21 @@ theorem «KernelInfer::dec_rewrite_int_lt_to_le».obs {x_rc x_spine x_types : So
       obtain ⟨v224, vs226, m227, c228, c229, rfl, d230, a231, rfl⟩ := a222.cons_inv
       obtain ⟨vs232, a233, rfl⟩ := d230.array_inv
       obtain ⟨v234, vs242, m243, c244, c245, rfl, d246, a247, rfl⟩ := a233.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d246.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d246.global_literal_inv Names.c3167744620027602021
       obtain ⟨v235, vs248, m249, c250, c251, rfl, d252, a253, rfl⟩ := a247.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d252.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d252.global_literal_inv Names.c9173999864893739538
       obtain ⟨v236, vs254, m255, c256, c257, rfl, d258, a259, rfl⟩ := a253.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d258.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d258.global_literal_inv Names.c9173999864893739538
       obtain ⟨v237, vs260, m261, c262, c263, rfl, d264, a265, rfl⟩ := a259.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d264.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d264.global_literal_inv Names.c9173999864893739538
       obtain ⟨v238, vs266, m267, c268, c269, rfl, d270, a271, rfl⟩ := a265.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d270.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d270.global_literal_inv Names.c9173999864893739538
       obtain ⟨v239, vs272, m273, c274, c275, rfl, d276, a277, rfl⟩ := a271.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d276.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d276.global_literal_inv Names.c9173999864893739538
       obtain ⟨v240, vs278, m279, c280, c281, rfl, d282, a283, rfl⟩ := a277.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d282.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d282.global_literal_inv Names.c9173999864893739538
       obtain ⟨v241, vs284, m285, c286, c287, rfl, d288, a289, rfl⟩ := a283.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d288.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d288.global_literal_inv Names.c9173999864893739538
       obtain ⟨rfl, rfl, rfl⟩ := a289.nil_inv
       obtain ⟨v225, vs290, m291, c292, c293, rfl, d294, a295, rfl⟩ := a231.cons_inv
       obtain ⟨v296, m297, d298, rfl, hm299⟩ := d294.store_inv
@@ -1775,8 +1775,8 @@ inductive «KernelInfer::dec_int».Path (x_rc x_is_le x_head_addr x_head_lvls x_
 theorem «KernelInfer::dec_int».obs {x_rc x_is_le x_head_addr x_head_lvls x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::dec_int" [x_rc, x_is_le, x_head_addr, x_head_lvls, x_spine, x_types] h r h' calls) :
     «KernelInfer::dec_int».Path x_rc x_is_le x_head_addr x_head_lvls x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.dec_int.lookup
-    (by simp [IxVM.KernelInfer.dec_int, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.dec_int.lookup
+    (by simp [IxVM.KernelInfer.dec_int, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.dec_int] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2530,8 +2530,8 @@ inductive «KernelInfer::int_le_verdict».Path (x_sa x_na x_sb x_nb : SourceValu
 theorem «KernelInfer::int_le_verdict».obs {x_sa x_na x_sb x_nb : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::int_le_verdict" [x_sa, x_na, x_sb, x_nb] h r h' calls) :
     «KernelInfer::int_le_verdict».Path x_sa x_na x_sb x_nb h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.int_le_verdict.lookup
-    (by simp [IxVM.KernelInfer.int_le_verdict, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.int_le_verdict.lookup
+    (by simp [IxVM.KernelInfer.int_le_verdict, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.int_le_verdict] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2614,8 +2614,8 @@ inductive «KernelInfer::mk_eq1».Path (x_rc x_ty x_a x_b : SourceValue F) (h : 
 theorem «KernelInfer::mk_eq1».obs {x_rc x_ty x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::mk_eq1" [x_rc, x_ty, x_a, x_b] h r h' calls) :
     «KernelInfer::mk_eq1».Path x_rc x_ty x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.mk_eq1.lookup
-    (by simp [IxVM.KernelInfer.mk_eq1, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.mk_eq1.lookup
+    (by simp [IxVM.KernelInfer.mk_eq1, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.mk_eq1] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv

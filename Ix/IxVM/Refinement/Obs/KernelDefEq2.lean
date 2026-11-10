@@ -160,8 +160,8 @@ inductive «KernelDefEq::try_eta_struct».Path (x_rc x_t x_s x_types : SourceVal
 theorem «KernelDefEq::try_eta_struct».obs {x_rc x_t x_s x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::try_eta_struct" [x_rc, x_t, x_s, x_types] h r h' calls) :
     «KernelDefEq::try_eta_struct».Path x_rc x_t x_s x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.try_eta_struct.lookup
-    (by simp [IxVM.KernelDefEq.try_eta_struct, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.try_eta_struct.lookup
+    (by simp [IxVM.KernelDefEq.try_eta_struct, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.try_eta_struct] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -511,8 +511,8 @@ inductive «KernelDefEq::compare_struct_fields».Path (x_rc x_struct_addr x_npar
 theorem «KernelDefEq::compare_struct_fields».obs {x_rc x_struct_addr x_nparams x_nfields x_t x_s_args x_i x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::compare_struct_fields" [x_rc, x_struct_addr, x_nparams, x_nfields, x_t, x_s_args, x_i, x_types] h r h' calls) :
     «KernelDefEq::compare_struct_fields».Path x_rc x_struct_addr x_nparams x_nfields x_t x_s_args x_i x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.compare_struct_fields.lookup
-    (by simp [IxVM.KernelDefEq.compare_struct_fields, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.compare_struct_fields.lookup
+    (by simp [IxVM.KernelDefEq.compare_struct_fields, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.compare_struct_fields] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨x10, y11, m12, c13, c14, d15, d16, op17, rfl⟩ := d7.binary_inv
@@ -655,8 +655,8 @@ inductive «KernelDefEq::compute_iprj_addr».Path (x_block_addr x_idx : SourceVa
 theorem «KernelDefEq::compute_iprj_addr».obs {x_block_addr x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::compute_iprj_addr" [x_block_addr, x_idx] h r h' calls) :
     «KernelDefEq::compute_iprj_addr».Path x_block_addr x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.compute_iprj_addr.lookup
-    (by simp [IxVM.KernelDefEq.compute_iprj_addr, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.compute_iprj_addr.lookup
+    (by simp [IxVM.KernelDefEq.compute_iprj_addr, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.compute_iprj_addr] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -777,8 +777,8 @@ inductive «KernelDefEq::try_eta_swap».Path (x_rc x_a x_b x_types : SourceValue
 theorem «KernelDefEq::try_eta_swap».obs {x_rc x_a x_b x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::try_eta_swap" [x_rc, x_a, x_b, x_types] h r h' calls) :
     «KernelDefEq::try_eta_swap».Path x_rc x_a x_b x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.try_eta_swap.lookup
-    (by simp [IxVM.KernelDefEq.try_eta_swap, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.try_eta_swap.lookup
+    (by simp [IxVM.KernelDefEq.try_eta_swap, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.try_eta_swap] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -915,8 +915,8 @@ inductive «KernelDefEq::try_unit_like».Path (x_rc x_a x_b x_types : SourceValu
 theorem «KernelDefEq::try_unit_like».obs {x_rc x_a x_b x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::try_unit_like" [x_rc, x_a, x_b, x_types] h r h' calls) :
     «KernelDefEq::try_unit_like».Path x_rc x_a x_b x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.try_unit_like.lookup
-    (by simp [IxVM.KernelDefEq.try_unit_like, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.try_unit_like.lookup
+    (by simp [IxVM.KernelDefEq.try_unit_like, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.try_unit_like] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1092,8 +1092,8 @@ inductive «KernelDefEq::is_unit_like_type».Path (x_ty : SourceValue F) (h : He
 theorem «KernelDefEq::is_unit_like_type».obs {x_ty : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::is_unit_like_type" [x_ty] h r h' calls) :
     «KernelDefEq::is_unit_like_type».Path x_ty h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.is_unit_like_type.lookup
-    (by simp [IxVM.KernelDefEq.is_unit_like_type, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.is_unit_like_type.lookup
+    (by simp [IxVM.KernelDefEq.is_unit_like_type, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.is_unit_like_type] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -1291,8 +1291,8 @@ inductive «KernelDefEq::try_proof_irrel».Path (x_rc x_a x_b x_types : SourceVa
 theorem «KernelDefEq::try_proof_irrel».obs {x_rc x_a x_b x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::try_proof_irrel" [x_rc, x_a, x_b, x_types] h r h' calls) :
     «KernelDefEq::try_proof_irrel».Path x_rc x_a x_b x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.try_proof_irrel.lookup
-    (by simp [IxVM.KernelDefEq.try_proof_irrel, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.try_proof_irrel.lookup
+    (by simp [IxVM.KernelDefEq.try_proof_irrel, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.try_proof_irrel] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1413,8 +1413,8 @@ inductive «KernelDefEq::try_eta_expand».Path (x_rc x_ty_a x_body_a x_b x_types
 theorem «KernelDefEq::try_eta_expand».obs {x_rc x_ty_a x_body_a x_b x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::try_eta_expand" [x_rc, x_ty_a, x_body_a, x_b, x_types] h r h' calls) :
     «KernelDefEq::try_eta_expand».Path x_rc x_ty_a x_body_a x_b x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.try_eta_expand.lookup
-    (by simp [IxVM.KernelDefEq.try_eta_expand, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.try_eta_expand.lookup
+    (by simp [IxVM.KernelDefEq.try_eta_expand, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.try_eta_expand] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1599,8 +1599,8 @@ inductive «KernelDefEq::is_prop_type».Path (x_rc x_ty x_types : SourceValue F)
 theorem «KernelDefEq::is_prop_type».obs {x_rc x_ty x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::is_prop_type" [x_rc, x_ty, x_types] h r h' calls) :
     «KernelDefEq::is_prop_type».Path x_rc x_ty x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.is_prop_type.lookup
-    (by simp [IxVM.KernelDefEq.is_prop_type, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.is_prop_type.lookup
+    (by simp [IxVM.KernelDefEq.is_prop_type, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.is_prop_type] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1683,8 +1683,8 @@ inductive «KernelDefEq::k_is_def_eq_struct».Path (x_rc x_a x_b x_types : Sourc
 theorem «KernelDefEq::k_is_def_eq_struct».obs {x_rc x_a x_b x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct" [x_rc, x_a, x_b, x_types] h r h' calls) :
     «KernelDefEq::k_is_def_eq_struct».Path x_rc x_a x_b x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.k_is_def_eq_struct.lookup
-    (by simp [IxVM.KernelDefEq.k_is_def_eq_struct, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.k_is_def_eq_struct.lookup
+    (by simp [IxVM.KernelDefEq.k_is_def_eq_struct, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.k_is_def_eq_struct] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -1922,8 +1922,8 @@ inductive «KernelDefEq::k_is_def_eq_struct_go».Path (x_rc x_a x_b x_types : So
 theorem «KernelDefEq::k_is_def_eq_struct_go».obs {x_rc x_a x_b x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct_go" [x_rc, x_a, x_b, x_types] h r h' calls) :
     «KernelDefEq::k_is_def_eq_struct_go».Path x_rc x_a x_b x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.k_is_def_eq_struct_go.lookup
-    (by simp [IxVM.KernelDefEq.k_is_def_eq_struct_go, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.k_is_def_eq_struct_go.lookup
+    (by simp [IxVM.KernelDefEq.k_is_def_eq_struct_go, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.k_is_def_eq_struct_go] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2738,8 +2738,8 @@ inductive «KernelDefEq::lazy_delta_loop».Path (x_rc x_a x_b x_fuel x_types : S
 theorem «KernelDefEq::lazy_delta_loop».obs {x_rc x_a x_b x_fuel x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelDefEq::lazy_delta_loop" [x_rc, x_a, x_b, x_fuel, x_types] h r h' calls) :
     «KernelDefEq::lazy_delta_loop».Path x_rc x_a x_b x_fuel x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelDefEq.lazy_delta_loop.lookup
-    (by simp [IxVM.KernelDefEq.lazy_delta_loop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelDefEq.lazy_delta_loop.lookup
+    (by simp [IxVM.KernelDefEq.lazy_delta_loop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelDefEq.lazy_delta_loop] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv

@@ -109,8 +109,8 @@ inductive «KernelCheck::is_unsafe_ci».Path (x_ci : SourceValue F) (h : Heap F)
 theorem «KernelCheck::is_unsafe_ci».obs {x_ci : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::is_unsafe_ci" [x_ci] h r h' calls) :
     «KernelCheck::is_unsafe_ci».Path x_ci h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.is_unsafe_ci.lookup
-    (by simp [IxVM.KernelCheck.is_unsafe_ci, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.is_unsafe_ci.lookup
+    (by simp [IxVM.KernelCheck.is_unsafe_ci, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.is_unsafe_ci] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -367,8 +367,8 @@ inductive «KernelCheck::safe_refs_only».Path (x_e : SourceValue F) (h : Heap F
 theorem «KernelCheck::safe_refs_only».obs {x_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::safe_refs_only" [x_e] h r h' calls) :
     «KernelCheck::safe_refs_only».Path x_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.safe_refs_only.lookup
-    (by simp [IxVM.KernelCheck.safe_refs_only, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.safe_refs_only.lookup
+    (by simp [IxVM.KernelCheck.safe_refs_only, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.safe_refs_only] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -601,8 +601,8 @@ inductive «KernelCheck::assert_safety».Path (x_self_unsafe x_e : SourceValue F
 theorem «KernelCheck::assert_safety».obs {x_self_unsafe x_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::assert_safety" [x_self_unsafe, x_e] h r h' calls) :
     «KernelCheck::assert_safety».Path x_self_unsafe x_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.assert_safety.lookup
-    (by simp [IxVM.KernelCheck.assert_safety, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.assert_safety.lookup
+    (by simp [IxVM.KernelCheck.assert_safety, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.assert_safety] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -674,8 +674,8 @@ inductive «KernelCheck::validate_univ_params_seen».Path (x_u x_bound : SourceV
 theorem «KernelCheck::validate_univ_params_seen».obs {x_u x_bound : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::validate_univ_params_seen" [x_u, x_bound] h r h' calls) :
     «KernelCheck::validate_univ_params_seen».Path x_u x_bound h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.validate_univ_params_seen.lookup
-    (by simp [IxVM.KernelCheck.validate_univ_params_seen, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.validate_univ_params_seen.lookup
+    (by simp [IxVM.KernelCheck.validate_univ_params_seen, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.validate_univ_params_seen] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -837,8 +837,8 @@ inductive «KernelCheck::validate_univ_params_list».Path (x_lvls x_bound : Sour
 theorem «KernelCheck::validate_univ_params_list».obs {x_lvls x_bound : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::validate_univ_params_list" [x_lvls, x_bound] h r h' calls) :
     «KernelCheck::validate_univ_params_list».Path x_lvls x_bound h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.validate_univ_params_list.lookup
-    (by simp [IxVM.KernelCheck.validate_univ_params_list, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.validate_univ_params_list.lookup
+    (by simp [IxVM.KernelCheck.validate_univ_params_list, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.validate_univ_params_list] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -963,8 +963,8 @@ inductive «KernelCheck::validate_expr_well_scoped».Path (x_e x_depth x_bound :
 theorem «KernelCheck::validate_expr_well_scoped».obs {x_e x_depth x_bound : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::validate_expr_well_scoped" [x_e, x_depth, x_bound] h r h' calls) :
     «KernelCheck::validate_expr_well_scoped».Path x_e x_depth x_bound h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.validate_expr_well_scoped.lookup
-    (by simp [IxVM.KernelCheck.validate_expr_well_scoped, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.validate_expr_well_scoped.lookup
+    (by simp [IxVM.KernelCheck.validate_expr_well_scoped, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.validate_expr_well_scoped] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1376,8 +1376,8 @@ inductive «KernelCheck::check_quot».Path (x_rc x_self_addr x_kind : SourceValu
 theorem «KernelCheck::check_quot».obs {x_rc x_self_addr x_kind : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_quot" [x_rc, x_self_addr, x_kind] h r h' calls) :
     «KernelCheck::check_quot».Path x_rc x_self_addr x_kind h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_quot.lookup
-    (by simp [IxVM.KernelCheck.check_quot, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_quot.lookup
+    (by simp [IxVM.KernelCheck.check_quot, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_quot] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, bs11, body12, c13, c14, d15, sel16, d17, rfl⟩ := d6.matchValue_inv
@@ -1550,8 +1550,8 @@ inductive «KernelCheck::peel_n_foralls».Path (x_e x_n : SourceValue F) (h : He
 theorem «KernelCheck::peel_n_foralls».obs {x_e x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::peel_n_foralls" [x_e, x_n] h r h' calls) :
     «KernelCheck::peel_n_foralls».Path x_e x_n h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.peel_n_foralls.lookup
-    (by simp [IxVM.KernelCheck.peel_n_foralls, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.peel_n_foralls.lookup
+    (by simp [IxVM.KernelCheck.peel_n_foralls, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.peel_n_foralls] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1627,8 +1627,8 @@ inductive «KernelCheck::assert_lvls_are_params».Path (x_lvls x_count x_idx : S
 theorem «KernelCheck::assert_lvls_are_params».obs {x_lvls x_count x_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::assert_lvls_are_params" [x_lvls, x_count, x_idx] h r h' calls) :
     «KernelCheck::assert_lvls_are_params».Path x_lvls x_count x_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.assert_lvls_are_params.lookup
-    (by simp [IxVM.KernelCheck.assert_lvls_are_params, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.assert_lvls_are_params.lookup
+    (by simp [IxVM.KernelCheck.assert_lvls_are_params, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.assert_lvls_are_params] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1756,8 +1756,8 @@ inductive «KernelCheck::assert_first_args_are_param_bvars».Path (x_args x_n_pa
 theorem «KernelCheck::assert_first_args_are_param_bvars».obs {x_args x_n_params x_n_fields x_i : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::assert_first_args_are_param_bvars" [x_args, x_n_params, x_n_fields, x_i] h r h' calls) :
     «KernelCheck::assert_first_args_are_param_bvars».Path x_args x_n_params x_n_fields x_i h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.assert_first_args_are_param_bvars.lookup
-    (by simp [IxVM.KernelCheck.assert_first_args_are_param_bvars, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.assert_first_args_are_param_bvars.lookup
+    (by simp [IxVM.KernelCheck.assert_first_args_are_param_bvars, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.assert_first_args_are_param_bvars] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨x10, y11, m12, c13, c14, d15, d16, op17, rfl⟩ := d7.binary_inv
@@ -1877,8 +1877,8 @@ inductive «KernelCheck::assert_return_head_is_parent».Path (x_caddr x_block_ad
 theorem «KernelCheck::assert_return_head_is_parent».obs {x_caddr x_block_addr x_ind_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::assert_return_head_is_parent" [x_caddr, x_block_addr, x_ind_idx] h r h' calls) :
     «KernelCheck::assert_return_head_is_parent».Path x_caddr x_block_addr x_ind_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.assert_return_head_is_parent.lookup
-    (by simp [IxVM.KernelCheck.assert_return_head_is_parent, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.assert_return_head_is_parent.lookup
+    (by simp [IxVM.KernelCheck.assert_return_head_is_parent, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.assert_return_head_is_parent] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -1982,8 +1982,8 @@ inductive «KernelCheck::check_ctor_return_type».Path (x_ctor_ty x_n_params x_n
 theorem «KernelCheck::check_ctor_return_type».obs {x_ctor_ty x_n_params x_n_indices x_n_fields x_ind_num_lvls x_block_addr x_ind_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_ctor_return_type" [x_ctor_ty, x_n_params, x_n_indices, x_n_fields, x_ind_num_lvls, x_block_addr, x_ind_idx] h r h' calls) :
     «KernelCheck::check_ctor_return_type».Path x_ctor_ty x_n_params x_n_indices x_n_fields x_ind_num_lvls x_block_addr x_ind_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_ctor_return_type.lookup
-    (by simp [IxVM.KernelCheck.check_ctor_return_type, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_ctor_return_type.lookup
+    (by simp [IxVM.KernelCheck.check_ctor_return_type, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_ctor_return_type] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2187,8 +2187,8 @@ inductive «KernelCheck::check_param_agreement_go».Path (x_rc x_ta x_tb x_n x_t
 theorem «KernelCheck::check_param_agreement_go».obs {x_rc x_ta x_tb x_n x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_param_agreement_go" [x_rc, x_ta, x_tb, x_n, x_types] h r h' calls) :
     «KernelCheck::check_param_agreement_go».Path x_rc x_ta x_tb x_n x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_param_agreement_go.lookup
-    (by simp [IxVM.KernelCheck.check_param_agreement_go, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_param_agreement_go.lookup
+    (by simp [IxVM.KernelCheck.check_param_agreement_go, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_param_agreement_go] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2325,8 +2325,8 @@ inductive «KernelCheck::check_param_agreement».Path (x_rc x_ta x_tb x_n : Sour
 theorem «KernelCheck::check_param_agreement».obs {x_rc x_ta x_tb x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_param_agreement" [x_rc, x_ta, x_tb, x_n] h r h' calls) :
     «KernelCheck::check_param_agreement».Path x_rc x_ta x_tb x_n h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_param_agreement.lookup
-    (by simp [IxVM.KernelCheck.check_param_agreement, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_param_agreement.lookup
+    (by simp [IxVM.KernelCheck.check_param_agreement, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_param_agreement] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -2381,8 +2381,8 @@ inductive «KernelCheck::get_result_sort_level».Path (x_rc x_ind_ty x_n x_types
 theorem «KernelCheck::get_result_sort_level».obs {x_rc x_ind_ty x_n x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::get_result_sort_level" [x_rc, x_ind_ty, x_n, x_types] h r h' calls) :
     «KernelCheck::get_result_sort_level».Path x_rc x_ind_ty x_n x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.get_result_sort_level.lookup
-    (by simp [IxVM.KernelCheck.get_result_sort_level, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.get_result_sort_level.lookup
+    (by simp [IxVM.KernelCheck.get_result_sort_level, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.get_result_sort_level] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2505,8 +2505,8 @@ inductive «KernelCheck::check_field_universes_inner».Path (x_rc x_ty x_ind_lev
 theorem «KernelCheck::check_field_universes_inner».obs {x_rc x_ty x_ind_level x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_field_universes_inner" [x_rc, x_ty, x_ind_level, x_types] h r h' calls) :
     «KernelCheck::check_field_universes_inner».Path x_rc x_ty x_ind_level x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_field_universes_inner.lookup
-    (by simp [IxVM.KernelCheck.check_field_universes_inner, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_field_universes_inner.lookup
+    (by simp [IxVM.KernelCheck.check_field_universes_inner, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_field_universes_inner] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2619,8 +2619,8 @@ inductive «KernelCheck::check_field_universes_skip_params».Path (x_rc x_ctor_t
 theorem «KernelCheck::check_field_universes_skip_params».obs {x_rc x_ctor_ty x_n_params x_ind_level x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_field_universes_skip_params" [x_rc, x_ctor_ty, x_n_params, x_ind_level, x_types] h r h' calls) :
     «KernelCheck::check_field_universes_skip_params».Path x_rc x_ctor_ty x_n_params x_ind_level x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_field_universes_skip_params.lookup
-    (by simp [IxVM.KernelCheck.check_field_universes_skip_params, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_field_universes_skip_params.lookup
+    (by simp [IxVM.KernelCheck.check_field_universes_skip_params, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_field_universes_skip_params] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2727,8 +2727,8 @@ inductive «KernelCheck::check_field_universes».Path (x_rc x_ctor_ty x_n_params
 theorem «KernelCheck::check_field_universes».obs {x_rc x_ctor_ty x_n_params x_ind_level : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::check_field_universes" [x_rc, x_ctor_ty, x_n_params, x_ind_level] h r h' calls) :
     «KernelCheck::check_field_universes».Path x_rc x_ctor_ty x_n_params x_ind_level h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.check_field_universes.lookup
-    (by simp [IxVM.KernelCheck.check_field_universes, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.check_field_universes.lookup
+    (by simp [IxVM.KernelCheck.check_field_universes, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.check_field_universes] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2788,8 +2788,8 @@ inductive «KernelCheck::ctor_parent_ind_ci».Path (x_block_addr x_ind_idx : Sou
 theorem «KernelCheck::ctor_parent_ind_ci».obs {x_block_addr x_ind_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::ctor_parent_ind_ci" [x_block_addr, x_ind_idx] h r h' calls) :
     «KernelCheck::ctor_parent_ind_ci».Path x_block_addr x_ind_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.ctor_parent_ind_ci.lookup
-    (by simp [IxVM.KernelCheck.ctor_parent_ind_ci, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.ctor_parent_ind_ci.lookup
+    (by simp [IxVM.KernelCheck.ctor_parent_ind_ci, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.ctor_parent_ind_ci] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -2831,8 +2831,8 @@ inductive «KernelCheck::addr_list_contains».Path (x_xs x_target : SourceValue 
 theorem «KernelCheck::addr_list_contains».obs {x_xs x_target : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::addr_list_contains" [x_xs, x_target] h r h' calls) :
     «KernelCheck::addr_list_contains».Path x_xs x_target h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.addr_list_contains.lookup
-    (by simp [IxVM.KernelCheck.addr_list_contains, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.addr_list_contains.lookup
+    (by simp [IxVM.KernelCheck.addr_list_contains, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.addr_list_contains] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2916,8 +2916,8 @@ inductive «KernelCheck::caddr_is_peer».Path (x_caddr x_block_addrs : SourceVal
 theorem «KernelCheck::caddr_is_peer».obs {x_caddr x_block_addrs : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelCheck::caddr_is_peer" [x_caddr, x_block_addrs] h r h' calls) :
     «KernelCheck::caddr_is_peer».Path x_caddr x_block_addrs h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelCheck.caddr_is_peer.lookup
-    (by simp [IxVM.KernelCheck.caddr_is_peer, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelCheck.caddr_is_peer.lookup
+    (by simp [IxVM.KernelCheck.caddr_is_peer, ControlLower.hasControl]) ev
   simp only [IxVM.KernelCheck.caddr_is_peer] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv

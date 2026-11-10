@@ -17,6 +17,1166 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The program resolves `RBTreeMap::rbtree_map_balance` at each instance to its closure. -/
+theorem «RBTreeMap::rbtree_map_balance».lookup (t_V : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol =
+      some { types := [("V", t_V)],
+             params := IxVM.RBTreeMap.rbtree_map_balance.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
+             body := IxVM.RBTreeMap.rbtree_map_balance.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_balance) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 93) (by decide +kernel)) rfl t_V
+
+/-- The evaluation paths of `RBTreeMap::rbtree_map_balance`: one constructor per combination of selected arms. -/
+inductive «RBTreeMap::rbtree_map_balance».Path (t_V : Generic.Ty) (x_color x_key x_value x_left x_right : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n1
+      (cs18 : List (Call F))
+      (hv14 : x_color = (.field 1))
+      (ev20 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance_fix" [t_V]).symbol [x_key, x_value, x_left, x_right] h r h' cs18)
+      (hc53 : calls = ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance_fix" [t_V]).symbol, [x_key, x_value, x_left, x_right], h⟩ : Call F) :: cs18))
+  | other
+      (m89 : Heap F) (m100 : Heap F)
+      (hne54 : (x_color : SourceValue F) ≠ (.field 1))
+      (he66 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_key, x_value, (.ptr (Value.type (x_left : SourceValue F)) (h).length), (.ptr (Value.type (x_right : SourceValue F)) (m89).length)]))
+      (hm97 : m89 = (h ++ [x_left]))
+      (hm108 : m100 = (m89 ++ [x_right]))
+      (he110 : h' = m100)
+      (hc111 : calls = [])
+
+/-- **Every observed derivation of `RBTreeMap::rbtree_map_balance` takes one of its paths.** -/
+theorem «RBTreeMap::rbtree_map_balance».obs {t_V : Generic.Ty} {x_color x_key x_value x_left x_right : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_key, x_value, x_left, x_right] h r h' calls) :
+    «RBTreeMap::rbtree_map_balance».Path t_V x_color x_key x_value x_left x_right h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («RBTreeMap::rbtree_map_balance».lookup t_V)
+    (by simp [IxVM.RBTreeMap.rbtree_map_balance, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.rbtree_map_balance] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨hv14, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt11
+    obtain ⟨vs15, m16, c17, cs18, a19, ev20, rfl⟩ := d9.call_inv
+    rw [instanceName_some_one, subst_param_singleton] at ev20
+    obtain ⟨v21, vs25, m26, c27, c28, rfl, d29, a30, rfl⟩ := a19.cons_inv
+    obtain ⟨l31, rfl, rfl⟩ := d29.var_inv
+    simp at l31
+    subst l31
+    obtain ⟨v22, vs32, m33, c34, c35, rfl, d36, a37, rfl⟩ := a30.cons_inv
+    obtain ⟨l38, rfl, rfl⟩ := d36.var_inv
+    simp at l38
+    subst l38
+    obtain ⟨v23, vs39, m40, c41, c42, rfl, d43, a44, rfl⟩ := a37.cons_inv
+    obtain ⟨l45, rfl, rfl⟩ := d43.var_inv
+    simp at l45
+    subst l45
+    obtain ⟨v24, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a44.cons_inv
+    obtain ⟨l52, rfl, rfl⟩ := d50.var_inv
+    simp at l52
+    subst l52
+    obtain ⟨rfl, rfl, rfl⟩ := a51.nil_inv
+    exact «RBTreeMap::rbtree_map_balance».Path.n1 _ hv14 ev20 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+  · have hne54 := MatchesConst.none_inv (MatchesConst.literal 1) nm12
+    rcases selectArm_cons_inv sel13 with ⟨mt55, rfl⟩ | ⟨nm56, sel57⟩
+    · obtain rfl := matchPattern_wildcard_inv mt55
+      obtain ⟨vs58, a59, hres60⟩ := d9.construct_inv
+      rw [instanceName_some_one, subst_param_singleton] at hres60
+      subst hres60
+      obtain ⟨v61, vs67, m68, c69, c70, rfl, d71, a72, rfl⟩ := a59.cons_inv
+      obtain ⟨l73, rfl, rfl⟩ := d71.var_inv
+      simp at l73
+      subst l73
+      obtain ⟨v62, vs74, m75, c76, c77, rfl, d78, a79, rfl⟩ := a72.cons_inv
+      obtain ⟨l80, rfl, rfl⟩ := d78.var_inv
+      simp at l80
+      subst l80
+      obtain ⟨v63, vs81, m82, c83, c84, rfl, d85, a86, rfl⟩ := a79.cons_inv
+      obtain ⟨l87, rfl, rfl⟩ := d85.var_inv
+      simp at l87
+      subst l87
+      obtain ⟨v64, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a86.cons_inv
+      obtain ⟨v94, m95, d96, rfl, hm97⟩ := d92.store_inv
+      obtain ⟨l98, rfl, rfl⟩ := d96.var_inv
+      simp at l98
+      subst l98
+      obtain ⟨v65, vs99, m100, c101, c102, rfl, d103, a104, rfl⟩ := a93.cons_inv
+      obtain ⟨v105, m106, d107, rfl, hm108⟩ := d103.store_inv
+      obtain ⟨l109, rfl, rfl⟩ := d107.var_inv
+      simp at l109
+      subst l109
+      obtain ⟨rfl, rfl, rfl⟩ := a104.nil_inv
+      try simp only [Value.type, List.map_cons, List.map_nil] at hne54 hm97 hm108 ⊢
+      exact «RBTreeMap::rbtree_map_balance».Path.other _ _ hne54 rfl hm97 hm108 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · exact (matchPattern_wildcard_none nm56).elim
+
+/-- The program resolves `RBTreeMap::rbtree_map_balance_fix` at each instance to its closure. -/
+theorem «RBTreeMap::rbtree_map_balance_fix».lookup (t_V : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "RBTreeMap::rbtree_map_balance_fix" [t_V]).symbol =
+      some { types := [("V", t_V)],
+             params := IxVM.RBTreeMap.rbtree_map_balance_fix.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
+             body := IxVM.RBTreeMap.rbtree_map_balance_fix.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_balance_fix) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 94) (by decide +kernel)) rfl t_V
+
+/-- The evaluation paths of `RBTreeMap::rbtree_map_balance_fix`: one constructor per combination of selected arms. -/
+inductive «RBTreeMap::rbtree_map_balance_fix».Path (t_V : Generic.Ty) (x_key x_value x_left x_right : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Node_bind
+      (x_yk : SourceValue F) (x_yv : SourceValue F) (w40 : SourceValue F) (x_c : SourceValue F) (x_xk : SourceValue F) (x_xv : SourceValue F) (x_a : SourceValue F) (x_b : SourceValue F) (m134 : Heap F) (m186 : Heap F) (m231 : Heap F)
+      (hv37 : x_left = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, w40, x_c]))
+      (ld63 : loadValue h w40 = .ok (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_xk, x_xv, x_a, x_b]))
+      (he112 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (h).length), (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m231).length)]))
+      (hm142 : m134 = (h ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_xk, x_xv, x_a, x_b])]))
+      (hm194 : m186 = (m231 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_key, x_value, x_c, (.ptr (Value.type (x_right : SourceValue F)) (m134).length)])]))
+      (hm239 : m231 = (m134 ++ [x_right]))
+      (he241 : h' = m186)
+      (hc242 : calls = [])
+  | Node_bind_1
+      (x_xk : SourceValue F) (x_xv : SourceValue F) (x_a : SourceValue F) (w255 : SourceValue F) (x_yk : SourceValue F) (x_yv : SourceValue F) (x_b : SourceValue F) (x_c : SourceValue F) (m349 : Heap F) (m401 : Heap F) (m446 : Heap F)
+      (hv252 : x_left = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_xk, x_xv, x_a, w255]))
+      (ld283 : loadValue h w255 = .ok (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, x_b, x_c]))
+      (he327 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (h).length), (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m446).length)]))
+      (hm357 : m349 = (h ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_xk, x_xv, x_a, x_b])]))
+      (hm409 : m401 = (m446 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_key, x_value, x_c, (.ptr (Value.type (x_right : SourceValue F)) (m349).length)])]))
+      (hm454 : m446 = (m349 ++ [x_right]))
+      (he456 : h' = m401)
+      (hc457 : calls = [])
+  | bind_Node
+      (x_zk : SourceValue F) (x_zv : SourceValue F) (w474 : SourceValue F) (x_d : SourceValue F) (x_yk : SourceValue F) (x_yv : SourceValue F) (x_b : SourceValue F) (x_c : SourceValue F) (m564 : Heap F) (m602 : Heap F) (m620 : Heap F)
+      (hv471 : x_right = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_zk, x_zv, w474, x_d]))
+      (ld497 : loadValue h w474 = .ok (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, x_b, x_c]))
+      (he542 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m602).length), (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m564).length)]))
+      (hm572 : m564 = (m602 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_key, x_value, (.ptr (Value.type (x_left : SourceValue F)) (h).length), x_b])]))
+      (hm610 : m602 = (h ++ [x_left]))
+      (hm628 : m620 = (m564 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_zk, x_zv, x_c, x_d])]))
+      (he671 : h' = m620)
+      (hc672 : calls = [])
+  | bind_Node_1
+      (x_yk : SourceValue F) (x_yv : SourceValue F) (x_b : SourceValue F) (w689 : SourceValue F) (x_zk : SourceValue F) (x_zv : SourceValue F) (x_c : SourceValue F) (x_d : SourceValue F) (m779 : Heap F) (m817 : Heap F) (m835 : Heap F)
+      (hv686 : x_right = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, x_b, w689]))
+      (ld717 : loadValue h w689 = .ok (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_zk, x_zv, x_c, x_d]))
+      (he757 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_yk, x_yv, (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m817).length), (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m779).length)]))
+      (hm787 : m779 = (m817 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_key, x_value, (.ptr (Value.type (x_left : SourceValue F)) (h).length), x_b])]))
+      (hm825 : m817 = (h ++ [x_left]))
+      (hm843 : m835 = (m779 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_zk, x_zv, x_c, x_d])]))
+      (he886 : h' = m835)
+      (hc887 : calls = [])
+  | other
+      (m921 : Heap F) (m932 : Heap F)
+      (he899 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_key, x_value, (.ptr (Value.type (x_left : SourceValue F)) (h).length), (.ptr (Value.type (x_right : SourceValue F)) (m921).length)]))
+      (hm929 : m921 = (h ++ [x_left]))
+      (hm940 : m932 = (m921 ++ [x_right]))
+      (he942 : h' = m932)
+      (hc943 : calls = [])
+
+/-- **Every observed derivation of `RBTreeMap::rbtree_map_balance_fix` takes one of its paths.** -/
+theorem «RBTreeMap::rbtree_map_balance_fix».obs {t_V : Generic.Ty} {x_key x_value x_left x_right : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance_fix" [t_V]).symbol [x_key, x_value, x_left, x_right] h r h' calls) :
+    «RBTreeMap::rbtree_map_balance_fix».Path t_V x_key x_value x_left x_right h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («RBTreeMap::rbtree_map_balance_fix».lookup t_V)
+    (by simp [IxVM.RBTreeMap.rbtree_map_balance_fix, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.rbtree_map_balance_fix] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs10, a11, rfl⟩ := d7.tuple_inv
+  obtain ⟨v12, vs14, m15, c16, c17, rfl, d18, a19, rfl⟩ := a11.cons_inv
+  obtain ⟨l20, rfl, rfl⟩ := d18.var_inv
+  simp at l20
+  subst l20
+  obtain ⟨v13, vs21, m22, c23, c24, rfl, d25, a26, rfl⟩ := a19.cons_inv
+  obtain ⟨l27, rfl, rfl⟩ := d25.var_inv
+  simp at l27
+  subst l27
+  obtain ⟨rfl, rfl, rfl⟩ := a26.nil_inv
+  rcases selectArm_cons_inv sel8 with ⟨mt28, rfl⟩ | ⟨nm29, sel30⟩
+  · have ml31 := matchPattern_tuple_tuple_inv mt28
+    obtain ⟨b32, b33, mt34, ml35, rfl⟩ := matchListWith_cons_cons_inv ml31
+    obtain ⟨vs36, hv37, -, ml38⟩ := matchPattern_construct_inv mt34
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv37
+    obtain ⟨w39, vs41, b42, b43, rfl, mt44, ml45, rfl⟩ := matchListWith_cons_inv ml38
+    obtain ⟨hv46, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt44
+    subst hv46
+    obtain ⟨x_yk, vs47, b48, b49, rfl, mt50, ml51, rfl⟩ := matchListWith_cons_inv ml45
+    obtain rfl := matchPattern_bind_inv mt50
+    obtain ⟨x_yv, vs52, b53, b54, rfl, mt55, ml56, rfl⟩ := matchListWith_cons_inv ml51
+    obtain rfl := matchPattern_bind_inv mt55
+    obtain ⟨w40, vs57, b58, b59, rfl, mt60, ml61, rfl⟩ := matchListWith_cons_inv ml56
+    obtain ⟨y62, ld63, mt64⟩ := matchPattern_load_inv mt60
+    obtain ⟨vs65, hv66, -, ml67⟩ := matchPattern_construct_inv mt64
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv66
+    subst hv66
+    obtain ⟨w68, vs69, b70, b71, rfl, mt72, ml73, rfl⟩ := matchListWith_cons_inv ml67
+    obtain ⟨hv74, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt72
+    subst hv74
+    obtain ⟨x_xk, vs75, b76, b77, rfl, mt78, ml79, rfl⟩ := matchListWith_cons_inv ml73
+    obtain rfl := matchPattern_bind_inv mt78
+    obtain ⟨x_xv, vs80, b81, b82, rfl, mt83, ml84, rfl⟩ := matchListWith_cons_inv ml79
+    obtain rfl := matchPattern_bind_inv mt83
+    obtain ⟨x_a, vs85, b86, b87, rfl, mt88, ml89, rfl⟩ := matchListWith_cons_inv ml84
+    obtain rfl := matchPattern_bind_inv mt88
+    obtain ⟨x_b, vs90, b91, b92, rfl, mt93, ml94, rfl⟩ := matchListWith_cons_inv ml89
+    obtain rfl := matchPattern_bind_inv mt93
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml94
+    obtain ⟨x_c, vs95, b96, b97, rfl, mt98, ml99, rfl⟩ := matchListWith_cons_inv ml61
+    obtain rfl := matchPattern_bind_inv mt98
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml99
+    obtain ⟨b100, b101, mt102, ml103, rfl⟩ := matchListWith_cons_cons_inv ml35
+    obtain rfl := matchPattern_bind_inv mt102
+    obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml103
+    obtain ⟨vs104, a105, hres106⟩ := d9.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres106
+    subst hres106
+    obtain ⟨v107, vs113, m114, c115, c116, rfl, d117, a118, rfl⟩ := a105.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d117.literal_inv
+    obtain ⟨v108, vs119, m120, c121, c122, rfl, d123, a124, rfl⟩ := a118.cons_inv
+    obtain ⟨l125, rfl, rfl⟩ := d123.var_inv
+    simp at l125
+    subst l125
+    obtain ⟨v109, vs126, m127, c128, c129, rfl, d130, a131, rfl⟩ := a124.cons_inv
+    obtain ⟨l132, rfl, rfl⟩ := d130.var_inv
+    simp at l132
+    subst l132
+    obtain ⟨v110, vs133, m134, c135, c136, rfl, d137, a138, rfl⟩ := a131.cons_inv
+    obtain ⟨v139, m140, d141, rfl, hm142⟩ := d137.store_inv
+    obtain ⟨vs143, a144, hres145⟩ := d141.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres145
+    subst hres145
+    obtain ⟨v146, vs151, m152, c153, c154, rfl, d155, a156, rfl⟩ := a144.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d155.literal_inv
+    obtain ⟨v147, vs157, m158, c159, c160, rfl, d161, a162, rfl⟩ := a156.cons_inv
+    obtain ⟨l163, rfl, rfl⟩ := d161.var_inv
+    simp at l163
+    subst l163
+    obtain ⟨v148, vs164, m165, c166, c167, rfl, d168, a169, rfl⟩ := a162.cons_inv
+    obtain ⟨l170, rfl, rfl⟩ := d168.var_inv
+    simp at l170
+    subst l170
+    obtain ⟨v149, vs171, m172, c173, c174, rfl, d175, a176, rfl⟩ := a169.cons_inv
+    obtain ⟨l177, rfl, rfl⟩ := d175.var_inv
+    simp at l177
+    subst l177
+    obtain ⟨v150, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a176.cons_inv
+    obtain ⟨l184, rfl, rfl⟩ := d182.var_inv
+    simp at l184
+    subst l184
+    obtain ⟨rfl, rfl, rfl⟩ := a183.nil_inv
+    obtain ⟨v111, vs185, m186, c187, c188, rfl, d189, a190, rfl⟩ := a138.cons_inv
+    obtain ⟨v191, m192, d193, rfl, hm194⟩ := d189.store_inv
+    obtain ⟨vs195, a196, hres197⟩ := d193.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres197
+    subst hres197
+    obtain ⟨v198, vs203, m204, c205, c206, rfl, d207, a208, rfl⟩ := a196.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d207.literal_inv
+    obtain ⟨v199, vs209, m210, c211, c212, rfl, d213, a214, rfl⟩ := a208.cons_inv
+    obtain ⟨l215, rfl, rfl⟩ := d213.var_inv
+    simp at l215
+    subst l215
+    obtain ⟨v200, vs216, m217, c218, c219, rfl, d220, a221, rfl⟩ := a214.cons_inv
+    obtain ⟨l222, rfl, rfl⟩ := d220.var_inv
+    simp at l222
+    subst l222
+    obtain ⟨v201, vs223, m224, c225, c226, rfl, d227, a228, rfl⟩ := a221.cons_inv
+    obtain ⟨l229, rfl, rfl⟩ := d227.var_inv
+    simp at l229
+    subst l229
+    obtain ⟨v202, vs230, m231, c232, c233, rfl, d234, a235, rfl⟩ := a228.cons_inv
+    obtain ⟨v236, m237, d238, rfl, hm239⟩ := d234.store_inv
+    obtain ⟨l240, rfl, rfl⟩ := d238.var_inv
+    simp at l240
+    subst l240
+    obtain ⟨rfl, rfl, rfl⟩ := a235.nil_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a190.nil_inv
+    try simp only [Value.type, List.map_cons, List.map_nil] at hv37 ld63 hm142 hm194 hm239 ⊢
+    exact «RBTreeMap::rbtree_map_balance_fix».Path.Node_bind _ _ _ _ _ _ _ _ _ _ _ hv37 ld63 rfl hm142 hm194 hm239 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · clear nm29
+    rcases selectArm_cons_inv sel30 with ⟨mt243, rfl⟩ | ⟨nm244, sel245⟩
+    · have ml246 := matchPattern_tuple_tuple_inv mt243
+      obtain ⟨b247, b248, mt249, ml250, rfl⟩ := matchListWith_cons_cons_inv ml246
+      obtain ⟨vs251, hv252, -, ml253⟩ := matchPattern_construct_inv mt249
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv252
+      obtain ⟨w254, vs256, b257, b258, rfl, mt259, ml260, rfl⟩ := matchListWith_cons_inv ml253
+      obtain ⟨hv261, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt259
+      subst hv261
+      obtain ⟨x_xk, vs262, b263, b264, rfl, mt265, ml266, rfl⟩ := matchListWith_cons_inv ml260
+      obtain rfl := matchPattern_bind_inv mt265
+      obtain ⟨x_xv, vs267, b268, b269, rfl, mt270, ml271, rfl⟩ := matchListWith_cons_inv ml266
+      obtain rfl := matchPattern_bind_inv mt270
+      obtain ⟨x_a, vs272, b273, b274, rfl, mt275, ml276, rfl⟩ := matchListWith_cons_inv ml271
+      obtain rfl := matchPattern_bind_inv mt275
+      obtain ⟨w255, vs277, b278, b279, rfl, mt280, ml281, rfl⟩ := matchListWith_cons_inv ml276
+      obtain ⟨y282, ld283, mt284⟩ := matchPattern_load_inv mt280
+      obtain ⟨vs285, hv286, -, ml287⟩ := matchPattern_construct_inv mt284
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv286
+      subst hv286
+      obtain ⟨w288, vs289, b290, b291, rfl, mt292, ml293, rfl⟩ := matchListWith_cons_inv ml287
+      obtain ⟨hv294, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt292
+      subst hv294
+      obtain ⟨x_yk, vs295, b296, b297, rfl, mt298, ml299, rfl⟩ := matchListWith_cons_inv ml293
+      obtain rfl := matchPattern_bind_inv mt298
+      obtain ⟨x_yv, vs300, b301, b302, rfl, mt303, ml304, rfl⟩ := matchListWith_cons_inv ml299
+      obtain rfl := matchPattern_bind_inv mt303
+      obtain ⟨x_b, vs305, b306, b307, rfl, mt308, ml309, rfl⟩ := matchListWith_cons_inv ml304
+      obtain rfl := matchPattern_bind_inv mt308
+      obtain ⟨x_c, vs310, b311, b312, rfl, mt313, ml314, rfl⟩ := matchListWith_cons_inv ml309
+      obtain rfl := matchPattern_bind_inv mt313
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml314
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml281
+      obtain ⟨b315, b316, mt317, ml318, rfl⟩ := matchListWith_cons_cons_inv ml250
+      obtain rfl := matchPattern_bind_inv mt317
+      obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml318
+      obtain ⟨vs319, a320, hres321⟩ := d9.construct_inv
+      rw [instanceName_some_one, subst_param_singleton] at hres321
+      subst hres321
+      obtain ⟨v322, vs328, m329, c330, c331, rfl, d332, a333, rfl⟩ := a320.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d332.literal_inv
+      obtain ⟨v323, vs334, m335, c336, c337, rfl, d338, a339, rfl⟩ := a333.cons_inv
+      obtain ⟨l340, rfl, rfl⟩ := d338.var_inv
+      simp at l340
+      subst l340
+      obtain ⟨v324, vs341, m342, c343, c344, rfl, d345, a346, rfl⟩ := a339.cons_inv
+      obtain ⟨l347, rfl, rfl⟩ := d345.var_inv
+      simp at l347
+      subst l347
+      obtain ⟨v325, vs348, m349, c350, c351, rfl, d352, a353, rfl⟩ := a346.cons_inv
+      obtain ⟨v354, m355, d356, rfl, hm357⟩ := d352.store_inv
+      obtain ⟨vs358, a359, hres360⟩ := d356.construct_inv
+      rw [instanceName_some_one, subst_param_singleton] at hres360
+      subst hres360
+      obtain ⟨v361, vs366, m367, c368, c369, rfl, d370, a371, rfl⟩ := a359.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d370.literal_inv
+      obtain ⟨v362, vs372, m373, c374, c375, rfl, d376, a377, rfl⟩ := a371.cons_inv
+      obtain ⟨l378, rfl, rfl⟩ := d376.var_inv
+      simp at l378
+      subst l378
+      obtain ⟨v363, vs379, m380, c381, c382, rfl, d383, a384, rfl⟩ := a377.cons_inv
+      obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
+      simp at l385
+      subst l385
+      obtain ⟨v364, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a384.cons_inv
+      obtain ⟨l392, rfl, rfl⟩ := d390.var_inv
+      simp at l392
+      subst l392
+      obtain ⟨v365, vs393, m394, c395, c396, rfl, d397, a398, rfl⟩ := a391.cons_inv
+      obtain ⟨l399, rfl, rfl⟩ := d397.var_inv
+      simp at l399
+      subst l399
+      obtain ⟨rfl, rfl, rfl⟩ := a398.nil_inv
+      obtain ⟨v326, vs400, m401, c402, c403, rfl, d404, a405, rfl⟩ := a353.cons_inv
+      obtain ⟨v406, m407, d408, rfl, hm409⟩ := d404.store_inv
+      obtain ⟨vs410, a411, hres412⟩ := d408.construct_inv
+      rw [instanceName_some_one, subst_param_singleton] at hres412
+      subst hres412
+      obtain ⟨v413, vs418, m419, c420, c421, rfl, d422, a423, rfl⟩ := a411.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d422.literal_inv
+      obtain ⟨v414, vs424, m425, c426, c427, rfl, d428, a429, rfl⟩ := a423.cons_inv
+      obtain ⟨l430, rfl, rfl⟩ := d428.var_inv
+      simp at l430
+      subst l430
+      obtain ⟨v415, vs431, m432, c433, c434, rfl, d435, a436, rfl⟩ := a429.cons_inv
+      obtain ⟨l437, rfl, rfl⟩ := d435.var_inv
+      simp at l437
+      subst l437
+      obtain ⟨v416, vs438, m439, c440, c441, rfl, d442, a443, rfl⟩ := a436.cons_inv
+      obtain ⟨l444, rfl, rfl⟩ := d442.var_inv
+      simp at l444
+      subst l444
+      obtain ⟨v417, vs445, m446, c447, c448, rfl, d449, a450, rfl⟩ := a443.cons_inv
+      obtain ⟨v451, m452, d453, rfl, hm454⟩ := d449.store_inv
+      obtain ⟨l455, rfl, rfl⟩ := d453.var_inv
+      simp at l455
+      subst l455
+      obtain ⟨rfl, rfl, rfl⟩ := a450.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a405.nil_inv
+      try simp only [Value.type, List.map_cons, List.map_nil] at hv252 ld283 hm357 hm409 hm454 ⊢
+      exact «RBTreeMap::rbtree_map_balance_fix».Path.Node_bind_1 _ _ _ _ _ _ _ _ _ _ _ hv252 ld283 rfl hm357 hm409 hm454 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · clear nm244
+      rcases selectArm_cons_inv sel245 with ⟨mt458, rfl⟩ | ⟨nm459, sel460⟩
+      · have ml461 := matchPattern_tuple_tuple_inv mt458
+        obtain ⟨b462, b463, mt464, ml465, rfl⟩ := matchListWith_cons_cons_inv ml461
+        obtain rfl := matchPattern_bind_inv mt464
+        obtain ⟨b466, b467, mt468, ml469, rfl⟩ := matchListWith_cons_cons_inv ml465
+        obtain ⟨vs470, hv471, -, ml472⟩ := matchPattern_construct_inv mt468
+        rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv471
+        obtain ⟨w473, vs475, b476, b477, rfl, mt478, ml479, rfl⟩ := matchListWith_cons_inv ml472
+        obtain ⟨hv480, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt478
+        subst hv480
+        obtain ⟨x_zk, vs481, b482, b483, rfl, mt484, ml485, rfl⟩ := matchListWith_cons_inv ml479
+        obtain rfl := matchPattern_bind_inv mt484
+        obtain ⟨x_zv, vs486, b487, b488, rfl, mt489, ml490, rfl⟩ := matchListWith_cons_inv ml485
+        obtain rfl := matchPattern_bind_inv mt489
+        obtain ⟨w474, vs491, b492, b493, rfl, mt494, ml495, rfl⟩ := matchListWith_cons_inv ml490
+        obtain ⟨y496, ld497, mt498⟩ := matchPattern_load_inv mt494
+        obtain ⟨vs499, hv500, -, ml501⟩ := matchPattern_construct_inv mt498
+        rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv500
+        subst hv500
+        obtain ⟨w502, vs503, b504, b505, rfl, mt506, ml507, rfl⟩ := matchListWith_cons_inv ml501
+        obtain ⟨hv508, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt506
+        subst hv508
+        obtain ⟨x_yk, vs509, b510, b511, rfl, mt512, ml513, rfl⟩ := matchListWith_cons_inv ml507
+        obtain rfl := matchPattern_bind_inv mt512
+        obtain ⟨x_yv, vs514, b515, b516, rfl, mt517, ml518, rfl⟩ := matchListWith_cons_inv ml513
+        obtain rfl := matchPattern_bind_inv mt517
+        obtain ⟨x_b, vs519, b520, b521, rfl, mt522, ml523, rfl⟩ := matchListWith_cons_inv ml518
+        obtain rfl := matchPattern_bind_inv mt522
+        obtain ⟨x_c, vs524, b525, b526, rfl, mt527, ml528, rfl⟩ := matchListWith_cons_inv ml523
+        obtain rfl := matchPattern_bind_inv mt527
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml528
+        obtain ⟨x_d, vs529, b530, b531, rfl, mt532, ml533, rfl⟩ := matchListWith_cons_inv ml495
+        obtain rfl := matchPattern_bind_inv mt532
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml533
+        obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml469
+        obtain ⟨vs534, a535, hres536⟩ := d9.construct_inv
+        rw [instanceName_some_one, subst_param_singleton] at hres536
+        subst hres536
+        obtain ⟨v537, vs543, m544, c545, c546, rfl, d547, a548, rfl⟩ := a535.cons_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d547.literal_inv
+        obtain ⟨v538, vs549, m550, c551, c552, rfl, d553, a554, rfl⟩ := a548.cons_inv
+        obtain ⟨l555, rfl, rfl⟩ := d553.var_inv
+        simp at l555
+        subst l555
+        obtain ⟨v539, vs556, m557, c558, c559, rfl, d560, a561, rfl⟩ := a554.cons_inv
+        obtain ⟨l562, rfl, rfl⟩ := d560.var_inv
+        simp at l562
+        subst l562
+        obtain ⟨v540, vs563, m564, c565, c566, rfl, d567, a568, rfl⟩ := a561.cons_inv
+        obtain ⟨v569, m570, d571, rfl, hm572⟩ := d567.store_inv
+        obtain ⟨vs573, a574, hres575⟩ := d571.construct_inv
+        rw [instanceName_some_one, subst_param_singleton] at hres575
+        subst hres575
+        obtain ⟨v576, vs581, m582, c583, c584, rfl, d585, a586, rfl⟩ := a574.cons_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d585.literal_inv
+        obtain ⟨v577, vs587, m588, c589, c590, rfl, d591, a592, rfl⟩ := a586.cons_inv
+        obtain ⟨l593, rfl, rfl⟩ := d591.var_inv
+        simp at l593
+        subst l593
+        obtain ⟨v578, vs594, m595, c596, c597, rfl, d598, a599, rfl⟩ := a592.cons_inv
+        obtain ⟨l600, rfl, rfl⟩ := d598.var_inv
+        simp at l600
+        subst l600
+        obtain ⟨v579, vs601, m602, c603, c604, rfl, d605, a606, rfl⟩ := a599.cons_inv
+        obtain ⟨v607, m608, d609, rfl, hm610⟩ := d605.store_inv
+        obtain ⟨l611, rfl, rfl⟩ := d609.var_inv
+        simp at l611
+        subst l611
+        obtain ⟨v580, vs612, m613, c614, c615, rfl, d616, a617, rfl⟩ := a606.cons_inv
+        obtain ⟨l618, rfl, rfl⟩ := d616.var_inv
+        simp at l618
+        subst l618
+        obtain ⟨rfl, rfl, rfl⟩ := a617.nil_inv
+        obtain ⟨v541, vs619, m620, c621, c622, rfl, d623, a624, rfl⟩ := a568.cons_inv
+        obtain ⟨v625, m626, d627, rfl, hm628⟩ := d623.store_inv
+        obtain ⟨vs629, a630, hres631⟩ := d627.construct_inv
+        rw [instanceName_some_one, subst_param_singleton] at hres631
+        subst hres631
+        obtain ⟨v632, vs637, m638, c639, c640, rfl, d641, a642, rfl⟩ := a630.cons_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d641.literal_inv
+        obtain ⟨v633, vs643, m644, c645, c646, rfl, d647, a648, rfl⟩ := a642.cons_inv
+        obtain ⟨l649, rfl, rfl⟩ := d647.var_inv
+        simp at l649
+        subst l649
+        obtain ⟨v634, vs650, m651, c652, c653, rfl, d654, a655, rfl⟩ := a648.cons_inv
+        obtain ⟨l656, rfl, rfl⟩ := d654.var_inv
+        simp at l656
+        subst l656
+        obtain ⟨v635, vs657, m658, c659, c660, rfl, d661, a662, rfl⟩ := a655.cons_inv
+        obtain ⟨l663, rfl, rfl⟩ := d661.var_inv
+        simp at l663
+        subst l663
+        obtain ⟨v636, vs664, m665, c666, c667, rfl, d668, a669, rfl⟩ := a662.cons_inv
+        obtain ⟨l670, rfl, rfl⟩ := d668.var_inv
+        simp at l670
+        subst l670
+        obtain ⟨rfl, rfl, rfl⟩ := a669.nil_inv
+        obtain ⟨rfl, rfl, rfl⟩ := a624.nil_inv
+        try simp only [Value.type, List.map_cons, List.map_nil] at hv471 ld497 hm572 hm610 hm628 ⊢
+        exact «RBTreeMap::rbtree_map_balance_fix».Path.bind_Node _ _ _ _ _ _ _ _ _ _ _ hv471 ld497 rfl hm572 hm610 hm628 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · clear nm459
+        rcases selectArm_cons_inv sel460 with ⟨mt673, rfl⟩ | ⟨nm674, sel675⟩
+        · have ml676 := matchPattern_tuple_tuple_inv mt673
+          obtain ⟨b677, b678, mt679, ml680, rfl⟩ := matchListWith_cons_cons_inv ml676
+          obtain rfl := matchPattern_bind_inv mt679
+          obtain ⟨b681, b682, mt683, ml684, rfl⟩ := matchListWith_cons_cons_inv ml680
+          obtain ⟨vs685, hv686, -, ml687⟩ := matchPattern_construct_inv mt683
+          rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv686
+          obtain ⟨w688, vs690, b691, b692, rfl, mt693, ml694, rfl⟩ := matchListWith_cons_inv ml687
+          obtain ⟨hv695, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt693
+          subst hv695
+          obtain ⟨x_yk, vs696, b697, b698, rfl, mt699, ml700, rfl⟩ := matchListWith_cons_inv ml694
+          obtain rfl := matchPattern_bind_inv mt699
+          obtain ⟨x_yv, vs701, b702, b703, rfl, mt704, ml705, rfl⟩ := matchListWith_cons_inv ml700
+          obtain rfl := matchPattern_bind_inv mt704
+          obtain ⟨x_b, vs706, b707, b708, rfl, mt709, ml710, rfl⟩ := matchListWith_cons_inv ml705
+          obtain rfl := matchPattern_bind_inv mt709
+          obtain ⟨w689, vs711, b712, b713, rfl, mt714, ml715, rfl⟩ := matchListWith_cons_inv ml710
+          obtain ⟨y716, ld717, mt718⟩ := matchPattern_load_inv mt714
+          obtain ⟨vs719, hv720, -, ml721⟩ := matchPattern_construct_inv mt718
+          rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv720
+          subst hv720
+          obtain ⟨w722, vs723, b724, b725, rfl, mt726, ml727, rfl⟩ := matchListWith_cons_inv ml721
+          obtain ⟨hv728, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt726
+          subst hv728
+          obtain ⟨x_zk, vs729, b730, b731, rfl, mt732, ml733, rfl⟩ := matchListWith_cons_inv ml727
+          obtain rfl := matchPattern_bind_inv mt732
+          obtain ⟨x_zv, vs734, b735, b736, rfl, mt737, ml738, rfl⟩ := matchListWith_cons_inv ml733
+          obtain rfl := matchPattern_bind_inv mt737
+          obtain ⟨x_c, vs739, b740, b741, rfl, mt742, ml743, rfl⟩ := matchListWith_cons_inv ml738
+          obtain rfl := matchPattern_bind_inv mt742
+          obtain ⟨x_d, vs744, b745, b746, rfl, mt747, ml748, rfl⟩ := matchListWith_cons_inv ml743
+          obtain rfl := matchPattern_bind_inv mt747
+          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml748
+          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml715
+          obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml684
+          obtain ⟨vs749, a750, hres751⟩ := d9.construct_inv
+          rw [instanceName_some_one, subst_param_singleton] at hres751
+          subst hres751
+          obtain ⟨v752, vs758, m759, c760, c761, rfl, d762, a763, rfl⟩ := a750.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d762.literal_inv
+          obtain ⟨v753, vs764, m765, c766, c767, rfl, d768, a769, rfl⟩ := a763.cons_inv
+          obtain ⟨l770, rfl, rfl⟩ := d768.var_inv
+          simp at l770
+          subst l770
+          obtain ⟨v754, vs771, m772, c773, c774, rfl, d775, a776, rfl⟩ := a769.cons_inv
+          obtain ⟨l777, rfl, rfl⟩ := d775.var_inv
+          simp at l777
+          subst l777
+          obtain ⟨v755, vs778, m779, c780, c781, rfl, d782, a783, rfl⟩ := a776.cons_inv
+          obtain ⟨v784, m785, d786, rfl, hm787⟩ := d782.store_inv
+          obtain ⟨vs788, a789, hres790⟩ := d786.construct_inv
+          rw [instanceName_some_one, subst_param_singleton] at hres790
+          subst hres790
+          obtain ⟨v791, vs796, m797, c798, c799, rfl, d800, a801, rfl⟩ := a789.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d800.literal_inv
+          obtain ⟨v792, vs802, m803, c804, c805, rfl, d806, a807, rfl⟩ := a801.cons_inv
+          obtain ⟨l808, rfl, rfl⟩ := d806.var_inv
+          simp at l808
+          subst l808
+          obtain ⟨v793, vs809, m810, c811, c812, rfl, d813, a814, rfl⟩ := a807.cons_inv
+          obtain ⟨l815, rfl, rfl⟩ := d813.var_inv
+          simp at l815
+          subst l815
+          obtain ⟨v794, vs816, m817, c818, c819, rfl, d820, a821, rfl⟩ := a814.cons_inv
+          obtain ⟨v822, m823, d824, rfl, hm825⟩ := d820.store_inv
+          obtain ⟨l826, rfl, rfl⟩ := d824.var_inv
+          simp at l826
+          subst l826
+          obtain ⟨v795, vs827, m828, c829, c830, rfl, d831, a832, rfl⟩ := a821.cons_inv
+          obtain ⟨l833, rfl, rfl⟩ := d831.var_inv
+          simp at l833
+          subst l833
+          obtain ⟨rfl, rfl, rfl⟩ := a832.nil_inv
+          obtain ⟨v756, vs834, m835, c836, c837, rfl, d838, a839, rfl⟩ := a783.cons_inv
+          obtain ⟨v840, m841, d842, rfl, hm843⟩ := d838.store_inv
+          obtain ⟨vs844, a845, hres846⟩ := d842.construct_inv
+          rw [instanceName_some_one, subst_param_singleton] at hres846
+          subst hres846
+          obtain ⟨v847, vs852, m853, c854, c855, rfl, d856, a857, rfl⟩ := a845.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d856.literal_inv
+          obtain ⟨v848, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a857.cons_inv
+          obtain ⟨l864, rfl, rfl⟩ := d862.var_inv
+          simp at l864
+          subst l864
+          obtain ⟨v849, vs865, m866, c867, c868, rfl, d869, a870, rfl⟩ := a863.cons_inv
+          obtain ⟨l871, rfl, rfl⟩ := d869.var_inv
+          simp at l871
+          subst l871
+          obtain ⟨v850, vs872, m873, c874, c875, rfl, d876, a877, rfl⟩ := a870.cons_inv
+          obtain ⟨l878, rfl, rfl⟩ := d876.var_inv
+          simp at l878
+          subst l878
+          obtain ⟨v851, vs879, m880, c881, c882, rfl, d883, a884, rfl⟩ := a877.cons_inv
+          obtain ⟨l885, rfl, rfl⟩ := d883.var_inv
+          simp at l885
+          subst l885
+          obtain ⟨rfl, rfl, rfl⟩ := a884.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := a839.nil_inv
+          try simp only [Value.type, List.map_cons, List.map_nil] at hv686 ld717 hm787 hm825 hm843 ⊢
+          exact «RBTreeMap::rbtree_map_balance_fix».Path.bind_Node_1 _ _ _ _ _ _ _ _ _ _ _ hv686 ld717 rfl hm787 hm825 hm843 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · clear nm674
+          rcases selectArm_cons_inv sel675 with ⟨mt888, rfl⟩ | ⟨nm889, sel890⟩
+          · obtain rfl := matchPattern_wildcard_inv mt888
+            obtain ⟨vs891, a892, hres893⟩ := d9.construct_inv
+            rw [instanceName_some_one, subst_param_singleton] at hres893
+            subst hres893
+            obtain ⟨v894, vs900, m901, c902, c903, rfl, d904, a905, rfl⟩ := a892.cons_inv
+            obtain ⟨rfl, rfl, rfl⟩ := d904.literal_inv
+            obtain ⟨v895, vs906, m907, c908, c909, rfl, d910, a911, rfl⟩ := a905.cons_inv
+            obtain ⟨l912, rfl, rfl⟩ := d910.var_inv
+            simp at l912
+            subst l912
+            obtain ⟨v896, vs913, m914, c915, c916, rfl, d917, a918, rfl⟩ := a911.cons_inv
+            obtain ⟨l919, rfl, rfl⟩ := d917.var_inv
+            simp at l919
+            subst l919
+            obtain ⟨v897, vs920, m921, c922, c923, rfl, d924, a925, rfl⟩ := a918.cons_inv
+            obtain ⟨v926, m927, d928, rfl, hm929⟩ := d924.store_inv
+            obtain ⟨l930, rfl, rfl⟩ := d928.var_inv
+            simp at l930
+            subst l930
+            obtain ⟨v898, vs931, m932, c933, c934, rfl, d935, a936, rfl⟩ := a925.cons_inv
+            obtain ⟨v937, m938, d939, rfl, hm940⟩ := d935.store_inv
+            obtain ⟨l941, rfl, rfl⟩ := d939.var_inv
+            simp at l941
+            subst l941
+            obtain ⟨rfl, rfl, rfl⟩ := a936.nil_inv
+            try simp only [Value.type, List.map_cons, List.map_nil] at hm929 hm940 ⊢
+            exact «RBTreeMap::rbtree_map_balance_fix».Path.other _ _ rfl hm929 hm940 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · exact (matchPattern_wildcard_none nm889).elim
+
+/-- The program resolves `RBTreeMap::rbtree_map_ins` at each instance to its closure. -/
+theorem «RBTreeMap::rbtree_map_ins».lookup (t_V : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol =
+      some { types := [("V", t_V)],
+             params := IxVM.RBTreeMap.rbtree_map_ins.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
+             body := IxVM.RBTreeMap.rbtree_map_ins.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_ins) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 95) (by decide +kernel)) rfl t_V
+
+/-- The evaluation paths of `RBTreeMap::rbtree_map_ins`: one constructor per combination of selected arms. -/
+inductive «RBTreeMap::rbtree_map_ins».Path (t_V : Generic.Ty) (x_key x_value x_tree : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (m47 : Heap F) (m60 : Heap F)
+      (hv15 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" []))
+      (he25 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 0), x_key, x_value, (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (h).length), (.ptr (.enum (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol) (m47).length)]))
+      (hm55 : m47 = (h ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" [])]))
+      (hm68 : m60 = (m47 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" [])]))
+      (he72 : h' = m60)
+      (hc73 : calls = [])
+  | Node_n1
+      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w81 : SourceValue F) (w82 : SourceValue F) (y103 : SourceValue F) (y111 : SourceValue F) (m115 : Heap F) (cs125 : List (Call F)) (v128 : SourceValue F) (m130 : Heap F) (cs138 : List (Call F)) (cs174 : List (Call F)) (v180 : SourceValue F) (m204 : Heap F) (cs212 : List (Call F))
+      (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv79 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, w81, w82]))
+      (ld104 : loadValue h w81 = .ok y103)
+      (ld112 : loadValue h w82 = .ok y111)
+      (ev140 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v128 m130 cs138)
+      (ev127 : ObsFn W "Fields::is_zero" [v128] m130 (.field 1) m115 cs125)
+      (ev214 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, y103] m115 v180 m204 cs212)
+      (ev176 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_k, x_v, v180, y111] m204 r h' cs174)
+      (hc246 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs138 ++ ((⟨"Fields::is_zero", [v128], m130⟩ : Call F) :: (cs125 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, y103], m115⟩ : Call F) :: (cs212 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol, [x_color, x_k, x_v, v180, y111], m204⟩ : Call F) :: cs174))))))))
+  | Node_other_n0
+      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w81 : SourceValue F) (w82 : SourceValue F) (y103 : SourceValue F) (y111 : SourceValue F) (v114 : SourceValue F) (m115 : Heap F) (cs125 : List (Call F)) (v128 : SourceValue F) (m130 : Heap F) (cs138 : List (Call F)) (x259 : SourceValue F) (m261 : Heap F) (cs270 : List (Call F)) (m334 : Heap F) (m345 : Heap F)
+      (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv79 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, w81, w82]))
+      (ld104 : loadValue h w81 = .ok y103)
+      (ld112 : loadValue h w82 = .ok y111)
+      (ev140 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v128 m130 cs138)
+      (ev127 : ObsFn W "Fields::is_zero" [v128] m130 v114 m115 cs125)
+      (hne247 : (v114 : SourceValue F) ≠ (.field 1))
+      (ev272 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m115 x259 m261 cs270)
+      (op266 : evalBinOp .sub x259 (.field 1) = .ok (.field 0))
+      (he311 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_key, x_value, (.ptr (Value.type (y103 : SourceValue F)) (m261).length), (.ptr (Value.type (y111 : SourceValue F)) (m334).length)]))
+      (hm342 : m334 = (m261 ++ [y103]))
+      (hm353 : m345 = (m334 ++ [y111]))
+      (he355 : h' = m345)
+      (hc356 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs138 ++ ((⟨"Fields::is_zero", [v128], m130⟩ : Call F) :: (cs125 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m115⟩ : Call F) :: cs270))))))
+  | Node_other_other
+      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w81 : SourceValue F) (w82 : SourceValue F) (y103 : SourceValue F) (y111 : SourceValue F) (v114 : SourceValue F) (m115 : Heap F) (cs125 : List (Call F)) (v128 : SourceValue F) (m130 : Heap F) (cs138 : List (Call F)) (v251 : SourceValue F) (x259 : SourceValue F) (m261 : Heap F) (cs270 : List (Call F)) (cs364 : List (Call F)) (v371 : SourceValue F) (m401 : Heap F) (cs409 : List (Call F))
+      (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv79 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, w81, w82]))
+      (ld104 : loadValue h w81 = .ok y103)
+      (ld112 : loadValue h w82 = .ok y111)
+      (ev140 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v128 m130 cs138)
+      (ev127 : ObsFn W "Fields::is_zero" [v128] m130 v114 m115 cs125)
+      (hne247 : (v114 : SourceValue F) ≠ (.field 1))
+      (ev272 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m115 x259 m261 cs270)
+      (op266 : evalBinOp .sub x259 (.field 1) = .ok v251)
+      (hne357 : (v251 : SourceValue F) ≠ (.field 0))
+      (ev411 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, y111] m261 v371 m401 cs409)
+      (ev366 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_k, x_v, y103, v371] m401 r h' cs364)
+      (hc436 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs138 ++ ((⟨"Fields::is_zero", [v128], m130⟩ : Call F) :: (cs125 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m115⟩ : Call F) :: (cs270 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, y111], m261⟩ : Call F) :: (cs409 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol, [x_color, x_k, x_v, y103, v371], m401⟩ : Call F) :: cs364))))))))))
+
+/-- **Every observed derivation of `RBTreeMap::rbtree_map_ins` takes one of its paths.** -/
+theorem «RBTreeMap::rbtree_map_ins».obs {t_V : Generic.Ty} {x_key x_value x_tree : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, x_tree] h r h' calls) :
+    «RBTreeMap::rbtree_map_ins».Path t_V x_key x_value x_tree h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («RBTreeMap::rbtree_map_ins».lookup t_V)
+    (by simp [IxVM.RBTreeMap.rbtree_map_ins, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.rbtree_map_ins] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨vs14, hv15, -, ml16⟩ := matchPattern_construct_inv mt11
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv15
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml16
+    obtain ⟨vs17, a18, hres19⟩ := d9.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres19
+    subst hres19
+    obtain ⟨v20, vs26, m27, c28, c29, rfl, d30, a31, rfl⟩ := a18.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d30.literal_inv
+    obtain ⟨v21, vs32, m33, c34, c35, rfl, d36, a37, rfl⟩ := a31.cons_inv
+    obtain ⟨l38, rfl, rfl⟩ := d36.var_inv
+    simp at l38
+    subst l38
+    obtain ⟨v22, vs39, m40, c41, c42, rfl, d43, a44, rfl⟩ := a37.cons_inv
+    obtain ⟨l45, rfl, rfl⟩ := d43.var_inv
+    simp at l45
+    subst l45
+    obtain ⟨v23, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a44.cons_inv
+    obtain ⟨v52, m53, d54, rfl, hm55⟩ := d50.store_inv
+    obtain ⟨vs56, a57, hres58⟩ := d54.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres58
+    subst hres58
+    obtain ⟨rfl, rfl, rfl⟩ := a57.nil_inv
+    obtain ⟨v24, vs59, m60, c61, c62, rfl, d63, a64, rfl⟩ := a51.cons_inv
+    obtain ⟨v65, m66, d67, rfl, hm68⟩ := d63.store_inv
+    obtain ⟨vs69, a70, hres71⟩ := d67.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres71
+    subst hres71
+    obtain ⟨rfl, rfl, rfl⟩ := a70.nil_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a64.nil_inv
+    try simp only [Value.type, List.map_cons, List.map_nil] at hv15 hm55 hm68 ⊢
+    exact «RBTreeMap::rbtree_map_ins».Path.Nil _ _ hv15 rfl hm55 hm68 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne74 := matchPattern_construct_none (by trivial) nm12
+    simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne74
+    rcases selectArm_cons_inv sel13 with ⟨mt75, rfl⟩ | ⟨nm76, sel77⟩
+    · obtain ⟨vs78, hv79, -, ml80⟩ := matchPattern_construct_inv mt75
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv79
+      obtain ⟨x_color, vs83, b84, b85, rfl, mt86, ml87, rfl⟩ := matchListWith_cons_inv ml80
+      obtain rfl := matchPattern_bind_inv mt86
+      obtain ⟨x_k, vs88, b89, b90, rfl, mt91, ml92, rfl⟩ := matchListWith_cons_inv ml87
+      obtain rfl := matchPattern_bind_inv mt91
+      obtain ⟨x_v, vs93, b94, b95, rfl, mt96, ml97, rfl⟩ := matchListWith_cons_inv ml92
+      obtain rfl := matchPattern_bind_inv mt96
+      obtain ⟨w81, vs98, b99, b100, rfl, mt101, ml102, rfl⟩ := matchListWith_cons_inv ml97
+      obtain ⟨y103, ld104, mt105⟩ := matchPattern_load_inv mt101
+      obtain rfl := matchPattern_bind_inv mt105
+      obtain ⟨w82, vs106, b107, b108, rfl, mt109, ml110, rfl⟩ := matchListWith_cons_inv ml102
+      obtain ⟨y111, ld112, mt113⟩ := matchPattern_load_inv mt109
+      obtain rfl := matchPattern_bind_inv mt113
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml110
+      obtain ⟨v114, m115, bs116, c117, c118, d119, mt120, d121, rfl⟩ := d9.letValue_inv
+      obtain ⟨vs122, m123, c124, cs125, a126, ev127, rfl⟩ := d119.call_inv
+      rw [instanceName_plain_some] at ev127
+      obtain ⟨v128, vs129, m130, c131, c132, rfl, d133, a134, rfl⟩ := a126.cons_inv
+      obtain ⟨vs135, m136, c137, cs138, a139, ev140, rfl⟩ := d133.call_inv
+      rw [instanceName_plain_some] at ev140
+      obtain ⟨v141, vs143, m144, c145, c146, rfl, d147, a148, rfl⟩ := a139.cons_inv
+      obtain ⟨l149, rfl, rfl⟩ := d147.var_inv
+      simp at l149
+      subst l149
+      obtain ⟨v142, vs150, m151, c152, c153, rfl, d154, a155, rfl⟩ := a148.cons_inv
+      obtain ⟨l156, rfl, rfl⟩ := d154.var_inv
+      simp at l156
+      subst l156
+      obtain ⟨rfl, rfl, rfl⟩ := a155.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a134.nil_inv
+      obtain rfl := matchPattern_bind_inv mt120
+      obtain ⟨v157, m158, bs159, body160, c161, c162, d163, sel164, d165, rfl⟩ := d121.matchValue_inv
+      obtain ⟨l166, rfl, rfl⟩ := d163.var_inv
+      simp at l166
+      subst l166
+      rcases selectArm_cons_inv sel164 with ⟨mt167, rfl⟩ | ⟨nm168, sel169⟩
+      · obtain ⟨hv170, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt167
+        subst hv170
+        obtain ⟨vs171, m172, c173, cs174, a175, ev176, rfl⟩ := d165.call_inv
+        rw [instanceName_some_one, subst_param_singleton] at ev176
+        obtain ⟨v177, vs182, m183, c184, c185, rfl, d186, a187, rfl⟩ := a175.cons_inv
+        obtain ⟨l188, rfl, rfl⟩ := d186.var_inv
+        simp at l188
+        subst l188
+        obtain ⟨v178, vs189, m190, c191, c192, rfl, d193, a194, rfl⟩ := a187.cons_inv
+        obtain ⟨l195, rfl, rfl⟩ := d193.var_inv
+        simp at l195
+        subst l195
+        obtain ⟨v179, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a194.cons_inv
+        obtain ⟨l202, rfl, rfl⟩ := d200.var_inv
+        simp at l202
+        subst l202
+        obtain ⟨v180, vs203, m204, c205, c206, rfl, d207, a208, rfl⟩ := a201.cons_inv
+        obtain ⟨vs209, m210, c211, cs212, a213, ev214, rfl⟩ := d207.call_inv
+        rw [instanceName_some_one, subst_param_singleton] at ev214
+        obtain ⟨v215, vs218, m219, c220, c221, rfl, d222, a223, rfl⟩ := a213.cons_inv
+        obtain ⟨l224, rfl, rfl⟩ := d222.var_inv
+        simp at l224
+        subst l224
+        obtain ⟨v216, vs225, m226, c227, c228, rfl, d229, a230, rfl⟩ := a223.cons_inv
+        obtain ⟨l231, rfl, rfl⟩ := d229.var_inv
+        simp at l231
+        subst l231
+        obtain ⟨v217, vs232, m233, c234, c235, rfl, d236, a237, rfl⟩ := a230.cons_inv
+        obtain ⟨l238, rfl, rfl⟩ := d236.var_inv
+        simp at l238
+        subst l238
+        obtain ⟨rfl, rfl, rfl⟩ := a237.nil_inv
+        obtain ⟨v181, vs239, m240, c241, c242, rfl, d243, a244, rfl⟩ := a208.cons_inv
+        obtain ⟨l245, rfl, rfl⟩ := d243.var_inv
+        simp at l245
+        subst l245
+        obtain ⟨rfl, rfl, rfl⟩ := a244.nil_inv
+        exact «RBTreeMap::rbtree_map_ins».Path.Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv79 ld104 ld112 ev140 ev127 ev214 ev176 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+      · have hne247 := MatchesConst.none_inv (MatchesConst.literal 1) nm168
+        rcases selectArm_cons_inv sel169 with ⟨mt248, rfl⟩ | ⟨nm249, sel250⟩
+        · obtain rfl := matchPattern_wildcard_inv mt248
+          obtain ⟨v251, m252, bs253, c254, c255, d256, mt257, d258, rfl⟩ := d165.letValue_inv
+          obtain ⟨x259, y260, m261, c262, c263, d264, d265, op266, rfl⟩ := d256.binary_inv
+          obtain ⟨vs267, m268, c269, cs270, a271, ev272, rfl⟩ := d264.call_inv
+          rw [instanceName_plain_some] at ev272
+          obtain ⟨v273, vs275, m276, c277, c278, rfl, d279, a280, rfl⟩ := a271.cons_inv
+          obtain ⟨l281, rfl, rfl⟩ := d279.var_inv
+          simp at l281
+          subst l281
+          obtain ⟨v274, vs282, m283, c284, c285, rfl, d286, a287, rfl⟩ := a280.cons_inv
+          obtain ⟨l288, rfl, rfl⟩ := d286.var_inv
+          simp at l288
+          subst l288
+          obtain ⟨rfl, rfl, rfl⟩ := a287.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d265.literal_inv
+          obtain rfl := matchPattern_bind_inv mt257
+          obtain ⟨v289, m290, bs291, body292, c293, c294, d295, sel296, d297, rfl⟩ := d258.matchValue_inv
+          obtain ⟨l298, rfl, rfl⟩ := d295.var_inv
+          simp at l298
+          subst l298
+          rcases selectArm_cons_inv sel296 with ⟨mt299, rfl⟩ | ⟨nm300, sel301⟩
+          · obtain ⟨hv302, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt299
+            subst hv302
+            obtain ⟨vs303, a304, hres305⟩ := d297.construct_inv
+            rw [instanceName_some_one, subst_param_singleton] at hres305
+            subst hres305
+            obtain ⟨v306, vs312, m313, c314, c315, rfl, d316, a317, rfl⟩ := a304.cons_inv
+            obtain ⟨l318, rfl, rfl⟩ := d316.var_inv
+            simp at l318
+            subst l318
+            obtain ⟨v307, vs319, m320, c321, c322, rfl, d323, a324, rfl⟩ := a317.cons_inv
+            obtain ⟨l325, rfl, rfl⟩ := d323.var_inv
+            simp at l325
+            subst l325
+            obtain ⟨v308, vs326, m327, c328, c329, rfl, d330, a331, rfl⟩ := a324.cons_inv
+            obtain ⟨l332, rfl, rfl⟩ := d330.var_inv
+            simp at l332
+            subst l332
+            obtain ⟨v309, vs333, m334, c335, c336, rfl, d337, a338, rfl⟩ := a331.cons_inv
+            obtain ⟨v339, m340, d341, rfl, hm342⟩ := d337.store_inv
+            obtain ⟨l343, rfl, rfl⟩ := d341.var_inv
+            simp at l343
+            subst l343
+            obtain ⟨v310, vs344, m345, c346, c347, rfl, d348, a349, rfl⟩ := a338.cons_inv
+            obtain ⟨v350, m351, d352, rfl, hm353⟩ := d348.store_inv
+            obtain ⟨l354, rfl, rfl⟩ := d352.var_inv
+            simp at l354
+            subst l354
+            obtain ⟨rfl, rfl, rfl⟩ := a349.nil_inv
+            try simp only [Value.type, List.map_cons, List.map_nil] at hne74 hv79 ld104 ld112 ev140 ev127 hne247 ev272 op266 hm342 hm353 ⊢
+            exact «RBTreeMap::rbtree_map_ins».Path.Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv79 ld104 ld112 ev140 ev127 hne247 ev272 op266 rfl hm342 hm353 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne357 := MatchesConst.none_inv (MatchesConst.literal 0) nm300
+            rcases selectArm_cons_inv sel301 with ⟨mt358, rfl⟩ | ⟨nm359, sel360⟩
+            · obtain rfl := matchPattern_wildcard_inv mt358
+              obtain ⟨vs361, m362, c363, cs364, a365, ev366, rfl⟩ := d297.call_inv
+              rw [instanceName_some_one, subst_param_singleton] at ev366
+              obtain ⟨v367, vs372, m373, c374, c375, rfl, d376, a377, rfl⟩ := a365.cons_inv
+              obtain ⟨l378, rfl, rfl⟩ := d376.var_inv
+              simp at l378
+              subst l378
+              obtain ⟨v368, vs379, m380, c381, c382, rfl, d383, a384, rfl⟩ := a377.cons_inv
+              obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
+              simp at l385
+              subst l385
+              obtain ⟨v369, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a384.cons_inv
+              obtain ⟨l392, rfl, rfl⟩ := d390.var_inv
+              simp at l392
+              subst l392
+              obtain ⟨v370, vs393, m394, c395, c396, rfl, d397, a398, rfl⟩ := a391.cons_inv
+              obtain ⟨l399, rfl, rfl⟩ := d397.var_inv
+              simp at l399
+              subst l399
+              obtain ⟨v371, vs400, m401, c402, c403, rfl, d404, a405, rfl⟩ := a398.cons_inv
+              obtain ⟨vs406, m407, c408, cs409, a410, ev411, rfl⟩ := d404.call_inv
+              rw [instanceName_some_one, subst_param_singleton] at ev411
+              obtain ⟨v412, vs415, m416, c417, c418, rfl, d419, a420, rfl⟩ := a410.cons_inv
+              obtain ⟨l421, rfl, rfl⟩ := d419.var_inv
+              simp at l421
+              subst l421
+              obtain ⟨v413, vs422, m423, c424, c425, rfl, d426, a427, rfl⟩ := a420.cons_inv
+              obtain ⟨l428, rfl, rfl⟩ := d426.var_inv
+              simp at l428
+              subst l428
+              obtain ⟨v414, vs429, m430, c431, c432, rfl, d433, a434, rfl⟩ := a427.cons_inv
+              obtain ⟨l435, rfl, rfl⟩ := d433.var_inv
+              simp at l435
+              subst l435
+              obtain ⟨rfl, rfl, rfl⟩ := a434.nil_inv
+              obtain ⟨rfl, rfl, rfl⟩ := a405.nil_inv
+              exact «RBTreeMap::rbtree_map_ins».Path.Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv79 ld104 ld112 ev140 ev127 hne247 ev272 op266 hne357 ev411 ev366 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+            · exact (matchPattern_wildcard_none nm359).elim
+        · exact (matchPattern_wildcard_none nm249).elim
+    · clear nm76
+      exact (selectArm_nil_inv sel77).elim
+
+/-- The program resolves `RBTreeMap::rbtree_map_insert` at each instance to its closure. -/
+theorem «RBTreeMap::rbtree_map_insert».lookup (t_V : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "RBTreeMap::rbtree_map_insert" [t_V]).symbol =
+      some { types := [("V", t_V)],
+             params := IxVM.RBTreeMap.rbtree_map_insert.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
+             body := IxVM.RBTreeMap.rbtree_map_insert.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_insert) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 96) (by decide +kernel)) rfl t_V
+
+/-- The evaluation paths of `RBTreeMap::rbtree_map_insert`: one constructor per combination of selected arms. -/
+inductive «RBTreeMap::rbtree_map_insert».Path (t_V : Generic.Ty) (x_key x_value x_tree : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | run
+      (m2 : Heap F) (cs12 : List (Call F)) (w55 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left : SourceValue F) (x_right : SourceValue F)
+      (ev14 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, x_tree] h (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w55, x_k, x_v, x_left, x_right]) m2 cs12)
+      (he89 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [(.field 1), x_k, x_v, x_left, x_right]))
+      (he124 : h' = m2)
+      (hc125 : calls = ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, x_tree], h⟩ : Call F) :: cs12))
+
+/-- **Every observed derivation of `RBTreeMap::rbtree_map_insert` takes one of its paths.** -/
+theorem «RBTreeMap::rbtree_map_insert».obs {t_V : Generic.Ty} {x_key x_value x_tree : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_insert" [t_V]).symbol [x_key, x_value, x_tree] h r h' calls) :
+    «RBTreeMap::rbtree_map_insert».Path t_V x_key x_value x_tree h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («RBTreeMap::rbtree_map_insert».lookup t_V)
+    (by simp [IxVM.RBTreeMap.rbtree_map_insert, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.rbtree_map_insert] at d0
+  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
+  rw [instanceName_some_one, subst_param_singleton] at ev14
+  obtain ⟨v15, vs18, m19, c20, c21, rfl, d22, a23, rfl⟩ := a13.cons_inv
+  obtain ⟨l24, rfl, rfl⟩ := d22.var_inv
+  simp at l24
+  subst l24
+  obtain ⟨v16, vs25, m26, c27, c28, rfl, d29, a30, rfl⟩ := a23.cons_inv
+  obtain ⟨l31, rfl, rfl⟩ := d29.var_inv
+  simp at l31
+  subst l31
+  obtain ⟨v17, vs32, m33, c34, c35, rfl, d36, a37, rfl⟩ := a30.cons_inv
+  obtain ⟨l38, rfl, rfl⟩ := d36.var_inv
+  simp at l38
+  subst l38
+  obtain ⟨rfl, rfl, rfl⟩ := a37.nil_inv
+  obtain rfl := matchPattern_bind_inv mt7
+  obtain ⟨v39, m40, bs41, body42, c43, c44, d45, sel46, d47, rfl⟩ := d8.matchValue_inv
+  obtain ⟨l48, rfl, rfl⟩ := d45.var_inv
+  simp at l48
+  subst l48
+  rcases selectArm_cons_inv sel46 with ⟨mt49, rfl⟩ | ⟨nm50, sel51⟩
+  · obtain ⟨vs52, hv53, -, ml54⟩ := matchPattern_construct_inv mt49
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv53
+    subst hv53
+    obtain ⟨w55, vs56, b57, b58, rfl, mt59, ml60, rfl⟩ := matchListWith_cons_inv ml54
+    obtain rfl := matchPattern_wildcard_inv mt59
+    obtain ⟨x_k, vs61, b62, b63, rfl, mt64, ml65, rfl⟩ := matchListWith_cons_inv ml60
+    obtain rfl := matchPattern_bind_inv mt64
+    obtain ⟨x_v, vs66, b67, b68, rfl, mt69, ml70, rfl⟩ := matchListWith_cons_inv ml65
+    obtain rfl := matchPattern_bind_inv mt69
+    obtain ⟨x_left, vs71, b72, b73, rfl, mt74, ml75, rfl⟩ := matchListWith_cons_inv ml70
+    obtain rfl := matchPattern_bind_inv mt74
+    obtain ⟨x_right, vs76, b77, b78, rfl, mt79, ml80, rfl⟩ := matchListWith_cons_inv ml75
+    obtain rfl := matchPattern_bind_inv mt79
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml80
+    obtain ⟨vs81, a82, hres83⟩ := d47.construct_inv
+    rw [instanceName_some_one, subst_param_singleton] at hres83
+    subst hres83
+    obtain ⟨v84, vs90, m91, c92, c93, rfl, d94, a95, rfl⟩ := a82.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d94.literal_inv
+    obtain ⟨v85, vs96, m97, c98, c99, rfl, d100, a101, rfl⟩ := a95.cons_inv
+    obtain ⟨l102, rfl, rfl⟩ := d100.var_inv
+    simp at l102
+    subst l102
+    obtain ⟨v86, vs103, m104, c105, c106, rfl, d107, a108, rfl⟩ := a101.cons_inv
+    obtain ⟨l109, rfl, rfl⟩ := d107.var_inv
+    simp at l109
+    subst l109
+    obtain ⟨v87, vs110, m111, c112, c113, rfl, d114, a115, rfl⟩ := a108.cons_inv
+    obtain ⟨l116, rfl, rfl⟩ := d114.var_inv
+    simp at l116
+    subst l116
+    obtain ⟨v88, vs117, m118, c119, c120, rfl, d121, a122, rfl⟩ := a115.cons_inv
+    obtain ⟨l123, rfl, rfl⟩ := d121.var_inv
+    simp at l123
+    subst l123
+    obtain ⟨rfl, rfl, rfl⟩ := a122.nil_inv
+    exact «RBTreeMap::rbtree_map_insert».Path.run _ _ _ _ _ _ _ ev14 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+  · have hne126 := matchPattern_construct_none (by trivial) nm50
+    simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne126
+    exact (selectArm_nil_inv sel51).elim
+
+/-- The program resolves `RBTreeMap::rbtree_map_lookup_or_default` at each instance to its closure. -/
+theorem «RBTreeMap::rbtree_map_lookup_or_default».lookup (t_V : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol =
+      some { types := [("V", t_V)],
+             params := IxVM.RBTreeMap.rbtree_map_lookup_or_default.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
+             body := IxVM.RBTreeMap.rbtree_map_lookup_or_default.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_lookup_or_default) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 97) (by decide +kernel)) rfl t_V
+
+/-- The evaluation paths of `RBTreeMap::rbtree_map_lookup_or_default`: one constructor per combination of selected arms. -/
+inductive «RBTreeMap::rbtree_map_lookup_or_default».Path (t_V : Generic.Ty) (x_key x_tree x_default : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (hv15 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" []))
+      (he18 : r = x_default)
+      (he19 : h' = h)
+      (hc20 : calls = [])
+  | Node_n1
+      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w29 : SourceValue F) (w30 : SourceValue F) (y51 : SourceValue F) (y59 : SourceValue F) (m63 : Heap F) (cs73 : List (Call F)) (v76 : SourceValue F) (m78 : Heap F) (cs86 : List (Call F)) (cs122 : List (Call F))
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv26 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w28, x_k, x_v, w29, w30]))
+      (ld52 : loadValue h w29 = .ok y51)
+      (ld60 : loadValue h w30 = .ok y59)
+      (ev88 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v76 m78 cs86)
+      (ev75 : ObsFn W "Fields::is_zero" [v76] m78 (.field 1) m63 cs73)
+      (ev124 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, y51, x_default] m63 r h' cs122)
+      (hc149 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs86 ++ ((⟨"Fields::is_zero", [v76], m78⟩ : Call F) :: (cs73 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol, [x_key, y51, x_default], m63⟩ : Call F) :: cs122))))))
+  | Node_other_n0
+      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w29 : SourceValue F) (w30 : SourceValue F) (y51 : SourceValue F) (y59 : SourceValue F) (v62 : SourceValue F) (m63 : Heap F) (cs73 : List (Call F)) (v76 : SourceValue F) (m78 : Heap F) (cs86 : List (Call F)) (x162 : SourceValue F) (m164 : Heap F) (cs173 : List (Call F))
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv26 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w28, x_k, x_v, w29, w30]))
+      (ld52 : loadValue h w29 = .ok y51)
+      (ld60 : loadValue h w30 = .ok y59)
+      (ev88 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v76 m78 cs86)
+      (ev75 : ObsFn W "Fields::is_zero" [v76] m78 v62 m63 cs73)
+      (hne150 : (v62 : SourceValue F) ≠ (.field 1))
+      (ev175 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m63 x162 m164 cs173)
+      (op169 : evalBinOp .sub x162 (.field 1) = .ok (.field 0))
+      (he207 : r = x_v)
+      (he208 : h' = m164)
+      (hc209 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs86 ++ ((⟨"Fields::is_zero", [v76], m78⟩ : Call F) :: (cs73 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m63⟩ : Call F) :: cs173))))))
+  | Node_other_other
+      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w29 : SourceValue F) (w30 : SourceValue F) (y51 : SourceValue F) (y59 : SourceValue F) (v62 : SourceValue F) (m63 : Heap F) (cs73 : List (Call F)) (v76 : SourceValue F) (m78 : Heap F) (cs86 : List (Call F)) (v154 : SourceValue F) (x162 : SourceValue F) (m164 : Heap F) (cs173 : List (Call F)) (cs217 : List (Call F))
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv26 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w28, x_k, x_v, w29, w30]))
+      (ld52 : loadValue h w29 = .ok y51)
+      (ld60 : loadValue h w30 = .ok y59)
+      (ev88 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v76 m78 cs86)
+      (ev75 : ObsFn W "Fields::is_zero" [v76] m78 v62 m63 cs73)
+      (hne150 : (v62 : SourceValue F) ≠ (.field 1))
+      (ev175 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m63 x162 m164 cs173)
+      (op169 : evalBinOp .sub x162 (.field 1) = .ok v154)
+      (hne210 : (v154 : SourceValue F) ≠ (.field 0))
+      (ev219 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, y59, x_default] m164 r h' cs217)
+      (hc244 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs86 ++ ((⟨"Fields::is_zero", [v76], m78⟩ : Call F) :: (cs73 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m63⟩ : Call F) :: (cs173 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol, [x_key, y59, x_default], m164⟩ : Call F) :: cs217))))))))
+
+/-- **Every observed derivation of `RBTreeMap::rbtree_map_lookup_or_default` takes one of its paths.** -/
+theorem «RBTreeMap::rbtree_map_lookup_or_default».obs {t_V : Generic.Ty} {x_key x_tree x_default : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, x_tree, x_default] h r h' calls) :
+    «RBTreeMap::rbtree_map_lookup_or_default».Path t_V x_key x_tree x_default h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («RBTreeMap::rbtree_map_lookup_or_default».lookup t_V)
+    (by simp [IxVM.RBTreeMap.rbtree_map_lookup_or_default, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.rbtree_map_lookup_or_default] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨vs14, hv15, -, ml16⟩ := matchPattern_construct_inv mt11
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv15
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml16
+    obtain ⟨l17, rfl, rfl⟩ := d9.var_inv
+    simp at l17
+    subst l17
+    exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Nil hv15 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne21 := matchPattern_construct_none (by trivial) nm12
+    simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne21
+    rcases selectArm_cons_inv sel13 with ⟨mt22, rfl⟩ | ⟨nm23, sel24⟩
+    · obtain ⟨vs25, hv26, -, ml27⟩ := matchPattern_construct_inv mt22
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv26
+      obtain ⟨w28, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml27
+      obtain rfl := matchPattern_wildcard_inv mt34
+      obtain ⟨x_k, vs36, b37, b38, rfl, mt39, ml40, rfl⟩ := matchListWith_cons_inv ml35
+      obtain rfl := matchPattern_bind_inv mt39
+      obtain ⟨x_v, vs41, b42, b43, rfl, mt44, ml45, rfl⟩ := matchListWith_cons_inv ml40
+      obtain rfl := matchPattern_bind_inv mt44
+      obtain ⟨w29, vs46, b47, b48, rfl, mt49, ml50, rfl⟩ := matchListWith_cons_inv ml45
+      obtain ⟨y51, ld52, mt53⟩ := matchPattern_load_inv mt49
+      obtain rfl := matchPattern_bind_inv mt53
+      obtain ⟨w30, vs54, b55, b56, rfl, mt57, ml58, rfl⟩ := matchListWith_cons_inv ml50
+      obtain ⟨y59, ld60, mt61⟩ := matchPattern_load_inv mt57
+      obtain rfl := matchPattern_bind_inv mt61
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml58
+      obtain ⟨v62, m63, bs64, c65, c66, d67, mt68, d69, rfl⟩ := d9.letValue_inv
+      obtain ⟨vs70, m71, c72, cs73, a74, ev75, rfl⟩ := d67.call_inv
+      rw [instanceName_plain_some] at ev75
+      obtain ⟨v76, vs77, m78, c79, c80, rfl, d81, a82, rfl⟩ := a74.cons_inv
+      obtain ⟨vs83, m84, c85, cs86, a87, ev88, rfl⟩ := d81.call_inv
+      rw [instanceName_plain_some] at ev88
+      obtain ⟨v89, vs91, m92, c93, c94, rfl, d95, a96, rfl⟩ := a87.cons_inv
+      obtain ⟨l97, rfl, rfl⟩ := d95.var_inv
+      simp at l97
+      subst l97
+      obtain ⟨v90, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a96.cons_inv
+      obtain ⟨l104, rfl, rfl⟩ := d102.var_inv
+      simp at l104
+      subst l104
+      obtain ⟨rfl, rfl, rfl⟩ := a103.nil_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a82.nil_inv
+      obtain rfl := matchPattern_bind_inv mt68
+      obtain ⟨v105, m106, bs107, body108, c109, c110, d111, sel112, d113, rfl⟩ := d69.matchValue_inv
+      obtain ⟨l114, rfl, rfl⟩ := d111.var_inv
+      simp at l114
+      subst l114
+      rcases selectArm_cons_inv sel112 with ⟨mt115, rfl⟩ | ⟨nm116, sel117⟩
+      · obtain ⟨hv118, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt115
+        subst hv118
+        obtain ⟨vs119, m120, c121, cs122, a123, ev124, rfl⟩ := d113.call_inv
+        rw [instanceName_some_one, subst_param_singleton] at ev124
+        obtain ⟨v125, vs128, m129, c130, c131, rfl, d132, a133, rfl⟩ := a123.cons_inv
+        obtain ⟨l134, rfl, rfl⟩ := d132.var_inv
+        simp at l134
+        subst l134
+        obtain ⟨v126, vs135, m136, c137, c138, rfl, d139, a140, rfl⟩ := a133.cons_inv
+        obtain ⟨l141, rfl, rfl⟩ := d139.var_inv
+        simp at l141
+        subst l141
+        obtain ⟨v127, vs142, m143, c144, c145, rfl, d146, a147, rfl⟩ := a140.cons_inv
+        obtain ⟨l148, rfl, rfl⟩ := d146.var_inv
+        simp at l148
+        subst l148
+        obtain ⟨rfl, rfl, rfl⟩ := a147.nil_inv
+        exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 ld52 ld60 ev88 ev75 ev124 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+      · have hne150 := MatchesConst.none_inv (MatchesConst.literal 1) nm116
+        rcases selectArm_cons_inv sel117 with ⟨mt151, rfl⟩ | ⟨nm152, sel153⟩
+        · obtain rfl := matchPattern_wildcard_inv mt151
+          obtain ⟨v154, m155, bs156, c157, c158, d159, mt160, d161, rfl⟩ := d113.letValue_inv
+          obtain ⟨x162, y163, m164, c165, c166, d167, d168, op169, rfl⟩ := d159.binary_inv
+          obtain ⟨vs170, m171, c172, cs173, a174, ev175, rfl⟩ := d167.call_inv
+          rw [instanceName_plain_some] at ev175
+          obtain ⟨v176, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a174.cons_inv
+          obtain ⟨l184, rfl, rfl⟩ := d182.var_inv
+          simp at l184
+          subst l184
+          obtain ⟨v177, vs185, m186, c187, c188, rfl, d189, a190, rfl⟩ := a183.cons_inv
+          obtain ⟨l191, rfl, rfl⟩ := d189.var_inv
+          simp at l191
+          subst l191
+          obtain ⟨rfl, rfl, rfl⟩ := a190.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d168.literal_inv
+          obtain rfl := matchPattern_bind_inv mt160
+          obtain ⟨v192, m193, bs194, body195, c196, c197, d198, sel199, d200, rfl⟩ := d161.matchValue_inv
+          obtain ⟨l201, rfl, rfl⟩ := d198.var_inv
+          simp at l201
+          subst l201
+          rcases selectArm_cons_inv sel199 with ⟨mt202, rfl⟩ | ⟨nm203, sel204⟩
+          · obtain ⟨hv205, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt202
+            subst hv205
+            obtain ⟨l206, rfl, rfl⟩ := d200.var_inv
+            simp at l206
+            subst l206
+            exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 ld52 ld60 ev88 ev75 hne150 ev175 op169 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne210 := MatchesConst.none_inv (MatchesConst.literal 0) nm203
+            rcases selectArm_cons_inv sel204 with ⟨mt211, rfl⟩ | ⟨nm212, sel213⟩
+            · obtain rfl := matchPattern_wildcard_inv mt211
+              obtain ⟨vs214, m215, c216, cs217, a218, ev219, rfl⟩ := d200.call_inv
+              rw [instanceName_some_one, subst_param_singleton] at ev219
+              obtain ⟨v220, vs223, m224, c225, c226, rfl, d227, a228, rfl⟩ := a218.cons_inv
+              obtain ⟨l229, rfl, rfl⟩ := d227.var_inv
+              simp at l229
+              subst l229
+              obtain ⟨v221, vs230, m231, c232, c233, rfl, d234, a235, rfl⟩ := a228.cons_inv
+              obtain ⟨l236, rfl, rfl⟩ := d234.var_inv
+              simp at l236
+              subst l236
+              obtain ⟨v222, vs237, m238, c239, c240, rfl, d241, a242, rfl⟩ := a235.cons_inv
+              obtain ⟨l243, rfl, rfl⟩ := d241.var_inv
+              simp at l243
+              subst l243
+              obtain ⟨rfl, rfl, rfl⟩ := a242.nil_inv
+              exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 ld52 ld60 ev88 ev75 hne150 ev175 op169 hne210 ev219 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+            · exact (matchPattern_wildcard_none nm212).elim
+        · exact (matchPattern_wildcard_none nm152).elim
+    · clear nm23
+      exact (selectArm_nil_inv sel24).elim
+
 /-- The evaluation paths of `RBTreeMap::canon_ord_cmp_g`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::canon_ord_cmp_g».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
@@ -46,8 +1206,8 @@ inductive «RBTreeMap::canon_ord_cmp_g».Path (x_a x_b : SourceValue F) (h : Hea
 theorem «RBTreeMap::canon_ord_cmp_g».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "RBTreeMap::canon_ord_cmp_g" [x_a, x_b] h r h' calls) :
     «RBTreeMap::canon_ord_cmp_g».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.RBTreeMap.canon_ord_cmp_g.lookup
-    (by simp [IxVM.RBTreeMap.canon_ord_cmp_g, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.RBTreeMap.canon_ord_cmp_g.lookup
+    (by simp [IxVM.RBTreeMap.canon_ord_cmp_g, ControlLower.hasControl]) ev
   simp only [IxVM.RBTreeMap.canon_ord_cmp_g] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨x10, y11, m12, c13, c14, d15, d16, op17, rfl⟩ := d7.binary_inv
@@ -110,8 +1270,8 @@ inductive «RBTreeMap::canon_ord_then».Path (x_a x_b : SourceValue F) (h : Heap
 theorem «RBTreeMap::canon_ord_then».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "RBTreeMap::canon_ord_then" [x_a, x_b] h r h' calls) :
     «RBTreeMap::canon_ord_then».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.RBTreeMap.canon_ord_then.lookup
-    (by simp [IxVM.RBTreeMap.canon_ord_then, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.RBTreeMap.canon_ord_then.lookup
+    (by simp [IxVM.RBTreeMap.canon_ord_then, ControlLower.hasControl]) ev
   simp only [IxVM.RBTreeMap.canon_ord_then] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -288,8 +1448,8 @@ inductive «RBTreeMap::canon_addr_cmp».Path (x_x x_y : SourceValue F) (h : Heap
 theorem «RBTreeMap::canon_addr_cmp».obs {x_x x_y : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "RBTreeMap::canon_addr_cmp" [x_x, x_y] h r h' calls) :
     «RBTreeMap::canon_addr_cmp».Path x_x x_y h r h' calls := by
-  have d0 := ev.function_inv IxVM.RBTreeMap.canon_addr_cmp.lookup
-    (by simp [IxVM.RBTreeMap.canon_addr_cmp, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.RBTreeMap.canon_addr_cmp.lookup
+    (by simp [IxVM.RBTreeMap.canon_addr_cmp, ControlLower.hasControl]) ev
   simp only [IxVM.RBTreeMap.canon_addr_cmp] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -964,8 +2124,8 @@ inductive «RBTreeMap::canon_addr_chunk».Path (x_x0 x_x1 x_x2 x_x3 x_y0 x_y1 x_
 theorem «RBTreeMap::canon_addr_chunk».obs {x_x0 x_x1 x_x2 x_x3 x_y0 x_y1 x_y2 x_y3 : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "RBTreeMap::canon_addr_chunk" [x_x0, x_x1, x_x2, x_x3, x_y0, x_y1, x_y2, x_y3] h r h' calls) :
     «RBTreeMap::canon_addr_chunk».Path x_x0 x_x1 x_x2 x_x3 x_y0 x_y1 x_y2 x_y3 h r h' calls := by
-  have d0 := ev.function_inv IxVM.RBTreeMap.canon_addr_chunk.lookup
-    (by simp [IxVM.RBTreeMap.canon_addr_chunk, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.RBTreeMap.canon_addr_chunk.lookup
+    (by simp [IxVM.RBTreeMap.canon_addr_chunk, ControlLower.hasControl]) ev
   simp only [IxVM.RBTreeMap.canon_addr_chunk] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨x9, y10, m11, c12, c13, d14, d15, op16, rfl⟩ := d6.binary_inv

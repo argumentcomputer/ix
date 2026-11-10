@@ -157,8 +157,8 @@ inductive «KernelInfer::dec_result».Path (x_rc x_verdict x_prop x_call : Sourc
 theorem «KernelInfer::dec_result».obs {x_rc x_verdict x_prop x_call : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::dec_result" [x_rc, x_verdict, x_prop, x_call] h r h' calls) :
     «KernelInfer::dec_result».Path x_rc x_verdict x_prop x_call h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.dec_result.lookup
-    (by simp [IxVM.KernelInfer.dec_result, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.dec_result.lookup
+    (by simp [IxVM.KernelInfer.dec_result, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.dec_result] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv
@@ -818,8 +818,8 @@ inductive «KernelInfer::try_str_dec_eq».Path (x_rc x_head_addr x_spine x_types
 theorem «KernelInfer::try_str_dec_eq».obs {x_rc x_head_addr x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::try_str_dec_eq" [x_rc, x_head_addr, x_spine, x_types] h r h' calls) :
     «KernelInfer::try_str_dec_eq».Path x_rc x_head_addr x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.try_str_dec_eq.lookup
-    (by simp [IxVM.KernelInfer.try_str_dec_eq, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.try_str_dec_eq.lookup
+    (by simp [IxVM.KernelInfer.try_str_dec_eq, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.try_str_dec_eq] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv

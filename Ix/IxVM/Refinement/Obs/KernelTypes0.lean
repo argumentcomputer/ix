@@ -41,8 +41,8 @@ inductive «KernelTypes::collect_spine».Path (x_e : SourceValue F) (h : Heap F)
 theorem «KernelTypes::collect_spine».obs {x_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelTypes::collect_spine" [x_e] h r h' calls) :
     «KernelTypes::collect_spine».Path x_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelTypes.collect_spine.lookup
-    (by simp [IxVM.KernelTypes.collect_spine, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelTypes.collect_spine.lookup
+    (by simp [IxVM.KernelTypes.collect_spine, ControlLower.hasControl]) ev
   simp only [IxVM.KernelTypes.collect_spine] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv

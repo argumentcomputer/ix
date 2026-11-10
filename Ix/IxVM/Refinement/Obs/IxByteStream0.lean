@@ -28,7 +28,7 @@ inductive «IxByteStream::read_byte_stream».Path (x_channel x_idx x_len : Sourc
   | other
       (k37 : Constant F) (v58 : SourceValue F) (m59 : Heap F) (cs69 : List (Call F)) (v73 : SourceValue F) (v74 : SourceValue F) (v120 : SourceValue F) (m123 : Heap F) (cs131 : List (Call F))
       (hne24 : (x_len : SourceValue F) ≠ (.field 0))
-      (ty39 : W.typed (Generic.Ty.toCore (Generic.Ty.subst .field [])) k37 = true)
+      (ty39 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] .field)) k37 = true)
       (op95 : evalBinOp .add x_idx (.field 1) = .ok v73)
       (op110 : evalBinOp .sub x_len (.field 1) = .ok v74)
       (ev71 : ObsFn W "IxByteStream::read_byte_stream" [x_channel, v73, v74] h v58 m59 cs69)
@@ -41,8 +41,8 @@ inductive «IxByteStream::read_byte_stream».Path (x_channel x_idx x_len : Sourc
 theorem «IxByteStream::read_byte_stream».obs {x_channel x_idx x_len : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxByteStream::read_byte_stream" [x_channel, x_idx, x_len] h r h' calls) :
     «IxByteStream::read_byte_stream».Path x_channel x_idx x_len h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxByteStream.read_byte_stream.lookup
-    (by simp [IxVM.IxByteStream.read_byte_stream, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxByteStream.read_byte_stream.lookup
+    (by simp [IxVM.IxByteStream.read_byte_stream, ControlLower.hasControl]) ev
   simp only [IxVM.IxByteStream.read_byte_stream] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -130,8 +130,8 @@ inductive «IxByteStream::read_finite_byte_stream».Path (x_channel x_idx x_len 
 theorem «IxByteStream::read_finite_byte_stream».obs {x_channel x_idx x_len : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxByteStream::read_finite_byte_stream" [x_channel, x_idx, x_len] h r h' calls) :
     «IxByteStream::read_finite_byte_stream».Path x_channel x_idx x_len h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxByteStream.read_finite_byte_stream.lookup
-    (by simp [IxVM.IxByteStream.read_finite_byte_stream, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxByteStream.read_finite_byte_stream.lookup
+    (by simp [IxVM.IxByteStream.read_finite_byte_stream, ControlLower.hasControl]) ev
   simp only [IxVM.IxByteStream.read_finite_byte_stream] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv

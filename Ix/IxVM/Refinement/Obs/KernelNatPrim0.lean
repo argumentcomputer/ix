@@ -43,8 +43,8 @@ inductive «KernelNatPrim::mk_bool».Path (x_rc x_g : SourceValue F) (h : Heap F
 theorem «KernelNatPrim::mk_bool».obs {x_rc x_g : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::mk_bool" [x_rc, x_g] h r h' calls) :
     «KernelNatPrim::mk_bool».Path x_rc x_g h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.mk_bool.lookup
-    (by simp [IxVM.KernelNatPrim.mk_bool, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.mk_bool.lookup
+    (by simp [IxVM.KernelNatPrim.mk_bool, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.mk_bool] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -152,8 +152,8 @@ inductive «KernelNatPrim::bv_to_nat_via».Path (x_rc x_width_e x_val_e : Source
 theorem «KernelNatPrim::bv_to_nat_via».obs {x_rc x_width_e x_val_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::bv_to_nat_via" [x_rc, x_width_e, x_val_e] h r h' calls) :
     «KernelNatPrim::bv_to_nat_via».Path x_rc x_width_e x_val_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.bv_to_nat_via.lookup
-    (by simp [IxVM.KernelNatPrim.bv_to_nat_via, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.bv_to_nat_via.lookup
+    (by simp [IxVM.KernelNatPrim.bv_to_nat_via, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.bv_to_nat_via] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -296,21 +296,21 @@ theorem «KernelNatPrim::bv_to_nat_via».obs {x_rc x_width_e x_val_e : SourceVal
               obtain ⟨v309, vs311, m312, c313, c314, rfl, d315, a316, rfl⟩ := a307.cons_inv
               obtain ⟨vs317, a318, rfl⟩ := d315.array_inv
               obtain ⟨v319, vs327, m328, c329, c330, rfl, d331, a332, rfl⟩ := a318.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d331.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d331.global_literal_inv Names.c1350107512230497446
               obtain ⟨v320, vs333, m334, c335, c336, rfl, d337, a338, rfl⟩ := a332.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d337.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d337.global_literal_inv Names.c9173999864893739538
               obtain ⟨v321, vs339, m340, c341, c342, rfl, d343, a344, rfl⟩ := a338.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d343.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d343.global_literal_inv Names.c9173999864893739538
               obtain ⟨v322, vs345, m346, c347, c348, rfl, d349, a350, rfl⟩ := a344.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d349.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d349.global_literal_inv Names.c9173999864893739538
               obtain ⟨v323, vs351, m352, c353, c354, rfl, d355, a356, rfl⟩ := a350.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d355.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d355.global_literal_inv Names.c9173999864893739538
               obtain ⟨v324, vs357, m358, c359, c360, rfl, d361, a362, rfl⟩ := a356.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d361.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d361.global_literal_inv Names.c9173999864893739538
               obtain ⟨v325, vs363, m364, c365, c366, rfl, d367, a368, rfl⟩ := a362.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d367.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d367.global_literal_inv Names.c9173999864893739538
               obtain ⟨v326, vs369, m370, c371, c372, rfl, d373, a374, rfl⟩ := a368.cons_inv
-              obtain ⟨rfl, rfl, rfl⟩ := d373.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+              obtain ⟨rfl, rfl, rfl⟩ := d373.global_literal_inv Names.c9173999864893739538
               obtain ⟨rfl, rfl, rfl⟩ := a374.nil_inv
               obtain ⟨v310, vs375, m376, c377, c378, rfl, d379, a380, rfl⟩ := a316.cons_inv
               obtain ⟨v381, m382, d383, rfl, hm384⟩ := d379.store_inv
@@ -421,8 +421,8 @@ inductive «KernelNatPrim::try_reduce_bit_vec_ult».Path (x_rc x_spine : SourceV
 theorem «KernelNatPrim::try_reduce_bit_vec_ult».obs {x_rc x_spine : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_reduce_bit_vec_ult" [x_rc, x_spine] h r h' calls) :
     «KernelNatPrim::try_reduce_bit_vec_ult».Path x_rc x_spine h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_reduce_bit_vec_ult.lookup
-    (by simp [IxVM.KernelNatPrim.try_reduce_bit_vec_ult, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_reduce_bit_vec_ult.lookup
+    (by simp [IxVM.KernelNatPrim.try_reduce_bit_vec_ult, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_reduce_bit_vec_ult] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -684,8 +684,8 @@ inductive «KernelNatPrim::bitvec_of_nat_args_direct».Path (x_rc x_e : SourceVa
 theorem «KernelNatPrim::bitvec_of_nat_args_direct».obs {x_rc x_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::bitvec_of_nat_args_direct" [x_rc, x_e] h r h' calls) :
     «KernelNatPrim::bitvec_of_nat_args_direct».Path x_rc x_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.bitvec_of_nat_args_direct.lookup
-    (by simp [IxVM.KernelNatPrim.bitvec_of_nat_args_direct, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.bitvec_of_nat_args_direct.lookup
+    (by simp [IxVM.KernelNatPrim.bitvec_of_nat_args_direct, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.bitvec_of_nat_args_direct] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -916,8 +916,8 @@ inductive «KernelNatPrim::try_bitvec_dispatch».Path (x_rc x_op x_spine x_types
 theorem «KernelNatPrim::try_bitvec_dispatch».obs {x_rc x_op x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_bitvec_dispatch" [x_rc, x_op, x_spine, x_types] h r h' calls) :
     «KernelNatPrim::try_bitvec_dispatch».Path x_rc x_op x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_bitvec_dispatch.lookup
-    (by simp [IxVM.KernelNatPrim.try_bitvec_dispatch, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_bitvec_dispatch.lookup
+    (by simp [IxVM.KernelNatPrim.try_bitvec_dispatch, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_bitvec_dispatch] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1159,8 +1159,8 @@ inductive «KernelNatPrim::bitvec_prep_spine_ult».Path (x_rc x_spine x_types : 
 theorem «KernelNatPrim::bitvec_prep_spine_ult».obs {x_rc x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::bitvec_prep_spine_ult" [x_rc, x_spine, x_types] h r h' calls) :
     «KernelNatPrim::bitvec_prep_spine_ult».Path x_rc x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.bitvec_prep_spine_ult.lookup
-    (by simp [IxVM.KernelNatPrim.bitvec_prep_spine_ult, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.bitvec_prep_spine_ult.lookup
+    (by simp [IxVM.KernelNatPrim.bitvec_prep_spine_ult, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.bitvec_prep_spine_ult] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1347,8 +1347,8 @@ inductive «KernelNatPrim::np_whnf_inner_bv».Path (x_rc x_e x_types : SourceVal
 theorem «KernelNatPrim::np_whnf_inner_bv».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::np_whnf_inner_bv" [x_rc, x_e, x_types] h r h' calls) :
     «KernelNatPrim::np_whnf_inner_bv».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.np_whnf_inner_bv.lookup
-    (by simp [IxVM.KernelNatPrim.np_whnf_inner_bv, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.np_whnf_inner_bv.lookup
+    (by simp [IxVM.KernelNatPrim.np_whnf_inner_bv, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.np_whnf_inner_bv] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -1635,8 +1635,8 @@ inductive «KernelNatPrim::try_str_dispatch».Path (x_rc x_head_addr x_op x_spin
 theorem «KernelNatPrim::try_str_dispatch».obs {x_rc x_head_addr x_op x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_str_dispatch" [x_rc, x_head_addr, x_op, x_spine, x_types] h r h' calls) :
     «KernelNatPrim::try_str_dispatch».Path x_rc x_head_addr x_op x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_str_dispatch.lookup
-    (by simp [IxVM.KernelNatPrim.try_str_dispatch, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_str_dispatch.lookup
+    (by simp [IxVM.KernelNatPrim.try_str_dispatch, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_str_dispatch] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2238,8 +2238,8 @@ inductive «KernelNatPrim::try_str_back».Path (x_rc x_spine : SourceValue F) (h
 theorem «KernelNatPrim::try_str_back».obs {x_rc x_spine : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_str_back" [x_rc, x_spine] h r h' calls) :
     «KernelNatPrim::try_str_back».Path x_rc x_spine h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_str_back.lookup
-    (by simp [IxVM.KernelNatPrim.try_str_back, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_str_back.lookup
+    (by simp [IxVM.KernelNatPrim.try_str_back, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_str_back] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2491,8 +2491,8 @@ inductive «KernelNatPrim::try_str_to_byte_array».Path (x_rc x_spine : SourceVa
 theorem «KernelNatPrim::try_str_to_byte_array».obs {x_rc x_spine : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_str_to_byte_array" [x_rc, x_spine] h r h' calls) :
     «KernelNatPrim::try_str_to_byte_array».Path x_rc x_spine h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_str_to_byte_array.lookup
-    (by simp [IxVM.KernelNatPrim.try_str_to_byte_array, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_str_to_byte_array.lookup
+    (by simp [IxVM.KernelNatPrim.try_str_to_byte_array, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_str_to_byte_array] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2675,8 +2675,8 @@ inductive «KernelNatPrim::utf8_validate».Path (x_bs : SourceValue F) (h : Heap
 theorem «KernelNatPrim::utf8_validate».obs {x_bs : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::utf8_validate" [x_bs] h r h' calls) :
     «KernelNatPrim::utf8_validate».Path x_bs h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.utf8_validate.lookup
-    (by simp [IxVM.KernelNatPrim.utf8_validate, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.utf8_validate.lookup
+    (by simp [IxVM.KernelNatPrim.utf8_validate, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.utf8_validate] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2748,8 +2748,8 @@ inductive «KernelNatPrim::utf8_last_codepoint».Path (x_bs : SourceValue F) (h 
 theorem «KernelNatPrim::utf8_last_codepoint».obs {x_bs : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::utf8_last_codepoint" [x_bs] h r h' calls) :
     «KernelNatPrim::utf8_last_codepoint».Path x_bs h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.utf8_last_codepoint.lookup
-    (by simp [IxVM.KernelNatPrim.utf8_last_codepoint, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.utf8_last_codepoint.lookup
+    (by simp [IxVM.KernelNatPrim.utf8_last_codepoint, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.utf8_last_codepoint] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -2781,8 +2781,8 @@ inductive «KernelNatPrim::utf8_last_go».Path (x_bs x_prev : SourceValue F) (h 
 theorem «KernelNatPrim::utf8_last_go».obs {x_bs x_prev : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::utf8_last_go" [x_bs, x_prev] h r h' calls) :
     «KernelNatPrim::utf8_last_go».Path x_bs x_prev h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.utf8_last_go.lookup
-    (by simp [IxVM.KernelNatPrim.utf8_last_go, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.utf8_last_go.lookup
+    (by simp [IxVM.KernelNatPrim.utf8_last_go, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.utf8_last_go] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2863,8 +2863,8 @@ inductive «KernelNatPrim::utf8_cont».Path (x_b : SourceValue F) (h : Heap F) (
 theorem «KernelNatPrim::utf8_cont».obs {x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::utf8_cont" [x_b] h r h' calls) :
     «KernelNatPrim::utf8_cont».Path x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.utf8_cont.lookup
-    (by simp [IxVM.KernelNatPrim.utf8_cont, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.utf8_cont.lookup
+    (by simp [IxVM.KernelNatPrim.utf8_cont, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.utf8_cont] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2874,7 +2874,7 @@ theorem «KernelNatPrim::utf8_cont».obs {x_b : SourceValue F} {h h' : Heap F} {
   simp at l24
   subst l24
   obtain ⟨v17, vs25, m26, c27, c28, rfl, d29, a30, rfl⟩ := a23.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d29.global_literal_inv (x := (128 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d29.global_literal_inv Names.c9413797303886659126
   obtain ⟨rfl, rfl, rfl⟩ := a30.nil_inv
   rcases selectArm_cons_inv sel8 with ⟨mt31, rfl⟩ | ⟨nm32, sel33⟩
   · obtain ⟨hv34, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt31
@@ -2887,7 +2887,7 @@ theorem «KernelNatPrim::utf8_cont».obs {x_b : SourceValue F} {h h' : Heap F} {
     simp at l58
     subst l58
     obtain ⟨v51, vs59, m60, c61, c62, rfl, d63, a64, rfl⟩ := a57.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d63.global_literal_inv (x := (192 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d63.global_literal_inv Names.c2292429251841039057
     obtain ⟨rfl, rfl, rfl⟩ := a64.nil_inv
     rcases selectArm_cons_inv sel42 with ⟨mt65, rfl⟩ | ⟨nm66, sel67⟩
     · obtain ⟨hv68, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt65

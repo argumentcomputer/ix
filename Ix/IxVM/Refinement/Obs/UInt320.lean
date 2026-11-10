@@ -29,8 +29,8 @@ inductive «UInt32::from_bytes».Path (x_bytes : SourceValue F) (h : Heap F) (r 
 theorem «UInt32::from_bytes».obs {x_bytes : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::from_bytes" [x_bytes] h r h' calls) :
     «UInt32::from_bytes».Path x_bytes h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.from_bytes.lookup
-    (by simp [IxVM.UInt32.from_bytes, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.from_bytes.lookup
+    (by simp [IxVM.UInt32.from_bytes, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.from_bytes] at d0
   obtain ⟨l1, rfl, rfl⟩ := d0.var_inv
   simp at l1
@@ -49,8 +49,8 @@ inductive «UInt32::to_bytes».Path (x_word : SourceValue F) (h : Heap F) (r : S
 theorem «UInt32::to_bytes».obs {x_word : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::to_bytes" [x_word] h r h' calls) :
     «UInt32::to_bytes».Path x_word h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.to_bytes.lookup
-    (by simp [IxVM.UInt32.to_bytes, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.to_bytes.lookup
+    (by simp [IxVM.UInt32.to_bytes, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.to_bytes] at d0
   obtain ⟨l1, rfl, rfl⟩ := d0.var_inv
   simp at l1
@@ -69,8 +69,8 @@ inductive «UInt32::compact_field».Path (x_word : SourceValue F) (h : Heap F) (
 theorem «UInt32::compact_field».obs {x_word : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::compact_field" [x_word] h r h' calls) :
     «UInt32::compact_field».Path x_word h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.compact_field.lookup
-    (by simp [IxVM.UInt32.compact_field, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.compact_field.lookup
+    (by simp [IxVM.UInt32.compact_field, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.compact_field] at d0
   obtain ⟨l1, rfl, rfl⟩ := d0.var_inv
   simp at l1
@@ -102,8 +102,8 @@ inductive «UInt32::compact».Path (x_word : SourceValue F) (h : Heap F) (r : So
 theorem «UInt32::compact».obs {x_word : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::compact" [x_word] h r h' calls) :
     «UInt32::compact».Path x_word h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.compact.lookup
-    (by simp [IxVM.UInt32.compact, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.compact.lookup
+    (by simp [IxVM.UInt32.compact, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.compact] at d0
   obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, rfl⟩ := d0.binary_inv
   obtain ⟨x9, y10, m11, c12, c13, d14, d15, op16, rfl⟩ := d6.binary_inv
@@ -167,8 +167,8 @@ inductive «UInt32::from_fields».Path (x_raw : SourceValue F) (h : Heap F) (r :
 theorem «UInt32::from_fields».obs {x_raw : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::from_fields" [x_raw] h r h' calls) :
     «UInt32::from_fields».Path x_raw h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.from_fields.lookup
-    (by simp [IxVM.UInt32.from_fields, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.from_fields.lookup
+    (by simp [IxVM.UInt32.from_fields, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.from_fields] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -237,7 +237,7 @@ inductive «UInt32::from_field».Path (x_value : SourceValue F) (h : Heap F) (r 
     (calls : List (Call F)) : Prop where
   | run
       (k10 : Constant F) (v14 : SourceValue F) (m15 : Heap F) (cs25 : List (Call F)) (v47 : SourceValue F) (m50 : Heap F) (cs58 : List (Call F))
-      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst (.array .field 4) [])) k10 = true)
+      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.array .field 4))) k10 = true)
       (ev27 : ObsFn W "UInt32::from_fields" [(Constant.toValue k10)] h v14 m15 cs25)
       (ev60 : ObsFn W "UInt32::compact" [v14] m15 v47 m50 cs58)
       (heq76 : (v47 : SourceValue F) = x_value)
@@ -249,8 +249,8 @@ inductive «UInt32::from_field».Path (x_value : SourceValue F) (h : Heap F) (r 
 theorem «UInt32::from_field».obs {x_value : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::from_field" [x_value] h r h' calls) :
     «UInt32::from_field».Path x_value h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.from_field.lookup
-    (by simp [IxVM.UInt32.from_field, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.from_field.lookup
+    (by simp [IxVM.UInt32.from_field, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.from_field] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
@@ -303,8 +303,8 @@ inductive «UInt32::compact_from_field».Path (x_value : SourceValue F) (h : Hea
 theorem «UInt32::compact_from_field».obs {x_value : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::compact_from_field" [x_value] h r h' calls) :
     «UInt32::compact_from_field».Path x_value h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.compact_from_field.lookup
-    (by simp [IxVM.UInt32.compact_from_field, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.compact_from_field.lookup
+    (by simp [IxVM.UInt32.compact_from_field, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.compact_from_field] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -332,8 +332,8 @@ inductive «UInt32::expand».Path (x_word : SourceValue F) (h : Heap F) (r : Sou
 theorem «UInt32::expand».obs {x_word : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::expand" [x_word] h r h' calls) :
     «UInt32::expand».Path x_word h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.expand.lookup
-    (by simp [IxVM.UInt32.expand, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.expand.lookup
+    (by simp [IxVM.UInt32.expand, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.expand] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -365,7 +365,7 @@ inductive «UInt32::add».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sourc
       (ev190 : ObsFn W "UInt8::to_field" [v191] m157 v131 m180 cs188)
       (pr223 : projectValue x_b 3 = .ok v214)
       (ev213 : ObsFn W "UInt8::to_field" [v214] m180 v132 m203 cs211)
-      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst (.array .field 4) [])) k10 = true)
+      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.array .field 4))) k10 = true)
       (ev238 : ObsFn W "UInt32::from_fields" [(Constant.toValue k10)] m203 v225 m226 cs236)
       (ev284 : ObsFn W "UInt32::compact" [x_a] m226 x271 m273 cs282)
       (ev298 : ObsFn W "UInt32::compact" [x_b] m273 y272 m265 cs296)
@@ -384,8 +384,8 @@ inductive «UInt32::add».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sourc
 theorem «UInt32::add».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::add" [x_a, x_b] h r h' calls) :
     «UInt32::add».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.add.lookup
-    (by simp [IxVM.UInt32.add, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.add.lookup
+    (by simp [IxVM.UInt32.add, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.add] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
@@ -557,7 +557,7 @@ inductive «UInt32::add3».Path (x_a x_b x_c : SourceValue F) (h : Heap F) (r : 
       (ev295 : ObsFn W "UInt8::to_field" [v296] m262 v236 m285 cs293)
       (pr328 : projectValue x_c 3 = .ok v319)
       (ev318 : ObsFn W "UInt8::to_field" [v319] m285 v237 m308 cs316)
-      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst (.array .field 4) [])) k10 = true)
+      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.array .field 4))) k10 = true)
       (ev343 : ObsFn W "UInt32::from_fields" [(Constant.toValue k10)] m308 v330 m331 cs341)
       (ev397 : ObsFn W "UInt32::compact" [x_a] m331 x384 m386 cs395)
       (ev411 : ObsFn W "UInt32::compact" [x_b] m386 y385 m378 cs409)
@@ -580,8 +580,8 @@ inductive «UInt32::add3».Path (x_a x_b x_c : SourceValue F) (h : Heap F) (r : 
 theorem «UInt32::add3».obs {x_a x_b x_c : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::add3" [x_a, x_b, x_c] h r h' calls) :
     «UInt32::add3».Path x_a x_b x_c h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.add3.lookup
-    (by simp [IxVM.UInt32.add3, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.add3.lookup
+    (by simp [IxVM.UInt32.add3, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.add3] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
@@ -784,7 +784,7 @@ inductive «UInt32::sub_borrow».Path (x_a x_b : SourceValue F) (h : Heap F) (r 
       (k10 : Constant F) (v15 : SourceValue F) (v16 : SourceValue F) (m18 : Heap F) (cs26 : List (Call F)) (m38 : Heap F) (cs46 : List (Call F)) (v57 : SourceValue F) (m58 : Heap F) (cs68 : List (Call F)) (v79 : SourceValue F) (x87 : SourceValue F) (x95 : SourceValue F) (x103 : SourceValue F) (m105 : Heap F) (cs114 : List (Call F)) (v138 : SourceValue F) (y147 : SourceValue F)
       (ev28 : ObsFn W "UInt32::compact_field" [x_a] h v15 m18 cs26)
       (ev48 : ObsFn W "UInt32::compact_field" [x_b] m18 v16 m38 cs46)
-      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst (.array .field 4) [])) k10 = true)
+      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.array .field 4))) k10 = true)
       (ev70 : ObsFn W "UInt32::from_fields" [(Constant.toValue k10)] m38 v57 m58 cs68)
       (ev116 : ObsFn W "UInt32::compact" [v57] m58 x103 m105 cs114)
       (op110 : evalBinOp .add x103 x_b = .ok x95)
@@ -801,8 +801,8 @@ inductive «UInt32::sub_borrow».Path (x_a x_b : SourceValue F) (h : Heap F) (r 
 theorem «UInt32::sub_borrow».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::sub_borrow" [x_a, x_b] h r h' calls) :
     «UInt32::sub_borrow».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.sub_borrow.lookup
-    (by simp [IxVM.UInt32.sub_borrow, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.sub_borrow.lookup
+    (by simp [IxVM.UInt32.sub_borrow, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.sub_borrow] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
@@ -897,8 +897,8 @@ inductive «UInt32::sub».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sourc
 theorem «UInt32::sub».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::sub" [x_a, x_b] h r h' calls) :
     «UInt32::sub».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.sub.lookup
-    (by simp [IxVM.UInt32.sub, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.sub.lookup
+    (by simp [IxVM.UInt32.sub, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.sub] at d0
   obtain ⟨p1, d2, pr3⟩ := d0.project_inv
   obtain ⟨vs4, m5, c6, cs7, a8, ev9, rfl⟩ := d2.call_inv
@@ -936,8 +936,8 @@ inductive «UInt32::less_than».Path (x_a x_b : SourceValue F) (h : Heap F) (r :
 theorem «UInt32::less_than».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::less_than" [x_a, x_b] h r h' calls) :
     «UInt32::less_than».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.less_than.lookup
-    (by simp [IxVM.UInt32.less_than, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.less_than.lookup
+    (by simp [IxVM.UInt32.less_than, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.less_than] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -973,8 +973,8 @@ inductive «UInt32::compact_less_than».Path (x_a x_b : SourceValue F) (h : Heap
 theorem «UInt32::compact_less_than».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::compact_less_than" [x_a, x_b] h r h' calls) :
     «UInt32::compact_less_than».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.compact_less_than.lookup
-    (by simp [IxVM.UInt32.compact_less_than, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.compact_less_than.lookup
+    (by simp [IxVM.UInt32.compact_less_than, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.compact_less_than] at d0
   obtain ⟨p1, d2, pr3⟩ := d0.project_inv
   obtain ⟨vs4, m5, c6, cs7, a8, ev9, rfl⟩ := d2.call_inv
@@ -995,7 +995,7 @@ inductive «UInt32::less_than_fields».Path (x_a x_b : SourceValue F) (h : Heap 
     (calls : List (Call F)) : Prop where
   | run
       (k10 : Constant F) (v31 : SourceValue F) (m32 : Heap F) (cs42 : List (Call F)) (v45 : SourceValue F) (v56 : SourceValue F) (m57 : Heap F) (cs67 : List (Call F)) (v70 : SourceValue F) (v81 : SourceValue F) (m82 : Heap F) (cs92 : List (Call F)) (v95 : SourceValue F) (v118 : SourceValue F) (m127 : Heap F) (cs135 : List (Call F)) (v159 : SourceValue F) (m168 : Heap F) (cs176 : List (Call F)) (v188 : SourceValue F) (x196 : SourceValue F) (x204 : SourceValue F) (x212 : SourceValue F) (m214 : Heap F) (cs223 : List (Call F)) (v247 : SourceValue F) (y256 : SourceValue F)
-      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst (.tuple [(.array .field 4), (.array .field 4), (.array .field 4)]) [])) k10 = true)
+      (ty12 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.tuple [(.array .field 4), (.array .field 4), (.array .field 4)]))) k10 = true)
       (pr54 : projectValue (Constant.toValue k10) 0 = .ok v45)
       (ev44 : ObsFn W "UInt32::from_fields" [v45] h v31 m32 cs42)
       (pr79 : projectValue (Constant.toValue k10) 1 = .ok v70)
@@ -1021,8 +1021,8 @@ inductive «UInt32::less_than_fields».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «UInt32::less_than_fields».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::less_than_fields" [x_a, x_b] h r h' calls) :
     «UInt32::less_than_fields».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.less_than_fields.lookup
-    (by simp [IxVM.UInt32.less_than_fields, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.less_than_fields.lookup
+    (by simp [IxVM.UInt32.less_than_fields, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.less_than_fields] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
@@ -1167,8 +1167,8 @@ inductive «UInt32::xor».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sourc
 theorem «UInt32::xor».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::xor" [x_a, x_b] h r h' calls) :
     «UInt32::xor».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.xor.lookup
-    (by simp [IxVM.UInt32.xor, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.xor.lookup
+    (by simp [IxVM.UInt32.xor, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.xor] at d0
   obtain ⟨vs1, a2, rfl⟩ := d0.array_inv
   obtain ⟨v3, vs8, m9, c10, c11, rfl, d12, a13, rfl⟩ := a2.cons_inv
@@ -1255,8 +1255,8 @@ inductive «UInt32::and».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sourc
 theorem «UInt32::and».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::and" [x_a, x_b] h r h' calls) :
     «UInt32::and».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.and.lookup
-    (by simp [IxVM.UInt32.and, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.and.lookup
+    (by simp [IxVM.UInt32.and, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.and] at d0
   obtain ⟨vs1, a2, rfl⟩ := d0.array_inv
   obtain ⟨v3, vs8, m9, c10, c11, rfl, d12, a13, rfl⟩ := a2.cons_inv
@@ -1343,8 +1343,8 @@ inductive «UInt32::or».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt32::or».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::or" [x_a, x_b] h r h' calls) :
     «UInt32::or».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.or.lookup
-    (by simp [IxVM.UInt32.or, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.or.lookup
+    (by simp [IxVM.UInt32.or, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.or] at d0
   obtain ⟨vs1, a2, rfl⟩ := d0.array_inv
   obtain ⟨v3, vs8, m9, c10, c11, rfl, d12, a13, rfl⟩ := a2.cons_inv
@@ -1423,8 +1423,8 @@ inductive «UInt32::rotr8».Path (x_a : SourceValue F) (h : Heap F) (r : SourceV
 theorem «UInt32::rotr8».obs {x_a : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::rotr8" [x_a] h r h' calls) :
     «UInt32::rotr8».Path x_a h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.rotr8.lookup
-    (by simp [IxVM.UInt32.rotr8, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.rotr8.lookup
+    (by simp [IxVM.UInt32.rotr8, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.rotr8] at d0
   obtain ⟨vs1, a2, rfl⟩ := d0.array_inv
   obtain ⟨v3, vs8, m9, c10, c11, rfl, d12, a13, rfl⟩ := a2.cons_inv
@@ -1467,8 +1467,8 @@ inductive «UInt32::rotr16».Path (x_a : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt32::rotr16».obs {x_a : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::rotr16" [x_a] h r h' calls) :
     «UInt32::rotr16».Path x_a h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.rotr16.lookup
-    (by simp [IxVM.UInt32.rotr16, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.rotr16.lookup
+    (by simp [IxVM.UInt32.rotr16, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.rotr16] at d0
   obtain ⟨vs1, a2, rfl⟩ := d0.array_inv
   obtain ⟨v3, vs8, m9, c10, c11, rfl, d12, a13, rfl⟩ := a2.cons_inv
@@ -1523,8 +1523,8 @@ inductive «UInt32::xor_rotr7».Path (x_a x_b : SourceValue F) (h : Heap F) (r :
 theorem «UInt32::xor_rotr7».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::xor_rotr7" [x_a, x_b] h r h' calls) :
     «UInt32::xor_rotr7».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.xor_rotr7.lookup
-    (by simp [IxVM.UInt32.xor_rotr7, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.xor_rotr7.lookup
+    (by simp [IxVM.UInt32.xor_rotr7, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.xor_rotr7] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1667,8 +1667,8 @@ inductive «UInt32::xor_rotr12».Path (x_a x_b : SourceValue F) (h : Heap F) (r 
 theorem «UInt32::xor_rotr12».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt32::xor_rotr12" [x_a, x_b] h r h' calls) :
     «UInt32::xor_rotr12».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt32.xor_rotr12.lookup
-    (by simp [IxVM.UInt32.xor_rotr12, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt32.xor_rotr12.lookup
+    (by simp [IxVM.UInt32.xor_rotr12, ControlLower.hasControl]) ev
   simp only [IxVM.UInt32.xor_rotr12] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv

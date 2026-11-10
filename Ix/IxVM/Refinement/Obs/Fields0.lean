@@ -35,8 +35,8 @@ inductive «Fields::is_zero».Path (x_x : SourceValue F) (h : Heap F) (r : Sourc
 theorem «Fields::is_zero».obs {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "Fields::is_zero" [x_x] h r h' calls) :
     «Fields::is_zero».Path x_x h r h' calls := by
-  have d0 := ev.function_inv IxVM.Fields.is_zero.lookup
-    (by simp [IxVM.Fields.is_zero, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Fields.is_zero.lookup
+    (by simp [IxVM.Fields.is_zero, ControlLower.hasControl]) ev
   simp only [IxVM.Fields.is_zero] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv

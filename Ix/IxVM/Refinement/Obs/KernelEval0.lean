@@ -53,8 +53,8 @@ inductive «KernelEval::eval_nf».Path (x_rc x_e x_types : SourceValue F) (h : H
 theorem «KernelEval::eval_nf».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelEval::eval_nf" [x_rc, x_e, x_types] h r h' calls) :
     «KernelEval::eval_nf».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelEval.eval_nf.lookup
-    (by simp [IxVM.KernelEval.eval_nf, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelEval.eval_nf.lookup
+    (by simp [IxVM.KernelEval.eval_nf, ControlLower.hasControl]) ev
   simp only [IxVM.KernelEval.eval_nf] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -259,8 +259,8 @@ inductive «KernelEval::eval_nf_spine».Path (x_rc x_e x_types : SourceValue F) 
 theorem «KernelEval::eval_nf_spine».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelEval::eval_nf_spine" [x_rc, x_e, x_types] h r h' calls) :
     «KernelEval::eval_nf_spine».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelEval.eval_nf_spine.lookup
-    (by simp [IxVM.KernelEval.eval_nf_spine, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelEval.eval_nf_spine.lookup
+    (by simp [IxVM.KernelEval.eval_nf_spine, ControlLower.hasControl]) ev
   simp only [IxVM.KernelEval.eval_nf_spine] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -404,8 +404,8 @@ inductive «KernelEval::eval_body».Path (x_input : SourceValue F) (h : Heap F) 
 theorem «KernelEval::eval_body».obs {x_input : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelEval::eval_body" [x_input] h r h' calls) :
     «KernelEval::eval_body».Path x_input h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelEval.eval_body.lookup
-    (by simp [IxVM.KernelEval.eval_body, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelEval.eval_body.lookup
+    (by simp [IxVM.KernelEval.eval_body, ControlLower.hasControl]) ev
   simp only [IxVM.KernelEval.eval_body] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -549,8 +549,8 @@ inductive «KernelEval::eval_output».Path (x_output x_nlvls x_input_type : Sour
 theorem «KernelEval::eval_output».obs {x_output x_nlvls x_input_type : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelEval::eval_output" [x_output, x_nlvls, x_input_type] h r h' calls) :
     «KernelEval::eval_output».Path x_output x_nlvls x_input_type h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelEval.eval_output.lookup
-    (by simp [IxVM.KernelEval.eval_output, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelEval.eval_output.lookup
+    (by simp [IxVM.KernelEval.eval_output, ControlLower.hasControl]) ev
   simp only [IxVM.KernelEval.eval_output] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -761,8 +761,8 @@ inductive «KernelEval::run_eval».Path (x_rc x_input x_output x_asm : SourceVal
 theorem «KernelEval::run_eval».obs {x_rc x_input x_output x_asm : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelEval::run_eval" [x_rc, x_input, x_output, x_asm] h r h' calls) :
     «KernelEval::run_eval».Path x_rc x_input x_output x_asm h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelEval.run_eval.lookup
-    (by simp [IxVM.KernelEval.run_eval, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelEval.run_eval.lookup
+    (by simp [IxVM.KernelEval.run_eval, ControlLower.hasControl]) ev
   simp only [IxVM.KernelEval.run_eval] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1071,8 +1071,8 @@ inductive «KernelEval::check_output».Path (x_rc x_output x_asm : SourceValue F
 theorem «KernelEval::check_output».obs {x_rc x_output x_asm : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelEval::check_output" [x_rc, x_output, x_asm] h r h' calls) :
     «KernelEval::check_output».Path x_rc x_output x_asm h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelEval.check_output.lookup
-    (by simp [IxVM.KernelEval.check_output, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelEval.check_output.lookup
+    (by simp [IxVM.KernelEval.check_output, ControlLower.hasControl]) ev
   simp only [IxVM.KernelEval.check_output] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv

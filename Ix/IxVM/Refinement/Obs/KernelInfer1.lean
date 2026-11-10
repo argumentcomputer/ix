@@ -60,8 +60,8 @@ inductive «KernelInfer::infer_let_drop_unused».Path (x_env x_count : SourceVal
 theorem «KernelInfer::infer_let_drop_unused».obs {x_env x_count : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::infer_let_drop_unused" [x_env, x_count] h r h' calls) :
     «KernelInfer::infer_let_drop_unused».Path x_env x_count h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.infer_let_drop_unused.lookup
-    (by simp [IxVM.KernelInfer.infer_let_drop_unused, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.infer_let_drop_unused.lookup
+    (by simp [IxVM.KernelInfer.infer_let_drop_unused, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.infer_let_drop_unused] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -304,8 +304,8 @@ inductive «KernelInfer::k_infer_let_env_core».Path (x_rc x_e x_env x_types x_d
 theorem «KernelInfer::k_infer_let_env_core».obs {x_rc x_e x_env x_types x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::k_infer_let_env_core" [x_rc, x_e, x_env, x_types, x_depth] h r h' calls) :
     «KernelInfer::k_infer_let_env_core».Path x_rc x_e x_env x_types x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.k_infer_let_env_core.lookup
-    (by simp [IxVM.KernelInfer.k_infer_let_env_core, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.k_infer_let_env_core.lookup
+    (by simp [IxVM.KernelInfer.k_infer_let_env_core, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.k_infer_let_env_core] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1038,8 +1038,8 @@ inductive «KernelInfer::k_infer_app_spine_loop».Path (x_rc x_t x_args x_subs_r
 theorem «KernelInfer::k_infer_app_spine_loop».obs {x_rc x_t x_args x_subs_rev x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::k_infer_app_spine_loop" [x_rc, x_t, x_args, x_subs_rev, x_types] h r h' calls) :
     «KernelInfer::k_infer_app_spine_loop».Path x_rc x_t x_args x_subs_rev x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.k_infer_app_spine_loop.lookup
-    (by simp [IxVM.KernelInfer.k_infer_app_spine_loop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.k_infer_app_spine_loop.lookup
+    (by simp [IxVM.KernelInfer.k_infer_app_spine_loop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.k_infer_app_spine_loop] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1509,8 +1509,8 @@ inductive «KernelInfer::k_infer_lit».Path (x_rc x_lit : SourceValue F) (h : He
 theorem «KernelInfer::k_infer_lit».obs {x_rc x_lit : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::k_infer_lit" [x_rc, x_lit] h r h' calls) :
     «KernelInfer::k_infer_lit».Path x_rc x_lit h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.k_infer_lit.lookup
-    (by simp [IxVM.KernelInfer.k_infer_lit, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.k_infer_lit.lookup
+    (by simp [IxVM.KernelInfer.k_infer_lit, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.k_infer_lit] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1606,8 +1606,8 @@ inductive «KernelInfer::peel_params_subst».Path (x_ty x_args x_n_params : Sour
 theorem «KernelInfer::peel_params_subst».obs {x_ty x_args x_n_params : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::peel_params_subst" [x_ty, x_args, x_n_params] h r h' calls) :
     «KernelInfer::peel_params_subst».Path x_ty x_args x_n_params h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.peel_params_subst.lookup
-    (by simp [IxVM.KernelInfer.peel_params_subst, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.peel_params_subst.lookup
+    (by simp [IxVM.KernelInfer.peel_params_subst, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.peel_params_subst] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1707,8 +1707,8 @@ inductive «KernelInfer::is_inductive_prop».Path (x_rc x_ind_ty x_lvls x_n_skip
 theorem «KernelInfer::is_inductive_prop».obs {x_rc x_ind_ty x_lvls x_n_skip x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::is_inductive_prop" [x_rc, x_ind_ty, x_lvls, x_n_skip, x_types] h r h' calls) :
     «KernelInfer::is_inductive_prop».Path x_rc x_ind_ty x_lvls x_n_skip x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.is_inductive_prop.lookup
-    (by simp [IxVM.KernelInfer.is_inductive_prop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.is_inductive_prop.lookup
+    (by simp [IxVM.KernelInfer.is_inductive_prop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.is_inductive_prop] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1806,8 +1806,8 @@ inductive «KernelInfer::peel_n_alls_whnf».Path (x_rc x_e x_n x_types : SourceV
 theorem «KernelInfer::peel_n_alls_whnf».obs {x_rc x_e x_n x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::peel_n_alls_whnf" [x_rc, x_e, x_n, x_types] h r h' calls) :
     «KernelInfer::peel_n_alls_whnf».Path x_rc x_e x_n x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.peel_n_alls_whnf.lookup
-    (by simp [IxVM.KernelInfer.peel_n_alls_whnf, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.peel_n_alls_whnf.lookup
+    (by simp [IxVM.KernelInfer.peel_n_alls_whnf, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.peel_n_alls_whnf] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1937,8 +1937,8 @@ inductive «KernelInfer::check_prop_field_if_prop».Path (x_rc x_is_prop x_dom x
 theorem «KernelInfer::check_prop_field_if_prop».obs {x_rc x_is_prop x_dom x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::check_prop_field_if_prop" [x_rc, x_is_prop, x_dom, x_types] h r h' calls) :
     «KernelInfer::check_prop_field_if_prop».Path x_rc x_is_prop x_dom x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.check_prop_field_if_prop.lookup
-    (by simp [IxVM.KernelInfer.check_prop_field_if_prop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.check_prop_field_if_prop.lookup
+    (by simp [IxVM.KernelInfer.check_prop_field_if_prop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.check_prop_field_if_prop] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2030,8 +2030,8 @@ inductive «KernelInfer::check_no_dep_data_field_if_prop».Path (x_rc x_is_prop 
 theorem «KernelInfer::check_no_dep_data_field_if_prop».obs {x_rc x_is_prop x_dom x_body x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::check_no_dep_data_field_if_prop" [x_rc, x_is_prop, x_dom, x_body, x_types] h r h' calls) :
     «KernelInfer::check_no_dep_data_field_if_prop».Path x_rc x_is_prop x_dom x_body x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.check_no_dep_data_field_if_prop.lookup
-    (by simp [IxVM.KernelInfer.check_no_dep_data_field_if_prop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.check_no_dep_data_field_if_prop.lookup
+    (by simp [IxVM.KernelInfer.check_no_dep_data_field_if_prop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.check_no_dep_data_field_if_prop] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -2135,8 +2135,8 @@ inductive «KernelInfer::peel_field_loop».Path (x_rc x_ty x_target x_current x_
 theorem «KernelInfer::peel_field_loop».obs {x_rc x_ty x_target x_current x_struct_addr x_val x_is_prop x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::peel_field_loop" [x_rc, x_ty, x_target, x_current, x_struct_addr, x_val, x_is_prop, x_types] h r h' calls) :
     «KernelInfer::peel_field_loop».Path x_rc x_ty x_target x_current x_struct_addr x_val x_is_prop x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.peel_field_loop.lookup
-    (by simp [IxVM.KernelInfer.peel_field_loop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.peel_field_loop.lookup
+    (by simp [IxVM.KernelInfer.peel_field_loop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.peel_field_loop] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2322,8 +2322,8 @@ inductive «KernelInfer::k_infer_proj».Path (x_rc x_struct_addr x_fidx x_e1 x_t
 theorem «KernelInfer::k_infer_proj».obs {x_rc x_struct_addr x_fidx x_e1 x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::k_infer_proj" [x_rc, x_struct_addr, x_fidx, x_e1, x_types] h r h' calls) :
     «KernelInfer::k_infer_proj».Path x_rc x_struct_addr x_fidx x_e1 x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.k_infer_proj.lookup
-    (by simp [IxVM.KernelInfer.k_infer_proj, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.k_infer_proj.lookup
+    (by simp [IxVM.KernelInfer.k_infer_proj, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.k_infer_proj] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2629,8 +2629,8 @@ inductive «KernelInfer::k_ensure_sort».Path (x_rc x_e x_types : SourceValue F)
 theorem «KernelInfer::k_ensure_sort».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::k_ensure_sort" [x_rc, x_e, x_types] h r h' calls) :
     «KernelInfer::k_ensure_sort».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.k_ensure_sort.lookup
-    (by simp [IxVM.KernelInfer.k_ensure_sort, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.k_ensure_sort.lookup
+    (by simp [IxVM.KernelInfer.k_ensure_sort, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.k_ensure_sort] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2702,8 +2702,8 @@ inductive «KernelInfer::k_check».Path (x_rc x_e x_expected x_types : SourceVal
 theorem «KernelInfer::k_check».obs {x_rc x_e x_expected x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInfer::k_check" [x_rc, x_e, x_expected, x_types] h r h' calls) :
     «KernelInfer::k_check».Path x_rc x_e x_expected x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInfer.k_check.lookup
-    (by simp [IxVM.KernelInfer.k_check, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInfer.k_check.lookup
+    (by simp [IxVM.KernelInfer.k_check, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInfer.k_check] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv

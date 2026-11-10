@@ -31,8 +31,8 @@ inductive «KernelClaim::run_check».Path (x_rc x_addr : SourceValue F) (h : Hea
 theorem «KernelClaim::run_check».obs {x_rc x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::run_check" [x_rc, x_addr] h r h' calls) :
     «KernelClaim::run_check».Path x_rc x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.run_check.lookup
-    (by simp [IxVM.KernelClaim.run_check, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.run_check.lookup
+    (by simp [IxVM.KernelClaim.run_check, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.run_check] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -127,8 +127,8 @@ inductive «KernelClaim::const_idxs_expr».Path (x_e : SourceValue F) (h : Heap 
 theorem «KernelClaim::const_idxs_expr».obs {x_e : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::const_idxs_expr" [x_e] h r h' calls) :
     «KernelClaim::const_idxs_expr».Path x_e h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.const_idxs_expr.lookup
-    (by simp [IxVM.KernelClaim.const_idxs_expr, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.const_idxs_expr.lookup
+    (by simp [IxVM.KernelClaim.const_idxs_expr, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.const_idxs_expr] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -380,8 +380,8 @@ inductive «KernelClaim::const_idxs_exprs».Path (x_es : SourceValue F) (h : Hea
 theorem «KernelClaim::const_idxs_exprs».obs {x_es : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::const_idxs_exprs" [x_es] h r h' calls) :
     «KernelClaim::const_idxs_exprs».Path x_es h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.const_idxs_exprs.lookup
-    (by simp [IxVM.KernelClaim.const_idxs_exprs, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.const_idxs_exprs.lookup
+    (by simp [IxVM.KernelClaim.const_idxs_exprs, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.const_idxs_exprs] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -455,8 +455,8 @@ inductive «KernelClaim::const_idxs_rules».Path (x_rs : SourceValue F) (h : Hea
 theorem «KernelClaim::const_idxs_rules».obs {x_rs : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::const_idxs_rules" [x_rs] h r h' calls) :
     «KernelClaim::const_idxs_rules».Path x_rs h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.const_idxs_rules.lookup
-    (by simp [IxVM.KernelClaim.const_idxs_rules, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.const_idxs_rules.lookup
+    (by simp [IxVM.KernelClaim.const_idxs_rules, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.const_idxs_rules] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -546,8 +546,8 @@ inductive «KernelClaim::const_idxs_ctors».Path (x_cs : SourceValue F) (h : Hea
 theorem «KernelClaim::const_idxs_ctors».obs {x_cs : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::const_idxs_ctors" [x_cs] h r h' calls) :
     «KernelClaim::const_idxs_ctors».Path x_cs h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.const_idxs_ctors.lookup
-    (by simp [IxVM.KernelClaim.const_idxs_ctors, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.const_idxs_ctors.lookup
+    (by simp [IxVM.KernelClaim.const_idxs_ctors, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.const_idxs_ctors] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -665,8 +665,8 @@ inductive «KernelClaim::const_idxs_muts».Path (x_ms : SourceValue F) (h : Heap
 theorem «KernelClaim::const_idxs_muts».obs {x_ms : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::const_idxs_muts" [x_ms] h r h' calls) :
     «KernelClaim::const_idxs_muts».Path x_ms h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.const_idxs_muts.lookup
-    (by simp [IxVM.KernelClaim.const_idxs_muts, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.const_idxs_muts.lookup
+    (by simp [IxVM.KernelClaim.const_idxs_muts, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.const_idxs_muts] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -963,8 +963,8 @@ inductive «KernelClaim::const_idxs_of».Path (x_c : SourceValue F) (h : Heap F)
 theorem «KernelClaim::const_idxs_of».obs {x_c : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::const_idxs_of" [x_c] h r h' calls) :
     «KernelClaim::const_idxs_of».Path x_c h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.const_idxs_of.lookup
-    (by simp [IxVM.KernelClaim.const_idxs_of, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.const_idxs_of.lookup
+    (by simp [IxVM.KernelClaim.const_idxs_of, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.const_idxs_of] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1270,8 +1270,8 @@ inductive «KernelClaim::g_list_has».Path (x_xs x_x : SourceValue F) (h : Heap 
 theorem «KernelClaim::g_list_has».obs {x_xs x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::g_list_has" [x_xs, x_x] h r h' calls) :
     «KernelClaim::g_list_has».Path x_xs x_x h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.g_list_has.lookup
-    (by simp [IxVM.KernelClaim.g_list_has, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.g_list_has.lookup
+    (by simp [IxVM.KernelClaim.g_list_has, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.g_list_has] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1388,8 +1388,8 @@ inductive «KernelClaim::run_check_transitive».Path (x_rc x_addr : SourceValue 
 theorem «KernelClaim::run_check_transitive».obs {x_rc x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::run_check_transitive" [x_rc, x_addr] h r h' calls) :
     «KernelClaim::run_check_transitive».Path x_rc x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.run_check_transitive.lookup
-    (by simp [IxVM.KernelClaim.run_check_transitive, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.run_check_transitive.lookup
+    (by simp [IxVM.KernelClaim.run_check_transitive, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.run_check_transitive] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1848,8 +1848,8 @@ inductive «KernelClaim::walk_refs_transitive».Path (x_rc x_refs x_consts x_i :
 theorem «KernelClaim::walk_refs_transitive».obs {x_rc x_refs x_consts x_i : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::walk_refs_transitive" [x_rc, x_refs, x_consts, x_i] h r h' calls) :
     «KernelClaim::walk_refs_transitive».Path x_rc x_refs x_consts x_i h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.walk_refs_transitive.lookup
-    (by simp [IxVM.KernelClaim.walk_refs_transitive, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.walk_refs_transitive.lookup
+    (by simp [IxVM.KernelClaim.walk_refs_transitive, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.walk_refs_transitive] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2043,8 +2043,8 @@ inductive «KernelClaim::check_muts_all».Path (x_rc x_block_addr x_all_members 
 theorem «KernelClaim::check_muts_all».obs {x_rc x_block_addr x_all_members x_cur x_pos : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::check_muts_all" [x_rc, x_block_addr, x_all_members, x_cur, x_pos] h r h' calls) :
     «KernelClaim::check_muts_all».Path x_rc x_block_addr x_all_members x_cur x_pos h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.check_muts_all.lookup
-    (by simp [IxVM.KernelClaim.check_muts_all, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.check_muts_all.lookup
+    (by simp [IxVM.KernelClaim.check_muts_all, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.check_muts_all] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2140,8 +2140,8 @@ inductive «KernelClaim::check_muts_member_at».Path (x_rc x_block_addr x_all_me
 theorem «KernelClaim::check_muts_member_at».obs {x_rc x_block_addr x_all_members x_m x_pos : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::check_muts_member_at" [x_rc, x_block_addr, x_all_members, x_m, x_pos] h r h' calls) :
     «KernelClaim::check_muts_member_at».Path x_rc x_block_addr x_all_members x_m x_pos h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.check_muts_member_at.lookup
-    (by simp [IxVM.KernelClaim.check_muts_member_at, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.check_muts_member_at.lookup
+    (by simp [IxVM.KernelClaim.check_muts_member_at, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.check_muts_member_at] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2202,8 +2202,8 @@ inductive «KernelClaim::leaf_hash».Path (x_addr : SourceValue F) (h : Heap F) 
 theorem «KernelClaim::leaf_hash».obs {x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::leaf_hash" [x_addr] h r h' calls) :
     «KernelClaim::leaf_hash».Path x_addr h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.leaf_hash.lookup
-    (by simp [IxVM.KernelClaim.leaf_hash, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.leaf_hash.lookup
+    (by simp [IxVM.KernelClaim.leaf_hash, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.leaf_hash] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2226,7 +2226,7 @@ theorem «KernelClaim::leaf_hash».obs {x_addr : SourceValue F} {h h' : Heap F} 
   rw [Names.n12516105052029042359] at hres51
   subst hres51
   obtain ⟨v52, vs54, m55, c56, c57, rfl, d58, a59, rfl⟩ := a50.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d58.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d58.global_literal_inv Names.c9173999864893739538
   obtain ⟨v53, vs60, m61, c62, c63, rfl, d64, a65, rfl⟩ := a59.cons_inv
   obtain ⟨l66, rfl, rfl⟩ := d64.var_inv
   simp at l66
@@ -2259,8 +2259,8 @@ inductive «KernelClaim::node_hash».Path (x_l x_r : SourceValue F) (h : Heap F)
 theorem «KernelClaim::node_hash».obs {x_l x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::node_hash" [x_l, x_r] h r h' calls) :
     «KernelClaim::node_hash».Path x_l x_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.node_hash.lookup
-    (by simp [IxVM.KernelClaim.node_hash, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.node_hash.lookup
+    (by simp [IxVM.KernelClaim.node_hash, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.node_hash] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2291,7 +2291,7 @@ theorem «KernelClaim::node_hash».obs {x_l x_r : SourceValue F} {h h' : Heap F}
   rw [Names.n12516105052029042359] at hres72
   subst hres72
   obtain ⟨v73, vs75, m76, c77, c78, rfl, d79, a80, rfl⟩ := a71.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d79.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d79.global_literal_inv Names.c3167744620027602021
   obtain ⟨v74, vs81, m82, c83, c84, rfl, d85, a86, rfl⟩ := a80.cons_inv
   obtain ⟨l87, rfl, rfl⟩ := d85.var_inv
   simp at l87
@@ -2326,8 +2326,8 @@ inductive «KernelClaim::parse_atree_body».Path (x_stream : SourceValue F) (h :
       (m2 : Heap F) (cs12 : List (Call F)) (x_tag : SourceValue F) (x_s : SourceValue F) (m37 : Heap F) (cs48 : List (Call F)) (m189 : Heap F) (m201 : Heap F)
       (ev14 : ObsFn W "IxonDeserialize::read_byte" [x_stream] h (.tuple [x_tag, x_s]) m2 cs12)
       (ev50 : ObsFn W "UInt8::to_field" [x_tag] m2 (.field 1) m37 cs48)
-      (he187 : r = (.tuple [(.ptr (Value.type (Value.tuple (List.replicate 32 (.field 0)))) (m37).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m189).length), x_s]))
-      (hm197 : m189 = (m37 ++ [(Value.tuple (List.replicate 32 (.field 0)))]))
+      (he187 : r = (.tuple [(.ptr (.tuple (List.map Value.type (List.replicate 32 ((.field 0) : SourceValue F)))) (m37).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m189).length), x_s]))
+      (hm197 : m189 = (m37 ++ [(.tuple (List.replicate 32 (.field 0)))]))
       (hm209 : m201 = (m189 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
       (he220 : h' = m201)
       (hc221 : calls = ((⟨"IxonDeserialize::read_byte", [x_stream], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt8::to_field", [x_tag], m2⟩ : Call F) :: cs48))))
@@ -2347,8 +2347,8 @@ inductive «KernelClaim::parse_atree_body».Path (x_stream : SourceValue F) (h :
 theorem «KernelClaim::parse_atree_body».obs {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::parse_atree_body" [x_stream] h r h' calls) :
     «KernelClaim::parse_atree_body».Path x_stream h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.parse_atree_body.lookup
-    (by simp [IxVM.KernelClaim.parse_atree_body, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.parse_atree_body.lookup
+    (by simp [IxVM.KernelClaim.parse_atree_body, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.parse_atree_body] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2436,7 +2436,7 @@ theorem «KernelClaim::parse_atree_body».obs {x_stream : SourceValue F} {h h' :
       obtain ⟨v184, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a183.cons_inv
       obtain ⟨v194, m195, d196, rfl, hm197⟩ := d192.store_inv
       obtain ⟨v198, d199, rfl⟩ := d196.repeat_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d199.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d199.global_literal_inv Names.c9173999864893739538
       obtain ⟨v185, vs200, m201, c202, c203, rfl, d204, a205, rfl⟩ := a193.cons_inv
       obtain ⟨v206, m207, d208, rfl, hm209⟩ := d204.store_inv
       obtain ⟨vs210, a211, hres212⟩ := d208.construct_inv
@@ -2552,8 +2552,8 @@ inductive «KernelClaim::load_assumption_tree».Path (x_root : SourceValue F) (h
 theorem «KernelClaim::load_assumption_tree».obs {x_root : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::load_assumption_tree" [x_root] h r h' calls) :
     «KernelClaim::load_assumption_tree».Path x_root h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.load_assumption_tree.lookup
-    (by simp [IxVM.KernelClaim.load_assumption_tree, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.load_assumption_tree.lookup
+    (by simp [IxVM.KernelClaim.load_assumption_tree, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.load_assumption_tree] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨p9, d10, ld11⟩ := d6.load_inv
@@ -2700,8 +2700,8 @@ inductive «KernelClaim::addr_set_build».Path (x_leaves x_acc : SourceValue F) 
 theorem «KernelClaim::addr_set_build».obs {x_leaves x_acc : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::addr_set_build" [x_leaves, x_acc] h r h' calls) :
     «KernelClaim::addr_set_build».Path x_leaves x_acc h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.addr_set_build.lookup
-    (by simp [IxVM.KernelClaim.addr_set_build, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.addr_set_build.lookup
+    (by simp [IxVM.KernelClaim.addr_set_build, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.addr_set_build] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2766,8 +2766,8 @@ inductive «KernelClaim::addr_set_member».Path (x_a x_tree : SourceValue F) (h 
 theorem «KernelClaim::addr_set_member».obs {x_a x_tree : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelClaim::addr_set_member" [x_a, x_tree] h r h' calls) :
     «KernelClaim::addr_set_member».Path x_a x_tree h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelClaim.addr_set_member.lookup
-    (by simp [IxVM.KernelClaim.addr_set_member, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.addr_set_member.lookup
+    (by simp [IxVM.KernelClaim.addr_set_member, ControlLower.hasControl]) ev
   simp only [IxVM.KernelClaim.addr_set_member] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [Names.n6062807466691911638] at ev6

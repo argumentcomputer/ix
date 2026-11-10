@@ -23,17 +23,17 @@ inductive «IxVMCompat::check_owned».Path (x_binding x_validator x_bytes : Sour
   | run
       (cs4 : List (Call F)) (v7 : SourceValue F) (m10 : Heap F) (cs18 : List (Call F)) (m24 : Heap F) (m42 : Heap F)
       (hm32 : m24 = (h ++ [x_binding]))
-      (ev20 : ObsFn W "KernelRoles::role_ctx_for_validator" [(.ptr (Value.type x_binding) (h).length), x_validator] m24 v7 m10 cs18)
+      (ev20 : ObsFn W "KernelRoles::role_ctx_for_validator" [(.ptr (Value.type (x_binding : SourceValue F)) (h).length), x_validator] m24 v7 m10 cs18)
       (hm50 : m42 = (m10 ++ [x_bytes]))
-      (ev6 : ObsFn W "KernelClaim::env_walk_all" [v7, (.ptr (Value.type x_bytes) (m10).length)] m42 r h' cs4)
-      (hc52 : calls = ((⟨"KernelRoles::role_ctx_for_validator", [(.ptr (Value.type x_binding) (h).length), x_validator], m24⟩ : Call F) :: (cs18 ++ ((⟨"KernelClaim::env_walk_all", [v7, (.ptr (Value.type x_bytes) (m10).length)], m42⟩ : Call F) :: cs4))))
+      (ev6 : ObsFn W "KernelClaim::env_walk_all" [v7, (.ptr (Value.type (x_bytes : SourceValue F)) (m10).length)] m42 r h' cs4)
+      (hc52 : calls = ((⟨"KernelRoles::role_ctx_for_validator", [(.ptr (Value.type (x_binding : SourceValue F)) (h).length), x_validator], m24⟩ : Call F) :: (cs18 ++ ((⟨"KernelClaim::env_walk_all", [v7, (.ptr (Value.type (x_bytes : SourceValue F)) (m10).length)], m42⟩ : Call F) :: cs4))))
 
 /-- **Every observed derivation of `IxVMCompat::check_owned` takes one of its paths.** -/
 theorem «IxVMCompat::check_owned».obs {x_binding x_validator x_bytes : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::check_owned" [x_binding, x_validator, x_bytes] h r h' calls) :
     «IxVMCompat::check_owned».Path x_binding x_validator x_bytes h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.check_owned.lookup
-    (by simp [IxVM.IxVMCompat.check_owned, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.check_owned.lookup
+    (by simp [IxVM.IxVMCompat.check_owned, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.check_owned] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -67,15 +67,15 @@ inductive «IxVMCompat::io_get_info».Path (x_channel x_key : SourceValue F) (h 
       (he5 : r = (Constant.toValue k2))
       (ev28 : ObsFn W "Blake3::address_to_fields" [x_key] h v9 m18 cs26)
       (he37 : h' = m18)
-      (ty4 : W.typed (Generic.Ty.toCore (Generic.Ty.subst (.tuple [.field, .field]) [])) k2 = true)
+      (ty4 : W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.tuple [.field, .field]))) k2 = true)
       (hc38 : calls = ((⟨"Blake3::address_to_fields", [x_key], h⟩ : Call F) :: cs26))
 
 /-- **Every observed derivation of `IxVMCompat::io_get_info` takes one of its paths.** -/
 theorem «IxVMCompat::io_get_info».obs {x_channel x_key : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::io_get_info" [x_channel, x_key] h r h' calls) :
     «IxVMCompat::io_get_info».Path x_channel x_key h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.io_get_info.lookup
-    (by simp [IxVM.IxVMCompat.io_get_info, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.io_get_info.lookup
+    (by simp [IxVM.IxVMCompat.io_get_info, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.io_get_info] at d0
   obtain ⟨x1, k2, d3, ty4, rfl⟩ := d0.hint_inv
   obtain ⟨vs6, a7, rfl⟩ := d3.tuple_inv
@@ -119,8 +119,8 @@ inductive «IxVMCompat::ordinary_div_mod».Path (x_a x_b : SourceValue F) (h : H
 theorem «IxVMCompat::ordinary_div_mod».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::ordinary_div_mod" [x_a, x_b] h r h' calls) :
     «IxVMCompat::ordinary_div_mod».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.ordinary_div_mod.lookup
-    (by simp [IxVM.IxVMCompat.ordinary_div_mod, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.ordinary_div_mod.lookup
+    (by simp [IxVM.IxVMCompat.ordinary_div_mod, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.ordinary_div_mod] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -222,8 +222,8 @@ inductive «IxVMCompat::divide_grow».Path (x_a x_b : SourceValue F) (h : Heap F
 theorem «IxVMCompat::divide_grow».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::divide_grow" [x_a, x_b] h r h' calls) :
     «IxVMCompat::divide_grow».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.divide_grow.lookup
-    (by simp [IxVM.IxVMCompat.divide_grow, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.divide_grow.lookup
+    (by simp [IxVM.IxVMCompat.divide_grow, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.divide_grow] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -393,8 +393,8 @@ inductive «IxVMCompat::stream_equal».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «IxVMCompat::stream_equal».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::stream_equal" [x_a, x_b] h r h' calls) :
     «IxVMCompat::stream_equal».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.stream_equal.lookup
-    (by simp [IxVM.IxVMCompat.stream_equal, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.stream_equal.lookup
+    (by simp [IxVM.IxVMCompat.stream_equal, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.stream_equal] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, a11, rfl⟩ := d7.tuple_inv
@@ -502,75 +502,75 @@ inductive «IxVMCompat::default_binding_addr».Path (h : Heap F) (r : SourceValu
 theorem «IxVMCompat::default_binding_addr».obs {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::default_binding_addr" [] h r h' calls) :
     «IxVMCompat::default_binding_addr».Path h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.default_binding_addr.lookup
-    (by simp [IxVM.IxVMCompat.default_binding_addr, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.default_binding_addr.lookup
+    (by simp [IxVM.IxVMCompat.default_binding_addr, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.default_binding_addr] at d0
   obtain ⟨v1, m2, d3, rfl, hm4⟩ := d0.store_inv
   obtain ⟨vs6, a7, rfl⟩ := d3.array_inv
   obtain ⟨v8, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a7.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv (x := (125 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c11055368227848790517
   obtain ⟨v9, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (248 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c8625757406670685203
   obtain ⟨v10, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (114 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c4368018265237050658
   obtain ⟨v11, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (219 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c12078453186527600422
   obtain ⟨v12, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (88 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c10621487201023178060
   obtain ⟨v13, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (209 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c9454143186152387735
   obtain ⟨v14, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (16 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c4657287510956961054
   obtain ⟨v15, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a81.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv (x := (10 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv Names.c17767019647226834810
   obtain ⟨v16, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a87.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv (x := (222 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv Names.c12075338171730505324
   obtain ⟨v17, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a93.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv (x := (13 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv Names.c14586370717960871890
   obtain ⟨v18, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a99.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv (x := (186 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv Names.c15888966825896649993
   obtain ⟨v19, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a105.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv (x := (87 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv Names.c18415082502931761857
   obtain ⟨v20, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a111.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv (x := (106 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv Names.c7337606866864008308
   obtain ⟨v21, vs118, m119, c120, c121, rfl, d122, a123, rfl⟩ := a117.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv (x := (19 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv Names.c4017473662635773303
   obtain ⟨v22, vs124, m125, c126, c127, rfl, d128, a129, rfl⟩ := a123.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv (x := (41 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv Names.c9535146383147336666
   obtain ⟨v23, vs130, m131, c132, c133, rfl, d134, a135, rfl⟩ := a129.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv (x := (130 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv Names.c16182748909402436911
   obtain ⟨v24, vs136, m137, c138, c139, rfl, d140, a141, rfl⟩ := a135.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d140.global_literal_inv (x := (217 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d140.global_literal_inv Names.c1120618628341026210
   obtain ⟨v25, vs142, m143, c144, c145, rfl, d146, a147, rfl⟩ := a141.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d146.global_literal_inv (x := (59 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d146.global_literal_inv Names.c2055296870433284577
   obtain ⟨v26, vs148, m149, c150, c151, rfl, d152, a153, rfl⟩ := a147.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d152.global_literal_inv (x := (191 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d152.global_literal_inv Names.c13265657144938307636
   obtain ⟨v27, vs154, m155, c156, c157, rfl, d158, a159, rfl⟩ := a153.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv (x := (159 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv Names.c4590721677409182186
   obtain ⟨v28, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a159.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv (x := (133 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv Names.c6423468919425334626
   obtain ⟨v29, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a165.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv (x := (41 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv Names.c9535146383147336666
   obtain ⟨v30, vs172, m173, c174, c175, rfl, d176, a177, rfl⟩ := a171.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv (x := (239 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv Names.c7211449745794722704
   obtain ⟨v31, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a177.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv (x := (15 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv Names.c7641370386151365290
   obtain ⟨v32, vs184, m185, c186, c187, rfl, d188, a189, rfl⟩ := a183.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv (x := (55 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv Names.c2126251733890856827
   obtain ⟨v33, vs190, m191, c192, c193, rfl, d194, a195, rfl⟩ := a189.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv (x := (161 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv Names.c7238466399104264063
   obtain ⟨v34, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a195.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv (x := (113 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv Names.c13611336004412951876
   obtain ⟨v35, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a201.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d206.global_literal_inv (x := (187 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d206.global_literal_inv Names.c1957414861934845478
   obtain ⟨v36, vs208, m209, c210, c211, rfl, d212, a213, rfl⟩ := a207.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d212.global_literal_inv (x := (47 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d212.global_literal_inv Names.c11054337940848463029
   obtain ⟨v37, vs214, m215, c216, c217, rfl, d218, a219, rfl⟩ := a213.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d218.global_literal_inv (x := (186 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d218.global_literal_inv Names.c15888966825896649993
   obtain ⟨v38, vs220, m221, c222, c223, rfl, d224, a225, rfl⟩ := a219.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d224.global_literal_inv (x := (225 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d224.global_literal_inv Names.c7595293350636867042
   obtain ⟨v39, vs226, m227, c228, c229, rfl, d230, a231, rfl⟩ := a225.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d230.global_literal_inv (x := (218 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d230.global_literal_inv Names.c16203459150952935861
   obtain ⟨rfl, rfl, rfl⟩ := a231.nil_inv
   try simp only [Value.type, List.map_cons, List.map_nil] at hm4 ⊢
   exact «IxVMCompat::default_binding_addr».Path.run rfl hm4 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -593,8 +593,8 @@ inductive «IxVMCompat::audit_div».Path (x_a x_b x_expected_q x_expected_r : So
 theorem «IxVMCompat::audit_div».obs {x_a x_b x_expected_q x_expected_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "IxVMCompat::audit_div" [x_a, x_b, x_expected_q, x_expected_r] h r h' calls) :
     «IxVMCompat::audit_div».Path x_a x_b x_expected_q x_expected_r h r h' calls := by
-  have d0 := ev.function_inv IxVM.IxVMCompat.audit_div.lookup
-    (by simp [IxVM.IxVMCompat.audit_div, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.audit_div.lookup
+    (by simp [IxVM.IxVMCompat.audit_div, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.audit_div] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv

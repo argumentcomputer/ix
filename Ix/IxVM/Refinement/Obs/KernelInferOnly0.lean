@@ -31,8 +31,8 @@ inductive «KernelInferOnly::io_types_lookup».Path (x_types x_i : SourceValue F
 theorem «KernelInferOnly::io_types_lookup».obs {x_types x_i : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::io_types_lookup" [x_types, x_i] h r h' calls) :
     «KernelInferOnly::io_types_lookup».Path x_types x_i h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.io_types_lookup.lookup
-    (by simp [IxVM.KernelInferOnly.io_types_lookup, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.io_types_lookup.lookup
+    (by simp [IxVM.KernelInferOnly.io_types_lookup, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.io_types_lookup] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -148,8 +148,8 @@ inductive «KernelInferOnly::io_const_num_lvls».Path (x_ci : SourceValue F) (h 
 theorem «KernelInferOnly::io_const_num_lvls».obs {x_ci : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::io_const_num_lvls" [x_ci] h r h' calls) :
     «KernelInferOnly::io_const_num_lvls».Path x_ci h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.io_const_num_lvls.lookup
-    (by simp [IxVM.KernelInferOnly.io_const_num_lvls, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.io_const_num_lvls.lookup
+    (by simp [IxVM.KernelInferOnly.io_const_num_lvls, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.io_const_num_lvls] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -411,8 +411,8 @@ inductive «KernelInferOnly::io_const_type_of».Path (x_ci : SourceValue F) (h :
 theorem «KernelInferOnly::io_const_type_of».obs {x_ci : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::io_const_type_of" [x_ci] h r h' calls) :
     «KernelInferOnly::io_const_type_of».Path x_ci h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.io_const_type_of.lookup
-    (by simp [IxVM.KernelInferOnly.io_const_type_of, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.io_const_type_of.lookup
+    (by simp [IxVM.KernelInferOnly.io_const_type_of, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.io_const_type_of] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -604,8 +604,8 @@ inductive «KernelInferOnly::k_infer_only».Path (x_rc x_e x_types : SourceValue
 theorem «KernelInferOnly::k_infer_only».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::k_infer_only" [x_rc, x_e, x_types] h r h' calls) :
     «KernelInferOnly::k_infer_only».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.k_infer_only.lookup
-    (by simp [IxVM.KernelInferOnly.k_infer_only, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.k_infer_only.lookup
+    (by simp [IxVM.KernelInferOnly.k_infer_only, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.k_infer_only] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -746,8 +746,8 @@ inductive «KernelInferOnly::k_infer_only_core».Path (x_rc x_e x_types : Source
 theorem «KernelInferOnly::k_infer_only_core».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::k_infer_only_core" [x_rc, x_e, x_types] h r h' calls) :
     «KernelInferOnly::k_infer_only_core».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.k_infer_only_core.lookup
-    (by simp [IxVM.KernelInferOnly.k_infer_only_core, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.k_infer_only_core.lookup
+    (by simp [IxVM.KernelInferOnly.k_infer_only_core, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.k_infer_only_core] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1531,8 +1531,8 @@ inductive «KernelInferOnly::ensure_sort_only».Path (x_rc x_e x_types : SourceV
 theorem «KernelInferOnly::ensure_sort_only».obs {x_rc x_e x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::ensure_sort_only" [x_rc, x_e, x_types] h r h' calls) :
     «KernelInferOnly::ensure_sort_only».Path x_rc x_e x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.ensure_sort_only.lookup
-    (by simp [IxVM.KernelInferOnly.ensure_sort_only, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.ensure_sort_only.lookup
+    (by simp [IxVM.KernelInferOnly.ensure_sort_only, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.ensure_sort_only] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1631,8 +1631,8 @@ inductive «KernelInferOnly::io_peel_params_subst».Path (x_ty x_args x_n_params
 theorem «KernelInferOnly::io_peel_params_subst».obs {x_ty x_args x_n_params : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::io_peel_params_subst" [x_ty, x_args, x_n_params] h r h' calls) :
     «KernelInferOnly::io_peel_params_subst».Path x_ty x_args x_n_params h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.io_peel_params_subst.lookup
-    (by simp [IxVM.KernelInferOnly.io_peel_params_subst, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.io_peel_params_subst.lookup
+    (by simp [IxVM.KernelInferOnly.io_peel_params_subst, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.io_peel_params_subst] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1741,8 +1741,8 @@ inductive «KernelInferOnly::io_peel_field_loop».Path (x_ty x_target x_current 
 theorem «KernelInferOnly::io_peel_field_loop».obs {x_ty x_target x_current x_struct_addr x_val : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelInferOnly::io_peel_field_loop" [x_ty, x_target, x_current, x_struct_addr, x_val] h r h' calls) :
     «KernelInferOnly::io_peel_field_loop».Path x_ty x_target x_current x_struct_addr x_val h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelInferOnly.io_peel_field_loop.lookup
-    (by simp [IxVM.KernelInferOnly.io_peel_field_loop, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelInferOnly.io_peel_field_loop.lookup
+    (by simp [IxVM.KernelInferOnly.io_peel_field_loop, ControlLower.hasControl]) ev
   simp only [IxVM.KernelInferOnly.io_peel_field_loop] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv

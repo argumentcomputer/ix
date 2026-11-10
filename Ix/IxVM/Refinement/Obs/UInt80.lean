@@ -33,8 +33,8 @@ inductive «UInt8::raw_and».Path (x_a x_b : SourceValue F) (h : Heap F) (r : So
 theorem «UInt8::raw_and».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::raw_and" [x_a, x_b] h r h' calls) :
     «UInt8::raw_and».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.raw_and.lookup
-    (by simp [IxVM.UInt8.raw_and, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.raw_and.lookup
+    (by simp [IxVM.UInt8.raw_and, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.raw_and] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -80,8 +80,8 @@ inductive «UInt8::raw_or».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sou
 theorem «UInt8::raw_or».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::raw_or" [x_a, x_b] h r h' calls) :
     «UInt8::raw_or».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.raw_or.lookup
-    (by simp [IxVM.UInt8.raw_or, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.raw_or.lookup
+    (by simp [IxVM.UInt8.raw_or, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.raw_or] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -125,8 +125,8 @@ inductive «UInt8::raw_lt».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Sou
 theorem «UInt8::raw_lt».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::raw_lt" [x_a, x_b] h r h' calls) :
     «UInt8::raw_lt».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.raw_lt.lookup
-    (by simp [IxVM.UInt8.raw_lt, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.raw_lt.lookup
+    (by simp [IxVM.UInt8.raw_lt, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.raw_lt] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -164,8 +164,8 @@ inductive «UInt8::to_field».Path (x_byte : SourceValue F) (h : Heap F) (r : So
 theorem «UInt8::to_field».obs {x_byte : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::to_field" [x_byte] h r h' calls) :
     «UInt8::to_field».Path x_byte h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.to_field.lookup
-    (by simp [IxVM.UInt8.to_field, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.to_field.lookup
+    (by simp [IxVM.UInt8.to_field, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.to_field] at d0
   obtain ⟨l1, rfl, rfl⟩ := d0.var_inv
   simp at l1
@@ -186,8 +186,8 @@ inductive «UInt8::from_fields».Path (x_a x_b : SourceValue F) (h : Heap F) (r 
 theorem «UInt8::from_fields».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::from_fields" [x_a, x_b] h r h' calls) :
     «UInt8::from_fields».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.from_fields.lookup
-    (by simp [IxVM.UInt8.from_fields, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.from_fields.lookup
+    (by simp [IxVM.UInt8.from_fields, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.from_fields] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -226,8 +226,8 @@ inductive «UInt8::bit_decomposition».Path (x_x : SourceValue F) (h : Heap F) (
 theorem «UInt8::bit_decomposition».obs {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::bit_decomposition" [x_x] h r h' calls) :
     «UInt8::bit_decomposition».Path x_x h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.bit_decomposition.lookup
-    (by simp [IxVM.UInt8.bit_decomposition, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.bit_decomposition.lookup
+    (by simp [IxVM.UInt8.bit_decomposition, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.bit_decomposition] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -250,8 +250,8 @@ inductive «UInt8::xor».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt8::xor».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::xor" [x_a, x_b] h r h' calls) :
     «UInt8::xor».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.xor.lookup
-    (by simp [IxVM.UInt8.xor, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.xor.lookup
+    (by simp [IxVM.UInt8.xor, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.xor] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -278,8 +278,8 @@ inductive «UInt8::and».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt8::and».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::and" [x_a, x_b] h r h' calls) :
     «UInt8::and».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.and.lookup
-    (by simp [IxVM.UInt8.and, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.and.lookup
+    (by simp [IxVM.UInt8.and, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.and] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -306,8 +306,8 @@ inductive «UInt8::or».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceV
 theorem «UInt8::or».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::or" [x_a, x_b] h r h' calls) :
     «UInt8::or».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.or.lookup
-    (by simp [IxVM.UInt8.or, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.or.lookup
+    (by simp [IxVM.UInt8.or, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.or] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -334,8 +334,8 @@ inductive «UInt8::less_than».Path (x_a x_b : SourceValue F) (h : Heap F) (r : 
 theorem «UInt8::less_than».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::less_than" [x_a, x_b] h r h' calls) :
     «UInt8::less_than».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.less_than.lookup
-    (by simp [IxVM.UInt8.less_than, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.less_than.lookup
+    (by simp [IxVM.UInt8.less_than, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.less_than] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -362,8 +362,8 @@ inductive «UInt8::add».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt8::add».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::add" [x_a, x_b] h r h' calls) :
     «UInt8::add».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.add.lookup
-    (by simp [IxVM.UInt8.add, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.add.lookup
+    (by simp [IxVM.UInt8.add, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.add] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -390,8 +390,8 @@ inductive «UInt8::sub».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt8::sub».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::sub" [x_a, x_b] h r h' calls) :
     «UInt8::sub».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.sub.lookup
-    (by simp [IxVM.UInt8.sub, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.sub.lookup
+    (by simp [IxVM.UInt8.sub, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.sub] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -418,8 +418,8 @@ inductive «UInt8::mul».Path (x_a x_b : SourceValue F) (h : Heap F) (r : Source
 theorem «UInt8::mul».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::mul" [x_a, x_b] h r h' calls) :
     «UInt8::mul».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.mul.lookup
-    (by simp [IxVM.UInt8.mul, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.mul.lookup
+    (by simp [IxVM.UInt8.mul, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.mul] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -446,8 +446,8 @@ inductive «UInt8::xor_split4».Path (x_a x_b : SourceValue F) (h : Heap F) (r :
 theorem «UInt8::xor_split4».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::xor_split4" [x_a, x_b] h r h' calls) :
     «UInt8::xor_split4».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.xor_split4.lookup
-    (by simp [IxVM.UInt8.xor_split4, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.xor_split4.lookup
+    (by simp [IxVM.UInt8.xor_split4, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.xor_split4] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -474,8 +474,8 @@ inductive «UInt8::xor_split7».Path (x_a x_b : SourceValue F) (h : Heap F) (r :
 theorem «UInt8::xor_split7».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::xor_split7" [x_a, x_b] h r h' calls) :
     «UInt8::xor_split7».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.xor_split7.lookup
-    (by simp [IxVM.UInt8.xor_split7, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.xor_split7.lookup
+    (by simp [IxVM.UInt8.xor_split7, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.xor_split7] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -505,8 +505,8 @@ inductive «UInt8::join4».Path (x_high x_low : SourceValue F) (h : Heap F) (r :
 theorem «UInt8::join4».obs {x_high x_low : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::join4" [x_high, x_low] h r h' calls) :
     «UInt8::join4».Path x_high x_low h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.join4.lookup
-    (by simp [IxVM.UInt8.join4, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.join4.lookup
+    (by simp [IxVM.UInt8.join4, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.join4] at d0
   obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, rfl⟩ := d0.binary_inv
   obtain ⟨p9, d10, pr11⟩ := d6.project_inv
@@ -534,8 +534,8 @@ inductive «UInt8::join7».Path (x_high x_low : SourceValue F) (h : Heap F) (r :
 theorem «UInt8::join7».obs {x_high x_low : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::join7" [x_high, x_low] h r h' calls) :
     «UInt8::join7».Path x_high x_low h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.join7.lookup
-    (by simp [IxVM.UInt8.join7, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.join7.lookup
+    (by simp [IxVM.UInt8.join7, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.join7] at d0
   obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, rfl⟩ := d0.binary_inv
   obtain ⟨p9, d10, pr11⟩ := d6.project_inv
@@ -564,8 +564,8 @@ inductive «UInt8::split_sum».Path (x_sum : SourceValue F) (h : Heap F) (r : So
 theorem «UInt8::split_sum».obs {x_sum : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "UInt8::split_sum" [x_sum] h r h' calls) :
     «UInt8::split_sum».Path x_sum h r h' calls := by
-  have d0 := ev.function_inv IxVM.UInt8.split_sum.lookup
-    (by simp [IxVM.UInt8.split_sum, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.UInt8.split_sum.lookup
+    (by simp [IxVM.UInt8.split_sum, ControlLower.hasControl]) ev
   simp only [IxVM.UInt8.split_sum] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv

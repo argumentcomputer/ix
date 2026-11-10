@@ -94,8 +94,8 @@ inductive «KernelNatPrim::try_nat_linear_rec».Path (x_rc x_spine x_nparams x_n
 theorem «KernelNatPrim::try_nat_linear_rec».obs {x_rc x_spine x_nparams x_nmotives x_nminors x_major_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_nat_linear_rec" [x_rc, x_spine, x_nparams, x_nmotives, x_nminors, x_major_idx] h r h' calls) :
     «KernelNatPrim::try_nat_linear_rec».Path x_rc x_spine x_nparams x_nmotives x_nminors x_major_idx h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_nat_linear_rec.lookup
-    (by simp [IxVM.KernelNatPrim.try_nat_linear_rec, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_nat_linear_rec.lookup
+    (by simp [IxVM.KernelNatPrim.try_nat_linear_rec, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_nat_linear_rec] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -439,8 +439,8 @@ inductive «KernelNatPrim::try_nat_dispatch».Path (x_rc x_head_addr x_op x_spin
 theorem «KernelNatPrim::try_nat_dispatch».obs {x_rc x_head_addr x_op x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_nat_dispatch" [x_rc, x_head_addr, x_op, x_spine, x_types] h r h' calls) :
     «KernelNatPrim::try_nat_dispatch».Path x_rc x_head_addr x_op x_spine x_types h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_nat_dispatch.lookup
-    (by simp [IxVM.KernelNatPrim.try_nat_dispatch, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_nat_dispatch.lookup
+    (by simp [IxVM.KernelNatPrim.try_nat_dispatch, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_nat_dispatch] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -803,8 +803,8 @@ inductive «KernelNatPrim::try_nat_binop_dispatch».Path (x_rc x_head_addr x_op 
 theorem «KernelNatPrim::try_nat_binop_dispatch».obs {x_rc x_head_addr x_op x_spine x_spine_len : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::try_nat_binop_dispatch" [x_rc, x_head_addr, x_op, x_spine, x_spine_len] h r h' calls) :
     «KernelNatPrim::try_nat_binop_dispatch».Path x_rc x_head_addr x_op x_spine x_spine_len h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.try_nat_binop_dispatch.lookup
-    (by simp [IxVM.KernelNatPrim.try_nat_binop_dispatch, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.try_nat_binop_dispatch.lookup
+    (by simp [IxVM.KernelNatPrim.try_nat_binop_dispatch, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.try_nat_binop_dispatch] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -1083,8 +1083,8 @@ inductive «KernelNatPrim::mk_nat_binop_stuck».Path (x_op_addr x_base_w x_n x_p
 theorem «KernelNatPrim::mk_nat_binop_stuck».obs {x_op_addr x_base_w x_n x_post : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelNatPrim::mk_nat_binop_stuck" [x_op_addr, x_base_w, x_n, x_post] h r h' calls) :
     «KernelNatPrim::mk_nat_binop_stuck».Path x_op_addr x_base_w x_n x_post h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelNatPrim.mk_nat_binop_stuck.lookup
-    (by simp [IxVM.KernelNatPrim.mk_nat_binop_stuck, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelNatPrim.mk_nat_binop_stuck.lookup
+    (by simp [IxVM.KernelNatPrim.mk_nat_binop_stuck, ControlLower.hasControl]) ev
   simp only [IxVM.KernelNatPrim.mk_nat_binop_stuck] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv

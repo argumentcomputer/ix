@@ -50,8 +50,8 @@ inductive «KernelKlimbs::klimbs_succ».Path (x_n : SourceValue F) (h : Heap F) 
 theorem «KernelKlimbs::klimbs_succ».obs {x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_succ" [x_n] h r h' calls) :
     «KernelKlimbs::klimbs_succ».Path x_n h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_succ.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_succ, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_succ.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_succ, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_succ] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -70,21 +70,21 @@ theorem «KernelKlimbs::klimbs_succ».obs {x_n : SourceValue F} {h h' : Heap F} 
     obtain ⟨v28, vs30, m31, c32, c33, rfl, d34, a35, rfl⟩ := a26.cons_inv
     obtain ⟨vs36, a37, rfl⟩ := d34.array_inv
     obtain ⟨v38, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a37.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c3167744620027602021
     obtain ⟨v39, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c9173999864893739538
     obtain ⟨v40, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c9173999864893739538
     obtain ⟨v41, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c9173999864893739538
     obtain ⟨v42, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c9173999864893739538
     obtain ⟨v43, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c9173999864893739538
     obtain ⟨v44, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a81.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv Names.c9173999864893739538
     obtain ⟨v45, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a87.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv Names.c9173999864893739538
     obtain ⟨rfl, rfl, rfl⟩ := a93.nil_inv
     obtain ⟨v29, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a35.cons_inv
     obtain ⟨v100, m101, d102, rfl, hm103⟩ := d98.store_inv
@@ -116,21 +116,21 @@ theorem «KernelKlimbs::klimbs_succ».obs {x_n : SourceValue F} {h h' : Heap F} 
       obtain ⟨v140, vs148, m149, c150, c151, rfl, d152, a153, rfl⟩ := a146.cons_inv
       obtain ⟨vs154, a155, rfl⟩ := d152.array_inv
       obtain ⟨v156, vs164, m165, c166, c167, rfl, d168, a169, rfl⟩ := a155.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d168.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d168.global_literal_inv Names.c3167744620027602021
       obtain ⟨v157, vs170, m171, c172, c173, rfl, d174, a175, rfl⟩ := a169.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d174.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d174.global_literal_inv Names.c9173999864893739538
       obtain ⟨v158, vs176, m177, c178, c179, rfl, d180, a181, rfl⟩ := a175.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d180.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d180.global_literal_inv Names.c9173999864893739538
       obtain ⟨v159, vs182, m183, c184, c185, rfl, d186, a187, rfl⟩ := a181.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d186.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d186.global_literal_inv Names.c9173999864893739538
       obtain ⟨v160, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a187.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d192.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d192.global_literal_inv Names.c9173999864893739538
       obtain ⟨v161, vs194, m195, c196, c197, rfl, d198, a199, rfl⟩ := a193.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d198.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d198.global_literal_inv Names.c9173999864893739538
       obtain ⟨v162, vs200, m201, c202, c203, rfl, d204, a205, rfl⟩ := a199.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d204.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d204.global_literal_inv Names.c9173999864893739538
       obtain ⟨v163, vs206, m207, c208, c209, rfl, d210, a211, rfl⟩ := a205.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d210.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d210.global_literal_inv Names.c9173999864893739538
       obtain ⟨rfl, rfl, rfl⟩ := a211.nil_inv
       obtain ⟨rfl, rfl, rfl⟩ := a153.nil_inv
       obtain rfl := matchPattern_bind_inv mt131
@@ -250,8 +250,8 @@ inductive «KernelKlimbs::klimbs_add_carry».Path (x_a x_b x_carry : SourceValue
 theorem «KernelKlimbs::klimbs_add_carry».obs {x_a x_b x_carry : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_add_carry" [x_a, x_b, x_carry] h r h' calls) :
     «KernelKlimbs::klimbs_add_carry».Path x_a x_b x_carry h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_add_carry.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_add_carry, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_add_carry.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_add_carry, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_add_carry] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -382,19 +382,19 @@ theorem «KernelKlimbs::klimbs_add_carry».obs {x_a x_b x_carry : SourceValue F}
             subst l261
             obtain ⟨rfl, rfl, rfl⟩ := a260.nil_inv
             obtain ⟨v235, vs262, m263, c264, c265, rfl, d266, a267, rfl⟩ := a247.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d266.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d266.global_literal_inv Names.c9173999864893739538
             obtain ⟨v236, vs268, m269, c270, c271, rfl, d272, a273, rfl⟩ := a267.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d272.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d272.global_literal_inv Names.c9173999864893739538
             obtain ⟨v237, vs274, m275, c276, c277, rfl, d278, a279, rfl⟩ := a273.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d278.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d278.global_literal_inv Names.c9173999864893739538
             obtain ⟨v238, vs280, m281, c282, c283, rfl, d284, a285, rfl⟩ := a279.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d284.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d284.global_literal_inv Names.c9173999864893739538
             obtain ⟨v239, vs286, m287, c288, c289, rfl, d290, a291, rfl⟩ := a285.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d290.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d290.global_literal_inv Names.c9173999864893739538
             obtain ⟨v240, vs292, m293, c294, c295, rfl, d296, a297, rfl⟩ := a291.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d296.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d296.global_literal_inv Names.c9173999864893739538
             obtain ⟨v241, vs298, m299, c300, c301, rfl, d302, a303, rfl⟩ := a297.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d302.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d302.global_literal_inv Names.c9173999864893739538
             obtain ⟨rfl, rfl, rfl⟩ := a303.nil_inv
             obtain ⟨rfl, rfl, rfl⟩ := a231.nil_inv
             obtain rfl := matchPattern_bind_inv mt209
@@ -477,8 +477,8 @@ inductive «KernelKlimbs::klimbs_add».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_add».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_add" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_add».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_add.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_add, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_add.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_add, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_add] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -563,8 +563,8 @@ inductive «KernelKlimbs::klimbs_sub_borrow».Path (x_a x_b x_borrow : SourceVal
 theorem «KernelKlimbs::klimbs_sub_borrow».obs {x_a x_b x_borrow : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_sub_borrow" [x_a, x_b, x_borrow] h r h' calls) :
     «KernelKlimbs::klimbs_sub_borrow».Path x_a x_b x_borrow h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_sub_borrow.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_sub_borrow, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_sub_borrow.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_sub_borrow, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_sub_borrow] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -704,21 +704,21 @@ theorem «KernelKlimbs::klimbs_sub_borrow».obs {x_a x_b x_borrow : SourceValue 
             obtain ⟨v259, vs267, m268, c269, c270, rfl, d271, a272, rfl⟩ := a265.cons_inv
             obtain ⟨vs273, a274, rfl⟩ := d271.array_inv
             obtain ⟨v275, vs283, m284, c285, c286, rfl, d287, a288, rfl⟩ := a274.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d287.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d287.global_literal_inv Names.c3167744620027602021
             obtain ⟨v276, vs289, m290, c291, c292, rfl, d293, a294, rfl⟩ := a288.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d293.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d293.global_literal_inv Names.c9173999864893739538
             obtain ⟨v277, vs295, m296, c297, c298, rfl, d299, a300, rfl⟩ := a294.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d299.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d299.global_literal_inv Names.c9173999864893739538
             obtain ⟨v278, vs301, m302, c303, c304, rfl, d305, a306, rfl⟩ := a300.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d305.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d305.global_literal_inv Names.c9173999864893739538
             obtain ⟨v279, vs307, m308, c309, c310, rfl, d311, a312, rfl⟩ := a306.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d311.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d311.global_literal_inv Names.c9173999864893739538
             obtain ⟨v280, vs313, m314, c315, c316, rfl, d317, a318, rfl⟩ := a312.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d317.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d317.global_literal_inv Names.c9173999864893739538
             obtain ⟨v281, vs319, m320, c321, c322, rfl, d323, a324, rfl⟩ := a318.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d323.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d323.global_literal_inv Names.c9173999864893739538
             obtain ⟨v282, vs325, m326, c327, c328, rfl, d329, a330, rfl⟩ := a324.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d329.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d329.global_literal_inv Names.c9173999864893739538
             obtain ⟨rfl, rfl, rfl⟩ := a330.nil_inv
             obtain ⟨rfl, rfl, rfl⟩ := a272.nil_inv
             obtain rfl := matchPattern_bind_inv mt250
@@ -846,19 +846,19 @@ theorem «KernelKlimbs::klimbs_sub_borrow».obs {x_a x_b x_borrow : SourceValue 
             subst l603
             obtain ⟨rfl, rfl, rfl⟩ := a602.nil_inv
             obtain ⟨v577, vs604, m605, c606, c607, rfl, d608, a609, rfl⟩ := a589.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d608.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d608.global_literal_inv Names.c9173999864893739538
             obtain ⟨v578, vs610, m611, c612, c613, rfl, d614, a615, rfl⟩ := a609.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d614.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d614.global_literal_inv Names.c9173999864893739538
             obtain ⟨v579, vs616, m617, c618, c619, rfl, d620, a621, rfl⟩ := a615.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d620.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d620.global_literal_inv Names.c9173999864893739538
             obtain ⟨v580, vs622, m623, c624, c625, rfl, d626, a627, rfl⟩ := a621.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d626.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d626.global_literal_inv Names.c9173999864893739538
             obtain ⟨v581, vs628, m629, c630, c631, rfl, d632, a633, rfl⟩ := a627.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d632.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d632.global_literal_inv Names.c9173999864893739538
             obtain ⟨v582, vs634, m635, c636, c637, rfl, d638, a639, rfl⟩ := a633.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d638.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d638.global_literal_inv Names.c9173999864893739538
             obtain ⟨v583, vs640, m641, c642, c643, rfl, d644, a645, rfl⟩ := a639.cons_inv
-            obtain ⟨rfl, rfl, rfl⟩ := d644.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+            obtain ⟨rfl, rfl, rfl⟩ := d644.global_literal_inv Names.c9173999864893739538
             obtain ⟨rfl, rfl, rfl⟩ := a645.nil_inv
             obtain ⟨rfl, rfl, rfl⟩ := a573.nil_inv
             obtain rfl := matchPattern_bind_inv mt551
@@ -988,8 +988,8 @@ inductive «KernelKlimbs::klimbs_normalize».Path (x_n : SourceValue F) (h : Hea
 theorem «KernelKlimbs::klimbs_normalize».obs {x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_normalize" [x_n] h r h' calls) :
     «KernelKlimbs::klimbs_normalize».Path x_n h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_normalize.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_normalize, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_normalize.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_normalize, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_normalize] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1122,8 +1122,8 @@ inductive «KernelKlimbs::klimbs_sub».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_sub».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_sub" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_sub».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_sub.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_sub, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_sub.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_sub, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_sub] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1206,8 +1206,8 @@ inductive «KernelKlimbs::klimbs_le».Path (x_a x_b : SourceValue F) (h : Heap F
 theorem «KernelKlimbs::klimbs_le».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_le" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_le».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_le.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_le, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_le.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_le, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_le] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1256,8 +1256,8 @@ inductive «KernelKlimbs::klimbs_dec».Path (x_a : SourceValue F) (h : Heap F) (
 theorem «KernelKlimbs::klimbs_dec».obs {x_a : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_dec" [x_a] h r h' calls) :
     «KernelKlimbs::klimbs_dec».Path x_a h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_dec.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_dec, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_dec.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_dec, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_dec] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv
@@ -1267,21 +1267,21 @@ theorem «KernelKlimbs::klimbs_dec».obs {x_a : SourceValue F} {h h' : Heap F} {
   obtain ⟨v16, vs18, m19, c20, c21, rfl, d22, a23, rfl⟩ := a14.cons_inv
   obtain ⟨vs24, a25, rfl⟩ := d22.array_inv
   obtain ⟨v26, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a25.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv Names.c3167744620027602021
   obtain ⟨v27, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a39.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c9173999864893739538
   obtain ⟨v28, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c9173999864893739538
   obtain ⟨v29, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c9173999864893739538
   obtain ⟨v30, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c9173999864893739538
   obtain ⟨v31, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c9173999864893739538
   obtain ⟨v32, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c9173999864893739538
   obtain ⟨v33, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c9173999864893739538
   obtain ⟨rfl, rfl, rfl⟩ := a81.nil_inv
   obtain ⟨v17, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a23.cons_inv
   obtain ⟨v88, m89, d90, rfl, hm91⟩ := d86.store_inv
@@ -1326,8 +1326,8 @@ inductive «KernelKlimbs::divmod_256».Path (x_x x_q : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::divmod_256».obs {x_x x_q : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::divmod_256" [x_x, x_q] h r h' calls) :
     «KernelKlimbs::divmod_256».Path x_x x_q h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.divmod_256.lookup
-    (by simp [IxVM.KernelKlimbs.divmod_256, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.divmod_256.lookup
+    (by simp [IxVM.KernelKlimbs.divmod_256, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.divmod_256] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -1389,8 +1389,8 @@ inductive «KernelKlimbs::klimbs_mul».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_mul».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_mul" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_mul».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_mul.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_mul, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_mul.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_mul, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_mul] at d0
   obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
   rw [instanceName_plain_some] at ev6
@@ -1436,8 +1436,8 @@ inductive «KernelKlimbs::klimbs_mul_outer».Path (x_a x_b x_acc x_shift : Sourc
 theorem «KernelKlimbs::klimbs_mul_outer».obs {x_a x_b x_acc x_shift : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_mul_outer" [x_a, x_b, x_acc, x_shift] h r h' calls) :
     «KernelKlimbs::klimbs_mul_outer».Path x_a x_b x_acc x_shift h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_mul_outer.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_mul_outer, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_mul_outer.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_mul_outer, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_mul_outer] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1478,21 +1478,21 @@ theorem «KernelKlimbs::klimbs_mul_outer».obs {x_a x_b x_acc x_shift : SourceVa
       obtain ⟨v57, vs72, m73, c74, c75, rfl, d76, a77, rfl⟩ := a70.cons_inv
       obtain ⟨vs78, a79, rfl⟩ := d76.array_inv
       obtain ⟨v80, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a79.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv Names.c9173999864893739538
       obtain ⟨v81, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a93.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv Names.c9173999864893739538
       obtain ⟨v82, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a99.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv Names.c9173999864893739538
       obtain ⟨v83, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a105.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv Names.c9173999864893739538
       obtain ⟨v84, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a111.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv Names.c9173999864893739538
       obtain ⟨v85, vs118, m119, c120, c121, rfl, d122, a123, rfl⟩ := a117.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv Names.c9173999864893739538
       obtain ⟨v86, vs124, m125, c126, c127, rfl, d128, a129, rfl⟩ := a123.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv Names.c9173999864893739538
       obtain ⟨v87, vs130, m131, c132, c133, rfl, d134, a135, rfl⟩ := a129.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv Names.c9173999864893739538
       obtain ⟨rfl, rfl, rfl⟩ := a135.nil_inv
       obtain ⟨rfl, rfl, rfl⟩ := a77.nil_inv
       obtain rfl := matchPattern_bind_inv mt47
@@ -1593,8 +1593,8 @@ inductive «KernelKlimbs::klimbs_mul_single».Path (x_a_limb x_b x_carry : Sourc
 theorem «KernelKlimbs::klimbs_mul_single».obs {x_a_limb x_b x_carry : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_mul_single" [x_a_limb, x_b, x_carry] h r h' calls) :
     «KernelKlimbs::klimbs_mul_single».Path x_a_limb x_b x_carry h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_mul_single.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_mul_single, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_mul_single.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_mul_single, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_mul_single] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1799,8 +1799,8 @@ inductive «KernelKlimbs::klimbs_shl_limbs».Path (x_x x_shift : SourceValue F) 
 theorem «KernelKlimbs::klimbs_shl_limbs».obs {x_x x_shift : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_shl_limbs" [x_x, x_shift] h r h' calls) :
     «KernelKlimbs::klimbs_shl_limbs».Path x_x x_shift h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_shl_limbs.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_shl_limbs, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_shl_limbs.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_shl_limbs, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_shl_limbs] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
@@ -1823,21 +1823,21 @@ theorem «KernelKlimbs::klimbs_shl_limbs».obs {x_x x_shift : SourceValue F} {h 
       obtain ⟨v38, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a36.cons_inv
       obtain ⟨vs46, a47, rfl⟩ := d44.array_inv
       obtain ⟨v48, vs56, m57, c58, c59, rfl, d60, a61, rfl⟩ := a47.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d60.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d60.global_literal_inv Names.c9173999864893739538
       obtain ⟨v49, vs62, m63, c64, c65, rfl, d66, a67, rfl⟩ := a61.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d66.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d66.global_literal_inv Names.c9173999864893739538
       obtain ⟨v50, vs68, m69, c70, c71, rfl, d72, a73, rfl⟩ := a67.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d72.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d72.global_literal_inv Names.c9173999864893739538
       obtain ⟨v51, vs74, m75, c76, c77, rfl, d78, a79, rfl⟩ := a73.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d78.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d78.global_literal_inv Names.c9173999864893739538
       obtain ⟨v52, vs80, m81, c82, c83, rfl, d84, a85, rfl⟩ := a79.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d84.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d84.global_literal_inv Names.c9173999864893739538
       obtain ⟨v53, vs86, m87, c88, c89, rfl, d90, a91, rfl⟩ := a85.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d90.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d90.global_literal_inv Names.c9173999864893739538
       obtain ⟨v54, vs92, m93, c94, c95, rfl, d96, a97, rfl⟩ := a91.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d96.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d96.global_literal_inv Names.c9173999864893739538
       obtain ⟨v55, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a97.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d102.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d102.global_literal_inv Names.c9173999864893739538
       obtain ⟨rfl, rfl, rfl⟩ := a103.nil_inv
       obtain ⟨v39, vs104, m105, c106, c107, rfl, d108, a109, rfl⟩ := a45.cons_inv
       obtain ⟨l110, rfl, rfl⟩ := d108.var_inv
@@ -1885,8 +1885,8 @@ inductive «KernelKlimbs::klimbs_is_zero».Path (x_x : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_is_zero».obs {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_is_zero" [x_x] h r h' calls) :
     «KernelKlimbs::klimbs_is_zero».Path x_x h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_is_zero.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_is_zero, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_is_zero.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_is_zero, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_is_zero] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1955,8 +1955,8 @@ inductive «KernelKlimbs::klimbs_div_mod».Path (x_a x_b : SourceValue F) (h : H
 theorem «KernelKlimbs::klimbs_div_mod».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_div_mod" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_div_mod».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_div_mod.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_div_mod, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_div_mod.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_div_mod, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_div_mod] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -2145,8 +2145,8 @@ inductive «KernelKlimbs::klimbs_div».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_div».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_div" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_div».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_div.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_div, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_div.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_div, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_div] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2189,8 +2189,8 @@ inductive «KernelKlimbs::klimbs_mod».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_mod».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_mod" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_mod».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_mod.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_mod, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_mod.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_mod, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_mod] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2239,8 +2239,8 @@ inductive «KernelKlimbs::klimbs_gcd».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_gcd».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_gcd" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_gcd».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_gcd.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_gcd, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_gcd.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_gcd, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_gcd] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2326,8 +2326,8 @@ inductive «KernelKlimbs::klimbs_pow».Path (x_base x_exp : SourceValue F) (h : 
 theorem «KernelKlimbs::klimbs_pow».obs {x_base x_exp : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_pow" [x_base, x_exp] h r h' calls) :
     «KernelKlimbs::klimbs_pow».Path x_base x_exp h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_pow.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_pow, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_pow.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_pow, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_pow] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -2347,21 +2347,21 @@ theorem «KernelKlimbs::klimbs_pow».obs {x_base x_exp : SourceValue F} {h h' : 
     obtain ⟨v36, vs38, m39, c40, c41, rfl, d42, a43, rfl⟩ := a34.cons_inv
     obtain ⟨vs44, a45, rfl⟩ := d42.array_inv
     obtain ⟨v46, vs54, m55, c56, c57, rfl, d58, a59, rfl⟩ := a45.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d58.global_literal_inv (x := (1 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d58.global_literal_inv Names.c3167744620027602021
     obtain ⟨v47, vs60, m61, c62, c63, rfl, d64, a65, rfl⟩ := a59.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d64.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d64.global_literal_inv Names.c9173999864893739538
     obtain ⟨v48, vs66, m67, c68, c69, rfl, d70, a71, rfl⟩ := a65.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d70.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d70.global_literal_inv Names.c9173999864893739538
     obtain ⟨v49, vs72, m73, c74, c75, rfl, d76, a77, rfl⟩ := a71.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d76.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d76.global_literal_inv Names.c9173999864893739538
     obtain ⟨v50, vs78, m79, c80, c81, rfl, d82, a83, rfl⟩ := a77.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d82.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d82.global_literal_inv Names.c9173999864893739538
     obtain ⟨v51, vs84, m85, c86, c87, rfl, d88, a89, rfl⟩ := a83.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d88.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d88.global_literal_inv Names.c9173999864893739538
     obtain ⟨v52, vs90, m91, c92, c93, rfl, d94, a95, rfl⟩ := a89.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d94.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d94.global_literal_inv Names.c9173999864893739538
     obtain ⟨v53, vs96, m97, c98, c99, rfl, d100, a101, rfl⟩ := a95.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d100.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+    obtain ⟨rfl, rfl, rfl⟩ := d100.global_literal_inv Names.c9173999864893739538
     obtain ⟨rfl, rfl, rfl⟩ := a101.nil_inv
     obtain ⟨v37, vs102, m103, c104, c105, rfl, d106, a107, rfl⟩ := a43.cons_inv
     obtain ⟨v108, m109, d110, rfl, hm111⟩ := d106.store_inv
@@ -2384,21 +2384,21 @@ theorem «KernelKlimbs::klimbs_pow».obs {x_base x_exp : SourceValue F} {h h' : 
       obtain ⟨v136, vs138, m139, c140, c141, rfl, d142, a143, rfl⟩ := a134.cons_inv
       obtain ⟨vs144, a145, rfl⟩ := d142.array_inv
       obtain ⟨v146, vs154, m155, c156, c157, rfl, d158, a159, rfl⟩ := a145.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv Names.c1350107512230497446
       obtain ⟨v147, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a159.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv Names.c9173999864893739538
       obtain ⟨v148, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a165.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv Names.c9173999864893739538
       obtain ⟨v149, vs172, m173, c174, c175, rfl, d176, a177, rfl⟩ := a171.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv Names.c9173999864893739538
       obtain ⟨v150, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a177.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv Names.c9173999864893739538
       obtain ⟨v151, vs184, m185, c186, c187, rfl, d188, a189, rfl⟩ := a183.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv Names.c9173999864893739538
       obtain ⟨v152, vs190, m191, c192, c193, rfl, d194, a195, rfl⟩ := a189.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv Names.c9173999864893739538
       obtain ⟨v153, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a195.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+      obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv Names.c9173999864893739538
       obtain ⟨rfl, rfl, rfl⟩ := a201.nil_inv
       obtain ⟨v137, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a143.cons_inv
       obtain ⟨v208, m209, d210, rfl, hm211⟩ := d206.store_inv
@@ -2523,8 +2523,8 @@ inductive «KernelKlimbs::klimbs_land».Path (x_a x_b : SourceValue F) (h : Heap
 theorem «KernelKlimbs::klimbs_land».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_land" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_land».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_land.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_land, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_land.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_land, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_land] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2649,8 +2649,8 @@ inductive «KernelKlimbs::klimbs_lor».Path (x_a x_b : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_lor».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_lor" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_lor».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_lor.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_lor, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_lor.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_lor, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_lor] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2769,8 +2769,8 @@ inductive «KernelKlimbs::klimbs_xor_op».Path (x_a x_b : SourceValue F) (h : He
 theorem «KernelKlimbs::klimbs_xor_op».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_xor_op" [x_a, x_b] h r h' calls) :
     «KernelKlimbs::klimbs_xor_op».Path x_a x_b h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_xor_op.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_xor_op, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_xor_op.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_xor_op, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_xor_op] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2875,8 +2875,8 @@ inductive «KernelKlimbs::klimbs_shl».Path (x_a x_n : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_shl».obs {x_a x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_shl" [x_a, x_n] h r h' calls) :
     «KernelKlimbs::klimbs_shl».Path x_a x_n h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_shl.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_shl, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_shl.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_shl, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_shl] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv
@@ -2886,21 +2886,21 @@ theorem «KernelKlimbs::klimbs_shl».obs {x_a x_n : SourceValue F} {h h' : Heap 
   obtain ⟨v16, vs18, m19, c20, c21, rfl, d22, a23, rfl⟩ := a14.cons_inv
   obtain ⟨vs24, a25, rfl⟩ := d22.array_inv
   obtain ⟨v26, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a25.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv Names.c1350107512230497446
   obtain ⟨v27, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a39.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c9173999864893739538
   obtain ⟨v28, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c9173999864893739538
   obtain ⟨v29, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c9173999864893739538
   obtain ⟨v30, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c9173999864893739538
   obtain ⟨v31, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c9173999864893739538
   obtain ⟨v32, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c9173999864893739538
   obtain ⟨v33, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c9173999864893739538
   obtain ⟨rfl, rfl, rfl⟩ := a81.nil_inv
   obtain ⟨v17, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a23.cons_inv
   obtain ⟨v88, m89, d90, rfl, hm91⟩ := d86.store_inv
@@ -2947,8 +2947,8 @@ inductive «KernelKlimbs::klimbs_shr».Path (x_a x_n : SourceValue F) (h : Heap 
 theorem «KernelKlimbs::klimbs_shr».obs {x_a x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelKlimbs::klimbs_shr" [x_a, x_n] h r h' calls) :
     «KernelKlimbs::klimbs_shr».Path x_a x_n h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelKlimbs.klimbs_shr.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_shr, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelKlimbs.klimbs_shr.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_shr, ControlLower.hasControl]) ev
   simp only [IxVM.KernelKlimbs.klimbs_shr] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨v9, m10, d11, rfl, hm12⟩ := d6.store_inv
@@ -2958,21 +2958,21 @@ theorem «KernelKlimbs::klimbs_shr».obs {x_a x_n : SourceValue F} {h h' : Heap 
   obtain ⟨v16, vs18, m19, c20, c21, rfl, d22, a23, rfl⟩ := a14.cons_inv
   obtain ⟨vs24, a25, rfl⟩ := d22.array_inv
   obtain ⟨v26, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a25.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d38.global_literal_inv Names.c1350107512230497446
   obtain ⟨v27, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a39.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c9173999864893739538
   obtain ⟨v28, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c9173999864893739538
   obtain ⟨v29, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c9173999864893739538
   obtain ⟨v30, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c9173999864893739538
   obtain ⟨v31, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c9173999864893739538
   obtain ⟨v32, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c9173999864893739538
   obtain ⟨v33, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv (x := (0 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c9173999864893739538
   obtain ⟨rfl, rfl, rfl⟩ := a81.nil_inv
   obtain ⟨v17, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a23.cons_inv
   obtain ⟨v88, m89, d90, rfl, hm91⟩ := d86.store_inv

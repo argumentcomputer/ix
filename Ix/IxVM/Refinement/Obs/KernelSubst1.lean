@@ -88,8 +88,8 @@ inductive «KernelSubst::expr_lower_walk».Path (x_e x_shift x_cutoff : SourceVa
 theorem «KernelSubst::expr_lower_walk».obs {x_e x_shift x_cutoff : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_lower_walk" [x_e, x_shift, x_cutoff] h r h' calls) :
     «KernelSubst::expr_lower_walk».Path x_e x_shift x_cutoff h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_lower_walk.lookup
-    (by simp [IxVM.KernelSubst.expr_lower_walk, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_lower_walk.lookup
+    (by simp [IxVM.KernelSubst.expr_lower_walk, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_lower_walk] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -440,8 +440,8 @@ inductive «KernelSubst::expr_lower_let».Path (x_ty x_val x_body x_shift x_cuto
 theorem «KernelSubst::expr_lower_let».obs {x_ty x_val x_body x_shift x_cutoff : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_lower_let" [x_ty, x_val, x_body, x_shift, x_cutoff] h r h' calls) :
     «KernelSubst::expr_lower_let».Path x_ty x_val x_body x_shift x_cutoff h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_lower_let.lookup
-    (by simp [IxVM.KernelSubst.expr_lower_let, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_lower_let.lookup
+    (by simp [IxVM.KernelSubst.expr_lower_let, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_lower_let] at d0
   obtain ⟨v1, m2, d3, rfl, hm4⟩ := d0.store_inv
   obtain ⟨vs6, a7, hres8⟩ := d3.construct_inv
@@ -570,8 +570,8 @@ inductive «KernelSubst::expr_has_bvar_at».Path (x_e x_depth : SourceValue F) (
 theorem «KernelSubst::expr_has_bvar_at».obs {x_e x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_has_bvar_at" [x_e, x_depth] h r h' calls) :
     «KernelSubst::expr_has_bvar_at».Path x_e x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_has_bvar_at.lookup
-    (by simp [IxVM.KernelSubst.expr_has_bvar_at, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_has_bvar_at.lookup
+    (by simp [IxVM.KernelSubst.expr_has_bvar_at, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_has_bvar_at] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -789,8 +789,8 @@ inductive «KernelSubst::expr_has_bvar_at_binder».Path (x_ty x_body x_depth : S
 theorem «KernelSubst::expr_has_bvar_at_binder».obs {x_ty x_body x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_has_bvar_at_binder" [x_ty, x_body, x_depth] h r h' calls) :
     «KernelSubst::expr_has_bvar_at_binder».Path x_ty x_body x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_has_bvar_at_binder.lookup
-    (by simp [IxVM.KernelSubst.expr_has_bvar_at_binder, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_has_bvar_at_binder.lookup
+    (by simp [IxVM.KernelSubst.expr_has_bvar_at_binder, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_has_bvar_at_binder] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -859,8 +859,8 @@ inductive «KernelSubst::expr_has_bvar_at_let».Path (x_ty x_val x_body x_depth 
 theorem «KernelSubst::expr_has_bvar_at_let».obs {x_ty x_val x_body x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_has_bvar_at_let" [x_ty, x_val, x_body, x_depth] h r h' calls) :
     «KernelSubst::expr_has_bvar_at_let».Path x_ty x_val x_body x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_has_bvar_at_let.lookup
-    (by simp [IxVM.KernelSubst.expr_has_bvar_at_let, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_has_bvar_at_let.lookup
+    (by simp [IxVM.KernelSubst.expr_has_bvar_at_let, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_has_bvar_at_let] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -950,8 +950,8 @@ inductive «KernelSubst::expr_inst1».Path (x_e x_arg x_depth : SourceValue F) (
 theorem «KernelSubst::expr_inst1».obs {x_e x_arg x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst1" [x_e, x_arg, x_depth] h r h' calls) :
     «KernelSubst::expr_inst1».Path x_e x_arg x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst1.lookup
-    (by simp [IxVM.KernelSubst.expr_inst1, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst1.lookup
+    (by simp [IxVM.KernelSubst.expr_inst1, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst1] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1108,8 +1108,8 @@ inductive «KernelSubst::expr_inst1_walk».Path (x_e x_arg x_depth : SourceValue
 theorem «KernelSubst::expr_inst1_walk».obs {x_e x_arg x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst1_walk" [x_e, x_arg, x_depth] h r h' calls) :
     «KernelSubst::expr_inst1_walk».Path x_e x_arg x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst1_walk.lookup
-    (by simp [IxVM.KernelSubst.expr_inst1_walk, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst1_walk.lookup
+    (by simp [IxVM.KernelSubst.expr_inst1_walk, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst1_walk] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -1473,8 +1473,8 @@ inductive «KernelSubst::expr_inst1_bvar».Path (x_i x_arg x_depth : SourceValue
 theorem «KernelSubst::expr_inst1_bvar».obs {x_i x_arg x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst1_bvar" [x_i, x_arg, x_depth] h r h' calls) :
     «KernelSubst::expr_inst1_bvar».Path x_i x_arg x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst1_bvar.lookup
-    (by simp [IxVM.KernelSubst.expr_inst1_bvar, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst1_bvar.lookup
+    (by simp [IxVM.KernelSubst.expr_inst1_bvar, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst1_bvar] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
@@ -1568,8 +1568,8 @@ inductive «KernelSubst::expr_inst1_let».Path (x_ty x_val x_body x_arg x_depth 
 theorem «KernelSubst::expr_inst1_let».obs {x_ty x_val x_body x_arg x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst1_let" [x_ty, x_val, x_body, x_arg, x_depth] h r h' calls) :
     «KernelSubst::expr_inst1_let».Path x_ty x_val x_body x_arg x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst1_let.lookup
-    (by simp [IxVM.KernelSubst.expr_inst1_let, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst1_let.lookup
+    (by simp [IxVM.KernelSubst.expr_inst1_let, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst1_let] at d0
   obtain ⟨v1, m2, d3, rfl, hm4⟩ := d0.store_inv
   obtain ⟨vs6, a7, hres8⟩ := d3.construct_inv
@@ -1674,8 +1674,8 @@ inductive «KernelSubst::expr_inst_many».Path (x_e x_substs x_depth : SourceVal
 theorem «KernelSubst::expr_inst_many».obs {x_e x_substs x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst_many" [x_e, x_substs, x_depth] h r h' calls) :
     «KernelSubst::expr_inst_many».Path x_e x_substs x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst_many.lookup
-    (by simp [IxVM.KernelSubst.expr_inst_many, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst_many.lookup
+    (by simp [IxVM.KernelSubst.expr_inst_many, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst_many] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1824,8 +1824,8 @@ inductive «KernelSubst::expr_inst_many_bvar».Path (x_i x_substs x_depth : Sour
 theorem «KernelSubst::expr_inst_many_bvar».obs {x_i x_substs x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst_many_bvar" [x_i, x_substs, x_depth] h r h' calls) :
     «KernelSubst::expr_inst_many_bvar».Path x_i x_substs x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst_many_bvar.lookup
-    (by simp [IxVM.KernelSubst.expr_inst_many_bvar, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst_many_bvar.lookup
+    (by simp [IxVM.KernelSubst.expr_inst_many_bvar, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst_many_bvar] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
   obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
@@ -1973,8 +1973,8 @@ inductive «KernelSubst::expr_inst_many_walk».Path (x_e x_substs x_depth : Sour
 theorem «KernelSubst::expr_inst_many_walk».obs {x_e x_substs x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst_many_walk" [x_e, x_substs, x_depth] h r h' calls) :
     «KernelSubst::expr_inst_many_walk».Path x_e x_substs x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst_many_walk.lookup
-    (by simp [IxVM.KernelSubst.expr_inst_many_walk, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst_many_walk.lookup
+    (by simp [IxVM.KernelSubst.expr_inst_many_walk, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst_many_walk] at d0
   obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
   obtain ⟨p10, d11, ld12⟩ := d7.load_inv
@@ -2326,8 +2326,8 @@ inductive «KernelSubst::expr_inst_many_let».Path (x_ty x_val x_body x_substs x
 theorem «KernelSubst::expr_inst_many_let».obs {x_ty x_val x_body x_substs x_depth : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)} (ev : ObsFn W "KernelSubst::expr_inst_many_let" [x_ty, x_val, x_body, x_substs, x_depth] h r h' calls) :
     «KernelSubst::expr_inst_many_let».Path x_ty x_val x_body x_substs x_depth h r h' calls := by
-  have d0 := ev.function_inv IxVM.KernelSubst.expr_inst_many_let.lookup
-    (by simp [IxVM.KernelSubst.expr_inst_many_let, ControlLower.hasControl])
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelSubst.expr_inst_many_let.lookup
+    (by simp [IxVM.KernelSubst.expr_inst_many_let, ControlLower.hasControl]) ev
   simp only [IxVM.KernelSubst.expr_inst_many_let] at d0
   obtain ⟨v1, m2, d3, rfl, hm4⟩ := d0.store_inv
   obtain ⟨vs6, a7, hres8⟩ := d3.construct_inv
