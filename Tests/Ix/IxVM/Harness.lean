@@ -226,7 +226,8 @@ def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
     IO.println s!"PW {c.label}: {rep.render} values={values} blocks={blocks} \
       variants>0={extra} binders={stats.binders} shares={stats.shares} \
       free-shares={stats.freeShares} params={stats.params} \
-      fallbacks={stats.fallbacks} refused={stats.refused} annotate_ms={t1 - t0} \
+      fallbacks={stats.fallbacks} inherited={stats.inherited} refused={stats.refused} \
+      annotate_ms={t1 - t0} \
       check_ms={(← IO.monoMsNow) - t1}"
     if rep.ok && same then return none
     for s in rep.samples do IO.eprintln s!"[{suite}] PW {c.label}: {s}"
