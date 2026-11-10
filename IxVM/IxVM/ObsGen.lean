@@ -660,7 +660,7 @@ mutual
       [.s " ", .t hin, .s " ", .t (.v v), .s " ", .t (.v m), .s s!" {c1}"]) sg
     let (pl, binds) ← patInv (.v v) pat mt (.v m)
     let rest ← if ← isDead then pure pl else
-      pure (pl ++ (← inv b db (binds ++ env) (.v m) dv dh fun s2 => k ([.sub c1] ++ s2)))
+      pure (pl ++ (← inv b db (binds ++ env) (.v m) dv dh fun s2 => k ([Seg.sub c1] ++ s2)))
     return [s!"obtain ⟨{v}, {m}, {bs}, {c1}, {c2}, {dx}, {mt}, {db}, rfl⟩ := {d}.letValue_inv",
       s!"have {sg} := «{s.fname}».{segName.decapitalize} {dx}", s!"clear {dx}"] ++ rest
 
@@ -689,9 +689,8 @@ mutual
       s!"    «{saved.fname}».{segName}{eargs} h r h' calls := by\n" ++
       s!"  simp only [Expr.sub, Expr.childAt, Expr.children, {lean}, List.map_cons, List.map_nil] at d0\n" ++
       "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
-    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs,
-      work := st.work, lookups := st.lookups,
-      segs := saved.segs.push (pos, segName, ind ++ "\n" ++ thm) }
+    let segs := saved.segs.push (pos, segName, ind ++ "\n" ++ thm)
+    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs, work := st.work, lookups := st.lookups, segs := segs }
     return segName
 
   partial def invArgs (es : List (Expr F)) (a : String) (env : Env) (hin : T)
@@ -864,8 +863,8 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
   let body : M (List String) :=
     inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf s!"«{f.name}».Path")
   let maxLookups := if generous.contains f.name then 40000 else 3000
-  let (script, st) ← body.run { counter := 1, params, src := some src, typeParam := tp, maxLookups,
-    fname := f.name, leanName, body := some f.body, segment := segmented.contains f.name }
+  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := segmented.contains f.name }
+  let (script, st) ← body.run init
   -- a generic function is stated at its instance `t_<param>`
   let (tbind, targ, tibind, symbol, lookupThm, lookupDecl) := match tp with
     | none => ("", "", "", q f.name, s!"{leanName}.lookup", "")
