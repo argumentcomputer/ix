@@ -256,28 +256,6 @@ def try_nat_dispatch_prewhnf := aiur_fn⟦
     }
 ⟧
 
-def bitvec_prep_spine := aiur_fn⟦
-  fn bitvec_prep_spine(rc: KernelRoles::RoleCtx, spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>)
-                              -> Lists::List<KernelTypes::KExpr> {
-      let spine_w = whnf_spine(rc, spine, types);
-      match (*(spine_w)) {
-        Lists::Node::Nil => {  spine_w } ,
-        Lists::Node::Cons(width_e, rest) => {
-          match (*(rest)) {
-            Lists::Node::Nil => {  spine_w } ,
-            Lists::Node::Cons(val_e, tail) => {
-              match KernelTypes::collect_spine(val_e) {
-                (vh, va) => {
-                  let va_w = whnf_spine(rc, va, types);
-                  let val_e2 = apply_spine(vh, va_w);
-                  let width_w = whnf(rc, width_e, types);
-                  (&(Lists::Node::Cons(width_w,
-                    (&(Lists::Node::Cons(val_e2, tail)))))) } ,
-              } } ,
-          } } ,
-      }
-    }
-⟧
 
 def prim_family := aiur_fn⟦
   fn prim_family(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef) -> (Field, Field) {
@@ -297,12 +275,6 @@ def try_prim_dispatch := aiur_fn⟦
       let (fam, op) = prim_family(rc, addr);
       match fam {
         1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
-        2 => {
-          let spine_w = whnf_spine(rc, spine, types);
-          KernelNatPrim::try_str_dispatch(rc, addr, op, spine_w, types) } ,
-        3 => {  KernelNatPrim::try_bitvec_dispatch(rc, op, spine, types) } ,
-        5 => {  KernelInfer::try_dec_dispatch(rc, addr, op, lvls, spine, types) } ,
-        6 => {  KernelNatPrim::try_int_prim_dispatch(rc, op, spine, types) } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
@@ -657,16 +629,6 @@ def k_synth_fab := aiur_fn⟦
 ⟧
 
 
-def replace_spine_major := aiur_fn⟦
-  fn replace_spine_major(spine: Lists::List<KernelTypes::KExpr>, major_idx: Field, major_w: KernelTypes::KExpr)
-                               -> Lists::List<KernelTypes::KExpr> {
-      let pre = Lists::take(spine, major_idx);
-      let post = Lists::drop(spine, major_idx + 1);
-      let with_major = Lists::concat(pre,
-        (&(Lists::Node::Cons(major_w, (&(Lists::Node::Nil))))));
-      Lists::concat(with_major, post)
-    }
-⟧
 
 def whnf_iota_major := aiur_fn⟦
   fn whnf_iota_major(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
@@ -701,10 +663,6 @@ def try_iota := aiur_fn⟦
         0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
         _ => {
 
-          let lin = KernelNatPrim::try_nat_linear_rec(rc, spine, nparams, nmotives, nminors, major_idx);
-          match lin {
-            (1, r) => {  (1, r) } ,
-            _ => {
           let raw_major = Lists::lookup(spine, major_idx);
 
           let major_clean1 = KernelNatPrim::cleanup_nat_offset_major(rc, raw_major);
@@ -715,9 +673,7 @@ def try_iota := aiur_fn⟦
                          rules, rec_parent, major, types) {
             (1, r3) => {  (1, r3) } ,
             _ => {
-              let new_spine = replace_spine_major(spine, major_idx, major_w);
-              (2, apply_spine(head, new_spine)) } ,
-          } } ,
+              (2, apply_spine(head, spine)) } ,
           } } ,
       }
     }
