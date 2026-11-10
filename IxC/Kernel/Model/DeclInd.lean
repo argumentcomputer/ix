@@ -68,10 +68,10 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
   have hEC0 : Ix.Kernel.EtaFamiliesClosedO (block.map (·.name)) env :=
     fun T cvT caps hf hcape hres _ => hE T cvT caps hf hcape hres
   have hnostore : ∀ {caps : IndCaps md} {envM envR : Env md},
-      IndMembersRun μ F (block.map (·.name)) caps env
+      IndMembersRunJ (runJ μ F) (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
-      IndRecsRun μ F (block.map (·.name)) envM
+      IndRecsRunJ (runJ μ F) (block.map (·.name)) envM
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => true | _ => false)) envR →
       ∀ n, (block.map (·.name)).contains n = true →
@@ -87,10 +87,10 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       rw [indRecsRun_fresh hrecs ci₀ hci₀] at hup
       exact nomatch hup
   have hI0gen : ∀ {caps : IndCaps md} {envM envR : Env md},
-      IndMembersRun μ F (block.map (·.name)) caps env
+      IndMembersRunJ (runJ μ F) (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
-      IndRecsRun μ F (block.map (·.name)) envM
+      IndRecsRunJ (runJ μ F) (block.map (·.name)) envM
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => true | _ => false)) envR →
       BlockInstalledTT (block.map (·.name)) env mp.base2.cvalE :=
@@ -98,17 +98,17 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       absurd (hnostore hmem hrecs n hn ci hf) (fun h => h)
   -- the annotated half, vacuous at the base for the same reason
   have hIA0gen : ∀ {caps : IndCaps md} {envM envR : Env md},
-      IndMembersRun μ F (block.map (·.name)) caps env
+      IndMembersRunJ (runJ μ F) (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
-      IndRecsRun μ F (block.map (·.name)) envM
+      IndRecsRunJ (runJ μ F) (block.map (·.name)) envM
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => true | _ => false)) envR →
       BlockAcvalInstalled (block.map (·.name)) env mp.base2.acval :=
     fun hmem hrecs n hn ci hf =>
       absurd (hnostore hmem hrecs n hn ci hf) (fun h => h)
   have hallGen : ∀ {caps : IndCaps md} {envM : Env md},
-      IndMembersRun μ F (block.map (·.name)) caps env
+      IndMembersRunJ (runJ μ F) (block.map (·.name)) caps env
         (block.filter (fun ci => match ci with
           | .recInfo _ _ _ _ => false | _ => true)) envM →
       ∀ n, (block.map (·.name)).contains n = true →
@@ -126,6 +126,8 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
     ⟨-, envM, hmem, hrecs⟩
   · -- the single-constructor arm
     obtain ⟨envM, envR, hmem, hrecs, -, hprojFresh, hproj⟩ := harm
+    replace hmem := indMembersRun_runJ hmem
+    replace hrecs := indRecsRun_runJ hrecs
     have hmemFil : ∀ {p : ConstantInfo md → Bool} {x : ConstantInfo md},
         block.filter p = [x] → x ∈ block := by
       intro p x hfil
@@ -191,7 +193,7 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       fun n cvS capsS hnb hf _ =>
         absurd (hnostore hmem hrecs n hnb _ hf) (fun h => h)
     -- the member fold, both tiers
-    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
+    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁, -⟩ :=
       indMembersPM memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F) _ mp hbnNon
         (fun cv caps₂ hmm => by
           obtain ⟨rfl, -⟩ := ConstantInfo.indInfo.inj
@@ -200,10 +202,11 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
               obtain rfl : cvC.name = C := Option.some.inj hC
               exact hCblockN,
             fun _ h0 => hpf0 h0⟩)
-        (indMembersRun_runJ hmem) (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
+        hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
     -- the recursor group
-    obtain ⟨mp₂, hI₂, hIA₂⟩ :=
-      indRecs hμ memberEtaLaw memberUnitLaw mp₁ hI₁ hIA₁
+    obtain ⟨mp₂, hI₂, hIA₂, -⟩ :=
+      indRecs memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F)
+        (fun m => judgeSound_runJ hμ m F) mp₁ hI₁ hIA₁
         hbnRec (hallGen hmem) hEC₁ hBP₁ hrecs
     -- the stored former, identified (v1's argument, verbatim)
     have hidR : ∀ (cvT' : ConstantVal md) (capsT' : IndCaps md),
@@ -283,16 +286,19 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
         hinvAR hI₂ hIA₂ hpinsR hCblockR hFieldsR
     exact ⟨mp₃⟩
   · -- the generic arm: an empty capability record
+    replace hmem := indMembersRun_runJ hmem
+    replace hrecs := indRecsRun_runJ hrecs
     have hBP0 : Ix.Kernel.BlockEtaPinned μ (block.map (·.name)) env :=
       fun n cvS capsS hnb hf _ =>
         absurd (hnostore hmem hrecs n hnb _ hf) (fun h => h)
-    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
+    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁, -⟩ :=
       indMembersPM memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F) _ mp hbnNon
         (fun cv caps₂ _ => ⟨etaPins_empty,
           ⟨fun h => absurd h (by (cases md <;> decide)), fun h => absurd h (by (cases md <;> decide))⟩⟩)
-        (indMembersRun_runJ hmem) (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
-    obtain ⟨mp₂, -, -⟩ :=
-      indRecs hμ memberEtaLaw memberUnitLaw mp₁ hI₁ hIA₁
+        hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
+    obtain ⟨mp₂, -, -, -⟩ :=
+      indRecs memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F)
+        (fun m => judgeSound_runJ hμ m F) mp₁ hI₁ hIA₁
         hbnRec (hallGen hmem) hEC₁ hBP₁ hrecs
     exact ⟨mp₂⟩
 

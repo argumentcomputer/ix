@@ -96,7 +96,10 @@ theorem ThmValOk.cons {env : Env md} {mp : EnvModelM V μ env} (h : ThmValOk mp)
 
 /-- **Model extension by fresh conses**: `mp₂`'s leaves are `mp₁`'s with
 fresh constants added one at a time, each satisfying `ThmValOk.cons`'s side
-conditions. -/
+conditions, and with steps that keep every leaf and change the environment
+only where no stored theorem reads it (`swap`: a recursor group's rule lists
+attached to its provisioned entries, which stores the same names, the same
+theorems and reads every term the same). -/
 inductive ModelExt {env₁ : Env md} (mp₁ : EnvModelM V μ env₁) :
     {env₂ : Env md} → EnvModelM V μ env₂ → Prop where
   | refl : ModelExt mp₁ mp₁
@@ -112,6 +115,15 @@ inductive ModelExt {env₁ : Env md} (mp₁ : EnvModelM V μ env₁) :
           ∀ ψ, denoteMeta mp₂.base2.acval env₂ ψ 0 v = some (A ψ)) →
       mp₃.base2.acval = acvalWith mp₂.base2.acval c₀.name A →
       ModelExt mp₁ mp₃
+  | swap {env₂ env₃ : Env md} {mp₂ : EnvModelM V μ env₂} {mp₃ : EnvModelM V μ env₃} :
+      ModelExt mp₁ mp₂ →
+      (∀ n, (env₂.find? n).isSome = true → (env₃.find? n).isSome = true) →
+      (∀ (cv : ConstantVal md) (v : Expr md),
+        ConstantInfo.thmInfo cv v ∈ env₃.consts → ConstantInfo.thmInfo cv v ∈ env₂.consts) →
+      (∀ (ψ : LevelParam → Nat) (d : Nat) (e : Expr md),
+        denoteMeta mp₂.base2.acval env₂ ψ d e = denoteMeta mp₂.base2.acval env₃ ψ d e) →
+      mp₃.base2.acval = mp₂.base2.acval →
+      ModelExt mp₁ mp₃
 
 /-- **`ThmValOk` along a model extension.** -/
 theorem ThmValOk.of_ext {env₁ env₂ : Env md} {mp₁ : EnvModelM V μ env₁}
@@ -120,6 +132,11 @@ theorem ThmValOk.of_ext {env₁ env₂ : Env md} {mp₁ : EnvModelM V μ env₁}
   induction hext with
   | refl => exact h
   | step _ hfresh hcross hhead hac ih => exact ThmValOk.cons ih hfresh hcross hhead hac
+  | swap _ hsome hthms hden hac ih =>
+    exact ⟨fun cv v hmem => Expr.constsResolve_of_find hsome (ih.resolve cv v (hthms cv v hmem)),
+      fun ψ cv v hmem => by
+        rw [hac, ← hden ψ 0 v]
+        exact ih.reads ψ cv v (hthms cv v hmem)⟩
 
 /-- Extensions compose. -/
 theorem ModelExt.trans {env₁ env₂ env₃ : Env md} {mp₁ : EnvModelM V μ env₁}
@@ -128,6 +145,7 @@ theorem ModelExt.trans {env₁ env₂ env₃ : Env md} {mp₁ : EnvModelM V μ e
   induction h₂ with
   | refl => exact h₁
   | step _ hfresh hcross hhead hac ih => exact .step ih hfresh hcross hhead hac
+  | swap _ hsome hthms hden hac ih => exact .swap ih hsome hthms hden hac
 
 /-- **A plain cons extends**: a fresh head that is neither a projection table nor
 a theorem (every pinned basis constant, a definition, an opaque, an axiom). -/

@@ -3,6 +3,7 @@ module
 import IxC.Kernel.Semantics.IndBlockRun
 public import IxC.Kernel.Model.IndCaps
 public import IxC.Kernel.Model.ClaimsJ
+public import IxC.Kernel.Model.ThmVal
 import IxC.Kernel.Semantics.EnvFactsCons
 public section
 
@@ -261,13 +262,14 @@ theorem indMembersPM (hetaP : (MemberEtaLaw (md := md)) V)
         BlockInstalledTT blockNames env₂ mp₂.base2.cvalE ∧
         BlockAcvalInstalled blockNames env₂ mp₂.base2.acval ∧
         Ix.Kernel.EtaFamiliesClosedO blockNames env₂ ∧
-        Ix.Kernel.BlockEtaPinned μ blockNames env₂ := by
+        Ix.Kernel.BlockEtaPinned μ blockNames env₂ ∧
+        ModelExt mp mp₂ := by
   intro members
   induction members with
   | nil =>
     intro env mp env₂ hbn hp h hI hIA hEC hBP
     subst h
-    exact ⟨mp, hI, hIA, hEC, hBP⟩
+    exact ⟨mp, hI, hIA, hEC, hBP, .refl⟩
   | cons ci rest ih =>
     intro env mp env₂ hbn hp h hI hIA hEC hBP
     obtain ⟨cvA, hmv, hmatch⟩ := h
@@ -290,30 +292,34 @@ theorem indMembersPM (hetaP : (MemberEtaLaw (md := md)) V)
         refine Ix.Kernel.indCapsWF_of_pins (μ := μ) ?_ hfm hty
         rw [hcvA']
         exact (hp cv caps' List.mem_cons_self).1
-      obtain ⟨mp₁, -, -, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
+      obtain ⟨mp₁, -, hac₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
         memberInstallPM hetaP hunitP mp hmv (hfr _) hI hIA hbnA
           (fun caps₃ heq => by
             obtain ⟨-, -, -, rfl⟩ := ConstantInfo.indInfo.inj heq
             exact hp cv caps' List.mem_cons_self)
           hEC hBP rfl rfl (Or.inl ⟨caps, rfl⟩) hicw
-      exact ih mp₁
+      obtain ⟨mp₂, hI₂, hIA₂, hEC₂, hBP₂, hext₂⟩ := ih mp₁
         (fun ci' hci' => hbn ci' (List.mem_cons_of_mem _ hci'))
         (fun cv₂ caps₂ hmem => etaMemberData_step hfreshA
           hpshapeA (hp cv₂ caps₂ (List.mem_cons_of_mem _ hmem)))
         hmatch
         hI₁ hIA₁ hEC₁ hBP₁
+      exact ⟨mp₂, hI₂, hIA₂, hEC₂, hBP₂,
+        ((ModelExt.refl (mp₁ := mp)).plain hac₁ hfreshA).trans hext₂⟩
     | ctorInfo cv nP nF =>
-      obtain ⟨mp₁, -, -, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
+      obtain ⟨mp₁, -, hac₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
         memberInstallPM hetaP hunitP mp hmv (hfr _) hI hIA hbnA
           (fun _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
           hEC hBP rfl rfl (Or.inr (Or.inl ⟨nP, nF, rfl⟩))
           (fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
-      exact ih mp₁
+      obtain ⟨mp₂, hI₂, hIA₂, hEC₂, hBP₂, hext₂⟩ := ih mp₁
         (fun ci' hci' => hbn ci' (List.mem_cons_of_mem _ hci'))
         (fun cv₂ caps₂ hmem => etaMemberData_step hfreshA
           hpshapeA (hp cv₂ caps₂ (List.mem_cons_of_mem _ hmem)))
         hmatch
         hI₁ hIA₁ hEC₁ hBP₁
+      exact ⟨mp₂, hI₂, hIA₂, hEC₂, hBP₂,
+        ((ModelExt.refl (mp₁ := mp)).plain hac₁ hfreshA).trans hext₂⟩
     | axiomInfo cv => exact nomatch hmatch
     | defnInfo cv v hint => exact nomatch hmatch
     | thmInfo cv v => exact nomatch hmatch
@@ -346,26 +352,31 @@ theorem provisionRecsPM (hetaP : (MemberEtaLaw (md := md)) V)
         BlockInstalledTT blockNames envSelf mS.base2.cvalE ∧
         BlockAcvalInstalled blockNames envSelf mS.base2.acval ∧
         Ix.Kernel.EtaFamiliesClosedO blockNames envSelf ∧
-        Ix.Kernel.BlockEtaPinned μ blockNames envSelf := by
+        Ix.Kernel.BlockEtaPinned μ blockNames envSelf ∧
+        ModelExt mp mS := by
   intro recs
   induction recs with
   | nil =>
     intro envAcc mp envSelf checked hbn h hI hIA hEC hBP
     obtain ⟨rfl, -⟩ := h
-    exact ⟨mp, hI, hIA, hEC, hBP⟩
+    exact ⟨mp, hI, hIA, hEC, hBP, .refl⟩
   | cons ci rest ih =>
     intro envAcc mp envSelf checked hbn h hI hIA hEC hBP
     obtain ⟨cvA, mI, rP, rules, rest', hciE, hmv, hrec, -⟩ := h
     obtain ⟨type', hcv, hcvA, -⟩ := id hmv
     have hnameA : cvA.name = ci.toConstantVal.name := by rw [hcvA]
-    obtain ⟨mp₁, -, -, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
+    have hfreshA : envAcc.find? cvA.name = none := by
+      rw [hnameA]; exact Option.isNone_iff_eq_none.mp hcv.1
+    obtain ⟨mp₁, -, hac₁, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
       memberInstallPM hetaP hunitP mp hmv (hfr _) hI hIA
         (by rw [hnameA]; exact hbn ci List.mem_cons_self)
         (fun _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
         hEC hBP rfl rfl (Or.inr (Or.inr ⟨mI, rP, rfl⟩))
         (fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
-    exact ih mp₁
+    obtain ⟨mS, hIS, hIAS, hECS, hBPS, hextS⟩ := ih mp₁
       (fun ci' hci' => hbn ci' (List.mem_cons_of_mem _ hci'))
       hrec hI₁ hIA₁ hEC₁ hBP₁
+    exact ⟨mS, hIS, hIAS, hECS, hBPS,
+      ((ModelExt.refl (mp₁ := mp)).plain hac₁ hfreshA).trans hextS⟩
 
 end Ix.Kernel.Model
