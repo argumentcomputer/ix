@@ -357,9 +357,11 @@ theorem read_byte_stream_spec [NatCast F] (enumName : String)
    alloc_byte_stream_rep enumName h _,
    read_byte_stream_length stream idx len⟩
 
-/-- Specification of `read_finite_byte_stream`: `read_byte_stream` followed by
-`WordLists::depth_checked` succeeds iff `len < 2^32`, producing a heap-extended
-`RepByteStream` of length `len < 2^32`. -/
+/-- `read_byte_stream` followed by a walk of the result (`WordLists::depth_checked`) succeeds iff
+`len < 2^32`, producing a heap-extended `RepByteStream` of length `len < 2^32`. This was
+`read_finite_byte_stream` while the stream was unconstrained advice; it now checks `len < 2^32`
+directly (`UInt32::less_than_fields(0, len)`), which `IxVMRep.ingress_verify_stream_sound` takes as
+its hypothesis. -/
 theorem read_finite_byte_stream_spec [NatCast F] (enumName : String)
     (stream : Nat → UInt8) (idx len : Nat) (h : Heap F) :
     let bytes := readByteStream stream idx len

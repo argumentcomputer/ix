@@ -5348,7 +5348,7 @@ info: @Library.IxVMRep.RepRoleCtx.det : ∀ {F : Type} [inst : Field F],
 info: @Library.IxVMRep.ingress_verify_stream_sound : ∀ {F : Type} [inst : Field F],
   Library.U32.Compatible F →
     ∀ (enumName : String) (stream : ℕ → UInt8) (idx len : ℕ) (h : Heap F) (expectedAddr : Library.Bytes.Address),
-      Library.List.Word.depthChecked (Library.Bytes.readByteStream stream idx len) = some len →
+      len < 2 ^ 32 →
         Library.Blake3.addressToFields F (Blake3.Pure.digest (Library.Bytes.readByteStream stream idx len)) =
             Library.Blake3.addressToFields F expectedAddr →
           have bytes := Library.Bytes.readByteStream stream idx len;

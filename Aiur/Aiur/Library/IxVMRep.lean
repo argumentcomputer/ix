@@ -1084,17 +1084,19 @@ theorem RepRoleCtx.det [Field F] (large : U32.Compatible F)
 
 /-! ## 7. Ingress Stream Authentication & `TagN` Field-Decoding Correctness -/
 
-/-- Ingress stream authentication in the Lean model: if the bytes read at
-`(idx, len)` pass `depthChecked` and the model of `Blake3::verify_bytes_against`
-(field-wise equality of `addressToFields` of the Lean `Blake3.digest`), then
-allocating them yields a heap-extended `RepByteStream` of length `len < 2^32`
-whose BLAKE3 digest equals `expectedAddr`. It models the checks that the IxVM
+/-- Ingress stream authentication in the Lean model: if the `len` bytes read at `idx` are fewer
+than `2^32` (the range check `IxByteStream::read_finite_byte_stream` makes,
+`UInt32::less_than_fields(0, len)`; `read_byte_stream` builds exactly `len` bytes by its own
+recursion) and pass the model of `Blake3::verify_bytes_against` (field-wise equality of
+`addressToFields` of the Lean `Blake3.digest`; `Blake3.verify_bytes_against_model_iff` relates it
+to the model of `Blake3::hash`), then allocating them yields a heap-extended `RepByteStream` of
+length `len < 2^32` whose BLAKE3 digest equals `expectedAddr`. It models the checks that the IxVM
 functions `Ingress::load_verified_constant`, `Ingress::load_verified_blob` and
 `KernelRoles::load_role_table` make, but is not a theorem about them. -/
 theorem ingress_verify_stream_sound [Field F] (large : U32.Compatible F)
     (enumName : String) (stream : Nat → UInt8) (idx len : Nat) (h : Heap F)
     (expectedAddr : Address)
-    (hDepth : Word.depthChecked (readByteStream stream idx len) = some len)
+    (hLen : len < 2 ^ 32)
     (hVerify : Blake3.addressToFields F (Blake3.digest (readByteStream stream idx len)) =
       Blake3.addressToFields F expectedAddr) :
     let bytes := readByteStream stream idx len
@@ -1104,8 +1106,8 @@ theorem ingress_verify_stream_sound [Field F] (large : U32.Compatible F)
       bytes.length = len ∧
       len < U32.base ∧
       Blake3.digest bytes = expectedAddr := by
-  obtain ⟨hDepthIff, hExt, hRep, hLen⟩ := read_finite_byte_stream_spec enumName stream idx len h
-  exact ⟨hExt, hRep, hLen, hDepthIff.mp hDepth,
+  obtain ⟨hExt, hRep, hLength⟩ := read_byte_stream_spec enumName stream idx len h
+  exact ⟨hExt, hRep, hLength, by unfold U32.base; omega,
     (Blake3.verify_bytes_against_iff large (readByteStream stream idx len) expectedAddr).mp hVerify⟩
 
 /-- Canonical `SourceValue F` representation of a decoded `Tag4` pair `(flag, value)`
