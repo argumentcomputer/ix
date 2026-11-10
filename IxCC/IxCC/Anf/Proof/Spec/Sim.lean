@@ -11,7 +11,7 @@ one clock down: the prologue rebuilds a frame related to the site
 walk of the callee's body simulates it (the walk's simulation below the
 bound). `red_sim`: a redirected recursive call inside the specialisation's
 body passes its masked parameters unchanged (`Walk.fixedAt`), so it calls
-the specialisation on another activation of the same site (M2.3). -/
+the specialisation on another activation of the same site. -/
 
 set_option autoImplicit false
 

@@ -38,7 +38,7 @@ import IxCC.Rt.Proof.Readback
 import IxCC.Rt.Proof.CxInit
 import IxCC.Rt.Proof.Publish
 
-/-! Required axiom fences for the runtime lowering's proof (M2.5): the
+/-! Required axiom fences for the runtime lowering's proof: the
 value relation and the immortal heap invariant, every primitive's
 expansion, allocation, projection, the procedures and their calls, the
 switch shapes, chunk and function layout, the state relation and the

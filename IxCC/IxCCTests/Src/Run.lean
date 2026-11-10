@@ -9,7 +9,7 @@ import IxCCTests.Src.Bench
 import IxCCTests.Src.SortPoly
 import IxCCTests.Src.ResourceCsimp
 
-/-! The `tests-src` suite (design note 01 §10): rules, the K1 table, K1 runs
+/-! The `tests-src` suite: rules, the K1 table, K1 runs
 on the eqn route, the native differential, pins, diagnostics, sort-polymorphic
 code at `Sort 0` (level-exact relevance, D18), and the
 bench-k1 entries. `tests-src-slow` adds `ack 3 10` and `fib 30` without
@@ -61,7 +61,7 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln s!"tests-src: FAILED after {← a.get} assertions: {e}"
     return 1
 
-/-- Rows over the 60 s budget (01 §10 part 3), recorded as a coverage
+/-- Rows over the 60 s budget, recorded as a coverage
 change: `ack 3 10` on the eqn route and `fib 30` with no primitives. -/
 def slow (_args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0

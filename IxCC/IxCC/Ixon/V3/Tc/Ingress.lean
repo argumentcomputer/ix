@@ -172,8 +172,8 @@ def kUnivToIxon : KUniv .anon → IxCC.Ixon.Univ
     the kernel's simplifying constructors). Used by egress's `canonConstant`
     so the original constant's raw levels compare against the kernel's
     reduced ones, and by meta ingress as the stage-1 level-spelling
-    decoration-presence test (canonicity §10.6): a table entry that is not
-    a `reduceIxonUniv` fixpoint reaches the kernel changed, so its
+    decoration-presence test (`docs/ix_canonicity.md`, "Universe-level canonicalization"): a table
+    entry that is not a `reduceIxonUniv` fixpoint reaches the kernel changed, so its
     occurrences are decorated with the stored spelling. -/
 def reduceIxonUniv (u : IxCC.Ixon.Univ) : IxCC.Ixon.Univ :=
   kUnivToIxon (ixonUnivToK u)

@@ -29,7 +29,7 @@ theorem wordAt_read32_high_zero {mem : X86.Memory} {address word : Word}
   rfl
 
 /-- A unique dynamic allocator header is entirely below 2^32; its physical
-count is zero. This bridges the existing 64-bit allocator store to H2's
+count is zero. This bridges the existing 64-bit allocator store to the runtime's
 separate concrete low-header/count read interface. -/
 theorem unique_header_reads {mem : X86.Memory} {address : Word} {fields tag : Nat}
     (small : fields < 32) (tagBound : tag ≤ maxTag)

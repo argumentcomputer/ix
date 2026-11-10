@@ -5,7 +5,7 @@ import IxCCTests.Rt.Levels
 import IxCCTests.Rt.Kernel
 import IxCCTests.Rt.KernelEval
 
-/-! The `tests-rt` suite (design note 04 §13, M1.F6): the primitive
+/-! The `tests-rt` suite: the primitive
 sequences at their boundaries; hand-written programs, declines and
 `cx_init`; planted mutations; every k1.ixe and bench-k1 root and
 first-order constant, the bench entries at test sizes and generated

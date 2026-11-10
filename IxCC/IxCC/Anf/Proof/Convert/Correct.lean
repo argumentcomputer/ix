@@ -4,7 +4,7 @@ import IxCC.Lam.Erase.Proof.Correct
 
 /-! # ANF conversion is correct
 
-`convert_correct` (P1, M2.3): every root of a converted program simulates
+`convert_correct` (P1): every root of a converted program simulates
 its Lam root from related arguments, with the clock map `k + 1` (the identity
 map when there are arguments): a Lam value is matched by a related Anf value
 at some clock, a trap by a trap, and a Lam timeout at `k + 1` by an Anf

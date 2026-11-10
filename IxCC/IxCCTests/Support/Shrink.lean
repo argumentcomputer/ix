@@ -2,12 +2,11 @@ import IxCCTests.Support.Rng
 import Lean.Data.Json
 
 /-!
-# Shrinking failing generated cases by their choice sequences (MT.5)
+# Shrinking failing generated cases by their choice sequences
 
-Hypothesis-style test-case reduction (MacIver and Donaldson, ECOOP 2020;
-research note §9.2.6): a generated case is the output of a generator run on
-a *choice sequence* (`Rng`'s tape), so a smaller sequence replayed through
-the same generator is a smaller case of the same type, well formed by
+Hypothesis-style test-case reduction (MacIver and Donaldson, ECOOP 2020): a generated case is the
+output of a generator run on a *choice sequence* (`Rng`'s tape), so a smaller sequence replayed
+through the same generator is a smaller case of the same type, well formed by
 construction. A failing case is reduced by editing its sequences and
 keeping an edit when the failure persists:
 

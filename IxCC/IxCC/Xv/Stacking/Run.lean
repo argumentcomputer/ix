@@ -3,7 +3,7 @@ import IxCC.X86.Layout.Basic
 import IxCC.X86.CheckK
 
 /-!
-# Stacking a program (05 §6)
+# Stacking a program
 
 `Stacking.run p layouts` checks each function's `FrameLayout` (the
 certificate, one per function, from `Stacking.produce` or elsewhere), then
@@ -21,14 +21,13 @@ the exit group, with the blocks to place last) and the exported symbols.
 Kernel-evaluable style: lists, folds, and a persistent map from function
 to entry block.
 
-**Clobber sets** (06 S15). The allocation validator trusts `Xl.Env.clobbers`:
+**Clobber sets**. The allocation validator trusts `Xl.Env.clobbers`:
 after a call it keeps the caller's values in every register outside the
 callee's declared set. Stacking checks the declaration against the code it
 emits: what each function writes and does not save, `r11` for a stack
 check, and what its callees may change must lie within its clobbers and
 result registers. The default (every caller-saved register) always passes;
-a runtime procedure declaring less (04 §7) is checked here.
--/
+a runtime procedure declaring less is checked here. -/
 
 namespace IxCC.Xv.Stacking
 
@@ -83,7 +82,7 @@ structure Stacked where
   exports : List Export
   deriving Repr, Inhabited
 
-/-- The oracle's layouts (05 §6): one per function, from its facts. -/
+/-- The oracle's layouts: one per function, from its facts. -/
 def produce (p : LProgram) : List FrameLayout :=
   p.funcs.toList.map fun f => FrameLayout.produce f.facts
 
@@ -148,7 +147,7 @@ def tailResults (p : LProgram) (f : Func Loc) : List X86.GPR :=
 /-- The registers a function may change beyond what its callers allow
 (`allowedChanges`): what it and its callees may change, and what its tail
 callees return in; and the callee-saved registers its declaration claims it
-may change (a call must keep them, 05 §6). -/
+may change (a call must keep them). -/
 def extraChanges (p : LProgram) (env : Xl.Env) (f : Func Loc) (fn : FunId) (l : FrameLayout) (a : Facts) :
     List X86.GPR :=
   (mayChange env f a l ++ tailResults p f).filter (!(allowedChanges env fn f).contains ·) ++
@@ -215,7 +214,7 @@ def run (p : LProgram) (layouts : List FrameLayout) (reps : FunId → Option (Li
   match checkedFns.find? (fun (_, _, l, a) => !l.check a) with
   | some (_, fn, _, _) => throw (.layout fn)
   | none => pure ()
-  -- The validator trusts `env.clobbers` (06 S15): every function must change
+  -- The validator trusts `env.clobbers`: every function must change
   -- no register its callers assume it keeps.
   match checkedFns.find? (fun (f, fn, l, a) => !(extraChanges p env f fn l a).isEmpty) with
   | some (f, fn, l, a) => throw (.clobbers fn (extraChanges p env f fn l a))

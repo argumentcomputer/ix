@@ -2,7 +2,7 @@
 # A persistent map keyed by `Nat`, for kernel evaluation
 
 The validator runs on `Recheck.run`'s path, which Lean's kernel must be able
-to evaluate (roadmap D17): no `HashMap`, no `Array` indexing (a list walk in
+to evaluate (D17): no `HashMap`, no `Array` indexing (a list walk in
 the kernel), no well-founded recursion. This is a binary trie on the
 bijective base-2 digits of the key: key `0` sits at a node, and key `2m + 1`
 (`2m + 2`) lives at key `m` of the left (right) child. Lookups recurse

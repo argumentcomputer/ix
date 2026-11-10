@@ -1,13 +1,13 @@
 import IxCCTests.Anf.Support
 import IxCCTests.Src.Rules
 
-/-! Anf's rules (design note 02 §6.2) on hand-written programs: atoms and
+/-! Anf's rules on hand-written programs: atoms and
 scope, constructors and checked keys, primitives, `Nat` peeling in `case`,
 the default and stuck cases, function and CAF globals (free and charged),
 known calls, applications under-, exactly and over-saturated (one charge
 each), local closures, join points and jumps (charged; a recursive join
 point is a loop), `tick` and `trap`, □ stuck under application, projection,
-`case` and primitives (06 S38); clock monotonicity on random clocks. -/
+`case` and primitives; clock monotonicity on random clocks. -/
 
 namespace IxCCTests.Anf.Eval
 

@@ -8,14 +8,13 @@ import IxCC.Xv.XlSemantics
 Where each live register is during allocation: at most one machine register
 (`occ`/`reg`), and whether its home cell already holds it (`home`). The
 home of a register is its own frame slot, or, for a stack parameter, its
-incoming cell. Registers are the allocatable set of 05 §6: every
+incoming cell. Registers are the allocatable set: every
 general-purpose register except `rsp`, `rbp` and the context register
 `r15` (`Xv.scratch`).
 
-Also the chaos control plane (05 §12 item 3): seeded perturbations of
+Also the chaos control plane: seeded perturbations of
 register order, hints, spill choice, split points and the move scratch. A
-disabled `Chaos` is the deterministic allocator.
--/
+disabled `Chaos` is the deterministic allocator. -/
 
 namespace IxCC.Xv.Alloc
 

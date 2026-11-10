@@ -3,8 +3,7 @@ import IxCC.Own.Kind
 
 /-! # Fir syntax
 
-The first-order IR below Anf (design note `plans/x86-v2/03-ownership.md`
-§2.1, Phase 1 fragment): functions keyed by `Key.GKey`, known saturated
+The first-order IR below Anf (Phase 1 fragment): functions keyed by `Key.GKey`, known saturated
 calls and tail calls, join points (recursive or not), `case` over
 constructor keys (with `Nat` literals peeling as `Nat.zero`/`Nat.succ`),
 projections, constructor applications and primitives. There are no
@@ -16,20 +15,20 @@ an `app` or a function-valued `glob` until P8 (Phase 2) defunctionalises it.
   one (a deterministic name supply, `Fun.vars` bounds them). Join points are
   named the same way (`Fun.joins`).
 * `case x alts dflt` selects by key; an alternative binds no fields, its
-  body projects them (`proj x c i`), as 03 §2.1 has it.
+  body projects them (`proj x c i`).
 * `bind x (call f as) k` is a non-tail call; `tcall f as` a tail call; `jmp`
   appears only in tail position (it is a terminator). A recursive join point
   is in scope in its own body.
-* Every value is `tobj` in Phase 1 (06 S33): a pointer or an immediate.
+* Every value is `tobj` in Phase 1: a pointer or an immediate.
   □ is the immediate operand `Arg.erased`.
 * Constructor info is a function of the checked key and Lam's constructor
-  table (`CtorInfo.ofKey`, D19, 06 S43): tag and field count; every field is
+  table (`CtorInfo.ofKey`, D19): tag and field count; every field is
   an object field of kind `shared` in Phase 1.
 
-Phase 2 forms of 03 §2.1 that Phase 1 never produces are not in this syntax:
-`Rhs.const` (statics, `Fir.Statics`), `Rhs.box`/`unbox` (word
-representations) and `Program.globals`. Fir has no `tick`: Anf's ticks are
-erased at Anf → Fir (06 S31). -/
+Forms planned for later phases are not in this syntax: `Rhs.const` (static
+objects, Phase 2), `Rhs.box`/`unbox` (word representations, Phase 3) and
+`Program.globals`. Fir has no `tick`: Anf's ticks are
+erased at Anf → Fir. -/
 
 namespace IxCC.Fir
 
@@ -39,7 +38,7 @@ abbrev Var := Nat
 abbrev FunId := Nat
 abbrev JoinId := Nat
 
-/-- Constructor shape (03 §2.1): a function of the checked key and the
+/-- Constructor shape: a function of the checked key and the
 constructor table (`ofKey`). `nobj` object fields, then `nscalar` scalar
 fields; `fieldKinds` from v3 field contracts (default `shared`). -/
 structure CtorInfo where
@@ -62,12 +61,12 @@ def ofKey (table : List Lam.CtorInfo) (c : Key.CtorKey) : Option CtorInfo :=
 /-- Number of fields. -/
 def arity (c : CtorInfo) : Nat := c.nobj + c.nscalar
 
-/-- A field-less constructor: an immediate from Own down (06 S4). -/
+/-- A field-less constructor: an immediate from Own down. -/
 def fieldless (c : CtorInfo) : Bool := c.arity == 0
 
 end CtorInfo
 
-/-- Value representation (06 S33), decided in Anf → Fir: `tobj` everywhere
+/-- Value representation, decided in Anf → Fir: `tobj` everywhere
 in Phase 1. -/
 inductive Rep where
   | obj
@@ -100,7 +99,7 @@ mutual
 inductive Code where
   | bind (x : Var) (rhs : Rhs) (k : Code)
   /-- Join point `j` with `params` over `k`; `rec`: `body` may jump to `j`
-  (a loop, 06 S30). -/
+  (a loop). -/
   | jp (j : JoinId) (params : List Var) (rec : Bool) (body k : Code)
   | jmp (j : JoinId) (args : List Arg)
   | case (x : Var) (alts : List Alt) (dflt : Option Code)
@@ -125,7 +124,7 @@ def body : Alt → Code | .mk _ b => b
 
 end Alt
 
-/-- A function (03 §2.1): key, parameters with their representation, body,
+/-- A function: key, parameters with their representation, body,
 and the contracts carried from Anf. -/
 structure Fun where
   key : Key.GKey

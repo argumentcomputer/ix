@@ -3,7 +3,7 @@ import IxCC.Anf.Proof.Convert.Env
 /-! # ANF conversion: application
 
 Applying related closures to related arguments simulates at clock bound
-`n`, given that bodies simulate below `n` (`app_sim`, P1, M2.3). A Lam
+`n`, given that bodies simulate below `n` (`app_sim`, P1). A Lam
 spine applies one slot at a time and charges at each; Anf applies a group
 of arguments with one charge (`applyN`). Both charge at the same depth: a
 Lam closure that still lacks binders returns the next closure without

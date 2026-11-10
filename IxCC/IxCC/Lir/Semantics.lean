@@ -5,10 +5,10 @@ import Std.Data.HashMap
 /-!
 # Lir semantics
 
-An executable, clocked small-step semantics (05 §2). The state is a stack of
+An executable, clocked small-step semantics. The state is a stack of
 frames over the machine's permissioned byte memory (`X86.Memory`) and the
 context word; there is no stack memory, so Lir addresses only the heap and
-context regions (04 §6).
+context regions.
 
 **Words.** An operation at width `w` reads the low `w` bits of its operands
 and yields a zero-extended word. Shift counts are masked as the machine masks
@@ -32,8 +32,7 @@ the definition is structural. Between two charges or returns an activation
 moves strictly forward through its blocks, so a run that spends `c` charges
 takes at most `(2c + 2) · (size + 1)` steps (returns never exceed calls plus
 one). The fuel is larger, so running out of it never happens before the
-clock runs out; `check-lir` tests the bound on every generated program.
--/
+clock runs out; `check-lir` tests the bound on every generated program. -/
 
 namespace IxCC.Lir
 

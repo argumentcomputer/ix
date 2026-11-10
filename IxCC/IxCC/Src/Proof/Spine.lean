@@ -7,7 +7,7 @@ irrelevant at the levels, else strict or by name) and applies the head to
 it, left to right; `eval_mkApps` evaluates a whole spine that way
 (`applySpine`). A special head accumulates its slots for free and fires at
 its arity, so a saturated spine is "build every slot, then fire"
-(`applySpine_pap_sat`). M2.2's erasure simulation reads spines through these
+(`applySpine_pap_sat`). The erasure simulation reads spines through these
 equations. -/
 
 namespace IxCC.Src

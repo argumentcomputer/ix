@@ -1,11 +1,11 @@
 /-! Sort-polymorphic code instantiated at `Sort 0` (level-exact relevance,
-D18; `plans/x86-v2/research/relevance-checker.md` §2.4). Each root is a
+D18). Each root is a
 `Nat → Nat` function. Compiled by `lake exe pin-src-tables --sortpoly`; see
 `README.md`. -/
 
 namespace SortPoly
 
-/-- The research note's `five`: `Function.comp` at `β := True` (`v = 0`).
+/-- The `five` example: `Function.comp` at `β := True` (`v = 0`).
 Inside `comp`, the argument `g x : β` is a proof exactly when `v = 0`. -/
 def comp (n : Nat) : Nat :=
   Function.comp (fun (_ : True) => n + 5) (fun (_ : Nat) => trivial) n

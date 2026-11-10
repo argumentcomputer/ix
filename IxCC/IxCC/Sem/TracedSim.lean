@@ -4,8 +4,7 @@ import IxCC.Sem.Traced
 # Traced clocked simulation
 
 `TSim R f c₁ c₂` is the clocked simulation of `Sem.Sim` for traced
-semantics that read an environment `o : Env` (decision D-1; the shape of
-`plans/systems/research/effects-concurrency.md` §4.2). For every
+semantics that read an environment `o : Env` (decision D-1). For every
 environment:
 
 - **forward:** an outcome of the source at clock `k` other than `timeout`

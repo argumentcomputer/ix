@@ -7,7 +7,7 @@ import IxCCTests.Rt.Kernel
 and returns a summary of that stage's output (sizes that traverse it, so
 the kernel evaluates all of it), or `none` if the path stops earlier. The
 stages follow `Recheck.runTyped` and `Backend.finish` step by step; the
-kernel measurements (`plans/x86-phase1/k1/`) time `decide +kernel` of each
+kernel measurements time `decide +kernel` of each
 prefix on the recheck artifacts, so a stage's cost is the difference
 between consecutive prefixes. The generator records the native summaries
 beside each artifact (`stages`). -/

@@ -5,7 +5,7 @@ import IxCCTests.Anf.Generated
 import IxCCTests.Anf.KernelEval
 import IxCCTests.Anf.LeanRender
 
-/-! The `tests-anf` suite (design note 02 §6–8, §13): Anf's rules and clock
+/-! The `tests-anf` suite: Anf's rules and clock
 monotonicity; Lam against Anf after every step of the Phase 1 pipeline on
 every root and first-order constant of `k1.ixe` and the bench-k1 closures
 (readback, traps, the timeout clause, tick dominance, `WellScoped`); the K1

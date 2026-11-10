@@ -112,7 +112,7 @@ in
       cp -R rc-logs "$out/"
     '';
 
-    # The pipeline suites (M3.1, MT.8), run from the shared programs build
+    # The pipeline suites, run from the shared programs build
     # against the tracked tree. Run one after another they take about 21
     # minutes in the sandbox, which with the rest of the surface exceeds the
     # 30-minute budget at --max-jobs 1, so this one check runs them
@@ -176,7 +176,7 @@ in
       fi
     '';
 
-    # Deterministic typed-x86 and ByteEval step counts (M3.2, MEAS-3) must
+    # Deterministic typed-x86 and ByteEval step counts must
     # equal the reviewed baseline fixtures/ixon-v4/bench-k1/steps.json.
     x86-steps = mkCheck "x86-steps" [] ''
       ./.lake/build/bin/check-steps

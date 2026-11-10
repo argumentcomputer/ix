@@ -1,6 +1,6 @@
 import IxCC.Xv.Validate.Proof.Program
 
-/-! Required axiom fences for register-allocation validation (M2.6): the
+/-! Required axiom fences for register-allocation validation: the
 validator's abstract states and checks, the row-level correspondence of Xv
 and Xl, the transfer of each instruction, edit and terminator, the
 simulation relation and the per-step simulation `Validate.sound`, fuel for

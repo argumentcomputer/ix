@@ -3,14 +3,13 @@ import IxCC.Src.Proof.NatMap
 
 /-! # The relevance checker is sound: `check_sound`
 
-`Relevance.check p ann = .ok c` gives the tier-S facts (design note 02
-§3.3) as a Prop, `WellAnnotated p ann c`, per profile: the records are well
-shaped (S1), every reached instance `(constant, profile)` has its record,
-its runtime terms annotated and their relevant positions satisfying S1 and
+`Relevance.check p ann = .ok c` gives the tier-S facts as a Prop, `WellAnnotated p ann c`, per
+profile: the records are well shaped (S1), every reached instance `(constant, profile)` has its
+record, its runtime terms annotated and their relevant positions satisfying S1 and
 S2 at that profile (`TermS`), and S4 at a subsingleton eliminator; the
 reached instances contain the roots and are closed under the references a
 relevant position makes at the reaching profile (`Program.instRefs`), so
-they are the instances SrcEval can reach (M2.2). -/
+they are the instances SrcEval can reach. -/
 
 set_option autoImplicit false
 

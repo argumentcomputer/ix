@@ -6,7 +6,7 @@ import IxCCTests.Backend.Programs
 
 Stacking (with its frame-layout check) and layout (tunnelling, the order
 check and linearisation) are on `Recheck.run`'s path, which Lean's kernel
-must evaluate (roadmap D17, M1.K1). These examples run them on
+must evaluate (D17). These examples run them on
 hand-written Xl programs inside the kernel (`decide +kernel`, no native
 evaluation) and check the instruction count of each laid-out block, so a
 change that stops them reducing fails to elaborate here.

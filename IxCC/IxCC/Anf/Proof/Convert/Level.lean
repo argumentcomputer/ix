@@ -10,7 +10,7 @@ clock (`bodySim`), and applying related closures does (`appSim`). Runs from
 a root (`run_sim`): a root's global is applied to value arguments; a run
 with arguments simulates with the identity clock map, and every run with
 clock map `k + 1` (a function root applied to nothing is a closure at clock
-0 in Anf, one δ later in Lam) (P1, M2.3). -/
+0 in Anf, one δ later in Lam) (P1). -/
 
 set_option autoImplicit false
 

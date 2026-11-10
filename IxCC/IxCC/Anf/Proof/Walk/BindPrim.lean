@@ -5,7 +5,7 @@ import IxCC.Anf.Proof.Walk.BindPure
 One fuel level of the walk's simulation for primitive bindings (literal
 folding to a literal or a `Bool` constructor, dead pure primitives, and kept
 ones with the `y + 1` fact) and local function bindings (dead, inlined at
-their single application, or walked under their parameters) (M2.3). -/
+their single application, or walked under their parameters). -/
 
 set_option autoImplicit false
 

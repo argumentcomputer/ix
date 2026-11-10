@@ -4,7 +4,7 @@ import IxCCTests.Fir.Gen
 import IxCCTests.Fir.Bench
 import IxCCTests.Fir.Render
 
-/-! The `tests-fir` suite (design note 03 §11, M1.F5): the rules of Fir, the
+/-! The `tests-fir` suite: the rules of Fir, the
 Phase 1 Own fragment and Cfg; every root and first-order constant of the K1
 fixtures through Anf → Fir → Own → Cfg; the fallback route declined at Fir;
 generated programs; the bench-k1 entries at their test sizes. Building the

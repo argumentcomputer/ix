@@ -66,7 +66,7 @@ theorem nested_safe : Stream.SafeTrace Runtime.rejecting nestedChecked 10 (fun _
     (Machine.initial nestedChecked core) := by
   decide +kernel
 
-/-! ## The failure exit (note 05 §6.1)
+/-! ## The failure exit
 
 An export wrapper saves the callee-saved registers and its stack pointer
 (`entrySp`, at `[r15 − 64]` with `r15 = rdi + 64`), then calls `depth`

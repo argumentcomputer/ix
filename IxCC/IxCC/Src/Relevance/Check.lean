@@ -3,12 +3,12 @@ import IxCC.Src.NatMap
 
 /-! # The relevance checker
 
-Decides an installed annotation (design note 02 §3.3) in one pass over the
+Decides an installed annotation in one pass over the
 runtime closure, level-exact (D18): the closure is a set of *instances*
 `(constant, profile)`, reached from the roots at the empty profile through
 positions relevant at the reaching instance's profile (`Src.Runtime`), and
 every rule is decided at the instance's profile. It is executable here; its
-theorems (`check_sound`, `check_consistent`) are M2 items. The checker reads
+soundness theorem is `Relevance.Proof.check_sound` (tier S). The checker reads
 only syntax: the tags installed in the terms, the `ConstRel`/`CtorRel`
 tables and the derived `RecKind`s. It never calls the type checker.
 
@@ -38,7 +38,7 @@ so the closure walked here is the one SrcEval can reach.
 * C2 at a constant head, an argument is irrelevant at the instance exactly
   when its parameter is irrelevant at the callee's profile (the parameter's
   condition instantiated at the call's universe arguments). This equality
-  replaces M1.F2's one-way rule, under which `Function.comp` at `Sort 0`
+  replaces an earlier one-way rule, under which `Function.comp` at `Sort 0`
   received □ in a parameter its body treats as relevant. It also rejects a
   *type* passed to a relevant parameter of a type-polymorphic callee, which
   no universe condition covers and which SrcEval gets stuck on if the callee
@@ -60,7 +60,7 @@ recurse structurally (the loop on a fuel; the term walk is a mutual
 structural recursion over `Term`, fixed by `termination_by structural`, so
 the kernel never unfolds a well-founded fixpoint), keep their state in lists
 and a persistent `NatMap`, and read the program and the annotation through
-their `NatMap`s and lists: no array or hash map on the path (M1.K1). -/
+their `NatMap`s and lists: no array or hash map on the path. -/
 
 namespace IxCC.Src.Relevance
 

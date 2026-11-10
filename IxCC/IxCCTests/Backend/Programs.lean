@@ -3,7 +3,7 @@ import IxCC.Xv.XlSemantics
 /-!
 # Hand-written Xl programs for the backend
 
-Allocated by hand, in the internal convention (05 §6: arguments in `rdi
+Allocated by hand, in the internal convention (arguments in `rdi
 rsi rdx rcx r8 r9 r10` then `outArg`/`inArg` cells, results in `rax
 rdx`), so each exercises one part of stacking:
 

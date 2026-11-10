@@ -6,7 +6,7 @@ import IxCC.Sem.TracedTransform
 Anf programs run from a root on `Nat` arguments (`Sem.Lang`, the input
 `(root index, arguments)` that SrcEval and Lam use), with values observed
 program-independently: literals, and constructor trees tagged by the source
-constructor (as Lam's `obsV`, M2.2). Every Anf pass's refinement (M2.3) is
+constructor (as Lam's `obsV`). Every Anf pass's refinement is
 stated against this instance; through `Lang.instTLang` it is also a traced
 language with `Env := Unit`, `E := Empty` (decision D-1). -/
 

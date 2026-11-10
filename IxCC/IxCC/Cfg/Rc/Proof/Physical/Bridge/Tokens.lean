@@ -29,8 +29,8 @@ def savedRoots {addresses : AddressMap} (saved : List (SavedCaller addresses)) :
 def savedStack {addresses : AddressMap} (saved : List (SavedCaller addresses)) :
     List (Cfg.Frame × Fir.Var) := saved.map fun s => (s.frame, s.destination)
 
-/-- This is the token/denotation projection of H1's full State. Join views
-remain in the original H1 state; no unsupported reconstruction after dropping
+/-- This is the token/denotation projection of the RC replay's full ownership
+state. Join views remain in the original state; no unsupported reconstruction after dropping
 a captured variable is claimed by this smaller boundary. -/
 structure Tokens (H : Heap) (external : Nat → Nat) (held : List RVal)
     (live : List Fir.Var) (ρf : Fir.Env) (ρo : Own.Env) (roots : List RVal) : Prop where

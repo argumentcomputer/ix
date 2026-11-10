@@ -2,7 +2,7 @@ import IxCC.Anf.Walk
 
 /-! # P3: inlining
 
-`Anf.Inline` (design note 02 §8, P3), parametric in an oracle: a **round**
+`Anf.Inline` (P3), parametric in an oracle: a **round**
 lists, per caller, the callees whose `call`s and CAF `glob`s it inlines.
 `call g as` becomes `tick` and `g`'s body with its parameters bound to `as`
 (its `ret` continues with the caller, through a join point when the body
@@ -13,7 +13,7 @@ round, so a round terminates and the pass is correct for **every** oracle
 (a listed callee that is not called is ignored).
 
 **Certificate** (D17): the rounds. The default oracle (`produce`), after
-Lean's (02 §7.4: instances, matchers, lazy and wrapper globals, small
+Lean's (instances, matchers, lazy and wrapper globals, small
 bodies), inlines every call of a callee that is not recursive (not on a
 cycle of the call graph) and is a CAF, a by-name variant or a wrapper, or
 has at most `Budgets.size` nodes. Recursive globals are never inlined by the

@@ -1,7 +1,6 @@
 /*
- * MEAS-4 C twins of the synthetic Lir kernels (roadmap MEAS-4, note 05 §12,
- * Phase 1 item M1.B6). Untrusted measurement code, compiled on its own at
- * -O2 so that the timing driver cannot inline or hoist it.
+ * The early backend probe's C twins of the synthetic Lir kernels. Untrusted
+ * measurement code, compiled on its own at -O2 so that the timing driver cannot inline or hoist it.
  *
  * Tagged twins (twin_*) use the object layout of the Lir kernels in
  * IxCCTests/Lir/Kernels.lean: a Nat n < 2^63 is the word 2n + 1,

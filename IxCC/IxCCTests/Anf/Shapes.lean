@@ -3,8 +3,8 @@ import IxCCTests.Anf.KernelEval
 import IxCC.Anf.Pipeline
 import IxCCTests.Src.Bench
 
-/-! The K1 shape expectations after the Phase 1 pipeline (design note 02
-§13.4, §9), on each bench-k1 entry and on the K1 roots of `k1.ixe`:
+/-! The K1 shape expectations after the Phase 1 pipeline, on each bench-k1 entry and on the K1 roots
+of `k1.ixe`:
 
 * `fib`, `ack`, `tak`, `gcd`: the program reachable from the root is one
   recursive global that calls only itself and primitives, plus the entry
@@ -17,8 +17,8 @@ import IxCCTests.Src.Bench
   boundary to decline) and has no CAF.
 
 These are structural summaries, not golden text. A shape that is not
-reached fails with an exact account of what remains (the decline set for
-M1.F5). Sizes (Lam, P1, final) are reported per fixture. -/
+reached fails with an exact account of what remains (the decline set at the
+Anf → Fir boundary). Sizes (Lam, P1, final) are reported per fixture. -/
 
 namespace IxCCTests.Anf.Shapes
 
@@ -145,7 +145,7 @@ def anfSize (P : Program) : String :=
   s!"{P.size} globals/{P.globalList.foldl (fun n (_, gd) => n + gd.body.nodes) 0} nodes"
 
 /-- The certificate replayed by the recheck reproduces `produce`'s program,
-and shrink is idempotent there (02 §13 item 6). -/
+and shrink is idempotent there. -/
 def replay (a : Assert) (label : String) (L : LProgram) (tr : Anf.Pipeline.Trace)
     (final : Program) : IO Unit := do
   let again ← IO.ofExcept (Anf.Pipeline.run tr.cert L)

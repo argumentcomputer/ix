@@ -32,7 +32,7 @@ private def immediates : List Word :=
    0xffffffff, 0xffffffff80000000, 0xffffffffffffff80, 0x100000000,
    0x8000000000000000, 0xffffffffffffffff]
 
-/-- The rows M1.B1 added: `test`, shifts, `div`, `setcc`, `cmovcc` and
+/-- The rows added for the Phase 1 backend: `test`, shifts, `div`, `setcc`, `cmovcc` and
 `op r, r/m`. -/
 private def phaseOneRow (o : Op) : Bool :=
   match o.mn with

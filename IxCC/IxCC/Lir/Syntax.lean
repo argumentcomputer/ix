@@ -4,10 +4,10 @@ import IxCC.Sem.Result
 /-!
 # Lir syntax
 
-Lir is the backend's first IR (design note `plans/x86-v2/05-backend.md` §2):
+Lir is the backend's first IR:
 SSA over 64-bit virtual registers, with block parameters instead of φ-nodes,
 explicit memory operations over the permissioned byte memory of `X86.State`,
-and explicit failure. Runtime procedures are ordinary Lir functions (04 §7),
+and explicit failure. Runtime procedures are ordinary Lir functions,
 so calls name a `FunId` and there is no intrinsic.
 
 A function's entry is block 0. Labels are block indices; their order is
@@ -16,8 +16,7 @@ most its source label (`Lir.Semantics`).
 
 Every value is a `Word`. An operation at width `w` reads the low `w` bits of
 its operands and produces a zero-extended result. `Base.ctx` names the pinned
-context register (`r15`, 04 §6); it is not a virtual register.
--/
+context register (`r15`); it is not a virtual register. -/
 
 namespace IxCC.Lir
 
@@ -108,7 +107,7 @@ inductive Term where
   | brOvf (o : Ovf) (x : VReg) (a b : Arg) (ok ovf : Edge)
   | ret (as : List Arg)
   | tail (f : FunId) (as : List Arg)
-  /-- Explicit resource failure (04, roadmap §4.12). -/
+  /-- Explicit resource failure. -/
   | fail (r : Sem.Resource)
   | trap
   deriving DecidableEq, Repr, Inhabited
@@ -121,7 +120,7 @@ structure Block where
   cold : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
-/-- Calling convention: internal (05 §6), or a SysV export wrapped at
+/-- Calling convention: internal, or a SysV export wrapped at
 Stacking. -/
 inductive Conv where
   | internal

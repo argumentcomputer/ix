@@ -9,7 +9,7 @@ bound (`Ident.level`, by strong induction: the fundamental lemma below the
 bound gives application, calls and global values, which give the
 fundamental lemma at the bound). So every expression simulates itself at
 every clock (`Ident.fund`) and every program refines itself
-(`Ident.refines`) (M2.3). -/
+(`Ident.refines`). -/
 
 set_option autoImplicit false
 

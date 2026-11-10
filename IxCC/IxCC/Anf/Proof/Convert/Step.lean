@@ -6,7 +6,7 @@ import IxCC.Anf.Proof.Convert.Force
 of the conversion (`conv`, `caseOn`, `caseBody`, `convAlts`, `convList`,
 `convArgs`, `groups`, `spine`) at fuel `fuel`: from related environments and
 a related continuation, the converted code simulates the Lam computation
-followed by the continuation's source (P1, M2.3). Every function at
+followed by the continuation's source (P1). Every function at
 `fuel + 1` calls the others at `fuel`, so `ConvAt n` holds at every fuel by
 induction (`Convert/Level`), given application at `n` and bodies below `n`.
 

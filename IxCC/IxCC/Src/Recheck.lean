@@ -4,10 +4,10 @@ import IxCC.Src.Lazify
 
 /-! # The front end's recheck path
 
-What `Recheck.run` (D17, design note 00 "Produce and recheck") does with a
-`Src.Program` before erasure (note 01 §1.2): the table checks re-validate
+What `Recheck.run` (D17) does with a
+`Src.Program` before erasure: the table checks re-validate
 every unfolding-table entry and the pinned identities (V), the relevance
-annotation is installed and checked, tiers S and C (V, 02 §3.3) and then
+annotation is installed and checked, tiers S and C (style V) and then
 `Relevance.checkCanonical` (V: every irrelevant tag must be justified by the
 declaration types, on every program whatever its pinned identities), and
 `Lazify` is re-run (P). Ingress, the annotator, `Table.build` and `Admit`

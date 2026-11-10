@@ -22,9 +22,9 @@ and measured scope are below. The later consumer additions passed focused
 execution on their separately guarded snapshots: tests-src runs 8,514
 assertions, and the new tests-own part runs 48 counted assertions and 36
 complete observations. Every later
-integration tree requires the same complete validation surface. G1 acceptance
-and the selected-producer fixture refreeze remain open. These local results
-do not establish hosted CI, clean-store timing or completion of Phase1.5.
+integration tree requires the same complete validation surface. The Phase 1.5
+resource and consumer gate and the selected-producer fixture refreeze remain open. These local
+results do not establish hosted CI, clean-store timing or completion of Phase1.5.
 
 The later consumer-order snapshot (2,394 files) passed all 16 required local
 checks in 19m 43.930s with the existing store. The subsequent explicit-cap
@@ -33,7 +33,8 @@ own complete run; [workspaces and recovery](workspaces-and-recovery.md)
 separates source recovery from compiler/proof acceptance.
 
 The removed surface, with its code and its last passing run, is preserved on
-branch `jcb/ixby-archive` at `7599a43`. There, `nix flake check` passed all 44
+branch `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix`
+repository, at `7599a43`. There, `nix flake check` passed all 44
 checks in 15 min 38 s at `--max-jobs 2`, with no `--accept-flake-config`.
 Hosted GitHub runs had already been disabled, and the workflow was removed
 with the checks.
@@ -72,7 +73,7 @@ builds they share:
 | `suites` | The pipeline suites, concurrently (`NIX_BUILD_CORES` at a time, longest first), each with its complete output, status and wall time in the log; assertion counts as measured at the 2026-11-09 review fixes: `tests-src` (8,520 assertions), `tests-relevance` (4,561), `tests-lam` (28,188), `tests-anf` (340,722), `tests-fir` (129,130), `tests-rt --cc` (77,325), `tests-pipeline --cc` (1,798), `tests-recheck` (1,248; the kernel recheck artifacts are current, and the 2026-11-09 review's hostile-input regressions pass), `tests-recheck-readback` (27 structural signature controls), `certified-census --self-test` (11 protocol controls), `check-lir`, `check-xv-select`, `check-regalloc`, `check-backend --cc`, `corpus check` (6 families, 32 closures, 160 roots, 1,411 cases), `tests-corpus --cc` (45,377, with the middle-end budget survey), `tests-own --cc` (9,754; ownership suite, including its own `corpus check` and the new `annotated-recursion` part) and `tests-shrink` (120; recorded choice sequences replay, and a planted bug per generator is named at its level, shrunk and written out). With `--cc` the objects are linked with the C drivers and run natively; that part is x86-64 Linux only, and elsewhere the check says the native runs are skipped and runs every Lean level |
 | `rc-runtime` | Portable: `tests-rt-rc controls`, `tests-rt-rc deep`, `tests-driver-session`, `tests-cfg-rc`, and `tests-pipeline-rc levels LOGDIR` / `counters LOGDIR`; actual Lir procedures, bounded reuse/release, modeled driver protocol, complete abstract-Cfg values/heaps, every actual RC pipeline level and executed allocation/RC/free counts |
 | `rc-native` | x86-64 Linux only: `tests-rt-rc native LOGDIR`, `tests-rc-certificate fresh LOGDIR`, and `tests-pipeline-rc native LOGDIR` / `negative LOGDIR`; independent C runtime controls, separate certificate writer/readers, exact ELF bytes, complete C+Lean results, same-region output drops, object-only corruption and actual-root heap exhaustion |
-| `x86-steps` | `check-steps`: the typed x86 and `ByteEval` step counts of `cx_init` and the root, and the result, for nine bench-k1 programs at their machine-level test arguments, equal to the reviewed baseline [`steps.json`](../fixtures/ixon-v4/bench-k1/steps.json) exactly (MEAS-3). A baseline change is a reviewed, performance-relevant change: `lake exe check-steps --write`, then review the diff |
+| `x86-steps` | `check-steps`: the typed x86 and `ByteEval` step counts of `cx_init` and the root, and the result, for nine bench-k1 programs at their machine-level test arguments, equal to the reviewed baseline [`steps.json`](../fixtures/ixon-v4/bench-k1/steps.json) exactly. A baseline change is a reviewed, performance-relevant change: `lake exe check-steps --write`, then review the diff |
 
 The source suite preserves 53 resource controls and adds nine tests that
 distinguish resource-bound replacement refusal from ordinary redirect
@@ -165,10 +166,10 @@ Full observations, certificates, object hashes, subprocess diagnostics and
 memory dumps are retained by the gates.
 
 Fixture identity is recorded under `fixtures/rc/real-source`; the current
-accepted baseline still uses its historical producer. Final G1/producer
+accepted baseline still uses its historical producer. The final Phase 1.5 gate, producer
 review and refreeze are separate from this test promotion. See
 [development commands](development-plan.md) and the
-[roadmap](roadmap.md#current-state-2026-10-08) for the remaining integration gates.
+[roadmap](roadmap.md#current-state-2026-11-09) for the remaining integration gates.
 
 ### Suite costs
 
@@ -213,6 +214,12 @@ Review the diff before committing; the inventory exists to make coverage
 changes visible.
 
 ## Coverage change record
+
+Rows are dated records and keep their original wording. Identifiers in older
+rows (milestones such as M1.K1 or MT.7, plan items such as MEAS-3, design-note
+sections, review-finding ids, and branches of the pre-merge
+`argumentcomputer/Compilatr.ix` repository) refer to plans and reports that
+are no longer kept; the documents in this directory describe the current state.
 
 | Date | Change | Checks |
 | --- | --- | --- |

@@ -36,7 +36,7 @@ def countXl (p : LProgram) (env : Xl.Env) (fuel k : Nat) (s : Xl.State) : Outcom
   return (.timeout, steps, charges)
 
 /-- A runtime-procedure-like environment: odd functions declare a smaller
-clobber set than every caller-saved register (04 §7). -/
+clobber set than every caller-saved register. -/
 def smallClobbers : Xl.Env :=
   { clobbers := fun g => if g % 2 == 1 then [.rax, .rdx, .rcx, .rdi] else X86.SysV.callerSaved.toList }
 

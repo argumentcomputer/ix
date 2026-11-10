@@ -5,7 +5,7 @@ import IxCC.Lir.Semantics
 /-!
 # The abstract state's meaning
 
-`AState.Agree a ρ ℓ` (05 §5): every fact `v ∈ a[l]` holds of the matching
+`AState.Agree a ρ ℓ`: every fact `v ∈ a[l]` holds of the matching
 runs, `ρ v = ℓ l`, with both defined. This module proves the facts the
 soundness argument needs about the validator's state:
 
@@ -19,8 +19,7 @@ soundness argument needs about the validator's state:
 
 Sets are read by list membership; `VSet.mem`, `insert` and `subset` are only
 used in the sound direction, and `erase` is a filter, so no sortedness
-invariant is needed.
--/
+invariant is needed. -/
 
 namespace IxCC.Xv.Validate
 
@@ -291,7 +290,7 @@ end AState
 
 /-! ## Agreement -/
 
-/-- The meaning of an abstract state (05 §5): each fact `v ∈ a[l]` holds of
+/-- The meaning of an abstract state: each fact `v ∈ a[l]` holds of
 the Xv environment `ρ` and the Xl locations `ℓ`, both defined. -/
 def AState.Agree (a : AState) (ρ : Env) (ℓ : Loc → Option Word) : Prop :=
   ∀ l v, v ∈ a.get l → ∃ w, ρ[v]? = some w ∧ ℓ l = some w
@@ -423,7 +422,7 @@ theorem bindParams_length :
       simp only [Lir.bindParams] at h
       simp [bindParams_length h]
 
-/-- An edge's parallel binding (05 §5, regalloc2's symbolic parallel move):
+/-- An edge's parallel binding (regalloc2's symbolic parallel move):
 the parameters take the arguments' values, read before any is written. -/
 theorem AState.Agree.bindParams {a : AState} {ρ ρ' : Env} {ℓ : Loc → Option Word}
     (h : a.Agree ρ ℓ) {params args : List VReg} {vals : List Word} (hnd : params.Nodup)

@@ -6,14 +6,14 @@ import IxCC.Xv.Select.Rules
 | Lir | Xv | Rule |
 | --- | --- | --- |
 | `br c w a b` | `jcc` with the flag producer of `Select.Producer` (`cmp`, `test a, a`, `test`, a folded load) | 1–3 |
-| `brOvf addC x a b` / `subB` | `jcc (add/sub r/m64, r/imm)` defining `x` (tied to `a`), `jb` = `jc` on carry or borrow (06 S9) | 4 (`brOvf.add*`, `brOvf.sub*`) |
+| `brOvf addC x a b` / `subB` | `jcc (add/sub r/m64, r/imm)` defining `x` (tied to `a`), `jb` = `jc`
+on carry or borrow | 4 (`brOvf.add*`, `brOvf.sub*`) |
 | `brOvf … (load m)` | `jcc (add/sub r64, m64)` (RM) | 4, 9 (`brOvf.addMem`, `brOvf.subMem`) |
 | `jump`, `ret`, `tail`, `fail`, `trap` | the same, immediates materialized | `jmp`, `ret`, `tail`, `exit` |
 
 The flag producer is part of the `jcc` terminator, so no edit can separate
-it from the branch (05 §3). Edge and return arguments are registers at Xv,
-so immediates are materialized before the terminator.
--/
+it from the branch. Edge and return arguments are registers at Xv,
+so immediates are materialized before the terminator. -/
 
 namespace IxCC.Xv.Select
 

@@ -4,7 +4,7 @@ import IxCC.Src.Proof.NatMap
 
 /-! # `Cfg.lower`'s block layout
 
-What `Cfg.Lower.code` emits, as M2.4's `Cfg.lower_correct` needs it:
+What `Cfg.Lower.code` emits, as `Cfg.lower_correct` needs it:
 
 * `code_frame`: lowering `c` into block `cur` with fresh labels from
   `next` writes only `cur` and the `count c` labels from `next`;

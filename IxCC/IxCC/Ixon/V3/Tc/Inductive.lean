@@ -441,9 +441,9 @@ def computeKTarget (indId : KId m) : RecM m Bool := do
   | some (.ctor (fields := fields) ..) => return fields == 0
   | _ => return false
 
--- ### A1–A4 constructor validation
+-- ### Constructor validation
 
-/-- A1 / S3b: walk the first `nParams` foralls of both types, def-eq the
+/-- Parameter agreement: walk the first `nParams` foralls of both types, def-eq the
     domains, and open both bodies with the SAME fvar. -/
 def checkParamAgreement (indTy ctorTy : KExpr m) (nParams : Nat) :
     RecM m Unit := do
@@ -552,7 +552,7 @@ def checkPositiveParametersFrom (id : KId m)
       checkPositiveParametersFrom id args params (index + 1) remaining
 
 /-- The exact stateful parameter-comparison loop used by positivity. Naming
-    it separately exposes the successful recursive `isDefEq` trace to E2c
+    it separately exposes the successful recursive `isDefEq` trace to proofs
     without changing the production comparison order or diagnostics. -/
 def checkPositiveParameters (id : KId m) (args params : Array (KExpr m))
     (nParams : Nat) : RecM m Unit :=
@@ -566,7 +566,7 @@ def positiveIndicesIndependent (args : Array (KExpr m)) (nParams : Nat)
     !exprMentionsAnyAddr index rootAddrs
 
 /-- The stateless prefix of recursive-application validation.  Keeping the
-    original error values here makes the production control flow and the E2c
+    original error values here makes the production control flow and the proofs'
     success characterization share one definition. -/
 def checkPositiveRecursiveApplicationPreconditions
     (us : Array (KUniv m)) (args : Array (KExpr m))
@@ -591,7 +591,7 @@ def checkPositiveRecursiveApplicationPreconditions
       s!"positivity: recursive occurrence has wrong argument count: expected {nParams + nIndices}, got {args.size}")
 
 /-- Validate the already-resolved inductive header of an active recursive
-    application.  Separating the lookup/match from these guards gives E2c an
+    application.  Separating the lookup/match from these guards gives proofs an
     exact successful-branch seam while preserving their production order. -/
 def checkPositiveRecursiveApplicationHeader (id : KId m)
     (us : Array (KUniv m)) (args : Array (KExpr m))
@@ -742,7 +742,7 @@ def checkNestedPositivityApplicationResolvedFuel (fuel : Nat) (id : KId m)
     parameter specialization mentions the root block.  The caller has already
     reduced the field domain to this constant-headed spine and established
     that the head is not a root-family address.  Keeping the lookup and
-    resolved continuation as named production actions gives E2c an exact
+    resolved continuation as named production actions gives proofs an exact
     successful-header boundary without changing execution order. -/
 def checkNestedPositivityApplicationFuel (fuel : Nat) (id : KId m)
     (us : Array (KUniv m)) (args : Array (KExpr m))
@@ -786,7 +786,7 @@ def checkPositivityDomainFuel :
     -- Inductive in the domain of a Pi = negative position.
     if exprMentionsAnyAddr innerDom rootAddrs then
       throw (.other "strict positivity violation")
-    -- H4: open with an fvar so whnf works on dependent types.
+    -- Open with an fvar so whnf works on dependent types.
     let saved := (← get).lctx.size
     let (innerOpen, _) ← TcM.openBinderAnon innerDom innerBody
     let result ←
@@ -939,7 +939,7 @@ def checkCtorReturnType (ctorTy : KExpr m)
   | _ =>
     modify fun s => { s with lctx := s.lctx.truncate saved }
     throw (.other "ctor return type: head is not the inductive")
-  -- S2: exact arg count.
+  -- Exact argument count.
   if args.size != nParams + nIndices then
     modify fun s => { s with lctx := s.lctx.truncate saved }
     throw (.other s!"ctor return type: expected {nParams + nIndices} args (params={nParams} + indices={nIndices}), got {args.size}")
@@ -990,11 +990,12 @@ def checkCtorMetadataAgainstParent (ctorId inductId : KId m)
     throw (.other s!"check_inductive: ctor cidx mismatch: expected {expectedCidx}, got {ctorCidx}")
   return (ctorTy, ctorFields)
 
-/-- Complete A1–A4 validation of one constructor after its parent inductive
-header and block context have been resolved.  Naming this shared sequence
-keeps member-wide and standalone-constructor checking on the same production
-path and gives E2c one exact seam at which successful positivity can be
-retained before the later universe and return-type checks. -/
+/-- Complete validation of one constructor after its parent inductive header
+and block context have been resolved: A1 parameter agreement, A2 return type,
+A3 strict positivity (safe inductives only), A4 field universe levels. Naming
+this shared sequence keeps member-wide and standalone-constructor checking on
+the same production path and gives proofs one exact seam at which successful
+positivity can be retained before the later universe and return-type checks. -/
 def checkInductiveConstructor (ctorId inductId : KId m)
     (expectedCidx indParams indIndices : Nat) (indLvls : UInt64)
     (indIsUnsafe : Bool) (indTy : KExpr m) (indLevel : KUniv m)
@@ -1022,7 +1023,7 @@ def checkInductiveConstructors (inductId : KId m)
       checkInductiveConstructors inductId indParams indIndices indLvls
         indIsUnsafe indTy indLevel blockAddrs ctorIds (expectedCidx + 1)
 
-/-- S3/S3b agreement for one already-resolved inductive header.  The cache
+/-- Peer agreement for one already-resolved inductive header.  The cache
 gate and peer order are unchanged; the named phase lets verification treat
 peer agreement as the prefix before the complete constructor traversal. -/
 def checkInductivePeerAgreement (id block : KId m)
@@ -1080,9 +1081,9 @@ def checkResolvedInductiveMember (id : KId m)
   -- an unverifiable recursor slip through).
   ensureInductiveRecursors block
 
-/-- Validate an inductive and every one of its constructors (S3/S3b peer
-    agreement + A1–A4). The Rust tail (recursor-generation trigger) lands
-    with P9. -/
+/-- Validate an inductive and every one of its constructors (peer
+    agreement and constructor validation). The Rust kernel's recursor-generation
+    trigger has no counterpart here. -/
 def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
   let (params, indices, lvls, ctors, block, isUnsafe, ty) ←
     match (← TcM.getConst id) with
@@ -1201,7 +1202,7 @@ def mkIndUnivs (indLvls offset : UInt64) :
 
 /-- Reuse or append the exact auxiliary specialization discovered by the
     flat-block scan.  Keeping this decision as a named production action
-    exposes the shared specialization key to the E2c transport without
+    exposes the shared specialization key to proofs without
     changing the source-ordered queue traversal around it. -/
 def appendNestedAuxiliary (headId : KId m)
     (occurrenceUs : Array (KUniv m)) (specParams : Array (KExpr m))
@@ -1261,7 +1262,7 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
   if !hasNestedRef then
     return (flat, auxSeen)
   let specParams := args.extract 0 extNParams
-  -- S7: reject param args depending on field/domain-local binders.
+  -- Reject parameter arguments depending on field/domain-local binders.
   let paramBound ← checkedNatMetadataSum "nested parameter scope"
     #[paramDepth, nRecParams.toNat]
   let s7ok := specParams.all fun sp =>
@@ -1361,7 +1362,7 @@ def scanFlatConstructors (allBlockAddrs : Array Address)
 
 /-- One source-ordered production queue step.  Naming the callback preserves
 the executable traversal while exposing the dynamically growing flat array
-and its deduplication set to E2c proofs. -/
+and its deduplication set to proofs. -/
 def buildFlatBlockQueueStep (allBlockAddrs : Array Address)
     (nRecParams univOffset : UInt64) (state : FlatBlockQueueState m) :
     RecM m (BoundedStep (FlatBlockQueueState m)
@@ -2826,7 +2827,7 @@ def checkGeneratedRecursorCandidate (ty : KExpr m)
     throw (.other "check_recursor: type mismatch")
   let generatedRules := generated.rules
   if generatedRules.isEmpty && !storedRules.isEmpty then
-    -- C1: cannot verify stored rules against a missing canonical form.
+    -- Stored rules cannot be verified against a missing canonical form.
     throw (.other s!"check_recursor: rule generation failed, cannot verify {storedRules.size} stored rules")
   else if !generatedRules.isEmpty && storedRules.isEmpty then
     throw (.other s!"check_recursor: stored recursor has no rules (expected {generatedRules.size})")
@@ -2883,7 +2884,7 @@ def collectGeneratedRecursorTypeMatches (ty : KExpr m)
 /-- Select the generated recursor corresponding to one frozen stored
 declaration. Complete recursor types are closed, unlike major domains peeled
 from under forall binders, so the stateful DefEq calls remain inside the
-top-level K2 translation context. Returning the index separately gives
+top-level translation context. Returning the index separately gives
 verification an exact boundary between selection and exhaustive comparison. -/
 def selectGeneratedRecursorIndex (recBlock id : KId m) (ty : KExpr m)
     (params motives minors : UInt64) (indId : KId m)
@@ -2915,7 +2916,7 @@ def checkGeneratedRecursorFromCache (recBlock id : KId m) (ty : KExpr m)
     checkGeneratedRecursorCandidate ty declaredLvls declaredIsUnsafe params
       motives minors indices storedRules selected
   | none =>
-    -- C2: no generated recursor — MUST NOT silently pass.
+    -- No generated recursor: must not silently pass.
     throw (.other "check_recursor: no generated recursor for major")
 
 /-- Freeze the complete stored recursor declaration and validate the exact

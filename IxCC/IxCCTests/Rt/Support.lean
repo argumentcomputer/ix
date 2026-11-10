@@ -5,26 +5,26 @@ import IxCC.Lir.Semantics
 import IxCC.Lir.WellFormed
 import IxCC.Lir.Print
 
-/-! Shared support for the runtime suite (`tests-rt`, M1.F6): the Lir-level
+/-! Shared support for the runtime suite (`tests-rt`): the Lir-level
 region with `cx_init` run on it, Cfg and Lir side by side, the value
 relation, typed readback, and the clock relation.
 
 **The region.** The Lir models map one region at `base` (64 KiB unless a
 test asks for less), zero-filled as a fresh `mmap` is, with `ctx = base +
-64` (04 §6). `cx_init` runs on it through `Lir.eval`, and its effect is
+64`. `cx_init` runs on it through `Lir.eval`, and its effect is
 checked against an independent expectation of the context block; runs then
 start from a copy of that memory whose bytes are a table (`X86.Memory` is a
 closure chain, so the ~600 bytes `cx_init` writes would otherwise be walked
 on every later read).
 
-**Cfg against Lir** (04 §8, 06 S32). Cfg's clock is total and charges the
+**Cfg against Lir**. Cfg's clock is total and charges the
 entry, calls, tail calls and back edges; Lir charges calls, tail calls and
 backward edges, and `Lir.eval` enters `main` without a charge. `Rt.lower`
 maps each Cfg charge after the entry to exactly one Lir charge, so a run's
 least Lir clock is its least Cfg clock minus one, and the timeout clause
 reads "Cfg times out at `k + 1` ⇒ Lir times out at `k`, or fails with an
 allowed resource" (identity from the entry on). A Cfg value is related to
-the Lir word and memory by `relate` (04 §8 `ValRel` with `ImmortalAt`: the
+the Lir word and memory by `relate` (the value relation of `Rt.Proof.Heap`: the
 immediates' words, and cells at distinct, disjoint, aligned addresses in
 `[start, bump)` with the immortal header and related fields), the object
 area holds exactly Cfg's cells (`bump − start` is their total size), and
@@ -60,7 +60,7 @@ def limitOf (size : Nat) : Word := base + UInt64.ofNat size
 def blockBytes : Nat := (start - base).toNat
 
 /-- What `cx_init` must leave in the context block: the four fields, the
-rest zero (04 §6). -/
+rest zero. -/
 def expectedBlock (size : Nat) (budget : Word) : List UInt8 :=
   let fields : List (Int × Word) :=
     [(Rt.stackBudgetOff, budget), (Rt.bumpOff, start), (Rt.limitOff, limitOf size), (Rt.regionBaseOff, base)]
@@ -115,7 +115,7 @@ def lirOutcome : Lir.Outcome → String
   | .trap => "trap"
   | .resource r => s!"resource {repr r}"
 
-/-- An extra target outcome `Rt.lower_correct` allows anywhere (04 §8). -/
+/-- An extra target outcome `Rt.lower_correct` allows anywhere. -/
 def allowed : Lir.Outcome → Bool
   | .resource .heap | .resource .natOverflow => true
   | _ => false
@@ -125,7 +125,7 @@ def allowed : Lir.Outcome → Bool
 /-- A placement: each location's address. -/
 abbrev Placement := List (Nat × Word)
 
-/-- Own's value against a Lir word (04 §8 `ValRel`, cells `ImmortalAt`):
+/-- Own's value against a Lir word (the value relation of `Rt.Proof.Heap`):
 the placement grows as cells are met, stays injective, and every cell lies,
 8-aligned, in `[lo, hi)` with the immortal header and related fields. -/
 def relate (H : Own.Heap) (m : X86.Memory) (lo hi : Word) : Nat → Placement → Own.RVal → Word → Option Placement

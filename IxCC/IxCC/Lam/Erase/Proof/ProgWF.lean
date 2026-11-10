@@ -7,7 +7,7 @@ import IxCC.Src.Proof.NatMap
 `progWF_iff`: erasure's check of the declarations (`Input.progWF`) holds
 exactly when the structural facts its correctness proof assumes
 (`ProgWF`) do; `erase_progWF`: a successful erasure passed the check. So
-`erase_correct` needs no premise about the declarations (M2.2). -/
+`erase_correct` needs no premise about the declarations. -/
 
 set_option autoImplicit false
 

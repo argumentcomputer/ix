@@ -237,7 +237,7 @@ E1/E2 laws. -/
 /-- info: 'IxCC.X86.executeInstr_load' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.executeInstr_load
 
-/-! Phase 1 table rows (M1.B1): row safety, fused pairs, branch producers and the
+/-! Phase 1 table rows: row safety, fused pairs, branch producers and the
 failure exit. -/
 
 /-- info: 'IxCC.X86.Op.safe_ok' depends on axioms: [propext, Quot.sound] -/

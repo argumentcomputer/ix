@@ -3,9 +3,8 @@ import IxCC.Sem.Result
 
 /-! # Readback
 
-First-order SrcEval values as shared observations (`Sem.Obs`, design note
-01 §3.1, 02 §5.2): a literal is a `Nat`, a constructor is its index with
-its kept fields in order, a string literal its UTF-8 bytes. Which fields are
+First-order SrcEval values as shared observations (`Sem.Obs`): a literal is a `Nat`, a constructor
+is its index with its kept fields in order, a string literal its UTF-8 bytes. Which fields are
 kept is the relevance check's `CtorRel` at the constructor value's own
 levels (`keep c ls i`, level-exact as D18 asks); a kept field that holds
 `irr` has no observation, so a wrong annotation cannot change a result by

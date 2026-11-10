@@ -2,7 +2,7 @@ import IxCCTests.Corpus.Manifest
 import IxCCTests.Src.Support
 import IxCC.Recheck
 
-/-! The middle end's budgets against every committed program (REPORT item 2).
+/-! The middle end's budgets against every committed program.
 
 The replay refuses a middle-end step that passes a node or work budget
 (`IxCC.Anf.Budget`). The budgets must leave every committed fixture and corpus

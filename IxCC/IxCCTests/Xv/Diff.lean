@@ -14,12 +14,12 @@ accepts:
 1. **Selection** is deterministic, its output is `Xv.WellFormed`, and each
    instruction's operand metadata names exactly its syntactic uses and
    definitions.
-2. **Lock-step outcomes** (05 §4, `Select.correct`): unless `Lir.eval` is
+2. **Lock-step outcomes** (`Select.correct`): unless `Lir.eval` is
    `stuck`, `Xv.eval` gives the same outcome (values, heap and context
    words, or the failure) at the clocks 0–3, 24 and 200.
 3. **Same clock**: stepping both by hand spends the same number of charges,
    and a run that finishes after `c` charges finishes identically at clock
-   `c` and times out at `c − 1` (the timeout clause, 06 S32).
+   `c` and times out at `c − 1` (the timeout clause).
 
 A program selection rejects must name an unsupported form; the report
 counts them by form. The kernels are checked at their exact clocks.

@@ -10,13 +10,12 @@ import IxCC.X86.ELFCheckK
 `concatMapK`. `writeK_eq` proves it writes `write`'s bytes, and
 `writeCheckedK` (the list writer accepted by `ELF.checkK`) is
 `writeChecked` (`writeCheckedK_eq`), so the recheck path's object carries
-the same `ELF.Valid` certificate (M1.K1, design note 00).
+the same `ELF.Valid` certificate.
 
 The provenance note's root is the `Ixon.Address` the configuration names;
 the writer reads its 32 bytes as `hash.data.toList`, two projections of the
 address's byte literal in a kernel term, and runs no `ByteArray` operation
-on it.
--/
+on it. -/
 
 namespace IxCC.X86.ELF
 

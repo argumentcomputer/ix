@@ -4,7 +4,7 @@ import IxCC.Sem.Result
 # Clocked semantics and their behaviours
 
 Every executable semantics of the pipeline is a function of a clock,
-`c : Nat → Result α` (design note `plans/x86-v2/00-conventions.md`). This
+`c : Nat → Result α`. This
 module fixes what such a function must satisfy and what it observes:
 
 - `ClockMono c`: an outcome other than `timeout` stays the same at every
@@ -15,8 +15,7 @@ module fixes what such a function must satisfy and what it observes:
   (`behaviour_of_ne_timeout`).
 
 `behaviour` is a Prop-level definition (it decides an unbounded
-quantifier), never evaluated; M2.8 evaluates only the passes.
--/
+quantifier), never evaluated; the kernel evaluates only the passes. -/
 
 namespace IxCC.Sem
 

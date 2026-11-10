@@ -7,7 +7,7 @@ evaluated left to right; erasure `let`-binds the relevant strict ones in the
 same order (`bindArgs`) and builds the head's form over the references. This
 module has the shape facts of `BindR`, SrcEval's unfolding of a saturated
 spine and of a constructor's firing, and the results of `Nat.succ` and of an
-unboxed constructor, for the erasure simulation (M2.2). -/
+unboxed constructor, for the erasure simulation. -/
 
 set_option autoImplicit false
 

@@ -8,7 +8,7 @@ verifiers the claimant also chooses the program. One certified step can
 therefore ask for work, memory and native recursion far beyond its input's
 size: a single `inline` step copied a callee into each of thousands of call
 sites, and the walk's continuation-passing recursion over the copies
-overflowed the checker's stack (REPORT item 2). The replay bounds every step
+overflowed the checker's stack. The replay bounds every step
 by fixed node budgets and refuses it, with an ordinary error, before it
 exceeds them:
 

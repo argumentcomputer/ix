@@ -3,7 +3,8 @@
 This guide indexes current contracts, plans and evidence. As reviewed on
 2026-10-08, the scalar recheck pipeline is implemented and Phase 1.5 integration
 remains incomplete. Documents for the retired pipeline, the Ixby
-backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
+backend and the Stage2 fixture are on branch `jcb/ixby-archive` of the pre-merge
+`argumentcomputer/Compilatr.ix` repository.
 
 ## Direction and process
 

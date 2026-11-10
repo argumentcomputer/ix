@@ -19,7 +19,7 @@ reached within the clock is the outcome (`of_final`), a path with more
 charges than the clock times out before its end (`timeout_of_star`), and a
 path within the clock is passed through (`passes`).
 
-This lives with the toy: the IO design note decides whether small-step
+This lives with the toy: a later IO design decides whether small-step
 levels carry their traces in their states.
 -/
 

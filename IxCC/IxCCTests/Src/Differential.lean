@@ -2,7 +2,7 @@ import IxCCTests.Src.Support
 import IxCCTests.Src.Rules
 import IxCCTests.Fixtures.K1
 
-/-! SrcEval against native Lean (design note 01 §10 part 4). The fixture
+/-! SrcEval against native Lean. The fixture
 `IxCCTests/Fixtures/K1.lean` is compiled into this executable as the
 test module `IxCCTests.Fixtures.K1`, so each K1 definition runs natively
 beside its SrcEval run on the same `k1.ixe` closure. Primitives are compared
@@ -82,7 +82,7 @@ def primsAgainstLean (a : Assert) : IO Unit := do
   for x in edges do
     for y in [2 ^ 64, 2 ^ 64 + 1, 2 ^ 100] do
       expect a (PrimOp.shiftRight.eval2 x y == .nat 0) s!"shiftRight {x} {y}"
-  -- Zero divisors (06 S23).
+  -- Zero divisors.
   for x in edges do
     expect a (PrimOp.div.eval2 x 0 == .nat 0 && PrimOp.mod.eval2 x 0 == .nat x) s!"div/mod {x} 0"
 

@@ -4,8 +4,8 @@ import IxCC.Sem.Result
 
 /-! # SrcEval
 
-The clocked big-step semantics of Src (design note 01 §3), the stage-S
-meaning of a program. Rules (§3.2):
+The clocked big-step semantics of Src, the stage-S
+meaning of a program. Rules:
 
 * E1 `var`: a `val` slot gives its value; a `name` slot is evaluated in its
   environment (clock charge, not memoised).
@@ -16,7 +16,7 @@ meaning of a program. Rules (§3.2):
 * E7 `app f a m r`: `f`, then the argument slot: `irr` where `r` is
   irrelevant at the current levels, otherwise by mode (`strict` evaluates,
   `byName` suspends), then `apply` — the curried left-to-right order that
-  Lam uses (02 §4.2).
+  Lam uses.
 * E8 `const` (δ): through the table (`prim`, `csimp`, `eqn`, `case`), then
   the declaration: special heads give a `pap` (fired at once when nullary);
   a safe definition or an allowlisted opaque evaluates its value (charged);
@@ -36,8 +36,8 @@ meaning of a program. Rules (§3.2):
 Relevance is level-exact (D18): every `irr` decision (E5, E7, and the kind
 of F2/F3/F5) is taken at the concrete levels SrcEval carries, so
 sort-polymorphic code at `Sort 0` passes `irr` exactly where its position is
-a proof. Applying or projecting `irr` is stuck at every level (06 S38).
-SrcEval never returns `resource`; `Nat` is exact (06 S19). -/
+a proof. Applying or projecting `irr` is stuck at every level.
+SrcEval never returns `resource`; `Nat` is exact. -/
 
 namespace IxCC.Src
 

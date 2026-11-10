@@ -2,7 +2,7 @@ import IxCC.Anf.Syntax
 
 /-! # Occurrence counts
 
-The syntactic facts the passes' heuristics read (Appel–Jim counts, 02 §8):
+The syntactic facts the passes' heuristics read (Appel–Jim counts):
 how often a value variable occurs, how often as the head of an application
 of a given arity, how often a join point is jumped to, and whether a term's
 free variables are all below a bound. They decide *whether* a rewrite is

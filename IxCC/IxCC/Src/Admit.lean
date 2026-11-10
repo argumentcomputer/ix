@@ -3,7 +3,7 @@ import Std.Data.HashSet
 
 /-! # Src.Admit
 
-The relevant closure and its rejection diagnostics (design note 01 §5):
+The relevant closure and its rejection diagnostics:
 reachability from the roots through the relevant positions of the runtime
 view (resolved bodies, `eqn` bodies, `csimp` targets, the rules of reached
 recursors, and the recursor under each reached `case` key). Reachability is
@@ -11,7 +11,7 @@ per universe profile (D18): a constant is reached as an instance
 `(constant, profile)`, and a position is followed only where its class is
 relevant at that profile, so a sort-polymorphic body instantiated at
 `Sort 0` never reaches the proofs in its proof positions. `Admit` is not on
-the recheck path (01 §1.2), so it keeps its hash set and queue array. Every
+the recheck path, so it keeps its hash set and queue array. Every
 reached reference is classified:
 
 | Code | Condition | Outcome |

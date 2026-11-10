@@ -1,9 +1,8 @@
 import IxCCTests.Fir.Support
 
-/-! The rules of Fir, Own and Cfg on hand-written programs (design note 03
-§2.1, §3.2, §4.4, §7):
+/-! The rules of Fir, Own and Cfg on hand-written programs:
 
-* **charges** (03 C6): function entry, tail calls and recursive jumps; a
+* **charges**: function entry, tail calls and recursive jumps; a
   jump into a join point is free, recursive or not; sequenced calls cost
   the depth at Fir and Own and the total at Cfg; a nested join point inside a
   recursive one charges the recursive jump; exact least clocks at each
@@ -12,7 +11,7 @@ import IxCCTests.Fir.Support
   allocation under both policies (static cells under `.immortal`, dynamic
   ones under `.rc`), field-less constructors as immediates, projection from
   a cell, the default arm; □, a wrong key and a missing alternative are
-  stuck at every level (06 S38, 03 C5); `trap`;
+  stuck at every level; `trap`;
 * **Anf → Fir** on hand-written Anf with join points (recursive and not), a
   CAF, constructors, projections of literals, literal scrutinees and tail
   calls, compared level by level (`compareRun`);

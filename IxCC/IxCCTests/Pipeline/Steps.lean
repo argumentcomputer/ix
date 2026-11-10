@@ -1,7 +1,7 @@
 import IxCCTests.Pipeline.Support
 import IxCC.Tools.Check
 
-/-! Deterministic x86 step counts (M3.2, MEAS-3): each bench-k1 program, as
+/-! Deterministic x86 step counts: each bench-k1 program, as
 the compiler makes it (`Recheck.compileInput`), runs `cx_init` and then its
 root on the typed x86 machine (`X86.step` from the exported wrapper) and on
 the byte machine (`ByteEval` over the object's own `.text`), as

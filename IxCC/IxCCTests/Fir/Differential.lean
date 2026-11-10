@@ -2,7 +2,7 @@ import IxCCTests.Fir.Support
 import IxCCTests.Anf.Differential
 import IxCC.Anf.Pipeline
 
-/-! Every Phase 1 level on the fixtures (design note 03 §11, M1.F5): each
+/-! Every Phase 1 level on the fixtures: each
 root and first-order constant of `k1.ixe` and of the five bench-k1
 closures, through Src → Lam → Anf (the Phase 1 pipeline) → Fir → Own → Cfg,
 compared level by level (`compareRun`: readback against Anf and Lam, traps,

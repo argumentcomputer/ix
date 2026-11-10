@@ -1,9 +1,9 @@
 import IxCCTests.Rt.Support
 
-/-! Hand-written programs for `Rt.lower` (design note 04 §13, tests 1 and
-6; M1.F6):
+/-! Hand-written programs for `Rt.lower` (tests 1 and
+6):
 
-* **primitive sequences** (04 §2): every `Lam.Prim` on variables and on
+* **primitive sequences**: every `Lam.Prim` on variables and on
   literals in either position, at 0, 1, small values, 2^31, 2^32, 2^62 ± 1
   and 2^63 − 1 (and shift counts and exponents around 63), against
   `Prim.sem`: the exact result `2r + 1`, or `fail natOverflow` exactly where
@@ -41,7 +41,7 @@ def bK : Key.CtorKey := .src 601
 def cK : Key.CtorKey := .src 602
 def leafK : Key.CtorKey := .src 700
 def nodeK : Key.CtorKey := .src 701
-/-- Beyond the header's limits (04 §3). -/
+/-- Beyond the header's limits. -/
 def wideK : Key.CtorKey := .src 800
 def manyK : Key.CtorKey := .src 801
 

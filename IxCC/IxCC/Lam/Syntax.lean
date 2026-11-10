@@ -5,8 +5,7 @@ import IxCC.Ixon.V3.Contracts
 
 /-! # Lam syntax
 
-The second IR of the rebuilt pipeline (design note
-`plans/x86-v2/02-erasure-middle.md` §4.1): an untyped, call-by-value λ
+The second IR of the rebuilt pipeline: an untyped, call-by-value λ
 calculus with box-passing erasure's `box` (□), checked constructor keys on
 `con`, `case` alternatives and `proj` (D19), explicit `tick`s where erasure
 elides a SrcEval charge, and `trap`. Erasure (`Lam.erase`) produces it from a
@@ -134,7 +133,7 @@ def body : Alt → Term | .mk _ _ b => b
 end Alt
 
 /-- A global: its key, closed body and result contract (the source Π's
-result, 06 S35). -/
+result). -/
 structure Global where
   key : Key.GKey
   body : Term

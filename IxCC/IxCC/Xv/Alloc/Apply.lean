@@ -5,7 +5,7 @@ import IxCC.Xv.XlSemantics
 /-!
 # Applying an allocation
 
-`Alloc.apply f o` (05 §5) is the Xl function an allocation denotes:
+`Alloc.apply f o` is the Xl function an allocation denotes:
 instructions are never rewritten, only given the locations `o` lists
 (`Inst.substitute`, in `Inst.operands` order), and the edits become `move`
 instructions at their positions. Edges carry no arguments at Xl (their
@@ -16,8 +16,7 @@ This is on `Recheck.run`'s path (the validator checks `o` and the emitted
 code is `apply f o`, closing regalloc2 gap 7), so it recurses structurally
 over lists. Edits must be in position order and none may follow the
 terminator; `apply` fails otherwise, and the validator rejects the same
-allocations.
--/
+allocations. -/
 
 namespace IxCC.Xv.Alloc
 

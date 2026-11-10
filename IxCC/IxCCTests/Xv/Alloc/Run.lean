@@ -5,7 +5,7 @@ import IxCCTests.Xv.Alloc.Cases
 /-!
 # `check-regalloc`
 
-TT-3 for allocation (05 §12 items 2–4): the Lir kernels through linear scan
+Generated testing of allocation: the Lir kernels through linear scan
 and all slots at their exact clocks, with their spill, reload and move
 counts; then generated programs (`programs × seeds`, the full Lir
 generator through selection), each allocated deterministically and under
@@ -15,8 +15,7 @@ counts, the mutation table and any rejection; fails on a differential
 mismatch, an unsound validator acceptance, a failed fallback, or (with
 `--strict`, the default) any rejection or decline of linear scan.
 
-Usage: `check-regalloc [--programs N] [--seeds S1,S2,…] [--chaos K] [--max-blocks B] [--no-mutate] [--lenient]`.
--/
+Usage: `check-regalloc [--programs N] [--seeds S1,S2,…] [--chaos K] [--max-blocks B] [--no-mutate] [--lenient]`. -/
 
 namespace IxCCTests.Xv.Alloc
 

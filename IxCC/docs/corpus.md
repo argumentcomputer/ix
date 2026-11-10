@@ -1,20 +1,20 @@
 # Fixture corpora
 
 The compiler is tested on corpora of real Lean programs, frozen as Ixon v4
-closures ([Ixon v4](ixon-v4.md)) with their `eq_def` sidecars (phase 1 plan, MT). Each *family* is a
+closures ([Ixon v4](ixon-v4.md)) with their `eq_def` sidecars. Each *family* is a
 directory of closures described by one manifest in the format
 `ixcc/corpus/1`. Required CI uses only the frozen files; it never runs
 ix.
 
 | Family | Manifest | Sources | Contents |
 | --- | --- | --- | --- |
-| `bench-k1` | [`fixtures/ixon-v4/bench-k1/corpus.json`](../fixtures/ixon-v4/bench-k1/corpus.json) | [`benchmarks/fixtures`](../benchmarks/fixtures/README.md) | the benchmark fixtures' pure `entry` closures: the five K1 programs, and the four added by MT.2 |
+| `bench-k1` | [`fixtures/ixon-v4/bench-k1/corpus.json`](../fixtures/ixon-v4/bench-k1/corpus.json) | [`benchmarks/fixtures`](../benchmarks/fixtures/README.md) | the benchmark fixtures' pure `entry` closures: the five K1 programs, and four from the scalar corpus |
 | `phase1-scalar` | [`fixtures/corpus/phase1-scalar/corpus.json`](../fixtures/corpus/phase1-scalar/corpus.json) | [`fixtures/corpus/phase1-scalar/src`](../fixtures/corpus/phase1-scalar/README.md) | the Phase 1 scalar corpus: 23 roots of first-order total programs, and five programs of Lean's `tests/compile` |
-| `phase1-boundary` | [`fixtures/corpus/phase1-boundary/corpus.json`](../fixtures/corpus/phase1-boundary/corpus.json) | [`fixtures/corpus/phase1-boundary/src`](../fixtures/corpus/phase1-boundary/README.md) | MT.3: every `Nat` primitive and operand shape at the `2⁶³` edge, literals of at least `2⁶³` in live and dead code, and the field-count and constructor-count limits |
-| `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | MT.3: heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
-| `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | MT.4: programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
-| `phase1-abi` | [`fixtures/corpus/phase1-abi/corpus.json`](../fixtures/corpus/phase1-abi/corpus.json) | [`fixtures/corpus/phase1-abi/src`](../fixtures/corpus/phase1-abi/README.md) | MT.4: the ABI and readback matrix, arities 0–6 by `Nat`, `Bool` and an enumeration |
-| `ownership` | [`fixtures/ownership/corpus.json`](../fixtures/ownership/corpus.json) | [`fixtures/ownership/src`](../fixtures/ownership/README.md) | the ownership suite (MT.7): annotated programs ix accepts, each beside its plain twin, and plain erasure and allocation fixtures; run by `tests-own` (with ix's verdicts on the annotated sources it rejects), not among `tests-corpus`'s registered families |
+| `phase1-boundary` | [`fixtures/corpus/phase1-boundary/corpus.json`](../fixtures/corpus/phase1-boundary/corpus.json) | [`fixtures/corpus/phase1-boundary/src`](../fixtures/corpus/phase1-boundary/README.md) | every `Nat` primitive and operand shape at the `2⁶³` edge, literals of at least `2⁶³` in live and dead code, and the field-count and constructor-count limits |
+| `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
+| `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
+| `phase1-abi` | [`fixtures/corpus/phase1-abi/corpus.json`](../fixtures/corpus/phase1-abi/corpus.json) | [`fixtures/corpus/phase1-abi/src`](../fixtures/corpus/phase1-abi/README.md) | the ABI and readback matrix, arities 0–6 by `Nat`, `Bool` and an enumeration |
+| `ownership` | [`fixtures/ownership/corpus.json`](../fixtures/ownership/corpus.json) | [`fixtures/ownership/src`](../fixtures/ownership/README.md) | the ownership suite: annotated programs ix accepts, each beside its plain twin, and plain erasure and allocation fixtures; run by `tests-own` (with ix's verdicts on the annotated sources it rejects), not among `tests-corpus`'s registered families |
 | `k1` | [`fixtures/ixon-v4/k1/corpus.json`](../fixtures/ixon-v4/k1/corpus.json) | [`fixtures/ixon-v4/k1`](../fixtures/ixon-v4/k1/README.md) | the K1 pack: the five K1 programs in one closure with their 40 unfolding equations and its census, without cases (the stage suites run its roots); not among `tests-corpus`'s registered families, so `corpus check` takes its manifest by path |
 
 ## The manifest
@@ -26,7 +26,7 @@ A manifest describes one family. Paths are relative to `IxCC/`
 | --- | --- | --- |
 | `format` | fixed | `ixcc/corpus/1` |
 | `family`, `description` | reviewed | the family's name and purpose |
-| `tier` | reviewed | `required`, `campaign` or `manual` (research §9.5) |
+| `tier` | reviewed | `required`, `campaign` or `manual` |
 | `phase` | reviewed | the roadmap phase whose fragment the family tests |
 | `directory` | reviewed | where the frozen files are |
 | `source_root` | reviewed | where the Lean sources are; ix and Lean run here |
@@ -134,8 +134,7 @@ the sidecar and census. It draws the generated cases, runs every case through
 derived fields. Files that do not change are not rewritten; the log says which
 did. The pinned ix (`be45a159`, SHA-256 `396dffb7…`; see [Refreezing](#refreezing))
 asks `lake env` for `LEAN_PATH`, so `--ix-path` names a directory with a
-`lake` stand-in that answers it. It replaces
-`plans/x86-phase1/bench-k1/build.sh`.
+`lake` stand-in that answers it. It replaces an earlier shell build script.
 
 ## The suite: `lake exe tests-corpus`
 

@@ -395,7 +395,7 @@ private def relocationCases : Except String Nat := do
     need (!(ELFLink.apply symbols [bad] stream.output.text).isOk) "malformed relocation accepted"
   return targets.length + 6
 
-/-! ## The failure exit (note 05 §6.1) -/
+/-! ## The failure exit -/
 
 /-- The caller's callee-saved registers hold sentinels; `rdi` points at the
 context, so `entrySp` lives at `[0x100]`. -/

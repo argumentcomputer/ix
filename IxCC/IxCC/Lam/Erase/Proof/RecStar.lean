@@ -8,7 +8,7 @@ by the major's constructor (or the only rule, or `trap`), then the rule's
 right-hand side over the parameters, motives, minors and fields. Lam enters
 `r⋆`'s λ-telescope (charge-free up to the last binder, whose closure entry is
 the ι), then `case`s on the major and runs the erased rule body, whose
-minor application passes the IHs by name to a λ-telescope (M2.2). -/
+minor application passes the IHs by name to a λ-telescope. -/
 
 set_option autoImplicit false
 

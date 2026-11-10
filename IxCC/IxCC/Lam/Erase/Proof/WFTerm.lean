@@ -8,7 +8,7 @@ its context's depth, given what the finished program provides (`WFEnv`):
 the globals `G` names are in range, and every constructor key registered
 in the final table has its table arity, of its constructor's shape. The
 table part comes from `erase_reg`: `RegT` says every key of the term has a
-row (M2.2). -/
+row. -/
 
 set_option autoImplicit false
 

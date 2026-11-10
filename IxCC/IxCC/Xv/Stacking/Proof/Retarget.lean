@@ -265,7 +265,7 @@ theorem Stk.withMain_cs (S : Stk) {g : FunId} {w : PlacedExport}
   subst hcs
   rfl
 
-/-- **Stacking and the wrapper simulate Xl from any export** (05 §6.2's
+/-- **Stacking and the wrapper simulate Xl from any export** (the backend's
 conclusion at the stacked level): the stacked program started at `g`'s
 wrapper, under the entry invariant for `g`, ends as `g`'s clocked Xl run
 does. -/

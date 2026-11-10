@@ -6,7 +6,7 @@ One fuel level of the walk's simulation for the bindings that never charge:
 atoms (copy propagation), constructors, projections (of a known
 constructor), primitives (literal folding) and local functions (dead,
 inlined at their single application, or walked under their parameters as a
-`walkc` closure) (M2.3). -/
+`walkc` closure). -/
 
 set_option autoImplicit false
 

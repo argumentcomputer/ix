@@ -38,7 +38,7 @@ Lean's `eq_def` states its binders without the `autoParam`/`optParam`
 wrappers the definition's type may carry. A wrapper is recognised by its
 body, not its address: a safe definition whose value is exactly `λ _. #0` or
 `λ _ _. #1`, so one δ step and β give its first argument, and the two domains
-are definitionally equal (the bridge's R6 step takes that δ step). -/
+are definitionally equal. -/
 
 /-- Arity of an identity-like wrapper definition. -/
 def wrapperArity? (p : Program) (c : CId) : Option Nat :=

@@ -7,7 +7,7 @@ import IxCC.X86.Table.Exec
 How an Xv/Xl instruction's `defs` and `args` fill a table row's slots and
 implicit registers (`bindRow`), and how the row then runs: every row
 executes through the table's `Op.exec`, the one x86 semantics that the
-typed and byte machines also use (05 §3, §8.1).
+typed and byte machines also use.
 
 **Binding.** Slots are filled in order. A read or address slot takes the
 next argument. A read-write slot takes the next argument: a register is a
@@ -26,8 +26,7 @@ a register: the instruction reads all its uses, runs the row, and reads its
 definitions back; a tied definition from its use's register and an
 implicit one from its fixed register. Xv chooses a register per operand
 position (`Xv.view`); Xl's locations are registers already, and stack cells
-borrow scratch registers (`Xv.Xl.execBound`).
--/
+borrow scratch registers (`Xv.Xl.execBound`). -/
 
 namespace IxCC.Xv
 
@@ -170,7 +169,7 @@ def dedup {α : Type} [BEq α] : List α → List α
   | x :: xs => x :: (dedup xs).filter (· != x)
 
 /-- A row's outcome, with the fault turned into `none` (a stuck step:
-Lir's success implies each row's precondition, 05 §2). -/
+Lir's success implies each row's precondition). -/
 def execRow (o : X86.Op) (args : List X86.Arg) (core : X86.Core) (flags : X86.ByteEval.Flags) :
     Option (X86.Core × X86.ByteEval.Flags) :=
   match o.exec args core flags with

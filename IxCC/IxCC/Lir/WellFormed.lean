@@ -4,7 +4,7 @@ import Std.Data.HashMap
 /-!
 # Well-formed Lir
 
-The decidable conditions the allocator and layout rely on (05 §2). Validator
+The decidable conditions the allocator and layout rely on. Validator
 soundness does not need them, and neither does the semantics.
 
 1. `main` and every called function exist, with matching arities: call
@@ -22,14 +22,13 @@ soundness does not need them, and neither does the semantics.
    read `brOvf`'s result).
 6. Every displacement fits a signed 32-bit field.
 7. No `Base.ctx` store reaches the context's `entrySp` or `stackLimit` cell
-   (`ctx − 64`, `ctx − 56`), which the failure exit and the prologue read
-   (05 §6.1). Without an index the store's bytes `[disp, disp + w)` must miss
+   (`ctx − 64`, `ctx − 56`), which the failure exit and the prologue read.
+   Without an index the store's bytes `[disp, disp + w)` must miss
    `[−64, −48)`; with an index the displacement must be at least −48. (That
    an index does not wrap, and that stores through registers stay in the
    heap, are runtime invariants, not syntax.)
 
-`Program.check` names the first violation.
--/
+`Program.check` names the first violation. -/
 
 namespace IxCC.Lir
 

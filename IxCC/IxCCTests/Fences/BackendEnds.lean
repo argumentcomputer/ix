@@ -1,7 +1,7 @@
 import IxCC.Backend.Proof.Ends
 
-/-! Required axiom fences for the backend for `main`'s export (M2.6b):
-05 §6.2's conclusion for an emitted object under the entry invariant
+/-! Required axiom fences for the backend for `main`'s export:
+the backend's conclusion for an emitted object under the entry invariant
 (`Backend.emitted_ends`: the stacking simulation transported through
 layout), and Lir to the object with no premise on the emitted code
 (`compile_sim_main`, `compile_refines_main`, `compile_tsim_main`).

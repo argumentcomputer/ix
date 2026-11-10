@@ -2,7 +2,7 @@ import IxCCTests.Fir.Support
 import IxCCTests.Support.LamGen
 import IxCC.Anf.Pipeline
 
-/-! Generated programs through Fir, Own and Cfg (design note 03 §11):
+/-! Generated programs through Fir, Own and Cfg:
 
 * **First-order Anf**, generated directly (`FoGen`), because the K1 pipeline
   never produces join points or allocation: typed (`Nat`, `Bool`, pairs,

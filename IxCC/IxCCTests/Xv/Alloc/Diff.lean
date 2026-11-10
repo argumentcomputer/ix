@@ -7,7 +7,7 @@ import IxCC.Lir.WellFormed
 /-!
 # Allocation of generated programs
 
-For each generated Lir program (split, selected; 05 §12 items 2–4):
+For each generated Lir program (split, selected):
 
 1. **Deterministic allocation**, then one allocation per chaos seed (a
    `Chaos.ofSeed` configuration, and on odd seeds a smaller clobber set for

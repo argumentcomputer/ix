@@ -3,8 +3,8 @@ import IxCC.Src.Resource.Check
 
 /-! # Unfolding-table checks
 
-Each check decides one untrusted proposal on the resolved declarations
-(design note 01 §4.1). Equality is `Term.eqv`: syntactic, ignoring
+Each check decides one untrusted proposal on the resolved declarations.
+Equality is `Term.eqv`: syntactic, ignoring
 contracts, modes and annotations. A check returns the entry it justifies or
 a reason; `Table.Build` drops refused proposals with a `hint` diagnostic. -/
 
@@ -13,7 +13,7 @@ namespace IxCC.Src.Table
 open IxCC.Ixon
 
 structure Config where
-  /-- The primitive operations with native lowering (§3.4); others resolve
+  /-- The primitive operations with native lowering; others resolve
   through their `eqn` entry or kernel body. -/
   prims : List PrimOp := PrimOp.all
   /-- Node cap for `inline` entries. -/
@@ -515,7 +515,7 @@ def equationBody (p : Program) (f thm : CId) (tf vf rhs : Term)
   return (fBinders.zip binders).foldr (fun ((b, d), (tb, _)) acc =>
     .lam { tb with contract := b.contract } d acc) rhs
 
-/-- Check `eqn f thm` and build the entry body `λ xs. rhs` (§4.1, checks 1–5). -/
+/-- Check `eqn f thm` and build the entry body `λ xs. rhs` (checks 1–5). -/
 def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
   let some (n, tf, vf) := safeDefn? p f
     | throw "eqn: the subject is not a safe definition"
@@ -621,7 +621,7 @@ def checkCaseMinors (np ni m total : Nat) (argAt : Nat → Term) :
     checkCaseMinor np ni m total argAt j rule
     checkCaseMinors np ni m total argAt (j + 1) rules
 
-/-- Check `case T` with key `T.casesOn` (§4.1). Returns the recursor. -/
+/-- Check `case T` with key `T.casesOn`. Returns the recursor. -/
 def checkCase (p : Program) (key : CId) : Except String Resolve := do
   let some (n, ty, value) := safeDefn? p key
     | throw "case: the key is not a safe definition"
@@ -690,7 +690,7 @@ def checkPrim (p : Program) (f : CId) (op : PrimOp) (enabled : List PrimOp) :
 
 /-! ## Derived `RecKind` -/
 
-/-- Derive a recursor's kind (§4.1, per profile as D18 asks): `empty` with no
+/-- Derive a recursor's kind (per profile as D18 asks): `empty` with no
 rules; for a single-rule recursor of a family whose type ends in `sort u`,
 `subsingleton when` with `when` the zero condition of `u` over the
 recursor's own universe parameters (read through the major's universe

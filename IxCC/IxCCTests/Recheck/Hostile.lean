@@ -8,26 +8,25 @@ import IxCCTests.Src.Support
 
 /-! # Hostile inputs to the verifiers and the middle end's replay
 
-Regression tests for the findings of the 2026-11-09 branch review. Programs
+Regression tests for hostile certificates and inputs found in review. Programs
 are written as Ixon v4 bytes with the test byte writer and read through
-`Recheck.ingress` with erased typing on, the route a real `.ixe` takes (the
-refuter R1's probes, which these follow).
+`Recheck.ingress` with erased typing on, the route a real `.ixe` takes.
 
-* **Pin-free programs** (REPORT item 1). A closure with no constant whose
+* **Pin-free programs**. A closure with no constant whose
   content is `Nat`, `Bool` or `Eq` has no pinned identities. `checkCanonical`
   was skipped on such programs, so a certificate retagging a relevant
   parameter and its call site as irrelevant compiled to an object returning
   the wrong constructor, and `Recheck.run`, `CompileClaim.verifyProgram`,
   `checkClaimProgram` and `Ring0Sip.verifyProgram` accepted a claim naming
-  it. R1's enumeration has three constructors; B1's two-constructor one has
+  it. The hostile enumeration has three constructors; a two-constructor one has
   `Bool`'s content address and is pinned, and is kept as a control.
-* **Stage A on `ixcc check-cert`** and the **erased-typing default** of the
-  claim APIs and the command line (B2-4).
-* **The N4 root checks, N6's specialisation bound and S10's frontier
-  dedupe** (B2-4).
-* **The `--rc auto` immortal fallback** (B1-6, B2-3) on R1's annotated
-  program, and `check-cert` refusing `--rc` (B1-8).
-* **Middle-end budgets** (REPORT item 2). R1's single `inline` step, at the
+* **Stage A on `ixcc check-cert`** (the canonical-annotation check) and the **erased-typing
+  default** of the claim APIs and the command line.
+* **The root signature checks, the specialisation bound and the
+  frontier dedupe of the layout's reachability walk**.
+* **The `--rc auto` immortal fallback** on the hostile annotated
+  program, and `check-cert` refusing `--rc`.
+* **Middle-end budgets**. A single hostile `inline` step, at the
   size that crashed `ixcc check-cert` with a stack overflow, through every
   verifier; an inline round over many callers; a walk that copies past its
   budget; a specialisation over an exponentially shared value tree. Each must
@@ -94,7 +93,7 @@ def pinFreeEnv (n : Nat) (illTyped : Bool := false) : Env × Addr × List (Strin
     e := (store e ⟨defn (arrow enumC enumC) (.ref 1 #[]), #[], #[b.enumI, b.ctors[0]!], #[]⟩).1
   return (e, main, roots)
 
-/-- R1's amplifier: `k (a b : E) : E := a`; `f x` is a balanced `k`-tree of
+/-- The inline amplifier: `k (a b : E) : E := a`; `f x` is a balanced `k`-tree of
 depth `dF` over `x` (`2^(dF+1) - 1` calls of `k`); `g x` a balanced `k`-tree
 of depth `dG` whose `2^dG` leaves are `f x`; `main := g c₁`. Every stored
 expression is a few nodes deep: the trees are `share` DAGs. -/
@@ -122,7 +121,7 @@ def ampEnv (dF dG : Nat) : Env × Addr × Addr × Addr := Id.run do
 
 /-- A certificate for annotation `ann` whose other parts the honest oracles
 make for it, through the front end without `checkCanonical` (which refuses a
-hostile annotation): R1's `mkCert`. -/
+hostile annotation). -/
 def mkCert (cfg : Recheck.Config) (P : Src.Program) (tc : Src.Table.TableCert)
     (ann : Src.Relevance.Ann) : Except Recheck.Err Recheck.Cert := do
   let table ← (Src.Table.ofCert cfg.table P tc).mapError fun m =>
@@ -171,7 +170,7 @@ def objectNoCanonical (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert
     (cfg.provenance.getD (Recheck.defaultProvenance root))).mapError Recheck.Err.ofBackend
   pure backend.object
 
-/-- R1's driver for the Ring-0 checks. -/
+/-- The driver for the Ring-0 checks. -/
 def driver : X86.Driver where
   base   := 0x00100000
   region := 0x10000000
@@ -189,7 +188,7 @@ def ofErr {α : Type} (label : String) (r : Except Recheck.Err α) : IO α :=
   | .error e => throw (IO.userError s!"{label}: {e.render}")
 
 /-- A pin-free (or, for two constructors, `Bool`-pinned) program with its
-honest certificate, and R1's hostile one: `idc`'s parameter and `main`'s
+honest certificate, and the hostile one: `idc`'s parameter and `main`'s
 argument retagged `.type`. -/
 structure Case where
   bytes : ByteArray
@@ -223,7 +222,7 @@ def mkCase (n : Nat) (illTyped : Bool := false) : IO Case := do
   let hostile ← ofErr s!"enum-{n}: hostile certificate" (mkCert cfg P honest.table hostileAnn)
   return { bytes := bs, json, inp, cfg, main, honest, hostile }
 
-/-! ## REPORT item 1: the program-level verifiers on pin-free programs -/
+/-! ## The program-level verifiers on pin-free programs -/
 
 def pinFree (a : Assert) (n : Nat) : IO String := do
   let c ← mkCase n
@@ -270,7 +269,7 @@ def pinFree (a : Assert) (n : Nat) : IO String := do
     verifier, object returns constructor 1; hostile claim (object {hostileObj.size} bytes) refused by \
     Recheck.run (relevance-S1), verifyProgram, checkClaimProgram, verifyBytes and both Ring0Sip verifiers"
 
-/-! ## B2-4: Stage A on the command line, and the erased-typing default -/
+/-! ## Stage A on the command line, and the erased-typing default -/
 
 /-- `ixcc check-cert` on files in `dir`, in process, returning the error. -/
 def checkCert (dir : System.FilePath) (cert : Recheck.Cert) (extra : List String) :
@@ -287,7 +286,7 @@ def cliStageA (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
   match ← checkCert dir c.honest [] with
   | .ok () => expect a true ""
   | .error e => expect a false s!"check-cert refused the honest certificate: {e.render}"
-  -- R1's hostile certificate (also refused later, by `checkCanonical`, with
+  -- The hostile certificate (also refused later, by `checkCanonical`, with
   -- `relevance-S1`), and the honest one with its annotated terms listed in
   -- reverse: the same annotation to every checker but Stage A's equality.
   let reversed := { c.honest with relevance := { c.honest.relevance with
@@ -329,7 +328,7 @@ def typecheckDefault (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
   return "an unreachable ill-typed constant: makeClaim, verifyBytes, checkClaim, Ring0Sip.verifyBytes and \
     check-cert refuse it by default and accept it without typing"
 
-/-! ## B2-4: the N4 root checks and N6's specialisation bound -/
+/-! ## The root signature checks and the specialisation bound -/
 
 def rootChecks (a : Assert) : IO String := do
   let l ← IxCCTests.Src.loadBench "gcd"
@@ -339,18 +338,18 @@ def rootChecks (a : Assert) : IO String := do
     { name := "entry", const, addr, fn := 0, symbol := "cx_entry", params := 2, ty := some ({}, .nat) }
   expect a (CompileClaim.rootParamsAllNat P root) "gcd entry: two Nat parameters refused"
   expect a (CompileClaim.checkImmortalRoot P root) "gcd entry: immortal root refused"
-  -- N4: the parameter count must be the type's telescope length
+  -- The parameter count must be the type's telescope length
   expect a (!CompileClaim.rootParamsAllNat P { root with params := 1 })
     "N4: a root passed fewer parameters than its type takes"
   expect a (!CompileClaim.rootParamsAllNat P { root with params := 3 })
     "N4: a root passed more parameters than its type takes"
-  -- N4: an immortal result is a scalar or an enumeration of field-free constructors
+  -- An immortal result is a scalar or an enumeration of field-free constructors
   expect a (CompileClaim.isImmortalViewType { inds := [[[], []]] } (.ind 0)) "a two-constructor enumeration"
   expect a (!CompileClaim.isImmortalViewType { inds := [[[], [.nat]]] } (.ind 0))
     "N4: a constructor with a field accepted as an immortal view"
   expect a (!CompileClaim.isImmortalViewType { inds := [[]] } (.ind 0)) "N4: an empty inductive accepted"
   expect a (!CompileClaim.isImmortalViewType {} (.ind 0)) "N4: an unknown inductive accepted"
-  -- N6: at most 64 decisions per specialisation step, masks of at most 64 parameters
+  -- At most 64 decisions per specialisation step, masks of at most 64 parameters
   let d : Anf.Specialize.Decision := { caller := 0, callee := 1, mask := [true] }
   let spec := fun (ds : List Anf.Specialize.Decision) => Recheck.checkMidCert { steps := [.specialize { decisions := ds }] }
   expect a (spec (List.replicate 64 d)).isOk "N6: 64 decisions refused"
@@ -360,11 +359,11 @@ def rootChecks (a : Assert) : IO String := do
   return "N4: rootParamsAllNat refuses a parameter count other than the telescope's; isImmortalViewType \
     refuses fields and empty inductives. N6: checkMidCert refuses 65 decisions and 65-parameter masks"
 
-/-! ## B2-4: S10's frontier dedupe in the layout's reachability walk -/
+/-! ## The frontier dedupe in the layout's reachability walk -/
 
 /-- A chain of `n` balanced joins: blocks `2i` and `2i + 1` both branch to
 `2i + 2` and `2i + 3`. Each step's frontier lists every target of every fresh
-block, so it holds four entries; without S10's dedupe (`reachStep` expanding a
+block, so it holds four entries; without the dedupe (`reachStep` expanding a
 block the frontier lists twice only once) it doubles at every join. -/
 def reachDedupe (a : Assert) : IO String := do
   let n := 40
@@ -386,7 +385,7 @@ def reachDedupe (a : Assert) : IO String := do
   expect a ((X86.Layout.reach m (2 * n + 1) {} [0, 1]).size == 2 * n) "S10: reach misses blocks"
   return s!"S10: {n} balanced joins, widest frontier {widest} entries, every block reached"
 
-/-! ## B1-6 / B2-3: `--rc auto` and `makeClaim` fall back to the immortal policy -/
+/-! ## `--rc auto` and `makeClaim` fall back to the immortal policy -/
 
 /-- A one-constructor, two-field structure over the type at `refs[0]`. -/
 def pairBlock (field : Addr) : Constant :=
@@ -394,7 +393,7 @@ def pairBlock (field : Addr) : Constant :=
       #[⟨false, 0, 0, 0, 2, arrow (.ref 0 #[]) (arrow (.ref 0 #[]) (.recur 0 #[]))⟩]⟩],
     #[], #[field], #[.succ .zero]⟩
 
-/-- R1's `auto` program with a claim-eligible first root, `main : E := idc c₁`;
+/-- The hostile `auto` program with a claim-eligible first root, `main : E := idc c₁`;
 `Box := mk E E`, `Two := mk Box Box`, `dupf (b : Box) : Two := Two.mk b b`
 (duplicates a heap parameter) and `lin (1 c : E) : E := c` (a linear binder
 contract, which puts the program outside `Own.Plain.programDomain`). -/
@@ -478,9 +477,9 @@ def autoFallback (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
     compile --rc auto fall back to the immortal policy (claim verified); --rc on still refuses; \
     check-cert --rc is a usage error"
 
-/-! ## REPORT item 2: middle-end budgets -/
+/-! ## Middle-end budgets -/
 
-/-- R1's `amp` input with the honest table and relevance (so Stage A passes)
+/-- The `amp` input with the honest table and relevance (so Stage A passes)
 and the single middle-end step `inline [(g, [f])]`. -/
 def ampCase (dF dG : Nat) : IO (ByteArray × Lean.Json × Recheck.Input × Recheck.Config × Addr × Recheck.Cert) := do
   let (env, f, g, main) := ampEnv dF dG
@@ -543,7 +542,7 @@ def amplifier (a : Assert) (dF dG : Nat) (budget : String) : IO String := IO.FS.
     ({budget}) in {ms} ms; verifyBytes, checkClaim, verifyProgram, checkClaimProgram, both Ring0Sip \
     verifiers and check-cert refuse it"
 
-/-- R1's crashing input, `amp-12-11` (its `f` makes 8,191 calls, so its Lam global is
+/-- The crashing input, `amp-12-11` (its `f` makes 8,191 calls, so its Lam global is
 over `maxLamNodes`), and `amp-10-11`, whose `f` converts to a chain of 2,047
 bindings, over `maxDepth` (its `inline` step would ask for 2,048 copies of it,
 which the walk's depth budget would stop after two). -/

@@ -2,9 +2,9 @@ import IxCCTests.Support.Shrink
 import IxCC.Sem.Result
 
 /-!
-# First diverging level and replayable failure records (MT.5)
+# First diverging level and replayable failure records
 
-**The first diverging level** (research note §9.2.6 item 3). A generated
+**The first diverging level**. A generated
 program is run on one input at every level a generator's *ladder* lists,
 from its reference level (the generator's source level) down the
 pipeline; each level gives an observation (`ok` and the value read back,
@@ -21,7 +21,7 @@ the seed it was found at, the shrunk choice sequences that regenerate it
 observations, the sizes before and after shrinking, and the program as
 text. `lake exe tests-shrink replay FILE` regenerates the program from the
 sequences and runs the ladder again. (The sequences, not the seed,
-reproduce the program: research note §9.2.6 item 5.) -/
+reproduce the program.) -/
 
 namespace IxCCTests.Support.Repro
 

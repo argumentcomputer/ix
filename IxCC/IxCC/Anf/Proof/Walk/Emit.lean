@@ -8,7 +8,7 @@ records about it), or it **skips** it, mapping the source variable to an
 operand, an inlined local function, or □ when nothing reads it. Also the
 application equations behind known calls (a saturated application of a
 function global's closure is a call; an over-saturated one is a call, then
-an application of the rest) (M2.3). -/
+an application of the rest). -/
 
 set_option autoImplicit false
 

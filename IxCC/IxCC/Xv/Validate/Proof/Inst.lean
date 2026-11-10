@@ -4,7 +4,7 @@ import IxCC.Xv.Validate.Proof.RowChecks
 # One instruction
 
 The validator's transfer for one instruction is sound for its Xl image
-(05 §5's per-instruction step of `Validate.sound`): if the abstract state
+(the per-instruction step of `Validate.sound`): if the abstract state
 agrees with the Xv environment and the Xl locations before, and Xv runs the
 instruction, then Xl runs the substituted instruction with the same memory
 and the new abstract state agrees afterwards (`stepInst_sound`, calls

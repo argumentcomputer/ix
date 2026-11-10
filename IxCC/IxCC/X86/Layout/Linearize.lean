@@ -2,7 +2,7 @@ import IxCC.X86.Layout.Order
 import IxCC.X86.Eval
 
 /-!
-# Linearisation (05 §7, step 3)
+# Linearisation (layout step 3 of 3)
 
 Given a checked order, renumber the blocks by their position in it, map
 every call, jump, branch and tail-call target and the entry through the
@@ -11,7 +11,7 @@ whose false target is not: `branch c yes no` becomes `branch c.negate no
 yes`, so the false edge is the one that falls through. A branch whose false
 target is then the next block is marked `fall`: E2 encodes only its `jcc`
 and checks that the next block starts where the `jcc` ends. A
-proved-once, re-run pass (P, 05 §1.1).
+proved-once, re-run pass (style P).
 
 `Condition.negate_holds` and `Flags.test_negate` are what inversion needs:
 the negated condition holds exactly when the original does not, on the

@@ -3,18 +3,18 @@ import IxCC.Sem.Simulation
 /-!
 # Languages, refinement and certificate-taking passes
 
-The pass interface of design note `plans/x86-v2/00-conventions.md` (MetaCoq's
+The pass interface (MetaCoq's
 `Transform.t`, with a certificate):
 
 - `Lang I S`: programs `S` run on inputs `I` under a monotone clocked
   semantics, with values observed as first-order `Obs`. `I` is an out
-  parameter: a program type fixes its input type, and M2.7 chooses one input
-  type shared by every level. (The class is `Lang`, not `Sem`, because
+  parameter: a program type fixes its input type, and the pipeline uses one
+  input type at every level. (The class is `Lang`, not `Sem`, because
   `Sem.Sem` would clash with the namespace.)
 - `Refines s t`: on every input, the behaviour of `t` refines that of `s` up
   to equal observations; the target may add resource failures, and a stuck
   source imposes nothing. `Refines.backward` and `Refines.safe` have the
-  shapes of `compile_sound` and `compile_safe` (roadmap §1.1), and
+  shapes of `compile_sound` and `compile_safe`, and
   `Refines.diverges` keeps a diverging source from a returning target.
 - `Transform S T`: a pass that reads an untrusted certificate and is
   correct for every certificate; `Transform.comp` composes passes and
@@ -23,8 +23,7 @@ The pass interface of design note `plans/x86-v2/00-conventions.md` (MetaCoq's
   D17): correctness never depends on the producer.
 
 A pass proves `Refines` per input through a clocked simulation
-(`Refines.of_sim`); no clock map reaches this level.
--/
+(`Refines.of_sim`); no clock map reaches this level. -/
 
 namespace IxCC.Sem
 

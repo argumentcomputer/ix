@@ -54,5 +54,5 @@ local store reuse does not establish hosted or cold-store timing.
 The local cleanup queue and detailed measurements remain under
 `plans/cleanup-and-consolidation-2026-10-11/`. After cleanup, retain one concise
 continuation record naming published revisions, recovery results, remaining
-acceptance gates and the next G1/G2 work. Resume implementation only when
+acceptance gates and the next Phase 1.5 work. Resume implementation only when
 requested; preservation and workspace retirement do not resume it.

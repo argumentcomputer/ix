@@ -8,8 +8,11 @@ introduce another parser or elaborator.
 
 Three ix sources are pinned, for three different things:
 
-- **The wire** is Ixon **v4** (`ixon-v4`), as written by ix `jcb/ix-certified`
-  at `f829b76044a44a61023d0983516137147bbb12a7`.
+- **The wire** is Ixon **v4** (`ixon-v4`), as written by ix commit
+  `f829b76044a44a61023d0983516137147bbb12a7` (made on a branch,
+  `jcb/ix-certified`, that no longer exists; the commit survives on ix's
+  `jcb/compilatrix-donor-history-2026-10-11` and
+  `jcb/compilatrix-resource-wip-2026-10-11` branches).
 - **The codec** that reads and writes it is a Lake dependency: ix's `IxCK/`
   package (`«ix-ck»`), beside IxCC in the ix workspace (`../IxCK`), of which
   IxCC imports the 11 modules of `IxCK.Ixon.Canonical`'s import closure (Init
@@ -21,9 +24,11 @@ Three ix sources are pinned, for three different things:
   it by the SHA-256 of each of those files ([trust
   ledger](trusted-extern-ledger.md), `lean_dependencies`); they were last
   reviewed as of ix `2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2`.
-- **The data model, the resource rules and the erased checker** come from ix
-  `jcb/ix-ixcc` at `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3,
-  which introduced the contract-carrying model; v4 changed only the wire),
+- **The data model, the resource rules and the erased checker** come from ix commit
+  `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3, made on a branch,
+  `jcb/ix-ixcc`, that no longer exists; the commit survives on ix's
+  `jcb/ix-compilatrix` branch; v3 introduced the contract-carrying model and
+  v4 changed only the wire),
   with the erased checker's primitive table and the resource profile and claim
   framing moved to `f829b760`.
 

@@ -1,14 +1,13 @@
 import IxCC.Rt.Proof.Heap
 
 /-!
-# The immortal bump allocation keeps the heap invariant (04 §8.1)
+# The immortal bump allocation keeps the heap invariant
 
 `Rt.lower`'s allocation stores the new bump pointer, the header as two
 32-bit halves, and the fields, into a cell that fits below the limit. This
 module proves the memory those stores leave satisfies `HeapAt` for the heap
 with the new cell appended, placed at the old bump pointer
-(`alloc_mem`), and that each store is allowed (`alloc_writable`).
--/
+(`alloc_mem`), and that each store is allowed (`alloc_writable`). -/
 
 set_option autoImplicit false
 

@@ -2,7 +2,7 @@ import IxCC.Recheck.Run
 import IxCC.Anf.Semantics
 import Lean
 
-/-! # The recheck path's kernel-style audit (M1.K1)
+/-! # The recheck path's kernel-style audit
 
 A build-time check over every constant `Recheck.run`'s value reaches through
 definitions (proofs and types are not walked): no `IxCC` constant on

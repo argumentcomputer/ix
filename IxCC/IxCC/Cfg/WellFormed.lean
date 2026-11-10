@@ -2,7 +2,7 @@ import IxCC.Cfg.Syntax
 
 /-! # Cfg well-formedness
 
-`Cfg.WellFormed P` (design note 03 §7), decided by `Cfg.check`, which names
+`Cfg.WellFormed P`, decided by `Cfg.check`, which names
 the first violation. Per function:
 
 * block 0 exists and its parameters match the signature;

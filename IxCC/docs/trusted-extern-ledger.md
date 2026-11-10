@@ -9,7 +9,8 @@ check of ix's flake validates it with
 Removed with the legacy pipeline: the durable-filesystem native interface,
 the IxIR and Ixby specification assumptions, the modeled IxIR oracles, the
 hosted CI actions and runner, and the comparison-runtime pins. All remain
-on branch `jcb/ixby-archive`. `nix flake check` runs the audit again.
+on branch `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix` repository.
+`nix flake check` runs the audit again.
 
 This document separates four things that are easy to blur:
 
@@ -527,20 +528,20 @@ changed memory and faults (memory faults as SIGSEGV or SIGBUS, `#DE` as
 SIGFPE) with `ByteEval`, and requires LLVM's `llvm-mc` to decode each case to the same
 instruction lengths, mnemonics and encodings. This is test evidence, not a
 proof of faithfulness: operand values the generator does not reach and
-flags the model leaves undefined are not compared. The Sail agreement (S2)
-remains the proof route.
+flags the model leaves undefined are not compared. The Sail agreement (step S2 of the
+[reference-model route](x86-reference-model.md)) remains the proof route.
 
 The backend gate `check-backend` links each object it emits with
 [`backend_driver.c`](../fixtures/x86/backend_driver.c), an untrusted C
-driver standing in for the runtime driver of note 04 §6: it maps a private
+driver standing in for the runtime driver: it maps a private
 region (at the Lean test region's address for generated programs), sets up
 the context block as `cx_init` would, calls the exported wrapper with
 sentinels in the callee-saved registers, and prints `rax:rdx` and whether
 the sentinels and `rsp` survived. It is integrity-pinned test code; no
 production path depends on it.
 
-The runtime driver of note 04 §6 is
-[`runtime_driver.c`](../fixtures/x86/runtime_driver.c) (M1.F6), untrusted
+The runtime driver is
+[`runtime_driver.c`](../fixtures/x86/runtime_driver.c), untrusted
 and integrity-pinned. It links with an object compiled from `Rt.lower`'s
 output, which exports `cx_init` and a SysV wrapper per root, maps a
 private region (`--region`, default 64 MiB) and a separate stack for the
@@ -621,7 +622,7 @@ exercise real-source root heap exhaustion separately from initializer refusal,
 with successful same-code neighbors. Counts stop before caller output-drop;
 physical reclamation remains covered by the existing native recycling gate.
 These tests add no driver assumption, extern or trusted allocator.
-The real-source fixture records its historical producer; final G1/producer
+The real-source fixture records its historical producer; final Phase 1.5 gate, producer
 review and refreeze are still separate from these accepted local results.
 
 **The driver model (specification assumption

@@ -1,9 +1,9 @@
 import IxCC.Xv.Stacking.Proof.WrapperSteps
 
 /-!
-# The export wrapper's entry (05 §6.1, 04 §6)
+# The export wrapper's entry
 
-`EntryBase` is what the export's caller provides (04 §6): `rdi` points 64
+`EntryBase` is what the export's caller provides: `rdi` points 64
 bytes below the context, `rsp` is SysV-aligned with the return address on
 top, the context's `stackBudget` leaves room for a frame without a stack
 check and the stack below `rsp` reaches no lower than `maxFrame + slack`,
@@ -14,8 +14,7 @@ passes it (`wrapperArgs`), every `Nat` below 2^63 (`ArgsFit`).
 
 `entry_match`: after the wrapper's head, its call to `main` and `main`'s
 prologue, the invariant holds for `main`'s first state, with the wrapper's
-frame (`entryWrap`) as the stack every activation lives on.
--/
+frame (`entryWrap`) as the stack every activation lives on. -/
 
 namespace IxCC.Xv.Stacking.Proof
 
@@ -36,7 +35,7 @@ return address. -/
 def InEntryStack (core₀ : Core) (ctx : Word) (x : Word) : Prop :=
   (core₀.readReg .rsp).toNat - 56 - (budgetOf core₀ ctx).toNat ≤ x.toNat ∧ x.toNat < (core₀.readReg .rsp).toNat + 8
 
-/-- What the caller of an export provides (04 §6), for Xl memory `mem` and
+/-- What the caller of an export provides, for Xl memory `mem` and
 context `ctx`. -/
 structure EntryBase (core₀ : Core) (retAddr : Word) (mem : Memory) (ctx : Word) : Prop where
   rdi : core₀.readReg .rdi = ctx - 64

@@ -4,7 +4,7 @@ import IxCC.Lir.Operands
 /-!
 # Xv operand metadata
 
-The allocator's view of each instruction (05 §3, §5), derived from the
+The allocator's view of each instruction, derived from the
 table row's slots through the same binding the executor uses
 (`bindRow`), so the metadata cannot disagree with the semantics about
 which operands are read and written.
@@ -22,7 +22,7 @@ which operands are read and written.
   position in the operand list; the use is `any` or `reg` as for a
   definition of that slot, since it will be written in place.
 - `call`, `ret` and `tail` operands are fixed by the internal convention
-  (`Lir.Conv.argCon`, `resultCon`, 05 §6); `move` is `any` to `any`; `zero`
+  (`Lir.Conv.argCon`, `resultCon`); `move` is `any` to `any`; `zero`
   defines a register.
 - Implicit register operands (`div`'s `rax`/`rdx`, a shift's `cl`) are
   `fixed` to their register, uses and definitions alike.
@@ -31,8 +31,7 @@ which operands are read and written.
   reads its uses, so it must not share a location with any of them.
 
 Uses come first, in slot order, then definitions. Edge arguments are
-block-parameter bindings, not operands (as at Lir).
--/
+block-parameter bindings, not operands (as at Lir). -/
 
 namespace IxCC.Xv
 
@@ -110,7 +109,7 @@ def Term.operands : Term ρ → List (Operand ρ)
 
 `Inst.substitute ls i` gives `i` the operands `ls`, one per entry of
 `i.operands` and in that order: the uses in argument order, then the
-definitions. This is the substitution of the allocator's `apply` (05 §5),
+definitions. This is the substitution of the allocator's `apply`,
 which never rewrites an instruction otherwise. `check-xv-select` checks
 that substituting an instruction's own operands gives it back. -/
 

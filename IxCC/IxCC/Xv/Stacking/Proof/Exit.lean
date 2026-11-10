@@ -3,7 +3,7 @@ import IxCC.Xv.Stacking.Proof.Steps
 import IxCC.X86.SafeStepsObject
 
 /-!
-# The failure exit (05 §6.1)
+# The failure exit
 
 Every failure leaves through the export wrapper that was entered: a
 `fail_k` block puts the status `k` in `eax` and jumps to `failExit`, which
@@ -14,8 +14,7 @@ wrapper's `rsp` at its call, the ghost frames end with the wrapper's own
 call frame, the caller's callee-saved registers and return address sit
 above `entrySp`, and `r15` still holds the context. `Wrapper.fail_safe`:
 from any `fail_k` block under an `EntryFrame`, at most 13 checked typed steps
-reach an `Exit` with status `k` and value 0.
--/
+reach an `Exit` with status `k` and value 0. -/
 
 namespace IxCC.Xv.Stacking.Proof
 
@@ -34,7 +33,7 @@ def saveWord (core₀ : Core) (retAddr : Word) (i : Nat) : Word :=
   | some r => core₀.readReg r
   | none => retAddr
 
-/-- What the failure exit needs (05 §6.1). `entrySp` is the wrapper's `rsp`
+/-- What the failure exit needs. `entrySp` is the wrapper's `rsp`
 at its call, `ctx` the context register's value. -/
 structure EntryFrame (ctx entrySp : Word) (core₀ : Core) (retAddr : Word) (s : Machine) (holes : Holes) : Prop where
   cell : s.core.memory.read64? (ctx - 64) = .ok entrySp
@@ -326,7 +325,7 @@ theorem ExitGroupAt.failExit {cs : Checked} (h : ExitGroupAt cs) :
   rw [UInt32.toNat_ofNat_of_lt' (by decide), h 4 (by decide)]
   rfl
 
-/-- **The failure exit** (05 §6.1): from a `fail_k` block under an
+/-- **The failure exit**: from a `fail_k` block under an
 `EntryFrame`, at most 13 checked typed steps reach an `Exit` with status `k`
 and value 0, the caller's callee-saved registers and stack pointer
 restored. -/

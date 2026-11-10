@@ -4,14 +4,14 @@ import IxCCTests.Lir.Kernels
 import IxCCTests.Xv.Alloc.Probe
 
 /-!
-# The Lir kernels through allocation (MEAS-4 inputs)
+# The Lir kernels through allocation (the early backend probe's inputs)
 
 Each hand-written kernel of `IxCCTests.Lir.Kernels` is selected,
 allocated by linear scan (which must validate, with no fallback) and by all
 slots, and run at Xl on the kernel's cases: the expected result at the
 exact clock and a timeout one below, as `check-xv-select` runs them at Xv.
 The report gives each allocation's static spills, reloads, moves and slots
-(05 §12's MEAS-4 metrics, at Xl).
+(at Xl).
 -/
 
 namespace IxCCTests.Xv.Alloc.Kernels
@@ -51,8 +51,8 @@ def allocate (f : Lir.Func) : Except String (VProgram × LProgram × LProgram ×
   return (q, g, all.program, row)
 
 /-- The kernel-evaluation probe's certificates are what linear scan emits
-today (regenerate them with `plans/x86-phase1/b4/scratch/Lit.lean` when the
-allocator changes). -/
+today (their generator is not kept in the repository; regenerate them by
+hand from the allocator's output when the allocator changes). -/
 def probeCertificates : Except String Unit := do
   for (f, o) in Probe.certificates do
     let q ← match Select.run (Lir.Kernels.program f) with

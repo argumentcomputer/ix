@@ -5,7 +5,7 @@ import IxCC.Anf.Proof.Convert.Step
 `convList` converts terms left to right, each with a meta-continuation that
 converts the rest; `convArgs` does the same for a spine's arguments, turning
 a `name` argument into the thunk closure `fn [_] t'`. Their simulations at
-`fuel + 1` from `ConvAt n fuel` (P1, M2.3). -/
+`fuel + 1` from `ConvAt n fuel` (P1). -/
 
 set_option autoImplicit false
 

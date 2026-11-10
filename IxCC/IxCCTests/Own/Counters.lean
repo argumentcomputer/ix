@@ -1,8 +1,8 @@
 import IxCC.Cfg.Semantics
 
-/-! # Dynamic counters over `Cfg.step` (MT.7)
+/-! # Dynamic counters over `Cfg.step`
 
-A test-side stepper (`plans/fixtures/ownership-suite.md` §5.3): it runs the
+A test-side stepper: it runs the
 production small-step function `Cfg.step` unchanged, exactly as
 `Sem.runClocked` does (same fuel, same clock, same charges), and before each
 step tallies what the current state is about to do: a function entry, a
@@ -14,8 +14,8 @@ peak number of live cells come from the heap itself (cells only append;
 
 **Phase 1.** Cfg has no reference-counting forms (`Own/Syntax.lean`), so
 `inc`, `dec`, `isShared`, `takeUnique` and reuse hits and misses are always
-0 here: the fields exist so that Phase 2's effect assertions
-(ownership-suite §5.6) are written against this record now and hold
+0 here: the fields exist so that the effect assertions of the
+planned RC forms are written against this record now and hold
 vacuously until the syntax gains those forms. Under the immortal policy
 nothing is freed, so the live cells at the end are all the cells. -/
 
@@ -49,7 +49,7 @@ structure Counts where
   /-- Live cells at the end, and their largest number at any step. -/
   live : Nat := 0
   peakLive : Nat := 0
-  /-- Phase 2 reference-counting events; always 0 in Phase 1. -/
+  /-- Reference-counting events of the planned RC forms; always 0 today. -/
   inc : Nat := 0
   dec : Nat := 0
   isShared : Nat := 0

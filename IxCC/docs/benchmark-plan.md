@@ -9,9 +9,9 @@ row compiles each K1 fixture's frozen closure (`fixtures/ixon-v4/bench-k1`)
 with the `ixcc` executable; the runner times every row in the process
 (startup) profile and, for `Nat` entries, in the entry profile with
 calibrated repetition counts, and adds two diagnostic rows for attribution
-(the K1 algorithms on the compiled value representation, and MEAS-4's
-hand-written Lir kernels). The earlier reversal-only runner and its protocol
-are on branch `jcb/ixby-archive`.
+(the K1 algorithms on the compiled value representation, and the early backend
+probe's hand-written Lir kernels). The earlier reversal-only runner and its protocol
+are on branch `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix` repository.
 
 ## Questions
 

@@ -1,8 +1,7 @@
 /-! # Shared semantic vocabulary
 
 Outcomes, behaviours and first-order observations shared by every IR of the
-rebuilt pipeline, from the source evaluator down to machine readback (design
-note `plans/x86-v2/00-conventions.md`).
+rebuilt pipeline, from the source evaluator down to machine readback.
 
 Every executable semantics takes a clock `k : Nat` and returns a `Result`.
 The clock is charged only at calls and loop back edges, so straight-line

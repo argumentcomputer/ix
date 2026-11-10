@@ -15,7 +15,8 @@ open IxCC Lean System
 def listObs (xs : List Nat) : Sem.Obs :=
   xs.foldr (fun n tail => .ctor 1 [.nat n, tail]) (.ctor 0 [])
 
-/-- Independent input/output formulas retained from the real-source H0 oracle. -/
+/-- Independent input/output formulas retained from the real-source `List.reverse` fixture's oracle.
+-/
 def expected (root : String) (n seed : Nat) : Sem.Obs :=
   let ascending := (List.range n).map (seed + ·)
   if root == "sharedReverse" then

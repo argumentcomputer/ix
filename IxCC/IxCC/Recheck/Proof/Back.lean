@@ -5,7 +5,7 @@ import IxCC.Lir.Proof.Perms
 import IxCC.Sem.SimConst
 
 /-!
-# The backend half: the object refines the loaded Lir program (M2.7b)
+# The backend half: the object refines the loaded Lir program
 
 `back_refines`: for an artifact `Recheck.run` returns and a driver that
 keeps its contract (`X86.Driver.Ok`), the object run by the driver
@@ -31,8 +31,7 @@ same parameter count). An exact call (`call_sim_linked`):
   `k ↦ (B + 1)(k + 1)`, `B` the stacked program's block count;
 - a `Nat` argument of 2^63 or more: the loaded program fails with
   `natOverflow`, and so does the object (the wrapper's status 3, or the
-  driver for 2^64 or more) unless `cx_init` failed for a resource first.
--/
+  driver for 2^64 or more) unless `cx_init` failed for a resource first. -/
 
 set_option autoImplicit false
 
@@ -265,7 +264,7 @@ theorem call_sim_linked {r fn : Nat} {sym : String} (hr : a.lowered.roots[r]? = 
     · exact Sim.of_eventually_resource (k₀ := 0) (fl := .natOverflow) (by simp [X86.Linked.call, h64])
 
 include h hD in
-/-- **The backend half** (`hback`, M2.7b): for an artifact `Recheck.run`
+/-- **The backend half** (`hback`): for an artifact `Recheck.run`
 returns, the object run by a driver that keeps its contract refines the
 lowered Lir program loaded into the driver's region. -/
 theorem back_refines : Sem.Refines (a.front.loaded (model D)) (a.linked D) := by

@@ -13,7 +13,7 @@ of every spine it heads; a spine headed by a global or a `name` variable
 passes each argument with its binder's mode and covers every `name` binder;
 a `name` argument whose binder's signature has a `name` is a forwarded minor
 with that signature or a λ-telescope whose leading modes are the signature;
-every other λ and application is strict (M2.2). -/
+every other λ and application is strict. -/
 
 set_option autoImplicit false
 

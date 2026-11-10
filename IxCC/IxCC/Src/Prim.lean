@@ -2,10 +2,10 @@ import IxCC.Src.Syntax
 
 /-! # Nat primitives
 
-The exact meaning of every `PrimOp` on literals (design note 01 §3.4):
+The exact meaning of every `PrimOp` on literals:
 `Tc.computeNatBin` without the kernel's checker caps (`pow` exponent,
 shift width), which are limits of the checker, not meaning. Division by zero
-gives `0` and remainder by zero gives the dividend (06 S23). -/
+gives `0` and remainder by zero gives the dividend. -/
 
 namespace IxCC.Src
 

@@ -78,7 +78,7 @@ theorem BlockCode.safe_ret {checked : Checked} {block : BlockId} {instructions :
   simpa only [code.holeStep, Stream.terminatorHoles] using one
 
 /-- `unwind` is one checked step: its source is ordinary data, it writes no
-memory, so the mask is unchanged (note 05 §6.1). -/
+memory, so the mask is unchanged. -/
 theorem Straight.Segment.safe_unwind {checked : Checked} {block : BlockId} {offset : Nat} {source : MemAddr}
     (segment : Straight.Segment checked block offset [.unwind source]) (fits : offset + 1 < UInt32.size)
     (runtime : Runtime) (core : Core) (returns : List ReturnFrame) (holes : Stream.Holes) {sp : Word}

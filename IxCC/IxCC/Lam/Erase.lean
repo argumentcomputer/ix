@@ -5,7 +5,7 @@ import IxCC.Lam.ModesOk
 /-! # Erasure Src → Lam
 
 `Lam.erase : Src.Program → Checked → Except EraseError (Program × Stats)`
-(design note 02 §5; D17–D19). Demand-driven from the roots (MetaCoq's
+(D17–D19). Demand-driven from the roots (MetaCoq's
 `erase_global_deps`): a global is erased when a relevant position first
 references its key, so theorems, types and axioms reached only through
 irrelevant positions are never visited. Keys carry the universe profile, so
@@ -92,7 +92,7 @@ def ruleBody (r : CId) (q : Profile) (pre depth : Nat) (minors : List (Nat × Li
       else if m == .byName then return (← rec_ I cx a, Mode.name)
       else return (← rec_ I cx a, Mode.strict)
     -- By-name IH arguments reach only a minor binder with exactly this
-    -- dispatch, which holds a λ-telescope (S25), never a wrapper.
+    -- dispatch, which holds a λ-telescope, never a wrapper.
     let modes := args.map (·.2)
     if hasName modes then
       match cx.ctx[v]? with

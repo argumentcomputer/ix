@@ -1,7 +1,7 @@
 import IxCC.Anf.Pipeline
 
 /-! Lam programs and middle-end certificates as Lean source, for kernel
-probes (M1.K1, 02 Q17): `tests-anf --kernel-probe NAME` prints a module that
+probes: `tests-anf --kernel-probe NAME` prints a module that
 re-runs the Phase 1 middle end on a bench-k1 entry inside the kernel
 (`decide +kernel`), so one kernel evaluation of the recheck on a real K1
 artifact can be timed. Contracts are rendered as their defaults (the passes

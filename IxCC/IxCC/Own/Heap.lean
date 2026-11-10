@@ -2,18 +2,18 @@ import IxCC.Fir.Semantics
 
 /-! # The abstract heap
 
-Own's values and heap (design note 03 §3.2), shared with Cfg (03 §7) and
-the runtime refinement (04 §8):
+Own's values and heap, shared with Cfg and
+the runtime refinement:
 
 * an **immediate** is any value other than `loc`: a literal, a field-less
-  constructor (`ctor0`, 06 S4) or □ (`erased`); it has no cell and no RC;
+  constructor (`ctor0`) or □ (`erased`); it has no cell and no RC;
 * a cell is `live rc mode body` or `dead`; `alloc` appends, and a dead cell
-  is never reused (S3). The mode is `dyn` under the RC policy and `static`
-  under the immortal one (`AllocPol`, 03 §4.4), where nothing is freed.
+  is never reused. The mode is `dyn` under the RC policy and `static`
+  under the immortal one (`AllocPol`), where nothing is freed.
 
 A `ctor0` carries its constructor info (key and tag), so `case` still
-selects by key, as Fir does; 04 represents it by its tag (`2·tag + 1`).
-Reserved cells (credits) and region cells are Phase 2. -/
+selects by key, as Fir does; the runtime represents it by its tag (`2·tag + 1`).
+Reserved cells (credits) and region cells are planned. -/
 
 namespace IxCC.Own
 
@@ -48,7 +48,8 @@ inductive Cell where
   | dead
   deriving DecidableEq, Repr, Inhabited
 
-/-- Phase 1 allocates immortal (static) cells; Phase 2 counted ones. -/
+/-- The allocation policy: `immortal` cells are static and never freed; `rc`
+cells are counted. -/
 inductive AllocPol where
   | rc
   | immortal
@@ -82,8 +83,7 @@ def isImm : RVal → Bool
   | _ => true
 
 /-- A value as a constructor: a live cell's body, a field-less constructor,
-or a `Nat` literal peeling with the pinned keys; a dead cell is stuck
-(03 C5). -/
+or a `Nat` literal peeling with the pinned keys; a dead cell is stuck. -/
 def asCtor (K : Lam.Known) (H : Heap) : RVal → Option (Key.CtorKey × List RVal)
   | .loc ℓ =>
     match H.cell? ℓ with
@@ -134,7 +134,7 @@ def Heap.value? (H : Heap) (v : RVal) : Option Fir.Val := toFir H (H.size + 1) v
 /-- First-order readback, through the Fir value. -/
 def Heap.readback (H : Heap) (v : RVal) : Option Obs := (H.value? v).bind Fir.readback
 
-/-! ## The immortal invariant (03 §4.4, `ImmortalHolds`) -/
+/-! ## The immortal invariant (`ImmortalHolds`) -/
 
 /-- Every cell is live and static, has as many fields as its constructor,
 and its fields are immediates or older cells. -/

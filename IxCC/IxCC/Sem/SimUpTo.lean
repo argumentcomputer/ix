@@ -13,7 +13,7 @@ The rules below build such simulations one sequencing step at a time, the
 way the evaluators are written (`bind`), with a charge on both sides
 (`later`, one clock level down) or on the target only (`laterR`, tick
 dominance: a target that spends more clock than its source). This lets a
-translation that is clock-exact only in places (erasure's wrappers, M2.2)
+translation that is clock-exact only in places (erasure's wrappers)
 be proved by one induction on the clock for both clauses at once, instead
 of separate "agrees at a larger clock" and "runs no further" lemmas. -/
 

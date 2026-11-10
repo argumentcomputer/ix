@@ -4,7 +4,7 @@ import IxCCTests.Lam.Erase
 # Erasure evaluated by the kernel
 
 Erasure is on `Recheck.run`'s path, which Lean's kernel must evaluate
-(roadmap D17, M1.K1). These examples erase synthetic programs (the world of
+(D17). These examples erase synthetic programs (the world of
 `IxCCTests.Lam.Erase`, with the annotation's records and no checker
 run) inside the kernel (`decide +kernel`, no native evaluation) and check
 the number of globals and nodes, so a change that stops erasure reducing (a

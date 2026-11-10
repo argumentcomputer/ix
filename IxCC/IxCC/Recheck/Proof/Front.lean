@@ -5,7 +5,7 @@ import IxCC.Cfg.Proof.OfAnf
 import IxCC.Rt.Proof.Lang
 
 /-!
-# The front half composed (M2.7)
+# The front half composed
 
 `Recheck.front_refines`: for every program the recheck path's front half
 accepts (`Recheck.runLir`: the table and annotation of the certificate,
@@ -30,7 +30,7 @@ runtime reads a word back by tag at the root's type. The view
 (`Rt.viewOf`) relabels a source observation by tag at the root's type and
 rejects (makes stuck) a result the type does not read back, so a source
 result outside its root's type is one more way the source goes wrong
-(`Front.GoesWrong`, roadmap §1.1's disjunct at stage S). Clock maps are
+(`Front.GoesWrong`, the correctness statement'sdisjunct at stage S). Clock maps are
 hidden by `Sem.Refines`: Anf → Fir `k ↦ tickBound A · (k + 1)`, Cfg → Lir
 `k ↦ k + 1`, the rest `id` or forward-only.
 
@@ -38,13 +38,12 @@ At K1's result types the view rejects nothing well typed: a `Nat` root
 reports a `Nat` as itself (`view_nat`), a `Bool` root reports `false` and
 `true` by their tags (`view_bool`).
 
-For M2.8's `Recheck.sound`: `run_runLir` (a successful `Recheck.run` ran
+For `Recheck.sound`: `run_runLir` (a successful `Recheck.run` ran
 `runLir`, and its artifact's levels and roots are the front half's) and
 `rootsOf_entry` (each of the artifact's roots is the loaded program's entry
 at the same index: function, parameter count, readback type).
-`Recheck.Proof.Sound` states the interface with the backend half (M2.7b)
-and derives `compile_sound` and `compile_safe` from it.
--/
+`Recheck.Proof.Sound` states the interface with the backend half
+and derives `compile_sound` and `compile_safe` from it. -/
 
 set_option autoImplicit false
 
@@ -278,7 +277,7 @@ theorem front_treeSource_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Fr
     Sem.Refines f.treeSource (⟨f.cfg, f.treeView⟩ : Sem.Viewed Cfg.Program) :=
   Sem.Viewed.refines (front_cfg h) f.treeView
 
-/-- **The front half refines** (M2.7): for every program `Recheck.runLir`
+/-- **The front half refines**: for every program `Recheck.runLir`
 accepts and every model region `cx_init` accepts, the lowered program
 loaded into the region refines the checked source viewed at the roots'
 readback types. -/

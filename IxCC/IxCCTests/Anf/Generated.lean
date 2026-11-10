@@ -2,9 +2,8 @@ import IxCCTests.Anf.Support
 import IxCCTests.Support.LamGen
 import IxCC.Anf.Pipeline
 
-/-! Generated Lam programs through the middle end (design note 02 §13 items
-5 and 6): every pass is run with **random oracles** (random shrink rounds,
-random inline rounds including recursive and uncalled callees, random
+/-! Generated Lam programs through the middle end : every pass is run with **random oracles**
+(random shrink rounds, random inline rounds including recursive and uncalled callees, random
 specialisation decisions and masks, which the fixed-parameter checker may
 reject), since correctness must hold for every certificate; after every step
 the program is `WellScoped` and Lam and Anf agree (`compareRun`: readback,

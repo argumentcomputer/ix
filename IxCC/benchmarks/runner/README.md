@@ -14,12 +14,12 @@ implements.
 | `lean-clang` | The fixture's Lean source through `lean -c` and Lean's `leanc -O3 -DNDEBUG` (bundled clang and Lean runtime) |
 | `clang-O2`, `clang-O3` | The fixture's natural C or C++ twin at `-O2` and `-O3` |
 | `clang-tagged` | Diagnostic, entry profile only: the K1 algorithms on ixcc's value representation (tagged words, carry-checked `+ 1`; [`../meas4/twins.c`](../meas4/twins.c) and [`entry/tagged.c`](entry/tagged.c)) at `-O2` |
-| `lir-kernel` | Diagnostic, entry profile only: MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd) through the current backend, from `backend-probe` |
+| `lir-kernel` | Diagnostic, entry profile only: the early backend probe's hand-written Lir kernels (fib, sum-loop, gcd) through the current backend, from `backend-probe` |
 | `ixcc@NAME` | Diagnostic, entry profile only (`build --variant NAME=DIR`): objects `DIR/<fixture>.o` with the ixcc row's interface (`cx_init`, `cx_entry`), such as another commit's compiler output (an A/B pair) or a hand-edited what-if; reports then add a ratio to `ixcc` |
 
 The `ixcc` row exists where a frozen closure exists (the nine K1
-fixtures: the original five and the MT.2 corpus four). A compiler decline or rejection is recorded in `build.json` with
-its `stage: code: message`, and the row is left out. Diagnostic rows
+fixtures: the original five and the four from the scalar corpus). A compiler decline or rejection is
+recorded in `build.json` with its `stage: code: message`, and the row is left out. Diagnostic rows
 attribute a gap; they are never real-program results.
 
 ## Profiles

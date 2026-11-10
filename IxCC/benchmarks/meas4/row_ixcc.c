@@ -1,7 +1,7 @@
 /*
- * MEAS-4 adapter for the ixcc-probe row (untrusted measurement code):
+ * The early backend probe's adapter for the ixcc-probe row (untrusted measurement code):
  * the objects backend-probe writes (lir_fib.o, lir_sumLoop.o, lir_gcd.o),
- * each exporting the SysV wrapper of note 05 §6.1,
+ * each exporting the SysV export wrapper,
  *
  *     {status, value} lir_<kernel>(void *region, a1, ...)    in rax:rdx
  *

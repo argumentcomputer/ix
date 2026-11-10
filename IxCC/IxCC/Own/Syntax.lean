@@ -2,11 +2,11 @@ import IxCC.Fir.Syntax
 
 /-! # Own syntax (Phase 1 fragment)
 
-The ownership IR (design note 03 §3.1) as far as the Phase 1 fragment
-(03 §4.4) needs it: Fir with explicit allocation and ownership annotations.
+The ownership IR as far as the Phase 1 fragment
+needs it: Fir with explicit allocation and ownership annotations.
 
 * `alloc c args κ` allocates a constructor of kind `κ` (a field-less one is
-  an immediate, 06 S4); `proj` is a borrowed projection; every other
+  an immediate); `proj` is a borrowed projection; every other
   right-hand side is Fir's (`fir`: `arg`, `prim`, `call`).
 * Parameters carry a signature (`PSig`: mode, kind, representation), join
   points their parameters' signatures and the outer tokens their body owns
@@ -16,7 +16,7 @@ In Phase 1 every allocation is `shared` and immortal, every parameter
 `owned` and `shared`, every `φ` empty, there is no region frame and no
 clone: exactly the image of `Own.immortal` (`Own.checkImmortal`). The RC
 forms (`inc`, `dec`, `isShared`, `takeUnique`, `reuse`, `dropCredit`,
-`freeze`, `view`), credits and regions are Phase 2 (03 §3–§5) and are not
+`freeze`, `view`), credits and regions are Phase 2 and are not
 in this syntax yet. -/
 
 namespace IxCC.Own
@@ -54,7 +54,7 @@ mutual
 inductive Code where
   | bind (x : Var) (rhs : Rhs) (k : Code)
   /-- `φ`: the outer tokens the body owns (the loop invariant of a recursive
-  join point, 06 S30). -/
+  join point). -/
   | jp (j : JoinId) (ps : List (Var × PSig)) (φ : List (Var × Nat)) (rec : Bool) (body k : Code)
   | jmp (j : JoinId) (args : List Arg)
   | case (x : Var) (alts : List Alt) (dflt : Option Code)
@@ -90,7 +90,7 @@ structure Fun where
 structure Program where
   funs : Src.NatMap Fun
   size : Nat
-  /-- Clone map (unique and borrow clones, 03 §6.2); empty in Phase 1. -/
+  /-- Clone map (unique and borrow clones); empty in Phase 1. -/
   clones : List (FunId × FunId) := []
   exports : List FunId
   ctors : List Lam.CtorInfo

@@ -5,7 +5,7 @@ import IxCC.Sem.Clock
 /-!
 # Xv semantics
 
-An executable, clocked small-step semantics for Xv (05 §3), over Lir's
+An executable, clocked small-step semantics for Xv, over Lir's
 states: the same frames (`Lir.Frame`, an environment `VReg → Word` per
 activation), memory and context word. Labels, calls, returns and the clock
 are Lir's, so Lir and Xv charge exactly the same events (`call`, `tail`,
@@ -26,8 +26,7 @@ the `jcc` row's own semantics. The context register is `r15`, holding `ctx`.
 
 **Outcomes** are Lir's: `stuck` for an undefined register, a faulting row
 (denied memory, or a flag the consumer reads left undefined), a missing
-function or block, or an arity mismatch.
--/
+function or block, or an arity mismatch. -/
 
 namespace IxCC.Xv
 

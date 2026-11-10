@@ -4,8 +4,7 @@ import IxCC.Anf.Proof.Convert.SpineBase
 
 A `name` variable's thunk is forced (`app x [□]`), giving a minor
 telescope closure or a plain value; a strict variable's value and any other
-head's value are plain. Then the arguments are applied in groups (P1,
-M2.3). -/
+head's value are plain. Then the arguments are applied in groups (P1). -/
 
 set_option autoImplicit false
 

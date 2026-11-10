@@ -8,7 +8,7 @@ callee's (`site_sim`, from `spec_sim`). Every other binding is the source's
 (the fundamental lemma's compatibility) or a local function of rewritten
 code (a closure of P4's other code, `RwClo`); the rest is the fundamental
 lemma's structure over the rewrite relation, with definitions that keep
-describing the source environment (`rw_step`, `rw_fund`, `xc_enter`, M2.3). -/
+describing the source environment (`rw_step`, `rw_fund`, `xc_enter`). -/
 
 set_option autoImplicit false
 

@@ -9,7 +9,7 @@ simulation from Cfg's total clock to Lir's: whatever Cfg's run of function
 the Lir program run from `g` on related words over a memory holding `H`
 produces with related results, or fails for a resource (`natOverflow`,
 `heap`); and where Cfg times out at clock `k + 1`, Lir times out or fails
-for a resource at `k` (06 S32's timeout clause; Cfg charges the entry Lir's
+for a resource at `k` (the timeout clause; Cfg charges the entry Lir's
 `eval` does not, and from the entry on the clocks agree).
 
 The proof composes the forward diagram from Cfg to the unpruned program

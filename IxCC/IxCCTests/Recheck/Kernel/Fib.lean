@@ -1,8 +1,8 @@
 import IxCCTests.Recheck.Artifacts.Fib
 import IxCCTests.Recheck.Kernel.Support
 
-/-! The `fib` bench-k1 artifact through the recheck path in the kernel
-(M1.K1): on the program, configuration and certificate of
+/-! The `fib` bench-k1 artifact through the recheck path in the kernel:
+on the program, configuration and certificate of
 `IxCCTests.Recheck.Artifacts.Fib`, `decide +kernel` evaluates
 
 * `Recheck.runTyped` to the laid-out typed x86 program the native run

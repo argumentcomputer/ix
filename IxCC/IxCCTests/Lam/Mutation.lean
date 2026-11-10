@@ -1,7 +1,7 @@
 import IxCCTests.Lam.Support
 import IxCCTests.Src.Relevance.Mutation
 
-/-! Annotation mutation through erasure (design note 02 §13 item 2): the
+/-! Annotation mutation through erasure: the
 relevance suite's mutant generator flips one tag or record of an accepted
 annotation of each bench-k1 closure. Every mutant tiers S and C accept is
 erased, through the front end without `Relevance.checkCanonical`

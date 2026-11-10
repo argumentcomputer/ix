@@ -4,7 +4,7 @@ import IxCC.Sem.Clock
 
 /-! # Cfg semantics
 
-A clocked **small-step** semantics (design note 03 §7) over Own's heap and
+A clocked **small-step** semantics over Own's heap and
 values, run by the shared runner `Sem.runClocked` with a **total** clock:
 every charge spends one unit, whatever the nesting (Src through Own count
 depth). It is the big-step → small-step bridge's target (`Sim.ofStar`,
@@ -18,17 +18,17 @@ the rest of the block's body (the program counter) and one environment per
 activation (variables are unique per function, so block parameters and
 instruction results never clash; a back edge rebinds a block's parameters).
 
-**Charges** (03 C6): entering a function (every `call` state: the entry of
+**Charges**: entering a function (every `call` state: the entry of
 a run, a non-tail call, a tail call) and taking a back edge. Everything else
 is free: instructions, forward edges, `switch`, returns. Instructions run as
 in Own (`Own.evalRhs`), so allocation follows the policy; `case` selection,
-□ and dead cells are stuck exactly as in Own (03 C5). Cfg never produces
+□ and dead cells are stuck exactly as in Own. Cfg never produces
 `resource`.
 
 The step bound (`fuelFor`) is structural: between two charges a frame runs
 at most one forward path of its function, and returns are bounded by calls,
-so `(2k + 6)·(size + 1)` steps always outlast clock `k` (tested; the proof is
-M2.4's `Potential`). Never evaluated on the recheck path (D17). -/
+so `(2k + 6)·(size + 1)` steps always outlast clock `k` (proved in
+`Cfg.Proof.Fuel`, `Cfg.runs_run`). Never evaluated on the recheck path (D17). -/
 
 namespace IxCC.Cfg
 

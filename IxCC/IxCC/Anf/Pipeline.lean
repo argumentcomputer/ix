@@ -6,12 +6,12 @@ import IxCC.Anf.Prune
 
 /-! # The Phase 1 middle end
 
-`Anf.Pipeline` (design note 02 §8, Phase 1): P1, then the steps of a
+`Anf.Pipeline` (Phase 1): P1, then the steps of a
 certificate. `produce` follows the Phase 1 schedule
 
   P1 → P2 → prune → (P3 → P2)* → P4 → P2 → (P3 → P2)* → prune
 
-(02's `P1 → P2 → P3 → P2 → P4 → P2 → P3 → P2`, with each inlining invocation
+(the designed order `P1 → P2 → P3 → P2 → P4 → P2 → P3 → P2`, with each inlining invocation
 iterated as rounds, each round followed by a shrink, until the default
 oracle has nothing left to inline or the round budget is spent), making every
 heuristic choice natively; the recheck (`run`) re-runs the proved passes on
@@ -19,11 +19,11 @@ those choices (D17: P1 has no certificate; P2 reads rounds per global and two
 size bounds; P3 inline rounds; P4 its decisions). `run` never searches, so it
 is the function `Recheck.run` evaluates in the kernel.
 
-Pruning the globals unreachable from the roots (an addition to 02's list)
+Pruning the globals unreachable from the roots (an addition to the designed order)
 runs after the first shrink (erasure's unused helpers) and last (inlining
 and specialisation leave the originals behind). A program that still has an
 `fn`, an `app` or a function-valued `glob` is not `FirstOrder`; the
-Anf → Fir boundary (M1.F5) declines it in
+Anf → Fir boundary declines it in
 Phase 1 (`residual` reports what remains). -/
 
 namespace IxCC.Anf.Pipeline
@@ -36,8 +36,7 @@ inductive Step where
   | prune
   deriving Inhabited
 
-/-- The middle end's certificate (the Phase 1 part of 02 §7.4's
-`Anf.Oracle`). -/
+/-- The middle end's certificate (the oracle decisions the Phase 1 passes read). -/
 structure Cert where
   shrink : Shrink.Params := {}
   steps : List Step := []

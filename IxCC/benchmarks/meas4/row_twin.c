@@ -1,5 +1,5 @@
 /*
- * MEAS-4 adapter for the tagged C twin rows (untrusted measurement code):
+ * The early backend probe's adapter for the tagged C twin rows (untrusted measurement code):
  * tag the arguments (n -> 2n + 1), call twins.c, untag the result. With
  * -DNATURAL it calls the fixtures' untagged algorithms instead.
  */

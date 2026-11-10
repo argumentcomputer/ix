@@ -10,7 +10,7 @@ is its constructor's kept-field count (`CtorInv`). `CSound x R` is the
 monad's judgement for this: `x` keeps every row and the invariant (and the
 erased globals, and every id below `next` naming a key: `IdsSurj`), with `R`
 of its result against every key-arity relation containing the final table
-(like `Sound` for the key table) (M2.2). -/
+(like `Sound` for the key table). -/
 
 set_option autoImplicit false
 

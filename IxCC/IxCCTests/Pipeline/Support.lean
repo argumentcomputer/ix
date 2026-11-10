@@ -5,10 +5,9 @@ import IxCCTests.Rt.Native
 import IxCCTests.Rt.Levels
 import IxCCTests.Src.Bench
 
-/-! Shared support for the end-to-end suite (`tests-pipeline`, M1.I1 and
-M1.I2): the fixtures, the compiler on them (`Recheck.ingress`, `produce`,
-`run`), an artifact as the backend harness's `Compiled`, and native linking
-with the runtime driver compiled once per entry symbol. -/
+/-! Shared support for the end-to-end suite (`tests-pipeline`): the fixtures, the compiler on them
+(`Recheck.ingress`, `produce`, `run`), an artifact as the backend harness's `Compiled`, and native
+linking with the runtime driver compiled once per entry symbol. -/
 
 namespace IxCCTests.Pipeline
 

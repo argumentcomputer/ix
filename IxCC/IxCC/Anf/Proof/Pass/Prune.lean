@@ -7,7 +7,7 @@ and `Dense`), `Prune.run` keeps the globals `reach` finds (the roots and
 everything they reference, `run_seen`), renumbers them densely in order and
 renames every reference; the kept globals sit at their new ids with renamed
 bodies, so the renaming simulation applies (`Setting`, `refines`) and the
-pruned program refines its input (`run_refines`, M2.3). -/
+pruned program refines its input (`run_refines`). -/
 
 set_option autoImplicit false
 

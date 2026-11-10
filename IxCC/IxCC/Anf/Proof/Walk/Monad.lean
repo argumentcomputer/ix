@@ -4,7 +4,7 @@ import IxCC.Anf.Walk
 
 The rewriting walk (`Anf.Walk`) runs in `StateT Fires (Except String)`; the
 state only counts rule firings and the nodes they copy. These lemmas invert a
-successful run of a bind, `pure`, `throw` and `fire` (M2.3). -/
+successful run of a bind, `pure`, `throw` and `fire`. -/
 
 set_option autoImplicit false
 

@@ -3,10 +3,10 @@ import IxCCTests.Lir.Kernels
 import Lean.Data.Json
 
 /-!
-# `backend-probe`: the MEAS-4 kernels as objects (M1.B6, 05 §12)
+# `backend-probe`: the early probe's kernels as objects
 
 Compiles the synthetic Lir kernels `fib`, `sumLoop` and `gcd`
-(`IxCCTests.Lir.Kernels`) with `Backend.compile` (selection, M1.B4's
+(`IxCCTests.Lir.Kernels`) with `Backend.compile` (selection, the
 linear scan with the all-slots fallback, stacking, layout, E1/E2 and the
 ELF writer) into `DIR/lir_<kernel>.o`, each exporting `lir_<kernel>`, and
 prints one JSON line per kernel:
@@ -21,11 +21,10 @@ prints one JSON line per kernel:
 - `compile_ms`: the median time of selection, allocation, emission and the
   whole of `Backend.compile` over `--reps` runs (default 20), natively.
 
-The probe feeds the MEAS-4 measurement (`benchmarks/meas4`); these kernels
-are never reported as real-program results (roadmap §9).
+The probe feeds the early backend measurement (`benchmarks/meas4`); these kernels
+are never reported as real-program results.
 
-Usage: `backend-probe DIR [--reps N]`.
--/
+Usage: `backend-probe DIR [--reps N]`. -/
 
 namespace IxCCTests.Backend.Probe
 

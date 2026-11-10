@@ -6,8 +6,7 @@ The three `casesOn` forms (empty, subsingleton, ordinary) against SrcEval's
 F5, once the arguments are bound: SrcEval charges ι, chooses a rule (for an
 ordinary eliminator by forcing the major), forces the minor and applies it
 to the fields; Lam ticks, then `trap`s, applies the only minor to the index
-fields, or cases on the major and applies the chosen alternative's minor
-(M2.2). -/
+fields, or cases on the major and applies the chosen alternative's minor. -/
 
 set_option autoImplicit false
 

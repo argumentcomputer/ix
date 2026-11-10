@@ -6,7 +6,7 @@ import IxCC.Anf.Proof.Walk.Step
 related to the walk's (`WEnv`, `JEnv` with the target meaning of `k`), target
 environments of the walk's depths satisfying its facts, no use of a dropped
 binding, and a source continuation matched by `k`, the walked term `out`
-simulates the source term `e` followed by the continuation (M2.3).
+simulates the source term `e` followed by the continuation.
 `WalkAt n fuel` is that statement for every walk function at `fuel`;
 `pass_sim` is the case where the term is an operand. -/
 

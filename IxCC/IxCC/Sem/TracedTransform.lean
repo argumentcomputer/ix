@@ -11,7 +11,7 @@ The traced counterparts of `Lang`, `Refines` and `Transform` (decision D-1):
   `run : S → I → Env → Nat → Traced E Val`. `Env`, `E` and `I` are out
   parameters: a program type fixes them, and two languages refine each
   other only at the same environment and event types. `Env` is the
-  environment the IO design note chooses (an oracle, answering from the
+  environment a later IO design chooses (an oracle, answering from the
   events so far or from its own state; how it refuses is its choice).
 - `Lang.lift`: every pure language is a traced one, ignoring the
   environment and performing no event. Phase 1 levels use it at
@@ -23,7 +23,7 @@ The traced counterparts of `Lang`, `Refines` and `Transform` (decision D-1):
   (a returned value with its trace), `trace_prefix` (every target trace is
   a source trace), `live` (every source trace is a target trace), `safe`
   and `diverges` are the shapes of `compile_sound_io`, `compile_live_io`
-  and `compile_safe` (effects note §4.5.1), each with its stuck-source
+  and `compile_safe`, each with its stuck-source
   and resource-failure escapes.
 - `TTransform S T`: a certificate-taking pass correct for every
   certificate, with `comp`, `comp_correct` and `compile_correct` as for

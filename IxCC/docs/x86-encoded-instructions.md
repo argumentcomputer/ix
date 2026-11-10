@@ -4,7 +4,7 @@ E1 connects every emitted instruction to a separate decoder and a local
 machine with byte RIP and condition flags. The proofs consume the encoder's
 actual byte arrays. [E2](x86-stream-objects.md) supplies complete program
 layout and ELF interpretation; agreement with an upstream ISA model remains
-S2.
+step S2 of the [reference-model route](x86-reference-model.md).
 
 ## The instruction table
 

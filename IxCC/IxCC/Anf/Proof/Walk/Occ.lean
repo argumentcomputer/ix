@@ -4,7 +4,7 @@ import IxCC.Anf.Proof.Walk.At
 
 `NoDead live jlive e` says no dropped value binding (`live = false`) and no
 dropped join point occurs in `e`; these lemmas pass it to subterms and read
-off that an atom the walk resolves is live (M2.3). -/
+off that an atom the walk resolves is live. -/
 
 set_option autoImplicit false
 

@@ -2,7 +2,7 @@ import IxCCTests.Anf.Support
 import IxCCTests.Lam.Differential
 import IxCC.Anf.Pipeline
 
-/-! Lam against Anf on the Phase 1 fixtures (design note 02 §13 item 3):
+/-! Lam against Anf on the Phase 1 fixtures:
 every root and first-order constant of `k1.ixe` and of each bench-k1
 closure, through Src → Lam → Anf, after every pass of the Phase 1 pipeline:
 equal readback, traps, the timeout clause and tick dominance

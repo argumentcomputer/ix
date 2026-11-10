@@ -1,7 +1,7 @@
 import IxCC.X86.Layout.Order
 
 /-!
-# What `Order.check` guarantees (05 §7, step 2)
+# What `Order.check` guarantees (layout step 2 of 3)
 
 `Order.check` accepts an order exactly when its flattening is a
 duplicate-free list of blocks of the program that contains the entry and

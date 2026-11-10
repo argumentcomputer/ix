@@ -6,7 +6,7 @@ import IxCC.Lam.Erase.Proof.ProgWF
 The bodies of the globals (`keyBody`) register their keys, the queue loop
 keeps every erased body's keys registered as the table grows, and so a
 successful erasure ends with a table (`CtorInv`) in which every constructor
-key of every global has a row (`erase_reg`) (M2.2). -/
+key of every global has a row (`erase_reg`). -/
 
 set_option autoImplicit false
 

@@ -1,8 +1,8 @@
 /*
- * Tagged C twins of the K1 programs ackermann and tak, and of the MT.2
- * corpus four (collatz, prime-count, even-odd, sfib) (untrusted measurement
+ * Tagged C twins of the K1 programs ackermann and tak, and of the four
+ * scalar-corpus programs (collatz, prime-count, even-odd, sfib) (untrusted measurement
  * code), for the runner's diagnostic clang-tagged row. The
- * twins of fib, sum-loop and gcd are MEAS-4's (benchmarks/meas4/twins.c);
+ * twins of fib, sum-loop and gcd are the early backend probe's (benchmarks/meas4/twins.c);
  * these follow the same rules, so the row measures what clang makes of the
  * K1 algorithms on ixcc's value representation:
  *
@@ -49,7 +49,7 @@ uint64_t twin_tak(uint64_t f, uint64_t x, uint64_t y, uint64_t z) {
   return z;
 }
 
-/* The MT.2 corpus four (benchmarks/fixtures/{collatz,prime-count,even-odd,
+/* The four from the scalar corpus (benchmarks/fixtures/{collatz,prime-count,even-odd,
  * sfib}), on the same rules. A tagged sum a + b is (a - 1) + b, a tagged
  * product a * b is (a - 1) * (b >> 1) + 1, each with its carry or overflow
  * out as natOverflow; Nat division and remainder untag their operands. Loop

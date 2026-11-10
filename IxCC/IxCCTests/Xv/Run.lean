@@ -12,7 +12,8 @@ Every generated program must select: a declined form fails the run.
 Prints counts, and each rule's firings and the programs it fired on. A
 failure prints the seed, the property and both programs, and fails the
 run. `--restricted` narrows the generator to the forms selection had before
-M1.B1 (constant left shifts; no division, `select` or `test`).
+shifts, division, `select` and `test` were added (constant left shifts; no division, `select` or
+`test`).
 
 Usage: `check-xv-select [--programs N] [--seeds S1,S2,…] [--max-blocks B] [--restricted]`.
 -/
@@ -45,7 +46,7 @@ def parseOptions : List String → Except String Options
       pure { o with seeds }
   | arg :: _ => throw s!"unknown argument {arg}"
 
-/-- The generator narrowed to the forms selection had before M1.B1: left
+/-- The generator narrowed to the forms selection had first: left
 shifts by constants only; no division, `select` or `test`. -/
 def restricted (maxBlocks : Nat) : Gen.Config :=
   { maxBlocks, shiftOps := #[.shl], varShifts := false, divs := false, selects := false, tests := false }

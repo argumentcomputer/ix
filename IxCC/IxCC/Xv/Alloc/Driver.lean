@@ -6,7 +6,7 @@ import IxCC.Xv.Validate.Check
 # Allocation with its checks
 
 `Alloc.run` allocates each function of an Xv program by linear scan,
-validates the result, and falls back to all slots (05 §5, the CakeML
+validates the result, and falls back to all slots (the CakeML
 pattern of a checker-gated oracle with a fallback): a linear-scan failure
 or a rejection is recorded and the function is allocated again with
 `allSlots`, which must itself validate or the program is declined (a
@@ -32,8 +32,7 @@ structure Result where
   outs : List Output
   outcomes : List Outcome
 
-/-- The all-slots fallback under 05 §5's name (`Alloc.allSlots_valid`, M2.6,
-is stated of it). -/
+/-- The all-slots fallback (`Alloc.allSlots_valid` is stated of it). -/
 def allSlots (f : Func Lir.VReg) : Except String Output := AllSlots.run f
 
 /-- Allocate and validate one function, with the fallback. -/

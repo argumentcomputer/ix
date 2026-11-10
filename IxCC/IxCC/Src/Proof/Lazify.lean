@@ -523,7 +523,7 @@ theorem step_modeEq (p : Program) (key : TermKey) : Program.ModeEq p (step p key
 key list, `Lazify.run p keys` is `p` up to the modes of application nodes in
 definition values, recursor rule right-hand sides and `eqn` bodies
 (`Program.ModeEq`). A syntactic fact: SrcEval preservation is not proved
-(open item S6). -/
+(open item S6 in `IxCC/docs/certification-design.md`). -/
 theorem run_modeEq (p : Program) : ∀ keys : List TermKey, Program.ModeEq p (run p keys)
   | [] => .refl p
   | key :: keys => (step_modeEq p key).trans (run_modeEq (step p key) keys)

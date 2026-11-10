@@ -11,7 +11,7 @@ other pass's closures (`RwClo`): calls of the input's ids simulate by the
 fundamental lemma or the rewritten code's simulation one clock down,
 redirected calls by `red_sim`, entering rewritten closures by `rw_fund`
 (`hyp`). Hence the output refines the input and keeps its shape
-(`run_refines`, M2.3). -/
+(`run_refines`). -/
 
 set_option autoImplicit false
 

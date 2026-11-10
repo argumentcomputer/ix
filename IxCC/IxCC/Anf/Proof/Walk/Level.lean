@@ -6,7 +6,7 @@ The walk's simulation (`WalkAt`) at every fuel, by induction on the fuel
 inside a strong induction on the clock bound: one fuel level from the one
 below and the bound below (`walkAt_succ`); with it, the fundamental lemma
 and the program interface at every bound (`levels`), and refinement of a
-program by one whose globals are walks of its globals (`refines`) (M2.3). -/
+program by one whose globals are walks of its globals (`refines`). -/
 
 set_option autoImplicit false
 

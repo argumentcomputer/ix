@@ -155,7 +155,7 @@ theorem call_sim_linked {r fn : Nat} {sym : String} (hr : a.front.lowered.roots[
     · exact Sim.of_eventually_resource (k₀ := 0) (fl := .natOverflow) (by simp [X86.Linked.call, h64])
 
 include h hD in
-/-- **The backend half** (`hback`, M2.7b): for an artifact `Recheck.run`
+/-- **The backend half** (`hback`): for an artifact `Recheck.run`
 returns, the object run by a driver that keeps its contract refines the
 lowered Lir program loaded into the driver's region. -/
 theorem back_refines : Sem.Refines (a.front.loaded (model D)) (a.linked D) := by

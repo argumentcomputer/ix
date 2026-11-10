@@ -3,7 +3,7 @@ import IxCC.Xv.Alloc.State
 /-!
 # The all-slots fallback
 
-`Alloc.allSlots` (05 §5) keeps every virtual register in its own home cell
+`Alloc.allSlots` keeps every virtual register in its own home cell
 (a frame slot; an incoming cell for a stack parameter) at every
 instruction boundary. Before an instruction, the registers it reads in
 registers (`reg`, `fixed`, ties, a `move`'s source) are loaded from their
@@ -15,10 +15,9 @@ home through a scratch register (`ParMove.resolve`).
 
 It is the allocator of last resort: when linear scan fails or the validator
 rejects its output, the driver allocates the function this way. It is still
-checked (until `Alloc.allSlots_valid` is proved, M2.6); a rejection is a
+checked (until `Alloc.allSlots_valid` is proved); a rejection is a
 compile error, never wrong code. Its only inputs are liveness (to size
-certificates and skip dead stores) and reverse postorder.
--/
+certificates and skip dead stores) and reverse postorder. -/
 
 namespace IxCC.Xv.Alloc.AllSlots
 

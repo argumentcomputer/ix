@@ -1,7 +1,7 @@
 import IxCCTests.Lam.Support
 import IxCCTests.Src.Rules
 
-/-! Lam's rules (design note 02 §4.2) on a hand-written program: slots and
+/-! Lam's rules on a hand-written program: slots and
 charges, application modes, □ stuck under application, projection, `case`
 and primitives, checked keys, `Nat` peeling, left-to-right order, `tick`
 and `trap`; key equality (D19); and clock monotonicity on random clocks. -/
@@ -65,7 +65,7 @@ def rules (a : Assert) : IO Unit := do
     "name argument forced on read"
   expectR a (ev 1 (.app (.lam .strict {} (v 0)) (lit 4) .name)) "timeout"
     "forcing charges inside the body"
-  -- □ is stuck under application, projection, case and primitives (06 S38).
+  -- □ is stuck under application, projection, case and primitives.
   expectR a (ev 5 .box) "ok box" "box"
   expectR a (ev 5 (.app .box (lit 1) .strict)) "stuck" "applying box"
   expectR a (ev 5 (.proj pairK 0 .box)) "stuck" "projecting box"

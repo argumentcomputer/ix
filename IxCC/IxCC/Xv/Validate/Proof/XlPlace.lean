@@ -4,14 +4,13 @@ import IxCC.Xv.Validate.Proof.Part
 /-!
 # The Xl placement
 
-How `Xl.execBound` places a row's operands (05 §3): register locations run
+How `Xl.execBound` places a row's operands: register locations run
 in themselves, and the distinct stack cells borrow, in order, the scratch
 registers the row does not name. With enough scratch registers, every
 operand location gets a register (`placeL`), different locations get
 different registers (`placeL_inj`), a borrowed register starts with its
 cell's value, and an allocatable register location with its own
-(`rowRegisters_use`).
--/
+(`rowRegisters_use`). -/
 
 namespace IxCC.Xv.Xl
 

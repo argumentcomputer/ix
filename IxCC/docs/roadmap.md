@@ -48,7 +48,7 @@ same literal in every model where it is readable and graded. Its environment
 and kernel term are not derived from a compile claim's environment or target,
 and the relation can be built only for definitions without type arguments,
 numerals, typeclass operations, `match` or recursion (of the 69 fixture roots
-surveyed in the 2026-11-09 review, only the identity `Abi.nat1`). Recursive
+surveyed in its README, only the identity `Abi.nat1`). Recursive
 programs need a denotational step for equation and csimp resolutions in place
 of kernel reduction.
 
@@ -65,8 +65,10 @@ have been recovered into the integration tree; focused checks and all 14
 required local Nix checks passed on the earlier consumer/readback snapshot. No final
 replacement producer has been selected or
 refrozen. The latest retained contract-sensitive typing experiments fail the
-original cold79/Q06 acceptance gates; upstream compiler certification does not
-discharge those obligations. Phase 2 groundwork now includes bounded
+original acceptance gates on the `cold79` and `Q06` workloads (resource-checker
+inputs from the Phase 1.5 work; they are not kept in this repository); upstream
+compiler certification does not discharge those obligations. Phase 2
+groundwork now includes bounded
 constructor-result signature discovery, dynamic-header readback laws, and
 a promoted checked plain-RC compiler with size-class recycling and iterative
 release. `Recheck.RcReplay.sound` composes accepted replay through the actual
@@ -106,7 +108,7 @@ Independent heap foundations can proceed alongside producer repairs; final
 real-source integration requires the reviewed producer and consumer gates.
 General K2/K3 coverage and ownership optimizations remain later Phase 2 work.
 
-The remaining combined acceptance gate is G1's resource/consumer requirements
+The remaining combined acceptance gate is the Phase 1.5 resource and consumer gate
 at the October 9 selected cap of 500,000 charged steps per declaration/equation
 and depth 256, a reviewed final producer with
 reproducible fixture refreeze and verdict review, and complete proof/fence,
@@ -126,7 +128,8 @@ it exhausts all 500,000 steps with depth fuel still available. No optimization
 has yet restored full Q06 acceptance.
 
 The September 29 reset, retired pipeline, Ixby backend and Stage2 fixture are
-preserved on `jcb/ixby-archive`, with their former gates and measurements.
+preserved on `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix`
+repository, with their former gates and measurements.
 
 **Current integration surface:**
 
@@ -135,7 +138,7 @@ preserved on `jcb/ixby-archive`, with their former gates and measurements.
 | Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`), `Ring0` (`verifyRing0Sip_sound`), certificate/artifact checks and native pipeline suites |
 | Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); exact ownership/certificate replay (`checkPlainMap` / `checkContractPlainMap`), ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
 | [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, catalog-v2 admission, erased typing, resource admission, claim binding |
-| [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
+| [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, DR9 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Aiur target](aiur-backend.md) | Pinned bytecode vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs |
 | Tools | Trust ledger, build-graph manifest, check helpers |
 
@@ -198,21 +201,21 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
         → Anf (join points; shrink, inline, specialise; P8 defunctionalisation, planned)
         → Fir (first order, known calls only) → Own (explicit RC, borrow, reuse)
         → Cfg (control-flow graph) → Lir (words, memory, runtime)
-        → Xv (x86 on virtual registers) → Xl (allocated) → typed x86 → E1 → E2/ELF
+        → Xv (x86 on virtual registers) → Xl (allocated) → typed x86 → DR9 → E2/ELF
 ```
 
 ### Phases
 
 | Phase | Deliverable | Closes with | State |
 | --- | --- | --- | --- |
-| 0 | Reset and foundations: first gates back, the ix `eq_def` export, design notes, a declarative x86 instruction table with compact encodings, hardware-differential and decoder gates, first-wave fixtures, census, Lean/Clang measurement rows | — | Done |
+| 0 | Reset and foundations: first gates back, the ix `eq_def` export, design notes (not kept in this repository), a declarative x86 instruction table with compact encodings, hardware-differential and decoder gates, first-wave fixtures, census, Lean/Clang measurement rows | — | Done |
 | 1 | Scalar vertical slice from real Lean source to certified ELF, with register allocation, loops and recursion (`fib`, `for` loops, Ackermann, `tak`, `gcd`) | K1 | Done: K1 certified relative to SrcEval |
 | 1.5 | Reviewed resource checking, address-bound equation/profile selection and contract transport; assess upstream certification before the final producer repin | Existing K1 and annotated/plain fixtures | In progress |
 | 2 | Heap and closures: general RC (scalar fields, large objects, static objects, reset/reuse, `unique`/`borrow`, inline fast paths, the Own checker); P8 defunctionalisation; P5/P6 when measured | K0 (real `List.reverse`), K2 (lists), K3 (trees); `Decline.composeClosure` | In progress: the bounded plain-RC route and the `List.reverse` regression are implemented |
 | 3 | Data and interface: fixed-width integers and small `Int`, arrays and byte arrays with in-place update, strings, interpreted opaques, P9; the byte ABI, the claim's ABI descriptor, state-machine roots | K4 | Planned |
 | 4 | Bignums: the limb library compiled by IxCC; large `Int` | K5 | Planned |
 | 5 | Scale and usability: input-relative budgets, linear-time recheck passes, per-function rechecking and caching, diagnostics, library census | K6; a closure of at least 2,000 definitions | Planned |
-| C | Certification depth, a track beside Phases 2–5: C1 front-end theorem, C2 shape typing, C3 stage L, C4 stage K | Per item, below | C1–C3 planned, C4 research |
+| C | Certification depth, a track beside Phases 2–5: CD1 front-end theorem, CD2 shape typing, CD3 stage L, CD4 stage K | Per item, below | CD1–CD3 planned, CD4 research |
 
 **Changes from the previous table** (Phases 0 to 1.5 are unchanged):
 - Closures move from Phase 3 to Phase 2. The design is closed-world
@@ -249,7 +252,7 @@ data:
 
 ### Phase 2: heap and closures
 
-- **Heap completion** ([D1](data-and-roots-design.md#d1-heap-completion)):
+- **Heap completion** ([DR1](data-and-roots-design.md#dr1-heap-completion)):
   scalar fields, constructors beyond 31 fields and large objects, static
   objects, reset/reuse with a uniqueness test, static reuse from `unique`
   contracts, borrowed parameters, inline RC fast paths, and the proved Own
@@ -265,15 +268,14 @@ data:
 
 ### Phase 3: data and interface
 
-- **Fixed width and small `Int`** ([D2](data-and-roots-design.md#d2-fixed-width-integers-and-int)),
-  **arrays and byte arrays** ([D3](data-and-roots-design.md#d3-arrays-and-byte-arrays)),
-  **strings** ([D4](data-and-roots-design.md#d4-strings)),
-  **library structures and interpreted opaques** ([D5](data-and-roots-design.md#d5-library-structures-and-opaque-constants)).
-- **Roots**: the byte ABI ([R1](data-and-roots-design.md#r1-structured-roots-and-the-byte-abi)),
-  the claim's ABI descriptor, on the encoding as fixed after the 2026-11-09
-  review ([R2](data-and-roots-design.md#r2-what-the-compile-claim-binds)),
-  monomorphic roots ([R3](data-and-roots-design.md#r3-universe-polymorphism-and-type-parameters-at-roots)),
-  state-machine roots ([E1](data-and-roots-design.md#e1-effects-and-io)).
+- **Fixed width and small `Int`** ([DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)),
+  **arrays and byte arrays** ([DR3](data-and-roots-design.md#dr3-arrays-and-byte-arrays)),
+  **strings** ([DR4](data-and-roots-design.md#dr4-strings)),
+  **library structures and interpreted opaques** ([DR5](data-and-roots-design.md#dr5-library-structures-and-opaque-constants)).
+- **Roots**: the byte ABI ([DR6](data-and-roots-design.md#dr6-structured-roots-and-the-byte-abi)),
+  the claim's ABI descriptor ([DR7](data-and-roots-design.md#dr7-what-the-compile-claim-binds)),
+  monomorphic roots ([DR8](data-and-roots-design.md#dr8-universe-polymorphism-and-type-parameters-at-roots)),
+  state-machine roots ([DR9](data-and-roots-design.md#dr9-effects-and-io)).
 - **P9** and the flow oracle, if K4 shows dispatch cost.
 - *Depends on:* Phase 2's scalar fields, large objects and uniqueness test;
   P8 for library code over dictionaries.
@@ -284,7 +286,7 @@ data:
 ### Phase 4: bignums
 
 - The limb library and the bignum representation ([bignum design](bignum-design.md)).
-- *Depends on:* D1–D4; C3 for the library's layer-3 proof (until then an
+- *Depends on:* DR1–DR4; CD3 for the library's layer-3 proof (until then an
   explicit ledger assumption, as the design says).
 - *Exit:* K5 compiles, certifies and matches Lean; `natOverflow` is retired
   with its gate map; the library theorems are fenced.
@@ -302,51 +304,56 @@ data:
 
 | Item | Content | Depends on | Exit | State |
 | --- | --- | --- | --- | --- |
-| C1 | Front-end theorem (S6): table, relevance canonicity, `Lazify`, pins | — | Five checker lemmas fenced; a corollary of `Recheck.sound` exposing them | Planned |
-| C2 | Checked shape typing on Src: progress and preservation | C1 | `GoesWrong`-free corollaries of `Recheck.sound` and of Ring-0 admission for shape-checked programs, on K1 and the corpus | Planned |
-| C3 | Stage L: a proof-producing translator from Lean constants to SrcEval behaviour | C1; ix's certified Lean-to-Ixon compile | `fib`, `gcd`, `ackermann` with "the object's result is `f xs`"; then the bignum library | Planned (prototype), research (IxCK scale) |
-| C4 | Stage K: semantic adequacy of SrcEval in the certified kernel's models (S8), replacing the conditional bridge | C1 | A spike on `fib` with the environment taken from the claim bytes; a size estimate after it | Research |
+| CD1 | Front-end theorem (S6): table, relevance canonicity, `Lazify`, pins | — | Five checker lemmas fenced; a corollary of `Recheck.sound` exposing them | Planned |
+| CD2 | Checked shape typing on Src: progress and preservation | CD1 | `GoesWrong`-free corollaries of `Recheck.sound` and of Ring-0 admission for shape-checked programs, on K1 and the corpus | Planned |
+| CD3 | Stage L: a proof-producing translator from Lean constants to SrcEval behaviour | CD1; ix's certified Lean-to-Ixon compile | `fib`, `gcd`, `ackermann` with "the object's result is `f xs`"; then the bignum library | Planned (prototype), research (IxCK scale) |
+| CD4 | Stage K: semantic adequacy of SrcEval in the certified kernel's models (S8), replacing the conditional bridge | CD1 | A spike on `fib` with the environment taken from the claim bytes; a size estimate after it | Research |
 
 Details and the obligations each extension adds are in the
-[certification design](certification-design.md). Recommended order: C1 and
-C2 first, then the C3 prototype, with C4 as a research spike in parallel.
+[certification design](certification-design.md). Order (decision 3 of
+2026-11-10): CD1 and CD2 first, then the CD3 prototype; CD4 is a research
+spike in parallel.
 
 ### Flagship targets
 
-**F1. The IxOS monitor and driver compiled through `ixcc`.** IxOS runs
+**The IxOS flagship: the monitor and driver compiled through `ixcc`.** IxOS runs
 admitted programs as software-isolated processes (SIPs) in Ring 0 and its
-monitor is itself Lean code compiled by IxCC. In this plan the monitor is a
-state-machine root (E1) and a small trusted *tender* performs privileged
-operations and the calls into SIP entries, because compiled code has no
-indirect calls.
+monitor is itself Lean code compiled by IxCC. The monitor is a state-machine
+root (DR9), and a small ledgered *tender* performs privileged operations and
+the calls into SIP entries, because compiled code has no indirect calls
+(decision 4 of 2026-11-10; D20).
 
 | Step | Content | Prerequisites | Exit | State |
 | --- | --- | --- | --- | --- |
-| F1.0 | A host loader that maps an object and calls its entries through a minimal ledgered trampoline, with readback in Lean, in place of linking `runtime_driver.c` | none | The K1 and RC suites pass through it with the C driver removed from the execution path | Planned |
-| F1.1 | Fuel metering in prologues and at back edges with a new resource status; Ring-0 frame preservation on every outcome, not only on return | none | Fenced theorems; the session gate with fuel exhaustion | Planned |
-| F1.2 | A minimal monitor: SIP table, region allocation, request dispatch to the tender, admission by claim digest and external evidence | Phase 2 (P8, D1), D2, D3, R1, E1 | The monitor's `step` certified; a host-harness session of SIP calls | Planned |
-| F1.3 | Admission inside the monitor: `CompileClaim.verifyBytes` compiled by IxCC | Phases 2–5 (bignums for 256-bit address comparisons, strings for certificate parsing, scale for the checker's closure) | An IxCC-compiled `check-cert` agrees with the Lean-compiled one on every committed certificate and the hostile-input regressions | Planned |
-| F1.4 | Certification: C2 for confinement without the source-safety premise; C3 on `step` and on `verifyBytes` | C2, C3 | "Admitted by the compiled monitor ⇒ accepted by the Lean verifier" as a theorem | Research |
+| IxOS-0 | A host loader that maps an object and calls its entries through a minimal ledgered trampoline, with readback in Lean, in place of linking `runtime_driver.c` | none | The K1 and RC suites pass through it with the C driver removed from the execution path | Planned |
+| IxOS-1 | Fuel metering in prologues and at back edges with a new resource status; Ring-0 frame preservation on every outcome, not only on return | none | Fenced theorems; the session gate with fuel exhaustion | Planned |
+| IxOS-2 | A minimal monitor: SIP table, region allocation, request dispatch to the tender, admission by claim digest and external evidence | Phase 2 (P8, DR1), DR2, DR3, DR6, DR9 | The monitor's `step` certified; a host-harness session of SIP calls | Planned |
+| IxOS-3 | Admission inside the monitor: `CompileClaim.verifyBytes` compiled by IxCC | Phases 2–5 (bignums for 256-bit address comparisons, strings for certificate parsing, scale for the checker's closure) | An IxCC-compiled `check-cert` agrees with the Lean-compiled one on every committed certificate and the hostile-input regressions | Planned |
+| IxOS-4 | Certification: CD2 for confinement without the source-safety premise; CD3 on `step` and on `verifyBytes` | CD2, CD3 | "Admitted by the compiled monitor ⇒ accepted by the Lean verifier" as a theorem | Research |
 
-**F2. The certified kernel compiled through `ixcc`** (native x86; the
-2026-11-09 IXCC-ROUTE review argues against this route for IxVM's Aiur
-circuits, which is a separate question).
+**The kernel flagship: the certified kernel compiled through `ixcc`** (native
+x86; whether this route also helps certify IxVM's Aiur circuits is a separate
+question this plan does not address).
 
 | Step | Content | Prerequisites | Exit | State |
 | --- | --- | --- | --- | --- |
-| F2.1 | `Ix.Kernel.Level` (`IxCK/Kernel/Level.lean`: fuelled, mutually recursive level comparison using `Int` offsets) | Phase 2, D2 | Compiles, certifies, and agrees with the Lean-compiled functions on generated level pairs | Planned |
-| F2.2 | The checker, through the reference fold `checkDeclsPure` or the cached fold: records of closures, monad polymorphism, `HashMap`, `Array`, `ByteArray`, `UInt64`, `USize`, `Int`, strings, exact `Nat` | Phases 2–5; D5's interpretation table, or IxCK without `mixHash` and `getNumBits` | Differential agreement with Lean-compiled IxCK on its smoke environment and claim fixtures; certified relative to SrcEval | Planned |
-| F2.3 | "The object accepts ⇒ `checkDecls` accepts" as a Lean theorem, then IxCK's soundness | C3 at IxCK's scale (or C4 plus a reflection step with no design) | The composed theorem fenced | Research |
+| IxCK-1 | `Ix.Kernel.Level` (`IxCK/Kernel/Level.lean`: fuelled, mutually recursive level comparison using `Int` offsets) | Phase 2, DR2 | Compiles, certifies, and agrees with the Lean-compiled functions on generated level pairs | Planned |
+| IxCK-2 | The checker, through the reference fold `checkDeclsPure` or the cached fold: records of closures, monad polymorphism, `HashMap`, `Array`, `ByteArray`, `UInt64`, `USize`, `Int`, strings, exact `Nat` | Phases 2–5; DR5's interpretation table, or IxCK without `mixHash` and `getNumBits` | Differential agreement with Lean-compiled IxCK on its smoke environment and claim fixtures; certified relative to SrcEval | Planned |
+| IxCK-3 | "The object accepts ⇒ `checkDecls` accepts" as a Lean theorem, then IxCK's soundness | CD3 at IxCK's scale (or CD4 plus a reflection step with no design) | The composed theorem fenced | Research |
 
 ### Dependencies in brief
 
 ```text
-Phase 1.5 ─► Phase 2 (D1 heap, P8) ─► Phase 3 (D2–D5, R1–R3, E1, P9) ─► Phase 4 (bignums) ─► F1.3, F2.2
-                     │                         │                                ▲
-                     └──────────► F1.2 ◄───────┘                    C3 ─────────┘ (bignum layer 3)
-Phase 5 (scale) ─► F1.3, F2.2, K6
-C1 ─► C2 ─► F1.4 ;  C1 ─► C3 ─► F1.4, F2.3 ;  C1 ─► C4 (research)
-F1.0, F1.1: no prerequisites
+Phase 1.5 → Phase 2 (DR1 heap completion, P8)
+Phase 2 → Phase 3 (DR2–DR9, P9) → Phase 4 (bignums)
+Phase 2, Phase 3 → IxOS-2
+Phase 4, Phase 5 → IxOS-3, IxCK-2
+Phase 5 → K6
+CD3 → the bignum library's layer 3
+CD1 → CD2 → IxOS-4
+CD1 → CD3 → IxOS-4, IxCK-3
+CD1 → CD4 (research)
+IxOS-0, IxOS-1: no prerequisites
 ```
 
 ### Phase 1.5 priorities after the certification work
@@ -385,8 +392,9 @@ and correspondence to executed runtime remain explicit trust boundaries.
    enter the production codec dependency. This gates adoption of certification
    interfaces; checker-only improvements retain their existing acceptance gates.
 3. **Finish the existing resource and consumer gates.** Validate the selected
-   500,000-step/depth-256 limits, all R2-1 cast-bypass controls, Lean/Rust parity,
-   equation/profile bindings, and D16/CX-2 contract transport. W/S acceptance cannot replace
+   500,000-step/depth-256 limits, all cast-bypass controls, Lean/Rust parity,
+   equation/profile bindings, and contract transport (D16), including the check
+   that an `eqn` entry does not drop contracts. W/S acceptance cannot replace
    these checks. Reassess the stalled engine against the selected upstream
    interfaces before choosing another optimization experiment.
 4. **Review, freeze and validate the combined result.** Perform the final
@@ -411,7 +419,7 @@ and correspondence to executed runtime remain explicit trust boundaries.
 | Erasure | An untrusted relevance annotation. `Recheck.front` decides it with the structural checker (`Relevance.check`, proved in `Relevance.Proof.check_sound`) and with `Relevance.checkCanonical`, which re-derives each position's class from the declaration types and refuses an irrelevant tag it cannot justify. The byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) also re-run `Relevance.annotate` on `(inp.env, cert.table)` and require the certificate's annotation to equal its output (`Recheck.checkCanonicalRelevance`); the program-level verifiers and `Recheck.run` do not. Neither `annotate` nor `checkCanonical` has a theorem yet. |
 | Middle end | Clocked big-step semantics for functional IRs, with a fuel-indexed logical relation and heuristic-parametric passes. Forward simulations below. |
 | Ownership | Untrusted RC, borrow and reuse passes; one proved ownership checker; fallback to plain RC. Ixon resource admission is a diagnostic gate, not a proof premise. |
-| Backend | Rule-based selection with one lemma per rule; an untrusted linear-scan allocator with a proved validator; a private internal calling convention with SysV at exports; fall-through layout; the existing E1/E2/ELF. |
+| Backend | Rule-based selection with one lemma per rule; an untrusted linear-scan allocator with a proved validator; a private internal calling convention with SysV at exports; fall-through layout; the existing DR9/E2/ELF. |
 | x86 trust | A declarative instruction table. Hardware-differential and XED/LLVM-MC gates first; the Sail agreement proof later. |
 | Runtime | Written in the compiler's own low-level IR and proved: an 8-byte header, single-threaded RC, size-class free lists, iterative free, tagged 63-bit small `Nat`. No C runtime and no GMP in the trusted base. |
 | Profiles | One production profile. Instrumentation, cost and space results are optional layers outside the core relations. |
@@ -419,18 +427,30 @@ and correspondence to executed runtime remain explicit trust boundaries.
 | Bignums | Decided by the owner on 2026-11-09: new Lean implementations of the standard multi-precision algorithms, each proved against `Nat` and compiled by IxCC; several references consulted, GMP for behaviour only ([bignum design](bignum-design.md)). |
 | Roots and effects | Roots stay level-monomorphic; structured data crosses the boundary as bytes; interacting programs are state machines driven by a host ([data, roots and effects](data-and-roots-design.md)). |
 
-## Open decisions
+## Decisions of 2026-11-10
 
-These need the owner. Each has the default this plan assumes and what a
-later change would cost.
+The owner settled four questions this plan had left open. Each is now a
+standing constraint on the designs.
 
-| Decision | Default | Cost of changing later |
-| --- | --- | --- |
-| Must closures cross a program boundary, or higher-order libraries be compiled separately? | No: boundaries pass first-order data and higher-order libraries are compiled into each program | Code-pointer closures at the boundary only: a new object kind, an indirect-call row with a target-validity premise, an extended Ring-0 argument; about 6–9k proof lines [estimate] ([closures design](closures-design.md#fallback-code-pointer-closures)) |
-| May a compile claim carry interpretations of opaque constants (`mixHash`, `getNumBits`)? | Yes, recorded in the claim, so `Std.HashMap` compiles from its Lean definitions | Refusing them later makes such claims unverifiable and pushes targets (IxCK) to remove hashed fields; allowing them later is a claim-format change ([D5](data-and-roots-design.md#d5-library-structures-and-opaque-constants)) |
-| Which route to Lean's meaning first: stage L (C3) or stage K (C4)? | C3 first, C4 as a research spike | Small: C1 and C2 serve both; the cost is the order in which the flagships get their end statements |
-| Is the IxOS tender (privileged operations and calls into SIP entries) a ledgered component, or are indirect calls certified? | Ledgered tender | A certified indirect call later needs the same row and premise as the first decision |
-| Should the pre-merge design notes (`plans/x86-v2/00`–`06`, about 5.8k lines, untracked) be added to the repository as historical records? About 480 code comments cite them | Yes, under `docs/design-notes/` with a header marking them historical and superseded where the tracked documents differ | Otherwise every citation must be rewritten against the tracked documents |
+1. **Closures stay inside a program.** No closure crosses a program boundary
+   (a SIP boundary included), and higher-order libraries are compiled into
+   each program that uses them. Closed-world defunctionalisation is therefore
+   complete for every program IxCC compiles, and no code-pointer closure
+   representation is planned ([closures design](closures-design.md)).
+2. **Claims may carry interpretations of opaque constants.** A compile claim
+   may record a fixed meaning for an `@[extern]` opaque such as `mixHash` or
+   `System.Platform.getNumBits`, so `Std.HashMap` compiles from its Lean
+   definitions; the statement then holds relative to the recorded
+   interpretation ([DR5](data-and-roots-design.md#dr5-library-structures-and-opaque-constants)).
+3. **Stage L first.** The proof-producing translator (CD3) is built first;
+   semantic adequacy (CD4) is a research spike
+   ([certification design](certification-design.md)).
+4. **No indirect calls in compiled code.** Every call and jump IxCC emits is
+   direct; the IxOS monitor reaches SIP entries through a ledgered tender,
+   and no indirect-call row is added to the instruction table. The closure
+   design (dispatch by compare trees), the Ring-0 admission argument (no
+   indirect branch rows) and the IxOS flagship rely on this
+   ([Design decisions](compiler-design.md#design-decisions)).
 
 ## Coordination
 

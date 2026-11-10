@@ -129,7 +129,7 @@ theorem Steps.halted_rax {runtime : Runtime} {checked : Checked} {count : Nat} {
           rw [status] at halted
           cases halted
 
-/-- How an export ends (note 05 §6.1): halted with status `st` in `rax` and
+/-- How an export ends: halted with status `st` in `rax` and
 value `val` in `rdx`, the caller's callee-saved registers and stack pointer
 restored, and the caller's return address in its slot. -/
 structure Exit (core₀ : Core) (retAddr st val : Word) (after : Machine) : Prop where

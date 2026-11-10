@@ -5,10 +5,9 @@ import Lean.Data.Json.Parser
 
 /-! # Unfolding-table hints
 
-Untrusted, unauthenticated proposals for the unfolding table (design note
-01 §4.3). Every address must resolve in the closure and every proposal must
-pass its `Table.Check` check. Ordinary missing or refused hints degrade to the
-kernel body; an explicit resource checked-pair claim instead requires its
+Untrusted, unauthenticated proposals for the unfolding table. Every address must resolve in the
+closure and every proposal must pass its `Table.Check` check. Ordinary missing or refused hints
+degrade to the kernel body; an explicit resource checked-pair claim instead requires its
 equation to be selected. Names are diagnostic only. -/
 
 namespace IxCC.Src

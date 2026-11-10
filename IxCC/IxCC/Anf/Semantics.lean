@@ -3,7 +3,7 @@ import IxCC.Sem.Result
 
 /-! # Anf semantics
 
-The clocked big-step semantics of Anf (design note 02 §6.2). As in Lam, the
+The clocked big-step semantics of Anf. As in Lam, the
 clock is a **depth bound**: a charge evaluates the rest of its computation
 at `k - 1`, and sequenced computations each run at `k`.
 
@@ -13,7 +13,7 @@ at `k - 1`, and sequenced computations each run at `k`.
 * `join n rec b e` pushes a join closure (environment, join environment,
   arity, body) and evaluates `e`. `jump j as` **charges one unit** and runs
   join point `j`'s body in its own environments extended by the arguments;
-  a recursive join point sees itself at index 0 (06 S30).
+  a recursive join point sees itself at index 0.
 * `case` reads its scrutinee as a constructor (`asCtor`, with `Nat`
   literals peeling into the pinned keys) and takes the first alternative
   whose key and arity match, else the default, else stuck.
@@ -25,10 +25,10 @@ at `k - 1`, and sequenced computations each run at `k`.
   arguments, exact saturation enters the body, over-saturation enters and
   then applies the result to the rest (another charge). Charging the
   under-saturated case is what lets a Lam application, which always
-  charges, map to one `app` (a deliberate divergence from 02 §6.2, which
-  charges only at saturation and so needs extra ticks).
+  charges, map to one `app` (charging only at saturation would need
+  extra ticks).
 * `proj`, `case`, `prim` and application of □ (or of any non-closure) are
-  stuck (06 S38); `trap` traps; scope and arity errors are stuck.
+  stuck; `trap` traps; scope and arity errors are stuck.
 
 Anf never returns `resource` (`Nat` is exact). The semantics is never
 evaluated on the recheck path (D17), so it recurses well-founded on the

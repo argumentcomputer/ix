@@ -3,7 +3,7 @@ import IxCC.Xv.Syntax
 /-!
 # An allocation: the allocator's certificate
 
-What the untrusted allocator emits for one Xv function (05 §5, D17): a
+What the untrusted allocator emits for one Xv function (D17): a
 location for every operand, the moves it inserts, and the abstract state
 at each block's entry. `Alloc.apply` turns it into Xl; the validator
 re-checks it. Everything is plain data in lists, in label order, so the
@@ -14,8 +14,8 @@ or before the terminator when `i` is the body size, in order. Edge moves
 are edits too: an edge `b → s` whose target has one predecessor puts them
 first among `s`'s edits at 0; otherwise its source has one successor (no
 critical edges) and they come last among `b`'s edits before the
-terminator. This is where 05 §5's `edgeEdits` would go, so the validator
-needs no separate case (a divergence in form, not in meaning).
+terminator. A separate per-edge edit list would go here, so the validator
+needs no separate case.
 
 **Certificates** (`cert`): the facts that hold on entry to the block, after
 the incoming edge has bound its parameters and before any of its edits, as
@@ -53,7 +53,7 @@ structure Output where
   numSlots : Nat
   deriving DecidableEq, Repr, Inhabited
 
-/-- Counts of the edits, for reports (MEAS-4 wants spills, reloads and moves). -/
+/-- Counts of the edits, for reports (the backend probe reports spills, reloads and moves). -/
 structure EditCounts where
   /-- Register to stack cell. -/
   spills : Nat := 0

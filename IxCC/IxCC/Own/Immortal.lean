@@ -2,16 +2,16 @@ import IxCC.Own.Syntax
 
 /-! # The Phase 1 Own fragment
 
-Design note 03 §4.4 (phase1 M0.3): Phase 1 compiles under the immortal
+Phase 1 compiles under the immortal
 allocation policy, where the Own layer is an embedding of Fir.
 
 * `Own.immortal : Fir.Program → Own.Program` (style P, re-run on the
-  recheck path, 03 §4.5): `ctor` ↦ `alloc … shared`, `proj` ↦ Own's
+  recheck path): `ctor` ↦ `alloc … shared`, `proj` ↦ Own's
   borrowed `proj`, every other right-hand side ↦ `fir`; parameters owned
   and shared with their Fir representation, join parameters owned, shared
   and `tobj`, every `φ` empty; no clone, no region frame. No RC form is
   emitted (the syntax has none yet).
-* `Own.erase : Own.Program → Fir.Program` (03 §3.1): `alloc` ↦ `ctor`,
+* `Own.erase : Own.Program → Fir.Program`: `alloc` ↦ `ctor`,
   annotations dropped.
 * `Own.checkImmortal q` accepts exactly the fragment: it holds iff
   `Own.immortal (Own.erase q) = q` (`checkImmortal_iff`), and
@@ -57,7 +57,7 @@ def immFun (fd : Fir.Fun) : Fun :=
     result := fd.result, contracts := fd.contracts, letContracts := fd.letContracts
     vars := fd.vars, joins := fd.joins }
 
-/-- The Phase 1 embedding of Fir into Own (03 §4.4). -/
+/-- The Phase 1 embedding of Fir into Own. -/
 def immortal (p : Fir.Program) : Program :=
   { funs := p.funs.map immFun, size := p.size, exports := p.exports, ctors := p.ctors
     known := p.known }
@@ -97,7 +97,7 @@ def eraseFun (fd : Fun) : Fir.Fun :=
     result := fd.result, contracts := fd.contracts, letContracts := fd.letContracts
     vars := fd.vars, joins := fd.joins }
 
-/-- Erasure to Fir (03 §3.1): allocations become constructors, annotations
+/-- Erasure to Fir: allocations become constructors, annotations
 go. (Clones are empty in Phase 1; `checkImmortal` requires it.) -/
 def erase (q : Program) : Fir.Program :=
   { funs := q.funs.map eraseFun, size := q.size, exports := q.exports, ctors := q.ctors
@@ -138,7 +138,7 @@ def okFun (fd : Fun) : Bool :=
   !fd.regionFrame && fd.sig.result == .shared && fd.sig.params.length == fd.params.length &&
   fd.sig.params.all (fun s => s.mode == .owned && s.kind == .shared) && okCode fd.body
 
-/-- The Phase 1 checker (03 §4.4): the program is in the immortal
+/-- The Phase 1 checker: the program is in the immortal
 fragment. -/
 def checkImmortal (q : Program) : Bool := q.clones.isEmpty && mapAll okFun q.funs
 
@@ -329,7 +329,7 @@ theorem immFun_eraseFun (fd : Fun) (h : okFun fd = true) : immFun (eraseFun fd) 
       simp only [immFun, eraseFun, immCode_eraseCode body hb, map_fst_zip params _ hlen',
         map_plain_zip params sps hlen.symm hps]
 
-/-- The checker accepts exactly the image of the embedding (03 §4.4). -/
+/-- The checker accepts exactly the image of the embedding. -/
 theorem immortal_erase (q : Program) (h : checkImmortal q = true) : immortal (erase q) = q := by
   simp only [checkImmortal, Bool.and_eq_true, List.isEmpty_iff] at h
   obtain ⟨hc, hf⟩ := h

@@ -2,7 +2,7 @@ import IxCC.Anf.Walk
 
 /-! # P4: bounded specialisation
 
-`Anf.Specialize` (design note 02 §8, P4). A **decision** asks for the calls
+`Anf.Specialize` (P4). A **decision** asks for the calls
 of a global `g` from a caller `f` to be specialised on the parameters of a
 mask. At each such call site the pass
 
@@ -11,7 +11,7 @@ mask. At each such call site the pass
    (else the site is left alone);
 2. builds each masked argument's **value tree** from the caller's
    definitions in scope: constructors (never one whose contract is
-   `unique`, 06 S37), literals, function globals and local functions (whose
+   `unique`), literals, function globals and local functions (whose
    free variables are followed in turn); an unknown value is a **hole**,
    i.e. an extra parameter (Lean's abstraction), and so is every operand
    left when the tree walk runs out of fuel;

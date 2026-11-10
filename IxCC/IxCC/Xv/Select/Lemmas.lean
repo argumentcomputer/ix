@@ -6,7 +6,7 @@ import IxCC.X86.ByteFlags
 /-!
 # Selection lemmas proved now
 
-The per-rule facts that are cheap to state and prove before M2 (05 §4):
+The per-rule facts that are cheap to state and prove on their own:
 the flag producers the branch rules pick decide exactly the Lir condition.
 
 - `condX86_holds`, `swapCond_holds`: the ten comparisons are x86
@@ -18,12 +18,11 @@ the flag producers the branch rules pick decide exactly the Lir condition.
 - `test_self_flags`, `test_self_test`: `test a, a` sets the flags of
   `cmp a, 0`, so it decides every comparison with zero (rule 1).
 - `add_carry`, `sub_borrow`: `jb`/`jc` after the 64-bit `add` or `sub` row
-  is Lir's `brOvf` carry or borrow (rule 4, 06 S9).
+  is Lir's `brOvf` carry or borrow (rule 4).
 - `imm8?_low`, `immFull?_low`: a selected immediate has the Lir constant's
   low bits (rules 1, 4, 5 and 6).
 
-`Fences.Xv` pins them to the standard axioms.
--/
+`Fences.Xv` pins them to the standard axioms. -/
 
 namespace IxCC.Xv.Select
 

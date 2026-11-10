@@ -1,10 +1,10 @@
 import IxCC.Recheck.Proof.Front
 
 /-!
-# `compile_sound` and `compile_safe` from the backend half (M2.7)
+# `compile_sound` and `compile_safe` from the backend half
 
-Roadmap §1.1 at stage S, for the recheck path's front half (`runLir`), with
-the backend half as a hypothesis. **What the backend half (M2.7b) must
+The correctness statement at stage S, for the recheck path's front half (`runLir`), with
+the backend half as a hypothesis. **What the backend half must
 provide** is a refinement of the loaded Lir program by the object's
 execution:
 
@@ -39,8 +39,7 @@ From it, for every input:
   every clock or fails for a resource.
 
 `Front.GoesWrong` is stage S's disjunct: SrcEval stuck or trapping, or
-returning a value its root's readback type does not read back.
--/
+returning a value its root's readback type does not read back. -/
 
 set_option autoImplicit false
 
@@ -49,7 +48,7 @@ namespace IxCC.Recheck
 open IxCC.Sem (Obs Lang)
 open IxCC.Lam.Erase.Proof (CheckedProgram)
 
-/-- **The source goes wrong** on an input (roadmap §1.1 at stage S):
+/-- **The source goes wrong** on an input (the correctness statement at stage S):
 SrcEval is stuck or traps at some clock, or returns a value its root's
 readback type does not read back (the view rejects it; Lean's typing
 excludes it, stage S does not check it). -/
@@ -64,9 +63,9 @@ theorem source_goesWrong {f : Front} {i : Nat × List Nat} {k : Nat}
   · exact ⟨k, .inl h'⟩
   · exact ⟨k, .inr h'⟩
 
-/-- **`compile_sound`, from the backend half** (roadmap §1.1 at stage S):
+/-- **`compile_sound`, from the backend half** (the correctness statement at stage S):
 if the object's execution refines the loaded Lir program (`hback`, what
-M2.7b proves), a value it returns is the view of a value SrcEval returns, or
+`Recheck.back_refines` proves), a value it returns is the view of a value SrcEval returns, or
 the source goes wrong. -/
 theorem compile_sound {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)

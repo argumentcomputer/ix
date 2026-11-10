@@ -1,7 +1,7 @@
 import IxCC.Xv.XlSemantics
 
 /-!
-# Frame layouts (05 §6)
+# Frame layouts
 
 Stacking turns each Xl function into typed x86 with one `rsp`-relative
 frame. Seen from a body instruction (after the prologue's `sub rsp, size`):
@@ -13,7 +13,7 @@ frame. Seen from a body instruction (after the prologue's `sub rsp, size`):
 [rsp + size + 8 + 8i]           incoming stack argument inArg i
 ```
 
-The layout is certificate data (D17, 05 §1.1): an untrusted oracle
+The layout is certificate data (D17): an untrusted oracle
 (`FrameLayout.produce`) proposes it and `FrameLayout.check`, on the recheck
 path, validates it against facts computed from the function (`Func.facts`):
 every slot has a cell, cells are 8-aligned, in bounds and pairwise
@@ -23,9 +23,8 @@ function that calls keeps `rsp` 16-aligned at its calls, and the frame is
 small enough for disp32 offsets and a non-wrapping stack check. Frameless
 functions (size 0) have no cells, no outgoing arguments and no calls.
 
-Everything here is in kernel-evaluable style (00): lists, folds and
-structural recursion.
--/
+Everything here is in kernel-evaluable style (D17): lists, folds and
+structural recursion. -/
 
 namespace IxCC.Xv.Stacking
 
@@ -33,20 +32,20 @@ open IxCC.Lir (FunId Label)
 
 /-! ## Convention constants -/
 
-/-- The internal callee-saved registers an allocation may write (05 §6). The
+/-- The internal callee-saved registers an allocation may write. The
 frame pointer `rbp` and the context register `r15` are never written, so
 they are never saved. -/
 def calleeSaved : List X86.GPR := [.rbx, .r12, .r13, .r14]
 
 /-- Bytes below a checked frame that code without its own check may use: a
-frameless leaf's return address, or a small leaf's frame with it (05 §6).
+frameless leaf's return address, or a small leaf's frame with it.
 A callee skips the prologue check exactly when it makes no call and its
 frame plus return address fit in the slack. -/
 def slack : Nat := 64
 
 /-- The largest frame plus slack. Far below 2^31, so every frame offset is a
 disp32 field, and the prologue's `lea` cannot wrap while the driver keeps
-`stackLimit ≥ maxFrame + slack` (05 §6). -/
+`stackLimit ≥ maxFrame + slack`. -/
 def maxFrame : Nat := 2 ^ 20
 
 /-! ## Facts about an Xl function -/
@@ -108,7 +107,7 @@ def saves (a : Facts) : List X86.GPR := calleeSaved.filter a.writes.contains
 
 /-! ## Layouts -/
 
-/-- A frame layout (05 §6). Offsets are from `rsp` after the prologue. -/
+/-- A frame layout. Offsets are from `rsp` after the prologue. -/
 structure FrameLayout where
   /-- Bytes from `rsp` to the return address (`sub rsp, size`); 0 is frameless. -/
   size : Nat
@@ -133,7 +132,7 @@ return address. -/
 def cellOk (l : FrameLayout) (o : Nat) : Bool :=
   o % 8 == 0 && decide (8 * l.outArgs ≤ o) && decide (o + 8 ≤ l.size)
 
-/-- The recheck-path validator of a proposed layout (05 §6). -/
+/-- The recheck-path validator of a proposed layout. -/
 def check (a : Facts) (l : FrameLayout) : Bool :=
   decide (l.size + slack ≤ maxFrame) &&
   l.slotOff.length == a.slots &&
@@ -170,7 +169,7 @@ def checked (a : Facts) (l : FrameLayout) : Bool :=
 
 /-! ## What `check` guarantees -/
 
-/-- The properties `check` establishes (05 §6: disjoint, aligned, in bounds,
+/-- The properties `check` establishes (disjoint, aligned, in bounds,
 saves exact), with the coverage, alignment and size facts stacking uses. -/
 structure Sound (a : Facts) (l : FrameLayout) : Prop where
   covers : l.slotOff.length = a.slots
@@ -223,7 +222,7 @@ theorem Sound.separated {a : Facts} {l : FrameLayout} (sound : l.Sound a) {o₁ 
   omega
 
 /-- A frameless layout has no cells, no outgoing arguments, no saves and no
-calls (05 §6: frameless ↔ size 0 with no calls, slots or saves). -/
+calls (frameless ↔ size 0 with no calls, slots or saves). -/
 theorem Sound.frameless {a : Facts} {l : FrameLayout} (sound : l.Sound a) (zero : l.size = 0) :
     a.slots = 0 ∧ l.outArgs = 0 ∧ a.outArgs = 0 ∧ saves a = [] ∧ a.calls = false := by
   have noCells : l.cells = [] := by

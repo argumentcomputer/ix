@@ -4,7 +4,7 @@ import IxCC.X86.Layout.Proof.Rows
 import IxCC.X86.Layout.Proof.Tunnel
 
 /-!
-# Linearisation is a simulation (05 §7, step 3)
+# Linearisation is a simulation (layout step 3 of 3)
 
 `linearize p order` renumbers the blocks by their position in `order`,
 maps call, jump, branch and tail-call targets and the entry through the

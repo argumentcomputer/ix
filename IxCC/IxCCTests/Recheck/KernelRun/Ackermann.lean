@@ -2,7 +2,7 @@ import IxCCTests.Recheck.Artifacts.Ackermann
 import IxCCTests.Recheck.Kernel.Support
 
 /-! The whole recheck path on the `ackermann` bench-k1 artifact in the
-kernel (M1.K1): `Recheck.run` gives the object's 2,040 bytes the native run
+kernel: `Recheck.run` gives the object's 2,040 bytes the native run
 writes. Manual (about 20 s after a 40 s artifact): `lake build
 IxCCTests.Recheck.KernelSlow`. -/
 

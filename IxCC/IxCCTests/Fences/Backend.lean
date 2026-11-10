@@ -2,7 +2,7 @@ import IxCC.Xv.Stacking.Frame
 import IxCC.X86.Layout.Tunnel
 import IxCC.X86.Layout.Linearize
 
-/-! Required axiom fences for stacking and layout (M1.B5): what the frame
+/-! Required axiom fences for stacking and layout: what the frame
 layout check guarantees, that tunnelled targets are reached by executing
 empty jumps, that an inverted branch goes where the original goes, and
 that a branch's `Reach` mark (fall-through) is invisible to the typed

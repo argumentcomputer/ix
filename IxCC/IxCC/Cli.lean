@@ -6,7 +6,7 @@ import IxCC.Cfg.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
 
-/-! # The `ixcc` command line (M1.I1)
+/-! # The `ixcc` command line
 
 ```text
 ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o

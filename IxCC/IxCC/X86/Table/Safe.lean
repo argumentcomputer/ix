@@ -119,7 +119,7 @@ end Table
 
 open Table in
 /-- Every row's semantics succeeds under the row's safety precondition
-(`safe_ok`, note 05 §8.6): `div` with a nonzero divisor above the high half,
+(`safe_ok`): `div` with a nonzero divisor above the high half,
 the flag readers with their condition's flags defined, and every other row
 unconditionally. -/
 theorem Op.safe_ok (o : Op) (input : SemIn) (safe : (desc o).safe input = true) :

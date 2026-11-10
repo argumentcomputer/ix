@@ -1,7 +1,7 @@
 import IxCCTests.Src.Artifacts.Fib
 import IxCCTests.Lam.KernelK1.Front
 
-/-! The `fib` bench-k1 artifact through the front end in the kernel (M1.K1):
+/-! The `fib` bench-k1 artifact through the front end in the kernel:
 `Src.Recheck.run` (the table's revalidation, the annotation's installation
 and check, `Lazify`) and erasure, evaluated by `decide +kernel` on the loaded
 program and annotation, then one mutation per recheck step, each rejected

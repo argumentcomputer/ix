@@ -3,7 +3,7 @@ import IxCC.Anf.Proof.Lang
 
 /-! # The fundamental lemma and adequacy
 
-**Fundamental lemma** (design note 02 §7.2, M2.3): for any structural
+**Fundamental lemma**: for any structural
 value relation `R` (`Rel.Structural`), every Anf expression simulates
 itself, the source run in program `P` and the target run in program `Q`,
 from related environments and join closures, at every clock bound `n` — given

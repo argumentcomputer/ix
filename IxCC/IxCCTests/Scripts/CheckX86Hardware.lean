@@ -177,7 +177,7 @@ def compare (c : Case) (native : Native) : Except String (List String) := do
 
 /-! ## Case generation: every table row
 
-Cases enumerate `Op.rows` (note 05 §8.7). For each linear row, every
+Cases enumerate `Op.rows`. For each linear row, every
 operand slot runs through its kinds: registers (low, extended, and the
 byte-register REX codes SPL–DIL), addresses covering the SIB holes
 (`rsp`/`r12` bases), the displacement holes (`rbp`/`r13`), absolute

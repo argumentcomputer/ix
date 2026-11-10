@@ -18,11 +18,11 @@ Proof-heavy frame lemmas, end-to-end admission soundness (`verifyRing0Sip_sound`
 the non-faulting theorem `admittedRing0Sip_call_not_goesWrong`, its frame
 consequence for one call `admittedRing0Sip_call_frame`, and the conditional
 frame theorems (`multi_sip_frame`, `pairwiseDisjointSips_frame`) live in
-`IxCC.Ring0.Proof` (`A8-5`).
+`IxCC.Ring0.Proof`.
 
-## Scope and Hardware Adequacy Boundary (`A3-1..A3-9`, `A6-1`, `A6-5`, `A6-9`)
+## Scope and Hardware Adequacy Boundary
 
-1. **Instruction-Table Privilege Absence & Control-Flow Encoding (`S9`, `A3-4`)**:
+1. **Instruction-Table Privilege Absence & Control-Flow Encoding**:
    - Every row `o ∈ X86.Op.rows` and every entry in `X86.Table.index` is checked
      at the opcode-descriptor level (`!EncDesc.isPrivilegedOrSystemOpcode (X86.desc o).enc`)
      to exclude privileged, system-control, interrupt, and port-I/O opcodes
@@ -31,12 +31,14 @@ frame theorems (`multi_sip_frame`, `pairwiseDisjointSips_frame`) live in
      `wrmsr`/`rdmsr`, legacy `in`/`out`, `cli`/`sti`, `hlt`, `int`, `iret`).
    - Every control-flow row in `X86.Op.rows` uses direct PC-relative 32-bit
      displacement (`OpEn.D32` for `call`, `jmp`, `jcc`) or `OpEn.ZO` (`ret`),
-     with zero indirect branch rows (`jmp r/m64` or `call r/m64`). Note that
+     with zero indirect branch rows (`jmp r/m64` or `call r/m64`); keeping it so
+     is a standing design constraint (decision D20 in
+     `IxCC/docs/compiler-design.md`). Note that
      `ret` pops its target from the stack frame; stack-slot integrity is a
      semantic property established by the backend simulation proof (`Recheck.sound`
      / `RcReplay.sound`), not by `Stream.check` alone.
 
-2. **Certified-Compilation Admission & Driver Checking (`S2`, `S4`, `A3-1`, `A3-9`)**:
+2. **Certified-Compilation Admission & Driver Checking**:
    - `Ring0Sip.verifyProgram` runs `CompileClaim.verifyProgram` (which replays
      the full compiler certificate via `Recheck.run`, `Recheck.runWithContracts`,
      or `Recheck.RcReplay.run` and checks `elfHash`, `target`, `abiArity`, and
@@ -45,7 +47,7 @@ frame theorems (`multi_sip_frame`, `pairwiseDisjointSips_frame`) live in
      unverified external hypothesis.
    - `Ring0Sip.verifyBytes` defaults to `typecheck := true` (`Ixon.V3.Tc.checkEnv`).
 
-3. **Hardware Assumptions Outside the Byte Model (`A3-3`, `A3-5`, `A3-6`)**:
+3. **Hardware Assumptions Outside the Byte Model**:
    - The `X86.ByteEval` / `X86.ObjectEval` model represents user-visible registers
      and a permission-checked byte memory `D.mapped` with separate instruction
      fetch from `text : ByteArray`. It has no page tables, interrupts, exceptions,
@@ -102,7 +104,7 @@ def category : Mnemonic → MnemonicCategory
   | .call | .jmp | .jcc _ | .ret => .directControlFlow
 
 /-- Total classifier witnessing that every constructor of `X86.Mnemonic` belongs
-to the unprivileged user-mode vocabulary. Note (`A3-4`): because `X86.Mnemonic`
+to the unprivileged user-mode vocabulary. Note: because `X86.Mnemonic`
 only defines unprivileged constructors, the substantive opcode-byte privilege
 exclusion check is `EncDesc.isPrivilegedOrSystemOpcode` over `(X86.desc o).enc`. -/
 def isUnprivileged (m : Mnemonic) : Bool :=
@@ -122,7 +124,7 @@ def isUnprivileged (m : Mnemonic) : Bool :=
 
 end Mnemonic
 
-/-- Genuine opcode-byte check (`S9`, `A3-4`, `A6-9`): returns `true` iff the
+/-- Genuine opcode-byte check: returns `true` iff the
 encoding descriptor `(enc.map, enc.opcode)` matches any x86-64 privileged,
 system-control, interrupt, or port-I/O opcode in the Intel SDM:
 - Two-byte map (`0F`):
@@ -171,7 +173,7 @@ def Op.isDirectControlOrData (o : Op) : Bool :=
 
 namespace Driver
 
-/-- Executable decision procedure for `Driver.Ok textSize` (`A3-9`). -/
+/-- Executable decision procedure for `Driver.Ok textSize`. -/
 def checkOk (D : Driver) (textSize : Nat) : Bool :=
   decide (D.region.toNat % 8 = 0) &&
   decide (4096 ≤ D.size.toNat) &&
@@ -184,7 +186,7 @@ def checkOk (D : Driver) (textSize : Nat) : Bool :=
     D.region.toNat + D.size.toNat + 56 + D.budget.toNat ≤ D.sp.toNat) &&
   decide (textSize ≤ (D.ret - D.base).toNat)
 
-/-- Executable decision procedure for `Driver.CanonicalOk textSize` (`A3-9`). -/
+/-- Executable decision procedure for `Driver.CanonicalOk textSize`. -/
 def checkCanonical (D : Driver) (textSize : Nat) : Bool :=
   D.checkOk textSize &&
   decide ((D.base.toNat + textSize ≤ D.region.toNat ∨ D.region.toNat + D.size.toNat ≤ D.base.toNat) ∧
@@ -227,8 +229,7 @@ open IxCC.X86 (Word GPR Width Memory Core Registers Op Mnemonic Arg Slot Implici
 
 set_option maxRecDepth 32768 in
 /-- No row in the 243-row x86-64 instruction table `X86.Op.rows` has an opcode
-descriptor matching any privileged, system-control, interrupt, or I/O instruction
-(`S9`, `A3-4`, `A6-9`). -/
+descriptor matching any privileged, system-control, interrupt, or I/O instruction. -/
 theorem op_rows_no_privileged_opcode :
     X86.Op.rows.all (fun o => !(X86.desc o).enc.isPrivilegedOrSystemOpcode) = true := by
   decide
@@ -345,7 +346,7 @@ def ExternalDisjoint (D : X86.Driver) (layout : X86.WordRegion.Layout) : Prop :=
 
 /-- Four aligned 64-bit word regions (`pml4`, `pdpt`, `pd`, `pt`) representing
 protected kernel table memory (such as a `CR3` 4-level page-table hierarchy)
-disjoint from a SIP's `D.mapped` region (`A3-5`).
+disjoint from a SIP's `D.mapped` region.
 Note: `X86.Memory` models permissions directly via `readable`/`writable` maps
 rather than walking hardware PTE bits; `KernelRegionLayout.Preserved` proves
 that any execution confined to `D.mapped` leaves all bytes and 64-bit slots of
@@ -358,7 +359,7 @@ structure KernelRegionLayout where
   pt   : X86.WordRegion.Layout
   cr3_eq : cr3 = pml4.base
 
-/-- Backwards-compatible alias for `KernelRegionLayout` (`A3-5`). -/
+/-- Backwards-compatible alias for `KernelRegionLayout`. -/
 abbrev KernelPageTables := KernelRegionLayout
 
 namespace KernelRegionLayout
@@ -436,7 +437,7 @@ def verifiedTextSize? (sip : Ring0Sip) (P : Src.Program) : Option Nat :=
 
 /-- Verify `sip.claim` against `P` and `sip.certText` in a single certificate
 replay pass and return `some a.backend.encoded.text.size` on success, or `none`
-on failure (`N11`). -/
+on failure. -/
 def verifyProgramWithTextSize? (sip : Ring0Sip) (P : Src.Program) : Option Nat :=
   if sip.claim.checkWellFormed then
     match P.roots.head? with
@@ -495,7 +496,7 @@ def verifyProgramWithTextSize? (sip : Ring0Sip) (P : Src.Program) : Option Nat :
 
 /-- Verify a `Ring0Sip`'s compilation claim AND its canonical driver contract
 (`sip.driver.checkCanonical textSize`) against a `Src.Program` in a single
-certificate replay pass (`A3-9`, `N11`). Precondition, as for `Recheck.run`:
+certificate replay pass. Precondition, as for `Recheck.run`:
 the program came from ingress or passed `Recheck.checkSrc`. -/
 def verifyProgram (sip : Ring0Sip) (P : Src.Program) : Bool :=
   match sip.verifyProgramWithTextSize? P with
@@ -504,7 +505,7 @@ def verifyProgram (sip : Ring0Sip) (P : Src.Program) : Bool :=
 
 /-- Verify a `Ring0Sip`'s compilation claim and canonical driver contract from
 raw `.ixe` environment bytes and sidecar equations JSON.
-Defaults `typecheck := true` (`S4`, `A3-2`) and enforces canonical relevance (`Stage A`). -/
+Defaults `typecheck := true` and enforces canonical relevance (`Stage A`). -/
 def verifyBytes (sip : Ring0Sip) (envBytes : ByteArray) (equations : Lean.Json)
     (typecheck : Bool := true) : Bool :=
   match Recheck.ingress envBytes equations

@@ -2,7 +2,7 @@ import IxCC.Sem.Smallstep
 import IxCC.Sem.Transform
 import IxCCTests.Sem.Toy.Cases
 
-/-! Required axiom fences for the shared semantic framework (M2.1): clock
+/-! Required axiom fences for the shared semantic framework: clock
 monotonicity and behaviours, clocked simulation and the divergence lemma,
 refinement and certificate-taking passes, and the small-step core; then the
 toy pipeline that exercises them end to end. Expected messages are preserved

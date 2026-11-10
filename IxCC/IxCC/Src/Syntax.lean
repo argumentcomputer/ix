@@ -5,9 +5,8 @@ import IxCC.Src.Resource.Syntax
 
 /-! # Src syntax
 
-The first IR of the rebuilt pipeline (design note `plans/x86-v2/01-src.md`
-§2): the resolved, table-free reading of a Tc-typed Ixon closure, with the
-relevance annotation (note 02 §3) written into its binders, arguments and
+The first IR of the rebuilt pipeline: the resolved, table-free reading of a Tc-typed Ixon closure,
+with the relevance annotation written into its binders, arguments and
 lets, and the evaluation modes that `Src.Lazify` sets.
 
 Relevance is level-exact (D18): every annotated position carries a `Rel`
@@ -20,9 +19,9 @@ identity (`CRef`, Ix.Kernel's `ConstRef` shape) and its v3 address. Src is not
 content-addressed. Contracts are carried exactly and never read by the
 semantics (D16).
 
-The program, its table and its declarations are kernel-evaluable data (D17,
-note 01 §1.2): persistent `NatMap`s over `CId` and lists, never arrays or
-hash maps, so the recheck path reads them by structural recursion. -/
+The program, its table and its declarations are kernel-evaluable data (D17): persistent `NatMap`s
+over `CId` and lists, never arrays or hash maps, so the recheck path reads them by structural
+recursion. -/
 
 namespace IxCC.Src
 
@@ -46,10 +45,9 @@ inductive Mode where
   | byName
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
-/-- Relevance class of a binder, argument, let or constructor field (note 02
-§3.1), level-exact (D18): `proof when` is a proof exactly where `when` holds
-and relevant elsewhere (`proof .never` is written `rel`); a `type` is
-irrelevant at every instance. -/
+/-- Relevance class of a binder, argument, let or constructor field, level-exact (D18): `proof when`
+is a proof exactly where `when` holds and relevant elsewhere (`proof .never` is written `rel`); a
+`type` is irrelevant at every instance. -/
 inductive Rel where
   | rel
   | proof (when : PropWhen)
@@ -81,7 +79,7 @@ end Rel
 structure Binder where
   /-- Written contract: carried, never read. -/
   contract : V3.BinderContract := {}
-  /-- Untrusted relevance annotation of the parameter (note 02). -/
+  /-- Untrusted relevance annotation of the parameter. -/
   rel : Rel := .rel
   /-- When this λ is a proof (the A1 guard): the zero condition of its
   codomain's sort. -/
@@ -159,7 +157,7 @@ structure ConstEntry where
   decl : Decl
   deriving Repr, Inhabited
 
-/-- Nat primitives with a native meaning (note 01 §3.4). -/
+/-- Nat primitives with a native meaning. -/
 inductive PrimOp where
   | add | sub | mul | div | mod | pow | gcd | beq | ble
   | land | lor | xor | shiftLeft | shiftRight | pred
@@ -205,7 +203,7 @@ inductive FieldSrc where
   | proof
   deriving BEq, DecidableEq, Repr, Inhabited
 
-/-- Derived recursor kind (note 01 §4.1), per universe profile (D18): a
+/-- Derived recursor kind, per universe profile (D18): a
 `subsingleton when` recursor is a subsingleton eliminator where `when` holds
 (its inductive is a proposition there) and an ordinary one elsewhere; for
 `PUnit.{u}.rec` it is `u = 0`, for `Eq.rec` always. -/
@@ -241,7 +239,7 @@ structure Table where
   recKind : NatMap RecKind := .leaf
   /-- By-name arity of `lazy` constants, consumed by `Src.Lazify`. -/
   lazy : NatMap Nat := .leaf
-  /-- Inliner hints for 02; no semantic effect. -/
+  /-- Inliner hints for the middle end; no semantic effect. -/
   inline : NatSet := .leaf
   /-- D12 allowlist: opaques evaluated through their value (`Lean.opaqueId`). -/
   opaqueByValue : NatSet := .leaf
@@ -257,7 +255,7 @@ def isOpaqueByValue (t : Table) (c : CId) : Bool := t.opaqueByValue.contains c
 
 end Table
 
-/-- `CId`s of the pinned constants present in the program (note 01 §4.2). -/
+/-- `CId`s of the pinned constants present in the program. -/
 structure Known where
   nat : Option CId := none
   natZero : Option CId := none
@@ -268,7 +266,7 @@ structure Known where
   boolFalse : Option CId := none
   eq : Option CId := none
   /-- `Decidable.isFalse`/`isTrue`: erasure retags them as `Bool.false`/`true`
-  (note 02 §4.1, D19). -/
+  (D19). -/
   decIsFalse : Option CId := none
   decIsTrue : Option CId := none
   deriving Repr, Inhabited
@@ -397,7 +395,7 @@ def lamCount : Term → Nat
   | _ => 0
 
 /-- Syntactic equality ignoring contracts, modes and annotations (the
-equality of the table checks, note 01 §4). -/
+equality of the table checks). -/
 def eqv : Term → Term → Bool
   | .var i, .var j => i == j
   | .sort u, .sort v => u == v

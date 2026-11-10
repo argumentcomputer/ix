@@ -4,7 +4,7 @@ import IxCC.Lir.Graph
 /-!
 # Well-formed Xv
 
-Decidable conditions on Xv programs (05 §3), checked on selection's output
+Decidable conditions on Xv programs, checked on selection's output
 and assumed by the allocator. Validator soundness does not rely on them.
 
 1. **Shape**, as for Lir: `main` and every callee exist with matching
@@ -31,8 +31,7 @@ and assumed by the allocator. Validator soundness does not rely on them.
    then its definitions; the terminator's uses, its definitions, then the
    edge arguments).
 6. **Context stores:** no `Base.ctx` store may reach `entrySp` or
-   `stackLimit` (`ctx − 64`, `ctx − 56`), as at Lir (05 §6.1).
--/
+   `stackLimit` (`ctx − 64`, `ctx − 56`), as at Lir. -/
 
 namespace IxCC.Xv
 

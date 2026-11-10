@@ -4,7 +4,7 @@ import IxCC.Lam.Semantics
 /-! # SrcEval and Lam values, related
 
 The relation that erasure's simulation keeps between SrcEval's values,
-slots and environments and Lam's (design note 02 §5.2, M2.2). Closures and
+slots and environments and Lam's. Closures and
 partial applications are included, related up to erasure's context map
 (`Cx`: which Src variable lives at which Lam binder level, or is □).
 
@@ -24,7 +24,7 @@ partial applications are included, related up to erasure's context map
   profile does (D18).
 * `MinorsOk cx ρ`: a variable bound to an `r⋆` minor that is dispatched with
   by-name IHs holds a thunk of a λ-telescope at least as long as the
-  dispatch (S25), so by-name arguments only ever meet λ binders. -/
+  dispatch, so by-name arguments only ever meet λ binders. -/
 
 set_option autoImplicit false
 

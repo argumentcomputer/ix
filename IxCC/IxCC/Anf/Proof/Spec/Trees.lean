@@ -10,7 +10,7 @@ level the prologue rebuilds (`needed`), or a level known to hold a literal.
 Every rebuilt level's own operands are covered in turn (`NeedOk`: a
 constructor's fields, a local function's free variables), hole sources read
 levels in scope (`TreesOk`), and every unmasked parameter has a hole
-(`siteTrees_ok`) (M2.3). -/
+(`siteTrees_ok`). -/
 
 set_option autoImplicit false
 

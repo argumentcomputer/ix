@@ -86,7 +86,7 @@ big    pointer to a cell:           header (scan 0, a kind tag above Rt.maxTag, 
   is at least 2^63 and returns an immediate when it is not. `pred`,
   subtraction and the `Nat.succ` peel of `case` can demote.
 - **Literals.** A literal at or above 2^63 becomes a static immortal cell in
-  read-only data (the statics of [D1](data-and-roots-design.md#d1-heap-completion)),
+  read-only data (the statics of [DR1](data-and-roots-design.md#dr1-heap-completion)),
   replacing today's `fail natOverflow` at the literal.
 - **Mutation.** A unique operand with enough capacity is overwritten in
   place; a shared one is copied. The cell has no scanned fields, so
@@ -97,9 +97,9 @@ big    pointer to a cell:           header (scan 0, a kind tag above Rt.maxTag, 
 
 ## What the library needs from earlier phases
 
-- **Raw 64-bit limbs** ([D2](data-and-roots-design.md#d2-fixed-width-integers-and-int)).
+- **Raw 64-bit limbs** ([DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)).
 - **Arrays of `UInt64` with in-place update under uniqueness**
-  ([D3](data-and-roots-design.md#d3-arrays-and-byte-arrays)).
+  ([DR3](data-and-roots-design.md#dr3-arrays-and-byte-arrays)).
 - **Three word primitives**, new pinned definitions of the library whose
   Lean bodies are their meaning, each with a conservativity lemma:
   add with carry (`UInt64 → UInt64 → Bool → UInt64 × Bool`), the full
@@ -140,12 +140,12 @@ Three layers, of which the third is the hard one.
 2. **Compiler theorem for the library program.** IxCC's existing pipeline
    theorems, instantiated at the library's Src program, give "the compiled
    routines refine SrcEval of the library", through the array data
-   refinement of D3.
+   refinement of DR3.
 3. **SrcEval computes the Lean definitions.** Layer 1 speaks about the Lean
    functions; layer 2 about SrcEval running the library's Ixon image. Linking
    them is source adequacy for this one program, which no theorem provides
    today ([certification design](certification-design.md), S8). The planned
-   route is the stage-L translator (C3 there) applied to the library's
+   route is the stage-L translator (CD3 there) applied to the library's
    closure, which is small, first order and monomorphic. The fallback is a
    direct proof per routine by symbolic evaluation of `Src.run`.
 
@@ -187,22 +187,20 @@ hardware-differential gate.
 
 ## Dependencies
 
-D1 (cells with scalar payload), D2 (raw words and the word primitives), D3
-(arrays, uniqueness), D1 again for static cells, and C3 of the
+DR1 (cells with scalar payload), DR2 (raw words and the word primitives), DR3
+(arrays, uniqueness), DR1 again for static cells, and CD3 of the
 certification design for layer 3.
 
 ## Size [estimate]
 
-- Stage 1 library with layer-1 proofs: 6–10k lines. Basis: CakeML's
-  verified bignum library (schoolbook and Algorithm D) with about 2.3k proof
-  lines plus 2.6k for its integration, as surveyed in the pre-merge numerics
-  research (untracked); our proofs are stated against `Nat` rather than
-  machine words, and carry normal-form invariants.
+- Stage 1 library with layer-1 proofs: 6–10k lines. Basis: about a dozen
+  routines, each a few hundred lines of code and proof, with Algorithm D the
+  largest.
 - Representation, slow-path calls, readback and the `Rt.lower` proofs: 3–6k,
   against `Rt/` (21.9k today).
 - Stage 2 algorithms: 5–10k more; recursive division and divide-and-conquer
-  conversion are the hardest, 2–3k each by the same survey.
-- Layer 3 is counted under C3.
+  conversion are the hardest, about 2–3k each.
+- Layer 3 is counted under CD3.
 
 ## Performance expectations
 

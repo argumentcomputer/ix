@@ -7,7 +7,7 @@ A by-name binder's dispatch signature comes from how the δ body of a `lazy`
 constant applies that parameter, which erasure does not constrain (a `lazy`
 hint needs only a safe definition with enough leading λs), so erasure checks
 its output with ANF's own checker (`erase-modes`). `erase_modesOk` states
-the result both as the checker's verdict and as `ModesOkSpec` (M2.2). -/
+the result both as the checker's verdict and as `ModesOkSpec`. -/
 
 set_option autoImplicit false
 

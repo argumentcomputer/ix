@@ -1,7 +1,7 @@
 import IxCC.Src.Recheck
 import IxCC.Lam.Erase
 
-/-! The front end as the kernel evaluates it on K1 artifacts (M1.K1, M2.8):
+/-! The front end as the kernel evaluates it on K1 artifacts:
 `Src.Recheck.run` (the table's revalidation, the annotation's installation
 and check, `Lazify`) followed by erasure to Lam, and the facts the
 `KernelK1` modules assert about its result. -/

@@ -1,7 +1,7 @@
 import Lean
 import IxCC.Tools.Check
 
-/-! Generator for `fixtures/ixon-v4/src-tables.tsv` (design note 01 §4.2).
+/-! Generator for `fixtures/ixon-v4/src-tables.tsv`.
 
 It enumerates `@[macro_inline]` declarations over the Lean `Init`
 environment of the running toolchain (excluding the generated `T.ctorIdx`
@@ -23,8 +23,7 @@ lake exe pin-src-tables --ix PATH/TO/ix --work plans/<task>/src-tables \
 
 `--diagnostics fixtures/ixon-v4/src-diag` and `--sortpoly
 fixtures/ixon-v4/src-sortpoly` instead compile a roots-only fixture from the
-Lean source in that directory.
--/
+Lean source in that directory. -/
 
 open Lean IxCC.Tools.Check
 
@@ -38,7 +37,7 @@ def extraLazy : List Name := [`Bool.or, `Bool.and]
 def opaqueByValue : List Name := [`Lean.opaqueId]
 
 /-- Names resolved for tests only (`src-names.tsv`, an untrusted test oracle:
-the relevance census of design note 02 §13.1 and runtime-set reports). -/
+the relevance census and runtime-set reports). -/
 def censusNames : List Name :=
   [`Eq, `Eq.rec, `HEq, `HEq.rec, `And, `And.rec, `Acc, `Acc.rec, `Acc.intro, `True, `True.rec,
    `False, `False.rec, `Empty, `Empty.rec, `Exists, `Exists.rec, `Fin, `Subtype, `BitVec,

@@ -3,7 +3,7 @@ import IxCCTests.Fir.Support
 import IxCC.Xv.Semantics
 import IxCC.Xv.XlSemantics
 
-/-! Every level agrees (M1.I2): each K1 program, as the compiler compiled it
+/-! Every level agrees: each K1 program, as the compiler compiled it
 (`Recheck.compileInput`: one artifact holds every level `run` made), on its
 test input, at
 

@@ -1,6 +1,6 @@
 import IxCCTests.Src.Support
 
-/-! K1 on the eqn route (design note 01 §10 part 3). Each run's clock budget
+/-! K1 on the eqn route. Each run's clock budget
 is `16 ×` Lean's call count (counted by instrumented native twins); the
 suite also reports the least clock that succeeds on small inputs, and a
 fallback row with no `eqn` entries (brecOn and `WellFounded.fix`). -/

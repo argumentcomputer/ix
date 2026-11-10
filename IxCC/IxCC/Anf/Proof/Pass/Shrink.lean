@@ -12,7 +12,7 @@ applies one more round to the globals with more than `i` certified rounds
 a configuration that reads the program as every stage does (constructors,
 arities), so each stage refines the previous (`WalkProg.refines`), and the
 last stage has the output's globals. Hence every certificate the re-run
-accepts gives a program that refines the input (`run_refines`, M2.3). -/
+accepts gives a program that refines the input (`run_refines`). -/
 
 set_option autoImplicit false
 

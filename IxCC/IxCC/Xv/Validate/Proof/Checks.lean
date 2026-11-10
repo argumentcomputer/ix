@@ -5,10 +5,9 @@ import IxCC.Xv.Validate.Proof.State
 /-!
 # What the operand checks establish
 
-`operandCode c ps row = none` (the validator's per-instruction checks,
-05 §5) decoded into propositions (`OperandFacts`), and, for a row whose
-operands are paired with their locations, the facts the row simulation
-needs (`rowFacts_of_checks`): every operand's location is usable and meets
+`operandCode c ps row = none` (the validator's per-instruction checks) decoded into propositions
+(`OperandFacts`), and, for a row whose operands are paired with their locations, the facts the row
+simulation needs (`rowFacts_of_checks`): every operand's location is usable and meets
 its constraint, a tie's definition shares its use's location (`tie_loc`),
 definitions are distinct, early definitions avoid the uses, and the row's
 stack cells fit the scratch registers it does not name.

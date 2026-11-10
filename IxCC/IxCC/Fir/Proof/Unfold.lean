@@ -5,7 +5,7 @@ import IxCC.Sem.Agrees
 
 One equation per rule of `Fir.eval`, `evalAlts` and `evalCall`, with every
 sequencing step written as `Result.bind`, every charge as `Sem.later` and
-every partial lookup as `Result.ofOption` (decision D-1, M2.4). Clock
+every partial lookup as `Result.ofOption` (decision D-1). Clock
 monotonicity (`Fir.Proof.Mono`), the Anf → Fir simulation and the Fir → Own
 refinement reason through these equations only. -/
 

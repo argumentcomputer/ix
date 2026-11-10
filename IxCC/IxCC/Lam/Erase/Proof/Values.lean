@@ -5,7 +5,7 @@ import IxCC.Lam.Erase.Proof.Rel
 
 Inverting `VR` on constructors, reading kept fields through `KeptR`, the
 kept index `unbox?` derives, constructor keys under the `Decidable ↦ Bool`
-alias, and the primitives' agreement (M2.2). -/
+alias, and the primitives' agreement. -/
 
 set_option autoImplicit false
 

@@ -7,8 +7,7 @@ to related arguments simulates. A closure of the same code enters the same
 body (the fundamental lemma below `n`, `Rel.app_idc`); a walked closure
 (`walkc`) enters the source body and its walk, one clock down, under the
 environment the closure records (the walk's simulation below `n`); the
-rest of the arguments are applied at `n` (induction on their number)
-(M2.3). -/
+rest of the arguments are applied at `n` (induction on their number). -/
 
 set_option autoImplicit false
 

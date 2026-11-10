@@ -10,7 +10,7 @@ symbols (one per export root), and a mandatory IxCC provenance
 note.  It emits no program headers, dynamic-linking metadata, debug
 surface, or arbitrary sections.
 
-Like the E0 instruction encoder, this executable writer is not yet connected
+Like the instruction encoder, this executable writer is not yet connected
 to a kernel-checked ELF parser/linker theorem.  `readelf`, `objdump`, and a
 native link/run fixture provide independent staging evidence.
 -/

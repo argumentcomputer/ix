@@ -6,7 +6,7 @@ import IxCC.Sem.SimUpTo
 `Term.apps h args` evaluates the head, then each argument's slot (`argSlot`:
 strict arguments evaluated, `name` ones suspended) and applies, left to
 right (`eval_apps`); `Term.lams` evaluates to a closure. With the clock
-monotonicity of each piece, for the erasure simulation (M2.2). -/
+monotonicity of each piece, for the erasure simulation. -/
 
 namespace IxCC.Lam
 

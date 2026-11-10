@@ -4,7 +4,7 @@ import IxCCTests.Rt.Cases
 import IxCCTests.Lam.Differential
 import IxCC.CompileClaim
 
-/-! The compiler (M1.I1): the `ixcc` command line on the fixtures,
+/-! The compiler: the `ixcc` command line on the fixtures,
 `produce` + `Recheck.run` against the stage suites' pipelines, the
 certificate's serialisation, and the declines.
 
@@ -404,7 +404,7 @@ def compileClaims (a : Assert) : IO String := do
       CompileClaim.ofClaimBytes vecClaim.toClaimBytes == some vecClaim &&
       CompileClaim.ofPayloadBytes vecClaim.toPayloadBytes == some vecClaim)
     "CompileClaim: deterministic 102-byte wire vector (#[0xE8, 0x05, 0x04, 0x06, ...]) and roundtrip"
-  -- `abiArity` is ix's `N0` code (B4-2). ix's `Tests/Ix/Claim.lean` pins the same
+  -- `abiArity` is ix's `N0` code. ix's `Tests/Ix/Claim.lean` pins the same
   -- vectors: one byte below 128, then the TagN rungs; `80 80` is 256 (IxCC's former
   -- Tag0 spelling of 128); the invalid code `C4` and the code of `2 ^ 64` are refused.
   let arityClaimBytes (arity : List UInt8) : ByteArray :=

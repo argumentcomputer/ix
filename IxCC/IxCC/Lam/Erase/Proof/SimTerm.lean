@@ -8,7 +8,7 @@ structural recursion on the derivation, mutually with a spine's arguments
 (applied one by one, or evaluated for a primitive), a saturated head's
 bound arguments and a constructor's fields. Every rule of SrcEval meets its
 Lam counterpart at the same clock, except that Lam may spend more
-(wrappers, delayed minors), which `SimUpTo.laterR` absorbs (M2.2). -/
+(wrappers, delayed minors), which `SimUpTo.laterR` absorbs. -/
 
 set_option autoImplicit false
 -- The mutual block shares its section hypotheses; not every member uses each.

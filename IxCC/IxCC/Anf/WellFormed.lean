@@ -2,7 +2,7 @@ import IxCC.Anf.Syntax
 
 /-! # Anf well-scopedness
 
-`Anf.WellScoped P` (design note 02 §6.2), decided by `wellScoped` with an
+`Anf.WellScoped P`, decided by `wellScoped` with an
 iff lemma. `Exp.WS S Γ Δ e` holds when every value variable of `e` is below
 the value depth `Γ`; every jump targets a join point of `Δ` (the arities of
 the join points in scope, innermost first) with that many arguments; `call`s
@@ -17,7 +17,7 @@ A program is well scoped when every global `0 … size - 1` is present with a
 body over its parameters, keys are pairwise distinct (D19), the constructor
 table has distinct keys, roots are in range and the pinned keys have their
 arities. `FirstOrder` (no `fn`, no `app`, no `glob` of a function global) is
-what the Anf → Fir boundary accepts in Phase 1 (02 §8). -/
+what the Anf → Fir boundary accepts in Phase 1. -/
 
 namespace IxCC.Anf
 
@@ -114,7 +114,7 @@ def Bind.WS (S : Sig) (Γ : Nat) : Bind → Prop
   | .app f as => f.WS Γ ∧ as ≠ [] ∧ Atom.WSList Γ as
   | .fn ps b => ps ≠ [] ∧ Exp.WS S (Γ + ps.length) [] b
 
-/-- `WellScoped Γ Δ e` (02 §6.2). -/
+/-- `WellScoped Γ Δ e`. -/
 def Exp.WS (S : Sig) (Γ : Nat) (Δ : List Nat) : Exp → Prop
   | .bind _ b e => b.WS S Γ ∧ Exp.WS S (Γ + 1) Δ e
   | .join n r b e => Exp.WS S (Γ + n) (if r then n :: Δ else Δ) b ∧ Exp.WS S Γ (n :: Δ) e
@@ -257,7 +257,7 @@ def firstOrder (P : Program) : Bool :=
   let isFn := fun g => (P.arity? g).any (· > 0)
   P.globalList.all fun (_, gd) => gd.body.firstOrder isFn
 
-/-- `Anf.FirstOrder` (02 §6.1): P8's output, and the fragment Phase 1's Fir
+/-- `Anf.FirstOrder`: P8's output, and the fragment Phase 1's Fir
 accepts. -/
 def FirstOrder (P : Program) : Prop := firstOrder P = true
 

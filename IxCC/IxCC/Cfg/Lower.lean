@@ -4,8 +4,8 @@ import IxCC.Fir.Lower
 
 /-! # Own → Cfg (`Cfg.lower`)
 
-Design note 03 §7: structured Own code becomes blocks. Style P on the
-recheck path (proved once, re-run, 03 §4.5), so kernel-evaluable (D17):
+Structured Own code becomes blocks. Style P on the
+recheck path (proved once, re-run), so kernel-evaluable (D17):
 structural recursion, lists and `Src.NatMap`.
 
 * Straight-line `bind`s go into the current block; a call stays an
@@ -14,7 +14,7 @@ structural recursion, lists and `Src.NatMap`.
   block whose parameters are `ps` (variables of the enclosing scope are
   visible by dominance: the block defining `j` dominates `j`'s block). A
   jump from `k` is a forward edge; a jump from `j`'s own body (recursive
-  `j`) is a **back edge** (06 S30).
+  `j`) is a **back edge**.
 * `case x alts d` ends the block with a `switch`; each arm is a new block.
 * A self `tcall` is a back edge to block 0 with the arguments as its
   parameters; other tail calls stay `tcall`s.
@@ -115,7 +115,7 @@ def function (f : FunId) (fd : Own.Fun) : Fun :=
 
 end Lower
 
-/-- Own → Cfg (03 §7). -/
+/-- Own → Cfg. -/
 def lower (q : Own.Program) : Program :=
   { funs := Src.NatMap.ofList (q.funList.map fun (f, fd) => (f, Lower.function f fd))
     size := q.size, exports := q.exports, ctors := q.ctors, known := q.known }

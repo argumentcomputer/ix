@@ -8,7 +8,7 @@ import IxCC.Backend
 
 /-! # Declines and rejections of the compiler
 
-Every way the compiler stops (M1.I1) names the stage that stopped it and a
+Every way the compiler stops names the stage that stopped it and a
 code, rendered as `stage: code: message`. The codes are the stages' own:
 Src's `Diag` codes (`decode`, `typing`, `relevance-C2`, `admit` codes, …),
 erasure's `EraseError.code` (`erase-const-kind`, `erase-string`,

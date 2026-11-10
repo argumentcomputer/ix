@@ -2,7 +2,7 @@ import IxCC.Lam.Erase.Proof.Bind
 
 /-! # Globals, projections and by-name variants
 
-The pieces of the term simulation (M2.2) that need no recursion on the
+The pieces of the term simulation that need no recursion on the
 erasure: a global's body, the spine steps of an application, a projection's
 continuation (dropped, unboxed or keyed field), and a by-name variant's
 leading arguments, which meet only the λs of its δ body. -/

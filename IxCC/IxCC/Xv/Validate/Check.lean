@@ -4,14 +4,14 @@ import IxCC.Xv.Alloc.Apply
 /-!
 # The allocation validator
 
-`Validate.func env p fi f o` checks an allocation `o` of Xv function `f`
-(05 §5): a forward pass over each block from its certificate, through the
+`Validate.func env p fi f o` checks an allocation `o` of Xv function `f`:
+a forward pass over each block from its certificate, through the
 edits and instructions, with local checks on every edge instead of a
 fixpoint. It accepts only allocations whose Xl code (`Alloc.apply f o`)
-runs in lock-step with `f`; its soundness (`Validate.sound`,
-`program_sound`) is M2 work. It assumes nothing about the allocator, and
+runs in lock-step with `f`; its soundness is proved
+(`Validate.sound`, `Validate.program_sound`). It assumes nothing about the allocator, and
 nothing about `f` beyond its operand metadata (`Inst.operands`, derived
-from the table rows by M1.B3).
+from the table rows).
 
 **Per instruction** (`stepInst`), on the state before it:
 1. every use, early or late, finds its register at its location
@@ -23,7 +23,7 @@ from the table rows by M1.B3).
 3. constraints: `reg` a register, `any` a register or cell, `stack` a
    cell, `fixed r` exactly `r`, `reuse i` the location of use `i`, which
    must be an early use;
-4. aliasing (05 §3): distinct definitions (as registers and as
+4. aliasing: distinct definitions (as registers and as
    locations), early definitions off every use location (gap 4), late uses
    off every definition location;
 5. Xl's remaining stuck cases: a row's stack cells must fit the scratch
@@ -32,7 +32,7 @@ from the table rows by M1.B3).
    seven arguments; a move is never cell to cell;
 6. the row runs the same in any registers (`rowShapeOk`): no stack
    traffic and no 8- or 16-bit write-only register destination outside a
-   fused consumer (found by the soundness proof, M2.6: such a write keeps
+   fused consumer (found by the soundness proof: such a write keeps
    the old high bits of its location, which Xv's fresh register does not
    have; `Xv.WellFormed` already excludes both).
 
@@ -51,11 +51,10 @@ stuck (a borrowed victim register saved while empty, for instance).
 also be below the entry convention's state (gap 2: no `Top`). Nothing
 follows a terminator (gap 7); the code checked is the code `apply` builds.
 Gap 6 (trusted operand descriptions) is closed where the metadata is
-derived (M1.B3).
+derived.
 
 The whole pass recurses structurally over lists and uses `NatMap`, so the
-kernel can evaluate it (D17, M1.K1).
--/
+kernel can evaluate it (D17). -/
 
 namespace IxCC.Xv.Validate
 

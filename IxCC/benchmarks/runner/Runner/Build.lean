@@ -19,7 +19,7 @@ compiler's own suites and costs 35–40 s on two closures). A decline or
 rejection is recorded as the row's status, with the compiler's
 `stage: code: message`, and the row is left out. All C of the entry profile
 (driver, adapters, twins) is compiled with `cc` and the same flags, without
-the nixpkgs wrapper's hardening (`NIX_HARDENING_ENABLE=`), as MEAS-4 does. -/
+the nixpkgs wrapper's hardening (`NIX_HARDENING_ENABLE=`), as the early backend probe does. -/
 
 namespace Runner
 
@@ -286,7 +286,7 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
   cc o "-O2" ["-c", (here / "tagged.c").toString, "-o", (common / "tagged.o").toString]
   objdump (common / "twins.o") (out / "asm" / "clang-tagged" / "twins.txt")
   objdump (common / "tagged.o") (out / "asm" / "clang-tagged" / "tagged.txt")
-  -- MEAS-4's hand-written kernels, when the probe is given
+  -- The early backend probe's hand-written kernels, when the probe is given
   let mut statuses : Array Status := #[]
   let mut compiles : Array Json := #[]
   if let some probe := o.probe then

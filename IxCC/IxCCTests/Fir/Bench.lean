@@ -8,7 +8,7 @@ manifest.json`) through Fir, Own and Cfg, against `expected.txt`, with the
 sizes of each entry's program at every level. Cfg is small-step, so it runs
 `sum-loop` 10⁶ in process; Fir and Own are big-step evaluators whose depth
 follows the loop, so `sum-loop` runs there in a child process with a larger
-Lean stack (`--entry NAME LEVEL`). K1 allocates nothing (02 §13.4): the final
+Lean stack (`--entry NAME LEVEL`). K1 allocates nothing: the final
 Own and Cfg heaps are empty. -/
 
 namespace IxCCTests.Fir.Bench

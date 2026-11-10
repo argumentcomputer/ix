@@ -9,7 +9,7 @@ a key, once given an id, keeps it. So a result can be specified against
 any key relation `G` that contains the table at the end of the run
 (`Sound x Q`): every id erasure hands out for a key is related to it by
 `G`, whatever keys are added later. The combinators follow the monad's
-`pure`, `bind`, `throw`, conditionals and `mapM` (M2.2). -/
+`pure`, `bind`, `throw`, conditionals and `mapM`. -/
 
 set_option autoImplicit false
 

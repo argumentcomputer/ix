@@ -1,7 +1,7 @@
 import IxCCTests.Fir.Gen
 import IxCCTests.Support.Repro
 
-/-! # Ladders for LamGen and FoGen (MT.5)
+/-! # Ladders for LamGen and FoGen
 
 The first-diverging-level ladders of the two generators whose programs go
 through the middle end and Fir, Own and Cfg (`IxCCTests.Support.Repro`):
@@ -9,7 +9,7 @@ through the middle end and Fir, Own and Cfg (`IxCCTests.Support.Repro`):
 * **LamGen** (`Support.LamGen.gen`): the reference is Lam (`Lam.run`); then
   Anf after P1 and after each step of `Anf.Pipeline.produce`; then Fir, Own
   (immortal) and Cfg when the last Anf stage has no closures left (`Fir.lower`
-  declines the rest, 06 `fir.closures`). Inputs `0`, `2`, `5`, as `tests-fir`'s
+  declines the rest with `fir.closures`). Inputs `0`, `2`, `5`, as `tests-fir`'s
   LamGen part. Lam runs at clock 3000 and every later level at 64·3000 + 1
   (Lam → Anf adds one per root; the later passes keep or lower the clock).
 * **FoGen** (`Fir.Gen.programTy`): the reference is the generated Anf

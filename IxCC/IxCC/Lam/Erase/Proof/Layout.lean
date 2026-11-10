@@ -3,9 +3,9 @@ import IxCC.Src.Proof.Unfold
 
 /-! # Erasure's input against SrcEval
 
-Facts relating erasure's reading of a program (`Erase.Input`) to SrcEval's
-(M2.2): the input reads the program's own maps; constructor layouts do not
-depend on the universe profile (one layout per constructor, S46); special
+Facts relating erasure's reading of a program (`Erase.Input`) to SrcEval's:
+the input reads the program's own maps; constructor layouts do not
+depend on the universe profile (one layout per constructor); special
 heads have the arities SrcEval gives them; δ and special heads are what
 `evalConst` evaluates. Also `ProgWF`, the structural well-formedness of the
 Src program the simulation assumes (ingress guarantees it; erasure decides

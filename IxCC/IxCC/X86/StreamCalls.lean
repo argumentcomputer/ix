@@ -303,7 +303,7 @@ the machines related; the typed step also drops the ghost frames above the
 reloaded stack pointer, and the frames it keeps are a suffix, so their
 physical return slots stay mapped. The mask is unchanged: the row writes no
 memory, and the dropped frames' slots stay masked until ordinary writes
-clear them (note 05 §6.1). -/
+clear them. -/
 theorem unwind_progress {checked : Checked} {output : Encode.Output} {externals : ExternalTargets}
     (valid : Valid checked.program output externals) (runtime : Runtime) (machine : Machine)
     (base : Word) (holes : Holes) (state : ByteEval.State) (related : Related checked.program base holes machine state)

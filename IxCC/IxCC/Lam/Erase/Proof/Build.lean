@@ -9,7 +9,7 @@ table) under which every global of `L` has the key it is named by and a
 head's wrapper (`RootR`), `L`'s pinned constructors are the input's, and
 `Nat.succ`'s field is kept: the setting of the erasure simulation. The
 queue loop keeps every allocated key either erased or queued, so at its
-end every key is erased (M2.2). -/
+end every key is erased. -/
 
 set_option autoImplicit false
 

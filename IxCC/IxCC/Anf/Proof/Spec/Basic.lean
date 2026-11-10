@@ -4,7 +4,7 @@ import IxCC.Anf.Proof.Pass.Prune
 /-! # P4: the pass's state and what a caller's definitions say
 
 The specialiser (`Anf.Specialize`, P4) runs in `StateT St (Except String)`;
-these lemmas invert a successful run (M2.3). A state keeps a dense program
+these lemmas invert a successful run. A state keeps a dense program
 with at least the input's ids (`StOk`); a later state keeps the
 specialisations of an earlier one (`Grows`), and the output program has
 those of every state of the run (`Pre`).

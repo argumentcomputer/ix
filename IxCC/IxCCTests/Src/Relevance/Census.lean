@@ -1,9 +1,9 @@
 import IxCCTests.Src.Support
 import IxCC.Tools.Check
 
-/-! The relevance census on `k1.ixe` (design note 02 §13.1): annotate and
+/-! The relevance census on `k1.ixe`: annotate and
 check the runtime closure of the five K1 roots, report each reached
-constant, and assert the facts the note lists. Constant names come from the
+constant, and assert the expected classifications. Constant names come from the
 untrusted, test-only `src-names.tsv` (the same ix run as `src-tables.tsv`). -/
 
 namespace IxCCTests.Src.Relevance.Census
@@ -29,7 +29,7 @@ def relName : Rel → String
   | .proof (.allZero ps) => s!"proof when {ps} are zero"
   | .type => "type"
 
-/-- A deterministic JSON line per reached constant (SRC-9). -/
+/-- A deterministic JSON line per reached constant. -/
 def report (l : Loaded) : Json :=
   let p := l.program
   Json.arr (l.checked.reached.toArray.map fun c =>

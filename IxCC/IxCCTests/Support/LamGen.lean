@@ -4,18 +4,16 @@ import IxCC.Lam.Syntax
 /-!
 # Generated Lam programs
 
-Well-formed, `ModesOk` Lam programs for the middle-end tests (design note 02
-§13 item 5): closures and partial application, by-name arguments (a by-name
-global's thunks), constructors (`Nat` peeling, `Bool`, a pair, an option),
-`case` with and without defaults, projections, primitives, `tick`, `trap`,
+Well-formed, `ModesOk` Lam programs for the middle-end tests: closures and partial application,
+by-name arguments (a by-name global's thunks), constructors (`Nat` peeling, `Bool`, a pair, an
+option), `case` with and without defaults, projections, primitives, `tick`, `trap`,
 recursion through globals (bounded by a decreasing `Nat` in the loop
 template, unbounded elsewhere, so some runs time out) and □ in head,
 projection, scrutinee and primitive positions, which must be stuck at every
-level (06 S38). Each program also has three templates the passes should
+level. Each program also has three templates the passes should
 transform: a loop with a fixed higher-order parameter (P4), a dictionary
 CAF (P3, P2) and a by-name conditional (P1's thunks, P2's β). Programs are
-determined by their seed.
--/
+determined by their seed. -/
 
 namespace IxCCTests.Support.LamGen
 

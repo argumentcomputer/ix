@@ -5,7 +5,7 @@ import IxCC.X86.Layout.Proof.Transport
 /-!
 # The emitted object ends as Xl does
 
-`emitted_ends`: 05 §6.2's conclusion for an emitted object's checked
+`emitted_ends`: the backend's conclusion for an emitted object's checked
 program, under the entry invariant (`Stacking.Proof.EntryInv`): the
 stacking simulation (`Stacking.Proof.stacked_ends`) transported through
 tunnelling and linearisation (`Layout.Proof.transport`, `transport_end`).
@@ -34,7 +34,7 @@ theorem statusOf_code (failure : Sem.Resource) :
     UInt64.ofNat (Stacking.statusOf failure) = X86.ObjectEval.Resource.code failure := by
   cases failure <;> rfl
 
-/-- **05 §6.2 for an emitted object**: under the entry invariant, the
+/-- **The backend's conclusion for an emitted object**: under the entry invariant, the
 emitted checked program's run from `main`'s wrapper ends as `main`'s
 clocked Xl run does, with the timeout bound `k / (B + 1)`. -/
 theorem emitted_ends {l : LProgram} {cfg : Config} {art : Artifact} {input : X86.ELF.Input}

@@ -1,10 +1,10 @@
 import IxCC.Rt.Readback
 
-/-! Required axiom fences for the Phase 1 runtime (M1.F6): the word and
+/-! Required axiom fences for the Phase 1 runtime: the word and
 header encodings (immediates are odd and halve back, the immortal header's
 scan and tag fields decode, the first object is aligned past the context
 block) and the readback of immediates and cells. `Rt.lower_correct` and
-`Rt.readback_sound` (M2.5) will join them. Expected messages are preserved
+`Rt.readback_sound` will join them. Expected messages are preserved
 verbatim. -/
 
 /-- info: 'IxCC.Rt.natWord_toNat' depends on axioms: [propext, Quot.sound] -/

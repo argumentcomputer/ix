@@ -10,8 +10,7 @@ only at the end (`Output.ofLists`), from lists the kernel then reads back
 by projection. `encode` concatenates and patches `ByteArray`s, whose
 reference definitions copy the whole text through `Array.extract` at every
 append (quadratic in the kernel, and `Array` indexing is linear there too).
-`encodeK_eq` proves the two equal (M1.K1, design note 00).
--/
+`encodeK_eq` proves the two equal. -/
 
 namespace IxCC.X86.Encode
 

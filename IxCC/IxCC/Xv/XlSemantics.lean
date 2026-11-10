@@ -4,23 +4,23 @@ import IxCC.Lir.Operands
 /-!
 # Xl semantics
 
-Xl is Xv over locations (05 §3): registers, a frame's slots, and its
+Xl is Xv over locations: registers, a frame's slots, and its
 incoming and outgoing stack-argument cells. Registers are global
 (`GPR → Option Word`); each frame owns its cells. Labels, calls and the
 clock are Xv's, so allocation's edits (moves) are ordinary steps that the
 clock ignores, and Xv and Xl time out at the same clock.
 
-**Calls** re-derive CompCert's `return_regs` (05 §3): a call's arguments
+**Calls** re-derive CompCert's `return_regs`: a call's arguments
 must sit in the convention's locations (`rdi rsi rdx rcx r8 r9 r10`, then
 outgoing cells, which become the callee's incoming cells), and its results
 in `rax rdx`. The callee starts with only its arguments defined. On return
 the caller sees the results, `none` in the callee's clobber set
 (`Env.clobbers`, every caller-saved register unless a runtime procedure
-declares fewer, 04 §7), and its own values elsewhere, which covers the
+declares fewer), and its own values elsewhere, which covers the
 callee-saved registers; its outgoing cells are gone. So the allocator never
 reasons about saving registers, and Stacking proves the callee-saved
 registers are restored. A tail call passes register arguments only (stack
-arguments force a call and a return, 05 §6).
+arguments force a call and a return).
 
 **Rows** run through the same executor as Xv, with each register location
 as itself. A stack cell in an r/m slot borrows a scratch register the
@@ -30,11 +30,10 @@ at width 64, where a register write and an 8-byte memory write agree (a
 narrower definition must be `reg`, `Xv.Operands`). A tied definition must
 sit at its use's location, an implicit operand at its fixed register,
 address registers must be registers, and no operand may be `rsp`, `rbp` or
-the context register `r15` (05 §5). A fused `setcc` zeroes its destination
+the context register `r15`. A fused `setcc` zeroes its destination
 register first, as its expansion's `xor` does, so that register must not
 hold any of the pair's uses (an early definition). Any other case is
-`stuck`, which the validator's constraint checks exclude.
--/
+`stuck`, which the validator's constraint checks exclude. -/
 
 namespace IxCC.Xv.Xl
 
@@ -56,7 +55,7 @@ structure Env where
   clobbers : FunId → List X86.GPR := fun _ => X86.SysV.callerSaved.toList
 
 /-- Registers no Xl operand may name: the stack pointer, the frame pointer
-(never written, 05 §6) and the context register. -/
+(never written) and the context register. -/
 def reserved (r : X86.GPR) : Bool := r == .rsp || r == .rbp || r == .r15
 
 /-- The internal convention.s argument registers (seven) and result registers (two). -/

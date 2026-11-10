@@ -2,7 +2,7 @@ import IxCC.X86.Layout.Basic
 import IxCC.X86.Eval
 
 /-!
-# Tunnelling (05 §7, step 1)
+# Tunnelling (layout step 1 of 3)
 
 A jump or branch to an empty block that only jumps on is redirected to
 where the chain of such blocks ends, so a failure site reaches its
@@ -13,7 +13,7 @@ block (the fuel), so an empty cycle ends somewhere on the cycle. The
 redirected-around blocks stay in the program until the block order drops
 them as unreachable.
 
-Tunnelling is a proved-once, re-run pass (P, 05 §1.1). What it preserves
+Tunnelling is a proved-once, re-run pass (style P). What it preserves
 is `ChainTo`: every redirected target is reached from the old one by
 executing empty jumps (`chase_chain`), each of which is one typed step
 that changes only the PC (`step_emptyJump`, `run_chain`). The designs are

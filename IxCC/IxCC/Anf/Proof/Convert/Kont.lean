@@ -6,7 +6,7 @@ Conversion is in continuation-passing style: a term is converted with a
 continuation (`Kont`) that is `ret`, a jump to a join point, or a
 meta-continuation producing the rest of the target code once the value's
 operand is known. Its simulation relates the target code to the *source*
-computation followed by a source continuation `SK` (P1, M2.3):
+computation followed by a source continuation `SK` (P1):
 
 * `KontR n dj k SK ρ' J'`: `ret` returns a related value; `jump l` jumps to
   a one-parameter join closure whose body simulates `SK`; a

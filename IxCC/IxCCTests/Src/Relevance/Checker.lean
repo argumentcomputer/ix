@@ -1,9 +1,8 @@
 import IxCCTests.Src.Support
 import IxCC.Src.Relevance.Check
 
-/-! The relevance checker's rules on synthetic programs (design note 02
-§3.3): an accepted baseline, and one violation per rule, each rejected with
-that rule's code; then the level-exact rules (D18): each decided at the
+/-! The relevance checker's rules on synthetic programs: an accepted baseline, and one violation per
+rule, each rejected with that rule's code; then the level-exact rules (D18): each decided at the
 instance's universe profile, with one constant reached at two profiles. -/
 
 namespace IxCCTests.Src.Relevance.Checker

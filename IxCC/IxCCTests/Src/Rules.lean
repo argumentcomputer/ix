@@ -1,7 +1,7 @@
 import IxCCTests.Src.Support
 import IxCC.Src.Lazify
 
-/-! One synthetic program per SrcEval rule (design note 01 §3.2, §10 part 1),
+/-! One synthetic program per SrcEval rule,
 with stuck and trap cases, the lazy and by-name behaviours, and an
 executable clock-monotonicity check on generated terms. -/
 
@@ -194,7 +194,7 @@ def rules (a : Assert) : IO Unit := do
   expectNat a (ev w 5 (app (c b.sub) [lit 3, lit 5])) 0 "F6 truncated sub"
   expectOutcome a (ev w 5 (app (c b.beq) [lit 3, lit 3])) s!"ok con {b.btrue}/0" "F6 beq gives Bool.true"
   expectOutcome a (ev w 5 (app (c b.add) [lit 3, .sort .zero])) "stuck" "F6 non-literal argument"
-  -- F7, F8, F9: quotients.
+  -- F7, F8: quotients; `Quot.ind` and `Quot` itself are stuck (labelled F9 below).
   let mk := app (.const b.quotMk [.succ .zero]) [irrArg, irrArg, lit 20]
   expectOutcome a (ev w 5 mk) s!"ok con {b.quotMk}/1" "F7 Quot.mk"
   expectNat a (ev w 5 (appM (.const b.quotLift [.succ .zero, .succ .zero])
@@ -277,7 +277,7 @@ def genTerm (w : World) : Nat → Nat → Gen → Term × Gen
     | _ => let (n, g) := g.next 10; (.natLit n, g)
 
 /-- For random terms and clocks `k ≤ k'`: a non-timeout outcome at `k` is
-the outcome at `k'` (01 §6.1 `eval_mono`, executable). -/
+the outcome at `k'` (`eval_mono`, executable). -/
 def evalMono (a : Assert) (samples : Nat := 2000) : IO Unit := do
   let w := world
   let mut g : Gen := { seed := 20260929 }

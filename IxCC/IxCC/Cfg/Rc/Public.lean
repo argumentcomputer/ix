@@ -5,7 +5,7 @@ set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
 
 /-- Exact caller-saved clobber sets for the generated RC runtime procedures
-and markers (Design Note 04 §7 / 06 S15). -/
+and markers. -/
 def Layout.clobbers (l : Layout) (base : Xv.Xl.Env) (fn : Lir.FunId) : List X86.GPR :=
   if fn == l.incWrapper then [.rax, .r11]
   else if fn == l.decWrapper then [.rax, .rcx, .rdx, .rsi, .rdi, .r11]

@@ -3,7 +3,7 @@ import IxCC.Sem.Result
 
 /-! # Lam semantics
 
-The clocked big-step semantics of Lam (design note 02 §4.2), with the same
+The clocked big-step semantics of Lam, with the same
 slot discipline and the same clock as SrcEval: the clock is a **depth
 bound**, charged at a `name`-slot read, a `glob` (δ), closure entry (β) and
 `tick`, so erasure can be clock-exact wherever it keeps SrcEval's charges.
@@ -22,10 +22,10 @@ bound**, charged at a `name`-slot read, a `glob` (δ), closure entry (β) and
   stuck.
 * `prim` evaluates its arguments left to right, then needs literals.
 * `tick t` charges one unit; `box` is □; `trap` traps.
-* **□ is stuck** under `apply`, `proj`, `case` and `prim` (06 S38): no
+* **□ is stuck** under `apply`, `proj`, `case` and `prim`: no
   absorption, as in SrcEval.
 
-Lam never returns `resource`: `Nat` is exact (06 S19). The semantics is
+Lam never returns `resource`: `Nat` is exact. The semantics is
 never evaluated on the recheck path (D17), so it recurses well-founded on
 `(k, size)` like SrcEval. -/
 

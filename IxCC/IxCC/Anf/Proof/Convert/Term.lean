@@ -2,7 +2,7 @@ import IxCC.Anf.Proof.Convert.Spine
 
 /-! # ANF conversion: terms
 
-`conv` at `fuel + 1`, one case per Lam construct (P1, M2.3): variables
+`conv` at `fuel + 1`, one case per Lam construct (P1): variables
 (a value passed on, or a thunk forced), globals (a CAF's value one clock
 down; a function global's closure behind a `tick` for Lam's δ charge), λs
 (an `fn` closure), application spines, `let`, constructors and primitives

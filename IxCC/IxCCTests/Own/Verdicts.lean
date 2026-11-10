@@ -1,6 +1,6 @@
 import IxCCTests.Corpus.Build
 
-/-! # The producer's verdicts on the annotated sources (MT.7)
+/-! # The producer's verdicts on the annotated sources
 
 `fixtures/ownership/verdicts.json`, format `ixcc/own-verdicts/1`: one
 record per annotated source of the ownership suite (and per negative probe),
@@ -131,8 +131,8 @@ def between (s start stop : String) : Option String :=
   | _ :: rest :: _ => some ((rest.splitOn stop).headD "")
   | _ => none
 
-/-- The verdict of a failed `ix compile` from its log (as
-`plans/fixtures/ix-usage-ownership/verdict.sh` reads it). -/
+/-- The verdict of a failed `ix compile` from its log (as the verdict
+script of the ix usage-ownership fixtures reads it). -/
 def parseLog (log : String) : Producer :=
   if (log.splitOn "resource admission").length > 1 then
     let constant := ((between log "Hash(\\\"" "\\\"").getD "").take 12 |>.toString
@@ -142,7 +142,7 @@ def parseLog (log : String) : Producer :=
     let rest := (between log "SourceContractError." " ").getD ""
     let code := String.ofList (rest.toList.takeWhile Char.isAlphanum)
     { verdict := "reject", stage := "elaboration", code }
-  -- the profile's refusals before admission (ix's review restrictions R2-3, R2-2)
+  -- the profile's refusals before admission (restrictions ix added after a review)
   else if (log.splitOn "is an annotated recursive definition").length > 1 then
     { verdict := "reject", stage := "profile", code := "annotated-recursion" }
   else if (log.splitOn "has a native implementation").length > 1 then

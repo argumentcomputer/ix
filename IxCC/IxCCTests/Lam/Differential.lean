@@ -6,8 +6,7 @@ import IxCCTests.Src.SortPoly
 import IxCCTests.Fixtures.K1
 import IxCCTests.Fixtures.SortPoly
 
-/-! SrcEval against Lam on the Phase 1 fixtures (design note 02 §13 items 1
-and 3):
+/-! SrcEval against Lam on the Phase 1 fixtures:
 
 * **k1.ixe and each bench-k1 closure**, with every first-order constant of
   the closure as an extra root (as the stuck-cause census selects them: no

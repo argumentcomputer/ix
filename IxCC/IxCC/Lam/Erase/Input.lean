@@ -3,7 +3,7 @@ import IxCC.Lam.Syntax
 
 /-! # Erasure input
 
-What erasure reads from a checked Src program (design note 02 §2, §5.1):
+What erasure reads from a checked Src program:
 the program's and the check's persistent `Nat`-keyed maps and lists (D17),
 taken as they are (building the input costs nothing), so erasure indexes no
 array on its path. Every query decides relevance at a universe profile (D18):
@@ -106,9 +106,8 @@ def fieldless (k : CId) : Bool :=
   | some fs => fs.all (·.alwaysDropped)
   | none => false
 
-/-- `Decidable.isFalse`/`isTrue` retagged as `Bool.false`/`true` (note 02
-§4.1, D19) when all four constructors are pinned and the `Decidable` one
-keeps no field (its proof), so both keys have the same layout. -/
+/-- `Decidable.isFalse`/`isTrue` retagged as `Bool.false`/`true` (D19) when all four constructors
+are pinned and the `Decidable` one keeps no field (its proof), so both keys have the same layout. -/
 def alias (c : CId) : CId :=
   match I.known.decIsFalse, I.known.decIsTrue, I.known.boolFalse, I.known.boolTrue with
   | some df, some dt, some bf, some bt =>
@@ -117,7 +116,7 @@ def alias (c : CId) : CId :=
 
 def ctorKey (c : CId) : Key.CtorKey := .src (I.alias c)
 
-/-- The term SrcEval evaluates for δ on `c` (note 01 §3.2, E8): the `csimp`
+/-- The term SrcEval evaluates for δ on `c` (E8): the `csimp`
 target, the `eqn` body, or the value of a safe definition or an
 allowlisted opaque; `none` for special heads and constants without one. -/
 def deltaBody (c : CId) : Option Src.Term :=
@@ -193,7 +192,7 @@ namespace Input
 
 variable (I : Input)
 
-/-- A constant's result contract (06 S35). -/
+/-- A constant's result contract. -/
 def resultContract (c : CId) : Ixon.V3.ValueContract :=
   ((I.decl? c).map (lastRes ·.type)).getD .shared
 

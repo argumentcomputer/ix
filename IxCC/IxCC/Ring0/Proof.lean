@@ -21,7 +21,7 @@ Proves:
    `multi_sip_frame`, `pairwiseDisjointSips_frame`) that
    completes within the model's `D.mapped` permission map preserves every byte
    outside `D.mapped` bit-for-bit.
-   - Note (`A3-2`, `A3-5`, `A3-6`): These frame theorems are conditional
+   - Note: These frame theorems are conditional
      preservation lemmas over runs that succeed (`.ok`) in `X86.Memory` (where
      stores outside `D.mapped` fail `Memory.write?`); they hold for any object.
      Absence of model faults for admitted SIPs, on source-safe inputs
@@ -33,8 +33,8 @@ Proves:
    the rechecked artifact `a` (`Recheck.run` / `Recheck.runWithContracts` /
    `Recheck.RcReplay.run`), `Recheck.front`, `CompileClaim.rootParamsAllNat`,
    `root.ty = some (sig, ty)`, `sip.driver.CanonicalOk a.backend.encoded.text.size`,
-   `Sem.Refines`, and `Ring0Safety` (`S2`, `A3-1`, `A6-1`).
-4. **Admitted-SIP Absence of Faults (`S3`, `A3-2`, `A6-5`)**:
+   `Sem.Refines`, and `Ring0Safety`.
+4. **Admitted-SIP Absence of Faults**:
    `admittedRing0Sip_call_not_goesWrong` proves that for any `sip` passing
    `sip.verifyProgram P = true`, the objects `Ring0Sip.artifact?` determines from
    the certificate satisfy: on any source-safe input `i` (`¬ GoesWrong i`),
@@ -81,7 +81,7 @@ theorem step_rip_inText (D : X86.Driver) {text : ByteArray} {state next : X86.By
    a valid block offset in `program.blocks` and every fall-through landing on
    the adjacent block boundary (`stream_targets_valid_block`, `stream_falls_valid_block`),
 3. Any `ByteEval.step` executes at `state.rip` inside `D.inText output.text.size`.
-Note (`A3-4`): `ret` is an indirect control transfer that pops its return address
+Note: `ret` is an indirect control transfer that pops its return address
 from `[rsp]`; return-slot integrity is guaranteed by the backend frame simulation
 (`Recheck.sound` / `RcReplay.sound`). -/
 theorem stream_check_cfi (D : X86.Driver) {program : X86.Program}
@@ -606,7 +606,7 @@ theorem session_runCalls_validTrace_frame {s : X86.DriverSession.Session} {textS
               fun addr hunmapped => (hrel addr hunmapped).trans (hb addr hunmapped)⟩)
     hrun
 
-/-- Conditional `DriverSession` frame theorem (`A3-2`): any `Session.runCalls`
+/-- Conditional `DriverSession` frame theorem: any `Session.runCalls`
 execution that returns `.ok output` preserves every byte outside `s.linked.driver.mapped`
 across the call sequence and at every intermediate event. -/
 theorem session_runCalls_preserves_unmapped {s : X86.DriverSession.Session} {textSize : Nat}
@@ -661,7 +661,7 @@ theorem session_run_preserves_unmapped {s : X86.DriverSession.Session} {textSize
 /-- Under `D.CanonicalOk textSize`, `.text` addresses `[D.base, D.base + textSize)`
 are disjoint from `D.mapped` (`textApart`), so no data store in `Session.runCalls`
 modifies `bytes addr` for `inText textSize addr = true`.
-Note (`A3-6`): In `ByteEval`, instruction fetch reads the immutable `text : ByteArray`
+Note: In `ByteEval`, instruction fetch reads the immutable `text : ByteArray`
 while data stores update `Memory.bytes`; hardware W^X (see the assumptions in `IxCC.Ring0`)
 identifies the two in unified physical memory. -/
 theorem text_preserved_of_canonicalOk {s : X86.DriverSession.Session} {textSize : Nat}
@@ -797,7 +797,7 @@ theorem kernelTablesPreserved_of_session_run {s : X86.DriverSession.Session}
   KernelRegionLayout.preserved_of_unmapped hdisj
     (session_run_preserves_unmapped hD hrun).1
 
-/-! ## 3. Non-Vacuous Ring-0 Certified-Compilation Admission (`S2`, `S3`, `A3-1`, `A3-2`, `A6-1`, `A6-5`) -/
+/-! ## 3. Non-Vacuous Ring-0 Certified-Compilation Admission -/
 
 /-- Ring-0 properties of a rechecked artifact's `CheckedProgram`, `view`,
 `GoesWrong`, `program`, `encoded`, and `linked = a.linked sip.driver`. The fields
@@ -858,7 +858,7 @@ structure Ring0Safety (sip : Ring0Sip) (checkedProg : CheckedProgram)
       (∀ kpt : KernelRegionLayout, kpt.DisjointFromDriver sip.driver →
         kpt.Preserved bytes output.bytes)
 
-/-- **Strong Non-Vacuous Ring-0 Certified-Compilation Admission Proposition (`S2`, `A3-1`, `A6-1`)**:
+/-- **Strong Non-Vacuous Ring-0 Certified-Compilation Admission Proposition**:
 Explicitly binds the parsed certificate `cert` and the rechecked artifact `a`
 produced by `Recheck.run` (for `.immortal`), `Recheck.runWithContracts` (for `.zeroRc`),
 or `Recheck.RcReplay.run` (for `.plainRc`) on `P`, pinning `checkedProg`, `view`,
@@ -978,7 +978,7 @@ theorem ring0Safety_of_parts {sip : Ring0Sip} {checkedProg : CheckedProgram}
 
 /-- Single-pass `Ring0Sip.verifyProgram` is logically equivalent to
 `CompileClaim.verifyProgram` together with `sip.driver.checkCanonical` on
-`sip.verifiedTextSize? P` (`N11`). -/
+`sip.verifiedTextSize? P`. -/
 theorem verifyProgramRing0Sip_iff (sip : Ring0Sip) (P : Src.Program) :
     sip.verifyProgram P = true ↔
       CompileClaim.verifyProgram sip.cfg P sip.claim sip.certText = true ∧
@@ -1055,7 +1055,7 @@ theorem verifyProgramRing0Sip_iff (sip : Ring0Sip) (P : Src.Program) :
 /-- **End-to-End Ring-0 Certified-Compilation Admission Theorem (`verifyRing0Sip_sound`)**:
 Any `Ring0Sip` that passes `sip.verifyProgram P = true` (under `.immortal`,
 `.zeroRc`, or `.plainRc` policy) satisfies the non-vacuous `AdmittedRing0Sip sip P`
-(`S2`, `A3-1`, `A3-9`, `A6-1`).
+.
 It holds for every `P`; that the check runs within an 8 MiB stack assumes
 `P` came from ingress (`Recheck.run`'s precondition). -/
 theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
@@ -1126,7 +1126,8 @@ annotation is exactly `Src.Relevance.annotate inp.env { inp.program with table }
 (`Recheck.checkCanonicalRelevance_iff`, for the certificate `sip.certText` parses to under
 the claim's policy). Its program satisfies the non-vacuous `AdmittedRing0Sip sip inp.program`.
 As for `CompileClaim.verifyBytes_*_sound`, these facts bind `a.src` to
-`(inp.env, cert.table)`; they do not relate it semantically to `inp.program` (S6). -/
+`(inp.env, cert.table)`; they do not relate it semantically to `inp.program` (open item S6 in
+`IxCC/docs/certification-design.md`). -/
 theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
     {equations : Lean.Json} {typecheck : Bool}
     (hver : sip.verifyBytes envBytes equations typecheck = true) :
@@ -1295,7 +1296,7 @@ theorem Ring0Artifact.safe_of_ring0Safety {sip : Ring0Sip} {A : Ring0Artifact}
   · intro kpt hkpt drop inputs bytes k output hcalls
     exact (hsafe.session_frame drop inputs bytes k output hcalls).2.2 kpt hkpt
 
-/-- **Admitted SIPs do not fault on source-safe inputs (`S3`, `A3-2`, `A6-5`).**
+/-- **Admitted SIPs do not fault on source-safe inputs.**
 A SIP passing `sip.verifyProgram P` has the artifact its certificate determines
 (`Ring0Sip.artifact?`), and that artifact satisfies `Ring0Artifact.Safe`: on an
 input with `¬ A.GoesWrong i`, the linked call from `cx_init` never faults or traps
@@ -1306,7 +1307,7 @@ The objects are functions of `sip` and `P`, and the certificate in `sip` decides
 checked source, and so `GoesWrong`, only within what the front end accepts: its
 relevance annotation must pass `Relevance.check` and `Relevance.checkCanonical`,
 which `Recheck.front` runs on every program, and its table entries must pass
-`Table.ofCert`. (R1's hostile retag of a program with no pinned identities, which
+`Table.ofCert`. (A hostile retag of a program with no pinned identities, which
 made `GoesWrong` hold, is refused: `IxCCTests.Recheck.Hostile.pinFree`.) No theorem
 states that `GoesWrong` is the same for every certificate these checks accept;
 `Ring0Sip.verifyBytes` also requires the annotation to be the canonical annotator's
@@ -1442,7 +1443,7 @@ theorem pairwiseDisjointSips_frame {sips : List X86.Driver}
     have hdisj := hfamily.2 sips[i] hmem addr hk
     exact hunm addr (hs ▸ hdisj)
 
-/-- **Admitted SIP Step/Run Frame Theorem (`N3`)**:
+/-- **Admitted SIP Step/Run Frame Theorem**:
 For any SIP passing `sip.verifyProgram P = true`, its unique artifact `A`
 (`sip.artifact? P = some A`) satisfies `FramePreserved` across any single step
 and any multi-step `runTo` execution that does not fault. Both frame conjuncts
@@ -1579,7 +1580,7 @@ theorem admittedRing0Sip_call_frame {sip : Ring0Sip} {P : Src.Program}
     rw [hdrv] at this
     exact this
 
-/-- **Admitted Two-SIP Coexistence & Frame Theorem (`N3`)**:
+/-- **Admitted Two-SIP Coexistence & Frame Theorem**:
 Connecting `sip₁.verifyProgram P₁ = true` and `sip₂.verifyProgram P₂ = true`
 with `DisjointDrivers sip₁.driver sip₂.driver` and `DisjointFromKernel` directly
 to `CoexistingSipPair` and `multi_sip_frame`. -/

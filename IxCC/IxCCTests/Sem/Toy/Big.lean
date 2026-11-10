@@ -3,8 +3,8 @@ import IxCC.Sem.Transform
 /-!
 # A toy big-step language for the semantic framework
 
-The first of three levels that exercise `IxCC.Sem` end to end
-(M2.1): a first-order language of one-argument functions over exact `Nat`,
+The first of three levels that exercise `IxCC.Sem` end to end:
+a first-order language of one-argument functions over exact `Nat`,
 with a *depth* clock as Src through Own use. A call or a `tick` evaluates
 its body one clock level down; `timeout` means the depth ran out.
 
@@ -12,8 +12,7 @@ its body one clock level down; `timeout` means the depth ran out.
 evaluates callee bodies and ticked expressions at the next level down. Both
 recursions are structural. `evalAt_agree` and `evalAt_dom` compare two
 clock levels (or two programs) whose `below`s agree, and give clock
-monotonicity (`eval_mono`) here and tick dominance in `Toy.Tick`.
--/
+monotonicity (`eval_mono`) here and tick dominance in `Toy.Tick`. -/
 
 namespace IxCCTests.Sem.Toy
 

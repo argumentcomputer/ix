@@ -5,8 +5,7 @@ import IxCC.Lam.Erase.Proof.Spec
 
 Given a sound recursive call (`RecSound`), `strictArgs`, `bindArgs`,
 `refTerm` and `minorApp` produce `ArgsR`, `BindR`, `RefR` and `MinorR`
-derivations against every key relation containing the final table
-(M2.2). -/
+derivations against every key relation containing the final table. -/
 
 set_option autoImplicit false
 

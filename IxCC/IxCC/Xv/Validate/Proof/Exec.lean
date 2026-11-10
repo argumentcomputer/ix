@@ -6,7 +6,7 @@ import IxCC.X86.Table.Exec
 The table executor (`X86.Op.run`) reads a row's operands only through its
 machine arguments and implicit registers, so two runs whose operands hold
 the same values compute the same results, whatever registers hold them. This
-is the fact behind Xv/Xl agreement (05 §3, "metadata from the table"): Xv
+is the fact behind Xv/Xl agreement ("metadata from the table"): Xv
 places each operand in its own scratch register, Xl in its allocated
 location, and `op_run_corr` shows the row cannot tell them apart.
 

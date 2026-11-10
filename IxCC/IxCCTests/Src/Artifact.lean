@@ -5,7 +5,7 @@ import IxCCTests.Src.Support
 The recheck path's input for one bench-k1 closure — the `Src.Program` that
 ingress, the pinned identities and `Table.build` produce, and the relevance
 annotation — printed as a Lean module, so that `decide +kernel` can evaluate
-`Src.Recheck.run` and erasure on it (M1.K1, M2.8). The loader decodes bytes
+`Src.Recheck.run` and erasure on it. The loader decodes bytes
 natively; the printed module is its output as data, with no decoding left
 for the kernel.
 

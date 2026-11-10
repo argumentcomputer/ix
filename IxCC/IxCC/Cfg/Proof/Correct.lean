@@ -3,7 +3,7 @@ import IxCC.Sem.TracedSim
 
 /-! # `Cfg.lower_correct`
 
-The Own → Cfg lowering is correct (design note 03 §7, M2.4): for an Own
+The Own → Cfg lowering is correct: for an Own
 program whose functions are below its size, whose signatures are as long as
 their parameters and whose names are bound above the environments in scope
 (`Good`), under either allocation policy, from every function, argument
@@ -19,7 +19,7 @@ list and heap,
 
 It crosses from big-step to small-step by `Sim.ofStar`: the CPS forward
 lemma (`run_reach`) gives the final step or the charges, and Cfg's step
-bound covers every clock (`Cfg.runs_run`, M2.5's `Potential`) because
+bound covers every clock (`Cfg.runs_run`) because
 `Cfg.lower` keeps forward edges going up (`lower_ordered`). The result
 relation is equality on plain values and heaps, so it composes with
 `Rt.lower_correct`'s argument and heap relations. The traced form (decision
@@ -34,7 +34,7 @@ open IxCC.Own (RVal Heap AllocPol)
 open IxCC.Fir (FunId)
 open IxCC.Cfg.Proof
 
-/-- **`Cfg.lower_correct`** (03 §7, M2.4). -/
+/-- **`Cfg.lower_correct`**. -/
 theorem lower_correct {pol : AllocPol} {q : Own.Program} (G : Good q) (f : FunId) (vs : List RVal)
     (H : Heap) :
     Sim Eq id (fun k => Own.run pol q k f vs H) (fun k => run pol (lower q) k f vs H) := by

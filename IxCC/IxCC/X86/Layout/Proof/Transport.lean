@@ -1,7 +1,7 @@
 import IxCC.X86.Layout.Proof.Linearize
 
 /-!
-# Layout as one simulation (05 §7)
+# Layout as one simulation
 
 `Backend.lay` tunnels the stacked program and then runs `Layout.run`
 (`Order.check` and `linearize`) on the tunnelled one; `Backend.finish`
@@ -11,8 +11,7 @@ program from its initial machine with an empty mask becomes a run of the
 laid-out program from its initial machine, with the same final mask, at
 most as many steps and at least `1/(blocks + 1)` as many (tunnelling skips
 empty jumps), ending in a machine with the same status and, given that the
-caller's return-address bytes are not masked, the same `Exit`.
--/
+caller's return-address bytes are not masked, the same `Exit`. -/
 
 namespace IxCC.X86.Layout.Proof
 

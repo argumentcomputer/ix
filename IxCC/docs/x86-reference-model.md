@@ -48,7 +48,10 @@ that Sail lacks Lean support. Compatibility of this snapshot, the current
 backend and this project's Lean 4.34.1 has not been established.
 [Sail changelog](https://github.com/rems-project/sail/blob/sail2/CHANGELOG.md).
 
-The next reference steps are concrete:
+The route has three steps: S0 compares emitted forms dynamically against the
+generated reference; S1 generates a reproducible Lean model from the Sail
+sources; S2 proves the local machine agrees with that model. The next
+reference steps are concrete:
 
 1. Finish S0 by establishing a pinned generator build for this exact snapshot
    and running emitted load/store/branch cases in the 64-bit application

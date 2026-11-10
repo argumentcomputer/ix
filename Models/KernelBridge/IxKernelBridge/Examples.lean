@@ -6,9 +6,8 @@ import IxKernelBridge.NatBridge
 `srcRun_to_red` and the theorems built on it hold for every relation
 `constSpec` that satisfies `hconst`, so they say nothing about a program for
 which no such relation exists. This module shows, in Lean, that the premises
-can be met, and records which primitive operations can take part. It is the
-machine-checked form of the positive instances built in the 2026-11-09 review
-(refuter R2) and of the per-operation facts found there.
+can be met, and records which primitive operations can take part. It gives
+positive instances and the per-operation facts in machine-checked form.
 
 What the instances show:
 
@@ -31,7 +30,7 @@ What they do not show:
   read property is that it is a definition). Nothing here connects `env` or
   `eRoot` to a compile claim's environment or target.
 - Of the repository's fixture roots, only `Abi.nat1 (a : Nat) : Nat := a` has
-  the shape `id_bridge` needs; the review established that by evaluating the
+  the shape `id_bridge` needs; this was established by evaluating the
   ingested program, not by a proof in this package.
 
 The per-operation premise of `RelHead.primBinNat` (`PrimPremise`) is proved for

@@ -3,7 +3,7 @@ import IxCC.Anf.Proof.Convert.Base
 /-! # ANF conversion: environments and closures
 
 Spine application on the Lam side, closure application on the Anf side, and
-the environment lemmas of the P1 simulation (M2.3): lookup, growth of the
+the environment lemmas of the P1 simulation: lookup, growth of the
 target environment (levels keep their values), and pushing a body's
 parameters. -/
 

@@ -8,7 +8,7 @@ rebuild the scrutinee (`identityTail`; never a pinned `Nat` key, whose
 literals are not constructors) and equal field-free arms (`sameArms`) make
 the case's choice irrelevant. One fuel level of the walk's simulation for
 `walkAlts`: each alternative's walk under its fields, with the scrutinee's
-constructor view recorded as a fact (M2.3). -/
+constructor view recorded as a fact. -/
 
 set_option autoImplicit false
 

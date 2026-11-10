@@ -3,7 +3,7 @@ import IxCC.Sem.Agrees
 
 /-! # Lam: clock monotonicity
 
-`Lam.eval_mono` (design note 02 §4.3, M2.2): an outcome of `eval` other
+`Lam.eval_mono`: an outcome of `eval` other
 than `timeout` is the outcome at every larger clock, and likewise for
 `apply`, `force`, `evalList`, `evalAlts`, `applyAll` and `run`; so each is a
 `Sem.ClockMono` computation. Strong induction on the clock; within one
@@ -177,7 +177,7 @@ theorem run_agrees {k k' : Nat} (hk : k ≤ k') (root : GlobalId) (xs : List Val
   | timeout => rw [he] at hne; exact absurd rfl hne
   | _ => rw [he] at h; rw [h (by simp)]
 
-/-- **Clock monotonicity** of Lam evaluation (M2.2). -/
+/-- **Clock monotonicity** of Lam evaluation. -/
 theorem eval_mono (ρ : Env) (t : Term) : ClockMono fun k => eval P k ρ t :=
   Result.Agrees.clockMono fun k k' hk => eval_agrees P k k' hk ρ t
 

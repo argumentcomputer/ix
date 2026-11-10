@@ -18,7 +18,7 @@ they do not identify its denotation with a certified kernel environment. Nor do
 they relate that checked source semantically to the ingested program: the front
 end (`Table.ofCert`, the relevance annotation and its checks, `Lazify.run`)
 builds it, and the theorems state that the front end ran and how, not what it
-preserves (open item S6).
+preserves (open item S6 in the [certification design](certification-design.md)).
 
 The implementation composes `compile = ingress; produce; run`. The current
 hashing boundaries are:

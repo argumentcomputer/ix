@@ -3,7 +3,7 @@ import IxCCTests.Src.Relevance.Census
 import IxCCTests.Src.Relevance.Mutation
 import IxCCTests.Src.Relevance.Stuck
 
-/-! The `tests-relevance` suite (design note 02 §3, §13): checker rules on
+/-! The `tests-relevance` suite: checker rules on
 synthetic programs, the census on `k1.ixe`, annotation mutation on the
 bench-k1 closures, and the stuck-cause census on `k1.ixe`, bench-k1 and
 `src-sortpoly`. `--report PATH` writes the census JSON and

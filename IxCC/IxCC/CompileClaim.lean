@@ -12,18 +12,18 @@ under a `CompilePolicy` (`immortal`, `zeroRc`, `plainRc`) and ABI parameter arit
 to the pure BLAKE3 digest (`Ixon.Address.blake3Pure`) of the emitted x86-64 ELF64
 object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
 
-1. **Wire Format Alignment (`S12`, `A1-4`, `A1-10`, `A8-2`, `A8-11`)**:
+1. **Wire Format Alignment**:
    - `CompileClaim.toClaimBytes` serializes the exact 4-byte `Ix.Claim.put (.compile ...)`
      header `#[0xE8, 0x05, 0x04, 0x06]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V1`)
      followed by `toPayloadBytes` (`env` 32B ++ `target` 32B ++ `[policy.toUInt8]` 1B ++
      `n0Bytes abiArity` 1..9B ++ `elfHash` 32B), totaling 102 bytes when `abiArity < 128`.
      `abiArity` uses ix's TagN code at flag width 0 (`Ixon.putTagN 0 0`), so the
-     bytes agree with `Ix.Claim.ser` for every arity below `2 ^ 64` (B4-2).
+     bytes agree with `Ix.Claim.ser` for every arity below `2 ^ 64`.
    - `CompileClaim.ofClaimBytes` parses and validates the canonical wire envelope
      via `Ixon.runGet`, rejecting invalid or overflowing arity codes and trailing bytes.
-   - Global `Coe (List UInt8) ByteArray` has been removed (`A8-11`).
+   - Global `Coe (List UInt8) ByteArray` has been removed.
 
-2. **Verified Ingress, Policy Unification & Root Observability (`S4`, `S7`, `A1-3`, `A1-6`, `A4-10`, `A4-12`)**:
+2. **Verified Ingress, Policy Unification & Root Observability**:
    - `verifyBytes`, `checkClaim`, and `makeClaim` default to `typecheck := true`,
      running `Ixon.V3.Tc.checkEnv` during `Recheck.ingress`.
    - `verifyProgram` requires `c.abiArity < 2 ^ 64`, verifies that the target root
@@ -39,7 +39,7 @@ object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
      produced or is refused (`produceAuto`'s `.immortal` fallback); the claim's
      `policy` is the policy actually compiled under.
 
-3. **Proof Separation (`A8-5`)**:
+3. **Proof Separation**:
    - This module contains only executable definitions, checkers, and wire codecs.
    - End-to-end soundness theorems (`verifyProgram_*_sound`, `verifyBytes_*_sound`,
      and wire roundtrip proofs) live in `IxCC.CompileClaim.Proof`. -/
@@ -386,7 +386,7 @@ def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
 
 /-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
 JSON, and serialized certificate `certText`. Defaults to `typecheck := true` so
-`Ixon.V3.Tc.checkEnv` validates the decoded environment at ingress (`S4`, `A1-6`)
+`Ixon.V3.Tc.checkEnv` validates the decoded environment at ingress
 and `checkCertCanonicalRelevance` validates canonical relevance (`Stage A`). -/
 def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
     (c : CompileClaim) (certText : String) (typecheck : Bool := true) : Bool :=
@@ -505,7 +505,7 @@ def checkClaimProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim
     throw "CompileClaim.checkClaimProgram: claim verification failed"
 
 /-- Check a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations JSON,
-and serialized certificate `certText`. Defaults to `typecheck := true` (`S4`, `A1-6`). -/
+and serialized certificate `certText`. Defaults to `typecheck := true`. -/
 def checkClaim (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
     (c : CompileClaim) (certText : String) (typecheck : Bool := true) : Except String Unit := do
   unless verifyBytes cfg envBytes equations c certText typecheck do
@@ -519,8 +519,8 @@ theorem checkClaim_ok_iff {cfg : Recheck.Config} {envBytes : ByteArray}
   cases verifyBytes cfg envBytes equations c certText typecheck <;> simp [pure, Except.pure]
 
 /-- Construct a `CompileClaim` from raw `.ixe` environment bytes and sidecar equations JSON
-in a single ingress + compilation pass without redundant re-ingress or double recheck (`A4-12`).
-Defaults to `typecheck := true` (`S4`, `A1-6`). -/
+in a single ingress + compilation pass without redundant re-ingress or double recheck.
+Defaults to `typecheck := true`. -/
 def makeClaim (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
     (mode : Compiler.RcMode := .auto) (typecheck : Bool := true) :
     Except String (CompileClaim × String × ByteArray) := do

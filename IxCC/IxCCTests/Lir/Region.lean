@@ -3,7 +3,7 @@ import IxCC.Lir.Semantics
 /-!
 # The mapped test region
 
-One region for generated programs and kernels, laid out as 04 §6 lays out
+One region for generated programs and kernels, laid out as `Rt.Layout` lays out
 the driver's region: the context register points 64 bytes in, with the
 context fields below it and the free-list heads above it; objects follow.
 
@@ -30,7 +30,7 @@ def heapSize : Nat := 0x400
 def ro : Word := base + 0x800
 def stop : Word := base + 0x900
 
-/-- Context offsets (04 §6). -/
+/-- Context offsets. -/
 def entrySpOff : Int := -64
 def stackLimitOff : Int := -56
 def regionBaseOff : Int := -24

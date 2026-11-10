@@ -2,8 +2,7 @@ import IxCC.Lam.Syntax
 
 /-! # Anf syntax
 
-The third IR of the rebuilt pipeline (design note
-`plans/x86-v2/02-erasure-middle.md` §6.1): A-normal form with second-class
+The third IR of the rebuilt pipeline: A-normal form with second-class
 join points and known calls, produced from Lam by ANF conversion
 (`Anf.convert`, P1) and rewritten by the middle-end passes P2–P4.
 
@@ -25,7 +24,7 @@ join points and known calls, produced from Lam by ANF conversion
   or the body's value for a CAF (`ps = []`, evaluated at each use).
 * `tick` charges one clock unit and is otherwise transparent; `trap` traps.
 * Globals carry their structural key (`Key.GKey`), binder contracts and
-  result contract (06 S35); `con`, `case` alternatives and `proj` carry
+  result contract; `con`, `case` alternatives and `proj` carry
   checked constructor keys (D19). The constructor table and the pinned keys
   are Lam's. -/
 
@@ -92,7 +91,7 @@ def body : Alt → Exp | .mk _ _ b => b
 
 end Alt
 
-/-- The contract of a binder a pass introduces (02 §11: `many`/`shared`). -/
+/-- The contract of a binder a pass introduces (`many`/`shared`). -/
 def freshLet : V3.LetContract := { nonDep := true }
 
 /-- A global: key, parameter contracts (`[]` for a CAF), result contract and
@@ -179,8 +178,8 @@ def atomsBeq : List Atom → List Atom → Bool
 mutual
 
 /-- Structural equality, by structural recursion: shrink compares arms
-(`Walk.sameArms`) on the recheck path, which the kernel evaluates (M1.K1;
-the derived form was compiled by well-founded recursion). -/
+(`Walk.sameArms`) on the recheck path, which the kernel evaluates (the derived form was compiled by
+well-founded recursion). -/
 def Exp.beq : Exp → Exp → Bool
   | .bind c b e, .bind c' b' e' => c == c' && b.beq b' && e.beq e'
   | .join n r b e, .join n' r' b' e' => n == n' && r == r' && b.beq b' && e.beq e'

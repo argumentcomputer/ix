@@ -3,7 +3,7 @@ import IxCC.Xv.Alloc.State
 /-!
 # SSA linear scan (untrusted)
 
-The allocator of 05 §5, as a single forward scan over the blocks in reverse
+The register allocator, as a single forward scan over the blocks in reverse
 postorder (the "second-chance binpacking" form of linear scan). Each live
 register sits in at most one machine register and possibly its home cell;
 the scan keeps values in registers as long as it can and splits their
@@ -42,8 +42,7 @@ never a use's.
 
 The output is an `Alloc.Output`: the certificate the validator checks. A
 `Chaos` configuration perturbs register order, hints, spill choice, split
-points and the move scratch (05 §12 item 3).
--/
+points and the move scratch. -/
 
 namespace IxCC.Xv.Alloc.LinearScan
 

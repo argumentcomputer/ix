@@ -8,7 +8,7 @@ and, for an output that has the final state's specialisations (`Pre`), is
 the rewrite relation (`RwE`): each rewritten call site's specialisation is
 the one the site builds (`specialize_ok`, a fresh one, or one this run made
 that is exactly it), each binding's definition holds of its value
-(`defOf_ok`) (M2.3). -/
+(`defOf_ok`). -/
 
 set_option autoImplicit false
 

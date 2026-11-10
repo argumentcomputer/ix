@@ -1,21 +1,21 @@
 import IxCCTests.Src.Support
 
 /-! A test-only instrumented SrcEval that names the cause of a `stuck`
-outcome (research note `relevance-checker.md` §2.1, §4.3). It mirrors
+outcome. It mirrors
 `IxCC.Src.Semantics` rule for rule; every census run also runs
 SrcEval itself and requires the same outcome, so the two cannot drift
 apart unnoticed. `Sem.Result` does not change.
 
 Causes are grouped as the census reports them:
 * **relevance**: an `irr` value demanded (applied, projected, a major, a
-  primitive argument, a quotient, a `Nat.succ` field; R1), the β guard (R2),
+  primitive argument, a quotient, a `Nat.succ` field), the β guard,
   or δ on a theorem or a type (a proof or type evaluated because a position
   was relevant);
 * **missing primitive**: δ on an opaque outside the opaque-by-value
   allowlist (an extern with no primitive entry);
 * **declined form**: δ on an axiom, an unsafe or partial constant, or a
   string demanded (E9 is not in the Phase 1 fragment);
-* **other**: shape errors (R3), scope (R5), malformed heads. -/
+* **other**: shape errors, scope errors, malformed heads. -/
 
 namespace IxCCTests.Src.StuckEval
 

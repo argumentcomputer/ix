@@ -9,7 +9,7 @@ major the two agree: the alternative of the rule SrcEval chooses is the
 first that matches, since constructors of one inductive have distinct keys
 (the `Decidable ↦ Bool` alias is injective on them), and its fields are
 the kept fields of the constructor value, dropped ones being `irr`
-(FieldsIrr) (M2.2). -/
+(FieldsIrr). -/
 
 set_option autoImplicit false
 

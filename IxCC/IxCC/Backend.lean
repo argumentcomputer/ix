@@ -10,7 +10,7 @@ import IxCC.X86.StreamK
 import IxCC.X86.ELFWriteK
 
 /-!
-# The backend (05 §1, §10)
+# The backend
 
 `Backend.compile` takes a Lir program to a checked ELF object:
 
@@ -22,14 +22,13 @@ Lir ─Select.run→ Xv ─Alloc.run (linear scan, validated; all-slots fallback
 
 `Backend.emit` is the part below allocation, and `compileWith` takes any
 allocator. The certificate fields here are the frame layouts and the
-block order (05 §1.1); when a configuration leaves them out, their
+block order; when a configuration leaves them out, their
 untrusted oracles supply them, and the checks run either way. (The
 allocation's certificate is `Alloc.run`'s own.)
 
-The object exports a symbol per export's wrapper (05 §6.1): `main`'s is
+The object exports a symbol per export's wrapper: `main`'s is
 the ELF entry symbol, and the others follow it in the symbol table
-(`ELF.Input.exports`, certified by `ELF.Valid.exported`).
--/
+(`ELF.Input.exports`, certified by `ELF.Valid.exported`). -/
 
 namespace IxCC.Backend
 
@@ -97,7 +96,7 @@ def lay (p : LProgram) (cfg : Config) : Except Error (Stacking.Stacked × X86.Pr
 encoding with E2's stream check, and the ELF writer with its validator.
 `main` is the function whose wrapper is the entry symbol.
 
-Each step is its kernel-evaluable twin (M1.K1): `Program.checkK`,
+Each step is its kernel-evaluable twin: `Program.checkK`,
 `Stream.encodeK` (the list encoder `Encode.encodeK` and the one-pass
 `Stream.checkK`) and `ELF.writeCheckedK` (the list writer and the windowed
 validator). They are proved equal to `Program.check`, `Stream.encode` and
@@ -145,7 +144,7 @@ def compileWith (alloc : VProgram → Except String LProgram) (p : Lir.Program) 
   let xl ← (alloc xv).mapError .alloc
   emit xl cfg
 
-/-- Lir to an ELF object with M1.B4's allocation: linear scan, validated,
+/-- Lir to an ELF object with the register allocation: linear scan, validated,
 falling back to all slots per function (`Alloc.run`). -/
 def compile (p : Lir.Program) (cfg : Config) : Except Error Artifact :=
   compileWith (fun xv => (·.program) <$> Alloc.run cfg.env xv) p cfg

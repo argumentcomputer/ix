@@ -11,11 +11,11 @@ specialisation remove what they can (implemented); P8 *closed-world
 defunctionalisation* turns every remaining λ into a constructor and every
 unknown call into a call of a generated dispatcher (planned); P9 narrows
 dispatch with untrusted flow facts (planned). Closure objects with code
-pointers, `pap` and `apply`, which Lean's own IR uses, are not planned. They
-are the fallback if one of the conditions under
-[Fallback](#fallback-code-pointer-closures) is met. This settles the earlier
-inconsistency: code comments name P8, while `compiler-design.md` described
-Fir with closure objects. Fir stays first order.
+pointers, `pap` and `apply`, which Lean's own IR uses, are ruled out: they
+need indirect calls, which compiled code does not contain (decision D20 of
+2026-11-10, [Design decisions](compiler-design.md#design-decisions)), and no
+closure crosses a program boundary (decision 1 of 2026-11-10 in the
+[roadmap](roadmap.md#decisions-of-2026-11-10)). Fir stays first order.
 
 ## Motivation
 
@@ -67,7 +67,7 @@ always remove.
 | Certificate | None: deterministic | None for P8: deterministic, re-run by `Recheck.run`; P9 reads facts that are correct for any value | As B |
 | Ownership and RC | New object kind; `pap` and three `apply` variants (owned, borrowed, unique) in Own; runtime apply procedures | Closures are constructor cells: dup/drop, the plain-RC checker, release and later reuse apply unchanged | As B |
 | Backend and Ring 0 | Needs `call r/m64` with a code-pointer validity premise, and a new control-flow argument for Ring 0 | Every call stays direct | As B |
-| Separate compilation | Supported | Whole program only | As B, with A possible later at a boundary |
+| Separate compilation | Supported | Whole program only | As B |
 | Cost at a megamorphic site | One indirect call | A compare tree over keys | P9 narrows it; P4 removes most sites first |
 
 **Why B (inside C) fits IxCC.**
@@ -77,9 +77,11 @@ always remove.
    Every closure a run can build therefore comes from a λ or a function
    global of the program, so a dispatcher over every closure key of an arity
    is complete without any analysis.
-2. **No indirect calls.** The Ring-0 admission argument relies on the
-   instruction table having no indirect branch rows (header of
-   [`Ring0.lean`](../IxCC/Ring0.lean)). B keeps that property; A breaks it.
+2. **No indirect calls.** Compiled code contains no indirect call or jump
+   (decision D20); the Ring-0 admission argument relies on the instruction
+   table having no indirect branch rows (header of
+   [`Ring0.lean`](../IxCC/Ring0.lean)). B keeps that property; A would break
+   it, which rules A out.
 3. **RC sees only data.** A closure cell is an ordinary constructor cell, so
    no ownership rule, runtime procedure or heap-invariant clause is added.
    The bounded plain-RC route already handles constructor cells.
@@ -99,8 +101,8 @@ joins the dispatcher's strongly connected component, which coarsens the
 call graph that per-SCC analyses see. A site with many keys pays a compare
 tree. Closure keys share the constructor tag space (at most
 `Rt.maxTag = 0x7EFF` tags, [`Rt/Layout.lean:49`](../IxCC/Rt/Layout.lean)).
-None of these has been measured; K4 and K6 rows decide whether P9 or a
-jump table is needed.
+None of these has been measured; K4 and K6 rows decide how much P9 and the
+compare-tree layout matter.
 
 ## Design (planned)
 
@@ -203,7 +205,7 @@ checker is needed; a wrong fact costs speed only.
 - The bounded plain-RC route admits at most 31 scanned fields
   ([`Cfg/Rc/Native.lean:62`, `:81`](../IxCC/Cfg/Rc/Native.lean)). A λ with
   more captures is declined there until general layouts land
-  ([data design](data-and-roots-design.md#d1-heap-completion)).
+  ([data design](data-and-roots-design.md#dr1-heap-completion)).
 - Dispatchers take every parameter owned. Borrowed callees come from borrow
   inference on the dispatcher's callee parameter, and one-shot closures from
   a unique cell consumed by a unique clone of the dispatcher; both belong to
@@ -211,7 +213,7 @@ checker is needed; a wrong fact costs speed only.
 - A dispatcher is a `case` on a constructor key, which Cfg turns into a
   `switch` and `Rt.lower` into a compare chain on the header tag (the
   "Switch" paragraph of [`Rt/Lower.lean`](../IxCC/Rt/Lower.lean)). A jump
-  table would need an indirect jump row; it is not planned.
+  table would need an indirect jump row, which decision D20 excludes.
 - Clocks: a dispatch is one charged call, so the target charges at least as
   often as the source and the timeout clause holds as it does for inlining.
 
@@ -264,14 +266,15 @@ The flow oracle is untrusted.
 ## Size [estimate]
 
 - P8, dispatcher generation and the table extension: about 1k lines of
-  code. Proof: 4–8k lines. Basis: the estimate in the pre-merge design notes
-  (untracked; see below), against IxCC's own Anf → Fir lowering (3.8k lines
-  for `Fir/` with its proofs) and CertiCoq's closure conversion as surveyed
-  there (about 0.5k lines of code and 9k of proof).
+  code. Proof: 4–8k lines. Basis: IxCC's own Anf → Fir lowering (3.8k
+  lines for `Fir/` with its proofs), plus one new value relation and the
+  dispatcher lemma; published mechanised closure conversions (CertiCoq's, in
+  Coq) are of the same order of magnitude.
 - The shrink rule: 0.1k + 0.3k. P9: 0.3k + 0.5–1k. Flow oracle: 1.5–2.5k,
   untrusted, no proof.
-- Stop rule: if P8's proof passes about 9k lines, re-evaluate option A,
-  which is the same class of proof.
+- Review point: if P8's proof passes about 9k lines, re-plan the proof
+  (for example a different value relation); the representation is fixed by
+  D20.
 
 ## Exit criteria
 
@@ -288,31 +291,19 @@ The flow oracle is untrusted.
 4. `fir.closures` is unreachable from a well-scoped Anf program; the
    remaining declines are specific (too many captures, tag space).
 
-## Fallback: code-pointer closures
+## No code-pointer fallback
 
-Option A becomes worth building only if one of these happens:
-- P8's proof passes the stop rule above;
-- a K4 or K6 row misses its target because of dispatch, after P9;
-- separately compiled higher-order libraries, or closures crossing a
-  program boundary (for example a SIP receiving a closure from the IxOS
-  monitor), become requirements.
+Code-pointer closures (option A) are not a fallback. They would need an
+indirect-call row, which decision D20 excludes, and their remaining use, a
+closure crossing a program boundary such as a SIP receiving one from the IxOS
+monitor, is excluded by decision 1 of 2026-11-10: boundaries pass first-order
+data, and higher-order libraries are compiled into each program that uses
+them. If dispatch cost makes a K4 or K6 row miss its target after P4 and P9,
+the remedies stay within direct calls: more specialisation, more P9 arms, and
+a better compare-tree layout (a balanced search on the tag).
+## Prior art
 
-The third is the owner's call (see [roadmap decisions](roadmap.md#open-decisions)).
-The default here is no: SIP boundaries pass first-order data, and libraries
-that take closures are compiled into each program. Adding A later at a
-boundary only, with dispatchers kept for internal calls, would cost a new
-object kind, a `call r/m64` row with a target-validity premise, an extended
-Ring-0 control-flow argument, and an estimated 6–9k proof lines (same
-basis as above).
-
-## Provenance and prior art
-
-This design is the D19 decision of the pre-merge Compilatr.ix plans: design
-note `02-erasure-middle.md` §8 (pass list, P8, P9), note `06-cross-check.md`
-seam S45 and the research note `research/grin-ir.md` §5.3. Those notes are
-untracked files under `plans/x86-v2/` of the pre-merge workspace and are not
-in this repository; code comments that cite "02 §8", "03 §2.2" or "06 S45"
-refer to them. Prior art they rely on:
+The design draws on:
 - Reynolds' defunctionalisation, with Nielsen's paper proof of an
   analysis-free version for a simply typed call-by-value language (BRICS
   RS-00-47);
@@ -322,5 +313,5 @@ refer to them. Prior art they rely on:
 - closure conversion in Lean 4's IR, CakeML (`clos_known` for known calls)
   and CertiCoq.
 
-No mechanised proof of whole-program defunctionalisation was found in that
-survey; P8's proof is new work.
+We know of no mechanised proof of whole-program defunctionalisation; P8's
+proof is new work.

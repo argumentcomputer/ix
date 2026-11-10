@@ -13,14 +13,14 @@ import IxCC.Lir.WellFormed
 /-!
 # `check-backend`
 
-Stacking, layout and emission (M1.B5), end to end:
+Stacking, layout and emission, end to end:
 
 1. **Hand-written Xl** (`Programs`): frameless leaves, slots, a checked
    leaf, calls with callee-saved registers, stack arguments, tail calls at
    constant stack, failures deep in a call chain, a stack-budget failure,
    heap traffic and fused pairs.
 2. **Kernels** (`IxCCTests.Lir.Kernels`: fib, sumLoop, sumFrom, gcd,
-   natDiv, natMod, natAdd, natSub) through selection and M1.B4's allocation,
+   natDiv, natMod, natAdd, natSub) through selection and register allocation,
    both ways (`Alloc.run`: linear scan with the all-slots fallback; and all
    slots): `Lir.eval`, `Xv.eval` and `Xl.eval` agree, `Xl.eval` finishes at
    the kernel's exact clock and times out one below; then the object runs on
@@ -38,8 +38,7 @@ Each object runs on the typed machine and the byte machine
 `rax:rdx` with the callee-saved registers and `rsp` restored.
 
 Usage: `check-backend [--cc CC] [--driver PATH] [--work DIR] [--programs N]
-[--seeds S1,…] [--native-every K] [--max-blocks B]`.
--/
+[--seeds S1,…] [--native-every K] [--max-blocks B]`. -/
 
 namespace IxCCTests.Backend
 
@@ -188,7 +187,7 @@ def handCases : List Case := [
 
 /-! ## Allocation -/
 
-/-- A Lir program selected, then allocated two ways: M1.B4's `Alloc.run`
+/-- A Lir program selected, then allocated two ways: `Alloc.run`
 (linear scan, validated, falling back to all slots per function) and all
 slots for every function. -/
 structure Allocated where

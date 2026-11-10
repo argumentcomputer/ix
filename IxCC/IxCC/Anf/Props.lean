@@ -3,13 +3,13 @@ import IxCC.Anf.Semantics
 /-! # Anf: basic properties
 
 Determinism holds by construction (`eval` is a function; stated below). The
-rules below are the ones the pass proofs (M2.3) read off directly: `tick`,
+rules below are the ones the pass proofs read off directly: `tick`,
 `jump`, `call`, a CAF `glob` and a non-empty application charge exactly one
 unit; a function `glob` and a local `fn` are free; □ is stuck under
-application, projection, `case` and primitives (06 S38); a key mismatch in
+application, projection, `case` and primitives; a key mismatch in
 `proj` is stuck. Clock monotonicity (`eval k … = r → r ≠ timeout → k ≤ k' →
-eval k' … = r`) is an M2.3 theorem; `tests-anf` checks it on the fixtures
-and on random clocks. -/
+eval k' … = r`) is proved (`Anf.eval_mono`); `tests-anf` also checks it on
+the fixtures and on random clocks. -/
 
 namespace IxCC.Anf
 

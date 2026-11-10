@@ -3,7 +3,7 @@ import IxCC.Sem.Result
 /-!
 # A clocked small-step runner
 
-The run loop that clocked small-step semantics share (Xv and Xl, 05 §3): a
+The run loop that clocked small-step semantics share (Xv and Xl): a
 step either continues, possibly spending one unit of clock, or ends. A
 charge with an empty clock is `timeout`. The runner also takes a step bound
 (`fuel`) so that it is structural; each semantics chooses a bound that the

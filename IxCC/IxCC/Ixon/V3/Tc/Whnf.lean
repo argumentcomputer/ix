@@ -353,7 +353,7 @@ def natOffsetStuckHead (p : Primitives m) : KExpr m → Bool
 
 These helpers used to live in the large recursive WHNF mutual block even
 though none of them takes a recursive edge.  Keeping them outside that block
-makes their equations transparent to the K0 proofs without adding runtime
+makes their equations transparent to the proofs about this module without adding runtime
 fuel or changing their operational behavior.
 -/
 
@@ -459,7 +459,7 @@ def tryApplyIotaCtor (recr : IotaInfo m) (recUs : Array (KUniv m))
     (spine ctorArgs : Array (KExpr m)) (cidx ctorFields : Nat)
     (transient : Bool) : RecM m (Option (KExpr m)) := do
   let some rule := recr.rules[cidx]? | return none
-  -- H6: level arity; H5: fields ≤ ctor args (lean4lean Reduce.lean:75-76).
+  -- Level arity; fields ≤ constructor arguments (lean4lean Reduce.lean:75-76).
   if recUs.size.toUInt64 != recr.lvls then
     return none
   if ctorFields > ctorArgs.size then
@@ -1124,14 +1124,14 @@ def finishStructEtaResult (indId : KId m) (major rhs : KExpr m)
   let result ← finishStructEtaFields indId major fields.toNat 0 result
   finishAppResult result trailingArgs 0
 
-/-- The H3 post-probe guard rejects exactly `Prop`-valued majors.  Keeping
+/-- The post-probe `Prop` guard rejects exactly `Prop`-valued majors.  Keeping
 this test pure makes the semantic boundary independently inspectable without
 moving any checker effects across it. -/
 def structEtaSortRejected : KExpr m → Bool
   | .sort u _ => u.isSemanticZero
   | _ => false
 
-/-- Apply the H3 Prop guard and, for an admissible major sort, instantiate
+/-- Apply the post-probe `Prop` guard and, for an admissible major sort, instantiate
 and rebuild the selected struct-eta rule. -/
 def finishStructEtaAfterSort (recUs : Array (KUniv m))
     (spine : Array (KExpr m)) (recr : IotaInfo m) (rule : RecRule m)
@@ -1155,7 +1155,7 @@ def tryStructEtaAfterInductive (recUs : Array (KUniv m))
     (indId : KId m) : RecM m (Option (KExpr m)) := do
   if !(← isStructLike indId) then
     return none
-  -- H3: Prop guard.
+  -- Post-probe `Prop` guard.
   let major := spine[recr.majorIdx]!
   let some majorTy ← tryOptional (inferOnlyRec major) | return none
   let some majorSort ← tryOptional (inferOnlyRec majorTy) | return none
@@ -1654,7 +1654,7 @@ def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let wb ← whnfRec args[1]!
   let some aVal := extractNatValue wa p | return none
   let some bVal := extractNatValue wb p | return none
-  -- S5: @Eq.refl.{1} for Bool : Type = Sort 1.
+  -- @Eq.refl.{1} for Bool : Type = Sort 1.
   let u1 : KUniv m := .mkSucc .mkZero
   if isDecLt then
     -- decLt n m → decLe (n+1) m (recursively reduced by the caller loop).

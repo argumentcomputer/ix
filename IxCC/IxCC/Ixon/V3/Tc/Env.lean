@@ -202,7 +202,7 @@ structure KEnv (m : Mode) where
   /-- Major-inductive set → inductive block id. Keys are arrays sorted by
       `KId.cmp` (the canonical set representation; Rust uses `BTreeSet`). -/
   recMajorsCache : HashMap (Array (KId m)) (KId m) := {}
-  /-- Block ids whose peers passed S3/S3b agreement. -/
+  /-- Block ids whose peers passed the peer-agreement check. -/
   blockPeerAgreementCache : HashSet (KId m) := {}
   /-- Whole-block type-check results; failures cached too, so every member
       of a bad block reports the same structured failure. -/

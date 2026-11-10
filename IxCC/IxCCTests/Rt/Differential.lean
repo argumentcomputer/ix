@@ -3,7 +3,7 @@ import IxCCTests.Fir.Differential
 import IxCCTests.Fir.Gen
 import IxCCTests.Src.Bench
 
-/-! Cfg against Lir on the fixtures and on generated programs (M1.F6):
+/-! Cfg against Lir on the fixtures and on generated programs:
 
 * every root and first-order constant of `k1.ixe` and of the five bench-k1
   closures, through the Phase 1 pipeline to Cfg and then `Rt.lower`

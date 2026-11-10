@@ -49,7 +49,7 @@ theorem call_inFrame {checked : Checked} {block target : BlockId} {offset : Nat}
   simp [Memory.write64?, Memory.write?, Width.bytes, writable, callCore, callFrame, Memory.write64]
 
 /-- `unwind` inside a caller continuation: `rsp` is reloaded from the source
-and the ghost frames the reloaded stack has left are dropped (note 05 §6.1). -/
+and the ghost frames the reloaded stack has left are dropped. -/
 theorem unwind_inFrame {checked : Checked} {block : BlockId} {offset : Nat} {source : MemAddr}
     (segment : Straight.Segment checked block offset [.unwind source]) (fits : offset + 1 < UInt32.size)
     (runtime : Runtime) (core : Core) (returns : List ReturnFrame) {sp : Word} {rest : List ReturnFrame}

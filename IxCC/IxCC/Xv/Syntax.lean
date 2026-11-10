@@ -4,8 +4,7 @@ import IxCC.X86.Table.Rows
 /-!
 # Xv and Xl syntax
 
-The machine-instruction IRs between Lir and typed x86 (design note
-`plans/x86-v2/05-backend.md` §3). One syntax, parameterised by the operand
+The machine-instruction IRs between Lir and typed x86. One syntax, parameterised by the operand
 type `ρ`, serves both levels:
 
 - **Xv** (`Program VReg`): x86 instructions over Lir's virtual registers, as
@@ -16,12 +15,11 @@ type `ρ`, serves both levels:
   frame slots and argument cells), as allocation produces them.
 
 Xv and Xl keep Lir's labels, calls and clock charges, so the three levels
-run in lock-step (05 §2, §5).
+run in lock-step.
 
 **Instructions.** `op o defs args` is one table row `o`; `fused p pargs c
 defs cargs` a flag producer and consumer that no edit may separate;
-`move` a copy; `zero x` the `xor x32, x32` idiom, which has no uses (a
-divergence from 05 §3, which leaves the idiom's form open); `call f args
+`move` a copy; `zero x` the `xor x32, x32` idiom, which has no uses; `call f args
 rets` a call whose operands the convention fixes. Terminators are `jmp`,
 `jcc p pargs defs c t f` (the flag producer `p` and the condition `c`; its
 definitions reach both edges, for `brOvf`), `ret`, `tail`, `fail` and
@@ -33,8 +31,7 @@ whose operand is memory; `defs` holds one register per written slot whose
 operand is a register. A read-write slot with a register argument is a tie:
 its argument is a use and its definition the next entry of `defs`. The
 row's implicit register operands (`div`'s `rax`/`rdx`, a shift's `cl`)
-follow the slots in the same way, fixed to their registers.
--/
+follow the slots in the same way, fixed to their registers. -/
 
 namespace IxCC.Xv
 
@@ -70,7 +67,7 @@ structure Amode (ρ : Type) where
 
 /-- A context access of `bytes` bytes that may reach the `entrySp` or
 `stackLimit` cell (`ctx − 64`, `ctx − 56`), which the failure exit and the
-prologue read (05 §6.1); no store may (`Lir.WellFormed` condition 7). -/
+prologue read; no store may (`Lir.WellFormed` condition 7). -/
 def Amode.hitsProtectedCtx {ρ : Type} (m : Amode ρ) (bytes : Nat) : Bool :=
   (match m.base with | some .ctx => true | _ => false) && decide (m.disp.toInt < -48) &&
     (m.index.isSome || decide (-64 < m.disp.toInt + bytes))

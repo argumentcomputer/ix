@@ -4,7 +4,7 @@ import IxCC.Anf.Pipeline
 # The middle end evaluated by the kernel
 
 The Anf passes are on `Recheck.run`'s path, which Lean's kernel must
-evaluate (roadmap D17, M1.K1). These examples run P1 and the certified steps
+evaluate (D17). These examples run P1 and the certified steps
 (`Pipeline.run`) on small Lam programs inside the kernel (`decide +kernel`,
 no native evaluation) and check the resulting sizes, so a change that stops
 the passes reducing (a `HashMap`, well-founded recursion, a native-only

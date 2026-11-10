@@ -14,7 +14,7 @@ return address (`runTo`). The outcome (`finish`):
 
 - control at the return address, `rsp` one word above `core₀`'s and the
   callee-saved registers `core₀`'s: the status in `rax` with the value in
-  `rdx` (`statusResult`, 05 §6.1 and 04 §6: 0 the value and the final
+  `rdx` (`statusResult`, the status codes of `Rt.Layout`: 0 the value and the final
   memory; 1 heap, 2 stack, 3 natOverflow; 4 trap; any other status
   `stuck`);
 - a return that does not restore `rsp` or a callee-saved register, a byte
@@ -40,7 +40,7 @@ def runTo (text : ByteArray) (base stop : Word) : Nat → ByteEval.State → Exc
         | .ok next => runTo text base stop fuel next
         | .error fault => .error fault
 
-/-- An export's status and value (04 §6) as an outcome. -/
+/-- An export's status and value as an outcome. -/
 def statusResult (status value : Word) (memory : Memory) : Result (Word × Memory) :=
   if status = 0 then .ok (value, memory)
   else if status = 1 then .resource .heap

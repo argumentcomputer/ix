@@ -35,9 +35,8 @@ import IxCC.Xv.Stacking.Proof.WrapperCall
 import IxCC.Xv.Stacking.Proof.WrapperEntry
 import IxCC.Xv.Stacking.Proof.Ends
 
-/-! Required axiom fences for the stacking and wrapper proofs (M2.6b
-deliverables 2-3): the stacked program's shape and checks (`run_ok`,
-`func_at`, `main_at`, `exit_at`), rows, fused pairs, moves and zeroing in
+/-! Required axiom fences for the stacking and wrapper proofs: the stacked program's shape and
+checks (`run_ok`, `func_at`, `main_at`, `exit_at`), rows, fused pairs, moves and zeroing in
 Xl and in the stacked code, the stacking invariant (`Match`) and its frame
 cells, every Xl step as checked machine steps (`step_op`, `step_fused`,
 `step_move`, `step_zero`, `step_jmp`, `step_jcc`, `step_fail`,
@@ -45,7 +44,7 @@ cells, every Xl step as checked machine steps (`step_op`, `step_fused`,
 failure exit (`Wrapper.fail_safe`), the simulation over clocked runs
 (`sim`), the export wrapper's head, `Nat` check, marshalling and call
 (`wrapper_head`, `wrapper_pre`, `wrapper_call`, `wrapper_entry`,
-`wrapper_overflow`), its success exit (`success_exit`), and 05 §6.2's
+`wrapper_overflow`), its success exit (`success_exit`), and the backend's
 conclusion at the stacked level (`stacked_ends`, `run_ends`). Generated
 from the proof modules' public theorems; expected messages are preserved
 verbatim. -/

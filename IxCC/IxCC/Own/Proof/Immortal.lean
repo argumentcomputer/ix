@@ -5,7 +5,7 @@ import IxCC.Fir.Proof.Mono
 
 /-! # The Phase 1 Own refinement (`Own.immortal_refines`)
 
-Design note 03 §4.4: the Phase 1 Own program of a Fir program `F` is the
+The Phase 1 Own program of a Fir program `F` is the
 embedding `Own.immortal F` run under the immortal allocation policy. It runs
 in **lock step** with `F` at every clock (`lock`): the same charges, so the
 same clock; a Fir value is an Own value that denotes it in the final heap

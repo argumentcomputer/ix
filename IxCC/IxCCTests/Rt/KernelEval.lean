@@ -4,9 +4,8 @@ import IxCCTests.Rt.Kernel
 # `Rt.lower` evaluated by the kernel
 
 `Rt.lower` (with the Lir edge splitter) is on `Recheck.run`'s path in style
-P (proved once, re-run; 04 §10), so Lean's kernel must evaluate it (D17,
-M1.K1). These examples re-run it with `decide +kernel` (no native
-evaluation), composed with `Cfg.ofAnf`, on
+P (proved once, re-run), so Lean's kernel must evaluate it (D17). These examples re-run it with
+`decide +kernel` (no native evaluation), composed with `Cfg.ofAnf`, on
 
 * the pipeline's final Anf program of each bench-k1 entry
   (`IxCCTests.Fir.Artifacts`, checked against the live pipeline by

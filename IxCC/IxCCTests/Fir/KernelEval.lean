@@ -6,7 +6,7 @@ import IxCC.Cfg.WellFormed
 # The Phase 1 lowerings evaluated by the kernel
 
 `Fir.lower`, `Own.immortal` and `Cfg.lower` are on `Recheck.run`'s path in
-style P (03 §4.5), which Lean's kernel must evaluate (D17, M1.K1). These
+style P, which Lean's kernel must evaluate (D17). These
 examples re-run them with `decide +kernel` (no native evaluation) on
 
 * the pipeline's final Anf program of each bench-k1 entry
@@ -18,8 +18,7 @@ examples re-run them with `decide +kernel` (no native evaluation) on
 so a change that stops the lowerings reducing (a `HashMap`, well-founded
 recursion, a native-only implementation) fails to elaborate here. The
 expected summaries were computed natively; `tests-fir` recomputes them
-natively from the same table (`expected`).
--/
+natively from the same table (`expected`). -/
 
 namespace IxCCTests.Fir.KernelEval
 

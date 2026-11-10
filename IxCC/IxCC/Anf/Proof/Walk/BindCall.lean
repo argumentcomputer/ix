@@ -5,7 +5,7 @@ import IxCC.Anf.Proof.Walk.BindPrim
 One fuel level of the walk's simulation for `glob` bindings (a CAF inlined
 behind a tick for its charge, a CAF or function global kept, a dead
 function global's closure dropped) and `call` bindings (redirected to a
-specialisation, inlined behind a tick, or kept) (M2.3). -/
+specialisation, inlined behind a tick, or kept). -/
 
 set_option autoImplicit false
 

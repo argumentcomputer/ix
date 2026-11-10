@@ -2,7 +2,7 @@ import IxCC.Fir.Syntax
 
 /-! # Fir well-formedness
 
-`Fir.WellFormed P` (design note 03 §2.1), decided by `Fir.check`, which
+`Fir.WellFormed P`, decided by `Fir.check`, which
 names the first violation:
 
 * **single binding:** every variable is bound once per function (parameters,
@@ -17,12 +17,12 @@ names the first violation:
 * **constructors:** a `ctor`'s info is `CtorInfo.ofKey` of its key and it
   has that many arguments; `proj` indices and `case` keys come from the
   table, and a `case`'s keys are distinct; primitives are saturated;
-* **Phase 1 representation:** every parameter is `tobj` (06 S33);
+* **Phase 1 representation:** every parameter is `tobj`;
 * **program:** every function `0 … size - 1` is present, function keys are
   pairwise distinct (D19), exports are in range, and the pinned keys have
   the arities `Nat` peeling and Boolean primitives need.
 
-Not on the recheck path (it is `Fir.lower`'s postcondition, 03 §2.2). -/
+Not on the recheck path (it is `Fir.lower`'s postcondition). -/
 
 namespace IxCC.Fir
 
@@ -155,7 +155,7 @@ def check (P : Program) : Except String Unit := do
 
 def wellFormed (P : Program) : Bool := (check P).isOk
 
-/-- `Fir.WellFormed` (03 §2.1). -/
+/-- `Fir.WellFormed`. -/
 def WellFormed (P : Program) : Prop := wellFormed P = true
 
 instance (P : Program) : Decidable (WellFormed P) := inferInstanceAs (Decidable (_ = true))

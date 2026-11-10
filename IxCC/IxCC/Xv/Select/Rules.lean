@@ -3,7 +3,7 @@ import IxCC.Xv.Select.Producer
 /-!
 # Statement rules
 
-The rules for Lir statements (05 §4), each named for the firing counts:
+The rules for Lir statements, each named for the firing counts:
 
 | Lir | Xv | Rule |
 | --- | --- | --- |
@@ -33,8 +33,7 @@ shifts run at their own width (a right shift reads only the low `w` bits),
 and both are zero-extended with `movzx`; narrow division zero-extends its
 operands to 32 bits first. Shift counts are masked alike by Lir and the
 machine (63 at width 64, else 31). A sign-extending load uses `movzx`, `xor`
-and `add` until `movsx` joins the table (05 §8.6 item 2).
--/
+and `add` until `movsx` joins the table. -/
 
 namespace IxCC.Xv.Select
 

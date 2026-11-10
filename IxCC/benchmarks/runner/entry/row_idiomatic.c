@@ -8,7 +8,7 @@
  * twin's path and FIXTURE_<name> selects the call (the fixture's name with
  * '-' as '_').
  *
- * Only the K1 twins (the original five and the MT.2 corpus four) are wired
+ * Only the K1 twins (the original five and the four from the scalar corpus) are wired
  * here; a fixture without a case does not build, and the runner leaves the
  * row out of its entry profile.
  */

@@ -6,7 +6,7 @@ One fuel level of the walk's simulation for `walk` itself (returns, ticks,
 traps; the other forms dispatch to their walk functions), for `after` (the
 continuation of an inlined term: the caller's continuation, a jump to an
 emitted join point, or a meta-continuation) and for `branch` (a
-meta-continuation becomes a join point before the walk branches) (M2.3). -/
+meta-continuation becomes a join point before the walk branches). -/
 
 set_option autoImplicit false
 

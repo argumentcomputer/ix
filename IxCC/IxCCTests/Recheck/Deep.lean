@@ -10,7 +10,7 @@ shapes that stress that, as Ixon v4 bytes:
   applications deep (stored as a chain of `share`s, each at most 200 deep, so
   the decoder accepts it). The source, Lam and Anf terms are all about `n`
   deep.
-* `wide d`: R1's amplifier with `g = f`: `f x` is a balanced `k`-tree of depth
+* `wide d`: the inline amplifier with `g = f`: `f x` is a balanced `k`-tree of depth
   `d` over `x`, a share DAG of `d + 1` stored nodes whose Lam expansion has
   `2^(d+1) - 1` calls, each of which ANF conversion turns into one binding of
   a chain.
@@ -27,8 +27,8 @@ shapes that stress that, as Ixon v4 bytes:
 runs every verifier entry point), so that a script can find, under a small
 Lean stack (`LEAN_STACK_SIZE_KB`, which sets the stack of the thread running a
 Lean `main`; `ulimit -s` does not), the depth at which each stage overflows;
-`probeAmp` and `probeWalk` do the same for R1's amplifier and for one walk.
-`stack8` is the regression test: every verifier entry point on R1's crashing
+`probeAmp` and `probeWalk` do the same for the inline amplifier and for one walk.
+`stack8` is the regression test: every verifier entry point on the crashing
 inputs and on these shapes at and past each budget, in a child process whose
 stack is 8 MiB (`stackPart`). `writeShrink` and `writeAmpShrink` write inputs
 whose certificates ask for many shrink rounds, for timing `check-cert`. -/
@@ -327,7 +327,7 @@ def writeShrink (dir : System.FilePath) (d : Nat) (rounds : Nat := 64) (steps : 
   IO.FS.writeFile (dir / s!"{stem}.base.cert") base.toText
   IO.println s!"{stem}: {bs.size} bytes, certificate {cert.toText.utf8ByteSize} bytes"
 
-/-- `tests-recheck --write-amp DIR DF DG`: R1's amplifier `amp-DF-DG` as `.ixe`, its
+/-- `tests-recheck --write-amp DIR DF DG`: the inline amplifier `amp-DF-DG` as `.ixe`, its
 sidecar, and its `inline` certificate (`.hostile.cert`) and Stage A's
 (`.base.cert`), for timing `check-cert` natively. -/
 def writeAmp (dir : System.FilePath) (dF dG : Nat) : IO Unit := do
@@ -338,7 +338,7 @@ def writeAmp (dir : System.FilePath) (dF dG : Nat) : IO Unit := do
   IO.FS.writeFile (dir / s!"amp-{dF}-{dG}.hostile.cert") hostile.toText
   IO.FS.writeFile (dir / s!"amp-{dF}-{dG}.base.cert") { hostile with mid := {} }.toText
 
-/-- `tests-recheck --write-amp-shrink DIR DF DG`: R1's amplifier `amp-DF-DG`
+/-- `tests-recheck --write-amp-shrink DIR DF DG`: the inline amplifier `amp-DF-DG`
 as `amp-DF-DG.ixe` and its sidecar, with a certificate whose middle end is its
 `inline` step followed by 64 shrink rounds of every global, so that the shrink
 census runs over the inlined global. -/
@@ -352,7 +352,7 @@ def writeAmpShrink (dir : System.FilePath) (dF dG : Nat) : IO Unit := do
   IO.FS.writeFile (dir / s!"amp-{dF}-{dG}.shrink.cert") cert.toText
   IO.println s!"amp-{dF}-{dG}: {bs.size} bytes, certificate {cert.toText.utf8ByteSize} bytes"
 
-/-- `tests-recheck --probe-amp DF DG [STAGE]`: R1's amplifier with its single
+/-- `tests-recheck --probe-amp DF DG [STAGE]`: the inline amplifier with its single
 `inline` step (`Hostile.ampCase`), for a global the step grows to near the
 budgets, up to `STAGE`: `anf` (the middle end's replay), `lir`
 (`Recheck.runLir`), `produce` (the producer's backend parts) or `run` (the
@@ -450,12 +450,12 @@ def deepest (name : String) : IO Nat := do
   return lo
 
 /-- `tests-recheck --stack-8mib`, run by `stackPart` with `LEAN_STACK_SIZE_KB=8192`:
-every verifier entry point on R1's crashing inputs and on generated deep and
+every verifier entry point on the crashing inputs and on generated deep and
 wide inputs at and past each budget, typing on and off. A line per input, then
 a summary line; a native stack overflow aborts the process instead. -/
 def stack8Lines : IO (Array String) := IO.FS.withTempDir fun dir => do
   let mut lines : Array String := #[]
-  -- R1's inputs (`amp-12-11` and `amp-13-13` crashed an 8 MiB checker), the
+  -- The amplifier inputs (`amp-12-11` and `amp-13-13` crashed an 8 MiB checker), the
   -- largest inline the copy budget allows through to the end of the backend,
   -- and one just past it
   for (dF, dG, full) in [(12, 11, false), (13, 13, false), (2, 7, true), (3, 7, true)] do
@@ -503,7 +503,7 @@ def stackPart (a : Assert) : IO (Array String) := do
   expect a (summary.startsWith "stack-8mib:") s!"tests-recheck --stack-8mib: no summary line: {summary}"
   let has := fun (pre sub : String) =>
     lines.any fun l => l.startsWith pre && (l.splitOn sub).length > 1
-  -- R1's inputs are refused by the budgets, not by a crash
+  -- The amplifier inputs are refused by the budgets, not by a crash
   expect a (has "amp-12-11 inline" "Lam global exceeds") "amp-12-11 is not refused by the Lam node budget"
   expect a (has "amp-13-13 base" "Lam global exceeds") "amp-13-13 is not refused by the Lam node budget"
   expect a (has "wide 13" "Lam global exceeds") "wide 13 is not refused by the Lam node budget"
@@ -734,8 +734,8 @@ chains through the middle end's replay (`Anf.Pipeline.run`); Anf chains
 through the size and depth check (one level past the budget is refused), a
 shrink step (which may make a chain shallower, so it may accept one past it)
 and, at the budget, the verifier's back end; and an inline walk whose copy is at the copy-depth
-budget and one level past it, below a global at the depth budget (FV-1's
-shape). A line each. -/
+budget and one level past it, below a global at the depth budget (the nesting
+shape that motivated the walk's depth budget). A line each. -/
 def nestingLines : IO (Array String) := do
   let mut lines : Array String := #[]
   let word := fun (r : Except String Unit) => match r with
@@ -756,7 +756,7 @@ def nestingLines : IO (Array String) := do
       let back := if pos == "at" then s!", back end {word ((anfBack P).map fun _ => ())}" else ""
       lines := lines.push
         s!"anf {k} depth {depth} ({pos} the depth budget): check {word chk}, shrink step {word shr}{back}"
-  -- FV-1: a global of single-alternative cases at the depth budget, inlining a
+  -- A global of single-alternative cases at the depth budget, inlining a
   -- callee of them that brings the walk just under its depth budget, and just past it
   let spare := Anf.Walk.maxWalkDepth - Anf.maxDepth
   for (c, pos) in [(spare - 8, "at"), (spare + 8, "past")] do

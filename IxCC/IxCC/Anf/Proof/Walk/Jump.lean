@@ -7,7 +7,7 @@ at its single jump, a small join point inlined at a jump, case-of-case (a
 jump with a known constructor to a join point that scrutinises its
 parameter takes the selected alternative), and an emitted jump (the join
 entry's `JoinR`). Each inlining replaces the jump's charge (and the
-skipped leading ticks) by ticks (M2.3). -/
+skipped leading ticks) by ticks. -/
 
 set_option autoImplicit false
 

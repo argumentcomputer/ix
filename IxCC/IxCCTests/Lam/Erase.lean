@@ -1,7 +1,7 @@
 import IxCCTests.Lam.Support
 import IxCCTests.Src.Relevance.Checker
 
-/-! Erasure on synthetic Src programs (design note 02 §5.1, §13): one root
+/-! Erasure on synthetic Src programs: one root
 per form — constructor parameters (evaluated, kept or unboxed), `casesOn`
 of every kind (ordinary with λ and non-λ minors, subsingleton, empty,
 over-applied), recursors with `Nat.rec` IHs, quotients, wrappers of

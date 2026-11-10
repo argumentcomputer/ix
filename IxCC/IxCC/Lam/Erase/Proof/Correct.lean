@@ -15,7 +15,7 @@ Src run imposes nothing). On first-order values the relation is erasure
 itself (`readback_erase`: the Lam result is `eraseVal` of the Src result),
 and first-order observations agree (`vr_obs`). With runs from a root on
 `Nat` arguments as the languages' semantics, erasure refines the checked
-Src program (`erase_refines`, through `Refines.of_sim`) (M2.2). -/
+Src program (`erase_refines`, through `Refines.of_sim`). -/
 
 set_option autoImplicit false
 

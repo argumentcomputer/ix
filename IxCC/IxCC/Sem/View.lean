@@ -17,7 +17,7 @@ arguments) and passes each result's observation through a per-root view:
 the observation the view reports (for example the source observation
 relabelled by tags at the root's type), or `none` to reject it, which makes
 the run **stuck**. A stuck source imposes nothing, so a rejected result is
-one more way the source goes wrong (roadmap §1.1's `GoesWrong`, which at
+one more way the source goes wrong (the correctness statement's`GoesWrong`, which at
 stage S then also covers a result outside the root's type); every other
 behaviour is the program's own.
 

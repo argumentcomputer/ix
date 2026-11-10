@@ -8,8 +8,8 @@ import IxCC.Src.Readback
 
 /-! # Loading a Src program
 
-The front-end pipeline (design note 01 §4.4, 06 S24): Ixon v4 decoding and
-erased typing (no resource admission, 06 S40) → ingress → pinned identities →
+The front-end pipeline: Ixon v4 decoding and
+erased typing (no resource admission) → ingress → pinned identities →
 unfolding table → the table's revalidation → relevance annotation (an
 oracle) → installation → the relevance check → `Lazify` → `Admit`. A failure
 names its stage and code. The revalidation, installation, check and `Lazify`
@@ -19,7 +19,7 @@ namespace IxCC.Src
 
 open IxCC.Ixon
 
-/-- The relevance oracle (note 02 §3.2): any function may be supplied; the
+/-- The relevance oracle: any function may be supplied; the
 checker decides its output. -/
 abbrev RelOracle := V3.Env → Program → Except String Relevance.Ann
 

@@ -5,7 +5,7 @@ import IxCC.Sem.Agrees
 
 One equation per rule of SrcEval (`eval`, `evalConst`, `headValue`,
 `apply`, `applyAll`, `fire`, `force`, `forceAll`), with every sequencing step
-written as `Result.bind` (M2.2). The definitions spell each step out as a
+written as `Result.bind`. The definitions spell each step out as a
 five-way `match`; these equations let clock monotonicity and the erasure
 simulation reason one bind at a time. -/
 

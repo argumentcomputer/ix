@@ -1,7 +1,7 @@
 import IxCCTests.Fir.Shrink
 import IxCCTests.Xv.Alloc.Shrink
 
-/-! # `tests-shrink`: shrinking and first-divergence reports (MT.5)
+/-! # `tests-shrink`: shrinking and first-divergence reports
 
 For each generator with a ladder (LamGen, FoGen, the Lir generator and the
 allocation mutants; `IxCCTests.Support.Repro`):

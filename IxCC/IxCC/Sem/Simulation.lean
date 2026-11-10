@@ -5,7 +5,7 @@ import IxCC.Sem.Clocked
 
 A pass is proved correct, per input, by a *clocked simulation*
 `Sim R f c₁ c₂` between the source semantics `c₁` and the target semantics
-`c₂` (design note `plans/x86-v2/00-conventions.md`, "Clock discipline"):
+`c₂` ("Clock discipline"):
 
 - **forward:** an outcome of the source at clock `k` other than `timeout` is
   matched by the target at *some* clock `k'`: a related value, the same
@@ -18,13 +18,12 @@ The forward clause concludes target success, so no separate progress proof
 is needed. `Sim.refines` (CakeML's `IMP_semantics_eq`,
 `closPropsScript.sml`) turns a simulation into a refinement of behaviours,
 including divergence; `Sim.backward` and `Sim.safe` are the per-clock shapes
-of `compile_sound` and `compile_safe` (roadmap §1.1): a target outcome other
+of `compile_sound` and `compile_safe`: a target outcome other
 than a timeout or a resource failure is the source's own (related value or
 trap), or the source is stuck.
 
 Refinement lets the target add resource failures anywhere and asks nothing
-of a stuck source.
--/
+of a stuck source. -/
 
 namespace IxCC.Sem
 
@@ -34,7 +33,7 @@ def RelComp {α β γ : Type} (R : α → β → Prop) (S : β → γ → Prop) 
 
 namespace Result
 
-/-- An outcome that goes wrong: stuck or a trap (roadmap §1.1's
+/-- An outcome that goes wrong: stuck or a trap (the correctness statement's
 `GoesWrong`, per clock). -/
 def GoesWrong {α : Type} : Result α → Prop
   | stuck => True
@@ -301,7 +300,7 @@ theorem backward (h₂ : ClockMono c₂) (hs : Sim R f c₁ c₂) {k : Nat}
 
 /-- Safety at one clock: if the source does not go wrong at clock `f k`,
 the target does not go wrong at `k`; it returns a value, times out or runs
-out of a resource (roadmap §1.1's `compile_safe`). -/
+out of a resource (the correctness statement's`compile_safe`). -/
 theorem safe (h₂ : ClockMono c₂) (hs : Sim R f c₁ c₂) {k : Nat}
     (hsrc : ¬ (c₁ (f k)).GoesWrong) : ¬ (c₂ k).GoesWrong := by
   intro ht

@@ -1,5 +1,5 @@
 /*
- * MEAS-4 adapter for the lean-clang row (untrusted measurement code): the
+ * The early backend probe's adapter for the lean-clang row (untrusted measurement code): the
  * K1 definitions compiled by `lean -c` and `leanc -O3 -DNDEBUG` (K1Probe.lean),
  * called through their exported entries on boxed scalar Nats. Lean's runtime
  * and the module are initialised once, before timing. leanc's toolchain has

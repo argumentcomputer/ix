@@ -4,8 +4,8 @@ import IxCC.Sem.TracedSim
 
 /-! # `Fir.convert_correct`
 
-The Anf → Fir lowering is correct for the first-order fragment it accepts
-(design note 03 §2.2, 06 S31): for every program `A` that `Fir.lower`
+The Anf → Fir lowering is correct for the first-order fragment it accepts:
+for every program `A` that `Fir.lower`
 lowers to `F` (it declines closures with `fir.closures`, so every program it
 accepts is first order), every global `g` below the size and related
 argument lists of its arity,
@@ -161,7 +161,7 @@ namespace IxCC.Fir
 open IxCC.Sem (Sim TSim)
 open IxCC.Fir.Proof
 
-/-- **`Fir.convert_correct`** (design note 03 §2.2, 06 S31; M2.4): for an
+/-- **`Fir.convert_correct`**: for an
 Anf program `Fir.lower` accepts (the first-order fragment), related values
 observe the same, every root is a global below the size, and from every
 global, on related arguments of its arity, Fir simulates Anf with the tick

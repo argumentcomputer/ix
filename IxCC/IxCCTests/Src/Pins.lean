@@ -1,7 +1,7 @@
 import IxCCTests.Src.Support
 import IxCC.Tools.Check
 
-/-! Pinned tables (design note 01 §4.2, §10 part 5): `Src.Pinned` equals the
+/-! Pinned tables: `Src.Pinned` equals the
 rows of `primitives.tsv` it transcribes and all of `src-tables.tsv`, and
 every pinned address that `k1.ixe` contains is a declaration of the right
 shape (each prim row passes its type check, each lazy row its λ count, and
@@ -51,7 +51,7 @@ def run (a : Assert) : IO Unit := do
       lazyPresent := lazyPresent + 1
       expect a ((Table.checkLazy p c arity) matches .ok ()) s!"k1.ixe: lazy {name} is a safe definition of arity {arity}"
   expect a (lazyPresent > 0) "k1.ixe contains lazy constants"
-  -- The `Decidable ↦ Bool` alias (note 02 §4.1): both pairs resolve, with
+  -- The `Decidable ↦ Bool` alias: both pairs resolve, with
   -- matching constructor indices and one proof field on the Decidable side.
   let ctorIdx := fun (c : Option CId) => match c.bind p.decl? with
     | some (.ctor _ _ ind cidx np nf _) => some (ind, cidx, np, nf)

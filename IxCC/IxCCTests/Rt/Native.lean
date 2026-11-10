@@ -1,7 +1,7 @@
 import IxCCTests.Rt.Support
 
-/-! Native runs under the runtime driver (`fixtures/x86/runtime_driver.c`,
-04 §6; untrusted, pinned in the trust ledger).
+/-! Native runs under the runtime driver (`fixtures/x86/runtime_driver.c`, untrusted, pinned in the
+trust ledger).
 
 An object from `Rt.lower` and `Backend.emit` is linked with the driver for
 one root (`-DENTRY=cx_<root>`). The driver maps a region and a stack, calls

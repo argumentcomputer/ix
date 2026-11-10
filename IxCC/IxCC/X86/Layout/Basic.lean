@@ -1,7 +1,7 @@
 import IxCC.X86.Basic
 
 /-!
-# Block layout: groups, targets and reachability (05 §7)
+# Block layout: groups, targets and reachability
 
 The layout passes (tunnelling, block order, linearisation) work on a
 typed program whose blocks come in *groups*: contiguous ranges that are
@@ -9,9 +9,8 @@ laid out together, each a function, an export wrapper, or the shared exit
 group of failure blocks. Stacking produces the groups; the order oracle
 permutes blocks within each group; linearisation renumbers.
 
-Everything here is in kernel-evaluable style (00): blocks are read once
-into a persistent `Nat`-keyed map, and graph walks run on fuel.
--/
+Everything here is in kernel-evaluable style (D17): blocks are read once
+into a persistent `Nat`-keyed map, and graph walks run on fuel. -/
 
 namespace IxCC.X86.Layout
 
@@ -54,7 +53,7 @@ def _root_.IxCC.X86.Block.targets (b : Block) : List BlockId :=
 
 /-- One breadth-first step: the frontier's blocks not seen yet join `seen`, and
 the next frontier is their targets. A block the frontier lists more than once
-is expanded once (S10): otherwise every balanced join would double the
+is expanded once: otherwise every balanced join would double the
 frontier. -/
 def reachStep (m : NatMap Block) (seen : NatSet) (frontier : List Nat) : NatSet × List Nat :=
   let fresh := frontier.filter (!seen.contains ·)

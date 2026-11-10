@@ -6,7 +6,7 @@ import IxCC.X86.Basic
 `Program.checkK` is `Program.check` over the blocks' and instructions'
 lists, with the block count computed once: `Array.all` runs a loop by
 well-founded recursion, which the kernel unfolds through `Acc` proofs
-(design note 00, kernel-evaluable style; M1.K1). `checkK_eq` proves it is
+(kernel-evaluable style). `checkK_eq` proves it is
 `Program.check`, so the recheck path (`Backend.finish`) runs it in place of
 the original without changing a result or a statement about `Checked`.
 -/

@@ -2,7 +2,7 @@ import IxCC.Own.Syntax
 
 /-! # Cfg syntax
 
-The control-flow IR between Own and Lir (design note 03 §7, OWN-4), in the
+The control-flow IR between Own and Lir, in the
 Phase 1 fragment: blocks with parameters, a straight-line body and a
 terminator.
 
@@ -11,16 +11,16 @@ terminator.
   as)`) is a non-tail call that returns to the next instruction.
 * An `Edge` binds its target's parameters; `back` marks a **back edge**,
   which charges the clock: exactly Own's self tail calls (a jump to block
-  0) and recursive jumps (03 C6, 06 S30).
+  0) and recursive jumps.
 * `switch x alts dflt` selects an edge by constructor key (a `Nat` peels);
   `ret`, `tcall` (to another function) and `trap` end a block.
 
 `Cfg.lower` numbers blocks so that every forward edge goes to a higher
 label and every back edge to a lower or equal one, which is the order
-04's `Rt.lower` needs (a back edge becomes a backward Lir edge, 06 S32).
-Critical edges are allowed (`Rt.lower` splits them, 06 S14). The RC
+`Rt.lower` needs (a back edge becomes a backward Lir edge).
+Critical edges are allowed (`Rt.lower` splits them). The RC
 instructions (`inc`, `dec`, `takeUnique`, `dropCredit`, `freeze`), credits
-and `branchShared` of 03 §7 are Phase 2. -/
+and `branchShared` are planned (Phase 2 heap completion). -/
 
 namespace IxCC.Cfg
 

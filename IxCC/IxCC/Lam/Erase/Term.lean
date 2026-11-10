@@ -2,8 +2,7 @@ import IxCC.Lam.Erase.Input
 
 /-! # Erasing terms
 
-Src → Lam per form (design note 02 §5.1, as revised in
-`plans/x86-phase1/f3/status.md`), level-exact (D18) and keyed (D19). A term
+Src → Lam per form, level-exact (D18) and keyed (D19). A term
 is erased at a universe profile under a **context map**: each Src de Bruijn
 index maps to a Lam binder level, or to □ (`none`). Lam-only binders (the
 lets that keep SrcEval's evaluation order, `case`-bound kept fields) only
@@ -35,7 +34,7 @@ open IxCC.Src IxCC.Src.Relevance
 
 /-- A named decline. -/
 structure EraseError where
-  /-- `erase-const-kind`, `erase-string`, `erase-mode`, `erase-minor` (S25),
+  /-- `erase-const-kind`, `erase-string`, `erase-mode`, `erase-minor`,
   `erase-lazy`, `erase-proj`, `erase-ctor-layout`,
   `erase-C2`, `erase-C4`, `erase-S2`, `erase-scope`, `erase-recursor`, `erase-root`,
   `erase-record`, `erase-fuel`, `erase-budget`, `erase-progwf`, `erase-modes`. -/
@@ -366,7 +365,7 @@ def casesForm (cx : Cx) (key r : CId) (q : Profile) (args : List Src.Term.Arg) :
 then `r⋆` applied to every argument, minors by name. A minor dispatched
 with a `name` IH must be a λ-telescope (its leading binder modes are set to
 the dispatch) or a forwarded minor binder with the same dispatch;
-otherwise the spine is declined (S25). -/
+otherwise the spine is declined (`erase-minor`). -/
 def recForm (cx : Cx) (r : CId) (q : Profile) (args : List Src.Term.Arg) : M Term := do
   let some (.recr _ _ _ np nmot nmin ni _ _ _) := I.decl? r
     | decline "erase-recursor" "not a recursor" r
@@ -534,7 +533,7 @@ def constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List Src.Term.A
 /-- `proj S i e`. A constructor has one layout at every profile (conditional
 field classes are kept, `Input.layoutClass`), so a projection, which carries
 no universe arguments, needs no profile: a field dropped at every profile
-still evaluates `e` (06 S41); an unboxed structure is its field; otherwise a
+still evaluates `e`; an unboxed structure is its field; otherwise a
 keyed projection of the kept rank. -/
 def projForm (cx : Cx) (s i : Nat) (e : Src.Term) : M Term := do
   let e' ← rec cx e

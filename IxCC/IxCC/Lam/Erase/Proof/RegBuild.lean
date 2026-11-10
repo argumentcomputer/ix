@@ -5,7 +5,7 @@ import IxCC.Lam.Erase.Proof.Reg
 Every builder of `Lam.Erase` keeps the constructor table's rows and
 invariant (`CtorInv`) and returns terms whose constructor keys all have rows
 in the final table (`RegT`): `ctorForm`, `ruleAlt` and `projForm` register a
-key before they emit it, and everything else only combines terms (M2.2). -/
+key before they emit it, and everything else only combines terms. -/
 
 set_option autoImplicit false
 

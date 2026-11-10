@@ -2,7 +2,7 @@ import IxCCTests.Src.StuckEval
 import IxCC.Src.Load
 import Lean.Data.Json
 
-/-! The stuck-cause census (research note `relevance-checker.md` §4.3, D18).
+/-! The stuck-cause census (D18).
 
 For each pack (`k1.ixe`, the five bench-k1 closures and the sort-polymorphism
 fixture `src-sortpoly`) it runs two sets of roots through SrcEval and through

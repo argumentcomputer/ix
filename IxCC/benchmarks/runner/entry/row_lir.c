@@ -1,9 +1,9 @@
 /*
  * The runner's adapter for the diagnostic lir-kernel row (untrusted
- * measurement code): MEAS-4's hand-written Lir kernels
+ * measurement code): the early backend probe's hand-written Lir kernels
  * (IxCCTests/Lir/Kernels.lean) through the current backend, as
  * `backend-probe DIR` writes them (lir_fib.o, lir_sumLoop.o, lir_gcd.o), each
- * exporting the SysV wrapper of note 05 §6.1,
+ * exporting the SysV export wrapper,
  *
  *     {status, value} lir_<kernel>(void *region, a1, ...)    in rax:rdx
  *

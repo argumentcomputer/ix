@@ -1,8 +1,7 @@
-/-! # `strip-contracts`: the plain twin of an annotated source (MT.7)
+/-! # `strip-contracts`: the plain twin of an annotated source
 
-The ownership suite pairs each annotated Lean source with its plain twin
-(`plans/fixtures/ownership-suite.md` §2.2). The twin is the annotated text
-with ix's contract syntax deleted, so the two differ by construction only in
+The ownership suite pairs each annotated Lean source with its plain twin. The twin is the annotated
+text with ix's contract syntax deleted, so the two differ by construction only in
 contracts:
 
 * the import of ix's elaborator (`import Ix.Compile.SourceContract.Elab`)

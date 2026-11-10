@@ -13,7 +13,8 @@ added 2026-11-09. The scalar pipeline and a bounded checked plain-RC
 path are implemented. General ownership optimizations and later heap features
 below remain extensions. Source adequacy, Phase 1.5 producer integration,
 final fixture refreeze and full promotion validation remain open. The earlier pipeline, its IRs
-and their contracts are on branch `jcb/ixby-archive`.
+and their contracts are on branch `jcb/ixby-archive` of the pre-merge
+`argumentcomputer/Compilatr.ix` repository.
 
 Where this document describes something not yet built, the section or row
 says *planned*. The designs of the planned extensions are in their own
@@ -45,6 +46,111 @@ documents (see [Planned extensions](#planned-extensions)).
   ([compile boundary](compile-boundary.md)). Runtime services, the ISA model
   and build inputs are recorded in the trust ledger.
 
+## Design decisions
+
+Code comments cite these decisions by number. Each entry describes the code
+as it is; the numbers are kept because comments throughout the tree use
+them.
+
+- **D-1. Traced statement shape.** Per-level and pipeline theorems are
+  stated in the traced shape of `IxCC.Sem`, and proofs reason through each
+  evaluator's bind-form unfolding lemmas, so that adding events changes the
+  unfolding lemmas, not the per-construct proofs (the paragraphs "Statement
+  shape" and "Evaluator interface" under [Correctness
+  statement](#correctness-statement)).
+- **D3. Relevance is a checked annotation.** Relevance is never written into
+  Ixon bytes. An untrusted annotator (`Src.Relevance.annotate`) proposes a
+  class for every binder, argument, let, constructor field and constant; the
+  annotation travels in the certificate beside the bytes, and the recheck
+  path decides it with `Relevance.check` (proved in
+  `Relevance.Proof.check_sound`) and `Relevance.checkCanonical`
+  ([Relevance and erasure](#relevance-and-erasure)).
+- **D10. Own runtime.** Allocation, reference counting, the `Nat`
+  procedures and the entry wrappers are Lir code, lowered and proved with
+  the program. There is no C or Lean runtime and no GMP in the trusted base;
+  the driver supplies one heap region, and the context register points into
+  it ([Runtime](#runtime)).
+- **D12. Constants without usable kernel semantics.** `partial` and
+  `unsafe` constants are rejected (`Src.Admit` codes `partial` and
+  `unsafe`). A definition marked `implemented_by` or `@[extern]` that has a
+  body compiles that body (or a pinned primitive). An `@[extern]` opaque is
+  rejected (`opaque`) unless the unfolding table lists it in `opaqueByValue`,
+  the allowlist of opaques evaluated through their stored value, such as
+  `Lean.opaqueId`. Recorded interpretations of other opaques are planned
+  ([library structures](data-and-roots-design.md#dr5-library-structures-and-opaque-constants)).
+- **D16. Contracts are lower bounds.** Written usage, ownership, locality
+  and borrow contracts are honoured exactly. Untrusted analyses may propose
+  stronger guarantees, which only a proved checker can accept, and nothing
+  inferred changes Ixon bytes or addresses ([Principles](#principles)).
+  Src and Lam carry contracts without reading them in their semantics.
+- **D17. Produce and recheck.** The untrusted producer (`Recheck.produce`
+  and the producers it calls) makes every heuristic choice natively and
+  records it in a certificate (`Recheck.Cert`); `Recheck.run` re-runs the
+  proved passes on the recorded choices and checks proposals with proved
+  validators, and never searches. A pass on the recheck path has one of two
+  *styles*:
+  - *style P*: proved once, for every value of its certificate data, and
+    re-run;
+  - *style V*: a proved validator checks the producer's output, and a
+    rejection is an error unless a checked fallback exists.
+
+  Lemmas used only inside the soundness proofs are *never evaluated*.
+  Everything `Recheck.run` calls is written so that Lean's kernel can
+  evaluate it (the `KernelEval` test modules run it with `decide +kernel`):
+  structural recursion or explicit fuel rather than well-founded recursion,
+  persistent `Nat`-keyed maps and sets (`Src.NatMap`, `Src.NatSet`) rather
+  than hash maps, and lists rather than array indexing. Where a faster
+  native twin exists, a `@[csimp]` theorem proves it equal and the trust
+  ledger lists it (for example `encodeK_csimp`). The producer has none of
+  these constraints.
+- **D18. Level-exact relevance.** Each relevance position's `proof` class
+  holds under a condition on the constant's universe levels (the zero
+  condition of its type's sort). SrcEval decides it at the concrete levels it
+  carries; `Relevance.check`, `Src.Admit` and erasure decide it per universe
+  *profile* (which levels are zero), and erasure emits one global per
+  constant and profile (`GKey.const c prof`). Sort-polymorphic code at
+  `Sort 0` therefore passes □ exactly where its position is a proof. A
+  constant reached at more than one profile is declined
+  (`Relevance.profileSplit`).
+- **D19. Keys.** Source identity is the dense `Src.CId` that ingress
+  assigns to each constant. Every global carries a structural `Key.GKey`
+  (`const`, `byName`, `recStar`, `wrapper`, P4's `spec`, and `worker`, `lam`
+  and `dispatch`, reserved for the planned P5 and P8), and every `con`,
+  `case` alternative and `proj` in Lam and Anf a checked `Key.CtorKey`, so a
+  run that confuses constructors is stuck in the source and key-based
+  rewrites need no typing theorem. Keys compare structurally; no pass treats
+  two things as equal because their addresses are. Erasure maps
+  `Decidable.isFalse`/`isTrue` to `Bool.false`/`true`.
+- **D20. No indirect calls** (decided 2026-11-10). Every call and jump the
+  compiler emits is direct: the instruction table has no indirect branch
+  row, the Ring-0 admission argument relies on that, closures are compiled
+  by defunctionalisation with compare-tree dispatch ([closures
+  design](closures-design.md)), and the IxOS monitor reaches SIP entries
+  through a ledgered tender ([roadmap](roadmap.md#decisions-of-2026-11-10)).
+
+## Identifier schemes
+
+Short identifiers used in code comments and these documents, and where each
+is defined.
+
+| Identifiers | Meaning | Defined in |
+| --- | --- | --- |
+| D-1, D3 … D20 | Design decisions | [Design decisions](#design-decisions) |
+| style P, style V | How a pass is checked on the recheck path | D17 above |
+| P0 … P9 | Lam and Anf passes | [Pass identifiers](#pass-identifiers) |
+| stage S, stage K, stage L | Statements relative to SrcEval (what is proved today); against the certified kernel's models; per program, about the Lean function | [Correctness statement](#correctness-statement), [certification design](certification-design.md) |
+| E1–E9, A1–A3, F1–F8 | SrcEval's rules | the module header of [`Src/Semantics.lean`](../IxCC/Src/Semantics.lean) |
+| tier S (S1–S4), tier C (C0–C6) | The relevance checker's soundness facts and consistency rules | the module header of [`Src/Relevance/Check.lean`](../IxCC/Src/Relevance/Check.lean) |
+| E1, E2 | The x86 encoding layers: per-form encoder and decoder; complete streams and ELF objects | [x86 instructions](x86-encoded-instructions.md), [x86 streams and objects](x86-stream-objects.md) |
+| K0 … K6 | Benchmark rungs | [roadmap](roadmap.md#benchmark-rungs) |
+| Phase 0 … 5 | Delivery phases | [roadmap](roadmap.md#phases) |
+| IxOS-0 … IxOS-4, IxCK-1 … IxCK-3 | Steps of the two flagship targets | [roadmap](roadmap.md#flagship-targets) |
+| DR1 … DR9 | Items of the data, roots and effects design | [data, roots and effects](data-and-roots-design.md) |
+| CD1 … CD4 | Items of the certification-depth design | [certification design](certification-design.md) |
+| Stage A | The byte-level verifiers' requirement that the certificate's relevance annotation equal `Src.Relevance.annotate`'s output on the certificate's table (`Recheck.checkCanonicalRelevance`) | this table |
+| S0, S1, S2 (x86) | Steps of the Sail reference-model route | [x86 reference model](x86-reference-model.md) |
+| S1–S12, N1–N14, `B*-*`, `R*-*` | Findings of the 2026-11 reviews | Each document that cites one says what the finding is |
+
 ## Correctness statement
 
 For a compiled root `f` with first-order argument and result types:
@@ -65,6 +171,11 @@ statement is established in two stages:
 2. **Against every model of the environment accepted by ix-certified's
    `Ix.Kernel`.** A single adequacy theorem relates evaluator results to
    denotations.
+
+Code comments call the first stage *stage S* and the second *stage K*. A
+third route, *stage L*, states per program that the compiled code computes
+the Lean function itself; it is planned first, with stage K as research
+([certification design](certification-design.md)).
 
 **What is proved (Phase 1, stage 1).** `Recheck.sound`
 (`IxCC/Recheck/Proof/Soundness.lean`) states the correctness
@@ -229,10 +340,8 @@ lemmas and adds one case, not the per-construct proofs.
 
 ### Pass identifiers
 
-Code comments and certificates name the Lam and Anf passes P0 to P9. The
-identifiers come from the pre-merge design note on erasure and the middle
-end (note 02 §8, untracked, not in this repository); this table is now their
-definition.
+Code comments and certificates name the Lam and Anf passes P0 to P9. This table
+is their definition.
 
 | Id | Pass | Module | Status |
 | --- | --- | --- | --- |
@@ -259,7 +368,7 @@ shrink rounds run and which call sites are specialised, and on the byte-level
 verifiers the claimant also chooses the program. Without bounds one certified
 step could ask for work and recursion far beyond its input: a single `inline`
 step on a 1.1 KB closure asked for about 16.8 million copied bindings and made
-`ixcc check-cert` abort with a stack overflow (review of 2026-11-09, item 2).
+`ixcc check-cert` abort with a stack overflow.
 The checker therefore refuses an input or a step, with an ordinary error, as
 soon as it passes one of these fixed budgets
 ([`Src/Syntax.lean`](../IxCC/Src/Syntax.lean),
@@ -329,8 +438,8 @@ depth left wherever the share is reused, so no ingested term is deeper than
 `CompileClaim.verifyProgram`, `checkClaimProgram`, `Ring0Sip.verifyProgram`)
 assume their `Src.Program` came from ingress, and say so; a host that builds
 one some other way runs `Recheck.checkSrc` first (it is not on the recheck
-path, where the kernel-evaluated tests would pay about 0.2 ms per tree node). `tests-recheck` runs every
-verifier entry point in a child process with `LEAN_STACK_SIZE_KB=8192` on R1's
+path, where the kernel-evaluated tests would pay about 0.2 ms per tree node). `tests-recheck` runs
+every verifier entry point in a child process with `LEAN_STACK_SIZE_KB=8192` on the inline
 amplifiers, on generated deep and wide inputs at and past each budget, on a
 term whose shares are reused deeper than their first use, and on chains of every nesting
 constructor at Lam and Anf (at the depth budget and one level past it, through
@@ -358,7 +467,7 @@ single-alternative cases take 12.4 s (`Cfg.lower` 4.3 s, `Rt.lower` 1.4 s,
 join points 1.9 s; 300 globals of 200 values live at once 0.1 s (allocation,
 its validator, frame layout, the encoder and the stream checker stay linear);
 2,000 125-way cases, fifteen times past the budget, 13.9 s, 11.8 s of it
-`Rt.checkSwitches`. FV-2's 16,383-level global, now refused by `maxDepth`,
+`Rt.checkSwitches`. A 16,383-level global, now refused by `maxDepth`,
 took 12.8 s. With the middle end's worst certificate (64 shrink steps each
 just under `maxStepWork`, 10.7 s), `checkSrc` (it refuses about 5·10⁸ tree
 nodes in 4.3 s) and the front end on a program at `maxSrcVisits` (about 6 s
@@ -392,7 +501,7 @@ checked against the admitted closure.
 | `case T` | `T.casesOn` becomes a primitive case. |
 | `inline f` | Unfold matchers and `@[inline]`/`@[macro_inline]` definitions. |
 | `lazy f` | Pass arguments by name (`ite`, `dite`, `cond`, `Bool.or`, …). |
-| `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a stage-2 obligation, [certification design](certification-design.md#c4-stage-k-semantic-adequacy-s8)). |
+| `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a stage-2 obligation, [certification design](certification-design.md#cd4-stage-k-semantic-adequacy-s8)). |
 
 In the model, an accepted equation theorem forces its two sides to denote the
 same value, so every table entry preserves meaning. When an equation is
@@ -436,7 +545,7 @@ The design in this section up to the plain-RC paragraph is the Phase 2
 target and is **planned**: the untrusted passes, the linear-typing checker,
 the checked fallback and the guarantee table are not built. What is
 implemented is the conservative plain-RC route described from "The first
-plain-RC implementation" on ([data design, D1](data-and-roots-design.md#d1-heap-completion)).
+plain-RC implementation" on ([data design, DR1](data-and-roots-design.md#dr1-heap-completion)).
 
 **Untrusted passes place reference-counting operations:**
 - borrow inference;
@@ -522,7 +631,7 @@ operations the plain route places.
   are planned; every implemented layout is fully scanned.
 - `UInt64` is raw in registers and scalar fields once a checked
   representation annotation exists (planned,
-  [D2](data-and-roots-design.md#d2-fixed-width-integers-and-int)); until then
+  [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)); until then
   it is a tagged `Nat`, and a value at or above 2^63 fails as `Nat` does.
 
 **Services.**
@@ -642,9 +751,9 @@ exit criterion. The [roadmap](roadmap.md#plan) orders them.
 | Extension | Status | Design |
 | --- | --- | --- |
 | Higher-order code: P8 defunctionalisation, P9 | Planned (Phase 2) | [Closures](closures-design.md) |
-| Heap completion: scalar fields, large and static objects, reuse, ownership checker | In progress (Phase 2) | [Data, roots and effects](data-and-roots-design.md#d1-heap-completion) |
+| Heap completion: scalar fields, large and static objects, reuse, ownership checker | In progress (Phase 2) | [Data, roots and effects](data-and-roots-design.md#dr1-heap-completion) |
 | Fixed-width integers, `Int`, arrays, byte arrays, strings, library structures | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md) |
-| Structured roots, the byte ABI, the claim's ABI descriptor, state-machine effects | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md#r1-structured-roots-and-the-byte-abi) |
+| Structured roots, the byte ABI, the claim's ABI descriptor, state-machine effects | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md#dr6-structured-roots-and-the-byte-abi) |
 | Bignums: a limb library compiled by IxCC | Planned (Phase 4) | [Bignums](bignum-design.md) |
 | Front-end theorem, shape typing, stage L, stage K | Planned and research (track C) | [Certification depth](certification-design.md) |
 | Scale and usability | Planned (Phase 5) | [below](#scale-and-usability) |
@@ -655,10 +764,11 @@ exit criterion. The [roadmap](roadmap.md#plan) orders them.
 planned.
 
 **Motivation.** The flagship targets are far larger than any program the
-compiler has seen. The certified kernel's executable closure is about 1,270
-definitions for the checker and about 1,870 with admission and the Ixon
-reader, before the parts of `Init` and `Std` it uses (grep counts, upper
-bounds, 2026-11-09 IXCC-ROUTE review). The largest committed programs fit
+compiler has seen. The import closure of the certified kernel's checker
+(`IxCK.Kernel.Cached.Installed`) has 53 modules and 1,264 `def` and `abbrev`
+lines; with admission and the Ixon reader it has 79 modules and 1,868, before
+the parts of `Init` and `Std` it uses (counted by following `import` lines;
+upper bounds). The largest committed programs fit
 the budgets with headroom between 2.4× and 326× ([Middle-end
 budgets](#middle-end-budgets)), but they are small: a global of more than
 16,384 nodes or 2,048 levels, or a term more than 2,048 deep, is refused today
@@ -672,8 +782,8 @@ verifier must fit an 8 MiB stack.
   ([`Recheck/Run.lean:173`](../IxCC/Recheck/Run.lean)).
 - The front end before the middle end is bounded by depth (`depthBudget`,
   `termFuel`) and, before P1, by `maxLamNodes`.
-- Reported superlinear steps (2026-11-08 review, not re-measured at this
-  head): a shrink round reads up to order `n²` nodes in a global's size (census
+- Superlinear steps found by measurement in November 2026 (not re-measured
+  since): a shrink round reads up to order `n²` nodes in a global's size (census
   reads, above; now charged to the walk's work budget); one walk round was about quadratic (16,000 bindings in
   25.6 s); `encodeK`, which kernel evaluation of the recheck runs (native
   code runs `encode` through `encodeK_csimp`), is quadratic in the program's
@@ -681,8 +791,8 @@ verifier must fit an 8 MiB stack.
   checks are quadratic. Erased type checking (`V3.Tc.checkEnv`) took about
   30 s on a 1 MB closure, against milliseconds for `Recheck.run`, so the
   roadmap's 10 s target is missed with type checking on.
-- The producer `ixcc compile` ran past 180 s on a 917-byte input with heavy
-  sharing, where `check-cert` is bounded (2026-11-09 review, open question 3).
+- The producer `ixcc compile` was seen to run past 180 s on a 917-byte input
+  with heavy sharing, where `check-cert` is bounded.
 - Declines carry a `stage: code` and a message (for example
   `fir.closures`); `lake exe census` reports the first failing stage per
   declaration ([corpus](corpus.md)). Messages name constants by Ixon

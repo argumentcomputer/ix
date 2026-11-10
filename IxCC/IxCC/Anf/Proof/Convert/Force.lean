@@ -4,7 +4,7 @@ import IxCC.Anf.Proof.Convert.Head
 
 Reading a `name` variable forces its thunk: Lam evaluates the thunk's term
 one clock down; Anf applies the thunk closure `fn [_] t'` to □, which runs
-`t'` one clock down (P1, M2.3). A plain thunk (its binder's signature has no
+`t'` one clock down (P1). A plain thunk (its binder's signature has no
 `name`) gives a plain value (`force_sim`, from the body simulation below the
 bound); a minor thunk (an erased recursor's minor, dispatched by name)
 gives a telescope closure whose binders fit its dispatch signature

@@ -5,7 +5,7 @@ import IxCC.Lam.Proof.Spine
 
 /-! # The erasure simulation: setting, environments, slots and β
 
-The simulation (M2.2) is proved one clock bound at a time
+The simulation is proved one clock bound at a time
 (`Sem.SimUpTo`): `TRSim S m` says every erasure `TR cx t t'` simulates, up to
 clock `m`, from related environments; `ApplySim S m` says applying related
 values to related slots does. This module fixes the setting (a Src program,

@@ -1,7 +1,7 @@
 import IxCCTests.Corpus.Artifacts.NatShiftr
 import IxCCTests.Recheck.Kernel.Support
 
-/-! The whole recheck path on a corpus closure in the kernel (MT.2): on the
+/-! The whole recheck path on a corpus closure in the kernel: on the
 program, configuration and certificate of
 `IxCCTests.Corpus.Artifacts.NatShiftr`, `Recheck.run` gives the object's
 bytes the native run writes (`corpus kernel-artifacts --check` recomputes

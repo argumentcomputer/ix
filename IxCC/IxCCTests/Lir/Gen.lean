@@ -540,7 +540,7 @@ def genFunc (fi : FunId) (budget : Nat) : G Func := do
 
 /-- The raw program drawn from `rng` (it may contain critical edges), with
 the generator's counts and the final `Rng` (whose tape, when it has one,
-holds the choices drawn: MT.5's shrinking replays them). -/
+holds the choices drawn: the shrinker replays them). -/
 def programWith (cfg : Config) (rng : Rng) : (Program × Stats) × Rng := Id.run do
   let gen : G Program := do
     let target ← match ← weighted [5, 3, 2] with

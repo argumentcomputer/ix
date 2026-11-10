@@ -8,7 +8,7 @@ needs the lower bounds and application at `m`. So every erasure simulates
 SrcEval at every clock (`tr_correct`, a `Sem.Sim` with the identity clock
 map), and a program's run from a root does (`run_correct`): its global is
 the root's δ body or its special head's wrapper, at the empty profile that
-agrees with the empty levels `Src.run` instantiates (M2.2). -/
+agrees with the empty levels `Src.run` instantiates. -/
 
 set_option autoImplicit false
 

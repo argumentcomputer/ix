@@ -4,14 +4,14 @@ import IxCC.Src.Value
 
 /-! # Erasing values
 
-`eraseVal` (design note 02 §5.2) on first-order SrcEval values: `irr` is □,
+`eraseVal` on first-order SrcEval values: `irr` is □,
 a literal is a literal, a constructor keeps its fields kept at the profile
 of its own levels (D18) under its checked key (`Decidable` retagged as
 `Bool`), an unboxed structure is its kept field, and a quotient is its
 unboxed element. Closures and partial applications have no image here:
 their erasure depends on the context map of the term that built them
-(erasure's Lam-only binders are captured), so M2.2 relates them up to
-environment layout. The tests compare first-order results through this
+(erasure's Lam-only binders are captured), so the erasure proof relates
+them up to environment layout. The tests compare first-order results through this
 function. -/
 
 namespace IxCC.Lam.Erase

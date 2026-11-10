@@ -79,7 +79,7 @@ def Fixture.natArity? (f : Fixture) : Option Nat :=
 * Diagnostic rows, entry profile only, which attribute a gap and are never
   real-program results: `clang-tagged`, the K1 algorithms on ixcc's
   value representation (tagged words, carry-checked `+ 1`) at `-O2`;
-  `lir-kernel`, MEAS-4's hand-written Lir kernels (fib, sum-loop, gcd)
+  `lir-kernel`, the early backend probe's hand-written Lir kernels (fib, sum-loop, gcd)
   through the current backend; and `ixcc@NAME`, objects with the
   ixcc row's interface from elsewhere (`build --variant NAME=DIR`,
   `DIR/<fixture>.o`): another commit's compiler, or a hand-edited
@@ -121,11 +121,11 @@ def Row.diagnostic : Row → Bool
   | _ => false
 
 /-- K1 fixtures whose natural twin the entry adapter calls, and which have a
-tagged twin: the original five and the MT.2 corpus four. -/
+tagged twin: the original five and the four from the scalar corpus. -/
 def k1Twins : List String :=
   ["fib", "sum-loop", "ackermann", "tak", "gcd", "collatz", "prime-count", "even-odd", "sfib"]
 
-/-- MEAS-4's hand-written Lir kernels: fixture name and object stem. -/
+/-- The early backend probe's hand-written Lir kernels: fixture name and object stem. -/
 def lirKernels : List (String × String) := [("fib", "fib"), ("sum-loop", "sumLoop"), ("gcd", "gcd")]
 
 /-- Substitute `{src}`, `{out}` and `{c}` placeholders. -/

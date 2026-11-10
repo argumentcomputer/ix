@@ -3,10 +3,10 @@ import IxCC.Sem.Dominance
 
 /-! # The Anf-to-Anf relation: interface and compatibility
 
-The logical relation of design note 02 §7 for Anf-to-Anf passes, at the
-granularity the depth clock allows (M2.3). Anf, like Lam, runs on a *depth*
+The logical relation for Anf-to-Anf passes, at the
+granularity the depth clock allows. Anf, like Lam, runs on a *depth*
 clock: a value computed one clock down is used at the full clock, so a
-step-indexed relation on values (02 §7.1's `ValRel k`) is circular. The
+step-indexed relation on values (`ValRel k`, indexed by the clock) is circular. The
 relation is therefore split:
 
 * on **values** a relation `R` that is not clock-indexed. It is

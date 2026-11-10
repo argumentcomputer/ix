@@ -3,7 +3,7 @@ import IxCC.Sem.SimUpTo
 
 /-! # Anf: clock monotonicity
 
-`Anf.eval_mono` (design note 02 §6.2, M2.3): an outcome of `eval` other
+`Anf.eval_mono`: an outcome of `eval` other
 than `timeout` is the outcome at every larger clock, and likewise for
 `evalBind`, `applyN`, `evalAlts`, the jump and call helpers, and `run`; so
 each is a `Sem.ClockMono` computation. Strong induction on the clock; within
@@ -192,7 +192,7 @@ theorem run_agrees {k k' : Nat} (hk : k ≤ k') (root : GlobalId) (xs : List Val
   rw [run_eq, run_eq]
   exact .bind (evalBind_agrees P hk [] _) fun f _ => applyN_agrees P hk f xs
 
-/-- **Clock monotonicity** of Anf evaluation (M2.3). -/
+/-- **Clock monotonicity** of Anf evaluation. -/
 theorem eval_mono (ρ : List Val) (J : List JClo) (e : Exp) : ClockMono fun k => eval P k ρ J e :=
   Result.Agrees.clockMono fun k k' hk => eval_agrees P k k' hk ρ J e
 

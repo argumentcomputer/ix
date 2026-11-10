@@ -4,7 +4,7 @@ import IxCC.Anf.Proof.Convert.Groups
 
 Lam spines rebuilt from their head and arguments, `covered` and the kinds a
 global's telescope expects, grouped argument order under a bind, and Lam's
-value of a global (P1, M2.3). -/
+value of a global (P1). -/
 
 set_option autoImplicit false
 

@@ -5,7 +5,7 @@ import IxCC.Anf.Budget
 /-! # The rewriting walk
 
 One traversal shared by shrink (P2), inlining (P3) and the specialiser's
-body copies (P4), designed as a sequence of local rewrites (02 §7.3) applied
+body copies (P4), designed as a sequence of local rewrites applied
 while copying a source term into a target term:
 
 * The walk carries an **environment** mapping source value variables to
@@ -20,7 +20,7 @@ while copying a source term into a target term:
   or a meta-continuation (the rest of a caller after an inlined body), used
   at most once: before any branching it becomes a join point.
 
-**Rules** (`Cfg.shrink`, 02 §8), each preserving every clock charge or
+**Rules** (`Cfg.shrink`), each preserving every clock charge or
 replacing it by a `tick` (tick dominance):
 * copy propagation of an atom binding; dead pure bindings (`con`, `proj`,
   `prim`, `fn`, function `glob`), dead join points; `call`, `app` and CAF

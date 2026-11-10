@@ -8,7 +8,7 @@ An inline round walks each listed caller's body under the configuration
 that inlines its listed callees, all against the program at the start of the
 round; the other globals are kept. Every round is therefore a walk pass
 (`WalkProg`) whose valid configurations read the round's input program, so
-the output refines the input for **every** oracle (`round_refines`, M2.3). -/
+the output refines the input for **every** oracle (`round_refines`). -/
 
 set_option autoImplicit false
 

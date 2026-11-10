@@ -6,11 +6,11 @@ import IxCC.Sem.Dominance
 
 /-! # ANF conversion: the value relation
 
-The relation that ANF conversion's simulation (P1, M2.3) keeps between Lam
-values, slots and environments and Anf values (design note 02 §7.1, for the
+The relation that ANF conversion's simulation (P1) keeps between Lam
+values, slots and environments and Anf values (for the
 Lam → Anf instance). Lam and Anf both use depth clocks, so a value computed
 one clock down is used at the full clock; the relation on values is
-therefore not clock-indexed (as in M2.2's erasure proof): a closure is
+therefore not clock-indexed (as in the erasure proof): a closure is
 related through the *code* conversion produced for its body, under related
 environments, and the simulation itself is clock-indexed (`Sem.SimUpTo`)
 and proved by strong induction on the clock bound.

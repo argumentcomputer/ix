@@ -3,7 +3,7 @@ import IxCC.Sem.SimUpTo
 /-! # Tick dominance under a charge
 
 Two `SimUpTo` rules for a translation whose target runs the *rest* of a
-computation under a charge that the source pays before it (M2.3):
+computation under a charge that the source pays before it:
 
 * `SimUpTo.tick`: the source charges, computes `c` one clock down and then
   continues with `d` at the full clock; the target charges and runs all of

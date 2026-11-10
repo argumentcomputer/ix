@@ -2,7 +2,7 @@
  * The runner's adapter for the diagnostic clang-tagged row (untrusted
  * measurement code): tag the arguments (n -> 2n + 1), call the tagged twin
  * (benchmarks/meas4/twins.c for fib, sum-loop and gcd; tagged.c for
- * ackermann, tak and the MT.2 corpus four, all at -O2), untag the result.
+ * ackermann, tak and the four from the scalar corpus, all at -O2), untag the result.
  * FIXTURE_<name> selects the twin.
  */
 #include <stdint.h>

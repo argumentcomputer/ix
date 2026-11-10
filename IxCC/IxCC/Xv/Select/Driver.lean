@@ -6,7 +6,7 @@ import IxCC.Xv.Select.Branch
 `Select.run` maps each Lir function to an Xv function with the same
 parameters, labels, block parameters, edges and cold flags, so the two run
 in lock-step: they charge the clock at the same calls, tail calls and
-edges (05 §2, §4).
+edges.
 
 Each block is scanned backwards (after Cranelift's `machinst/lower.rs`):
 first the terminator, then the statements from last to first. A rule may
@@ -18,8 +18,7 @@ consumed register has no other reader.
 
 The driver is in kernel-evaluable style (`Select.Basic`): the analyses are
 persistent `Nat`-keyed maps built by folds over lists, and blocks and
-statements are visited as lists by structural recursion.
--/
+statements are visited as lists by structural recursion. -/
 
 namespace IxCC.Xv.Select
 
@@ -125,14 +124,14 @@ def run (p : Lir.Program) : Except Error (VProgram × Std.TreeMap String Nat com
   return ({ funcs := funcs.toArray, main := p.main }, fired)
 
 /-- Select a Lir program without the firing statistics: the recheck path's
-entry (`Recheck.run`, M1.K1), whose kernel evaluation keeps no
+entry (`Recheck.run`), whose kernel evaluation keeps no
 `String`-keyed map. The statistics are write-only, so it selects what
 `run` selects (`check-xv-select` and the pipeline suites compare). -/
 def select (p : Lir.Program) : Except Error VProgram := do
   let (funcs, _) ← (selectFuncs false p.funcs.toList.zipIdx).run {}
   return { funcs := funcs.toArray, main := p.main }
 
-/-- The rule names `run` reports, in table order (05 §4). -/
+/-- The rule names `run` reports, in table order. -/
 def ruleNames : List String :=
   ["br", "cmp.rr", "cmp.imm8", "cmp.imm32", "cmp.swap", "cmp.testSelf",
    "cmp.mem.rr", "cmp.mem.imm8", "cmp.mem.imm32", "test.rr", "test.imm", "test.mem",

@@ -297,7 +297,7 @@ theorem exec_allocStores {ρl : Lir.Env} {ctx bump e lo hi : Word} {m : X86.Memo
     exact hw _ (by simp [X86.Memory.write]) _ (by omega) (by omega))]
   rfl
 
-/-- **The immortal bump allocation simulates Cfg's `alloc`** (04 §8.1). -/
+/-- **The immortal bump allocation simulates Cfg's `alloc`**. -/
 theorem alloc_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup : Nat}
     {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
     (hH : Holds f F off starts C) {st st' : St} {x : Nat} {c : Fir.CtorInfo} {las : List Lir.Arg}

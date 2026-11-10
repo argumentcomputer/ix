@@ -7,7 +7,7 @@ import IxCC.Anf.Prune
 (the size, the total number of references, the roots and one), it empties
 its worklist: each step lowers the worklist's length plus the references of
 the globals not yet seen. Its result then contains the roots and is closed
-under the references of the globals it contains (M2.3). -/
+under the references of the globals it contains. -/
 
 set_option autoImplicit false
 

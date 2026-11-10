@@ -1,5 +1,5 @@
 /*
- * MEAS-4 timing driver (untrusted measurement code). One executable per row:
+ * The early backend probe's timing driver (untrusted measurement code). One executable per row:
  * this file plus the row's adapter (row_<row>.c), which provides row_init
  * and the three kernels on natural numbers, and the row's code.
  *

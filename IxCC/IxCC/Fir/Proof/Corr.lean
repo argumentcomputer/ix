@@ -5,7 +5,7 @@ import IxCC.Sem.Bind
 
 `Corr A N a D ra cf`: Anf's outcome `ra` at clock `a` against Fir's
 computation `cf` (a function of Fir's clock), as `Fir.convert_correct`
-needs it (06 S31):
+needs it:
 
 * **forward at the same clock:** a value at `a` is a related Fir value at
   `a`, a trap a trap (Fir charges a subset of Anf's events, so it runs at

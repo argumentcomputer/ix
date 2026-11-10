@@ -6,7 +6,7 @@ import IxCC.Xv.XlSemantics
 # Analyses for the allocator (untrusted)
 
 Precise liveness, loop depth, spill weights and register hints over an Xv
-function (05 §5). The allocator is `produce` code (D17): it may use hash
+function. The allocator is `produce` code (D17): it may use hash
 maps and arrays, and nothing here needs to be right for soundness, since the
 validator re-checks the allocation. It must be right for the allocation to
 be accepted.
@@ -23,8 +23,7 @@ be accepted.
   `fixed` constraint and 1000 for `any`.
 - **Hints**: the first fixed register each register is used in, and
   whether a register is live across a call (then callee-saved registers
-  are preferred).
--/
+  are preferred). -/
 
 namespace IxCC.Xv.Alloc
 

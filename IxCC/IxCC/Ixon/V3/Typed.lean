@@ -2,7 +2,7 @@ import IxCC.Ixon.V3.Tc.Driver
 
 /-! Decoded and erased-typed v3 input, without resource admission. The
 compiler front end (`IxCC.Src`) consumes this: v3 resource admission
-is a census diagnostic, never a compile gate (design note 06 S40). The
+is a census diagnostic, never a compile gate. The
 existing `ValidatedInput` keeps its combined resource and typing contract. -/
 
 namespace IxCC.Ixon.V3

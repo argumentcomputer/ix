@@ -5,8 +5,7 @@ import IxCCTests.Recheck.Kernel.Gcd
 /-! # The recheck path on K1 artifacts, evaluated by the kernel
 
 On the bench-k1 artifacts (`IxCCTests.Recheck.Artifacts`),
-`decide +kernel` checks against the native run (M1.K1; M2.8 makes this the
-kernel-recheck gate):
+`decide +kernel` checks against the native run:
 
 * `Recheck.runTyped` (the laid-out typed x86 program) on fib, tak and gcd;
 * the whole `Recheck.run` (the object's bytes) on fib, about 17 s.

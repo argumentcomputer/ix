@@ -6,7 +6,7 @@ import IxCC.Xv.Validate.Proof.Fuel
 
 When `Validate.run env p outs` accepts and gives `q`:
 
-- `Validate.program_eval_eq` (05 §5's `program_sound`): at every clock,
+- `Validate.program_eval_eq`: at every clock,
   on every input, the Xl run of `q` has the Xv run's outcome unless that
   is stuck, timeouts included;
 - `Validate.program_sim`: hence a clocked simulation with the identity
@@ -34,7 +34,7 @@ theorem initial_match (hacc : Accepted env p outs q) {args : List Word} {mem : X
     fr, [], fl, [], rfl, rfl, hrun, trivial⟩
   simp [Xl.State.initial, hacc.main, hent]
 
-/-- Validator soundness per clock (05 §5): an accepted allocation's Xl run
+/-- Validator soundness per clock: an accepted allocation's Xl run
 has the Xv run's outcome at every clock, timeouts included, unless the Xv
 run is stuck. -/
 theorem program_eval_eq (h : Validate.run env p outs = .ok q) {k : Nat} {args : List Word}
@@ -62,7 +62,7 @@ theorem program_sim (h : Validate.run env p outs = .ok q) (args : List Word) (me
     obtain ⟨t, ht, hm⟩ := initial_match hacc hi
     exact (diagram hacc).sim hm (runs_eval hi) (Xl.runs_eval ht)
 
-/-- Validator soundness (M2.6): an accepted allocation refines its
+/-- Validator soundness: an accepted allocation refines its
 program. On every input, each behaviour of the Xv program other than a
 stuck one (a result, divergence, a trap, a resource failure) is the Xl
 program's. -/

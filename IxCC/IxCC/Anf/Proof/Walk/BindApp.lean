@@ -8,7 +8,7 @@ the result applied to the rest, under-applied: a `walkc` closure of the
 remaining parameters), known calls (an application of a function global's
 closure or partial application becomes a call; over-saturated, a call then
 an application of the rest; a dead partial application becomes a tick), and
-kept applications (with the partial-application fact) (M2.3). -/
+kept applications (with the partial-application fact). -/
 
 set_option autoImplicit false
 

@@ -172,7 +172,7 @@ def misalignedCallTraps : Bool :=
 
 #guard misalignedCallTraps
 
-/-- An export with the failure exit (note 05 §6.1), called as
+/-- An export with the failure exit, called as
 `ixcc_main(ctx, depth, mode)`. The wrapper saves the callee-saved
 registers and its stack pointer at `[ctx]` (`r15 = ctx + 64`) and calls
 `f(depth)`. Each level of `f` checks the stack against `stackLimit` at

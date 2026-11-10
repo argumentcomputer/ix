@@ -3,7 +3,7 @@ import IxCC.Sem.SimUpTo
 
 /-! # Own: clock monotonicity
 
-`Own.eval_mono` (M2.4): under either allocation policy, an outcome of `eval`
+`Own.eval_mono`: under either allocation policy, an outcome of `eval`
 other than `timeout` is the outcome at every larger clock, and likewise for
 `evalAlts`, `evalCall`, the call and jump helpers and `run`. Strong
 induction on the clock; within one clock, well-founded induction on the
@@ -156,7 +156,7 @@ theorem evalAlts_agrees {k k' : Nat} (hk : k ≤ k') (ρ : Env) (J : List JEntry
     Agrees (evalAlts pol P k' ρ J H key alts d) (evalAlts pol P k ρ J H key alts d) :=
   evalAlts_agrees_of pol P (fun j _ j' hj => eval_agrees pol P j j' hj) hk ρ J H key alts d
 
-/-- **Clock monotonicity** of Own evaluation, under either policy (M2.4). -/
+/-- **Clock monotonicity** of Own evaluation, under either policy. -/
 theorem eval_mono (ρ : Env) (J : List JEntry) (H : Heap) (c : Code) :
     ClockMono fun k => eval pol P k ρ J H c :=
   Result.Agrees.clockMono fun k k' hk => eval_agrees pol P k k' hk ρ J H c
@@ -184,7 +184,7 @@ theorem jumpTo_mono (e : JEntry) (rest : List JEntry) (vs : List RVal) (H : Heap
     · exact eval_agrees pol P k k' hk _ _ H e.body
   · exact .refl _
 
-/-- **Clock monotonicity** of an Own run, under either policy (M2.4). -/
+/-- **Clock monotonicity** of an Own run, under either policy. -/
 theorem run_mono (f : FunId) (args : List RVal) (H : Heap) :
     ClockMono fun k => run pol P k f args H :=
   evalCall_mono pol P f args H

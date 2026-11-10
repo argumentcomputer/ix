@@ -2,7 +2,7 @@ import IxCC.Lam.Syntax
 
 /-! # Static by-name positions
 
-`Lam.ModesOk P` (design note 02 §4.3), ANF's precondition: a `name` λ binder
+`Lam.ModesOk P`, ANF's precondition: a `name` λ binder
 only ever receives `name` slots and a `strict` binder only `val` slots, so
 ANF conversion knows statically which variables hold thunks. It is decided
 by `modesOk`, a syntactic check:

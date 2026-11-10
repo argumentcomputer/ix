@@ -3,7 +3,7 @@ import IxCCTests.Pipeline.Mutants
 import IxCCTests.Pipeline.Levels
 import IxCCTests.Pipeline.Twin
 
-/-! The `tests-pipeline` suite (M1.I1, M1.I2): the compiler end to end.
+/-! The `tests-pipeline` suite: the compiler end to end.
 
 * the `ixcc` command line on the bench-k1 closures and `k1.ixe`,
   `produce` + `run` against the stage suites' pipeline, the certificate's

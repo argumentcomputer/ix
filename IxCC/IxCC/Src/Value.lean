@@ -2,7 +2,7 @@ import IxCC.Src.Syntax
 
 /-! # SrcEval values
 
-Values and slots of the clocked big-step semantics (design note 01 §3.1).
+Values and slots of the clocked big-step semantics.
 Thunks live only in environments (`Slot.name`) and are forced at each read:
 call by name, not memoised. Types, proofs and irrelevant arguments are `irr`
 values, which are never forced, applied or projected. -/

@@ -4,7 +4,7 @@ import IxCC.Lir.Proof.Eval
 import IxCC.Lir.Proof.Relabel
 import IxCC.Lir.Proof.Split
 
-/-! Required axiom fences for Lir's run loop and step lemmas (M2.5):
+/-! Required axiom fences for Lir's run loop and step lemmas:
 `Lir.run` is `Sem.runClocked` of its step, the fuel of `Lir.eval` outlasts
 its clock (`runs_eval`, `eval_mono`), the width-64 evaluation equations,
 the steps of a frame, and relabelled programs running in lock step

@@ -5,7 +5,7 @@ import IxCCTests.Lir.Kernels
 # Selection evaluated by the kernel
 
 Selection is on `Recheck.run`'s path, which Lean's kernel must evaluate
-(roadmap D17, M1.K1). These examples run `Select.run` on the tagged-`Nat`
+(D17). These examples run `Select.run` on the tagged-`Nat`
 kernels inside the kernel (`decide +kernel`, no native evaluation) and
 check the size of each selected block, so a change that stops selection
 reducing (a `HashMap`, well-founded recursion, `implemented_by`) fails to

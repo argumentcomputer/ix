@@ -2,7 +2,7 @@ import IxCC.Lam.Syntax
 
 /-! # Lam well-formedness
 
-`Lam.WellFormed P` (design note 02 §4.3), decided by `wellFormed` with an
+`Lam.WellFormed P`, decided by `wellFormed` with an
 iff lemma: every global `0 … size - 1` is present and closed; variables are
 in scope; `glob` ids are in range; `con` arities, `case` alternative
 arities and `proj` indices come from the constructor table (the pinned `Nat`

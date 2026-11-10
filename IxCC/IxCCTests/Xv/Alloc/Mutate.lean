@@ -2,7 +2,7 @@ import IxCCTests.Xv.Alloc.Support
 import IxCCTests.Support.Rng
 
 /-!
-# Validator mutation (05 §12 item 4)
+# Validator mutation
 
 Each mutation plants one allocation bug in an accepted allocation. The
 validator must reject the mutant; if it accepts one, differential execution

@@ -19,7 +19,7 @@ read the entry.
 - `call_exit`, `call_running`: checked steps that exit as an export does
   are the call's outcome at some clock; checked steps that end running
   leave the call running one clock earlier;
-- `call_sim_of_ends`: 05 §6.2's conclusion at every clock (`ObjectEval.Ends`)
+- `call_sim_of_ends`: the backend's conclusion at every clock (`ObjectEval.Ends`)
   gives a simulation of the source by the call, for any clock map `f` with
   `k < b (f k)`.
 -/
@@ -161,7 +161,7 @@ theorem call_running (hout : output.text.size ≤ (retAddr - base).toNat) {n : N
       simp [finish, hne]
 
 include stream htext hsym hret in
-/-- 05 §6.2's conclusion at every clock, with step bound `b k` at clock
+/-- The backend's conclusion at every clock, with step bound `b k` at clock
 `k`, gives a simulation of the source by the call, with any clock map `f`
 such that the bound at `f k` exceeds `k`. -/
 theorem call_sim_of_ends (hout : output.text.size ≤ (retAddr - base).toNat) {α : Type}

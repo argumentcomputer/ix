@@ -3,14 +3,14 @@ import IxCC.Xv.Semantics
 import IxCC.X86.Basic
 
 /-!
-# Stacking: Xl functions to typed x86 (05 §6)
+# Stacking: Xl functions to typed x86
 
 Each Xl function becomes a run of typed x86 blocks:
 
 - **Stack check** (only when `FrameLayout.checked`): `lea r11, [rsp −
   (size + slack)]` and a branch `cmp r11, [r15 − 56]; jb fail₂`, where
-  `[r15 − 56]` is the context's `stackLimit` (04 §6) and `fail₂` the exit
-  group's stack block (05 §6.1).
+  `[r15 − 56]` is the context's `stackLimit` and `fail₂` the exit
+  group's stack block.
 - **Label 0** starts with the rest of the prologue: `sub rsp, size`, then a
   `mov [rsp + o], r` per saved register. Label `l` is block `labelBase + l`,
   so labels keep their order.
@@ -24,14 +24,13 @@ Each Xl function becomes a run of typed x86 blocks:
 - **Terminators.** `jmp` and `jcc` keep their targets (edges carry no
   arguments at Xl); `ret` restores the saved registers, frees the frame and
   returns; `tail f` does the same and jumps to `f`'s entry (register
-  arguments only, 05 §6); `fail r` and `trap` jump to the exit group's
-  `fail_k` block for status `k` (04 §6).
+  arguments only); `fail r` and `trap` jump to the exit group's
+  `fail_k` block for status `k`.
 
 Every check the Xl semantics makes by getting stuck (reserved registers,
 ties, fixed operands, convention locations, arities) is repeated here, so a
 program that stacks names only encodable operands. Emission is a
-proved-once, re-run pass (P, 05 §1.1), written in kernel-evaluable style.
--/
+proved-once, re-run pass (style P), written in kernel-evaluable style. -/
 
 namespace IxCC.Xv.Stacking
 
@@ -41,7 +40,7 @@ abbrev NatMap (α : Type) := Std.TreeMap Nat α compare
 
 /-! ## Addresses and rows -/
 
-/-- A context-block cell `[r15 + off]` (04 §6). -/
+/-- A context-block cell `[r15 + off]`. -/
 def ctxAt (off : Int) : X86.MemAddr := { base := some .r15, displacement := (Int32.ofInt off).toUInt32 }
 
 /-- `entrySp`: the wrapper's `rsp` at its call, for the failure exit. -/
@@ -69,7 +68,7 @@ def addRsp (n : Nat) : X86.Instr := X86.Instr.ofRow (X86.aluImmRow .add .w64 (.r
 /-- `xor r32, r32`. -/
 def zeroReg (r : X86.GPR) : X86.Instr := .op zeroRow [.reg r, .reg r]
 
-/-- Status codes the export wrapper returns in `rax` (04 §6). -/
+/-- Status codes the export wrapper returns in `rax`. -/
 def statusOf : Sem.Resource → Nat
   | .heap => 1
   | .stack => 2
@@ -89,7 +88,7 @@ def epilogue (l : FrameLayout) : List X86.Instr :=
   l.saveOff.map (fun (r, o) => X86.Instr.load .w64 r (rspAt o)) ++
     (if l.size == 0 then [] else [addRsp l.size])
 
-/-- The stack check (05 §6): `lea r11, [rsp − (size + slack)]; cmp r11,
+/-- The stack check: `lea r11, [rsp − (size + slack)]; cmp r11,
 [r15 − 56]; jb fail₂`, else on to label 0. -/
 def stackCheck (l : FrameLayout) (fail₂ next : X86.BlockId) : X86.Block :=
   { instructions := #[X86.Instr.lea .r11 (rspBelow (l.size + slack))]

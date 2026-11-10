@@ -4,11 +4,11 @@ import IxCC.Lam.Semantics
 
 Determinism holds by construction (`eval` is a function; stated below).
 The rules below are the ones erasure's proof reads off directly: □ is stuck
-under application, projection, `case` and primitives (06 S38), a key
+under application, projection, `case` and primitives, a key
 mismatch in `proj` is stuck, and `tick`, `glob` and closure entry charge
 exactly one unit. Clock monotonicity (`eval k ρ t = r → r ≠ timeout → k ≤ k'
-→ eval k' ρ t = r`) is an M2.2 theorem; `tests-lam` checks it on random
-clocks. -/
+→ eval k' ρ t = r`) is proved (`Lam.eval_mono`); `tests-lam` also checks it
+on random clocks. -/
 
 namespace IxCC.Lam
 

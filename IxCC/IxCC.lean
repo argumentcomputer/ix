@@ -503,9 +503,9 @@ certificate, `produce`, the recheck path `Recheck.run` and `compile`, and the
 front half's refinement from the checked source to the loaded Lir program,
 `Recheck.front_refines`, the backend half's (`Recheck.back_refines`: the object
 run by the runtime driver, `X86.Linked`, refines the loaded Lir program), and
-roadmap §1.1 at stage S for every object `Recheck.run` makes (`Recheck.sound`); `Cli`: the `ixcc` command line), and the Aiur target. The
-compiler pipeline is being rebuilt; see `docs/roadmap.md`. The complete
-regression and proof collection is built explicitly through
+the correctness statement at stage S for every object `Recheck.run` makes (`Recheck.sound`); `Cli`:
+the `ixcc` command line), and the Aiur target. The compiler pipeline is being rebuilt; see
+`docs/roadmap.md`. The complete regression and proof collection is built explicitly through
 `IxCCTests.Proofs`. The checked plain-RC companion API is
 `Recheck.RcReplay`: complete ownership certificate serialization/replay,
 allocation/reclamation/recycling lowering, emitted ELF and raw-word `cx_drop`.

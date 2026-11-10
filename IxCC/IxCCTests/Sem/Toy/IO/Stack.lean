@@ -4,7 +4,7 @@ import IxCCTests.Sem.Toy.IO.Runner
 /-!
 # Compiling the IO toy to a stack machine that performs the same events
 
-The target of the IO toy: M2.1's stack machine (`Toy.Stack`), whose calls
+The target of the IO toy: the pure toy's stack machine (`Toy.Stack`), whose calls
 and ticks charge a *total* clock and whose `add` fails with `natOverflow`
 at 2^64, with two more instructions, `out` (pop a value and perform
 `out v`) and `inp` (push the oracle's answer to the events so far and

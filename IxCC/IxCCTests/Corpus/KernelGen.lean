@@ -1,7 +1,7 @@
 import IxCCTests.Corpus.Manifest
 import IxCCTests.Recheck.Artifact
 
-/-! The corpus's kernel-recheck sample (MT.2): a few small corpus closures as
+/-! The corpus's kernel-recheck sample: a few small corpus closures as
 `Recheck.run`'s input, printed as Lean modules by the recheck artifact
 printer (`IxCCTests.Recheck.Artifact`) into
 `IxCCTests/Corpus/Artifacts/`, for the `decide +kernel` claims of

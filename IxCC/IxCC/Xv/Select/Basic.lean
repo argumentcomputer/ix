@@ -5,7 +5,7 @@ import Std.Data.TreeMap
 /-!
 # Selection: context, state and shared helpers
 
-Selection (05 §4) scans each Lir block backwards, turning each statement
+Selection scans each Lir block backwards, turning each statement
 and the terminator into Xv instructions with the first rule that applies.
 This module holds what the rules share:
 
@@ -16,22 +16,21 @@ This module holds what the rules share:
   `pureBetween j i` holds when none lies strictly between statements `j`
   and `i`. A rule may fold (consume) an earlier statement of the block whose
   single use it is: address arithmetic at any distance, a load only if
-  `pureBetween` holds, so folding never crosses a store or a call (06 S18).
+  `pureBetween` holds, so folding never crosses a store or a call.
 - **State** (`St`): fresh registers (after the function's largest), the
   statements already consumed, and a count of each rule's firings.
 - **Immediates** (rule 5): `xor r32, r32` for 0, `mov r32, imm32` below
   2^32, `mov r/m64, imm32` for sign-extended 32-bit values, `movabs`
   otherwise; and the imm8/imm32 fits of rule 6.
 
-**Kernel-evaluable style** (roadmap D17, M1.K1): selection is on the
+**Kernel-evaluable style** (D17): selection is on the
 `Recheck.run` path, so it keeps its tables in persistent `Nat`-keyed maps
 (`Std.TreeMap`, which the kernel reduces), recurses structurally over
 lists, and never indexes an `Array`: blocks and statements are read as
 lists (`Array.toList` is a projection).
 
 A form the table cannot express is an `unsupported` error naming the form,
-never a miscompilation.
--/
+never a miscompilation. -/
 
 namespace IxCC.Xv.Select
 
@@ -79,7 +78,7 @@ structure St where
   consumed : List Nat := []
   fired : Std.TreeMap String Nat compare := {}
   /-- Whether `fire` counts: off on the recheck path (`Select.select`), whose
-  kernel evaluation has no use for `String`-keyed statistics (M1.K1). -/
+  kernel evaluation has no use for `String`-keyed statistics. -/
   stats : Bool := true
 
 abbrev SelM := ReaderT Ctx (StateT St (Except Error))

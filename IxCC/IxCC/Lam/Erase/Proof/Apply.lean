@@ -10,7 +10,7 @@ the head, against the wrapper's body over its binders. That body is the
 head's saturated form over variables (`WrapR`): its `let`s rebind the
 binders' values without a charge, so the firing meets the forms of the
 saturated heads over the same slots, one clock after Lam's entry into the
-closure (M2.2). -/
+closure. -/
 
 set_option autoImplicit false
 

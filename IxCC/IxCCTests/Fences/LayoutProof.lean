@@ -4,7 +4,7 @@ import IxCC.X86.Layout.Proof.Rows
 import IxCC.X86.Layout.Proof.Linearize
 import IxCC.X86.Layout.Proof.Transport
 
-/-! Required axiom fences for the layout proofs (M2.6b): tunnelling keeps
+/-! Required axiom fences for the layout proofs: tunnelling keeps
 programs well formed and is a measured simulation (`tunnel_wellFormed`,
 `tunnel_step`, `tunnel_safeSteps`, `tunnel_run`), `Order.check` is sound
 (`Order.check_sound`: duplicate free, in range, entry, reachable blocks,

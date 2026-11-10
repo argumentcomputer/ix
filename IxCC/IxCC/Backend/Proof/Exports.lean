@@ -19,7 +19,7 @@ Lir program started at that function (`{ p with main := g }`):
   stacked exports' symbols are distinct, the laid-out program started at
   `g`'s wrapper is encoded in the object (`Stream.Valid`), the object's
   text is it, `sym` names its first block, and its runs end as `g`'s clocked
-  Xl runs do (05 §6.2, under the entry invariant for `g`) or, for a `Nat`
+  Xl runs do (under the entry invariant for `g`) or, for a `Nat`
   argument of 2^63 or more, exit with status 3;
 - `call_sim_export`: Lir started at `g` to the object's call of `sym`, with
   the clock map `k ↦ (B + 1)(k + 1)`;

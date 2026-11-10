@@ -108,7 +108,7 @@ address as ordinary data will agree with the symbolic evaluator.
 Every failure (`fail heap`, the prologue's `fail stack`, `fail
 natOverflow`, `trap`) leaves through the export wrapper that was entered,
 with status 1–4 in `rax`, 0 in `rdx`, and the caller's callee-saved
-registers restored (note 05 §6.1). The wrapper saves `rsp` in the context
+registers restored. The wrapper saves `rsp` in the context
 (`entrySp`, at `[r15 − 64]`); the exit group runs `unwind [r15 − 64]`, whose
 bytes are `mov rsp, [r15 − 64]` (`49 8B 67 C0`), then restores the saved
 registers and returns.
@@ -197,8 +197,8 @@ complete-stream results through serialized ELF interpretation.
 
 The earlier source-to-object composition for runtime list reversal
 (`RuntimeObjectSim.lean`) left main with the legacy pipeline; it remains on
-branch `jcb/ixby-archive`. New source compilers attach through the same
-`run_from_typed` and `run_with_calls` theorems.
+branch `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix` repository. New source
+compilers attach through the same `run_from_typed` and `run_with_calls` theorems.
 
 ## Evidence and remaining boundaries
 
@@ -246,4 +246,5 @@ and modeled permission faults. A hardware interpretation must also establish
 that the executable mapping has no writable alias in the arena or stack.
 Canonical addresses, unified hardware fetch,
 reference-ISA agreement, and external runtime-body refinement remain
-separate obligations. E2 does not discharge S1/S2, N3, or finite-space F1.
+separate obligations. E2 does not discharge steps S1 and S2 of the
+[reference-model route](x86-reference-model.md) or a finite-space bound.

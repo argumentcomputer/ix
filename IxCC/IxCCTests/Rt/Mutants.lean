@@ -1,6 +1,6 @@
 import IxCCTests.Rt.Cases
 
-/-! Planted mutations of `Rt.lower`'s output (M1.F6). Each mutant must be
+/-! Planted mutations of `Rt.lower`'s output. Each mutant must be
 caught:
 
 * **by `Lir.WellFormed`**, for the structural invariants the backend relies

@@ -4,7 +4,7 @@ import IxCC.Tools.Census
 import IxCC.Tools.SourceScan
 import IxCC.Recheck.Produce
 
-/-! The corpus builder (MT.1): `lake exe corpus`.
+/-! The corpus builder: `lake exe corpus`.
 
 * **`rebuild`** (manual; needs ix and Lean): for each fixture of a family,
   compile the anonymous closure of its roots and the named twin with the
@@ -15,7 +15,7 @@ import IxCC.Recheck.Produce
   generated cases from their seeds, run every case through Lean 4.34's
   interpreter (`lean --run`), check the independent constants, and rewrite
   the manifest's derived fields. It refuses an ix binary whose SHA-256 is not
-  the manifest's. This replaces `plans/x86-phase1/bench-k1/build.sh`, whose
+  the manifest's. This replaces an earlier shell script, whose
   commands it runs (byte-identical output on the five K1 closures).
 * **`check`** (offline; no ix, no Lean unless `--interpret`): verify every
   frozen file against the manifest (hashes and sizes, the sidecar's roots,

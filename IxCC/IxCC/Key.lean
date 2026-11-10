@@ -3,7 +3,7 @@ import IxCC.Src.Value
 /-! # Global and constructor keys
 
 Structural identities of the rebuilt pipeline's globals and constructors
-(D19; `plans/x86-v2/00-conventions.md` "Identity and keys", note 02 §4.1).
+(decision D19 in `docs/compiler-design.md`).
 Keys are built from Src's dense constant identities (`Src.CId`, one per
 source `CRef`) and universe profiles (D18), never from digests: they compare
 by `DecidableEq`, no theorem mentions a hash, and an address is only a label

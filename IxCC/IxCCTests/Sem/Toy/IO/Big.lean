@@ -4,7 +4,7 @@ import IxCC.Sem.TracedTransform
 # A toy big-step language with IO
 
 The IO toy checks the traced clause shapes of decision D-1 on a pipeline
-like M2.1's (`IxCCTests.Sem.Toy`): the same first-order language of
+like the pure toy's (`IxCCTests.Sem.Toy`): the same first-order language of
 one-argument functions with a depth clock, plus two event-producing
 constructs, `out a e` (output the value of `a`, then evaluate `e`) and
 `inp` (input a number). An abstract oracle answers an input from the events

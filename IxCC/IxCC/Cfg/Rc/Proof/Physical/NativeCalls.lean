@@ -3,7 +3,7 @@ import IxCC.Lir.Proof.Steps
 /-! Memory-changing ordinary procedure calls. Unlike the older scalar Nat
 procedure helper, the final memory may differ from the caller's initial memory.
 The premises are actual Lir steps and traces, with no compiler simulation
-oracle. H2's ambient procedure theorem supplies the internal trace. -/
+oracle. The runtime procedures' ambient theorem supplies the internal trace. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
 open IxCC.Lir

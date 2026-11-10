@@ -7,7 +7,7 @@ What the middle-end passes keep: the globals live below the program's size
 (`GlobalsBelow`, established by P1 and kept by every pass), a program
 rebuilt from its global list with each global mapped has the mapped globals
 (`get?_ofList_globalList`), and a program with the same globals refines its
-source (M2.3). -/
+source. -/
 
 set_option autoImplicit false
 

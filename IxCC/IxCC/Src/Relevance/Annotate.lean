@@ -3,10 +3,9 @@ import IxCC.Ixon.V3.Tc.Driver
 
 /-! # The relevance annotator (untrusted)
 
-Produces an `Ann` for the runtime-reachable part of a program (design note
-02 §3.2) with the ported checker's context: each runtime term is walked in
-step with its kernel reading (`KExpr`, from the same v3 expression, so the
-shapes agree node for node), opening binders as free variables. Relevance is
+Produces an `Ann` for the runtime-reachable part of a program with the ported checker's context:
+each runtime term is walked in step with its kernel reading (`KExpr`, from the same v3 expression,
+so the shapes agree node for node), opening binders as free variables. Relevance is
 level-exact (D18): a binder, argument or let whose type's sort is zero under
 a condition on the constant's universe parameters (`kZeroCond` of the
 inferred sort, exact without normalisation) is `proof` under that condition;
@@ -14,7 +13,7 @@ otherwise one whose type whnf's to a Π-telescope ending in a sort is `type`;
 anything else is `rel`. Each λ gets `propWhen` from the zero condition of
 the sort of its body's type. Field classes and constant classes use the same
 test. A λ binder, let, constant parameter or argument written `0` (erased)
-is irrelevant at every instance whatever its type (`honourErased`; CX-1),
+is irrelevant at every instance whatever its type (`honourErased`),
 so a run-time use of it fails the checker's C1 instead of its C0.
 
 The annotator is an oracle of the pipeline: nothing it produces is trusted.
@@ -135,7 +134,7 @@ def propWhenOfLam (lamE : KExpr .anon) : M PropWhen := do
   let u ← TcM.ensureSort s
   return condOfLevel u
 
-/-- A binder written `0` (erased) is irrelevant at every instance (CX-1):
+/-- A binder written `0` (erased) is irrelevant at every instance:
 the class its type gives is kept when that is already irrelevant at every
 instance, and is a proof at every instance otherwise. The checker decides
 the consequences: a run-time use of the binder fails C1, and a call whose

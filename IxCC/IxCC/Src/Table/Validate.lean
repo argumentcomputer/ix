@@ -2,11 +2,11 @@ import IxCC.Src.Table.Check
 
 /-! # Revalidating the unfolding table
 
-The table checks on the recheck path (design note 01 §1.2, style V): given a
-program and its table, re-run the §4.1 check that justifies every entry.
+The table checks on the recheck path (style V): given a
+program and its table, re-run the entry check that justifies every entry.
 `Table.build` (the producer) proposes, checks and prioritises entries; this
 validator only asks that each entry present be justified, which is what the
-stage-S reading of the table needs (§6.2):
+stage-S reading of the table needs:
 
 * `prim op`: `checkPrim` (the configured set, the pinned address, the type);
 * `csimp g us thm`: `checkCsimp` gives exactly this entry, its target has a

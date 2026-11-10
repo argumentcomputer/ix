@@ -86,7 +86,7 @@ theorem falls_sound {program : Program} {offset : Nat} {target : BlockId}
     target.toNat < program.blocks.size ∧ blockOffset program target.toNat = offset := by
   simpa only [falls, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] using accepted
 
-/-- A branch whose false edge falls through (05 §7) runs its producer and
+/-- A branch whose false edge falls through runs its producer and
 its `jcc`, two byte steps whether or not it is taken; not taken, the next
 byte is the false target's first. -/
 theorem branch_fall_at {program : Program} {text : ByteArray} {offset : Nat}

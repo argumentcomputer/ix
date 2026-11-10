@@ -1,7 +1,7 @@
 import IxCCTests.Corpus.Json
 import IxCC.Tools.Check
 
-/-! The corpus manifest, format `ixcc/corpus/1` (MT.1).
+/-! The corpus manifest, format `ixcc/corpus/1`.
 
 One manifest describes one fixture family: a directory of frozen Ixon v3
 closures, each compiled by ix from one Lean source file, with its
@@ -397,7 +397,7 @@ def Family.write (m : Family) (path : System.FilePath) : IO Unit :=
 
 /-! ## Expectations -/
 
-/-- The Phase 1 `Nat` words end at `2⁶³` (04 §2). -/
+/-- The Phase 1 `Nat` words end at `2⁶³`. -/
 def limit : Nat := 2 ^ 63
 
 /-- The resource failures and the trap, by their driver statuses 1–4. -/

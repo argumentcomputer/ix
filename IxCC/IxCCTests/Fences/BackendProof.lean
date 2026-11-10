@@ -4,7 +4,7 @@ import IxCC.Backend.Proof.Xl
 import IxCC.Backend.Proof.Emit
 import IxCC.Backend.Proof.Object
 
-/-! Required axiom fences for the backend composition (M2.6b item 5): the
+/-! Required axiom fences for the backend composition: the
 object's clocked execution (`ObjectEval.exec`, `exec_mono`), the bridge
 from checked typed runs to it (`exec_exit`, `exec_running`,
 `sim_of_ends`), and the composed backend (`Backend.xl_sim` and the

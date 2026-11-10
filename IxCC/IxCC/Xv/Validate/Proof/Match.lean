@@ -3,14 +3,13 @@ import IxCC.Xv.Validate.Proof.Steps
 /-!
 # The simulation relation
 
-`Match s t` (05 §5): an Xv state and an Xl state at the same label and
+`Match s t`: an Xv state and an Xl state at the same label and
 instruction (the Xl position is the one before the edits of that
 instruction), with the same memory and context word, the validator's state
 at that point agreeing with the Xv environment and the Xl locations
 (`RunMatch`), and each suspended caller matching at its call's return
 point, whatever values come back (`RetMatch`, CompCert's `return_regs`
-discipline).
--/
+discipline). -/
 
 namespace IxCC.Xv.Validate
 

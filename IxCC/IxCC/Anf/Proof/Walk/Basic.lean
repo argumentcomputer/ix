@@ -5,7 +5,7 @@ import IxCC.Anf.Proof.Walk.Rel
 The walk relation is structural (an `Anf.Rel` instance); environments,
 facts, join entries and continuations stay valid when the target
 environments grow (levels keep their values); resolving a live atom gives
-an operand whose value is related to the atom's source value (M2.3). -/
+an operand whose value is related to the atom's source value. -/
 
 set_option autoImplicit false
 

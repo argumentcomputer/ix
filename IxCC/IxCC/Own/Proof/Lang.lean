@@ -101,7 +101,7 @@ theorem immortal_refines_lang {F : Fir.Program} (hb : BoolsOk F) : Sem.Refines F
           exact Sim.bindStuck (R := ImmRes {}) (g := fun _ _ => .stuck)
             (immortal_refines hb f immortalOk_empty hd) fun _ _ _ => rfl
 
-/-- The immortal embedding as a pass (03 §4.4): it needs the `Bool` pins
+/-- The immortal embedding as a pass: it needs the `Bool` pins
 without fields and the names the Own → Cfg lowering needs (both of which
 `Fir.lower`'s output has, `Cfg.Proof.immortal_good`), and keeps the names. -/
 def immortalPass (P : Fir.Program → Prop) (hP : ∀ F, P F → BoolsOk F) (Q : Program → Prop)

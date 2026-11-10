@@ -1,11 +1,11 @@
 import IxCCTests.Src.Support
 import IxCC.Tools.Check
 
-/-! The Phase 1 compiler inputs (design note 01 §1.1): each bench-k1
+/-! The Phase 1 compiler inputs: each bench-k1
 closure's `entry` runs through SrcEval on the test arguments of
 `benchmarks/fixtures/manifest.json` and must print `expected.txt`. Each
 closure's admitted runtime set (primitives, eliminators, `case` keys,
-`lazy` constants, quotient heads) is reported (phase1.md M0.4).
+`lazy` constants, quotient heads) is reported.
 
 SrcEval is a big-step evaluator, so `sum-loop`'s loop nests native frames
 per iteration: its test size (10⁶) runs in a child process of this

@@ -5,7 +5,7 @@ import IxCC.Lam.Erase.Proof.BuildTerm
 The body erasure gives each key (`keyBody`) is a `BodyR` body: a δ body
 (`constBody`), its by-name variant, `r⋆` (`recStarBody`, with `ruleBody`
 for each rule) or a wrapper (`wrapperBody`), against every key relation
-containing the final key table (M2.2). -/
+containing the final key table. -/
 
 set_option autoImplicit false
 

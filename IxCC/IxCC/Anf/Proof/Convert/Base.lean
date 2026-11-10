@@ -4,7 +4,7 @@ import IxCC.Anf.Proof.Convert.Rel
 
 Telescopes and spines on the Lam side, environments and parameters on both
 sides, and the shape of Anf application on a closure, for the P1
-simulation (M2.3). -/
+simulation. -/
 
 set_option autoImplicit false
 

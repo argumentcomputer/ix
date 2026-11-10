@@ -7,10 +7,9 @@ import IxCCTests.Own.AnnotatedRecursion
 import IxCC.Fir.Print
 import IxCC.Cfg.Print
 
-/-! # The ownership and usage-annotation suite, Phase 1 part (MT.7)
+/-! # The ownership and usage-annotation suite, Phase 1 part
 
-`lake exe tests-own` over `fixtures/ownership` (design:
-`plans/fixtures/ownership-suite.md`). Each annotated program ix accepts is a
+`lake exe tests-own` over `fixtures/ownership`. Each annotated program ix accepts is a
 fixture of the `ownership` corpus family (`corpus.json`, format
 `ixcc/corpus/1`) beside its plain twin; ix's verdicts on every
 annotated source are in `verdicts.json`. Parts:
@@ -38,7 +37,7 @@ annotated source are in `verdicts.json`. Parts:
   the same; no cell where none is expected; OS-16's `2n` cells, and with
   `--cc` its `48n` bump bytes natively; every reference-counting counter 0
   (Phase 1 has no such forms).
-* **`cx1`**: CX-1, `0` binders in the relevance annotator: OS-03 compiles;
+* **`cx1`**: `0` binders in the relevance annotator (`honourErased`): OS-03 compiles;
   the same program built by writing `ignoreFirst`'s parameter erased into
   the plain twin compiles to OS-03's object; and writing a *used* parameter
   erased (OS-01's `n`) is rejected with `relevance: relevance-C1`. -/
@@ -314,7 +313,7 @@ def cx1 (a : Assert) (m : Family) : IO (Array String) := do
   let input := fun (name : String) => do
     let f ← fixtureOf m name
     ingressFile (dir / f.closure.path) (dir / f.equations.path) ["entry"]
-  -- the annotated OS-03 compiles (relevance-C0 before CX-1)
+  -- the annotated OS-03 compiles (it failed with relevance-C0 before the annotator honoured `0`)
   let inp3 ← input "OS03-annotated"
   let (_, art3) ← compileIn "OS03-annotated" inp3
   expect a true ""

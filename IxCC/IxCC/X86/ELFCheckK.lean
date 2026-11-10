@@ -15,8 +15,8 @@ over lists. In the kernel a list is read by walking it, so `parse`'s
 positional reads cost the object's length each, and `extract` copies it.
 
 `parseK_eq` and `checkK_eq` prove the twins equal to `parse` and `check`,
-so `ELF.writeCheckedK` certifies with `check_sound` as `writeChecked` does
-(M1.K1, design note 00).
+so `ELF.writeCheckedK` certifies with `check_sound` as `writeChecked` does.
+
 -/
 
 namespace IxCC.X86.ELFRead

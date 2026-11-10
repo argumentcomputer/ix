@@ -1,9 +1,9 @@
 # Certification depth: from SrcEval to Lean's meaning
 
-Written 2026-11-09. **Status:** C1 to C3 are **planned**, C4 is
+Written 2026-11-09. **Status:** CD1 to CD3 are **planned**, CD4 is
 **research**. This document plans the semantic obligations that separate
-today's theorems from a certified compiler for Lean: the front end (review
-finding S6), adequacy against the certified kernel's model (S8), and the
+today's theorems from a certified compiler for Lean: the front end (open item
+S6), adequacy against the certified kernel's model (open item S8), and the
 `GoesWrong` disjunct. The [roadmap](roadmap.md) schedules them; the
 [compile boundary](compile-boundary.md) records what the current theorems
 cover.
@@ -47,10 +47,10 @@ What is not proved:
   ix's [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is a
   conditional simulation lemma: given a user-supplied relation between Src
   constants and kernel terms, a successful `Src.run` on `Nat` literals is
-  matched by kernel reduction. The 2026-11-09 review (R2) found the relation
-  constructible only for definitions with no type arguments, numerals,
-  instance methods, `match` or recursion (one of 69 fixture roots), and
-  found two structural reasons:
+  matched by kernel reduction. The relation can be built only for definitions
+  with no type arguments, numerals, instance methods, `match` or recursion
+  (of the 69 fixture roots surveyed in its README, only the identity), for two
+  structural reasons:
   1. `RelTerm.app` relates every argument, type arguments and motives
      included, although SrcEval never inspects an irrelevant argument; there
      is no case for an inductive in `RelConstStep`, no projection rule, and
@@ -69,21 +69,23 @@ What is not proved:
 
 Two routes reach Lean's meaning, and they answer different questions.
 
-| | Stage K: semantic adequacy (C4) | Stage L: per-program translation (C3) |
+| | Stage K: semantic adequacy (CD4) | Stage L: per-program translation (CD3) |
 | --- | --- | --- |
 | Statement | For every model `M` of the environment the certified kernel accepts, the native result denotes `⟦target xs⟧_M` | The native result equals the Lean function applied to the inputs: a Lean proposition about the constant itself |
 | Applies to | Every program the compiler accepts, once proved | Each program the translator processes |
 | Removes `GoesWrong` | No (adequacy is not progress) | Yes, for total functions |
-| Lean proposition for the kernel target | Needs a further reflection step from models to the Lean function, for which no design exists (2026-11-09 IXCC-ROUTE §3) | Direct |
+| Lean proposition for the kernel target | Needs a further reflection step from models to the Lean function, for which no design exists | Direct |
 | Difficulty | Research; the spike covered almost nothing | Engineering, scaling with program size |
 
-**Recommendation.** Build C1 and C2 first (they are needed by both routes
-and by Ring 0), then a C3 prototype, used first for the bignum library and
-then for the flagship entry points. Pursue C4 as research, starting with a
-spike on a recursive program. Both flagship targets consume a C3-shaped
-statement.
+**Order (decided 2026-11-10).** Stage L comes first and stage K is a
+research spike (decision 3 of 2026-11-10 in the
+[roadmap](roadmap.md#decisions-of-2026-11-10)). CD1 and CD2 come before both
+(they are needed by both routes and by Ring 0), then a CD3 prototype, used
+first for the bignum library and then for the flagship entry points; CD4
+starts with a spike on a recursive program. Both flagship targets consume a
+CD3-shaped statement.
 
-## C1. The front-end theorem (S6)
+## CD1. The front-end theorem (S6)
 
 **Status: planned.** Two parts are proved already, as standalone lemmas not
 yet composed into a corollary: the axiom-closure part of clause 2
@@ -106,8 +108,8 @@ yet composed into a corollary: the axiom-closure part of clause 2
    constants.
 
 **Proof obligation.** Each clause is a lemma of the form "checker returns
-`ok` ⇒ property", about Src syntax. C1 does not change `Recheck.sound`; it is
-the premise package C2, C3 and C4 consume to get from `a.src` back to `P`.
+`ok` ⇒ property", about Src syntax. CD1 does not change `Recheck.sound`; it is
+the premise package CD2, CD3 and CD4 consume to get from `a.src` back to `P`.
 
 **Trusted base.** Removes "the front end builds the intended program" from
 what a reader must take on trust.
@@ -121,7 +123,7 @@ existing relevance soundness proofs (1.1k).
 **Exit.** The five lemmas fenced with the standard axioms, and a corollary
 of `Recheck.sound` that exposes them for the accepted artifact.
 
-## C2. Source safety: a checked shape typing
+## CD2. Source safety: a checked shape typing
 
 **Status: planned.**
 
@@ -134,7 +136,7 @@ strings, each inductive with its constructors' field shapes per universe
 profile, and functions by arity, checked by a proved checker over `a.src`
 with the root's readback type as the result shape. The checker is decided
 on Src, not implied by kernel type checking: kernel acceptance implies no
-decidable shape system (decision D18 of the pre-merge notes). An untrusted
+decidable shape system. An untrusted
 annotator proposes the shapes.
 
 **Proof obligation.** Progress and preservation for SrcEval on well-shaped
@@ -142,25 +144,26 @@ programs: a well-shaped root on well-shaped inputs returns a value of its
 shape, traps, or times out; it never gets stuck, and the view always reads
 the result back. Composed with `Recheck.sound`, this yields a corollary
 without the stuck and view-mismatch cases. Two causes remain:
-- a trap (`False.rec`), which only C3 or C4 exclude, since reaching it
+- a trap (`False.rec`), which only CD3 or CD4 exclude, since reaching it
   requires a proof of `False`;
 - the stuck rule for bounded constructions of
-  [D2](data-and-roots-design.md#d2-fixed-width-integers-and-int), whose
+  [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int), whose
   erased proof shapes cannot see.
 
 **Trusted base.** No change.
 
-**Dependencies.** C1 (canonical relevance lets shapes treat irrelevant
+**Dependencies.** CD1 (canonical relevance lets shapes treat irrelevant
 positions as □).
 
-**Size [estimate].** 5–7k lines, the pre-merge estimate for this item
-(SRC-10).
+**Size [estimate].** 5–7k lines, by comparison with the relevance checker
+and its soundness proofs (2k lines together), which decide a similar per-node
+property over the same terms.
 
 **Exit.** A `GoesWrong`-free corollary of `Recheck.sound` and of the Ring-0
 admission theorem for shape-checked programs, applied to every K1 root and
 every compiled corpus root.
 
-## C3. Stage L: a proof-producing translator
+## CD3. Stage L: a proof-producing translator
 
 **Status: planned** (prototype), **research** (at the scale of IxCK).
 
@@ -185,17 +188,17 @@ higher-order and polymorphic functions after P8.
 **Trusted base.** Removes "SrcEval is the source's meaning" for each
 translated program.
 
-**Dependencies.** C1. ix's compile certificate for the identification of
+**Dependencies.** CD1. ix's compile certificate for the identification of
 constants.
 
-**Size [estimate].** Not estimated in lines. The pre-merge plan estimated
-3–6 person-months for this item (SRC-11), a K1 prototype included.
+**Size [estimate].** Not estimated; the K1 prototype will give the first
+figure.
 
 **Exit.** Prototype: `fib`, `gcd` and `ackermann` from K1 with end-to-end
 corollaries "the object's result is `f xs`", fenced. Then the bignum
 library's closure.
 
-## C4. Stage K: semantic adequacy (S8)
+## CD4. Stage K: semantic adequacy (S8)
 
 **Status: research.**
 
@@ -212,7 +215,7 @@ holds in every model of an accepted environment, not by kernel reduction:
   inductive, `Quot`, and the cast family by the corresponding model facts;
 - each `Nat` and string primitive by one lemma that its meaning equals the
   denotation of the pinned definition (the same lemma as the conservativity
-  lemmas of [D2](data-and-roots-design.md#d2-fixed-width-integers-and-int)),
+  lemmas of [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)),
   for all fifteen `Nat` operations, independently of the kernel's evaluation
   caps;
 - by-name positions and closures by the clock-indexed function case, as the
@@ -223,9 +226,8 @@ every model `M` of the environment the certified kernel reads from the
 claim's environment bytes, the claim's target applied to the inputs denotes
 the value `w` reads back as in `M`, or the source goes wrong. The
 environment and the root term must come from the claim's bytes and target
-through IxCK's reader, which shares IxCC's Ixon codec (the 2026-11-09
-review's B3-1). `model_exists` (`IxCK/Kernel/MainTheorem.lean:60`) makes the
-statement non-vacuous for environments IxCK accepts.
+through IxCK's reader, which shares IxCC's Ixon codec. `model_exists`
+(`IxCK/Kernel/MainTheorem.lean:60`) makes the statement non-vacuous for environments IxCK accepts.
 
 **Needed from IxCK.** Model-level statements that accepted definitions
 denote their bodies, accepted theorems hold, recursor rules and projections
@@ -234,17 +236,17 @@ states in a usable form was not checked for this plan.
 
 **Difficulty.** Unknown. The universe-profile machinery (level-exact
 relevance), by-name evaluation and the model's treatment of large
-eliminations are the expected hard parts. The previous spike was 1.85k lines
-for a fragment containing one real root (2026-11-09 IXCC-ROUTE).
+eliminations are the expected hard parts. The conditional bridge in
+`Models/KernelBridge` covers a fragment containing one real root.
 
 **Exit.** A spike: `fib` from `bench-k1`, recursive, with numerals,
 instance methods and `match`, related end to end with the environment
-derived from the claim bytes. A size estimate for the whole of C4 follows
+derived from the claim bytes. A size estimate for the whole of CD4 follows
 the spike.
 
 ## What each extension adds
 
-| Extension | C1 | C2 (shapes) | C3 (translator) | C4 (adequacy) |
+| Extension | CD1 | CD2 (shapes) | CD3 (translator) | CD4 (adequacy) |
 | --- | --- | --- | --- | --- |
 | P8 closures ([design](closures-design.md)) | — | function shapes by arity; applying a non-closure is a shape error | higher-order functions, as CakeML's translator handles them | the function case of the relation (below SrcEval P8 adds nothing) |
 | Heap completion, RC, reuse | — | — | — | — (all below SrcEval) |
@@ -258,12 +260,14 @@ the spike.
 
 - **The certified kernel through IxCC.** The useful end statement is "if the
   object accepts the environment bytes, then IxCK's `checkDecls` accepts
-  them", after which IxCK's soundness gives a model. Through C4 this needs a
+  them", after which IxCK's soundness gives a model. Through CD4 this needs a
   reflection step from models to the Lean function, and in its model-based
-  form also needs the kernel's own closure to be accepted; IXCC-ROUTE §3(b)
-  and (c) found no design for either. Through C3 the statement is direct, and
+  form also needs the kernel's own closure to be accepted, which only a
+  trusted run could establish; no design exists for either. Through CD3 the statement is direct, and
   the open question is whether the translator scales to IxCK's 1.3k–1.9k
-  definitions and the parts of `Init` and `Std` they use. The opaque
-  constants in its closure (D5) count against C3 unless IxCK removes them.
-- **The IxOS monitor.** C2 makes Ring-0 confinement independent of source
-  safety; C3 on the monitor's `step` makes its behaviour the Lean function's.
+  definitions (1,264 `def` and `abbrev` lines in the import closure of
+  `IxCK.Kernel.Cached.Installed`, 1,868 with admission and the Ixon reader) and the parts of `Init`
+  and `Std` they use. The opaque constants in its closure (DR5) count against CD3 unless IxCK
+  removes them.
+- **The IxOS monitor.** CD2 makes Ring-0 confinement independent of source
+  safety; CD3 on the monitor's `step` makes its behaviour the Lean function's.

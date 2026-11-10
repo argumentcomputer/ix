@@ -5,8 +5,8 @@ import IxCC.Sem.Smallstep
 # Fuel for Cfg runs
 
 `Cfg.run` runs `Sem.runClocked` with the step bound `fuelFor P k = (2k +
-6)·(instrs + 1)` (`Cfg.Semantics`), which M1.F5 tested but did not prove.
-This module proves it: under `Cfg.Ordered P` (every forward edge goes to a
+6)·(instrs + 1)` (`Cfg.Semantics`). This module proves it
+sufficient: under `Cfg.Ordered P` (every forward edge goes to a
 higher label, and every function of the program is counted in `instrs`),
 the positions left to the frames form a `Sem.Potential` with bound
 `1 + instrs` (`Cfg.potential_step`), so
@@ -16,8 +16,8 @@ the positions left to the frames form a `Sem.Potential` with bound
   side, and
 * `Cfg.run` is clock monotone (`Cfg.run_mono`).
 
-M2.4 (`Cfg.lower_correct`, by `Sim.ofStar`) and M2.5 (`Rt.lower_correct`,
-by a forward diagram) both use it.
+`Cfg.lower_correct` (by `Sim.ofStar`) and `Rt.lower_correct` (by a forward
+diagram) both use it.
 
 **The potential.** A frame at block `b` with `rest` left in it has
 `2 + |rest| + Σ_{j > b} (|body j| + 1)` positions left: an instruction

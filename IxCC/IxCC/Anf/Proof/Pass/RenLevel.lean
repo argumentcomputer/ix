@@ -7,7 +7,7 @@ Applying related closures enters the source body and its renaming one clock
 down (`app_at`); calls and global values of `S` simulate their renamed ids
 (`call_at`, `glob_at`); with the fundamental lemma for renamed code, the
 interface holds at every bound (`levels`), and a program whose roots are the
-renamed roots refines its source (`refines`) (M2.3). -/
+renamed roots refines its source (`refines`). -/
 
 set_option autoImplicit false
 

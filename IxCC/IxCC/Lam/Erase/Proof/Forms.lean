@@ -6,7 +6,7 @@ import IxCC.Lam.Erase.Proof.Values
 Once a saturated spine's arguments are bound (SrcEval's slots; Lam's `let`s
 and `Ref`s), SrcEval fires the head and Lam evaluates the form erasure put
 in its place. These lemmas relate the two for each head, needing only
-lower clock bounds (every nested evaluation follows a charge) (M2.2). The
+lower clock bounds (every nested evaluation follows a charge). The
 same lemmas serve saturated spines in place and wrapper bodies, whose
 arguments are variables bound to values. -/
 

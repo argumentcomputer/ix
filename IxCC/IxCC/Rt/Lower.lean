@@ -5,15 +5,14 @@ import IxCC.Rt.Procs.Nat
 
 /-! # Cfg → Lir (`Rt.lower`, the Phase 1 fragment)
 
-The data refinement of design note `plans/x86-v2/04-runtime.md` §8, for
-Cfg programs of the immortal fragment (03 §4.4, 04 §8.1): no RC operation,
-no credit, no closure. On the recheck path in style P (proved once, re-run;
-04 §10), so it is written in kernel-evaluable style (D17): structural
-recursion over lists, `Src.NatMap`/`NatSet`, a state monad over plain data,
-no `HashMap`, no array indexing, no well-founded recursion. It reads no
+The data refinement from Cfg's abstract heap to Lir's memory, for
+Cfg programs of the immortal fragment: no RC operation,
+no credit, no closure. On the recheck path in style P (proved once, re-run), so it is written in
+kernel-evaluable style (D17): structural recursion over lists, `Src.NatMap`/`NatSet`, a state monad
+over plain data, no `HashMap`, no array indexing, no well-founded recursion. It reads no
 certificate.
 
-**Values** (`Rt.Layout`, 04 §2): a `Nat` literal `n` is the immediate
+**Values** (`Rt.Layout`): a `Nat` literal `n` is the immediate
 `2n + 1`, and one at or above 2^63 fails with `natOverflow` where Cfg would
 evaluate it; □ is `1`; a field-less constructor is `2·tag + 1`; a cell is
 its address. Cfg variables keep their numbers as virtual registers;
@@ -26,7 +25,7 @@ order, so a Cfg forward edge stays forward and a back edge (a self tail
 call or a recursive jump, which Cfg's labels put at or below its source)
 stays backward: Lir charges exactly Cfg's back edges, and calls and tail
 calls map to `call` and `tail`, so the clock map is the identity from the
-entry on (06 S32). Block 0 carries the function's parameters; when some
+entry on. Block 0 carries the function's parameters; when some
 edge enters it, a fresh parameterless entry block binds the parameters and
 jumps to it (Lir entries have no predecessors). Blocks no path reaches (Cfg
 allows dead join points; Lir does not) are dropped, keeping the order, and
@@ -34,12 +33,12 @@ allows dead join points; Lir does not) are dropped, keeping the order, and
 
 **Instructions.**
 * `alloc` of a field-less constructor is its immediate; otherwise the
-  immortal bump of 04 §8.1: load `bump`, add the cell size, compare with
+  immortal bump allocation: load `bump`, add the cell size, compare with
   `limit` (`fail heap` above it), store `bump`, the static header (`scan =
   fields`, `cls = 0`, `rc = INT32_MIN`, as two 32-bit stores) and the
   fields.
 * `proj` is a load at `8 + 8i`; the `Nat` successor's field is `v − 2`.
-* Primitives on tagged words (04 §2): `natAdd` by `brOvf addC` on `a − 1`
+* Primitives on tagged words: `natAdd` by `brOvf addC` on `a − 1`
   and `b` (carry: `fail natOverflow`); `natSub` and `natPred` truncate with a
   `select`; `natMul` untags one side, multiplies, and checks the product by
   division; `natDiv`/`natMod` untag, divide by a nonzero divisor, and select
@@ -52,7 +51,7 @@ allows dead join points; Lir does not) are dropped, keeping the order, and
 * A comparison whose only use is the block's `switch` on `Bool` becomes
   the branch itself.
 
-**Switch** (04 §8 "Control"): on `Nat` keys, the zero test `v = 1`; on
+**Switch**: on `Nat` keys, the zero test `v = 1`; on
 field-less keys, a compare chain against `2·tag + 1`; on keys with fields,
 the header's tag (`u16` at offset 2); mixed, the low bit first. Without a
 default the last alternative is taken without a test (a value no
@@ -72,7 +71,7 @@ inductive Error where
   | noExports
   | missingFun (f : FunId)
   | missingBlock (f : FunId) (b : Nat)
-  /-- A string literal: statics are Phase 2 (BCK-6). -/
+  /-- A string literal: string objects are planned. -/
   | string (f : FunId)
   /-- A primitive without a Phase 1 lowering. -/
   | prim (f : FunId) (op : Lam.Prim)
@@ -82,7 +81,7 @@ inductive Error where
   /-- A right-hand side Cfg is stuck on (a Fir `ctor`/`proj`, a projection
   outside the constructor, an allocation of the wrong arity). -/
   | form (f : FunId) (what : String)
-  /-- A constructor outside the layout limits of 04 §3. -/
+  /-- A constructor outside the layout limits of `Rt.Layout`. -/
   | layout (f : FunId) (what : String)
   | switch (f : FunId) (b : Nat) (what : String)
   /-- An edge whose back flag disagrees with Cfg's label order (the clock
@@ -273,7 +272,7 @@ def withOperands (f : FunId) (as : List Fir.Arg) (k : List Lir.Arg → M Unit) :
   | some ls => k ls; pure true
   | none => close (.fail .natOverflow); pure false
 
-/-! ## Primitives on tagged words (04 §2) -/
+/-! ## Primitives on tagged words -/
 
 /-- The untagged value of a word (`w >>> 1`). -/
 def untag : Lir.Arg → M Lir.Arg
@@ -420,7 +419,7 @@ def compareOf : Lam.Prim → Option Lir.Cond
 def isNatKey (T : Tables) (k : Key.CtorKey) : Bool :=
   T.known.natZero == some k || T.known.natSucc == some k
 
-/-- The immortal bump allocation of 04 §8.1. -/
+/-- The immortal bump allocation. -/
 def alloc (f : FunId) (T : Tables) (x : VReg) (c : Fir.CtorInfo) (as : List Lir.Arg) : M Unit := do
   if isNatKey T c.key then throw (.layout f "a Nat constructor cell (Nat values are literals)")
   if c.nscalar != 0 then throw (.layout f "scalar fields are Phase 2")
@@ -829,7 +828,7 @@ end Lower
 
 open Lower in
 /-- Cfg (the immortal fragment) → Lir, with `cx_init` after the program's
-functions (04 §8.1). -/
+functions. -/
 def lower (cfg : Config) (P : Cfg.Program) : Except Error Lowered := do
   let some main := P.exports.head? | throw .noExports
   if let some (f, _) := P.funs.toList.find? (P.size ≤ ·.1) then throw (.funRange f)

@@ -11,7 +11,7 @@ redirected call (P4) simulates the call it replaces.
 
 `WalkAt n fuel` is the simulation, at bound `n`, of each walk function at
 `fuel`: the walked term simulates the source term followed by the source
-continuation that matches the walk's continuation (M2.3). Join entries,
+continuation that matches the walk's continuation. Join entries,
 environments and continuations survive growing target environments
 (`JEnv.suffix`, `KontW.suffix`), and lower bounds (`JEnv.mono`,
 `KontW.mono`). -/

@@ -7,7 +7,7 @@ dispatch), `after` and `walkJoin` (dead join points, join points inlined at
 their single jump, and emitted ones). An emitted join point's `JoinR` is
 proved by Löb induction on the bound: its body is the walk of the source
 body one clock down, with the join point itself (when recursive) related at
-the smaller bound (M2.3). -/
+the smaller bound. -/
 
 set_option autoImplicit false
 

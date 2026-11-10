@@ -2,7 +2,7 @@ import IxCC.Xv.Stacking.Proof.WrapperEntry
 import IxCC.Xv.Validate.Proof.Fuel
 
 /-!
-# Stacking is correct (05 §6.2)
+# Stacking is correct
 
 `stacked_ends`: under the entry invariant, the stacked program's checked
 run from its first instruction (`main`'s export wrapper) ends as `main`'s
@@ -10,14 +10,13 @@ clocked Xl run does (`Outcome`, the shape of `ObjectEval.Ends` with
 `ReadableData` at every exit's stack pointer): a failed stack check exits
 with status 2 at any clock; otherwise a result exits with status 0 and
 `Final`, a timeout at clock `k` is a running machine after at least `k`
-checked steps, and a resource failure or a trap exits with its status.
--/
+checked steps, and a resource failure or a trap exits with its status. -/
 
 namespace IxCC.Xv.Stacking.Proof
 
 open IxCC.X86 IxCC.X86.Stream
 
-/-- **Stacking and the wrapper simulate Xl** (05 §6.2's conclusion at the
+/-- **Stacking and the wrapper simulate Xl** (the backend's conclusion at the
 stacked level). -/
 theorem stacked_ends (S : Stk) {core₀ : Core} {retAddr ctx : Word} {args : List Word} {mem : Memory}
     (inv : EntryInv S.p S.reps core₀ retAddr args mem ctx) (k : Nat)

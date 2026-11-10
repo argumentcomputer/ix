@@ -1,12 +1,12 @@
 import IxCC.Rt.Layout
 import IxCC.X86.State
 
-/-! # Readback (04 §6, the Phase 1 fragment)
+/-! # Readback (the Phase 1 fragment)
 
 `Rt.readback` is the observation of the top theorem: a type-directed Lean
 function from a result word and the final memory to `Sem.Obs`. Phase 1
 reads first-order results: `Nat`, `Bool` and other enumerations, and
-constructor trees in the region (04 §8.1).
+constructor trees in the region.
 
 * `nat`: an odd word `2n + 1` is `n` (an even one would be a bignat, Phase 4:
   `none`).
@@ -14,10 +14,10 @@ constructor trees in the region (04 §8.1).
   an even word is a cell whose header (`read64?`, so an unreadable address
   is `none`) gives the tag and the field count, which must match the
   constructor's field types in `sig`; the fields are the words at `8 + 8j`,
-  read back at their types. `fuel` bounds the depth (04: `(limit − base)/8`).
+  read back at their types. `fuel` bounds the depth (`(limit − base)/8`).
 
-The header's `rc` and `cls` are not observed: Phase 1 cells are immortal,
-Phase 2's are counted, and the observation is the same.
+The header's `rc` and `cls` are not observed: immortal cells and
+the plain-RC route's counted cells read back the same way.
 
 `Rt.observe` maps a `cx_result` (status and value) to an outcome, and the
 text forms below (`FoTy.encode`, `Sig.encode`, `renderObs`) are the runtime
@@ -28,7 +28,7 @@ namespace IxCC.Rt
 open IxCC.Lir (Word)
 open IxCC.Sem (Obs)
 
-/-- First-order types (04 §6), as far as Phase 1 reads them. -/
+/-- First-order types, as far as Phase 1 reads them. -/
 inductive FoTy where
   | nat
   /-- An inductive of the signature (`Bool` and other enumerations too). -/
@@ -72,7 +72,7 @@ def readback (sig : Sig) : Nat → X86.Memory → FoTy → Word → Option Obs
           | none => none
 
 /-- A `cx_result` as an outcome: status 0 reads the value back; 1–3 are the
-resource failures and 4 a trap (04 §6); anything else is `none`. -/
+resource failures and 4 a trap; anything else is `none`. -/
 def observe (sig : Sig) (fuel : Nat) (m : X86.Memory) (ty : FoTy) (status value : Word) :
     Option (Sem.Result Obs) :=
   match status.toNat with
@@ -116,7 +116,7 @@ end
 
 /-! ## Readback lemmas
 
-The cases of `Rt.readback_sound` (M2.5) that need no heap invariant: a
+The cases of `Rt.readback_sound` that need no heap invariant: a
 `Nat`'s word and a field-less constructor's word read back as themselves,
 and an immortal cell unfolds to its fields' readbacks. -/
 

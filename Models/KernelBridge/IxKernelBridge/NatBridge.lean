@@ -16,7 +16,8 @@ This module proves a simulation lemma between `IxCC`'s source evaluator (`Src.ev
 `constSpec` that the user supplies, and composes it with set-theoretic denotation
 (`Ix.Kernel.Denotes` in `Model.ofEnvModelM mp`) and with IxCC's own soundness theorems. It is
 not a source-adequacy theorem for compiled claims: source adequacy against the kernel model
-(the roadmap's target theorem, review finding S8) remains open. `Models/KernelBridge/README.md`
+(the roadmap's target theorem, open item S8 of
+`IxCC/docs/certification-design.md`) remains open. `Models/KernelBridge/README.md`
 states the scope in full.
 
 What a user must supply:

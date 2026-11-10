@@ -9,7 +9,7 @@ import IxCC.Recheck.Readback
 
 /-! # `Recheck.run`: the compiler's checked path
 
-`run cfg P c` (design note 00 "Produce and recheck", D17; 06 S44) takes a
+`run cfg P c` (D17) takes a
 `Src.Program` as ingress left it (constants, roots and pinned identities,
 no table) and a certificate, and re-runs every pass on the certificate's
 decisions, validating what the producer searched for:
@@ -30,12 +30,12 @@ that a validator refuses is a rejection naming its stage and code. For one it
 accepts, the passes' theorems (which quantify over the certificate) relate
 the object to SrcEval on the checked source `a.src` that the certificate's
 table and annotation produce, up to that source going wrong; no theorem
-relates `a.src` semantically to `P` (open item S6), so nothing proves that two
-accepted certificates give code that agrees. `Recheck.sound` (M2.8) is stated
+relates `a.src` semantically to `P` (open item S6 in `IxCC/docs/certification-design.md`), so
+nothing proves that two accepted certificates give code that agrees. `Recheck.sound` is stated
 of this function.
 
 **Kernel style.** `runLir` is the front half, up to the lowered Lir program
-(what M2.7's front theorem, `Recheck.front_refines`, is stated of);
+(what the front theorem, `Recheck.front_refines`, is stated of);
 `runTyped` is `run` up to the laid-out typed x86 program (`runLir`, then
 everything before `Backend.finish`); `run` adds `Backend.finish`: the typed
 program's check, E1 encoding, E2's stream check and the ELF writer with its
@@ -43,7 +43,7 @@ validator, each by its kernel-evaluable twin proved equal to the original
 (`Program.checkK`, `Stream.encodeK`, `ELF.writeCheckedK`). The whole path is
 written in kernel-evaluable style (persistent `NatMap`s, lists, structural
 recursion or fuel), and `decide +kernel` evaluates both functions on the K1
-artifacts (`IxCCTests.Recheck.Kernel`, M1.K1): `run`'s object bytes
+artifacts (`IxCCTests.Recheck.Kernel`): `run`'s object bytes
 equal the native run's. -/
 
 namespace IxCC.Recheck
@@ -92,7 +92,7 @@ structure Artifact where
 def Artifact.object (a : Artifact) : ByteArray := a.backend.object
 
 /-- The ELF object's bytes as a list: what a kernel evaluation of `run`
-states (`(run cfg P c).map Artifact.bytes = .ok bytes`, M1.K1, M2.8). -/
+states (`(run cfg P c).map Artifact.bytes = .ok bytes`). -/
 def Artifact.bytes (a : Artifact) : List UInt8 := a.object.data.toList
 
 /-! ## Roots -/
@@ -140,7 +140,7 @@ def rootsOf (cfg : Config) (p : Src.Program) (C : Cfg.Program) (l : Rt.Lowered) 
       ty := rootTy p C c } ::
       rootsOf cfg p C l rest
 
-/-- A root with more parameters than the wrapper passes (04 §6): declined
+/-- A root with more parameters than the wrapper passes: declined
 before lowering, with its own code. -/
 def checkParams (cfg : Config) (C : Cfg.Program) : List (Nat × Fir.FunId) → Except Err Unit
   | [] => pure ()
@@ -156,7 +156,7 @@ def checkParams (cfg : Config) (C : Cfg.Program) : List (Nat × Fir.FunId) → E
 `Backend.sharedSymbol?`, the check `Backend.emit` runs. -/
 def sharedSymbol? (es : List Xv.Stacking.Export) : Option String := Backend.sharedSymbol? es
 
-/-- Every export has its own symbol (M2.8). `Backend.finish` lists the
+/-- Every export has its own symbol. `Backend.finish` lists the
 further exports without the entry symbol, so an export sharing the entry's
 symbol would be dropped and its symbol would run `main`'s wrapper;
 `Rt.symbolOf` replaces characters, so distinct root names can share a
@@ -299,7 +299,7 @@ structure Front where
   cfg : Cfg.Program
   lowered : Rt.Lowered
 
-/-- The recheck path up to the lowered Lir program (the front half, M2.7):
+/-- The recheck path up to the lowered Lir program (the front half):
 the front end, erasure, the middle end, Fir, Own and Cfg, the roots'
 parameter check, the switch check (`Rt.checkSwitches`, which discharges
 `Rt.lower_correct`'s `SwitchOk` without types) and `Rt.lower`. -/

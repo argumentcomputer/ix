@@ -9,7 +9,7 @@ closure against the closure of its renamed code (whose references lie in
 `S`). The fundamental lemma for renamed code (`fund_step`) is the Rel
 compatibility lemmas with calls and global values going through `m`, and
 renamed join closures; the program interface at each bound comes from the
-lemma below it (`levels`) (M2.3). -/
+lemma below it (`levels`). -/
 
 set_option autoImplicit false
 

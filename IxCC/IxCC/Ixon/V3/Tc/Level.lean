@@ -349,7 +349,7 @@ decreasing_by all_goals simp [KUniv.size]; omega
 
 end
 
-/-! ### Subsumption (Phase 2) -/
+/-! ### Subsumption -/
 
 /-- Keep only the `xs` entries not dominated by a `ys` entry (merge-walk over
     sorted var lists). Mirrors level.rs `subsume_vars`. Written as index
@@ -448,8 +448,8 @@ def entryNonEmpty (e : Path × NormNode) : Bool :=
     `max (u+1) v` never creates; counting those made `univEq` strictly
     finer than semantic equality (3 of 3,253,373 whole-Mathlib
     entries). `normLevelLe` already skips them; mirroring here makes
-    `univEq` the exact semantic quotient (canonicity §10.6 R5, option
-    (b); mirrors Rust `norm_level_eq`). `toList` is key-ordered, so
+    `univEq` the exact semantic quotient (`docs/ix_canonicity.md`, "Universe-level
+    canonicalization"; mirrors Rust `norm_level_eq`). `toList` is key-ordered, so
     positional comparison of the filtered streams is a sound map
     comparison. -/
 def normLevelEq (l1 l2 : NormLevel) : Bool :=

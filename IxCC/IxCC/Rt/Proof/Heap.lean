@@ -4,7 +4,7 @@ import IxCC.Rt.Proof.Mem
 import IxCC.Rt.Proof.Words
 
 /-!
-# The data refinement: values and the immortal heap (04 §8, §8.1)
+# The data refinement: values and the immortal heap
 
 `ValRel T P v w` relates a Cfg value to its Lir word under a placement
 `P` (the address of each cell, by location: cells are appended, so `P` is a
@@ -15,7 +15,7 @@ list as long as the heap):
   has it, outside `Nat`'s keys and within the tag limit (`CtorOk`);
 * □ is `1`; a location is its cell's address.
 
-`HeapAt T P H ctx m bump limit` is 04 §8.1's `HeapInv` for the Phase 1
+`HeapAt T P H ctx m bump limit` is the heap invariant for the Phase 1
 fragment, with the bump pointer and limit the context block holds:
 
 * the context block: `ctx ≥ 64`, the bump pointer and the limit as words at
@@ -30,8 +30,7 @@ fragment, with the bump pointer and limit the context block holds:
 
 `HeapInv` hides the two words. `alloc_mem` proves the immortal bump
 allocation keeps it; `proj_mem` and `tag_mem` read a cell's fields and
-tag.
--/
+tag. -/
 
 set_option autoImplicit false
 
@@ -48,7 +47,7 @@ structure CtorOk (T : Tables) (c : Fir.CtorInfo) : Prop where
   notNat : isNatKey T c.key = false
   tag : c.tag ≤ maxTag
 
-/-- The value relation (04 §8 `ValRel`, Phase 1). -/
+/-- The value relation (Phase 1). -/
 def ValRel (T : Tables) (P : List Word) : Own.RVal → Word → Prop
   | .lit (.nat n), w => natWord n = some w
   | .lit (.str _), _ => False
@@ -106,7 +105,7 @@ end ListRel
 /-- The bytes a cell with `n` fields occupies. -/
 abbrev cellSize (n : Nat) : Nat := 8 * (1 + n)
 
-/-- A cell at address `a` holding `b` (04 §8.1 `ImmortalAt`). -/
+/-- A cell at address `a` holding `b`. -/
 structure CellAt (T : Tables) (P : List Word) (m : Memory) (a : Word) (b : Own.Body) : Prop where
   ctor : CtorOk T b.ctor
   fieldless : b.ctor.fieldless = false
@@ -137,7 +136,7 @@ structure HeapAt (T : Tables) (P : List Word) (H : Own.Heap) (ctx : Word) (m : M
   ordered : ∀ (ℓ ℓ' : Nat) (a a' : Word) (rc : Nat) (b : Own.Body), ℓ < ℓ' → P[ℓ]? = some a → P[ℓ']? = some a' →
     H.cells[ℓ]? = some (.live rc .static b) → a.toNat + cellSize b.fields.length ≤ a'.toNat
 
-/-- 04 §8.1's `HeapInv`: the heap invariant for some bump pointer and
+/-- The heap invariant for some bump pointer and
 limit. -/
 def HeapInv (T : Tables) (P : List Word) (H : Own.Heap) (ctx : Word) (m : Memory) : Prop :=
   ∃ bump limit, HeapAt T P H ctx m bump limit

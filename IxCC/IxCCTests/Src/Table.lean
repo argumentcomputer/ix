@@ -1,8 +1,8 @@
 import IxCCTests.Src.Support
 
-/-! The unfolding table on the K1 packs (design note 01 §10 part 2): every
+/-! The unfolding table on the K1 packs: every
 `eqn` proposal of `k1.ixe` and of each bench-k1 closure is accepted, the
-`case`, `prim` and `lazy` entries resolve, and each §4.1 check refuses one
+`case`, `prim` and `lazy` entries resolve, and each entry check refuses one
 mutation while accepting the unmutated input. -/
 
 namespace IxCCTests.Src.Table
@@ -50,7 +50,7 @@ def packCounts (a : Assert) (l : Loaded) (label : String) (eqns : Nat) : IO Unit
       | some (.prim op') => expect a (op == op') s!"{label}: {op.name} resolves to {op'.name}"
       | _ => expect a false s!"{label}: {op.name} is not a prim entry"
 
-/-- Each §4.1 check refuses one mutation and accepts the original. -/
+/-- Each entry check refuses one mutation and accepts the original. -/
 def mutations (a : Assert) (l : Loaded) : IO Unit := do
   let p := l.program
   -- eqn: Nat.add.eq_def is `∀ x y, Nat.add x y = …`.

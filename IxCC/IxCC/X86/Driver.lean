@@ -3,7 +3,7 @@ import IxCC.X86.ObjectCall
 /-!
 # The runtime driver's calls, as a model
 
-What `fixtures/x86/runtime_driver.c` sets up for the object's calls (04 §6),
+What `fixtures/x86/runtime_driver.c` sets up for the object's calls,
 as data and a contract (`Driver.Ok`) on it, so that the object's execution
 from an input is a definite function (`X86.Linked`, the object's `Lang`):
 
@@ -20,7 +20,7 @@ from an input is a definite function (`X86.Linked`, the object's `Lang`):
   else is. The program cannot change permissions, so each call starts from
   this mapping (`Driver.mem`) with the bytes the previous call left;
 - before `cx_init`, the bytes are `init` with the stack budget at
-  `region + 16` (`ctx − 48`, where every wrapper reads it, 04 §6);
+  `region + 16` (`ctx − 48`, where every wrapper reads it);
 - Lir's memory (`Driver.lirMem`) is the region from `region + 16`: the
   first 16 bytes (`entrySp`, `stackLimit`) are the wrappers'.
 
@@ -28,8 +28,7 @@ from an input is a definite function (`X86.Linked`, the object's `Lang`):
 (8-aligned, at least 4 KiB, below 2^63), a 16-byte-aligned call
 (`sp ≡ 8 mod 16`), a budget of at least 64 bytes with room for the largest
 frame below the stack (`2^20 + 64 + budget + 56 ≤ sp`), the stack apart
-from the region, and the return address outside the text.
--/
+from the region, and the return address outside the text. -/
 
 namespace IxCC.X86
 

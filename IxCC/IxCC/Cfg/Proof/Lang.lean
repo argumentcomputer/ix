@@ -96,7 +96,7 @@ theorem lower_refines {q : Own.Program} (G : Good q) : Sem.Refines q (lower q) :
         · simp only [Sem.entryRun, he, hlt, ↓reduceIte]
           exact Sim.bindStuck (R := Eq) (g := fun _ _ => .stuck) (lower_correct G f _ _) fun _ _ _ => rfl
 
-/-- `Cfg.lower` as a pass (03 §7). -/
+/-- `Cfg.lower` as a pass. -/
 def lowerPass : Sem.Transform Own.Program Program where
   name := "Cfg.lower"
   pre := Good

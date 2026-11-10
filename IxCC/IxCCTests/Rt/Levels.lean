@@ -4,7 +4,7 @@ import IxCCTests.Rt.Differential
 import IxCCTests.Rt.Cases
 import IxCC.Tools.Check
 
-/-! `Rt.lower`'s output at every level down to native (M1.F6):
+/-! `Rt.lower`'s output at every level down to native:
 
 * the **bench-k1 entries**: small inputs at Cfg, Lir, Xv, Xl, typed x86 and
   the byte machine; with `--cc`, natively at those inputs, at the test

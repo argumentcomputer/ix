@@ -41,7 +41,7 @@ inductive Instr where
   | unwind (source : MemAddr)
   deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr, Inhabited
 
-/-- How a branch's false edge is encoded (05 §7): `rel32` is a `jmp rel32`
+/-- How a branch's false edge is encoded: `rel32` is a `jmp rel32`
 after the `jcc`; `fall` is no bytes, since the false target is the next
 block in the text. The typed semantics ignores it; E2's stream check
 (`terminatorMatches`) requires a `fall` target to start where the `jcc`

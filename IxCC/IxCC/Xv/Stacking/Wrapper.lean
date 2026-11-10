@@ -1,7 +1,7 @@
 import IxCC.Xv.Stacking.Emit
 
 /-!
-# The SysV export wrapper and the exit group (05 §6.1, 04 §6)
+# The SysV export wrapper and the exit group
 
 An export `cx_root(void *region, uint64_t a1, …, a5)` returns `{status,
 value}` in `rax:rdx`. Stacking emits one wrapper per `sysvExport` function
@@ -24,15 +24,14 @@ failExit: unwind [r15 − 64]; xor edx, edx                   ; rsp := entrySp, 
 The epilogue is inlined in both places instead of shared, which saves the
 success path a jump. All wrappers save the same registers in the same
 order, so one exit group serves every export; `r15` still holds the
-context at `failExit` because internal code never writes it (05 §5).
+context at `failExit` because internal code never writes it.
 
-**Arguments** (04 §6). The internal convention puts argument `i` in
+**Arguments**. The internal convention puts argument `i` in
 `rdi, rsi, rdx, rcx, r8` (`Lir.Conv.argRegs`), the C caller in the SysV
 register after the region pointer; each is moved one register down, in
 order, so no source is overwritten before it is read. A `Nat` argument is
 checked below 2^63 (the OR of all of them has its sign bit clear) and
-tagged `2n+1`; a `word` argument passes unchanged.
--/
+tagged `2n+1`; a `word` argument passes unchanged. -/
 
 namespace IxCC.Xv.Stacking
 
@@ -40,7 +39,7 @@ open IxCC.Lir (FunId)
 
 /-- How an export passes an argument. -/
 inductive ArgRep where
-  /-- A `Nat` below 2^63, tagged `2n+1` (04 §2); a larger one fails with
+  /-- A `Nat` below 2^63, tagged `2n+1`; a larger one fails with
   status 3 (natOverflow). -/
   | nat
   /-- An untagged word, passed as is. -/

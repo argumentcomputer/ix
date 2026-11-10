@@ -575,7 +575,7 @@ def instUnivInner (e : KExpr m) (us : Array (KUniv m)) :
     -- `pure`, not `return`, in every rebuilding arm: `return` exits the
     -- whole function, skipping the intern + memo-insert tail below, and
     -- an interior-node-less memo turns shared-DAG walks exponential
-    -- (see the note in `Ix/Tc/Subst.lean` `liftCached`).
+    -- (see the note at `liftCached` in `IxCC.Ixon.V3.Tc.Subst`).
     | .sort u _ =>
       pure (KExpr.mkSort (← TcM.ofExcept (substUniv u us)))
     | .const id curUs _ => do

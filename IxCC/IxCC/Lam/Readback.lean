@@ -2,16 +2,15 @@ import IxCC.Lam.Semantics
 
 /-! # Lam readback
 
-First-order Lam values as shared observations (`Sem.Obs`, design note 02
-§5.2): a `Nat` literal is a `Nat`, a constructor is its source tag (the
-constructor index, from the program's constructor table) with its kept
+First-order Lam values as shared observations (`Sem.Obs`): a `Nat` literal is a `Nat`, a constructor
+is its source tag (the constructor index, from the program's constructor table) with its kept
 fields, a string literal its UTF-8 bytes. Closures and □ have none.
 
 This untyped readback equals `Src.readback` except on unboxed structures
 (`Fin`, `Subtype`, one-method classes, …), which Lam represents by their one
 kept field; the tests compare `readback (eraseVal v)` with the Lam result,
-and Src's readback directly for `Nat` and `Bool` results. A typed readback
-over first-order types (`FOTy`, which also re-boxes structures) is M1.I2's. -/
+and Src's readback directly for `Nat` and `Bool` results. The typed readback
+over first-order types is `Rt.readback`, at the machine level. -/
 
 namespace IxCC.Lam
 

@@ -7,7 +7,7 @@ constructor (the selected alternative under its fields), case identity
 (the arms rebuild the scrutinee, so the case returns it or jumps with it,
 keeping the arms' leading ticks), equal field-free arms (the case's choice
 is irrelevant), and the general case (alternatives and default walked, a
-meta-continuation first made a join point when the case branches) (M2.3). -/
+meta-continuation first made a join point when the case branches). -/
 
 set_option autoImplicit false
 

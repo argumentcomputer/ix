@@ -20,7 +20,7 @@ the walk relation (`WalkProof.WV`) for two pieces of P4's code:
   local functions) and the redirecting walk of a site, for an activation
   (`Site.Act`): source arguments whose masked ones are the roots' values at
   the site, specialisation arguments whose level holes stand for the
-  caller's levels there (`Site.Lvls`, related pairs) (M2.3). -/
+  caller's levels there (`Site.Lvls`, related pairs). -/
 
 set_option autoImplicit false
 

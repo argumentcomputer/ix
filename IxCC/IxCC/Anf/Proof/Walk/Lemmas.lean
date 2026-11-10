@@ -5,7 +5,7 @@ import IxCC.Anf.Proof.Walk.Occ
 Operand lists and the environments the walk pushes (parameters, fields,
 arguments), join-entry lookups, the target meaning of a continuation under
 growth, and what the walk's syntactic tests (`known`, `knownHead`,
-`select`, `stripTicks`, `fold`) say about values (M2.3). -/
+`select`, `stripTicks`, `fold`) say about values. -/
 
 set_option autoImplicit false
 

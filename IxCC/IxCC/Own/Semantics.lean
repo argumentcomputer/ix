@@ -3,19 +3,18 @@ import IxCC.Own.Heap
 
 /-! # Own semantics
 
-The clocked big-step semantics of Own over the abstract heap (design note
-03 §3.2), with the allocation policy as an argument (`AllocPol`, 03 §4.4).
-It charges exactly where Fir does (03 C6): function entry, tail calls and
+The clocked big-step semantics of Own over the abstract heap, with the allocation policy as an
+argument (`AllocPol`). It charges exactly where Fir does: function entry, tail calls and
 recursive jumps, with the same depth clock and the same join-point stack
 discipline (`Fir.Semantics`), so an Own program and its erasure run in lock
 step, `timeout` included.
 
-* `alloc c args κ`: a field-less `c` gives `ctor0 c` and no cell (06 S4);
+* `alloc c args κ`: a field-less `c` gives `ctor0 c` and no cell;
   otherwise a fresh cell `live 1 dyn` under `.rc` and `live 1 static` under
   `.immortal`. The kind is recorded and unused.
 * `proj` and `case` read a live cell, a field-less constructor or a `Nat`
   literal as a constructor; a dead cell, □ or a closure-free mismatch is
-  stuck (03 C5).
+  stuck.
 * `prim` is exact on `Nat`; Boolean results are the pinned field-less
   constructors. Own never returns `resource` (its heap is unbounded).
 

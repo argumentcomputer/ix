@@ -12,7 +12,7 @@ constructor table lists each row once, keyed by its constructor, with the
 kept-field count of a constructor aliased to it. So every global is present
 and well formed (`bodyR_wf`), global and constructor keys are distinct,
 roots are in range, and the pinned keys have the arities `Nat` peeling and
-Boolean primitives need (M2.2). -/
+Boolean primitives need. -/
 
 set_option autoImplicit false
 

@@ -3,7 +3,7 @@ import IxCC.Anf.Syntax
 /-! # Structural equality of Anf terms is equality
 
 Shrink's equal-arms rule compares alternatives with `Exp.beq`; its
-correctness needs `Exp.beq e e' = true → e = e'` (M2.3). The contracts'
+correctness needs `Exp.beq e e' = true → e = e'`. The contracts'
 derived `BEq` instances are lawful (each unfolds to its fields'
 comparisons). -/
 

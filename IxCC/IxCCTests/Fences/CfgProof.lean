@@ -1,6 +1,6 @@
 import IxCC.Cfg.Proof.Fuel
 
-/-! Required axiom fences for Cfg's run loop (M2.5): under `Cfg.Ordered`
+/-! Required axiom fences for Cfg's run loop: under `Cfg.Ordered`
 the frames' positions are a step-bound potential, so every `Cfg.run` is the
 clocked outcome of its steps (`runs_run`) and clock monotone (`run_mono`).
 Generated from the proof module's public theorems; expected messages are

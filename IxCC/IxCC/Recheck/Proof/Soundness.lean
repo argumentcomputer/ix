@@ -1,9 +1,9 @@
 import IxCC.Recheck.Proof.Object
 
 /-!
-# `Recheck.sound` (M2.8)
+# `Recheck.sound`
 
-Roadmap §1.1 at stage S for the recheck path: for every object
+The correctness statement at stage S for the recheck path: for every object
 `Recheck.run` makes (`a.object`, the bytes the kernel gate evaluates,
 `Artifact.bytes`) and every driver that keeps its contract
 (`X86.Driver.Ok`), on every input,
@@ -41,7 +41,7 @@ theorem driver_exists (h : run cfg P c = .ok a) : ∃ D : X86.Driver, D.Ok a.bac
   rw [← em.encoded, em.stream.textLength]
   exact em.stream.textBound
 
-/-- **`Recheck.sound`** (M2.8): roadmap §1.1 at stage S for the object
+/-- **`Recheck.sound`**: the correctness statement at stage S for the object
 `Recheck.run` makes, run by any driver that keeps its contract, on every
 input: the object's values are the source's viewed at the roots' readback
 types unless the source goes wrong; a source that does not go wrong has an
@@ -71,7 +71,7 @@ theorem sound_bytes {bytes : List UInt8} (h : (run cfg P c).map Artifact.bytes =
     simp only [Except.map, Except.ok.injEq] at h
     exact ⟨a, rfl, h, fun _ => h⟩
 
-/-- **`compile_sound` for the object** (roadmap §1.1, stage S), from
+/-- **`compile_sound` for the object** (stage S), from
 `Recheck.sound`: a value the object returns is the view of a value SrcEval
 returns, or the source goes wrong. -/
 theorem compile_sound_linked (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)

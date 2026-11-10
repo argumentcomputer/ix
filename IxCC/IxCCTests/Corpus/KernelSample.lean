@@ -3,7 +3,7 @@ import IxCCTests.Corpus.Kernel.EvenOdd
 import IxCCTests.Corpus.Kernel.StrictAnd
 import IxCCTests.Corpus.Kernel.NatShiftr
 
-/-! # The corpus's kernel-recheck sample (MT.2, manual)
+/-! # The corpus's kernel-recheck sample (manual)
 
 The whole `Recheck.run` by `decide +kernel` on four corpus roots beyond K1:
 `bench-k1/even-odd` (mutual recursion), `phase1-scalar/tuple` (an allocated

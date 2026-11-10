@@ -7,8 +7,9 @@ import IxCC.Own.Plain.Certificate
 
 /-! # The compiler: `produce` and `Recheck.run` (D17)
 
-Design note 00 "Produce and recheck" and 06 S44, as built for Phase 1
-(M1.I1):
+Decision D17 (`docs/compiler-design.md`, "Design decisions"), as built for
+Phase 1:
+
 
 * `Recheck.Cert` (`Recheck.Cert`): the untrusted certificate: the table in
   proposal form, the relevance annotation, the middle end's oracle, the
@@ -24,7 +25,8 @@ Design note 00 "Produce and recheck" and 06 S44, as built for Phase 1
 * `Recheck.Err`: every decline or rejection as `stage: code: message`.
 
 `Recheck.sound` (the per-artifact theorem, from which `compile_sound` and
-`compile_safe` follow) is M2.8. The command-line compiler is
+`compile_safe` follow) is proved in `Recheck.Proof.Soundness`. The
+command-line compiler is
 `IxCC.Cli`. -/
 
 set_option autoImplicit false

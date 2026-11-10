@@ -7,7 +7,7 @@ import Std.Data.HashMap
 Collects proposals (pinned primitives, `lazy` and opaque-by-value rows;
 sidecar `eqn`/`csimp`/`inline` hints; `case` candidates found by scanning
 for recursor-headed definitions), checks each one, and resolves by priority
-`prim > csimp > eqn > case > body` (design note 01 §4). Every refused explicit
+`prim > csimp > eqn > case > body`. Every refused explicit
 proposal leaves a `hint` diagnostic. Recursor kinds are derived for every
 recursor. -/
 

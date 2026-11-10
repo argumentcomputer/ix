@@ -1,7 +1,7 @@
 import IxCC.Anf.Syntax
 
 /-! Anf programs as Lean source, for the kernel artifacts of the Phase 1
-lowerings (M1.K1): `tests-fir --render-artifacts` prints
+lowerings: `tests-fir --render-artifacts` prints
 `IxCCTests/Fir/Artifacts.lean`, the pipeline's final Anf program of
 each bench-k1 entry, which `IxCCTests.Fir.KernelEval` lowers to Cfg
 inside the kernel and `tests-fir` compares with the live pipeline (so the

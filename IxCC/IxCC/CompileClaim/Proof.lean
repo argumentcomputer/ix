@@ -12,16 +12,16 @@ three policies (`.immortal`, `.zeroRc`, `.plainRc`):
 - `verifyProgram_immortal_sound`, `verifyProgram_zeroRc_sound`, `verifyProgram_plainRc_sound`
 - `verifyBytes_immortal_sound`, `verifyBytes_zeroRc_sound`, `verifyBytes_plainRc_sound`
 
-## Scope and Trust Boundary Notes (`A1-1..A1-10`, `A6-2`, `A6-3`, `A6-8`)
+## Scope and Trust Boundary Notes
 
-1. **Ingress & Kernel Typechecking (`S4`, `A1-6`)**:
+1. **Ingress & Kernel Typechecking**:
    - `verifyBytes` defaults to `typecheck := true`, and `verifyBytes_*_sound`
      explicitly exposes `Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp`,
      `Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env`,
      `typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`, and
      `Src.Resource.validate inp.program = .ok ()`.
 
-2. **Front-End Recheck Step (`S6`, `S8`, `A1-2`, `A6-2`)**:
+2. **Front-End Recheck Step**:
    - Every soundness theorem exposes `Recheck.front cfg P cert = .ok (a.src, a.checked)`
      (or `Recheck.front cfg P cert.base = .ok (a.front.src, a.front.checked)` under
      `.plainRc`). `Recheck.front` runs `Src.Table.ofCert`, then
@@ -35,12 +35,12 @@ three policies (`.immortal`, `.zeroRc`, `.plainRc`):
      (`Table.ofCert`, the annotation equal to `Relevance.annotate`'s output,
      `install`, `check`, `WellAnnotated`, `Lazify.run`, which changes only
      application modes: `Lazify.run_modeEq`). None of these relates `a.src` to
-     `inp.program` semantically (open item S6), and nothing relates either to the
-     kernel's meaning of `c.target` (open item S8). The value clause is relative
-     to SrcEval on `a.src` and disjoined with `a.front.GoesWrong`, which no
-     theorem bounds.
+     `inp.program` semantically (open item S6 in `IxCC/docs/certification-design.md`), and nothing
+     relates either to the kernel's meaning of `c.target` (open item S8 in
+     `IxCC/docs/certification-design.md`). The value clause is relative to SrcEval on `a.src` and
+     disjoined with `a.front.GoesWrong`, which no theorem bounds.
 
-3. **Observable Roots & `Nat`-Parameter ABI (`S7`, `A1-3`, `A6-8`)**:
+3. **Observable Roots & `Nat`-Parameter ABI**:
    - `verifyProgram` rejects roots with `root.ty = none`, a declaration whose
      Π-telescope length is not `root.params` or whose parameters are not `Nat`
      (`rootParamsAllNat`), and, on the immortal/`.zeroRc` paths, return types
@@ -284,14 +284,14 @@ theorem getClaimM_spec {c : CompileClaim} (hwf : c.WellFormed) :
     simpa [next, hfalse] using getPayloadM_spec hwf
   simpa [getClaimM, next, toClaimBytes] using Ixon.GetSpec.bind (next := next) hhdr hnext
 
-/-- Canonical payload serialization roundtrip (`A1-10`). -/
+/-- Canonical payload serialization roundtrip. -/
 theorem ofPayloadBytes_toPayloadBytes {c : CompileClaim} (hwf : c.WellFormed) :
     ofPayloadBytes c.toPayloadBytes = some c := by
   unfold ofPayloadBytes
   rw [Ixon.runGet_eq_ok_of_spec (getPayloadM_spec hwf)]
   rfl
 
-/-- Canonical full wire-envelope serialization roundtrip (`S12`, `A1-4`, `A1-10`). -/
+/-- Canonical full wire-envelope serialization roundtrip. -/
 theorem ofClaimBytes_toClaimBytes {c : CompileClaim} (hwf : c.WellFormed) :
     ofClaimBytes c.toClaimBytes = some c := by
   unfold ofClaimBytes
@@ -441,7 +441,7 @@ private theorem runGet_toOption_some {α : Type} {m : Ixon.GetM α} {bs : ByteAr
       exact ⟨st, rfl, htrail⟩
 
 /-- Decoding payload bytes recovers a well-formed `CompileClaim` whose canonical
-encoding equals `bs` (`N13`). -/
+encoding equals `bs`. -/
 theorem toPayloadBytes_ofPayloadBytes (bs : ByteArray) (c : CompileClaim)
     (h : ofPayloadBytes bs = some c) :
     c.toPayloadBytes = bs ∧ c.WellFormed := by
@@ -461,7 +461,7 @@ theorem toPayloadBytes_ofPayloadBytes (bs : ByteArray) (c : CompileClaim)
   exact ⟨hbs.symm, hwf⟩
 
 /-- Decoding full wire-envelope claim bytes recovers a well-formed `CompileClaim`
-whose canonical wire encoding equals `bs` (`N13`). -/
+whose canonical wire encoding equals `bs`. -/
 theorem toClaimBytes_ofClaimBytes (bs : ByteArray) (c : CompileClaim)
     (h : ofClaimBytes bs = some c) :
     c.toClaimBytes = bs ∧ c.WellFormed := by

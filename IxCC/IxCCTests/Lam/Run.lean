@@ -6,7 +6,7 @@ import IxCCTests.Lam.Mutation
 import IxCCTests.Lam.KernelEval
 import IxCCTests.Lam.KernelK1.Fib
 
-/-! The `tests-lam` suite (design note 02 §4–5, §13): Lam's rules and clock
+/-! The `tests-lam` suite: Lam's rules and clock
 monotonicity; erasure on synthetic programs; SrcEval against Lam on
 `k1.ixe`, the bench-k1 closures (roots and first-order constants) and
 `src-sortpoly`; Lam against native Lean and the bench-k1 entries at their

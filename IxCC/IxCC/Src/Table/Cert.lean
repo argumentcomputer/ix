@@ -2,15 +2,14 @@ import IxCC.Src.Table.Validate
 
 /-! # The unfolding table as certificate data
 
-The table part of the compiler's certificate (design note 00 "Produce and
-recheck", `Cert.table`; 01 §1.2): the entries `Table.build` accepted, in the
-form of the proposals they came from, without anything a check re-derives.
+The table part of the compiler's certificate (`Cert.table`): the entries `Table.build` accepted, in
+the form of the proposals they came from, without anything a check re-derives.
 An `eqn` entry names its theorem but not its body, a `csimp` entry its
 target and theorem but not the target's levels, a `case` entry nothing but
 its key, and a recursor kind only the recursor.
 
 `Table.ofCert` rebuilds the table from such a certificate on the recheck path
-(style V): every entry is produced by the §4.1 check that justifies it
+(style V): every entry is produced by the entry check that justifies it
 (`checkPrim`, `checkCsimp`, `checkEqn`, `checkCase`, `deriveRecKind`,
 `checkLazy`, `checkInline`, the opaque-by-value allowlist), and the global
 conditions of `Table.validate` are checked on the result (pinned identities,

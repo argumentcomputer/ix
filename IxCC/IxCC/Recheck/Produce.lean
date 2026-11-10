@@ -13,10 +13,9 @@ import IxCC.X86.Layout.Tunnel
 
 /-! # Ingress, `produce` and `compile`
 
-The untrusted half of the compiler (design note 00 "Produce and recheck",
-D17) and the whole compiler:
+The untrusted half of the compiler (D17) and the whole compiler:
 
-* `ingress` (01 §1.2; not on the recheck path): Ixon v4 decoding, the
+* `ingress` (not on the recheck path): Ixon v4 decoding, the
   `ixcc/k1-equations/1` sidecar (the roots chosen by name, and the
   table proposals), erased typing, ingress into a `Src.Program` and the
   pinned identities;

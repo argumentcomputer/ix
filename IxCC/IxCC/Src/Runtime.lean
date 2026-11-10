@@ -2,8 +2,8 @@ import IxCC.Src.Syntax
 
 /-! # The runtime view
 
-The terms SrcEval can evaluate, and the relevant positions inside them
-(design note 01 §5, 02 §3.3). A constant's runtime terms are its resolved
+The terms SrcEval can evaluate, and the relevant positions inside them.
+A constant's runtime terms are its resolved
 body: the `eqn` body, the `csimp` target, the declaration value of a safe
 definition (or an allowlisted opaque), and the rules of a recursor; a `case`
 key reaches its recursor. Relevant positions follow the installed tags at a
@@ -13,7 +13,7 @@ skipped. The relevant closure is a set of instances `(constant, profile)`:
 roots at the empty profile (every parameter zero, as `run` instantiates
 them), and each reference at the profile its universe arguments give.
 
-`Src.Relevance.check` (02) and `Src.Admit` (01) both walk this view. -/
+`Src.Relevance.check` and `Src.Admit` both walk this view. -/
 
 namespace IxCC.Src
 

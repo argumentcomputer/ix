@@ -3,7 +3,7 @@ import IxCC.Fir.WellFormed
 
 /-! # Own well-formedness
 
-`Own.WellFormed q` (the premise of `Cfg.lower_correct`, 03 §7): each
+`Own.WellFormed q` (the premise of `Cfg.lower_correct`): each
 function's signature has one entry per parameter, and the erasure is a
 well-formed Fir program (`Fir.WellFormed`), which gives scoping, single
 binding, saturated calls and constructor keys. Ownership itself is the

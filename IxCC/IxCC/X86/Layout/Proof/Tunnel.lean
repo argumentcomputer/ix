@@ -2,7 +2,7 @@ import IxCC.X86.Layout.Tunnel
 import IxCC.X86.SafeStepsObject
 
 /-!
-# Tunnelling is a simulation (05 §7, step 1)
+# Tunnelling is a simulation (layout step 1 of 3)
 
 `tunnel` redirects each jump and branch target to the end of the chain of
 empty jump blocks it starts (`chase`). It keeps every block, every

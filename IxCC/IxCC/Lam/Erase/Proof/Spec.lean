@@ -2,14 +2,14 @@ import IxCC.Lam.Erase
 
 /-! # What erasure produces, as relations
 
-The Lam terms erasure can produce for a Src term (design note 02 §5.1, as
+The Lam terms erasure can produce for a Src term (as
 built in `Lam.Erase.Term` and `Lam.Erase`), as inductive relations that
 follow the translation's cases one to one. They are parametrised by the
 erasure input `I` and by `G`, the key-to-global map of the finished
 program (`G key g`: global `g` has key `key`), so they do not mention
 erasure's state; `Proof.Build` shows that every successful erasure is
 described by them, and `Proof.Sim` that everything they describe simulates
-SrcEval (M2.2).
+SrcEval.
 
 * `TR cx t t'`: `t'` is an erasure of `t` under the context map `cx` (`term`);
   a λ's mode is free, since `setModes` changes the modes of by-name

@@ -5,10 +5,9 @@ import IxCC.Sem.Agrees
 
 One equation per rule of `Anf.eval`, `evalBind`, `applyN` and `evalAlts`,
 with every sequencing step written as `Result.bind`, every charge as
-`Sem.later`, and every partial lookup as `Result.ofOption` (decision D-1,
-M2.3). The definitions spell each step out as a `match`; the proofs of clock
-monotonicity (`Anf.Proof.Mono`) and of the passes (P1–P4) reason through
-these equations only, one bind at a time, so that moving the evaluator to a
+`Sem.later`, and every partial lookup as `Result.ofOption` (decision D-1). The definitions spell
+each step out as a `match`; the proofs of clock monotonicity (`Anf.Proof.Mono`) and of the passes
+(P1–P4) reason through these equations only, one bind at a time, so that moving the evaluator to a
 traced monad later changes these equations and not the per-construct
 proofs. -/
 

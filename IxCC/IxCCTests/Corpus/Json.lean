@@ -1,6 +1,6 @@
 import Lean.Data.Json
 
-/-! Ordered JSON for the corpus files (MT.1).
+/-! Ordered JSON for the corpus files.
 
 `Lean.Json` keeps object keys sorted, but the frozen fixture files were
 written by `jq`, which keeps insertion order. `OJson` keeps the order it is

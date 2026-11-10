@@ -86,7 +86,8 @@ coverage inventory and the coverage-change record. During development:
   then run `check-trusted-externs` and `check-tools-tests`.
 
 The former complete surface, including every family gate and its command,
-is documented on branch `jcb/ixby-archive`.
+is documented on branch `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix`
+repository.
 
 For equation/profile consumer changes, build the shared source and ownership
 executables once, then run the affected checks:
@@ -264,7 +265,7 @@ choice sequence or replay an edited one (`IxCCTests.Support.Rng`).
 `lake exe tests-shrink` checks that recorded sequences regenerate their
 seeded cases, and that a planted bug per generator is found, named at the
 first level of its ladder that diverges from the generator's reference
-level, shrunk, and written out (MT.5). For a real failure at some seed:
+level, shrunk, and written out. For a real failure at some seed:
 
 ```sh
 lake exe tests-shrink campaign GEN --from SEED --count 1 [--out DIR]

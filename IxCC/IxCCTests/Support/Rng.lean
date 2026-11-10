@@ -6,7 +6,7 @@ three xor-shift-multiply rounds per output. Streams are fully determined by
 their seed and identical on every platform, so a failing generated case is
 reproduced from its seed alone.
 
-**Choice sequences** (MT.5). Every draw goes through `Rng.draw`: a choice
+**Choice sequences**. Every draw goes through `Rng.draw`: a choice
 in `[0, n)` (`below n`, and so `range`, `chance`, `pick`, `weighted`), or a
 whole word (`word`, `n = 0`). An `Rng` may carry a `Tape`:
 
@@ -21,8 +21,7 @@ seed and replaying the log gives the same output, and any edited sequence
 still gives a generator output, which is what the shrinker
 (`IxCCTests.Support.Shrink`) relies on. Without a tape a draw is
 exactly the word stream's (`below n = word % n`), so every existing seed
-generates what it always did.
--/
+generates what it always did. -/
 
 namespace IxCCTests.Support
 

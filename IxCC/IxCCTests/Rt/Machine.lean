@@ -6,10 +6,10 @@ import IxCC.Xv.Alloc.Driver
 import IxCC.Xv.Semantics
 import IxCC.Xv.XlSemantics
 
-/-! `Rt.lower`'s output through the backend, run at every level below Lir
-(M1.F6):
+/-! `Rt.lower`'s output through the backend, run at every level below Lir:
 
-* **Xv** (`Xv.eval`, after selection) and **Xl** (`Xl.eval`, after M1.B4's
+
+* **Xv** (`Xv.eval`, after selection) and **Xl** (`Xl.eval`, after register
   allocation) from the memory `cx_init` left, as Lir runs;
 * **typed x86** and the **byte machine** on the object `Backend.emit` makes:
   `cx_init`'s wrapper on a zero region (with a mapped stack), then the
@@ -18,7 +18,7 @@ import IxCC.Xv.XlSemantics
 
 An Lir outcome must come back as the same outcome at Xv and Xl, and as
 `rax:rdx` from both machines (`ok w` as `0:w`, a resource failure as its
-status and a trap as 4, 04 §6), with the callee-saved registers and `rsp`
+status and a trap as 4), with the callee-saved registers and `rsp`
 restored and the object area and the `bump`/`limit` fields equal to Lir's.
 The models share Lir's region address, so pointer results agree as words. -/
 
@@ -40,7 +40,7 @@ def compile (l : IxCC.Rt.Lowered) : Except String Compiled := do
   let (xv, _) ← (Select.run l.program).mapError fun e => s!"selection: {e.form}: {e.reason}"
   let r ← (Alloc.run {} xv).mapError (s!"allocation: " ++ ·)
   let a ← (Backend.emit r.program (l.config testProvenance)).mapError toString
-  -- `Rt.Lowered.compile` (the glue M1.I1 uses) makes the same object
+  -- `Rt.Lowered.compile` (the compiler's glue) makes the same object
   let whole ← (l.compile testProvenance).mapError toString
   unless whole.object == a.object do throw "Rt.Lowered.compile made a different object"
   pure { lir := l, xv, xl := r.program, artifact := a }

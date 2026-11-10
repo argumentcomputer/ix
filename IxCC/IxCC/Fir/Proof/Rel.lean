@@ -5,7 +5,7 @@ import IxCC.Sem.Forall2
 
 /-! # Anf and Fir values related
 
-The value relation of `Fir.convert_correct` (design note 03 §2.2, `ValRel`):
+The value relation of `Fir.convert_correct` (`ValRel`):
 literals to literals, □ to `erased`, and an Anf constructor to the Fir
 constructor of its table row (`CtorInfo.ofKey`) with related fields. There
 is no closure case: the lowering declines closures (`fir.closures`), so the
@@ -29,7 +29,7 @@ macro "fir_omega" : tactic =>
   `(tactic| ((try dsimp only [IxCC.Fir.Var, IxCC.Fir.JoinId, IxCC.Fir.FunId] at *) <;> omega))
 
 
-/-- Anf and Fir values related (03 §2.2 `ValRel`). -/
+/-- Anf and Fir values related. -/
 inductive VR (A : Anf.Program) : Anf.Val → Val → Prop
   | lit (l : Lam.Lit) : VR A (.lit l) (.lit l)
   | box : VR A .box .erased

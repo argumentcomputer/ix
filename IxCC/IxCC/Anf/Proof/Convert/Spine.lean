@@ -2,7 +2,7 @@ import IxCC.Anf.Proof.Convert.SpineGlob
 
 /-! # ANF conversion: application spines
 
-`spine` converts an application spine by its head (P1, M2.3): a CAF's value
+`spine` converts an application spine by its head (P1): a CAF's value
 (one charge, as Lam's δ) then the arguments in groups; a function global
 (`spine_fun`); a `name` variable's forced thunk, a strict variable's value,
 or any other head's value (`Convert/SpineVar`), then the arguments in

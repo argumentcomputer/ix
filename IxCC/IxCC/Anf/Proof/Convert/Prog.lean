@@ -4,7 +4,7 @@ import IxCC.Lam.Proof.Program
 
 /-! # ANF conversion: the converted program
 
-What a successful `convert L = .ok Q` gives the P1 simulation (M2.3):
+What a successful `convert L = .ok Q` gives the P1 simulation:
 `L` is `ModesOk` (so every global's telescope has its kinds and its body is
 well moded, `Lam.modesOk_sound`), and every global `g` of `L` has a global of
 `Q` under the same id whose parameters are `g`'s leading telescope and whose

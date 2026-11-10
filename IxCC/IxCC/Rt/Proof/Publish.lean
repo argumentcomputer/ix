@@ -5,9 +5,9 @@ import IxCC.Rt.Proof.Switches
 import IxCC.Sem.TracedSim
 
 /-!
-# M2.5's published theorems
+# The runtime lowering's published theorems
 
-`Rt.lower_correct` (06 S32): the runtime lowering simulates Cfg's immortal
+`Rt.lower_correct`: the runtime lowering simulates Cfg's immortal
 semantics, clock map `k ↦ k + 1` at the level of `Cfg.run` and `Lir.eval`.
 `Rt.lower_correct_traced`: the same in the traced vocabulary of decision
 D-1, for every environment and event type (`TSim.ofPure`).
@@ -17,11 +17,10 @@ give for a final result. `Rt.init_correct`: the lowered program's
 `cx_init` (`Rt.Proof.cxInit_ok`) establishes the heap invariant
 `Rt.lower_correct` starts from, for the empty heap.
 
-M2.7: `Rt.lower_correct_checked` and `Rt.init_correct_checked` are the same
+`Rt.lower_correct_checked` and `Rt.init_correct_checked` are the same
 for a program the pipeline's switch check accepts (`Rt.switchesOk`), with no
 `SwitchOk` premise (`Rt.Proof.switchSel_of_ok`). The `Lang` binding of Lir
-is `Rt.Proof.Lang` (`Rt.Loaded`).
--/
+is `Rt.Proof.Lang` (`Rt.Loaded`). -/
 
 set_option autoImplicit false
 
@@ -88,7 +87,7 @@ theorem init_correct {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower c
   exact ⟨left, mem', hrun, hpost, fun hargs hsafe => lower_correct h hargs (hpost.heap _) hsafe⟩
 
 /-- **`Rt.lower_correct` for a program the pipeline's switch check
-accepts** (M2.7): no `SwitchOk` premise. -/
+accepts**: no `SwitchOk` premise. -/
 theorem lower_correct_checked {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower cfg P = .ok L)
     (hsw : switchesOk P = true) {g : Nat} {args : List Own.RVal} {H : Own.Heap} {ws : List Word}
     {mem : X86.Memory} {ctx : Word} {Pw : List Word}
@@ -108,7 +107,7 @@ theorem lower_correct_checked_traced {Env E : Type} {cfg : Config} {P : Cfg.Prog
   Sem.TSim.ofPure (lower_correct_checked h hsw hargs hheap)
 
 /-- **`cx_init`, then `Rt.lower_correct` from the empty heap, for a program
-the pipeline's switch check accepts** (M2.7): no `SwitchOk` premise. -/
+the pipeline's switch check accepts**: no `SwitchOk` premise. -/
 theorem init_correct_checked {cfg : Config} {P : Cfg.Program} {L : Lowered} (h : lower cfg P = .ok L)
     (hsw : switchesOk P = true) {size budget ctx : Word} {mem : X86.Memory} (hok : RegionOk ctx size)
     (hreg : Region mem ctx size) :

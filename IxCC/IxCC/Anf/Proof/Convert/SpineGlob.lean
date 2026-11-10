@@ -8,7 +8,7 @@ the arguments, and its partial applications at a positive clock only build
 closures, so the grouped Lam order (`call_source`) simulates; an impure
 argument gets a leading `tick` (`SimUpTo.tickConst`). With fewer arguments,
 the global's closure (free in Anf) is applied in groups, behind a `tick` when
-the first argument is impure (P1, M2.3). -/
+the first argument is impure (P1). -/
 
 set_option autoImplicit false
 

@@ -9,8 +9,8 @@ theorems (`IxCC.Recheck.sound_nat`, `IxCC.CompileClaim.verifyBytes_immortal_soun
 It is **not** a source-adequacy theorem for compiled claims. The kernel environment and the
 kernel term it speaks about are not derived from a claim's environment or target, and the
 relation it needs can be built only for a very small fragment. Source adequacy against the
-kernel model, the target theorem of [IxCC's roadmap](../../IxCC/docs/roadmap.md) and review
-finding S8, remains open.
+kernel model, the target theorem of [IxCC's roadmap](../../IxCC/docs/roadmap.md) and open
+item S8 of IxCC's [certification design](../../IxCC/docs/certification-design.md), remains open.
 
 The package lives outside IxCC's production import root, so `IxCC` never imports IxCK's
 model tier.
@@ -81,9 +81,9 @@ explicit `Nat.succ`/`Nat.zero`, explicit binary `Nat.*` calls on relevant argume
 operations whose premise holds, raw `nat_lit` literals, and calls to other non-recursive
 definitions of the same kind.
 
-The 2026-11-09 review surveyed 17 of the repository's fixture packs (from the bench-k1, `k1`,
-phase1-scalar, phase1-decline and phase1-abi families) as the loader builds them: of their 69 roots
-after the front end, 65 are provably unrelatable, and only
+A survey of 17 of the repository's fixture packs (from the bench-k1, `k1`,
+phase1-scalar, phase1-decline and phase1-abi families), as the loader builds them, found that of
+their 69 roots after the front end, 65 are provably unrelatable, and only
 `Abi.nat1 (a : Nat) : Nat := a` qualifies. Of the other three, two return `Bool` or `Tri`
 constructors (no `RelHead` case, and the theorems need a `Nat` result) and one,
 `Decline.applyArg`, is higher-order.

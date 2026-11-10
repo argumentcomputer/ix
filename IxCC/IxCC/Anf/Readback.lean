@@ -7,7 +7,7 @@ readback (`Lam.readback`): a `Nat` literal is a `Nat`, a constructor is its
 source tag (from the constructor table, which Anf carries unchanged from
 Lam) with its kept fields, a string literal its UTF-8 bytes. Closures and □
 have none. Equal Lam and Anf readback of related values is what the
-differential tests compare and what adequacy (02 §7.2) concludes. -/
+differential tests compare and what adequacy concludes. -/
 
 namespace IxCC.Anf
 

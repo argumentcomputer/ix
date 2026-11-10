@@ -3,11 +3,11 @@ import IxCC.Sem.Agrees
 
 /-! # SrcEval: clock monotonicity
 
-`Src.eval_mono` (design note 01 §6.1, M2.2): an outcome of SrcEval other
+`Src.eval_mono`: an outcome of SrcEval other
 than `timeout` is the outcome at every larger clock, for `eval`, `apply`,
 `applyAll`, `fire`, `force`, `forceAll`, `evalConst`, `headValue` and `run`;
-so each is a `Sem.ClockMono` computation (as v2's `MonoAt`,
-`jcb/ixby-archive:IxCC/Ixon/Eval.lean:898`).
+so each is a `Sem.ClockMono` computation (as the retired pipeline's
+evaluator was).
 
 Strong induction on the clock. Within one clock, the functions call each
 other without a charge only in the order `eval → {apply, force, evalConst}
@@ -274,7 +274,7 @@ theorem monoAt : ∀ k, MonoAt p k := by
         forceAll := fun _ hk ss => forceAll_agrees_of ih hk ss
         evalConst := fun _ hk ls c => evalConst_agrees_of ih hk ls c }
 
-/-- **Clock monotonicity** of SrcEval (`eval_mono`, design note 01 §6.1). -/
+/-- **Clock monotonicity** of SrcEval (`eval_mono`). -/
 theorem eval_mono (ls : Levels) (ρ : Env) (t : Term) : ClockMono fun k => eval p k ls ρ t :=
   Result.Agrees.clockMono fun k k' hk => (monoAt p k).eval k' hk ls ρ t
 

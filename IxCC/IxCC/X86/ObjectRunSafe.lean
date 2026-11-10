@@ -10,14 +10,14 @@ The bridge from typed `X86.Eval` runs to the object's clocked semantics
 (`ELF.Valid`), for an export whose caller returns outside the text:
 
 - `exec_exit`: checked steps (`Stream.SafeSteps`) from the entry that end
-  as an export does (`Exit`, 05 §6.1) are the object's outcome
+  as an export does (`Exit`) are the object's outcome
   `statusResult st val` at some clock, with memory related outside the
   holes (`ObjectEval.run_exit`);
 - `exec_running`: checked steps that end running, `n > 0` of them, leave
   the object running at clock `n − 1` (every typed step is at least one
   byte step, `Stream.safe_progress`);
-- `sim_of_ends`: hence, from 05 §6.2's conclusion for every outcome of a
-  clocked source (`Ends`, the shape of `Backend.safeSteps`, whose timeout
+- `sim_of_ends`: hence, from the backend's conclusion for every outcome of a
+  clocked source (`Ends`, whose timeout
   clause asks for at least `b k` steps at clock `k`), a `Sem.Sim` from the
   source to the object with any clock map `f` with `k < b (f k)`
   (`sim_of_ends_succ`: `b = id`, `f k = k + 1`).
@@ -173,7 +173,7 @@ theorem exec_running (hout : input.encoded.text.size ≤ (retAddr - base).toNat)
 
 end Object
 
-/-- 05 §6.2's conclusion (`Backend.safeSteps`) for an outcome `r` of a
+/-- The backend's conclusion for an outcome `r` of a
 clocked source: checked steps from the entry that end as the outcome
 says, or in the target's own stack failure (status 2). A value ends with
 status 0, its word in `rdx` and `Final` of the final memory; a resource
@@ -219,7 +219,7 @@ variable {checked : Checked} {input : ELF.Input} {bytes : ByteArray}
   (hout : input.encoded.text.size ≤ (retAddr - base).toNat)
 
 include stream object entry hret hout in
-/-- 05 §6.2's conclusion at every clock, with step bound `b k` at clock
+/-- The backend's conclusion at every clock, with step bound `b k` at clock
 `k`, gives a simulation of the source by the object, with any clock map
 `f` such that the bound at `f k` exceeds `k`. -/
 theorem sim_of_ends {α : Type} {Final : α → Word → Memory → Stream.Holes → Prop} {c : Nat → Result α}

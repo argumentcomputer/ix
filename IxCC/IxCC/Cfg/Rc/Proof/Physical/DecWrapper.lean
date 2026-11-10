@@ -8,7 +8,7 @@ open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
 /-- Actual ordinary-call dec wrapper, complete release, and erased dummy
-return. All physical heap/partition facts are restored from H2's proved idle
+return. All physical heap/partition facts are restored from the runtime's proved idle
 invariant; the caller supplies no release simulation. -/
 theorem decrement_body_complete
     {heap : Heap} {addresses : AddressMap} {mem : X86.Memory} {external : Nat → Nat}

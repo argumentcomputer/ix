@@ -4,7 +4,7 @@ import IxCC.Lam.Erase.Proof.Bind
 /-! # Erasure's saturated forms meet their specification
 
 `saturated` (primitives, constructors, quotients, `casesOn`, recursors)
-produces a `SatR` derivation, given a sound recursive call (M2.2). -/
+produces a `SatR` derivation, given a sound recursive call. -/
 
 set_option autoImplicit false
 

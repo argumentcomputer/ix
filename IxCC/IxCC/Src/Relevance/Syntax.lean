@@ -2,7 +2,7 @@ import IxCC.Src.Runtime
 
 /-! # The relevance annotation
 
-Its format and installation (design note 02 §3.1). The annotation is
+Its format and installation. The annotation is
 carried beside the Ixon bytes (D3): per-constant `ConstRel`, per-constructor
 `CtorRel`, and node tags for every runtime term. `install` writes the node
 tags into the Src terms: `Binder.rel` and `Binder.propWhen` on λs, the `Rel`

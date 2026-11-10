@@ -20,12 +20,11 @@ One Xl program is stacked, laid out, encoded and written as an ELF object
   registers.
 
 An Xl result `ok [v]` must come back as `rax:rdx = 0:v`, `resource r` as
-`statusOf r : 0` and `trap` as `4 : 0` (04 §6), with the callee-saved
+`statusOf r : 0` and `trap` as `4 : 0`, with the callee-saved
 registers and `rsp` restored and, after a return, the heap and context
 words equal to Xl's. The typed machine halts at its final `ret` (depth 0);
 the byte machine executes it and must land on the sentinel return address.
-Native execution (`Native`) links the object with the C driver.
--/
+Native execution (`Native`) links the object with the C driver. -/
 
 namespace IxCCTests.Backend
 
@@ -37,7 +36,7 @@ def stackLo : Word := 0x100000
 def stackHi : Word := 0x200000
 /-- `rsp` at the export's entry, where the return address is: 8 mod 16. -/
 def sp0 : Word := stackHi - 8
-/-- The wrapper's `rsp` at its call (05 §6.1): six pushes and a pad below `sp0`. -/
+/-- The wrapper's `rsp` at its call: six pushes and a pad below `sp0`. -/
 def entrySp : Word := sp0 - 56
 /-- The return address the byte machine's final `ret` jumps to. -/
 def retSentinel : Word := 0x7e57000000

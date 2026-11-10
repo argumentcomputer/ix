@@ -6,7 +6,7 @@ import IxCC.Anf.Proof.Convert.Rel
 /-! # The rewriting walk: the relation
 
 The relation the walk's simulation keeps (P2 shrink, P3 inline, P4's
-specialisation bodies; M2.3), an instance of `Anf.Rel`'s structural
+specialisation bodies), an instance of `Anf.Rel`'s structural
 relations between a source program `P` and a target program `Q`:
 
 * `WV v w`: literals, □, constructors of related fields, closures of the

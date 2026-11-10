@@ -9,7 +9,7 @@ is one silent step, a run of edits is silent steps (`xl_edits`), a callee
 starts with its arguments where the entry convention puts them
 (`entry_agree`), and after a return the caller's abstract state at the
 return point agrees with the returned registers (`call_agree`, CompCert's
-`return_regs` discipline, 05 §3).
+`return_regs` discipline).
 -/
 
 namespace IxCC.Xv.Validate

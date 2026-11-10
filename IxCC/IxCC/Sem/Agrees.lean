@@ -5,8 +5,8 @@ import IxCC.Sem.Clocked
 `Agrees r' r`: `r'` is `r` wherever `r` does not time out, so `r'` runs at
 least as far as `r`. Clock monotonicity of an evaluator is `Agrees` between
 a larger and a smaller clock, proved one sequencing step at a time with
-`Agrees.bind` (the toy pipeline's pattern, `IxCCTests.Sem.Toy.Big`,
-for the IRs' mutual evaluators; M2.2). -/
+`Agrees.bind` (the toy pipeline's pattern, `IxCCTests.Sem.Toy.Big`, for the IRs' mutual evaluators).
+-/
 
 namespace IxCC.Sem
 

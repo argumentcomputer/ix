@@ -1,13 +1,13 @@
 import IxCC.Lir.Syntax
 
 /-!
-# Hand-written Lir kernels (MEAS-4 inputs)
+# Hand-written Lir kernels (the early backend probe's inputs)
 
-Synthetic kernels over 04's tagged `Nat` words (`n ↦ 2n+1`, n < 2^63), written
-as `Rt.lower` should emit them for K1 (04 §2), with every edge already
-non-critical. M1.B6 runs them through selection, allocation and emission and
-measures them against C twins; they are never reported as real-program
-results (roadmap §9).
+Synthetic kernels over the runtime's tagged `Nat` words (`n ↦ 2n+1`, n < 2^63), written
+as `Rt.lower` should emit them for K1, with every edge already
+non-critical. The backend tests run them through selection, allocation and
+emission, and the benchmark runner measures them against C twins; they are never reported as
+real-program results.
 
 - `fib`: K1's `fib` (`0 ↦ 0`, `1 ↦ 1`, `n+2 ↦ fib n + fib (n+1)`): two
   recursive calls and a tagged add, `lea t,[a-1]; add t,b; jc` as
@@ -22,8 +22,7 @@ results (roadmap §9).
   for boundary tests.
 
 Label order puts each loop's header before its body, so exactly the back
-edges charge the clock; `fib` charges one unit per recursive call.
--/
+edges charge the clock; `fib` charges one unit per recursive call. -/
 
 namespace IxCCTests.Lir.Kernels
 
@@ -107,7 +106,7 @@ def gcd : Func where
         bin 7 .shl (v 6) (i 1), bin 8 .or (v 7) (i 1)]
       term := .jump (to 1 [v 3, v 8]) }]
 
-/-- `a + b` (04 §2: `lea rax,[rdi-1]; add rax,rsi; jc`). -/
+/-- `a + b` (on tagged words: `lea rax,[rdi-1]; add rax,rsi; jc`). -/
 def natAdd : Func where
   name := "natAdd"
   params := [0, 1]
@@ -117,7 +116,7 @@ def natAdd : Func where
     { term := .ret [v 3] },
     { term := .fail .natOverflow, cold := true }]
 
-/-- Truncated `a - b` (04 §2: `sub rax,rsi; jb .Lzero; or rax,1`). -/
+/-- Truncated `a - b` (on tagged words: `sub rax,rsi; jb .Lzero; or rax,1`). -/
 def natSub : Func where
   name := "natSub"
   params := [0, 1]

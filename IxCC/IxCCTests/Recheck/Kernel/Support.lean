@@ -1,7 +1,7 @@
 import IxCC.Recheck.Run
 
 /-! What the kernel modules state about `Recheck.run` on the recheck
-artifacts (M1.K1, M2.8): decidable equality of `Except` results, so a
+artifacts: decidable equality of `Except` results, so a
 claim reads `(Recheck.run cfg P c).map Artifact.bytes = .ok bytes`. -/
 
 namespace IxCCTests.Recheck.Kernel

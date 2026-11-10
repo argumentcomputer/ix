@@ -2,7 +2,9 @@
 
 > **Historical record.** The compiler code, fixtures, runners and documents
 > it describes left main on 2026-09-29 when the compiler was rebuilt; links
-> to them point to branch `jcb/ixby-archive`.
+> to them point to branch `jcb/ixby-archive` of the pre-merge
+> `argumentcomputer/Compilatr.ix` repository. Milestone, plan-item and
+> section identifiers in it refer to plans that are no longer kept.
 
 These reports measure the named compiled programs on their recorded hosts.
 Each links its raw-result archive, build inputs, correctness checks, and replay
@@ -21,6 +23,6 @@ shared-host references do not establish dedicated regression thresholds.
 Use the implemented benchmark protocol (`benchmarks/protocol.md` at archive commit `7599a434`) to
 build, verify, measure, and reproduce the suite. The [benchmark design](../benchmark-plan.md)
 defines comparison rules and expansion criteria; the
-[roadmap](../roadmap.md#performance-measurement) owns PERF2/PERF3 priorities.
+[roadmap](../roadmap.md#measurement) owns measurement priorities.
 Interpreter counter evidence (`docs/thesis-counter-evidence.md` at archive commit `7599a434`) complements native
 measurements without implying a wall-clock speedup.

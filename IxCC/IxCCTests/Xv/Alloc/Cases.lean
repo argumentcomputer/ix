@@ -178,7 +178,7 @@ def verdict (env : Xl.Env) (o : Output) : Option Code :=
   | .error e => some e.code
 
 /- Callee-saved survives; caller-saved does not, unless the callee declares
-a clobber set without it (a runtime procedure, 04 §7). -/
+a clobber set without it (a runtime procedure). -/
 #guard verdict {} (keepIn .rbx) == none
 #guard verdict {} (keepIn .rcx) == some .useMissing
 #guard verdict { clobbers := fun _ => [.rax, .rdx] } (keepIn .rcx) == none
@@ -242,7 +242,7 @@ def stackProg : VProgram := { funcs := #[callNine, nine], main := 0 }
 def eight : Func VReg := { params := List.range 8, results := 1, blocks := #[
   { body := #[.op addMR [8] [.r 0, .r 7]], term := .ret [8] }] }
 
-/-- A tail call with eight arguments has no allocation (05 §13 Q7): both
+/-- A tail call with eight arguments has no allocation: both
 allocators decline it, and the validator rejects a hand-made one. -/
 def tailEight : Func VReg := { params := List.range 8, results := 1, blocks := #[
   { term := .tail 1 (List.range 8) }] }
@@ -252,7 +252,7 @@ def tailEight : Func VReg := { params := List.range 8, results := 1, blocks := #
     { numSlots := 0, blocks := [{ cert := [], termLocs := (List.range 8).map Xl.argLoc }] } with
   | .error e => e.code == .convention
   | .ok () => false
-/- Three results: past the two result registers (05 §6). -/
+/- Three results: past the two result registers. -/
 def threeResults : Func VReg := { params := [0], results := 1, blocks := #[
   { body := #[.call 1 [0] [1, 2, 3]], term := .ret [1] }] }
 #guard (IxCC.Xv.Alloc.LinearScan.run {} threeResults).toBool == false

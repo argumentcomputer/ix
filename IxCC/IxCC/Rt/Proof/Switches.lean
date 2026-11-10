@@ -7,8 +7,8 @@ import IxCC.Rt.Switches
 `Rt.lower_correct` needs, at each switch Cfg steps on, that the lowering's
 word and tag tests dispatch the scrutinee as Cfg's key selection does
 (`Dispatches`). Cfg carries no types, so this is not a consequence of the
-simulation. M2.7 discharges it with a check rather than a typing invariant
-(`Rt.switchesOk`, route (c)): no default arm, `Nat` keys not mixed with
+simulation. The pipeline discharges it with a check rather than a typing invariant
+(`Rt.switchesOk`): no default arm, `Nat` keys not mixed with
 others, distinct keys with distinct tests, `Nat.zero` and `Nat.succ` apart.
 
 `dispatches_of_ok`: under the check, a scrutinee related to a word under the

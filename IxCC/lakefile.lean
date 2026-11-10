@@ -30,7 +30,7 @@ require «ix-ck» from "../IxCK"
 lean_lib IxCC where
   roots := #[`IxCC]
 
-/- The compiler (M1.I1): `ixcc compile CLOSURE.ixe --equations EQ.json
+/- The compiler: `ixcc compile CLOSURE.ixe --equations EQ.json
 --root NAME -o OUT.o` runs ingress, `produce` and `Recheck.run` and writes the
 ELF object; `ixcc check-cert` rechecks a certificate. The logic is in
 `IxCC.Cli`; the root only calls it. -/
@@ -46,7 +46,7 @@ lean_lib IxCCTests where
   roots := #[`IxCCTests]
 
 /- Src: rules, the K1 table and runs, the native differential, pins,
-diagnostics and the bench-k1 entries (design note 01 §10). -/
+diagnostics and the bench-k1 entries. -/
 lean_exe «tests-src» where
   root := `IxCCTests.Src.Main
 
@@ -54,11 +54,11 @@ lean_exe «tests-src» where
 lean_exe «tests-src-slow» where
   root := `IxCCTests.Src.SlowMain
 
-/- The relevance annotator and checker (design note 02 §3, §13). -/
+/- The relevance annotator and checker. -/
 lean_exe «tests-relevance» where
   root := `IxCCTests.Src.Relevance.Main
 
-/- Lam and erasure (design note 02 §4–5, §13): Lam's rules, erasure on
+/- Lam and erasure: Lam's rules, erasure on
 synthetic programs, SrcEval against Lam on K1, bench-k1 and src-sortpoly
 (readback, traps, least clocks), the native differential, annotation
 mutation, well-formedness and static modes of every erased program. -/
@@ -67,18 +67,18 @@ lean_exe «tests-lam» where
 
 /- Regenerates (or with `--check` compares) the K1 artifacts the kernel
 evaluates: `IxCCTests/Src/Artifacts/*.lean`, the loaded fib, tak and
-gcd programs with their annotations as Lean terms (M1.K1). -/
+gcd programs with their annotations as Lean terms. -/
 lean_exe «gen-src-artifacts» where
   root := `IxCCTests.Src.ArtifactMain
 
-/- Anf and the middle-end passes P1–P4 (design note 02 §6–8, §13): Lam
+/- Anf and the middle-end passes P1–P4: Lam
 against Anf after every pass on k1.ixe and bench-k1, the K1 shape
 expectations, generated Lam programs under random oracles, WellScoped and
 shrink idempotence, and the passes re-run by the kernel. -/
 lean_exe «tests-anf» where
   root := `IxCCTests.Anf.Main
 
-/- Fir, the Phase 1 Own fragment and Cfg (design note 03, M1.F5): every
+/- Fir, the Phase 1 Own fragment and Cfg: every
 root and first-order constant of k1.ixe and bench-k1 through Anf → Fir →
 Own → Cfg against Anf and Lam (readback, traps, each level's clock map and
 timeout clause), the fallback route declined at Fir, generated first-order
@@ -87,7 +87,7 @@ and the lowerings re-run by the kernel. -/
 lean_exe «tests-fir» where
   root := `IxCCTests.Fir.Main
 
-/- The runtime lowering (design note 04, M1.F6): `Rt.lower` from Cfg to
+/- The runtime lowering: `Rt.lower` from Cfg to
 Lir on k1.ixe, bench-k1 and generated programs against Cfg (related values,
 typed readback, traps, the clock relation, heap and natOverflow), the
 primitive sequences at their boundaries, `cx_init`, hand-written cases and
@@ -119,7 +119,7 @@ lean_exe «tests-pipeline-rc» where
 lean_exe «tests-driver-session» where
   root := `IxCCTests.X86.DriverSession.Main
 
-/- The compiler end to end (M1.I1, M1.I2): the `ixcc` command line on
+/- The compiler end to end: the `ixcc` command line on
 the bench-k1 closures and k1.ixe (with `--cc`, linked with the runtime driver
 and run at test and bench sizes), `produce` + `Recheck.run` against the stage
 suites' pipeline, the certificate's JSON round trip, declines, and
@@ -127,14 +127,14 @@ certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
   root := `IxCCTests.Pipeline.Main
 
-/- Deterministic x86 step counts (M3.2, MEAS-3): each bench-k1 program's
+/- Deterministic x86 step counts: each bench-k1 program's
 `cx_init` and root on the typed x86 machine and on `ByteEval`, compared
 exactly with the reviewed baseline `fixtures/ixon-v4/bench-k1/steps.json`
 (`--write` regenerates it). -/
 lean_exe «check-steps» where
   root := `IxCCTests.Pipeline.StepsMain
 
-/- The corpus builder (MT.1, `docs/corpus.md`): `corpus check` verifies the
+/- The corpus builder (`docs/corpus.md`): `corpus check` verifies the
 frozen fixture families against their `ixcc/corpus/1` manifests
 without ix; `corpus rebuild MANIFEST --ix IX` recompiles a family with the
 pinned ix and recomputes the expected outputs with Lean's interpreter. -/
@@ -146,17 +146,17 @@ The kernel itself is neither imported nor a build dependency. -/
 lean_exe «certified-census» where
   root := `IxCCTests.Corpus.CertifiedCensusMain
 
-/- The corpus suite (MT.2): every root of every registered corpus family
+/- The corpus suite: every root of every registered corpus family
 compiled, declined with its expected code, or run at every level (SrcEval
 … Cfg, Lir, Xv, Xl, typed x86, ByteEval) and natively (with `--cc`) on its
 frozen cases against Lean's interpreter. -/
 lean_exe «tests-corpus» where
   root := `IxCCTests.Corpus.Main
 
-/- The ownership and usage-annotation suite, Phase 1 part (MT.7): the annotated
+/- The ownership and usage-annotation suite, Phase 1 part: the annotated
 programs ix accepts against their plain twins and Lean's interpreter at every
 level and natively, their code compared, erasure, the Cfg stepper's counters,
-CX-1, and ix's recorded verdicts (`fixtures/ownership`). -/
+the annotator's handling of `0` binders, and ix's recorded verdicts (`fixtures/ownership`). -/
 lean_exe «tests-own» where
   root := `IxCCTests.Own.Main
 
@@ -164,7 +164,7 @@ lean_exe «tests-own» where
 lean_exe «tests-own-plain» where
   root := `IxCCTests.Own.Plain.Main
 
-/- Shrinking and first-divergence reports for the generators (MT.5): recorded
+/- Shrinking and first-divergence reports for the generators: recorded
 choice sequences replay to the seeded cases, and a planted bug per generator
 (LamGen, FoGen, the Lir generator, the allocation mutants) is found, named at
 its level, shrunk and written out as a replayable record. -/
@@ -172,13 +172,13 @@ lean_exe «tests-shrink» where
   root := `IxCCTests.Pipeline.ShrinkMain
 
 /- Regenerates (or with `--check` compares) the recheck artifacts the kernel
-evaluates (M1.K1): `IxCCTests/Recheck/Artifacts/*.lean`, each bench-k1
+evaluates: `IxCCTests/Recheck/Artifacts/*.lean`, each bench-k1
 closure's `Src.Program`, configuration and certificate as shared Lean terms,
 with the typed program and object bytes of the native run. -/
 lean_exe «gen-recheck-artifacts» where
   root := `IxCCTests.Recheck.ArtifactMain
 
-/- The recheck path in kernel-evaluable style (M1.K1): building it evaluates
+/- The recheck path in kernel-evaluable style: building it evaluates
 `Recheck.runTyped` on the fib, tak and gcd artifacts and the whole
 `Recheck.run` on fib by `decide +kernel`; running it checks every committed
 artifact against a fresh ingress, `produce` and native run, and the
@@ -214,7 +214,7 @@ lock-step (outcome, memory and clock), with per-rule firing counts. -/
 lean_exe «check-xv-select» where
   root := `IxCCTests.Xv.Main
 
-/- Allocation (TT-3): linear scan, the validator and the all-slots fallback on
+/- Allocation: linear scan, the validator and the all-slots fallback on
 the kernels and on generated programs, with chaos seeds, validator mutation
 and Xv.eval against Xl.eval on every accepted allocation. -/
 lean_exe «check-regalloc» where
@@ -226,7 +226,7 @@ and (with `--cc`) natively under `fixtures/x86/backend_driver.c`. -/
 lean_exe «check-backend» where
   root := `IxCCTests.Backend.Main
 
-/- MEAS-4 (M1.B6): the Lir kernels fib, sumLoop and gcd as ELF objects, with
+/- The early backend probe: the Lir kernels fib, sumLoop and gcd as ELF objects, with
 their static spill and move counts and compile times, for the optional
 measurement in benchmarks/meas4 (not a CI gate). -/
 lean_exe «backend-probe» where

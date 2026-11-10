@@ -1,7 +1,7 @@
 import IxCC.Fir.Semantics
 
-/-! Required axiom fences for Fir (M1.F5): the size and join-stack facts the
-well-founded Fir semantics terminates by. `Fir.convert_correct` (M2.4) will
+/-! Required axiom fences for Fir: the size and join-stack facts the
+well-founded Fir semantics terminates by. `Fir.convert_correct` will
 join them. Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Fir.Code.size_pos' depends on axioms: [propext] -/

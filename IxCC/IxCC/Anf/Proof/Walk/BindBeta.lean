@@ -3,7 +3,7 @@ import IxCC.Anf.Proof.Walk.BindApp
 /-! # The rewriting walk: β-reduction and the `app` step
 
 β-reduction of a local function inlined at its single application, and the
-whole `app` case of the walk's simulation (M2.3). -/
+whole `app` case of the walk's simulation. -/
 
 set_option autoImplicit false
 

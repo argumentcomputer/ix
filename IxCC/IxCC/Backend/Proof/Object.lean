@@ -6,7 +6,7 @@ import IxCC.Sem.TracedSim
 /-!
 # The backend from Lir to the object
 
-`Backend.compile` composed end to end, given 05 §6.2's conclusion for the
+`Backend.compile` composed end to end, given the backend's conclusion for the
 emitted program (`ObjectEval.Ends`: stacking, the wrapper and the exit
 group, transported through tunnelling and linearisation): the object's
 execution through the entry wrapper (`ObjectEval.exec` on the object's
@@ -39,7 +39,7 @@ variable {p : Lir.Program} {q : VProgram} {fired : Std.TreeMap String Nat compar
   {b f : Nat → Nat}
 
 /-- Lir to the object: selection, the validated allocation, and an emitted
-program whose runs from `core₀` end as 05 §6.2 says. -/
+program whose runs from `core₀` end as the backend's conclusion (`ObjectEval.Ends`) says. -/
 theorem object_sim (hs : Select.run p = .ok (q, fired)) (hv : Validate.run env q outs = .ok l)
     (stream : X86.Stream.Valid x.program input.encoded) (object : X86.ELF.Valid input bytes)
     (entry : input.entryBlock = x.program.entry) (flags : X86.ByteEval.Flags)

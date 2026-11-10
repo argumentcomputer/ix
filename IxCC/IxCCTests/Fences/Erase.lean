@@ -5,7 +5,7 @@ import IxCC.Src.Relevance.Proof.Sound
 import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 
-/-! Required axiom fences for the source-to-Lam theorems (M2.2): clock
+/-! Required axiom fences for the source-to-Lam theorems: clock
 monotonicity of SrcEval and Lam, erasure's correctness, and the relevance
 checker's soundness. Expected messages are preserved verbatim. -/
 

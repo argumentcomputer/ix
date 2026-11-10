@@ -1,13 +1,13 @@
 import IxCC.Rt.Layout
 
-/-! # `Nat` runtime procedures (04 §2, §7)
+/-! # `Nat` runtime procedures
 
 `Nat.pow` and `Nat.gcd` loop, so they are Lir procedures rather than inline
-sequences (04 §2, S20): internal functions over tagged words (`2n + 1`)
+sequences: internal functions over tagged words (`2n + 1`)
 that `Rt.lower` calls. Their loops charge the clock at their back edges, as
 every Lir loop does, so a run that calls them spends more Lir clock than its
 Cfg run (the timeout clause still holds: runtime-procedure loops only add
-charges, 04 §8).
+charges).
 
 * `rt_nat_pow a e`: `a^e`, or `fail natOverflow` when it is at least 2^63.
   `e = 0` gives 1 and a base of 0 or 1 itself; otherwise the base is at
@@ -17,7 +17,7 @@ charges, 04 §8).
   remain; each product is checked (by division, and below 2^63), and a
   product that is needed and too large means the result is too.
 * `rt_nat_gcd a b`: Euclid over `urem` on the untagged values (`gcd a 0 =
-  a`), as M1.B2's `gcd` kernel. -/
+  a`), as the synthetic `gcd` kernel of the backend tests. -/
 
 namespace IxCC.Rt.Procs
 

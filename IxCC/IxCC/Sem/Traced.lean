@@ -4,14 +4,13 @@ import IxCC.Sem.Simulation
 # Traced outcomes and their behaviours
 
 The statement shapes that let IO arrive without restating any simulation
-theorem (decision D-1, the hybrid; `plans/systems/ixcc-systems-programming.md`
-§5.2). A traced semantics reads an environment and returns, at every clock,
+theorem (decision D-1). A traced semantics reads an environment and returns, at every clock,
 a `Traced E α`: the clocked `Result` together with the events performed so
 far, on timeout too.
 
 The environment and the event type `E` stay abstract. Phase 1 levels lift
 their pure evaluators (`Traced.lift`, `TraceMono.ofPure`): the environment
-is `Unit`, `E` is `Empty` and every trace is `[]`. The IO design note
+is `Unit`, `E` is `Empty` and every trace is `[]`. A later IO design
 chooses the concrete events (for example an operation with first-order
 arguments and response), the oracle, and how an oracle refusal ends a run.
 None of them needs a new `Result` constructor: a refusal can be a response

@@ -3,7 +3,7 @@ import IxCC.Lir.Semantics
 import IxCC.Src.Prim
 
 /-!
-# Tagged-word arithmetic (04 §2)
+# Tagged-word arithmetic
 
 The word-level facts behind each primitive's Lir expansion in `Rt.lower`
 (`Rt.Lower.primitive`): on tagged words `2n + 1` (`natWord`), each
@@ -21,8 +21,7 @@ apply them.
 * `natLand`, `natLor`, `natXor`: the tag bit survives `and`/`or`, and `xor`
   restores it.
 * `natShr`: `(2p + 1) >>> q ||| 1` is `2(p >>> q) + 1`; `natShl`: `2p <<< q`
-  shifted back to `2p` is exact.
--/
+  shifted back to `2p` is exact. -/
 
 set_option autoImplicit false
 

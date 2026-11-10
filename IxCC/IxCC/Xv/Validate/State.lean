@@ -5,11 +5,11 @@ import IxCC.Xv.Slots
 /-!
 # The validator's abstract state
 
-`AState` (05 §5) maps each location to the set of virtual registers whose
+`AState` maps each location to the set of virtual registers whose
 current value it holds: `v ∈ a[l]` means that, in the matching runs, the Xl
 location `l` equals Xv's `ρ v`. A missing location holds nothing known;
 there is no `Top` (regalloc2 gap 2), and `≤` is pointwise inclusion, so a
-smaller state claims less. The soundness argument (M2, `Validate.sound`)
+smaller state claims less. The soundness argument (`Validate.sound`)
 needs only that `Agree` is antitone in `≤` and preserved by each transfer
 function below.
 
@@ -24,8 +24,7 @@ Everything here is kernel-evaluable (D17): locations are keyed by `Nat` in a
 - `bindParams`: an edge's parallel binding of block parameters, as a
   symbolic move over registers (regalloc2 `checker.rs:562-599`): each
   location loses the parameters and gains every parameter whose argument it
-  holds.
--/
+  holds. -/
 
 namespace IxCC.Xv.Validate
 

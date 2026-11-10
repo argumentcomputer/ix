@@ -8,7 +8,7 @@ operands, function globals' closures, and local functions walked over the
 caller's captured operands. From an activation whose level holes are
 related to the caller's levels at the site, the prologue's values are
 related to the caller's values of the levels they rebuild (`FrameOk`), so
-every operand the trees cover is reproduced (`prologue_frame`, M2.3). -/
+every operand the trees cover is reproduced (`prologue_frame`). -/
 
 set_option autoImplicit false
 

@@ -1,6 +1,6 @@
 import IxCC.Sem.Forward
 
-/-! Required axiom fences for forward diagrams and lock steps (M2.5):
+/-! Required axiom fences for forward diagrams and lock steps:
 `Sem.Forward` (no obligation at a stuck source, resource failures allowed
 at the target) and the simulation it gives, and `Sem.LockStep` with
 `reaches` and `comp`. Generated from the module's public theorems; expected

@@ -5,7 +5,7 @@ import IxCC.Anf.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
 
-/-! The corpus suite (MT.2): every root of every registered corpus family,
+/-! The corpus suite: every root of every registered corpus family,
 against its frozen cases (`ixcc/corpus/1`).
 
 For each root the compiler (`Recheck.ingress`, `produce`, `run`) either

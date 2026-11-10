@@ -1,7 +1,7 @@
 import IxCCTests.Src.Rules
 import IxCC.Src.Admit
 
-/-! `Src.Admit` diagnostics (design note 01 §5, §10 part 5) on synthetic
+/-! `Src.Admit` diagnostics on synthetic
 roots: each rejection code, its reference path from the root, the decline
 codes, and the accepted opaque-by-value case. -/
 

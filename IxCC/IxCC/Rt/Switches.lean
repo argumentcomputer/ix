@@ -3,7 +3,7 @@ import IxCC.Rt.Lower
 /-! # Switches the lowering dispatches without types (the pipeline's check)
 
 Cfg's `switch` selects an edge by the scrutinee's constructor key; the
-lowering (`Rt.lower`, 04 §8) tests words and tags, and keys are forgotten.
+lowering (`Rt.lower`) tests words and tags, and keys are forgotten.
 The two agree on a value of the switched inductive, but constructor tags
 repeat across inductives and a `Nat` literal's word is a field-less
 constructor's, so on a value of another type a default arm could be Cfg's
@@ -11,7 +11,7 @@ choice while a tag test fires in Lir. Cfg carries no types, so
 `Rt.lower_correct` assumes `SwitchOk` of every state Cfg reaches.
 
 `switchesOk` is the check that discharges it without a typing invariant
-(M2.7, route (c)): every switch has **no default arm**, does not mix `Nat`
+: every switch has **no default arm**, does not mix `Nat`
 keys with other keys, and gives **distinct keys distinct tests** (zero,
 successor, a field-less constructor's word, a cell's tag); and `Nat.zero`
 and `Nat.succ` are not pinned to one key. Then a switch Cfg can step on

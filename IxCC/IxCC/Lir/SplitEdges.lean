@@ -3,8 +3,8 @@ import IxCC.Lir.Graph
 /-!
 # Critical-edge splitting
 
-A Lir pass that makes every edge non-critical (05 §2, `WellFormed`
-condition 3). Cross-check S14 makes `Rt.lower` responsible for emitting
+A Lir pass that makes every edge non-critical (`WellFormed`
+condition 3). `Rt.lower` is responsible for emitting
 critical-edge-free Lir; this pass is the tool it (and the tests) use.
 
 Each critical edge `b → s` with arguments `as` becomes `b → e` without
@@ -43,7 +43,7 @@ def splitEdges (critical : Edge → Bool) (relabel : Label → Label) (first : L
 
 /-- Split every critical edge (see the module note). The entry keeps
 label 0, and a function without critical edges is returned unchanged.
-Kernel-evaluable style (M1.K1): the blocks are walked as a list, the
+Kernel-evaluable style: the blocks are walked as a list, the
 predecessor counts and labels are lists built once, and no array is
 indexed. -/
 def splitCriticalEdges (f : Func) : Func :=

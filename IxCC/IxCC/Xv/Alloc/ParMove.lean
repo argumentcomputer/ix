@@ -3,7 +3,7 @@ import IxCC.Xv.Alloc.Output
 /-!
 # Parallel moves (untrusted)
 
-A port of regalloc2's resolver (`src/moves.rs`, 05 §5; review §1.1 Q4). A
+A port of regalloc2's resolver (`src/moves.rs`). A
 parallel move `{dᵢ ← sᵢ}` with distinct destinations reads every source,
 then writes every destination. `sequence` orders it: each move precedes the
 one that overwrites its source, and since each location has one writer the

@@ -69,7 +69,7 @@ resource-contract obligations. The next goal combines Phase 1.5 completion
 with a first certified RC heap slice for real `List.reverse`.
 
 The earlier pipeline, the Ixby backend and their measurements are on branch
-`jcb/ixby-archive`.
+`jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix` repository.
 
 ## Build and check
 

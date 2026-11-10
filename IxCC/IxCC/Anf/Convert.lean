@@ -3,7 +3,7 @@ import IxCC.Lam.ModesOk
 
 /-! # P1: ANF conversion (Lam → Anf)
 
-`Anf.convert` (design note 02 §8, P1), a CPS-style conversion with
+`Anf.convert` (P1), a CPS-style conversion with
 level-based operands, so no term is ever shifted:
 
 * A Lam variable maps to a target operand (a target *level*, a literal or
@@ -12,7 +12,7 @@ level-based operands, so no term is ever shifted:
 * A continuation (`Kont`) is `ret`, a jump to a target join level, or a
   meta-continuation receiving the target depths and the value's operand.
   A `case` whose continuation is a meta-continuation becomes a join point
-  over that continuation (non-tail `case`, 02 §6.1); a tail `case` or one
+  over that continuation (non-tail `case`); a tail `case` or one
   inside another join point's alternatives passes its continuation down.
 * A global's leading λ-telescope becomes its parameters; any other λ-telescope
   an `fn` of that arity.
@@ -23,7 +23,7 @@ level-based operands, so no term is ever shifted:
 **Clock** (Lam and Anf both use depth clocks). Lam charges at `glob`,
 closure entry, `name` reads and `tick`; Anf at calls, applications, jumps,
 CAF `glob`s and `tick`. The conversion keeps every Lam charge at the same or
-a greater depth (tick dominance, 02 §7.1), and is exact on the common
+a greater depth (tick dominance), and is exact on the common
 shapes:
 * a thunk read's charge is the thunk application's; a CAF `glob`'s is the
   Anf CAF `glob`'s; a closure entry's is the application's (Anf charges
@@ -289,7 +289,7 @@ def arities (P : Lam.Program) : Arities :=
 
 /-- A root is a global below the program's size whose leading telescope has
 no `name` binder: a run applies a root to value arguments, which a by-name
-parameter would read as thunks (M2.3). -/
+parameter would read as thunks. -/
 def rootStrict (P : Lam.Program) (r : Lam.GlobalId) : Bool :=
   match P.global? r with
   | some gl => decide (r < P.size) && !Lam.ModesOk.hasName (Lam.Term.telescope gl.body).1

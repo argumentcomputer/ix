@@ -1,13 +1,13 @@
 import IxCCTests.IxonV3.TypingFixtures
 
 /-! The resource checker's step budget bounds its work: the regression for
-review findings B4-1 and R3, with the same generated constants as ix's
+an exponential validator, with the same generated constants as ix's
 `Tests/Ix/ResourceBudget.lean`. Each constant is framed as a one-constant `.ixe`
 file and read through the byte boundary `check-ixon-v3` uses. The suite asserts
 the outcome and the steps the definition consumed; printed times are for
 reading only.
 
-- `letChain k` (R3's `L`): reducing its declared type builds a value of about
+- `letChain k`: reducing its declared type builds a value of about
   `2^k` nodes, and every node visited costs a step, so from `k = 16` the
   definition runs out of its 100,000 steps.
 - `sharingChain k` (`A`): an ill-typed sharing chain
@@ -77,7 +77,7 @@ structure Case where
   /-- Also time the combined `validate` (only where resources refuse first). -/
   validate : Bool := false
 
-/-- The sizes R3 timed first, then larger ones (minutes to hours each before
+/-- The sizes timed first, then larger ones (minutes to hours each before
 the fix). `k ≤ 14` let chains are accepted, as at the merge base. -/
 def cases : Array Case := Id.run do
   let mut cases : Array Case := #[]

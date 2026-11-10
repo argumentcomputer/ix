@@ -3,7 +3,7 @@ import IxCC.Sem.TracedSim
 
 /-! # `Own.immortal_refines`
 
-The Phase 1 Own refinement (design note 03 §4.4, phase1 M2.4): a Fir
+The Phase 1 Own refinement: a Fir
 program's immortal embedding `Own.immortal F`, run under the immortal
 policy, simulates `F` with the **identity** clock map, in lock step at every
 clock (`Own.Proof.lock`). The result relation `ImmRes H`: the Own value
@@ -33,7 +33,7 @@ theorem readback_den {H : Heap} {v : RVal} {w : Fir.Val} (h : Den H v w) :
     H.readback v = Fir.readback w := by
   simp only [Heap.readback, show H.value? v = some w from h, Option.bind_some]
 
-/-- **`Own.immortal_refines`** (03 §4.4, M2.4): for a Fir program whose
+/-- **`Own.immortal_refines`**: for a Fir program whose
 `Bool` pins have no fields where its table lists them, its immortal
 embedding simulates it with the identity clock map, from every immortal
 heap and denoting arguments. -/

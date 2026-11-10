@@ -8,7 +8,7 @@ the shapes erasure builds (`Term.apps`, `Term.lams`, `wrapLets`,
 `setModes`), kept-field counting (`rank`), and what `ProgWF` says of
 `alias`: a constructor and the one it is retagged as have the same
 kept-field count, and two constructors of one inductive with the same key
-are the same (M2.2). -/
+are the same. -/
 
 set_option autoImplicit false
 

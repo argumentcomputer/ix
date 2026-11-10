@@ -204,8 +204,8 @@ def Machine.afterRow (machine : Machine) :
   | .error (.memory fault) => machine.trap (.memoryFault fault)
   | .error (.semantic fault) => machine.trap (.semantic fault)
 
-/-- The ghost frames kept when execution resumes with stack pointer `sp`
-(note 05 §6.1): every frame at depth 0; otherwise the frames outside the
+/-- The ghost frames kept when execution resumes with stack pointer `sp`:
+every frame at depth 0; otherwise the frames outside the
 first one whose return slot is `sp − 8`, which is the frame the reloaded
 stack returns through. `none` when no frame matches. -/
 def cutAt (sp : Word) : List ReturnFrame → Option (List ReturnFrame)

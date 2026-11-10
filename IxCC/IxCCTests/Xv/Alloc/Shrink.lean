@@ -1,7 +1,7 @@
 import IxCCTests.Xv.Alloc.Diff
 import IxCCTests.Support.Repro
 
-/-! # Ladders for the Lir generator and the allocation mutants (MT.5)
+/-! # Ladders for the Lir generator and the allocation mutants
 
 The first-diverging-level ladders (`IxCCTests.Support.Repro`) of the
 generated Lir programs (`Lir.Gen.programWith`, regalloc2-style SSA) and of

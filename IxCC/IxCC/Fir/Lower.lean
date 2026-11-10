@@ -4,17 +4,15 @@ import IxCC.Anf.Census
 
 /-! # Anf → Fir (`Fir.lower`)
 
-The Phase 1 conversion of design note 03 §2.2 (`Fir.convert`, module
-`Fir.Lower`). It is on the recheck path in style P (proved once, re-run;
-03 §4.5), so it is written in kernel-evaluable style (D17): structural
-recursion over Anf terms, a threaded name supply, lists and `Src.NatMap`.
+The Phase 1 conversion (`Fir.convert`, module `Fir.Lower`). It is on the recheck path in style P
+(proved once, re-run), so it is written in kernel-evaluable style (D17): structural recursion over
+Anf terms, a threaded name supply, lists and `Src.NatMap`.
 
 * **Declines closures.** A program with a local closure (`fn`), an unknown
   call (`app`) or the value of a function global (`glob` of a global with
   parameters) is declined with `Error.closures`, naming the globals, until
-  P8 (closed-world defunctionalisation, Phase 2) removes them (02 §8, 06
-  S45). Nothing else is declined.
-* **Rejects what the correctness proof excludes** (`Fir.Proof`, M2.4), with
+  P8 (closed-world defunctionalisation, Phase 2) removes them. Nothing else is declined.
+* **Rejects what the correctness proof excludes** (`Fir.Proof`), with
   `fir.malformed`, `fir.missing` or `fir.pins`: a root, call or CAF
   reference to a global id beyond the program's size, a constructor or
   `case` alternative whose
@@ -26,7 +24,7 @@ recursion over Anf terms, a threaded name supply, lists and `Src.NatMap`.
   Boolean primitives' `Bool` pins are listed.
 * **One to one otherwise.** Every Anf global becomes the function with the
   same id, key, contracts and result contract; a CAF (no parameters) becomes
-  a zero-argument function called at each use (06 S36), so `glob g` of a CAF
+  a zero-argument function called at each use, so `glob g` of a CAF
   is `call g []`. `call` stays a known call; `bind x (call g as) (ret x)`
   (ticks allowed before the `ret`) is the tail call `tcall g as`. `con`,
   `proj`, `prim` and `case` map one to one, with `CtorInfo.ofKey`; `join n
@@ -36,10 +34,10 @@ recursion over Anf terms, a threaded name supply, lists and `Src.NatMap`.
   fields: the arm starts with a projection for each field its body uses.
   A literal or □ scrutinee, or projection source, is bound to a variable
   first.
-* **Ticks are erased** (06 S31). `tickBound` gives the constant `N` of the
-  timeout clause (03 §2.2): Anf timing out at `N · (k + 1)` means Fir times
+* **Ticks are erased**. `tickBound` gives the constant `N` of the
+  timeout clause: Anf timing out at `N · (k + 1)` means Fir times
   out at `k`.
-* **Representation:** every parameter is `tobj` (06 S33). -/
+* **Representation:** every parameter is `tobj`. -/
 
 namespace IxCC.Fir
 
@@ -336,7 +334,7 @@ def functions (A : Anf.Program) : List Anf.GlobalId → Except Error (List (FunI
 
 end Lower
 
-/-- Anf → Fir (03 §2.2): declines residual closures, rejects inconsistent
+/-- Anf → Fir: declines residual closures, rejects inconsistent
 pinned keys, else converts every global. -/
 def lower (A : Anf.Program) : Except Lower.Error Program := do
   let r := Lower.residual A
@@ -347,7 +345,7 @@ def lower (A : Anf.Program) : Except Lower.Error Program := do
   pure { funs := Src.NatMap.ofList fs, size := A.size, exports := A.roots, ctors := A.ctors
          known := A.known }
 
-/-! ## The tick bound (06 S31) -/
+/-! ## The tick bound -/
 
 namespace TickBound
 
@@ -385,7 +383,7 @@ end
 end TickBound
 
 /-- `N_f` of a global: the most Anf-only charges between two Fir charges
-on its charge-free paths (03 §2.2). -/
+on its charge-free paths. -/
 def tickDepth (gd : Anf.GDef) : Nat :=
   let (d, s) := TickBound.exp [] gd.body
   max d s

@@ -4,15 +4,16 @@ import IxCC.Src.Runtime
 
 Sets `byName` on the arguments of saturated `lazy` spines (the first
 `arity` arguments), on the minors of saturated recursor and `case` spines,
-and on every IH argument of every rule `rhs` (design note 01 §4.4). A mode
+and on every IH argument of every rule `rhs`. A mode
 matters only where its argument is relevant, so a level-conditional argument
 (D18) gets its mode like any other; arguments irrelevant at every instance
 are not entered. It never changes a class or a major, and it touches only
 modes: `Lazify.run_modeEq` (`IxCC.Src.Proof.Lazify`) proves that `run`
 changes nothing in a program but the modes of application nodes in the runtime
 terms it visits. That is a syntactic fact; no theorem states that lazification
-preserves the program's meaning under SrcEval (part of the open item S6). It
-runs after the relevance check, on the checked runtime terms.
+preserves the program's meaning under SrcEval (part of the open item S6 in
+`IxCC/docs/certification-design.md`). It runs after the relevance check, on the checked runtime
+terms.
 
 Kernel-evaluable (D17, on the recheck path as a re-run pass): the term walk
 is a mutual structural recursion over `Term`, a spine's by-name positions are

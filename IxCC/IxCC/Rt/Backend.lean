@@ -3,7 +3,7 @@ import IxCC.Backend
 
 /-! # `Rt.lower`'s output through the backend
 
-The glue M1.I1 uses between the runtime and the backend (05 §6.1): every
+The glue the compiler uses between the runtime and the backend: every
 root and `cx_init` is a SysV export, `cx_init` taking its region size and
 stack budget as words and every root its arguments as tagged `Nat`s (the
 wrapper checks them below 2^63). The object's entry symbol is the first

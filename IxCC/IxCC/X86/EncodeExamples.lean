@@ -109,7 +109,7 @@ def instr (instruction : Instr) : ByteArray := (encodeInstr instruction).bytes
 #guard encodeCompare { width := .w32, left := .r9, right := .reg .r10 } ==
   expected #[0x45, 0x39, 0xd1]
 
-/-! Phase 1 rows (M1.B1): `div`, shifts by imm8 and `cl`, `test`, `setcc`,
+/-! Phase 1 rows: `div`, shifts by imm8 and `cl`, `test`, `setcc`,
 `cmovcc`, `op r, r/m`, and the `mov rsp, [r15 − 64]` of the failure exit. -/
 
 def row (o : Op) (args : List Arg) : ByteArray := encodeOp o args

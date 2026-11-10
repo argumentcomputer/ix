@@ -14,14 +14,14 @@ import IxCC.Cfg.Print
 program to every level, runs at each level, the value relations, and the
 level-by-level comparison with its clock maps:
 
-* **Anf → Fir** (tick erasure, 06 S31): Fir charges a subset of Anf's
+* **Anf → Fir** (tick erasure): Fir charges a subset of Anf's
   events, so an Anf value at clock `k` is a Fir value at `k` (Fir's least
   clock is at most Anf's), and Anf timing out at `N·(k + 1)` (`N =
   Fir.tickBound`) means Fir times out at `k`;
-* **Fir → Own** (the immortal embedding, 03 §4.4): the same outcome at every
+* **Fir → Own** (the immortal embedding): the same outcome at every
   clock, the Own value denoting the Fir value, under both allocation
   policies;
-* **Own → Cfg** (big-step depth clock → small-step total clock, 03 §7): an
+* **Own → Cfg** (big-step depth clock → small-step total clock): an
   Own value at depth `k` is the same value and heap at some Cfg clock `k' ≥
   k`, and Own timing out at `k` means Cfg times out at `k`; the step bound
   never decides a run. -/
@@ -80,7 +80,7 @@ def runCfgFuel (pol : Own.AllocPol) (C : CProgram) (fuel k f : Nat) (args : List
     IO (Result (RVal × Heap)) :=
   IO.lazyPure fun _ => IxCC.Cfg.runFuel pol C fuel k f (rArgs args)
 
-/-- Anf and Fir values related (03 §2.2 `ValRel`): equal literals, □ and
+/-- Anf and Fir values related: equal literals, □ and
 `erased`, a constructor and its `CtorInfo.ofKey` with related fields. -/
 partial def relAF (A : AProgram) : AVal → FVal → Bool
   | .lit a, .lit b => a == b

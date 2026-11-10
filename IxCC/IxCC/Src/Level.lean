@@ -2,7 +2,7 @@ import IxCC.Ixon.Univ
 
 /-! # Universe profiles and zero conditions
 
-Level-exact relevance (D18; research note `relevance-checker.md` §4.1).
+Level-exact relevance (D18).
 Whether a position is a proof depends only on which universe parameters of
 its constant are zero: the *zero condition* of its type's sort. SrcEval
 decides a condition at the concrete levels it carries (`PropWhen.holds`);

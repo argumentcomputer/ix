@@ -4,7 +4,7 @@ import IxCCTests.Backend.Programs
 /-!
 # Backend cases checked while this module elaborates
 
-Cheap assertions on the pieces of M1.B5: the frame layout oracle and the
+Cheap assertions on the backend's pieces: the frame layout oracle and the
 check's rejections (overlap, alignment, bounds, missing or extra saves,
 16-byte alignment at calls, frameless with calls, size), when the
 prologue checks the stack, the shape of what stacking emits (the exit
@@ -161,7 +161,7 @@ def emitted (p : LProgram) : Except Backend.Error Backend.Artifact :=
 #guard Backend.sharedSymbol? [⟨0, "a", 0⟩, ⟨1, "b", 1⟩, ⟨2, "a", 2⟩] == some "a"
 #guard Backend.sharedSymbol? [⟨0, "a", 0⟩, ⟨1, "b", 1⟩] == none
 
--- Declared clobber sets (06 S15): `inc` changes `rcx` and `r11` besides its
+-- Declared clobber sets: `inc` changes `rcx` and `r11` besides its
 -- result (its saved `rbx` does not count), so declaring `rax` alone is
 -- rejected; a caller's declaration must cover its own stack check's `r11`
 -- and what its callees may change.

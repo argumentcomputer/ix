@@ -5,10 +5,9 @@ import IxCC.Anf.Proof.Convert.Lists
 A `case` is converted with its scrutinee's operand; its alternatives bind
 their fields above the current target depth. With a meta-continuation and
 more than one branch, the continuation becomes a join point of one
-parameter and every branch jumps to it (non-tail `case`, 02 §6.1): the jump
+parameter and every branch jumps to it (non-tail `case`): the jump
 charges, which only makes the target run deeper (tick dominance). The
-simulations of `convAlts`, `caseBody` and `caseOn` at `fuel + 1` (P1,
-M2.3). -/
+simulations of `convAlts`, `caseBody` and `caseOn` at `fuel + 1` (P1). -/
 
 set_option autoImplicit false
 

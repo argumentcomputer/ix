@@ -3,9 +3,9 @@ import IxCC.X86.StreamK
 import IxCC.X86.ELFWriteK
 
 /-! Required axiom fences for the kernel-evaluable twins of the backend's
-last steps (M1.K1): each twin on `Recheck.run`'s path equals the original
+last steps: each twin on `Recheck.run`'s path equals the original
 it replaces there, so the recheck path's object and its `Stream.Valid` and
-`ELF.Valid` certificates are the originals' (M2.8 composes through these).
+`ELF.Valid` certificates are the originals' (`Recheck.sound` composes through these).
 Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.X86.Program.wellFormedK_eq' depends on axioms: [propext, Quot.sound] -/

@@ -4,12 +4,11 @@ import IxCC.Src.Relevance.Check
 
 The checker walks each runtime term of an instance, adding an error for
 every violated rule (`Check.term`/`Check.rest`). An empty error list
-therefore gives the tier-S facts (design note 02 §3.3) at every relevant
+therefore gives the tier-S facts at every relevant
 position the walk visits: S1 (variables in scope, constant and constructor
 records present, conditions within the constant's levels) and S2 (a
 constructor spine passes an argument irrelevant at the instance at every
-field dropped at the constructor's profile), as the inductive `TermS`
-(M2.2). -/
+field dropped at the constructor's profile), as the inductive `TermS`. -/
 
 set_option autoImplicit false
 

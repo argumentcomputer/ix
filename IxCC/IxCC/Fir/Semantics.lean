@@ -3,15 +3,15 @@ import IxCC.Sem.Result
 
 /-! # Fir semantics
 
-The clocked big-step semantics of Fir (design note 03 §2.1). As in Lam and
+The clocked big-step semantics of Fir. As in Lam and
 Anf, the clock is a **depth bound**: a charge evaluates the rest of its
 computation at `k - 1`, and sequenced computations each run at `k`.
 
-**Charges** (03 C6): entering a function body (`call`, `tcall`, and the
+**Charges**: entering a function body (`call`, `tcall`, and the
 entry of `run`) and a **recursive jump**, a `jmp j` inside the body of a
-recursive join point `j` (06 S30). The jump from a join point's scope into
+recursive join point `j`. The jump from a join point's scope into
 it is free, recursive or not. Fir has no `tick`: Anf's ticks and Anf's
-charges on non-recursive jumps are gone (06 S31), so Fir charges a subset of
+charges on non-recursive jumps are gone, so Fir charges a subset of
 the events Anf charges, and `Fir.tickBound` bounds the difference.
 
 * Variables are looked up in a persistent map (`Env`); `bind` inserts.
@@ -27,7 +27,7 @@ the events Anf charges, and `Fir.tickBound` bounds the difference.
   value's key, else the default, else is stuck.
 * `prim` is exact on `Nat`; Boolean results are the pinned `Bool`
   constructors. Fir never returns `resource`.
-* □ (`erased`) is stuck under `case`, `proj` and `prim` (06 S38); scope,
+* □ (`erased`) is stuck under `case`, `proj` and `prim`; scope,
   arity and key errors are stuck.
 
 The semantics is never evaluated on the recheck path (D17). It recurses

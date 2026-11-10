@@ -8,7 +8,7 @@ body or replaces it by the walk of its body over its parameters
 (`Walk.global`), under configurations that read the program as the source
 does and redirect nothing, refines its input (`WalkProg.refines`): calls and
 global values simulate at each bound by the walk's simulation (or the
-fundamental lemma) one clock down (M2.3). -/
+fundamental lemma) one clock down. -/
 
 set_option autoImplicit false
 

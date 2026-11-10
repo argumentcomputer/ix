@@ -16,7 +16,7 @@ import IxCC.Xv.Select.Proof.Program
 import IxCC.Xv.Select.Proof.XvSteps
 import IxCC.Xv.Select.Proof.Correct
 
-/-! Required axiom fences for instruction selection's proof (M2.6b item 1):
+/-! Required axiom fences for instruction selection's proof:
 placed Xv rows run on their operands' values (`execBound_run`) and each
 row family computes its result (`exec_*`); word, sum and address lemmas;
 selection's monad and folds (`foldLin_spec`, `buildAmode_spec`,

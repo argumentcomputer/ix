@@ -9,7 +9,7 @@ import Std.Data.HashMap
 The whole recheck path's input for one bench-k1 closure — the `Src.Program`
 as ingress leaves it (no table), the configuration and the certificate
 `produce` makes — printed as Lean modules, so that `decide +kernel` can
-evaluate `Recheck.run` on it (M1.K1, M2.8, M3.5). Beside the input, each
+evaluate `Recheck.run` on it. Beside the input, each
 artifact records what the native run computes: the laid-out typed x86
 program (`Recheck.runTyped`) and the object's bytes (`Recheck.run`), which
 the kernel modules (`IxCCTests.Recheck.Kernel`) state as equalities.
@@ -24,7 +24,7 @@ never re-expands it in the term, so the artifact's size and the kernel's
 input are the DAG's. Constants are `c<i>`, addresses `a<i>` (byte lists,
 read only as numbers by the pins and as bytes by the provenance note).
 
-The printer reuses `IxCCTests.Src.Artifact`'s term syntax (K1a) and
+The printer reuses `IxCCTests.Src.Artifact`'s term syntax and
 `IxCCTests.Anf.LeanRender`'s middle-end certificate syntax; the
 backend's certificate parts, the typed program and the root records are
 printed with their derived `Repr`. `lake exe gen-recheck-artifacts`

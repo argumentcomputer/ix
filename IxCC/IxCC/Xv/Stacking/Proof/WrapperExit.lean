@@ -1,7 +1,7 @@
 import IxCC.Xv.Stacking.Proof.TailStep
 
 /-!
-# The export's success exit (05 §6.1, 04 §6)
+# The export's success exit
 
 When the outermost activation returns, the machine resumes in the export
 wrapper after its call (`WrapCont`): `mov rdx, rax; xor eax, eax`, the
@@ -11,8 +11,7 @@ return address as at entry. `step_done`: an Xl return from the outermost
 activation, which ends the run, is matched by the epilogue, the return into
 the wrapper and its exit, with `Final`: the result is the single value Xl
 returns, Xl's memory lies inside the machine's, and the holes are where Xl
-cannot look.
--/
+cannot look. -/
 
 namespace IxCC.Xv.Stacking.Proof
 

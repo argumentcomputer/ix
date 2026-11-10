@@ -2,9 +2,9 @@ import IxCCTests.Pipeline.Support
 import IxCCTests.Lam.Support
 import IxCCTests.Support.Rng
 
-/-! Certificate mutations (M1.I1): a wrong certificate is rejected, or it
+/-! Certificate mutations: a wrong certificate is rejected, or it
 makes code that still agrees on every tested input; it never makes wrong
-code (design note 00, D17).
+code (D17).
 
 For each bench-k1 entry, the certificate `produce` made is corrupted by
 random mutations in each class below and given to `Recheck.run`:

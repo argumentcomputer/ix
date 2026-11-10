@@ -10,30 +10,30 @@ import IxCC.Xv.XlSemantics
 
 /-! # The compiler's certificate and configuration
 
-The certificate (design note 00 "Produce and recheck", D17) is the untrusted
+The certificate (D17) is the untrusted
 data `produce` hands to `Recheck.run`: every oracle decision and every
 output a validator re-checks, and nothing else. Its fields are the ones the
 Phase 1 passes read today, in pipeline order:
 
-| Field | Pass | Style | 00's sketch |
-| --- | --- | --- | --- |
-| `table` | the unfolding table (`Table.ofCert`) | V | `table` |
-| `relevance` | installation and the relevance check | V | `relevance` |
-| `mid` | P1–P4 and pruning (`Anf.Pipeline.run`) | P, oracle | `mid` |
-| `alloc` | allocation (`Validate.program`, `Alloc.applyProgram`) | V | `alloc` |
-| `frames` | frame layouts (`FrameLayout.check` in `Stacking.run`) | V | `frames` |
-| `order` | block order (`Order.check`) | V | `order` |
+| Field | Pass | Style |
+| --- | --- | --- |
+| `table` | the unfolding table (`Table.ofCert`) | V |
+| `relevance` | installation and the relevance check | V |
+| `mid` | P1–P4 and pruning (`Anf.Pipeline.run`) | P, oracle |
+| `alloc` | allocation (`Validate.program`, `Alloc.applyProgram`) | V |
+| `frames` | frame layouts (`FrameLayout.check` in `Stacking.run`) | V |
+| `order` | block order (`Order.check`) | V |
 
-00's `own` (Phase 2: the Own program), `select` (selection reads no oracle
-today: its rules are deterministic) and `reach` (rel8 choices: every branch
-is `rel32` or falls through, and linearisation decides the fall-through) are
-left out until a pass reads them. The certificate is plain data, lists in
+Styles P and V are those of decision D17 (`docs/compiler-design.md`). This
+certificate has no field for an Own program (the plain-RC route wraps it with
+the proposed ownership code in `Recheck.RcReplay.Cert`), for selection (its rules are deterministic)
+or for rel8 choices (every branch is `rel32` or falls through, and linearisation
+decides the fall-through). The certificate is plain data, lists in
 function and label order; `Recheck.Json` serialises it. -/
 
 namespace IxCC.Recheck
 
-/-- The SysV entry wrapper passes the region and at most five arguments
-(04 §6, 05 §6.1). -/
+/-- The SysV entry wrapper passes the region and at most five arguments. -/
 def maxParams : Nat := 5
 
 structure Config where

@@ -663,7 +663,7 @@ def Op.divM (width : Width) : Op := { mn := .div, w := width, form := .M }
 def Op.setccM (condition : Condition) : Op := { mn := .setcc condition, w := .w8, form := .M }
 def Op.cmovRM (condition : Condition) (width : Width) : Op := { mn := .cmovcc condition, w := width, form := .RM }
 
-/-- A producer defines every flag its consumer reads (note 05 §3): the
+/-- A producer defines every flag its consumer reads: the
 consumer of a fused pair, or the `jcc` of a branch, sees only flags the
 producer has just computed, never older ones. -/
 def FusedOk (producer consumer : Op) : Bool :=

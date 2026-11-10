@@ -17,8 +17,8 @@ open Blake3.Rust (Hasher)
 abbrev MData := Array (Name × Metadata.DataValue)
 
 /-- Original level-spelling decoration for a meta-mode `sort`/`const`
-    occurrence (canonicity §10.6). Carried when the occurrence's stored
-    spelling differs from the kernel-held `mk*`-normal form, so meta
+    occurrence (`docs/ix_canonicity.md`, "Universe-level canonicalization"). Carried when the
+    occurrence's stored spelling differs from the kernel-held `mk*`-normal form, so meta
     egress can replay the source syntax. Spellings are `IxCC.Ixon.Univ`
     (positional `var` indices — language-neutral vs the Rust twin).
     Presentation-only: never folded into the semantic `addr`, never read

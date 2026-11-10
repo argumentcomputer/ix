@@ -1,7 +1,7 @@
 import IxCC.X86.Layout.Basic
 
 /-!
-# Block order (05 §7, step 2)
+# Block order (layout step 2 of 3)
 
 The order is certificate data: an untrusted oracle (`Order.produce`)
 proposes, per group, the blocks in layout order, and `Order.check`, on the

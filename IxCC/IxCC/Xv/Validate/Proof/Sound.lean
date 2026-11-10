@@ -4,11 +4,10 @@ import IxCC.Xv.Validate.Proof.Diagram
 /-!
 # Each Xv step is simulated
 
-`Validate.sound` (05 §5): from matching states, each Xv step is matched by
+`Validate.sound`: from matching states, each Xv step is matched by
 Xl steps (the edits before the instruction as silent moves, then its image)
 spending the same charges, and each final Xv step other than a stuck one by
-the same final Xl step. `Validate.diagram` packs both as a `LockStep`.
--/
+the same final Xl step. `Validate.diagram` packs both as a `LockStep`. -/
 
 namespace IxCC.Xv.Validate
 
@@ -221,7 +220,7 @@ theorem drop_getElem_cons {α : Type} {arr : Array α} {i : Nat} (h : i < arr.si
   rw [List.drop_eq_getElem_cons (by simpa using h)]
   simp
 
-/-- Per-step simulation (05 §5): matching states stay matched through each
+/-- Per-step simulation: matching states stay matched through each
 Xv step, the Xl steps (edits, then the image) spending exactly its charge. -/
 theorem sound (hacc : Accepted env p outs q) {s s' : Lir.State} {t : Xl.State} {c : Bool}
     (hm : Match env p outs q s t) (hs : Xv.step p s = .next s' c) :

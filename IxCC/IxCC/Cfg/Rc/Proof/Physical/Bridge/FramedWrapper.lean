@@ -3,8 +3,8 @@ import IxCC.Cfg.Rc.Proof.Physical.DecWrapper
 import IxCC.Rt.Rc.Proof.FrameReleaseCaller
 
 /-! Draft companion, not registered in the first frozen gate. This extends
-the existing exact wrapper trace with H2's protectedBytes-byte frame and derives
-the consumed token from the source boundary. It still begins at wrapper entry;
+the existing exact wrapper trace with the runtime procedures' `protectedBytes`-byte frame and
+derives the consumed token from the source boundary. It still begins at wrapper entry;
 the consumed source instruction/caller cursor binding is a separate interface. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
@@ -50,7 +50,7 @@ theorem wrapper_framed
     (trace.trans (Sem.Star.single (Lir.semStep_next.mpr returnStep)))
   simpa [continuation] using composed
 
-/-- Source ownership is the exact H1-projected live root list. The physical
+/-- Source ownership is the exact live root list projected from the ownership state. The physical
 invariant counts that same list plus retained caller tokens. The actual value
 and its word are extracted, not supplied as an assumed valid owned argument. -/
 theorem decrement_wrapper_tokens

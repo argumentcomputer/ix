@@ -2,7 +2,7 @@ import IxCCTests.Src.Support
 import IxCCTests.Src.Rules
 import IxCCTests.Src.StuckEval
 
-/-! Annotation mutation (design note 02 §13.2): flip one tag or record of an
+/-! Annotation mutation: flip one tag or record of an
 accepted annotation. Tier S rejects what violates S1–S4 and tier C most of
 the rest. For every accepted mutant SrcEval gives the original observation or
 none (stuck, trap, timeout, or a value without readback); a *different*

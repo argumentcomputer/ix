@@ -14,7 +14,7 @@ The head of a spine is either a plain value applied to strict arguments, or
 a telescope closure whose binders' kinds agree with the kinds the spine's
 modes expect (`GroupHead`, `Compat`); a `name` variable whose signature has
 a `name` holds a minor thunk, whose forced value is such a closure
-(`minor_sim`). (P1, M2.3.) -/
+(`minor_sim`). (P1.) -/
 
 set_option autoImplicit false
 

@@ -2,7 +2,7 @@ import IxCC.Anf.Walk
 
 /-! # P2: shrink
 
-`Anf.Shrink` (design note 02 §8, P2): the walk's rewrite rules (`Walk`,
+`Anf.Shrink` (P2): the walk's rewrite rules (`Walk`,
 `Cfg.shrink`), iterated per global. A **round** is one walk over a global's
 body; a round in which no rule fires returns its input unchanged, so the
 fixpoint is idempotent.

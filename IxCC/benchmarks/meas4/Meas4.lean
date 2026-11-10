@@ -1,11 +1,11 @@
 import Lean.Data.Json
 
 /-!
-# MEAS-4 early probe (roadmap MEAS-4, note 05 §12, Phase 1 item M1.B6)
+# Early backend probe
 
 Measures the synthetic Lir kernels `fib`, `sum-loop` and `gcd`, compiled
 natively by IxCC, against C twins and Lean's own compiler. These
-are backend probes, never real-program results (roadmap §9).
+are backend probes, never real-program results.
 
 | Row | Build |
 | --- | --- |
@@ -41,8 +41,7 @@ user-space instructions, cycles, branches and branch misses per operation
 is recorded as unavailable, not as zero. `report` gives per kernel the
 median ns/op, the ratio of each row to `clang-twin` and to `lean-clang`
 with a 95% percentile-bootstrap interval over paired blocks (as the runner
-does), the counters, code size and static counts, and compile times.
--/
+does), the counters, code size and static counts, and compile times. -/
 
 open Lean System
 

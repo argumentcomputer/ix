@@ -6,7 +6,7 @@ import IxCC.Lam.Erase.Proof.BuildForms
 `TR` erasure of its input, against every key relation containing the final
 key table; a constant's spine goes through `constSpine` (a special head in
 place or through its wrapper, or a δ body's global or its by-name variant),
-a projection through `projForm` (M2.2). -/
+a projection through `projForm`. -/
 
 set_option autoImplicit false
 

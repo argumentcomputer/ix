@@ -8,7 +8,7 @@ evaluated first and applied with one `app` (one charge). On the Lam side the
 pure arguments of a group evaluate to the same slots at every clock, so
 evaluating them before the group's applications changes nothing
 (`applyArgs_group`); applying the group is `app_sim`. The head of each next
-group is the previous application's value (P1, M2.3). -/
+group is the previous application's value (P1). -/
 
 set_option autoImplicit false
 

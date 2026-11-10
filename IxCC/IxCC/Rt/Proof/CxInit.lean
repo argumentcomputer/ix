@@ -221,7 +221,7 @@ theorem region_at {mem : Memory} {ctx size : Word} (hreg : Region mem ctx size) 
 
 /-- The part of the region Lir uses: from `ctx − 48` (the context words
 `cx_init` and the allocator use, then the objects) to its end. The first 16
-bytes (`entrySp`, `stackLimit`, 04 §6) are the export wrapper's: the
+bytes (`entrySp`, `stackLimit`) are the export wrapper's: the
 machine writes them and Lir never does, so the backend's entry invariant
 keeps them out of Lir's memory (`Stacking.Proof.EntryBase.ctxCells`). -/
 def LirRegion (mem : Memory) (ctx size : Word) : Prop :=

@@ -1,7 +1,7 @@
 import IxCC.Own.Immortal
 import IxCC.Own.Semantics
 
-/-! Required axiom fences for the Phase 1 Own fragment (M1.F5): the checker
+/-! Required axiom fences for the Phase 1 Own fragment: the checker
 accepts exactly the image of the immortal embedding
 (`checkImmortal_iff`, `immortal_erase`, `checkImmortal_immortal`), erasure
 inverts the embedding (`erase_immortal`), their structural lemmas, and the

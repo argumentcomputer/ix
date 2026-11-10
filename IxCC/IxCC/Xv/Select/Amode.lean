@@ -16,9 +16,8 @@ modulo 2^64 at Lir (`Lir.Addr.eval`) and on the machine
 modulo 2^64, fits a signed 32-bit field.
 
 `sinkLoad?` moves a single-use load of the block into its consumer's
-memory operand, provided no store or call lies between them (05 §4, 06
-S18) and the consumer reads at most the loaded bytes.
--/
+memory operand, provided no store or call lies between them and the consumer reads at most the
+loaded bytes. -/
 
 namespace IxCC.Xv.Select
 

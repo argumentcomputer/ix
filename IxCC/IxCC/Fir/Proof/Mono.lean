@@ -3,7 +3,7 @@ import IxCC.Sem.SimUpTo
 
 /-! # Fir: clock monotonicity
 
-`Fir.eval_mono` (M2.4): an outcome of `eval` other than `timeout` is the
+`Fir.eval_mono`: an outcome of `eval` other than `timeout` is the
 outcome at every larger clock, and likewise for `evalAlts`, `evalCall`,
 the call and jump helpers and `run`; so each is a `Sem.ClockMono`
 computation. Strong induction on the clock; within one clock, well-founded
@@ -163,7 +163,7 @@ theorem evalAlts_agrees {k k' : Nat} (hk : k ≤ k') (ρ : Env) (J : List JEntry
     Agrees (evalAlts P k' ρ J key alts d) (evalAlts P k ρ J key alts d) :=
   evalAlts_agrees_of P (fun j _ j' hj => eval_agrees P j j' hj) hk ρ J key alts d
 
-/-- **Clock monotonicity** of Fir evaluation (M2.4). -/
+/-- **Clock monotonicity** of Fir evaluation. -/
 theorem eval_mono (ρ : Env) (J : List JEntry) (c : Code) : ClockMono fun k => eval P k ρ J c :=
   Result.Agrees.clockMono fun k k' hk => eval_agrees P k k' hk ρ J c
 
@@ -188,7 +188,7 @@ theorem jumpTo_mono (e : JEntry) (rest : List JEntry) (vs : List Val) :
     · exact eval_agrees P k k' hk _ _ e.body
   · exact .refl _
 
-/-- **Clock monotonicity** of a Fir run (M2.4). -/
+/-- **Clock monotonicity** of a Fir run. -/
 theorem run_mono (f : FunId) (args : List Val) : ClockMono fun k => run P k f args :=
   evalCall_mono P f args
 

@@ -1,16 +1,16 @@
 import IxCC.Rt.Layout
 
-/-! # `cx_init` (04 §6, §7)
+/-! # `cx_init`
 
 The runtime's first procedure, a fixed Lir function exported as
 `cx_result cx_init(void *region, uint64_t size, uint64_t stack_budget)`.
-The export wrapper (05 §6.1) points `ctx` 64 bytes into the region, so
+The export wrapper points `ctx` 64 bytes into the region, so
 `ctx − 64` is the region's base. `cx_init` checks that
 
 * the base is 8-aligned,
 * the region has at least `minRegion` (4 KiB) bytes, and
 * it does not wrap: `base + size < 2^63` (so the allocator's `lea` never
-  wraps either, 04 §8.1),
+  wraps either),
 
 failing with `fail heap` (status 1) otherwise. It then stores the stack
 budget, the bump pointer (the first 64-byte boundary after the 640-byte

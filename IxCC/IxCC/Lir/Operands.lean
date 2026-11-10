@@ -4,18 +4,17 @@ import IxCC.Lir.Semantics
 # Operand metadata
 
 The register operands of each statement and terminator, for the allocator
-and its validator (05 §2, §5). The lists are built from `Stmt.uses` and
+and its validator. The lists are built from `Stmt.uses` and
 `Stmt.defs`, the registers `Stmt.exec` reads and writes, and the frame
 lemmas below prove that those are all it reads and writes. That closes
 regalloc2's gap 6 (trusted operand descriptions) at Lir.
 
 At Lir every use is early, every definition late, and every constraint
-`any`, except the operands the internal convention fixes (05 §6): call and
+`any`, except the operands the internal convention fixes: call and
 tail-call arguments (`rdi rsi rdx rcx r8 r9 r10`, then outgoing stack
 slots) and call and return results (`rax rdx`, then stack). Immediate
 arguments have no register operand. Edge arguments are not operands: they
-are block-parameter bindings, which the validator checks as a parallel move.
--/
+are block-parameter bindings, which the validator checks as a parallel move. -/
 
 namespace IxCC.Lir
 
@@ -47,7 +46,7 @@ structure Operand (ρ : Type) where
 
 namespace Conv
 
-/-- Internal-convention argument registers (05 §6). -/
+/-- Internal-convention argument registers. -/
 def argRegs : List X86.GPR := [.rdi, .rsi, .rdx, .rcx, .r8, .r9, .r10]
 
 /-- Internal-convention result registers. -/
@@ -242,7 +241,7 @@ theorem Rhs.eval_congr {r : Rhs} {ρ ρ' : Env} (mem : X86.Memory) (ctx : Word)
       simp only [Rhs.eval]
       rw [Arg.eval_congr h.append_left, Arg.eval_congr h.append_right]
 
-/-- The frame lemma of 05 §2 for local statements: a statement's result
+/-- The frame lemma for local statements: a statement's result
 depends only on its uses, and it changes only its definitions. -/
 theorem Stmt.exec_frame {s : Stmt} {ρ ρ' ρ₁ : Env} {mem mem₁ : X86.Memory} {ctx : Word}
     (agree : Agree s.uses ρ ρ') (h : s.exec ρ mem ctx = some (ρ₁, mem₁)) :

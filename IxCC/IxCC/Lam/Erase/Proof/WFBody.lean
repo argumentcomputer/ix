@@ -4,7 +4,7 @@ import IxCC.Lam.Erase.Proof.WFTerm
 
 Every body `BodyR` describes (a δ body or its by-name variant, `r⋆`, a
 wrapper) is well formed at depth 0 (`bodyR_wf`), given `WFEnv` and that
-its constructor keys have rows (M2.2). -/
+its constructor keys have rows. -/
 
 set_option autoImplicit false
 

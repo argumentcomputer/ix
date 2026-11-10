@@ -3,7 +3,7 @@ import IxCC.Cfg.Proof.Lang
 import IxCC.Sem.View
 
 /-!
-# Lir as a language: the lowered program loaded into a region (M2.7)
+# Lir as a language: the lowered program loaded into a region
 
 The `Lang` binding of the lowered program (`Rt.Loaded`), on the input every
 Phase 1 level shares (root index, `Nat` arguments):
@@ -33,8 +33,7 @@ accepts is `Typed` at the type, and reads back, at every fuel and in Own
 `Rt.result_readback` for a final result, and `tagify_fir` at Fir
 (`Fir.obsV` against `Fir.readback`, which `Own.readback_den` carries to
 Own). Phase 1 reads `Nat` and field-less constructors (`Bool`): `tagify`
-accepts nothing else.
--/
+accepts nothing else. -/
 
 set_option autoImplicit false
 
@@ -63,7 +62,7 @@ structure Model where
   budget : Word
   mem : X86.Memory
 
-/-- The readback fuel: the region's size in words (04 §6). -/
+/-- The readback fuel: the region's size in words. -/
 def Model.fuel (M : Model) : Nat := M.size.toNat / 8
 
 /-- A lowered program with its entries, loaded into a machine. -/
@@ -862,7 +861,7 @@ theorem lower_refines_lir {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lo
           refine Sim.ofEq (Sim.bindStuck (R' := Eq) (g := fun _ _ => .stuck) (hcs (ns.take fd.params.length))
             fun _ _ _ => rfl) (fun k => Sem.bind_stuck_bind _ _) fun _ => rfl
 
-/-- **Cfg → Lir refines** (M2.7): on a model region `cx_init` accepts, the
+/-- **Cfg → Lir refines**: on a model region `cx_init` accepts, the
 loaded program refines Cfg viewed at the roots' readback types, for a
 program `Rt.lower` and the pipeline's switch check accept. -/
 theorem lower_refines {cfg : Config} {C : Cfg.Program} {L : Lowered} (h : lower cfg C = .ok L)
