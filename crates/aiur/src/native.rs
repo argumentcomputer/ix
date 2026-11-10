@@ -3,11 +3,13 @@
 //! A generator turns a [`NativePlan`] into Rust function bodies; this module
 //! owns everything those bodies may not reimplement: memoized calls, pending
 //! query rejection, fixed-table calls, hint evaluation, typed ROM operations,
-//! record accounting and error attribution. The plan is derived from the same
-//! normalized representation the interpreter runs (dead code removed,
-//! registers aliased, skippable instructions folded into dispatch entries,
-//! copy/jump suffixes folded into return plans), so a generated executor
-//! produces the interpreter's record, row for row, and its instruction count.
+//! record accounting (including the call heights depth circuits read) and
+//! error attribution. The plan is derived from the same normalized
+//! representation the interpreter runs (dead code removed, registers
+//! aliased, skippable instructions folded into dispatch entries, copy/jump
+//! suffixes folded into return plans), so a generated executor produces the
+//! interpreter's record, row for row, and its instruction count. Call heights
+//! are kept by the runtime, so generated code does not depend on the trace.
 //!
 //! Memory-type indices are assigned from a hash map when a program is checked
 //! and may differ between processes. Plans therefore name ROM operations by
@@ -567,6 +569,12 @@ pub struct Runtime<'a, B: FieldBackend> {
   sites: &'a [Vec<Option<HintSite<B::Element>>>],
   record: Execution<B>,
   failure: Option<ExecutionError>,
+  /// Function SCCs of the depth circuits, when heights are recorded.
+  sccs: Option<&'a [u32]>,
+  /// While heights are recorded, one entry per pending query, innermost
+  /// last: its function's SCC and its height so far, one more than its
+  /// highest finished or cached callee in the same SCC.
+  heights: Vec<(u32, u64)>,
 }
 
 impl<'a, B: FieldBackend> Runtime<'a, B> {
@@ -674,11 +682,58 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
           message: "query multiplicity overflow".into(),
         }));
       }
+      if let Some(sccs) = self.sccs {
+        let height = table.depth(row);
+        self.raise_cached(sccs, caller, function, height);
+      }
       return Ok(Begin::Cached(row));
     }
     match table.start(args, outputs, hash) {
-      Ok(row) => Ok(Begin::Started(row)),
+      Ok(row) => {
+        if let Some(sccs) = self.sccs {
+          self.heights.push((sccs[function], 0));
+        }
+        Ok(Begin::Started(row))
+      },
       Err(e) => Err(self.raise(e.into())),
+    }
+  }
+
+  /// A cache hit within the caller's SCC bounds the caller's height, as a
+  /// finished call does. The caller is the innermost pending query.
+  #[inline(always)]
+  fn raise_cached(
+    &mut self,
+    sccs: &[u32],
+    caller: usize,
+    callee: usize,
+    height: u64,
+  ) {
+    let scc = sccs[callee];
+    if scc != crate::trace::depth::NO_SCC
+      && sccs[caller] == scc
+      && let Some(top) = self.heights.last_mut()
+    {
+      top.1 = top.1.max(height.saturating_add(1));
+    }
+  }
+
+  /// Record the height of `function`'s finished `row` and raise its
+  /// caller's, when the caller is in the same SCC. The finished query is the
+  /// innermost pending one, and its caller is next.
+  #[inline(always)]
+  fn finish_height(&mut self, function: usize, row: usize) {
+    let Some((scc, height)) = self.heights.pop() else {
+      return;
+    };
+    if scc == crate::trace::depth::NO_SCC {
+      return;
+    }
+    self.record.queries.tables[function].set_depth(row, height);
+    if let Some(parent) = self.heights.last_mut()
+      && parent.0 == scc
+    {
+      parent.1 = parent.1.max(height.saturating_add(1));
     }
   }
 
@@ -717,6 +772,9 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
       return Err(self.fail(function, pc, &e));
     }
     self.record.queries.tables[function].finish(row, output);
+    if self.sccs.is_some() {
+      self.finish_height(function, row);
+    }
     Ok(())
   }
 
@@ -971,6 +1029,8 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
       program,
       sites: &hints.bindings.sites,
       failure: None,
+      sccs: program.depth.as_deref(),
+      heights: vec![],
       record: Execution {
         hints: hints.bindings.clone(),
         output: vec![],
@@ -1067,10 +1127,16 @@ pub fn record_diff<B: FieldBackend>(
             y.len()
           ));
         }
+        if x.depths_len() != y.depths_len() {
+          return Err(format!(
+            "function {function}: only one record has heights"
+          ));
+        }
         for row in 0..x.len() {
           if x.input(row) != y.input(row)
             || x.output(row).output != y.output(row).output
             || x.count(row) != y.count(row)
+            || x.depth(row) != y.depth(row)
           {
             return Err(format!("function {function}: row {row} differs"));
           }
