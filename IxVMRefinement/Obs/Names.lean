@@ -510,8 +510,6 @@ theorem n4825454920124213627 : instanceName [] "Lists::drop" (some [(.ptr (.name
 
 theorem n5459665738436230359 : instanceName [] "Lists::length" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::length<&KernelTypes::KLevelNode>» := by decide +kernel
 
-theorem n6610484583606465244 : constructorName [] (.named "KernelInfer::InferLetEnvNode" []) = "KernelInfer::InferLetEnvNode" := by decide +kernel
-
 theorem n9644275015669645019 : constructorName [] (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::Node<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n8510078739894799097 : instanceName [] "Lists::Node" (some [(.array .field 8)]) = Names.«Lists::Node<[Field; 8]>» := by decide +kernel

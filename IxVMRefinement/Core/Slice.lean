@@ -39,7 +39,7 @@ theorem core_sound (c : Ctx) (hA : Assumed c) :
     whnf := fun hn => by subst hn; exact whnf_step c ev ih
     whnfCore := fun hn => by subst hn; exact whnfCore_step c ev ih
     withSpine := fun hn => by subst hn; exact withSpine_step c hA ev ih
-    applyBeta := fun hn => by subst hn; exact applyBeta_step c hA ev ih
+    redBeta := fun hn => by subst hn; exact redBeta_step c hA ev ih
     constHead := fun hn => by subst hn; exact constHead_step c hA ev ih
     applySpine := fun hn => by subst hn; exact applySpine_step c ev ih
     peel := fun hn => by subst hn; exact peel_step c ev ih

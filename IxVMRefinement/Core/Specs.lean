@@ -17,14 +17,16 @@ and the stand-in size bound (below).
 prove. Each `Assumed` field is that function's Phase 3 obligation, stated in the
 form the induction consumes.
 
-**The size bound.** `Lists::length` returns a field element, and
-`whnf_apply_beta` branches on it being `0` or `1`; for a list of `p + 1` consumed
-arguments it would take the one-argument branch on a telescope of `p + 1`
-binders, which is wrong, not merely unproved (T3-2's wrap, in a new place). So a
-bound is needed: L0's, at most `2^39` distinct memoized calls in a valid ROM
-(`MemoBounded`). It bounds the list because `Lists::length` recurses through every
-suffix, and lists of different lengths need different keys
-(`IxVMRefinement.Core.Bound`, `length_lt`). -/
+**The size bound.** IxVM counts with field elements (`Lists::length`, the index
+arithmetic of `Lists::lookup`, `take` and `drop`), and a count is faithful only
+below the field's characteristic (T3-2's wrap). L0 bounds the counts: at most
+`2^39` distinct memoized calls in a valid ROM (`MemoBounded`); a list
+`Lists::length` counts is shorter than that, because it recurses through every
+suffix and lists of different lengths need different keys
+(`IxVMRefinement.Core.Bound`, `length_lt`). Since lane cx's `red_beta` matches
+the consumed arguments structurally, the slice itself branches on no count; the
+bound stays in `Good` for the rest of L4 (`red_iota`'s field split, `red_proj`'s
+index). -/
 
 namespace IxVM.Refinement.Core
 
@@ -173,11 +175,15 @@ def WithSpineSpec : Prop :=
     ∀ d Γ H As, RepE c.κ d Γ h H hd → RepSpine c.κ d Γ h As sp →
       ∃ E', RepE c.κ d Γ h' E' r ∧ Red c.env d (K.mkAppN H As) E'
 
-/-- `whnf_apply_beta(rc, spine, lam, types)`: `Red` of the applied `λ`. -/
-def ApplyBetaSpec : Prop :=
-  ∀ rc sp lam types, args = [rc, sp, lam, types] → Good c calls →
+/-- `red_beta(rc, lam, spine, types)`: tag `1` is `Red` of the applied `λ` to the
+reduct applied to the rest of the spine (`Red.betaGate`, one step per consumed
+argument). Nothing is claimed for tag `0` (no move). -/
+def RedBetaSpec : Prop :=
+  ∀ rc lam sp types, args = [rc, lam, sp, types] →
     ∀ d Γ L As, RepE c.κ d Γ h L lam → RepSpine c.κ d Γ h As sp →
-      ∃ E', RepE c.κ d Γ h' E' r ∧ Red c.env d (K.mkAppN L As) E'
+      ∀ x y, r = .tuple [.field 1, x, y] →
+        ∃ E Bs, RepE c.κ d Γ h' E x ∧ RepSpine c.κ d Γ h' Bs y ∧
+          Red c.env d (K.mkAppN L As) (K.mkAppN E Bs)
 
 /-- `whnf_const_head(rc, addr, lvls, head, spine, types)`, at a level-free
 constant head: `Red` of the applied constant. -/
@@ -240,7 +246,7 @@ structure CoreSpecs (c : Ctx) (n : String) (args : List (SourceValue F)) (h : He
   whnf : n = "KernelWhnf::whnf" → WhnfSpec c args h r h' calls
   whnfCore : n = "KernelWhnf::whnf_core" → WhnfSpec c args h r h' calls
   withSpine : n = "KernelWhnf::whnf_with_spine" → WithSpineSpec c args h r h' calls
-  applyBeta : n = "KernelWhnf::whnf_apply_beta" → ApplyBetaSpec c args h r h' calls
+  redBeta : n = "KernelWhnf::red_beta" → RedBetaSpec c args h r h'
   constHead : n = "KernelWhnf::whnf_const_head" → ConstHeadSpec c args h r h' calls
   applySpine : n = "KernelWhnf::apply_spine" → ApplySpineSpec c args h r h'
   peel : n = "KernelWhnf::peel_beta" → PeelSpec c args h r h' calls
@@ -297,12 +303,6 @@ structure Assumed (c : Ctx) : Prop where
     ObsFn W "KernelSubst::expr_inst_many" [body, vs, .field 0] h r h' calls →
     ∀ d Γ B As, RepEk c.κ d Γ As.length h B body → RepSpine c.κ d Γ h As vs →
       RepE c.κ d Γ h' (B.instantiateList As 0) r
-  /-- library: `Lists::length` counts. -/
-  length : ∀ l h r h' calls, ObsFn W lengthName [l] h r h' calls →
-    ∀ d Γ As, RepSpine c.κ d Γ h As l → r = .field (As.length : F)
-  /-- library: `Lists::lookup(l, 0)` is the head. -/
-  lookup0 : ∀ l h r h' calls, ObsFn W lookupName [l, .field 0] h r h' calls →
-    ∀ d Γ A As, RepSpine c.κ d Γ h (A :: As) l → RepE c.κ d Γ h' A r
   /-- library: `Lists::concat` appends. -/
   concat : ∀ l₁ l₂ h r h' calls, ObsFn W concatName [l₁, l₂] h r h' calls →
     ∀ d Γ As Bs, RepSpine c.κ d Γ h As l₁ → RepSpine c.κ d Γ h Bs l₂ →
