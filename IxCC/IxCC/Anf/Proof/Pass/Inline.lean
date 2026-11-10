@@ -24,7 +24,7 @@ def V (P : Program) : Cfg → List Val → List Val → List (Val × Val) → Pr
 /-- A global after the round (itself if not a listed caller, or if its walk
 fails). -/
 def after (P : Program) (r : Round) (g : GlobalId) (gd : GDef) : GDef :=
-  match r.lookup g with
+  match (calleeMap r).get? g with
   | some cs@(_ :: _) =>
     match (Walk.global { prog := P, inline := cs } gd).run {} with
     | .ok (gd', _) => gd'

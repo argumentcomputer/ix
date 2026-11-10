@@ -377,11 +377,19 @@ def writeWide (dir : System.FilePath) (kind : String) (n : Nat) : IO Unit := do
   IO.FS.writeFile (dir / s!"{kind}-{n}.cert") text
   IO.println s!"{kind}-{n}: {bs.size} bytes, sidecar {json.compress.utf8ByteSize} bytes, certificate {text.utf8ByteSize} bytes"
 
+/-- With `IXCC_STACK_TRACE` set, name the input about to run on standard error
+(flushed), so a run that overflows its stack shows which input did. -/
+def traceInput (label : String) : IO Unit := do
+  if (← IO.getEnv "IXCC_STACK_TRACE").isSome then
+    IO.eprintln s!"input: {label}"
+    (← IO.getStderr).flush
+
 /-- The byte-level verifiers on one input (`verifyBytes`, `checkClaim`,
 `Ring0Sip.verifyBytes`, typing on and off, with a claim for the input's first
 root), and an in-process `check-cert`: the outcomes as a line. -/
 def bytesEntries (dir : System.FilePath) (label : String) (bs : ByteArray) (json : Lean.Json)
     (text : String) : IO String := do
+  traceInput label
   let env ← IO.ofExcept (V3.decodeAnonymousEnv bs)
   let main := match Src.Hints.ofK1Json json with
     | .ok h => (h.roots[0]?.map (·.1)).getD default
@@ -410,6 +418,26 @@ def bytesEntries (dir : System.FilePath) (label : String) (bs : ByteArray) (json
 def probeWide (kind : String) (n : Nat) : IO UInt32 := IO.FS.withTempDir fun dir => do
   let (bs, json, text) ← wideInput kind n
   IO.println (← bytesEntries dir s!"{kind} {n} (certificate {text.utf8ByteSize} bytes)" bs json text)
+  return 0
+
+/-- `tests-recheck --size-diag SHAPE N`: the honest allocation certificate of a
+shape against `Xv.Validate.sizeOk`, component by component, per function. -/
+def sizeDiag (name : String) (n : Nat) : IO UInt32 := do
+  let (e, main) ← IO.ofExcept (shapeEnv name n)
+  let inp ← IO.ofExcept ((Recheck.ingress (bytes e) (sidecar [("main", main)]) [] true).mapError (·.render))
+  let cfg := Recheck.Config.forInput {} inp
+  let cert ← IO.ofExcept ((Recheck.produce cfg inp).mapError (·.render))
+  let f ← IO.ofExcept ((Recheck.runLir cfg inp.program cert).mapError (·.render))
+  let xv ← IO.ofExcept ((Xv.Select.select f.lowered.program).mapError fun _ => "select")
+  for (fn, o) in xv.funcs.toList.zip cert.alloc do
+    let blocks := fn.blocks.toList
+    let m := Xv.Validate.regMentions fn
+    let per := (blocks.zip o.blocks).map fun (b, bo) =>
+      (bo.locs.length == b.body.size, bo.termLocs.length == (Xv.Term.operands b.term).length,
+       (b.body.toList.zip bo.locs).all (fun (i, ls) => ls.length == (Xv.Inst.operands i).length),
+       Xv.Validate.maxRun bo.edits 0 0 0, Xv.Validate.factsSorted bo.cert .leaf)
+    IO.println s!"fn: blocks {blocks.length}/{o.blocks.length} slots {o.numSlots} mentions {m} sizeOk {Xv.Validate.sizeOk fn o}"
+    IO.println s!"  per block (locs, termLocs, operand counts, edits at one position, facts sorted): {per}"
   return 0
 
 /-- `tests-recheck --write-amp DIR DF DG`: the inline amplifier `amp-DF-DG` as `.ixe`, its
@@ -487,6 +515,7 @@ them, `verifyProgram`, `checkClaimProgram`, `Ring0Sip.verifyProgram`,
 def entryPoints (dir : System.FilePath) (label : String) (bs : ByteArray) (json : Lean.Json) (main : Addr)
     (typecheck : Bool) (mkCert : Recheck.Input → Recheck.Config → Except String Recheck.Cert) :
     IO String := do
+  traceInput label
   let env ← IO.ofExcept (V3.decodeAnonymousEnv bs)
   let claim : CompileClaim := { env := env.root, target := main, policy := .immortal, abiArity := 0
                                 elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
@@ -586,13 +615,24 @@ def stack8Lines : IO (Array String) := IO.FS.withTempDir fun dir => do
     (sidecar [("main", main)]) main false fun _ _ => .ok {})
   return lines
 
-/-- The parent of `stack8`: the same executable with `LEAN_STACK_SIZE_KB=8192`
-(the stack of the thread that runs a Lean `main`; `ulimit -s` does not
-change it), which must exit normally with a line per input. -/
+/-- The parent of `stack8` and `stack2`: the same executable with
+`LEAN_STACK_SIZE_KB=8192` and with 2048 (the stack of the thread that runs a
+Lean `main`; `ulimit -s` does not change it), each of which must exit
+normally with a line per input; the 2 MiB run's lines must be the 8 MiB
+run's. -/
 def stackPart (a : Assert) : IO (Array String) := do
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--stack-8mib"]
                                 env := #[("LEAN_STACK_SIZE_KB", some "8192")] }
   let lines := (out.stdout.splitOn "\n").filter (!·.isEmpty)
+  -- the certificate-driven inputs on a quarter of that stack
+  let small ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--stack-2mib"]
+                                  env := #[("LEAN_STACK_SIZE_KB", some "2048")] }
+  expect a (small.exitCode == 0)
+    s!"tests-recheck --stack-2mib exited with {small.exitCode} on a 2 MiB stack: {small.stderr}"
+  let smallLines := (small.stdout.splitOn "\n").filter (!·.isEmpty)
+  expect a (smallLines.getLast?.any (·.startsWith "stack-2mib:")) "tests-recheck --stack-2mib: no summary line"
+  expect a (smallLines.dropLast.all lines.contains) "the 2 MiB run's lines are not the 8 MiB run's"
+  expect a (smallLines.length > 20) s!"tests-recheck --stack-2mib: {smallLines.length} lines"
   expect a (out.exitCode == 0)
     s!"tests-recheck --stack-8mib exited with {out.exitCode} on an 8 MiB stack: {out.stderr}"
   let summary := lines.getLast?.getD ""
@@ -625,6 +665,25 @@ def stackPart (a : Assert) : IO (Array String) := do
   let anf := lines.filter (·.startsWith "anf ")
   let inl := lines.filter (·.startsWith "inline case ")
   let wide := lines.filter (·.startsWith "width ")
+  let alloc := lines.filter (·.startsWith "alloc ")
+  expect a (alloc.length == 8) s!"allocation inputs: {alloc.length} lines"
+  for l in alloc do
+    expect a (if inL l "(past " then inL l "check-cert refused (alloc: alloc.shape)"
+      else if inL l "(within " then inL l "check-cert refused (alloc: alloc.edge)"
+      else !inL l "alloc.shape" && !inL l "cert.parse") s!"allocation cap: {l}"
+  expect a (alloc.any fun l => inL l "alloc slots" && inL l "(at " && inL l "check-cert accepted")
+    "the last function at its frame-slot cap is not accepted"
+  -- the front and middle certificates' caps: at the cap accepted, past it refused by the cap
+  let caps := lines.filter (·.startsWith "cap ")
+  expect a (caps.length == 7) s!"certificate cap inputs: {caps.length} lines"
+  for l in caps do
+    let ok := if inL l "(at " then inL l "check-cert accepted" && inL l "Recheck.run accepted"
+      else if inL l "cap table" then inL l "names a constant outside the program, or one twice"
+      else if inL l "cap relevance" then inL l "names a constant outside the program, or a runtime term twice"
+      else if inL l "cap inline" then
+        inL l "check-cert refused (anf: anf.replay)" && inL l "a round lists more callers than the program has globals"
+      else inL l "check-cert refused (anf: anf.replay)" && inL l "lists more globals than the program has"
+    expect a ok s!"certificate cap: {l}"
   expect a (wide.length == 5) s!"wide inputs: {wide.length} lines"
   expect a (wide.any fun l => inL l "width tree 16" && inL l "check-cert refused (anf")
     "the 262,142-tag annotation is not refused normally by check-cert"
@@ -843,12 +902,14 @@ def nestingLines : IO (Array String) := do
     | .error m => s!"refused ({m})"
   for k in ["lam", "app", "appf", "let", "letv", "con", "case", "cases", "proj", "tick"] do
     for (n, pos) in [(Anf.maxLamDepth - 1, "at"), (Anf.maxLamDepth, "past")] do
+      traceInput s!"lam {k} {n}"
       let r := (Anf.Pipeline.run {} (lamProgram k n)).map fun _ => ()
       lines := lines.push s!"lam {k} depth {n + 1} ({pos} the depth budget): Pipeline.run {word r}"
   for k in ["tick", "case", "case2", "tcase", "join", "joinb", "bind"] do
     let per := if k == "tcase" then 2 else 1
     let nAt := (Anf.maxDepth - 1) / per
     for (n, pos) in [(nAt, "at"), (nAt + 1, "past")] do
+      traceInput s!"anf {k} {n}"
       let P := chainProgram k n 1
       let depth := ((P.global? 0).map fun gd => gd.body.depthUpTo 1000000 1000000).getD 0
       let chk := (Anf.Pipeline.checkGlobalNodes P).map fun _ => ()
@@ -860,6 +921,7 @@ def nestingLines : IO (Array String) := do
   -- callee of them that brings the walk just under its depth budget, and just past it
   let spare := Anf.Walk.maxWalkDepth - Anf.maxDepth
   for (c, pos) in [(spare - 8, "at"), (spare + 8, "past")] do
+    traceInput s!"inline case {c}"
     let callee : Anf.GDef := { key := .dispatch 0, ps := [{}], body := anfChain "case" c (.ret (.var 0)) }
     let gBody := anfChain "case" (Anf.maxDepth - 2) (.bind Anf.freshLet (.call 0 [.var 0]) (.ret (.var 0)))
     let g : Anf.GDef := { key := .dispatch 1, ps := [{}], body := gBody }
@@ -871,13 +933,159 @@ def nestingLines : IO (Array String) := do
       check {word chk}, inline walk {word r}"
   return lines
 
+/-- `tree 9` with its producer's whole certificate (accepted by every
+verifier but for the claim's hash), as bytes, sidecar and certificate. -/
+def honestTree9 : IO (ByteArray × Lean.Json × Recheck.Cert) := do
+  let (e, main) := treeEnv 9
+  let bs := bytes e
+  let json := sidecar [("main", main)]
+  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let cert ← IO.ofExcept ((Recheck.produce (Recheck.Config.forInput {} inp) inp).mapError (·.render))
+  return (bs, json, cert)
+
+/-- `honestTree9` with an allocation changed: `selfmoves N` puts `N` moves of a
+location to itself before the first instruction of the last block of the
+first function that has one, `factregs N` adds registers `0 … N − 1` to the
+first fact of the last block of the first function that has one, `slots N`
+sets the last function's frame slots to `N`. -/
+def allocInput (kind : String) (n : Nat) : IO (ByteArray × Lean.Json × String) := do
+  let (bs, json, cert) ← honestTree9
+  if kind == "slots" then
+    let some o := cert.alloc.getLast? | throw (IO.userError "tree 9: no allocation")
+    let cert' : Recheck.Cert := { cert with alloc := cert.alloc.dropLast ++ [{ o with numSlots := n }] }
+    return (bs, json, cert'.toText)
+  let some o := cert.alloc.head? | throw (IO.userError "tree 9: no allocation")
+  let lastWith := fun (p : Xv.Alloc.BlockOut → Bool) =>
+    ((o.blocks.zipIdx.filter fun (bo, _) => p bo).getLast?.map (·.2)).getD 0
+  let o' : Xv.Alloc.Output := match kind with
+    | "selfmoves" =>
+      let k := lastWith fun bo => !bo.locs.isEmpty
+      { o with blocks := o.blocks.zipIdx.map fun (bo, i) =>
+          if i == k then
+            let l := ((bo.locs.head?.bind List.head?)).getD (.slot 0)
+            { bo with edits := List.replicate n (0, .move l l) ++ bo.edits }
+          else bo }
+    | "factregs" =>
+      let k := lastWith fun bo => !bo.cert.isEmpty
+      { o with blocks := o.blocks.zipIdx.map fun (bo, i) =>
+          if i == k then
+            match bo.cert with
+            | (l, vs) :: rest => { bo with cert := (l, (List.range n ++ vs.map (· + n))) :: rest }
+            | [] => bo
+          else bo }
+    | _ => { o with numSlots := n }
+  let cert' : Recheck.Cert := { cert with alloc := o' :: cert.alloc.tail }
+  return (bs, json, cert'.toText)
+
+/-- The first and last functions of `honestTree9` as Xv: what
+`Xv.Validate.sizeOk` derives its caps from. -/
+def tree9Funcs : IO (Xv.Func Lir.VReg × Xv.Func Lir.VReg) := do
+  let (bs, json, cert) ← honestTree9
+  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let cfg := Recheck.Config.forInput {} inp
+  let f ← IO.ofExcept ((Recheck.runLir cfg inp.program cert).mapError (·.render))
+  let xv ← IO.ofExcept ((Xv.Select.select f.lowered.program).mapError fun _ => "select")
+  let some fn := xv.funcs.toList.head? | throw (IO.userError "tree 9: no function")
+  let some last := xv.funcs.toList.getLast? | throw (IO.userError "tree 9: no function")
+  return (fn, last)
+
+/-- The allocation certificate's caps from bytes (`allocInput`), through every
+byte-level entry point: each component at its cap in `tree 9`'s first
+function (the frame slots in its last, whose cap is below the decoder's) and
+one past it, and the two inputs that once overflowed or outlasted the
+validator: 100,000 moves of a location to itself at one position and a fact
+of 100,000 registers. A line each. -/
+def allocLines : IO (Array String) := IO.FS.withTempDir fun dir => do
+  let (fn, last) ← tree9Funcs
+  let r := Xv.Validate.regMentions fn
+  let (_, _, cert) ← honestTree9
+  let some o := cert.alloc.head? | throw (IO.userError "tree 9: no allocation")
+  let lastIdx := fun (p : Xv.Alloc.BlockOut → Bool) =>
+    ((o.blocks.zipIdx.filter fun (bo, _) => p bo).getLast?.map (·.2)).getD 0
+  -- `allocInput`'s blocks: self-moves at position 0 of one, registers in the first fact of another
+  let kMoves := lastIdx fun bo => !bo.locs.isEmpty
+  let kFacts := lastIdx fun bo => !bo.cert.isEmpty
+  let at0 := (((o.blocks[kMoves]?).map (·.edits)).getD [] |>.filter (·.1 == 0)).length
+  let movesAt := (fn.blocks[kMoves]?.map (Xv.Validate.editsAllowed · 0)).getD 0 - at0
+  let factAt := Xv.Validate.factFactor * (r + 1) - ((o.blocks[kFacts]?).map (Xv.Validate.factEntries ·.cert)).getD 0
+  let rLast := Xv.Validate.regMentions last
+  let cases : List (String × Nat × String) := [
+    ("selfmoves", movesAt, "at"), ("selfmoves", movesAt + 1, "past"),
+    ("selfmoves", 100000, if 100000 > movesAt then "past" else "within"),
+    ("factregs", factAt, "at"), ("factregs", factAt + 1, "past"),
+    ("factregs", 100000, if 100000 > factAt then "past" else "within"),
+    ("slots", rLast + Xv.Validate.slotSlack, "at"), ("slots", rLast + Xv.Validate.slotSlack + 1, "past")]
+  let mut lines : Array String := #[]
+  for (kind, n, pos) in cases do
+    let (bs, json, text) ← allocInput kind n
+    lines := lines.push (← bytesEntries dir s!"alloc {kind} {n} ({pos} the cap)" bs json text)
+  return lines
+
+/-- The front and middle certificates' caps from bytes, on `tree 9` and its
+honest certificate: a table column naming a constant twice, one naming a
+constant past the program, an annotation naming a runtime term twice, and an
+inline round and a shrink step listing as many globals as the program has
+(at the cap: steps that change nothing, accepted) and one more (past it). A
+line each: `bytesEntries`, then `Recheck.run`'s outcome. -/
+def capLines : IO (Array String) := IO.FS.withTempDir fun dir => do
+  let (bs, json, cert) ← honestTree9
+  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let cfg := Recheck.Config.forInput {} inp
+  let f ← IO.ofExcept ((Recheck.runLir cfg inp.program cert).mapError (·.render))
+  let size := inp.program.size
+  let g := f.anf.size
+  let mid := fun (s : Anf.Pipeline.Step) =>
+    { cert with mid := { cert.mid with steps := cert.mid.steps ++ [s] } }
+  let cases : List (String × Recheck.Cert) := [
+    ("table inline column naming constant 0 twice (past the cap)",
+      { cert with table := { cert.table with inline := [0, 0] } }),
+    (s!"table recKind column naming constant {size} of {size} (past the cap)",
+      { cert with table := { cert.table with recKind := [size] } }),
+    ("relevance naming its first runtime term twice (past the cap)",
+      { cert with relevance := { cert.relevance with
+          nodes := cert.relevance.nodes.take 1 ++ cert.relevance.nodes } }),
+    (s!"inline round of {g} callers for {g} globals (at the cap)", mid (.inline ((List.range g).map (·, [])))),
+    (s!"inline round of {g + 1} callers for {g} globals (past the cap)",
+      mid (.inline ((List.range (g + 1)).map (·, [])))),
+    (s!"shrink step of {g} round counts for {g} globals (at the cap)", mid (.shrink (List.replicate g 0))),
+    (s!"shrink step of {g + 1} round counts for {g} globals (past the cap)",
+      mid (.shrink (List.replicate (g + 1) 0)))]
+  let mut lines : Array String := #[]
+  for (label, c) in cases do
+    let run := match Recheck.run cfg inp.program c with
+      | .ok _ => "accepted"
+      | .error e => s!"refused ({e.stage.name}: {e.code}: {e.message.take 96})"
+    lines := lines.push s!"{← bytesEntries dir s!"cap {label}" bs json c.toText}, Recheck.run {run}"
+  return lines
+
+/-- `tests-recheck --write-alloc DIR KIND N`: `allocInput KIND N` as files, for
+timing native `ixcc check-cert` on it. -/
+def writeAlloc (dir : System.FilePath) (kind : String) (n : Nat) : IO Unit := do
+  let (bs, json, text) ← allocInput kind n
+  IO.FS.createDirAll dir
+  IO.FS.writeBinFile (dir / s!"alloc-{kind}-{n}.ixe") bs
+  IO.FS.writeFile (dir / s!"alloc-{kind}-{n}.equations.json") json.compress
+  IO.FS.writeFile (dir / s!"alloc-{kind}-{n}.cert") text
+  IO.println s!"alloc-{kind}-{n}: {bs.size} bytes, certificate {text.utf8ByteSize} bytes"
+
 /-- `tests-recheck --stack-8mib`, run by `stackPart` with `LEAN_STACK_SIZE_KB=8192`:
-`stack8Lines`, `nestingLines` and `widthLines`, a line per input, then a summary line; a
-native stack overflow aborts the process instead. -/
+`stack8Lines`, `nestingLines`, `widthLines`, `allocLines` and `capLines`, a line per input, then a
+summary line; a native stack overflow aborts the process instead. -/
 def stack8 : IO UInt32 := do
-  let lines := (← stack8Lines) ++ (← nestingLines) ++ (← widthLines)
+  let lines := (← stack8Lines) ++ (← nestingLines) ++ (← widthLines) ++ (← allocLines) ++ (← capLines)
   for line in lines do IO.println line
   IO.println s!"stack-8mib: {lines.size} inputs"
+  return 0
+
+/-- `tests-recheck --stack-2mib`, run by `stackPart` with `LEAN_STACK_SIZE_KB=2048`:
+the inputs whose size the certificate or the sidecar sets (`widthLines`,
+`allocLines`, `capLines`), on a quarter of `stack8`'s stack. The program-shaped
+inputs of `stack8Lines` and `nestingLines` need the 8 MiB stack the
+middle-end budgets were sized for. -/
+def stack2 : IO UInt32 := do
+  let lines := (← widthLines) ++ (← allocLines) ++ (← capLines)
+  for line in lines do IO.println line
+  IO.println s!"stack-2mib: {lines.size} inputs"
   return 0
 
 end IxCCTests.Recheck.Deep

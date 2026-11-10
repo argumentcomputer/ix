@@ -476,21 +476,54 @@ child. Frame slots (4,096), the certificate's order lists and Ixon's
 reference, sharing and universe tables (4,096 each) were later run at their
 limits and one past them and behave the same.
 
-*Known gaps.* Two traversals in the register-allocation validator are not
-bounded this way, and both are reachable from a certificate's bytes:
+*Certificate caps.* Every list the certificate carries is bounded by
+quantities of the program it is checked against, and the bound is checked
+before the first reader of the list walks it, by a loop (linear in the list,
+in constant stack). A padded certificate is refused for the cost of reading
+it once, and the work a certificate within the caps can ask for is the
+program's, times the constants below. Ratios are per function; the committed
+values are measured by `tests-corpus`, which fails if any reaches its cap.
 
-- `Xv.Alloc.takeAt` (`IxCC/Xv/Alloc/Apply.lean`) takes a stack frame per edit
-  at one position, and the validator runs it before it checks those edits. A
-  1.9 MB certificate with 100,000 valid self-moves at one position aborts on
-  an 8 MiB stack; with 1,000,000 it is accepted on the executable's default
-  stack.
-- `Xv.Validate.VSet.insert` (`IxCC/Xv/Validate/State.lean`) is quadratic in
-  the registers a certificate fact lists and takes a frame per register. A
-  2.2 MB certificate listing 300,000 registers takes about 250 s to refuse,
-  and 1,000,000 abort on an 8 MiB stack.
+| Certificate part | Cap | Largest committed value | Checked in |
+| --- | --- | --- | --- |
+| table columns (`resolve`, `recKind`, `lazy`, `inline`, `opaqueByValue`) | constants of the program, each named at most once per column | exact | `Table.ofCert` (`TableCert.keysOk`), the first reader on every verifier path |
+| annotation records (`consts`, `ctors`) | constants of the program | exact | `Recheck.checkRelevanceKeys`, after `Table.ofCert` |
+| annotation node tags | each runtime term (a value, an `eqn` body, a recursor rule) named at most once, of a constant of the program; its tags cover the term exactly | exact | `checkRelevanceKeys`; installation |
+| middle-end steps | 64 steps; shrink: at most one round count per global of the program at that step, each at most 64; inline: at most one caller per global, 64 callees each; specialisation: 64 decisions with masks of at most 64 | exact | `checkMidCert` and the decoder; `Anf.Pipeline.Step.run` |
+| allocation shape | one output per function; per block one location list per instruction and per terminator, one location per operand | exact | `Xv.Validate.sizeOk`, the first statement of `Validate.func` |
+| allocation edits at one position | 160, plus two per operand of the instruction there and of the one before (a reload per use, a store per definition) | 10 in all | `sizeOk` (16×) |
+| allocation edits | 10 per register mention or block | 0.58 | `sizeOk` (17×) |
+| allocation facts, per block | a location plus one per register: 8 entries per register mention of the function; locations distinct and registers strictly increasing (both allocators merge a location's entries, which leaves the state the same) | 1.33 per mention | `sizeOk` (6×; a structural bound: an honest block names each register live into it in a few locations, the all-slots fallback at most twice its live registers) |
+| frame slots | the function's register mentions plus 16, and 4,096 | the mentions plus 0 | `sizeOk`; the decoder (`maxAllocSlots`) |
+| frame layouts | one per function; cells 8-aligned, inside a frame of at most 2^20 bytes, in strictly increasing order (a single pass; it implies they are distinct) | exact | `Stacking.run`, `FrameLayout.check` |
+| block order | one group per layout group; each block at most once, in its group | exact | `Order.check`, one pass over the list |
+| plain-RC ownership code | decoded against the source's control tree, at most 4,096 deep, and equal to the canonical code | exact | `Own.Plain.Certificate.admit` |
+| the whole certificate | 64 MiB of JSON nested at most 512 deep | | `checkJsonText` |
 
-`Recheck/Rc`, `Xv/Stacking/Run.lean` and the ELF validators have not been read
-for recursion along certificate-controlled lists.
+Native `ixcc check-cert` on the allocation's two former outliers, in `tree 9`'s
+first function, at 2 MiB, 8 MiB and the default stack alike: 100,000
+self-moves at one position (they took a stack frame each and aborted an 8 MiB
+stack) are refused by the cap in 0.2 s, 164 MB; a fact of 100,000 registers
+(23.6 s at 8 MiB before, and an abort at 2 MiB) is refused by the fact cap in
+0.13 s, 117 MB. At the caps: a fact of 98,224 registers is refused by the
+edge check in 0.15 s, 115 MB, and 164 self-moves at one position are accepted
+in 0.19 s, 97 MB. The validator's register sets are built and compared in linear time
+on the strictly increasing lists `sizeOk` requires (`VSet.ofListTR`,
+`subsetTR`, `insertTR`, proved equal to the definitions the proofs use), and
+`Alloc.takeAt` is a loop (`takeAtTR`).
+
+What remains: the validator's work is still the product of a block's
+instructions and its abstract state (each definition forgets its register in
+every location, `AState.forget`, and each edge rebinds the target's
+parameters over the state). A state that its incoming edges justify holds at
+most one set per location (16 registers, at most 4,096 slots, the outgoing
+cells); only a block checked before all its predecessors starts from
+unjustified facts, which the fact cap bounds by 8 entries per register
+mention of its function. P1 (`Anf.convert`) at the Lam node budget needs more
+than 2 MiB of stack, so `tests-recheck` runs the program-shaped inputs in its
+8 MiB child and the certificate- and sidecar-sized ones (the widths above,
+the allocation caps, and the table, annotation, inline and shrink caps at and
+one past each) in both an 8 MiB and a 2 MiB child.
 
 **Work.** Under shrink, the census counts read at each binding walk the rest of
 its body, so a round reads up to the global's depth times its nodes. The walk

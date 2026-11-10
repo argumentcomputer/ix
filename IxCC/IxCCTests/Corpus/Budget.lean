@@ -45,6 +45,10 @@ structure Stats where
   maxDepth : Nat := 0
   maxCopyDepth : Nat := 0
   maxBackWork : Nat := 0
+  maxEditsAt : Nat := 0
+  maxEditPermille : Nat := 0
+  maxFactPermille : Nat := 0
+  maxSlotsOver : Nat := 0
   programs : Nat := 0
   declined : Nat := 0
 
@@ -58,7 +62,9 @@ def Stats.merge (s t : Stats) : Stats :=
     maxLam := max s.maxLam t.maxLam, maxSrcDepth := max s.maxSrcDepth t.maxSrcDepth
     maxSrcVisits := max s.maxSrcVisits t.maxSrcVisits, maxLamDepth := max s.maxLamDepth t.maxLamDepth
     maxDepth := max s.maxDepth t.maxDepth, maxCopyDepth := max s.maxCopyDepth t.maxCopyDepth
-    maxBackWork := max s.maxBackWork t.maxBackWork
+    maxBackWork := max s.maxBackWork t.maxBackWork, maxEditsAt := max s.maxEditsAt t.maxEditsAt
+    maxEditPermille := max s.maxEditPermille t.maxEditPermille
+    maxFactPermille := max s.maxFactPermille t.maxFactPermille, maxSlotsOver := max s.maxSlotsOver t.maxSlotsOver
     programs := s.programs + t.programs, declined := s.declined + t.declined }
 
 /-- The largest global's nodes and the program's. -/
@@ -164,6 +170,26 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
                   maxDepth := max s.maxDepth (anfDepth P), maxBackWork := max s.maxBackWork (Anf.backWork P) }
   return s
 
+/-- The honest allocation certificate against the functions it allocates: the most
+edits at one position, edits per register mention or block and one block's fact
+entries per register mention (in thousandths), and frame slots beyond the
+register mentions. -/
+def allocStats (cfg : Config) (P : Src.Program) (cert : Recheck.Cert) : Stats := Id.run do
+  let some f := (Recheck.runLir cfg P cert).toOption | return {}
+  let some xv := (Xv.Select.select f.lowered.program).toOption | return {}
+  let mut s : Stats := {}
+  for (fn, o) in xv.funcs.toList.zip cert.alloc do
+    let r := Xv.Validate.regMentions fn
+    let m := r + fn.blocks.size
+    let edits := o.blocks.foldl (fun n bo => n + bo.edits.length) 0
+    let facts := o.blocks.foldl (fun n bo => max n (Xv.Validate.factEntries bo.cert)) 0
+    let run := o.blocks.foldl (fun n bo => max n (Xv.Validate.maxRun bo.edits 0 0 0)) 0
+    s := { s with maxEditsAt := max s.maxEditsAt run
+                  maxEditPermille := max s.maxEditPermille (edits * 1000 / max m 1)
+                  maxFactPermille := max s.maxFactPermille (facts * 1000 / (r + 1))
+                  maxSlotsOver := max s.maxSlotsOver (o.numSlots - Xv.Validate.regMentions fn) }
+  return s
+
 /-- One program: its honest certificate's middle end, measured (none if the
 compiler declines it before the middle end, as the corpus expects of some). -/
 def program (bytes : ByteArray) (json : Lean.Json) (roots : List String) : IO (Option Stats) := do
@@ -190,7 +216,7 @@ def program (bytes : ByteArray) (json : Lean.Json) (roots : List String) : IO (O
         | .error _ => return some declined
         | .ok (lam, _) =>
           let s ← IO.ofExcept (measure lam cert.mid)
-          return some { s with maxSrcDepth := depth, maxSrcVisits := visits }
+          return some ({ s with maxSrcDepth := depth, maxSrcVisits := visits }.merge (allocStats cfg inp.program cert))
 
 def file (path : FilePath) (equations : FilePath) (roots : List String := []) : IO (Option Stats) := do
   program (← IO.FS.readBinFile path) (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile equations))) roots
@@ -240,7 +266,13 @@ def survey (a : Assert) : IO (Array String) := do
     ("deepest Lam global", s.maxLamDepth, Anf.maxLamDepth),
     ("deepest Anf global", s.maxDepth, Anf.maxDepth),
     ("most walk steps on the stack at once", s.maxCopyDepth, Anf.Walk.maxWalkDepth),
-    ("most back-end work (nodes squared, and table searches)", s.maxBackWork, Anf.maxBackWork)]
+    ("most back-end work (nodes squared, and table searches)", s.maxBackWork, Anf.maxBackWork),
+    ("most allocation edits at one position", s.maxEditsAt, Xv.Validate.maxEditsAt),
+    ("most allocation edits per register mention or block, in thousandths", s.maxEditPermille,
+      Xv.Validate.editFactor * 1000),
+    ("most allocation fact entries in one block per register mention, in thousandths", s.maxFactPermille,
+      Xv.Validate.factFactor * 1000),
+    ("most frame slots beyond the register mentions", s.maxSlotsOver, Xv.Validate.slotSlack)]
   let mut out := #[s!"{s.programs} programs measured, {s.declined} declined before the middle end"]
   for (label, got, budget) in rows do
     expect a (got < budget) s!"{label}: {got} reaches its budget {budget}"

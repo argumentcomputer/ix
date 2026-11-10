@@ -34,6 +34,29 @@ def takeAt (i : Nat) : List (Nat × Edit) → List Edit × List (Nat × Edit)
         (e :: now, later)
       else ([], (j, e) :: rest)
 
+/-- `takeAt` as a loop, keeping the run it has taken reversed in `acc`; the
+compiled code uses it (`csimp`), so a long run takes no stack. -/
+def takeAtGo (i : Nat) : List Edit → List (Nat × Edit) → List Edit × List (Nat × Edit)
+  | acc, [] => (acc.reverse, [])
+  | acc, (j, e) :: rest => if j == i then takeAtGo i (e :: acc) rest else (acc.reverse, (j, e) :: rest)
+
+theorem takeAtGo_eq (i : Nat) : ∀ (acc : List Edit) (xs : List (Nat × Edit)),
+    takeAtGo i acc xs = (acc.reverse ++ (takeAt i xs).1, (takeAt i xs).2)
+  | acc, [] => by simp [takeAtGo, takeAt]
+  | acc, (j, e) :: rest => by
+    by_cases h : (j == i) = true
+    · simp only [takeAtGo, takeAt, h, ↓reduceIte, takeAtGo_eq i (e :: acc) rest]
+      cases takeAt i rest
+      simp
+    · simp only [takeAtGo, takeAt, h, Bool.false_eq_true, ↓reduceIte]
+      simp
+
+def takeAtTR (i : Nat) (xs : List (Nat × Edit)) : List Edit × List (Nat × Edit) := takeAtGo i [] xs
+
+@[csimp] theorem takeAt_eq_takeAtTR : @takeAt = @takeAtTR := by
+  funext i xs
+  simp [takeAtTR, takeAtGo_eq]
+
 /-- Positions nondecreasing from `prev` and at most `n` (the terminator). -/
 def editsOrdered (n : Nat) : List (Nat × Edit) → Nat → Bool
   | [], _ => true

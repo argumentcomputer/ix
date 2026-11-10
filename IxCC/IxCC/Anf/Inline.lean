@@ -39,13 +39,19 @@ def checkCert (r : Round) : Bool :=
   r.all fun (caller, callees) =>
     callees.length ≤ maxCertCallees && callees.all (· != caller)
 
+/-- The round as a map from caller to callees, the first entry for a caller
+winning (as `List.lookup` would). Built once per round, so each global's
+lookup costs a walk down the bits of its id, not a scan of the round. -/
+def calleeMap (r : Round) : Src.NatMap (List GlobalId) := Src.NatMap.ofList r.reverse
+
 /-- One round. Each listed caller's walk is bounded by `Walk.maxCopy` and
 `Walk.maxWalkWork`, and the round stops as soon as the globals it has made pass
 `maxProgramNodes` or its walks' work passes `maxStepWork`, so it never holds or
 does much more than the budgets (`mapMWithin`). -/
 def round (P : Program) (r : Round) : Except String (Program × Walk.Fires) := do
+  let m := calleeMap r
   let rs ← mapMWithin (fun (g, gd) => do
-      match r.lookup g with
+      match m.get? g with
       | some cs@(_ :: _) =>
         let (gd', f) ← ((Walk.global { prog := P, inline := cs } gd).run {}).mapError
           (s!"inline global {g}: " ++ ·)

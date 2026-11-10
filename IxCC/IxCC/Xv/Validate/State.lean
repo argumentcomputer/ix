@@ -66,6 +66,164 @@ def subset (xs ys : VSet) : Bool := xs.all (mem · ys)
 
 def ofList (xs : List VReg) : VSet := xs.foldl (fun s x => insert x s) []
 
+/-! ### Compiled forms
+
+The definitions above are what the proofs follow. The compiled code uses the
+forms below, proved equal to them (`csimp`): `insert` as a loop, and `ofList`
+and `subset` in linear time on the strictly increasing lists the validator
+works with (it checks that a certificate's facts are; the sets it builds
+from them stay so). -/
+
+/-- Whether a list is strictly increasing. A loop. -/
+def strictlyAsc : List VReg → Bool
+  | a :: b :: rest => decide (a < b) && strictlyAsc (b :: rest)
+  | _ => true
+
+/-- `insert`, keeping the prefix it passes reversed in `acc`. -/
+def insertGo (x : VReg) : VSet → VSet → VSet
+  | acc, [] => acc.reverseAux [x]
+  | acc, y :: ys =>
+    if x == y then acc.reverseAux (y :: ys)
+    else if x < y then acc.reverseAux (x :: y :: ys)
+    else insertGo x (y :: acc) ys
+
+theorem insertGo_eq (x : VReg) : ∀ (acc s : VSet), insertGo x acc s = acc.reverse ++ insert x s
+  | acc, [] => by simp [insertGo, insert, List.reverseAux_eq]
+  | acc, y :: ys => by
+    simp only [insertGo, insert]
+    by_cases h1 : (x == y) = true
+    · simp [h1, List.reverseAux_eq]
+    · by_cases h2 : x < y
+      · simp [h1, h2, List.reverseAux_eq]
+      · simp [h1, h2, insertGo_eq x (y :: acc) ys]
+
+def insertTR (x : VReg) (s : VSet) : VSet := insertGo x [] s
+
+@[csimp] theorem insert_eq_insertTR : @insert = @insertTR := by
+  funext x s
+  simp [insertTR, insertGo_eq]
+
+theorem insert_of_lt {x : VReg} : ∀ {s : VSet}, (∀ y ∈ s, y < x) → insert x s = s ++ [x]
+  | [], _ => rfl
+  | y :: ys, h => by
+    have hy : y < x := h y (by simp)
+    have hne : (x == y) = false := beq_false_of_ne (Nat.ne_of_gt hy)
+    have hnlt : ¬ x < y := Nat.not_lt.mpr (Nat.le_of_lt hy)
+    simp only [insert, hne, hnlt, Bool.false_eq_true, ↓reduceIte, List.cons_append]
+    rw [insert_of_lt fun z hz => h z (by simp [hz])]
+
+theorem strictlyAsc_cons {a : VReg} {s : List VReg} (h : strictlyAsc (a :: s) = true) :
+    strictlyAsc s = true ∧ ∀ y ∈ s, a < y := by
+  induction s generalizing a with
+  | nil => simp [strictlyAsc]
+  | cons b rest ih =>
+    simp only [strictlyAsc, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨hab, hrest⟩ := h
+    obtain ⟨-, hb⟩ := ih hrest
+    refine ⟨hrest, fun y hy => ?_⟩
+    simp only [List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · exact hab
+    · exact Nat.lt_trans hab (hb y hy)
+
+theorem strictlyAsc_append {s t : List VReg} (h : strictlyAsc (s ++ t) = true) :
+    strictlyAsc t = true ∧ ∀ y ∈ s, ∀ z ∈ t, y < z := by
+  induction s with
+  | nil => simpa using h
+  | cons a s ih =>
+    obtain ⟨hrest, ha⟩ := strictlyAsc_cons (by simpa using h)
+    obtain ⟨ht, hst⟩ := ih hrest
+    refine ⟨ht, fun y hy z hz => ?_⟩
+    simp only [List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · exact ha z (by simp [hz])
+    · exact hst y hy z hz
+
+theorem foldl_insert_asc : ∀ (xs s : List VReg), strictlyAsc (s ++ xs) = true →
+    xs.foldl (fun s x => insert x s) s = s ++ xs
+  | [], s, _ => by simp
+  | x :: xs, s, h => by
+    have hlt : ∀ y ∈ s, y < x := fun y hy => (strictlyAsc_append h).2 y hy x (by simp)
+    simp only [List.foldl_cons, insert_of_lt hlt]
+    rw [foldl_insert_asc xs (s ++ [x]) (by simpa using h)]
+    simp
+
+def ofListTR (xs : List VReg) : VSet :=
+  if strictlyAsc xs then xs else xs.foldl (fun s x => insert x s) []
+
+@[csimp] theorem ofList_eq_ofListTR : @ofList = @ofListTR := by
+  funext xs
+  unfold ofList ofListTR
+  split
+  · next h => exact foldl_insert_asc xs [] (by simpa using h)
+  · rfl
+
+/-- `xs ⊆ ys` on strictly increasing lists, by one merge. -/
+def subsetSorted : VSet → VSet → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | x :: xs, y :: ys =>
+    if x == y then subsetSorted xs ys
+    else if x < y then false
+    else subsetSorted (x :: xs) ys
+
+theorem mem_of_gt {z y : VReg} {ys : VSet} (h : y < z) : mem z (y :: ys) = mem z ys := by
+  have hne : (z == y) = false := beq_false_of_ne (Nat.ne_of_gt h)
+  have hnlt : ¬ z < y := Nat.not_lt.mpr (Nat.le_of_lt h)
+  simp only [mem, hne, hnlt, Bool.false_eq_true, ↓reduceIte]
+
+theorem all_mem_congr {ys ys' : VSet} : ∀ {xs : List VReg}, (∀ z ∈ xs, mem z ys = mem z ys') →
+    xs.all (mem · ys) = xs.all (mem · ys')
+  | [], _ => rfl
+  | a :: as, h => by
+    have hrest : as.all (mem · ys) = as.all (mem · ys') :=
+      all_mem_congr fun z hz => h z (List.mem_cons_of_mem a hz)
+    simp only [List.all_cons, h a (List.mem_cons_self), hrest]
+
+theorem subsetSorted_eq : ∀ (xs ys : VSet), strictlyAsc xs = true → strictlyAsc ys = true →
+    subsetSorted xs ys = xs.all (mem · ys)
+  | [], _, _, _ => by simp [subsetSorted]
+  | x :: xs, [], _, _ => by simp [subsetSorted, mem]
+  | x :: xs, y :: ys, hx, hy => by
+    obtain ⟨hxs, hxlt⟩ := strictlyAsc_cons hx
+    obtain ⟨hys, _⟩ := strictlyAsc_cons hy
+    by_cases h1 : x = y
+    · subst h1
+      have hmem : mem x (x :: ys) = true := by simp [mem]
+      have hrest : xs.all (mem · (x :: ys)) = xs.all (mem · ys) :=
+        all_mem_congr fun z hz => mem_of_gt (hxlt z hz)
+      rw [List.all_cons, hmem, Bool.true_and, hrest]
+      simp only [subsetSorted, beq_self_eq_true, ↓reduceIte]
+      exact subsetSorted_eq xs ys hxs hys
+    · have hbeq : (x == y) = false := beq_false_of_ne h1
+      by_cases h2 : x < y
+      · have hmem : mem x (y :: ys) = false := by
+          simp only [mem, hbeq, h2, Bool.false_eq_true, ↓reduceIte]
+        rw [List.all_cons, hmem, Bool.false_and]
+        simp only [subsetSorted, hbeq, h2, Bool.false_eq_true, ↓reduceIte]
+      · have hyx : y < x := Nat.lt_of_le_of_ne (Nat.not_lt.mp h2) (Ne.symm h1)
+        have hall : (x :: xs).all (mem · (y :: ys)) = (x :: xs).all (mem · ys) :=
+          all_mem_congr fun z hz => by
+            simp only [List.mem_cons] at hz
+            rcases hz with rfl | hz
+            · exact mem_of_gt hyx
+            · exact mem_of_gt (Nat.lt_trans hyx (hxlt z hz))
+        rw [hall]
+        simp only [subsetSorted, hbeq, h2, Bool.false_eq_true, ↓reduceIte]
+        exact subsetSorted_eq (x :: xs) ys hx hys
+
+def subsetTR (xs ys : VSet) : Bool :=
+  if strictlyAsc xs && strictlyAsc ys then subsetSorted xs ys else xs.all (mem · ys)
+
+@[csimp] theorem subset_eq_subsetTR : @subset = @subsetTR := by
+  funext xs ys
+  unfold subset subsetTR
+  split
+  · next h =>
+    simp only [Bool.and_eq_true] at h
+    exact (subsetSorted_eq xs ys h.1 h.2).symm
+  · rfl
+
 end VSet
 
 /-! ## States -/

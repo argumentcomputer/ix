@@ -70,8 +70,14 @@ def checkGlobalNodes (P : Program) : Except String Program :=
 /-- A step, then the size check (P2, P3 and P4 can grow the program; pruning
 only removes globals). -/
 def Step.run (p : Shrink.Params) : Step → Program → Except String Program
-  | .shrink c, P => Shrink.run p c P >>= checkGlobalNodes
-  | .inline r, P => Inline.round P r >>= fun x => checkGlobalNodes x.1
+  | .shrink c, P =>
+    -- one round count per global id
+    if c.length ≤ P.size then Shrink.run p c P >>= checkGlobalNodes
+    else .error "shrink: the certificate lists more globals than the program has"
+  | .inline r, P =>
+    -- a round lists each caller once, so no more callers than the program has globals
+    if r.length ≤ P.size then Inline.round P r >>= fun x => checkGlobalNodes x.1
+    else .error "inline: a round lists more callers than the program has globals"
   | .specialize c, P => Specialize.run c P >>= checkGlobalNodes
   | .prune, P => pure (Prune.run P)
 

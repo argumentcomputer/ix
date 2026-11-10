@@ -176,6 +176,7 @@ def main (args : List String) : IO UInt32 := do
   if let ["--probe-lam", kind, n, stg] := args then return ← Deep.probeLam kind n.toNat! stg
   if let ["--probe-walkk", kind, n, c, op] := args then return ← Deep.probeWalkKind kind n.toNat! c.toNat! op
   if args == ["--stack-8mib"] then return ← Deep.stack8
+  if args == ["--stack-2mib"] then return ← Deep.stack2
   if let ["--write-shrink", dir, d] := args then
     Deep.writeShrink dir d.toNat!
     return 0
@@ -183,8 +184,12 @@ def main (args : List String) : IO UInt32 := do
     Deep.writeShrink dir d.toNat! r.toNat! s.toNat! s!"tree-{d}-{r}-{s}"
     return 0
   if let ["--wide", kind, n] := args then return ← Deep.probeWide kind n.toNat!
+  if let ["--size-diag", shp, n] := args then return ← Deep.sizeDiag shp n.toNat!
   if let ["--write-wide", dir, kind, n] := args then
     Deep.writeWide dir kind n.toNat!
+    return 0
+  if let ["--write-alloc", dir, kind, n] := args then
+    Deep.writeAlloc dir kind n.toNat!
     return 0
   if let ["--write-amp", dir, f, g] := args then
     Deep.writeAmp dir f.toNat! g.toNat!

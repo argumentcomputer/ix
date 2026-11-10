@@ -204,7 +204,7 @@ def run (f : Func VReg) : Except String Output := do
   let blocks := (List.range n).map fun b =>
     { locs := st.locs[b]!.toList, termLocs := st.termLocs[b]!
       edits := (st.head[b]!.map ((0, ·))).toList ++ st.edits[b]!.toList
-      cert := (st.certs[b]!).getD [] : BlockOut }
+      cert := mergeFacts ((st.certs[b]!).getD []) : BlockOut }
   return { blocks, numSlots := st.nextSlot }
 
 end IxCC.Xv.Alloc.AllSlots

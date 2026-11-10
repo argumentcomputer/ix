@@ -704,7 +704,7 @@ def run (env : Xl.Env) (f : Func VReg) (chaos : Chaos := {}) : Except String Out
   let ((), st) ← (go.run cfg).run st
   let blocks := (List.range n).map fun b =>
     { locs := st.locs[b]!.toList, termLocs := st.termLocs[b]!, edits := st.edits[b]!.toList
-      cert := (st.certs[b]!).getD [] : BlockOut }
+      cert := mergeFacts ((st.certs[b]!).getD []) : BlockOut }
   return { blocks, numSlots := st.nextSlot }
 
 end IxCC.Xv.Alloc.LinearScan

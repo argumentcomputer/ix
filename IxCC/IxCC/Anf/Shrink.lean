@@ -91,6 +91,40 @@ def runGlobals (P : Program) (p : Params) (cert : Cert) :
         | .error e => .error e
         | .ok gs => .ok ((g, gd') :: gs)
 
+/-- `runGlobals` reading the certificate from an array, one step per global
+rather than a walk down the list to its id. -/
+def runGlobalsArr (P : Program) (p : Params) (cert : Array Nat) :
+    List (GlobalId × GDef) → Nat → Nat → Except String (List (GlobalId × GDef))
+  | [], _, _ => .ok []
+  | (g, gd) :: rest, nodes, work =>
+    match rounds P p gd work (cert.getD g 0) with
+    | .error e => .error s!"shrink global {g}: {e}"
+    | .ok (gd', work') =>
+      if nodes + gd'.body.nodesUpTo maxProgramNodes > maxProgramNodes then
+        .error "shrink: the program exceeds the node budget"
+      else
+        match runGlobalsArr P p cert rest (nodes + gd'.body.nodesUpTo maxProgramNodes) work' with
+        | .error e => .error e
+        | .ok gs => .ok ((g, gd') :: gs)
+
+/-- What the compiled code runs for `runGlobals` (`runGlobals_eq_fast`). -/
+def runGlobalsFast (P : Program) (p : Params) (cert : Cert) :
+    List (GlobalId × GDef) → Nat → Nat → Except String (List (GlobalId × GDef)) :=
+  runGlobalsArr P p cert.toArray
+
+theorem runGlobalsArr_eq (P : Program) (p : Params) (cert : Cert) :
+    ∀ (xs : List (GlobalId × GDef)) (nodes work : Nat),
+      runGlobalsArr P p cert.toArray xs nodes work = runGlobals P p cert xs nodes work
+  | [], _, _ => rfl
+  | (g, gd) :: rest, nodes, work => by
+    have hg : cert.toArray.getD g 0 = cert.getD g 0 := by
+      simp [Array.getD_eq_getD_getElem?]
+    simp only [runGlobalsArr, runGlobals, hg, runGlobalsArr_eq P p cert rest]
+
+@[csimp] theorem runGlobals_eq_fast : @runGlobals = @runGlobalsFast := by
+  funext P p cert xs nodes work
+  exact (runGlobalsArr_eq P p cert xs nodes work).symm
+
 /-- P2 re-run on its certificate, within the node and work budgets. -/
 def run (p : Params) (cert : Cert) (P : Program) : Except String Program := do
   let gs ← runGlobals P p cert P.globalList 0 0

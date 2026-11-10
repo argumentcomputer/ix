@@ -59,6 +59,9 @@ theorem func_ok {env : Xl.Env} {fi : Nat} {f : Func VReg} {o : Output} (h : func
     FuncOk env f o := by
   unfold func at h
   simp only [bind, Except.bind] at h
+  cases h₀ : sizeOk f o <;>
+    simp only [h₀, Bool.not_true, Bool.not_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure,
+      throw, throwThe, MonadExceptOf.throw, reduceCtorEq] at h
   cases h₁ : (f.blocks.toList.length == o.blocks.length) <;>
     simp only [h₁, Bool.not_true, Bool.not_false, Bool.false_eq_true, ↓reduceIte, pure, Except.pure,
       throw, throwThe, MonadExceptOf.throw, reduceCtorEq] at h

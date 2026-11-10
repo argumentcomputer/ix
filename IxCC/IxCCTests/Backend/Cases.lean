@@ -38,6 +38,9 @@ def callsLayout : FrameLayout := FrameLayout.produce callsFacts
 #guard !({ callsLayout with slotOff := [4] } : FrameLayout).check callsFacts
 #guard !({ callsLayout with slotOff := [24] } : FrameLayout).check callsFacts
 #guard !({ callsLayout with slotOff := [] } : FrameLayout).check callsFacts
+-- Distinct cells out of increasing order: the check walks the cells once, in order.
+#guard !({ callsLayout with slotOff := [8], saveOff := [(.rbx, 0)] } : FrameLayout).check callsFacts
+#guard FrameLayout.ascending [0, 8, 16] && !FrameLayout.ascending [0, 16, 8] && !FrameLayout.ascending [8, 8]
 -- A written callee-saved register left unsaved; a register saved that is not written.
 #guard !({ callsLayout with saveOff := [] } : FrameLayout).check callsFacts
 #guard !({ callsLayout with size := 40, saveOff := [(.rbx, 8), (.r12, 16)] } : FrameLayout).check callsFacts

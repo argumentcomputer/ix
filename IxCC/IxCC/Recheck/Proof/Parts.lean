@@ -48,6 +48,11 @@ theorem front_wellAnnotated {cfg : Config} {P : Src.Program} {c : Cert}
     | error e => simp [htab] at h
     | ok table =>
       simp only [htab] at h
+      have hkeys : checkRelevanceKeys P c.relevance = .ok () := by
+        cases hk : checkRelevanceKeys P c.relevance with
+        | error e => simp [hk] at h
+        | ok u => cases u; rfl
+      simp only [hkeys] at h
       cases hann : Src.Recheck.annotation { P with table } c.relevance with
       | error err =>
         rw [hann] at h

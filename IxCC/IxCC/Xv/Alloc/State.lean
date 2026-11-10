@@ -131,4 +131,36 @@ RC-wrapper-saved (`r8`, `r9`, `r10`), then `rcx`, `rdx` (preserved by
 def crossCallOrder : List X86.GPR :=
   [.rbx, .r12, .r13, .r14, .r8, .r9, .r10, .rcx, .rdx, .rsi, .rdi, .rax, .r11]
 
+/-! ## Certificate facts in the validator's form -/
+
+/-- An injective key for a location (the validator's `locKey`). -/
+def factKey : Loc → Nat
+  | .reg r => gprIndex r
+  | .slot i => 16 + 3 * i
+  | .inArg i => 17 + 3 * i
+  | .outArg i => 18 + 3 * i
+
+/-- Strictly increasing registers from any list: sorted, each once. -/
+def sortRegs (vs : List VReg) : List VReg :=
+  ((vs.mergeSort (· ≤ ·)).foldl (fun (acc : List VReg) v =>
+    match acc with
+    | w :: _ => if v == w then acc else v :: acc
+    | [] => [v]) []).reverse
+
+/-- A block's facts with one entry per location, in the order the locations
+first appear, naming strictly increasing registers. The validator's state
+from them is the same (`Validate.AState.ofList` unions a location's entries),
+and it is the form `Validate.sizeOk` asks for. -/
+def mergeFacts (facts : List (Loc × List VReg)) : List (Loc × List VReg) := Id.run do
+  let mut order : Array Loc := #[]
+  let mut regs : Std.HashMap Nat (List VReg) := {}
+  for (l, vs) in facts do
+    let k := factKey l
+    match regs[k]? with
+    | some old => regs := regs.insert k (old ++ vs)
+    | none =>
+      order := order.push l
+      regs := regs.insert k vs
+  return order.toList.map fun l => (l, sortRegs ((regs[factKey l]?).getD []))
+
 end IxCC.Xv.Alloc

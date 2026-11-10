@@ -16,8 +16,8 @@ frame. Seen from a body instruction (after the prologue's `sub rsp, size`):
 The layout is certificate data (D17): an untrusted oracle
 (`FrameLayout.produce`) proposes it and `FrameLayout.check`, on the recheck
 path, validates it against facts computed from the function (`Func.facts`):
-every slot has a cell, cells are 8-aligned, in bounds and pairwise
-distinct, the saved registers are exactly the callee-saved registers the
+every slot has a cell, cells are 8-aligned, in bounds and in strictly
+increasing order (so pairwise distinct), the saved registers are exactly the callee-saved registers the
 allocation writes (as in Cranelift, `machinst/vcode.rs:668-710`), a
 function that calls keeps `rsp` 16-aligned at its calls, and the frame is
 small enough for disp32 offsets and a non-wrapping stack check. Frameless
@@ -132,6 +132,34 @@ return address. -/
 def cellOk (l : FrameLayout) (o : Nat) : Bool :=
   o % 8 == 0 && decide (8 * l.outArgs ≤ o) && decide (o + 8 ≤ l.size)
 
+/-- Offsets in strictly increasing order: a loop, linear in the list. A
+frame may hold 2^17 cells, too many for a pairwise distinctness test; the
+oracle's cells are in increasing order, which implies distinct
+(`ascending_nodup`). -/
+def ascending : List Nat → Bool
+  | a :: b :: rest => decide (a < b) && ascending (b :: rest)
+  | _ => true
+
+theorem ascending_cons {a : Nat} {s : List Nat} (h : ascending (a :: s) = true) :
+    ascending s = true ∧ ∀ y ∈ s, a < y := by
+  induction s generalizing a with
+  | nil => simp [ascending]
+  | cons b rest ih =>
+    simp only [ascending, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨hab, hrest⟩ := h
+    obtain ⟨-, hb⟩ := ih hrest
+    refine ⟨hrest, fun y hy => ?_⟩
+    simp only [List.mem_cons] at hy
+    rcases hy with rfl | hy
+    · exact hab
+    · exact Nat.lt_trans hab (hb y hy)
+
+theorem ascending_nodup : ∀ {s : List Nat}, ascending s = true → s.Nodup
+  | [], _ => List.nodup_nil
+  | a :: s, h => by
+    obtain ⟨hs, ha⟩ := ascending_cons h
+    exact List.nodup_cons.2 ⟨fun m => Nat.lt_irrefl a (ha a m), ascending_nodup hs⟩
+
 /-- The recheck-path validator of a proposed layout. -/
 def check (a : Facts) (l : FrameLayout) : Bool :=
   decide (l.size + slack ≤ maxFrame) &&
@@ -146,7 +174,7 @@ def check (a : Facts) (l : FrameLayout) : Bool :=
   decide l.saved.Nodup &&
   l.cells.all l.cellOk &&
   decide (8 * l.cells.length ≤ l.size) &&
-  decide l.cells.Nodup
+  ascending l.cells
 
 /-- The untrusted oracle: outgoing arguments at the bottom, then the slots
 in index order, then the saves, rounded up so that `rsp` is 16-aligned at a
@@ -189,7 +217,7 @@ theorem check_sound {a : Facts} {l : FrameLayout} (h : l.check a = true) : l.Sou
     Bool.or_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨bounded, covers⟩, _⟩, outArgs⟩, fit⟩, calls⟩, aligned16⟩, sub⟩, sup⟩,
     savesDistinct⟩, cells⟩, _⟩, distinct⟩ := h
-  refine ⟨covers, outArgs, fit, ?_, ?_, distinct, savesDistinct, ?_, ?_, ?_, bounded⟩
+  refine ⟨covers, outArgs, fit, ?_, ?_, ascending_nodup distinct, savesDistinct, ?_, ?_, ?_, bounded⟩
   · intro o member
     have ok := cells o member
     simp only [cellOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at ok

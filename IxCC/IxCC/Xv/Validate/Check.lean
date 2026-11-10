@@ -351,8 +351,101 @@ def checkBlocks (c : Ctx) (fi : Nat) (info : BlockInfo) :
       | .ok () => checkBlocks c fi info bs os (l + 1)
   | _, _, l => throw { fn := fi, block := l, code := .shape }
 
-/-- Validate allocation `o` of function `fi` (`f`). -/
+/-! ## The certificate's size against the function's
+
+A function's allocation is a list per block, instruction and fact, all
+certificate data. Before anything walks them, `sizeOk` checks, by loops, that
+they are in proportion to the function they allocate: one location list per
+instruction with one location per operand; at one position at most
+`maxEditsAt` edits plus two per operand of the instruction there and of the
+one before (`editsAllowed`), and `editFactor` edits per register mention or
+block in all; in each block, facts at distinct locations naming strictly
+increasing registers, at most `factFactor` entries per register mention of the
+function; and at most as many frame slots as the function has register
+mentions (plus a few). The validator's own work then grows with the function,
+not with the certificate. -/
+
+/-- A function's register mentions: its parameters, its blocks' parameters,
+and its instructions' and terminators' operands. -/
+def regMentions (f : Func VReg) : Nat :=
+  f.blocks.toList.foldl (fun n b =>
+    b.body.toList.foldl (fun n i => n + (Inst.operands i).length)
+      (n + b.params.length + (Term.operands b.term).length)) f.params.length
+
+/-- The longest run of edits at one position (the list is checked ordered later). -/
+def maxRun : List (Nat × Edit) → Nat → Nat → Nat → Nat
+  | [], _, run, best => max run best
+  | (i, _) :: rest, cur, run, best =>
+    if i == cur then maxRun rest cur (run + 1) best else maxRun rest i 1 (max run best)
+
+/-- Facts at distinct locations (`seen` holds those passed), each naming strictly
+increasing registers. A loop. -/
+def factsSorted : List (Loc × List VReg) → NatMap Unit → Bool
+  | [], _ => true
+  | (l, vs) :: rest, seen =>
+    (seen.find? (locKey l)).isNone && VSet.strictlyAsc vs && factsSorted rest (seen.insert (locKey l) ())
+
+/-- Edits one position may hold beyond two per operand of the instruction there
+and of the one before: sixteen times the most an honest allocation of a
+committed program holds at one position in all (10, `tests-corpus`). -/
+def maxEditsAt : Nat := 160
+
+/-- Edits per register mention or block, over a function: about seventeen times
+the honest maximum (0.58, `tests-corpus`). -/
+def editFactor : Nat := 10
+
+/-- Fact entries (a location, plus one per register it names) in one block, per
+register mention of the function. An honest block's facts name each register
+live into it in at most a few locations (at most twice its live registers for
+the all-slots allocation), so a few per register mention; this is twice four. -/
+def factFactor : Nat := 8
+
+/-- Frame slots beyond one per register mention (honest allocations use none
+beyond, `tests-corpus`). -/
+def slotSlack : Nat := 16
+
+/-- Operands of the instruction at position `p` of `b`: the terminator's at
+`b.body.size`, none past it. -/
+def opsAt (b : Block VReg) (p : Nat) : Nat :=
+  if h : p < b.body.size then (Inst.operands b.body[p]).length
+  else if p == b.body.size then (Term.operands b.term).length else 0
+
+/-- Edits position `p` of `b` may hold: `maxEditsAt`, plus two per operand of
+the instruction there and of the one before (a reload per use, a store per
+definition). -/
+def editsAllowed (b : Block VReg) (p : Nat) : Nat :=
+  maxEditsAt + 2 * (opsAt b p + opsAt b (p - 1))
+
+/-- Every run of edits at one position within `editsAllowed` (`cur` and `run`:
+the position and the edits at it so far; the list is checked ordered later).
+A loop. -/
+def editRunsOk (b : Block VReg) : List (Nat × Edit) → Nat → Nat → Bool
+  | [], cur, run => decide (run ≤ editsAllowed b cur)
+  | (i, _) :: rest, cur, run =>
+    if i == cur then editRunsOk b rest cur (run + 1)
+    else decide (run ≤ editsAllowed b cur) && editRunsOk b rest i 1
+
+/-- Fact entries of a block: a location, plus one per register it names. -/
+def factEntries (cert : List (Loc × List VReg)) : Nat :=
+  cert.foldl (fun n p => n + 1 + p.2.length) 0
+
+/-- Whether allocation `o` is in proportion to `f` (see above). -/
+def sizeOk (f : Func VReg) (o : Output) : Bool :=
+  let blocks := f.blocks.toList
+  let r := regMentions f
+  blocks.length == o.blocks.length &&
+  decide (o.numSlots ≤ r + slotSlack) &&
+  (blocks.zip o.blocks).all (fun (b, bo) =>
+    bo.locs.length == b.body.size &&
+    bo.termLocs.length == (Term.operands b.term).length &&
+    (b.body.toList.zip bo.locs).all (fun (i, ls) => ls.length == (Inst.operands i).length) &&
+    editRunsOk b bo.edits 0 0 &&
+    decide (factEntries bo.cert ≤ factFactor * (r + 1)) && factsSorted bo.cert .leaf) &&
+  decide (o.blocks.foldl (fun n bo => n + bo.edits.length) 0 ≤ editFactor * (r + blocks.length))
+
+/-- Validate allocation `o` of function `fi` (`f`), after `sizeOk`. -/
 def func (env : Xl.Env) (fi : Nat) (f : Func VReg) (o : Output) : Except Err Unit := do
+  unless sizeOk f o do throw { fn := fi, code := .shape }
   let blocks := f.blocks.toList
   unless blocks.length == o.blocks.length do throw { fn := fi, code := .shape }
   unless nodup f.params do throw { fn := fi, code := .params }

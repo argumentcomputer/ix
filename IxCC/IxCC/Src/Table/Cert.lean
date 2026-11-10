@@ -55,6 +55,20 @@ def TableCert.ofTable (t : Table) : TableCert :=
     inline := t.inline.toList.map (·.1)
     opaqueByValue := t.opaqueByValue.toList.map (·.1) }
 
+/-- Constants of a program of `size` constants, none named twice (`seen`
+holds those passed). A loop. -/
+def idsDistinct (size : Nat) : List CId → NatSet → Bool
+  | [], _ => true
+  | c :: rest, seen => decide (c < size) && !seen.contains c && idsDistinct size rest (seen.insert c)
+
+/-- Each column names constants of the program, each at most once (as a
+table built from maps does): so no column is longer than the program and no
+entry's check runs twice. -/
+def TableCert.keysOk (size : Nat) (t : TableCert) : Bool :=
+  idsDistinct size (t.resolve.map (·.1)) .leaf && idsDistinct size t.recKind .leaf &&
+    idsDistinct size (t.lazy.map (·.1)) .leaf && idsDistinct size t.inline .leaf &&
+    idsDistinct size t.opaqueByValue .leaf
+
 /-- The entry a certificate line names, produced by its check. -/
 def entryOf (cfg : Config) (p : Program) (f : CId) : Entry → Except String Resolve
   | .prim op => do checkPrim p f op cfg.prims; pure (.prim op)
@@ -105,6 +119,7 @@ def csimpTargetsOk (p : Program) (resolve : NatMap Resolve) :
 path, style V). -/
 def ofCert (cfg : Config) (p : Program) (c : TableCert) : Except String Table := do
   unless Pinned.knownOk p do throw "known: a pinned constant is misidentified"
+  unless c.keysOk p.size do throw "a column names a constant outside the program, or one twice"
   let resolve ← resolveOfCert cfg p c.resolve .leaf
   csimpTargetsOk p resolve resolve.toList
   let recKind ← recKindOfCert p c.recKind .leaf
@@ -394,6 +409,11 @@ theorem ofCert_ok_props {cfg : Config} {p : Program} {cert : TableCert} {t : Tab
     cases h
   | true =>
     simp only [hkn, ↓reduceIte, pure, Except.pure, bind, Except.bind] at h
+    have hkeys : cert.keysOk p.size = true := by
+      cases hk : cert.keysOk p.size with
+      | false => simp [hk] at h
+      | true => rfl
+    simp only [hkeys, ↓reduceIte] at h
     cases hres : resolveOfCert cfg p cert.resolve .leaf with
     | error _ => rw [hres] at h; cases h
     | ok resolve =>

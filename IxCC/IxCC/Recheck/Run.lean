@@ -182,6 +182,37 @@ def checkMidCert (m : Anf.Pipeline.Cert) : Except Err Unit :=
   else
     .ok ()
 
+/-- Runtime terms named at most once, of constants of the program (`seen`
+maps a constant to the terms of it passed: 0 its value, 1 its `eqn` body,
+`j + 2` its rule `j`). A loop. -/
+def termKeysDistinct (size : Nat) : List (Src.TermKey × List Src.Relevance.Tag) →
+    Src.NatMap Src.NatSet → Bool
+  | [], _ => true
+  | (k, _) :: rest, seen =>
+    let (c, s) := match k with
+      | .value c => (c, 0)
+      | .eqn c => (c, 1)
+      | .rule c j => (c, j + 2)
+    let terms := (seen.get? c).getD .leaf
+    decide (c < size) && !terms.contains s &&
+      termKeysDistinct size rest (seen.insert c (terms.insert s))
+
+/-- The annotation's records name constants of the program, and its node
+tags name each runtime term at most once: so installing the tags walks each
+term of the program at most once. -/
+def relevanceKeysOk (size : Nat) (a : Src.Relevance.Ann) : Bool :=
+  a.consts.toList.all (·.1 < size) && a.ctors.toList.all (·.1 < size) &&
+    termKeysDistinct size a.nodes .leaf
+
+/-- The annotation in proportion to the program (`relevanceKeysOk`), before
+installation reads it. (The table's columns are checked first thing in
+`Table.ofCert`, `TableCert.keysOk`, and the middle end's steps by
+`checkMidCert`.) -/
+def checkRelevanceKeys (P : Src.Program) (a : Src.Relevance.Ann) : Except Err Unit :=
+  if relevanceKeysOk P.size a then .ok ()
+  else .error { stage := .relevance, code := "relevance-S1",
+                message := "the annotation names a constant outside the program, or a runtime term twice" }
+
 /-- Whether the source terms in `todo` (each paired with its level) nest at
 most `depth` levels, visiting at most `fuel` nodes. Counted as trees: a term
 shared in memory is visited, and its depth counted, at each use. A tail call
@@ -229,6 +260,7 @@ def front (cfg : Config) (P : Src.Program) (c : Cert) :
   checkMidCert c.mid
   let table ← (Src.Table.ofCert cfg.table P c.table).mapError fun msg =>
     { stage := .table, code := "table.entry", message := msg }
+  checkRelevanceKeys P c.relevance
   match Src.Recheck.annotation { P with table } c.relevance with
   | .ok r => pure r
   | .error (.install msg) => throw { stage := .relevance, code := "relevance-S1", message := msg }
