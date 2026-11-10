@@ -77,7 +77,8 @@ fn address(fields: &[u64]) -> Result<[u8; 32], String> {
   let mut out = [0u8; 32];
   for (byte, &field) in out.iter_mut().zip(fields) {
     *byte = u8::try_from(field)
-      .map_err(|_| "binder data: a record address byte exceeds 255")?;
+      .ok()
+      .ok_or("binder data: a record address byte exceeds 255")?;
   }
   Ok(out)
 }
@@ -92,7 +93,11 @@ impl Table {
     Ok(table)
   }
 
-  fn add_record(&mut self, rec: [u8; 32], values: &[u64]) -> Result<(), String> {
+  fn add_record(
+    &mut self,
+    rec: [u8; 32],
+    values: &[u64],
+  ) -> Result<(), String> {
     let mut r = Reader { values, next: 0 };
     for _ in 0..r.read()? {
       let (ekind, eidx, variant) = (r.read()?, r.read()?, r.read()?);
@@ -106,9 +111,11 @@ impl Table {
           1 => Node::Share(r.read()?),
           tag => {
             let len = u32::try_from(tag - 2)
-              .map_err(|_| "binder data: too many parameters")?;
+              .ok()
+              .ok_or("binder data: too many parameters")?;
             let start = u32::try_from(self.params.len())
-              .map_err(|_| "binder data: too many parameters")?;
+              .ok()
+              .ok_or("binder data: too many parameters")?;
             for _ in 0..len {
               let p = r.read()?;
               self.params.push(p);
@@ -148,7 +155,7 @@ impl Table {
     };
     let nodes =
       self.blocks.get(&(rec, ekind, eidx, variant)).ok_or_else(missing)?;
-    let ordinal = usize::try_from(ordinal).map_err(|_| missing())?;
+    let ordinal = usize::try_from(ordinal).ok().ok_or_else(missing)?;
     nodes.get(ordinal).copied().ok_or_else(missing)
   }
 
@@ -170,7 +177,8 @@ impl Table {
     match self.node("ixvm.pw.param", &key[..36])? {
       Node::AllZero { start, len } if j < u64::from(len) => {
         let at = usize::try_from(u64::from(start) + j)
-          .map_err(|_| "binder data: parameter index overflow")?;
+          .ok()
+          .ok_or("binder data: parameter index overflow")?;
         Ok(self.params[at])
       },
       _ => Err(format!(
@@ -184,10 +192,7 @@ impl Table {
   pub(super) fn share(&self, key: &[u64; 36]) -> Result<u64, String> {
     match self.node("ixvm.pw.share", key)? {
       Node::Share(v) => Ok(v),
-      _ => Err(format!(
-        "{} (a binder)",
-        self.node_error("ixvm.pw.share", key)
-      )),
+      _ => Err(format!("{} (a binder)", self.node_error("ixvm.pw.share", key))),
     }
   }
 
@@ -214,12 +219,9 @@ pub(super) fn register<B: FieldBackend>(
     Type::Tuple { items }
   };
   let t = table.clone();
-  channels.insert_fixed::<36, 1>(
-    "ixvm.pw",
-    key(4),
-    Type::Field,
-    move |k| Ok([field.from_u64(t.pw(&k.map(|w| field.to_u64(w)))?)]),
-  )?;
+  channels.insert_fixed::<36, 1>("ixvm.pw", key(4), Type::Field, move |k| {
+    Ok([field.from_u64(t.pw(&k.map(|w| field.to_u64(w)))?)])
+  })?;
   let t = table.clone();
   channels.insert_fixed::<37, 1>(
     "ixvm.pw.param",
@@ -283,7 +285,10 @@ mod tests {
   fn missing_keys_are_named() {
     let t = table();
     let e = t.pw(&key(4)).unwrap_err();
-    assert!(e.starts_with("missing hint data: ixvm.pw at record 000102"), "{e}");
+    assert!(
+      e.starts_with("missing hint data: ixvm.pw at record 000102"),
+      "{e}"
+    );
     assert!(e.ends_with("entry (1, 3), variant 1, ordinal 4"), "{e}");
     let mut other = key(0);
     other[34] = 0;
@@ -300,8 +305,7 @@ mod tests {
   #[test]
   fn malformed_streams_are_refused() {
     let rec: Vec<u64> = (0..32).collect();
-    for values in [vec![1, 1, 3, 1, 2, 0], vec![0, 5], vec![1, 0, 0, 0, 1, 7]]
-    {
+    for values in [vec![1, 1, 3, 1, 2, 0], vec![0, 5], vec![1, 0, 0, 0, 1, 7]] {
       let s = Streams(vec![Stream {
         channel: STREAM_CHANNEL,
         key: rec.clone(),

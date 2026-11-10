@@ -239,9 +239,68 @@ structure KernelEnv where
   installed : Nat
   refused : Nat
 
+/-- The index of `env`, as `Ix.Kernel.mkFEnv` builds it (the newest
+constant of a key wins; counters from the oldest), by a loop rather than
+`mkFEnv`'s recursion over the whole list. -/
+def reindex (env : Ix.Kernel.Env .anon) : Ix.Kernel.FEnv .anon := Id.run do
+  let n := env.consts.length
+  let mut idx : Std.HashMap (Ix.Kernel.Key .anon) (Nat × Ix.Kernel.ConstantInfo .anon) :=
+    Std.HashMap.emptyWithCapacity n
+  let mut i := n
+  for ci in env.consts do
+    i := i - 1
+    unless idx.contains ci.name do idx := idx.insert ci.name (i, ci)
+  return ⟨env, idx, n⟩
+
+/-- One declaration through phase A of IxC's fold; on failure, the
+environment as it was. -/
+def installDecl (ev : Ix.Kernel.Evidences .anon) (fe : Ix.Kernel.FEnv .anon) (pos : Nat)
+    (d : Ix.Kernel.Declaration .anon) : Ix.Kernel.FEnv .anon × Nat × Bool :=
+  let before := fe.env
+  match Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev (pos, fe, #[]) d {} with
+  | .ok ((pos', fe', _), _) => (fe', pos', true)
+  | .error _ => (reindex before, pos + 1, false)
+
+/-- A record's member types (an inductive's constructors included) as
+axioms, with their keys and level counts: what the data need of a record the
+kernel does not install (an inductive block whose recursors the witness
+lacks, which IxC's reader declines; a declaration the kernel refuses), so
+that the records that use it can still be typed. -/
+def memberAxioms (cx : Ctx .anon) (a : Address) (c : Ixon.Constant) :
+    Array (Ix.Kernel.Declaration .anon) := Id.run do
+  let n := memberCount c
+  let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
+    if i < n then some (cx.memberKey (.member a i)) else none
+  let mr := Ix.Kernel.Reader.MemberReader.mk' cx c id self
+  let mut members : Array (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon) × UInt64 × Ixon.Expr) := #[]
+  match c.info with
+  | .defn d => members := members.push (cx.memberKey (.member a 0), d.lvls, d.typ)
+  | .axio x => members := members.push (cx.memberKey (.member a 0), x.lvls, x.typ)
+  | .quot q => members := members.push (cx.memberKey (.member a 0), q.lvls, q.typ)
+  | .recr r => members := members.push (cx.memberKey (.member a 0), r.lvls, r.typ)
+  | .muts ms =>
+    for (m, i) in ms.zipIdx do
+      match m with
+      | .defn d => members := members.push (cx.memberKey (.member a i), d.lvls, d.typ)
+      | .recr r => members := members.push (cx.memberKey (.member a i), r.lvls, r.typ)
+      | .indc ind =>
+        members := members.push (cx.memberKey (.member a i), ind.lvls, ind.typ)
+        for (ctor, j) in ind.ctors.zipIdx do
+          members := members.push (cx.memberKey (.ctor a i j), ctor.lvls, ctor.typ)
+  | _ => pure ()
+  let mut out := #[]
+  for (key, lvls, typ) in members do
+    match key, mr.read typ with
+    | .ok k, .ok ty => out := out.push (.axiomDecl ⟨k, List.range lvls.toNat, ty⟩)
+    | _, _ => pure ()
+  return out
+
 /-- Install `addresses` (owners, in check order) as phase A of IxC's fold
 does, continuing past failures: a failed declaration leaves the environment
-as it was. Partial and unsafe records go through the typing tier. -/
+as it was. Partial and unsafe records go through the typing tier. A record
+the kernel does not install gets its member types as axioms
+(`memberAxioms`). Returns the environment, the declarations installed and the
+records refused. -/
 def install (s : Setup) (addresses : Array Address) : Ix.Kernel.FEnv .anon × Nat × Nat := Id.run do
   let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
   let mut st : Ix.Kernel.Reader.State .anon := {}
@@ -249,29 +308,38 @@ def install (s : Setup) (addresses : Array Address) : Ix.Kernel.FEnv .anon × Na
   let mut ok := 0
   let mut bad := 0
   for a in addresses do
+    let mut failed := false
+    let mut unread := false
     match s.tierRead a with
     | some (.ok d) =>
       let (fe', err) := Benchmarks.Kernel.CheckIxeStep.stepTier fe fe d
       fe := fe'
-      if err.isSome then bad := bad + 1 else ok := ok + 1
-    | some (.error _) => bad := bad + 1
+      if err.isSome then failed := true else ok := ok + 1
+    | some (.error _) => failed := true
     | none =>
       match s.read st a with
-      | .error _ => bad := bad + 1
+      | .error _ => failed := true
       | .ok rd =>
         st := st.commit rd
+        -- a recursor record reads with its block: if the block was not
+        -- installed, its recursors are not either
+        if rd.decls.isEmpty then unread := true
         for d in rd.decls do
-          let before := fe.env
-          match Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified s.evidence
-              (pos, fe, #[]) d {} with
-          | .ok ((pos', fe', _), _) =>
+          let (fe', pos', good) := installDecl s.evidence fe pos d
+          fe := fe'
+          pos := pos'
+          if good then ok := ok + 1 else failed := true
+    if failed then bad := bad + 1
+    if failed || unread then
+      if let some c := s.store[a]? then
+        for d in memberAxioms s.cx a c do
+          let fresh := match d with
+            | .axiomDecl cv => (fe.find? cv.name).isNone
+            | _ => false
+          if fresh then
+            let (fe', pos', _) := installDecl s.evidence fe pos d
             fe := fe'
             pos := pos'
-            ok := ok + 1
-          | .error _ =>
-            fe := Ix.Kernel.mkFEnv before
-            pos := pos + 1
-            bad := bad + 1
   return (fe, ok, bad)
 
 /-- The kernel's environment for a view. -/
