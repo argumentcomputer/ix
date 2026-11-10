@@ -234,6 +234,7 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 
 ### Prerequisites
 
+- Linux (x86-64 or aarch64). macOS is not currently supported.
 - Install Clang to enable Bindgen, then set `LIBCLANG_PATH` per https://rust-lang.github.io/rust-bindgen/requirements.html
 
 ### Build
@@ -295,6 +296,8 @@ holds the end-to-end checks on Init+Std; `--tier landing` selects it.
 
 #### Prerequisites
 
+- The flake builds for `x86_64-linux` and `aarch64-linux` only; macOS is not
+  currently supported.
 - Install [Nix](https://nixos.org/download/)
 
 - Enable [Flakes](https://zero-to-nix.com/concepts/flakes/)
@@ -305,8 +308,15 @@ holds the end-to-end checks on Init+Std; `--tier landing` selects it.
 
 #### Build
 
-Build and run the Ix CLI with `nix build` and `nix run`.
+Build and run the Ix CLI with `nix build .#ix` and `nix run .#ix`.
 
 This will prompt you to optionally enable the Cachix binary cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://argumentcomputer.cachix.org`
 
-To build and run the test suite, run `nix build .#test` and `nix run .#test`.
+The tests are not part of the Nix build; run them with `lake test` inside
+`nix develop`.
+
+Nix builds are portable rather than tuned to your machine: their Rust code
+is compiled for `x86-64-v3` (AVX2) on x86-64, so the cached binaries run on
+any recent x86-64 machine. For native performance, build with `cargo` and
+`lake` inside `nix develop`, where `.cargo/config.toml` selects
+`-Ctarget-cpu=native`.

@@ -22,7 +22,12 @@ feature set every listed family shares, and their sticky lineages carry that
 name so native artifacts never mix in. Valgrind builds `generic`, without
 AVX-512, into the S3-backed actions cache under its own key, with S3-backed
 sccache for Rust compilation. Benchmarks stay on exact `r8i.8xlarge` with
-`native` codegen so their timings remain comparable.
+`native` codegen so their timings remain comparable. The Nix build is a
+compatibility check rather than a performance build: the flake fixes its
+Rust code generation to `x86-64-v3` (AVX2), so the binaries Cachix serves
+run on any recent x86-64 machine, including Intel client CPUs without
+AVX-512. Nix CI builds everything in Nix's sandbox, so it needs no sticky
+disk or sccache; Cachix is its cache.
 
 Runner labels include the workflow run ID, job ID, run attempt, and, for
 matrix jobs, the job index. This keeps concurrent jobs and recovery attempts
@@ -51,7 +56,7 @@ the entry runs:
 
 | Tier | Where it runs | What it holds |
 | --- | --- | --- |
-| `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
+| `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs | the quick suites |
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
 | `ci:ixvm` | a step of the `lean-test` job, after `tools/ixvm/check-formal.sh`, on its claim artifact | claims through the formal IxVM program (`ixvm-proof test`) under the circuit verdict (every assertion checked, `IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution): kernel verdicts, the exploit, arena, TagN, evaluation, binding, IO-ingress and circuit-verdict suites |
 | `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the binding proof through the `ix` binary |
@@ -94,10 +99,9 @@ textual: a step disabled by an `if:` still counts. A merge-tests partition
 must finish well within the merge queue's status-check timeout: split a tier
 into two jobs before it approaches it.
 
-The primary tier runs in two places per event: incrementally in `lean-test`,
-and in Nix CI's sandbox from the Nix-built test binary on a fresh copy of the
-tracked sources (the flake's one check, `ix-tests`; the Rust lints and tests
-are `rust-test`'s). Nix CI's development shell only builds the library. In the
+The primary tier runs incrementally in `lean-test`; the Rust lints and tests
+are `rust-test`'s. Nix CI runs no tests: its flake checks build the Ix library
+and CLI, build the development shell, and run the shell's tools. In the
 merge queue, the `build` job of Merge tests builds the partitions' targets and
 the set-theory model using the CI sticky lineage and sccache. It records the
 revision in `.lake/merge-build-revision` and saves its sticky snapshot.

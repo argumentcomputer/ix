@@ -3,8 +3,7 @@ name: Nix CI
 on:
   pull_request:
   merge_group:
-  # Pushes to main keep the sticky disk's `main` snapshot fresh, which every
-  # new PR branch and merge-queue ref falls back to (see ci.yml).
+  # Pushes to main keep Cachix current with main's packages and dev shell.
   push:
     branches: [main]
   workflow_dispatch:
@@ -19,31 +18,14 @@ concurrency:
 jobs:
   nix-test:
     name: Nix Tests
-    env:
-      # The dev shell builds with cargo directly, where `.cargo/config.toml`
-      # would select native code generation; the sticky cache is shared
-      # across instance families, so pin the same baseline CI uses.
-      RUSTFLAGS: -Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni
-    # Sticky disks retain Lake/Cargo files; /nix uses the larger root volume
-    # and Cachix provides its binary cache.
-    # https://runs-on.com/docs/runners/capabilities/sticky-disks/
-    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
+    # Everything builds inside Nix's sandbox, so Cachix is the only cache;
+    # /nix uses the larger root volume. The flake fixes its own code
+    # generation, so any of the families will do.
+    runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # sccache serves only the `nix develop` build at the end: `nix build` and
-      # `nix flake check` compile inside Nix's sandbox, which sees neither
-      # the wrapper nor the network, and rely on Cachix instead. The dev
-      # shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
-      # binary the sccache action installs resolves there (see ci.yml).
-      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
-        with:
-          sccache: s3
-          sticky_cache: |
-            rust
-            custom,path=.lake,path=target
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           nix_path: nixpkgs=channel:nixos-unstable
@@ -57,17 +39,11 @@ jobs:
       # `install-nix-action`'s github_access_token covers only `github:`
       # flake inputs, which fetch via the API.
       - uses: $/.github/actions/authenticate-github-fetches
-      # Ix CLI
-      - run: nix build --print-build-logs --accept-flake-config
-      - run: nix run .#ix -- --help
-      # The flake's one check, `ix-tests`: the primary tier from the
-      # Nix-built test binary, in the sandbox, on a fresh copy of the
-      # tracked sources. CI Jobs' lean-test runs the same tier on its
-      # incremental sticky disk and its rust-test job runs clippy and
-      # nextest, so neither runs again here.
+      # The flake's checks build the Ix library and the CLI, build the dev
+      # shell and run its tools: a compatibility check of the Nix packaging
+      # and the development environment. The tests run in CI Jobs.
       - run: nix flake check --print-build-logs --accept-flake-config
-      # The development shell builds the library; the tests ran above.
-      - run: nix develop --accept-flake-config --command lake build
+      - run: nix run --print-build-logs --accept-flake-config .#ix -- --help
 
   nix-gate:
     if: ${{ always() }}
