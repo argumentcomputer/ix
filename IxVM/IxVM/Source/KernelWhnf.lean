@@ -513,6 +513,13 @@ def try_iota := aiur_fn⟦
                   let new_spine = replace_spine_major(spine, major_idx, major_w);
                   (2, apply_spine(head, new_spine)) } ,
                 (1, rfields, rrhs) => {
+                  -- D7: a modeled recursor's rule fires only at the comparands
+                  -- its model's iota theorem covers (`paramsBlind := false`)
+                  match KernelModeled::fire_ok(rc, nmotives, head, lvls, spine, major, types) {
+                    0 => {
+                      let new_spine = replace_spine_major(spine, major_idx, major_w);
+                      (2, apply_spine(head, new_spine)) } ,
+                    _ => {
                   let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
                   let pmm_end = nparams + nmotives + nminors;
                   let pmm = Lists::take(spine, pmm_end);
@@ -524,6 +531,7 @@ def try_iota := aiur_fn⟦
                   let r2 = apply_spine(r1, field_args);
                   let r3 = apply_spine(r2, post_major);
                   (1, r3) } ,
+                  } } ,
               } } ,
             _ => {
 
@@ -674,8 +682,14 @@ def struct_is_rec := aiur_fn⟦
       let ci = (*(Ingress::get_ci(parent)));
       match ci {
         KernelTypes::KConstantInfo::Induct(_, _, n_params, _, num_ctors, _, block, idx) => {
-          let members = struct_block_member_addrs(parent, block);
-          struct_scan_ctors(block, idx, num_ctors, n_params, members, 0) } ,
+          -- D6/D7: no structure eta at a member of a mutual block (the kernel grants
+          -- none without a model theorem); a nested one-type structure is recursive, which the scan finds
+          match KernelModeled::block_is_multi(block) {
+            0 => {
+              let members = struct_block_member_addrs(parent, block);
+              struct_scan_ctors(block, idx, num_ctors, n_params, members, 0) } ,
+            _ => {  1 } ,
+          } } ,
         _ => {  1 } ,
       }
     }

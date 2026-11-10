@@ -64,6 +64,15 @@ def nativeEvaluationFixtures : Array Lean.Name := #[
   `Tests.Ix.Kernel.TutorialDefs.natBleTrue, `Tests.Ix.Kernel.TutorialDefs.natBleFalse,
   `Tests.Ix.Kernel.TutorialDefs.natBeqTrue, `Tests.Ix.Kernel.TutorialDefs.natBeqFalse]
 
+/-- Fixtures the modeled route refuses because the kernel's modeller has no
+model for them (decision D7). `nestedSpecLocalF`'s nested occurrence takes a
+constructor field as its parametric argument, so no auxiliary type can be formed:
+IxC declines it (`Tests.Ix.Kernel.Tutorial.cornerCases`), and IxVM, which checks a
+nested block against a model, finds none ("no model advice"). Lean's elaborator
+rejects the declaration; the arena's outcome for its nearest test is `either`. -/
+def modeledDeclines : Array Lean.Name :=
+  #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
+
 private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run do
   let skipSet : Std.HashSet Lean.Name :=
     knownIncompatible.foldl (init := {}) (fun s (n, _) => s.insert n)
@@ -79,7 +88,8 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
       seen := seen.insert n
       if !env.constants.contains n && !rawNames.contains n then continue
       if skipSet.contains n then continue
-      out := out.push { name := n, expectPass := pass && !nativeEvaluationFixtures.contains n }
+      let expectPass := pass && !nativeEvaluationFixtures.contains n && !modeledDeclines.contains n
+      out := out.push { name := n, expectPass := expectPass }
   return out
 
 /-- The block a projection names. -/

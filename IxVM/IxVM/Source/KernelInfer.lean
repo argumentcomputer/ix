@@ -475,7 +475,7 @@ def k_infer_proj := aiur_fn⟦
 
                   assert_eq!(num_ctors, 1,
                     "projection on an inductive with more than one constructor");
-                  let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, 0)));
+                  let ctor_ci = (*(KernelModeled::proj_ctor(block_addr, ind_idx)));
                   match ctor_ci {
                     KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
                       assert_eq!(ctor_nlvls, ind_nlvls,

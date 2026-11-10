@@ -488,51 +488,14 @@ def check_positivity_aug := aiur_fn⟦
                             _ => {  () } ,
                           } } ,
                         _ => {
-                          let ci = (*(Ingress::get_ci(caddr)));
-                          match ci {
-                            KernelTypes::KConstantInfo::Induct(_, _, n_ctor_params,
-                                                   _, ext_num_ctors, _,
-                                                   ext_block_addr, ext_ind_idx) => {
-                              let after_params = Lists::drop(args, n_ctor_params);
-                              assert_eq!(list_any_mentions_block(after_params,
-                                                                      block_addrs), 0,
-                                "strict positivity: block occurs in a nested inductive's index args");
-
-                              let aug = (&(Lists::Node::Cons(ext_block_addr,
-                                                                block_addrs)));
-                              let rev_params = Lists::reverse(
-                                Lists::take(args, n_ctor_params));
-                              check_nested_ctors_positivity(rc, ext_block_addr,
-                                ext_ind_idx, ext_num_ctors, aug, 0,
-                                n_ctor_params, rev_params) } ,
-                          } } ,
+                          -- D7: a nested occurrence is the modeled route's
+                          -- (`KernelModeled::block_is_modeled`); one that only
+                          -- whnf exposes is refused here, as Lean refuses it.
+                          assert_eq!(0, 1,
+                            "strict positivity: nested occurrence on the native route");
+                          () } ,
                       } } ,
                   } } ,
-              } } ,
-          } } ,
-      }
-    }
-⟧
-
-def check_nested_ctors_positivity := aiur_fn⟦
-  fn check_nested_ctors_positivity(rc: KernelRoles::RoleCtx, block_addr: Bytes::AddressRef, ind_idx: Field,
-                                          num_ctors: Field, aug: Lists::List<Bytes::AddressRef>,
-                                          cidx: Field, n_params: Field,
-                                          rev_params: Lists::List<KernelTypes::KExpr>) -> () {
-      match num_ctors - cidx {
-        0 => {  () } ,
-        _ => {
-          let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, cidx)));
-          match ctor_ci {
-            KernelTypes::KConstantInfo::Ctor(_, ctor_ty, _, _, _, _, _, _) => {
-              match peel_n_foralls_with_types(ctor_ty, n_params,
-                                                   (&(Lists::Node::Nil))) {
-                (body, _) => {
-
-                  check_positivity_fields(rc, KernelSubst::expr_inst_many(body, rev_params, 0),
-                    aug, (&(Lists::Node::Nil)), 0);
-                  check_nested_ctors_positivity(rc, block_addr, ind_idx,
-                    num_ctors, aug, cidx + 1, n_params, rev_params) } ,
               } } ,
           } } ,
       }
@@ -620,6 +583,45 @@ def check_inductive_shape_ctors := aiur_fn⟦
                                                block_addr, ind_idx,
                                                ind_level, is_unsafe,
                                                cidx + 1) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The declared shape of a modeled type's constructors (`checkIndShape`,
+  -- `indParamsOk`): their records, counts and return types. Their parameter
+  -- domains, field universes and positivity are the model's to justify.
+
+def check_modeled_ctors := aiur_fn⟦
+  fn check_modeled_ctors(rc: KernelRoles::RoleCtx, n_params: Field, n_indices: Field, num_ctors: Field,
+                         num_lvls: Field, block_addr: Bytes::AddressRef, ind_idx: Field,
+                         is_unsafe: Field, cidx: Field) -> () {
+      match num_ctors - cidx {
+        0 => {  () } ,
+        _ => {
+          let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, cidx)));
+          match ctor_ci {
+            KernelTypes::KConstantInfo::Ctor(c_nlvls, cty, c_block, c_ind_idx, c_cidx,
+                                c_np, c_nf, c_unsafe) => {
+              assert_eq!(Bytes::address_eq(c_block, block_addr), 1,
+                "ctor belongs to a different block than its inductive");
+              assert_eq!(c_ind_idx, ind_idx,
+                "ctor points at a different member of the block");
+              assert_eq!(c_cidx, cidx,
+                "ctor's stored index differs from its position");
+              assert_eq!(c_nlvls, num_lvls,
+                "ctor universe count differs from the inductive's");
+              assert_eq!(c_np, n_params,
+                "ctor parameter count differs from the inductive's");
+              assert_eq!(c_unsafe, is_unsafe,
+                "ctor safety differs from the inductive's");
+              validate_expr_well_scoped(cty, 0, num_lvls);
+              KernelInfer::k_ensure_sort(rc, cty, (&(Lists::Node::Nil)));
+              assert_safety(is_unsafe, cty);
+              check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
+                                          block_addr, ind_idx);
+              check_modeled_ctors(rc, n_params, n_indices, num_ctors, num_lvls,
+                                  block_addr, ind_idx, is_unsafe, cidx + 1) } ,
           } } ,
       }
     }
@@ -2562,6 +2564,8 @@ def check_recursor_member := aiur_fn⟦
               let is_aux = is_muts_block(rec_block_addr) *
                 is_muts_block(parent_block_addr) *
                 (1 - Bytes::address_eq(rec_block_addr, parent_block_addr));
+              assert_eq!(is_aux, 0,
+                "a recursor of a native block eliminates an auxiliary family");
               assert_eq!(Lists::length(rules), num_ctors,
                 "recursor rule count differs from the inductive's ctor count");
               peel_n_foralls(ty,
@@ -2702,10 +2706,71 @@ def check_block_member_kinds := aiur_fn⟦
               let has_defn = muts_has_kind(members, 1);
               assert_eq!(has_defn * muts_has_kind(members, 0), 0,
                 "mutual block mixes a definition member with inductives");
+              let (n_unsafe, n_all) = muts_safety_counts(members, 0, 0);
+              assert_eq!(n_unsafe * (n_all - n_unsafe), 0,
+                "mutual block mixes safe members with unsafe or partial ones");
               assert_eq!(has_defn * muts_has_kind(members, 2), 0,
                 "mutual block mixes a definition member with recursors");
               () } ,
             _ => {  () } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- One safety per block (D20): Lean's `inductDecl` and mutual definitions carry one
+  -- flag for the whole block, so a safe seed reaches no unsafe or partial co-member
+  -- through its block. Counts the block's constants (members and constructors) and
+  -- those outside the logic (`Ingress::defn_is_unsafe_ci` on definitions, the flag
+  -- elsewhere), as `KernelClaim::muts_unsafe` reads them.
+
+def muts_safety_counts := aiur_fn⟦
+  fn muts_safety_counts(ms: Lists::List<Ixon::MutConst>, u: Field, n: Field) -> (Field, Field) {
+      match (*(ms)) {
+        Lists::Node::Nil => {  (u, n) } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            Ixon::MutConst::Defn(d) => {
+              match d {
+                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                  muts_safety_counts(rest, u + Ingress::defn_is_unsafe_ci(kind, safety), n + 1) } ,
+              } } ,
+            Ixon::MutConst::Indc(ind) => {
+              match ind {
+                Ixon::Inductive::Mk(is_unsafe, _, _, _, _, ctors) => {
+                  let iu = match is_unsafe {
+                    0 => {  0 } ,
+                    _ => {  1 } ,
+                  };
+                  let (cu, cn) = ctors_safety_counts(ctors, 0, 0);
+                  muts_safety_counts(rest, u + iu + cu, n + 1 + cn) } ,
+              } } ,
+            Ixon::MutConst::Recr(r) => {
+              match r {
+                Ixon::Recursor::Mk(_, is_unsafe, _, _, _, _, _, _, _) => {
+                  let ru = match is_unsafe {
+                    0 => {  0 } ,
+                    _ => {  1 } ,
+                  };
+                  muts_safety_counts(rest, u + ru, n + 1) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def ctors_safety_counts := aiur_fn⟦
+  fn ctors_safety_counts(cs: Lists::List<Ixon::Constructor>, u: Field, n: Field) -> (Field, Field) {
+      match (*(cs)) {
+        Lists::Node::Nil => {  (u, n) } ,
+        Lists::Node::Cons(c, rest) => {
+          match c {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+              let cu = match is_unsafe {
+                0 => {  0 } ,
+                _ => {  1 } ,
+              };
+              ctors_safety_counts(rest, u + cu, n + 1) } ,
           } } ,
       }
     }
@@ -2766,10 +2831,23 @@ def check_const := aiur_fn⟦
 
           check_block_member_kinds(ind_block);
 
-          check_inductive_shape(rc, ty, n_params, n_indices, num_ctors,
-                                     nlvls, ind_block, ind_idx,
-                                     ind_is_unsafe);
-          check_block_peer_param_agreement(rc, ci, addr) } ,
+          match KernelModeled::block_is_modeled(ind_block) {
+            0 => {
+              check_inductive_shape(rc, ty, n_params, n_indices, num_ctors,
+                                         nlvls, ind_block, ind_idx,
+                                         ind_is_unsafe);
+              check_block_peer_param_agreement(rc, ci, addr) } ,
+            _ => {
+              -- the modeled route: the declared shape, then the family against
+              -- its model (`KernelModeled::check_family`)
+              let KernelTypes::KExprNode::Srt(_) = (*(peel_n_foralls(ty, n_params + n_indices)));
+              check_modeled_ctors(rc, n_params, n_indices, num_ctors, nlvls,
+                                  ind_block, ind_idx, ind_is_unsafe, 0);
+              match ind_is_unsafe {
+                0 => {  KernelModeled::check_modeled_block(rc, ind_block) } ,
+                _ => {  () } ,
+              } } ,
+          } } ,
         KernelTypes::KConstantInfo::Ctor(nlvls, ty, block_addr, ind_idx, _cidx,
                            num_params, num_fields, _) => {
           validate_expr_well_scoped(ty, 0, nlvls);
@@ -2785,26 +2863,48 @@ def check_const := aiur_fn⟦
                 "ctor parameter count differs from its inductive's");
               assert_eq!(u, ind_is_unsafe,
                 "ctor safety differs from its inductive's");
-              check_param_agreement(rc, ind_ty, ty, ind_n_params);
               check_ctor_return_type(ty, num_params, ind_n_indices,
                                           num_fields, ind_nlvls, block_addr,
                                           ind_idx);
-              let ind_level = get_result_sort_level(rc, ind_ty,
-                ind_n_params + ind_n_indices, (&(Lists::Node::Nil)));
-              check_field_universes(rc, ty, num_params, ind_level);
+              match KernelModeled::block_is_modeled(block_addr) {
+                0 => {
+                  check_param_agreement(rc, ind_ty, ty, ind_n_params);
+                  let ind_level = get_result_sort_level(rc, ind_ty,
+                    ind_n_params + ind_n_indices, (&(Lists::Node::Nil)));
+                  check_field_universes(rc, ty, num_params, ind_level);
 
-              match ind_is_unsafe {
-                0 => {  check_positivity(rc, ty, num_params, block_addr,
-                                           (&(Lists::Node::Nil))) } ,
-                _ => {  () } ,
+                  match ind_is_unsafe {
+                    0 => {  check_positivity(rc, ty, num_params, block_addr,
+                                               (&(Lists::Node::Nil))) } ,
+                    _ => {  () } ,
+                  } } ,
+                _ => {
+                  match ind_is_unsafe {
+                    0 => {  KernelModeled::check_modeled_block(rc, block_addr) } ,
+                    _ => {  () } ,
+                  } } ,
               } } ,
           } } ,
-        KernelTypes::KConstantInfo::Rec(nlvls, ty, _, _, _, _, _, _, _, rec_block, _) => {
+        KernelTypes::KConstantInfo::Rec(nlvls, ty, _, _, n_mot, _, _, k_flag, rec_uns, rec_block, _) => {
           validate_expr_well_scoped(ty, 0, nlvls);
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
           assert_safety(u, ty);
           check_block_member_kinds(rec_block);
-          check_recursor_member(rc, ci, addr) } ,
+          let family = KernelModeled::rec_family_block(addr);
+          match KernelModeled::block_is_modeled(family) {
+            0 => {
+              -- the native route: the block's one recursor (`nativeShape?`)
+              assert_eq!(n_mot, 1, "a recursor of a native block with more than one motive");
+              check_recursor_member(rc, ci, addr) } ,
+            _ => {
+              -- the modeled route: no K; the recursor's whole family record
+              -- against the block's model
+              assert_eq!(k_flag, 0, "a recursor of a mutual or nested block declares K");
+              match rec_uns {
+                0 => {  KernelModeled::check_family(rc, family, rec_block) } ,
+                _ => {  () } ,
+              } } ,
+          } } ,
       }
     }
 ⟧

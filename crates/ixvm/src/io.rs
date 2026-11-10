@@ -18,7 +18,7 @@ pub(super) fn register<B: FieldBackend>(
   channels: &mut HintChannels<B::Element>,
 ) -> Result<bool, String> {
   let key_type = Type::Tuple { items: vec![Type::Field; 2] };
-  let mut rows = [vec![], vec![], vec![]];
+  let mut rows = [vec![], vec![], vec![], vec![]];
   for entry in entries.iter().filter(|e| e.channel == READ_CHANNEL) {
     if entry.key_type != key_type
       || entry.r#type != Type::Field
@@ -35,11 +35,12 @@ pub(super) fn register<B: FieldBackend>(
       2 => 0,
       4 => 1,
       6 => 2,
+      7 => 3,
       _ => return Ok(false),
     };
     rows[arena].push(entry);
   }
-  let mut arenas = [vec![], vec![], vec![]];
+  let mut arenas = [vec![], vec![], vec![], vec![]];
   for (rows, arena) in rows.iter_mut().zip(&mut arenas) {
     rows.sort_unstable_by_key(|entry| entry.key[1]);
     for entry in rows {
@@ -57,7 +58,7 @@ pub(super) fn register<B: FieldBackend>(
       }
     }
   }
-  let [constants, blobs, roles] = arenas;
+  let [constants, blobs, roles, models] = arenas;
   channels.insert(
     READ_CHANNEL,
     key_type,
@@ -67,6 +68,7 @@ pub(super) fn register<B: FieldBackend>(
         2 => &constants,
         4 => &blobs,
         6 => &roles,
+        7 => &models,
         _ => return Err("missing hint data: unknown IO channel".into()),
       };
       let offset = usize::try_from(field.to_u64(key[1]))
