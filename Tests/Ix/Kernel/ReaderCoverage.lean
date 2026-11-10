@@ -75,8 +75,9 @@ def readerAccepts (label : String) (env : Ixon.Env) : IO Bool := do
   let logical := { env with consts := env.consts.filter fun a _ => !set.contains a }
   match Ix.RoleBinding.Artifact.prepare logical limits with
   | .ok _ =>
+    let names := set.toList.map fun a => (env.addrToName[a]?).map toString |>.getD (toString a)
     IO.println s!"[reader-coverage] {label}: {logical.consts.size} records read; \
-      {set.size} unsafe or partial records set aside"
+      {set.size} unsafe or partial records set aside: {names.take 12}"
     return true
   | .error e =>
     IO.eprintln s!"[reader-coverage] {label}: the reader declines: {e}"
