@@ -241,11 +241,22 @@ def diag (env : Lean.Environment) : IO UInt32 := do
   let k ← IO.ofExcept (KernelEnv.ofView v)
   IO.println s!"[ixvm-pw-diag] {name}: {v.records.size} records, {k.owners.size} owners, \
     {k.installed} declarations installed, {k.failures.size} records refused"
-  let cut (s : String) : String := (s.toList.take 140).asString
+  let cut (s : String) : String := String.ofList (s.toList.take 140)
   for (why, n) in histogram (k.failures.map (cut ·.2)) do
     IO.println s!"  refused {n}: {why}"
   for (a, why) in k.failures.extract 0 40 do
     IO.println s!"  refused {nameOf a}: {cut why}"
+  -- the keys the reasons name, by their address prefix
+  let hexes := names.toArray.map fun (a, n) => (toString a, n)
+  let nameKeys (reasons : Array String) : IO Unit := do
+    let mut tokens : Std.HashSet String := {}
+    for (why, _) in (histogram reasons).extract 0 15 do
+      for part in (why.splitOn "#").drop 1 do
+        tokens := tokens.insert (String.ofList (part.toList.take 12))
+    for t in tokens do
+      let hits := (hexes.filter fun (h, _) => h.startsWith t).map (·.2)
+      IO.println s!"  #{t} = {hits.toList.take 3}"
+  nameKeys (k.failures.map (cut ·.2))
   let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
   let mut rootErrors : Array String := #[]
   let mut fallbackRecords : Array (String × Nat) := #[]
@@ -271,6 +282,7 @@ def diag (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[ixvm-pw-diag] roots the kernel's pass refuses: {rootErrors.size}"
   for (why, n) in (histogram rootErrors).extract 0 30 do
     IO.println s!"  root {n}: {why}"
+  nameKeys rootErrors
   return 0
 
 /-! ## The corpus measurement -/

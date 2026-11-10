@@ -218,6 +218,11 @@ structure View where
   table : Option ByteArray := none
   /-- channel-2 entries that do not decode -/
   undecoded : Nat := 0
+  /-- the records of the builder's environment the witness does not carry: read
+  by the kernel only, to type the witness's records (an inductive block's
+  recursor records, which IxC needs to install the block and its projection
+  table, are often outside a claim's closure); never annotated -/
+  support : Array (Address × Ixon.Constant) := #[]
 
 private def addressOfKey (key : Array Aiur.G) : Option Address :=
   if key.size == 32 then some ⟨⟨key.map (·.val.toUInt8)⟩⟩ else none
@@ -254,7 +259,18 @@ def View.ofBuffer (io : Aiur.IOBuffer) (env : Ixon.Env := {}) : View := Id.run d
     | 4 => v := { v with blobs := v.blobs.insert a (bytesOf io ch info) }
     | 6 => v := { v with table := some (bytesOf io ch info) }
     | _ => pure ()
-  return { v with records := v.records.qsort (fun x y => x.1.cmpBytes y.1 == .lt) }
+  let carried : Std.HashSet Address := v.records.foldl (fun s (a, _) => s.insert a) {}
+  let mut support := #[]
+  for (a, lc) in env.consts do
+    unless carried.contains a do
+      if let some c := lc.get? then support := support.push (a, c)
+  for (a, b) in env.blobs do
+    unless v.blobs.contains a do v := { v with blobs := v.blobs.insert a b }
+  for (a, h) in env.anonHints do
+    unless v.hints.contains a do v := { v with hints := v.hints.insert a h }
+  return { v with
+    records := v.records.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
+    support := support.qsort (fun x y => x.1.cmpBytes y.1 == .lt) }
 
 /-- The kernel's environment over a view: IxC's reader context over the
 records (and the prelude), and the environment its fold installs. -/
@@ -394,14 +410,17 @@ def KernelEnv.ofView (v : View) : Except String KernelEnv := do
       pure (fallbackTable, pre)
   let (table, pre) := chosen
   let store : Ixon.CheckOrder.RecordStore :=
-    v.records.foldl (fun m (a, c) => m.insert a c) {}
+    (v.support ++ v.records).foldl (fun m (a, c) => m.insert a c) {}
   let hints := Hints.ofStore store v.hints
   let s := Benchmarks.Kernel.CheckIxeStep.setup store (v.blobs[·]?) table pre hints.lookup
+  -- the witness's records with expressions (a projection's block counts only
+  -- when the witness carries it: the circuit loads nothing else)
+  let carried : Std.HashSet Address := v.records.foldl (fun s (a, _) => s.insert a) {}
   let mut owners : Array Address := #[]
   let mut seen : Std.HashSet Address := {}
   for (a, c) in v.records do
     let o := Ixon.CheckOrder.owner a c
-    if seen.contains o then continue
+    if seen.contains o || !carried.contains o then continue
     seen := seen.insert o
     if let some oc := store[o]? then
       unless (roots oc).isEmpty do owners := owners.push o
