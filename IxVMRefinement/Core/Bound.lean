@@ -39,17 +39,17 @@ theorem traceROM_valid {source : Generic.Source F} {entries : List String}
 /-! ## Spines -/
 
 /-- The cells of a list, whatever its elements. -/
-abbrev Spine (enum : String) (h : Heap F) (xs : List Unit) (p : SourceValue F) : Prop :=
-  RepLinkedList enum "Nil" "Cons" (fun _ _ _ => True) h xs p
+abbrev Spine (en : String) (h : Heap F) (xs : List Unit) (p : SourceValue F) : Prop :=
+  RepLinkedList en "Nil" "Cons" (fun _ _ _ => True) h xs p
 
-theorem RepLinkedList.spine {α : Type} {enum : String} {R : Heap F → α → SourceValue F → Prop}
+theorem RepLinkedList.spine {α : Type} {en : String} {R : Heap F → α → SourceValue F → Prop}
     {h : Heap F} {xs : List α} {p : SourceValue F}
-    (rep : RepLinkedList enum "Nil" "Cons" R h xs p) : Spine enum h (xs.map fun _ => ()) p := by
+    (rep : RepLinkedList en "Nil" "Cons" R h xs p) : Spine en h (xs.map fun _ => ()) p := by
   induction rep with
   | nil cell => exact .nil cell
   | cons cell _ _ ih => exact .cons cell trivial ih
 
-theorem represents_ptr_inv {rom : ROM F} {h : Heap F} {t : Ty} {loc : Nat} {w : Value F}
+theorem represents_ptr_inv {rom : ROM F} {h : Heap F} {t : Aiur.Ty} {loc : Nat} {w : Value F}
     (r : Represents rom h (.ptr t loc) w) :
     ∃ stored address encoded, h[loc]? = some stored ∧ (address, encoded) ∈ rom.entries ∧
       Represents rom h stored encoded ∧ w = .ptr encoded.type address := by
@@ -85,11 +85,11 @@ theorem forall₂_pair {α β : Type} {R : α → β → Prop} {a b : α} {ws : 
   exact ⟨wa, wb, rfl, ha, hb⟩
 
 /-- The value a list cell is represented by, at a represented pointer. -/
-theorem cell_represented {rom : ROM F} {h : Heap F} {enum c : String} {addr : Nat}
+theorem cell_represented {rom : ROM F} {h : Heap F} {en c : String} {addr : Nat}
     {vs : List (SourceValue F)} {w : Value F}
-    (cell : h[addr]? = some (.construct enum c vs)) (r : Represents rom h (.ptr (.enum enum) addr) w) :
-    ∃ address ws, (address, .construct enum c ws) ∈ rom.entries ∧
-      List.Forall₂ (Represents rom h) vs ws ∧ w = .ptr (.enum enum) address := by
+    (cell : h[addr]? = some (.construct en c vs)) (r : Represents rom h (.ptr (.enum en) addr) w) :
+    ∃ address ws, (address, .construct en c ws) ∈ rom.entries ∧
+      List.Forall₂ (Represents rom h) vs ws ∧ w = .ptr (.enum en) address := by
   obtain ⟨stored, address, encoded, src, mem, rep, rfl⟩ := represents_ptr_inv r
   rw [cell] at src
   cases src
@@ -97,9 +97,9 @@ theorem cell_represented {rom : ROM F} {h : Heap F} {enum c : String} {addr : Na
   exact ⟨address, ws, mem, items, rfl⟩
 
 /-- **In a valid ROM, a value represents lists of one length only.** -/
-theorem spine_length_eq {rom : ROM F} (valid : rom.Valid) {enum : String} {h₁ h₂ : Heap F}
+theorem spine_length_eq {rom : ROM F} (valid : rom.Valid) {en : String} {h₁ h₂ : Heap F}
     {xs₁ xs₂ : List Unit} {p₁ p₂ : SourceValue F} {w : Value F}
-    (s₁ : Spine enum h₁ xs₁ p₁) (s₂ : Spine enum h₂ xs₂ p₂)
+    (s₁ : Spine en h₁ xs₁ p₁) (s₂ : Spine en h₂ xs₂ p₂)
     (r₁ : Represents rom h₁ p₁ w) (r₂ : Represents rom h₂ p₂ w) : xs₁.length = xs₂.length := by
   induction s₁ generalizing xs₂ p₂ w with
   | nil cell₁ =>
@@ -184,14 +184,14 @@ theorem length_chain (t : Generic.Ty) (n : Nat) :
 /-- **A chain of calls on lists of every length up to `n` needs `n + 1` keys**, if the
 ROM is valid and the callee is memoized (not inlined). -/
 theorem chain_bound {rom : ROM F} (valid : rom.Valid) {calls : List (Call F)} {N : Nat}
-    (bound : MemoCallsAtMost IxVM.source rom calls N) {name enum : String}
+    (bound : MemoCallsAtMost IxVM.source rom calls N) {name en : String}
     (memoized : inlineCall IxVM.source name = false) {n : Nat}
     (chain : ∀ j ≤ n, ∃ c ∈ calls, c.name = name ∧ ∃ p ys, c.args = [p] ∧
-      Spine enum c.heap ys p ∧ ys.length = j) :
+      Spine en c.heap ys p ∧ ys.length = j) :
     n + 1 ≤ N := by
   obtain ⟨keys, hlen, cover⟩ := bound
   have pick : ∀ j : Fin (n + 1), ∃ k, k ∈ keys ∧ ∃ (h : Heap F) (p : SourceValue F) (ys : List Unit)
-      (w : Value F), k.2 = [w] ∧ Represents rom h p w ∧ Spine enum h ys p ∧ ys.length = j := by
+      (w : Value F), k.2 = [w] ∧ Represents rom h p w ∧ Spine en h ys p ∧ ys.length = j := by
     intro j
     obtain ⟨c, hc, hname, p, ys, hargs, hs, hys⟩ := chain j (Nat.lt_succ_iff.mp j.isLt)
     obtain ⟨k, hk, -, hfa⟩ := cover c hc (by rw [hname]; exact memoized)
@@ -202,7 +202,7 @@ theorem chain_bound {rom : ROM F} (valid : rom.Valid) {calls : List (Call F)} {N
     exact ⟨k, hk, c.heap, p, ys, w, hk2, hw, hs, hys⟩
   let f : Fin (n + 1) → String × List (Value F) := fun j => Classical.choose (pick j)
   have hf : ∀ j, f j ∈ keys ∧ ∃ (h : Heap F) (p : SourceValue F) (ys : List Unit) (w : Value F),
-      (f j).2 = [w] ∧ Represents rom h p w ∧ Spine enum h ys p ∧ ys.length = j :=
+      (f j).2 = [w] ∧ Represents rom h p w ∧ Spine en h ys p ∧ ys.length = j :=
     fun j => Classical.choose_spec (pick j)
   have inj : Function.Injective f := by
     intro j j' heq
@@ -247,7 +247,7 @@ theorem length_lt {rom : ROM F} (valid : rom.Valid) {calls : List (Call F)}
     rw [henum]; exact RepLinkedList.spine hl
   have chain := length_chain kexprTy _ ev' hs rfl
   have := chain_bound valid bound (name := lengthName)
-    (enum := (Instance.mk "Lists::Node" [kexprTy]).symbol) length_memoized
+    (en := (Instance.mk "Lists::Node" [kexprTy]).symbol) length_memoized
     (n := (xs.map fun _ => ()).length) fun j hj => by
       obtain ⟨c, hc, hcn, rest⟩ := chain j hj
       refine ⟨c, ?_, hcn.trans hname, rest⟩

@@ -748,11 +748,11 @@ def leaf (fname : String) (segs : List Seg) : M (List String) := do
   let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr)
   return norm ++ [s!"exact «{fname}».Path.{name}{holes}{proofs}"]
 
-/-- The path inductive and the inversion theorem of one function. -/
 /-- Functions L4 needs whose paths multiply (a `let` bound to a match): generated under
 larger caps, at a larger module cost. -/
 def generous : List String := ["KernelWhnf::whnf_nd_const_head"]
 
+/-- The path inductive and the inversion theorem of one function. -/
 def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
     (maxChars : Nat := if generous.contains f.name then 2000000 else 200000) :
     Except String (String × Array (String × String × String) × Array (String × String × String) × Nat) := do
@@ -765,8 +765,8 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
   let env : Env := (f.params.map (·.1)).zip (ps.map .v)
   let body : M (List String) :=
     inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf f.name)
-  let (script, st) ← body.run { counter := 1, params, src := some src, typeParam := tp,
-    maxLookups := if generous.contains f.name then 40000 else 3000 }
+  let maxLookups := if generous.contains f.name then 40000 else 3000
+  let (script, st) ← body.run { counter := 1, params, src := some src, typeParam := tp, maxLookups }
   let leanName := s!"IxVM.{functionName f.name}"
   -- a generic function is stated at its instance `t_<param>`
   let (tbind, targ, tibind, symbol, lookupThm, lookupDecl) := match tp with
