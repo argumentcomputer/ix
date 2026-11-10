@@ -393,7 +393,7 @@ structure Seams where
   opening depth `depth` and under `binders` local binders, the IxVM value `v` (a
   `KernelTypes::KExpr`) represents the kernel term `t` (whose loose bound
   variables are the local binders). Lane S2 (PM-A, PM-L): it pairs each binder with
-  a validated `pw` datum, and holds up to semantically equal levels. -
+  a validated `pw` datum, and holds up to semantically equal levels. -/
   term : Ixon.Env → Ix.Kernel.Env .anon → (depth binders : Nat) →
     Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → Ix.Kernel.Expr .anon → Prop
   /-- (L4) The role context `rc` (`KernelRoles::RoleCtx`) and the context list
