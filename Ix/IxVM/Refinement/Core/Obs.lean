@@ -202,6 +202,12 @@ theorem Builtin.assertEq_inv {a : Assertion} {x y r : SourceValue F}
   rw [hv, evalAssertEq_ok] at h
   exact ⟨h.2.1, h.2.2⟩
 
+/-- A named type's constructor name is its instance's name. -/
+theorem constructorName_named (types : Types) (n : String) (args : List Ty) :
+    constructorName types (.named n args) = instanceName types n (some args) := by
+  unfold constructorName instanceName
+  simp [Ty.subst, Ty.toCore]
+
 /-! ## Arm selection and patterns, one step at a time
 
 The generated path lemmas (`Ix.IxVM.Refinement.Obs`) select arms in order
@@ -293,6 +299,29 @@ theorem matchPattern_tuple_tuple_inv {ps : List (Pattern F)} {us : List (SourceV
   split at h
   · cases h
   · exact h
+
+omit [Field F] in
+theorem matchPattern_array_tuple_inv {ps : List (Pattern F)} {us : List (SourceValue F)}
+    {heap : Heap F} {bs : Environment F Nat}
+    (h : world.matchPattern types heap (.array ps) (.tuple us) = .ok (some bs)) :
+    matchListWith (world.matchPattern types heap) ps us = .ok (some bs) := by
+  rw [matchPattern_array] at h
+  split at h
+  · cases h
+  · exact h
+
+omit [Field F] in
+/-- A flat array pattern that did not match: the value is no such tuple. -/
+theorem matchPattern_array_none {ps : List (Pattern F)} {v : SourceValue F} {heap : Heap F}
+    (hflat : IsFlatPatternList ps) (h : world.matchPattern types heap (.array ps) v = .ok none) :
+    ∀ vs : List (SourceValue F), vs.length = ps.length → v ≠ .tuple vs := by
+  intro vs hlen hv
+  subst hv
+  rw [matchPattern_array] at h
+  simp only [hlen, bne_self_eq_false] at h
+  obtain ⟨bs', hbs'⟩ := hflat.matchListWith (world := world) (types := types) hlen.symm heap
+  rw [hbs'] at h
+  cases h
 
 omit [Field F] in
 theorem matchPattern_load_inv {p : Pattern F} {v : SourceValue F} {heap : Heap F}
