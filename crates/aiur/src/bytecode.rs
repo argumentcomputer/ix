@@ -641,6 +641,11 @@ impl<B: FieldBackend> CheckedProgram<B> {
       .then(|| sccs.into());
     Ok(())
   }
+  /// Whether execution records call heights for depth circuits
+  /// ([`Self::track_depth`]).
+  pub fn records_depth(&self) -> bool {
+    self.depth.is_some()
+  }
   pub fn field(&self) -> B {
     self.field
   }

@@ -53,7 +53,7 @@ open IxVM.ClaimHarness
 
 /-- The IxVM claim artifact the suites execute: `$IX_AIUR_ARTIFACT`, or the
 checkout's cached export. -/
-def programArtifact : IO String := Ix.Cli.FormalAiur.artifact default
+def programArtifact : IO String := Ix.Cli.FormalAiur.artifactPath default
 
 /-- The Rust host that executes the cases (`ixvm-proof test`). -/
 def programHost : IO String := Ix.Cli.FormalAiur.host

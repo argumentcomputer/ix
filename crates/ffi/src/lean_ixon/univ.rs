@@ -52,17 +52,16 @@ impl<R: LeanRef> LeanIxonUniv<R> {
     if self.inner().is_scalar() {
       return Univ::Zero;
     }
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.inner().tag() {
       0 => Univ::Zero,
-      1 => Univ::Succ(Arc::new(LeanIxonUniv(ctor.get(0)).decode())),
+      1 => Univ::Succ(Arc::new(LeanIxonUniv(self.get_obj(0)).decode())),
       2 => Univ::Max(
-        Arc::new(LeanIxonUniv(ctor.get(0)).decode()),
-        Arc::new(LeanIxonUniv(ctor.get(1)).decode()),
+        Arc::new(LeanIxonUniv(self.get_obj(0)).decode()),
+        Arc::new(LeanIxonUniv(self.get_obj(1)).decode()),
       ),
       3 => Univ::IMax(
-        Arc::new(LeanIxonUniv(ctor.get(0)).decode()),
-        Arc::new(LeanIxonUniv(ctor.get(1)).decode()),
+        Arc::new(LeanIxonUniv(self.get_obj(0)).decode()),
+        Arc::new(LeanIxonUniv(self.get_obj(1)).decode()),
       ),
       4 => Univ::Var(self.get_num_64(0)),
       tag => panic!("Invalid Ixon.Univ tag: {tag}"),

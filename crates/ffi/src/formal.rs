@@ -1,56 +1,65 @@
 //! Lean adapter for the formal Aiur prover library (`ix-prover`).
-//! Environments and requests are opaque Rust-owned handles. Lean byte
-//! arrays are borrowed only for the duration of a call.
+//! Registries, programs, systems, environments and requests are opaque
+//! Rust-owned handles. Lean byte arrays are borrowed only for the duration
+//! of a call; work that outlives a call holds the handles' shared data.
 //!
-//! Errors become Lean `IO` errors. A panic is caught at this boundary when
-//! the build unwinds, and aborts the process under the workspace's
-//! `panic = "abort"` profiles; it never unwinds into Lean.
+//! Errors become Lean `IO` errors. The workspace profiles abort on panic,
+//! so a panic never unwinds into Lean.
 //!
 //! Lean declarations: `Ix/FormalProver.lean`.
 use std::{
-  panic::{AssertUnwindSafe, catch_unwind},
   path::Path,
   sync::{Arc, LazyLock},
 };
 
+mod records;
+
 use ix_prover::{
-  protocol::{Kind, Options},
+  aggregate::LaneResult,
+  protocol::Kind,
   request::{Environment, Request},
+  system::{Program, Registry, System},
   tools,
 };
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExternal,
-  LeanIOResult, LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanIOResult, LeanNat, LeanOption, LeanOwned, LeanProd, LeanRef, LeanString,
+};
+use records::{
+  LeanAggregateConfig, LeanCatalogConfig, LeanJobOptions, LeanLaneConfig,
+  LeanLaneResult, LeanNormalizeConfig, LeanProtocolParameters,
 };
 
 struct FormalEnvironment(Arc<Environment>);
 struct FormalRequest(Request);
+struct FormalRegistry(Registry);
+struct FormalProgram(Program);
+struct FormalSystem(System);
 
 static ENVIRONMENT_CLASS: LazyLock<ExternalClass> =
   LazyLock::new(ExternalClass::register_with_drop::<FormalEnvironment>);
 static REQUEST_CLASS: LazyLock<ExternalClass> =
   LazyLock::new(ExternalClass::register_with_drop::<FormalRequest>);
+static REGISTRY_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<FormalRegistry>);
+static PROGRAM_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<FormalProgram>);
+static SYSTEM_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<FormalSystem>);
 
-fn io(
-  f: impl FnOnce() -> Result<LeanOwned, String>,
+type Borrowed<'a, T> = LeanExternal<T, LeanBorrowed<'a>>;
+
+fn io<T: Into<LeanOwned>>(
+  f: impl FnOnce() -> Result<T, String>,
 ) -> LeanIOResult<LeanOwned> {
-  match catch_unwind(AssertUnwindSafe(f)) {
-    Ok(Ok(value)) => LeanIOResult::ok(value),
-    Ok(Err(error)) => LeanIOResult::error_string(&error),
-    Err(_) => LeanIOResult::error_string("formal prover panicked"),
+  match f() {
+    Ok(value) => LeanIOResult::ok(value),
+    Err(error) => LeanIOResult::error_string(&error),
   }
 }
 
-fn small_nat(n: LeanBorrowed<'_>) -> Result<usize, String> {
-  if n.is_scalar() {
-    Ok(n.unbox_usize())
-  } else {
-    Err("natural number argument is too large".into())
-  }
-}
-
-fn options(json: &str) -> Result<Options, String> {
-  serde_json::from_str(json).map_err(|e| format!("invalid job options: {e}"))
+fn small_nat(n: LeanNat<LeanBorrowed<'_>>) -> Result<usize, String> {
+  records::nat(*n.inner())
 }
 
 /// Run `f` on a pool of `threads` threads, or on the global pool for zero.
@@ -68,14 +77,6 @@ fn with_threads<T: Send>(
   Ok(pool.install(f))
 }
 
-fn completion(status: u32, report: &serde_json::Value) -> LeanOwned {
-  LeanProd::new(
-    LeanOwned::box_u32(status),
-    LeanString::new(&report.to_string()),
-  )
-  .into()
-}
-
 /// `Ix.FormalProver.Env.ofHandle : @& Aiur.EnvHandle → IO Env`: a copy of
 /// the environment Lean loaded, normalized or compiled; constant bytes are
 /// shared.
@@ -85,15 +86,17 @@ extern "C" fn rs_formal_env_of_handle(
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
     let env = Environment::new(handle.get().env.clone());
-    Ok(
-      LeanExternal::alloc(&ENVIRONMENT_CLASS, FormalEnvironment(Arc::new(env)))
-        .into(),
-    )
+    Ok(LeanExternal::alloc(
+      &ENVIRONMENT_CLASS,
+      FormalEnvironment(Arc::new(env)),
+    ))
   })
 }
 
-fn request(request: Result<Request, String>) -> Result<LeanOwned, String> {
-  Ok(LeanExternal::alloc(&REQUEST_CLASS, FormalRequest(request?)).into())
+fn request(
+  request: Result<Request, String>,
+) -> Result<LeanExternal<FormalRequest, LeanOwned>, String> {
+  Ok(LeanExternal::alloc(&REQUEST_CLASS, FormalRequest(request?)))
 }
 
 /// `Ix.FormalProver.Request.check : @& Env → (target claim : @& ByteArray)
@@ -152,219 +155,340 @@ extern "C" fn rs_formal_request_buffers(
   })
 }
 
-/// `Ix.FormalProver.resources : IO String`
+/// `Ix.FormalProver.resources : IO Resources`: available bytes, when known,
+/// and logical cores.
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_resources() -> LeanIOResult<LeanOwned> {
-  io(|| Ok(LeanString::new(&tools::resources().to_string()).into()))
+  io(|| {
+    let (available, cores) = tools::resources();
+    Ok(records::resources(available, cores))
+  })
 }
 
 /// `Ix.FormalProver.executors : IO (Array String)`
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_executors() -> LeanIOResult<LeanOwned> {
   io(|| {
-    let names = ix_prover::executors();
-    let array = LeanArray::alloc(names.len());
-    for (i, name) in names.iter().enumerate() {
-      array.set(i, LeanString::new(name));
-    }
-    Ok(array.into())
+    Ok(records::lean_array(
+      ix_prover::executors().iter().map(|name| LeanString::new(name)),
+    ))
   })
 }
 
-/// `Ix.FormalProver.verify : (artifact entry : @& String) →
+fn nat(n: u64) -> Result<LeanOwned, String> {
+  usize::try_from(n)
+    .map(LeanOwned::box_usize)
+    .map_err(|e| format!("natural number result: {e}"))
+}
+
+/// `Ix.FormalProver.Registry.new : IO Registry`
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_registry_new() -> LeanIOResult<LeanOwned> {
+  io(|| {
+    Ok(LeanExternal::alloc(
+      &REGISTRY_CLASS,
+      FormalRegistry(Registry::default()),
+    ))
+  })
+}
+
+/// `Ix.FormalProver.Registry.load : @& Registry → (path : @& String) →
+/// IO Program`: the compiled package at `path`, decoded and checked once per
+/// registry.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_registry_load(
+  registry: Borrowed<'_, FormalRegistry>,
+  path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let path = Path::new(path.as_str());
+    let canonical = std::fs::canonicalize(path)
+      .map_err(|e| format!("{}: {e}", path.display()))?;
+    let key = canonical.to_str().ok_or("artifact path is not UTF-8")?;
+    let program =
+      registry.get().0.program(key, || ix_prover::load_program(&canonical))?;
+    Ok(LeanExternal::alloc(&PROGRAM_CLASS, FormalProgram(program)))
+  })
+}
+
+/// `Ix.FormalProver.Program.identity : @& Program → IO ByteArray`
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_program_identity(
+  program: Borrowed<'_, FormalProgram>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| Ok(LeanByteArray::from_bytes(program.get().0.identity())))
+}
+
+/// `Ix.FormalProver.Registry.system : @& Registry → @& Program →
+/// @& ProtocolParameters → IO System`: the program's verifying system under
+/// the parameters, prepared once per registry.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_registry_system(
+  registry: Borrowed<'_, FormalRegistry>,
+  program: Borrowed<'_, FormalProgram>,
+  params: LeanProtocolParameters<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let system = registry
+      .get()
+      .0
+      .system(&program.get().0, records::parameters(params)?)?;
+    Ok(LeanExternal::alloc(&SYSTEM_CLASS, FormalSystem(system)))
+  })
+}
+
+/// `Ix.FormalProver.counters : IO (Nat × Nat × Nat × Nat)`: programs, plans,
+/// systems and proving backends constructed by this process.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_counters() -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let c = ix_prover::system::counters();
+    let n = |x: usize| LeanOwned::box_usize(x);
+    Ok(LeanProd::new(
+      n(c.programs),
+      LeanProd::new(n(c.plans), LeanProd::new(n(c.systems), n(c.provers))),
+    ))
+  })
+}
+
+/// `Ix.FormalProver.System.verify : @& System → (entry : @& String) →
 /// (args : @& Array UInt64) → (proof : @& ByteArray) → IO Nat`: the number
 /// of trace shards of a proof that verifies.
 #[unsafe(no_mangle)]
-extern "C" fn rs_formal_verify(
-  artifact: LeanString<LeanBorrowed<'_>>,
+extern "C" fn rs_formal_system_verify(
+  system: Borrowed<'_, FormalSystem>,
   entry: LeanString<LeanBorrowed<'_>>,
   args: LeanArray<LeanBorrowed<'_>>,
   proof: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
     let args = args.map(|word| word.unbox_u64());
-    let shards = tools::verify(
-      Path::new(artifact.as_str()),
-      entry.as_str(),
-      &args,
-      proof.as_bytes(),
-    )?;
+    let shards =
+      tools::verify(&system.get().0, entry.as_str(), &args, proof.as_bytes())?;
     Ok(LeanOwned::box_usize(shards))
   })
 }
 
-/// `Ix.FormalProver.identity : (artifact : @& String) → (recursive : Bool) →
+/// `Ix.FormalProver.System.key : @& System → IO ByteArray`
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_system_key(
+  system: Borrowed<'_, FormalSystem>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| Ok(LeanByteArray::from_bytes(system.get().0.key())))
+}
+
+/// `Ix.FormalProver.System.identity : @& System → (recursive : Bool) →
 /// IO (ByteArray × Nat × Nat)`: the verifying key, function index and call
 /// channel.
 #[unsafe(no_mangle)]
-extern "C" fn rs_formal_identity(
-  artifact: LeanString<LeanBorrowed<'_>>,
+extern "C" fn rs_formal_system_identity(
+  system: Borrowed<'_, FormalSystem>,
   recursive: bool,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
     let kind = if recursive { Kind::Recursion } else { Kind::Ixvm };
-    let identity = tools::identity(Path::new(artifact.as_str()), kind)?;
-    let nat = |n: u64| {
-      usize::try_from(n)
-        .map(LeanOwned::box_usize)
-        .map_err(|e| format!("identity word: {e}"))
-    };
-    Ok(
-      LeanProd::new(
-        LeanByteArray::from_bytes(&identity.key),
-        LeanProd::new(
-          nat(identity.function_index)?,
-          nat(identity.call_channel)?,
-        ),
-      )
-      .into(),
-    )
+    let identity = tools::identity(&system.get().0, kind)?;
+    Ok(LeanProd::new(
+      LeanByteArray::from_bytes(&identity.key),
+      LeanProd::new(nat(identity.function_index)?, nat(identity.call_channel)?),
+    ))
   })
 }
 
-/// `Ix.FormalProver.prove : (artifact : @& String) → @& Request →
-/// (output options : @& String) → (threads : @& Nat) → IO (UInt32 × String)`:
-/// prove one IxVM claim, writing the proof next to `output`.
+/// `Ix.FormalProver.System.prove : @& System → @& Request →
+/// (output : @& String) → @& JobOptions → (threads : @& Nat) →
+/// (report : Bool) → IO Outcome`: prove one IxVM claim, writing the proof
+/// next to `output`.
 #[unsafe(no_mangle)]
-extern "C" fn rs_formal_prove(
-  artifact: LeanString<LeanBorrowed<'_>>,
-  job_request: LeanExternal<FormalRequest, LeanBorrowed<'_>>,
+extern "C" fn rs_formal_system_prove(
+  system: Borrowed<'_, FormalSystem>,
+  job_request: Borrowed<'_, FormalRequest>,
   output: LeanString<LeanBorrowed<'_>>,
-  job_options: LeanString<LeanBorrowed<'_>>,
-  threads: LeanBorrowed<'_>,
+  job_options: LeanJobOptions<LeanBorrowed<'_>>,
+  threads: LeanNat<LeanBorrowed<'_>>,
+  report: bool,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let options = options(job_options.as_str())?;
-    let (status, report) = tools::prove(
-      Path::new(artifact.as_str()),
+    let options = records::options(*job_options.inner())?;
+    let outcome = tools::prove(
+      &system.get().0,
       &job_request.get().0,
       &options,
       Path::new(output.as_str()),
       small_nat(threads)?,
     )?;
-    Ok(completion(status, &report))
+    Ok(records::outcome(&outcome, report))
   })
 }
 
-/// `Ix.FormalProver.check : (plan : Bool) → (artifact : @& String) →
-/// @& Request → (options : @& String) → (threads : @& Nat) →
-/// IO (UInt32 × String)`: execute an IxVM claim, and with `plan` also plan
-/// its proof, without proving.
+/// `Ix.FormalProver.System.check : @& System → @& Request →
+/// (threads : @& Nat) → (report : Bool) → IO Outcome`: execute an IxVM
+/// claim on the system's program without proving.
 #[unsafe(no_mangle)]
-extern "C" fn rs_formal_check(
-  plan: bool,
-  artifact: LeanString<LeanBorrowed<'_>>,
-  job_request: LeanExternal<FormalRequest, LeanBorrowed<'_>>,
-  job_options: LeanString<LeanBorrowed<'_>>,
-  threads: LeanBorrowed<'_>,
+extern "C" fn rs_formal_system_check(
+  system: Borrowed<'_, FormalSystem>,
+  job_request: Borrowed<'_, FormalRequest>,
+  threads: LeanNat<LeanBorrowed<'_>>,
+  report: bool,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let mode = if plan { tools::Check::Plan } else { tools::Check::Execute };
-    let options = options(job_options.as_str())?;
-    let artifact = Path::new(artifact.as_str());
+    let system = &system.get().0;
     let job_request = &job_request.get().0;
-    let (status, report) = with_threads(small_nat(threads)?, || {
-      tools::check(mode, artifact, job_request, &options)
+    let outcome = with_threads(small_nat(threads)?, || {
+      tools::execute(system, job_request)
     })??;
-    Ok(completion(status, &report))
+    Ok(records::outcome(&outcome, report))
   })
 }
 
-/// `Ix.FormalProver.proveLanes : @& Aiur.EnvHandle → @& String → IO String`:
-/// the whole lane run over the handle's environment from its JSON
-/// configuration (`ix_prover::aggregate::LaneConfig`) on the aggregate
-/// controller, returning the verified root's store address. The environment
-/// is borrowed for the call, not copied.
+/// `Ix.FormalProver.System.plan : @& System → @& Request → @& JobOptions →
+/// (threads : @& Nat) → (report : Bool) → IO Outcome`: execute an IxVM
+/// claim and plan its proof without proving.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_system_plan(
+  system: Borrowed<'_, FormalSystem>,
+  job_request: Borrowed<'_, FormalRequest>,
+  job_options: LeanJobOptions<LeanBorrowed<'_>>,
+  threads: LeanNat<LeanBorrowed<'_>>,
+  report: bool,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let options = records::options(*job_options.inner())?;
+    let system = &system.get().0;
+    let job_request = &job_request.get().0;
+    let outcome = with_threads(small_nat(threads)?, || {
+      tools::plan(system, job_request, &options)
+    })??;
+    Ok(records::outcome(&outcome, report))
+  })
+}
+
+/// `Ix.FormalProver.proveLanes : (ixvm aggr : @& System) →
+/// @& Aiur.EnvHandle → @& LaneConfig → IO LaneResult`: the whole lane run
+/// over the handle's environment on the aggregate controller: the verified
+/// root's store address, or each proven claim's shard id and address. The
+/// environment is borrowed for the call, not copied.
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_prove_lanes(
+  ixvm: Borrowed<'_, FormalSystem>,
+  aggr: Borrowed<'_, FormalSystem>,
   env: LeanExternal<crate::lean_ixon::EnvHandle, LeanBorrowed<'_>>,
-  config: LeanString<LeanBorrowed<'_>>,
+  config: LeanLaneConfig<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let config: ix_prover::aggregate::LaneConfig =
-      serde_json::from_str(config.as_str())
-        .map_err(|e| format!("invalid lane configuration: {e}"))?;
-    let root = ix_prover::aggregate::prove_lanes(&config, &env.get().env)?;
-    Ok(LeanString::new(&root).into())
+    let config = records::lane_config(config)?;
+    let result = ix_prover::aggregate::prove_lanes(
+      &config,
+      &env.get().env,
+      &ixvm.get().0,
+      &aggr.get().0,
+    )?;
+    Ok(match result {
+      LaneResult::Root(address) => {
+        let root = LeanLaneResult::alloc(0);
+        root.set_obj(0, records::lean_address(&address));
+        root
+      },
+      LaneResult::Claims(claims) => {
+        let proven = LeanLaneResult::alloc(1);
+        proven.set_obj(
+          0,
+          records::lean_array(claims.iter().map(|(id, address)| {
+            LeanProd::new(
+              LeanOwned::box_usize(*id as usize),
+              records::lean_address(address),
+            )
+          })),
+        );
+        proven
+      },
+    })
   })
 }
 
-/// `Ix.FormalProver.aggregate : @& Aiur.EnvHandle → @& String →
-/// IO (String × ByteArray)`: `ix aggregate` over the handle's environment
-/// from its JSON configuration (`ix_prover::aggregate::AggregateConfig`),
-/// returning the address of the proof it produced (an empty string for a
-/// plan) and, when the run did not persist that proof, its encoded wrapper
-/// (otherwise empty).
+/// `Ix.FormalProver.aggregate : (ixvm aggr : @& System) →
+/// @& Aiur.EnvHandle → @& AggregateConfig →
+/// (bindingProof : @& Option ByteArray) → IO (Option (ByteArray × ByteArray))`:
+/// `ix aggregate` over the handle's environment. A supplied binding proof is
+/// the encoded wrapper of a run that writes nothing to the store. Returns
+/// nothing for a plan; otherwise the address of the proof it produced and,
+/// when the run did not persist that proof, its encoded wrapper (otherwise
+/// empty).
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_aggregate(
+  ixvm: Borrowed<'_, FormalSystem>,
+  aggr: Borrowed<'_, FormalSystem>,
   env: LeanExternal<crate::lean_ixon::EnvHandle, LeanBorrowed<'_>>,
-  config: LeanString<LeanBorrowed<'_>>,
+  config: LeanAggregateConfig<LeanBorrowed<'_>>,
+  binding_proof: LeanOption<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let config: ix_prover::aggregate::AggregateConfig =
-      serde_json::from_str(config.as_str())
-        .map_err(|e| format!("invalid aggregate configuration: {e}"))?;
-    let output = ix_prover::aggregate::aggregate(&config, &env.get().env)?;
-    let (address, wrapper) = match output {
-      Some(output) => {
-        (output.address.hex(), output.wrapper.unwrap_or_default())
-      },
-      None => (String::new(), Vec::new()),
-    };
-    Ok(
+    let config = records::aggregate_config(config)?;
+    let binding = binding_proof
+      .to_option()
+      .map(|bytes| bytes.as_byte_array().as_bytes().to_vec());
+    let output = ix_prover::aggregate::aggregate(
+      &config,
+      &env.get().env,
+      &ixvm.get().0,
+      &aggr.get().0,
+      binding,
+    )?;
+    Ok(records::some_or_none(output.map(|output| {
       LeanProd::new(
-        LeanString::new(&address),
-        LeanByteArray::from_bytes(&wrapper),
+        records::lean_address(&output.address),
+        LeanByteArray::from_bytes(&output.wrapper.unwrap_or_default()),
       )
-      .into(),
-    )
+    })))
   })
 }
 
-/// `Ix.FormalProver.aggregateCatalog : @& String → IO String`:
-/// `ix aggregate --ixc` from its JSON configuration
-/// (`ix_prover::aggregate::CatalogConfig`), returning the address of the
-/// catalog root's proof wrapper.
+/// `Ix.FormalProver.aggregateCatalog : (ixvm aggr : @& System) →
+/// @& CatalogConfig → IO ByteArray`: `ix aggregate --ixc`, returning the
+/// address of the catalog root's proof wrapper.
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_aggregate_catalog(
-  config: LeanString<LeanBorrowed<'_>>,
+  ixvm: Borrowed<'_, FormalSystem>,
+  aggr: Borrowed<'_, FormalSystem>,
+  config: LeanCatalogConfig<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let config: ix_prover::aggregate::CatalogConfig =
-      serde_json::from_str(config.as_str())
-        .map_err(|e| format!("invalid catalog configuration: {e}"))?;
-    Ok(
-      LeanString::new(&ix_prover::aggregate::aggregate_catalog(&config)?)
-        .into(),
-    )
+    let config = records::catalog_config(config)?;
+    let root = ix_prover::aggregate::aggregate_catalog(
+      &config,
+      &ixvm.get().0,
+      &aggr.get().0,
+    )?;
+    Ok(records::lean_address(&root))
   })
 }
 
-/// `Ix.FormalProver.normalizeRoot : @& String → @& ByteArray →
-/// @& ByteArray → @& ByteArray → IO ByteArray`: the raw proof of one more wrap of the
-/// aggregate root `proof` of `claim`, proved at the heights of the fixed
-/// layout `layout` (`.ixl` bytes) from the JSON configuration
-/// (`ix_prover::aggregate::NormalizeConfig`).
+/// `Ix.FormalProver.normalizeRoot : (ixvm aggr : @& System) →
+/// @& NormalizeConfig → (layout claim proof : @& ByteArray) → IO ByteArray`:
+/// the raw proof of one more wrap of the aggregate root `proof` of `claim`,
+/// proved at the heights of the fixed layout `layout` (`.ixl` bytes).
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_normalize_root(
-  config: LeanString<LeanBorrowed<'_>>,
+  ixvm: Borrowed<'_, FormalSystem>,
+  aggr: Borrowed<'_, FormalSystem>,
+  config: LeanNormalizeConfig<LeanBorrowed<'_>>,
   layout: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
   proof: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let config: ix_prover::aggregate::NormalizeConfig =
-      serde_json::from_str(config.as_str())
-        .map_err(|e| format!("invalid normalization configuration: {e}"))?;
+    let config = records::normalize_config(config)?;
     let layout =
       ix_proof_compression::pipeline::FixedRoot::from_bytes(layout.as_bytes())
         .map_err(|e| e.to_string())?;
     let normalized = ix_prover::aggregate::normalize_root(
       &config,
+      &ixvm.get().0,
+      &aggr.get().0,
       layout.log_heights(),
       claim.as_bytes(),
       proof.as_bytes(),
     )?;
-    Ok(LeanByteArray::from_bytes(&normalized).into())
+    Ok(LeanByteArray::from_bytes(&normalized))
   })
 }

@@ -23,18 +23,18 @@ private def fixture (dir : System.FilePath) (args : Array Aiur.G) : IO Unit := d
 
 /-- A stand-in proof of `claim` as a `kind` child: a `claim_fixture` proof
 whose public input is the child's outer claim. -/
-private def standIn (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
+private def standIn (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
     (claim : Ix.Claim) : IO Ixon.Proof := do
   fixture dir ((outerClaim ctx kind claim).extract 2 18)
   let magic := (if kind == .ixvm then "IXAIUR2\x00" else "IXAGGR2\x00").toUTF8
   return { claim, proof := magic ++ (← IO.FS.readBinFile (dir / "proof.bin")) }
 
-private def node (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
+private def node (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
     (statement : CheckEnvTrees) : IO Node := do
   return { kind, statement, wrapper := ← standIn ctx dir kind statement.claim }
 
 /-- The advice of a wrap or pair as the `IOBuffer` the circuit cases run. -/
-private def advice (ctx : Context) (left : Node) (right : Option Node)
+private def advice (ctx : Keys) (left : Node) (right : Option Node)
     (output : CheckEnvTrees) (structural : Bool) : IO Aiur.IOBuffer :=
   return (← streamsAdvice ctx left right output structural).toIOBuffer
 
@@ -93,7 +93,7 @@ private def rejectionReasons : List (String × String) := [
   ("shape 16 rejects a catalog child without its members tree",
     "Aggregation::aggr_load_canonical_tree")]
 
-private def test (ctx : Context) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
+private def test (ctx : Keys) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
     (accept : Bool := true) : Ix.AiurInvocation.Case :=
   { label := label, accept := accept,
     rejectsWith := (if accept then none else rejectionReasons.lookup label),
@@ -113,13 +113,13 @@ private def shiftedGs (bytes : ByteArray) : Array Aiur.G := Id.run do
 /-- A child proving `claim`, which need not be a `CheckEnv` claim (a binding or
 a catalog claim). Advice reads only a node's kind and wrapper, so `statement`
 is a placeholder. -/
-private def claimNode (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
+private def claimNode (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
     (claim : Ix.Claim) (statement : CheckEnvTrees) : IO Node := do
   return { kind, statement, wrapper := ← standIn ctx dir kind claim }
 
 /-- A two-child witness for `shape`: the children, the output claim, the
 channel-4 preimages and the channel-5 trees. -/
-private def pairAdvice (ctx : Context) (shape : Nat) (l r : Node) (output : Ix.Claim)
+private def pairAdvice (ctx : Keys) (shape : Nat) (l r : Node) (output : Ix.Claim)
     (preimages : Array ByteArray) (trees : Array Ix.AssumptionTree := #[]) :
     IO Aiur.IOBuffer := do
   let s ← streamsChild ctx (({} : Streams).identity ctx.allowed shape) 0 l
@@ -142,7 +142,7 @@ private def tableOf (rebind : List Ix.Kernel.Role) (tag : String) (drop : Bool :
 /-- Shapes 13 to 16: binding discharge, cross-binding joins and catalog joins,
 each with the negative cases of the bindings it checks, and the
 `streams_parity` dumps of the accepted discharges. -/
-private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
+private def bindingShapeCases (ctx : Keys) (dir : System.FilePath)
     (claimCtx : Ix.ClaimContext) (left right : CheckEnvTrees) (li : Node) :
     IO (Array Ix.AiurInvocation.Case × Array Json) := do
   let mut tests : Array Ix.AiurInvocation.Case := #[]
@@ -330,9 +330,7 @@ def main (args : List String) : IO Unit := do
     fixture (dir / "self") (Array.replicate 16 0)
     let ixvmKey ← IO.FS.readBinFile (dir / "ixvm" / "key.bin")
     let aggrKey ← IO.FS.readBinFile (dir / "self" / "key.bin")
-    let ctx : Context := {
-      ixvmArtifact := ""
-      aggrArtifact := ""
+    let ctx : Keys := {
       ixvm := ⟨ixvmKey, 0⟩
       aggr := ⟨aggrKey, 0⟩
       allowed := allowedBlob ixvmKey 0 aggrKey 0 }

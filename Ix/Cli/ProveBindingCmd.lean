@@ -44,11 +44,11 @@ def runProveBinding (p : Cli.Parsed) : IO UInt32 := do
   let witness ← match IxVM.ClaimHarness.buildClaimWitness env claim {} with
     | .error e => IO.eprintln s!"binding claim witness: {e}"; return 1
     | .ok w => pure w
-  let artifactPath ← FormalAiur.artifact p
+  let selected ← FormalAiur.artifact p (← FormalProver.Registry.new)
   let options ← FormalAiur.hostOptions p
   IO.println s!"Proving the binding claim for {binding.address}"
   (← IO.getStdout).flush
-  let result ← FormalAiur.one p artifactPath options "prove" claim
+  let result ← FormalAiur.one p selected options "prove" claim
     (fun _ => FormalAiur.bufferRequest witness.input witness.inputIOBuffer)
     s!"binding claim for {binding.address}"
   let some address := result.address

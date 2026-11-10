@@ -42,7 +42,7 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   -- The statement comes from the same backend `ix verify --aggregate` uses;
   -- a trusted root key only replaces the verifying key the FRI stage checks.
   let ctx ← FormalAggregate.context p
-  let statement := FormalAggregate.statementBytes ctx wrapper.claim
+  let statement := FormalAggregate.statementBytes ctx.toKeys wrapper.claim
   Compression.checkClaim (Ix.Claim.ser wrapper.claim) statement
   let out ← match opts.out with
     | some path => pure path

@@ -19,6 +19,7 @@ pub mod memory;
 #[cfg(feature = "native")]
 pub mod native;
 pub mod query;
+pub mod shared;
 mod table;
 pub mod trace;
 pub mod value;

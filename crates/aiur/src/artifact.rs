@@ -758,6 +758,48 @@ fn put_program(w: &mut Writer, p: &Program) {
   });
 }
 
+/// A program in Ixon serialization with each table listing its rows inline
+/// (the version 1 `program` grammar). The encoding does not depend on how a
+/// file pools rows, so native-executor fingerprints hash it.
+pub fn program_bytes(p: &Program) -> Vec<u8> {
+  let mut w = Writer::new();
+  w.nat(u64::from(p.version));
+  w.nat(p.modulus);
+  w.list(&p.functions, |w, f| {
+    w.str(&f.name);
+    w.list(&f.params, put_type);
+    put_type(w, &f.result);
+    w.usize(f.registers);
+    w.list(&f.code, put_instruction);
+  });
+  w.list(&p.enums, |w, e| {
+    w.str(&e.name);
+    w.list(&e.constructors, |w, c| {
+      w.str(&c.name);
+      w.list(&c.fields, put_type);
+    });
+  });
+  w.list(&p.tables, |w, t| {
+    w.str(&t.name);
+    put_type(w, &t.r#type);
+    w.list(&t.rows, |w, row| w.nats(row));
+  });
+  w.list(&p.maps, |w, m| {
+    w.str(&m.name);
+    w.list(&m.params, put_type);
+    put_type(w, &m.result);
+    w.usize(m.input);
+    w.usize(m.output);
+  });
+  w.list(&p.entries, |w, e| {
+    w.str(&e.name);
+    w.usize(e.function);
+    w.list(&e.inputs, put_io_type);
+    w.option(e.output.as_ref(), put_io_type);
+  });
+  w.into_bytes()
+}
+
 fn program(r: &mut Reader<'_>, format: Version) -> Result<Program, String> {
   let version = r.u32()?;
   let modulus = r.nat()?;

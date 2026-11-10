@@ -128,12 +128,16 @@ ix aggregate --ixe env.ixe --ixes env.ixes <shard-proof-address>...
 ix verify --aggregate --ixe env.ixe --ixes env.ixes <aggregate-address>
 ```
 
-The CLI builds the separate exporter and caches its artifact by source and
-exporter contents, in the `.lake/aiur` of the checkout `ix` was built in, so
-commands work from any directory. `ix prepare` does this ahead of time and
-selects the artifacts for the native executors that the next `lake build ix`
-links; otherwise the first command that needs an artifact exports it, which
-takes about ten minutes for IxVM. The prover runs inside `ix` as a linked
+The CLI compiles a certified program with the compiler linked into `ix`
+(`Ix.FormalCompiler`, which runs the exporters' own `IxVM.compilePackage` and
+`MultiStark.compilePackage`) and caches the package by the compiler's identity
+and the program's digest, in the `.lake/aiur` of the checkout `ix` was built
+in, so commands work from any directory. `ix prepare` does this ahead of time
+and selects the artifacts for the native executors that the next `lake build
+ix` links; otherwise the first command that needs a program compiles it, which
+takes about ten minutes for IxVM. Each command loads a package once and
+prepares its verifying system once; see
+[direct FFI](formal-aiur-direct-ffi.md). The prover runs inside `ix` as a linked
 library, so `lake build ix` rebuilds it with its sources; see the
 [orchestration guide](formal-aiur-orchestration.md#in-process-prover).
 

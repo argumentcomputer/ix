@@ -36,8 +36,12 @@ impl Executor {
         ));
       },
     }
+    // Generated kernels do not record call heights, which depth circuits
+    // read, so a program that records them runs on the interpreter.
     #[cfg(feature = "native")]
-    if let Some(kernel) = Kernel::matching(program) {
+    if !program.records_depth()
+      && let Some(kernel) = Kernel::matching(program)
+    {
       return Ok(Self::Native(kernel));
     }
     #[cfg(not(feature = "native"))]

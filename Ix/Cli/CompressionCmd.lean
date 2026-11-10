@@ -38,9 +38,9 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
     for hex in proofs do
       let (addr, wrapper) ← loadRoot hex
       IO.eprintln s!"Executing the root wrap of {addr}."
-      let (raw, inv) ← FormalAggregate.wrapInvocation ctx wrapper
+      let (raw, inv) ← FormalAggregate.wrapInvocation ctx.toKeys wrapper
       rows := rows.push (← Compression.rootRows ctx.aggrArtifact inv raw)
-      claimLen := (FormalAggregate.outerClaim ctx .aggr wrapper.claim).size
+      claimLen := (FormalAggregate.outerClaim ctx.toKeys .aggr wrapper.claim).size
     let layout ← Compression.rootLayout ctx.aggrArtifact
       ("[" ++ ",".intercalate rows.toList ++ "]") headroom.toUInt32 claimLen.toUInt32
     IO.FS.writeBinFile out layout
@@ -60,7 +60,7 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
     let root ← FormalCompress.normalize p ctx wrapper layout
     let claim := Ix.Claim.ser wrapper.claim
     Compression.writeRoot ctx.aggr.key root claim
-      (FormalAggregate.statementBytes ctx wrapper.claim) layout out
+      (FormalAggregate.statementBytes ctx.toKeys wrapper.claim) layout out
     IO.println out
     return 0
   catch e =>
@@ -125,7 +125,7 @@ private def parametersDir : IO System.FilePath := do
   return (← StoreIO.toIO Store.getHomeDir) / ".ix/compression/params"
 
 private def backendVk (p : Cli.Parsed) : IO ByteArray := do
-  return (← FormalAggregate.aggrIdentity p).2.key
+  return (← FormalAggregate.aggrIdentity p (← FormalProver.Registry.new)).2.2.key
 
 def runSetup (p : Cli.Parsed) : IO UInt32 := do
   try

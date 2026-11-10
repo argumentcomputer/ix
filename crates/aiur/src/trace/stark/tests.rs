@@ -1525,3 +1525,39 @@ fn gpu_depth_population_proves_identically() {
     assert_eq!(device.to_bytes().unwrap(), host.to_bytes().unwrap());
   }
 }
+
+/// A backend that shares its plan and program through `Arc`s proves the grouped
+/// fixture to the same key and bytes as one that borrows them, and keeps
+/// proving after every other handle to them is released.
+#[test]
+fn shared_handles_prove_like_borrowed_ones() {
+  use multi_stark::batch::Retention;
+  use std::sync::Arc;
+  let entry = "Grouped::run";
+  let borrowed = {
+    let package = grouping_fixture();
+    let program = package.program.check().unwrap();
+    let plan = TracePlan::new(&program, package.trace).unwrap();
+    let backend = Backend::for_batch(&plan, parameters()).unwrap();
+    let record = program.execute(entry, vec![3]).unwrap();
+    let traces = backend.generate(&record, entry, &[3]).unwrap();
+    let proof = backend
+      .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+      .unwrap();
+    (backend.verifying_key_bytes().unwrap(), proof.to_bytes().unwrap())
+  };
+  let package = grouping_fixture();
+  let checked = Arc::new(package.program.check().unwrap());
+  let plan =
+    Arc::new(TracePlan::new(Arc::clone(&checked), package.trace).unwrap());
+  let backend = Backend::for_batch(Arc::clone(&plan), parameters()).unwrap();
+  let record = checked.execute(entry, vec![3]).unwrap();
+  drop((checked, plan));
+  let traces = backend.generate(&record, entry, &[3]).unwrap();
+  let proof = backend
+    .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+  assert_eq!(backend.verifying_key_bytes().unwrap(), borrowed.0);
+  assert_eq!(proof.to_bytes().unwrap(), borrowed.1);
+}
