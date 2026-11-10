@@ -180,8 +180,6 @@ private def claimContains : IO (String × ClaimWitness) := do
     (Ix.Claim.contains tree.root b) (singletonTrees tree)
   pure ("Claim Contains (synthetic 3-leaf)", witness)
 
-/-- The adversarial Ixon corpus: every exploit must be rejected and every
-control accepted. Each claim is made under its environment's role binding. -/
 /-- Checks `name` under its compiled closure's default role binding. -/
 private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Ix.AiurInvocation.Case := do
   let env ← loadIxonEnv name leanEnv

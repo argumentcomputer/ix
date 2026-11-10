@@ -41,7 +41,7 @@ private def advice (ctx : Keys) (left : Node) (right : Option Node)
 private def hex (b : ByteArray) : String :=
   b.foldl (init := "") fun s x =>
     let d := Nat.toDigits 16 x.toNat
-    s ++ (if d.length == 1 then "0" else "") ++ String.mk d
+    s ++ (if d.length == 1 then "0" else "") ++ String.ofList d
 
 /-- The ordered streams of an advice, for the Rust encoder's parity check. -/
 private def entriesJson (s : Streams) : Json :=
