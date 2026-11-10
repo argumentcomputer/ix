@@ -124,8 +124,9 @@ def renderSegs (sub : List (String × T)) : List Seg → String
 structure Path where
   binders : Array (String × String) := #[]
   subst : List (String × T) := []
-  /-- Field name, fact template, proof term. -/
-  facts : Array (String × List Piece × String) := #[]
+  /-- Field name, fact template, proof term, and a subject: the fact is dropped when
+  its subject turns out to be a constructed value (it then says nothing). -/
+  facts : Array (String × List Piece × String × Option T) := #[]
   /-- Hypotheses to normalize at the leaf. -/
   hyps : Array String := #[]
   tokens : Array String := #[]
@@ -145,6 +146,8 @@ structure St where
   ctors : Array Ctor := #[]
   /-- Name lemmas: short name, statement. -/
   names : Array (String × String) := #[]
+  /-- Name abbreviations: identifier, literal. -/
+  abbrevs : Array (String × String) := #[]
   /-- The variables a path never replaces: the parameters, `h`, `r`, `h'`, `calls`. -/
   params : List String := []
   src : Option (Aiur.Generic.Source F) := none
@@ -181,10 +184,11 @@ def isParam (n : String) : M Bool := return (← get).params.contains n
 
 def resolveT (t : T) : M T := return t.resolve (← get).path.subst
 
-def addFact (name : String) (fact : List Piece) (proof : String) (hyp : Bool := true) : M Unit :=
+def addFact (name : String) (fact : List Piece) (proof : String) (hyp : Bool := true)
+    (subject : Option T := none) : M Unit :=
   modifyPath fun p =>
     let hyps := if hyp then p.hyps.push name else p.hyps
-    { p with facts := p.facts.push (name, fact, proof), hyps := hyps }
+    { p with facts := p.facts.push (name, fact, proof, subject), hyps := hyps }
 
 def useLemma (l : String) : M Unit :=
   modifyPath fun p => if p.lemmas.contains l then p else { p with lemmas := p.lemmas.push l }
@@ -218,13 +222,34 @@ def unifyPat (V tmpl : T) (hv : String) : M (List String) := do
 
 /-! ## Names -/
 
-/-- A name lemma `lhs = "lit"`, proved by the kernel; returns its name. -/
-def nameLemma (lhs lit : String) : M String := do
+/-- How a name appears in statements: short ones as literals, long ones (the
+JSON symbols of generic instances) by an abbreviation named after the instance. -/
+def nameTerm (lit pretty : String) : M String := do
+  if lit.length ≤ 48 && !lit.startsWith "$" then return q lit
+  let s ← get
+  unless s.abbrevs.any (·.1 == pretty) do
+    set { s with abbrevs := s.abbrevs.push (pretty, lit) }
+  return s!"Names.«{pretty}»"
+
+/-- A name lemma `lhs = name`, proved by the kernel; returns the name's term and
+the lemma's name. -/
+def nameLemma (lhs lit pretty : String) : M (String × String) := do
+  let term ← nameTerm lit pretty
   let n := s!"n{(hash lhs).toNat}"
   let s ← get
   unless s.names.any (·.1 == n) do
-    set { s with names := s.names.push (n, s!"{lhs} = {q lit}") }
-  return s!"Names.{n}"
+    set { s with names := s.names.push (n, s!"{lhs} = {term}") }
+  return (term, s!"Names.{n}")
+
+/-- A type in the source's notation. -/
+partial def tyStr : Ty → String
+  | .param p => p
+  | .field => "Field"
+  | .tuple ts => "(" ++ ", ".intercalate (ts.map tyStr) ++ ")"
+  | .array t n => s!"[{tyStr t}; {n}]"
+  | .ptr t => "&" ++ tyStr t
+  | .named n [] => n
+  | .named n args => n ++ "<" ++ ", ".intercalate (args.map tyStr) ++ ">"
 
 partial def closed : Ty → Bool
   | .param _ => false
@@ -243,15 +268,14 @@ def instName (name : String) (args : Option (List Ty)) : M (String × String) :=
   | some ts =>
     unless ts.all closed do throw s!"generic instance {name}"
     let lit := instanceName [] name (some ts)
-    let l ← nameLemma s!"instanceName [] {q name} (some {list (ts.map ty)})" lit
-    return (q lit, l)
+    nameLemma s!"instanceName [] {q name} (some {list (ts.map ty)})" lit
+      (name ++ "<" ++ ", ".intercalate (ts.map tyStr) ++ ">")
 
 /-- A pattern's constructor name, and the lemma normalizing `constructorName [] t`. -/
 def ctorName (t : Ty) : M (String × String) := do
   unless closed t do throw "generic constructor pattern"
   let lit := constructorName [] t
-  let l ← nameLemma s!"constructorName [] {ty t}" lit
-  return (q lit, l)
+  nameLemma s!"constructorName [] {ty t}" lit (tyStr t)
 
 def constField (n : String) (t : Ty) : M String := do
   let some src := (← get).src | throw "no source"
@@ -408,7 +432,7 @@ mutual
           return [s!"have {eq} := Builtin.debug_inv {ap}", s!"subst {eq}"] ++ (← k segs)
         | .assertEq _, [x, y] =>
           let eq ← fresh "heq"
-          addFact eq [.t (.v x), .s " = ", .t (.v y)] eq
+          addFact eq [.s "(", .t (.v x), .s " : SourceValue F) = ", .t (.v y)] eq
           assign dv (.tuple [])
           return [s!"obtain ⟨{eq}, rfl⟩ := Builtin.assertEq_inv {ap}"] ++ (← k segs)
         | _, _ => throw "builtin arity"
@@ -523,23 +547,23 @@ mutual
     | _ =>
       if let some (u, prf) ← constPat? p then
         let hne ← fresh "hne"
-        addFact hne [.t V, .s " ≠ ", .t u] hne
+        addFact hne [.s "(", .t V, .s " : SourceValue F) ≠ ", .t u] hne (subject := some V)
         return ([s!"have {hne} := MatchesConst.none_inv ({prf}) {nm}"], false)
       match p with
       | .construct t c ps =>
         if ps.all isFlat then
           let (lit, lem) ← ctorName t
           let hne ← fresh "hne"
-          addFact hne [.s s!"∀ vs : List (SourceValue F), vs.length = {ps.length} → ", .t V,
-            .s s!" ≠ .construct {lit} {q c} vs"] hne
+          addFact hne [.s s!"∀ vs : List (SourceValue F), vs.length = {ps.length} → (", .t V,
+            .s s!" : SourceValue F) ≠ .construct {lit} {q c} vs"] hne (subject := some V)
           return ([s!"have {hne} := matchPattern_construct_none (by trivial) {nm}",
             s!"simp only [{lem}] at {hne}"], false)
         else return ([s!"clear {nm}"], false)
       | .tuple ps =>
         if ps.all isFlat then
           let hne ← fresh "hne"
-          addFact hne [.s s!"∀ vs : List (SourceValue F), vs.length = {ps.length} → ", .t V,
-            .s " ≠ .tuple vs"] hne
+          addFact hne [.s s!"∀ vs : List (SourceValue F), vs.length = {ps.length} → (", .t V,
+            .s " : SourceValue F) ≠ .tuple vs"] hne (subject := some V)
           return ([s!"have {hne} := matchPattern_tuple_none (by trivial) {nm}"], false)
         else return ([s!"clear {nm}"], false)
       | _ => return ([s!"clear {nm}"], false)
@@ -634,13 +658,16 @@ def leaf (fname : String) (segs : List Seg) : M (List String) := do
   let lemmas := ["List.append_assoc", "List.cons_append", "List.nil_append", "List.append_nil",
     "instanceName_plain_none", "instanceName_plain_some"] ++ p.lemmas.toList
   let callsT := renderSegs p.subst segs
-  let p := { p with facts := p.facts.push (hcName, [.s s!"calls = {callsT}"],
-    s!"(by first | rfl | simp only [{", ".intercalate lemmas.eraseDups}])") }
+  let kept := p.facts.filter fun (_, _, _, subj) => match subj with
+    | some v => match v.resolve p.subst with | .v _ => true | _ => false
+    | none => true
+  let p := { p with facts := kept.push (hcName, [.s s!"calls = {callsT}"],
+    s!"(by first | rfl | simp only [{", ".intercalate lemmas.eraseDups}])", none) }
   let binders := p.binders.toList.filter fun (n, _) => (p.subst.lookup n).isNone
   -- the constructor's name: the arm tokens, made unique
   let base := sanitize ("_".intercalate p.tokens.toList)
   let name := uniqueName (s.ctors.map (·.name)) base
-  let fields := p.facts.toList.map fun (n, f, _) => s!"({n} : {renderPieces p.subst f})"
+  let fields := p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})"
   let bs := binders.map fun (n, t) => s!"({n} : {t})"
   let text := s!"  | {name}" ++
     (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
@@ -651,12 +678,12 @@ def leaf (fname : String) (segs : List Seg) : M (List String) := do
       [s!"try simp only [Value.type, List.map_cons, List.map_nil] at {" ".intercalate hs} ⊢"]
     else []
   let holes := String.join (binders.map fun _ => " _")
-  let proofs := String.join (p.facts.toList.map fun (_, _, pr) => " " ++ pr)
+  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr)
   return norm ++ [s!"exact «{fname}».Path.{name}{holes}{proofs}"]
 
 /-- The path inductive and the inversion theorem of one function. -/
-def function (src : Aiur.Generic.Source F) (f : Function F) :
-    Except String (String × Array (String × String) × Nat) := do
+def function (src : Aiur.Generic.Source F) (f : Function F) (maxChars : Nat := 100000) :
+    Except String (String × Array (String × String) × Array (String × String) × Nat) := do
   unless f.typeParams.isEmpty do throw "generic function"
   if f.name.startsWith "$" then throw "internal function"
   if ControlLower.hasControl f.body then throw "control"
@@ -682,7 +709,9 @@ def function (src : Aiur.Generic.Source F) (f : Function F) :
     s!"    (by simp [{leanName}, ControlLower.hasControl])\n" ++
     s!"  simp only [{leanName}] at d0\n" ++
     "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
-  return (ind ++ "\n" ++ thm, st.names, st.ctors.size)
+  let text := ind ++ "\n" ++ thm
+  if text.length > maxChars then throw s!"too large: {text.length / 1000} KB"
+  return (text, st.names, st.abbrevs, st.ctors.size)
 
 /-! ## Files -/
 
@@ -705,7 +734,7 @@ def fileFooter : String := "end IxVM.Refinement.Obs\n"
 def group (name : String) : String :=
   sanitize ((name.splitOn "::").head!)
 
-abbrev Result := Except String (String × Array (String × String) × Nat)
+abbrev Result := Except String (String × Array (String × String) × Array (String × String) × Nat)
 
 /-- **The generated files** from each function's result: the names module, one
 module per chunk of a group, and the index module with the generator's report. -/
@@ -713,6 +742,7 @@ def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
     List (System.FilePath × String) := Id.run do
   let dir : System.FilePath := "Ix/IxVM/Refinement/Obs"
   let mut names : Array (String × String) := #[]
+  let mut abbrevs : Array (String × String) := #[]
   let mut report : Array String := #[]
   -- group → chunks (each: function texts, lines)
   let mut chunks : Array (String × Array String) := #[]
@@ -722,12 +752,15 @@ def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
   for (name, result) in results do
     match result with
     | .error e => report := report.push s!"{name}: skipped ({e})"
-    | .ok (text, ns, n) =>
+    | .ok (text, ns, abs, n) =>
       proved := proved + 1
       paths := paths + n
       report := report.push s!"{name}: {n} paths"
       for x in ns do
         unless names.any (·.1 == x.1) do names := names.push x
+      -- an identifier names one literal (a second literal would redeclare it)
+      for x in abs do
+        unless abbrevs.any (· == x) do abbrevs := abbrevs.push x
       let g := group name
       let lines := (text.splitOn "\n").length
       match cur with
@@ -756,6 +789,8 @@ def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
       "Generated path lemmas: the world and the instance names they normalize." ++
     "/-- The prepared source's world. -/\nabbrev W : World F := IxVM.source.world\n\n" ++
     "namespace Names\n\n" ++
+    String.join (abbrevs.toList.map fun (n, lit) =>
+      s!"/-- The instance `{n}`. -/\nabbrev «{n}» : String := {q lit}\n\n") ++
     String.join (names.toList.map fun (n, st) =>
       s!"theorem {n} : {st} := by decide +kernel\n\n") ++
     "end Names\n\n" ++ fileFooter
@@ -784,7 +819,7 @@ def renderIO : IO (List (System.FilePath × String)) := do
     let t0 ← IO.monoMsNow
     let r := function IxVM.source f
     let tag := match r with
-      | .ok (_, _, n) => s!"{n} paths"
+      | .ok (_, _, _, n) => s!"{n} paths"
       | .error e => s!"skipped ({e})"
     IO.eprintln s!"[obs-gen] {name}: {tag} {(← IO.monoMsNow) - t0}ms"
     rs := rs.push (name, r)
