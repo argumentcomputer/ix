@@ -7,6 +7,7 @@ import Aiur.Optimized.EndToEnd
 import Aiur.Optimized.Depth.Basic
 import Aiur.Optimized.Depth.Classify
 import Aiur.Artifact
+import Std.Data.HashMap
 
 /-! Ixon encoding of companion population plans and physical circuits: the
 trace section of an artifact. The grammar is documented with its Rust reader,
@@ -20,20 +21,86 @@ H1): the gap limb widths, and per circuit its depth column, SCC rank and call
 slots. -/
 def planVersion : Nat := 3
 
-partial def putPolynomial (encode : F → Nat) : Polynomial F → PutM Unit
-  | .const x => do u8 0; nat (encode x)
-  | .var x => do u8 1; nat x
-  | .add a b => do u8 2; putPolynomial encode a; putPolynomial encode b
-  | .sub a b => do u8 3; putPolynomial encode a; putPolynomial encode b
-  | .mul a b => do u8 4; putPolynomial encode a; putPolynomial encode b
+/-! ## Node pool
 
-private def putPolynomials (encode : F → Nat) (ps : List (Polynomial F)) : PutM Unit :=
-  list ps (putPolynomial encode)
+A section's polynomials share one pool of distinct nodes, written before the
+section (`withNodes`); a polynomial is written as the index of its root. -/
 
-def putOperation (encode : F → Nat) (hintPCs : List Nat) : Operation F → PutM Unit
+/-- A node pool under construction, holding each distinct node once, in the
+order a left-to-right post-order walk of the polynomials, in writing order,
+first completes it. `bytes` are the encoded nodes, each operand as its
+distance back; `index` keys a node by its tag and fields, operands as node
+indices. -/
+structure NodePool where
+  bytes : ByteArray := .empty
+  count : Nat := 0
+  index : Std.HashMap (Nat × Nat × Nat) Nat := {}
+
+/-- Writes a section whose polynomials share one `NodePool`. -/
+abbrev PoolM := StateT NodePool PutM
+
+/-- The index of the node with tag `tag` and fields `a` and `b` (a leaf's `b`
+is 0), added unless already present. -/
+def NodePool.node (tag a b : Nat) : PoolM Nat := do
+  unless a < 2 ^ 64 do throw s!"integer {a} exceeds UInt64"
+  modifyGetThe NodePool fun pool =>
+    match pool.index[(tag, a, b)]? with
+    | some i => (i, pool)
+    | none =>
+      let i := pool.count
+      let bytes := pool.bytes.push tag.toUInt8
+      let bytes := if tag < 2 then tagN0 bytes a.toUInt64
+        else tagN0 (tagN0 bytes (i - a).toUInt64) (i - b).toUInt64
+      (i, { bytes, count := i + 1, index := pool.index.insert (tag, a, b) i })
+
+/-- The index of `p`'s root, adding the nodes not yet in the pool. -/
+def internPolynomial (encode : F → Nat) : Polynomial F → PoolM Nat
+  | .const x => NodePool.node 0 (encode x) 0
+  | .var x => NodePool.node 1 x 0
+  | .add a b => do
+    let ia ← internPolynomial encode a
+    let ib ← internPolynomial encode b
+    NodePool.node 2 ia ib
+  | .sub a b => do
+    let ia ← internPolynomial encode a
+    let ib ← internPolynomial encode b
+    NodePool.node 3 ia ib
+  | .mul a b => do
+    let ia ← internPolynomial encode a
+    let ib ← internPolynomial encode b
+    NodePool.node 4 ia ib
+
+/-- `body` after the node pool its polynomials reference. -/
+def withNodes (body : PoolM Unit) : PutM Unit := do
+  let outer ← getThe ByteArray
+  modifyThe ByteArray fun _ => ByteArray.emptyWithCapacity (1 <<< 16)
+  let (_, pool) ← body.run {}
+  let inner ← getThe ByteArray
+  modifyThe ByteArray fun _ => outer
+  nat pool.count
+  raw pool.bytes
+  raw inner
+
+/-- `Ixon.list` over `PoolM`. -/
+@[specialize] def listP (xs : List α) (item : α → PoolM Unit) : PoolM Unit := do
+  nat xs.length
+  for x in xs do item x
+
+/-- `Ixon.array` over `PoolM`. -/
+@[specialize] def arrayP (xs : Array α) (item : α → PoolM Unit) : PoolM Unit := do
+  nat xs.size
+  for x in xs do item x
+
+def putPolynomial (encode : F → Nat) (p : Polynomial F) : PoolM Unit := do
+  nat (← internPolynomial encode p)
+
+private def putPolynomials (encode : F → Nat) (ps : List (Polynomial F)) : PoolM Unit :=
+  listP ps (putPolynomial encode)
+
+def putOperation (encode : F → Nat) (hintPCs : List Nat) : Operation F → PoolM Unit
   | .assign dest values => do u8 0; nats dest; putPolynomials encode values
   | .inverse dest value => do u8 1; nat dest; putPolynomial encode value
-  | .choose dest tests => do u8 2; nats dest; list tests (putPolynomials encode)
+  | .choose dest tests => do u8 2; nats dest; listP tests (putPolynomials encode)
   | .failure dest differences => do u8 3; nats dest; putPolynomials encode differences
   | .call name args dest => do u8 4; str name; putPolynomials encode args; nats dest
   | .store type values dest => do u8 5; putTy type; putPolynomials encode values; nat dest
@@ -44,7 +111,7 @@ def putOperation (encode : F → Nat) (hintPCs : List Nat) : Operation F → Put
       putPolynomials encode key; nats dest
 
 def putChip [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chip F) :
-    PutM Unit := do
+    PoolM Unit := do
   let chip := Activation.compile source
   unless chip.wellFormed do throw s!"invalid activated circuit {source.name}"
   unless chip.stats.maxConstraintDegree ≤ max 2 source.stats.maxConstraintDegree &&
@@ -55,17 +122,17 @@ def putChip [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chi
   nat chip.numVars
   nat source.numVars
   nats (chip.inputs.flatMap WireValue.words)
-  list chip.output.words poly
-  list chip.constraints poly
-  list chip.sends fun send => do
+  listP chip.output.words poly
+  listP chip.constraints poly
+  listP chip.sends fun send => do
     str send.channel
-    list (send.args.flatMap WireValue.words) poly
+    listP (send.args.flatMap WireValue.words) poly
     nats send.result.words
     poly send.enable
-  list chip.memory fun cell => do
+  listP chip.memory fun cell => do
     putTy cell.value.type
     poly cell.address
-    list cell.value.words poly
+    listP cell.value.words poly
     poly cell.enable
 
 /-- The actual layout functions replayed from the source function alone, to
@@ -103,7 +170,7 @@ plan. Equality checks fail closed if either compiler evolves without updating
 its companion metadata. -/
 def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Config)
     (fn : Function F) (replay : Replay F) (layout : LaidOutChip F) (representative : String)
-    (bytecode : Execution.Function F) : PutM Unit := do
+    (bytecode : Execution.Function F) : PoolM Unit := do
   let ⟨source, degree, replayed, chip, columns⟩ := replay
   unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
   unless replayed == layout.layout do throw s!"trace column allocation mismatch in {fn.name}"
@@ -126,33 +193,33 @@ def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Confi
   nat degree.chip.roles.size
   nats (source.chip.inputs.flatMap WireValue.words)
   nats source.chip.output.words
-  array steps fun step => do
+  arrayP steps fun step => do
     putPolynomial encode (source.chip.activation step.scope)
     putOperation encode hintPCs step.operation
-  list writes fun (column, id, guard) => do
+  listP writes fun (column, id, guard) => do
     nat column; nat id; putPolynomial encode guard
 
 def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
     (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
-    (bytecode : Execution.Function F) (validateInputs : Bool := true) : PutM Unit := do
+    (bytecode : Execution.Function F) (validateInputs : Bool := true) : PoolM Unit := do
   putFunctionOf encode config fn
     (← MonadExcept.ofExcept (replayFunction program config fn validateInputs)) layout
     representative bytecode
 
 def putGroup [Field F] [DecidableEq F] (encode : F → Nat) (group : Grouping.Layout F) :
-    PutM Unit := do
+    PoolM Unit := do
   let poly := putPolynomial encode
   str group.name
   nat group.width
   poly group.activation
-  list group.constraints poly
-  list group.receive poly
-  list group.sends fun s => do poly s.enable; list s.args poly
-  list group.members fun m => do
+  listP group.constraints poly
+  listP group.receive poly
+  listP group.sends fun s => do poly s.enable; listP s.args poly
+  listP group.members fun m => do
     str m.name
     array m.columns nat
     nat m.selector
-    list m.writes fun (column, value) => do nat column; poly value
+    listP m.writes fun (column, value) => do nat column; poly value
 
 /-- A function grouping artifact: checked groups alone, as `grouping_tune` writes
 them for hosts that replace a package's grouping. -/
@@ -161,7 +228,7 @@ def exportGroups [Field F] [DecidableEq F] (encode : F → Nat) (groups : List (
   Ixon.run do
     raw Artifact.groupsMagic
     nat Artifact.formatVersion
-    list groups (putGroup encode)
+    withNodes (listP groups (putGroup encode))
 
 /-! ## Depth pass (Track A, H1) -/
 
@@ -259,18 +326,19 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     nat planVersion
     nat modulus
     nats cfg.limbs
-    list ((program.functions.zip artifact.layouts).zip original.functions).zipIdx
-        fun (((fn, layout), code), index) => do
-      unless fn.name == code.name do throw "trace bytecode function order mismatch"
-      let replay ← match replays with
-        | some replays => MonadExcept.ofExcept (replays[index]?.getD (throw "missing trace replay"))
-        | none => MonadExcept.ofExcept (replayFunction program artifact.config fn
-            (artifact.entries.contains fn.name))
-      putFunctionOf encode artifact.config fn replay layout (physical.representative fn.name) code
-    list (system.chips.zip physical.system.chips) fun (chip, source) => do
-      putChip encode chip
-      putDepth cfg source
-    list plan.groups fun p => putGroup encode p.checked.layout
+    withNodes do
+      listP ((program.functions.zip artifact.layouts).zip original.functions).zipIdx
+          fun (((fn, layout), code), index) => do
+        unless fn.name == code.name do throw "trace bytecode function order mismatch"
+        let replay ← match replays with
+          | some replays => MonadExcept.ofExcept (replays[index]?.getD (throw "missing trace replay"))
+          | none => MonadExcept.ofExcept (replayFunction program artifact.config fn
+              (artifact.entries.contains fn.name))
+        putFunctionOf encode artifact.config fn replay layout (physical.representative fn.name) code
+      listP (system.chips.zip physical.system.chips) fun (chip, source) => do
+        putChip encode chip
+        putDepth cfg source
+      listP plan.groups fun p => putGroup encode p.checked.layout
   return ({ exported with bytecode }, trace)
 
 /-- `exportPreparedPlan` after physical deduplication of `artifact`. -/

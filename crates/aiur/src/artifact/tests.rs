@@ -139,8 +139,8 @@ fn decoding_is_strict() {
       .contains("found a compiled package")
   );
   let mut version = bytes.clone();
-  version[8] = 2;
-  assert!(Package::decode(&version).unwrap_err().contains("version 2"));
+  version[8] = 3;
+  assert!(Package::decode(&version).unwrap_err().contains("version 3"));
   // An option tag beyond `some` where the trace begins.
   let bare = Package { trace: None, ..sample() }.encode();
   let mut option = bare.clone();
@@ -161,8 +161,8 @@ fn unknown_tags_and_out_of_range_values_are_rejected() {
     (&[5], |r| io_type(r).map(drop), "IO type tag 5"),
     (&[14], |r| instruction(r).map(drop), "instruction tag 14"),
     (&[3, 0, 4, 0, 0], |r| instruction(r).map(drop), "operator tag 4"),
-    (&[2, 1, 0, 5], |r| poly(r).map(drop), "polynomial tag 5"),
-    (&[8], |r| action(r).map(drop), "action tag 8"),
+    (&[2, 1, 0, 5], |r| tree(r).map(drop), "polynomial tag 5"),
+    (&[8], |r| action(r, &mut Polys::Trees).map(drop), "action tag 8"),
   ];
   for (bytes, f, message) in checks {
     let error = read(bytes, f).unwrap_err();
@@ -172,34 +172,227 @@ fn unknown_tags_and_out_of_range_values_are_rejected() {
   let mut w = Writer::new();
   w.nat(u64::from(u32::MAX) + 1);
   let bytes = w.into_bytes();
-  assert!(program(&mut Reader::new(&bytes)).unwrap_err().contains("u32"));
+  assert!(
+    program(&mut Reader::new(&bytes), Version::V2).unwrap_err().contains("u32")
+  );
   // An assertion's runtime check is a strict bool.
   let error = instruction(&mut Reader::new(&[11, 0, 0, 0, 2])).unwrap_err();
   assert!(error.contains("bool tag 2"), "{error}");
 }
 
+/// The version 1 tree encoding of a polynomial, which writers no longer
+/// emit.
+fn put_tree(w: &mut Writer, p: &Polynomial) {
+  let mut pending = vec![p];
+  while let Some(p) = pending.pop() {
+    match p {
+      Polynomial::Const(value) => {
+        w.u8(0);
+        w.nat(*value);
+      },
+      Polynomial::Var(var) => {
+        w.u8(1);
+        w.usize(*var);
+      },
+      Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
+        w.u8(match p {
+          Polynomial::Add(_) => 2,
+          Polynomial::Sub(_) => 3,
+          _ => 4,
+        });
+        pending.push(&xs[1]);
+        pending.push(&xs[0]);
+      },
+    }
+  }
+}
+
+fn var(index: usize) -> Polynomial {
+  Polynomial::Var(index)
+}
+
+fn add(a: Polynomial, b: Polynomial) -> Polynomial {
+  Polynomial::Add(Box::new([a, b]))
+}
+
+fn mul(a: Polynomial, b: Polynomial) -> Polynomial {
+  Polynomial::Mul(Box::new([a, b]))
+}
+
+/// A pool read from complete `bytes`, with constants below 7.
+fn read_nodes(bytes: &[u8]) -> Result<Nodes, String> {
+  let mut r = Reader::new(bytes);
+  let nodes = Nodes::read(&mut r, Some(7))?;
+  r.finish()?;
+  Ok(nodes)
+}
+
+/// The polynomial of root `root` in `nodes`.
+fn root(nodes: &mut Nodes, root: u64) -> Result<Polynomial, String> {
+  let mut w = Writer::new();
+  w.nat(root);
+  let bytes = w.into_bytes();
+  nodes.poly(&mut Reader::new(&bytes))
+}
+
 #[test]
 fn deep_polynomials_need_no_recursion() {
-  let mut p = Polynomial::Var(0);
+  let mut p = var(0);
   for i in 0..200_000u64 {
-    p = Polynomial::Add(Box::new([p, Polynomial::Const(i)]));
+    p = add(p, Polynomial::Const(i));
   }
+  // Version 1 trees.
   let mut w = Writer::new();
-  put_poly(&mut w, &p);
+  put_tree(&mut w, &p);
   let bytes = w.into_bytes();
   let mut r = Reader::new(&bytes);
-  let decoded = poly(&mut r).unwrap();
+  let from_tree = tree(&mut r).unwrap();
   r.finish().unwrap();
   let mut again = Writer::new();
-  put_poly(&mut again, &decoded);
+  put_tree(&mut again, &from_tree);
   assert_eq!(again.into_bytes(), bytes);
-  // Release both chains without recursing through `Drop`.
-  for mut p in [p, decoded] {
+  // Version 2 node pools.
+  let mut interner = Interner::default();
+  let index = interner.intern(&p);
+  let mut w = Writer::new();
+  interner.put(&mut w);
+  let mut nodes = Nodes::read(&mut Reader::new(&w.into_bytes()), None).unwrap();
+  let from_pool = root(&mut nodes, u64::try_from(index).unwrap()).unwrap();
+  let mut again = Writer::new();
+  put_tree(&mut again, &from_pool);
+  assert_eq!(again.into_bytes(), bytes);
+  // Release the chains without recursing through `Drop`.
+  for mut p in [p, from_tree, from_pool] {
     while let Polynomial::Add(xs) = p {
       let [left, _] = *xs;
       p = left;
     }
   }
+}
+
+/// A group whose polynomials are `activation` and `constraints`.
+fn bare_group(
+  name: &str,
+  activation: Polynomial,
+  constraints: Vec<Polynomial>,
+) -> FunctionGroup {
+  FunctionGroup {
+    name: name.into(),
+    width: 2,
+    activation,
+    constraints,
+    receive: vec![],
+    sends: vec![],
+    members: vec![],
+  }
+}
+
+/// Each distinct node is stored once, in the order a post-order walk of
+/// the polynomials, in file order, first completes it. Lean's writer
+/// (`Aiur.Trace`) produces these bytes for the same groups.
+#[test]
+fn shared_subexpressions_are_stored_once() {
+  let sum = add(var(0), var(1));
+  let square = mul(sum.clone(), sum);
+  let groups = vec![
+    bare_group("a", var(0), vec![square.clone()]),
+    bare_group("b", var(0), vec![var(1), square]),
+  ];
+  let bytes = encode_groups(&groups);
+  let mut expected = GROUPS_MAGIC.to_vec();
+  expected.extend([2]);
+  // x0, x1, x0 + x1 and (x0 + x1)^2, operands as distances back.
+  expected.extend([4, 1, 0, 1, 1, 2, 2, 1, 4, 1, 1]);
+  expected.extend([2]);
+  expected.extend([1, b'a', 2, 0, 1, 3, 0, 0, 0]);
+  expected.extend([1, b'b', 2, 0, 2, 1, 3, 0, 0, 0]);
+  assert_eq!(bytes, expected);
+  assert_eq!(decode_groups(&bytes).unwrap(), groups);
+
+  // A polynomial reused by a second chip adds no node to the pool.
+  let pool_size = |package: &Package| {
+    let bare = Package { trace: None, ..package.clone() }.encode();
+    let bytes = package.encode();
+    let mut r = Reader::new(&bytes[bare.len()..]);
+    r.nat().unwrap();
+    r.nat().unwrap();
+    r.usizes().unwrap();
+    r.nat().unwrap()
+  };
+  let package = sample();
+  let mut shared = package.clone();
+  let trace = shared.trace.as_mut().unwrap();
+  let constraint = trace.chips[0].constraints[0].clone();
+  trace.chips[1].constraints.push(constraint);
+  // Repeated table rows are stored once and expanded on reading.
+  let mut table = shared.program.tables[0].clone();
+  table.name = "ys".into();
+  table.rows.push(table.rows[0].clone());
+  shared.program.tables.push(table);
+  assert_eq!(pool_size(&shared), pool_size(&package));
+  let bytes = shared.encode();
+  let decoded = Package::decode(&bytes).unwrap();
+  assert_eq!(decoded, shared);
+  assert_eq!(decoded.encode(), bytes);
+}
+
+#[test]
+fn pool_references_point_back_into_the_pool() {
+  // x0, x1, x0 + x1.
+  let mut nodes = read_nodes(&[3, 1, 0, 1, 1, 2, 2, 1]).unwrap();
+  assert_eq!(root(&mut nodes, 2).unwrap(), add(var(0), var(1)));
+  let error = root(&mut nodes, 3).unwrap_err();
+  assert!(error.contains("root 3 is not one of the 3"), "{error}");
+  for (bytes, message) in [
+    // A zero distance (a node referring to itself).
+    (&[2, 1, 0, 2, 0, 1][..], "refers 0 nodes back"),
+    // Distances past the first node.
+    (&[2, 1, 0, 2, 1, 2][..], "refers 2 nodes back"),
+    (&[1, 2, 1, 1][..], "refers 1 nodes back"),
+    (&[1, 5][..], "polynomial node tag 5"),
+    (&[1, 0, 7][..], "not below the modulus 7"),
+    (&[2, 1, 0][..], "end of input"),
+    (&[3, 1, 0][..], "count 3"),
+  ] {
+    let error = read_nodes(bytes).map(drop).unwrap_err();
+    assert!(error.contains(message), "{error}");
+  }
+  // The same checks apply within a file.
+  let mut forward = GROUPS_MAGIC.to_vec();
+  forward.extend([2, 2, 2, 1, 1, 1, 0, 0]);
+  let error = decode_groups(&forward).unwrap_err();
+  assert!(error.contains("refers 1 nodes back"), "{error}");
+  let mut missing = GROUPS_MAGIC.to_vec();
+  missing.extend([2, 1, 1, 0, 1, 1, b'g', 2, 1, 0, 0, 0, 0]);
+  let error = decode_groups(&missing).unwrap_err();
+  assert!(error.contains("root 1 is not one of the 1"), "{error}");
+  // Table rows: values below the modulus, indices into the pool.
+  let error = Rows::read(&mut Reader::new(&[1, 1, 7]), 7).unwrap_err();
+  assert!(error.contains("table value 7"), "{error}");
+  let mut rows = Rows::read(&mut Reader::new(&[1, 1, 6]), 7).unwrap();
+  assert_eq!(
+    rows.table(&mut Reader::new(&[2, 0, 0])).unwrap(),
+    vec![vec![6], vec![6]]
+  );
+  let error = rows.table(&mut Reader::new(&[1, 1])).unwrap_err();
+  assert!(error.contains("table row 1 is not one of the 1"), "{error}");
+}
+
+#[test]
+fn polynomial_expansion_is_bounded() {
+  // x0, then 40 doublings: node i expands to 2^(i + 1) - 1 nodes.
+  let mut bytes = vec![41, 1, 0];
+  for _ in 0..40 {
+    bytes.extend([2, 1, 1]);
+  }
+  let error = root(&mut read_nodes(&bytes).unwrap(), 40).unwrap_err();
+  assert!(error.contains("expand to more than"), "{error}");
+  // Node 27 alone fits the bound, which counts every polynomial read from
+  // the pool.
+  let mut nodes = read_nodes(&bytes).unwrap();
+  assert!(root(&mut nodes, 10).is_ok());
+  let error = root(&mut nodes, 27).unwrap_err();
+  assert!(error.contains("expand to more than"), "{error}");
 }
 
 #[test]
@@ -225,17 +418,35 @@ fn content_addressed_names_are_checked() {
   std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// Lean writes the canonical encoding: re-encoding what Rust decodes from
-/// Lean's grouping fixture reproduces its bytes.
+/// Lean's committed fixtures are version 1: they still decode, and their
+/// values survive re-encoding, which writes canonical version 2.
 #[test]
-fn lean_fixture_is_canonical() {
-  let bytes = include_bytes!(concat!(
+fn version_1_fixtures_still_decode() {
+  let grouping = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/grouping.ixa"
   ));
-  let package = Package::decode(bytes).unwrap();
+  let depth = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/depth.ixa"
+  ));
+  for bytes in [&grouping[..], &depth[..]] {
+    assert_eq!(bytes[8], 1);
+    let package = Package::decode(bytes).unwrap();
+    let encoded = package.encode();
+    assert_eq!(encoded[8], 2);
+    let decoded = Package::decode(&encoded).unwrap();
+    assert_eq!(decoded, package);
+    assert_eq!(decoded.encode(), encoded);
+  }
+  let package = Package::decode(grouping).unwrap();
   assert!(package.trace.as_ref().is_some_and(|t| t.groups.len() == 1));
-  assert_eq!(package.encode(), bytes);
+  // A version 1 grouping, with its activation x0 + 5 as a tree.
+  let mut v1 = GROUPS_MAGIC.to_vec();
+  v1.extend([1, 1, 1, b'g', 2, 2, 1, 0, 0, 5, 0, 0, 0, 0]);
+  let groups = vec![bare_group("g", add(var(0), Polynomial::Const(5)), vec![])];
+  assert_eq!(decode_groups(&v1).unwrap(), groups);
+  assert_eq!(decode_groups(&encode_groups(&groups)).unwrap(), groups);
 }
 
 fn sample_invocation() -> Invocation {
