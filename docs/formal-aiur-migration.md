@@ -221,7 +221,10 @@ leaf that already has a verified proof in the shard-proof index. Reports use
 addresses. A failed run does not publish a refined manifest and exits 1 (3, the
 benchmark contract's rejection code, under `ix check --json`); `ix shard refine`
 on the retired backend wrote its manifest anyway and exited 2.
-Ordinary `ix check` only executes.
+Ordinary `ix check` only executes. With `IX_AIUR_CIRCUIT_VERDICT=1` the host also
+checks the assertions only the circuit enforces (`runtimeCheck := false`), so its
+verdict on a witness is the circuit's (within the circuit's row bound); the `ci:ixvm`
+suites use this verdict.
 
 `MultiStark.recursionProgram` composes the ordinary Aiur recursive
 verifier modules; `MultiStark.aggregateProgram` reuses them and adds all

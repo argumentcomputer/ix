@@ -36,12 +36,13 @@ Lean computes and checks the costs from those raw measurements.
 Ordinary execution skips the assertions the program exports with
 `runtimeCheck := false` (`constrain_eq!`: the `u32`/`u64` gadgets' range and
 recomposition checks, `KernelNatPrim`'s `split_u32`), which only the circuit
-enforces. In circuit-verdict mode (`$IX_AIUR_CIRCUIT_VERDICT=1`, or a suite's
-`circuit := some true`) the host checks every assertion, so a case's verdict is
-the circuit's on the case's witness. The host acknowledges the mode in its
-output; a case file whose host did not is a failure, so that a stale host
-cannot pass a suite in the wrong mode. A suite can pin either mode with
-`circuit`; otherwise it follows the environment variable.
+enforces. In circuit-verdict mode the host checks every assertion, so a case's
+verdict is the circuit's on the case's witness. The circuit verdict is the
+suites' verdict: the harness runs every case file in circuit-verdict mode
+unless `$IX_AIUR_CIRCUIT_VERDICT=0` selects plain execution or a suite pins a
+mode with `circuit`. The host acknowledges the mode in its output; a case file
+whose host did not is a failure, so that a stale host cannot pass a suite in
+the wrong mode.
 -/
 
 public section
@@ -225,9 +226,10 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
     IO UInt32 := do
   let artifact ← programArtifact
   let host ← programHost
+  -- The circuit verdict unless the environment asks for plain execution.
   let circuit ← match circuit with
     | some c => pure c
-    | none => do pure ((← IO.getEnv circuitVerdictVar) == some "1")
+    | none => do pure ((← IO.getEnv circuitVerdictVar) != some "0")
   let go (dir : System.FilePath) : IO UInt32 := do
     IO.FS.createDirAll dir
     let started ← IO.monoMsNow

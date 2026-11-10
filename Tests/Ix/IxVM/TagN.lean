@@ -31,7 +31,11 @@ the 2^64 limit; truncations and a trailing byte; and every one-byte string
 with a sample of second bytes.
 
 A universe variable is checked by value too: `Sort (var v)` is well-formed under
-`v + 1` universe parameters and not under `v`.
+`v + 1` universe parameters and not under `v`. The program bounds the variable
+with `UInt32::less_than_fields(v, lvls)`, whose operands must have a 4-byte
+decomposition in the circuit, so a parameter count of `2^32` or more has no
+trace: those claims are true but unprovable, and the circuit verdict (the
+suite's) rejects them at the comparison's range check.
 
 The legacy suite also proved one value per rung through a test-only codec
 entry point. The production program has no such entry point, and
@@ -259,17 +263,21 @@ def sweepCases (_ : Unit) : Array Builder := Id.run do
   return out
 
 /-- `unsafe axiom _ : Sort (var v)` with `lvls` universe parameters: well-formed
-exactly when `v < lvls`, so the program must read `v` as the host wrote it. -/
+exactly when `v < lvls`, so the program must read `v` as the host wrote it. A
+well-formed one with `lvls ≥ 2^32` is unprovable (the bound's range check has no
+trace), so the circuit rejects it at `u32 comparison`. -/
 def universeVariableCases (_ : Unit) : Array Builder :=
   let values := (boundaries 2).filter (· < 2 ^ 64 - 1)
   values.toArray.flatMap fun v =>
-    #[(v + 1, true), (v, false)].map fun (lvls, accept) _ => do
+    #[(v + 1, true), (v, false)].map fun (lvls, wellFormed) _ => do
       let ctx ← Ix.ClaimContext.ofDefaultTable
       let c : Ixon.Constant :=
         ⟨.axio ⟨true, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64]⟩
       let (env, addr) := Exploits.storeAt {} c
+      let provable := lvls < 2 ^ 32
       Case.ofClaim s!"TagN f=2 universe variable {v} under {lvls} parameters" (← bare env)
-        (.check ctx addr none) (accept := accept)
+        (.check ctx addr none) (accept := wellFormed && provable)
+        (rejectsWith := if wellFormed && !provable then some "u32 comparison" else none)
 
 /-- The level count by value: a `Reveal` of another count is refused. -/
 def levelCountCases (_ : Unit) : Array Builder :=
@@ -284,7 +292,9 @@ def run : IO UInt32 := do
   let host ← lspecIO (.ofList [("ixvm-tagn host", [expectedHostTests])]) []
   let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeCases ()
     ++ levelCountCases () ++ universeVariableCases () ++ sweepCases ()
-  let ixvm ← runCases "ixvm-tagn" cases
+  -- The universe-variable cases are decided by the circuit's range check, so
+  -- this suite always takes the circuit verdict.
+  let ixvm ← runCases "ixvm-tagn" cases (circuit := some true)
   return if host == 0 && ixvm == 0 then 0 else 1
 
 end Tests.Ix.IxVM.TagN
