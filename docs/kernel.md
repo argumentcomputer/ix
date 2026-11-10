@@ -88,9 +88,11 @@ compile completely and validate its resources. The role support, certificates
 and binding are then added (`Ix.RoleBinding.Compile.finalize`, which compiles the
 support with `compileReport` too), and the finalized artifact is checked again
 (`checkFinalized`: the original's publications and hints unchanged, and every
-report check that reads the artifact alone) before it is written. The certified
-compiler runs at the default sharing limits, which `compileReport` fixes: a
-sharing-limit override is refused there.
+report check that reads the artifact alone) before it is written. `ix compile
+--unbound` skips that step (`Ix.CompileM.compileUnbound`): it writes
+`compileReport`'s artifact itself, in the version-4 envelope without a role
+binding. The certified compiler runs at the default sharing limits, which
+`compileReport` fixes: a sharing-limit override is refused there.
 
 Name-only `ix prove`, `ix check` and `ix addr-of` use
 `Ix.Check.loadNamedIxonEnv`, which also compiles the closure through the

@@ -249,6 +249,17 @@ same certified compiler (`Ix.CompileM.compileCertified`). The uncertified
 streamed and Rust compilers have been retired. See
 [docs/kernel.md](docs/kernel.md) for what the theorem covers on these paths.
 
+`ix compile --equations` also realizes the unfolding theorem `f.eq_def` of
+every recursive definition the selected closure reaches (Lean derives most of
+them only on demand), compiles each with its dependencies, and writes which
+theorem unfolds which definition to `--equations-out` (JSON,
+`ix/compile-equations/1`; `Ix/Compile/Equations.lean`). `ix compile --unbound`
+writes the certified compile without the role support, certificates and role
+binding that finalization adds: exactly the selected closure, in the
+version-4 envelope. Both serve consumers such as IxCC's corpus fixtures
+([IxCC/docs/corpus.md](IxCC/docs/corpus.md)), which compile recursion through
+the unfolding theorems and read only that envelope.
+
 ### Testing
 
 **Lean tests:** `lake test`

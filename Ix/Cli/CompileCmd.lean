@@ -9,6 +9,8 @@ public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
+public import Ix.Compile.Equations
+public import Ix.Compile.Unbound
 import Std.Internal.UV.System
 
 /-! `ix compile`: compile a Lean source file to an Ixon `.ixe` artifact using
@@ -173,6 +175,23 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
         pure (closed, false)
 
+  -- `--equations`: realize the unfolding theorem `f.eq_def` of every recursive
+  -- definition the closure reaches, library definitions included, close over
+  -- the theorems and their dependencies, and write which theorem unfolds which
+  -- definition (`Ix.Compile.Equations`).
+  if (p.flag? "equations-out").isSome && !p.hasFlag "equations" then
+    p.printError "error: --equations-out needs --equations"
+    return 1
+  let (leanEnv, constList) ← if p.hasFlag "equations" then do
+      let (env, closed, found, failed) ←
+        Ix.Compile.Equations.close leanEnv (constList.map (·.1))
+      IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
+      let sidecar := (p.flag? "equations-out").map (·.as! String)
+        |>.getD (outPath ++ ".equations.json")
+      IO.FS.writeFile sidecar ((Ix.Compile.Equations.toJson found failed).pretty ++ "\n")
+      pure (env, closed)
+    else pure (leanEnv, constList)
+
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
 
@@ -199,8 +218,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- atomically below.
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
-  let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) (prefetch := wholeEnv) with
+  -- `--unbound` publishes the certified compile without `finalize`
+  -- (`Ix.CompileM.compileUnbound`).
+  let (out, finalization) ← match ← (if p.hasFlag "unbound" then
+      Ix.CompileM.compileUnbound leanEnv constList workers allowPartial log (strip := strip)
+    else Ix.CompileM.compileAndFinalize leanEnv constList workers
+      allowPartial log (strip := strip) (prefetch := wholeEnv)) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
@@ -240,7 +263,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
           , ("constsFile", flagStr "consts-file")
           , ("module", flagStr "module")
           , ("exclude", flagStr "exclude")
-          , ("excludeFile", flagStr "exclude-file") ])
+          , ("excludeFile", flagStr "exclude-file")
+          , ("equations", Lean.toJson (p.hasFlag "equations")) ])
       , ("requested", Lean.toJson totalConsts)
       , ("named", Lean.toJson status.named.toNat)
       , ("uniqueAnon", Lean.toJson status.uniqueAnon.toNat)
@@ -311,6 +335,9 @@ def compileCmd : Cli.Cmd := `[Cli|
     "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
+    equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the selected closure reaches, library definitions included; compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations to --equations-out."
+    "equations-out" : String; "Path for the --equations associations (JSON, format `ix/compile-equations/1`: `equations` [{definition, equation}] sorted by definition, `failures` [{definition, message}]); defaults to <out>.equations.json."
+    unbound        ;         "Publish the certified compile without the role support, certificates and role binding that finalization adds: exactly the selected closure, in the version-4 envelope (0xE4), for consumers that do not read role bindings (IxCC's corpus fixtures). Consumers that admit through a role binding refuse it."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

@@ -33,15 +33,15 @@ Three ix sources are pinned, for three different things:
   framing moved to `f829b760`.
 
 The producer of the frozen fixtures is a fourth, local revision: `f829b760`
-plus the `--equations` export (`be45a159`, [corpus](corpus.md)). The fixtures
-cannot currently be regenerated from this tree: the ix of this repository
-(checked 2026-11-09) has no `compile --equations` export, which every family's
-equation sidecars need, and no `ix check-rs`, which `refreeze-ixon typing`
-runs on each typing bundle and refuses to proceed without. `be45a159` is not
-in this repository's history; it survives on ix's
+plus the `--equations` export (`be45a159`, [corpus](corpus.md)). `be45a159`
+is not in this repository's history; it survives on ix's
 `jcb/compilatrix-donor-history-2026-10-11` and
-`jcb/compilatrix-resource-wip-2026-10-11` branches. A refreeze builds that
-revision and follows [Refreezing](corpus.md#refreezing).
+`jcb/compilatrix-resource-wip-2026-10-11` branches. The ix of this repository
+has the same export (`ix compile --equations`) and writes the unbound
+version-4 closures ingress reads with `ix compile --unbound`; `refreeze-ixon
+typing` checks the primitive closure with its `ix check-lean`. A refreeze
+with it follows [Refreezing](corpus.md#refreezing), which says what it
+changes and which steps it cannot yet run.
 
 This source pin is independent of the Aiur target snapshot in
 [`IxCC/Vendor/README.md`](../IxCC/Vendor/README.md). That target contains the

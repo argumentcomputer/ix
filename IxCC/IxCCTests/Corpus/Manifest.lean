@@ -180,6 +180,12 @@ structure Producer where
   /-- The written resource profile the family is compiled under (`--profile`;
   reviewed path from the repository root, derived SHA-256); absent: none. -/
   profile : Option FileRec := none
+  /-- Whether the compiles pass `--unbound` (reviewed; read from the
+  manifest's commands): the selected closure without the role support,
+  certificates and role binding that ix's finalization adds, in the
+  version-4 envelope that ingress reads. Without it, the ix of this
+  repository writes a role-bound version-5 envelope. -/
+  unbound : Bool := false
   deriving Inhabited, BEq
 
 structure Family where
@@ -219,12 +225,20 @@ def withProfile (command : List String) : List String :=
 /-- The re-verification of an annotated closure's checked pairs. -/
 def checkEquationsCommand : List String := ["ix", "check-equations", "{equations}", "{ixe}"]
 
-/-- A family's commands: with `--profile` when it pins a profile. -/
+/-- A compile command that writes the unbound closure: `--unbound` before
+`--out`. -/
+def withUnbound (command : List String) : List String :=
+  command.flatMap fun a => if a == "--out" then ["--unbound", a] else [a]
+
+/-- A family's commands: with `--profile` when it pins a profile, and
+`--unbound` when its producer writes unbound closures. -/
 def Producer.anonymous (p : Producer) : List String :=
-  if p.profile.isSome then withProfile anonCommand else anonCommand
+  let c := if p.profile.isSome then withProfile anonCommand else anonCommand
+  if p.unbound then withUnbound c else c
 
 def Producer.named (p : Producer) : List String :=
-  if p.profile.isSome then withProfile namedCommand else namedCommand
+  let c := if p.profile.isSome then withProfile namedCommand else namedCommand
+  if p.unbound then withUnbound c else c
 
 def interpretCommand (protocol : String) : List String :=
   if protocol == "args" then ["lean", "-Dlinter.all=false", "--run", "{src}", "{args}"]
@@ -316,13 +330,15 @@ def Family.ofJson (j : Json) : IO Family := do
   let profile ← match p.getObjVal? "profile" with
     | .ok r => some <$> FileRec.ofJson r
     | .error _ => pure none
+  -- the canonical form (`corpus check`) then requires both commands to carry it
+  let unbound := ((p.getObjValAs? (Array String) "anonymous").toOption.getD #[]).contains "--unbound"
   return { family := ← strField j "family", description := (optStr j "description").getD ""
            tier := ← strField j "tier", phase := ← nat (← field j "phase")
            directory := ← strField j "directory", sourceRoot := ← strField j "source_root"
            leanVersion := ← strField (← field j "lean") "version"
            producer := { ixRevision := ← strField p "ix_revision", ixBinarySha256 := ← strField p "ix_binary_sha256"
                          ixVersion := ← strField p "ix_version", ixBuild := (optStr p "ix_build").getD ""
-                         profile }
+                         profile, unbound }
            fixtures := ← (← arrField j "fixtures").toList.mapM Fixture.ofJson }
 
 def Family.read (path : System.FilePath) : IO Family := do

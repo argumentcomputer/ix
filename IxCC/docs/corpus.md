@@ -127,7 +127,9 @@ also re-runs Lean's interpreter on every case.
 `rebuild` refuses an ix binary whose SHA-256 is not the manifest's. Then, per
 fixture, it runs the commands `build.sh` ran for the K1 pack: the anonymous
 closure and the named twin (`ix compile --no-build --consts ROOTS --equations
-[--anon]`), checks that their equation lists agree, resolves every root,
+[--anon]`, with `--unbound` when the manifest's commands carry it, as a
+refreeze with the ix of this repository writes them; see
+[Refreezing](#refreezing)), checks that their equation lists agree, resolves every root,
 definition and equation name with `ix addr-of` against the twin, and writes
 the sidecar and census. It draws the generated cases, runs every case through
 `lean -Dlinter.all=false --run`, checks the constants, and rewrites the
@@ -251,24 +253,35 @@ diff <(git show HEAD:$m | jq -S "$norm") <(jq -S "$norm" $m)
 ```
 
 What a refreeze needs:
-- `IX`: the producer binary (now ix `be45a159`, `f829b760` plus the
-  `--equations` export, built with Lake in ix's dev shell at that revision;
-  SHA-256 `396dffb7…` from the 2026-11-07 rebuild, as the build is not
-  reproducible). It cannot be the ix of this repository (checked 2026-11-09),
-  which has neither `compile --equations` (every family's sidecars) nor
-  `check-rs` (step 7: `refreeze-ixon typing` refuses an ix without it), so
-  the fixtures cannot currently be regenerated from this tree. `be45a159` is
-  not in this repository's history: it is reachable only from ix's
-  `jcb/compilatrix-donor-history-2026-10-11` and
-  `jcb/compilatrix-resource-wip-2026-10-11` branches;
+- `IX`: the producer binary. The frozen files were produced by ix `be45a159`
+  (`f829b760` plus the `--equations` export, built with Lake in ix's dev
+  shell at that revision; SHA-256 `396dffb7…` from the 2026-11-07 rebuild, as
+  the build is not reproducible), which is not in this repository's history:
+  it is reachable only from ix's `jcb/compilatrix-donor-history-2026-10-11`
+  and `jcb/compilatrix-resource-wip-2026-10-11` branches. The ix of this
+  repository (`lake build ix` at the repository root) can be the producer
+  instead: it has the same export (`ix compile --equations`), and
+  `ix compile --unbound` writes the closure as ingress reads it (the
+  version-4 envelope; without the flag it writes a role-bound version-5
+  envelope with the role support and certificates, which ingress refuses).
+  `refreeze-ixon producer` writes `--unbound` into every manifest's commands.
+  Its `--consts` closure is ix's selected closure (recursors, whole logical
+  units and checker support included), so refreezing with it changes every
+  closure, census and most equation lists, but no source, root, case or
+  value;
 - `FAKE`: a directory holding a `lake` stand-in that answers
   `lake env printenv LEAN_PATH` with the producer workspace's built Lean
   libraries at the same revision (ix elaborates the sources against them; the
   ownership sources import `Ix.Compile.SourceContract.Elab`), and refuses
-  everything else;
+  everything else. For the ix of this repository that is the value
+  `lake env printenv LEAN_PATH` prints at the repository root;
 - `IXREPO`, `IXPIN`: a read-only ix checkout and the revision whose
-  `Tests/Fixtures/ixon-v4/` and `Ix/Tc/Primitive.lean` apply (`f829b760`, the
-  wire revision; the codec pin `2dd96055` no longer has `Ix/Tc`);
+  `Tests/Fixtures/ixon-v4/` and primitive table apply (`f829b760`, the wire
+  revision, whose table is `Ix/Tc/Primitive.lean`; the codec pin `2dd96055`
+  no longer has `Ix/Tc`). This repository keeps the table in
+  `Ix/PrimAddrs.lean`, which has no `stringLegacyBack` field, so
+  `refreeze-ixon tc-primitives` refuses it until the erased checker's table
+  drops that field;
 - the pinned toolchain's `lean` on `PATH` (`nix develop`).
 
 The commands, in order, from `IxCC/`, with `lake build` of the
@@ -306,7 +319,8 @@ git show HEAD:fixtures/ixon-v4/primitives.tsv > old-primitives.tsv
 git show HEAD:fixtures/ixon-v4/src-tables.tsv > old-src-tables.tsv
 lake exe pin-src-tables --repin IxCC/Src/Pinned.lean \
   --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
-# 7. the typing bundles, then the catalogs over them
+# 7. the typing bundles, then the catalogs over them (the ix of this repository
+#    assembles only role-bound catalog members, so `catalog` refuses it)
 PATH=$FAKE:$PATH $LAKE exe refreeze-ixon typing --ix $IX --revision $REV
 lake exe refreeze-ixon catalog --ix $IX --revision $REV
 # 8. the generated kernel artifacts (rebuild the generators first: Pinned changed)

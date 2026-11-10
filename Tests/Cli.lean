@@ -247,6 +247,73 @@ private def Tests.Cli.testCompileExportForeignRoles : IO Unit := do
       throw <| IO.userError "compile-export of the 4.35.0 fixture wrote no role binding"
     IO.println "compile-export: the 4.35.0 export compiles with its own role binding"
 
+/-- `ix compile --equations` on a file with a structurally recursive, a
+well-founded and a mutual definition, reached from a non-recursive root: the
+associations it writes are the same for the anonymous, named and bound
+compiles, list each local definition with its `eq_def` and no failure, and
+the named artifact resolves every theorem. `--unbound` writes the version-4
+envelope without a role binding, whose constants and publications the bound
+compile keeps; `--equations-out` without `--equations` is refused. -/
+private def Tests.Cli.testCompileEquations : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  IO.FS.withTempDir fun dir => do
+    let source := dir / "Equations.lean"
+    IO.FS.writeFile source <| String.intercalate "\n"
+      [ "def eqLen : List Nat → Nat", "  | [] => 0", "  | _ :: t => eqLen t + 1"
+      , "def eqLog (n : Nat) : Nat :=", "  if h : n < 2 then 0 else eqLog (n / 2) + 1"
+      , "termination_by n", "decreasing_by omega"
+      , "mutual", "def eqEven : Nat → Bool", "  | 0 => true", "  | n + 1 => eqOdd n"
+      , "def eqOdd : Nat → Bool", "  | 0 => false", "  | n + 1 => eqEven n", "end"
+      , "def eqEntry (l : List Nat) (n : Nat) : Nat := eqLen l + eqLog n + (if eqEven n then 1 else 0)", "" ]
+    let compile (out : String) (flags : Array String) : IO (Lean.Json × ByteArray) := do
+      let ixe := dir / s!"{out}.ixe"
+      let json := dir / s!"{out}.json"
+      let result ← IO.Process.output { cmd := ix.toString, args := #["compile", source.toString,
+        "--no-build", "--consts", "eqEntry", "--equations", "--out", ixe.toString,
+        "--equations-out", json.toString] ++ flags }
+      unless result.exitCode == 0 do
+        throw <| IO.userError s!"compile --equations {flags} failed:\n{result.stdout}\n{result.stderr}"
+      return (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile json)), ← IO.FS.readBinFile ixe)
+    let (anonJson, anonBytes) ← compile "anon" #["--anon", "--unbound"]
+    let (namedJson, namedBytes) ← compile "named" #["--unbound"]
+    let (boundJson, boundBytes) ← compile "bound" #[]
+    unless anonJson == namedJson && namedJson == boundJson do
+      throw <| IO.userError "compile --equations: the anonymous, named and bound associations differ"
+    let rows ← IO.ofExcept (namedJson.getObjValAs? (Array Lean.Json) "equations")
+    let pairs := rows.toList.filterMap fun row =>
+      match row.getObjValAs? String "definition", row.getObjValAs? String "equation" with
+      | .ok d, .ok e => some (d, e)
+      | _, _ => none
+    let failures ← IO.ofExcept (namedJson.getObjValAs? (Array Lean.Json) "failures")
+    for d in ["eqLen", "eqLog", "eqEven", "eqOdd"] do
+      unless pairs.contains (d, s!"{d}.eq_def") do
+        throw <| IO.userError s!"compile --equations: no association for {d}: {namedJson.compress}"
+      let addrArgs := #["addr-of", "--ixe", (dir / "named.ixe").toString, s!"{d}.eq_def"]
+      let addr ← IO.Process.output { cmd := ix.toString, args := addrArgs }
+      unless addr.exitCode == 0 && addr.stdout.trimAscii.toString.length == 64 do
+        throw <| IO.userError s!"addr-of {d}.eq_def in the named artifact: {addr.stdout}{addr.stderr}"
+    if pairs.any (·.1 == "eqEntry") || !failures.isEmpty then
+      throw <| IO.userError s!"compile --equations: unexpected association or failure: {namedJson.compress}"
+    unless anonBytes[0]? == some 0xE4 && namedBytes[0]? == some 0xE4 && boundBytes[0]? == some 0xE5 do
+      throw <| IO.userError "compile --unbound: expected the 0xE4 envelope, and 0xE5 without it"
+    let anon ← IO.ofExcept (Ixon.deEnv anonBytes)
+    let named ← IO.ofExcept (Ixon.deEnv namedBytes)
+    let bound ← IO.ofExcept (Ixon.deEnv boundBytes)
+    unless anon.roleBinding.isNone && named.roleBinding.isNone && anon.named.isEmpty do
+      throw <| IO.userError "compile --unbound: a role binding, or names under --anon"
+    unless anon.consts.size == named.consts.size &&
+        named.consts.toList.all (fun (a, _) => anon.consts.contains a && bound.consts.contains a) &&
+        named.named.toList.all (fun (n, e) => (bound.named.get? n).map (·.addr) == some e.addr) do
+      throw <| IO.userError "compile --unbound: the bound compile does not keep the unbound one's constants"
+    let refused ← IO.Process.output { cmd := ix.toString, args := #["compile", source.toString,
+      "--no-build", "--consts", "eqEntry", "--equations-out", (dir / "alone.json").toString,
+      "--out", (dir / "alone.ixe").toString] }
+    if refused.exitCode == 0 || (← (dir / "alone.ixe").pathExists) then
+      throw <| IO.userError "compile accepted --equations-out without --equations"
+    IO.println s!"compile --equations: {pairs.length} associations, the same for the anonymous, \
+      named and bound compiles; --unbound: {named.consts.size} of the bound compile's \
+      {bound.consts.size} constants, version-4 envelope"
+
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
@@ -255,6 +322,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.testCompileReportAbort
   Tests.Cli.testPublishedEnvelopeVersion
   Tests.Cli.testCompileExportForeignRoles
+  Tests.Cli.testCompileEquations
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

@@ -33,6 +33,7 @@ import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.Equations
 import Tests.Ix.IxVM.SubstBoundaries
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -134,6 +135,8 @@ def registry : List Entry := [
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  -- `ix compile --equations`: the unfolding theorems it realizes, against Lean's own
+  .suiteIO "compile-equations" .primary Tests.Ix.Compile.Equations.suite,
   .suite "aiur-cross" .primary [AiurTests.Cross.tests],
   .runner "aiur-io-buffer" .primary AiurTests.IOBuffer.runSuite,
   .suite "aiur-cost" .primary [AiurTests.Cost.tests],
