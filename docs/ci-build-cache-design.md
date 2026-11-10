@@ -109,7 +109,7 @@ introducing another transfer mechanism:
 4. A stale or missing marker warns; Lake still builds stale targets and runs
    the tests. A green test result alone is not evidence that the cache worked.
 
-Pushes to `ix.ci-merge-tests` exercise this path using the pushed commit. The
+Pushes to `ci-merge-tests` exercise this path using the pushed commit. The
 build is the only writer in that workflow. CI Jobs' `lean-test` disables saves
 on merge-group runs sharing the queue ref; its `main` push runs still seed
 the default-branch snapshot. Consolidating the two builds remains separate

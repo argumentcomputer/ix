@@ -2,7 +2,7 @@ name: Merge tests
 
 on:
   push:
-    branches: [ix.ci-merge-tests]
+    branches: [ci-merge-tests]
   merge_group:
   # `!merge-tests` on a PR: the relay job dispatches this workflow on the
   # PR's branch, so the run carries the branch's ref. RunsOn files the

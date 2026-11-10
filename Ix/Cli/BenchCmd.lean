@@ -132,29 +132,32 @@ structure BackendSpec where
   stages : List (String × List String) := []
 
 def backendSpecs : List BackendSpec := [
-  -- ixvm: execution of the certified IxVM claim verifier by `ix check`,
-  -- no proving. A constant row is one `ix check --ixe <env>.ixe <name>`:
-  -- `execute-time` is the in-process `aiur/execute` span (bind + run),
-  -- `check-time` the whole process (adding the env load, program load and
-  -- claim construction), `peak-rss` the texray tree sampler's peak over
-  -- it. The env row shards the env with `ix shard --max-ram 100` (setup,
-  -- outside the measured window), then one `ix check --ixes` executes
-  -- every shard's claim across all cores; its `execute-time` sums the
-  -- shards' spans; `shards` counts the partition. In prove mode a
-  -- constant row also proves the constant end to end (`runIxvmProve`), and
-  -- in compress mode it also compresses the root to KZG; env rows stay
-  -- execution-only, since whole-env proving is too slow for CI.
+  -- ixvm: execution of the certified IxVM claim verifier, no proving. A
+  -- constant row is one `bench-ixvm` process: the env and programs load
+  -- once, outside every timed window; `execute-time` is the `aiur/execute`
+  -- span (bind + run) and `peak-rss` the process's peak over it. The env
+  -- row shards the env with `ix shard --max-ram 100` (setup, outside the
+  -- measured window), then one `ix check --ixes` executes every shard's
+  -- claim across all cores; its `execute-time` is that execution's wall
+  -- clock and `shards` counts the partition. `fft-cost` is the Lean FFT-work
+  -- model over the execution's circuit measurements, summed over the env's
+  -- shards for the env row: deterministic, unlike the times. In prove mode the same
+  -- `bench-ixvm` process also proves the constant on the aggregate
+  -- controller and verifies the root; `prove-trace-shards` counts the trace
+  -- shards of its claim proofs. In compress mode `ix compress` then
+  -- compresses that root to KZG. Env rows stay execution-only, since
+  -- whole-env proving is too slow for CI.
   { name := "ixvm", testbed := "ixvm",
-    constantMetrics := ["execute-time", "check-time", "peak-rss"],
-    envMetrics := ["check-time", "peak-rss", "execute-time", "shards"],
+    constantMetrics := ["execute-time", "peak-rss", "fft-cost"],
+    envMetrics := ["execute-time", "peak-rss", "shards", "fft-cost"],
     stages := [
-      ("prove", ["prove-time", "prove-peak-rss", "prove-proof-size", "verify-time"]),
+      ("prove", ["prove-time", "prove-peak-rss", "prove-proof-size", "verify-time",
+                 "prove-trace-shards"]),
       ("compress", ["compress-time", "compress-peak-rss", "compress-proof-size",
                     "compress-verify-time"])] },
   -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
   -- constant rows check each constant's full closure in one process per
-  -- env; the env row checks the whole env and writes the per-constant
-  -- attribution CSV the compare drill-down reads. The constant rows share
+  -- env; the env row checks the whole env. The constant rows share
   -- that process, so its peak RSS is the env load, not the constant.
   { name := "ixvm-ooc", testbed := "ixvm-ooc",
     constantMetrics := ["check-time"],
@@ -267,25 +270,6 @@ def readSpans (path : String) : IO (Array (String × Float)) := do
         | none => acc := acc.push (s, v)
   return acc
 
-/-- Run a per-constant tool: one process per constant, so a kill costs
-    exactly that constant, and each spawn's spans belong wholly to it. Per
-    exit: a signal death marks the row `oom`/`crash` per `killStatus`
-    (keeping whatever was written) and continues; `exitRejected` means the
-    rejected row is on disk, so continue (the final gate fails the run);
-    any other nonzero exit is deterministic (usage error, missing input,
-    unknown name) and would repeat for every remaining name, so abort. -/
-def runPerConstant (out : String) (names : Array String)
-    (spawn : String → IO UInt32) : IO Unit := do
-  for name in names do
-    let exit ← spawn name
-    if isKill exit then
-      let status := killStatus exit
-      IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording {status}"
-      markKilled out name status
-    else if exit != 0 && exit != exitRejected then
-      IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
-      return
-
 /-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
     must exist — no silent recompile of a mistyped path); otherwise the
     env is compiled fresh to `<repo>/<env>.ixe` with the default compiler. -/
@@ -344,43 +328,13 @@ def saveBaseline (out : String) (params : String) : IO Unit := do
   let base := s!"{dir}/{params}.json"
   if ← FilePath.pathExists base then
     IO.FS.writeFile s!"{dir}/{params}.prev.json" (← IO.FS.readFile base)
-    -- Rotate the per-constant attribution CSV alongside its results file.
-    if ← FilePath.pathExists s!"{base}.perconst.csv" then
-      IO.FS.writeFile s!"{dir}/{params}.prev.json.perconst.csv"
-        (← IO.FS.readFile s!"{base}.perconst.csv")
   IO.FS.writeFile base (← IO.FS.readFile out)
-  if ← FilePath.pathExists s!"{out}.perconst.csv" then
-    IO.FS.writeFile s!"{base}.perconst.csv"
-      (← IO.FS.readFile s!"{out}.perconst.csv")
-
-/-- The `ixvm` constant rows: one `ix check` per constant, its
-    `aiur/execute` span written to the run's texray sink. The span closes
-    on a rejection too, so a failing exit with the span is a verdict;
-    without it the check never reached the claim. Execution runs inside
-    `ix check`, so an OOM kill takes that process (exit 137) and the row
-    records it. -/
-def runIxvmConstants (ix ixe out : String) (names : Array String) : IO Unit := do
-  let spans := out ++ ".spans"
-  runPerConstant out names fun name => do
-    let (exit, seconds, peak) ← runMeasured ix
-      #["check", "--ixe", ixe, name] #[("IX_TEXRAY_JSON", some spans)]
-    let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
-    if ← FilePath.pathExists spans then IO.FS.removeFile spans
-    let rejected := exit != 0 && !isKill exit && execute.isSome
-    if exit == 0 || rejected then
-      let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
-        ("peak-rss", Lean.toJson peak)]
-      let row := match execute with
-        | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
-        | none => row
-      writeEntry out name <|
-        if rejected then row.setObjVal! "status" (.str "rejected") else row
-    return if rejected then exitRejected else exit
 
 /-- The `ixvm` env row: seed the partition for the runner's RAM from the
     env's static block-shape score (setup, outside the measured window),
-    then one `ix check` executes every shard's claim, one job per core,
-    writing every shard's `aiur/execute` span to the one sink. -/
+    then one `ix check` executes every shard's claim, one job per core.
+    `execute-time` is the wall clock of that concurrent execution, which
+    `ix check --batch-time` records after the env load. -/
 def runIxvmEnv (ix ixe out env : String) : IO Unit := do
   let manifest := s!"{env}-exec.ixes"
   let exit ← runTool ix #["shard", ixe, "--max-ram", "100", "--out", manifest]
@@ -390,17 +344,21 @@ def runIxvmEnv (ix ixe out env : String) : IO Unit := do
   let shards := match Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest) with
     | .ok view => view.shards.size
     | .error _ => 0
-  let spans := out ++ ".spans"
-  let (exit, seconds, peak) ← runMeasured ix
-    #["check", "--ixe", ixe, "--ixes", manifest, "--jobs", "0"]
-    #[("IX_TEXRAY_JSON", some spans)]
-  let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
-  if ← FilePath.pathExists spans then IO.FS.removeFile spans
+  let batchTime := out ++ ".batch-time"
+  if ← FilePath.pathExists batchTime then IO.FS.removeFile batchTime
+  let (exit, _, peak) ← runMeasured ix
+    #["check", "--ixe", ixe, "--ixes", manifest, "--jobs", "0", "--batch-time", batchTime]
+  let execute ← do
+    if !(← FilePath.pathExists batchTime) then pure none else
+    let text ← IO.FS.readFile batchTime
+    IO.FS.removeFile batchTime
+    pure <| match Lean.Json.parse text with
+      | .ok (.num n) => some n.toFloat
+      | _ => none
   if isKill exit then
     markKilled out env (killStatus exit)
   else if exit == 0 || execute.isSome then
-    let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
-      ("peak-rss", Lean.toJson peak), ("shards", Lean.toJson shards)]
+    let row := Lean.Json.mkObj [("peak-rss", Lean.toJson peak), ("shards", Lean.toJson shards)]
     let row := match execute with
       | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
       | none => row
@@ -469,45 +427,29 @@ def IxvmMode.name : IxvmMode → String
     join, so one shard has no root. -/
 def proveShards : Nat := 2
 
-/-- Prove a constant end to end, after its execution row: extract it into
-    a one-constant env and split that into `proveShards` shards (setup,
-    unmeasured), prove them and aggregate them into a root on the
-    controller (`prove-*`), verify the root (`verify-time`), and with
-    compress mode compress the root to KZG with development parameters
-    (`compress-*`) and verify that (`compress-verify-time`). Each stage is
-    its own spawn, timed by its wall clock and the texray tree sampler. A
-    kill marks the row `oom` or `crash`, keeping what was measured; returns
-    whether every stage succeeded. -/
-def runIxvmProve (ix ixe out name : String) (mode : IxvmMode) : IO Bool := do
-  let slug := String.ofList (name.toList.map fun c => if c.isAlphanum then c else '_')
-  let dir := s!"{out}.prove/{slug}"
-  IO.FS.createDirAll dir
-  let one := s!"{dir}/env.ixe"
-  let manifest := s!"{dir}/env.ixes"
+/-- One `ixvm` constant row, from one `bench-ixvm` process: execution and,
+    beyond execute mode, proving and root verification, each stage's fields
+    merged into the row as it completes. A kill marks the row `oom` or
+    `crash`, keeping what was measured. Returns the process's exit. -/
+def runIxvmConstant (benchIxvm ixe out name root : String) (mode : IxvmMode) : IO UInt32 := do
+  let exit ← runTool benchIxvm <| #["--ixe", ixe, "--const", name, "--json", out]
+    ++ (if mode == .execute then #[] else #["--mode", "prove", "--root-out", root])
+  if isKill exit then markKilled out name (killStatus exit)
+  return exit
+
+/-- Compress the root `bench-ixvm` proved for `name` (its store address in
+    `root`) to KZG with development parameters (`compress-*`), and verify
+    the compressed proof (`compress-verify-time`), each stage its own `ix`
+    spawn timed by its wall clock and the texray tree sampler. A kill marks
+    the row `oom` or `crash`, keeping what was measured; returns whether both
+    stages succeeded. -/
+def runIxvmCompress (ix out name root dir : String) : IO Bool := do
   let stage : String → UInt32 → IO Bool := fun what exit => do
     if exit == 0 then return true
     if isKill exit then markKilled out name (killStatus exit)
     IO.eprintln s!"[bench] {what} failed on '{name}' (exit {exit})"
     return false
-  if !(← stage "extract" (← runTool ix #["shard", "extract", ixe, "--consts", name, "--out", one])) then
-    return false
-  if !(← stage "shard" (← runTool ix #["shard", one, "--shards", toString proveShards, "--out", manifest])) then
-    return false
-  -- One lane per shard: each lane reserves its prover workspace up front
-  -- and proves with every core, so a lane with no shard only holds memory.
-  let (exit, seconds, peak, stdout) ← runCaptured ix
-    #["prove", "--ixe", one, "--ixes", manifest, "--aggregate", "--trace-shards",
-      "--jobs", toString proveShards, "--fresh"]
-  if !(← stage "prove" exit) then return false
-  let some root := lastAddress stdout
-    | IO.eprintln s!"[bench] prove printed no root address for '{name}'"; return false
-  addFields out name <| [("prove-time", jsonRound 6 seconds), ("prove-peak-rss", Lean.toJson peak)]
-    ++ ((← proofSize root).map fun n => ("prove-proof-size", Lean.toJson n)).toList
-  let (exit, seconds, _, _) ← runCaptured ix
-    #["verify", "--aggregate", "--ixe", one, "--ixes", manifest, root]
-  if !(← stage "verify" exit) then return false
-  addFields out name [("verify-time", jsonRound 6 seconds)]
-  if mode != .compress then return true
+  let root := (← IO.FS.readFile root).trimAscii.toString
   let (exit, seconds, peak, stdout) ← runCaptured ix
     #["compress", root, "--dev-kzg-srs", "--fresh", "--out", s!"{dir}/compression"]
   if !(← stage "compress" exit) then return false
@@ -590,12 +532,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let ok := fun (exit : UInt32) =>
       exit == 0 || exit == exitRejected || exit == checkLeanConditional
     if envRow then
-      -- Whole-env row, plus the per-constant attribution CSV the compare
-      -- drill-down reads (top movers).
       let exit ← runTool ix
         #["check-lean", ixe, "--anon", "--allow-user-axioms",
-          "--json", out, "--json-name", info.name,
-          "--per-const", s!"{out}.perconst.csv"]
+          "--json", out, "--json-name", info.name]
       if !ok exit then
         IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- One full-closure row per constant, from ONE process for all names:
@@ -610,17 +549,27 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "ixvm" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    runIxvmConstants ix ixe out names
-    if mode != .execute then
-      if envRow then
-        IO.eprintln s!"[bench] proving covers constant rows only; the {env} env row stays execution-only"
-      for name in names do
-        -- A constant whose execution failed or was killed has nothing to prove.
-        let rows ← readRows out
-        let status := (rows.getObjVal? name).toOption.map fun row =>
-          ((row.getObjVal? "status").toOption.bind (·.getStr?.toOption)).getD "ok"
-        if status != some "ok" then continue
-        if !(← runIxvmProve ix ixe out name mode) then proveFailures := proveFailures + 1
+    let benchIxvm ← resolveBin repo "bench-ixvm"
+    if mode != .execute && envRow then
+      IO.eprintln s!"[bench] proving covers constant rows only; the {env} env row stays execution-only"
+    for name in names do
+      let slug := String.ofList (name.toList.map fun c => if c.isAlphanum then c else '_')
+      let dir := s!"{out}.prove/{slug}"
+      IO.FS.createDirAll dir
+      let root := s!"{dir}/root"
+      let exit ← runIxvmConstant benchIxvm ixe out name root mode
+      -- A killed or rejected constant has nothing more to measure.
+      if isKill exit || exit == exitRejected then continue
+      if exit == exitStageFailed then
+        proveFailures := proveFailures + 1
+        continue
+      -- Anything else (a usage error, a missing input) would repeat for
+      -- every remaining constant.
+      if exit != 0 then
+        IO.eprintln s!"[bench] bench-ixvm failed on '{name}' (exit {exit}); aborting the remaining names"
+        break
+      if mode == .compress && !(← runIxvmCompress ix out name root dir) then
+        proveFailures := proveFailures + 1
     if envRow then runIxvmEnv ix ixe out env
   | other =>
     p.printError s!"error: backend '{other}' has no runner"

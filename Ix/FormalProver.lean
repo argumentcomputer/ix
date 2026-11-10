@@ -168,10 +168,11 @@ structure LaneConfig where
   claimsOnly : Bool
   assumeBinding : Bool
 
-/-- What a lane run proved: the verified root's store address, or with
+/-- What a lane run proved: the verified root's store address and the trace
+shards of the claim proofs the run made (reused claims count none), or with
 `claimsOnly` each proven claim's shard id and proof address. -/
 inductive LaneResult where
-  | root (address : ByteArray)
+  | root (address : ByteArray) (claimTraceShards : Nat)
   | claims (proven : Array (Nat × ByteArray))
 
 /-- `ix aggregate` as configured. `proofs` are store addresses of claim and

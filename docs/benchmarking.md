@@ -33,8 +33,9 @@ and one exit-code convention (`Ix/Benchmark/Results.lean`):
   passed only with user axioms admitted).
 - Exit codes: `0` all ok · `2` usage error · `3` the kernel **rejected** a
   constant (its row is on disk) · `4`/`5` `ix check-lean`'s partial and
-  conditional runs (their rows are on disk) · anything else is an
-  infrastructure failure.
+  conditional runs (their rows are on disk) · `6` `bench-ixvm`'s proving
+  failed after the constant executed (the execution row is on disk) ·
+  anything else is an infrastructure failure.
 
 There is no output scraping anywhere: no marker lines, no log grepping, no
 sentinel-key jq. State flows through rows and exit codes only. A rejected or
@@ -46,8 +47,8 @@ row** — an empty or quietly-partial cell can't be green.
 
 | subcommand | job |
 |---|---|
-| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool (one process per constant on ixvm), read the ixvm cells' execution spans into their rows, gate on the rows |
-| `compare`    | two rows files → one cell's Markdown base-vs-PR table, the renderer the PR comment uses (`base → PR (Δ%)` cells, ⚠️/🟢 past ±3%, OOM/❌ rows) |
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool (one `bench-ixvm` per constant on ixvm), gate on the rows |
+| `compare`    | two rows files → one cell's Markdown base-vs-PR table, the renderer the PR comment uses (`base | PR | Δ%` columns per metric, ⚠️/🟢 past ±3%, ❌ OOM and ❌ rejected cells) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
 | `report`     | assemble per-cell results into one Markdown report, one table per backend (CI posts it as the PR comment) |
@@ -67,6 +68,9 @@ ix bench run --backend ixvm --env InitStd --constants Nat.add_comm --no-env-row
 
 # Also prove, aggregate, verify and KZG-compress the constant rows:
 ix bench run --backend ixvm --mode compress --env InitStd --no-env-row
+
+# One ixvm constant row directly, without the driver (needs the .ixe):
+lake exe bench-ixvm --ixe InitStd.ixe --const Nat.add_comm --mode prove --json rows.json
 
 # Change something, run again, and diff against your previous run
 # (runs save baselines under .lake/benches/<cell>{,.prev}.json — the same
@@ -164,12 +168,12 @@ and, if selected, its env row.
 
 | backend | rows | what it measures | tool |
 |---|---|---|---|
-| `ixvm` | constant | formal Aiur execution of the certified IxVM claim verifier, no proving: `execute-time` (the texray `aiur/execute` span around binding and executing the claim), `check-time` (the whole `ix check` process, adding the env load, program load and claim construction), `peak-rss` (the texray tree sampler over that process) | `ix check --ixe <env>.ixe <name>` |
-| `ixvm` | env | the same execution over the whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `check-time`, `peak-rss`, `execute-time` (summed over shards), `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
-| `ixvm prove` | constant | the constant proven end to end on the controller, after its execution: `ix shard extract` writes a one-constant env and `ix shard --shards 2` splits it (setup, untimed; aggregation needs a join), then `ix prove --aggregate --trace-shards --fresh` proves both shards and aggregates them into a root (`prove-time`, `prove-peak-rss`, `prove-proof-size`), and `ix verify --aggregate` checks the root (`verify-time`) | `ix prove --ixe <one>.ixe --ixes <one>.ixes --aggregate` |
-| `ixvm compress` | constant | executes and proves the constant, then compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`) | `ix compress <root> --dev-kzg-srs` |
+| `ixvm` | constant | formal Aiur execution of the certified IxVM claim verifier, no proving, in one `bench-ixvm` process per constant that loads the env and programs once, outside every timed window: `execute-time` (the texray `aiur/execute` span around binding and executing the claim) and `peak-rss` (the process's peak, sampled over the execution) | `bench-ixvm --ixe <env>.ixe --const <name>` |
+| `ixvm` | env | the same execution over the whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `execute-time` (the wall clock of that concurrent execution, after the env load, which `ix check --batch-time` records), `peak-rss`, `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
+| `ixvm prove` | constant | the constant proven end to end, in the same `bench-ixvm` process after its execution: it extracts a one-constant env and splits it into two shards (setup, untimed; aggregation needs a join), proves both claims and joins them into a root on the in-process aggregate controller with no proof reused from the index or cache (`prove-time`, `prove-peak-rss`, `prove-proof-size`, and `prove-trace-shards`: the trace shards of the two claim proofs), checks the root proves the env's statement, and verifies it (`verify-time`) | `bench-ixvm --ixe <env>.ixe --const <name> --mode prove` |
+| `ixvm compress` | constant | executes and proves the constant (as `ixvm prove`), then `ix compress` compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`) | `ix compress <root> --dev-kzg-srs` |
 | `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxC`) over each constant's full closure, user axioms admitted as the `ixvm` claim context admits them: `check-time` wraps only the check — the env loads once, outside every row's timed window, and the rows share that process, so they report no peak RSS of their own | `ix check-lean --anon --allow-user-axioms --consts-file` |
-| `ixvm-ooc` | env | the same kernel over the whole env, plus the per-constant attribution CSV the compare drill-down reads. An env with user axioms gets a `conditional` verdict (it holds only under the axioms listed); its row is measured and uploaded like an `ok` one | `ix check-lean --anon --allow-user-axioms --per-const` |
+| `ixvm-ooc` | env | the same kernel over the whole env. An env with user axioms gets a `conditional` verdict (it holds only under the axioms listed); its row is measured and uploaded like an `ok` one | `ix check-lean --anon --allow-user-axioms --per-const` |
 | `compile` | env | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | env | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
@@ -208,10 +212,12 @@ All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar. Constant rows use per-constant
 **full-closure** scope.
 
-For the `ixvm` cells, `ix bench run` points `IX_TEXRAY_JSON` at `<out>.spans`,
-where `ix check` writes each claim's `aiur/execute` span, and reads the
-execution time back from it. A failing `ix check` that wrote the span is a
-`rejected` verdict; one that failed before executing the claim writes no row.
+The `ixvm` constant rows come from `bench-ixvm`, which writes them itself: it
+reads its claim's `aiur/execute` span from its own texray sink, records a
+failing claim that executed as a `rejected` row, and writes no row when the
+check failed before executing the claim. Each later stage merges its fields
+into the row as it completes. The env row reads the batch's wall clock from
+`ix check --batch-time`.
 
 ## Memory: OOM rows
 
@@ -220,8 +226,8 @@ through `.github/scripts/memory-cap`: a `systemd-run --user --scope` with
 cgroup-v2 `MemoryMax` at the runner's RAM minus 15 GiB and swap disabled.
 At the cap the kernel OOM-kills the largest process in the scope, the
 measured tool, with SIGKILL (exit 137), and `ix bench run` survives it. The
-`ixvm` constant rows run one `ix check` per constant, with the execution in
-that process, so a kill marks that constant's row `status: oom` and the loop
+`ixvm` constant rows run one `bench-ixvm` per constant, with execution and
+proving in that process, so a kill marks that constant's row `status: oom` and the loop
 continues: one constant's death costs one constant. An `ixvm` env-row kill
 marks the env row `oom`. The `ix check-lean` and `ix compile` backends run as
 single processes that write their own rows, so a kill there means missing
@@ -271,6 +277,14 @@ RUST_LOG=info                  # passthrough env (allowlist:
                                # RUST_LOG, RUSTFLAGS, IX_COMPILE_DEMOTE)
 ```
 
+The defaults apply only when neither key is set. Setting either one runs
+exactly what it names, and the other selects nothing: `!benchmark ixvm
+BENCH_CONSTANTS=Nat.add_comm` runs that constant without the InitStd env row,
+and `!benchmark ixvm BENCH_ENVS=Mathlib` runs only the Mathlib env row.
+`ixvm prove` and `ixvm compress` default to `Nat.add_comm` alone, since
+proving the larger constants on CPU would outlast the 60-minute job timeout:
+name other constants with `BENCH_CONSTANTS` to prove them.
+
 `ixvm execute` measures execution, `ixvm prove` also proves and verifies each
 constant, and `ixvm compress` additionally KZG-compresses and verifies the
 root. Bare `ixvm` and `all` default to execution. A mode immediately follows
@@ -289,33 +303,43 @@ available; fresh results are passed between jobs as run-scoped artifacts.
 One comment per run. Its header line names the base and PR commits (linked),
 the machine, where the base side came from (bencher at the base SHA, or a
 base rerun), and the run's selection; the measuring hardware follows once,
-both sides only when they differ. Then one table per backend, its rows
-grouped by env: the env row in bold, the env's constant rows under it. Each
-headline metric (at most four) is one column whose cell reads
-`base → PR (Δ%)`, with ⚠️ for a regression and 🟢 for an improvement past
-±3%; the backend's other metrics sit in one collapsed block, and an
-`ixvm-ooc` env row adds its per-constant attribution drill-down. A run with
+both sides only when they differ. Then each backend's tables, one per row
+kind: its env rows (`#### ixvm · envs`), then its constant rows (`#### ixvm ·
+constants`), since the two kinds carry different measures (an env row has
+`shards`, for one). In each table, every headline metric (at most four)
+gets three columns, `<metric> (<base>)`,
+`<metric> (PR)` and `Δ%`, with ⚠️ for a regression and 🟢 for an improvement past
+±3%, and the change as a factor in the metric's terms (`1.07× slower`,
+`1.20× larger`) once it reaches 1.05×; a table's other metrics sit in one
+collapsed block. A run with
 `ixvm prove` or `ixvm compress` names its stages in the header line
 (`stages execute+prove+compress`) and adds one table per stage under the
-`ixvm` table (`#### ixvm · prove`, `#### ixvm · compress`), with the
+constant table (`#### ixvm · prove`, `#### ixvm · compress`), with the
 constant rows that ran it. `ix bench compare` renders a single cell with the
-same table.
+same tables.
 
 ```
 ## `!benchmark` — main [`1a2b3c4`](…) ← PR [`5d6e7f8`](…)
 
 machine `r8i.8xlarge` · base: bencher @ 1a2b3c4 · backends `ixvm` · constants `all` · env rows `InitStd`
 
-Hardware: Intel Xeon 6975P-C, 32 vCPUs, 256 GiB
+Hardware: CPU: `Intel Xeon 6975P-C` · vCPUs: `32` · RAM: `251.4 GiB`
 
 ### `ixvm`
 
 _6 rows · 1 with regressions · 0 with improvements (|Δ| > 3.0% on any metric)._
 
-| row | execute-time | check-time | peak-ram | shards |
-|---|---|---|---|---|
-| **InitStd** | 41.2 s → 43.9 s (+6.6%) ⚠️ | 52.0 s → 54.1 s (+4.0%) ⚠️ | 61.0 GiB → 61.2 GiB (+0.3%) | 12 → 12 (+0.0%) |
-| `Nat.add_comm` | 12.1 ms → 12.0 ms (-0.8%) | 3.112 s → 3.098 s (-0.4%) | 1.20 GiB → 1.20 GiB (+0.0%) |  |
+#### `ixvm` · envs
+
+| env | execute-time (main) | execute-time (PR) | Δ% | peak-ram (main) | peak-ram (PR) | Δ% | env-shards (main) | env-shards (PR) | Δ% |
+|---|---|---|---|---|---|---|---|---|---|
+| InitStd | 41.200 s | 43.900 s | +6.6% (1.07× slower) ⚠️ | 61.00 GiB | 61.20 GiB | +0.3% | 12 | 12 | +0.0% |
+
+#### `ixvm` · constants
+
+| constant | execute-time (main) | execute-time (PR) | Δ% | peak-ram (main) | peak-ram (PR) | Δ% |
+|---|---|---|---|---|---|---|
+| `Nat.add_comm` | 12.1 ms | 12.0 ms | -0.8% | 1.20 GiB | 1.20 GiB | +0.0% |
 ```
 
 The `KEY=VALUE` config works both as lines below the command (the comment

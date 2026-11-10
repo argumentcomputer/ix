@@ -82,11 +82,12 @@ jobs:
         with:
           auto-config: false
           build: true
-          build-args: "ix --wfail -v"
+          build-args: "ix bench-ixvm --wfail -v"
           use-github-cache: false
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
+          cp .lake/build/bin/bench-ixvm ~/.local/bin/
       - name: Warm the compiled-program cache
         run: .github/scripts/warm-aiur-cache ~/.local/bin/ix
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -342,21 +343,9 @@ jobs:
           .github/scripts/memory-cap ix bench run --backend ${{ matrix.params.backend }}
           --env ${{ matrix.params.env }}
           --ixe ${{ matrix.params.env }}.ixe --out bench.json
-      # The ixvm-ooc env row writes a per-constant attribution CSV next to its
-      # results file. Bencher stores metric rows only, so cache the CSV by
-      # (SHA, cell) — bench-pr restores it to render the per-constant
-      # drill-down against a bencher-fetched main side (PR runs can read
-      # caches created on main). Best-effort: an evicted or missing entry
-      # just means the drill-down falls back to base-run-only availability.
-      - name: Cache per-constant attribution CSV
-        if: ${{ !cancelled() && matrix.params.backend == 'ixvm-ooc' }}
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: bench.json.perconst.csv
-          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # The measurement host, by (SHA, parameters), for bench-pr to label a
-      # bencher-sourced base side — same best-effort contract as the CSV.
+      # bencher-sourced base side. Best-effort: a missing entry renders
+      # without the base side's hardware.
       - name: Record measurement hardware
         if: ${{ !cancelled() }}
         env:

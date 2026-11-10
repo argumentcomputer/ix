@@ -37,6 +37,10 @@ def exitUsage : UInt32 := 2
 /-- The kernel rejected at least one constant; its row is on disk. -/
 def exitRejected : UInt32 := 3
 
+/-- A stage after a successful execution (proving, aggregation or
+    verification) failed; the execution row is on disk. -/
+def exitStageFailed : UInt32 := 6
+
 /-- A `Json` number with at most `d` decimal places, rendered decimally.
     `Float`'s own `ToJson` prints the full binary representation
     (`0.02602000000000000146…`), so build the `JsonNumber` (mantissa ·
