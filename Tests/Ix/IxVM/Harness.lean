@@ -109,7 +109,10 @@ def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) (accept : Bool := true)
     (rejectsWith : Option String := none) : Except String Case := do
   let witness ← buildClaimWitness env claim trees
-  return { label, accept, rejectsWith, witness, env := ← withDefaultRoleBinding env }
+  -- Only a claim that converts expressions reads binder data, so only its environment is
+  -- kept (closing every case's environment over the role table is slow on large suites).
+  let env ← if _root_.IxVM.PwHints.converts claim then withDefaultRoleBinding env else pure {}
+  return { label, accept, rejectsWith, witness, env }
 
 /-- `c` with the binder data (D2, `IxVM.PwHints`) its claim's conversion
 reads, when its witness carries none: a suite that builds its IO by hand gets
