@@ -94,13 +94,13 @@ def k_infer_core := aiur_fn⟦
               k_infer_app_spine_loop(rc, head_ty, args, (&(Lists::Node::Nil)), types) } ,
           } } ,
 
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           k_ensure_sort(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let body_ty = k_infer(rc, body, types2);
-          (&(KernelTypes::KExprNode::Forall(ty, body_ty))) } ,
+          (&(KernelTypes::KExprNode::Forall(ty, body_ty, bl))) } ,
 
-        KernelTypes::KExprNode::Forall(ty, body) => {
+        KernelTypes::KExprNode::Forall(ty, body, _) => {
           let u1 = k_ensure_sort(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let u2 = k_ensure_sort(rc, body, types2);
@@ -145,7 +145,7 @@ def k_infer_app_spine_loop := aiur_fn⟦
           inst_subs(t, subs_rev) } ,
         Lists::Node::Cons(a, rest) => {
           match (*(t)) {
-            KernelTypes::KExprNode::Forall(dom, cod) => {
+            KernelTypes::KExprNode::Forall(dom, cod, _) => {
               let dom_subst = inst_subs(dom, subs_rev);
               k_check(rc, a, dom_subst, types);
               k_infer_app_spine_loop(rc, cod, rest,
@@ -154,7 +154,7 @@ def k_infer_app_spine_loop := aiur_fn⟦
               let t_concrete = inst_subs(t, subs_rev);
               let t_w = KernelWhnf::whnf(rc, t_concrete, types);
               match (*(t_w)) {
-                KernelTypes::KExprNode::Forall(dom, cod) => {
+                KernelTypes::KExprNode::Forall(dom, cod, _) => {
                   k_check(rc, a, dom, types);
                   k_infer_app_spine_loop(rc, cod, rest,
                     (&(Lists::Node::Cons(a, (&(Lists::Node::Nil))))), types) } ,
@@ -180,7 +180,7 @@ def peel_params_subst := aiur_fn⟦
         0 => {  ty } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
               match (*(args)) {
                 Lists::Node::Cons(arg, rest) => {
                   let body_substed = KernelSubst::expr_inst1(body, arg, 0);
@@ -251,7 +251,7 @@ def peel_n_alls_whnf := aiur_fn⟦
         _ => {
           let ew = KernelWhnf::whnf(rc, e, types);
           match (*(ew)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               let t2 = (&(Lists::Node::Cons(dom, types)));
               peel_n_alls_whnf(rc, body, n - 1, t2) } ,
             _ => {  ew } ,
@@ -298,7 +298,7 @@ def peel_field_loop := aiur_fn⟦
                            struct_addr: Bytes::AddressRef, val: KernelTypes::KExpr, is_prop: Field,
                            types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           match target - current {
             0 => {
               check_prop_field_if_prop(rc, is_prop, dom, types);

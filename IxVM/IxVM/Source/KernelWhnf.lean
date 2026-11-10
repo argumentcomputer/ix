@@ -24,7 +24,7 @@ def peel_beta := aiur_fn⟦
   fn peel_beta(lam: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>, acc: Lists::List<KernelTypes::KExpr>)
                     -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KExpr>) {
       match (*(lam)) {
-        KernelTypes::KExprNode::Lam(_, body) => {
+        KernelTypes::KExprNode::Lam(_, body, _) => {
           match (*(spine)) {
             Lists::Node::Cons(a, rest) => {
               peel_beta(body, rest, (&(Lists::Node::Cons(a, acc)))) } ,
@@ -111,7 +111,7 @@ def red_proj := aiur_fn⟦
 def type_sort_never := aiur_fn⟦
   fn type_sort_never(ty: KernelTypes::KExpr, n: Field, lvls: Lists::List<KernelTypes::KLevel>) -> Field {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(_, body) => {
+        KernelTypes::KExprNode::Forall(_, body, _) => {
           match n {
             0 => {  0 } ,
             _ => {  type_sort_never(body, n - 1, lvls) } ,
@@ -152,7 +152,7 @@ def whnf_with_spine := aiur_fn⟦
             (inner_head, inner_spine) => {
               whnf_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, _) => {
           match red_beta(rc, head, spine, types) {
             (1, reduct, rest) => {  whnf_with_spine(rc, reduct, rest, types) } ,
             _ => {  apply_spine(head, spine) } ,
@@ -464,7 +464,7 @@ def projection_definition_info := aiur_fn⟦
   fn projection_definition_info(val: KernelTypes::KExpr, arity: Field)
                                       -> (Field, Field, Bytes::AddressRef, Field, Field) {
       match (*(val)) {
-        KernelTypes::KExprNode::Lam(_, body) => {
+        KernelTypes::KExprNode::Lam(_, body, _) => {
           projection_definition_info(body, arity + 1) } ,
         KernelTypes::KExprNode::Proj(struct_addr, field, projected) => {
           match (*(projected)) {
@@ -773,7 +773,7 @@ def iota_certs := aiur_fn⟦
 def rec_slots_never := aiur_fn⟦
   fn rec_slots_never(t: KernelTypes::KExpr, nparams: Field) -> Field {
       match (*(t)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           match nparams {
             0 => {  final_sort_never(dom) } ,
             _ => {  rec_slots_never(body, nparams - 1) } ,
@@ -786,7 +786,7 @@ def rec_slots_never := aiur_fn⟦
 def final_sort_never := aiur_fn⟦
   fn final_sort_never(t: KernelTypes::KExpr) -> Field {
       match (*(t)) {
-        KernelTypes::KExprNode::Forall(_, body) => {  final_sort_never(body) } ,
+        KernelTypes::KExprNode::Forall(_, body, _) => {  final_sort_never(body) } ,
         KernelTypes::KExprNode::Srt(l) => {  KernelLevels::level_is_not_zero(l) } ,
         _ => {  0 } ,
       }
@@ -801,7 +801,7 @@ def pi_peel := aiur_fn⟦
   fn pi_peel(t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>, subs_rev: Lists::List<KernelTypes::KExpr>,
              n: Field) -> (Field, KernelTypes::KExpr) {
       match (*(t)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           match n {
             0 => {  (1, KernelInfer::inst_subs(dom, subs_rev)) } ,
             _ => {
@@ -826,7 +826,7 @@ def pi_residual := aiur_fn⟦
         Lists::Node::Nil => {  (1, KernelInfer::inst_subs(t, subs_rev)) } ,
         Lists::Node::Cons(a, rest) => {
           match (*(t)) {
-            KernelTypes::KExprNode::Forall(_, body) => {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
               pi_residual(body, rest, (&(Lists::Node::Cons(a, subs_rev)))) } ,
             _ => {  (0, t) } ,
           } } ,
@@ -951,7 +951,7 @@ def certs_all := aiur_fn⟦
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(a, rest) => {
           match (*(t)) {
-            KernelTypes::KExprNode::Forall(dom, cod) => {
+            KernelTypes::KExprNode::Forall(dom, cod, _) => {
               let ta = KernelInferOnly::k_infer_only(rc, a, types);
               match KernelDefEq::k_is_def_eq(rc, ta, KernelInfer::inst_subs(dom, subs_rev), types) {
                 1 => {  certs_all(rc, cod, rest, (&(Lists::Node::Cons(a, subs_rev))), types) } ,
@@ -960,7 +960,7 @@ def certs_all := aiur_fn⟦
             _ => {
               let t_w = whnf(rc, KernelInfer::inst_subs(t, subs_rev), types);
               match (*(t_w)) {
-                KernelTypes::KExprNode::Forall(_, _) => {  certs_all(rc, t_w, args, (&(Lists::Node::Nil)), types) } ,
+                KernelTypes::KExprNode::Forall(_, _, _) => {  certs_all(rc, t_w, args, (&(Lists::Node::Nil)), types) } ,
                 _ => {  0 } ,
               } } ,
           } } ,
@@ -973,7 +973,7 @@ def se_parent_addr := aiur_fn⟦
       match skip {
         0 => {
           match (*(rec_ty)) {
-            KernelTypes::KExprNode::Forall(dom, _) => {
+            KernelTypes::KExprNode::Forall(dom, _, _) => {
               match KernelTypes::collect_spine(dom) {
                 (h, _) => {
                   match (*(h)) {
@@ -985,7 +985,7 @@ def se_parent_addr := aiur_fn⟦
           } } ,
         _ => {
           match (*(rec_ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {  se_parent_addr(body, skip - 1) } ,
+            KernelTypes::KExprNode::Forall(_, body, _) => {  se_parent_addr(body, skip - 1) } ,
             _ => {  (0, (&([UInt8::BYTE_0; 32]))) } ,
           } } ,
       }
@@ -1077,7 +1077,7 @@ def se_peel_tol := aiur_fn⟦
         0 => {  ty } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {  se_peel_tol(body, n - 1) } ,
+            KernelTypes::KExprNode::Forall(_, body, _) => {  se_peel_tol(body, n - 1) } ,
             _ => {  ty } ,
           } } ,
       }
@@ -1087,7 +1087,7 @@ def se_peel_tol := aiur_fn⟦
 def se_scan_fields := aiur_fn⟦
   fn se_scan_fields(ty: KernelTypes::KExpr, members: Lists::List<Bytes::AddressRef>) -> Field {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           match se_mentions(dom, members) {
             1 => {  1 } ,
             _ => {  se_scan_fields(body, members) } ,
@@ -1106,12 +1106,12 @@ def se_mentions := aiur_fn⟦
             1 => {  1 } ,
             _ => {  se_mentions(x, members) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(t, b) => {
+        KernelTypes::KExprNode::Lam(t, b, _) => {
           match se_mentions(t, members) {
             1 => {  1 } ,
             _ => {  se_mentions(b, members) } ,
           } } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
+        KernelTypes::KExprNode::Forall(t, b, _) => {
           match se_mentions(t, members) {
             1 => {  1 } ,
             _ => {  se_mentions(b, members) } ,
@@ -1149,8 +1149,8 @@ def whnf := aiur_fn⟦
       match (*(e)) {
         KernelTypes::KExprNode::Srt(_) => {  e } ,
         KernelTypes::KExprNode::Lit(_) => {  e } ,
-        KernelTypes::KExprNode::Lam(_, _) => {  e } ,
-        KernelTypes::KExprNode::Forall(_, _) => {  e } ,
+        KernelTypes::KExprNode::Lam(_, _, _) => {  e } ,
+        KernelTypes::KExprNode::Forall(_, _, _) => {  e } ,
         KernelTypes::KExprNode::BVar(_) => {  e } ,
         _ => {  whnf_core(rc, e, KernelSubst::ctx_trim(types, KernelSubst::expr_lbr(e))) } ,
       }
@@ -1168,8 +1168,8 @@ def whnf_struct_core := aiur_fn⟦
       match (*(e)) {
         KernelTypes::KExprNode::Srt(_) => {  e } ,
         KernelTypes::KExprNode::Lit(_) => {  e } ,
-        KernelTypes::KExprNode::Lam(_, _) => {  e } ,
-        KernelTypes::KExprNode::Forall(_, _) => {  e } ,
+        KernelTypes::KExprNode::Lam(_, _, _) => {  e } ,
+        KernelTypes::KExprNode::Forall(_, _, _) => {  e } ,
         KernelTypes::KExprNode::BVar(_) => {  e } ,
         _ => {  whnf_struct_core_spine(rc, e, (&(Lists::Node::Nil)),
                KernelSubst::ctx_trim(types, KernelSubst::expr_lbr(e))) } ,
@@ -1185,7 +1185,7 @@ def whnf_struct_core_spine := aiur_fn⟦
           match KernelTypes::collect_spine(head) {
             (h, s) => {  whnf_struct_core_spine(rc, h, Lists::concat(s, spine), types) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(_, _) => {
+        KernelTypes::KExprNode::Lam(_, _, _) => {
           match red_beta(rc, head, spine, types) {
             (1, reduct, rest) => {  whnf_struct_core_spine(rc, reduct, rest, types) } ,
             _ => {  apply_spine(head, spine) } ,
@@ -1241,8 +1241,8 @@ def whnf_nd := aiur_fn⟦
       match (*(e)) {
         KernelTypes::KExprNode::Srt(_) => {  e } ,
         KernelTypes::KExprNode::Lit(_) => {  e } ,
-        KernelTypes::KExprNode::Lam(_, _) => {  e } ,
-        KernelTypes::KExprNode::Forall(_, _) => {  e } ,
+        KernelTypes::KExprNode::Lam(_, _, _) => {  e } ,
+        KernelTypes::KExprNode::Forall(_, _, _) => {  e } ,
         KernelTypes::KExprNode::BVar(_) => {  e } ,
         _ => {  whnf_nd_core(rc, e, KernelSubst::ctx_trim(types, KernelSubst::expr_lbr(e))) } ,
       }
@@ -1264,7 +1264,7 @@ def whnf_nd_with_spine := aiur_fn⟦
             (inner_head, inner_spine) => {
               whnf_nd_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, _) => {
           match red_beta(rc, head, spine, types) {
             (1, reduct, rest) => {  whnf_nd_with_spine(rc, reduct, rest, types) } ,
             _ => {  apply_spine(head, spine) } ,

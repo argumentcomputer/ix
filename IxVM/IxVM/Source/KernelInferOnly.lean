@@ -72,20 +72,20 @@ def k_infer_only_core := aiur_fn⟦
         KernelTypes::KExprNode::App(f, a) => {
           let f_ty = k_infer_only(rc, f, types);
           match (*(f_ty)) {
-            KernelTypes::KExprNode::Forall(_, cod) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+            KernelTypes::KExprNode::Forall(_, cod, _) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
             _ => {
               let f_ty_whnf = KernelWhnf::whnf(rc, f_ty, types);
               match (*(f_ty_whnf)) {
-                KernelTypes::KExprNode::Forall(_, cod) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+                KernelTypes::KExprNode::Forall(_, cod, _) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
               } } ,
           } } ,
 
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let body_ty = k_infer_only(rc, body, types2);
-          (&(KernelTypes::KExprNode::Forall(ty, body_ty))) } ,
+          (&(KernelTypes::KExprNode::Forall(ty, body_ty, bl))) } ,
 
-        KernelTypes::KExprNode::Forall(ty, body) => {
+        KernelTypes::KExprNode::Forall(ty, body, _) => {
           let u1 = ensure_sort_only(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let u2 = ensure_sort_only(rc, body, types2);
@@ -175,7 +175,7 @@ def io_peel_params_subst := aiur_fn⟦
         0 => {  ty } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
               match (*(args)) {
                 Lists::Node::Cons(arg, rest) => {
                   let body_substed = KernelSubst::expr_inst1(body, arg, 0);
@@ -190,7 +190,7 @@ def io_peel_field_loop := aiur_fn⟦
   fn io_peel_field_loop(ty: KernelTypes::KExpr, target: Field, current: Field,
                               struct_addr: Bytes::AddressRef, val: KernelTypes::KExpr) -> KernelTypes::KExpr {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           match target - current {
             0 => {  dom } ,
             _ => {

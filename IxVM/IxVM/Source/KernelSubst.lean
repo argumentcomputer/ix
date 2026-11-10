@@ -18,9 +18,9 @@ def expr_lbr := aiur_fn⟦
         KernelTypes::KExprNode::Const(_, _) => {  0 } ,
         KernelTypes::KExprNode::Lit(_) => {  0 } ,
         KernelTypes::KExprNode::App(f, a) => {  lbr_max(expr_lbr(f), expr_lbr(a)) } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, _) => {
           lbr_max(expr_lbr(ty), lbr_dec(expr_lbr(body))) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {
+        KernelTypes::KExprNode::Forall(ty, body, _) => {
           lbr_max(expr_lbr(ty), lbr_dec(expr_lbr(body))) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  expr_lbr_let(ty, val, body) } ,
         KernelTypes::KExprNode::Proj(_, _, e1) => {  expr_lbr(e1) } ,
@@ -74,8 +74,8 @@ def has_bvar_in_range := aiur_fn⟦
             1 => {  1 } ,
             0 => {  has_bvar_in_range(a, lo, hi) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {  has_bvar_in_range_binder(ty, body, lo, hi) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {  has_bvar_in_range_binder(ty, body, lo, hi) } ,
+        KernelTypes::KExprNode::Lam(ty, body, _) => {  has_bvar_in_range_binder(ty, body, lo, hi) } ,
+        KernelTypes::KExprNode::Forall(ty, body, _) => {  has_bvar_in_range_binder(ty, body, lo, hi) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  has_bvar_in_range_let(ty, val, body, lo, hi) } ,
         KernelTypes::KExprNode::Proj(_, _, e1) => {  has_bvar_in_range(e1, lo, hi) } ,
       }
@@ -200,8 +200,8 @@ def expr_glb_walk := aiur_fn⟦
           0 => {  0 } ,
           n => {  lbr_min(n, expr_glb(a, c)) } ,
         } } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {  expr_glb_binder(ty, body, c) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {  expr_glb_binder(ty, body, c) } ,
+        KernelTypes::KExprNode::Lam(ty, body, _) => {  expr_glb_binder(ty, body, c) } ,
+        KernelTypes::KExprNode::Forall(ty, body, _) => {  expr_glb_binder(ty, body, c) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  expr_glb_let(ty, val, body, c) } ,
         KernelTypes::KExprNode::Proj(_, _, e1) => {  expr_glb(e1, c) } ,
       }
@@ -253,14 +253,14 @@ def expr_lift_walk := aiur_fn⟦
           (&(KernelTypes::KExprNode::App(
             expr_lift(f, shift, cutoff),
             expr_lift(a, shift, cutoff)))) } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Lam(
             expr_lift(ty, shift, cutoff),
-            expr_lift(body, shift, cutoff + 1)))) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {
+            expr_lift(body, shift, cutoff + 1), bl))) } ,
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Forall(
             expr_lift(ty, shift, cutoff),
-            expr_lift(body, shift, cutoff + 1)))) } ,
+            expr_lift(body, shift, cutoff + 1), bl))) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  expr_lift_let(ty, val, body, shift, cutoff) } ,
         KernelTypes::KExprNode::Lit(lit) => {  (&(KernelTypes::KExprNode::Lit(lit))) } ,
         KernelTypes::KExprNode::Proj(tidx, fidx, e1) => {
@@ -313,14 +313,14 @@ def expr_lower_walk := aiur_fn⟦
           (&(KernelTypes::KExprNode::App(
             expr_lower(f, shift, cutoff),
             expr_lower(a, shift, cutoff)))) } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Lam(
             expr_lower(ty, shift, cutoff),
-            expr_lower(body, shift, cutoff + 1)))) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {
+            expr_lower(body, shift, cutoff + 1), bl))) } ,
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Forall(
             expr_lower(ty, shift, cutoff),
-            expr_lower(body, shift, cutoff + 1)))) } ,
+            expr_lower(body, shift, cutoff + 1), bl))) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  expr_lower_let(ty, val, body, shift, cutoff) } ,
         KernelTypes::KExprNode::Lit(lit) => {  (&(KernelTypes::KExprNode::Lit(lit))) } ,
         KernelTypes::KExprNode::Proj(tidx, fidx, e1) => {
@@ -347,8 +347,8 @@ def expr_has_bvar_at := aiur_fn⟦
             1 => {  1 } ,
             _ => {  expr_has_bvar_at(a, depth) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {  expr_has_bvar_at_binder(ty, body, depth) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {  expr_has_bvar_at_binder(ty, body, depth) } ,
+        KernelTypes::KExprNode::Lam(ty, body, _) => {  expr_has_bvar_at_binder(ty, body, depth) } ,
+        KernelTypes::KExprNode::Forall(ty, body, _) => {  expr_has_bvar_at_binder(ty, body, depth) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  expr_has_bvar_at_let(ty, val, body, depth) } ,
         KernelTypes::KExprNode::Proj(_, _, inner) => {  expr_has_bvar_at(inner, depth) } ,
         _ => {  0 } ,
@@ -403,14 +403,14 @@ def expr_inst1_walk := aiur_fn⟦
           (&(KernelTypes::KExprNode::App(
             expr_inst1(f, arg, depth),
             expr_inst1(a, arg, depth)))) } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Lam(
             expr_inst1(ty, arg, depth),
-            expr_inst1(body, arg, depth + 1)))) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {
+            expr_inst1(body, arg, depth + 1), bl))) } ,
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Forall(
             expr_inst1(ty, arg, depth),
-            expr_inst1(body, arg, depth + 1)))) } ,
+            expr_inst1(body, arg, depth + 1), bl))) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  expr_inst1_let(ty, val, body, arg, depth) } ,
         KernelTypes::KExprNode::Lit(lit) => {  (&(KernelTypes::KExprNode::Lit(lit))) } ,
         KernelTypes::KExprNode::Proj(tidx, fidx, e1) => {
@@ -482,14 +482,14 @@ def expr_inst_many_walk := aiur_fn⟦
           (&(KernelTypes::KExprNode::App(
             expr_inst_many(f, substs, depth),
             expr_inst_many(a, substs, depth)))) } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Lam(
             expr_inst_many(ty, substs, depth),
-            expr_inst_many(body, substs, depth + 1)))) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {
+            expr_inst_many(body, substs, depth + 1), bl))) } ,
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           (&(KernelTypes::KExprNode::Forall(
             expr_inst_many(ty, substs, depth),
-            expr_inst_many(body, substs, depth + 1)))) } ,
+            expr_inst_many(body, substs, depth + 1), bl))) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {
           expr_inst_many_let(ty, val, body, substs, depth) } ,
         KernelTypes::KExprNode::Lit(lit) => {  (&(KernelTypes::KExprNode::Lit(lit))) } ,

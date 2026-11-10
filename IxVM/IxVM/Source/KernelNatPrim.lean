@@ -409,7 +409,7 @@ def str_lit_delta_step := aiur_fn⟦
                 KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {
                   let body = KernelLevels::expr_inst_levels(value, (&(Lists::Node::Nil)));
                   match (*(body)) {
-                    KernelTypes::KExprNode::Lam(_, lam_body) => {
+                    KernelTypes::KExprNode::Lam(_, lam_body, _) => {
                       KernelWhnf::whnf_nd(rc, KernelSubst::expr_inst1(lam_body, list_arg, 0), types) } ,
                     _ => {  KernelWhnf::whnf_nd(rc, (&(KernelTypes::KExprNode::App(body, list_arg))), types) } ,
                   } } ,
@@ -997,9 +997,9 @@ def mk_nat_offset_stuck := aiur_fn⟦
 def is_nat_succ_ih_step := aiur_fn⟦
   fn is_nat_succ_ih_step(rc: KernelRoles::RoleCtx, step: KernelTypes::KExpr) -> Field {
       match (*(step)) {
-        KernelTypes::KExprNode::Lam(_, body1) => {
+        KernelTypes::KExprNode::Lam(_, body1, _) => {
           match (*(body1)) {
-            KernelTypes::KExprNode::Lam(_, body2) => {
+            KernelTypes::KExprNode::Lam(_, body2, _) => {
               match KernelTypes::collect_spine(body2) {
                 (head, args) => {
                   match (*(head)) {

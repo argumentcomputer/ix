@@ -305,14 +305,14 @@ def k_is_def_eq_struct_safe := aiur_fn⟦
             KernelTypes::KExprNode::Srt(lb) => {  KernelLevels::level_equal(la, lb) } ,
             _ => {  0 } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ty_a, body_a) => {
+        KernelTypes::KExprNode::Lam(ty_a, body_a, _) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Lam(ty_b, body_b) => {  de_binder(rc, ty_a, body_a, ty_b, body_b, types) } ,
+            KernelTypes::KExprNode::Lam(ty_b, body_b, _) => {  de_binder(rc, ty_a, body_a, ty_b, body_b, types) } ,
             _ => {  0 } ,
           } } ,
-        KernelTypes::KExprNode::Forall(ty_a, body_a) => {
+        KernelTypes::KExprNode::Forall(ty_a, body_a, _) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Forall(ty_b, body_b) => {  de_binder(rc, ty_a, body_a, ty_b, body_b, types) } ,
+            KernelTypes::KExprNode::Forall(ty_b, body_b, _) => {  de_binder(rc, ty_a, body_a, ty_b, body_b, types) } ,
             _ => {  0 } ,
           } } ,
         _ => {  0 } ,
@@ -464,9 +464,9 @@ def k_is_def_eq_struct_bounded := aiur_fn⟦
                   } } ,
                 _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
               } } ,
-            KernelTypes::KExprNode::Lam(ta, ba) => {
+            KernelTypes::KExprNode::Lam(ta, ba, _) => {
               match (*(b)) {
-                KernelTypes::KExprNode::Lam(tb, bb) => {
+                KernelTypes::KExprNode::Lam(tb, bb, _) => {
                   match k_is_def_eq_struct_bounded(rc, ta, tb, credit, types) {
                     (1, rest) => {
                       let types2 = (&(Lists::Node::Cons(ta, types)));
@@ -475,9 +475,9 @@ def k_is_def_eq_struct_bounded := aiur_fn⟦
                   } } ,
                 _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
               } } ,
-            KernelTypes::KExprNode::Forall(ta, ba) => {
+            KernelTypes::KExprNode::Forall(ta, ba, _) => {
               match (*(b)) {
-                KernelTypes::KExprNode::Forall(tb, bb) => {
+                KernelTypes::KExprNode::Forall(tb, bb, _) => {
                   match k_is_def_eq_struct_bounded(rc, ta, tb, credit, types) {
                     (1, rest) => {
                       let types2 = (&(Lists::Node::Cons(ta, types)));
@@ -627,14 +627,14 @@ def compute_iprj_addr := aiur_fn⟦
 def try_eta_swap := aiur_fn⟦
   fn try_eta_swap(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       match (*(a)) {
-        KernelTypes::KExprNode::Lam(ta, ba) => {
+        KernelTypes::KExprNode::Lam(ta, ba, _) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Lam(_, _) => {  0 } ,
+            KernelTypes::KExprNode::Lam(_, _, _) => {  0 } ,
             _ => {  try_eta_expand(rc, ta, ba, b, types) } ,
           } } ,
         _ => {
           match (*(b)) {
-            KernelTypes::KExprNode::Lam(tb, bb) => {  try_eta_expand(rc, tb, bb, a, types) } ,
+            KernelTypes::KExprNode::Lam(tb, bb, _) => {  try_eta_expand(rc, tb, bb, a, types) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -707,7 +707,7 @@ def try_eta_expand := aiur_fn⟦
       let b_ty = KernelInferOnly::k_infer_only(rc, b, types);
       let b_ty_w = KernelWhnf::whnf(rc, b_ty, types);
       match (*(b_ty_w)) {
-        KernelTypes::KExprNode::Forall(dom_b, _) => {
+        KernelTypes::KExprNode::Forall(dom_b, _, _) => {
           match k_is_def_eq(rc, ty_a, dom_b, types) {
             0 => {  0 } ,
             _ => {
@@ -775,14 +775,14 @@ def k_is_def_eq_struct_go := aiur_fn⟦
               } } ,
             _ => {  try_lazy_delta_app(rc, a, b, types) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ta, ba) => {
+        KernelTypes::KExprNode::Lam(ta, ba, _) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Lam(tb, bb) => {  de_binder(rc, ta, ba, tb, bb, types) } ,
+            KernelTypes::KExprNode::Lam(tb, bb, _) => {  de_binder(rc, ta, ba, tb, bb, types) } ,
             _ => {  try_eta_expand(rc, ta, ba, b, types) } ,
           } } ,
-        KernelTypes::KExprNode::Forall(ta, ba) => {
+        KernelTypes::KExprNode::Forall(ta, ba, _) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Forall(tb, bb) => {  de_binder(rc, ta, ba, tb, bb, types) } ,
+            KernelTypes::KExprNode::Forall(tb, bb, _) => {  de_binder(rc, ta, ba, tb, bb, types) } ,
             _ => {  0 } ,
           } } ,
         KernelTypes::KExprNode::Let(_, _, _) => {
