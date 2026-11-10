@@ -167,7 +167,9 @@ pub(super) fn select<B: WitnessField>(
         compiled.name
       ));
     }
-    if circuits[ci] {
+    // Compiled writers do not fill depth columns: a depth circuit stays on
+    // the interpreter or the host whatever the bundle holds.
+    if circuits[ci] && !gpu::circuit_has_depth(backend, ci) {
       chosen[ci] = Some(compiled);
     }
   }

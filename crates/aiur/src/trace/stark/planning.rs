@@ -308,9 +308,10 @@ pub enum HostCause {
   UnsupportedMap,
   /// A member's plan exceeds a limit of the device encoding.
   EncodingLimit,
-  /// A member carries a depth column or depth slots, which the device
-  /// encoding does not populate.
-  Depth,
+  /// `AIUR_GPU_TRACE=compiled` selects only compiled writers, and a member
+  /// carries a depth column or depth slots, which compiled writers do not
+  /// fill (`compiled+generated` interprets such circuits on the device).
+  CompiledDepth,
   /// Some members could be filled on the device, but not all of them.
   IneligibleGroup,
   /// The record's device population does not fit at the layout host

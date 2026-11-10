@@ -1440,7 +1440,7 @@ fn gpu_population_proves_identically() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
     .iter()
@@ -1464,7 +1464,7 @@ fn gpu_population_proves_identically() {
           retention,
         )
         .unwrap();
-      backend.device_plans = Some(gpu::DevicePlans::new(&backend));
+      backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
       let stage = backend.prepare_stage_1(&record, entry, &[3]).unwrap();
       assert_eq!(
         stage.cells(),
@@ -1499,7 +1499,7 @@ fn gpu_depth_population_proves_identically() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
   assert!(plans.circuits[fib], "fib's gap slots run on the device");
   let entry = "Depth::run";
@@ -1517,7 +1517,7 @@ fn gpu_depth_population_proves_identically() {
         Retention::Retain,
       )
       .unwrap();
-    backend.device_plans = Some(gpu::DevicePlans::new(&backend));
+    backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
     let stage = backend.prepare_stage_1(&record, entry, &[12]).unwrap();
     let device = backend
       .prove_stage_one(entry, &[12], &output, stage, rows, Retention::Retain)

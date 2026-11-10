@@ -515,14 +515,21 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   /// The depth range tables' uses over the whole record: the gap limbs of
   /// every row of a circuit with gap slots. Fixed tables are committed in
   /// the first shard, before the rows that use them are populated, so their
-  /// counts come from this pass over the record.
-  fn depth_ranges(&self, record: &Execution<B>) -> Result<RangeCounts, String> {
+  /// counts come from this pass over the record. Circuits for which
+  /// `skip(ci)` holds are left out: the device counts their rows at upload.
+  fn depth_ranges(
+    &self,
+    record: &Execution<B>,
+    skip: impl Fn(usize) -> bool,
+  ) -> Result<RangeCounts, String> {
     let gapped: Vec<usize> = (0..self.plan.artifact.functions.len())
       .filter(|&f| {
-        self.plan.depth.fills[self.plan.members[f]]
-          .slots
-          .iter()
-          .any(|slot| matches!(slot.kind, crate::trace::depth::Kind::Gap(_)))
+        let chip = self.plan.members[f];
+        !skip(self.placements[chip].circuit)
+          && self.plan.depth.fills[chip]
+            .slots
+            .iter()
+            .any(|slot| matches!(slot.kind, crate::trace::depth::Kind::Gap(_)))
       })
       .collect();
     let count = |&function: &usize| {
@@ -572,19 +579,32 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       }
       members.push(spans);
     }
+    #[cfg(feature = "cuda")]
+    let device = self
+      .device_plans_for(record)
+      .map(|plans| {
+        gpu::DeviceRecord::upload(self, plans, record, self.device)
+          .map(std::sync::Arc::new)
+      })
+      .transpose()?;
+    // Device circuits' range-table uses are counted at upload; the host
+    // counts the rest.
+    #[cfg(feature = "cuda")]
+    let ranges = match &device {
+      Some(device) => self
+        .depth_ranges(record, |ci| device.height(ci).is_some())?
+        .merge(device.ranges().clone()),
+      None => self.depth_ranges(record, |_| false)?,
+    };
+    #[cfg(not(feature = "cuda"))]
+    let ranges = self.depth_ranges(record, |_| false)?;
     Ok(PreparedRecord {
       record,
-      counts: self.auxiliary_counts(record, &self.depth_ranges(record)?)?,
+      counts: self.auxiliary_counts(record, &ranges)?,
       members,
       rows: self.record_rows(record)?,
       #[cfg(feature = "cuda")]
-      device: self
-        .device_plans_for(record)
-        .map(|plans| {
-          gpu::DeviceRecord::upload(self, plans, record, self.device)
-            .map(std::sync::Arc::new)
-        })
-        .transpose()?,
+      device,
     })
   }
 

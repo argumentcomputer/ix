@@ -100,7 +100,12 @@ pub fn emit(
       continue;
     }
     let symbol = format!("{SYMBOL_PREFIX}_{tag}_{ci}");
-    match Unit::circuit(d, &closed, ci, &symbol) {
+    let unit = if described.depth.get(ci).copied().unwrap_or(false) {
+      Err("fills depth columns (interpreted on the device)".to_owned())
+    } else {
+      Unit::circuit(d, &closed, ci, &symbol)
+    };
+    match unit {
       Ok(unit) => emitted.circuits.push(unit),
       Err(reason) => {
         if matches!(selection, Selection::Named(_)) {
@@ -121,12 +126,13 @@ const PRELUDE: &str = r#"#include <cuda_runtime.h>
 using namespace multi_stark_cuda;
 
 // Layouts shared with `crates/aiur/src/trace/stark/gpu.rs` and
-// `crates/aiur/cuda/population.cu` (compiled ABI version 2).
+// `crates/aiur/cuda/population.cu` (compiled ABI version 3).
 struct AiurFunction {
     const uint32_t* code;
     const uint64_t* constants;
     const uint64_t* rows;
     const uint64_t* multiplicities;
+    const uint64_t* depths;
     uint64_t count;
     uint64_t first;
     uint32_t code_len;
@@ -139,6 +145,8 @@ struct AiurFunction {
 struct AiurCallee {
     const uint64_t* rows;
     const uint32_t* index;
+    const uint64_t* multiplicities;
+    const uint64_t* depths;
     uint64_t count;
     uint32_t mask;
     uint32_t inputs;

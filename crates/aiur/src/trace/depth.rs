@@ -96,20 +96,20 @@ pub(super) struct SlotFill {
 /// checks that the callee's recorded height is the caller's minus one, so a
 /// slot the Lean planner misclassified fails here, by name, rather than as an
 /// unbalanced lookup at verification.
-struct ExactCheck {
+pub(super) struct ExactCheck {
   channel: String,
-  enable: Polynomial,
+  pub(super) enable: Polynomial,
   /// The send's arguments without its final depth word: the callee query.
-  args: Vec<Polynomial>,
+  pub(super) args: Vec<Polynomial>,
   /// The functions whose rows the callee circuit holds.
-  callees: Vec<usize>,
+  pub(super) callees: Vec<usize>,
 }
 
 /// One circuit's depth columns (exact slots need none), and its exact slots.
 pub(super) struct DepthFill {
   pub(super) column: Option<usize>,
   pub(super) slots: Vec<SlotFill>,
-  exact: Vec<ExactCheck>,
+  pub(super) exact: Vec<ExactCheck>,
 }
 
 #[cfg(feature = "stark")]
