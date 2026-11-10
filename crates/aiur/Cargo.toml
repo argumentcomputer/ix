@@ -35,7 +35,7 @@ trace-profile = ["stark"]
 stark = ["dep:stark-key"]
 parallel = ["stark", "multi-stark/parallel", "dep:rayon"]
 cuda = ["stark", "multi-stark/cuda"]
-# Runtime for generated executors (`aiur-macros`).
+# Runtime for generated executors (`aiur-codegen`).
 native = ["dep:stacker"]
 
 [[example]]

@@ -4,12 +4,18 @@
   is rebuilt from the specification digest's bytes alone
   (`IxVM.RoleSpecGen.renderFromBytes`). `--check` fails when a file on disk
   differs, so the rendered circuit specification and the digest cannot drift
-  apart; `tools/ixvm/check-formal.sh` runs it.
+  apart; `tools/ixvm/check-formal.sh` runs it. With `--out DIR`, also write the
+  native executors (and with `--cuda` the CUDA trace writers) of the certified
+  IxVM, recursive verifier and aggregation programs under `DIR` for
+  inspection: the sources `lake build ix` generates and compiles into `ix`
+  (see `docs/formal-aiur-codegen.md`). The programs come from the artifact
+  cache, or are compiled on a miss.
 -/
 module
 public import Cli
 public import Ix.IxVM.RoleSpecGen
 public import Ix.RoleBinding.RustSpecGen
+public import Ix.Cli.FormalAiur
 
 public section
 
@@ -39,6 +45,8 @@ def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
 def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
   let checkOnly := p.hasFlag "check"
   let ok ← emitRustRoleSpecs checkOnly
+  if let some out := p.flag? "out" then
+    FormalAiur.writeGenerated p (out.as! String) (p.hasFlag "cuda")
   return if ok then 0 else 1
 
 end Ix.Cli.CodegenCmd
@@ -46,10 +54,18 @@ end Ix.Cli.CodegenCmd
 open Ix.Cli.CodegenCmd in
 def codegenCmd : Cli.Cmd := `[Cli|
   "codegen" VIA runCodegenCmd;
-  "Emit or verify the role-binding specification fixtures derived from IxC."
+  "Emit or verify the role-binding specification fixtures derived from IxC. With --out, also write the certified Aiur programs' generated native executors (and with --cuda their CUDA trace writers) for inspection."
 
   FLAGS:
     "check"; "Compare emitted fixtures against disk and exit 0 if identical, 1 otherwise."
+    "out" : String; "Write the certified Aiur programs' generated sources under this directory."
+    "cuda"; "With --out, also write the CUDA trace writers."
+    "aiur-artifact" : String; "With --out, use this trusted IxVM artifact instead of compiling one."
+    "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
+    "aggr-artifact" : String; "With --out, use this trusted aggregation artifact instead of compiling one."
+    "aggr-artifact-digest" : String; "Refuse an aggregation artifact whose BLAKE3 digest is not this one."
+    "verifier-artifact" : String; "With --out, use this trusted recursive verifier artifact instead of compiling one."
+    "verifier-artifact-digest" : String; "Refuse a recursive verifier artifact whose BLAKE3 digest is not this one."
 ]
 
 end

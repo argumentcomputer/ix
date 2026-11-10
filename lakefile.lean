@@ -57,7 +57,14 @@ The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
 
 Every archive contains the formal Aiur prover library (`ix-prover`), which the
-`ix` CLI runs in process.
+`ix` CLI runs in process. `ix_rs_net` also contains the native executors
+generated from the certified programs (`formal_generated`): before Cargo runs,
+`formal-codegen`, which links `ix_rs`, writes them as Rust source, and with
+CUDA the trace writers as CUDA source, to `.lake/build/formal-generated`,
+compiling the programs into the artifact cache (`.lake/aiur`) first when they
+are missing (once per compiler and program revision; several minutes). An
+executor only ever runs for the program with exactly its fingerprint, so a
+stale one is never used.
 -/
 section FFI
 
@@ -65,25 +72,42 @@ section FFI
 def enabled (name : String) : IO Bool :=
   return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
+/-- Whether the Rust archives are built with CUDA: IX_CUDA, or
+IX_FORMAL_COMPILED_TRACE=1, which implies it. -/
+def cudaEnabled : IO Bool := do
+  return (← enabled "IX_CUDA") || (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1"
+
+/-- Whether `ix` links the native executors generated from the certified
+programs (`formal_generated`). -/
+def nativeExecutors : Bool := true
+
 /-- Rust feature selection shared by compilation and native runtime linkage.
-IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA. For `net` (the `ix` CLI),
-IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
-end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
-library. -/
-def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+IX_NO_PAR=1 disables parallel; `cudaEnabled` enables CUDA. `native` links the
+generated native executors (`formal_generated`), and with
+IX_FORMAL_COMPILED_TRACE=1 also the generated CUDA trace writers of formal
+IxVM (`AIUR_GPU_TRACE=compiled`). For `net` (the `ix` CLI), IX_PLONK and
+IX_GROTH16 add those final compression backends, which otherwise end at the
+recursive KZG proof; with CUDA, Groth16 links an installed ICICLE library. -/
+def cargoFeatures (testFfi : Bool := false) (net : Bool := false) (native : Bool := false) :
+    IO (Array String) := do
   let mut features := #[]
   if net && (← enabled "IX_PLONK") then features := features.push "plonk"
   if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
   if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
-  if ← enabled "IX_CUDA" then features := features.push "cuda"
+  if ← cudaEnabled then features := features.push "cuda"
+  if native then
+    features := features.push "native-executors"
+    if (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1" then
+      features := features.push "formal-compiled-trace"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
 
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
-def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  let features ← cargoFeatures testFfi net
+def cargoArgs (testFfi : Bool := false) (net : Bool := false) (native : Bool := false) :
+    IO (Array String) := do
+  let features ← cargoFeatures testFfi net native
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
@@ -174,9 +198,39 @@ selection writes Cargo's one release archive. -/
 target ix_rs_test pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
 
-/-- Build the Rust static lib with `net` for the `ix` CLI. -/
+/-- Writes the generated sources of the certified programs for
+`formal_generated`. It links `ix_rs`, which has no generated code. -/
+lean_exe «formal-codegen» where
+  root := `FormalCodegen
+
+/-- The generated sources of the certified programs in
+`.lake/build/formal-generated`: the native executors, and in a CUDA build
+(`cudaEnabled`) the trace writers. `formal-codegen` writes them, compiling
+programs missing from the artifact cache first; it reruns only when it (and so
+the programs and compiler it links) or the CUDA selection changed, and rewrites
+only files whose contents changed. A CPU build removes any CUDA output. -/
+target formal_generated pkg : FilePath := do
+  let codegen ← «formal-codegen».fetch
+  let cuda ← cudaEnabled
+  let directory := pkg.buildDir / "formal-generated"
+  buildFileAfterDep (directory / "inputs") codegen (extraDepTrace := do
+      return .ofHash (pureHash cuda) s!"cuda: {cuda}") fun exe => do
+    proc {
+      cmd := exe.toString
+      args := #[directory.toString] ++ (if cuda then #["--cuda"] else #[])
+      cwd := pkg.dir
+      env := #[("IX_ROOT", some pkg.dir.toString)]
+    }
+    IO.FS.writeFile (directory / "inputs") s!"cuda {cuda}\n"
+
+/-- Build the Rust static lib with `net` for the `ix` CLI, with the native
+executors generated from the certified programs. -/
 target ix_rs_net pkg : FilePath := do
-  buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
+  let before ← ix_rs.fetch
+  let before ← if nativeExecutors then
+      pure (before.zipWith (fun archive _ => archive) (← formal_generated.fetch))
+    else pure before
+  buildRustStatic pkg (← cargoArgs (net := true) (native := nativeExecutors)) "net" (some before)
 
 end FFI
 

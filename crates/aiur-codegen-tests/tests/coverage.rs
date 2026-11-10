@@ -8,7 +8,11 @@ use aiur::hints::HintEntry;
 use aiur::native::record_diff;
 use multi_stark::p3_goldilocks::Goldilocks;
 
-aiur_macros::kernel!(Coverage, "tests/fixtures/coverage.json");
+#[allow(warnings, clippy::all, clippy::pedantic)]
+mod generated {
+  include!(concat!(env!("OUT_DIR"), "/coverage.rs"));
+}
+use generated::Coverage;
 
 fn program() -> Program {
   serde_json::from_slice(include_bytes!("fixtures/coverage.json")).unwrap()
@@ -173,4 +177,11 @@ fn binding_rejects_an_override_that_disagrees_with_its_table() {
       panic!("bound a kernel to an override that disagrees with its table")
     },
   }
+}
+
+#[test]
+fn executor_names_must_be_identifiers() {
+  let program = program().check().unwrap();
+  assert!(aiur_codegen::native_executor(&program, "not valid").is_err());
+  assert!(aiur_codegen::native_executor(&program, "9lives").is_err());
 }

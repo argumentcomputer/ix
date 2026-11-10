@@ -146,8 +146,9 @@ structural hashes of every constant reachable from `Ix.FormalCompiler.compile`
 plus the Lean version. It changes whenever that code changes and not when
 unrelated Rust or Lean code does, so a rebuilt `ix` keeps its cache.
 
-`ix prepare` compiles the three programs into the cache and records their
-paths in `.lake/aiur/native-kernels.env` for the native executors.
+`ix prepare` compiles the three programs into the cache ahead of time, and
+`lake build ix` generates the native executors from the same packages
+([code generation](formal-aiur-codegen.md)).
 
 ## Identities
 

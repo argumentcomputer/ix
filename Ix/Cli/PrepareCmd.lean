@@ -3,13 +3,11 @@
 
   Readies the default backend once per source revision, so later commands
   start immediately and from any directory: compiles the certified IxVM,
-  recursive verifier and aggregation packages into the checkout's cache, and
-  records them in `.lake/aiur/native-kernels.env`. The formal prover runs
-  inside `ix`; the next `lake build ix` compiles native executors generated
-  from these artifacts into it (see `formalNativeArtifacts` in
-  `lakefile.lean`). Until then jobs run on the interpreter, with identical
-  records and proofs. A package is compiled only when the linked compiler or
-  the digest of its program changed.
+  recursive verifier and aggregation packages into the checkout's cache,
+  concurrently, and prints their paths. `lake build ix` generates the native
+  executors from the same cache (`formal_generated` in `lakefile.lean`). A
+  package is compiled only when the linked compiler or the digest of its
+  program changed.
 -/
 module
 public import Cli
@@ -24,20 +22,13 @@ def runPrepareCmd (p : Cli.Parsed) : IO UInt32 := do
   let root ← FormalAiur.repoRoot
   IO.println s!"checkout {root}"
   let absolute (path : String) : IO String := return (← IO.FS.realPath path).toString
-  let ixvm ← absolute (← FormalAiur.artifactPath p)
-  let verifier ← absolute (← FormalAiur.verifierArtifactPath p)
-  let aggregation ← absolute (← FormalAiur.aggregationArtifactPath p)
-  IO.println s!"ixvm artifact {ixvm}"
-  IO.println s!"verifier artifact {verifier}"
-  IO.println s!"aggregation artifact {aggregation}"
-  let manifest := root / ".lake" / "aiur" / "native-kernels.env"
-  IO.FS.createDirAll (root / ".lake" / "aiur")
-  IO.FS.writeFile manifest s!"AIUR_IXVM_ARTIFACT={ixvm}\nAIUR_VERIFIER_ARTIFACT={verifier}\nAIUR_AGGREGATION_ARTIFACT={aggregation}\n"
-  IO.println s!"native kernels {manifest}"
+  let targets := #[FormalProver.Target.ixvm, .verifier, .aggregation]
+  let paths ← FormalAiur.targetPaths p targets
+  for target in targets, path in paths do
+    let full ← absolute path
+    IO.println s!"{FormalAiur.generatedName target} artifact {full}"
   let linked ← Ix.FormalProver.executors
   IO.println s!"linked executors {", ".intercalate linked.toList}"
-  unless linked.contains "native-ixvm" do
-    IO.println "rebuild with `lake build ix` to link the native executors for these artifacts"
   return 0
 
 end Ix.Cli.PrepareCmd
@@ -45,7 +36,7 @@ end Ix.Cli.PrepareCmd
 open Ix.Cli.PrepareCmd in
 def prepareCmd : Cli.Cmd := `[Cli|
   prepare VIA runPrepareCmd;
-  "Compile the default backend's certified artifacts ahead of time and select them for its native executors"
+  "Compile the default backend's certified artifacts ahead of time"
 
   FLAGS:
     "aiur-artifact" : String; "Use this trusted IxVM artifact instead of compiling one."

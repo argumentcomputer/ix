@@ -17,13 +17,16 @@
 use aiur::field::FieldBackend;
 use aiur::native::Kernel;
 use aiur::native::record_diff;
+use formal_generated::{Aggregation, Verifier};
 use multi_stark::types::Val;
-use stark_verifier_native::{Aggregation, Verifier};
 use std::{error::Error, time::Instant};
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
+/// Why `prove` refuses a program with depth circuits.
+const DEPTH: &str = "generated executors do not record call heights, so their \
+  records cannot be proven against a program with depth circuits";
+
+fn load(path: &str) -> Result<aiur::artifact::Package, String> {
+  Ok(aiur::artifact::Package::load(std::path::Path::new(path))?.0)
 }
 
 fn median(mut samples: Vec<f64>) -> f64 {
@@ -55,10 +58,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
   }
   let runs: usize = cli.get(4).map_or(Ok(3), |s| s.parse())?;
-  let package: Package = aiur::decode_artifact(&std::fs::read(&cli[2])?)?;
+  let package = load(&cli[2])?;
   let program = package.program.check_field::<Val>()?;
-  let invocation: stark_verifier::Invocation =
-    serde_json::from_slice(&std::fs::read(&cli[3])?)?;
+  let invocation =
+    stark_verifier::Invocation::load(std::path::Path::new(&cli[3]))?;
   let args = program.field().decode(&invocation.args)?;
   let hints = stark_verifier::prepare(&program, &invocation.streams)?;
   let run = if invocation.entry == "MultiStark::ix_aggr" {
@@ -186,18 +189,10 @@ fn fixture(
   let key = stark_key::to_bytes(&system, cp, fp);
   let claims = stark_verifier::claims_bytes(&claims);
   let proof = proof.to_bytes()?;
-  std::fs::write(
-    dir.join("input.json"),
-    serde_json::to_vec(&stark_verifier::invocation(&key, &claims, &proof))?,
-  )?;
+  stark_verifier::invocation(&key, &claims, &proof)
+    .store(&dir.join("input.ixi"))?;
   println!("wrote a {}-byte proof to {}", proof.len(), dir.display());
   Ok(())
-}
-
-#[derive(serde::Deserialize)]
-struct TracePackage {
-  program: aiur::Program,
-  trace: aiur::trace::TraceArtifact,
 }
 
 fn prove(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
@@ -205,13 +200,17 @@ fn prove(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
     TracePlan,
     stark::{Backend, Parameters, planning::Options},
   };
-  let package: TracePackage = aiur::decode_artifact(&std::fs::read(package)?)?;
-  let program = package.program.check_field::<Val>()?;
-  let plan = TracePlan::new(&program, package.trace)?;
+  let (program, trace) = load(package)?.traced()?;
+  let mut program = program.check_field::<Val>()?;
+  program.track_depth(&trace)?;
+  if program.records_depth() {
+    return Err(DEPTH.into());
+  }
+  let plan = TracePlan::new(&program, trace)?;
   let backend =
     Backend::for_batch_on_device(&plan, Parameters::default(), None)?;
-  let invocation: stark_verifier::Invocation =
-    serde_json::from_slice(&std::fs::read(input)?)?;
+  let invocation =
+    stark_verifier::Invocation::load(std::path::Path::new(input))?;
   let entry = invocation.entry.as_str();
   let args = program.field().decode(&invocation.args)?;
   let hints = stark_verifier::prepare(&program, &invocation.streams)?;
@@ -260,11 +259,11 @@ fn prove(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
 
 fn advice(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
   use aiur::{library::advice::Advice, native::outcome_diff};
-  let package: Package = aiur::decode_artifact(&std::fs::read(package)?)?;
+  let package = load(package)?;
   let program = package.program.check_field::<Val>()?;
   let start = Instant::now();
-  let invocation: stark_verifier::Invocation =
-    serde_json::from_slice(&std::fs::read(input)?)?;
+  let invocation =
+    stark_verifier::Invocation::load(std::path::Path::new(input))?;
   let parse = start.elapsed().as_secs_f64();
   let (entry, streams) = (&invocation.entry, &invocation.streams);
   let field = program.field();

@@ -1,6 +1,6 @@
 //! Arithmetic replacements for fixed-table maps.
 //!
-//! As in the native executor generator (`aiur-macros`), a map has a closed
+//! As in the native executor generator (`aiur-codegen`), a map has a closed
 //! form when its input table lists every argument tuple exactly once in
 //! mixed-radix order (first argument most significant) and each output column
 //! equals one candidate expression on every row. Agreement is checked

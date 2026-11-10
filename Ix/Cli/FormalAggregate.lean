@@ -50,9 +50,12 @@ def aggrIdentity (p : Cli.Parsed) (registry : FormalProver.Registry) :
 
 def context (p : Cli.Parsed) : IO Context := do
   let registry ← FormalProver.Registry.new
-  let ixvmSelected ← FormalAiur.artifact p registry
+  let selected ← selectAll p registry #[.ixvm, .aggregation]
+  let (some ixvmSelected, some aggrSelected) := (selected[0]?, selected[1]?)
+    | throw (IO.userError "missing selected programs")
   let ixvmSystem ← ixvmSelected.system
-  let (aggrSelected, aggrSystem, aggr) ← aggrIdentity p registry
+  let aggrSystem ← aggrSelected.system
+  let aggr ← identity aggrSystem true
   let ixvm ← identity ixvmSystem false
   let allowed := Aggr.allowedBlob ixvm.key ixvm.index aggr.key aggr.index
   return { ixvmArtifact := ixvmSelected.path, aggrArtifact := aggrSelected.path, ixvmSystem,

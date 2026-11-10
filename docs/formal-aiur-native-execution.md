@@ -1,8 +1,8 @@
 # Native execution for formal Aiur
 
 Formal Aiur executes programs with a bytecode interpreter
-(`crates/aiur/src/execute.rs`). A procedural macro also generates a native
-Rust executor from a checked program. The generated executor produces the
+(`crates/aiur/src/execute.rs`). A generator (`aiur-codegen`) also emits a
+native Rust executor from a checked program. The generated executor produces the
 same execution record as the interpreter, so either can feed proving. This
 document describes the design, the conditions it meets, how it is built and
 selected, and how it was validated and measured.
@@ -81,26 +81,18 @@ This is a function-dispatch contract, separate from the `Map` overrides
 
 ### Packaging
 
-The generator is the `kernel!` procedural macro in `crates/aiur-macros`.
-`kernel!(pub Name, env = "VAR")` reads an execution package at compile time,
-derives its normalized plan with `aiur`'s own checker and expands to a type
-implementing `aiur::native::Kernel`. The expansion references the artifact
-with `include_bytes!` and the variable with `env!`, so Cargo regenerates the
-kernel when either the file or the variable changes.
-
-Each application's expansion lives in its own crate:
-
-| Kernel | Crate | Artifact variable |
-|---|---|---|
-| IxVM claim verifier | `crates/ixvm-native` | `AIUR_IXVM_ARTIFACT` |
-| Recursive verifier | `crates/stark-verifier-native` | `AIUR_VERIFIER_ARTIFACT` |
-| Aggregation | `crates/stark-verifier-native` | `AIUR_AGGREGATION_ARTIFACT` |
-
-Both kernel crates are workspace members but not default members, and each
-compiles its kernels only under its non-default `kernel` feature. Without it
-the crate is empty and its tool is skipped, so `--workspace` builds need no
-artifacts. The generator itself is tested by `aiur-macros`' checked-in
-coverage fixture (`crates/aiur-macros/tests/coverage.rs`).
+The generator is the library `aiur-codegen`: `native_executor` turns a
+checked program into Rust source for a type implementing
+`aiur::native::Kernel`, from the program's bytecode and its normalized plan
+(derived by `aiur`'s own checker). `lake build ix` writes the executors of
+IxVM's claim verifier (`Ixvm`), the recursive verifier (`Verifier`) and
+aggregation (`Aggregation`) to `.lake/build/formal-generated/native`, and
+`crates/formal-generated` compiles them with `include!` under its
+`executors` feature; without it the crate is empty, so `--workspace` builds
+need no generated sources ([code generation](formal-aiur-codegen.md)).
+`crates/ixvm-native` and `crates/stark-verifier-native` compare the linked
+executors with the interpreter on real invocations. The generator itself is
+tested by the coverage fixture of `crates/aiur-codegen-tests`.
 
 Each expansion carries a fingerprint covering the program, its normalized
 plan, the field and the runtime ABI version (`aiur::native::ABI_VERSION`).
@@ -167,21 +159,18 @@ is not charged to the record reservation. Budget cancellation is retained.
 ## Build and executor selection
 
 The formal prover (`crates/ix-prover`) runs inside `ix` as part of the Rust
-static library. Its feature `native` enables all three kernels together;
-`ix-ffi`'s `formal-native` feature turns it on.
+static library. Its feature `native` enables all three executors together;
+`ix-ffi`'s `native-executors` feature turns it on, which `lake build ix`
+selects for `ix` after generating the executors.
 
-`ix prepare` (`Ix/Cli/PrepareCmd.lean`) compiles the certified IxVM,
-recursive verifier and aggregation programs in process into the checkout's
-cache and records their paths in `.lake/aiur/native-kernels.env`. Each
-program is compiled only when the linked compiler or its program changed;
-`--aiur-artifact`, `--verifier-artifact` and `--aggr-artifact` supply trusted
-ones instead. The next `lake build ix` reads that file (`formalNativeArtifacts` in
-`lakefile.lean`) and builds the library with `formal-native` and the three
-`AIUR_*_ARTIFACT` variables. All three variables may instead be set in the
-environment. `IX_FORMAL_NATIVE=0` builds without kernels, and
-`IX_FORMAL_NATIVE=1` fails the build if the artifacts are missing.
-Compiling them needs a built `ix`, so the kernels cannot be part of the
-first build; until the rebuild, every job runs on the interpreter.
+`lake build ix` generates the executors (`formal_generated` in
+`lakefile.lean`) from the certified IxVM, recursive verifier and aggregation
+packages in the checkout's artifact cache, compiling missing ones in process
+first; the `IX_*_ARTIFACT` variables supply trusted packages instead.
+`ix prepare` (`Ix/Cli/PrepareCmd.lean`) fills the cache ahead of time.
+When a selected program differs from the one its linked executor was
+generated from, `ix` reports it and runs the interpreter, or fails under
+`IX_FORMAL_NATIVE=1`.
 
 Executor selection (`crates/ix-prover/src/executor.rs`) happens once per
 loaded artifact. With `native`, a program runs on the kernel whose
@@ -222,7 +211,7 @@ These results were recorded on `formal-aiur-perf` between `9da877bce` and
 `1e8cc6bd7` (2026-11-03), before role binding changed IxVM. Every comparison
 requires identical records, as defined above, or identical failures.
 
-- **Coverage fixture** (`crates/aiur-macros/tests/coverage.rs`): memoized and
+- **Coverage fixture** (`crates/aiur-codegen-tests/tests/coverage.rs`): memoized and
   mutual recursion, a branch join with a simultaneous swap, typed ROM, a
   fixed table with and without a fixed-arity override, data hints, constant
   and dynamic division, and every failure path (guard, checked assertion,
@@ -353,8 +342,8 @@ layout, so differences smaller than that are not meaningful here.
 
 `crates/aiur-tracegen` applies the same approach to trace population: it
 emits a straight-line CUDA row writer for each eligible function circuit of
-an exported trace artifact, and `crates/ixvm-tracegen` compiles them for the
-IxVM artifact. Like the native executor generator, it replaces a fixed-table
+a checked program's trace, and `crates/formal-generated` compiles the IxVM
+writers that `lake build ix` generates in a CUDA build. Like the native executor generator, it replaces a fixed-table
 call with arithmetic only when a closed form is verified against every table
 row, and a bundle binds only to the program whose population fingerprint it
 was generated from. The two take different inputs: execution creates

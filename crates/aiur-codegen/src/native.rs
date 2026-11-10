@@ -17,9 +17,6 @@ pub(crate) struct Kernel<'a> {
   pub(crate) program: &'a aiur::Program,
   pub(crate) public: bool,
   pub(crate) name: &'a str,
-  pub(crate) artifact: &'a str,
-  /// The environment variable that named the artifact, if any.
-  pub(crate) variable: Option<&'a str>,
   pub(crate) fingerprint: &'a str,
   pub(crate) plan: &'a NativePlan,
 }
@@ -40,13 +37,6 @@ pub(crate) fn kernel(k: &Kernel<'_>) -> String {
      use ::aiur::field::FieldBackend;\n\
 ",
   );
-  let _ =
-    writeln!(s, "const _ARTIFACT: &[u8] = include_bytes!({:?});", k.artifact);
-  // `include_bytes!` tracks the file's contents, `env!` the variable that
-  // chose it: Cargo regenerates the kernel when either changes.
-  if let Some(variable) = k.variable {
-    let _ = writeln!(s, "const _VARIABLE: &str = env!({variable:?});");
-  }
   let _ = writeln!(s, "impl Kernel for {name} {{");
   let _ = writeln!(s, "const FINGERPRINT: &'static str = {:?};", k.fingerprint);
   s.push_str(

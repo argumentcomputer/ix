@@ -138,18 +138,32 @@ def compiledArtifact (p : Cli.Parsed) (flag env : String) (target : FormalProver
   AiurArtifact.cached cache name key expected fun tmp =>
     command "lake" (#["env", binary.toString, mode, tmp.toString] ++ extra) root
 
+/-- The flag and variable that name a trusted package for `target`. -/
+private def selection : FormalProver.Target → String × String
+  | .ixvm => ("aiur-artifact", "IX_AIUR_ARTIFACT")
+  | .verifier => ("verifier-artifact", "IX_VERIFIER_ARTIFACT")
+  | .aggregation => ("aggr-artifact", "IX_AGGR_ARTIFACT")
+
+/-- The package of `target` (`compiledArtifact`). -/
+def targetPath (p : Cli.Parsed) (target : FormalProver.Target) : IO String :=
+  let (flag, env) := selection target
+  compiledArtifact p flag env target
+
+/-- The packages of `targets`, in order, selected concurrently: misses
+compile at the same time. -/
+def targetPaths (p : Cli.Parsed) (targets : Array FormalProver.Target) : IO (Array String) := do
+  let tasks ← targets.mapM fun target => IO.asTask (prio := .dedicated) (targetPath p target)
+  tasks.mapM fun task => do IO.ofExcept (← IO.wait task)
+
 /-- The certified IxVM claim program with its circuits. -/
-def artifactPath (p : Cli.Parsed) : IO String :=
-  compiledArtifact p "aiur-artifact" "IX_AIUR_ARTIFACT" .ixvm
+def artifactPath (p : Cli.Parsed) : IO String := targetPath p .ixvm
 
 /-- The certified aggregation program (`MultiStark::ix_aggr`) with its circuits. -/
-def aggregationArtifactPath (p : Cli.Parsed) : IO String :=
-  compiledArtifact p "aggr-artifact" "IX_AGGR_ARTIFACT" .aggregation
+def aggregationArtifactPath (p : Cli.Parsed) : IO String := targetPath p .aggregation
 
 /-- The certified recursive verifier (`MultiStark::verify_multi_stark_proof`)
 with its circuits. -/
-def verifierArtifactPath (p : Cli.Parsed) : IO String :=
-  compiledArtifact p "verifier-artifact" "IX_VERIFIER_ARTIFACT" .verifier
+def verifierArtifactPath (p : Cli.Parsed) : IO String := targetPath p .verifier
 
 /-- A program a command selected, in the registry that prepares its system. -/
 structure Selected where
@@ -167,14 +181,94 @@ per registry. -/
 def Selected.system (s : Selected) : IO FormalProver.System :=
   s.registry.system s.program {}
 
-def artifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected := do
-  Selected.load registry (← artifactPath p)
+/-- The name a target's generated sources and native executor are filed
+under (`ix_prover::codegen::PROGRAMS`). -/
+def generatedName : FormalProver.Target → String
+  | .ixvm => "ixvm"
+  | .verifier => "verifier"
+  | .aggregation => "aggregation"
 
-def aggregationArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected := do
-  Selected.load registry (← aggregationArtifactPath p)
+/-- When this build links native executors, check that the one for `target`
+was generated from exactly the selected program: under `IX_FORMAL_NATIVE=1`
+a stale executor is an error, otherwise it is reported. A stale executor is
+never used: the program runs on the interpreter, which produces identical
+records and proofs. A program with depth circuits always runs on the
+interpreter, since generated executors do not record call heights. -/
+def checkExecutor (target : FormalProver.Target) (s : Selected) : IO Unit := do
+  if (← IO.getEnv "IX_PROVER_EXECUTOR") == some "interpreter" then return
+  let name := generatedName target
+  unless (← FormalProver.executors).contains s!"native-{name}" do return
+  let (executor, fingerprint, depth) ← s.program.executor
+  if executor == s!"native-{name}" || depth then return
+  let message := s!"the linked native {name} executor was generated from a different \
+    program than {s.path} (native fingerprint {fingerprint}), so it runs on the interpreter. \
+    Rebuild `ix` (`lake build ix`) to generate it for the current programs."
+  if (← IO.getEnv "IX_FORMAL_NATIVE") == some "1" then
+    throw (IO.userError s!"IX_FORMAL_NATIVE=1: {message}")
+  IO.eprintln s!"[aiur] {message}"
 
-def verifierArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected := do
-  Selected.load registry (← verifierArtifactPath p)
+/-- The programs of `targets`, in order, loaded into `registry` and checked
+against the linked native executors; misses compile concurrently. -/
+def selectAll (p : Cli.Parsed) (registry : FormalProver.Registry)
+    (targets : Array FormalProver.Target) : IO (Array Selected) := do
+  let paths ← targetPaths p targets
+  (targets.zip paths).mapM fun (target, path) => do
+    let selected ← Selected.load registry path
+    checkExecutor target selected
+    return selected
+
+/-- The program of `target`, loaded into `registry` (`selectAll`). -/
+def select (p : Cli.Parsed) (registry : FormalProver.Registry) (target : FormalProver.Target) :
+    IO Selected := do
+  let some selected := (← selectAll p registry #[target])[0]?
+    | throw (IO.userError "missing selected program")
+  return selected
+
+def artifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
+  select p registry .ixvm
+
+def aggregationArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
+  select p registry .aggregation
+
+def verifierArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
+  select p registry .verifier
+
+/-- Write the generated sources of the formal programs under `directory`:
+each program's native executor, and with `cuda` its trace writers
+(`FormalProver.Program.codegen`). A file is rewritten only when its contents
+change, so Cargo recompiles only what changed; files that are no longer
+generated, CUDA output in a CPU build included, are removed. Prints each
+program's package, native fingerprint and linked executor. -/
+def writeGenerated (p : Cli.Parsed) (directory : System.FilePath) (cuda : Bool) : IO Unit := do
+  let targets := #[FormalProver.Target.ixvm, .verifier, .aggregation]
+  let paths ← targetPaths p targets
+  let registry ← FormalProver.Registry.new
+  let mut expected : Array System.FilePath := #[]
+  for target in targets, path in paths do
+    let name := generatedName target
+    let selected ← Selected.load registry path
+    let files ← selected.program.codegen name cuda
+    let (executor, fingerprint, _) ← selected.program.executor
+    let bytes := files.foldl (fun n (_, contents) => n + contents.utf8ByteSize) 0
+    IO.println s!"{name} artifact {path}"
+    IO.println s!"{name} native fingerprint {fingerprint}; linked executor {executor}"
+    IO.println s!"{name} generated {files.size} files, {bytes} bytes"
+    for (relative, contents) in files do
+      let file := directory / relative
+      expected := expected.push file
+      let existing ← try pure (some (← IO.FS.readFile file)) catch _ => pure none
+      unless existing == some contents do
+        if let some parent := file.parent then IO.FS.createDirAll parent
+        let temporary := file.addExtension "tmp"
+        IO.FS.writeFile temporary contents
+        IO.FS.rename temporary file
+  for sub in #["native", "cuda"] do
+    let dir := directory / sub
+    if ← dir.isDir then
+      for entry in ← dir.walkDir do
+        unless (← entry.isDir) || expected.contains entry do IO.FS.removeFile entry
+  let cudaDir := directory / "cuda"
+  if !cuda && (← cudaDir.isDir) then IO.FS.removeDirAll cudaDir
 
 structure HostOptions where
   rows : Nat := 0

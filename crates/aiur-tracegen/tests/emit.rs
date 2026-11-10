@@ -1,13 +1,26 @@
 //! Emission from the grouped fixture shared with `aiur`'s own tests.
 use aiur_tracegen::cuda::{Selection, emit};
 
+use aiur::trace::TraceArtifact;
+
 const FIXTURE: &str =
-  concat!(env!("CARGO_MANIFEST_DIR"), "/../aiur/tests/fixtures/grouping.json");
+  concat!(env!("CARGO_MANIFEST_DIR"), "/../aiur/tests/fixtures/grouping.ixa");
+
+fn fixture() -> (aiur::Program, TraceArtifact) {
+  let (package, _) =
+    aiur::artifact::Package::load(std::path::Path::new(FIXTURE)).unwrap();
+  package.traced().unwrap()
+}
+
+fn describe(
+  (program, trace): (aiur::Program, TraceArtifact),
+) -> aiur_tracegen::Described {
+  aiur_tracegen::describe(&program.check().unwrap(), trace).unwrap()
+}
 
 #[test]
 fn emits_supported_circuits_and_explains_the_rest() {
-  let bytes = std::fs::read(FIXTURE).unwrap();
-  let artifact = aiur_tracegen::describe(&bytes).unwrap();
+  let artifact = describe(fixture());
   let emitted = emit(&artifact, &Selection::All, "fixture").unwrap();
   assert!(!emitted.circuits.is_empty());
   assert!(
@@ -42,22 +55,37 @@ fn emits_supported_circuits_and_explains_the_rest() {
 
 #[test]
 fn fingerprint_covers_plans_and_placement() {
-  let bytes = std::fs::read(FIXTURE).unwrap();
-  let original = aiur_tracegen::describe(&bytes).unwrap();
-  let mut package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-  package["trace"]["groups"] = serde_json::json!([]);
-  let ungrouped =
-    aiur_tracegen::describe(&serde_json::to_vec(&package).unwrap()).unwrap();
-  assert_ne!(original.fingerprint, ungrouped.fingerprint);
-  let mut package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-  let writes =
-    package["trace"]["functions"][1]["writes"].as_array_mut().unwrap();
-  writes.reverse();
-  let reordered =
-    aiur_tracegen::describe(&serde_json::to_vec(&package).unwrap()).unwrap();
-  assert_ne!(original.fingerprint, reordered.fingerprint);
-  assert_eq!(
-    original.fingerprint,
-    aiur_tracegen::describe(&bytes).unwrap().fingerprint
+  let original = describe(fixture());
+  let (program, mut trace) = fixture();
+  trace.groups.clear();
+  assert_ne!(original.fingerprint, describe((program, trace)).fingerprint);
+  let (program, mut trace) = fixture();
+  trace.functions[1].writes.reverse();
+  assert_ne!(original.fingerprint, describe((program, trace)).fingerprint);
+  assert_eq!(original.fingerprint, describe(fixture()).fingerprint);
+}
+
+#[test]
+fn sources_carry_the_preamble_and_fingerprint() {
+  let described = describe(fixture());
+  let files =
+    aiur_tracegen::bundle::sources(&described, "fixture", "// Header.\n")
+      .unwrap();
+  let emitted = emit(&described, &Selection::All, "fixture").unwrap();
+  assert_eq!(files.len(), emitted.circuits.len() + 1);
+  let fingerprint =
+    format!("// Population fingerprint {}", described.fingerprint);
+  for (name, contents) in &files {
+    assert!(contents.starts_with("// Header.\n"), "{name}");
+    assert!(contents.lines().nth(1).unwrap().starts_with(&fingerprint));
+  }
+  let (_, binding) = files.last().unwrap();
+  assert!(binding.contains("pub static BUNDLE"));
+  for circuit in &emitted.circuits {
+    assert!(binding.contains(&circuit.symbol));
+  }
+  assert!(
+    aiur_tracegen::bundle::sources(&described, "fixture", "not a comment\n")
+      .is_err()
   );
 }
