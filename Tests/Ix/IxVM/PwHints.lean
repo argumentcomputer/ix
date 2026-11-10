@@ -220,11 +220,21 @@ private def histogram (xs : Array String) : Array (String × Nat) :=
 
 def diag (env : Lean.Environment) : IO UInt32 := do
   let name := (← IO.getEnv "IX_PW_NAME").getD "Nat.add_comm"
-  let leanName := name.toName
-  let ixon ← _root_.IxVM.ClaimHarness.loadIxonEnv leanName env
-  let addr ← _root_.IxVM.ClaimHarness.lookupAddr ixon leanName
-  let ctx ← IO.ofExcept (_root_.Ix.ClaimContext.ofEnv ixon true)
-  let w ← IO.ofExcept (_root_.IxVM.ClaimHarness.buildClaimWitness ixon (.check ctx addr none))
+  -- `@idPoly`: the hand-made record of `ixvm-pw-circuit` over the default
+  -- table's support records alone, as the hand-made suites build their claims
+  let (ixon, w) ← if name == "@idPoly" then do
+      let addr := Address.blake3 (Ixon.ser idPoly)
+      let e := ({} : Ixon.Env).storeConst addr idPoly
+      let e := { e with anonHints := e.anonHints.insert addr (.regular 0) }
+      let ctx ← IO.ofExcept _root_.Ix.ClaimContext.ofDefaultTable
+      let w ← IO.ofExcept (_root_.IxVM.ClaimHarness.buildClaimWitness e (.check ctx addr none))
+      pure (← IO.ofExcept (_root_.IxVM.ClaimHarness.withDefaultRoleBinding e), w)
+    else do
+      let leanName := name.toName
+      let ixon ← _root_.IxVM.ClaimHarness.loadIxonEnv leanName env
+      let addr ← _root_.IxVM.ClaimHarness.lookupAddr ixon leanName
+      let ctx ← IO.ofExcept (_root_.Ix.ClaimContext.ofEnv ixon true)
+      pure (ixon, ← IO.ofExcept (_root_.IxVM.ClaimHarness.buildClaimWitness ixon (.check ctx addr none)))
   let io := stripHints w.inputIOBuffer
   let mut names : Std.HashMap Address String := {}
   for (n, named) in ixon.named do
