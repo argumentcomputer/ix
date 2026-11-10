@@ -81,6 +81,14 @@ jobs:
           Aiur/.lake/build/bin/trace_tests
           Aiur/.lake/build/bin/u32_tests
           Aiur/.lake/build/bin/library_tests
+      # The refinement proofs and the path lemmas `lake exe ixvm/ixvm-proof-gen`
+      # writes are their own library (not a default target, and skipped by
+      # lint's build-all): check that the generated files are current, then
+      # build the library.
+      - name: Check the IxVM refinement proofs
+        run: |
+          lake exe ixvm/ixvm-proof-gen --check
+          lake build --wfail IxVMRefinement
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
