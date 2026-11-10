@@ -16,7 +16,7 @@ def outDir : List String → Option System.FilePath
 def main (args : List String) : IO UInt32 := do
   let check := args.contains "--check"
   let root := outDir args
-  let files := render ++ IxVM.ObsGen.render
+  let files := render ++ (← IxVM.ObsGen.renderIO)
   let mut ok := true
   for (path, text) in files do
     let path := match root with

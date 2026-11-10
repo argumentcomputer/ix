@@ -68,6 +68,12 @@ partial def T.resolveN (s : List (String × T)) : Nat → T → T
 /-- Apply a path's substitution (a variable is replaced at most 10000 times deep). -/
 def T.resolve (s : List (String × T)) (t : T) : T := T.resolveN s 10000 t
 
+partial def T.mentions (n : String) : T → Bool
+  | .v m => m == n
+  | .field _ => false
+  | .tuple xs | .ctor _ _ xs | .app _ xs => xs.any (T.mentions n)
+  | .ptr x h | .snoc h x => T.mentions n x || T.mentions n h
+
 mutual
   partial def T.render : T → String
     | .v n => n
@@ -143,6 +149,8 @@ structure St where
   params : List String := []
   src : Option (Aiur.Generic.Source F) := none
   maxPaths : Nat := 256
+  /-- Inversion steps taken, against a budget. -/
+  work : Nat := 0
 
 abbrev M := StateT St (Except String)
 
@@ -190,6 +198,7 @@ def assign (dest t : T) : M Unit := do
       let f ← fresh "he"
       addFact f [.s s!"{n} = ", .t t] "rfl" false
     else
+      if (← resolveT t).mentions n then throw "cyclic assignment"
       modifyPath fun p => { p with subst := (n, t) :: p.subst }
   | _ => throw "destination is not a variable"
 
@@ -202,6 +211,7 @@ def unifyPat (V tmpl : T) (hv : String) : M (List String) := do
       addFact hv [.s s!"{n} = ", .t tmpl] hv
       return []
     else
+      if (← resolveT tmpl).mentions n then throw "cyclic template"
       modifyPath fun p => { p with subst := (n, tmpl) :: p.subst }
       return [s!"subst {hv}"]
   | _ => throw "concrete scrutinee"
@@ -300,6 +310,9 @@ mutual
   then continue with the call segments. -/
   partial def inv (e : Expr F) (d : String) (env : Env) (hin dv dh : T) (k : K) :
       M (List String) := do
+    let s ← get
+    if s.work ≥ 20000 then throw "too large"
+    set { s with work := s.work + 1 }
     match e with
     | .var n =>
       let some t := env.lookup n | throw s!"unbound variable {n}"
@@ -688,11 +701,12 @@ def fileFooter : String := "end IxVM.Refinement.Obs\n"
 def group (name : String) : String :=
   sanitize ((name.splitOn "::").head!)
 
-/-- **The generated files**: the names module, one module per chunk of a group,
-and the index module with the generator's report. -/
-def render (maxLines : Nat := 3000) : List (System.FilePath × String) := Id.run do
-  let prog := IxVM.program
-  let src := IxVM.source
+abbrev Result := Except String (String × Array (String × String) × Nat)
+
+/-- **The generated files** from each function's result: the names module, one
+module per chunk of a group, and the index module with the generator's report. -/
+def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
+    List (System.FilePath × String) := Id.run do
   let dir : System.FilePath := "Ix/IxVM/Refinement/Obs"
   let mut names : Array (String × String) := #[]
   let mut report : Array String := #[]
@@ -701,9 +715,8 @@ def render (maxLines : Nat := 3000) : List (System.FilePath × String) := Id.run
   let mut cur : Option (String × Array String × Nat) := none
   let mut proved := 0
   let mut paths := 0
-  for name in IxVM.functions.map (·.name) do
-    let some f := prog.functions.find? (·.name == name) | continue
-    match function src f with
+  for (name, result) in results do
+    match result with
     | .error e => report := report.push s!"{name}: skipped ({e})"
     | .ok (text, ns, n) =>
       proved := proved + 1
@@ -750,5 +763,27 @@ def render (maxLines : Nat := 3000) : List (System.FilePath × String) := Id.run
     String.join (report.toList.map (s!"* " ++ · ++ "\n")) ++ "-/\n"
   return [(dir / "Names.lean", namesText)] ++ files ++
     [(System.FilePath.mk "Ix/IxVM/Refinement/Obs.lean", index)]
+
+
+/-- Each function's result, in program order. -/
+def results : List (String × Result) :=
+  (IxVM.functions.map (·.name)).filterMap fun name =>
+    (IxVM.program.functions.find? (·.name == name)).map fun f => (name, function IxVM.source f)
+
+def render : List (System.FilePath × String) := assemble results
+
+/-- `render`, printing each function's outcome and time. -/
+def renderIO : IO (List (System.FilePath × String)) := do
+  let mut rs : Array (String × Result) := #[]
+  for name in IxVM.functions.map (·.name) do
+    let some f := IxVM.program.functions.find? (·.name == name) | continue
+    let t0 ← IO.monoMsNow
+    let r := function IxVM.source f
+    let tag := match r with
+      | .ok (_, _, n) => s!"{n} paths"
+      | .error e => s!"skipped ({e})"
+    IO.eprintln s!"[obs-gen] {name}: {tag} {(← IO.monoMsNow) - t0}ms"
+    rs := rs.push (name, r)
+  return assemble rs.toList
 
 end IxVM.ObsGen
