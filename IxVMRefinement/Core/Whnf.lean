@@ -1,4 +1,5 @@
 import IxVMRefinement.Core.Specs
+import IxVMRefinement.Core.Bound
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Obs.KernelLevels
@@ -206,7 +207,7 @@ theorem peel_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
 
 /-! ## `whnf_apply_beta` -/
 
-theorem field_lit_eq {n m : Nat} {x : F} (hn : n < 4294967296) (hm : m < 4294967296)
+theorem field_lit_eq {n m : Nat} {x : F} (hn : n < 2 ^ 39) (hm : m < 2 ^ 39)
     (h1 : ((n : F)) = x) (h2 : x = (m : F)) : n = m :=
   natCast_lt_inj hn hm (h1.trans h2)
 
@@ -256,13 +257,15 @@ theorem applyBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
   · -- `1 => whnf_with_spine(rc, expr_inst1(deep, lookup(consumed, 0), 0), rest, types)`
     obtain ⟨Ts, D, rfl, hlenA, hlenC, hD, hcons, hrest, hlit⟩ :=
       applyBeta_prefix c hA ih ev15 (by lenlt) ev81 hL hAs
-    have hlt := good.2.2.2
-    have hn1 : Ts.length < 4294967296 := by
-      simp only [List.length_append, List.length_cons, List.length_nil] at hlt
-      omega
+    -- the consumed list is short: L0's bound, through `Lists::length`'s own calls
+    obtain ⟨rom, hrv, hmemo⟩ := good.2.2.2
+    have hlt := length_lt hrv hmemo ev81
+      (by intro x hx; simp only [List.mem_cons] at hx; rcases hx with rfl | hx <;> simp [hx]) hcons
+    have hclen : ((As.take Ts.length).reverse ++ []).length = Ts.length := by simp; omega
+    rw [hclen] at hlt
     have hn : Ts.length = 1 := by
       injection hlit with hlit
-      exact field_lit_eq (m := 1) hn1 (by omega) hlit.symm (by decide)
+      exact field_lit_eq (m := 1) hlt (by norm_num) hlit.symm (by decide)
     obtain ⟨T1, rfl⟩ : ∃ T1, Ts = [T1] := by
       rcases Ts with _ | ⟨T1, _ | ⟨_, _⟩⟩
       · simp at hn

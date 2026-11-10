@@ -1,4 +1,4 @@
-import IxVMRefinement.Core.Rep
+import IxVMRefinement.Core.Specs
 import IxVMRefinement.Obs.Lists
 import Ix.IxVM.Consistency.Statement
 import Mathlib.Data.List.Forall2

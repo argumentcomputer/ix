@@ -60,7 +60,7 @@ theorem whnf_red (c : Ctx) (hA : Assumed c) {rc e types : SourceValue F} {h h' :
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) :
+    (bound : MemoBounded calls) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ E, RepE c.κ d Γ h E e → ∃ E', RepE c.κ d Γ h' E' r ∧ Red c.env d E E' := by
   by_cases hc : c.V.HashedCollision [] calls
@@ -74,7 +74,7 @@ theorem defEq_of_run (c : Ctx) (hA : Assumed c) {rc a b types : SourceValue F}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) (hr : r ≠ .field 0) :
+    (bound : MemoBounded calls) (hr : r ≠ .field 0) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ A B, RepE c.κ d Γ h A a → RepE c.κ d Γ h B b → DefEq c.env d A B := by
   by_cases hc : c.V.HashedCollision [] calls
@@ -90,7 +90,7 @@ theorem defEq_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory
     {rc a b types : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) (hr : r ≠ .field 0) :
+    (bound : MemoBounded calls) (hr : r ≠ .field 0) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ A B, RepE c.κ d Γ h A a → RepE c.κ d Γ h B b →
         Ix.Kernel.Model.Rules.DefEqSem m φ d A B := by
@@ -111,7 +111,7 @@ theorem whnf_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory 
     {rc e types : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) :
+    (bound : MemoBounded calls) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ E, RepE c.κ d Γ h E e →
         ∃ E', RepE c.κ d Γ h' E' r ∧ Ix.Kernel.Model.Rules.RedSem m φ d E E' := by
@@ -153,4 +153,5 @@ theorem Infer.toIO {env : Ix.Kernel.Env .anon} :
 end IxVM.Refinement.Core
 
 #guard_module_axioms IxVMRefinement.Core.Obs IxVMRefinement.Core.Rep
-  IxVMRefinement.Core.Specs IxVMRefinement.Core.Whnf IxVMRefinement.Core.DefEq
+  IxVMRefinement.Core.Specs IxVMRefinement.Core.Bound IxVMRefinement.Core.Whnf
+  IxVMRefinement.Core.DefEq
