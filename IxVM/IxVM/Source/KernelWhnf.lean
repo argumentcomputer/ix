@@ -256,75 +256,97 @@ def try_prim_dispatch := aiur_fn⟦
 ⟧
 
 def try_quot_iota := aiur_fn⟦
-  fn try_quot_iota(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
-                           types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+  fn try_quot_iota(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>,
+                   spine: Lists::List<KernelTypes::KExpr>,
+                   types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       match KernelRoles::role_is(rc, addr, KernelRoleSpec::role_quot_lift()) {
-        1 => {  try_quot_lift(rc, spine, types) } ,
+        1 => {  red_quot(rc, 1, addr, lvls, spine, types) } ,
         _ => {
           match KernelRoles::role_is(rc, addr, KernelRoleSpec::role_quot_ind()) {
-            1 => {  try_quot_ind(rc, spine, types) } ,
+            1 => {  red_quot(rc, 0, addr, lvls, spine, types) } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
       }
     }
 ⟧
 
-def try_quot_lift := aiur_fn⟦
-  fn try_quot_lift(rc: KernelRoles::RoleCtx, spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let n = Lists::length(spine);
-      match UInt32::less_than_fields(n, 6) {
-        1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-        _ => {
-          let f = Lists::lookup(spine, 3);
-          let q = Lists::lookup(spine, 5);
-          match quot_extract_arg(rc, q, types) {
-            (1, a) => {
-              let post = Lists::drop(spine, 6);
-              (1, apply_spine((&(KernelTypes::KExprNode::App(f, a))), post)) } ,
-            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-          } } ,
-      }
-    }
-⟧
+  -- The quotient's ι (the kernel stores `Quot.lift`/`Quot.ind` as recursors with one
+  -- rule for `Quot.mk`): `Quot.lift α r β f h q post ↦ f a post` and
+  -- `Quot.ind α r β m q post ↦ m a post` when `q` head-normalizes to
+  -- `Quot.mk α' r' a`. Premises: the level counts, the rule's level comparand
+  -- (`Quot.mk`'s level against the eliminator's first), and Fix A's licensed
+  -- certificates of both spines: the eliminator's at a possibly-zero motive
+  -- (`Quot.lift`'s `β : Sort v`; `Quot.ind`'s motive is `Prop`, so always), and
+  -- `Quot.mk`'s at a possibly-zero `α : Sort u`.
 
-def try_quot_ind := aiur_fn⟦
-  fn try_quot_ind(rc: KernelRoles::RoleCtx, spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let n = Lists::length(spine);
-      match UInt32::less_than_fields(n, 5) {
-        1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-        _ => {
-          let m = Lists::lookup(spine, 3);
-          let q = Lists::lookup(spine, 4);
-          match quot_extract_arg(rc, q, types) {
-            (1, a) => {
-              let post = Lists::drop(spine, 5);
-              (1, apply_spine((&(KernelTypes::KExprNode::App(m, a))), post)) } ,
-            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-          } } ,
-      }
-    }
-⟧
-
-def quot_extract_arg := aiur_fn⟦
-  fn quot_extract_arg(rc: KernelRoles::RoleCtx, q: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let q_w = whnf(rc, q, types);
-      match KernelTypes::collect_spine(q_w) {
-        (head, args) => {
-          match (*(head)) {
-            KernelTypes::KExprNode::Const(caddr, _) => {
-              match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_quot_mk()) {
-                1 => {
-                  match Lists::length(args) - 3 {
-                    0 => {  (1, Lists::lookup(args, 2)) } ,
+def red_quot := aiur_fn⟦
+  fn red_quot(rc: KernelRoles::RoleCtx, is_lift: Field, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>,
+              spine: Lists::List<KernelTypes::KExpr>,
+              types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      let major_idx = 4 + is_lift;
+      match UInt32::less_than_fields(major_idx, Lists::length(spine)) * Fields::is_zero(Lists::length(lvls) - (1 + is_lift)) {
+        1 => {
+          let q_w = whnf(rc, Lists::lookup(spine, major_idx), types);
+          match KernelTypes::collect_spine(q_w) {
+            (qh, qargs) => {
+              match (*(qh)) {
+                KernelTypes::KExprNode::Const(mk_addr, mk_lvls) => {
+                  let shape = (KernelRoles::role_is(rc, mk_addr, KernelRoleSpec::role_quot_mk())
+                               * Fields::is_zero(Lists::length(qargs) - 3)) * Fields::is_zero(Lists::length(mk_lvls) - 1);
+                  match shape {
+                    1 => {
+                      match KernelLevels::level_equal(Lists::lookup(mk_lvls, 0), Lists::lookup(lvls, 0)) {
+                        1 => {
+                          match quot_certs(rc, is_lift, addr, lvls, Lists::snoc(Lists::take(spine, major_idx), q_w),
+                                           mk_addr, mk_lvls, qargs, types) {
+                            1 => {
+                              let elim = Lists::lookup(spine, 3);
+                              (1, apply_spine((&(KernelTypes::KExprNode::App(elim, Lists::lookup(qargs, 2)))),
+                                              Lists::drop(spine, major_idx + 1))) } ,
+                            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                          } } ,
+                        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                      } } ,
                     _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                   } } ,
                 _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
-            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
 ⟧
+
+def quot_certs := aiur_fn⟦
+  fn quot_certs(rc: KernelRoles::RoleCtx, is_lift: Field, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>,
+                rec_args: Lists::List<KernelTypes::KExpr>, mk_addr: Bytes::AddressRef,
+                mk_lvls: Lists::List<KernelTypes::KLevel>, mk_args: Lists::List<KernelTypes::KExpr>,
+                types: Lists::List<KernelTypes::KExpr>) -> Field {
+      let rec_never = match is_lift {
+        1 => {  KernelLevels::level_is_not_zero(Lists::lookup(lvls, 1)) } ,
+        _ => {  0 } ,
+      };
+      let c1 = match rec_never {
+        1 => {  1 } ,
+        _ => {
+          certs_all(rc, KernelLevels::expr_inst_levels(KernelInfer::const_type_of((*(Ingress::get_ci(addr)))), lvls),
+                    rec_args, (&(Lists::Node::Nil)), types) } ,
+      };
+      match c1 {
+        1 => {
+          match KernelLevels::level_is_not_zero(Lists::lookup(mk_lvls, 0)) {
+            1 => {  1 } ,
+            _ => {
+              certs_all(rc, KernelLevels::expr_inst_levels(KernelInfer::const_type_of((*(Ingress::get_ci(mk_addr)))), mk_lvls),
+                        mk_args, (&(Lists::Node::Nil)), types) } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+
+
 
 def whnf_const_head := aiur_fn⟦
   fn whnf_const_head(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr,
@@ -350,7 +372,7 @@ def whnf_const_head := aiur_fn⟦
 
         KernelTypes::KConstantInfo::Thm(_, _, _) => {  apply_spine(head, spine) } ,
         KernelTypes::KConstantInfo::Quot(_, _, _) => {
-          let quot = try_quot_iota(rc, addr, spine, types);
+          let quot = try_quot_iota(rc, addr, lvls, spine, types);
           match quot {
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
@@ -647,8 +669,10 @@ def red_iota := aiur_fn⟦
                       let major_idx = pmm_end + nindices;
                       match shape {
                         1 => {
-                          match iota_cmp(rc, KernelLevels::expr_inst_levels(rec_ty, lvls), Lists::take(spine, major_idx),
-                                         major_idx, cty, clvls, cnp, margs, nindices, types) {
+                          let rec_ty_i = KernelLevels::expr_inst_levels(rec_ty, lvls);
+                          let pre = Lists::take(spine, major_idx);
+                          match iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)
+                                * iota_certs(rc, rec_ty_i, nparams, Lists::snoc(pre, major), cty, cblock, cind, clvls, margs, types) {
                             1 => {
                               let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
                               let r1 = apply_spine(rhs_lvled, Lists::take(spine, pmm_end));
@@ -708,6 +732,62 @@ def iota_cmp := aiur_fn⟦
                 _ => {  0 } ,
               } } ,
           } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Fix A at ι (RULES-GAP PM-C): Red.iota's two licensed `Certs` walks. The binder
+  -- datum of every slot of a stored type former's telescope is the zero-ness of the
+  -- sort it ends in (D2's entry point for stored declaration types): for the
+  -- recursor, its motive's sort; for the constructor, its inductive's sort. At a
+  -- never-zero datum every slot skips; otherwise every argument is certified.
+
+def iota_certs := aiur_fn⟦
+  fn iota_certs(rc: KernelRoles::RoleCtx, rec_ty_i: KernelTypes::KExpr, nparams: Field,
+                rec_args: Lists::List<KernelTypes::KExpr>, cty: KernelTypes::KExpr, cblock: Bytes::AddressRef,
+                cind: Field, clvls: Lists::List<KernelTypes::KLevel>, margs: Lists::List<KernelTypes::KExpr>,
+                types: Lists::List<KernelTypes::KExpr>) -> Field {
+      let c1 = match rec_slots_never(rec_ty_i, nparams) {
+        1 => {  1 } ,
+        _ => {  certs_all(rc, rec_ty_i, rec_args, (&(Lists::Node::Nil)), types) } ,
+      };
+      match c1 {
+        1 => {
+          match (*(Ingress::get_ci_iprj(cblock, cind))) {
+            KernelTypes::KConstantInfo::Induct(_, ind_ty, inp, ini, _, _, _, _) => {
+              match type_sort_never(ind_ty, inp + ini, clvls) {
+                1 => {  1 } ,
+                _ => {  certs_all(rc, KernelLevels::expr_inst_levels(cty, clvls), margs, (&(Lists::Node::Nil)), types) } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- The datum of a recursor type's slots: whether its (first) motive's type ends in
+  -- a never-zero sort. The recursor type must be syntactically a telescope there.
+
+def rec_slots_never := aiur_fn⟦
+  fn rec_slots_never(t: KernelTypes::KExpr, nparams: Field) -> Field {
+      match (*(t)) {
+        KernelTypes::KExprNode::Forall(dom, body) => {
+          match nparams {
+            0 => {  final_sort_never(dom) } ,
+            _ => {  rec_slots_never(body, nparams - 1) } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def final_sort_never := aiur_fn⟦
+  fn final_sort_never(t: KernelTypes::KExpr) -> Field {
+      match (*(t)) {
+        KernelTypes::KExprNode::Forall(_, body) => {  final_sort_never(body) } ,
+        KernelTypes::KExprNode::Srt(l) => {  KernelLevels::level_is_not_zero(l) } ,
         _ => {  0 } ,
       }
     }
@@ -1245,7 +1325,7 @@ def whnf_nd_const_head := aiur_fn⟦
             _ => {  apply_spine(head, spine) } ,
           } } ,
         KernelTypes::KConstantInfo::Quot(_, _, _) => {
-          let quot = try_quot_iota(rc, addr, spine, types);
+          let quot = try_quot_iota(rc, addr, lvls, spine, types);
           match quot {
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,
