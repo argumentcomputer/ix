@@ -129,6 +129,9 @@ structure Fires where
   /-- Nodes of the bodies the firings walked again (`copyCost`): not a rule
   firing, so `total` leaves it out. -/
   copied : Nat := 0
+  /-- The work the walk's steps charged (`stepCost`): not a rule firing
+  either. -/
+  work : Nat := 0
   deriving Repr, Inhabited
 
 namespace Fires
@@ -147,7 +150,7 @@ def add (f g : Fires) : Fires :=
     caseOfCase := f.caseOfCase + g.caseOfCase, caseId := f.caseId + g.caseId
     sameArms := f.sameArms + g.sameArms, inline := f.inline + g.inline
     inlineCaf := f.inlineCaf + g.inlineCaf, redirect := f.redirect + g.redirect
-    copied := f.copied + g.copied }
+    copied := f.copied + g.copied, work := f.work + g.work }
 
 def render (f : Fires) : String :=
   let xs := [("copy", f.copy), ("dead", f.dead), ("projKnown", f.projKnown), ("fold", f.fold),
@@ -210,11 +213,11 @@ def maxFires : Nat := 8192
 
 /-- Nodes one walk may walk again (`Fires.copied`): inlined callees, β-reduced
 local functions, inlined join points and case-of-case alternatives together.
-An inline round's output keeps every node it charges (a copy loses its `ret`
-to the caller's continuation and gains a `tick`), so an inline walk over
-`maxGlobalNodes` would be refused by the size check after the round anyway.
-The committed programs copy at most 2,860 nodes in one walk (a shrink round). -/
-def maxCopy : Nat := maxGlobalNodes
+A walk recurses natively through what it copies as through its global, so
+this and `maxGlobalNodes` together bound its native depth (see there); the
+committed programs copy at most 2,860 nodes in one walk (a shrink round), a
+third of this. -/
+def maxCopy : Nat := 8192
 
 /-- The charge for walking `b` again: its nodes, counted up to `maxCopy + 1`
 (`Exp.nodesUpTo` stops there). -/
@@ -226,6 +229,61 @@ def fire (f : Fires → Fires) : M Unit := fun s =>
   if (f s).total > maxFires then .error "walk: rule firing budget exhausted"
   else if (f s).copied > maxCopy then .error "walk: copy budget exhausted"
   else .ok ((), f s)
+
+/-- Work one walk may do (`Fires.work`, charged by `stepCost` at every step):
+seventeen times the most one walk of a committed program does (572,520). -/
+def maxWalkWork : Nat := 10000000
+
+/-- What resolving `as` reads: variable `i` is the `i`-th entry of the
+environment's list. -/
+def atomsCost : List Atom → Nat
+  | [] => 0
+  | .var i :: as => i + 1 + atomsCost as
+  | _ :: as => 1 + atomsCost as
+
+/-- The atoms a binding resolves. -/
+def bindAtoms : Bind → List Atom
+  | .atom a | .proj _ _ a => [a]
+  | .con _ as | .prim _ as | .call _ as => as
+  | .app f as => f :: as
+  | .glob _ | .fn .. => []
+
+/-- An upper bound of the work one walk step on `e` does beyond a constant,
+counted up to `cap + 1`: resolving the atoms it reads (the environment is a
+list), looking a join point up by index (a jump, or a binding whose body is
+one, `after`), and, under shrink, the census counts, arm comparisons and
+case-identity tests that read subterms of `e` (`Exp.occ`, `Exp.headOcc`,
+`Exp.jocc`, `sameArms`, `identityTail`), the target join point's body at a
+jump, and the known-primitive search over the levels (`knownPrim`); a call
+being redirected reads the redirection's holes. Charged by `walk` before the
+step runs (`charge`), so a walk's work is at most `maxWalkWork` whatever its
+input and certificate. -/
+def stepCost (C : Cfg) (env : Env) (here : Here) (e : Exp) (cap : Nat) : Nat :=
+  let lookups := match e with
+    | .bind _ b body => atomsCost (bindAtoms b) + (match body with
+        | .jump j _ => j
+        | _ => 0)
+    | .jump j as => atomsCost as + j
+    | .case x _ _ => atomsCost [x]
+    | .ret a => atomsCost [a]
+    | _ => 0
+  let census := if C.shrink then
+      e.nodesUpTo cap + here.d + (match e with
+        | .jump j _ => match env.jσ[j]? with
+          | some (.mk _ _ _ _ _ b) => b.nodesUpTo cap
+          | none => 0
+        | _ => 0)
+    else 0
+  let redirect := match e, C.redirect with
+    | .bind _ (.call _ _) _, some r => r.holes.length
+    | _, _ => 0
+  1 + lookups + census + redirect
+
+/-- Charge one step's work (`cost` of the budget left), refusing the walk
+once its work passes `maxWalkWork`. -/
+def charge (cost : Nat → Nat) : M Unit := fun s =>
+  if s.work + cost (maxWalkWork - s.work) > maxWalkWork then .error "walk: work budget exhausted"
+  else .ok ((), { s with work := s.work + cost (maxWalkWork - s.work) })
 
 def resolve (env : Env) : Atom → M Opd
   | .var i =>
@@ -378,7 +436,8 @@ mutual
 
 def walk (C : Cfg) : Nat → Env → Here → Exp → Kont → M Exp
   | 0, _, _, _, _ => throw "walk: fuel"
-  | fuel + 1, env, here, e, k =>
+  | fuel + 1, env, here, e, k => do
+    charge (stepCost C env here e)
     match e with
     | .bind c b body => walkBind C fuel env here c b body k
     | .join n r b body => walkJoin C fuel env here n r b body k

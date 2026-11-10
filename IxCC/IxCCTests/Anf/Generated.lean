@@ -8,7 +8,9 @@ random inline rounds including recursive and uncalled callees, random
 specialisation decisions and masks, which the fixed-parameter checker may
 reject), since correctness must hold for every certificate; after every step
 the program is `WellScoped` and Lam and Anf agree (`compareRun`: readback,
-traps, the timeout clause, tick dominance). The default pipeline also runs
+traps, the timeout clause, tick dominance). A random step the replay's budgets
+refuse (`Anf.Budget`: it can inline most globals into most callers, step after
+step) is counted and skipped; any other refusal fails. The default pipeline also runs
 on each program: its certificate replayed by `Pipeline.run` reproduces
 `produce`'s program exactly, and shrink is idempotent at its fixpoint. -/
 
@@ -52,6 +54,8 @@ structure Stats where
   tally : Tally := {}
   specs : Nat := 0
   replays : Nat := 0
+  /-- Random steps the middle end's budgets refused (`Anf.Budget`). -/
+  overBudget : Nat := 0
 
 def argsets : List (List Nat) := [[0], [1], [2], [3], [5]]
 
@@ -80,10 +84,20 @@ def one (a : Assert) (seed : Nat) (s : Stats) : IO Stats := do
     let (step, g') := (randomStep P i).run g |>.run
     g := g'
     let before := P.size
-    P ← IO.ofExcept ((step.run {} P).mapError (s!"seed {seed} step {i} ({step.name}): " ++ ·))
-    if step matches .specialize _ then s := { s with specs := s.specs + (P.size - before) }
-    s := { s with steps := s.steps + 1,
-                  tally := ← compare a L P s!"seed {seed} step {i} {step.name}" s.tally }
+    match step.run {} P with
+    | .error m =>
+      -- A random step can ask for more than the replay's budgets (it inlines
+      -- 40% of the globals at 60% of the callers, step after step): refusing
+      -- it is the budgets' job, as for any certificate, and the program stays
+      -- as it was for the next step. Any other refusal fails the suite.
+      unless (m.splitOn "budget").length > 1 do
+        throw (IO.userError s!"seed {seed} step {i} ({step.name}): {m}")
+      s := { s with overBudget := s.overBudget + 1 }
+    | .ok P' =>
+      P := P'
+      if step matches .specialize _ then s := { s with specs := s.specs + (P.size - before) }
+      s := { s with steps := s.steps + 1,
+                    tally := ← compare a L P s!"seed {seed} step {i} {step.name}" s.tally }
   -- the default pipeline: replay and idempotence
   let tr ← IO.ofExcept ((Anf.Pipeline.produce {} L).mapError (s!"seed {seed} produce: " ++ ·))
   let final := (tr.stages.getLast?.map (·.2)).getD P1
@@ -100,7 +114,8 @@ def run (a : Assert) (count : Nat) : IO (Array String) := do
   for seed in [0:count] do
     s ← one a seed s
   return #[s!"{s.programs} programs ({s.rejected} rejected by WellFormed/ModesOk), \
-    {s.steps} random certificate steps ({s.specs} specialisations), {s.replays} replays",
+    {s.steps} random certificate steps ({s.specs} specialisations; {s.overBudget} more refused by \
+    the budgets), {s.replays} replays",
     s!"  {s.tally.render}"]
 
 end IxCCTests.Anf.Generated

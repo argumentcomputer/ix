@@ -5,6 +5,7 @@ import IxCCTests.Lir.Gen
 import IxCC.Lir.SplitEdges
 import IxCC.Recheck.Rc.Replay
 import IxCCTests.Recheck.Hostile
+import IxCCTests.Recheck.Deep
 
 /-! The `tests-recheck` suite (M1.K1): the recheck path in kernel-evaluable
 style. Building the suite evaluates, in the kernel
@@ -19,7 +20,9 @@ the regression tests of the 2026-11-09 branch review (`Hostile`): hostile
 certificates on pin-free programs through every program-level and byte-level
 verifier, Stage A in `check-cert`, the erased-typing default, the N4 root
 checks, N6, S10, the `--rc auto` immortal fallback, and the middle end's
-budgets on R1's inline amplifier and other over-budget steps. -/
+budgets on R1's inline amplifier and other over-budget steps; and every
+verifier entry point on R1's crashing inputs and on generated deep and wide
+inputs in a child process whose Lean stack is 8 MiB (`--stack-8mib`). -/
 
 namespace IxCCTests.Recheck.Run
 
@@ -163,6 +166,20 @@ def negativeSecurityTests (a : Assert) : IO (Array String) := do
   return #["14 hostile certificate/table/JSON/DAG regression checks passed"]
 
 def main (args : List String) : IO UInt32 := do
+  if let "--probe" :: rest := args then return ← Deep.probe rest
+  if let ["--probe-amp", f, g] := args then return ← Deep.probeAmp f.toNat! g.toNat!
+  if let ["--probe-amp", f, g, stg] := args then return ← Deep.probeAmp f.toNat! g.toNat! stg
+  if let ["--probe-walk", n] := args then return ← Deep.probeWalk n.toNat!
+  if args == ["--stack-8mib"] then return ← Deep.stack8
+  if let ["--write-shrink", dir, d] := args then
+    Deep.writeShrink dir d.toNat!
+    return 0
+  if let ["--write-shrink", dir, d, r, s] := args then
+    Deep.writeShrink dir d.toNat! r.toNat! s.toNat! s!"tree-{d}-{r}-{s}"
+    return 0
+  if let ["--write-amp-shrink", dir, f, g] := args then
+    Deep.writeAmpShrink dir f.toNat! g.toNat!
+    return 0
   let count := match args with
     | ["--generated", n] => n.toNat!
     | _ => 1000
@@ -178,7 +195,8 @@ def main (args : List String) : IO UInt32 := do
     part a "the --rc auto immortal fallback and check-cert --rc (B1-6, B1-8)" do
       return #[← Hostile.autoFallback a]
     part a "middle-end budgets (REPORT item 2)" do
-      return #[← Hostile.budgets a, ← Hostile.inlineAmplifier a]
+      return #[← Hostile.budgets a, ← Hostile.shrinkWork a, ← Hostile.inlineAmplifier a]
+    part a "every verifier on an 8 MiB stack (FA follow-up, item 1)" (Deep.stackPart a)
     part a "Select.select against Select.run on generated Lir" (selection a count)
     part a "recheck artifacts equal a fresh ingress, produce and run" (artifacts a)
     IO.println s!"tests-recheck: {← a.get} assertions passed"

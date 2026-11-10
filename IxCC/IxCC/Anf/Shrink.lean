@@ -62,23 +62,37 @@ def cfg (P : Program) (p : Params) : Walk.Cfg :=
 def round (P : Program) (p : Params) (gd : GDef) : Except String (GDef × Walk.Fires) :=
   (Walk.global (cfg P p) gd).run {}
 
-/-- Exactly `n` rounds, refusing a round that leaves the global over
-`maxGlobalNodes` (so every round's walk starts within the budget). -/
-def rounds (P : Program) (p : Params) (gd : GDef) : Nat → Except String GDef
-  | 0 => pure gd
+/-- Exactly `n` rounds, starting with `work` already done by the step; the
+global and the step's work after them. A round is refused if it leaves the
+global over `maxGlobalNodes` (so every round's walk starts within the budget)
+or brings the step's work over `maxStepWork`. -/
+def rounds (P : Program) (p : Params) (gd : GDef) (work : Nat) : Nat → Except String (GDef × Nat)
+  | 0 => pure (gd, work)
   | n + 1 => do
-    let (gd', _) ← round P p gd
-    if gd'.body.nodesLe maxGlobalNodes then rounds P p gd' n
-    else .error "shrink: a global exceeds the node budget"
+    let (gd', f) ← round P p gd
+    if gd'.body.nodesLe maxGlobalNodes && work + f.work ≤ maxStepWork then
+      rounds P p gd' (work + f.work) n
+    else .error "shrink: a global or the step exceeds the node or work budget"
 
-/-- P2 re-run on its certificate. It stops as soon as the globals it has made
-pass `maxProgramNodes` (`mapMWithin`). -/
+/-- The certified rounds of each global in turn, threading the step's work
+and the nodes made so far: refused as soon as either passes its budget. -/
+def runGlobals (P : Program) (p : Params) (cert : Cert) :
+    List (GlobalId × GDef) → Nat → Nat → Except String (List (GlobalId × GDef))
+  | [], _, _ => .ok []
+  | (g, gd) :: rest, nodes, work =>
+    match rounds P p gd work (cert.getD g 0) with
+    | .error e => .error s!"shrink global {g}: {e}"
+    | .ok (gd', work') =>
+      if nodes + gd'.body.nodesUpTo maxProgramNodes > maxProgramNodes then
+        .error "shrink: the program exceeds the node budget"
+      else
+        match runGlobals P p cert rest (nodes + gd'.body.nodesUpTo maxProgramNodes) work' with
+        | .error e => .error e
+        | .ok gs => .ok ((g, gd') :: gs)
+
+/-- P2 re-run on its certificate, within the node and work budgets. -/
 def run (p : Params) (cert : Cert) (P : Program) : Except String Program := do
-  let gs ← mapMWithin (fun (g, gd) => do
-      let gd' ← (rounds P p gd (cert.getD g 0)).mapError (s!"shrink global {g}: " ++ ·)
-      return (g, gd'))
-    (fun x => x.2.body.nodesUpTo maxProgramNodes) maxProgramNodes
-    "shrink: the program exceeds the node budget" 0 P.globalList
+  let gs ← runGlobals P p cert P.globalList 0 0
   return { P with globals := Src.NatMap.ofList gs }
 
 /-- Rounds until one fires no rule (not counted), within `budget`. -/

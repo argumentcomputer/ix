@@ -32,20 +32,24 @@ theorem KontW.of_KT {k : Kont} {J' : List JClo} {T : Val → Nat → Result Val}
 theorem walk_step (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {here : Here} {e : Exp}
     {k : Kont} {out : Exp} {s s' : Fires} (h : (Walk.walk C (fuel + 1) env here e k).run s = .ok (out, s')) :
     ExpSim P Q Valid Xc n C out env here k e := by
+  rw [Walk.walk.eq_def] at h
+  dsimp only at h
+  -- the step's work charge changes only the work counter
+  obtain ⟨s0, h⟩ := Walk.run_charge_then h
   cases e with
-  | bind c b body => rw [Walk.walk] at h; exact hW.walkBind h
-  | join ar r b body => rw [Walk.walk] at h; exact hW.walkJoin h
-  | jump j as => rw [Walk.walk] at h; exact hW.walkJump h
-  | case x alts d => rw [Walk.walk] at h; exact hW.walkCase h
+  | bind c b body => exact hW.walkBind h
+  | join ar r b body => exact hW.walkJoin h
+  | jump j as => exact hW.walkJump h
+  | case x alts d => exact hW.walkCase h
   | ret a =>
-    rw [Walk.walk] at h
+    try dsimp only at h
     obtain ⟨o, s1, h1, h2⟩ := Walk.run_bind_ok h
     intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
     obtain ⟨rfl, v, w, hv, hw, hvw⟩ := resolve_rel' henv h1 fun i hi => by
       simpa [Exp.occ] using hnd.1 i hi
     exact (pass_sim h2 hd hdj hf hk hw hvw).congr (fun k => by rw [eval_ret', hv]; rfl) (fun _ => rfl)
   | tick body =>
-    rw [Walk.walk] at h
+    try dsimp only at h
     obtain ⟨o, s1, h1, h2⟩ := Walk.run_bind_ok h
     obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h2
     intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
@@ -53,7 +57,7 @@ theorem walk_step (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {
     exact (SimUpTo.tick (eval_mono P ρ J body) (eval_mono Q ρ' J' o) this).congr
       (fun k => by rw [eval_tick]) (fun k => by rw [eval_tick])
   | trap =>
-    rw [Walk.walk] at h
+    try dsimp only at h
     obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h
     intro ρ J ρ' J' live jlive SK hV henv hJ hd hdj hf hnd hk
     exact SimUpTo.trap.congr (fun k => by rw [eval_trap']; rfl) (fun k => eval_trap' Q k ρ' J')

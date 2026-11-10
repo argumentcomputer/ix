@@ -147,17 +147,48 @@ theorem iter_succ' (gd : GDef) : ∀ j, iter P0 p gd (j + 1) = iter P0 p (roundO
   | 0 => rfl
   | j + 1 => by rw [iter, iter_succ' gd j]; rfl
 
-theorem rounds_iter : ∀ (n : Nat) (gd gd' : GDef), rounds P0 p gd n = .ok gd' → iter P0 p gd n = gd'
-  | 0, gd, gd', h => by simp only [rounds] at h; cases h; rfl
-  | n + 1, gd, gd', h => by
+theorem rounds_iter : ∀ (n : Nat) (gd gd' : GDef) (work work' : Nat),
+    rounds P0 p gd work n = .ok (gd', work') → iter P0 p gd n = gd'
+  | 0, gd, gd', work, work', h => by
+    simp only [rounds, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    rfl
+  | n + 1, gd, gd', work, work', h => by
     simp only [rounds] at h
     obtain ⟨⟨gd1, f⟩, h1, h2⟩ := Lam.ModesOk.bind_ok h
     have hr : roundOr P0 p gd = gd1 := by unfold roundOr; rw [h1]
     rw [iter_succ', hr]
     try dsimp only at h2
     split at h2
-    · exact rounds_iter n gd1 gd' h2
+    · exact rounds_iter n gd1 gd' _ _ h2
     · cases h2
+
+/-- The globals `runGlobals` makes are the input's after their certified
+rounds. -/
+theorem runGlobals_eq {cert : Cert} : ∀ (xs : List (GlobalId × GDef)) (nodes work : Nat)
+    (gs : List (GlobalId × GDef)), runGlobals P0 p cert xs nodes work = .ok gs →
+    gs = xs.map fun q => (q.1, iter P0 p q.2 (cert.getD q.1 0))
+  | [], _, _, gs, h => by
+    simp only [runGlobals, Except.ok.injEq] at h
+    subst h
+    rfl
+  | (g, gd) :: rest, nodes, work, gs, h => by
+    simp only [runGlobals] at h
+    cases hr : rounds P0 p gd work (cert.getD g 0) with
+    | error e => rw [hr] at h; cases h
+    | ok r =>
+      obtain ⟨gd', work'⟩ := r
+      rw [hr] at h
+      simp only at h
+      split at h
+      · cases h
+      · cases hrest : runGlobals P0 p cert rest (nodes + gd'.body.nodesUpTo maxProgramNodes) work' with
+        | error e => rw [hrest] at h; cases h
+        | ok gs' =>
+          rw [hrest] at h
+          simp only [Except.ok.injEq] at h
+          subst h
+          rw [List.map_cons, rounds_iter _ _ _ _ _ hr, runGlobals_eq rest _ _ gs' hrest]
 
 theorem getD_le_foldr : ∀ (cert : Cert) (g : GlobalId), cert.getD g 0 ≤ cert.foldr max 0
   | [], g => by simp
@@ -173,23 +204,9 @@ theorem run_global {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
       if g < P0.size then (P0.global? g).map (fun gd => iter P0 p gd (cert.getD g 0)) else none := by
   unfold run at h
   obtain ⟨gs, hgs, h⟩ := Lam.ModesOk.bind_ok h
-  replace hgs := mapMWithin_mapM _ _ _ hgs
   cases h
   refine ⟨rfl, rfl, rfl, fun g => ?_⟩
-  obtain ⟨hlen, hall⟩ := Lam.ModesOk.mapM_ok hgs
-  have hgs' : gs = P0.globalList.map fun q => (q.1, iter P0 p q.2 (cert.getD q.1 0)) := by
-    apply List.ext_getElem?
-    intro j
-    simp only [List.getElem?_map]
-    cases hj : P0.globalList[j]? with
-    | none =>
-      simp only [Option.map_none]
-      rw [List.getElem?_eq_none_iff] at hj ⊢; omega
-    | some q =>
-      obtain ⟨y, hy, hf⟩ := hall j q hj
-      obtain ⟨gd', hgd', hret⟩ := Lam.ModesOk.bind_ok hf
-      cases hret
-      rw [hy, Option.map_some, rounds_iter _ _ _ (Lam.ModesOk.mapError_ok hgd')]
+  have hgs' := runGlobals_eq _ _ _ _ hgs
   show (Src.NatMap.ofList gs).get? g = _
   rw [hgs']
   exact get?_ofList_globalList P0 (fun g gd => iter P0 p gd (cert.getD g 0)) g

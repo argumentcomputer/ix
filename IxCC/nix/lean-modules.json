@@ -459,7 +459,8 @@
     "IxCCTests.Lir.Gen",
     "IxCC.Lir.SplitEdges",
     "IxCC.Recheck.Rc.Replay",
-    "IxCCTests.Recheck.Hostile"]},
+    "IxCCTests.Recheck.Hostile",
+    "IxCCTests.Recheck.Deep"]},
   "IxCCTests.Recheck.ReadbackMain":
   {"path": "IxCCTests/Recheck/ReadbackMain.lean",
    "imports": ["IxCCTests.Recheck.Readback"]},
@@ -559,6 +560,8 @@
    ["IxCCTests.Recheck.Kernel.Fib",
     "IxCCTests.Recheck.Kernel.Tak",
     "IxCCTests.Recheck.Kernel.Gcd"]},
+  "IxCCTests.Recheck.Deep":
+  {"path": "IxCCTests/Recheck/Deep.lean", "imports": ["IxCCTests.Recheck.Hostile"]},
   "IxCCTests.Recheck.Hostile":
   {"path": "IxCCTests/Recheck/Hostile.lean",
    "imports":

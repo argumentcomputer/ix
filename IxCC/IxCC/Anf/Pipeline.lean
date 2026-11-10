@@ -75,9 +75,16 @@ def Step.name : Step → String
   | .specialize _ => "P4"
   | .prune => "prune"
 
-/-- The recheck: P1 and the size check, then the certificate's steps. -/
+/-- Refuse a Lam program holding a global over `maxLamNodes` (counted with an
+early exit), before ANF conversion recurses over it. -/
+def checkLamNodes (L : Lam.Program) : Except String Lam.Program :=
+  if L.globalList.all fun (_, gl) => lamNodesUpTo maxLamNodes gl.body ≤ maxLamNodes then .ok L
+  else .error "middle end: a Lam global exceeds the node budget"
+
+/-- The recheck: the Lam size check, P1 and the size check, then the
+certificate's steps. -/
 def run (cert : Cert) (L : Lam.Program) : Except String Program := do
-  let P ← convert L >>= checkGlobalNodes
+  let P ← checkLamNodes L >>= convert >>= checkGlobalNodes
   cert.steps.foldlM (fun P s => s.run cert.shrink P) P
 
 structure Budgets where
@@ -95,7 +102,7 @@ structure Trace where
 
 /-- The Phase 1 schedule with the default oracles. -/
 def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
-  let p1 ← convert L
+  let p1 ← checkLamNodes L >>= convert
   let mut P := p1
   let mut steps : Array Step := #[]
   let mut stages : Array (String × Program) := #[("P1", p1)]

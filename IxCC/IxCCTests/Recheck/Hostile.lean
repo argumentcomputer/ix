@@ -508,11 +508,10 @@ def ampCase (dF dG : Nat) : IO (ByteArray × Lean.Json × Recheck.Input × Reche
   let some gg := gidOf gId | throw (IO.userError "amp: no global for g")
   return (bs, json, inp, cfg, main, { base with mid := { steps := [.inline [(gg, [gf])]] } })
 
-/-- R1's crashing input (`amp-12-11`: `f` makes 8,191 calls, `g` calls it at
-2,048 sites, so the step asks for about 16.8M copied binds) is refused with an
-ordinary `anf.replay` error by every verifier, in process. -/
-def inlineAmplifier (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
-  let (bs, json, inp, cfg, main, hostile) ← ampCase 12 11
+/-- An amplifier `ampCase dF dG` with its single `inline` step, refused with an
+ordinary `anf.replay` error naming `budget` by `Recheck.run` and every verifier. -/
+def amplifier (a : Assert) (dF dG : Nat) (budget : String) : IO String := IO.FS.withTempDir fun dir => do
+  let (bs, json, inp, cfg, main, hostile) ← ampCase dF dG
   let P := inp.program
   expect a (Recheck.checkCanonicalRelevance cfg inp hostile.table hostile.relevance)
     "amp: Stage A refuses the certificate, so the byte-level verifiers would not reach the replay"
@@ -521,8 +520,8 @@ def inlineAmplifier (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
   match Recheck.run cfg P hostile with
   | .ok _ => expect a false "amp: Recheck.run accepted the certificate"
   | .error e =>
-    expect a (e.stage == .anf && e.code == "anf.replay" && (e.message.splitOn "copy budget").length > 1)
-      s!"amp: Recheck.run refused, but not by the walk's copy budget: {e.render}"
+    expect a (e.stage == .anf && e.code == "anf.replay" && (e.message.splitOn budget).length > 1)
+      s!"amp: Recheck.run refused, but not by {budget}: {e.render}"
   let ms := (← IO.monoMsNow) - t0
   let claim : CompileClaim :=
     { env := inp.env.root, target := main, policy := .immortal, abiArity := 0
@@ -540,9 +539,17 @@ def inlineAmplifier (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
   match ← checkCert dir hostile [] with
   | .ok () => expect a false "amp: check-cert accepted"
   | .error e => expect a (e.stage == .anf && e.code == "anf.replay") s!"amp: check-cert: {e.render}"
-  return s!"R1's amp-12-11 (.ixe {bs.size} bytes, certificate {text.utf8ByteSize} bytes): Recheck.run refused \
-    by the copy budget in {ms} ms; verifyBytes, checkClaim, verifyProgram, checkClaimProgram, both Ring0Sip \
+  return s!"amp-{dF}-{dG} (.ixe {bs.size} bytes, certificate {text.utf8ByteSize} bytes): Recheck.run refused \
+    ({budget}) in {ms} ms; verifyBytes, checkClaim, verifyProgram, checkClaimProgram, both Ring0Sip \
     verifiers and check-cert refuse it"
+
+/-- R1's crashing input, `amp-12-11` (its `f` makes 8,191 calls, so its Lam global is
+over `maxLamNodes`), and `amp-10-11`, whose globals are within every size budget but
+whose single `inline` step asks for 2,048 copies of an 8,000-node callee. -/
+def inlineAmplifier (a : Assert) : IO String := do
+  let lam ← amplifier a 12 11 "Lam global exceeds"
+  let copy ← amplifier a 10 11 "copy budget"
+  return s!"R1's {lam}; {copy}"
 
 /-- `n` dead `atom` bindings before `ret`: `2 n + 1` nodes. -/
 def chain (n : Nat) : Anf.Exp :=
@@ -571,24 +578,28 @@ def budgets (a : Assert) : IO String := do
     for cap in [0, 1, 5, 64, 4096, 1000000] do
       expect a (e.nodesUpTo cap == min e.nodes (cap + 1))
         s!"Exp.nodesUpTo {cap} disagrees with Exp.nodes ({e.nodes})"
-  -- a walk that copies past its budget: two calls of a 50,001-node callee
-  match Anf.Inline.round (callersProgram 1 2 25000) [(1, [0])] with
-  | .ok _ => expect a false "a walk copying 100,002 nodes was accepted"
+  -- a walk that copies past its budget: two calls of a callee of about maxCopy nodes
+  let cb := Anf.Walk.maxCopy / 2 - 8
+  match Anf.Inline.round (callersProgram 1 2 cb) [(1, [0])] with
+  | .ok _ => expect a false s!"a walk copying {2 * (2 * cb + 1)} nodes was accepted"
   | .error m => expect a ((m.splitOn "copy budget").length > 1) s!"the over-budget walk: {m}"
   -- one call is within the walk's budget
-  expect a (Anf.Inline.round (callersProgram 1 1 25000) [(1, [0])]).isOk "a walk copying 50,001 nodes refused"
+  expect a (Anf.Inline.round (callersProgram 1 1 cb) [(1, [0])]).isOk s!"a walk copying {2 * cb + 1} nodes refused"
   -- a round whose walks are each within budget but whose output is not:
-  -- twenty callers each inlining a 50,001-node callee once
-  match Anf.Inline.round (callersProgram 20 1 25000) ((List.range 20).map fun i => (i + 1, [0])) with
-  | .ok _ => expect a false "an inline round making 1,000,000+ nodes was accepted"
+  -- callers each inlining that callee once, over the program budget together
+  let k := Anf.maxProgramNodes / (2 * cb) + 2
+  match Anf.Inline.round (callersProgram k 1 cb) ((List.range k).map fun i => (i + 1, [0])) with
+  | .ok _ => expect a false s!"an inline round making {k * (2 * cb + 1)} nodes was accepted"
   | .error m => expect a ((m.splitOn "the program exceeds").length > 1) s!"the over-budget round: {m}"
   -- the size check after P1 and after each step counts the whole program
-  expect a (Anf.Pipeline.checkGlobalNodes (callersProgram 1 1 30000)).isOk "a 60,001-node global refused"
-  expect a (!(Anf.Pipeline.checkGlobalNodes (callersProgram 1 1 40000)).isOk) "an 80,001-node global accepted"
-  let many : Anf.Program := { callersProgram 0 0 30000 with
-    globals := Src.NatMap.ofList ((List.range 20).map fun i =>
-      (i, ({ key := .dispatch i, ps := [{}], body := chain 30000 } : Anf.GDef))), size := 20 }
-  expect a (!(Anf.Pipeline.checkGlobalNodes many).isOk) "a 1,200,020-node program accepted"
+  let gb := Anf.maxGlobalNodes / 2
+  expect a (Anf.Pipeline.checkGlobalNodes (callersProgram 1 1 (gb - 8))).isOk s!"a {2 * gb - 15}-node global refused"
+  expect a (!(Anf.Pipeline.checkGlobalNodes (callersProgram 1 1 (gb + 8))).isOk) s!"a {2 * gb + 17}-node global accepted"
+  let kp := Anf.maxProgramNodes / (2 * gb) + 2
+  let many : Anf.Program := { callersProgram 0 0 (gb - 8) with
+    globals := Src.NatMap.ofList ((List.range kp).map fun i =>
+      (i, ({ key := .dispatch i, ps := [{}], body := chain (gb - 8) } : Anf.GDef))), size := kp }
+  expect a (!(Anf.Pipeline.checkGlobalNodes many).isOk) s!"a {kp * (2 * gb - 15)}-node program accepted"
   -- a specialisation whose value tree is exponentially larger than its caller
   let towerProgram : Anf.Program :=
     { globals := Src.NatMap.ofList [(0, { key := .dispatch 0, ps := [{}], body := .ret (.var 0) }),
@@ -602,8 +613,62 @@ def budgets (a : Assert) : IO String := do
   let small := { towerProgram with globals := towerProgram.globals.insert 1 smallCaller }
   expect a (Anf.Specialize.run { decisions := [{ caller := 1, callee := 0, mask := [true] }] } small).isOk
     "a specialisation over a 31-node value tree refused"
-  return "Exp.nodesUpTo agrees with Exp.nodes below its cap; refused: a walk copying 100,002 nodes, an \
-    inline round making 1,000,000+ nodes, an 80,001-node global, a 1,200,020-node program, a \
-    specialisation over a 2^49-node value tree"
+  return s!"Exp.nodesUpTo agrees with Exp.nodes below its cap; refused: a walk copying {2 * (2 * cb + 1)} \
+    nodes, an inline round making {k * (2 * cb + 1)} nodes, a {2 * gb + 17}-node global, a \
+    {kp * (2 * gb - 15)}-node program, a specialisation over a 2^49-node value tree"
+
+/-- Global 0 returns its parameter; globals `1 … k` are `tower depth`. -/
+def towers (k depth : Nat) : Anf.Program :=
+  { globals := Src.NatMap.ofList ((0, ({ key := .dispatch 0, ps := [{}], body := .ret (.var 0) } : Anf.GDef)) ::
+      (List.range k).map fun i =>
+        (i + 1, ({ key := .dispatch (i + 1), ps := [{}], body := tower depth } : Anf.GDef)))
+    size := k + 1, roots := [1], ctors := [], known := {} }
+
+/-- The shrink census (FA residual): under shrink the walk counts the bound
+variable's uses over the rest of the body at each binding, so one round on a
+global of `n` bindings each used later reads about `n²` nodes, some 10⁸ for a
+global within the node budget, and 64 rounds of it, which one step may ask
+for, some 10¹⁰. The walk charges that reading to `Fires.work` and refuses
+past `Walk.maxWalkWork`; a step refuses once its walks' work passes
+`Anf.maxStepWork`. Asserted on the outcome and the counter, not on time. -/
+def shrinkWork (a : Assert) : IO String := do
+  let p := ({} : Anf.Shrink.Params)
+  -- a small tower is shrunk, and the counter shows the census's n² reads
+  let n := 1000
+  let small := towers 1 n
+  let some g1 := small.global? 1 | throw (IO.userError "towers: no global 1")
+  let w ← match Anf.Shrink.round small p g1 with
+    | .ok (_, f) => pure f.work
+    | .error m => expect a false s!"a shrink round on a {g1.body.nodes}-node tower refused: {m}"; pure 0
+  expect a (w ≥ n * n && w ≤ Anf.Walk.maxWalkWork)
+    s!"a shrink round on a {n}-binding tower: work {w}, expected at least {n * n}"
+  -- one round on a tower of about maxGlobalNodes nodes asks for about m² reads
+  let m := Anf.maxGlobalNodes / 4 - 4
+  let big := towers 1 m
+  let some gb := big.global? 1 | throw (IO.userError "towers: no global 1")
+  expect a (gb.body.nodes ≤ Anf.maxGlobalNodes) s!"the big tower ({gb.body.nodes} nodes) is over the node budget"
+  match Anf.Shrink.round big p gb with
+  | .ok (_, f) => expect a false s!"a shrink round reading about {m * m} nodes was accepted (work {f.work})"
+  | .error msg => expect a ((msg.splitOn "work budget").length > 1) s!"the {m * m}-read round: {msg}"
+  -- the same through the certified step: 64 rounds of the global
+  match Anf.Shrink.run p [0, 64] big with
+  | .ok _ => expect a false s!"64 shrink rounds of a {gb.body.nodes}-node tower were accepted"
+  | .error msg => expect a ((msg.splitOn "work budget").length > 1) s!"64 rounds of the big tower: {msg}"
+  -- k globals, each round within the walk's budget, over the step's budget together
+  let d := 1500
+  let some gw := (towers 1 d).global? 1 | throw (IO.userError "towers: no global 1")
+  let ww ← match Anf.Shrink.round (towers 1 d) p gw with
+    | .ok (_, f) => pure f.work
+    | .error msg => expect a false s!"one round of a {d}-binding tower refused: {msg}"; pure 1
+  let k := Anf.maxStepWork / ww + 2
+  expect a (k * ww > Anf.maxStepWork && k * gw.body.nodes < Anf.maxProgramNodes)
+    s!"{k} {d}-binding towers: {k * ww} work, within the step budget"
+  match Anf.Shrink.run p ((List.range (k + 1)).map fun i => if i == 0 then 0 else 1) (towers k d) with
+  | .ok _ => expect a false s!"a shrink step of {k * ww} work was accepted"
+  | .error msg => expect a ((msg.splitOn "work budget").length > 1) s!"the over-budget shrink step: {msg}"
+  return s!"shrink census charged: a round on a {n}-binding tower does {w} work; refused: one round and \
+    64 rounds on a {gb.body.nodes}-node tower (about {m * m} reads; walk budget {Anf.Walk.maxWalkWork}), \
+    one round each of {k} {d}-binding towers ({ww} work each, {k * ww} together; step budget \
+    {Anf.maxStepWork})"
 
 end IxCCTests.Recheck.Hostile

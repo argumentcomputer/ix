@@ -94,6 +94,13 @@ theorem checkGlobalNodes_ok {P Q : Program} (h : checkGlobalNodes P = .ok Q) : Q
   · cases h; rfl
   · cases h
 
+/-- The Lam size check passes its program through unchanged. -/
+theorem checkLamNodes_ok {L L' : Lam.Program} (h : checkLamNodes L = .ok L') : L = L' := by
+  unfold checkLamNodes at h
+  split at h
+  · cases h; rfl
+  · cases h
+
 /-- P4's correctness: every certificate the re-run accepts gives a
 refinement of the input with ids `0 … size - 1`. -/
 def SpecCorrect : Prop :=
@@ -161,6 +168,8 @@ theorem run_correct {cert : Cert} {L : Lam.Program} {Q : Program}
   unfold run at h
   obtain ⟨P, h1, h2⟩ := Lam.ModesOk.bind_ok h
   obtain ⟨P0, h0, hc⟩ := Lam.ModesOk.bind_ok h1
+  obtain ⟨L', hl, h0⟩ := Lam.ModesOk.bind_ok h0
+  rw [← checkLamNodes_ok hl] at h0
   have hP : P = P0 := checkGlobalNodes_ok hc
   rw [hP] at h2
   exact (Convert.Proof.convert_refines h0).trans
@@ -173,6 +182,8 @@ theorem run_correct_noSpec {cert : Cert} (hno : ∀ s ∈ cert.steps, Step.NoSpe
   unfold run at h
   obtain ⟨P, h1, h2⟩ := Lam.ModesOk.bind_ok h
   obtain ⟨P0, h0, hc⟩ := Lam.ModesOk.bind_ok h1
+  obtain ⟨L', hl, h0⟩ := Lam.ModesOk.bind_ok h0
+  rw [← checkLamNodes_ok hl] at h0
   have hP : P = P0 := checkGlobalNodes_ok hc
   rw [hP] at h2
   exact (Convert.Proof.convert_refines h0).trans

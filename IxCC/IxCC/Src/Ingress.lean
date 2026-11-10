@@ -170,8 +170,13 @@ def conv (ctx : Ctx) : Nat → V3.Expr → ConvM Term
       modify (·.insert i t)
       return t
 
-/-- Depth budget for one expression, share expansions included. -/
-def depthBudget : Nat := 1 <<< 16
+/-- Depth budget for one expression, share expansions included: sixteen times
+the deepest term of a committed program (256). It bounds the native recursion
+of every traversal from here to erasure: on an 8 MiB stack the front end
+(installation, the checks, `checkCanonical`, `Lazify`) survives terms 32,768
+deep and erasure overflows at about 8,960 (a constructor chain; 14,080 for an
+application chain), which `Lam.Erase.termFuel` bounds again. -/
+def depthBudget : Nat := 1 <<< 12
 
 /-! ## Recursor majors -/
 

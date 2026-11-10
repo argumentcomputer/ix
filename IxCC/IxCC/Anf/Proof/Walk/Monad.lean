@@ -43,6 +43,12 @@ theorem run_fire_ok {f : Fires → Fires} {s : Fires} {r : Unit × Fires} (h : (
     · cases h
       rfl
 
+/-- A walk step's work charge changes only the state (its work counter). -/
+theorem run_charge_then {α : Type} {cost : Nat → Nat} {x : M α} {s s' : Fires} {a : α}
+    (h : (charge cost >>= fun _ => x).run s = .ok (a, s')) : ∃ s0, x.run s0 = .ok (a, s') := by
+  obtain ⟨u, s0, _, h2⟩ := run_bind_ok h
+  exact ⟨s0, h2⟩
+
 theorem run_map_ok {α β : Type} {g : α → β} {x : M α} {s s' : Fires} {b : β}
     (h : (g <$> x).run s = .ok (b, s')) : ∃ a, x.run s = .ok (a, s') ∧ g a = b := by
   simp only [StateT.run_map] at h

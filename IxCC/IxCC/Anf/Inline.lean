@@ -39,9 +39,10 @@ def checkCert (r : Round) : Bool :=
   r.all fun (caller, callees) =>
     callees.length ≤ maxCertCallees && callees.all (· != caller)
 
-/-- One round. Each listed caller's walk is bounded by `Walk.maxCopy`, and the
-round stops as soon as the globals it has made pass `maxProgramNodes`, so it
-never holds much more than the budget (`mapMWithin`). -/
+/-- One round. Each listed caller's walk is bounded by `Walk.maxCopy` and
+`Walk.maxWalkWork`, and the round stops as soon as the globals it has made pass
+`maxProgramNodes` or its walks' work passes `maxStepWork`, so it never holds or
+does much more than the budgets (`mapMWithin`). -/
 def round (P : Program) (r : Round) : Except String (Program × Walk.Fires) := do
   let rs ← mapMWithin (fun (g, gd) => do
       match r.lookup g with
@@ -50,8 +51,8 @@ def round (P : Program) (r : Round) : Except String (Program × Walk.Fires) := d
           (s!"inline global {g}: " ++ ·)
         return (g, gd', f)
       | _ => return (g, gd, ({} : Walk.Fires)))
-    (fun x => x.2.1.body.nodesUpTo maxProgramNodes) maxProgramNodes
-    "inline: the program exceeds the node budget" 0 P.globalList
+    (fun x => (x.2.1.body.nodesUpTo maxProgramNodes, x.2.2.work)) (maxProgramNodes, maxStepWork)
+    "inline: the program exceeds the node or work budget" (0, 0) P.globalList
   return ({ P with globals := Src.NatMap.ofList (rs.map fun (g, gd, _) => (g, gd)) },
     rs.foldl (fun acc (_, _, f) => acc.add f) {})
 

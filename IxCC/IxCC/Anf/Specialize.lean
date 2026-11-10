@@ -318,17 +318,19 @@ def treesWork (defs : Src.NatMap Def) (cap : Nat) : Nat → List Opd → Nat →
 `mask`) may cost, in a program of `size` globals of which `specs` are this
 step's specialisations: the work (three readings of the callee's body, by the
 checker, the walk and the comparison with an equal-keyed specialisation; the
-square of the trees' work, since their holes and needed levels are lists
-searched at each visit; a pass over the globals, and a key comparison per
-specialisation, to find or add one), and the nodes of the specialisation it may
-build (the callee's body and the trees' rebuilt definitions). The counts stop
-past `maxWork` (the trees' past `maxTreeWork`). -/
+walk's lookups, each of which may read the environment's list as far as the
+callee's binders and the holes; the square of the trees' work, since their
+holes and needed levels are lists searched at each visit; a pass over the
+globals, and a key comparison per specialisation, to find or add one), and
+the nodes of the specialisation it may build (the callee's body and the trees'
+rebuilt definitions). The counts stop past `maxWork` (the trees' past
+`maxTreeWork`). -/
 def siteCost (defs : Src.NatMap Def) (d : Nat) (gd : GDef) (mask : List Bool) (as : List Atom)
     (size specs : Nat) : Nat × Nat :=
   let masked := ((as.map (·.opd d)).zip mask).filterMap fun (o, m) => if m then some o else none
   let v := min (treesWork defs maxTreeWork (maxTreeWork + 2) masked 0) (maxTreeWork + 1)
   let body := gd.body.nodesUpTo maxWork
-  (3 * body + v * v + size + specs * (v + 1), body + v)
+  (3 * body + body * (body + v) + v * v + size + specs * (v + 1), body + v)
 
 /-- Charge a site's work and nodes (`cost` of the program's size and of the
 specialisations made so far), refusing the step once either passes its
