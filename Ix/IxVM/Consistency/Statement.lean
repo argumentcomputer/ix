@@ -26,8 +26,12 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   `ClosureOrderAt`, `preludeFor`, `prepareWith`, the trusted component of plan
   8.1), installed declaration by declaration (`Installs`, `InstallStep`);
 * contains each claimed constant at its key, with an annotation of the type the
-  reader gives it (`SeedStored`, `Annotates`);
-* has a model in every set theory: `∀ V, Nonempty (Ix.Kernel.Model V env)`.
+  reader gives it (`SeedStored`, `Annotates`). A seed outside Lean's logic (an
+  unsafe or `partial` record, `OutsideLogicAt`) is set aside: the reader declines
+  it, and Lean's kernel accepts an unsafe constant of any type;
+* has a claimed sub-environment (`claimedEnv`: without the model families'
+  auxiliary constants) with a model in every set theory:
+  `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
 
 Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 `False`.
@@ -194,12 +198,12 @@ def LoadedBy (calls : List (Call IxVM.F)) (E : Ixon.Env) : Prop :=
 table `b` (the trusted component of plan 8.1, as `AcceptsIn` uses it): the table
 admitted, the compiled closure in an order with no record before one it
 references, the table's prelude, and `prepareWith`'s evidence and declarations. -/
-def ReadIn (b : Binding) (E : Ixon.Env) (seeds : List Address)
+def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
     (ev : Ix.Kernel.Evidences .anon) (ds : Array (Ix.Kernel.Declaration .anon)) : Prop :=
   ∃ (t : Ix.Kernel.RoleTable) (order : List Address) (pre : Ix.Kernel.Reader.Prelude .anon)
     (limits : Ix.Kernel.Admission.Limits),
     Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-    Ix.Cert.ClosureOrderAt t E (· ∈ seeds) order ∧
+    Ix.Cert.ClosureOrderAt t E seeds order ∧
     Ix.Kernel.Reader.preludeFor t = .ok pre ∧
     Ix.Kernel.Admission.prepareWith Address.admissionHash b pre limits (Ix.Cert.recordsOf E order)
       (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)
@@ -291,16 +295,66 @@ def SeedStored (b : Binding) (ds : Array (Ix.Kernel.Declaration .anon)) (env : I
     env.find? k = some ci ∧ ci.toConstantVal.levelParams = cv.levelParams ∧
     Annotates ci.toConstantVal.type cv.type
 
+/-- A block member in Lean's logic, by the reader's safety policy
+(`Ix.Kernel.Reader.safetyDecline`, `readInductive`). -/
+def InLogicMut : Ixon.MutConst → Prop
+  | .defn d => Ix.Kernel.Reader.safetyDecline d = none
+  | .indc i => i.isUnsafe = false ∧ ∀ ctor ∈ i.ctors.toList, ctor.isUnsafe = false
+  | .recr r => r.isUnsafe = false
+
+/-- **A record in Lean's logic**, by the reader's safety policy: not an unsafe
+or `partial` definition, an unsafe opaque, an unsafe axiom, recursor or
+inductive, nor a block holding one (`Ix.Kernel.Reader.safetyDeclineOf`,
+`readInductive`, `readRecord`). The reader declines the others, and must:
+Lean's kernel accepts an unsafe constant of any type, `False` included. -/
+def InLogic (c : Ixon.Constant) : Prop :=
+  match c.info with
+  | .defn d => Ix.Kernel.Reader.safetyDecline d = none
+  | .recr r => r.isUnsafe = false
+  | .axio a => a.isUnsafe = false
+  | .muts ms => ∀ m ∈ ms.toList, InLogicMut m
+  | _ => True
+
+/-- **`a` holds a record outside Lean's logic** in `E`: the record, or the block
+it projects from, is not `InLogic`. IxVM type-checks such constants and keeps
+safe constants from referencing them (`KernelCheck::is_unsafe_ci`,
+`assert_safety`); the consistency conclusion is about the others. -/
+def OutsideLogicAt (E : Ixon.Env) (a : Address) : Prop :=
+  ∃ c, Ix.Cert.recordAt E a = some c ∧
+    (¬ InLogic c ∨ ∃ cb, Ix.Cert.recordAt E (Ix.Cert.ownerOf a c) = some cb ∧ ¬ InLogic cb)
+
+/-- **A constant of a model family**: an auxiliary key (`Key.aux`) that is not a
+projection table. Model families (the in-process modeller's `_model`
+declarations, their ι and projection theorems) are the checker's means; a
+projection table is how a claimed type's projections read (`Denotes`'
+`proj_table` rule looks the table up at `projTableName T`, itself an auxiliary
+key), so it stays. -/
+def isModelAux (ci : Ix.Kernel.ConstantInfo .anon) : Bool :=
+  match ci.name, ci with
+  | .aux _ _, .projInfo _ => false
+  | .aux _ _, _ => true
+  | _, _ => false
+
+/-- **The claimed sub-environment**: `env` without the model families'
+constants. Its constants are those the claimed closure's records install, with
+their projection tables. -/
+def claimedEnv (env : Ix.Kernel.Env .anon) : Ix.Kernel.Env .anon :=
+  ⟨env.consts.filter fun ci => !isModelAux ci⟩
+
 /-- **The consistency conclusion**: an environment read from the records the run
-loaded, under the default role table, storing every claimed constant with its
-type, with a model in every set theory. -/
+loaded, under the default role table, from the claim's seeds in Lean's logic,
+storing every such claimed constant with its type, whose claimed sub-environment
+(`claimedEnv`: without the model families' auxiliary constants, which the run
+checks as advice) has a model in every set theory. A seed whose loaded record is
+outside Lean's logic (`OutsideLogicAt`) is set aside, as a block seed is (its
+members are stored). -/
 def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
   ∃ (b : Binding) (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
     Ix.Kernel.Admission.defaultBinding = .ok b ∧ LoadedBy calls E₀ ∧ Draws E E₀ ∧
-    ReadIn b E seeds ev ds ∧ Installs ds.toList env ∧
-    (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
-    ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)
+    ReadIn b E (fun a => a ∈ seeds ∧ ¬ OutsideLogicAt E₀ a) ev ds ∧ Installs ds.toList env ∧
+    (∀ a ∈ seeds, IsBlockAt E₀ a ∨ OutsideLogicAt E₀ a ∨ SeedStored b ds env a) ∧
+    ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V (claimedEnv env))
 
 /-- **What a verify_claim derivation establishes** (plan 8.1): for every claim
 byte string whose digest packs to `d` and decodes to an in-scope claim, and every
@@ -319,13 +373,13 @@ def Milestone : Prop := CircuitSound ConsistencySpec.{u}
 
 /-- **No claimed constant has type `False`**, in every set theory: the read
 environment is consistent (`Ix.Kernel.Consistent`), and every claimed constant
-that is not a block has a reader's type, and a stored type, other than
+that is not a block and is in Lean's logic has a reader's type, and a stored type, other than
 `False`. -/
 theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
     {calls : List (Call IxVM.F)} {seeds : List Address} (h : ConsistentRead.{u} calls seeds) :
     ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
-      (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent env ∧
-      ∀ a ∈ seeds, IsBlockAt E a ∨
+      (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
+      ∀ a ∈ seeds, IsBlockAt E a ∨ OutsideLogicAt E a ∨
         ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon)
           (ci : Ix.Kernel.ConstantInfo .anon),
           AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
@@ -333,14 +387,24 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
           cv.type ≠ .const Ix.Kernel.falseName [] ∧
           ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] := by
   obtain ⟨b, E, -, -, ds, env, -, -, -, -, -, hseeds, hmodel⟩ := h
-  have hcons : Ix.Kernel.Consistent env := Ix.Kernel.consistent_of_model V (hmodel V)
+  have hcons : Ix.Kernel.Consistent (claimedEnv env) := Ix.Kernel.consistent_of_model V (hmodel V)
   refine ⟨b, E, ds, env, hcons, fun a ha => ?_⟩
-  rcases hseeds a ha with hblock | ⟨k, cv, ci, hkey, hname, hdecl, hfind, -, hann⟩
+  rcases hseeds a ha with hblock | hout | ⟨k, cv, ci, hkey, hname, hdecl, hfind, -, hann⟩
   · exact Or.inl hblock
-  · have hmem : ci ∈ env.consts := List.mem_of_find?_eq_some hfind
+  · exact Or.inr (Or.inl hout)
+  · have hmem0 : ci ∈ env.consts := List.mem_of_find?_eq_some hfind
+    have hname' : ci.name = k := by
+      have := List.find?_some hfind
+      simpa using this
+    have hnaux : isModelAux ci = false := by
+      unfold isModelAux
+      rw [hname']
+      rcases hkey with rfl | ⟨t, r, -, -, rfl⟩ <;> rfl
+    have hmem : ci ∈ (claimedEnv env).consts :=
+      List.mem_filter.mpr ⟨hmem0, by simp [hnaux]⟩
     have hci : ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] :=
       fun hf => hcons ci hmem hf
-    refine Or.inr ⟨k, cv, ci, hkey, hname, hdecl, hfind, fun hf => ?_, hci⟩
+    refine Or.inr (Or.inr ⟨k, cv, ci, hkey, hname, hdecl, hfind, fun hf => ?_, hci⟩)
     rw [hf] at hann
     exact hci hann.const_inv
 
@@ -352,8 +416,8 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
     {W : View} {seeds : List Address} (hs : ClaimSeeds c W seeds) :
     W.HashedCollision [bytes] calls ∨
       ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
-        (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent env ∧
-        ∀ a ∈ seeds, IsBlockAt E a ∨
+        (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
+        ∀ a ∈ seeds, IsBlockAt E a ∨ OutsideLogicAt E a ∨
           ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon)
             (ci : Ix.Kernel.ConstantInfo .anon),
             AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
@@ -588,7 +652,10 @@ def L6 : Prop := Records S → ClaimPhase S
 source-level statement. Its job: read the walked closure with the kernel's
 reader (`ReadIn`), order the checked declarations by the reading, produce
 `Seams.Checked` for each at its prefix, fold `Decls`'s invariant from the empty environment to a
-model (through `EnvModelOk` and `model_of_envModelOk`), and place the seeds
+model (through `EnvModelOk` and `model_of_envModelOk`), restrict it to the claimed
+sub-environment (`claimedEnv`: `Denotes` agrees between `env` and `claimedEnv env` on
+terms that mention no model-family key, the lookups and projection tables being the
+same), and place the seeds
 (`SeedStored`). -/
 def L7 : Prop := Records S → Decls.{u} S → ClaimPhase S → SourceSoundBounded ConsistencySpec.{u}
 

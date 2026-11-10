@@ -133,6 +133,36 @@ theorem red_rename (hR : Renaming P f env env') :
   | _, _, _, .delta hu, he =>
     ⟨unfoldDefinition_good hR.rel he hu,
       .delta (by rw [unfoldDefinition_ren hR.rel he, hu]; rfl)⟩
+  | _, _, _, .deltaThm (n := n) (us := us) (cv := cv) (value := value)
+      hf hlen hvf hvb hinf hde hinfT hred hz, _ => by
+    have hci := hR.good hf
+    simp only [ConstantInfo.Good] at hci
+    have hvg : (value.instantiateLevelParams cv.levelParams us).Good P :=
+      Expr.Good.instantiateLevelParams hci.2 _ _
+    have htg : (cv.type.instantiateLevelParams cv.levelParams us).Good P :=
+      Expr.Good.instantiateLevelParams hci.1.2 _ _
+    obtain ⟨gvt, ivt⟩ := infer_rename hR hinf hvg
+    obtain ⟨gs, its⟩ := infer_rename hR hinfT htg
+    obtain ⟨-, rs⟩ := red_rename hR hred gs
+    have dvt := defEq_rename hR hde gvt htg
+    refine ⟨hvg, ?_⟩
+    have key := Red.deltaThm (env := env') (n := n.map f) (us := us)
+      (cv := cv.mapKeys f) (value := value.mapKeys f)
+      (by rw [hR.find hf]; rfl)
+      (by rw [ConstantVal.mapKeys_levelParams]; exact hlen)
+      (by rw [Expr.hasFvar_mapKeys]; exact hvf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hvb)
+      (by rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams]
+          exact ivt)
+      (by rw [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
+            ← Expr.mapKeys_instantiateLevelParams]
+          exact dvt)
+      (by rw [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
+            ← Expr.mapKeys_instantiateLevelParams]
+          exact its)
+      rs hz
+    rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams] at key
+    exact key
   | _, _, _, .natLit h, _ => by
     refine ⟨natLitToConstructor_good hR.roles.pre _, ?_⟩
     rw [natLitToConstructor_mapKeys]

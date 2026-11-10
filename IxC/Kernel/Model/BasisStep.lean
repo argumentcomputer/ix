@@ -4,6 +4,7 @@ public import IxC.Kernel.Model.EqTower
 public import IxC.Kernel.Model.DivMod
 import IxC.Kernel.Model.NatEqs
 public import IxC.Kernel.Model.BasisTypeOk
+public import IxC.Kernel.Model.ThmVal
 
 public section
 

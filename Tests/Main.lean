@@ -50,6 +50,7 @@ import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
+import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
@@ -204,6 +205,9 @@ def registry : List Entry := [
   -- what it must.
   -- Kernel verdicts and exact FFT costs for constants, the binding claim and a shard.
   .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
+  -- The trusted reader (`prepareWith`) accepts the logical records of the closures
+  -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`; decision D10).
+  .env "ixvm-reader-coverage" (.ci .ixvm) Tests.Ix.Kernel.ReaderCoverage.run,
   -- Prover-authored malformed Ixon, each exploit with its controls.
   .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
   -- The lean-kernel-arena tutorial fixtures: good accepted, `bad_*` rejected.
@@ -326,6 +330,7 @@ def required : List (String × String) := [
   ("host-admission-cli", "ci:cli"),
   ("compression-cli", "ci:cli"),
   ("ixvm-kernel-checks", "ci:ixvm"),
+  ("ixvm-reader-coverage", "ci:ixvm"),
   ("ixvm-exploits", "ci:ixvm"),
   ("ixvm-arena", "ci:ixvm"),
   ("ixvm-tagn", "ci:ixvm"),
