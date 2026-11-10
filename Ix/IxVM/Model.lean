@@ -227,9 +227,10 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       | some (.sort .zero) => true
       | _ => false
     let k := isProp && ctors.length == 1 && ctors.all (fun (_, _, cF) => cF == 0)
-    let recR : Ixon.Recursor := { k := k, isUnsafe := false, lvls := rlps.length.toUInt64,
-      params := nP.toUInt64, indices := (mI - rP).toUInt64, motives := 1,
-      minors := ctors.length.toUInt64, typ := rtyp, rules := rrules }
+    let recR : Ixon.Recursor :=
+      { k := k, isUnsafe := false, lvls := rlps.length.toUInt64,
+        params := nP.toUInt64, indices := (mI - rP).toUInt64, motives := 1,
+        minors := ctors.length.toUInt64, typ := rtyp, rules := rrules }
     let recC : Ixon.Constant := ⟨.recr recR, #[], rs.refs, rs.univs⟩
     let recA := addressOf recC
     out := { out with records := out.records.push (recA, recC), keys := out.keys.push (cvR.name, recA),
