@@ -57,7 +57,8 @@ def aggregateContext (ixvm aggregation : Selected) : IO FormalAggregate.Context 
   let aggr ← FormalAggregate.identity aggrSystem true
   let ixvmId ← FormalAggregate.identity ixvmSystem false
   let allowed ← Ix.Cli.FormalKeys.pinnedAllowed ixvmId.key ixvmId.index aggr.key aggr.index
-  return { ixvmSystem, aggrSystem, ixvm := ixvmId, aggr, allowed }
+  return { ixvmArtifact := ixvm.path, aggrArtifact := aggregation.path, ixvmSystem,
+           aggrSystem, ixvm := ixvmId, aggr, allowed }
 
 /-- The root statement `manifest` folds to over the environment at `ixe`,
 with every constant audited, as `ix verify --aggregate` recomputes it. -/
@@ -122,7 +123,9 @@ def run (p : Cli.Parsed) : IO UInt32 := do
   TracingTexray.startSampler
   let registry ← FormalProver.Registry.new
   let (ixvm, aggregation) ← if mode == "prove" then do
-      let (ixvm, aggregation) ← ixvmAndAggregation p registry
+      let selected ← selectAll p registry #[.ixvm, .aggregation]
+      let (some ixvm, some aggregation) := (selected[0]?, selected[1]?)
+        | throw (IO.userError "missing selected programs")
       pure (ixvm, some aggregation)
     else pure (← artifact p registry, none)
   let (ixonEnv, handle) ← Ix.Check.loadBoundIxe ixe
