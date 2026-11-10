@@ -28,30 +28,42 @@ shard's claim closure as `ix check` builds it, one line per shard.
 
 namespace Tests.Ix.IxVM.PwHints
 
-open IxVM.PwHints
+open _root_.IxVM.PwHints
 
 private def all := Ixon.Expr.leanAll
 private def lam := Ixon.Expr.leanLam
 
+/-- `x → x` with `x` loose: sharing entry 0 of `twoSorts`. -/
+def arrowEntry : Ixon.Expr := all (.var 0) (.var 1)
+
 /-- `(A : Prop) → (A → A) → (B : Type) → (B → B) → Prop`, both `_ → _` the
-sharing entry 0, `x → x` with `x` loose. -/
-def twoSorts : Ixon.Constant :=
-  { info := .axio { isUnsafe := false, lvls := 0, typ :=
-      all (.sort 0) (all (.share 0) (all (.sort 1) (all (.share 0) (.sort 0)))) }
-    sharing := #[all (.var 0) (.var 1)], refs := #[], univs := #[.zero, .succ .zero] }
+sharing entry 0. -/
+def twoSortsType : Ixon.Expr :=
+  all (.sort 0) (all (.share 0) (all (.sort 1) (all (.share 0) (.sort 0))))
+
+def twoSorts : Ixon.Constant where
+  info := .axio { isUnsafe := false, lvls := 0, typ := twoSortsType }
+  sharing := #[arrowEntry]
+  refs := #[]
+  univs := #[.zero, .succ .zero]
+
+/-- `fun p => let q : Prop := p → p; q → q`. -/
+def letValue : Ixon.Expr :=
+  lam (.sort 0) (Ixon.Expr.leanLet false (.sort 0) arrowEntry arrowEntry)
 
 /-- `def _ : Prop → Prop := fun p => let q : Prop := p → p; q → q`. -/
-def letBody : Ixon.Constant :=
-  { info := .defn { kind := .defn, safety := .safe, lvls := 0,
-      typ := all (.sort 0) (.sort 0),
-      value := lam (.sort 0)
-        (Ixon.Expr.leanLet false (.sort 0) (all (.var 0) (.var 1)) (all (.var 0) (.var 1))) }
-    sharing := #[], refs := #[], univs := #[.zero] }
+def letBody : Ixon.Constant where
+  info := .defn { kind := .defn, safety := .safe, lvls := 0, typ := all (.sort 0) (.sort 0), value := letValue }
+  sharing := #[]
+  refs := #[]
+  univs := #[.zero]
 
 /-- `(α : Sort u) → α → α`. -/
-def polyId : Ixon.Constant :=
-  { info := .axio { isUnsafe := false, lvls := 1, typ := all (.sort 0) (all (.var 0) (.var 1)) }
-    sharing := #[], refs := #[], univs := #[.var 0] }
+def polyId : Ixon.Constant where
+  info := .axio { isUnsafe := false, lvls := 1, typ := all (.sort 0) arrowEntry }
+  sharing := #[]
+  refs := #[]
+  univs := #[.var 0]
 
 private def never : Node := .binder none
 private def always : Node := .binder (some #[])
@@ -66,13 +78,13 @@ def expected : List (Ixon.Constant × Array Block) := [
 /-- An environment of `cs` bound to the default role table, without the
 table's support records (the records name no role). -/
 def envOf (cs : List Ixon.Constant) : Except String Ixon.Env := do
-  let bytes ← Ix.Kernel.Reader.defaultTableBytes
+  let bytes ← _root_.Ix.Kernel.Reader.defaultTableBytes
   let env : Ixon.Env := { roleBinding := some { address := Address.blake3 bytes, bytes } }
   return cs.foldl (fun env c => env.storeConst (Address.blake3 (Ixon.ser c)) c) env
 
 /-- A witness's IO with every record of `env`, without binder data. -/
 def bufferOf (env : Ixon.Env) : Aiur.IOBuffer :=
-  IxVM.ClaimHarness.addEntries env (fun _ => true) (IxVM.ClaimHarness.seedBinding env default)
+  _root_.IxVM.ClaimHarness.addEntries env (fun _ => true) (_root_.IxVM.ClaimHarness.seedBinding env default)
 
 private def ensure (ok : Bool) (msg : String) : IO Unit :=
   unless ok do throw (IO.userError msg)
@@ -146,20 +158,20 @@ def measure (label : String) (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Stats :=
 def corpus : IO UInt32 := do
   let some ixe ← IO.getEnv "IX_PW_IXE" | do IO.eprintln "IX_PW_IXE is not set"; return 1
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))
-  let env ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding env)
+  let env ← IO.ofExcept (_root_.IxVM.ClaimHarness.withDefaultRoleBinding env)
   IO.println s!"PWCORPUS loaded {ixe}: {env.consts.size} records, hwm_kb={← rssKb}"
   match ← IO.getEnv "IX_PW_IXES" with
   | some ixes =>
-    let shards ← match ← Ix.Shard.loadEnvAndShards ixes ixe with
+    let shards ← match ← _root_.Ix.Shard.loadEnvAndShards ixes ixe with
       | .ok (_, shards) => pure shards
       | .error e => throw (IO.userError e)
     let mut total : Stats := {}
     let t0 ← IO.monoMsNow
     for (blocks, k) in shards.zipIdx do
-      let owned := Ix.Shard.ownedConstsForBlocks env blocks
-      let (_, closure, _) ← IO.ofExcept (IxVM.ClaimHarness.shardCheckEnvClaim env owned true)
-      let io := IxVM.ClaimHarness.addEntries env closure.contains
-        (IxVM.ClaimHarness.seedBinding env default)
+      let owned := _root_.Ix.Shard.ownedConstsForBlocks env blocks
+      let (_, closure, _) ← IO.ofExcept (_root_.IxVM.ClaimHarness.shardCheckEnvClaim env owned true)
+      let io := _root_.IxVM.ClaimHarness.addEntries env closure.contains
+        (_root_.IxVM.ClaimHarness.seedBinding env default)
       total := total.add (← measure s!"shard {k} ({owned.size} owned, {closure.size} in closure)" env io)
     IO.println s!"PWCORPUS shards total: ms={(← IO.monoMsNow) - t0} {total.render} hwm_kb={← rssKb}"
   | none => pure ()
