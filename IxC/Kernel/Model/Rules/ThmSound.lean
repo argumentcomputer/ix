@@ -32,7 +32,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Key ConstantVal)
+open Ix.Kernel (Env Expr Key ConstantVal ConstantInfo)
 open Ix.Kernel.Rules
 
 universe w
@@ -56,7 +56,8 @@ theorem Red.deltaThm_sound (hin : RulesInputs V m φ) {d : Nat} {n : Key md}
   -- the subject reads to the theorem's leaf
   rw [denoteMeta, hf] at hea
   dsimp only at hea
-  rw [if_pos hlen] at hea
+  rw [if_pos (show us.length = (ConstantInfo.thmInfo cv value).toConstantVal.levelParams.length
+    from hlen)] at hea
   obtain rfl : ea = m.acval n (Level.substFn φ cv.levelParams us) :=
     (Option.some.inj hea).symm
   -- the reduct is closed, reads and is graded
