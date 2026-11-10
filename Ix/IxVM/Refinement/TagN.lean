@@ -21,12 +21,12 @@ mirror). This module is the creative layer on top of it:
 namespace IxVM.Refinement.TagN
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open IxVM.Checked (F)
+open IxVM (F)
 
 set_option linter.unusedSimpArgs false
 
-/-- The checked source's world. -/
-abbrev W : World F := IxVM.Checked.source.world
+/-- The prepared source's world. -/
+abbrev W : World F := IxVM.source.world
 
 /-! ## Rows of the byte maps -/
 
@@ -40,77 +40,77 @@ theorem mem_zip_map {α β γ : Type} {l : List α} {f : α → β} {g : α → 
     · exact .inl rfl
     · exact .inr (ih hx)
 
-theorem pair_mem {a b : Nat} (ha : a < 256) (hb : b < 256) : (a, b) ∈ IxVM.Checked.pairInputs :=
+theorem pair_mem {a b : Nat} (ha : a < 256) (hb : b < 256) : (a, b) ∈ IxVM.pairInputs :=
   List.mem_flatMap.mpr ⟨a, List.mem_range.mpr ha, List.mem_map.mpr ⟨b, List.mem_range.mpr hb, rfl⟩⟩
 
 /-- The static map `UInt8::from_field`. -/
-def fromFieldMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[0]'(by decide)
+def fromFieldMap : Aiur.MapDecl := IxVM.coreTables.maps[0]'(by decide)
 /-- The static map `UInt8::raw_add`. -/
-def rawAddMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[4]'(by decide)
+def rawAddMap : Aiur.MapDecl := IxVM.coreTables.maps[4]'(by decide)
 /-- The static map `UInt8::raw_sub`. -/
-def rawSubMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[5]'(by decide)
+def rawSubMap : Aiur.MapDecl := IxVM.coreTables.maps[5]'(by decide)
 
 theorem rawSub_row {a b : Nat} (ha : a < 256) (hb : b < 256) :
-    lookupMap IxVM.Checked.source.tables "UInt8::raw_sub" ([.field (a : F), .field (b : F)] : List (SourceValue F)) =
+    lookupMap IxVM.source.tables "UInt8::raw_sub" ([.field (a : F), .field (b : F)] : List (SourceValue F)) =
       .ok (.tuple [.field (((a + 256 - b) % 256 : Nat) : F),
         .field ((if a < b then 1 else 0 : Nat) : F)]) := by
-  have member : rawSubMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
-  have rows : IxVM.Checked.coreTables.mapRows rawSubMap =
-      IxVM.Checked.pairInputsTTable.rows.zip IxVM.Checked.pairSubsTable.rows := by
+  have member : rawSubMap ∈ IxVM.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.coreTables.mapRows rawSubMap =
+      IxVM.pairInputsTTable.rows.zip IxVM.pairSubsTable.rows := by
     simp only [Aiur.Program.mapRows, show rawSubMap.input = "UInt8::pair_inputs" from rfl,
-      show rawSubMap.output = "UInt8::pair_subs" from rfl, IxVM.Checked.find_pairInputsT,
-      IxVM.Checked.find_pairSubs]
+      show rawSubMap.output = "UInt8::pair_subs" from rfl, IxVM.find_pairInputsT,
+      IxVM.find_pairSubs]
   have row : (⟨[.field (a : F), .field (b : F)], .tuple [.field (((a + 256 - b) % 256 : Nat) : F),
       .field ((if a < b then 1 else 0 : Nat) : F)]⟩ : MapEntry F) ∈
-      IxVM.Checked.coreTables.mapEntries rawSubMap := by
+      IxVM.coreTables.mapEntries rawSubMap := by
     apply Aiur.mapEntry_mem_iff.mpr
     rw [rows]
-    simp only [IxVM.Checked.pairInputsTTable, IxVM.Checked.pairSubsTable, List.map_map]
+    simp only [IxVM.pairInputsTTable, IxVM.pairSubsTable, List.map_map]
     convert mem_zip_map (pair_mem ha hb) using 1
-    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf]
-  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
-  simpa [Constant.toValue, Value.mapAddress, show rawSubMap.name = "UInt8::raw_sub" from rfl, IxVM.Checked.source]
+    simp [IxVM.coreRow, IxVM.coreLeaf]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.tablesChecked member row
+  simpa [Constant.toValue, Value.mapAddress, show rawSubMap.name = "UInt8::raw_sub" from rfl, IxVM.source]
     using looked
 
 theorem rawAdd_row {a b : Nat} (ha : a < 256) (hb : b < 256) :
-    lookupMap IxVM.Checked.source.tables "UInt8::raw_add" ([.field (a : F), .field (b : F)] : List (SourceValue F)) =
+    lookupMap IxVM.source.tables "UInt8::raw_add" ([.field (a : F), .field (b : F)] : List (SourceValue F)) =
       .ok (.tuple [.field (((a + b) % 256 : Nat) : F), .field (((a + b) / 256 : Nat) : F)]) := by
-  have member : rawAddMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
-  have rows : IxVM.Checked.coreTables.mapRows rawAddMap =
-      IxVM.Checked.pairInputsTTable.rows.zip IxVM.Checked.pairAddsTable.rows := by
+  have member : rawAddMap ∈ IxVM.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.coreTables.mapRows rawAddMap =
+      IxVM.pairInputsTTable.rows.zip IxVM.pairAddsTable.rows := by
     simp only [Aiur.Program.mapRows, show rawAddMap.input = "UInt8::pair_inputs" from rfl,
-      show rawAddMap.output = "UInt8::pair_adds" from rfl, IxVM.Checked.find_pairInputsT,
-      IxVM.Checked.find_pairAdds]
+      show rawAddMap.output = "UInt8::pair_adds" from rfl, IxVM.find_pairInputsT,
+      IxVM.find_pairAdds]
   have row : (⟨[.field (a : F), .field (b : F)], .tuple [.field (((a + b) % 256 : Nat) : F),
       .field (((a + b) / 256 : Nat) : F)]⟩ : MapEntry F) ∈
-      IxVM.Checked.coreTables.mapEntries rawAddMap := by
+      IxVM.coreTables.mapEntries rawAddMap := by
     apply Aiur.mapEntry_mem_iff.mpr
     rw [rows]
-    simp only [IxVM.Checked.pairInputsTTable, IxVM.Checked.pairAddsTable, List.map_map]
+    simp only [IxVM.pairInputsTTable, IxVM.pairAddsTable, List.map_map]
     convert mem_zip_map (pair_mem ha hb) using 1
-    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf]
-  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
-  simpa [Constant.toValue, Value.mapAddress, show rawAddMap.name = "UInt8::raw_add" from rfl, IxVM.Checked.source]
+    simp [IxVM.coreRow, IxVM.coreLeaf]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.tablesChecked member row
+  simpa [Constant.toValue, Value.mapAddress, show rawAddMap.name = "UInt8::raw_add" from rfl, IxVM.source]
     using looked
 
 theorem fromField_row {x : Nat} (hx : x < 256) :
-    lookupMap IxVM.Checked.source.tables "UInt8::from_field" ([.field (x : F)] : List (SourceValue F)) =
+    lookupMap IxVM.source.tables "UInt8::from_field" ([.field (x : F)] : List (SourceValue F)) =
       .ok (.field (x : F)) := by
-  have member : fromFieldMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
-  have rows : IxVM.Checked.coreTables.mapRows fromFieldMap =
-      IxVM.Checked.byteInputsTable.rows.zip IxVM.Checked.byteValuesTable.rows := by
+  have member : fromFieldMap ∈ IxVM.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.coreTables.mapRows fromFieldMap =
+      IxVM.byteInputsTable.rows.zip IxVM.byteValuesTable.rows := by
     simp only [Aiur.Program.mapRows, show fromFieldMap.input = "UInt8::byte_inputs" from rfl,
-      show fromFieldMap.output = "UInt8::byte_values" from rfl, IxVM.Checked.find_byteInputs,
-      IxVM.Checked.find_byteValues]
+      show fromFieldMap.output = "UInt8::byte_values" from rfl, IxVM.find_byteInputs,
+      IxVM.find_byteValues]
   have row : (⟨[.field (x : F)], .field (x : F)⟩ : MapEntry F) ∈
-      IxVM.Checked.coreTables.mapEntries fromFieldMap := by
+      IxVM.coreTables.mapEntries fromFieldMap := by
     apply Aiur.mapEntry_mem_iff.mpr
     rw [rows]
-    simp only [IxVM.Checked.byteInputsTable, IxVM.Checked.byteValuesTable, List.map_map]
+    simp only [IxVM.byteInputsTable, IxVM.byteValuesTable, List.map_map]
     convert mem_zip_map (List.mem_range.mpr hx) using 1
-    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf]
-  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
-  simpa [Constant.toValue, Value.mapAddress, show fromFieldMap.name = "UInt8::from_field" from rfl, IxVM.Checked.source]
+    simp [IxVM.coreRow, IxVM.coreLeaf]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.tablesChecked member row
+  simpa [Constant.toValue, Value.mapAddress, show fromFieldMap.name = "UInt8::from_field" from rfl, IxVM.source]
     using looked
 
 /-! ## The byte stream -/
@@ -228,9 +228,9 @@ theorem getU64le_complete : Mirrors.«IxonDeserialize::get_u64_le».Complete := 
   induction m using Nat.strong_induction_on with
   | _ m ih =>
   intro x_stream x_num_bytes h h' r hm ev
-  have body := ev.function_inv IxVM.Checked.Lookup.«IxonDeserialize::get_u64_le»
-    (by simp [IxVM.Checked.Fn.«IxonDeserialize::get_u64_le», ControlLower.hasControl])
-  simp only [IxVM.Checked.Fn.«IxonDeserialize::get_u64_le»] at body
+  have body := ev.function_inv IxVM.IxonDeserialize.get_u64_le.lookup
+    (by simp [IxVM.IxonDeserialize.get_u64_le, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.get_u64_le] at body
   obtain ⟨v1, m2, bs3, body4, d5, sel6, d7⟩ := body.matchValue_inv
   obtain ⟨l8, rfl⟩ := d5.var_inv
   simp at l8
@@ -364,14 +364,14 @@ theorem tailShort_run {q hh : Nat} (hq : q < hh) (hh' : hh < 128) {heap : Heap F
       some (.tuple [u64Value (2 * hh + q * 256 + lo.toNat), tailPtr], heap) := by
   have hlo := lo.toNat_lt
   have hlt := rawLt_run (a := q) (b := hh) (by omega) (by omega) k heap
-  have hadd : lookupMap IxVM.Checked.source.tables "UInt8::raw_add"
+  have hadd : lookupMap IxVM.source.tables "UInt8::raw_add"
       ([.field (lo.toNat : F), .field (2 * (hh : F))] : List (SourceValue F)) =
       .ok (.tuple [.field (((lo.toNat + 2 * hh) % 256 : Nat) : F),
         .field (((lo.toNat + 2 * hh) / 256 : Nat) : F)]) := by
     have := rawAdd_row (a := lo.toNat) (b := 2 * hh) hlo (by omega)
     push_cast at this
     exact this
-  have hff : lookupMap IxVM.Checked.source.tables "UInt8::from_field"
+  have hff : lookupMap IxVM.source.tables "UInt8::from_field"
       ([.field ((q : F) + (((lo.toNat + 2 * hh) / 256 : Nat) : F))] : List (SourceValue F)) =
       .ok (.field ((q + (lo.toNat + 2 * hh) / 256 : Nat) : F)) := by
     have := fromField_row (x := q + (lo.toNat + 2 * hh) / 256) (by omega)
@@ -477,34 +477,34 @@ theorem getTagN0_refines_short {stream r : SourceValue F} {heap h' : Heap F} {by
 /-! ## `get_tagn4`: the four-bit flag -/
 
 /-- The static map `UInt8::raw_bit_decomposition`. -/
-def bitsMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[1]'(by decide)
+def bitsMap : Aiur.MapDecl := IxVM.coreTables.maps[1]'(by decide)
 
 theorem bitDecomp_row {x : Nat} (hx : x < 256) :
-    lookupMap IxVM.Checked.source.tables "UInt8::raw_bit_decomposition"
+    lookupMap IxVM.source.tables "UInt8::raw_bit_decomposition"
         ([.field (x : F)] : List (SourceValue F)) =
       .ok (.tuple [.field ((x % 2 : Nat) : F), .field ((x / 2 % 2 : Nat) : F),
         .field ((x / 4 % 2 : Nat) : F), .field ((x / 8 % 2 : Nat) : F),
         .field ((x / 16 % 2 : Nat) : F), .field ((x / 32 % 2 : Nat) : F),
         .field ((x / 64 % 2 : Nat) : F), .field ((x / 128 % 2 : Nat) : F)]) := by
-  have member : bitsMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
-  have rows : IxVM.Checked.coreTables.mapRows bitsMap =
-      IxVM.Checked.byteInputsTable.rows.zip IxVM.Checked.byteBitsTable.rows := by
+  have member : bitsMap ∈ IxVM.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.coreTables.mapRows bitsMap =
+      IxVM.byteInputsTable.rows.zip IxVM.byteBitsTable.rows := by
     simp only [Aiur.Program.mapRows, show bitsMap.input = "UInt8::byte_inputs" from rfl,
-      show bitsMap.output = "UInt8::byte_bits" from rfl, IxVM.Checked.find_byteInputs,
-      IxVM.Checked.find_byteBits]
+      show bitsMap.output = "UInt8::byte_bits" from rfl, IxVM.find_byteInputs,
+      IxVM.find_byteBits]
   have row : (⟨[.field (x : F)], .tuple [.field ((x % 2 : Nat) : F), .field ((x / 2 % 2 : Nat) : F),
       .field ((x / 4 % 2 : Nat) : F), .field ((x / 8 % 2 : Nat) : F),
       .field ((x / 16 % 2 : Nat) : F), .field ((x / 32 % 2 : Nat) : F),
       .field ((x / 64 % 2 : Nat) : F), .field ((x / 128 % 2 : Nat) : F)]⟩ : MapEntry F) ∈
-      IxVM.Checked.coreTables.mapEntries bitsMap := by
+      IxVM.coreTables.mapEntries bitsMap := by
     apply Aiur.mapEntry_mem_iff.mpr
     rw [rows]
-    simp only [IxVM.Checked.byteInputsTable, IxVM.Checked.byteBitsTable, List.map_map]
+    simp only [IxVM.byteInputsTable, IxVM.byteBitsTable, List.map_map]
     convert mem_zip_map (List.mem_range.mpr hx) using 1
-    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf, List.range_succ]
-  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
+    simp [IxVM.coreRow, IxVM.coreLeaf, List.range_succ]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.tablesChecked member row
   simpa [Constant.toValue, Value.mapAddress,
-    show bitsMap.name = "UInt8::raw_bit_decomposition" from rfl, IxVM.Checked.source] using looked
+    show bitsMap.name = "UInt8::raw_bit_decomposition" from rfl, IxVM.source] using looked
 
 /-- The value of the bit fields `x₀ + 2x₁ + 4x₂ (+ 8x₃)` a reader adds up. -/
 theorem bits_low {x : Nat} :
@@ -542,7 +542,7 @@ theorem tagn4One_run {heap : Heap F} {addr : Nat} {b : UInt8} {tailPtr : SourceV
   have hb := b.toNat_lt
   have hbits := bitDecomp_run hb (k + 1) heap
   have hb3 : b.toNat / 8 % 2 = 0 := by omega
-  have hff : lookupMap IxVM.Checked.source.tables "UInt8::from_field"
+  have hff : lookupMap IxVM.source.tables "UInt8::from_field"
       ([.field (((b.toNat % 2 : Nat) : F) + 2 * ((b.toNat / 2 % 2 : Nat) : F) +
         4 * ((b.toNat / 4 % 2 : Nat) : F))] : List (SourceValue F)) =
       .ok (.field ((b.toNat % 8 : Nat) : F)) := by
@@ -683,7 +683,7 @@ theorem tagn2One_run {heap : Heap F} {addr : Nat} {b : UInt8} {tailPtr : SourceV
   have hb := b.toNat_lt
   have hbits := bitDecomp_run hb (k + 1) heap
   have hb5 : b.toNat / 32 % 2 = 0 := by omega
-  have hff : lookupMap IxVM.Checked.source.tables "UInt8::from_field"
+  have hff : lookupMap IxVM.source.tables "UInt8::from_field"
       ([.field (((b.toNat % 2 : Nat) : F) + 2 * ((b.toNat / 2 % 2 : Nat) : F) +
         4 * ((b.toNat / 4 % 2 : Nat) : F) + 8 * ((b.toNat / 8 % 2 : Nat) : F) +
         16 * ((b.toNat / 16 % 2 : Nat) : F))] : List (SourceValue F)) =
@@ -832,7 +832,7 @@ theorem u64Value_cons {b x : Nat} (hb : b < 256) :
 theorem natCast_succ_ne_zero {n : Nat} (hn : n < 1000) : (n : F) + 1 ≠ 0 := by
   intro h
   have h' : ((n + 1 : Nat) : F) = ((0 : Nat) : F) := by push_cast; exact h
-  have := IxVM.Checked.natCast_inj (by omega) (by omega) h'
+  have := IxVM.natCast_inj (by omega) (by omega) h'
   omega
 
 /-- **`get_u64_le(stream, n)` reads `n` bytes**, little-endian, for `n ≤ 8`. -/
@@ -866,30 +866,30 @@ theorem getU64le_run {heap : Heap F} : ∀ (n : Nat), n ≤ 8 → ∀ {bs : List
 /-! ## Wide rungs: 64-bit addition -/
 
 /-- The static map `UInt8::raw_sum_byte`. -/
-def sumByteMap : Aiur.MapDecl := IxVM.Checked.coreTables.maps[9]'(by decide)
+def sumByteMap : Aiur.MapDecl := IxVM.coreTables.maps[9]'(by decide)
 
 theorem sumByte_row {s : Nat} (hs : s < 768) :
-    lookupMap IxVM.Checked.source.tables "UInt8::raw_sum_byte" ([.field (s : F)] : List (SourceValue F)) =
+    lookupMap IxVM.source.tables "UInt8::raw_sum_byte" ([.field (s : F)] : List (SourceValue F)) =
       .ok (.field ((s % 256 : Nat) : F)) := by
-  have member : sumByteMap ∈ IxVM.Checked.coreTables.maps := List.getElem_mem _
-  have rows : IxVM.Checked.coreTables.mapRows sumByteMap =
-      IxVM.Checked.sumInputsTable.rows.zip IxVM.Checked.sumBytesTable.rows := by
+  have member : sumByteMap ∈ IxVM.coreTables.maps := List.getElem_mem _
+  have rows : IxVM.coreTables.mapRows sumByteMap =
+      IxVM.sumInputsTable.rows.zip IxVM.sumBytesTable.rows := by
     simp only [Aiur.Program.mapRows, show sumByteMap.input = "UInt8::sum_inputs" from rfl,
-      show sumByteMap.output = "UInt8::sum_bytes" from rfl, IxVM.Checked.find_sumInputs,
-      IxVM.Checked.find_sumBytes]
+      show sumByteMap.output = "UInt8::sum_bytes" from rfl, IxVM.find_sumInputs,
+      IxVM.find_sumBytes]
   have row : (⟨[.field (s : F)], .field ((s % 256 : Nat) : F)⟩ : MapEntry F) ∈
-      IxVM.Checked.coreTables.mapEntries sumByteMap := by
+      IxVM.coreTables.mapEntries sumByteMap := by
     apply Aiur.mapEntry_mem_iff.mpr
     rw [rows]
-    simp only [IxVM.Checked.sumInputsTable, IxVM.Checked.sumBytesTable, List.map_map]
-    have mem : (s, s % 256) ∈ IxVM.Checked.sumPairs := by
-      simp only [IxVM.Checked.sumPairs, Aiur.Library.Carry.rows]
+    simp only [IxVM.sumInputsTable, IxVM.sumBytesTable, List.map_map]
+    have mem : (s, s % 256) ∈ IxVM.sumPairs := by
+      simp only [IxVM.sumPairs, Aiur.Library.Carry.rows]
       exact List.mem_map.mpr ⟨s, List.mem_range.mpr hs, rfl⟩
     convert mem_zip_map mem using 1
-    simp [IxVM.Checked.coreRow, IxVM.Checked.coreLeaf]
-  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.Checked.tablesChecked member row
+    simp [IxVM.coreRow, IxVM.coreLeaf]
+  have looked := Aiur.lookupMap_of_entry (A := Nat) IxVM.tablesChecked member row
   simpa [Constant.toValue, Value.mapAddress, show sumByteMap.name = "UInt8::raw_sum_byte" from rfl,
-    IxVM.Checked.source] using looked
+    IxVM.source] using looked
 
 theorem two56_ne_zero : (256 : F) ≠ 0 := by decide
 

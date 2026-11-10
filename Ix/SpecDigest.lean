@@ -23,7 +23,7 @@ together with `specVersion` or `encodingVersion`.
 
 IxVM holds the digest as a literal (`KernelRoleSpec::spec_digest`) beside the
 tables `IxVM.RoleSpecGen` renders from the specifications
-(`IxVM/IxVM/Modules/KernelRoleSpec.lean`). The renderer reads nothing but
+(`IxVM/IxVM/Source/KernelRoleSpec.lean`). The renderer reads nothing but
 `specBytes`, read back by `Committed.ofBytes` (`Ix/SpecDigest/Decode.lean`),
 so every value those tables hold is a function of the bytes, a circuit that
 validates roles in another way carries another digest, and `ix codegen

@@ -19,7 +19,7 @@ def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
   let formalAiur ← IO.ofExcept IxVM.RoleSpecGen.renderFormalAiur
   let outputs := #[
     ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", IxVM.RoleSpecGen.renderSpecShapeTsv),
-    ("IxVM/IxVM/Modules/KernelRoleSpec.lean", formalAiur)]
+    ("IxVM/IxVM/Source/KernelRoleSpec.lean", formalAiur)]
   let mut ok := true
   for (path, contents) in outputs do
     if checkOnly then

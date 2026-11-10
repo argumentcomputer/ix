@@ -259,8 +259,9 @@ private def checkIdentifiersStep (recur : Syntax → SharedM Syntax) (s : Syntax
   else discard <| s.getArgs.mapM recur
   return s
 
-/-- A module-only root; source files and imports are not part of this frontend. -/
-private def checkIdentifiers (s : Syntax) : Except String Unit :=
+/-- Validate source identifiers before qualified names are normalized. Shared
+by whole-module and individual-function quotations. -/
+def checkIdentifiers (s : Syntax) : Except String Unit :=
   discard <| shared checkIdentifiersStep s
 
 private def dottedParts (s : Syntax) : List String :=

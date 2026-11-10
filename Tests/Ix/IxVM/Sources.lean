@@ -9,7 +9,7 @@ The guards over the IxVM and multi-stark programs' text (`Tests.Ix.Kernel.
 PrimAddrs`, `Tests.IOIngress`) read it through `Tests.Ix.IxVM.programSources`
 and split it here: into functions, the hint channels each reads, and the byte
 literal lists each holds. The scanner knows only the surface it needs:
-`module M {`, `fn f(` (with `pub`/`inline`), `hint::<…>("channel"` and
+`module M {` or `aiur_module M where`, `fn f(` (with `pub`/`inline`), `hint::<…>("channel"` and
 bracketed lists of literals.
 -/
 
@@ -48,6 +48,9 @@ def functions (sources : Array (System.FilePath × String)) : Array Function := 
     for line in text.splitOn "\n" do
       if let some m := declared "module" line then
         module := m
+      if let some m := declared "aiur_module" line then
+        let words := (line.trimAscii.toString.splitOn " ").filter (!·.isEmpty)
+        module := if words[2]? == some "as" then words[3]?.getD m else m
       if let some f := declared "fn" line then
         if let some (name, lines) := current then
           out := out.push { name, file, body := "\n".intercalate lines.toList }

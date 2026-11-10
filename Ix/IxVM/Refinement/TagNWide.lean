@@ -11,20 +11,20 @@ and the refinements of `Ixon.getTagN 0`, `2` and `4` on every header. -/
 namespace IxVM.Refinement.TagN
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open IxVM.Checked (F)
+open IxVM (F)
 
 set_option linter.unusedSimpArgs false
 /-! ## Wide rungs: `get_tagn_wide` -/
 
 theorem fromField_two {hh : Nat} (hhh : hh < 128) (h : Heap F) :
-    mapCall IxVM.Checked.source.tables "UInt8::from_field" [.field (2 * (hh : F))] h =
+    mapCall IxVM.source.tables "UInt8::from_field" [.field (2 * (hh : F))] h =
       some (.field (2 * (hh : F)), h) := by
   have := fromField_row (x := 2 * hh) (by omega)
   push_cast at this
   simp [mapCall, this, Constant.toValue, Value.mapAddress]
 
 theorem fromField_one {hh : Nat} (hhh : hh < 256) (h : Heap F) :
-    mapCall IxVM.Checked.source.tables "UInt8::from_field" [.field (hh : F)] h =
+    mapCall IxVM.source.tables "UInt8::from_field" [.field (hh : F)] h =
       some (.field (hh : F), h) := by
   simp [mapCall, fromField_row hhh, Constant.toValue, Value.mapAddress]
 
@@ -188,7 +188,7 @@ theorem wide3_run {hh : Nat} (hhv : hh = 64 ∨ hh = 16 ∨ hh = 4) {heap : Heap
     toField_run, Builtin.apply, evalAssertEq, Value.pointerFree]
 
 theorem natCast_ne_of_lt {a b : Nat} (ha : a < 1000) (hb : b < 1000) (hab : a ≠ b) :
-    (a : F) ≠ (b : F) := fun h => hab (IxVM.Checked.natCast_inj (by omega) (by omega) h)
+    (a : F) ≠ (b : F) := fun h => hab (IxVM.natCast_inj (by omega) (by omega) h)
 
 /-- **`get_tagn_tail(hh + c, hh, stream)` for a wide code `c < 4`**. -/
 theorem tailWide_run {hh c : Nat} (hhv : hh = 64 ∨ hh = 16 ∨ hh = 4) (hc : c < 4) {heap : Heap F}

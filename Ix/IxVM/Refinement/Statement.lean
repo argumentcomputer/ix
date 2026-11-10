@@ -1,7 +1,6 @@
 import Ix.IxVM.Refinement.Claim
 import Aiur.Generic.Observe
-import IxVM.Program
-import IxVM.Checked
+import IxVM
 import Aiur.Optimized.Observed
 import Aiur.Library.Bytes.Correctness
 
@@ -14,17 +13,14 @@ headline; nothing here proves the refinement. Frozen in
 
 ## The object
 
-`IxVM.Checked.source` (`IxVM/IxVM/Checked.lean`): the checked IxVM source
-for the entry `IxVM::verify_claim` alone, pinned as a Lean literal, from
-which `ixvm check-claim`, `export-claim` and `export-claim-trace` compile
-the deployed claim artifact. It is what `Aiur.Modules.prepare IxVM.program
-[verifyClaim]` computes: the modules linked, renamed and elaborated. Nothing
-in the statements or the claim exporter runs the module frontend or the DSL
+`IxVM.source` (`IxVM/IxVM/Source.lean`) combines `IxVM.program` with its
+certified static tables. The program and all exporters use the same named
+function definitions, elaborated once from the DSL in `IxVM/IxVM/Source/`.
+Neither the statements nor the exporters run the module frontend or the DSL
 elaborators (`Source.world` uses the kernel-computable `Generic.elaborateConst`
-for consts). The link to `IxVM.program` is a native check: the test suite
-`ixvm-checked-source` prepares `IxVM.program` and checks that its source and
-exported bytecode are this one's, and `lake exe ixvm/ixvm-checked --check`
-that the files are its rendering.
+for consts). The `ixvm-source` test independently prepares the imported DSL
+metadata and compares the full program, static tables, and exported bytecode.
+`lake exe ixvm/ixvm-proof-gen --check` checks the derived proof scripts.
 
 `verify_claim(digest: [Field; 8])` reads the claim's bytes on IO channel 0,
 checks that their BLAKE3 digest packs to `digest`, decodes the claim and
@@ -73,7 +69,7 @@ the derivation itself hashed.
 * `SourceSound P`: every observed `verify_claim` derivation gives `P`. The
   obligation Phases 3 and 4 discharge.
 * `CircuitSound P` (the main circuit statement): from the circuit compiled
-  from the checked source, over the certified depth pass, rows the grouped,
+  from the prepared source, over the certified depth pass, rows the grouped,
   activated memo checker accepts with at most `2^39` rows give an observed
   derivation whose calls the trace's memory carries (`CallsInROM`), so the
   escape's byte string is read off the trace; it gives `P`. No acyclicity is
@@ -165,17 +161,17 @@ def IxVMClaimSpecIn (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
 
 /-! ## Source level -/
 
-/-- **The checked IxVM source** the statements are about. -/
-abbrev source : Aiur.Generic.Source IxVM.F := IxVM.Checked.source
+/-- **The prepared IxVM source** the statements are about. -/
+abbrev source : Aiur.Generic.Source IxVM.F := IxVM.source
 
 /-- **Source-level soundness of `verify_claim` for `P`**: every observed
-source-semantics derivation of `verify_claim(d)` in the checked source's
+source-semantics derivation of `verify_claim(d)` in the prepared source's
 world (any hints, any result, any final heap) gives `P` of its calls and
 `d`. -/
 def SourceSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ (d : Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
     (calls : List (Call IxVM.F)),
-    Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim [digestValue d] []
+    Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim [digestValue d] []
       value heap calls → P calls d
 
 /-- **The main statement** (D2 as revised): every observed `verify_claim`
@@ -187,9 +183,9 @@ def VerifyClaimSoundIn : Prop :=
 of every `EvalFn` derivation. -/
 theorem SourceSound.eval {P : List (Call IxVM.F) → Digest → Prop} (sound : SourceSound P)
     {d : Digest} {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F}
-    (evaluated : Aiur.Generic.SourceSemantics.EvalFn IxVM.Checked.source.world verifyClaim
+    (evaluated : Aiur.Generic.SourceSemantics.EvalFn IxVM.source.world verifyClaim
       [digestValue d] [] value heap) :
-    ∃ calls, Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim
+    ∃ calls, Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim
       [digestValue d] [] value heap calls ∧ P calls d := by
   obtain ⟨calls, observed⟩ := evaluated.observe
   exact ⟨calls, observed, sound d value heap calls observed⟩
@@ -197,10 +193,10 @@ theorem SourceSound.eval {P : List (Call IxVM.F) → Digest → Prop} (sound : S
 /-- **Every hint and IO world**: a source-level statement holds of every run
 of the executable source semantics, whatever its hint provider and fuel. -/
 theorem SourceSound.run {P : List (Call IxVM.F) → Digest → Prop} (sound : SourceSound P)
-    {d : Digest} {fuel : Nat} {hints : IxVM.Checked.source.HintProvider}
+    {d : Digest} {fuel : Nat} {hints : IxVM.source.HintProvider}
     {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F}
-    (executed : IxVM.Checked.source.run verifyClaim [digestValue d] fuel hints = .ok (value, heap)) :
-    ∃ calls, Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim
+    (executed : IxVM.source.run verifyClaim [digestValue d] fuel hints = .ok (value, heap)) :
+    ∃ calls, Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim
       [digestValue d] [] value heap calls ∧ P calls d :=
   sound.eval (Aiur.Generic.Source.run_spec executed).2
 
@@ -221,7 +217,7 @@ is assumed: the depth words make every accepted memo graph acyclic (Track A,
 `Depth.plan_checkMemo_sound`). -/
 def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ {id : String → Except String Nat}
-    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [verifyClaim]}
+    {specialized : Aiur.Generic.Specialized IxVM.source [verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     {cfg : Aiur.Optimized.Depth.Config},
@@ -243,7 +239,7 @@ def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
       Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [digestValue d]) →
       Aiur.WireValue.decode specialized.program.enums output = some result →
       ∃ (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F) (calls : List (Call IxVM.F)),
-        Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim [digestValue d] []
+        Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim [digestValue d] []
           value heap calls ∧
           Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧ P calls d
 
@@ -267,7 +263,7 @@ plan of the physical circuits themselves, with `AcyclicDerivation` of the root
 in place of the memo checker and the row bound. -/
 def CircuitSoundAssuming (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ {id : String → Except String Nat}
-    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [verifyClaim]}
+    {specialized : Aiur.Generic.Specialized IxVM.source [verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     (plan : Aiur.Optimized.Grouping.Plan physical.system id),
@@ -281,7 +277,7 @@ def CircuitSoundAssuming (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
       Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [digestValue d]) →
       Aiur.WireValue.decode specialized.program.enums output = some result →
       ∃ (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F) (calls : List (Call IxVM.F)),
-        Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world verifyClaim [digestValue d] []
+        Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim [digestValue d] []
           value heap calls ∧
           Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧ P calls d
 

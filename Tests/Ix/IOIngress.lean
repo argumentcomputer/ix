@@ -38,7 +38,7 @@ open LSpec Tests.Ix.IxVM
 and the multi-stark verifier with `ix_aggr` (the verifier plus the aggregation
 modules), which share one directory and are scanned as their union. -/
 def bundles : List System.FilePath :=
-  ["IxVM/IxVM/Modules", "MultiStark/MultiStark/Modules"]
+  ["IxVM/IxVM/Source", "MultiStark/MultiStark/Modules"]
 
 /-- The byte-reading channels and the functions allowed to read each. -/
 def byteReaders : List (String × List String) := [

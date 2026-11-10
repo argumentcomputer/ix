@@ -19,15 +19,15 @@ silently. The module is outside any namespace, so every name prints in full.
 
 Three guards keep the statement about the deployed object:
 
-* it names the checked source `IxVM.Checked.source` and the entry
-  `IxVM::verify_claim`, and it does not name the module program
-  `IxVM.program` or its preparation (the `run_meta` check, beside the frozen
-  text): the object is the pinned literal;
-* the checked source is the deployed preparation's: that is the native test
-  suite `ixvm-checked-source` (`IxVM.CheckedCheck`), which prepares
-  `IxVM.program` for `verify_claim` and compares the result with
-  `IxVM.Checked.source`, and `lake exe ixvm/ixvm-checked --check`, which
-  compares the files with their rendering. These are checks, not proofs;
+* it names the prepared source `IxVM.source` and the entry
+  `IxVM::verify_claim`, and it does not substitute the bare
+  `IxVM.program` or invoke module preparation (the `run_meta` check, beside the frozen
+  text): the object is the compiled, transparent source;
+* the prepared source is the deployed preparation's: that is the native test
+  suite `ixvm-source` (`IxVM.Check`), which prepares
+  the imported DSL declarations for `verify_claim` and compares the result with
+  `IxVM.source`, and `lake exe ixvm/ixvm-proof-gen --check`, which
+  compares the derived proof scripts with their rendering. These are checks, not proofs;
 * it is not vacuous, and its escape names a real function: in the checked
   source, `verify_claim` is an entry, its world prepares a call on a digest
   argument, and the program has the function `Blake3::hash` the escape
@@ -38,18 +38,18 @@ Three guards keep the statement about the deployed object:
 example : IxVM.Refinement.verifyClaim = "IxVM::verify_claim" := rfl
 example : IxVM.Refinement.blake3Hash = "Blake3::hash" := rfl
 example : IxVM.Refinement.byteStreamEnum = "${\"name\":\"Lists::Node\",\"types\":[\"field\"]}" := rfl
-example : IxVM.Checked.entry = IxVM.Refinement.verifyClaim := rfl
+example : IxVM.entry = IxVM.Refinement.verifyClaim := rfl
 
 open Lean in
 run_meta do
   let names : List (Name × List Name) := [
-    (``IxVM.Refinement.SourceSound, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+    (``IxVM.Refinement.SourceSound, [``IxVM.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.SourceSemantics.ObsFn, ``IxVM.Refinement.digestValue]),
-    (``IxVM.Refinement.CircuitSound, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+    (``IxVM.Refinement.CircuitSound, [``IxVM.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.Specialized, ``Aiur.Optimized.Depth.Certified, ``Aiur.Optimized.Depth.system,
       ``Aiur.Optimized.Grouping.Plan.checkMemo, ``IxVM.Refinement.digestValue,
       ``Aiur.Generic.SourceSemantics.CallsInROM]),
-    (``IxVM.Refinement.CircuitSoundAssuming, [``IxVM.Checked.source, ``IxVM.Refinement.verifyClaim,
+    (``IxVM.Refinement.CircuitSoundAssuming, [``IxVM.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.Specialized, ``IxVM.Refinement.AcyclicDerivation,
       ``IxVM.Refinement.digestValue, ``Aiur.Generic.SourceSemantics.CallsInROM]),
     (``IxVM.Refinement.AxiomScopeIn, [``IxVM.Refinement.UserAxiomLeavesIn]),
@@ -73,12 +73,12 @@ run_meta do
     let some info := (← getEnv).find? statement | throwError "{statement} is missing"
     let used := info.value!.getUsedConstants
     for n in [``IxVM.program, ``Aiur.Modules.prepare] do
-      if used.contains n then throwError "{statement} names {n}: state it over the checked source"
+      if used.contains n then throwError "{statement} names {n}: state it over the prepared source"
 
-#guard IxVM.Checked.source.checkEntry IxVM.Refinement.verifyClaim matches .ok () &&
-  (IxVM.Checked.source.world.prepare IxVM.Refinement.verifyClaim
+#guard IxVM.source.checkEntry IxVM.Refinement.verifyClaim matches .ok () &&
+  (IxVM.source.world.prepare IxVM.Refinement.verifyClaim
       [IxVM.Refinement.digestValue 0]).toBool &&
-  (match IxVM.Checked.source.program.sourceFunction? IxVM.Refinement.blake3Hash with
+  (match IxVM.source.program.sourceFunction? IxVM.Refinement.blake3Hash with
     | some f => f.params.map Prod.snd == [.ptr (.enum IxVM.Refinement.byteStreamEnum)]
     | none => false)
 
@@ -111,8 +111,8 @@ info: def IxVM.Refinement.SourceSound : (List (Aiur.Generic.SourceSemantics.Call
 fun P =>
   ∀ (d : IxVM.Refinement.Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
     (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-    Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
-        [IxVM.Refinement.digestValue d] [] value heap calls →
+    Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] []
+        value heap calls →
       P calls d
 -/
 #guard_msgs in
@@ -122,8 +122,7 @@ fun P =>
 info: def IxVM.Refinement.CircuitSound : (List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop) →
   Prop :=
 fun P =>
-  ∀ {id : String → Except String ℕ}
-    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [IxVM.Refinement.verifyClaim]}
+  ∀ {id : String → Except String ℕ} {specialized : Aiur.Generic.Specialized IxVM.source [IxVM.Refinement.verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
     Aiur.Optimized.Depth.Certified cfg physical.system →
@@ -148,9 +147,8 @@ fun P =>
                                     (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
                                   Aiur.WireValue.decode specialized.program.enums output = some result →
                                     ∃ value heap calls,
-                                      Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world
-                                          IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] [] value heap
-                                          calls ∧
+                                      Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim
+                                          [IxVM.Refinement.digestValue d] [] value heap calls ∧
                                         Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧
                                           P calls d
 -/
@@ -162,8 +160,7 @@ info: def IxVM.Refinement.CircuitSoundAssuming : (List (Aiur.Generic.SourceSeman
     IxVM.Refinement.Digest → Prop) →
   Prop :=
 fun P =>
-  ∀ {id : String → Except String ℕ}
-    {specialized : Aiur.Generic.Specialized IxVM.Checked.source [IxVM.Refinement.verifyClaim]}
+  ∀ {id : String → Except String ℕ} {specialized : Aiur.Generic.Specialized IxVM.source [IxVM.Refinement.verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     (plan : Aiur.Optimized.Grouping.Plan physical.system id),
@@ -179,7 +176,7 @@ fun P =>
                 Aiur.DecodesValues specialized.program.enums wires (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
                   Aiur.WireValue.decode specialized.program.enums output = some result →
                     ∃ value heap calls,
-                      Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+                      Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim
                           [IxVM.Refinement.digestValue d] [] value heap calls ∧
                         Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧ P calls d
 -/
@@ -337,30 +334,30 @@ info: def IxVM.Refinement.verifyClaim : String :=
 
 /--
 info: @[reducible] def IxVM.Refinement.source : Aiur.Generic.Source IxVM.F :=
-IxVM.Checked.source
+IxVM.source
 -/
 #guard_msgs in
 #print IxVM.Refinement.source
 
 /--
-info: def IxVM.Checked.source : Aiur.Generic.Source IxVM.Checked.F :=
-{ program := IxVM.Checked.program, tables := IxVM.Checked.coreTables, tablesChecked := IxVM.Checked.tablesChecked }
+info: def IxVM.source : Aiur.Generic.Source IxVM.F :=
+{ program := IxVM.program, tables := IxVM.coreTables, tablesChecked := IxVM.tablesChecked }
 -/
 #guard_msgs in
-#print IxVM.Checked.source
+#print IxVM.source
 
 /--
-info: def IxVM.Checked.entry : String :=
+info: def IxVM.entry : String :=
 "IxVM::verify_claim"
 -/
 #guard_msgs in
-#print IxVM.Checked.entry
+#print IxVM.entry
 
 /--
-info: IxVM.Checked.tablesChecked : Aiur.typecheck IxVM.Checked.coreTables = Except.ok ()
+info: IxVM.tablesChecked : Aiur.typecheck IxVM.coreTables = Except.ok ()
 -/
 #guard_msgs in
-#check @IxVM.Checked.tablesChecked
+#check @IxVM.tablesChecked
 
 /--
 info: def Aiur.Modules.Prepared.ObsFn : {F : Type} →
@@ -1196,8 +1193,8 @@ example (l r : Ix.AssumptionTree) : IxVM.Refinement.treeImages (.node l r) =
 The first refinement: every derivation of `IxonDeserialize::get_tagn0` agrees
 with IxC's `Ixon.getTagN 0` on the same bytes, on every header
 (`getTagN0_refines`; `getTagN2_refines` and `getTagN4_refines` for the two- and
-four-bit flags), proved from the checked source through its generated lookup
-facts (`IxVM.Checked.Lookup`), the generated mirrors and their lemmas
+four-bit flags), proved from the prepared source through its generated lookup
+facts (`IxVM.Lookup`), the generated mirrors and their lemmas
 (`Ix.IxVM.Refinement.Mirrors.TagN`, over the helper library
 `Ix.IxVM.Refinement.Mirror`) and the hand-written creative layer
 (`Ix.IxVM.Refinement.TagN`, `Ix.IxVM.Refinement.TagNWide`). Deterministic runs and their
@@ -1298,10 +1295,10 @@ info: @IxVM.Refinement.SourceSound.eval : ∀
   {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop},
   IxVM.Refinement.SourceSound P →
     ∀ {d : IxVM.Refinement.Digest} {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F},
-      Aiur.Generic.SourceSemantics.EvalFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
-          [IxVM.Refinement.digestValue d] [] value heap →
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.source.world IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d]
+          [] value heap →
         ∃ calls,
-          Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+          Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim
               [IxVM.Refinement.digestValue d] [] value heap calls ∧
             P calls d
 -/
@@ -1312,12 +1309,11 @@ info: @IxVM.Refinement.SourceSound.eval : ∀
 info: @IxVM.Refinement.SourceSound.run : ∀
   {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop},
   IxVM.Refinement.SourceSound P →
-    ∀ {d : IxVM.Refinement.Digest} {fuel : ℕ} {hints : IxVM.Checked.source.HintProvider}
-      {value : Aiur.SourceValue IxVM.F} {heap : Aiur.Heap IxVM.F},
-      IxVM.Checked.source.run IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] fuel hints =
-          Except.ok (value, heap) →
+    ∀ {d : IxVM.Refinement.Digest} {fuel : ℕ} {hints : IxVM.source.HintProvider} {value : Aiur.SourceValue IxVM.F}
+      {heap : Aiur.Heap IxVM.F},
+      IxVM.source.run IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] fuel hints = Except.ok (value, heap) →
         ∃ calls,
-          Aiur.Generic.SourceSemantics.ObsFn IxVM.Checked.source.world IxVM.Refinement.verifyClaim
+          Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim
               [IxVM.Refinement.digestValue d] [] value heap calls ∧
             P calls d
 -/
@@ -1439,8 +1435,8 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_strict [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.acceptsRefUnder_iff_of_nil [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.nfGo_of_whnf_sort [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Checked.tablesChecked [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Checked.source [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.tablesChecked [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.source [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN0_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN2_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.TagN.getTagN4_refines [propext, Classical.choice, Quot.sound]
@@ -1451,11 +1447,11 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_tagn0».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«UInt64::add».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Aiur.Generic.SourceSemantics.EvalFn.exec [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Checked.functionNames_nodup [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Checked.Lookup.«IxonDeserialize::get_tagn0» [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.functionNames_nodup [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.IxonDeserialize.get_tagn0.lookup [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef
-  IxVM.Checked IxVM.Checked.Static IxVM.Checked.Program IxVM.Checked.Tables IxVM.Checked.Lookup
+  IxVM.Source IxVM.Static IxVM.Program IxVM.Tables IxVM.Lookup
   Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
   Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
