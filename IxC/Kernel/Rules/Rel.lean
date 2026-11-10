@@ -166,6 +166,22 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   at the head.  A theorem never unfolds (`unfoldDefinition`). -/
   | delta {d : Nat} {e e' : Expr md} :
       unfoldDefinition env e = some e' → Red env d e e'
+  /-- **A theorem unfolds** (S2's N1, lane l5; IxVM unfolds theorems in lazy δ and
+  at ι majors, the checker does not): a stored theorem constant becomes its
+  stored value at the use's levels. The rule carries what its soundness reads:
+  the value is closed and has the theorem's type at this environment, and that
+  type is a proposition at every assignment, so value and constant are the one
+  proof (proof irrelevance). The rest of a spine unfolds by `appFn`. -/
+  | deltaThm {d : Nat} {n : Key md} {us : List Level} {cv : ConstantVal md}
+      {value vt s : Expr md} {u : Level} :
+      env.find? n = some (.thmInfo cv value) →
+      us.length = cv.levelParams.length →
+      value.hasFvar = false → value.looseBVarsBounded 0 = true →
+      Infer env .full d (value.instantiateLevelParams cv.levelParams us) vt →
+      DefEq env d vt (cv.type.instantiateLevelParams cv.levelParams us) →
+      Infer env .full d (cv.type.instantiateLevelParams cv.levelParams us) s →
+      Red env d s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
+      Red env d (.const n us) (value.instantiateLevelParams cv.levelParams us)
   /-- A `Nat`-literal major converts to constructor form, one layer
   (`litMajorToCtor`'s `litToCtorIfNat` arm, `Core.lean:739`). -/
   | natLit {d : Nat} {n : Nat} :

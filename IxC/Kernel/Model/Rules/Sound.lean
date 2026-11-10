@@ -6,6 +6,7 @@ import IxC.Kernel.Model.Rules.IotaSound
 import IxC.Kernel.Model.Rules.DefEqSound
 import IxC.Kernel.Model.Rules.InferSound
 import IxC.Kernel.Model.Rules.CertsSound
+import IxC.Kernel.Model.Rules.ThmSound
 import IxC.Kernel.Rules.Derived
 
 public section
@@ -51,6 +52,9 @@ theorem red_sound (hin : RulesInputs V m φ) :
   | _, _, _, .beta hta hd =>
     Red.beta_sound (infer_sound hin hta) (defeq_sound hin hd)
   | _, _, _, .delta h => Red.delta_sound hin h
+  | _, _, _, .deltaThm hf hlen hvf hvb hinf hde hinfT hred hz =>
+    Red.deltaThm_sound hin hf hlen hvf hvb hinf (infer_sound hin hinf) (defeq_sound hin hde)
+      (infer_sound hin hinfT) (red_sound hin hred) hz
   | _, _, _, .natLit h => Red.natLit_sound h
   | _, _, _, .strLit h => Red.strLit_sound h
   | _, _, _, .natSucc hsup hw hn =>
