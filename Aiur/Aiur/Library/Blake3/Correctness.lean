@@ -570,8 +570,8 @@ decreasing_by
 theorem compress_layer_two_spec (left right : CV) :
     cvBytes (compressLayer [left, right]) = (parentOutput left right).rootHash := by
   have h12 : ((4 : UInt32) ||| 8) = 12 := rfl
-  unfold parentOutput Output.rootHash
-  dsimp only
+  show cvBytes (compressLayer [left, right]) =
+    cvBytes (compress iv (left ++ right) 0 64 ((4 : UInt32) ||| 8))
   rw [h12, compressLayer]
 
 theorem compress_layer_step_spec (left right c : CV) (rest : List CV) :
