@@ -436,6 +436,9 @@ abbrev Env := List (String × T)
 
 abbrev K := List Seg → M (List String)
 
+/-- A match of at least this many arms is a table (`invArms`). -/
+def tableArms : Nat := 16
+
 /-- Functions whose `let`-bound matches are inverted as segments: the match's paths
 become their own inductive (`«f».Seg<i>`, with its theorem `«f».seg<i>`), and the
 function's paths continue once after it, instead of once per arm. -/
@@ -627,7 +630,8 @@ mutual
       let bs ← fresh "bs"; let body ← fresh "body"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dx ← fresh "d"; let sel ← fresh "sel"; let db ← fresh "d"
       let rest ← inv x dx env hin (.v v) (.v m) fun s1 =>
-        invArms arms (arms.length > 1) sel db env (.v v) (.v m) dv dh fun s2 => k (s1 ++ s2)
+        invArms arms (arms.length > 1) (arms.length ≥ tableArms) sel db env (.v v) (.v m) dv dh
+          fun s2 => k (s1 ++ s2)
       return [s!"obtain ⟨{v}, {m}, {bs}, {body}, {c1}, {c2}, {dx}, {sel}, {db}, rfl⟩ := {d}.matchValue_inv"] ++
         rest
     | .global _ none => throw "unannotated global"
@@ -666,7 +670,7 @@ mutual
     let segName := s!"Seg{saved.segs.size + 1}"
     let es := names.zipIdx.map fun (n, i) => s!"e{i}_{sanitize n}"
     set { saved with path := {}, ctors := #[], params := es ++ ["h", "r", "h'", "calls"], inSeg := true }
-    let script ← inv x "d0" (names.zip (es.map .v)) (.v "h") (.v "r") (.v "h'")
+    let script ← inv x "d0" (names.zip (es.map T.v)) (.v "h") (.v "r") (.v "h'")
       (leaf s!"«{saved.fname}».{segName}")
     let st ← get
     let lean := saved.leanName
@@ -704,8 +708,11 @@ mutual
           invArgs es a' env (.v m) its dh fun s2 => k (s1 ++ s2))
     | _, _ => throw "argument arity"
 
-  /-- Arms in order: the first matched (positive branch) or did not (negative). -/
-  partial def invArms (arms : List (Pattern F × Expr F)) (multi : Bool) (sel db : String)
+  /-- Arms in order: the first matched (positive branch) or did not (negative). In a
+  table (`table`: a dispatch of at least `tableArms` arms) whose scrutinee is a
+  parameter, a matched arm drops the negations of the earlier arms: its own equation
+  `x = template` implies them, and keeping them makes the paths quadratic. -/
+  partial def invArms (arms : List (Pattern F × Expr F)) (multi table : Bool) (sel db : String)
       (env : Env) (V heap dv dh : T) (k : K) : M (List String) := do
     match arms with
     | [] => return [s!"exact (selectArm_nil_inv {sel}).elim"]
@@ -714,10 +721,16 @@ mutual
       let saved := (← get).path
       if multi then modifyPath fun q => { q with tokens := q.tokens.push (armToken p) }
       let (pl, binds) ← patInv V p mt heap
+      if table && !(← isDead) then
+        let s ← get
+        let Vr := V.resolve s.path.subst
+        if (match Vr with | .v n => s.params.contains n | _ => false) then
+          modifyPath fun q => { q with facts := q.facts.filter fun (_, _, _, subj) =>
+            match subj with | some u => u.resolve q.subst != Vr | none => true }
       let pos ← if ← isDead then pure [] else inv b db (binds ++ env) heap dv dh k
       modify fun s => { s with path := saved }
       let (nl, dead) ← negArm V p nm
-      let negRest ← if dead then pure [] else invArms rest multi sel' db env V heap dv dh k
+      let negRest ← if dead then pure [] else invArms rest multi table sel' db env V heap dv dh k
       modify fun s => { s with path := saved }
       return [s!"rcases selectArm_cons_inv {sel} with ⟨{mt}, rfl⟩ | ⟨{nm}, {sel'}⟩"] ++
         bullet (pl ++ pos) ++ bullet (nl ++ negRest)
