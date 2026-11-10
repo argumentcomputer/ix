@@ -8,9 +8,8 @@ import IxC.Kernel.Verify.InstLevels
 
 /-! # The representation relation: IxVM heap terms and the kernel's `Expr`
 
-Spike S3 (`plans/ixvm-no-false-plan.md` 8.4: "a representation relation between
-IxVM heap terms and the kernel's `Expr` at an opening depth"). Design note; the
-lane report (`plans/ixvmc/s3/REPORT.md`) carries the same text with the evidence.
+A representation relation between IxVM heap terms and the kernel's `Expr` at an
+opening depth. Design note.
 
 ## Two layers
 
@@ -36,7 +35,7 @@ IxVM's context list `types` is not part of the relation for terms: it is a
 *segment* of the ghost context (entry `j` translates to `Γ (d-1-j)`), read only
 by inference. The opening depth `d` is the segment's top end, so trimming its
 outer entries (`ctx_trim`) leaves every image unchanged and needs no renaming
-lemma (lane s2's bottom shift W1 is not needed under this convention); lowering (`k_infer_rebase`, `k_def_eq_rebase`) leaves the images
+lemma (no bottom shift of the context is needed under this convention); lowering (`k_infer_rebase`, `k_def_eq_rebase`) leaves the images
 unchanged but runs the inner computation at depth `d - g`, so its derivations
 must be moved back to depth `d` by a depth-weakening lemma the rules do not have.
 
@@ -51,8 +50,8 @@ equalities are `rfl`; but a term is *graded* (the soundness theorems' premise)
 only if none of its binders has a codomain that can be a proposition. So the
 model facts proved here are about the data fragment, and `λ`-inference (whose
 rule validates the datum by a sort computation IxVM never makes) has no rule.
-Relating proofs (`λ h : p, …`) requires IxVM to carry and validate the datum
-(the report's change (C-ann)); the relation then reads it from the node.
+Relating proofs (`λ h : p, …`) requires IxVM to carry and validate the datum;
+the relation then reads it from the node.
 
 ## Lets, levels, literals, projections
 
@@ -61,7 +60,7 @@ Relating proofs (`λ h : p, …`) requires IxVM to carry and validate the datum
   term has no let.
 * Levels: the slice is level-free (`Const a []` only). The full relation must be
   up to level equivalence, because `DefEq` has no transitivity and IxVM's level
-  instantiation simplifies (T3-3).
+  instantiation simplifies.
 * `Nat` literals translate to their value (limb order little-endian, not used
   by any proof here); string literals and projections have no image. -/
 

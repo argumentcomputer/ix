@@ -845,7 +845,7 @@ end
 /-! ## One function -/
 
 
-/-- Functions L4 needs whose paths multiply (a `let` bound to a match): generated under
+/-- Functions the refinement proofs need whose paths multiply: generated under
 larger caps, at a larger module cost. -/
 def generous : List String := ["KernelWhnf::whnf_nd_const_head"]
 

@@ -890,8 +890,8 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F)
   let doc := "/-! Generator report:\n\n" ++ String.join (report.map (s!"* " ++ · ++ "\n")) ++ "-/\n\n"
   return out ++ doc ++ "end IxVM.Refinement.Mirrors\n"
 
-/-- Only derived proof scripts are written to disk. (Port of the refinement
-snapshot's three mirror files onto the PR #686 layout, for review rv3-P686-2.) -/
+/-- Only derived proof scripts are written to disk: the lookup certificates, the
+three mirror modules (TagN, Deserialize, KernelLevels) and the path lemmas. -/
 def render : List (System.FilePath × String) :=
   let prog := IxVM.program
   let src := IxVM.source

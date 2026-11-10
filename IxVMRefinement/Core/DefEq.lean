@@ -3,7 +3,7 @@ import IxVMRefinement.Obs.KernelDefEq
 
 /-! # The step lemmas of the `is_def_eq` fast path
 
-Spike S3. `k_is_def_eq` at closed terms, through `k_is_def_eq_core` and
+`k_is_def_eq` at closed terms, through `k_is_def_eq_core` and
 `k_is_def_eq_ordered` to `try_def_eq_app` (same-head spine congruence) and
 `de_args` (pairwise, calling back into `k_is_def_eq`): a nonzero answer is
 `DefEq`. The slow tiers and the lowering rebase are not taken in the fragment

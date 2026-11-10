@@ -6,7 +6,7 @@ import IxVMRefinement.Obs.KernelLevels
 
 /-! # The step lemmas of the whnf slice, and the induction
 
-Spike S3. One lemma per function: from the induction hypothesis at strictly
+One lemma per function: from the induction hypothesis at strictly
 fewer calls (`IH`) and an observed derivation of the function, its spec. Each
 proof takes the derivation's path from the generated path lemma
 (`IxVMRefinement.Obs`, `«f».obs`: the inversion of the body, with every
@@ -239,7 +239,7 @@ theorem peel_nil (c : Ctx) {calls : List (Call F)} (ih : IH c calls)
   rw [List.append_nil] at hcons
   exact ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩
 
-/-- `red_beta`: the consumed arguments are matched structurally (lane cx), so no
+/-- `red_beta`: the consumed arguments are matched structurally, so no
 count is read as a field element. -/
 theorem redBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}

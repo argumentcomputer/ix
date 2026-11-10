@@ -5,28 +5,29 @@ import IxVM.Lookup
 
 /-! # The slice's statements: one spec per function, and what is assumed
 
-Spike S3. For a context `c` (the kernel environment, the keying, the view), each
-function of the slice gets a spec over its observed derivations (`*Spec`), in the
-shapes of plan 8.4: a derivation of `whnf(e) = e'` gives `Red`, and so on. Every
+For a context `c` (the kernel environment, the keying, the view), each function
+of the slice gets a spec over its observed derivations (`*Spec`): a derivation of
+`whnf(e) = e'` gives `Red`, a nonzero `is_def_eq` gives `DefEq`, and so on. Every
 spec is conditional on `Good c calls`: no hashed collision (the escape of the
 statement, `View.HashedCollision`), every record the run loads is in the view,
 and the stand-in size bound (below).
 
 `CoreSpecs` bundles the specs of the functions proved by the induction;
 `Assumed` collects the specs of the functions the slice calls but does not
-prove. Each `Assumed` field is that function's Phase 3 obligation, stated in the
-form the induction consumes.
+prove. Each `Assumed` field is what another part of the refinement must prove
+about that function, stated in the form the induction consumes.
 
 **The size bound.** IxVM counts with field elements (`Lists::length`, the index
 arithmetic of `Lists::lookup`, `take` and `drop`), and a count is faithful only
-below the field's characteristic (T3-2's wrap). L0 bounds the counts: at most
-`2^39` distinct memoized calls in a valid ROM (`MemoBounded`); a list
+below the field's characteristic (past it, a count wraps around). The circuit
+bounds the counts: at most `2^39` distinct memoized calls in a valid ROM
+(`MemoBounded`, the consistency statement's `MemoCallsAtMost`); a list
 `Lists::length` counts is shorter than that, because it recurses through every
 suffix and lists of different lengths need different keys
-(`IxVMRefinement.Core.Bound`, `length_lt`). Since lane cx's `red_beta` matches
-the consumed arguments structurally, the slice itself branches on no count; the
-bound stays in `Good` for the rest of L4 (`red_iota`'s field split, `red_proj`'s
-index). -/
+(`IxVMRefinement.Core.Bound`, `length_lt`). Since `red_beta` matches the
+consumed arguments structurally, the slice itself branches on no count; the
+bound stays in `Good` for the rest of the core (`red_iota`'s field split,
+`red_proj`'s index). -/
 
 namespace IxVM.Refinement.Core
 
@@ -49,7 +50,7 @@ structure Ctx where
   env : Ix.Kernel.Env .anon
   κ : Bytes.Address → Ix.Kernel.Key .anon
   V : View
-  /-- The records of the fragment: those whose loads the L1 obligation `Assumed.getCI`
+  /-- The records of the fragment: those whose loads the record loader's assumption `Assumed.getCI`
   covers (for the slice, level-free definitions, theorems, axioms, inductives and
   constructors whose terms the relation represents). -/
   frag : _root_.Address → Prop
@@ -64,14 +65,15 @@ def nativeNames : List String :=
    "KernelNatPrim::try_int_prim_dispatch",
    "KernelDefEq::k_is_def_eq_slow", "KernelDefEq::k_def_eq_rebase"]
 
-/-- **L0's size bound**: at most `2^39` distinct memoized calls, in a valid ROM (the trace
-ROM of L0 is valid whenever the headline's width ROM is: `traceROM_valid`). -/
+/-- **The circuit's size bound**: at most `2^39` distinct memoized calls, in a valid ROM
+(the trace ROM of the compiled circuit is valid whenever the consistency statement's width
+ROM is: `traceROM_valid`). -/
 abbrev MemoBounded (calls : List (Call F)) : Prop :=
   ∃ rom : ROM F, rom.Valid ∧ IxVM.Consistency.MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
 
 /-- **The calls are good**: they hashed no collision; every record they load is
 in the view and in the fragment; they call no native dispatcher; and they have at
-most `2^39` distinct memoized calls in a valid ROM (L0's bound, `MemoBounded`). -/
+most `2^39` distinct memoized calls in a valid ROM (the circuit's bound, `MemoBounded`). -/
 def Good (c : Ctx) (calls : List (Call F)) : Prop :=
   ¬ c.V.HashedCollision [] calls ∧
   (∀ cl ∈ calls, cl.name = "Ingress::get_ci" → ∀ addr a, cl.args = [addr] →
@@ -267,13 +269,14 @@ def IH (c : Ctx) (calls : List (Call F)) : Prop :=
 /-! ## What the slice assumes -/
 
 /-- **The specs the slice assumes**: those of the functions it calls and does
-not prove. Each field is a Phase 3 obligation of another layer or of the rest
-of L4, stated in the form the induction consumes. -/
+not prove. Each field is a proof obligation of another part of the refinement
+(the record loader, substitution, the native reductions, the rest of the core),
+stated in the form the induction consumes. -/
 structure Assumed (c : Ctx) : Prop where
   /-- The fragment (by reading `try_prim_dispatch`: every family other than `0` calls
   one of `nativeNames`): a run that calls no native dispatcher gets tag `0`. The
-  general obligation (tags `1`, `2` are reductions) belongs to the natives lane and
-  needs rules s2 lists as missing (`Int`, `BitVec`, `String`, decisions). -/
+  general obligation (tags `1`, `2` are reductions) belongs to the proof of the native
+  reductions, and needs kernel rules for `Int`, `BitVec`, `String` and decisions. -/
   tryPrim : ∀ rc addr lvls sp types h r h' calls,
     ObsFn W "KernelWhnf::try_prim_dispatch" [rc, addr, lvls, sp, types] h r h' calls →
     (∀ cl ∈ calls, cl.name ∉ nativeNames) → ∃ x, r = .tuple [.field 0, x]
@@ -283,7 +286,7 @@ structure Assumed (c : Ctx) : Prop where
   tryProjDef : ∀ value nl lvls sp h r h' calls,
     ObsFn W "KernelWhnf::try_reduce_projection_definition" [value, nl, lvls, sp] h r h' calls →
     ∀ d Γ V, RepE c.κ d Γ h V value → ∃ x, r = .tuple [.field 0, x]
-  /-- L1 (decoder, `Convert`, the kernel's reader, BLAKE3): if every byte string
+  /-- The record loader (decoder, `Convert`, the kernel's reader, BLAKE3): if every byte string
   the load hashed to the address is the view's data there, the loaded constant
   represents the environment's constant at the address's key. -/
   getCI : ∀ addr h ci h' calls,
@@ -293,12 +296,12 @@ structure Assumed (c : Ctx) : Prop where
       (∀ bytes, Hashed calls bytes → Address.blake3Pure bytes = ixAddr a →
         c.V.Preimage (ixAddr a) bytes) →
       CIRep c h' ci (c.env.find? (c.κ a))
-  /-- L3: `expr_inst1` is substitution of a closed value at index `0`. -/
+  /-- Substitution: `expr_inst1` substitutes a closed value at index `0`. -/
   inst1 : ∀ body v h r h' calls,
     ObsFn W "KernelSubst::expr_inst1" [body, v, .field 0] h r h' calls →
     ∀ d Γ B A, RepEk c.κ d Γ 1 h B body → RepE c.κ d Γ h A v →
       RepE c.κ d Γ h' (B.instantiate1 A) r
-  /-- L3: `expr_inst_many` is bulk substitution (`instantiateList`). -/
+  /-- Substitution: `expr_inst_many` is bulk substitution (`instantiateList`). -/
   instMany : ∀ body vs h r h' calls,
     ObsFn W "KernelSubst::expr_inst_many" [body, vs, .field 0] h r h' calls →
     ∀ d Γ B As, RepEk c.κ d Γ As.length h B body → RepSpine c.κ d Γ h As vs →

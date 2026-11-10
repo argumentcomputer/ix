@@ -5,11 +5,10 @@ import Mathlib.Data.List.Forall2
 
 /-! # The size bound: a list IxVM measures as a field element is short
 
-D14. `Lists::length` returns a field element, and IxVM computes with it (`red_iota` splits
-a constructor's arguments at `Lists::length(ctor_args) - rfields`; before lane cx's
-restructure β compared the number of consumed arguments with `0` and `1`), so the soundness
+`Lists::length` returns a field element, and IxVM computes with it (`red_iota` splits a
+constructor's arguments at `Lists::length(ctor_args) - rfields`), so the soundness
 of such a step needs the list's length to be below the field's characteristic. The circuit bounds
-*distinct memoized calls* (L0's `MemoCallsAtMost … (2^39)`), not calls counted with
+*distinct memoized calls* (the consistency statement's `MemoCallsAtMost … (2^39)`), not calls counted with
 repetition. The bridge (`length_lt`): the derivation of `Lists::length` on a list of length
 `n` makes `n + 1` calls to itself, on the list's suffixes; their arguments are lists of
 pairwise different lengths, and two lists of different lengths are never represented by the
@@ -18,7 +17,7 @@ distinct keys (`chain_bound`).
 
 The ROM's validity is an explicit hypothesis here: `MemoCallsAtMost` alone admits an invalid
 ROM, at one address of which two lists of different lengths could both be represented. For
-the trace ROM of L0 it follows from the headline's own hypothesis `rom.Valid` on the width
+the compiled circuit's trace ROM it follows from the consistency statement's hypothesis `rom.Valid` on the width
 ROM (`traceROM_valid`). -/
 
 namespace IxVM.Refinement.Core
@@ -30,7 +29,7 @@ set_option linter.unusedVariables false
 
 /-! ## The trace ROM is valid -/
 
-/-- **The trace ROM of L0 is valid** whenever the width ROM is: decoding and typing keep
+/-- **The compiled circuit's trace ROM is valid** whenever the width ROM is: decoding and typing keep
 validity (`WireROM.decode_valid`, `WidthROM.toWireROM_valid`). -/
 theorem traceROM_valid {source : Generic.Source F} {entries : List String}
     {specialized : Generic.Specialized source entries} (compiled : Optimized.GenericArtifact specialized)
