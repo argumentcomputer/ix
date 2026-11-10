@@ -89,3 +89,30 @@ fn sources_carry_the_preamble_and_fingerprint() {
       .is_err()
   );
 }
+
+#[test]
+fn depth_circuits_are_left_to_the_interpreter() {
+  let path =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../aiur/tests/fixtures/depth.ixa");
+  let (package, _) =
+    aiur::artifact::Package::load(std::path::Path::new(path)).unwrap();
+  let (program, trace) = package.traced().unwrap();
+  let mut program = program.check().unwrap();
+  program.track_depth(&trace).unwrap();
+  let described = aiur_tracegen::describe(&program, trace).unwrap();
+  assert!(described.depth.iter().any(|&d| d));
+  let emitted = emit(&described, &Selection::All, "depth").unwrap();
+  for (circuit, &depth) in
+    described.description.circuits.iter().zip(&described.depth)
+  {
+    let compiled = emitted.circuits.iter().any(|c| c.name == circuit.name);
+    assert!(!(depth && compiled), "{} was compiled", circuit.name);
+    if depth {
+      assert!(emitted.skipped.iter().any(|(name, reason)| {
+        *name == circuit.name && reason.starts_with("fills depth columns")
+      }));
+    }
+  }
+  let fib = Selection::Named(vec!["Depth::fib".into()]);
+  assert!(emit(&described, &fib, "depth").is_err());
+}

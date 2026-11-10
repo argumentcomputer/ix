@@ -6,16 +6,7 @@ use planning::{HostCause, PopulationProvider};
 const ENTRY: &str = "Grouped::run";
 
 fn grouped() -> (CheckedProgram, TraceArtifact) {
-  #[derive(serde::Deserialize)]
-  struct Package {
-    program: Program,
-    trace: TraceArtifact,
-  }
-  let package: Package = serde_json::from_str(include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/grouping.json"
-  )))
-  .unwrap();
+  let package = grouping_fixture();
   (package.program.check().unwrap(), package.trace)
 }
 
@@ -446,4 +437,48 @@ fn device_population_plans_records_host_population_cannot_prove() {
   let device = check(&ample);
   assert!(host.fits && device.fits);
   assert_eq!(device.layout, host.layout);
+}
+
+/// Depth circuits (exact, gap and external slots) fill on the device to the
+/// host's words, and the upload's range counts are the host's: proving with
+/// them commits the same fixed range tables.
+#[test]
+fn depth_circuits_fill_on_the_device() {
+  let (program, artifact) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let entry = "Depth::run";
+  let record = program.execute(entry, vec![12]).unwrap();
+  let expected: Vec<Vec<u64>> = backend
+    .generate_stage_1(&record, entry, &[12])
+    .unwrap()
+    .into_iter()
+    .map(|m| m.values.iter().map(|v| v.as_canonical_u64()).collect())
+    .collect();
+  let rows = backend.record_rows(&record).unwrap();
+  let plans = DevicePlans::new(&backend);
+  let device = DeviceRecord::upload(&backend, &plans, &record, 0).unwrap();
+  let depth: Vec<usize> = (0..backend.members.len())
+    .filter(|&ci| super::super::gpu::circuit_has_depth(&backend, ci))
+    .collect();
+  assert!(!depth.is_empty(), "fixture has no depth circuit");
+  for &ci in &depth {
+    assert!(plans.circuits[ci], "{} stays on the host", backend.names[ci]);
+    let height = device.height(ci).unwrap();
+    let tile =
+      device.tile_words(ci, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+    assert_eq!(tile, expected[ci], "{}", backend.names[ci]);
+  }
+  let gaps: u64 = device.ranges().table(0).iter().sum();
+  assert!(gaps > 0, "fib's gap slots were not counted");
+  // Released and rebuilt, the record still reads the recorded heights.
+  device.release(0);
+  for &ci in &depth {
+    let height = device.height(ci).unwrap();
+    let tile =
+      device.tile_words(ci, 0, 0, height, height, rows[ci], GARBAGE).unwrap();
+    assert_eq!(tile, expected[ci], "{} after release", backend.names[ci]);
+  }
 }

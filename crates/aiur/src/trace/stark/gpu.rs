@@ -10,6 +10,13 @@
 //! circuits (memory, fixed tables, plans with stores, loads or stream hints)
 //! keep host rows. Proof bytes are identical to host population.
 //!
+//! Depth circuits (the depth pass, [`crate::trace::depth`]) are filled on the
+//! device too: each plan carries a depth section, and the record upload holds
+//! the recorded query heights. Their gap limbs' range-table uses are counted
+//! once at upload, by a pass over every real row, because the fixed range
+//! tables are committed before any tile is generated and tiles can be
+//! generated more than once.
+//!
 //! `AIUR_GPU_TRACE_CIRCUITS=a,b` restricts device population to the listed
 //! circuits, named by circuit or by member function; the record upload then
 //! holds only what those circuits read.
@@ -27,6 +34,7 @@ use crate::{
   Execution,
   trace::{
     Action,
+    depth::{DepthPlan, Kind as DepthKind},
     plan::device::{Constants, Encoded, Target},
   },
 };
@@ -42,6 +50,13 @@ const POLY_ADD: u32 = 2;
 const POLY_SUB: u32 = 3;
 const POLY_MUL: u32 = 4;
 
+/// The depth column word of a circuit without one.
+const NO_COLUMN: u32 = u32::MAX;
+/// Depth slot kinds in a plan's depth section.
+const DEPTH_EXACT: u32 = 0;
+const DEPTH_GAP: u32 = 1;
+const DEPTH_EXTERNAL: u32 = 2;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct AiurFunction {
@@ -49,6 +64,8 @@ struct AiurFunction {
   constants: *const u64,
   rows: *const u64,
   multiplicities: *const u64,
+  /// Each query's recorded height, or null when the table tracks none.
+  depths: *const u64,
   count: u64,
   first: u64,
   code_len: u32,
@@ -64,6 +81,9 @@ struct AiurFunction {
 struct AiurCallee {
   rows: *const u64,
   index: *const u32,
+  multiplicities: *const u64,
+  /// Each query's recorded height, or null when the table tracks none.
+  depths: *const u64,
   count: u64,
   mask: u32,
   inputs: u32,
@@ -137,6 +157,16 @@ unsafe extern "C" {
     rows: u64,
     height: u64,
     scratch: *mut u64,
+    error: *mut AiurPopulationError,
+    status: *mut AiurPopulationError,
+  ) -> i32;
+  fn aiur_gpu_count_ranges(
+    device: i32,
+    circuit: *const AiurCircuit,
+    threads: u64,
+    rows: *mut u64,
+    scratch: *mut u64,
+    ranges: *mut u64,
     error: *mut AiurPopulationError,
     status: *mut AiurPopulationError,
   ) -> i32;
@@ -467,21 +497,24 @@ fn hint_kind(channel: &str) -> Option<u32> {
   })
 }
 
+/// Postfix tokens of `p`, reading physical column `column(c)` for each of
+/// its columns `c`.
 fn polynomial(
   p: &Polynomial,
   constants: &mut Constants,
   out: &mut Vec<u32>,
+  column: &impl Fn(usize) -> usize,
 ) -> Option<()> {
   match p {
     Polynomial::Const(value) => {
       out.extend([POLY_CONST, constants.word(*value)? & 0x7fff_ffff]);
     },
-    Polynomial::Var(column) => {
-      out.extend([POLY_VAR, u32::try_from(*column).ok()?]);
+    Polynomial::Var(c) => {
+      out.extend([POLY_VAR, u32::try_from(column(*c)).ok()?]);
     },
     Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
-      polynomial(&xs[0], constants, out)?;
-      polynomial(&xs[1], constants, out)?;
+      polynomial(&xs[0], constants, out, column)?;
+      polynomial(&xs[1], constants, out, column)?;
       out.extend([
         match p {
           Polynomial::Add(_) => POLY_ADD,
@@ -515,11 +548,8 @@ fn encode<B: WitnessField>(
       if !include(f) {
         return None;
       }
-      // Depth columns and gap limbs are populated on the host.
-      if has_depth(plan, f) {
-        return None;
-      }
-      let placement = &backend.placements[plan.members[f]];
+      let chip = plan.members[f];
+      let placement = &backend.placements[chip];
       let steps = &plan.artifact.functions[f].steps;
       let mut call = |callable: usize| {
         if callable >= functions {
@@ -545,11 +575,20 @@ fn encode<B: WitnessField>(
       let column = |c: usize| placement.columns[c];
       let Encoded { mut code, scratch, inputs, outputs } =
         fill.encode(&mut call, &mut hint, &column, &mut constants)?;
+      // The selector comes first: depth slot enables read it.
       code.push(u32::try_from(placement.selector).ok()?);
+      encode_depth(
+        &plan.depth,
+        chip,
+        &column,
+        &mut call,
+        &mut constants,
+        &mut code,
+      )?;
       code.push(u32::try_from(placement.writes.len()).ok()?);
       for write in &placement.writes {
         let mut tokens = vec![];
-        polynomial(&write.value, &mut constants, &mut tokens)?;
+        polynomial(&write.value, &mut constants, &mut tokens, &|c| c)?;
         code.push(u32::try_from(write.column).ok()?);
         code.push(u32::try_from(tokens.len() / 2).ok()?);
         code.extend(tokens);
@@ -560,10 +599,98 @@ fn encode<B: WitnessField>(
   (programs, constants, callees)
 }
 
-/// Whether function `f`'s circuit carries a depth column or depth slots.
-fn has_depth<B: WitnessField>(plan: &TracePlan<'_, B>, f: usize) -> bool {
-  let fill = &plan.depth.fills[plan.members[f]];
-  fill.column.is_some() || !fill.slots.is_empty()
+/// Each depth range table's first word in the flat device count buffer, and
+/// the buffer's length in words.
+fn range_offsets(depth: &DepthPlan) -> (Vec<usize>, usize) {
+  let mut offsets = vec![];
+  let mut words = 0usize;
+  for table in &depth.tables {
+    offsets.push(words);
+    words += 1 << table.width;
+  }
+  (offsets, words)
+}
+
+/// Appends circuit `chip`'s depth section, over physical columns `column`:
+/// the depth column (or [`NO_COLUMN`]) and the slot count, then per exact,
+/// gap or external slot its kind, its new columns as (column, limb width,
+/// range-table offset) triples, its callee slots, its enable, and the count
+/// and each of its callee query's arguments, each polynomial as a token
+/// count and tokens.
+fn encode_depth(
+  depth: &DepthPlan,
+  chip: usize,
+  column: &impl Fn(usize) -> usize,
+  call: &mut impl FnMut(usize) -> Option<Target>,
+  constants: &mut Constants,
+  code: &mut Vec<u32>,
+) -> Option<()> {
+  let (offsets, _) = range_offsets(depth);
+  let fill = &depth.fills[chip];
+  code.push(match fill.column {
+    Some(c) => u32::try_from(column(c)).ok().filter(|&c| c != NO_COLUMN)?,
+    None => NO_COLUMN,
+  });
+  let exact = fill
+    .exact
+    .iter()
+    .map(|e| (DEPTH_EXACT, vec![], &e.enable, &e.args, &e.callees));
+  let slots = fill.slots.iter().map(|slot| {
+    let (kind, columns) = match slot.kind {
+      DepthKind::Gap(first) => (
+        DEPTH_GAP,
+        depth
+          .limbs
+          .iter()
+          .enumerate()
+          .map(|(i, &(width, table))| {
+            [column(first + i), width as usize, offsets[table]]
+          })
+          .collect(),
+      ),
+      DepthKind::External(c) => (DEPTH_EXTERNAL, vec![[column(c), 0, 0]]),
+    };
+    (kind, columns, &slot.enable, &slot.args, &slot.callees)
+  });
+  code.push(u32::try_from(fill.exact.len() + fill.slots.len()).ok()?);
+  for (kind, columns, enable, args, callees) in exact.chain(slots) {
+    code.push(kind);
+    code.push(u32::try_from(columns.len()).ok()?);
+    for word in columns.into_iter().flatten() {
+      code.push(u32::try_from(word).ok()?);
+    }
+    code.push(u32::try_from(callees.len()).ok()?);
+    for &callee in callees {
+      match call(callee)? {
+        Target::Call(slot) => code.push(slot),
+        Target::Map(_) => return None,
+      }
+    }
+    let mut push = |p: &Polynomial, code: &mut Vec<u32>| {
+      let mut tokens = vec![];
+      polynomial(p, constants, &mut tokens, column)?;
+      code.push(u32::try_from(tokens.len() / 2).ok()?);
+      code.extend(tokens);
+      Some(())
+    };
+    push(enable, code)?;
+    code.push(u32::try_from(args.len()).ok()?);
+    for arg in args {
+      push(arg, code)?;
+    }
+  }
+  Some(())
+}
+
+/// Whether a member of function circuit `ci` has a depth column or depth
+/// slots, which compiled writers do not fill.
+pub(super) fn circuit_has_depth<B: WitnessField>(
+  backend: &Backend<'_, '_, B>,
+  ci: usize,
+) -> bool {
+  backend.members[ci]
+    .iter()
+    .any(|&f| !backend.plan.depth.fills[backend.plan.members[f]].is_empty())
 }
 
 /// The host-only operations in function `f`'s population steps.
@@ -573,9 +700,6 @@ fn host_steps<B: WitnessField>(
 ) -> Vec<(HostCause, String)> {
   let maps = &backend.plan.program.program().maps;
   let mut causes = vec![];
-  if has_depth(&backend.plan, f) {
-    causes.push((HostCause::Depth, "depth".to_owned()));
-  }
   for step in &backend.plan.artifact.functions[f].steps {
     let cause = match &step.action {
       Action::Store { .. } => (HostCause::Store, "store".to_owned()),
@@ -672,7 +796,15 @@ impl DevicePlans {
     let blocked: Vec<_> =
       members.iter().filter(|&&f| !self.causes[f].is_empty()).collect();
     if blocked.is_empty() {
-      return if self.selected[ci] && self.compiled.is_some() {
+      return if self.selected[ci]
+        && self.compiled.is_some()
+        && circuit_has_depth(backend, ci)
+      {
+        (
+          vec![HostCause::CompiledDepth],
+          "compiled writers do not fill depth columns".to_owned(),
+        )
+      } else if self.selected[ci] && self.compiled.is_some() {
         (
           vec![HostCause::NotCompiled],
           "no writer in the compiled bundle".to_owned(),
@@ -867,6 +999,19 @@ struct CircuitImage {
   real: u64,
   width: u32,
   scratch: u32,
+  /// Whether a member has gap slots, whose limbs use the range tables.
+  gaps: bool,
+}
+
+/// An uploaded query table.
+#[derive(Clone, Copy)]
+struct TableImage {
+  function: usize,
+  count: usize,
+  /// Words per row: inputs, then outputs.
+  stride: usize,
+  /// Whether the table's recorded heights are uploaded with it.
+  depths: bool,
 }
 
 /// Everything a device record holds except the query table contents, kept
@@ -874,8 +1019,7 @@ struct CircuitImage {
 struct Image {
   code: Vec<u32>,
   constants: Vec<u64>,
-  /// Uploaded query tables: function, rows, words per row.
-  tables: Vec<(usize, usize, usize)>,
+  tables: Vec<TableImage>,
   /// Callee slots in order: table index, inputs, outputs.
   callees: Vec<(usize, u32, u32)>,
   circuits: Vec<Option<CircuitImage>>,
@@ -911,9 +1055,14 @@ impl Image {
       .iter()
       .map(|&f| {
         let (inputs, outputs) = tables[f].widths();
-        (f, tables[f].len(), inputs + outputs)
+        let count = tables[f].len();
+        let depths = tables[f].depths_len() != 0;
+        if depths && tables[f].depths_len() < count {
+          return Err("query record is missing depth heights".to_owned());
+        }
+        Ok(TableImage { function: f, count, stride: inputs + outputs, depths })
       })
-      .collect();
+      .collect::<Result<_, String>>()?;
     let callees = plans
       .callees
       .iter()
@@ -964,6 +1113,12 @@ impl Image {
         width: u32::try_from(backend.system.circuits[ci].main_width)
           .map_err(|_| "circuit width overflow")?,
         scratch,
+        gaps: backend.members[ci].iter().any(|&f| {
+          backend.plan.depth.fills[backend.plan.members[f]]
+            .slots
+            .iter()
+            .any(|slot| matches!(slot.kind, DepthKind::Gap(_)))
+        }),
       });
     }
     Ok(Self {
@@ -988,12 +1143,15 @@ impl Image {
   fn bytes(&self) -> Result<u64, String> {
     let mut bytes = (self.code.len() as u128 * 4).max(8)
       + (self.constants.len() as u128 * 8).max(8);
-    for &(_, count, stride) in &self.tables {
-      bytes += (count as u128 * stride as u128).max(1) * 8;
-      bytes += count.max(1) as u128 * 8;
+    for table in &self.tables {
+      bytes += (table.count as u128 * table.stride as u128).max(1) * 8;
+      bytes += table.count.max(1) as u128 * 8;
+      if table.depths {
+        bytes += table.count.max(1) as u128 * 8;
+      }
     }
     for &(table, _, _) in &self.callees {
-      bytes += Self::index_slots(self.tables[table].1)? as u128 * 4;
+      bytes += Self::index_slots(self.tables[table].count)? as u128 * 4;
     }
     bytes += (self.callees.len() as u128
       * std::mem::size_of::<AiurCallee>() as u128)
@@ -1005,38 +1163,45 @@ impl Image {
     u64::try_from(bytes).map_err(|_| "device record size overflow".into())
   }
 
-  /// Allocates the record on `device`, filling each query table's rows and
-  /// multiplicities with `fill`.
+  /// Allocates the record on `device`, filling each query table's rows,
+  /// multiplicities and heights with `fill`.
   fn upload(
     &self,
     device: i32,
-    mut fill: impl FnMut(usize, &Buffer, &Buffer) -> Result<(), String>,
+    mut fill: impl FnMut(usize, &TableBuffers) -> Result<(), String>,
   ) -> Result<Resident, String> {
     let code = Buffer::upload(device, &self.code)?;
     let constants = Buffer::upload(device, &self.constants)?;
     let mut tables = vec![];
-    for (i, &(_, count, stride)) in self.tables.iter().enumerate() {
-      let words = count.checked_mul(stride).ok_or("table size overflow")?;
-      let rows = Buffer::new(device, words.max(1) * 8)?;
-      let multiplicities = Buffer::new(device, count.max(1) * 8)?;
-      fill(i, &rows, &multiplicities)?;
-      tables.push((rows, multiplicities));
+    for (i, table) in self.tables.iter().enumerate() {
+      let words =
+        table.count.checked_mul(table.stride).ok_or("table size overflow")?;
+      let buffers = TableBuffers {
+        rows: Buffer::new(device, words.max(1) * 8)?,
+        multiplicities: Buffer::new(device, table.count.max(1) * 8)?,
+        depths: table
+          .depths
+          .then(|| Buffer::new(device, table.count.max(1) * 8))
+          .transpose()?,
+      };
+      fill(i, &buffers)?;
+      tables.push(buffers);
     }
     let mut indexes = vec![];
     let mut callees = vec![];
     for &(table, inputs, outputs) in &self.callees {
-      let (_, count, stride) = self.tables[table];
+      let TableImage { count, stride, .. } = self.tables[table];
       let size = Self::index_slots(count)?;
       let mask =
         u32::try_from(size - 1).map_err(|_| "callee index overflow")?;
       let index = Buffer::new(device, size * 4)?;
-      let rows = &tables[table].0;
+      let buffers = &tables[table];
       // SAFETY: `index` holds `size` words; `rows` holds the table rows.
       check(
         unsafe {
           aiur_gpu_build_index(
             device,
-            rows.as_ptr(),
+            buffers.rows.as_ptr(),
             count as u64,
             inputs,
             stride as u32,
@@ -1047,8 +1212,10 @@ impl Image {
         "GPU population callee index",
       )?;
       callees.push(AiurCallee {
-        rows: rows.as_ptr(),
+        rows: buffers.rows.as_ptr(),
         index: index.as_ptr(),
+        multiplicities: buffers.multiplicities.as_ptr(),
+        depths: buffers.depths_ptr(),
         count: count as u64,
         mask,
         inputs,
@@ -1068,14 +1235,15 @@ impl Image {
           .members
           .iter()
           .map(|m| {
-            let (_, count, stride) = self.tables[m.table];
-            let (rows, multiplicities) = &tables[m.table];
+            let TableImage { count, stride, .. } = self.tables[m.table];
+            let buffers = &tables[m.table];
             AiurFunction {
               // SAFETY: offsets index the uploaded code.
               code: unsafe { code.as_ptr::<u32>().add(m.code_offset) },
               constants: constants.as_ptr(),
-              rows: rows.as_ptr(),
-              multiplicities: multiplicities.as_ptr(),
+              rows: buffers.rows.as_ptr(),
+              multiplicities: buffers.multiplicities.as_ptr(),
+              depths: buffers.depths_ptr(),
               count: count as u64,
               first: m.first,
               code_len: m.code_len,
@@ -1108,20 +1276,41 @@ impl Image {
   }
 }
 
+/// One uploaded query table: its rows, multiplicities and, when tracked,
+/// recorded heights.
+struct TableBuffers {
+  rows: Buffer,
+  multiplicities: Buffer,
+  depths: Option<Buffer>,
+}
+
+impl TableBuffers {
+  fn depths_ptr(&self) -> *const u64 {
+    self.depths.as_ref().map_or(std::ptr::null(), |d| d.as_ptr())
+  }
+}
+
 /// A record's device allocations.
 struct Resident {
   circuits: Vec<Option<AiurCircuit>>,
-  /// Rows and multiplicities of each [`Image::tables`] entry.
-  tables: Vec<(Buffer, Buffer)>,
+  /// Each [`Image::tables`] entry's buffers.
+  tables: Vec<TableBuffers>,
   _buffers: Vec<Buffer>,
+}
+
+/// Host copy of an uploaded table's canonical rows, multiplicities and
+/// heights (empty when untracked).
+struct Spilled {
+  rows: Vec<u64>,
+  multiplicities: Vec<u64>,
+  depths: Vec<u64>,
 }
 
 #[derive(Default)]
 struct State {
   resident: Option<Resident>,
-  /// Host copy of each uploaded table's canonical rows and multiplicities,
-  /// taken by the first release.
-  spilled: Option<Vec<(Vec<u64>, Vec<u64>)>>,
+  /// Host copy of each uploaded table, taken by the first release.
+  spilled: Option<Vec<Spilled>>,
 }
 
 /// One proof's device-resident record tables and circuit descriptors.
@@ -1136,8 +1325,8 @@ pub(super) struct DeviceRecord {
   /// Device bytes of the uploaded record.
   bytes: u64,
   compiled: Option<Arc<super::compiled::Selection>>,
-  /// Range-table uses counted on the device; none while depth circuits are
-  /// populated on the host.
+  /// Depth range-table uses of every real row of the device circuits,
+  /// counted at upload.
   ranges: RangeCounts,
 }
 // SAFETY: the raw pointers address device memory owned by `state`, and
@@ -1151,7 +1340,9 @@ fn poisoned<T>(_: T) -> String {
 
 impl DeviceRecord {
   /// Uploads what the device circuits read from `record`: their member
-  /// queries and every callee's queries with an input index.
+  /// queries and every callee's queries with an input index, with the
+  /// recorded heights of tables that track them. Then counts the device
+  /// circuits' depth range-table uses.
   pub(super) fn upload<B: WitnessField>(
     backend: &Backend<'_, '_, B>,
     plans: &DevicePlans,
@@ -1160,9 +1351,9 @@ impl DeviceRecord {
   ) -> Result<Self, String> {
     let image = Image::new(backend, plans, record)?;
     let tables = &record.queries.tables;
-    let resident = image.upload(device, |i, buffer, multiplicities| {
-      let (f, count, stride) = image.tables[i];
-      let table = &tables[f];
+    let resident = image.upload(device, |i, buffers| {
+      let TableImage { function, count, stride, .. } = image.tables[i];
+      let table = &tables[function];
       if table.static_map.is_some() {
         return Err("GPU population cannot read a map's table".into());
       }
@@ -1184,13 +1375,13 @@ impl DeviceRecord {
         return Err("query table storage ended early".into());
       }
       let pieces: Vec<&[u64]> = words.iter().map(|w| &w[..]).collect();
-      buffer.write_staged(0, &pieces, true)?;
+      buffers.rows.write_staged(0, &pieces, true)?;
       // SAFETY: the buffer holds `count * stride` words.
       check(
         unsafe {
           aiur_gpu_canonicalize(
             device,
-            buffer.as_ptr(),
+            buffers.rows.as_ptr(),
             (count * stride) as u64,
           )
         },
@@ -1200,10 +1391,18 @@ impl DeviceRecord {
       if counts.iter().any(|&c| c >= Val::ORDER_U64) {
         return Err("function count reaches field characteristic".into());
       }
-      multiplicities.write_staged(0, &[counts], true)
+      buffers.multiplicities.write_staged(0, &[counts], true)?;
+      if let Some(depths) = &buffers.depths {
+        let heights = &table.depths()[..count];
+        if heights.iter().any(|&d| d >= Val::ORDER_U64) {
+          return Err("query record depth reaches field characteristic".into());
+        }
+        depths.write_staged(0, &[heights], true)?;
+      }
+      Ok(())
     })?;
     let bytes = image.bytes()?;
-    Ok(Self {
+    let mut record = Self {
       device,
       image,
       state: RwLock::new(State { resident: Some(resident), spilled: None }),
@@ -1212,10 +1411,70 @@ impl DeviceRecord {
       bytes,
       compiled: plans.compiled.clone(),
       ranges: RangeCounts::default(),
-    })
+    };
+    record.ranges = record.count_ranges(&backend.plan.depth)?;
+    Ok(record)
   }
 
-  /// Range-table uses the device circuits' rows made.
+  /// Uses of the depth range tables by every real row of the device
+  /// circuits with gap slots: one counting launch per such circuit, which
+  /// fills each row into a per-thread buffer and tallies its gap limbs.
+  fn count_ranges(&self, depth: &DepthPlan) -> Result<RangeCounts, String> {
+    let (_, words) = range_offsets(depth);
+    let counted: Vec<usize> = (0..self.image.circuits.len())
+      .filter(|&ci| {
+        self.image.circuits[ci].as_ref().is_some_and(|c| c.gaps && c.real > 0)
+      })
+      .collect();
+    if counted.is_empty() || words == 0 {
+      return Ok(RangeCounts::default());
+    }
+    let ranges = Buffer::upload(self.device, &vec![0u64; words])?;
+    let state = self.resident()?;
+    let resident = state.resident.as_ref().expect("resident record");
+    // SAFETY: plain query of the launch configuration.
+    let launch = unsafe { aiur_gpu_population_threads() };
+    for ci in counted {
+      let circuit = resident.circuits[ci].ok_or("not a device circuit")?;
+      let width = u64::from(circuit.width).max(1);
+      // At most 2^24 words of per-thread rows, in whole blocks.
+      let threads = ((1u64 << 24) / width / 128 * 128).clamp(128, launch);
+      let rows = Buffer::new(
+        self.device,
+        usize::try_from(threads * width * 8)
+          .map_err(|e| format!("range counting buffer: {e}"))?,
+      )?;
+      let workspace = Workspace::new(
+        self.device,
+        threads.saturating_mul(u64::from(circuit.scratch).max(1)),
+      )?;
+      // SAFETY: device pointers come from this record's resident buffers,
+      // which the read guard keeps alive, and from buffers sized above for
+      // `threads` threads.
+      check(
+        unsafe {
+          aiur_gpu_count_ranges(
+            self.device,
+            &circuit,
+            threads,
+            rows.as_ptr(),
+            workspace.scratch.as_ptr(),
+            ranges.as_ptr(),
+            workspace.error.as_ptr(),
+            workspace.status,
+          )
+        },
+        "GPU depth range counting",
+      )?;
+      // SAFETY: the launch completed, so the page-locked copy is current.
+      population_status(ci, unsafe { workspace.status.read_volatile() })?;
+    }
+    drop(state);
+    let flat = ranges.read(words)?;
+    Ok(RangeCounts::from_flat(depth.tables.iter().map(|t| t.width), &flat))
+  }
+
+  /// Depth range-table uses of every real row of the device circuits.
   pub(super) fn ranges(&self) -> &RangeCounts {
     &self.ranges
   }
@@ -1246,9 +1505,18 @@ impl DeviceRecord {
         // tile job on this thread, which would wait on the write lock it
         // holds.
         state.resident =
-          Some(self.image.upload(self.device, |i, rows, multiplicities| {
-            rows.write_staged(0, &[&spilled[i].0], false)?;
-            multiplicities.write_staged(0, &[&spilled[i].1], false)
+          Some(self.image.upload(self.device, |i, buffers| {
+            let copy = &spilled[i];
+            buffers.rows.write_staged(0, &[&copy.rows], false)?;
+            buffers.multiplicities.write_staged(
+              0,
+              &[&copy.multiplicities],
+              false,
+            )?;
+            match &buffers.depths {
+              Some(depths) => depths.write_staged(0, &[&copy.depths], false),
+              None => Ok(()),
+            }
           })?);
       }
     }
@@ -1270,8 +1538,15 @@ impl DeviceRecord {
         .tables
         .iter()
         .zip(&resident.tables)
-        .map(|(&(_, count, stride), (rows, multiplicities))| {
-          Ok((rows.read(count * stride)?, multiplicities.read(count)?))
+        .map(|(table, buffers)| {
+          Ok(Spilled {
+            rows: buffers.rows.read(table.count * table.stride)?,
+            multiplicities: buffers.multiplicities.read(table.count)?,
+            depths: match &buffers.depths {
+              Some(depths) => depths.read(table.count)?,
+              None => vec![],
+            },
+          })
         })
         .collect::<Result<Vec<_>, String>>();
       match copy {
@@ -1427,6 +1702,11 @@ fn population_status(
       4 => "no table entry for map input",
       5 => "missing recorded callee",
       6 => "invalid hint input",
+      8 => "device polynomial stack overflow",
+      9 => "callee is not below its caller, or its depth gap is too wide",
+      10 => "exact depth slot callee is not one below its caller",
+      11 => "pending recorded callee",
+      12 => "missing recorded callee height",
       _ => "invalid device plan encoding",
     }
   ))

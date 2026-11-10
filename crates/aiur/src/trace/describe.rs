@@ -622,7 +622,7 @@ impl MemberDescription {
 /// record: the `AiurCircuit`, `AiurFunction`, `AiurCallee` and
 /// `AiurPopulationError` layouts, the callee index hash, the launch
 /// signature and the error codes of `cuda/population.cu`.
-pub const COMPILED_ABI_VERSION: u32 = 2;
+pub const COMPILED_ABI_VERSION: u32 = 3;
 
 /// What a compiled writer reads per row: the member's recorded query row of
 /// canonical words (inputs, then outputs) and its full-width multiplicity.
