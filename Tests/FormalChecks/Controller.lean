@@ -148,9 +148,11 @@ def main (argv : List String) : IO UInt32 := do
     -- independently, and resumes from the aggregate cache.
     let structuralManifest := (out / "structural.ixes").toString
     let structural := #[ix, "prove", "--aggregate", "--structural-above", "0", "--ixe", tiny,
-      "--ixes", manifest, "--trace-shards", "--jobs", "2", "--exec-jobs", "2", "--max-ram", "64",
+      "--ixes", manifest, "--trace-shards", "--jobs", "2", "--exec-jobs", "2", "--max-ram", "16",
       "--out-ixes", structuralManifest]
-    let cpuEnv := #[("AIUR_HOST_WORKSPACE_BYTES", some (toString (16 * 2 ^ 30))),
+    -- The fixture environment is small: two CPU lanes of 4 GiB workspace fit
+    -- the 16 GiB budget of an ordinary machine or CI runner.
+    let cpuEnv := #[("AIUR_HOST_WORKSPACE_BYTES", some (toString (4 * 2 ^ 30))),
       ("AIUR_LANES_CACHE_DIR", some (out / "cache").toString)]
     let text ← run c "structural" structural cpuEnv
     let root ← rootOf "structural" text
@@ -169,7 +171,7 @@ def main (argv : List String) : IO UInt32 := do
     -- The claims alone: one line per claim, each a verified proof.
     let claimsManifest := (out / "claims.ixes").toString
     let text ← run c "claims-only" #[ix, "prove", "--ixe", tiny, "--ixes", manifest, "--jobs", "2",
-      "--exec-jobs", "2", "--max-ram", "64", "--no-index", "--out-ixes", claimsManifest] cpuEnv
+      "--exec-jobs", "2", "--max-ram", "16", "--no-index", "--out-ixes", claimsManifest] cpuEnv
     let claims := claimLines text
     unless claims.size == 2 do
       fail s!"claims-only: expected two `shard address` lines, found {claims.size}"
