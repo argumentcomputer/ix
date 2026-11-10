@@ -10,16 +10,39 @@ namespace IxVM
 
 aiur_module IxByteStream where
 
-  -- Port divergence: bytes are typed hints, checked as bytes by `UInt8::from_field`.
+  -- Port divergence: bytes are typed hints, checked as bytes by `UInt8::from_field`, or two at a
+  -- time by `UInt8::from_fields` (one lookup in the byte-pair table). Four bytes per row; the last
+  -- 0 to 3 bytes of a stream take one row.
 def read_byte_stream := aiur_fn⟦
   fn read_byte_stream(channel: Field, idx: Field, len: Field) -> Bytes::Stream {
-
-          match len {
-            0 => {  (&(Lists::Node::Nil)) } ,
-            _ => {  let byte = hint::<Field>("ixvm.io.read", (channel, idx));
-                 let tail = read_byte_stream(channel, idx + 1, len - 1);
-                 (&(Lists::Node::Cons(UInt8::from_field(byte), tail))) } ,
-          }
+      match len {
+        0 => {  (&(Lists::Node::Nil)) } ,
+        1 => {
+          let b0 = hint::<Field>("ixvm.io.read", (channel, idx));
+          (&(Lists::Node::Cons(UInt8::from_field(b0), (&(Lists::Node::Nil))))) } ,
+        2 => {
+          let b0 = hint::<Field>("ixvm.io.read", (channel, idx));
+          let b1 = hint::<Field>("ixvm.io.read", (channel, idx + 1));
+          let (u0, u1) = UInt8::from_fields(b0, b1);
+          (&(Lists::Node::Cons(u0, (&(Lists::Node::Cons(u1, (&(Lists::Node::Nil)))))))) } ,
+        3 => {
+          let b0 = hint::<Field>("ixvm.io.read", (channel, idx));
+          let b1 = hint::<Field>("ixvm.io.read", (channel, idx + 1));
+          let b2 = hint::<Field>("ixvm.io.read", (channel, idx + 2));
+          let (u0, u1) = UInt8::from_fields(b0, b1);
+          (&(Lists::Node::Cons(u0, (&(Lists::Node::Cons(u1,
+            (&(Lists::Node::Cons(UInt8::from_field(b2), (&(Lists::Node::Nil))))))))))) } ,
+        _ => {
+          let b0 = hint::<Field>("ixvm.io.read", (channel, idx));
+          let b1 = hint::<Field>("ixvm.io.read", (channel, idx + 1));
+          let b2 = hint::<Field>("ixvm.io.read", (channel, idx + 2));
+          let b3 = hint::<Field>("ixvm.io.read", (channel, idx + 3));
+          let (u0, u1) = UInt8::from_fields(b0, b1);
+          let (u2, u3) = UInt8::from_fields(b2, b3);
+          let tail = read_byte_stream(channel, idx + 4, len - 4);
+          (&(Lists::Node::Cons(u0, (&(Lists::Node::Cons(u1,
+            (&(Lists::Node::Cons(u2, (&(Lists::Node::Cons(u3, tail)))))))))))) } ,
+      }
     }
 ⟧
 
