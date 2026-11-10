@@ -201,10 +201,10 @@ def Runner.fail (r : Runner) (message : String) : IO Unit := do
 /-- The host-side check of a case's binder data (`$IX_PW_CHECK`): every key
 the conversion asks for answered, every datum the kernel's
 (`IxVM.PwHints.check`), and the annotator, rerun on the witness without its
-data, deterministic. One `PW` line per case; a failure fails the suite. -/
-def Runner.pwCheck (r : Runner) (c : Case) : IO Unit := do
+data, deterministic. Prints one `PW` line; returns the failure, if any. -/
+def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
   let io := c.witness.inputIOBuffer
-  unless IxVM.PwHints.hasHints io do return
+  unless IxVM.PwHints.hasHints io do return none
   let t0 ← IO.monoMsNow
   let again := IxVM.PwHints.annotate (IxVM.PwHints.stripHints io)
   let rerun ← match again with
@@ -220,12 +220,17 @@ def Runner.pwCheck (r : Runner) (c : Case) : IO Unit := do
     let (values, blocks, extra) := IxVM.PwHints.streamCounts io
     IO.println s!"PW {c.label}: {rep.render} values={values} blocks={blocks} \
       variants>0={extra} binders={stats.binders} shares={stats.shares} \
-      fallbacks={stats.fallbacks} annotate_ms={t1 - t0} check_ms={(← IO.monoMsNow) - t1}"
-    unless rep.ok && same do
-      for s in rep.samples do IO.eprintln s!"[{r.suite}] PW {c.label}: {s}"
-      r.fail s!"PW {c.label}: binder data incomplete, not the kernel's, or not deterministic"
-  | .error e, _ => r.fail s!"PW {c.label}: {e}"
-  | _, none => r.fail s!"PW {c.label}: the annotator failed on a rerun"
+      fallbacks={stats.fallbacks} refused={stats.refused} annotate_ms={t1 - t0} \
+      check_ms={(← IO.monoMsNow) - t1}"
+    if rep.ok && same then return none
+    for s in rep.samples do IO.eprintln s!"[{suite}] PW {c.label}: {s}"
+    return some s!"PW {c.label}: binder data incomplete, not the kernel's, or not deterministic"
+  | .error e, _ => return some s!"PW {c.label}: {e}"
+  | _, none => return some s!"PW {c.label}: the annotator failed on a rerun"
+
+/-- `pwCheckCase` in a runner: a failure fails the suite. -/
+def Runner.pwCheck (r : Runner) (c : Case) : IO Unit := do
+  if let some e ← pwCheckCase r.suite c then r.fail e
 
 /-- Write `c` to the current case file. -/
 def Runner.add (r : Runner) (c : Case) : IO Unit := do
