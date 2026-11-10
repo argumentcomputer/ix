@@ -281,11 +281,11 @@ theorem harvestDefnJ {J : Judgements md}
     obtain ⟨sta, hsta, htE, -, -⟩ := hrowsT ψ
     -- vtype's scoping package
     have hwvt : Expr.WScoped 0 vtype :=
-      hJ.wscoped hvrun hwv
+      (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).1
     have hbvt : vtype.looseBVarsBounded 0 = true :=
-      hJ.bounded hvrun hwv hbv' hLv
+      (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).2.1
     have hnlvt : vtype.fvarLeaves = [] := by
-      have hsub := hJ.leaves hvrun hwv
+      have hsub := (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).2.2
       cases hh : vtype.fvarLeaves with
       | nil => rfl
       | cons l ls =>
@@ -475,7 +475,7 @@ theorem harvestDefnJ {J : Judgements md}
       exact divMod_install mp (mp.div_mod φ) mp.eq_law
         (fun {d} {e} {t} hrun hw hb hL =>
           hJ.accepted φ hrun hw hb hL)
-        hJ.toJudgeFrames (hreads φ) ((hclaims φ).2.2.2) ((hclaims φ).2.2.1)
+        hJ.toJudgeFrames (hJ.frame φ) (hreads φ) ((hclaims φ).2.2.2) ((hclaims φ).2.2.1)
         (List.contains_iff_mem.mp hno) hfresh hgenv hcerts
         hA hAclosed hvf' hbv'
         hTa (fun ψ ρ => by
@@ -666,11 +666,11 @@ theorem harvestThmJ {J : Judgements md}
     obtain ⟨sta, hsta, htE, -, -⟩ := hrowsT ψ
     -- vtype's scoping package
     have hwvt : Expr.WScoped 0 vtype :=
-      hJ.wscoped hvrun hwv
+      (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).1
     have hbvt : vtype.looseBVarsBounded 0 = true :=
-      hJ.bounded hvrun hwv hbv' hLv
+      (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).2.1
     have hnlvt : vtype.fvarLeaves = [] := by
-      have hsub := hJ.leaves hvrun hwv
+      have hsub := (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).2.2
       cases hh : vtype.fvarLeaves with
       | nil => rfl
       | cons l ls =>
@@ -1187,11 +1187,11 @@ theorem harvestOpaqueJ {J : Judgements md}
     obtain ⟨sta, hsta, htE, -, -⟩ := hrowsT ψ
     -- vtype's scoping package
     have hwvt : Expr.WScoped 0 vtype :=
-      hJ.wscoped hvrun hwv
+      (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).1
     have hbvt : vtype.looseBVarsBounded 0 = true :=
-      hJ.bounded hvrun hwv hbv' hLv
+      (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).2.1
     have hnlvt : vtype.fvarLeaves = [] := by
-      have hsub := hJ.leaves hvrun hwv
+      have hsub := (hJ.frame ψ hvrun hwv hbv' hLv (CtxOk.nil hnlv) (hA ψ)).2.2
       cases hh : vtype.fvarLeaves with
       | nil => rfl
       | cons l ls =>

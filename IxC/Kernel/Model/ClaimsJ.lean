@@ -76,7 +76,7 @@ variable {V : Type w} [SetTheory V]
     ∃ ta, denoteMeta m.acval env φ d t = some ta
 
 /-- **The scoping a package's outputs keep** (model-free): an annotation keeps its
-input's scope, bound and leaves; an inferred type keeps its subject's. The kernel's
+input's scope, bound and leaves (an inferred type's frame is `InferFrameJ`). The kernel's
 runs satisfy it at a well-formed environment (`judgeFrames_runJ`,
 `Model/JudgeSound.lean`). -/
 structure JudgeFrames (J : Judgements md) (env : Env md) : Prop where
@@ -91,11 +91,19 @@ structure JudgeFrames (J : Judgements md) (env : Env md) : Prop where
   annot_leaves : ∀ {d : Nat} {e e' : Expr md}, J.annot env d e e' →
     Expr.WScoped d e → e.looseBVarsBounded 0 = true →
     ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves
-  /-- the inferred type's scoping -/
-  wscoped : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e → Expr.WScoped d t
-  bounded : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e →
-    e.looseBVarsBounded 0 = true → Expr.LeavesBounded e → t.looseBVarsBounded 0 = true
-  leaves : ∀ {d : Nat} {e t : Expr md}, J.infer env d e t → Expr.WScoped d e →
-    ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves
+
+/-- **An accepted subject's inferred type keeps its frame**, where the subject
+reads (the kernel's runs keep it unconditionally, `inferTypeCore_WScoped` and
+its siblings; a derivation keeps it by its soundness motive, `InferSemFull`). -/
+@[expose] def InferFrameJ (J : Judgements md) {env : Env md} (m : EnvModel V env)
+    (φ : LevelParam → Nat) : Prop :=
+  ∀ {d : Nat} {e t : Expr md} {Δa : List AnnotTerm} {ea : AnnotTerm},
+    J.infer env d e t →
+    Expr.WScoped d e → e.looseBVarsBounded 0 = true →
+    Expr.LeavesBounded e →
+    CtxOk m φ d Δa e →
+    denoteMeta m.acval env φ d e = some ea →
+    Expr.WScoped d t ∧ t.looseBVarsBounded 0 = true ∧
+      ∀ l ∈ t.fvarLeaves, l ∈ e.fvarLeaves
 
 end Ix.Kernel.Model

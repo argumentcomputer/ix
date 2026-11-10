@@ -431,7 +431,8 @@ theorem certValue {J : Judgements md} (mp : EnvModelM V μ env) (ψ : LevelParam
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       ∃ ea, denoteMeta mp.base2.acval env ψ d e = some ea)
-    (hJF : JudgeFrames J env) (hreads : InferReadsJ J mp.base2 ψ)
+    (hJF : JudgeFrames J env) (hfrm : InferFrameJ J mp.base2 ψ)
+    (hreads : InferReadsJ J mp.base2 ψ)
     (hinfC : InferClaimJ J mp.base2 ψ)
     (hdeC : DefEqClaimJ J mp.base2 ψ)
     {c : Key md} {annVal : Expr md} {st : List (Expr md) × Expr md} {proof : Expr md}
@@ -475,15 +476,15 @@ theorem certValue {J : Judgements md} (mp : EnvModelM V μ env) (ψ : LevelParam
   obtain ⟨-, hokT, hmem⟩ := hinfC hinf hWA hBA hLA hCA' hea hta
   -- the inferred type's frame
   have hWtp : Expr.WScoped 4 tp :=
-    hJF.wscoped hinf hWA
+    (hfrm hinf hWA hBA hLA hCA' hea).1
   have hBtp : tp.looseBVarsBounded 0 = true :=
-    hJF.bounded hinf hWA hBA hLA
+    (hfrm hinf hWA hBA hLA hCA' hea).2.1
   have hLtp : Expr.LeavesBounded tp := fun l hl =>
-    hLA l (hJF.leaves hinf hWA
+    hLA l ((hfrm hinf hWA hBA hLA hCA' hea).2.2
       l hl)
   have hCtp : CtxOk mp.base2 ψ 4 Δa tp :=
     hCA'.of_subset
-      (hJF.leaves hinf hWA)
+      ((hfrm hinf hWA hBA hLA hCA' hea).2.2)
   -- the defeq run identifies the inferred type with the statement
   have heq := hdeC hde hWtp hBtp hLtp hWE hBE hLE hCtp hCE hta hvE
     hokT hokE ρ hsat
@@ -884,7 +885,8 @@ theorem dmStmtEq {J : Judgements md} {mp : EnvModelM V μ env} {c : Key md}
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       ∃ ea, denoteMeta mp.base2.acval env ψ d e = some ea)
-    (hJF : JudgeFrames J env) (hreads : InferReadsJ J mp.base2 ψ)
+    (hJF : JudgeFrames J env) (hfrm : InferFrameJ J mp.base2 ψ)
+    (hreads : InferReadsJ J mp.base2 ψ)
     (hinfC : InferClaimJ J mp.base2 ψ)
     (hdeC : DefEqClaimJ J mp.base2 ψ)
     {hyps : List (Expr md)} {lhs rhs proof : Expr md}
@@ -1008,7 +1010,7 @@ theorem dmStmtEq {J : Judgements md} {mp : EnvModelM V μ env} {c : Key md}
       (dmLeavesOk_substConst0 fr.valueNoFvar hlE)
   have hCE := dmCtxOk_natLeaves fr hlen h3 h2 hlE
   -- the certificate: the statement is inhabited
-  obtain ⟨w, hw⟩ := certValue mp ψ hacc hJF hreads hinfC hdeC hfacts
+  obtain ⟨w, hw⟩ := certValue mp ψ hacc hJF hfrm hreads hinfC hdeC hfacts
     hWA hBA hLA hCA hWE hBE hLE hCE hstmt hokE ρ4 hsat
   -- …hence the two sides are equal
   obtain ⟨hx4, hy4⟩ := hslots ρ4 hsat
@@ -1189,7 +1191,8 @@ theorem dmClause1 {J : Judgements md} {mp : EnvModelM V μ env} {c : Key md}
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       ∃ ea, denoteMeta mp.base2.acval env ψ d e = some ea)
-    (hJF : JudgeFrames J env) (hreads : InferReadsJ J mp.base2 ψ)
+    (hJF : JudgeFrames J env) (hfrm : InferFrameJ J mp.base2 ψ)
+    (hreads : InferReadsJ J mp.base2 ψ)
     (hinfC : InferClaimJ J mp.base2 ψ)
     (hdeC : DefEqClaimJ J mp.base2 ψ)
     (ρ : Nat → V) {xx yy : V}
@@ -1389,7 +1392,7 @@ theorem dmClause1 {J : Judgements md} {mp : EnvModelM V μ env} {c : Key md}
       · exact ⟨by omega, trivial, hnatSlot 3 4 rfl⟩
       · exact ⟨by omega, trivial, hnatSlot 2 3 rfl⟩
   -- the statement
-  have hres := dmStmtEq fr heqlaw hacc hJF hreads hinfC hdeC hfacts
+  have hres := dmStmtEq fr heqlaw hacc hJF hfrm hreads hinfC hdeC hfacts
     hlhs hrhs rfl rfl rfl hWA hBA hLA hCA
     (cons xx (cons pt (cons yy (cons xx ρ)))) hsat
   rw [show (fun n => interp V (cons xx (cons pt (cons yy
@@ -1410,7 +1413,8 @@ theorem dmClause2 {J : Judgements md} {mp : EnvModelM V μ env} {c : Key md}
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       ∃ ea, denoteMeta mp.base2.acval env ψ d e = some ea)
-    (hJF : JudgeFrames J env) (hreads : InferReadsJ J mp.base2 ψ)
+    (hJF : JudgeFrames J env) (hfrm : InferFrameJ J mp.base2 ψ)
+    (hreads : InferReadsJ J mp.base2 ψ)
     (hinfC : InferClaimJ J mp.base2 ψ)
     (hdeC : DefEqClaimJ J mp.base2 ψ)
     (ρ : Nat → V) {xx yy : V}
@@ -1685,7 +1689,7 @@ theorem dmClause2 {J : Judgements md} {mp : EnvModelM V μ env} {c : Key md}
       rcases dmLeavesOk_mem (hlH hm1 hm2) hm with rfl | rfl
       · exact ⟨by omega, trivial, hnatSlot 3 4 rfl⟩
       · exact ⟨by omega, trivial, hnatSlot 2 3 rfl⟩
-  have hres := dmStmtEq fr heqlaw hacc hJF hreads hinfC hdeC hfacts
+  have hres := dmStmtEq fr heqlaw hacc hJF hfrm hreads hinfC hdeC hfacts
     hlhs hrhs rfl rfl rfl hWA hBA hLA hCA
     (cons pt (cons pt (cons yy (cons xx ρ)))) hsat
   rw [show (fun n => interp V (cons pt (cons pt (cons yy
@@ -2030,7 +2034,8 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
       Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       ∃ ea, denoteMeta mp.base2.acval env φ d e = some ea)
-    (hJF : JudgeFrames J env) (hreads : InferReadsJ J mp.base2 φ)
+    (hJF : JudgeFrames J env) (hfrm : InferFrameJ J mp.base2 φ)
+    (hreads : InferReadsJ J mp.base2 φ)
     (hinfC : InferClaimJ J mp.base2 φ)
     (hdeC : DefEqClaimJ J mp.base2 φ)
     {c : Key md} {lps : List LevelParam} {type' value' : Expr md}
@@ -2089,7 +2094,7 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
       cases r2 with | cons f3 r3 =>
     refine ⟨fun hg1 hg2 => ?_, fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause2 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause2 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2098,14 +2103,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
               dmEvalV_fvar, reduceIte, dmLeaf] using hg2)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f3 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2116,7 +2121,7 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
       cases r2 with | cons f3 r3 =>
     refine ⟨fun hg1 hg2 => ?_, fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause2 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause2 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2125,14 +2130,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
               dmEvalV_fvar, reduceIte, dmLeaf] using hg2)
       cases md <;> simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       cases md <;> simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f3 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2142,14 +2147,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
   · -- `Nat.gcd`
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
     refine ⟨fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2159,14 +2164,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
   · -- `Nat.land`
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
     refine ⟨fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2176,14 +2181,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
   · -- `Nat.lor`
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
     refine ⟨fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2193,14 +2198,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
   · -- `Nat.xor`
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
     refine ⟨fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2210,14 +2215,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
   · -- `Nat.shiftLeft`
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
     refine ⟨fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
@@ -2227,14 +2232,14 @@ theorem divMod_install {J : Judgements md} (mp : EnvModelM V μ env)
   · -- `Nat.shiftRight`
     cases hruns with | cons f1 r1 => cases r1 with | cons f2 r2 =>
     refine ⟨fun hg => ?_, fun hg => ?_⟩
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inl rfl) f1 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,
               dmEvalV_fvar, reduceIte, dmLeaf] using hg)
       simpa +decide only [dmEvalV_app, dmEvalV_const, dmEvalV_fvar,
         reduceIte, dmLeaf] using h
-    · have h := dmClause1 fr heqlaw hacc hJF hreads hinfC hdeC ρ hx hy
+    · have h := dmClause1 fr heqlaw hacc hJF hfrm hreads hinfC hdeC ρ hx hy
         (Or.inr rfl) f2 (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
         (by (cases md <;> decide))
         (by simpa +decide only [dmEvalV_app, dmEvalV_const,

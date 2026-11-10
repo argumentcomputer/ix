@@ -53,6 +53,8 @@ structure JudgeSound (J : Judgements md) {env : Env md} (m : EnvModel V env) : P
   defeq : ∀ φ, DefEqClaimJ J m φ
   /-- an accepted subject's inferred type reads -/
   reads : ∀ φ, InferReadsJ J m φ
+  /-- an accepted subject's inferred type keeps its frame -/
+  frame : ∀ φ, InferFrameJ J m φ
 
 /-- **The kernel's runs keep scoping** at a well-formed environment. -/
 theorem judgeFrames_runJ {μ : CheckMode} {env : Env md} (hwf : EnvWF env) (F : Nat) :
@@ -61,9 +63,13 @@ theorem judgeFrames_runJ {μ : CheckMode} {env : Env md} (hwf : EnvWF env) (F : 
   annot_wscoped := fun hann hw => annotateCore_WScoped F _ hann hw
   annot_bounded := fun hann hb => annotateCore_looseBVars F _ hann hb
   annot_leaves := fun hann hw hb => annotateCore_leaves_sub F _ hann hw hb
-  wscoped := fun h hw => inferTypeCore_WScoped hwf F h hw
-  bounded := fun h hw hb hL => inferTypeCore_looseBVars hwf F h hw hb hL
-  leaves := fun h hw => inferTypeCore_fvarLeaves hwf F h hw
+
+/-- The kernel's runs keep the inferred type's frame unconditionally. -/
+theorem inferFrame_runJ {μ : CheckMode} {env : Env md} (hwf : EnvWF env) (F : Nat)
+    (m : EnvModel V env) (φ : LevelParam → Nat) : InferFrameJ (runJ μ F) m φ := by
+  intro d e t Δa ea h hw hb hL _ _
+  exact ⟨inferTypeCore_WScoped hwf F h hw, inferTypeCore_looseBVars hwf F h hw hb hL,
+    inferTypeCore_fvarLeaves hwf F h hw⟩
 
 /-- **The kernel's instance**: the runs at fuel `F` satisfy the package, at the
 fold's invariant. -/
@@ -74,5 +80,6 @@ theorem judgeSound_runJ {μ : CheckMode} (hμ : μ.verifiedChecks = true) {env :
   infer := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
   defeq := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
   reads := fun φ => inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
+  frame := inferFrame_runJ mp.base2.wf F mp.base2
 
 end Ix.Kernel.Model
