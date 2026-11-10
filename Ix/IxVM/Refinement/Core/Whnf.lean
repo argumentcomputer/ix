@@ -73,7 +73,7 @@ theorem collect_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h
     obtain ⟨rfl, rfl⟩ := hpair
     have hEa := RepEk.mono extm (show RepE c.κ d Γ _ Ea a from ⟨a', ra, ta⟩)
     have hsn := hA.snoc _ _ _ _ _ _ ev2 d Γ As Ea hAs hEa
-    exact ⟨hdp, _, Hh, As ++ [Ea], rfl, RepEk.mono ev2.heap_extends hHh, hsn,
+    exact ⟨_, _, Hh, As ++ [Ea], rfl, RepEk.mono ev2.heap_extends hHh, hsn,
       (K.mkAppN_snoc Hh Ea As).symm⟩
   · -- `_ => (e, &Nil)`
     exact ⟨_, _, E, [], rfl, RepEk.mono (Heap.Extends.snoc _ _) hE, RepSpine.store_nil _, rfl⟩
