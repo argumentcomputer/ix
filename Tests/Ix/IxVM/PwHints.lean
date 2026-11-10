@@ -206,6 +206,73 @@ def circuit : IO UInt32 := do
     return 0
   Tests.Ix.IxVM.runCases "ixvm-pw-circuit" (← IO.ofExcept circuitCases)
 
+/-! ## Diagnosis
+
+`ixvm-pw-diag` (manual) builds one check claim of the test binary's
+environment as the pins build it (`IX_PW_NAME`, default `Nat.add_comm`) and
+prints, with names: the records the kernel does not install and why (counted by
+reason), the records with binders whose datum the kernel's pass could not
+compute, and why the kernel's pass refuses roots. -/
+
+private def histogram (xs : Array String) : Array (String × Nat) :=
+  let m : Std.HashMap String Nat := xs.foldl (fun m x => m.insert x (m.getD x 0 + 1)) {}
+  m.toArray.qsort (fun a b => a.2 > b.2)
+
+def diag (env : Lean.Environment) : IO UInt32 := do
+  let name := (← IO.getEnv "IX_PW_NAME").getD "Nat.add_comm"
+  let leanName := name.toName
+  let ixon ← _root_.IxVM.ClaimHarness.loadIxonEnv leanName env
+  let addr ← _root_.IxVM.ClaimHarness.lookupAddr ixon leanName
+  let ctx ← IO.ofExcept (_root_.Ix.ClaimContext.ofEnv ixon true)
+  let w ← IO.ofExcept (_root_.IxVM.ClaimHarness.buildClaimWitness ixon (.check ctx addr none))
+  let io := stripHints w.inputIOBuffer
+  let mut names : Std.HashMap Address String := {}
+  for (n, named) in ixon.named do
+    names := names.insert named.addr (toString n)
+    if let some c := ixon.getConst? named.addr then
+      let block := match c.info with
+        | .iPrj p => some p.block | .cPrj p => some p.block
+        | .rPrj p => some p.block | .dPrj p => some p.block
+        | _ => none
+      if let some b := block then
+        unless names.contains b do names := names.insert b s!"block of {n}"
+  let nameOf (a : Address) : String := (names[a]?).getD (toString a)
+  let v := View.ofBuffer io ixon
+  let k ← IO.ofExcept (KernelEnv.ofView v)
+  IO.println s!"[ixvm-pw-diag] {name}: {v.records.size} records, {k.owners.size} owners, \
+    {k.installed} declarations installed, {k.failures.size} records refused"
+  let cut (s : String) : String := (s.toList.take 140).asString
+  for (why, n) in histogram (k.failures.map (cut ·.2)) do
+    IO.println s!"  refused {n}: {why}"
+  for (a, why) in k.failures.extract 0 40 do
+    IO.println s!"  refused {nameOf a}: {cut why}"
+  let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
+  let mut rootErrors : Array String := #[]
+  let mut fallbackRecords : Array (String × Nat) := #[]
+  for a in k.owners do
+    let some c := k.setup.store[a]? | continue
+    let (_, fb) := annotateRecord k core a c
+    if fb > 0 then fallbackRecords := fallbackRecords.push (nameOf a, fb)
+    let n := memberCount c
+    let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
+      if i < n then some (k.setup.cx.memberKey (.member a i)) else none
+    let mr := Ix.Kernel.Reader.MemberReader.mk' k.setup.cx c id self
+    for e in roots c do
+      match mr.read e with
+      | .error _ => rootErrors := rootErrors.push "reader"
+      | .ok raw =>
+        match (core.annotate 0 raw).run {} with
+        | .ok _ => pure ()
+        | .error err =>
+          rootErrors := rootErrors.push (cut (Benchmarks.Kernel.CheckIxeStep.checkOutcome err).2)
+  IO.println s!"[ixvm-pw-diag] records with fallbacks: {fallbackRecords.size}"
+  for (n, fb) in (fallbackRecords.qsort (fun a b => a.2 > b.2)).extract 0 40 do
+    IO.println s!"  fallbacks {fb}: {n}"
+  IO.println s!"[ixvm-pw-diag] roots the kernel's pass refuses: {rootErrors.size}"
+  for (why, n) in (histogram rootErrors).extract 0 30 do
+    IO.println s!"  root {n}: {why}"
+  return 0
+
 /-! ## The corpus measurement -/
 
 private def rssKb : IO Nat := Benchmarks.Kernel.CheckIxeStep.statusKb "VmHWM:"
