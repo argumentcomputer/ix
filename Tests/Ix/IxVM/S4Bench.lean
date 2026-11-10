@@ -118,6 +118,11 @@ def declOwned (env : Ixon.Env) (names : List Lean.Name) : Except String (Array A
       if keys.contains (groupOf a c.info) then owned := owned.push a
   return owned
 
+/-- A recursor's name: last component `rec` or `rec_<k>`. -/
+def isRecName : Lean.Name → Bool
+  | .str _ s => s == "rec" || s.startsWith "rec_"
+  | _ => false
+
 /-- The inductive blocks measured, by kind: a label, the constants whose shard
 groups make up the declarations, and the recursor whose whole closure a
 `check` claim walks. -/
@@ -175,6 +180,15 @@ def bench (env : Lean.Environment) : IO UInt32 := do
       let owned ← declOwned ixonEnv ns
       let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
       return { label := s!"s4 decl {label} ({owned.size} owned)", accept := true, witness }
+    -- the same declarations split: the inductive block alone, then the
+    -- recursor block alone (the other assumed)
+    let (recs, inds) := ns.partition isRecName
+    unless recs.isEmpty || inds.isEmpty do
+      for (part, sel) in [("ind", inds), ("rec", recs)] do
+        cases := cases.push fun _ => do
+          let owned ← declOwned ixonEnv sel
+          let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
+          return { label := s!"s4 decl-{part} {label} ({owned.size} owned)", accept := true, witness }
     cases := cases.push fun _ => do
       let some target := ixonEnv.getAddr? (Ix.Name.fromLeanName (nameOfString r))
         | throw s!"{r} is not in the Ixon environment"
