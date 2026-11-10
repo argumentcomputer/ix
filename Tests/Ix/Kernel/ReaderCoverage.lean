@@ -17,6 +17,13 @@ of the logical fragment:
   `Lean.Syntax` and `Lean.Meta.Grind.Arith.Linear.RingIneqCnstr`), its `Std`
   shards and its module shards (`Std.Data.HashMap`, `Std.Data.DHashMap`).
 
+Each environment is read first as the IxVM suites compile it (the records a
+run may load). Where that declines because an inductive block's recursors are
+absent (IxVM needs a recursor only where a constant uses it; the reader needs
+every block's), the suite names those recursors and reads the environment
+again with them: the records `IxVM.consistent`'s `Draws` lets the reading add
+at addresses the run did not load. The supplemented reading must succeed.
+
 The reader's safety policy declines unsafe and `partial` definitions, unsafe
 axioms and unsafe inductive blocks (`Ix.Kernel.Reader.safetyDeclineOf`,
 `readInductive`): they are outside Lean's logic, and an unsafe constant may have
@@ -89,6 +96,24 @@ def moduleNames (env : Lean.Environment) (pre : Lean.Name) : Array Lean.Name := 
       if pre.isPrefixOf env.header.moduleNames[i.toNat]! then names := names.push n
   return names.qsort Lean.Name.lt
 
+/-- `names` with the recursors of every inductive in their closure
+(`<T>.rec` and the nested `<T>.rec_N`), closed again until stable: the
+records `IxVM.consistent`'s `Draws` lets the reading add. -/
+def withRecursors (env : Lean.Environment) (names : Array Lean.Name) : Array Lean.Name := Id.run do
+  let mut seeds := names
+  for _ in [0:8] do
+    let mut extra : Array Lean.Name := #[]
+    for (_, ci) in Lean.collectDependenciesMany seeds env.constants do
+      if let .inductInfo v := ci then
+        let recs := Lean.mkRecName v.name ::
+          (List.range v.numNested).map fun i => Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
+        for r in recs do
+          if env.constants.contains r && !seeds.contains r && !extra.contains r then
+            extra := extra.push r
+    if extra.isEmpty then break
+    seeds := seeds ++ extra
+  return seeds
+
 def run (env : Lean.Environment) : IO UInt32 := do
   let mut groups : Array (String × Array Lean.Name) := #[]
   let pins := (Tests.Ix.IxVM.kernelCheckEntries ++ Tests.Ix.IxVM.validatingCheckEntries).map
@@ -107,8 +132,16 @@ def run (env : Lean.Environment) : IO UInt32 := do
       IO.eprintln s!"[reader-coverage] {label}: not in the environment: {missing}"
       failed := failed + 1
       continue
-    let ixonEnv ← loadSharedIxonEnv names env
-    unless ← readerAccepts label ixonEnv do failed := failed + 1
+    -- the environment as the IxVM suites compile it: what a run may load
+    let loaded ← loadSharedIxonEnv names env
+    if ← readerAccepts s!"{label} (as loaded)" loaded then continue
+    -- the same, with the recursors the reading may add (`Draws`)
+    let names' := withRecursors env names
+    let added := (names'.filter (!names.contains ·)).filter fun r =>
+      (loaded.getAddr? (Ix.Name.fromLeanName r)).isNone
+    IO.println s!"[reader-coverage] {label}: recursors absent from the loaded records: {added}"
+    let supplemented ← loadSharedIxonEnv names' env
+    unless ← readerAccepts s!"{label} (with those recursors)" supplemented do failed := failed + 1
   return if failed == 0 then 0 else 1
 
 end Tests.Ix.Kernel.ReaderCoverage
