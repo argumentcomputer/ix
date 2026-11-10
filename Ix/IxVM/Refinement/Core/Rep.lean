@@ -1,4 +1,5 @@
 import Ix.IxVM.Refinement.Core.Obs
+import Ix.IxVM.Refinement.Obs.Names
 import Aiur.Library.IxVMRep
 import IxVM.Field
 import IxC.Kernel.Rules.Derived
@@ -83,9 +84,9 @@ theorem nb_isNever : nb.pw.isNever = true := Ix.Kernel.PropWhen.isNever_never
 
 abbrev kexprEnum : String := "KernelTypes::KExprNode"
 abbrev kexprTy : Generic.Ty := .ptr (.named "KernelTypes::KExprNode" [])
-abbrev kexprListEnum : String := nodeEnumName kexprTy
+abbrev kexprListEnum : String := Obs.Names.«Lists::Node<&KernelTypes::KExprNode>»
 abbrev klevelTy : Generic.Ty := .ptr (.named "KernelTypes::KLevelNode" [])
-abbrev klevelListEnum : String := nodeEnumName klevelTy
+abbrev klevelListEnum : String := Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>»
 abbrev limbListEnum : String := nodeEnumName (.named "UInt64::U64" [])
 abbrev byteListEnum : String := "${\"name\":\"Lists::Node\",\"types\":[\"field\"]}"
 abbrev addrTy : Aiur.Ty := .tuple (List.replicate 32 .field)

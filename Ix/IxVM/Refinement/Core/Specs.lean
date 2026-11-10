@@ -136,10 +136,10 @@ structure CIRep (c : Ctx) (h : Heap F) (ci : SourceValue F)
 
 /-! ## Instance names of the generic list functions -/
 
-abbrev lengthName : String := (Instance.mk "Lists::length" [kexprTy]).symbol
-abbrev lookupName : String := (Instance.mk "Lists::lookup" [kexprTy]).symbol
-abbrev concatName : String := (Instance.mk "Lists::concat" [kexprTy]).symbol
-abbrev snocName : String := (Instance.mk "Lists::snoc" [kexprTy]).symbol
+abbrev lengthName : String := Obs.Names.«Lists::length<&KernelTypes::KExprNode>»
+abbrev lookupName : String := Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>»
+abbrev concatName : String := Obs.Names.«Lists::concat<&KernelTypes::KExprNode>»
+abbrev snocName : String := Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>»
 
 theorem length_inst : instanceName [] "Lists::length" (some [kexprTy]) = lengthName := by
   decide +kernel
