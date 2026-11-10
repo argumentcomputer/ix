@@ -174,8 +174,9 @@ def isParam (n : String) : M Bool := return (← get).params.contains n
 def resolveT (t : T) : M T := return t.resolve (← get).path.subst
 
 def addFact (name : String) (fact : List Piece) (proof : String) (hyp : Bool := true) : M Unit :=
-  modifyPath fun p => { p with facts := p.facts.push (name, fact, proof),
-    hyps := if hyp then p.hyps.push name else p.hyps }
+  modifyPath fun p =>
+    let hyps := if hyp then p.hyps.push name else p.hyps
+    { p with facts := p.facts.push (name, fact, proof), hyps := hyps }
 
 def useLemma (l : String) : M Unit :=
   modifyPath fun p => if p.lemmas.contains l then p else { p with lemmas := p.lemmas.push l }

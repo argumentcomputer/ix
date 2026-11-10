@@ -304,7 +304,7 @@ theorem matchPattern_load_inv {p : Pattern F} {v : SourceValue F} {heap : Heap F
   | error e => simp [hl, bind, Except.bind] at h
   | ok u =>
     simp only [hl, bind, Except.bind] at h
-    exact ⟨u, hl, h⟩
+    exact ⟨u, rfl, h⟩
 
 omit [Field F] in
 /-- A flat constructor pattern that did not match: the value is no such constructor. -/
