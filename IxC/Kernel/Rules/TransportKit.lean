@@ -255,12 +255,36 @@ theorem renFV_strLitToConstructor (s : String) :
 theorem renFV_of_natOpResult {c : Key md} {a b : Nat} {r : Expr md}
     (h : natOpResult c a b = some r) : r.renFV ρ = r := by
   unfold natOpResult at h
-  repeat (split at h)
+  repeat' (split at h)
   all_goals first
     | (obtain rfl := Option.some.inj h; rfl)
     | exact nomatch h
 
+theorem fvarLeaves_sub_renFV {a b : Expr md} (h : ∀ l ∈ a.fvarLeaves, l ∈ b.fvarLeaves) :
+    ∀ l ∈ (a.renFV ρ).fvarLeaves, l ∈ (b.renFV ρ).fvarLeaves := by
+  rw [fvarLeaves_renFV, fvarLeaves_renFV]
+  intro l hl
+  obtain ⟨l', hl', rfl⟩ := List.mem_map.mp hl
+  exact List.mem_map.mpr ⟨l', h l' hl', rfl⟩
+
+theorem fvarLeaves_all_renFV {a b : Expr md}
+    (h : a.fvarLeaves.all (fun l => b.fvarLeaves.contains l) = true) :
+    (a.renFV ρ).fvarLeaves.all (fun l => (b.renFV ρ).fvarLeaves.contains l) = true := by
+  rw [List.all_eq_true] at h ⊢
+  intro l hl
+  have hsub : ∀ l ∈ a.fvarLeaves, l ∈ b.fvarLeaves := fun l hl =>
+    List.contains_iff_mem.mp (h l hl)
+  exact List.contains_iff_mem.mpr (fvarLeaves_sub_renFV hsub l hl)
+
+theorem getD_map_renFV :
+    ∀ (l : List (Expr md)) (n : Nat),
+      (l.map (renFV ρ)).getD n (.bvar 0) = (l.getD n (.bvar 0)).renFV ρ
+  | [], _ => rfl
+  | _ :: _, 0 => rfl
+  | _ :: l, n + 1 => getD_map_renFV l n
+
 end Expr
+
 
 /-! ## The prop-ness readers ignore the renaming -/
 
@@ -500,9 +524,7 @@ theorem unfoldDefinition_mono (h : EnvExt env env') {e e' : Expr md}
     (hu : unfoldDefinition env e = some e') : unfoldDefinition env' e = some e' := by
   unfold unfoldDefinition at hu ⊢
   split at hu
-  · rename_i n us hfn
-    rw [hfn]
-    try dsimp only
+  · rename_i n _ _
     cases hf : env.find? n with
     | none => rw [hf] at hu; exact nomatch hu
     | some c => rw [h.find hf]; rw [hf] at hu; exact hu
