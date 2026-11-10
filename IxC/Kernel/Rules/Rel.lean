@@ -182,6 +182,25 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       Infer env .full d (cv.type.instantiateLevelParams cv.levelParams us) s →
       Red env d s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
       Red env d (.const n us) (value.instantiateLevelParams cv.levelParams us)
+  /-- **An equation's proof rewrites its left side** (S2's N13 as equality
+  reflection, lane l5): a constant application `a` reduces to `b` given a proof
+  `p` of `@Eq.{u} T a b` at this environment (its leaves among `a`'s), the
+  typings of `a` and `b` at `T`, and `T`'s sort at `u`. Sound because `Eq`
+  denotes equality (`eq_law`). IxVM's native results reduce through the role
+  equations' evidence, instantiated at the arguments. The constant head keeps a
+  sort or a `∀` reducing only to itself. -/
+  | eqProof {d : Nat} {a b p T ta tb sT : Expr md} {c : Key md} {ua : List Level}
+      {u v : Level} {ci : ConstantInfo md} :
+      a.getAppFn = .const c ua →
+      env.find? eqName = some ci →
+      Infer env .full d p (.app (.app (.app (.const eqName [u]) T) a) b) →
+      p.wscopedB d = true → p.looseBVarsBounded 0 = true →
+      (∀ l ∈ p.fvarLeaves, l ∈ a.fvarLeaves) →
+      Infer env .full d a ta → DefEq env d ta T →
+      Infer env .full d b tb → DefEq env d tb T →
+      Infer env .full d T sT → Red env d sT (.sort v) →
+      (∀ φ : LevelParam → Nat, Level.eval φ v = Level.eval φ u) →
+      Red env d a b
   /-- A `Nat`-literal major converts to constructor form, one layer
   (`litMajorToCtor`'s `litToCtorIfNat` arm, `Core.lean:739`). -/
   | natLit {d : Nat} {n : Nat} :

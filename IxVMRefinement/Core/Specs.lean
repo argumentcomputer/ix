@@ -1,5 +1,6 @@
-import Ix.IxVM.Refinement.Core.Rep
+import IxVMRefinement.Core.Rep
 import Ix.IxVM.Refinement.Statement
+import Ix.IxVM.Consistency.Statement
 import IxVM.Lookup
 
 /-! # The slice's statements: one spec per function, and what is assumed
@@ -20,11 +21,10 @@ form the induction consumes.
 `whnf_apply_beta` branches on it being `0` or `1`; for a list of `p + 1` consumed
 arguments it would take the one-argument branch on a telescope of `p + 1`
 binders, which is wrong, not merely unproved (T3-2's wrap, in a new place). So a
-bound is needed. The slice uses `calls.length < 2^32` as a stand-in. The bound
-the circuit actually supplies is on *distinct* calls (rows), not on calls
-counted with repetition; it suffices here because the chain of `peel_beta`
-calls that builds the consumed list has pairwise distinct arguments (each
-receives a freshly stored accumulator), but that argument is not made here. -/
+bound is needed: L0's, at most `2^39` distinct memoized calls in a valid ROM
+(`MemoBounded`). It bounds the list because `Lists::length` recurses through every
+suffix, and lists of different lengths need different keys
+(`IxVMRefinement.Core.Bound`, `length_lt`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -62,16 +62,21 @@ def nativeNames : List String :=
    "KernelNatPrim::try_int_prim_dispatch",
    "KernelDefEq::k_is_def_eq_slow", "KernelDefEq::k_def_eq_rebase"]
 
+/-- **L0's size bound**: at most `2^39` distinct memoized calls, in a valid ROM (the trace
+ROM of L0 is valid whenever the headline's width ROM is: `traceROM_valid`). -/
+abbrev MemoBounded (calls : List (Call F)) : Prop :=
+  ∃ rom : ROM F, rom.Valid ∧ IxVM.Consistency.MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
+
 /-- **The calls are good**: they hashed no collision; every record they load is
-in the view and in the fragment; they call no native dispatcher; and there are
-fewer than `2^32` of them (the stand-in bound). -/
+in the view and in the fragment; they call no native dispatcher; and they have at
+most `2^39` distinct memoized calls in a valid ROM (L0's bound, `MemoBounded`). -/
 def Good (c : Ctx) (calls : List (Call F)) : Prop :=
   ¬ c.V.HashedCollision [] calls ∧
   (∀ cl ∈ calls, cl.name = "Ingress::get_ci" → ∀ addr a, cl.args = [addr] →
     Bytes.RepAddressRef addrTy cl.heap a addr →
       (∃ lc, c.V.env.consts.get? (ixAddr a) = some lc) ∧ c.frag (ixAddr a)) ∧
   (∀ cl ∈ calls, cl.name ∉ nativeNames) ∧
-  calls.length < 4294967296
+  MemoBounded calls
 
 /-- The fragment's hypothesis on loads: every record the calls load is in the view
 and in the fragment. -/
@@ -103,10 +108,11 @@ theorem collision_mono {V : View} {calls₁ calls₂ : List (Call F)}
     · exact .inr (hashed_mono hsub hp)
 
 theorem Good.sub {c : Ctx} {calls₁ calls₂ : List (Call F)} (g : Good c calls₂)
-    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (hlen : calls₁.length ≤ calls₂.length) :
+    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (_hlen : calls₁.length ≤ calls₂.length) :
     Good c calls₁ :=
   ⟨fun h => g.1 (collision_mono hsub h), fun cl hcl => g.2.1 cl (hsub cl hcl),
-    fun cl hcl => g.2.2.1 cl (hsub cl hcl), Nat.lt_of_le_of_lt hlen g.2.2.2⟩
+    fun cl hcl => g.2.2.1 cl (hsub cl hcl),
+    let ⟨rom, hv, keys, hk, cover⟩ := g.2.2.2; ⟨rom, hv, keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩⟩
 
 /-- **The record-load escape** (the mechanics of the statement's escape at one
 load): with no hashed collision, every byte string the run hashed to a stored
@@ -136,10 +142,10 @@ structure CIRep (c : Ctx) (h : Heap F) (ci : SourceValue F)
 
 /-! ## Instance names of the generic list functions -/
 
-abbrev lengthName : String := (Instance.mk "Lists::length" [kexprTy]).symbol
-abbrev lookupName : String := (Instance.mk "Lists::lookup" [kexprTy]).symbol
-abbrev concatName : String := (Instance.mk "Lists::concat" [kexprTy]).symbol
-abbrev snocName : String := (Instance.mk "Lists::snoc" [kexprTy]).symbol
+abbrev lengthName : String := Obs.Names.«Lists::length<&KernelTypes::KExprNode>»
+abbrev lookupName : String := Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>»
+abbrev concatName : String := Obs.Names.«Lists::concat<&KernelTypes::KExprNode>»
+abbrev snocName : String := Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>»
 
 theorem length_inst : instanceName [] "Lists::length" (some [kexprTy]) = lengthName := by
   decide +kernel
@@ -312,12 +318,12 @@ structure Assumed (c : Ctx) : Prop where
 
 /-! ## Matching helpers -/
 
-theorem natCast_lt_inj {a b : Nat} (ha : a < 4294967296) (hb : b < 4294967296)
+theorem natCast_lt_inj {a b : Nat} (ha : a < 2 ^ 39) (hb : b < 2 ^ 39)
     (heq : (a : F) = (b : F)) : a = b := by
   rw [ZMod.natCast_eq_natCast_iff'] at heq
-  have hm : (4294967296 : Nat) ≤ Aiur.Library.U32.Goldilocks.modulus := by
-    simp only [Aiur.Library.U32.Goldilocks.modulus]; omega
-  rwa [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)] at heq
+  have hm : (2 ^ 39 : Nat) ≤ Aiur.Library.U32.Goldilocks.modulus := by
+    norm_num [Aiur.Library.U32.Goldilocks.modulus]
+  rwa [Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le ha hm), Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le hb hm)] at heq
 
 theorem matchList_wild {heap : Heap F} {types : Types} :
     ∀ (n : Nat) (vs : List (SourceValue F)) {bs : Environment F Nat},

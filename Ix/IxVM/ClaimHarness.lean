@@ -485,12 +485,25 @@ aggregating their members' check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
-/-- The kernel shard claim and its canonical subject/assumption trees, without
-    constructing the witness byte closure. -/
-def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+/-- The owned constants a shard claim may name: `owned` without those outside
+    Lean's logic (unsafe or partial, or projected from such a block;
+    `Ixon.Env.outsideLogicAt`), which IxVM refuses as seeds
+    (`KernelClaim::assert_claimable`). The rest stays closed under the claim
+    walk: a safe constant references no unsafe one (`KernelCheck::assert_safety`),
+    so no walk from it reaches what is left out. -/
+def claimableOwned (env : Ixon.Env) (owned : Array Address) : Except String (Array Address) := do
+  if owned.isEmpty then throw "shardCheckEnvClaim: empty owned set"
+  let kept := env.dropOutsideLogic owned
+  if kept.isEmpty then
+    throw s!"shardCheckEnvClaim: all {owned.size} owned constant(s) are unsafe or partial, \
+      outside Lean's logic; IxVM certifies none of them"
+  pure kept
+
+/-- The shard claim over `owned`, already `claimableOwned`, under the bound
+    `env`. -/
+def shardCheckEnvClaimTreesOf (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
-  let env ← withDefaultRoleBinding env
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
@@ -529,13 +542,23 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
   | none => pure ()
   pure (claim, trees)
 
+/-- The kernel shard claim and its canonical subject/assumption trees, without
+    constructing the witness byte closure. Its owned tree holds the
+    `claimableOwned` constants of `owned`. -/
+def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let env ← withDefaultRoleBinding env
+  shardCheckEnvClaimTreesOf env (← claimableOwned env owned) assumeBinding
+
 /-- Claim/tree construction plus the byte closure needed by a Lean-built shard
     witness. -/
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
     (assumeBinding : Bool := false) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let env ← withDefaultRoleBinding env
-  let (claim, trees) ← shardCheckEnvClaimTrees env owned assumeBinding
+  let owned ← claimableOwned env owned
+  let (claim, trees) ← shardCheckEnvClaimTreesOf env owned assumeBinding
   let primitiveRoots := Ix.primAddrSet.toArray.filter env.consts.contains
   let closure := closureFromRoots env
     (owned ++ primitiveRoots ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
@@ -558,9 +581,12 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
   return (claim, { funcName := `verify_claim
                    input := digestKey, inputIOBuffer := ioBuffer })
 
-/-- Canonical merkle tree over every const address in `env`. -/
+/-- Canonical merkle tree over every const address in `env` in Lean's logic
+    (`Ixon.Env.inLogicConsts`): the owned tree of a `checkEnv` claim on the
+    whole of `env`, which leaves out the unsafe and partial constants IxVM
+    refuses as seeds. -/
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
-  Ix.AssumptionTree.canonical (env.consts.keys.toArray)
+  Ix.AssumptionTree.canonical env.inLogicConsts
 
 /-- Subject-only `verify_const` witness. -/
 def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWitness := do

@@ -1,4 +1,4 @@
-import Ix.IxVM.Refinement.Core.DefEq
+import IxVMRefinement.Core.DefEq
 import IxC.Kernel.Model.Rules.Sound
 import IxC.Kernel.Audit.Axioms
 
@@ -8,7 +8,7 @@ Spike S3. `whnf_model`: an observed derivation of IxVM's `whnf` on a
 represented term either hashed a collision, or its result represents a reduct
 whose reading is the input's, in every model of the environment
 (`Ix.Kernel.Model.Rules.red_sound`). Together with the step lemmas and the
-induction (`Ix.IxVM.Refinement.Core.Whnf`), this is the slice of plan 8.7 S3,
+induction (`IxVMRefinement.Core.Whnf`), this is the slice of plan 8.7 S3,
 under the assumptions collected in `Assumed` and the fragment hypotheses of
 `Good`.
 
@@ -60,7 +60,7 @@ theorem whnf_red (c : Ctx) (hA : Assumed c) {rc e types : SourceValue F} {h h' :
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) :
+    (bound : MemoBounded calls) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ E, RepE c.κ d Γ h E e → ∃ E', RepE c.κ d Γ h' E' r ∧ Red c.env d E E' := by
   by_cases hc : c.V.HashedCollision [] calls
@@ -74,7 +74,7 @@ theorem defEq_of_run (c : Ctx) (hA : Assumed c) {rc a b types : SourceValue F}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) (hr : r ≠ .field 0) :
+    (bound : MemoBounded calls) (hr : r ≠ .field 0) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ A B, RepE c.κ d Γ h A a → RepE c.κ d Γ h B b → DefEq c.env d A B := by
   by_cases hc : c.V.HashedCollision [] calls
@@ -90,7 +90,7 @@ theorem defEq_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory
     {rc a b types : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) (hr : r ≠ .field 0) :
+    (bound : MemoBounded calls) (hr : r ≠ .field 0) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ A B, RepE c.κ d Γ h A a → RepE c.κ d Γ h B b →
         Ix.Kernel.Model.Rules.DefEqSem m φ d A B := by
@@ -111,7 +111,7 @@ theorem whnf_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory 
     {rc e types : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
-    (bound : calls.length < 4294967296) :
+    (bound : MemoBounded calls) :
     c.V.HashedCollision [] calls ∨
       ∀ d Γ E, RepE c.κ d Γ h E e →
         ∃ E', RepE c.κ d Γ h' E' r ∧ Ix.Kernel.Model.Rules.RedSem m φ d E E' := by
@@ -152,5 +152,6 @@ theorem Infer.toIO {env : Ix.Kernel.Env .anon} :
 
 end IxVM.Refinement.Core
 
-#guard_module_axioms Ix.IxVM.Refinement.Core.Obs Ix.IxVM.Refinement.Core.Rep
-  Ix.IxVM.Refinement.Core.Specs Ix.IxVM.Refinement.Core.Whnf Ix.IxVM.Refinement.Core.DefEq
+#guard_module_axioms IxVMRefinement.Core.Obs IxVMRefinement.Core.Rep
+  IxVMRefinement.Core.Specs IxVMRefinement.Core.Bound IxVMRefinement.Core.Whnf
+  IxVMRefinement.Core.DefEq

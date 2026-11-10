@@ -14,7 +14,9 @@ constants are the primitive reductions of `IxVMPrim`, the performance shapes of
 compiler's mutual and auxiliary shapes (`Tests.Ix.Compile.Mutual`), the string
 reductions (`Tests.Ix.Kernel.StringReduction`) and closures from `Init`.
 Each pins a regression that once rejected it; the comments in
-`Tests.Ix.IxVMFixtures` name them.
+`Tests.Ix.IxVMFixtures` name them. Every one is in Lean's logic: a claim on an
+unsafe or partial constant (`IxVMInd.UnsafeSquash`, an `_unsafe_rec`
+companion) is refused at its seed (`ixvm-claim-safety`).
 
 The claims assume their role binding (validator 4), as an aggregate's claims
 do; `validatingCheckEntries` validate the roles their proofs use (validator
