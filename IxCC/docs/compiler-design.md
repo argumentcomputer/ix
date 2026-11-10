@@ -551,9 +551,24 @@ took 12.8 s. With the middle end's worst certificate (64 shrink steps each
 just under `maxStepWork`, 10.7 s), `checkSrc` (it refuses about 5·10⁸ tree
 nodes in 4.3 s) and the front end on a program at `maxSrcVisits` (about 6 s
 and 4.3 GB per 10⁸ tree nodes before it refuses an empty certificate, so about
-16 s and 12 GB at the budget), the slowest certificate the budgets admit or
-refuse costs a verifier an estimated 45 s; the stages were measured
-separately, not composed from bytes. The producer (`Recheck.produce`,
+16 s and 12 GB at the budget), the stages add up to about 45 s for the
+slowest certificate the budgets admit or refuse. That sum is an estimate from
+stages measured separately, not a measurement, and it leaves out typing.
+Measured from bytes as single certificates (native `ixcc check-cert`,
+2026-11-10), typing at ingress dominates: an honest root of the committed
+`fixtures/corpus/phase1-scalar/scalar.ixe` (1,543 constants) is accepted in
+51.8 s, 51.7 s of it typing (0.46 s with `--no-typecheck`). The erased
+typechecker's fuel (`Tc.maxRecFuel`) is per constant, so no budget bounds the
+typing of a whole closure. Of the inputs built to stress the other stages, the
+slowest accepted is a closure of 8,006 constants (`tests-recheck --write-wide
+DIR many 8000`) with its honest certificate padded to 64 middle-end steps and
+its allocation edits at the caps, 7.8 s and 167 MB, 4.7 s of it ingress. A
+closure of 16,371 constants is refused for want of back-end parts after 19.5 s
+and 155 MB, 16.6 s of it typing; in process, with the producer's back end added
+(`tests-recheck --probe run many 16370`), it takes 54 s, the producer
+included. No certificate near the front-end, middle-end, back-end and
+allocation limits at once has been built. The
+producer (`Recheck.produce`,
 `ixcc compile`) is not bounded the same way: its `X86.Layout.Order.produce`
 is quadratic like `tunnel`.
 

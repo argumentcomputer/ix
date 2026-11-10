@@ -1558,7 +1558,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-10 root result shapes (FD): totality of the immortal view on result shapes, readback-discovery facts",
+ "2026-11-10: result shapes at immortal roots; every certificate list capped in program quantities, with loop forms for the allocation validator's list operations",
  "axiom_sha256":
  "2926fa2533aaaded998760b6011615dd83d553cdec45ef8d9d61bfa7fd59fa9e",
  "axiom_count": 5483}

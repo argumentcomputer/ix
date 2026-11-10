@@ -474,14 +474,18 @@ theorem step_known (prm : Anf.Shrink.Params) :
     ∀ (s : Anf.Pipeline.Step) (P Q : Anf.Program), P.WF → s.run prm P = .ok Q → Q.known = P.known
   | .shrink c, P, Q, _, h => by
     simp only [Anf.Pipeline.Step.run] at h
-    obtain ⟨x, hs, hc⟩ := Lam.ModesOk.bind_ok h
-    rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
-    exact (Anf.Shrink.Proof.run_global hs).2.1
+    split at h
+    · obtain ⟨x, hs, hc⟩ := Lam.ModesOk.bind_ok h
+      rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+      exact (Anf.Shrink.Proof.run_global hs).2.1
+    · cases h
   | .inline r, P, Q, _, h => by
     simp only [Anf.Pipeline.Step.run] at h
-    obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
-    rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
-    exact (Anf.Inline.Proof.round_global hr).2.1
+    split at h
+    · obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
+      rw [Anf.Pipeline.Proof.checkGlobalNodes_ok hc]
+      exact (Anf.Inline.Proof.round_global hr).2.1
+    · cases h
   | .specialize c, P, Q, hw, h => by
     simp only [Anf.Pipeline.Step.run] at h
     obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
