@@ -117,6 +117,9 @@ structure Stats where
   freeShares : Nat := 0
   /-- binders whose datum the kernel's pass could not compute, given `never` -/
   fallbacks : Nat := 0
+  /-- binders of a definition value's top λ chain whose datum the kernel's pass
+  could not compute, given the declared type's datum at the same place -/
+  inherited : Nat := 0
   /-- declarations the kernel installed, and records it refused -/
   installed : Nat := 0
   refused : Nat := 0
@@ -129,12 +132,13 @@ def Stats.add (a b : Stats) : Stats :=
     binders := a.binders + b.binders, params := a.params + b.params,
     shares := a.shares + b.shares, extraVariants := a.extraVariants + b.extraVariants,
     freeShares := a.freeShares + b.freeShares,
-    fallbacks := a.fallbacks + b.fallbacks, installed := a.installed + b.installed,
+    fallbacks := a.fallbacks + b.fallbacks, inherited := a.inherited + b.inherited,
+    installed := a.installed + b.installed,
     refused := a.refused + b.refused, values := a.values + b.values }
 
 def Stats.render (s : Stats) : String :=
   s!"records={s.records} blocks={s.blocks} binders={s.binders} params={s.params} \
-    shares={s.shares} free-shares={s.freeShares} variants>0={s.extraVariants} fallbacks={s.fallbacks} \
+    shares={s.shares} free-shares={s.freeShares} variants>0={s.extraVariants} fallbacks={s.fallbacks} inherited={s.inherited} \
     installed={s.installed} refused={s.refused} values={s.values}"
 
 /-! ## Records and their entries -/
@@ -158,6 +162,21 @@ def roots (c : Ixon.Constant) : Array Ixon.Expr :=
   | .quot q => #[q.typ]
   | .recr r => ofRecr r
   | .muts ms => ms.foldl (init := #[]) fun acc m => acc ++ ofMember m
+  | _ => #[]
+
+/-- For each root, the root that is its declared type when it is a definition's
+value. -/
+def valueTypes (c : Ixon.Constant) : Array (Option Nat) :=
+  let none' (n : Nat) : Array (Option Nat) := (List.replicate n none).toArray
+  let ofMember (base : Nat) : Ixon.MutConst → Array (Option Nat)
+    | .defn _ => #[none, some base]
+    | .indc i => none' (1 + i.ctors.size)
+    | .recr r => none' (1 + r.rules.size)
+  match c.info with
+  | .defn _ => #[none, some 0]
+  | .axio _ | .quot _ => #[none]
+  | .recr r => none' (1 + r.rules.size)
+  | .muts ms => ms.foldl (init := #[]) fun acc m => acc ++ ofMember acc.size m
   | _ => #[]
 
 /-- The number of members `Rec` may name. -/
@@ -457,6 +476,8 @@ structure WState where
   blocks : Array Block := #[]
   memo : Std.HashMap (Nat × List Nat) (KExpr × Nat) := {}
   fallbacks : Nat := 0
+  /-- data taken from the declared type where the kernel's pass could not run -/
+  inherited : Nat := 0
 
 abbrev CM := Ix.Kernel.Cached.CheckCM .anon
 abbrev WM := StateT WState CM
@@ -475,15 +496,19 @@ private def freshId : WM Nat :=
 /-- The kernel's datum of a binder whose annotated opened body is `body`,
 at `depth` (the body's): `annotPwPiI` for a ∀, `annotPwLamI` for a λ.
 Where the kernel's pass fails, `never`. -/
-def datum (rc : RecCx) (pi : Bool) (depth : Nat) (body : KExpr) : WM Ix.Kernel.PropWhen := do
+def datum (rc : RecCx) (pi : Bool) (depth : Nat) (body : KExpr)
+    (typed : Option Ix.Kernel.PropWhen := none) : WM Ix.Kernel.PropWhen := do
   let act : CM Ix.Kernel.PropWhen :=
     if pi then Ix.Kernel.Cached.annotPwPiI rc.core rc.fe depth body
     else Ix.Kernel.Cached.annotPwLamI rc.core rc.fe depth body
   let res : Option Ix.Kernel.PropWhen ←
     (tryCatch (some <$> act) (fun _ => pure none) : CM (Option Ix.Kernel.PropWhen))
-  match res with
-  | some pw => pure pw
-  | none => do fallback; pure Ix.Kernel.PropWhen.never
+  match res, typed with
+  | some pw, _ => pure pw
+  | none, some pw => do
+    modify fun st => { st with inherited := st.inherited + 1 }
+    pure pw
+  | none, none => do fallback; pure Ix.Kernel.PropWhen.never
 
 private def reserve : EM Nat :=
   modifyGet fun nodes => (nodes.size, nodes.push (.binder none))
@@ -511,43 +536,48 @@ private def variantOf (n : Nat) (nodes : Array Node) : WM Nat := do
 
 /-- The walk of one entry's tree under `ctx` (innermost first) at binder
 depth `depth`. -/
-def walk : Nat → RecCx → List CtxEntry → Nat → Ixon.Expr → EM KExpr
-  | 0, _, _, _, _ => do fallback; pure (.sort .zero)
-  | fuel + 1, rc, ctx, depth, e =>
+def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Expr → EM KExpr
+  | 0, _, _, _, _, _ => do fallback; pure (.sort .zero)
+  | fuel + 1, rc, ctx, depth, exp, e =>
     match e with
     | .var i =>
       match ctx[i.toNat]? with
       | some c => pure c.val
       | none => do fallback; pure (Ix.Kernel.Expr.mkBvar i.toNat)
     | .app f a => do
-      let f' ← walk fuel rc ctx depth f
-      let a' ← walk fuel rc ctx depth a
+      let f' ← walk fuel rc ctx depth none f
+      let a' ← walk fuel rc ctx depth none a
       pure (.app f' a')
     | .lam c t b => do
       let ord ← reserve
-      let t' ← walk fuel rc ctx depth t
+      let t' ← walk fuel rc ctx depth none t
       let id ← freshId
-      let b' ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) b
-      let pw ← datum rc false (depth + 1) b'
+      -- a definition value's top λ chain: the declared type's ∀ at the same
+      -- place, whose datum the kernel's binder congruence requires of the λ
+      let (expBody, expPw) : Option KExpr × Option Ix.Kernel.PropWhen := match exp with
+        | some (.forallE _ eb m) => (some eb, some m.pw)
+        | _ => (none, none)
+      let b' ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) expBody b
+      let pw ← datum rc false (depth + 1) b' expPw
       setNode ord (Node.ofPw pw)
       pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts c .shared).withPw pw))
     | .all c r t b => do
       let ord ← reserve
-      let t' ← walk fuel rc ctx depth t
+      let t' ← walk fuel rc ctx depth none t
       let id ← freshId
-      let b' ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) b
+      let b' ← walk fuel rc (⟨id, .fvar depth t'⟩ :: ctx) (depth + 1) none b
       let pw ← datum rc true (depth + 1) b'
       setNode ord (Node.ofPw pw)
       pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts c r).withPw pw))
     | .letE _ t v b => do
       -- the kernel annotates the type and the value, then the body with the
       -- value transparent (its ζ-reduct)
-      let _ ← walk fuel rc ctx depth t
-      let v' ← walk fuel rc ctx depth v
+      let _ ← walk fuel rc ctx depth none t
+      let v' ← walk fuel rc ctx depth none v
       let id ← freshId
-      walk fuel rc (⟨id, v'⟩ :: ctx) depth b
+      walk fuel rc (⟨id, v'⟩ :: ctx) depth exp b
     | .prj i f v => do
-      let v' ← walk fuel rc ctx depth v
+      let v' ← walk fuel rc ctx depth none v
       match rc.ecx.keyAt i with
       | .ok k => pure (.proj k f.toNat v')
       | .error _ => do fallback; pure v'
@@ -561,7 +591,7 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Ixon.Expr → EM KExpr
           match rc.sharing[n]? with
           | none => do fallback; pure ((.sort .zero : KExpr), 0)
           | some entry => do
-            let (e', nodes) ← ((walk fuel rc ctx depth entry).run #[] : WM (KExpr × Array Node))
+            let (e', nodes) ← ((walk fuel rc ctx depth none entry).run #[] : WM (KExpr × Array Node))
             let variant ← variantOf n nodes
             modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant) }
             pure (e', variant)
@@ -572,7 +602,7 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Ixon.Expr → EM KExpr
 /-- A record's blocks: its roots at variant 0, then its sharing entries'
 conversions in the order they were first met; and its fallback count. -/
 def annotateRecord (k : KernelEnv) (core : Ix.Kernel.Cached.CoreFnsI .anon) (addr : Address)
-    (c : Ixon.Constant) : Array Block × Nat :=
+    (c : Ixon.Constant) : Array Block × Nat × Nat :=
   let n := memberCount c
   let cx := k.setup.cx
   let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
@@ -581,13 +611,20 @@ def annotateRecord (k : KernelEnv) (core : Ix.Kernel.Cached.CoreFnsI .anon) (add
   let rc : RecCx := { fe := k.fe, core, ecx, sharing := c.sharing, bounds := bounds c.sharing }
   let act : WM (Array Block) := do
     let mut out := #[]
+    let mut annotated : Array KExpr := #[]
+    let tys := valueTypes c
     for (e, i) in (roots c).zipIdx do
-      let (_, nodes) ← (walk walkFuel rc [] 0 e).run #[]
+      -- a definition's value is walked against its annotated type
+      let exp := match tys[i]? with
+        | some (some j) => annotated[j]?
+        | _ => none
+      let (k, nodes) ← (walk walkFuel rc [] 0 exp e).run #[]
+      annotated := annotated.push k
       out := out.push ⟨0, i, 0, nodes⟩
     return out
   match (act.run {}).run {} with
-  | .ok ((rs, st), _) => (rs ++ st.blocks, st.fallbacks)
-  | .error _ => (#[], 1)
+  | .ok ((rs, st), _) => (rs ++ st.blocks, st.fallbacks, st.inherited)
+  | .error _ => (#[], 1, 0)
 
 /-- Every owner record's blocks. -/
 def annotateKernel (k : KernelEnv) : Array (Address × Array Block) × Stats := Id.run do
@@ -596,9 +633,10 @@ def annotateKernel (k : KernelEnv) : Array (Address × Array Block) × Stats := 
   let mut stats : Stats := { installed := k.installed, refused := k.refused }
   for a in k.owners do
     let some c := k.setup.store[a]? | continue
-    let (blocks, fb) := annotateRecord k core a c
+    let (blocks, fb, inh) := annotateRecord k core a c
     out := out.push (a, blocks)
-    stats := { stats with records := stats.records + 1, fallbacks := stats.fallbacks + fb }
+    stats := { stats with records := stats.records + 1, fallbacks := stats.fallbacks + fb,
+                          inherited := stats.inherited + inh }
     let full := binderful c.sharing
     let rs := roots c
     for b in blocks do
