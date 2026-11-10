@@ -21,9 +21,10 @@ namespace Tests.Ix.IxVM.RestrictionDefs
 
 universe u
 
-/-- A field-less structure-like type at `Sort u`: a proposition at `u = 0`. (An
-`inductive` with one field-less constructor: Lean refuses `structure` at `Sort u`;
-structure η reads the type's shape, one constructor and no indices.) -/
+set_option bootstrap.inductiveCheckResultingUniverse false in
+/-- A field-less structure-like type at `Sort u`: a proposition at `u = 0`. (Declared
+as core declares `PUnit`: Lean refuses a resulting universe that may be `Prop` unless
+told not to check; structure η reads the shape, one constructor and no indices.) -/
 inductive PU : Sort u where
   | mk : PU
 
