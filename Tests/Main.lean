@@ -50,6 +50,7 @@ import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
+import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -229,6 +230,8 @@ def registry : List Entry := [
   .runner "ixvm-binding-frontier" (.ci .ixvm) Tests.Ix.IxVM.BindingFrontier.run,
   -- A constant byte out of range is refused.
   .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
+  .env "ixvm-model-advice" (.ci .ixvm) Tests.Ix.IxVM.ModelAdvice.run,
+  .env "ixvm-model-report" (.manual "lane dc: model advice per block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
   -- Execution with every assertion checked gives the circuit's verdict on a witness;
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
@@ -339,6 +342,7 @@ def required : List (String × String) := [
   ("ixvm-user-axioms", "ci:ixvm"),
   ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
+  ("ixvm-model-advice", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),

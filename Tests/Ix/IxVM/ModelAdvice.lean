@@ -1,0 +1,154 @@
+module
+
+public import Ix.Meta
+public import Ix.IxVM.Model
+public import Tests.Ix.IxVM.Harness
+public import Tests.Ix.IxVMFixtures
+
+/-! # Model advice for the modeled route (lane dc, decision D7)
+
+IxVM checks a mutual or nested inductive block against a model the prover
+supplies (`IxVM/IxVM/Source/KernelModeled.lean`, `Ix/IxVM/Model.lean`). The
+model is witness data. Two properties are tested here:
+
+* **The claim does not change** (`ixvm-model-advice`, first part): for an
+  environment with mutual and nested blocks, the claim, its digest, its context
+  and the public input of its witness are the same whether or not the models are
+  attached, and `consts` is untouched.
+* **A different valid model is accepted** (second part): the modeller's records
+  with every `iota_j` proof rewritten (`let _ : Nat := 0; p`), so that every
+  theorem record, and with it the advice set, has another address. The circuit
+  must accept the same claims with it.
+
+The must-reject cases for advice (wrong member models, wrong iota statements,
+axioms, self-reference, another block's payload, missing payloads, oversized
+counts) are fixtures of the local-only branch `jcb/ixvmc-dc-mustreject`.
+
+`ixvm-model-report` (manual) prints, for an `.ixe` file (`IX_MODEL_IXE`), what
+the modeller and the encoder produce per mutual or nested block: the advice's
+record count and its outside references by witness kind, or why the block has
+no model.
+-/
+
+public section
+
+namespace Tests.Ix.IxVM.ModelAdvice
+
+open IxVM.ClaimHarness
+
+/-- Mutual (`Even`/`Odd`, `SoloA`/`SoloB`) and nested (`Tree`, `DedupM`,
+`AuxTie`) fixtures, types and recursors. -/
+def modeledNames : List String := [
+  "IxVMInd.Even", "IxVMInd.Odd", "IxVMInd.Even.rec", "IxVMInd.Odd.rec",
+  "IxVMInd.SoloA.rec", "IxVMInd.Tree", "IxVMInd.Tree.rec", "IxVMInd.Tree.rec_1",
+  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec"]
+
+private def nameOfString (str : String) : Lean.Name :=
+  str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
+    match s.toNat? with
+    | some n => .mkNum acc n
+    | none => .mkStr acc s
+
+/-- The environment a claim builder sees without the models. -/
+def withoutModels (env : Ixon.Env) : Ixon.Env :=
+  { env with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+             modelDeps := {}, modelsAttached := true }
+
+/-- The claims over `env` and over `env` without its models agree, byte for byte. -/
+def digestUnchanged (env : Ixon.Env) (names : List Lean.Name) : IO Bool := do
+  let bare := withoutModels env
+  let mut ok := true
+  if env.models.size < 2 then
+    IO.eprintln s!"[ixvm-model-advice] only {env.models.size} modeled blocks got a payload"
+    ok := false
+  unless env.consts.size == bare.consts.size &&
+      env.consts.keys.all bare.consts.contains do
+    IO.eprintln "[ixvm-model-advice] attaching the models changed `consts`"
+    ok := false
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
+  let ctx0 ← IO.ofExcept (Ix.ClaimContext.ofEnv bare true)
+  let mut owned : Array Address := #[]
+  for n in names do
+    let addr ← lookupAddr env n
+    owned := owned.push addr
+    let claim := Ix.Claim.check ctx addr none
+    let claim0 := Ix.Claim.check ctx0 addr none
+    unless Ix.Claim.ser claim == Ix.Claim.ser claim0 do
+      IO.eprintln s!"[ixvm-model-advice] the check claim on {n} differs"
+      ok := false
+    let w ← IO.ofExcept (buildClaimWitness env claim)
+    let w0 ← IO.ofExcept (buildClaimWitness bare claim0)
+    unless w.input == w0.input && w.funcName == w0.funcName do
+      IO.eprintln s!"[ixvm-model-advice] the public input of the claim on {n} differs"
+      ok := false
+  let (c, _) ← IO.ofExcept (shardCheckEnvClaimTrees env owned true)
+  let (c0, _) ← IO.ofExcept (shardCheckEnvClaimTrees bare owned true)
+  unless Ix.Claim.ser c == Ix.Claim.ser c0 do
+    IO.eprintln "[ixvm-model-advice] the shard claim differs"
+    ok := false
+  let digest := Address.blake3 (Ix.Claim.ser c)
+  IO.println s!"[ixvm-model-advice] {env.models.size} payloads; {names.length} check claims and \
+    the shard claim over them agree with and without models (shard digest {digest})"
+  return ok
+
+/-- Every theorem's value under `let _ : Nat := 0`: a different proof of the
+same statement, so a different record. -/
+def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
+  | .thmDecl cv v => .thmDecl cv (.letE (.const (.role .nat) []) (.lit (.natVal 0)) v default)
+  | d => d
+
+def run (lenv : Lean.Environment) : IO UInt32 := do
+  let names := modeledNames.map nameOfString
+  let missing := names.filter (!lenv.constants.contains ·)
+  unless missing.isEmpty do
+    IO.eprintln s!"[ixvm-model-advice] not in the environment: {missing}"
+    return 1
+  let env ← loadSharedIxonEnv names.toArray lenv
+  let digestOk ← digestUnchanged env names
+  -- the control: the same environment with the tweaked models
+  let (tweaked, _) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false } tweakProofs)
+  let differ := tweaked.models.toList.any fun (b, p) => env.models[b]? != some p
+  unless differ do IO.eprintln "[ixvm-model-advice] the tweaked models have the same payloads"
+  let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun _ => do
+    let some target := e.getAddr? (Ix.Name.fromLeanName n)
+      | throw s!"{n} is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv e true
+    Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
+  let cases := (names.map (mkCase env "modeller's model")) ++
+    (names.map (mkCase tweaked "a different valid model"))
+  let rc ← runCases "ixvm-model-advice" cases.toArray
+  return if digestOk && differ && rc == 0 then 0 else 1
+
+/-- `ixvm-model-report`: the advice per modeled block of an `.ixe` file. -/
+def report (_ : Lean.Environment) : IO UInt32 := do
+  let some path ← IO.getEnv "IX_MODEL_IXE"
+    | IO.eprintln "[ixvm-model-report] set IX_MODEL_IXE to an .ixe file"; return 1
+  let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))
+  let env ← IO.ofExcept (withRoleTable env (← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes))
+  let (_, rep) ← IO.ofExcept (IxVM.Model.generateReport { env with modelsAttached := false })
+  let mut ok := 0
+  let mut kinds : Std.HashMap Nat Nat := {}
+  let mut outsideAll : Std.HashMap Address Nat := {}
+  for (b, r) in rep.blocks do
+    match r with
+    | .ok (n, outside) =>
+      ok := ok + 1
+      for (x, k) in outside do
+        kinds := kinds.insert k (kinds.getD k 0 + 1)
+        outsideAll := outsideAll.insert x k
+      IO.println s!"BLOCK {b} ok records={n} outside={outside.size} \
+        basis={(outside.filter (·.2 == 0)).size} closure={(outside.filter (·.2 == 1)).size} \
+        container-rec={(outside.filter (·.2 == 2)).size}"
+    | .error e => IO.println s!"BLOCK {b} none: {e}"
+  IO.println s!"[ixvm-model-report] {rep.blocks.size} modeled blocks, {ok} with a payload; outside \
+    references by kind: basis {kinds.getD 0 0}, closure {kinds.getD 1 0}, container recursor {kinds.getD 2 0}; \
+    {outsideAll.size} distinct"
+  for (x, k) in outsideAll.toList do
+    if k != 1 then
+      let n := (env.addrToName[x]?.map toString).getD "?"
+      IO.println s!"OUTSIDE kind={k} {x} {n}"
+  return if ok == rep.blocks.size then 0 else 1
+
+end Tests.Ix.IxVM.ModelAdvice
+
+end

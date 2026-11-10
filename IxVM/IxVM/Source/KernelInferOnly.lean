@@ -119,6 +119,7 @@ def k_infer_only_core := aiur_fn⟦
 
                       assert_eq!(num_ctors, 1,
                         "projection on an inductive with more than one constructor");
+                      KernelModeled::assert_proj_allowed(block_addr);
                       let ctor_ci = (*(Ingress::get_ci_cprj(block_addr, ind_idx, 0)));
                       match ctor_ci {
                         KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
