@@ -465,9 +465,26 @@ back end, 16,000 globals, functions of 16,384 blocks, 125-way switches and
 lists has at least four times the headroom an 8 MiB stack needs. Constructor
 fields (at most 254), switch arms (125), certificate steps and decisions (64),
 and parameters, arguments and join parameters (bounded by the depth budget,
-2,048) are short. Not run at width: the certificate's allocation, frame and
-order lists beyond what the programs above produce. `tests-recheck` keeps a
-representative of each in its 8 MiB child.
+2,048) are short. `tests-recheck` keeps a representative of each in its 8 MiB
+child. Frame slots (4,096), the certificate's order lists and Ixon's
+reference, sharing and universe tables (4,096 each) were later run at their
+limits and one past them and behave the same.
+
+*Known gaps.* Two traversals in the register-allocation validator are not
+bounded this way, and both are reachable from a certificate's bytes:
+
+- `Xv.Alloc.takeAt` (`IxCC/Xv/Alloc/Apply.lean`) takes a stack frame per edit
+  at one position, and the validator runs it before it checks those edits. A
+  1.9 MB certificate with 100,000 valid self-moves at one position aborts on
+  an 8 MiB stack; with 1,000,000 it is accepted on the executable's default
+  stack.
+- `Xv.Validate.VSet.insert` (`IxCC/Xv/Validate/State.lean`) is quadratic in
+  the registers a certificate fact lists and takes a frame per register. A
+  2.2 MB certificate listing 300,000 registers takes about 250 s to refuse,
+  and 1,000,000 abort on an 8 MiB stack.
+
+`Recheck/Rc`, `Xv/Stacking/Run.lean` and the ELF validators have not been read
+for recursion along certificate-controlled lists.
 
 **Work.** Under shrink, the census counts read at each binding walk the rest of
 its body, so a round reads up to the global's depth times its nodes. The walk
