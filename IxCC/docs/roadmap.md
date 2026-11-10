@@ -24,7 +24,9 @@ The target theorem:
   overflow until bignums land) or a run that has not finished.
 
 The theorem is stated first against the published source evaluator, then
-against the model of ix-certified's `Ix.Kernel`.
+against the model of ix-certified's `Ix.Kernel`, and, for programs a
+proof-producing translator processes, against the Lean function itself
+([certification design](certification-design.md)).
 
 ## Current state (2026-11-09)
 
@@ -153,26 +155,86 @@ Every later integration tree requires the same full validation surface.
 Final selected-budget producer acceptance/review/refreeze remains open; no
 hosted-CI or cold-store timing is claimed.
 
+## The fragment compiled and proved today
+
+- **Input.** An Ixon v4 closure and an unfolding table (`eqn`, `csimp`,
+  `case`, `inline`, `lazy`, `prim`). Admission rejects `partial` and `unsafe`
+  definitions, extern opaques and relevant axioms; erasure declines string
+  literals in relevant positions.
+- **Values.** `Nat`, exact above Lir and at run time a tagged word below
+  2^63 (a larger value is the resource failure `natOverflow`); constructors
+  of inductive types; □. Fixed-width integers have no representation of
+  their own (erasure unboxes them to `Nat`, so a `UInt64` at or above 2^63
+  fails like a `Nat`); there are no arrays, byte arrays or strings.
+- **Higher-order code** only where bounded inlining and specialisation
+  (P3, P4) remove it; any remaining closure is declined at Anf → Fir
+  (`fir.closures`).
+- **Memory.** Immortal cells, or the bounded plain-RC route: shared
+  constructors with 1 to 31 scanned fields, size-class free lists, iterative
+  release (`--rc auto|on|off`).
+- **Roots.** Level-monomorphic, at most five `Nat` parameters; results that
+  are `Nat` or enumerations (immortal and zero-RC policies) or first-order
+  constructor trees (plain RC).
+- **Proved.** For an accepted certificate, the object refines SrcEval on the
+  checked source `a.src`, with the `GoesWrong` escape, under the x86,
+  loader and driver assumptions of the [trust ledger](trusted-extern-ledger.md).
+  **Not proved:** that `a.src` is the ingested program's meaning (S6), and
+  that SrcEval agrees with the certified kernel's model or with Lean (S8).
+  See the [certification design](certification-design.md).
+
 ## Plan
+
+Revised 2026-11-09. The goal is a generally useful compiler for Lean code,
+with certification. Two flagship targets make that concrete: the IxOS
+monitor and driver compiled through `ixcc`, and the certified kernel (IxCK)
+compiled through `ixcc` ([Flagship targets](#flagship-targets)).
 
 The pipeline and its staged delivery scope:
 
 ```text
 Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
-        → Lam (erased λ-calculus) → Anf (join points; shrink, inline, specialise)
-        → Fir (closure-converted, first order) → Own (explicit RC, borrow, reuse)
+        → Lam (erased λ-calculus)
+        → Anf (join points; shrink, inline, specialise; P8 defunctionalisation, planned)
+        → Fir (first order, known calls only) → Own (explicit RC, borrow, reuse)
         → Cfg (control-flow graph) → Lir (words, memory, runtime)
         → Xv (x86 on virtual registers) → Xl (allocated) → typed x86 → E1 → E2/ELF
 ```
 
-| Phase | Deliverable | Benchmark rung |
+### Phases
+
+| Phase | Deliverable | Closes with | State |
+| --- | --- | --- | --- |
+| 0 | Reset and foundations: first gates back, the ix `eq_def` export, design notes, a declarative x86 instruction table with compact encodings, hardware-differential and decoder gates, first-wave fixtures, census, Lean/Clang measurement rows | — | Done |
+| 1 | Scalar vertical slice from real Lean source to certified ELF, with register allocation, loops and recursion (`fib`, `for` loops, Ackermann, `tak`, `gcd`) | K1 | Done: K1 certified relative to SrcEval |
+| 1.5 | Reviewed resource checking, address-bound equation/profile selection and contract transport; assess upstream certification before the final producer repin | Existing K1 and annotated/plain fixtures | In progress |
+| 2 | Heap and closures: general RC (scalar fields, large objects, static objects, reset/reuse, `unique`/`borrow`, inline fast paths, the Own checker); P8 defunctionalisation; P5/P6 when measured | K0 (real `List.reverse`), K2 (lists), K3 (trees); `Decline.composeClosure` | In progress: the bounded plain-RC route and the `List.reverse` regression are implemented |
+| 3 | Data and interface: fixed-width integers and small `Int`, arrays and byte arrays with in-place update, strings, interpreted opaques, P9; the byte ABI, the claim's ABI descriptor, state-machine roots | K4 | Planned |
+| 4 | Bignums: the limb library compiled by IxCC; large `Int` | K5 | Planned |
+| 5 | Scale and usability: input-relative budgets, linear-time recheck passes, per-function rechecking and caching, diagnostics, library census | K6; a closure of at least 2,000 definitions | Planned |
+| C | Certification depth, a track beside Phases 2–5: C1 front-end theorem, C2 shape typing, C3 stage L, C4 stage K | Per item, below | C1–C3 planned, C4 research |
+
+**Changes from the previous table** (Phases 0 to 1.5 are unchanged):
+- Closures move from Phase 3 to Phase 2. The design is closed-world
+  defunctionalisation in Anf, so closures are constructor cells under the
+  same RC as other data and arrive with it, as the code comments already
+  say ("P8, Phase 2"); K2 and K3 sources may need them.
+- Scale and tooling move from Phase 4 to a Phase 5 of their own, since both
+  flagships need them and they do not depend on bignums.
+- The semantic obligations (S6, S8, `GoesWrong`) become an explicit track
+  with exit criteria instead of the single "stage 2" sentence.
+- The two flagship targets are added as milestones.
+
+### Benchmark rungs
+
+| Rung | Programs | State |
 | --- | --- | --- |
-| 0 | Reset and foundations: first gates back, the ix `eq_def` export, design notes, a declarative x86 instruction table with compact encodings, hardware-differential and decoder gates, first-wave fixtures, census, Lean/Clang measurement rows | — |
-| 1 | Scalar vertical slice from real Lean source to certified ELF, with register allocation, loops and recursion (`fib`, `for` loops, Ackermann, `tak`, `gcd`) | K1 |
-| 1.5 | Reviewed resource checking, address-bound equation/profile selection and contract transport; assess upstream certification before the final producer repin | Existing K1 and annotated/plain fixtures |
-| 2 | Heap: constructors, reference counting, reset/reuse, allocator; `unique`/`borrow` twins | K0 (real `List.reverse`), K2 (lists), K3 (trees) |
-| 3 | Closures, fixed-width integers, arrays, bytes, strings (`qsort`, `unionfind`, BLAKE3, `deriv`) | K4 |
-| 4 | Bignums, scale, objects and tooling, applications | K5, K6 |
+| K0 | Real `List.reverse` on `List Nat` | Runs through the bounded plain-RC route ([`fixtures/rc/real-source`](../fixtures/rc/real-source/README.md)); final producer refreeze open |
+| K1 | `fib`, `sum-loop`, `ackermann`, `tak`, `gcd`, and `collatz`, `prime-count`, `even-odd`, `sfib` | Certified and measured |
+| K2 | `nqueens`, `queue`, `reverse`, `foldl`, `list-qsort` | Sources and twins in [`benchmarks/fixtures`](../benchmarks/fixtures/README.md); no frozen Ixon closures yet |
+| K3 | `rbmap`, `rbmap_checkpoint`, `const_fold`, `binarytrees` (total), `rbmap_fbip` with its annotated twin | As K2 |
+| K4 | `deriv` (`String`), `qsort` (`UInt32`, `Array`), `unionfind` (`Array`, `StateT`), `blake3` (`Blake3.Pure`), `hashmap`, `nat_repr` | Not started |
+| K5 | factorial, big Fibonacci, π digits, e digits | Not started |
+| K6 | `liasolver`, `parser`, a subset of the certified kernel (`Ix.Kernel.Level` first) | Not started |
 
 **Performance targets** are provisional and frozen per rung after first
 data:
@@ -180,8 +242,111 @@ data:
 - K2/K3 plain sources: ≤ 1.2× Lean → Clang;
 - annotated twins: ≤ 1.0×;
 - K4: ≤ 1.3×;
+- K5 and K6: set after the first measurements;
 - no row above 2×;
 - ≤ 10 s to compile and check each suite program.
+
+### Phase 2: heap and closures
+
+- **Heap completion** ([D1](data-and-roots-design.md#d1-heap-completion)):
+  scalar fields, constructors beyond 31 fields and large objects, static
+  objects, reset/reuse with a uniqueness test, static reuse from `unique`
+  contracts, borrowed parameters, inline RC fast paths, and the proved Own
+  checker with the canonical plain producer as its fallback.
+- **P8** ([closures design](closures-design.md)): defunctionalisation,
+  dispatchers, the known-dispatch shrink rule, `Anf.Defun.correct`.
+- **P5 and P6** only where K2/K3 measurements show the need.
+- *Depends on:* Phase 1.5's final producer for the K0 refreeze.
+- *Exit:* K0 refrozen with the final producer; K2 and K3 frozen, compiled
+  under `--rc auto` and certified, measured against their targets, with the
+  annotated twins against the plain sources; `Decline.composeClosure` and the
+  new higher-order corpus roots of the closures design compile and certify.
+
+### Phase 3: data and interface
+
+- **Fixed width and small `Int`** ([D2](data-and-roots-design.md#d2-fixed-width-integers-and-int)),
+  **arrays and byte arrays** ([D3](data-and-roots-design.md#d3-arrays-and-byte-arrays)),
+  **strings** ([D4](data-and-roots-design.md#d4-strings)),
+  **library structures and interpreted opaques** ([D5](data-and-roots-design.md#d5-library-structures-and-opaque-constants)).
+- **Roots**: the byte ABI ([R1](data-and-roots-design.md#r1-structured-roots-and-the-byte-abi)),
+  the claim's ABI descriptor with the encoding fixes of the 2026-11-09
+  review ([R2](data-and-roots-design.md#r2-what-the-compile-claim-binds)),
+  monomorphic roots ([R3](data-and-roots-design.md#r3-universe-polymorphism-and-type-parameters-at-roots)),
+  state-machine roots ([E1](data-and-roots-design.md#e1-effects-and-io)).
+- **P9** and the flow oracle, if K4 shows dispatch cost.
+- *Depends on:* Phase 2's scalar fields, large objects and uniqueness test;
+  P8 for library code over dictionaries.
+- *Exit:* K4 compiles, certifies and is measured; BLAKE3 passes its
+  known-answer vectors; a `ByteArray → ByteArray` root round-trips through
+  the driver; a state-machine session of 1,000 calls passes.
+
+### Phase 4: bignums
+
+- The limb library and the bignum representation ([bignum design](bignum-design.md)).
+- *Depends on:* D1–D4; C3 for the library's layer-3 proof (until then an
+  explicit ledger assumption, as the design says).
+- *Exit:* K5 compiles, certifies and matches Lean; `natOverflow` is retired
+  with its gate map; the library theorems are fenced.
+
+### Phase 5: scale and usability
+
+- [Scale and usability](compiler-design.md#scale-and-usability).
+- *Depends on:* nothing for budgets, linear passes and diagnostics;
+  per-function certificates for incremental rechecking.
+- *Exit:* K6 compiles and certifies; a closure of at least 2,000 definitions
+  compiles and rechecks with no budget refusal within a compile-time target
+  set after its first measurement; the library census is published.
+
+### Certification track
+
+| Item | Content | Depends on | Exit | State |
+| --- | --- | --- | --- | --- |
+| C1 | Front-end theorem (S6): table, relevance canonicity, `Lazify`, pins | — | Five checker lemmas fenced; a corollary of `Recheck.sound` exposing them | Planned |
+| C2 | Checked shape typing on Src: progress and preservation | C1 | `GoesWrong`-free corollaries of `Recheck.sound` and of Ring-0 admission for shape-checked programs, on K1 and the corpus | Planned |
+| C3 | Stage L: a proof-producing translator from Lean constants to SrcEval behaviour | C1; ix's certified Lean-to-Ixon compile | `fib`, `gcd`, `ackermann` with "the object's result is `f xs`"; then the bignum library | Planned (prototype), research (IxCK scale) |
+| C4 | Stage K: semantic adequacy of SrcEval in the certified kernel's models (S8), replacing the conditional bridge | C1 | A spike on `fib` with the environment taken from the claim bytes; a size estimate after it | Research |
+
+Details and the obligations each extension adds are in the
+[certification design](certification-design.md). Recommended order: C1 and
+C2 first, then the C3 prototype, with C4 as a research spike in parallel.
+
+### Flagship targets
+
+**F1. The IxOS monitor and driver compiled through `ixcc`.** IxOS runs
+admitted programs as software-isolated processes (SIPs) in Ring 0 and its
+monitor is itself Lean code compiled by IxCC. In this plan the monitor is a
+state-machine root (E1) and a small trusted *tender* performs privileged
+operations and the calls into SIP entries, because compiled code has no
+indirect calls.
+
+| Step | Content | Prerequisites | Exit | State |
+| --- | --- | --- | --- | --- |
+| F1.0 | A host loader that maps an object and calls its entries through a minimal ledgered trampoline, with readback in Lean, in place of linking `runtime_driver.c` | none | The K1 and RC suites pass through it with the C driver removed from the execution path | Planned |
+| F1.1 | Fuel metering in prologues and at back edges with a new resource status; Ring-0 frame preservation on every outcome, not only on return | none | Fenced theorems; the session gate with fuel exhaustion | Planned |
+| F1.2 | A minimal monitor: SIP table, region allocation, request dispatch to the tender, admission by claim digest and external evidence | Phase 2 (P8, D1), D2, D3, R1, E1 | The monitor's `step` certified; a host-harness session of SIP calls | Planned |
+| F1.3 | Admission inside the monitor: `CompileClaim.verifyBytes` compiled by IxCC | Phases 2–5 (bignums for 256-bit address comparisons, strings for certificate parsing, scale for the checker's closure) | An IxCC-compiled `check-cert` agrees with the Lean-compiled one on every committed certificate and the hostile-input regressions | Planned |
+| F1.4 | Certification: C2 for confinement without the source-safety premise; C3 on `step` and on `verifyBytes` | C2, C3 | "Admitted by the compiled monitor ⇒ accepted by the Lean verifier" as a theorem | Research |
+
+**F2. The certified kernel compiled through `ixcc`** (native x86; the
+2026-11-09 IXCC-ROUTE review argues against this route for IxVM's Aiur
+circuits, which is a separate question).
+
+| Step | Content | Prerequisites | Exit | State |
+| --- | --- | --- | --- | --- |
+| F2.1 | `Ix.Kernel.Level` (`IxCK/Kernel/Level.lean`: fuelled, mutually recursive level comparison using `Int` offsets) | Phase 2, D2 | Compiles, certifies, and agrees with the Lean-compiled functions on generated level pairs | Planned |
+| F2.2 | The checker, through the reference fold `checkDeclsPure` or the cached fold: records of closures, monad polymorphism, `HashMap`, `Array`, `ByteArray`, `UInt64`, `USize`, `Int`, strings, exact `Nat` | Phases 2–5; D5's interpretation table, or IxCK without `mixHash` and `getNumBits` | Differential agreement with Lean-compiled IxCK on its smoke environment and claim fixtures; certified relative to SrcEval | Planned |
+| F2.3 | "The object accepts ⇒ `checkDecls` accepts" as a Lean theorem, then IxCK's soundness | C3 at IxCK's scale (or C4 plus a reflection step with no design) | The composed theorem fenced | Research |
+
+### Dependencies in brief
+
+```text
+Phase 1.5 ─► Phase 2 (D1 heap, P8) ─► Phase 3 (D2–D5, R1–R3, E1, P9) ─► Phase 4 (bignums) ─► F1.3, F2.2
+                     │                         │                                ▲
+                     └──────────► F1.2 ◄───────┘                    C3 ─────────┘ (bignum layer 3)
+Phase 5 (scale) ─► F1.3, F2.2, K6
+C1 ─► C2 ─► F1.4 ;  C1 ─► C3 ─► F1.4, F2.3 ;  C1 ─► C4 (research)
+F1.0, F1.1: no prerequisites
+```
 
 ### Phase 1.5 priorities after the certification work
 
@@ -249,6 +414,22 @@ and correspondence to executed runtime remain explicit trust boundaries.
 | x86 trust | A declarative instruction table. Hardware-differential and XED/LLVM-MC gates first; the Sail agreement proof later. |
 | Runtime | Written in the compiler's own low-level IR and proved: an 8-byte header, single-threaded RC, size-class free lists, iterative free, tagged 63-bit small `Nat`. No C runtime and no GMP in the trusted base. |
 | Profiles | One production profile. Instrumentation, cost and space results are optional layers outside the core relations. |
+| Closures | Closed-world defunctionalisation in Anf (P8), after inlining and specialisation, with untrusted flow facts narrowing dispatch (P9). Fir stays first order; no closure objects, `pap`, `apply` or indirect calls ([closures design](closures-design.md)). |
+| Bignums | Decided by the owner on 2026-11-09: new Lean implementations of the standard multi-precision algorithms, each proved against `Nat` and compiled by IxCC; several references consulted, GMP for behaviour only ([bignum design](bignum-design.md)). |
+| Roots and effects | Roots stay level-monomorphic; structured data crosses the boundary as bytes; interacting programs are state machines driven by a host ([data, roots and effects](data-and-roots-design.md)). |
+
+## Open decisions
+
+These need the owner. Each has the default this plan assumes and what a
+later change would cost.
+
+| Decision | Default | Cost of changing later |
+| --- | --- | --- |
+| Must closures cross a program boundary, or higher-order libraries be compiled separately? | No: boundaries pass first-order data and higher-order libraries are compiled into each program | Code-pointer closures at the boundary only: a new object kind, an indirect-call row with a target-validity premise, an extended Ring-0 argument; about 6–9k proof lines [estimate] ([closures design](closures-design.md#fallback-code-pointer-closures)) |
+| May a compile claim carry interpretations of opaque constants (`mixHash`, `getNumBits`)? | Yes, recorded in the claim, so `Std.HashMap` compiles from its Lean definitions | Refusing them later makes such claims unverifiable and pushes targets (IxCK) to remove hashed fields; allowing them later is a claim-format change ([D5](data-and-roots-design.md#d5-library-structures-and-opaque-constants)) |
+| Which route to Lean's meaning first: stage L (C3) or stage K (C4)? | C3 first, C4 as a research spike | Small: C1 and C2 serve both; the cost is the order in which the flagships get their end statements |
+| Is the IxOS tender (privileged operations and calls into SIP entries) a ledgered component, or are indirect calls certified? | Ledgered tender | A certified indirect call later needs the same row and premise as the first decision |
+| Should the pre-merge design notes (`plans/x86-v2/00`–`06`, about 5.8k lines, untracked) be added to the repository as historical records? About 480 code comments cite them | Yes, under `docs/design-notes/` with a header marking them historical and superseded where the tracked documents differ | Otherwise every citation must be rewritten against the tracked documents |
 
 ## Coordination
 

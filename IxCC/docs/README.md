@@ -22,6 +22,19 @@ backend and the Stage2 fixture are on branch `jcb/ixby-archive`.
 - [CI builds and required coverage](ci.md): the current check surface and
   its coverage-change record.
 
+## Designs of planned extensions
+
+The [roadmap](roadmap.md#plan) orders these; nothing in them is implemented
+unless a line says so.
+- [Closures](closures-design.md): higher-order code by closed-world
+  defunctionalisation (P8, P9).
+- [Data, roots and effects](data-and-roots-design.md): heap completion,
+  fixed-width integers, arrays, strings, library structures, the root and
+  claim interface, state-machine effects.
+- [Bignums](bignum-design.md): the limb library compiled by IxCC.
+- [Certification depth](certification-design.md): the front-end theorem,
+  source safety, stage L and stage K.
+
 ## Source boundary
 
 - [Compile and recheck boundary](compile-boundary.md): what the public

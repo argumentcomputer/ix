@@ -8,11 +8,16 @@ Normative wire and trust contracts remain in their focused specifications:
 - [x86 streams and objects](x86-stream-objects.md);
 - the [trust ledger](trusted-extern-ledger.md).
 
-Reviewed 2026-10-08. The scalar pipeline and a bounded checked plain-RC
+Reviewed 2026-10-08; pass identifiers and the plans for later extensions
+added 2026-11-09. The scalar pipeline and a bounded checked plain-RC
 path are implemented. General ownership optimizations and later heap features
 below remain extensions. Source adequacy, Phase 1.5 producer integration,
 final fixture refreeze and full promotion validation remain open. The earlier pipeline, its IRs
 and their contracts are on branch `jcb/ixby-archive`.
+
+Where this document describes something not yet built, the section or row
+says *planned*. The designs of the planned extensions are in their own
+documents (see [Planned extensions](#planned-extensions)).
 
 ## Principles
 
@@ -207,13 +212,38 @@ lemmas and adds one case, not the per-construct proofs.
 | --- | --- | --- | --- |
 | **Src** | Closed, relevance-annotated kernel terms from Ixon v4 plus an unfolding table | Clocked big-step environment machine. It never evaluates irrelevant positions and calls lazy constants by name. | Adequacy against `Ix.Kernel`'s model |
 | **Lam** | Erased λ-calculus: □, constructors, `case`, recursive definitions, primitives, `trap`; binder contracts retained | Clocked big-step | Erasure simulation |
-| **Anf** | A-normal form with join points and known calls | Clocked big-step | Fuel-indexed logical relation; heuristic-parametric rewrites |
-| **Fir** | First order: top-level functions, closure objects, `pap`/`apply`, tail calls | Clocked big-step | Forward simulation |
-| **Own** | Explicit ownership: owned/borrowed parameters, `inc`/`dec`, reset/reuse credits, unique and local kinds | Clocked big-step over an abstract RC heap | Proved ownership checker ⇒ refinement of Fir |
+| **Anf** | A-normal form with join points, known calls, and (until P8) local functions and unknown calls | Clocked big-step | Logical relation, clock-indexed on computations; heuristic-parametric rewrites |
+| **Fir** | First order: top-level functions, known calls, join points, tail calls. No closures: Anf → Fir declines them until P8 (planned) defunctionalises them in Anf; there are no closure objects, `pap` or `apply` ([closures design](closures-design.md)) | Clocked big-step | Forward simulation |
+| **Own** | Explicit ownership. Implemented: the immortal fragment and `Own.Plain`'s `inc`/`dec` actions. Planned: borrowed parameters, reset/reuse credits, unique and local kinds | Clocked big-step over an abstract RC heap | Proved ownership checker ⇒ refinement of Fir |
 | **Cfg** | Blocks with parameters over the same operations | Clocked small-step | The single big-step → small-step bridge |
 | **Lir** | Words, memory, compare-branch, calls, runtime procedures | Clocked small-step | Heap → memory data refinement |
 | **Xv / Xl** | x86-shaped operations on virtual registers, then on registers and slots | Small-step | One lemma per selection rule; allocation validator |
 | **x86** | Typed x86: frames, ABI, layout | `X86.Eval` | Frame layout, layout, and generic `SafeSteps` into E1/E2 |
+
+### Pass identifiers
+
+Code comments and certificates name the Lam and Anf passes P0 to P9. The
+identifiers come from the pre-merge design note on erasure and the middle
+end (note 02 §8, untracked, not in this repository); this table is now their
+definition.
+
+| Id | Pass | Module | Status |
+| --- | --- | --- | --- |
+| P0 | Erasure, Src → Lam | [`Lam.Erase`](../IxCC/Lam/Erase.lean) | Implemented |
+| P1 | ANF conversion, Lam → Anf; join point for every non-tail `case` | [`Anf.Convert`](../IxCC/Anf/Convert.lean) | Implemented |
+| P2 | Shrink: the rewrite rules of [`Anf.Walk`](../IxCC/Anf/Walk.lean), iterated per global | [`Anf.Shrink`](../IxCC/Anf/Shrink.lean) | Implemented |
+| P3 | Inlining of listed callees and CAFs | [`Anf.Inline`](../IxCC/Anf/Inline.lean) | Implemented, bounded |
+| P4 | Specialisation on masked arguments, with a fixed-parameter checker | [`Anf.Specialize`](../IxCC/Anf/Specialize.lean) | Implemented, bounded |
+| — | Pruning of globals unreachable from the roots | [`Anf.Prune`](../IxCC/Anf/Prune.lean) | Implemented |
+| P5 | Dead parameters (worker/wrapper; the key `GKey.worker` exists) | — | Planned |
+| P6 | Contification, arity raising, uncurrying | — | Planned |
+| P7 | Measured extras: accumulators, multi-value returns, common subexpressions, float-in | — | Planned, each when a measurement asks for it |
+| P8 | Closed-world defunctionalisation | — | Planned, Phase 2 ([design](closures-design.md)) |
+| P9 | Dispatch narrowing by untrusted flow facts | — | Planned, Phase 2–3 ([design](closures-design.md#p9-and-the-flow-oracle)) |
+
+The implemented schedule is in [`Anf.Pipeline`](../IxCC/Anf/Pipeline.lean);
+P1 has no certificate data, P2 to P4 read their choices from the
+certificate.
 
 ### Middle-end budgets
 
@@ -273,7 +303,7 @@ checked against the admitted closure.
 | `case T` | `T.casesOn` becomes a primitive case. |
 | `inline f` | Unfold matchers and `@[inline]`/`@[macro_inline]` definitions. |
 | `lazy f` | Pass arguments by name (`ite`, `dite`, `cond`, `Bool.or`, …). |
-| `prim f op` | Compute `f` with a primitive proved against its pinned kernel body. |
+| `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a stage-2 obligation, [certification design](certification-design.md#c4-stage-k-semantic-adequacy-s8)). |
 
 In the model, an accepted equation theorem forces its two sides to denote the
 same value, so every table entry preserves meaning. When an equation is
@@ -312,6 +342,12 @@ safe-source condition of the correctness statement.
 - represents field-free enums as immediates.
 
 ## Ownership, reference counting and reuse
+
+The design in this section up to the plain-RC paragraph is the Phase 2
+target and is **planned**: the untrusted passes, the linear-typing checker,
+the checked fallback and the guarantee table are not built. What is
+implemented is the conservative plain-RC route described from "The first
+plain-RC implementation" on ([data design, D1](data-and-roots-design.md#d1-heap-completion)).
 
 **Untrusted passes place reference-counting operations:**
 - borrow inference;
@@ -379,7 +415,12 @@ ownership kind, so a literal may flow into a `unique` position.
 | shared | Dynamic RC; reuse guarded by a runtime uniqueness test |
 | borrowed | No `inc`/`dec` for the view or anything projected from it |
 | local | Borrowed convention now; region or stack allocation later, once measured |
-| one-shot closure | Captures move; the closure cell is freed or reused without a test |
+| one-shot closure | Captures move; the closure cell is freed or reused without a test (closures are constructor cells after P8) |
+
+None of these effects is implemented yet. Today a written contract can make
+a binder irrelevant (`0`), and the contracts decide whether `--rc auto`
+selects the zero-RC policy, as described above; they do not change the RC
+operations the plain route places.
 
 ## Runtime
 
@@ -388,16 +429,22 @@ ownership kind, so a literal may flow into a `unique` position.
   enums and other field-free constructors, `Bool`, `Char`, `UInt8/16/32`,
   and □.
 - Objects carry one 8-byte header (scan count, size class, 16-bit tag,
-  32-bit RC), followed by scanned fields, then scalar fields.
+  32-bit RC), followed by scanned fields, then scalar fields. Scalar fields
+  are planned; every implemented layout is fully scanned.
 - `UInt64` is raw in registers and scalar fields once a checked
-  representation annotation exists; until then it is a tagged `Nat`.
+  representation annotation exists (planned,
+  [D2](data-and-roots-design.md#d2-fixed-width-integers-and-int)); until then
+  it is a tagged `Nat`, and a value at or above 2^63 fails as `Nat` does.
 
 **Services.**
 - Allocation uses size-class free lists refilled by bump pointer from a heap
   region the caller supplies.
-- Allocation, `inc`, `dec` and the uniqueness test have inline fast paths.
+- Inline fast paths for allocation, `inc`, `dec` and the uniqueness test are
+  planned. Today each RC operation calls a runtime procedure, and there is no
+  uniqueness test because there is no reuse yet.
 - Freeing is iterative.
-- `Nat` overflow is an explicit failure until certified limb bignums land.
+- `Nat` overflow is an explicit failure until certified limb bignums land
+  ([bignum design](bignum-design.md)).
 
 The runtime is ordinary Lir code under the same proofs. It links no C runtime
 and does not depend on GMP.
@@ -496,3 +543,105 @@ Four obligations stay distinct:
    provenance, each with its own inventory;
 4. statement faithfulness: roots are identified by their Ixon v4 addresses,
    with source maps and any replacements bound to the certified artifact.
+
+## Planned extensions
+
+Each extension has a design document with its motivation, current state,
+options, proof obligation, trust effect, dependencies, size estimate and
+exit criterion. The [roadmap](roadmap.md#plan) orders them.
+
+| Extension | Status | Design |
+| --- | --- | --- |
+| Higher-order code: P8 defunctionalisation, P9 | Planned (Phase 2) | [Closures](closures-design.md) |
+| Heap completion: scalar fields, large and static objects, reuse, ownership checker | In progress (Phase 2) | [Data, roots and effects](data-and-roots-design.md#d1-heap-completion) |
+| Fixed-width integers, `Int`, arrays, byte arrays, strings, library structures | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md) |
+| Structured roots, the byte ABI, the claim's ABI descriptor, state-machine effects | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md#r1-structured-roots-and-the-byte-abi) |
+| Bignums: a limb library compiled by IxCC | Planned (Phase 4) | [Bignums](bignum-design.md) |
+| Front-end theorem, shape typing, stage L, stage K | Planned and research (track C) | [Certification depth](certification-design.md) |
+| Scale and usability | Planned (Phase 5) | [below](#scale-and-usability) |
+
+## Scale and usability
+
+**Status: planned** (Phase 5). The budgets are implemented; the rest is
+planned.
+
+**Motivation.** The flagship targets are far larger than any program the
+compiler has seen. The certified kernel's executable closure is about 1,270
+definitions for the checker and about 1,870 with admission and the Ixon
+reader, before the parts of `Init` and `Std` it uses (grep counts, upper
+bounds, 2026-11-09 IXCC-ROUTE review). The largest committed programs fit
+the budgets with headroom between 16× and 326× ([Middle-end
+budgets](#middle-end-budgets)), but they are small.
+
+**Current state.**
+- *Implemented.* The middle-end budgets above are fixed constants,
+  independent of the input's size. A step may hold at most 64
+  specialisation decisions with masks of at most 64 parameters
+  ([`Recheck/Run.lean:173`](../IxCC/Recheck/Run.lean)).
+- The front end before the middle end has no node budget (see the budget
+  section above).
+- Reported superlinear steps (2026-11-08 review, not re-measured at this
+  head): a shrink round costs up to order `n²` in a global's size (census
+  reads, above); one walk round was about quadratic (16,000 bindings in
+  25.6 s); `encodeK`, which kernel evaluation of the recheck runs (native
+  code runs `encode` through `encodeK_csimp`), is quadratic in the program's
+  text; `selectRcPolicy` was cubic in let-alias chains; frame `Nodup`
+  checks are quadratic. Erased type checking (`V3.Tc.checkEnv`) took about
+  30 s on a 1 MB closure, against milliseconds for `Recheck.run`, so the
+  roadmap's 10 s target is missed with type checking on.
+- The producer `ixcc compile` ran past 180 s on a 917-byte input with heavy
+  sharing, where `check-cert` is bounded (2026-11-09 review, open question 3).
+- Declines carry a `stage: code` and a message (for example
+  `fir.closures`); `lake exe census` reports the first failing stage per
+  declaration ([corpus](corpus.md)). Messages name constants by Ixon
+  identity, not by Lean source position.
+
+**Design.**
+1. **Budgets proportional to input.** Replace fixed caps by limits that
+   scale with the closure's size (a constant factor of the input's nodes),
+   keeping the fixed caps as an upper bound for hostile inputs, so a large
+   honest program is not refused while a hostile certificate still cannot
+   amplify its input.
+2. **Linear-time passes on the recheck path.** Incremental census counts in
+   shrink, linear walks, an indexed encoder for kernel evaluation, linear
+   RC-policy selection, set-based `Nodup` checks. Each is a refactor of a
+   proved pass, with the existing theorem restated.
+3. **Per-function recheck and caching.** Check certificates per global or
+   per strongly connected component, and cache accepted results by content
+   address, so recompiling after a change rechecks only what changed.
+   Cached entries are oracle outputs that the consuming checker re-validates.
+4. **Faster ingress.** Run the erased type checker once per closure root
+   and reuse its result across compilations of the same closure; separately,
+   adopt the certified kernel for admission when its interfaces allow (the
+   coordination item in the [roadmap](roadmap.md#coordination)).
+5. **Diagnostics.** Every decline names the Lean constant (through the named
+   environment ix can produce beside the anonymous one), the stage, the
+   construct, and what would lift it (for example "a closure captured 40
+   variables; the plain-RC route allows 31").
+6. **Library coverage.** A *library census*: run `census` over the
+   public declarations of `Init` and `Std` that a general user reaches
+   (`Nat`, `Int`, `UIntN`, `Fin`, `Char`, `List`, `Array`, `ByteArray`,
+   `String`, `Option`, `Except`, `StateT`, `ReaderT`, `ExceptT`, `ForIn`,
+   `Std.HashMap`, `Std.TreeMap`, `toString`/`repr`) and track, per
+   declaration, the first stage that declines it. Floats, `Task`, `IO` and
+   `partial` definitions stay outside (`partial_fixpoint` compiles through
+   its equation).
+
+**Proof obligation.** Items 1, 2 and 5 restate existing checkers' theorems
+for new implementations. Item 3 needs a composition theorem: a program whose
+globals were checked separately, under the same table and annotation, has
+the whole-program guarantees. Item 4 changes nothing proved.
+
+**Trusted base.** No change; a cache adds nothing because every hit is
+rechecked.
+
+**Dependencies.** None for items 1, 2, 5 and 6; item 3 needs per-function
+certificates.
+
+**Size [estimate].** Items 1, 2 and 5: 3–6k lines; item 3: 5–10k lines;
+item 6: a tool of about 0.5k lines over the existing census.
+
+**Exit.** K6 (`liasolver`, `parser`, and a subset of the certified kernel)
+compiles and certifies; a closure of at least 2,000 definitions compiles and
+rechecks with no budget refusal, within a compile-time target set after the
+first measurement; the library census is published with its decline counts.

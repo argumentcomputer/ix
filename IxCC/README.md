@@ -27,8 +27,26 @@ ELF (`--rc auto|on|off`). `Recheck.sound`, `Recheck.RcReplay.sound`,
 `Compiler.compile_sound`, `CompileClaim`, and `Ring0` (`verifyRing0Sip_sound`)
 prove the accepted recheck, replay, and claim-verification paths correct
 relative to the source evaluator and the native driver model; the connection to
-Lean's denotation remains open. See the
-[roadmap](docs/roadmap.md) for scope and remaining work. Main includes:
+Lean's denotation remains open.
+
+**What compiles today.** First-order Lean programs over `Nat` (below 2^63 at
+run time; a larger value is a resource failure) and inductive types, with
+recursion through equation theorems. Higher-order code compiles only where
+inlining and specialisation remove every closure. Memory is immortal or
+bounded plain reference counting (constructors of up to 31 fields). Roots
+take at most five `Nat` arguments and return a `Nat`, an enumeration or a
+first-order constructor tree. Fixed-width integers at or above 2^63,
+arrays, byte arrays, strings, bignums and IO are not supported.
+
+**What is proved.** An accepted object refines the source evaluator on the
+checked source program, unless that source goes wrong (gets stuck, traps or
+returns a value its type does not read back), under the x86, loader and
+driver assumptions of the [trust ledger](docs/trusted-extern-ledger.md). That
+the checked source means the Lean definition is not proved.
+
+The [roadmap](docs/roadmap.md) states the fragment exactly and plans the
+way to a generally useful certified compiler, with two flagship targets.
+Main includes:
 - the scalar and bounded plain-RC compiler (`Compiler.Proof`, `CompileClaim`,
   `Ring0`), certificate rechecker (`Recheck`, `Recheck.RcReplay`), proof fences
   and native suites;
@@ -37,7 +55,8 @@ Lean's denotation remains open. See the
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
   [stream/ELF layer](docs/x86-stream-objects.md);
-- the [Aiur target](docs/aiur-backend.md).
+- a verifier-side model of [Aiur](docs/aiur-backend.md) bytecode, pinned from
+  an earlier ix revision; no IxCC IR lowers to it yet.
 
 Phase 1.5's resource-checker work, final producer repin and consumer integration
 remain incomplete. New upstream Lean-to-Ixon certification provides interfaces
