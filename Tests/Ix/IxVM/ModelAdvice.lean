@@ -183,10 +183,11 @@ def report (_ : Lean.Environment) : IO UInt32 := do
         outsideAll := outsideAll.insert x k
       IO.println s!"BLOCK {b} ok records={n} outside={outside.size} \
         basis={(outside.filter (·.2 == 0)).size} closure={(outside.filter (·.2 == 1)).size} \
-        container-rec={(outside.filter (·.2 == 2)).size}"
+        container-rec={(outside.filter (·.2 == 2)).size} projection={(outside.filter (·.2 == 3)).size}"
     | .error e => IO.println s!"BLOCK {b} none: {e}"
   IO.println s!"[ixvm-model-report] {rep.blocks.size} modeled blocks, {ok} with a payload; outside \
-    references by kind: basis {kinds.getD 0 0}, closure {kinds.getD 1 0}, container recursor {kinds.getD 2 0}; \
+    references by kind: basis {kinds.getD 0 0}, closure {kinds.getD 1 0}, container recursor {kinds.getD 2 0}, \
+    projection of a closure block {kinds.getD 3 0}; \
     {outsideAll.size} distinct"
   for (x, k) in outsideAll.toList do
     if k != 1 then

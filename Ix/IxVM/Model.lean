@@ -333,7 +333,7 @@ dependency path), the models of the types, constructors and recursors, and the
 structure Payload where
   recBlock : Address
   advice : Array Address
-  witnesses : Array (Address × Nat × List Nat)
+  witnesses : Array (Address × Nat × List Nat × List Nat)
   typeModels : Array Address
   ctorModels : Array Address
   recModels : Array Address
@@ -346,9 +346,10 @@ def Payload.ser (p : Payload) : ByteArray := Id.run do
   b := putN b (p.adviceCount.getD p.advice.size)
   for a in p.advice do b := putAddr b a
   b := putN b p.witnesses.size
-  for (x, kind, steps) in p.witnesses do
+  for (x, kind, steps, extra) in p.witnesses do
     b := (putAddr b x).push kind.toUInt8
     unless kind == 0 do b := steps.foldl putN (putN b steps.length)
+    b := extra.foldl putN b
   for a in p.typeModels ++ p.ctorModels ++ p.recModels ++ p.iotas do b := putAddr b a
   return b
 
@@ -430,16 +431,26 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       if aset.contains r || outside.contains r then continue
       outside := outside.push r
   let parent := depsSearch look b
+  -- a path of one step or more: the block itself is not in its closure
+  let pathFrom (x : Address) : Option (List Nat) := (pathTo parent b x).filter (!·.isEmpty)
   let roleOf (x : Address) : Option Nat := do
     let (r, _) ← table.bound.find? (·.2 == x)
     Ix.Kernel.Role.all.idxOf? r
   let mut deps : Array Address := (records.map (·.1)).push fk.recBlock
-  let mut witnesses : Array (Address × Nat × List Nat) := #[]
+  let mut witnesses : Array (Address × Nat × List Nat × List Nat) := #[]
   for x in outside do
-    if let some steps := pathTo parent b x then
-      witnesses := witnesses.push (x, 1, steps)
+    if let some steps := pathFrom x then
+      witnesses := witnesses.push (x, 1, steps, [])
     else if (roleOf x).any basisRoleAllowed then
-      witnesses := witnesses.push (x, 0, [])
+      witnesses := witnesses.push (x, 0, [], [])
+    else if let some (pb, idx, c1) := (look x).bind (fun c => match c.info with
+        | .iPrj p => some (p.block, p.idx.toNat, 0)
+        | .cPrj p => some (p.block, p.idx.toNat, p.cidx.toNat + 1)
+        | _ => none) then
+      -- a type or constructor of a block in the closure (its block's walk checks it)
+      let some steps := pathFrom pb
+        | throw s!"outside projection {x} is of a block outside the closure"
+      witnesses := witnesses.push (x, 3, steps, [idx, c1])
     else
       -- a container's recursor: a recursor of a block in the closure
       let ref? : Option (ConstRef Address) := (look x).bind fun c => match c.info with
@@ -448,9 +459,9 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
         | _ => none
       let some ref := ref? | throw s!"outside reference {x} is neither in the closure nor a basis role"
       let some entry := cx.index.recs[ref]? | throw s!"outside recursor {x} is not indexed"
-      let some steps := pathTo parent b entry.block
+      let some steps := pathFrom entry.block
         | throw s!"outside recursor {x} eliminates a block outside the closure"
-      witnesses := witnesses.push (x, 2, steps)
+      witnesses := witnesses.push (x, 2, steps, [])
       deps := deps.push x
   -- the member models and the iota theorems, in the circuit's order
   let modelOf (k : Key .anon) : Except String Address :=
@@ -555,7 +566,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
         env := { env with models := env.models.insert a adv.payload,
                           modelDeps := env.modelDeps.insert a adv.deps }
         report := { report with
-          blocks := report.blocks.push (a, .ok (adv.records.size, adv.layout.witnesses.map fun (x, k, _) => (x, k))),
+          blocks := report.blocks.push (a, .ok (adv.records.size, adv.layout.witnesses.map fun (x, k, _, _) => (x, k))),
           advice := report.advice.push (a, adv) }
   return ({ withEmptyPayloads env with modelsAttached := true }, report)
 

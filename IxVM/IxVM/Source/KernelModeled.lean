@@ -37,6 +37,9 @@ Payload layout (bytes; counts are TagN0, addresses 32 bytes):
                            --      to its block, j + 1 = the record's j-th used reference)
                            --   2  a native recursor of a block in the closure: a path to
                            --      that block; the recursor is checked here
+                           --   3  a type or constructor of a block in the closure: a path
+                           --      to the block, the member index, 0 (the type) or j + 1
+                           --      (constructor j); the block's walk checks its members
     type models            -- one per member of the block, in position order
     ctor models            -- one per constructor, by member then constructor index
     recursor models        -- one per member of the family record, in order
@@ -539,15 +542,37 @@ def check_witness := aiur_fn⟦
           s } ,
         1 => {
           let (n, s2) = get_count(s);
-          let (stop, s3) = walk_path(block, s2, n);
+          let (stop, s3) = walk_from_block(block, s2, n);
           assert_eq!(Bytes::address_eq(stop, x), 1, "model advice: a dependency path ends elsewhere");
           s3 } ,
         2 => {
           let (n, s2) = get_count(s);
-          let (iblock, s3) = walk_path(block, s2, n);
+          let (iblock, s3) = walk_from_block(block, s2, n);
           check_container_rec(rc, x, iblock);
           s3 } ,
+        3 => {
+          let (n, s2) = get_count(s);
+          let (iblock, s3) = walk_from_block(block, s2, n);
+          let (idx, s4) = get_count(s3);
+          let (c1, s5) = get_count(s4);
+          let expected = match c1 {
+            0 => {  KernelDefEq::compute_iprj_addr(iblock, idx) } ,
+            _ => {  KernelCheck::projection_addr_ctor(idx, c1 - 1, iblock) } ,
+          };
+          assert_eq!(Bytes::address_eq(expected, x), 1,
+            "model advice: a projection witness names another member");
+          s5 } ,
       }
+    }
+⟧
+
+  -- A path of one step or more from the block: what it reaches is in the block's
+  -- dependency closure, which by content addressing cannot contain the block.
+
+def walk_from_block := aiur_fn⟦
+  fn walk_from_block(block: Bytes::AddressRef, s: Bytes::Stream, n: Field) -> (Bytes::AddressRef, Bytes::Stream) {
+      assert_eq!(Fields::is_zero(n), 0, "model advice: an empty dependency path");
+      walk_path(block, s, n)
     }
 ⟧
 
