@@ -111,6 +111,7 @@ def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
 reads, when its witness carries none: a suite that builds its IO by hand gets
 them as `IxVM.ClaimHarness`'s builders give them. -/
 def Case.withPwHints (c : Case) : Except String Case := do
+  if _root_.IxVM.PwHints.hasHints c.witness.inputIOBuffer then return c
   let some claim := _root_.IxVM.PwHints.claimOf c.witness.inputIOBuffer c.witness.input | return c
   let io ← _root_.IxVM.PwHints.withHints claim c.witness.inputIOBuffer
   return { c with witness := { c.witness with inputIOBuffer := io } }
