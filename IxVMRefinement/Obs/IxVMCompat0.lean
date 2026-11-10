@@ -21,12 +21,14 @@ open IxVM (F)
 inductive «IxVMCompat::check_owned».Path (x_binding x_validator x_bytes : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (cs4 : List (Call F)) (v7 : SourceValue F) (m10 : Heap F) (cs18 : List (Call F)) (m24 : Heap F) (m42 : Heap F)
-      (hm32 : m24 = (h ++ [x_binding]))
-      (ev20 : ObsFn W "KernelRoles::role_ctx_for_validator" [(.ptr (Value.type (x_binding : SourceValue F)) (h).length), x_validator] m24 v7 m10 cs18)
-      (hm50 : m42 = (m10 ++ [x_bytes]))
-      (ev6 : ObsFn W "KernelClaim::env_walk_all" [v7, (.ptr (Value.type (x_bytes : SourceValue F)) (m10).length)] m42 r h' cs4)
-      (hc52 : calls = ((⟨"KernelRoles::role_ctx_for_validator", [(.ptr (Value.type (x_binding : SourceValue F)) (h).length), x_validator], m24⟩ : Call F) :: (cs18 ++ ((⟨"KernelClaim::env_walk_all", [v7, (.ptr (Value.type (x_bytes : SourceValue F)) (m10).length)], m42⟩ : Call F) :: cs4))))
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (m17 : Heap F) (cs30 : List (Call F)) (v33 : SourceValue F) (m36 : Heap F) (cs44 : List (Call F)) (m50 : Heap F) (m68 : Heap F)
+      (hm25 : m17 = (h ++ [x_bytes]))
+      (ev14 : ObsFn W "KernelClaim::assert_claimable" [(.ptr (Value.type (x_bytes : SourceValue F)) (h).length)] m17 v1 m2 cs12)
+      (hm58 : m50 = (m2 ++ [x_binding]))
+      (ev46 : ObsFn W "KernelRoles::role_ctx_for_validator" [(.ptr (Value.type (x_binding : SourceValue F)) (m2).length), x_validator] m50 v33 m36 cs44)
+      (hm76 : m68 = (m36 ++ [x_bytes]))
+      (ev32 : ObsFn W "KernelClaim::env_walk_all" [v33, (.ptr (Value.type (x_bytes : SourceValue F)) (m36).length)] m68 r h' cs30)
+      (hc78 : calls = ((⟨"KernelClaim::assert_claimable", [(.ptr (Value.type (x_bytes : SourceValue F)) (h).length)], m17⟩ : Call F) :: (cs12 ++ ((⟨"KernelRoles::role_ctx_for_validator", [(.ptr (Value.type (x_binding : SourceValue F)) (m2).length), x_validator], m50⟩ : Call F) :: (cs44 ++ ((⟨"KernelClaim::env_walk_all", [v33, (.ptr (Value.type (x_bytes : SourceValue F)) (m36).length)], m68⟩ : Call F) :: cs30))))))
 
 /-- **Every observed derivation of `IxVMCompat::check_owned` takes one of its paths.** -/
 theorem «IxVMCompat::check_owned».obs {x_binding x_validator x_bytes : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -35,29 +37,39 @@ theorem «IxVMCompat::check_owned».obs {x_binding x_validator x_bytes : SourceV
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxVMCompat.check_owned.lookup
     (by simp [IxVM.IxVMCompat.check_owned, ControlLower.hasControl]) ev
   simp only [IxVM.IxVMCompat.check_owned] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, rfl⟩ := d0.call_inv
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, rfl, d13, a14, rfl⟩ := a5.cons_inv
-  obtain ⟨vs15, m16, c17, cs18, a19, ev20, rfl⟩ := d13.call_inv
-  rw [instanceName_plain_some] at ev20
-  obtain ⟨v21, vs23, m24, c25, c26, rfl, d27, a28, rfl⟩ := a19.cons_inv
-  obtain ⟨v29, m30, d31, rfl, hm32⟩ := d27.store_inv
-  obtain ⟨l33, rfl, rfl⟩ := d31.var_inv
-  simp at l33
-  subst l33
-  obtain ⟨v22, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a28.cons_inv
-  obtain ⟨l40, rfl, rfl⟩ := d38.var_inv
-  simp at l40
-  subst l40
-  obtain ⟨rfl, rfl, rfl⟩ := a39.nil_inv
-  obtain ⟨v8, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a14.cons_inv
-  obtain ⟨v47, m48, d49, rfl, hm50⟩ := d45.store_inv
-  obtain ⟨l51, rfl, rfl⟩ := d49.var_inv
-  simp at l51
-  subst l51
-  obtain ⟨rfl, rfl, rfl⟩ := a46.nil_inv
-  try simp only [Value.type, List.map_cons, List.map_nil] at hm32 ev20 hm50 ev6 ⊢
-  exact «IxVMCompat::check_owned».Path.run _ _ _ _ _ _ hm32 ev20 hm50 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
+  rw [instanceName_plain_some] at ev14
+  obtain ⟨v15, vs16, m17, c18, c19, rfl, d20, a21, rfl⟩ := a13.cons_inv
+  obtain ⟨v22, m23, d24, rfl, hm25⟩ := d20.store_inv
+  obtain ⟨l26, rfl, rfl⟩ := d24.var_inv
+  simp at l26
+  subst l26
+  obtain ⟨rfl, rfl, rfl⟩ := a21.nil_inv
+  obtain rfl := matchPattern_wildcard_inv mt7
+  obtain ⟨vs27, m28, c29, cs30, a31, ev32, rfl⟩ := d8.call_inv
+  rw [instanceName_plain_some] at ev32
+  obtain ⟨v33, vs35, m36, c37, c38, rfl, d39, a40, rfl⟩ := a31.cons_inv
+  obtain ⟨vs41, m42, c43, cs44, a45, ev46, rfl⟩ := d39.call_inv
+  rw [instanceName_plain_some] at ev46
+  obtain ⟨v47, vs49, m50, c51, c52, rfl, d53, a54, rfl⟩ := a45.cons_inv
+  obtain ⟨v55, m56, d57, rfl, hm58⟩ := d53.store_inv
+  obtain ⟨l59, rfl, rfl⟩ := d57.var_inv
+  simp at l59
+  subst l59
+  obtain ⟨v48, vs60, m61, c62, c63, rfl, d64, a65, rfl⟩ := a54.cons_inv
+  obtain ⟨l66, rfl, rfl⟩ := d64.var_inv
+  simp at l66
+  subst l66
+  obtain ⟨rfl, rfl, rfl⟩ := a65.nil_inv
+  obtain ⟨v34, vs67, m68, c69, c70, rfl, d71, a72, rfl⟩ := a40.cons_inv
+  obtain ⟨v73, m74, d75, rfl, hm76⟩ := d71.store_inv
+  obtain ⟨l77, rfl, rfl⟩ := d75.var_inv
+  simp at l77
+  subst l77
+  obtain ⟨rfl, rfl, rfl⟩ := a72.nil_inv
+  try simp only [Value.type, List.map_cons, List.map_nil] at hm25 ev14 hm58 ev46 hm76 ev32 ⊢
+  exact «IxVMCompat::check_owned».Path.run _ _ _ _ _ _ _ _ _ _ hm25 ev14 hm58 ev46 hm76 ev32 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `IxVMCompat::io_get_info`: one constructor per combination of selected arms. -/
 inductive «IxVMCompat::io_get_info».Path (x_channel x_key : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
