@@ -91,15 +91,8 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
         env₃.find? n = some (.recInfo cv mI rP rules) →
         envSelf.find? n = some (.recInfo cv mI rP rules) ∨
         RecLawsAt mp.base2 cv mI rP rules := by
-  -- the four claims and the reads, at every assignment (`hμ` + `mp`)
-  have hclaims := fun ψ =>
-    checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
-    fun ψ => (hclaims ψ).2.2.1
-  have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
-    fun ψ => (hclaims ψ).2.2.2
-  have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
-    fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
+  -- the kernel's runs, as a sound judgement package at the self model
+  have hJ := judgeSound_runJ (V := V) hμ mp F
   intro recs
   induction recs with
   | nil =>
@@ -122,8 +115,8 @@ theorem indRecsFold (hμ : μ.verifiedChecks = true) {F : Nat}
     -- this recursor's rules, fired
     have hfacts : RecLawsAt mp.base2 cvA mI rP rules' :=
       fun rl hrl hfire φ =>
-        iotaRules mp hdeq hinf hreadsP rfl hroT hIS hupB hbnA hselfA
-          heqfB 0 rules rules' hiot rl hrl hfire φ
+        iotaRules mp hJ rfl hroT hIS hupB hbnA hselfA
+          heqfB 0 rules rules' (iotaRulesRun_runJ hiot) rl hrl hfire φ
     refine ih ?_ (fun ci hci => hbn ci (List.mem_cons_of_mem _ hci))
       hprov' hfold'
     intro n cv mI₀ rP₀ rules₀ hfx

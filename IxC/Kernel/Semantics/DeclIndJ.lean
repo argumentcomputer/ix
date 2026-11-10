@@ -236,7 +236,9 @@ def IotaThmRunJ (J : Judgements md) (env' envSelf : Env md)
            (targs.getD 0 (.bvar 0)) lhsS)
 
 /-- `IotaThmNRun` over a package: a nested rule's `iota` theorem, with the pins
-typed against the constructor's parameter domains (`TypedListJ`). -/
+typed against the constructor's parameter domains (`TypedListJ`). The kernel's
+check that each pin is a fixed point of the annotation pass is not part of the
+record: the model tier reads the pins through their typings only. -/
 def IotaThmNRunJ (J : Judgements md) (env' envSelf : Env md)
     (f : Key md → Key md) (cvName : Key md)
     (lps : List LevelParam) (tyA : Expr md) (mI rP j : Nat) (r : RecRule md)
@@ -277,7 +279,6 @@ def IotaThmNRunJ (J : Judgements md) (env' envSelf : Env md)
        openPisAtFvars rP tyA 0 = some (fvsP, crest2) ∧
        (let pinsP := pins.map fun p =>
           Expr.instSpine (fvsP.take rP) (rP - 1) p
-        (∀ p ∈ pinsP, J.annot envSelf depth p p) ∧
         Expr.instPisAt pinsP
           (cvj.type.instantiateLevelParams cvj.levelParams lvls)
           = some (cdomsP, crestP) ∧
@@ -491,9 +492,9 @@ theorem iotaThmNRun_runJ {env' envSelf : Env md} {f : Key md → Key md}
   refine ⟨hshape, cvt, fvs, tbody, h1, h2, h3, h4, h5, ?_⟩
   dsimp only at h6 ⊢
   obtain ⟨g1, g2, g3, g4, g5, cdoms, cres, rdoms, lrest, fvsP, crest2, cdomsP,
-    crestP, xFvsP, ldoms, k1, k2, k3, k4, k5, ldomsL, lrest2, k7, k8, k9⟩ := h6
+    crestP, xFvsP, ldoms, k1, k2, k3, k4, ⟨-, k5a, k5b, k5c⟩, ldomsL, lrest2, k7, k8, k9⟩ := h6
   exact ⟨g1, g2, g3, g4, g5, cdoms, cres, rdoms, lrest, fvsP, crest2, cdomsP,
-    crestP, xFvsP, ldoms, k1, k2, k3, k4, k5, ldomsL, lrest2, k7,
+    crestP, xFvsP, ldoms, k1, k2, k3, k4, ⟨k5a, k5b, k5c⟩, ldomsL, lrest2, k7,
     typedListOk_runJ k8, iotaRuns_runJ k9⟩
 
 theorem iotaRuleRun_runJ {env' envSelf : Env md} {f : Key md → Key md}

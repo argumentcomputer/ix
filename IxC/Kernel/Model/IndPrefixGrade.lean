@@ -57,8 +57,8 @@ set_option maxHeartbeats 3200000 in
 /-- **The prefix walk's gradings and equalities, by position.**  See
 the module docstring; the two conclusions are proved by one strong
 induction because each feeds the other one step later. -/
-theorem prefixGradeFire {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem prefixGradeFire {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {rP cnF : Nat}
     -- the statement frame
     {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
@@ -95,7 +95,7 @@ theorem prefixGradeFire {m : EnvModel V env} {F : Nat}
       RenEqT f ((fvsP.map Expr.fvarTypeD).getD n default)
         (rdoms.getD n default))
     -- the recorded run
-    (hdePre : DefEqListOk μ F env (rP + cnF)
+    (hdePre : DefEqListJ J env (rP + cnF)
       ((fvs.take rP).map Expr.fvarTypeD) rdoms)
     {N : Nat} (hN : N ≤ rP + cnF) :
     ∀ n, n ≤ N → n < rP → ∀ ρ' : Nat → V,
@@ -325,8 +325,7 @@ theorem prefixGradeFire {m : EnvModel V env} {F : Nat}
   intro ρ' hsat
   refine ⟨hgrBall ρ' hsat, ?_⟩
   -- the equality: fire the recorded run at the padded frame
-  have hrun : isDefEqCore μ env F (rP + cnF) ty (rdoms.getD n default)
-      = .ok true := by
+  have hrun : J.defeq env (rP + cnF) ty (rdoms.getD n default) := by
     have h := defEqListOk_getD hdePre n
       (by rw [List.length_map, List.length_take, hfvslen]; omega)
     rw [show ((fvs.take rP).map Expr.fvarTypeD).getD n default = ty from by

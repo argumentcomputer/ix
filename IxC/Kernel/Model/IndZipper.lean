@@ -51,8 +51,8 @@ variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 set_option maxHeartbeats 6400000 in
 /-- **The zipper, at the reading** (`zipperS`): the fired statement
 spine satisfies and fits the checked statement's telescope. -/
-theorem zipper {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem zipper {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {rP cnP cnF mI : Nat} {xs ys : List AnnotTerm} {ρ : Nat → V}
     (hrPmI : rP ≤ mI) (hlenX : xs.length = mI)
@@ -122,9 +122,9 @@ theorem zipper {m : EnvModel V env} {F : Nat}
     (hfitRpre : TeleFitPA V ρ TV (xs.take rP) restRpre)
     (hfitC : TeleFitPA V ρ TVj ys restC)
     -- the recorded runs
-    (hdePre : DefEqListOk μ F env (rP + cnF)
+    (hdePre : DefEqListJ J env (rP + cnF)
       ((fvs.take rP).map Expr.fvarTypeD) rdoms)
-    (hdeFld : DefEqListOk μ F env (rP + cnF)
+    (hdeFld : DefEqListJ J env (rP + cnF)
       ((fvs.drop rP).map Expr.fvarTypeD) (cdoms.drop cnP))
     -- the constructor run's parameter positions, at every padding
     -- (the padding level is bounded below by `rP`: the field branch is

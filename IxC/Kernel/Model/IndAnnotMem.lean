@@ -254,8 +254,8 @@ induction: the earlier positions' equalities carry `Sat`'s
 memberships into the λ tower, `wellDenotedV_lamTower_slot` grades slot `k`
 out of `hokRa`, and the recorded lam walk fires at the statement
 frame's own context through `ctxOk_of_walked_openers`. -/
-theorem annotMem {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem annotMem {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {K : Nat}
     -- the public frame
     {pfvs : List (Expr md)} (hPlen : pfvs.length = K)
@@ -288,7 +288,7 @@ theorem annotMem {m : EnvModel V env} {F : Nat}
     (hdomsLam : ∀ (i : Nat) (x : Expr md), ldomsL[i]? = some x →
       denoteMeta m.acval env φ i x = some (Γlam.getD (K - 1 - i) default))
     -- the recorded lam walk
-    (hdeLam : DefEqListOk μ F env K (pfvs.map Expr.fvarTypeD) ldomsL) :
+    (hdeLam : DefEqListJ J env K (pfvs.map Expr.fvarTypeD) ldomsL) :
     ∀ k, k < K → ∀ ρ' : Nat → V, Sat V Δa ρ' →
       WellDenotedV V (fun j => ρ' (j + (K - k)))
           (Γlam.getD (K - 1 - k) default) ∧
@@ -392,7 +392,7 @@ theorem annotMem {m : EnvModel V env} {F : Nat}
     rw [List.getD, hld]
     rfl
   -- the run at position `k`
-  have hrun : isDefEqCore μ env F K ty ld = .ok true := by
+  have hrun : J.defeq env K ty ld := by
     have h := defEqListOk_getD hdeLam k (by
       rw [List.length_map, hPlen]; omega)
     rw [show (pfvs.map Expr.fvarTypeD).getD k default = ty from by
