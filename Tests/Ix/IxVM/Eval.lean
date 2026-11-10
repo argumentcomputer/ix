@@ -103,7 +103,7 @@ private def evalFftCosts : List (String × Nat) := [
   ("generated arithmetic 3, seed 312873973889897908", 3_909_500_807),
   ("generated arithmetic 4, seed 14324766925872067785", 3_910_492_407),
   ("generated arithmetic 5, seed 5865597085624116754", 3_919_896_446),
-  ("generated arithmetic 6, seed 8838574616595545567", 3_900_060_215),
+  ("generated arithmetic 6, seed 8838574616595545567", 3_907_548_014),
   ("generated arithmetic 7, seed 5951150478550409152", 3_914_812_946),
   ("generated arithmetic 8, seed 13867390926732686213", 3_904_538_643),
   ("generated arithmetic 9, seed 3876320172222402110", 3_916_447_415),
@@ -120,7 +120,7 @@ private def evalFftCosts : List (String × Nat) := [
   ("generated arithmetic 20, seed 5561980989402630457", 3_872_527_175),
   ("generated arithmetic 21, seed 215210223919765058", 3_913_771_911),
   ("generated arithmetic 22, seed 7293824100597899471", 2_783_596_799),
-  ("generated arithmetic 23, seed 2714453358506657904", 3_451_204_448),
+  ("generated arithmetic 23, seed 2714453358506657904", 3_458_665_515),
 ]
 
 /-- Every accepted evaluation must have an exact FFT pin. Rejections are

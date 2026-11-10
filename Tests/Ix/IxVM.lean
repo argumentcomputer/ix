@@ -102,7 +102,7 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.thmMajorUse", 782_357_596),
   ("IxVMInd.partialKRec", 262_804_401),
   ("IxVMInd.deepRebase", 336_355_626),
-  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec", 3_681_831_310),
+  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec", 3_690_619_832),
   ("Lean.Widget.TaggedText.rec", 4_896_728_096),
   ("Lean.Doc.Part.rec", 24_182_504_183),
   ("Lean.Doc.Block.rec", 21_379_738_645),

@@ -65,7 +65,7 @@ over one is certified against the bound constants themselves.
   type is closed over role keys.
 
 **The compiler-trust axioms.** `Lean.trustCompiler`, `Lean.ofReduceBool` and
-`Lean.ofReduceNat` are inert roles (`Ix.SpecDigest.inert`), so that a role
+`Lean.ofReduceNat` are inert roles (`Role.inert`), so that a role
 binding names them and a claim over Lean's `Init` lists no user axiom for
 them. Native evaluation is outside the certified theory: IxVM tolerates their
 declarations, as it tolerates `sorryAx`'s, and refuses every constant that
