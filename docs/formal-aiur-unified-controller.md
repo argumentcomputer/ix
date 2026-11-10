@@ -337,9 +337,9 @@ share one assumption tree, each built by Lean. The script then runs the
 `streams_parity` example (`crates/aggregate-controller/examples/streams_parity.rs`)
 on that file. The example compares the Rust streams byte for byte, and
 checks that the Rust fold reaches Lean's output claim for every pair. The
-same script runs `tools/ixvm/check-controller.py`, which covers a
-controller prove, an independent verify, a resume, and claims-only manifest
-proving.
+same script runs `formal-checks controller`
+(`Tests/FormalChecks/Controller.lean`), which covers a controller prove, an
+independent verify, a resume, and claims-only manifest proving.
 
 ## 6. Migration stages
 
@@ -373,7 +373,7 @@ distributed proving no longer exist. The `ix-prover` binary keeps only the
   trace shard.
 - **Report.** With `--report`, `ix prove --lanes/--aggregate` writes only the
   verified root (`ix-formal-pipeline/1`). Progress is the `[lanes]` log, which
-  `check-controller.py` reads.
+  `formal-checks controller` reads.
 
 ## 8. Init benchmark
 
