@@ -112,6 +112,9 @@ structure Stats where
   shares : Nat := 0
   /-- sharing-entry conversions at a variant beyond 0 -/
   extraVariants : Nat := 0
+  /-- share sites whose entry has no binder (through its shares): their variant is
+  always 0 -/
+  freeShares : Nat := 0
   /-- binders whose datum the kernel's pass could not compute, given `never` -/
   fallbacks : Nat := 0
   /-- declarations the kernel installed, and records it refused -/
@@ -125,12 +128,13 @@ def Stats.add (a b : Stats) : Stats :=
   { records := a.records + b.records, blocks := a.blocks + b.blocks,
     binders := a.binders + b.binders, params := a.params + b.params,
     shares := a.shares + b.shares, extraVariants := a.extraVariants + b.extraVariants,
+    freeShares := a.freeShares + b.freeShares,
     fallbacks := a.fallbacks + b.fallbacks, installed := a.installed + b.installed,
     refused := a.refused + b.refused, values := a.values + b.values }
 
 def Stats.render (s : Stats) : String :=
   s!"records={s.records} blocks={s.blocks} binders={s.binders} params={s.params} \
-    shares={s.shares} variants>0={s.extraVariants} fallbacks={s.fallbacks} \
+    shares={s.shares} free-shares={s.freeShares} variants>0={s.extraVariants} fallbacks={s.fallbacks} \
     installed={s.installed} refused={s.refused} values={s.values}"
 
 /-! ## Records and their entries -/
@@ -178,6 +182,29 @@ def looseBound (shared : Array Nat) : Ixon.Expr → Nat
 /-- Each sharing entry's loose bound, entry by entry. -/
 def bounds (sharing : Array Ixon.Expr) : Array Nat :=
   sharing.foldl (fun out e => out.push (looseBound out e)) #[]
+
+/-- Whether `e` has a binder, through the sharing entries before it (`shared`). -/
+def hasBinder (shared : Array Bool) : Ixon.Expr → Bool
+  | .lam .. | .all .. => true
+  | .app f a => hasBinder shared f || hasBinder shared a
+  | .letE _ t v b => hasBinder shared t || hasBinder shared v || hasBinder shared b
+  | .prj _ _ v => hasBinder shared v
+  | .share n => shared[n.toNat]?.getD false
+  | _ => false
+
+/-- Whether each sharing entry has a binder. -/
+def binderful (sharing : Array Ixon.Expr) : Array Bool :=
+  sharing.foldl (fun out e => out.push (hasBinder out e)) #[]
+
+/-- The share sites of a tree (its own numbered nodes) whose entry has no binder. -/
+def freeSites (full : Array Bool) : Ixon.Expr → Nat
+  | .lam _ t b => freeSites full t + freeSites full b
+  | .all _ _ t b => freeSites full t + freeSites full b
+  | .app f a => freeSites full f + freeSites full a
+  | .letE _ t v b => freeSites full t + freeSites full v + freeSites full b
+  | .prj _ _ v => freeSites full v
+  | .share n => if full[n.toNat]?.getD false then 0 else 1
+  | _ => 0
 
 /-! ## The kernel's environment -/
 
@@ -553,7 +580,11 @@ def annotateKernel (k : KernelEnv) : Array (Address × Array Block) × Stats := 
     let (blocks, fb) := annotateRecord k core a c
     out := out.push (a, blocks)
     stats := { stats with records := stats.records + 1, fallbacks := stats.fallbacks + fb }
+    let full := binderful c.sharing
+    let rs := roots c
     for b in blocks do
+      let tree := if b.ekind == 0 then rs[b.eidx]? else c.sharing[b.eidx]?
+      stats := { stats with freeShares := stats.freeShares + (tree.map (freeSites full)).getD 0 }
       stats := { stats with blocks := stats.blocks + 1
                             extraVariants := stats.extraVariants + (if b.variant > 0 then 1 else 0) }
       for node in b.nodes do
