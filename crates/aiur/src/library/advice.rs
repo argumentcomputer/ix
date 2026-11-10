@@ -143,7 +143,8 @@ impl<B: FieldBackend> AdviceBuilder<B> {
     if !self.keys.insert((channel, key.into())) {
       return Err("duplicate IO stream key".into());
     }
-    let index = channel as usize;
+    let index = usize::try_from(channel)
+      .map_err(|e| format!("IO channel {channel}: {e}"))?;
     if self.arenas.len() <= index {
       self.arenas.resize_with(index + 1, || Arena::Bytes(vec![]));
     }
@@ -235,9 +236,10 @@ impl<B: FieldBackend> Advice<B> {
     let mut builder = AdviceBuilder::new(field)?;
     let mut bytes = vec![];
     for stream in &streams.0 {
-      if stream.values.iter().all(|&v| v <= u64::from(u8::MAX)) {
+      if stream.values.iter().all(|&v| u8::try_from(v).is_ok()) {
         bytes.clear();
-        bytes.extend(stream.values.iter().map(|&v| v as u8));
+        bytes
+          .extend(stream.values.iter().filter_map(|&v| u8::try_from(v).ok()));
         builder.push_bytes(stream.channel, &stream.key, &bytes)?;
       } else {
         builder.push_words(stream.channel, &stream.key, &stream.values)?;
@@ -253,7 +255,10 @@ impl<B: FieldBackend> Advice<B> {
   /// Whether `channel` is held as bytes. Unused channels are empty byte
   /// arenas.
   pub fn is_byte_channel(&self, channel: u64) -> bool {
-    matches!(self.arenas.get(channel as usize), Some(Arena::Bytes(_)))
+    matches!(
+      usize::try_from(channel).ok().and_then(|i| self.arenas.get(i)),
+      Some(Arena::Bytes(_))
+    )
   }
 
   pub fn retained_bytes(&self) -> AdviceBytes {
@@ -264,6 +269,7 @@ impl<B: FieldBackend> Advice<B> {
     AdviceBytes { payload, metadata }
   }
 
+  #[allow(clippy::cast_possible_truncation)] // Streams index arenas built from their channels.
   fn value(&self, stream: &StreamInfo) -> u64 {
     match &self.arenas[stream.channel as usize] {
       Arena::Bytes(bytes) => u64::from(bytes[stream.offset]),
@@ -294,9 +300,11 @@ impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
       },
       move |[channel, offset]| {
         let channel = usize::try_from(field.to_u64(channel))
-          .map_err(|_| "IO channel overflow")?;
+          .ok()
+          .ok_or("IO channel overflow")?;
         let offset = usize::try_from(field.to_u64(offset))
-          .map_err(|_| "IO offset overflow")?;
+          .ok()
+          .ok_or("IO offset overflow")?;
         offset.checked_add(N).ok_or("IO offset overflow")?;
         arenas
           .get(channel)
@@ -309,7 +317,7 @@ impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
   fn metadata(
     &self,
     name: &str,
-    key_type: Type,
+    key_type: &Type,
     fixed_channel: Option<u64>,
     accepts: impl Fn(u64, &[u64]) -> bool,
     value: bool,
@@ -321,7 +329,7 @@ impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
       }
       let entry = metadata_entry(
         name,
-        &key_type,
+        key_type,
         fixed_channel,
         value,
         stream.channel,

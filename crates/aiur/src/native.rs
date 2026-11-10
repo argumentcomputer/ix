@@ -901,30 +901,34 @@ impl<'a, B: FieldBackend> PreparedHints<'a, B> {
 }
 
 impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
+  // Takes the arguments as `PreparedHints::execute` does, so the two are
+  // interchangeable.
+  #[allow(clippy::needless_pass_by_value)]
   pub fn execute(
     &self,
     entry: &str,
     args: Vec<B::Element>,
   ) -> Result<Execution<B>, ExecutionError> {
-    self.execute_inner(entry, args, None)
+    self.execute_inner(entry, &args, None)
   }
 
   /// Execute under a shared record reservation, as
   /// [`PreparedHints::execute_reserved`] does. Record storage is charged as
   /// in the interpreter; native stack frames are not charged.
+  #[allow(clippy::needless_pass_by_value)]
   pub fn execute_reserved(
     &self,
     entry: &str,
     args: Vec<B::Element>,
     reservation: &crate::budget::RecordReservation,
   ) -> Result<Execution<B>, ExecutionError> {
-    self.execute_inner(entry, args, Some(reservation))
+    self.execute_inner(entry, &args, Some(reservation))
   }
 
   fn execute_inner(
     &self,
     entry: &str,
-    args: Vec<B::Element>,
+    args: &[B::Element],
     reservation: Option<&crate::budget::RecordReservation>,
   ) -> Result<Execution<B>, ExecutionError> {
     std::thread::scope(|scope| {
@@ -946,7 +950,7 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
   fn run(
     &self,
     entry: &str,
-    args: Vec<B::Element>,
+    args: &[B::Element],
     reservation: Option<&crate::budget::RecordReservation>,
   ) -> Result<Execution<B>, ExecutionError> {
     let hints = self.hints;
@@ -959,7 +963,7 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
     };
     let selected = program.entry(entry).map_err(error)?;
     let root = selected.function;
-    program.inputs[root].validate(&args, program.field).map_err(error)?;
+    program.inputs[root].validate(args, program.field).map_err(error)?;
     let (queries, memory) = hints.fresh_storage(reservation)?;
     let top = stack_address();
     STACK_USE.set(StackUse { top, lowest: top, segments: 0 });
@@ -981,7 +985,7 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
     if root >= program.program.functions.len() {
       output.resize(program.outputs[root].width(), program.field.zero());
       let record = rt.record.queries.tables[root].static_map.as_mut().unwrap();
-      record.call(&args, &mut output).map_err(|e| ExecutionError {
+      record.call(args, &mut output).map_err(|e| ExecutionError {
         function: "<entry>".into(),
         instruction: 0,
         resource: None,
@@ -989,14 +993,14 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
       })?;
     } else {
       let outputs = program.outputs[root].width();
-      let row = match rt.begin_slice(root, 0, root, &args, outputs) {
+      let row = match rt.begin_slice(root, 0, root, args, outputs) {
         Ok(Begin::Started(row)) => row,
         Ok(Begin::Cached(_)) => {
           unreachable!("a fresh session has no completed queries")
         },
         Err(Failed) => return Err(rt.take_failure()),
       };
-      if K::run(&mut rt, root, row, &args, &mut output).is_err() {
+      if K::run(&mut rt, root, row, args, &mut output).is_err() {
         return Err(rt.take_failure());
       }
     }
@@ -1145,7 +1149,7 @@ mod tests {
 
   #[test]
   fn fingerprint_is_deterministic_and_covers_its_inputs() {
-    let (base, program, plan) = fingerprint(self::program(5, "c"));
+    let (base, program, plan) = fingerprint(program(5, "c"));
     assert_eq!(base.len(), 64);
     assert!(base.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')));
     assert_eq!(fingerprint(self::program(5, "c")).0, base);
@@ -1179,7 +1183,7 @@ mod tests {
 
   #[test]
   fn fingerprint_hashes_the_versioned_domain() {
-    let (base, program, plan) = fingerprint(self::program(5, "c"));
+    let (base, program, plan) = fingerprint(program(5, "c"));
     let hash = |scheme: u32| {
       let program = crate::artifact::program_bytes(&program);
       let encoded = plan_bytes(&plan);

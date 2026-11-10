@@ -73,7 +73,7 @@ impl ExternalReads for RecordReads<'_> {
     let cell = &self
       .record
       .memory
-      .get_by_width(width, address as usize)
+      .get_by_width(width, usize::try_from(address).map_err(|e| e.to_string())?)
       .ok_or("missing recorded load")?
       .cell;
     output.copy_from_slice(cell.value);
@@ -186,16 +186,12 @@ fn description_rows_match_calls_maps_and_memory() {
 
 #[test]
 fn description_rows_match_grouped_placements() {
-  #[derive(serde::Deserialize)]
-  struct Package {
-    program: crate::Program,
-    trace: crate::trace::TraceArtifact,
-  }
-  let package: Package = serde_json::from_str(include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/grouping.json"
-  )))
+  let (program, trace) = crate::artifact::Package::decode(include_bytes!(
+    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/grouping.ixa")
+  ))
+  .and_then(crate::artifact::Package::traced)
   .unwrap();
+  let package = Traced { program, trace };
   let program = package.program.check().unwrap();
   let description =
     check(&program, package.trace.clone(), "Grouped::run", &[3], &[]);

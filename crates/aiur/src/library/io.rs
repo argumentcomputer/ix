@@ -83,7 +83,7 @@ pub trait StreamAdvice<B: FieldBackend> {
   fn metadata(
     &self,
     name: &str,
-    key_type: Type,
+    key_type: &Type,
     fixed_channel: Option<u64>,
     accepts: impl Fn(u64, &[u64]) -> bool,
     value: bool,
@@ -198,7 +198,7 @@ impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
       }
       result.extend(metadata_entry(
         name,
-        &key_type,
+        key_type,
         fixed_channel,
         value,
         stream.channel,

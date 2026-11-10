@@ -84,6 +84,20 @@ pub struct RecordStorage {
 }
 
 impl<B: FieldBackend> Execution<B> {
+  /// The recorded height of a query of `function` in a finished record: the
+  /// longest call path below it within its SCC (zero without a depth word).
+  pub fn query_depth(
+    &self,
+    function: usize,
+    args: &[B::Element],
+  ) -> Option<u64> {
+    let table = self.queries.tables.get(function)?;
+    if table.static_map.is_some() {
+      return None;
+    }
+    table.lookup(args).1.map(|row| table.depth(row))
+  }
+
   pub fn storage_usage(&self) -> RecordStorage {
     let mut usage = RecordStorage::default();
     for table in &self.queries.tables {

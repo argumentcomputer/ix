@@ -75,7 +75,9 @@ impl Environment {
             ixon::shard_claim::check_block(entry.key(), entry.value())?;
           owners.entry(block).or_default().push(entry.key().clone());
         }
-        owners.values_mut().for_each(|owned| owned.sort_unstable());
+        for owned in owners.values_mut() {
+          owned.sort_unstable();
+        }
         Ok(owners)
       })
       .as_ref()
@@ -109,7 +111,7 @@ pub enum Leaf {
 
 #[derive(Clone)]
 pub enum Request {
-  /// An `Invocation` in the JSON interchange format: test fixtures and
+  /// An `Invocation` in Ixon (`aiur::artifact`): test fixtures and
   /// diagnostics.
   Invocation(Arc<[u8]>),
   /// A claim prepared by the prover; `expected` must equal the claim
@@ -130,7 +132,8 @@ impl Request {
     expected: &[u8],
   ) -> Result<Self, String> {
     let target = Address::from_slice(target)
-      .map_err(|_| "a target address has 32 bytes".to_owned())?;
+      .ok()
+      .ok_or_else(|| "a target address has 32 bytes".to_owned())?;
     Ok(Self::Leaf {
       env,
       leaf: Leaf::Check(target),
@@ -203,7 +206,7 @@ fn read_u64s(bytes: &[u8], what: &str) -> Result<Vec<u64>, String> {
 /// words in `words`. Every buffer must be consumed exactly; channels, key
 /// uniqueness and canonical words are validated as the advice is built.
 pub fn buffer_advice(
-  field: crate::Field,
+  field: Field,
   meta: &[u8],
   bytes: &[u8],
   words: &[u8],
@@ -366,12 +369,11 @@ pub(crate) fn bind<'a>(
       let parsing =
         usize::try_from(bytes.saturating_mul(8)).unwrap_or(usize::MAX);
       charge.reserve(parsing)?;
-      let invocation: Invocation =
-        serde_json::from_slice(input).map_err(|e| other(e.to_string()))?;
+      let invocation = Invocation::decode(input).map_err(other)?;
       let advice =
         Advice::from_streams(field, &invocation.streams).map_err(other)?;
       settle(charge, parsing, advice.retained_bytes().total())?;
-      report.insert("input_json_bytes".into(), json!(bytes));
+      report.insert("input_bytes".into(), json!(bytes));
       (invocation.entry, invocation.args, Cow::Owned(advice))
     },
     Request::Leaf { env, leaf, expected } => {
@@ -401,7 +403,7 @@ pub(crate) fn bind<'a>(
       return Err(other("job input was already released".into()));
     },
   };
-  bind_advice(program, kind, entry, args, &advice, charge, report)
+  bind_advice(program, kind, entry, &args, &advice, charge, report)
 }
 
 /// The witness of `request`, whose claim must be `expected`, as compact
@@ -434,7 +436,7 @@ pub(crate) fn bind_advice<'a>(
   program: &'a Program,
   kind: Kind,
   entry: String,
-  args: Vec<u64>,
+  args: &[u64],
   advice: &Advice<Field>,
   charge: &impl Charge,
   mut report: serde_json::Map<String, serde_json::Value>,
@@ -451,7 +453,7 @@ pub(crate) fn bind_advice<'a>(
   if !valid {
     return Err(other("wrong application entrypoint".into()));
   }
-  let args = field.decode(&args).map_err(other)?;
+  let args = field.decode(args).map_err(other)?;
   let retained = advice.retained_bytes();
   // The hint providers copy every stream's key and metadata value into their
   // own maps, estimated at the size of the stream metadata. Charged before

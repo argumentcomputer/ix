@@ -10,7 +10,7 @@ use record_pool::RecordReservation;
 type Element = <Field as aiur::field::FieldBackend>::Element;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Executor {
+pub(crate) enum Executor {
   Interpreter,
   #[cfg(feature = "native")]
   Native(Kernel),
@@ -27,7 +27,7 @@ pub enum Kernel {
 
 impl Executor {
   /// The executor for `program`, chosen once when its artifact is loaded.
-  pub fn select(program: &crate::Program) -> Result<Self, String> {
+  pub(crate) fn select(program: &crate::Program) -> Result<Self, String> {
     match std::env::var("IX_PROVER_EXECUTOR").as_deref() {
       Ok("interpreter") => return Ok(Self::Interpreter),
       Ok("native") | Err(_) => {},
@@ -51,7 +51,7 @@ impl Executor {
   }
 
   /// Every executor compiled into this build.
-  pub fn available() -> &'static [&'static str] {
+  pub(crate) fn available() -> &'static [&'static str] {
     #[cfg(feature = "native")]
     {
       &["interpreter", "native-ixvm", "native-verifier", "native-aggregation"]
@@ -62,7 +62,7 @@ impl Executor {
     }
   }
 
-  pub fn name(self) -> &'static str {
+  pub(crate) fn name(self) -> &'static str {
     match self {
       Self::Interpreter => "interpreter",
       #[cfg(feature = "native")]
@@ -77,7 +77,7 @@ impl Executor {
   /// Execute `entry` under `reservation`, and name the executor that ran.
   /// A kernel that refuses to bind (a map override that disagrees with its
   /// table) leaves the job to the interpreter, which honours overrides.
-  pub fn execute(
+  pub(crate) fn execute(
     self,
     hints: &PreparedHints<'_, Field>,
     entry: &str,
