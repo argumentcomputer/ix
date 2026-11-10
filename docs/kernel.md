@@ -885,7 +885,7 @@ Project-level execution constructs are admitted only as named by
 | project `@[csimp]` | `IxCK.Kernel` | each replacement theorem depends on the standard axioms only |
 | the codec's TagN `@[csimp]` twins (`getTagN_eq_fast`, `putTagN_eq_fast`) | `IxCK.Ixon.Codec` (also `Ixon.Audit.rulings`) | the reader and writer at a fixed flag width with their powers folded; each theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
-| `IxCK.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxCK/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
+| `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxCK/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
 | elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `IxCK.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
 | `Address.admissionHash` `implemented_by` `Address.blake3`, with its three Rust externs | `Ix/Address/Admission.lean` (root library; `assumedSubstitutions`, for `Ixon.Authenticated` only) | an explicit, owner-approved assumption that the Rust BLAKE3 equals pure BLAKE3 |
 

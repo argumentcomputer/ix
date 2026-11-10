@@ -14,11 +14,13 @@ object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
 
 1. **Wire Format Alignment (`S12`, `A1-4`, `A1-10`, `A8-2`, `A8-11`)**:
    - `CompileClaim.toClaimBytes` serializes the exact 4-byte `Ix.Claim.put (.compile ...)`
-     header `#[0xE8, 0x03, 0x04, 0x06]` (`putTagN 4 0xE 11` ++ `putScope VALIDATOR_COMPILE_V1`)
+     header `#[0xE8, 0x05, 0x04, 0x06]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V1`)
      followed by `toPayloadBytes` (`env` 32B ++ `target` 32B ++ `[policy.toUInt8]` 1B ++
-     `putTag0 abiArity` 1..9B ++ `elfHash` 32B), totaling 102 bytes when `abiArity < 128`.
+     `n0Bytes abiArity` 1..9B ++ `elfHash` 32B), totaling 102 bytes when `abiArity < 128`.
+     `abiArity` uses ix's TagN code at flag width 0 (`Ixon.putTagN 0 0`), so the
+     bytes agree with `Ix.Claim.ser` for every arity below `2 ^ 64` (B4-2).
    - `CompileClaim.ofClaimBytes` parses and validates the canonical wire envelope
-     via `Ixon.runGet`, rejecting non-canonical `Tag0` headers and trailing bytes.
+     via `Ixon.runGet`, rejecting invalid or overflowing arity codes and trailing bytes.
    - Global `Coe (List UInt8) ByteArray` has been removed (`A8-11`).
 
 2. **Verified Ingress, Policy Unification & Root Observability (`S4`, `S7`, `A1-3`, `A1-6`, `A4-10`, `A4-12`)**:
@@ -102,8 +104,9 @@ structure CompileClaim where
 
 namespace CompileClaim
 
-/-- Well-formedness predicate for a `CompileClaim`: `abiArity < 2 ^ 64` so its
-`Tag0` encoding is canonical (`Ixon.Address` fields already carry `hash_size : hash.size = 32`). -/
+/-- Well-formedness predicate for a `CompileClaim`: `abiArity < 2 ^ 64`, the range of
+ix's `UInt64` field and of its `N0` code (`Ixon.Address` fields already carry
+`hash_size : hash.size = 32`). -/
 def WellFormed (c : CompileClaim) : Prop :=
   c.abiArity < 2 ^ 64
 
@@ -111,8 +114,10 @@ def WellFormed (c : CompileClaim) : Prop :=
 def checkWellFormed (c : CompileClaim) : Bool :=
   decide (c.abiArity < 2 ^ 64)
 
-/-- `Ix.Claim.put (.compile ...)` Tag4 header bytes (`putTagN 4 0xE 11 = #[0xE8, 0x03]`). -/
-def CLAIM_TAG4_COMPILE : ByteArray := ByteArray.mk #[0xE8, 0x03]
+/-- `Ix.Claim.put (.compile ...)` Tag4 header bytes (`putTagN 4 0xE 13 = #[0xE8, 0x05]`).
+Values 11 (`E8 03`) and 12 (`E8 04`) of the claim tag space are ix's role-binding
+section and literal-class preimage, not claims. -/
+def CLAIM_TAG4_COMPILE : ByteArray := ByteArray.mk #[0xE8, 0x05]
 
 /-- Scope domain tag for object format claims (`OBJECT_FORMAT = 4`). -/
 def OBJECT_FORMAT : UInt8 := 0x04
@@ -120,17 +125,90 @@ def OBJECT_FORMAT : UInt8 := 0x04
 /-- Validator ID for `CompileClaim` v1 (`6`, matching `Ix.Claim.VALIDATOR_COMPILE_V1`). -/
 def VALIDATOR_COMPILE_V1 : UInt8 := 0x06
 
-/-- Claim variant index (`11`, encoded in `CLAIM_TAG4_COMPILE`). -/
-def VARIANT_COMPILE_CLAIM : UInt8 := 11
+/-- Claim variant index (`13`, encoded in `CLAIM_TAG4_COMPILE`). -/
+def VARIANT_COMPILE_CLAIM : UInt8 := 13
 
 /-- The exact 4-byte `Ix.Claim.put (.compile ...)` wire header:
-`#[0xE8, 0x03, 0x04, 0x06]` (`putTagN 4 0xE 11` ++ `putScope VALIDATOR_COMPILE_V1`). -/
+`#[0xE8, 0x05, 0x04, 0x06]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V1`). -/
 def validatorHeader : ByteArray :=
-  ByteArray.mk #[0xE8, 0x03, OBJECT_FORMAT, VALIDATOR_COMPILE_V1]
+  ByteArray.mk #[0xE8, 0x05, OBJECT_FORMAT, VALIDATOR_COMPILE_V1]
 
-/-- Canonical Ixon Tag0 (`Ixon.tag0Bytes`) variable-length integer encoding for `v < 2 ^ 64`. -/
-def putTag0 (v : Nat) : List UInt8 :=
-  (Ixon.tag0Bytes ⟨UInt64.ofNat v⟩).data.toList
+/-! ### `abiArity`: ix's `N0` integer code
+
+`Ix.Claim` writes `abiArity` with the Ixon v4 TagN code at flag width 0
+(`putTagN 0 0`, `getTagN 0`), so this module writes and reads that code, not
+the v2 `Tag0` of `IxCC.Ixon.Serialize` (the two agree only below 128). The
+rungs are: one byte below 128; a header `0x80 + (v - 128) / 256` and one byte
+below 16512; then a header `0xC0`–`0xC3` and 2, 3, 4 or 8 little-endian bytes
+of `v` minus the rung's start (16512, 82048, 16859264, 4311826560). Headers
+`0xC4`–`0xFF` and values reaching `2 ^ 64` are refused. -/
+
+/-- `width` little-endian bytes of `x`, low byte first. -/
+def leBytes (x : Nat) : Nat → List UInt8
+  | 0 => []
+  | w + 1 => UInt8.ofNat x :: leBytes (x / 256) w
+
+/-- The value of little-endian bytes. -/
+def leValue : List UInt8 → Nat
+  | [] => 0
+  | b :: bs => b.toNat + 256 * leValue bs
+
+/-- Header byte of the `N0` code of `v`. -/
+def n0Header (v : Nat) : UInt8 :=
+  if v < 128 then UInt8.ofNat v
+  else if v < 16512 then UInt8.ofNat (128 + (v - 128) / 256)
+  else if v < 82048 then 0xC0
+  else if v < 16859264 then 0xC1
+  else if v < 4311826560 then 0xC2
+  else 0xC3
+
+/-- Bytes after the header of the `N0` code of `v`. -/
+def n0Payload (v : Nat) : List UInt8 :=
+  if v < 128 then []
+  else if v < 16512 then leBytes ((v - 128) % 256) 1
+  else if v < 82048 then leBytes (v - 16512) 2
+  else if v < 16859264 then leBytes (v - 82048) 3
+  else if v < 4311826560 then leBytes (v - 16859264) 4
+  else leBytes (v - 4311826560) 8
+
+/-- The `N0` code of `v`: `Ixon.runPut (Ixon.putTagN 0 0 v)` for `v < 2 ^ 64`. -/
+def n0Bytes (v : Nat) : ByteArray :=
+  Ixon.u8Bytes (n0Header v) ++ ⟨(n0Payload v).toArray⟩
+
+/-- Payload width of an `N0` header byte; `none` for the invalid codes `C4`–`FF`. -/
+def n0Width (header : UInt8) : Option Nat :=
+  if header.toNat < 128 then some 0
+  else if header.toNat < 192 then some 1
+  else if header.toNat = 192 then some 2
+  else if header.toNat = 193 then some 3
+  else if header.toNat = 194 then some 4
+  else if header.toNat = 195 then some 8
+  else none
+
+/-- The value an `N0` header and payload denote. -/
+def n0Value (header : UInt8) (payload : List UInt8) : Nat :=
+  if header.toNat < 128 then header.toNat
+  else if header.toNat < 192 then 128 + (header.toNat - 128) * 256 + leValue payload
+  else if header.toNat = 192 then 16512 + leValue payload
+  else if header.toNat = 193 then 82048 + leValue payload
+  else if header.toNat = 194 then 16859264 + leValue payload
+  else 4311826560 + leValue payload
+
+/-- The end of `getN0`, after its header and payload: values reaching `2 ^ 64`
+are refused. The re-encoding check never fails for this bijective code; it
+makes canonicity immediate. -/
+def n0Finish (header : UInt8) (payload : ByteArray) : Ixon.GetM Nat :=
+  if n0Value header payload.data.toList < 2 ^ 64 ∧
+      n0Bytes (n0Value header payload.data.toList) = Ixon.u8Bytes header ++ payload then
+    pure (n0Value header payload.data.toList)
+  else throw "CompileClaim: abiArity exceeds UInt64"
+
+/-- Strict reader of the `N0` code (`Ixon.getTagN 0`). -/
+def getN0 : Ixon.GetM Nat :=
+  Ixon.getU8 >>= fun header =>
+    match n0Width header with
+    | some width => Ixon.getBytes width >>= n0Finish header
+    | none => throw "CompileClaim: invalid abiArity code"
 
 /-- Monadic payload reader in `Ixon.GetM` for `CompileClaim`. -/
 def getPayloadM : Ixon.GetM CompileClaim := do
@@ -139,13 +217,13 @@ def getPayloadM : Ixon.GetM CompileClaim := do
   let polByte ← Ixon.getU8
   let some policy := CompilePolicy.ofUInt8? polByte |
     throw "CompileClaim: invalid policy byte"
-  let arityTag ← Ixon.getTag0
+  let abiArity ← getN0
   let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
   return {
     env
     target
     policy
-    abiArity := arityTag.size.toNat
+    abiArity
     elfHash
   }
 
@@ -156,20 +234,20 @@ def getClaimM : Ixon.GetM CompileClaim := do
     throw "CompileClaim: invalid validator header"
   getPayloadM
 
-/-- Serialize the `CompileClaim` payload (`env ++ target ++ [policy.toUInt8] ++ putTag0 abiArity ++ elfHash`),
+/-- Serialize the `CompileClaim` payload (`env ++ target ++ [policy.toUInt8] ++ n0Bytes abiArity ++ elfHash`),
 matching `Ix.Claim.CompileClaim.put` byte-for-byte (98 bytes when `abiArity < 128`). -/
 def toPayloadBytes (c : CompileClaim) : ByteArray :=
   c.env.hash ++
     c.target.hash ++
     Ixon.u8Bytes c.policy.toUInt8 ++
-    Ixon.tag0Bytes ⟨UInt64.ofNat c.abiArity⟩ ++
+    n0Bytes c.abiArity ++
     c.elfHash.hash
 
 /-- Deserialize a `CompileClaim` payload produced by `toPayloadBytes`. -/
 def ofPayloadBytes (bs : ByteArray) : Option CompileClaim :=
   (Ixon.runGet getPayloadM bs).toOption
 
-/-- Serialize the full `CompileClaim` wire envelope (`#[0xE8, 0x03, 0x04, 0x06] ++ c.toPayloadBytes`),
+/-- Serialize the full `CompileClaim` wire envelope (`#[0xE8, 0x05, 0x04, 0x06] ++ c.toPayloadBytes`),
 matching `Ix.Claim.ser (.compile ...)` byte-for-byte (102 bytes when `abiArity < 128`). -/
 def toClaimBytes (c : CompileClaim) : ByteArray :=
   validatorHeader ++ c.toPayloadBytes

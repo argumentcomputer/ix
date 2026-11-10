@@ -8,7 +8,11 @@ Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, with the Ixon v4
 profile framing (TagN counts and limits, `ixon-v4/resource-v1`) of ix
 `f829b76044a44a61023d0983516137147bbb12a7`: imports/namespaces use the local
 AST, fixed-width addresses, strict bounded constant decoder, and raw-byte
-environment (there is no decoded cache).
+environment (there is no decoded cache). As in ix's copy since `866e7fa82`,
+safe theorems get their own declaration kind, field rules cover
+single-constructor structures with parameters and dependent fields, every such
+structure gets projection-reduction metadata, and each sharing entry gets a
+loose-index bound (`computeSharingBounds`).
 
 This boundary reads canonical bytes and ignores presentation metadata. It
 resolves each constant's local tables to one program, derives nominal kinds
@@ -368,7 +372,7 @@ def prepare (env : IxCC.Ixon.V3.Env) (profile : Profile := {}) : Except String A
       throw "resource adapter: literal type must be a checked nominal type"
     pure (IxCC.Ixon.V3.Expr.ref i #[])
   program := { program with
-    sharingInfo := computeSharingInfo program.sharing
+    sharingBounds := computeSharingBounds program.sharing
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
     shareableTypes := shareable, choices }

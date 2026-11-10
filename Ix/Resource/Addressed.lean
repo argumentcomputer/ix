@@ -369,7 +369,7 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
       throw "resource adapter: literal type must be a checked nominal type"
     pure (Ixon.Expr.ref i #[])
   program := { program with
-    sharingInfo := computeSharingInfo program.sharing
+    sharingBounds := computeSharingBounds program.sharing
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
     shareableTypes := shareable, choices }

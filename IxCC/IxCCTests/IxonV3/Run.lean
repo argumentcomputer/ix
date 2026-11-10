@@ -4,6 +4,7 @@ import IxCCTests.IxonV3.Typing
 import IxCCTests.IxonV3.Primitives
 import IxCCTests.IxonV3.Catalog.Run
 import IxCCTests.IxonV3.K1
+import IxCCTests.IxonV3.ResourceBudget
 import IxCC.Tools.Check
 
 namespace IxCCTests.IxonV3
@@ -78,6 +79,7 @@ def run : IO Bool := do
     assertions := assertions + (← Primitives.run root)
     assertions := assertions + (← CatalogTests.run root)
     assertions := assertions + (← K1.run root)
+    assertions := assertions + (← ResourceBudget.run)
     IO.println s!"ixon-v3-tests-ok: {assertions} contract, wire, typing, and resource assertions"
     return true
   catch error =>

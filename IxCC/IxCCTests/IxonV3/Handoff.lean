@@ -149,6 +149,62 @@ def handoff (root : System.FilePath) : IO Nat := do
   require ((Resource.checkDefinition duoProg 5).isOk) "rejected parameterized structure snd projection"
   require ((Resource.checkDefinition duoProg 6).toOption.isNone) "accepted parameterized structure swapped parameter projection"
   assertions := assertions + 3
+  -- Dependent structure (`Sigma` shape): `Sig.mk : (α : Type) → (β : α → Type) →
+  -- (fst : α) → β fst → Sig α β`. The second field's rule is open over both
+  -- parameters and the first field, so `x.2 : F x.1` for `x : Sig A F`.
+  let ref (i : UInt64) : Expr := .ref i #[]
+  let many : BinderContract := ⟨.many, .shared⟩
+  let field : BinderContract := ⟨.many, .unique⟩
+  let sigProg : Resource.Program := {
+    declarations := #[
+      { type := .sort 1, kind := .typeConstructor },                          -- 0: A
+      { type := .all many .shared (ref 0) (.sort 1), kind := .typeConstructor }, -- 1: F : A → Type
+      { type := .all many .shared (.sort 1)
+          (.all many .shared (.all many .shared (.var 0) (.sort 1)) (.sort 1)),
+        kind := .typeConstructor },                                           -- 2: Sig
+      { type := .all ⟨.erased, .shared⟩ .shared (.sort 1)
+          (.all ⟨.erased, .shared⟩ .shared (.all many .shared (.var 0) (.sort 1))
+            (.all field .shared (.var 1)
+              (.all field .unique (.app (.var 1) (.var 0))
+                (.app (.app (ref 2) (.var 3)) (.var 2))))),
+        kind := .assumption },                                                -- 3: Sig.mk
+      { type := ref 0, kind := .assumption },                                 -- 4: a : A
+      { type := .app (ref 1) (ref 4), kind := .assumption }                   -- 5: b : F a
+    ]
+    fields := #[
+      { typeRef := 2, index := 0, binders := 2, type := .var 1, contract := .unique },
+      { typeRef := 2, index := 1, binders := 3, type := .app (.var 1) (.var 0), contract := .unique }
+    ]
+    projections := #[{ typeRef := 2, constructor := 3, params := 2, fields := 2 }]
+  }
+  let sigAF : Expr := .app (.app (ref 2) (ref 0)) (ref 1)
+  let project (index : UInt64) (result : Expr) : Resource.Declaration := {
+    type := .all ⟨.linear, .unique⟩ .unique sigAF result
+    body := some (.lam ⟨.linear, .unique⟩ sigAF (.prj 2 index (.var 0))) }
+  let sigCases : Array (String × Resource.Declaration × Bool) := #[
+    ("first field", project 0 (ref 0), true),
+    ("second field depends on the first projection", project 1 (.app (ref 1) (.prj 2 0 (.var 0))), true),
+    ("second field is not the parameter type", project 1 (ref 0), false),
+    ("second field does not depend on itself", project 1 (.app (ref 1) (.prj 2 1 (.var 0))), false)
+  ]
+  for (label, declaration, accept) in sigCases do
+    let program := { sigProg with declarations := sigProg.declarations.push declaration }
+    require ((Resource.checkDefinition program sigProg.declarations.size).toOption.isSome == accept)
+      s!"dependent structure {label}: expected {accept}"
+  -- Projection reduction on a constructor application of the projected structure only.
+  let built : Expr := .app (.app (.app (.app (ref 3) (ref 0)) (ref 1)) (ref 4)) (ref 5)
+  let reducesTo (e target : Expr) : Bool :=
+    match (Resource.whnf sigProg 32 e).run {} with
+    | .ok reduced _ => reduced == target
+    | .error _ _ => false
+  require (reducesTo (.prj 2 0 built) (ref 4) && reducesTo (.prj 2 1 built) (ref 5))
+    "projection of a constructor application did not reduce to its field"
+  require (reducesTo (.prj 2 0 (ref 5)) (.prj 2 0 (ref 5)))
+    "projection of a non-constructor value reduced"
+  let partialMk : Expr := .app (.app (.app (ref 3) (ref 0)) (ref 1)) (ref 4)
+  require (reducesTo (.prj 2 0 partialMk) (.prj 2 0 partialMk))
+    "projection of a partial constructor application reduced"
+  assertions := assertions + sigCases.size + 3
   -- Recursive annotated closure with `PProd` `.brecOn` projections and equation theorem (`OS-04`)
   let annotatedBytes ← IO.FS.readBinFile "fixtures/ownership/historical/annotated-recursion-cb68/Annotated.ixe"
   let annotatedEnv ← IO.ofExcept (decodeAnonymousEnv annotatedBytes)

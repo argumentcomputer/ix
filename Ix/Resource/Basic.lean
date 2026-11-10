@@ -80,8 +80,6 @@ structure State where
   /-- Root 0 has no parent. Every new parent precedes its child. -/
   parents : Array (Option ScopeId) := #[none]
   remaining : Nat := 100000
-  resourceWhnfMemoEnabled : Bool := false
-  resourceWhnfMemo : Array (Ixon.Expr × Ixon.Expr) := #[]
   deriving BEq, Repr, Inhabited
 
 abbrev CheckM := EStateM Error State
@@ -95,6 +93,12 @@ def tick : CheckM Unit := do
   match s.remaining with
   | 0 => throw .budget
   | n + 1 => set { s with remaining := n }
+
+/-- Charge `n` steps at once, for bookkeeping that touches `n` bindings. -/
+def tickN (n : Nat) : CheckM Unit := do
+  let s ← get
+  if n ≤ s.remaining then set { s with remaining := s.remaining - n }
+  else throw .budget
 
 def binding (id : OwnerId) : CheckM Binding := do
   match (← get).bindings[id]? with
@@ -223,6 +227,7 @@ def invoke (v : Value) : CheckM Unit := do
     else if !b.owner.live then throw (.moved id)
 
 def closeScope (scope : ScopeId) (result : Value) : CheckM Unit := do
+  tickN (← get).bindings.size
   let s ← get
   let some (some parent) := s.parents[scope]? | throw .invalidScope
   liftExcept (checkOrigins s.parents result.origins parent)

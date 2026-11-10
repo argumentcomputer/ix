@@ -1,8 +1,10 @@
 import IxCC.Ixon.V3.Expr
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`.
-Only the import, expression namespace, and surrounding namespace are changed.
-This resource check retains the upstream erased-typing prerequisite. -/
+/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
+(`Ix/Resource/Basic.lean`), with the local expression type and namespaces, the
+lemmas moved to `StateProofs.lean`, and `tickN`, which charges bookkeeping that
+touches several bindings at once (as ix's copy does). This resource check
+retains the upstream erased-typing prerequisite. -/
 
 namespace IxCC.Ixon.V3.Resource
 
@@ -67,11 +69,6 @@ structure Binding where
   deriving BEq, Repr, Inhabited
 
 structure State where
-  /-- Opt-in conversion cache for a single immutable Program. Only the fresh
-  definition-checking entry point enables it; mixed-program typing actions
-  leave it disabled. Entries record completed reductions, never pending ones. -/
-  resourceWhnfMemoEnabled : Bool := false
-  resourceWhnfMemo : Array (Expr × Expr) := #[]
   bindings : Array Binding := #[]
   /-- Root 0 has no parent. Every new parent precedes its child. -/
   parents : Array (Option ScopeId) := #[none]
@@ -89,6 +86,12 @@ def tick : CheckM Unit := do
   match s.remaining with
   | 0 => throw .budget
   | n + 1 => set { s with remaining := n }
+
+/-- Charge `n` steps at once, for bookkeeping that touches `n` bindings. -/
+def tickN (n : Nat) : CheckM Unit := do
+  let s ← get
+  if n ≤ s.remaining then set { s with remaining := s.remaining - n }
+  else throw .budget
 
 def binding (id : OwnerId) : CheckM Binding := do
   match (← get).bindings[id]? with
@@ -217,6 +220,7 @@ def invoke (v : Value) : CheckM Unit := do
     else if !b.owner.live then throw (.moved id)
 
 def closeScope (scope : ScopeId) (result : Value) : CheckM Unit := do
+  tickN (← get).bindings.size
   let s ← get
   let some (some parent) := s.parents[scope]? | throw .invalidScope
   liftExcept (checkOrigins s.parents result.origins parent)

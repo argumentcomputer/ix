@@ -305,6 +305,87 @@ def runContractMatrix : IO Nat := do
       checks := checks + 1
   return checks
 
+/-- Structures with parameters and a dependent field (`866e7fa82`'s field and
+projection rules). Declarations: `0` a type `A`, `1` a family `F : A → Type`,
+`2` `Duo : Type → Type → Type` with `3` `Duo.mk : (α β : Type) → α → β → Duo α β`,
+`4` `Sig : (α : Type) → (α → Type) → Type` with
+`5` `Sig.mk : (α : Type) → (β : α → Type) → (fst : α) → β fst → Sig α β`,
+then `6` an `a : A` and `7` a `b : F a`. A field rule's type is open over the
+constructor's parameters and earlier fields (`binders`); `fieldType`
+substitutes the owner type's arguments and the earlier projections. -/
+def structureProgram : Program := {
+  declarations := #[
+    { type := .sort 1, kind := .typeConstructor },
+    { type := arr (b .many) .shared (ref 0) (.sort 1), kind := .typeConstructor },
+    { type := arr (b .many) .shared (.sort 1) (arr (b .many) .shared (.sort 1) (.sort 1)),
+      kind := .typeConstructor },
+    { type := arr (b .erased) .shared (.sort 1) (arr (b .erased) .shared (.sort 1)
+        (arr (b .many .unique) .shared (v 1) (arr (b .many .unique) .unique (v 1)
+          (.app (.app (ref 2) (v 3)) (v 2))))),
+      kind := .assumption },
+    { type := arr (b .many) .shared (.sort 1)
+        (arr (b .many) .shared (arr (b .many) .shared (v 0) (.sort 1)) (.sort 1)),
+      kind := .typeConstructor },
+    { type := arr (b .erased) .shared (.sort 1)
+        (arr (b .erased) .shared (arr (b .many) .shared (v 0) (.sort 1))
+          (arr (b .many .unique) .shared (v 1) (arr (b .many .unique) .unique (.app (v 1) (v 0))
+            (.app (.app (ref 4) (v 3)) (v 2))))),
+      kind := .assumption },
+    { type := ref 0, kind := .assumption },
+    { type := .app (ref 1) (ref 6), kind := .assumption }
+  ]
+  fields := #[
+    { typeRef := 2, index := 0, binders := 2, type := v 1, contract := .unique },
+    { typeRef := 2, index := 1, binders := 3, type := v 1, contract := .unique },
+    { typeRef := 4, index := 0, binders := 2, type := v 1, contract := .unique },
+    { typeRef := 4, index := 1, binders := 3, type := .app (v 1) (v 0), contract := .unique }
+  ]
+  projections := #[
+    { typeRef := 2, constructor := 3, params := 2, fields := 2 },
+    { typeRef := 4, constructor := 5, params := 2, fields := 2 }
+  ]
+}
+
+def checkStructureRules : IO Nat := do
+  let p := structureProgram
+  let linearUnique := b .linear .unique
+  let duoAF := Ixon.Expr.app (.app (ref 2) (ref 0)) (.app (ref 1) (ref 6))
+  let sigAF := Ixon.Expr.app (.app (ref 4) (ref 0)) (ref 1)
+  let project (typeRef : UInt64) (owner : E) (index : UInt64) (result : E) : Declaration := {
+    type := arr linearUnique .unique owner result
+    body := some (lam linearUnique (.prj typeRef index (v 0)) owner) }
+  let cases : Array (String × Declaration × Bool) := #[
+    -- parameters: `Duo A (F a)`'s fields are `A` and `F a`, not the other way round
+    ("parameterized first field", project 2 duoAF 0 (ref 0), true),
+    ("parameterized second field", project 2 duoAF 1 (.app (ref 1) (ref 6)), true),
+    ("parameterized field keeps its own parameter", project 2 duoAF 0 (.app (ref 1) (ref 6)), false),
+    -- a dependent field: `x.2 : F x.1`, with `x.1` the earlier projection of the owner
+    ("dependent first field", project 4 sigAF 0 (ref 0), true),
+    ("dependent second field", project 4 sigAF 1 (.app (ref 1) (.prj 4 0 (v 0))), true),
+    ("dependent field is not its parameter's type", project 4 sigAF 1 (ref 0), false),
+    ("dependent field depends on the first, not the second, projection",
+      project 4 sigAF 1 (.app (ref 1) (.prj 4 1 (v 0))), false)
+  ]
+  for (label, declaration, accept) in cases do
+    let program := { p with declarations := p.declarations.push declaration }
+    match checkDefinition program p.declarations.size, accept with
+    | .ok (), true | .error _, false => pure ()
+    | .ok (), false => throw <| IO.userError s!"resource structure rule {label}: accepted"
+    | .error e, true => throw <| IO.userError s!"resource structure rule {label}: refused {repr e}"
+  -- projection reduction: `(Sig.mk A F a b).1` reduces to `a`, and a projection of
+  -- a value that is not a constructor application stays put
+  let built := Ixon.Expr.app (.app (.app (.app (ref 5) (ref 0)) (ref 1)) (ref 6)) (ref 7)
+  let reducesTo (e target : E) : Bool := match (whnf p 32 e).run {} with
+    | .ok reduced _ => reduced == target
+    | .error _ _ => false
+  unless reducesTo (.prj 4 0 built) (ref 6) && reducesTo (.prj 4 1 built) (ref 7) do
+    throw <| IO.userError "projection of a constructor application did not reduce to its field"
+  unless reducesTo (.prj 4 0 (ref 7)) (.prj 4 0 (ref 7)) do
+    throw <| IO.userError "projection of a non-constructor value reduced"
+  unless reducesTo (.prj 2 0 built) (.prj 2 0 built) do
+    throw <| IO.userError "projection reduced through another structure's constructor"
+  return cases.size + 4
+
 /-- Budget exhaustion is an error, including cycles through open sharing. -/
 def checkSharingBudget : IO Unit := do
   let cyclic := { program with sharing := #[.share 0] }
@@ -316,8 +397,9 @@ def checkSharingBudget : IO Unit := do
 def run : IO Unit := do
   let fixtures ← runFixtureCases
   let matrix ← runContractMatrix
+  let structures ← checkStructureRules
   checkSharingBudget
-  IO.println s!"Resource checker: {fixtures + matrix + 1} positive/negative and mode checks passed"
+  IO.println s!"Resource checker: {fixtures + matrix + structures + 1} positive/negative and mode checks passed"
 
 end Tests.Resource
 

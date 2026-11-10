@@ -104,6 +104,27 @@ def run (root : System.FilePath) : IO Nat := do
     lambda (.ref 0 #[]) (.var 0)⟩, #[], #[prop], #[]⟩
   expect "valid theorem" (Tc.checkEnv (store propEnv validTheorem).1) true
   assertions := assertions + 5
+  -- The theorem exemption: resource admission does not analyze a safe theorem's
+  -- proof (erased computation); typing still refuses a non-proposition
+  -- "theorem". `∀ (P : sort) (p : linear P), P`, proved by `(fun q r => q) p p`.
+  let linear : BinderContract := ⟨.linear, .shared⟩
+  let theoremOf (kind : DefKind) (sort : E) : Environment := (store {}
+    ⟨.defn ⟨kind, .safe, 0, arrow sort (.all linear .shared (.var 0) (.var 1)),
+      lambda sort (.lam linear (.var 0)
+        (.app (.app (lambda (.var 1) (lambda (.var 2) (.var 1))) (.var 0)) (.var 0)))⟩,
+      #[], #[], #[.zero, .succ .zero]⟩).1
+  let profile : Resource.Profile := {}
+  let propTheorem := theoremOf .thm (.sort 0)
+  expect "theorem proof is not resource-checked" (admitResources (bytes propTheorem) profile.bytes) true
+  expect "theorem over a proposition passes combined admission"
+    (validate (bytes propTheorem) profile.bytes) true
+  expect "the same proof as a definition is resource-checked"
+    (admitResources (bytes (theoremOf .defn (.sort 0))) profile.bytes) false
+  let typeTheorem := theoremOf .thm (.sort 1)
+  expect "non-proposition theorem passes the resource half"
+    (admitResources (bytes typeTheorem) profile.bytes) true
+  expect "non-proposition theorem fails combined admission" (validate (bytes typeTheorem) profile.bytes) false
+  assertions := assertions + 5
   expect "recursive inductive" (Tc.checkEnv (indEnv natLike)) true
   let negative : V3.Inductive := ⟨false, 0, 0, 0, .sort 0,
     #[⟨false, 0, 0, 0, 1, arrow (arrow (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩

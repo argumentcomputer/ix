@@ -15,6 +15,19 @@ Erased typing is a separate prerequisite. This module also compares the full
 resource structure of types, so erased definitional equality cannot launder a
 different higher-order contract. Unsupported reductions exhaust a fixed bound
 or report an error instead of silently discarding modes.
+
+The bound covers the work, not only reductions. Every function here that walks
+an expression (`shift`, `substitute`, `splitApp`, `whnf`, `exprEq`,
+`compatible`, `typeOf`, `place`, `analyze`) charges one step per node it
+visits, and every pass over the bindings in scope is charged one step per
+binding. A value that substitution leaves physically shared is therefore paid
+for as a tree each time it is walked. The two shortcuts that skip a walk are
+constant-time and exact: shifting by zero returns its input, and a `.share`
+node whose precomputed loose-index bound (`Program.sharingBounds`) shows the
+operation is the identity stays a `.share` node rather than being replaced by
+its expansion. Not charged per element: lookups in the program's field and
+projection tables, and operations on origin and loan lists, which are bounded
+by the scopes created so far (at most one per step).
 -/
 
 @[expose] public section
@@ -64,8 +77,12 @@ structure Program where
   requires a profile assumption instead of ordinary lambda checking. -/
   auxiliary : Array (Nat × Ixon.Expr) := #[]
   sharing : Array Ixon.Expr := #[]
-  /-- Precomputed unshared expansion and loose de Bruijn bound for each sharing entry. -/
-  sharingInfo : Array (Option (Ixon.Expr × Nat)) := #[]
+  /-- `computeSharingBounds sharing`: a strict upper bound on the loose de Bruijn
+  indices of each entry's expansion, or `none` when unknown. `shift` and
+  `substitute` use it only to leave a `.share` node unchanged. Empty disables
+  that shortcut. The address adapter fills it; a hand-built program must
+  either leave it empty or compute it with `computeSharingBounds`. -/
+  sharingBounds : Array (Option Nat) := #[]
   fields : Array Field := #[]
   projections : Array ProjectionInfo := #[]
   natType : Option Ixon.Expr := none
@@ -103,72 +120,40 @@ def literalType (type : Option Ixon.Expr) : CheckM Ixon.Expr :=
 def checkedIndex (n : Nat) : CheckM UInt64 :=
   if n < UInt64.size then pure n.toUInt64 else throw (.unsupported "readVariable index overflow")
 
-/-- Pure upper bound on loose de Bruijn indices for an expression without `.share` or `.recur`. -/
-def unsharedBVarBound : Ixon.Expr → Option Nat
+/-- A strict upper bound on the loose de Bruijn indices of a sharing entry's
+expansion, read from the entry's own syntax. A `.share j` inside it contributes
+the bound already computed for an earlier entry `j`; a forward or unknown
+reference, or `.recur`, gives `none`. Nothing is expanded, so filling the whole
+table visits each node of its syntax once. -/
+def sharingEntryBound (bounds : Array (Option Nat)) : Ixon.Expr → Option Nat
   | .var idx => some (idx.toNat + 1)
-  | .sort _ | .ref _ _ | .nat _ | .str _ => some 0
-  | .prj _ _ val => unsharedBVarBound val
+  | .sort _ | .ref .. | .nat _ | .str _ => some 0
+  | .recur .. => none
+  | .share idx => bounds[idx.toNat]?.join
+  | .prj _ _ val => sharingEntryBound bounds val
   | .app fn arg => do
-    let b1 ← unsharedBVarBound fn
-    let b2 ← unsharedBVarBound arg
-    return Nat.max b1 b2
+    return Nat.max (← sharingEntryBound bounds fn) (← sharingEntryBound bounds arg)
   | .lam _ ty body | .all _ _ ty body => do
-    let b1 ← unsharedBVarBound ty
-    let b2 ← unsharedBVarBound body
-    return Nat.max b1 (b2 - 1)
+    return Nat.max (← sharingEntryBound bounds ty) ((← sharingEntryBound bounds body) - 1)
   | .letE _ ty val body => do
-    let b1 ← unsharedBVarBound ty
-    let b2 ← unsharedBVarBound val
-    let b3 ← unsharedBVarBound body
-    return Nat.max (Nat.max b1 b2) (b3 - 1)
-  | .share _ | .recur _ _ => none
+    return Nat.max (Nat.max (← sharingEntryBound bounds ty) (← sharingEntryBound bounds val))
+      ((← sharingEntryBound bounds body) - 1)
 
-def expandSharingEntry (info : Array (Option (Ixon.Expr × Nat))) : Ixon.Expr → Option (Ixon.Expr × Nat)
-  | .var idx => some (.var idx, idx.toNat + 1)
-  | .sort l => some (.sort l, 0)
-  | .ref i ls => some (.ref i ls, 0)
-  | .nat i => some (.nat i, 0)
-  | .str i => some (.str i, 0)
-  | .prj t i val => do
-    let (val', b) ← expandSharingEntry info val
-    return (.prj t i val', b)
-  | .app fn arg => do
-    let (fn', b1) ← expandSharingEntry info fn
-    let (arg', b2) ← expandSharingEntry info arg
-    return (.app fn' arg', Nat.max b1 b2)
-  | .lam c ty body => do
-    let (ty', b1) ← expandSharingEntry info ty
-    let (body', b2) ← expandSharingEntry info body
-    return (.lam c ty' body', Nat.max b1 (b2 - 1))
-  | .all c r ty body => do
-    let (ty', b1) ← expandSharingEntry info ty
-    let (body', b2) ← expandSharingEntry info body
-    return (.all c r ty' body', Nat.max b1 (b2 - 1))
-  | .letE c ty val body => do
-    let (ty', b1) ← expandSharingEntry info ty
-    let (val', b2) ← expandSharingEntry info val
-    let (body', b3) ← expandSharingEntry info body
-    return (.letE c ty' val' body', Nat.max (Nat.max b1 b2) (b3 - 1))
-  | .share idx =>
-    match info[idx.toNat]? with
-    | some entry => entry
-    | none => none
-  | .recur _ _ => none
+/-- `Program.sharingBounds` for a sharing table, in time linear in its syntax. -/
+def computeSharingBounds (sharing : Array Ixon.Expr) : Array (Option Nat) :=
+  sharing.foldl (fun bounds e => bounds.push (sharingEntryBound bounds e)) #[]
 
-def computeSharingInfo (sharing : Array Ixon.Expr) : Array (Option (Ixon.Expr × Nat)) := Id.run do
-  let mut info : Array (Option (Ixon.Expr × Nat)) := Array.mkEmpty sharing.size
-  for e in sharing do
-    info := info.push (expandSharingEntry info e)
-  return info
+/-- The bound `computeSharingBounds` recorded for a `.share` entry, if any. -/
+def sharingBound? (program : Program) (index : UInt64) : Option Nat :=
+  program.sharingBounds[index.toNat]?.join
 
 def shift (program : Program) : Nat → Ixon.Expr → Nat → Nat → CheckM Ixon.Expr
   | 0, _, _, _ => throw .budget
   | fuel + 1, e, amount, cutoff => do
     tick
-    match unsharedBVarBound e with
-    | some bound =>
-      if amount == 0 || bound ≤ cutoff then return e
-    | none => pure ()
+    -- Shifting by zero is the identity. The result may be physically shared,
+    -- which costs nothing here: every later walk pays a step per node visited.
+    if amount == 0 then return e
     match e with
     | .var idx =>
       if idx.toNat < cutoff then return e
@@ -187,8 +172,10 @@ def shift (program : Program) : Nat → Ixon.Expr → Nat → Nat → CheckM Ixo
         (← shift program fuel body amount (cutoff + 1))
     | .prj t i val => return .prj t i (← shift program fuel val amount cutoff)
     | .share idx =>
-      if let some (some (expanded, bound)) := program.sharingInfo[idx.toNat]? then
-        if amount == 0 || bound ≤ cutoff then return expanded
+      -- An entry with no loose index at or above `cutoff` is unchanged: keep
+      -- the `.share` node, never its expansion.
+      if let some bound := sharingBound? program idx then
+        if bound ≤ cutoff then return e
       shift program fuel (← expansion program idx) amount cutoff
     | .recur .. => throw (.unsupported "unresolved recursive reference")
     | _ => return e
@@ -197,10 +184,6 @@ def substitute (program : Program) : Nat → Ixon.Expr → Ixon.Expr → Nat →
   | 0, _, _, _ => throw .budget
   | fuel + 1, e, value, depth => do
     tick
-    match unsharedBVarBound e with
-    | some bound =>
-      if bound ≤ depth then return e
-    | none => pure ()
     match e with
     | .var idx =>
       if idx.toNat == depth then shift program fuel value depth 0
@@ -221,8 +204,9 @@ def substitute (program : Program) : Nat → Ixon.Expr → Ixon.Expr → Nat →
         (← substitute program fuel body value (depth + 1))
     | .prj t i val => return .prj t i (← substitute program fuel val value depth)
     | .share idx =>
-      if let some (some (expanded, bound)) := program.sharingInfo[idx.toNat]? then
-        if bound ≤ depth then return expanded
+      -- No loose index of the entry reaches `depth`: it is unchanged.
+      if let some bound := sharingBound? program idx then
+        if bound ≤ depth then return e
       substitute program fuel (← expansion program idx) value depth
     | .recur .. => throw (.unsupported "unresolved recursive reference")
     | _ => return e
@@ -237,6 +221,33 @@ def splitApp (program : Program) :
     | .share index => splitApp program fuel (← expansion program index) args
     | _ => return (e, args)
 
+/-- Syntactic equality charging one step per pair of nodes compared. Unlike
+the derived `==`, it cannot walk a physically shared value as a tree for free.
+`.share` nodes compare by index, as in `==`. -/
+def exprEq : Ixon.Expr → Ixon.Expr → CheckM Bool
+  | .app f a, .app f' a' => do
+    tick
+    return (← exprEq f f') && (← exprEq a a')
+  | .lam c t b, .lam c' t' b' => do
+    tick
+    return c == c' && (← exprEq t t') && (← exprEq b b')
+  | .all c r t b, .all c' r' t' b' => do
+    tick
+    return c == c' && r == r' && (← exprEq t t') && (← exprEq b b')
+  | .letE c t v b, .letE c' t' v' b' => do
+    tick
+    return c == c' && (← exprEq t t') && (← exprEq v v') && (← exprEq b b')
+  | .prj t i v, .prj t' i' v' => do
+    tick
+    return t == t' && i == i' && (← exprEq v v')
+  | left, right => do
+    tick
+    -- Remaining cases: leaves, and nodes of different shapes (`==` is then
+    -- false after inspecting only the constructors).
+    match left, right with
+    | .app .., _ | .lam .., _ | .all .., _ | .letE .., _ | .prj .., _ => return false
+    | _, _ => return left == right
+
 /-- This reduction is only for resource interfaces. The ordinary typechecker
 separately validates universes, dependent types, and definitional equality. -/
 def whnf (program : Program) : Nat → Ixon.Expr → CheckM Ixon.Expr
@@ -244,56 +255,46 @@ def whnf (program : Program) : Nat → Ixon.Expr → CheckM Ixon.Expr
   | fuel + 1, e => do
     tick
     match e with
-    | .var _ | .sort _ | .nat _ | .str _ | .lam .. | .all .. => return e
-    | _ =>
-      let st ← get
-      if st.resourceWhnfMemoEnabled then
-        if let some (_, cached) := st.resourceWhnfMemo.find? (fun entry => entry.1 == e) then
-          return cached
-      let reduced ← match e with
-        | .share idx => whnf program fuel (← expansion program idx)
-        | .letE _ _ value body =>
-          whnf program fuel (← substitute program fuel body value 0)
-        | .app fn arg =>
-          let fn ← whnf program fuel fn
-          match fn with
-          | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
-          | _ => pure (.app fn arg)
-        | .prj typeRef index value =>
-          let value ← whnf program fuel value
-          match program.projections.find? (fun p => p.typeRef == typeRef) with
-          | some info =>
-            let (head, args) ← splitApp program fuel value []
-            match head with
-            | .ref ctorRef _ =>
-              if ctorRef == info.constructor && args.length == info.params + info.fields && index.toNat < info.fields then
-                whnf program fuel args[info.params + index.toNat]!
-              else
-                pure (.prj typeRef index value)
-            | _ => pure (.prj typeRef index value)
-          | none => pure (.prj typeRef index value)
-        | .ref idx _ =>
-          let d ← declaration program idx
-          if d.kind == .definition then
-            match d.body with
-            | some body => whnf program fuel body
-            | none => pure e
-          else pure e
-        | .recur .. => throw (.unsupported "unresolved recursive reference")
-        | _ => pure e
-      if st.resourceWhnfMemoEnabled then
-        modify fun s => { s with resourceWhnfMemo := s.resourceWhnfMemo.push (e, reduced) }
-      return reduced
+    | .share idx => whnf program fuel (← expansion program idx)
+    | .letE _ _ value body =>
+      whnf program fuel (← substitute program fuel body value 0)
+    | .app fn arg =>
+      let fn ← whnf program fuel fn
+      match fn with
+      | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
+      | _ => return .app fn arg
+    | .prj typeRef index value =>
+      let value ← whnf program fuel value
+      match program.projections.find? (fun p => p.typeRef == typeRef) with
+      | some info =>
+        let (head, args) ← splitApp program fuel value []
+        match head with
+        | .ref ctorRef _ =>
+          if ctorRef == info.constructor && args.length == info.params + info.fields && index.toNat < info.fields then
+            whnf program fuel args[info.params + index.toNat]!
+          else
+            return .prj typeRef index value
+        | _ => return .prj typeRef index value
+      | none => return .prj typeRef index value
+    | .ref idx _ =>
+      let d ← declaration program idx
+      if d.kind == .definition then
+        match d.body with
+        | some body => whnf program fuel body
+        | none => return e
+      else return e
+    | .recur .. => throw (.unsupported "unresolved recursive reference")
+    | _ => return e
 
 def compatible (program : Program) : Nat → Ixon.Expr → Ixon.Expr → CheckM Bool
   | 0, _, _ => throw .budget
   | fuel + 1, left, right => do
     tick
     -- Exact syntax is safe even when an opaque type has no reduction rule.
-    if left == right then return true
+    if ← exprEq left right then return true
     let left ← whnf program fuel left
     let right ← whnf program fuel right
-    if left == right then return true
+    if ← exprEq left right then return true
     match left, right with
     | .all c r a b, .all c' r' a' b' =>
       if c != c' || r != r' then return false
@@ -311,7 +312,7 @@ def compatible (program : Program) : Nat → Ixon.Expr → Ixon.Expr → CheckM 
       compatible program fuel v v'
     | .sort _, .sort _ => return true
     | .ref i _, .ref j _ => return i == j
-    | _, _ => return left == right
+    | _, _ => exprEq left right
 
 def requireType (program : Program) (fuel : Nat) (actual expected : Ixon.Expr) : CheckM Unit := do
   if !(← compatible program fuel actual expected) then throw .typeMismatch
@@ -449,6 +450,7 @@ def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
 bindings cannot escape: returned places have already been consumed, and
 retained local origins are checked before their lexical scopes close. -/
 def joinBindings (count : Nat) (left right : State) : CheckM (Array Binding) := do
+  tickN count
   let mut result := #[]
   for i in [0:count] do
     let some a := left.bindings[i]? | throw (.unbound i)
@@ -475,6 +477,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
       if let .sort _ ← whnf ctx.program fuel type then
         return { type, owned := .unique }
     if grade != .linear then
+      -- Resetting and then rescaling every binding's demand touches each once.
+      tickN (2 * (← get).bindings.size)
       let before ← get
       set { before with bindings := before.bindings.map fun (b : Binding) =>
         { b with demand := .erased, touched := false } }
@@ -509,6 +513,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
             requireType ctx.program fuel domain ty
             pure (result, some codomain)
           | none => pure (.shared, none)
+        -- Resetting and then merging every outer binding touches each once.
+        tickN (2 * (← get).bindings.size)
         let before ← get
         -- Deferred closure checking gets fresh per-invocation demands.
         set { before with bindings := before.bindings.map fun (b : Binding) =>
@@ -656,17 +662,24 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
           ordinary
     finishValue ctx fuel destination expected value
 
-def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit := do
-  let some declaration := program.declarations[index]? | throw (.badReference index)
-  let some body := declaration.body | throw (.unsupported "definition has no body")
+/-- `checkDefinition` with the number of steps it consumed. Running out of
+`limits.steps` reports `budget` after consuming all of them; running out of
+`limits.depth` reports `budget` too, possibly earlier. -/
+def checkDefinitionCounted (program : Program) (index : Nat) (limits : Limits := {}) :
+    Except Error Unit × Nat :=
   let action : CheckM Unit := do
+    let some declaration := program.declarations[index]? | throw (.badReference index)
+    let some body := declaration.body | throw (.unsupported "definition has no body")
     let scope ← newScope 0
     let _ ← analyze limits.depth { program, scope } body
       (some (declaration.type, .shared)) scope .linear
     pure ()
-  match action.run { remaining := limits.steps, resourceWhnfMemoEnabled := true } with
-  | .ok _ _ => pure ()
-  | .error error _ => throw error
+  match action.run { remaining := limits.steps } with
+  | .ok _ s => (.ok (), limits.steps - s.remaining)
+  | .error error s => (.error error, limits.steps - s.remaining)
+
+def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit :=
+  (checkDefinitionCounted program index limits).1
 
 end Ix.Resource
 

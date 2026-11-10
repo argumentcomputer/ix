@@ -224,9 +224,10 @@ Nine variants in six families:
 - **`compile`**: certified compilation claim asserting that `target` in the
   environment with Merkle root `env` compiles under `policy` with ABI parameter
   count `abiArity` to an x86-64 ELF64 object with BLAKE3 digest `elfHash`
-  (tag 11, 2-byte header `E8 03`, object format `04`, validator `06`, followed
+  (tag 13, 2-byte header `E8 05`, object format `04`, validator `06`, followed
   by `env` (32B), `target` (32B), `policy` (1B), `putTagN 0 0 abiArity`, and
-  `elfHash` (32B)).
+  `elfHash` (32B)). Values 11 and 12 of the tag space are the role-binding
+  section (`E8 03`) and the literal-class preimage (`E8 04`).
 
 A `catalog` claim is formed only by aggregation (`ix_aggr` shape 16), from
 unconditional `checkEnv` claims (validator `erased-lean-v2` or
@@ -625,16 +626,20 @@ end RevealConstantInfo
 namespace Claim
 
 -- TagN (`f = 4`) value dispatch (variants 2–10 mirror crates/ixon/src/proof.rs;
--- variant 11 `compile` is Lean-only for IxCC).
+-- variant 13 `compile` is Lean-only for IxCC).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
 -- so catalog is `E8 00`, resource `E8 01`, binding `E8 02`, and compile
--- `E8 03` (followed by scope `04 06`, `env` (32B), `target` (32B),
+-- `E8 05` (followed by scope `04 06`, `env` (32B), `target` (32B),
 -- `policy` (1B), `putTagN 0 0 abiArity`, and `elfHash` (32B)) on the wire.
+-- Values 11 (`E8 03`) and 12 (`E8 04`) are not claims: they begin the
+-- role-binding section (`IxCK/Kernel/Ixon/RoleTable.lean`) and the literal-class
+-- preimage (`Ix.ClaimContext.literalClassTag`), whose hashes claims commit to.
 -- The `.ixe` header also uses flag 0xE, with the format version as the value
 -- (`0xE4` for version 4, the same byte as the check claim tag).
 -- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7 for variants 0–7, and
--- two-byte tag `F8 00` for variant 8 `compile`).
+-- two-byte tag `F8 00` for variant 8 `compile`). Proof variant `v` wraps claim
+-- variant `v + 3`, except `compile`'s (`claimVariantOfProof`).
 
 def FLAG_CLAIM : UInt8 := 0xE
 def FLAG_PROOF : UInt8 := 0xF
@@ -649,7 +654,7 @@ def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
 def VARIANT_RESOURCE_CLAIM   : UInt64 := 9
 def VARIANT_BINDING_CLAIM    : UInt64 := 10
-def VARIANT_COMPILE_CLAIM    : UInt64 := 11
+def VARIANT_COMPILE_CLAIM    : UInt64 := 13
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
 def VARIANT_CHECK_PROOF      : UInt64 := 1
@@ -660,6 +665,11 @@ def VARIANT_CATALOG_PROOF    : UInt64 := 5
 def VARIANT_RESOURCE_PROOF   : UInt64 := 6
 def VARIANT_BINDING_PROOF    : UInt64 := 7
 def VARIANT_COMPILE_PROOF    : UInt64 := 8
+
+/-- The claim variant a proof variant wraps: `v + 3`, except the compile proof
+(`8`), which wraps the compile claim (`13`). -/
+def claimVariantOfProof (variant : UInt64) : UInt64 :=
+  if variant == VARIANT_COMPILE_PROOF then VARIANT_COMPILE_CLAIM else variant + 3
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
     (some). Mirrors `put_opt_addr` in crates/ixon/src/proof.rs. -/
@@ -936,8 +946,9 @@ def get : GetM Proof := do
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
   if tag.value > Ix.Claim.VARIANT_COMPILE_PROOF then
     throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
-  let validator ← Ix.Claim.getScope (tag.value + 3)
-  let claim ← Ix.Claim.getPayload (tag.value + 3) validator
+  let variant := Ix.Claim.claimVariantOfProof tag.value
+  let validator ← Ix.Claim.getScope variant
+  let claim ← Ix.Claim.getPayload variant validator
   let lenTag ← getTagN 0
   let bytes ← getBytes lenTag.value.toNat
   pure { claim, proof := bytes }

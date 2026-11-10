@@ -885,7 +885,11 @@
     "IxCCTests.IxonV3.Primitives",
     "IxCCTests.IxonV3.Catalog.Run",
     "IxCCTests.IxonV3.K1",
+    "IxCCTests.IxonV3.ResourceBudget",
     "IxCC.Tools.Check"]},
+  "IxCCTests.IxonV3.ResourceBudget":
+  {"path": "IxCCTests/IxonV3/ResourceBudget.lean",
+   "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
   "IxCCTests.IxonV3.Primitives":
   {"path": "IxCCTests/IxonV3/Primitives.lean",
    "imports": ["IxCCTests.IxonV3.TypingFixtures"]},

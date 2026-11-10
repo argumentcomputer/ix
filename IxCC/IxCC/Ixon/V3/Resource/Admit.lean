@@ -1,8 +1,11 @@
 import IxCC.Ixon.V3.Resource.Check
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`.
-Only the import, expression namespace, and surrounding namespace are changed.
-This resource check retains the upstream erased-typing prerequisite. -/
+/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
+(`Ix/Resource/Admit.lean`), with the local expression type and namespaces.
+As in ix's copy since `866e7fa82`, a safe theorem's proof is neither scanned
+for relevance nor resource-checked: only its statement counts. That relies on
+the typing half refusing a theorem whose statement is not a proposition. This
+resource check retains the upstream erased-typing prerequisite. -/
 
 namespace IxCC.Ixon.V3.Resource
 

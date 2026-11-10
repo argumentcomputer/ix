@@ -50,6 +50,160 @@ theorem checkWellFormed_iff (c : CompileClaim) :
     c.checkWellFormed = true ↔ c.WellFormed := by
   simp [checkWellFormed, WellFormed]
 
+/-! ### The `N0` code of `abiArity` -/
+
+theorem leBytes_length (x w : Nat) : (leBytes x w).length = w := by
+  induction w generalizing x with
+  | zero => rfl
+  | succ w ih => simp [leBytes, ih]
+
+theorem leValue_leBytes {x w : Nat} (h : x < 256 ^ w) : leValue (leBytes x w) = x := by
+  induction w generalizing x with
+  | zero => simp [leBytes, leValue]; omega
+  | succ w ih =>
+    have hdiv : x / 256 < 256 ^ w := by
+      rw [Nat.div_lt_iff_lt_mul (by decide)]
+      simpa [Nat.pow_succ] using h
+    simp only [leBytes, leValue, ih hdiv, UInt8.toNat_ofNat']
+    omega
+
+/-- Below `2 ^ 64`, the header of `n0Bytes v` announces its payload width and the
+header and payload denote `v`. -/
+theorem n0_spec {v : Nat} (hv : v < 2 ^ 64) :
+    n0Width (n0Header v) = some (n0Payload v).length ∧
+      n0Value (n0Header v) (n0Payload v) = v := by
+  by_cases h1 : v < 128
+  · have hh : (n0Header v).toNat = v := by
+      simp only [n0Header, h1, ite_true, UInt8.toNat_ofNat']
+      omega
+    simp [n0Width, n0Value, n0Payload, hh, h1]
+  by_cases h2 : v < 16512
+  · have hh : (n0Header v).toNat = 128 + (v - 128) / 256 := by
+      simp only [n0Header, h1, h2, ite_true, ite_false, UInt8.toNat_ofNat']
+      omega
+    have hp : n0Payload v = leBytes ((v - 128) % 256) 1 := by simp [n0Payload, h1, h2]
+    have hlv : leValue (leBytes ((v - 128) % 256) 1) = (v - 128) % 256 :=
+      leValue_leBytes (by omega)
+    refine ⟨?_, ?_⟩
+    · simp only [n0Width, hh, hp, leBytes_length]
+      split <;> first | omega | (split <;> first | rfl | omega)
+    · simp only [n0Value, hh, hp, hlv]
+      split
+      · omega
+      · split
+        · omega
+        · omega
+  by_cases h3 : v < 82048
+  · have hh : n0Header v = 0xC0 := by simp [n0Header, h1, h2, h3]
+    have hp : n0Payload v = leBytes (v - 16512) 2 := by simp [n0Payload, h1, h2, h3]
+    have hlv := leValue_leBytes (x := v - 16512) (w := 2) (by omega)
+    refine ⟨?_, ?_⟩
+    · simp [n0Width, hh, hp, leBytes_length]
+    · simp [n0Value, hh, hp, hlv]; omega
+  by_cases h4 : v < 16859264
+  · have hh : n0Header v = 0xC1 := by simp [n0Header, h1, h2, h3, h4]
+    have hp : n0Payload v = leBytes (v - 82048) 3 := by simp [n0Payload, h1, h2, h3, h4]
+    have hlv := leValue_leBytes (x := v - 82048) (w := 3) (by omega)
+    refine ⟨?_, ?_⟩
+    · simp [n0Width, hh, hp, leBytes_length]
+    · simp [n0Value, hh, hp, hlv]; omega
+  by_cases h5 : v < 4311826560
+  · have hh : n0Header v = 0xC2 := by simp [n0Header, h1, h2, h3, h4, h5]
+    have hp : n0Payload v = leBytes (v - 16859264) 4 := by simp [n0Payload, h1, h2, h3, h4, h5]
+    have hlv := leValue_leBytes (x := v - 16859264) (w := 4) (by omega)
+    refine ⟨?_, ?_⟩
+    · simp [n0Width, hh, hp, leBytes_length]
+    · simp [n0Value, hh, hp, hlv]; omega
+  · have hh : n0Header v = 0xC3 := by simp [n0Header, h1, h2, h3, h4, h5]
+    have hp : n0Payload v = leBytes (v - 4311826560) 8 := by simp [n0Payload, h1, h2, h3, h4, h5]
+    have hlv := leValue_leBytes (x := v - 4311826560) (w := 8) (by omega)
+    refine ⟨?_, ?_⟩
+    · simp [n0Width, hh, hp, leBytes_length]
+    · simp [n0Value, hh, hp, hlv]; omega
+
+theorem getN0_eq : getN0 = (Ixon.getU8 >>= fun header =>
+    match n0Width header with
+    | some width => Ixon.getBytes width >>= n0Finish header
+    | none => throw "CompileClaim: invalid abiArity code") := by
+  rfl
+
+/-- `getN0` reads `n0Bytes v` back as `v` for every `v < 2 ^ 64`. -/
+theorem getN0_encoded_spec {v : Nat} (hv : v < 2 ^ 64) :
+    Ixon.GetSpec getN0 (n0Bytes v) v := by
+  obtain ⟨hw, hval⟩ := n0_spec hv
+  let payload : ByteArray := ⟨(n0Payload v).toArray⟩
+  have hsize : payload.size = (n0Payload v).length := by simp [payload, ByteArray.size]
+  have hlist : payload.data.toList = n0Payload v := by simp [payload]
+  have hcheck : v < 2 ^ 64 ∧ n0Bytes v = Ixon.u8Bytes (n0Header v) ++ payload := ⟨hv, rfl⟩
+  have hb : n0Bytes v = Ixon.u8Bytes (n0Header v) ++ (payload ++ ByteArray.empty) := by
+    simp [n0Bytes, payload]
+  have hfinish : n0Finish (n0Header v) payload = pure v := by
+    simp only [n0Finish, hlist, hval]
+    exact ite_eq_left hcheck
+  rw [hb, getN0_eq]
+  refine Ixon.GetSpec.bind (Ixon.getU8_spec (n0Header v)) ?_
+  simp only [hw]
+  rw [← hsize]
+  refine Ixon.GetSpec.bind (Ixon.getBytes_spec payload) ?_
+  rw [hfinish]
+  exact Ixon.GetSpec.pure v
+
+/-- Every successful `getN0` read returns a value below `2 ^ 64` and consumed
+exactly its `N0` code: the reader is canonical. -/
+theorem getN0_sound (pre rest : ByteArray) {value : Nat} {st' : Ixon.GetState}
+    (h : getN0.run ⟨pre ++ rest, pre.size⟩ = .ok (value, st')) :
+    value < 2 ^ 64 ∧ ∃ suffix,
+      rest = n0Bytes value ++ suffix ∧
+      st' = ⟨pre ++ rest, pre.size + (n0Bytes value).size⟩ := by
+  rw [getN0_eq] at h
+  simp only [StateT.run_bind] at h
+  cases hh : Ixon.getU8.run ⟨pre ++ rest, pre.size⟩ with
+  | error e => rw [hh] at h; contradiction
+  | ok r =>
+    rcases r with ⟨header, mid⟩
+    rw [hh] at h
+    simp only [bind, Except.bind] at h
+    obtain ⟨afterHead, hrest, hmid⟩ := Ixon.getU8_canonical pre rest hh
+    let headPre := pre ++ Ixon.u8Bytes header
+    have hmid' : mid = ⟨headPre ++ afterHead, headPre.size⟩ := by
+      rw [hmid]
+      simp [headPre, hrest, ByteArray.append_assoc]
+    rw [hmid'] at h
+    cases hw : n0Width header with
+    | none =>
+      simp only [hw] at h
+      change (Except.error _) = Except.ok (value, st') at h
+      contradiction
+    | some width =>
+      simp only [hw] at h
+      change ((Ixon.getBytes width >>= n0Finish header).run
+        ⟨headPre ++ afterHead, headPre.size⟩) = .ok (value, st') at h
+      simp only [StateT.run_bind] at h
+      cases hp : (Ixon.getBytes width).run ⟨headPre ++ afterHead, headPre.size⟩ with
+      | error e => rw [hp] at h; contradiction
+      | ok r2 =>
+        rcases r2 with ⟨payload, after⟩
+        rw [hp] at h
+        simp only [bind, Except.bind] at h
+        obtain ⟨suffix, hafter, hst⟩ := Ixon.getBytes_canonical width headPre afterHead hp
+        change (n0Finish header payload).run after = .ok (value, st') at h
+        unfold n0Finish at h
+        split at h
+        · rename_i hcond
+          obtain ⟨hlt, hbytes⟩ := hcond
+          change Except.ok (n0Value header payload.data.toList, after) = Except.ok (value, st') at h
+          cases h
+          refine ⟨hlt, suffix, ?_, ?_⟩
+          · rw [hrest, hafter, hbytes]
+            simp [ByteArray.append_assoc]
+          · rw [hst, hbytes]
+            simp [headPre, hrest, ByteArray.size_append, ByteArray.append_assoc, Nat.add_assoc]
+        · change (Except.error _) = Except.ok (value, st') at h
+          contradiction
+
+theorem getN0_canonical : Ixon.GetCanonical getN0 n0Bytes :=
+  fun pre rest _ _ h => (getN0_sound pre rest h).2
+
 /-- `getPayloadM` consumes `c.toPayloadBytes` and returns `c` for any well-formed `CompileClaim`. -/
 theorem getPayloadM_spec {c : CompileClaim} (hwf : c.WellFormed) :
     Ixon.GetSpec getPayloadM c.toPayloadBytes c := by
@@ -59,44 +213,41 @@ theorem getPayloadM_spec {c : CompileClaim} (hwf : c.WellFormed) :
     Ixon.Address.get_spec c.target
   have hpol : Ixon.GetSpec Ixon.getU8 (Ixon.u8Bytes c.policy.toUInt8) c.policy.toUInt8 :=
     Ixon.getU8_spec c.policy.toUInt8
-  let arityTag : Ixon.Tag0 := ⟨UInt64.ofNat c.abiArity⟩
-  have harity : Ixon.GetSpec Ixon.getTag0 (Ixon.tag0Bytes arityTag) arityTag :=
-    Ixon.getTag0_encoded_spec arityTag
+  have harity : Ixon.GetSpec getN0 (n0Bytes c.abiArity) c.abiArity :=
+    getN0_encoded_spec hwf
   have helf : Ixon.GetSpec (Ixon.Serialize.get : Ixon.GetM Ixon.Address) c.elfHash.hash c.elfHash :=
     Ixon.Address.get_spec c.elfHash
-  have harity_toNat : arityTag.size.toNat = c.abiArity :=
-    UInt64.toNat_ofNat_of_lt hwf
   have hstep4 : Ixon.GetSpec (do
       let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
       pure ({
         env := c.env
         target := c.target
         policy := c.policy
-        abiArity := arityTag.size.toNat
+        abiArity := c.abiArity
         elfHash
       } : CompileClaim)) c.elfHash.hash c := by
     have hpure : Ixon.GetSpec (pure ({
       env := c.env
       target := c.target
       policy := c.policy
-      abiArity := arityTag.size.toNat
+      abiArity := c.abiArity
       elfHash := c.elfHash
     } : CompileClaim)) ByteArray.empty ({
       env := c.env
       target := c.target
       policy := c.policy
-      abiArity := arityTag.size.toNat
+      abiArity := c.abiArity
       elfHash := c.elfHash
     } : CompileClaim) := Ixon.GetSpec.pure _
     have h := Ixon.GetSpec.bind (next := fun elfHash => pure ({
       env := c.env
       target := c.target
       policy := c.policy
-      abiArity := arityTag.size.toNat
+      abiArity := c.abiArity
       elfHash
     } : CompileClaim)) helf hpure
     rcases c with ⟨env, target, pol, arity, elfHash⟩
-    simpa [ByteArray.append_empty, harity_toNat] using h
+    simpa [ByteArray.append_empty] using h
   unfold getPayloadM toPayloadBytes
   simp only [ByteArray.append_assoc]
   refine Ixon.GetSpec.bind henv ?_
@@ -215,9 +366,9 @@ theorem getPayloadM_canonical (pre rest : ByteArray) {c : CompileClaim} {st' : I
         | some policy =>
           rw [hpolOpt] at h
           change (do
-            let arityTag ← Ixon.getTag0
+            let abiArity ← getN0
             let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
-            pure ({ env, target, policy, abiArity := arityTag.size.toNat, elfHash } : CompileClaim)).run st3 =
+            pure ({ env, target, policy, abiArity, elfHash } : CompileClaim)).run st3 =
               .ok (c, st') at h
           simp only [StateT.run_bind] at h
           have hpolEq : policy.toUInt8 = polByte := CompilePolicy.toUInt8_ofUInt8? hpolOpt
@@ -225,14 +376,14 @@ theorem getPayloadM_canonical (pre rest : ByteArray) {c : CompileClaim} {st' : I
           have hst3' : st3 = ⟨pre3 ++ rest3, pre3.size⟩ := by
             rw [hst3]; simp [pre3, hrest3, ByteArray.append_assoc]
           rw [hst3'] at h
-          cases harity : Ixon.getTag0.run ⟨pre3 ++ rest3, pre3.size⟩ with
+          cases harity : getN0.run ⟨pre3 ++ rest3, pre3.size⟩ with
           | error e => rw [harity] at h; contradiction
           | ok r4 =>
-            rcases r4 with ⟨arityTag, st4⟩
+            rcases r4 with ⟨abiArity, st4⟩
             rw [harity] at h
             simp only [bind, Except.bind] at h
-            obtain ⟨rest4, hrest4, hst4⟩ := Ixon.getTag0_canonical pre3 rest3 harity
-            let pre4 := pre3 ++ Ixon.tag0Bytes arityTag
+            obtain ⟨harityLt, rest4, hrest4, hst4⟩ := getN0_sound pre3 rest3 harity
+            let pre4 := pre3 ++ n0Bytes abiArity
             have hst4' : st4 = ⟨pre4 ++ rest4, pre4.size⟩ := by
               rw [hst4]; simp [pre4, hrest4, ByteArray.append_assoc]
             rw [hst4'] at h
@@ -241,15 +392,12 @@ theorem getPayloadM_canonical (pre rest : ByteArray) {c : CompileClaim} {st' : I
             | ok r5 =>
               rcases r5 with ⟨elfHash, st5⟩
               rw [helf] at h
-              change Except.ok ({ env, target, policy, abiArity := arityTag.size.toNat, elfHash }, st5) =
+              change Except.ok ({ env, target, policy, abiArity, elfHash }, st5) =
                 Except.ok (c, st') at h
               cases h
               obtain ⟨suffix, hrest5, hst5⟩ := address_get_canonical pre4 rest4 helf
-              have hwf : ({ env, target, policy, abiArity := arityTag.size.toNat, elfHash } : CompileClaim).WellFormed :=
-                arityTag.size.toNat_lt
-              have htagEq : (⟨UInt64.ofNat arityTag.size.toNat⟩ : Ixon.Tag0) = arityTag := by
-                rcases arityTag with ⟨sz⟩
-                simp [UInt64.ofNat_toNat]
+              have hwf : ({ env, target, policy, abiArity, elfHash } : CompileClaim).WellFormed :=
+                harityLt
               refine ⟨hwf, suffix, ?_, ?_⟩
               · rw [hrest1, hrest2, hrest3, hrest4, hrest5]
                 simp [toPayloadBytes, hpolEq, ByteArray.append_assoc]

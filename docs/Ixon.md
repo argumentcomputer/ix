@@ -150,8 +150,8 @@ All four are roots of the sharing proofs' audit manifest
 | 0xB | Expr | Share | Sharing table index |
 | 0xC | Constant | Muts | Entry count |
 | 0xD | Constant | Non-Muts | Variant (0-7) |
-| 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim | `.ixe` header: format version (4, byte `0xE4`); Comm/AssumptionTree/Claim: variant |
-| 0xF | Proof | ZK proofs | Variant (0-6) |
+| 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim, role-binding section, literal-class preimage | `.ixe` header: format version (4, byte `0xE4`); Comm/AssumptionTree/Claim: variant (1–10, 13); role-binding section `E8 03` (11); literal-class preimage `E8 04` (12) |
+| 0xF | Proof | ZK proofs | Variant (0–7; 8 is the Lean-only compile proof) |
 
 ### Examples
 
@@ -1733,7 +1733,12 @@ and proof statement. A claim with another object format is rejected with
 | 8 | `0xE8 0x00` | Catalog claim | 1 addr (members root over member claim digests) |
 | 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
 | 10 | `0xE8 0x02` | Binding claim | 2 addr (specification digest, binding hash) |
-| 11 | `0xE8 0x03` | Compile claim (Lean / IxCC) | 2 addr (env root, target) + 1B policy + N0 abiArity + 1 addr (elfHash) |
+| 11 | `0xE8 0x03` | Role-binding section (not a claim) | the role table's canonical bytes; its BLAKE3 is the binding hash claims commit to |
+| 12 | `0xE8 0x04` | Literal-class preimage (not a claim) | the addresses a literal class binds to its roles; its BLAKE3 is the class hash |
+| 13 | `0xE8 0x05` | Compile claim (Lean / IxCC) | 2 addr (env root, target) + 1B policy + N0 abiArity + 1 addr (elfHash) |
+
+Values 11 and 12 begin hashed objects that are not claims; no claim uses them,
+so a claim's tag alone tells which kind of object it begins.
 
 The claim payloads in this table follow the two scope bytes. Reveal and
 Contains require validator `0`; Eval, Catalog and Binding require validator
@@ -1986,17 +1991,19 @@ E8 02                 -- N4(0xE, 10) (Binding): two-byte TagN rung
 ```
 Total: 68 bytes.
 
-**Compile claim** (`0xE8 0x03`, 3 addresses + policy + `abiArity`):
+**Compile claim** (`0xE8 0x05`, 3 addresses + policy + `abiArity`):
 ```
-E8 03                 -- N4(0xE, 11) (Compile): two-byte TagN rung
+E8 05                 -- N4(0xE, 13) (Compile): two-byte TagN rung
 04 06                 -- object format 4, compile-v1
 [32 bytes]            -- env Merkle root
 [32 bytes]            -- target constant address
 [1 byte]              -- policy (0 = immortal, 1 = zeroRc, 2 = plainRc)
-[N0]                  -- abiArity (1 byte when < 128)
+[N0]                  -- abiArity (1 byte when < 128; `80 00` is 128)
 [32 bytes]            -- elfHash (BLAKE3 of x86-64 ELF64 object)
 ```
-Total: 102 bytes (for 1-byte `abiArity`).
+Total: 102 bytes (for 1-byte `abiArity`). The compile proof wrapper keeps
+proof variant 8 (`F8 00`), which wraps claim variant 13. `IxCC.CompileClaim`
+writes and reads `abiArity` with the same `N0` code.
 
 A Check or CheckEnv claim that assumes its binding is the validator-3 layout
 with `04 04` (object format 4, erased-lean-v2-assumed) as its scope bytes.
@@ -2005,9 +2012,12 @@ The cross-language claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the
 canonical bytes and BLAKE3 digest of one claim of every variant shared between
 the Rust and Lean codecs (`eval` through `binding`, plus the `check` and
 `checkEnv` validator-4 and validator-5 forms); its headers and scope bytes match
-the claim examples above. Lean-only `compile` claims (`0xE8 0x03`, scope
+the claim examples above. Lean-only `compile` claims (`0xE8 0x05`, scope
 `04 06`) are tested alongside them in `Tests/Ix/ClaimsV4.lean` and
-`Tests/Ix/Claim.lean`. `lake exe ixon-v4-tests` compares `claims.tsv`
+`Tests/Ix/Claim.lean`, which pins the 102-byte vector and the `abiArity`
+vectors that `IxCC/IxCCTests/Pipeline/Compiler.lean` also pins; Rust's
+`compile_claim_vector_refused` (`crates/ixon/src/proof.rs`) checks that Rust
+refuses that vector. `lake exe ixon-v4-tests` compares `claims.tsv`
 with the serializers' output, and `--export-fixtures` regenerates it under
 `ixon-v4-fixtures/` in the scratch directory `$IX_IXON_V4_DIR` (default
 `/tmp`).

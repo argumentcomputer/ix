@@ -34,7 +34,7 @@ In `Recheck.front`, the checker validates the unfolding table (`Table.ofCert`, e
 Start with the modules that state what `IxCC` proves from serialized source bytes down to x86-64 machine execution:
 
 1. **[`IxCC/CompileClaim.lean`](../IxCC/CompileClaim.lean), [`IxCC/CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean) & [`Ix/Claim.lean`](../../Ix/Claim.lean)**
-   - Connects `Ix`'s Blake3-committed `CompileClaim` (tag `11`, wire header `E8 03 04 06`) to machine-checked x86-64 execution across all three memory policies (`.immortal`, `.zeroRc`, `.plainRc`).
+   - Connects `Ix`'s Blake3-committed `CompileClaim` (tag `13`, wire header `E8 05 04 06`) to machine-checked x86-64 execution across all three memory policies (`.immortal`, `.zeroRc`, `.plainRc`).
    - Key definitions and theorems:
      - `verifyProgram`, `verifyBytes`, and `checkClaim_ok_iff`: Verifies that the `Ixon.Env` Merkle root matches `c.env`, the emitted ELF64 `.o` bytes hash to `c.elfHash`, the environment typechecks (`typecheck := true` by default), the target root has `Nat` parameters and an observable return type, and the certified checker accepts the certificate for the claimed policy and ABI arity.
      - `verifyProgram_immortal_sound`, `verifyProgram_zeroRc_sound`, `verifyProgram_plainRc_sound`, and their byte-level counterparts `verifyBytes_immortal_sound`, `verifyBytes_zeroRc_sound`, and `verifyBytes_plainRc_sound`: End-to-end soundness from `Ixon.Env` / `ByteArray` inputs to linked x86-64 object execution (`X86.Linked`, `a.linked D`, `ELFRead.parse`, `ByteEval.step`) under `X86.Driver.Ok`.

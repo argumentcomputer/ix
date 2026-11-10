@@ -268,6 +268,9 @@ pub struct Proof {
 /// - 8: Catalog claim (`E8 00`)
 /// - 9: Resource claim (`E8 01`)
 /// - 10: Binding claim (`E8 02`)
+/// - 11 (`E8 03`) and 12 (`E8 04`) are not claims: they begin the role-binding
+///   section and the literal-class preimage (`role_table.rs`)
+/// - 13: the Lean-only compile claim (`E8 05`), which this crate refuses
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
 /// legacy 4 is `0xE4` and the role-bound 5 is `0xE5`. Checked claims still bind
@@ -1848,6 +1851,39 @@ mod tests {
     assert_eq!(pbuf[0], 0xF5, "catalog proof wrapper tag drifted");
     let back = Proof::get(&mut pbuf.as_slice()).expect("proof roundtrip");
     assert_eq!(back, proof);
+  }
+
+  /// The Lean-only compile claim (`Ix.Claim.compile`, `IxCC.CompileClaim`):
+  /// TagN `0xE8 0x05` (variant 13), scope `04 06` (compile-v1), `env`,
+  /// `target`, policy, `abiArity` and `elfHash`. This is the 102-byte vector
+  /// that `Tests/Ix/Claim.lean` and `IxCC/IxCCTests/Pipeline/Compiler.lean` pin. Rust
+  /// has no compile variant: it must refuse these bytes with an error, under
+  /// either validator byte, as a proof wrapper, and as a role-binding section,
+  /// never read them as another claim.
+  #[test]
+  fn compile_claim_vector_refused() {
+    let mut bytes = vec![0xE8, 0x05, 4, 6];
+    bytes.extend_from_slice(&[0x11; 32]);
+    bytes.extend_from_slice(&[0x22; 32]);
+    bytes.extend_from_slice(&[0x02, 0x03]);
+    bytes.extend_from_slice(&[0x33; 32]);
+    assert_eq!(bytes.len(), 102);
+    let err = Claim::from_bytes(&bytes).unwrap_err();
+    assert!(err.contains("wrong validator identity"), "{err}");
+    // Under the validator its variant would have (erased-lean-v2), the
+    // variant itself is refused.
+    let mut v3 = bytes.clone();
+    v3[3] = VALIDATOR_ERASED_LEAN;
+    let err = Claim::from_bytes(&v3).unwrap_err();
+    assert!(err.contains("invalid claim variant 13"), "{err}");
+    // The proof wrapper Lean writes for it (`F8 00`, proof variant 8).
+    let mut proof = vec![0xF8, 0x00];
+    proof.extend_from_slice(&bytes[2..]);
+    proof.push(0);
+    let err = Proof::get(&mut proof.as_slice()).unwrap_err();
+    assert!(err.contains("invalid proof variant 8"), "{err}");
+    // It is not a role-binding section (`E8 03`).
+    assert!(crate::role_table::RoleTable::from_bytes(&bytes).is_err());
   }
 
   /// A typing claim made for the retired erased-lean-v1 validator is refused,

@@ -394,7 +394,7 @@ def compileClaims (a : Assert) : IO String := do
     elfHash := ⟨ByteArray.mk (Array.replicate 32 0x33), by decide⟩
   }
   let expectedVecBytes : ByteArray :=
-    ByteArray.mk (#[0xE8, 0x03, 0x04, 0x06] ++
+    ByteArray.mk (#[0xE8, 0x05, 0x04, 0x06] ++
       Array.replicate 32 0x11 ++
       Array.replicate 32 0x22 ++
       #[0x02, 0x03] ++
@@ -403,26 +403,48 @@ def compileClaims (a : Assert) : IO String := do
       vecClaim.toClaimBytes.size == 102 &&
       CompileClaim.ofClaimBytes vecClaim.toClaimBytes == some vecClaim &&
       CompileClaim.ofPayloadBytes vecClaim.toPayloadBytes == some vecClaim)
-    "CompileClaim: deterministic 102-byte wire vector (#[0xE8, 0x03, 0x04, 0x06, ...]) and roundtrip"
+    "CompileClaim: deterministic 102-byte wire vector (#[0xE8, 0x05, 0x04, 0x06, ...]) and roundtrip"
+  -- `abiArity` is ix's `N0` code (B4-2). ix's `Tests/Ix/Claim.lean` pins the same
+  -- vectors: one byte below 128, then the TagN rungs; `80 80` is 256 (IxCC's former
+  -- Tag0 spelling of 128); the invalid code `C4` and the code of `2 ^ 64` are refused.
+  let arityClaimBytes (arity : List UInt8) : ByteArray :=
+    ByteArray.mk (#[0xE8, 0x05, 0x04, 0x06] ++ Array.replicate 32 0x11 ++
+      Array.replicate 32 0x22 ++ #[0x02] ++ arity.toArray ++ Array.replicate 32 0x33)
+  let arityVectors : List (Nat × List UInt8) := [
+    (0, [0x00]), (5, [0x05]), (6, [0x06]), (127, [0x7F]), (128, [0x80, 0x00]),
+    (256, [0x80, 0x80]), (16511, [0xBF, 0xFF]), (16512, [0xC0, 0x00, 0x00]),
+    (2 ^ 64 - 1, [0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])]
+  let arityRejected : List (List UInt8) :=
+    [[0xC4], [0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]]
+  expect a (arityVectors.all fun (arity, bytes) =>
+      let claim := { vecClaim with abiArity := arity }
+      claim.toClaimBytes == arityClaimBytes bytes &&
+        CompileClaim.ofClaimBytes (arityClaimBytes bytes) == some claim)
+    "CompileClaim: abiArity N0 vectors shared with ix's Claim.ser"
+  expect a (arityRejected.all fun bytes => CompileClaim.ofClaimBytes (arityClaimBytes bytes) == none)
+    "CompileClaim: invalid and overflowing abiArity codes are refused"
+  expect a (CompileClaim.ofClaimBytes (vecClaim.toClaimBytes.set! 1 0x03) == none &&
+      CompileClaim.ofClaimBytes (vecClaim.toClaimBytes.set! 1 0x04) == none)
+    "CompileClaim: the role-binding (E8 03) and literal-class (E8 04) tags are not compile claims"
   let gcdClaimBytes := gcdClaim.toClaimBytes
   expect a (gcdClaimBytes.size == 102 &&
-      gcdClaimBytes.get! 0 == 0xE8 && gcdClaimBytes.get! 1 == 0x03 &&
+      gcdClaimBytes.get! 0 == 0xE8 && gcdClaimBytes.get! 1 == 0x05 &&
       gcdClaimBytes.get! 2 == 0x04 && gcdClaimBytes.get! 3 == 0x06 &&
       gcdClaimBytes.get! 68 == 1 && gcdClaimBytes.get! 69 == 2 &&
       CompileClaim.ofClaimBytes gcdClaimBytes == some gcdClaim &&
       CompileClaim.ofPayloadBytes gcdClaim.toPayloadBytes == some gcdClaim &&
       gcdClaim.commit == Ixon.Address.blake3Pure gcdClaimBytes)
-    "gcd CompileClaim: wire envelope layout (#[0xE8, 0x03, 0x04, 0x06, ...]), roundtrip, and deterministic BLAKE3 commit"
+    "gcd CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x06, ...]), roundtrip, and deterministic BLAKE3 commit"
   let rcClaimBytes := rcClaim.toClaimBytes
   expect a (rcClaimBytes.size == 102 &&
-      rcClaimBytes.get! 0 == 0xE8 && rcClaimBytes.get! 1 == 0x03 &&
+      rcClaimBytes.get! 0 == 0xE8 && rcClaimBytes.get! 1 == 0x05 &&
       rcClaimBytes.get! 2 == 0x04 && rcClaimBytes.get! 3 == 0x06 &&
       rcClaimBytes.get! 68 == 2 && rcClaimBytes.get! 69 == 2 &&
       CompileClaim.ofClaimBytes rcClaimBytes == some rcClaim &&
       CompileClaim.ofPayloadBytes rcClaim.toPayloadBytes == some rcClaim &&
       rcClaim.commit == Ixon.Address.blake3Pure rcClaimBytes &&
       rcClaim.commit != gcdClaim.commit)
-    "reverseList CompileClaim: wire envelope layout (#[0xE8, 0x03, 0x04, 0x06, ...]), roundtrip, and deterministic BLAKE3 commit"
+    "reverseList CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x06, ...]), roundtrip, and deterministic BLAKE3 commit"
   let (madeGcdClaim, madeGcdCert, madeGcdElf) ← IO.ofExcept (CompileClaim.makeClaim gcdCfg gcdBytes gcdJson)
   expect a (madeGcdClaim == gcdClaim && madeGcdCert == gcdCert && madeGcdElf == gcdElf &&
       (CompileClaim.checkClaim gcdCfg gcdBytes gcdJson madeGcdClaim madeGcdCert).isOk &&

@@ -102,16 +102,32 @@ until after a loan has been removed.
 ## Explicit bounds of the initial checker
 
 The checker requires visible arrow interfaces after bounded beta, let, sharing,
-and definition reduction. Higher-order types must agree in every contract.
-It does not guess a resource interface when normalization is unsupported.
-Abstract unique function values are not assumed safe to borrow as reusable
-callbacks. A representation needs a checked or explicitly admitted rule before
-the checker grants that permission.
+projection and definition reduction. Definition reduction unfolds only safe
+definitions: theorems, and unsafe and partial definitions (which the adapter
+treats as assumptions), stay opaque, as they are to the kernel. Higher-order
+types must agree in every contract. It does not guess a resource interface
+when normalization is unsupported. Abstract unique function values are not
+assumed safe to borrow as reusable callbacks. A representation needs a checked
+or explicitly admitted rule before the checker grants that permission.
 
-Field rules must be derived from transparent constructor interfaces. The
-initial projection fragment requires closed field types and field usage
-`many`; other projection transformations are rejected before artifact emission.
-It does not split availability between fields of the same owner.
+Field rules must be derived from transparent constructor interfaces of safe
+inductives with one constructor and no indices. Parameters are allowed, and a
+field's type may depend on the parameters and on earlier fields (`Prod`,
+`PProd`, `Sigma`, `Subtype`); every field must have usage `many`. A dependent
+rule is instantiated at the projected owner: its parameters by the arguments of
+the owner's type, its earlier fields by the owner's earlier projections, so
+`x.2 : β x.1` for `x : Sigma α β`. The owner's type must reduce to the
+structure applied to its parameters (the IxCC copy requires exactly that many
+arguments). A projection of an application of the structure's constructor to
+all parameters and fields reduces to the field. Other projection
+transformations are rejected before artifact emission. The checker does not
+split availability between fields of the same owner.
+
+A safe theorem's proof is not analyzed: it is erased computation that no
+backend runs. Its statement still counts for relevance, and callers use it as
+an interface. This rests on the typing half, which refuses a theorem whose
+statement is not a proposition; `Addressed.checkResources` alone, which is not
+a certificate, accepts such a declaration.
 
 Special alternative-path analysis requires a profile-bound selection primitive
 with the specified evaluation behavior. Such a primitive must be fully applied
@@ -127,6 +143,26 @@ typechecking remains responsible for the language's recursion admissibility.
 The default analysis bounds are depth 256 and 100,000 steps per declaration.
 Exhaustion is a rejection. Open sharing is analyzed in each binding context;
 its resource result is never cached by expression identity alone.
+
+The step limit bounds a definition check's work. Every walk over an expression
+(shifting, substitution, reduction, syntactic and structural comparison,
+inference, analysis) costs one step per node it visits, and every pass over the
+bindings in scope costs one step per binding. Substitution can leave a value
+physically shared at each occurrence of the variable it replaces; a later walk
+still pays for every node it reaches, so sharing in memory saves no steps. Two
+shortcuts skip a walk without changing its result: shifting by zero, and
+leaving a `.share` node in place when the precomputed bound on its loose
+variables shows that a shift or substitution would not change it. Not charged
+per element: lookups in the program's field and projection rule tables
+(bounded by the program), and operations on origin and loan lists (bounded by
+the scopes the check has created, at most one per step). Filling the sharing
+bounds costs time linear in the sharing tables, and relevance scanning hashes
+input subterms, so its cost is bounded by the input size times the depth
+limit.
+`Tests/Ix/ResourceBudget.lean` (the `resource-budget` test) checks constants
+that the checker at `866e7fa82` walked for hours without charging a step: a
+let chain whose reduced type has `2^k` nodes now runs out of its steps from
+`k = 16`, as at the merge base.
 
 ## Profiles, claims, and consumers
 
