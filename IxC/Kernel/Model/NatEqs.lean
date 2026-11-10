@@ -3,6 +3,7 @@ module
 public import IxC.Kernel.Model.Install
 public import IxC.Kernel.Semantics.NatFrag
 public import IxC.Kernel.Semantics.DeclRun
+public import IxC.Kernel.Model.ClaimsJ
 
 public section
 
@@ -646,12 +647,12 @@ law shape `NatOps` stores.  `DefEqClaim` does the work; the frames
 come from the v1 fragment machinery, the gradings from the packages,
 the context from `ctxOk_natCtx2`. -/
 theorem natEqLaw_of_run (mp : EnvModelM V μ env) {ψ : LevelParam → Nat}
-    {F : Nat} (hde : DefEqClaim μ mp.base2 ψ F)
+    {J : Judgements md} (hde : DefEqClaimJ J mp.base2 ψ)
     {ciN : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = [])
     {lhs rhs : Expr md} {la ra : AnnotTerm}
-    (hrun : Ix.Kernel.isDefEqCore μ env F 2 lhs rhs = .ok true)
+    (hrun : J.defeq env 2 lhs rhs)
     (hwl : Expr.WScoped 2 lhs) (hbl : lhs.looseBVarsBounded 0 = true)
     (hLl : Expr.LeavesBounded lhs)
     (hll : ∀ l ∈ lhs.fvarLeaves, l.1 < 2 ∧
@@ -1097,7 +1098,7 @@ through `DefEqClaim` at the pre-insertion environment, and the
 substitution crossing (`denoteMeta_substConst0`) restates them as the raw
 equations' readings at the extension. -/
 theorem natOps_install (mp : EnvModelM V μ env) {φ : LevelParam → Nat}
-    {F : Nat} (hde : DefEqClaim μ mp.base2 φ F)
+    {J : Judgements md} (hde : DefEqClaimJ J mp.base2 φ)
     (hprev : NatOps mp.base2 φ)
     {c : Key md} {lps : List LevelParam} {type' value' : Expr md}
     {hint : ReducibilityHint}
@@ -1112,7 +1113,7 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : LevelParam → Nat}
       (Ix.Kernel.natOpStoredOk
         (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env md))
       = true)
-    (hruns : NatEqsRun μ F env
+    (hruns : NatEqsRunJ J env
       ((Ix.Kernel.natOpEquations 0 c).map fun eq =>
         (Expr.substConst0 c value' eq.1,
          Expr.substConst0 c value' eq.2)))

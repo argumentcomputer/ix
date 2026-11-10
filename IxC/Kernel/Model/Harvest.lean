@@ -459,7 +459,7 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
       obtain ⟨hSelfBin, hSelfUn⟩ := natSelfHead_install (φ := φ) mp
         hcmem hfresh hpin hsE hTa hTok hA2
         (fun ψ ρ => ⟨hAok ψ ρ, hAvalid ψ ρ⟩) hmemA
-      exact natOps_install mp ((hclaims φ).2.2.1) (mp.nat_ops φ)
+      exact natOps_install (J := runJ μ F) mp ((hclaims φ).2.2.1) (mp.nat_ops φ)
         hcmem hfresh hlpcv hsE hg2 hdeps₂ hruns hA hAclosed hvf' hbv'
         hSelfBin hSelfUn _ rfl
     · exact natOps_cons_fresh mp (mp.nat_ops φ)
