@@ -744,9 +744,13 @@ is not a benchmark run"
     let ix ← resolveBin repo "ix"
     -- Whole-env row (keyed by the env name), plus the per-constant
     -- attribution CSV the compare drill-down reads (top movers).
+    -- Upstream libraries contain declarations outside IxCK's fragment
+    -- (e.g. Lean.trustCompiler, unsafe inductives) that decline in the
+    -- record check; --allow-declined benchmarks the whole-env record check
+    -- while still failing (exit 3 / status: rejected) on any kernel reject.
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check-lean", ixe, "--anon", "--json", out, "--json-name", info.name,
-        "--per-const", s!"{out}.perconst.csv"]
+      #["check-lean", ixe, "--anon", "--allow-declined", "--json", out,
+        "--json-name", info.name, "--per-const", s!"{out}.perconst.csv"]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- … plus one full-closure row per constant. ONE process for all names

@@ -1293,10 +1293,17 @@ axiom prints the same list under `selected checking:`.
 | --- | --- |
 | 0 | everything asked for passed; for a whole bound run, through the certified entry |
 | 1 | an infrastructure failure |
-| 2 | a usage error: a bad flag or selector, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound or conditional run) |
-| 3 | a declaration failed, or the artifact was refused |
+| 2 | a usage error: a bad flag or selector, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run) |
+| 3 | a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused |
 | 4 | partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
 | 5 | conditional: everything passed, but only with the listed user axioms admitted |
+
+`--allow-declined` runs the record-by-record check (as the `ooc` whole-env
+benchmark uses it on upstream libraries that contain `Lean.trustCompiler` or
+`unsafe inductive` declarations): declarations outside `IxCK`'s fragment
+(`decline`) and their dependents (`blocked`) are tolerated, whole-artifact
+admission does not run and no host statement can be issued, and the run exits 3
+only when a checked declaration or support record has outcome `reject`.
 
 `--json <file>` writes benchmark results rows (`Ix.Benchmark.Results`). A run
 writes one row, keyed by `--json-name` (default `env`). With a selection it

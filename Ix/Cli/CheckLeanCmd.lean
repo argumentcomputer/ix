@@ -63,6 +63,7 @@ structure CheckCfg where
   workers : Nat := 1
   verbose : Bool := false
   silent : Bool := false
+  allowDeclined : Bool := false
   progressMs : Nat := 2000
   slowMs : Nat := 7000
   stackBytes : Nat := 256 * 1024 * 1024
@@ -254,6 +255,11 @@ def CheckReport.passed (r : CheckReport) : Nat := (r.targets.filter (success ∘
 def CheckReport.typed (r : CheckReport) : Nat := (r.targets.filter (·.outcome == "typed")).size
 def CheckReport.failures (r : CheckReport) : Array (String × String) :=
   (r.targets.filter (!success ·.outcome)).map fun t => (t.target.label, s!"{t.outcome}: {t.reason}")
+/-- Whether any checked target or record in the closure was rejected by the
+kernel or reader (`outcome == "reject"`), as opposed to declined as outside
+`IxCK`'s fragment (`"decline"`) or blocked solely by a declined dependency. -/
+def CheckReport.hasReject (r : CheckReport) : Bool :=
+  r.targets.any (·.outcome == "reject") || r.rows.any (·.outcome == "reject")
 
 /-- The user axioms a run's verdict is conditional on: the conditional
 whole-artifact entry's, otherwise those its declaration checks read and accepted. -/
@@ -286,12 +292,16 @@ def exitConditional : UInt32 := 5
 
 /-- What a completed run did not check, if anything: a selected or capped run covers
 only its selection; a run that asked for the whole artifact (`wholeRequested`) of an
-artifact with no role binding covers only the per-declaration checks. -/
-def coverageNotice (report : CheckReport) (wholeRequested : Bool) : Option String :=
+artifact with no role binding covers only the per-declaration checks; `--allow-declined`
+checks records only and makes no whole-artifact admission claim. -/
+def coverageNotice (report : CheckReport) (wholeRequested : Bool)
+    (allowDeclined : Bool := false) : Option String :=
   match report.artifactAdmission with
   | some _ => none
   | none =>
-    if report.bound then
+    if allowDeclined then
+      some "[check-lean] record check (--allow-declined); no whole-artifact receipt"
+    else if report.bound then
       if wholeRequested then
         some "[check-lean] whole-artifact admission did not run because declaration checks failed"
       else some "[check-lean] selected checking only; no whole-artifact receipt"
@@ -304,22 +314,27 @@ whole-artifact admission did not run; only the per-declaration checks ran \
 whole-artifact admission could run"
 
 /-- The exit status of a completed run: a refusal (`exitRejected`) when a
-checked declaration failed; otherwise a usage error when a host statement was
+checked declaration failed (or, under `allowDeclined`, when any target or
+record was `"reject"`ed); otherwise a usage error when a host statement was
 asked for (`hostRequested`) and the run issued none; otherwise `exitPartial`
-when the whole artifact was asked for and its admission did not run; otherwise
-`exitConditional` when the verdict is conditional on user axioms; else 0. -/
-def runExit (report : CheckReport) (wholeRequested : Bool) (hostRequested : Bool := false) : UInt32 :=
-  if !report.failures.isEmpty then Ix.Benchmark.Results.exitRejected
+when the whole artifact was asked for (without `allowDeclined`) and its
+admission did not run; otherwise `exitConditional` when the verdict is
+conditional on user axioms; else 0. -/
+def runExit (report : CheckReport) (wholeRequested : Bool) (hostRequested : Bool := false)
+    (allowDeclined : Bool := false) : UInt32 :=
+  let failed := if allowDeclined then report.hasReject else !report.failures.isEmpty
+  if failed then Ix.Benchmark.Results.exitRejected
   else if hostRequested && report.hostStatement.isNone then Ix.Benchmark.Results.exitUsage
-  else if wholeRequested && report.artifactAdmission.isNone then exitPartial
+  else if !allowDeclined && wholeRequested && report.artifactAdmission.isNone then exitPartial
   else if !report.conditionalOn.isEmpty then exitConditional
   else 0
 
 /-- The results-row status of a completed run (`Ix.Benchmark.Results`): its
 exit status (`runExit`, no host statement asked for) by name. `rejected` (3),
 `partial` (`exitPartial`), `conditional` (`exitConditional`), else `ok`. -/
-def runStatus (report : CheckReport) (wholeRequested : Bool) : String :=
-  let code := runExit report wholeRequested
+def runStatus (report : CheckReport) (wholeRequested : Bool)
+    (allowDeclined : Bool := false) : String :=
+  let code := runExit report wholeRequested (allowDeclined := allowDeclined)
   if code == Ix.Benchmark.Results.exitRejected then "rejected"
   else if code == exitPartial then "partial"
   else if code == exitConditional then "conditional"
@@ -459,7 +474,7 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
       | .ok report =>
         let report := { report with
           bound := p.bound, roles := if whole then some (roleCounts p report.rows) else none }
-        if !whole || !report.failures.isEmpty then return .ok report
+        if !whole || cfg.allowDeclined || !report.failures.isEmpty then return .ok report
         let started ← IO.monoMsNow
         let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
         let elapsed := (← IO.monoMsNow) - started
@@ -497,7 +512,9 @@ def checkConfig (p : Cli.Parsed) : IO (Except DriverError CheckCfg) := do
   if workers == 0 then return .error (.usage "--workers must be greater than zero")
   let progress ← envNat ["IX_KERNEL_CHECK_PROGRESS_MS", "IX_PROGRESS_MS"] 2000
   let slow ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
-  return do pure { workers, verbose := p.hasFlag "verbose", progressMs := ← progress, slowMs := ← slow }
+  return do pure {
+    workers, verbose := p.hasFlag "verbose", allowDeclined := p.hasFlag "allow-declined"
+    progressMs := ← progress, slowMs := ← slow }
 
 private def csvField (s : String) : String :=
   if s.any (fun c => c == ',' || c == '"')
@@ -545,12 +562,12 @@ is the number of records the run checked or read, whole-artifact or per name;
 `throughput` is that count per second of `check-time`. `status` is the run's
 exit status by name (`runStatus`): `rejected`, `partial`, `conditional` or `ok`. -/
 private def writeJsonReportRow (jsonPath key : String) (report : CheckReport)
-    (wholeRequested : Bool) : IO Unit := do
+    (wholeRequested : Bool) (allowDeclined : Bool := false) : IO Unit := do
   let secs := report.elapsedMs.toFloat / 1000.0
   let tput := if report.elapsedMs > 0
     then report.records.toFloat * 1000.0 / report.elapsedMs.toFloat else 0.0
   let peakRss := (← statusKb "VmHWM:") * 1024
-  let status := runStatus report wholeRequested
+  let status := runStatus report wholeRequested allowDeclined
   Ix.Benchmark.Results.writeRow jsonPath key status
     [ ("constants", Lean.toJson report.records)
     , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
@@ -590,7 +607,7 @@ def parseOptions (p : Cli.Parsed) (path : String) : IO (Except DriverError Optio
     only := (← ConstsFile.gather p), cap := (p.flag? "max").map (·.as! Nat)
     json? := string "json", jsonName? := string "json-name", perConst? := string "per-const"
     failOut? := string "fail-out", hostOut? := string "host-out", hostStore := p.hasFlag "host-store" }
-  if o.hostRequested && (o.hasConsts || o.cap.isSome) then
+  if o.hostRequested && (o.hasConsts || o.cap.isSome || o.cfg.allowDeclined) then
     return .error (.usage "[check-lean] host statement output requires a complete bound artifact check")
   if o.perName?.isSome && o.failOut?.isSome then
     return .error (.usage "[check-lean] --json per-name rows and --fail-out cannot be combined")
@@ -659,7 +676,7 @@ def runPerName (o : Options) (p : PreparedInput) (json : String) :
         refused := refused.push name
       | .error e => return .error e
       | .ok report =>
-        writeJsonReportRow json (key name) report false
+        writeJsonReportRow json (key name) report false o.cfg.allowDeclined
         userAxioms := report.userAxioms.foldl (·.insert ·) userAxioms
         merged := { merged with
           targets := merged.targets ++ report.targets, rows := merged.rows ++ report.rows
@@ -693,7 +710,7 @@ uncertified, no host statement ({report.artifactMs}ms)"
   | none =>
     if report.failures.isEmpty && !report.userAxioms.isEmpty then
       for line in conditionalLines p "selected checking" report.userAxioms do IO.println line
-    if let some notice := coverageNotice report o.wholeRequested then IO.println notice
+    if let some notice := coverageNotice report o.wholeRequested o.cfg.allowDeclined then IO.println notice
   if let some statement := report.hostStatement then
     let hostBytes ← IO.ofExcept statement.bytes
     let address := Address.admissionHash hostBytes
@@ -714,7 +731,7 @@ admission: this run is CONDITIONAL on {axioms.size} user axioms and issues no ho
   IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
   IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
   if let some json := o.json? then
-    writeJsonReportRow json (o.jsonName?.getD "env") report o.wholeRequested
+    writeJsonReportRow json (o.jsonName?.getD "env") report o.wholeRequested o.cfg.allowDeclined
 
 def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.positionalArg? "path" | p.printError "error: must specify <path>"; return 2
@@ -727,7 +744,8 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       pure h
     let bytes ← IO.FS.readBinFile o.path
     IO.println s!"Running IxCK record check ({if o.anon then "anon" else "meta"} mode\
-{if o.allowUserAxioms then "; user axioms allowed" else ""})"
+{if o.allowUserAxioms then "; user axioms allowed" else ""}\
+{if o.cfg.allowDeclined then "; declined allowed" else ""})"
     let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms with
       | .ok prep => pure prep
       | .error e => return (← refuse out e)
@@ -745,12 +763,12 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"##check-lean## {(← IO.monoMsNow) - startAll} {report.passed} {failed + unresolved.size} {o.only.size}"
       return if !unresolved.isEmpty then Ix.Benchmark.Results.exitUsage
         else if !refused.isEmpty then Ix.Benchmark.Results.exitRejected
-        else runExit report false
+        else runExit report false (allowDeclined := o.cfg.allowDeclined)
     match ← runPrepared prepared o.cfg o.selection o.cap out with
     | .error e => return (← refuse out e)
     | .ok report =>
       emitReport o prepared report out
-      return runExit report o.wholeRequested o.hostRequested
+      return runExit report o.wholeRequested o.hostRequested o.cfg.allowDeclined
   catch e => IO.eprintln s!"[check-lean] {e}"; return 1
 
 end Ix.Cli.CheckLeanCmd
@@ -763,6 +781,7 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
     anon; "Anonymous keys and #hex display labels"
     workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"
     "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind sorryAx, propext and Classical.choice. A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
+    "allow-declined"; "Record-check mode: tolerate declarations outside IxCK's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
     "fail-out" : String; "Write failing selected labels in consts-file format"
     "host-out" : String; "Write the checked whole-artifact host admission statement (certified, unconditional runs only)"
     "host-store"; "Persist the checked host admission statement in the content-addressed store"
