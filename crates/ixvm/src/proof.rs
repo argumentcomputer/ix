@@ -13,6 +13,8 @@ use multi_stark::{p3_field::PrimeField64, types::Val};
 use std::{error::Error, time::Instant};
 
 const MAGIC: &[u8] = b"IXAIUR2\0";
+/// Set to `1` to execute with every assertion checked (circuit-verdict mode).
+const CIRCUIT_VERDICT: &str = "IX_AIUR_CIRCUIT_VERDICT";
 
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
@@ -31,8 +33,23 @@ fn main() -> Result<(), Box<dyn Error>> {
   if !["execute", "plan", "prove", "verify", "test", "key"].contains(&mode) {
     return Err("unknown mode".into());
   }
-  let (package, artifact) = Package::load(cli[2].as_ref())?;
+  let (mut package, artifact) = Package::load(cli[2].as_ref())?;
   eprintln!("artifact {}: blake3 {artifact}", cli[2]);
+  // Circuit-verdict mode: execution also checks the assertions only the
+  // circuit enforces (`runtime_check: false`), so that a run fails exactly
+  // where the circuit has no trace for the same witness. The artifact, its
+  // digest and its circuits are unchanged; only the execution copy differs.
+  if std::env::var_os(CIRCUIT_VERDICT).is_some_and(|v| v == "1") {
+    let enabled = package.program.enforce_deferred_assertions();
+    let line = format!(
+      "circuit verdict: {enabled} deferred assertions enforced in execution"
+    );
+    if mode == "test" {
+      println!("{line}");
+    } else {
+      eprintln!("{line}");
+    }
+  }
   let mut program = package.program.check_field::<Val>()?;
   if let Some(trace) = &package.trace {
     program.track_depth(trace)?;

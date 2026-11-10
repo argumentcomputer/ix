@@ -47,6 +47,7 @@ import Tests.Ix.IxVM.TagN
 import Tests.Ix.IxVM.Codec
 import Tests.Ix.IxVM.UserAxioms
 import Tests.Ix.IxVM.DecisionRoles
+import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
@@ -222,6 +223,10 @@ def registry : List Entry := [
   .runner "ixvm-binding-frontier" (.ci .ixvm) Tests.Ix.IxVM.BindingFrontier.run,
   -- A constant byte out of range is refused.
   .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
+  -- Execution with every assertion checked gives the circuit's verdict on a witness;
+  -- default execution skips the deferred range checks and can accept what the
+  -- circuit cannot prove.
+  .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
   -- Lane s4 measurements (spike S4): declaration costs, a Std shard, the
   -- inductive census and the in-process modeller's records. Not a gate.
   .env "ixvm-s4-bench" (.manual "lane s4 measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
@@ -323,6 +328,7 @@ def required : List (String × String) := [
   ("ixvm-user-axioms", "ci:ixvm"),
   ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
+  ("ixvm-circuit-verdict", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
