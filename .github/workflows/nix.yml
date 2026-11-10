@@ -68,11 +68,21 @@ jobs:
       # their own job (ixcc.yml, from CI Jobs and Merge tests): they are
       # evaluated here but not built.
       - run: nix flake check --no-build --accept-flake-config
+      # The list is evaluated into a variable, not a process substitution, so
+      # a failed evaluation fails the step; an empty list would make
+      # `nix build` build the default package instead and pass.
       - name: Build the flake's checks other than IxCC's
+        shell: bash
         run: |
-          mapfile -t checks < <(nix eval --accept-flake-config --json .#checks.x86_64-linux \
+          names=$(nix eval --accept-flake-config --json .#checks.x86_64-linux \
             --apply 'checks: builtins.filter (name: builtins.substring 0 5 name != "ixcc-") (builtins.attrNames checks)' \
             | jq -r '.[]')
+          if [ -z "$names" ]; then
+            echo "::error::The flake defines no checks other than IxCC's for x86_64-linux"
+            exit 1
+          fi
+          mapfile -t checks <<< "$names"
+          echo "Checks: ${checks[*]}"
           nix build --print-build-logs --accept-flake-config --no-link "${checks[@]/#/.#checks.x86_64-linux.}"
       # The development shell builds the library; the tests ran above.
       - run: nix develop --accept-flake-config --command lake build

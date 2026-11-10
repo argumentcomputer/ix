@@ -55,26 +55,97 @@ The checker deliberately fails closed on changes to:
   imported/unimported reachability claim (checked against actual imports);
 - the exact project-local Lean extern inventory, each Lake-referenced C source,
   its pinned SHA-256, and its exact `LEAN_EXPORT` inventory;
-- declaration-level `axiom`, standalone `sorry`, or `native_decide` tokens in
-  the checked project sources (a conservative lexer excludes comments and
-  literals and retains line locations);
+- declaration-level `axiom`, standalone `sorry`, and every spelling of native
+  evaluation the lexer can see in the checked project sources and the pure
+  Lean dependency's closure: `native_decide`, `decide +native` (also after
+  other flags, as in `decide +kernel +native`), a configuration field
+  `native := true` (`decide (config := { native := true })`), and the names
+  `ofReduceBool`, `ofReduceNat`, `trustCompiler` (bare or under `Lean.`) and
+  `Lean.reduceBool`/`Lean.reduceNat`. A conservative lexer excludes comments
+  and literals and retains line locations. The bare names `reduceBool` and
+  `reduceNat` are accepted, because the erased checker's primitive table uses
+  them as field names, and so is a variable or field named `native` in any
+  other position. The one native axiom the fences permit, Blake3's
+  `native_decide`, is inside the Blake3 package, which this scan does not
+  read (its externs are inventoried instead);
 - every `@[csimp]` theorem (and `attribute [csimp]` command) in the project's
   audited sources and in each pure Lean dependency's closure: each must be
   stated as `: @f = @g :=` and listed with its file and replacement pair
   (`csimp_theorems`, top level and per dependency), since it changes the code
   compiled for every call of `f`;
 - every package/version and the complete checksum-bearing Cargo lockfile;
-- every locked Nix flake node of the repository's `flake.lock` and IxCC's
-  build-selection files (`lakefile.lean`, `lake-manifest.json`,
-  `lean-toolchain`, `nix/*.nix`); ix's `flake.nix`, which only instantiates
-  `nix/build.nix` and `nix/checks.nix`, is not pinned;
-- the integrity-pinned independent x86 decoder and ELF object/link checks used
-  as E0 evidence, including their native harness;
+- the integrity pins (below): the SHA-256 of every file the integrity rule
+  covers, among them IxCC's build-selection files (`lakefile.lean`,
+  `lake-manifest.json`, `lean-toolchain`, `nix/*`), its checkers, scripts and
+  native harnesses and its fixtures, and of the repository files listed in
+  `integrity.repository_files` (`.github/workflows/ixcc.yml`);
+- the revision of every locked Nix flake node of the repository's
+  `flake.lock`, and, inside a larger repository, that the repository's
+  `lean-toolchain` (whose Lean ix's flake builds IxCC with) equals IxCC's;
+- the required-check inventory (below): the attributes of `nix/checks.nix`
+  against `required_checks`;
 - every `uses:` reference in the CI workflows in scope (below), followed
   through the repository's own local actions and reusable workflows
   (`./path` or `$/path`, which must stay inside the repository): a remote
   reference not pinned to a full 40-hex commit is rejected outright, and the
   pinned inventory must match the ledger.
+
+ix's `flake.nix` is not pinned. It selects the toolchain (the repository's
+`lean-toolchain`, checked above), passes ix's Blake3 build (its `blake3` and
+`blake3-lean` nodes are pinned in `flake.lock`, and the Blake3 entry below
+ties them to the Lake pin) and exposes `nix/checks.nix`'s checks as
+`ixcc-*`. What it exposes is checked by `ixcc.yml` (below), not by this
+audit.
+
+### Integrity pins
+
+`integrity.rule` states which project files are pinned, and the audit fails
+unless `integrity.tracked_files` pins exactly those: a covered file without a
+pin fails, and so does a pin of a file the rule does not cover. A file is
+covered when its path relative to `IxCC/` matches an `include` glob and no
+`exclude` glob (`*` within a path segment, `**` for any number of segments);
+hidden files and directories (`.gitignore`, `.lake`) are never covered. The
+rule covers everything that can change what a check builds, runs or compares
+against:
+
+- the Lake and toolchain files (`lakefile.lean`, `lake-manifest.json`,
+  `lean-toolchain`) and the root modules `IxCC.lean` and `IxCCTests.lean`;
+- every file under `IxCC/` (the production library, the repository checkers
+  in `IxCC/Tools` and the vendored Aiur reference), `IxCCTests/` (tests,
+  fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
+  `Scripts/Census.lean`), `fixtures/` (closures, catalogs, goldens, C drivers
+  and harnesses such as `fixtures/x86/exports_harness.c` and
+  `unwind_harness.c`), `nix/` and `tools/`;
+- the benchmark runner's C entry points (`benchmarks/runner/entry/*.c`) and
+  `benchmarks/toolchains.json`, and the specifications the Aiur checks and the
+  Ixon boundary cite (`docs/aiur-*.md` other than `aiur-backend.md`,
+  `docs/ixon-v4.md`, `docs/x86-reference-model.json`);
+- except anything under a `target/` directory (Cargo output of the manual
+  reference tools).
+
+Not pinned: the rest of `docs/` (including this ledger, `trusted-externs.json`),
+`README.md`, `AGENTS.md`, `.gitignore`, and the rest of `benchmarks/` (the
+optional measurement package, its fixtures and records). These describe or
+measure; no required check reads them.
+
+`integrity.repository_files` pins files of the enclosing repository by path
+relative to its root. Every configured workflow file must be listed, so
+inside ix `.github/workflows/ixcc.yml` is pinned in full, not only its
+`uses:` lines.
+
+### Required checks
+
+`required_checks` lists IxCC's required checks: exactly the attribute names
+`nix/checks.nix` binds in its attribute sets (a lexer for that file's form
+reads them, and refuses a binding it cannot account for). ix's flake exposes
+each as `ixcc-<name>`, and `.github/workflows/ixcc.yml` builds the flake's
+evaluated `ixcc-*` checks only if they are exactly `required_checks` with that
+prefix. So dropping or adding a check in `nix/checks.nix` fails this audit,
+dropping one in ix's `flake.nix` fails `ixcc.yml`, and narrowing what
+`ixcc.yml` runs changes its pinned hash. What remains outside: an edit to
+`ixcc.yml` that also stops it running `ixcc-trusted-extern-ledger` is caught
+only by review of that file, which the ledger's pin makes a ledger change,
+and CI Jobs' and Merge tests' calls of `ixcc.yml` are ix's and unaudited.
 
 Standalone, the project is its repository: its `flake.lock` and
 `.github/workflows` are checked. Inside a larger repository, the optional
@@ -89,17 +160,56 @@ Inside ix the ledger names the repository (`root: ".."`), so ix's
 `flake.lock` is checked, and scopes the workflow audit to
 `.github/workflows/ixcc.yml`, the reusable workflow that runs IxCC's checks
 and that IxCC owns; its three remote actions are pinned and listed in
-`ci_actions`. ix's other workflows, including the jobs that call `ixcc.yml`,
-are outside the scope: they track `argumentcomputer/ci-workflows@main` and
+`ci_actions`, and its full text is pinned in `integrity.repository_files`.
+ix's other workflows, including the jobs that call `ixcc.yml`, are outside
+the scope: they track `argumentcomputer/ci-workflows@main` and
 `argumentcomputer/lean-update@dev` by branch, by ix's choice, which this audit
 would reject. A change to `flake.lock` (for example a toolchain or
 `lean4-nix` update) fails the audit until the node inventory is reviewed here.
 The Nix check runs on a copy of the workspace that keeps this layout
-(`nix/sources.nix`, `ledgerWorkspace`).
+(`nix/sources.nix`, `ledgerWorkspace`: IxCC, the codec closure, the
+repository's `flake.lock` and `lean-toolchain`, the scoped workflows and the
+pinned repository files).
 
 Updating a dependency therefore requires reviewing and updating this ledger,
 not merely refreshing a lockfile. An entry may only be removed when its exit
 criteria are met and the coverage check confirms that its boundary vanished.
+
+### Routine updates
+
+ix's update automation changes pinned inputs, so each such pull request fails
+`ixcc-trusted-extern-ledger` until the ledger is updated in the same pull
+request:
+
+| Update | What changes | Ledger fields |
+| --- | --- | --- |
+| `update-rust.yml` (weekly Rust toolchain; runs `nix flake update`) | `flake.lock` revisions; ix's `flake.nix` (not pinned) | `integrity.flake_nodes`; `seed_and_build_trust` `gmp-seed.version` by hand if nixpkgs' GMP moved (the Nix check passes Nix's GMP version) |
+| `update.yml` (Lean release; moves `lean4-nix`) | the `lean-toolchain` files, `flake.lock`, possibly `lake-manifest.json` | `integrity.flake_nodes`; the hashes of `lean-toolchain` and of any changed `lake-manifest.json`; `seed_and_build_trust` `lean-seed-runtime.version` by hand |
+| Dependabot `github-actions` bump of `ixcc.yml` | an action commit in `ixcc.yml` | `ci_actions[].commit` (and `.version` by hand, from the `# vX` comment); `integrity.repository_files` for `ixcc.yml` |
+| Any edit of a covered IxCC file or of `ixcc.yml` | its hash | `integrity.tracked_files` or `integrity.repository_files` |
+
+The mechanical fields (every integrity hash, the flake node revisions and the
+`ci_actions` commits) are re-recorded by the checker itself, which prints them
+as the tree stands (it never edits the ledger), and a `jq` program that merges
+them while keeping each object's order. From `IxCC/`, in ix's development
+shell:
+
+```sh
+lake build check-trusted-externs
+mkdir -p plans
+.lake/build/bin/check-trusted-externs --record > plans/ledger-pins.json
+jq --indent 2 --slurpfile pins plans/ledger-pins.json -f tools/record-ledger-pins.jq \
+  docs/trusted-externs.json > plans/trusted-externs.json
+mv plans/trusted-externs.json docs/trusted-externs.json
+git diff docs/trusted-externs.json   # review every changed pin against the diff it records
+.lake/build/bin/check-trusted-externs
+```
+
+Then edit by hand what the audit still names (a seed version, a new action
+repository, a symbol, a closure hash of the IxCK codec, a csimp theorem), set
+`last_reviewed`, and commit the ledger with the change. `--record` leaves the
+IxCK codec closure's hashes (`lean_dependencies[].closure`) alone: a change to
+those 11 files is a dependency review, edited by hand, not a routine update.
 
 All repository check scripts are Lean executables. The trust auditor uses
 the pinned Lake TOML parser and GNU `sha256sum`; the independent encoder
@@ -119,13 +229,19 @@ outside the root flake, being rebuilt for the new benchmark ladder
 dependencies of the root flake checks.
 
 `lake exe check-tools-tests` exercises the auditor on isolated temporary
-copies. It checks source literals/comments, unrecognized extern attributes,
-new executable roots, project/dependency extern drift, imports and native
-entry points, integrity changes, malformed/duplicate Cargo metadata, CI
-action drift (including scoped repository workflows and their local actions),
-an overriding `flake.lock`, path-pinned pure Lean dependencies, and unlisted,
-dropped, malformed or attribute-only `@[csimp]` theorems. The Nix trust-ledger
-check runs these regressions too.
+copies. It checks source literals/comments, every spelling of native
+evaluation above (and that kernel decision and fields named `native` pass),
+unrecognized extern attributes, new executable roots, project/dependency
+extern drift, imports and native entry points, integrity changes, the
+integrity rule (a covered file without a pin, a pin outside the rule, its
+globs), pinned repository files (an edited or unpinned `ixcc.yml`, and a
+narrowed check filter in it), the required-check inventory (a check renamed in
+`nix/checks.nix`, a listed check it lacks, and the Nix lexer's strings,
+antiquotations and refusals), the repository's toolchain, malformed/duplicate
+Cargo metadata, CI action drift (including scoped repository workflows and
+their local actions), an overriding `flake.lock`, path-pinned pure Lean
+dependencies, and unlisted, dropped, malformed or attribute-only `@[csimp]`
+theorems. The Nix trust-ledger check runs these regressions too.
 
 The `IxCCTests` Lake root keeps every test and fence inside the
 audited source inventory, and the proof aggregate `IxCCTests.Proofs`

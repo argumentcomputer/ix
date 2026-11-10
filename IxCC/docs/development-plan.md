@@ -78,9 +78,12 @@ coverage inventory and the coverage-change record. During development:
   `lake exe check-build-graph --write` and review the manifest. After a
   reviewed fence or assertion change, regenerate the coverage inventory
   with `--write-coverage` (see the CI guide).
-- After changing an integrity-pinned file, review and update its pin in
-  `docs/trusted-externs.json`, then run `check-trusted-externs` and
-  `check-tools-tests`.
+- After adding, changing or deleting a file the ledger's integrity rule
+  covers (everything under `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
+  `tools/` and the Lake files), re-record the pins with
+  `check-trusted-externs --record` and `tools/record-ledger-pins.jq`, review
+  the diff of `docs/trusted-externs.json` (trust ledger, "Routine updates"),
+  then run `check-trusted-externs` and `check-tools-tests`.
 
 The former complete surface, including every family gate and its command,
 is documented on branch `jcb/ixby-archive`.

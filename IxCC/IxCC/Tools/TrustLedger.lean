@@ -3,7 +3,8 @@ import Lake.Toml.Load
 
 /-! Fail-closed validation of the hand-reviewed native/build trust ledger.
 Inventories are derived from source and lock metadata. This program never
-generates or refreshes ledger entries. -/
+edits the ledger; `recordPins` prints the mechanical pins (hashes and
+revisions) as the tree stands, for a reviewed update. -/
 
 namespace IxCC.Tools.TrustLedger
 
@@ -266,20 +267,124 @@ def leanSources (root : FilePath) (lake : Array Token) : IO (List FilePath) := d
 private def scanFile (path : FilePath) (cSource : Bool := false) : IO (Array Token) := do
   checked ((scan (← IO.FS.readFile path) cSource).mapError (fun message => s!"{path}: {message}"))
 
-def validateIntegrity (root : FilePath) (ledger : Json) (flakeLock : FilePath) : IO Unit := do
-  let integrity ← field ledger "integrity"
-  let tracked ← stringPairs (← field integrity "tracked_files")
-  need (!tracked.isEmpty) "empty integrity.tracked_files"
-  for (relative, expected) in tracked do
-    let actual ← sha256 (root / relative)
-    need (actual == expected) s!"{relative} changed: ledger {expected}, actual {actual}"
+/-! ## Integrity pins
+
+`integrity.tracked_files` pins the SHA-256 of exactly the project files that
+`integrity.rule` covers; `integrity.repository_files` pins files of the
+enclosing repository, among them every configured CI workflow file. -/
+
+/-- Whether `name` matches the wildcard `pattern`, in which `*` matches any run
+of characters. -/
+def wildcardMatches : List Char → List Char → Bool
+  | [], [] => true
+  | '*' :: pattern, [] => wildcardMatches pattern []
+  | '*' :: pattern, c :: name =>
+      wildcardMatches pattern (c :: name) || wildcardMatches ('*' :: pattern) name
+  | p :: pattern, c :: name => p == c && wildcardMatches pattern name
+  | _, _ => false
+
+/-- Whether the `/`-separated `path` matches the glob `pattern`, whose segments
+are wildcards and in which a `**` segment matches any number of segments. -/
+def globMatches : List String → List String → Bool
+  | [], [] => true
+  | "**" :: pattern, [] => globMatches pattern []
+  | "**" :: pattern, s :: path =>
+      globMatches pattern (s :: path) || globMatches ("**" :: pattern) path
+  | p :: pattern, s :: path => wildcardMatches p.toList s.toList && globMatches pattern path
+  | _, _ => false
+
+/-- The project files the ledger pins: those matching an `include` glob and no
+`exclude` glob, relative to the project root. -/
+structure IntegrityRule where
+  includes : List String
+  excludes : List String
+
+def IntegrityRule.covers (rule : IntegrityRule) (relative : String) : Bool :=
+  let path := relative.splitOn "/"
+  let hit (pattern : String) : Bool := globMatches (pattern.splitOn "/") path
+  rule.includes.any hit && !rule.excludes.any hit
+
+def integrityRule (integrity : Json) : IO IntegrityRule := do
+  let rule ← field integrity "rule"
+  let includes ← jsonStrings (← field rule "include")
+  let excludes ← jsonStrings (← field rule "exclude")
+  need (!includes.isEmpty) "empty integrity.rule.include"
+  for pattern in includes ++ excludes do
+    need (!pattern.isEmpty && !(FilePath.mk pattern).isAbsolute &&
+      !(pattern.splitOn "/").contains ".." && !(pattern.splitOn "/").contains "")
+      s!"unsupported integrity.rule pattern {pattern}"
+  return { includes, excludes }
+
+/-- The files under `root` that `rule` covers, relative to `root`, sorted.
+Hidden files and directories (`.lake`, `.gitignore`) are never covered. -/
+def ruleFiles (root : FilePath) (rule : IntegrityRule) : IO (List String) := do
+  let base := root.toString ++ "/"
+  return ((← files root true).map fun path => (path.toString.dropPrefix base).toString)
+    |>.filter rule.covers
+
+private def flakeRevisions (flakeLock : FilePath) : IO (List (String × String)) := do
   let lock ← readJson flakeLock
   let mut revisions := []
   for (name, node) in ← pairs (← field lock "nodes") do
     if let .ok locked := node.getObjVal? "locked" then
       if let .ok rev := locked.getObjValAs? String "rev" then
         revisions := (name, rev) :: revisions
-  sameSet revisions (← stringPairs (← field integrity "flake_nodes")) "flake node/revision inventory"
+  return revisions.reverse
+
+/-- `integrity.repository_files`, absent: none. -/
+private def repositoryPins (integrity : Json) : IO (List (String × String)) :=
+  match integrity.getObjVal? "repository_files" with
+  | .ok value => stringPairs value
+  | .error _ => pure []
+
+/-- The configured CI workflow files, relative to the repository root. -/
+private def workflowFiles (repo : Repository) : IO (List String) := do
+  let base := repo.root.toString ++ "/"
+  let mut result := []
+  if repo.configured then
+    for path in repo.workflows do
+      if (← path.pathExists) && !(← path.isDir) then
+        result := result ++ [(path.toString.dropPrefix base).toString]
+  return result
+
+/-- Every pinned project and repository file has its recorded hash, every
+configured workflow file is pinned, and the flake nodes are recorded with
+their revisions. Whether the pinned set is exactly the rule's is
+`validateIntegrityRule`, run at the end of the audit. -/
+def validateIntegrity (root : FilePath) (ledger : Json) (repo : Repository) : IO Unit := do
+  let integrity ← field ledger "integrity"
+  let tracked ← stringPairs (← field integrity "tracked_files")
+  need (!tracked.isEmpty) "empty integrity.tracked_files"
+  let digests ← sha256Many (tracked.map fun (relative, _) => root / relative)
+  for ((relative, expected), actual) in tracked.zip digests do
+    need (actual == expected) s!"{relative} changed: ledger {expected}, actual {actual}"
+  let pins ← repositoryPins integrity
+  for (relative, _) in pins do
+    need (!relative.isEmpty && !(FilePath.mk relative).isAbsolute &&
+      !(relative.splitOn "/").contains "..") s!"repository file must be a relative path: {relative}"
+  let pinDigests ← sha256Many (pins.map fun (relative, _) => repo.root / relative)
+  for ((relative, expected), actual) in pins.zip pinDigests do
+    need (actual == expected) s!"repository file {relative} changed: ledger {expected}, actual {actual}"
+  for workflow in ← workflowFiles repo do
+    need (pins.any (·.1 == workflow))
+      s!"configured CI workflow {workflow} is not pinned in integrity.repository_files"
+  sameSet (← flakeRevisions repo.flakeLock) (← stringPairs (← field integrity "flake_nodes"))
+    "flake node/revision inventory"
+
+/-- The pinned project files are exactly the files `integrity.rule` covers: a
+covered file without a pin, or a pin outside the rule, fails. -/
+def validateIntegrityRule (root : FilePath) (ledger : Json) : IO Unit := do
+  let integrity ← field ledger "integrity"
+  let rule ← integrityRule integrity
+  let pinned := (← pairs (← field integrity "tracked_files")).map (·.1)
+  let covered ← ruleFiles root rule
+  let listed (paths : List String) : String :=
+    s!"{paths.take 20}{if paths.length > 20 then s!" and {paths.length - 20} more" else ""}"
+  let unpinned := covered.filter (!pinned.contains ·)
+  need unpinned.isEmpty
+    s!"integrity rule: files the rule covers have no pin (record them with check-trusted-externs --record and review): {listed unpinned}"
+  let outside := pinned.filter (!rule.covers ·)
+  need outside.isEmpty s!"integrity rule: pinned files the rule does not cover: {listed outside}"
 
 private def dependencies (interfaces : Array Json) : IO (Array Json) :=
   interfaces.filterM fun entry => return (← strField entry "source_kind") == "dependency"
@@ -499,10 +604,19 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
   sameSet unresolved declared "imports of pure Lean dependencies"
   return checkedFiles
 
-def validateSeeds (root : FilePath) (seeds : Array Json) (gmp : Option String) : IO Unit := do
+/-- The Lean seed is the project's `lean-toolchain`, and inside a larger
+repository the repository's `lean-toolchain` (whose Lean ix's flake builds IxCC
+with) names the same release; the GMP seed is Nix's GMP when given. -/
+def validateSeeds (root : FilePath) (repo : Repository) (seeds : Array Json) (gmp : Option String) :
+    IO Unit := do
   let toolchain := (← IO.FS.readFile (root / "lean-toolchain")).trimAscii.toString
   let marker := "leanprover/lean4:v"
   need (toolchain.startsWith marker && toolchain.length > marker.length) "unrecognized lean-toolchain"
+  if repo.root.toString != root.toString then
+    let outer := repo.root / "lean-toolchain"
+    need (← outer.pathExists) s!"missing repository lean-toolchain: {outer}"
+    need ((← IO.FS.readFile outer).trimAscii.toString == toolchain)
+      "the repository's lean-toolchain differs from the project's"
   let mut foundLean := false
   let mut foundGmp := false
   for entry in seeds do
@@ -558,11 +672,11 @@ private def localTarget (repo : Repository) (origin : FilePath) (line : Nat) (re
     s!"{location}: local action escapes the repository: {relative}"
   return target
 
-/-- Every remote action the scoped workflows use is pinned to a full commit and
-recorded in `ci_actions`. A repository-local action or reusable workflow is
-reviewed with the repository: it is followed, and the remote actions it uses
+/-- The remote actions the scoped workflows use, as `(repository, commit)`,
+each pinned to a full commit. A repository-local action or reusable workflow
+is reviewed with the repository: it is followed, and the remote actions it uses
 are inventoried in its place. -/
-def validateCI (repo : Repository) (ledger : Json) : IO Unit := do
+def ciInventory (repo : Repository) : IO (List (String × String)) := do
   let mut pending : List FilePath := []
   for entry in repo.workflows do
     if ← entry.isDir then
@@ -589,9 +703,27 @@ def validateCI (repo : Repository) (ledger : Json) : IO Unit := do
         | throw (IO.userError s!"{path}:{line}: unpinned CI action {reference}")
       need (!repository.isEmpty && isHex 40 commit) s!"{path}:{line}: unpinned CI action {reference}"
       actual := (repository, commit) :: actual
+  return actual.reverse
+
+/-- Every remote action the scoped workflows use is pinned to a full commit and
+recorded in `ci_actions` (`ciInventory`). -/
+def validateCI (repo : Repository) (ledger : Json) : IO Unit := do
   let expected ← (← arrField ledger "ci_actions").toList.mapM fun entry =>
     return (← strField entry "repository", ← strField entry "commit")
-  sameSet actual expected "CI action inventory"
+  sameSet (← ciInventory repo) expected "CI action inventory"
+
+/-- The required-check inventory: `required_checks` lists exactly the
+attributes `nix/checks.nix` defines (each exposed by ix's flake as
+`ixcc-<name>`, and compared again with the flake's evaluated checks by
+`ixcc.yml`), with no duplicate. -/
+def validateRequiredChecks (root : FilePath) (ledger : Json) : IO Unit := do
+  let expected ← jsonStrings (← field ledger "required_checks")
+  need (!expected.isEmpty) "empty required_checks"
+  unique expected "required_checks"
+  let actual ← checked ((nixBodyAttributes (← IO.FS.readFile (root / "nix/checks.nix"))).mapError
+    fun error => s!"nix/checks.nix: {error}")
+  unique actual "nix/checks.nix attributes"
+  sameSet actual expected "required check inventory (nix/checks.nix against required_checks)"
 
 /-- Every `@[csimp]` theorem in the project's audited sources is in the
 ledger's `csimp_theorems`, and every listed one exists. -/
@@ -617,17 +749,47 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
   let lake ← scanFile (root / "lakefile.lean")
   let paths ← leanSources root lake
   let sources ← paths.mapM fun path => return (path, ← scanFile path)
-  validateIntegrity root ledger repo.flakeLock
+  validateIntegrity root ledger repo
   for (path, tokens) in sources do
     checked ((hygiene tokens).mapError (fun error => s!"{path}: {error}"))
   validateImports root ledger interfaces sources
   validateProjectCSimps root ledger sources
   let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
   let leanFiles ← validateLeanDependencies root ledger lake sources overrides
-  validateSeeds root seeds gmp
+  validateSeeds root repo seeds gmp
   validateCI repo ledger
+  validateRequiredChecks root ledger
+  validateIntegrityRule root ledger
   let mut symbols := 0
   for entry in interfaces do symbols := symbols + (← arrField entry "foreign_symbols").size
   IO.println s!"trusted-extern ledger ok: {interfaces.size} native interface, {symbols} symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependency ({leanFiles} files), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
+
+/-- The ledger's mechanical pins as the tree now stands, for review before
+they replace the recorded ones (`tools/record-ledger-pins.jq`): the hash of
+every file `integrity.rule` covers and of every listed or configured
+repository file, the revision of every `flake.lock` node, and the commit of
+every remote CI action. It never edits the ledger, and records nothing else:
+seed versions, symbols, closures and the other entries are reviewed by hand. -/
+def recordPins (root : FilePath) (repositoryRoot flakeLock : Option FilePath := none) :
+    IO Json := do
+  let root ← IO.FS.realPath root
+  let ledger ← readJson (root / "docs/trusted-externs.json")
+  let repo ← repository root ledger repositoryRoot flakeLock
+  let integrity ← field ledger "integrity"
+  let covered ← ruleFiles root (← integrityRule integrity)
+  let digests ← sha256Many (covered.map fun (relative : String) => root / relative)
+  let repositoryFiles := ((← repositoryPins integrity).map (·.1) ++ (← workflowFiles repo)).eraseDups
+  let repositoryDigests ← sha256Many (repositoryFiles.map fun (relative : String) => repo.root / relative)
+  let actions ← ciInventory repo
+  for (repository, commit) in actions do
+    need (actions.all fun (other, pin) => other != repository || pin == commit)
+      s!"{repository} is pinned at several commits; record ci_actions by hand"
+  let object (entries : List (String × String)) : Json :=
+    Json.mkObj (entries.map fun (key, value) => (key, toJson value))
+  return Json.mkObj [
+    ("tracked_files", object (covered.zip digests)),
+    ("repository_files", object (repositoryFiles.zip repositoryDigests)),
+    ("flake_nodes", object (← flakeRevisions repo.flakeLock)),
+    ("ci_actions", object actions.eraseDups)]
 
 end IxCC.Tools.TrustLedger

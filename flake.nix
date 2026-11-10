@@ -364,15 +364,14 @@
             blake3 = blake3Lake;
             workspace = ./.;
           };
-          # Its required checks: the production library, the shared program
-          # and proof build, and the gates that run those programs.
-          ixccChecks = {
-            build = ixcc.ixccLib;
-            proofs = ixcc.programs;
-          }
-          // import ./IxCC/nix/checks.nix {
+          # Its required checks, all defined in IxCC/nix/checks.nix: the
+          # production library, the shared program and proof build, and the
+          # gates that run those programs. IxCC's trust ledger records their
+          # names (`required_checks`) and ixcc.yml requires the `ixcc-*`
+          # checks below to be exactly those.
+          ixccChecks = import ./IxCC/nix/checks.nix {
             inherit pkgs system blake3-lean;
-            inherit (ixcc) auditSrc ledgerWorkspace mkCheck;
+            inherit (ixcc) ixccLib programs auditSrc ledgerWorkspace mkCheck;
           };
         in
         {

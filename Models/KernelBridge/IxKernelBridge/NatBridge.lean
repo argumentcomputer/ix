@@ -9,15 +9,45 @@ import IxCC.Recheck.Proof.Soundness
 import IxCC.CompileClaim.Proof
 
 /-!
-# First-Order `Nat` Kernel-Bridge Adequacy (`IxKernelBridge.NatBridge`)
+# A conditional simulation lemma between `Src.run` and kernel `Red` (`IxKernelBridge.NatBridge`)
 
-Proves Stage C adequacy connecting `IxCC`'s source semantics (`Src.eval` / `Src.run`),
-recheck pipeline (`Recheck.run` / `Recheck.sound_nat`), and byte-level claim verifier
-(`CompileClaim.verifyBytes` / `CompileClaim.verifyBytes_immortal_sound`) to `IxCK`'s
-certified kernel reduction (`Ix.Kernel.Rules.Red`) and set-theoretic model denotation
-(`Ix.Kernel.Denotes` in `Model.ofEnvModelM mp` obtained from `Ix.Kernel.Cached.checkDecls_sound`).
+This module proves a simulation lemma between `IxCC`'s source evaluator (`Src.eval` /
+`Src.run`) and `IxCK`'s kernel reduction (`Ix.Kernel.Rules.Red`), relative to a relation
+`constSpec` that the user supplies, and composes it with set-theoretic denotation
+(`Ix.Kernel.Denotes` in `Model.ofEnvModelM mp`) and with IxCC's own soundness theorems. It is
+not a source-adequacy theorem for compiled claims: source adequacy against the kernel model
+(the roadmap's target theorem, review finding S8) remains open. `Models/KernelBridge/README.md`
+states the scope in full.
 
-## Architecture
+What a user must supply:
+- a kernel environment `env` with `natBasisStored env = true` (no lemma derives this from
+  `checkDecls`);
+- `constSpec : Levels → CId → Expr md → Prop` with
+  `hconst : ∀ ls c e, constSpec ls c e → RelConstStep p env constSpec ls c e`. For each related
+  definition, equation, csimp or opaque constant this asks for a proof of `Red env 0 e kbody`
+  and a `RelTerm` image `kbody` of its Src body that mirrors it node for node, type arguments
+  and motives included (only `sort` and `pi` positions are unconstrained); for each related
+  primitive, the per-operation agreement premise of `RelHead.primBinNat`;
+- a related, closed root `eRoot` (`constSpec [] root eRoot`);
+- for the denotation layers, that the applied root is readable in the model (`denoteMeta`) and
+  graded (`Graded`, or an `Infer` derivation).
+
+What is not connected: the Layer 3 theorems take `env` from any `checkDecls`-accepted
+declaration stream and `eRoot` from any closed term related to the Src root. Neither is derived
+from the compile claim's `env` bytes or its `target`, and the root index is not tied to
+`claim.target`; the theorems are conjunctions that share only the checked Src program.
+
+The relation can be built only for a small fragment: `RelTerm.app` relates an application only
+if its argument is related, whatever its relevance; constants are related only through
+`constSpec`, whose `RelConstStep` has no case for an inductive type (such as `Nat` itself), an
+axiom or a theorem; there is no rule for `.proj` or string literals; and `RelHead`/`RelVal`
+know only the `Nat` constructors, `Nat.rec` and `Nat.casesOn`. So type arguments, numerals,
+typeclass operations, `match` and recursion as Lean elaborates them are outside it. Recursion
+is blocked independently: kernel `Red` is weak-head, so a related recursive constant reduces
+only to its stored recursor form (`Nat.brecOn`, `WellFounded.fix`), never to the equation body
+`RelConstStep.eqn` asks it to mirror. `IxKernelBridge.Examples` gives instances that do work.
+
+## Layers
 
 1. **Layer 1 (`srcRun_to_red`)**:
    - Simultaneous de Bruijn substitution (`subst`) commuting with `Expr.instantiate1`
@@ -26,25 +56,32 @@ certified kernel reduction (`Ix.Kernel.Rules.Red`) and set-theoretic model denot
      δ-unfolding (`red_delta_const`), `Nat.rec` ι-reduction (`red_natRec_zero`,
      `red_natRec_succ`), and `Nat.casesOn` δ+β+ι reduction (`red_natCasesOn_zero`,
      `red_natCasesOn_succ`).
-   - Relational term/head/constant/value correspondence (`RelTerm`, `RelHead`,
-     `RelConstStep`, `RelVal`, `RelSlot`, `RelSlots`) covering variables, `Nat` literals,
-     sort/type/proof terms, λ-abstractions, `.strict`/`.byName`/irrelevant applications,
-     both β-redex and ζ-reduct `let` forms, constants (definitions, equations, csimp,
-     allowlisted opaques), `Nat.zero`/`Nat.succ`, all 9 binary `Nat` primitives, and
-     `Nat.rec`/`Nat.casesOn`.
+   - Relations between Src and kernel terms, heads, constants and values (`RelTerm`,
+     `RelHead`, `RelConstStep`, `RelVal`, `RelSlot`, `RelSlots`). They have cases for variables,
+     `Nat` literals, sorts and Π-types (unconstrained), λ-abstractions, `.strict`/`.byName`/
+     irrelevant applications (argument related in every mode), both β-redex and ζ-reduct `let`
+     forms, constants resolved as definitions, equations, csimp or allowlisted opaques (each
+     with a user-supplied `Red` step), `Nat.zero`/`Nat.succ`, binary `Nat` primitives (with a
+     user-supplied agreement premise: `IxCC.Src.PrimOp` has 14 binary operations; the premise
+     holds for 11 and is false for `pow`, `beq` and `ble`, see `IxKernelBridge.Examples`), and
+     `Nat.rec`/`Nat.casesOn`. The unary `pred` has no case.
    - Fuel-strong induction (`sim_all`: `eval_sim`, `apply_sim`, `force_sim`, `fire_sim`,
      `headValue_sim`, `evalConst_sim`) culminating in `srcRun_to_red`.
 
 2. **Layer 2 (`red_to_denotes_nat`, `infer_red_to_denotes_nat`)**:
    - Composes `RulesInputs.ofSem mp φ`, `red_sound`, `infer_sound`, `Denotes_of_denoteMeta`,
      and `Denotes.natLit` to translate closed `Red env 0 e w` with `rawNatLit? w = some out`
-     into set-theoretic denotation in `Model.ofEnvModelM mp`.
+     into set-theoretic denotation in `Model.ofEnvModelM mp`, given `denoteMeta` and `Graded`
+     (or `Infer`) for `e`.
 
-3. **Layer 3 (`srcRun_to_denotes_nat`, `checkDecls_srcRun_denotes_nat`,
-   `checkDecls_recheck_x86_denotes_nat`, `checkDecls_verifyBytes_immortal_denotes_nat`)**:
-   - End-to-end capstone theorems composing `Ix.Kernel.Cached.checkDecls_sound`,
-     `srcRun_to_red`, `red_to_denotes_nat`, `IxCC.Recheck.sound_nat`, and
-     `IxCC.CompileClaim.verifyBytes_immortal_sound`.
+3. **Layer 3 (`srcRun_to_denotes_nat`, `srcRun_infer_to_denotes_nat`,
+   `checkDecls_srcRun_denotes_nat`, `checkDecls_recheck_x86_denotes_nat`,
+   `checkDecls_verifyBytes_immortal_denotes_nat`)**:
+   - Conjunctions of Layers 1 and 2 with `Ix.Kernel.Cached.checkDecls_sound`,
+     `IxCC.Recheck.sound_nat` and `IxCC.CompileClaim.verifyBytes_immortal_sound`, under the
+     premises above. `checkDecls_verifyBytes_immortal_denotes_nat` inherits the Blake3
+     `native_decide` axiom of `verifyBytes_immortal_sound`; the others use only the standard
+     three (`IxKernelBridge.Audit`).
 -/
 
 namespace IxKernelBridge
@@ -1468,6 +1505,12 @@ theorem relSlots_of_natVals : ∀ (xs : List Nat),
   | [] => .nil
   | _ :: ns => .cons (.val rfl Red.refl (.lit rfl rfl)) (relSlots_of_natVals ns)
 
+/-- **Layer 1, the simulation lemma.** For a kernel environment `env` storing the `Nat`
+basis, and a user-supplied relation `constSpec` closed under `RelConstStep` (`hconst`), if
+the root `root` is related to `eRoot` and `Src.run` returns the literal `out` on `Nat`
+literal arguments, then `eRoot` applied to those literals reduces under `Red env 0` to a
+term whose raw literal is `out`. It says nothing about a program for which no such
+`constSpec` exists; see the module docstring for the fragment where one does. -/
 theorem srcRun_to_red {p : IxCC.Src.Program} {env : Env md}
     {constSpec : IxCC.Src.Levels → IxCC.Src.CId → Expr md → Prop}
     (hbasis : natBasisStored env = true)
@@ -1629,17 +1672,21 @@ theorem infer_red_to_denotes_nat {μ : CheckMode} {env : Env md}
   obtain ⟨_, _, _, _, hgrad, _, _⟩ := hisem
   exact red_to_denotes_nat mp φ ρ hsup hnf hlb hea hgrad hred hout
 
-/-! ## Layer 3: End-to-End Adequacy from `Src.run`, `Recheck.run`, and `CompileClaim.verifyBytes` to `Denotes` -/
+/-! ## Layer 3: conjunctions with `checkDecls_sound`, `Recheck.sound_nat` and `verifyBytes_immortal_sound`
+
+Every theorem below keeps Layer 1's user-supplied `constSpec`, `hconst` and related root
+`eRoot` as premises. `env` and `eRoot` are not derived from the compiled input. -/
 
 /-- Applied kernel expression `eRoot` on `Nat` literal arguments `xs`. -/
 abbrev mkNatApp (eRoot : Expr md) (xs : List Nat) : Expr md :=
   Expr.mkAppN eRoot (xs.map fun n => Expr.lit (.natVal n))
 
-/-- Composes Layer 1 (`srcRun_to_red`) with Layer 2 (`red_to_denotes_nat`):
-any terminating `Src.run p k root (xs.map .lit) = .ok (.lit out)` reduces
-`mkNatApp eRoot xs` in `Red env 0` to `natLitToConstructor out` and equates its
-set-theoretic denotation in `Model.ofEnvModelM mp` with `.lit (.natVal out)` and
-`natLitToConstructor out`. -/
+/-- Composes Layer 1 (`srcRun_to_red`) with Layer 2 (`red_to_denotes_nat`): for a
+user-supplied `constSpec` satisfying `hconst` and a related closed root `eRoot`, a
+terminating `Src.run p k root (xs.map .lit) = .ok (.lit out)` gives a `Red env 0`
+reduction of `mkNatApp eRoot xs` to `natLitToConstructor out`, and, if that term is
+readable (`hea`) and graded (`hgrad`) in `mp`, equal denotations in
+`Model.ofEnvModelM mp` for it, `.lit (.natVal out)` and `natLitToConstructor out`. -/
 theorem srcRun_to_denotes_nat {μ : CheckMode} {p : IxCC.Src.Program} {env : Env md}
     {constSpec : IxCC.Src.Levels → IxCC.Src.CId → Expr md → Prop}
     (mp : EnvModelM V μ env) (φ : LevelParam → Nat) (ρ : Nat → V)
@@ -1666,7 +1713,8 @@ theorem srcRun_to_denotes_nat {μ : CheckMode} {p : IxCC.Src.Program} {env : Env
   exact ⟨Red.trans hred (red_natLitToConstructor_of_rawNatLit hsup hout),
     red_to_denotes_nat mp φ ρ hsup hnf hlb hea hgrad hred hout⟩
 
-/-- Variant of `srcRun_to_denotes_nat` discharging `Graded` from `Infer env .full 0`. -/
+/-- Variant of `srcRun_to_denotes_nat` that takes an `Infer env .full 0` derivation for the
+applied root in place of `Graded`; the user-supplied `constSpec` premises are unchanged. -/
 theorem srcRun_infer_to_denotes_nat {μ : CheckMode} {p : IxCC.Src.Program} {env : Env md}
     {constSpec : IxCC.Src.Levels → IxCC.Src.CId → Expr md → Prop}
     (mp : EnvModelM V μ env) (φ : LevelParam → Nat) (ρ : Nat → V)
@@ -1693,11 +1741,14 @@ theorem srcRun_infer_to_denotes_nat {μ : CheckMode} {p : IxCC.Src.Program} {env
   exact ⟨Red.trans hred (red_natLitToConstructor_of_rawNatLit hsup hout),
     infer_red_to_denotes_nat mp φ ρ hsup hnf hlb hea hinf hred hout⟩
 
-/-- Connects `Ix.Kernel.Cached.checkDecls` (`checkDecls_sound`) to `Src.run`:
-any environment `env` accepted by `checkDecls μ ev ds = .ok env` (with `μ.verifiedChecks = true`)
-has a model `Nonempty (EnvModelM V μ env)`, and any `Src.run p k root (xs.map .lit) = .ok (.lit out)`
-reduces `mkNatApp eRoot xs` to `natLitToConstructor out` and denotes the same value `v : V`
-as `.lit (.natVal out)` and `natLitToConstructor out` in every `EnvModelM V μ env`. -/
+/-- Conjoins `Ix.Kernel.Cached.checkDecls_sound` with `srcRun_to_denotes_nat`: an
+environment `env` accepted by `checkDecls μ ev ds = .ok env` (with `μ.verifiedChecks = true`)
+has a model `Nonempty (EnvModelM V μ env)`; and, for a user-supplied `constSpec` satisfying
+`hconst` and a related closed root `eRoot`, a terminating
+`Src.run p k root (xs.map .lit) = .ok (.lit out)` gives a reduction of `mkNatApp eRoot xs` to
+`natLitToConstructor out`, and equal denotations in every model `mp` in which that term is
+readable and graded. `ds` is any declaration stream: it is not required to be the program's
+compiled environment, and `p` is not required to come from it. -/
 theorem checkDecls_srcRun_denotes_nat {μ : CheckMode} {ev : Evidences md}
     {ds : Array (Declaration md)} {env : Env md}
     {p : IxCC.Src.Program} {constSpec : IxCC.Src.Levels → IxCC.Src.CId → Expr md → Prop}
@@ -1740,17 +1791,23 @@ theorem checkedProgram_run_of_srcRun (s : IxCC.Lam.Erase.Proof.CheckedProgram)
   show IxCC.Lam.Erase.Proof.srcRun s i k = .ok _
   simp [IxCC.Lam.Erase.Proof.srcRun, hroot, hrun, IxCC.Sem.Result.map, IxCC.Sem.Result.bind]
 
-/-- **Stage C Capstone 1 (`checkDecls_recheck_x86_denotes_nat`)**:
-Composes `Ix.Kernel.Cached.checkDecls_sound`, `IxCC.Recheck.sound_nat`, `srcRun_to_red`,
-and `red_to_denotes_nat`.
+/-- **Conjunction with the recheck pipeline (`checkDecls_recheck_x86_denotes_nat`)**:
+`Ix.Kernel.Cached.checkDecls_sound`, `IxCC.Recheck.sound_nat`, `srcRun_to_red` and
+`red_to_denotes_nat`, which share only the checked Src program `a.src` and the run `hrun`.
 When `checkDecls μ ev ds = .ok env` and `Recheck.run cfg P cert = .ok a` at a `Nat` root
-`a.src.roots[i.1]? = some (rootAddr, rootId)` where `Src.run a.src k_src rootId (i.2.map .lit) = .ok (.lit out)`:
+`a.src.roots[i.1]? = some (rootAddr, rootId)` where `Src.run a.src k_src rootId (i.2.map .lit) = .ok (.lit out)`,
+and for a user-supplied `constSpec` satisfying `hconst` with a related closed root `eRoot`:
 1. `env` has a set-theoretic model `Nonempty (EnvModelM V μ env)`;
 2. Every valid x86-64 driver `D` (`D.Ok a.backend.encoded.text.size`) never goes wrong on `i`,
-   and any terminating x86-64 execution `Lang.run (a.linked D) i k = .ok w` returns `w = some (.nat out)`;
+   and any terminating x86-64 execution `Lang.run (a.linked D) i k = .ok w` returns `w = some (.nat out)`
+   (this is `Recheck.sound_nat`, independent of `env` and `eRoot`);
 3. In `env`, `mkNatApp eRoot i.2` reduces via `Ix.Kernel.Rules.Red` to `natLitToConstructor out`;
-4. In every `mp : EnvModelM V μ env`, `mkNatApp eRoot i.2`, `.lit (.natVal out)`, and
-   `natLitToConstructor out` denote the exact same set-theoretic value `v : V` in `Model.ofEnvModelM mp`. -/
+4. In every `mp : EnvModelM V μ env` in which `mkNatApp eRoot i.2` is readable and graded, it,
+   `.lit (.natVal out)` and `natLitToConstructor out` denote the same value `v : V` in
+   `Model.ofEnvModelM mp`.
+
+`env` is not derived from `P`, and `eRoot` is not required to be the kernel constant of the
+root: the kernel-side conclusions are about whatever term the user related to `rootId`. -/
 theorem checkDecls_recheck_x86_denotes_nat {μ : CheckMode} {ev : Evidences md}
     {ds : Array (Declaration md)} {env : Env md}
     {cfg : IxCC.Recheck.Config} {P : IxCC.Src.Program} {cert : IxCC.Recheck.Cert}
@@ -1791,10 +1848,14 @@ theorem checkDecls_recheck_x86_denotes_nat {μ : CheckMode} {ev : Evidences md}
   obtain ⟨_, _, hngw, hsafe, hval⟩ := IxCC.Recheck.sound_nat hrec D hD hty heval hobs
   exact ⟨hngw, hsafe, hval⟩
 
-/-- **Stage C Capstone 2 (`checkDecls_verifyBytes_immortal_denotes_nat`)**:
-End-to-end byte-level adequacy connecting `IxCC.CompileClaim.verifyBytes` (under `.immortal` policy)
-and `Ix.Kernel.Cached.checkDecls` (`checkDecls_sound`) to x86-64 linked ELF execution (`a.linked D`),
-kernel reduction (`Red`), and set-theoretic denotation (`Denotes` in `Model.ofEnvModelM mp`). -/
+/-- **Conjunction with the byte-level claim verifier (`checkDecls_verifyBytes_immortal_denotes_nat`)**:
+`IxCC.CompileClaim.verifyBytes_immortal_sound` (under `.immortal` policy), `checkDecls_sound`, and,
+for every user-supplied `constSpec` satisfying `hconst` and every related closed root `eRoot`,
+the conclusions of `checkDecls_recheck_x86_denotes_nat` for the artifact `a` the verifier
+rechecked. This is not adequacy for the claim: `ds`/`env` occur only in `hchk` and `hbasis`
+and `envBytes` only in `hver`, so `env` is not the claim's environment; `eRoot` is not the
+kernel constant of `claim.target`; and the root index `i` is not tied to `claim.target`.
+Its axioms include the Blake3 `native_decide` axiom of `verifyBytes_immortal_sound`. -/
 theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evidences md}
     {ds : Array (Declaration md)} {env : Env md}
     {cfg : IxCC.Recheck.Config} {envBytes : ByteArray} {equations : Lean.Json}

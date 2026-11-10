@@ -107,6 +107,27 @@ def sha256 (path : FilePath) : IO String := do
   need (isHex 64 digest) s!"invalid SHA-256 tool output for {path}"
   return digest
 
+/-- The SHA-256 of each of `paths`, in order: `sha256`, with one `sha256sum`
+process per 256 files. Each output line must name its file exactly (GNU
+`sha256sum` escapes unusual names, which are refused). -/
+def sha256Many (paths : List FilePath) : IO (List String) := do
+  let all := paths.toArray
+  let mut digests := #[]
+  for start in [0:all.size:256] do
+    let chunk := all.extract start (start + 256)
+    let output ← run "sha256sum" (#["--"] ++ chunk.map (·.toString))
+    let lines := ((output.splitOn "\n").filter (!·.isEmpty)).toArray
+    need (lines.size == chunk.size) s!"sha256sum printed {lines.size} lines for {chunk.size} files"
+    for index in [:chunk.size] do
+      let line := lines[index]!
+      let path := chunk[index]!
+      need (!line.startsWith "\\") s!"unsupported file name for hashing: {path}"
+      let digest := (line.take 64).toString
+      need (isHex 64 digest && (line.drop 66).toString == path.toString)
+        s!"invalid SHA-256 tool output for {path}: {line}"
+      digests := digests.push digest
+  return digests.toList
+
 partial def files (root : FilePath) (skipHidden : Bool := false) : IO (List FilePath) := do
   let mut result := []
   for entry in ← root.readDir do

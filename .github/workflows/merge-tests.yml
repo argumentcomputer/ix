@@ -121,10 +121,12 @@ jobs:
   # and builds what they build: the test binary with the executables it
   # needs, the ZK voting prover, the standalone certified kernel package,
   # the certification statements' freeze and the kernel gate's
-  # executables. RunsOn snapshots the disk when the job ends, under the
-  # run's ref, and the partitions start after it and restore that ref's
-  # latest snapshot. A partition that restores an older one (`main`'s)
-  # rebuilds what it needs, as before, and its log says so.
+  # executables. The kernel partition's two models (the set-theory model and
+  # the kernel-bridge model) are built there, not here. RunsOn snapshots the
+  # disk when the job ends, under the run's ref, and the partitions start
+  # after it and restore that ref's latest snapshot. A partition that
+  # restores an older one (`main`'s) rebuilds what it needs, as before, and
+  # its log says so.
   build:
     name: Build merge-test targets
     needs: prepare
@@ -152,7 +154,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target,path=Models/SetTheory/.lake
+            custom,path=.lake,path=target,path=Models/SetTheory/.lake,path=IxCC/.lake,path=Models/KernelBridge/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -241,7 +243,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target,path=Models/SetTheory/.lake
+            custom,path=.lake,path=target,path=Models/SetTheory/.lake,path=IxCC/.lake,path=Models/KernelBridge/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -291,6 +293,14 @@ jobs:
       - name: Check certified kernel, host audits, model, fences, entry cases and meta names
         if: ${{ matrix.kind == 'kernel' }}
         run: lake run check-kernel --with-model
+      # The kernel-bridge model (Models/KernelBridge/README.md), a workspace of
+      # its own that requires IxCK and IxCC by path and shares IxCC's package
+      # directory, where Lake checks out and builds Blake3: its build, whose
+      # modules treat warnings as errors, and its axiom-fence inventory. Its
+      # Lake directories and IxCC's persist on the sticky disk.
+      - name: Check the kernel-bridge model and its fence inventory
+        if: ${{ matrix.kind == 'kernel' }}
+        run: lake run check-kernel-bridge
 
   valgrind:
     name: Valgrind FFI

@@ -697,4 +697,72 @@ script "check-kernel" (args) := do
   IO.println "Certified kernel checks passed."
   return 0
 
+/-- The theorems `Models/KernelBridge/IxKernelBridge/Audit.lean` fences with
+`#guard_msgs in #print axioms`. `check-kernel-bridge` fails unless the fenced
+set is exactly this list, so removing or adding a fence also changes this
+inventory. -/
+def kernelBridgeFences : List String := [
+  "IxKernelBridge.srcRun_to_red",
+  "IxKernelBridge.red_to_denotes_nat",
+  "IxKernelBridge.infer_red_to_denotes_nat",
+  "IxKernelBridge.srcRun_to_denotes_nat",
+  "IxKernelBridge.srcRun_infer_to_denotes_nat",
+  "IxKernelBridge.checkDecls_srcRun_denotes_nat",
+  "IxKernelBridge.checkDecls_recheck_x86_denotes_nat",
+  "IxKernelBridge.checkDecls_verifyBytes_immortal_denotes_nat",
+  "IxKernelBridge.Examples.add_premise",
+  "IxKernelBridge.Examples.sub_premise",
+  "IxKernelBridge.Examples.mul_premise",
+  "IxKernelBridge.Examples.div_premise",
+  "IxKernelBridge.Examples.mod_premise",
+  "IxKernelBridge.Examples.gcd_premise",
+  "IxKernelBridge.Examples.land_premise",
+  "IxKernelBridge.Examples.lor_premise",
+  "IxKernelBridge.Examples.xor_premise",
+  "IxKernelBridge.Examples.shiftLeft_premise",
+  "IxKernelBridge.Examples.shiftRight_premise",
+  "IxKernelBridge.Examples.beq_premise_false",
+  "IxKernelBridge.Examples.ble_premise_false",
+  "IxKernelBridge.Examples.pow_premise_false",
+  "IxKernelBridge.Examples.id_bridge",
+  "IxKernelBridge.Examples.succ_bridge",
+  "IxKernelBridge.Examples.add_bridge",
+  "IxKernelBridge.Examples.addLit_bridge",
+  "IxKernelBridge.Examples.addLit_concrete"]
+
+/-- Build the kernel-bridge model (`Models/KernelBridge`, a workspace of its
+own that requires `IxCK` and `IxCC` by path: a conditional simulation lemma
+between IxCC's source evaluator and the kernel's reduction; its README states
+the scope), whose modules treat warnings as errors and whose audit module
+holds the axiom fences, then check that the fenced theorems are exactly
+`kernelBridgeFences` and that no `#print axioms` is unguarded. Run from the
+repository root. The merge-queue kernel partition runs it beside
+`check-kernel --with-model`. -/
+script "check-kernel-bridge" (args) := do
+  unless args.isEmpty do
+    IO.eprintln "usage: lake run check-kernel-bridge"
+    return 2
+  let child ← IO.Process.spawn {
+    cmd := "lake", args := #["-d", "Models/KernelBridge", "build"],
+    stdout := .inherit, stderr := .inherit }
+  let code ← child.wait
+  unless code == 0 do
+    IO.eprintln s!"lake -d Models/KernelBridge build failed with exit code {code}"
+    return 1
+  let marker := "#guard_msgs in #print axioms "
+  let lines := (← IO.FS.readFile "Models/KernelBridge/IxKernelBridge/Audit.lean").splitOn "\n"
+  let fenced := lines.filterMap fun line =>
+    if line.startsWith marker then some (line.drop marker.length).toString.trimAscii.toString
+    else none
+  let unguarded := lines.filter fun line =>
+    line.trimAscii.toString.startsWith "#print axioms"
+  let missing := kernelBridgeFences.filter (!fenced.contains ·)
+  let extra := fenced.filter (!kernelBridgeFences.contains ·)
+  unless unguarded.isEmpty && missing.isEmpty && extra.isEmpty &&
+      fenced.eraseDups.length == fenced.length do
+    IO.eprintln s!"kernel-bridge fence inventory changed: missing {missing}, unlisted {extra}, unguarded {unguarded}, {fenced.length - fenced.eraseDups.length} duplicates"
+    return 1
+  IO.println s!"Kernel bridge checks passed: {fenced.length} exact axiom fences."
+  return 0
+
 end IxCK

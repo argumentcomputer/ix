@@ -37,6 +37,19 @@ erasure, middle-end transformations, register allocation and ELF emission.
 precise scope and native-model assumptions. Source adequacy against the
 certified kernel's model remains open.
 
+ix's [`Models/KernelBridge`](../../Models/KernelBridge/README.md) package does
+not close it. It proves a conditional simulation lemma: given a kernel
+environment storing the `Nat` basis and a user-supplied relation between Src
+constants and kernel terms, a successful `Src.run` on `Nat` literals is
+matched by kernel `Red` reduction of the related term, which then denotes the
+same literal in every model where it is readable and graded. Its environment
+and kernel term are not derived from a compile claim's environment or target,
+and the relation can be built only for definitions without type arguments,
+numerals, typeclass operations, `match` or recursion (of the 69 fixture roots
+surveyed in the 2026-11-09 review, only the identity `Abi.nat1`). Recursive
+programs need a denotational step for equation and csimp resolutions in place
+of kernel reduction.
+
 The actual scalar compiler entry point now has a composition theorem:
 `compile_parts` exposes successful ingress, production and certificate replay;
 `compiled_sound` derives the same SrcEval-relative object guarantees from

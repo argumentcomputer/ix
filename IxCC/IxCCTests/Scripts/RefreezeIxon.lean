@@ -22,8 +22,9 @@ their provenance; required CI never runs it.
 * `typing --ix IX --revision REV [--work DIR]`: compile the primitive closure
   (`ix compile --consts` every `primitives.tsv` name the toolchain has), check
   every other row's address with `ix addr-of`, extract the four bundles with
-  `ix pack --anon`, check them with `ix check-rs`, and write
-  `typing/provenance.json`.
+  `ix pack --anon`, check them with `ix check-rs` (the producer's Rust kernel;
+  an ix without that command, such as the ix of this repository, is
+  refused first), and write `typing/provenance.json`.
 * `catalog --ix IX --revision REV [--work DIR]`: assemble and verify
   `catalog/fat.ixc` from the typing bundles with `ix catalog`, write
   `catalog/chunked.ixc` (`CatalogFixtures.writeChunked`), verify it with ix,
@@ -134,8 +135,24 @@ def primitiveRows : IO (List (String × String)) := do
 
 def bundles : List String := ["Nat", "Nat.add", "String", "Quot.lift"]
 
+/-- `typing` checks each bundle with `ix check-rs`, ix's Rust kernel, and
+records the `[check] checked N` counts it prints. That command exists at the
+documented producer (`be45a159`, docs/corpus.md "Refreezing"), not in the ix
+of this repository, which has no equivalent with that output (its `ix check`
+runs the IxVM kernel); refuse a producer without it before anything is
+written. -/
+def requireCheckRs (ix : FilePath) : IO Unit := do
+  let result ← IO.Process.output { cmd := ix.toString, args := #["check-rs", "--help"] }
+  need (result.exitCode == 0) <|
+    s!"{ix} has no `check-rs` command (exit {result.exitCode}). `refreeze-ixon typing` " ++
+    "records ix's Rust-kernel check of each bundle with `ix check-rs --anon`, which only " ++
+    "the producer revision be45a159 provides; the ix of this repository has neither it " ++
+    "nor the `compile --equations` export, so the fixtures cannot be regenerated with it " ++
+    "(docs/corpus.md, \"Refreezing\")."
+
 def typing (ix revision : String) (work : FilePath) : IO Unit := do
   let ix ← IO.FS.realPath ix
+  requireCheckRs ix
   let work := work / "typing"
   IO.FS.createDirAll work
   let work ← IO.FS.realPath work

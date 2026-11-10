@@ -1,6 +1,8 @@
 {
   pkgs,
   system,
+  ixccLib,
+  programs,
   auditSrc,
   ledgerWorkspace,
   blake3-lean,
@@ -16,7 +18,16 @@
   native = system == "x86_64-linux";
   ccArg = pkgs.lib.optionalString native "--cc ${pkgs.stdenv.cc}/bin/cc";
 in
+  # IxCC's required checks; ix's flake exposes each as `ixcc-<name>`. The
+  # trust ledger's `required_checks` lists exactly these attribute names, and
+  # `.github/workflows/ixcc.yml` requires the flake's evaluated `ixcc-*` set
+  # to equal it (docs/trusted-extern-ledger.md).
   {
+    # The production library, and the shared build of every executable and
+    # the complete proof and fence collection that the checks below run.
+    build = ixccLib;
+    proofs = programs;
+
     # The catalog reader rejects symlinked files, so the fixture commands read
     # the store copy of the source tree rather than the symlinked work tree.
     ixon-v3 = mkCheck "ixon-v3" [] ''

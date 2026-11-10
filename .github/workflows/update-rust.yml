@@ -29,7 +29,9 @@ jobs:
       # and opens a PR on `update/rust-<version>`. The zisk and sp1
       # sub-workspaces pin their own toolchains and are left alone. The PR is
       # opened with `GITHUB_TOKEN`, so a maintainer closes and reopens it to
-      # run CI.
+      # run CI. The new flake.lock revisions fail IxCC's trust-ledger check
+      # until its flake_nodes are re-recorded in the same PR ("Routine
+      # updates" in IxCC/docs/trusted-extern-ledger.md).
       - uses: argumentcomputer/ci-workflows/.github/actions/rust-version@main
         with:
           update-flake: 'true'

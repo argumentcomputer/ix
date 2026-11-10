@@ -107,10 +107,46 @@ def imports (tokens : Array Token) : List String := Id.run do
         if next.kind == .name then result := next.text :: result
   return result.reverse
 
+/-- Names that declare an axiom, leave a proof hole, or evaluate natively: the
+`native_decide` tactic and the axioms native evaluation rests on
+(`Lean.ofReduceBool`, `Lean.ofReduceNat`, `Lean.trustCompiler`) and the
+qualified markers they reduce (`Lean.reduceBool`, `Lean.reduceNat`). The bare
+`reduceBool`/`reduceNat` are not refused: IxCC uses them as field names. -/
+def forbiddenNames : List String :=
+  ["axiom", "sorry", "native_decide",
+   "ofReduceBool", "Lean.ofReduceBool", "ofReduceNat", "Lean.ofReduceNat",
+   "trustCompiler", "Lean.trustCompiler", "Lean.reduceBool", "Lean.reduceNat"]
+
+/-- Whether `tokens[index]` is the flag `native` of a `decide` configuration,
+`decide +native` (after any other `+flag`/`-flag`s, as in
+`decide +kernel +native`), rather than an addition such as `x + native`. -/
+private def decideNativeFlag (tokens : Array Token) (index : Nat) : Bool := Id.run do
+  let text (i : Nat) : String := (tokens[i]?.map (·.text)).getD ""
+  if index == 0 || text (index - 1) != "+" then return false
+  -- walk back over the preceding `±flag` pairs to the tactic name
+  let mut at_ := index - 1
+  while at_ ≥ 2 && ["+", "-"].contains (text (at_ - 2)) &&
+      (tokens[at_ - 1]?.map (·.kind == .name)).getD false do
+    at_ := at_ - 2
+  return at_ ≥ 1 && text (at_ - 1) == "decide"
+
+/-- Refuse `axiom`, `sorry` and every spelling of native evaluation the lexer
+can see: the names in `forbiddenNames`, `decide +native` and a configuration
+field `native := true` (`decide (config := { native := true })`). Comments and
+literals are not scanned. -/
 def hygiene (tokens : Array Token) : Except String Unit := do
-  for token in tokens do
-    if token.kind == .name && ["axiom", "sorry", "native_decide"].contains token.text then
+  for index in [:tokens.size] do
+    let token := tokens[index]!
+    if token.kind != .name then continue
+    if forbiddenNames.contains token.text then
       throw s!"line {token.line}: {token.text} is not allowed in checked sources"
+    if token.text == "native" then
+      if decideNativeFlag tokens index then
+        throw s!"line {token.line}: decide +native is not allowed in checked sources"
+      if (tokens[index + 1]?.map (·.text)) == some ":" &&
+          (tokens[index + 2]?.map (·.text)) == some "=" &&
+          (tokens[index + 3]?.map (·.text)) == some "true" then
+        throw s!"line {token.line}: native := true is not allowed in checked sources"
 
 private def modifier (name : String) : Bool :=
   ["public", "protected", "private", "unsafe", "partial", "noncomputable", "meta"].contains name
@@ -220,6 +256,182 @@ def csimps (tokens : Array Token) : Except String (List CSimp) := do
         throw s!"line {token.line}: unsupported csimp attribute target"
       if count == 0 then throw s!"line {token.line}: missing csimp attribute names"
   return result.reverse
+
+/-! ## Nix attribute names
+
+The trust ledger compares the checks `nix/checks.nix` defines with its
+recorded list. This lexer reads only what that needs: the attribute names
+bound directly in the attribute sets of the file's body. -/
+
+/-- A context of the Nix lexer: code (inside an antiquotation, with its own
+brace depth), a `"…"` string or an `''…''` string. -/
+private inductive NixFrame where
+  | code (depth : Nat)
+  | quoted
+  | indented
+  deriving Inhabited
+
+/-- A token of the Nix file outside every string and antiquotation, with the
+brace depth of its context (a `{` carries the depth outside it, a `}` the
+depth after it). Strings and antiquotations appear as the tokens `"`, `''` and
+`${`, so a binding cannot hide in one. -/
+structure NixToken where
+  text : String
+  depth : Nat
+  line : Nat
+  deriving Repr, Inhabited
+
+private def nixIdStart (char : Char) : Bool := char.isAlpha || char == '_'
+private def nixIdPart (char : Char) : Bool :=
+  char.isAlphanum || char == '_' || char == '\'' || char == '-'
+
+def nixTokens (input : String) : Except String (Array NixToken) := do
+  let chars := input.toList.toArray
+  let at_ (i : Nat) : Char := chars[i]?.getD '\x00'
+  let mut tokens : Array NixToken := #[]
+  let mut stack : List NixFrame := []
+  let mut depth := 0
+  let mut index := 0
+  let mut line := 1
+  while index < chars.size do
+    let char := at_ index
+    let next := at_ (index + 1)
+    if char == '\n' then line := line + 1
+    match stack with
+    | .quoted :: rest =>
+      if char == '\\' then index := index + 2
+      else if char == '$' && next == '$' then index := index + 2
+      else if char == '$' && next == '{' then
+        stack := .code 0 :: stack
+        index := index + 2
+      else if char == '"' then
+        stack := rest
+        index := index + 1
+      else index := index + 1
+    | .indented :: rest =>
+      if char == '\'' && next == '\'' then
+        let third := at_ (index + 2)
+        if third == '\'' || third == '$' then index := index + 3
+        else if third == '\\' then index := index + 4
+        else
+          stack := rest
+          index := index + 2
+      else if char == '$' && next == '$' then index := index + 2
+      else if char == '$' && next == '{' then
+        stack := .code 0 :: stack
+        index := index + 2
+      else index := index + 1
+    | frame =>
+      let top := frame.isEmpty
+      if char.isWhitespace then index := index + 1
+      else if char == '#' then
+        while index < chars.size && at_ index != '\n' do index := index + 1
+      else if char == '/' && next == '*' then
+        index := index + 2
+        while index < chars.size && !(at_ index == '*' && at_ (index + 1) == '/') do
+          if at_ index == '\n' then line := line + 1
+          index := index + 1
+        if index ≥ chars.size then throw s!"line {line}: unterminated comment"
+        index := index + 2
+      else if char == '"' then
+        if top then tokens := tokens.push ⟨"\"", depth, line⟩
+        stack := .quoted :: stack
+        index := index + 1
+      else if char == '\'' && next == '\'' then
+        if top then tokens := tokens.push ⟨"''", depth, line⟩
+        stack := .indented :: stack
+        index := index + 2
+      else if char == '$' && next == '{' then
+        if top then tokens := tokens.push ⟨"${", depth, line⟩
+        stack := .code 0 :: stack
+        index := index + 2
+      else if char == '{' then
+        match frame with
+        | .code d :: rest => stack := .code (d + 1) :: rest
+        | _ =>
+          tokens := tokens.push ⟨"{", depth, line⟩
+          depth := depth + 1
+        index := index + 1
+      else if char == '}' then
+        match frame with
+        | .code 0 :: rest => stack := rest
+        | .code (d + 1) :: rest => stack := .code d :: rest
+        | _ =>
+          if depth == 0 then throw s!"line {line}: unbalanced closing brace"
+          depth := depth - 1
+          tokens := tokens.push ⟨"}", depth, line⟩
+        index := index + 1
+      else if nixIdStart char then
+        let start := index
+        while index < chars.size && nixIdPart (at_ index) do index := index + 1
+        if top then tokens := tokens.push ⟨String.ofList (chars.extract start index).toList, depth, line⟩
+      else if ["==", "!=", "<=", ">=", "//", "++", "->", "&&", "||"].contains
+          (String.ofList [char, next]) then
+        if top then tokens := tokens.push ⟨String.ofList [char, next], depth, line⟩
+        index := index + 2
+      else
+        if top then tokens := tokens.push ⟨String.singleton char, depth, line⟩
+        index := index + 1
+  unless stack.isEmpty do throw "unterminated string or antiquotation"
+  unless depth == 0 do throw "unbalanced braces"
+  return tokens
+
+/-- The attribute names bound directly in the attribute sets of the body of a
+Nix file of the form `{ args }: let … in { … } // … { … }`: the body follows
+the `in` that closes the first top-level `let`, and each `{` opened at depth 0
+there starts a set whose bindings are `name = …;` or `inherit [(…)] names;`.
+Anything else in a binding position (a string or antiquoted name, an
+attribute path) is refused, so no binding escapes the inventory. -/
+def nixBodyAttributes (input : String) : Except String (List String) := do
+  let tokens ← nixTokens input
+  let text (i : Nat) : String := (tokens[i]?.map (·.text)).getD ""
+  let mut lets := 0
+  let mut start := none
+  for i in [:tokens.size] do
+    if tokens[i]!.depth == 0 && text i == "let" then lets := lets + 1
+    if tokens[i]!.depth == 0 && text i == "in" && lets > 0 then
+      lets := lets - 1
+      if lets == 0 then
+        start := some (i + 1)
+        break
+  let some first := start | throw "no top-level `let … in` before the attribute sets"
+  let mut names : List String := []
+  let mut binding := false
+  let mut i := first
+  while i < tokens.size do
+    let token := tokens[i]!
+    if token.depth == 0 then
+      -- `{` opens a set; its `}` (depth 0 after it) closes it
+      binding := token.text == "{"
+      i := i + 1
+    else if token.depth == 1 && binding then
+      if token.text == "}" then
+        binding := false
+        i := i + 1
+      else if token.text == "inherit" then
+        i := i + 1
+        while i < tokens.size && text i != ";" do
+          if text i == "(" then
+            let mut parens := 0
+            while i < tokens.size && !(text i == ")" && parens == 1) do
+              if text i == "(" then parens := parens + 1
+              if text i == ")" then parens := parens - 1
+              i := i + 1
+            i := i + 1
+          else if (text i).toList.headD ' ' |> nixIdStart then
+            names := names ++ [text i]
+            i := i + 1
+          else throw s!"line {tokens[i]!.line}: unsupported inherit"
+        i := i + 1
+      else if nixIdStart ((token.text.toList.headD ' ')) && text (i + 1) == "=" then
+        names := names ++ [token.text]
+        binding := false
+        i := i + 2
+      else throw s!"line {token.line}: unsupported binding `{token.text}` in an attribute set"
+    else
+      if token.depth == 1 && token.text == ";" then binding := true
+      i := i + 1
+  return names
 
 def cExports (tokens : Array Token) : Except String (List String) := do
   let mut result := []

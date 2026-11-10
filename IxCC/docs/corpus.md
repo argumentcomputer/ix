@@ -255,7 +255,13 @@ What a refreeze needs:
 - `IX`: the producer binary (now ix `be45a159`, `f829b760` plus the
   `--equations` export, built with Lake in ix's dev shell at that revision;
   SHA-256 `396dffb7…` from the 2026-11-07 rebuild, as the build is not
-  reproducible);
+  reproducible). It cannot be the ix of this repository (checked 2026-11-09),
+  which has neither `compile --equations` (every family's sidecars) nor
+  `check-rs` (step 7: `refreeze-ixon typing` refuses an ix without it), so
+  the fixtures cannot currently be regenerated from this tree. `be45a159` is
+  not in this repository's history: it is reachable only from ix's
+  `jcb/compilatrix-donor-history-2026-10-11` and
+  `jcb/compilatrix-resource-wip-2026-10-11` branches;
 - `FAKE`: a directory holding a `lake` stand-in that answers
   `lake env printenv LEAN_PATH` with the producer workspace's built Lean
   libraries at the same revision (ix elaborates the sources against them; the
@@ -330,10 +336,11 @@ Then:
 - the fixed identities in tests (the catalog roots in
   `IxCCTests/IxonV3/Catalog/Files.lean`) come from the catalog
   provenance;
-- the trust ledger's integrity pins are recomputed for every tracked file
-  that changed, `nix/lean-modules.json` with `lake exe check-build-graph
-  --write` if a module changed, and the fixture READMEs' producer lines
-  follow the manifests;
+- the trust ledger's integrity pins are re-recorded
+  (`check-trusted-externs --record`; every new or changed fixture is
+  covered by its rule), `nix/lean-modules.json` with
+  `lake exe check-build-graph --write` if a module changed, and the fixture
+  READMEs' producer lines follow the manifests;
 - the suites run in full (`docs/ci.md`); their assertion counts can move
   where a test samples by constant number (`tests-relevance`'s annotation
   mutants are drawn over the renumbered constants).

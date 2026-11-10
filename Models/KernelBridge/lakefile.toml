@@ -1,5 +1,7 @@
 name = "ix-kernel-bridge"
 defaultTargets = ["IxKernelBridge"]
+# Shares IxCC's package directory, so the Blake3 checkout and build that IxCC
+# uses serve this package too (README.md, "Build and gate").
 packagesDir = "../../IxCC/.lake/packages"
 
 [[require]]
@@ -10,5 +12,8 @@ path = "../../IxCK"
 name = "ix-cc"
 path = "../../IxCC"
 
+# Warnings in this package's own modules are errors. `lake build --wfail`
+# would also fail on the deprecation warnings IxCC's modules emit today.
 [[lean_lib]]
 name = "IxKernelBridge"
+leanOptions = { warningAsError = true }

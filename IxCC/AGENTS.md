@@ -32,9 +32,23 @@ tree still contains monolithic test and proof modules that need migration.
   checks as `ixcc-*`. `nix/sources.nix` selects IxCC's sources from the
   workspace, so keep every input IxCC reads inside `IxCC/` or recorded in
   the trust ledger.
-- `lean-toolchain` must equal ix's. The trust ledger also audits ix's
-  `flake.lock` and `.github/workflows/ixcc.yml`: a change to either, or to
-  a file of the `IxCK` codec closure, needs a reviewed ledger update.
+- `lean-toolchain` must equal ix's; the trust ledger checks this, as does
+  CI Jobs' toolchain check.
+- The [trust ledger](docs/trusted-extern-ledger.md) pins the following, so
+  a change to any of them fails `ixcc-trusted-extern-ledger` until the ledger
+  is updated and reviewed in the same change: every IxCC file its integrity
+  rule covers (Lake files, `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
+  `tools/` and a few named specifications; not the rest of `docs/`, the
+  READMEs, this file or `benchmarks/`), the 11 files of the `IxCK` codec
+  closure, the revisions of ix's `flake.lock`, the full text of
+  `.github/workflows/ixcc.yml` and the remote actions it uses, and the set of
+  required checks (`required_checks`, which must equal the attributes of
+  `nix/checks.nix`). ix's `flake.nix` is not pinned; `ixcc.yml` instead
+  fails unless the flake's `ixcc-*` checks are exactly `required_checks`.
+  Not covered at all: ix's other workflows (including the jobs that call
+  `ixcc.yml`) and IxCK outside the codec closure. For routine updates,
+  `check-trusted-externs --record` prints the mechanical pins for review
+  ("Routine updates" in the ledger document).
 - Shared files at the repository root (`flake.nix`, `flake.lock`,
   `.github/`, `.gitattributes`) are ix's; change them with ix's
   conventions and keep ix's own checks passing.

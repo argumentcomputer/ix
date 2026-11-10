@@ -44,7 +44,8 @@ private def copyRelative (sourceRoot targetRoot source : FilePath) : IO Unit := 
 repository around it into `target`, the copy's repository root: the project's
 Lean sources, tracked files and ledger, at the project's path in the
 repository; each pure Lean dependency's lakefile and recorded closure; the
-repository's `flake.lock`; and its `.github` (workflows and local actions).
+repository's `flake.lock` and `lean-toolchain`; and its `.github` (workflows and
+local actions).
 Returns the copied project's root. -/
 private def cloneWorkspace (source target : FilePath) : IO FilePath := do
   let ledger ← readJson (source / "docs/trusted-externs.json")
@@ -62,6 +63,7 @@ private def cloneWorkspace (source target : FilePath) : IO FilePath := do
     for (relative, _) in ← pairs (← field entry "closure") do
       copy (source / directory / sourceDir / relative)
   copy repo.flakeLock
+  copy (repo.root / "lean-toolchain")
   let github := repo.root / ".github"
   if ← github.isDir then
     for path in ← files github do copy path
@@ -82,6 +84,26 @@ private def lexerTests : IO Unit := do
     checked (hygiene (← checked (scan "def pair : Nat × Nat := ⟨sorry, 0⟩")))
   rejects "Unicode-delimited native tactic" "native_decide is not allowed" do
     checked (hygiene (← checked (scan "by exact ⟨by native_decide⟩")))
+  -- every spelling of native evaluation the lexer can see
+  for (source, fragment) in [
+      ("theorem t : 2 + 2 = 4 := by decide +native", "decide +native is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide +kernel +native", "decide +native is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide (config := { native := true })",
+        "native := true is not allowed"),
+      ("theorem t : 2 + 2 = 4 := by decide (config := {kernel := false, native := true})",
+        "native := true is not allowed"),
+      ("theorem t : True := Lean.ofReduceBool _ _ rfl", "Lean.ofReduceBool is not allowed"),
+      ("open Lean in theorem t : True := ofReduceBool _ _ rfl", "ofReduceBool is not allowed"),
+      ("example := Lean.ofReduceNat", "Lean.ofReduceNat is not allowed"),
+      ("example := Lean.trustCompiler", "Lean.trustCompiler is not allowed"),
+      ("example := Lean.reduceBool true", "Lean.reduceBool is not allowed")] do
+    rejects source fragment do checked (hygiene (← checked (scan source)))
+  -- kernel decision, a variable or field named `native`, the bare marker
+  -- names IxCC uses as fields, comments and literals are accepted
+  checked (hygiene (← checked (scan ("theorem t : 2 + 2 = 4 := by decide +kernel\n" ++
+    "def f (native : Nat) := 1 + native\ndef g := { native := 0, kernel := true }\n" ++
+    "def h := let native := 1; native\ndef r (p : P) := p.reduceBool\n" ++
+    "-- by decide +native\n/- Lean.ofReduceBool -/\ndef s := \"native := true\"\n"))))
   let externInput := "/- @[extern \"ignored\"] opaque absent : Nat -/\n" ++
     "@[extern 1 \"ffi_first\"] private unsafe opaque first : Nat\n" ++
     "attribute [extern \"ffi_second\"] second Qualified.third\n"
@@ -124,6 +146,35 @@ private def lexerTests : IO Unit := do
     let _ ← lakeRoots (← checked (scan "lean_lib Main where\n  roots := #[]\n"))
   rejects "unauditable roots" "unsupported Lake roots" do
     let _ ← lakeRoots (← checked (scan "lean_lib Main where\n  roots := computedRoots\n"))
+
+/-- The Nix attribute lexer behind the required-check inventory, and the globs
+of the integrity rule. -/
+private def inventoryTests : IO Unit := do
+  let source := "{ pkgs, system }: let\n  x = \"}\" + ''\n  ${f ''{ nested }''} '' ;\n" ++
+    "  # { comment = 1; }\nin\n{\n  a = mkCheck \"a\" [] ''\n    echo \"${y}\" ''${z} '''\n  '';\n" ++
+    "  b-c = { inner = 1; };\n  inherit (pkgs) d e;\n}\n" ++
+    "// pkgs.lib.optionalAttrs (system == \"x\") {\n  f = /* { g = 1; } */ 2;\n}\n"
+  need ((← checked (nixBodyAttributes source)) == ["a", "b-c", "d", "e", "f"])
+    "Nix attribute inventory changed"
+  rejects "quoted Nix attribute" "unsupported binding" do
+    discard (checked (nixBodyAttributes "{}: let in { \"a-b\" = 1; }"))
+  rejects "Nix attribute path" "unsupported binding" do
+    discard (checked (nixBodyAttributes "{}: let in { a.b = 1; }"))
+  rejects "antiquoted Nix attribute" "unsupported binding" do
+    discard (checked (nixBodyAttributes "{}: let in { ${n} = 1; }"))
+  rejects "unterminated Nix string" "unterminated" do
+    discard (checked (nixBodyAttributes "{}: let in { a = ''x; }"))
+  rejects "Nix file without let" "no top-level" do
+    discard (checked (nixBodyAttributes "{}: { a = 1; }"))
+  let glob (pattern path : String) : Bool := globMatches (pattern.splitOn "/") (path.splitOn "/")
+  need (glob "IxCC/**" "IxCC/A/B.lean" && glob "fixtures/**/*.c" "fixtures/x86/a.c" &&
+      glob "docs/aiur-*.md" "docs/aiur-wire.md" && glob "**" "a/b" &&
+      glob "lean-toolchain" "lean-toolchain" && glob "IxCC/**" "IxCC/A.lean")
+    "integrity glob rejected a match"
+  need (!glob "docs/aiur-*.md" "docs/x/aiur-wire.md" && !glob "IxCC/**" "IxCCTests/A.lean" &&
+      !glob "benchmarks/runner/entry/*.c" "benchmarks/runner/entry/x/y.c" &&
+      !glob "fixtures/**/*.c" "fixtures/x86/a.h" && !glob "IxCC.lean" "IxCC.leanx")
+    "integrity glob accepted a non-match"
 
 private def disassemblyTests : IO Unit := do
   let body := "   0:\t48 89 f8\tmov    rax,rdi\n   3:\tc3\tret"
@@ -169,6 +220,21 @@ private def rehash (ledger : Json) (root : FilePath) (relative : String) : IO Js
   let tracked ← replaceField (← field integrity "tracked_files") relative (toJson (← sha256 (root / relative)))
   replaceField ledger "integrity" (← replaceField integrity "tracked_files" tracked)
 
+/-- `ledger` with the project file `relative` pinned at its current hash
+(added if absent). -/
+private def pinProject (ledger : Json) (root : FilePath) (relative : String) : IO Json := do
+  let integrity ← field ledger "integrity"
+  let tracked := (← field integrity "tracked_files").setObjVal! relative (toJson (← sha256 (root / relative)))
+  replaceField ledger "integrity" (integrity.setObjVal! "tracked_files" tracked)
+
+/-- `ledger` with the repository file `relative` pinned at its current hash
+(added if absent). -/
+private def pinRepository (ledger : Json) (repositoryRoot : FilePath) (relative : String) : IO Json := do
+  let integrity ← field ledger "integrity"
+  let pins := ((integrity.getObjVal? "repository_files").toOption.getD (Json.mkObj [])).setObjVal!
+    relative (toJson (← sha256 (repositoryRoot / relative)))
+  replaceField ledger "integrity" (integrity.setObjVal! "repository_files" pins)
+
 private def withPolicy (ledger : Json) (key : String) (value : Json) : IO Json := do
   replaceField ledger "policy" ((← field ledger "policy").setObjVal! key value)
 
@@ -213,22 +279,34 @@ private def repositoryTests (temporary repositoryRoot root blake : FilePath) (le
   let reviewed (ledger : Json) : IO Json := replaceField ledger "ci_actions" (Json.arr #[Json.mkObj
     [("repository", toJson "reviewed/action"), ("commit", toJson pinned)]])
   let scope := some [".github/workflows/regression-scoped.yml"]
-  withFile ledgerPath (← reviewed (← withScope ledger scope)).compress do
+  -- a configured workflow file is pinned in full (`integrity.repository_files`)
+  let pinScoped (ledger : Json) : IO Json :=
+    pinRepository ledger repositoryRoot ".github/workflows/regression-scoped.yml"
+  withFile ledgerPath (← pinScoped (← reviewed (← withScope ledger scope))).compress do
     audited
-  withFile ledgerPath (← withScope ledger scope).compress do
+  withFile ledgerPath (← reviewed (← withScope ledger scope)).compress do
+    rejects "unpinned configured workflow" "is not pinned in integrity.repository_files" audited
+  withFile ledgerPath (← pinScoped (← reviewed (← withScope ledger scope))).compress do
+    withFile scopedWorkflow ((← IO.FS.readFile scopedWorkflow) ++ "# edited\n") do
+      rejects "edited configured workflow" "repository file .github/workflows/regression-scoped.yml changed" audited
+  withFile ledgerPath (← pinScoped (← withScope ledger scope)).compress do
     rejects "remote action of a local action" "CI action inventory drifted" audited
   withFile ledgerPath (← reviewed (← withScope ledger none)).compress do
     rejects "unscoped repository workflows" "unpinned CI action" audited
   withFile ledgerPath (← reviewed (← withScope ledger (some [".github/workflows/absent.yml"]))).compress do
     rejects "missing scoped workflow" "missing configured CI workflow path" audited
-  withFile ledgerPath (← reviewed (← withScope ledger scope)).compress do
-    withFile scopedWorkflow "jobs:\n  test:\n    steps:\n      - uses: ./.github/actions/absent\n" do
+  withFile scopedWorkflow "jobs:\n  test:\n    steps:\n      - uses: ./.github/actions/absent\n" do
+    withFile ledgerPath (← pinScoped (← reviewed (← withScope ledger scope))).compress do
       rejects "missing local action" "missing local action or workflow" audited
-    -- a local action outside the repository
-    IO.FS.createDirAll (temporary / "escape")
-    IO.FS.writeFile (temporary / "escape" / "action.yml") "runs:\n  using: composite\n  steps: []\n"
-    withFile scopedWorkflow "jobs:\n  test:\n    steps:\n      - uses: ./../escape\n" do
+  -- a local action outside the repository
+  IO.FS.createDirAll (temporary / "escape")
+  IO.FS.writeFile (temporary / "escape" / "action.yml") "runs:\n  using: composite\n  steps: []\n"
+  withFile scopedWorkflow "jobs:\n  test:\n    steps:\n      - uses: ./../escape\n" do
+    withFile ledgerPath (← pinScoped (← reviewed (← withScope ledger scope))).compress do
       rejects "escaping local action" "local action escapes the repository" audited
+  -- the repository's toolchain is the project's
+  withFile (repositoryRoot / "lean-toolchain") "leanprover/lean4:v4.0.0\n" do
+    rejects "repository toolchain" "the repository's lean-toolchain differs from the project's" audited
 
 /-- The pure Lean dependency is a package of the enclosing workspace, pinned
 by its path (`../IxCK` from `IxCC/` inside ix): the manifest and the ledger
@@ -343,7 +421,11 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     let existingCsimps ← arrField originalLedger "csimp_theorems"
     let listed ← replaceField originalLedger "csimp_theorems"
       (Json.arr (existingCsimps ++ #[csimpRecord "IxCC/AuditRegression.lean"]))
-    withFile (root / "docs/trusted-externs.json") listed.compress check
+    -- the integrity rule covers the new file: unpinned, it fails last
+    withFile (root / "docs/trusted-externs.json") listed.compress do
+      rejects "unpinned covered source" "files the rule covers have no pin" check
+    withFile (root / "docs/trusted-externs.json")
+      (← pinProject listed root "IxCC/AuditRegression.lean").compress check
   for token in ["axiom", "sorry", "native_decide"] do
     withFile regression s!"{token} injected\n" do
       rejects token (token ++ " is not allowed") check
@@ -359,16 +441,51 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
   let repositoryPolicy ← field (← field originalLedger "policy") "repository"
   let scope ← (← arrField repositoryPolicy "workflows").toList.mapM string
   let scopedLedger ← withScope originalLedger (some (scope ++ [".github/workflows/regression.yml"]))
-  withFile (root / "docs/trusted-externs.json") scopedLedger.compress do
-    withFile workflow "jobs:\n  test:\n    steps:\n      - run: true\n" check
-    withFile workflow "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@main\n" do
-      rejects "unpinned CI action" "unpinned CI action" check
-    withFile workflow ("jobs:\n  test:\n    steps:\n      - uses: \"unreviewed/action@" ++
-        String.join (List.replicate 40 "1") ++ "\"\t# reviewed\n") do
-      rejects "new quoted pinned CI action" "CI action inventory drifted" check
-    withFile workflow ("jobs:\n  test:\n    steps:\n      - uses: unreviewed/action@" ++
-        String.join (List.replicate 40 "1") ++ "\n") do
-      rejects "new pinned CI action" "CI action inventory drifted" check
+  let withWorkflow (content : String) (action : IO Unit) : IO Unit :=
+    withFile workflow content do
+      withFile (root / "docs/trusted-externs.json")
+        (← pinRepository scopedLedger repositoryRoot ".github/workflows/regression.yml").compress action
+  withWorkflow "jobs:\n  test:\n    steps:\n      - run: true\n" check
+  withWorkflow "jobs:\n  test:\n    steps:\n      - uses: actions/checkout@main\n" do
+    rejects "unpinned CI action" "unpinned CI action" check
+  withWorkflow ("jobs:\n  test:\n    steps:\n      - uses: \"unreviewed/action@" ++
+      String.join (List.replicate 40 "1") ++ "\"\t# reviewed\n") do
+    rejects "new quoted pinned CI action" "CI action inventory drifted" check
+  withWorkflow ("jobs:\n  test:\n    steps:\n      - uses: unreviewed/action@" ++
+      String.join (List.replicate 40 "1") ++ "\n") do
+    rejects "new pinned CI action" "CI action inventory drifted" check
+  -- the check workflow is pinned in full: narrowing the checks it runs, or
+  -- dropping its pin, fails
+  let checkWorkflow := repositoryRoot / ".github/workflows/ixcc.yml"
+  let original ← IO.FS.readFile checkWorkflow
+  let narrowed := original.replace "name == \"ixcc-\"" "name == \"ixcc-\" && name != \"ixcc-census\""
+  need (narrowed != original) "test fixture: ixcc.yml no longer selects the ixcc- checks by prefix"
+  withFile checkWorkflow narrowed do
+    rejects "narrowed check workflow" "repository file .github/workflows/ixcc.yml changed" check
+  let integrity ← field originalLedger "integrity"
+  let unpinned ← replaceField originalLedger "integrity"
+    (integrity.setObjVal! "repository_files" (Json.mkObj []))
+  withFile (root / "docs/trusted-externs.json") unpinned.compress do
+    rejects "unpinned check workflow" "ixcc.yml is not pinned in integrity.repository_files" check
+  -- the required-check inventory is exactly nix/checks.nix's attributes
+  let checksNix := root / "nix/checks.nix"
+  let checksSource ← IO.FS.readFile checksNix
+  let renamed := checksSource.replace "    census = mkCheck" "    census-renamed = mkCheck"
+  need (renamed != checksSource) "test fixture: nix/checks.nix has no census check"
+  withFile checksNix renamed do
+    withFile (root / "docs/trusted-externs.json") (← rehash originalLedger root "nix/checks.nix").compress do
+      rejects "check renamed in nix/checks.nix" "required check inventory" check
+  let required ← arrField originalLedger "required_checks"
+  withFile (root / "docs/trusted-externs.json")
+      (← replaceField originalLedger "required_checks" (Json.arr (required.push (toJson "absent")))).compress do
+    rejects "required check absent from nix/checks.nix" "required check inventory" check
+  -- the integrity rule: a covered file without a pin, and a pin outside the rule
+  withFile (root / "fixtures/x86/rogue_harness.c") "int main(void) { return 0; }\n" do
+    rejects "unpinned covered harness" "files the rule covers have no pin" check
+  withFile (root / "docs/regression-notes.md") "notes\n" do
+    withFile (root / "docs/trusted-externs.json")
+        (← pinProject originalLedger root "docs/regression-notes.md").compress do
+      rejects "pin outside the integrity rule" "pinned files the rule does not cover" check
   let build := root / "nix/build.nix"
   withFile build ((← IO.FS.readFile build) ++ "\n") do
     rejects "integrity drift" "nix/build.nix changed" check
@@ -411,6 +528,7 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   let root ← IO.FS.realPath (option args "--root" ".")
   let blake ← IO.FS.realPath (option args "--blake3" (root / ".lake/packages/Blake3").toString)
   lexerTests
+  inventoryTests
   disassemblyTests
   regressionTests root blake
-  IO.println "Lean check regressions ok: source lexing, root/native/csimp inventories, build graph, proof/runtime coverage, integrity, Cargo, CI, repository and workspace-dependency rejection paths"
+  IO.println "Lean check regressions ok: source lexing (including native evaluation), root/native/csimp inventories, Nix check inventory, build graph, proof/runtime coverage, integrity pins and rule, Cargo, CI, repository and workspace-dependency rejection paths"

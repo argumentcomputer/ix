@@ -63,13 +63,15 @@ jobs:
       - name: Check generated trace writers, CUDA units and manifest are up to date
         if: github.event_name != 'push'
         run: lake exe ix codegen --trace-bundle --check
-      - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model, and certified compiler
+      - name: Check Lean versions match for Ix, compiler bench, certified kernel, its models, and certified compiler with its benchmark runner
         if: github.event_name != 'push'
         run: |
           diff lean-toolchain Benchmarks/Compile/lean-toolchain
           diff lean-toolchain IxCK/lean-toolchain
           diff lean-toolchain Models/SetTheory/lean-toolchain
+          diff lean-toolchain Models/KernelBridge/lean-toolchain
           diff lean-toolchain IxCC/lean-toolchain
+          diff lean-toolchain IxCC/benchmarks/runner/lean-toolchain
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- --tier ci:cli
@@ -197,9 +199,12 @@ jobs:
 
   # Whether a change reaches the certified compiler's checks (IxCC/docs/ci.md):
   # IxCC/ itself, the IxCK codec it imports, the flake, the toolchain, and the
-  # workflow and local actions its trust ledger audits. Job-level gates, as in
+  # workflow and local actions its trust ledger audits. And whether it reaches
+  # the kernel-bridge model (Models/KernelBridge/README.md): IxCC's Lean
+  # sources and Lake files, all of IxCK, the model itself, the root toolchain
+  # and lakefile (its gate script) and this workflow. Job-level gates, as in
   # codeql.yml. A merge group skips the filter: merge-tests.yml runs IxCC's
-  # checks on every merge group.
+  # checks and the model's gate on every merge group.
   changes:
     name: Detect IxCC changes
     runs-on: ubuntu-latest
@@ -208,6 +213,7 @@ jobs:
       pull-requests: read
     outputs:
       ixcc: ${{ steps.filter.outputs.ixcc }}
+      kernel-bridge: ${{ steps.filter.outputs.kernel-bridge }}
     steps:
       # paths-filter diffs the PR via the API on pull_request events, but
       # needs a checkout to resolve the pushed commit range on push events.
@@ -231,6 +237,18 @@ jobs:
               - 'flake.lock'
               - 'lean-toolchain'
               - '.github/workflows/ixcc.yml'
+              - '.github/actions/**'
+            kernel-bridge:
+              - 'IxCC/IxCC/**'
+              - 'IxCC/IxCC.lean'
+              - 'IxCC/lakefile.lean'
+              - 'IxCC/lake-manifest.json'
+              - 'IxCC/lean-toolchain'
+              - 'IxCK/**'
+              - 'Models/KernelBridge/**'
+              - 'lean-toolchain'
+              - 'lakefile.lean'
+              - '.github/workflows/ci.yml'
               - '.github/actions/**'
 
   ixcc:
@@ -272,9 +290,75 @@ jobs:
             echo "The change does not reach IxCC, or this is a merge group (merge-tests.yml runs IxCC's checks there)."
           fi
 
+  # The kernel-bridge model's gate (`lake run check-kernel-bridge`: its build,
+  # whose modules treat warnings as errors, and its axiom-fence inventory) when
+  # a change reaches it; merge-tests.yml's kernel partition runs it on every
+  # merge group. The model requires IxCK and IxCC by path and builds IxCK's
+  # kernel and model tier, the IxCC modules it imports and Blake3 (with Cargo).
+  # It uses lean-test's sticky lineage, which holds IxCK's objects in
+  # `.lake/kernel`, and adds IxCC's and the model's Lake directories to it, as
+  # merge-tests.yml adds the set-theory model's.
+  kernel-bridge:
+    name: Kernel bridge model
+    needs: changes
+    if: needs.changes.outputs.kernel-bridge == 'true'
+    permissions:
+      contents: read
+    runs-on: runs-on=${{ github.run_id }}-kernel-bridge-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=target,path=IxCC/.lake,path=Models/KernelBridge/.lake
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          use-github-cache: "false"
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Check the kernel-bridge model and its fence inventory
+        run: lake run check-kernel-bridge
+
+  # One result for ci-gate: the model's gate passed, or the change does not
+  # reach it.
+  kernel-bridge-result:
+    name: Kernel bridge result
+    if: ${{ always() }}
+    needs: [changes, kernel-bridge]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require the kernel-bridge gate when the change reaches it
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          REACHES_BRIDGE: ${{ needs.changes.outputs.kernel-bridge }}
+          BRIDGE_RESULT: ${{ needs.kernel-bridge.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != success ]; then
+            echo "::error::The path filter did not succeed: $CHANGES_RESULT"
+            exit 1
+          fi
+          if [ "$REACHES_BRIDGE" = true ]; then
+            if [ "$BRIDGE_RESULT" != success ]; then
+              echo "::error::The kernel-bridge gate did not succeed: $BRIDGE_RESULT"
+              exit 1
+            fi
+            echo "The kernel-bridge gate passed."
+          else
+            echo "The change does not reach the kernel-bridge model, or this is a merge group (merge-tests.yml runs its gate there)."
+          fi
+
   ci-gate:
     if: ${{ always() }}
-    needs: [lean-test, rust-test, cuda-compile, lints, ixcc-result]
+    needs: [lean-test, rust-test, cuda-compile, lints, ixcc-result, kernel-bridge-result]
     permissions:
       actions: read
       checks: read

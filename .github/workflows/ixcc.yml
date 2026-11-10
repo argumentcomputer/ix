@@ -6,10 +6,12 @@ name: IxCC
 # every merge group.
 #
 # IxCC's trust ledger (IxCC/docs/trusted-externs.json, policy.repository)
-# audits this file and the repository-local actions it uses: every remote
-# action here is pinned to a full commit and listed in the ledger's
-# ci_actions, so changing one means reviewing the ledger. The calling
-# workflows are ix's and outside that audit.
+# pins this file by its SHA-256 (integrity.repository_files) and audits the
+# repository-local actions it uses: every remote action here is pinned to a
+# full commit and listed in the ledger's ci_actions. Any change to this file
+# therefore means reviewing the ledger ("Routine updates" in
+# IxCC/docs/trusted-extern-ledger.md). The calling workflows are ix's and
+# outside that audit.
 
 on:
   workflow_call:
@@ -37,6 +39,11 @@ jobs:
     # Nix builds in its own store on the root volume; Cachix holds the
     # artifacts between runs, so there is no sticky disk.
     runs-on: runs-on=${{ github.run_id }}-ixcc-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/extras=s3-cache
+    # IxCC/AGENTS.md aims for 30 minutes including cold compilation; all 16
+    # checks took 13.4 minutes on a 64-core machine with the toolchain and the
+    # codec already in the store. Twice the target leaves room for a cold
+    # 32-core runner and stops a hung check well before the 360-minute default.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,17 +72,30 @@ jobs:
       - uses: $/.github/actions/authenticate-github-fetches
 
       # Every check runs the programs of one shared build (`ixcc-proofs`);
-      # the checks then run concurrently.
+      # the checks then run concurrently. The flake's ixcc-* checks must be
+      # exactly the trust ledger's required_checks, each prefixed `ixcc-`
+      # (IxCC/nix/checks.nix defines them; the ledger check compares that file
+      # with the same list), so a check dropped from or added to the flake
+      # fails here. The lists are evaluated into variables, so a failed
+      # evaluation fails the step.
       - name: Build and run the ixcc-* checks
+        shell: bash
         run: |
           system=$(nix eval --impure --raw --expr builtins.currentSystem)
-          mapfile -t checks < <(nix eval --accept-flake-config --json ".#checks.$system" \
+          names=$(nix eval --accept-flake-config --json ".#checks.$system" \
             --apply 'checks: builtins.filter (name: builtins.substring 0 5 name == "ixcc-") (builtins.attrNames checks)' \
             | jq -r '.[]')
-          if [ "${#checks[@]}" -eq 0 ]; then
-            echo "::error::The flake defines no ixcc-* checks for $system"
+          expected=$(jq -r '.required_checks | map("ixcc-" + .) | sort | .[]' IxCC/docs/trusted-externs.json)
+          if [ -z "$expected" ]; then
+            echo "::error::IxCC/docs/trusted-externs.json lists no required_checks"
             exit 1
           fi
+          if [ "$names" != "$expected" ]; then
+            echo "::error::The flake's ixcc-* checks for $system differ from the trust ledger's required_checks"
+            diff <(echo "$expected") <(echo "$names") || true
+            exit 1
+          fi
+          mapfile -t checks <<< "$names"
           echo "Checks: ${checks[*]}"
           nix build --print-build-logs --accept-flake-config --keep-going --no-link \
             "${checks[@]/#/.#checks.$system.}"

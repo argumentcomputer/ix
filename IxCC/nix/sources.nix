@@ -73,17 +73,20 @@ in {
   };
   # The workspace as the trust ledger audits it, with IxCC at its path: the
   # IxCC tree, «ix-ck»'s lakefile and recorded closure, the repository's
-  # flake.lock, the workflows the ledger scopes and the repository-local
-  # actions they may use.
+  # flake.lock and lean-toolchain, the workflows the ledger scopes, the
+  # repository files it pins and the repository-local actions they may use.
   ledgerWorkspace = lib.fileset.toSource {
     root = workspace;
     fileset = lib.fileset.unions ([
         root
         (ixCKRoot + "/lakefile.lean")
         (repository + "/flake.lock")
+        (repository + "/lean-toolchain")
         (lib.fileset.maybeMissing (repository + "/.github/actions"))
       ]
       ++ ixCKFiles
-      ++ map (path: repository + "/${path}") (ledger.policy.repository.workflows or []));
+      ++ map (path: repository + "/${path}") (ledger.policy.repository.workflows or [])
+      ++ map (path: repository + "/${path}")
+      (builtins.attrNames (ledger.integrity.repository_files or {})));
   };
 }
