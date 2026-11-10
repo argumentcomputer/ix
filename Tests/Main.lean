@@ -51,6 +51,7 @@ import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
+import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -190,8 +191,11 @@ def registry : List Entry := [
   -- deployed program (`Aiur.Generic.Instance.symbol`).
   .runner "instance-symbols" .primary Tests.Ix.InstanceSymbols.run,
   -- The public IxVM source agrees with native preparation of the imported
-  -- DSL declarations (`IxVM.Check`).
-  .env "ixvm-source" .primary Tests.Ix.VMSource.run,
+  -- DSL declarations (`IxVM.Check`). In the `ci:ixvm` tier with the other
+  -- suites that import IxVM's modules at run time: the Nix-built test binary
+  -- (the flake's `ix-tests` check, primary tier) carries the root package's
+  -- `.olean` files but not those of the nested `Aiur`/`IxVM` packages.
+  .env "ixvm-source" (.ci .ixvm) Tests.Ix.VMSource.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -207,7 +211,7 @@ def registry : List Entry := [
   -- Kernel verdicts and exact FFT costs for constants, the binding claim and a shard.
   .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
   -- The trusted reader (`prepareWith`) accepts the logical records of the closures
-  -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`; decision D10).
+  -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`).
   .env "ixvm-reader-coverage" (.ci .ixvm) Tests.Ix.Kernel.ReaderCoverage.run,
   -- Prover-authored malformed Ixon, each exploit with its controls.
   .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
@@ -230,12 +234,16 @@ def registry : List Entry := [
   .runner "ixvm-binding-frontier" (.ci .ixvm) Tests.Ix.IxVM.BindingFrontier.run,
   -- A constant byte out of range is refused.
   .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
+  .env "ixvm-model-advice" (.ci .ixvm) Tests.Ix.IxVM.ModelAdvice.run,
+  .env "ixvm-model-report" (.manual "model advice per mutual or nested block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
+  .env "ixvm-model-coverage" (.manual "every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
+  .env "ixvm-model-proj" (.manual "records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,
   -- Execution with every assertion checked gives the circuit's verdict on a witness;
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
   .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
   -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
-  -- builders leave them out (decision D20).
+  -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
@@ -243,11 +251,11 @@ def registry : List Entry := [
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
   .env "ixvm-differential-shards" (.manual "a sharded corpus: an ix check report against Lean's kernel, rejected shards bisected; IX_DIFF_IXE, IX_DIFF_IXES, IX_DIFF_REPORT, IX_DIFF_OUT") Tests.Ix.IxVM.Differential.runShards,
   .env "ixvm-mutator" (.manual "mutated blocks and recursors; IX_MUT_MODULES, IX_MUT_BUDGET, IX_MUT_SEED") Tests.Ix.IxVM.Mutator.run,
-  -- Lane s4 measurements (spike S4): declaration costs, a Std shard, the
+  -- Declaration-checker measurements: declaration costs, a Std shard, the
   -- inductive census and the in-process modeller's records. Not a gate.
-  .env "ixvm-s4-bench" (.manual "lane s4 measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
-  .env "ixvm-s4-census" (.manual "lane s4 inductive census and modeller records") Tests.Ix.IxVM.S4Bench.census,
-  .env "ixvm-s4-model" (.manual "lane s4 candidate (a) prototype; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.modelProbe,
+  .env "ixvm-s4-bench" (.manual "declaration-checker cost measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
+  .env "ixvm-s4-census" (.manual "inductive census and modeller records") Tests.Ix.IxVM.S4Bench.census,
+  .env "ixvm-s4-model" (.manual "the modeled-route prototype; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.modelProbe,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
@@ -328,7 +336,7 @@ def required : List (String × String) := [
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
   ("instance-symbols", "primary"),
-  ("ixvm-source", "primary"),
+  ("ixvm-source", "ci:ixvm"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
@@ -345,6 +353,7 @@ def required : List (String × String) := [
   ("ixvm-user-axioms", "ci:ixvm"),
   ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
+  ("ixvm-model-advice", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
   ("ixvm-claim-safety", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),

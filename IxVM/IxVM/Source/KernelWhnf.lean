@@ -631,7 +631,15 @@ def try_iota := aiur_fn⟦
           let major = nat_lit_to_ctor_or_self(rc, major_clean2);
           match red_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
                          rules, rec_parent, major, types) {
-            (1, r3) => {  (1, r3) } ,
+            (1, r3) => {
+              -- a modeled family's recursor fires only at the comparands its model's
+              -- iota theorem covers (`paramsBlind := false`)
+              match KernelModeled::fire_ok(rc, nmotives, head, lvls, spine, major, types) {
+                0 => {
+                  let new_spine = replace_spine_major(spine, major_idx, major_w);
+                  (2, apply_spine(head, new_spine)) } ,
+                _ => {  (1, r3) } ,
+              } } ,
             _ => {
               let new_spine = replace_spine_major(spine, major_idx, major_w);
               (2, apply_spine(head, new_spine)) } ,
@@ -1010,8 +1018,14 @@ def struct_is_rec := aiur_fn⟦
       let ci = (*(Ingress::get_ci(parent)));
       match ci {
         KernelTypes::KConstantInfo::Induct(_, _, _, _, _, _, block, _) => {
-          let members = struct_block_member_addrs(parent, block);
-          struct_scan_members(members, members) } ,
+          -- Lean's block-level is_rec; no structure eta at a member of a mutual block
+          -- (the kernel grants none there without a model theorem)
+          match KernelModeled::block_is_multi(block) {
+            0 => {
+              let members = struct_block_member_addrs(parent, block);
+              struct_scan_members(members, members) } ,
+            _ => {  1 } ,
+          } } ,
         _ => {  1 } ,
       }
     }

@@ -24,6 +24,7 @@ import IxVM.Source.KernelWhnf
 import IxVM.Source.KernelInferOnly
 import IxVM.Source.KernelDefEq
 import IxVM.Source.KernelCheck
+import IxVM.Source.KernelModeled
 import IxVM.Source.IxVMCompat
 import IxVM.Source.KernelEval
 import IxVM.Source.IxVM
@@ -41,7 +42,7 @@ def moduleNames : List Name := [
   `IxVM.KernelInfer, `IxVM.KernelClaim, `IxVM.IxByteStream, `IxVM.IxonSerialize,
   `IxVM.IxonDeserialize, `IxVM.KernelKlimbs, `IxVM.KernelNatPrim, `IxVM.Convert,
   `IxVM.Ingress, `IxVM.KernelSubst, `IxVM.KernelRoleSpec, `IxVM.KernelWhnf,
-  `IxVM.KernelInferOnly, `IxVM.KernelDefEq, `IxVM.KernelCheck, `IxVM.IxVMCompat,
+  `IxVM.KernelInferOnly, `IxVM.KernelDefEq, `IxVM.KernelCheck, `IxVM.KernelModeled, `IxVM.IxVMCompat,
   `IxVM.KernelEval, `IxVM.Entry]
 
 /-- Reconstruct compiler input from imported declaration metadata. -/
