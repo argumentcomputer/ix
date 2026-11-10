@@ -55,8 +55,16 @@ open IxVM.ClaimHarness
 checkout's cached export. -/
 def programArtifact : IO String := Ix.Cli.FormalAiur.artifactPath default
 
-/-- The Rust host that executes the cases (`ixvm-proof test`). -/
-def programHost : IO String := Ix.Cli.FormalAiur.host
+/-- The Rust host that executes the cases (`ixvm-proof test`):
+`$IX_AIUR_HOST`, or the checkout's release build, built when missing. -/
+def programHost : IO String := do
+  if let some path ← IO.getEnv "IX_AIUR_HOST" then return path
+  let root ← Ix.Cli.FormalAiur.repoRoot
+  let path := root / "target" / "release" / "ixvm-proof"
+  unless ← path.pathExists do
+    Ix.Cli.FormalAiur.command "cargo" #["build", "--release", "--locked", "-p", "ixvm",
+      "--bin", "ixvm-proof", "--features", "parallel"] root
+  return path.toString
 
 /-- The Aiur source text of a program's modules as `(file, text)`, in file-name
 order: the body of the `aiur⟦ … ⟧` block of each `.lean` file in `dir`, by

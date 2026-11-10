@@ -53,13 +53,13 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
   let claimCtx : Ix.ClaimContext := { spec := testHash, binding := testHash, axioms := none }
   let claim := Ix.Claim.checkEnv claimCtx testHash none
   Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
-    (Ix.Cli.FormalAggregate.statementBytes ctx claim)
+    (Ix.Cli.FormalAggregate.statementBytes ctx.toKeys claim)
   let other := { ctx with
     allowed := Aggr.allowedBlob ctx.ixvm.key (ctx.ixvm.index + 1) ctx.aggr.key ctx.aggr.index }
   let refused ←
     try
       Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
-        (Ix.Cli.FormalAggregate.statementBytes other claim)
+        (Ix.Cli.FormalAggregate.statementBytes other.toKeys claim)
       pure false
     catch _ => pure true
   unless refused do
