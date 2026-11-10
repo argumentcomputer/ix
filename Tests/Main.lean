@@ -48,6 +48,7 @@ import Tests.Ix.IxVM.Codec
 import Tests.Ix.IxVM.UserAxioms
 import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
+import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.Kernel.ReaderCoverage
@@ -233,6 +234,10 @@ def registry : List Entry := [
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
   .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
+  -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
+  -- builders leave them out (decision D20).
+  .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
+  .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
   -- real inductive blocks and recursor records (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
@@ -341,6 +346,7 @@ def required : List (String × String) := [
   ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
+  ("ixvm-claim-safety", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),

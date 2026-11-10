@@ -56,10 +56,24 @@ def loadClaimAndTrees (claimHex : String) :
     trees := trees.insert r tree
   return (claim, trees)
 
+/-- Why IxVM refuses a `Check` claim on `addr` (named `label`) before it types
+    anything, or `none`: the constant, or the block it projects from, is unsafe
+    or partial, outside Lean's logic (`Ixon.Env.outsideLogicAt`,
+    `KernelClaim::assert_claimable`). The face of a `partial def` is a safe
+    opaque, and is claimable. -/
+def outsideLogicError? (ixonEnv : Ixon.Env) (label : String) (addr : Address) :
+    Option String :=
+  if ixonEnv.outsideLogicAt addr then
+    some s!"{label} is unsafe or partial: IxVM checks only constants in Lean's logic"
+  else none
+
 /-- The `Check` claim on `addr` (full transitive typecheck of the target's
-    closure), relative to `ixonEnv`'s role binding. -/
+    closure), relative to `ixonEnv`'s role binding. Refuses a constant outside
+    Lean's logic (`outsideLogicError?`). -/
 def checkClaimOf (ixonEnv : Ixon.Env) (addr : Address)
     (assumeBinding : Bool := false) : IO Ix.Claim := do
+  if let some e := outsideLogicError? ixonEnv s!"{addr}" addr then
+    throw (IO.userError e)
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv assumeBinding)
   return Ix.Claim.check ctx addr none
 
@@ -115,6 +129,9 @@ def forEachClaim
     (assumeBinding : Bool := false)
     : IO UInt32 := do
   let mut failures : Array String := #[]
+  -- constants outside Lean's logic, which no claim certifies, skipped when
+  -- iterating a whole environment
+  let mut skipped : Nat := 0
   match ixePath with
   | some path =>
     let (ixonEnv, envHandle) ← loadBoundIxe path
@@ -123,25 +140,43 @@ def forEachClaim
     if let some hex := claimHex then
       let (claim, trees) ← loadClaimAndTrees hex
       let label := s!"claim {hex}"
-      let target : Target ← match claim with
-        | .check _ addr none =>
-          if forceLeanWitness then
+      -- a typing claim's seeds outside Lean's logic, refused before running
+      let refused : Option String := match claim with
+        | .check _ addr _ => outsideLogicError? ixonEnv s!"{label}: the target {addr}" addr
+        | .checkEnv _ root _ =>
+          let leaves := (trees.get? root).map (·.leaves) |>.getD #[]
+          let aside := leaves.filter ixonEnv.outsideLogicAt
+          if aside.isEmpty then none
+          else some s!"{label}: {aside.size} owned constant(s) are unsafe or partial \
+            (first {aside[0]!}): IxVM checks only constants in Lean's logic"
+        | _ => none
+      match refused with
+      | some e =>
+        IO.eprintln s!"error: {e}"
+        failures := failures.push label
+      | none =>
+        let target : Target ← match claim with
+          | .check _ addr none =>
+            if forceLeanWitness then
+              let witness ← IO.ofExcept <|
+                IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
+              pure (.leanW witness)
+            else pure (.addr addr)
+          | _ =>
             let witness ← IO.ofExcept <|
               IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
             pure (.leanW witness)
-          else pure (.addr addr)
-        | _ =>
-          let witness ← IO.ofExcept <|
-            IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
-          pure (.leanW witness)
-      if (← runOne claim (some envHandle) target label) ≠ 0 then
-        failures := failures.push label
+        if (← runOne claim (some envHandle) target label) ≠ 0 then
+          failures := failures.push label
     else if names.isEmpty then
       let sorted := ixonEnv.named.toArray.qsort
         (fun a b => toString a.1 < toString b.1)
       for (ixName, named) in sorted do
         let leanName := ixNameToLeanName ixName
         let label := toString leanName
+        if ixonEnv.outsideLogicAt named.addr then
+          skipped := skipped + 1
+          continue
         let claim ← checkClaimOf ixonEnv named.addr assumeBinding
         let target : Target ←
           if forceLeanWitness then
@@ -160,6 +195,11 @@ def forEachClaim
           if !keepGoing then break
         | some addr =>
           let label := arg
+          if let some e := outsideLogicError? ixonEnv label addr then
+            IO.eprintln s!"error: {e}"
+            failures := failures.push label
+            if !keepGoing then break
+            else continue
           let claim ← checkClaimOf ixonEnv addr assumeBinding
           let target : Target ←
             if forceLeanWitness then
@@ -173,9 +213,15 @@ def forEachClaim
     if claimHex.isSome then
       IO.eprintln "error: --claim requires --ixe <path>"; return 1
     let env ← get_env!
+    -- Lean's own flags name the constants outside its logic, before any compile
+    let outsideLogic (name : Lean.Name) : Bool :=
+      (env.find? name).any fun ci => ci.isUnsafe || ci.isPartial
     let runOneByName (name : Lean.Name) (label : String) : IO UInt32 := do
       let ixonEnv ← loadNamedIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
+      if let some e := outsideLogicError? ixonEnv label addr then
+        IO.eprintln s!"error: {e}"
+        return 1
       let claim ← checkClaimOf ixonEnv addr assumeBinding
       if forceLeanWitness then
         let w ← mkWitness addr ixonEnv assumeBinding
@@ -193,6 +239,9 @@ def forEachClaim
         (fun a b => toString a.1 < toString b.1)
       for (name, _) in sorted do
         let label := toString name
+        if outsideLogic name then
+          skipped := skipped + 1
+          continue
         if (← runOneByName name label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
@@ -206,10 +255,19 @@ def forEachClaim
           else continue
         | some name =>
           let label := toString name
+          if outsideLogic name then
+            IO.eprintln s!"error: {label} is unsafe or partial: IxVM checks only constants \
+              in Lean's logic"
+            failures := failures.push label
+            if !keepGoing then break
+            else continue
           if (← runOneByName name label) ≠ 0 then
             failures := failures.push label
             if !keepGoing then break
 
+  if skipped != 0 then
+    IO.println s!"[{logTag}] skipped {skipped} unsafe or partial constant(s): \
+      outside Lean's logic, no claim certifies them"
   if failures.isEmpty then pure 0
   else
     IO.eprintln s!"[{logTag}] {failures.size} failure(s):"
