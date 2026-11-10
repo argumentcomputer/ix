@@ -17,6 +17,180 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `KernelRoleSpec::eqns_conditional`: one constructor per combination of selected arms. -/
+inductive «KernelRoleSpec::eqns_conditional».Path (x_r x_k : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n4162
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 4162))
+      (he32 : r = (.field 1))
+      (he33 : h' = h)
+      (hc34 : calls = [])
+  | n4736
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 4736))
+      (he40 : r = (.field 1))
+      (he41 : h' = h)
+      (hc42 : calls = [])
+  | n4737
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 4737))
+      (he48 : r = (.field 1))
+      (he49 : h' = h)
+      (hc50 : calls = [])
+  | n5249
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 5249))
+      (he56 : r = (.field 1))
+      (he57 : h' = h)
+      (hc58 : calls = [])
+  | n5250
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 5250))
+      (he64 : r = (.field 1))
+      (he65 : h' = h)
+      (hc66 : calls = [])
+  | n6400
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 6400))
+      (he72 : r = (.field 1))
+      (he73 : h' = h)
+      (hc74 : calls = [])
+  | n6401
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 6401))
+      (he80 : r = (.field 1))
+      (he81 : h' = h)
+      (hc82 : calls = [])
+  | n6402
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 6402))
+      (he88 : r = (.field 1))
+      (he89 : h' = h)
+      (hc90 : calls = [])
+  | n6403
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 6403))
+      (he96 : r = (.field 1))
+      (he97 : h' = h)
+      (hc98 : calls = [])
+  | n6404
+      (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok (.field 6404))
+      (he104 : r = (.field 1))
+      (he105 : h' = h)
+      (hc106 : calls = [])
+  | other
+      (v1 : SourceValue F) (x10 : SourceValue F)
+      (op25 : evalBinOp .mul ((.field 64) : SourceValue F) (x_r : SourceValue F) = .ok x10)
+      (op17 : evalBinOp .add (x10 : SourceValue F) (x_k : SourceValue F) = .ok v1)
+      (hne35 : (v1 : SourceValue F) ≠ (.field 4162))
+      (hne43 : (v1 : SourceValue F) ≠ (.field 4736))
+      (hne51 : (v1 : SourceValue F) ≠ (.field 4737))
+      (hne59 : (v1 : SourceValue F) ≠ (.field 5249))
+      (hne67 : (v1 : SourceValue F) ≠ (.field 5250))
+      (hne75 : (v1 : SourceValue F) ≠ (.field 6400))
+      (hne83 : (v1 : SourceValue F) ≠ (.field 6401))
+      (hne91 : (v1 : SourceValue F) ≠ (.field 6402))
+      (hne99 : (v1 : SourceValue F) ≠ (.field 6403))
+      (hne107 : (v1 : SourceValue F) ≠ (.field 6404))
+      (he111 : r = (.field 0))
+      (he112 : h' = h)
+      (hc113 : calls = [])
+
+/-- **Every observed derivation of `KernelRoleSpec::eqns_conditional` takes one of its paths.** -/
+theorem «KernelRoleSpec::eqns_conditional».obs {x_r x_k : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::eqns_conditional" [x_r, x_k] h r h' calls) :
+    «KernelRoleSpec::eqns_conditional».Path x_r x_k h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.eqns_conditional.lookup
+    (by simp [IxVM.KernelRoleSpec.eqns_conditional, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelRoleSpec.eqns_conditional] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨x10, y11, m12, c13, c14, d15, d16, op17, rfl⟩ := d7.binary_inv
+  obtain ⟨x18, y19, m20, c21, c22, d23, d24, op25, rfl⟩ := d15.binary_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d23.literal_inv
+  obtain ⟨l26, rfl, rfl⟩ := d24.var_inv
+  simp at l26
+  subst l26
+  obtain ⟨l27, rfl, rfl⟩ := d16.var_inv
+  simp at l27
+  subst l27
+  rcases selectArm_cons_inv sel8 with ⟨mt28, rfl⟩ | ⟨nm29, sel30⟩
+  · obtain ⟨hv31, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 4162) mt28
+    subst hv31
+    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+    exact «KernelRoleSpec::eqns_conditional».Path.n4162 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne35 := MatchesConst.none_inv (MatchesConst.literal 4162) nm29
+    rcases selectArm_cons_inv sel30 with ⟨mt36, rfl⟩ | ⟨nm37, sel38⟩
+    · obtain ⟨hv39, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 4736) mt36
+      subst hv39
+      obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+      exact «KernelRoleSpec::eqns_conditional».Path.n4736 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne43 := MatchesConst.none_inv (MatchesConst.literal 4736) nm37
+      rcases selectArm_cons_inv sel38 with ⟨mt44, rfl⟩ | ⟨nm45, sel46⟩
+      · obtain ⟨hv47, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 4737) mt44
+        subst hv47
+        obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+        exact «KernelRoleSpec::eqns_conditional».Path.n4737 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne51 := MatchesConst.none_inv (MatchesConst.literal 4737) nm45
+        rcases selectArm_cons_inv sel46 with ⟨mt52, rfl⟩ | ⟨nm53, sel54⟩
+        · obtain ⟨hv55, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 5249) mt52
+          subst hv55
+          obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+          exact «KernelRoleSpec::eqns_conditional».Path.n5249 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne59 := MatchesConst.none_inv (MatchesConst.literal 5249) nm53
+          rcases selectArm_cons_inv sel54 with ⟨mt60, rfl⟩ | ⟨nm61, sel62⟩
+          · obtain ⟨hv63, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 5250) mt60
+            subst hv63
+            obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+            exact «KernelRoleSpec::eqns_conditional».Path.n5250 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne67 := MatchesConst.none_inv (MatchesConst.literal 5250) nm61
+            rcases selectArm_cons_inv sel62 with ⟨mt68, rfl⟩ | ⟨nm69, sel70⟩
+            · obtain ⟨hv71, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 6400) mt68
+              subst hv71
+              obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+              exact «KernelRoleSpec::eqns_conditional».Path.n6400 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            · have hne75 := MatchesConst.none_inv (MatchesConst.literal 6400) nm69
+              rcases selectArm_cons_inv sel70 with ⟨mt76, rfl⟩ | ⟨nm77, sel78⟩
+              · obtain ⟨hv79, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 6401) mt76
+                subst hv79
+                obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                exact «KernelRoleSpec::eqns_conditional».Path.n6401 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · have hne83 := MatchesConst.none_inv (MatchesConst.literal 6401) nm77
+                rcases selectArm_cons_inv sel78 with ⟨mt84, rfl⟩ | ⟨nm85, sel86⟩
+                · obtain ⟨hv87, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 6402) mt84
+                  subst hv87
+                  obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                  exact «KernelRoleSpec::eqns_conditional».Path.n6402 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                · have hne91 := MatchesConst.none_inv (MatchesConst.literal 6402) nm85
+                  rcases selectArm_cons_inv sel86 with ⟨mt92, rfl⟩ | ⟨nm93, sel94⟩
+                  · obtain ⟨hv95, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 6403) mt92
+                    subst hv95
+                    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                    exact «KernelRoleSpec::eqns_conditional».Path.n6403 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · have hne99 := MatchesConst.none_inv (MatchesConst.literal 6403) nm93
+                    rcases selectArm_cons_inv sel94 with ⟨mt100, rfl⟩ | ⟨nm101, sel102⟩
+                    · obtain ⟨hv103, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 6404) mt100
+                      subst hv103
+                      obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                      exact «KernelRoleSpec::eqns_conditional».Path.n6404 _ op25 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    · have hne107 := MatchesConst.none_inv (MatchesConst.literal 6404) nm101
+                      rcases selectArm_cons_inv sel102 with ⟨mt108, rfl⟩ | ⟨nm109, sel110⟩
+                      · obtain rfl := matchPattern_wildcard_inv mt108
+                        obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                        exact «KernelRoleSpec::eqns_conditional».Path.other _ _ op25 op17 hne35 hne43 hne51 hne59 hne67 hne75 hne83 hne91 hne99 hne107 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                      · exact (matchPattern_wildcard_none nm109).elim
+
 /-- The evaluation paths of `KernelRoleSpec::role_prim_family`: one constructor per combination of selected arms. -/
 inductive «KernelRoleSpec::role_prim_family».Path (x_r : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
@@ -26,1021 +200,201 @@ inductive «KernelRoleSpec::role_prim_family».Path (x_r : SourceValue F) (h : H
       (he32 : h' = h)
       (hc33 : calls = [])
   | n38
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
       (hv38 : x_r = (.field 38))
       (he43 : r = (.tuple [(.field 2), (.field 1)]))
       (he56 : h' = h)
       (hc57 : calls = [])
   | n41
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
       (hv62 : x_r = (.field 41))
       (he67 : r = (.tuple [(.field 1), (.field 2)]))
       (he80 : h' = h)
       (hc81 : calls = [])
   | n42
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
       (hv86 : x_r = (.field 42))
       (he91 : r = (.tuple [(.field 1), (.field 3)]))
       (he104 : h' = h)
       (hc105 : calls = [])
   | n43
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
       (hv110 : x_r = (.field 43))
       (he115 : r = (.tuple [(.field 1), (.field 4)]))
       (he128 : h' = h)
       (hc129 : calls = [])
   | n44
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
       (hv134 : x_r = (.field 44))
       (he139 : r = (.tuple [(.field 1), (.field 5)]))
       (he152 : h' = h)
       (hc153 : calls = [])
   | n45
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
       (hv158 : x_r = (.field 45))
       (he163 : r = (.tuple [(.field 1), (.field 9)]))
       (he176 : h' = h)
       (hc177 : calls = [])
   | n46
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
       (hv182 : x_r = (.field 46))
       (he187 : r = (.tuple [(.field 1), (.field 15)]))
       (he200 : h' = h)
       (hc201 : calls = [])
   | n47
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
       (hv206 : x_r = (.field 47))
       (he211 : r = (.tuple [(.field 1), (.field 16)]))
       (he224 : h' = h)
       (hc225 : calls = [])
   | n48
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
       (hv230 : x_r = (.field 48))
       (he235 : r = (.tuple [(.field 1), (.field 6)]))
       (he248 : h' = h)
       (hc249 : calls = [])
   | n49
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
       (hv254 : x_r = (.field 49))
       (he259 : r = (.tuple [(.field 1), (.field 7)]))
       (he272 : h' = h)
       (hc273 : calls = [])
   | n50
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
       (hv278 : x_r = (.field 50))
       (he283 : r = (.tuple [(.field 1), (.field 8)]))
       (he296 : h' = h)
       (hc297 : calls = [])
   | n51
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
       (hv302 : x_r = (.field 51))
       (he307 : r = (.tuple [(.field 1), (.field 10)]))
       (he320 : h' = h)
       (hc321 : calls = [])
   | n52
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
       (hv326 : x_r = (.field 52))
       (he331 : r = (.tuple [(.field 1), (.field 11)]))
       (he344 : h' = h)
       (hc345 : calls = [])
   | n53
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
       (hv350 : x_r = (.field 53))
       (he355 : r = (.tuple [(.field 1), (.field 12)]))
       (he368 : h' = h)
       (hc369 : calls = [])
   | n54
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
       (hv374 : x_r = (.field 54))
       (he379 : r = (.tuple [(.field 1), (.field 13)]))
       (he392 : h' = h)
       (hc393 : calls = [])
   | n55
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
       (hv398 : x_r = (.field 55))
       (he403 : r = (.tuple [(.field 1), (.field 14)]))
       (he416 : h' = h)
       (hc417 : calls = [])
   | n67
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
       (hv422 : x_r = (.field 67))
       (he427 : r = (.tuple [(.field 5), (.field 3)]))
       (he440 : h' = h)
       (hc441 : calls = [])
   | n68
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
       (hv446 : x_r = (.field 68))
       (he451 : r = (.tuple [(.field 5), (.field 2)]))
       (he464 : h' = h)
       (hc465 : calls = [])
   | n69
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
       (hv470 : x_r = (.field 69))
       (he475 : r = (.tuple [(.field 5), (.field 1)]))
       (he488 : h' = h)
       (hc489 : calls = [])
   | n75
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
       (hv494 : x_r = (.field 75))
       (he499 : r = (.tuple [(.field 6), (.field 1)]))
       (he512 : h' = h)
       (hc513 : calls = [])
   | n76
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
       (hv518 : x_r = (.field 76))
       (he523 : r = (.tuple [(.field 6), (.field 6)]))
       (he536 : h' = h)
       (hc537 : calls = [])
   | n77
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
       (hv542 : x_r = (.field 77))
       (he547 : r = (.tuple [(.field 6), (.field 7)]))
       (he560 : h' = h)
       (hc561 : calls = [])
   | n78
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
       (hv566 : x_r = (.field 78))
       (he571 : r = (.tuple [(.field 6), (.field 8)]))
       (he584 : h' = h)
       (hc585 : calls = [])
   | n79
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
       (hv590 : x_r = (.field 79))
       (he595 : r = (.tuple [(.field 6), (.field 2)]))
       (he608 : h' = h)
       (hc609 : calls = [])
   | n80
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
       (hv614 : x_r = (.field 80))
       (he619 : r = (.tuple [(.field 6), (.field 10)]))
       (he632 : h' = h)
       (hc633 : calls = [])
   | n81
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
       (hv638 : x_r = (.field 81))
       (he643 : r = (.tuple [(.field 6), (.field 9)]))
       (he656 : h' = h)
       (hc657 : calls = [])
   | n82
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
       (hv662 : x_r = (.field 82))
       (he667 : r = (.tuple [(.field 6), (.field 5)]))
       (he680 : h' = h)
       (hc681 : calls = [])
   | n85
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
       (hv686 : x_r = (.field 85))
       (he691 : r = (.tuple [(.field 3), (.field 1)]))
       (he704 : h' = h)
       (hc705 : calls = [])
   | n86
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
       (hv710 : x_r = (.field 86))
       (he715 : r = (.tuple [(.field 3), (.field 2)]))
       (he728 : h' = h)
       (hc729 : calls = [])
   | n87
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
       (hv734 : x_r = (.field 87))
       (he739 : r = (.tuple [(.field 2), (.field 5)]))
       (he752 : h' = h)
       (hc753 : calls = [])
   | n90
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
       (hv758 : x_r = (.field 90))
       (he763 : r = (.tuple [(.field 2), (.field 4)]))
       (he776 : h' = h)
       (hc777 : calls = [])
   | n92
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
       (hv782 : x_r = (.field 92))
       (he787 : r = (.tuple [(.field 2), (.field 6)]))
       (he800 : h' = h)
       (hc801 : calls = [])
   | n95
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
       (hv806 : x_r = (.field 95))
       (he811 : r = (.tuple [(.field 5), (.field 6)]))
       (he824 : h' = h)
       (hc825 : calls = [])
   | n96
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
       (hv830 : x_r = (.field 96))
       (he835 : r = (.tuple [(.field 5), (.field 5)]))
       (he848 : h' = h)
       (hc849 : calls = [])
   | n97
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
-      (hne850 : (x_r : SourceValue F) ≠ (.field 96))
       (hv854 : x_r = (.field 97))
       (he859 : r = (.tuple [(.field 5), (.field 4)]))
       (he872 : h' = h)
       (hc873 : calls = [])
   | n98
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
-      (hne850 : (x_r : SourceValue F) ≠ (.field 96))
-      (hne874 : (x_r : SourceValue F) ≠ (.field 97))
       (hv878 : x_r = (.field 98))
       (he883 : r = (.tuple [(.field 6), (.field 3)]))
       (he896 : h' = h)
       (hc897 : calls = [])
   | n99
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
-      (hne850 : (x_r : SourceValue F) ≠ (.field 96))
-      (hne874 : (x_r : SourceValue F) ≠ (.field 97))
-      (hne898 : (x_r : SourceValue F) ≠ (.field 98))
       (hv902 : x_r = (.field 99))
       (he907 : r = (.tuple [(.field 6), (.field 4)]))
       (he920 : h' = h)
       (hc921 : calls = [])
   | n101
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
-      (hne850 : (x_r : SourceValue F) ≠ (.field 96))
-      (hne874 : (x_r : SourceValue F) ≠ (.field 97))
-      (hne898 : (x_r : SourceValue F) ≠ (.field 98))
-      (hne922 : (x_r : SourceValue F) ≠ (.field 99))
       (hv926 : x_r = (.field 101))
       (he931 : r = (.tuple [(.field 2), (.field 2)]))
       (he944 : h' = h)
       (hc945 : calls = [])
   | n102
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
-      (hne850 : (x_r : SourceValue F) ≠ (.field 96))
-      (hne874 : (x_r : SourceValue F) ≠ (.field 97))
-      (hne898 : (x_r : SourceValue F) ≠ (.field 98))
-      (hne922 : (x_r : SourceValue F) ≠ (.field 99))
-      (hne946 : (x_r : SourceValue F) ≠ (.field 101))
       (hv950 : x_r = (.field 102))
       (he955 : r = (.tuple [(.field 2), (.field 3)]))
       (he968 : h' = h)
       (hc969 : calls = [])
   | other
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 38))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 41))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 42))
-      (hne130 : (x_r : SourceValue F) ≠ (.field 43))
-      (hne154 : (x_r : SourceValue F) ≠ (.field 44))
-      (hne178 : (x_r : SourceValue F) ≠ (.field 45))
-      (hne202 : (x_r : SourceValue F) ≠ (.field 46))
-      (hne226 : (x_r : SourceValue F) ≠ (.field 47))
-      (hne250 : (x_r : SourceValue F) ≠ (.field 48))
-      (hne274 : (x_r : SourceValue F) ≠ (.field 49))
-      (hne298 : (x_r : SourceValue F) ≠ (.field 50))
-      (hne322 : (x_r : SourceValue F) ≠ (.field 51))
-      (hne346 : (x_r : SourceValue F) ≠ (.field 52))
-      (hne370 : (x_r : SourceValue F) ≠ (.field 53))
-      (hne394 : (x_r : SourceValue F) ≠ (.field 54))
-      (hne418 : (x_r : SourceValue F) ≠ (.field 55))
-      (hne442 : (x_r : SourceValue F) ≠ (.field 67))
-      (hne466 : (x_r : SourceValue F) ≠ (.field 68))
-      (hne490 : (x_r : SourceValue F) ≠ (.field 69))
-      (hne514 : (x_r : SourceValue F) ≠ (.field 75))
-      (hne538 : (x_r : SourceValue F) ≠ (.field 76))
-      (hne562 : (x_r : SourceValue F) ≠ (.field 77))
-      (hne586 : (x_r : SourceValue F) ≠ (.field 78))
-      (hne610 : (x_r : SourceValue F) ≠ (.field 79))
-      (hne634 : (x_r : SourceValue F) ≠ (.field 80))
-      (hne658 : (x_r : SourceValue F) ≠ (.field 81))
-      (hne682 : (x_r : SourceValue F) ≠ (.field 82))
-      (hne706 : (x_r : SourceValue F) ≠ (.field 85))
-      (hne730 : (x_r : SourceValue F) ≠ (.field 86))
-      (hne754 : (x_r : SourceValue F) ≠ (.field 87))
-      (hne778 : (x_r : SourceValue F) ≠ (.field 90))
-      (hne802 : (x_r : SourceValue F) ≠ (.field 92))
-      (hne826 : (x_r : SourceValue F) ≠ (.field 95))
-      (hne850 : (x_r : SourceValue F) ≠ (.field 96))
-      (hne874 : (x_r : SourceValue F) ≠ (.field 97))
-      (hne898 : (x_r : SourceValue F) ≠ (.field 98))
-      (hne922 : (x_r : SourceValue F) ≠ (.field 99))
-      (hne946 : (x_r : SourceValue F) ≠ (.field 101))
-      (hne970 : (x_r : SourceValue F) ≠ (.field 102))
       (he978 : r = (.tuple [(.field 0), (.field 0)]))
       (he991 : h' = h)
       (hc992 : calls = [])
@@ -1074,7 +428,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
       obtain ⟨v42, vs50, m51, c52, c53, rfl, d54, a55, rfl⟩ := a49.cons_inv
       obtain ⟨rfl, rfl, rfl⟩ := d54.literal_inv
       obtain ⟨rfl, rfl, rfl⟩ := a55.nil_inv
-      exact «KernelRoleSpec::role_prim_family».Path.n38 hne34 hv38 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      exact «KernelRoleSpec::role_prim_family».Path.n38 hv38 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
     · have hne58 := MatchesConst.none_inv (MatchesConst.literal 38) nm36
       rcases selectArm_cons_inv sel37 with ⟨mt59, rfl⟩ | ⟨nm60, sel61⟩
       · obtain ⟨hv62, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 41) mt59
@@ -1084,7 +438,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
         obtain ⟨v66, vs74, m75, c76, c77, rfl, d78, a79, rfl⟩ := a73.cons_inv
         obtain ⟨rfl, rfl, rfl⟩ := d78.literal_inv
         obtain ⟨rfl, rfl, rfl⟩ := a79.nil_inv
-        exact «KernelRoleSpec::role_prim_family».Path.n41 hne34 hne58 hv62 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        exact «KernelRoleSpec::role_prim_family».Path.n41 hv62 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
       · have hne82 := MatchesConst.none_inv (MatchesConst.literal 41) nm60
         rcases selectArm_cons_inv sel61 with ⟨mt83, rfl⟩ | ⟨nm84, sel85⟩
         · obtain ⟨hv86, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 42) mt83
@@ -1094,7 +448,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
           obtain ⟨v90, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a97.cons_inv
           obtain ⟨rfl, rfl, rfl⟩ := d102.literal_inv
           obtain ⟨rfl, rfl, rfl⟩ := a103.nil_inv
-          exact «KernelRoleSpec::role_prim_family».Path.n42 hne34 hne58 hne82 hv86 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          exact «KernelRoleSpec::role_prim_family».Path.n42 hv86 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
         · have hne106 := MatchesConst.none_inv (MatchesConst.literal 42) nm84
           rcases selectArm_cons_inv sel85 with ⟨mt107, rfl⟩ | ⟨nm108, sel109⟩
           · obtain ⟨hv110, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 43) mt107
@@ -1104,7 +458,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
             obtain ⟨v114, vs122, m123, c124, c125, rfl, d126, a127, rfl⟩ := a121.cons_inv
             obtain ⟨rfl, rfl, rfl⟩ := d126.literal_inv
             obtain ⟨rfl, rfl, rfl⟩ := a127.nil_inv
-            exact «KernelRoleSpec::role_prim_family».Path.n43 hne34 hne58 hne82 hne106 hv110 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            exact «KernelRoleSpec::role_prim_family».Path.n43 hv110 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
           · have hne130 := MatchesConst.none_inv (MatchesConst.literal 43) nm108
             rcases selectArm_cons_inv sel109 with ⟨mt131, rfl⟩ | ⟨nm132, sel133⟩
             · obtain ⟨hv134, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 44) mt131
@@ -1114,7 +468,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
               obtain ⟨v138, vs146, m147, c148, c149, rfl, d150, a151, rfl⟩ := a145.cons_inv
               obtain ⟨rfl, rfl, rfl⟩ := d150.literal_inv
               obtain ⟨rfl, rfl, rfl⟩ := a151.nil_inv
-              exact «KernelRoleSpec::role_prim_family».Path.n44 hne34 hne58 hne82 hne106 hne130 hv134 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              exact «KernelRoleSpec::role_prim_family».Path.n44 hv134 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
             · have hne154 := MatchesConst.none_inv (MatchesConst.literal 44) nm132
               rcases selectArm_cons_inv sel133 with ⟨mt155, rfl⟩ | ⟨nm156, sel157⟩
               · obtain ⟨hv158, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 45) mt155
@@ -1124,7 +478,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                 obtain ⟨v162, vs170, m171, c172, c173, rfl, d174, a175, rfl⟩ := a169.cons_inv
                 obtain ⟨rfl, rfl, rfl⟩ := d174.literal_inv
                 obtain ⟨rfl, rfl, rfl⟩ := a175.nil_inv
-                exact «KernelRoleSpec::role_prim_family».Path.n45 hne34 hne58 hne82 hne106 hne130 hne154 hv158 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                exact «KernelRoleSpec::role_prim_family».Path.n45 hv158 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
               · have hne178 := MatchesConst.none_inv (MatchesConst.literal 45) nm156
                 rcases selectArm_cons_inv sel157 with ⟨mt179, rfl⟩ | ⟨nm180, sel181⟩
                 · obtain ⟨hv182, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 46) mt179
@@ -1134,7 +488,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                   obtain ⟨v186, vs194, m195, c196, c197, rfl, d198, a199, rfl⟩ := a193.cons_inv
                   obtain ⟨rfl, rfl, rfl⟩ := d198.literal_inv
                   obtain ⟨rfl, rfl, rfl⟩ := a199.nil_inv
-                  exact «KernelRoleSpec::role_prim_family».Path.n46 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hv182 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  exact «KernelRoleSpec::role_prim_family».Path.n46 hv182 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                 · have hne202 := MatchesConst.none_inv (MatchesConst.literal 46) nm180
                   rcases selectArm_cons_inv sel181 with ⟨mt203, rfl⟩ | ⟨nm204, sel205⟩
                   · obtain ⟨hv206, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 47) mt203
@@ -1144,7 +498,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                     obtain ⟨v210, vs218, m219, c220, c221, rfl, d222, a223, rfl⟩ := a217.cons_inv
                     obtain ⟨rfl, rfl, rfl⟩ := d222.literal_inv
                     obtain ⟨rfl, rfl, rfl⟩ := a223.nil_inv
-                    exact «KernelRoleSpec::role_prim_family».Path.n47 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hv206 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    exact «KernelRoleSpec::role_prim_family».Path.n47 hv206 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                   · have hne226 := MatchesConst.none_inv (MatchesConst.literal 47) nm204
                     rcases selectArm_cons_inv sel205 with ⟨mt227, rfl⟩ | ⟨nm228, sel229⟩
                     · obtain ⟨hv230, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 48) mt227
@@ -1154,7 +508,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                       obtain ⟨v234, vs242, m243, c244, c245, rfl, d246, a247, rfl⟩ := a241.cons_inv
                       obtain ⟨rfl, rfl, rfl⟩ := d246.literal_inv
                       obtain ⟨rfl, rfl, rfl⟩ := a247.nil_inv
-                      exact «KernelRoleSpec::role_prim_family».Path.n48 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hv230 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                      exact «KernelRoleSpec::role_prim_family».Path.n48 hv230 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                     · have hne250 := MatchesConst.none_inv (MatchesConst.literal 48) nm228
                       rcases selectArm_cons_inv sel229 with ⟨mt251, rfl⟩ | ⟨nm252, sel253⟩
                       · obtain ⟨hv254, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 49) mt251
@@ -1164,7 +518,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                         obtain ⟨v258, vs266, m267, c268, c269, rfl, d270, a271, rfl⟩ := a265.cons_inv
                         obtain ⟨rfl, rfl, rfl⟩ := d270.literal_inv
                         obtain ⟨rfl, rfl, rfl⟩ := a271.nil_inv
-                        exact «KernelRoleSpec::role_prim_family».Path.n49 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hv254 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                        exact «KernelRoleSpec::role_prim_family».Path.n49 hv254 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                       · have hne274 := MatchesConst.none_inv (MatchesConst.literal 49) nm252
                         rcases selectArm_cons_inv sel253 with ⟨mt275, rfl⟩ | ⟨nm276, sel277⟩
                         · obtain ⟨hv278, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 50) mt275
@@ -1174,7 +528,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                           obtain ⟨v282, vs290, m291, c292, c293, rfl, d294, a295, rfl⟩ := a289.cons_inv
                           obtain ⟨rfl, rfl, rfl⟩ := d294.literal_inv
                           obtain ⟨rfl, rfl, rfl⟩ := a295.nil_inv
-                          exact «KernelRoleSpec::role_prim_family».Path.n50 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hv278 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                          exact «KernelRoleSpec::role_prim_family».Path.n50 hv278 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                         · have hne298 := MatchesConst.none_inv (MatchesConst.literal 50) nm276
                           rcases selectArm_cons_inv sel277 with ⟨mt299, rfl⟩ | ⟨nm300, sel301⟩
                           · obtain ⟨hv302, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 51) mt299
@@ -1184,7 +538,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                             obtain ⟨v306, vs314, m315, c316, c317, rfl, d318, a319, rfl⟩ := a313.cons_inv
                             obtain ⟨rfl, rfl, rfl⟩ := d318.literal_inv
                             obtain ⟨rfl, rfl, rfl⟩ := a319.nil_inv
-                            exact «KernelRoleSpec::role_prim_family».Path.n51 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hv302 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                            exact «KernelRoleSpec::role_prim_family».Path.n51 hv302 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                           · have hne322 := MatchesConst.none_inv (MatchesConst.literal 51) nm300
                             rcases selectArm_cons_inv sel301 with ⟨mt323, rfl⟩ | ⟨nm324, sel325⟩
                             · obtain ⟨hv326, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 52) mt323
@@ -1194,7 +548,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                               obtain ⟨v330, vs338, m339, c340, c341, rfl, d342, a343, rfl⟩ := a337.cons_inv
                               obtain ⟨rfl, rfl, rfl⟩ := d342.literal_inv
                               obtain ⟨rfl, rfl, rfl⟩ := a343.nil_inv
-                              exact «KernelRoleSpec::role_prim_family».Path.n52 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hv326 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                              exact «KernelRoleSpec::role_prim_family».Path.n52 hv326 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                             · have hne346 := MatchesConst.none_inv (MatchesConst.literal 52) nm324
                               rcases selectArm_cons_inv sel325 with ⟨mt347, rfl⟩ | ⟨nm348, sel349⟩
                               · obtain ⟨hv350, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 53) mt347
@@ -1204,7 +558,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                 obtain ⟨v354, vs362, m363, c364, c365, rfl, d366, a367, rfl⟩ := a361.cons_inv
                                 obtain ⟨rfl, rfl, rfl⟩ := d366.literal_inv
                                 obtain ⟨rfl, rfl, rfl⟩ := a367.nil_inv
-                                exact «KernelRoleSpec::role_prim_family».Path.n53 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hv350 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                exact «KernelRoleSpec::role_prim_family».Path.n53 hv350 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                               · have hne370 := MatchesConst.none_inv (MatchesConst.literal 53) nm348
                                 rcases selectArm_cons_inv sel349 with ⟨mt371, rfl⟩ | ⟨nm372, sel373⟩
                                 · obtain ⟨hv374, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 54) mt371
@@ -1214,7 +568,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                   obtain ⟨v378, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a385.cons_inv
                                   obtain ⟨rfl, rfl, rfl⟩ := d390.literal_inv
                                   obtain ⟨rfl, rfl, rfl⟩ := a391.nil_inv
-                                  exact «KernelRoleSpec::role_prim_family».Path.n54 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hv374 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                  exact «KernelRoleSpec::role_prim_family».Path.n54 hv374 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                 · have hne394 := MatchesConst.none_inv (MatchesConst.literal 54) nm372
                                   rcases selectArm_cons_inv sel373 with ⟨mt395, rfl⟩ | ⟨nm396, sel397⟩
                                   · obtain ⟨hv398, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 55) mt395
@@ -1224,7 +578,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                     obtain ⟨v402, vs410, m411, c412, c413, rfl, d414, a415, rfl⟩ := a409.cons_inv
                                     obtain ⟨rfl, rfl, rfl⟩ := d414.literal_inv
                                     obtain ⟨rfl, rfl, rfl⟩ := a415.nil_inv
-                                    exact «KernelRoleSpec::role_prim_family».Path.n55 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hv398 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                    exact «KernelRoleSpec::role_prim_family».Path.n55 hv398 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                   · have hne418 := MatchesConst.none_inv (MatchesConst.literal 55) nm396
                                     rcases selectArm_cons_inv sel397 with ⟨mt419, rfl⟩ | ⟨nm420, sel421⟩
                                     · obtain ⟨hv422, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 67) mt419
@@ -1234,7 +588,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                       obtain ⟨v426, vs434, m435, c436, c437, rfl, d438, a439, rfl⟩ := a433.cons_inv
                                       obtain ⟨rfl, rfl, rfl⟩ := d438.literal_inv
                                       obtain ⟨rfl, rfl, rfl⟩ := a439.nil_inv
-                                      exact «KernelRoleSpec::role_prim_family».Path.n67 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hv422 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                      exact «KernelRoleSpec::role_prim_family».Path.n67 hv422 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                     · have hne442 := MatchesConst.none_inv (MatchesConst.literal 67) nm420
                                       rcases selectArm_cons_inv sel421 with ⟨mt443, rfl⟩ | ⟨nm444, sel445⟩
                                       · obtain ⟨hv446, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 68) mt443
@@ -1244,7 +598,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                         obtain ⟨v450, vs458, m459, c460, c461, rfl, d462, a463, rfl⟩ := a457.cons_inv
                                         obtain ⟨rfl, rfl, rfl⟩ := d462.literal_inv
                                         obtain ⟨rfl, rfl, rfl⟩ := a463.nil_inv
-                                        exact «KernelRoleSpec::role_prim_family».Path.n68 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hv446 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                        exact «KernelRoleSpec::role_prim_family».Path.n68 hv446 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                       · have hne466 := MatchesConst.none_inv (MatchesConst.literal 68) nm444
                                         rcases selectArm_cons_inv sel445 with ⟨mt467, rfl⟩ | ⟨nm468, sel469⟩
                                         · obtain ⟨hv470, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 69) mt467
@@ -1254,7 +608,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                           obtain ⟨v474, vs482, m483, c484, c485, rfl, d486, a487, rfl⟩ := a481.cons_inv
                                           obtain ⟨rfl, rfl, rfl⟩ := d486.literal_inv
                                           obtain ⟨rfl, rfl, rfl⟩ := a487.nil_inv
-                                          exact «KernelRoleSpec::role_prim_family».Path.n69 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hv470 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                          exact «KernelRoleSpec::role_prim_family».Path.n69 hv470 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                         · have hne490 := MatchesConst.none_inv (MatchesConst.literal 69) nm468
                                           rcases selectArm_cons_inv sel469 with ⟨mt491, rfl⟩ | ⟨nm492, sel493⟩
                                           · obtain ⟨hv494, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 75) mt491
@@ -1264,7 +618,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                             obtain ⟨v498, vs506, m507, c508, c509, rfl, d510, a511, rfl⟩ := a505.cons_inv
                                             obtain ⟨rfl, rfl, rfl⟩ := d510.literal_inv
                                             obtain ⟨rfl, rfl, rfl⟩ := a511.nil_inv
-                                            exact «KernelRoleSpec::role_prim_family».Path.n75 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hv494 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                            exact «KernelRoleSpec::role_prim_family».Path.n75 hv494 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                           · have hne514 := MatchesConst.none_inv (MatchesConst.literal 75) nm492
                                             rcases selectArm_cons_inv sel493 with ⟨mt515, rfl⟩ | ⟨nm516, sel517⟩
                                             · obtain ⟨hv518, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 76) mt515
@@ -1274,7 +628,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                               obtain ⟨v522, vs530, m531, c532, c533, rfl, d534, a535, rfl⟩ := a529.cons_inv
                                               obtain ⟨rfl, rfl, rfl⟩ := d534.literal_inv
                                               obtain ⟨rfl, rfl, rfl⟩ := a535.nil_inv
-                                              exact «KernelRoleSpec::role_prim_family».Path.n76 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hv518 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                              exact «KernelRoleSpec::role_prim_family».Path.n76 hv518 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                             · have hne538 := MatchesConst.none_inv (MatchesConst.literal 76) nm516
                                               rcases selectArm_cons_inv sel517 with ⟨mt539, rfl⟩ | ⟨nm540, sel541⟩
                                               · obtain ⟨hv542, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 77) mt539
@@ -1284,7 +638,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                 obtain ⟨v546, vs554, m555, c556, c557, rfl, d558, a559, rfl⟩ := a553.cons_inv
                                                 obtain ⟨rfl, rfl, rfl⟩ := d558.literal_inv
                                                 obtain ⟨rfl, rfl, rfl⟩ := a559.nil_inv
-                                                exact «KernelRoleSpec::role_prim_family».Path.n77 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hv542 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                exact «KernelRoleSpec::role_prim_family».Path.n77 hv542 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                               · have hne562 := MatchesConst.none_inv (MatchesConst.literal 77) nm540
                                                 rcases selectArm_cons_inv sel541 with ⟨mt563, rfl⟩ | ⟨nm564, sel565⟩
                                                 · obtain ⟨hv566, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 78) mt563
@@ -1294,7 +648,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                   obtain ⟨v570, vs578, m579, c580, c581, rfl, d582, a583, rfl⟩ := a577.cons_inv
                                                   obtain ⟨rfl, rfl, rfl⟩ := d582.literal_inv
                                                   obtain ⟨rfl, rfl, rfl⟩ := a583.nil_inv
-                                                  exact «KernelRoleSpec::role_prim_family».Path.n78 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hv566 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                  exact «KernelRoleSpec::role_prim_family».Path.n78 hv566 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                 · have hne586 := MatchesConst.none_inv (MatchesConst.literal 78) nm564
                                                   rcases selectArm_cons_inv sel565 with ⟨mt587, rfl⟩ | ⟨nm588, sel589⟩
                                                   · obtain ⟨hv590, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 79) mt587
@@ -1304,7 +658,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                     obtain ⟨v594, vs602, m603, c604, c605, rfl, d606, a607, rfl⟩ := a601.cons_inv
                                                     obtain ⟨rfl, rfl, rfl⟩ := d606.literal_inv
                                                     obtain ⟨rfl, rfl, rfl⟩ := a607.nil_inv
-                                                    exact «KernelRoleSpec::role_prim_family».Path.n79 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hv590 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                    exact «KernelRoleSpec::role_prim_family».Path.n79 hv590 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                   · have hne610 := MatchesConst.none_inv (MatchesConst.literal 79) nm588
                                                     rcases selectArm_cons_inv sel589 with ⟨mt611, rfl⟩ | ⟨nm612, sel613⟩
                                                     · obtain ⟨hv614, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 80) mt611
@@ -1314,7 +668,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                       obtain ⟨v618, vs626, m627, c628, c629, rfl, d630, a631, rfl⟩ := a625.cons_inv
                                                       obtain ⟨rfl, rfl, rfl⟩ := d630.literal_inv
                                                       obtain ⟨rfl, rfl, rfl⟩ := a631.nil_inv
-                                                      exact «KernelRoleSpec::role_prim_family».Path.n80 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hv614 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                      exact «KernelRoleSpec::role_prim_family».Path.n80 hv614 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                     · have hne634 := MatchesConst.none_inv (MatchesConst.literal 80) nm612
                                                       rcases selectArm_cons_inv sel613 with ⟨mt635, rfl⟩ | ⟨nm636, sel637⟩
                                                       · obtain ⟨hv638, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 81) mt635
@@ -1324,7 +678,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                         obtain ⟨v642, vs650, m651, c652, c653, rfl, d654, a655, rfl⟩ := a649.cons_inv
                                                         obtain ⟨rfl, rfl, rfl⟩ := d654.literal_inv
                                                         obtain ⟨rfl, rfl, rfl⟩ := a655.nil_inv
-                                                        exact «KernelRoleSpec::role_prim_family».Path.n81 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hv638 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                        exact «KernelRoleSpec::role_prim_family».Path.n81 hv638 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                       · have hne658 := MatchesConst.none_inv (MatchesConst.literal 81) nm636
                                                         rcases selectArm_cons_inv sel637 with ⟨mt659, rfl⟩ | ⟨nm660, sel661⟩
                                                         · obtain ⟨hv662, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 82) mt659
@@ -1334,7 +688,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                           obtain ⟨v666, vs674, m675, c676, c677, rfl, d678, a679, rfl⟩ := a673.cons_inv
                                                           obtain ⟨rfl, rfl, rfl⟩ := d678.literal_inv
                                                           obtain ⟨rfl, rfl, rfl⟩ := a679.nil_inv
-                                                          exact «KernelRoleSpec::role_prim_family».Path.n82 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hv662 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                          exact «KernelRoleSpec::role_prim_family».Path.n82 hv662 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                         · have hne682 := MatchesConst.none_inv (MatchesConst.literal 82) nm660
                                                           rcases selectArm_cons_inv sel661 with ⟨mt683, rfl⟩ | ⟨nm684, sel685⟩
                                                           · obtain ⟨hv686, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 85) mt683
@@ -1344,7 +698,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                             obtain ⟨v690, vs698, m699, c700, c701, rfl, d702, a703, rfl⟩ := a697.cons_inv
                                                             obtain ⟨rfl, rfl, rfl⟩ := d702.literal_inv
                                                             obtain ⟨rfl, rfl, rfl⟩ := a703.nil_inv
-                                                            exact «KernelRoleSpec::role_prim_family».Path.n85 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hv686 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                            exact «KernelRoleSpec::role_prim_family».Path.n85 hv686 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                           · have hne706 := MatchesConst.none_inv (MatchesConst.literal 85) nm684
                                                             rcases selectArm_cons_inv sel685 with ⟨mt707, rfl⟩ | ⟨nm708, sel709⟩
                                                             · obtain ⟨hv710, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 86) mt707
@@ -1354,7 +708,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                               obtain ⟨v714, vs722, m723, c724, c725, rfl, d726, a727, rfl⟩ := a721.cons_inv
                                                               obtain ⟨rfl, rfl, rfl⟩ := d726.literal_inv
                                                               obtain ⟨rfl, rfl, rfl⟩ := a727.nil_inv
-                                                              exact «KernelRoleSpec::role_prim_family».Path.n86 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hv710 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                              exact «KernelRoleSpec::role_prim_family».Path.n86 hv710 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                             · have hne730 := MatchesConst.none_inv (MatchesConst.literal 86) nm708
                                                               rcases selectArm_cons_inv sel709 with ⟨mt731, rfl⟩ | ⟨nm732, sel733⟩
                                                               · obtain ⟨hv734, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 87) mt731
@@ -1364,7 +718,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                 obtain ⟨v738, vs746, m747, c748, c749, rfl, d750, a751, rfl⟩ := a745.cons_inv
                                                                 obtain ⟨rfl, rfl, rfl⟩ := d750.literal_inv
                                                                 obtain ⟨rfl, rfl, rfl⟩ := a751.nil_inv
-                                                                exact «KernelRoleSpec::role_prim_family».Path.n87 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hv734 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                exact «KernelRoleSpec::role_prim_family».Path.n87 hv734 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                               · have hne754 := MatchesConst.none_inv (MatchesConst.literal 87) nm732
                                                                 rcases selectArm_cons_inv sel733 with ⟨mt755, rfl⟩ | ⟨nm756, sel757⟩
                                                                 · obtain ⟨hv758, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 90) mt755
@@ -1374,7 +728,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                   obtain ⟨v762, vs770, m771, c772, c773, rfl, d774, a775, rfl⟩ := a769.cons_inv
                                                                   obtain ⟨rfl, rfl, rfl⟩ := d774.literal_inv
                                                                   obtain ⟨rfl, rfl, rfl⟩ := a775.nil_inv
-                                                                  exact «KernelRoleSpec::role_prim_family».Path.n90 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hv758 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                  exact «KernelRoleSpec::role_prim_family».Path.n90 hv758 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                 · have hne778 := MatchesConst.none_inv (MatchesConst.literal 90) nm756
                                                                   rcases selectArm_cons_inv sel757 with ⟨mt779, rfl⟩ | ⟨nm780, sel781⟩
                                                                   · obtain ⟨hv782, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 92) mt779
@@ -1384,7 +738,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                     obtain ⟨v786, vs794, m795, c796, c797, rfl, d798, a799, rfl⟩ := a793.cons_inv
                                                                     obtain ⟨rfl, rfl, rfl⟩ := d798.literal_inv
                                                                     obtain ⟨rfl, rfl, rfl⟩ := a799.nil_inv
-                                                                    exact «KernelRoleSpec::role_prim_family».Path.n92 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hv782 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                    exact «KernelRoleSpec::role_prim_family».Path.n92 hv782 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                   · have hne802 := MatchesConst.none_inv (MatchesConst.literal 92) nm780
                                                                     rcases selectArm_cons_inv sel781 with ⟨mt803, rfl⟩ | ⟨nm804, sel805⟩
                                                                     · obtain ⟨hv806, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 95) mt803
@@ -1394,7 +748,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                       obtain ⟨v810, vs818, m819, c820, c821, rfl, d822, a823, rfl⟩ := a817.cons_inv
                                                                       obtain ⟨rfl, rfl, rfl⟩ := d822.literal_inv
                                                                       obtain ⟨rfl, rfl, rfl⟩ := a823.nil_inv
-                                                                      exact «KernelRoleSpec::role_prim_family».Path.n95 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hv806 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                      exact «KernelRoleSpec::role_prim_family».Path.n95 hv806 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                     · have hne826 := MatchesConst.none_inv (MatchesConst.literal 95) nm804
                                                                       rcases selectArm_cons_inv sel805 with ⟨mt827, rfl⟩ | ⟨nm828, sel829⟩
                                                                       · obtain ⟨hv830, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 96) mt827
@@ -1404,7 +758,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                         obtain ⟨v834, vs842, m843, c844, c845, rfl, d846, a847, rfl⟩ := a841.cons_inv
                                                                         obtain ⟨rfl, rfl, rfl⟩ := d846.literal_inv
                                                                         obtain ⟨rfl, rfl, rfl⟩ := a847.nil_inv
-                                                                        exact «KernelRoleSpec::role_prim_family».Path.n96 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hv830 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                        exact «KernelRoleSpec::role_prim_family».Path.n96 hv830 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                       · have hne850 := MatchesConst.none_inv (MatchesConst.literal 96) nm828
                                                                         rcases selectArm_cons_inv sel829 with ⟨mt851, rfl⟩ | ⟨nm852, sel853⟩
                                                                         · obtain ⟨hv854, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 97) mt851
@@ -1414,7 +768,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                           obtain ⟨v858, vs866, m867, c868, c869, rfl, d870, a871, rfl⟩ := a865.cons_inv
                                                                           obtain ⟨rfl, rfl, rfl⟩ := d870.literal_inv
                                                                           obtain ⟨rfl, rfl, rfl⟩ := a871.nil_inv
-                                                                          exact «KernelRoleSpec::role_prim_family».Path.n97 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hne850 hv854 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                          exact «KernelRoleSpec::role_prim_family».Path.n97 hv854 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                         · have hne874 := MatchesConst.none_inv (MatchesConst.literal 97) nm852
                                                                           rcases selectArm_cons_inv sel853 with ⟨mt875, rfl⟩ | ⟨nm876, sel877⟩
                                                                           · obtain ⟨hv878, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 98) mt875
@@ -1424,7 +778,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                             obtain ⟨v882, vs890, m891, c892, c893, rfl, d894, a895, rfl⟩ := a889.cons_inv
                                                                             obtain ⟨rfl, rfl, rfl⟩ := d894.literal_inv
                                                                             obtain ⟨rfl, rfl, rfl⟩ := a895.nil_inv
-                                                                            exact «KernelRoleSpec::role_prim_family».Path.n98 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hne850 hne874 hv878 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                            exact «KernelRoleSpec::role_prim_family».Path.n98 hv878 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                           · have hne898 := MatchesConst.none_inv (MatchesConst.literal 98) nm876
                                                                             rcases selectArm_cons_inv sel877 with ⟨mt899, rfl⟩ | ⟨nm900, sel901⟩
                                                                             · obtain ⟨hv902, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 99) mt899
@@ -1434,7 +788,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                               obtain ⟨v906, vs914, m915, c916, c917, rfl, d918, a919, rfl⟩ := a913.cons_inv
                                                                               obtain ⟨rfl, rfl, rfl⟩ := d918.literal_inv
                                                                               obtain ⟨rfl, rfl, rfl⟩ := a919.nil_inv
-                                                                              exact «KernelRoleSpec::role_prim_family».Path.n99 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hne850 hne874 hne898 hv902 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                              exact «KernelRoleSpec::role_prim_family».Path.n99 hv902 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                             · have hne922 := MatchesConst.none_inv (MatchesConst.literal 99) nm900
                                                                               rcases selectArm_cons_inv sel901 with ⟨mt923, rfl⟩ | ⟨nm924, sel925⟩
                                                                               · obtain ⟨hv926, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 101) mt923
@@ -1444,7 +798,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                                 obtain ⟨v930, vs938, m939, c940, c941, rfl, d942, a943, rfl⟩ := a937.cons_inv
                                                                                 obtain ⟨rfl, rfl, rfl⟩ := d942.literal_inv
                                                                                 obtain ⟨rfl, rfl, rfl⟩ := a943.nil_inv
-                                                                                exact «KernelRoleSpec::role_prim_family».Path.n101 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hne850 hne874 hne898 hne922 hv926 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                                exact «KernelRoleSpec::role_prim_family».Path.n101 hv926 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                               · have hne946 := MatchesConst.none_inv (MatchesConst.literal 101) nm924
                                                                                 rcases selectArm_cons_inv sel925 with ⟨mt947, rfl⟩ | ⟨nm948, sel949⟩
                                                                                 · obtain ⟨hv950, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 102) mt947
@@ -1454,7 +808,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                                   obtain ⟨v954, vs962, m963, c964, c965, rfl, d966, a967, rfl⟩ := a961.cons_inv
                                                                                   obtain ⟨rfl, rfl, rfl⟩ := d966.literal_inv
                                                                                   obtain ⟨rfl, rfl, rfl⟩ := a967.nil_inv
-                                                                                  exact «KernelRoleSpec::role_prim_family».Path.n102 hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hne850 hne874 hne898 hne922 hne946 hv950 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                                  exact «KernelRoleSpec::role_prim_family».Path.n102 hv950 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                                 · have hne970 := MatchesConst.none_inv (MatchesConst.literal 102) nm948
                                                                                   rcases selectArm_cons_inv sel949 with ⟨mt971, rfl⟩ | ⟨nm972, sel973⟩
                                                                                   · obtain rfl := matchPattern_wildcard_inv mt971
@@ -1464,7 +818,7 @@ theorem «KernelRoleSpec::role_prim_family».obs {x_r : SourceValue F} {h h' : H
                                                                                     obtain ⟨v977, vs985, m986, c987, c988, rfl, d989, a990, rfl⟩ := a984.cons_inv
                                                                                     obtain ⟨rfl, rfl, rfl⟩ := d989.literal_inv
                                                                                     obtain ⟨rfl, rfl, rfl⟩ := a990.nil_inv
-                                                                                    exact «KernelRoleSpec::role_prim_family».Path.other hne34 hne58 hne82 hne106 hne130 hne154 hne178 hne202 hne226 hne250 hne274 hne298 hne322 hne346 hne370 hne394 hne418 hne442 hne466 hne490 hne514 hne538 hne562 hne586 hne610 hne634 hne658 hne682 hne706 hne730 hne754 hne778 hne802 hne826 hne850 hne874 hne898 hne922 hne946 hne970 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                                                                    exact «KernelRoleSpec::role_prim_family».Path.other rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                                                                                   · exact (matchPattern_wildcard_none nm972).elim
 
 end IxVM.Refinement.Obs

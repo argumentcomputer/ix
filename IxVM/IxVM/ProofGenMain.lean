@@ -33,4 +33,17 @@ def main (args : List String) : IO UInt32 := do
       if let some dir := path.parent then IO.FS.createDirAll dir
       IO.FS.writeFile path text
       IO.println s!"[ixvm-proof-gen] wrote {path}"
+  -- a path-lemma module the generator no longer writes (its chunks moved) would still be
+  -- built by the `IxVMRefinement` glob: report it (and fail `--check`); it is not deleted here
+  let obsDir : System.FilePath := match root with
+    | some dir => dir / "IxVMRefinement" / "Obs"
+    | none => ⟨"IxVMRefinement/Obs"⟩
+  if ← obsDir.isDir then
+    let written := files.map fun (path, _) => match root with
+      | some dir => dir / path
+      | none => path
+    for entry in ← obsDir.readDir do
+      if entry.path.extension == some "lean" && !written.contains entry.path then
+        IO.eprintln s!"[ixvm-proof-gen] {entry.path} is not generated any more: delete it"
+        if check then ok := false
   return if ok then 0 else 1

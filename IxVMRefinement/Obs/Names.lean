@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Obs
 import IxVM.Lookup
+import IxVM.ExprPath
 
 /-! Generated path lemmas: the world and the instance names they normalize.
 
