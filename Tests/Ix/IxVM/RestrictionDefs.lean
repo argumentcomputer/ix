@@ -21,9 +21,11 @@ namespace Tests.Ix.IxVM.RestrictionDefs
 
 universe u
 
-/-- A field-less structure at `Sort u`: a proposition at `u = 0`. -/
-structure PU : Sort u where
-  mk ::
+/-- A field-less structure-like type at `Sort u`: a proposition at `u = 0`. (An
+`inductive` with one field-less constructor: Lean refuses `structure` at `Sort u`;
+structure η reads the type's shape, one constructor and no indices.) -/
+inductive PU : Sort u where
+  | mk : PU
 
 /-- A field-less structure at `Type`: never a proposition. -/
 structure PT : Type where
