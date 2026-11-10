@@ -1,11 +1,15 @@
 version: 2
+# Monthly schedules and cooldowns apply only to routine version updates.
+# Security updates and grouping are enabled in repository settings: alerts
+# with available fixes trigger security PRs immediately, without waiting
+# for the monthly schedule or cooldown.
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
     pull-request-branch-name:
       separator: "-"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     cooldown:
       default-days: 7
     # Create separate pull requests for major vs minor/patch version updates, as major bumps will likely introduce breaking changes and Dependabot will put each one in its own PR.
@@ -25,7 +29,7 @@ updates:
       - "/"
       - "/.github/actions/*"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     cooldown:
       default-days: 7
     groups:
