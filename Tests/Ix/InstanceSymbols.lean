@@ -1,4 +1,4 @@
-import IxVM.Program
+import IxVM.Source
 import MultiStark.Program
 
 /-! Instance symbols are unchanged by the structural encoding.
@@ -29,14 +29,17 @@ def jsonOfSymbol (name : String) : Except String Generic.Instance :=
     Lean.fromJson? (← Lean.Json.parse (name.drop 1).toString)
   else return ⟨name, []⟩
 
-/-- The `$` names of the specialized program for `entries`. -/
+/-- The `$` names of a specialized program. -/
+def symbolsOfSource {F : Type} [Field F] [DecidableEq F] (source : Generic.Source F)
+    (entries : List String) : Except String (List String) := do
+  let specialized ← Generic.specialize source entries
+  let names := specialized.program.functions.map (·.name) ++ specialized.program.enums.map (·.name)
+  return (names.filter (·.startsWith "$")).eraseDups
+
 def symbolsOf {F : Type} [Field F] [DecidableEq F] (p : Modules.Program F) (entries : List String) :
     Except String (List String) := do
   let prepared ← Modules.prepare p entries
-  let specialized ← Generic.specialize prepared.environment.source prepared.entries
-  let names := specialized.program.functions.map (·.name) ++
-    specialized.program.enums.map (·.name)
-  return (names.filter (·.startsWith "$")).eraseDups
+  symbolsOfSource prepared.environment.source prepared.entries
 
 def agrees (key : Generic.Instance) (s : String) : Bool :=
   key.symbol == s && jsonSymbol key == s &&
@@ -53,8 +56,8 @@ def synthetic : List Generic.Instance := [
 
 def run : IO UInt32 := do
   let programs : List (String × Except String (List String)) := [
-    ("IxVM verify_claim", symbolsOf IxVM.program ["IxVM::verify_claim"]),
-    ("IxVM export entries", symbolsOf IxVM.program ["IxVM::verify_transitive",
+    ("IxVM verify_claim", symbolsOfSource IxVM.source ["IxVM::verify_claim"]),
+    ("IxVM export entries", symbolsOfSource IxVM.source ["IxVM::verify_transitive",
       "IxVM::verify_constant", "IxVM::verify_serde", "IxVM::check_primitives",
       "IxVM::check_port_cases"]),
     ("MultiStark recursion", symbolsOf MultiStark.recursionProgram

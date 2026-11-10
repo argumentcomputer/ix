@@ -769,8 +769,8 @@ Init's addresses requires regeneration; the specifications, `specVersion`
 and the digest stay. Soundness does not depend on the table.
 
 **In IxVM.** The circuit reads a typing claim's roles through the binding its
-context names (`IxVM/IxVM/Modules/KernelRoles.lean`) and validates each against the
-same specifications, rendered as circuit terms (`IxVM/IxVM/Modules/KernelRoleSpec.lean`,
+context names (`IxVM/IxVM/Source/KernelRoles.lean`) and validates each against the
+same specifications, rendered as circuit terms (`IxVM/IxVM/Source/KernelRoleSpec.lean`,
 rendered by `Ix/IxVM/RoleSpecGen.lean`). Groups follow `Role.block`, in an
 order where every `Role.deps` precedes, and a group is validated the first
 time a claim uses one of its roles, under a context that admits only the
@@ -1068,10 +1068,10 @@ interleaved:
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
 3. **The rendered role specifications.** `lake exe ix codegen` rewrites
-   `IxVM/IxVM/Modules/KernelRoleSpec.lean`, the role specifications rendered as
+   `IxVM/IxVM/Source/KernelRoleSpec.lean`, the role specifications rendered as
    circuit terms by `Ix/IxVM/RoleSpecGen.lean`, which change with `specVersion`
    or the specification digest; `lake exe ix codegen --check` must pass. The
-   other IxVM modules (`IxVM/IxVM/Modules/*.lean`) are source, written by hand.
+   other IxVM modules (`IxVM/IxVM/Source/*.lean`) are source, written by hand.
 4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after

@@ -58,11 +58,10 @@ def fixtureHints (fixture : Fixture) : Array (Execution.HintEntry F) := Id.run d
   if enabled then IO.eprintln s!"Phase {label}: {(← IO.monoMsNow) - start}ms"
   return result
 
-private def dumpPropagation {source : Modules.Program F}
-    (prepared : Modules.Prepared source) (directory : String) : IO Unit := do
+private def dumpPropagation (source : Generic.Source F) (entries : List String) (directory : String) : IO Unit := do
   IO.eprintln "Specializing/inlining propagation fixtures..."
-  let specialized ← IO.ofExcept (Generic.specialize prepared.environment.source prepared.entries)
-  let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames prepared.entries)
+  let specialized ← IO.ofExcept (Generic.specialize source entries)
+  let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames entries)
   IO.FS.createDirAll directory
   for (name, symbol) in [("put_expr", "IxonSerialize::put_expr"),
       ("get_expr", "IxonDeserialize::get_expr"),
@@ -77,28 +76,29 @@ private def dumpPropagation {source : Modules.Program F}
 
 /-- Actual circuit columns, before adding any lookup protocol,
 memory-table chips, multiplicities or quotient commitments. -/
-private def reportColumns {source : Modules.Program F}
-    (prepared : Modules.Prepared source) (path : String)
+private def reportColumns (source : Generic.Source F) (entries : List String) (path : String)
     (config : Optimized.Config := {}) (reference : Bool := false)
     (profile : Bool := false) : IO Unit := do
   let (system, representatives, unmerged, description) ← if reference then do
     IO.eprintln "Compiling reference circuits..."
-    let compiled ← IO.ofExcept prepared.compile
-    let system := compiled.circuit.system
+    let specialized ← IO.ofExcept (Generic.specialize source entries)
+    let compiled ← IO.ofExcept specialized.compile
+    let system := compiled.system
     pure (system, system.chips.map (fun c => (c.name, c.name)),
       system.chips.length, "reference")
   else do
     IO.eprintln s!"Compiling circuits: {reprStr config}"
     let artifact ← if profile then do
       let specialized ← timePhase true "specialization" fun _ =>
-        Generic.specialize prepared.environment.source prepared.entries
+        Generic.specialize source entries
       let inlined ← timePhase true "inlining" fun _ =>
-        Inlining.prepare specialized.program specialized.inlineNames prepared.entries
+        Inlining.prepare specialized.program specialized.inlineNames entries
       timePhase true "circuit compilation" fun _ =>
-        Optimized.compile inlined.program prepared.entries config
+        Optimized.compile inlined.program entries config
     else do
-      let compiled ← IO.ofExcept (prepared.compileOptimized config)
-      pure compiled.circuit.artifact
+      let specialized ← IO.ofExcept (Generic.specialize source entries)
+      let compiled ← IO.ofExcept (specialized.compileOptimized config)
+      pure compiled.artifact
     let physical ← timePhase profile "physical deduplication" fun _ => Optimized.Physical.prepare artifact
     let representatives := artifact.representatives.map fun (name, _) => (name, physical.representative name)
     pure (physical.system, representatives, artifact.unmerged.chips.length,
@@ -114,7 +114,7 @@ private def reportColumns {source : Modules.Program F}
       ("width", toJson layout.width)]
   let columns := system.stats.foldl (fun n s => n + s.columns) 0
   let result := Json.mkObj [
-    ("modulus", toJson modulus), ("entries", toJson prepared.entries),
+    ("modulus", toJson modulus), ("entries", toJson entries),
     ("config", toJson description),
     ("function_chips", toJson chips.length), ("function_stage1", toJson columns),
     ("chips", toJson chips), ("representatives", toJson representatives),
@@ -160,10 +160,10 @@ unsafe def main (args : List String) : IO Unit := do
   if profile then IO.eprintln s!"Phase initialization: {(← IO.monoMsNow) - totalStart}ms"
   IO.eprintln s!"IxVM program {IxVM.programDigest}"
   if ["check-claim", "export-claim", "export-claim-trace", "grouping-snapshot"].contains mode then
-    let source := IxVM.Checked.source
-    let entries := [IxVM.Checked.entry]
+    let source := IxVM.source
+    let entries := [IxVM.entry]
     let start ← IO.monoMsNow
-    IO.eprintln "Compiling bytecode from checked source..."
+    IO.eprintln "Compiling bytecode from source..."
     let exported ← IO.ofExcept (source.exportExecution entries)
     IO.eprintln s!"Exported {exported.bytecode.functions.length} functions in {(← IO.monoMsNow) - start}ms."
     if mode == "check-claim" then return
@@ -190,21 +190,21 @@ unsafe def main (args : List String) : IO Unit := do
     Artifact.write path (← IO.ofExcept (Artifact.package exported modulus ZMod.val trace))
     IO.eprintln s!"Wrote {path}"
     return
-  let source := IxVM.program
-  IO.eprintln "Checking IxVM tables..."
+  let source := IxVM.source
+  IO.eprintln "Checking IxVM entrypoints..."
   let start ← IO.monoMsNow
   let entries := if mode == "export" then ["IxVM::verify_transitive", "IxVM::verify_constant", "IxVM::verify_serde", "IxVM::check_primitives", "IxVM::check_port_cases"] else [entry]
-  let prepared ← timePhase profile "module/table preparation" fun _ =>
-    Modules.prepare source entries
+  for entry in entries do
+    IO.ofExcept (source.checkEntry entry)
   if mode == "dump-propagation" then
-    return ← dumpPropagation prepared (args[1]?.getD "/tmp/aiur-propagation")
+    return ← dumpPropagation source entries (args[1]?.getD "/tmp/aiur-propagation")
   if mode == "stats" || profile || mode == "stats-no-propagation" || mode == "stats-reference" then
-    reportColumns prepared (args[1]?.getD "/tmp/aiur-ixvm-columns.json")
+    reportColumns source entries (args[1]?.getD "/tmp/aiur-ixvm-columns.json")
       {propagateValues := mode != "stats-no-propagation"} (mode == "stats-reference") profile
     if profile then IO.eprintln s!"Phase total: {(← IO.monoMsNow) - totalStart}ms"
     return
   IO.eprintln s!"Checked in {(← IO.monoMsNow) - start}ms. Compiling bytecode..."
-  let exported ← IO.ofExcept prepared.exportExecution
+  let exported ← IO.ofExcept (source.exportExecution entries)
   IO.eprintln s!"Exported {exported.bytecode.functions.length} functions."
   if mode == "check" then return
   let fixture ← IO.ofExcept (Fixture.decode (← IO.FS.readBinFile (← sourcePath "fixtures/nat-add-comm.ixf")))
@@ -215,9 +215,10 @@ unsafe def main (args : List String) : IO Unit := do
   let hints ← IO.ofExcept (exported.prepareHints hints)
   let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
-    let compiled ← IO.ofExcept (prepared.compileOptimized {})
+    let specialized ← IO.ofExcept (Generic.specialize source entries)
+    let compiled ← IO.ofExcept (specialized.compileOptimized {})
     let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+      compiled.inlined.program compiled.artifact exported groups)
     pure (exported, some trace)
   else pure (exported, none)
   IO.eprintln "Encoding execution package..."

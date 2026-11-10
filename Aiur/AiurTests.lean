@@ -30,6 +30,7 @@ import AiurTests.Diagnostics
 import AiurTests.Assertions
 import AiurTests.OrPatterns
 import AiurTests.Modules
+import AiurTests.Functions
 import AiurTests.Opacity
 import AiurTests.Execution
 import AiurTests.Trace

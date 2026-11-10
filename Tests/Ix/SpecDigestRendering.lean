@@ -3,7 +3,7 @@ module
 public import Ix.IxVM.RoleSpecGen
 
 /-! The rendered circuit specification and the specification digest cannot
-drift apart. `IxVM/IxVM/Modules/KernelRoleSpec.lean` is rebuilt from the bytes
+drift apart. `IxVM/IxVM/Source/KernelRoleSpec.lean` is rebuilt from the bytes
 the digest hashes (`IxVM.RoleSpecGen.checkRendering`): the checked-in file
 must pass, and each mutation below, of the bytes or of the file, must be
 refused. `ix codegen --check` runs the same rebuild on every PR
@@ -15,7 +15,7 @@ namespace Tests.Ix.SpecDigestRendering
 
 open Ix.Kernel
 
-def renderedPath : System.FilePath := "IxVM/IxVM/Modules/KernelRoleSpec.lean"
+def renderedPath : System.FilePath := "IxVM/IxVM/Source/KernelRoleSpec.lean"
 
 /-- `xs` with its first two entries swapped. -/
 def swapFirstTwo {α : Type} : List α → List α

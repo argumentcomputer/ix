@@ -52,21 +52,29 @@ row indices, and constraints are unchanged by this refactor.
 
 ## Applications and source composition
 
-The application modules are Lean files, one per module, each an embedded
-`aiur⟦ … ⟧` block (`Aiur.Modules.Frontend.embedded`) that defines a
-`Modules.Program Nat` constant. Lean elaborates them when the package is
-built; they are the source of truth, and nothing regenerates them.
+The application modules are Lean files containing embedded Aiur syntax.
+Lean parses and elaborates the syntax when the package is built.
 
-`IxVM/IxVM/Modules/*.lean` define `IxVM.Source.<module>`: Ixon types and
-serialization, ingress, conversion, address maps, and the kernel subsystems
+`IxVM/IxVM/Source/*.lean` contain the authored Aiur modules. They define Ixon
+types and serialization, ingress, conversion, address maps, and the kernel subsystems
 (limbs, natural primitives, levels, substitution, weak-head reduction,
 inference, definitional equality, checking, claims, and evaluation), and the
-entrypoints in `IxVM.lean`. `IxVM.source` (`IxVM/IxVM/Program.lean`) composes
-them in a fixed order, and `IxVM.program` adds the shared libraries over
-Goldilocks. `KernelRoleSpec.lean` is the one rendered module: `lake exe ix
-codegen` writes it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`),
-reading only the specification digest's bytes, and `lake exe ix codegen
---check` fails when it is stale.
+entrypoints in `IxVM.lean`. Each `aiur_module` contains named `def` declarations
+written with `aiur_fn⟦ … ⟧`. Imported modules retain these declarations in Lean's
+persistent environment metadata. `IxVM/Program.lean` resolves the selected modules
+and shared Goldilocks libraries together, then emits each function once as a
+transparent Lean definition, such as `IxVM.KernelWhnf.whnf`. `IxVM.program`
+contains references to those definitions; `IxVM.source` adds the certified
+static tables. Execution and refinement proofs use that same source. Import
+`IxVM` to use it from another Lean project; no source files are read at runtime.
+
+`KernelRoleSpec.lean` is the one rendered module: `lake exe ix codegen` writes
+it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`), reading only the
+specification digest's bytes. `lake exe ix codegen --check` checks freshness.
+The `ixvm-source` test compares the public program, tables, and bytecode with
+full native preparation of the declaration metadata.
+`lake exe ixvm/ixvm-proof-gen --check` checks the derived lookup and mirror
+proof scripts; the lookup lemma for the example is `IxVM.KernelWhnf.whnf.lookup`.
 
 `MultiStark/MultiStark/Modules/*.lean` hold proof and system decoding,
 transcript, hash adapters, Merkle verification, PCS, the STARK verifier, and
@@ -76,9 +84,10 @@ verifier implementation. `Recursion.lean` and `Aggregate.lean` are the two
 definitions of module `MultiStark`, with the public entrypoints
 `MultiStark::verify_multi_stark_proof` and `MultiStark::ix_aggr`.
 
-Where a program is composed, `#aiur_check` checks it against the libraries it
-uses, so an ill-formed module fails the build. Each program also has a digest,
-BLAKE3 of its `Repr` rendering computed at build time (`IxVM.programDigest`,
+The program elaborator (or `#aiur_check` for quoted programs) checks the
+modules against their libraries, so an ill-formed module fails the build. Each
+program also has a digest, BLAKE3 of its composed module input’s `Repr` rendering
+computed at build time (`IxVM.programDigest`,
 `MultiStark.recursionDigest`, `MultiStark.aggregateDigest`). The exporters
 print it (`ixvm digest`, `stark-export digest [--aggregate]`) and report it
 when they export, and `ix` caches each exported artifact under BLAKE3 of the

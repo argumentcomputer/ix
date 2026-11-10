@@ -47,25 +47,26 @@ def programHost : IO String := Ix.Cli.FormalAiur.host
 
 /-- The Aiur source text of a program's modules as `(file, text)`, in file-name
 order: the body of the `aiur⟦ … ⟧` block of each `.lean` file in `dir`, by
-default the IxVM program's modules, without its `--` comment lines. The block
-starts after the last `aiur⟦` before the `⟧` that closes it at the start of a
-line (the module docstring mentions `aiur⟦ … ⟧` first). A module file without
-a block fails, so a change in the sources' layout cannot hide them from the
-guards. -/
-def programSources (dir : System.FilePath := "IxVM/IxVM/Modules") :
+default the IxVM program's modules, without `--` comment lines. Named DSL
+modules retain all function quotations; legacy module quotations (used by
+MultiStark) retain their whole block. Missing declarations fail the guard. -/
+def programSources (dir : System.FilePath := "IxVM/IxVM/Source") :
     IO (Array (System.FilePath × String)) := do
   let dir := (← Ix.Cli.FormalAiur.repoRoot) / dir
   let files := ((← dir.readDir).map (·.path)).filter (·.extension == some "lean")
   let mut out := #[]
   for file in files.qsort (·.toString < ·.toString) do
     let text ← IO.FS.readFile file
-    let (head :: _ :: _) := text.splitOn "\n⟧"
-      | throw (IO.userError s!"{file} has no aiur⟦ … ⟧ block")
-    let parts := head.splitOn "aiur⟦"
-    unless parts.length ≥ 2 do throw (IO.userError s!"{file} has no aiur⟦ … ⟧ block")
-    let lines := ((parts.getLastD "").splitOn "\n").filter
-      fun l => !l.trimAscii.toString.startsWith "--"
-    out := out.push (file, "\n".intercalate lines)
+    let lines := text.splitOn "\n"
+    let named := lines.dropWhile fun l => !l.trimAscii.toString.startsWith "aiur_module "
+    let lines ← if !named.isEmpty then pure named else do
+      let (head :: _ :: _) := text.splitOn "\n⟧"
+        | throw (IO.userError s!"{file} has no Aiur declarations")
+      let parts := head.splitOn "aiur⟦"
+      unless parts.length ≥ 2 do throw (IO.userError s!"{file} has no Aiur declarations")
+      pure ((parts.getLastD "").splitOn "\n")
+    out := out.push (file, "\n".intercalate (lines.filter
+      fun l => !l.trimAscii.toString.startsWith "--"))
   if out.isEmpty then throw (IO.userError s!"{dir} holds no module files")
   return out
 

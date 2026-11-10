@@ -10,7 +10,7 @@ IxVM reads a claim's primitives through its role binding and validates each
 bound role against IxC's specification (`Ix.Kernel.Role.spec`) before using
 it. The circuit cannot evaluate Lean data, so this module renders the
 specification set as Formal Aiur source, the Lean file
-`IxVM/IxVM/Modules/KernelRoleSpec.lean` (an `aiur⟦ … ⟧` block),
+`IxVM/IxVM/Source/KernelRoleSpec.lean` (an `aiur⟦ … ⟧` block),
 which `lake exe ix codegen` writes and `lake exe ix codegen --check`
 compares against this renderer. The rendered file names `specVersion` and the
 specification digest, so a change to the specifications that is not
@@ -424,7 +424,7 @@ def closeEqnStatement (src : Source) (eq : Nat) (r : Role) (e : Equation .anon) 
 within that family. -/
 def primFamilyOp (src : Source) (r : Role) : Nat × Nat := (src.row r).native
 
-/-! ## The file (`IxVM/IxVM/Modules/KernelRoleSpec.lean`) -/
+/-! ## The file (`IxVM/IxVM/Source/KernelRoleSpec.lean`) -/
 
 /-- The roles directly named by circuit modules (`role_<name>`). Each name's
 index is the one the specification bytes give the role's Lean name. -/
@@ -450,10 +450,13 @@ def byRole (f : Role → Except String String) (fallback : String) : Except Stri
       arms := arms ++ arm (toString (roleIdx r)) rhs
   pure s!"      match r \{\n{arms}{arm "_" fallback}      }"
 
-def formalAiurFn (sig body : String) : String := s!"  {sig} \{\n{body}\n    }"
+def formalAiurFn (sig body : String) : String :=
+  let name := (((sig.splitOn "fn ").getLast!).splitOn "(").head!
+  s!"def {name} := aiur_fn⟦\n" ++
+    s!"  {sig} \{\n{body}\n    }\n⟧"
 
-/-- The rendered Lean file, up to its `aiur⟦ … ⟧` block. -/
-def leanHeader : String := "import Aiur.Modules.Frontend
+/-- The rendered Lean file, up to its named function definitions. -/
+def leanHeader : String := "import Aiur.Modules.Function
 
 /-! # IxVM module `KernelRoleSpec`
 
@@ -461,18 +464,17 @@ Rendered from IxC's role specifications (`Ix.Kernel.Role.spec`) by
 `IxVM.RoleSpecGen.renderFormalAiur`; do not edit. `lake exe ix codegen` writes
 this file, and `lake exe ix codegen --check` fails when it is stale.
 
-Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `IxVM.source`
-(`IxVM/IxVM/Program.lean`) composes the modules. -/
+Named Aiur declarations, elaborated together by `IxVM.Program`. -/
 
-namespace IxVM.Source
+namespace IxVM
 
 -- Compiling the long role matches recurses past the default depth.
-set_option maxRecDepth 32768 in
-def kernelRoleSpec : Aiur.Modules.Program Nat := aiur⟦
+set_option maxRecDepth 32768
+aiur_module KernelRoleSpec where
+
 "
 
-/-- Render `IxVM/IxVM/Modules/KernelRoleSpec.lean`, whose block is
-`module KernelRoleSpec { … }`, from the source alone. -/
+/-- Render the named functions and their module from the source alone. -/
 def renderSource (src : Source) : Except String String := do
   let c := src.committed
   let schedule := c.schedule
@@ -580,8 +582,8 @@ def renderSource (src : Source) : Except String String := do
     (← byRole (fun r => do
       let (fam, op) := primFamilyOp src r
       pure s!"({fam}, {op})") "(0, 0)"))
-  let body := "module KernelRoleSpec {\n" ++ "\n\n".intercalate fns.toList ++ "\n}"
-  pure (leanHeader ++ body ++ "\n⟧\n\nend IxVM.Source\n")
+  pure (leanHeader ++ "\n\n".intercalate fns.toList ++
+    "\n\nend\n\nend IxVM\n")
 
 /-- **`KernelRoleSpec.lean`, rebuilt from the specification bytes alone.** -/
 def renderFromBytes (bytes : ByteArray) : Except String String := do
@@ -607,7 +609,7 @@ def checkRendering (bytes : ByteArray) (file : String) : Except String Unit := d
     throw s!"KernelRoleSpec.lean is not the rendering of the specification bytes \
       (digest {Address.blake3Pure bytes}): {firstDifference rendered file}"
 
-/-- Render `IxVM/IxVM/Modules/KernelRoleSpec.lean` from the specification
+/-- Render `IxVM/IxVM/Source/KernelRoleSpec.lean` from the specification
 digest's bytes, once IxC's specification set and its schedule are checked
 (`checkGroups`). `ix codegen` writes it and `ix codegen --check` compares. -/
 def renderFormalAiur : Except String String := do

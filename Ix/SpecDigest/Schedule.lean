@@ -7,7 +7,7 @@ public import IxC.Kernel.Roles
 /-! # The validation schedule
 
 IxVM validates a binding's roles group by group
-(`IxVM/IxVM/Modules/KernelRoles.lean`). A group's roles are bound together
+(`IxVM/IxVM/Source/KernelRoles.lean`). A group's roles are bound together
 (`Role.block`), and every role a group needs (`Role.deps`) is in an earlier
 group. A group is validated under a context that admits only groups before
 it, so a native rule never takes part in its own validation. The order and

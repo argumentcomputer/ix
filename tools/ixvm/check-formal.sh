@@ -21,7 +21,7 @@ lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggrega
   aiur/grouping_example aiur/depth_example aiur/Aiur.Library.U8Facts \
   aiur/u32_tests aiur/library_tests
 # The IxVM and MultiStark modules are Lean source (`aiur⟦ … ⟧`). Only
-# IxVM/IxVM/Modules/KernelRoleSpec.lean is rendered, from IxC's role specifications.
+# IxVM/IxVM/Source/KernelRoleSpec.lean is rendered, from IxC's role specifications.
 .lake/build/bin/ix codegen --check
 lake env Aiur/.lake/build/bin/u32_tests
 lake env Aiur/.lake/build/bin/library_tests "$formal_tmp/library.ixa"

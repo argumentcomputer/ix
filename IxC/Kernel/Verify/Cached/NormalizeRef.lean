@@ -9,7 +9,7 @@ public import IxC.Kernel.TypeChecker
 
 `nfRef mode env fuel depth e` normalizes `e` with the kernel's fueled `whnf`,
 with the structure of IxVM's evaluator (`KernelEval::eval_nf` and
-`eval_nf_spine`, `IxVM/IxVM/Modules/KernelEval.lean`):
+`eval_nf_spine`, `IxVM/IxVM/Source/KernelEval.lean`):
 
 * reduce the head with `whnf`;
 * under a `lam` or a `forallE`, normalize the domain, then the body opened

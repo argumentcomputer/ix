@@ -17,7 +17,7 @@ lean_exe ixvm where
   root := `IxVM.Main
   supportInterpreter := true
 
-/-- Writes, or with `--check` compares, the checked source's Lean files
-(`IxVM/IxVM/Checked/`). -/
-lean_exe «ixvm-checked» where
-  root := `IxVM.CheckedMain
+/-- Writes, or with `--check` compares, derived lookup certificates and
+refinement mirrors. The source functions are elaborated at build time. -/
+lean_exe «ixvm-proof-gen» where
+  root := `IxVM.ProofGenMain
