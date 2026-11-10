@@ -741,7 +741,7 @@ def leaf (fname : String) (segs : List Seg) : M (List String) := do
   return norm ++ [s!"exact «{fname}».Path.{name}{holes}{proofs}"]
 
 /-- The path inductive and the inversion theorem of one function. -/
-def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (maxChars : Nat := 100000) :
+def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (maxChars : Nat := 200000) :
     Except String (String × Array (String × String × String) × Array (String × String × String) × Nat) := do
   if f.typeParams.length > 1 then throw "several type parameters"
   if f.name.startsWith "$" then throw "internal function"
@@ -779,8 +779,8 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (maxCh
     s!"theorem «{f.name}».obs {tibind}{ibind}\{h h' : Heap F} \{r : SourceValue F}\n" ++
     s!"    \{calls : List (Call F)} (ev : ObsFn W {symbol} {list ps} h r h' calls) :\n" ++
     s!"    «{f.name}».Path{targ}{pargs} h r h' calls := by\n" ++
-    s!"  have d0 := ev.function_inv {lookupThm}\n" ++
-    s!"    (by simp [{leanName}, ControlLower.hasControl])\n" ++
+    s!"  have d0 := ObsFn.function_inv (s := IxVM.source) {lookupThm}\n" ++
+    s!"    (by simp [{leanName}, ControlLower.hasControl]) ev\n" ++
     s!"  simp only [{leanName}] at d0\n" ++
     "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
   let text := lookupDecl ++ ind ++ "\n" ++ thm
