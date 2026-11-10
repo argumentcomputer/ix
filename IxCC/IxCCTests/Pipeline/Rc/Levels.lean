@@ -327,7 +327,8 @@ def verifyMixedScalarRealSource : IO Unit := do
   check s!"OS16 mixed scalar/heap contracts expected .zeroRc, got {repr pol}" (pol == .zeroRc)
   match ← IO.ofExcept ((Recheck.RcReplay.produceAuto cfg annotatedInp).mapError (·.message)) with
   | .zeroRc .. => pure ()
-  | .plainRc .. => throw (IO.userError "OS16 mixed scalar/heap produceAuto selected .plainRc instead of .zeroRc")
+  | .plainRc .. | .immortal .. =>
+    throw (IO.userError "OS16 mixed scalar/heap produceAuto did not select .zeroRc")
 
 def run (logs : System.FilePath) : IO Unit := do
   IxCCTests.Recheck.Rc.Fixtures.verify

@@ -4,6 +4,7 @@ import IxCCTests.Recheck.Audit
 import IxCCTests.Lir.Gen
 import IxCC.Lir.SplitEdges
 import IxCC.Recheck.Rc.Replay
+import IxCCTests.Recheck.Hostile
 
 /-! The `tests-recheck` suite (M1.K1): the recheck path in kernel-evaluable
 style. Building the suite evaluates, in the kernel
@@ -13,7 +14,12 @@ every committed artifact (`IxCCTests/Recheck/Artifacts/*.lean`)
 equals a fresh ingress, `produce` and native run, so the kernel's claims
 are about the live compiler, and that the recheck path's statistics-free
 selection (`Select.select`) selects what `Select.run` selects on generated
-Lir (`--generated N` for a longer campaign; 1,000 by default). -/
+Lir (`--generated N` for a longer campaign; 1,000 by default). It also runs
+the regression tests of the 2026-11-09 branch review (`Hostile`): hostile
+certificates on pin-free programs through every program-level and byte-level
+verifier, Stage A in `check-cert`, the erased-typing default, the N4 root
+checks, N6, S10, the `--rc auto` immortal fallback, and the middle end's
+budgets on R1's inline amplifier and other over-budget steps. -/
 
 namespace IxCCTests.Recheck.Run
 
@@ -164,6 +170,15 @@ def main (args : List String) : IO UInt32 := do
   try
     IO.println "tests-recheck"
     part a "negative security checks (S1, S5, A2-2..A2-4, A4-1..A4-5)" (negativeSecurityTests a)
+    part a "pin-free programs through the program-level verifiers (REPORT item 1)" do
+      return #[← Hostile.pinFree a 3, ← Hostile.pinFree a 2]
+    part a "Stage A in check-cert, erased typing by default, N4, N6 and S10 (B2-4)" do
+      return #[← Hostile.cliStageA a, ← Hostile.typecheckDefault a, ← Hostile.rootChecks a,
+        ← Hostile.reachDedupe a]
+    part a "the --rc auto immortal fallback and check-cert --rc (B1-6, B1-8)" do
+      return #[← Hostile.autoFallback a]
+    part a "middle-end budgets (REPORT item 2)" do
+      return #[← Hostile.budgets a, ← Hostile.inlineAmplifier a]
     part a "Select.select against Select.run on generated Lir" (selection a count)
     part a "recheck artifacts equal a fresh ingress, produce and run" (artifacts a)
     IO.println s!"tests-recheck: {← a.get} assertions passed"

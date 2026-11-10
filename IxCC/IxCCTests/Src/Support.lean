@@ -97,6 +97,63 @@ def rootNamed (l : Loaded) (name : String) : IO CId := do
     | none => throw (IO.userError s!"root {name} is not in the closure")
   | none => throw (IO.userError s!"no root named {name}")
 
+/-! ## The front end without `Relevance.checkCanonical`
+
+`Src.Recheck.annotation`, and so `Src.Recheck.run`, `finish` and every
+verifier, refuses any irrelevant tag the declaration types do not justify
+(`Relevance.checkCanonical`). Erasure is correct for every annotation tiers S
+and C accept, and the suites test it on annotations the canonical check
+refuses: synthetic programs whose placeholder types justify nothing, and
+mutants of real annotations. These are the production steps with only that
+check left out; the suites assert separately what the production path does
+with the same inputs (`canonicalVerdict`). -/
+
+/-- `Src.Recheck.annotation` without `Relevance.checkCanonical`. -/
+def annotationNoCanonical (p : Program) (ann : Relevance.Ann) :
+    Except IxCC.Src.Recheck.Error (Program × Relevance.Checked) :=
+  match Relevance.install p ann with
+  | .error msg => .error (.install msg)
+  | .ok p =>
+    match Relevance.check p ann with
+    | .error errs => .error (.relevance errs)
+    | .ok checked => .ok (Lazify.run p checked.keys, checked)
+
+/-- `Src.Recheck.run` without `Relevance.checkCanonical`. -/
+def recheckNoCanonical (cfg : Table.Config) (p : Program) (ann : Relevance.Ann) :
+    Except IxCC.Src.Recheck.Error (Program × Relevance.Checked) :=
+  match Table.validate cfg p with
+  | .error msg => .error (.table msg)
+  | .ok () => annotationNoCanonical p ann
+
+/-- `finish` without `Relevance.checkCanonical`. -/
+def finishNoCanonical (cfg : LoadConfig) (hints : Hints) (p : Program) (ann : Relevance.Ann) :
+    Except Diag (Program × Relevance.Checked × Admitted) := do
+  let (p, checked) ← match annotationNoCanonical p ann with
+    | .ok r => pure r
+    | .error (.install msg) => throw (Diag.of "relevance-S1" msg)
+    | .error (.relevance errs) =>
+      let first := errs[0]?.map (·.rule) |>.getD "S1"
+      throw (Diag.of s!"relevance-{first}"
+        (String.intercalate "; " (errs.toList.take 8 |>.map (·.render p))))
+    | .error (.table msg) => throw (Diag.of "table-recheck" msg)
+  let admitted ← match admit p (Loaded.names hints) cfg.admit with
+    | .ok a => pure a
+    | .error diags =>
+      throw ((diags[0]?.getD (Diag.of "admit" "rejected")) |> fun d =>
+        { d with message := String.intercalate "; " (diags.toList.map toString) })
+  return (p, checked, admitted)
+
+/-- What the production front end does with an annotation tiers S and C
+accept: `true` if it accepts it too, `false` if `checkCanonical` refuses it
+(`relevance-S1`); anything else fails the assertion, since the two paths
+differ only in that check. -/
+def canonicalVerdict (a : Assert) (label : String) (r : Except Diag α) : IO Bool := do
+  match r with
+  | .ok _ => expect a true label; pure true
+  | .error d =>
+    expect a (d.code == "relevance-S1") s!"{label}: refused with {d.code}, not by checkCanonical"
+    pure false
+
 /-! ## Synthetic programs -/
 
 /-- A synthetic program under construction. Addresses are distinct fake

@@ -1,9 +1,12 @@
 import IxCCTests.Lam.Support
 import IxCC.Src.Recheck
 
-/-! Synthetic consumer-order controls through the actual table/relevance/Lazify
+/-! Synthetic consumer-order controls through the table/relevance/Lazify
 rechecker and erasure. Fake addresses and placeholder types deliberately make
-no kernel, ingress, resource-profile, or final-producer admission claim. -/
+no kernel, ingress, resource-profile, or final-producer admission claim. The
+placeholder types justify no irrelevant tag, so the fixtures go through the
+rechecker without `Relevance.checkCanonical` (`recheckNoCanonical`), and the
+production rechecker's verdict on each is asserted separately. -/
 
 namespace IxCCTests.Lam.EvaluationOrder
 
@@ -136,9 +139,17 @@ def run (a : Assert) : IO Unit := do
   for (label, value, expected) in examples w do
     let (b, root) := w.builder.add (.defn .defn .safe 0 ty value)
     let before := b.program #[root]
-    let (checked, proof) ← match Src.Recheck.run {} before (annotation before) with
+    -- The placeholder types justify no irrelevant tag, so the order is tested
+    -- through the recheck path without `checkCanonical`; what the production
+    -- path does with the fixture is asserted on its own.
+    let (checked, proof) ← match recheckNoCanonical {} before (annotation before) with
       | .ok result => pure result
       | .error _ => throw (IO.userError s!"case-order {label}: Src.Recheck refused synthetic fixture")
+    let production : Except Diag Unit := match Src.Recheck.run {} before (annotation before) with
+      | .ok _ => .ok ()
+      | .error (.relevance errs) => .error (Diag.of s!"relevance-{(errs[0]?.map (·.rule)).getD "S1"}" "")
+      | .error _ => .error (Diag.of "table-or-install" "")
+    let _ ← canonicalVerdict a s!"case-order {label}: production recheck" production
     if label.startsWith "direct-" || label.startsWith "extra-" then
       let ms := modes checked root
       expect a (ms.take 4 == [.strict, .strict, .byName, .byName]) s!"{label}: selected minors lazy"

@@ -32,6 +32,12 @@ mask. At each such call site the pass
 
 The pass is correct for every decision list (a decision that fails the
 checker, or a site where no masked argument is known, changes nothing).
+Every call site a decision makes the pass examine is first charged an upper
+bound of the work examining it can take and of the nodes it may build
+(`siteCost`), and a step whose charges pass `maxWork` or `maxNodes` is
+refused, so a certificate cannot make one step's work grow with the product
+of call sites and callee size, or with the exponential size of a value tree
+over shared definitions.
 Recursion is structural or on fuel, maps are `NatMap`s (kernel-evaluable,
 D17). Mutually recursive groups are not copied (Phase 1): calls from other
 members of `g`'s group keep calling the generic `g`. -/
@@ -249,8 +255,90 @@ structure St where
   /-- The next local function's pre-order index in the current caller. -/
   fns : Nat := 0
   specs : Nat := 0
+  /-- The work charged so far for the call sites examined (`siteCost`). -/
+  work : Nat := 0
+  /-- The nodes charged so far: an upper bound of what the specialisations
+  built for the examined sites hold (`siteCost`). -/
+  nodes : Nat := 0
 
 abbrev M := StateT St (Except String)
+
+/-! ## The work budget
+
+A decision lists a caller and a callee, and the pass then examines every call
+of the callee in the caller: the fixed-parameter checker and the
+specialisation's walk read the callee's body, the value trees follow the
+caller's definitions (a shared definition is described again in full, so a
+tree can be exponentially larger than the caller), and finding or adding the
+specialisation reads the program's globals. Each examined site is charged an
+upper bound of that work, and of the nodes of the specialisation it may build,
+before any of it runs, and the step is refused once the charges pass `maxWork`
+or `maxNodes`. -/
+
+/-- Work one specialisation step may charge (`siteCost`): forty times the most a
+committed program charges (1,615,803). -/
+def maxWork : Nat := 1 <<< 26
+
+/-- The trees' work counted per site (`treesWork`): past it, the square alone
+passes `maxWork`. -/
+def maxTreeWork : Nat := 1 <<< 13
+
+/-- Specialisation nodes one step may charge (`siteCost`): the program budget. -/
+def maxNodes : Nat := maxProgramNodes
+
+/-- An upper bound on the work of `trees` on `os`, counted up to `cap + 1` on
+a worklist: one per operand visited, following constructor fields and local
+functions' free variables however deep the definitions nest (`tree` also stops
+at its fuel), plus each constructor's fields and each local function's nodes
+and squared free-variable count (`Exp.free`, `dedup`). -/
+def treesWork (defs : Src.NatMap Def) (cap : Nat) : Nat → List Opd → Nat → Nat
+  | 0, _, acc => acc
+  | _, [], acc => acc
+  | fuel + 1, o :: todo, acc =>
+    if acc > cap then acc
+    else
+      match o with
+      | .lvl l =>
+        match defs.get? l with
+        | some (.con _ fs) => treesWork defs cap fuel (fs ++ todo) (acc + 1 + fs.length)
+        | some (.fn df ps b _) =>
+          let n := b.nodesUpTo cap
+          if acc + n > cap then acc + n + 1
+          else
+            let frees := b.free ps.length
+            let k := frees.length
+            if acc + n + k * k > cap then acc + n + k * k + 1
+            else
+              treesWork defs cap fuel ((dedup frees).map (fun j => Opd.lvl (df - 1 - j)) ++ todo)
+                (acc + 1 + n + k * k)
+        | _ => treesWork defs cap fuel todo (acc + 1)
+      | _ => treesWork defs cap fuel todo (acc + 1)
+
+/-- What examining a call of `gd` with arguments `as` (at depth `d`, masked by
+`mask`) may cost, in a program of `size` globals of which `specs` are this
+step's specialisations: the work (three readings of the callee's body, by the
+checker, the walk and the comparison with an equal-keyed specialisation; the
+square of the trees' work, since their holes and needed levels are lists
+searched at each visit; a pass over the globals, and a key comparison per
+specialisation, to find or add one), and the nodes of the specialisation it may
+build (the callee's body and the trees' rebuilt definitions). The counts stop
+past `maxWork` (the trees' past `maxTreeWork`). -/
+def siteCost (defs : Src.NatMap Def) (d : Nat) (gd : GDef) (mask : List Bool) (as : List Atom)
+    (size specs : Nat) : Nat × Nat :=
+  let masked := ((as.map (·.opd d)).zip mask).filterMap fun (o, m) => if m then some o else none
+  let v := min (treesWork defs maxTreeWork (maxTreeWork + 2) masked 0) (maxTreeWork + 1)
+  let body := gd.body.nodesUpTo maxWork
+  (3 * body + v * v + size + specs * (v + 1), body + v)
+
+/-- Charge a site's work and nodes (`cost` of the program's size and of the
+specialisations made so far), refusing the step once either passes its
+budget. -/
+def charge (cost : Nat → Nat → Nat × Nat) : M Unit := fun st =>
+  if st.work + (cost st.prog.size st.specs).1 > maxWork ||
+      st.nodes + (cost st.prog.size st.specs).2 > maxNodes then
+    .error "specialize: work budget exhausted"
+  else .ok ((), { st with work := st.work + (cost st.prog.size st.specs).1
+                          nodes := st.nodes + (cost st.prog.size st.specs).2 })
 
 /-- One argument of a site: a masked argument's value tree (and its root),
 or a hole for an unmasked one. -/
@@ -388,7 +476,8 @@ def rewrite (src : Program) (inv : Nat) (fkey : Key.GKey) (D : List (GlobalId ×
           pure (Bind.fn ps fb')
         | .call g as =>
           match D.lookup g, src.global? g with
-          | some mask, some gd =>
+          | some mask, some gd => do
+            charge (siteCost defs d gd mask as)
             if fixedOk gd g mask then do
               match ← specialize src inv fkey defs d g gd mask as with
               | some (s, args) => pure (Bind.call s args)
@@ -420,7 +509,7 @@ def run (cert : Cert) (P : Program) : Except String Program := do
     let D := (cert.decisions.filter (·.caller == f)).map fun d => (d.callee, d.mask)
     if D.isEmpty then pure st else
     let n := gd.ps.length
-    let (body, st) ← (rewrite P cert.inv gd.key D (4 * gd.body.nodes + 64)
+    let (body, st) ← (rewrite P cert.inv gd.key D (4 * gd.body.nodesUpTo maxGlobalNodes + 64)
       (Src.NatMap.ofList ((List.range n).map (·, Def.blank))) n gd.body).run { st with fns := 0 }
     let gs := st.prog.globalList.map fun (g, gd') => if g == f then { gd' with body } else gd'
     pure { st with prog := st.prog.withGlobals gs }

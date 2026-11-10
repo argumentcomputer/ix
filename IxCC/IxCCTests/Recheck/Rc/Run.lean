@@ -54,6 +54,8 @@ def verifyContractsAndPolicy : IO Unit := do
       throw (IO.userError "produceAuto (.plainRc) differs from produce")
   | .zeroRc .. =>
     throw (IO.userError "reverseList produceAuto unexpectedly selected .zeroRc")
+  | .immortal _ _ _ reason =>
+    throw (IO.userError s!"reverseList produceAuto fell back to .immortal: {reason.render}")
   let gcdBytes ← IO.FS.readBinFile "fixtures/ixon-v4/bench-k1/gcd.ixe"
   let gcdEqs ← IO.ofExcept (Json.parse (← IO.FS.readFile "fixtures/ixon-v4/bench-k1/gcd.equations.json"))
   let gcdInput ← IO.ofExcept ((Recheck.ingress gcdBytes gcdEqs ["entry"] false).mapError (·.message))
@@ -66,8 +68,8 @@ def verifyContractsAndPolicy : IO Unit := do
     let (wantCert, wantArt) ← IO.ofExcept ((Recheck.compileInput gcdCfg gcdInput).mapError (·.message))
     unless zeroCert.toText == wantCert.toText && zeroArt.object == wantArt.object do
       throw (IO.userError "gcd produceAuto (.zeroRc) differs from Recheck.compileInput")
-  | .plainRc .. =>
-    throw (IO.userError "gcd produceAuto unexpectedly selected .plainRc")
+  | .plainRc .. | .immortal .. =>
+    throw (IO.userError "gcd produceAuto did not select .zeroRc")
   IO.println "PASS contract-aware canonicalForSrc (.borrow/.unique), selectPolicy, and single-pass produceAuto"
 
 def run (args : List String) : IO Unit := do

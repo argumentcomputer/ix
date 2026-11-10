@@ -114,6 +114,20 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 -/
 #guard_msgs in #print axioms IxCC.Compiler.compileAuto_plainRc_sound
 
+/-- info: 'IxCC.Compiler.produceAuto_immortal_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.produceAuto_immortal_sound
+
+/-- info: 'IxCC.Compiler.compileAuto_immortal_sound' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blake3.HasherOps.hash._native.native_decide.ax_1✝]
+-/
+#guard_msgs in #print axioms IxCC.Compiler.compileAuto_immortal_sound
+
 /-- info: 'IxCC.CompileClaim.ofPayloadBytes_toPayloadBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.ofPayloadBytes_toPayloadBytes
 

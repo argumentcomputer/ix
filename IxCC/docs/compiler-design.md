@@ -215,6 +215,42 @@ lemmas and adds one case, not the per-construct proofs.
 | **Xv / Xl** | x86-shaped operations on virtual registers, then on registers and slots | Small-step | One lemma per selection rule; allocation validator |
 | **x86** | Typed x86: frames, ABI, layout | `X86.Eval` | Frame layout, layout, and generic `SafeSteps` into E1/E2 |
 
+### Middle-end budgets
+
+The middle end's certificate chooses which callees are inlined where, how many
+shrink rounds run and which call sites are specialised, and on the byte-level
+verifiers the claimant also chooses the program. Without bounds one certified
+step could ask for work and recursion far beyond its input: a single `inline`
+step on a 1.1 KB closure asked for about 16.8 million copied bindings and made
+`ixcc check-cert` abort with a stack overflow (review of 2026-11-09, item 2).
+The replay therefore refuses a step, with an ordinary `anf.replay` error, as
+soon as it passes one of these budgets ([`IxCC/Anf/Budget.lean`](../IxCC/Anf/Budget.lean)):
+
+| Budget | Bounds | Value | Largest committed value | Headroom |
+| --- | --- | --- | --- | --- |
+| `maxGlobalNodes` | one global, after P1 and after every step, and after every shrink round | 65,536 | 2,507 | 26× |
+| `maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 4,935 | 212× |
+| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, β-reduced local functions, inlined join points, case-of-case alternatives | 65,536 | 1,583 (inline), 2,860 (shrink) | 22× |
+| `Walk.maxFires` | rule firings in one walk | 8,192 | 500 | 16× |
+| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 1,615,803 | 41× |
+| `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
+
+The counts stop early (`Exp.nodesUpTo` walks a worklist and stops past its
+cap), so checking a budget costs no more than the budget. The largest values are
+measured by `tests-corpus`, which replays the honest certificate of every
+committed program step by step (every root of every corpus family, and `k1.ixe`,
+`src-sortpoly`, `src-diag`, the ownership fixtures and the RC real-source
+closure with all their roots: 158 programs) and fails if any reaches its budget.
+
+A walk's native recursion depth is at most its input's nodes plus its copies,
+so a refused step needs at most about 130,000 walk frames: `ixcc check-cert`
+refuses R1's amplifiers within an 8 MiB Lean stack (`LEAN_STACK_SIZE_KB=8192`).
+The front end before the middle end is not bounded this way: a closure whose P1
+output holds a 65,535-node global needs more than 8 MiB (and at most 16 MiB) of
+stack before the size check refuses it. Under shrink, the census counts read at
+each binding walk the rest of its body, so one shrink round on a global of `n`
+nodes still costs up to order `n²` steps.
+
 ## Source semantics and replacements
 
 The source evaluator's rules:
@@ -297,16 +333,20 @@ checker rejects the optimised output, the plain dup/drop output is used.
 
 The first plain-RC implementation lives in `Own.Plain` and `Own.Rc`.
 In the top-level compiler and claim/SIP verifiers
-(`Recheck.RcReplay.selectRcPolicyForSrc` in `IxCC/Recheck/Rc/Produce.lean`),
+(`Own.Plain.selectRcPolicyForSrc` in `IxCC/Recheck/Rc/Produce.lean`),
 `--rc auto` enriches the lowered `Fir.Program` with contracts from the
 relevance-erased `Src.Program` (`enrichFirContracts`, propagating `.many`
 defaults to unannotated functions) and inspects whether the resulting program is
 zero-RC (`zeroRcProgram`); if so, it selects `.zeroRc` and uses the immortal
-backend (`Recheck.run`). When `selectRcPolicyForSrc` selects `.plainRc` for a
-program outside the plain-RC domain (`!programDomain P`), `produceAuto` falls
-back to `.immortal` (`Recheck.produce`).
-Other programs (or `--rc on`) route through the bounded plain-RC replay path
-(`Recheck.RcReplay.run`). On the plain-RC route, `Plain.checkPlainMap` (and
+backend (`Recheck.run`). Otherwise it selects `.plainRc` and routes through the
+bounded plain-RC replay path (`Recheck.RcReplay.run`), as `--rc on` does; when
+the plain-RC certificate cannot be produced or its replay refuses it (for example
+for a contract-annotated program outside the plain-RC domain, `!programDomain P`),
+`RcReplay.produceAuto` falls back to `.immortal` (`AutoCompiled.immortal`, which
+carries the refusal): the zero-RC-format certificate on the immortal backend,
+rechecked by `Recheck.run`. `--rc auto` prints the policy it compiled under, and
+`CompileClaim.produce`/`makeClaim` bind it in the claim. `--rc on` has no
+fallback. On the plain-RC route, `Plain.checkPlainMap` (and
 `Plain.checkContractPlainMap`, which validates against explicit per-parameter
 borrow and return-ownership contracts) conservatively requires the complete
 proposed function map to equal the canonical producer's map, including its trie

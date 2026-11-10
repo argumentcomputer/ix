@@ -458,7 +458,8 @@
     "IxCCTests.Recheck.Audit",
     "IxCCTests.Lir.Gen",
     "IxCC.Lir.SplitEdges",
-    "IxCC.Recheck.Rc.Replay"]},
+    "IxCC.Recheck.Rc.Replay",
+    "IxCCTests.Recheck.Hostile"]},
   "IxCCTests.Recheck.ReadbackMain":
   {"path": "IxCCTests/Recheck/ReadbackMain.lean",
    "imports": ["IxCCTests.Recheck.Readback"]},
@@ -558,6 +559,16 @@
    ["IxCCTests.Recheck.Kernel.Fib",
     "IxCCTests.Recheck.Kernel.Tak",
     "IxCCTests.Recheck.Kernel.Gcd"]},
+  "IxCCTests.Recheck.Hostile":
+  {"path": "IxCCTests/Recheck/Hostile.lean",
+   "imports":
+   ["IxCC.CompileClaim",
+    "IxCC.Ring0",
+    "IxCC.Recheck.Linked",
+    "IxCC.Cli",
+    "IxCC.X86.Layout.Basic",
+    "IxCCTests.IxonV3.TypingFixtures",
+    "IxCCTests.Src.Support"]},
   "IxCCTests.Recheck.Audit":
   {"path": "IxCCTests/Recheck/Audit.lean",
    "imports": ["IxCC.Recheck.Run", "IxCC.Anf.Semantics", "Lean"]},
@@ -3125,6 +3136,7 @@
   {"path": "IxCCTests/Corpus/Run.lean",
    "imports":
    ["IxCCTests.Corpus.Manifest",
+    "IxCCTests.Corpus.Budget",
     "IxCCTests.Pipeline.Levels",
     "IxCC.Anf.Print",
     "IxCC.Lir.Print",
@@ -3177,6 +3189,10 @@
   "IxCCTests.Corpus.CertifiedCensus":
   {"path": "IxCCTests/Corpus/CertifiedCensus.lean",
    "imports": ["IxCCTests.Corpus.Manifest"]},
+  "IxCCTests.Corpus.Budget":
+  {"path": "IxCCTests/Corpus/Budget.lean",
+   "imports":
+   ["IxCCTests.Corpus.Manifest", "IxCCTests.Src.Support", "IxCC.Recheck"]},
   "IxCCTests.Corpus.Build":
   {"path": "IxCCTests/Corpus/Build.lean",
    "imports":
@@ -7204,7 +7220,7 @@
   {"path": "IxCC/Anf/WellFormed.lean", "imports": ["IxCC.Anf.Syntax"]},
   "IxCC.Anf.Walk":
   {"path": "IxCC/Anf/Walk.lean",
-   "imports": ["IxCC.Anf.Opd", "IxCC.Anf.Census"]},
+   "imports": ["IxCC.Anf.Opd", "IxCC.Anf.Census", "IxCC.Anf.Budget"]},
   "IxCC.Anf.Syntax":
   {"path": "IxCC/Anf/Syntax.lean", "imports": ["IxCC.Lam.Syntax"]},
   "IxCC.Anf.Specialize":
@@ -7448,6 +7464,8 @@
    "imports": ["IxCC.Anf.Opd", "IxCC.Lam.ModesOk"]},
   "IxCC.Anf.Census":
   {"path": "IxCC/Anf/Census.lean", "imports": ["IxCC.Anf.Syntax"]},
+  "IxCC.Anf.Budget":
+  {"path": "IxCC/Anf/Budget.lean", "imports": ["IxCC.Anf.Syntax"]},
   "IxCC.Aiur.Wire.TreeProofs":
   {"path": "IxCC/Aiur/Wire/TreeProofs.lean",
    "imports": ["IxCC.Aiur.Wire.Tree", "IxCC.Aiur.Wire.OpProofs"]},

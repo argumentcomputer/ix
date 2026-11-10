@@ -286,22 +286,28 @@ theorem rewrite_ok : ∀ (fuel : Nat) {inv : Nat} {fkey : Key.GKey} {D : List (G
         dsimp only at h
         split at h
         · next mask gd hl hg =>
+          -- the site's charge changes only the work counter
+          obtain ⟨u, stc, hc, h⟩ := run_bind_ok h
+          have hpc := run_charge_ok hc
+          have hstc : StOk P stc := ⟨by rw [hpc]; exact hst.1, by rw [hpc]; exact hst.2⟩
+          have hgc := Grows.of_prog hpc
+          try dsimp only at h
           split at h
           · next hfix =>
             obtain ⟨r, st1, h2, h⟩ := run_bind_ok h
-            obtain ⟨hs1, hg1, hsite⟩ := specialize_ok (Q := Q) h2 hst
+            obtain ⟨hs1, hg1, hsite⟩ := specialize_ok (Q := Q) h2 hstc
             split at h
             · next s args =>
               obtain ⟨b', st1', h3, h⟩ := run_bind_ok h
               obtain ⟨rfl, rfl⟩ := run_pure_ok h3
-              exact bind_tail IH hs1 hg1 (fun hpre => .call (hsite s args rfl hg hfix hpre))
+              exact bind_tail IH hs1 (hgc.trans hg1) (fun hpre => .call (hsite s args rfl hg hfix hpre))
                 (defOf_ok (fun _ e => nomatch e)) h
             · obtain ⟨b', st1', h3, h⟩ := run_bind_ok h
               obtain ⟨rfl, rfl⟩ := run_pure_ok h3
-              exact bind_tail IH hs1 hg1 (fun _ => .same) (defOf_ok (fun _ e => nomatch e)) h
+              exact bind_tail IH hs1 (hgc.trans hg1) (fun _ => .same) (defOf_ok (fun _ e => nomatch e)) h
           · obtain ⟨b', st1', h3, h⟩ := run_bind_ok h
             obtain ⟨rfl, rfl⟩ := run_pure_ok h3
-            exact bind_tail IH hst (Grows.refl _) (fun _ => .same) (defOf_ok (fun _ e => nomatch e)) h
+            exact bind_tail IH hstc hgc (fun _ => .same) (defOf_ok (fun _ e => nomatch e)) h
         · obtain ⟨b', st1', h3, h⟩ := run_bind_ok h
           obtain ⟨rfl, rfl⟩ := run_pure_ok h3
           exact bind_tail IH hst (Grows.refl _) (fun _ => .same) (defOf_ok (fun _ e => nomatch e)) h

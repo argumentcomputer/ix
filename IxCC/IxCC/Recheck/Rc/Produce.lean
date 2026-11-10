@@ -335,25 +335,53 @@ def selectPolicy (cfg : Config) (input : Recheck.Input) : Except Err Own.Plain.R
   let front ← produceFir cfg input
   return Own.Plain.selectRcPolicyForSrc front.src front.fir
 
-/-- Result of automatic policy-aware compilation (`produceAuto`). -/
+/-- Result of automatic policy-aware compilation (`produceAuto`): the policy it
+compiled under, with that policy's certificate and rechecked artifact. -/
 inductive AutoCompiled where
   | zeroRc (cert : Recheck.Cert) (artifact : Recheck.Artifact) (alloc : List Xv.Alloc.Outcome)
   | plainRc (cert : Cert) (artifact : Artifact) (alloc : List Xv.Alloc.Outcome)
+  /-- The immortal fallback: `selectRcPolicyForSrc` chose plain RC, but the
+  plain-RC certificate could not be produced or its replay refused it
+  (`reason`), so the program was compiled under the immortal policy
+  (`Recheck.run`, an `ixcc/cert/1` certificate). -/
+  | immortal (cert : Recheck.Cert) (artifact : Recheck.Artifact) (alloc : List Xv.Alloc.Outcome)
+      (reason : Err)
+
+/-- The immortal-backend certificate for an already-produced front end, and its
+recheck (`Recheck.run`). -/
+def produceImmortal (cfg : Config) (input : Recheck.Input) (front : ProducedFir) :
+    Except Err (Recheck.Produced × Recheck.Artifact) := do
+  let p ← finishZeroRcCert cfg front
+  let artifact ← Recheck.run cfg input.program p.cert
+  return (p, artifact)
+
+/-- The plain-RC certificate for an already-produced front end, and its replay
+(`RcReplay.run`). -/
+def producePlain (cfg : Config) (input : Recheck.Input) (front : ProducedFir) :
+    Except Err (Produced × Artifact) := do
+  let p ← finishPlainRcCert cfg front
+  let artifact ← run cfg input.program p.cert
+  return (p, artifact)
 
 /-- Automatically select `.zeroRc` or `.plainRc` from `Own.Plain.selectRcPolicyForSrc`
-in a single front-end pass, then produce and recheck the selected certificate. -/
+in a single front-end pass, then produce and recheck the selected certificate.
+When plain RC is selected but its certificate cannot be produced or is refused
+by its replay (for example a contract-annotated program outside
+`Own.Plain.programDomain`), fall back to the immortal policy (`.immortal`,
+carrying the plain-RC refusal). -/
 def produceAuto (cfg : Config) (input : Recheck.Input) : Except Err AutoCompiled := do
   let cfg := cfg.forInput input
   let front ← produceFir cfg input
   match Own.Plain.selectRcPolicyForSrc front.src front.fir with
   | .zeroRc =>
-    let p ← finishZeroRcCert cfg front
-    let artifact ← Recheck.run cfg input.program p.cert
+    let (p, artifact) ← produceImmortal cfg input front
     return .zeroRc p.cert artifact p.alloc
   | .plainRc =>
-    let p ← finishPlainRcCert cfg front
-    let artifact ← run cfg input.program p.cert
-    return .plainRc p.cert artifact p.alloc
+    match producePlain cfg input front with
+    | .ok (p, artifact) => return .plainRc p.cert artifact p.alloc
+    | .error reason =>
+      let (p, artifact) ← produceImmortal cfg input front
+      return .immortal p.cert artifact p.alloc reason
 
 /-- Policy-aware compiler from raw closure bytes and sidecar JSON. -/
 def compileAuto (cfg : Config) (bytes : ByteArray) (equations : Lean.Json)

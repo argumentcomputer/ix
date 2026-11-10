@@ -154,7 +154,10 @@ theorem rounds_iter : ∀ (n : Nat) (gd gd' : GDef), rounds P0 p gd n = .ok gd' 
     obtain ⟨⟨gd1, f⟩, h1, h2⟩ := Lam.ModesOk.bind_ok h
     have hr : roundOr P0 p gd = gd1 := by unfold roundOr; rw [h1]
     rw [iter_succ', hr]
-    exact rounds_iter n gd1 gd' h2
+    try dsimp only at h2
+    split at h2
+    · exact rounds_iter n gd1 gd' h2
+    · cases h2
 
 theorem getD_le_foldr : ∀ (cert : Cert) (g : GlobalId), cert.getD g 0 ≤ cert.foldr max 0
   | [], g => by simp
@@ -170,6 +173,7 @@ theorem run_global {cert : Cert} {Q : Program} (h : run p cert P0 = .ok Q) :
       if g < P0.size then (P0.global? g).map (fun gd => iter P0 p gd (cert.getD g 0)) else none := by
   unfold run at h
   obtain ⟨gs, hgs, h⟩ := Lam.ModesOk.bind_ok h
+  replace hgs := mapMWithin_mapM _ _ _ hgs
   cases h
   refine ⟨rfl, rfl, rfl, fun g => ?_⟩
   obtain ⟨hlen, hall⟩ := Lam.ModesOk.mapM_ok hgs

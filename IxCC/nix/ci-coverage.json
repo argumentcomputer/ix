@@ -80,6 +80,7 @@
   "IxCC.Aiur.Wire.Records",
   "IxCC.Aiur.Wire.Tree",
   "IxCC.Aiur.Wire.TreeProofs",
+  "IxCC.Anf.Budget",
   "IxCC.Anf.Census",
   "IxCC.Anf.Convert",
   "IxCC.Anf.Inline",
@@ -1555,7 +1556,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-09: add Stage A/B, Driver, Ring0, CompileClaim, Table, Lazify, and encodeK_csimp axiom fences",
+ "2026-11-09 review fixes (FA): fences for produceAuto_immortal_sound and compileAuto_immortal_sound",
  "axiom_sha256":
- "e7050d1dd9c1903b089456d5853a07e03dbd715016e0dddd3b5f2408d0652284",
- "axiom_count": 5435}
+ "3e15640c7837fac4d1aca3e9872d9aaf767602b8d5adbff2ae9ef02fc359705c",
+ "axiom_count": 5437}

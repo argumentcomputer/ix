@@ -47,6 +47,7 @@ theorem round_global {Q : Program} {f : Walk.Fires} (h : round P r = .ok (Q, f))
       ∀ g, Q.global? g = if g < P.size then (P.global? g).map (after P r g) else none := by
   unfold round at h
   obtain ⟨rs, hrs, h⟩ := Lam.ModesOk.bind_ok h
+  replace hrs := mapMWithin_mapM _ _ _ hrs
   cases h
   refine ⟨rfl, rfl, rfl, fun g => ?_⟩
   obtain ⟨hlen, hall⟩ := Lam.ModesOk.mapM_ok hrs

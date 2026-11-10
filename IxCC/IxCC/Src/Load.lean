@@ -76,8 +76,9 @@ def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
   stage "table-recheck" (Table.validate cfg.table p)
   return (p, tableDiags, tableStats)
 
-/-- Installation, the relevance check, `Lazify` and `Admit`, for one
-annotation of a prepared program. -/
+/-- Installation, the relevance check (tiers S and C, then
+`Relevance.checkCanonical`), `Lazify` and `Admit`, for one annotation of a
+prepared program (`Recheck.annotation`, then `admit`). -/
 def finish (cfg : LoadConfig) (hints : Hints) (p : Program) (ann : Relevance.Ann) :
     Except Diag (Program × Relevance.Checked × Admitted) := do
   let (p, checked) ← match Recheck.annotation p ann with

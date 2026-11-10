@@ -25,8 +25,9 @@ three policies (`.immortal`, `.zeroRc`, `.plainRc`):
    - Every soundness theorem exposes `Recheck.front cfg P cert = .ok (a.src, a.checked)`
      (or `Recheck.front cfg P cert.base = .ok (a.front.src, a.front.checked)` under
      `.plainRc`). `Recheck.front` runs `Src.Table.ofCert`, then
-     `Src.Recheck.annotation` (which runs `Relevance.check` and `Lazify.run`), then
-     `Relevance.checkCanonical`.
+     `Src.Recheck.annotation`, which installs the annotation and runs
+     `Relevance.check`, then `Relevance.checkCanonical` (on every program, whatever
+     its pinned identities), then `Lazify.run`.
    - Note (stage S): `CheckedProgram` evaluates `a.src` after table installation,
      relevance annotation recheck, and `Lazify` under `SrcEval` (`Lam.Erase.Proof`).
      These theorems state that `front` ran, not what it preserves: connecting its

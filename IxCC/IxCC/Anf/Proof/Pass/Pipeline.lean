@@ -87,6 +87,13 @@ theorem convert_wf {L : Lam.Program} {Q : Program} (h : convert L = .ok Q) : Q.W
     obtain ⟨gd, hgd, -⟩ := hgl g gl hgl' hg
     exact ⟨gd, hgd⟩
 
+/-- The size check passes its program through unchanged. -/
+theorem checkGlobalNodes_ok {P Q : Program} (h : checkGlobalNodes P = .ok Q) : Q = P := by
+  unfold checkGlobalNodes at h
+  split at h
+  · cases h; rfl
+  · cases h
+
 /-- P4's correctness: every certificate the re-run accepts gives a
 refinement of the input with ids `0 … size - 1`. -/
 def SpecCorrect : Prop :=
@@ -103,7 +110,11 @@ def Step.NoSpec : Step → Prop
 theorem step_correct (p : Shrink.Params) :
     ∀ (s : Step) (P Q : Program), (Step.NoSpec s ∨ SpecCorrect) → P.WF → s.run p P = .ok Q →
       Q.WF ∧ Sem.Refines P Q
-  | .shrink c, P, Q, _, hw, h => Shrink.Proof.run_refines hw h
+  | .shrink c, P, Q, _, hw, h => by
+    simp only [Step.run] at h
+    obtain ⟨x, hs, hc⟩ := Lam.ModesOk.bind_ok h
+    cases checkGlobalNodes_ok hc
+    exact Shrink.Proof.run_refines hw hs
   | .inline r, P, Q, _, hw, h => by
     simp only [Step.run] at h
     obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
@@ -149,8 +160,11 @@ theorem run_correct {cert : Cert} {L : Lam.Program} {Q : Program}
     (h : run cert L = .ok Q) : Sem.Refines L Q := by
   unfold run at h
   obtain ⟨P, h1, h2⟩ := Lam.ModesOk.bind_ok h
-  exact (Convert.Proof.convert_refines h1).trans
-    (steps_correct cert.shrink cert.steps P Q (fun _ _ => .inr spec_correct) (convert_wf h1) h2).2
+  obtain ⟨P0, h0, hc⟩ := Lam.ModesOk.bind_ok h1
+  have hP : P = P0 := checkGlobalNodes_ok hc
+  rw [hP] at h2
+  exact (Convert.Proof.convert_refines h0).trans
+    (steps_correct cert.shrink cert.steps P0 Q (fun _ _ => .inr spec_correct) (convert_wf h0) h2).2
 
 /-- **The middle end is correct** for every certificate without P4 steps:
 if the re-run accepts it, its output refines the Lam program. -/
@@ -158,8 +172,11 @@ theorem run_correct_noSpec {cert : Cert} (hno : ∀ s ∈ cert.steps, Step.NoSpe
     {Q : Program} (h : run cert L = .ok Q) : Sem.Refines L Q := by
   unfold run at h
   obtain ⟨P, h1, h2⟩ := Lam.ModesOk.bind_ok h
-  exact (Convert.Proof.convert_refines h1).trans
-    (steps_correct cert.shrink cert.steps P Q (fun s hs => .inl (hno s hs)) (convert_wf h1) h2).2
+  obtain ⟨P0, h0, hc⟩ := Lam.ModesOk.bind_ok h1
+  have hP : P = P0 := checkGlobalNodes_ok hc
+  rw [hP] at h2
+  exact (Convert.Proof.convert_refines h0).trans
+    (steps_correct cert.shrink cert.steps P0 Q (fun s hs => .inl (hno s hs)) (convert_wf h0) h2).2
 
 /-! ## The traced shape (decision D-1) -/
 

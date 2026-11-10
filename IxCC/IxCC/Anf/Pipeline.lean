@@ -43,19 +43,28 @@ structure Cert where
   steps : List Step := []
   deriving Inhabited
 
-/-- Nodes one global may hold after an inlining or specialization step: thirty times the
-largest global in the corpus (2,115). Inlining a callee doubles a mutually recursive pair
-each round with one firing, so the walk's firing budget alone does not bound certificate
-rounds. -/
-def maxGlobalNodes : Nat := 65536
+/-- The nodes of `P`'s globals, counting each up to what is left of
+`maxProgramNodes` and stopping once the total passes it. -/
+def programNodesUpTo : List (GlobalId × GDef) → Nat → Nat
+  | [], used => used
+  | (_, gd) :: rest, used =>
+    let used := used + gd.body.nodesUpTo (maxProgramNodes - used)
+    if used > maxProgramNodes then used else programNodesUpTo rest used
 
-/-- Refuse a program holding a global over `maxGlobalNodes`. -/
+/-- Refuse a program holding a global over `maxGlobalNodes`, or more than
+`maxProgramNodes` nodes in all. The counts stop early (`Exp.nodesUpTo`), so the
+check is cheap and shallow whatever the program's size. Inlining a callee
+doubles a mutually recursive pair each round with one firing, so the walk's
+budgets alone do not bound certificate rounds. -/
 def checkGlobalNodes (P : Program) : Except String Program :=
-  if P.globalList.all fun (_, gd) => decide (gd.body.nodes ≤ maxGlobalNodes) then .ok P
-  else .error "inline: a global exceeds the node budget"
+  if P.globalList.all (fun (_, gd) => gd.body.nodesLe maxGlobalNodes) &&
+      programNodesUpTo P.globalList 0 ≤ maxProgramNodes then .ok P
+  else .error "middle end: a global or the program exceeds the node budget"
 
+/-- A step, then the size check (P2, P3 and P4 can grow the program; pruning
+only removes globals). -/
 def Step.run (p : Shrink.Params) : Step → Program → Except String Program
-  | .shrink c, P => Shrink.run p c P
+  | .shrink c, P => Shrink.run p c P >>= checkGlobalNodes
   | .inline r, P => Inline.round P r >>= fun x => checkGlobalNodes x.1
   | .specialize c, P => Specialize.run c P >>= checkGlobalNodes
   | .prune, P => pure (Prune.run P)
@@ -66,9 +75,9 @@ def Step.name : Step → String
   | .specialize _ => "P4"
   | .prune => "prune"
 
-/-- The recheck: P1, then the certificate's steps. -/
+/-- The recheck: P1 and the size check, then the certificate's steps. -/
 def run (cert : Cert) (L : Lam.Program) : Except String Program := do
-  let P ← convert L
+  let P ← convert L >>= checkGlobalNodes
   cert.steps.foldlM (fun P s => s.run cert.shrink P) P
 
 structure Budgets where

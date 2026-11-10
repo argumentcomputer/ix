@@ -7,7 +7,9 @@ import IxCC.Src.Lazify
 What `Recheck.run` (D17, design note 00 "Produce and recheck") does with a
 `Src.Program` before erasure (note 01 §1.2): the table checks re-validate
 every unfolding-table entry and the pinned identities (V), the relevance
-annotation is installed and checked, tiers S and C (V, 02 §3.3), and
+annotation is installed and checked, tiers S and C (V, 02 §3.3) and then
+`Relevance.checkCanonical` (V: every irrelevant tag must be justified by the
+declaration types, on every program whatever its pinned identities), and
 `Lazify` is re-run (P). Ingress, the annotator, `Table.build` and `Admit`
 are the producer's and stay off this path. Every step is kernel-evaluable:
 `IxCCTests.Lam.KernelK1` evaluates `run` and erasure on real K1
@@ -25,8 +27,10 @@ inductive Error where
   | relevance (errs : Array Relevance.RelError)
   deriving Inhabited
 
-/-- The annotation's steps: install the tags, check the annotation, and
-Lazify the checked runtime terms. -/
+/-- The annotation's steps: install the tags, check the annotation (tiers S
+and C, `Relevance.check`), refuse any tag the declaration types do not
+justify (`Relevance.checkCanonical`, on every program, whatever its pinned
+identities), and Lazify the checked runtime terms. -/
 def annotation (p : Program) (ann : Relevance.Ann) :
     Except Error (Program × Relevance.Checked) :=
   match Relevance.install p ann with
@@ -35,9 +39,7 @@ def annotation (p : Program) (ann : Relevance.Ann) :
     match Relevance.check p ann with
     | .error errs => .error (.relevance errs)
     | .ok checked =>
-      let canonErrs :=
-        if p.known.eq.isNone && p.known.nat.isNone && p.known.bool.isNone then []
-        else Relevance.checkCanonical p ann checked
+      let canonErrs := Relevance.checkCanonical p ann checked
       if !canonErrs.isEmpty then .error (.relevance canonErrs.toArray)
       else .ok (Lazify.run p checked.keys, checked)
 

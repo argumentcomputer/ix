@@ -18,9 +18,11 @@ Connects contract-aware `Own.Plain` verification (`checkContractPlainMap`,
    `recheck_contract_own_refines`, `compile_sound`,
    `compileWithContracts_sound`);
 3. Automatic RC policy selection (`RcReplay.produceAuto` / `RcReplay.compileAuto`)
-   across both `.zeroRc` and `.plainRc` paths (`produceAuto_zeroRc_sound`,
-   `produceAuto_plainRc_sound`, `compileAuto_zeroRc_sound`,
-   `compileAuto_plainRc_sound`). -/
+   across the `.zeroRc` and `.plainRc` paths and the immortal fallback taken when
+   plain RC is selected but refused (`produceAuto_zeroRc_sound`,
+   `produceAuto_plainRc_sound`, `produceAuto_immortal_sound`,
+   `compileAuto_zeroRc_sound`, `compileAuto_plainRc_sound`,
+   `compileAuto_immortal_sound`). -/
 
 set_option autoImplicit false
 
@@ -390,6 +392,46 @@ theorem compile_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Le
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) :=
   Recheck.compiled_sound accepted driver valid input
 
+/-- What `RcReplay.produceImmortal` computed: the zero-RC certificate and its
+`Recheck.run`. -/
+theorem produceImmortal_parts {cfg : Recheck.Config} {inp : Recheck.Input}
+    {front : Recheck.RcReplay.ProducedFir} {p : Recheck.Produced} {a : Recheck.Artifact}
+    (h : Recheck.RcReplay.produceImmortal cfg inp front = .ok (p, a)) :
+    Recheck.RcReplay.finishZeroRcCert cfg front = .ok p ∧ Recheck.run cfg inp.program p.cert = .ok a := by
+  unfold Recheck.RcReplay.produceImmortal at h
+  simp only [bind, Except.bind] at h
+  cases hf : Recheck.RcReplay.finishZeroRcCert cfg front with
+  | error e => simp [hf] at h
+  | ok p' =>
+    simp only [hf] at h
+    cases hr : Recheck.run cfg inp.program p'.cert with
+    | error e => simp [hr] at h
+    | ok a' =>
+      simp only [hr, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rfl, hr⟩
+
+/-- What `RcReplay.producePlain` computed: the plain-RC certificate and its
+`RcReplay.run`. -/
+theorem producePlain_parts {cfg : Recheck.Config} {inp : Recheck.Input}
+    {front : Recheck.RcReplay.ProducedFir} {p : Recheck.RcReplay.Produced}
+    {a : Recheck.RcReplay.Artifact}
+    (h : Recheck.RcReplay.producePlain cfg inp front = .ok (p, a)) :
+    Recheck.RcReplay.finishPlainRcCert cfg front = .ok p ∧
+      Recheck.RcReplay.run cfg inp.program p.cert = .ok a := by
+  unfold Recheck.RcReplay.producePlain at h
+  simp only [bind, Except.bind] at h
+  cases hf : Recheck.RcReplay.finishPlainRcCert cfg front with
+  | error e => simp [hf] at h
+  | ok p' =>
+    simp only [hf] at h
+    cases hr : Recheck.RcReplay.run cfg inp.program p'.cert with
+    | error e => simp [hr] at h
+    | ok a' =>
+      simp only [hr, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rfl, hr⟩
+
 /-- Decomposition of `RcReplay.produceAuto` when it selects `.zeroRc` (including
 contract-annotated zero-RC programs). -/
 theorem produceAuto_zeroRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
@@ -410,26 +452,28 @@ theorem produceAuto_zeroRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
     cases hpol : Own.Plain.selectRcPolicyForSrc front.src front.fir with
     | zeroRc =>
       simp only [hpol] at accepted
-      cases hfin : Recheck.RcReplay.finishZeroRcCert (cfg.forInput inp) front with
-      | error e => simp [hfin] at accepted
-      | ok p =>
-        simp only [hfin] at accepted
-        cases hrun : Recheck.run (cfg.forInput inp) inp.program p.cert with
-        | error e => simp [hrun] at accepted
-        | ok a =>
-          simp only [hrun, pure, Except.pure, Except.ok.injEq,
-            Recheck.RcReplay.AutoCompiled.zeroRc.injEq] at accepted
-          obtain ⟨rfl, rfl, rfl⟩ := accepted
-          exact ⟨front, p, rfl, hpol, hfin, rfl, rfl, hrun⟩
+      cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+      | error e => simp [hi] at accepted
+      | ok r =>
+        obtain ⟨p, a⟩ := r
+        simp only [hi, pure, Except.pure, Except.ok.injEq,
+          Recheck.RcReplay.AutoCompiled.zeroRc.injEq] at accepted
+        obtain ⟨rfl, rfl, rfl⟩ := accepted
+        obtain ⟨hfin, hrun⟩ := produceImmortal_parts hi
+        exact ⟨front, p, rfl, hpol, hfin, rfl, rfl, hrun⟩
     | plainRc =>
       simp only [hpol] at accepted
-      cases hfin : Recheck.RcReplay.finishPlainRcCert (cfg.forInput inp) front with
-      | error e => simp [hfin] at accepted
-      | ok p =>
-        simp only [hfin] at accepted
-        cases hrun : Recheck.RcReplay.run (cfg.forInput inp) inp.program p.cert with
-        | error e => simp [hrun] at accepted
-        | ok a => simp [hrun, pure, Except.pure] at accepted
+      cases hpl : Recheck.RcReplay.producePlain (cfg.forInput inp) inp front with
+      | ok r =>
+        obtain ⟨p, a⟩ := r
+        simp [hpl, pure, Except.pure] at accepted
+      | error reason =>
+        simp only [hpl] at accepted
+        cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+        | error e => simp [hi] at accepted
+        | ok r =>
+          obtain ⟨p, a⟩ := r
+          simp [hi, pure, Except.pure] at accepted
 
 /-- Decomposition of `RcReplay.produceAuto` when it selects `.plainRc`. -/
 theorem produceAuto_plainRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
@@ -451,26 +495,74 @@ theorem produceAuto_plainRc_parts {cfg : Recheck.Config} {inp : Recheck.Input}
     cases hpol : Own.Plain.selectRcPolicyForSrc front.src front.fir with
     | zeroRc =>
       simp only [hpol] at accepted
-      cases hfin : Recheck.RcReplay.finishZeroRcCert (cfg.forInput inp) front with
-      | error e => simp [hfin] at accepted
-      | ok p =>
-        simp only [hfin] at accepted
-        cases hrun : Recheck.run (cfg.forInput inp) inp.program p.cert with
-        | error e => simp [hrun] at accepted
-        | ok a => simp [hrun, pure, Except.pure] at accepted
+      cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+      | error e => simp [hi] at accepted
+      | ok r =>
+        obtain ⟨p, a⟩ := r
+        simp [hi, pure, Except.pure] at accepted
     | plainRc =>
       simp only [hpol] at accepted
-      cases hfin : Recheck.RcReplay.finishPlainRcCert (cfg.forInput inp) front with
-      | error e => simp [hfin] at accepted
-      | ok p =>
-        simp only [hfin] at accepted
-        cases hrun : Recheck.RcReplay.run (cfg.forInput inp) inp.program p.cert with
-        | error e => simp [hrun] at accepted
-        | ok a =>
-          simp only [hrun, pure, Except.pure, Except.ok.injEq,
-            Recheck.RcReplay.AutoCompiled.plainRc.injEq] at accepted
-          obtain ⟨rfl, rfl, rfl⟩ := accepted
-          exact ⟨front, p, rfl, hpol, hfin, rfl, rfl, hrun⟩
+      cases hpl : Recheck.RcReplay.producePlain (cfg.forInput inp) inp front with
+      | ok r =>
+        obtain ⟨p, a⟩ := r
+        simp only [hpl, pure, Except.pure, Except.ok.injEq,
+          Recheck.RcReplay.AutoCompiled.plainRc.injEq] at accepted
+        obtain ⟨rfl, rfl, rfl⟩ := accepted
+        obtain ⟨hfin, hrun⟩ := producePlain_parts hpl
+        exact ⟨front, p, rfl, hpol, hfin, rfl, rfl, hrun⟩
+      | error reason =>
+        simp only [hpl] at accepted
+        cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+        | error e => simp [hi] at accepted
+        | ok r =>
+          obtain ⟨p, a⟩ := r
+          simp [hi, pure, Except.pure] at accepted
+
+/-- Decomposition of `RcReplay.produceAuto` when it falls back to the immortal
+policy: plain RC was selected, its certificate or replay was refused with
+`reason`, and the zero-RC certificate was rechecked by `Recheck.run`. -/
+theorem produceAuto_immortal_parts {cfg : Recheck.Config} {inp : Recheck.Input}
+    {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
+    {reason : Recheck.Err}
+    (accepted : Recheck.RcReplay.produceAuto cfg inp = .ok (.immortal cert artifact alloc reason)) :
+    ∃ front p,
+      Recheck.RcReplay.produceFir (cfg.forInput inp) inp = .ok front ∧
+      Own.Plain.selectRcPolicyForSrc front.src front.fir = .plainRc ∧
+      Recheck.RcReplay.producePlain (cfg.forInput inp) inp front = .error reason ∧
+      Recheck.RcReplay.finishZeroRcCert (cfg.forInput inp) front = .ok p ∧
+      p.cert = cert ∧ p.alloc = alloc ∧
+      Recheck.run (cfg.forInput inp) inp.program cert = .ok artifact := by
+  unfold Recheck.RcReplay.produceAuto at accepted
+  simp only [bind, Except.bind] at accepted
+  cases hfront : Recheck.RcReplay.produceFir (cfg.forInput inp) inp with
+  | error e => simp [hfront] at accepted
+  | ok front =>
+    simp only [hfront] at accepted
+    cases hpol : Own.Plain.selectRcPolicyForSrc front.src front.fir with
+    | zeroRc =>
+      simp only [hpol] at accepted
+      cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+      | error e => simp [hi] at accepted
+      | ok r =>
+        obtain ⟨p, a⟩ := r
+        simp [hi, pure, Except.pure] at accepted
+    | plainRc =>
+      simp only [hpol] at accepted
+      cases hpl : Recheck.RcReplay.producePlain (cfg.forInput inp) inp front with
+      | ok r =>
+        obtain ⟨p, a⟩ := r
+        simp [hpl, pure, Except.pure] at accepted
+      | error reason' =>
+        simp only [hpl] at accepted
+        cases hi : Recheck.RcReplay.produceImmortal (cfg.forInput inp) inp front with
+        | error e => simp [hi] at accepted
+        | ok r =>
+          obtain ⟨p, a⟩ := r
+          simp only [hi, pure, Except.pure, Except.ok.injEq,
+            Recheck.RcReplay.AutoCompiled.immortal.injEq] at accepted
+          obtain ⟨rfl, rfl, rfl, rfl⟩ := accepted
+          obtain ⟨hfin, hrun⟩ := produceImmortal_parts hi
+          exact ⟨front, p, rfl, hpol, hpl, hfin, rfl, rfl, hrun⟩
 
 /-- End-to-end soundness of `RcReplay.produceAuto` on the `.zeroRc` path
 (covering both scalar closures and contract-annotated zero-RC heap closures). -/
@@ -509,6 +601,24 @@ theorem produceAuto_plainRc_sound {cfg : Recheck.Config} {inp : Recheck.Input}
         ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource) := by
   obtain ⟨_, _, _, _, _, _, _, hrun⟩ := produceAuto_plainRc_parts accepted
   exact Recheck.RcReplay.sound hrun driver valid input
+
+/-- End-to-end soundness of `RcReplay.produceAuto` on its immortal fallback
+(plain RC selected but refused). -/
+theorem produceAuto_immortal_sound {cfg : Recheck.Config} {inp : Recheck.Input}
+    {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
+    {reason : Recheck.Err}
+    (accepted : Recheck.RcReplay.produceAuto cfg inp = .ok (.immortal cert artifact alloc reason))
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (input : Nat × List Nat) :
+    (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
+      (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
+        artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
+    (¬ artifact.front.GoesWrong input → ∀ clock, ¬ (Lang.run (artifact.linked driver) input clock).GoesWrong) ∧
+    ((∀ clock, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input clock = .timeout) →
+      (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
+        ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
+  obtain ⟨_, _, _, _, _, _, _, _, hrun⟩ := produceAuto_immortal_parts accepted
+  exact Recheck.sound hrun driver valid input
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on the `.zeroRc` path. -/
 theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
@@ -558,6 +668,30 @@ theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {eq
   | ok inp =>
     simp only [hing] at accepted
     exact produceAuto_plainRc_sound accepted driver valid input
+
+/-- End-to-end soundness of `RcReplay.compileAuto` on its immortal fallback. -/
+theorem compileAuto_immortal_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
+    {roots : List String} {typecheck : Bool}
+    {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
+    {reason : Recheck.Err}
+    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck =
+      .ok (.immortal cert artifact alloc reason))
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (input : Nat × List Nat) :
+    (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
+      (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
+        artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
+    (¬ artifact.front.GoesWrong input → ∀ clock, ¬ (Lang.run (artifact.linked driver) input clock).GoesWrong) ∧
+    ((∀ clock, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input clock = .timeout) →
+      (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
+        ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
+  unfold Recheck.RcReplay.compileAuto at accepted
+  simp only [bind, Except.bind] at accepted
+  cases hing : Recheck.ingress bytes equations roots typecheck with
+  | error e => simp [hing] at accepted
+  | ok inp =>
+    simp only [hing] at accepted
+    exact produceAuto_immortal_sound accepted driver valid input
 
 end IxCC.Compiler
 

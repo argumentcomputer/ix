@@ -29,7 +29,7 @@ theorem reach_mono (m : NatMap Block) :
   | 0, _, _, _, h => by simpa [reach] using h
   | _ + 1, _, [], _, h => by simpa [reach] using h
   | fuel + 1, seen, x :: xs, b, h => by
-    simp only [reach]
+    simp only [reach, reachStep]
     apply reach_mono m fuel
     rw [contains_foldl_insert]
     exact .inr h
@@ -41,7 +41,7 @@ theorem reach_frontier (m : NatMap Block) {fuel : Nat} (hf : 0 < fuel) (seen : N
   cases frontier with
   | nil => simp at hb
   | cons x xs =>
-    simp only [reach]
+    simp only [reach, reachStep]
     apply reach_mono m fuel
     rw [contains_foldl_insert]
     by_cases hs : seen.contains b = true

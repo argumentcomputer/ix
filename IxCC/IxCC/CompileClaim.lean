@@ -31,6 +31,10 @@ object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
    - `.zeroRc` verification uses `Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc`
      (matching `produceAuto` and `produce`), and `makeClaim` / `produce` avoid
      redundant re-ingress and double recheck.
+   - With the default `.auto` mode, `produce` and `makeClaim` compile under the
+     immortal policy when plain RC is selected but its certificate cannot be
+     produced or is refused (`produceAuto`'s `.immortal` fallback); the claim's
+     `policy` is the policy actually compiled under.
 
 3. **Proof Separation (`A8-5`)**:
    - This module contains only executable definitions, checkers, and wire codecs.
@@ -345,6 +349,20 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
         { env := input.env.root
           target
           policy := .plainRc
+          abiArity := root.params
+          elfHash := Ixon.Address.blake3Pure elfBytes }
+      return (claim, cert.toText, elfBytes)
+    | .immortal cert a _ _ =>
+      -- plain RC was selected but refused: the claim binds the immortal policy it compiled under
+      let some root := a.roots.head?
+        | throw { stage := .rt, code := "roots", message := "artifact has no root" }
+      unless checkImmortalRoot a.src root do
+        throw { stage := .cert, code := "roots", message := "root parameters must be Nat and result type must be scalar/enum for immortal" }
+      let elfBytes := a.backend.object
+      let claim : CompileClaim :=
+        { env := input.env.root
+          target
+          policy := .immortal
           abiArity := root.params
           elfHash := Ixon.Address.blake3Pure elfBytes }
       return (claim, cert.toText, elfBytes)

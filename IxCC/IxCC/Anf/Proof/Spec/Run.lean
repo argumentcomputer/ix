@@ -71,7 +71,7 @@ theorem runInv_step (hw : P.WF) {inv : Nat} {key : Key.GKey} {D : List (GlobalId
     {st st1 : St} {f : GlobalId} {gd : GDef} (hf : P.global? f = some gd) (hflt : f < P.size)
     (hi : RunInv P Q st) {body : Exp}
     (h1 : (rewrite P inv key D fuel (Src.NatMap.ofList ((List.range gd.ps.length).map (·, Def.blank)))
-      gd.ps.length gd.body).run { prog := st.prog, specs := st.specs } = .ok (body, st1)) :
+      gd.ps.length gd.body).run { prog := st.prog, specs := st.specs, work := st.work, nodes := st.nodes } = .ok (body, st1)) :
     RunInv P Q { st1 with prog := st1.prog.withGlobals (st1.prog.globalList.map fun (p : GlobalId × GDef) =>
       if p.1 == f then { p.2 with body } else p.2) } := by
   obtain ⟨hs1, hg1, hr1⟩ := rewrite_ok (Q := Q) _ h1 hi.ok

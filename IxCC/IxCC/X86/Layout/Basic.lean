@@ -52,17 +52,25 @@ def _root_.IxCC.X86.Block.targets (b : Block) : List BlockId :=
     | .branch _ _ _ yes no _ => [yes, no]
     | .ret => []
 
-/-- Breadth-first reachability, one frontier per unit of fuel. -/
+/-- One breadth-first step: the frontier's blocks not seen yet join `seen`, and
+the next frontier is their targets. A block the frontier lists more than once
+is expanded once (S10): otherwise every balanced join would double the
+frontier. -/
+def reachStep (m : NatMap Block) (seen : NatSet) (frontier : List Nat) : NatSet × List Nat :=
+  let fresh := frontier.filter (!seen.contains ·)
+  let seen := fresh.foldl (fun s b => s.insert b) seen
+  let dedupFresh := (fresh.foldl (init := (({} : NatSet), [])) fun (s, acc) b =>
+    if s.contains b then (s, acc) else (s.insert b, b :: acc)).2.reverse
+  let next := dedupFresh.flatMap fun b => ((m.get? b).map fun blk => blk.targets.map UInt32.toNat).getD []
+  (seen, next)
+
+/-- Breadth-first reachability, one frontier (`reachStep`) per unit of fuel. -/
 def reach (m : NatMap Block) : Nat → NatSet → List Nat → NatSet
   | 0, seen, _ => seen
   | _, seen, [] => seen
   | fuel + 1, seen, frontier =>
-      let fresh := frontier.filter (!seen.contains ·)
-      let seen := fresh.foldl (fun s b => s.insert b) seen
-      let dedupFresh := (fresh.foldl (init := (({} : NatSet), [])) fun (s, acc) b =>
-        if s.contains b then (s, acc) else (s.insert b, b :: acc)).2.reverse
-      let next := dedupFresh.flatMap fun b => ((m.get? b).map fun blk => blk.targets.map UInt32.toNat).getD []
-      reach m fuel seen next
+      match reachStep m seen frontier with
+      | (seen, next) => reach m fuel seen next
 
 /-- The blocks reachable from the program entry and the roots. -/
 def reachable (p : Program) (roots : List Nat) : NatSet :=

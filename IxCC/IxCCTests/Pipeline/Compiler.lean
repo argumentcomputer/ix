@@ -295,8 +295,8 @@ def contractZeroRc (a : Assert) : IO String := do
   | .zeroRc autoCert autoArt _ =>
     expect a (autoCert.toText == cert.toText && autoArt.object == art.object)
       "OS16-contract: produceAuto zeroRc certificate and object must match produce + run"
-  | .plainRc .. =>
-    expect a false "OS16-contract: produceAuto selected plainRc instead of zeroRc"
+  | .plainRc .. | .immortal .. =>
+    expect a false "OS16-contract: produceAuto did not select zeroRc"
   let (osClaim, osCertText, osElf) ← ofErr "OS16-contract CompileClaim.produce" fun _ =>
     CompileClaim.produce cfg annotatedInp
   expect a (osClaim.policy == .zeroRc && osClaim.abiArity == 1 && osElf == art.object && osCertText == cert.toText)
@@ -532,13 +532,18 @@ def reports (a : Assert) : IO (Array String) := do
   match IxCC.Cli.parse (base ++ ["--root", "A", "--root", "B", "--dump-ir", "all", "--stats"]) with
   | .ok o => expect a (o.roots == ["A", "B"] && o.dumps == IxCC.Cli.dumpLevels && o.stats && o.rc == .off) "parse"
   | .error e => expect a false s!"parse: {e}"
+  -- a certificate fixes the RC policy: `check-cert` parses without `--rc`, and refuses it (below)
+  match IxCC.Cli.parse ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json"] with
+  | .ok o => expect a (o.cert.isSome && !o.rcExplicit) "parse check-cert"
+  | .error e => expect a false s!"parse check-cert: {e}"
   for (flag, mode) in [("off", IxCC.Cli.RcMode.off), ("on", .on), ("auto", .auto)] do
     match IxCC.Cli.parse (base ++ ["--rc", flag]) with
     | .ok o => expect a (o.rc == mode) s!"parse --rc {flag}"
     | .error e => expect a false s!"parse --rc {flag}: {e}"
   for bad in [["compile", "c.ixe"], ["compile", "c.ixe", "--equations", "e.json"], ["check-cert", "c.ixe",
       "--equations", "e.json"], base ++ ["--dump-ir", "asm"], base ++ ["--rc", "bogus"], ["frobnicate"],
-      base ++ ["extra"]] do
+      base ++ ["extra"], base ++ ["--cert", "c.json", "--rc", "auto"],
+      ["check-cert", "c.ixe", "--equations", "e.json", "--cert", "c.json", "--rc", "auto"]] do
     expect a (!(IxCC.Cli.parse bad).toBool) s!"parse accepted {bad}"
   -- every erasure decline renders with its own code
   let eraseCodes := ["erase-const-kind", "erase-string", "erase-mode", "erase-minor", "erase-lazy",

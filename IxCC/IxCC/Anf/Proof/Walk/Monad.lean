@@ -3,8 +3,8 @@ import IxCC.Anf.Walk
 /-! # The walk's monad, inverted
 
 The rewriting walk (`Anf.Walk`) runs in `StateT Fires (Except String)`; the
-state only counts rule firings. These lemmas invert a successful run of a
-bind, `pure`, `throw` and `fire` (M2.3). -/
+state only counts rule firings and the nodes they copy. These lemmas invert a
+successful run of a bind, `pure`, `throw` and `fire` (M2.3). -/
 
 set_option autoImplicit false
 
@@ -34,11 +34,14 @@ theorem run_fire_ok {f : Fires → Fires} {s : Fires} {r : Unit × Fires} (h : (
     r = ((), f s) := by
   change (if (f s).total > maxFires then
     (.error "walk: rule firing budget exhausted" : Except String (Unit × Fires))
+    else if (f s).copied > maxCopy then .error "walk: copy budget exhausted"
     else .ok ((), f s)) = .ok r at h
   split at h
   · cases h
-  · cases h
-    rfl
+  · split at h
+    · cases h
+    · cases h
+      rfl
 
 theorem run_map_ok {α β : Type} {g : α → β} {x : M α} {s s' : Fires} {b : β}
     (h : (g <$> x).run s = .ok (b, s')) : ∃ a, x.run s = .ok (a, s') ∧ g a = b := by

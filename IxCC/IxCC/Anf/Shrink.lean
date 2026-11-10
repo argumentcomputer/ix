@@ -62,18 +62,23 @@ def cfg (P : Program) (p : Params) : Walk.Cfg :=
 def round (P : Program) (p : Params) (gd : GDef) : Except String (GDef × Walk.Fires) :=
   (Walk.global (cfg P p) gd).run {}
 
-/-- Exactly `n` rounds. -/
+/-- Exactly `n` rounds, refusing a round that leaves the global over
+`maxGlobalNodes` (so every round's walk starts within the budget). -/
 def rounds (P : Program) (p : Params) (gd : GDef) : Nat → Except String GDef
   | 0 => pure gd
   | n + 1 => do
     let (gd', _) ← round P p gd
-    rounds P p gd' n
+    if gd'.body.nodesLe maxGlobalNodes then rounds P p gd' n
+    else .error "shrink: a global exceeds the node budget"
 
-/-- P2 re-run on its certificate. -/
+/-- P2 re-run on its certificate. It stops as soon as the globals it has made
+pass `maxProgramNodes` (`mapMWithin`). -/
 def run (p : Params) (cert : Cert) (P : Program) : Except String Program := do
-  let gs ← P.globalList.mapM fun (g, gd) => do
-    let gd' ← (rounds P p gd (cert.getD g 0)).mapError (s!"shrink global {g}: " ++ ·)
-    return (g, gd')
+  let gs ← mapMWithin (fun (g, gd) => do
+      let gd' ← (rounds P p gd (cert.getD g 0)).mapError (s!"shrink global {g}: " ++ ·)
+      return (g, gd'))
+    (fun x => x.2.body.nodesUpTo maxProgramNodes) maxProgramNodes
+    "shrink: the program exceeds the node budget" 0 P.globalList
   return { P with globals := Src.NatMap.ofList gs }
 
 /-- Rounds until one fires no rule (not counted), within `budget`. -/

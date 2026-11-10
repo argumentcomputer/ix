@@ -1213,8 +1213,14 @@ theorem Ring0Artifact.safe_of_ring0Safety {sip : Ring0Sip} {A : Ring0Artifact}
 /-- **Admitted SIPs do not fault (`S3`, `A3-2`, `A6-5`).** A SIP passing
 `sip.verifyProgram P` has the artifact its certificate determines
 (`Ring0Sip.artifact?`), and that artifact satisfies `Ring0Artifact.Safe`. The
-objects are functions of `sip` and `P`, so `GoesWrong` cannot be chosen to make the
-semantic clauses vacuous. -/
+objects are functions of `sip` and `P`, and the certificate in `sip` decides the
+checked source only within what the front end accepts: its relevance annotation
+must pass `Relevance.check` and `Relevance.checkCanonical`, which `Recheck.front`
+runs on every program (so a retag that makes `GoesWrong` hold on a program with no
+pinned identities is refused, `IxCCTests.Recheck.Hostile.pinFree`), and its table
+entries `Table.ofCert`. No theorem yet states that `GoesWrong` is the same for every
+certificate these checks accept; `Ring0Sip.verifyBytes` also requires the
+annotation to be the canonical annotator's output (Stage A). -/
 theorem admittedRing0Sip_call_not_goesWrong {sip : Ring0Sip} {P : Src.Program}
     (hver : sip.verifyProgram P = true) :
     ∃ A : Ring0Artifact, sip.artifact? P = some A ∧ A.Safe sip := by

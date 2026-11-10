@@ -66,6 +66,19 @@ theorem run_modifyGet_ok {α : Type} {f : St → α × St} {s s' : St} {a : α}
   rw [e] at h
   exact (Except.ok.inj h).symm
 
+/-- A site's charge changes only the work counter. -/
+theorem run_charge_ok {cost : Nat → Nat → Nat × Nat} {s s' : St} {u : Unit} (h : (charge cost).run s = .ok (u, s')) :
+    s'.prog = s.prog := by
+  change (if s.work + (cost s.prog.size s.specs).1 > maxWork ||
+      s.nodes + (cost s.prog.size s.specs).2 > maxNodes then
+    (.error "specialize: work budget exhausted" : Except String (Unit × St))
+    else .ok ((), { s with work := s.work + (cost s.prog.size s.specs).1
+                           nodes := s.nodes + (cost s.prog.size s.specs).2 })) = .ok (u, s') at h
+  split at h
+  · cases h
+  · cases h
+    rfl
+
 theorem run_liftM_ok {α : Type} {x : Except String α} {s s' : St} {a : α}
     (h : (specialize.liftM x).run s = .ok (a, s')) : x = .ok a ∧ s' = s := by
   unfold specialize.liftM at h

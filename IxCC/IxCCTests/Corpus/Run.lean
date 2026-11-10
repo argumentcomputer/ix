@@ -1,4 +1,5 @@
 import IxCCTests.Corpus.Manifest
+import IxCCTests.Corpus.Budget
 import IxCCTests.Pipeline.Levels
 import IxCC.Anf.Print
 import IxCC.Lir.Print
@@ -249,6 +250,12 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   IO.println s!"  {t.compiled} roots compiled, {t.declined} declined as expected; {t.cases} cases, \
     {t.runs} level runs{if native.isSome then s!", {t.native} native runs" else ""}; \
     {t.allowed} allowed resource failures"
+  -- the middle end's budgets against every committed program (a full run only)
+  if o.manifests.isEmpty && o.only.isEmpty && o.roots.isEmpty then
+    let before ← a.get
+    let (lines, ms) ← timed (Budget.survey a)
+    IO.println s!"  middle-end budgets: {(← a.get) - before} assertions, {ms} ms"
+    for l in lines do IO.println s!"    {l}"
 
 /-- The middle end's and the backend's input for a root `produce` declines:
 Anf after the middle end, Lir and Xv (as `ixcc --dump-ir` prints them),

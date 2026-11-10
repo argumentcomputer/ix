@@ -6,8 +6,13 @@ import IxCCTests.Src.StuckEval
 accepted annotation. Tier S rejects what violates S1–S4 and tier C most of
 the rest. For every accepted mutant SrcEval gives the original observation or
 none (stuck, trap, timeout, or a value without readback); a *different*
-observation fails the test. Every mutant also runs without the checker, which
-tests the stronger claim that a wrong annotation only makes SrcEval stuck. -/
+observation fails the test. The checker here is tiers S and C
+(`finishNoCanonical`): the production front end's `Relevance.checkCanonical`
+refuses most mutants before they run, so its verdict on each is asserted
+separately (refused whenever tiers S and C refuse, and otherwise accepted or
+refused by the canonical check alone). Every mutant also runs without the
+checker, which tests the stronger claim that a wrong annotation only makes
+SrcEval stuck. -/
 
 namespace IxCCTests.Src.Relevance.Mutation
 
@@ -100,6 +105,9 @@ structure Tally where
   rejectedS : Nat := 0
   rejectedC : Nat := 0
   rejectedOther : Nat := 0
+  /-- Mutants tiers S and C accept that the production front end refuses
+  (`checkCanonical`). -/
+  rejectedCanonical : Nat := 0
   acceptedSame : Nat := 0
   acceptedNone : Nat := 0
   uncheckedSame : Nat := 0
@@ -124,6 +132,7 @@ def bump (xs : Array (String × Nat)) (k : String) : Array (String × Nat) :=
 def Tally.render (t : Tally) : String :=
   let why := (t.acceptedWhy.qsort (fun a b => a.1 < b.1)).toList.map fun (k, n) => s!"{k} {n}"
   s!"{t.mutants} mutants: rejected S {t.rejectedS}, C {t.rejectedC}, other {t.rejectedOther}; " ++
+  s!"accepted by tiers S and C but refused by checkCanonical {t.rejectedCanonical}; " ++
   s!"accepted with the same result {t.acceptedSame}, with no observation {t.acceptedNone} " ++
   s!"({String.intercalate ", " why}); " ++
   s!"unchecked same {t.uncheckedSame}, none {t.uncheckedNone}" ++
@@ -161,13 +170,18 @@ def fixture (a : Assert) (name : String) (count : Nat) (seed : Nat) : IO Tally :
     g := g1
     if what == "none" then continue
     t := { t with mutants := t.mutants + 1 }
-    -- Through the checker.
-    match finish cfg hints p0 m with
+    -- Through the checker (tiers S and C; `checkCanonical` is asserted on its own
+    -- below, so that it does not filter the mutants out first).
+    match finishNoCanonical cfg hints p0 m with
     | .error d =>
       if d.code.startsWith "relevance-S" then t := { t with rejectedS := t.rejectedS + 1 }
       else if d.code.startsWith "relevance-C" then t := { t with rejectedC := t.rejectedC + 1 }
       else t := { t with rejectedOther := t.rejectedOther + 1 }
+      expect a (finish cfg hints p0 m matches .error _)
+        s!"{name}: the production front end accepted mutant {what}, which tiers S and C refuse"
     | .ok (pm, ch, _) =>
+      unless (← canonicalVerdict a s!"{name}: mutant {what} in the production front end" (finish cfg hints p0 m)) do
+        t := { t with rejectedCanonical := t.rejectedCanonical + 1 }
       let r := run pm clock root (args.map .lit)
       match observe pm ch.keeps r with
       | none =>

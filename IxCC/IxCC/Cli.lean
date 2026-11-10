@@ -13,7 +13,7 @@ ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o
     [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE]
     [--dump-ir LEVEL]... [--stats] [--no-typecheck]
 ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
-    [--rc off|on|auto] [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
+    [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
 ```
 
 `compile` runs ingress, `produce` and `Recheck.run` and writes the ELF
@@ -22,7 +22,16 @@ when no `--root` is given) and `cx_init`, for `fixtures/x86/runtime_driver.c`
 (`cc -no-pie -DENTRY=cx_<root> runtime_driver.c OUT.o`). With `--cert`, the
 given certificate replaces `produce`'s (so the recheck needs nothing from the
 producer); `--emit-cert` writes the certificate used. `check-cert` runs
-`Recheck.run` on a certificate and reports acceptance or the rejection.
+`Recheck.run` on a certificate and reports acceptance or the rejection. A
+certificate's format fixes its RC policy, so `--rc` with `--cert` (and so with
+`check-cert`) is a usage error.
+
+`--rc off` (the default) compiles a zero-RC-format certificate on the immortal
+backend, `--rc on` under plain RC (which may refuse the program). `--rc auto`
+follows `RcReplay.produceAuto`: zero RC when `Own.Plain.selectRcPolicyForSrc`
+selects it; plain RC when it selects that and the plain-RC certificate is
+produced and replayed; otherwise the immortal policy. It prints
+`rc policy: …` naming the policy it compiled under.
 
 `--signatures FILE` writes, per root, its symbol, parameter count and the
 driver's `--type`/`--sig` arguments (JSON; `null` when bounded ground
@@ -78,7 +87,7 @@ def usage : String :=
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
     "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats] [--no-typecheck]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
-    "      [--rc off|on|auto] [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
+    "      [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
     "dump levels: lam anf fir cfg lir xv xl all"]
 
 def dumpLevels : List String := ["lam", "anf", "fir", "cfg", "lir", "xv", "xl"]
@@ -113,7 +122,8 @@ def parse : List String → Except String Options
       if o.closure.isNone then throw "no closure given"
       if o.equations.isNone then throw "no --equations sidecar given"
       if cmd == "compile" && o.out.isNone then throw "no -o output given"
-      if cmd == "compile" && o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
+      -- a certificate fixes the RC policy (its format), so `--rc` with one is a usage error
+      if o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
       pure o
     else throw s!"unknown command {cmd}"
@@ -232,31 +242,38 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   let ((bytes, json), tRead) ← timed (readInputs o)
   let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots o.typecheck)
   let cfg := Config.forInput {} inp
-  let ((cliCert, outcomes), tProduce) ← timed do
+  -- `policy`: the policy `--rc auto` compiled under, reported on standard output
+  let ((cliCert, outcomes, policy), tProduce) ← timed do
     match o.cert with
     | some f =>
       let cc ← readCliCert f
       unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
         throw { stage := .relevance, code := "relevance-canonical",
                 message := "certificate relevance annotation does not match canonical annotator output" }
-      pure (cc, none)
+      pure (cc, none, none)
     | none =>
       match o.rc with
       | .off =>
         let p ← lift fun _ => produceWith cfg inp
-        pure (.zeroRc p.cert, some p.alloc)
+        pure (.zeroRc p.cert, some p.alloc, none)
       | .on =>
         let p ← lift fun _ => RcReplay.produceWith cfg inp
-        pure (.plainRc p.cert, some p.alloc)
+        pure (.plainRc p.cert, some p.alloc, none)
       | .auto =>
+        -- `RcReplay.produceAuto`'s choice: plain RC when it is selected and its
+        -- certificate is produced and replayed, else the immortal policy
         let front ← lift fun _ => RcReplay.produceFir cfg inp
         match Own.Plain.selectRcPolicyForSrc front.src front.fir with
         | .zeroRc =>
           let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
-          pure (.zeroRc p.cert, some p.alloc)
+          pure (.zeroRc p.cert, some p.alloc, some "zero-rc")
         | .plainRc =>
-          let p ← lift fun _ => RcReplay.finishPlainRcCert cfg front
-          pure (.plainRc p.cert, some p.alloc)
+          match ← lift fun _ => .ok (RcReplay.producePlain cfg inp front) with
+          | .ok (p, _) => pure (.plainRc p.cert, some p.alloc, some "plain-rc")
+          | .error reason =>
+            let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
+            pure (.zeroRc p.cert, some p.alloc,
+              some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code})")
   let (a, tRun) ← timed do
     match cliCert with
     | .zeroRc cert => lift fun _ => run cfg inp.program cert
@@ -276,14 +293,12 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   if o.command == "check-cert" then
     IO.println s!"certificate accepted: object {a.object.size} bytes, text {a.backend.encoded.text.size} bytes, \
       exports {a.roots.map (·.symbol)}"
+  if let some p := policy then IO.println s!"rc policy: {p}"
   if o.stats then
     let cert := cliCert.base
     let certBytes := cliCert.toText.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
     IO.println s!"time: read {tRead} ms, ingress {tIngress} ms, {producer} {tProduce} ms, run {tRun} ms"
-    if o.rc == .auto && o.cert.isNone then
-      let polName := match cliCert with | .zeroRc _ => "zero-rc" | .plainRc _ => "plain-rc"
-      IO.println s!"rc policy: {polName}"
     IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
       {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
       {cert.alloc.length} allocations, {cert.frames.length} frame layouts"

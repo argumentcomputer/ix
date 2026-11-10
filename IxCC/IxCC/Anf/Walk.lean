@@ -1,5 +1,6 @@
 import IxCC.Anf.Opd
 import IxCC.Anf.Census
+import IxCC.Anf.Budget
 
 /-! # The rewriting walk
 
@@ -53,7 +54,18 @@ the specialisation's fixed values calls the specialisation.
 Everything recurses on explicit fuel over lists and `NatMap`s
 (kernel-evaluable, D17). The census counts (`Exp.occ`, `Exp.jocc`) are
 computed on the source term; a binding is dropped only when its variable has
-no occurrence at all. -/
+no occurrence at all.
+
+**Budgets.** A walk visits each node of its source once, except where a rule
+walks a body again at another place: an inlined callee, a β-reduced local
+function, an inlined join point or a case-of-case alternative. Each such
+firing charges the body's nodes (`copyCost`) to `Fires.copied`, and `fire`
+refuses the walk once its firings exceed `maxFires` or its copies exceed
+`maxCopy`. A walk therefore visits at most its source's nodes plus `maxCopy`
+nodes, whatever the certificate asks for, and its native recursion depth is
+bounded by the same count. (Under shrink, the census counts read at a binding,
+`Exp.occ` and `Exp.headOcc`, walk the rest of the body, so a round on a global
+of `n` nodes still costs up to order `n²` steps.) -/
 
 namespace IxCC.Anf.Walk
 
@@ -114,6 +126,9 @@ structure Fires where
   inline : Nat := 0
   inlineCaf : Nat := 0
   redirect : Nat := 0
+  /-- Nodes of the bodies the firings walked again (`copyCost`): not a rule
+  firing, so `total` leaves it out. -/
+  copied : Nat := 0
   deriving Repr, Inhabited
 
 namespace Fires
@@ -131,7 +146,8 @@ def add (f g : Fires) : Fires :=
     deadJoin := f.deadJoin + g.deadJoin, caseKnown := f.caseKnown + g.caseKnown
     caseOfCase := f.caseOfCase + g.caseOfCase, caseId := f.caseId + g.caseId
     sameArms := f.sameArms + g.sameArms, inline := f.inline + g.inline
-    inlineCaf := f.inlineCaf + g.inlineCaf, redirect := f.redirect + g.redirect }
+    inlineCaf := f.inlineCaf + g.inlineCaf, redirect := f.redirect + g.redirect
+    copied := f.copied + g.copied }
 
 def render (f : Fires) : String :=
   let xs := [("copy", f.copy), ("dead", f.dead), ("projKnown", f.projKnown), ("fold", f.fold),
@@ -189,13 +205,26 @@ inductive Kont where
 instance : Inhabited Kont := ⟨.ret⟩
 
 /-- Rule firings allowed in one walk of one global: three times the highest total
-any whole corpus program reaches (2,674). Each firing re-walks at most one inlined
-body, so this bounds a walk on code that duplicates itself exponentially. -/
+any whole corpus program reaches (2,674). -/
 def maxFires : Nat := 8192
 
-/-- Count a rule firing, refusing the walk once its budget is spent. -/
+/-- Nodes one walk may walk again (`Fires.copied`): inlined callees, β-reduced
+local functions, inlined join points and case-of-case alternatives together.
+An inline round's output keeps every node it charges (a copy loses its `ret`
+to the caller's continuation and gains a `tick`), so an inline walk over
+`maxGlobalNodes` would be refused by the size check after the round anyway.
+The committed programs copy at most 2,860 nodes in one walk (a shrink round). -/
+def maxCopy : Nat := maxGlobalNodes
+
+/-- The charge for walking `b` again: its nodes, counted up to `maxCopy + 1`
+(`Exp.nodesUpTo` stops there). -/
+def copyCost (b : Exp) : Nat := b.nodesUpTo maxCopy
+
+/-- Count a rule firing, refusing the walk once its firings exceed `maxFires`
+or its copies exceed `maxCopy`. -/
 def fire (f : Fires → Fires) : M Unit := fun s =>
   if (f s).total > maxFires then .error "walk: rule firing budget exhausted"
+  else if (f s).copied > maxCopy then .error "walk: copy budget exhausted"
   else .ok ((), f s)
 
 def resolve (env : Env) : Atom → M Opd
@@ -430,7 +459,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         match gd.ps with
         | [] =>
           if C.inline.contains g then do
-            fire fun f => { f with inlineCaf := f.inlineCaf + 1 }
+            fire fun f => { f with inlineCaf := f.inlineCaf + 1, copied := f.copied + copyCost gd.body }
             let k' ← after C fuel env body k
             return .tick (← walk { C with inline := [], redirect := none } fuel {} here gd.body k')
           else emit (.glob g) none
@@ -450,7 +479,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         match P.global? g with
         | some gd =>
           if C.inline.contains g && os.length == gd.ps.length then do
-            fire fun f => { f with inline := f.inline + 1 }
+            fire fun f => { f with inline := f.inline + 1, copied := f.copied + copyCost gd.body }
             let k' ← after C fuel env body k
             return .tick (← walk { C with inline := [], redirect := none } fuel
               { σ := entsOf os.reverse } here gd.body k')
@@ -467,7 +496,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
       match local? with
       | some (σf, n, fb) =>
         if os.length ≥ n then do
-          fire fun f => { f with beta := f.beta + 1 }
+          fire fun f => { f with beta := f.beta + 1, copied := f.copied + copyCost fb }
           let rest := os.drop n
           let k' ← if rest.isEmpty then after C fuel env body k
             else pure (.cont fun here' o => do
@@ -479,7 +508,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         else do
           -- under-application: the rest of the function, its first
           -- parameters bound (the application's charge becomes a tick)
-          fire fun f => { f with beta := f.beta + 1 }
+          fire fun f => { f with beta := f.beta + 1, copied := f.copied + copyCost fb }
           let m := n - os.length
           let fb' ← walk C fuel { σ := entsOf (os ++ fieldOpds here.d m).reverse ++ σf }
             { here with d := here.d + m, dj := 0 } fb .ret
@@ -540,14 +569,14 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
     match env.jσ[j]? with
     | some (.mk none σj jσj n _ b) =>
       if os.length == n then do
-        fire fun f => { f with joinOnce := f.joinOnce + 1 }
+        fire fun f => { f with joinOnce := f.joinOnce + 1, copied := f.copied + copyCost b }
         return .tick (← walk C fuel { σ := entsOf os.reverse ++ σj, jσ := jσj } here b k)
       else throw s!"walk: jump to join point #{j} with {os.length} arguments"
     | some (.mk (some l) σj jσj n r b) =>
       let (m, inner) := stripTicks b
       if C.shrink && !r && os.length == n &&
-          (b.nodes ≤ C.smallJoin || (n == 1 && b.headOcc 0 1 > 0)) then do
-        fire fun f => { f with joinSmall := f.joinSmall + 1 }
+          (b.nodesLe C.smallJoin || (n == 1 && b.headOcc 0 1 > 0)) then do
+        fire fun f => { f with joinSmall := f.joinSmall + 1, copied := f.copied + copyCost b }
         return .tick (← walk C fuel { σ := entsOf os.reverse ++ σj, jσ := jσj } here b k)
       let hit := if C.shrink && !r && n == 1 then
           match inner, os with
@@ -556,7 +585,7 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
             | some (c, fs) =>
               match select alts dflt c fs.length with
               | some (isAlt, alt) =>
-                if alt.nodes ≤ C.caseOfCaseBound then
+                if alt.nodesLe C.caseOfCaseBound then
                   some ((if isAlt then entsOf fs.reverse else []) ++ .opd o :: σj, alt)
                 else none
               | none => none
@@ -565,7 +594,7 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
         else none
       match hit with
       | some (σ', alt) => do
-        fire fun f => { f with caseOfCase := f.caseOfCase + 1 }
+        fire fun f => { f with caseOfCase := f.caseOfCase + 1, copied := f.copied + copyCost alt }
         return ticks (m + 1) (← walk C fuel { σ := σ', jσ := jσj } here alt k)
       | none => pure (.jump (here.dj - 1 - l) (atoms here.d os))
     | none => throw s!"walk: join point #{j} out of scope"
