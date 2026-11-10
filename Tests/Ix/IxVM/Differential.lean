@@ -223,12 +223,15 @@ def runShards (leanEnv : Lean.Environment) : IO UInt32 := do
       for b in bs do rejectedBlocks := rejectedBlocks.insert b
   -- The block each owned constant belongs to, and its shard.
   let blockOf (a : Address) : Address :=
-    match (env.getConst? a).map (·.info) with
-    | some (.iPrj p) => p.block
-    | some (.cPrj p) => p.block
-    | some (.rPrj p) => p.block
-    | some (.dPrj p) => p.block
-    | _ => a
+    match env.getConst? a with
+    | some c =>
+      match (c.info : Ixon.ConstantInfo) with
+      | .iPrj p => p.block
+      | .cPrj p => p.block
+      | .rPrj p => p.block
+      | .dPrj p => p.block
+      | _ => a
+    | none => a
   let mut shardOf : Std.HashMap Address Nat := {}
   for (owned, k) in owners.zipIdx do
     for a in owned do shardOf := shardOf.insert a k
