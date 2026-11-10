@@ -255,7 +255,78 @@ def isOpaqueByValue (t : Table) (c : CId) : Bool := t.opaqueByValue.contains c
 
 end Table
 
-/-- `CId`s of the pinned constants present in the program. -/
+/-- Where the pinned identities are: each address as a 256-bit number, its 32
+bytes read big-endian (`Src.Pinned.addrNat`), so that the recheck path compares
+addresses with pins in the kernel (D17). An identity without a pin (`none`, or
+an operation or axiom missing from its list) is absent from the program, as an
+identity whose constant is missing from the closure is. Ingress chooses the
+pins (`Src.Pinned.pinsOf`): for a role-bound environment the role table's,
+through the stated mapping from the kernel's roles (`Src.Pinned.ofRoles`), and
+for an unbound one the fixed table `Pins.fixed`. -/
+structure Pins where
+  nat : Option Nat := none
+  natZero : Option Nat := none
+  natSucc : Option Nat := none
+  natRec : Option Nat := none
+  bool : Option Nat := none
+  boolTrue : Option Nat := none
+  boolFalse : Option Nat := none
+  eq : Option Nat := none
+  decIsFalse : Option Nat := none
+  decIsTrue : Option Nat := none
+  /-- The primitive operations that have a pin, with it. -/
+  prims : List (PrimOp × Nat) := []
+  /-- The standard axioms (`propext`, `Quot.sound`, `Classical.choice`). -/
+  stdAxioms : List Nat := []
+  /-- The D12 allowlist: opaques evaluated through their value (`Lean.opaqueId`). -/
+  opaqueByValue : List Nat := []
+  deriving Repr, Inhabited
+
+namespace Pins
+
+/-- The fixed table: the addresses of `fixtures/ixon-v4/primitives.tsv` and
+`src-tables.tsv` (`Src.Pinned`'s rows, which `#guard`s tie to these numbers),
+used for an environment without a role binding. -/
+def fixed : Pins :=
+  { nat := some 0x35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc
+    natZero := some 0xeeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46
+    natSucc := some 0x42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6
+    natRec := some 0xc8322e03d558f85a8edc7fe68524013880ad0bbcb7dc890136d247154b230992
+    bool := some 0xe6eba3c8b4d19f6a1076b39fa89aec61dccbb960f83d9a62e6acf35a69c9a0a4
+    boolTrue := some 0xa29a636176cf1135d077eb074798f9007c78e7801383e9cff363bae5edf05762
+    boolFalse := some 0xdda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63e
+    eq := some 0xc37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea9f7578a207
+    decIsFalse := some 0x8cc0e1360c1b29108dab3d6172e7fce8a9aa9640daa4bbe99ba1305d9623624b
+    decIsTrue := some 0x363d071182be414e1a58599b83f5e19f9b873723054f4287ba69705aafef27da
+    prims :=
+      [ (.add, 0x3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8),
+        (.sub, 0x03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb),
+        (.mul, 0x373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0),
+        (.div, 0x824d1c53d8c1c3cf0a27f24639ec2be1ecc13d4a01c993171595edccf6949737),
+        (.mod, 0x11abbf986481c53a21c8cb21ee2581ae6238aedbec15f972959d086bef1a1985),
+        (.pow, 0x5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab),
+        (.gcd, 0xaba94bfb41351d4db36172c379a512f04219ef21dc5454d71590967d4e8f913f),
+        (.beq, 0xd3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337),
+        (.ble, 0x9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92),
+        (.land, 0xde8c100c22f82a5c3533c67e4370671813434a6fec5d023998ded090df4a4934),
+        (.lor, 0x93afc1cd298c63606e5f468d1e5989ab4680d256e95d07a8642a88b5c6b858e1),
+        (.xor, 0x77dd40d7b6ca310cc59466d1f24df4f180ef50e1b00fd850698458cd26901c5d),
+        (.shiftLeft, 0x05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd),
+        (.shiftRight, 0x25019ff485fcf5709597cd1e07fcc3ce796776ef3f715a6d187eb5831c63b4be),
+        (.pred, 0x3244687301d779ec757274761d903def3eb3135177327b709bcbd854ef496f79) ]
+    stdAxioms :=
+      [ 0x209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34,
+        0x9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a,
+        0xcfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40 ]
+    opaqueByValue := [0xd0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046] }
+
+/-- The pin of a primitive operation, if it has one. -/
+def prim? (p : Pins) (op : PrimOp) : Option Nat := p.prims.lookup op
+
+end Pins
+
+/-- `CId`s of the pinned constants present in the program, and the pins they
+were resolved against. -/
 structure Known where
   nat : Option CId := none
   natZero : Option CId := none
@@ -269,6 +340,9 @@ structure Known where
   (D19). -/
   decIsFalse : Option CId := none
   decIsTrue : Option CId := none
+  /-- The pins: ingress's choice for the environment the program was read
+  from; every check of a pinned identity compares with these. -/
+  pins : Pins := Pins.fixed
   deriving Repr, Inhabited
 
 /-- A resolved program with its unfolding table and roots.

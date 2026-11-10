@@ -35,8 +35,10 @@ Every route shares four objects and the theorems that connect them.
    admits them under a role binding
    ([`IxCK/Kernel/Admission.lean`](../../IxCK/Kernel/Admission.lean)). IxCC
    reads them with its own decoder (`V3.decodeAnonymousEnv`,
-   [`Ixon/V3/Env.lean`](../IxCC/Ixon/V3/Env.lean)), which accepts only the
-   version-4 envelope without a role binding.
+   [`Ixon/V3/Env.lean`](../IxCC/Ixon/V3/Env.lean)), which reads the role-bound
+   envelope `ix compile` writes, authenticating its role table and taking its
+   pinned identities from it, and the unbound one of the committed fixtures
+   ([byte contract](byte-contract.md)).
 2. **The kernel's acceptance and its model.** An environment IxCK accepts
    has a *strong* model (`checkDecls_sound`,
    [`IxCK/Kernel/Verify/Cached/MainC.lean`](../../IxCK/Kernel/Verify/Cached/MainC.lean);

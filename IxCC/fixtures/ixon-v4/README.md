@@ -28,6 +28,12 @@ reaches, and `equations.json` names each definition/theorem pair by address.
 The producer is a local ix change on top of the pinned revision; its manifest
 (`k1/corpus.json`) records the exact revision, binary and commands.
 
+## Role-bound closures
+
+[`bound/`](bound/README.md) holds two closures in the role-bound envelope
+(`0xE5`) this repository's `ix compile` writes by default, with their role
+bindings; every other closure here is unbound (`0xE4`).
+
 ## Src tables and diagnostics
 
 `src-tables.tsv` holds the Src front end's pinned `lazy` rows (the 28

@@ -1,32 +1,48 @@
 import IxCC.Ixon.V3.Wire
+import IxCC.Ixon.V3.Binding
 import IxCC.Ixon.Merkle
 import IxCC.Ixon.PureHash
 
-/-! Anonymous Ixon v4 ingress. The authenticated source boundary consists of
-the format header, addressed constants and blobs, assumptions, and hints. As
-in ix's anonymous reader, presentation metadata is retained as opaque bytes;
+/-! Ixon environment ingress. The authenticated source boundary consists of
+the format header, addressed constants and blobs, assumptions, hints and, in a
+role-bound environment, the role binding (`IxCC/docs/byte-contract.md`). As in
+ix's anonymous reader, presentation metadata is retained as opaque bytes;
 this is not a validator of the full metadata serialization.
 
-The framing follows ix's `Env.getEnv` (`Ix/Ixon.lean` at
-`producerRevision`), whose module is outside ix's pure codec package:
-the header is TagN(4) with flag `0xE` and value 4 (the byte `0xE4`), every
-count, length, hint delta and hint is a TagN(0) integer read by ix's codec,
-and constants are decoded by `decodeConstant` (ix's canonical decoder). Every
-blob and constant must hash to its address, and the constant root must be the
-canonical Merkle root of the constant addresses, both with pure BLAKE3
+Two envelopes are read, as ix writes them (`Ixon.Env.putEnv`, `Ix/Ixon.lean`,
+whose module is outside ix's pure codec package):
+
+* the **unbound** envelope: header TagN(4) with flag `0xE` and value 4 (the
+  byte `0xE4`), the root, `main`, the assumptions, then the blobs, constants,
+  hints and metadata;
+* the **role-bound** envelope: value 5 (`0xE5`), the same sections with the
+  role binding inserted after the assumptions: a 32-byte address, a TagN(0)
+  length and that many bytes, the binding section, which must hash to the
+  address and decode as a role table (`V3.Binding`).
+
+Every count, length, hint delta and hint is a TagN(0) integer read by ix's
+codec, and constants are decoded by `decodeConstant` (ix's canonical decoder).
+Every blob and constant must hash to its address, and the constant root must be
+the canonical Merkle root of the constant addresses, both with pure BLAKE3
 (`Address.blake3Pure`): ix's certified reader treats addresses as keys, so
-authentication is ours. -/
+authentication is ours. The root covers the constants only; the binding is
+named by its own address. -/
 
 namespace IxCC.Ixon.V3
 
 /-- The ix revision whose Ixon v4 environment format this reader follows. -/
 def producerRevision : String := "f829b76044a44a61023d0983516137147bbb12a7"
 
-/-- The `.ixe` format version (`Ixon.Env.VERSION` in ix). -/
+/-- The unbound `.ixe` envelope version (`Ixon.Env.LEGACY_ENV_VERSION` in ix). -/
 def envVersion : UInt64 := 4
 
+/-- The role-bound `.ixe` envelope version (`Ixon.Env.BINDING_ENV_VERSION` in
+ix): the unbound layout with a role binding after the assumptions. -/
+def boundEnvVersion : UInt64 := 5
+
 /-- The object format byte that claims and catalog manifests bind (ix's
-`Ixon.Env.OBJECT_FORMAT`: the `.ixe` format version as one byte). -/
+`Ixon.Env.OBJECT_FORMAT`, the checked-object grammar version, which both
+envelopes share). -/
 def objectFormat : UInt8 := envVersion.toUInt8
 
 structure Env where
@@ -38,7 +54,13 @@ structure Env where
   /-- 0 = opaque, 1 = abbrev, 2 + height = regular. -/
   hints : Array (Address × UInt64) := #[]
   metadata : ByteArray := .empty
+  /-- The role binding: `some` exactly when the bytes were the role-bound
+  envelope (`0xE5`), `none` for the unbound one (`0xE4`). -/
+  binding : Option Binding := none
   deriving Inhabited
+
+/-- Whether the environment was read from the role-bound envelope. -/
+def Env.isBound (env : Env) : Bool := env.binding.isSome
 
 abbrev EnvM := _root_.Ixon.GetM
 
@@ -96,13 +118,29 @@ def getObjectTable (constants : Bool) : EnvM (Array (Address × ByteArray)) := d
     result := result.push (address, bytes)
   return result
 
+/-- The role binding of the role-bound envelope (ix's `getBindingHeader`): the
+binding section's address, its length (at most the format's largest section,
+`RoleTable.maxBytes`) and its bytes, which must hash to the address with pure
+BLAKE3 and decode as a role table (`Binding.ofSection`). -/
+def getBinding : EnvM Binding := do
+  let address ← getAddress
+  let size ← getNat
+  if size > RoleTable.maxBytes then throw "role binding: the section exceeds the format's size"
+  let bytes ← _root_.Ixon.getBytes size
+  unless Address.blake3Pure bytes == address do
+    throw "role binding: the section's bytes do not hash to its address"
+  match Binding.ofSection address bytes with
+  | .ok binding => return binding
+  | .error error => throw error
+
 def getAnonymousEnv : EnvM Env := do
   let tag ← _root_.Ixon.getTagN 4
-  unless tag.flag == 0xE && tag.value == envVersion do
-    throw "ixon-v4: expected environment format 4"
+  unless tag.flag == 0xE && (tag.value == envVersion || tag.value == boundEnvVersion) do
+    throw "ixon-v4: expected environment format 4 (unbound) or 5 (role-bound)"
   let root ← getAddress
   let main ← getOptionalAddress
   let assumptions ← getAddressList
+  let binding ← if tag.value == boundEnvVersion then some <$> getBinding else pure none
   let blobs ← getObjectTable false
   let constants ← getObjectTable true
   unless Merkle.rootCanonicalBy Address.blake3Pure (constants.map Prod.fst) == root do
@@ -128,10 +166,12 @@ def getAnonymousEnv : EnvM Env := do
   let metadata ← _root_.Ixon.getBytes (state.bytes.size - state.idx)
   let blobs := blobs.foldl (fun table (address, bytes) => table.insert address bytes)
     ({} : Std.HashMap Address ByteArray)
-  return { consts, blobs, root, main, assumptions, hints, metadata }
+  return { consts, blobs, root, main, assumptions, hints, metadata, binding }
 
-/-- Decode only the anonymous sections; metadata is outside admission.
-The caller must supply an expected source root when one is externally bound. -/
+/-- Decode the anonymous sections of either envelope (unbound `0xE4` or
+role-bound `0xE5`); metadata is outside admission. The result's `binding` says
+which envelope it was. The caller must supply an expected source root when one
+is externally bound. -/
 def decodeAnonymousEnv (bytes : ByteArray) (maxBytes : Nat := 16 * 1024 * 1024) :
     Except String Env := do
   if bytes.size > maxBytes then throw "ixon-v4: environment byte budget exceeded"

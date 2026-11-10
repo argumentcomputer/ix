@@ -58,7 +58,7 @@ def validateRecKind (p : Program) (r : CId) (k : RecKind) : Except String Unit :
 def validateOpaque (p : Program) (c : CId) (_ : Unit) : Except String Unit :=
   match p.decl? c with
   | some (.defn _ .safe ..) =>
-    if Pinned.opaqueByValuePins.contains (Pinned.addrNat (p.addr c)) then pure ()
+    if p.known.pins.opaqueByValue.contains (Pinned.addrNat (p.addr c)) then pure ()
     else throw "opaque-by-value: not an allowlisted address"
   | _ => throw "opaque-by-value: not a safe definition"
 

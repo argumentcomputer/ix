@@ -28,16 +28,12 @@ def maxTermNodes : Nat := 100000
 `checkAxiomWalk` (`sum-loop`'s unshared tree has 1.68M nodes). -/
 def maxBodyNodes : Nat := 5000000
 
-/-- The standard Lean axioms (`propext`, `Quot.sound`, `Classical.choice`) as
-256-bit big-endian address pins (`Pinned.addrNat`). -/
-def standardAxiomPins : List Nat :=
-  [ 0x209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34,
-    0x9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a,
-    0xcfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40 ]
-
+/-- A standard Lean axiom (`propext`, `Quot.sound`, `Classical.choice`): a safe
+axiom at one of the program's standard-axiom pins (`Pins.stdAxioms`, 256-bit
+big-endian addresses, `Pinned.addrNat`). -/
 def isStandardAxiom (p : Program) (c : CId) : Bool :=
   match p.decl? c with
-  | some (.axio true _ _) => standardAxiomPins.contains (Pinned.addrNat (p.addr c))
+  | some (.axio true _ _) => p.known.pins.stdAxioms.contains (Pinned.addrNat (p.addr c))
   | _ => false
 
 def declTerms : Decl → List Term
@@ -673,7 +669,7 @@ types, by the operation's arity and result. -/
 def checkPrim (p : Program) (f : CId) (op : PrimOp) (enabled : List PrimOp) :
     Except String Unit := do
   unless enabled.contains op do throw s!"prim: {op.name} is not in the configured set"
-  unless Pinned.addrNat (p.addr f) == Pinned.primPin op do
+  unless some (Pinned.addrNat (p.addr f)) == p.known.pins.prim? op do
     throw "prim: the address is not the pinned one"
   let some natId := p.known.nat | throw "prim: Nat is absent"
   let nat := Term.const natId []

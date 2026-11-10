@@ -51,6 +51,10 @@ unless a line says so.
 - [Compile and recheck boundary](compile-boundary.md): what the public
   theorem covers, the hashing dependencies, and the remaining source-adequacy
   obligations.
+- [The byte contract](byte-contract.md): exactly which bytes a compile claim
+  is about and how they are identified (the envelope, the root, the role
+  binding and the pins it gives, the records, the hash), term for term with a
+  kernel claim about the same artifact.
 - [Ixon v4](ixon-v4.md): the ix pins (the v4 codec and the producer), contract encoding, strict
   decoding, catalog-v2 admission, erased typing, resource admission and
   claims.

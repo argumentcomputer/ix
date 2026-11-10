@@ -75,7 +75,7 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
     ({ code := "hint", addr := some prop.subject, name := prop.name?, message := msg } : Diag)
   -- prim: every pinned primitive present in the closure.
   for c in [0:n] do
-    if let some op := Pinned.primAt? (p.addr c) then
+    if let some op := Pinned.primAt? p.known.pins (p.addr c) then
       match checkPrim p c op cfg.prims with
       | .ok () =>
         resolve := resolve.insert c (.prim op)
@@ -147,8 +147,8 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
       diags := diags.push d
   -- opaque-by-value allowlist.
   let mut opaqueByValue : NatSet := .leaf
-  for (_, hex) in Pinned.opaqueByValueRows do
-    if let some c := lookup (Pinned.addr hex) then
+  for n in p.known.pins.opaqueByValue do
+    if let some c := lookup (Pinned.addrOfNat n) then
       if let some (.defn _ .safe _ _ _) := p.decl? c then
         opaqueByValue := opaqueByValue.insert c
         stats := { stats with opaqueByValue := stats.opaqueByValue.push c }

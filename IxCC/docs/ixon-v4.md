@@ -16,7 +16,8 @@ Three ix sources are pinned, for three different things:
 - **The codec** that reads and writes it is a Lake dependency: ix's `IxCK/`
   package (`«ix-ck»`), beside IxCC in the ix workspace (`../IxCK`), of which
   IxCC imports the 11 modules of `IxCK.Ixon.Canonical`'s import closure (Init
-  only). They are `f829b760`'s `Ix.Ixon.*` and `Ix.Address.Core` under the
+  only), and, to read role-bound environments, the kernel's role vocabulary
+  (`IxCK.Kernel.Key`, with `IxCK.Kernel.Name`; [byte contract](byte-contract.md)). They are `f829b760`'s `Ix.Ixon.*` and `Ix.Address.Core` under the
   `IxCK` module root, without an unused error type, and with a TagN fast path:
   two `@[csimp]` theorems make compiled code use copies of `putTagN` and
   `getTagN` specialized to the flag widths 0, 2 and 4. It is the only reader
@@ -37,8 +38,9 @@ plus the `--equations` export (`be45a159`, [corpus](corpus.md)). `be45a159`
 is not in this repository's history; it survives on ix's
 `jcb/compilatrix-donor-history-2026-10-11` and
 `jcb/compilatrix-resource-wip-2026-10-11` branches. The ix of this repository
-has the same export (`ix compile --equations`) and writes the unbound
-version-4 closures ingress reads with `ix compile --unbound`; `refreeze-ixon
+has the same export (`ix compile --equations`); it writes role-bound
+version-5 closures by default, which ingress reads, and the unbound version-4
+closures of the committed fixtures with `ix compile --unbound`; `refreeze-ixon
 typing` checks the primitive closure with its `ix check-lean`. A refreeze
 with it follows [Refreezing](corpus.md#refreezing), which says what it
 changes and which steps it cannot yet run.
@@ -78,8 +80,10 @@ capture, quantity and supported projection rules.
 **The wire.** Every integer is a TagN integer (ix's `putTagN`/`getTagN`): a
 flag of `f` bits and a value in rungs of 1, 2, 3, 4, 5 or 9 bytes, one
 encoding per value. Sharing is canonical. The environment header is TagN(4)
-flag `0xE` value 4, the single byte `0xE4`; there is no v3 reader or writer
-(a v3 header, `0xE3`, is rejected). Raw constant bytes carry no
+flag `0xE` value 4 (the single byte `0xE4`, unbound) or value 5 (`0xE5`,
+role-bound: the same sections with a role binding after the assumptions,
+[byte contract](byte-contract.md)); there is no v3 reader or writer (a v3
+header, `0xE3`, is rejected). Raw constant bytes carry no
 self-identifying version, so consumers must select this API from an
 authenticated versioned boundary. The v4 primitive inventory is ix's
 [`primitives.tsv`](../fixtures/ixon-v4/primitives.tsv) (copied unchanged); 66

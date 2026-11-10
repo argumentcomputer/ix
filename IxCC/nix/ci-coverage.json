@@ -456,6 +456,7 @@
   "IxCC.Ixon.Serialize",
   "IxCC.Ixon.Univ",
   "IxCC.Ixon.Uses",
+  "IxCC.Ixon.V3.Binding",
   "IxCC.Ixon.V3.Catalog",
   "IxCC.Ixon.V3.Catalog.Admit",
   "IxCC.Ixon.V3.Catalog.Basic",
@@ -1567,7 +1568,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "P8: closed-world defunctionalisation modules (not in the pipeline) and their fences",
+ "2026-11-10: role-bound ingress, pins from the role table (ofEnv_pins, known_pins fences), on P8",
  "axiom_sha256":
- "1b00718cd2e0aaf48e7b299e06ac056f0ab70f29409339969b1581ada586709e",
- "axiom_count": 5604}
+ "3d893d0051f9b5e36ab631eb4053db7c401c8eac81ba2f4b6c630f2d5f4a6fec",
+ "axiom_count": 5606}

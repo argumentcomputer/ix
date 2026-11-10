@@ -38,7 +38,9 @@ driver's `--type`/`--sig` arguments (JSON; `null` when bounded ground
 first-order signature discovery does not support the result type).
 `--dump-ir LEVEL` prints a level (`lam`, `anf`, `fir`,
 `cfg`, `lir`, `xv`, `xl`, or `all`) to standard output; `--stats` prints
-timings, sizes and the allocation outcomes. `--no-typecheck` skips erased
+the closure's envelope, constant root and role table address, timings, sizes
+and the allocation outcomes. The closure is either envelope: role-bound
+(`0xE5`, as `ix compile` writes it) or unbound (`0xE4`). `--no-typecheck` skips erased
 typing at ingress (the fixtures' typing is gated by `tests-ixon-v3`).
 
 A decline or rejection prints `ixcc: stage: code: message` on
@@ -176,6 +178,15 @@ def statsLines (a : Artifact) (outcomes : Option (List Xv.Alloc.Outcome)) : List
    s!"x86: {edits} blocks after stacking, text {a.backend.encoded.text.size} bytes, object {a.object.size} bytes"] ++
   a.roots.map fun r => s!"root {r.name}: {r.symbol}, parameters {r.params}, driver {driverArgs r}"
 
+/-- What the closure is, by its identity: the envelope, the constant root and,
+for a role-bound envelope, the binding hash (the role table's address). -/
+def envelopeLine (env : Ixon.V3.Env) : String :=
+  match env.binding with
+  | some b =>
+    s!"environment: role-bound (0xE5), root {env.root}, role table {b.address} \
+      ({b.table.bound.length} roles bound, specification version {b.table.version})"
+  | none => s!"environment: unbound (0xE4), root {env.root}"
+
 /-! ## Commands -/
 
 def cliErr (code message : String) : Err := { stage := .cli, code, message }
@@ -298,6 +309,7 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     let cert := cliCert.base
     let certBytes := cliCert.toText.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
+    IO.println (envelopeLine inp.env)
     IO.println s!"time: read {tRead} ms, ingress {tIngress} ms, {producer} {tProduce} ms, run {tRun} ms"
     IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
       {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \

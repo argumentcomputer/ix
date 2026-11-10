@@ -261,9 +261,11 @@ What a refreeze needs:
   and `jcb/compilatrix-resource-wip-2026-10-11` branches. The ix of this
   repository (`lake build ix` at the repository root) can be the producer
   instead: it has the same export (`ix compile --equations`), and
-  `ix compile --unbound` writes the closure as ingress reads it (the
-  version-4 envelope; without the flag it writes a role-bound version-5
-  envelope with the role support and certificates, which ingress refuses).
+  `ix compile --unbound` writes the closure in the version-4 envelope the
+  committed fixtures use; without the flag it writes a role-bound version-5
+  envelope with the role support and certificates, which ingress also reads
+  ([byte contract](byte-contract.md)), and from which IxCC takes its pinned
+  identities.
   `refreeze-ixon producer` writes `--unbound` into every manifest's commands.
   Its `--consts` closure is ix's selected closure (recursors, whole logical
   units and checker support included), so refreezing with it changes every
@@ -318,6 +320,8 @@ lake exe refreeze-ixon tc-primitives --ix-repo $IXREPO --ix-revision $IXPIN
 git show HEAD:fixtures/ixon-v4/primitives.tsv > old-primitives.tsv
 git show HEAD:fixtures/ixon-v4/src-tables.tsv > old-src-tables.tsv
 lake exe pin-src-tables --repin IxCC/Src/Pinned.lean \
+  --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
+lake exe pin-src-tables --repin IxCC/Src/Syntax.lean \
   --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
 # 7. the typing bundles, then the catalogs over them (the ix of this repository
 #    assembles only role-bound catalog members, so `catalog` refuses it)

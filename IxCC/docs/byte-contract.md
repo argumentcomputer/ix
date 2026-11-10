@@ -1,0 +1,212 @@
+# The byte contract: what a compile claim is about
+
+Written 2026-11-10. **Status:** IxCC reads both envelopes below and takes its
+pinned identities from the role table of a role-bound one (implemented); the
+compile claim does not yet name the role table, and two kinds of address on
+the verifier path are still computed with the native hash (both planned,
+[below](#what-is-not-yet-so)).
+
+A statement of the [end-to-end plan](end-to-end.md) has two premises about a
+content address: that the certified kernel accepts the environment with root
+`H` under role table `ρ`, and that IxCC's checked source program is faithful
+to the kernel's reading of those bytes. A consumer that proves claims about
+role-bound environments discharges them, or a native kernel run does. Neither
+means anything unless IxCC compiles the artifact those proofs are about. This
+page says exactly which bytes that is and how they are identified, so that a
+compile claim can be compared term for term with a kernel claim about the same
+artifact.
+
+## The artifact
+
+An `.ixe` environment, as `ix compile` writes it (`Ixon.Env.putEnv`,
+`Ix/Ixon.lean`). All integers marked N0 are TagN integers with a 0-bit flag
+(ix's codec, `IxCK/Ixon/Codec.lean`); every address is 32 bytes.
+
+| Part | Bytes | Role-bound (`0xE5`) | Unbound (`0xE4`) |
+| --- | --- | --- | --- |
+| header | TagN(4): flag `0xE`, value 5 or 4 | `E5` | `E4` |
+| root | 32 | the constant root `H` | the same |
+| `main` | `00`, or `01` and an address | present | present |
+| assumptions | N0 count, then strictly ascending addresses | present | present |
+| **binding** | address `ρ`, N0 length, that many bytes | **present** | absent |
+| §1 blobs | N0 count; per blob address, N0 length, bytes; ascending | present | present |
+| §2 constants (records) | N0 count; per record address, N0 length, bytes; ascending | present | present |
+| §3 hints | N0 count; per hint an N0 index delta and an N0 hint | present | present |
+| §4–§6 metadata | names, named entries, commitments | present | present |
+
+The role-bound envelope is the unbound one with the binding inserted after
+the assumptions; nothing else differs. `ix compile` writes it by default;
+`ix compile --unbound` writes the unbound one, which only IxCC's committed
+fixtures use (a bridge, [below](#what-is-not-yet-so)).
+
+### What identifies it
+
+- **The root `H`** is the canonical Merkle root of the §2 addresses: sorted,
+  deduplicated, leaves `BLAKE3(00 ‖ a)`, nodes `BLAKE3(01 ‖ l ‖ r)`, an odd
+  node paired with 32 zero bytes, the empty set's root 32 zero bytes
+  (`IxCC/IxCC/Ixon/Merkle.lean`). The root covers the records only. It does
+  not cover the binding, the hints or the metadata.
+- **The role table's address `ρ`** is `BLAKE3` of the binding section's
+  bytes. It is the *binding hash* that ix's typing claims name
+  (`ClaimContext.binding`, `Ix/Claim.lean`) and the `bindingHash` of a host
+  admission statement (`Ix/HostAdmission/Codec.lean`).
+- **A constant** is named by its record's address; a member of a `muts` block
+  by the address of its projection record (`dPrj`, `iPrj`, `rPrj`, `cPrj`
+  with that block and index, and empty tables), whether or not the file holds
+  that record. The kernel's reader keys members the same way
+  (`IxCK/Kernel/Ixon/Reader.lean`, "Keys").
+
+So an artifact is named by the pair `(H, ρ)`; an unbound one by `H` alone.
+Two artifacts with the same records and different role tables have the same
+`H`.
+
+### The hash
+
+BLAKE3, unkeyed, 32-byte output, everywhere: records, blobs, the root's
+leaves and nodes, the binding section. IxCC's ingress computes it with the
+pure Lean implementation (`Blake3.Pure.hash`, `Address.blake3Pure`), so
+reading an artifact involves no foreign code. The kernel's admission takes the
+hash as a parameter (`IxCK/Kernel/Admission.lean`), and every theorem holds at
+every hash; ix instantiates it with `Address.admissionHash`, which is pure
+BLAKE3 by definition and is executed by the Rust implementation on a recorded
+assumption that the two agree (`Ix/Address/Admission.lean`).
+
+### Canonical bytes
+
+Every record must be a canonical Ixon v4 constant: ix's bounded decoder
+`Ixon.Canonical.deConstant` accepts it, and it re-encodes to exactly its
+bytes. IxCC and the kernel's admission decode records with that same function
+(`IxCC/IxCC/Ixon/V3/Wire.lean`, `IxCK/Kernel/Admission/Bytes.lean`).
+*Canonical sharing* ([Ixon v4](../../docs/Ixon-v4.md)) is a requirement on
+the producer, not something either reader checks: a record's sharing table is
+the output of the one canonical construction, so its address is a function of
+the declaration's expanded expressions. A statement about an address is about
+whatever bytes hash to it, so neither premise depends on it; what depends on
+it is that two producers compiling the same declaration name it by the same
+address.
+
+## Which records are the closure
+
+Every §2 record is part of the closure the root covers, and IxCC reads every
+one. For a role-bound artifact they are, by provenance:
+
+1. **The requested closure**: the requested constants and the closure ix's
+   compiler selects for them (dependencies, recursors, whole logical units and
+   checker support).
+2. **Role support**: the constants bound to roles, closed under the roles'
+   blocks and dependencies, and their own closures, compiled from the same
+   source.
+3. **Certificates**: the theorems the role table names as evidence for the
+   equations of the bound operations, and their closures.
+
+The three are not marked in the file and need not be: they are ordinary
+records under one root, and the kernel admits them together. IxCC accounts
+for each record kind it meets:
+
+| Kind | What IxCC does |
+| --- | --- |
+| `defn`, `recr`, `axio`, `quot` | a Src constant (`Src.Ingress.readConsts`) |
+| `muts` (a block) | one Src constant per member and per constructor, keyed by its projection address |
+| `dPrj`, `iPrj`, `rPrj`, `cPrj` (projection records) | an alias of the member it names; a projection record that names no member of a block in the closure is refused (`src ingress: projection record … names no member of a block in the closure`) |
+| §1 blobs | authenticated; read through the constants that reference them (`nat` and `str` literals) |
+| assumptions | read; a reference to a constant the file does not hold is refused at ingress, so IxCC compiles only closed closures |
+| §3 hints | read and range-checked, kept as advice for the erased checker; not covered by `H` |
+| §4–§6 metadata | not part of the closure: kept as opaque bytes, never interpreted |
+| the binding | authenticated, decoded, kept with the environment (`V3.Env.binding`) and read for the pins |
+
+Which records the compiled program *reaches* is decided by the target, as
+before; the rest are read and ignored. Support and certificate records cost
+ingestion and erased typing, not compilation.
+
+## The role binding
+
+The binding section's grammar is the kernel's (`IxCK/Kernel/Ixon/RoleTable.lean`):
+`E8 03`, a specification version byte, the bound roles (a role's index and
+its address, indices strictly increasing), then the evidence entries (a
+role's index, a count and that many pieces of evidence, each `00` or `01` and
+a theorem's address). A role's index is its position in the kernel's
+`Ix.Kernel.Role.all` (`IxCK/Kernel/Key.lean`). IxCC reads it with its own
+decoder of the same grammar (`IxCC/IxCC/Ixon/V3/Binding.lean`), against the
+kernel's role vocabulary imported from that module, so a change to the
+vocabulary changes IxCC's reading in the same build. It refuses:
+
+- a section whose bytes do not hash to its address;
+- a section that is not exactly one canonical binding section (the kernel's
+  `RoleTable.ofBytes` refuses the same inputs);
+- a table that binds one address to two roles.
+
+It does not check the table against the specifications (the version, closure
+under blocks and dependencies, the evidence): that is the kernel's admission
+(`admitBinding`), which premise (i) covers. The specification version is read
+and reported, never compared with a value IxCC holds.
+
+### Pinned identities
+
+For a role-bound artifact, every identity IxCC treats specially is the
+constant the table binds to the identity's role (`Src.Pinned.ofRoles`). An
+identity whose role the table does not bind has no pin and is absent, as an
+identity whose constant is missing from the closure is. For an unbound
+artifact the fixed table stays (`Pins.fixed`, `IxCC/IxCC/Src/Syntax.lean`).
+
+| IxCC identity | Kernel role |
+| --- | --- |
+| `Nat`, `Nat.zero`, `Nat.succ`, `Nat.rec` | `nat`, `natZero`, `natSucc`, `natRec` |
+| `Bool`, `Bool.true`, `Bool.false` | `bool`, `boolTrue`, `boolFalse` |
+| `Eq` | `eq` |
+| `Decidable.isFalse`, `Decidable.isTrue` | `decidableIsFalse`, `decidableIsTrue` |
+| the primitives `add`, `sub`, `mul`, `div`, `mod`, `pow`, `gcd`, `beq`, `ble`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight`, `pred` | `natAdd`, `natSub`, `natMul`, `natDiv`, `natMod`, `natPow`, `natGcd`, `natBeq`, `natBle`, `natLand`, `natLor`, `natXor`, `natShiftLeft`, `natShiftRight`, `natPred` |
+| the standard axioms `propext`, `Quot.sound`, `Classical.choice` | `propext`, `quotSound`, `choice` |
+| the D12 allowlist (`Lean.opaqueId`) | none: keeps its fixed address |
+
+The pins travel with the program (`Known.pins`), and every check of a pinned
+identity on the recheck path compares with them: `Pinned.knownOk`, the `prim`
+entries' address check (`Table.checkPrim`), the standard-axiom closure of
+`eqn` and `csimp` theorems (`Table.isStandardAxiom`) and the allowlist
+(`Table.validateOpaque`). `Src.Ingress.ofEnv_pins` states that ingress gives
+the program the pins of the environment it read (`Pinned.pinsOf`).
+
+Not identities, and so not taken from the table: the `lazy` rows
+(`Pinned.lazyRows`), which are the producer's proposals (the table check
+accepts a `lazy` entry for any definition of the right shape), and the erased
+checker's own primitive table (`Tc.PrimAddrs.canonical`), which only speeds up
+its reduction of literals.
+
+## A compile claim and a kernel claim, term for term
+
+| Term | Compile claim (`CompileClaim`, `Ix.Claim.compile`) | Kernel typing claim (`checkEnv`) | Host admission statement |
+| --- | --- | --- | --- |
+| records | `env` = `H` | `root` = `H` | `contentRoot` = `H` |
+| role table | not named yet | `ctx.binding` = `ρ` | `bindingHash` = `ρ` |
+| specifications | not named | `ctx.spec`, the specification digest | `hostSpecDigest` |
+| axioms beyond the standard three | not named: the producer's admission refuses relevant axioms, and the table admits only the standard three in the closure of an `eqn` or `csimp` theorem | `ctx.axioms` | the policy |
+| the constant | `target`: its record's or projection's address | (all of them) | `main` |
+| hash | BLAKE3 | BLAKE3 | BLAKE3 |
+
+A consumer pairs a compile claim with a kernel claim by `H` today, and is to
+pair them by `(H, ρ)` once the claim names the role table.
+
+## What is not yet so
+
+- **The claim does not name `ρ`.** Two role-bound artifacts with the same
+  records and different tables (and so possibly different pins) give compile
+  claims with the same bytes. The planned change adds the role table's address
+  to the compile claim on both sides, in the style of the tag-13 change, with
+  the old bytes refused; an image digest is to follow when the image exists
+  ([roadmap](roadmap.md), DO-11).
+- **Two hashes on the verifier path.** Block members are keyed by projection
+  addresses computed with the native (Rust) BLAKE3 (`V3.Tc.defnProjAddr` and
+  its siblings), and the byte-level theorems carry the axiom
+  `Blake3.HasherOps.hash._native.native_decide.ax_1`, which asserts only
+  `32 < 2 ^ System.Platform.numBits`
+  ([compile boundary](compile-boundary.md)). The plan is pure BLAKE3 for every
+  address on the verifier path, with the native code at most a checked
+  accelerator.
+- **The fixtures are unbound.** IxCC's committed closures are `0xE4`
+  envelopes, regenerated with `ix compile --unbound`. That flag is a bridge,
+  to be removed when the fixtures are refrozen in the role-bound form.
+- **Two readings.** IxCC's decoder and the kernel's reader each read the
+  bytes; they share the record decoder and, for the binding, the role
+  vocabulary, not the framing or the reading into declarations. The plan
+  replaces a proof that they agree by the faithfulness premise; a single
+  reading is the native-discharge milestone (SP-N in the
+  [roadmap](roadmap.md)).

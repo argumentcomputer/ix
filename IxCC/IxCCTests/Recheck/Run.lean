@@ -9,6 +9,7 @@ import IxCCTests.Recheck.Deep
 import IxCCTests.Recheck.Perf
 import IxCCTests.Recheck.Producer
 import IxCCTests.Recheck.RootShape
+import IxCCTests.Recheck.Bound
 
 /-! The `tests-recheck` suite: the recheck path in kernel-evaluable
 style. Building the suite evaluates, in the kernel
@@ -32,7 +33,9 @@ every result of the shape a root's declared type describes, also at roots compil
 objects return each constructor and whose claims `verifyBytes` accepts; SrcEval's results on the
 ABI fixture's roots are of it; the shape view rejects an ill-typed root's constructor of
 another type, which the view relabels; and the plain-RC view accepts the constructor trees of a
-plain-RC root's declared type); and every verifier entry point on the crashing inputs and on generated deep
+plain-RC root's declared type); the role-bound closures (`Bound`: their claims, from `makeClaim`, are
+accepted by `verifyBytes` and `checkClaim` and name the role-bound root, and their objects are
+byte for byte those of the unbound twins); and every verifier entry point on the crashing inputs and on generated deep
 and wide inputs in a child process whose Lean stack is 8 MiB (`--stack-8mib`).
 `--producer-reference` counts the replaced code's allocations on the same
 inputs. `--perf-write`, `--perf-stages` and `--perf-anf` write the producer's scaling
@@ -258,6 +261,8 @@ def main (args : List String) : IO UInt32 := do
       return (← RootShape.aloneCases a).push (← RootShape.illTyped a)
     part a "plain-RC roots: the view accepts the constructor trees of the declared type" do
       RootShape.plainRc a
+    part a "role-bound closures: the byte-level verifiers accept their claims; the objects are the unbound twins'" do
+      Bound.run a
     part a "every verifier on an 8 MiB stack (FA follow-up, item 1)" (Deep.stackPart a)
     part a "Select.select against Select.run on generated Lir" (selection a count)
     part a "recheck artifacts equal a fresh ingress, produce and run" (artifacts a)

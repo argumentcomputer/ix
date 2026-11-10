@@ -25,7 +25,8 @@ hashing boundaries are:
 
 | Boundary | Current computation | Role |
 | --- | --- | --- |
-| `V3.decodeAnonymousEnv` | `Address.blake3Pure`, including the canonical constant-root Merkle fold | Authenticating Ixon objects, blobs and the closure root |
+| `V3.decodeAnonymousEnv` | `Address.blake3Pure`, including the canonical constant-root Merkle fold and the role binding's section | Authenticating Ixon objects, blobs, the closure root and, in a role-bound envelope, the role table ([byte contract](byte-contract.md)) |
+| `Src.Ingress.ofEnv` | `Address.blake3` (`V3.Tc.*ProjAddr`) | Keying block members and constructors by their projection addresses; a projection record must be the alias of a member it keys |
 | `V3.Tc.checkEnv` | `Address.blake3` and `Blake3.Rust.Hasher` | Rechecking materialized object/blob hashes; constructing projection addresses, expression/universe nodes, context and reduction-cache keys |
 | `Recheck.produceWith` relevance annotation; `Recheck.checkCanonicalRelevance` | The same erased typechecker's expressions and conversion | In `produce`, a proposal the relevance checks then decide. On the byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) `checkCanonicalRelevance` re-runs `Src.Relevance.annotate` on `(inp.env, cert.table)` and requires the certificate's annotation to equal its output, so the annotator is on their acceptance path. It has no correctness theorem: S1's closure on those paths rests on it annotating honest programs correctly |
 | `Src.Resource.validateContext` | `Address.blake3Pure` plus the codec's pure framing operations | Binding raw effective profile bytes and checked equation selections to actual Src declarations; no resource-safety claim |

@@ -34,9 +34,9 @@ The chain from the bytes to the object's result, link by link:
 | Link | Content | State | Under the plan |
 | --- | --- | --- | --- |
 | Claim bytes | `CompileClaim` encodes and decodes exactly | Proved (round trip). Binds the environment root, target, policy, arity and object hash only: not the role binding, the certificate, the sidecar, the typing flag or `Recheck.Config` | SP-0: the claim also binds the role table and the image digest |
-| IxCC's reading | `.ixe` bytes to IxCC's environment (`V3.decodeAnonymousEnv`), pure BLAKE3 authentication, canonicity evidence | Proved that it ran; IxCC's own framing, version 4 without a role binding only | SP-0: role-bound envelopes, pure BLAKE3; off the trusted path once faithfulness is a premise |
+| IxCC's reading | `.ixe` bytes to IxCC's environment (`V3.decodeAnonymousEnv`), pure BLAKE3 authentication, canonicity evidence | Proved that it ran; IxCC's own framing of both envelopes, the role binding authenticated and decoded, pins from its role table ([byte contract](byte-contract.md)) | SP-0: pure BLAKE3 for every address; off the trusted path once faithfulness is a premise |
 | IxCK's reading | the same bytes to IxCK's records and declarations | Proved by IxCK (`checkBytesWith_reading`, [`IxCK/Kernel/Admission/Theorems.lean`](../../IxCK/Kernel/Admission/Theorems.lean)); needs a role binding | the reading the premises are about |
-| The two readings agree | IxCC and IxCK decode the same constants under the same keys | **Absent.** They share only the constant decoder | Not needed: premise (ii), or one reading by construction (SP-N) |
+| The two readings agree | IxCC and IxCK decode the same constants under the same keys | **Absent.** They share the constant decoder and the role vocabulary (`Ix.Kernel.Role`), not the framing or the reading into declarations | Not needed: premise (ii), or one reading by construction (SP-N) |
 | Kernel acceptance ⇒ strong model | `checkDecls_sound`, `checkBytes_strongModel` | Proved by IxCK. **Not a premise of any IxCC theorem** | Premise (i), discharged by an IxVM proof or a native run |
 | The target names a kernel constant | `c.target` and IxCK's key agree | **Absent.** IxCC keys block members by projection addresses computed with the native BLAKE3 extern ([`Src/Ingress.lean`](../IxCC/Src/Ingress.lean)) | SP-0 (pure hashing, the claim binds the target) and premise (ii) |
 | IxCC's erased type checker | `Tc.checkEnv` ([`Ixon/V3/Tc/Driver.lean`](../IxCC/Ixon/V3/Tc/Driver.lean)), run when the `typecheck` flag is set | **No soundness theorem**; every guarantee holds with typing on or off | Off the guarantee path (DC-3) |
@@ -179,9 +179,10 @@ simulation (1.9k), IxCK's reader (1.3k) and IxCC's ingress (0.3k).
 bytes the IxVM proof is about and state what it guarantees about them.
 
 - **The same bytes.** IxCC reads role-bound (version-5) environments, which
-  IxVM's claims are about and this repository's `ix compile` writes; IxCC's
-  ingress refuses them today ([`Ixon/V3/Env.lean`](../IxCC/Ixon/V3/Env.lean)),
-  so the fixtures' unbound envelope is a bridge, not the design.
+  IxVM's claims are about and this repository's `ix compile` writes
+  (implemented: [`Ixon/V3/Env.lean`](../IxCC/Ixon/V3/Env.lean), the
+  [byte contract](byte-contract.md)); the fixtures' unbound envelope is a
+  bridge, not the design.
 - **The same hash.** Every address in the statement is the same mathematical
   function as in IxVM's claims: pure BLAKE3 (`Address.blake3Pure`) on the whole
   verifier path, including block-member projection addresses, which ingress
@@ -192,8 +193,9 @@ bytes the IxVM proof is about and state what it guarantees about them.
   whose proposition is a bound on the output length, provable from
   `System.Platform.numBits_eq`.
 - **The same identities.** Pinned identities come from the role table, as
-  IxVM's do; IxCC's own pins ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean))
-  become a check against the table.
+  IxVM's do (implemented for role-bound closures, `Src.Pinned.ofRoles`); IxCC's
+  fixed pins ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean)) stay for unbound
+  closures.
 - **The claim binds what composition needs.** The environment root `H`, the
   target, the role table and the image digest `D` (today the claim binds the
   root, the target, the policy, the arity and the object hash). The verifier

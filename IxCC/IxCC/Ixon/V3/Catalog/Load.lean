@@ -66,6 +66,8 @@ def loadWith (limits : Limits) (manifestBytes : ByteArray) (pieceBytes : Array B
     unless raw.size == spec.fileBytes.toNat do throw (.piece i "file size differs")
     unless Address.blake3 raw == spec.fileHash do throw (.piece i "file hash differs")
     let piece ← (decodeAnonymousEnv raw limits.pieceBytes).mapError (Error.piece i)
+    -- A catalog's union carries no role binding, so its pieces are unbound.
+    if piece.isBound then throw (.piece i "a catalog piece must be an unbound environment")
     unless piece.root == spec.root do throw (.piece i "environment root differs")
     if !chunked && !piece.assumptions.isEmpty then
       throw (.piece i "fat member carries external assumptions")

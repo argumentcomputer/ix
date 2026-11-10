@@ -477,7 +477,8 @@
     "IxCCTests.Recheck.Deep",
     "IxCCTests.Recheck.Perf",
     "IxCCTests.Recheck.Producer",
-    "IxCCTests.Recheck.RootShape"]},
+    "IxCCTests.Recheck.RootShape",
+    "IxCCTests.Recheck.Bound"]},
   "IxCCTests.Recheck.RootShape":
   {"path": "IxCCTests/Recheck/RootShape.lean",
    "imports":
@@ -615,6 +616,9 @@
   "IxCCTests.Recheck.Deep":
   {"path": "IxCCTests/Recheck/Deep.lean",
    "imports": ["IxCCTests.Recheck.Hostile"]},
+  "IxCCTests.Recheck.Bound":
+  {"path": "IxCCTests/Recheck/Bound.lean",
+   "imports": ["IxCCTests.Recheck.RootShape", "IxCC.CompileClaim"]},
   "IxCCTests.Recheck.Audit":
   {"path": "IxCCTests/Recheck/Audit.lean",
    "imports": ["IxCC.Recheck.Run", "IxCC.Anf.Semantics", "Lean"]},
@@ -941,6 +945,7 @@
     "IxCCTests.IxonV3.Catalog.Run",
     "IxCCTests.IxonV3.K1",
     "IxCCTests.IxonV3.ResourceBudget",
+    "IxCCTests.IxonV3.Binding",
     "IxCC.Tools.Check"]},
   "IxCCTests.IxonV3.ResourceBudget":
   {"path": "IxCCTests/IxonV3/ResourceBudget.lean",
@@ -980,6 +985,14 @@
   "IxCCTests.IxonV3.Catalog.Admission":
   {"path": "IxCCTests/IxonV3/Catalog/Admission.lean",
    "imports": ["IxCCTests.IxonV3.Catalog.Fixtures"]},
+  "IxCCTests.IxonV3.Binding":
+  {"path": "IxCCTests/IxonV3/Binding.lean",
+   "imports":
+   ["IxCC.Ixon.V3.Env",
+    "IxCC.Src.Ingress",
+    "IxCC.Src.Hints",
+    "IxCC.Src.Table.Check",
+    "IxCCTests.IxonV3.Catalog.Fixtures"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -4312,7 +4325,8 @@
   {"path": "IxCC/Src/Prim.lean", "imports": ["IxCC.Src.Syntax"]},
   "IxCC.Src.Pinned":
   {"path": "IxCC/Src/Pinned.lean",
-   "imports": ["IxCC.Src.Syntax", "IxCC.Ixon.V3.Tc.Support"]},
+   "imports":
+   ["IxCC.Src.Syntax", "IxCC.Ixon.V3.Env", "IxCC.Ixon.V3.Tc.Support"]},
   "IxCC.Src.NatMap": {"path": "IxCC/Src/NatMap.lean", "imports": []},
   "IxCC.Src.Load":
   {"path": "IxCC/Src/Load.lean",
@@ -4330,7 +4344,11 @@
   {"path": "IxCC/Src/Lazify.lean", "imports": ["IxCC.Src.Runtime"]},
   "IxCC.Src.Ingress":
   {"path": "IxCC/Src/Ingress.lean",
-   "imports": ["IxCC.Src.Syntax", "IxCC.Ixon.V3.Typed", "Std.Data.HashMap"]},
+   "imports":
+   ["IxCC.Src.Syntax",
+    "IxCC.Src.Pinned",
+    "IxCC.Ixon.V3.Typed",
+    "Std.Data.HashMap"]},
   "IxCC.Src.Hints":
   {"path": "IxCC/Src/Hints.lean",
    "imports":
@@ -5919,7 +5937,11 @@
    "imports": ["IxCC.Ixon.Univ", "IxCC.Ixon.V3.Contracts"]},
   "IxCC.Ixon.V3.Env":
   {"path": "IxCC/Ixon/V3/Env.lean",
-   "imports": ["IxCC.Ixon.V3.Wire", "IxCC.Ixon.Merkle", "IxCC.Ixon.PureHash"]},
+   "imports":
+   ["IxCC.Ixon.V3.Wire",
+    "IxCC.Ixon.V3.Binding",
+    "IxCC.Ixon.Merkle",
+    "IxCC.Ixon.PureHash"]},
   "IxCC.Ixon.V3.Contracts":
   {"path": "IxCC/Ixon/V3/Contracts.lean", "imports": ["IxCC.Ixon.Uses"]},
   "IxCC.Ixon.V3.Const":
@@ -5947,6 +5969,9 @@
   "IxCC.Ixon.V3.Catalog":
   {"path": "IxCC/Ixon/V3/Catalog.lean",
    "imports": ["IxCC.Ixon.V3.Catalog.Admit"]},
+  "IxCC.Ixon.V3.Binding":
+  {"path": "IxCC/Ixon/V3/Binding.lean",
+   "imports": ["IxCK.Kernel.Key", "IxCC.Ixon.Address"]},
   "IxCC.Ixon.V3":
   {"path": "IxCC/Ixon/V3.lean",
    "imports": ["IxCC.Ixon.V3.Validate", "IxCC.Ixon.V3.Catalog"]},

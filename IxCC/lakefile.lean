@@ -19,9 +19,11 @@ require Blake3 from git
 
 /- Ix's certified-kernel package (`IxCK/`, no dependencies, no Rust).
 Only its pure Ixon v4 codec (`IxCK.Ixon.Canonical` and its import closure, 11
-modules) is imported, by the ingress wire layer (`IxCC.Ixon.V4.Convert`,
-`IxCC.Ixon.V3.Wire`) and the resource profile reader
-(`IxCC.Src.Resource.Profile`). It is the package beside this one in the ix
+modules) and the kernel's role vocabulary (`IxCK.Kernel.Key` and
+`IxCK.Kernel.Name`) are imported: the codec by the ingress wire layer
+(`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`) and the resource profile reader
+(`IxCC.Src.Resource.Profile`), the roles by the reader of a role-bound
+environment's binding (`IxCC.Ixon.V3.Binding`). It is the package beside this one in the ix
 workspace; the trust ledger records the SHA-256 of every file of that
 closure, so a change to it is reviewed here. -/
 require «ix-ck» from "../IxCK"

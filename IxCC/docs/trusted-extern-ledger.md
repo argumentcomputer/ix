@@ -209,8 +209,8 @@ git diff docs/trusted-externs.json   # review every changed pin against the diff
 Then edit by hand what the audit still names (a seed version, a new action
 repository, a symbol, a closure hash of the IxCK codec, a csimp theorem), set
 `last_reviewed`, and commit the ledger with the change. `--record` leaves the
-IxCK codec closure's hashes (`lean_dependencies[].closure`) alone: a change to
-those 11 files is a dependency review, edited by hand, not a routine update.
+IxCK closure's hashes (`lean_dependencies[].closure`) alone: a change to
+those 13 files is a dependency review, edited by hand, not a routine update.
 
 All repository check scripts are Lean executables. The trust auditor uses
 the pinned Lake TOML parser and GNU `sha256sum`; the independent encoder
@@ -396,11 +396,18 @@ outside the closure or the toolchain, and requires its `@[csimp]` theorems to be
 exactly the entry's `csimp_theorems`.
 
 The one entry, `ix-ck-ixon-v4-codec`, is ix's `IxCK/` package (`«ix-ck»`),
-beside IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical` and
-`IxCK.Ixon.Codec` (an 11-module closure importing only `Init`; its public roots
-use `propext` and `Quot.sound`). It is the ingress decoder and encoder.
-Its two `@[csimp]` theorems, `putTagN_eq_fast` and `getTagN_eq_fast` in
-`IxCK/Ixon/Codec.lean`, are the entry's `csimp_theorems`: compiled code
+beside IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical`,
+`IxCK.Ixon.Codec` and `IxCK.Kernel.Key` (a 13-module closure importing only
+`Init` and `Std.Data.HashMap`; its public roots use `propext` and
+`Quot.sound`). The codec is the ingress decoder and encoder; `IxCK.Kernel.Key`
+gives the kernel's role vocabulary (`Ix.Kernel.Role`, `Role.all`), against
+which IxCC decodes the binding section of a role-bound environment and maps
+roles to its pinned identities ([byte contract](byte-contract.md)), so a role
+is read as the kernel of the same build reads it. Its four `@[csimp]`
+theorems are the entry's `csimp_theorems`: `Name.beq_eq_beqPtr` and
+`Key.beq_eq_beqPtr` replace structural equality of kernel names and keys by a
+pointer-guarded equality proved equal to it (IxCC compares roles, not names or
+keys); `putTagN_eq_fast` and `getTagN_eq_fast` in `IxCK/Ixon/Codec.lean`: compiled code
 writes and reads TagN integers with copies of `putTagN` and `getTagN`
 specialized to the flag widths 0, 2 and 4 (`putTagNFast`, `getTagNFast`).
 Each is a proved equality, so the functions the theorems are about are

@@ -24,7 +24,9 @@ tree still contains monolithic test and proof modules that need migration.
 
 - IxCC is the `IxCC/` package of ix (`«ix-cc»`). Run Lake from `IxCC/` in
   ix's development shell (`nix develop` finds ix's flake from here). IxCC
-  depends on `../IxCK` (only its Ixon codec closure) and Blake3; ix's root
+  depends on `../IxCK` (only its Ixon codec closure and the role vocabulary,
+  `IxCK.Kernel.Key`, with which it reads role-bound environments) and Blake3;
+  ix's root
   package does not depend on IxCC, and IxCC must not import the root
   package's `Ix.*` modules.
 - ix's `flake.nix` builds IxCC from `nix/build.nix` and `nix/checks.nix`,
@@ -39,14 +41,14 @@ tree still contains monolithic test and proof modules that need migration.
   is updated and reviewed in the same change: every IxCC file its integrity
   rule covers (Lake files, `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
   `tools/` and a few named specifications; not the rest of `docs/`, the
-  READMEs, this file or `benchmarks/`), the 11 files of the `IxCK` codec
-  closure, the revisions of ix's `flake.lock`, the full text of
+  READMEs, this file or `benchmarks/`), the 13 files of the `IxCK` closure
+  IxCC imports (the codec and the role vocabulary), the revisions of ix's `flake.lock`, the full text of
   `.github/workflows/ixcc.yml` and the remote actions it uses, and the set of
   required checks (`required_checks`, which must equal the attributes of
   `nix/checks.nix`). ix's `flake.nix` is not pinned; `ixcc.yml` instead
   fails unless the flake's `ixcc-*` checks are exactly `required_checks`.
   Not covered at all: ix's other workflows (including the jobs that call
-  `ixcc.yml`) and IxCK outside the codec closure. For routine updates,
+  `ixcc.yml`) and IxCK outside that closure. For routine updates,
   `check-trusted-externs --record` prints the mechanical pins for review
   ("Routine updates" in the ledger document).
 - Shared files at the repository root (`flake.nix`, `flake.lock`,

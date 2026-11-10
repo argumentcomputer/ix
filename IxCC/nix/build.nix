@@ -15,9 +15,10 @@
   # `srcDir := ".."` (the ix checkout root), which lean4-nix cannot shadow (it
   # copies only a dependency's own directory), and its `IxCK.Ixon` library
   # also holds the codec's proofs and audits, which import the kernel: linking
-  # IxCC's shared library would build all of it. So the sources of the codec
+  # IxCC's shared library would build all of it. So the sources of the
   # closure IxCC imports (the files the trust ledger hashes: `IxCK.Ixon.Canonical`
-  # and its imports, under `IxCK/Address` and `IxCK/Ixon`, unchanged) are
+  # and its imports, under `IxCK/Address` and `IxCK/Ixon`, and the role
+  # vocabulary `IxCK.Kernel.Key` with `IxCK.Kernel.Name`, unchanged) are
   # packaged under the same package name and toolchain with a library holding
   # exactly those modules, built once here with its shared and static facets.
   # A module the closure imports but the ledger does not record fails this
