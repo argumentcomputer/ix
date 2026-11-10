@@ -101,6 +101,126 @@ theorem comparands_good {rl : RecRule md} (hrl : rl.Good P) (lps : List LevelPar
   | inert => exact hargs.take _
   | plain => exact hargs.take _
 
+/-! ## A typed subject is good
+
+The equality-reflection rule (`Red.eqProof`) types a proof term its subject does not
+contain; its renaming needs that term's goodness, which its inference gives: every
+constant it mentions is stored, and its leaves are the subject's. -/
+
+/-- A good term's leaves carry good types. -/
+theorem leaves_good : ∀ {e : Expr md}, e.Good P → ∀ l ∈ e.fvarLeaves, l.2.Good P := by
+  intro e
+  induction e with
+  | fvar idx ty ih =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_cons] at hl
+    rcases hl with rfl | hl
+    · exact he
+    · exact ih he l hl
+  | app f a ihf iha =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_append] at hl
+    rcases hl with hl | hl
+    · exact ihf he.1 l hl
+    · exact iha he.2 l hl
+  | lam ty b _ iht ihb | forallE ty b _ iht ihb =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_append] at hl
+    rcases hl with hl | hl
+    · exact iht he.1 l hl
+    · exact ihb he.2 l hl
+  | letE t v b _ iht ihv ihb =>
+    intro he l hl
+    simp only [Expr.fvarLeaves, List.mem_append] at hl
+    rcases hl with (hl | hl) | hl
+    · exact iht he.1 l hl
+    · exact ihv he.2.1 l hl
+    · exact ihb he.2.2 l hl
+  | proj _ _ e ih =>
+    intro he l hl
+    simp only [Expr.fvarLeaves] at hl
+    exact ih he.2 l hl
+  | bvar | sort | const | lit => intro _ l hl; simp [Expr.fvarLeaves] at hl
+
+/-- Instantiation keeps only keys of the instantiated term. -/
+theorem good_of_instantiate1 {v : Expr md} :
+    ∀ {b : Expr md} {k : Nat}, (b.instantiate1 v k).Good P → b.Good P := by
+  intro b
+  induction b with
+  | bvar => intros; trivial
+  | fvar => intro k h; exact h
+  | sort | const | lit => intro k h; exact h
+  | app f a ihf iha => intro k h; exact ⟨ihf h.1, iha h.2⟩
+  | lam ty b _ iht ihb | forallE ty b _ iht ihb => intro k h; exact ⟨iht h.1, ihb h.2⟩
+  | letE t w b _ iht ihw ihb => intro k h; exact ⟨iht h.1, ihw h.2.1, ihb h.2.2⟩
+  | proj s i e ih => intro k h; exact ⟨h.1, ih h.2⟩
+
+mutual
+
+/-- **A subject inference accepts is good**, when its leaves' types are. -/
+theorem infer_good (hR : Renaming P f env env') :
+    ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → g = .full →
+      (∀ l ∈ e.fvarLeaves, l.2.Good P) → e.Good P
+  | _, _, _, _, .sort, _, _ => trivial
+  | _, _, _, _, .fvar (idx := idx) (ty := ty) _, _, hl => hl (idx, ty) (by simp [Expr.fvarLeaves])
+  | _, _, _, _, .const (n := n) (ci := ci) hf _ _, _, _ => hR.found n ci hf
+  | _, _, _, _, .natLit _, _, _ => trivial
+  | _, _, _, _, .strLit _, _, _ => hR.roles.str
+  | _, _, _, _, .forallE (d := d) (ty := ty) (body := body) hs _ hbs _ _, hg, hl => by
+    have hty : ty.Good P := infer_good hR hs hg (fun l h => hl l (by simp [Expr.fvarLeaves, h]))
+    refine ⟨hty, good_of_instantiate1 (v := .fvar d ty) (k := 0) (infer_good hR hbs hg ?_)⟩
+    intro l h
+    rcases Expr.fvarLeaves_instantiate1 body 0 h with h2 | h2
+    · exact hl l (by simp [Expr.fvarLeaves, h2])
+    · simp only [Expr.fvarLeaves, List.mem_cons] at h2
+      rcases h2 with rfl | h2
+      · exact hty
+      · exact hl l (by simp [Expr.fvarLeaves, h2])
+  | _, _, _, _, .lam (d := d) (ty := ty) (body := body) hs _ hbt _ _ _ _, hg, hl => by
+    have hty : ty.Good P :=
+      infer_good hR (hs hg) rfl (fun l h => hl l (by simp [Expr.fvarLeaves, h]))
+    refine ⟨hty, good_of_instantiate1 (v := .fvar d ty) (k := 0) (infer_good hR hbt hg ?_)⟩
+    intro l h
+    rcases Expr.fvarLeaves_instantiate1 body 0 h with h2 | h2
+    · exact hl l (by simp [Expr.fvarLeaves, h2])
+    · simp only [Expr.fvarLeaves, List.mem_cons] at h2
+      rcases h2 with rfl | h2
+      · exact hty
+      · exact hl l (by simp [Expr.fvarLeaves, h2])
+  | _, _, _, _, .app htf _ hta _, hg, hl =>
+    ⟨infer_good hR htf hg (fun l h => hl l (by simp [Expr.fvarLeaves, h])),
+      infer_good hR hta hg (fun l h => hl l (by simp [Expr.fvarLeaves, h]))⟩
+  | _, _, _, _, .appSkip _ _ _, hg, _ => nomatch hg
+  | _, _, _, _, .proj (sn := sn) htpe _ _ hent _ _ _, hg, hl => by
+    refine ⟨?_, infer_good hR htpe hg (fun l h => hl l (by simpa [Expr.fvarLeaves] using h))⟩
+    unfold Env.findProj? at hent
+    cases h : env.find? (projTableName sn) with
+    | none => rw [h] at hent; simp at hent
+    | some c => exact hR.found _ c h
+
+theorem infer_good_red : ∀ {d : Nat} {e e' : Expr md}, Red env d e e' → True
+  | _, _, _, _ => trivial
+
+theorem infer_good_defeq : ∀ {d : Nat} {a b : Expr md}, DefEq env d a b → True
+  | _, _, _, _ => trivial
+
+theorem infer_good_certs :
+    ∀ {d : Nat} {lic : Bool} {ty : Expr md} {args : List (Expr md)},
+      Certs env d lic ty args → True
+  | _, _, _, _, _ => trivial
+
+theorem infer_good_defEqList :
+    ∀ {d : Nat} {as bs : List (Expr md)}, DefEqList env d as bs → True
+  | _, _, _, _ => trivial
+
+theorem infer_good_etaProjCerts :
+    ∀ {d : Nat} {T : Key md} {us' : List Level} {targs : List (Expr md)} {b : Expr md}
+      {lpsT : List LevelParam} {idxs : List Nat},
+      EtaProjCerts env d T us' targs b lpsT idxs → True
+  | _, _, _, _, _, _, _, _ => trivial
+
+end
+
 /-! ## The renaming -/
 
 mutual
@@ -163,6 +283,24 @@ theorem red_rename (hR : Renaming P f env env') :
       rs hz
     rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams] at key
     exact key
+  | _, _, _, .eqProof (b := b) (p := p) (T := T) hhead hfE hp hwp hbp hlp ha hda hb hdb hT
+      hred hv, he => by
+    have hpg : p.Good P := infer_good hR hp rfl (fun l hl => leaves_good he l (hlp l hl))
+    obtain ⟨gS, iS⟩ := infer_rename hR hp hpg
+    have hTg : T.Good P := gS.1.1.2
+    have hbg : b.Good P := gS.2
+    obtain ⟨gta, ita⟩ := infer_rename hR ha he
+    obtain ⟨gtb, itb⟩ := infer_rename hR hb hbg
+    obtain ⟨gsT, itT⟩ := infer_rename hR hT hTg
+    obtain ⟨-, rs⟩ := red_rename hR hred gsT
+    refine ⟨hbg, .eqProof (head_map hhead) (hR.find hfE) iS
+      (by rw [Expr.wscopedB_mapKeys]; exact hwp)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hbp) ?_
+      ita (defEq_rename hR hda gta hTg) itb (defEq_rename hR hdb gtb hTg) itT rs hv⟩
+    rw [Expr.fvarLeaves_mapKeys, Expr.fvarLeaves_mapKeys]
+    intro l hl
+    obtain ⟨l', hl', rfl⟩ := List.mem_map.mp hl
+    exact List.mem_map.mpr ⟨l', hlp l' hl', rfl⟩
   | _, _, _, .natLit h, _ => by
     refine ⟨natLitToConstructor_good hR.roles.pre _, ?_⟩
     rw [natLitToConstructor_mapKeys]
