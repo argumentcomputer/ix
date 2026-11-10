@@ -58,7 +58,9 @@ import json, sys
 r = json.load(open(sys.argv[1])); tot = 0
 for leaf in r["leaves"]:
     for i, p in enumerate(leaf["parts"]):
-        c = p["report"].get("fft-cost") or 0; tot += c
+        if p.get("status"):  # a refused part: no report, and no cost
+            print(f"corpus initstd shard {leaf['shard']}.{i} ({len(p['blocks'])} blocks) refused"); continue
+        c = (p.get("report") or {}).get("fft-cost") or 0; tot += c
         print(f"FFT corpus initstd shard {leaf['shard']}.{i} ({len(p['blocks'])} blocks): {c} (expected none)")
 print(f"FFT corpus initstd total: {tot} (expected none)")
 PY
