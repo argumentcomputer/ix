@@ -100,7 +100,7 @@ def total(c):
 
 
 def suite(label):
-    for p in ("eval ", "check ", "binding ", "shard ", "s4 decl ", "s4 decl-ind ", "s4 decl-rec ",
+    for p in ("eval ", "check ", "binding ", "shard ", "corpus ", "s4 decl ", "s4 decl-ind ", "s4 decl-rec ",
               "s4 check ", "s4 std ", "s4 model "):
         if label.startswith(p):
             return p.strip()

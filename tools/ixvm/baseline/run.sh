@@ -11,7 +11,8 @@
 # set `ixvm-s4-bench` (declaration shards, closure checks, Std shards). The
 # host writes per-function rows (IXVM_FUNCTION_STATS=1); circuit statistics do
 # not depend on it. A pin mismatch is reported in the log and in the diff, and
-# does not stop the run. BENCH=0 skips the larger set.
+# does not stop the run. BENCH=0 skips the larger set; CORPUS=1 adds Init+Std in 24 shards
+# (`corpus initstd shard K` and `corpus initstd total`).
 set -u
 OUT=${1:?usage: run.sh OUT [RECORDED.json]}; REC=${2:-}
 mkdir -p "$OUT"
@@ -39,6 +40,30 @@ if [ "${BENCH:-1}" = 1 ] && grep -q '"ixvm-s4-bench"' Tests/Main.lean; then
   lake test --wfail -- ixvm-s4-bench > "$OUT/bench.log" 2>&1
   log "bench rc=$? $((SECONDS-t))s; $(grep -c '^FFT ' "$OUT/bench.log") FFT lines"
   logs+=("$OUT/bench.log")
+fi
+if [ "${CORPUS:-0}" = 1 ]; then
+  # Init+Std (the certified compile; --no-build, so the Benchmarks project and its Mathlib
+  # requirement are not built), 24 static shards, every shard executed with the binding assumed.
+  # One FFT line per shard, and the total, enter the baseline (about 20 min, 93 GB tree peak).
+  t=$SECONDS
+  lake build --wfail ix > "$OUT/corpus-build.log" 2>&1
+  IX=$PWD/.lake/build/bin/ix
+  lake env "$IX" compile-lean Benchmarks/Compile/CompileInitStd.lean --no-build --out "$OUT/initstd.ixe" \
+    > "$OUT/corpus-compile.log" 2>&1
+  lake env "$IX" shard "$OUT/initstd.ixe" --shards 24 --out "$OUT/initstd.ixes" > "$OUT/corpus-shard.log" 2>&1
+  lake env "$IX" check --ixe "$OUT/initstd.ixe" --ixes "$OUT/initstd.ixes" --aiur-artifact "$OUT/ixvm.ixa" \
+    --assume-binding --jobs 3 --keep-going --report "$OUT/initstd.report.json" > "$OUT/corpus-check.log" 2>&1
+  "$PY" - "$OUT/initstd.report.json" > "$OUT/corpus.log" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1])); tot = 0
+for leaf in r["leaves"]:
+    for i, p in enumerate(leaf["parts"]):
+        c = p["report"].get("fft-cost") or 0; tot += c
+        print(f"FFT corpus initstd shard {leaf['shard']}.{i} ({len(p['blocks'])} blocks): {c} (expected none)")
+print(f"FFT corpus initstd total: {tot} (expected none)")
+PY
+  log "corpus rc=$? $((SECONDS-t))s; $(tail -n 1 "$OUT/corpus.log")"
+  logs+=("$OUT/corpus.log")
 fi
 "$PY" "$HERE/baseline.py" extract "$OUT/out" "${logs[@]}" > "$OUT/baseline.json" 2> "$OUT/extract.txt"
 log "$(tail -n 1 "$OUT/extract.txt")"
