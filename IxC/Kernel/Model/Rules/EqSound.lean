@@ -106,11 +106,11 @@ theorem Red.eqProof_sound (hin : RulesInputs V m φ) {d : Nat} {a b p T ta tb sT
   obtain ⟨-, -, sa', hsa', -, heqS⟩ := sred hfsT (hCT.of_subset hsubsT) hsTr hgsT
   rw [denoteMeta_sort] at hsa'
   obtain rfl : sa' = AnnotTerm.sort (v.eval φ) := (Option.some.inj hsa').symm
-  have hlaw := (hin.eq_law hfE (Level.substFn φ eqA.toConstantVal.levelParams [u])).1
+  have hlaw := (hin.eq_law hfE (Level.substFn φ (eqA (md := md)).toConstantVal.levelParams [u])).1
   refine ⟨hfb, fun l hl => hlp l (hsubS l (by simp [Expr.fvarLeaves, hl])), br, hbr, hgB,
     fun ρ hρ => ?_⟩
   have hTu : interp V ρ Tr ∈ˢ
-      (univ (Level.substFn φ eqA.toConstantVal.levelParams [u] uN) : V) := by
+      (univ (Level.substFn φ (eqA (md := md)).toConstantVal.levelParams [u] uN) : V) := by
     have h := hmemT ρ hρ
     rw [heqS ρ hρ, interp_sort, hv φ] at h
     exact h
