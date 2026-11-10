@@ -13,7 +13,9 @@ specification set changes these lines; it
 is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`).
 `specVersion` 4 makes the decision procedures depend on the `of_decide_eq_*`
 roles their native rules answer with (`Role.deps`): 9 more dependency entries,
-19436 bytes.
+19436 bytes. `specVersion` 5 adds the compiler-trust roles: three inert axioms of
+their exact types and the two opaques their types mention, as anchors; the
+schedule gains their five groups after `sorryAx`'s (77 groups).
 
 `encodingVersion` 2 commits, beside the specifications, to what IxVM reads
 off each role's identity (its name, inertness, quotient kind and native rule)
