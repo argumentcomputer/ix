@@ -48,11 +48,10 @@
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      # Systems we want to build for
+      # Linux only: macOS is not supported. The `isDarwin` conditionals below
+      # are kept for when it is added back.
       systems = [
-        "aarch64-darwin"
         "aarch64-linux"
-        "x86_64-darwin"
         "x86_64-linux"
       ];
 
@@ -71,11 +70,6 @@
             file = ./rust-toolchain.toml;
             sha256 = "sha256-p8h3Sl/YRByZfZTAKXdsvF6xEenXKrXSVvpphmZENH4=";
           };
-
-          plonkSources = pkgs.lib.fileset.fileFilter (
-            file: file.hasExt "go" || file.hasExt "h" || file.hasExt "json" || file.hasExt "bin"
-              || file.name == "go.mod" || file.name == "go.sum"
-          ) ./tools/gnark;
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -100,35 +94,23 @@
               ./crates/ixon/tests/fixtures
             ];
           };
-          # Rust code generation for the sandboxed builds. `.cargo/config.toml`
-          # selects `-Ctarget-cpu=native`, and crane keeps that file in the
-          # source, so without an override every Rust derivation is compiled
-          # for whichever host builds it while sharing one store path: Cachix
-          # then hands Intel-native binaries to AMD hosts and vice versa.
-          # Default to the x86-64-v4 baseline setup-rust-toolchain's `portable`
-          # mode uses, so CI caches one portable set. For a build tuned to the
-          # local machine (the dev shell's cargo already is, via the config
-          # file):
+          # bindgen's libclang, shared by the Rust package build and the dev
+          # shell so the package build also verifies the shell's setting.
+          libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
+          # Rust code generation for the sandboxed builds. Nix builds are a
+          # portable compatibility check, never a performance build: native
+          # builds go through cargo and Lake in the dev shell, where
+          # `.cargo/config.toml` selects `-Ctarget-cpu=native`.
           #
-          #   IX_RUST_CODEGEN=native nix build --impure
-          #
-          # The flag string is part of the derivation, so a native build has
-          # its own store path and is never substituted from Cachix. Pure
-          # evaluation sees an empty variable and takes the default.
-          rustCodegen =
-            let
-              requested = builtins.getEnv "IX_RUST_CODEGEN";
-            in
-            if requested == "native" then
-              "-Ctarget-cpu=native"
-            else if requested == "" || requested == "portable" then
-              "-Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni"
-            else
-              throw "IX_RUST_CODEGEN must be `portable` or `native`, got `${requested}`";
+          # crane keeps that config file in the source, so the sandboxed build
+          # overrides it with one fixed baseline. x86-64-v3 (AVX2) runs on any
+          # x86-64 machine from the last decade; x86-64-v4 would need AVX-512,
+          # which most current Intel client CPUs lack. Every machine builds the
+          # same store path, so local builds can substitute CI's from Cachix.
           craneArgs =
             pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
               # Environment form of the `build.rustflags` key the config file sets
-              CARGO_BUILD_RUSTFLAGS = rustCodegen;
+              CARGO_BUILD_RUSTFLAGS = "-Ctarget-cpu=x86-64-v3";
             }
             // {
               inherit src;
@@ -139,7 +121,7 @@
               # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
               LEAN_SYSROOT = "${lean}";
               # bindgen needs libclang to parse C headers
-              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              LIBCLANG_PATH = libclangPath;
               # Same C standard the lakefile gives Cargo: Lean's bundled
               # link-time glibc predates the C23 `__isoc23_*` redirects.
               CFLAGS = "-std=gnu17";
@@ -158,36 +140,16 @@
           cargoArtifacts = craneLib.buildDepsOnly (
             craneArgs
             // {
-              cargoExtraArgs = "--locked -p ix-ffi --features parallel,test-ffi,net";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel,net";
             }
           );
 
-          # Test build: parallel + test-ffi (only used by ixTest).
+          # The archive the `ix` CLI links: the lakefile's `ix_rs_net` target,
+          # with the iroh stack for `ix serve` / `ix connect`, which it skips
+          # on macOS. The library build links nothing, so it uses the same one.
           # doCheck = false: package builds only compile. Clippy and the
           # cargo tests run in CI Jobs' rust-test job, not in the flake.
-          rustPkgTest = craneLib.buildPackage (
-            craneArgs
-            // {
-              inherit cargoArtifacts;
-              cargoExtraArgs = "--locked -p ix-ffi --features parallel,test-ffi";
-              doCheck = false;
-            }
-          );
-
-          # Release build without test-ffi (for distribution)
-          rustPkgRelease = craneLib.buildPackage (
-            craneArgs
-            // {
-              inherit cargoArtifacts;
-              cargoExtraArgs = "--locked -p ix-ffi --features parallel";
-              doCheck = false;
-            }
-          );
-
-          # Net build for the `ix` CLI (`ix serve` / `ix connect` iroh stack),
-          # mirroring the lakefile's `ix_rs_net` target, which skips `net` on
-          # macOS.
-          rustPkgNet = craneLib.buildPackage (
+          rustPkg = craneLib.buildPackage (
             craneArgs
             // {
               inherit cargoArtifacts;
@@ -199,10 +161,9 @@
 
           # Lake package
           lake2nix = pkgs.callPackage lean4-nix.lake { inherit lean; };
-          # Restrict the Lake build inputs to files traced by the Lean and
-          # Rust archive targets. Cargo itself is still handled by Crane, but
-          # Lake needs the Rust sources and manifests to calculate the archive
-          # dependency trace before copying the prebuilt static library.
+          # Restrict the Lake build inputs to the files Lake reads. Crane builds
+          # the Rust archive, and Lake's archive targets only hash the prebuilt
+          # file, so no Rust sources are needed here.
           leanSrc = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
@@ -212,10 +173,6 @@
               ./IxC/lean-toolchain
               # The pinned verifying keys `FormalAiurKeys` embeds.
               ./tools/formal-aiur.keys
-              # What its Rust archive target traces, as Crane sees it.
-              cargoSource
-              compressionData
-              plonkSources
             ];
           };
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
@@ -223,8 +180,8 @@
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
             # Formal Aiur's proofs require mathlib, which brings these packages
-            # into the workspace. Nothing the flake builds (the Ix library, the
-            # CLI and the test binary) imports them, so Lake needs only their
+            # into the workspace. Nothing the flake builds (the Ix library and
+            # its executables) imports them, so Lake needs only their
             # sources to resolve the workspace. Building them would compile all
             # of Mathlib and its shared library, and lean4-nix's library target
             # guess (`Proofwidgets`) does not exist.
@@ -274,7 +231,7 @@
             }
           );
           # Shared Lake build args: patches out the Cargo build (Crane handles it)
-          mkLakeBuildArgs = rustLib: {
+          lakeBuildArgs = {
             inherit lakeDeps;
             src = leanSrc;
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
@@ -296,7 +253,7 @@
             # have left it
             postConfigure = ''
               mkdir -p target/release
-              ln -s ${rustLib}/lib/libix_ffi.a target/release/
+              ln -s ${rustPkg}/lib/libix_ffi.a target/release/
             '';
             buildInputs = [
               pkgs.gmp
@@ -304,13 +261,6 @@
               pkgs.rsync
             ];
           };
-
-          # Release build args (no test-ffi symbols)
-          lakeBuildArgs = mkLakeBuildArgs rustPkgRelease;
-          # CLI build args (net symbols for `ix serve` / `ix connect`)
-          lakeNetBuildArgs = mkLakeBuildArgs rustPkgNet;
-          # Test build args (includes test-ffi symbols)
-          lakeTestBuildArgs = mkLakeBuildArgs rustPkgTest;
 
           ixLib = lake2nix.mkPackage (
             lakeBuildArgs
@@ -322,11 +272,6 @@
               buildLibrary = false;
             }
           );
-          lakeBinArgs = lakeBuildArgs // {
-            lakeArtifacts = ixLib;
-            # Binaries that import Ix.Meta need .olean files at runtime via LEAN_PATH
-            installArtifacts = true;
-          };
           leanPath = pkgs.lib.concatStringsSep ":" (
             [ "${ixLib}/.lake/kernel/lib/lean" ]
             ++ map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
@@ -342,11 +287,11 @@
                   --set LEAN_PATH "${drv}/.lake/build/lib/lean:${drv}/.lake/kernel/lib/lean:${leanPath}"
               done
             '';
-          # The CLI links rustPkgNet (lakefile: `ix` uses `ix_rs_net`), reusing
-          # ixLib's oleans.
+          # The CLI reuses ixLib's oleans. It imports Ix modules at run time, so
+          # it installs its workspace for `wrapBin`'s LEAN_PATH.
           ixCLI = wrapBin (
             lake2nix.mkPackage (
-              lakeNetBuildArgs
+              lakeBuildArgs
               // {
                 lakeArtifacts = ixLib;
                 installArtifacts = true;
@@ -354,89 +299,60 @@
               }
             )
           );
-          # Test binary links rustPkgTest (with test-ffi) instead of rustPkgRelease
-          ixTestArtifacts = lake2nix.mkPackage (
-            lakeTestBuildArgs
-            // {
-              lakeArtifacts = ixLib;
-              name = "IxTests";
-              installArtifacts = true;
-            }
-          );
-          ixTest = wrapBin ixTestArtifacts;
-          ZKVotingProver = wrapBin (
-            lake2nix.mkPackage (
-              lakeBinArgs
-              // {
-                name = "Apps.ZKVoting.Prover";
-                installArtifacts = true;
+
+          # Lean + Rust shell for host development (`cargo build`, `lake build`).
+          devShell = pkgs.mkShell {
+            LIBCLANG_PATH = libclangPath;
+            packages = with pkgs; [
+              pkg-config
+              openssl
+              clang
+              rustToolchain
+              rust-analyzer
+              lean
+              cargo-deny
+              valgrind
+            ];
+          };
+          # Runs the shell's tools with the shell's own inputs and environment:
+          # building the shell only proves its packages exist, not that the
+          # commands developers run are on PATH and start.
+          devShellTools =
+            pkgs.runCommand "dev-shell-tools"
+              {
+                inherit (devShell) nativeBuildInputs buildInputs LIBCLANG_PATH;
               }
-            )
-          );
+              ''
+                lean --version
+                lake --version
+                rustc --version
+                cargo --version
+                cargo deny --version
+                rust-analyzer --version
+                clang --version
+                pkg-config --exists openssl
+                test -e "$LIBCLANG_PATH/libclang${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}"
+                touch $out
+              '';
         in
         {
           packages = {
             default = ixLib;
             ix = ixCLI;
-            zkv-prover = ZKVotingProver // {
-              meta.mainProgram = "Apps-ZKVoting-Prover";
-            };
           };
 
-          # The Nix packaging check. Clippy and the cargo tests are CI Jobs'
-          # rust-test job (`.github/workflows/ci.yml`), with the same
-          # features and profile; the flake does not repeat them.
+          # The Nix build is a compatibility check: the library and the CLI
+          # build, and the dev shell builds and its tools run. The tests run in
+          # CI Jobs (`.github/workflows/ci.yml`), not in the flake. Building
+          # the shell here also lets CI push its closure to Cachix.
           checks = {
-            # Lean test suite. The suite reads fixtures and writes scratch
-            # files by paths relative to the working dir, so run it from a
-            # writable copy of the source tree, as if from a checkout.
-            ix-tests = pkgs.runCommandCC "ix-tests" {
-              # zstd decompresses the lean-export suite's toolchain fixture.
-              nativeBuildInputs = [ rustToolchain lean pkgs.zstd ];
-            } ''
-              cp -r ${./.} src
-              chmod -R u+w src
-              # Source-mode CLI tests invoke Lake. Reuse the configured build
-              # tree, including local package overrides and fixture oleans,
-              # with writable copies of all artifacts that Lake may rebuild.
-              cp -rP ${ixTestArtifacts}/.lake src/.lake
-              chmod -R u+w src/.lake
-              # Mathlib is in the workspace only through formal Aiur and is
-              # left unbuilt (`lakeDeps`). Mark it present, or the source-mode
-              # commands try to download its cache (`Ix.fetchMathlibCache`).
-              mkdir -p src/.lake/packages/mathlib/.lake/build
-              cp ${ixTestArtifacts}/lakefile.lean src/lakefile.lean
-              # The configured lakefile delegates Cargo to Crane; preserve
-              # its prebuilt archive input if a Lake target needs refreshing.
-              mkdir -p src/target/release
-              ln -s ${rustPkgTest}/lib/libix_ffi.a src/target/release/libix_ffi.a
-              # Both subprocesses are built by IxTests.needs. Use their
-              # wrappers so runtime imports keep the packaged search paths.
-              for exe in ix kernel-check-ixe; do
-                ln -sf ${ixTest}/bin/$exe src/.lake/build/bin/$exe
-              done
-              cd src
-              ${ixTest}/bin/IxTests
-              touch $out
-            '';
+            ix-lib = ixLib;
+            ix-cli = ixCLI;
+            dev-shell = devShell;
+            dev-shell-tools = devShellTools;
           };
 
-          devShells = {
-            # Lean + Rust shell for host development (`cargo build`, `lake build`).
-            default = pkgs.mkShell {
-              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-              packages = with pkgs; [
-                pkg-config
-                openssl
-                clang
-                rustToolchain
-                rust-analyzer
-                lean
-                cargo-deny
-                valgrind
-              ];
-            };
-          };
+          devShells.default = devShell;
 
           # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
           # directory; bare `nixfmt` only accepts individual files.
