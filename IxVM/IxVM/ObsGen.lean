@@ -352,10 +352,14 @@ mutual
         s!"subst {hr}"] ++ (← invArgs es a env hin items dh k)
     | .store x =>
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"; let d' ← fresh "d"
+      let hm ← fresh "hm"
       assign dv (.ptr (.v v) (.v m))
-      assign dh (.snoc (.v m) (.v v))
+      -- the grown heap stays a variable, with its equation (rendering it would nest heaps)
+      match ← resolveT dh with
+      | .v n => addFact hm [.s s!"{n} = ", .t (.snoc (.v m) (.v v))] hm
+      | _ => throw "store destination is not a variable"
       modifyPath fun p => { p with stored := true }
-      return [s!"obtain ⟨{v}, {m}, {d'}, rfl, rfl⟩ := {d}.store_inv"] ++
+      return [s!"obtain ⟨{v}, {m}, {d'}, rfl, {hm}⟩ := {d}.store_inv"] ++
         (← inv x d' env hin (.v v) (.v m) k)
     | .load x =>
       let p ← binder "p" "SourceValue F"; let d' ← fresh "d"; let ld ← fresh "ld"
