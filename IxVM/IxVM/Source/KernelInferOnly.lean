@@ -72,11 +72,11 @@ def k_infer_only_core := aiur_fn⟦
         KernelTypes::KExprNode::App(f, a) => {
           let f_ty = k_infer_only(rc, f, types);
           match (*(f_ty)) {
-            KernelTypes::KExprNode::Forall(_, cod, _) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+            KernelTypes::KExprNode::Forall(dom, cod, bl) => {  io_app_cod(rc, dom, cod, bl, a, types) } ,
             _ => {
               let f_ty_whnf = KernelWhnf::whnf(rc, f_ty, types);
               match (*(f_ty_whnf)) {
-                KernelTypes::KExprNode::Forall(_, cod, _) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+                KernelTypes::KExprNode::Forall(dom, cod, bl) => {  io_app_cod(rc, dom, cod, bl, a, types) } ,
               } } ,
           } } ,
 
@@ -142,6 +142,22 @@ def k_infer_only_core := aiur_fn⟦
 
   -- Infer.forallE's datum premise (both grades): the binder's datum is the zero-ness of
   -- the body's sort (`zeronessOf v = mb.pw`).
+
+  -- Infer.appSkip and Infer.app at the io grade: at a ∀ whose datum is never, no argument
+  -- certificate; otherwise the argument's io-grade type is definitionally equal to the domain.
+
+def io_app_cod := aiur_fn⟦
+  inline fn io_app_cod(rc: KernelRoles::RoleCtx, dom: KernelTypes::KExpr, cod: KernelTypes::KExpr, bl: KernelTypes::KLevel,
+                a: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match KernelLevels::level_is_not_zero(bl) {
+        1 => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+        _ => {
+          assert_eq!(KernelDefEq::k_is_def_eq(rc, k_infer_only(rc, a, types), dom, types), 1,
+            "io application: the argument's type is not the domain");
+          KernelSubst::expr_inst1(cod, a, 0) } ,
+      }
+    }
+⟧
 
 def forall_datum_ok := aiur_fn⟦
   inline fn forall_datum_ok(v: KernelTypes::KLevel, bl: KernelTypes::KLevel) -> () {

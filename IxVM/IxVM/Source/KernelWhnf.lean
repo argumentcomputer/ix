@@ -24,10 +24,13 @@ def peel_beta := aiur_fn⟦
   fn peel_beta(lam: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>, acc: Lists::List<KernelTypes::KExpr>)
                     -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KExpr>) {
       match (*(lam)) {
-        KernelTypes::KExprNode::Lam(_, body, _) => {
+        KernelTypes::KExprNode::Lam(_, body, bl) => {
           match (*(spine)) {
             Lists::Node::Cons(a, rest) => {
-              peel_beta(body, rest, (&(Lists::Node::Cons(a, acc)))) } ,
+              match KernelLevels::level_is_not_zero(bl) {
+                1 => {  peel_beta(body, rest, (&(Lists::Node::Cons(a, acc)))) } ,
+                _ => {  (lam, acc, spine) } ,
+              } } ,
             Lists::Node::Nil => {  (lam, acc, spine) } ,
           } } ,
         _ => {  (lam, acc, spine) } ,
@@ -52,13 +55,37 @@ def red_beta := aiur_fn⟦
       match peel_beta(lam, spine, (&(Lists::Node::Nil))) {
         (deep, consumed, rest) => {
           match (*(consumed)) {
-            Lists::Node::Nil => {  (0, lam, spine) } ,
+            Lists::Node::Nil => {  red_beta_cert(rc, lam, spine, types) } ,
             Lists::Node::Cons(a, more) => {
               match (*(more)) {
                 Lists::Node::Nil => {  (1, KernelSubst::expr_inst1(deep, a, 0), rest) } ,
                 Lists::Node::Cons(_, _) => {  (1, KernelSubst::expr_inst_many(deep, consumed, 0), rest) } ,
               } } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Fix A at β. `peel_beta` consumes arguments only at λs whose datum is never
+  -- (Red.betaGate); a λ whose datum may be zero takes one certified step (Red.beta): the
+  -- argument's io-grade type is definitionally equal to the domain. Otherwise no move.
+
+def red_beta_cert := aiur_fn⟦
+  fn red_beta_cert(rc: KernelRoles::RoleCtx, lam: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>,
+                   types: Lists::List<KernelTypes::KExpr>)
+                   -> (Field, KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(lam)) {
+        KernelTypes::KExprNode::Lam(ty, body, _) => {
+          match (*(spine)) {
+            Lists::Node::Cons(a, rest) => {
+              let ta = KernelInferOnly::k_infer_only(rc, a, types);
+              match KernelDefEq::k_is_def_eq(rc, ta, ty, types) {
+                1 => {  (1, KernelSubst::expr_inst1(body, a, 0), rest) } ,
+                _ => {  (0, lam, spine) } ,
+              } } ,
+            Lists::Node::Nil => {  (0, lam, spine) } ,
+          } } ,
+        _ => {  (0, lam, spine) } ,
       }
     }
 ⟧
@@ -449,13 +476,42 @@ def try_reduce_projection_definition := aiur_fn⟦
         (1, arity, struct_addr, field, struct_arg_idx) => {
           match (1 - UInt32::less_than_fields(Lists::length(spine), arity)) * Fields::is_zero(Lists::length(lvls) - nl) {
             1 => {
-              let target_arg = Lists::lookup(spine, struct_arg_idx);
+              match lams_never(value, arity, lvls) {
+                1 => {
+                  let target_arg = Lists::lookup(spine, struct_arg_idx);
               let proj_expr = (&(KernelTypes::KExprNode::Proj(struct_addr, field, target_arg)));
               let post = Lists::drop(spine, arity);
               (1, apply_spine(proj_expr, post)) } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+  -- The projection-function shortcut is δ and then β at each of the value's λs; it takes
+  -- them as gated steps (Red.betaGate), so it fires only when every one of those λs has a
+  -- never datum at the use's levels (otherwise δ and `red_beta`'s certificates run).
+
+def lams_never := aiur_fn⟦
+  fn lams_never(v: KernelTypes::KExpr, n: Field, lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match n {
+        0 => {  1 } ,
+        _ => {
+          match (*(v)) {
+            KernelTypes::KExprNode::Lam(_, body, bl) => {
+              match KernelLevels::level_is_not_zero(bl) {
+                1 => {  lams_never(body, n - 1, lvls) } ,
+                _ => {
+                  match KernelLevels::level_is_not_zero(KernelLevels::level_inst_params(bl, lvls)) {
+                    1 => {  lams_never(body, n - 1, lvls) } ,
+                    _ => {  0 } ,
+                  } } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
       }
     }
 ⟧

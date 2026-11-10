@@ -409,8 +409,11 @@ def str_lit_delta_step := aiur_fn⟦
                 KernelTypes::KConstantInfo::Defn(_, _, value, _, _) => {
                   let body = KernelLevels::expr_inst_levels(value, (&(Lists::Node::Nil)));
                   match (*(body)) {
-                    KernelTypes::KExprNode::Lam(_, lam_body, _) => {
-                      KernelWhnf::whnf_nd(rc, KernelSubst::expr_inst1(lam_body, list_arg, 0), types) } ,
+                    KernelTypes::KExprNode::Lam(_, lam_body, bl) => {
+                      match KernelLevels::level_is_not_zero(bl) {
+                        1 => {  KernelWhnf::whnf_nd(rc, KernelSubst::expr_inst1(lam_body, list_arg, 0), types) } ,
+                        _ => {  KernelWhnf::whnf_nd(rc, (&(KernelTypes::KExprNode::App(body, list_arg))), types) } ,
+                      } } ,
                     _ => {  KernelWhnf::whnf_nd(rc, (&(KernelTypes::KExprNode::App(body, list_arg))), types) } ,
                   } } ,
                 _ => {  expanded } ,

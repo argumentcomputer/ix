@@ -1817,7 +1817,7 @@ def canonical_rules_at_pos := aiur_fn⟦
             rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
             spec_params, 0, elim_level);
           compare_rules(rc, rules, canonical, n_p, n_mot, n_min,
-            parent_block_addr, parent_ind_idx, num_ctors, 0) } ,
+            parent_block_addr, parent_ind_idx, num_ctors, 0, elim_level) } ,
       }
     }
 ⟧
@@ -1881,7 +1881,8 @@ def populate_rules := aiur_fn⟦
 def compare_rules := aiur_fn⟦
   fn compare_rules(rc: KernelRoles::RoleCtx, stored: Lists::List<KernelTypes::KRecRule>, canonical: Lists::List<KernelTypes::KExpr>,
                           n_p: Field, n_mot: Field, n_min: Field,
-                          block_addr: Bytes::AddressRef, ind_idx: Field, num_ctors: Field, pos: Field) -> () {
+                          block_addr: Bytes::AddressRef, ind_idx: Field, num_ctors: Field, pos: Field,
+                          elim: KernelTypes::KLevel) -> () {
       match (*(stored)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
@@ -1904,7 +1905,7 @@ def compare_rules := aiur_fn⟦
                 Lists::Node::Cons(cbody, crest) => {
                   let total = ((n_p + n_mot) + n_min) + nf;
                   match peel_n_lams_collect(rhs, total, 0,
-                          (&(Lists::Node::Nil))) {
+                          (&(Lists::Node::Nil)), elim) {
                     (stored_body, peeled, _) => {
                       assert_eq!(peeled, total,
                         "recursor rule rhs has too few binders to peel");
@@ -1915,7 +1916,7 @@ def compare_rules := aiur_fn⟦
                       () } ,
                   };
                   compare_rules(rc, rest, crest, n_p, n_mot, n_min,
-                    block_addr, ind_idx, num_ctors, pos + 1) } ,
+                    block_addr, ind_idx, num_ctors, pos + 1, elim) } ,
               } } ,
           } } ,
       }
@@ -2659,15 +2660,20 @@ def check_rec_rules_wellscoped := aiur_fn⟦
 ⟧
 
 def peel_n_lams_collect := aiur_fn⟦
-  fn peel_n_lams_collect(e: KernelTypes::KExpr, n: Field, peeled: Field, acc: Lists::List<KernelTypes::KExpr>)
+  fn peel_n_lams_collect(e: KernelTypes::KExpr, n: Field, peeled: Field, acc: Lists::List<KernelTypes::KExpr>,
+                         elim: KernelTypes::KLevel)
                                 -> (KernelTypes::KExpr, Field, Lists::List<KernelTypes::KExpr>) {
       match n {
         0 => {  (e, peeled, acc) } ,
         _ => {
           match (*(e)) {
-            KernelTypes::KExprNode::Lam(dom, body, _) => {
+            KernelTypes::KExprNode::Lam(dom, body, bl) => {
+              -- The rule's λs are the kernel's canonical ones, whose data are the
+              -- elimination level's zero-ness (the body's type is a motive application).
+              assert_eq!(KernelLevels::pw_eq(bl, elim), 1,
+                "a recursor rule's binder datum is not the zero-ness of its elimination level");
               peel_n_lams_collect(body, n - 1, peeled + 1,
-                (&(Lists::Node::Cons(dom, acc)))) } ,
+                (&(Lists::Node::Cons(dom, acc))), elim) } ,
             _ => {  (e, peeled, acc) } ,
           } } ,
       }
