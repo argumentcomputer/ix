@@ -50,14 +50,16 @@ source text. `crates/formal-generated` compiles the generated files with
 plain `include!`, so Cargo tracks them as ordinary sources. Cargo never
 invokes Lake and never reads a compiled package.
 
-The emitter's own test (`crates/aiur-codegen-tests`) generates the executor
-of a fixture program from its build script and checks it against the
-interpreter. `ixvm-native` and `stark-verifier-native` compare the linked
-executors with the interpreter on real invocations.
+The emitter's own test (`crates/aiur-codegen-tests`) generates the executors
+of fixture programs from its build script and checks them against the
+interpreter, including the call heights of programs with depth circuits.
+`ixvm-native` and `stark-verifier-native` compare the linked executors
+with the interpreter on real invocations.
 
-Generated executors do not record call heights, which depth circuits read,
-so a program whose trace has depth circuits runs on the interpreter even
-when an executor generated from it is linked (`Executor::select`).
+Generated executors record call heights, which depth circuits read, in the
+runtime (`aiur::native`), so generated code does not depend on the trace
+and a program with depth circuits runs on its linked executor like any
+other (`Executor::select`).
 
 ### CUDA trace writers
 

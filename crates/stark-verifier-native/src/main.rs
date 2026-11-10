@@ -21,10 +21,6 @@ use formal_generated::{Aggregation, Verifier};
 use multi_stark::types::Val;
 use std::{error::Error, time::Instant};
 
-/// Why `prove` refuses a program with depth circuits.
-const DEPTH: &str = "generated executors do not record call heights, so their \
-  records cannot be proven against a program with depth circuits";
-
 fn load(path: &str) -> Result<aiur::artifact::Package, String> {
   Ok(aiur::artifact::Package::load(std::path::Path::new(path))?.0)
 }
@@ -203,9 +199,6 @@ fn prove(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
   let (program, trace) = load(package)?.traced()?;
   let mut program = program.check_field::<Val>()?;
   program.track_depth(&trace)?;
-  if program.records_depth() {
-    return Err(DEPTH.into());
-  }
   let plan = TracePlan::new(&program, trace)?;
   let backend =
     Backend::for_batch_on_device(&plan, Parameters::default(), None)?;

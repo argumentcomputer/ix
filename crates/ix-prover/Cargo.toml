@@ -37,8 +37,7 @@ compiled-trace = ["cuda", "native", "ixvm/compiled-trace"]
 # The native executors for IxVM, the recursive verifier and aggregation
 # that `lake build ix` generates from the certified programs
 # (crates/formal-generated). An executor runs jobs only for a program with
-# exactly its fingerprint and no depth circuits; other programs use the
-# interpreter.
+# exactly its fingerprint; other programs use the interpreter.
 native = ["dep:formal-generated", "formal-generated/executors", "aiur/native"]
 
 [lints]
