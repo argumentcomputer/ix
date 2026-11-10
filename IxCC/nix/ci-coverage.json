@@ -1556,7 +1556,7 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
- "baseline": "FA3: nesting depth and back-end work bounded",
+ "baseline": "FA4: recursion along lists bounded; kernel artifacts gated",
  "axiom_sha256":
  "ea561d0eb8e717e30b4ae49c0fe026a0e43fd39e7c82bc5a49bdf6998245a319",
  "axiom_count": 5449}

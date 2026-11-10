@@ -135,14 +135,15 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
 
 /-- Verify that `rel` is the exact canonical relevance annotation produced by
 `Src.Relevance.annotate` on the theorem-validated table built from `tableCert`
-(independent of `inp.hints`). -/
+(independent of `inp.hints`). The comparison is `Ann.eqb`, which runs in constant
+stack however long the annotation's lists are. -/
 def checkCanonicalRelevance (cfg : Config) (inp : Input)
     (tableCert : Src.Table.TableCert) (rel : Src.Relevance.Ann) : Bool :=
   match Src.Table.ofCert cfg.table inp.program tableCert with
   | .error _ => false
   | .ok table =>
     match Src.Relevance.annotate inp.env { inp.program with table } with
-    | .ok ann => decide (ann = rel)
+    | .ok ann => ann.eqb rel
     | .error _ => false
 
 theorem checkCanonicalRelevance_iff (cfg : Config) (inp : Input)
@@ -160,7 +161,7 @@ theorem checkCanonicalRelevance_iff (cfg : Config) (inp : Input)
     cases hann : Src.Relevance.annotate inp.env { inp.program with table } with
     | error _ => simp
     | ok ann =>
-      simp [eq_comm]
+      simp only [Src.Relevance.Ann.eqb_iff, Except.ok.injEq]
 
 /-- `produce` (D17): the certificate. -/
 def produce (cfg : Config) (inp : Input) : Except Err Cert :=

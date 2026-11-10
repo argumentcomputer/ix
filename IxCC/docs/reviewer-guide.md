@@ -138,7 +138,8 @@ lake build IxCC IxCCTests ixcc \
   tests-rt-rc tests-cfg-rc tests-driver-session tests-pipeline-rc tests-rc-certificate \
   tests-pipeline corpus certified-census tests-corpus check-backend check-regalloc tests-src \
   tests-rt check-xv-select tests-lam tests-fir check-lir tests-anf tests-own tests-own-plain \
-  tests-shrink tests-relevance tests-recheck tests-recheck-readback
+  tests-shrink tests-relevance tests-recheck tests-recheck-readback \
+  gen-src-artifacts gen-recheck-artifacts
 bin=.lake/build/bin
 
 # ixon-v3
@@ -212,6 +213,9 @@ $bin/tests-shrink
 $bin/tests-relevance
 $bin/tests-recheck
 $bin/tests-recheck-readback
+$bin/gen-src-artifacts --check
+$bin/gen-recheck-artifacts --check
+$bin/corpus kernel-artifacts --check
 
 # x86-steps
 $bin/check-steps

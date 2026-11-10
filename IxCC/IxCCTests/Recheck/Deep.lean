@@ -327,6 +327,91 @@ def writeShrink (dir : System.FilePath) (d : Nat) (rounds : Nat := 64) (steps : 
   IO.FS.writeFile (dir / s!"{stem}.base.cert") base.toText
   IO.println s!"{stem}: {bs.size} bytes, certificate {cert.toText.utf8ByteSize} bytes"
 
+/-! ## Wide inputs, from bytes -/
+
+/-- A wide input as bytes, sidecar and certificate text: `tree N` (a constructor
+tree of depth `N` as a share DAG: its annotation holds one tag list of about
+`2^(N+2)` entries), `many N` (`N + 1` globals: as many table and annotation
+entries), `roots N` (a sidecar naming one root `N` times), `equations N` (a
+sidecar with `N` empty equation entries), or `tags N` (`tree 4` with a
+certificate whose annotation has one more term of `N` tags). The honest
+certificate is Stage A's. -/
+def wideInput (kind : String) (n : Nat) : IO (ByteArray × Lean.Json × String) := do
+  let honest := fun (e : Env) (main : Addr) (json : Lean.Json) => do
+    let bs := bytes e
+    let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+    let cert ← IO.ofExcept (baseCert inp (Recheck.Config.forInput {} inp))
+    let _ := main
+    pure (bs, json, cert)
+  match kind with
+  | "tree" | "many" =>
+    let (e, main) := if kind == "tree" then treeEnv n else manyEnv n
+    let json := sidecar [("main", main)]
+    let (bs, json, cert) ← honest e main json
+    return (bs, json, cert.toText)
+  | "roots" =>
+    let (e, main) := deepAppEnv 4
+    let json := sidecar ((List.range n).map fun _ => ("main", main))
+    return (bytes e, json, "{}")
+  | "equations" =>
+    let (e, main) := deepAppEnv 4
+    let json := Lean.Json.mkObj [("format", .str "ixcc/k1-equations/1"),
+      ("roots", .arr #[Lean.Json.mkObj [("name", .str "main"), ("address", .str (toString main))]]),
+      ("equations", .arr (Array.replicate n (Lean.Json.mkObj [])))]
+    return (bytes e, json, "{}")
+  | _ =>
+    let (e, main) := treeEnv 4
+    let (bs, json, cert) ← honest e main (sidecar [("main", main)])
+    let key := (cert.relevance.nodes.head?.map (·.1)).getD (.value 0)
+    let wide : Recheck.Cert := { cert with relevance := { cert.relevance with
+      nodes := cert.relevance.nodes ++ [(key, List.replicate n (.arg .rel))] } }
+    return (bs, json, wide.toText)
+
+/-- `tests-recheck --write-wide DIR KIND N`: `wideInput KIND N` as
+`KIND-N.ixe`, `KIND-N.equations.json` and `KIND-N.cert`. -/
+def writeWide (dir : System.FilePath) (kind : String) (n : Nat) : IO Unit := do
+  let (bs, json, text) ← wideInput kind n
+  IO.FS.createDirAll dir
+  IO.FS.writeBinFile (dir / s!"{kind}-{n}.ixe") bs
+  IO.FS.writeFile (dir / s!"{kind}-{n}.equations.json") json.compress
+  IO.FS.writeFile (dir / s!"{kind}-{n}.cert") text
+  IO.println s!"{kind}-{n}: {bs.size} bytes, sidecar {json.compress.utf8ByteSize} bytes, certificate {text.utf8ByteSize} bytes"
+
+/-- The byte-level verifiers on one input (`verifyBytes`, `checkClaim`,
+`Ring0Sip.verifyBytes`, typing on and off, with a claim for the input's first
+root), and an in-process `check-cert`: the outcomes as a line. -/
+def bytesEntries (dir : System.FilePath) (label : String) (bs : ByteArray) (json : Lean.Json)
+    (text : String) : IO String := do
+  let env ← IO.ofExcept (V3.decodeAnonymousEnv bs)
+  let main := match Src.Hints.ofK1Json json with
+    | .ok h => (h.roots[0]?.map (·.1)).getD default
+    | .error _ => default
+  let claim : CompileClaim := { env := env.root, target := main, policy := .immortal, abiArity := 0
+                                elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
+  let word := fun (b : Bool) => if b then "accepted" else "refused"
+  let mut outs : Array String := #[]
+  for tc in [true, false] do
+    let cfg : Recheck.Config := {}
+    let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
+    outs := outs ++ #[s!"verifyBytes{if tc then "" else " (untyped)"} {word (CompileClaim.verifyBytes cfg bs json claim text tc)}",
+      s!"checkClaim {word (CompileClaim.checkClaim cfg bs json claim text tc).isOk}",
+      s!"Ring0Sip.verifyBytes {word (sip.verifyBytes bs json tc)}"]
+  IO.FS.writeBinFile (dir / "c.ixe") bs
+  IO.FS.writeFile (dir / "c.json") json.compress
+  IO.FS.writeFile (dir / "cert.json") text
+  let o ← IO.ofExcept (IxCC.Cli.parse ["check-cert", (dir / "c.ixe").toString, "--equations",
+    (dir / "c.json").toString, "--cert", (dir / "cert.json").toString])
+  let cc ← match ← (IxCC.Cli.execute o).run with
+    | .ok () => pure "accepted"
+    | .error e => pure s!"refused ({e.stage.name}: {e.code})"
+  return s!"{label}: {", ".intercalate outs.toList}, check-cert {cc}"
+
+/-- `tests-recheck --wide KIND N`: `bytesEntries` on `wideInput KIND N`. -/
+def probeWide (kind : String) (n : Nat) : IO UInt32 := IO.FS.withTempDir fun dir => do
+  let (bs, json, text) ← wideInput kind n
+  IO.println (← bytesEntries dir s!"{kind} {n} (certificate {text.utf8ByteSize} bytes)" bs json text)
+  return 0
+
 /-- `tests-recheck --write-amp DIR DF DG`: the inline amplifier `amp-DF-DG` as `.ixe`, its
 sidecar, and its `inline` certificate (`.hostile.cert`) and Stage A's
 (`.base.cert`), for timing `check-cert` natively. -/
@@ -449,10 +534,21 @@ def deepest (name : String) : IO Nat := do
     if ok mid then lo := mid else hi := mid
   return lo
 
-/-- `tests-recheck --stack-8mib`, run by `stackPart` with `LEAN_STACK_SIZE_KB=8192`:
-every verifier entry point on the crashing inputs and on generated deep and
-wide inputs at and past each budget, typing on and off. A line per input, then
-a summary line; a native stack overflow aborts the process instead. -/
+/-- Wide inputs from bytes through every byte-level entry point (`bytesEntries`):
+the constructor tree whose honest annotation holds a 262,142-entry tag list
+(`tree 16`; the derived list equality took a frame per entry), a certificate
+with a 300,000-entry tag list, sidecars with 300,000 roots and 300,000
+equation entries, and 4,001 globals. A line each. -/
+def widthLines : IO (Array String) := IO.FS.withTempDir fun dir => do
+  let mut lines : Array String := #[]
+  for (kind, n) in [("tree", 16), ("tags", 300000), ("roots", 300000), ("equations", 300000), ("many", 4000)] do
+    let (bs, json, text) ← wideInput kind n
+    lines := lines.push (← bytesEntries dir s!"width {kind} {n}" bs json text)
+  return lines
+
+/-- Part of the 8 MiB child (`stack8`): every verifier entry point on the
+programs that once overflowed an 8 MiB stack and on generated deep and wide
+inputs at and past each budget, typing on and off. A line per input. -/
 def stack8Lines : IO (Array String) := IO.FS.withTempDir fun dir => do
   let mut lines : Array String := #[]
   -- The amplifier inputs (`amp-12-11` and `amp-13-13` crashed an 8 MiB checker), the
@@ -528,6 +624,10 @@ def stackPart (a : Assert) : IO (Array String) := do
   let lam := lines.filter (·.startsWith "lam ")
   let anf := lines.filter (·.startsWith "anf ")
   let inl := lines.filter (·.startsWith "inline case ")
+  let wide := lines.filter (·.startsWith "width ")
+  expect a (wide.length == 5) s!"wide inputs: {wide.length} lines"
+  expect a (wide.any fun l => inL l "width tree 16" && inL l "check-cert refused (anf")
+    "the 262,142-tag annotation is not refused normally by check-cert"
   expect a (lam.length == 20 && anf.length == 14 && inl.length == 2)
     s!"nesting lines: {lam.length} Lam, {anf.length} Anf, {inl.length} inline"
   for l in lam do
@@ -772,10 +872,10 @@ def nestingLines : IO (Array String) := do
   return lines
 
 /-- `tests-recheck --stack-8mib`, run by `stackPart` with `LEAN_STACK_SIZE_KB=8192`:
-`stack8Lines` and `nestingLines`, a line per input, then a summary line; a
+`stack8Lines`, `nestingLines` and `widthLines`, a line per input, then a summary line; a
 native stack overflow aborts the process instead. -/
 def stack8 : IO UInt32 := do
-  let lines := (← stack8Lines) ++ (← nestingLines)
+  let lines := (← stack8Lines) ++ (← nestingLines) ++ (← widthLines)
   for line in lines do IO.println line
   IO.println s!"stack-8mib: {lines.size} inputs"
   return 0

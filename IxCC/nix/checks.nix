@@ -160,6 +160,9 @@ in
       launch tests-relevance $bin/tests-relevance
       launch tests-recheck $bin/tests-recheck
       launch tests-recheck-readback $bin/tests-recheck-readback
+      launch src-artifacts $bin/gen-src-artifacts --check
+      launch recheck-artifacts $bin/gen-recheck-artifacts --check
+      launch corpus-kernel-artifacts $bin/corpus kernel-artifacts --check
       wait
       failed=()
       for name in "''${names[@]}"; do

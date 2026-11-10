@@ -446,16 +446,28 @@ constructor at Lam and Anf (at the depth budget and one level past it, through
 the middle end's replay, a shrink step and the back end), and on a walk whose
 copy brings it to its depth budget and one step past it.
 
-*Known gap.* The depth budgets bound recursion on term structure, not recursion
-along a list whose length the certificate controls. One such traversal is known
-to overflow an 8 MiB stack: `Recheck.checkCanonicalRelevance` compares the
-certificate's annotation with the re-derived one by `decide (ann = rel)`, and the
-compiled list equality it uses takes a stack frame per element. A 560-byte
-closure whose honest certificate is 2.6 MB (about 133,000 elements) aborts
-`ixcc check-cert` under `LEAN_STACK_SIZE_KB=8192`; with a 16 MiB stack or the
-executable's default it is checked normally. The byte-level verifiers make the
-same call. The other list traversals on the verifier path have not been audited
-for this.
+*Width.* The depth budgets bound recursion on term structure; recursion along a
+list whose length the input or the certificate controls is bounded another
+way. Stage A compares the certificate's annotation with the re-derived one by
+`Src.Relevance.Ann.eqb`, a loop over the term list and each tag list (the
+derived list equality it replaced took a stack frame per element, so a
+560-byte closure whose honest certificate holds a 262,142-entry tag list
+aborted `ixcc check-cert` on an 8 MiB stack). The other list-shaped parts of
+the input and the certificate were run at the widest the budgets admit, from
+bytes, through `verifyBytes`, `checkClaim`, `Ring0Sip.verifyBytes` (typed and
+untyped) and `check-cert`, on a 2 MiB stack, a quarter of the target: the
+annotation's tag list (524,286 entries, the most the annotator's node budget
+admits), 16,371 constants and globals with their table and annotation
+entries, a certificate with a 2,500,000-entry JSON array (25 MB), sidecars
+with 300,000 roots and 1,000,000 equation entries; and from Anf, through the
+back end, 16,000 globals, functions of 16,384 blocks, 125-way switches and
+200 values live at once. All ran within 2 MiB, so any recursion along those
+lists has at least four times the headroom an 8 MiB stack needs. Constructor
+fields (at most 254), switch arms (125), certificate steps and decisions (64),
+and parameters, arguments and join parameters (bounded by the depth budget,
+2,048) are short. Not run at width: the certificate's allocation, frame and
+order lists beyond what the programs above produce. `tests-recheck` keeps a
+representative of each in its 8 MiB child.
 
 **Work.** Under shrink, the census counts read at each binding walk the rest of
 its body, so a round reads up to the global's depth times its nodes. The walk

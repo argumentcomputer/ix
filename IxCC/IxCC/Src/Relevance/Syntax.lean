@@ -83,6 +83,43 @@ structure Ann where
   nodes : List (TermKey × List Tag) := []
   deriving BEq, DecidableEq, Repr, Inhabited
 
+/-- `xs = ys`, comparing elements with `eq`. The compiled code is a loop (the
+recursive call is in tail position), so it runs in constant stack on lists of
+any length; the derived `DecidableEq` on lists takes a frame per element. -/
+def listEqb {α : Type} (eq : α → α → Bool) : List α → List α → Bool
+  | [], [] => true
+  | a :: as, b :: bs => eq a b && listEqb eq as bs
+  | _, _ => false
+
+theorem listEqb_iff {α : Type} {eq : α → α → Bool} (h : ∀ a b, eq a b = true ↔ a = b) :
+    ∀ xs ys : List α, listEqb eq xs ys = true ↔ xs = ys
+  | [], [] => by simp [listEqb]
+  | [], _ :: _ => by simp [listEqb]
+  | _ :: _, [] => by simp [listEqb]
+  | a :: as, b :: bs => by
+    simp only [listEqb, Bool.and_eq_true, List.cons.injEq, h, listEqb_iff h as bs]
+
+/-- `a = b` for annotations, in constant stack on the term list and its tag
+lists, which grow with the program's terms (the records are tries of bounded
+depth and their lists are bounded by a constant's telescope and fields). -/
+def Ann.eqb (a b : Ann) : Bool :=
+  decide (a.consts = b.consts) && decide (a.ctors = b.ctors) &&
+    listEqb (fun p q => decide (p.1 = q.1) && listEqb (fun x y => decide (x = y)) p.2 q.2) a.nodes b.nodes
+
+theorem Ann.eqb_iff (a b : Ann) : a.eqb b = true ↔ a = b := by
+  have hp : ∀ p q : TermKey × List Tag,
+      (decide (p.1 = q.1) && listEqb (fun x y => decide (x = y)) p.2 q.2) = true ↔ p = q := by
+    intro p q
+    rw [Bool.and_eq_true, decide_eq_true_iff, listEqb_iff (fun x y => decide_eq_true_iff) p.2 q.2]
+    constructor
+    · rintro ⟨h1, h2⟩
+      exact Prod.ext h1 h2
+    · rintro rfl
+      exact ⟨rfl, rfl⟩
+  cases a
+  cases b
+  simp only [Ann.eqb, Bool.and_eq_true, decide_eq_true_iff, listEqb_iff hp, Ann.mk.injEq, and_assoc]
+
 namespace Ann
 
 def constRel? (a : Ann) (c : CId) : Option ConstRel := a.consts.get? c

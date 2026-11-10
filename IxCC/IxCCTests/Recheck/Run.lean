@@ -179,6 +179,10 @@ def main (args : List String) : IO UInt32 := do
   if let ["--write-shrink", dir, d, r, s] := args then
     Deep.writeShrink dir d.toNat! r.toNat! s.toNat! s!"tree-{d}-{r}-{s}"
     return 0
+  if let ["--wide", kind, n] := args then return ← Deep.probeWide kind n.toNat!
+  if let ["--write-wide", dir, kind, n] := args then
+    Deep.writeWide dir kind n.toNat!
+    return 0
   if let ["--write-amp", dir, f, g] := args then
     Deep.writeAmp dir f.toNat! g.toNat!
     return 0

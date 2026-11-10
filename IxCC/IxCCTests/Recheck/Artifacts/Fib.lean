@@ -1,6 +1,6 @@
 import IxCC.Recheck.Run
 
-/-! The `fib` bench-k1 closure as `Recheck.run`'s input (M1.K1): the `Src.Program`
+/-! The `fib` bench-k1 closure as `Recheck.run`'s input: the `Src.Program`
 ingress makes from `fixtures/ixon-v4/bench-k1/fib.ixe` (48 constants, no table),
 the configuration and `produce`'s certificate, with the laid-out typed program and the
 object's bytes the native run computes. Terms are shared: 6146 tree nodes, 1053

@@ -254,7 +254,7 @@ def render (a : Input) (tiny : Nat := 24) (long : Nat := 2000) : String × Strin
   let genText := if a.origin.isSome then "`lake exe corpus kernel-artifacts`" else "`lake exe gen-recheck-artifacts`"
   let mut out := s!"import IxCC.Recheck.Run
 
-/-! {originText} as `Recheck.run`'s input (M1.K1): the `Src.Program`
+/-! {originText} as `Recheck.run`'s input: the `Src.Program`
 ingress makes from {fromText} ({p.size} constants, no table),
 the configuration and `produce`'s certificate, with the laid-out typed program and the
 object's bytes the native run computes. Terms are shared: {dag.tree} tree nodes, {dag.nodes.size}
