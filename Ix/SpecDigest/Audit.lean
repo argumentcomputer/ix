@@ -15,7 +15,7 @@ is made on purpose, with `specVersion` (`IxC/Kernel/Audit/Roles.lean`).
 roles their native rules answer with (`Role.deps`): 9 more dependency entries,
 19436 bytes. `specVersion` 5 adds the compiler-trust roles: three inert axioms of
 their exact types and the two opaques their types mention, as anchors; the
-schedule gains their five groups after `sorryAx`'s (77 groups).
+schedule gains their five groups after `sorryAx`'s (77 groups): 19730 bytes.
 
 `encodingVersion` 2 commits, beside the specifications, to what IxVM reads
 off each role's identity (its name, inertness, quotient kind and native rule)
@@ -26,13 +26,13 @@ encoding was 17727 bytes, with digest
 6d02153ea311f3efd1778c49b2ee5f31e79a0bae95e533a08d4914fc05572d33; version 2
 adds 1700 bytes. -/
 
-/-- info: "19436 bytes" -/
+/-- info: "19730 bytes" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specBytes with
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "7e6bc58cf52458db99edc516b71fb18a5b74dfd8eb01ca6cf24b82bbaa623a82" -/
+/-- info: "e6f717602b5c3d293803bcc6165dddcbf2c6163b49bc4e5704505cf286856fa9" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a

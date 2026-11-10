@@ -789,49 +789,45 @@ theorem n14149180230363482143 : instanceName [] "Lists::length" (some [(.named "
 
 theorem n2303571640435370391 : instanceName [] "Lists::length" (some [(.ptr (.array .field 32))]) = Names.«Lists::length<&[Field; 32]>» := by decide +kernel
 
-theorem c11055368227848790517 : W.constant "UInt8::BYTE_125" (Generic.Ty.subst [] .field) = .ok (.literal (125 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c17927648229768564833 : W.constant "UInt8::BYTE_122" (Generic.Ty.subst [] .field) = .ok (.literal (122 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c8649195782337804782 : W.constant "UInt8::BYTE_39" (Generic.Ty.subst [] .field) = .ok (.literal (39 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c2694251791703205058 : W.constant "UInt8::BYTE_154" (Generic.Ty.subst [] .field) = .ok (.literal (154 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c5806309069015085062 : W.constant "UInt8::BYTE_206" (Generic.Ty.subst [] .field) = .ok (.literal (206 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c12221147600160410934 : W.constant "UInt8::BYTE_196" (Generic.Ty.subst [] .field) = .ok (.literal (196 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c1640406971471674764 : W.constant "UInt8::BYTE_162" (Generic.Ty.subst [] .field) = .ok (.literal (162 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c4116844157151427729 : W.constant "UInt8::BYTE_45" (Generic.Ty.subst [] .field) = .ok (.literal (45 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c13576414666169235276 : W.constant "UInt8::BYTE_150" (Generic.Ty.subst [] .field) = .ok (.literal (150 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem c15316874658082287075 : W.constant "UInt8::BYTE_36" (Generic.Ty.subst [] .field) = .ok (.literal (36 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c8625757406670685203 : W.constant "UInt8::BYTE_248" (Generic.Ty.subst [] .field) = .ok (.literal (248 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c12078453186527600422 : W.constant "UInt8::BYTE_219" (Generic.Ty.subst [] .field) = .ok (.literal (219 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c17769731467762635715 : W.constant "UInt8::BYTE_74" (Generic.Ty.subst [] .field) = .ok (.literal (74 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c10621487201023178060 : W.constant "UInt8::BYTE_88" (Generic.Ty.subst [] .field) = .ok (.literal (88 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c8617612433627249767 : W.constant "UInt8::BYTE_156" (Generic.Ty.subst [] .field) = .ok (.literal (156 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c9454143186152387735 : W.constant "UInt8::BYTE_209" (Generic.Ty.subst [] .field) = .ok (.literal (209 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c14994678399914079694 : W.constant "UInt8::BYTE_234" (Generic.Ty.subst [] .field) = .ok (.literal (234 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c4657287510956961054 : W.constant "UInt8::BYTE_16" (Generic.Ty.subst [] .field) = .ok (.literal (16 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c10006766132832736802 : W.constant "UInt8::BYTE_177" (Generic.Ty.subst [] .field) = .ok (.literal (177 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c17767019647226834810 : W.constant "UInt8::BYTE_10" (Generic.Ty.subst [] .field) = .ok (.literal (10 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c14188626174573859192 : W.constant "UInt8::BYTE_53" (Generic.Ty.subst [] .field) = .ok (.literal (53 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c12075338171730505324 : W.constant "UInt8::BYTE_222" (Generic.Ty.subst [] .field) = .ok (.literal (222 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c13694282340018876896 : W.constant "UInt8::BYTE_143" (Generic.Ty.subst [] .field) = .ok (.literal (143 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c14586370717960871890 : W.constant "UInt8::BYTE_13" (Generic.Ty.subst [] .field) = .ok (.literal (13 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c3568939744595682641 : W.constant "UInt8::BYTE_29" (Generic.Ty.subst [] .field) = .ok (.literal (29 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c15888966825896649993 : W.constant "UInt8::BYTE_186" (Generic.Ty.subst [] .field) = .ok (.literal (186 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c4050599859905033318 : W.constant "UInt8::BYTE_119" (Generic.Ty.subst [] .field) = .ok (.literal (119 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c4017473662635773303 : W.constant "UInt8::BYTE_19" (Generic.Ty.subst [] .field) = .ok (.literal (19 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c14680907590866113513 : W.constant "UInt8::BYTE_147" (Generic.Ty.subst [] .field) = .ok (.literal (147 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem c16182748909402436911 : W.constant "UInt8::BYTE_130" (Generic.Ty.subst [] .field) = .ok (.literal (130 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c13265657144938307636 : W.constant "UInt8::BYTE_191" (Generic.Ty.subst [] .field) = .ok (.literal (191 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c4590721677409182186 : W.constant "UInt8::BYTE_159" (Generic.Ty.subst [] .field) = .ok (.literal (159 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c7211449745794722704 : W.constant "UInt8::BYTE_239" (Generic.Ty.subst [] .field) = .ok (.literal (239 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c7641370386151365290 : W.constant "UInt8::BYTE_15" (Generic.Ty.subst [] .field) = .ok (.literal (15 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c2126251733890856827 : W.constant "UInt8::BYTE_55" (Generic.Ty.subst [] .field) = .ok (.literal (55 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c7238466399104264063 : W.constant "UInt8::BYTE_161" (Generic.Ty.subst [] .field) = .ok (.literal (161 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c13611336004412951876 : W.constant "UInt8::BYTE_113" (Generic.Ty.subst [] .field) = .ok (.literal (113 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c11054337940848463029 : W.constant "UInt8::BYTE_47" (Generic.Ty.subst [] .field) = .ok (.literal (47 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c7595293350636867042 : W.constant "UInt8::BYTE_225" (Generic.Ty.subst [] .field) = .ok (.literal (225 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem c16203459150952935861 : W.constant "UInt8::BYTE_218" (Generic.Ty.subst [] .field) = .ok (.literal (218 : F)) := eq_of_isLiteral (by decide +kernel)
+theorem c5625875361470370405 : W.constant "UInt8::BYTE_152" (Generic.Ty.subst [] .field) = .ok (.literal (152 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c917315906697843574 : W.constant "UInt8::BYTE_254" (Generic.Ty.subst [] .field) = .ok (.literal (254 : F)) := eq_of_isLiteral (by decide +kernel)
 
