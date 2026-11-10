@@ -610,12 +610,29 @@ def seed (io : Aiur.IOBuffer) (tables : Array (Address × Array Block)) : Aiur.I
 def hasHints (io : Aiur.IOBuffer) : Bool :=
   io.map.keys.any (·.1.n == channel)
 
+/-- The records whose binder data `io` already carries. -/
+def annotated (io : Aiur.IOBuffer) : Std.HashSet Address :=
+  io.map.fold (init := {}) fun s (ch, key) _ =>
+    if ch.n == channel then
+      match addressOfKey key with
+      | some a => s.insert a
+      | none => s
+    else s
+
 /-- **The annotator**: `io` with the binder data of every record it carries on
-channel 2, and the run's counts. `env` only saves decoding records it holds. -/
+channel 2 that has none yet, and the run's counts. `env` only saves decoding
+records it holds. The kernel's environment is built from every record on
+channel 2; nothing is done when every record already has its data. -/
 def annotate (io : Aiur.IOBuffer) (env : Ixon.Env := {}) : Except String (Aiur.IOBuffer × Stats) := do
   let v := View.ofBuffer io env
-  if v.records.isEmpty then return (io, {})
+  let done := annotated io
+  let byAddr : Std.HashMap Address Ixon.Constant := v.records.foldl (fun m (a, c) => m.insert a c) {}
+  let pending := v.records.any fun (a, c) =>
+    let o := Ixon.CheckOrder.owner a c
+    !done.contains o && ((byAddr[o]?).map fun oc => !(roots oc).isEmpty).getD false
+  if !pending then return (io, {})
   let k ← KernelEnv.ofView v
+  let k := { k with owners := k.owners.filter (!done.contains ·) }
   let (tables, stats) := annotateKernel k
   let (io, values) := seed io tables
   return (io, { stats with values })
@@ -626,11 +643,12 @@ def converts : Ix.Claim → Bool
   | .check .. | .eval .. | .checkEnv .. | .binding .. => true
   | _ => false
 
-/-- `io` with binder data when `claim` converts expressions and `io` has none
-yet (the claim harness's builders call this last). -/
+/-- `io` with binder data for every record that lacks it, when `claim`
+converts expressions (the claim harness's builders call this last; calling it
+again after adding records annotates those). -/
 def withHints (claim : Ix.Claim) (io : Aiur.IOBuffer) (env : Ixon.Env := {}) :
     Except String Aiur.IOBuffer :=
-  if converts claim && !hasHints io then (·.1) <$> annotate io env else pure io
+  if converts claim then (·.1) <$> annotate io env else pure io
 
 /-- The claim a witness's IO carries under its public digest, if it decodes. -/
 def claimOf (io : Aiur.IOBuffer) (digest : Array Aiur.G) : Option Ix.Claim := do
