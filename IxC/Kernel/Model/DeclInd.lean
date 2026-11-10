@@ -3,6 +3,7 @@ module
 import IxC.Kernel.Semantics.DeclIndRun
 public import IxC.Kernel.Model.ProjInstall
 import IxC.Kernel.Model.JudgeSound
+import IxC.Kernel.Model.DeclIndJ
 public section
 
 /-!
@@ -285,21 +286,10 @@ theorem declInd (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
       projInstall hμ hTblock hbshape _ mp₂ hproj hinvR
         hinvAR hI₂ hIA₂ hpinsR hCblockR hFieldsR
     exact ⟨mp₃⟩
-  · -- the generic arm: an empty capability record
-    replace hmem := indMembersRun_runJ hmem
-    replace hrecs := indRecsRun_runJ hrecs
-    have hBP0 : Ix.Kernel.BlockEtaPinned μ (block.map (·.name)) env :=
-      fun n cvS capsS hnb hf _ =>
-        absurd (hnostore hmem hrecs n hnb _ hf) (fun h => h)
-    obtain ⟨mp₁, hI₁, hIA₁, hEC₁, hBP₁, -⟩ :=
-      indMembersPM memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F) _ mp hbnNon
-        (fun cv caps₂ _ => ⟨etaPins_empty,
-          ⟨fun h => absurd h (by (cases md <;> decide)), fun h => absurd h (by (cases md <;> decide))⟩⟩)
-        hmem (hI0gen hmem hrecs) (hIA0gen hmem hrecs) hEC0 hBP0
-    obtain ⟨mp₂, -, -, -⟩ :=
-      indRecs memberEtaLaw memberUnitLaw (fun _ => judgeFrames_runJ F)
-        (fun m => judgeSound_runJ hμ m F) mp₁ hI₁ hIA₁
-        hbnRec (hallGen hmem) hEC₁ hBP₁ hrecs
+  · -- the generic arm: the modeled record at the kernel's runs
+    obtain ⟨mp₂, -⟩ := declIndJ (fun _ => judgeFrames_runJ F)
+      (fun m => judgeSound_runJ hμ m F) mp hE
+      ⟨hsplit, envM, indMembersRun_runJ hmem, indRecsRun_runJ hrecs⟩
     exact ⟨mp₂⟩
 
 end Ix.Kernel.Model
