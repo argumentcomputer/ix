@@ -46,7 +46,9 @@ theorem driver_exists (h : run cfg P c = .ok a) : ∃ D : X86.Driver, D.Ok a.bac
 input: the object's values are the source's viewed at the roots' readback
 types unless the source goes wrong; a source that does not go wrong has an
 object that never goes wrong; a diverging source has an object that runs
-or fails for a resource. -/
+or fails for a resource.
+It holds for every `P`; that the check runs within an 8 MiB stack assumes
+`P` came from ingress (`Recheck.run`'s precondition). -/
 theorem sound (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)
     (i : Nat × List Nat) :
     (∀ k w, Lang.run (a.linked D) i k = .ok w →

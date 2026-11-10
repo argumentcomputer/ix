@@ -58,12 +58,12 @@ theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) 
     (h : (if ((as0 ++ os).length == (C.prog.arity? g).getD 0) = true then do
           Walk.fire fun f => { f with knownCall := f.knownCall + 1 }
           let e ← Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
-            { d := here.d + 1, dj := here.dj, facts := here.facts } body k
+            { d := here.d + 1, dj := here.dj, facts := here.facts, lvl := here.lvl } body k
           pure (Exp.bind c (.call g (Walk.atoms here.d (as0 ++ os))) e)
         else if (as0 ++ os).length > (C.prog.arity? g).getD 0 then do
           Walk.fire fun f => { f with knownCall := f.knownCall + 1 }
           let e ← Walk.walk C fuel { σ := .opd (.lvl (here.d + 1)) :: env.σ, jσ := env.jσ }
-            { d := here.d + 2, dj := here.dj, facts := here.facts } body k
+            { d := here.d + 2, dj := here.dj, facts := here.facts, lvl := here.lvl } body k
           pure (Exp.bind freshLet
             (.call g (Walk.atoms here.d (List.take ((C.prog.arity? g).getD 0) (as0 ++ os))))
             (Exp.bind c (.app (.var 0)
@@ -74,7 +74,7 @@ theorem app_known (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) 
           pure e.tick
         else do
           let e ← Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
-            { d := here.d + 1, dj := here.dj, facts := here.facts.insert here.d (.pap g (as0 ++ os)) } body k
+            { d := here.d + 1, dj := here.dj, facts := here.facts.insert here.d (.pap g (as0 ++ os)), lvl := here.lvl } body k
           pure (Exp.bind c (.app (fo.atom here.d) (Walk.atoms here.d os)) e)).run s0 = .ok (out, s0')) :
     SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.app f as) body)).bind (SK · k))
       (fun k => eval Q k ρ' J' out) := by

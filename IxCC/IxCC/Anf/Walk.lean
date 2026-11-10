@@ -101,11 +101,15 @@ inductive Fact where
   /-- An under-saturated application of function global `g`. -/
   | pap (g : GlobalId) (as : List Opd)
 
-/-- The target depths and the facts at a point. -/
+/-- The target depths and the facts at a point, and how many walk steps are on
+the native stack below it (`lvl`, counted by `walk`; a continuation is called
+with the `Here` of the point that calls it, so this counts the copies whose
+frames stay below the rest of a caller too). -/
 structure Here where
   d : Nat
   dj : Nat
   facts : Src.NatMap Fact
+  lvl : Nat := 0
 
 /-- Rule firing counts (the census of a round; zero at a fixpoint). -/
 structure Fires where
@@ -129,6 +133,9 @@ structure Fires where
   /-- Nodes of the bodies the firings walked again (`copyCost`): not a rule
   firing, so `total` leaves it out. -/
   copied : Nat := 0
+  /-- The most walk steps on the native stack at once (`Here.lvl`): not a rule
+  firing either. -/
+  depth : Nat := 0
   /-- The work the walk's steps charged (`stepCost`): not a rule firing
   either. -/
   work : Nat := 0
@@ -150,7 +157,8 @@ def add (f g : Fires) : Fires :=
     caseOfCase := f.caseOfCase + g.caseOfCase, caseId := f.caseId + g.caseId
     sameArms := f.sameArms + g.sameArms, inline := f.inline + g.inline
     inlineCaf := f.inlineCaf + g.inlineCaf, redirect := f.redirect + g.redirect
-    copied := f.copied + g.copied, work := f.work + g.work }
+    copied := f.copied + g.copied, depth := max f.depth g.depth,
+    work := f.work + g.work }
 
 def render (f : Fires) : String :=
   let xs := [("copy", f.copy), ("dead", f.dead), ("projKnown", f.projKnown), ("fold", f.fold),
@@ -284,6 +292,21 @@ once its work passes `maxWalkWork`. -/
 def charge (cost : Nat → Nat) : M Unit := fun s =>
   if s.work + cost (maxWalkWork - s.work) > maxWalkWork then .error "walk: work budget exhausted"
   else .ok ((), { s with work := s.work + cost (maxWalkWork - s.work) })
+
+/-- Walk steps one walk may have on the native stack at once: four times below
+the fewest at which a walk overflows an 8 MiB stack (nested single-alternative
+`case`s, about 12,290; see `docs/compiler-design.md`, "Middle-end budgets"),
+and 2.4 times the most a committed program's walk reaches (1,252).
+A walk recurses natively through its global and, below the rest of a caller,
+through every copy it splices in, so the depth checks on its input do not bound
+this alone. -/
+def maxWalkDepth : Nat := 3072
+
+/-- Refuse a step `lvl` walk steps deep once that passes `maxWalkDepth`, and
+record the deepest. -/
+def descend (lvl : Nat) : M Unit := fun s =>
+  if lvl > maxWalkDepth then .error "walk: depth budget exhausted"
+  else .ok ((), { s with depth := max s.depth lvl })
 
 def resolve (env : Env) : Atom → M Opd
   | .var i =>
@@ -438,6 +461,8 @@ def walk (C : Cfg) : Nat → Env → Here → Exp → Kont → M Exp
   | 0, _, _, _, _ => throw "walk: fuel"
   | fuel + 1, env, here, e, k => do
     charge (stepCost C env here e)
+    descend (here.lvl + 1)
+    let here := { here with lvl := here.lvl + 1 }
     match e with
     | .bind c b body => walkBind C fuel env here c b body k
     | .join n r b body => walkJoin C fuel env here n r b body k
@@ -707,8 +732,9 @@ def walkAlts (C : Cfg) : Nat → Env → Here → Opd → List Alt → Kont → 
 
 end
 
-/-- Fuel of one walk: a bound on its recursion depth (subterms, inlined
-bodies and continuations), far above any Phase 1 body. -/
+/-- Fuel of one walk: a bound on its recursion through subterms and inlined
+bodies, far above any Phase 1 body. A continuation walks with its caller's
+fuel, so the fuel does not bound the native stack; `maxWalkDepth` does. -/
 def fuel : Nat := 1 <<< 24
 
 /-- Walk a global's body over its parameters. -/

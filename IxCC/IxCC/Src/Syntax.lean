@@ -502,4 +502,13 @@ def Program.majorUnivs (p : Program) (r : CId) : Option (List Univ) :=
   | some (.recr _ _ _ np nmot nmin ni _ _ ty) => ty.domainUnivs? (np + nmot + nmin + ni)
   | _ => none
 
+/-- How deep a source term may nest: eight times the deepest term of a
+committed program (256), and four times below the shallowest depth at which a
+traversal from ingress to erasure overflows an 8 MiB stack (erasure, on a
+constructor chain about 8,960 deep; the front end survives 32,768). Ingress
+checks it per expression (`Ingress.depthBudget`), the recheck path again on the
+whole program (`Recheck.checkSrc`), and erasure's fuel is the same
+(`Lam.Erase.termFuel`). -/
+def maxTermDepth : Nat := 2048
+
 end IxCC.Src

@@ -30,7 +30,9 @@ namespace IxCC.Recheck
 
 /-- Where the compiler stopped. -/
 inductive Stage where
-  /-- Decoding, erased typing, ingress, the sidecar (not on the recheck path). -/
+  /-- Decoding, erased typing, ingress, the sidecar (not on the recheck path),
+  and the recheck path's own size and depth check of the program
+  (`Recheck.checkSrc`). -/
   | ingress
   /-- The unfolding table: its certificate re-checked (`Table.ofCert`). -/
   | table

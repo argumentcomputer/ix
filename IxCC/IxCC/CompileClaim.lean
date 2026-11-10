@@ -303,7 +303,8 @@ discovered first-order readback signature (`root.ty.isSome`). -/
 def checkPlainRcRoot (src : Src.Program) (root : Recheck.Root) : Bool :=
   rootParamsAllNat src root && root.ty.isSome
 
-/-- Verify a `CompileClaim` against an ingested `Src.Program` and serialized
+/-- Verify a `CompileClaim` against a `Src.Program` (precondition: ingested, or passed
+`Recheck.checkSrc`, as for `Recheck.run`) and serialized
 certificate `certText` using pure BLAKE3 (`Ixon.Address.blake3Pure`). -/
 def verifyProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim) (certText : String) : Bool :=
   c.checkWellFormed &&
@@ -496,7 +497,8 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
         elfHash := Ixon.Address.blake3Pure elfBytes }
     return (claim, cert.toText, elfBytes)
 
-/-- Check a `CompileClaim` against an ingested `Src.Program` and serialized certificate. -/
+/-- Check a `CompileClaim` against a `Src.Program` (precondition: ingested, or passed
+`Recheck.checkSrc`, as for `Recheck.run`) and serialized certificate. -/
 def checkClaimProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim)
     (certText : String) : Except String Unit := do
   unless verifyProgram cfg P c certText do

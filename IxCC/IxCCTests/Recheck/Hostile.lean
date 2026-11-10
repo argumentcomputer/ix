@@ -544,21 +544,28 @@ def amplifier (a : Assert) (dF dG : Nat) (budget : String) : IO String := IO.FS.
     verifiers and check-cert refuse it"
 
 /-- R1's crashing input, `amp-12-11` (its `f` makes 8,191 calls, so its Lam global is
-over `maxLamNodes`), and `amp-10-11`, whose globals are within every size budget but
-whose single `inline` step asks for 2,048 copies of an 8,000-node callee. -/
+over `maxLamNodes`), and `amp-10-11`, whose `f` converts to a chain of 2,047
+bindings, over `maxDepth` (its `inline` step would ask for 2,048 copies of it,
+which the walk's depth budget would stop after two). -/
 def inlineAmplifier (a : Assert) : IO String := do
   let lam ← amplifier a 12 11 "Lam global exceeds"
-  let copy ← amplifier a 10 11 "copy budget"
+  let copy ← amplifier a 10 11 "depth budget"
   return s!"R1's {lam}; {copy}"
 
 /-- `n` dead `atom` bindings before `ret`: `2 n + 1` nodes. -/
 def chain (n : Nat) : Anf.Exp :=
   (List.range n).foldl (fun e _ => .bind Anf.freshLet (.atom .box) e) (.ret .box)
 
-/-- Global 0 is `chain binds` over one parameter; globals `1 … callers` each
-call it `calls` times. -/
+/-- One binding of a constructor of `n - 3` atoms, then `ret`: `n` nodes, three
+levels deep. -/
+def fat (n : Nat) : Anf.Exp :=
+  .bind Anf.freshLet (.con (.src 0) (List.replicate (n - 3) .box)) (.ret .box)
+
+/-- Global 0 is `fat (2 binds + 1)` (as many nodes as `chain binds`, but
+shallow, within the depth budgets) over one parameter; globals `1 … callers`
+each call it `calls` times. -/
 def callersProgram (callers calls binds : Nat) : Anf.Program :=
-  let callee : Anf.GDef := { key := .dispatch 0, ps := [{}], body := chain binds }
+  let callee : Anf.GDef := { key := .dispatch 0, ps := [{}], body := fat (2 * binds + 1) }
   let body := (List.range calls).foldl (fun e _ => .bind Anf.freshLet (.call 0 [.var 0]) e) (.ret .box)
   let caller : Anf.GDef := { key := .dispatch 1, ps := [{}], body }
   { globals := Src.NatMap.ofList ((0, callee) :: (List.range callers).map fun i => (i + 1, caller))
@@ -598,8 +605,24 @@ def budgets (a : Assert) : IO String := do
   let kp := Anf.maxProgramNodes / (2 * gb) + 2
   let many : Anf.Program := { callersProgram 0 0 (gb - 8) with
     globals := Src.NatMap.ofList ((List.range kp).map fun i =>
-      (i, ({ key := .dispatch i, ps := [{}], body := chain (gb - 8) } : Anf.GDef))), size := kp }
+      (i, ({ key := .dispatch i, ps := [{}], body := fat (2 * (gb - 8) + 1) } : Anf.GDef))), size := kp }
   expect a (!(Anf.Pipeline.checkGlobalNodes many).isOk) s!"a {kp * (2 * gb - 15)}-node program accepted"
+  -- the back end's work: five 8,000-node globals (nodes squared), and two hundred
+  -- 125-way cases (the switch check searches the constructor table per pair)
+  let fatProg : Anf.Program := { callersProgram 0 0 0 with
+    globals := Src.NatMap.ofList ((List.range 5).map fun i =>
+      (i, ({ key := .dispatch i, ps := [{}], body := fat 8000 } : Anf.GDef))), size := 5 }
+  let wideBody : Anf.Exp := .case (.var 0) ((List.range 125).map fun i => .mk (.src i) 0 (.ret (.var 0))) none
+  let wideProg : Anf.Program := { callersProgram 0 0 0 with
+    globals := Src.NatMap.ofList ((List.range 200).map fun i =>
+      (i, ({ key := .dispatch i, ps := [{}], body := wideBody } : Anf.GDef))), size := 200
+    ctors := (List.range 125).map fun i => { key := .src i, tag := i, arity := 0 } }
+  for (label, Q) in [("five 8,000-node globals", fatProg), ("two hundred 125-way cases", wideProg)] do
+    expect a (Anf.backWork Q > Anf.maxBackWork && Anf.Pipeline.programNodesUpTo Q.globalList 0 ≤ Anf.maxProgramNodes)
+      s!"{label}: back-end work {Anf.backWork Q}, within the budget {Anf.maxBackWork}"
+    match Anf.Pipeline.checkGlobalNodes Q with
+    | .ok _ => expect a false s!"{label} accepted"
+    | .error m => expect a ((m.splitOn "back end's work budget").length > 1) s!"{label}: {m}"
   -- a specialisation whose value tree is exponentially larger than its caller
   let towerProgram : Anf.Program :=
     { globals := Src.NatMap.ofList [(0, { key := .dispatch 0, ps := [{}], body := .ret (.var 0) }),
@@ -617,6 +640,15 @@ def budgets (a : Assert) : IO String := do
     nodes, an inline round making {k * (2 * cb + 1)} nodes, a {2 * gb + 17}-node global, a \
     {kp * (2 * gb - 15)}-node program, a specialisation over a 2^49-node value tree"
 
+/-- `tower depth` with a binding of a `w`-atom constructor below its chain, so
+that every census in the chain reads those atoms again. -/
+def towerOver (depth w : Nat) : Anf.Exp :=
+  let rec go : Nat → Anf.Exp
+    | 0 => .bind Anf.freshLet (.con (.src 0) (List.replicate w (.var 0)))
+        (.bind Anf.freshLet (.call 0 [.var 0]) (.ret (.var 0)))
+    | k + 1 => .bind Anf.freshLet (.con (.src 0) [.var 0, .var 0]) (go k)
+  .bind Anf.freshLet (.con (.src 0) []) (go depth)
+
 /-- Global 0 returns its parameter; globals `1 … k` are `tower depth`. -/
 def towers (k depth : Nat) : Anf.Program :=
   { globals := Src.NatMap.ofList ((0, ({ key := .dispatch 0, ps := [{}], body := .ret (.var 0) } : Anf.GDef)) ::
@@ -626,9 +658,9 @@ def towers (k depth : Nat) : Anf.Program :=
 
 /-- The shrink census (FA residual): under shrink the walk counts the bound
 variable's uses over the rest of the body at each binding, so one round on a
-global of `n` bindings each used later reads about `n²` nodes, some 10⁸ for a
-global within the node budget, and 64 rounds of it, which one step may ask
-for, some 10¹⁰. The walk charges that reading to `Fires.work` and refuses
+global of `n` bindings each used later reads about `n²` nodes: up to the
+global's depth times its nodes, some 3·10⁷ within the node and depth
+budgets, and 64 rounds of it, which one step may ask for, some 2·10⁹. The walk charges that reading to `Fires.work` and refuses
 past `Walk.maxWalkWork`; a step refuses once its walks' work passes
 `Anf.maxStepWork`. Asserted on the outcome and the counter, not on time. -/
 def shrinkWork (a : Assert) : IO String := do
@@ -642,14 +674,17 @@ def shrinkWork (a : Assert) : IO String := do
     | .error m => expect a false s!"a shrink round on a {g1.body.nodes}-node tower refused: {m}"; pure 0
   expect a (w ≥ n * n && w ≤ Anf.Walk.maxWalkWork)
     s!"a shrink round on a {n}-binding tower: work {w}, expected at least {n * n}"
-  -- one round on a tower of about maxGlobalNodes nodes asks for about m² reads
-  let m := Anf.maxGlobalNodes / 4 - 4
-  let big := towers 1 m
+  -- one round on a global within the node and depth budgets that asks for about
+  -- m · 10,000 reads: m bindings over a 10,000-atom constructor
+  let m := 1500
+  let big : Anf.Program := { towers 1 1 with
+    globals := (towers 1 1).globals.insert 1 { key := .dispatch 1, ps := [{}], body := towerOver m 10000 } }
   let some gb := big.global? 1 | throw (IO.userError "towers: no global 1")
-  expect a (gb.body.nodes ≤ Anf.maxGlobalNodes) s!"the big tower ({gb.body.nodes} nodes) is over the node budget"
+  expect a (gb.body.nodes ≤ Anf.maxGlobalNodes && (Anf.Pipeline.checkGlobalNodes big).isOk)
+    s!"the big tower ({gb.body.nodes} nodes) is over the node or depth budget"
   match Anf.Shrink.round big p gb with
-  | .ok (_, f) => expect a false s!"a shrink round reading about {m * m} nodes was accepted (work {f.work})"
-  | .error msg => expect a ((msg.splitOn "work budget").length > 1) s!"the {m * m}-read round: {msg}"
+  | .ok (_, f) => expect a false s!"a shrink round reading about {m * 10000} nodes was accepted (work {f.work})"
+  | .error msg => expect a ((msg.splitOn "work budget").length > 1) s!"the {m * 10000}-read round: {msg}"
   -- the same through the certified step: 64 rounds of the global
   match Anf.Shrink.run p [0, 64] big with
   | .ok _ => expect a false s!"64 shrink rounds of a {gb.body.nodes}-node tower were accepted"
@@ -667,7 +702,7 @@ def shrinkWork (a : Assert) : IO String := do
   | .ok _ => expect a false s!"a shrink step of {k * ww} work was accepted"
   | .error msg => expect a ((msg.splitOn "work budget").length > 1) s!"the over-budget shrink step: {msg}"
   return s!"shrink census charged: a round on a {n}-binding tower does {w} work; refused: one round and \
-    64 rounds on a {gb.body.nodes}-node tower (about {m * m} reads; walk budget {Anf.Walk.maxWalkWork}), \
+    64 rounds on a {gb.body.nodes}-node tower (about {m * 10000} reads; walk budget {Anf.Walk.maxWalkWork}), \
     one round each of {k} {d}-binding towers ({ww} work each, {k * ww} together; step budget \
     {Anf.maxStepWork})"
 

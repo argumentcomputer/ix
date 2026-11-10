@@ -82,10 +82,10 @@ inductive WV : Val → Val → Prop
   | idc {ρ ρ' got got' : List Val} {n : Nat} {b : Exp} :
       WVs ρ ρ' → WVs got got' → WV (.clos ρ n b got) (.clos ρ' n b got')
   | walkc {C : Cfg} {fuel : Nat} {s s' : Fires} {σP σ0 : List Ent} {live : List Bool}
-      {facts : Src.NatMap Fact} {ρ ρ' got got' : List Val} {n m : Nat} {b b' : Exp}
+      {facts : Src.NatMap Fact} {lvl : Nat} {ρ ρ' got got' : List Val} {n m : Nat} {b b' : Exp}
       {oOf : Nat → Opd} {wOf : Nat → Val} :
       VOk C ρ ρ' →
-      (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts } b
+      (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts, lvl } b
         .ret).run s = .ok (b', s') →
       WEnv C live σ0 ρ ρ' → FactsOk Q Valid facts ρ' → NoDead (List.replicate n true ++ live) [] b →
       σP.length = n → m ≤ n → n - m ≤ got.length → got.length < n →

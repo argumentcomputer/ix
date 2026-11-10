@@ -1055,7 +1055,9 @@ theorem verifyProgramRing0Sip_iff (sip : Ring0Sip) (P : Src.Program) :
 /-- **End-to-End Ring-0 Certified-Compilation Admission Theorem (`verifyRing0Sip_sound`)**:
 Any `Ring0Sip` that passes `sip.verifyProgram P = true` (under `.immortal`,
 `.zeroRc`, or `.plainRc` policy) satisfies the non-vacuous `AdmittedRing0Sip sip P`
-(`S2`, `A3-1`, `A3-9`, `A6-1`). -/
+(`S2`, `A3-1`, `A3-9`, `A6-1`).
+It holds for every `P`; that the check runs within an 8 MiB stack assumes
+`P` came from ingress (`Recheck.run`'s precondition). -/
 theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
     (hver : sip.verifyProgram P = true) :
     AdmittedRing0Sip sip P := by

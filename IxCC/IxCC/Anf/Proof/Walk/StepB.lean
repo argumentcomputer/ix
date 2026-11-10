@@ -36,11 +36,13 @@ theorem walk_step (hW : WalkAt P Q Valid Xc n fuel) {C : Cfg} {env : Walk.Env} {
   dsimp only at h
   -- the step's work charge changes only the work counter
   obtain ⟨s0, h⟩ := Walk.run_charge_then h
+  -- so does its depth check (`Here.lvl` is no part of the simulation)
+  obtain ⟨s1, h⟩ := Walk.run_descend_then h
   cases e with
-  | bind c b body => exact hW.walkBind h
-  | join ar r b body => exact hW.walkJoin h
-  | jump j as => exact hW.walkJump h
-  | case x alts d => exact hW.walkCase h
+  | bind c b body => exact (hW.walkBind h :)
+  | join ar r b body => exact (hW.walkJoin h :)
+  | jump j as => exact (hW.walkJump h :)
+  | case x alts d => exact (hW.walkCase h :)
   | ret a =>
     try dsimp only at h
     obtain ⟨o, s1, h1, h2⟩ := Walk.run_bind_ok h
@@ -123,7 +125,7 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
     (hb : (Walk.walk C fuel
       { σ := Walk.entsOf (paramOpds here0.d ar) ++ env.σ,
         jσ := if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b :: env.jσ else env.jσ }
-      { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts } b k0).run s =
+      { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts, lvl := here0.lvl } b k0).run s =
         .ok (b', s'))
     {ρ ρ' : List Val} {J J'0 : List JClo} {live jlive : List Bool} {Tk : Val → Nat → Result Val}
     (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')

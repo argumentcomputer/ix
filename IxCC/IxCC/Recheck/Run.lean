@@ -182,6 +182,47 @@ def checkMidCert (m : Anf.Pipeline.Cert) : Except Err Unit :=
   else
     .ok ()
 
+/-- Whether the source terms in `todo` (each paired with its level) nest at
+most `depth` levels, visiting at most `fuel` nodes. Counted as trees: a term
+shared in memory is visited, and its depth counted, at each use. A tail call
+over the worklist, so it is safe on any depth. -/
+def srcWithin (depth : Nat) : Nat → List (Src.Term × Nat) → Bool
+  | 0, _ => false
+  | _, [] => true
+  | fuel + 1, (t, d) :: todo =>
+    if d > depth then false
+    else
+      match t with
+      | .app f a _ _ => srcWithin depth fuel ((f, d + 1) :: (a, d + 1) :: todo)
+      | .lam _ dom b | .pi _ _ dom b => srcWithin depth fuel ((dom, d + 1) :: (b, d + 1) :: todo)
+      | .letE _ _ ty v b => srcWithin depth fuel ((ty, d + 1) :: (v, d + 1) :: (b, d + 1) :: todo)
+      | .proj _ _ e => srcWithin depth fuel ((e, d + 1) :: todo)
+      | .var _ | .sort _ | .const .. | .natLit _ | .strLit _ => srcWithin depth fuel todo
+
+/-- Nodes `checkSrc` visits at most, counting shared terms at each use: eight
+times the most a committed program has (32,360,755, measured by
+`tests-corpus`). It also bounds the front end's and erasure's walks over the
+program's terms, which count them the same way: on a share-DAG program of
+about 10⁸ such nodes the recheck path's front end takes about 6 s and 4.3 GB
+before it refuses an empty certificate, and `checkSrc` refuses one of about
+5·10⁸ in 4.3 s. -/
+def maxSrcVisits : Nat := 1 <<< 28
+
+/-- Refuse a program whose terms nest deeper than `Src.maxTermDepth` or hold
+more than `maxSrcVisits` nodes counted as trees. Ingress bounds every term's
+depth (reused shares included, `Src.Ingress.convH`); the recheck path
+(`run` and the program-level verifiers built on it) assumes its program came
+from ingress, and a host that builds a `Src.Program` some other way runs this
+first. It is not run on the recheck path itself: evaluated in the kernel
+(`IxCCTests.Recheck.Kernel*`) it costs about 0.2 ms per tree node. -/
+def checkSrc (P : Src.Program) : Except Err Unit :=
+  let terms := (List.range P.size).flatMap fun c => match P.decl? c with
+    | some d => (Src.Table.declTerms d).map (·, 1)
+    | none => []
+  if srcWithin Src.maxTermDepth maxSrcVisits terms then .ok ()
+  else .error { stage := .ingress, code := "ingress.size",
+                message := "a term nests too deep or the program's terms are too large" }
+
 /-- The front end on the certificate: the table, the annotation, `Lazify`. -/
 def front (cfg : Config) (P : Src.Program) (c : Cert) :
     Except Err (Src.Program × Src.Relevance.Checked) := do
@@ -286,7 +327,12 @@ def runTyped (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Typed := d
 /-- The recheck path (D17): the object `P` compiles to under certificate `c`,
 or the stage and code that declined or rejected it: `runTyped`, then
 `checkSymbols` (every export its own symbol) and `Backend.finish` (`Program.check`, E1/E2 and
-the ELF writer). -/
+the ELF writer). **Precondition:** `P` came from ingress (`Recheck.ingress`,
+`Src.Ingress.ofEnv`), which bounds every term's depth by `Src.maxTermDepth`,
+reused shares included, or passed `checkSrc`; the front end recurses on its
+terms before any later budget applies, so a deeper program can overflow an
+8 MiB stack. From erasure on every level is bounded by the middle end's budgets
+(`Anf.Budget`). -/
 def run (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Artifact := do
   let t ← runTyped cfg P c
   checkSymbols t.stacked.exports

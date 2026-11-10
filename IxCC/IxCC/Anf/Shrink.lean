@@ -64,15 +64,16 @@ def round (P : Program) (p : Params) (gd : GDef) : Except String (GDef × Walk.F
 
 /-- Exactly `n` rounds, starting with `work` already done by the step; the
 global and the step's work after them. A round is refused if it leaves the
-global over `maxGlobalNodes` (so every round's walk starts within the budget)
-or brings the step's work over `maxStepWork`. -/
+global over `maxGlobalNodes` or deeper than `maxDepth` (so every round's walk
+starts within the budgets) or brings the step's work over `maxStepWork`. -/
 def rounds (P : Program) (p : Params) (gd : GDef) (work : Nat) : Nat → Except String (GDef × Nat)
   | 0 => pure (gd, work)
   | n + 1 => do
     let (gd', f) ← round P p gd
-    if gd'.body.nodesLe maxGlobalNodes && work + f.work ≤ maxStepWork then
+    if gd'.body.nodesLe maxGlobalNodes && gd'.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth &&
+        work + f.work ≤ maxStepWork then
       rounds P p gd' (work + f.work) n
-    else .error "shrink: a global or the step exceeds the node or work budget"
+    else .error "shrink: a global or the step exceeds the node, depth or work budget"
 
 /-- The certified rounds of each global in turn, threading the step's work
 and the nodes made so far: refused as soon as either passes its budget. -/

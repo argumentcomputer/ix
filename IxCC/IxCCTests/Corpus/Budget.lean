@@ -40,6 +40,11 @@ structure Stats where
   maxStepWork : Nat := 0
   maxLam : Nat := 0
   maxSrcDepth : Nat := 0
+  maxSrcVisits : Nat := 0
+  maxLamDepth : Nat := 0
+  maxDepth : Nat := 0
+  maxCopyDepth : Nat := 0
+  maxBackWork : Nat := 0
   programs : Nat := 0
   declined : Nat := 0
 
@@ -51,11 +56,36 @@ def Stats.merge (s t : Stats) : Stats :=
     maxSpecNodes := max s.maxSpecNodes t.maxSpecNodes
     maxWalkWork := max s.maxWalkWork t.maxWalkWork, maxStepWork := max s.maxStepWork t.maxStepWork
     maxLam := max s.maxLam t.maxLam, maxSrcDepth := max s.maxSrcDepth t.maxSrcDepth
+    maxSrcVisits := max s.maxSrcVisits t.maxSrcVisits, maxLamDepth := max s.maxLamDepth t.maxLamDepth
+    maxDepth := max s.maxDepth t.maxDepth, maxCopyDepth := max s.maxCopyDepth t.maxCopyDepth
+    maxBackWork := max s.maxBackWork t.maxBackWork
     programs := s.programs + t.programs, declined := s.declined + t.declined }
 
 /-- The largest global's nodes and the program's. -/
 def sizes (P : Anf.Program) : Nat × Nat :=
   P.globalList.foldl (fun (m, t) (_, gd) => (max m gd.body.nodes, t + gd.body.nodes)) (0, 0)
+
+/-- The deepest global of a program (uncapped). -/
+def anfDepth (P : Anf.Program) : Nat :=
+  P.globalList.foldl (fun m (_, gd) => max m (gd.body.depthUpTo 1000000000 1000000000)) 0
+
+/-- The nodes of a source term's tree (each use of a shared term counted). -/
+def srcNodes (t : Src.Term) : Nat := Id.run do
+  let mut stack : List Src.Term := [t]
+  let mut n := 0
+  for _ in [0:1 <<< 28] do
+    match stack with
+    | [] => break
+    | t :: rest =>
+      stack := rest
+      n := n + 1
+      match t with
+      | .app f a _ _ => stack := f :: a :: stack
+      | .lam _ dom b | .pi _ _ dom b => stack := dom :: b :: stack
+      | .letE _ _ ty v b => stack := ty :: v :: b :: stack
+      | .proj _ _ e => stack := e :: stack
+      | _ => pure ()
+  return n
 
 /-- The depth of a source term's tree, on an explicit stack (the terms are
 share DAGs; this visits each tree node). -/
@@ -96,7 +126,10 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
   let mut P ← Anf.convert lam
   let (g, t) := sizes P
   let maxLam := lam.globalList.foldl (fun m (_, gl) => max m gl.body.nodes) 0
-  let mut s : Stats := { maxGlobal := g, maxProgram := t, programs := 1, maxLam }
+  let maxLamDepth := lam.globalList.foldl
+    (fun m (_, gl) => max m (Anf.lamDepthUpTo 1000000000 1000000000 gl.body)) 0
+  let mut s : Stats := { maxGlobal := g, maxProgram := t, programs := 1, maxLam, maxLamDepth,
+                         maxDepth := anfDepth P, maxBackWork := Anf.backWork P }
   for step in cert.steps do
     match step with
     | .shrink c =>
@@ -106,7 +139,7 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
         for _ in [0:c.getD g 0] do
           let (gd', f) ← Anf.Shrink.round P cert.shrink cur
           s := { s with maxCopyShrink := max s.maxCopyShrink f.copied, maxFires := max s.maxFires f.total }
-          s := { s with maxWalkWork := max s.maxWalkWork f.work }
+          s := { s with maxWalkWork := max s.maxWalkWork f.work, maxCopyDepth := max s.maxCopyDepth f.depth }
           stepWork := stepWork + f.work
           cur := gd'
       s := { s with maxStepWork := max s.maxStepWork stepWork }
@@ -117,7 +150,7 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
         | some cs@(_ :: _) =>
           let (_, f) ← (Anf.Walk.global { prog := P, inline := cs } gd).run {}
           s := { s with maxCopyInline := max s.maxCopyInline f.copied, maxFires := max s.maxFires f.total }
-          s := { s with maxWalkWork := max s.maxWalkWork f.work }
+          s := { s with maxWalkWork := max s.maxWalkWork f.work, maxCopyDepth := max s.maxCopyDepth f.depth }
           stepWork := stepWork + f.work
         | _ => pure ()
       s := { s with maxStepWork := max s.maxStepWork stepWork }
@@ -127,7 +160,8 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
     | .prune => pure ()
     P ← step.run cert.shrink P
     let (g, t) := sizes P
-    s := { s with maxGlobal := max s.maxGlobal g, maxProgram := max s.maxProgram t }
+    s := { s with maxGlobal := max s.maxGlobal g, maxProgram := max s.maxProgram t,
+                  maxDepth := max s.maxDepth (anfDepth P), maxBackWork := max s.maxBackWork (Anf.backWork P) }
   return s
 
 /-- One program: its honest certificate's middle end, measured (none if the
@@ -141,7 +175,10 @@ def program (bytes : ByteArray) (json : Lean.Json) (roots : List String) : IO (O
     let depth := (List.range P.size).foldl (fun m c => match P.decl? c with
       | some d => (Src.Table.declTerms d).foldl (fun m t => max m (srcDepth t)) m
       | none => m) 0
-    let declined : Stats := { maxSrcDepth := depth, declined := 1 }
+    let visits := (List.range P.size).foldl (fun m c => match P.decl? c with
+      | some d => (Src.Table.declTerms d).foldl (fun m t => m + srcNodes t) m
+      | none => m) 0
+    let declined : Stats := { maxSrcDepth := depth, maxSrcVisits := visits, declined := 1 }
     let cfg := ({} : Config).forInput inp
     match produce cfg inp with
     | .error _ => return some declined
@@ -153,7 +190,7 @@ def program (bytes : ByteArray) (json : Lean.Json) (roots : List String) : IO (O
         | .error _ => return some declined
         | .ok (lam, _) =>
           let s ← IO.ofExcept (measure lam cert.mid)
-          return some { s with maxSrcDepth := depth }
+          return some { s with maxSrcDepth := depth, maxSrcVisits := visits }
 
 def file (path : FilePath) (equations : FilePath) (roots : List String := []) : IO (Option Stats) := do
   program (← IO.FS.readBinFile path) (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile equations))) roots
@@ -198,7 +235,12 @@ def survey (a : Assert) : IO (Array String) := do
     ("most work in one walk", s.maxWalkWork, Anf.Walk.maxWalkWork),
     ("most walk work in one inline or shrink step", s.maxStepWork, Anf.maxStepWork),
     ("largest Lam global", s.maxLam, Anf.maxLamNodes),
-    ("deepest source term", s.maxSrcDepth, Src.Ingress.depthBudget)]
+    ("deepest source term", s.maxSrcDepth, Src.maxTermDepth),
+    ("most source nodes, counted as trees", s.maxSrcVisits, Recheck.maxSrcVisits),
+    ("deepest Lam global", s.maxLamDepth, Anf.maxLamDepth),
+    ("deepest Anf global", s.maxDepth, Anf.maxDepth),
+    ("most walk steps on the stack at once", s.maxCopyDepth, Anf.Walk.maxWalkDepth),
+    ("most back-end work (nodes squared, and table searches)", s.maxBackWork, Anf.maxBackWork)]
   let mut out := #[s!"{s.programs} programs measured, {s.declined} declined before the middle end"]
   for (label, got, budget) in rows do
     expect a (got < budget) s!"{label}: {got} reaches its budget {budget}"

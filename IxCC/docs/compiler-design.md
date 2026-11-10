@@ -260,22 +260,26 @@ verifiers the claimant also chooses the program. Without bounds one certified
 step could ask for work and recursion far beyond its input: a single `inline`
 step on a 1.1 KB closure asked for about 16.8 million copied bindings and made
 `ixcc check-cert` abort with a stack overflow (review of 2026-11-09, item 2).
-The checker therefore refuses an input or a step, with an ordinary error
-(`anf.replay` in the middle end), as soon as it passes one of these fixed
-budgets ([`Anf/Budget.lean`](../IxCC/Anf/Budget.lean),
+The checker therefore refuses an input or a step, with an ordinary error, as
+soon as it passes one of these fixed budgets
+([`Src/Syntax.lean`](../IxCC/Src/Syntax.lean),
+[`Recheck/Run.lean`](../IxCC/Recheck/Run.lean),
+[`Anf/Budget.lean`](../IxCC/Anf/Budget.lean),
 [`Anf/Walk.lean`](../IxCC/Anf/Walk.lean),
-[`Anf/Specialize.lean`](../IxCC/Anf/Specialize.lean),
-[`Src/Ingress.lean`](../IxCC/Src/Ingress.lean),
-[`Lam/Erase.lean`](../IxCC/Lam/Erase.lean)):
+[`Anf/Specialize.lean`](../IxCC/Anf/Specialize.lean)):
 
 | Budget | Bounds | Value | Largest committed value | Headroom |
 | --- | --- | --- | --- | --- |
-| `Src.Ingress.depthBudget` | the depth of each ingested expression, share expansions included | 4,096 | 256 | 16× |
-| `Lam.Erase.termFuel` | erasure's nesting, checked again because erasure also walks the bodies the unfolding table substitutes | 4,096 | not surveyed | — |
+| `Src.maxTermDepth` | the depth of a source term: per expression at ingress (`Ingress.depthBudget`, share expansions included and a reused share's height checked against the depth left, `Ingress.convH`), and erasure's nesting (`Lam.Erase.termFuel`) | 2,048 | 256 | 8× |
+| `Recheck.maxSrcVisits` | with `Src.maxTermDepth`, `Recheck.checkSrc`'s check of a program built without ingress: its term nodes counted as trees (a shared term at each use) | 268,435,456 | 32,360,755 | 8.3× |
 | `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 2,256 | 7.3× |
+| `Anf.maxLamDepth` | each Lam global's depth, before P1 | 2,048 | 134 | 15× |
 | `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 2,507 | 6.5× |
+| `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 752 | 2.7× |
 | `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 4,935 | 212× |
+| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 6,287,130 | 42× |
 | `Walk.maxCopy` | the nodes one walk walks again: inlined callees, β-reduced local functions, inlined join points, case-of-case alternatives | 8,192 | 1,583 (inline), 2,860 (shrink) | 5.2×, 2.9× |
+| `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,252 | 2.4× |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 500 | 16× |
 | `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 572,520 | 17× |
 | `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 2,642,755 | 17× |
@@ -289,9 +293,10 @@ most 64 parameters, case-of-case and small-join thresholds of at most 512 and
 64, and JSON nested at most 512 deep. A specialisation site counts its value
 trees only up to `Specialize.maxTreeWork` (8,192) before charging them.
 
-The counts stop early (`Exp.nodesUpTo` and `lamNodesUpTo` walk a worklist and
-stop past their cap; a walk's charges stop at the budget left), so checking a
-budget costs no more than the budget. The largest values are measured by
+The counts stop early and walk explicit worklists (`Exp.nodesUpTo`,
+`Exp.depthUpTo`, `lamNodesUpTo`, `lamDepthUpTo`, `Recheck.srcWithin`; a walk's
+charges stop at the budget left), so checking a budget costs no more than the
+budget and is safe on any depth. The largest values are measured by
 `tests-corpus`, which replays the honest certificate of every committed program
 step by step (every root of every corpus family, and `k1.ixe`, `src-sortpoly`,
 `src-diag`, the ownership fixtures and the RC real-source closure with all their
@@ -300,41 +305,70 @@ fails if any value reaches its budget.
 
 **Native stack.** A Lean program runs `main` on a thread whose stack is
 `LEAN_STACK_SIZE_KB` (`ulimit -s` does not change it). The `ixcc` executable's
-default is far above 8 MiB; the budgets were set from 8 MiB measurements so
-that the verifier entry points fit a host thread of 8 MiB. Measured on 8 MiB stacks: the front end
-(installation, the relevance checks, `checkCanonical`, `Lazify`) survives terms
-32,768 deep, and erasure overflows at about 8,960 nested constructors (14,080
-nested applications), which `depthBudget` and `termFuel` keep it to less than
-half of; P1 converts a 32,767-node Lam global and overflows on a 65,535-node
-one; a walk recurses once per binding of its global and of what it copies,
-survives 18,831 bindings and overflows at 19,078, and `maxGlobalNodes` with
-`maxCopy` keep it to (16,384 + 8,192) / 2 = 12,288 bindings (1.5× headroom,
-measured on chains of bindings); Fir to x86 has run on 37,000-node globals.
-That headroom does not hold for every constructor: a walk over nested
-single-alternative `case`s (one node per level; erasure's `casesForm` emits
-`tick (case …)`, two) overflows an 8 MiB stack from about 13,000 levels of the
-first shape and below 12,286 of the second, while the global and copy budgets
-allow 24,575 and 12,286 levels (2026-11-09 integration review, FV-1). The `ixcc` executable's
-default stack is not affected.
-`tests-recheck` runs every verifier entry point in a child process with
-`LEAN_STACK_SIZE_KB=8192` on R1's amplifiers and on generated deep and wide
-inputs at and past each budget. The program-level verifiers
-(`CompileClaim.verifyProgram`, `checkClaimProgram`, `Ring0Sip.verifyProgram`,
-`Recheck.run`) take a `Src.Program` that is assumed to come from ingress; one
-built some other way is not depth-checked.
+default is far above 8 MiB; the depth budgets are set at least four times below
+the depth at which each recursive traversal on the verifier path overflows an
+8 MiB stack (`LEAN_STACK_SIZE_KB=8192`, `tests-recheck --probe*`), measured per
+nesting constructor:
+
+| Traversal | Nesting shape | Overflows at 8 MiB | Budget |
+| --- | --- | --- | --- |
+| ingress (`conv`) | any | never (its own fuel) | `maxTermDepth` 2,048 |
+| front end (installation, the relevance checks, `checkCanonical`, `Lazify`) | constructor, application, `let`, type chains | above 32,768 | 2,048 (16×) |
+| erasure | constructor chain / applications / `let` / types | 8,960 / 14,080 / above 32,768 / above 32,768 | 2,048 (4.4×) |
+| `Lam.modesOk` (in erasure) | application (argument) / `case` / scrutinee / constructor / λ | 35,202 / 44,142 / 75,625 / 105,163 / 131,593 | `maxLamDepth` 2,048 |
+| P1 (`Anf.convert`) | application (argument) / `case` and scrutinee / constructor / application (function) / projection / `tick` / `let` value / `let` body / λ | 9,451 / 13,825 / 17,712 / 44,142 / 48,028 / 66,296 / 75,625 / 88,062 / 131,593 | 2,048 (4.6×) |
+| a walk (steps on the stack) | single-alternative `case` / `tick (case …)` / two-alternative `case` / join point / binding / `tick` | about 12,290 (FV), and per MiB: 1,771 / 2,848 / 1,817 / 2,212 / 2,607 / above 3,072 | `maxWalkDepth` 3,072 (4×); globals start at most `maxDepth` 2,048 deep |
+| Fir to x86 | single-alternative `case` / two-alternative `case` / `tick (case …)` / join points / bindings / `tick` | above 16,383 / 8,192 / 8,192 / 8,192 / 8,191 / 16,383 (all that was tried) | `maxDepth` 2,048 (4×) |
+
+The walk is the tightest: four times below its threshold leaves `maxDepth`
+2.7 times the deepest committed Anf global and `maxWalkDepth` 2.4 times the
+deepest committed walk, the room an 8 MiB stack allows. Ingress converts a share once
+and reuses the term; it keeps the term's height and checks it against the
+depth left wherever the share is reused, so no ingested term is deeper than
+`maxTermDepth`. The program-level verifiers (`Recheck.run`,
+`CompileClaim.verifyProgram`, `checkClaimProgram`, `Ring0Sip.verifyProgram`)
+assume their `Src.Program` came from ingress, and say so; a host that builds
+one some other way runs `Recheck.checkSrc` first (it is not on the recheck
+path, where the kernel-evaluated tests would pay about 0.2 ms per tree node). `tests-recheck` runs every
+verifier entry point in a child process with `LEAN_STACK_SIZE_KB=8192` on R1's
+amplifiers, on generated deep and wide inputs at and past each budget, on a
+term whose shares are reused deeper than their first use, and on chains of every nesting
+constructor at Lam and Anf (at the depth budget and one level past it, through
+the middle end's replay, a shrink step and the back end), and on a walk whose
+copy brings it to its depth budget and one step past it.
 
 **Work.** Under shrink, the census counts read at each binding walk the rest of
-its body, so a round on a global of `n` nodes reads up to order `n²` nodes. The
-walk therefore charges every step before taking it (`Walk.stepCost`: one, plus
-the environment entries its atoms resolve and the join point it looks up, and
+its body, so a round reads up to the global's depth times its nodes. The walk
+therefore charges every step before taking it (`Walk.stepCost`: one, plus the
+environment entries its atoms resolve and the join point it looks up, and
 under shrink the nodes of the expression it stands on, the body of a jump's
 target and the levels the known-primitive search reads), refuses past
 `maxWalkWork`, and the inline and shrink steps refuse once their walks' work
-passes `maxStepWork`. A certificate holds at most 64 steps, so the middle end's
-charged walk work is at most 64 × 45,000,000. The back end after the middle end
-(Fir to x86) has no work budget and is superlinear in nested `case`s: one
-16,384-node global of nested single-alternative cases takes the verifier about
-20 s (2026-11-09 integration review, FV-2).
+passes `maxStepWork`. A certificate holds at most 64 steps. The back end (Fir to
+x86) is linear in a function's nodes but for `Cfg.lower`'s block counts,
+`Lir.Func.splitCriticalEdges`' predecessor counts and `X86.Layout.tunnel`'s
+chains (quadratic in a function's blocks or depth) and the constructor table's
+searches (`Rt.checkSwitches` per pair of a switch's alternatives): `backWork`
+bounds them all. Measured on the box with each back-end level of the verifier timed
+(`tests-recheck --probe-back`, with the producer's allocation, frames and
+order), on programs at `maxBackWork`: 64 globals of 2,047 nested
+single-alternative cases take 12.4 s (`Cfg.lower` 4.3 s, `Rt.lower` 1.4 s,
+`X86.Layout.tunnel` 6.6 s); sixteen globals of two-alternative cases 3.6 s;
+270 smaller ones 3.4 s; one comb of eight 2,047-level chains 2.3 s; chains of
+join points 1.9 s; 300 globals of 200 values live at once 0.1 s (allocation,
+its validator, frame layout, the encoder and the stream checker stay linear);
+2,000 125-way cases, fifteen times past the budget, 13.9 s, 11.8 s of it
+`Rt.checkSwitches`. FV-2's 16,383-level global, now refused by `maxDepth`,
+took 12.8 s. With the middle end's worst certificate (64 shrink steps each
+just under `maxStepWork`, 10.7 s), `checkSrc` (it refuses about 5·10⁸ tree
+nodes in 4.3 s) and the front end on a program at `maxSrcVisits` (about 6 s
+and 4.3 GB per 10⁸ tree nodes before it refuses an empty certificate, so about
+16 s and 12 GB at the budget), the slowest certificate the budgets admit or
+refuse costs a verifier an estimated 45 s; the stages were measured
+separately, not composed from bytes. The producer (`Recheck.produce`,
+`ixcc compile`) is not bounded the same way: its `X86.Layout.Order.produce`
+is quadratic like `tunnel`.
+
 
 ## Source semantics and replacements
 
@@ -625,10 +659,11 @@ compiler has seen. The certified kernel's executable closure is about 1,270
 definitions for the checker and about 1,870 with admission and the Ixon
 reader, before the parts of `Init` and `Std` it uses (grep counts, upper
 bounds, 2026-11-09 IXCC-ROUTE review). The largest committed programs fit
-the budgets with headroom between 2.9× and 326× ([Middle-end
+the budgets with headroom between 2.4× and 326× ([Middle-end
 budgets](#middle-end-budgets)), but they are small: a global of more than
-16,384 nodes, or a term more than 4,096 deep, is refused today whatever the
-certificate.
+16,384 nodes or 2,048 levels, or a term more than 2,048 deep, is refused today
+whatever the certificate; the nesting budgets cannot grow much while a
+verifier must fit an 8 MiB stack.
 
 **Current state.**
 - *Implemented.* The budgets above are fixed constants, independent of the

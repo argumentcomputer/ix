@@ -29,7 +29,7 @@ What is not proved:
 - **S6.** `a.src` is what the front end built from the ingested program: the
   unfolding table installed, the certificate's relevance annotation
   installed and checked, by-name modes set by `Lazify`
-  ([`Recheck/Run.lean:186`](../IxCC/Recheck/Run.lean),
+  ([`Recheck/Run.lean:232`](../IxCC/Recheck/Run.lean),
   [`Src/Recheck.lean:32-45`](../IxCC/Src/Recheck.lean)). No theorem relates
   `a.src` semantically to the ingested program. What is proved about the
   front end is syntactic: `Relevance.check` has a soundness theorem

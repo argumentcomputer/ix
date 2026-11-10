@@ -44,10 +44,10 @@ structure Stats where
 
 /-- Nesting fuel for terms, and the queue budget. Erasure recurses natively once
 per unit of `termFuel`, and overflows an 8 MiB stack on a constructor chain
-about 8,960 deep, so the fuel is under half that, the ingress depth budget
-(`Src.Ingress.depthBudget`), checked again here because erasure also walks
-what the certificate's table substitutes. -/
-def termFuel : Nat := 1 <<< 12
+about 8,960 deep, so the fuel is `Src.maxTermDepth`, a quarter of that, checked
+again here because erasure also walks what the certificate's table
+substitutes. -/
+def termFuel : Nat := Src.maxTermDepth
 def loopFuel : Nat := 1 <<< 24
 
 section

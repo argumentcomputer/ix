@@ -494,8 +494,9 @@ def verifyProgramWithTextSize? (sip : Ring0Sip) (P : Src.Program) : Option Nat :
   else none
 
 /-- Verify a `Ring0Sip`'s compilation claim AND its canonical driver contract
-(`sip.driver.checkCanonical textSize`) against an ingested `Src.Program` in a
-single certificate replay pass (`A3-9`, `N11`). -/
+(`sip.driver.checkCanonical textSize`) against a `Src.Program` in a single
+certificate replay pass (`A3-9`, `N11`). Precondition, as for `Recheck.run`:
+the program came from ingress or passed `Recheck.checkSrc`. -/
 def verifyProgram (sip : Ring0Sip) (P : Src.Program) : Bool :=
   match sip.verifyProgramWithTextSize? P with
   | some textSize => sip.driver.checkCanonical textSize

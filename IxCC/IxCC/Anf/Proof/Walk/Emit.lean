@@ -161,7 +161,7 @@ theorem emit_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel) {
     {here : Here} {c c' : Ixon.V3.LetContract} {b b' : Bind} {body e : Exp} {k : Kont} {s s' : Fires}
     {facts' : Src.NatMap Fact}
     (he : (Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
-      { d := here.d + 1, dj := here.dj, facts := facts' } body k).run s = .ok (e, s'))
+      { d := here.d + 1, dj := here.dj, facts := facts', lvl := here.lvl } body k).run s = .ok (e, s'))
     {ρ : List Val} {J : List JClo} {ρ' : List Val} {J' : List JClo} {live jlive : List Bool}
     {SK : Val → Nat → Result Val} (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
     (hJ : JEnv P Q Valid Xc C n (KT Q k J') ρ' J' jlive env.jσ J) (hd : here.d = ρ'.length)

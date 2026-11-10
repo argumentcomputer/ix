@@ -114,7 +114,7 @@ structure Ctx where
   source : Source
   byAddr : Std.HashMap Ixon.Address CId
 
-abbrev ConvM := StateT (Std.HashMap UInt64 Term) (Except String)
+abbrev ConvM := StateT (Std.HashMap UInt64 (Term × Nat)) (Except String)
 
 def univ (ctx : Ctx) (i : UInt64) : ConvM Univ :=
   match ctx.source.constant.univs[i.toNat]? with
@@ -138,45 +138,65 @@ def blob (ctx : Ctx) (i : UInt64) : ConvM ByteArray := do
   | some bytes => pure bytes
   | none => throw s!"src ingress: missing blob {a}"
 
-/-- Convert one expression. `fuel` bounds the nesting depth, share
-expansions included; the cache holds each expanded share index once. -/
-def conv (ctx : Ctx) : Nat → V3.Expr → ConvM Term
+/-- Convert one expression, with the converted term's height. `fuel` bounds the
+nesting depth, share expansions included; the cache holds each expanded share
+index once, with its height, so a share reused deeper than its first use is
+checked against the depth left there too. -/
+def convH (ctx : Ctx) : Nat → V3.Expr → ConvM (Term × Nat)
   | 0, _ => throw "src ingress: expression depth budget exhausted"
   | fuel + 1, e => match e with
-    | .sort i => return .sort (← univ ctx i)
-    | .var i => return .var i.toNat
-    | .ref i us => return .const (← resolveRef ctx i) (← us.toList.mapM (univ ctx))
+    | .sort i => return (.sort (← univ ctx i), 1)
+    | .var i => return (.var i.toNat, 1)
+    | .ref i us => return (.const (← resolveRef ctx i) (← us.toList.mapM (univ ctx)), 1)
     | .recur i us => do
       let some c := ctx.source.members[i.toNat]?
         | throw s!"src ingress: recursive member index {i} out of range"
-      return .const c (← us.toList.mapM (univ ctx))
-    | .prj i field v => return .proj (← resolveRef ctx i) field.toNat (← conv ctx fuel v)
+      return (.const c (← us.toList.mapM (univ ctx)), 1)
+    | .prj i field v => do
+      let s ← resolveRef ctx i
+      let (t, h) ← convH ctx fuel v
+      return (.proj s field.toNat t, h + 1)
     | .str i => do
       let bytes ← blob ctx i
       match String.fromUTF8? bytes with
-      | some s => return .strLit s
+      | some s => return (.strLit s, 1)
       | none => throw "src ingress: string blob is not valid UTF-8"
-    | .nat i => return .natLit (V3.Tc.natFromBytesLE (← blob ctx i).data)
-    | .app f a => return .app (← conv ctx fuel f) (← conv ctx fuel a) .strict .rel
-    | .lam c d b => return .lam { contract := c } (← conv ctx fuel d) (← conv ctx fuel b)
-    | .all c r d b => return .pi { contract := c } r (← conv ctx fuel d) (← conv ctx fuel b)
-    | .letE c t v b =>
-      return .letE c .rel (← conv ctx fuel t) (← conv ctx fuel v) (← conv ctx fuel b)
+    | .nat i => return (.natLit (V3.Tc.natFromBytesLE (← blob ctx i).data), 1)
+    | .app f a => do
+      let (f, hf) ← convH ctx fuel f
+      let (a, ha) ← convH ctx fuel a
+      return (.app f a .strict .rel, max hf ha + 1)
+    | .lam c d b => do
+      let (d, hd) ← convH ctx fuel d
+      let (b, hb) ← convH ctx fuel b
+      return (.lam { contract := c } d b, max hd hb + 1)
+    | .all c r d b => do
+      let (d, hd) ← convH ctx fuel d
+      let (b, hb) ← convH ctx fuel b
+      return (.pi { contract := c } r d b, max hd hb + 1)
+    | .letE c t v b => do
+      let (t, ht) ← convH ctx fuel t
+      let (v, hv) ← convH ctx fuel v
+      let (b, hb) ← convH ctx fuel b
+      return (.letE c .rel t v b, max ht (max hv hb) + 1)
     | .share i => do
-      if let some t := (← get)[i]? then return t
+      if let some (t, h) := (← get)[i]? then
+        if h > fuel then throw "src ingress: expression depth budget exhausted"
+        return (t, h)
       let some expansion := ctx.source.constant.sharing[i.toNat]?
         | throw s!"src ingress: share index {i} out of range"
-      let t ← conv ctx fuel expansion
-      modify (·.insert i t)
-      return t
+      let (t, h) ← convH ctx fuel expansion
+      modify (·.insert i (t, h))
+      return (t, h)
 
-/-- Depth budget for one expression, share expansions included: sixteen times
-the deepest term of a committed program (256). It bounds the native recursion
-of every traversal from here to erasure: on an 8 MiB stack the front end
-(installation, the checks, `checkCanonical`, `Lazify`) survives terms 32,768
-deep and erasure overflows at about 8,960 (a constructor chain; 14,080 for an
-application chain), which `Lam.Erase.termFuel` bounds again. -/
-def depthBudget : Nat := 1 <<< 12
+/-- Convert one expression (`convH` without the height). -/
+def conv (ctx : Ctx) (fuel : Nat) (e : V3.Expr) : ConvM Term := (·.1) <$> convH ctx fuel e
+
+/-- Depth budget for one expression, share expansions included
+(`Src.maxTermDepth`). A share converted once is reused without its depth being
+counted again, so the recheck path checks the program's depth again, as
+trees, before its front end (`Recheck.checkSrc`). -/
+def depthBudget : Nat := maxTermDepth
 
 /-! ## Recursor majors -/
 
@@ -213,7 +233,7 @@ def ofEnv (env : V3.Env) (roots : Array Ixon.Address) : Except String Program :=
     | some (.indc _ _ ctors) => ctors
     | _ => #[]
   let mut consts : Array ConstEntry := Array.mkEmpty layout.items.size
-  let mut cache : Std.HashMap UInt64 Term := {}
+  let mut cache : Std.HashMap UInt64 (Term × Nat) := {}
   let mut currentSrc : Option Nat := none
   for h : id in [0:layout.items.size] do
     let item := layout.items[id]
@@ -222,7 +242,7 @@ def ofEnv (env : V3.Env) (roots : Array Ixon.Address) : Except String Program :=
       currentSrc := some item.src
     let source := layout.sources[item.src]?.getD default
     let ctx : Ctx := { env, source, byAddr }
-    let run := fun (e : V3.Expr) (m : Std.HashMap UInt64 Term) =>
+    let run := fun (e : V3.Expr) (m : Std.HashMap UInt64 (Term × Nat)) =>
       (conv ctx depthBudget e).run m
     let ref := layout.refs[id]?.getD default
     let addr := layout.addrs[id]?.getD default

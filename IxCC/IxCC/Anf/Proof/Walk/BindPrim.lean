@@ -102,7 +102,7 @@ theorem walkBind_prim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     · exact .inr ⟨u, fun k => by rw [hsrc, hu], .inr ⟨rfl, hocc⟩⟩
   have hemit : ∀ {e : Exp} {s0 s0' : Fires} {facts' : Src.NatMap Fact},
       (Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
-        { d := here.d + 1, dj := here.dj, facts := facts' } body k).run s0 = .ok (e, s0') →
+        { d := here.d + 1, dj := here.dj, facts := facts', lvl := here.lvl } body k).run s0 = .ok (e, s0') →
       (∀ u, primResult P.known p vs = .ok u → FactsOk Q Valid facts' (u :: ρ')) →
       SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.prim p as) body)).bind (SK · k))
         (fun k => eval Q k ρ' J' (.bind c (.prim p (Walk.atoms here.d os)) e)) := by

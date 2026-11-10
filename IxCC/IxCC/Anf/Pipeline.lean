@@ -51,15 +51,22 @@ def programNodesUpTo : List (GlobalId × GDef) → Nat → Nat
     let used := used + gd.body.nodesUpTo (maxProgramNodes - used)
     if used > maxProgramNodes then used else programNodesUpTo rest used
 
-/-- Refuse a program holding a global over `maxGlobalNodes`, or more than
-`maxProgramNodes` nodes in all. The counts stop early (`Exp.nodesUpTo`), so the
-check is cheap and shallow whatever the program's size. Inlining a callee
-doubles a mutually recursive pair each round with one firing, so the walk's
-budgets alone do not bound certificate rounds. -/
+/-- Refuse a program holding a global over `maxGlobalNodes` or deeper than
+`maxDepth`, more than `maxProgramNodes` nodes in all, or more back-end work
+than `maxBackWork`. The counts stop early and walk explicit worklists
+(`Exp.nodesUpTo`, `Exp.depthUpTo`), so the check is cheap and shallow whatever
+the program's size and depth. Inlining a callee doubles a mutually recursive
+pair each round with one firing, so the walk's budgets alone do not bound
+certificate rounds. -/
 def checkGlobalNodes (P : Program) : Except String Program :=
-  if P.globalList.all (fun (_, gd) => gd.body.nodesLe maxGlobalNodes) &&
-      programNodesUpTo P.globalList 0 ≤ maxProgramNodes then .ok P
-  else .error "middle end: a global or the program exceeds the node budget"
+  if !(P.globalList.all (fun (_, gd) => gd.body.nodesLe maxGlobalNodes) &&
+      programNodesUpTo P.globalList 0 ≤ maxProgramNodes) then
+    .error "middle end: a global or the program exceeds the node budget"
+  else if !(P.globalList.all fun (_, gd) => gd.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth) then
+    .error "middle end: a global exceeds the depth budget"
+  else if backWork P > maxBackWork then
+    .error "middle end: the program exceeds the back end's work budget"
+  else .ok P
 
 /-- A step, then the size check (P2, P3 and P4 can grow the program; pruning
 only removes globals). -/
@@ -75,10 +82,13 @@ def Step.name : Step → String
   | .specialize _ => "P4"
   | .prune => "prune"
 
-/-- Refuse a Lam program holding a global over `maxLamNodes` (counted with an
-early exit), before ANF conversion recurses over it. -/
+/-- Refuse a Lam program holding a global over `maxLamNodes` or deeper than
+`maxLamDepth` (both counted over worklists with an early exit), before ANF
+conversion recurses over it. -/
 def checkLamNodes (L : Lam.Program) : Except String Lam.Program :=
-  if L.globalList.all fun (_, gl) => lamNodesUpTo maxLamNodes gl.body ≤ maxLamNodes then .ok L
+  if L.globalList.all fun (_, gl) => lamNodesUpTo maxLamNodes gl.body ≤ maxLamNodes then
+    if L.globalList.all fun (_, gl) => lamDepthUpTo maxLamDepth maxLamNodes gl.body ≤ maxLamDepth then .ok L
+    else .error "middle end: a Lam global exceeds the depth budget"
   else .error "middle end: a Lam global exceeds the node budget"
 
 /-- The recheck: the Lam size check, P1 and the size check, then the

@@ -66,10 +66,10 @@ walk, one clock down. -/
 theorem enter_walkc (hlow : ∀ m < n, ∀ fuel, WalkAt P Q Valid Xc m fuel)
     (hsuffix : ∀ C ρ ρ' prs ρ₂ ρ'₂, Valid C ρ ρ' prs → ρ <:+ ρ₂ → ρ' <:+ ρ'₂ → Valid C ρ₂ ρ'₂ prs)
     {C : Cfg} {fuel : Nat} {s s' : Fires} {σP σ0 : List Ent} {live : List Bool}
-    {facts : Src.NatMap Fact} {ρ ρ' got got' : List Val} {nn m : Nat} {b b' : Exp}
+    {facts : Src.NatMap Fact} {lvl : Nat} {ρ ρ' got got' : List Val} {nn m : Nat} {b b' : Exp}
     {oOf : Nat → Opd} {wOf : Nat → Val}
     (hV : VOk Q Valid Xc C ρ ρ')
-    (hrun : (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts } b
+    (hrun : (Walk.walk C fuel { σ := σP ++ σ0, jσ := [] } { d := ρ'.length + m, dj := 0, facts, lvl } b
       .ret).run s = .ok (b', s'))
     (henv : WEnv Q Valid Xc C live σ0 ρ ρ') (hf : FactsOk Q Valid facts ρ')
     (hnd : NoDead (List.replicate nn true ++ live) [] b) (hσP : σP.length = nn) (hmn : m ≤ nn)

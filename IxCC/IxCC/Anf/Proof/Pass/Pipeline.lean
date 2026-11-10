@@ -91,14 +91,20 @@ theorem convert_wf {L : Lam.Program} {Q : Program} (h : convert L = .ok Q) : Q.W
 theorem checkGlobalNodes_ok {P Q : Program} (h : checkGlobalNodes P = .ok Q) : Q = P := by
   unfold checkGlobalNodes at h
   split at h
-  · cases h; rfl
   · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · cases h; rfl
 
 /-- The Lam size check passes its program through unchanged. -/
 theorem checkLamNodes_ok {L L' : Lam.Program} (h : checkLamNodes L = .ok L') : L = L' := by
   unfold checkLamNodes at h
   split at h
-  · cases h; rfl
+  · split at h
+    · cases h; rfl
+    · cases h
   · cases h
 
 /-- P4's correctness: every certificate the re-run accepts gives a
@@ -125,21 +131,15 @@ theorem step_correct (p : Shrink.Params) :
   | .inline r, P, Q, _, hw, h => by
     simp only [Step.run] at h
     obtain ⟨x, hr, hc⟩ := Lam.ModesOk.bind_ok h
-    unfold checkGlobalNodes at hc
-    split at hc
-    · cases hc
-      exact Inline.Proof.round_refines hw hr
-    · cases hc
+    rw [checkGlobalNodes_ok hc]
+    exact Inline.Proof.round_refines hw hr
   | .specialize c, P, Q, hs, hw, h => by
     rcases hs with hs | hs
     · exact hs.elim
     · simp only [Step.run] at h
       obtain ⟨x, hspec, hc⟩ := Lam.ModesOk.bind_ok h
-      unfold checkGlobalNodes at hc
-      split at hc
-      · cases hc
-        exact hs c P Q hw hspec
-      · cases hc
+      rw [checkGlobalNodes_ok hc]
+      exact hs c P x hw hspec
   | .prune, P, Q, _, hw, h => by
     simp only [Step.run] at h
     cases h

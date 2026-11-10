@@ -121,6 +121,28 @@ def manyEnv (n : Nat) : Env × Addr := Id.run do
   let (eM, main) := store e ⟨defn (.ref 0 #[]) (.app (.ref 1 #[]) (.ref 2 #[])), #[], #[b.enumI, f, b.ctors[0]!], #[]⟩
   return (eM, main)
 
+/-- `shared n`: `main : E := idc t (w t)`, where `t` is `n` applications of
+`idc` over `c₁` and `w` wraps `n` more around it, all stored as shares of at
+most 200: the term's tree is about `2 n` deep, but `t` is first used shallowly.
+Ingress used to reuse its conversion under `w` without counting its depth
+again; it now checks a reused share's height against the depth left there. -/
+def sharedEnv (n : Nat) : Env × Addr := Id.run do
+  let b := base 3
+  -- refs: 0 E, 1 idc, 2 c₁
+  let step := fun (t : X) => (.app (.ref 1 #[]) t : X)
+  let mut sh : Array X := #[]
+  let mut cur : X := .ref 2 #[]
+  for _ in [0:(n + 199) / 200] do
+    sh := sh.push (Nat.repeat step 200 cur)
+    cur := .share (sh.size - 1).toUInt64
+  let top := cur
+  for _ in [0:(n + 199) / 200] do
+    sh := sh.push (Nat.repeat step 200 cur)
+    cur := .share (sh.size - 1).toUInt64
+  let (e, main) := store b.env ⟨defn (.ref 0 #[]) (.app (.app (.ref 1 #[]) top) cur), sh,
+    #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
+  return (e, main)
+
 /-- `inductive T | leaf | node (l r : T)`. -/
 def treeBlock : Constant :=
   ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
@@ -305,6 +327,17 @@ def writeShrink (dir : System.FilePath) (d : Nat) (rounds : Nat := 64) (steps : 
   IO.FS.writeFile (dir / s!"{stem}.base.cert") base.toText
   IO.println s!"{stem}: {bs.size} bytes, certificate {cert.toText.utf8ByteSize} bytes"
 
+/-- `tests-recheck --write-amp DIR DF DG`: R1's amplifier `amp-DF-DG` as `.ixe`, its
+sidecar, and its `inline` certificate (`.hostile.cert`) and Stage A's
+(`.base.cert`), for timing `check-cert` natively. -/
+def writeAmp (dir : System.FilePath) (dF dG : Nat) : IO Unit := do
+  let (bs, json, _, _, _, hostile) ← ampCase dF dG
+  IO.FS.createDirAll dir
+  IO.FS.writeBinFile (dir / s!"amp-{dF}-{dG}.ixe") bs
+  IO.FS.writeFile (dir / s!"amp-{dF}-{dG}.equations.json") json.pretty
+  IO.FS.writeFile (dir / s!"amp-{dF}-{dG}.hostile.cert") hostile.toText
+  IO.FS.writeFile (dir / s!"amp-{dF}-{dG}.base.cert") { hostile with mid := {} }.toText
+
 /-- `tests-recheck --write-amp-shrink DIR DF DG`: R1's amplifier `amp-DF-DG`
 as `amp-DF-DG.ixe` and its sidecar, with a certificate whose middle end is its
 `inline` step followed by 64 shrink rounds of every global, so that the shrink
@@ -420,7 +453,7 @@ def deepest (name : String) : IO Nat := do
 every verifier entry point on R1's crashing inputs and on generated deep and
 wide inputs at and past each budget, typing on and off. A line per input, then
 a summary line; a native stack overflow aborts the process instead. -/
-def stack8 : IO UInt32 := IO.FS.withTempDir fun dir => do
+def stack8Lines : IO (Array String) := IO.FS.withTempDir fun dir => do
   let mut lines : Array String := #[]
   -- R1's inputs (`amp-12-11` and `amp-13-13` crashed an 8 MiB checker), the
   -- largest inline the copy budget allows through to the end of the backend,
@@ -450,9 +483,12 @@ def stack8 : IO UInt32 := IO.FS.withTempDir fun dir => do
         (sidecar [("main", main)]) main false fun inp cfg => do
           let c ← transplantedCert name m 200 inp cfg
           return (withBackend cfg inp.program c).toOption.getD c)
-  for line in lines do IO.println line
-  IO.println s!"stack-8mib: {lines.size} inputs through every verifier entry point"
-  return 0
+  -- a share converted once and reused deeper: ingress checks its height
+  -- against the depth left at each use
+  let (e, main) := sharedEnv 1200
+  lines := lines.push (← entryPoints dir "shared 1200 + 1200 (past the depth budget, shares reused)" (bytes e)
+    (sidecar [("main", main)]) main false fun _ _ => .ok {})
+  return lines
 
 /-- The parent of `stack8`: the same executable with `LEAN_STACK_SIZE_KB=8192`
 (the stack of the thread that runs a Lean `main`; `ulimit -s` does not
@@ -484,16 +520,264 @@ def stackPart (a : Assert) : IO (Array String) := do
     "checkClaimProgram accepted"]
   expect a (lines.all fun l => claimed.all fun w => (l.splitOn w).length == 1)
     "a verifier accepted a claim with a made-up hash"
+  let inL := fun (l a : String) => (l.splitOn a).length > 1
+  -- ingress counts a reused share's height against the depth left
+  expect a (has "shared" "expression depth budget exhausted")
+    "shares reused deeper than the depth budget are not refused at ingress"
+  -- nesting depth: every chain at its budget passes the check, one level past is refused
+  let lam := lines.filter (·.startsWith "lam ")
+  let anf := lines.filter (·.startsWith "anf ")
+  let inl := lines.filter (·.startsWith "inline case ")
+  expect a (lam.length == 20 && anf.length == 14 && inl.length == 2)
+    s!"nesting lines: {lam.length} Lam, {anf.length} Anf, {inl.length} inline"
+  for l in lam do
+    expect a (if inL l "(at " then !inL l "Lam global exceeds"
+      else (inL l "Pipeline.run refused" && inL l "Lam global exceeds the depth budget")) s!"Lam chain: {l}"
+  for l in anf do
+    expect a (if inL l "(at " then (inL l "check accepted" && !inL l "exceeds the depth budget")
+      else inL l "check refused (middle end: a global exceeds the depth budget)")
+      s!"Anf chain: {l}"
+  for l in inl do
+    expect a (if inL l "(at " then (inL l "check accepted" && inL l "inline walk accepted")
+      else (inL l "inline walk refused" && inL l "walk: depth budget exhausted")) s!"inline copy: {l}"
   return lines.toArray
+
+/-! ## Lam chains of one nesting constructor -/
+
+/-- `n` levels of `kind` above `.box`: `lam`, `app` (argument), `appf`
+(function), `let` (body), `letv` (bound value), `con` (field), `case`
+(alternative), `cases` (scrutinee), `proj` or `tick`. -/
+def lamChain (kind : String) (n : Nat) : Lam.Term :=
+  let c : V3.LetContract := { nonDep := false }
+  (List.range n).foldl (fun t _ => match kind with
+    | "lam" => .lam .strict {} t
+    | "app" => .app (.glob 0) t .strict
+    | "appf" => .app t .box .strict
+    | "let" => .letE c .box t
+    | "letv" => .letE c t .box
+    | "con" => .con (.src 0) [t]
+    | "case" => .case .box [.mk (.src 1) 0 t] none
+    | "cases" => .case t [.mk (.src 1) 0 .box] none
+    | "proj" => .proj (.src 0) 0 t
+    | _ => .tick t) .box
+
+/-- One global, `lamChain kind n`. -/
+def lamProgram (kind : String) (n : Nat) : Lam.Program :=
+  { globals := Src.NatMap.ofList [(0, ({ key := default, body := lamChain kind n } : Lam.Global))], size := 1,
+    roots := [0], ctors := [{ key := .src 0, tag := 0, arity := 1 }, { key := .src 1, tag := 1, arity := 0 }],
+    known := default }
+
+/-- `tests-recheck --probe-lam KIND N STAGE`: `lamProgram KIND N` through
+`Lam.modesOk` (which erasure runs on its output), the middle end's Lam check (`check`) or P1
+without it (`convert`). -/
+def probeLam (kind : String) (n : Nat) (stg : String) : IO UInt32 := do
+  let L := lamProgram kind n
+  let out := match stg with
+    | "modesOk" => s!"modesOk {Lam.modesOk L}"
+    | "check" => match Anf.Pipeline.checkLamNodes L with
+      | .ok _ => "check ok"
+      | .error m => s!"check refused: {m}"
+    | _ => match Anf.convert L with
+      | .ok P => s!"convert ok, {(P.globalList.map fun (p : Anf.GlobalId × Anf.GDef) => p.2.body.nodes)} nodes"
+      | .error m => s!"convert refused: {m}"
+  IO.println s!"lam {kind} {n} {stg}: {out}"
+  return 0
+
+/-! ## Anf chains of one nesting constructor -/
+
+/-- `n` levels of `kind` above `bottom`: `tick`, a single-alternative `case`,
+a two-alternative `case` (`case2`), erasure's `tick (case …)` (`tcase`), a
+join point in the bound expression's place (`join`) or in the body
+(`joinb`), or else a binding. -/
+def anfChain (kind : String) (n : Nat) (bottom : Anf.Exp) : Anf.Exp :=
+  (List.range n).foldl (fun e _ => match kind with
+    | "tick" => .tick e
+    | "case" => .case (.var 0) [.mk (.src 0) 0 e] none
+    | "case2" => .case (.var 0) [.mk (.src 0) 0 e, .mk (.src 1) 0 (.ret (.var 0))] none
+    | "tcase" => .tick (.case (.var 0) [.mk (.src 0) 0 e] none)
+    | "join" => .join 0 false (.ret .box) e
+    | "joinb" => .join 0 false e (.jump 0 [])
+    | _ => .bind Anf.freshLet (.atom .box) e) bottom
+
+/-- Two nullary constructors, for the chains' `case`s. -/
+def anfCtors : List Lam.CtorInfo :=
+  [{ key := .src 0, tag := 0, arity := 0 }, { key := .src 1, tag := 1, arity := 0 }]
+
+/-- `k` globals of one parameter, each `anfChain kind n` over `ret` of it, or
+(`wide`) one `case` of `n` alternatives, each returning, or (`comb`) one of eight
+alternatives, each `anfChain "case" n`, or (`live`) `n` copies of the parameter
+all live into one constructor. -/
+def chainProgram (kind : String) (n k : Nat) : Anf.Program :=
+  let body : Anf.Exp := if kind == "wide" then
+      .case (.var 0) ((List.range n).map fun i => .mk (.src i) 0 (.ret (.var 0))) none
+    else if kind == "comb" then
+      .case (.var 0) ((List.range 8).map fun i => .mk (.src i) 0 (anfChain "case" n (.ret (.var 0)))) none
+    else if kind == "live" then
+      (List.range n).foldl (fun e _ => .bind Anf.freshLet (.atom (.var 0)) e)
+        (.bind Anf.freshLet (.con (.src 0) ((List.range n).map fun i => .var i)) (.ret (.var 0)))
+    else anfChain kind n (.ret (.var 0))
+  let g := fun i => ({ key := .dispatch i, ps := [{}], body } : Anf.GDef)
+  { globals := Src.NatMap.ofList ((List.range k).map fun i => (i, g i)), size := k, roots := [k - 1],
+    ctors := if kind == "wide" then (List.range n).map fun i => { key := .src i, tag := i, arity := 0 }
+      else if kind == "comb" then (List.range 8).map fun i => { key := .src i, tag := i, arity := 0 }
+      else if kind == "live" then [{ key := .src 0, tag := 0, arity := n }]
+      else anfCtors, known := {} }
+
+/-- `tests-recheck --probe-walkk KIND N C OP`: one walk over a global of `N`
+levels of `KIND` (`anfChain`): a shrink round (`shrink`), or an inline walk
+(`inline`) that copies a callee of `C` such levels at the global's bottom, so
+the walk recurses about `N + C` levels deep. The budgets are not checked
+first, so this measures the walk's own native depth. -/
+def probeWalkKind (kind : String) (n c : Nat) (op : String) : IO UInt32 := do
+  let callee : Anf.GDef := { key := .dispatch 0, ps := [{}], body := anfChain kind c (.ret (.var 0)) }
+  let bottom : Anf.Exp :=
+    if op == "inline" then .bind Anf.freshLet (.call 0 [.var 0]) (.ret (.var 0)) else .ret (.var 0)
+  let g : Anf.GDef := { key := .dispatch 1, ps := [{}], body := anfChain kind n bottom }
+  let P : Anf.Program := { globals := Src.NatMap.ofList [(0, callee), (1, g)], size := 2, roots := [1],
+                           ctors := anfCtors, known := {} }
+  let out := match op with
+    | "shrink" => match Anf.Shrink.round P {} g with
+      | .ok (g', f) => s!"shrink ok: {g'.body.nodes} nodes, walk depth {f.depth}"
+      | .error m => s!"shrink refused: {m}"
+    | _ => match Anf.Inline.round P [(1, [0])] with
+      | .ok (P', f) => s!"inline ok: {(P'.globalList.map fun (p : Anf.GlobalId × Anf.GDef) => p.2.body.nodes)} nodes, walk depth {f.depth}"
+      | .error m => s!"inline refused: {m}"
+  IO.println s!"walk {kind} {n} + {c} {op}: {out}"
+  return 0
+
+/-- Run `x`, recording its wall time under `label`. -/
+def timed {α : Type} (label : String) (acc : IO.Ref (Array String)) (x : Unit → Except String α) : IO α := do
+  let t0 ← IO.monoMsNow
+  match x () with
+  | .ok a =>
+    let t1 ← IO.monoMsNow
+    acc.modify (·.push s!"{label} {t1 - t0} ms")
+    pure a
+  | .error m => throw (IO.userError s!"{label}: {m}")
+
+/-- `tests-recheck --probe-back KIND N K`: `chainProgram KIND N K` through the
+verifier's levels after the middle end, with the producer's allocation, frames
+and order, each level timed. -/
+def probeBack (kind : String) (n k : Nat) : IO UInt32 := do
+  let P := chainProgram kind n k
+  let acc ← IO.mkRef #[]
+  let cfg : Recheck.Config := {}
+  let refused := fun (s : String) => s!"{s} refused"
+  let fir ← timed "Fir.lower" acc fun _ => (Fir.lower P).mapError fun _ => refused "Fir.lower"
+  let own ← timed "Own.immortal" acc fun _ => .ok (Own.immortal fir)
+  let C ← timed "Cfg.lower" acc fun _ => .ok (Cfg.lower own)
+  let _ ← timed "Rt.checkSwitches" acc fun _ => (Rt.checkSwitches C).mapError fun _ => refused "switches"
+  let l ← timed "Rt.lower" acc fun _ => (Rt.lower { names := cfg.names } C).mapError fun _ => refused "Rt.lower"
+  let (xvp, _) ← timed "producer Select.run" acc fun _ =>
+    (Xv.Select.run l.program).mapError fun _ => refused "Select.run"
+  let r ← timed "producer Alloc.run" acc fun _ => Xv.Alloc.run cfg.env xvp
+  let layouts ← timed "producer Stacking.produce" acc fun _ => .ok (Xv.Stacking.produce r.program)
+  let st0 ← timed "producer Stacking.run" acc fun _ =>
+    (Xv.Stacking.run r.program layouts l.reps cfg.env).mapError fun _ => refused "Stacking.run"
+  let order ← timed "producer Order.produce" acc fun _ =>
+    .ok (X86.Layout.Order.produce (X86.Layout.tunnel st0.program) st0.shape)
+  let xv ← timed "Select.select" acc fun _ => (Xv.Select.select l.program).mapError fun _ => refused "select"
+  let _ ← timed "Validate.program" acc fun _ =>
+    (Xv.Validate.program cfg.env xv r.outs).mapError fun _ => refused "validate"
+  let xl ← timed "Alloc.applyProgram" acc fun _ => Xv.Alloc.applyProgram xv r.outs
+  let st ← timed "Stacking.run" acc fun _ =>
+    (Xv.Stacking.run xl layouts l.reps cfg.env).mapError fun _ => refused "Stacking.run"
+  let tun ← timed "Layout.tunnel" acc fun _ => .ok (X86.Layout.tunnel st.program)
+  let (prog, _) ← timed "Layout.run" acc fun _ =>
+    (X86.Layout.run tun st.shape order).mapError fun _ => refused "Layout.run"
+  let checked ← timed "Program.checkK" acc fun _ => prog.checkK.mapError fun _ => refused "checkK"
+  let _ ← timed "Stream.encodeK" acc fun _ => (X86.Stream.encodeK checked).mapError fun _ => refused "encodeK"
+  let _ ← timed "Backend.finish" acc fun _ =>
+    (Backend.finish xl.main st prog [] (Recheck.defaultProvenance default)).mapError fun _ => refused "finish"
+  IO.println s!"back {kind} {n} x{k} (back work {Anf.backWork P}, {(P.globalList.map fun (p : Anf.GlobalId × Anf.GDef) => p.2.body.nodes).foldl (· + ·) 0} nodes): {", ".intercalate (← acc.get).toList}"
+  return 0
 
 /-- `tests-recheck --probe STAGE SHAPE N [--no-typecheck] [--transplant]`. -/
 def probe (args : List String) : IO UInt32 := do
   match args with
   | stg :: shp :: n :: rest =>
     let (bs, json) ← IO.ofExcept (shape shp n.toNat!)
-    let mkCert := if rest.contains "--transplant" then transplantedCert shp n.toNat! 200 else baseCert
+    let mkCert := if rest.contains "--transplant" then transplantedCert shp n.toNat! 200
+      else if rest.contains "--empty" then fun _ _ => .ok {} else baseCert
     IO.println s!"{shp} {n} ({bs.size} bytes) to {stg}: {← stage stg bs json (!rest.contains "--no-typecheck") mkCert}"
     return 0
   | _ => IO.eprintln "usage: tests-recheck --probe STAGE SHAPE N [--no-typecheck]"; return 2
+
+/-! ## Nesting depth on an 8 MiB stack -/
+
+/-- The verifier's levels after the middle end on `P` (`Fir.lower` to
+`Backend.finish`), with the producer's allocation, frames and order: the
+object's size. -/
+def anfBack (P : Anf.Program) : Except String Nat := do
+  let cfg : Recheck.Config := {}
+  let fir ← (Fir.lower P).mapError fun _ => "Fir.lower refused"
+  let C := Cfg.lower (Own.immortal fir)
+  let l ← (Rt.lower { names := cfg.names } C).mapError fun _ => "Rt.lower refused"
+  let (xvp, _) ← (Xv.Select.run l.program).mapError fun _ => "Select.run refused"
+  let r ← Xv.Alloc.run cfg.env xvp
+  let layouts := Xv.Stacking.produce r.program
+  let st0 ← (Xv.Stacking.run r.program layouts l.reps cfg.env).mapError fun _ => "Stacking.run refused"
+  let order := X86.Layout.Order.produce (X86.Layout.tunnel st0.program) st0.shape
+  let xv ← (Xv.Select.select l.program).mapError fun _ => "select refused"
+  (Xv.Validate.program cfg.env xv r.outs).mapError fun _ => "validate refused"
+  let xl ← Xv.Alloc.applyProgram xv r.outs
+  let (stacked, program, exports) ← (Backend.lay xl
+    { l.config (Recheck.defaultProvenance default) with layouts := some layouts, order := some order, env := cfg.env }).mapError
+      fun _ => "lay refused"
+  let a ← (Backend.finish xl.main stacked program exports (Recheck.defaultProvenance default)).mapError
+    fun _ => "finish refused"
+  return a.object.size
+
+/-- Nesting-depth inputs, one chain per nesting constructor, at each depth
+budget and one level past it, through the levels that recurse on them: Lam
+chains through the middle end's replay (`Anf.Pipeline.run`); Anf chains
+through the size and depth check (one level past the budget is refused), a
+shrink step (which may make a chain shallower, so it may accept one past it)
+and, at the budget, the verifier's back end; and an inline walk whose copy is at the copy-depth
+budget and one level past it, below a global at the depth budget (FV-1's
+shape). A line each. -/
+def nestingLines : IO (Array String) := do
+  let mut lines : Array String := #[]
+  let word := fun (r : Except String Unit) => match r with
+    | .ok () => "accepted"
+    | .error m => s!"refused ({m})"
+  for k in ["lam", "app", "appf", "let", "letv", "con", "case", "cases", "proj", "tick"] do
+    for (n, pos) in [(Anf.maxLamDepth - 1, "at"), (Anf.maxLamDepth, "past")] do
+      let r := (Anf.Pipeline.run {} (lamProgram k n)).map fun _ => ()
+      lines := lines.push s!"lam {k} depth {n + 1} ({pos} the depth budget): Pipeline.run {word r}"
+  for k in ["tick", "case", "case2", "tcase", "join", "joinb", "bind"] do
+    let per := if k == "tcase" then 2 else 1
+    let nAt := (Anf.maxDepth - 1) / per
+    for (n, pos) in [(nAt, "at"), (nAt + 1, "past")] do
+      let P := chainProgram k n 1
+      let depth := ((P.global? 0).map fun gd => gd.body.depthUpTo 1000000 1000000).getD 0
+      let chk := (Anf.Pipeline.checkGlobalNodes P).map fun _ => ()
+      let shr := (Anf.Pipeline.Step.run {} (.shrink [1]) P).map fun _ => ()
+      let back := if pos == "at" then s!", back end {word ((anfBack P).map fun _ => ())}" else ""
+      lines := lines.push
+        s!"anf {k} depth {depth} ({pos} the depth budget): check {word chk}, shrink step {word shr}{back}"
+  -- FV-1: a global of single-alternative cases at the depth budget, inlining a
+  -- callee of them that brings the walk just under its depth budget, and just past it
+  let spare := Anf.Walk.maxWalkDepth - Anf.maxDepth
+  for (c, pos) in [(spare - 8, "at"), (spare + 8, "past")] do
+    let callee : Anf.GDef := { key := .dispatch 0, ps := [{}], body := anfChain "case" c (.ret (.var 0)) }
+    let gBody := anfChain "case" (Anf.maxDepth - 2) (.bind Anf.freshLet (.call 0 [.var 0]) (.ret (.var 0)))
+    let g : Anf.GDef := { key := .dispatch 1, ps := [{}], body := gBody }
+    let gs := Src.NatMap.ofList [(0, callee), (1, g)]
+    let P : Anf.Program := { globals := gs, size := 2, roots := [1], ctors := anfCtors, known := {} }
+    let chk := (Anf.Pipeline.checkGlobalNodes P).map fun _ => ()
+    let r := (Anf.Inline.round P [(1, [0])]).map fun _ => ()
+    lines := lines.push s!"inline case {Anf.maxDepth - 2} + copy {c} ({pos} the walk-depth budget): \
+      check {word chk}, inline walk {word r}"
+  return lines
+
+/-- `tests-recheck --stack-8mib`, run by `stackPart` with `LEAN_STACK_SIZE_KB=8192`:
+`stack8Lines` and `nestingLines`, a line per input, then a summary line; a
+native stack overflow aborts the process instead. -/
+def stack8 : IO UInt32 := do
+  let lines := (← stack8Lines) ++ (← nestingLines)
+  for line in lines do IO.println line
+  IO.println s!"stack-8mib: {lines.size} inputs"
+  return 0
 
 end IxCCTests.Recheck.Deep

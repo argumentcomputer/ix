@@ -62,7 +62,7 @@ theorem walkBind_glob (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
       rw [evalBind_glob, hP]; rfl
     have hemit : ∀ {e : Exp} {s0 s0' : Fires} {facts' : Src.NatMap Fact},
         (Walk.walk C fuel { σ := .opd (.lvl here.d) :: env.σ, jσ := env.jσ }
-          { d := here.d + 1, dj := here.dj, facts := facts' } body k).run s0 = .ok (e, s0') →
+          { d := here.d + 1, dj := here.dj, facts := facts', lvl := here.lvl } body k).run s0 = .ok (e, s0') →
         (∀ k w, evalBind Q k ρ' (.glob g) = .ok w → FactsOk Q Valid facts' (w :: ρ')) →
         SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.bind c (.glob g) body)).bind (SK · k))
           (fun k => eval Q k ρ' J' (.bind c (.glob g) e)) := by

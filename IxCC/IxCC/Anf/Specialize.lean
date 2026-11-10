@@ -275,8 +275,8 @@ upper bound of that work, and of the nodes of the specialisation it may build,
 before any of it runs, and the step is refused once the charges pass `maxWork`
 or `maxNodes`. -/
 
-/-- Work one specialisation step may charge (`siteCost`): forty times the most a
-committed program charges (1,615,803). -/
+/-- Work one specialisation step may charge (`siteCost`): thirty times the most a
+committed program charges (2,166,288). -/
 def maxWork : Nat := 1 <<< 26
 
 /-- The trees' work counted per site (`treesWork`): past it, the square alone

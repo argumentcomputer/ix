@@ -499,7 +499,9 @@ theorem toClaimBytes_ofClaimBytes (bs : ByteArray) (c : CompileClaim)
       exact ⟨hbs.symm, hwf⟩
 
 /-- Soundness of `CompileClaim.verifyProgram` under `.immortal` policy, backed by
-`Recheck.sound`, `Recheck.object_refines`, `Recheck.run_front`, and `checkImmortalRoot`. -/
+`Recheck.sound`, `Recheck.object_refines`, `Recheck.run_front`, and `checkImmortalRoot`.
+It holds for every `P`; that the check runs within an 8 MiB stack assumes
+`P` came from ingress (`Recheck.run`'s precondition). -/
 theorem verifyProgram_immortal_sound {cfg : Recheck.Config} {P : Src.Program}
     {c : CompileClaim} {certText : String}
     (hpol : c.policy = .immortal)
@@ -568,7 +570,9 @@ theorem verifyProgram_immortal_sound {cfg : Recheck.Config} {P : Src.Program}
     · cases hver
 
 /-- Soundness of `CompileClaim.verifyProgram` under `.zeroRc` policy, backed by
-`Recheck.recheckWithContracts_sound`, `Recheck.run_front`, and `checkImmortalRoot`. -/
+`Recheck.recheckWithContracts_sound`, `Recheck.run_front`, and `checkImmortalRoot`.
+It holds for every `P`; that the check runs within an 8 MiB stack assumes
+`P` came from ingress (`Recheck.run`'s precondition). -/
 theorem verifyProgram_zeroRc_sound {cfg : Recheck.Config} {P : Src.Program}
     {c : CompileClaim} {certText : String}
     (hpol : c.policy = .zeroRc)
@@ -648,7 +652,9 @@ theorem verifyProgram_zeroRc_sound {cfg : Recheck.Config} {P : Src.Program}
 
 /-- Soundness of `CompileClaim.verifyProgram` under `.plainRc` policy, backed by
 `Recheck.RcReplay.sound`, `Recheck.RcReplay.object_refines`, `Recheck.RcReplay.run_front`,
-and `checkPlainRcRoot`. -/
+and `checkPlainRcRoot`.
+It holds for every `P`; that the check runs within an 8 MiB stack assumes
+`P` came from ingress (`Recheck.run`'s precondition). -/
 theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
     {c : CompileClaim} {certText : String}
     (hpol : c.policy = .plainRc)

@@ -221,7 +221,7 @@ theorem walkAlts_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     -- the alternative's walk, for any facts that hold once it is taken
     have halt : ∀ (facts' : Src.NatMap Fact) (b' : Exp) (s0 s0' : Fires),
         (Walk.walk C fuel { σ := Walk.entsOf (paramOpds here.d m) ++ env.σ, jσ := env.jσ }
-          { d := here.d + m, dj := here.dj, facts := facts' } b k).run s0 = .ok (b', s0') →
+          { d := here.d + m, dj := here.dj, facts := facts', lvl := here.lvl } b k).run s0 = .ok (b', s0') →
         (key = c ∧ m = fs.length → FactsOk Q Valid facts' (fs'.reverse ++ ρ')) →
         (rest' : List Alt) → (s1 s1' : Fires) →
         (Walk.walkAlts C fuel env here xo rest k).run s1 = .ok (rest', s1') →
