@@ -480,7 +480,7 @@ theorem infer_rename (hR : Renaming P f env env') :
       (Expr.Good.getAppArgs gte) hpe, ?_⟩
     have key := Infer.proj (env := env') it rte (head_map hhead)
       (by rw [hR.rel.findProj? hsn, hent]; rfl)
-      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus hprop
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) hus (by exact hprop)
     simpa [Expr.getAppArgs_mapKeys] using key
 
 /-- **A telescope certificate, renamed.** -/
