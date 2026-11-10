@@ -102,9 +102,12 @@ def convert_univ_idxs := aiur_fn⟦
   -- `(1, n)` sharing entry `n`), the entry's variant (roots are converted at 0; a `Share`
   -- site reads the variant of its entry from `ixvm.pw.share`), and the node's position among
   -- the entry's `Lam`, `All` and `Share` nodes in pre-order (a `Share` is not entered).
-  -- A subtree with no binder, also through its shares, needs no datum: it is converted by
-  -- `convert_expr` as before, memoized without the key, and a share site whose entry has
-  -- no binder reads no variant.
+  --
+  -- `convert_expr` converts a tree without the key and returns, with the conversion, the
+  -- tree's number of numbered nodes and whether it has a binder (through its shares). A tree
+  -- without a binder needs no datum: its conversion is the one memoized here, shared by all
+  -- its occurrences. A tree with a binder is converted by `convert_annotated` at its
+  -- ordinal; for it the first component returned here is a placeholder, never used.
 
 def convert_expr := aiur_fn⟦
   fn convert_expr(
@@ -114,101 +117,81 @@ def convert_expr := aiur_fn⟦
       refs: Lists::List<Bytes::AddressRef>,
       recur_addrs: Lists::List<Bytes::AddressRef>,
       univs: Lists::List<&Ixon::Univ>
-    ) -> KernelTypes::KExpr {
+    ) -> (KernelTypes::KExpr, Field, Field) {
       match (*(e)) {
         Ixon::Expr::Srt(univ_idx) => {
           let u_ref = Lists::lookup(univs, UInt64::to_field(univ_idx));
-          (&(KernelTypes::KExprNode::Srt(convert_univ(u_ref)))) } ,
+          ((&(KernelTypes::KExprNode::Srt(convert_univ(u_ref)))), 0, 0) } ,
 
         Ixon::Expr::Var(idx) => {
-          (&(KernelTypes::KExprNode::BVar(UInt64::to_field(idx)))) } ,
+          ((&(KernelTypes::KExprNode::BVar(UInt64::to_field(idx)))), 0, 0) } ,
 
         Ixon::Expr::Ref(ref_idx, univ_idxs) => {
           let ref_addr = Lists::lookup(refs, UInt64::to_field(ref_idx));
           let levels = convert_univ_idxs(univ_idxs, univs);
-          (&(KernelTypes::KExprNode::Const(ref_addr, levels))) } ,
+          ((&(KernelTypes::KExprNode::Const(ref_addr, levels))), 0, 0) } ,
 
         Ixon::Expr::Rec(rec_idx, univ_idxs) => {
 
           let ref_addr = Lists::lookup(recur_addrs, UInt64::to_field(rec_idx));
           let levels = convert_univ_idxs(univ_idxs, univs);
-          (&(KernelTypes::KExprNode::Const(ref_addr, levels))) } ,
+          ((&(KernelTypes::KExprNode::Const(ref_addr, levels))), 0, 0) } ,
 
         Ixon::Expr::Prj(type_ref_idx, field_idx, inner) => {
-          let type_addr = Lists::lookup(refs, UInt64::to_field(type_ref_idx));
-          (&(KernelTypes::KExprNode::Proj(
-            type_addr,
-            UInt64::to_field(field_idx),
-            convert_expr(inner, sharing, bound, refs, recur_addrs, univs)))) } ,
+          let (ki, ci, bi) = convert_expr(inner, sharing, bound, refs, recur_addrs, univs);
+          match bi {
+            0 => {
+              let type_addr = Lists::lookup(refs, UInt64::to_field(type_ref_idx));
+              ((&(KernelTypes::KExprNode::Proj(type_addr, UInt64::to_field(field_idx), ki))), ci, 0) } ,
+            _ => {  (ki, ci, 1) } ,
+          } } ,
 
         Ixon::Expr::Str(blob_ref_idx) => {
           let blob_addr = Lists::lookup(refs, UInt64::to_field(blob_ref_idx));
           let bs = Ingress::load_verified_blob(blob_addr);
 
           KernelNatPrim::utf8_validate(bs);
-          (&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Str(bs)))) } ,
+          ((&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Str(bs)))), 0, 0) } ,
 
         Ixon::Expr::Nat(blob_ref_idx) => {
           let blob_addr = Lists::lookup(refs, UInt64::to_field(blob_ref_idx));
           let bs = Ingress::load_verified_blob(blob_addr);
           let limbs = bytes_to_limbs(bs);
-          (&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Nat(limbs)))) } ,
+          ((&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Nat(limbs)))), 0, 0) } ,
 
         Ixon::Expr::App(f, a) => {
-          (&(KernelTypes::KExprNode::App(
-            convert_expr(f, sharing, bound, refs, recur_addrs, univs),
-            convert_expr(a, sharing, bound, refs, recur_addrs, univs)))) } ,
+          let (kf, cf, bf) = convert_expr(f, sharing, bound, refs, recur_addrs, univs);
+          let (ka, ca, ba) = convert_expr(a, sharing, bound, refs, recur_addrs, univs);
+          match bf + ba {
+            0 => {  ((&(KernelTypes::KExprNode::App(kf, ka))), cf + ca, 0) } ,
+            _ => {  (kf, cf + ca, 1) } ,
+          } } ,
 
-        Ixon::Expr::Let(_, ty, val, body) => {
-          (&(KernelTypes::KExprNode::Let(
-            convert_expr(ty, sharing, bound, refs, recur_addrs, univs),
-            convert_expr(val, sharing, bound, refs, recur_addrs, univs),
-            convert_expr(body, sharing, bound, refs, recur_addrs, univs)))) } ,
-
-        Ixon::Expr::Share(idx) => {
-          let n = UInt64::to_field(idx);
-          assert_eq!(UInt32::less_than_fields(n, bound), 1, "sharing reference is not to an earlier entry");
-          let Lists::Node::Cons(e, _) = (*(Lists::drop(sharing, n)));
-          convert_expr(e, sharing, n, refs, recur_addrs, univs) } ,
-      }
-    }
-⟧
-
-  -- The shape of a tree: the number of its `Lam`, `All` and `Share` nodes (the ordinals it
-  -- takes, its shares not entered), and whether it has a binder, through its shares.
-
-def ixon_shape := aiur_fn⟦
-  fn ixon_shape(e: &Ixon::Expr, sharing: Lists::List<&Ixon::Expr>, bound: Field) -> (Field, Field) {
-      match (*(e)) {
-        Ixon::Expr::App(f, a) => {
-          let (cf, bf) = ixon_shape(f, sharing, bound);
-          let (ca, ba) = ixon_shape(a, sharing, bound);
-          (cf + ca, (bf + ba) - (bf * ba)) } ,
         Ixon::Expr::Lam(_, ty, body) => {
-          let (ct, _bt) = ixon_shape(ty, sharing, bound);
-          let (cb, _bb) = ixon_shape(body, sharing, bound);
-          ((ct + cb) + 1, 1) } ,
+          let (kt, ct, _bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
+          let (_kb, cb, _bb) = convert_expr(body, sharing, bound, refs, recur_addrs, univs);
+          (kt, (ct + cb) + 1, 1) } ,
+
         Ixon::Expr::All(_, _, ty, body) => {
-          let (ct, _bt) = ixon_shape(ty, sharing, bound);
-          let (cb, _bb) = ixon_shape(body, sharing, bound);
-          ((ct + cb) + 1, 1) } ,
+          let (kt, ct, _bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
+          let (_kb, cb, _bb) = convert_expr(body, sharing, bound, refs, recur_addrs, univs);
+          (kt, (ct + cb) + 1, 1) } ,
+
         Ixon::Expr::Let(_, ty, val, body) => {
-          let (ct, bt) = ixon_shape(ty, sharing, bound);
-          let (cv, bv) = ixon_shape(val, sharing, bound);
-          let (cb, bb) = ixon_shape(body, sharing, bound);
-          let any = match (bt + bv) + bb {
-            0 => {  0 } ,
-            _ => {  1 } ,
-          };
-          ((ct + cv) + cb, any) } ,
-        Ixon::Expr::Prj(_, _, inner) => {  ixon_shape(inner, sharing, bound) } ,
+          let (kt, ct, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
+          let (kv, cv, bv) = convert_expr(val, sharing, bound, refs, recur_addrs, univs);
+          let (kb, cb, bb) = convert_expr(body, sharing, bound, refs, recur_addrs, univs);
+          match (bt + bv) + bb {
+            0 => {  ((&(KernelTypes::KExprNode::Let(kt, kv, kb))), (ct + cv) + cb, 0) } ,
+            _ => {  (kt, (ct + cv) + cb, 1) } ,
+          } } ,
+
         Ixon::Expr::Share(idx) => {
           let n = UInt64::to_field(idx);
           assert_eq!(UInt32::less_than_fields(n, bound), 1, "sharing reference is not to an earlier entry");
           let Lists::Node::Cons(s, _) = (*(Lists::drop(sharing, n)));
-          let (_cs, bs) = ixon_shape(s, sharing, n);
-          (1, bs) } ,
-        _ => {  (0, 0) } ,
+          let (ks, _cs, bs) = convert_expr(s, sharing, n, refs, recur_addrs, univs);
+          (ks, 1, bs) } ,
       }
     }
 ⟧
@@ -221,6 +204,7 @@ def read_pw := aiur_fn⟦
       let c = hint::<Field>("ixvm.pw", (Blake3::address_to_fields((*(rec))), ekind, eidx, variant, ord));
       match c {
         0 => {  (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero))))) } ,
+        1 => {  (&(KernelTypes::KLevelNode::Zero)) } ,
         _ => {  pw_params(rec, ekind, eidx, variant, ord, c - 1, 0) } ,
       }
     }
@@ -229,15 +213,11 @@ def read_pw := aiur_fn⟦
 def pw_params := aiur_fn⟦
   fn pw_params(rec: Bytes::AddressRef, ekind: Field, eidx: Field, variant: Field, ord: Field,
                k: Field, j: Field) -> KernelTypes::KLevel {
-      match k - j {
-        0 => {  (&(KernelTypes::KLevelNode::Zero)) } ,
-        _ => {
-          let p = hint::<Field>("ixvm.pw.param", (Blake3::address_to_fields((*(rec))), ekind, eidx, variant, ord, j));
-          let lp = (&(KernelTypes::KLevelNode::Param(p)));
-          match (k - j) - 1 {
-            0 => {  lp } ,
-            _ => {  (&(KernelTypes::KLevelNode::Max(lp, pw_params(rec, ekind, eidx, variant, ord, k, j + 1)))) } ,
-          } } ,
+      let p = hint::<Field>("ixvm.pw.param", (Blake3::address_to_fields((*(rec))), ekind, eidx, variant, ord, j));
+      let lp = (&(KernelTypes::KLevelNode::Param(p)));
+      match (k - j) - 1 {
+        0 => {  lp } ,
+        _ => {  (&(KernelTypes::KLevelNode::Max(lp, pw_params(rec, ekind, eidx, variant, ord, k, j + 1)))) } ,
       }
     }
 ⟧
@@ -264,73 +244,76 @@ def convert_annotated := aiur_fn⟦
     ) -> KernelTypes::KExpr {
       match (*(e)) {
         Ixon::Expr::App(f, a) => {
-          let (cf, _bf) = ixon_shape(f, sharing, bound);
-          (&(KernelTypes::KExprNode::App(
-            convert_child(f, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord),
-            convert_child(a, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + cf)))) } ,
+          let (kf, cf, bf) = convert_expr(f, sharing, bound, refs, recur_addrs, univs);
+          let (ka, _ca, ba) = convert_expr(a, sharing, bound, refs, recur_addrs, univs);
+          let kf2 = match bf {
+            0 => {  kf } ,
+            _ => {  convert_annotated(f, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord) } ,
+          };
+          let ka2 = match ba {
+            0 => {  ka } ,
+            _ => {  convert_annotated(a, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + cf) } ,
+          };
+          (&(KernelTypes::KExprNode::App(kf2, ka2))) } ,
 
         Ixon::Expr::Lam(_, ty, body) => {
           let l = read_pw(rec, ekind, eidx, variant, ord);
-          let (ct, _bt) = ixon_shape(ty, sharing, bound);
-          (&(KernelTypes::KExprNode::Lam(
-            convert_child(ty, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + 1),
-            convert_child(body, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, (ord + 1) + ct),
-            l))) } ,
+          let (kt, ct, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
+          let (kb, _cb, bb) = convert_expr(body, sharing, bound, refs, recur_addrs, univs);
+          let kt2 = match bt {
+            0 => {  kt } ,
+            _ => {  convert_annotated(ty, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + 1) } ,
+          };
+          let kb2 = match bb {
+            0 => {  kb } ,
+            _ => {  convert_annotated(body, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, (ord + 1) + ct) } ,
+          };
+          (&(KernelTypes::KExprNode::Lam(kt2, kb2, l))) } ,
 
         Ixon::Expr::All(_, _, ty, body) => {
           let l = read_pw(rec, ekind, eidx, variant, ord);
-          let (ct, _bt) = ixon_shape(ty, sharing, bound);
-          (&(KernelTypes::KExprNode::Forall(
-            convert_child(ty, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + 1),
-            convert_child(body, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, (ord + 1) + ct),
-            l))) } ,
+          let (kt, ct, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
+          let (kb, _cb, bb) = convert_expr(body, sharing, bound, refs, recur_addrs, univs);
+          let kt2 = match bt {
+            0 => {  kt } ,
+            _ => {  convert_annotated(ty, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + 1) } ,
+          };
+          let kb2 = match bb {
+            0 => {  kb } ,
+            _ => {  convert_annotated(body, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, (ord + 1) + ct) } ,
+          };
+          (&(KernelTypes::KExprNode::Forall(kt2, kb2, l))) } ,
 
         Ixon::Expr::Let(_, ty, val, body) => {
-          let (ct, _bt) = ixon_shape(ty, sharing, bound);
-          let (cv, _bv) = ixon_shape(val, sharing, bound);
-          (&(KernelTypes::KExprNode::Let(
-            convert_child(ty, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord),
-            convert_child(val, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + ct),
-            convert_child(body, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, (ord + ct) + cv)))) } ,
+          let (kt, ct, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
+          let (kv, cv, bv) = convert_expr(val, sharing, bound, refs, recur_addrs, univs);
+          let (kb, _cb, bb) = convert_expr(body, sharing, bound, refs, recur_addrs, univs);
+          let kt2 = match bt {
+            0 => {  kt } ,
+            _ => {  convert_annotated(ty, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord) } ,
+          };
+          let kv2 = match bv {
+            0 => {  kv } ,
+            _ => {  convert_annotated(val, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord + ct) } ,
+          };
+          let kb2 = match bb {
+            0 => {  kb } ,
+            _ => {  convert_annotated(body, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, (ord + ct) + cv) } ,
+          };
+          (&(KernelTypes::KExprNode::Let(kt2, kv2, kb2))) } ,
 
         Ixon::Expr::Prj(type_ref_idx, field_idx, inner) => {
           let type_addr = Lists::lookup(refs, UInt64::to_field(type_ref_idx));
           (&(KernelTypes::KExprNode::Proj(
             type_addr,
             UInt64::to_field(field_idx),
-            convert_child(inner, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord)))) } ,
+            convert_annotated(inner, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord)))) } ,
 
         Ixon::Expr::Share(idx) => {
           let n = UInt64::to_field(idx);
-          assert_eq!(UInt32::less_than_fields(n, bound), 1, "sharing reference is not to an earlier entry");
           let Lists::Node::Cons(s, _) = (*(Lists::drop(sharing, n)));
-          let (_cs, bs) = ixon_shape(s, sharing, n);
-          match bs {
-            0 => {  convert_expr(s, sharing, n, refs, recur_addrs, univs) } ,
-            _ => {
-              let v = read_pw_share(rec, ekind, eidx, variant, ord);
-              convert_annotated(s, sharing, n, refs, recur_addrs, univs, rec, 1, n, v, 0) } ,
-          } } ,
-
-        _ => {  convert_expr(e, sharing, bound, refs, recur_addrs, univs) } ,
-      }
-    }
-⟧
-
-def convert_child := aiur_fn⟦
-  inline fn convert_child(
-      e: &Ixon::Expr,
-      sharing: Lists::List<&Ixon::Expr>,
-      bound: Field,
-      refs: Lists::List<Bytes::AddressRef>,
-      recur_addrs: Lists::List<Bytes::AddressRef>,
-      univs: Lists::List<&Ixon::Univ>,
-      rec: Bytes::AddressRef, ekind: Field, eidx: Field, variant: Field, ord: Field
-    ) -> KernelTypes::KExpr {
-      let (_c, b) = ixon_shape(e, sharing, bound);
-      match b {
-        0 => {  convert_expr(e, sharing, bound, refs, recur_addrs, univs) } ,
-        _ => {  convert_annotated(e, sharing, bound, refs, recur_addrs, univs, rec, ekind, eidx, variant, ord) } ,
+          let v = read_pw_share(rec, ekind, eidx, variant, ord);
+          convert_annotated(s, sharing, n, refs, recur_addrs, univs, rec, 1, n, v, 0) } ,
       }
     }
 ⟧
@@ -350,7 +333,11 @@ def convert_root := aiur_fn⟦
       univs: Lists::List<&Ixon::Univ>,
       rec: Bytes::AddressRef, r: Field
     ) -> KernelTypes::KExpr {
-      convert_child(e, sharing, 4294967295, refs, recur_addrs, univs, rec, 0, r, 0, 0)
+      let (k, _c, b) = convert_expr(e, sharing, 4294967295, refs, recur_addrs, univs);
+      match b {
+        0 => {  k } ,
+        _ => {  convert_annotated(e, sharing, 4294967295, refs, recur_addrs, univs, rec, 0, r, 0, 0) } ,
+      }
     }
 ⟧
 
