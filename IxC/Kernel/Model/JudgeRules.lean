@@ -11,6 +11,9 @@ import IxC.Kernel.SetModel.Ops
 import IxC.Kernel.Model.Annot.BitLemmas
 import IxC.Kernel.Verify.Abstract
 import IxC.Kernel.Verify.Leaves
+/- `PropWhen` seals its representation; the bit lemmas below compute the pinned
+`Eq`'s instantiated type by `rfl`, which needs the view (as `Model/AxiomBits.lean`). -/
+import all IxC.Kernel.PropWhen
 
 public section
 
