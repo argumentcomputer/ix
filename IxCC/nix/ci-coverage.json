@@ -83,6 +83,9 @@
   "IxCC.Anf.Budget",
   "IxCC.Anf.Census",
   "IxCC.Anf.Convert",
+  "IxCC.Anf.Defun",
+  "IxCC.Anf.Defun.Dispatch",
+  "IxCC.Anf.Defun.Lift",
   "IxCC.Anf.Inline",
   "IxCC.Anf.Opd",
   "IxCC.Anf.Pipeline",
@@ -105,6 +108,9 @@
   "IxCC.Anf.Proof.Convert.SpineVar",
   "IxCC.Anf.Proof.Convert.Step",
   "IxCC.Anf.Proof.Convert.Term",
+  "IxCC.Anf.Proof.Defun.FirstOrder",
+  "IxCC.Anf.Proof.Defun.Rel",
+  "IxCC.Anf.Proof.Defun.Scope",
   "IxCC.Anf.Proof.Lang",
   "IxCC.Anf.Proof.Mono",
   "IxCC.Anf.Proof.Pass.Basic",
@@ -428,6 +434,7 @@
   "IxCC.Fir.Proof.Corr",
   "IxCC.Fir.Proof.Correct",
   "IxCC.Fir.Proof.Env",
+  "IxCC.Fir.Proof.FirstOrder",
   "IxCC.Fir.Proof.Lang",
   "IxCC.Fir.Proof.Lowering",
   "IxCC.Fir.Proof.Mono",
@@ -1137,6 +1144,7 @@
   "IxCCTests.Fences.CfgLower",
   "IxCCTests.Fences.CfgProof",
   "IxCCTests.Fences.Compile",
+  "IxCCTests.Fences.Defun",
   "IxCCTests.Fences.Erase",
   "IxCCTests.Fences.Fir",
   "IxCCTests.Fences.FirProof",
@@ -1559,7 +1567,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-10: rows for every constructor of a root's result type; the shape view; constructor trees at plain-RC roots",
+ "P8: closed-world defunctionalisation modules (not in the pipeline) and their fences",
  "axiom_sha256":
- "f00ffc33a092400a02502713ef410f547d593da92b7ce09a47e9f1c1bf98aeb5",
- "axiom_count": 5528}
+ "1b00718cd2e0aaf48e7b299e06ac056f0ab70f29409339969b1581ada586709e",
+ "axiom_count": 5604}

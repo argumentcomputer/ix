@@ -1,0 +1,331 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase2-closures",
+  "description": "Higher-order workloads for P8 (docs/closures-design.md, Exit criteria): a closure that grows each iteration, dictionary-passing polymorphic recursion, a StateT-over-Except loop, partial and over-application through a stored closure, and a fuel-indexed record of closures. Not yet a registered family: the P8 end-to-end test reads it outside the production pipeline.",
+  "tier": "required",
+  "phase": 2,
+  "directory": "fixtures/corpus/phase2-closures",
+  "source_root": "fixtures/corpus/phase2-closures/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "46f5a995fb8ce742c34cabecb319bc0e8a258785",
+    "ix_binary_sha256": "9c2010ae94c309217a3dbee4dbcb727559eab3fa930332a005422b1cb8d4dedd",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "The ix of this repository: built with Lake (lake build ix) at the recorded revision of jcb/ixcc-p8-defun (its root package is jcb/ixck-ixcc-merge's at dfdc1e1e3) in the build box's checkout, Lean 4.34.1, 2026-11-10; not a Nix build. Unbound closures (--unbound).",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--unbound",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--unbound",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "closures",
+      "source": {
+        "path": "Closures.lean",
+        "sha256": "ca6e543dbfa0658a32ef2fcc36f0e07d5957eb56889a3da057339ad0f2a04887",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Closures.composeClosure",
+        "Closures.polyRec",
+        "Closures.stateLoop",
+        "Closures.storedApply",
+        "Closures.knot"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "closures.ixe",
+        "sha256": "eec49844d9b98b8ab7062b1ed3d94b1fee12e334f5ed37f82ebb7f560976195b",
+        "bytes": 245931
+      },
+      "equations": {
+        "path": "closures.equations.json",
+        "sha256": "800f028d626afd1f8a571ba62f69d7a2a8767bb2e79af1b45c05ac8a8dc0860e",
+        "equations": 13,
+        "failures": 0
+      },
+      "named_env_sha256": "b8f01a5a66585dbe0be7252d2a35918581b01d1896f5a860ee4006a73d2f7699",
+      "census": {
+        "path": "closures.census.json",
+        "sha256": "aba707d870b8e74d2bb5a86ffeda0b52a74ab8f7d092e776c0bdee87d1496868"
+      },
+      "roots": [
+        {
+          "name": "Closures.composeClosure",
+          "address": "e7037cdabfdf3423c812789879bff16a2121a5e0ee79c7099850f15f8989fa9d",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                5
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                1,
+                5
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                4,
+                3
+              ],
+              "value": "19"
+            },
+            {
+              "args": [
+                10,
+                0
+              ],
+              "value": "1024"
+            }
+          ]
+        },
+        {
+          "name": "Closures.polyRec",
+          "address": "589d2509c7b0abd1ae46e1a8d3585c3fc3597a49ef89fe807abafa21c2756a72",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                5
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                1,
+                5
+              ],
+              "value": "12"
+            },
+            {
+              "args": [
+                3,
+                2
+              ],
+              "value": "24"
+            },
+            {
+              "args": [
+                6,
+                1
+              ],
+              "value": "128"
+            },
+            {
+              "args": [
+                10,
+                3
+              ],
+              "value": "4096"
+            }
+          ]
+        },
+        {
+          "name": "Closures.stateLoop",
+          "address": "1cb6d3d0318185b9b1e4b76e8c23925b0e5c5c070d1e7dc28c2fa2059b413a3c",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "Outside the production pipeline, with P8 between the middle end and Fir (tests-pipeline, its defun part), refused by register allocation (alloc: alloc.fallback): the program has a source global of eight parameters, past the internal calling convention's seven argument registers. That limit is on parameter counts and independent of closures.",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                3,
+                10
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                5,
+                7
+              ],
+              "value": "1007"
+            },
+            {
+              "args": [
+                10,
+                100
+              ],
+              "value": "21"
+            },
+            {
+              "args": [
+                20,
+                15
+              ],
+              "value": "1015"
+            }
+          ]
+        },
+        {
+          "name": "Closures.storedApply",
+          "address": "203d548448ffb51a616fbeeb3316aefffcaee5c5297d5f946a4fe3596b2be65f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                3
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                3
+              ],
+              "value": "4"
+            },
+            {
+              "args": [
+                4,
+                2
+              ],
+              "value": "142"
+            },
+            {
+              "args": [
+                8,
+                5
+              ],
+              "value": "107"
+            }
+          ]
+        },
+        {
+          "name": "Closures.knot",
+          "address": "afa2e993e4eeef714ba8cca6cb899c3e78604175f6d2186094d2f5718d4fcf46",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                3,
+                2
+              ],
+              "value": "103"
+            },
+            {
+              "args": [
+                5,
+                3
+              ],
+              "value": "5"
+            },
+            {
+              "args": [
+                10,
+                4
+              ],
+              "value": "110"
+            },
+            {
+              "args": [
+                4,
+                9
+              ],
+              "value": "4"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

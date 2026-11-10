@@ -2,6 +2,7 @@ import IxCCTests.Pipeline.Compiler
 import IxCCTests.Pipeline.Mutants
 import IxCCTests.Pipeline.Levels
 import IxCCTests.Pipeline.Twin
+import IxCCTests.Pipeline.Defun
 
 /-! The `tests-pipeline` suite: the compiler end to end.
 
@@ -11,7 +12,10 @@ import IxCCTests.Pipeline.Twin
 * certificate mutations (`Mutants`);
 * every level of every K1 program on its test input (`Levels`);
 * the compiled `k1.ixe` roots against their Lean-compiled twin on generated
-  inputs, with the `2⁶³` boundary (`Twin`).
+  inputs, with the `2⁶³` boundary (`Twin`);
+* P8 (`Anf.defun`) between the middle end and Fir, outside the production
+  pipeline, on the decline corpus's `composeClosure` and the K1 fallback route
+  (`Defun`).
 
 With `--cc CC`, objects are linked with `fixtures/x86/runtime_driver.c` and
 run natively.
@@ -23,7 +27,7 @@ inputs per root, default 60; `--bin`: spawn this `ixcc` binary for
 the command-line part instead of running it in process; `--full`: every
 level at the test size, including the ones the default runs at a reduced
 size to fit the CI budget; `--only`: `cli`, `same`, `json`, `declines`, `reports`,
-`mutants`, `levels`, `twin`). `tests-pipeline --level NAME LEVEL ARGS…` is
+`mutants`, `levels`, `twin`, `defun`). `tests-pipeline --level NAME LEVEL ARGS…` is
 the child-process mode of `Levels`. -/
 
 namespace IxCCTests.Pipeline.Run
@@ -113,6 +117,9 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   if want "twin" then
     part a s!"k1.ixe's roots against the Lean-compiled twin ({o.twin} generated inputs per root){natively}"
       (Twin.run a native o.twin o.seed)
+  if want "defun" then
+    part a s!"P8 between the middle end and Fir, outside the production pipeline{natively}"
+      (Defun.run a native)
 
 def main (args : List String) : IO UInt32 := do
   if let "--level" :: name :: level :: xs := args then

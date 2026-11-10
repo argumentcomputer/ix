@@ -4,6 +4,7 @@ import IxCCTests.Anf.Shapes
 import IxCCTests.Anf.Generated
 import IxCCTests.Anf.KernelEval
 import IxCCTests.Anf.LeanRender
+import IxCCTests.Anf.Defun
 
 /-! The `tests-anf` suite: Anf's rules and clock
 monotonicity; Lam against Anf after every step of the Phase 1 pipeline on
@@ -12,9 +13,12 @@ every root and first-order constant of `k1.ixe` and the bench-k1 closures
 shape expectations, certificate replay and shrink idempotence, sizes and
 least clocks; the bench-k1 entries at their test sizes through the
 pipeline's output (`sum-loop` 10⁶ in a child process with a larger stack);
-generated Lam programs under random oracles. `--entry NAME` runs one bench
+generated Lam programs under random oracles; P8 (`Anf.defun`, not yet in the
+pipeline) on hand-written and generated programs, Anf before against Anf
+after (`IxCCTests.Anf.Defun`). `--entry NAME` runs one bench
 entry (the child-process mode); `--dump NAME` prints a bench entry's Anf
-after every step. Building the suite also runs the passes in the kernel
+after every step; `--defun N` runs the P8 section alone on `N` generated
+programs. Building the suite also runs the passes in the kernel
 (`IxCCTests.Anf.KernelEval`). -/
 
 namespace IxCCTests.Anf.Run
@@ -41,6 +45,11 @@ def main (args : List String) : IO UInt32 := do
     let a ← IO.mkRef 0
     for line in ← Generated.run a n.toNat! do IO.println line
     IO.println s!"tests-anf --generated {n}: {← a.get} assertions passed"
+    return 0
+  | ["--defun", n] =>
+    let a ← IO.mkRef 0
+    for line in ← Defun.run a n.toNat! do IO.println line
+    IO.println s!"tests-anf --defun {n}: {← a.get} assertions passed"
     return 0
   | ["--kernel-probe", name] =>
     -- a module re-running the middle end on a bench entry in the kernel
@@ -73,6 +82,8 @@ def main (args : List String) : IO UInt32 := do
       for line in ← Shapes.entries a (← IO.appPath) do IO.println s!"    {line}"
     part a "generated Lam programs under random oracles" do
       for line in ← Generated.run a 1000 do IO.println s!"    {line}"
+    part a "P8 (defunctionalisation), Anf before against Anf after" do
+      for line in ← Defun.run a 300 do IO.println s!"    {line}"
     IO.println s!"tests-anf: {← a.get} assertions passed"
     return 0
   catch e =>

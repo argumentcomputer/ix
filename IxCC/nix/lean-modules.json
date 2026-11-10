@@ -711,7 +711,8 @@
    ["IxCCTests.Pipeline.Compiler",
     "IxCCTests.Pipeline.Mutants",
     "IxCCTests.Pipeline.Levels",
-    "IxCCTests.Pipeline.Twin"]},
+    "IxCCTests.Pipeline.Twin",
+    "IxCCTests.Pipeline.Defun"]},
   "IxCCTests.Pipeline.Rc.Support":
   {"path": "IxCCTests/Pipeline/Rc/Support.lean",
    "imports":
@@ -757,6 +758,14 @@
     "IxCCTests.Fir.Support",
     "IxCC.Xv.Semantics",
     "IxCC.Xv.XlSemantics"]},
+  "IxCCTests.Pipeline.Defun":
+  {"path": "IxCCTests/Pipeline/Defun.lean",
+   "imports":
+   ["IxCCTests.Pipeline.Support",
+    "IxCCTests.Anf.Support",
+    "IxCC.Anf.Defun",
+    "IxCCTests.Pipeline.Twin",
+    "IxCCTests.Corpus.Manifest"]},
   "IxCCTests.Pipeline.Compiler":
   {"path": "IxCCTests/Pipeline/Compiler.lean",
    "imports":
@@ -3041,6 +3050,13 @@
     "IxCC.Src.Relevance.Proof.Sound",
     "IxCC.Lam.Erase.Proof.ModesOk",
     "IxCC.Lam.Erase.Proof.WFProg"]},
+  "IxCCTests.Fences.Defun":
+  {"path": "IxCCTests/Fences/Defun.lean",
+   "imports":
+   ["IxCC.Anf.Proof.Defun.FirstOrder",
+    "IxCC.Anf.Proof.Defun.Rel",
+    "IxCC.Fir.Proof.FirstOrder",
+    "IxCC.Anf.Proof.Defun.Scope"]},
   "IxCCTests.Fences.Compile":
   {"path": "IxCCTests/Fences/Compile.lean",
    "imports":
@@ -3166,6 +3182,7 @@
     "IxCCTests.Fences.Compile",
     "IxCCTests.Fences.Erase",
     "IxCCTests.Fences.Anf",
+    "IxCCTests.Fences.Defun",
     "IxCCTests.Fences.SemForward",
     "IxCCTests.Fences.CfgProof",
     "IxCCTests.Fences.LirProof",
@@ -3370,7 +3387,8 @@
     "IxCCTests.Anf.Shapes",
     "IxCCTests.Anf.Generated",
     "IxCCTests.Anf.KernelEval",
-    "IxCCTests.Anf.LeanRender"]},
+    "IxCCTests.Anf.LeanRender",
+    "IxCCTests.Anf.Defun"]},
   "IxCCTests.Anf.Main":
   {"path": "IxCCTests/Anf/Main.lean", "imports": ["IxCCTests.Anf.Run"]},
   "IxCCTests.Anf.LeanRender":
@@ -3390,6 +3408,15 @@
    ["IxCCTests.Anf.Support",
     "IxCCTests.Lam.Differential",
     "IxCC.Anf.Pipeline"]},
+  "IxCCTests.Anf.Defun":
+  {"path": "IxCCTests/Anf/Defun.lean",
+   "imports":
+   ["IxCCTests.Anf.Support",
+    "IxCCTests.Support.LamGen",
+    "IxCC.Anf.Pipeline",
+    "IxCC.Anf.Defun",
+    "IxCC.Fir.Lower",
+    "IxCC.Rt.Layout"]},
   "IxCCTests.Aiur.WireRun":
   {"path": "IxCCTests/Aiur/WireRun.lean",
    "imports": ["IxCCTests.Aiur.WireFixtures"]},
@@ -5981,6 +6008,8 @@
   {"path": "IxCC/Fir/Proof/Lang.lean",
    "imports":
    ["IxCC.Fir.Proof.Correct", "IxCC.Sem.Entry", "IxCC.Sem.TracedTransform"]},
+  "IxCC.Fir.Proof.FirstOrder":
+  {"path": "IxCC/Fir/Proof/FirstOrder.lean", "imports": ["IxCC.Fir.Lower"]},
   "IxCC.Fir.Proof.Env":
   {"path": "IxCC/Fir/Proof/Env.lean",
    "imports": ["IxCC.Fir.Proof.Rel", "IxCC.Fir.Proof.Lowering"]},
@@ -7452,6 +7481,16 @@
   "IxCC.Anf.Proof.Lang":
   {"path": "IxCC/Anf/Proof/Lang.lean",
    "imports": ["IxCC.Anf.Proof.Mono", "IxCC.Sem.TracedTransform"]},
+  "IxCC.Anf.Proof.Defun.Scope":
+  {"path": "IxCC/Anf/Proof/Defun/Scope.lean",
+   "imports": ["IxCC.Anf.Proof.Defun.FirstOrder"]},
+  "IxCC.Anf.Proof.Defun.Rel":
+  {"path": "IxCC/Anf/Proof/Defun/Rel.lean",
+   "imports": ["IxCC.Anf.Defun", "IxCC.Anf.Census", "IxCC.Anf.Proof.Lang"]},
+  "IxCC.Anf.Proof.Defun.FirstOrder":
+  {"path": "IxCC/Anf/Proof/Defun/FirstOrder.lean",
+   "imports":
+   ["IxCC.Anf.Defun", "IxCC.Src.Proof.NatMap", "IxCC.Anf.WellFormed"]},
   "IxCC.Anf.Proof.Convert.Term":
   {"path": "IxCC/Anf/Proof/Convert/Term.lean",
    "imports": ["IxCC.Anf.Proof.Convert.Spine"]},
@@ -7533,6 +7572,13 @@
   "IxCC.Anf.Opd": {"path": "IxCC/Anf/Opd.lean", "imports": ["IxCC.Anf.Syntax"]},
   "IxCC.Anf.Inline":
   {"path": "IxCC/Anf/Inline.lean", "imports": ["IxCC.Anf.Walk"]},
+  "IxCC.Anf.Defun.Lift":
+  {"path": "IxCC/Anf/Defun/Lift.lean",
+   "imports": ["IxCC.Anf.Census", "IxCC.Anf.Budget"]},
+  "IxCC.Anf.Defun.Dispatch":
+  {"path": "IxCC/Anf/Defun/Dispatch.lean", "imports": ["IxCC.Anf.Defun.Lift"]},
+  "IxCC.Anf.Defun":
+  {"path": "IxCC/Anf/Defun.lean", "imports": ["IxCC.Anf.Defun.Dispatch"]},
   "IxCC.Anf.Convert":
   {"path": "IxCC/Anf/Convert.lean",
    "imports": ["IxCC.Anf.Opd", "IxCC.Lam.ModesOk"]},
@@ -8012,6 +8058,12 @@
     "IxCC.Anf.Proof.Pass.RenLevel",
     "IxCC.Anf.Proof.Pass.Prune",
     "IxCC.Anf.Proof.Pass.Pipeline",
+    "IxCC.Anf.Defun.Lift",
+    "IxCC.Anf.Defun.Dispatch",
+    "IxCC.Anf.Defun",
+    "IxCC.Anf.Proof.Defun.FirstOrder",
+    "IxCC.Anf.Proof.Defun.Rel",
+    "IxCC.Anf.Proof.Defun.Scope",
     "IxCC.Own.Kind",
     "IxCC.Fir.Syntax",
     "IxCC.Fir.Semantics",
@@ -8036,6 +8088,7 @@
     "IxCC.Fir.Proof.Correct",
     "IxCC.Sem.Entry",
     "IxCC.Fir.Proof.Lang",
+    "IxCC.Fir.Proof.FirstOrder",
     "IxCC.Own.Proof.Unfold",
     "IxCC.Own.Proof.Mono",
     "IxCC.Own.Proof.Heap",

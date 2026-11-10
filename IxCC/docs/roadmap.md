@@ -58,7 +58,7 @@ object refines SrcEval on the checked source `a.src`, unless that source goes
 wrong; at a claim's root on the immortal and zero-RC policies, the view
 rejects only a result off the root's declared shape
 ([`Recheck/Proof/RootShape.lean`](../IxCC/Recheck/Proof/RootShape.lean)).
-5,483 exact axiom fences ([CI guide](ci.md)).
+5,604 exact axiom fences ([CI guide](ci.md)).
 
 **Since the 2026-11-09 review**, on this branch:
 - the relevance checks run on every program (`checkCanonical`,
@@ -88,13 +88,23 @@ dishonest certificate.
 
 **In progress, not yet in this tree:** the result-type rows of roots compiled
 alone and a shape view that makes the third `GoesWrong` clause an equivalence
-on the immortal routes, with constructor-tree shapes for plain-RC roots; P8
-milestone 1 (defunctionalisation modules and their cheap proofs, outside the
-production pipeline); the port of the equations export to this repository's
+on the immortal routes, with constructor-tree shapes for plain-RC roots; the
+port of the equations export to this repository's
 `ix`, with a flag that writes the unbound envelope IxCC reads, as the first
 phase of regenerating the fixtures from this tree; a SrcEval step counter for
 the IxVM workstream's first measurement (EV-0; the evaluator's clock is a depth
 bound, not a step count); producer speed.
+
+**In this tree, outside the production pipeline:** P8, closed-world
+defunctionalisation ([closures design](closures-design.md)). The pass
+`Anf.defun` is implemented and tested: against the Anf evaluator, and end to
+end natively on `Decline.composeClosure`, the K1 programs without equations
+and the design's workloads. Its output is proved first order, and `Fir.lower`
+declines no first-order program for closures. Nothing on the recheck path calls
+it, and its correctness theorem is not proved. Its statement follows the
+decision of 2026-11-13 on roots applied to more arguments than they take
+([closures design](closures-design.md#proof-obligation): a premise on the source
+root's declared parameter count, and the compiled arity pinned to it).
 
 **Current integration surface:**
 
@@ -433,8 +443,11 @@ data:
 - **P8** ([closures design](closures-design.md)): defunctionalisation,
   dispatchers, the known-dispatch shrink rule, `Anf.Defun.correct`. Started
   at the owner's request (2026-11-10) for the native route's generality,
-  although the evaluator route does not need it; milestone 1 (the modules and
-  their cheap proofs, outside the production pipeline) is in progress.
+  although the evaluator route does not need it. The pass is implemented and
+  tested outside the production pipeline (nothing on the recheck path calls
+  it); its correctness theorem is not proved. Its statement follows the
+  decision of 2026-11-13 on roots applied to more arguments than they take
+  ([closures design](closures-design.md#proof-obligation)).
 - **P5 and P6** only where K2/K3 measurements show the need.
 - *For the spine:* nothing. Every item is below SrcEval.
 - *For the Aiur routes:* nothing; the evaluator has closures natively and its

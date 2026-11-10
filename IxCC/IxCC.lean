@@ -212,6 +212,12 @@ import IxCC.Anf.Proof.Pass.Ren
 import IxCC.Anf.Proof.Pass.RenLevel
 import IxCC.Anf.Proof.Pass.Prune
 import IxCC.Anf.Proof.Pass.Pipeline
+import IxCC.Anf.Defun.Lift
+import IxCC.Anf.Defun.Dispatch
+import IxCC.Anf.Defun
+import IxCC.Anf.Proof.Defun.FirstOrder
+import IxCC.Anf.Proof.Defun.Rel
+import IxCC.Anf.Proof.Defun.Scope
 import IxCC.Own.Kind
 import IxCC.Fir.Syntax
 import IxCC.Fir.Semantics
@@ -236,6 +242,7 @@ import IxCC.Fir.Proof.Sim
 import IxCC.Fir.Proof.Correct
 import IxCC.Sem.Entry
 import IxCC.Fir.Proof.Lang
+import IxCC.Fir.Proof.FirstOrder
 import IxCC.Own.Proof.Unfold
 import IxCC.Own.Proof.Mono
 import IxCC.Own.Proof.Heap

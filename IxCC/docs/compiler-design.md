@@ -114,8 +114,8 @@ them.
   (`Relevance.profileSplit`).
 - **D19. Keys.** Source identity is the dense `Src.CId` that ingress
   assigns to each constant. Every global carries a structural `Key.GKey`
-  (`const`, `byName`, `recStar`, `wrapper`, P4's `spec`, and `worker`, `lam`
-  and `dispatch`, reserved for the planned P5 and P8), and every `con`,
+  (`const`, `byName`, `recStar`, `wrapper`, P4's `spec`, `worker`, reserved for the
+  planned P5, and P8's `lam` and `dispatch`), and every `con`,
   `case` alternative and `proj` in Lam and Anf a checked `Key.CtorKey`, so a
   run that confuses constructors is stuck in the source and key-based
   rewrites need no typing theorem. Keys compare structurally; no pass treats
@@ -350,7 +350,7 @@ lemmas and adds one case, not the per-construct proofs.
 | **Src** | Closed, relevance-annotated kernel terms from Ixon v4 plus an unfolding table | Clocked big-step environment machine. It never evaluates irrelevant positions and calls lazy constants by name. | Adequacy against `Ix.Kernel`'s model |
 | **Lam** | Erased λ-calculus: □, constructors, `case`, recursive definitions, primitives, `trap`; binder contracts retained | Clocked big-step | Erasure simulation |
 | **Anf** | A-normal form with join points, known calls, and (until P8) local functions and unknown calls | Clocked big-step | Logical relation, clock-indexed on computations; heuristic-parametric rewrites |
-| **Fir** | First order: top-level functions, known calls, join points, tail calls. No closures: Anf → Fir declines them until P8 (planned) defunctionalises them in Anf; there are no closure objects, `pap` or `apply` ([closures design](closures-design.md)) | Clocked big-step | Forward simulation |
+| **Fir** | First order: top-level functions, known calls, join points, tail calls. No closures: Anf → Fir declines them until P8, implemented but not yet in the pipeline, defunctionalises them in Anf; there are no closure objects, `pap` or `apply` ([closures design](closures-design.md)) | Clocked big-step | Forward simulation |
 | **Own** | Explicit ownership. Implemented: the immortal fragment and `Own.Plain`'s `inc`/`dec` actions. Planned: borrowed parameters, reset/reuse credits, unique and local kinds | Clocked big-step over an abstract RC heap | Proved ownership checker ⇒ refinement of Fir |
 | **Cfg** | Blocks with parameters over the same operations | Clocked small-step | The single big-step → small-step bridge |
 | **Lir** | Words, memory, compare-branch, calls, runtime procedures | Clocked small-step | Heap → memory data refinement |
@@ -373,7 +373,7 @@ is their definition.
 | P5 | Dead parameters (worker/wrapper; the key `GKey.worker` exists) | — | Planned |
 | P6 | Contification, arity raising, uncurrying | — | Planned |
 | P7 | Measured extras: accumulators, multi-value returns, common subexpressions, float-in | — | Planned, each when a measurement asks for it |
-| P8 | Closed-world defunctionalisation | — | Planned, Phase 2 ([design](closures-design.md)) |
+| P8 | Closed-world defunctionalisation | [`Anf.Defun`](../IxCC/Anf/Defun.lean) | Phase 2: implemented and tested outside the production pipeline (nothing on the recheck path calls it); its correctness theorem is not proved; roots applied to more arguments than they take: decided 2026-11-13 ([design](closures-design.md#proof-obligation)) |
 | P9 | Dispatch narrowing by untrusted flow facts | — | Planned, Phase 2–3 ([design](closures-design.md#p9-and-the-flow-oracle)) |
 
 The implemented schedule is in [`Anf.Pipeline`](../IxCC/Anf/Pipeline.lean);
@@ -900,7 +900,7 @@ exit criterion. The [roadmap](roadmap.md#plan) orders them.
 
 | Extension | Status | Design |
 | --- | --- | --- |
-| Higher-order code: P8 defunctionalisation, P9 | In progress (Phase 2: P8 milestone 1) | [Closures](closures-design.md) |
+| Higher-order code: P8 defunctionalisation, P9 | In progress (Phase 2): P8 implemented and tested outside the production pipeline, not proved | [Closures](closures-design.md) |
 | Heap completion: scalar fields, large and static objects, reuse, ownership checker | In progress (Phase 2) | [Data, roots and effects](data-and-roots-design.md#dr1-heap-completion) |
 | Fixed-width integers, `Int`, arrays, byte arrays, strings, library structures | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md) |
 | Structured roots, the byte ABI, the claim's ABI descriptor, state-machine effects | Planned (Phase 3) | [Data, roots and effects](data-and-roots-design.md#dr6-structured-roots-and-the-byte-abi) |

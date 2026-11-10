@@ -1,9 +1,11 @@
 # Higher-order code: closed-world defunctionalisation
 
-Written 2026-11-09. **Status: in progress (Phase 2).** Milestone 1 (the
-defunctionalisation modules and their cheap proofs, outside the production
-pipeline) was started on 2026-11-10 at the owner's request, for the native
-route's generality; it is not yet in this tree. Only the lines marked
+Written 2026-11-09. **Status: in progress (Phase 2).** Started on 2026-11-10
+at the owner's request, for the native route's generality. The pass is
+implemented and tested outside the production pipeline: nothing on the
+recheck path calls it, and its correctness theorem is not proved (see
+[Current state](#current-state); the decision of 2026-11-13 on over-applied
+roots is under [Proof obligation](#proof-obligation)). Only the lines marked
 *implemented* describe code that exists; everything else is design.
 
 **Place in the plan.** P8 is below SrcEval, so it adds nothing to the
@@ -64,7 +66,38 @@ always remove.
   `Decline.applyArg` and `Decline.composeClosure` are recorded as
   `fir: fir.closures` in the decline corpus
   ([`corpus.json`](../fixtures/corpus/phase1-decline/corpus.json)).
-- No P8 or P9 code exists.
+- *Implemented, not in the pipeline.* The pass `Anf.defun`
+  ([`Anf/Defun.lean`](../IxCC/Anf/Defun.lean), with the walk in
+  [`Anf/Defun/Lift.lean`](../IxCC/Anf/Defun/Lift.lean) and the dispatchers in
+  [`Anf/Defun/Dispatch.lean`](../IxCC/Anf/Defun/Dispatch.lean)), as designed
+  below; `Anf.Pipeline` and `Recheck.run` do not call it. Proved: its output
+  is `Anf.FirstOrder` (`Anf.Defun.Proof.run_firstOrder`), `Fir.lower` declines
+  no first-order program for closures (`Fir.Proof.lower_firstOrder`), and a
+  lifted body is well scoped over its captures and parameters
+  (`Anf.Defun.Proof.lifted_ws`); the value relation is defined
+  ([`Anf/Proof/Defun/Rel.lean`](../IxCC/Anf/Proof/Defun/Rel.lean)). Tested
+  against the Anf evaluator (`tests-anf`) and end to end, natively, on
+  `Decline.composeClosure`, the K1 programs without equations and the
+  workloads of [Exit criteria](#exit-criteria) item 2
+  ([`phase2-closures`](../fixtures/corpus/phase2-closures/corpus.json), frozen,
+  not yet a registered family), with and without inlining and specialisation
+  (`tests-pipeline --only defun`). The `StateT`-over-`Except` loop is refused
+  by allocation (`alloc.fallback`: a source global of eight parameters, past
+  the internal convention's seven argument registers), not by P8; that limit
+  is on parameter counts and independent of closures. The simulation proof
+  is not written. No P9 code exists.
+- *Implemented: P8's own input checks.* The pipeline does not establish
+  `Anf.WellScoped`, so the pass refuses (`defun.input`) what its correctness
+  relies on and a well-scoped program never has: a global already keyed `lam`
+  or `dispatch`, a closure key already in the constructor table, two globals
+  whose closures the program builds with equal keys, a local function without
+  parameters, a free variable of a local function out of scope, and the value
+  of a global beyond the program's size. Besides the two declines of [Exit
+  criteria](#exit-criteria) item 4, more captures than a cell holds and the tag space
+  (`defun.captures`, `defun.tags`), it refuses nothing else but its budgets
+  (`defun.budget`). The correctness proof must show that passing these checks
+  gives the well-scopedness the theorem assumes, or the pipeline must
+  establish it earlier.
 
 ## Options
 
@@ -251,8 +284,52 @@ checker is needed; a wrong fact costs speed only.
   ([`Fir/Proof/Correct.lean:171`](../IxCC/Fir/Proof/Correct.lean)) is
   unchanged. Roots take and return first-order values, where the relation is
   equality, so `Recheck.sound`, `Recheck.RcReplay.sound` and the compile-claim
-  theorems keep their statements: still relative to SrcEval, still with the
-  `GoesWrong` disjunct.
+  theorems stay relative to SrcEval, with the `GoesWrong` disjunct, for the
+  inputs the next item describes.
+- **Decided 2026-11-13: over-applied roots, option (a).** The refinement
+  holds only for inputs that give a root at most as many arguments as it
+  takes. Anf, Lam and SrcEval apply a root's result to further
+  arguments; stage S has no typing theorem, so that result can be a closure,
+  which the source applies and P8's output, holding a closure cell, cannot
+  (its `applyN` of a cell is stuck; the test
+  `IxCCTests.Anf.Defun.overAppliedRoot`). Every level below Anf already makes
+  such inputs stuck (`Sem.entryRun`). Of the two options (a: a premise on the
+  input; b: every level from SrcEval down applies a root as `Sem.entryRun`
+  does), the owner chose (a), with two conditions that are part of the
+  decision:
+  1. *The premise is about the source.* P8's refinement, and the end-to-end
+     theorems that compose it (`Recheck.sound`, `Recheck.RcReplay.sound`,
+     `Recheck.compiled_sound`), hold for inputs no longer than the source
+     root's declared parameter count: the number of leading binders of the
+     root's declared type as written (`Src.Term.pis`, which unfolds no
+     definition), the quantity `CompileClaim.rootParamsAllNat` compares. The
+     certificate cannot influence it. It is not `Recheck.Root.params`, which
+     is read off the compiled function (`cfgParams`), whose shape the
+     certificate's middle-end steps choose.
+  2. *The compiled arity is pinned.* Wherever the premise is used, the
+     verifier establishes that each compiled root takes exactly its source
+     root's declared parameter count: at the claim level `rootParamsAllNat`
+     does today (with `root.params = abiArity`); for `Recheck.run`, a new
+     refusing check with its lemma (or a proof that no certificate changes a
+     root's compiled arity, stated rather than assumed).
+
+  The claim-level theorems (`verifyProgram_*_sound`, `verifyBytes_*_sound`,
+  `verifyRing0Sip_sound`, `verifyBytesRing0Sip_sound`) are to be restated for
+  inputs of exactly the claim's `abiArity` arguments, what the driver session
+  executes, where the premise is discharged by `rootParamsAllNat` and
+  `root.params = abiArity`, so nothing at the claim level becomes conditional.
+
+  *Reachability today.* A well-typed over-application arises only when a
+  root's definition has fewer leading binders than its declared type has
+  arrows (a point-free or partially applied definition), or when the
+  declared type hides arrows behind a definition. The front end does not
+  η-expand roots: erasure gives a root its constant's erased δ body, or a
+  special head's wrapper (`Lam.Erase.rootId`), whose leading binders set
+  the compiled arity. Such a root whose result is a function is declined
+  today at `fir: fir.closures` (its value is a closure); with P8 it would
+  compile. At the claim level it is refused, since `rootParamsAllNat`
+  requires the declared telescope's length to equal the compiled parameter
+  count; `Recheck.run` has no such check yet, which is condition 2.
 - **P9** is proved for every fact; the shrink rule is one rewrite lemma
   proved by unfolding the dispatcher.
 
