@@ -226,7 +226,7 @@ def backWork (P : Program) : Nat :=
     acc + n * n + (n + Exp.caseWorkGo (n + 1) [gd.body] 0) * (P.ctors.length + 1)) 0
 
 /-- `backWork` a program may reach after P1 and after every middle-end step:
-forty-two times the most a committed program reaches (6,287,130), and enough
+about eighteen times the most a committed program reaches (14,976,810), and enough
 for one global at `maxGlobalNodes`. See
 `docs/compiler-design.md`, "Middle-end budgets", for the back end's time at
 it. -/

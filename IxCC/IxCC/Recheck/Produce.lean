@@ -24,7 +24,7 @@ The untrusted half of the compiler (D17) and the whole compiler:
   relevance annotator, `Admit` (a producer gate: a program outside the
   admitted fragment is declined here), the middle end's default oracles
   (`Anf.Pipeline.produce`), linear scan with its validated all-slots
-  fallback (`Alloc.run`), and the frame-layout and block-order oracles; the
+  fallback (`Alloc.runProducer`), and the frame-layout and block-order oracles; the
   result is the certificate;
 * `compile = ingress; produce; Recheck.run`: the object is `run`'s, never
   `produce`'s. -/
@@ -146,7 +146,7 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt
   let (xv, _) ← (Xv.Select.run lowered.program).mapError Err.ofSelect
-  let r ← (Xv.Alloc.run cfg.env xv).mapError fun m => { stage := .alloc, code := "alloc.fallback", message := m }
+  let r ← (Xv.Alloc.runProducer cfg.env xv).mapError fun m => { stage := .alloc, code := "alloc.fallback", message := m }
   let layouts := Xv.Stacking.produce r.program
   let stacked ← (Xv.Stacking.run r.program layouts lowered.reps cfg.env).mapError (Err.ofBackend ∘ .stacking)
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape

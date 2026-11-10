@@ -6,6 +6,8 @@ import IxCC.Lir.SplitEdges
 import IxCC.Recheck.Rc.Replay
 import IxCCTests.Recheck.Hostile
 import IxCCTests.Recheck.Deep
+import IxCCTests.Recheck.Perf
+import IxCCTests.Recheck.Producer
 import IxCCTests.Recheck.RootShape
 
 /-! The `tests-recheck` suite: the recheck path in kernel-evaluable
@@ -22,13 +24,19 @@ certificates on pin-free programs through every program-level and byte-level
 verifier, Stage A in `check-cert`, the erased-typing default, the root signature
 checks, the specialisation bound, the reachability dedupe, the `--rc auto`
 immortal fallback, and the middle end's budgets on the inline amplifier and
-other over-budget steps; the root result shapes (`RootShape`: the view and the shape view accept
+other over-budget steps; the producer (`Producer`, alone with `--producer`):
+its oracles rewritten for speed give the output of reference copies of the
+code they replaced, it stays within the re-run's budgets, and its work,
+counted in allocations, grows near-linearly on scaling inputs; the root result shapes (`RootShape`: the view and the shape view accept
 every result of the shape a root's declared type describes, also at roots compiled alone, whose
 objects return each constructor and whose claims `verifyBytes` accepts; SrcEval's results on the
 ABI fixture's roots are of it; the shape view rejects an ill-typed root's constructor of
 another type, which the view relabels; and the plain-RC view accepts the constructor trees of a
 plain-RC root's declared type); and every verifier entry point on the crashing inputs and on generated deep
-and wide inputs in a child process whose Lean stack is 8 MiB (`--stack-8mib`). -/
+and wide inputs in a child process whose Lean stack is 8 MiB (`--stack-8mib`).
+`--producer-reference` counts the replaced code's allocations on the same
+inputs. `--perf-write`, `--perf-stages` and `--perf-anf` write the producer's scaling
+inputs and time the producer and the checker stage by stage (`Perf`). -/
 
 namespace IxCCTests.Recheck.Run
 
@@ -170,6 +178,14 @@ def negativeSecurityTests (a : Assert) : IO (Array String) := do
 
   return #["14 hostile certificate/table/JSON/DAG regression checks passed"]
 
+/-- The producer's part: its rewritten oracles against the reference copies
+of the code they replaced, and its work on scaling inputs. -/
+def producerPart (a : Assert) (count : Nat) : IO (Array String) := do
+  let extra ← [("many", 60), ("fns", 20), ("dag", 8), ("tree", 9), ("wide", 9)].mapM fun (s, n) => do
+    return (s!"{s} {n}", ← Producer.lamOf s n)
+  return (← Producer.orderSame a (count / 4)) ++ (← Producer.middleSame a (count / 4) extra) ++
+    (← Producer.budgets a) ++ (← Producer.work a)
+
 def main (args : List String) : IO UInt32 := do
   if let "--probe" :: rest := args then return ← Deep.probe rest
   if let ["--probe-amp", f, g] := args then return ← Deep.probeAmp f.toNat! g.toNat!
@@ -180,6 +196,18 @@ def main (args : List String) : IO UInt32 := do
   if let ["--probe-walkk", kind, n, c, op] := args then return ← Deep.probeWalkKind kind n.toNat! c.toNat! op
   if args == ["--stack-8mib"] then return ← Deep.stack8
   if args == ["--stack-2mib"] then return ← Deep.stack2
+  if args == ["--producer-reference"] then return ← Producer.referenceWork
+  if args == ["--producer"] then
+    -- the producer's part alone
+    let a ← IO.mkRef 0
+    try
+      part a "the producer: rewritten oracles give the reference's output, and near-linear work"
+        (producerPart a 1000)
+      IO.println s!"tests-recheck --producer: {← a.get} assertions passed"
+      return 0
+    catch e =>
+      IO.eprintln s!"tests-recheck --producer: FAILED after {← a.get} assertions: {e}"
+      return 1
   if let ["--write-shrink", dir, d] := args then
     Deep.writeShrink dir d.toNat!
     return 0
@@ -197,6 +225,12 @@ def main (args : List String) : IO UInt32 := do
   if let ["--write-amp", dir, f, g] := args then
     Deep.writeAmp dir f.toNat! g.toNat!
     return 0
+  if let ["--perf-write", dir, shp, n] := args then
+    Perf.write dir shp n.toNat!
+    return 0
+  if let "--perf-stages" :: file :: eqs :: mode :: roots := args then
+    return ← Perf.stages file eqs mode roots
+  if let ["--perf-anf", kind, n, k] := args then return ← Perf.anfStages kind n.toNat! k.toNat!
   if let ["--write-amp-shrink", dir, f, g] := args then
     Deep.writeAmpShrink dir f.toNat! g.toNat!
     return 0
@@ -216,6 +250,8 @@ def main (args : List String) : IO UInt32 := do
       return #[← Hostile.autoFallback a]
     part a "middle-end budgets (REPORT item 2)" do
       return #[← Hostile.budgets a, ← Hostile.shrinkWork a, ← Hostile.inlineAmplifier a]
+    part a "the producer: rewritten oracles give the reference's output, and near-linear work" do
+      producerPart a count
     part a "root result shapes: totality of the view on the shapes, SrcEval results of the shape" do
       return (← RootShape.abi a).push (← RootShape.pinFree a)
     part a "roots compiled alone: every result constructor has a row; the shape view" do

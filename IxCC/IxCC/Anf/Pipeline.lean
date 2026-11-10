@@ -115,38 +115,54 @@ structure Trace where
   stages : List (String × Program)
   fires : Walk.Fires
 
-/-- The Phase 1 schedule with the default oracles. -/
+/-- The most steps a certificate may hold (the cap `Recheck.checkMidCert`
+applies to every certificate's middle end). -/
+def maxSteps : Nat := 64
+
+/-- The Phase 1 schedule with the default oracles, within what the re-run
+accepts: P1 and every shrink step are followed by the re-run's size, depth
+and back-end work check (`checkGlobalNodes`), and a program that fails it is
+refused here, with the re-run's message, before the back end runs; an inline
+round or a specialisation is taken through the re-run's own step
+(`Step.run`), and one it refuses (a walk, step or program past its budgets)
+is not taken: a refused round ends that invocation's rounds, and a refused
+specialisation ends the schedule's phases, as one that adds no global does;
+and a round or specialisation is only begun while the certificate has room
+for its two steps and the final prune (`maxSteps`). Where the re-run would
+accept every step anyway, none of these checks changes a choice. -/
 def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
-  let p1 ← checkLamNodes L >>= convert
+  let p1 ← checkLamNodes L >>= convert >>= checkGlobalNodes
   let mut P := p1
   let mut steps : Array Step := #[]
   let mut stages : Array (String × Program) := #[("P1", p1)]
   let mut fires : Walk.Fires := {}
   -- P2, then drop what the roots never reach (erasure's wrappers and helpers)
   let (c, P2, f) ← Shrink.produce B.shrink P
-  P := P2; fires := fires.add f
+  P ← checkGlobalNodes P2; fires := fires.add f
   steps := steps.push (.shrink c); stages := stages.push ("P2", P)
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)
   for phase in [0:4] do
     if phase > 0 then
       -- P4, then P2
+      if steps.size + 3 > maxSteps then break
       let sc := Specialize.produce B.spec (phase - 1) P
-      let P4 ← Specialize.run sc P
+      let .ok P4 := Step.run B.shrink.params (.specialize sc) P | break
       if phase > 1 && P4.size == P.size then break
       P := P4
       steps := steps.push (.specialize sc); stages := stages.push ("P4", P)
       let (c, P2, f) ← Shrink.produce B.shrink P
-      P := P2; fires := fires.add f
+      P ← checkGlobalNodes P2; fires := fires.add f
       steps := steps.push (.shrink c); stages := stages.push ("P2", P)
     -- (P3, P2) rounds
     for _ in [0:B.inline.rounds] do
+      if steps.size + 3 > maxSteps then break
       let r := Inline.produce B.inline P
       if r.isEmpty then break
-      let (P3, _) ← Inline.round P r
+      let .ok P3 := Step.run B.shrink.params (.inline r) P | break
       steps := steps.push (.inline r); stages := stages.push ("P3", P3)
       let (c, P2, f) ← Shrink.produce B.shrink P3
-      P := P2; fires := fires.add f
+      P ← checkGlobalNodes P2; fires := fires.add f
       steps := steps.push (.shrink c); stages := stages.push ("P2", P)
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)

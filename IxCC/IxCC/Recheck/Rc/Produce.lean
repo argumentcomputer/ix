@@ -264,7 +264,7 @@ def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.P
   Recheck.checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt
   let (xv, _) ← (Xv.Select.run lowered.program).mapError Err.ofSelect
-  let r ← (Xv.Alloc.run cfg.env xv).mapError fun m =>
+  let r ← (Xv.Alloc.runProducer cfg.env xv).mapError fun m =>
     { stage := .alloc, code := "alloc.fallback", message := m }
   let layouts := Xv.Stacking.produce r.program
   let stacked ← (Xv.Stacking.run r.program layouts lowered.reps cfg.env).mapError
@@ -302,7 +302,7 @@ def finishPlainRcCert (cfg : Config) (front : ProducedFir) : Except Err Produced
     ⟨candidate.base.size, candidate.base.ctors.filter (fun c => c.arity > 0)⟩
   let rcEnv := layout.env cfg.env
   let (xv, _) ← (Xv.Select.run lowered.runtime.program).mapError Err.ofSelect
-  let allocated ← (Xv.Alloc.run rcEnv xv).mapError fun message =>
+  let allocated ← (Xv.Alloc.runProducer rcEnv xv).mapError fun message =>
     { stage := .alloc, code := "alloc.fallback", message }
   let frames := Xv.Stacking.produce allocated.program
   let stacked ← (Xv.Stacking.run allocated.program frames reps rcEnv).mapError

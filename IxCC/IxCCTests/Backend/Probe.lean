@@ -76,7 +76,7 @@ def loopBlocks (p : X86.Program) : X86.Layout.NatSet :=
   let fuel := p.blocks.size + 1
   let all := List.range p.blocks.size
   let (_, backs) := all.foldl (init := (({} : X86.Layout.NatSet), ([] : List (Nat × Nat)))) fun acc r =>
-    if acc.1.contains r then acc else X86.Layout.backEdges m ok fuel [] acc r
+    if acc.1.contains r then acc else X86.Layout.backEdges m ok fuel {} acc r
   let preds := X86.Layout.predsIn m ok all
   backs.foldl (init := {}) fun s (u, h) =>
     (X86.Layout.loopBody preds fuel (({} : X86.Layout.NatSet).insert h) [u]).toList.foldl (·.insert ·) s

@@ -533,17 +533,30 @@ structure Budgets where
   maxSpecs : Nat := 64
   deriving Repr, Inhabited
 
+/-- The most decisions a certificate's specialisation step may hold (the cap
+`Recheck.checkMidStep` applies). -/
+def maxCertDecisions : Nat := 64
+
+/-- The most parameters a decision's mask may cover (the cap
+`Recheck.checkMidStep` applies). -/
+def maxCertMask : Nat := 64
+
 /-- Lean's `@[specialize]` default for fixed instance and higher-order
 arguments: in every caller, specialise each self-recursive callee on the
 parameters it passes unchanged to itself (sites whose masked arguments are
-all unknown are left alone by the pass). -/
-def produce (_B : Budgets) (inv : Nat) (P : Program) : Cert :=
-  let masks := P.globalList.map fun (g, gd) => (g, fixedMask g gd)
+all unknown are left alone by the pass). Each caller's callees are taken
+once each, in first-call order, and their masks looked up in a map. The
+first `maxSpecs` decisions are kept (at most `maxCertDecisions`), of
+callees of at most `maxCertMask` parameters. -/
+def produce (B : Budgets) (inv : Nat) (P : Program) : Cert :=
+  let masks : Src.NatMap (List Bool) := Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, fixedMask g gd))
   let ds := P.globalList.flatMap fun (f, gd) =>
-    gd.body.sites.eraseDups.filterMap fun g =>
-      match masks.lookup g with
+    let callees := (gd.body.sites.foldl (init := (Src.NatSet.ofList [], ([] : List GlobalId)))
+      fun (seen, acc) g => if seen.contains g then (seen, acc) else (seen.insert g, g :: acc)).2.reverse
+    callees.filterMap fun g =>
+      match masks.get? g with
       | some mask => if g != f && mask.any id then some { caller := f, callee := g, mask } else none
       | none => none
-  { inv, decisions := ds }
+  { inv, decisions := (ds.filter (·.mask.length ≤ maxCertMask)).take (min B.maxSpecs maxCertDecisions) }
 
 end IxCC.Anf.Specialize

@@ -139,14 +139,41 @@ def fixpoint (P : Program) (p : Params) (gd : GDef) :
     if f.total == 0 then pure (gd, n, acc)
     else fixpoint P p gd' budget (n + 1) (acc.add f)
 
-/-- `produce`: each global to its fixpoint; the certificate, the program and
-the rule counts. -/
+/-- `fixpoint` within what the re-run (`rounds`) accepts, `work` being the
+step's work so far: the rounds stop, the last one uncounted, at a round that
+fires no rule, fails (a walk past its own budgets), leaves the global over
+`maxGlobalNodes` or deeper than `maxDepth`, or brings the step's work over
+`maxStepWork`. The global, its round count, the step's work and the rule
+counts. -/
+def fixpointWithin (P : Program) (p : Params) (gd : GDef) :
+    Nat → Nat → Nat → Walk.Fires → GDef × Nat × Nat × Walk.Fires
+  | 0, n, work, acc => (gd, n, work, acc)
+  | budget + 1, n, work, acc =>
+    match round P p gd with
+    | .error _ => (gd, n, work, acc)
+    | .ok (gd', f) =>
+      if f.total == 0 then (gd, n, work, acc)
+      else if gd'.body.nodesLe maxGlobalNodes && gd'.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth &&
+          work + f.work ≤ maxStepWork then
+        fixpointWithin P p gd' budget (n + 1) (work + f.work) (acc.add f)
+      else (gd, n, work, acc)
+
+/-- `produce`: each global to its fixpoint, in id order, within what the
+re-run accepts (`fixpointWithin`, threading the step's work from global to
+global as `runGlobals` does); the certificate, the program and the rule
+counts. A global whose next round the re-run would refuse keeps the rounds
+before it, so the certificate never asks for more than the re-run's budgets
+allow (its program nodes are checked after the step, by
+`Pipeline.checkGlobalNodes`). -/
 def produce (B : Budgets) (P : Program) : Except String (Cert × Program × Walk.Fires) := do
-  let rs ← P.globalList.mapM fun (g, gd) => do
-    let (gd', n, f) ← (fixpoint P B.params gd B.rounds 0 {}).mapError (s!"shrink global {g}: " ++ ·)
-    return (g, gd', n, f)
+  let (rs, _) := P.globalList.foldl (init := (#[], 0)) fun (rs, work) (g, gd) =>
+    let (gd', n, work, f) := fixpointWithin P B.params gd B.rounds 0 work {}
+    (rs.push (g, gd', n, f), work)
+  let rs := rs.toList
   let P' := { P with globals := Src.NatMap.ofList (rs.map fun (g, gd, _) => (g, gd)) }
-  let cert := (List.range P.size).map fun g => ((rs.find? (·.1 == g)).map (·.2.2.1)).getD 0
+  -- each global's round count, looked up in a map (the globals' ids are distinct)
+  let rounds : Src.NatMap Nat := Src.NatMap.ofList (rs.map fun (g, _, n, _) => (g, n))
+  let cert := (List.range P.size).map fun g => rounds.getD g 0
   return (cert, P', rs.foldl (fun acc (_, _, _, f) => acc.add f) {})
 
 end IxCC.Anf.Shrink

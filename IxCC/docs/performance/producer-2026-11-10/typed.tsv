@@ -1,0 +1,101 @@
+build	program	exit	compile_s	compile_rss_kb	ingress_ms	produce_ms	run_ms	check_s	check_rss_kb	refusal
+before	fixtures/corpus/phase1-abi/abi.ixe	1	1.05	114780						ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-boundary/boundary.ixe	0	1.25	119080	1131	56	28	1.24	110540	
+before	fixtures/corpus/phase1-boundary/fields254.ixe	0	0.15	84112	64	42	11	0.12	84036	
+before	fixtures/corpus/phase1-boundary/fields255.ixe	1	0.04	74576						ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/tags125.ixe	0	5.44	138144	1753	3533	77	5.73	138700	
+before	fixtures/corpus/phase1-boundary/tags126.ixe	1	0.05	76592						ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/tags16.ixe	0	1.10	110440	1015	50	8	1.06	114400	
+before	fixtures/corpus/phase1-boundary/tags17.ixe	0	1.05	114484	964	49	9	1.03	114872	
+before	fixtures/corpus/phase1-decline/admit.ixe	1	0.07	77728						ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+before	fixtures/corpus/phase1-decline/closures.ixe	1	0.07	79104						ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+before	fixtures/corpus/phase1-decline/erase.ixe	1	0.04	77048						ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/loops.ixe	0	46.71	580252	46547	99	19	50.17	577468	
+before	fixtures/corpus/phase1-decline/panic.ixe	1	1.07	111920						ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+before	fixtures/corpus/phase1-decline/params.ixe	1	0.07	79552						ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/strings.ixe	1	270.25	1406560						ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+before	fixtures/corpus/phase1-decline/symbols.ixe	1	0.08	80516						ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+before	fixtures/corpus/phase1-resource/resource.ixe	0	46.22	585284	46043	112	19	45.30	587400	
+before	fixtures/corpus/phase1-scalar/bigctor.ixe	0	0.04	77832	5	8	4	0.04	78380	
+before	fixtures/corpus/phase1-scalar/natShiftr.ixe	0	0.30	88724	267	9	2	0.30	88632	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	0	49.36	618148	48898	270	144	49.95	621776	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	0	0.10	82468	61	12	4	0.10	82400	
+before	fixtures/corpus/phase1-scalar/tuple.ixe	0	0.06	73992	29	8	2	0.06	78956	
+before	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	1	0.03	75548						ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+before	fixtures/ixon-v4/bench-k1/ackermann.ixe	0	36.02	532968	35922	49	7	36.33	542692	
+before	fixtures/ixon-v4/bench-k1/collatz.ixe	0	46.04	558632	45875	103	15	40.42	558024	
+before	fixtures/ixon-v4/bench-k1/even-odd.ixe	0	0.08	77588	38	12	3	0.07	77404	
+before	fixtures/ixon-v4/bench-k1/fib.ixe	0	0.08	82104	39	9	3	0.07	80496	
+before	fixtures/ixon-v4/bench-k1/gcd.ixe	0	0.55	94212	500	17	3	0.54	93724	
+before	fixtures/ixon-v4/bench-k1/prime-count.ixe	0	44.29	580848	44124	110	21	49.37	583364	
+before	fixtures/ixon-v4/bench-k1/sfib.ixe	0	0.22	84356	169	19	4	0.21	85344	
+before	fixtures/ixon-v4/bench-k1/sum-loop.ixe	0	43.80	580204	43646	91	14	40.99	578624	
+before	fixtures/ixon-v4/bench-k1/tak.ixe	0	0.23	86720	176	20	4	0.22	85944	
+before	fixtures/ixon-v4/src-diag/diag.ixe	1	71.44	685496						ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	1	0.06	77456						ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ownership/OS01-annotated.ixe	0	0.06	77860	27	6	3	0.06	77328	
+before	fixtures/ownership/OS01-plain.ixe	0	0.06	77868	27	6	3	0.06	78404	
+before	fixtures/ownership/OS02-plain.ixe	0	0.20	86300	148	17	3	0.19	85620	
+before	fixtures/ownership/OS03-annotated.ixe	0	0.06	79184	26	7	2	0.06	80156	
+before	fixtures/ownership/OS03-plain.ixe	0	0.06	79992	26	6	2	0.06	73992	
+before	fixtures/ownership/OS03b-annotated.ixe	0	0.07	82696	36	7	2	0.07	76172	
+before	fixtures/ownership/OS03b-plain.ixe	0	0.07	82096	37	7	2	0.07	79820	
+before	fixtures/ownership/OS13-annotated.ixe	0	0.03	78496	1	2	3	0.03	74044	
+before	fixtures/ownership/OS13-plain.ixe	0	0.03	78676	1	2	3	0.03	77732	
+before	fixtures/ownership/OS14-annotated.ixe	0	0.04	77588	4	5	2	0.03	71932	
+before	fixtures/ownership/OS14-plain.ixe	0	0.04	76172	5	5	2	0.03	75572	
+before	fixtures/ownership/OS16-plain.ixe	0	0.12	83824	72	15	3	0.11	84348	
+before	fixtures/ownership/OS22-annotated.ixe	0	0.03	77524	1	2	3	0.03	74108	
+before	fixtures/ownership/OS22-plain.ixe	0	0.03	78004	1	3	2	0.03	78408	
+before	fixtures/ixon-v4/k1/k1.ixe	0	47.60	627476	47427	109	17	49.89	626472	
+before	fixtures/rc/real-source/anonymous.ixe	0	0.12	85096	74	16	4	0.11	83944	
+after	fixtures/corpus/phase1-abi/abi.ixe	1	0.97	118256						ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-boundary/boundary.ixe	0	1.23	122220	1108	57	28	1.20	122632	
+after	fixtures/corpus/phase1-boundary/fields254.ixe	0	0.14	87440	63	41	11	0.12	87448	
+after	fixtures/corpus/phase1-boundary/fields255.ixe	1	0.04	82336						ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/tags125.ixe	0	5.32	140480	1731	3458	69	5.12	142768	
+after	fixtures/corpus/phase1-boundary/tags126.ixe	1	0.05	83956						ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/tags16.ixe	0	0.99	117720	905	45	8	0.96	118384	
+after	fixtures/corpus/phase1-boundary/tags17.ixe	0	0.97	118276	889	46	8	0.97	118040	
+after	fixtures/corpus/phase1-decline/admit.ixe	1	0.06	81244						ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+after	fixtures/corpus/phase1-decline/closures.ixe	1	0.07	83056						ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+after	fixtures/corpus/phase1-decline/erase.ixe	1	0.04	80948						ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/loops.ixe	0	38.50	585100	38331	98	19	38.07	582788	
+after	fixtures/corpus/phase1-decline/panic.ixe	1	1.06	116172						ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+after	fixtures/corpus/phase1-decline/params.ixe	1	0.06	81084						ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/strings.ixe	1	253.98	1409704						ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+after	fixtures/corpus/phase1-decline/symbols.ixe	1	0.12	83152						ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+after	fixtures/corpus/phase1-resource/resource.ixe	0	40.46	589156	40263	113	20	54.09	588376	
+after	fixtures/corpus/phase1-scalar/bigctor.ixe	0	0.06	81412	7	10	5	0.06	80860	
+after	fixtures/corpus/phase1-scalar/natShiftr.ixe	0	0.44	92236	384	13	3	0.32	91180	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	0	56.09	624464	55615	284	145	52.28	625948	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	0	0.10	85296	61	12	4	0.10	78512	
+after	fixtures/corpus/phase1-scalar/tuple.ixe	0	0.07	74316	27	8	4	0.08	80944	
+after	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	1	0.03	79612						ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+after	fixtures/ixon-v4/bench-k1/ackermann.ixe	0	55.40	535876	55296	49	7	45.84	547232	
+after	fixtures/ixon-v4/bench-k1/collatz.ixe	0	46.79	562368	46542	173	24	64.91	560880	
+after	fixtures/ixon-v4/bench-k1/even-odd.ixe	0	0.12	81356	54	16	5	0.10	81160	
+after	fixtures/ixon-v4/bench-k1/fib.ixe	0	0.12	83584	57	12	4	0.11	83620	
+after	fixtures/ixon-v4/bench-k1/gcd.ixe	0	0.81	98364	741	24	5	0.74	98232	
+after	fixtures/ixon-v4/bench-k1/prime-count.ixe	0	73.45	585924	73171	183	34	55.77	584504	
+after	fixtures/ixon-v4/bench-k1/sfib.ixe	0	0.22	87264	170	18	4	0.21	87108	
+after	fixtures/ixon-v4/bench-k1/sum-loop.ixe	0	45.21	583080	45013	125	19	46.83	583816	
+after	fixtures/ixon-v4/bench-k1/tak.ixe	0	0.23	82716	178	19	5	0.22	89936	
+after	fixtures/ixon-v4/src-diag/diag.ixe	1	78.90	694552						ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	1	0.06	81488						ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ownership/OS01-annotated.ixe	0	0.06	82244	27	6	3	0.06	81068	
+after	fixtures/ownership/OS01-plain.ixe	0	0.06	81132	27	6	3	0.06	80960	
+after	fixtures/ownership/OS02-plain.ixe	0	0.20	89956	149	16	4	0.21	89280	
+after	fixtures/ownership/OS03-annotated.ixe	0	0.06	80924	27	6	2	0.06	81836	
+after	fixtures/ownership/OS03-plain.ixe	0	0.06	81100	26	7	2	0.06	81000	
+after	fixtures/ownership/OS03b-annotated.ixe	0	0.07	83960	37	7	2	0.07	82768	
+after	fixtures/ownership/OS03b-plain.ixe	0	0.07	83600	37	7	3	0.07	83168	
+after	fixtures/ownership/OS13-annotated.ixe	0	0.03	80976	1	3	2	0.03	81416	
+after	fixtures/ownership/OS13-plain.ixe	0	0.03	81172	1	2	2	0.03	80960	
+after	fixtures/ownership/OS14-annotated.ixe	0	0.04	79304	4	4	3	0.04	78616	
+after	fixtures/ownership/OS14-plain.ixe	0	0.04	79172	5	4	3	0.03	78644	
+after	fixtures/ownership/OS16-plain.ixe	0	0.12	85380	70	15	4	0.11	85000	
+after	fixtures/ownership/OS22-annotated.ixe	0	0.03	81540	1	3	2	0.03	80908	
+after	fixtures/ownership/OS22-plain.ixe	0	0.03	81756	1	3	2	0.03	81836	
+after	fixtures/ixon-v4/k1/k1.ixe	0	54.77	629740	54593	110	18	56.47	630124	
+after	fixtures/rc/real-source/anonymous.ixe	0	0.13	87872	77	15	5	0.12	86868	

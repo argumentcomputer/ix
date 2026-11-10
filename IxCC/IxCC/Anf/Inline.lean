@@ -75,29 +75,65 @@ structure Budgets where
   rounds : Nat := 8
   deriving Repr, Inhabited
 
-/-- The globals reachable from `g` in one or more steps. -/
-def reachable (edges : Src.NatMap (List GlobalId)) (size g : Nat) : List GlobalId := Id.run do
-  let mut seen : Std.HashSet Nat := {}
-  let mut todo := edges.getD g []
-  let mut out := #[]
-  for _ in [0:size * size + size + 1] do
-    match todo with
-    | [] => break
-    | h :: rest =>
-      todo := rest
-      if seen.contains h then continue
-      seen := seen.insert h
-      out := out.push h
-      todo := edges.getD h [] ++ todo
-  return out.toList
-
-/-- Globals on a cycle of the reference graph. -/
+/-- Globals on a cycle of the reference graph: those with a reference to
+themselves, and those in a strongly connected component of more than one
+global (Tarjan's algorithm, with explicit stacks), in time linear in the
+globals and their references. -/
 def recursive (P : Program) : Std.HashSet GlobalId := Id.run do
-  let edges : Src.NatMap (List GlobalId) :=
-    Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, gd.body.refs.eraseDups))
+  let edges : Src.NatMap (Array GlobalId) :=
+    Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, gd.body.refs.toArray))
+  let steps := P.globalList.foldl (fun n (_, gd) => n + 2 * gd.body.refs.length + 2) 1
+  let mut index : Src.NatMap Nat := .leaf
+  let mut low : Src.NatMap Nat := .leaf
+  let mut onStack : Std.HashSet GlobalId := {}
+  let mut stack : Array GlobalId := #[]
   let mut out : Std.HashSet GlobalId := {}
-  for (g, _) in P.globalList do
-    if (reachable edges P.size g).contains g then out := out.insert g
+  let mut next := 0
+  for (root, _) in P.globalList do
+    if index.contains root then continue
+    index := index.insert root next
+    low := low.insert root next
+    next := next + 1
+    stack := stack.push root
+    onStack := onStack.insert root
+    -- each frame: a global and how many of its references it has followed
+    let mut frames : Array (GlobalId × Nat) := #[(root, 0)]
+    for _ in [0:steps] do
+      match frames.back? with
+      | none => break
+      | some (v, i) =>
+        let es := edges.getD v #[]
+        if h : i < es.size then
+          frames := frames.set! (frames.size - 1) (v, i + 1)
+          let w := es[i]
+          if w == v then out := out.insert v
+          match index.get? w with
+          | none =>
+            index := index.insert w next
+            low := low.insert w next
+            next := next + 1
+            stack := stack.push w
+            onStack := onStack.insert w
+            frames := frames.push (w, 0)
+          | some iw =>
+            if onStack.contains w then low := low.insert v (min (low.getD v 0) iw)
+        else
+          frames := frames.pop
+          let lv := low.getD v 0
+          if lv == index.getD v 0 then
+            -- `v` roots a component: the stack down to `v`
+            let mut comp : Array GlobalId := #[]
+            for _ in [0:stack.size] do
+              match stack.back? with
+              | none => break
+              | some x =>
+                stack := stack.pop
+                onStack := onStack.erase x
+                comp := comp.push x
+                if x == v then break
+            if comp.size > 1 then
+              for x in comp do out := out.insert x
+          if let some (u, _) := frames.back? then low := low.insert u (min (low.getD u 0) lv)
   return out
 
 mutual
@@ -133,17 +169,25 @@ def inlinable (B : Budgets) (recs : Std.HashSet GlobalId) (gd : GDef) (g : Globa
      | _ => false))
 
 /-- The default oracle's next round: for each caller, the inlinable callees
-it references (none if nothing remains). -/
+it references, first reference first, at most `maxCertCallees` of them
+(none if nothing remains). Whether a global is inlinable is decided once
+per global, and each caller's sites are a set. -/
 def produce (B : Budgets) (P : Program) : Round :=
   let recs := recursive P
+  let inl : Src.NatMap Bool :=
+    Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, inlinable B recs gd g))
   P.globalList.filterMap fun (f, gd) =>
-    let sites := gd.body.sites
-    let cs := gd.body.refs.eraseDups.filter fun g =>
+    let sites : Std.HashSet GlobalId := gd.body.sites.foldl (·.insert ·) {}
+    -- the references without repetition, in first-reference order
+    let refs := (gd.body.refs.foldl (init := (({} : Std.HashSet GlobalId), ([] : List GlobalId)))
+      fun (seen, acc) g => if seen.contains g then (seen, acc) else (seen.insert g, g :: acc)).2.reverse
+    let cs := refs.filter fun g =>
       g != f && (match P.global? g with
         | some gd' =>
           -- a function `glob` is a closure, not a site: only calls and CAFs
-          inlinable B recs gd' g && (gd'.ps.isEmpty || sites.contains g)
+          inl.getD g false && (gd'.ps.isEmpty || sites.contains g)
         | none => false)
-    if cs.isEmpty then none else some (f, cs)
+    -- at most the callees a certificate may list per caller (`checkCert`)
+    if cs.isEmpty then none else some (f, cs.take maxCertCallees)
 
 end IxCC.Anf.Inline

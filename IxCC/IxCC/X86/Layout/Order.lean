@@ -62,7 +62,14 @@ def Order.check (p : Program) (s : Shape) (o : Order) : Bool :=
   placed.contains p.entry.toNat &&
   placedClosed p placed
 
-/-! ## The oracle (untrusted) -/
+/-! ## The oracle (untrusted)
+
+Its cost is near-linear in a group's blocks and edges: the depth-first search
+keeps the blocks on its current path in a set; the loops are found once per
+header, from all its back edges at once, by a breadth-first walk that expands
+each block once; each block knows the loops containing it, smallest first;
+and the next chain's start is found from per-loop cursors over the loops'
+blocks in index order, which only move forward. -/
 
 /-- Successors in order of preference: a branch's false edge (which can
 fall through), then its true edge; a jump's target. -/
@@ -78,43 +85,50 @@ def succsIn (m : NatMap Block) (ok : Nat → Bool) (b : Nat) : List Nat :=
 
 /-- Depth-first search from `b` (depth bounded by the fuel), adding the
 blocks it visits to `seen` and each back edge `(u, h)` (`h` on the current
-path) to the list. -/
+path, the set `onPath`) to the list. -/
 def backEdges (m : NatMap Block) (ok : Nat → Bool) :
-    Nat → List Nat → NatSet × List (Nat × Nat) → Nat → NatSet × List (Nat × Nat)
+    Nat → NatSet → NatSet × List (Nat × Nat) → Nat → NatSet × List (Nat × Nat)
   | 0, _, acc, _ => acc
-  | fuel + 1, path, (seen, backs), b =>
-      let path := b :: path
+  | fuel + 1, onPath, (seen, backs), b =>
+      let onPath := onPath.insert b
       (succsIn m ok b).foldl (init := (seen.insert b, backs)) fun (seen, backs) t =>
-        if path.contains t then (seen, (b, t) :: backs)
+        if onPath.contains t then (seen, (b, t) :: backs)
         else if seen.contains t then (seen, backs)
-        else backEdges m ok fuel path (seen, backs) t
+        else backEdges m ok fuel onPath (seen, backs) t
 
 /-- Predecessors within the group, from each member's successors. -/
 def predsIn (m : NatMap Block) (ok : Nat → Bool) (members : List Nat) : NatMap (List Nat) :=
   members.foldl (init := {}) fun acc b =>
     (succsIn m ok b).foldl (init := acc) fun acc t => acc.insert t (b :: acc.getD t [])
 
-/-- The natural loop of a back edge into `h`: `body` starts as `{h}`, and
-the search walks predecessors backwards from the edge's source, one
-frontier per unit of fuel, never past `h`. -/
+/-- The loop of a header: `body` starts as `{h}`, and the search walks
+predecessors backwards from the sources of the back edges into `h`, one
+frontier per unit of fuel, never past `h`, so it collects the union of their
+natural loops. A block the frontier lists more than once is expanded once:
+otherwise every two-way branch inside the loop would double the frontier. -/
 def loopBody (preds : NatMap (List Nat)) : Nat → NatSet → List Nat → NatSet
   | 0, body, _ => body
   | _, body, [] => body
   | fuel + 1, body, frontier =>
-      let fresh := frontier.filter (!body.contains ·)
-      let body := fresh.foldl (fun s b => s.insert b) body
+      let (body, fresh) := frontier.foldl (init := (body, ([] : List Nat))) fun (s, acc) b =>
+        if s.contains b then (s, acc) else (s.insert b, b :: acc)
       loopBody preds fuel body (fresh.flatMap (preds.getD · []))
 
-/-- A loop per header: the union of the natural loops of its back edges. -/
-def addLoop (loops : List (Nat × NatSet)) (h : Nat) (body : NatSet) : List (Nat × NatSet) :=
-  if loops.any (·.1 == h) then
-    loops.map fun (h', b) => if h' == h then (h', body.toList.foldl (fun s x => s.insert x) b) else (h', b)
-  else (h, body) :: loops
+/-- Insert `x` into a list ordered by its first component. -/
+def insertBySize (x : Nat × Nat) : List (Nat × Nat) → List (Nat × Nat)
+  | [] => [x]
+  | y :: ys => if x.1 ≤ y.1 then x :: y :: ys else y :: insertBySize x ys
+
+/-- For each block, the loops containing it, as `(size, header)`, smallest
+first. -/
+def loopsOf (loops : List (Nat × NatSet)) : NatMap (List (Nat × Nat)) :=
+  loops.foldl (init := {}) fun acc (h, body) =>
+    body.toList.foldl (init := acc) fun acc x => acc.insert x (insertBySize (body.size, h) (acc.getD x []))
 
 /-- The size of the smallest loop containing both blocks, else `none'`. -/
-def sharedLoop (loops : List (Nat × NatSet)) (none' a b : Nat) : Nat :=
-  loops.foldl (init := none') fun best (_, body) =>
-    if body.contains a && body.contains b then min best body.size else best
+def sharedLoop (byBlock : NatMap (List (Nat × Nat))) (loops : NatMap NatSet) (none' a b : Nat) : Nat :=
+  (byBlock.getD a []).foldl (init := none') fun best (size, h) =>
+    if ((loops.get? h).map (·.contains b)).getD false then min best size else best
 
 /-- The first candidate with the smallest score. -/
 def pickBest (score : Nat → Nat) : List Nat → Option Nat
@@ -125,39 +139,74 @@ def pickBest (score : Nat → Nat) : List Nat → Option Nat
       | none => some c
 
 /-- Place `b`, then keep following the unplaced successor that stays in the
-smallest loop shared with the block just placed. The placed blocks are a
-set and a list in reverse order. -/
-def extendChain (m : NatMap Block) (ok : Nat → Bool) (loops : List (Nat × NatSet)) (none' : Nat) :
+smallest loop shared with the block just placed (`shared`). The placed
+blocks are a set and a list in reverse order. -/
+def extendChain (m : NatMap Block) (ok : Nat → Bool) (shared : Nat → Nat → Nat) :
     Nat → NatSet × List Nat → Nat → NatSet × List Nat
   | 0, placed, _ => placed
   | fuel + 1, (done, order), b =>
       let done := done.insert b
       let order := b :: order
-      match pickBest (sharedLoop loops none' b) ((succsIn m ok b).filter (!done.contains ·)) with
-      | some t => extendChain m ok loops none' fuel (done, order) t
+      match pickBest (shared b) ((succsIn m ok b).filter (!done.contains ·)) with
+      | some t => extendChain m ok shared fuel (done, order) t
       | none => (done, order)
+
+/-- `xs` from its first unplaced block on. -/
+def dropPlaced (done : NatSet) : List Nat → List Nat
+  | [] => []
+  | x :: xs => if done.contains x then dropPlaced done xs else x :: xs
+
+/-- Among the loops containing a block (`(size, header)`, smallest first), the
+first unplaced block in index order of those of the smallest size that still
+have one, with each loop's cursor (its blocks in index order, from its first
+unplaced one) moved forward; `best` is the size and block found so far. -/
+def loopStart (done : NatSet) :
+    List (Nat × Nat) → Option (Nat × Nat) → NatMap (List Nat) → Option Nat × NatMap (List Nat)
+  | [], best, cursors => (best.map (·.2), cursors)
+  | (size, h) :: rest, best, cursors =>
+      let larger := match best with
+        | some (s, _) => decide (s < size)
+        | none => false
+      if larger then (best.map (·.2), cursors)
+      else
+        let cur := dropPlaced done (cursors.getD h [])
+        let cursors := cursors.insert h cur
+        match cur with
+        | [] => loopStart done rest best cursors
+        | x :: _ =>
+            let best := match best with
+              | some (_, y) => some (size, min x y)
+              | none => some (size, x)
+            loopStart done rest best cursors
 
 /-- Start a chain at the unplaced block sharing the smallest loop with the
 last block placed (the first pending block when none does, or when nothing
-is placed yet), until every pending block is placed. -/
-def chains (m : NatMap Block) (ok : Nat → Bool) (loops : List (Nat × NatSet)) (none' bound : Nat) :
-    Nat → NatSet × List Nat → List Nat → NatSet × List Nat
-  | 0, placed, _ => placed
-  | fuel + 1, (done, order), pending =>
-      match pending.filter (!done.contains ·) with
+is placed yet), until every pending block is placed. After the first chain
+(which places the entry) the pending blocks are in index order, so the first
+unplaced one sharing the smallest loop is the one of least index among the
+loops of that size containing the last block (`loopStart`). -/
+def chains (m : NatMap Block) (ok : Nat → Bool) (shared : Nat → Nat → Nat)
+    (byBlock : NatMap (List (Nat × Nat))) (bound : Nat) :
+    Nat → NatSet × List Nat → List Nat → NatMap (List Nat) → NatSet × List Nat
+  | 0, placed, _, _ => placed
+  | fuel + 1, (done, order), pending, cursors =>
+      match dropPlaced done pending with
       | [] => (done, order)
       | first :: rest =>
-          let start := match order.head? with
-            | some last => (pickBest (sharedLoop loops none' last) (first :: rest)).getD first
-            | none => first
-          chains m ok loops none' bound fuel (extendChain m ok loops none' bound (done, order) start)
-            (first :: rest)
+          let (start, cursors) := match order.head? with
+            | some last =>
+                let (s, cursors) := loopStart done (byBlock.getD last []) none cursors
+                (s.getD first, cursors)
+            | none => (first, cursors)
+          chains m ok shared byBlock bound fuel (extendChain m ok shared bound (done, order) start)
+            (first :: rest) cursors
 
 /-- One group's order: the entry, chains through hot blocks, then the cold
 blocks in index order. -/
 def groupOrder (m : NatMap Block) (seen : NatSet) (g : Group) : List Nat :=
+  let coldSet : NatSet := g.cold.foldl (fun s b => s.insert b) {}
   let members := ((List.range g.count).map (g.start + ·)).filter seen.contains
-  let isCold (b : Nat) : Bool := g.cold.contains b && g.entry != some b
+  let isCold (b : Nat) : Bool := coldSet.contains b && g.entry != some b
   let hot := members.filter (!isCold ·)
   let cold := members.filter isCold
   let ok (t : Nat) : Bool := g.contains t && seen.contains t && !isCold t
@@ -167,11 +216,16 @@ def groupOrder (m : NatMap Block) (seen : NatSet) (g : Group) : List Nat :=
   let pending := start ++ hot
   let fuel := members.length + 1
   let (_, backs) := pending.foldl (init := (({} : NatSet), ([] : List (Nat × Nat)))) fun acc r =>
-    if acc.1.contains r then acc else backEdges m ok fuel [] acc r
+    if acc.1.contains r then acc else backEdges m ok fuel {} acc r
   let preds := predsIn m ok hot
-  let loops := backs.foldl (init := []) fun loops (u, h) =>
-    addLoop loops h (loopBody preds fuel (({} : NatSet).insert h) [u])
-  (chains m ok loops fuel fuel fuel ({}, []) pending).2.reverse ++ cold
+  -- the back edges' sources, by header
+  let latches : NatMap (List Nat) := backs.foldl (init := {}) fun acc (u, h) => acc.insert h (u :: acc.getD h [])
+  let loops : List (Nat × NatSet) :=
+    latches.toList.map fun (h, us) => (h, loopBody preds fuel (({} : NatSet).insert h) us)
+  let loopMap : NatMap NatSet := loops.foldl (init := {}) fun acc (h, body) => acc.insert h body
+  let byBlock := loopsOf loops
+  let cursors : NatMap (List Nat) := loops.foldl (init := {}) fun acc (h, body) => acc.insert h body.toList
+  (chains m ok (sharedLoop byBlock loopMap fuel) byBlock fuel fuel ({}, []) pending cursors).2.reverse ++ cold
 
 def Order.produce (p : Program) (s : Shape) : Order :=
   let m := blockMap p

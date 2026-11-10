@@ -1,0 +1,1291 @@
+build	program	root	mode	exit	cert_bytes	object_bytes	cert_sha	object_sha	produce_ms	run_ms	refusal
+before	fixtures/corpus/phase1-abi/abi.ixe	all	off	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat0	off	0	3356	1864	6741e96d0d0a6226	0df298c253c8f381	12	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool0	off	0	3107	1864	0870358d66e8b79b	ffb1bc7e9acfcec1	12	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri0	off	0	3105	1864	b2fe857c15402bd9	76c318f244e60d2a	12	2	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat1	off	0	3125	1888	9398328a47aac4c7	31635ecb3fa4f2ca	12	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool1	off	0	5959	1928	401984c4c3429aba	f7627ecc78a4e523	20	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri1	off	0	7545	1944	3a8952f8311cc3cb	62f0985306bb2762	28	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat2	off	0	4380	1936	c35328983eefdf82	7aeda2fef230da51	18	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool2	off	0	6474	1968	f77ca07415c95fc9	09307b1afd87c842	27	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri2	off	0	8083	1992	3693a7f6f4d17a12	52999a7dc16eaca3	30	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat3	off	0	4711	1976	f366a31c744e086a	2420bf86b3db1592	18	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool3	off	0	6807	2008	62c336c32634d4a3	1d34947172e5bbe4	21	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri3	off	0	8418	2032	4e1658d62165c285	1f7ffd644fe15b82	29	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat4	off	0	5047	2016	5969eb0b6188191d	d78d8b4e11a58ec6	16	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool4	off	0	7141	2056	92821398c4e14010	a73684b786b4f47d	22	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri4	off	0	8751	2072	c2a084133e2cfc9c	c5152a14447ae1ae	26	7	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat5	off	0	5373	2056	733e150f333de6eb	a1b0b7f1aa7c5673	18	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool5	off	0	7467	2096	3c00d59566aa2ced	d34c7dd9025433cb	22	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri5	off	0	9077	2112	60319eb6f67a69b7	526690930383ff0e	28	7	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat6	off	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool6	off	1							ixcc: rt: rt.params: root Abi.bool6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri6	off	1							ixcc: rt: rt.params: root Abi.tri6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	all	on	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat0	on	0	4781	2152	71469f24259bd391	bf83021d606931a0	14	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool0	on	0	4541	2152	9cacf184c2e1904a	04bde0fd9a2133bd	14	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri0	on	0	4539	2152	b7f3a1a4ddf69265	38be2d42f1072521	14	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat1	on	0	4550	2176	ed34dd5c05bc58b9	2abd6969c533e2f5	13	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool1	on	0	7402	2216	13fc52193b584917	00f8d946cd7ec5fb	22	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri1	on	0	9078	2232	f037ccfe0325670d	5bce4184baada821	25	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat2	on	0	5823	2216	610365720f312e09	e012feec300e7568	16	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool2	on	0	7935	2256	21a366d0f18c58b5	4d2a6fd4c9f48f11	21	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri2	on	0	9634	2272	bbee5e53d609dc99	559a6f06ed3dd26e	26	7	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat3	on	0	6172	2256	bfcd56dbc0f489cd	b9a6ebf5b228691f	27	7	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool3	on	0	8286	2296	9a551072daa23417	3bba9e4f74acb120	23	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri3	on	0	9987	2312	b7fb3eb97ed7ca09	dfcdc6e1941f0ede	43	10	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat4	on	0	6526	2296	70a167e24fdde228	b8c24e184f68e47a	18	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool4	on	0	8638	2336	c3305e447dc9bbf1	338827fa6224cca7	23	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri4	on	0	10338	2352	27f523f27e40a630	65dc10947ee7c5ec	29	7	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat5	on	0	6870	2344	5fb505760faca75e	12a5557c8ff3747b	18	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool5	on	0	8982	2376	d4640e574106fd52	7814b865a57daaaa	23	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri5	on	0	10682	2400	8a2e0c5451b6281a	4fa7097aec67641d	29	8	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat6	on	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool6	on	1							ixcc: rt: rt.params: root Abi.bool6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri6	on	1							ixcc: rt: rt.params: root Abi.tri6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	all	auto	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat0	auto	0	3356	1864	6741e96d0d0a6226	0df298c253c8f381	13	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool0	auto	0	3107	1864	0870358d66e8b79b	ffb1bc7e9acfcec1	12	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri0	auto	0	3105	1864	b2fe857c15402bd9	76c318f244e60d2a	12	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat1	auto	0	3125	1888	9398328a47aac4c7	31635ecb3fa4f2ca	12	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool1	auto	0	5959	1928	401984c4c3429aba	f7627ecc78a4e523	20	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri1	auto	0	7545	1944	3a8952f8311cc3cb	62f0985306bb2762	39	7	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat2	auto	0	4380	1936	c35328983eefdf82	7aeda2fef230da51	16	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool2	auto	0	6474	1968	f77ca07415c95fc9	09307b1afd87c842	21	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri2	auto	0	8083	1992	3693a7f6f4d17a12	52999a7dc16eaca3	25	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat3	auto	0	4711	1976	f366a31c744e086a	2420bf86b3db1592	16	3	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool3	auto	0	6807	2008	62c336c32634d4a3	1d34947172e5bbe4	21	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri3	auto	0	8418	2032	4e1658d62165c285	1f7ffd644fe15b82	26	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat4	auto	0	5047	2016	5969eb0b6188191d	d78d8b4e11a58ec6	16	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool4	auto	0	7141	2056	92821398c4e14010	a73684b786b4f47d	23	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri4	auto	0	8751	2072	c2a084133e2cfc9c	c5152a14447ae1ae	27	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat5	auto	0	5373	2056	733e150f333de6eb	a1b0b7f1aa7c5673	17	4	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool5	auto	0	7467	2096	3c00d59566aa2ced	d34c7dd9025433cb	21	5	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri5	auto	0	9077	2112	60319eb6f67a69b7	526690930383ff0e	27	6	
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat6	auto	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool6	auto	1							ixcc: rt: rt.params: root Abi.bool6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri6	auto	1							ixcc: rt: rt.params: root Abi.tri6 takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-boundary/boundary.ixe	all	off	0	33961	11184	420ec2adb9ff4f49	c31ed68d28d440fd	57	29	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.add	off	0	4097	1912	97652bd89a3cc078	dc7f82c22404c071	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.sub	off	0	4093	1920	b3dcb60e0f9e55c7	5ceb45c7b3f5fc5d	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mul	off	0	4350	1976	acc7a31eb9a000c9	0ea1b92c850fc2a5	17	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.div	off	0	4193	1944	37fd2be817b93b0a	37a6b953f36fc596	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mod	off	0	4202	1944	79a3faa6cbd593d5	02b1aabefec3295c	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pow	off	0	4479	2136	d5678861e1e4a6b8	b000baa40521d691	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.gcd	off	0	3382	1992	594f781635f2426e	9692c9d415a22913	16	2	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.land	off	0	4041	1912	657aed17566a75c3	68a135abdfa4a98b	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.lor	off	0	4043	1904	3c96d1cbe381f0dd	e4c17c8cd44b5799	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xor	off	0	4055	1904	099bb717195c5d3f	be0f4b719fdc926e	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shl	off	0	4280	1968	d7290605a221afa9	2d93bcfa93b5f946	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shr	off	0	4116	1928	607f1ec14380cc21	b85568a9d54c8019	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.beq	off	0	3394	1912	65f38813c9ff1387	15cd5815fb800535	15	2	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ble	off	0	3394	1912	f94f1cd9cb9245c9	e12f4d2a9be21eec	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.blt	off	0	3607	1920	bd1c8f07138c780e	6008f0dadda0455f	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decEq	off	0	4808	1920	a23aff6d5f78e192	115c97ce82a7245b	19	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLe	off	0	5700	1928	598440bec5dafc78	c320995e0e895150	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLt	off	0	5986	1952	a0550c909be3bb01	4e5d7253f05ea350	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decGt	off	0	5986	1952	2acd06adf68544b3	62f49348bdda3c90	21	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.bne	off	0	5495	1920	b35ee5faa560d1b1	f77fe35896290c16	20	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltBranch	off	0	6330	1936	9193873f7a6f430d	d969baeb9c837d54	23	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leBranch	off	0	6109	1928	286e1e377294d271	0fb01d4d39d23bae	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.minN	off	0	6367	1920	a9c9c354976a3641	6ecdbe1f6a357aed	23	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.maxN	off	0	6365	1920	f339dc2fd62bab6f	860df698e6f7673c	23	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pred	off	0	3350	1912	b7b3dba081f4835d	6157e4784334cdc3	15	2	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succ	off	0	3381	1912	0867d55005c21b96	a3fe988a749c1ca1	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ident	off	0	3292	1896	99255ad13fd2374d	5cec14433b90d83b	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addK	off	0	4302	1912	966a915b6122011c	d8de68471d6230d7	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kAdd	off	0	4300	1912	c9e709a39bca05fc	bc57304ee3d32aae	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.subK	off	0	4292	1920	f41eb893ffca37c3	bb00823ef6e9e435	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kSub	off	0	4306	1920	6182a90b1170aa32	fc997423079a210c	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulK	off	0	4569	1976	0b75061d81157aef	b0952e263630d717	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMul	off	0	4311	1920	d652a788303b995b	9ab66998086d435e	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.divK	off	0	4273	1904	225c03c03e0c563d	edcdf16de78b6e49	19	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kDiv	off	0	4429	1952	dd0d06db03a01b02	e798c9a7534a8c9a	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.modK	off	0	4326	1920	2dee6e6d2037fc02	75f33f61740c97a2	20	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMod	off	0	4444	1960	e9b63152bb4586b1	d5032c3bef920070	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlK	off	0	4454	1968	a78cd971671eac44	f608416b206049e8	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShl	off	0	4527	1976	5d82004064424c7b	4e79004dc0f57c56	17	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shrK	off	0	4310	1928	263d612e75416bcf	a3f7f474a81d9304	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShr	off	0	4330	1928	608b909aea467c07	80cd8d7613f9f5f3	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powK	off	0	4715	2144	502c04177175ef10	2ef4c47d866e81ad	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kPow	off	0	4746	2152	8e1c2a4651d0de16	139f04670828f63c	23	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.landK	off	0	4275	1912	bc235b271005c6cd	ac8ba37c6cdea95e	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xorK	off	0	4275	1904	0ede959c1063fa9a	31dbd1e14110a188	19	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltK	off	0	6195	1944	c61827408363ca4a	076937b1c3078542	23	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leK	off	0	5918	1912	d23be86ba9a48105	593cadc221573d4c	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.eqK	off	0	5360	1904	51ef348a9e211036	0dd6b46d1a16a913	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litMax	off	0	6616	1920	ef67240eb7ae55a5	e20b1f7d2c070de3	23	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litWord	off	0	6601	1912	3ec968e650097063	34d5e97799bb597f	26	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litDead	off	0	7354	1920	e8afa87a0db93e6a	6dc0762841739b1e	26	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litArm	off	0	4590	1928	7c350456b33b354f	411c1603d1a2ed49	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litOperand	off	0	4224	1904	137049b026faf1c9	b9275048cbca3e70	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litCompare	off	0	6048	1912	fe7637dd374f7743	27864a57c874b800	22	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addSub	off	0	4381	1944	8ce06ee2553692ea	f073fb4d726cbbbb	17	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulDiv	off	0	4731	2040	c6081a7303082b09	d6a13385301b8698	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlShr	off	0	4546	2000	8f67cdbd40144e86	2ed0775bc3812ae3	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powMod	off	0	5269	2224	0054479de9438910	8bad4809df2b2412	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succPred	off	0	4360	1920	779ced85d8e7d04d	dfb35b15644cc3fd	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	all	on	0	39897	11712	693babcf52c4c891	39fe1008d0fc8713	58	33	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.add	on	0	5530	2200	afcf6c0c698078e3	77b90978e072ff3d	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.sub	on	0	5527	2200	8ff9dad1f35b90e2	1ab1ca5303ebd057	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mul	on	0	5783	2256	f25353c5697d5703	1c396fd6dcba97b2	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.div	on	0	5627	2232	fec2918dedab6fdb	cb187506b441d637	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mod	on	0	5636	2232	8a863637c8b6a7cc	f18a2db8a60ffa2c	18	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pow	on	0	5911	2408	77cc3cde83dba0a7	453e85c1c2abb99d	19	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.gcd	on	0	4814	2264	d937fb4eda54c651	80ba08ddd10e9bb3	16	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.land	on	0	5475	2192	24e4dc5ab0e460c9	84dc6ef8d8c50236	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.lor	on	0	5477	2184	328b144b390dab97	652a15ea0b769426	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xor	on	0	5489	2192	57b62edb00e74240	8517c5cc30da924c	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shl	on	0	5713	2248	728753f4849af5b0	99aa70dd86fcd3d7	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shr	on	0	5550	2208	37c2760f35765d23	ccfdedcc21f8a458	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.beq	on	0	4828	2200	0edc9778fda383ed	f0f9da32eaed834c	16	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ble	on	0	4828	2200	6f7211829b403ebc	ef76277b10a92265	16	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.blt	on	0	5049	2208	394edf13ad3e9e8d	16bdcbd01cb788fa	16	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decEq	on	0	6242	2208	4419aa9466627e32	931cf4dd5187f193	20	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLe	on	0	7179	2208	80ed884a71145d3e	16bbd91c7e7ded04	21	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLt	on	0	7473	2240	1dad9f2ea1ed9f5e	f3a1bee72489f01f	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decGt	on	0	7473	2240	39b77435aca6eede	85a63af1f980f36f	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.bne	on	0	6974	2200	ee11e4280e4be2e1	fbe319b230a05e14	21	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltBranch	on	0	7799	2216	cecb4b9ad3f4ec55	b0c850d2400e7805	24	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leBranch	on	0	7570	2208	660758bfdd3206a8	c47b8ed5a5565179	23	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.minN	on	0	7828	2208	2328444066063834	46abaa334d6f76ca	24	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.maxN	on	0	7826	2208	cf601085e879c154	ee23fa12b209188c	23	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pred	on	0	4784	2200	1a9225b01b9efb3e	4f8e8b55aacd1f6a	15	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succ	on	0	4814	2192	61838addea561c2c	b5aadf680c189625	16	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ident	on	0	4717	2184	d1f83e0a59ac218c	63e83332ad7d6069	16	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addK	on	0	5735	2192	b0afd3ed1e6bc4ee	eedba74915b65ad6	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kAdd	on	0	5733	2192	523528d174558f3e	fe322187a9078133	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.subK	on	0	5726	2200	efaf640d1fb9c4b6	3863d27b54c3e843	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kSub	on	0	5740	2208	598ba3d32ceaa08f	eab94338120c01fe	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulK	on	0	6002	2264	61bb3e2ed1b85b98	30b105dfafecbbf9	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMul	on	0	5744	2208	de42beaa72d6d1af	28ac815b94d75efe	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.divK	on	0	5707	2192	59050f3fb09dd996	b481b373b5253e65	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kDiv	on	0	5863	2240	90b853ba5181e122	6bd3f1ac4ad236bd	18	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.modK	on	0	5760	2200	8a50b9cea8fcd5c2	ccb4fd3086963245	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMod	on	0	5878	2248	288ffa921df06b2d	bbdd59f306c6e42e	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlK	on	0	5887	2248	1410f854ee4582d1	fe18ca689c2769bf	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShl	on	0	5960	2256	1eb471b0c1cc7e46	e26b86a6a213f9ff	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shrK	on	0	5744	2208	77d2898432306230	c4ccd7742d511045	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShr	on	0	5764	2216	8899fddd90644b7e	fa0e51e190a30528	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powK	on	0	6147	2416	dfcd2cee3e2a24ef	b7fdf4696578f402	20	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kPow	on	0	6178	2424	df86482d5ad03060	9608f0a958a0e1e1	20	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.landK	on	0	5709	2200	41f5e80038be98a5	3314f69a68b6c209	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xorK	on	0	5709	2192	74149321e9bf375c	84c8629448c8dd66	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltK	on	0	7682	2224	7eb51ca0aecc5215	800fee34b143d0f9	23	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leK	on	0	7397	2192	5bb8b38e31d5f3ba	b2cd8c56f1ac9501	22	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.eqK	on	0	6794	2192	c1691d49395bf0ca	146829fbe104d262	21	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litMax	on	0	8077	2200	1b5e41f461a371a8	cc2a4f9290b2eee4	24	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litWord	on	0	8062	2192	cc8fbd70c575b21a	b32b7f546ecf04a7	24	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litDead	on	0	8823	2208	d3c9e331e760d2ef	4a8bbb0373e75f71	27	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litArm	on	0	6983	2472	e8afd8b426d7b02f	f420b296d388f5ca	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litOperand	on	0	5658	2184	560c3bea0662d8c1	03b9d4e432569a40	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litCompare	on	0	7535	2192	44fc55a8e02161a8	32ae217c2659dec3	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addSub	on	0	5823	2232	fa656dd6ed4a2b77	3b875349fc18972e	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulDiv	on	0	6173	2320	7134c7bc017ea056	9219d3dede9f23ff	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlShr	on	0	5988	2288	bdfa301b199abe08	09005077af541b14	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powMod	on	0	6710	2496	63c4bd7c42976b01	dbfcb78cdcbd0e0c	20	5	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succPred	on	0	5802	2208	fda91eee7ac44ed2	c37fb9e0d62886ea	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	all	auto	0	33961	11184	420ec2adb9ff4f49	c31ed68d28d440fd	56	27	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.add	auto	0	4097	1912	97652bd89a3cc078	dc7f82c22404c071	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.sub	auto	0	4093	1920	b3dcb60e0f9e55c7	5ceb45c7b3f5fc5d	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mul	auto	0	4350	1976	acc7a31eb9a000c9	0ea1b92c850fc2a5	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.div	auto	0	4193	1944	37fd2be817b93b0a	37a6b953f36fc596	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mod	auto	0	4202	1944	79a3faa6cbd593d5	02b1aabefec3295c	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pow	auto	0	4479	2136	d5678861e1e4a6b8	b000baa40521d691	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.gcd	auto	0	3382	1992	594f781635f2426e	9692c9d415a22913	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.land	auto	0	4041	1912	657aed17566a75c3	68a135abdfa4a98b	16	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.lor	auto	0	4043	1904	3c96d1cbe381f0dd	e4c17c8cd44b5799	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xor	auto	0	4055	1904	099bb717195c5d3f	be0f4b719fdc926e	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shl	auto	0	4280	1968	d7290605a221afa9	2d93bcfa93b5f946	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shr	auto	0	4116	1928	607f1ec14380cc21	b85568a9d54c8019	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.beq	auto	0	3394	1912	65f38813c9ff1387	15cd5815fb800535	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ble	auto	0	3394	1912	f94f1cd9cb9245c9	e12f4d2a9be21eec	14	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.blt	auto	0	3607	1920	bd1c8f07138c780e	6008f0dadda0455f	22	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decEq	auto	0	4808	1920	a23aff6d5f78e192	115c97ce82a7245b	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLe	auto	0	5700	1928	598440bec5dafc78	c320995e0e895150	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLt	auto	0	5986	1952	a0550c909be3bb01	4e5d7253f05ea350	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decGt	auto	0	5986	1952	2acd06adf68544b3	62f49348bdda3c90	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.bne	auto	0	5495	1920	b35ee5faa560d1b1	f77fe35896290c16	20	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltBranch	auto	0	6330	1936	9193873f7a6f430d	d969baeb9c837d54	22	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leBranch	auto	0	6109	1928	286e1e377294d271	0fb01d4d39d23bae	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.minN	auto	0	6367	1920	a9c9c354976a3641	6ecdbe1f6a357aed	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.maxN	auto	0	6365	1920	f339dc2fd62bab6f	860df698e6f7673c	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pred	auto	0	3350	1912	b7b3dba081f4835d	6157e4784334cdc3	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succ	auto	0	3381	1912	0867d55005c21b96	a3fe988a749c1ca1	15	2	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ident	auto	0	3292	1896	99255ad13fd2374d	5cec14433b90d83b	15	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addK	auto	0	4302	1912	966a915b6122011c	d8de68471d6230d7	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kAdd	auto	0	4300	1912	c9e709a39bca05fc	bc57304ee3d32aae	17	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.subK	auto	0	4292	1920	f41eb893ffca37c3	bb00823ef6e9e435	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kSub	auto	0	4306	1920	6182a90b1170aa32	fc997423079a210c	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulK	auto	0	4569	1976	0b75061d81157aef	b0952e263630d717	17	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMul	auto	0	4311	1920	d652a788303b995b	9ab66998086d435e	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.divK	auto	0	4273	1904	225c03c03e0c563d	edcdf16de78b6e49	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kDiv	auto	0	4429	1952	dd0d06db03a01b02	e798c9a7534a8c9a	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.modK	auto	0	4326	1920	2dee6e6d2037fc02	75f33f61740c97a2	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMod	auto	0	4444	1960	e9b63152bb4586b1	d5032c3bef920070	17	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlK	auto	0	4454	1968	a78cd971671eac44	f608416b206049e8	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShl	auto	0	4527	1976	5d82004064424c7b	4e79004dc0f57c56	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shrK	auto	0	4310	1928	263d612e75416bcf	a3f7f474a81d9304	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShr	auto	0	4330	1928	608b909aea467c07	80cd8d7613f9f5f3	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powK	auto	0	4715	2144	502c04177175ef10	2ef4c47d866e81ad	18	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kPow	auto	0	4746	2152	8e1c2a4651d0de16	139f04670828f63c	19	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.landK	auto	0	4275	1912	bc235b271005c6cd	ac8ba37c6cdea95e	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xorK	auto	0	4275	1904	0ede959c1063fa9a	31dbd1e14110a188	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltK	auto	0	6195	1944	c61827408363ca4a	076937b1c3078542	22	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leK	auto	0	5918	1912	d23be86ba9a48105	593cadc221573d4c	22	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.eqK	auto	0	5360	1904	51ef348a9e211036	0dd6b46d1a16a913	20	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litMax	auto	0	6616	1920	ef67240eb7ae55a5	e20b1f7d2c070de3	23	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litWord	auto	0	6601	1912	3ec968e650097063	34d5e97799bb597f	24	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litDead	auto	0	7354	1920	e8afa87a0db93e6a	6dc0762841739b1e	25	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litArm	auto	0	4590	1928	7c350456b33b354f	411c1603d1a2ed49	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litOperand	auto	0	4224	1904	137049b026faf1c9	b9275048cbca3e70	18	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litCompare	auto	0	6048	1912	fe7637dd374f7743	27864a57c874b800	21	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addSub	auto	0	4381	1944	8ce06ee2553692ea	f073fb4d726cbbbb	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulDiv	auto	0	4731	2040	c6081a7303082b09	d6a13385301b8698	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlShr	auto	0	4546	2000	8f67cdbd40144e86	2ed0775bc3812ae3	17	3	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powMod	auto	0	5269	2224	0054479de9438910	8bad4809df2b2412	19	4	
+before	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succPred	auto	0	4360	1920	779ced85d8e7d04d	dfb35b15644cc3fd	26	4	
+before	fixtures/corpus/phase1-boundary/fields254.ixe	all	off	0	21815	4792	750c2cb993825e07	dc54480970d666a5	42	11	
+before	fixtures/corpus/phase1-boundary/fields254.ixe	all	on	1							ixcc: rt: rc.lower: constructor table exceeds first RC layout fragment
+before	fixtures/corpus/phase1-boundary/fields254.ixe	all	auto	0	21815	4792	750c2cb993825e07	dc54480970d666a5	44	16	
+before	fixtures/corpus/phase1-boundary/fields255.ixe	all	off	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/fields255.ixe	all	on	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/fields255.ixe	all	auto	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/tags125.ixe	all	off	0	343103	4784	3615ab951c89dfb8	202c353878fc15a2	3430	73	
+before	fixtures/corpus/phase1-boundary/tags125.ixe	all	on	0	412398	15680	f941e23cd837a791	78b2702bd01ecc56	3529	102	
+before	fixtures/corpus/phase1-boundary/tags125.ixe	all	auto	0	412398	15680	f941e23cd837a791	78b2702bd01ecc56	3782	101	
+before	fixtures/corpus/phase1-boundary/tags126.ixe	all	off	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/tags126.ixe	all	on	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/tags126.ixe	all	auto	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+before	fixtures/corpus/phase1-boundary/tags16.ixe	all	off	0	17747	2424	e9167b97d9ecec4f	471ad2693a4becac	45	7	
+before	fixtures/corpus/phase1-boundary/tags16.ixe	all	on	0	29576	4384	0167c339c8a1877d	6cd6becd702b90ea	76	18	
+before	fixtures/corpus/phase1-boundary/tags16.ixe	all	auto	0	29576	4384	0167c339c8a1877d	6cd6becd702b90ea	81	17	
+before	fixtures/corpus/phase1-boundary/tags17.ixe	all	off	0	18572	2448	d902249dfdbc3333	2f0fac9f3bc2ab6e	70	11	
+before	fixtures/corpus/phase1-boundary/tags17.ixe	all	on	0	30928	4488	b8039dd752a83e0c	0c26e556adb98be5	69	18	
+before	fixtures/corpus/phase1-boundary/tags17.ixe	all	auto	0	30928	4488	b8039dd752a83e0c	0c26e556adb98be5	76	15	
+before	fixtures/corpus/phase1-decline/admit.ixe	all	off	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useOpaque	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.usePartial	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useUnsafe	off	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useChoice	off	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/corpus/phase1-decline/admit.ixe	all	on	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useOpaque	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.usePartial	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useUnsafe	on	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useChoice	on	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/corpus/phase1-decline/admit.ixe	all	auto	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useOpaque	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.usePartial	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useUnsafe	auto	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition
+before	fixtures/corpus/phase1-decline/admit.ixe	Decline.useChoice	auto	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/corpus/phase1-decline/closures.ixe	all	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+before	fixtures/corpus/phase1-decline/closures.ixe	Decline.applyArg	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [], app in [0], fu
+before	fixtures/corpus/phase1-decline/closures.ixe	Decline.composeClosure	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [0, 1], app in [1]
+before	fixtures/corpus/phase1-decline/closures.ixe	all	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+before	fixtures/corpus/phase1-decline/closures.ixe	Decline.applyArg	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [], app in [0], fu
+before	fixtures/corpus/phase1-decline/closures.ixe	Decline.composeClosure	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [0, 1], app in [1]
+before	fixtures/corpus/phase1-decline/closures.ixe	all	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+before	fixtures/corpus/phase1-decline/closures.ixe	Decline.applyArg	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [], app in [0], fu
+before	fixtures/corpus/phase1-decline/closures.ixe	Decline.composeClosure	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [0, 1], app in [1]
+before	fixtures/corpus/phase1-decline/erase.ixe	all	off	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.recMinor	off	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.unboxMatch	off	0	3145	1896	32f2beef6bb7b58e	fb97333588848069	4	2	
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.subtypeMatch	off	0	3305	1896	39cffc53bc224bf7	855c7cabb85b3808	6	2	
+before	fixtures/corpus/phase1-decline/erase.ixe	all	on	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.recMinor	on	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.unboxMatch	on	0	4570	2184	21e677f57ab9605d	48c0d865ddae4764	5	3	
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.subtypeMatch	on	0	4730	2184	2efae45f172b4f3f	852d7a990118ebd6	8	3	
+before	fixtures/corpus/phase1-decline/erase.ixe	all	auto	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.recMinor	auto	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.unboxMatch	auto	0	3145	1896	32f2beef6bb7b58e	fb97333588848069	4	2	
+before	fixtures/corpus/phase1-decline/erase.ixe	Decline.subtypeMatch	auto	0	3305	1896	39cffc53bc224bf7	855c7cabb85b3808	7	2	
+before	fixtures/corpus/phase1-decline/loops.ixe	all	off	0	17364	2344	146ef09a20941860	ad2a4a6851303edf	97	18	
+before	fixtures/corpus/phase1-decline/loops.ixe	Decline.nestedFor	off	0	15341	2064	59fa4a4504518afc	5917d3e04a240d63	92	16	
+before	fixtures/corpus/phase1-decline/loops.ixe	Decline.mulN	off	0	14617	2056	9008bce4370a90a8	690084c24d67f521	88	12	
+before	fixtures/corpus/phase1-decline/loops.ixe	all	on	0	22145	2808	91f438883ac92021	259682003ed4be15	103	21	
+before	fixtures/corpus/phase1-decline/loops.ixe	Decline.nestedFor	on	0	19912	2504	639a363c6bbd97f4	37aad0e7c094c0e1	97	18	
+before	fixtures/corpus/phase1-decline/loops.ixe	Decline.mulN	on	0	18947	2400	771b0a830886be19	b527ede44de82914	90	14	
+before	fixtures/corpus/phase1-decline/loops.ixe	all	auto	0	17364	2344	146ef09a20941860	ad2a4a6851303edf	113	26	
+before	fixtures/corpus/phase1-decline/loops.ixe	Decline.nestedFor	auto	0	15341	2064	59fa4a4504518afc	5917d3e04a240d63	126	19	
+before	fixtures/corpus/phase1-decline/loops.ixe	Decline.mulN	auto	0	14617	2056	9008bce4370a90a8	690084c24d67f521	88	12	
+before	fixtures/corpus/phase1-decline/panic.ixe	all	off	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+before	fixtures/corpus/phase1-decline/panic.ixe	all	on	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+before	fixtures/corpus/phase1-decline/panic.ixe	all	auto	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+before	fixtures/corpus/phase1-decline/params.ixe	all	off	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.six	off	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndType	off	1							ixcc: rt: rt.params: root Decline.fiveAndType takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndProof	off	1							ixcc: rt: rt.params: root Decline.fiveAndProof takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	all	on	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.six	on	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndType	on	1							ixcc: rt: rt.params: root Decline.fiveAndType takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndProof	on	1							ixcc: rt: rt.params: root Decline.fiveAndProof takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	all	auto	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.six	auto	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndType	auto	1							ixcc: rt: rt.params: root Decline.fiveAndType takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndProof	auto	1							ixcc: rt: rt.params: root Decline.fiveAndProof takes 6 parameters; the entry wrapper passes at most 5
+before	fixtures/corpus/phase1-decline/strings.ixe	all	off	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+before	fixtures/corpus/phase1-decline/strings.ixe	all	on	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+before	fixtures/corpus/phase1-decline/strings.ixe	all	auto	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+before	fixtures/corpus/phase1-decline/symbols.ixe	all	off	1							ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+before	fixtures/corpus/phase1-decline/symbols.ixe	A.b	off	0	3658	1896	d4d96db445ede5ec	2dd0b525e8c2d961	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	A_b	off	0	3658	1896	7dc3172e5b780c7a	d0f63bae3cb09457	6	3	
+before	fixtures/corpus/phase1-decline/symbols.ixe	«x-y»	off	0	3658	1904	0d463354bb609c95	725ff13a31ae785e	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	_x_y_	off	0	3658	1904	c66f2190890c3253	c0fcc1b63b18b36d	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	α	off	0	3658	1896	79eca2466e2850d9	5d5b766ceb862c80	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	β	off	0	3658	1896	d64f3e2993831955	7f602308eb8aece7	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	init	off	0	3658	1904	4e24db9bc0ea9912	3961ab4de762f124	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	root_init	off	0	3658	1904	2bd21d9efbc9554a	28311cd17dbbb658	8	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	twinA	off	0	4186	1976	7d49e8ae2594e843	fa170a39a15bc8b3	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	twinB	off	0	4186	1976	7d49e8ae2594e843	f1294b0b27c16724	9	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	all	on	1							ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+before	fixtures/corpus/phase1-decline/symbols.ixe	A.b	on	0	5091	2176	7687eccc3e0bf538	7d4fd84786842d29	10	4	
+before	fixtures/corpus/phase1-decline/symbols.ixe	A_b	on	0	5091	2176	f8cc9cbd0e402f9e	c1a6388156d67107	11	4	
+before	fixtures/corpus/phase1-decline/symbols.ixe	«x-y»	on	0	5091	2184	1b194b9c6083cc88	f5d236717733728a	11	4	
+before	fixtures/corpus/phase1-decline/symbols.ixe	_x_y_	on	0	5091	2184	18e198bf630a3b4b	68f96387eacb9a17	7	4	
+before	fixtures/corpus/phase1-decline/symbols.ixe	α	on	0	5091	2176	cd0e207cbc7c0d4f	0814d328f89e2d1a	8	4	
+before	fixtures/corpus/phase1-decline/symbols.ixe	β	on	0	5091	2176	ba18c019013a6c86	a1c4723fdf7672a8	8	3	
+before	fixtures/corpus/phase1-decline/symbols.ixe	init	on	0	5091	2184	69f4bb7560235681	3cdd2221d5ff6fd9	7	3	
+before	fixtures/corpus/phase1-decline/symbols.ixe	root_init	on	0	5091	2184	75490be9102cdbef	89b6b189d6c23dab	8	3	
+before	fixtures/corpus/phase1-decline/symbols.ixe	twinA	on	0	5628	2264	9684d2cfa5a0b55f	c6763a6f9f5aa6dd	9	4	
+before	fixtures/corpus/phase1-decline/symbols.ixe	twinB	on	0	5628	2264	9684d2cfa5a0b55f	6bc1053c2c505478	9	3	
+before	fixtures/corpus/phase1-decline/symbols.ixe	all	auto	1							ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+before	fixtures/corpus/phase1-decline/symbols.ixe	A.b	auto	0	3658	1896	d4d96db445ede5ec	2dd0b525e8c2d961	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	A_b	auto	0	3658	1896	7dc3172e5b780c7a	d0f63bae3cb09457	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	«x-y»	auto	0	3658	1904	0d463354bb609c95	725ff13a31ae785e	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	_x_y_	auto	0	3658	1904	c66f2190890c3253	c0fcc1b63b18b36d	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	α	auto	0	3658	1896	79eca2466e2850d9	5d5b766ceb862c80	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	β	auto	0	3658	1896	d64f3e2993831955	7f602308eb8aece7	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	init	auto	0	3658	1904	4e24db9bc0ea9912	3961ab4de762f124	6	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	root_init	auto	0	3658	1904	2bd21d9efbc9554a	28311cd17dbbb658	7	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	twinA	auto	0	4186	1976	7d49e8ae2594e843	fa170a39a15bc8b3	8	2	
+before	fixtures/corpus/phase1-decline/symbols.ixe	twinB	auto	0	4186	1976	7d49e8ae2594e843	f1294b0b27c16724	7	3	
+before	fixtures/corpus/phase1-resource/resource.ixe	all	off	0	23381	3608	536eb25b78f1a6ad	25808b023b981f80	116	23	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.heapList	off	0	7628	2072	7e6d78997304720b	08faeb5a5e2d2e31	76	11	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.twoVars	off	0	15534	2120	847c3249ce8e2159	aa90afae38f297bb	95	15	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.oneVar	off	0	14248	1952	4fcb6b64c5038a64	2cf25f22aa26311a	90	12	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.depth	off	0	5889	1968	9c2a54efc98155bd	d540788292e8ecbe	51	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.tail	off	0	6107	1944	77191a7c1fcae0b2	8faec4edcdb664dc	73	9	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.isEven	off	0	5178	1944	63f7edbad82c05c6	57406232e19fdaef	49	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.isOdd	off	0	5178	1944	edcc577f7251da6e	f0ccb006a7dcef23	49	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapEmpty	off	0	4353	1912	bf26b5c9a19fc411	46847f0e9e5e4f9a	47	7	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapFalse	off	0	4249	1912	6d103d5258982dde	4e8e8dc2955ab012	53	7	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapAbsurd	off	0	4352	1920	0aba995f353ca7c3	26b8e0a23dcb35d3	47	9	
+before	fixtures/corpus/phase1-resource/resource.ixe	all	on	0	32693	5080	b4154255714c10db	443f87bb0476a2d3	116	25	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.heapList	on	0	10922	2808	8f6035c4bcef8102	0e44f90dd5e459c3	58	10	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.twoVars	on	0	21000	2784	98255bc87a433755	2d3a587483c6889a	97	16	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.oneVar	on	0	18494	2240	ae3291790e681c95	cc1a8efd063a626e	112	15	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.depth	on	0	8182	2456	2019635a7c9cf63b	a163e7fecfc5cdac	53	10	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.tail	on	0	8316	2432	a8073e1f7ba80412	3b0650c136ac011e	54	9	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.isEven	on	0	7599	2520	b365f256706e43d0	e43e165f2cd1915a	51	9	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.isOdd	on	0	7599	2520	9ffda72a7c17f8d6	6813ba21d1e1f47c	51	9	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapEmpty	on	0	5815	2256	c1a714d1bc729cfa	cbe134e029e6742f	48	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapFalse	on	0	5711	2256	eee5b0c7993271ce	dcc5238adea66a05	48	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapAbsurd	on	0	5886	2272	079e1bc053eb6c5e	201de1b264884dd0	49	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	all	auto	0	32693	5080	b4154255714c10db	443f87bb0476a2d3	142	25	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.heapList	auto	0	10922	2808	8f6035c4bcef8102	0e44f90dd5e459c3	68	10	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.twoVars	auto	0	21000	2784	98255bc87a433755	2d3a587483c6889a	112	17	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.oneVar	auto	0	14248	1952	4fcb6b64c5038a64	2cf25f22aa26311a	91	13	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.depth	auto	0	5889	1968	9c2a54efc98155bd	d540788292e8ecbe	52	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.tail	auto	0	6107	1944	77191a7c1fcae0b2	8faec4edcdb664dc	52	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.isEven	auto	0	5178	1944	63f7edbad82c05c6	57406232e19fdaef	49	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.isOdd	auto	0	5178	1944	edcc577f7251da6e	f0ccb006a7dcef23	50	7	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapEmpty	auto	0	4353	1912	bf26b5c9a19fc411	46847f0e9e5e4f9a	47	7	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapFalse	auto	0	4249	1912	6d103d5258982dde	4e8e8dc2955ab012	47	8	
+before	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapAbsurd	auto	0	4352	1920	0aba995f353ca7c3	26b8e0a23dcb35d3	47	7	
+before	fixtures/corpus/phase1-scalar/bigctor.ixe	all	off	0	7729	2696	2257ef2cf267f28f	0af8237e44015293	8	4	
+before	fixtures/corpus/phase1-scalar/bigctor.ixe	all	on	1							ixcc: rt: rc.lower: constructor table exceeds first RC layout fragment
+before	fixtures/corpus/phase1-scalar/bigctor.ixe	all	auto	0	7729	2696	2257ef2cf267f28f	0af8237e44015293	7	4	
+before	fixtures/corpus/phase1-scalar/natShiftr.ixe	all	off	0	3761	1928	61ead7b42743985f	1e042c97e6ba627e	10	2	
+before	fixtures/corpus/phase1-scalar/natShiftr.ixe	all	on	0	5195	2208	3f25bd30879b64b9	176763031b72edbe	11	3	
+before	fixtures/corpus/phase1-scalar/natShiftr.ixe	all	auto	0	3761	1928	61ead7b42743985f	1e042c97e6ba627e	9	3	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	all	off	0	68801	9344	6ee583a28766b857	e3d555e0bf236f6c	274	144	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.tailfib	off	0	6503	1960	cab4d21937e3a70a	e726ef52d36a4151	58	9	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.nfib	off	0	6731	2040	0bd98228f7b6a800	9e58697be478ebd9	57	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isEven	off	0	5346	1944	e598625a92a1a3bd	704dbf5d6524f607	54	9	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isOdd	off	0	5346	1936	7dcc0130ef0d8a4d	58feccb29bbcd059	53	9	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.f91	off	0	9349	2040	20e0d240f1521f55	ea2391030da2b428	65	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.factorial	off	0	6595	2056	effac82b738b9dc4	69dfb204d8b9a480	57	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.impFor	off	0	16993	2160	76750276c6d0919c	8add4828ee7a8411	110	26	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.pyth	off	0	23909	2552	d6464da9d0aa3e9f	3e1709a2f3937ea0	206	81	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sfib	off	0	9506	2016	21d057203793b393	79c47085413237a2	64	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatz	off	0	11408	2040	fa7a34b65943c28b	eca1df135750e592	70	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatzBest	off	0	20408	2384	9420cacf30719abb	d8b2722301a27eb1	111	18	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPrime	off	0	11446	2104	f76049e0ae7f0c96	76ffd2684fb87b20	70	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.primeCount	off	0	19580	2280	62536011090db16e	a1e86398c40bfcaf	108	19	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sigma	off	0	16523	2032	8c5bfab47b9f1167	7f280b541a039b3f	102	16	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPerfect	off	0	17355	2128	473dc5d397a8444f	1813c1a959e7ccff	115	26	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.perfectCount	off	0	19710	2232	79940cacf006cefc	aa1a9f56e90f0774	143	45	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.chooseMul	off	0	15727	2136	d15f2ca1bf5bd6c1	7130b756844f7dff	124	18	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.lcmUpTo	off	0	15868	2248	a1c3beb9eeda5320	0d8a83c3c03bbd62	127	23	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.choosePascal	off	0	6673	2072	0a705c682508f9a1	65a4d0451e3f0772	74	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isqrt	off	0	10273	2072	757d5dc1d603dedc	e4d0bcfdf8adf38e	70	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.powMod	off	0	11191	2400	b2c564bfa0a1c056	9167ff36a25ef49b	75	13	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.digitSum	off	0	8379	2032	6ba614c5c66cbb0c	51a4e5351e1e158f	92	16	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.gcdSub	off	0	9235	2016	922de21d39010dde	e960a8ca34d80802	89	14	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	all	on	0	86738	11776	bc429581105c9088	2e711f5e6d88447b	380	224	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.tailfib	on	0	8799	2472	ffaca01f8948804c	fb62d4c353268860	74	14	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.nfib	on	0	9273	2544	131c7ec34a60c3d6	17b685e897ecb484	74	16	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isEven	on	0	7767	2520	a85168f3dfbecbb9	e64f56b86bcc5d9e	72	14	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isOdd	on	0	7767	2512	a87ba9a810947cee	a069933f7f4e4ac9	67	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.f91	on	0	11810	2528	7b49ba8e910f491f	b8dce0699a54563e	66	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.factorial	on	0	8721	2488	cf0cba7a85101dca	3652e47fb1fc2292	58	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.impFor	on	0	21844	2656	7b057c2d6e3fbd93	5b0b9f5468f32155	134	29	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.pyth	on	0	29683	3144	cd77bb54cd553116	af032b5516ba368a	175	66	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sfib	on	0	11894	2520	0ade1b141fe1f5bb	4b16df99202b49cc	67	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatz	on	0	14203	2624	de908e0d1788c11a	e8fea137636f39a6	73	14	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatzBest	on	0	27251	3176	afb4c97430bbf02d	da4240e92553e7c2	137	24	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPrime	on	0	14329	2712	49396ca21bff0268	bdc6ff0047ca0c76	75	14	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.primeCount	on	0	25470	2896	8b1b36a20a69ebff	f2a518050562acc3	113	21	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sigma	on	0	20812	2312	4c3e941fc399875f	4db6ba188b297716	105	18	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPerfect	on	0	21707	2400	2b861461694db1bc	de1f8450df8224e5	113	24	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.perfectCount	on	0	24178	2504	9a90ad28c08b4b78	cfc7f7a9ef96c8cd	127	37	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.chooseMul	on	0	20075	2480	f55292f58d01da9b	837a53b4dfad9312	100	17	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.lcmUpTo	on	0	20142	2520	6100b170ef415914	58b42fb17bdf6235	101	17	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.choosePascal	on	0	9573	2648	8cfe97bf63323b34	c3e08638d4cb394f	59	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isqrt	on	0	12860	2624	250d839de5e831a0	10031df4441f9779	68	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.powMod	on	0	13055	2848	2eebb0d195959c23	092c839c332c2258	69	14	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.digitSum	on	0	9883	2312	50a3f98dffca8e46	699809cf0bd17ddf	63	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.gcdSub	on	0	10791	2304	57ae127a2198ca97	27cd2bc8305ac4a1	66	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	all	auto	0	86738	11776	bc429581105c9088	2e711f5e6d88447b	438	157	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.tailfib	auto	0	6503	1960	cab4d21937e3a70a	e726ef52d36a4151	57	9	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.nfib	auto	0	6731	2040	0bd98228f7b6a800	9e58697be478ebd9	57	9	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isEven	auto	0	5346	1944	e598625a92a1a3bd	704dbf5d6524f607	54	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isOdd	auto	0	5346	1936	7dcc0130ef0d8a4d	58feccb29bbcd059	54	9	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.f91	auto	0	9349	2040	20e0d240f1521f55	ea2391030da2b428	64	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.factorial	auto	0	6595	2056	effac82b738b9dc4	69dfb204d8b9a480	57	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.impFor	auto	0	16993	2160	76750276c6d0919c	8add4828ee7a8411	108	26	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.pyth	auto	0	23909	2552	d6464da9d0aa3e9f	3e1709a2f3937ea0	159	64	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sfib	auto	0	9506	2016	21d057203793b393	79c47085413237a2	64	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatz	auto	0	11408	2040	fa7a34b65943c28b	eca1df135750e592	69	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatzBest	auto	0	27251	3176	afb4c97430bbf02d	da4240e92553e7c2	133	21	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPrime	auto	0	11446	2104	f76049e0ae7f0c96	76ffd2684fb87b20	69	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.primeCount	auto	0	19580	2280	62536011090db16e	a1e86398c40bfcaf	108	18	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sigma	auto	0	16523	2032	8c5bfab47b9f1167	7f280b541a039b3f	100	16	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPerfect	auto	0	17355	2128	473dc5d397a8444f	1813c1a959e7ccff	107	21	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.perfectCount	auto	0	19710	2232	79940cacf006cefc	aa1a9f56e90f0774	123	33	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.chooseMul	auto	0	15727	2136	d15f2ca1bf5bd6c1	7130b756844f7dff	95	15	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.lcmUpTo	auto	0	15868	2248	a1c3beb9eeda5320	0d8a83c3c03bbd62	96	15	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.choosePascal	auto	0	6673	2072	0a705c682508f9a1	65a4d0451e3f0772	56	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isqrt	auto	0	10273	2072	757d5dc1d603dedc	e4d0bcfdf8adf38e	66	12	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.powMod	auto	0	11191	2400	b2c564bfa0a1c056	9167ff36a25ef49b	66	11	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.digitSum	auto	0	8379	2032	6ba614c5c66cbb0c	51a4e5351e1e158f	62	10	
+before	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.gcdSub	auto	0	9235	2016	922de21d39010dde	e960a8ca34d80802	64	11	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	all	off	0	6769	2208	5b2afce767129c35	d65db842e19f9c30	13	3	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictOr	off	0	5770	1992	05a8cdc8be48dab3	c66b1664111b245d	11	3	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictAnd	off	0	5770	1992	eb7ca3511484e8b2	9d98193198ef1157	11	3	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	all	on	0	10646	3000	23331563a2d8edd2	410189674f5883f3	14	6	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictOr	on	0	8409	2552	5735a5ba3134dae8	4919d27bf3eb21fb	13	4	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictAnd	on	0	8409	2552	14c9b1b0099d7459	d816257eeebc91d5	13	5	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	all	auto	0	6769	2208	5b2afce767129c35	d65db842e19f9c30	12	4	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictOr	auto	0	5770	1992	05a8cdc8be48dab3	c66b1664111b245d	11	3	
+before	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictAnd	auto	0	5770	1992	eb7ca3511484e8b2	9d98193198ef1157	11	3	
+before	fixtures/corpus/phase1-scalar/tuple.ixe	all	off	0	4221	1936	250a72d982774ba7	622c8cfc7ceefb46	7	3	
+before	fixtures/corpus/phase1-scalar/tuple.ixe	all	on	0	6098	2216	fb37871a75fa28e7	6919f610544b5e10	9	3	
+before	fixtures/corpus/phase1-scalar/tuple.ixe	all	auto	0	4221	1936	250a72d982774ba7	622c8cfc7ceefb46	7	3	
+before	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	all	off	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+before	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	all	on	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+before	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	all	auto	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+before	fixtures/ixon-v4/bench-k1/ackermann.ixe	all	off	0	6521	2032	8ae251871281d5c5	f5c0b76b2747ee2a	69	10	
+before	fixtures/ixon-v4/bench-k1/ackermann.ixe	all	on	0	9168	2552	a20ff7db73f85fa4	c405113b35172372	51	8	
+before	fixtures/ixon-v4/bench-k1/ackermann.ixe	all	auto	0	6521	2032	8ae251871281d5c5	f5c0b76b2747ee2a	49	7	
+before	fixtures/ixon-v4/bench-k1/collatz.ixe	all	off	0	18723	2176	0835bac36aff99ab	a48b4c8ab6631202	100	15	
+before	fixtures/ixon-v4/bench-k1/collatz.ixe	all	on	0	24371	2752	a8bf6e6e2189fb9c	a1d0ea83ccf6cbbd	102	17	
+before	fixtures/ixon-v4/bench-k1/collatz.ixe	all	auto	0	18723	2176	0835bac36aff99ab	a48b4c8ab6631202	101	15	
+before	fixtures/ixon-v4/bench-k1/even-odd.ixe	all	off	0	6092	2000	5611fb16e1dd1596	f772368d1be3a8cf	11	3	
+before	fixtures/ixon-v4/bench-k1/even-odd.ixe	all	on	0	8950	2648	a08e2c329f853acd	bf0818fe21ffd4a3	13	5	
+before	fixtures/ixon-v4/bench-k1/even-odd.ixe	all	auto	0	6092	2000	5611fb16e1dd1596	f772368d1be3a8cf	12	3	
+before	fixtures/ixon-v4/bench-k1/fib.ixe	all	off	0	5102	2032	617f04b3c6f98255	5fc10d60b4b8bf2c	10	2	
+before	fixtures/ixon-v4/bench-k1/fib.ixe	all	on	0	7638	2544	6b51e5ced86e604d	38042fbfc3d16e94	11	4	
+before	fixtures/ixon-v4/bench-k1/fib.ixe	all	auto	0	5102	2032	617f04b3c6f98255	5fc10d60b4b8bf2c	9	3	
+before	fixtures/ixon-v4/bench-k1/gcd.ixe	all	off	0	5994	1976	fcc5bfd1ef4e78f4	93e47bf74376536e	16	3	
+before	fixtures/ixon-v4/bench-k1/gcd.ixe	all	on	0	7489	2256	0909efedae2d2a21	7fbbd5f36375f8d2	18	4	
+before	fixtures/ixon-v4/bench-k1/gcd.ixe	all	auto	0	5994	1976	fcc5bfd1ef4e78f4	93e47bf74376536e	16	4	
+before	fixtures/ixon-v4/bench-k1/prime-count.ixe	all	off	0	19674	2272	aabe26995e1a9ad2	e48af387f2c6d181	108	21	
+before	fixtures/ixon-v4/bench-k1/prime-count.ixe	all	on	0	25564	2888	e2ef26555ebae053	63792b03218a335c	111	24	
+before	fixtures/ixon-v4/bench-k1/prime-count.ixe	all	auto	0	19674	2272	aabe26995e1a9ad2	e48af387f2c6d181	109	21	
+before	fixtures/ixon-v4/bench-k1/sfib.ixe	all	off	0	8166	2016	52641df8f50b7a6f	7e970116a506ef97	19	4	
+before	fixtures/ixon-v4/bench-k1/sfib.ixe	all	on	0	10554	2520	f76a301cf2654fbb	bab00244792188c2	20	6	
+before	fixtures/ixon-v4/bench-k1/sfib.ixe	all	auto	0	8166	2016	52641df8f50b7a6f	7e970116a506ef97	19	4	
+before	fixtures/ixon-v4/bench-k1/sum-loop.ixe	all	off	0	14445	1952	b7829064e5726bf8	66ec33519ebb2454	91	14	
+before	fixtures/ixon-v4/bench-k1/sum-loop.ixe	all	on	0	18691	2240	d0a535c16b56861f	182f0d6029a99132	94	16	
+before	fixtures/ixon-v4/bench-k1/sum-loop.ixe	all	auto	0	14445	1952	b7829064e5726bf8	66ec33519ebb2454	91	14	
+before	fixtures/ixon-v4/bench-k1/tak.ixe	all	off	0	8949	2208	70c46b7577ac4f0a	f2f484b5a441cee7	21	5	
+before	fixtures/ixon-v4/bench-k1/tak.ixe	all	on	0	11893	2760	cfbadf54c23424ba	d32d9007b2c2e9e6	23	6	
+before	fixtures/ixon-v4/bench-k1/tak.ixe	all	auto	0	8949	2208	70c46b7577ac4f0a	f2f484b5a441cee7	21	4	
+before	fixtures/ixon-v4/src-diag/diag.ixe	all	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootPartial	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootMixHash	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootFloat	off	1							ixcc: anf: anf.produce: inline global 22: walk: copy budget exhausted
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootClassical	off	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootSorry	off	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootOpaqueId	off	0	4808	1912	05d8d2cc047937e6	fe91283fb12ebad8	58	4	
+before	fixtures/ixon-v4/src-diag/diag.ixe	all	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootPartial	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootMixHash	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootFloat	on	1							ixcc: anf: anf.produce: inline global 22: walk: copy budget exhausted
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootClassical	on	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootSorry	on	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootOpaqueId	on	0	6241	2192	28090e8595a800d9	5cb4c98b83c27469	59	5	
+before	fixtures/ixon-v4/src-diag/diag.ixe	all	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootPartial	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootMixHash	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootFloat	auto	1							ixcc: anf: anf.produce: inline global 22: walk: copy budget exhausted
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootClassical	auto	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootSorry	auto	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+before	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootOpaqueId	auto	0	4808	1912	05d8d2cc047937e6	fe91283fb12ebad8	58	4	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	all	off	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.comp	off	0	3968	1912	a9dbf196dc346002	a936b08196907a8a	7	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.throughRoot	off	0	3977	1920	69c0ed6ff813f6a5	6eb9e7ba8fbe6876	7	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCases	off	0	3840	1912	5e23da5779367f8c	a13c9464ae6a7b41	7	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCasesType	off	0	3853	1920	bd465ae65340adc5	f0ace5e40a7500ba	8	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitRec	off	0	3811	1912	64f366b62223bfe7	6b594cc15c72e725	8	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.unitBoth	off	0	4249	1920	ad72939bf5253f58	b831e70fb56e2342	8	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.sigmaRoot	off	0	4442	1984	d993d6fc481e52c8	8cd0ffdd71179293	8	3	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.typeArg	off	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	all	on	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.comp	on	0	5401	2192	8e74b37152da82b1	ca450c2154245a9f	9	3	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.throughRoot	on	0	5410	2208	6b1e2e01d44121ee	49bffe2724311580	9	3	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCases	on	0	5273	2192	0d8702368f692843	266171c94d905f4c	8	4	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCasesType	on	0	5286	2200	13b32db9b50e8bbe	9ddbe219fa995ba9	8	4	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitRec	on	0	5244	2192	e125c493153c7b2b	b5051170cec4b7b9	8	4	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.unitBoth	on	0	5691	2200	59766555bc34ba42	3f18367161450035	9	4	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.sigmaRoot	on	0	6319	2272	5568d5799dc5d129	2a207270a88eaf2f	10	4	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.typeArg	on	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	all	auto	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.comp	auto	0	3968	1912	a9dbf196dc346002	a936b08196907a8a	8	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.throughRoot	auto	0	3977	1920	69c0ed6ff813f6a5	6eb9e7ba8fbe6876	8	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCases	auto	0	3840	1912	5e23da5779367f8c	a13c9464ae6a7b41	7	3	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCasesType	auto	0	3853	1920	bd465ae65340adc5	f0ace5e40a7500ba	7	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitRec	auto	0	3811	1912	64f366b62223bfe7	6b594cc15c72e725	7	2	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.unitBoth	auto	0	4249	1920	ad72939bf5253f58	b831e70fb56e2342	7	3	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.sigmaRoot	auto	0	4442	1984	d993d6fc481e52c8	8cd0ffdd71179293	8	3	
+before	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.typeArg	auto	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+before	fixtures/ownership/OS01-annotated.ixe	all	off	0	3817	1904	a4274f025a21dc4c	51528470db303f16	7	2	
+before	fixtures/ownership/OS01-annotated.ixe	all	on	0	5250	2184	b88973dda0bcdaf4	dc9a6977035b7fe7	8	3	
+before	fixtures/ownership/OS01-annotated.ixe	all	auto	0	3817	1904	a4274f025a21dc4c	51528470db303f16	6	3	
+before	fixtures/ownership/OS01-plain.ixe	all	off	0	3817	1904	e560f6b5c2494bd8	636593e9ff64f8f1	7	2	
+before	fixtures/ownership/OS01-plain.ixe	all	on	0	5250	2184	18e217caf8c59666	fc529f4d8e676325	8	3	
+before	fixtures/ownership/OS01-plain.ixe	all	auto	0	3817	1904	e560f6b5c2494bd8	636593e9ff64f8f1	7	2	
+before	fixtures/ownership/OS02-plain.ixe	all	off	0	6947	1920	3d7e14775f7c89f0	486aa3c6c08eedfe	17	4	
+before	fixtures/ownership/OS02-plain.ixe	all	on	0	8416	2200	0b034b5f09dbaf9a	7fc45a703c0ad148	18	5	
+before	fixtures/ownership/OS02-plain.ixe	all	auto	0	6947	1920	3d7e14775f7c89f0	486aa3c6c08eedfe	18	4	
+before	fixtures/ownership/OS03-annotated.ixe	all	off	0	3817	1904	6f793fe547f18953	b473e00e2a98f9d5	6	3	
+before	fixtures/ownership/OS03-annotated.ixe	all	on	0	5250	2184	fc90496c1b1e9329	81b8bc5e0420a2ab	8	3	
+before	fixtures/ownership/OS03-annotated.ixe	all	auto	0	3817	1904	6f793fe547f18953	b473e00e2a98f9d5	7	2	
+before	fixtures/ownership/OS03-plain.ixe	all	off	0	3802	1904	e94cf1fda86e8d48	a62a23edc91f55bf	7	2	
+before	fixtures/ownership/OS03-plain.ixe	all	on	0	5235	2184	301d3d64db474382	695aee7456c04723	8	3	
+before	fixtures/ownership/OS03-plain.ixe	all	auto	0	3802	1904	e94cf1fda86e8d48	a62a23edc91f55bf	7	2	
+before	fixtures/ownership/OS03b-annotated.ixe	all	off	0	3837	1904	ad1f3b636d8a397a	78043932f94c90a3	7	2	
+before	fixtures/ownership/OS03b-annotated.ixe	all	on	0	5270	2184	d3329ec444ed3c64	c08a394f92ae3a68	8	3	
+before	fixtures/ownership/OS03b-annotated.ixe	all	auto	0	3837	1904	ad1f3b636d8a397a	78043932f94c90a3	6	3	
+before	fixtures/ownership/OS03b-plain.ixe	all	off	0	4170	1904	71b868f8099c5df7	87d50de4f9417158	7	3	
+before	fixtures/ownership/OS03b-plain.ixe	all	on	0	5603	2184	30bfb948dd4569bd	cbbf8bd11bfcd87c	8	4	
+before	fixtures/ownership/OS03b-plain.ixe	all	auto	0	4170	1904	71b868f8099c5df7	87d50de4f9417158	7	3	
+before	fixtures/ownership/OS13-annotated.ixe	all	off	0	2759	2000	f65a0bb793c5246d	1d5dabb0d722af0c	2	3	
+before	fixtures/ownership/OS13-annotated.ixe	linId	off	0	2599	1888	4c5ae5316271f698	12ef3f99cffdc2b2	3	2	
+before	fixtures/ownership/OS13-annotated.ixe	entry	off	0	2683	1888	d1f0df61e3dc7c4d	94d4811de0db468d	3	2	
+before	fixtures/ownership/OS13-annotated.ixe	all	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+before	fixtures/ownership/OS13-annotated.ixe	linId	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+before	fixtures/ownership/OS13-annotated.ixe	entry	on	0	4108	2176	7aec8ed4239aa705	7614f2534a7636f4	4	2	
+before	fixtures/ownership/OS13-annotated.ixe	all	auto	0	2759	2000	f65a0bb793c5246d	1d5dabb0d722af0c	3	2	
+before	fixtures/ownership/OS13-annotated.ixe	linId	auto	0	2599	1888	4c5ae5316271f698	12ef3f99cffdc2b2	3	2	
+before	fixtures/ownership/OS13-annotated.ixe	entry	auto	0	2683	1888	d1f0df61e3dc7c4d	94d4811de0db468d	2	3	
+before	fixtures/ownership/OS13-plain.ixe	all	off	0	2759	2000	f65a0bb793c5246d	28d968eb2d67eaea	3	2	
+before	fixtures/ownership/OS13-plain.ixe	linId	off	0	2599	1888	4c5ae5316271f698	64ede684d3846b3e	2	2	
+before	fixtures/ownership/OS13-plain.ixe	entry	off	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	3	2	
+before	fixtures/ownership/OS13-plain.ixe	all	on	0	4213	2288	58e8e074cefdcce7	d0193accfd7a82f3	4	3	
+before	fixtures/ownership/OS13-plain.ixe	linId	on	0	4024	2176	1c5df8eda40a7c2c	b0d091a8be16a870	3	3	
+before	fixtures/ownership/OS13-plain.ixe	entry	on	0	4108	2176	7aec8ed4239aa705	442da82ed58a5dca	4	3	
+before	fixtures/ownership/OS13-plain.ixe	all	auto	0	2759	2000	f65a0bb793c5246d	28d968eb2d67eaea	3	2	
+before	fixtures/ownership/OS13-plain.ixe	linId	auto	0	2599	1888	4c5ae5316271f698	64ede684d3846b3e	3	2	
+before	fixtures/ownership/OS13-plain.ixe	entry	auto	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	3	2	
+before	fixtures/ownership/OS14-annotated.ixe	all	off	0	3738	1912	6fc4fd03d0ebf830	27f8eca7f8792d4d	6	2	
+before	fixtures/ownership/OS14-annotated.ixe	all	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+before	fixtures/ownership/OS14-annotated.ixe	all	auto	0	3738	1912	6fc4fd03d0ebf830	27f8eca7f8792d4d	5	3	
+before	fixtures/ownership/OS14-plain.ixe	all	off	0	3740	1912	04ad207a03f08838	f063bd859298b425	5	2	
+before	fixtures/ownership/OS14-plain.ixe	all	on	0	5843	2392	d17bec104c14cbb4	be8392a57d89a0db	6	5	
+before	fixtures/ownership/OS14-plain.ixe	all	auto	0	3740	1912	04ad207a03f08838	f063bd859298b425	5	2	
+before	fixtures/ownership/OS16-plain.ixe	all	off	0	7328	2168	2f22c3d69ba5e1ce	bc03cd794ade0d47	15	4	
+before	fixtures/ownership/OS16-plain.ixe	all	on	0	11420	3080	032eb16d3fa1fe08	3204448876d2b7a0	17	6	
+before	fixtures/ownership/OS16-plain.ixe	all	auto	0	11420	3080	032eb16d3fa1fe08	3204448876d2b7a0	22	6	
+before	fixtures/ownership/OS22-annotated.ixe	all	off	0	2683	1888	d1f0df61e3dc7c4d	37a4d3d611923653	3	2	
+before	fixtures/ownership/OS22-annotated.ixe	all	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+before	fixtures/ownership/OS22-annotated.ixe	all	auto	0	2683	1888	d1f0df61e3dc7c4d	37a4d3d611923653	2	3	
+before	fixtures/ownership/OS22-plain.ixe	all	off	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	2	3	
+before	fixtures/ownership/OS22-plain.ixe	all	on	0	4108	2176	7aec8ed4239aa705	442da82ed58a5dca	3	3	
+before	fixtures/ownership/OS22-plain.ixe	all	auto	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	3	2	
+before	fixtures/ixon-v4/k1/k1.ixe	all	off	0	21511	3048	ed928f02b6080607	8fbd03ce7bf3133e	108	16	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.fib	off	0	6397	2032	9656f2a53992962a	e283084a5961c8ec	53	9	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.sumLoop	off	0	14291	1952	8c2a4f5e2e3a8832	34caeba479b5fbc2	92	13	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.ack	off	0	6524	2032	568206a1fecacef7	b0d052a368ef3732	54	8	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.tak	off	0	9928	2200	a2b2334d8bc7f781	0739fd4261710fca	64	9	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.gcd	off	0	6888	1968	9bb39c9d39b70179	ecbf3997907176b3	56	8	
+before	fixtures/ixon-v4/k1/k1.ixe	all	on	0	28894	3856	1610ff30296d6513	f84ddfdc8a995e46	114	21	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.fib	on	0	8906	2536	5fa94058ac141245	23cd4e8b766cc890	56	10	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.sumLoop	on	0	18537	2240	4fb81af0447af990	78b15c869565cb4e	96	15	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.ack	on	0	9144	2552	af7ea87d7610501a	8360fef62673b822	56	10	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.tak	on	0	12845	2752	4602044c8650c811	c7fd633aee3a7538	65	11	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.gcd	on	0	8356	2256	7b460171d4da050b	9a706868cf1df2aa	57	9	
+before	fixtures/ixon-v4/k1/k1.ixe	all	auto	0	21511	3048	ed928f02b6080607	8fbd03ce7bf3133e	106	16	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.fib	auto	0	6397	2032	9656f2a53992962a	e283084a5961c8ec	54	8	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.sumLoop	auto	0	14291	1952	8c2a4f5e2e3a8832	34caeba479b5fbc2	93	12	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.ack	auto	0	6524	2032	568206a1fecacef7	b0d052a368ef3732	53	8	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.tak	auto	0	9928	2200	a2b2334d8bc7f781	0739fd4261710fca	63	9	
+before	fixtures/ixon-v4/k1/k1.ixe	K1.gcd	auto	0	6888	1968	9bb39c9d39b70179	ecbf3997907176b3	55	9	
+before	fixtures/rc/real-source/anonymous.ixe	all	off	0	8034	2736	5a723f033dbee16c	dd68b3d28317c9e6	16	4	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseList	off	0	6535	2184	b75f6abab9c12765	ee63909c9095979f	14	4	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseRepeated	off	0	5783	2184	ddd57854bdf4b196	2ef4d47cdb02c428	12	3	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.sharedReverse	off	0	6847	2256	fcf71929efcf20a9	990a05ce1ac18728	15	3	
+before	fixtures/rc/real-source/anonymous.ixe	all	on	0	14190	4008	1d97a6b34eeb2324	545608b4bd89c233	19	7	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseList	on	0	10443	3000	16d92378067c83f2	db8f1fa928e61a57	17	5	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseRepeated	on	0	9993	3072	e71d8740ffc45c70	8d2955b1a4e49109	15	5	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.sharedReverse	on	0	11419	3192	93d993901c80e8bc	6f53bfe0fc4bcc38	18	5	
+before	fixtures/rc/real-source/anonymous.ixe	all	auto	0	14190	4008	1d97a6b34eeb2324	545608b4bd89c233	26	8	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseList	auto	0	10443	3000	16d92378067c83f2	db8f1fa928e61a57	22	5	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseRepeated	auto	0	9993	3072	e71d8740ffc45c70	8d2955b1a4e49109	20	5	
+before	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.sharedReverse	auto	0	11419	3192	93d993901c80e8bc	6f53bfe0fc4bcc38	22	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	all	off	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat0	off	0	3356	1864	6741e96d0d0a6226	0df298c253c8f381	13	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool0	off	0	3107	1864	0870358d66e8b79b	ffb1bc7e9acfcec1	12	2	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri0	off	0	3105	1864	b2fe857c15402bd9	76c318f244e60d2a	12	2	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat1	off	0	3125	1888	9398328a47aac4c7	31635ecb3fa4f2ca	12	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool1	off	0	5959	1928	401984c4c3429aba	f7627ecc78a4e523	19	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri1	off	0	7545	1944	3a8952f8311cc3cb	62f0985306bb2762	29	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat2	off	0	4380	1936	c35328983eefdf82	7aeda2fef230da51	17	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool2	off	0	6474	1968	f77ca07415c95fc9	09307b1afd87c842	21	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri2	off	0	8083	1992	3693a7f6f4d17a12	52999a7dc16eaca3	27	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat3	off	0	4711	1976	f366a31c744e086a	2420bf86b3db1592	16	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool3	off	0	6807	2008	62c336c32634d4a3	1d34947172e5bbe4	21	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri3	off	0	8418	2032	4e1658d62165c285	1f7ffd644fe15b82	31	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat4	off	0	5047	2016	5969eb0b6188191d	d78d8b4e11a58ec6	25	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool4	off	0	7141	2056	92821398c4e14010	a73684b786b4f47d	26	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri4	off	0	8751	2072	c2a084133e2cfc9c	c5152a14447ae1ae	26	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat5	off	0	5373	2056	733e150f333de6eb	a1b0b7f1aa7c5673	17	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool5	off	0	7467	2096	3c00d59566aa2ced	d34c7dd9025433cb	21	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri5	off	0	9077	2112	60319eb6f67a69b7	526690930383ff0e	28	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat6	off	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool6	off	1							ixcc: rt: rt.params: root Abi.bool6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri6	off	1							ixcc: rt: rt.params: root Abi.tri6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	all	on	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat0	on	0	4781	2152	71469f24259bd391	bf83021d606931a0	14	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool0	on	0	4541	2152	9cacf184c2e1904a	04bde0fd9a2133bd	15	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri0	on	0	4539	2152	b7f3a1a4ddf69265	38be2d42f1072521	14	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat1	on	0	4550	2176	ed34dd5c05bc58b9	2abd6969c533e2f5	14	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool1	on	0	7402	2216	13fc52193b584917	00f8d946cd7ec5fb	20	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri1	on	0	9078	2232	f037ccfe0325670d	5bce4184baada821	25	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat2	on	0	5823	2216	610365720f312e09	e012feec300e7568	19	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool2	on	0	7935	2256	21a366d0f18c58b5	4d2a6fd4c9f48f11	21	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri2	on	0	9634	2272	bbee5e53d609dc99	559a6f06ed3dd26e	43	9	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat3	on	0	6172	2256	bfcd56dbc0f489cd	b9a6ebf5b228691f	17	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool3	on	0	8286	2296	9a551072daa23417	3bba9e4f74acb120	24	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri3	on	0	9987	2312	b7fb3eb97ed7ca09	dfcdc6e1941f0ede	40	9	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat4	on	0	6526	2296	70a167e24fdde228	b8c24e184f68e47a	25	7	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool4	on	0	8638	2336	c3305e447dc9bbf1	338827fa6224cca7	22	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri4	on	0	10338	2352	27f523f27e40a630	65dc10947ee7c5ec	28	7	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat5	on	0	6870	2344	5fb505760faca75e	12a5557c8ff3747b	18	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool5	on	0	8982	2376	d4640e574106fd52	7814b865a57daaaa	23	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri5	on	0	10682	2400	8a2e0c5451b6281a	4fa7097aec67641d	29	8	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat6	on	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool6	on	1							ixcc: rt: rt.params: root Abi.bool6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri6	on	1							ixcc: rt: rt.params: root Abi.tri6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	all	auto	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat0	auto	0	3356	1864	6741e96d0d0a6226	0df298c253c8f381	13	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool0	auto	0	3107	1864	0870358d66e8b79b	ffb1bc7e9acfcec1	12	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri0	auto	0	3105	1864	b2fe857c15402bd9	76c318f244e60d2a	12	2	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat1	auto	0	3125	1888	9398328a47aac4c7	31635ecb3fa4f2ca	12	2	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool1	auto	0	5959	1928	401984c4c3429aba	f7627ecc78a4e523	29	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri1	auto	0	7545	1944	3a8952f8311cc3cb	62f0985306bb2762	26	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat2	auto	0	4380	1936	c35328983eefdf82	7aeda2fef230da51	16	3	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool2	auto	0	6474	1968	f77ca07415c95fc9	09307b1afd87c842	32	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri2	auto	0	8083	1992	3693a7f6f4d17a12	52999a7dc16eaca3	26	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat3	auto	0	4711	1976	f366a31c744e086a	2420bf86b3db1592	15	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool3	auto	0	6807	2008	62c336c32634d4a3	1d34947172e5bbe4	20	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri3	auto	0	8418	2032	4e1658d62165c285	1f7ffd644fe15b82	26	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat4	auto	0	5047	2016	5969eb0b6188191d	d78d8b4e11a58ec6	18	5	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool4	auto	0	7141	2056	92821398c4e14010	a73684b786b4f47d	21	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri4	auto	0	8751	2072	c2a084133e2cfc9c	c5152a14447ae1ae	27	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat5	auto	0	5373	2056	733e150f333de6eb	a1b0b7f1aa7c5673	17	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool5	auto	0	7467	2096	3c00d59566aa2ced	d34c7dd9025433cb	22	4	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri5	auto	0	9077	2112	60319eb6f67a69b7	526690930383ff0e	27	6	
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.nat6	auto	1							ixcc: rt: rt.params: root Abi.nat6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.bool6	auto	1							ixcc: rt: rt.params: root Abi.bool6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-abi/abi.ixe	Abi.tri6	auto	1							ixcc: rt: rt.params: root Abi.tri6 takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-boundary/boundary.ixe	all	off	0	33961	11184	420ec2adb9ff4f49	c31ed68d28d440fd	55	28	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.add	off	0	4097	1912	97652bd89a3cc078	dc7f82c22404c071	17	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.sub	off	0	4093	1920	b3dcb60e0f9e55c7	5ceb45c7b3f5fc5d	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mul	off	0	4350	1976	acc7a31eb9a000c9	0ea1b92c850fc2a5	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.div	off	0	4193	1944	37fd2be817b93b0a	37a6b953f36fc596	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mod	off	0	4202	1944	79a3faa6cbd593d5	02b1aabefec3295c	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pow	off	0	4479	2136	d5678861e1e4a6b8	b000baa40521d691	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.gcd	off	0	3382	1992	594f781635f2426e	9692c9d415a22913	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.land	off	0	4041	1912	657aed17566a75c3	68a135abdfa4a98b	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.lor	off	0	4043	1904	3c96d1cbe381f0dd	e4c17c8cd44b5799	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xor	off	0	4055	1904	099bb717195c5d3f	be0f4b719fdc926e	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shl	off	0	4280	1968	d7290605a221afa9	2d93bcfa93b5f946	17	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shr	off	0	4116	1928	607f1ec14380cc21	b85568a9d54c8019	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.beq	off	0	3394	1912	65f38813c9ff1387	15cd5815fb800535	15	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ble	off	0	3394	1912	f94f1cd9cb9245c9	e12f4d2a9be21eec	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.blt	off	0	3607	1920	bd1c8f07138c780e	6008f0dadda0455f	15	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decEq	off	0	4808	1920	a23aff6d5f78e192	115c97ce82a7245b	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLe	off	0	5700	1928	598440bec5dafc78	c320995e0e895150	20	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLt	off	0	5986	1952	a0550c909be3bb01	4e5d7253f05ea350	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decGt	off	0	5986	1952	2acd06adf68544b3	62f49348bdda3c90	21	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.bne	off	0	5495	1920	b35ee5faa560d1b1	f77fe35896290c16	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltBranch	off	0	6330	1936	9193873f7a6f430d	d969baeb9c837d54	24	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leBranch	off	0	6109	1928	286e1e377294d271	0fb01d4d39d23bae	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.minN	off	0	6367	1920	a9c9c354976a3641	6ecdbe1f6a357aed	23	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.maxN	off	0	6365	1920	f339dc2fd62bab6f	860df698e6f7673c	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pred	off	0	3350	1912	b7b3dba081f4835d	6157e4784334cdc3	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succ	off	0	3381	1912	0867d55005c21b96	a3fe988a749c1ca1	14	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ident	off	0	3292	1896	99255ad13fd2374d	5cec14433b90d83b	14	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addK	off	0	4302	1912	966a915b6122011c	d8de68471d6230d7	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kAdd	off	0	4300	1912	c9e709a39bca05fc	bc57304ee3d32aae	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.subK	off	0	4292	1920	f41eb893ffca37c3	bb00823ef6e9e435	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kSub	off	0	4306	1920	6182a90b1170aa32	fc997423079a210c	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulK	off	0	4569	1976	0b75061d81157aef	b0952e263630d717	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMul	off	0	4311	1920	d652a788303b995b	9ab66998086d435e	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.divK	off	0	4273	1904	225c03c03e0c563d	edcdf16de78b6e49	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kDiv	off	0	4429	1952	dd0d06db03a01b02	e798c9a7534a8c9a	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.modK	off	0	4326	1920	2dee6e6d2037fc02	75f33f61740c97a2	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMod	off	0	4444	1960	e9b63152bb4586b1	d5032c3bef920070	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlK	off	0	4454	1968	a78cd971671eac44	f608416b206049e8	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShl	off	0	4527	1976	5d82004064424c7b	4e79004dc0f57c56	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shrK	off	0	4310	1928	263d612e75416bcf	a3f7f474a81d9304	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShr	off	0	4330	1928	608b909aea467c07	80cd8d7613f9f5f3	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powK	off	0	4715	2144	502c04177175ef10	2ef4c47d866e81ad	19	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kPow	off	0	4746	2152	8e1c2a4651d0de16	139f04670828f63c	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.landK	off	0	4275	1912	bc235b271005c6cd	ac8ba37c6cdea95e	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xorK	off	0	4275	1904	0ede959c1063fa9a	31dbd1e14110a188	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltK	off	0	6195	1944	c61827408363ca4a	076937b1c3078542	22	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leK	off	0	5918	1912	d23be86ba9a48105	593cadc221573d4c	21	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.eqK	off	0	5360	1904	51ef348a9e211036	0dd6b46d1a16a913	21	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litMax	off	0	6616	1920	ef67240eb7ae55a5	e20b1f7d2c070de3	26	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litWord	off	0	6601	1912	3ec968e650097063	34d5e97799bb597f	23	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litDead	off	0	7354	1920	e8afa87a0db93e6a	6dc0762841739b1e	25	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litArm	off	0	4590	1928	7c350456b33b354f	411c1603d1a2ed49	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litOperand	off	0	4224	1904	137049b026faf1c9	b9275048cbca3e70	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litCompare	off	0	6048	1912	fe7637dd374f7743	27864a57c874b800	24	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addSub	off	0	4381	1944	8ce06ee2553692ea	f073fb4d726cbbbb	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulDiv	off	0	4731	2040	c6081a7303082b09	d6a13385301b8698	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlShr	off	0	4546	2000	8f67cdbd40144e86	2ed0775bc3812ae3	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powMod	off	0	5269	2224	0054479de9438910	8bad4809df2b2412	20	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succPred	off	0	4360	1920	779ced85d8e7d04d	dfb35b15644cc3fd	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	all	on	0	39897	11712	693babcf52c4c891	39fe1008d0fc8713	59	32	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.add	on	0	5530	2200	afcf6c0c698078e3	77b90978e072ff3d	17	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.sub	on	0	5527	2200	8ff9dad1f35b90e2	1ab1ca5303ebd057	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mul	on	0	5783	2256	f25353c5697d5703	1c396fd6dcba97b2	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.div	on	0	5627	2232	fec2918dedab6fdb	cb187506b441d637	17	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mod	on	0	5636	2232	8a863637c8b6a7cc	f18a2db8a60ffa2c	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pow	on	0	5911	2408	77cc3cde83dba0a7	453e85c1c2abb99d	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.gcd	on	0	4814	2264	d937fb4eda54c651	80ba08ddd10e9bb3	16	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.land	on	0	5475	2192	24e4dc5ab0e460c9	84dc6ef8d8c50236	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.lor	on	0	5477	2184	328b144b390dab97	652a15ea0b769426	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xor	on	0	5489	2192	57b62edb00e74240	8517c5cc30da924c	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shl	on	0	5713	2248	728753f4849af5b0	99aa70dd86fcd3d7	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shr	on	0	5550	2208	37c2760f35765d23	ccfdedcc21f8a458	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.beq	on	0	4828	2200	0edc9778fda383ed	f0f9da32eaed834c	16	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ble	on	0	4828	2200	6f7211829b403ebc	ef76277b10a92265	16	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.blt	on	0	5049	2208	394edf13ad3e9e8d	16bdcbd01cb788fa	15	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decEq	on	0	6242	2208	4419aa9466627e32	931cf4dd5187f193	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLe	on	0	7179	2208	80ed884a71145d3e	16bbd91c7e7ded04	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLt	on	0	7473	2240	1dad9f2ea1ed9f5e	f3a1bee72489f01f	22	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decGt	on	0	7473	2240	39b77435aca6eede	85a63af1f980f36f	22	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.bne	on	0	6974	2200	ee11e4280e4be2e1	fbe319b230a05e14	21	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltBranch	on	0	7799	2216	cecb4b9ad3f4ec55	b0c850d2400e7805	24	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leBranch	on	0	7570	2208	660758bfdd3206a8	c47b8ed5a5565179	24	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.minN	on	0	7828	2208	2328444066063834	46abaa334d6f76ca	23	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.maxN	on	0	7826	2208	cf601085e879c154	ee23fa12b209188c	24	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pred	on	0	4784	2200	1a9225b01b9efb3e	4f8e8b55aacd1f6a	15	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succ	on	0	4814	2192	61838addea561c2c	b5aadf680c189625	16	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ident	on	0	4717	2184	d1f83e0a59ac218c	63e83332ad7d6069	15	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addK	on	0	5735	2192	b0afd3ed1e6bc4ee	eedba74915b65ad6	28	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kAdd	on	0	5733	2192	523528d174558f3e	fe322187a9078133	18	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.subK	on	0	5726	2200	efaf640d1fb9c4b6	3863d27b54c3e843	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kSub	on	0	5740	2208	598ba3d32ceaa08f	eab94338120c01fe	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulK	on	0	6002	2264	61bb3e2ed1b85b98	30b105dfafecbbf9	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMul	on	0	5744	2208	de42beaa72d6d1af	28ac815b94d75efe	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.divK	on	0	5707	2192	59050f3fb09dd996	b481b373b5253e65	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kDiv	on	0	5863	2240	90b853ba5181e122	6bd3f1ac4ad236bd	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.modK	on	0	5760	2200	8a50b9cea8fcd5c2	ccb4fd3086963245	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMod	on	0	5878	2248	288ffa921df06b2d	bbdd59f306c6e42e	18	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlK	on	0	5887	2248	1410f854ee4582d1	fe18ca689c2769bf	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShl	on	0	5960	2256	1eb471b0c1cc7e46	e26b86a6a213f9ff	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shrK	on	0	5744	2208	77d2898432306230	c4ccd7742d511045	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShr	on	0	5764	2216	8899fddd90644b7e	fa0e51e190a30528	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powK	on	0	6147	2416	dfcd2cee3e2a24ef	b7fdf4696578f402	19	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kPow	on	0	6178	2424	df86482d5ad03060	9608f0a958a0e1e1	20	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.landK	on	0	5709	2200	41f5e80038be98a5	3314f69a68b6c209	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xorK	on	0	5709	2192	74149321e9bf375c	84c8629448c8dd66	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltK	on	0	7682	2224	7eb51ca0aecc5215	800fee34b143d0f9	23	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leK	on	0	7397	2192	5bb8b38e31d5f3ba	b2cd8c56f1ac9501	22	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.eqK	on	0	6794	2192	c1691d49395bf0ca	146829fbe104d262	20	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litMax	on	0	8077	2200	1b5e41f461a371a8	cc2a4f9290b2eee4	24	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litWord	on	0	8062	2192	cc8fbd70c575b21a	b32b7f546ecf04a7	24	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litDead	on	0	8823	2208	d3c9e331e760d2ef	4a8bbb0373e75f71	27	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litArm	on	0	6983	2472	e8afd8b426d7b02f	f420b296d388f5ca	18	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litOperand	on	0	5658	2184	560c3bea0662d8c1	03b9d4e432569a40	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litCompare	on	0	7535	2192	44fc55a8e02161a8	32ae217c2659dec3	23	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addSub	on	0	5823	2232	fa656dd6ed4a2b77	3b875349fc18972e	19	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulDiv	on	0	6173	2320	7134c7bc017ea056	9219d3dede9f23ff	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlShr	on	0	5988	2288	bdfa301b199abe08	09005077af541b14	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powMod	on	0	6710	2496	63c4bd7c42976b01	dbfcb78cdcbd0e0c	20	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succPred	on	0	5802	2208	fda91eee7ac44ed2	c37fb9e0d62886ea	18	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	all	auto	0	33961	11184	420ec2adb9ff4f49	c31ed68d28d440fd	56	28	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.add	auto	0	4097	1912	97652bd89a3cc078	dc7f82c22404c071	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.sub	auto	0	4093	1920	b3dcb60e0f9e55c7	5ceb45c7b3f5fc5d	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mul	auto	0	4350	1976	acc7a31eb9a000c9	0ea1b92c850fc2a5	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.div	auto	0	4193	1944	37fd2be817b93b0a	37a6b953f36fc596	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mod	auto	0	4202	1944	79a3faa6cbd593d5	02b1aabefec3295c	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pow	auto	0	4479	2136	d5678861e1e4a6b8	b000baa40521d691	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.gcd	auto	0	3382	1992	594f781635f2426e	9692c9d415a22913	15	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.land	auto	0	4041	1912	657aed17566a75c3	68a135abdfa4a98b	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.lor	auto	0	4043	1904	3c96d1cbe381f0dd	e4c17c8cd44b5799	24	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xor	auto	0	4055	1904	099bb717195c5d3f	be0f4b719fdc926e	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shl	auto	0	4280	1968	d7290605a221afa9	2d93bcfa93b5f946	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shr	auto	0	4116	1928	607f1ec14380cc21	b85568a9d54c8019	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.beq	auto	0	3394	1912	65f38813c9ff1387	15cd5815fb800535	15	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ble	auto	0	3394	1912	f94f1cd9cb9245c9	e12f4d2a9be21eec	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.blt	auto	0	3607	1920	bd1c8f07138c780e	6008f0dadda0455f	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decEq	auto	0	4808	1920	a23aff6d5f78e192	115c97ce82a7245b	19	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLe	auto	0	5700	1928	598440bec5dafc78	c320995e0e895150	21	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decLt	auto	0	5986	1952	a0550c909be3bb01	4e5d7253f05ea350	21	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.decGt	auto	0	5986	1952	2acd06adf68544b3	62f49348bdda3c90	21	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.bne	auto	0	5495	1920	b35ee5faa560d1b1	f77fe35896290c16	20	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltBranch	auto	0	6330	1936	9193873f7a6f430d	d969baeb9c837d54	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leBranch	auto	0	6109	1928	286e1e377294d271	0fb01d4d39d23bae	21	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.minN	auto	0	6367	1920	a9c9c354976a3641	6ecdbe1f6a357aed	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.maxN	auto	0	6365	1920	f339dc2fd62bab6f	860df698e6f7673c	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.pred	auto	0	3350	1912	b7b3dba081f4835d	6157e4784334cdc3	14	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succ	auto	0	3381	1912	0867d55005c21b96	a3fe988a749c1ca1	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ident	auto	0	3292	1896	99255ad13fd2374d	5cec14433b90d83b	15	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addK	auto	0	4302	1912	966a915b6122011c	d8de68471d6230d7	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kAdd	auto	0	4300	1912	c9e709a39bca05fc	bc57304ee3d32aae	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.subK	auto	0	4292	1920	f41eb893ffca37c3	bb00823ef6e9e435	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kSub	auto	0	4306	1920	6182a90b1170aa32	fc997423079a210c	26	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulK	auto	0	4569	1976	0b75061d81157aef	b0952e263630d717	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMul	auto	0	4311	1920	d652a788303b995b	9ab66998086d435e	18	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.divK	auto	0	4273	1904	225c03c03e0c563d	edcdf16de78b6e49	18	2	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kDiv	auto	0	4429	1952	dd0d06db03a01b02	e798c9a7534a8c9a	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.modK	auto	0	4326	1920	2dee6e6d2037fc02	75f33f61740c97a2	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kMod	auto	0	4444	1960	e9b63152bb4586b1	d5032c3bef920070	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlK	auto	0	4454	1968	a78cd971671eac44	f608416b206049e8	17	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShl	auto	0	4527	1976	5d82004064424c7b	4e79004dc0f57c56	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shrK	auto	0	4310	1928	263d612e75416bcf	a3f7f474a81d9304	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kShr	auto	0	4330	1928	608b909aea467c07	80cd8d7613f9f5f3	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powK	auto	0	4715	2144	502c04177175ef10	2ef4c47d866e81ad	19	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.kPow	auto	0	4746	2152	8e1c2a4651d0de16	139f04670828f63c	19	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.landK	auto	0	4275	1912	bc235b271005c6cd	ac8ba37c6cdea95e	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.xorK	auto	0	4275	1904	0ede959c1063fa9a	31dbd1e14110a188	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.ltK	auto	0	6195	1944	c61827408363ca4a	076937b1c3078542	22	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.leK	auto	0	5918	1912	d23be86ba9a48105	593cadc221573d4c	30	5	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.eqK	auto	0	5360	1904	51ef348a9e211036	0dd6b46d1a16a913	20	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litMax	auto	0	6616	1920	ef67240eb7ae55a5	e20b1f7d2c070de3	23	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litWord	auto	0	6601	1912	3ec968e650097063	34d5e97799bb597f	23	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litDead	auto	0	7354	1920	e8afa87a0db93e6a	6dc0762841739b1e	26	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litArm	auto	0	4590	1928	7c350456b33b354f	411c1603d1a2ed49	18	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litOperand	auto	0	4224	1904	137049b026faf1c9	b9275048cbca3e70	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.litCompare	auto	0	6048	1912	fe7637dd374f7743	27864a57c874b800	21	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.addSub	auto	0	4381	1944	8ce06ee2553692ea	f073fb4d726cbbbb	17	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.mulDiv	auto	0	4731	2040	c6081a7303082b09	d6a13385301b8698	17	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.shlShr	auto	0	4546	2000	8f67cdbd40144e86	2ed0775bc3812ae3	16	4	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.powMod	auto	0	5269	2224	0054479de9438910	8bad4809df2b2412	19	3	
+after	fixtures/corpus/phase1-boundary/boundary.ixe	Boundary.succPred	auto	0	4360	1920	779ced85d8e7d04d	dfb35b15644cc3fd	17	3	
+after	fixtures/corpus/phase1-boundary/fields254.ixe	all	off	0	21815	4792	750c2cb993825e07	dc54480970d666a5	41	11	
+after	fixtures/corpus/phase1-boundary/fields254.ixe	all	on	1							ixcc: rt: rc.lower: constructor table exceeds first RC layout fragment
+after	fixtures/corpus/phase1-boundary/fields254.ixe	all	auto	0	21815	4792	750c2cb993825e07	dc54480970d666a5	42	11	
+after	fixtures/corpus/phase1-boundary/fields255.ixe	all	off	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/fields255.ixe	all	on	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/fields255.ixe	all	auto	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/tags125.ixe	all	off	0	343103	4784	3615ab951c89dfb8	202c353878fc15a2	3434	72	
+after	fixtures/corpus/phase1-boundary/tags125.ixe	all	on	0	412398	15680	f941e23cd837a791	78b2702bd01ecc56	3496	101	
+after	fixtures/corpus/phase1-boundary/tags125.ixe	all	auto	0	412398	15680	f941e23cd837a791	78b2702bd01ecc56	3754	99	
+after	fixtures/corpus/phase1-boundary/tags126.ixe	all	off	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/tags126.ixe	all	on	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/tags126.ixe	all	auto	1							ixcc: ingress: decode: ixon-v4: constant exceeds the consumer budget
+after	fixtures/corpus/phase1-boundary/tags16.ixe	all	off	0	17747	2424	e9167b97d9ecec4f	471ad2693a4becac	59	11	
+after	fixtures/corpus/phase1-boundary/tags16.ixe	all	on	0	29576	4384	0167c339c8a1877d	6cd6becd702b90ea	48	12	
+after	fixtures/corpus/phase1-boundary/tags16.ixe	all	auto	0	29576	4384	0167c339c8a1877d	6cd6becd702b90ea	68	15	
+after	fixtures/corpus/phase1-boundary/tags17.ixe	all	off	0	18572	2448	d902249dfdbc3333	2f0fac9f3bc2ab6e	68	9	
+after	fixtures/corpus/phase1-boundary/tags17.ixe	all	on	0	30928	4488	b8039dd752a83e0c	0c26e556adb98be5	69	16	
+after	fixtures/corpus/phase1-boundary/tags17.ixe	all	auto	0	30928	4488	b8039dd752a83e0c	0c26e556adb98be5	84	15	
+after	fixtures/corpus/phase1-decline/admit.ixe	all	off	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useOpaque	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.usePartial	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useUnsafe	off	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useChoice	off	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/corpus/phase1-decline/admit.ixe	all	on	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useOpaque	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.usePartial	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useUnsafe	on	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useChoice	on	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/corpus/phase1-decline/admit.ixe	all	auto	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition; an opaque constant outside the opaque-by-value allowli
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useOpaque	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.usePartial	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useUnsafe	auto	1							ixcc: admit: unsafe: an unsafe definition; use a safe definition
+after	fixtures/corpus/phase1-decline/admit.ixe	Decline.useChoice	auto	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/corpus/phase1-decline/closures.ixe	all	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+after	fixtures/corpus/phase1-decline/closures.ixe	Decline.applyArg	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [], app in [0], fu
+after	fixtures/corpus/phase1-decline/closures.ixe	Decline.composeClosure	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [0, 1], app in [1]
+after	fixtures/corpus/phase1-decline/closures.ixe	all	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+after	fixtures/corpus/phase1-decline/closures.ixe	Decline.applyArg	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [], app in [0], fu
+after	fixtures/corpus/phase1-decline/closures.ixe	Decline.composeClosure	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [0, 1], app in [1]
+after	fixtures/corpus/phase1-decline/closures.ixe	all	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [1, 2], app in [0,
+after	fixtures/corpus/phase1-decline/closures.ixe	Decline.applyArg	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [], app in [0], fu
+after	fixtures/corpus/phase1-decline/closures.ixe	Decline.composeClosure	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [0, 1], app in [1]
+after	fixtures/corpus/phase1-decline/erase.ixe	all	off	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.recMinor	off	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.unboxMatch	off	0	3145	1896	32f2beef6bb7b58e	fb97333588848069	4	2	
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.subtypeMatch	off	0	3305	1896	39cffc53bc224bf7	855c7cabb85b3808	6	2	
+after	fixtures/corpus/phase1-decline/erase.ixe	all	on	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.recMinor	on	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.unboxMatch	on	0	4570	2184	21e677f57ab9605d	48c0d865ddae4764	5	3	
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.subtypeMatch	on	0	4730	2184	2efae45f172b4f3f	852d7a990118ebd6	8	3	
+after	fixtures/corpus/phase1-decline/erase.ixe	all	auto	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.recMinor	auto	1							ixcc: erase: erase-minor: at constant 20 in const 14: minor 1 forwards a binder with another dispatch (S25)
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.unboxMatch	auto	0	3145	1896	32f2beef6bb7b58e	fb97333588848069	4	3	
+after	fixtures/corpus/phase1-decline/erase.ixe	Decline.subtypeMatch	auto	0	3305	1896	39cffc53bc224bf7	855c7cabb85b3808	7	2	
+after	fixtures/corpus/phase1-decline/loops.ixe	all	off	0	17364	2344	146ef09a20941860	ad2a4a6851303edf	99	19	
+after	fixtures/corpus/phase1-decline/loops.ixe	Decline.nestedFor	off	0	15341	2064	59fa4a4504518afc	5917d3e04a240d63	93	16	
+after	fixtures/corpus/phase1-decline/loops.ixe	Decline.mulN	off	0	14617	2056	9008bce4370a90a8	690084c24d67f521	88	12	
+after	fixtures/corpus/phase1-decline/loops.ixe	all	on	0	22145	2808	91f438883ac92021	259682003ed4be15	101	21	
+after	fixtures/corpus/phase1-decline/loops.ixe	Decline.nestedFor	on	0	19912	2504	639a363c6bbd97f4	37aad0e7c094c0e1	97	18	
+after	fixtures/corpus/phase1-decline/loops.ixe	Decline.mulN	on	0	18947	2400	771b0a830886be19	b527ede44de82914	90	14	
+after	fixtures/corpus/phase1-decline/loops.ixe	all	auto	0	17364	2344	146ef09a20941860	ad2a4a6851303edf	97	19	
+after	fixtures/corpus/phase1-decline/loops.ixe	Decline.nestedFor	auto	0	15341	2064	59fa4a4504518afc	5917d3e04a240d63	116	21	
+after	fixtures/corpus/phase1-decline/loops.ixe	Decline.mulN	auto	0	14617	2056	9008bce4370a90a8	690084c24d67f521	105	12	
+after	fixtures/corpus/phase1-decline/panic.ixe	all	off	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+after	fixtures/corpus/phase1-decline/panic.ixe	all	on	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+after	fixtures/corpus/phase1-decline/panic.ixe	all	auto	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4); a string literal in 
+after	fixtures/corpus/phase1-decline/params.ixe	all	off	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.six	off	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndType	off	1							ixcc: rt: rt.params: root Decline.fiveAndType takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndProof	off	1							ixcc: rt: rt.params: root Decline.fiveAndProof takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	all	on	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.six	on	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndType	on	1							ixcc: rt: rt.params: root Decline.fiveAndType takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndProof	on	1							ixcc: rt: rt.params: root Decline.fiveAndProof takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	all	auto	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.six	auto	1							ixcc: rt: rt.params: root Decline.six takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndType	auto	1							ixcc: rt: rt.params: root Decline.fiveAndType takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/params.ixe	Decline.fiveAndProof	auto	1							ixcc: rt: rt.params: root Decline.fiveAndProof takes 6 parameters; the entry wrapper passes at most 5
+after	fixtures/corpus/phase1-decline/strings.ixe	all	off	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+after	fixtures/corpus/phase1-decline/strings.ixe	all	on	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+after	fixtures/corpus/phase1-decline/strings.ixe	all	auto	1							ixcc: admit: unsupported: a string literal in a relevant position (strings are declined before K4)
+after	fixtures/corpus/phase1-decline/symbols.ixe	all	off	1							ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+after	fixtures/corpus/phase1-decline/symbols.ixe	A.b	off	0	3658	1896	d4d96db445ede5ec	2dd0b525e8c2d961	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	A_b	off	0	3658	1896	7dc3172e5b780c7a	d0f63bae3cb09457	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	«x-y»	off	0	3658	1904	0d463354bb609c95	725ff13a31ae785e	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	_x_y_	off	0	3658	1904	c66f2190890c3253	c0fcc1b63b18b36d	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	α	off	0	3658	1896	79eca2466e2850d9	5d5b766ceb862c80	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	β	off	0	3658	1896	d64f3e2993831955	7f602308eb8aece7	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	init	off	0	3658	1904	4e24db9bc0ea9912	3961ab4de762f124	6	3	
+after	fixtures/corpus/phase1-decline/symbols.ixe	root_init	off	0	3658	1904	2bd21d9efbc9554a	28311cd17dbbb658	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	twinA	off	0	4186	1976	7d49e8ae2594e843	fa170a39a15bc8b3	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	twinB	off	0	4186	1976	7d49e8ae2594e843	f1294b0b27c16724	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	all	on	1							ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+after	fixtures/corpus/phase1-decline/symbols.ixe	A.b	on	0	5091	2176	7687eccc3e0bf538	7d4fd84786842d29	8	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	A_b	on	0	5091	2176	f8cc9cbd0e402f9e	c1a6388156d67107	7	3	
+after	fixtures/corpus/phase1-decline/symbols.ixe	«x-y»	on	0	5091	2184	1b194b9c6083cc88	f5d236717733728a	8	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	_x_y_	on	0	5091	2184	18e198bf630a3b4b	68f96387eacb9a17	10	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	α	on	0	5091	2176	cd0e207cbc7c0d4f	0814d328f89e2d1a	8	3	
+after	fixtures/corpus/phase1-decline/symbols.ixe	β	on	0	5091	2176	ba18c019013a6c86	a1c4723fdf7672a8	10	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	init	on	0	5091	2184	69f4bb7560235681	3cdd2221d5ff6fd9	10	3	
+after	fixtures/corpus/phase1-decline/symbols.ixe	root_init	on	0	5091	2184	75490be9102cdbef	89b6b189d6c23dab	10	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	twinA	on	0	5628	2264	9684d2cfa5a0b55f	c6763a6f9f5aa6dd	10	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	twinB	on	0	5628	2264	9684d2cfa5a0b55f	6bc1053c2c505478	8	4	
+after	fixtures/corpus/phase1-decline/symbols.ixe	all	auto	1							ixcc: stacking: stacking.symbols: two exports share the symbol cx_A_b
+after	fixtures/corpus/phase1-decline/symbols.ixe	A.b	auto	0	3658	1896	d4d96db445ede5ec	2dd0b525e8c2d961	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	A_b	auto	0	3658	1896	7dc3172e5b780c7a	d0f63bae3cb09457	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	«x-y»	auto	0	3658	1904	0d463354bb609c95	725ff13a31ae785e	6	3	
+after	fixtures/corpus/phase1-decline/symbols.ixe	_x_y_	auto	0	3658	1904	c66f2190890c3253	c0fcc1b63b18b36d	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	α	auto	0	3658	1896	79eca2466e2850d9	5d5b766ceb862c80	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	β	auto	0	3658	1896	d64f3e2993831955	7f602308eb8aece7	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	init	auto	0	3658	1904	4e24db9bc0ea9912	3961ab4de762f124	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	root_init	auto	0	3658	1904	2bd21d9efbc9554a	28311cd17dbbb658	6	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	twinA	auto	0	4186	1976	7d49e8ae2594e843	fa170a39a15bc8b3	7	2	
+after	fixtures/corpus/phase1-decline/symbols.ixe	twinB	auto	0	4186	1976	7d49e8ae2594e843	f1294b0b27c16724	7	3	
+after	fixtures/corpus/phase1-resource/resource.ixe	all	off	0	23381	3608	536eb25b78f1a6ad	25808b023b981f80	112	19	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.heapList	off	0	7628	2072	7e6d78997304720b	08faeb5a5e2d2e31	56	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.twoVars	off	0	15534	2120	847c3249ce8e2159	aa90afae38f297bb	121	20	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.oneVar	off	0	14248	1952	4fcb6b64c5038a64	2cf25f22aa26311a	90	12	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.depth	off	0	5889	1968	9c2a54efc98155bd	d540788292e8ecbe	51	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.tail	off	0	6107	1944	77191a7c1fcae0b2	8faec4edcdb664dc	51	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.isEven	off	0	5178	1944	63f7edbad82c05c6	57406232e19fdaef	59	9	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.isOdd	off	0	5178	1944	edcc577f7251da6e	f0ccb006a7dcef23	50	7	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapEmpty	off	0	4353	1912	bf26b5c9a19fc411	46847f0e9e5e4f9a	47	7	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapFalse	off	0	4249	1912	6d103d5258982dde	4e8e8dc2955ab012	67	7	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapAbsurd	off	0	4352	1920	0aba995f353ca7c3	26b8e0a23dcb35d3	54	11	
+after	fixtures/corpus/phase1-resource/resource.ixe	all	on	0	32693	5080	b4154255714c10db	443f87bb0476a2d3	121	25	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.heapList	on	0	10922	2808	8f6035c4bcef8102	0e44f90dd5e459c3	58	11	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.twoVars	on	0	21000	2784	98255bc87a433755	2d3a587483c6889a	96	17	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.oneVar	on	0	18494	2240	ae3291790e681c95	cc1a8efd063a626e	108	19	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.depth	on	0	8182	2456	2019635a7c9cf63b	a163e7fecfc5cdac	54	9	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.tail	on	0	8316	2432	a8073e1f7ba80412	3b0650c136ac011e	53	10	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.isEven	on	0	7599	2520	b365f256706e43d0	e43e165f2cd1915a	51	9	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.isOdd	on	0	7599	2520	9ffda72a7c17f8d6	6813ba21d1e1f47c	50	10	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapEmpty	on	0	5815	2256	c1a714d1bc729cfa	cbe134e029e6742f	48	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapFalse	on	0	5711	2256	eee5b0c7993271ce	dcc5238adea66a05	48	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapAbsurd	on	0	5886	2272	079e1bc053eb6c5e	201de1b264884dd0	48	9	
+after	fixtures/corpus/phase1-resource/resource.ixe	all	auto	0	32693	5080	b4154255714c10db	443f87bb0476a2d3	140	25	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.heapList	auto	0	10922	2808	8f6035c4bcef8102	0e44f90dd5e459c3	69	11	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.twoVars	auto	0	21000	2784	98255bc87a433755	2d3a587483c6889a	114	17	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.oneVar	auto	0	14248	1952	4fcb6b64c5038a64	2cf25f22aa26311a	91	12	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.depth	auto	0	5889	1968	9c2a54efc98155bd	d540788292e8ecbe	52	7	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.tail	auto	0	6107	1944	77191a7c1fcae0b2	8faec4edcdb664dc	52	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.isEven	auto	0	5178	1944	63f7edbad82c05c6	57406232e19fdaef	49	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.isOdd	auto	0	5178	1944	edcc577f7251da6e	f0ccb006a7dcef23	50	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapEmpty	auto	0	4353	1912	bf26b5c9a19fc411	46847f0e9e5e4f9a	47	7	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapFalse	auto	0	4249	1912	6d103d5258982dde	4e8e8dc2955ab012	46	8	
+after	fixtures/corpus/phase1-resource/resource.ixe	Resource.trapAbsurd	auto	0	4352	1920	0aba995f353ca7c3	26b8e0a23dcb35d3	47	7	
+after	fixtures/corpus/phase1-scalar/bigctor.ixe	all	off	0	7729	2696	2257ef2cf267f28f	0af8237e44015293	7	4	
+after	fixtures/corpus/phase1-scalar/bigctor.ixe	all	on	1							ixcc: rt: rc.lower: constructor table exceeds first RC layout fragment
+after	fixtures/corpus/phase1-scalar/bigctor.ixe	all	auto	0	7729	2696	2257ef2cf267f28f	0af8237e44015293	7	4	
+after	fixtures/corpus/phase1-scalar/natShiftr.ixe	all	off	0	3761	1928	61ead7b42743985f	1e042c97e6ba627e	9	3	
+after	fixtures/corpus/phase1-scalar/natShiftr.ixe	all	on	0	5195	2208	3f25bd30879b64b9	176763031b72edbe	10	4	
+after	fixtures/corpus/phase1-scalar/natShiftr.ixe	all	auto	0	3761	1928	61ead7b42743985f	1e042c97e6ba627e	9	2	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	all	off	0	68801	9344	6ee583a28766b857	e3d555e0bf236f6c	277	143	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.tailfib	off	0	6503	1960	cab4d21937e3a70a	e726ef52d36a4151	58	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.nfib	off	0	6731	2040	0bd98228f7b6a800	9e58697be478ebd9	57	10	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isEven	off	0	5346	1944	e598625a92a1a3bd	704dbf5d6524f607	54	8	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isOdd	off	0	5346	1936	7dcc0130ef0d8a4d	58feccb29bbcd059	54	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.f91	off	0	9349	2040	20e0d240f1521f55	ea2391030da2b428	64	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.factorial	off	0	6595	2056	effac82b738b9dc4	69dfb204d8b9a480	73	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.impFor	off	0	16993	2160	76750276c6d0919c	8add4828ee7a8411	111	25	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.pyth	off	0	23909	2552	d6464da9d0aa3e9f	3e1709a2f3937ea0	180	92	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sfib	off	0	9506	2016	21d057203793b393	79c47085413237a2	85	13	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatz	off	0	11408	2040	fa7a34b65943c28b	eca1df135750e592	71	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatzBest	off	0	20408	2384	9420cacf30719abb	d8b2722301a27eb1	111	19	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPrime	off	0	11446	2104	f76049e0ae7f0c96	76ffd2684fb87b20	70	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.primeCount	off	0	19580	2280	62536011090db16e	a1e86398c40bfcaf	107	19	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sigma	off	0	16523	2032	8c5bfab47b9f1167	7f280b541a039b3f	101	16	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPerfect	off	0	17355	2128	473dc5d397a8444f	1813c1a959e7ccff	110	21	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.perfectCount	off	0	19710	2232	79940cacf006cefc	aa1a9f56e90f0774	147	36	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.chooseMul	off	0	15727	2136	d15f2ca1bf5bd6c1	7130b756844f7dff	110	18	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.lcmUpTo	off	0	15868	2248	a1c3beb9eeda5320	0d8a83c3c03bbd62	119	20	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.choosePascal	off	0	6673	2072	0a705c682508f9a1	65a4d0451e3f0772	68	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isqrt	off	0	10273	2072	757d5dc1d603dedc	e4d0bcfdf8adf38e	74	13	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.powMod	off	0	11191	2400	b2c564bfa0a1c056	9167ff36a25ef49b	70	14	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.digitSum	off	0	8379	2032	6ba614c5c66cbb0c	51a4e5351e1e158f	67	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.gcdSub	off	0	9235	2016	922de21d39010dde	e960a8ca34d80802	90	13	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	all	on	0	86738	11776	bc429581105c9088	2e711f5e6d88447b	382	225	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.tailfib	on	0	8799	2472	ffaca01f8948804c	fb62d4c353268860	82	14	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.nfib	on	0	9273	2544	131c7ec34a60c3d6	17b685e897ecb484	68	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isEven	on	0	7767	2520	a85168f3dfbecbb9	e64f56b86bcc5d9e	70	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isOdd	on	0	7767	2512	a87ba9a810947cee	a069933f7f4e4ac9	58	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.f91	on	0	11810	2528	7b49ba8e910f491f	b8dce0699a54563e	71	16	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.factorial	on	0	8721	2488	cf0cba7a85101dca	3652e47fb1fc2292	61	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.impFor	on	0	21844	2656	7b057c2d6e3fbd93	5b0b9f5468f32155	130	36	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.pyth	on	0	29683	3144	cd77bb54cd553116	af032b5516ba368a	184	68	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sfib	on	0	11894	2520	0ade1b141fe1f5bb	4b16df99202b49cc	67	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatz	on	0	14203	2624	de908e0d1788c11a	e8fea137636f39a6	72	14	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatzBest	on	0	27251	3176	afb4c97430bbf02d	da4240e92553e7c2	113	22	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPrime	on	0	14329	2712	49396ca21bff0268	bdc6ff0047ca0c76	72	14	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.primeCount	on	0	25470	2896	8b1b36a20a69ebff	f2a518050562acc3	112	21	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sigma	on	0	20812	2312	4c3e941fc399875f	4db6ba188b297716	107	18	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPerfect	on	0	21707	2400	2b861461694db1bc	de1f8450df8224e5	156	23	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.perfectCount	on	0	24178	2504	9a90ad28c08b4b78	cfc7f7a9ef96c8cd	129	36	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.chooseMul	on	0	20075	2480	f55292f58d01da9b	837a53b4dfad9312	100	17	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.lcmUpTo	on	0	20142	2520	6100b170ef415914	58b42fb17bdf6235	100	18	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.choosePascal	on	0	9573	2648	8cfe97bf63323b34	c3e08638d4cb394f	59	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isqrt	on	0	12860	2624	250d839de5e831a0	10031df4441f9779	69	13	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.powMod	on	0	13055	2848	2eebb0d195959c23	092c839c332c2258	68	13	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.digitSum	on	0	9883	2312	50a3f98dffca8e46	699809cf0bd17ddf	64	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.gcdSub	on	0	10791	2304	57ae127a2198ca97	27cd2bc8305ac4a1	66	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	all	auto	0	86738	11776	bc429581105c9088	2e711f5e6d88447b	514	157	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.tailfib	auto	0	6503	1960	cab4d21937e3a70a	e726ef52d36a4151	57	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.nfib	auto	0	6731	2040	0bd98228f7b6a800	9e58697be478ebd9	56	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isEven	auto	0	5346	1944	e598625a92a1a3bd	704dbf5d6524f607	54	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isOdd	auto	0	5346	1936	7dcc0130ef0d8a4d	58feccb29bbcd059	75	13	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.f91	auto	0	9349	2040	20e0d240f1521f55	ea2391030da2b428	65	10	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.factorial	auto	0	6595	2056	effac82b738b9dc4	69dfb204d8b9a480	56	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.impFor	auto	0	16993	2160	76750276c6d0919c	8add4828ee7a8411	110	26	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.pyth	auto	0	23909	2552	d6464da9d0aa3e9f	3e1709a2f3937ea0	159	63	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sfib	auto	0	9506	2016	21d057203793b393	79c47085413237a2	64	10	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatz	auto	0	11408	2040	fa7a34b65943c28b	eca1df135750e592	69	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.collatzBest	auto	0	27251	3176	afb4c97430bbf02d	da4240e92553e7c2	133	21	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPrime	auto	0	11446	2104	f76049e0ae7f0c96	76ffd2684fb87b20	69	11	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.primeCount	auto	0	19580	2280	62536011090db16e	a1e86398c40bfcaf	105	18	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.sigma	auto	0	16523	2032	8c5bfab47b9f1167	7f280b541a039b3f	101	15	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isPerfect	auto	0	17355	2128	473dc5d397a8444f	1813c1a959e7ccff	107	21	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.perfectCount	auto	0	19710	2232	79940cacf006cefc	aa1a9f56e90f0774	125	33	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.chooseMul	auto	0	15727	2136	d15f2ca1bf5bd6c1	7130b756844f7dff	95	15	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.lcmUpTo	auto	0	15868	2248	a1c3beb9eeda5320	0d8a83c3c03bbd62	97	15	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.choosePascal	auto	0	6673	2072	0a705c682508f9a1	65a4d0451e3f0772	57	9	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.isqrt	auto	0	10273	2072	757d5dc1d603dedc	e4d0bcfdf8adf38e	66	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.powMod	auto	0	11191	2400	b2c564bfa0a1c056	9167ff36a25ef49b	67	12	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.digitSum	auto	0	8379	2032	6ba614c5c66cbb0c	51a4e5351e1e158f	62	10	
+after	fixtures/corpus/phase1-scalar/scalar.ixe	Scalar.gcdSub	auto	0	9235	2016	922de21d39010dde	e960a8ca34d80802	65	10	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	all	off	0	6769	2208	5b2afce767129c35	d65db842e19f9c30	12	4	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictOr	off	0	5770	1992	05a8cdc8be48dab3	c66b1664111b245d	11	3	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictAnd	off	0	5770	1992	eb7ca3511484e8b2	9d98193198ef1157	11	3	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	all	on	0	10646	3000	23331563a2d8edd2	410189674f5883f3	14	6	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictOr	on	0	8409	2552	5735a5ba3134dae8	4919d27bf3eb21fb	12	5	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictAnd	on	0	8409	2552	14c9b1b0099d7459	d816257eeebc91d5	12	5	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	all	auto	0	6769	2208	5b2afce767129c35	d65db842e19f9c30	12	4	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictOr	auto	0	5770	1992	05a8cdc8be48dab3	c66b1664111b245d	11	3	
+after	fixtures/corpus/phase1-scalar/strictAndOr.ixe	entryStrictAnd	auto	0	5770	1992	eb7ca3511484e8b2	9d98193198ef1157	10	4	
+after	fixtures/corpus/phase1-scalar/tuple.ixe	all	off	0	4221	1936	250a72d982774ba7	622c8cfc7ceefb46	7	2	
+after	fixtures/corpus/phase1-scalar/tuple.ixe	all	on	0	6098	2216	fb37871a75fa28e7	6919f610544b5e10	9	3	
+after	fixtures/corpus/phase1-scalar/tuple.ixe	all	auto	0	4221	1936	250a72d982774ba7	622c8cfc7ceefb46	7	2	
+after	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	all	off	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+after	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	all	on	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+after	fixtures/corpus/phase1-scalar/typeFormerPolymorphism.ixe	all	auto	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of 9cfb76a7 (5486631c): a type argument for a parameter relev
+after	fixtures/ixon-v4/bench-k1/ackermann.ixe	all	off	0	6521	2032	8ae251871281d5c5	f5c0b76b2747ee2a	48	8	
+after	fixtures/ixon-v4/bench-k1/ackermann.ixe	all	on	0	9168	2552	a20ff7db73f85fa4	c405113b35172372	50	8	
+after	fixtures/ixon-v4/bench-k1/ackermann.ixe	all	auto	0	6521	2032	8ae251871281d5c5	f5c0b76b2747ee2a	49	7	
+after	fixtures/ixon-v4/bench-k1/collatz.ixe	all	off	0	18723	2176	0835bac36aff99ab	a48b4c8ab6631202	100	15	
+after	fixtures/ixon-v4/bench-k1/collatz.ixe	all	on	0	24371	2752	a8bf6e6e2189fb9c	a1d0ea83ccf6cbbd	103	17	
+after	fixtures/ixon-v4/bench-k1/collatz.ixe	all	auto	0	18723	2176	0835bac36aff99ab	a48b4c8ab6631202	98	14	
+after	fixtures/ixon-v4/bench-k1/even-odd.ixe	all	off	0	6092	2000	5611fb16e1dd1596	f772368d1be3a8cf	12	3	
+after	fixtures/ixon-v4/bench-k1/even-odd.ixe	all	on	0	8950	2648	a08e2c329f853acd	bf0818fe21ffd4a3	13	5	
+after	fixtures/ixon-v4/bench-k1/even-odd.ixe	all	auto	0	6092	2000	5611fb16e1dd1596	f772368d1be3a8cf	11	3	
+after	fixtures/ixon-v4/bench-k1/fib.ixe	all	off	0	5102	2032	617f04b3c6f98255	5fc10d60b4b8bf2c	9	3	
+after	fixtures/ixon-v4/bench-k1/fib.ixe	all	on	0	7638	2544	6b51e5ced86e604d	38042fbfc3d16e94	11	4	
+after	fixtures/ixon-v4/bench-k1/fib.ixe	all	auto	0	5102	2032	617f04b3c6f98255	5fc10d60b4b8bf2c	9	3	
+after	fixtures/ixon-v4/bench-k1/gcd.ixe	all	off	0	5994	1976	fcc5bfd1ef4e78f4	93e47bf74376536e	16	4	
+after	fixtures/ixon-v4/bench-k1/gcd.ixe	all	on	0	7489	2256	0909efedae2d2a21	7fbbd5f36375f8d2	17	4	
+after	fixtures/ixon-v4/bench-k1/gcd.ixe	all	auto	0	5994	1976	fcc5bfd1ef4e78f4	93e47bf74376536e	16	3	
+after	fixtures/ixon-v4/bench-k1/prime-count.ixe	all	off	0	19674	2272	aabe26995e1a9ad2	e48af387f2c6d181	109	22	
+after	fixtures/ixon-v4/bench-k1/prime-count.ixe	all	on	0	25564	2888	e2ef26555ebae053	63792b03218a335c	110	23	
+after	fixtures/ixon-v4/bench-k1/prime-count.ixe	all	auto	0	19674	2272	aabe26995e1a9ad2	e48af387f2c6d181	108	21	
+after	fixtures/ixon-v4/bench-k1/sfib.ixe	all	off	0	8166	2016	52641df8f50b7a6f	7e970116a506ef97	19	4	
+after	fixtures/ixon-v4/bench-k1/sfib.ixe	all	on	0	10554	2520	f76a301cf2654fbb	bab00244792188c2	20	5	
+after	fixtures/ixon-v4/bench-k1/sfib.ixe	all	auto	0	8166	2016	52641df8f50b7a6f	7e970116a506ef97	19	4	
+after	fixtures/ixon-v4/bench-k1/sum-loop.ixe	all	off	0	14445	1952	b7829064e5726bf8	66ec33519ebb2454	91	14	
+after	fixtures/ixon-v4/bench-k1/sum-loop.ixe	all	on	0	18691	2240	d0a535c16b56861f	182f0d6029a99132	94	16	
+after	fixtures/ixon-v4/bench-k1/sum-loop.ixe	all	auto	0	14445	1952	b7829064e5726bf8	66ec33519ebb2454	92	14	
+after	fixtures/ixon-v4/bench-k1/tak.ixe	all	off	0	8949	2208	70c46b7577ac4f0a	f2f484b5a441cee7	21	4	
+after	fixtures/ixon-v4/bench-k1/tak.ixe	all	on	0	11893	2760	cfbadf54c23424ba	d32d9007b2c2e9e6	23	6	
+after	fixtures/ixon-v4/bench-k1/tak.ixe	all	auto	0	8949	2208	70c46b7577ac4f0a	f2f484b5a441cee7	20	5	
+after	fixtures/ixon-v4/src-diag/diag.ixe	all	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootPartial	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootMixHash	off	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootFloat	off	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [9, 31, 32, 34, 35
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootClassical	off	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootSorry	off	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootOpaqueId	off	0	4808	1912	05d8d2cc047937e6	fe91283fb12ebad8	58	4	
+after	fixtures/ixon-v4/src-diag/diag.ixe	all	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootPartial	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootMixHash	on	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootFloat	on	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [9, 31, 32, 34, 35
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootClassical	on	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootSorry	on	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootOpaqueId	on	0	6241	2192	28090e8595a800d9	5cb4c98b83c27469	60	5	
+after	fixtures/ixon-v4/src-diag/diag.ixe	all	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist; an opaque constant outside the opaque-by-
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootPartial	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootMixHash	auto	1							ixcc: admit: opaque: an opaque constant outside the opaque-by-value allowlist
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootFloat	auto	1							ixcc: fir: fir.closures: declined until P8 (closed-world defunctionalisation, Phase 2): fn in globals [9, 31, 32, 34, 35
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootClassical	auto	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootSorry	auto	1							ixcc: admit: relevant-axiom: an axiom in a relevant position
+after	fixtures/ixon-v4/src-diag/diag.ixe	SrcDiag.rootOpaqueId	auto	0	4808	1912	05d8d2cc047937e6	fe91283fb12ebad8	58	4	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	all	off	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.comp	off	0	3968	1912	a9dbf196dc346002	a936b08196907a8a	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.throughRoot	off	0	3977	1920	69c0ed6ff813f6a5	6eb9e7ba8fbe6876	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCases	off	0	3840	1912	5e23da5779367f8c	a13c9464ae6a7b41	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCasesType	off	0	3853	1920	bd465ae65340adc5	f0ace5e40a7500ba	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitRec	off	0	3811	1912	64f366b62223bfe7	6b594cc15c72e725	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.unitBoth	off	0	4249	1920	ad72939bf5253f58	b831e70fb56e2342	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.sigmaRoot	off	0	4442	1984	d993d6fc481e52c8	8cd0ffdd71179293	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.typeArg	off	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	all	on	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.comp	on	0	5401	2192	8e74b37152da82b1	ca450c2154245a9f	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.throughRoot	on	0	5410	2208	6b1e2e01d44121ee	49bffe2724311580	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCases	on	0	5273	2192	0d8702368f692843	266171c94d905f4c	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCasesType	on	0	5286	2200	13b32db9b50e8bbe	9ddbe219fa995ba9	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitRec	on	0	5244	2192	e125c493153c7b2b	b5051170cec4b7b9	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.unitBoth	on	0	5691	2200	59766555bc34ba42	3f18367161450035	9	4	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.sigmaRoot	on	0	6319	2272	5568d5799dc5d129	2a207270a88eaf2f	10	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.typeArg	on	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	all	auto	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.comp	auto	0	3968	1912	a9dbf196dc346002	a936b08196907a8a	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.throughRoot	auto	0	3977	1920	69c0ed6ff813f6a5	6eb9e7ba8fbe6876	8	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCases	auto	0	3840	1912	5e23da5779367f8c	a13c9464ae6a7b41	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitCasesType	auto	0	3853	1920	bd465ae65340adc5	f0ace5e40a7500ba	7	2	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.punitRec	auto	0	3811	1912	64f366b62223bfe7	6b594cc15c72e725	7	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.unitBoth	auto	0	4249	1920	ad72939bf5253f58	b831e70fb56e2342	7	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.sigmaRoot	auto	0	4442	1984	d993d6fc481e52c8	8cd0ffdd71179293	8	3	
+after	fixtures/ixon-v4/src-sortpoly/sortpoly.ixe	SortPoly.typeArg	auto	1							ixcc: relevance: relevance-C2: [relevance C2] in the value of a0bc4059 (077db344): a type argument for a parameter relev
+after	fixtures/ownership/OS01-annotated.ixe	all	off	0	3817	1904	a4274f025a21dc4c	51528470db303f16	6	2	
+after	fixtures/ownership/OS01-annotated.ixe	all	on	0	5250	2184	b88973dda0bcdaf4	dc9a6977035b7fe7	7	3	
+after	fixtures/ownership/OS01-annotated.ixe	all	auto	0	3817	1904	a4274f025a21dc4c	51528470db303f16	6	3	
+after	fixtures/ownership/OS01-plain.ixe	all	off	0	3817	1904	e560f6b5c2494bd8	636593e9ff64f8f1	6	2	
+after	fixtures/ownership/OS01-plain.ixe	all	on	0	5250	2184	18e217caf8c59666	fc529f4d8e676325	8	3	
+after	fixtures/ownership/OS01-plain.ixe	all	auto	0	3817	1904	e560f6b5c2494bd8	636593e9ff64f8f1	7	2	
+after	fixtures/ownership/OS02-plain.ixe	all	off	0	6947	1920	3d7e14775f7c89f0	486aa3c6c08eedfe	17	4	
+after	fixtures/ownership/OS02-plain.ixe	all	on	0	8416	2200	0b034b5f09dbaf9a	7fc45a703c0ad148	19	5	
+after	fixtures/ownership/OS02-plain.ixe	all	auto	0	6947	1920	3d7e14775f7c89f0	486aa3c6c08eedfe	17	3	
+after	fixtures/ownership/OS03-annotated.ixe	all	off	0	3817	1904	6f793fe547f18953	b473e00e2a98f9d5	6	2	
+after	fixtures/ownership/OS03-annotated.ixe	all	on	0	5250	2184	fc90496c1b1e9329	81b8bc5e0420a2ab	7	3	
+after	fixtures/ownership/OS03-annotated.ixe	all	auto	0	3817	1904	6f793fe547f18953	b473e00e2a98f9d5	6	2	
+after	fixtures/ownership/OS03-plain.ixe	all	off	0	3802	1904	e94cf1fda86e8d48	a62a23edc91f55bf	6	3	
+after	fixtures/ownership/OS03-plain.ixe	all	on	0	5235	2184	301d3d64db474382	695aee7456c04723	7	4	
+after	fixtures/ownership/OS03-plain.ixe	all	auto	0	3802	1904	e94cf1fda86e8d48	a62a23edc91f55bf	7	2	
+after	fixtures/ownership/OS03b-annotated.ixe	all	off	0	3837	1904	ad1f3b636d8a397a	78043932f94c90a3	6	3	
+after	fixtures/ownership/OS03b-annotated.ixe	all	on	0	5270	2184	d3329ec444ed3c64	c08a394f92ae3a68	8	3	
+after	fixtures/ownership/OS03b-annotated.ixe	all	auto	0	3837	1904	ad1f3b636d8a397a	78043932f94c90a3	6	3	
+after	fixtures/ownership/OS03b-plain.ixe	all	off	0	4170	1904	71b868f8099c5df7	87d50de4f9417158	7	3	
+after	fixtures/ownership/OS03b-plain.ixe	all	on	0	5603	2184	30bfb948dd4569bd	cbbf8bd11bfcd87c	8	3	
+after	fixtures/ownership/OS03b-plain.ixe	all	auto	0	4170	1904	71b868f8099c5df7	87d50de4f9417158	7	3	
+after	fixtures/ownership/OS13-annotated.ixe	all	off	0	2759	2000	f65a0bb793c5246d	1d5dabb0d722af0c	3	2	
+after	fixtures/ownership/OS13-annotated.ixe	linId	off	0	2599	1888	4c5ae5316271f698	12ef3f99cffdc2b2	2	2	
+after	fixtures/ownership/OS13-annotated.ixe	entry	off	0	2683	1888	d1f0df61e3dc7c4d	94d4811de0db468d	3	2	
+after	fixtures/ownership/OS13-annotated.ixe	all	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+after	fixtures/ownership/OS13-annotated.ixe	linId	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+after	fixtures/ownership/OS13-annotated.ixe	entry	on	0	4108	2176	7aec8ed4239aa705	7614f2534a7636f4	4	3	
+after	fixtures/ownership/OS13-annotated.ixe	all	auto	0	2759	2000	f65a0bb793c5246d	1d5dabb0d722af0c	3	2	
+after	fixtures/ownership/OS13-annotated.ixe	linId	auto	0	2599	1888	4c5ae5316271f698	12ef3f99cffdc2b2	3	2	
+after	fixtures/ownership/OS13-annotated.ixe	entry	auto	0	2683	1888	d1f0df61e3dc7c4d	94d4811de0db468d	2	2	
+after	fixtures/ownership/OS13-plain.ixe	all	off	0	2759	2000	f65a0bb793c5246d	28d968eb2d67eaea	2	3	
+after	fixtures/ownership/OS13-plain.ixe	linId	off	0	2599	1888	4c5ae5316271f698	64ede684d3846b3e	2	3	
+after	fixtures/ownership/OS13-plain.ixe	entry	off	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	2	2	
+after	fixtures/ownership/OS13-plain.ixe	all	on	0	4213	2288	58e8e074cefdcce7	d0193accfd7a82f3	4	3	
+after	fixtures/ownership/OS13-plain.ixe	linId	on	0	4024	2176	1c5df8eda40a7c2c	b0d091a8be16a870	4	3	
+after	fixtures/ownership/OS13-plain.ixe	entry	on	0	4108	2176	7aec8ed4239aa705	442da82ed58a5dca	3	3	
+after	fixtures/ownership/OS13-plain.ixe	all	auto	0	2759	2000	f65a0bb793c5246d	28d968eb2d67eaea	3	2	
+after	fixtures/ownership/OS13-plain.ixe	linId	auto	0	2599	1888	4c5ae5316271f698	64ede684d3846b3e	3	2	
+after	fixtures/ownership/OS13-plain.ixe	entry	auto	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	3	2	
+after	fixtures/ownership/OS14-annotated.ixe	all	off	0	3738	1912	6fc4fd03d0ebf830	27f8eca7f8792d4d	5	2	
+after	fixtures/ownership/OS14-annotated.ixe	all	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+after	fixtures/ownership/OS14-annotated.ixe	all	auto	0	3738	1912	6fc4fd03d0ebf830	27f8eca7f8792d4d	5	2	
+after	fixtures/ownership/OS14-plain.ixe	all	off	0	3740	1912	04ad207a03f08838	f063bd859298b425	5	2	
+after	fixtures/ownership/OS14-plain.ixe	all	on	0	5843	2392	d17bec104c14cbb4	be8392a57d89a0db	7	4	
+after	fixtures/ownership/OS14-plain.ixe	all	auto	0	3740	1912	04ad207a03f08838	f063bd859298b425	4	3	
+after	fixtures/ownership/OS16-plain.ixe	all	off	0	7328	2168	2f22c3d69ba5e1ce	bc03cd794ade0d47	15	3	
+after	fixtures/ownership/OS16-plain.ixe	all	on	0	11420	3080	032eb16d3fa1fe08	3204448876d2b7a0	17	6	
+after	fixtures/ownership/OS16-plain.ixe	all	auto	0	11420	3080	032eb16d3fa1fe08	3204448876d2b7a0	23	5	
+after	fixtures/ownership/OS22-annotated.ixe	all	off	0	2683	1888	d1f0df61e3dc7c4d	37a4d3d611923653	2	2	
+after	fixtures/ownership/OS22-annotated.ixe	all	on	1							ixcc: cert: own.plain: own.cert.check: ownership proposal or source domain refused
+after	fixtures/ownership/OS22-annotated.ixe	all	auto	0	2683	1888	d1f0df61e3dc7c4d	37a4d3d611923653	3	2	
+after	fixtures/ownership/OS22-plain.ixe	all	off	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	2	2	
+after	fixtures/ownership/OS22-plain.ixe	all	on	0	4108	2176	7aec8ed4239aa705	442da82ed58a5dca	4	3	
+after	fixtures/ownership/OS22-plain.ixe	all	auto	0	2683	1888	d1f0df61e3dc7c4d	31baf23f76877cdb	3	2	
+after	fixtures/ixon-v4/k1/k1.ixe	all	off	0	21511	3048	ed928f02b6080607	8fbd03ce7bf3133e	109	16	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.fib	off	0	6397	2032	9656f2a53992962a	e283084a5961c8ec	54	8	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.sumLoop	off	0	14291	1952	8c2a4f5e2e3a8832	34caeba479b5fbc2	91	12	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.ack	off	0	6524	2032	568206a1fecacef7	b0d052a368ef3732	53	9	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.tak	off	0	9928	2200	a2b2334d8bc7f781	0739fd4261710fca	63	10	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.gcd	off	0	6888	1968	9bb39c9d39b70179	ecbf3997907176b3	56	9	
+after	fixtures/ixon-v4/k1/k1.ixe	all	on	0	28894	3856	1610ff30296d6513	f84ddfdc8a995e46	112	20	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.fib	on	0	8906	2536	5fa94058ac141245	23cd4e8b766cc890	55	10	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.sumLoop	on	0	18537	2240	4fb81af0447af990	78b15c869565cb4e	96	15	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.ack	on	0	9144	2552	af7ea87d7610501a	8360fef62673b822	55	10	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.tak	on	0	12845	2752	4602044c8650c811	c7fd633aee3a7538	66	11	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.gcd	on	0	8356	2256	7b460171d4da050b	9a706868cf1df2aa	58	9	
+after	fixtures/ixon-v4/k1/k1.ixe	all	auto	0	21511	3048	ed928f02b6080607	8fbd03ce7bf3133e	109	17	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.fib	auto	0	6397	2032	9656f2a53992962a	e283084a5961c8ec	53	9	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.sumLoop	auto	0	14291	1952	8c2a4f5e2e3a8832	34caeba479b5fbc2	92	13	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.ack	auto	0	6524	2032	568206a1fecacef7	b0d052a368ef3732	53	9	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.tak	auto	0	9928	2200	a2b2334d8bc7f781	0739fd4261710fca	64	9	
+after	fixtures/ixon-v4/k1/k1.ixe	K1.gcd	auto	0	6888	1968	9bb39c9d39b70179	ecbf3997907176b3	55	9	
+after	fixtures/rc/real-source/anonymous.ixe	all	off	0	8034	2736	5a723f033dbee16c	dd68b3d28317c9e6	15	4	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseList	off	0	6535	2184	b75f6abab9c12765	ee63909c9095979f	14	3	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseRepeated	off	0	5783	2184	ddd57854bdf4b196	2ef4d47cdb02c428	12	3	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.sharedReverse	off	0	6847	2256	fcf71929efcf20a9	990a05ce1ac18728	15	3	
+after	fixtures/rc/real-source/anonymous.ixe	all	on	0	14190	4008	1d97a6b34eeb2324	545608b4bd89c233	18	7	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseList	on	0	10443	3000	16d92378067c83f2	db8f1fa928e61a57	16	6	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseRepeated	on	0	9993	3072	e71d8740ffc45c70	8d2955b1a4e49109	13	6	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.sharedReverse	on	0	11419	3192	93d993901c80e8bc	6f53bfe0fc4bcc38	16	6	
+after	fixtures/rc/real-source/anonymous.ixe	all	auto	0	14190	4008	1d97a6b34eeb2324	545608b4bd89c233	25	8	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseList	auto	0	10443	3000	16d92378067c83f2	db8f1fa928e61a57	21	6	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.reverseRepeated	auto	0	9993	3072	e71d8740ffc45c70	8d2955b1a4e49109	19	5	
+after	fixtures/rc/real-source/anonymous.ixe	IxCCTests.Own.H0.sharedReverse	auto	0	11419	3192	93d993901c80e8bc	6f53bfe0fc4bcc38	22	6	

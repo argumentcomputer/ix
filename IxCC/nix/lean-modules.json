@@ -475,6 +475,8 @@
     "IxCC.Recheck.Rc.Replay",
     "IxCCTests.Recheck.Hostile",
     "IxCCTests.Recheck.Deep",
+    "IxCCTests.Recheck.Perf",
+    "IxCCTests.Recheck.Producer",
     "IxCCTests.Recheck.RootShape"]},
   "IxCCTests.Recheck.RootShape":
   {"path": "IxCCTests/Recheck/RootShape.lean",
@@ -526,6 +528,22 @@
   "IxCCTests.Recheck.Rc.CodecControls":
   {"path": "IxCCTests/Recheck/Rc/CodecControls.lean",
    "imports": ["IxCC.Own.Plain.Certificate"]},
+  "IxCCTests.Recheck.ProducerRef":
+  {"path": "IxCCTests/Recheck/ProducerRef.lean",
+   "imports": ["IxCC.X86.Layout.Order", "IxCC.Anf.Pipeline"]},
+  "IxCCTests.Recheck.Producer":
+  {"path": "IxCCTests/Recheck/Producer.lean",
+   "imports":
+   ["IxCCTests.Recheck.Perf",
+    "IxCCTests.Recheck.ProducerRef",
+    "IxCCTests.Lir.Gen",
+    "IxCC.Lir.SplitEdges",
+    "IxCCTests.Support.LamGen",
+    "IxCC.Lam.WellFormed",
+    "IxCC.Lam.ModesOk"]},
+  "IxCCTests.Recheck.Perf":
+  {"path": "IxCCTests/Recheck/Perf.lean",
+   "imports": ["IxCCTests.Recheck.Deep"]},
   "IxCCTests.Recheck.Main":
   {"path": "IxCCTests/Recheck/Main.lean", "imports": ["IxCCTests.Recheck.Run"]},
   "IxCCTests.Recheck.KernelSlow":

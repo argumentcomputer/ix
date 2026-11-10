@@ -1,0 +1,132 @@
+build	rep	input	exit	compile_s	compile_rss_kb	ingress_ms	produce_ms	run_ms	cert_bytes	object_bytes	check_s	check_rss_kb	refusal
+before	1	dag-12	1	0.09	88316								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	1	dag-16	1	1.05	140708								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	1	dag-20	1	1.48	93804								ixcc: relevance: relevance-oracle: relevance annotator: relevance annotator: node budget exhausted
+before	1	tree-16	1	1.05	141792								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	1	wide-16	1	0.92	129764								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	1	deep-500	0	1.17	141276	7	717	239	2249903	33736	0.43	166248	
+before	1	deep-1000	1	0.09	77828								ixcc: anf: anf.produce: shrink global 0: walk: work budget exhausted
+before	1	body-8	0	0.35	96296	2	175	106	238669	46880	0.16	96068	
+before	1	body-10	0	2.02	163024	2	1140	742	1016036	182896	0.81	158988	
+before	1	many-500	0	0.45	81852	100	255	60	80530	1872	0.16	79884	
+before	1	many-1000	0	0.67	88172	174	367	80	159771	1888	0.31	86752	
+before	1	many-2000	0	1.76	94092	441	1074	184	334335	1928	0.80	95996	
+before	1	many-4000	0	5.19	122256	1365	3277	454	683177	2008	1.98	126116	
+before	1	fns-100	0	4.10	271164	33	2124	1653	2855039	561664	2.08	270156	
+before	1	fns-200	0	9.46	457100	70	4651	4168	5713037	1121360	4.83	458264	
+before	1	fns-500	0	30.19	979988	231	11089	17407	14301156	2800464	19.70	975256	
+before	1	fns-2000	1	47.81	1530472								ixcc: anf: anf.replay: middle end: the program exceeds the back end's work budget
+before	1	fns6-500	0	11.85	525212	202	5168	5817	6901035	1398920	6.85	518780	
+before	1	fns6-1000	0	29.18	951484	548	10609	16519	13819274	2795920	19.18	952412	
+before	1	fns6-2000	0	82.52	1866416	1679	23652	54458	27694272	5589920	60.34	1864336	
+before	1	fns6-3000	0	159.26	2724220	3243	37369	114568	41569272	8383920	127.31	2703696	
+before	2	dag-12	1	0.09	88728								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	2	dag-16	1	1.07	141192								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	2	dag-20	1	1.35	92180								ixcc: relevance: relevance-oracle: relevance annotator: relevance annotator: node budget exhausted
+before	2	tree-16	1	1.06	140960								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	2	wide-16	1	0.94	133484								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	2	deep-500	0	1.15	140620	6	704	232	2249903	33736	0.44	164196	
+before	2	deep-1000	1	0.09	77604								ixcc: anf: anf.produce: shrink global 0: walk: work budget exhausted
+before	2	body-8	0	0.35	96452	2	178	112	238669	46880	0.19	96756	
+before	2	body-10	0	2.36	163236	3	1355	841	1016036	182896	0.99	158376	
+before	2	many-500	0	0.34	82276	80	179	43	80530	1872	0.18	81448	
+before	2	many-1000	0	0.76	90192	184	431	95	159771	1888	0.38	85784	
+before	2	many-2000	0	1.91	97800	499	1154	196	334335	1928	0.73	95704	
+before	2	many-4000	0	5.45	122768	1401	3452	490	683177	2008	2.31	121500	
+before	2	fns-100	0	4.43	256692	33	2182	1903	2855039	561664	2.22	270588	
+before	2	fns-200	0	9.63	457000	70	4658	4240	5713037	1121360	5.24	456688	
+before	2	fns-500	0	33.65	976632	220	13735	18272	14301156	2800464	19.12	974040	
+before	2	fns-1000	0	79.68	1844880	594	22176	54085	28655666	5598960	58.72	1845392	
+before	2	fns-2000	1	49.01	1530972								ixcc: anf: anf.replay: middle end: the program exceeds the back end's work budget
+before	2	fns6-500	0	12.14	525660	221	5455	5753	6901035	1398920	7.02	522652	
+before	2	fns6-1000	0	30.62	951832	567	11301	17301	13819274	2795920	19.67	948796	
+before	2	fns6-2000	0	84.01	1867512	1689	24554	54964	27694272	5589920	60.68	1868264	
+before	2	fns6-3000	0	159.94	2724536	3274	36919	115526	41569272	8383920	122.32	2726388	
+before	3	dag-12	1	0.09	87772								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	3	dag-16	1	1.05	140100								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	3	dag-20	1	1.37	92048								ixcc: relevance: relevance-oracle: relevance annotator: relevance annotator: node budget exhausted
+before	3	tree-16	1	1.08	140736								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	3	wide-16	1	0.93	135760								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+before	3	deep-500	0	1.20	141724	6	732	238	2249903	33736	0.45	164900	
+before	3	deep-1000	1	0.10	78960								ixcc: anf: anf.produce: shrink global 0: walk: work budget exhausted
+before	3	body-8	0	0.34	97128	2	179	107	238669	46880	0.17	96388	
+before	3	body-10	0	2.06	163160	3	1171	744	1016036	182896	0.79	159520	
+before	3	many-500	0	0.28	81740	68	145	37	80530	1872	0.16	79868	
+before	3	many-1000	0	0.66	89204	169	365	82	159771	1888	0.32	87408	
+before	3	many-2000	0	1.75	94872	436	1056	191	334335	1928	0.74	96124	
+before	3	many-4000	0	5.19	122564	1361	3267	465	683177	2008	1.99	125488	
+before	3	fns-100	0	4.28	270712	32	2123	1818	2855039	561664	2.09	270548	
+before	3	fns-200	0	9.39	457080	70	4297	4422	5713037	1121360	5.19	457256	
+before	3	fns-500	0	29.62	982572	222	11067	16889	14301156	2800464	19.38	978868	
+before	3	fns-1000	0	80.35	1842984	599	21950	54984	28655666	5598960	56.89	1844292	
+before	3	fns-2000	1	48.01	1532500								ixcc: anf: anf.replay: middle end: the program exceeds the back end's work budget
+before	3	fns6-500	0	12.88	522768	203	5237	6728	6901035	1398920	7.29	523264	
+before	3	fns6-1000	0	29.53	952748	558	10821	16825	13819274	2795920	18.67	953232	
+before	3	fns6-2000	0	94.72	1857956	1675	27686	61126	27694272	5589920	65.73	1862464	
+before	3	fns6-3000	0	154.74	2725104	3364	36509	110550	41569272	8383920	124.52	2725532	
+after	1	dag-12	1	0.09	91952								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	1	dag-16	1	1.04	144584								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	1	dag-20	1	2.08	96792								ixcc: relevance: relevance-oracle: relevance annotator: relevance annotator: node budget exhausted
+after	1	tree-16	1	1.15	144388								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	1	wide-16	1	0.95	135796								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	1	deep-500	0	1.58	145080	10	894	367	2249903	33736	0.55	167612	
+after	1	deep-1000	0	4.42	290440	11	2777	863	8988905	65736	1.60	414184	
+after	1	body-8	0	0.32	92972	2	151	109	238669	46880	0.16	99652	
+after	1	body-10	0	1.88	165888	2	1055	686	1016036	182896	0.83	161920	
+after	1	many-500	0	0.28	86016	67	143	36	80530	1872	0.15	83124	
+after	1	many-1000	0	0.62	91268	162	327	81	159771	1888	0.32	89780	
+after	1	many-2000	0	1.31	105188	436	624	188	334335	1928	0.73	99572	
+after	1	many-4000	0	3.29	118256	1357	1342	481	683177	2008	1.99	128760	
+after	1	fns-100	0	3.97	271772	45	1964	1668	2855039	561664	2.08	274084	
+after	1	fns-200	0	9.30	460544	69	3767	4532	5713037	1121360	6.90	461588	
+after	1	fns-500	0	37.43	981016	290	14135	21508	14301156	2800464	19.51	981680	
+after	1	fns-1000	0	89.16	1848232	813	26093	58064	28655666	5598960	70.14	1847740	
+after	1	fns-2000	1	6.69	170920								ixcc: anf: anf.produce: middle end: the program exceeds the back end's work budget
+after	1	fns6-500	0	15.40	526200	278	6654	7329	6901035	1398920	9.46	525220	
+after	1	fns6-1000	0	37.32	955532	566	13533	21162	13819274	2795920	21.10	955460	
+after	1	fns6-2000	0	81.15	1861564	1701	20338	56244	27694272	5589920	61.31	1870332	
+after	1	fns6-3000	0	156.81	2706984	3256	31546	117336	41569272	8383920	123.67	2728728	
+after	2	dag-12	1	0.09	90860								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	2	dag-16	1	1.03	144584								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	2	dag-20	1	1.36	95928								ixcc: relevance: relevance-oracle: relevance annotator: relevance annotator: node budget exhausted
+after	2	tree-16	1	1.04	144468								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	2	wide-16	1	0.92	136936								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	2	deep-500	0	1.53	138492	7	814	414	2249903	33736	0.45	168240	
+after	2	deep-1000	0	4.30	290972	11	2678	851	8988905	65736	1.58	414848	
+after	2	body-8	0	0.30	100284	2	150	105	238669	46880	0.18	99628	
+after	2	body-10	0	1.69	166288	2	895	663	1016036	182896	0.76	162364	
+after	2	many-500	0	0.28	85224	68	142	36	80530	1872	0.15	83484	
+after	2	many-1000	0	0.57	91508	161	291	81	159771	1888	0.31	89712	
+after	2	many-2000	0	1.29	106068	434	615	182	334335	1928	0.73	99872	
+after	2	many-4000	0	3.24	118036	1352	1335	460	683177	2008	1.97	129032	
+after	2	fns-100	0	3.86	265096	32	1840	1686	2855039	561664	2.08	274432	
+after	2	fns-200	0	8.51	460804	69	3722	4146	5713037	1121360	4.96	461012	
+after	2	fns-500	0	27.81	981188	218	9432	16681	14301156	2800464	18.90	981516	
+after	2	fns-1000	0	79.28	1848044	602	19438	56173	28655666	5598960	58.27	1848436	
+after	2	fns-2000	1	4.82	168168								ixcc: anf: anf.produce: middle end: the program exceeds the back end's work budget
+after	2	fns6-500	0	12.13	526324	201	5352	5879	6901035	1398920	6.79	526036	
+after	2	fns6-1000	0	28.10	955628	552	9545	16659	13819274	2795920	18.82	956868	
+after	2	fns6-2000	0	81.23	1869680	1677	20311	56428	27694272	5589920	61.42	1870992	
+after	2	fns6-3000	0	159.65	2706688	3389	33913	117176	41569272	8383920	121.38	2728432	
+after	3	dag-12	1	0.09	91176								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	3	dag-16	1	1.03	143988								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	3	dag-20	1	1.36	88808								ixcc: relevance: relevance-oracle: relevance annotator: relevance annotator: node budget exhausted
+after	3	tree-16	1	1.08	144808								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	3	wide-16	1	1.16	122960								ixcc: anf: anf.produce: middle end: a Lam global exceeds the node budget
+after	3	deep-500	0	1.12	143704	7	658	241	2249903	33736	0.44	168052	
+after	3	deep-1000	0	4.34	290964	12	2639	911	8988905	65736	1.66	414644	
+after	3	body-8	0	0.31	99708	2	150	105	238669	46880	0.20	99792	
+after	3	body-10	0	1.76	159780	3	935	698	1016036	182896	0.77	161944	
+after	3	many-500	0	0.28	84808	68	142	39	80530	1872	0.18	84052	
+after	3	many-1000	0	0.58	91988	162	296	80	159771	1888	0.31	89856	
+after	3	many-2000	0	1.50	99176	555	695	185	334335	1928	0.74	100120	
+after	3	many-4000	0	3.67	119296	1517	1380	654	683177	2008	2.01	128488	
+after	3	fns-100	0	4.57	259552	32	1851	2248	2855039	561664	2.99	272900	
+after	3	fns-200	0	8.77	461260	71	3956	4182	5713037	1121360	4.96	461304	
+after	3	fns-500	0	27.78	981500	217	9447	16693	14301156	2800464	21.59	981464	
+after	3	fns-1000	0	79.72	1849512	619	19731	56456	28655666	5598960	60.65	1848656	
+after	3	fns-2000	1	4.62	171000								ixcc: anf: anf.produce: middle end: the program exceeds the back end's work budget
+after	3	fns6-500	0	11.17	526036	200	4590	5684	6901035	1398920	6.84	526936	
+after	3	fns6-1000	0	27.92	955668	553	9419	16565	13819274	2795920	19.61	956260	
+after	3	fns6-2000	0	77.73	1870688	1671	19632	53672	27694272	5589920	59.27	1870644	
+after	3	fns6-3000	0	146.58	2721132	3252	30068	109206	41569272	8383920	124.70	2728692	

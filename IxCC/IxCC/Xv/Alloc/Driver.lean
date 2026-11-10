@@ -63,6 +63,22 @@ def run (env : Xl.Env) (p : VProgram) (chaos : Chaos := {}) : Except String Resu
   let program ← Validate.run env p outs.toList
   return { program, outs := outs.toList, outcomes := outcomes.toList }
 
+/-- `run` as the producer calls it: the same allocations, outcomes and
+program, without validating every function a second time. `allocFunc`
+accepts an allocation only after `Validate.func` accepts it at its index,
+and `Validate.run` checks exactly those again before it applies them, so the
+program is `applyProgram`'s; `tests-recheck --producer` compares the two.
+`run` keeps the closing check, which `Backend.alloc_validated` reads. -/
+def runProducer (env : Xl.Env) (p : VProgram) (chaos : Chaos := {}) : Except String Result := do
+  let mut outs := #[]
+  let mut outcomes := #[]
+  for h : fi in [:p.funcs.size] do
+    let (o, why) ← allocFunc env fi p.funcs[fi] chaos
+    outs := outs.push o
+    outcomes := outcomes.push why
+  let program ← applyProgram p outs.toList
+  return { program, outs := outs.toList, outcomes := outcomes.toList }
+
 /-- All slots for every function, validated. -/
 def runAllSlots (env : Xl.Env) (p : VProgram) : Except String Result := do
   let mut outs := #[]

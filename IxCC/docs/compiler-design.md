@@ -405,7 +405,7 @@ soon as it passes one of these fixed budgets
 | `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 2,507 | 6.5× |
 | `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 752 | 2.7× |
 | `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 4,935 | 212× |
-| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 6,287,130 | 42× |
+| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 14,976,810 | 18× |
 | `Walk.maxCopy` | the nodes one walk walks again: inlined callees, β-reduced local functions, inlined join points, case-of-case alternatives | 8,192 | 1,583 (inline), 2,860 (shrink) | 5.2×, 2.9× |
 | `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,252 | 2.4× |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 500 | 16× |
@@ -557,7 +557,10 @@ single-alternative cases take 12.4 s (`Cfg.lower` 4.3 s, `Rt.lower` 1.4 s,
 `X86.Layout.tunnel` 6.6 s); sixteen globals of two-alternative cases 3.6 s;
 270 smaller ones 3.4 s; one comb of eight 2,047-level chains 2.3 s; chains of
 join points 1.9 s; 300 globals of 200 values live at once 0.1 s (allocation,
-its validator, frame layout, the encoder and the stream checker stay linear);
+its validator, frame layout, the encoder and the stream checker stay linear
+there; on objects of megabytes the encoder, the stream check and the ELF
+writer grow about quadratically in the text, as the paragraph "The producer"
+below measures);
 2,000 125-way cases, fifteen times past the budget, 13.9 s, 11.8 s of it
 `Rt.checkSwitches`. A 16,383-level global, now refused by `maxDepth`,
 took 12.8 s. With the middle end's worst certificate (64 shrink steps each
@@ -580,11 +583,46 @@ closure of 16,371 constants is refused for want of back-end parts after 19.5 s
 and 155 MB, 16.6 s of it typing; in process, with the producer's back end added
 (`tests-recheck --probe run many 16370`), it takes 54 s, the producer
 included. No certificate near the front-end, middle-end, back-end and
-allocation limits at once has been built. The
-producer (`Recheck.produce`,
-`ixcc compile`) is not bounded the same way: its `X86.Layout.Order.produce`
-is quadratic like `tunnel`.
+allocation limits at once has been built.
 
+**The producer.** The producer (`Recheck.produce`, `RcReplay.produceWith`,
+`ixcc compile`) is untrusted, so no budget is a soundness premise for it; it
+keeps to the re-run's budgets so that it fails as fast as the re-run would
+and never hands the re-run a certificate past them. Its middle end
+(`Anf.Pipeline.produce`) runs the re-run's size, depth and back-end work
+check (`checkGlobalNodes`) after P1 and after every shrink step and refuses
+there with the re-run's message, before its back end runs; it takes each
+inline round and specialisation through the re-run's own step
+(`Pipeline.Step.run`) and does not take one the re-run refuses; a global's
+shrink rounds stop where the re-run would refuse the next one
+(`Shrink.fixpointWithin`: a walk past its budgets, a global past
+`maxGlobalNodes` or `maxDepth`, the step past `maxStepWork`); and it keeps to
+the certificate's caps on steps (`Pipeline.maxSteps`), callees per caller and
+specialisation decisions. Its oracles are near-linear in the program: the
+recursive-global search is Tarjan's algorithm (it was a reachability walk from
+every global); the block order is near-linear in a group's blocks
+(`Order.produce`: it was quadratic, and exponential in the two-way branches
+of a loop body, whose loop search expanded a block once per path to it); and
+the allocation driver (`Alloc.runProducer`) does not validate every function
+a second time. On a closure of n small functions (`tests-recheck --perf-write
+DIR fns N`) the producer takes 2.0, 9.7 and 20.1 s at 100, 500 and 1,000
+functions, linear, and the checker 1.7, 17.4 and 56.6 s: `Backend.finish`
+(`Stream.encodeK` and `ELF.writeCheckedK`) grows about quadratically in the
+text across functions, while its allocations grow linearly. 2,001 functions
+of 63 constructors each compile and are accepted (producer 18.9 s, checker
+55.6 s); 2,001 of 127 are past `maxBackWork` and are refused by the producer's middle end in 2.5 s
+(the producer used to run its whole back end, 45 s, before the re-run
+refused them). On the committed programs the producer takes at most about 4 s,
+nearly all of it the relevance annotator on `tags125` (`Src.Relevance.annotate`,
+3.5 s, which Stage A of `check-cert` re-runs); their compile time is
+otherwise erased typing at ingress (35 to 75 s on each 1 MB closure on the shared box, and 240
+to 310 s on the 3.7 MB `strings` decline fixture), which `check-cert` runs as
+well. `tests-recheck --producer` compares the
+rewritten oracles with reference copies of the code they replaced and checks
+that the producer's work, counted in allocations, grows near-linearly on
+scaling inputs (and times the block order against the code it replaced, whose
+quadratic scans allocate little); the measurements are in the
+[producer's performance record](performance/producer-2026-11-10/README.md).
 
 ## Source semantics and replacements
 
@@ -906,8 +944,13 @@ verifier must fit an 8 MiB stack.
   checks are quadratic. Erased type checking (`V3.Tc.checkEnv`) took about
   30 s on a 1 MB closure, against milliseconds for `Recheck.run`, so the
   roadmap's 10 s target is missed with type checking on.
-- The producer `ixcc compile` was seen to run past 180 s on a 917-byte input
-  with heavy sharing, where `check-cert` is bounded.
+- The producer `ixcc compile` was once seen to run past 180 s on a 917-byte
+  input with heavy sharing; it now keeps to the re-run's budgets and refuses
+  a share DAG of depth 16 at the Lam node budget in about a second, and its
+  own cost is near-linear in a closure's definitions ([the
+  producer](#middle-end-budgets), the paragraph "The producer"). On large
+  closures the compile time is now the checker's `Backend.finish`, about
+  quadratic in the object's text, and erased typing at ingress.
 - Declines carry a `stage: code` and a message (for example
   `fir.closures`); `lake exe census` reports the first failing stage per
   declaration ([corpus](corpus.md)). Messages name constants by Ixon
