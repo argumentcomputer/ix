@@ -14,8 +14,13 @@ namespace IxVM
 
 aiur_module IxVMCompat where
 
+  -- The owned walk's per-constant entry, and the call a distributed proof routes to the
+  -- worker that owns the constant. The constant must be claimable (not unsafe or
+  -- partial, nor projected from such a block); for a dependency of a safe constant
+  -- this always holds, since a safe constant references only safe ones.
 def check_owned := aiur_fn⟦
   fn check_owned(binding: [UInt8::U8; 32], validator: Field, bytes: [UInt8::U8; 32]) -> () {
+      KernelClaim::assert_claimable((&(bytes)));
       KernelClaim::env_walk_all(KernelRoles::role_ctx_for_validator((&(binding)), validator), (&(bytes)))
     }
 ⟧

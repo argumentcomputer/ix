@@ -571,6 +571,10 @@ def assert_leaves_claimable := aiur_fn⟦
     }
 ⟧
 
+  -- Every owned leaf is claimable (`assert_claimable`). On the owned walk the check runs
+  -- inside `IxVMCompat::check_owned`, once per leaf: that is the call a distributed proof
+  -- executes in the record of the worker that owns the leaf, the only record holding the
+  -- leaf's bytes. The other two walks run in one record and check the leaves first.
 def run_check_env := aiur_fn⟦
   fn run_check_env(rc: KernelRoles::RoleCtx, env_root: Bytes::AddressRef, asm: Options::Option<Bytes::AddressRef>) -> () {
       let owned = load_assumption_tree(env_root);
@@ -580,15 +584,17 @@ def run_check_env := aiur_fn⟦
           () } ,
         Lists::Node::Cons(_, _) => {  () } ,
       };
-      assert_leaves_claimable(owned);
       match asm {
         Options::Option::None => {
 
           match KernelRoles::role_ctx_axioms(rc) {
             RBTreeMap::RBTreeMap::Nil => {  walk_leaves_owned(rc, owned) } ,
-            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {  walk_leaves_transitive(rc, owned) } ,
+            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
+              assert_leaves_claimable(owned);
+              walk_leaves_transitive(rc, owned) } ,
           } } ,
         Options::Option::Some(r) => {
+          assert_leaves_claimable(owned);
           let owned_set = addr_set_build(owned, RBTreeMap::RBTreeMap::Nil);
           let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
           env_walk_leaves(rc, owned, owned_set, asm_set) } ,
