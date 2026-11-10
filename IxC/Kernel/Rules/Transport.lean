@@ -262,7 +262,7 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
         exact h)
       hcR hcC
       (fun hne => by
-        have h := piResidual_renFV _ _ _ (hres hne)
+        have h := piResidual_renFV (ρ := ρ) _ _ _ (hres hne)
         rw [hT.fixType (cv := cvj) hctor rfl, ← getAppArgs_renFV] at h
         exact h)
       (fun hne => by
@@ -301,9 +301,10 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .rescueAnd (major := major) (tmaj := tmaj) (cvj := cvj)
       hrec hctor hres hind htm htmaj hthead hlen hlv hslots hfab hws hb hlv' hcerts htf hdt hpi,
       hd => by
-    have hargs : (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major]).map (renFV ρ)
+    have hargs :
+        (tmaj.getAppArgs ++ [Expr.proj andName 0 major, Expr.proj andName 1 major]).map (renFV ρ)
         = (tmaj.renFV ρ).getAppArgs ++
-          [.proj andName 0 (major.renFV ρ), .proj andName 1 (major.renFV ρ)] := by
+          [Expr.proj andName 0 (major.renFV ρ), Expr.proj andName 1 (major.renFV ρ)] := by
       rw [List.map_append, getAppArgs_renFV]
       rfl
     have hcs := certs_tr hT hcerts hd
