@@ -17,11 +17,11 @@ def storeLiteral (env : Environment) (blob : ByteArray) (string : Bool)
     #[], #[type, address], #[]⟩).1
 
 def arithmeticWitness (env : Environment) (result : Nat) : Environment := Id.run do
-  let p := Tc.PrimAddrs.canonical
+  let p := V3.PrimAddrs.canonical
   let mut env := env
   let mut refs := #[p.nat, p.eq, p.eqRefl, p.natAdd]
   for n in #[20, 22, result] do
-    let blob : ByteArray := ⟨Tc.tcNatBytesLE n⟩
+    let blob : ByteArray := ⟨V3.natBytesLE n⟩
     let address := Address.blake3 blob
     env := { env with blobs := env.blobs.insert address blob }
     refs := refs.push address
@@ -31,7 +31,7 @@ def arithmeticWitness (env : Environment) (result : Nat) : Environment := Id.run
   return (store env ⟨.defn ⟨.thm, .safe, 0, typ, value⟩, #[], refs, #[.succ .zero]⟩).1
 
 def run (root : System.FilePath) : IO Nat := do
-  let p := Tc.PrimAddrs.canonical
+  let p := V3.PrimAddrs.canonical
   let cases := #[
     ("Nat", p.nat, 4), ("Nat.add", p.natAdd, 18),
     ("String", p.string, 307), ("Quot.lift", p.quotLift, 5)]

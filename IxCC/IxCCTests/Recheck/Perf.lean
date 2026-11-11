@@ -53,9 +53,9 @@ def dagEnv (d : Nat) : Env × Addr := Id.run do
 /-- `fns n` (see the module note), with bodies `depth` constructor levels deep. -/
 def fnsEnv (n : Nat) (depth : Nat := 7) : Env × Addr := Id.run do
   let (e, blk) := block {} treeBlock
-  let tI := Tc.indcProjAddr blk 0
-  let leaf := Tc.ctorProjAddr blk 0 0
-  let node := Tc.ctorProjAddr blk 0 1
+  let tI := V3.indcProjAddr blk 0
+  let leaf := V3.ctorProjAddr blk 0 0
+  let node := V3.ctorProjAddr blk 0 1
   let tT : X := .ref 0 #[]
   -- f₀ x := node x x; refs: 0 T, 1 node
   let (e, f0) := store e

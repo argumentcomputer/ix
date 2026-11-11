@@ -183,9 +183,11 @@ the program the pins of the environment it read (`Pinned.pinsOf`).
 
 Not identities, and so not taken from the table: the `lazy` rows
 (`Pinned.lazyRows`), which are the producer's proposals (the table check
-accepts a `lazy` entry for any definition of the right shape), and the erased
-checker's own primitive table (`Tc.PrimAddrs.canonical`), which only speeds up
-its reduction of literals.
+accepts a `lazy` entry for any definition of the right shape), and the
+primitive table (`V3.PrimAddrs.canonical`, `Ixon/V3/PrimAddrs.lean`), which the
+erased checker uses only to speed up its reduction of literals, and the
+resource profile reads for its literal pins (`V3.checkLiteralProfile`) and its
+`Eq` (`Resource.Addressed`).
 
 ## A compile claim and a kernel claim, term for term
 

@@ -1,11 +1,13 @@
 import IxCC.Src.Syntax
 import IxCC.Src.Pinned
-import IxCC.Ixon.V3.Typed
+import IxCC.Ixon.V3.Keys
+import IxCC.Ixon.V3.Support
 import Std.Data.HashMap
 
 /-! # Src ingress
 
-Reads a decoded, Tc-typed Ixon closure into the table-free `Src.Program`.
+Reads a decoded Ixon closure into the table-free `Src.Program` (the front end
+types the closure separately, `Recheck.ingress`; ingress itself runs no typing).
 Share nodes expand through a per-constant cache, so the
 result is a DAG in memory. `ref` resolves through the constant's `refs` table
 and the program's address map, `recur` through the block's members, `nat`
@@ -13,8 +15,9 @@ blobs decode little-endian and `str` blobs as UTF-8, and universe indices
 through `univs`.
 
 Every member of a mutual block gets a `CRef.member`, every constructor a
-`CRef.ctor`; each is addressed by its projection constant (the Tc kernel's
-identity), so projection constants are aliases. A standalone constant is a
+`CRef.ctor`; each is addressed by its projection constant's address (the
+block-member keys, `V3.defnProjAddr` and its siblings), so projection
+constants are aliases. A standalone constant is a
 singleton block. -/
 
 namespace IxCC.Src.Ingress
@@ -78,17 +81,17 @@ def add (l : Layout) (address : Ixon.Address) (c : V3.Constant) : Layout := Id.r
       let idx := i.toUInt64
       match members[i] with
       | .defn d =>
-        l := (l.push (.member address i) (V3.Tc.defnProjAddr address idx) (.defn d src)).1
+        l := (l.push (.member address i) (V3.defnProjAddr address idx) (.defn d src)).1
       | .recr r =>
-        l := (l.push (.member address i) (V3.Tc.recrProjAddr address idx) (.recr r src)).1
+        l := (l.push (.member address i) (V3.recrProjAddr address idx) (.recr r src)).1
       | .indc ind =>
-        l := (l.push (.member address i) (V3.Tc.indcProjAddr address idx)
+        l := (l.push (.member address i) (V3.indcProjAddr address idx)
           (.indc ind src (ctorIds[i]?.getD #[]))).1
     for h : i in [0:members.size] do
       match members[i] with
       | .indc ind =>
         for h : j in [0:ind.ctors.size] do
-          l := (l.push (.ctor address i j) (V3.Tc.ctorProjAddr address i.toUInt64 j.toUInt64)
+          l := (l.push (.ctor address i j) (V3.ctorProjAddr address i.toUInt64 j.toUInt64)
             (.ctor ind.ctors[j] src (base + i))).1
       | _ => pure ()
     return { l with sources := l.sources.push { constant := c, members := memberIds } }
@@ -162,7 +165,7 @@ def convH (ctx : Ctx) : Nat → V3.Expr → ConvM (Term × Nat)
       match String.fromUTF8? bytes with
       | some s => return (.strLit s, 1)
       | none => throw "src ingress: string blob is not valid UTF-8"
-    | .nat i => return (.natLit (V3.Tc.natFromBytesLE (← blob ctx i).data), 1)
+    | .nat i => return (.natLit (V3.natFromBytesLE (← blob ctx i).data), 1)
     | .app f a => do
       let (f, hf) ← convH ctx fuel f
       let (a, ha) ← convH ctx fuel a

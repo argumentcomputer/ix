@@ -91,7 +91,7 @@ def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_NNUM])
   h := h.update pre.getHash.hash
-  h := h.update ⟨(tcNatBytesLE i)⟩
+  h := h.update ⟨(natBytesLE i)⟩
   .num pre i (finishHash h)
 
 partial def toStringAux : Name → String
@@ -172,18 +172,18 @@ def hashInt (h : Hasher) (i : Int) : Hasher := Id.run do
   match i with
   | .ofNat n =>
     h := h.update (ByteArray.mk #[0])
-    h := h.update ⟨(tcNatBytesLE n)⟩
+    h := h.update ⟨(natBytesLE n)⟩
   | .negSucc n =>
     h := h.update (ByteArray.mk #[1])
-    h := h.update ⟨(tcNatBytesLE n)⟩
+    h := h.update ⟨(natBytesLE n)⟩
   h
 
 def hashSubstring (h : Hasher) (ss : Substring) : Hasher :=
   Id.run do
     let mut h := h.update (ByteArray.mk #[TAG_MSSTR])
     h := h.update ss.str.toUTF8
-    h := h.update ⟨(tcNatBytesLE ss.startPos)⟩
-    h := h.update ⟨(tcNatBytesLE ss.stopPos)⟩
+    h := h.update ⟨(natBytesLE ss.startPos)⟩
+    h := h.update ⟨(natBytesLE ss.stopPos)⟩
     h
 
 def hashSourceInfo (h : Hasher) (si : SourceInfo) : Hasher :=
@@ -193,13 +193,13 @@ def hashSourceInfo (h : Hasher) (si : SourceInfo) : Hasher :=
     | .original leading leadingPos trailing trailingPos =>
       h := h.update (ByteArray.mk #[0])
       h := hashSubstring h leading
-      h := h.update ⟨(tcNatBytesLE leadingPos)⟩
+      h := h.update ⟨(natBytesLE leadingPos)⟩
       h := hashSubstring h trailing
-      h := h.update ⟨(tcNatBytesLE trailingPos)⟩
+      h := h.update ⟨(natBytesLE trailingPos)⟩
     | .synthetic start stop canonical =>
       h := h.update (ByteArray.mk #[1])
-      h := h.update ⟨(tcNatBytesLE start)⟩
-      h := h.update ⟨(tcNatBytesLE stop)⟩
+      h := h.update ⟨(natBytesLE start)⟩
+      h := h.update ⟨(natBytesLE stop)⟩
       h := h.update (ByteArray.mk #[if canonical then 1 else 0])
     | .none =>
       h := h.update (ByteArray.mk #[2])
@@ -230,7 +230,7 @@ private partial def hashSyntax (h : Hasher) (syn : Syntax)
     h := h.update (ByteArray.mk #[1])
     h := hashSourceInfo h info
     h := h.update kind.getHash.hash
-    h := h.update ⟨(tcNatBytesLE args.size)⟩
+    h := h.update ⟨(natBytesLE args.size)⟩
     for arg in args do
       h := hashSyntax h arg
   | .atom info val =>
@@ -242,7 +242,7 @@ private partial def hashSyntax (h : Hasher) (syn : Syntax)
     h := hashSourceInfo h info
     h := hashSubstring h rawVal
     h := h.update val.getHash.hash
-    h := h.update ⟨(tcNatBytesLE preresolved.size)⟩
+    h := h.update ⟨(natBytesLE preresolved.size)⟩
     for pr in preresolved do
       h := hashSyntaxPreresolved h pr
   h
@@ -262,7 +262,7 @@ def hashDataValue (h : Hasher) (dv : DataValue)
     h := h.update name.getHash.hash
   | .ofNat n =>
     h := h.update (ByteArray.mk #[3])
-    h := h.update ⟨(tcNatBytesLE n)⟩
+    h := h.update ⟨(natBytesLE n)⟩
   | .ofInt i =>
     h := h.update (ByteArray.mk #[4])
     h := hashInt h i

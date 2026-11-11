@@ -28,7 +28,7 @@ def run (root : System.FilePath) : IO Nat := do
   expect "Nat profile cannot redirect" (checkLiteralProfile { natType := some unit }) false
   expect "String profile cannot redirect" (checkLiteralProfile { stringType := some unit }) false
   expect "canonical literal profile" (checkLiteralProfile {
-    natType := some Tc.PrimAddrs.canonical.nat, stringType := some Tc.PrimAddrs.canonical.string }) true
+    natType := some V3.PrimAddrs.canonical.nat, stringType := some V3.PrimAddrs.canonical.string }) true
   let malformed : C := ⟨.defn ⟨.defn, .safe, 0, .sort 0, .var 0⟩, #[], #[], #[.zero]⟩
   let badEnv := (store input.resource.env malformed).1
   expect "ordinary ill-typed component passes resources"
@@ -36,7 +36,7 @@ def run (root : System.FilePath) : IO Nat := do
   expect "ordinary ill-typed component fails typing" (Tc.checkEnv badEnv) false
   expect "same raw bytes fail combined admission" (validate (bytes badEnv) profileRaw) false
   let mut assertions := 10
-  let table := Tc.PrimAddrs.leanParityTable
+  let table := V3.PrimAddrs.leanParityTable
   let lines := (← IO.FS.readFile (root / "primitives.tsv")).splitOn "\n" |>.filter
     (fun line => !line.isEmpty && !line.startsWith "#")
   require (lines.length == table.size) "primitive inventory size differs"
@@ -47,9 +47,9 @@ def run (root : System.FilePath) : IO Nat := do
       -- The actual declaration aliases id. Only the synthetic, reserved
       -- marker may trigger eager reduction (the producer makes this exception).
       require (address == "173299c76efa82e689210a09e49ad09c14ee1108f2da8d355ef9333b1583a1d5" &&
-        Tc.PrimAddrs.canonical.eagerReduce.toHex ==
+        V3.PrimAddrs.canonical.eagerReduce.toHex ==
           "ff00000000000000000000000000000000000000000000000000000000000003" &&
-        !Tc.primAddrSet.contains (Tc.PrimAddrs.h address)) "synthetic eager-reduction marker"
+        !Tc.primAddrSet.contains (V3.PrimAddrs.h address)) "synthetic eager-reduction marker"
     else
       require (table.any fun (n, a) => n == name && a.toHex == address) s!"primitive differs: {name}"
     assertions := assertions + 1
@@ -143,7 +143,7 @@ def run (root : System.FilePath) : IO Nat := do
   expect "constructor field count" (Tc.checkEnv (indEnv badFields)) false
   let (nEnv, nBlock) := block {} ⟨.muts #[.indc natLike], #[], #[], #[.succ .zero]⟩
   expect "missing constructor wrapper" (Tc.checkEnv
-    { nEnv with consts := nEnv.consts.erase (Tc.ctorProjAddr nBlock 0 1) }) false
+    { nEnv with consts := nEnv.consts.erase (V3.ctorProjAddr nBlock 0 1) }) false
   let orphan := (store nEnv ⟨.iPrj ⟨99, nBlock⟩, #[], #[], #[]⟩).1
   expect "out of range wrapper" (Tc.checkEnv orphan) false
   assertions := assertions + 8
@@ -152,9 +152,9 @@ def run (root : System.FilePath) : IO Nat := do
   expect "recursor rule mismatch" (Tc.checkEnv (recursorEnv false true)) false
   expect "recursor universe arity mismatch" (Tc.checkEnv (recursorEnv false false 2)) false
   assertions := assertions + 4
-  let mismatch := { env with consts := env.consts.insert Tc.PrimAddrs.canonical.nat (constantBytes axiomType) }
+  let mismatch := { env with consts := env.consts.insert V3.PrimAddrs.canonical.nat (constantBytes axiomType) }
   expect "primitive content cannot be forged" (Tc.checkEnv mismatch) false
-  expect "verification cannot be disabled" (Tc.getConstVerified mismatch Tc.PrimAddrs.canonical.nat false) false
+  expect "verification cannot be disabled" (Tc.getConstVerified mismatch V3.PrimAddrs.canonical.nat false) false
   let blob : ByteArray := ⟨#[42]⟩
   let blobAddr := Address.blake3 blob
   let literal : C := ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .nat 1⟩, #[], #[a, blobAddr], #[]⟩
@@ -164,12 +164,12 @@ def run (root : System.FilePath) : IO Nat := do
   expect "literal bytes are checked" (Tc.checkEnv (store wrongBlob literal).1) false
   assertions := assertions + 4
   for n in #[0, 1, 255, 256, 65535, 18446744073709551615, 2^130 + 513] do
-    require (Tc.natFromBytesLE (Tc.tcNatBytesLE n) == n) s!"natural bytes {n}"
+    require (V3.natFromBytesLE (V3.natBytesLE n) == n) s!"natural bytes {n}"
     assertions := assertions + 1
   require (Tc.tcUInt64BytesLE 0x0807060504030201 == ⟨#[1,2,3,4,5,6,7,8]⟩)
     "fixed integer byte order"
-  require ((Tc.tcNatBytesLE 256) == #[0, 1]) "natural byte order"
-  require ((Tc.tcNatBytesLE 0) == #[0]) "zero literal bytes"
+  require ((V3.natBytesLE 256) == #[0, 1]) "natural byte order"
+  require ((V3.natBytesLE 0) == #[0]) "zero literal bytes"
   assertions := assertions + 3
   let ku : Tc.KUniv .anon := .mkParam 0 ()
   let kv : Tc.KUniv .anon := .mkParam 1 ()

@@ -230,8 +230,8 @@ def nativeAlone (a : Assert) (nt : IxCCTests.Rt.Native.Tools) : IO (Array String
 def illTypedEnv : Ixon.V3.Env × Ixon.Address := Id.run do
   let (e, blkE) := block {} ⟨.muts #[.indc (Hostile.enumInd 3)], #[], #[], #[.succ .zero]⟩
   let (e, blkF) := block e ⟨.muts #[.indc (Hostile.enumInd 4)], #[], #[], #[.succ .zero]⟩
-  let enumE := Ixon.V3.Tc.indcProjAddr blkE 0
-  let f1 := Ixon.V3.Tc.ctorProjAddr blkF 0 1
+  let enumE := Ixon.V3.indcProjAddr blkE 0
+  let f1 := Ixon.V3.ctorProjAddr blkF 0 1
   store e ⟨Hostile.defn (.ref 0 #[]) (.ref 1 #[]), #[], #[enumE, f1], #[]⟩
 
 /-- The view relabels `F.c₁` by its table tag as `E`'s constructor 1, which

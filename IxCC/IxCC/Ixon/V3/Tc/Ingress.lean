@@ -1,5 +1,6 @@
 import IxCC.Ixon.V3.Tc.Monad
 import IxCC.Ixon.V3.Tc.Bounds
+import IxCC.Ixon.V3.Keys
 
 /-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Ingress.lean`.
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
@@ -45,19 +46,9 @@ end IngressM
 
 `blake3(serConstant ⟨.xPrj …, #[], #[], #[]⟩)` — the same commitment the
 compiler uses when storing projection constants (`Ix.CompileM`), so the
-kernel-side lookup key and the compile-side storage key stay in lock-step. -/
-
-def defnProjAddr (block : Address) (idx : UInt64) : Address :=
-  Address.blake3 (IxCC.Ixon.V3.constantBytes ⟨.dPrj ⟨idx, block⟩, #[], #[], #[]⟩)
-
-def indcProjAddr (block : Address) (idx : UInt64) : Address :=
-  Address.blake3 (IxCC.Ixon.V3.constantBytes ⟨.iPrj ⟨idx, block⟩, #[], #[], #[]⟩)
-
-def recrProjAddr (block : Address) (idx : UInt64) : Address :=
-  Address.blake3 (IxCC.Ixon.V3.constantBytes ⟨.rPrj ⟨idx, block⟩, #[], #[], #[]⟩)
-
-def ctorProjAddr (block : Address) (idx cidx : UInt64) : Address :=
-  Address.blake3 (IxCC.Ixon.V3.constantBytes ⟨.cPrj ⟨idx, cidx, block⟩, #[], #[], #[]⟩)
+kernel-side lookup key and the compile-side storage key stay in lock-step.
+The four keys (`V3.defnProjAddr` and its siblings) are in
+`IxCC/Ixon/V3/Keys.lean`, which ingress also uses. -/
 
 /-- Ctor projection addresses for every constructor of the inductive at
     member position `indcIdx` of `blockAddr`. -/

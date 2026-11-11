@@ -466,7 +466,8 @@ other roots than index 0. Each new SrcEval rule is a new version of the
 
 ### SP-N. Native discharge of the premises
 
-**Planned, optional.** For a consumer of x86 claims without an IxVM proof:
+**Planned, optional; its front end in progress.** For a consumer of x86
+claims without an IxVM proof:
 existence by running IxCK natively (its typing core's blow-up on chains of
 `let` then matters to that verifier,
 [hardening design](hardening-design.md#external-dependencies)), and
@@ -479,8 +480,11 @@ kernel's runs. Designed, and built beside the default front end, as the
 [kernel front end](kernel-front-end-design.md): IxCK's tiered entry accepts
 the whole artifact, IxCC's reading is checked against IxCK's, and the
 relevance annotation comes from IxCK's inference; the erased type checker is
-deleted at its switch, which is held until IxCK's typing core has a work
-budget (also a working default awaiting confirmation).
+deleted at its switch. The switch proceeds now (the owner's decision of
+2026-11-11; its step 2 is done), and IxCK's blow-up on chains of `let` is
+fixed in the kernel package on this branch in parallel, both before the
+branch is merged; until that fix lands, the native verifier the switch
+produces inherits the blow-up.
 
 **Which entry discharges existence natively.** The tiered entry's acceptance
 of the artifact gives a model of the artifact's whole logical environment,
@@ -496,7 +500,7 @@ table, the committed prelude, the closure of `S`). Two ways to close the gap:
   derivation in the larger environment that mentions only the closure's
   constants is one in the closure). About 2–4k lines, three lemmas over the
   reader and the rules.
-- *The logical entry on the closure* (default): compute the closure of `S` in
+- *The logical entry on the closure* (decided 2026-11-11, DO-37): compute the closure of `S` in
   the artifact's records under the same table as the IxVM claim (reference,
   certified-operation ground and recursor edges), order it, and run the
   kernel's logical entry with the committed prelude on exactly those records.

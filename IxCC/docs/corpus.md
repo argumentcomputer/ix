@@ -284,8 +284,8 @@ What a refreeze needs:
   revision, whose table is `Ix/Tc/Primitive.lean`; the codec pin `2dd96055`
   no longer has `Ix/Tc`). This repository keeps the table in
   `Ix/PrimAddrs.lean`, which has no `stringLegacyBack` field, so
-  `refreeze-ixon tc-primitives` refuses it until the erased checker's table
-  drops that field;
+  `refreeze-ixon tc-primitives` refuses it until IxCC's table
+  (`V3.PrimAddrs`, `IxCC/Ixon/V3/PrimAddrs.lean`) drops that field;
 - the pinned toolchain's `lean` on `PATH` (`nix develop`).
 
 The commands, in order, from `IxCC/`, with `lake build` of the

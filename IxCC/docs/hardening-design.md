@@ -73,11 +73,13 @@ most 64 MiB of JSON each), through `verifyBytes`, `checkClaim`,
 **HD-1. Typing off the verifier path (planned; with SP-0).** Once IxCK's
 acceptance is a premise discharged by an IxVM proof or a native kernel run
 ([certification design](certification-design.md#the-architecture-premises-discharged-by-proofs)),
-IxCC's erased type checker leaves the guarantee path. Whether it stays as an
-optional early filter, or is retired, is a [decision to
-confirm](roadmap.md#decisions-to-confirm). Either way the dominant unbounded
-cost leaves IxCC's verifier; where kernel acceptance is checked instead
-becomes the question (an [open decision](roadmap.md#open-decisions)).
+IxCC's erased type checker leaves the guarantee path. It is retired, not
+kept as a filter (DC-4, decided): the [kernel front
+end](kernel-front-end-design.md) replaces it in the producer and on the
+native verifier path, and its switch is in progress (the owner's decision of
+2026-11-11). The erased checker's cost leaves IxCC's verifier; the kernel's
+typing core takes its place there, with its own blow-up on chains of `let`
+until the kernel's fix lands ([below](#external-dependencies)).
 
 **HD-2. A metered verifier by construction (planned; after SP-0).** Replace
 the patchwork of per-stage budgets by one work budget threaded through every
@@ -118,11 +120,19 @@ decision](roadmap.md#open-decisions).
   and compare in constant time, and a memo table for every function. A count
   of calls and memo misses per function would settle which of the core's
   functions doubles. The fix (interning and memoisation in the core, or
-  charging its walks to a budget, or both) is the kernel owners' to decide. It
+  charging its walks to a budget, or both) is the kernel side's to choose. It
   matters to IxCC because IxCC's verifier is to run IxCK itself: the front end
   over the kernel ([kernel front end](kernel-front-end-design.md#resource-bounds))
   runs the kernel's entry and typing core on the claimant's bytes, and the core
-  exposes no work counter for IxCC to bound; a step budget in the core is that
-  front end's dependency.
+  exposes no work counter for IxCC to bound. **The fix is planned on this
+  branch** (the owner's decision of 2026-11-11): another engineer makes it in
+  the kernel package, in parallel with the switch of IxCC's front end to the
+  kernel, which proceeds now, and both land before the branch is merged.
+  Until the fix lands the exposure is on the branch: once the switch's step 3
+  lands, the erased checker (flat on this family) is gone from the verifier
+  path, and a closure of ordinary size can hold the byte-level verifiers as
+  long as its author chooses (52 s at 30 `let`s, measured in the [kernel front
+  end](kernel-front-end-design.md#resource-bounds)). If the fix exposes a step
+  counter, the front end passes it as a budget and reports a decline (KF-3).
 - **The proof system's verifier** on the Aiur routes, which has its own
   parameter checks (the IxVM workstream's).

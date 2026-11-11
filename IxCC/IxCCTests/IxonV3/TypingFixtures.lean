@@ -62,7 +62,7 @@ def recursorEnv (k tamper : Bool) (levelCount : UInt64 := 1) : Environment := Id
     (.var (if tamper then 1 else 0)))
   let recursor : V3.Recursor := ⟨k, false, levelCount, 0, 0, 1, 1, typ, #[⟨0, rhs⟩]⟩
   return (block env ⟨.muts #[.recr recursor], #[],
-    #[Tc.indcProjAddr parent 0, Tc.ctorProjAddr parent 0 0], #[.var 0]⟩).1
+    #[V3.indcProjAddr parent 0, V3.ctorProjAddr parent 0 0], #[.var 0]⟩).1
 
 /-- Independent framing for constructing complete adversarial input files. -/
 def bytes (env : Environment) : ByteArray := _root_.Ixon.runPut do

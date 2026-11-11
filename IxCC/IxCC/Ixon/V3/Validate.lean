@@ -1,4 +1,5 @@
 import IxCC.Ixon.V3.Source
+import IxCC.Ixon.V3.PrimAddrs
 import IxCC.Ixon.V3.Tc.Driver
 
 /-! Combined native admission: both resource and erased typing checks consume
@@ -15,8 +16,8 @@ def literalPinAllowed (selected : Option Address) (actual : Address) : Bool :=
 /-- Literal interpretation belongs to the pinned kernel primitive inventory.
 A profile may omit unused literal types, but cannot select different ones. -/
 def checkLiteralProfile (profile : Resource.Profile) : Except String Unit :=
-  if literalPinAllowed profile.natType Tc.PrimAddrs.canonical.nat &&
-      literalPinAllowed profile.stringType Tc.PrimAddrs.canonical.string then .ok ()
+  if literalPinAllowed profile.natType PrimAddrs.canonical.nat &&
+      literalPinAllowed profile.stringType PrimAddrs.canonical.string then .ok ()
   else .error "ixon-v3: literal type differs from the kernel primitive identity"
 
 theorem literalPinAllowed_sound {selected : Option Address} {actual : Address}
@@ -28,8 +29,8 @@ theorem literalPinAllowed_sound {selected : Option Address} {actual : Address}
 
 theorem checkLiteralProfile_sound {profile : Resource.Profile}
     (h : checkLiteralProfile profile = .ok ()) :
-    (profile.natType = none ∨ profile.natType = some Tc.PrimAddrs.canonical.nat) ∧
-    (profile.stringType = none ∨ profile.stringType = some Tc.PrimAddrs.canonical.string) := by
+    (profile.natType = none ∨ profile.natType = some PrimAddrs.canonical.nat) ∧
+    (profile.stringType = none ∨ profile.stringType = some PrimAddrs.canonical.string) := by
   unfold checkLiteralProfile at h
   split at h
   next accepted =>
@@ -40,7 +41,7 @@ theorem checkLiteralProfile_sound {profile : Resource.Profile}
 /-- The upstream minimal profile, restricted to primitives actually present
 in the addressed closure. Assumptions still require explicit selection. -/
 def standardProfile (env : Env) : Resource.Profile :=
-  let primitives := Tc.PrimAddrs.canonical
+  let primitives := PrimAddrs.canonical
   let present := fun address => if env.consts.contains address then some address else none
   { natType := present primitives.nat
     stringType := present primitives.string
@@ -97,9 +98,9 @@ theorem ValidatedInput.profile_decoded {bytes profileBytes : ByteArray}
 theorem ValidatedInput.literal_types {bytes profileBytes : ByteArray}
     (input : ValidatedInput bytes profileBytes) :
     (input.resource.profile.natType = none ∨
-      input.resource.profile.natType = some Tc.PrimAddrs.canonical.nat) ∧
+      input.resource.profile.natType = some PrimAddrs.canonical.nat) ∧
     (input.resource.profile.stringType = none ∨
-      input.resource.profile.stringType = some Tc.PrimAddrs.canonical.string) :=
+      input.resource.profile.stringType = some PrimAddrs.canonical.string) :=
   checkLiteralProfile_sound input.literalProfileChecked
 
 end IxCC.Ixon.V3

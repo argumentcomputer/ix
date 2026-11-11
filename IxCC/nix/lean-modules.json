@@ -4418,8 +4418,7 @@
   {"path": "IxCC/Src/Prim.lean", "imports": ["IxCC.Src.Syntax"]},
   "IxCC.Src.Pinned":
   {"path": "IxCC/Src/Pinned.lean",
-   "imports":
-   ["IxCC.Src.Syntax", "IxCC.Ixon.V3.Env", "IxCC.Ixon.V3.Tc.Support"]},
+   "imports": ["IxCC.Src.Syntax", "IxCC.Ixon.V3.Env", "IxCC.Ixon.V3.Support"]},
   "IxCC.Src.NatMap": {"path": "IxCC/Src/NatMap.lean", "imports": []},
   "IxCC.Src.Load":
   {"path": "IxCC/Src/Load.lean",
@@ -4468,13 +4467,14 @@
    "imports":
    ["IxCC.Src.Syntax",
     "IxCC.Src.Pinned",
-    "IxCC.Ixon.V3.Typed",
+    "IxCC.Ixon.V3.Keys",
+    "IxCC.Ixon.V3.Support",
     "Std.Data.HashMap"]},
   "IxCC.Src.Hints":
   {"path": "IxCC/Src/Hints.lean",
    "imports":
    ["IxCC.Src.Syntax",
-    "IxCC.Ixon.V3.Tc.Support",
+    "IxCC.Ixon.V3.Support",
     "Lean.Data.Json.Basic",
     "Lean.Data.Json.Parser"]},
   "IxCC.Src.Admit":
@@ -5976,19 +5976,24 @@
    "imports": ["IxCK.Ixon.Canonical", "IxCC.Ixon.V4.Convert"]},
   "IxCC.Ixon.V3.Validate":
   {"path": "IxCC/Ixon/V3/Validate.lean",
-   "imports": ["IxCC.Ixon.V3.Source", "IxCC.Ixon.V3.Tc.Driver"]},
+   "imports":
+   ["IxCC.Ixon.V3.Source", "IxCC.Ixon.V3.PrimAddrs", "IxCC.Ixon.V3.Tc.Driver"]},
   "IxCC.Ixon.V3.Typed":
   {"path": "IxCC/Ixon/V3/Typed.lean", "imports": ["IxCC.Ixon.V3.Tc.Driver"]},
   "IxCC.Ixon.V3.Tc.Whnf":
   {"path": "IxCC/Ixon/V3/Tc/Whnf.lean", "imports": ["IxCC.Ixon.V3.Tc.Monad"]},
   "IxCC.Ixon.V3.Tc.Support":
   {"path": "IxCC/Ixon/V3/Tc/Support.lean",
-   "imports": ["IxCC.Ixon.Hash", "Lean.Declaration", "Std.Data.TreeMap"]},
+   "imports":
+   ["IxCC.Ixon.Hash",
+    "IxCC.Ixon.V3.Support",
+    "Lean.Declaration",
+    "Std.Data.TreeMap"]},
   "IxCC.Ixon.V3.Tc.Subst":
   {"path": "IxCC/Ixon/V3/Tc/Subst.lean", "imports": ["IxCC.Ixon.V3.Tc.Env"]},
   "IxCC.Ixon.V3.Tc.Primitive":
   {"path": "IxCC/Ixon/V3/Tc/Primitive.lean",
-   "imports": ["IxCC.Ixon.V3.Tc.Env"]},
+   "imports": ["IxCC.Ixon.V3.Tc.Env", "IxCC.Ixon.V3.PrimAddrs"]},
   "IxCC.Ixon.V3.Tc.Monad":
   {"path": "IxCC/Ixon/V3/Tc/Monad.lean",
    "imports":
@@ -6011,7 +6016,8 @@
   {"path": "IxCC/Ixon/V3/Tc/Knot.lean", "imports": ["IxCC.Ixon.V3.Tc.DefEq"]},
   "IxCC.Ixon.V3.Tc.Ingress":
   {"path": "IxCC/Ixon/V3/Tc/Ingress.lean",
-   "imports": ["IxCC.Ixon.V3.Tc.Monad", "IxCC.Ixon.V3.Tc.Bounds"]},
+   "imports":
+   ["IxCC.Ixon.V3.Tc.Monad", "IxCC.Ixon.V3.Tc.Bounds", "IxCC.Ixon.V3.Keys"]},
   "IxCC.Ixon.V3.Tc.Infer":
   {"path": "IxCC/Ixon/V3/Tc/Infer.lean", "imports": ["IxCC.Ixon.V3.Tc.Whnf"]},
   "IxCC.Ixon.V3.Tc.Inductive":
@@ -6050,6 +6056,8 @@
    "imports": ["IxCC.Ixon.V3.Tc.Const", "IxCC.Ixon.V3.Tc.Error"]},
   "IxCC.Ixon.V3.Tc.Bounds":
   {"path": "IxCC/Ixon/V3/Tc/Bounds.lean", "imports": ["IxCC.Ixon.V3.Env"]},
+  "IxCC.Ixon.V3.Support":
+  {"path": "IxCC/Ixon/V3/Support.lean", "imports": ["IxCC.Ixon.Address"]},
   "IxCC.Ixon.V3.Source":
   {"path": "IxCC/Ixon/V3/Source.lean",
    "imports": ["IxCC.Ixon.V3.Resource.Addressed"]},
@@ -6070,7 +6078,12 @@
    "imports":
    ["IxCC.Ixon.V3.Resource.Admit",
     "IxCC.Ixon.V3.Env",
-    "IxCC.Ixon.V3.Tc.Primitive"]},
+    "IxCC.Ixon.V3.PrimAddrs"]},
+  "IxCC.Ixon.V3.PrimAddrs":
+  {"path": "IxCC/Ixon/V3/PrimAddrs.lean", "imports": ["IxCC.Ixon.V3.Support"]},
+  "IxCC.Ixon.V3.Keys":
+  {"path": "IxCC/Ixon/V3/Keys.lean",
+   "imports": ["IxCC.Ixon.V3.Wire", "IxCC.Ixon.Hash"]},
   "IxCC.Ixon.V3.Expr":
   {"path": "IxCC/Ixon/V3/Expr.lean",
    "imports": ["IxCC.Ixon.Univ", "IxCC.Ixon.V3.Contracts"]},

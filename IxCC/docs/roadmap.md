@@ -336,9 +336,10 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
   question and an adequacy spike (SP-A), adequacy and progress on a first
   fragment (SP-1), widening (SP-2), and the native discharge of the premises
   (SP-N), whose kernel-based front end, to replace the erased checker, is
-  built beside the existing one; the switch is held until the kernel's typing
-  core has a work budget (a working default awaiting the owner's
-  confirmation). Kernel acceptance and the image's faithfulness are premises
+  built beside the existing one; the switch proceeds now (the owner's
+  decision of 2026-11-11), with the kernel's blow-up on chains of `let` fixed
+  in the kernel package on this branch in parallel, both before the branch is
+  merged. Kernel acceptance and the image's faithfulness are premises
   that IxVM proofs (or a native kernel run) discharge, not IxCC theorems.
   Designed in the [certification
   design](certification-design.md#the-architecture-premises-discharged-by-proofs).
@@ -395,7 +396,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | SP-1 | Soundness and progress on the first fragment, by a semantic relation indexed by the kernel's types, discharging SP-0's hypotheses ([certification design](certification-design.md#sp-1-adequacy-and-progress-on-the-first-fragment) compares it with a simulation by kernel reduction) | SP-0, SP-A; the external dependencies of XK | both [exit tests](certification-design.md#the-first-grounded-fragment) | 14–30k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
 | XK | **External dependencies of the spine** (none in this repository; listed for tracking): the IxVM consistency theorem's eight obligations proved; its claimed environment fixing kinds and values; its derivations exposed or the lowering claim proving typing; the rules' soundness over the public model; the projection of a constructor and the `Nat` operations on literals as public laws; public level irrelevance; "the annotation pass preserves denotation"; the table restriction lemma | the certified-IxVM work | each stated on the kernel or IxVM side | theirs | kernel and IxVM workstreams | — |
 | SP-2 | Widening: `Quot`, nested inductives, strings, data primitives, plain-RC results, other roots | SP-1, the phases | per item | per item | IxCC | wider images |
-| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch is planned). Working defaults, awaiting the owner's confirmation ([decisions](kernel-front-end-design.md#decisions)): IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude, unbound environments refused; the switch held until the kernel's typing core has a work budget, because on a hostile `let` chain the kernel front end's acceptance takes 52.2 s at 30 `let`s against the erased checker's 0.19 s | SP-B; SP-0 for the statement; for the switch, the role-bound refreeze (RL-1 phase 2) and a work budget in the kernel's typing core | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.5k) | IxCC | — |
+| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch in progress: its step 2, moving what is not typing out of the checker, done 2026-11-11). Decided by the owner on 2026-11-11 ([decisions](kernel-front-end-design.md#decisions)): the switch proceeds now; the kernel's blow-up on chains of `let` is fixed in the kernel package on this branch by another engineer, in parallel, and both land before the branch is merged; until then the exposure is on the branch (on a hostile `let` chain the kernel front end's acceptance takes 52.2 s at 30 `let`s against the erased checker's 0.19 s). Working defaults, awaiting the owner's confirmation: IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude; unbound environments are refused, which follows from the switch | SP-B; SP-0 for the statement; for the switch's step 3, the role-bound refreeze (RL-1 phase 2, in progress); before the branch merges, the kernel's fix of its blow-up on `let` chains (KF-3, in parallel on this branch) | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.3k) | IxCC | — |
 | AR-1 | The evaluator circuit, its refinement of SrcEval, the lowering claim, aggregation | EV-1, EV-2 (unproved deployment); SP-0, SP-1 (proofs) | the IxVM workstream's | that workstream's estimates: the circuit 5–10k lines of formal Aiur, its refinement 10–25k, the lowering check 3–8k | IxVM workstream | — |
 | AR-2 | Fir → formal Aiur with a backward simulation, one object enumeration per program, small `Nat` below 2^56 | RL-2 (formal Aiur in this repository), a key-derivation story or a standalone customer; CD2 optional | K1 through per-program circuits | 8–15k lines for the `Nat` and tree fragment (a spike outside this tree; the IxVM side estimates 10–25k) | unassigned | — |
 | XB-1 | = IxOS-0, as redefined on 2026-11-14 (DO-34): IxCC-written executables replace the C runtime driver in the native gates, out of process, with no C and no in-process trampoline (X0 then X1 of [standalone executables](#standalone-executables)); first planned as a host loader calling an object's entries through a trampoline. Done with X1 | X0 | as X1 | as X0 and X1 | IxCC | — |
@@ -935,6 +936,30 @@ the wrong shape. The plan above is restated on these lines
   which settles DC-2's stored-value part.
 
 **Opened by it**: DO-37 to DO-41 below.
+
+### The kernel front end's switch (2026-11-11)
+
+- **The switch proceeds now.** IxCC's front end moves to the certified
+  kernel on both the producer and the verifier path, and the erased checker
+  is deleted ([the switch](kernel-front-end-design.md#the-switch)), without
+  waiting for a work budget in the kernel's typing core. This replaces the
+  working default that held the switch on that budget.
+- **The kernel's blow-up on chains of `let` is fixed in the kernel package on
+  this branch**, by another engineer, in parallel with the switch (KF-3);
+  both land before the branch is merged. Until the fix lands the exposure is
+  on the branch: once the switch's step 3 lands, a claimant's closure of
+  ordinary size can hold the byte-level verifiers as long as it chooses
+  ([resource bounds](kernel-front-end-design.md#resource-bounds),
+  [hardening](hardening-design.md#external-dependencies)).
+- **The fixtures are being refrozen in the role-bound form** by another
+  engineer (RL-1 phase 2); the switch's step 3 lands after that, since the
+  kernel admits only role-bound environments.
+
+What remains a working default, awaiting confirmation, is listed with the
+[kernel front end's decisions](kernel-front-end-design.md#decisions): the
+native check of the clauses (DO-6 (c)), the tiered entry and the artifact's
+own prelude. The closure run for premise (i) (DO-37) was decided the same
+day.
 
 ### Decisions to confirm
 

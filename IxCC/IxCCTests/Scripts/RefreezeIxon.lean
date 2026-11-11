@@ -15,9 +15,9 @@ their provenance; required CI never runs it.
   (`Tests/Fixtures/ixon-v4/` at REV, unchanged) into `fixtures/ixon-v4`:
   the expression, addressed, claim, resource and text vectors, the handoff and
   `primitives.tsv`.
-* `tc-primitives --ix-repo DIR --ix-revision REV`: rewrite the erased
-  checker's primitive table (`PrimAddrs.canonical` in
-  `IxCC/Ixon/V3/Tc/Primitive.lean`) field by field from ix's table at REV
+* `tc-primitives --ix-repo DIR --ix-revision REV`: rewrite IxCC's
+  primitive table (`V3.PrimAddrs.canonical` in
+  `IxCC/Ixon/V3/PrimAddrs.lean`) field by field from ix's table at REV
   (`Ix/PrimAddrs.lean`, or `Ix/Tc/Primitive.lean` in earlier revisions), and
   check that the two tables are equal; tables with different fields are
   refused, naming the fields.
@@ -122,7 +122,7 @@ ix of this repository, `Ix/Tc/Primitive.lean` in earlier revisions. -/
 def primitiveTableFiles : List String := ["Ix/PrimAddrs.lean", "Ix/Tc/Primitive.lean"]
 
 def tcPrimitives (repo revision : String) : IO Unit := do
-  let path : FilePath := "IxCC/Ixon/V3/Tc/Primitive.lean"
+  let path : FilePath := "IxCC/Ixon/V3/PrimAddrs.lean"
   let mut theirs : List (String × String) := []
   let mut source := ""
   for file in primitiveTableFiles do

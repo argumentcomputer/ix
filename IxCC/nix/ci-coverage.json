@@ -480,12 +480,15 @@
   "IxCC.Ixon.V3.Contracts",
   "IxCC.Ixon.V3.Env",
   "IxCC.Ixon.V3.Expr",
+  "IxCC.Ixon.V3.Keys",
+  "IxCC.Ixon.V3.PrimAddrs",
   "IxCC.Ixon.V3.Resource.Addressed",
   "IxCC.Ixon.V3.Resource.Admit",
   "IxCC.Ixon.V3.Resource.Check",
   "IxCC.Ixon.V3.Resource.State",
   "IxCC.Ixon.V3.Resource.StateProofs",
   "IxCC.Ixon.V3.Source",
+  "IxCC.Ixon.V3.Support",
   "IxCC.Ixon.V3.Tc.Bounds",
   "IxCC.Ixon.V3.Tc.CanonicalCheck",
   "IxCC.Ixon.V3.Tc.Check",
@@ -510,7 +513,6 @@
   "IxCC.Ixon.V3.Tc.Subst",
   "IxCC.Ixon.V3.Tc.Support",
   "IxCC.Ixon.V3.Tc.Whnf",
-  "IxCC.Ixon.V3.Typed",
   "IxCC.Ixon.V3.Validate",
   "IxCC.Ixon.V3.Wire",
   "IxCC.Ixon.V4.Convert",
@@ -1599,7 +1601,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "M3: the closures step on the compile and recheck path; roots entered at exactly their declared count",
+ "KS: the switch's step 2 (what is not typing moved out of the erased checker)",
  "axiom_sha256":
  "c00704914b675a09977c5dc84beaa5afebefd95254f3ec90ebc0d2e9958e7d86",
  "axiom_count": 5875}

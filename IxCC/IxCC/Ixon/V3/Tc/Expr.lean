@@ -409,7 +409,7 @@ instance : Inhabited (KExpr m) := ⟨mkSort .mkZero⟩
 
 /-- Blob address for a `nat` literal: Blake3 of the minimal little-endian
     encoding (`0 ↦ #[0]`). Used when whnf materializes literals. -/
-def natBlob (n : Nat) : Address := Address.blake3 ⟨(tcNatBytesLE n)⟩
+def natBlob (n : Nat) : Address := Address.blake3 ⟨(natBytesLE n)⟩
 
 /-- Blob address for a `str` literal: Blake3 of the UTF-8 bytes. -/
 def strBlob (s : String) : Address := Address.blake3 s.toUTF8

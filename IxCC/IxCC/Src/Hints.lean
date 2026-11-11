@@ -1,5 +1,5 @@
 import IxCC.Src.Syntax
-import IxCC.Ixon.V3.Tc.Support
+import IxCC.Ixon.V3.Support
 import Lean.Data.Json.Basic
 import Lean.Data.Json.Parser
 

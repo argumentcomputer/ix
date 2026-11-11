@@ -64,9 +64,9 @@ def chain (step : X → X) (inner : X) (n : Nat) : Array X × X := Id.run do
 def deepEnv (n : Nat) : Env × Addr := Id.run do
   let b := base 3
   let (e, blk) := block b.env (listBlock b.enumI)
-  let listI := Tc.indcProjAddr blk 0
-  let nil := Tc.ctorProjAddr blk 0 0
-  let cons := Tc.ctorProjAddr blk 0 1
+  let listI := V3.indcProjAddr blk 0
+  let nil := V3.ctorProjAddr blk 0 0
+  let cons := V3.ctorProjAddr blk 0 1
   -- refs: 0 L, 1 cons, 2 nil, 3 c₀
   let (sh, v) := chain (fun t => .app (.app (.ref 1 #[]) (.ref 3 #[])) t) (.ref 2 #[]) n
   let (e, main) := store e ⟨defn (.ref 0 #[]) v, sh, #[listI, cons, nil, b.ctors[0]!], #[]⟩
@@ -157,9 +157,9 @@ later, so every shrink round's census reads the rest of the chain at each of
 them. -/
 def treeEnv (d : Nat) : Env × Addr := Id.run do
   let (e, blk) := block {} treeBlock
-  let tI := Tc.indcProjAddr blk 0
-  let leaf := Tc.ctorProjAddr blk 0 0
-  let node := Tc.ctorProjAddr blk 0 1
+  let tI := V3.indcProjAddr blk 0
+  let leaf := V3.ctorProjAddr blk 0 0
+  let node := V3.ctorProjAddr blk 0 1
   -- refs: 0 T, 1 node, 2 leaf
   let mut sh : Array X := #[.app (.app (.ref 1 #[]) (.ref 2 #[])) (.ref 2 #[])]
   for i in [1:d+1] do

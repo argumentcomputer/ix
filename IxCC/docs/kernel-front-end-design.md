@@ -5,8 +5,12 @@ information and its acceptance of an environment from the certified kernel
 (the `IxCK/` package), and its own erased type checker is to be deleted. The
 new front end is **implemented beside the old one** (`IxCC.Src.KernelFront`,
 [`Src/KernelFront`](../IxCC/Src/KernelFront)), with a differential suite
-(`tests-kernel-front`); the switch that makes it the only front end is
-**planned** ([The switch](#the-switch)). This is most of the native
+(`tests-kernel-front`); the switch that makes it the only front end is **in
+progress** ([The switch](#the-switch)): by the owner's decision of 2026-11-11
+it proceeds now, while the kernel's blow-up on chains of `let` is fixed in the
+kernel package on this branch in parallel, and both land before the branch is
+merged ([decisions](#decisions)). Its step 2 is done; the old front end is
+still the default. This is most of the native
 discharge of the premises in the [roadmap](roadmap.md#milestones) (SP-N): the
 faithfulness check and the source of the typing derivations; the first
 premise as restated on 2026-11-11 needs one more kernel run, on the closure
@@ -25,7 +29,7 @@ Ixon checker of ix, with no soundness theorem) two kinds of question:
 | --- | --- | --- | --- |
 | `Tc.checkEnv` | accept every declaration of the closure | `Recheck.ingress` when its `typecheck` flag is set, hence every byte-level verifier (`CompileClaim.verifyBytes`, `checkClaim`, `makeClaim`, `Ring0Sip.verifyBytes`), `ixcc compile` and `check-cert`; also `Src.load`, catalog admission, the resource-validation API and the census | nothing proved: the byte-level theorems carry only `typecheck = true → Tc.checkEnv inp.env = .ok ()` and hold with typing off |
 | `Src.Relevance.annotate` | the type of a subterm in a context of opened binders; whether a type reduces to a Π-telescope ending in a sort; the sort of a type and its zero condition over the constant's universe parameters (D18) | the producer, and through Stage A (`Recheck.checkCanonicalRelevance`: the certificate's annotation must equal the annotator's) every byte-level verifier | an untrusted oracle: the recheck path decides the annotation (`Relevance.check`, `checkCanonical`); under the [end-to-end plan](end-to-end.md) it is the relevance clause of the faithfulness premise |
-| not typing | block-member keys (`Tc.*ProjAddr`, pure BLAKE3 like every address IxCC computes), `Tc.natFromBytesLE`, `Tc.PrimAddrs.canonical` | ingress, the resource profile's literal pins and its `Eq` | — |
+| not typing (moved out of `Tc` by the switch's step 2) | block-member keys (now `V3.*ProjAddr`, [`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean), pure BLAKE3 like every address IxCC computes), the `Nat` literal bytes and address order and hexadecimal reading (`V3.natFromBytesLE`, `Address.cmpBytes`, `Address.fromString`, [`Ixon/V3/Support.lean`](../IxCC/Ixon/V3/Support.lean)), the primitive table (`V3.PrimAddrs.canonical`, [`Ixon/V3/PrimAddrs.lean`](../IxCC/Ixon/V3/PrimAddrs.lean)) | ingress, the pinned identities, the sidecar's reader, the resource profile's literal pins and its `Eq` | — |
 
 The recheck path (`Recheck.run` and everything it reaches) runs no typing:
 it takes a `Src.Program` and checks the certificate's choices syntactically.
@@ -194,8 +198,8 @@ the one the annotator asks about; it is not, as it stands, a native discharge
 of premise (i). That needs either three restriction lemmas (models of the
 whole to the closure, the reading under the artifact's table to the default
 one, the derivations to the closure) or a second run of the kernel's logical
-entry on the closure alone under the claim's table and prelude (the default
-in the [certification design](certification-design.md#sp-n-native-discharge-of-the-premises)).
+entry on the closure alone under the claim's table and prelude (decided on
+2026-11-11, DO-37; [certification design](certification-design.md#sp-n-native-discharge-of-the-premises)).
 For the second, `Accept.lean` gains an entry that computes the closure of the
 seeds in the accepted records (references, the certified operations' ground
 and literal edges, recursors; a port of the kernel side's closure walk, since
@@ -270,15 +274,26 @@ byte-level path; the kernel is already there for acceptance.
 
 ### What each use of the erased checker becomes
 
-| Use | Becomes |
-| --- | --- |
-| `Tc.checkEnv` at ingress | the kernel's tiered entry (`accept`), mandatory |
-| `Src.Relevance.annotate` in the producer | `KernelFront.annotate` (with `checkReachedTypes`) |
-| Stage A on the byte-level path | `KernelFront.checkCanonicalRelevance` |
-| `Tc.*ProjAddr` (block-member keys) | moved out of the checker's namespace (they are already pure BLAKE3); the kernel's key map already checks them against its own reconstruction (`Reading.build`) |
-| `Tc.natFromBytesLE`, `Tc.PrimAddrs.canonical` (the resource profile's literal pins and its `Eq`) | moved out of the checker's namespace |
-| `Src.load`, the census, catalog admission, the resource-validation API (which keeps typing as its prerequisite) | the kernel's acceptance where a role-bound environment is read; the catalogs (unbound pieces assembled by IxCC) keep their decoder-level admission, without typing |
-| the per-claim `typecheck` flag | removed ([below](#the-typing-flag)) |
+Every use of the checker (`IxCC/IxCC/Ixon/V3/Tc/`) outside its own modules,
+as the tree stands after step 2 (2026-11-11), and what it becomes:
+
+| Use (where) | What rests on it | Becomes at the switch |
+| --- | --- | --- |
+| `V3.Tc.checkEnv` in `Recheck.ingress` (`Recheck/Produce.lean`), when its `typecheck` flag is set | acceptance on every byte-level path: `CompileClaim.verifyBytes`, `checkClaim`, `makeClaim`; `Ring0Sip.verifyBytes`; `Recheck.compile`, `compileWithContracts`; `RcReplay.compileAuto`; `ixcc compile` and `check-cert` | the kernel's tiered entry (`KernelFront.accept`, inside `KernelFront.ingress`), mandatory; each of them loses its `typecheck` parameter |
+| `Src.Relevance.annotate` (`Src/Relevance/Annotate.lean`, which opens `Tc` and asks its inference, conversion and weak head normalisation) | the producers' relevance oracle (`Recheck.produceSource`; `RcReplay.produceFir`, `Recheck/Rc/Produce.lean`); Stage A (`Recheck.checkCanonicalRelevance`, hence `CompileClaim.checkCertCanonicalRelevance`, `Ring0Sip.verifyBytes`, `check-cert`); `Src.load`'s default oracle | `KernelFront.annotateChecked` (with `checkReachedTypes`); Stage A `KernelFront.checkCanonicalRelevance`; the module is deleted |
+| `V3.Tc.checkEnv` in `Src.prepare` (`Src/Load.lean`), when `LoadConfig.typecheck`; `RelOracle` takes a `V3.Env` | the loader of the Src, Lam and pipeline suites and of `src-steps` | `KernelFront.ingress` and its annotator; `LoadConfig.typecheck` goes, and the oracle takes the accepted input |
+| `V3.TypedInput`, `V3.validateTyped` (`Ixon/V3/Typed.lean`) | nothing: since step 2 only the umbrella `IxCC.lean` imports it | deleted |
+| `ValidatedInput.typingChecked` in `V3.validate` (`Ixon/V3/Validate.lean`), and `ValidatedInput.typing_checked` | the resource-validation API (`check-ixon-v3`, `tests-ixon-v3`), which keeps typing as its prerequisite | the typing conjunct goes (resource admission and the literal pins stay); the kernel's acceptance where the input is role-bound. Its handoff fixtures are unbound |
+| `Admitted.typingChecked` in `Catalog.admitWith` (`Ixon/V3/Catalog/Admit.lean`), and `Admitted.typing_checked` | catalog validator 1 (`check-ixon-v3-catalog`) | decoder-level admission without typing: the catalogs are unbound pieces IxCC assembles |
+| `Tc.initialState`, `getConstVerified`, `checkTarget`, `TcM.checkConst` in `Tools.Census.entries` (`Tools/Census.lean`) | the per-constant typing verdicts of the required `census` check, compared with reviewed baselines | the kernel's acceptance of the whole role-bound closure, its refusal naming the record; the baselines regenerated with the refreeze |
+| `typecheck = true → V3.Tc.checkEnv inp.env = .ok ()` and `Src.Relevance.annotate … = .ok …` in statements: `Recheck.ingress_parts` (`Compiler/Proof.lean`), `verifyBytes_{immortal,zeroRc,plainRc}_sound` (`CompileClaim/Proof.lean`), `verifyBytesRing0Sip_sound` (`Ring0/Proof.lean`), and the bridge's `checkDecls_verifyBytes_immortal_denotes_nat` (`Models/KernelBridge/IxKernelBridge/NatBridge.lean`); the `typecheck` parameter alone in `compile_parts` and its siblings (`Recheck/Proof/Compile.lean`), `compileWithContracts_*` and `compileAuto_*_sound` (`Compiler/Proof.lean`), `checkClaim_iff` (`CompileClaim.lean`) | the byte-level guarantees | restated with the acceptance and the kernel Stage A conjuncts ([statements](#the-byte-level-theorems-after-the-switch)) |
+| `--no-typecheck` (`Cli.lean`) | skips typing at ingress | removed ([the typing flag](#the-typing-flag)) |
+| the erased checker's tests: `IxCCTests/IxonV3/{Typing,Primitives,K1}.lean` (`Tc.checkEnv`, `KUniv`, `univEq`, `getConstVerified`, `primAddrSet`, `tcUInt64BytesLE`) | `tests-ixon-v3`'s typing part | deleted; its assertions that are not typing (the primitive table against `primitives.tsv`, the `Nat` literal bytes) move to the suite's other parts |
+| `IxCCTests/KernelFront/Diff.lean` (`V3.Tc.checkEnv`, the old front end) | the differential | the old side goes; the kernel front end's regressions stay, and its run over the refrozen corpus becomes the required differential's successor |
+| docstrings: `Ixon/Hash.lean` (`V3.Tc.finishHash`, the Rust hasher's one user), `Src/Prim.lean` (`Tc.computeNatBin`), `Src/KernelFront/Front.lean`, `Ixon/V4/Convert.lean`, `CompileClaim.lean`, `Ring0.lean` | — | rewritten; with the checker gone, `Blake3.Rust` has no user in IxCC |
+| not typing: the block-member keys, the `Nat` literal bytes, address order and hexadecimal reading, the primitive table | ingress, the pinned identities, the sidecar's reader, the resource profile | moved by step 2 to `V3.*ProjAddr` ([`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean)), `V3.natFromBytesLE`, `V3.natBytesLE`, `Address.cmpBytes`, `Address.fromString` ([`Ixon/V3/Support.lean`](../IxCC/Ixon/V3/Support.lean)) and `V3.PrimAddrs` ([`Ixon/V3/PrimAddrs.lean`](../IxCC/Ixon/V3/PrimAddrs.lean)); the kernel's key map checks the keys against its own reconstruction (`Reading.build`) |
+
+The per-claim `typecheck` flag goes with the first row ([below](#the-typing-flag)).
 
 ## Statements
 
@@ -408,7 +423,11 @@ asks a change of behaviour:
    the core may remove the blow-up itself. A budget is needed either way, for
    whatever family is found next. A step counter threaded through
    the core, with acceptance stated within the budget, is what lets IxCC bound
-   its verifier ([Resource bounds](#resource-bounds)).
+   its verifier ([Resource bounds](#resource-bounds)). Planned on this branch
+   (the owner's decision of 2026-11-11): another engineer fixes the blow-up in
+   the kernel package, in parallel with the switch, and both land before the
+   branch is merged; whether by interning, a budget or both is the kernel
+   side's choice.
 5. **The rules' soundness over the public model** (added 2026-11-11).
    `infer_sound`, `defeq_sound` and `red_sound` are stated over the internal
    carrier with `RulesInputs`; soundness of the evaluator over every public
@@ -520,18 +539,31 @@ Both accept every one. So the switch adds an exposure the erased checker does
 not have: a claimant can make the verifier's acceptance take as long as it
 likes with a closure of ordinary size. The annotator asks the same core about
 `let`-substituted subterms, so a root whose terms carry such a chain costs as
-much again in the producer and in Stage A. The guard is a dependency: a step
-counter in the kernel's core (kernel-side lemma 4), which the front end would
-pass as a budget and report as a decline (milestone KF-3 below). Until then,
-the kernel's typing time is outside the verifier's time bound. On every
-closure `ix compile` writes, the kernel is faster ([measurements](#measurements)).
+much again in the producer and in Stage A. The guard is a dependency: the
+kernel's fix of its blow-up (kernel-side item 4), and, if the fix exposes a
+step counter, a budget the front end passes and reports as a decline
+(milestone KF-3 below). The owner decided on 2026-11-11 that the switch
+proceeds now and that the fix is made in the kernel package on this branch,
+by another engineer, in parallel; both land before the branch is merged.
+**Until the fix lands, the exposure is on this branch**: once the switch's
+step 3 lands, the kernel's typing time is outside the verifier's time bound,
+and a constant of a few hundred bytes chosen by a claimant can hold
+`verifyBytes`, `Ring0Sip.verifyBytes` and `ixcc check-cert` as long as it
+chooses (52 s at 30 `let`s, roughly doubling with each further one; the table
+above).
+Before step 3 it is so only for the kernel front end's own entry points. On
+every closure `ix compile` writes, the kernel is faster
+([measurements](#measurements)).
 The kernel's recursion depth on the verifier's 8 MiB stack is likewise the
 kernel's to bound (HD-3 audits it with IxCC's own).
 
 ## The switch
 
 The steps that make the new front end the only one, in an order that keeps
-the tree green at every commit:
+the tree green at every commit. The switch proceeds now (the owner's decision
+of 2026-11-11, [decision 5](#decisions)); the kernel's fix of its blow-up on
+`let` chains is made in parallel in the kernel package on this branch, and
+both land before the branch is merged.
 
 1. **Prerequisites (not this work).** The fixtures refrozen in the role-bound
    form (RL-1 phase 2; the kernel admits only role-bound environments, and
@@ -541,33 +573,54 @@ the tree green at every commit:
    bound neither `choice` nor `natLor` in the larger closures, and the
    kernel declined `Classical.choice` there as a non-standard axiom; the
    closures [measured](#measurements) below come from an `ix` that binds them.
+   In progress (2026-11-11), by another engineer; step 3 cannot land before
+   it.
 2. **Move what is not typing out of the checker** (a refactor, no behaviour
-   change): the block-member keys (`Tc.defnProjAddr` and its siblings, already pure
-   BLAKE3), `Tc.natFromBytesLE` and
-   the pins the resource adapter takes from `Tc.PrimAddrs.canonical` (its
-   literal types and `Eq`), into `IxCC/IxCC/Ixon/V3/`.
-3. **One commit: the kernel front end becomes the front end.** Held, by the
-   working default of [decision 5](#decisions), until the kernel's typing
-   core has a work budget. `Recheck.ingress` returns the kernel front end's input (the `Recheck.Input`
+   change). **Done** (2026-11-11): the block-member keys (`V3.defnProjAddr`
+   and its siblings, pure BLAKE3) to [`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean);
+   the `Nat` literal bytes (`V3.natFromBytesLE`, `V3.natBytesLE`, formerly
+   `Tc.tcNatBytesLE`) and address order and hexadecimal reading
+   (`Address.cmpBytes`, the `Ord Address` instance, `Address.fromString`) to
+   [`Ixon/V3/Support.lean`](../IxCC/Ixon/V3/Support.lean); the primitive table
+   the resource adapter takes its literal types and `Eq` from (`V3.PrimAddrs`,
+   with `canonical` and the parity table `leanParityTable`) to
+   [`Ixon/V3/PrimAddrs.lean`](../IxCC/Ixon/V3/PrimAddrs.lean). `Tc` keeps the
+   checker's own hashing helpers (`finishHash`, `tcUInt64BytesLE`), its
+   reserved reduction markers and its primitive set. `Src.Ingress`,
+   `Src.Hints`, `Src.Pinned` and the resource adapter no longer import the
+   checker; [above](#what-each-use-of-the-erased-checker-becomes) is every use
+   that remains.
+3. **One commit: the kernel front end becomes the front end.** After the
+   refreeze (step 1). `Recheck.ingress` returns the kernel front end's input (the `Recheck.Input`
    gains the accepted kernel input, or becomes `KInput`); `produceSource` uses
    `KernelFront.annotate`; `checkCanonicalRelevance` is the kernel one; the
    `typecheck` parameters go from `Recheck.ingress`, `compile`,
    `CompileClaim.verifyBytes`, `checkClaim`, `makeClaim`, `Ring0Sip`,
    `Src.load`, the census and the corpus tools, and `--no-typecheck` from
    `ixcc`; the theorems are restated (`CompileClaim/Proof.lean`'s
-   `verifyBytes_*_sound` and `_rootShape`, `Recheck/Proof/Parts.lean`'s
-   `front_wellAnnotated`, `Compiler/Proof.lean`, `Ring0/Proof.lean`) with the
-   acceptance and the kernel Stage A conjuncts, and their fences
-   (`IxCCTests/Fences/Compile.lean`) re-recorded; the duplicated producer of
-   `KernelFront.Front` folds back into `Recheck.Produce`.
+   `verifyBytes_*_sound`, and `_rootShape` and `_shape`, which lose the
+   parameter; `Compiler/Proof.lean`'s `ingress_parts` and the compile
+   theorems; `Recheck/Proof/Compile.lean`; `Ring0/Proof.lean`'s
+   `verifyBytesRing0Sip_sound`; the bridge's
+   `checkDecls_verifyBytes_immortal_denotes_nat`) with the acceptance and the
+   kernel Stage A conjuncts, and their fences re-recorded (`front_wellAnnotated`,
+   `Recheck/Proof/Parts.lean`, is about `Recheck.front`, which runs no typing,
+   and does not change); the duplicated producer of `KernelFront.Front` folds
+   back into `Recheck.Produce`.
 4. **Delete** (a separate commit, no behaviour change): `IxCC/IxCC/Ixon/V3/Tc/`
-   (24 files, 12,680 lines), `IxCC/IxCC/Src/Relevance/Annotate.lean` (336),
+   (24 files, 12,339 lines since step 2), `IxCC/IxCC/Src/Relevance/Annotate.lean` (336),
    `IxCC/IxCC/Ixon/V3/Typed.lean` (34), the typing parts of
-   `IxCC/IxCC/Ixon/V3/Validate.lean` (105) and
-   `IxCC/IxCC/Ixon/V3/Catalog/Admit.lean` (49), the typing fixtures and their
-   suite part (`fixtures/ixon-v4/typing/`, `IxCCTests/IxonV3/TypingFixtures.lean`),
+   `IxCC/IxCC/Ixon/V3/Validate.lean` (106 lines in all) and
+   `IxCC/IxCC/Ixon/V3/Catalog/Admit.lean` (49), the typing tests
+   (`IxCCTests/IxonV3/{Typing,Primitives,K1}.lean`, less the primitive table's
+   parity and the `Nat` literal bytes, which move to the suite's other parts),
    and IxCC's own binding decoder (`IxCC/IxCC/Ixon/V3/Binding.lean`, 171), whose
-   reading the kernel's `admitBinding` replaces; about 13,500 lines.
+   reading the kernel's `admitBinding` replaces; about 13,300 lines. Not
+   deleted: `IxCCTests/IxonV3/TypingFixtures.lean`, which is the in-memory
+   environment builder of `tests-recheck`, the catalog tests and
+   `ResourceBudget` (renamed, less anything typing-only); and the typing
+   bundles `fixtures/ixon-v4/typing/`, which also seeded the catalog fixtures,
+   are the refreeze's to keep or drop.
 5. **The ledger last**: the closure and the exception are already recorded;
    the integrity pins re-recorded by the documented procedure; the
    `tests-ixon-v3` typing part and the `tests-relevance` annotator part move to
@@ -674,14 +727,24 @@ front end's acceptance time. A hostile closure is measured under
 | --- | --- | --- |
 | KF-0 | The front end beside the old one, the differential suite, the acceptance and classifier lemmas, the ledger's exception (this change) | `tests-kernel-front` passes; identical annotations, certificates and objects on every role-bound closure the kernel accepts |
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
-| KF-2 | The switch (steps 2–5) | all required checks on the refrozen corpus; the deletion list gone |
-| KF-3 | A work budget threaded through the kernel's core (kernel-side) and passed by the front end | a hostile `let`-chain closure declines within the budget |
+| KF-2 | The switch (steps 2–5). In progress: step 2 done (2026-11-11); steps 3–5 after the refreeze | all required checks on the refrozen corpus; the deletion list gone |
+| KF-3 | The kernel's fix of its blow-up on `let` chains (kernel-side item 4: interning, a work budget threaded through the core, or both), made in the kernel package on this branch by another engineer, in parallel with KF-2; a budget, if the fix exposes one, passed by the front end. Lands with KF-2 before the branch is merged (the owner's decision of 2026-11-11) | the hostile `let`-chain closure accepted in time flat in `k`, or declined within the budget |
 | KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
 ## Decisions
 
-The defaults below are the working defaults this work proceeds on. Each
-awaits the owner's confirmation; none is decided.
+**Decided by the owner on 2026-11-11** (decision 5 below): the switch
+proceeds now; the kernel's blow-up on `let` chains is fixed in the kernel
+package on this branch, by another engineer, in parallel with the switch;
+both land before the branch is merged; until the fix lands the exposure is
+on the branch. The fixtures are being refrozen in the role-bound form by
+another engineer, and the switch's step 3 lands after that. Item 6 (the
+closure run for premise (i)) was decided the same day (DO-37).
+
+Items 1, 2 and 3 below are the working defaults this work proceeds on, each
+awaiting the owner's confirmation. The switch makes the front end as built
+the only one, so after step 3 reversing 1, 2 or 3 changes the only front end
+rather than choosing between two.
 
 1. **Shape B, the native check of the clauses, for the native path.**
    Working default: yes (above). It reverses the default of the open decision
@@ -695,15 +758,22 @@ awaits the owner's confirmation; none is decided.
 3. **The artifact's own prelude.** As `ix check-lean`. The committed prelude
    (`preludeFor`, `checkBytes`) works only where the artifact's prelude
    records are the committed ones. Working default: the artifact's.
-4. **Unbound environments.** Working default: refused by the front end.
-   Until the refreeze, the old front end stays the default for the unbound
-   fixtures.
+4. **Unbound environments.** Refused by the front end: with the switch
+   decided this follows, since the kernel admits only role-bound
+   environments. Until step 3 the old front end stays the default, and the
+   unbound fixtures keep using it; step 3 waits for the refreeze. Working
+   default for what stays unbound after it: the catalog pieces and the
+   resource handoff fixtures, read without typing (the table of uses above).
 5. **The exposure on `let` chains** ([resource bounds](#resource-bounds)).
    The switch (step 3; the producer and the verifier go together) either
-   lands with the exposure documented or waits for the kernel's work budget
-   (kernel-side lemma 4, KF-3). Working default: the switch is held until
-   the kernel's typing core has a work budget; steps 1 and 2 may proceed.
-   The reason, measured: acceptance of a role-bound closure of 206 records
+   lands with the exposure documented or waits for the kernel's fix
+   (kernel-side item 4, KF-3). **Decided** (the owner, 2026-11-11): the
+   switch proceeds now, with the exposure documented; the kernel's fix is
+   made in the kernel package on this branch by another engineer, in
+   parallel, and both land before the branch is merged. Until the fix lands
+   the exposure is on the branch. (The earlier working default held the
+   switch until the kernel's typing core had a work budget.) The exposure,
+   measured: acceptance of a role-bound closure of 206 records
    with one constant of `k` nested `let`s, each alone in its own process:
 
    | `k` | 16 | 20 | 22 | 24 | 26 | 28 | 30 |
@@ -713,7 +783,8 @@ awaits the owner's confirmation; none is decided.
 6. **The native discharge of premise (i)** (added 2026-11-11). Either keep
    the tiered whole-artifact acceptance and prove the three restriction lemmas,
    or add a run of the logical entry on the closure of the seeds under the
-   default table and committed prelude. Working default: the closure run; it
-   costs one more kernel run over a subset of the records and a ported closure
-   walk, and makes the native and the IxVM routes discharge one statement.
-   The tiered acceptance stays as the producer's check either way.
+   default table and committed prelude. **Decided** (2026-11-11, DO-37 in the
+   [roadmap](roadmap.md#open-decisions)): the closure run (KF-4); it costs one
+   more kernel run over a subset of the records and a ported closure walk,
+   and makes the native and the IxVM routes discharge one statement. The
+   tiered acceptance stays as the producer's check either way.

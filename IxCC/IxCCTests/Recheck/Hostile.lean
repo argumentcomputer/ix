@@ -62,8 +62,8 @@ structure Base where
 
 def base (n : Nat) : Base := Id.run do
   let (e, blk) := block {} ⟨.muts #[.indc (enumInd n)], #[], #[], #[.succ .zero]⟩
-  let enumI := Tc.indcProjAddr blk 0
-  let ctors := (Array.range n).map fun j => Tc.ctorProjAddr blk 0 j.toUInt64
+  let enumI := V3.indcProjAddr blk 0
+  let ctors := (Array.range n).map fun j => V3.ctorProjAddr blk 0 j.toUInt64
   let (e, idc) := store e ⟨defn (arrow enumC enumC) (lambda enumC (.var 0)), #[], #[enumI], #[]⟩
   return { env := e, enumI, ctors, idc }
 
@@ -401,10 +401,10 @@ contract, which puts the program outside `Own.Plain.programDomain`). -/
 def autoEnv : Env × List (String × Addr) := Id.run do
   let b := base 3
   let (e, boxBlk) := block b.env (pairBlock b.enumI)
-  let boxI := Tc.indcProjAddr boxBlk 0
+  let boxI := V3.indcProjAddr boxBlk 0
   let (e, twoBlk) := block e (pairBlock boxI)
-  let twoI := Tc.indcProjAddr twoBlk 0
-  let twoMk := Tc.ctorProjAddr twoBlk 0 0
+  let twoI := V3.indcProjAddr twoBlk 0
+  let twoMk := V3.ctorProjAddr twoBlk 0 0
   let (e, main) := store e
     ⟨defn enumC (.app (.ref 1 #[]) (.ref 2 #[])), #[], #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
   let (e, dupf) := store e

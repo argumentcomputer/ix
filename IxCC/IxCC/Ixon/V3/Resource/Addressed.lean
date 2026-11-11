@@ -1,6 +1,6 @@
 import IxCC.Ixon.V3.Resource.Admit
 import IxCC.Ixon.V3.Env
-import IxCC.Ixon.V3.Tc.Primitive
+import IxCC.Ixon.V3.PrimAddrs
 
 /-!
 # Addressed resource interfaces
@@ -373,7 +373,7 @@ def prepare (env : IxCC.Ixon.V3.Env) (profile : Profile := {}) : Except String A
       throw "resource adapter: literal type must be a checked nominal type"
     pure (IxCC.Ixon.V3.Expr.ref i #[])
   -- The kernel's `Eq`, by its pinned address (`dataEquation`).
-  let equality := (indices[IxCC.Ixon.V3.Tc.PrimAddrs.canonical.eq]?).filter fun i =>
+  let equality := (indices[IxCC.Ixon.V3.PrimAddrs.canonical.eq]?).filter fun i =>
     kinds[i.toNat]? == some .typeConstructor
   program := { program with
     sharingBounds := computeSharingBounds program.sharing
