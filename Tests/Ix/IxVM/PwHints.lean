@@ -7,11 +7,11 @@ import Tests.Ix.IxVM.Harness
 import IxVM.Fixture
 
 /-!
-# The binder-data annotator (D2)
+# The binder-data annotator
 
 `IxVM.PwHints.annotate` writes, for every record a witness carries, the datum
 of every `Lam` and `All` node and the variant of every `Share` site, keyed as
-lane cx's interface (`plans/ixvmc/cx/REPORT.md`, "D2 hint interface") says.
+the conversion's interface (`IxVM/IxVM/Source/Convert.lean`, "Binder data") says.
 
 `ixvm-pw-hints` holds the annotator to hand-made records whose data are known:
 * a sharing entry `x → x` with `x` loose, used under `A : Prop` and under

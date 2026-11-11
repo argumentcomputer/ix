@@ -495,7 +495,7 @@ def check_positivity_aug := aiur_fn⟦
                                 _ => {  () } ,
                               } } ,
                             _ => {
-                              -- D7: a nested occurrence is the modeled route's
+                              -- A nested occurrence is the modeled route's
                               -- (`KernelModeled::block_is_modeled`); one that only
                               -- whnf exposes is refused here, as Lean refuses it.
                               assert_eq!(0, 1,
@@ -1071,7 +1071,7 @@ def aux_already_in := aiur_fn⟦
 ⟧
 
   -- Binders are structurally equal when their domains and bodies are and their data
-  -- (D2) agree: equal zero sets, the kernel's `m₁.pw = m₂.pw`.
+  -- agree: equal zero sets, the kernel's `m₁.pw = m₂.pw`.
 
 def kexpr_binder_struct_eq := aiur_fn⟦
   fn kexpr_binder_struct_eq(ta: KernelTypes::KExpr, ba: KernelTypes::KExpr, la: KernelTypes::KLevel,
@@ -2685,7 +2685,7 @@ def peel_n_lams_collect := aiur_fn⟦
     }
 ⟧
 
-  -- `peel_n_lams_collect` for a recursor rule (D2): each peeled λ must carry the
+  -- `peel_n_lams_collect` for a recursor rule: each peeled λ must carry the
   -- elimination level's zero-ness, as the kernel's canonical rules do.
 
 def peel_rule_lams := aiur_fn⟦
@@ -2761,7 +2761,7 @@ def check_block_member_kinds := aiur_fn⟦
     }
 ⟧
 
-  -- One safety per block (D20): Lean's `inductDecl` and mutual definitions carry one
+  -- One safety per block: Lean's `inductDecl` and mutual definitions carry one
   -- flag for the whole block, so a safe seed reaches no unsafe or partial co-member
   -- through its block. Counts the block's constants (members and constructors) and
   -- those outside the logic (`Ingress::defn_is_unsafe_ci` on definitions, the flag

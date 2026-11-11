@@ -10,7 +10,7 @@ public import Ix.CompileM
 public import Ix.IxVM.RecordSections
 
 /-!
-# Model advice for IxVM's modeled route (decision D7)
+# Model advice for IxVM's modeled route
 
 IxVM checks a mutual or nested inductive block the way the certified kernel's
 modeled install does (`IxC/Kernel/Inductives/Modeled.lean`): against a *model*

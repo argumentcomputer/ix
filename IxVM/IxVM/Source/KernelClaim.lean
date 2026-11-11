@@ -443,7 +443,7 @@ def env_walk_leaves := aiur_fn⟦
 
 
   -- A typing claim certifies its seeds (a `check` target, the owned leaves of a
-  -- `checkEnv`) only in Lean's logic (decision D20). A seed is refused when its
+  -- `checkEnv`) only in Lean's logic. A seed is refused when its
   -- record, or the block it projects from, is unsafe or partial: an unsafe or
   -- partial definition, an unsafe opaque, axiom or recursor, an unsafe inductive
   -- or constructor, or a block holding one. Lean's kernel accepts an unsafe

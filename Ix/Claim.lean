@@ -795,7 +795,7 @@ end Ix
 /-! ## Seeds in Lean's logic
 
 A typing claim (`check`, `checkEnv`) certifies its seeds, the `check` target
-and the `checkEnv` owned leaves, only in Lean's logic (decision D20). IxVM
+and the `checkEnv` owned leaves, only in Lean's logic. IxVM
 refuses a seed whose record, or the block it projects from, is unsafe or
 partial (`KernelClaim::assert_claimable`): Lean's kernel accepts an unsafe
 constant of any type, `False` included, and a `partial` block (Lean's
