@@ -120,9 +120,8 @@ structure BackendSpec where
   /-- The measures of the constant rows, in column order; empty for a
       backend without constant rows. Column convention: the headline
       wall-clock time, throughput, peak-rss, then detail (secondary times,
-      sizes, deterministic counters). The compare table shows the first
-      four measures of `metrics` as columns and the rest in a collapsed
-      block. -/
+      sizes, deterministic counters). The compare table shows each as a
+      column, in this order. -/
   constantMetrics : List String := []
   /-- The measures of the env rows, in the same convention. -/
   envMetrics : List String
@@ -139,7 +138,10 @@ def backendSpecs : List BackendSpec := [
   -- row shards the env with `ix shard --max-ram 100` (setup, outside the
   -- measured window), then one `ix check --ixes` executes every shard's
   -- claim across all cores; its `execute-time` is that execution's wall
-  -- clock and `shards` counts the partition. `fft-cost` is the Lean FFT-work
+  -- clock and `shards` counts the partition. `throughput` is the constants
+  -- checked (a constant row's closure, the env's owned constants) over
+  -- `execute-time`, and `prove-throughput` the same constants over
+  -- `prove-time`. `fft-cost` is the Lean FFT-work
   -- model over the execution's circuit measurements, summed over the env's
   -- shards for the env row: deterministic, unlike the times. In prove mode the same
   -- `bench-ixvm` process also proves the constant on the aggregate
@@ -148,11 +150,11 @@ def backendSpecs : List BackendSpec := [
   -- compresses that root to KZG. Env rows stay execution-only, since
   -- whole-env proving is too slow for CI.
   { name := "ixvm", testbed := "ixvm",
-    constantMetrics := ["execute-time", "peak-rss", "fft-cost"],
-    envMetrics := ["execute-time", "peak-rss", "shards", "fft-cost"],
+    constantMetrics := ["execute-time", "throughput", "peak-rss", "fft-cost"],
+    envMetrics := ["execute-time", "throughput", "peak-rss", "shards", "fft-cost"],
     stages := [
-      ("prove", ["prove-time", "prove-peak-rss", "prove-proof-size", "verify-time",
-                 "prove-trace-shards"]),
+      ("prove", ["prove-time", "prove-throughput", "prove-peak-rss", "prove-proof-size",
+                 "verify-time", "prove-trace-shards"]),
       ("compress", ["compress-time", "compress-peak-rss", "compress-proof-size",
                     "compress-verify-time"])] },
   -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
@@ -334,7 +336,8 @@ def saveBaseline (out : String) (params : String) : IO Unit := do
     env's static block-shape score (setup, outside the measured window),
     then one `ix check` executes every shard's claim, one job per core.
     `execute-time` is the wall clock of that concurrent execution, which
-    `ix check --batch-time` records after the env load. -/
+    `ix check --batch-time` records after the env load with the constants
+    the shards own; `throughput` is those constants over that time. -/
 def runIxvmEnv (ix ixe out env : String) : IO Unit := do
   let manifest := s!"{env}-exec.ixes"
   let exit ← runTool ix #["shard", ixe, "--max-ram", "100", "--out", manifest]
@@ -352,15 +355,17 @@ def runIxvmEnv (ix ixe out env : String) : IO Unit := do
     if !(← FilePath.pathExists batchTime) then pure none else
     let text ← IO.FS.readFile batchTime
     IO.FS.removeFile batchTime
-    pure <| match Lean.Json.parse text with
-      | .ok (.num n) => some n.toFloat
-      | _ => none
+    pure <| (Lean.Json.parse text).toOption.bind fun j => do
+      let seconds ← (j.getObjValAs? Float "seconds").toOption
+      let constants ← (j.getObjValAs? Nat "constants").toOption
+      return (seconds, constants)
   if isKill exit then
     markKilled out env (killStatus exit)
   else if exit == 0 || execute.isSome then
     let row := Lean.Json.mkObj [("peak-rss", Lean.toJson peak), ("shards", Lean.toJson shards)]
     let row := match execute with
-      | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
+      | some (t, constants) => row.setObjVal! "execute-time" (jsonRound 6 t)
+          |>.setObjVal! "throughput" (jsonRound 2 (constants.toFloat / t))
       | none => row
     writeEntry out env <|
       if exit == 0 then row else row.setObjVal! "status" (.str "rejected")

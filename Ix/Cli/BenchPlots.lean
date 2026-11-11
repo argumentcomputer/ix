@@ -60,10 +60,12 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile-lean", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile-lean", "peak-rss"           => "Ix Decompile Peak RAM Usage"
   | "ixvm", "execute-time"     => "IxVM Execute Time"
+  | "ixvm", "throughput"       => "IxVM Execute Throughput"
   | "ixvm", "peak-rss"         => "IxVM Check Peak RAM Usage"
   | "ixvm", "shards"           => "IxVM Env Shards"
   | "ixvm", "fft-cost"         => "IxVM FFT Cost"
   | "ixvm", "prove-time"       => "IxVM Prove Time (prove + aggregate)"
+  | "ixvm", "prove-throughput" => "IxVM Prove Throughput"
   | "ixvm", "prove-peak-rss"   => "IxVM Prove Peak RAM Usage"
   | "ixvm", "prove-proof-size" => "IxVM Aggregate Root Proof Size"
   | "ixvm", "prove-trace-shards" => "IxVM Claim Proof Trace Shards"
@@ -96,7 +98,8 @@ def unitsFor (slug : String) : Option String :=
    ("shards", "env shards"),
    ("prove-trace-shards", "trace shards"),
    ("fft-cost", "FFT work"),
-   ("throughput", "constants / second")].lookup slug
+   ("throughput", "constants / second"),
+   ("prove-throughput", "constants / second")].lookup slug
 
 /-- Dashboard group order (compile first, then decompile, IxVM execution,
     IxVM out-of-circuit checks); unranked workloads (a future backend) sort last. -/

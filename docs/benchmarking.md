@@ -306,12 +306,11 @@ base rerun), and the run's selection; the measuring hardware follows once,
 both sides only when they differ. Then each backend's tables, one per row
 kind: its env rows (`#### ixvm · envs`), then its constant rows (`#### ixvm ·
 constants`), since the two kinds carry different measures (an env row has
-`shards`, for one). In each table, every headline metric (at most four)
+`shards`, for one). In each table, every metric its rows carry
 gets three columns, `<metric> (<base>)`,
 `<metric> (PR)` and `Δ%`, with ⚠️ for a regression and 🟢 for an improvement past
 ±3%, and the change as a factor in the metric's terms (`1.07× slower`,
-`1.20× larger`) once it reaches 1.05×; a table's other metrics sit in one
-collapsed block. A run with
+`1.20× larger`) once it reaches 1.05×. A run with
 `ixvm prove` or `ixvm compress` names its stages in the header line
 (`stages execute+prove+compress`) and adds one table per stage under the
 constant table (`#### ixvm · prove`, `#### ixvm · compress`), with the

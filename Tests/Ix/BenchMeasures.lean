@@ -124,7 +124,7 @@ def testReport : TestSeq := .individualIO "ixvm report: an env table, then a con
     && (plain.splitOn "| constant | execute-time (main)").length == 2
     && (plain.splitOn "· prove").length == 1
     && (staged.splitOn "#### `ixvm` · prove").length == 2
-    && (staged.splitOn "| prove-time (main) | prove-time (PR) | Δ% | peak-ram (main) |").length == 2
+    && (staged.splitOn "| constant | prove-time (main) | prove-time (PR) | Δ% |\n").length == 2
     && (plain.splitOn "check-time").length == 1
   return (ok, 0, 0, if ok then none else some plain)) .done
 
@@ -139,6 +139,21 @@ def testFftCost : TestSeq := .individualIO "ixvm tables show the FFT cost on bot
     3.0 "main"
   let ok := (text.splitOn "| env-shards (main) | env-shards (PR) | Δ% | fft-cost (main) |").length == 2
     && (text.splitOn "| `Nat.add_comm` | 1.000 s | 1.000 s | +0.0% | 1 B | 1 B | +0.0% | 390.00M | 400.00M | +2.6% |").length == 2
+  return (ok, 0, 0, if ok then none else some text)) .done
+
+open Ix.Cli.BenchReport in
+def testThroughput : TestSeq := .individualIO "every measure gets columns, throughputs improve upward" none (do
+  let some spec := findBackend "ixvm" | return (false, 0, 0, none)
+  let rows := fun (t : Nat) => rowsOf [
+    ("InitStd", [("execute-time", 40), ("throughput", t), ("peak-rss", 1), ("shards", 12),
+      ("fft-cost", 100)]),
+    ("Nat.add_comm", [("execute-time", 1), ("prove-time", 30), ("prove-throughput", t)])]
+  let text ← renderBackend spec
+    #[{ backend := "ixvm", env := "InitStd", base := rows 100, pr := rows 110 }] 3.0 "main"
+  let ok := (text.splitOn "| env | execute-time (main) | execute-time (PR) | Δ% | throughput (const/s) (main) | throughput (const/s) (PR) | Δ% | peak-ram (main) | peak-ram (PR) | Δ% | env-shards (main) | env-shards (PR) | Δ% | fft-cost (main) | fft-cost (PR) | Δ% |").length == 2
+    && (text.splitOn "more metrics").length == 1
+    && (text.splitOn "| prove-throughput (const/s) (main) |").length == 2
+    && (text.splitOn "+10.0% (1.10× faster) 🟢").length == 3
   return (ok, 0, 0, if ok then none else some text)) .done
 
 open Ix.Cli.BenchReport in
@@ -251,6 +266,6 @@ def testRunMode : TestSeq := .individualIO "invalid run modes fail before starti
   return (ok, 0, 0, none)) .done
 
 def suite : List TestSeq :=
-  [testRows, testCells, testReport, testFftCost, testRowKinds, testCommands, testRunMode]
+  [testRows, testCells, testReport, testFftCost, testThroughput, testRowKinds, testCommands, testRunMode]
 
 end Tests.Ix.BenchMeasures

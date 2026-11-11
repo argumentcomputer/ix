@@ -76,7 +76,7 @@ def expectedRoot (ixe manifest : String) : IO Ix.Claim := do
 /-- Prove `name` end to end on the aggregate controller and merge the prove
 stage's fields into its row. Returns the root's store address. -/
 def prove (p : Cli.Parsed) (ctx : FormalAggregate.Context) (ixe name out : String)
-    (dir : System.FilePath) : IO Address := do
+    (constants : Nat) (dir : System.FilePath) : IO Address := do
   let one := (dir / "env.ixe").toString
   let manifest := (dir / "env.ixes").toString
   let proven := (dir / "proven.ixes").toString
@@ -102,7 +102,8 @@ def prove (p : Cli.Parsed) (ctx : FormalAggregate.Context) (ixe name out : Strin
   let size := (← (← StoreIO.toIO (Store.storePath address)).metadata).byteSize.toNat
   Ix.Cli.BenchCmd.addFields out name [
     ("prove-time", jsonRound 6 proveSeconds), ("prove-peak-rss", toJson provePeak),
-    ("prove-proof-size", toJson size), ("prove-trace-shards", toJson traceShards)]
+    ("prove-proof-size", toJson size), ("prove-trace-shards", toJson traceShards),
+    ("prove-throughput", jsonRound 2 (constants.toFloat / proveSeconds))]
   let (_, verifySeconds, _) ← measured (FormalAggregate.verifyWrapper ctx .aggr wrapper)
   Ix.Cli.BenchCmd.addFields out name [("verify-time", jsonRound 6 verifySeconds)]
   return address
@@ -132,6 +133,9 @@ def run (p : Cli.Parsed) : IO UInt32 := do
   let some addr := Ix.Cli.NameResolve.resolveIxeAddr ixonEnv name
     | p.printError s!"error: {name} not found in {ixe}"; return exitUsage
   let claim ← Ix.Check.checkClaimOf ixonEnv addr
+  -- The constants the claim checks: its closure, as main's Aiur throughput
+  -- counted them.
+  let constants := (IxVM.ClaimHarness.closureFromRoots ixonEnv #[addr]).size
   let env ← FormalProver.Env.ofHandle handle
   let options ← hostOptions p
   let (result, _, peak) ← measured
@@ -140,7 +144,8 @@ def run (p : Cli.Parsed) : IO UInt32 := do
   let some seconds := execute
     | IO.eprintln s!"[bench-ixvm] {name}: the check failed before executing its claim (code {result.code})"
       return 1
-  let row := Json.mkObj [("execute-time", jsonRound 6 seconds), ("peak-rss", toJson peak)]
+  let row := Json.mkObj [("execute-time", jsonRound 6 seconds), ("peak-rss", toJson peak),
+    ("throughput", jsonRound 2 (constants.toFloat / seconds))]
   if result.code != 0 then
     writeEntry out name (row.setObjVal! "status" (.str "rejected"))
     return exitRejected
@@ -148,7 +153,7 @@ def run (p : Cli.Parsed) : IO UInt32 := do
   let some aggregation := aggregation | return 0
   let ctx ← aggregateContext ixvm aggregation
   try
-    let root ← IO.FS.withTempDir fun dir => prove p ctx ixe name out dir
+    let root ← IO.FS.withTempDir fun dir => prove p ctx ixe name out constants dir
     if let some path := (p.flag? "root-out").map (·.as! String) then
       IO.FS.writeFile path s!"{root}\n"
     return 0
