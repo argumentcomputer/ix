@@ -226,12 +226,12 @@ theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, _, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact standalone_rows_wire classes block main metadata
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, _, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact build_rows_wire classes (Address.admissionHash (Ixon.ser block))
       (Ixon.Authenticated.admissionHash_width _) metadata

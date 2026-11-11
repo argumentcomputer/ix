@@ -84,17 +84,18 @@ theorem build_cases (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, built, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     have selected := chosen_standalone members info chosen
-    exact ⟨rfl, .inr ⟨sharing_standalone limits info state.refs state.univs block selected.1 built,
+    exact ⟨rfl, .inr ⟨sharing_standalone limits info state.refs state.univs
+      { block with binders := #[] } selected.1 built,
       selected.2, MutualProjections.standalone_rows sources block metadata⟩⟩
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, built, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     obtain ⟨targets, info, shape⟩ :=
-      ProjectionLayout.sharing_mutual_shape limits members state.refs state.univs block built
+      ProjectionLayout.sharing_mutual_shape limits members state.refs state.univs { block with binders := #[] } built
     exact ⟨rfl, .inl ⟨targets, metadata, info, shape, rfl⟩⟩
 
 theorem no_ctor_references (owner : Address) (index : Nat) (source : MutConst) (kind : MemberShape)
