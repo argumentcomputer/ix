@@ -6,6 +6,7 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
+public import Ix.Cli.ClaimPolicy
 public import Ix.AiurArtifact
 public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
@@ -688,6 +689,10 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       unless expected.isEmpty || expected.contains wrapper.claim do
         throw (IO.userError "proof does not match a requested manifest shard")
       if covered.contains wrapper.claim then throw (IO.userError "duplicate shard proof")
+      -- a whole partition discharges its shards' assumed leaves; a verified binding
+      -- proof, their assumed binding
+      ClaimPolicy.admit p wrapper.claim (bindingDischarged := assumeBinding)
+        (assumptionsDischarged := !expected.isEmpty && shard.isNone)
       let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
       if Compression.isCompressed wrapper.proof then
         let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")

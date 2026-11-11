@@ -93,6 +93,7 @@ import Tests.Ix.Ixes
 import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
+import Tests.Ix.ClaimPolicy
 import Tests.Ix.CatalogDedup
 import Tests.Ix.ImportIxe
 import Tests.Ix.TruthMinesRecords
@@ -114,6 +115,7 @@ def registry : List Entry := [
   .suite "ffi" .primary Tests.FFI.suite,
   .suite "meta-env" .primary Tests.Ix.MetaEnv.suite,
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
+  .suite "claim-policy" .primary Tests.ClaimPolicy.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,

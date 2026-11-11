@@ -33,11 +33,23 @@ private def tagNSamples : List UInt64 :=
 def packageMagic : ByteArray := "IXAIURP\x00".toUTF8
 def extension : String := "ixa"
 
+/-- **The release's artifacts**: the BLAKE3 digests of the IxVM and aggregation
+artifacts this release's keys are derived from, set when the release keys are
+generated, next to the compression constants (`ROOT_VK_BLAKE3`,
+`STATEMENT_PREFIX`). An artifact is admitted against them unless the caller pins
+another digest explicitly. `none`: a development build, which admits the artifact
+it is given and says so. -/
+def releaseDigest? : String → Option String
+  | "IX_AIUR_ARTIFACT" => none
+  | "IX_AGGR_ARTIFACT" => none
+  | _ => none
+
 /-- The digest pinned for an artifact: the `--{flag}-digest` flag, else the
-`{env}_DIGEST` variable. -/
+`{env}_DIGEST` variable, else the release's (`releaseDigest?`). -/
 def expected (flagDigest : Option String) (env : String) : IO (Option String) := do
   if let some digest := flagDigest then return some digest
-  IO.getEnv s!"{env}_DIGEST"
+  if let some digest ← IO.getEnv s!"{env}_DIGEST" then return some digest
+  return releaseDigest? env
 
 /-- Admit the compiled package at `path` for use: check that it is one, print
 its digest, and refuse it when it differs from the `expected` digest. -/
@@ -48,9 +60,13 @@ def admit (target : String) (path : String) (expected : Option String := none) :
     throw (IO.userError s!"{path} is not a compiled Aiur package")
   let digest := Address.blake3 bytes
   IO.eprintln s!"[aiur] {target} artifact {path}: blake3 {digest}"
-  if let some expected := expected then
+  match expected with
+  | some expected =>
     unless toString digest == expected do
       throw (IO.userError s!"{target} artifact {path} has digest {digest}, but {expected} is pinned")
+  | none =>
+    IO.eprintln s!"[aiur] warning: no {target} artifact digest is pinned (a development build); \
+      the proof is checked against this artifact's key only"
   return digest
 
 private def writeAtomically (path : System.FilePath) (text : String) : IO Unit := do
