@@ -101,8 +101,8 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.HiddenIdx.rec", 201_904_706),
   ("IxVMInd.NestParIdx.rec", 985_026_645),
   ("IxVMInd.NestListIdx.rec", 936_159_262),
-  ("IxVMInd.NestRefl.rec", 0),
-  ("IxVMInd.NestReflOpt.rec", 0),
+  ("IxVMInd.NestRefl.rec", 702_438_020),
+  ("IxVMInd.NestReflOpt.rec", 590_538_629),
   ("IxVMInd.thmMajorUse", 677_404_631),
   ("IxVMInd.partialKRec", 221_567_484),
   ("IxVMInd.deepRebase", 286_626_208),
@@ -142,8 +142,8 @@ def validatingCheckEntries : List (String × Nat) := [
 its blocks are declared through Lean's kernel, which the fixtures module
 cannot export), with claims that assume their binding. -/
 def entryCheckEntries : List (String × Nat) := [
-  ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 0),
-  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 0),
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 670_595_578),
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 683_242_967),
   ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 0)]
 
 /-- A `Check` claim on `name` over `ixonEnv`. -/
