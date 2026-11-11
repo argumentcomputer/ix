@@ -319,7 +319,7 @@ theorem «IxVM::verify_check_env».obs {x_digest : SourceValue F} {h h' : Heap F
 inductive «IxVM::check_port_cases».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (m20 : Heap F) (m33 : Heap F) (m46 : Heap F) (m59 : Heap F) (v71 : SourceValue F) (m72 : Heap F) (cs82 : List (Call F)) (m90 : Heap F) (m103 : Heap F) (m182 : Heap F) (m195 : Heap F) (m208 : Heap F) (v220 : SourceValue F) (m221 : Heap F) (cs231 : List (Call F)) (m239 : Heap F) (m318 : Heap F) (m331 : Heap F) (m344 : Heap F) (m357 : Heap F) (m436 : Heap F) (v448 : SourceValue F) (m449 : Heap F) (cs459 : List (Call F)) (m467 : Heap F) (m546 : Heap F) (m559 : Heap F) (m638 : Heap F) (m651 : Heap F) (m730 : Heap F) (m743 : Heap F) (m822 : Heap F) (v834 : SourceValue F) (m835 : Heap F) (cs845 : List (Call F)) (m853 : Heap F) (m932 : Heap F) (m945 : Heap F) (m1024 : Heap F) (m1037 : Heap F) (m1116 : Heap F) (m1129 : Heap F) (m1208 : Heap F) (v1220 : SourceValue F) (m1221 : Heap F) (cs1231 : List (Call F)) (m1239 : Heap F) (m1318 : Heap F) (m1331 : Heap F) (m1410 : Heap F) (m1423 : Heap F) (m1436 : Heap F) (m1515 : Heap F) (v1527 : SourceValue F) (m1528 : Heap F) (cs1538 : List (Call F)) (m1546 : Heap F) (m1625 : Heap F) (m1704 : Heap F) (m1717 : Heap F) (m1796 : Heap F) (m1809 : Heap F) (m1888 : Heap F) (m1901 : Heap F) (m1980 : Heap F) (v1992 : SourceValue F) (m1993 : Heap F) (cs2003 : List (Call F)) (m2011 : Heap F) (m2090 : Heap F) (m2169 : Heap F) (m2182 : Heap F) (m2261 : Heap F) (m2274 : Heap F) (m2353 : Heap F) (m2366 : Heap F) (m2445 : Heap F) (v2457 : SourceValue F) (m2458 : Heap F) (cs2468 : List (Call F)) (m2476 : Heap F) (m2555 : Heap F) (m2634 : Heap F) (m2647 : Heap F) (m2726 : Heap F) (m2805 : Heap F) (m2818 : Heap F) (m2897 : Heap F) (m2910 : Heap F) (m2989 : Heap F) (m3002 : Heap F) (m3017 : Heap F) (m3034 : Heap F) (m3051 : Heap F) (m3099 : Heap F) (m3114 : Heap F) (m3137 : Heap F) (m3159 : Heap F) (m3181 : Heap F) (m3212 : Heap F) (v3253 : SourceValue F) (m3256 : Heap F) (cs3264 : List (Call F)) (v3317 : SourceValue F) (m3320 : Heap F) (cs3328 : List (Call F)) (v3381 : SourceValue F) (m3384 : Heap F) (cs3392 : List (Call F)) (v3445 : SourceValue F) (m3448 : Heap F) (cs3456 : List (Call F)) (v3509 : SourceValue F) (m3512 : Heap F) (cs3520 : List (Call F)) (v3557 : SourceValue F) (m3560 : Heap F) (cs3568 : List (Call F)) (v3605 : SourceValue F) (m3608 : Heap F) (cs3616 : List (Call F)) (m3629 : Heap F) (v3667 : SourceValue F) (m3670 : Heap F) (cs3678 : List (Call F)) (m3684 : Heap F) (m3713 : Heap F) (v3759 : SourceValue F) (m3762 : Heap F) (cs3770 : List (Call F)) (v3805 : SourceValue F) (m3808 : Heap F) (cs3816 : List (Call F)) (v3851 : SourceValue F) (m3854 : Heap F) (cs3862 : List (Call F))
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (m20 : Heap F) (m33 : Heap F) (m46 : Heap F) (m59 : Heap F) (v71 : SourceValue F) (m72 : Heap F) (cs82 : List (Call F)) (m90 : Heap F) (m103 : Heap F) (m182 : Heap F) (m195 : Heap F) (m208 : Heap F) (v220 : SourceValue F) (m221 : Heap F) (cs231 : List (Call F)) (m239 : Heap F) (m318 : Heap F) (m331 : Heap F) (m344 : Heap F) (m357 : Heap F) (m436 : Heap F) (v448 : SourceValue F) (m449 : Heap F) (cs459 : List (Call F)) (m467 : Heap F) (m546 : Heap F) (m559 : Heap F) (m638 : Heap F) (m651 : Heap F) (m730 : Heap F) (m743 : Heap F) (m822 : Heap F) (v834 : SourceValue F) (m835 : Heap F) (cs845 : List (Call F)) (m853 : Heap F) (m932 : Heap F) (m945 : Heap F) (m1024 : Heap F) (m1037 : Heap F) (m1116 : Heap F) (m1129 : Heap F) (m1208 : Heap F) (v1220 : SourceValue F) (m1221 : Heap F) (cs1231 : List (Call F)) (m1239 : Heap F) (m1318 : Heap F) (m1331 : Heap F) (m1410 : Heap F) (m1423 : Heap F) (m1436 : Heap F) (m1515 : Heap F) (v1527 : SourceValue F) (m1528 : Heap F) (cs1538 : List (Call F)) (m1546 : Heap F) (m1625 : Heap F) (m1704 : Heap F) (m1717 : Heap F) (m1796 : Heap F) (m1809 : Heap F) (m1888 : Heap F) (m1901 : Heap F) (m1980 : Heap F) (v1992 : SourceValue F) (m1993 : Heap F) (cs2003 : List (Call F)) (m2011 : Heap F) (m2090 : Heap F) (m2169 : Heap F) (m2182 : Heap F) (m2261 : Heap F) (m2274 : Heap F) (m2353 : Heap F) (m2366 : Heap F) (m2445 : Heap F) (v2457 : SourceValue F) (m2458 : Heap F) (cs2468 : List (Call F)) (m2476 : Heap F) (m2555 : Heap F) (m2634 : Heap F) (m2647 : Heap F) (m2726 : Heap F) (m2805 : Heap F) (m2818 : Heap F) (m2897 : Heap F) (m2910 : Heap F) (m2989 : Heap F) (m3002 : Heap F) (m3017 : Heap F) (m3034 : Heap F) (m3051 : Heap F) (m3099 : Heap F) (m3114 : Heap F) (m3137 : Heap F) (m3159 : Heap F) (m3181 : Heap F) (m3197 : Heap F) (m3210 : Heap F) (m3249 : Heap F) (v3290 : SourceValue F) (m3293 : Heap F) (cs3301 : List (Call F)) (v3354 : SourceValue F) (m3357 : Heap F) (cs3365 : List (Call F)) (v3418 : SourceValue F) (m3421 : Heap F) (cs3429 : List (Call F)) (v3482 : SourceValue F) (m3485 : Heap F) (cs3493 : List (Call F)) (v3546 : SourceValue F) (m3549 : Heap F) (cs3557 : List (Call F)) (v3594 : SourceValue F) (m3597 : Heap F) (cs3605 : List (Call F)) (v3642 : SourceValue F) (m3645 : Heap F) (cs3653 : List (Call F)) (m3666 : Heap F) (v3704 : SourceValue F) (m3707 : Heap F) (cs3715 : List (Call F)) (m3721 : Heap F) (m3750 : Heap F) (v3796 : SourceValue F) (m3799 : Heap F) (cs3807 : List (Call F)) (v3842 : SourceValue F) (m3845 : Heap F) (cs3853 : List (Call F)) (v3888 : SourceValue F) (m3891 : Heap F) (cs3899 : List (Call F))
       (hm28 : m20 = (h ++ [(.construct Names.«Lists::Node<[Field; 8]>» "Nil" [])]))
       (hm41 : m33 = (m20 ++ [(.construct Names.«Lists::Node<[Field; 8]>» "Nil" [])]))
       (hm54 : m46 = (m33 ++ [(.construct Names.«Lists::Node<[Field; 8]>» "Nil" [])]))
@@ -403,36 +403,38 @@ inductive «IxVM::check_port_cases».Path (h : Heap F) (r : SourceValue F) (h' :
       (hm3124 : m3114 = (m3099 ++ [(.construct "KernelTypes::KExprNode" "Srt" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
       (hm3147 : m3137 = (m3114 ++ [(.construct "KernelTypes::KExprNode" "BVar" [(.field 0)])]))
       (hm3169 : m3159 = (m3137 ++ [(.construct "KernelTypes::KExprNode" "BVar" [(.field 1)])]))
-      (hm3191 : m3181 = (m3159 ++ [(.construct "KernelTypes::KExprNode" "Lam" [(.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3114).length)])]))
-      (hm3222 : m3212 = (m3181 ++ [(.construct "KernelTypes::KExprNode" "App" [(.ptr (.enum "KernelTypes::KExprNode") (m3159).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length)])]))
-      (ev3266 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3212 v3253 m3256 cs3264)
-      (heq3305 : (v3253 : SourceValue F) = (.field 1))
-      (ev3330 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3159).length), (.ptr (.enum "KernelTypes::KExprNode") (m3159).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3256 v3317 m3320 cs3328)
-      (heq3369 : (v3317 : SourceValue F) = (.field 1))
-      (ev3394 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3320 v3381 m3384 cs3392)
-      (heq3433 : (v3381 : SourceValue F) = (.field 1))
-      (ev3458 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3384 v3445 m3448 cs3456)
-      (heq3497 : (v3445 : SourceValue F) = (.field 1))
-      (ev3522 : ObsFn W "KernelCheck::kexpr_struct_eq" [(.ptr (.enum "KernelTypes::KExprNode") (m3114).length), (.ptr (.enum "KernelTypes::KExprNode") (m3137).length)] m3448 v3509 m3512 cs3520)
-      (heq3545 : (v3509 : SourceValue F) = (.field 0))
-      (ev3570 : ObsFn W "KernelCheck::kexpr_struct_eq" [(.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length)] m3512 v3557 m3560 cs3568)
-      (heq3593 : (v3557 : SourceValue F) = (.field 1))
-      (hm3637 : m3629 = (m3560 ++ [(.construct "KernelTypes::KLevelNode" "Succ" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
-      (ev3618 : ObsFn W "KernelLevels::level_struct_eq" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3560).length)] m3629 v3605 m3608 cs3616)
-      (heq3655 : (v3605 : SourceValue F) = (.field 0))
-      (hm3692 : m3684 = (m3608 ++ [(.construct "KernelTypes::KLevelNode" "Max" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
-      (hm3721 : m3713 = (m3684 ++ [(.construct "KernelTypes::KLevelNode" "Max" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
-      (ev3680 : ObsFn W "KernelLevels::level_struct_eq" [(.ptr (.enum "KernelTypes::KLevelNode") (m3608).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3684).length)] m3713 v3667 m3670 cs3678)
-      (heq3747 : (v3667 : SourceValue F) = (.field 1))
-      (ev3772 : ObsFn W "UInt32::less_than_fields" [(.field 0), (.field 4294967295)] m3670 v3759 m3762 cs3770)
-      (heq3793 : (v3759 : SourceValue F) = (.field 1))
-      (ev3818 : ObsFn W "UInt32::less_than_fields" [(.field 4294967295), (.field 0)] m3762 v3805 m3808 cs3816)
-      (heq3839 : (v3805 : SourceValue F) = (.field 0))
-      (ev3864 : ObsFn W "UInt32::less_than_fields" [(.field 4294967295), (.field 4294967295)] m3808 v3851 m3854 cs3862)
-      (heq3885 : (v3851 : SourceValue F) = (.field 0))
-      (he3888 : r = (.tuple []))
-      (he3889 : h' = m3854)
-      (hc3890 : calls = ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (h).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m20).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m33).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m46).length)], m59⟩ : Call F) :: (cs12 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m182).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m103).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m195).length)], m208⟩ : Call F) :: (cs82 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m318).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m239).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m331).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m436).length)], m357⟩ : Call F) :: (cs231 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m546).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m638).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m730).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m822).length)], m743⟩ : Call F) :: (cs459 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m932).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1024).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1116).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1208).length)], m1129⟩ : Call F) :: (cs845 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1318).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1410).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1331).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1515).length)], m1436⟩ : Call F) :: (cs1231 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1625).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1796).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1888).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1980).length)], m1901⟩ : Call F) :: (cs1538 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2090).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2261).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2353).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2445).length)], m2366⟩ : Call F) :: (cs2003 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2555).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2726).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2897).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2989).length)], m2910⟩ : Call F) :: (cs2468 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3212⟩ : Call F) :: (cs3264 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3159).length), (.ptr (.enum "KernelTypes::KExprNode") (m3159).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3256⟩ : Call F) :: (cs3328 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3320⟩ : Call F) :: (cs3392 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3384⟩ : Call F) :: (cs3456 ++ ((⟨"KernelCheck::kexpr_struct_eq", [(.ptr (.enum "KernelTypes::KExprNode") (m3114).length), (.ptr (.enum "KernelTypes::KExprNode") (m3137).length)], m3448⟩ : Call F) :: (cs3520 ++ ((⟨"KernelCheck::kexpr_struct_eq", [(.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length)], m3512⟩ : Call F) :: (cs3568 ++ ((⟨"KernelLevels::level_struct_eq", [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3560).length)], m3629⟩ : Call F) :: (cs3616 ++ ((⟨"KernelLevels::level_struct_eq", [(.ptr (.enum "KernelTypes::KLevelNode") (m3608).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3684).length)], m3713⟩ : Call F) :: (cs3678 ++ ((⟨"UInt32::less_than_fields", [(.field 0), (.field 4294967295)], m3670⟩ : Call F) :: (cs3770 ++ ((⟨"UInt32::less_than_fields", [(.field 4294967295), (.field 0)], m3762⟩ : Call F) :: (cs3816 ++ ((⟨"UInt32::less_than_fields", [(.field 4294967295), (.field 4294967295)], m3808⟩ : Call F) :: cs3862))))))))))))))))))))))))))))))))))))))))
+      (hm3191 : m3181 = (m3197 ++ [(.construct "KernelTypes::KLevelNode" "Succ" [(.ptr (.enum "KernelTypes::KLevelNode") (m3159).length)])]))
+      (hm3205 : m3197 = (m3159 ++ [(.construct "KernelTypes::KLevelNode" "Zero" [])]))
+      (hm3220 : m3210 = (m3181 ++ [(.construct "KernelTypes::KExprNode" "Lam" [(.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3114).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3197).length)])]))
+      (hm3259 : m3249 = (m3210 ++ [(.construct "KernelTypes::KExprNode" "App" [(.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length)])]))
+      (ev3303 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3249 v3290 m3293 cs3301)
+      (heq3342 : (v3290 : SourceValue F) = (.field 1))
+      (ev3367 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3293 v3354 m3357 cs3365)
+      (heq3406 : (v3354 : SourceValue F) = (.field 1))
+      (ev3431 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3210).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3357 v3418 m3421 cs3429)
+      (heq3470 : (v3418 : SourceValue F) = (.field 1))
+      (ev3495 : ObsFn W "KernelDefEq::k_is_def_eq" [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3210).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)] m3421 v3482 m3485 cs3493)
+      (heq3534 : (v3482 : SourceValue F) = (.field 1))
+      (ev3559 : ObsFn W "KernelCheck::kexpr_struct_eq" [(.ptr (.enum "KernelTypes::KExprNode") (m3114).length), (.ptr (.enum "KernelTypes::KExprNode") (m3137).length)] m3485 v3546 m3549 cs3557)
+      (heq3582 : (v3546 : SourceValue F) = (.field 0))
+      (ev3607 : ObsFn W "KernelCheck::kexpr_struct_eq" [(.ptr (.enum "KernelTypes::KExprNode") (m3210).length), (.ptr (.enum "KernelTypes::KExprNode") (m3210).length)] m3549 v3594 m3597 cs3605)
+      (heq3630 : (v3594 : SourceValue F) = (.field 1))
+      (hm3674 : m3666 = (m3597 ++ [(.construct "KernelTypes::KLevelNode" "Succ" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
+      (ev3655 : ObsFn W "KernelLevels::level_struct_eq" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3597).length)] m3666 v3642 m3645 cs3653)
+      (heq3692 : (v3642 : SourceValue F) = (.field 0))
+      (hm3729 : m3721 = (m3645 ++ [(.construct "KernelTypes::KLevelNode" "Max" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
+      (hm3758 : m3750 = (m3721 ++ [(.construct "KernelTypes::KLevelNode" "Max" [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3017).length)])]))
+      (ev3717 : ObsFn W "KernelLevels::level_struct_eq" [(.ptr (.enum "KernelTypes::KLevelNode") (m3645).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3721).length)] m3750 v3704 m3707 cs3715)
+      (heq3784 : (v3704 : SourceValue F) = (.field 1))
+      (ev3809 : ObsFn W "UInt32::less_than_fields" [(.field 0), (.field 4294967295)] m3707 v3796 m3799 cs3807)
+      (heq3830 : (v3796 : SourceValue F) = (.field 1))
+      (ev3855 : ObsFn W "UInt32::less_than_fields" [(.field 4294967295), (.field 0)] m3799 v3842 m3845 cs3853)
+      (heq3876 : (v3842 : SourceValue F) = (.field 0))
+      (ev3901 : ObsFn W "UInt32::less_than_fields" [(.field 4294967295), (.field 4294967295)] m3845 v3888 m3891 cs3899)
+      (heq3922 : (v3888 : SourceValue F) = (.field 0))
+      (he3925 : r = (.tuple []))
+      (he3926 : h' = m3891)
+      (hc3927 : calls = ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (h).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m20).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m33).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m46).length)], m59⟩ : Call F) :: (cs12 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m182).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m103).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m195).length)], m208⟩ : Call F) :: (cs82 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m318).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m239).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m331).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m436).length)], m357⟩ : Call F) :: (cs231 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m546).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m638).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m730).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m822).length)], m743⟩ : Call F) :: (cs459 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m932).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1024).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1116).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1208).length)], m1129⟩ : Call F) :: (cs845 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1318).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1410).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1331).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1515).length)], m1436⟩ : Call F) :: (cs1231 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1625).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1796).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1888).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m1980).length)], m1901⟩ : Call F) :: (cs1538 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2090).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2261).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2353).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2445).length)], m2366⟩ : Call F) :: (cs2003 ++ ((⟨"IxVMCompat::audit_div", [(.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2555).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2726).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2897).length), (.ptr (.enum Names.«Lists::Node<[Field; 8]>») (m2989).length)], m2910⟩ : Call F) :: (cs2468 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3249⟩ : Call F) :: (cs3301 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum "KernelTypes::KExprNode") (m3181).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3293⟩ : Call F) :: (cs3365 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3210).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3357⟩ : Call F) :: (cs3429 ++ ((⟨"KernelDefEq::k_is_def_eq", [(.ptr (.enum "KernelRoles::RoleCtxNode") (m3034).length), (.ptr (.enum "KernelTypes::KExprNode") (m3099).length), (.ptr (.enum "KernelTypes::KExprNode") (m3210).length), (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2458).length)], m3421⟩ : Call F) :: (cs3493 ++ ((⟨"KernelCheck::kexpr_struct_eq", [(.ptr (.enum "KernelTypes::KExprNode") (m3114).length), (.ptr (.enum "KernelTypes::KExprNode") (m3137).length)], m3485⟩ : Call F) :: (cs3557 ++ ((⟨"KernelCheck::kexpr_struct_eq", [(.ptr (.enum "KernelTypes::KExprNode") (m3210).length), (.ptr (.enum "KernelTypes::KExprNode") (m3210).length)], m3549⟩ : Call F) :: (cs3605 ++ ((⟨"KernelLevels::level_struct_eq", [(.ptr (.enum "KernelTypes::KLevelNode") (m3017).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3597).length)], m3666⟩ : Call F) :: (cs3653 ++ ((⟨"KernelLevels::level_struct_eq", [(.ptr (.enum "KernelTypes::KLevelNode") (m3645).length), (.ptr (.enum "KernelTypes::KLevelNode") (m3721).length)], m3750⟩ : Call F) :: (cs3715 ++ ((⟨"UInt32::less_than_fields", [(.field 0), (.field 4294967295)], m3707⟩ : Call F) :: (cs3807 ++ ((⟨"UInt32::less_than_fields", [(.field 4294967295), (.field 0)], m3799⟩ : Call F) :: (cs3853 ++ ((⟨"UInt32::less_than_fields", [(.field 4294967295), (.field 4294967295)], m3845⟩ : Call F) :: cs3899))))))))))))))))))))))))))))))))))))))))
 
 /-- **Every observed derivation of `IxVM::check_port_cases` takes one of its paths.** -/
 theorem «IxVM::check_port_cases».obs {h h' : Heap F} {r : SourceValue F}
@@ -1537,289 +1539,306 @@ theorem «IxVM::check_port_cases».obs {h h' : Heap F} {r : SourceValue F}
   obtain ⟨vs3192, a3193, hres3194⟩ := d3190.construct_inv
   rw [instanceName_plain_some] at hres3194
   subst hres3194
-  obtain ⟨v3195, vs3197, m3198, c3199, c3200, rfl, d3201, a3202, rfl⟩ := a3193.cons_inv
-  obtain ⟨l3203, rfl, rfl⟩ := d3201.var_inv
-  simp at l3203
-  subst l3203
-  obtain ⟨v3196, vs3204, m3205, c3206, c3207, rfl, d3208, a3209, rfl⟩ := a3202.cons_inv
-  obtain ⟨l3210, rfl, rfl⟩ := d3208.var_inv
-  simp at l3210
-  subst l3210
-  obtain ⟨rfl, rfl, rfl⟩ := a3209.nil_inv
+  obtain ⟨v3195, vs3196, m3197, c3198, c3199, rfl, d3200, a3201, rfl⟩ := a3193.cons_inv
+  obtain ⟨v3202, m3203, d3204, rfl, hm3205⟩ := d3200.store_inv
+  obtain ⟨vs3206, a3207, hres3208⟩ := d3204.construct_inv
+  rw [instanceName_plain_some] at hres3208
+  subst hres3208
+  obtain ⟨rfl, rfl, rfl⟩ := a3207.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3201.nil_inv
   obtain rfl := matchPattern_bind_inv mt3186
-  obtain ⟨v3211, m3212, bs3213, c3214, c3215, d3216, mt3217, d3218, rfl⟩ := d3187.letValue_inv
-  obtain ⟨v3219, m3220, d3221, rfl, hm3222⟩ := d3216.store_inv
-  obtain ⟨vs3223, a3224, hres3225⟩ := d3221.construct_inv
-  rw [instanceName_plain_some] at hres3225
-  subst hres3225
-  obtain ⟨v3226, vs3228, m3229, c3230, c3231, rfl, d3232, a3233, rfl⟩ := a3224.cons_inv
-  obtain ⟨l3234, rfl, rfl⟩ := d3232.var_inv
-  simp at l3234
-  subst l3234
-  obtain ⟨v3227, vs3235, m3236, c3237, c3238, rfl, d3239, a3240, rfl⟩ := a3233.cons_inv
-  obtain ⟨l3241, rfl, rfl⟩ := d3239.var_inv
-  simp at l3241
-  subst l3241
-  obtain ⟨rfl, rfl, rfl⟩ := a3240.nil_inv
-  obtain rfl := matchPattern_bind_inv mt3217
-  obtain ⟨v3242, m3243, bs3244, c3245, c3246, d3247, mt3248, d3249, rfl⟩ := d3218.letValue_inv
-  obtain ⟨vs3250, a3251, ap3252⟩ := d3247.builtin_inv
-  obtain ⟨v3253, vs3255, m3256, c3257, c3258, rfl, d3259, a3260, rfl⟩ := a3251.cons_inv
-  obtain ⟨vs3261, m3262, c3263, cs3264, a3265, ev3266, rfl⟩ := d3259.call_inv
-  rw [instanceName_plain_some] at ev3266
-  obtain ⟨v3267, vs3271, m3272, c3273, c3274, rfl, d3275, a3276, rfl⟩ := a3265.cons_inv
-  obtain ⟨l3277, rfl, rfl⟩ := d3275.var_inv
-  simp at l3277
-  subst l3277
-  obtain ⟨v3268, vs3278, m3279, c3280, c3281, rfl, d3282, a3283, rfl⟩ := a3276.cons_inv
-  obtain ⟨l3284, rfl, rfl⟩ := d3282.var_inv
-  simp at l3284
-  subst l3284
-  obtain ⟨v3269, vs3285, m3286, c3287, c3288, rfl, d3289, a3290, rfl⟩ := a3283.cons_inv
-  obtain ⟨l3291, rfl, rfl⟩ := d3289.var_inv
-  simp at l3291
-  subst l3291
-  obtain ⟨v3270, vs3292, m3293, c3294, c3295, rfl, d3296, a3297, rfl⟩ := a3290.cons_inv
-  obtain ⟨l3298, rfl, rfl⟩ := d3296.var_inv
-  simp at l3298
-  subst l3298
-  obtain ⟨rfl, rfl, rfl⟩ := a3297.nil_inv
-  obtain ⟨v3254, vs3299, m3300, c3301, c3302, rfl, d3303, a3304, rfl⟩ := a3260.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3303.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3304.nil_inv
-  obtain ⟨heq3305, rfl⟩ := Builtin.assertEq_inv ap3252
-  obtain rfl := matchPattern_wildcard_inv mt3248
-  obtain ⟨v3306, m3307, bs3308, c3309, c3310, d3311, mt3312, d3313, rfl⟩ := d3249.letValue_inv
-  obtain ⟨vs3314, a3315, ap3316⟩ := d3311.builtin_inv
-  obtain ⟨v3317, vs3319, m3320, c3321, c3322, rfl, d3323, a3324, rfl⟩ := a3315.cons_inv
-  obtain ⟨vs3325, m3326, c3327, cs3328, a3329, ev3330, rfl⟩ := d3323.call_inv
-  rw [instanceName_plain_some] at ev3330
-  obtain ⟨v3331, vs3335, m3336, c3337, c3338, rfl, d3339, a3340, rfl⟩ := a3329.cons_inv
-  obtain ⟨l3341, rfl, rfl⟩ := d3339.var_inv
-  simp at l3341
-  subst l3341
-  obtain ⟨v3332, vs3342, m3343, c3344, c3345, rfl, d3346, a3347, rfl⟩ := a3340.cons_inv
-  obtain ⟨l3348, rfl, rfl⟩ := d3346.var_inv
-  simp at l3348
-  subst l3348
-  obtain ⟨v3333, vs3349, m3350, c3351, c3352, rfl, d3353, a3354, rfl⟩ := a3347.cons_inv
-  obtain ⟨l3355, rfl, rfl⟩ := d3353.var_inv
-  simp at l3355
-  subst l3355
-  obtain ⟨v3334, vs3356, m3357, c3358, c3359, rfl, d3360, a3361, rfl⟩ := a3354.cons_inv
-  obtain ⟨l3362, rfl, rfl⟩ := d3360.var_inv
-  simp at l3362
-  subst l3362
-  obtain ⟨rfl, rfl, rfl⟩ := a3361.nil_inv
-  obtain ⟨v3318, vs3363, m3364, c3365, c3366, rfl, d3367, a3368, rfl⟩ := a3324.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3367.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3368.nil_inv
-  obtain ⟨heq3369, rfl⟩ := Builtin.assertEq_inv ap3316
-  obtain rfl := matchPattern_wildcard_inv mt3312
-  obtain ⟨v3370, m3371, bs3372, c3373, c3374, d3375, mt3376, d3377, rfl⟩ := d3313.letValue_inv
-  obtain ⟨vs3378, a3379, ap3380⟩ := d3375.builtin_inv
-  obtain ⟨v3381, vs3383, m3384, c3385, c3386, rfl, d3387, a3388, rfl⟩ := a3379.cons_inv
-  obtain ⟨vs3389, m3390, c3391, cs3392, a3393, ev3394, rfl⟩ := d3387.call_inv
-  rw [instanceName_plain_some] at ev3394
-  obtain ⟨v3395, vs3399, m3400, c3401, c3402, rfl, d3403, a3404, rfl⟩ := a3393.cons_inv
-  obtain ⟨l3405, rfl, rfl⟩ := d3403.var_inv
-  simp at l3405
-  subst l3405
-  obtain ⟨v3396, vs3406, m3407, c3408, c3409, rfl, d3410, a3411, rfl⟩ := a3404.cons_inv
-  obtain ⟨l3412, rfl, rfl⟩ := d3410.var_inv
-  simp at l3412
-  subst l3412
-  obtain ⟨v3397, vs3413, m3414, c3415, c3416, rfl, d3417, a3418, rfl⟩ := a3411.cons_inv
-  obtain ⟨l3419, rfl, rfl⟩ := d3417.var_inv
-  simp at l3419
-  subst l3419
-  obtain ⟨v3398, vs3420, m3421, c3422, c3423, rfl, d3424, a3425, rfl⟩ := a3418.cons_inv
-  obtain ⟨l3426, rfl, rfl⟩ := d3424.var_inv
-  simp at l3426
-  subst l3426
-  obtain ⟨rfl, rfl, rfl⟩ := a3425.nil_inv
-  obtain ⟨v3382, vs3427, m3428, c3429, c3430, rfl, d3431, a3432, rfl⟩ := a3388.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3431.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3432.nil_inv
-  obtain ⟨heq3433, rfl⟩ := Builtin.assertEq_inv ap3380
-  obtain rfl := matchPattern_wildcard_inv mt3376
-  obtain ⟨v3434, m3435, bs3436, c3437, c3438, d3439, mt3440, d3441, rfl⟩ := d3377.letValue_inv
-  obtain ⟨vs3442, a3443, ap3444⟩ := d3439.builtin_inv
-  obtain ⟨v3445, vs3447, m3448, c3449, c3450, rfl, d3451, a3452, rfl⟩ := a3443.cons_inv
-  obtain ⟨vs3453, m3454, c3455, cs3456, a3457, ev3458, rfl⟩ := d3451.call_inv
-  rw [instanceName_plain_some] at ev3458
-  obtain ⟨v3459, vs3463, m3464, c3465, c3466, rfl, d3467, a3468, rfl⟩ := a3457.cons_inv
-  obtain ⟨l3469, rfl, rfl⟩ := d3467.var_inv
-  simp at l3469
-  subst l3469
-  obtain ⟨v3460, vs3470, m3471, c3472, c3473, rfl, d3474, a3475, rfl⟩ := a3468.cons_inv
-  obtain ⟨l3476, rfl, rfl⟩ := d3474.var_inv
-  simp at l3476
-  subst l3476
-  obtain ⟨v3461, vs3477, m3478, c3479, c3480, rfl, d3481, a3482, rfl⟩ := a3475.cons_inv
-  obtain ⟨l3483, rfl, rfl⟩ := d3481.var_inv
-  simp at l3483
-  subst l3483
-  obtain ⟨v3462, vs3484, m3485, c3486, c3487, rfl, d3488, a3489, rfl⟩ := a3482.cons_inv
-  obtain ⟨l3490, rfl, rfl⟩ := d3488.var_inv
-  simp at l3490
-  subst l3490
-  obtain ⟨rfl, rfl, rfl⟩ := a3489.nil_inv
-  obtain ⟨v3446, vs3491, m3492, c3493, c3494, rfl, d3495, a3496, rfl⟩ := a3452.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3495.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3496.nil_inv
-  obtain ⟨heq3497, rfl⟩ := Builtin.assertEq_inv ap3444
-  obtain rfl := matchPattern_wildcard_inv mt3440
-  obtain ⟨v3498, m3499, bs3500, c3501, c3502, d3503, mt3504, d3505, rfl⟩ := d3441.letValue_inv
-  obtain ⟨vs3506, a3507, ap3508⟩ := d3503.builtin_inv
-  obtain ⟨v3509, vs3511, m3512, c3513, c3514, rfl, d3515, a3516, rfl⟩ := a3507.cons_inv
-  obtain ⟨vs3517, m3518, c3519, cs3520, a3521, ev3522, rfl⟩ := d3515.call_inv
-  rw [instanceName_plain_some] at ev3522
-  obtain ⟨v3523, vs3525, m3526, c3527, c3528, rfl, d3529, a3530, rfl⟩ := a3521.cons_inv
-  obtain ⟨l3531, rfl, rfl⟩ := d3529.var_inv
-  simp at l3531
-  subst l3531
-  obtain ⟨v3524, vs3532, m3533, c3534, c3535, rfl, d3536, a3537, rfl⟩ := a3530.cons_inv
-  obtain ⟨l3538, rfl, rfl⟩ := d3536.var_inv
-  simp at l3538
-  subst l3538
-  obtain ⟨rfl, rfl, rfl⟩ := a3537.nil_inv
-  obtain ⟨v3510, vs3539, m3540, c3541, c3542, rfl, d3543, a3544, rfl⟩ := a3516.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3543.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3544.nil_inv
-  obtain ⟨heq3545, rfl⟩ := Builtin.assertEq_inv ap3508
-  obtain rfl := matchPattern_wildcard_inv mt3504
-  obtain ⟨v3546, m3547, bs3548, c3549, c3550, d3551, mt3552, d3553, rfl⟩ := d3505.letValue_inv
-  obtain ⟨vs3554, a3555, ap3556⟩ := d3551.builtin_inv
-  obtain ⟨v3557, vs3559, m3560, c3561, c3562, rfl, d3563, a3564, rfl⟩ := a3555.cons_inv
-  obtain ⟨vs3565, m3566, c3567, cs3568, a3569, ev3570, rfl⟩ := d3563.call_inv
-  rw [instanceName_plain_some] at ev3570
-  obtain ⟨v3571, vs3573, m3574, c3575, c3576, rfl, d3577, a3578, rfl⟩ := a3569.cons_inv
-  obtain ⟨l3579, rfl, rfl⟩ := d3577.var_inv
-  simp at l3579
-  subst l3579
-  obtain ⟨v3572, vs3580, m3581, c3582, c3583, rfl, d3584, a3585, rfl⟩ := a3578.cons_inv
-  obtain ⟨l3586, rfl, rfl⟩ := d3584.var_inv
-  simp at l3586
-  subst l3586
-  obtain ⟨rfl, rfl, rfl⟩ := a3585.nil_inv
-  obtain ⟨v3558, vs3587, m3588, c3589, c3590, rfl, d3591, a3592, rfl⟩ := a3564.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3591.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3592.nil_inv
-  obtain ⟨heq3593, rfl⟩ := Builtin.assertEq_inv ap3556
-  obtain rfl := matchPattern_wildcard_inv mt3552
-  obtain ⟨v3594, m3595, bs3596, c3597, c3598, d3599, mt3600, d3601, rfl⟩ := d3553.letValue_inv
-  obtain ⟨vs3602, a3603, ap3604⟩ := d3599.builtin_inv
-  obtain ⟨v3605, vs3607, m3608, c3609, c3610, rfl, d3611, a3612, rfl⟩ := a3603.cons_inv
-  obtain ⟨vs3613, m3614, c3615, cs3616, a3617, ev3618, rfl⟩ := d3611.call_inv
-  rw [instanceName_plain_some] at ev3618
-  obtain ⟨v3619, vs3621, m3622, c3623, c3624, rfl, d3625, a3626, rfl⟩ := a3617.cons_inv
-  obtain ⟨l3627, rfl, rfl⟩ := d3625.var_inv
-  simp at l3627
-  subst l3627
-  obtain ⟨v3620, vs3628, m3629, c3630, c3631, rfl, d3632, a3633, rfl⟩ := a3626.cons_inv
-  obtain ⟨v3634, m3635, d3636, rfl, hm3637⟩ := d3632.store_inv
-  obtain ⟨vs3638, a3639, hres3640⟩ := d3636.construct_inv
-  rw [instanceName_plain_some] at hres3640
-  subst hres3640
-  obtain ⟨v3641, vs3642, m3643, c3644, c3645, rfl, d3646, a3647, rfl⟩ := a3639.cons_inv
-  obtain ⟨l3648, rfl, rfl⟩ := d3646.var_inv
-  simp at l3648
-  subst l3648
-  obtain ⟨rfl, rfl, rfl⟩ := a3647.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3633.nil_inv
-  obtain ⟨v3606, vs3649, m3650, c3651, c3652, rfl, d3653, a3654, rfl⟩ := a3612.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3653.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3654.nil_inv
-  obtain ⟨heq3655, rfl⟩ := Builtin.assertEq_inv ap3604
-  obtain rfl := matchPattern_wildcard_inv mt3600
-  obtain ⟨v3656, m3657, bs3658, c3659, c3660, d3661, mt3662, d3663, rfl⟩ := d3601.letValue_inv
-  obtain ⟨vs3664, a3665, ap3666⟩ := d3661.builtin_inv
-  obtain ⟨v3667, vs3669, m3670, c3671, c3672, rfl, d3673, a3674, rfl⟩ := a3665.cons_inv
-  obtain ⟨vs3675, m3676, c3677, cs3678, a3679, ev3680, rfl⟩ := d3673.call_inv
-  rw [instanceName_plain_some] at ev3680
-  obtain ⟨v3681, vs3683, m3684, c3685, c3686, rfl, d3687, a3688, rfl⟩ := a3679.cons_inv
-  obtain ⟨v3689, m3690, d3691, rfl, hm3692⟩ := d3687.store_inv
-  obtain ⟨vs3693, a3694, hres3695⟩ := d3691.construct_inv
-  rw [instanceName_plain_some] at hres3695
-  subst hres3695
-  obtain ⟨v3696, vs3698, m3699, c3700, c3701, rfl, d3702, a3703, rfl⟩ := a3694.cons_inv
-  obtain ⟨l3704, rfl, rfl⟩ := d3702.var_inv
-  simp at l3704
-  subst l3704
-  obtain ⟨v3697, vs3705, m3706, c3707, c3708, rfl, d3709, a3710, rfl⟩ := a3703.cons_inv
-  obtain ⟨l3711, rfl, rfl⟩ := d3709.var_inv
-  simp at l3711
-  subst l3711
-  obtain ⟨rfl, rfl, rfl⟩ := a3710.nil_inv
-  obtain ⟨v3682, vs3712, m3713, c3714, c3715, rfl, d3716, a3717, rfl⟩ := a3688.cons_inv
-  obtain ⟨v3718, m3719, d3720, rfl, hm3721⟩ := d3716.store_inv
-  obtain ⟨vs3722, a3723, hres3724⟩ := d3720.construct_inv
-  rw [instanceName_plain_some] at hres3724
-  subst hres3724
-  obtain ⟨v3725, vs3727, m3728, c3729, c3730, rfl, d3731, a3732, rfl⟩ := a3723.cons_inv
-  obtain ⟨l3733, rfl, rfl⟩ := d3731.var_inv
-  simp at l3733
-  subst l3733
-  obtain ⟨v3726, vs3734, m3735, c3736, c3737, rfl, d3738, a3739, rfl⟩ := a3732.cons_inv
-  obtain ⟨l3740, rfl, rfl⟩ := d3738.var_inv
-  simp at l3740
-  subst l3740
-  obtain ⟨rfl, rfl, rfl⟩ := a3739.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3717.nil_inv
-  obtain ⟨v3668, vs3741, m3742, c3743, c3744, rfl, d3745, a3746, rfl⟩ := a3674.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3745.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3746.nil_inv
-  obtain ⟨heq3747, rfl⟩ := Builtin.assertEq_inv ap3666
-  obtain rfl := matchPattern_wildcard_inv mt3662
-  obtain ⟨v3748, m3749, bs3750, c3751, c3752, d3753, mt3754, d3755, rfl⟩ := d3663.letValue_inv
-  obtain ⟨vs3756, a3757, ap3758⟩ := d3753.builtin_inv
-  obtain ⟨v3759, vs3761, m3762, c3763, c3764, rfl, d3765, a3766, rfl⟩ := a3757.cons_inv
-  obtain ⟨vs3767, m3768, c3769, cs3770, a3771, ev3772, rfl⟩ := d3765.call_inv
-  rw [instanceName_plain_some] at ev3772
-  obtain ⟨v3773, vs3775, m3776, c3777, c3778, rfl, d3779, a3780, rfl⟩ := a3771.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3779.literal_inv
-  obtain ⟨v3774, vs3781, m3782, c3783, c3784, rfl, d3785, a3786, rfl⟩ := a3780.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3785.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3786.nil_inv
-  obtain ⟨v3760, vs3787, m3788, c3789, c3790, rfl, d3791, a3792, rfl⟩ := a3766.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3791.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3792.nil_inv
-  obtain ⟨heq3793, rfl⟩ := Builtin.assertEq_inv ap3758
-  obtain rfl := matchPattern_wildcard_inv mt3754
-  obtain ⟨v3794, m3795, bs3796, c3797, c3798, d3799, mt3800, d3801, rfl⟩ := d3755.letValue_inv
-  obtain ⟨vs3802, a3803, ap3804⟩ := d3799.builtin_inv
-  obtain ⟨v3805, vs3807, m3808, c3809, c3810, rfl, d3811, a3812, rfl⟩ := a3803.cons_inv
-  obtain ⟨vs3813, m3814, c3815, cs3816, a3817, ev3818, rfl⟩ := d3811.call_inv
-  rw [instanceName_plain_some] at ev3818
-  obtain ⟨v3819, vs3821, m3822, c3823, c3824, rfl, d3825, a3826, rfl⟩ := a3817.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3825.literal_inv
-  obtain ⟨v3820, vs3827, m3828, c3829, c3830, rfl, d3831, a3832, rfl⟩ := a3826.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3831.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3832.nil_inv
-  obtain ⟨v3806, vs3833, m3834, c3835, c3836, rfl, d3837, a3838, rfl⟩ := a3812.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3837.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3838.nil_inv
-  obtain ⟨heq3839, rfl⟩ := Builtin.assertEq_inv ap3804
-  obtain rfl := matchPattern_wildcard_inv mt3800
-  obtain ⟨v3840, m3841, bs3842, c3843, c3844, d3845, mt3846, d3847, rfl⟩ := d3801.letValue_inv
-  obtain ⟨vs3848, a3849, ap3850⟩ := d3845.builtin_inv
-  obtain ⟨v3851, vs3853, m3854, c3855, c3856, rfl, d3857, a3858, rfl⟩ := a3849.cons_inv
-  obtain ⟨vs3859, m3860, c3861, cs3862, a3863, ev3864, rfl⟩ := d3857.call_inv
-  rw [instanceName_plain_some] at ev3864
-  obtain ⟨v3865, vs3867, m3868, c3869, c3870, rfl, d3871, a3872, rfl⟩ := a3863.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3871.literal_inv
-  obtain ⟨v3866, vs3873, m3874, c3875, c3876, rfl, d3877, a3878, rfl⟩ := a3872.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3877.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3878.nil_inv
-  obtain ⟨v3852, vs3879, m3880, c3881, c3882, rfl, d3883, a3884, rfl⟩ := a3858.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d3883.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3884.nil_inv
-  obtain ⟨heq3885, rfl⟩ := Builtin.assertEq_inv ap3850
-  obtain rfl := matchPattern_wildcard_inv mt3846
-  obtain ⟨vs3886, a3887, rfl⟩ := d3847.tuple_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a3887.nil_inv
-  try simp only [Value.type, List.map_cons, List.map_nil] at hm28 hm41 hm54 hm67 ev14 hm98 hm111 hm190 hm203 hm216 ev84 hm247 hm326 hm339 hm352 hm365 hm444 ev233 hm475 hm554 hm567 hm646 hm659 hm738 hm751 hm830 ev461 hm861 hm940 hm953 hm1032 hm1045 hm1124 hm1137 hm1216 ev847 hm1247 hm1326 hm1339 hm1418 hm1431 hm1444 hm1523 ev1233 hm1554 hm1633 hm1712 hm1725 hm1804 hm1817 hm1896 hm1909 hm1988 ev1540 hm2019 hm2098 hm2177 hm2190 hm2269 hm2282 hm2361 hm2374 hm2453 ev2005 hm2484 hm2563 hm2642 hm2655 hm2734 hm2813 hm2826 hm2905 hm2918 hm2997 ev2470 hm3012 hm3027 hm3042 hm3059 hm3109 hm3124 hm3147 hm3169 hm3191 hm3222 ev3266 heq3305 ev3330 heq3369 ev3394 heq3433 ev3458 heq3497 ev3522 heq3545 ev3570 heq3593 hm3637 ev3618 heq3655 hm3692 hm3721 ev3680 heq3747 ev3772 heq3793 ev3818 heq3839 ev3864 heq3885 ⊢
-  exact «IxVM::check_port_cases».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hm28 hm41 hm54 hm67 ev14 hm98 hm111 hm190 hm203 hm216 ev84 hm247 hm326 hm339 hm352 hm365 hm444 ev233 hm475 hm554 hm567 hm646 hm659 hm738 hm751 hm830 ev461 hm861 hm940 hm953 hm1032 hm1045 hm1124 hm1137 hm1216 ev847 hm1247 hm1326 hm1339 hm1418 hm1431 hm1444 hm1523 ev1233 hm1554 hm1633 hm1712 hm1725 hm1804 hm1817 hm1896 hm1909 hm1988 ev1540 hm2019 hm2098 hm2177 hm2190 hm2269 hm2282 hm2361 hm2374 hm2453 ev2005 hm2484 hm2563 hm2642 hm2655 hm2734 hm2813 hm2826 hm2905 hm2918 hm2997 ev2470 hm3012 hm3027 hm3042 hm3059 hm3109 hm3124 hm3147 hm3169 hm3191 hm3222 ev3266 heq3305 ev3330 heq3369 ev3394 heq3433 ev3458 heq3497 ev3522 heq3545 ev3570 heq3593 hm3637 ev3618 heq3655 hm3692 hm3721 ev3680 heq3747 ev3772 heq3793 ev3818 heq3839 ev3864 heq3885 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  obtain ⟨v3209, m3210, bs3211, c3212, c3213, d3214, mt3215, d3216, rfl⟩ := d3187.letValue_inv
+  obtain ⟨v3217, m3218, d3219, rfl, hm3220⟩ := d3214.store_inv
+  obtain ⟨vs3221, a3222, hres3223⟩ := d3219.construct_inv
+  rw [instanceName_plain_some] at hres3223
+  subst hres3223
+  obtain ⟨v3224, vs3227, m3228, c3229, c3230, rfl, d3231, a3232, rfl⟩ := a3222.cons_inv
+  obtain ⟨l3233, rfl, rfl⟩ := d3231.var_inv
+  simp at l3233
+  subst l3233
+  obtain ⟨v3225, vs3234, m3235, c3236, c3237, rfl, d3238, a3239, rfl⟩ := a3232.cons_inv
+  obtain ⟨l3240, rfl, rfl⟩ := d3238.var_inv
+  simp at l3240
+  subst l3240
+  obtain ⟨v3226, vs3241, m3242, c3243, c3244, rfl, d3245, a3246, rfl⟩ := a3239.cons_inv
+  obtain ⟨l3247, rfl, rfl⟩ := d3245.var_inv
+  simp at l3247
+  subst l3247
+  obtain ⟨rfl, rfl, rfl⟩ := a3246.nil_inv
+  obtain rfl := matchPattern_bind_inv mt3215
+  obtain ⟨v3248, m3249, bs3250, c3251, c3252, d3253, mt3254, d3255, rfl⟩ := d3216.letValue_inv
+  obtain ⟨v3256, m3257, d3258, rfl, hm3259⟩ := d3253.store_inv
+  obtain ⟨vs3260, a3261, hres3262⟩ := d3258.construct_inv
+  rw [instanceName_plain_some] at hres3262
+  subst hres3262
+  obtain ⟨v3263, vs3265, m3266, c3267, c3268, rfl, d3269, a3270, rfl⟩ := a3261.cons_inv
+  obtain ⟨l3271, rfl, rfl⟩ := d3269.var_inv
+  simp at l3271
+  subst l3271
+  obtain ⟨v3264, vs3272, m3273, c3274, c3275, rfl, d3276, a3277, rfl⟩ := a3270.cons_inv
+  obtain ⟨l3278, rfl, rfl⟩ := d3276.var_inv
+  simp at l3278
+  subst l3278
+  obtain ⟨rfl, rfl, rfl⟩ := a3277.nil_inv
+  obtain rfl := matchPattern_bind_inv mt3254
+  obtain ⟨v3279, m3280, bs3281, c3282, c3283, d3284, mt3285, d3286, rfl⟩ := d3255.letValue_inv
+  obtain ⟨vs3287, a3288, ap3289⟩ := d3284.builtin_inv
+  obtain ⟨v3290, vs3292, m3293, c3294, c3295, rfl, d3296, a3297, rfl⟩ := a3288.cons_inv
+  obtain ⟨vs3298, m3299, c3300, cs3301, a3302, ev3303, rfl⟩ := d3296.call_inv
+  rw [instanceName_plain_some] at ev3303
+  obtain ⟨v3304, vs3308, m3309, c3310, c3311, rfl, d3312, a3313, rfl⟩ := a3302.cons_inv
+  obtain ⟨l3314, rfl, rfl⟩ := d3312.var_inv
+  simp at l3314
+  subst l3314
+  obtain ⟨v3305, vs3315, m3316, c3317, c3318, rfl, d3319, a3320, rfl⟩ := a3313.cons_inv
+  obtain ⟨l3321, rfl, rfl⟩ := d3319.var_inv
+  simp at l3321
+  subst l3321
+  obtain ⟨v3306, vs3322, m3323, c3324, c3325, rfl, d3326, a3327, rfl⟩ := a3320.cons_inv
+  obtain ⟨l3328, rfl, rfl⟩ := d3326.var_inv
+  simp at l3328
+  subst l3328
+  obtain ⟨v3307, vs3329, m3330, c3331, c3332, rfl, d3333, a3334, rfl⟩ := a3327.cons_inv
+  obtain ⟨l3335, rfl, rfl⟩ := d3333.var_inv
+  simp at l3335
+  subst l3335
+  obtain ⟨rfl, rfl, rfl⟩ := a3334.nil_inv
+  obtain ⟨v3291, vs3336, m3337, c3338, c3339, rfl, d3340, a3341, rfl⟩ := a3297.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3340.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3341.nil_inv
+  obtain ⟨heq3342, rfl⟩ := Builtin.assertEq_inv ap3289
+  obtain rfl := matchPattern_wildcard_inv mt3285
+  obtain ⟨v3343, m3344, bs3345, c3346, c3347, d3348, mt3349, d3350, rfl⟩ := d3286.letValue_inv
+  obtain ⟨vs3351, a3352, ap3353⟩ := d3348.builtin_inv
+  obtain ⟨v3354, vs3356, m3357, c3358, c3359, rfl, d3360, a3361, rfl⟩ := a3352.cons_inv
+  obtain ⟨vs3362, m3363, c3364, cs3365, a3366, ev3367, rfl⟩ := d3360.call_inv
+  rw [instanceName_plain_some] at ev3367
+  obtain ⟨v3368, vs3372, m3373, c3374, c3375, rfl, d3376, a3377, rfl⟩ := a3366.cons_inv
+  obtain ⟨l3378, rfl, rfl⟩ := d3376.var_inv
+  simp at l3378
+  subst l3378
+  obtain ⟨v3369, vs3379, m3380, c3381, c3382, rfl, d3383, a3384, rfl⟩ := a3377.cons_inv
+  obtain ⟨l3385, rfl, rfl⟩ := d3383.var_inv
+  simp at l3385
+  subst l3385
+  obtain ⟨v3370, vs3386, m3387, c3388, c3389, rfl, d3390, a3391, rfl⟩ := a3384.cons_inv
+  obtain ⟨l3392, rfl, rfl⟩ := d3390.var_inv
+  simp at l3392
+  subst l3392
+  obtain ⟨v3371, vs3393, m3394, c3395, c3396, rfl, d3397, a3398, rfl⟩ := a3391.cons_inv
+  obtain ⟨l3399, rfl, rfl⟩ := d3397.var_inv
+  simp at l3399
+  subst l3399
+  obtain ⟨rfl, rfl, rfl⟩ := a3398.nil_inv
+  obtain ⟨v3355, vs3400, m3401, c3402, c3403, rfl, d3404, a3405, rfl⟩ := a3361.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3404.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3405.nil_inv
+  obtain ⟨heq3406, rfl⟩ := Builtin.assertEq_inv ap3353
+  obtain rfl := matchPattern_wildcard_inv mt3349
+  obtain ⟨v3407, m3408, bs3409, c3410, c3411, d3412, mt3413, d3414, rfl⟩ := d3350.letValue_inv
+  obtain ⟨vs3415, a3416, ap3417⟩ := d3412.builtin_inv
+  obtain ⟨v3418, vs3420, m3421, c3422, c3423, rfl, d3424, a3425, rfl⟩ := a3416.cons_inv
+  obtain ⟨vs3426, m3427, c3428, cs3429, a3430, ev3431, rfl⟩ := d3424.call_inv
+  rw [instanceName_plain_some] at ev3431
+  obtain ⟨v3432, vs3436, m3437, c3438, c3439, rfl, d3440, a3441, rfl⟩ := a3430.cons_inv
+  obtain ⟨l3442, rfl, rfl⟩ := d3440.var_inv
+  simp at l3442
+  subst l3442
+  obtain ⟨v3433, vs3443, m3444, c3445, c3446, rfl, d3447, a3448, rfl⟩ := a3441.cons_inv
+  obtain ⟨l3449, rfl, rfl⟩ := d3447.var_inv
+  simp at l3449
+  subst l3449
+  obtain ⟨v3434, vs3450, m3451, c3452, c3453, rfl, d3454, a3455, rfl⟩ := a3448.cons_inv
+  obtain ⟨l3456, rfl, rfl⟩ := d3454.var_inv
+  simp at l3456
+  subst l3456
+  obtain ⟨v3435, vs3457, m3458, c3459, c3460, rfl, d3461, a3462, rfl⟩ := a3455.cons_inv
+  obtain ⟨l3463, rfl, rfl⟩ := d3461.var_inv
+  simp at l3463
+  subst l3463
+  obtain ⟨rfl, rfl, rfl⟩ := a3462.nil_inv
+  obtain ⟨v3419, vs3464, m3465, c3466, c3467, rfl, d3468, a3469, rfl⟩ := a3425.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3468.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3469.nil_inv
+  obtain ⟨heq3470, rfl⟩ := Builtin.assertEq_inv ap3417
+  obtain rfl := matchPattern_wildcard_inv mt3413
+  obtain ⟨v3471, m3472, bs3473, c3474, c3475, d3476, mt3477, d3478, rfl⟩ := d3414.letValue_inv
+  obtain ⟨vs3479, a3480, ap3481⟩ := d3476.builtin_inv
+  obtain ⟨v3482, vs3484, m3485, c3486, c3487, rfl, d3488, a3489, rfl⟩ := a3480.cons_inv
+  obtain ⟨vs3490, m3491, c3492, cs3493, a3494, ev3495, rfl⟩ := d3488.call_inv
+  rw [instanceName_plain_some] at ev3495
+  obtain ⟨v3496, vs3500, m3501, c3502, c3503, rfl, d3504, a3505, rfl⟩ := a3494.cons_inv
+  obtain ⟨l3506, rfl, rfl⟩ := d3504.var_inv
+  simp at l3506
+  subst l3506
+  obtain ⟨v3497, vs3507, m3508, c3509, c3510, rfl, d3511, a3512, rfl⟩ := a3505.cons_inv
+  obtain ⟨l3513, rfl, rfl⟩ := d3511.var_inv
+  simp at l3513
+  subst l3513
+  obtain ⟨v3498, vs3514, m3515, c3516, c3517, rfl, d3518, a3519, rfl⟩ := a3512.cons_inv
+  obtain ⟨l3520, rfl, rfl⟩ := d3518.var_inv
+  simp at l3520
+  subst l3520
+  obtain ⟨v3499, vs3521, m3522, c3523, c3524, rfl, d3525, a3526, rfl⟩ := a3519.cons_inv
+  obtain ⟨l3527, rfl, rfl⟩ := d3525.var_inv
+  simp at l3527
+  subst l3527
+  obtain ⟨rfl, rfl, rfl⟩ := a3526.nil_inv
+  obtain ⟨v3483, vs3528, m3529, c3530, c3531, rfl, d3532, a3533, rfl⟩ := a3489.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3532.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3533.nil_inv
+  obtain ⟨heq3534, rfl⟩ := Builtin.assertEq_inv ap3481
+  obtain rfl := matchPattern_wildcard_inv mt3477
+  obtain ⟨v3535, m3536, bs3537, c3538, c3539, d3540, mt3541, d3542, rfl⟩ := d3478.letValue_inv
+  obtain ⟨vs3543, a3544, ap3545⟩ := d3540.builtin_inv
+  obtain ⟨v3546, vs3548, m3549, c3550, c3551, rfl, d3552, a3553, rfl⟩ := a3544.cons_inv
+  obtain ⟨vs3554, m3555, c3556, cs3557, a3558, ev3559, rfl⟩ := d3552.call_inv
+  rw [instanceName_plain_some] at ev3559
+  obtain ⟨v3560, vs3562, m3563, c3564, c3565, rfl, d3566, a3567, rfl⟩ := a3558.cons_inv
+  obtain ⟨l3568, rfl, rfl⟩ := d3566.var_inv
+  simp at l3568
+  subst l3568
+  obtain ⟨v3561, vs3569, m3570, c3571, c3572, rfl, d3573, a3574, rfl⟩ := a3567.cons_inv
+  obtain ⟨l3575, rfl, rfl⟩ := d3573.var_inv
+  simp at l3575
+  subst l3575
+  obtain ⟨rfl, rfl, rfl⟩ := a3574.nil_inv
+  obtain ⟨v3547, vs3576, m3577, c3578, c3579, rfl, d3580, a3581, rfl⟩ := a3553.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3580.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3581.nil_inv
+  obtain ⟨heq3582, rfl⟩ := Builtin.assertEq_inv ap3545
+  obtain rfl := matchPattern_wildcard_inv mt3541
+  obtain ⟨v3583, m3584, bs3585, c3586, c3587, d3588, mt3589, d3590, rfl⟩ := d3542.letValue_inv
+  obtain ⟨vs3591, a3592, ap3593⟩ := d3588.builtin_inv
+  obtain ⟨v3594, vs3596, m3597, c3598, c3599, rfl, d3600, a3601, rfl⟩ := a3592.cons_inv
+  obtain ⟨vs3602, m3603, c3604, cs3605, a3606, ev3607, rfl⟩ := d3600.call_inv
+  rw [instanceName_plain_some] at ev3607
+  obtain ⟨v3608, vs3610, m3611, c3612, c3613, rfl, d3614, a3615, rfl⟩ := a3606.cons_inv
+  obtain ⟨l3616, rfl, rfl⟩ := d3614.var_inv
+  simp at l3616
+  subst l3616
+  obtain ⟨v3609, vs3617, m3618, c3619, c3620, rfl, d3621, a3622, rfl⟩ := a3615.cons_inv
+  obtain ⟨l3623, rfl, rfl⟩ := d3621.var_inv
+  simp at l3623
+  subst l3623
+  obtain ⟨rfl, rfl, rfl⟩ := a3622.nil_inv
+  obtain ⟨v3595, vs3624, m3625, c3626, c3627, rfl, d3628, a3629, rfl⟩ := a3601.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3628.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3629.nil_inv
+  obtain ⟨heq3630, rfl⟩ := Builtin.assertEq_inv ap3593
+  obtain rfl := matchPattern_wildcard_inv mt3589
+  obtain ⟨v3631, m3632, bs3633, c3634, c3635, d3636, mt3637, d3638, rfl⟩ := d3590.letValue_inv
+  obtain ⟨vs3639, a3640, ap3641⟩ := d3636.builtin_inv
+  obtain ⟨v3642, vs3644, m3645, c3646, c3647, rfl, d3648, a3649, rfl⟩ := a3640.cons_inv
+  obtain ⟨vs3650, m3651, c3652, cs3653, a3654, ev3655, rfl⟩ := d3648.call_inv
+  rw [instanceName_plain_some] at ev3655
+  obtain ⟨v3656, vs3658, m3659, c3660, c3661, rfl, d3662, a3663, rfl⟩ := a3654.cons_inv
+  obtain ⟨l3664, rfl, rfl⟩ := d3662.var_inv
+  simp at l3664
+  subst l3664
+  obtain ⟨v3657, vs3665, m3666, c3667, c3668, rfl, d3669, a3670, rfl⟩ := a3663.cons_inv
+  obtain ⟨v3671, m3672, d3673, rfl, hm3674⟩ := d3669.store_inv
+  obtain ⟨vs3675, a3676, hres3677⟩ := d3673.construct_inv
+  rw [instanceName_plain_some] at hres3677
+  subst hres3677
+  obtain ⟨v3678, vs3679, m3680, c3681, c3682, rfl, d3683, a3684, rfl⟩ := a3676.cons_inv
+  obtain ⟨l3685, rfl, rfl⟩ := d3683.var_inv
+  simp at l3685
+  subst l3685
+  obtain ⟨rfl, rfl, rfl⟩ := a3684.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3670.nil_inv
+  obtain ⟨v3643, vs3686, m3687, c3688, c3689, rfl, d3690, a3691, rfl⟩ := a3649.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3690.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3691.nil_inv
+  obtain ⟨heq3692, rfl⟩ := Builtin.assertEq_inv ap3641
+  obtain rfl := matchPattern_wildcard_inv mt3637
+  obtain ⟨v3693, m3694, bs3695, c3696, c3697, d3698, mt3699, d3700, rfl⟩ := d3638.letValue_inv
+  obtain ⟨vs3701, a3702, ap3703⟩ := d3698.builtin_inv
+  obtain ⟨v3704, vs3706, m3707, c3708, c3709, rfl, d3710, a3711, rfl⟩ := a3702.cons_inv
+  obtain ⟨vs3712, m3713, c3714, cs3715, a3716, ev3717, rfl⟩ := d3710.call_inv
+  rw [instanceName_plain_some] at ev3717
+  obtain ⟨v3718, vs3720, m3721, c3722, c3723, rfl, d3724, a3725, rfl⟩ := a3716.cons_inv
+  obtain ⟨v3726, m3727, d3728, rfl, hm3729⟩ := d3724.store_inv
+  obtain ⟨vs3730, a3731, hres3732⟩ := d3728.construct_inv
+  rw [instanceName_plain_some] at hres3732
+  subst hres3732
+  obtain ⟨v3733, vs3735, m3736, c3737, c3738, rfl, d3739, a3740, rfl⟩ := a3731.cons_inv
+  obtain ⟨l3741, rfl, rfl⟩ := d3739.var_inv
+  simp at l3741
+  subst l3741
+  obtain ⟨v3734, vs3742, m3743, c3744, c3745, rfl, d3746, a3747, rfl⟩ := a3740.cons_inv
+  obtain ⟨l3748, rfl, rfl⟩ := d3746.var_inv
+  simp at l3748
+  subst l3748
+  obtain ⟨rfl, rfl, rfl⟩ := a3747.nil_inv
+  obtain ⟨v3719, vs3749, m3750, c3751, c3752, rfl, d3753, a3754, rfl⟩ := a3725.cons_inv
+  obtain ⟨v3755, m3756, d3757, rfl, hm3758⟩ := d3753.store_inv
+  obtain ⟨vs3759, a3760, hres3761⟩ := d3757.construct_inv
+  rw [instanceName_plain_some] at hres3761
+  subst hres3761
+  obtain ⟨v3762, vs3764, m3765, c3766, c3767, rfl, d3768, a3769, rfl⟩ := a3760.cons_inv
+  obtain ⟨l3770, rfl, rfl⟩ := d3768.var_inv
+  simp at l3770
+  subst l3770
+  obtain ⟨v3763, vs3771, m3772, c3773, c3774, rfl, d3775, a3776, rfl⟩ := a3769.cons_inv
+  obtain ⟨l3777, rfl, rfl⟩ := d3775.var_inv
+  simp at l3777
+  subst l3777
+  obtain ⟨rfl, rfl, rfl⟩ := a3776.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3754.nil_inv
+  obtain ⟨v3705, vs3778, m3779, c3780, c3781, rfl, d3782, a3783, rfl⟩ := a3711.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3782.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3783.nil_inv
+  obtain ⟨heq3784, rfl⟩ := Builtin.assertEq_inv ap3703
+  obtain rfl := matchPattern_wildcard_inv mt3699
+  obtain ⟨v3785, m3786, bs3787, c3788, c3789, d3790, mt3791, d3792, rfl⟩ := d3700.letValue_inv
+  obtain ⟨vs3793, a3794, ap3795⟩ := d3790.builtin_inv
+  obtain ⟨v3796, vs3798, m3799, c3800, c3801, rfl, d3802, a3803, rfl⟩ := a3794.cons_inv
+  obtain ⟨vs3804, m3805, c3806, cs3807, a3808, ev3809, rfl⟩ := d3802.call_inv
+  rw [instanceName_plain_some] at ev3809
+  obtain ⟨v3810, vs3812, m3813, c3814, c3815, rfl, d3816, a3817, rfl⟩ := a3808.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3816.literal_inv
+  obtain ⟨v3811, vs3818, m3819, c3820, c3821, rfl, d3822, a3823, rfl⟩ := a3817.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3822.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3823.nil_inv
+  obtain ⟨v3797, vs3824, m3825, c3826, c3827, rfl, d3828, a3829, rfl⟩ := a3803.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3828.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3829.nil_inv
+  obtain ⟨heq3830, rfl⟩ := Builtin.assertEq_inv ap3795
+  obtain rfl := matchPattern_wildcard_inv mt3791
+  obtain ⟨v3831, m3832, bs3833, c3834, c3835, d3836, mt3837, d3838, rfl⟩ := d3792.letValue_inv
+  obtain ⟨vs3839, a3840, ap3841⟩ := d3836.builtin_inv
+  obtain ⟨v3842, vs3844, m3845, c3846, c3847, rfl, d3848, a3849, rfl⟩ := a3840.cons_inv
+  obtain ⟨vs3850, m3851, c3852, cs3853, a3854, ev3855, rfl⟩ := d3848.call_inv
+  rw [instanceName_plain_some] at ev3855
+  obtain ⟨v3856, vs3858, m3859, c3860, c3861, rfl, d3862, a3863, rfl⟩ := a3854.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3862.literal_inv
+  obtain ⟨v3857, vs3864, m3865, c3866, c3867, rfl, d3868, a3869, rfl⟩ := a3863.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3868.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3869.nil_inv
+  obtain ⟨v3843, vs3870, m3871, c3872, c3873, rfl, d3874, a3875, rfl⟩ := a3849.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3874.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3875.nil_inv
+  obtain ⟨heq3876, rfl⟩ := Builtin.assertEq_inv ap3841
+  obtain rfl := matchPattern_wildcard_inv mt3837
+  obtain ⟨v3877, m3878, bs3879, c3880, c3881, d3882, mt3883, d3884, rfl⟩ := d3838.letValue_inv
+  obtain ⟨vs3885, a3886, ap3887⟩ := d3882.builtin_inv
+  obtain ⟨v3888, vs3890, m3891, c3892, c3893, rfl, d3894, a3895, rfl⟩ := a3886.cons_inv
+  obtain ⟨vs3896, m3897, c3898, cs3899, a3900, ev3901, rfl⟩ := d3894.call_inv
+  rw [instanceName_plain_some] at ev3901
+  obtain ⟨v3902, vs3904, m3905, c3906, c3907, rfl, d3908, a3909, rfl⟩ := a3900.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3908.literal_inv
+  obtain ⟨v3903, vs3910, m3911, c3912, c3913, rfl, d3914, a3915, rfl⟩ := a3909.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3914.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3915.nil_inv
+  obtain ⟨v3889, vs3916, m3917, c3918, c3919, rfl, d3920, a3921, rfl⟩ := a3895.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d3920.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3921.nil_inv
+  obtain ⟨heq3922, rfl⟩ := Builtin.assertEq_inv ap3887
+  obtain rfl := matchPattern_wildcard_inv mt3883
+  obtain ⟨vs3923, a3924, rfl⟩ := d3884.tuple_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a3924.nil_inv
+  try simp only [Value.type, List.map_cons, List.map_nil] at hm28 hm41 hm54 hm67 ev14 hm98 hm111 hm190 hm203 hm216 ev84 hm247 hm326 hm339 hm352 hm365 hm444 ev233 hm475 hm554 hm567 hm646 hm659 hm738 hm751 hm830 ev461 hm861 hm940 hm953 hm1032 hm1045 hm1124 hm1137 hm1216 ev847 hm1247 hm1326 hm1339 hm1418 hm1431 hm1444 hm1523 ev1233 hm1554 hm1633 hm1712 hm1725 hm1804 hm1817 hm1896 hm1909 hm1988 ev1540 hm2019 hm2098 hm2177 hm2190 hm2269 hm2282 hm2361 hm2374 hm2453 ev2005 hm2484 hm2563 hm2642 hm2655 hm2734 hm2813 hm2826 hm2905 hm2918 hm2997 ev2470 hm3012 hm3027 hm3042 hm3059 hm3109 hm3124 hm3147 hm3169 hm3191 hm3205 hm3220 hm3259 ev3303 heq3342 ev3367 heq3406 ev3431 heq3470 ev3495 heq3534 ev3559 heq3582 ev3607 heq3630 hm3674 ev3655 heq3692 hm3729 hm3758 ev3717 heq3784 ev3809 heq3830 ev3855 heq3876 ev3901 heq3922 ⊢
+  exact «IxVM::check_port_cases».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hm28 hm41 hm54 hm67 ev14 hm98 hm111 hm190 hm203 hm216 ev84 hm247 hm326 hm339 hm352 hm365 hm444 ev233 hm475 hm554 hm567 hm646 hm659 hm738 hm751 hm830 ev461 hm861 hm940 hm953 hm1032 hm1045 hm1124 hm1137 hm1216 ev847 hm1247 hm1326 hm1339 hm1418 hm1431 hm1444 hm1523 ev1233 hm1554 hm1633 hm1712 hm1725 hm1804 hm1817 hm1896 hm1909 hm1988 ev1540 hm2019 hm2098 hm2177 hm2190 hm2269 hm2282 hm2361 hm2374 hm2453 ev2005 hm2484 hm2563 hm2642 hm2655 hm2734 hm2813 hm2826 hm2905 hm2918 hm2997 ev2470 hm3012 hm3027 hm3042 hm3059 hm3109 hm3124 hm3147 hm3169 hm3191 hm3205 hm3220 hm3259 ev3303 heq3342 ev3367 heq3406 ev3431 heq3470 ev3495 heq3534 ev3559 heq3582 ev3607 heq3630 hm3674 ev3655 heq3692 hm3729 hm3758 ev3717 heq3784 ev3809 heq3830 ev3855 heq3876 ev3901 heq3922 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 end IxVM.Refinement.Obs

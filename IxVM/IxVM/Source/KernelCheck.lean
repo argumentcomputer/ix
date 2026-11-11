@@ -39,9 +39,9 @@ def safe_refs_only := aiur_fn⟦
           1 - is_unsafe_ci(ci) } ,
         KernelTypes::KExprNode::App(f, a) => {
           safe_refs_only(f) * safe_refs_only(a) } ,
-        KernelTypes::KExprNode::Lam(t, b) => {
+        KernelTypes::KExprNode::Lam(t, b, _) => {
           safe_refs_only(t) * safe_refs_only(b) } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
+        KernelTypes::KExprNode::Forall(t, b, _) => {
           safe_refs_only(t) * safe_refs_only(b) } ,
         KernelTypes::KExprNode::Let(t, v, b) => {
           safe_refs_only(t) * safe_refs_only(v) * safe_refs_only(b) } ,
@@ -110,10 +110,12 @@ def validate_expr_well_scoped := aiur_fn⟦
         KernelTypes::KExprNode::App(f, a) => {
           validate_expr_well_scoped(f, depth, bound);
           validate_expr_well_scoped(a, depth, bound) } ,
-        KernelTypes::KExprNode::Lam(t, b) => {
+        KernelTypes::KExprNode::Lam(t, b, l) => {
+          validate_univ_params_seen(l, bound);
           validate_expr_well_scoped(t, depth, bound);
           validate_expr_well_scoped(b, depth + 1, bound) } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
+        KernelTypes::KExprNode::Forall(t, b, l) => {
+          validate_univ_params_seen(l, bound);
           validate_expr_well_scoped(t, depth, bound);
           validate_expr_well_scoped(b, depth + 1, bound) } ,
         KernelTypes::KExprNode::Let(t, v, b) => {
@@ -147,7 +149,7 @@ def peel_n_foralls := aiur_fn⟦
         0 => {  e } ,
         _ => {
           match (*(e)) {
-            KernelTypes::KExprNode::Forall(_, body) => {  peel_n_foralls(body, n - 1) } ,
+            KernelTypes::KExprNode::Forall(_, body, _) => {  peel_n_foralls(body, n - 1) } ,
           } } ,
       }
     }
@@ -244,9 +246,9 @@ def check_param_agreement_go := aiur_fn⟦
         0 => {  () } ,
         _ => {
           match (*(ta)) {
-            KernelTypes::KExprNode::Forall(da, ba) => {
+            KernelTypes::KExprNode::Forall(da, ba, _) => {
               match (*(tb)) {
-                KernelTypes::KExprNode::Forall(db, bb) => {
+                KernelTypes::KExprNode::Forall(db, bb, _) => {
                   let eq = KernelDefEq::k_is_def_eq(rc, da, db, types);
                   assert_eq!(eq, 1,
                     "ctor parameter type disagrees with the inductive's");
@@ -275,7 +277,7 @@ def get_result_sort_level := aiur_fn⟦
           } } ,
         _ => {
           match (*(w)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               get_result_sort_level(rc, body, n - 1,
                 (&(Lists::Node::Cons(dom, types)))) } ,
           } } ,
@@ -287,7 +289,7 @@ def check_field_universes_inner := aiur_fn⟦
   fn check_field_universes_inner(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, ind_level: KernelTypes::KLevel,
                                         types: Lists::List<KernelTypes::KExpr>) -> () {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           let dom_level = KernelInfer::k_ensure_sort(rc, dom, types);
           assert_eq!(KernelLevels::level_leq(dom_level, ind_level), 1,
             "ctor field lives in a universe above the inductive's");
@@ -306,7 +308,7 @@ def check_field_universes_skip_params := aiur_fn⟦
         0 => {  check_field_universes_inner(rc, ctor_ty, ind_level, types) } ,
         _ => {
           match (*(ctor_ty)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               check_field_universes_skip_params(rc, body, n_params - 1,
                 ind_level, (&(Lists::Node::Cons(dom, types)))) } ,
           } } ,
@@ -367,12 +369,12 @@ def expr_mentions_block := aiur_fn⟦
             1 => {  1 } ,
             _ => {  expr_mentions_block(a, block_addrs) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(t, b) => {
+        KernelTypes::KExprNode::Lam(t, b, _) => {
           match expr_mentions_block(t, block_addrs) {
             1 => {  1 } ,
             _ => {  expr_mentions_block(b, block_addrs) } ,
           } } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
+        KernelTypes::KExprNode::Forall(t, b, _) => {
           match expr_mentions_block(t, block_addrs) {
             1 => {  1 } ,
             _ => {  expr_mentions_block(b, block_addrs) } ,
@@ -413,7 +415,7 @@ def peel_n_foralls_with_types := aiur_fn⟦
         0 => {  (e, types) } ,
         _ => {
           match (*(e)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               let t2 = (&(Lists::Node::Cons(dom, types)));
               peel_n_foralls_with_types(body, n - 1, t2) } ,
             _ => {  (e, types) } ,
@@ -469,7 +471,7 @@ def check_positivity_aug := aiur_fn⟦
         _ => {
           let dom_w = KernelWhnf::whnf(rc, dom, types);
           match (*(dom_w)) {
-            KernelTypes::KExprNode::Forall(idom, ibody) => {
+            KernelTypes::KExprNode::Forall(idom, ibody, _) => {
               assert_eq!(expr_mentions_block(idom, block_addrs), 0,
                 "strict positivity: block occurs left of an arrow");
               let t2 = (&(Lists::Node::Cons(idom, types)));
@@ -506,7 +508,7 @@ def check_positivity_fields := aiur_fn⟦
   fn check_positivity_fields(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>,
                                     types: Lists::List<KernelTypes::KExpr>, check_params: Field) -> () {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           check_positivity_aug(rc, dom, block_addrs, types, check_params);
           let t2 = (&(Lists::Node::Cons(dom, types)));
           check_positivity_fields(rc, body, block_addrs, t2, check_params) } ,
@@ -754,7 +756,7 @@ def check_large_prop_ctor := aiur_fn⟦
                                        (&(Lists::Node::Nil))) } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               let inner = (&(Lists::Node::Cons(dom, types)));
               check_large_prop_ctor(rc, body, n_params - 1, n_fields, inner) } ,
             _ => {  0 } ,
@@ -774,7 +776,7 @@ def check_large_walk_fields := aiur_fn⟦
           } } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               let lvl = KernelInfer::k_ensure_sort(rc, dom, types);
               let is_data = 1 - KernelLevels::level_equal(lvl, (&(KernelTypes::KLevelNode::Zero)));
 
@@ -907,7 +909,7 @@ def rec_to_parent_addr := aiur_fn⟦
       let skip = n_p + n_mot + n_min + n_i;
       let after_skip = peel_n_foralls(ty, skip);
       match (*(after_skip)) {
-        KernelTypes::KExprNode::Forall(major_ty, _) => {
+        KernelTypes::KExprNode::Forall(major_ty, _, _) => {
           match KernelTypes::collect_spine(major_ty) {
             (head, _) => {
               match (*(head)) {
@@ -924,7 +926,7 @@ def extract_aux_occ_us := aiur_fn⟦
         KernelTypes::KConstantInfo::Rec(_, ty, np, ni, nmot, nmin, _, _, _, _, _) => {
           let skip = ((np + nmot) + nmin) + ni;
           match (*(peel_n_foralls(ty, skip))) {
-            KernelTypes::KExprNode::Forall(major_ty, _) => {
+            KernelTypes::KExprNode::Forall(major_ty, _, _) => {
               match KernelTypes::collect_spine(major_ty) {
                 (head, _) => {
                   match (*(head)) {
@@ -945,7 +947,7 @@ def extract_aux_spec_params := aiur_fn⟦
       let skip = n_p + n_mot + n_min + n_i;
       let after_skip = peel_n_foralls(ty, skip);
       match (*(after_skip)) {
-        KernelTypes::KExprNode::Forall(major_ty, _) => {
+        KernelTypes::KExprNode::Forall(major_ty, _, _) => {
           match KernelTypes::collect_spine(major_ty) {
             (_head, args) => {
 
@@ -1062,6 +1064,23 @@ def aux_already_in := aiur_fn⟦
     }
 ⟧
 
+  -- Binders are structurally equal when their domains and bodies are and their data
+  -- (D2) agree: equal zero sets, the kernel's `m₁.pw = m₂.pw`.
+
+def kexpr_binder_struct_eq := aiur_fn⟦
+  fn kexpr_binder_struct_eq(ta: KernelTypes::KExpr, ba: KernelTypes::KExpr, la: KernelTypes::KLevel,
+                            tb: KernelTypes::KExpr, bb: KernelTypes::KExpr, lb: KernelTypes::KLevel) -> Field {
+      match KernelLevels::pw_eq(la, lb) {
+        1 => {
+          match kexpr_struct_eq(ta, tb) {
+            1 => {  kexpr_struct_eq(ba, bb) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
 def kexpr_struct_eq := aiur_fn⟦
   fn kexpr_struct_eq(a: KernelTypes::KExpr, b: KernelTypes::KExpr) -> Field {
       match (*(a)) {
@@ -1094,22 +1113,14 @@ def kexpr_struct_eq := aiur_fn⟦
                   } } ,
                 _ => {  0 } ,
               } } ,
-            KernelTypes::KExprNode::Lam(ta, ba) => {
+            KernelTypes::KExprNode::Lam(ta, ba, la) => {
               match (*(b)) {
-                KernelTypes::KExprNode::Lam(tb, bb) => {
-                  match kexpr_struct_eq(ta, tb) {
-                    1 => {  kexpr_struct_eq(ba, bb) } ,
-                    _ => {  0 } ,
-                  } } ,
+                KernelTypes::KExprNode::Lam(tb, bb, lb) => {  kexpr_binder_struct_eq(ta, ba, la, tb, bb, lb) } ,
                 _ => {  0 } ,
               } } ,
-            KernelTypes::KExprNode::Forall(da, xa) => {
+            KernelTypes::KExprNode::Forall(da, xa, la) => {
               match (*(b)) {
-                KernelTypes::KExprNode::Forall(db, xb) => {
-                  match kexpr_struct_eq(da, db) {
-                    1 => {  kexpr_struct_eq(xa, xb) } ,
-                    _ => {  0 } ,
-                  } } ,
+                KernelTypes::KExprNode::Forall(db, xb, lb) => {  kexpr_binder_struct_eq(da, xa, la, db, xb, lb) } ,
                 _ => {  0 } ,
               } } ,
             KernelTypes::KExprNode::Let(ta, va, ba) => {
@@ -1422,7 +1433,7 @@ def peel_motive_params_subst := aiur_fn⟦
         0 => {  ty } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
               let p = subst_param_for(j, n_rec_params, is_aux, spec_params);
               let body_substed = KernelSubst::expr_inst1(body, p, 0);
               peel_motive_params_subst(body_substed, n - 1, n_rec_params,
@@ -1438,11 +1449,11 @@ def collect_index_doms := aiur_fn⟦
         0 => {  (&(Lists::Node::Nil)) } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               (&(Lists::Node::Cons(dom, collect_index_doms(rc, body, n - 1)))) } ,
             _ => {
               match (*(KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil))))) {
-                KernelTypes::KExprNode::Forall(dom, body) => {
+                KernelTypes::KExprNode::Forall(dom, body, _) => {
                   (&(Lists::Node::Cons(dom, collect_index_doms(rc, body, n - 1)))) } ,
                 _ => {  (&(Lists::Node::Nil)) } ,
               } } ,
@@ -1501,11 +1512,11 @@ def build_major_indices := aiur_fn⟦
 ⟧
 
 def wrap_foralls := aiur_fn⟦
-  fn wrap_foralls(body: KernelTypes::KExpr, doms: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+  fn wrap_foralls(body: KernelTypes::KExpr, doms: Lists::List<KernelTypes::KExpr>, dl: KernelTypes::KLevel) -> KernelTypes::KExpr {
       match (*(doms)) {
         Lists::Node::Nil => {  body } ,
         Lists::Node::Cons(dom, rest) => {
-          (&(KernelTypes::KExprNode::Forall(dom, wrap_foralls(body, rest)))) } ,
+          (&(KernelTypes::KExprNode::Forall(dom, wrap_foralls(body, rest, dl), dl))) } ,
       }
     }
 ⟧
@@ -1517,13 +1528,13 @@ def collect_n_doms_whnf := aiur_fn⟦
         _ => {
 
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(dom, body) => {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
               match collect_n_doms_whnf(rc, body, n - 1) {
                 (rest, after) => {  ((&(Lists::Node::Cons(dom, rest))), after) } ,
               } } ,
             _ => {
               match (*(KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil))))) {
-                KernelTypes::KExprNode::Forall(dom, body) => {
+                KernelTypes::KExprNode::Forall(dom, body, _) => {
                   match collect_n_doms_whnf(rc, body, n - 1) {
                     (rest, after) => {  ((&(Lists::Node::Cons(dom, rest))), after) } ,
                   } } ,
@@ -1587,8 +1598,9 @@ def build_motive_type_flat := aiur_fn⟦
         n_indices, is_aux, spec_params);
       let major_ty = build_major_indices(with_args, n_indices, 0);
       let sort_e = (&(KernelTypes::KExprNode::Srt(elim_level)));
-      let with_major = (&(KernelTypes::KExprNode::Forall(major_ty, sort_e)));
-      wrap_foralls(with_major, index_doms)
+      let never = (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))));
+      let with_major = (&(KernelTypes::KExprNode::Forall(major_ty, sort_e, never)));
+      wrap_foralls(with_major, index_doms, never)
     }
 ⟧
 
@@ -1627,11 +1639,11 @@ def build_minor_apps := aiur_fn⟦
 ⟧
 
 def wrap_lams := aiur_fn⟦
-  fn wrap_lams(body: KernelTypes::KExpr, doms: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+  fn wrap_lams(body: KernelTypes::KExpr, doms: Lists::List<KernelTypes::KExpr>, dl: KernelTypes::KLevel) -> KernelTypes::KExpr {
       match (*(doms)) {
         Lists::Node::Nil => {  body } ,
         Lists::Node::Cons(dom, rest) => {
-          (&(KernelTypes::KExprNode::Lam(dom, wrap_lams(body, rest)))) } ,
+          (&(KernelTypes::KExprNode::Lam(dom, wrap_lams(body, rest, dl), dl))) } ,
       }
     }
 ⟧
@@ -1673,7 +1685,7 @@ def build_rec_type_from := aiur_fn⟦
         (param_doms, after_params) => {
           let motive_doms = build_all_motives(rc, flat, elim_level, n_params);
           let minor_doms = build_all_minors(rc, flat, flat_own_params, n_params,
-            n_motives, motive_base);
+            n_motives, motive_base, elim_level);
           let n_minors = Lists::length(minor_doms);
           let (self_addr, self_is_aux, self_spec_params, self_occ_us) =
             flat_member_at(flat, self_pos);
@@ -1701,11 +1713,11 @@ def build_rec_type_from := aiur_fn⟦
             n_indices, 0);
           let conclusion = (&(KernelTypes::KExprNode::App(with_indices,
             (&(KernelTypes::KExprNode::BVar(0))))));
-          let with_major = (&(KernelTypes::KExprNode::Forall(major_ty, conclusion)));
-          let with_idx_foralls = wrap_foralls(with_major, index_doms);
-          let with_minors = wrap_foralls(with_idx_foralls, minor_doms);
-          let with_motives = wrap_foralls(with_minors, motive_doms);
-          wrap_foralls(with_motives, param_doms) } ,
+          let with_major = (&(KernelTypes::KExprNode::Forall(major_ty, conclusion, elim_level)));
+          let with_idx_foralls = wrap_foralls(with_major, index_doms, elim_level);
+          let with_minors = wrap_foralls(with_idx_foralls, minor_doms, elim_level);
+          let with_motives = wrap_foralls(with_minors, motive_doms, elim_level);
+          wrap_foralls(with_motives, param_doms, elim_level) } ,
       }
     }
 ⟧
@@ -1796,7 +1808,7 @@ def canonical_rules_at_pos := aiur_fn⟦
 
           let canon_n_motives = Lists::length(flat);
           let canon_n_minors = Lists::length(build_all_minors(rc, flat,
-            flat_own_params, n_p, canon_n_motives, n_p));
+            flat_own_params, n_p, canon_n_motives, n_p, elim_level));
           assert_eq!(n_mot, canon_n_motives,
             "recursor motive count disagrees with the canonical reconstruction");
           assert_eq!(n_min, canon_n_minors,
@@ -1805,9 +1817,9 @@ def canonical_rules_at_pos := aiur_fn⟦
           let canonical = populate_rules(rc, num_ctors, self_ctors_offset,
             parent_block_addr, parent_ind_idx, n_p, n_mot, n_min, occ_us,
             rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
-            spec_params, 0);
+            spec_params, 0, elim_level);
           compare_rules(rc, rules, canonical, n_p, n_mot, n_min,
-            parent_block_addr, parent_ind_idx, num_ctors, 0) } ,
+            parent_block_addr, parent_ind_idx, num_ctors, 0, elim_level) } ,
       }
     }
 ⟧
@@ -1845,7 +1857,7 @@ def populate_rules := aiur_fn⟦
                             peer_recs: Lists::List<Bytes::AddressRef>,
                             flat_own_params: Lists::List<Field>,
                             is_aux: Field, spec_params: Lists::List<KernelTypes::KExpr>,
-                            cidx: Field) -> Lists::List<KernelTypes::KExpr> {
+                            cidx: Field, elim: KernelTypes::KLevel) -> Lists::List<KernelTypes::KExpr> {
       match num_ctors - cidx {
         0 => {  (&(Lists::Node::Nil)) } ,
         _ => {
@@ -1856,12 +1868,12 @@ def populate_rules := aiur_fn⟦
               let rhs = build_rule_rhs(rc, ctor_ty, ctor_minor_index,
                 n_params, n_motives, n_minors, np, occurrence_us,
                 rec_lvls_list, flat, peer_recs, flat_own_params,
-                is_aux, spec_params);
+                is_aux, spec_params, elim);
               (&(Lists::Node::Cons(rhs,
                 populate_rules(rc, num_ctors, self_ctors_offset, block_addr,
                   ind_idx, n_params, n_motives, n_minors, occurrence_us,
                   rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
-                  spec_params, cidx + 1)))) } ,
+                  spec_params, cidx + 1, elim)))) } ,
             _ => {  (&(Lists::Node::Nil)) } ,
           } } ,
       }
@@ -1871,7 +1883,8 @@ def populate_rules := aiur_fn⟦
 def compare_rules := aiur_fn⟦
   fn compare_rules(rc: KernelRoles::RoleCtx, stored: Lists::List<KernelTypes::KRecRule>, canonical: Lists::List<KernelTypes::KExpr>,
                           n_p: Field, n_mot: Field, n_min: Field,
-                          block_addr: Bytes::AddressRef, ind_idx: Field, num_ctors: Field, pos: Field) -> () {
+                          block_addr: Bytes::AddressRef, ind_idx: Field, num_ctors: Field, pos: Field,
+                          elim: KernelTypes::KLevel) -> () {
       match (*(stored)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
@@ -1893,8 +1906,8 @@ def compare_rules := aiur_fn⟦
                 Lists::Node::Nil => {  () } ,
                 Lists::Node::Cons(cbody, crest) => {
                   let total = ((n_p + n_mot) + n_min) + nf;
-                  match peel_n_lams_collect(rhs, total, 0,
-                          (&(Lists::Node::Nil))) {
+                  match peel_rule_lams(rhs, total, 0,
+                          (&(Lists::Node::Nil)), elim) {
                     (stored_body, peeled, _) => {
                       assert_eq!(peeled, total,
                         "recursor rule rhs has too few binders to peel");
@@ -1905,7 +1918,7 @@ def compare_rules := aiur_fn⟦
                       () } ,
                   };
                   compare_rules(rc, rest, crest, n_p, n_mot, n_min,
-                    block_addr, ind_idx, num_ctors, pos + 1) } ,
+                    block_addr, ind_idx, num_ctors, pos + 1, elim) } ,
               } } ,
           } } ,
       }
@@ -1920,7 +1933,7 @@ def apply_ihs_full := aiur_fn⟦
                             flat_own_params: Lists::List<Field>,
                             n_params: Field, n_motives: Field, n_minors: Field,
                             n_fields: Field, rec_lvls_list: Lists::List<KernelTypes::KLevel>,
-                            k: Field) -> KernelTypes::KExpr {
+                            k: Field, elim: KernelTypes::KLevel) -> KernelTypes::KExpr {
       match (*(rec_indices)) {
         Lists::Node::Nil => {  head } ,
         Lists::Node::Cons(field_idx, rest) => {
@@ -1953,11 +1966,11 @@ def apply_ihs_full := aiur_fn⟦
                   let field_ref = (&(KernelTypes::KExprNode::BVar(field_base)));
                   let field_app = build_apply_xs(field_ref, n_xs, 0);
                   let ih_inner = (&(KernelTypes::KExprNode::App(with_idx, field_app)));
-                  let ih = wrap_lams(ih_inner, forall_doms);
+                  let ih = wrap_lams(ih_inner, forall_doms, elim);
                   let new_head = (&(KernelTypes::KExprNode::App(head, ih)));
                   apply_ihs_full(rc, new_head, rest, rec_member_idxs,
                     field_doms, peer_recs, flat_own_params, n_params,
-                    n_motives, n_minors, n_fields, rec_lvls_list, k + 1) } ,
+                    n_motives, n_minors, n_fields, rec_lvls_list, k + 1, elim) } ,
               } } ,
           } } ,
       }
@@ -1973,7 +1986,7 @@ def build_rule_rhs := aiur_fn⟦
                             flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                             peer_recs: Lists::List<Bytes::AddressRef>,
                             flat_own_params: Lists::List<Field>,
-                            is_aux: Field, spec_params: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+                            is_aux: Field, spec_params: Lists::List<KernelTypes::KExpr>, elim: KernelTypes::KLevel) -> KernelTypes::KExpr {
       let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, occurrence_us);
       let after_params_raw = peel_n_foralls(ctor_ty_inst, n_own_params);
       let n_fields = count_foralls_body(after_params_raw, 0);
@@ -1992,7 +2005,7 @@ def build_rule_rhs := aiur_fn⟦
             n_fields, 0);
           apply_ihs_full(rc, with_fields, rec_indices, rec_member_idxs,
             field_doms, peer_recs, flat_own_params, n_params, n_motives,
-            n_minors, n_fields, rec_lvls_list, 0) } ,
+            n_minors, n_fields, rec_lvls_list, 0, elim) } ,
       }
     }
 ⟧
@@ -2130,7 +2143,7 @@ def build_minor_doms := aiur_fn⟦
                               motive_base: Field, self_mem_idx: Field,
                               block_addr: Bytes::AddressRef, ind_idx: Field,
                               num_ctors: Field, prev_minors: Field,
-                              cidx: Field) -> Lists::List<KernelTypes::KExpr> {
+                              cidx: Field, elim: KernelTypes::KLevel) -> Lists::List<KernelTypes::KExpr> {
       match num_ctors - cidx {
         0 => {  (&(Lists::Node::Nil)) } ,
         _ => {
@@ -2141,12 +2154,12 @@ def build_minor_doms := aiur_fn⟦
               let minor = build_minor_at_depth(rc, ctor_addr, ctor_ty, np,
                 is_aux, spec_params, occurrence_us, flat, flat_own_params,
                 n_rec_params, n_motives, prev_minors, motive_base,
-                self_mem_idx);
+                self_mem_idx, elim);
               (&(Lists::Node::Cons(minor,
                 build_minor_doms(rc, member_addr, is_aux, spec_params,
                   occurrence_us, flat, flat_own_params, n_rec_params,
                   n_motives, motive_base, self_mem_idx, block_addr, ind_idx,
-                  num_ctors, prev_minors + 1, cidx + 1)))) } ,
+                  num_ctors, prev_minors + 1, cidx + 1, elim)))) } ,
 
           } } ,
       }
@@ -2157,9 +2170,9 @@ def build_all_minors := aiur_fn⟦
   fn build_all_minors(rc: KernelRoles::RoleCtx, flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                               flat_own_params: Lists::List<Field>,
                               n_rec_params: Field, n_motives: Field,
-                              motive_base: Field) -> Lists::List<KernelTypes::KExpr> {
+                              motive_base: Field, elim: KernelTypes::KLevel) -> Lists::List<KernelTypes::KExpr> {
       build_all_minors_walk(rc, flat, flat, flat_own_params, n_rec_params,
-        n_motives, motive_base, 0, 0)
+        n_motives, motive_base, 0, 0, elim)
     }
 ⟧
 
@@ -2169,7 +2182,7 @@ def build_all_minors_walk := aiur_fn⟦
                                    flat_own_params: Lists::List<Field>,
                                    n_rec_params: Field, n_motives: Field,
                                    motive_base: Field, prev_minors: Field,
-                                   mem_pos: Field) -> Lists::List<KernelTypes::KExpr> {
+                                   mem_pos: Field, elim: KernelTypes::KLevel) -> Lists::List<KernelTypes::KExpr> {
       match (*(flat)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(m, rest) => {
@@ -2182,16 +2195,16 @@ def build_all_minors_walk := aiur_fn⟦
                   let m_minors = build_minor_doms(rc, member_addr, is_aux,
                     spec_params, occ_us, full_flat, flat_own_params,
                     n_rec_params, n_motives, motive_base, mem_pos,
-                    mem_block_addr, mem_ind_idx, num_ctors, prev_minors, 0);
+                    mem_block_addr, mem_ind_idx, num_ctors, prev_minors, 0, elim);
                   let added = Lists::length(m_minors);
                   let rest_minors = build_all_minors_walk(rc, rest, full_flat,
                     flat_own_params, n_rec_params, n_motives, motive_base,
-                    prev_minors + added, mem_pos + 1);
+                    prev_minors + added, mem_pos + 1, elim);
                   Lists::concat(m_minors, rest_minors) } ,
                 _ => {
                   build_all_minors_walk(rc, rest, full_flat, flat_own_params,
                     n_rec_params, n_motives, motive_base, prev_minors,
-                    mem_pos + 1) } ,
+                    mem_pos + 1, elim) } ,
               } } ,
           } } ,
       }
@@ -2216,7 +2229,7 @@ def ctor_subst_param_for := aiur_fn⟦
 def count_foralls_body := aiur_fn⟦
   fn count_foralls_body(ty: KernelTypes::KExpr, acc: Field) -> Field {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(_, body) => {  count_foralls_body(body, acc + 1) } ,
+        KernelTypes::KExprNode::Forall(_, body, _) => {  count_foralls_body(body, acc + 1) } ,
         _ => {  acc } ,
       }
     }
@@ -2231,7 +2244,7 @@ def peel_ctor_params_subst := aiur_fn⟦
         _ => {
 
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
               let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
                 spec_params);
               let body_substed = KernelSubst::expr_inst1(body, p, 0);
@@ -2239,7 +2252,7 @@ def peel_ctor_params_subst := aiur_fn⟦
                 spec_lift, is_aux, spec_params, j + 1) } ,
             _ => {
               match (*(KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil))))) {
-                KernelTypes::KExprNode::Forall(_, body) => {
+                KernelTypes::KExprNode::Forall(_, body, _) => {
                   let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
                     spec_params);
                   let body_substed = KernelSubst::expr_inst1(body, p, 0);
@@ -2260,7 +2273,7 @@ def build_minor_at_depth := aiur_fn⟦
                                   flat_own_params: Lists::List<Field>,
                                   n_rec_params: Field, n_motives: Field,
                                   prev_minors: Field, motive_base: Field,
-                                  self_mem_idx: Field) -> KernelTypes::KExpr {
+                                  self_mem_idx: Field, elim: KernelTypes::KLevel) -> KernelTypes::KExpr {
       let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, occurrence_us);
       let minor_saved = n_rec_params + n_motives + prev_minors;
       let below_params = n_motives + prev_minors;
@@ -2289,9 +2302,9 @@ def build_minor_at_depth := aiur_fn⟦
               let conclusion = (&(KernelTypes::KExprNode::App(with_indices, ctor_app)));
               let ih_doms = build_ih_doms(rc, rec_indices, rec_member_idxs,
                 field_doms, flat_own_params, motive_base, n_fields,
-                minor_saved, 0);
-              let with_ihs = wrap_foralls(conclusion, ih_doms);
-              wrap_foralls(with_ihs, field_doms) } ,
+                minor_saved, 0, elim);
+              let with_ihs = wrap_foralls(conclusion, ih_doms, elim);
+              wrap_foralls(with_ihs, field_doms, elim) } ,
           } } ,
       }
     }
@@ -2310,7 +2323,7 @@ def peel_leading_foralls_acc := aiur_fn⟦
   fn peel_leading_foralls_acc(ty: KernelTypes::KExpr, acc: Lists::List<KernelTypes::KExpr>)
                                       -> (Lists::List<KernelTypes::KExpr>, KernelTypes::KExpr) {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           peel_leading_foralls_acc(body, (&(Lists::Node::Cons(dom, acc)))) } ,
         _ => {  (acc, ty) } ,
       }
@@ -2333,7 +2346,7 @@ def build_ih_doms := aiur_fn⟦
                           field_doms: Lists::List<KernelTypes::KExpr>,
                           flat_own_params: Lists::List<Field>,
                           motive_base: Field, n_fields: Field, minor_saved: Field,
-                          k: Field) -> Lists::List<KernelTypes::KExpr> {
+                          k: Field, elim: KernelTypes::KLevel) -> Lists::List<KernelTypes::KExpr> {
       match (*(rec_indices)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(field_idx, rest) => {
@@ -2358,11 +2371,11 @@ def build_ih_doms := aiur_fn⟦
                   let field_ref = (&(KernelTypes::KExprNode::BVar(field_bvar)));
                   let field_app = build_apply_xs(field_ref, n_xs, 0);
                   let ih_body = (&(KernelTypes::KExprNode::App(with_indices, field_app)));
-                  let ih_dom = wrap_foralls(ih_body, forall_doms);
+                  let ih_dom = wrap_foralls(ih_body, forall_doms, elim);
                   (&(Lists::Node::Cons(ih_dom,
                     build_ih_doms(rc, rest, rec_member_idxs, field_doms,
                       flat_own_params, motive_base, n_fields, minor_saved,
-                      k + 1)))) } ,
+                      k + 1, elim)))) } ,
               } } ,
           } } ,
       }
@@ -2433,7 +2446,7 @@ def is_rec_field_peel := aiur_fn⟦
                               spec_lift_by: Field) -> (Field, Field) {
       let w = KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil)));
       match (*(w)) {
-        KernelTypes::KExprNode::Forall(_, body) => {
+        KernelTypes::KExprNode::Forall(_, body, _) => {
           is_rec_field_peel(rc, body, flat, spec_lift_by) } ,
         _ => {
           match KernelTypes::collect_spine(w) {
@@ -2501,7 +2514,7 @@ def walk_fields_classify := aiur_fn⟦
                                   fidx: Field, spec_lift_by: Field)
                                   -> (Lists::List<KernelTypes::KExpr>, Lists::List<Field>, Lists::List<Field>, KernelTypes::KExpr) {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
 
           let r = is_rec_field(rc, dom, flat, spec_lift_by + fidx);
           let new_doms = (&(Lists::Node::Cons(dom, doms_acc)));
@@ -2602,7 +2615,7 @@ def check_rec_major_spine := aiur_fn⟦
       let skip = n_p + n_mot + n_min + n_i;
       let after_skip = peel_n_foralls(ty, skip);
       match (*(after_skip)) {
-        KernelTypes::KExprNode::Forall(major_ty, _) => {
+        KernelTypes::KExprNode::Forall(major_ty, _, _) => {
           match KernelTypes::collect_spine(major_ty) {
             (_head, args) => {
               assert_eq!(Lists::length(args), expected_args,
@@ -2657,9 +2670,33 @@ def peel_n_lams_collect := aiur_fn⟦
         0 => {  (e, peeled, acc) } ,
         _ => {
           match (*(e)) {
-            KernelTypes::KExprNode::Lam(dom, body) => {
+            KernelTypes::KExprNode::Lam(dom, body, _) => {
               peel_n_lams_collect(body, n - 1, peeled + 1,
                 (&(Lists::Node::Cons(dom, acc)))) } ,
+            _ => {  (e, peeled, acc) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- `peel_n_lams_collect` for a recursor rule (D2): each peeled λ must carry the
+  -- elimination level's zero-ness, as the kernel's canonical rules do.
+
+def peel_rule_lams := aiur_fn⟦
+  fn peel_rule_lams(e: KernelTypes::KExpr, n: Field, peeled: Field, acc: Lists::List<KernelTypes::KExpr>,
+                         elim: KernelTypes::KLevel)
+                                -> (KernelTypes::KExpr, Field, Lists::List<KernelTypes::KExpr>) {
+      match n {
+        0 => {  (e, peeled, acc) } ,
+        _ => {
+          match (*(e)) {
+            KernelTypes::KExprNode::Lam(dom, body, bl) => {
+              -- The rule's λs are the kernel's canonical ones, whose data are the
+              -- elimination level's zero-ness (the body's type is a motive application).
+              assert_eq!(KernelLevels::pw_eq(bl, elim), 1,
+                "a recursor rule's binder datum is not the zero-ness of its elimination level");
+              peel_rule_lams(body, n - 1, peeled + 1,
+                (&(Lists::Node::Cons(dom, acc))), elim) } ,
             _ => {  (e, peeled, acc) } ,
           } } ,
       }

@@ -37,6 +37,63 @@ def level_is_not_zero := aiur_fn⟦
     }
 ⟧
 
+  -- The zero-ness datum of a level (D2; IxC's `Level.zeronessOf`), as the pair
+  -- (1, []) for `never`, or (0, ps) for `ifAllZero ps` with `ps` strictly ascending:
+  -- the level is zero exactly when every parameter in `ps` is. Canonical, so two
+  -- levels have the same zero-ness exactly when their pairs are equal.
+
+def zero_set := aiur_fn⟦
+  fn zero_set(l: KernelTypes::KLevel) -> (Field, Lists::List<Field>) {
+      match (*(l)) {
+        KernelTypes::KLevelNode::Zero => {  (0, (&(Lists::Node::Nil))) } ,
+        KernelTypes::KLevelNode::Succ(_) => {  (1, (&(Lists::Node::Nil))) } ,
+        KernelTypes::KLevelNode::Param(i) => {  (0, (&(Lists::Node::Cons(i, (&(Lists::Node::Nil)))))) } ,
+        KernelTypes::KLevelNode::Max(a, b) => {
+          let (na, sa) = zero_set(a);
+          match na {
+            1 => {  (1, (&(Lists::Node::Nil))) } ,
+            _ => {
+              let (nb, sb) = zero_set(b);
+              match nb {
+                1 => {  (1, (&(Lists::Node::Nil))) } ,
+                _ => {  (0, glist_union(sa, sb)) } ,
+              } } ,
+          } } ,
+        KernelTypes::KLevelNode::IMax(_, b) => {  zero_set(b) } ,
+      }
+    }
+⟧
+
+  -- The ascending union of two strictly ascending lists.
+
+def glist_union := aiur_fn⟦
+  fn glist_union(xs: Lists::List<Field>, ys: Lists::List<Field>) -> Lists::List<Field> {
+      match (*(xs)) {
+        Lists::Node::Nil => {  ys } ,
+        Lists::Node::Cons(x, rest) => {
+          let (_ins, ys2) = glist_ordered_insert(x, ys);
+          glist_union(rest, ys2) } ,
+      }
+    }
+⟧
+
+  -- Whether two binder data agree (the kernel's `m₁.pw = m₂.pw`): equal zero sets.
+
+def pw_eq := aiur_fn⟦
+  fn pw_eq(a: KernelTypes::KLevel, b: KernelTypes::KLevel) -> Field {
+      let (na, sa) = zero_set(a);
+      let (nb, sb) = zero_set(b);
+      match na - nb {
+        0 => {
+          match na {
+            1 => {  1 } ,
+            _ => {  Fields::is_zero(glist_cmp(sa, sb)) } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
 def level_eq := aiur_fn⟦
   fn level_eq(a: KernelTypes::KLevel, b: KernelTypes::KLevel) -> Field {
       match (*(a)) {
@@ -864,10 +921,12 @@ def expr_inst_levels_walk := aiur_fn⟦
           (&(KernelTypes::KExprNode::Const(idx, level_list_inst(lvls, params)))) } ,
         KernelTypes::KExprNode::App(f, a) => {
           (&(KernelTypes::KExprNode::App(expr_inst_levels(f, params), expr_inst_levels(a, params)))) } ,
-        KernelTypes::KExprNode::Lam(ty, body) => {
-          (&(KernelTypes::KExprNode::Lam(expr_inst_levels(ty, params), expr_inst_levels(body, params)))) } ,
-        KernelTypes::KExprNode::Forall(ty, body) => {
-          (&(KernelTypes::KExprNode::Forall(expr_inst_levels(ty, params), expr_inst_levels(body, params)))) } ,
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
+          (&(KernelTypes::KExprNode::Lam(expr_inst_levels(ty, params), expr_inst_levels(body, params),
+            level_inst_params(bl, params)))) } ,
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
+          (&(KernelTypes::KExprNode::Forall(expr_inst_levels(ty, params), expr_inst_levels(body, params),
+            level_inst_params(bl, params)))) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {
           (&(KernelTypes::KExprNode::Let(
             expr_inst_levels(ty, params),

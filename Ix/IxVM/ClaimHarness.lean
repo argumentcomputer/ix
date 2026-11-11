@@ -7,6 +7,7 @@ public import Ix.CompileCertified
 public import Ix.Common
 public import Ix.PrimAddrs
 public import Ix.ClaimContext
+public import Ix.IxVM.PwHints
 public import Ix.IxVM.Model
 public import Ix.IxVM.ClaimSeeds
 
@@ -447,6 +448,8 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
+  -- the binder data the conversion reads (D2, `IxVM.PwHints`)
+  ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
@@ -544,6 +547,7 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
   ioBuffer := addEntries env closure.contains ioBuffer
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer
+  ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return (claim, { funcName := `verify_claim
                    input := digestKey, inputIOBuffer := ioBuffer })
 
@@ -561,6 +565,7 @@ def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWi
     | throw "verify_const: the environment carries no role binding"
   let closure := closureFrom env target
   let ioBuffer := addEntries env closure.contains (seedBinding env default)
+  let ioBuffer ← (·.1) <$> IxVM.PwHints.annotate ioBuffer env
   return { funcName := `verify_const
            input := addrKey binding.address ++ addrKey target, inputIOBuffer := ioBuffer }
 

@@ -5,7 +5,7 @@ use aiur::ixon::Reader;
 use std::path::Path;
 
 pub const MAGIC: &[u8; 8] = b"IXVMFIX\0";
-pub const VERSION: u64 = 1;
+pub const VERSION: u64 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Serialized {
@@ -32,6 +32,9 @@ pub struct Fixture {
   pub constants: Vec<Serialized>,
   pub blobs: Vec<Serialized>,
   pub roles: Vec<Serialized>,
+  /// The records' binder data (D2), version 2: per record its address and
+  /// its stream values as IO channel 8 carries them (`Ix/IxVM/PwHints.lean`).
+  pub binder_data: Vec<([u8; 32], Vec<u64>)>,
 }
 
 fn words(address: &[u8; 32]) -> Vec<u64> {
@@ -57,7 +60,7 @@ impl Fixture {
       return Err("not an IxVM fixture".into());
     }
     let version = r.nat()?;
-    if version != VERSION {
+    if version != 1 && version != VERSION {
       return Err(format!("unsupported IxVM fixture version {version}"));
     }
     let fixture = Self {
@@ -68,6 +71,11 @@ impl Fixture {
       constants: r.list(serialized)?,
       blobs: r.list(serialized)?,
       roles: r.list(serialized)?,
+      binder_data: if version == 1 {
+        vec![]
+      } else {
+        r.list(|r| Ok((address(r)?, r.nats()?)))?
+      },
     };
     r.finish()?;
     Ok(fixture)

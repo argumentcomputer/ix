@@ -63,7 +63,8 @@ def check_primitives := aiur_fn⟦
       let prop = (&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))));
       let var = (&(KernelTypes::KExprNode::BVar(0)));
       let ctx = (&(Lists::Node::Cons(prop, empty)));
-      let lam = (&(KernelTypes::KExprNode::Lam(prop, var)));
+      let never = (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))));
+      let lam = (&(KernelTypes::KExprNode::Lam(prop, var, never)));
       assert_eq!(KernelDefEq::k_is_def_eq(rc, prop, prop, empty), 1, "sort reflexivity without pointer shortcut");
       assert_eq!(KernelDefEq::k_is_def_eq(rc, var, var, ctx), 1, "open reflexivity without pointer shortcut");
       assert_eq!(KernelDefEq::k_is_def_eq(rc, var, var, empty), 1, "context-free variable comparison");
@@ -118,7 +119,8 @@ def check_port_cases := aiur_fn⟦
       let prop = (&(KernelTypes::KExprNode::Srt(zero_level)));
       let v0 = (&(KernelTypes::KExprNode::BVar(0)));
       let v1 = (&(KernelTypes::KExprNode::BVar(1)));
-      let lam = (&(KernelTypes::KExprNode::Lam(prop, v0)));
+      let never = (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))));
+      let lam = (&(KernelTypes::KExprNode::Lam(prop, v0, never)));
       let app = (&(KernelTypes::KExprNode::App(lam, prop)));
       assert_eq!(KernelDefEq::k_is_def_eq(rc, prop, prop, empty), 1, "reflexive sort");
       assert_eq!(KernelDefEq::k_is_def_eq(rc, lam, lam, empty), 1, "reflexive lambda");
