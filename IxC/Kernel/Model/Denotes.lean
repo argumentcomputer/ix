@@ -38,7 +38,10 @@ this module builds one from the graded invariant `EnvModelM`
   *pinned* `Eq` being stored, and the `Denotes` hypothesis supplies
   only that *something* is stored at `eqName`; the two are joined by
   `basis_pinnedL`'s declaration clause, which since task #283 holds of
-  a stored reserved name whatever its kind.
+  a stored reserved name whatever its kind.  `defn_value` from the
+  invariant's `defn_reads`: a stored definition's value reads to the
+  constant's own leaf, and a stored value is closed, so the bridge at
+  depth `0` gives the value the leaf's interpretation as denotation.
 -/
 
 namespace Ix.Kernel.Model
@@ -424,5 +427,14 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
         (by rw [hψ]; exact hA) ha hb
       rw [interp_cvalOf m.base2.cval_closedL] at hlaw
       exact hlaw
+  defn_value := by
+    intro cv value hint hmem φ ρ
+    have hr := m.defn_reads φ cv value ⟨hint, hmem⟩
+    have hv := (m.base2.wf _ hmem).2.2.2.2.1 cv value hint rfl
+    have hb := Denotes_of_denoteMeta (V := V) m.base2.cval_closedL 0 value hr
+      (fvarsBelow_zero_of_not_hasFvar hv.1) hv.2.2.2 ρ
+      ⟨m.base2.acval_wellDenoted _ φ ρ, m.acval_validV _ φ ρ⟩
+    rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
+    exact hb
 
 end Ix.Kernel.Model

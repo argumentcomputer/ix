@@ -284,16 +284,21 @@ Authentic Address.blake3Pure records blobs`).
 `Ix.Kernel.Model V env` (`IxC/Kernel/Denotes.lean`) assigns a set
 `cval c φ` to every constant at every level assignment such that every
 stored constant is a member of what its type denotes (`mem`), what the
-built-in `False` denotes is empty (`false_empty`), and what the built-in `Eq`
-denotes is set equality (`eq_equality`). Definitional equalities need no
-clause: an accepted `rfl` theorem's two sides denote the same set. The
+built-in `False` denotes is empty (`false_empty`), what the built-in `Eq`
+denotes is set equality (`eq_equality`), and every stored definition denotes
+what its value denotes (`defn_value`, δ). Membership alone would let a
+constant denote any inhabitant of its type (`def P : Prop := False` with a
+theorem of type `P` would have a model in which `P` is true); the δ law rules
+that out (`Tests/Ix/Kernel/ModelLaws.lean`). β, function η, proof
+irrelevance and the literals' constructor forms hold in every model by the
+reading itself; the structure's docstring lists the definitional equalities
+that are not yet laws of it. The
 model theorem is `Ix.Kernel.model_exists` (`IxC/Kernel/MainTheorem.lean`,
 upstream's statement and proof) at the prepared declarations: it holds for
 every declaration array the fold accepts, so the reader owes nothing for
-consistency. Definition values come from the kernel's model invariant
-`defn_reads` through `Ix.Kernel.Cached.checkDecls_model_defn_values`
-(`IxC/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
-equation, by upstream's design.
+consistency. The definition values come from the kernel's model invariant
+`defn_reads` (`Model.ofEnvModelM`, `IxC/Kernel/Model/Denotes.lean`). Theorem
+and opaque bodies have no value equation, by upstream's design.
 
 **The reference level** (`IxC/Kernel/Verify/Cached/Reference.lean`,
 `PerBlock.lean`, `IxC/Kernel/Admission/Reference.lean`): an accept of the fold

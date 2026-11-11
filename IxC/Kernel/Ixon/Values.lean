@@ -5,14 +5,14 @@ import IxC.Kernel.Verify.Cached.Reference
 
 /-! # Stored definitions denote their constants
 
-The kernel's public `Model` states types only. Its internal invariant
-`EnvModelM` also keeps `defn_reads` (`Model/Annot/EnvModelM.lean`,
-`AcvalDefnInst` in `Model/Annot/Laws.lean`): the reading of every stored
-definition's value is that constant's own leaf. Read through the kernel's
-bridge from the internal reading to the public denotation
-(`Model.Denotes_of_denoteMeta`), this gives a model of the accepted
-environment in which every stored definition's value denotes the constant
-(`checkDecls_model_defn_values`).
+The kernel's public `Model` makes every stored definition denote its value
+(`Model.defn_value`). It reads this off the internal invariant's
+`defn_reads` (`Model/Annot/EnvModelM.lean`, `AcvalDefnInst` in
+`Model/Annot/Laws.lean`): the reading of every stored definition's value is
+that constant's own leaf, and the kernel's bridge from the internal reading to
+the public denotation (`Model.Denotes_of_denoteMeta`) turns it into the
+public clause. `checkDecls_model_defn_values` below states it for the
+executed fold.
 
 The value is the stored one, i.e. the checker's annotation of the declared
 value (binder regimes computed, `let` reduced). Theorems and opaques keep

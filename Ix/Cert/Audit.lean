@@ -431,20 +431,14 @@ fields:
             Ix.Kernel.SetTheory.Mem b A →
               Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app E A) a) b =
                 Ix.Kernel.SetTheory.eqv a b
-  Ix.Cert.ValueModel.defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
+  Ix.Kernel.Model.defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
       (hint : Ix.Kernel.ReducibilityHint),
       Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
         ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
           Ix.Kernel.Denotes self.cval env φ ρ value (self.cval cv.name φ)
 constructor:
   Ix.Cert.ValueModel.mk.{w} {md : Ix.Kernel.Mode} {V : Type w} [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env md}
-    (toModel : Ix.Kernel.Model V env)
-    (defn_value :
-      ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md) (hint : Ix.Kernel.ReducibilityHint),
-        Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
-          ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),
-            Ix.Kernel.Denotes toModel.cval env φ ρ value (toModel.cval cv.name φ)) :
-    Ix.Cert.ValueModel V env
+    (toModel : Ix.Kernel.Model V env) : Ix.Cert.ValueModel V env
 field notation resolution order:
   Ix.Cert.ValueModel, Ix.Kernel.Model -/
 #guard_msgs (whitespace := lax) in
@@ -5763,7 +5757,7 @@ fields:
             Ix.Kernel.SetTheory.Mem b A →
               Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app (Ix.Kernel.SetTheory.app E A) a) b =
                 Ix.Kernel.SetTheory.eqv a b
-  Ix.Cert.ValueModel.defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
+  Ix.Kernel.Model.defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
       (hint : Ix.Kernel.ReducibilityHint),
       Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
         ∀ (φ : Ix.Kernel.LevelParam → Nat) (ρ : Ix.Kernel.BVarIdx → V),

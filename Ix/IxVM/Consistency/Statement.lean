@@ -36,6 +36,14 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   auxiliary constants) with a model in every set theory:
   `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
 
+A model (`Ix.Kernel.Model`, `IxC/Kernel/Denotes.lean`) interprets every claimed
+constant as a set: a member of what its type denotes, with `False` empty, `Eq`
+equality, and every definition what its value denotes. So the claimed constants
+mean what Lean means by them, not just some inhabitants of their types: a
+definition `P := False` cannot be true in the model, and no claimed constant can
+prove it. The structure's docstring lists which of Lean's definitional
+equalities it carries as laws, and which hold in every model by the reading.
+
 Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 `False`.
 
@@ -664,10 +672,10 @@ source-level statement. Its job: read the walked closure with the kernel's
 reader (`ReadIn`), order the checked declarations by the reading, produce
 `Seams.Checked` for each at its prefix, fold `Decls`'s invariant from the empty environment to a
 model (through `EnvModelOk` and `model_of_envModelOk`), restrict it to the claimed
-sub-environment (`claimedEnv`: `Denotes` agrees between `env` and `claimedEnv env` on
-terms that mention no model-family key, the lookups and projection tables being the
-same), and place the seeds
-(`SeedStored`). -/
+sub-environment (`claimedEnv`, `claimedModel`: `Denotes` agrees between `env` and
+`claimedEnv env` on terms that mention no model-family key, the lookups and projection
+tables being the same; the claimed types and definitions' values mention none), and
+place the seeds (`SeedStored`). -/
 def L7 : Prop := Records S → Decls.{u} S → ClaimPhase S → SourceSoundBounded ConsistencySpec.{u}
 
 end IxVM.Consistency

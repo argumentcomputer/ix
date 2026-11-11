@@ -10,7 +10,8 @@ public import IxC.Kernel.Denotes
 `Denotes` reads an environment at two places only: a constant's entry
 (`find?`, for its level parameters) and a structure's projection table
 (`findProj?`). So a model of `env` is a model of any sub-environment `env'` that
-agrees with it there, on the keys the stored types mention: `Model.restrict`.
+agrees with it there, on the keys the stored types and the definitions' values
+mention: `Model.restrict`.
 
 The keys a term mentions are `Expr.RefsIn`'s; a literal is read through its
 constructor form, whose keys are `LitKeys`. The consistency statement uses this
@@ -114,14 +115,16 @@ theorem Denotes.const_back {cval : Key md → (LevelParam → Nat) → V} {env e
   | const hf hlen => exact .const (by rw [← hfind]; exact hf) hlen
 
 /-- **A model restricts** to a sub-environment that agrees with the environment
-on the keys its stored types mention (and on `False` and `Eq`) and on projection
-tables. -/
+on the keys its stored types and definitions' values mention (and on `False`
+and `Eq`) and on projection tables. -/
 def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     (hfind : ∀ n, K n → env'.find? n = env.find? n)
     (hproj : ∀ T i, env'.findProj? T i = env.findProj? T i)
     (hlit : LitKeys K)
     (hsub : ∀ c ∈ env'.consts, c ∈ env.consts)
     (htype : ∀ c ∈ env'.consts, c.toConstantVal.type.RefsIn K)
+    (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ env'.consts →
+      value.RefsIn K)
     (hF : K falseName) (hE : K eqName) : Model V env' where
   cval := M.cval
   mem := fun c hc φ ρ =>
@@ -130,5 +133,8 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
   false_empty := fun φ ρ F h => M.false_empty φ ρ F (Denotes.const_back (hfind _ hF) h)
   eq_equality := fun u φ ρ E A a b h =>
     M.eq_equality u φ ρ E A a b (Denotes.const_back (hfind _ hE) h)
+  defn_value := fun cv value hint hc φ ρ =>
+    Denotes.mono_env hfind hproj hlit (M.defn_value cv value hint (hsub _ hc) φ ρ)
+      (hvalue cv value hint hc)
 
 end Ix.Kernel

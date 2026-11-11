@@ -126,22 +126,6 @@ theorem Denotes.const_push {env : Env md} {env' : Env md'} (h : EnvRel P f env e
     rw [hlps] at hd'
     exact hd'
 
-/-- **A model of the renamed environment is a model of the original.** -/
-def Model.pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
-    (M : Model V env') : Model V env where
-  cval := pullCval f M.cval
-  mem c hc φ ρ := by
-    obtain ⟨T, hT, hmem⟩ := M.mem _ (h.mem hc) φ ρ
-    have hty : (c.mapKeys f).toConstantVal.type = c.toConstantVal.type.mapKeys f := by
-      simp [ConstantInfo.mapKeys_toConstantVal]
-    rw [hty] at hT
-    refine ⟨T, Denotes.pullback h hT rfl (h.all c hc).toConstantVal.2, ?_⟩
-    have hn : (c.mapKeys f).name = c.name.map f := ConstantInfo.mapKeys_name f c
-    rw [hn] at hmem
-    exact hmem
-  false_empty φ ρ F hF := M.false_empty φ ρ F (Denotes.const_push h hF)
-  eq_equality u φ ρ E A a b hE := M.eq_equality u φ ρ E A a b (Denotes.const_push h hE)
-
 /-- **The value clause, pulled back**: if every definition of `env'` denotes
 its value, so does every definition of `env` at the pulled-back values. -/
 theorem defn_value_pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
@@ -157,5 +141,22 @@ theorem defn_value_pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env 
   have hc' := h.mem hc
   have hg := h.all _ hc
   exact Denotes.pullback h (hv _ _ hint hc' φ ρ) rfl hg.2
+
+/-- **A model of the renamed environment is a model of the original.** -/
+def Model.pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+    (M : Model V env') : Model V env where
+  cval := pullCval f M.cval
+  mem c hc φ ρ := by
+    obtain ⟨T, hT, hmem⟩ := M.mem _ (h.mem hc) φ ρ
+    have hty : (c.mapKeys f).toConstantVal.type = c.toConstantVal.type.mapKeys f := by
+      simp [ConstantInfo.mapKeys_toConstantVal]
+    rw [hty] at hT
+    refine ⟨T, Denotes.pullback h hT rfl (h.all c hc).toConstantVal.2, ?_⟩
+    have hn : (c.mapKeys f).name = c.name.map f := ConstantInfo.mapKeys_name f c
+    rw [hn] at hmem
+    exact hmem
+  false_empty φ ρ F hF := M.false_empty φ ρ F (Denotes.const_push h hF)
+  eq_equality u φ ρ E A a b hE := M.eq_equality u φ ρ E A a b (Denotes.const_push h hE)
+  defn_value := defn_value_pullback h M.defn_value
 
 end Ix.Kernel
