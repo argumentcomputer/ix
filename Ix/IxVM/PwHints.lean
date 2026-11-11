@@ -616,7 +616,6 @@ records refused. -/
 def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
     Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
   let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-  let mut pending : Array Address := #[]
   let mut st : Ix.Kernel.Reader.State .anon := {}
   let mut pos := 0
   let mut ok := 0
@@ -653,12 +652,7 @@ def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
             if failure.isNone then
               failure := some (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
     if let some why := failure then failures := failures.push (a, why)
-    if failure.isSome || unread then pending := pending.push a
-  -- second pass, after IxC's own: the records it did not install, in order, put in by the
-  -- walk; IxC's checks never see a constant put in this way (its binder congruences
-  -- compare data, and the walk's are not checked), so they cannot refuse in cascade
-  if lenient then
-    for a in pending do
+    if lenient && (failure.isSome || unread) then
       if let some c := s.store[a]? then
         for ci in lenientInfos s.cx fe s.cx.hint a c do
           if (fe.find? ci.name).isNone then fe := fe.push ci
