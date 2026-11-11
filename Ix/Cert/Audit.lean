@@ -1002,6 +1002,7 @@ fun maxUnivNodes => do
   let __do_lift ← Ixon.getTagN 0
   have numUnivs : Nat := __do_lift.value.toNat
   let _ ← Ix.Cert.RecordRefs.skipUnivArray numUnivs maxUnivNodes
+  let _ ← Ixon.getBinders
   pure (refs, block) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.getRefs
@@ -3697,7 +3698,8 @@ fun ixe order =>
   ∀ (a : Address),
     a ∈ order →
       ∀ (lc : Ixon.LazyConstant),
-        ixe.consts.get? a = some lc → ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes -/
+        ixe.consts.get? a = some lc →
+          ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Stream.StoredCanonical
 

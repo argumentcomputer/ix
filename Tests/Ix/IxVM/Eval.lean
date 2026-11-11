@@ -23,7 +23,7 @@ private def idValue : Ixon.Expr :=
 
 private def definition (ty value : Ixon.Expr) (refs : Array Address := #[])
     (lvls : UInt64 := 0) (univs : Array Ixon.Univ := #[.zero]) : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, lvls, ty, value⟩, #[], refs, univs⟩
+  ⟨.defn ⟨.defn, .safe, lvls, ty, value⟩, #[], refs, univs, #[]⟩
 
 private def withValue (c : Ixon.Constant) (value : Ixon.Expr) : Ixon.Constant :=
   match c.info with
@@ -172,23 +172,23 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   r.build <| execute "input without a body"
     (← witness axiomEnv axiomInput idOutput) (some "")
   for (label, kind) in [("theorem body", Ix.DefKind.thm), ("opaque body", .opaq)] do
-    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, beta⟩, #[], #[], #[.zero]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, beta⟩, #[], #[], #[.zero], #[]⟩
     let (fixture, a) := storeConstant {} c
     let fixture := { fixture with anonHints := fixture.anonHints.insert a .opaque }
     r.build <| execute label (← witness fixture a idOutput)
     r.build <| execute s!"output must be an ordinary definition (input with a {label})"
       (← witness env input c) (some "output must be a definition")
   for safety in [Ix.DefinitionSafety.unsaf, .part] do
-    let c : Ixon.Constant := ⟨.defn ⟨.defn, safety, 0, idType, idValue⟩, #[], #[], #[.zero]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨.defn, safety, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
     let (fixture, a) := storeConstant {} c
     r.build <| execute s!"{repr safety} subject" (← witness fixture a idOutput)
       (some "unsafe or partial")
     r.build <| execute s!"{repr safety} output" (← witness env input c)
       (some "unsafe or partial output")
   let block : Ixon.Constant :=
-    ⟨.muts #[.defn ⟨.defn, .safe, 0, idType, beta⟩], #[], #[], #[.zero]⟩
+    ⟨.muts #[.defn ⟨.defn, .safe, 0, idType, beta⟩], #[], #[], #[.zero], #[]⟩
   let (fixture, ba) := storeConstant {} block
-  let projection : Ixon.Constant := ⟨.dPrj ⟨0, ba⟩, #[], #[], #[]⟩
+  let projection : Ixon.Constant := ⟨.dPrj ⟨0, ba⟩, #[], #[], #[], #[]⟩
   let (fixture, pa) := storeConstant fixture projection
   r.build <| execute "mutual definition projection" (← witness fixture pa idOutput)
   let tree := Ix.AssumptionTree.canonical #[dep] |>.get!
@@ -272,7 +272,7 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   r.build <| execute "captured variable with the same type"
     (← witness captureEnv captureInput (definition captureTy captured)) (some "result does not match")
   for (label, kind) in [("theorem reference", Ix.DefKind.thm), ("opaque reference", .opaq)] do
-    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, idValue⟩, #[], #[], #[.zero]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
     let (fixture, a) := storeConstant {} c
     let (fixture, b) := storeConstant fixture (withValue c beta)
     let fixture := { fixture with anonHints := fixture.anonHints.insert a .opaque |>.insert b .opaque }

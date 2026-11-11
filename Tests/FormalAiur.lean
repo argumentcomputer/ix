@@ -15,7 +15,7 @@ private def evalCases : Except String (Array Ix.AiurInvocation.Case) := do
   let ty : Ixon.Expr := .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
   let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
   let beta : Ixon.Expr := .app (.leanLam ty (.var 0)) value
-  let constant v : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, ty, v⟩, #[], #[], #[.zero]⟩
+  let constant v : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, ty, v⟩, #[], #[], #[.zero], #[]⟩
   let input := constant beta
   let output := constant value
   let ia := Address.blake3 (Ixon.ser input)
@@ -39,7 +39,7 @@ private def controllerEnv : Ixon.Env := Id.run do
     let body := if i == 0 then value else if i == 1 then .ref 0 #[]
       else .app (.leanLam ty (.var 0)) (.ref 0 #[])
     let c : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, ty, body⟩,
-      #[], prior.toArray, #[.zero]⟩
+      #[], prior.toArray, #[.zero], #[]⟩
     let addr := Address.blake3 (Ixon.ser c)
     env := env.storeConst addr c
     env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
@@ -65,7 +65,7 @@ that would let the circuit skip checking it; the control shows the circuit
 rejects it when it is checked. -/
 private def assumptionCases : Except String (Array Ix.AiurInvocation.Case) := do
   let prop : Ixon.Expr := .sort 0
-  let bad : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, prop, prop⟩, #[], #[], #[.zero]⟩
+  let bad : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, prop, prop⟩, #[], #[], #[.zero], #[]⟩
   let ba := Address.blake3 (Ixon.ser bad)
   let env := ({} : Ixon.Env).storeConst ba bad
   let env := { env with anonHints := env.anonHints.insert ba (.regular 0) }
@@ -147,7 +147,7 @@ private def claimRevealBinderModes : IO (String × ClaimWitness) := do
       (.lam .affine (.sort 0)
         (.all .erased .shared (.sort 0) (.var 0)))
   let c : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero]⟩
+    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero], #[]⟩
   let addr := Address.blake3 (Ixon.ser c)
   let ixonEnv := ({} : Ixon.Env).storeConst addr c
   let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr typ))

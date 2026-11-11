@@ -6,34 +6,11 @@
 //! The sharing vector is stored at the Constant level, shared across
 //! all expressions in the constant (including mutual block members).
 
-#![allow(clippy::needless_
-  pub fn gen_binder_node(g: &mut Gen) -> BinderNode {
-    match u8::arbitrary(g) % 5 {
-      0 => BinderNode::Never,
-      1 => BinderNode::Zero,
-      2 => BinderNode::IfAllZero(
-        (0..gen_range(g, 0..4)).map(|_| u64::arbitrary(g)).collect(),
-      ),
-      3 => BinderNode::Share(u64::arbitrary(g)),
-      _ => BinderNode::Undecided,
-    }
-  }
-
-  /// Arbitrary sections: neither sorted nor canonical, which the codec
-  /// round-trips all the same.
-  pub fn gen_binders(g: &mut Gen) -> Vec<BinderBlock> {
-    (0..gen_range(g, 0..3))
-      .map(|_| BinderBlock {
-        shared: bool::arbitrary(g),
-        index: u64::arbitrary(g),
-        variant: u64::arbitrary(g),
-        nodes: (0..gen_range(g, 0..5)).map(|_| gen_binder_node(g)).collect(),
-      })
-      .collect()
-  }
-pass_by_value)]
+#![allow(clippy::needless_pass_by_value)]
 
 use std::sync::Arc;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
@@ -361,25 +338,213 @@ impl Constant {
     }
   }
 
-  /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`):
-  /// blocks strictly sorted by key, a root block at variant 0, and every
-  /// `IfAllZero` parameter list nonempty, strictly ascending and below
-  /// `max_lvls`.
-  pub fn binders_canonical(&self) -> bool {
-    let lvls = self.max_lvls();
-    self.binders.windows(2).all(|w| w[0].key() < w[1].key())
-      && self.binders.iter().all(|b| {
-        (b.shared || b.variant == 0)
-          && b.nodes.iter().all(|n| match n {
-            BinderNode::IfAllZero(ps) => {
-              !ps.is_empty()
-                && ps.windows(2).all(|w| w[0] < w[1])
-                && ps.iter().all(|p| *p < lvls)
-            },
-            _ => true,
-          })
-      })
+  /// The record's root expressions, in the order its binder-data section
+  /// numbers them (`Ixon.ConstantInfo.binderRoots`): a definition's type and
+  /// value; an axiom's or quotient's type; a recursor's type and its rules'
+  /// right-hand sides; an inductive's type and its constructors' types; a
+  /// block's members in order. A projection has none.
+  pub fn binder_roots(&self) -> Vec<&Expr> {
+    fn member<'a>(m: &'a MutConst, out: &mut Vec<&'a Expr>) {
+      match m {
+        MutConst::Defn(d) => {
+          out.push(d.typ.as_ref());
+          out.push(d.value.as_ref());
+        },
+        MutConst::Indc(i) => {
+          out.push(i.typ.as_ref());
+          out.extend(i.ctors.iter().map(|c| c.typ.as_ref()));
+        },
+        MutConst::Recr(r) => {
+          out.push(r.typ.as_ref());
+          out.extend(r.rules.iter().map(|rule| rule.rhs.as_ref()));
+        },
+      }
+    }
+    let mut out = Vec::new();
+    match &self.info {
+      ConstantInfo::Defn(d) => {
+        out.push(d.typ.as_ref());
+        out.push(d.value.as_ref());
+      },
+      ConstantInfo::Recr(r) => {
+        out.push(r.typ.as_ref());
+        out.extend(r.rules.iter().map(|rule| rule.rhs.as_ref()));
+      },
+      ConstantInfo::Axio(a) => out.push(a.typ.as_ref()),
+      ConstantInfo::Quot(q) => out.push(q.typ.as_ref()),
+      ConstantInfo::CPrj(_)
+      | ConstantInfo::RPrj(_)
+      | ConstantInfo::IPrj(_)
+      | ConstantInfo::DPrj(_) => {},
+      ConstantInfo::Muts(ms) => ms.iter().for_each(|m| member(m, &mut out)),
+    }
+    out
   }
+
+  /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`):
+  /// the empty section, or the complete one (`binders_complete`).
+  pub fn binders_canonical(&self) -> bool {
+    self.binders.is_empty() || self.binders_complete()
+  }
+
+  /// The section is complete (`Ixon.Constant.bindersComplete`): blocks
+  /// strictly sorted, exactly one per root with a numbered node (variant 0)
+  /// and per sharing entry and variant a share node names, each with one node
+  /// per numbered node of its expression and of the matching kind, every
+  /// `IfAllZero` list nonempty, strictly ascending and below `max_lvls`, the
+  /// variants of an entry numbered in order of first occurrence (roots in
+  /// order, each in pre-order, a share node visiting its variant there) and
+  /// pairwise distinct.
+  pub fn binders_complete(&self) -> bool {
+    if !self.binders.windows(2).all(|w| w[0].key() < w[1].key()) {
+      return false;
+    }
+    let lvls = self.max_lvls();
+    let full = binderful_entries(&self.sharing);
+    let blocks: FxHashMap<(bool, u64, u64), &[BinderNode]> =
+      self.binders.iter().map(|b| (b.key(), b.nodes.as_slice())).collect();
+    let mut walk = BinderWalk::default();
+    let budget = self.binders.len() + 1;
+    for (r, root) in self.binder_roots().into_iter().enumerate() {
+      let mut shape = Vec::new();
+      numbered_nodes(&full, root, &mut shape);
+      if shape.is_empty() {
+        continue;
+      }
+      let key = (false, r as u64, 0);
+      let Some(nodes) = blocks.get(&key) else { return false };
+      walk.visited.insert(key);
+      let cx = BinderCheck { lvls, full: &full, sharing: &self.sharing, blocks: &blocks };
+      if !cx.check(budget, &shape, nodes, &mut walk) {
+        return false;
+      }
+    }
+    if walk.visited.len() != self.binders.len() {
+      return false;
+    }
+    for b in self.binders.iter().filter(|b| b.shared) {
+      if self.binders.iter().any(|o| {
+        o.shared && o.index == b.index && o.variant < b.variant && o.nodes == b.nodes
+      }) {
+        return false;
+      }
+    }
+    true
+  }
+}
+
+/// Whether each sharing entry has a binder, directly or through the entries
+/// before it (`Ixon.binderfulEntries`).
+fn binderful_entries(sharing: &[Arc<Expr>]) -> Vec<bool> {
+  fn has_binder(full: &[bool], e: &Expr) -> bool {
+    match e {
+      Expr::Lam(..) | Expr::All(..) => true,
+      Expr::App(f, a) => has_binder(full, f) || has_binder(full, a),
+      Expr::Let(_, t, v, b) => {
+        has_binder(full, t) || has_binder(full, v) || has_binder(full, b)
+      },
+      Expr::Prj(_, _, v) => has_binder(full, v),
+      Expr::Share(n) => full.get(*n as usize).copied().unwrap_or(false),
+      _ => false,
+    }
+  }
+  let mut full = Vec::with_capacity(sharing.len());
+  for e in sharing {
+    let flag = has_binder(&full, e);
+    full.push(flag);
+  }
+  full
+}
+
+/// The numbered nodes of `e` in pre-order (`Ixon.Expr.numberedNodes`): `None`
+/// for a `Lam` or `All`, `Some(n)` for a `Share` of an entry with a binder.
+fn numbered_nodes(full: &[bool], e: &Expr, acc: &mut Vec<Option<usize>>) {
+  match e {
+    Expr::Lam(_, t, b) | Expr::All(_, _, t, b) => {
+      acc.push(None);
+      numbered_nodes(full, t, acc);
+      numbered_nodes(full, b, acc);
+    },
+    Expr::App(f, a) => {
+      numbered_nodes(full, f, acc);
+      numbered_nodes(full, a, acc);
+    },
+    Expr::Let(_, t, v, b) => {
+      numbered_nodes(full, t, acc);
+      numbered_nodes(full, v, acc);
+      numbered_nodes(full, b, acc);
+    },
+    Expr::Prj(_, _, v) => numbered_nodes(full, v, acc),
+    Expr::Share(n) => {
+      if full.get(*n as usize).copied().unwrap_or(false) {
+        acc.push(Some(*n as usize));
+      }
+    },
+    _ => {},
+  }
+}
+
+#[derive(Default)]
+struct BinderWalk {
+  visited: FxHashSet<(bool, u64, u64)>,
+  variants: FxHashMap<usize, u64>,
+}
+
+struct BinderCheck<'a> {
+  lvls: u64,
+  full: &'a [bool],
+  sharing: &'a [Arc<Expr>],
+  blocks: &'a FxHashMap<(bool, u64, u64), &'a [BinderNode]>,
+}
+
+impl BinderCheck<'_> {
+  /// `Ixon.checkBinderNodes`.
+  fn check(
+    &self,
+    fuel: usize,
+    shape: &[Option<usize>],
+    nodes: &[BinderNode],
+    walk: &mut BinderWalk,
+  ) -> bool {
+    if fuel == 0 || shape.len() != nodes.len() {
+      return false;
+    }
+    for (kind, node) in shape.iter().zip(nodes) {
+      match (kind, node) {
+        (None, BinderNode::Share(_)) => return false,
+        (None, BinderNode::IfAllZero(ps)) => {
+          if ps.is_empty()
+            || !ps.windows(2).all(|w| w[0] < w[1])
+            || !ps.iter().all(|p| *p < self.lvls)
+          {
+            return false;
+          }
+        },
+        (None, _) => {},
+        (Some(n), BinderNode::Share(v)) => {
+          let key = (true, *n as u64, *v);
+          if walk.visited.contains(&key) {
+            continue;
+          }
+          if *v != walk.variants.get(n).copied().unwrap_or(0) {
+            return false;
+          }
+          let Some(entry) = self.sharing.get(*n) else { return false };
+          let Some(sub) = self.blocks.get(&key) else { return false };
+          walk.visited.insert(key);
+          walk.variants.insert(*n, v + 1);
+          let mut sub_shape = Vec::new();
+          numbered_nodes(self.full, entry, &mut sub_shape);
+          if !self.check(fuel - 1, &sub_shape, sub, walk) {
+            return false;
+          }
+        },
+        (Some(_), _) => return false,
+      }
+    }
+    true
+  }
+
 }
 
 // ============================================================================
@@ -573,6 +738,31 @@ pub mod tests {
     }
   }
 
+  pub fn gen_binder_node(g: &mut Gen) -> BinderNode {
+    match u8::arbitrary(g) % 5 {
+      0 => BinderNode::Never,
+      1 => BinderNode::Zero,
+      2 => BinderNode::IfAllZero(
+        (0..gen_range(g, 0..4)).map(|_| u64::arbitrary(g)).collect(),
+      ),
+      3 => BinderNode::Share(u64::arbitrary(g)),
+      _ => BinderNode::Undecided,
+    }
+  }
+
+  /// Arbitrary sections: neither sorted nor canonical, which the codec
+  /// round-trips all the same.
+  pub fn gen_binders(g: &mut Gen) -> Vec<BinderBlock> {
+    (0..gen_range(g, 0..3))
+      .map(|_| BinderBlock {
+        shared: bool::arbitrary(g),
+        index: u64::arbitrary(g),
+        variant: u64::arbitrary(g),
+        nodes: (0..gen_range(g, 0..5)).map(|_| gen_binder_node(g)).collect(),
+      })
+      .collect()
+  }
+
   pub fn gen_constant(g: &mut Gen) -> Constant {
     Constant {
       info: gen_constant_info(g),
@@ -624,7 +814,7 @@ pub mod tests {
   /// two variants of a sharing entry, a share node and the sentinel.
   fn binder_fixture() -> Constant {
     let typ = Expr::all(Expr::sort(0), Expr::share(0));
-    let value = Expr::lam(Expr::sort(0), Expr::var(0));
+    let value = Expr::lam(Expr::sort(0), Expr::share(0));
     let defn = Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
@@ -643,13 +833,13 @@ pub mod tests {
         shared: false,
         index: 0,
         variant: 0,
-        nodes: vec![BinderNode::IfAllZero(vec![0, 2]), BinderNode::Share(1)],
+        nodes: vec![BinderNode::IfAllZero(vec![0, 2]), BinderNode::Share(0)],
       },
       BinderBlock {
         shared: false,
         index: 1,
         variant: 0,
-        nodes: vec![BinderNode::Never],
+        nodes: vec![BinderNode::Never, BinderNode::Share(1)],
       },
       BinderBlock {
         shared: true,
@@ -686,8 +876,8 @@ pub mod tests {
       section,
       vec![
         4, // four blocks
-        0, 0, 0, 2, 2, 2, 0, 2, 3, 1, // root 0: ifAllZero [0, 2], share 1
-        0, 1, 0, 1, 0, // root 1: never
+        0, 0, 0, 2, 2, 2, 0, 2, 3, 0, // root 0: ifAllZero [0, 2], share 0
+        0, 1, 0, 2, 0, 3, 1, // root 1: never, share 1
         1, 0, 0, 1, 1, // entry 0, variant 0: zero
         1, 0, 1, 1, 4, // entry 0, variant 1: undecided
       ]
@@ -708,6 +898,12 @@ pub mod tests {
       c
     };
     // Every form below still round-trips; only the canonical form rejects it.
+    let block = |shared, index, variant, nodes: Vec<BinderNode>| BinderBlock {
+      shared,
+      index,
+      variant,
+      nodes,
+    };
     let cases = [
       with(&|b| b.swap(0, 1)),                 // blocks out of order
       with(&|b| b.push(b[3].clone())),         // a repeated key
@@ -716,23 +912,37 @@ pub mod tests {
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![2, 0])), // descending
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![1, 1])), // repeated
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![3])), // not below lvls
+      with(&|b| b.push(block(true, 0, 2, vec![]))), // an empty block
+      with(&|b| b.push(block(true, 0, 2, vec![BinderNode::Never]))), // a dead variant
+      with(&|b| {
+        b.remove(1);
+      }), // a missing root block
+      with(&|b| {
+        b.remove(3);
+      }), // a missing variant
+      with(&|b| {
+        b[0].nodes[1] = BinderNode::Share(1);
+        b[1].nodes[1] = BinderNode::Share(0);
+      }), // variants out of first-occurrence order
+      with(&|b| b[3].nodes = vec![BinderNode::Zero]), // two equal variants
+      with(&|b| b[2].nodes = vec![BinderNode::Share(0)]), // a share node at a binder
+      with(&|b| b[0].nodes[1] = BinderNode::Never), // a binder node at a share
+      with(&|b| b[2].nodes = vec![BinderNode::Zero, BinderNode::Zero]), // a node too many
+      with(&|b| b.push(block(true, 1, 0, vec![BinderNode::Never]))), // no such entry
     ];
     for c in &cases {
       assert!(constant_roundtrip(c));
       assert!(!c.binders_canonical(), "{:?}", c.binders);
     }
-    // A projection's level count is 0: any parameter is out of range.
-    let prj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
-      idx: 0,
-      block: Address::hash(b"block"),
-    }))
-    .with_binders(vec![BinderBlock {
-      shared: false,
-      index: 0,
-      variant: 0,
-      nodes: vec![BinderNode::IfAllZero(vec![0])],
-    }]);
-    assert!(!prj.binders_canonical());
+    // A projection carries no binder data: any section is noncanonical.
+    for node in [BinderNode::IfAllZero(vec![0]), BinderNode::Never] {
+      let prj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
+        idx: 0,
+        block: Address::hash(b"block"),
+      }))
+      .with_binders(vec![block(false, 0, 0, vec![node])]);
+      assert!(!prj.binders_canonical());
+    }
   }
 
   #[test]
@@ -740,7 +950,7 @@ pub mod tests {
     let c = binder_fixture();
     let mut buf = Vec::new();
     c.put(&mut buf);
-    let section_start = buf.len() - 26;
+    let section_start = buf.len() - 28;
     // An unknown node tag.
     let mut bad = buf.clone();
     bad[section_start + 5] = 5;

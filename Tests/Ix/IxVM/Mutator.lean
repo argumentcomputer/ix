@@ -147,7 +147,7 @@ def storeMutated (env : Ixon.Env) (block : Ixon.Constant) (ms : Array Ixon.MutCo
     match member with
     | .indc ind =>
       for ci in [:ind.ctors.size] do
-        let cw : Ixon.Constant := ⟨.cPrj ⟨i.toUInt64, ci.toUInt64, blockAddr⟩, #[], #[], #[]⟩
+        let cw : Ixon.Constant := ⟨.cPrj ⟨i.toUInt64, ci.toUInt64, blockAddr⟩, #[], #[], #[], #[]⟩
         env := env.storeConst (Address.blake3 (Ixon.ser cw)) cw
     | .defn _ => env := { env with anonHints := env.anonHints.insert a (.regular 0) }
     | _ => pure ()

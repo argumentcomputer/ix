@@ -170,7 +170,7 @@ def encDefinition (nm : Names) (cv : ConstantVal .anon) (value : Expr .anon) (ki
       let v ← encExpr nm lps (fun _ => none) value
       pure (t, v) : EncM _).run {}
   let c : Ixon.Constant := ⟨.defn { kind := kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v },
-    #[], s.refs, s.univs⟩
+    #[], s.refs, s.univs, #[]⟩
   let a := addressOf c
   return { records := #[(a, c)], keys := #[(cv.name, a)], blobs := s.blobs,
            hints := match hint with | some h => #[(a, hintOf h)] | none => #[] }
@@ -200,7 +200,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       pure (t, cs) : EncM _).run {}
   let ind : Ixon.Inductive := { isUnsafe := false, lvls := lps.length.toUInt64, params := nP.toUInt64,
                                 indices := nIdx.toUInt64, typ, ctors := ctorRecs }
-  let blockC : Ixon.Constant := ⟨.muts #[.indc ind], #[], s.refs, s.univs⟩
+  let blockC : Ixon.Constant := ⟨.muts #[.indc ind], #[], s.refs, s.univs, #[]⟩
   let blockA := addressOf blockC
   let iprj := projRecord (.iPrj ⟨0, blockA⟩)
   let iprjA := addressOf iprj
@@ -231,7 +231,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       { k := k, isUnsafe := false, lvls := rlps.length.toUInt64,
         params := nP.toUInt64, indices := (mI - rP).toUInt64, motives := 1,
         minors := ctors.length.toUInt64, typ := rtyp, rules := rrules }
-    let recC : Ixon.Constant := ⟨.recr recR, #[], rs.refs, rs.univs⟩
+    let recC : Ixon.Constant := ⟨.recr recR, #[], rs.refs, rs.univs, #[]⟩
     let recA := addressOf recC
     out := { out with records := out.records.push (recA, recC), keys := out.keys.push (cvR.name, recA),
                       blobs := out.blobs ++ rs.blobs }

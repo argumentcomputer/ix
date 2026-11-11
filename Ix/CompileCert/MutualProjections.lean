@@ -26,10 +26,10 @@ def memberProjection (owner : Address) (index : UInt64) (source : MutConst) : Ix
   ⟨match source with
     | .defn _ => .dPrj ⟨index, owner⟩
     | .indc _ => .iPrj ⟨index, owner⟩
-    | .recr _ => .rPrj ⟨index, owner⟩, #[], #[], #[]⟩
+    | .recr _ => .rPrj ⟨index, owner⟩, #[], #[], #[], #[]⟩
 
 def constructorProjection (owner : Address) (index ctorIndex : UInt64) : Ixon.Constant :=
-  ⟨.cPrj ⟨index, ctorIndex, owner⟩, #[], #[], #[]⟩
+  ⟨.cPrj ⟨index, ctorIndex, owner⟩, #[], #[], #[], #[]⟩
 
 def sourceRows (owner : Address) (index : UInt64) (source : MutConst) : List (Ix.Name × Ixon.Constant) :=
   (source.name, memberProjection owner index source) ::

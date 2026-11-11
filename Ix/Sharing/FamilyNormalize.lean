@@ -121,6 +121,6 @@ def normalizeFamily (cfg : Config) (layout : ShareLayout) (constant : Ixon.Const
   let expanded ← expand limits constant.sharing (constantInfoRoots constant.info) true
   let result ← familyExpanded cfg layout limits expanded
   let info ← withRoots constant.info result.result.roots
-  return ({ constant with info, sharing := result.result.sharing }, result)
+  return ({ constant with info, sharing := result.result.sharing, binders := #[] }, result)
 
 end Ix.Sharing.Family

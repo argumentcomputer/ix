@@ -678,21 +678,21 @@ def blockProjectionAddrs (b : Address) (lc : Ixon.LazyConstant) : Array Address 
   if !Ix.Cert.blockHeader lc.rawBytes then #[]
   else
     match lc.get? with
-    | some ⟨.muts components, _, _, _⟩ => Id.run do
+    | some ⟨.muts components, _, _, _, _⟩ => Id.run do
       let mut out : Array Address := #[]
       for idx in [:components.size] do
         match components[idx]! with
         | .indc iv =>
-          let iProj : Ixon.Constant := ⟨.iPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          let iProj : Ixon.Constant := ⟨.iPrj ⟨idx.toUInt64, b⟩, #[], #[], #[], #[]⟩
           out := out.push (Address.admissionHash (Ixon.serConstant iProj))
           for cidx in [:iv.ctors.size] do
-            let cProj : Ixon.Constant := ⟨.cPrj ⟨idx.toUInt64, cidx.toUInt64, b⟩, #[], #[], #[]⟩
+            let cProj : Ixon.Constant := ⟨.cPrj ⟨idx.toUInt64, cidx.toUInt64, b⟩, #[], #[], #[], #[]⟩
             out := out.push (Address.admissionHash (Ixon.serConstant cProj))
         | .defn _ =>
-          let dProj : Ixon.Constant := ⟨.dPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          let dProj : Ixon.Constant := ⟨.dPrj ⟨idx.toUInt64, b⟩, #[], #[], #[], #[]⟩
           out := out.push (Address.admissionHash (Ixon.serConstant dProj))
         | .recr _ =>
-          let rProj : Ixon.Constant := ⟨.rPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          let rProj : Ixon.Constant := ⟨.rPrj ⟨idx.toUInt64, b⟩, #[], #[], #[], #[]⟩
           out := out.push (Address.admissionHash (Ixon.serConstant rProj))
       return out
     | _ => #[]

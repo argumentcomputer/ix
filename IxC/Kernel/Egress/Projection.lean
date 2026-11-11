@@ -76,20 +76,20 @@ def writeProjectionC (layout : ProjectionLayout) (reference : ConstRef Address) 
   match layout, reference with
   | .definition, .member owner i => do
     let index ← wordC i
-    return ⟨⟨.dPrj ⟨index.val, owner⟩, #[], #[], #[]⟩, by
+    return ⟨⟨.dPrj ⟨index.val, owner⟩, #[], #[], #[], #[]⟩, by
       simpa only [index.property] using ProjectionReads.definition ⟨index.val, owner⟩⟩
   | .inductive, .member owner i => do
     let index ← wordC i
-    return ⟨⟨.iPrj ⟨index.val, owner⟩, #[], #[], #[]⟩, by
+    return ⟨⟨.iPrj ⟨index.val, owner⟩, #[], #[], #[], #[]⟩, by
       simpa only [index.property] using ProjectionReads.inductive ⟨index.val, owner⟩⟩
   | .recursor, .member owner i => do
     let index ← wordC i
-    return ⟨⟨.rPrj ⟨index.val, owner⟩, #[], #[], #[]⟩, by
+    return ⟨⟨.rPrj ⟨index.val, owner⟩, #[], #[], #[], #[]⟩, by
       simpa only [index.property] using ProjectionReads.recursor ⟨index.val, owner⟩⟩
   | .constructor, .ctor owner i c => do
     let index ← wordC i
     let ctor ← wordC c
-    return ⟨⟨.cPrj ⟨index.val, ctor.val, owner⟩, #[], #[], #[]⟩, by
+    return ⟨⟨.cPrj ⟨index.val, ctor.val, owner⟩, #[], #[], #[], #[]⟩, by
       simpa only [index.property, ctor.property] using ProjectionReads.constructor ⟨index.val, ctor.val, owner⟩⟩
   | _, _ => .error (.malformed "projection variant and kernel reference disagree")
 

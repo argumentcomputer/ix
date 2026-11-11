@@ -1,5 +1,7 @@
 module
 public import IxC.Ixon.Wire
+public import Std.Data.HashMap
+public import Std.Data.HashSet
 import all IxC.Ixon.Wire
 import all IxC.Ixon.Codec
 
@@ -180,11 +182,128 @@ def blocksAscending : List BinderBlock → Bool
   | a :: tail@(b :: _) => a.keyLt b && blocksAscending tail
   | _ => true
 
-/-- The binder data of `c` are in canonical form. -/
+/-! ### The section's structure
+
+A section is either empty (a record compiled without binder data, which a
+checker that needs a datum rejects at its first lookup) or complete: exactly
+the blocks the record's expressions call for, each with exactly one node per
+numbered node, its kind matching, every share node naming a variant that the
+section holds, and each sharing entry's variants pairwise distinct and
+numbered in order of first occurrence. So a record has one canonical
+complete section for each choice of data, and the data are the only freedom
+left: a checker validates every datum it uses. -/
+
+/-- A record's root expressions, in the order the section numbers them: a
+definition's type and value; an axiom's or quotient's type; a recursor's type
+and its rules' right-hand sides; an inductive's type and its constructors'
+types; a block's members in order, each contributing its roots. A projection
+has none. -/
+def ConstantInfo.binderRoots : ConstantInfo → Array Expr
+  | .defn d => #[d.typ, d.value]
+  | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+  | .axio a => #[a.typ]
+  | .quot q => #[q.typ]
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => #[]
+  | .muts ms => ms.foldl (init := #[]) fun acc m => acc ++ match m with
+    | .defn d => #[d.typ, d.value]
+    | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
+    | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+
+/-- Whether `e` has a binder, directly or through the sharing entries before
+it (`full`, one flag per earlier entry). -/
+def Expr.hasBinderUnder (full : Array Bool) : Expr → Bool
+  | .lam .. | .all .. => true
+  | .app f a => f.hasBinderUnder full || a.hasBinderUnder full
+  | .letE _ t v b => t.hasBinderUnder full || v.hasBinderUnder full || b.hasBinderUnder full
+  | .prj _ _ v => v.hasBinderUnder full
+  | .share n => full[n.toNat]?.getD false
+  | _ => false
+
+/-- Whether each sharing entry has a binder (an entry reads the entries before
+it). -/
+def binderfulEntries (sharing : Array Expr) : Array Bool :=
+  sharing.foldl (fun out e => out.push (e.hasBinderUnder out)) #[]
+
+/-- The numbered nodes of `e`, in pre-order (type before body, function before
+argument, a `let`'s type, value, then body), appended to `acc`: `none` for a
+`lam` or `all`, `some n` for a `share` of an entry `n` with a binder. A share
+is not entered. -/
+def Expr.numberedNodes (full : Array Bool) : Expr → Array (Option Nat) → Array (Option Nat)
+  | .lam _ t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
+  | .all _ _ t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
+  | .app f a, acc => a.numberedNodes full (f.numberedNodes full acc)
+  | .letE _ t v b, acc => b.numberedNodes full (v.numberedNodes full (t.numberedNodes full acc))
+  | .prj _ _ v, acc => v.numberedNodes full acc
+  | .share n, acc => if full[n.toNat]?.getD false then acc.push (some n.toNat) else acc
+  | _, acc => acc
+
+/-- The traversal state of the structure check: the blocks visited, and per
+sharing entry the number of its variants met so far. -/
+structure BinderWalk where
+  visited : Std.HashSet (Bool × UInt64 × UInt64) := {}
+  variants : Std.HashMap Nat Nat := {}
+
+/-- Check `nodes` against the numbered nodes `shape` of their expression,
+visiting each share node's variant at its first occurrence (`fuel` bounds the
+nesting by the number of blocks). -/
+def checkBinderNodes (lvls : Nat) (full : Array Bool) (sharing : Array Expr)
+    (blocks : Std.HashMap (Bool × UInt64 × UInt64) (Array BinderNode)) :
+    Nat → Array (Option Nat) → Array BinderNode → BinderWalk → Option BinderWalk
+  | 0, _, _, _ => none
+  | fuel + 1, shape, nodes, walk => do
+    if shape.size != nodes.size then none
+    let mut walk := walk
+    for (kind, node) in shape.zip nodes do
+      match kind, node with
+      | none, .share _ => none
+      | none, node => if !node.canonical lvls then none
+      | some _, .never | some _, .zero | some _, .ifAllZero _ | some _, .undecided => none
+      | some n, .share v =>
+        let key := (true, n.toUInt64, v)
+        if walk.visited.contains key then continue
+        -- a new variant is the next one: variants are numbered in order of first occurrence
+        if v.toNat != walk.variants.getD n 0 then none
+        let some entry := sharing[n]? | none
+        let some sub := blocks[key]? | none
+        walk := { visited := walk.visited.insert key,
+                  variants := walk.variants.insert n (v.toNat + 1) }
+        walk ← checkBinderNodes lvls full sharing blocks fuel (entry.numberedNodes full #[]) sub walk
+    return walk
+
+/-- The section of `c` is complete: blocks strictly sorted, exactly one per
+root with a numbered node (variant 0) and per sharing entry and variant a share
+node names, each matching its expression, variants numbered in order of first
+occurrence and pairwise distinct. -/
+def Constant.bindersComplete (c : Constant) : Bool := Id.run do
+  unless blocksAscending c.binders.toList do return false
+  let lvls := c.info.maxLvls
+  let full := binderfulEntries c.sharing
+  let blocks : Std.HashMap (Bool × UInt64 × UInt64) (Array BinderNode) :=
+    c.binders.foldl (fun m b => m.insert (b.shared, b.index, b.variant) b.nodes) {}
+  let roots := c.info.binderRoots
+  let mut walk : BinderWalk := {}
+  for h : r in [:roots.size] do
+    let shape := roots[r].numberedNodes full #[]
+    if shape.isEmpty then continue
+    let key := (false, r.toUInt64, (0 : UInt64))
+    let some nodes := blocks[key]? | return false
+    walk := { walk with visited := walk.visited.insert key }
+    match checkBinderNodes lvls full c.sharing blocks (c.binders.size + 1) shape nodes walk with
+    | some w => walk := w
+    | none => return false
+  -- no block outside the traversal
+  unless walk.visited.size == c.binders.size do return false
+  -- an entry's variants are distinct node lists
+  for b in c.binders do
+    if b.shared then
+      for b' in c.binders do
+        if b'.shared && b'.index == b.index && b'.variant < b.variant && b'.nodes == b.nodes then
+          return false
+  return true
+
+/-- The binder data of `c` are in canonical form: the empty section, or the
+complete one (`Constant.bindersComplete`). -/
 def Constant.bindersCanonical (c : Constant) : Bool :=
-  blocksAscending c.binders.toList &&
-    c.binders.all fun block =>
-      (block.shared || block.variant == 0) &&
-        block.nodes.all (BinderNode.canonical c.info.maxLvls)
+  c.binders.isEmpty || c.bindersComplete
 
 end Ixon

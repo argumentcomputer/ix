@@ -1,3 +1,4 @@
+import Ix.Compile.BinderData
 import Ix.IxVM.PwCheck
 import Ix.IxVM.ClaimHarness
 import Ix.Shard.Environment
@@ -313,6 +314,91 @@ def measure (label : String) (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Stats :=
   IO.println s!"PWCORPUS {label}: ms={ms} {stats.render} hwm_kb={← rssKb}"
   return stats
 
+/-- The refusals and fallbacks of one witness, with the names `env` gives (`IX_PW_SHARD`). -/
+def diagnose (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
+  let mut names : Std.HashMap Address String := {}
+  for (n, named) in env.named do names := names.insert named.addr (toString n)
+  let nameOf (a : Address) : String := (names[a]?).getD (toString a)
+  let k ← IO.ofExcept (KernelEnv.ofView (View.ofBuffer io env))
+  let cut (s : String) : String := String.ofList (s.toList.take 160)
+  for (why, n) in (histogram (k.failures.map (cut ·.2))).extract 0 12 do
+    IO.println s!"PWDIAG refused {n}: {why}"
+  for (a, why) in k.failures.extract 0 25 do
+    IO.println s!"PWDIAG refused {nameOf a}: {cut why}"
+  let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
+  for a in k.owners do
+    let some c := k.setup.store[a]? | continue
+    let (_, fb, _) := annotateRecord k core a c
+    if fb > 0 then IO.println s!"PWDIAG fallbacks {fb}: {nameOf a}"
+
+private def pre (n : Nat) (s : String) : String := String.ofList (s.toList.take n)
+
+/-- The extended diagnosis of one witness (`IX_PW_DIAG2=1`): the store's
+recursor-index conflicts (records filed under one block's motive), the role
+bindings of the `Bool` roles, the install order at each refusal, and IxC's own
+record check (`checkLoop`, phase B included, no lenient install) over the same
+records in the same order. -/
+def diagnose2 (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
+  let mut allNames : Std.HashMap Address (Array String) := {}
+  for (n, named) in env.named do
+    let cur := allNames.getD named.addr #[]
+    if cur.size < 3 then allNames := allNames.insert named.addr (cur.push (toString n))
+  let nameOf (a : Address) : String :=
+    match allNames[a]? with
+    | some ns => s!"{ns.toList}@{pre 12 (toString a)}"
+    | none => pre 16 (toString a)
+  let cut (s : String) : String := pre 200 s
+  let v := View.ofBuffer io env
+  let k ← IO.ofExcept (KernelEnv.ofView v)
+  let s := k.setup
+  -- the recursor index: every record a recursor analysis files under a block's motive
+  let mut groups : Std.HashMap (Address × Nat) (Array Address) := {}
+  for (a, c) in s.store.toArray do
+    for (_, r) in Ix.Kernel.Reader.recursorMembers c do
+      if let some (m, carriers, _) := Ix.Kernel.Reader.analyseRecursor s.cx.store a c r then
+        if let some (Ix.Kernel.ConstRef.member b _) := carriers[0]? then
+          let cur := groups.getD (b, m) #[]
+          unless cur.contains a do groups := groups.insert (b, m) (cur.push a)
+  let indexed (a : Address) : Bool :=
+    match s.store[a]? with
+    | some c => (Ix.Kernel.Reader.recursorMembers c).any fun (j, _) =>
+        s.cx.index.recs.contains (.member a j)
+    | none => false
+  let mut conflicts := 0
+  for ((b, m), rs) in groups.toList do
+    if rs.size > 1 then
+      conflicts := conflicts + 1
+      if conflicts ≤ 20 then
+        let shown := rs.toList.map fun r => s!"{nameOf r} indexed={indexed r}"
+        IO.println s!"PWDIAG2 index conflict: block {nameOf b} motive {m}: {shown}"
+  IO.println s!"PWDIAG2 index conflicts: {conflicts} (of {groups.size} block motives)"
+  for (r, key) in s.cx.roles.names.toList do
+    let ks := toString key
+    if ks.startsWith "Bool" then
+      let a := match r with
+        | .member a _ => a
+        | .ctor a _ _ => a
+      IO.println s!"PWDIAG2 role {ks} -> {nameOf a} indexed={indexed a}"
+  -- the install order, and the refusals in it
+  let preRead ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude (md := .anon))
+  let first := preRead.records.map (·.1)
+  let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ k.owners)
+  let pos : Std.HashMap Address Nat := addresses.zipIdx.foldl (fun m (a, i) => m.insert a i) {}
+  IO.println s!"PWDIAG2 install order: {addresses.size} records"
+  for (a, why) in k.failures.extract 0 30 do
+    IO.println s!"PWDIAG2 refused at {(pos[a]?).getD 0}: {nameOf a}: {cut why}"
+  -- IxC's own record check over the same records, in the same order
+  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
+  let out ← Benchmarks.Kernel.CheckIxeStep.checkLoop s (fun a => #[nameOf a]) addresses {}
+    (fun row => if row.outcome == "accept" || row.outcome == "typed" then pure ()
+      else rows.modify (·.push row)) (tier := true)
+  IO.println s!"PWDIAG2 strict IxC over the same records: {out.counts.toList}"
+  for (why, n) in (histogram ((← rows.get).map (cut ·.reason))).extract 0 12 do
+    IO.println s!"PWDIAG2 strict reason {n}: {why}"
+  for row in (← rows.get).extract 0 40 do
+    IO.println s!"PWDIAG2 strict {row.outcome} at {(pos[row.address]?).getD 0}: \
+      {nameOf row.address}: {cut row.reason}"
+
 def corpus : IO UInt32 := do
   let some ixe ← IO.getEnv "IX_PW_IXE" | do IO.eprintln "IX_PW_IXE is not set"; return 1
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))
@@ -326,11 +412,18 @@ def corpus : IO UInt32 := do
     let mut total : Stats := {}
     let t0 ← IO.monoMsNow
     for (blocks, k) in shards.zipIdx do
+      let chosen := (← IO.getEnv "IX_PW_SHARD").map (·.splitOn ",")
+      if let some ks := chosen then
+        unless ks.contains (toString k) do continue
       let owned := _root_.Ix.Shard.ownedConstsForBlocks env blocks
       let (_, closure, _) ← IO.ofExcept (_root_.IxVM.ClaimHarness.shardCheckEnvClaim env owned true)
       let io := _root_.IxVM.ClaimHarness.addEntries env closure.contains
         (_root_.IxVM.ClaimHarness.seedBinding env default)
       total := total.add (← measure s!"shard {k} ({owned.size} owned, {closure.size} in closure)" env io)
+      if chosen.isSome then
+        IO.println s!"PWDIAG shard {k}"
+        diagnose env io
+        if (← IO.getEnv "IX_PW_DIAG2") == some "1" then diagnose2 env io
     IO.println s!"PWCORPUS shards total: ms={(← IO.monoMsNow) - t0} {total.render} hwm_kb={← rssKb}"
   | none => pure ()
   if (← IO.getEnv "IX_PW_WHOLE") != some "0" then
@@ -368,3 +461,128 @@ def fixture : IO UInt32 := do
   return 0
 
 end Tests.Ix.IxVM.PwHints
+
+/-! ## The compiler's sections (`Ix.Compile.BinderData`)
+
+`ixvm-binder-data` runs the compile side on the hand-made records above,
+bound to the default table with its support records: each record's section is
+the annotator's data in the section's spelling (binder-free share nodes and
+blocks dropped, "always zero" written `.zero`), canonical, with no undecided
+binder; the environment is re-addressed (each record under the hash of its
+new bytes, the binding rewritten); and a second run on the result changes
+nothing (the data do not depend on addresses, and the run is deterministic).
+
+`binder-data-corpus` (manual) checks a compiled `.ixe` (`IX_BD_IXE`): every
+record's section canonical, projections' empty, the undecided binders counted
+and named, and the sections recomputed from the artifact itself equal to the
+stored ones. -/
+
+namespace Tests.Ix.IxVM.BinderData
+
+open _root_.IxVM.PwHints
+open _root_.Ix.Compile.BinderData
+
+private def ensure (ok : Bool) (msg : String) : IO Unit :=
+  unless ok do throw (IO.userError msg)
+
+/-- The expected sections of the hand-made records. -/
+def expectedSections : List (Ixon.Constant × Array Ixon.BinderBlock) := [
+  (Tests.Ix.IxVM.PwHints.twoSorts,
+    #[⟨false, 0, 0, #[.never, .never, .share 0, .never, .never, .share 1]⟩,
+      ⟨true, 0, 0, #[.zero]⟩, ⟨true, 0, 1, #[.never]⟩]),
+  (Tests.Ix.IxVM.PwHints.letBody,
+    #[⟨false, 0, 0, #[.never]⟩, ⟨false, 1, 0, #[.never, .zero, .zero]⟩]),
+  (Tests.Ix.IxVM.PwHints.polyId, #[⟨false, 0, 0, #[.ifAllZero #[0], .ifAllZero #[0]]⟩])]
+
+/-- The serialized environment, for comparisons. -/
+private def bytesOf (env : Ixon.Env) : Except String ByteArray := Ixon.serEnv env
+
+def units : IO Unit := do
+  let base := expectedSections.foldl
+    (fun (env : Ixon.Env) (c, _) => env.storeConst (Address.blake3 (Ixon.ser c)) c) {}
+  let env ← IO.ofExcept (_root_.IxVM.ClaimHarness.withRoleTable base
+    (← IO.ofExcept _root_.Ix.Kernel.Reader.defaultTableBytes))
+  let (env', report) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env)
+  IO.println s!"[ixvm-binder-data] {report.summary}"
+  ensure report.undecided.isEmpty "an undecided binder"
+  ensure (env'.consts.size == env.consts.size) "the record count changed"
+  -- every record under the hash of its bytes, its section canonical
+  for (a, lc) in env'.consts do
+    ensure (Address.blake3 lc.rawBytes == a) s!"{a} is not the hash of its record"
+    let c ← IO.ofExcept lc.get
+    ensure c.bindersCanonical s!"{a}: the section is not canonical"
+  -- the hand-made records' sections, under their new addresses
+  for (c, sec) in expectedSections do
+    let a' := Address.blake3 (Ixon.ser { c with binders := sec })
+    ensure (env'.consts.contains a') s!"no record with the expected section {repr sec}"
+    ensure (!env.consts.contains a') "the record kept its old address"
+  -- the binding names the new addresses
+  let some b := env'.roleBinding | throw (IO.userError "the binding is gone")
+  ensure (Address.blake3 b.bytes == b.address) "the binding is not under the hash of its bytes"
+  let some t := _root_.Ix.Kernel.RoleTable.ofBytes b.bytes | throw (IO.userError "binding decode")
+  for (_, a) in t.bound do
+    ensure (env'.consts.contains a) s!"the binding names {a}, not a record"
+  -- a second run changes nothing; a run is deterministic
+  let (env'', _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env')
+  ensure ((← IO.ofExcept (bytesOf env'')) == (← IO.ofExcept (bytesOf env')))
+    "a second run changed the environment"
+  let (again, _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env)
+  ensure ((← IO.ofExcept (bytesOf again)) == (← IO.ofExcept (bytesOf env')))
+    "two runs differ"
+  -- stripping the sections gives back the compiler's environment, and an
+  -- environment mixing both is annotated as one
+  let stripped ← IO.ofExcept (_root_.Ix.Compile.BinderData.strip env')
+  ensure ((← IO.ofExcept (bytesOf stripped)) == (← IO.ofExcept (bytesOf env)))
+    "strip does not give back the compiler's environment"
+  let mixed := env'.consts.fold (fun (e : Ixon.Env) a lc => { e with consts := e.consts.insert a lc }) env
+  let (whole, _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.withBinderData mixed)
+  ensure ((← IO.ofExcept (bytesOf whole)) == (← IO.ofExcept (bytesOf env')))
+    "a mixed environment is not annotated as one"
+
+def run : IO UInt32 := do
+  try
+    units
+    IO.println "[ixvm-binder-data] passed"
+    return 0
+  catch e =>
+    IO.eprintln s!"[ixvm-binder-data] FAILED: {e}"
+    return 1
+
+private def rssKb : IO Nat := Benchmarks.Kernel.CheckIxeStep.statusKb "VmHWM:"
+
+/-- `binder-data-corpus` (manual): a compiled `.ixe`'s sections (`IX_BD_IXE`). -/
+def corpus : IO UInt32 := do
+  let some ixe ← IO.getEnv "IX_BD_IXE" | do IO.eprintln "IX_BD_IXE is not set"; return 1
+  let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))
+  IO.println s!"BDCORPUS loaded {ixe}: {env.consts.size} records, hwm_kb={← rssKb}"
+  let records ← IO.ofExcept (recordsOf env)
+  let mut stored : Std.HashMap Address (Array Ixon.BinderBlock) := {}
+  let mut nonCanonical := 0
+  let mut projections := 0
+  let mut undecided := 0
+  let mut nodes := 0
+  for (a, c) in records do
+    unless c.bindersCanonical do
+      nonCanonical := nonCanonical + 1
+      if nonCanonical ≤ 10 then IO.println s!"BDCORPUS not canonical: {a}"
+    if (roots c).isEmpty && !c.binders.isEmpty then projections := projections + 1
+    unless c.binders.isEmpty do stored := stored.insert a c.binders
+    for b in c.binders do
+      nodes := nodes + b.nodes.size
+      undecided := undecided + (b.nodes.filter (· == .undecided)).size
+  IO.println s!"BDCORPUS stored: {stored.size} records with a section, {nodes} nodes, \
+    {undecided} undecided, {nonCanonical} not canonical, {projections} projections with data"
+  let t0 ← IO.monoMsNow
+  let (sections, report) ← IO.ofExcept (_root_.Ix.Compile.BinderData.annotate env records)
+  IO.println s!"BDCORPUS recomputed in {(← IO.monoMsNow) - t0}ms: {report.summary}, \
+    hwm_kb={← rssKb}"
+  let mut differ := 0
+  for (a, _) in records do
+    unless sections.getD a #[] == stored.getD a #[] do
+      differ := differ + 1
+      if differ ≤ 10 then IO.println s!"BDCORPUS differs: {a}"
+  IO.println s!"BDCORPUS sections recomputed from the artifact that differ from the stored: {differ}"
+  report.print env "BDCORPUS" (limit := 30)
+  return (if nonCanonical == 0 && differ == 0 && projections == 0 then 0 else 1)
+
+end Tests.Ix.IxVM.BinderData

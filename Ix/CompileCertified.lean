@@ -4,6 +4,7 @@ public import Ix.Compile.ReadyCompile
 public import Ix.Resource.Validate
 public import Ix.RoleBinding.Compile
 public import Ix.Cli.Common
+public import Ix.Compile.BinderData
 public section
 
 /-!
@@ -260,13 +261,20 @@ whole toolchain's library publishes every role, so `finalize` needs exactly
 those certificates. The prefetch is always joined before returning, also on a
 refusal or a failure, or when `finalize` needed other certificates: a task
 still running when `main` returns would wait for subtasks that the runtime's
-shutdown no longer runs. -/
+shutdown no longer runs.
+
+The finalized artifact's records get their binder data
+(`Ix.Compile.BinderData.apply`: every record's section, the artifact
+re-addressed) before `validateFinalized`; `onBinders` receives the report and
+the artifact. A binder whose datum the annotator cannot decide carries the
+undecided node; with `strictBinderData` it fails the compile instead. -/
 def compileAndFinalize (source : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) (allowPartial : Bool)
     (log : String → IO Unit := fun _ => pure ())
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
-    (prefetch : Bool := false) :
+    (prefetch : Bool := false) (strictBinderData : Bool := false)
+    (onBinders : Ix.Compile.BinderData.Report → Ixon.Env → IO Unit := fun _ _ => pure ()) :
     IO (Except String (CertifiedOut × Finalization)) := do
   let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
   let certificates? ← if prefetch then
@@ -283,9 +291,17 @@ def compileAndFinalize (source : Lean.Environment)
       let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
         (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
         (prefetched? := certificates?)
+      let tb ← IO.monoMsNow
+      log s!"finalize: {tb - t0}ms, rss {← Ix.Cli.residentSetSize}"
+      let (artifact, binders) ← IO.ofExcept (Ix.Compile.BinderData.apply artifact)
+      log s!"binder data: {(← IO.monoMsNow) - tb}ms, rss {← Ix.Cli.residentSetSize}; \
+        {binders.summary}"
+      onBinders binders artifact
+      if strictBinderData && !binders.undecided.isEmpty then
+        throw (IO.userError s!"binder data: {binders.undecided.size} undecided binder(s) \
+          (--strict-binder-data)")
       IO.ofExcept (validateFinalized out.annotated artifact)
       let t1 ← IO.monoMsNow
-      log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
       let artifact := strip artifact
       let bytes ← IO.ofExcept (Ixon.serEnv artifact)
       log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"

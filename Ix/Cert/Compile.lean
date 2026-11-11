@@ -901,6 +901,7 @@ private theorem getRefs_some_header {buf : ByteArray} {off maxUnivNodes : Nat}
   obtain ⟨_, _, _, h⟩ := bind_ok h
   obtain ⟨_, _, _, h⟩ := bind_ok h
   obtain ⟨_, _, _, h⟩ := bind_ok h
+  obtain ⟨_, _, _, h⟩ := bind_ok h
   simp only [pure, EStateM.pure, EStateM.Result.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨⟨_, rfl⟩, _⟩ := h
   exact skipInfo_some_header hinfo

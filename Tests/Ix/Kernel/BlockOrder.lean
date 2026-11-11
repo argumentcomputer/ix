@@ -27,7 +27,7 @@ def indc (params : UInt64) (ctors : Array Ixon.Constructor := #[]) : Ixon.MutCon
   .indc ⟨false, 0, params, 0, .sort 0, ctors⟩
 
 def record (members : Array Ixon.MutConst) : Ixon.Constant :=
-  ⟨.muts members, #[], #[], #[.zero, .succ .zero, .var 0]⟩
+  ⟨.muts members, #[], #[], #[.zero, .succ .zero, .var 0], #[]⟩
 
 -- A block of recursors is checked in motive order: member `j` must eliminate
 -- motive `j` (the head of its result, as the reader reads it) and declare one
@@ -64,6 +64,6 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
 #guard recordCheck (record #[motive 0, indc 0]) == .ok ()
 #guard recordCheck (record #[indc 0, motive 0]) == .ok ()
 -- a record that is not a block is unconstrained
-#guard recordCheck ⟨.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩, #[], #[], #[]⟩ == .ok ()
+#guard recordCheck ⟨.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩, #[], #[], #[], #[]⟩ == .ok ()
 
 end Tests.Ix.Kernel.BlockOrder

@@ -127,6 +127,7 @@ private def binderAt (label : String) (nodes : Array Node) (ord : Nat)
     | none =>
       modify fun st => { st with report := { st.report with unaligned := st.report.unaligned + 1 } }
   | some (.share _) => missingKey s!"{label} ordinal {ord}: a share datum at a binder"
+  | some .undecided => missingKey s!"{label} ordinal {ord}: an undecided datum"
   | none => missingKey s!"{label} ordinal {ord}: no binder datum"
 
 /-- The check of one entry conversion: `nodes` its block, `e` its tree, `k`
@@ -184,7 +185,8 @@ def checkTree (a : Address) (sharing : Array Ixon.Expr) (table : Table) (label :
                 missingKey s!"{label'}: {nodes'.size} data for {used} numbered nodes"
           | none, _ => missingKey s!"{label'}: no such sharing entry"
           | _, none => missingKey s!"{label'}: no block"
-      | some (.binder _) => missingKey s!"{label} ordinal {ord}: a binder datum at a share site"
+      | some (.binder _) | some .undecided =>
+        missingKey s!"{label} ordinal {ord}: a binder datum at a share site"
       | none => missingKey s!"{label} ordinal {ord}: no share datum"
       pure (ord + 1)
     | _ => pure ord

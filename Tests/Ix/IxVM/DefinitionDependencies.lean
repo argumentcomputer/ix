@@ -23,12 +23,12 @@ private def definition (kind : Ix.DefKind) (ty value : Ixon.Expr) : Ixon.Definit
 private def block (definitions : Array Ixon.Definition)
     (sharing : Array Ixon.Expr := #[]) : Ixon.Env × Address := Id.run do
   let (source, address) := storeAt {}
-    ⟨.muts (definitions.map .defn), sharing, #[], #[.zero]⟩
+    ⟨.muts (definitions.map .defn), sharing, #[], #[.zero], #[]⟩
   let mut source := source
   let mut first := address
   for i in [:definitions.size] do
     let (updated, projection) := storeAt source
-      ⟨.dPrj ⟨i.toUInt64, address⟩, #[], #[], #[]⟩
+      ⟨.dPrj ⟨i.toUInt64, address⟩, #[], #[], #[], #[]⟩
     source := { updated with anonHints := updated.anonHints.insert projection (.regular 0) }
     if i == 0 then first := projection
   return (source, first)
@@ -48,7 +48,7 @@ def cases : Array ExploitCase := Id.run do
   for (label, kind) in [("definition", Ix.DefKind.defn), ("theorem", .thm), ("opaque", .opaq)] do
     result := result.push (asCase s!"axiom-free-self-{label}"
       "prove every proposition by citing the declaration itself"
-      (storeAt {} ⟨.defn (definition kind everyProp (.recur 0 #[])), #[], #[], #[.zero]⟩))
+      (storeAt {} ⟨.defn (definition kind everyProp (.recur 0 #[])), #[], #[], #[.zero], #[]⟩))
     result := result.push (asCase s!"mutual-self-{label}"
       "hide the same false proof in a one-member mutual block"
       (block #[definition kind everyProp (.recur 0 #[])]))
@@ -97,7 +97,7 @@ private def ixvmSafetyCases : Array ExploitCase :=
 def run : IO UInt32 := do
   let control := asCase "control-closed-identity"
     "a genuine closed proof must still be accepted"
-    (storeAt {} ⟨.defn (definition .thm identityType identityValue), #[], #[], #[.zero]⟩) true
+    (storeAt {} ⟨.defn (definition .thm identityType identityValue), #[], #[], #[.zero], #[]⟩) true
   let ixvmCases := cases.filter (fun c => !c.expectAccept) ++ ixvmSafetyCases ++ #[control]
   Tests.Ix.IxVM.runCases "ixvm-definition-dependencies" (ixvmCases.map fun c _ => c.toCase)
 
