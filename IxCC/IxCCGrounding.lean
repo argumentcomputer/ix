@@ -1,0 +1,10 @@
+import IxCCGrounding.Syntax
+import IxCCGrounding.Laws
+import IxCCGrounding.Model
+import IxCCGrounding.Lits
+import IxCCGrounding.Relation
+import IxCCGrounding.Apply
+import IxCCGrounding.Support
+import IxCCGrounding.Heads
+import IxCCGrounding.Hyps
+import IxCCGrounding.Fundamental
