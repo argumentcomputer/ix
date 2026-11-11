@@ -378,21 +378,9 @@ preserve the same axiom basis. The 445 catalog assertions include producer
 fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
 and filesystem/CLI tests. Validator 1 does not select a resource profile.
 
-The required ownership consumer regression retains authentic historical
-annotated/plain recursion bytes (a dated record of an earlier ix, outside
-this repository's history, kept as data: DO-18) under
-`fixtures/ownership/historical/annotated-recursion-cb68/`. Its pinned inventory
-includes the source twins, raw named/anonymous bytes and sidecars, original
-profile, address receipts and independent literal reference results. Tests
-verify those hashes before ingress and compare 36 complete Src/Fir/Own
-observations. A test-only adapter accepts the historical plain sidecar's
-absent or empty checked list only when no profile is present; malformed and
-nonempty orphan claims are refused. Production paired-key parsing is unchanged.
-The annotated erased contract retains its explicit plain-RC domain refusal.
-These fixtures and the valid-neighbor resource/csimp controls add no native
-interface, symbol, dependency, build seed, specification assumption or axiom.
-Historical producer acceptance remains separate from the final producer review
-and fixture refreeze.
+The valid-neighbor resource and `csimp` controls of the source suite add no
+native interface, symbol, dependency, build seed, specification assumption or
+axiom.
 
 ## Pure Lean dependencies
 

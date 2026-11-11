@@ -53,10 +53,10 @@ def fixtures : List (String × String × String) :=
    ("fib", "fixtures/ixon-v4/bench-k1/fib", "entry")]
 
 /-- Every committed role-bound closure under `fixtures/`: not the typing bundles,
-the catalogs, the handoff vectors or the dated historical records (unbound, frozen). -/
+the catalogs or the handoff vectors (unbound, frozen). -/
 def committedClosures : IO (Array System.FilePath) := do
   let all ← System.FilePath.walkDir "fixtures"
-  let skip := ["/typing/", "/catalog/", "/handoff/", "/historical/"]
+  let skip := ["/typing/", "/catalog/", "/handoff/"]
   let ixe := all.filter fun p => p.extension == some "ixe" && !skip.any fun s => (p.toString.splitOn s).length > 1
   return ixe.qsort (·.toString < ·.toString)
 

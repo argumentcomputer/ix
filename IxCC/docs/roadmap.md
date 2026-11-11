@@ -189,12 +189,11 @@ remain open.
 The later consumer regressions are installed and pass focused execution.
 The source suite now runs 8,529 assertions, including nine discriminating
 resource-bound `csimp` controls and pinned SrcEval step counts
-([source steps](source-steps.md)). Authentic historical OS04 annotated/plain
-recursion adds 36 complete Src/Fir/Own observations and 48 counted ownership
-assertions. The annotated case uses checked immortal Own and retains its
-explicit plain-RC erased-contract refusal; the plain twin uses checked plain
-RC Own. These fixtures supplement the required consumer coverage; they do
-not replace the selected producer's paired matrix or final family refreeze.
+([source steps](source-steps.md)). The dated OS04 annotated/plain recursion
+records that once added Src/Fir/Own observations of an annotated recursive
+program were retired with the kernel front end's step 4 (2026-11-11, DO-18):
+they were unbound, and the `ix` of this repository cannot write a role-bound
+successor ([CI coverage record](ci.md)).
 
 The Lam suite additionally passes 134 evaluation-order assertions; its default
 run has 28,188 assertions. Sixteen synthetic cases pass actual
@@ -1019,7 +1018,7 @@ day.
 | DO-15 | IxCC's primitive table lacks this repository's `String.back` and has a `String.Legacy.back` that Lean 4.34.1 lacks | adopt this repository's table; keep IxCC's and retire the regeneration step | Adopt (follows from fixtures from this tree); moot once the certified kernel replaces the erased checker (DC-4, decided 2026-11-14) | One table, regenerable | Low |
 | DO-16 | The catalog fixtures cannot be regenerated: this repository's assembler takes only role-bound members | keep frozen with the pin described; an IxCC-side assembler; regenerate after SP-B | Keep frozen, described, until IxCC's catalog reader takes role-bound members (SP-B reads role-bound environments but refuses a role-bound catalog piece); then regenerate with ix's assembler | No new assembler to maintain | Low |
 | DO-17 | Does the fixture regeneration gate block CI? | blocking; a report | A report until this branch lands, blocking afterwards with the refreeze procedure documented (the certified-IxVM work lands first, so it is never blocked) | A blocking gate makes every `ix` change that alters these bytes refreeze IxCC in the same pull request | Low |
-| DO-18 | Dated records whose producing commits are not in this repository (the historical annotated-recursion ownership records) | keep, described; retire | Keep as dated data, described in words | They are evidence for a retained refusal boundary | Low |
+| DO-18 | Dated records whose producing commits are not in this repository (the historical annotated-recursion ownership records) | keep, described; retire | **Retired** (2026-11-11, the kernel front end's step 4): the records were unbound, which the kernel front end refuses, and this repository's `ix` refuses their source (OS-04) at its resource admission and writes no resource profile or checked pair, so no role-bound successor exists; what they tested is in the [CI coverage record](ci.md) | They were evidence for a retained refusal boundary; their reading (the erased checker, the earlier annotator and ingress) is deleted | Low |
 | DO-19 | The unbound-envelope flag, or IxCC reading role-bound environments | — | **Closed** by the decision "byte compatibility first" (2026-11-13): IxCC reads role-bound envelopes (SP-B, implemented); `ix compile --unbound` stays only as the committed fixtures' bridge until they are refrozen in the role-bound form (SP-B), then goes | — | — |
 | DO-20 | The regenerated closures are larger (this repository's root selection adds recursors, whole logical units and checker support) | accept; add a plain-dependency closure to `ix` for IxCC | Accept | A second closure semantics in `ix` would be maintained for fixtures only; the larger closures pass ingestion and the suites unchanged | Low; kernel-evaluated recheck tests may slow |
 | DO-21 | Does the image the evaluator reads keep subterms shared? | a flat tree; a DAG with each distinct subterm once | The shared form for the evaluator, with the tree form as the specification of content | A flat image is about 6 times the closure for a small program and about 21 times for the one-megabyte closures, measured outside this tree, and a circuit hashes all it reads | Medium: a second canonical-order argument in the codec proofs |

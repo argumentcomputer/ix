@@ -95,15 +95,8 @@ executables once, then run the affected checks:
 ```sh
 lake build tests-src tests-own
 lake exe tests-src
-lake exe tests-own --only annotated-recursion
+lake exe tests-own --only resource-records
 ```
-
-The `annotated-recursion` part also runs in default `tests-own`, including the
-required Nix suite. It authenticates committed historical annotated/plain
-fixtures, checks 36 complete observations, retains the annotated plain-RC
-domain refusal and tests the local legacy empty-metadata adapter. It invokes
-no producer and changes no production parser. Keep its historical provenance
-distinct from final selected-producer acceptance and family refreeze.
 
 For consumer case, wrapper and overapplication order, build `tests-lam` once
 and run `.lake/build/bin/tests-lam --only evaluation-order`. Its 134 assertions

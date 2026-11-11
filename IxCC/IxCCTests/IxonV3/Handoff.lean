@@ -205,13 +205,14 @@ def handoff (root : System.FilePath) : IO Nat := do
   require (reducesTo (.prj 2 0 partialMk) (.prj 2 0 partialMk))
     "projection of a partial constructor application reduced"
   assertions := assertions + sigCases.size + 3
-  -- Recursive annotated closure with `PProd` `.brecOn` projections and equation theorem (`OS-04`)
-  let annotatedBytes ← IO.FS.readBinFile "fixtures/ownership/historical/annotated-recursion-cb68/Annotated.ixe"
-  let annotatedEnv ← IO.ofExcept (decodeAnonymousEnv annotatedBytes)
-  let annotatedProfile := standardProfile annotatedEnv
-  let annotatedResolved ← IO.ofExcept (Resource.Addressed.checkResources annotatedEnv annotatedProfile)
-  require (annotatedResolved.program.fields.any (fun f => f.binders > 0))
-    "expected parameterized PProd field rules in Annotated.ixe"
+  -- A recursive closure with `PProd` `.brecOn` projections and equation theorems
+  -- (`OS-16`'s plain heap program, role-bound, as `ix compile --equations` writes it)
+  let recursiveBytes ← IO.FS.readBinFile "fixtures/ownership/OS16-plain.ixe"
+  let recursiveEnv ← IO.ofExcept (decodeAnonymousEnv recursiveBytes)
+  let recursiveProfile := standardProfile recursiveEnv
+  let recursiveResolved ← IO.ofExcept (Resource.Addressed.checkResources recursiveEnv recursiveProfile)
+  require (recursiveResolved.program.fields.any (fun f => f.binders > 0))
+    "expected parameterized PProd field rules in OS16-plain.ixe"
   assertions := assertions + 2
   return assertions + 2
 

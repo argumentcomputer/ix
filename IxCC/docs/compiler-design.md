@@ -296,14 +296,12 @@ future theorem about `compile`.
 
 The required source suite tests resource-bound `csimp` rejection with an
 otherwise valid redirect that is accepted without a resource context.
-The ownership suite also uses authentic historical annotated/plain recursive
-`len` fixtures: both reach complete Src and Fir results; the annotated case
-passes checked immortal Own, and the plain twin passes checked plain RC Own.
-The annotated erased parameter remains outside the plain-RC domain. These
-consumer regressions authenticate retained bytes and preserve the refusal
-boundary; they do not establish arbitrary profile semantics or final producer
-admission. Their provenance is recorded in the
-[historical fixture directory](../fixtures/ownership/historical/annotated-recursion-cb68/README.md).
+The ownership suite's annotated fixtures are the programs the `ix` of this
+repository accepts (`fixtures/ownership/verdicts.json` records the others):
+none is recursive. `ix compile` takes no resource profile and writes no
+checked equation pair, and it refuses the annotated recursive `len` of OS-04 at
+its resource admission ("external resource interface is absent from the bound
+profile"), so the suite has no annotated recursive program.
 
 The required Lam suite also checks sixteen synthetic evaluation-order cases
 through table and relevance rechecking, lazification and erasure. Their

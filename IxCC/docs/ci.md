@@ -80,17 +80,10 @@ builds they share:
 The source suite preserves 53 resource controls and adds nine tests that
 distinguish resource-bound replacement refusal from ordinary redirect
 validation. Its installed build took 2,800 ms and complete execution 50,104 ms.
-The installed `tests-own --only annotated-recursion` gate built in 7,805 ms
-and ran in 341 ms: 48 counted assertions, five retained structural refusals,
-six local legacy-metadata controls and 36 complete Src/Fir/Own observations.
-It uses committed historical fixtures without an external producer. The
-annotated case retains its precise plain-RC domain refusal and runs the
-checked immortal Own path; the plain twin runs checked plain RC Own. These
-are local warm focused measurements, distinct from full default/Nix execution.
-The earlier default ownership suite had 9,617 assertions; retain its existing
-coverage when validating the new default suite. Fixture identities and
-limitations are in the
-[historical fixture README](../fixtures/ownership/historical/annotated-recursion-cb68/README.md).
+`tests-own` no longer has an `annotated-recursion` part: it read dated,
+unbound closures that the kernel front end refuses, and the `ix` of this
+repository cannot write their role-bound successor (the coverage record below,
+2026-11-11).
 
 The required `suites` check also runs `tests-own-plain`: 9 complete-value cases,
 83 clock controls, exact shared-field identities/counts and complete output

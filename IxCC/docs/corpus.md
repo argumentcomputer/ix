@@ -302,8 +302,7 @@ Not regenerated, and why: `fixtures/ixon-v4/typing` and `catalog` (the
 erased checker's unbound typing bundles and the catalogs over them; this
 repository's `ix` writes only role-bound environments; frozen until the
 switch to the certified kernel retires those tests or the catalog reader
-takes role-bound members), the dated `fixtures/ownership/historical` records,
-the vendored Aiur snapshot and its reference exports (not written by `ix`),
+takes role-bound members), the vendored Aiur snapshot and its reference exports (not written by `ix`),
 and `fixtures/ixon-v4/bench-k1/steps.json` (a measurement of the compiled
 code, checked by `check-steps`, rewritten by `check-steps --write`).
 

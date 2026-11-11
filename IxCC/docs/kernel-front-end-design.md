@@ -612,8 +612,8 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    kernel declined `Classical.choice` there as a non-standard axiom; the
    closures [measured](#measurements) below come from an `ix` that binds them.
    Done (2026-11-11): every committed closure is role-bound but the frozen
-   typing bundles, catalogs, resource handoff vectors and dated historical
-   records.
+   typing bundles, catalogs and resource handoff vectors (the dated
+   historical ownership records, unbound, were retired in step 4).
 2. **Move what is not typing out of the checker** (a refactor, no behaviour
    change). **Done** (2026-11-11): the block-member keys (`V3.defnProjAddr`
    and its siblings, pure BLAKE3) to [`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean);
