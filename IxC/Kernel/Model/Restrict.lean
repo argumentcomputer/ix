@@ -105,6 +105,40 @@ theorem Denotes.mono_env {cval : Key md → (LevelParam → Nat) → V} {env env
   | natLit _ ih => exact fun _ => .natLit (ih (refsIn_natLit hlit _))
   | strLit _ ih => exact fun _ => .strLit (ih (refsIn_strLit hlit _))
 
+/-- **A list denotation transports** as `Denotes.mono_env` does. -/
+theorem DenotesList.mono_env {cval : Key md → (LevelParam → Nat) → V} {env env' : Env md}
+    {φ : LevelParam → Nat} {K : Key md → Prop}
+    (hfind : ∀ n, K n → env'.find? n = env.find? n)
+    (hproj : ∀ T i, env'.findProj? T i = env.findProj? T i)
+    (hlit : LitKeys K) {ρ : BVarIdx → V} :
+    ∀ {es : List (Expr md)} {vs : List V}, DenotesList cval env φ ρ es vs →
+      (∀ e ∈ es, e.RefsIn K) → DenotesList cval env' φ ρ es vs := by
+  intro es vs h
+  induction h with
+  | nil => exact fun _ => .nil
+  | cons he _ ih =>
+    intro hK
+    exact .cons (Denotes.mono_env hfind hproj hlit he (hK _ (by simp)))
+      (ih fun e he' => hK e (by simp [he']))
+
+/-- **A telescope fit transports** as `Denotes.mono_env` does, and what remains of the
+telescope mentions only the keys the telescope does. -/
+theorem Fits.mono_env {cval : Key md → (LevelParam → Nat) → V} {env env' : Env md}
+    {φ : LevelParam → Nat} {K : Key md → Prop}
+    (hfind : ∀ n, K n → env'.find? n = env.find? n)
+    (hproj : ∀ T i, env'.findProj? T i = env.findProj? T i)
+    (hlit : LitKeys K) :
+    ∀ {ρ ρ' : BVarIdx → V} {T R : Expr md} {xs : List V},
+      Fits cval env φ ρ T xs ρ' R → T.RefsIn K → Fits cval env' φ ρ T xs ρ' R ∧ R.RefsIn K := by
+  intro ρ ρ' T R xs h
+  induction h with
+  | nil => exact fun hK => ⟨.nil, hK⟩
+  | cons hA hx _ ih =>
+    intro hK
+    simp only [Expr.RefsIn] at hK
+    obtain ⟨h1, h2⟩ := ih hK.2
+    exact ⟨.cons (Denotes.mono_env hfind hproj hlit hA hK.1) hx h1, h2⟩
+
 /-- A constant's denotation in the sub-environment is its denotation in the
 environment, at a key where they agree. -/
 theorem Denotes.const_back {cval : Key md → (LevelParam → Nat) → V} {env env' : Env md}

@@ -285,10 +285,11 @@ The kernel's other generic definitional equalities do not depend on
   form, by `Denotes`' own rules, so the literal `n + 1` and
   `Nat.succ n` denote the same set.
 
-Not yet laws of this structure: the ι rules of recursors (the quotient's
-computation rules among them: `Quot.lift` and `Quot.ind` are stored as
-recursors), structure η and unit-like η, the projection of a constructor,
-and the kernel's acceleration of `Nat` operations on literals. -/
+Not yet fields of this structure, because the checker does not yet establish
+them for every stored constant: the ι rules of recursors (`IotaLaw`, below; the
+quotient's computation rules are among them, since `Quot.lift` and `Quot.ind`
+are stored as recursors), structure η and unit-like η, the projection of a
+constructor, and the kernel's acceleration of `Nat` operations on literals. -/
 structure Model (V : Type w) [SetTheory V] (env : Env md) where
   /-- the set a constant denotes, per level assignment -/
   cval : Key md → (LevelParam → Nat) → V
@@ -318,6 +319,80 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
     ConstantInfo.defnInfo cv value hint ∈ env.consts →
     ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
       Denotes cval env φ ρ value (cval cv.name φ)
+
+/-! ## Telescopes, and the laws that are not yet fields
+
+`Model` carries a law as a field only when the checker can establish it for every
+stored constant. The laws below are stated in the same vocabulary, to be proved for
+the cases the checker covers; each becomes a field once it
+covers every case. They need two notions beyond `Denotes`: a list of terms denoting a
+list of sets, and a list of sets fitting a telescope. -/
+
+/-- `DenotesList cval env φ ρ es vs`: the terms `es` denote the sets `vs`, one by one. -/
+inductive DenotesList (cval : Key md → (LevelParam → Nat) → V) (env : Env md)
+    (φ : LevelParam → Nat) (ρ : BVarIdx → V) : List (Expr md) → List V → Prop
+  | nil : DenotesList cval env φ ρ [] []
+  | cons {e : Expr md} {es : List (Expr md)} {v : V} {vs : List V} :
+      Denotes cval env φ ρ e v → DenotesList cval env φ ρ es vs →
+      DenotesList cval env φ ρ (e :: es) (v :: vs)
+
+/-- **Sets fitting a telescope**: `Fits cval env φ ρ T xs ρ' R` says the sets `xs` are, in
+order, members of the domains of `T`'s leading `∀`s, each domain read with the earlier
+sets bound (`push`, as `Denotes` reads a binder's body); `R` is what remains of `T`, and
+`ρ'` the variable environment with all of `xs` bound. Arguments fit a function's type
+exactly when each is a member of its type. -/
+inductive Fits (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ : LevelParam → Nat) :
+    (BVarIdx → V) → Expr md → List V → (BVarIdx → V) → Expr md → Prop
+  | nil {ρ : BVarIdx → V} {T : Expr md} : Fits cval env φ ρ T [] ρ T
+  | cons {ρ ρ' : BVarIdx → V} {A B R : Expr md} {m : BinderMeta} {X x : V} {xs : List V} :
+      Denotes cval env φ ρ A X → x ∈ˢ X → Fits cval env φ (push x ρ) B xs ρ' R →
+      Fits cval env φ ρ (.forallE A B m) (x :: xs) ρ' R
+
+/-- **ι, the computation rule of a stored recursor.** At a stored recursor `r` and any
+rule `rl` of it, whose constructor `C` is stored with `nP` parameters and `nF` fields:
+the recursor applied to its arguments `xs` (parameters, motives, minor premises,
+indices) and to a constructor application `C ys` equals the rule's right-hand side
+applied to the prefix `xs.take rP` (parameters, motives, minor premises) and to the
+constructor's fields `ys.drop nP`, whenever the arguments are members of their types
+and the constructor's parameters and indices are the ones the major premise's type
+gives. Precisely, at every level assignment `φ` and every level arguments `us` of the
+recursor:
+
+* `xs` fit the recursor's type, which then reads `∀ t : D.{ls} as, _` at `σ`: the major
+  premise's type is the family `D` at levels `ls` and arguments `as`;
+* the constructor is used at those levels `ls`, so the recursor's and the constructor's
+  levels line up as Lean's do (a family's recursor carries the family's level parameters,
+  and one more for the motive when it eliminates into every universe; an auxiliary
+  recursor of a nested family uses the nested occurrence's levels); `ys` fit its type,
+  which then reads `RC` at `σC`, and `C ys` is a member of the major premise's type;
+* the constructor's parameters `ys.take nP` are what the major premise's parameter
+  arguments `as.take nP` denote, and the constructor result's index arguments
+  `RC.getAppArgs.drop nP` denote the recursor's indices `xs.drop rP`.
+
+The last two premises are exactly what Lean's typing of the redex supplies: the major
+premise `C ys` must have the type the recursor's telescope gives it, `D.{ls} as`, while
+the constructor's type gives it the type `RC`, the same family at the constructor's
+parameters and its own indices; the two agree only if the parameters and the indices
+do. -/
+def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
+    (rl : RecRule md) (cvC : ConstantVal md) (nP nF : Nat),
+    env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules →
+    env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ σC : BVarIdx → V) (xs ys : List V)
+      (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K H X : V),
+      us.length = cv.levelParams.length → xs.length = mI → ys.length = nP + nF →
+      Denotes cval env φ ρ (.const r us) R →
+      Fits cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us) xs σ
+        (.forallE dom body m) →
+      dom.getAppFn = .const D ls → Denotes cval env φ σ dom X →
+      Denotes cval env φ ρ (.const rl.ctor ls) K →
+      Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls) ys σC RC →
+      ys.foldl app K ∈ˢ X →
+      DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP) →
+      DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP) →
+      Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H →
+      (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
 
 /-! ## Semantic consistency -/
 
