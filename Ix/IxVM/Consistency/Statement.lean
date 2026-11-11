@@ -38,11 +38,12 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
 
 A model (`Ix.Kernel.Model`, `IxC/Kernel/Denotes.lean`) interprets every claimed
 constant as a set: a member of what its type denotes, with `False` empty, `Eq`
-equality, and every definition what its value denotes. So the claimed constants
-mean what Lean means by them, not just some inhabitants of their types: a
-definition `P := False` cannot be true in the model, and no claimed constant can
-prove it. The structure's docstring lists which of Lean's definitional
-equalities it carries as laws, and which hold in every model by the reading.
+equality, and every definition what its value denotes. So a claimed definition
+means what its value means, not just some inhabitant of its type: a definition
+`P := False` is false in every model, and no claimed constant can prove it. The
+structure's docstring lists which of Lean's definitional equalities it carries
+as laws, which hold in every model by the reading, and which it does not carry
+yet.
 
 Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 `False`.

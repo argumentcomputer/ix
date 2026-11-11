@@ -18,9 +18,9 @@ consistent. With the law it has none (`no_model_of_false_def`): whatever else
 the environment holds and whatever `bad`'s stored value is, `P` denotes what
 `False` denotes, the empty set, and `bad` cannot be a member of it. -/
 
-namespace Tests.Ix.Kernel.ModelLaws
+open _root_.Ix.Kernel _root_.Ix.Kernel.SetTheory
 
-open Ix.Kernel SetTheory
+namespace Tests.Ix.Kernel.ModelLaws
 
 universe w
 
@@ -36,9 +36,9 @@ theorem no_model_of_false_def {env : Env md} {P bad : Key md} {cvP cvB : Constan
     (hty : cvB.type = .const P []) :
     Model V env → False := by
   intro M
-  have hPname : cvP.name = P := Ix.Kernel.Semantics.Env.find?_name hP
+  have hPname : cvP.name = P := _root_.Ix.Kernel.Semantics.Env.find?_name hP
   obtain ⟨T, hT, hmem⟩ :=
-    M.mem _ (Ix.Kernel.Semantics.Env.find?_mem hbad) (fun _ => 0) (fun _ => empty)
+    M.mem _ (_root_.Ix.Kernel.Semantics.Env.find?_mem hbad) (fun _ => 0) (fun _ => empty)
   change Denotes M.cval env (fun _ => 0) (fun _ => empty) cvB.type T at hT
   rw [hty] at hT
   cases hT with
@@ -46,7 +46,7 @@ theorem no_model_of_false_def {env : Env md} {P bad : Key md} {cvP cvB : Constan
     rw [hP] at hf
     cases hf
     -- `P`'s value is `False`, which denotes the empty set
-    have hval := M.defn_value cvP _ hint (Ix.Kernel.Semantics.Env.find?_mem hP)
+    have hval := M.defn_value cvP _ hint (_root_.Ix.Kernel.Semantics.Env.find?_mem hP)
       (Level.substFn (fun _ => 0) cvP.levelParams []) (fun _ => empty)
     have hempty : M.cval cvP.name (Level.substFn (fun _ => 0) cvP.levelParams []) = empty :=
       M.false_empty _ _ _ hval
