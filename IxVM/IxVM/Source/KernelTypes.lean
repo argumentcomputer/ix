@@ -34,7 +34,7 @@ module KernelTypes {
       Srt(KLevel),
       Const(Bytes::AddressRef, Lists::List<KLevel>),
       App(KExpr, KExpr),
-      -- A binder carries its datum (D2): a level whose zero-ness is the binder's
+      -- A binder carries its datum: a level whose zero-ness is the binder's
       -- `pw` (the binder's codomain sort is zero exactly when the level is).
       Lam(KExpr, KExpr, KLevel),
       Forall(KExpr, KExpr, KLevel),

@@ -37,7 +37,7 @@ def level_is_not_zero := aiur_fn⟦
     }
 ⟧
 
-  -- The zero-ness datum of a level (D2; IxC's `Level.zeronessOf`), as the pair
+  -- The zero-ness datum of a level (IxC's `Level.zeronessOf`), as the pair
   -- (1, []) for `never`, or (0, ps) for `ifAllZero ps` with `ps` strictly ascending:
   -- the level is zero exactly when every parameter in `ps` is. Canonical, so two
   -- levels have the same zero-ness exactly when their pairs are equal.

@@ -6,7 +6,7 @@ import IxC.Kernel.Verify.Level
 
 /-! # The KernelLevels slice: `RepKLevel` and universe level refinement
 
-Track B, Phase 4 (`plans/ixvm-certification-gap.md`). On top of the generated
+On top of the generated
 mirrors in `Ix.IxVM.Refinement.Mirrors.KernelLevels`, this module establishes:
 
 * `RepKLevel` and `RepKLevelList`: the heap representation predicates connecting

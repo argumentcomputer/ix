@@ -8,14 +8,14 @@ public import Ix.KernelCheck.Step
 public section
 
 /-!
-# IxVM's binder data as witness hints (D2)
+# IxVM's binder data as witness hints
 
 The certified kernel's rules read, at every λ and ∀ binder, its datum
 `pw : PropWhen`: `never` (the binder's codomain sort is never zero) or
 `ifAllZero S` (zero exactly when every level parameter in `S` is). IxVM
 reads the datum of every `Lam` and `All` node it converts as a witness hint
-(`plans/ixvmc/DECISIONS.md`, D2 revised; the interface is lane cx's
-`plans/ixvmc/cx/REPORT.md`, "D2 hint interface"), and validates it where the
+(the interface: `IxVM/IxVM/Source/Convert.lean`, "Binder data", and
+`crates/ixvm/src/pw.rs`), and validates it where the
 kernel's rules do (`Infer.forallE`, `Infer.lam`). So nothing here is
 trusted: a wrong datum can only make a claim fail.
 
@@ -343,8 +343,8 @@ def levelCount (c : Ixon.Constant) : Nat :=
 
 /-- Records declaring more level parameters than this are not given to IxC:
 its install lists the parameters and checks them pairwise distinct, so a record
-with 2^32 of them (the TagN boundary cases; IxVM cannot prove such a claim either,
-D15) would never finish. Their own data need no count: the walk reads the
+with 2^32 of them (the TagN boundary cases, which IxVM cannot prove either) would
+never finish. Their own data need no count: the walk reads the
 universe table. -/
 def maxLevels : Nat := 1 <<< 12
 

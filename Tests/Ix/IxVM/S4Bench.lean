@@ -58,7 +58,7 @@ def runStats (suite : String) (cases : Array (Unit → Except String Case)) (job
       IO.eprintln s!"[{suite}] a case could not be built: {e}"
       failed := failed + 1
     | .ok c =>
-      -- the binder data (D2), and with `$IX_PW_CHECK` their host-side check
+      -- the binder data, and with `$IX_PW_CHECK` their host-side check
       let c ← IO.ofExcept c.withPwHints
       if let some mode ← IO.getEnv "IX_PW_CHECK" then
         if let some e ← pwCheckCase suite c then
