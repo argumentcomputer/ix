@@ -31,17 +31,17 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for checked Ixon grammar, version 4
-/// (`Env::CHECKED_FORMAT_VERSION`). Unchecked envelope data does not change it.
-/// Mirrors `Ixon.wireFormatId`.
-pub const WIRE_FORMAT_ID: &str = "ixon-v4";
+/// Stable identifier for checked Ixon grammar, version 5: version 4's TagN
+/// integers plus each record's binder-data section. Unchecked envelope data
+/// does not change it. Mirrors `Ixon.wireFormatId`.
+pub const WIRE_FORMAT_ID: &str = "ixon-v5";
 
 // Re-export main types
 pub use comm::Comm;
 pub use constant::{
-  Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
-  Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
-  Recursor, RecursorProj, RecursorRule,
+  Axiom, BinderBlock, BinderNode, Constant, ConstantInfo, Constructor,
+  ConstructorProj, DefKind, Definition, DefinitionProj, Inductive,
+  InductiveProj, MutConst, Quotient, Recursor, RecursorProj, RecursorRule,
 };
 #[cfg(not(target_arch = "riscv64"))]
 pub use diff::{

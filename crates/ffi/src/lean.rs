@@ -45,7 +45,8 @@ lean_ffi::lean_inductive! {
   LeanIxonDefinitionProj  [ { num_obj: 1, num_64: 1 } ];
   LeanIxonNamed           [ { num_obj: 4 } ];
   LeanIxonComm            [ { num_obj: 2 } ];
-  LeanIxonConstant        [ { num_obj: 4 } ];
+  LeanIxonConstant        [ { num_obj: 5 } ];
+  LeanIxonBinderBlock     [ { num_obj: 1, num_64: 2, num_8: 1 } ];
   LeanIxonRawConst        [ { num_obj: 2 } ];
   // name, addr, constMeta, original, hints
   LeanIxonRawNamed        [ { num_obj: 5 } ];
@@ -77,6 +78,14 @@ lean_ffi::lean_inductive! {
   LeanIxonEnvDiff         [ { num_obj: 18 } ];
 
   // --- Ixon multi-variant inductives ---
+
+  LeanIxonBinderNode [
+    { },                                      // tag 0: never (scalar)
+    { },                                      // tag 1: zero (scalar)
+    { num_obj: 1 },                           // tag 2: ifAllZero
+    { num_64: 1 },                            // tag 3: share
+    { },                                      // tag 4: undecided (scalar)
+  ];
 
   LeanIxonUniv [
     { },                                      // tag 0: zero

@@ -346,6 +346,7 @@ def constantUnits : TestSeq :=
     #[.var 0, .sort 1]  -- sharing
     #[⟨(Blake3.Rust.hash "ref".toUTF8).val⟩]  -- refs
     #[.zero, .succ .zero]  -- univs
+    #[]  -- binder data
   test "Constant roundtrip" (constantSerde c)
 
 def commUnits : TestSeq :=
@@ -638,7 +639,7 @@ private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Boo
 def envHeaderUnits : TestSeq :=
   let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
   test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
-  ++ test "wireFormatId is ixon-v4" (wireFormatId == "ixon-v4")
+  ++ test "wireFormatId is ixon-v5" (wireFormatId == "ixon-v5")
   ++ test "checked object-format byte remains 4" (Env.OBJECT_FORMAT == 4)
   ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
   ++ test "Lean reader rejects a version 3 header"
@@ -708,6 +709,76 @@ private def envelopeUnits (definition : Definition) : TestSeq :=
       | .ok _ => (true, 0, 0, none)
       | .error e => (false, 0, 0, some e)) .done
 
+/-! ## The binder-data section
+
+A record ends with its binder-data section. The fixture carries every node
+kind: a root block with a parameter list and a share node, a second root
+block, and two variants of a sharing entry, the second the sentinel. The Rust
+crate's `binder_fixture` checks the same section bytes. -/
+
+def binderFixture : Constant :=
+  { info := .defn (Definition.mk .defn .safe 3
+      (.all .many .shared (.sort 0) (.share 0)) (.lam .many (.sort 0) (.var 0)))
+    sharing := #[.lam .many (.sort 0) (.var 0)]
+    refs := #[]
+    univs := #[.var 0]
+    binders := #[
+      ⟨false, 0, 0, #[.ifAllZero #[0, 2], .share 1]⟩,
+      ⟨false, 1, 0, #[.never]⟩,
+      ⟨true, 0, 0, #[.zero]⟩,
+      ⟨true, 0, 1, #[.undecided]⟩] }
+
+def binderFixtureSection : Array UInt8 :=
+  #[4,
+    0, 0, 0, 2, 2, 2, 0, 2, 3, 1,
+    0, 1, 0, 1, 0,
+    1, 0, 0, 1, 1,
+    1, 0, 1, 1, 4]
+
+/-- The canonical decoder over a record's own bytes. -/
+def canonicalRead (c : Constant) : Bool :=
+  let bytes := serConstant c
+  (Canonical.deConstant bytes.size loadMaxUnivNodes bytes).toOption == some c
+
+/-- Each form still round-trips; only the canonical form rejects it. -/
+def noncanonicalSections : List (String × Array BinderBlock) :=
+  let b := binderFixture.binders
+  [("blocks out of order", #[b[1]!, b[0]!, b[2]!, b[3]!]),
+   ("a repeated key", b.push b[3]!),
+   ("a root block at variant 1", b.set! 1 { b[1]! with variant := 1 }),
+   ("an empty parameter list", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[], .share 1] }),
+   ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0], .share 1] }),
+   ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1], .share 1] }),
+   ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3], .share 1] })]
+
+def binderSectionUnits : TestSeq :=
+  let bytes := serConstant binderFixture
+  let badTag := bytes.set! (bytes.size - binderFixtureSection.size + 5) 5
+  let badKind := bytes.set! (bytes.size - binderFixtureSection.size + 1) 2
+  test "section bytes" ((runPut (putBinders binderFixture.binders)).data == binderFixtureSection)
+  ++ test "the empty section is 0x00" ((runPut (putBinders #[])).data == #[0])
+  ++ test "a record ends with its section"
+      ((bytes.extract (bytes.size - binderFixtureSection.size) bytes.size).data
+        == binderFixtureSection)
+  ++ test "record with a section round-trips" (constantSerde binderFixture)
+  ++ test "record without a section round-trips" (constantSerde { binderFixture with binders := #[] })
+  ++ test "the fixture's section is canonical" binderFixture.bindersCanonical
+  ++ test "the canonical decoder accepts it" (canonicalRead binderFixture)
+  ++ test "the canonical decoder accepts the empty section"
+      (canonicalRead { binderFixture with binders := #[] })
+  ++ noncanonicalSections.foldl (init := .done) (fun acc (label, blocks) =>
+      let c := { binderFixture with binders := blocks }
+      acc ++ test s!"{label}: round-trips" (constantSerde c)
+        ++ test s!"{label}: not canonical" (!c.bindersCanonical && !canonicalRead c))
+  ++ test "a projection with a parameter is not canonical"
+      (!canonicalRead { info := .dPrj ⟨0, Address.blake3 "block".toUTF8⟩, sharing := #[],
+          refs := #[], univs := #[], binders := #[⟨false, 0, 0, #[.ifAllZero #[0]]⟩] })
+  ++ test "an unknown node tag is rejected" ((deConstant badTag).toOption.isNone)
+  ++ test "a block kind other than 0 or 1 is rejected" ((deConstant badKind).toOption.isNone)
+  ++ test "a truncated section is rejected"
+      ((deConstantExact (bytes.extract 0 (bytes.size - 1))).toOption.isNone)
+  ++ test "section serialization Lean==Rust" (constantSerializationMatches binderFixture)
+
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
@@ -732,6 +803,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   strictExprUnits,
   tagNUnits,
   exprMetaArenaUnits,
+  binderSectionUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
   -- Env serialization comparison unit tests

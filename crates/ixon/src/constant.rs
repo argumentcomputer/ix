@@ -6,7 +6,32 @@
 //! The sharing vector is stored at the Constant level, shared across
 //! all expressions in the constant (including mutual block members).
 
-#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::needless_
+  pub fn gen_binder_node(g: &mut Gen) -> BinderNode {
+    match u8::arbitrary(g) % 5 {
+      0 => BinderNode::Never,
+      1 => BinderNode::Zero,
+      2 => BinderNode::IfAllZero(
+        (0..gen_range(g, 0..4)).map(|_| u64::arbitrary(g)).collect(),
+      ),
+      3 => BinderNode::Share(u64::arbitrary(g)),
+      _ => BinderNode::Undecided,
+    }
+  }
+
+  /// Arbitrary sections: neither sorted nor canonical, which the codec
+  /// round-trips all the same.
+  pub fn gen_binders(g: &mut Gen) -> Vec<BinderBlock> {
+    (0..gen_range(g, 0..3))
+      .map(|_| BinderBlock {
+        shared: bool::arbitrary(g),
+        index: u64::arbitrary(g),
+        variant: u64::arbitrary(g),
+        nodes: (0..gen_range(g, 0..5)).map(|_| gen_binder_node(g)).collect(),
+      })
+      .collect()
+  }
+pass_by_value)]
 
 use std::sync::Arc;
 
@@ -210,7 +235,62 @@ impl ConstantInfo {
   }
 }
 
-/// A top-level constant with its sharing, refs, and univs vectors.
+// ============================================================================
+// Binder data
+// ============================================================================
+
+/// One numbered node of a binder-data block (`Constant::binders`).
+///
+/// A binder's datum is the zero-ness of its codomain sort: never zero, or
+/// zero exactly when every universe parameter of a set is zero.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BinderNode {
+  /// A binder whose codomain sort is never zero (wire tag 0).
+  Never,
+  /// A binder whose codomain sort is always zero (wire tag 1).
+  Zero,
+  /// A binder whose codomain sort is zero exactly when every listed
+  /// universe parameter is (wire tag 2). Canonical: nonempty, strictly
+  /// ascending, below the record's level count.
+  IfAllZero(Vec<u64>),
+  /// A share site whose entry has a binder: that entry at this variant
+  /// (wire tag 3).
+  Share(u64),
+  /// A binder whose datum the compiler could not decide (wire tag 4).
+  /// Readers accept it; a checker that needs the datum rejects it.
+  Undecided,
+}
+
+impl BinderNode {
+  pub const TAG_NEVER: u8 = 0;
+  pub const TAG_ZERO: u8 = 1;
+  pub const TAG_IF_ALL_ZERO: u8 = 2;
+  pub const TAG_SHARE: u8 = 3;
+  pub const TAG_UNDECIDED: u8 = 4;
+}
+
+/// The binder data of one expression of a record: a root (`shared` false,
+/// `index` the root's number, `variant` 0) or one variant of a sharing entry
+/// (`shared` true, `index` the entry's index). Its nodes follow the
+/// expression's numbered nodes (every `Lam` and `All`, and every `Share`
+/// whose entry has a binder) in pre-order.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BinderBlock {
+  pub shared: bool,
+  pub index: u64,
+  pub variant: u64,
+  pub nodes: Vec<BinderNode>,
+}
+
+impl BinderBlock {
+  /// The block's key; blocks are strictly sorted by it.
+  pub fn key(&self) -> (bool, u64, u64) {
+    (self.shared, self.index, self.variant)
+  }
+}
+
+/// A top-level constant with its sharing, refs, and univs vectors, and its
+/// binder-data section.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Constant {
   /// The constant payload
@@ -221,6 +301,8 @@ pub struct Constant {
   pub refs: Vec<Address>,
   /// Universe table: universes referenced by Expr::Sort(idx), Expr::Ref(_, univs), Expr::Rec(_, univs)
   pub univs: Vec<Arc<Univ>>,
+  /// Binder data, blocks strictly sorted by `BinderBlock::key`
+  pub binders: Vec<BinderBlock>,
 }
 
 impl Constant {
@@ -229,19 +311,74 @@ impl Constant {
   /// TagN flag used for Muts constants (the entry count is the value)
   pub const FLAG_MUTS: u8 = 0xC;
 
-  /// Create a new constant with no sharing, refs, or univs
+  /// Create a new constant with no sharing, refs, univs or binder data
   pub fn new(info: ConstantInfo) -> Self {
-    Constant { info, sharing: Vec::new(), refs: Vec::new(), univs: Vec::new() }
+    Constant {
+      info,
+      sharing: Vec::new(),
+      refs: Vec::new(),
+      univs: Vec::new(),
+      binders: Vec::new(),
+    }
   }
 
-  /// Create a new constant with sharing, refs, and univs
+  /// Create a new constant with sharing, refs, and univs, and no binder data
   pub fn with_tables(
     info: ConstantInfo,
     sharing: Vec<Arc<Expr>>,
     refs: Vec<Address>,
     univs: Vec<Arc<Univ>>,
   ) -> Self {
-    Constant { info, sharing, refs, univs }
+    Constant { info, sharing, refs, univs, binders: Vec::new() }
+  }
+
+  /// This constant with the binder-data section `binders`.
+  pub fn with_binders(mut self, binders: Vec<BinderBlock>) -> Self {
+    self.binders = binders;
+    self
+  }
+
+  /// The level count bounding the binder data's parameters: the largest
+  /// level count of the record's members (0 for a projection).
+  pub fn max_lvls(&self) -> u64 {
+    fn mut_lvls(m: &MutConst) -> u64 {
+      match m {
+        MutConst::Defn(d) => d.lvls,
+        MutConst::Indc(i) => i.lvls,
+        MutConst::Recr(r) => r.lvls,
+      }
+    }
+    match &self.info {
+      ConstantInfo::Defn(d) => d.lvls,
+      ConstantInfo::Recr(r) => r.lvls,
+      ConstantInfo::Axio(a) => a.lvls,
+      ConstantInfo::Quot(q) => q.lvls,
+      ConstantInfo::CPrj(_)
+      | ConstantInfo::RPrj(_)
+      | ConstantInfo::IPrj(_)
+      | ConstantInfo::DPrj(_) => 0,
+      ConstantInfo::Muts(ms) => ms.iter().map(mut_lvls).max().unwrap_or(0),
+    }
+  }
+
+  /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`):
+  /// blocks strictly sorted by key, a root block at variant 0, and every
+  /// `IfAllZero` parameter list nonempty, strictly ascending and below
+  /// `max_lvls`.
+  pub fn binders_canonical(&self) -> bool {
+    let lvls = self.max_lvls();
+    self.binders.windows(2).all(|w| w[0].key() < w[1].key())
+      && self.binders.iter().all(|b| {
+        (b.shared || b.variant == 0)
+          && b.nodes.iter().all(|n| match n {
+            BinderNode::IfAllZero(ps) => {
+              !ps.is_empty()
+                && ps.windows(2).all(|w| w[0] < w[1])
+                && ps.iter().all(|p| *p < lvls)
+            },
+            _ => true,
+          })
+      })
   }
 }
 
@@ -442,6 +579,7 @@ pub mod tests {
       sharing: gen_sharing(g),
       refs: gen_refs(g),
       univs: gen_univs(g),
+      binders: gen_binders(g),
     }
   }
 
@@ -479,5 +617,144 @@ pub mod tests {
     cnst.put(&mut buf);
     assert_eq!(buf[0] >> 4, Constant::FLAG, "Constant should use flag 0xD");
     assert!(constant_roundtrip(&cnst));
+  }
+
+  /// A universe-polymorphic definition `fun (x : Sort u) => x` with a
+  /// sharing entry, carrying a section with every node kind: a root block,
+  /// two variants of a sharing entry, a share node and the sentinel.
+  fn binder_fixture() -> Constant {
+    let typ = Expr::all(Expr::sort(0), Expr::share(0));
+    let value = Expr::lam(Expr::sort(0), Expr::var(0));
+    let defn = Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: 3,
+      typ,
+      value,
+    };
+    Constant::with_tables(
+      ConstantInfo::Defn(defn),
+      vec![Expr::lam(Expr::sort(0), Expr::var(0))],
+      vec![],
+      vec![Arc::new(Univ::Var(0))],
+    )
+    .with_binders(vec![
+      BinderBlock {
+        shared: false,
+        index: 0,
+        variant: 0,
+        nodes: vec![BinderNode::IfAllZero(vec![0, 2]), BinderNode::Share(1)],
+      },
+      BinderBlock {
+        shared: false,
+        index: 1,
+        variant: 0,
+        nodes: vec![BinderNode::Never],
+      },
+      BinderBlock {
+        shared: true,
+        index: 0,
+        variant: 0,
+        nodes: vec![BinderNode::Zero],
+      },
+      BinderBlock {
+        shared: true,
+        index: 0,
+        variant: 1,
+        nodes: vec![BinderNode::Undecided],
+      },
+    ])
+  }
+
+  #[test]
+  fn binders_section_bytes() {
+    // The empty section is one byte, 0x00, after the univs table.
+    let empty = Constant::new(ConstantInfo::DPrj(DefinitionProj {
+      idx: 0,
+      block: Address::hash(b"block"),
+    }));
+    let mut buf = Vec::new();
+    empty.put(&mut buf);
+    assert_eq!(buf[buf.len() - 4..], [0, 0, 0, 0], "sharing, refs, univs, binders");
+    assert!(constant_roundtrip(&empty));
+    assert!(empty.binders_canonical());
+
+    let c = binder_fixture();
+    let mut section = Vec::new();
+    crate::serialize::put_binders(&c.binders, &mut section);
+    assert_eq!(
+      section,
+      vec![
+        4, // four blocks
+        0, 0, 0, 2, 2, 2, 0, 2, 3, 1, // root 0: ifAllZero [0, 2], share 1
+        0, 1, 0, 1, 0, // root 1: never
+        1, 0, 0, 1, 1, // entry 0, variant 0: zero
+        1, 0, 1, 1, 4, // entry 0, variant 1: undecided
+      ]
+    );
+    let mut full = Vec::new();
+    c.put(&mut full);
+    assert!(full.ends_with(&section));
+    assert!(constant_roundtrip(&c));
+    assert!(c.binders_canonical());
+  }
+
+  #[test]
+  fn binders_noncanonical_forms() {
+    let base = binder_fixture();
+    let with = |f: &dyn Fn(&mut Vec<BinderBlock>)| {
+      let mut c = base.clone();
+      f(&mut c.binders);
+      c
+    };
+    // Every form below still round-trips; only the canonical form rejects it.
+    let cases = [
+      with(&|b| b.swap(0, 1)),                 // blocks out of order
+      with(&|b| b.push(b[3].clone())),         // a repeated key
+      with(&|b| b[1].variant = 1),             // a root block at variant 1
+      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![])), // empty list
+      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![2, 0])), // descending
+      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![1, 1])), // repeated
+      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![3])), // not below lvls
+    ];
+    for c in &cases {
+      assert!(constant_roundtrip(c));
+      assert!(!c.binders_canonical(), "{:?}", c.binders);
+    }
+    // A projection's level count is 0: any parameter is out of range.
+    let prj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
+      idx: 0,
+      block: Address::hash(b"block"),
+    }))
+    .with_binders(vec![BinderBlock {
+      shared: false,
+      index: 0,
+      variant: 0,
+      nodes: vec![BinderNode::IfAllZero(vec![0])],
+    }]);
+    assert!(!prj.binders_canonical());
+  }
+
+  #[test]
+  fn binders_reader_rejects_bad_tags() {
+    let c = binder_fixture();
+    let mut buf = Vec::new();
+    c.put(&mut buf);
+    let section_start = buf.len() - 26;
+    // An unknown node tag.
+    let mut bad = buf.clone();
+    bad[section_start + 5] = 5;
+    assert!(Constant::get(&mut bad.as_slice()).is_err());
+    // A block kind other than 0 or 1.
+    let mut bad = buf.clone();
+    bad[section_start + 1] = 2;
+    assert!(Constant::get(&mut bad.as_slice()).is_err());
+    // A truncated section.
+    assert!(Constant::get(&mut &buf[..buf.len() - 1]).is_err());
+    // A record without its section (Ixon v4 bytes).
+    let empty = Constant::new(ConstantInfo::Muts(vec![]));
+    let mut v5 = Vec::new();
+    empty.put(&mut v5);
+    assert!(Constant::get(&mut &v5[..v5.len() - 1]).is_err());
   }
 }

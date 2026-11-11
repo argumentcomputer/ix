@@ -13,9 +13,9 @@ use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind, ReducibilityHints};
 
 use super::constant::{
-  Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
-  Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
-  Recursor, RecursorProj, RecursorRule,
+  Axiom, BinderBlock, BinderNode, Constant, ConstantInfo, Constructor,
+  ConstructorProj, DefKind, Definition, DefinitionProj, Inductive,
+  InductiveProj, MutConst, Quotient, Recursor, RecursorProj, RecursorRule,
 };
 use super::contract::{
   BinderContract, LetContract, ValueContract, get_binder_contract,
@@ -1076,6 +1076,98 @@ fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   Ok(univs)
 }
 
+// ============================================================================
+// The binder-data section
+// ============================================================================
+//
+// section := nblocks:TagN0 block[nblocks]
+// block   := ekind:u8 eidx:TagN0 variant:TagN0 nnodes:TagN0 node[nnodes]
+// node    := 0x00 | 0x01 | 0x02 k:TagN0 p[k]:TagN0 | 0x03 v:TagN0 | 0x04
+//
+// Mirrors `Ixon.putBinders`/`Ixon.getBinders`: one constructor per tag; the
+// canonical form is `Constant::binders_canonical`.
+
+impl BinderNode {
+  pub fn put(&self, buf: &mut Vec<u8>) {
+    match self {
+      BinderNode::Never => put_u8(Self::TAG_NEVER, buf),
+      BinderNode::Zero => put_u8(Self::TAG_ZERO, buf),
+      BinderNode::IfAllZero(params) => {
+        put_u8(Self::TAG_IF_ALL_ZERO, buf);
+        put_u64(params.len() as u64, buf);
+        for p in params {
+          put_u64(*p, buf);
+        }
+      },
+      BinderNode::Share(variant) => {
+        put_u8(Self::TAG_SHARE, buf);
+        put_u64(*variant, buf);
+      },
+      BinderNode::Undecided => put_u8(Self::TAG_UNDECIDED, buf),
+    }
+  }
+
+  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    match get_u8(buf)? {
+      Self::TAG_NEVER => Ok(BinderNode::Never),
+      Self::TAG_ZERO => Ok(BinderNode::Zero),
+      Self::TAG_IF_ALL_ZERO => {
+        let count = get_u64(buf)?;
+        let mut params = Vec::with_capacity(capped_capacity(count, buf));
+        for _ in 0..count {
+          params.push(get_u64(buf)?);
+        }
+        Ok(BinderNode::IfAllZero(params))
+      },
+      Self::TAG_SHARE => Ok(BinderNode::Share(get_u64(buf)?)),
+      Self::TAG_UNDECIDED => Ok(BinderNode::Undecided),
+      t => Err(format!("BinderNode::get: invalid tag {t}")),
+    }
+  }
+}
+
+impl BinderBlock {
+  pub fn put(&self, buf: &mut Vec<u8>) {
+    put_bool(self.shared, buf);
+    put_u64(self.index, buf);
+    put_u64(self.variant, buf);
+    put_u64(self.nodes.len() as u64, buf);
+    for n in &self.nodes {
+      n.put(buf);
+    }
+  }
+
+  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    let shared = get_bool(buf)?;
+    let index = get_u64(buf)?;
+    let variant = get_u64(buf)?;
+    let count = get_u64(buf)?;
+    let mut nodes = Vec::with_capacity(capped_capacity(count, buf));
+    for _ in 0..count {
+      nodes.push(BinderNode::get(buf)?);
+    }
+    Ok(BinderBlock { shared, index, variant, nodes })
+  }
+}
+
+pub(crate) fn put_binders(blocks: &[BinderBlock], buf: &mut Vec<u8>) {
+  put_u64(blocks.len() as u64, buf);
+  for b in blocks {
+    b.put(buf);
+  }
+}
+
+pub(crate) fn get_binders(
+  buf: &mut &[u8],
+) -> Result<Vec<BinderBlock>, String> {
+  let count = get_u64(buf)?;
+  let mut blocks = Vec::with_capacity(capped_capacity(count, buf));
+  for _ in 0..count {
+    blocks.push(BinderBlock::get(buf)?);
+  }
+  Ok(blocks)
+}
+
 impl Constant {
   pub fn put(&self, buf: &mut Vec<u8>) {
     match &self.info {
@@ -1096,6 +1188,7 @@ impl Constant {
     put_sharing(&self.sharing, buf);
     put_refs(&self.refs, buf);
     put_univs(&self.univs, buf);
+    put_binders(&self.binders, buf);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
@@ -1125,7 +1218,8 @@ impl Constant {
     let sharing = get_sharing(buf)?;
     let refs = get_refs(buf)?;
     let univs = get_univs(buf)?;
-    Ok(Constant { info, sharing, refs, univs })
+    let binders = get_binders(buf)?;
+    Ok(Constant { info, sharing, refs, univs, binders })
   }
 
   /// Serialize a constant and compute its content address.

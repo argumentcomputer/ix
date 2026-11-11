@@ -1,4 +1,7 @@
-//! Host packing availability for an artifact's exact binding. This does not
+  if !input.is_empty()
+    || canonical.as_slice() != bytes.as_ref()
+    || !constant.binders_canonical()
+  {//! Host packing availability for an artifact's exact binding. This does not
 //! admit role specifications or proof evidence; the certified consumer does.
 
 use std::collections::VecDeque;
@@ -30,7 +33,10 @@ pub(crate) fn raw_constant(
   let constant = Constant::get(&mut input)?;
   let mut canonical = Vec::new();
   constant.put(&mut canonical);
-  if !input.is_empty() || canonical.as_slice() != bytes.as_ref() {
+  if !input.is_empty()
+    || canonical.as_slice() != bytes.as_ref()
+    || !constant.binders_canonical()
+  {
     return Err(format!(
       "binding support: noncanonical constant {}",
       address.hex()

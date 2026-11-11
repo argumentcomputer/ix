@@ -7,14 +7,15 @@
 use std::sync::Arc;
 
 use crate::lean::{
-  LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
+  LeanIxAddress, LeanIxonAxiom, LeanIxonBinderBlock, LeanIxonBinderNode,
+  LeanIxonConstant, LeanIxonConstantInfo,
   LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
   LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonInductive,
   LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
   LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
 };
 use ixon::constant::{
-  Axiom as IxonAxiom, Constant as IxonConstant,
+  Axiom as IxonAxiom, BinderBlock, BinderNode, Constant as IxonConstant,
   ConstantInfo as IxonConstantInfo, Constructor as IxonConstructor,
   ConstructorProj, DefKind, Definition as IxonDefinition, DefinitionProj,
   Inductive as IxonInductive, InductiveProj, MutConst,
@@ -548,6 +549,113 @@ impl<R: LeanRef> LeanIxonConstantInfo<R> {
 }
 
 // =============================================================================
+// Binder data
+// =============================================================================
+
+impl LeanIxonBinderNode<LeanOwned> {
+  /// Build Ixon.BinderNode: `never`, `zero` and `undecided` are scalars.
+  pub fn build(node: &BinderNode) -> Self {
+    match node {
+      BinderNode::Never => Self::new(LeanOwned::box_usize(0)),
+      BinderNode::Zero => Self::new(LeanOwned::box_usize(1)),
+      BinderNode::IfAllZero(params) => {
+        let arr = LeanArray::alloc(params.len());
+        for (i, p) in params.iter().enumerate() {
+          arr.set(i, LeanOwned::box_u64(*p));
+        }
+        let ctor = Self::alloc(2);
+        ctor.set_obj(0, arr);
+        ctor
+      },
+      BinderNode::Share(variant) => {
+        let ctor = Self::alloc(3);
+        ctor.set_num_64(0, *variant);
+        ctor
+      },
+      BinderNode::Undecided => Self::new(LeanOwned::box_usize(4)),
+    }
+  }
+}
+
+impl<R: LeanRef> LeanIxonBinderNode<R> {
+  /// Decode Ixon.BinderNode.
+  pub fn decode(&self) -> BinderNode {
+    if self.inner().is_scalar() {
+      return match self.inner().as_raw() as usize >> 1 {
+        0 => BinderNode::Never,
+        1 => BinderNode::Zero,
+        4 => BinderNode::Undecided,
+        tag => panic!("Invalid scalar Ixon.BinderNode tag: {tag}"),
+      };
+    }
+    let ctor = self.as_ctor();
+    match ctor.tag() {
+      2 => BinderNode::IfAllZero(
+        ctor
+          .get(0)
+          .as_array()
+          .iter()
+          .map(|elem| {
+            if elem.is_scalar() {
+              elem.unbox_usize() as u64
+            } else {
+              elem.unbox_u64()
+            }
+          })
+          .collect(),
+      ),
+      3 => BinderNode::Share(self.get_num_64(0)),
+      tag => panic!("Invalid Ixon.BinderNode tag: {tag}"),
+    }
+  }
+}
+
+impl LeanIxonBinderBlock<LeanOwned> {
+  /// Build Ixon.BinderBlock. Scalars ordered by size: index(8) + variant(8)
+  /// + shared(1) + padding(7).
+  pub fn build(block: &BinderBlock) -> Self {
+    let nodes = LeanArray::alloc(block.nodes.len());
+    for (i, node) in block.nodes.iter().enumerate() {
+      nodes.set(i, LeanIxonBinderNode::build(node));
+    }
+    let ctor = Self::alloc(0);
+    ctor.set_obj(0, nodes);
+    ctor.set_num_64(0, block.index);
+    ctor.set_num_64(1, block.variant);
+    ctor.set_num_8(0, u8::from(block.shared));
+    ctor
+  }
+
+  /// Build an Array of Ixon.BinderBlock.
+  pub fn build_array(blocks: &[BinderBlock]) -> LeanArray<LeanOwned> {
+    let arr = LeanArray::alloc(blocks.len());
+    for (i, block) in blocks.iter().enumerate() {
+      arr.set(i, Self::build(block));
+    }
+    arr
+  }
+}
+
+impl<R: LeanRef> LeanIxonBinderBlock<R> {
+  /// Decode Ixon.BinderBlock.
+  pub fn decode(&self) -> BinderBlock {
+    let ctor = self.as_ctor();
+    let nodes = ctor
+      .get(0)
+      .as_array()
+      .iter()
+      .map(|elem| LeanIxonBinderNode(elem).decode())
+      .collect();
+    BinderBlock {
+      shared: self.get_num_8(0) != 0,
+      index: self.get_num_64(0),
+      variant: self.get_num_64(1),
+      nodes,
+    }
+  }
+}
+
+// =============================================================================
 // Constant
 // =============================================================================
 
@@ -558,11 +666,13 @@ impl LeanIxonConstant<LeanOwned> {
     let sharing_obj = LeanIxonExpr::build_array(&constant.sharing);
     let refs_obj = LeanIxAddress::build_array(&constant.refs);
     let univs_obj = LeanIxonUniv::build_array(&constant.univs);
+    let binders_obj = LeanIxonBinderBlock::build_array(&constant.binders);
     let ctor = LeanIxonConstant::alloc(0);
     ctor.set_obj(0, info_obj);
     ctor.set_obj(1, sharing_obj);
     ctor.set_obj(2, refs_obj);
     ctor.set_obj(3, univs_obj);
+    ctor.set_obj(4, binders_obj);
     ctor
   }
 }
@@ -576,6 +686,12 @@ impl<R: LeanRef> LeanIxonConstant<R> {
       sharing: LeanIxonExpr::decode_array(&ctor.get(1).as_array()),
       refs: LeanIxAddress::decode_array(ctor.get(2).as_array()),
       univs: LeanIxonUniv::decode_array(&ctor.get(3).as_array()),
+      binders: ctor
+        .get(4)
+        .as_array()
+        .iter()
+        .map(|elem| LeanIxonBinderBlock(elem).decode())
+        .collect(),
     }
   }
 }

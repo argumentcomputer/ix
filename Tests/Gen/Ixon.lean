@@ -285,12 +285,28 @@ def genConstantInfo : Gen ConstantInfo :=
     (5, .muts <$> genSmallArray genMutConst),
   ]
 
+/-- Generate a binder-data node -/
+def genBinderNode : Gen BinderNode :=
+  frequency [
+    (10, pure .never),
+    (10, pure .zero),
+    (10, .ifAllZero <$> genArray genUInt64Small),
+    (10, .share <$> genUInt64Small),
+    (5, pure .undecided),
+  ]
+
+/-- Generate a binder-data block. A section need not be canonical to round-trip. -/
+def genBinderBlock : Gen BinderBlock :=
+  BinderBlock.mk <$> genBool <*> genUInt64Small <*> genUInt64Small
+    <*> genSmallArray genBinderNode
+
 /-- Generate a Constant (new format) -/
 def genConstant : Gen Constant :=
   Constant.mk <$> genConstantInfo
     <*> genSmallArray genExpr
     <*> genSmallArray genAddress
     <*> genSmallArray genUniv
+    <*> genSmallArray genBinderBlock
 
 /-! ## Shrinkable instances -/
 
@@ -402,7 +418,8 @@ instance : Shrinkable Constant where
   shrink c :=
     (if c.sharing.size > 0 then [{ c with sharing := c.sharing.pop }] else []) ++
     (if c.refs.size > 0 then [{ c with refs := c.refs.pop }] else []) ++
-    (if c.univs.size > 0 then [{ c with univs := c.univs.pop }] else [])
+    (if c.univs.size > 0 then [{ c with univs := c.univs.pop }] else []) ++
+    (if c.binders.size > 0 then [{ c with binders := c.binders.pop }] else [])
 
 -- DataValue - shrink to simpler variant
 instance : Shrinkable DataValue where
