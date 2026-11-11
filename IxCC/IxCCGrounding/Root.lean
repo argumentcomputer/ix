@@ -66,8 +66,7 @@ theorem readback_ctor {p : Program} {v : Value} {i : Nat}
     | none => rw [hf] at h; simp at h
     | some os =>
       rw [hf] at h
-      simp only [Option.bind_eq_bind, Option.some_bind, Option.pure_def, Option.some.injEq,
-        IxCC.Sem.Obs.ctor.injEq] at h
+      simp at h
       obtain ⟨htag, rfl⟩ := h
       obtain rfl := readbackFields_nil hf
       refine ⟨c, ls, ps, rfl, ?_⟩
@@ -96,8 +95,9 @@ theorem enum_arg (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
       (∀ ρ X, Denotes M.cval env φ ρ (.const (κ D) []) X → M.cval (κ c) φ ∈ˢ X) := by
   obtain ⟨safe', ty', cs', hd', ⟨ciD, hfD, hlD⟩, hcs, _⟩ := hE
   rw [hd] at hd'
-  simp only [Option.some.injEq, IxCC.Src.Decl.induct.injEq] at hd'
-  obtain ⟨-, -, rfl⟩ := hd'
+  injection hd' with hd''
+  injection hd'' with _ _ _ _ _ hcs
+  subst hcs
   obtain ⟨hS, -, cv, hfc, hlc, htc⟩ := hcs i c hc
   obtain ⟨ci, hci, hlps⟩ := hF.stored c hS
   rw [hfc] at hci
@@ -211,8 +211,9 @@ theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId �
     obtain ⟨_, hden, _⟩ := enum_arg (M := M) (ann := ann) hG.faith hE hd hc φ
     obtain ⟨_, _, _, hd', _, hcs, _⟩ := hE
     rw [hd] at hd'
-    simp only [Option.some.injEq, IxCC.Src.Decl.induct.injEq] at hd'
-    obtain ⟨-, -, rfl⟩ := hd'
+    injection hd' with hd''
+    injection hd'' with _ _ _ _ _ hcs
+    subst hcs
     obtain ⟨_, _, cvc, hfc, hlc, _⟩ := hcs i c hc
     generalize hXv : Es.foldl app (M.cval (κ root) φ) = Xv at hrelv ⊢
     cases hrelv with
