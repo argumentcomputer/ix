@@ -6456,7 +6456,7 @@ theorem «WordLists::lookup_u64».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.lookup_u64.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.lookup_u64.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.lookup_u64) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 94) (by decide +kernel)) rfl t_T
 
 /-- The mirror of `WordLists::lookup_u64`. -/
 def «WordLists::lookup_u64» (t_T : Generic.Ty) : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6495,7 +6495,7 @@ theorem «WordLists::length_u64».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.length_u64.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.length_u64.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.length_u64) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 91) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 93) (by decide +kernel)) rfl t_T
 
 /-- The mirror of `WordLists::length_u64`. -/
 def «WordLists::length_u64» (t_T : Generic.Ty) : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6580,7 +6580,7 @@ theorem «WordLists::depth_checked».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.depth_checked.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.depth_checked.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.depth_checked) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 90) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
 
 /-- The mirror of `WordLists::depth_checked`. -/
 def «WordLists::depth_checked» (t_T : Generic.Ty) : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)

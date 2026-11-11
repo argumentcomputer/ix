@@ -23,6 +23,7 @@ import Aiur.Library.RBTreeMap.Correctness
 import Aiur.Library.IxVMRep
 import Aiur.Library.Blake3.Correctness
 import Aiur.Library.Blake3.Goldilocks
+import Aiur.Library.Blake3.BlockLoop
 
 /-!
 # Frozen Certification Audit for Aiur
@@ -100,7 +101,10 @@ trusted: multi-stark's STARK, FRI and LogUp soundness; the `aiur⟦ … ⟧` and
 `aiur_library%` elaborators; and the artifact exporter. The library
 `Correctness` theorems prove hand-written Lean models of the library functions
 (their byte and limb arithmetic) against Lean specifications such as
-`Blake3.digest`. No theorem evaluates the library's Aiur source, so they are
+`Blake3.Pure.digest`; `Blake3.hash_model_spec` proves the model of
+`Blake3::hash` (its block loop, byte loop and level-by-level tree) equal to
+`Blake3.Pure.digest`, through the tree lemma `Blake3.Pure.mergeLevels_chunkOutputs`.
+No theorem evaluates the library's Aiur source, so they are
 not proofs about the Aiur library functions, nor about the IxVM or MultiStark
 programs that call them.
 -/
@@ -2765,7 +2769,7 @@ info: Library.Blake3.iv_spec : #v[Library.Blake3.wordOfBytes 103 230 9 106, Libr
     Library.Blake3.wordOfBytes 114 243 110 60, Library.Blake3.wordOfBytes 58 245 79 165,
     Library.Blake3.wordOfBytes 127 82 14 81, Library.Blake3.wordOfBytes 140 104 5 155,
     Library.Blake3.wordOfBytes 171 217 131 31, Library.Blake3.wordOfBytes 25 205 224 91] =
-  Library.Blake3.iv
+  Blake3.Pure.iv
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.iv_spec
@@ -2775,7 +2779,7 @@ info: Library.Blake3.iv_spec : #v[Library.Blake3.wordOfBytes 103 230 9 106, Libr
 
 /--
 info: Library.Blake3.rotr8_spec : ∀ (b0 b1 b2 b3 : UInt8),
-  Library.Blake3.rotateRight (Library.Blake3.wordOfBytes b0 b1 b2 b3) 8 = Library.Blake3.wordOfBytes b1 b2 b3 b0
+  Blake3.Pure.rotateRight (Library.Blake3.wordOfBytes b0 b1 b2 b3) 8 = Library.Blake3.wordOfBytes b1 b2 b3 b0
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.rotr8_spec
@@ -2785,7 +2789,7 @@ info: Library.Blake3.rotr8_spec : ∀ (b0 b1 b2 b3 : UInt8),
 
 /--
 info: Library.Blake3.rotr16_spec : ∀ (b0 b1 b2 b3 : UInt8),
-  Library.Blake3.rotateRight (Library.Blake3.wordOfBytes b0 b1 b2 b3) 16 = Library.Blake3.wordOfBytes b2 b3 b0 b1
+  Blake3.Pure.rotateRight (Library.Blake3.wordOfBytes b0 b1 b2 b3) 16 = Library.Blake3.wordOfBytes b2 b3 b0 b1
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.rotr16_spec
@@ -2814,7 +2818,7 @@ info: Library.Blake3.xor_rotr12_spec : ∀ (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8),
   have r1 := UInt8.ofNat (x2 / 16 + x3 % 16 * 16);
   have r2 := UInt8.ofNat (x3 / 16 + x0 % 16 * 16);
   have r3 := UInt8.ofNat (x0 / 16 + x1 % 16 * 16);
-  Library.Blake3.rotateRight (Library.Blake3.wordOfBytes a0 a1 a2 a3 ^^^ Library.Blake3.wordOfBytes b0 b1 b2 b3) 12 =
+  Blake3.Pure.rotateRight (Library.Blake3.wordOfBytes a0 a1 a2 a3 ^^^ Library.Blake3.wordOfBytes b0 b1 b2 b3) 12 =
     Library.Blake3.wordOfBytes r0 r1 r2 r3
 -/
 #guard_msgs in
@@ -2833,7 +2837,7 @@ info: Library.Blake3.xor_rotr7_spec : ∀ (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8),
   have r1 := UInt8.ofNat (x1 / 128 + x2 % 128 * 2);
   have r2 := UInt8.ofNat (x2 / 128 + x3 % 128 * 2);
   have r3 := UInt8.ofNat (x3 / 128 + x0 % 128 * 2);
-  Library.Blake3.rotateRight (Library.Blake3.wordOfBytes a0 a1 a2 a3 ^^^ Library.Blake3.wordOfBytes b0 b1 b2 b3) 7 =
+  Blake3.Pure.rotateRight (Library.Blake3.wordOfBytes a0 a1 a2 a3 ^^^ Library.Blake3.wordOfBytes b0 b1 b2 b3) 7 =
     Library.Blake3.wordOfBytes r0 r1 r2 r3
 -/
 #guard_msgs in
@@ -2845,14 +2849,14 @@ info: Library.Blake3.xor_rotr7_spec : ∀ (a0 a1 a2 a3 b0 b1 b2 b3 : UInt8),
 /--
 info: Library.Blake3.g_function_spec : ∀ (a b c d mx my : UInt32),
   have a1 := a + b + mx;
-  have d1 := Library.Blake3.rotateRight (d ^^^ a1) 16;
+  have d1 := Blake3.Pure.rotateRight (d ^^^ a1) 16;
   have c1 := c + d1;
-  have b1 := Library.Blake3.rotateRight (b ^^^ c1) 12;
+  have b1 := Blake3.Pure.rotateRight (b ^^^ c1) 12;
   have a2 := a1 + b1 + my;
-  have d2 := Library.Blake3.rotateRight (d1 ^^^ a2) 8;
+  have d2 := Blake3.Pure.rotateRight (d1 ^^^ a2) 8;
   have c2 := c1 + d2;
-  have b2 := Library.Blake3.rotateRight (b1 ^^^ c2) 7;
-  #v[a2, b2, c2, d2] = Library.Blake3.mix a b c d mx my
+  have b2 := Blake3.Pure.rotateRight (b1 ^^^ c2) 7;
+  #v[a2, b2, c2, d2] = Blake3.Pure.mix a b c d mx my
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.g_function_spec
@@ -2861,21 +2865,21 @@ info: Library.Blake3.g_function_spec : ∀ (a b c d mx my : UInt32),
 #print axioms Aiur.Library.Blake3.g_function_spec
 
 /--
-info: Library.Blake3.g_spec : ∀ (state : Library.Blake3.Block) (j : Fin 8) (mx my : UInt32),
+info: Library.Blake3.g_spec : ∀ (state : Blake3.Pure.Block) (j : Fin 8) (mx my : UInt32),
   (match ↑j with
-    | 0 => Library.Blake3.g state 0 4 8 12 mx my
-    | 1 => Library.Blake3.g state 1 5 9 13 mx my
-    | 2 => Library.Blake3.g state 2 6 10 14 mx my
-    | 3 => Library.Blake3.g state 3 7 11 15 mx my
-    | 4 => Library.Blake3.g state 0 5 10 15 mx my
-    | 5 => Library.Blake3.g state 1 6 11 12 mx my
-    | 6 => Library.Blake3.g state 2 7 8 13 mx my
-    | x => Library.Blake3.g state 3 4 9 14 mx my) =
+    | 0 => Blake3.Pure.g state 0 4 8 12 mx my
+    | 1 => Blake3.Pure.g state 1 5 9 13 mx my
+    | 2 => Blake3.Pure.g state 2 6 10 14 mx my
+    | 3 => Blake3.Pure.g state 3 7 11 15 mx my
+    | 4 => Blake3.Pure.g state 0 5 10 15 mx my
+    | 5 => Blake3.Pure.g state 1 6 11 12 mx my
+    | 6 => Blake3.Pure.g state 2 7 8 13 mx my
+    | x => Blake3.Pure.g state 3 4 9 14 mx my) =
     have cols :=
       #v[(0, 4, 8, 12), (1, 5, 9, 13), (2, 6, 10, 14), (3, 7, 11, 15), (0, 5, 10, 15), (1, 6, 11, 12), (2, 7, 8, 13),
         (3, 4, 9, 14)];
     match cols[j] with
-    | (a, b, c, d) => Library.Blake3.g state a b c d mx my
+    | (a, b, c, d) => Blake3.Pure.g state a b c d mx my
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.g_spec
@@ -2884,8 +2888,8 @@ info: Library.Blake3.g_spec : ∀ (state : Library.Blake3.Block) (j : Fin 8) (mx
 #print axioms Aiur.Library.Blake3.g_spec
 
 /--
-info: Library.Blake3.round_spec : ∀ (state m : Library.Blake3.Block),
-  Library.Blake3.compressInnerJ state m = Library.Blake3.round state m Library.Blake3.schedules[0]
+info: Library.Blake3.round_spec : ∀ (state m : Blake3.Pure.Block),
+  Library.Blake3.compressInnerJ state m = Blake3.Pure.round state m Blake3.Pure.schedules[0]
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.round_spec
@@ -2894,8 +2898,8 @@ info: Library.Blake3.round_spec : ∀ (state m : Library.Blake3.Block),
 #print axioms Aiur.Library.Blake3.round_spec
 
 /--
-info: Library.Blake3.permute_spec : ∀ (m : Library.Blake3.Block) (r : Fin 7) (k : Fin 16),
-  (Library.Blake3.permute^[↑r] m)[↑k] = m[Library.Blake3.schedules[r][↑k]]
+info: Library.Blake3.permute_spec : ∀ (m : Blake3.Pure.Block) (r : Fin 7) (k : Fin 16),
+  (Library.Blake3.permute^[↑r] m)[↑k] = m[Blake3.Pure.schedules[r][↑k]]
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.permute_spec
@@ -2904,9 +2908,9 @@ info: Library.Blake3.permute_spec : ∀ (m : Library.Blake3.Block) (r : Fin 7) (
 #print axioms Aiur.Library.Blake3.permute_spec
 
 /--
-info: Library.Blake3.compress_inner_i_spec : ∀ (state m : Library.Blake3.Block),
+info: Library.Blake3.compress_inner_i_spec : ∀ (state m : Blake3.Pure.Block),
   Library.Blake3.compressInnerI state m =
-    Vector.foldl (fun s sched => Library.Blake3.round s m sched) state Library.Blake3.schedules
+    Vector.foldl (fun s sched => Blake3.Pure.round s m sched) state Blake3.Pure.schedules
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.compress_inner_i_spec
@@ -2928,11 +2932,11 @@ info: Library.Blake3.counter_split_spec : ∀ (c0 c1 c2 c3 c4 c5 c6 c7 : UInt8),
 #print axioms Aiur.Library.Blake3.counter_split_spec
 
 /--
-info: Library.Blake3.compress_spec : ∀ (cv : Library.Blake3.CV) (message : Library.Blake3.Block) (counter : UInt64)
+info: Library.Blake3.compress_spec : ∀ (cv : Blake3.Pure.CV) (message : Blake3.Pure.Block) (counter : UInt64)
   (blockLen flags : UInt32),
   Library.Blake3.finalizeState
-      (Library.Blake3.compressInnerI (Library.Blake3.initialWords cv counter blockLen flags) message) =
-    Library.Blake3.compress cv message counter blockLen flags
+      (Library.Blake3.compressInnerI (Blake3.Pure.initialWords cv counter blockLen flags) message) =
+    Blake3.Pure.compress cv message counter blockLen flags
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.compress_spec
@@ -2952,8 +2956,7 @@ info: Library.Blake3.pad_block_spec : ∀ (acc : List UInt8),
 
 /--
 info: Library.Blake3.bytes_to_block_spec : ∀ (acc : List UInt8),
-  acc.length ≤ 64 →
-    Library.Blake3.blockWords (acc ++ List.replicate (64 - acc.length) 0) = Library.Blake3.blockWords acc
+  acc.length ≤ 64 → Blake3.Pure.blockWords (acc ++ List.replicate (64 - acc.length) 0) = Blake3.Pure.blockWords acc
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.bytes_to_block_spec
@@ -2963,7 +2966,7 @@ info: Library.Blake3.bytes_to_block_spec : ∀ (acc : List UInt8),
 
 /--
 info: Library.Blake3.chunk_single_root_spec : ∀ (input : List UInt8),
-  input.length ≤ 1024 → (Library.Blake3.chunkOutput 0 input).rootHash = Library.Blake3.digest input
+  input.length ≤ 1024 → (Blake3.Pure.chunkOutput 0 input).rootHash = Blake3.Pure.digest input
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.chunk_single_root_spec
@@ -2972,9 +2975,9 @@ info: Library.Blake3.chunk_single_root_spec : ∀ (input : List UInt8),
 #print axioms Aiur.Library.Blake3.chunk_single_root_spec
 
 /--
-info: Library.Blake3.next_layer_pair_spec : ∀ (left right : Library.Blake3.CV) (rest : List Library.Blake3.CV),
+info: Library.Blake3.next_layer_pair_spec : ∀ (left right : Blake3.Pure.CV) (rest : List Blake3.Pure.CV),
   Library.Blake3.nextLayer (left :: right :: rest) =
-    Library.Blake3.compress Library.Blake3.iv (left ++ right) 0 64 4 :: Library.Blake3.nextLayer rest
+    Blake3.Pure.compress Blake3.Pure.iv (left ++ right) 0 64 4 :: Library.Blake3.nextLayer rest
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.next_layer_pair_spec
@@ -2983,9 +2986,8 @@ info: Library.Blake3.next_layer_pair_spec : ∀ (left right : Library.Blake3.CV)
 #print axioms Aiur.Library.Blake3.next_layer_pair_spec
 
 /--
-info: Library.Blake3.compress_layer_two_spec : ∀ (left right : Library.Blake3.CV),
-  Library.Blake3.cvBytes (Library.Blake3.compressLayer [left, right]) =
-    (Library.Blake3.parentOutput left right).rootHash
+info: Library.Blake3.compress_layer_two_spec : ∀ (left right : Blake3.Pure.CV),
+  Blake3.Pure.cvBytes (Library.Blake3.compressLayer [left, right]) = (Blake3.Pure.parentOutput left right).rootHash
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.compress_layer_two_spec
@@ -2994,7 +2996,7 @@ info: Library.Blake3.compress_layer_two_spec : ∀ (left right : Library.Blake3.
 #print axioms Aiur.Library.Blake3.compress_layer_two_spec
 
 /--
-info: Library.Blake3.compress_layer_step_spec : ∀ (left right c : Library.Blake3.CV) (rest : List Library.Blake3.CV),
+info: Library.Blake3.compress_layer_step_spec : ∀ (left right c : Blake3.Pure.CV) (rest : List Blake3.Pure.CV),
   Library.Blake3.compressLayer (left :: right :: c :: rest) =
     Library.Blake3.compressLayer (Library.Blake3.nextLayer (left :: right :: c :: rest))
 -/
@@ -3005,8 +3007,8 @@ info: Library.Blake3.compress_layer_step_spec : ∀ (left right c : Library.Blak
 #print axioms Aiur.Library.Blake3.compress_layer_step_spec
 
 /--
-info: Library.Blake3.digest_bytes_spec : ∀ (cv : Library.Blake3.CV) (i : Fin 32),
-  (Library.Blake3.cvBytes cv)[i] = (Library.Blake3.wordBytes cv[↑i / 4])[↑i % 4]
+info: Library.Blake3.digest_bytes_spec : ∀ (cv : Blake3.Pure.CV) (i : Fin 32),
+  (Blake3.Pure.cvBytes cv)[i] = (Blake3.Pure.wordBytes cv[↑i / 4])[↑i % 4]
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.digest_bytes_spec
@@ -3015,8 +3017,8 @@ info: Library.Blake3.digest_bytes_spec : ∀ (cv : Library.Blake3.CV) (i : Fin 3
 #print axioms Aiur.Library.Blake3.digest_bytes_spec
 
 /--
-info: @Library.Blake3.cvBytes_inj : ∀ {cv1 cv2 : Library.Blake3.CV},
-  Library.Blake3.cvBytes cv1 = Library.Blake3.cvBytes cv2 → cv1 = cv2
+info: @Library.Blake3.cvBytes_inj : ∀ {cv1 cv2 : Blake3.Pure.CV},
+  Blake3.Pure.cvBytes cv1 = Blake3.Pure.cvBytes cv2 → cv1 = cv2
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.cvBytes_inj
@@ -3047,9 +3049,9 @@ info: @Library.Blake3.address_to_fields_inj : ∀ {F : Type} [inst : Field F],
 /--
 info: @Library.Blake3.verify_bytes_against_iff : ∀ {F : Type} [inst : Field F],
   Library.U32.Compatible F →
-    ∀ (bytes : List UInt8) (expectedAddr : Library.Blake3.Digest),
-      Library.Blake3.addressToFields F (Library.Blake3.digest bytes) = Library.Blake3.addressToFields F expectedAddr ↔
-        Library.Blake3.digest bytes = expectedAddr
+    ∀ (bytes : List UInt8) (expectedAddr : Blake3.Pure.Digest),
+      Library.Blake3.addressToFields F (Blake3.Pure.digest bytes) = Library.Blake3.addressToFields F expectedAddr ↔
+        Blake3.Pure.digest bytes = expectedAddr
 -/
 #guard_msgs in
 #check @Aiur.Library.Blake3.verify_bytes_against_iff
@@ -3063,6 +3065,79 @@ info: @Library.Blake3.verify_bytes_against_iff : ∀ {F : Type} [inst : Field F]
 /-- info: 'Aiur.Library.Blake3.Goldilocks.u64_compatible' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.Blake3.Goldilocks.u64_compatible
+
+/--
+info: Blake3.Pure.mergeLevels_chunkOutputs : ∀ (counter : ℕ) (input : List UInt8),
+  Blake3.Pure.mergeLevels (Blake3.Pure.chunkOutputs counter input) = Blake3.Pure.subtree counter input
+-/
+#guard_msgs in
+#check @Blake3.Pure.mergeLevels_chunkOutputs
+/-- info: 'Blake3.Pure.mergeLevels_chunkOutputs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Blake3.Pure.mergeLevels_chunkOutputs
+
+/--
+info: Blake3.Pure.digest_eq_mergeLevels : ∀ (input : List UInt8),
+  Blake3.Pure.digest input = (Blake3.Pure.mergeLevels (Blake3.Pure.chunkOutputs 0 input)).rootHash
+-/
+#guard_msgs in
+#check @Blake3.Pure.digest_eq_mergeLevels
+/-- info: 'Blake3.Pure.digest_eq_mergeLevels' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Blake3.Pure.digest_eq_mergeLevels
+
+/--
+info: Library.Blake3.compress_layer_spec : ∀ (outputs : List Blake3.Pure.Output),
+  2 ≤ outputs.length →
+    Blake3.Pure.cvBytes (Library.Blake3.compressLayer (List.map Blake3.Pure.Output.chainingValue outputs)) =
+      (Blake3.Pure.mergeLevels outputs).rootHash
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.compress_layer_spec
+/-- info: 'Aiur.Library.Blake3.compress_layer_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.compress_layer_spec
+
+/--
+info: Library.Blake3.hashBlocks_chunks : ∀ (input : List UInt8) (c : ℕ) (layer : List Blake3.Pure.CV),
+  0 < input.length →
+    0 < c + (input.length - 1) / 1024 →
+      c + (input.length - 1) / 1024 < 2 ^ 64 →
+        Library.Blake3.hashBlocks input 0 c.toUInt64 Blake3.Pure.iv layer =
+          layer ++ List.map Blake3.Pure.Output.chainingValue (Blake3.Pure.chunkOutputs c input)
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.hashBlocks_chunks
+/-- info: 'Aiur.Library.Blake3.hashBlocks_chunks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.hashBlocks_chunks
+
+/--
+info: Library.Blake3.hash_model_spec : ∀ (input : List UInt8),
+  Blake3.Pure.NativeInput input → Blake3.Pure.cvBytes (Library.Blake3.hashModel input) = Blake3.Pure.digest input
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.hash_model_spec
+/-- info: 'Aiur.Library.Blake3.hash_model_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.hash_model_spec
+
+/--
+info: @Library.Blake3.verify_bytes_against_model_iff : ∀ {F : Type} [inst : Field F],
+  Library.U32.Compatible F →
+    ∀ (bytes : List UInt8),
+      Blake3.Pure.NativeInput bytes →
+        ∀ (expected : Blake3.Pure.Digest),
+          Library.Blake3.addressToFields F (Blake3.Pure.cvBytes (Library.Blake3.hashModel bytes)) =
+              Library.Blake3.addressToFields F expected ↔
+            Blake3.Pure.digest bytes = expected
+-/
+#guard_msgs in
+#check @Aiur.Library.Blake3.verify_bytes_against_model_iff
+/-- info: 'Aiur.Library.Blake3.verify_bytes_against_model_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Library.Blake3.verify_bytes_against_model_iff
+
 
 /-! ### 5. Heap Monotonicity (`Aiur.HeapMono`) -/
 
@@ -5350,14 +5425,14 @@ info: @Library.IxVMRep.RepRoleCtx.det : ∀ {F : Type} [inst : Field F],
 info: @Library.IxVMRep.ingress_verify_stream_sound : ∀ {F : Type} [inst : Field F],
   Library.U32.Compatible F →
     ∀ (enumName : String) (stream : ℕ → UInt8) (idx len : ℕ) (h : Heap F) (expectedAddr : Library.Bytes.Address),
-      Library.List.Word.depthChecked (Library.Bytes.readByteStream stream idx len) = some len →
-        Library.Blake3.addressToFields F (Library.Blake3.digest (Library.Bytes.readByteStream stream idx len)) =
+      len < 2 ^ 32 →
+        Library.Blake3.addressToFields F (Blake3.Pure.digest (Library.Bytes.readByteStream stream idx len)) =
             Library.Blake3.addressToFields F expectedAddr →
           have bytes := Library.Bytes.readByteStream stream idx len;
           have allocated := Library.Bytes.allocByteStream enumName h bytes;
           h.Extends allocated.2 ∧
             Library.Bytes.RepByteStream enumName allocated.2 bytes allocated.1 ∧
-              bytes.length = len ∧ len < Library.U32.base ∧ Library.Blake3.digest bytes = expectedAddr
+              bytes.length = len ∧ len < Library.U32.base ∧ Blake3.Pure.digest bytes = expectedAddr
 -/
 #guard_msgs in
 #check @Aiur.Library.IxVMRep.ingress_verify_stream_sound

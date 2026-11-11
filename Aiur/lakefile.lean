@@ -21,6 +21,11 @@ package aiur where
 
 require "leanprover-community" / "mathlib" @ git "v4.34.1"
 
+/- The BLAKE3 specification the library is proved against (`Blake3.Pure`), the same pinned
+revision as the root, IxVM and MultiStark packages. -/
+require Blake3 from git
+  "https://github.com/argumentcomputer/Blake3.lean" @ "3f8b805614a0bae1c033469ff893a8f0ee85f601"
+
 /-- Keep ordinary Cargo builds independent of Lean. Only the Lean executable
 link step needs this archive and the small C object-ABI adapter. -/
 target aiur_rs pkg : FilePath := do
