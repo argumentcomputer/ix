@@ -249,12 +249,9 @@ def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
           IotaThmRun μ F env' envSelf f cvName lps tyA mI rP j r
             cvj cnP cnF rhsA) ∨
        (Expr.recRulePlain tyA mI rP cnP cvj.levelParams = false ∧
-          ((fire = .inert ∧
-            nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
-              = none) ∨
-           (∃ lvls pins, fire = .nested lvls pins ∧
-             IotaThmNRun μ F env' envSelf f cvName lps tyA mI rP j r
-               cvj cnP cnF rhsA lvls pins))))
+          ∃ lvls pins, fire = .nested lvls pins ∧
+            IotaThmNRun μ F env' envSelf f cvName lps tyA mI rP j r
+              cvj cnP cnF rhsA lvls pins))
 
 /-- `IotaRulesR`'s run/guard half. -/
 def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)

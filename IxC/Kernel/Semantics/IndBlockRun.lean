@@ -661,8 +661,7 @@ theorem iotaRulesFactsRun {J : Judgements md}
         rw [hr'fire] at hfireN
         rcases hbranch with ⟨-, hfireP, -⟩ | ⟨-, hrest⟩
         · rw [hfireP] at hfireN; exact nomatch hfireN
-        rcases hrest with ⟨hfireI, -⟩ | ⟨lvls₀, pins₀, hfireN₀, hthmN⟩
-        · rw [hfireI] at hfireN; exact nomatch hfireN
+        obtain ⟨lvls₀, pins₀, hfireN₀, hthmN⟩ := hrest
         rw [hfireN₀] at hfireN
         obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj hfireN
         obtain ⟨hshape, -⟩ := hthmN
@@ -678,15 +677,13 @@ theorem iotaRulesFactsRun {J : Judgements md}
           rw [hr'fire] at hp
           rcases hbranch with ⟨hplain, -, -⟩ | ⟨-, hrest⟩
           · exact hplain
-          rcases hrest with ⟨hfireI, -⟩ | ⟨lvls₀, pins₀, hfireN₀, -⟩
-          · rw [hfireI] at hp; exact nomatch hp
-          · rw [hfireN₀] at hp; exact nomatch hp
+          obtain ⟨lvls₀, pins₀, hfireN₀, -⟩ := hrest
+          rw [hfireN₀] at hp; exact nomatch hp
         · rw [hr'cp]
           rw [hr'fire] at hfireN
           rcases hbranch with ⟨-, hfireP, -⟩ | ⟨-, hrest⟩
           · rw [hfireP] at hfireN; exact nomatch hfireN
-          rcases hrest with ⟨hfireI, -⟩ | ⟨lvls₀, pins₀, hfireN₀, hthmN⟩
-          · rw [hfireI] at hfireN; exact nomatch hfireN
+          obtain ⟨lvls₀, pins₀, hfireN₀, hthmN⟩ := hrest
           rw [hfireN₀] at hfireN
           obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj hfireN
           obtain ⟨-, -, -, _, _, _, _, _, -, -, -, hlen⟩ := nestedRuleShape_inv hthmN.1
@@ -696,8 +693,7 @@ theorem iotaRulesFactsRun {J : Judgements md}
         refine ⟨?_, fun φ => ?_⟩
         · rcases hbranch with ⟨hplain, -, -⟩ | ⟨-, hrest⟩
           · exact recRulePlain_params_le hplain
-          rcases hrest with ⟨hfireI, -⟩ | ⟨lvls₀, pins₀, hfireN₀, hthmN⟩
-          · exact absurd (by rw [hr'fire, hfireI]) hfire
+          obtain ⟨lvls₀, pins₀, hfireN₀, hthmN⟩ := hrest
           exact (nestedRuleShape_inv hthmN.1).1
         · obtain ⟨t', hty'⟩ := hityK
           obtain ⟨Rv, hRv⟩ := hden rhsA hrhsAw hrhsAb ⟨t', hty'⟩ φ

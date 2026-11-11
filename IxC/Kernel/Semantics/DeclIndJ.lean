@@ -322,12 +322,9 @@ def IotaRuleRunJ (J : Judgements md) (env' envSelf : Env md)
           IotaThmRunJ J env' envSelf f cvName lps tyA mI rP j r
             cvj cnP cnF rhsA) ∨
        (Expr.recRulePlain tyA mI rP cnP cvj.levelParams = false ∧
-          ((fire = .inert ∧
-            nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
-              = none) ∨
-           (∃ lvls pins, fire = .nested lvls pins ∧
-             IotaThmNRunJ J env' envSelf f cvName lps tyA mI rP j r
-               cvj cnP cnF rhsA lvls pins))))
+          ∃ lvls pins, fire = .nested lvls pins ∧
+            IotaThmNRunJ J env' envSelf f cvName lps tyA mI rP j r
+              cvj cnP cnF rhsA lvls pins))
 
 /-- `IotaRulesRun` over a package. -/
 def IotaRulesRunJ (J : Judgements md) (env' envSelf : Env md)
@@ -505,10 +502,9 @@ theorem iotaRuleRun_runJ {env' envSelf : Env md} {f : Key md → Key md}
   obtain ⟨cvj, cnP, cnF, rhsA, h1, h2, h3, h4, h5, h6, h7, h8, h9, fire, h10,
     hbr⟩ := h
   refine ⟨cvj, cnP, cnF, rhsA, h1, h2, h3, h4, h5, h6, h7, h8, h9, fire, h10, ?_⟩
-  rcases hbr with ⟨hp, hf, ht⟩ | ⟨hp, ⟨hf, hn⟩ | ⟨lvls, pins, hf, ht⟩⟩
+  rcases hbr with ⟨hp, hf, ht⟩ | ⟨hp, lvls, pins, hf, ht⟩
   · exact Or.inl ⟨hp, hf, iotaThmRun_runJ ht⟩
-  · exact Or.inr ⟨hp, Or.inl ⟨hf, hn⟩⟩
-  · exact Or.inr ⟨hp, Or.inr ⟨lvls, pins, hf, iotaThmNRun_runJ ht⟩⟩
+  · exact Or.inr ⟨hp, lvls, pins, hf, iotaThmNRun_runJ ht⟩
 
 theorem iotaRulesRun_runJ {env' envSelf : Env md} {f : Key md → Key md}
     {cvName : Key md} {lps : List LevelParam} {tyA : Expr md} {mI rP : Nat} :

@@ -193,9 +193,8 @@ theorem iotaRulePlain {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env
     rcases hbranch with h | ⟨hnpl, hrest⟩
     · exact h
     · exfalso
-      rcases hrest with ⟨hfireI, -⟩ | ⟨lvls, pins, hfireN, -⟩
-      · rw [hr'fire, hfireI] at hfireP; exact nomatch hfireP
-      · rw [hr'fire, hfireN] at hfireP; exact nomatch hfireP
+      obtain ⟨lvls, pins, hfireN, -⟩ := hrest
+      rw [hr'fire, hfireN] at hfireP; exact nomatch hfireP
   refine ⟨recRulePlain_le_mIT hpl, ?_⟩
   intro us huslen
   -- unpack the canonical `iota_j` kit

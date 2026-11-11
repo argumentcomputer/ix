@@ -202,15 +202,16 @@ arguments are all opened variables, the stored pins can contain
 binders (dependent nested occurrences, `Impl α (fun _ => T ...)`), and
 export arenas intern name-insensitively, so the theorem's pin spelling
 can differ from the recursor type's in binder names only.  When
-the rule has no certifiable shape the rule is stored inert (`.inert`;
-a matched major positively declines at fire time); a shape whose
+the rule has no certifiable shape the block is declined (every stored
+rule fires); a shape whose
 theorem then fails the pin is a positive decline here. -/
 def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
     (mI rP j : Nat) (r : RecRule md) (cvj : ConstantVal md)
     (cnP cnF : Nat) (rhsA : Expr md) : m (RecRuleFire md) := do
     match nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j with
-    | none => pure .inert
+    | none => throw (.notImplemented
+        msg!"nested auxiliary rule outside the certified shape for {cvName}")
     | some (lvls, pins) => do
     let cvt ← unwrapOr
         (env'.findCV? (auxKey (auxKey cvName .model) (.iota j)))

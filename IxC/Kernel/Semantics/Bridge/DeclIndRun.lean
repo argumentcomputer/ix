@@ -295,9 +295,9 @@ theorem iotaRuleRun_of {env' envSelf : Env md}
     cases hf : fire0 with
     | plain =>
       exact absurd (hplainIff.mp hf) (by rw [hplainF]; simp)
-    | inert => exact Or.inl ⟨rfl, hinert hf⟩
+    | inert => exact absurd hf hinert
     | nested lvls pins =>
-      refine Or.inr ⟨lvls, pins, rfl, ?_⟩
+      refine ⟨lvls, pins, rfl, ?_⟩
       obtain ⟨-, -, -, -, -, hkitN⟩ := hnested lvls pins hf
       exact iotaThmNRun_of (hnestShape lvls pins hf) hkitN
 
