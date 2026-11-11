@@ -217,6 +217,17 @@ public inductive NestListIdx (α : Type) : List α → Type where
   | nil : NestListIdx α []
   | mk : List (NestListIdx α []) → NestListIdx α []
 
+-- Nested blocks with a reflexive field into a member: in a constructor of
+-- the block, and in a container pinned at a function into the block (the
+-- container's own field is reflexive).
+public inductive NestRefl where
+  | leaf : NestRefl
+  | mk : (Nat → NestRefl) → List NestRefl → NestRefl
+
+public inductive NestReflOpt where
+  | leaf : NestReflOpt
+  | mk : Option (Nat → NestReflOpt) → NestReflOpt
+
 public def thmMajorWant (n : Nat) (_pf : n = 1) : Nat := n
 
 @[expose] public def thmMajorUse : Nat :=

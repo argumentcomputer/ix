@@ -573,9 +573,7 @@ theorem lowerInductive_sideNames {st : State .source} {rb : BlockRead .source}
   split at h
   all_goals
     rcases ReaderUnits.ite_ok h with h | h
-    all_goals first
-      | (obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h)
-      | skip
+    all_goals obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
     all_goals
       rcases ReaderUnits.ite_ok h with h | h
       · split at h

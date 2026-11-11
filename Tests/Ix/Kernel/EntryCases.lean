@@ -208,6 +208,11 @@ def cases : List Case := [
   -- reduction through both recursors
   { label := "nested-parameter-index", seeds := [seed "NB", seed "NB4", seed "nb4Iota"],
     expected := .accept },
+  -- nested blocks with a reflexive field into a member (in a constructor of
+  -- the block, and in a container pinned at a function into it), with ι
+  -- reductions through the reflexive hypotheses
+  { label := "nested-reflexive", seeds := [seed "RA1", seed "RA3", seed "ra1Iota", seed "ra3Iota"],
+    expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in
   -- canonical form, equal at every valuation (only the Géran fallback of the
@@ -305,6 +310,20 @@ def cases : List Case := [
       | _, _ => false },
   { label := "nested-parameter-index-false-constructor", seeds := [`nb4CtorFalse],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `nb4CtorFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- false ι equations through the reflexive fields of `RA1` and `RA3`, and a
+  -- false constructor equation at `RA3`
+  { label := "nested-reflexive-false-iota", seeds := [`ra1IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `ra1IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-reflexive-container-false-iota", seeds := [`ra3IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `ra3IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-reflexive-container-false-constructor", seeds := [`ra3CtorFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `ra3CtorFalse with
       | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
@@ -422,8 +441,9 @@ def tierCases : List TierCase := [
 
 /-! ## Forged records of a modeled block
 
-Hand-built records Lean cannot produce, at a nested block the in-process
-modeller models (`NB4`, whose index domain mentions a parameter): the block's
+Hand-built records Lean cannot produce, at the nested blocks the in-process
+modeller models (`NB4`, whose index domain mentions a parameter; `RA1` and
+`RA3`, with a reflexive field into a member): the blocks'
 recursor records altered over the decoded records, each under its key, and
 checked by the logical entry (`Admission.checkConstants`). Each must be
 refused, by the reader or the checker (a K flag on a nested block by the reader).
@@ -470,7 +490,17 @@ def forgedCases : List ForgedCase := [
       | none => r },
   { label := "modeled-nested-parameter-index-forged-k", seeds := [seed "NB4"],
     target := seed "NB4.rec", forge := fun r => { r with k := true },
-    refusal := (hasInfix · "of a nested block declares k := true") } ]
+    refusal := (hasInfix · "of a nested block declares k := true") },
+  -- a reflexive field into a member: in a constructor of the block (`RA1`),
+  -- and in a container pinned at a function into it (`RA3`)
+  { label := "modeled-nested-reflexive-forged-rule", seeds := [seed "RA1"],
+    target := seed "RA1.rec", forge := swapRules },
+  { label := "modeled-nested-reflexive-forged-fields", seeds := [seed "RA1"],
+    target := seed "RA1.rec", forge := fun r => match r.rules[1]? with
+      | some b => { r with rules := r.rules.set! 1 { b with fields := b.fields + 1 } }
+      | none => r },
+  { label := "modeled-nested-reflexive-container-forged-rule", seeds := [seed "RA3"],
+    target := seed "RA3.rec", forge := swapRules } ]
 
 def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
   let started ← IO.monoMsNow

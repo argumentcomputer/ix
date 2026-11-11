@@ -142,6 +142,31 @@ noncomputable def nb4Val (t : NB4 Nat []) : Nat :=
 
 theorem nb4Iota : nb4Val (NB4.mk [NB4.nil]) = 2 := rfl
 
+/-- Nested blocks with a reflexive field into a member: in a constructor of
+the block (`RA1`), and in a container pinned at a function into the block
+(`RA3`: the container's own field, `Option.some`'s, is reflexive). -/
+inductive RA1 where
+  | leaf : RA1
+  | mk : (Nat → RA1) → List RA1 → RA1
+
+inductive RA3 where
+  | leaf : RA3
+  | mk : Option (Nat → RA3) → RA3
+
+/-- Values by the blocks' recursors, and ι reductions through the
+reflexive fields' hypotheses. -/
+noncomputable def ra1Val (t : RA1) : Nat :=
+  RA1.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ _ ihf ihl => ihf 0 + ihl + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+theorem ra1Iota : ra1Val (RA1.mk (fun _ => RA1.leaf) [RA1.leaf]) = 3 := rfl
+
+noncomputable def ra3Val (t : RA3) : Nat :=
+  RA3.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ ih => ih 0 + 5) t
+
+theorem ra3Iota : ra3Val (RA3.mk (some fun _ => RA3.leaf)) = 7 := rfl
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
@@ -236,5 +261,15 @@ bad_thm falseThm : False := unchecked True.intro
 bad_thm nb4IotaFalse : nb4Val (NB4.mk [NB4.nil]) = 3 := unchecked (Eq.refl (nb4Val (NB4.mk [NB4.nil])))
 
 bad_thm nb4CtorFalse : NB4.nil (α := Nat) = NB4.mk [] := unchecked (Eq.refl (NB4.nil (α := Nat)))
+
+-- False ι equations through the reflexive fields of `RA1` and `RA3`, and a
+-- false constructor equation at `RA3`, installed in Lean unchecked.
+bad_thm ra1IotaFalse : ra1Val (RA1.mk (fun _ => RA1.leaf) [RA1.leaf]) = 4 :=
+  unchecked (Eq.refl (ra1Val (RA1.mk (fun _ => RA1.leaf) [RA1.leaf])))
+
+bad_thm ra3IotaFalse : ra3Val (RA3.mk (some fun _ => RA3.leaf)) = 6 :=
+  unchecked (Eq.refl (ra3Val (RA3.mk (some fun _ => RA3.leaf))))
+
+bad_thm ra3CtorFalse : RA3.mk none = RA3.leaf := unchecked (Eq.refl (RA3.mk none))
 
 end Tests.Ix.Kernel.EntryCaseDefs

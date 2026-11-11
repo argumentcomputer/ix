@@ -224,6 +224,15 @@ theorem idxBm {mems : List (Mem md)} {mem : Mem md} (hx : mem ∈ mems) (hmG : �
 theorem domm {cs : List (ACtor md)} {c : ACtor md} (hx : c ∈ cs) (hcG : ∀ c ∈ cs, c.Good P) (i : Nat) :
     RG P f (c.doms.getD i default) ((c.mapKeys f).doms.getD i default) :=
   dom (hcG c hx) i
+/-- A field's domain past its telescope (`teleBody`), renamed. -/
+theorem tbody {c : ACtor md} (hc : c.Good P) (i : Nat) :
+    RG P f (teleBody c i) (teleBody (c.mapKeys f) i) := by
+  have hs := stripAllPis_good (Expr.GoodList.getD_default hc.2.1 i)
+  refine ⟨?_, hs.2⟩
+  simp only [teleBody, ACtor.mapKeys_doms, getD_mapKeys_default, stripAllPis_mapKeys, Expr.mapTele]
+theorem tbodym {cs : List (ACtor md)} {c : ACtor md} (hx : c ∈ cs) (hcG : ∀ c ∈ cs, c.Good P) (i : Nat) :
+    RG P f (teleBody c i) (teleBody (c.mapKeys f) i) :=
+  tbody (hcG c hx) i
 end RG
 
 namespace RGL
@@ -310,20 +319,38 @@ theorem mc (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i : Nat) {d :
     obtain ⟨t, idx⟩ := p
     exact ⟨rfl, fun y hy => Expr.Good.getAppArgs h y (matchCarrier_args hm y hy)⟩
 /-- A field's index arguments off its domain (`fieldIdx`). -/
-theorem fieldIdx (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o' : Nat) {d : Expr md}
+theorem fieldIdx (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o' c : Nat) {d : Expr md}
     {d' : Expr md'} (h : RG P f d d') :
-    RGL P f ((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o' 0))
-      ((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o' 0)) :=
-  lifts (mc hf hfam i h) o' 0
+    RGL P f ((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o' c))
+      ((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o' c)) :=
+  lifts (mc hf hfam i h) o' c
 /-- A field's index arguments off its domain, the parameters lifted past `o` binders
 (`fieldIdxAt`). -/
-theorem fieldIdxAt (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o o' : Nat) {d : Expr md}
+theorem fieldIdxAt (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i c o o' c' : Nat) {d : Expr md}
     {d' : Expr md'} (h : RG P f d d') :
-    RGL P f (((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o i)).map
-        (·.liftLooseBVars o' 0))
-      (((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o i)).map
-        (·.liftLooseBVars o' 0)) :=
-  lifts (lifts (mc hf hfam i h) o i) o' 0
+    RGL P f (((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o c)).map
+        (·.liftLooseBVars o' c'))
+      (((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o c)).map
+        (·.liftLooseBVars o' c')) :=
+  lifts (lifts (mc hf hfam i h) o c) o' c'
+/-- A field's telescope domains (`teleDoms`), renamed. -/
+theorem tele {c : ACtor md} (hc : c.Good P) (i : Nat) :
+    RGL P f (teleDoms c i) (teleDoms (c.mapKeys f) i) := by
+  have hs := stripAllPis_good (Expr.GoodList.getD_default hc.2.1 i)
+  refine ⟨?_, Expr.goodList_piBinders hs.1⟩
+  simp only [teleDoms, ACtor.mapKeys_doms, getD_mapKeys_default, stripAllPis_mapKeys, Expr.mapTele,
+    piBinders_mapBinders']
+theorem telem {cs : List (ACtor md)} {c : ACtor md} (hx : c ∈ cs) (hcG : ∀ c ∈ cs, c.Good P) (i : Nat) :
+    RGL P f (teleDoms c i) (teleDoms (c.mapKeys f) i) :=
+  tele (hcG c hx) i
+/-- A telescope at another frame (`liftTele`). -/
+theorem liftT {tele : List (Expr md)} {tele' : List (Expr md')} (h : RGL P f tele tele') (i o o' : Nat) :
+    RGL P f (liftTele tele i o o') (liftTele tele' i o o') := by
+  obtain ⟨rfl, h⟩ := h
+  unfold Ix.Kernel.Frontend.InModel.liftTele
+  rw [List.length_map]
+  exact map rfl fun j _ =>
+    RG.lift (RG.lift ⟨getD_mapKeys_default _ _, Expr.GoodList.getD_default h j⟩ _ _) _ _
 
 end RGL
 
@@ -638,6 +665,10 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible exact RG.dom ‹_› _)
   | (with_reducible exact RG.idxBm ‹_› ‹_› _)
   | (with_reducible exact RG.domm ‹_› ‹_› _)
+  | (with_reducible exact RG.tbody ‹_› _)
+  | (with_reducible exact RG.tbodym ‹_› ‹_› _)
+  | (with_reducible exact RGL.tele ‹_› _)
+  | (with_reducible exact RGL.telem ‹_› ‹_› _)
   | (with_reducible exact RGL.idx ‹_›)
   | (with_reducible exact RGL.pins ‹_›)
   | (with_reducible exact RGL.pinsD ‹_› _)
@@ -658,8 +689,8 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine RG.eq ‹_› ?_ ?_ ?_)
   | (with_reducible refine RG.refl ‹_› ?_ ?_)
   | (with_reducible refine RG.eqRec ‹_› ?_ ?_ ?_ ?_ ?_ ?_)
-  | (with_reducible refine RGL.fieldIdxAt ‹_› ‹_› _ _ _ ?_)
-  | (with_reducible refine RGL.fieldIdx ‹_› ‹_› _ _ ?_)
+  | (with_reducible refine RGL.fieldIdxAt ‹_› ‹_› _ _ _ _ _ ?_)
+  | (with_reducible refine RGL.fieldIdx ‹_› ‹_› _ _ _ ?_)
   | (with_reducible refine RGL.mc ‹_› ‹_› _ ?_)
   | (with_reducible refine RGL.cons ?_ ?_)
   | (with_reducible refine RGL.append ?_ ?_)
@@ -667,6 +698,7 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine RGL.args ?_)
   | (with_reducible refine RGL.liftAll ?_ _)
   | (with_reducible refine RGL.lifts ?_ _ _)
+  | (with_reducible refine RGL.liftT ?_ _ _ _)
   | (with_reducible refine RGL.set ?_ _ ?_)
   | (with_reducible refine RGL.mapG ‹_› ?_; intro _ _)
   | (with_reducible refine RGL.mapR ?_ ?_; rotate_left; intro _ _ _)
@@ -697,7 +729,7 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible exact goodRecD ‹_› _)
   | exact ‹KeyScope.Pre _› _ (by decide)
   | (simp only [Mem.mapKeys_tag, Mem.mapKeys_real?, Mem.mapKeys_j, Mem.mapKeys_nIdx, Mem.mapKeys_lv,
-      Mem.mapKeys_pins_length, ACtor.mapKeys_mem, ACtor.mapKeys_kinds, ACtor.mapKeys_nF,
+      Mem.mapKeys_pins_length, ACtor.mapKeys_mem, ACtor.mapKeys_kinds, ACtor.mapKeys_teles, ACtor.mapKeys_nF,
       ACtor.mapKeys_clv, ACtor.mapKeys_J, ACtor.mapKeys_jIn, ACtor.mapKeys_cname, Group.mapKeys_tags,
       Group.mapKeys_lv, Group.mapKeys_nPI, Group.mapKeys_large, getD_map_default Mem.mapKeys_default,
       getD_map_default IndRecRec.mapKeys_default, IndRecRec.mapKeys_cv, ConstantVal.mapKeys_name,
@@ -795,11 +827,11 @@ theorem push_thm_map {o : Array (Declaration md)} {nm : Key md} {nm' : Key md'} 
       (o.push (.thmDecl ⟨nm, l, ty⟩ v)).map (Declaration.mapKeys f) := by
   subst hnm hty hv; rw [Array.map_push]; rfl
 
--- The elaboration budget: one theorem walks all of `genNested` (about 930 lines of
+-- The elaboration budget: one theorem walks all of `genNested` (about 990 lines of
 -- generator, each emitted term descended by `rg`); genMutual's 4000000 ran out at the
 -- last step (the projection artifacts). It bounds elaboration only, as does the first
 -- `simp`'s step bound (it inlines every `let` of the generator).
-set_option maxHeartbeats 10000000 in
+set_option maxHeartbeats 20000000 in
 theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
@@ -807,7 +839,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   obtain ⟨types, ctors, recs⟩ := b
   obtain ⟨hty, hct, hrc⟩ := hb
   unfold genNested
-  simp (config := { maxSteps := 400000 }) only [← Bool.cond_eq_ite, except_throw_bind,
+  simp (config := { maxSteps := 800000 }) only [← Bool.cond_eq_ite, except_throw_bind,
     BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
     BlockRec.mapKeys_recs, List.length_map]
   cases types with
@@ -822,9 +854,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_list hl trivial fun t t' _ _ ht _ => ?_)
     fun _ _ _ => ?_
   · obtain ⟨rfl, htg⟩ := ht
-    simp only [IndTypeRec.mapKeys_isReflexive, IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_levelParams,
-      IndTypeRec.mapKeys_nP]
-    refine ExRel.cond rfl (fun _ => ?_) (fun _ => ExRel.throw')
+    simp only [IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_levelParams, IndTypeRec.mapKeys_nP]
     exact ExRel.cond rfl (fun _ => ExRel.pure' trivial) (fun _ => ExRel.throw')
   simp only [Expr.stripPis_mapKeys]
   cases hs : Expr.stripPis (t0.nP + t0.nIdx) t0.cv.type with

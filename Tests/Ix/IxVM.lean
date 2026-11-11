@@ -101,6 +101,8 @@ def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.HiddenIdx.rec", 201_904_706),
   ("IxVMInd.NestParIdx.rec", 985_026_645),
   ("IxVMInd.NestListIdx.rec", 936_159_262),
+  ("IxVMInd.NestRefl.rec", 0),
+  ("IxVMInd.NestReflOpt.rec", 0),
   ("IxVMInd.thmMajorUse", 677_404_631),
   ("IxVMInd.partialKRec", 221_567_484),
   ("IxVMInd.deepRebase", 286_626_208),

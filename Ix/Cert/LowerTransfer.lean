@@ -141,7 +141,7 @@ theorem kStep_yields (x : CVal md × RecCounts × List (RecRule md)) (r : ForInS
   cases hk : rc.k <;>
     simp [kStep, hk, malformed, throw, throwThe, MonadExceptOf.throw, bind, Except.bind, pure,
       Except.pure] at h
-  all_goals first | exact h.symm | exact h
+  all_goals exact h.symm
 
 theorem checkStep_yields (rb : BlockRead md) (x : CVal md × RecCounts × List (RecRule md))
     (r : ForInStep PUnit) (h : checkStep rb x () = .ok r) : r = .yield () := by

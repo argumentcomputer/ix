@@ -19,10 +19,10 @@ model is witness data. Two properties are tested here:
   with every `iota_j` proof rewritten (`let _ : Nat := 0; p`), so that every
   theorem record, and with it the advice set, has another address. The circuit
   must accept the same claims with it.
-* **Verdicts at a nested block whose index domain mentions a parameter**
-  (`nestedVerdicts`): an ι reduction through its recursors is accepted, and a
-  false ι equation and a false constructor equation, installed in Lean
-  unchecked, are refused.
+* **Verdicts at nested blocks the modeller models** (`nestedVerdicts`: an index
+  domain that mentions a parameter, a reflexive field into a member): ι
+  reductions through their recursors are accepted, and false ι and constructor
+  equations, installed in Lean unchecked, are refused.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -47,15 +47,21 @@ def modeledNames : List String := [
   "IxVMInd.SoloA.rec", "IxVMInd.Tree", "IxVMInd.Tree.rec", "IxVMInd.Tree.rec_1",
   "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec"]
 
-/-- Claims on a nested block whose index domain mentions a parameter
-(`Tests.Ix.Kernel.EntryCaseDefs.NB4`), with the verdict the circuit must give:
-an ι reduction through both recursors, and a false ι equation and a false
-constructor equation installed in Lean unchecked (`bad_thm` declares their
+/-- Claims on nested blocks the modeller models, with the verdict the circuit
+must give: `Tests.Ix.Kernel.EntryCaseDefs.NB4` (an index domain that mentions
+a parameter), `RA1` and `RA3` (a reflexive field into a member). For each, ι
+reductions through the recursors are accepted, and false ι or constructor
+equations installed in Lean unchecked are refused (`bad_thm` declares their
 names at the root). -/
 def nestedVerdicts : List (Lean.Name × Bool) := [
   (`Tests.Ix.Kernel.EntryCaseDefs.nb4Iota, true),
   (`nb4IotaFalse, false),
-  (`nb4CtorFalse, false)]
+  (`nb4CtorFalse, false),
+  (`Tests.Ix.Kernel.EntryCaseDefs.ra1Iota, true),
+  (`ra1IotaFalse, false),
+  (`Tests.Ix.Kernel.EntryCaseDefs.ra3Iota, true),
+  (`ra3IotaFalse, false),
+  (`ra3CtorFalse, false)]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
