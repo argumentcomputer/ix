@@ -392,7 +392,8 @@ theorem build_mutual_shape (limits : Ix.Sharing.Exact.Limits) (classes : List Mu
       rw [built]
       exact sectioned
     cases Except.ok.inj returned
-    exact sharing_shape limits (.muts members) state.refs state.univs _ (EmissionBlocks.sectioned_of_bind both).1
+    exact sharing_shape limits (.muts members) state.refs state.univs { block with binders := #[] }
+      (EmissionBlocks.sectioned_of_bind both).1
 
 theorem finish_mutual_shape (classes : List MutConst) (members : Array Ixon.MutConst)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) :
