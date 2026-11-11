@@ -1,5 +1,5 @@
 //! The binder data of IxVM's conversion (decision D2), served from IO
-//! channel 7. Nothing here is trusted: the circuit validates every datum
+//! channel 8. Nothing here is trusted: the circuit validates every datum
 //! where the kernel's rules do, so a wrong one can only fail a claim.
 //!
 //! The Lean annotator (`Ix/IxVM/PwHints.lean`) writes one stream per record,
@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// The IO channel of the binder data.
-pub(super) const STREAM_CHANNEL: u64 = 7;
+pub(super) const STREAM_CHANNEL: u64 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Node {

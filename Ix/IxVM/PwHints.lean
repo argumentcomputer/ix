@@ -56,8 +56,9 @@ needs more. Occurrences under the same enclosing binders are memoized.
 ## The witness
 
 The data travel in the claim's IO, never in the claim, its digest or the
-`.ixe`: channel 7, one stream per record, keyed by the record's 32 address
-bytes, its values the record's conversions:
+`.ixe`: channel 8 (channel 7 holds `IxVM.Model`'s payloads), one stream per
+record, keyed by the record's 32 address bytes, its values the record's
+conversions:
 
 ```text
 values = nblocks (ekind eidx variant nnodes node*)*
@@ -78,7 +79,7 @@ open Benchmarks.Kernel.CheckIxeStep (Setup Hints)
 abbrev KExpr := Ix.Kernel.Expr .anon
 
 /-- The IO channel of the binder data. -/
-def channel : Nat := 7
+def channel : Nat := 8
 
 /-- The datum of one numbered node. -/
 inductive Node where
@@ -360,6 +361,27 @@ def memberAxioms (cx : Ctx .anon) (a : Address) (c : Ixon.Constant) :
     | _, _ => pure ()
   return out
 
+/-- The largest level-parameter count a record's members declare. -/
+def levelCount (c : Ixon.Constant) : Nat :=
+  let ofMember : Ixon.MutConst → Nat
+    | .defn d => d.lvls.toNat
+    | .indc i => i.ctors.foldl (fun n k => max n k.lvls.toNat) i.lvls.toNat
+    | .recr r => r.lvls.toNat
+  match c.info with
+  | .defn d => d.lvls.toNat
+  | .axio a => a.lvls.toNat
+  | .quot q => q.lvls.toNat
+  | .recr r => r.lvls.toNat
+  | .muts ms => ms.foldl (fun n m => max n (ofMember m)) 0
+  | _ => 0
+
+/-- Records declaring more level parameters than this are not given to IxC:
+its install lists the parameters and checks them pairwise distinct, so a record
+with 2^32 of them (the TagN boundary cases; IxVM cannot prove such a claim either,
+D15) would never finish. Their own data need no count: the walk reads the
+universe table. -/
+def maxLevels : Nat := 1 <<< 12
+
 /-- Install `addresses` (owners, in check order) as phase A of IxC's fold
 does, continuing past failures: a failed declaration leaves the environment
 as it was. Partial and unsafe records go through the typing tier. A record
@@ -376,6 +398,9 @@ def install (s : Setup) (addresses : Array Address) :
   for a in addresses do
     let mut failure : Option String := none
     let mut unread := false
+    if ((s.store[a]?).map levelCount).getD 0 > maxLevels then
+      failures := failures.push (a, s!"more than {maxLevels} level parameters: not installed")
+      continue
     match s.tierRead a with
     | some (.ok d) =>
       let (fe', err) := Benchmarks.Kernel.CheckIxeStep.stepTier fe fe d

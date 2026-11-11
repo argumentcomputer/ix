@@ -3,6 +3,7 @@ import Ix.IxVM.ClaimHarness
 import Ix.Shard.Environment
 import Ix.KernelCheck.Step
 import Tests.Ix.IxVM.Harness
+import IxVM.Fixture
 
 /-!
 # The binder-data annotator (D2)
@@ -162,7 +163,7 @@ def idPoly : Ixon.Constant where
   refs := #[]
   univs := #[.var 0]
 
-/-- Every record's blocks, from a witness's channel-7 streams. -/
+/-- Every record's blocks, from a witness's channel-8 streams. -/
 def blocksOf (io : Aiur.IOBuffer) : Except String (Array (Address × Array Block)) := do
   let mut out := #[]
   for ((ch, key), info) in io.map do
@@ -334,6 +335,36 @@ def corpus : IO UInt32 := do
   | none => pure ()
   if (← IO.getEnv "IX_PW_WHOLE") != some "0" then
     let _ ← measure "whole environment" env (bufferOf env)
+  return 0
+
+end Tests.Ix.IxVM.PwHints
+
+namespace Tests.Ix.IxVM.PwHints
+
+open _root_.IxVM.PwHints
+
+/-- `ixvm-pw-fixture` (manual): the dev fixture (`IX_PW_FIXTURE`, default
+`IxVM/IxVM/fixtures/nat-add-comm.ixf`) rewritten at version 2 with the binder
+data of its records (`IX_PW_FIXTURE_OUT`, default in place): the witness its
+constants (the invalid proof included), tags, blobs and role table make, as
+`IxVM.Cli.fixtureHints` serves them, annotated. -/
+def fixture : IO UInt32 := do
+  let path := (← IO.getEnv "IX_PW_FIXTURE").getD "IxVM/IxVM/fixtures/nat-add-comm.ixf"
+  let outPath := (← IO.getEnv "IX_PW_FIXTURE_OUT").getD path
+  let f ← IO.ofExcept (_root_.IxVM.Fixture.decode (← IO.FS.readBinFile path))
+  let key (s : _root_.IxVM.Serialized) : Array Aiur.G := s.address.map (Aiur.G.ofNat ·)
+  let vals (s : _root_.IxVM.Serialized) : Array Aiur.G := s.bytes.map (Aiur.G.ofNat ·)
+  let mut io : Aiur.IOBuffer := default
+  for s in f.constants.push f.invalidProof do
+    io := io.extend 2 (key s) (vals s)
+    io := io.extend 3 (key s) #[.ofNat s.hint]
+  for s in f.blobs do io := io.extend 4 (key s) (vals s)
+  for s in f.roles do io := io.extend 6 (key s) (vals s)
+  let (annotated, stats) ← IO.ofExcept (annotate io)
+  let blocks := (← IO.ofExcept (blocksOf annotated)).qsort fun x y => x.1.cmpBytes y.1 == .lt
+  let binderData := blocks.map fun (a, bs) => (a.hash.data.map (·.toNat), (encode bs).map (·.n))
+  IO.FS.writeBinFile outPath (← IO.ofExcept ({ f with binderData }).encode)
+  IO.println s!"[ixvm-pw-fixture] {outPath}: {stats.render}"
   return 0
 
 end Tests.Ix.IxVM.PwHints

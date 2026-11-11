@@ -9,6 +9,7 @@ public import Ix.PrimAddrs
 public import Ix.ClaimContext
 public import Ix.IxVM.PwHints
 public import Ix.IxVM.Model
+public import Ix.IxVM.PwHints
 
 public section
 

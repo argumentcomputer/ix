@@ -355,7 +355,15 @@ def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 8)
     (circuit : Option Bool := none) : IO UInt32 :=
   withRunner suite (jobs := jobs) (circuit := circuit) fun r => do
     IO.println s!"[{suite}] {cases.size} claims through the IxVM program"
-    for build in cases do r.build (build ())
+    let trace := (← IO.getEnv "IX_PW_TRACE").isSome
+    for (build, i) in cases.zipIdx do
+      if trace then IO.eprintln s!"[{suite}] building case {i}"
+      let t0 ← IO.monoMsNow
+      let c ← IO.lazyPure fun _ => build ()
+      if trace then
+        let label := match c with | .ok c => c.label | .error e => s!"(not built: {e})"
+        IO.eprintln s!"[{suite}] built case {i} in {(← IO.monoMsNow) - t0} ms: {label}"
+      r.build c
 
 end Tests.Ix.IxVM
 
