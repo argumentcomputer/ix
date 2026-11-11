@@ -5,6 +5,7 @@ public import Std.Data.HashMap
 public import Std.Data.TreeMap
 public import Ix.Address
 public import IxC.Ixon.Types
+public import Lean.Declaration
 
 /-!
   Canonical Lean types with embedded content-addressed hashes.
@@ -668,8 +669,17 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 /-! ## Environment -/
 
 /-- A binder-data annotator: a block record's binder-data section, from the
-block's member names (in the record's member order) and its record. -/
-abbrev BinderAnnotator := Array Name → Ixon.Constant → Array Ixon.BinderBlock
+block's member names (in the record's member order) and its record, with the
+source constants its environments lack (`extra`: a definition compiled outside
+them, which the compile adds here itself). -/
+structure BinderAnnotator where
+  run : Array (Lean.Name × Lean.ConstantInfo) → Array Name → Ixon.Constant → Array Ixon.BinderBlock
+  extra : Array (Lean.Name × Lean.ConstantInfo) := #[]
+
+/-- `a` with the source constant `ci` of `n` added. -/
+def BinderAnnotator.withSource (a : BinderAnnotator) (n : Lean.Name) (ci : Lean.ConstantInfo) :
+    BinderAnnotator :=
+  { a with extra := a.extra.push (n, ci) }
 
 /-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
 

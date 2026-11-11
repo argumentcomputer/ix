@@ -292,16 +292,17 @@ def members (c : Ixon.Constant) : Array (Ixon.MutConst ⊕ Ixon.ConstantInfo) :=
 
 /-- The Lean environment holding the members' sources, each root's expression
 and level parameters, and whether every member is safe and total. -/
-def sources (envs : Array Environment) (names : Array Ix.Name) (c : Ixon.Constant) :
-    Option (Environment × Array (Expr × List Name) × Bool) := do
+def sources (envs : Array Environment) (extra : Array (Name × ConstantInfo)) (names : Array Ix.Name)
+    (c : Ixon.Constant) : Option (Environment × Array (Expr × List Name) × Bool) := do
   let ms := members c
   guard (ms.size == names.size)
   let leanNames := names.map Ix.SemanticContract.toLeanName
-  let env ← envs.find? fun env => leanNames.all env.contains
+  let fromExtra (n : Name) : Option ConstantInfo := (extra.find? (·.1 == n)).map (·.2)
+  let env ← envs.find? fun env => leanNames.all fun n => (fromExtra n).isSome || env.contains n
   let mut out : Array (Expr × List Name) := #[]
   let mut decided := true
   for (m, n) in ms.zip leanNames do
-    let ci ← env.find? n
+    let ci ← (fromExtra n).orElse fun _ => env.find? n
     let rs ← sourceRoots env ci m
     out := out ++ rs.map (·, ci.levelParams)
     if ci.isUnsafe || ci.isPartial then decided := false
@@ -313,12 +314,13 @@ def sources (envs : Array Environment) (names : Array Ix.Name) (c : Ixon.Constan
 /-- **The section of a block record**, from its members' sources in `envs`.
 `report` collects the safe records given an undecided binder (their member
 names), for the compile's report and `--strict-binder-data`. -/
-def annotate (envs : Array Environment) (report : IO.Ref (Array String)) (names : Array Ix.Name)
+def annotate (envs : Array Environment) (report : IO.Ref (Array String))
+    (extra : Array (Name × ConstantInfo)) (names : Array Ix.Name)
     (c : Ixon.Constant) : IO (Array Ixon.BinderBlock) := do
   if (roots c).isEmpty then return #[]
   let undecided : IO Unit :=
     report.modify (·.push (", ".intercalate (names.map (·.pretty)).toList))
-  let some (env, srcs, decided) := sources envs names c | do
+  let some (env, srcs, decided) := sources envs extra names c | do
     undecided
     return Ix.CompileM.undecidedSection c
   unless decided do return Ix.CompileM.undecidedSection c
@@ -336,8 +338,9 @@ def annotate (envs : Array Environment) (report : IO.Ref (Array String)) (names 
     return Ix.CompileM.undecidedSection c
 
 private unsafe def annotateUnsafe (envs : Array Environment) (report : IO.Ref (Array String))
-    (names : Array Ix.Name) (c : Ixon.Constant) : Array Ixon.BinderBlock :=
-  match unsafeIO (annotate envs report names c) with
+    (extra : Array (Name × ConstantInfo)) (names : Array Ix.Name) (c : Ixon.Constant) :
+    Array Ixon.BinderBlock :=
+  match unsafeIO (annotate envs report extra names c) with
   | .ok binders => binders
   | .error _ => #[]
 
@@ -346,7 +349,8 @@ private unsafe def annotateUnsafe (envs : Array Environment) (report : IO.Ref (A
 elaboration of the sources is deterministic. -/
 @[implemented_by annotateUnsafe]
 opaque annotatePure (envs : Array Environment) (report : IO.Ref (Array String))
-    (names : Array Ix.Name) (c : Ixon.Constant) : Array Ixon.BinderBlock
+    (extra : Array (Name × ConstantInfo)) (names : Array Ix.Name) (c : Ixon.Constant) :
+    Array Ixon.BinderBlock
 
 /-- **The annotator of a compile over `envs`** (its source environments, each
 marked persistent: the compile's workers share them), with the report of the
@@ -355,7 +359,7 @@ def annotator (envs : Array Environment) : IO (Ix.BinderAnnotator × IO.Ref (Arr
   let envs ← envs.mapM fun (env : Environment) =>
     (unsafe Runtime.markPersistent env : BaseIO Environment)
   let report ← IO.mkRef #[]
-  return (annotatePure envs report, report)
+  return ({ run := annotatePure envs report }, report)
 
 end BinderAnnotate
 

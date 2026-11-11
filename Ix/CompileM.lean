@@ -1590,7 +1590,7 @@ with a binder that entry's one variant. -/
 @[expose] def annotatorSection (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
   match annotator? with
-  | some annotate => annotate names c
+  | some annotate => annotate.run annotate.extra names c
   | none => #[]
 
 /-- The section the compiler gives a block record `c`: the annotator's when it
