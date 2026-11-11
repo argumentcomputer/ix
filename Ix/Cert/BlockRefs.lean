@@ -23,7 +23,7 @@ open Ix.Cert.DefinitionDeps (ConstOcc)
 /-! ## A context keyed by addresses -/
 
 /-- A singleton record every address of `addrCtx`'s store holds. -/
-def anyRecord : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[]⟩
+def anyRecord : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[], #[]⟩
 
 /-- **A context whose keys are the addresses**, with the compile's blobs. -/
 def addrCtx (blob : Address → Option ByteArray) : Ctx .anon :=

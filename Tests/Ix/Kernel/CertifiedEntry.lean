@@ -277,12 +277,12 @@ whose type is not `sorryAx`'s. An axiom of `sorryAx`'s type bound there is
 tolerated. -/
 
 /-- `axiom evil : False`. -/
-def evilFalse : Ixon.Constant := ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[bound .false], #[]⟩
+def evilFalse : Ixon.Constant := ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[bound .false], #[], #[]⟩
 
 /-- `axiom sorryAx.{u} (α : Sort u) (synthetic : Bool) : α`. -/
 def sorryAxRecord : Ixon.Constant :=
   ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.leanAll (.ref 0 #[]) (.var 1))⟩, #[], #[bound .bool],
-   #[.var 0]⟩
+   #[.var 0], #[]⟩
 
 #guard !accepts [(address 60, evilFalse)]
 #guard !accepts [(address 60, evilFalse)] [] (rebind [(.sorryAx, address 60)])

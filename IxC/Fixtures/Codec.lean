@@ -47,7 +47,7 @@ def exactCanonicalConstant (value : Ixon.Constant) : Bool :=
 #guard separatedFalse.all fun (_, value) => exactBoundedConstant value
 #guard exactBoundedConstant sharedIdentity
 #guard exactBoundedConstant ⟨.muts #[], #[], #[], #[], #[]⟩
-#guard exactBoundedConstant ⟨.muts #[], #[], #[], Array.replicate 4096 .zero⟩
+#guard exactBoundedConstant ⟨.muts #[], #[], #[], Array.replicate 4096 .zero, #[]⟩
 #guard variants.all fun (_, value) => exactCanonicalConstant value
 #guard falseStore.all fun (_, value) => exactCanonicalConstant value
 #guard separatedFalse.all fun (_, value) => exactCanonicalConstant value
@@ -55,13 +55,13 @@ def exactCanonicalConstant (value : Ixon.Constant) : Bool :=
 #guard exactCanonicalConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 
 -- Malformed address widths are outside the wire domain regardless of typing.
-#guard !Ixon.WireCheck.validConstant ⟨.muts #[], #[], #[⟨⟨#[0]⟩⟩], #[]⟩
-#guard !Ixon.WireCheck.validConstant ⟨.iPrj ⟨0, ⟨⟨#[0]⟩⟩⟩, #[], #[], #[]⟩
+#guard !Ixon.WireCheck.validConstant ⟨.muts #[], #[], #[⟨⟨#[0]⟩⟩], #[], #[]⟩
+#guard !Ixon.WireCheck.validConstant ⟨.iPrj ⟨0, ⟨⟨#[0]⟩⟩⟩, #[], #[], #[], #[]⟩
 #guard Ixon.WireCheck.validExpr
   ((List.range 4096).foldl (fun e i => .app e (.var i.toUInt64)) (.var 0))
 
 def sharedUniverseBudget : Ixon.Constant :=
-  ⟨.muts #[], #[], #[], #[.addSucc 15 .zero, .addSucc 15 .zero]⟩
+  ⟨.muts #[], #[], #[], #[.addSucc 15 .zero, .addSucc 15 .zero], #[]⟩
 
 #guard exactBoundedConstant sharedUniverseBudget
 -- Each entry fits 16 nodes, but the table requires 32. Resetting the budget
@@ -218,7 +218,7 @@ def decoderRejectedSpellings : List (ByteArray × String) := [
   | .error _ => false
 #guard [Ixon.deConstantExact, Ixon.Bounded.deConstant 256 64, Ixon.Canonical.deConstant 256 64].all
   fun decode => match decode (recordUnivsPayload 1 ⟨#[0xE0, 0x00]⟩) with
-    | .ok value => value == ⟨.muts #[], #[], #[], #[.var 32]⟩
+    | .ok value => value == ⟨.muts #[], #[], #[], #[.var 32], #[]⟩
     | .error _ => false
 
 #guard alternateSpellings.all fun bytes =>
@@ -390,7 +390,7 @@ def resourceConstant (value : Ixon.Constant) : Bool :=
 #guard resourceConstant sharedUniverseBudget
 #guard resourceConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 #guard resourceConstant ⟨.muts #[], Array.replicate 128 (.var 0),
-  Array.replicate 128 (address 0), Array.replicate 128 .zero⟩
+  Array.replicate 128 (address 0), Array.replicate 128 .zero, #[]⟩
 #guard alternateSpellings.all fun bytes =>
   match Ixon.deConstantExact bytes with
   | .error _ => false

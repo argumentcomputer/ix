@@ -47,7 +47,7 @@ namespace Tests.Ix.IxVM.TagN
 open LSpec Tests.Ix.IxVM
 
 /-- The constant the cases rewrite. -/
-def base : Ixon.Constant := ⟨.axio ⟨true, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+def base : Ixon.Constant := ⟨.axio ⟨true, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
 
 /-- Where a case rewrites `base`'s bytes. -/
 inductive Field where
@@ -274,7 +274,7 @@ def universeVariableCases (_ : Unit) : Array Builder :=
     #[(v + 1, true), (v, false)].map fun (lvls, wellFormed) _ => do
       let ctx ← Ix.ClaimContext.ofDefaultTable
       let c : Ixon.Constant :=
-        ⟨.axio ⟨false, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64]⟩
+        ⟨.axio ⟨false, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64], #[]⟩
       let (env, addr) := Exploits.storeAt {} c
       let some axioms := Ix.AssumptionTree.canonical #[addr]
         | throw "the axiom has no tree"
@@ -288,7 +288,7 @@ def universeVariableCases (_ : Unit) : Array Builder :=
 /-- The level count by value: a `Reveal` of another count is refused. -/
 def levelCountCases (_ : Unit) : Array Builder :=
   (boundaries 0).toArray.map fun v _ => do
-    let c : Ixon.Constant := ⟨.axio ⟨true, v.toUInt64, .sort 0⟩, #[], #[], #[.zero]⟩
+    let c : Ixon.Constant := ⟨.axio ⟨true, v.toUInt64, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let (env, addr) := Exploits.storeAt {} c
     let other := if v == 0 then 1 else v - 1
     Case.ofClaim s!"TagN f=0 level count {v} is not revealed as {other}" (← bare env)

@@ -346,7 +346,7 @@ theorem dPrj_claimant (P : Premises env roots sub ixe failures t envQ) {n : Ix.N
     simp [h1, notInd] at hcond
 
 /-- The record a block of definitions publishes its member `j` at. -/
-abbrev dProj (B : Address) (j : Nat) : Ixon.Constant := ⟨.dPrj ⟨j.toUInt64, B⟩, #[], #[], #[]⟩
+abbrev dProj (B : Address) (j : Nat) : Ixon.Constant := ⟨.dPrj ⟨j.toUInt64, B⟩, #[], #[], #[], #[]⟩
 
 /-- **A group of several definitions is published at a block's projections**: the block's record
 is a block of as many definitions, member `j` is published at the projection of position `j`,

@@ -174,11 +174,11 @@ projection of its kind, or the constructor's, with empty tables. -/
 def projectionAt (store : Store) : ConstRef Address → Option Ixon.Constant
   | .member b i =>
     match memberAt store b i with
-    | some (.defn _) => some ⟨.dPrj ⟨i.toUInt64, b⟩, #[], #[], #[]⟩
-    | some (.indc _) => some ⟨.iPrj ⟨i.toUInt64, b⟩, #[], #[], #[]⟩
-    | some (.recr _) => some ⟨.rPrj ⟨i.toUInt64, b⟩, #[], #[], #[]⟩
+    | some (.defn _) => some ⟨.dPrj ⟨i.toUInt64, b⟩, #[], #[], #[], #[]⟩
+    | some (.indc _) => some ⟨.iPrj ⟨i.toUInt64, b⟩, #[], #[], #[], #[]⟩
+    | some (.recr _) => some ⟨.rPrj ⟨i.toUInt64, b⟩, #[], #[], #[], #[]⟩
     | none => none
-  | .ctor b i j => some ⟨.cPrj ⟨i.toUInt64, j.toUInt64, b⟩, #[], #[], #[]⟩
+  | .ctor b i j => some ⟨.cPrj ⟨i.toUInt64, j.toUInt64, b⟩, #[], #[], #[], #[]⟩
 
 theorem empty_constant {c : Ixon.Constant} (h : emptyTables c = true) :
     c = ⟨c.info, #[], #[], #[], #[]⟩ := by
