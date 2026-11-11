@@ -16,7 +16,9 @@ erasure's `EraseError.code` (`erase-const-kind`, `erase-string`,
 `erase-C2`, `erase-C4`, `erase-S2`, `erase-scope`, `erase-recursor`,
 `erase-root`, `erase-record`, `erase-fuel`, `erase-budget`, and the forms
 its proof excludes: `erase-univs`, `erase-unbox-elim`, `erase-pin`,
-`erase-key`), `fir.closures`, `Rt.lower`'s `rt.*`, the allocation
+`erase-key`), the closures step's `anf.entry` and P8's `defun.captures`,
+`defun.tags`, `defun.input` and `defun.budget`, `fir.closures` (unreachable
+after the closures step), `Rt.lower`'s `rt.*`, the allocation
 validator's check names and so on; the compiler adds `rt.params` (a root
 with more parameters than the entry wrapper passes), `rt.dispatch` and
 `rt.pins` (the switch check `Rt.checkSwitches`: a default arm, mixed or
@@ -41,7 +43,8 @@ inductive Stage where
   /-- The producer's admission of the relevant closure (`Src.Admit`). -/
   | admit
   | erase
-  /-- The middle end's replay (`Anf.Pipeline.run`). -/
+  /-- The middle end's replay (`Anf.Pipeline.run`) and the closures step
+  (`Anf.Pipeline.closures`: `anf.entry`, P8's `defun.*`). -/
   | anf
   | fir
   /-- Runtime lowering and the entry ABI. -/
@@ -99,6 +102,14 @@ def Err.ofErase (e : Lam.Erase.EraseError) : Err :=
 def Err.ofFir (e : Fir.Lower.Error) : Err :=
   let (code, message) := splitCode e.render
   { stage := .fir, code, message }
+
+/-- A decline of the closures step (`Anf.Pipeline.closures`): P8's `defun.*` codes
+and `anf.entry` as they are, anything else (the size check) as
+`anf.closures`. -/
+def Err.ofClosures (msg : String) : Err :=
+  let (code, message) := splitCode msg
+  if code.startsWith "defun." || code == "anf.entry" then { stage := .anf, code, message }
+  else { stage := .anf, code := "anf.closures", message := msg }
 
 def Err.ofRt (e : Rt.Error) : Err :=
   let (code, message) := splitCode e.render

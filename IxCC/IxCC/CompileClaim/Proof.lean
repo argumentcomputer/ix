@@ -622,9 +622,10 @@ theorem verifyProgram_immortal_sound {cfg : Recheck.Config} {P : Src.Program}
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.object = c.elfHash ∧
+      (∀ ns : List Nat, ns.length = c.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size →
-        Sem.Refines a.front.source (a.linked D) ∧
-        ∀ (i : Nat × List Nat),
+        Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked D) ∧
+        ∀ (i : Nat × List Nat), a.front.Covered cert i →
           (∀ k w, Lang.run (a.linked D) i k = .ok w →
             (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k' = .ok v ∧
               a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i) ∧
@@ -667,9 +668,10 @@ theorem verifyProgram_immortal_sound {cfg : Recheck.Config} {P : Src.Program}
               rcases st with ⟨sig, ty⟩
               simp only [hty] at htyOk
               refine ⟨cert, a, rootId, root, sig, ty, hwf, rfl, rfl, hrun,
-                Recheck.run_front hrun, hahead, hnatParams, hty, htyOk, hparams, hhash, ?_⟩
+                Recheck.run_front hrun, hahead, hnatParams, hty, htyOk, hparams, hhash,
+                fun ns hl => Recheck.Artifact.covered_head hrun hahead hnatParams (hl.trans hparams.symm), ?_⟩
               intro D hD
-              exact ⟨Recheck.object_refines hrun D hD, fun i => Recheck.sound hrun D hD i⟩
+              exact ⟨Recheck.object_refines hrun D hD, fun i hi => Recheck.sound hrun D hD i hi⟩
     · cases hver
 
 /-- Soundness of `CompileClaim.verifyProgram` under `.zeroRc` policy, backed by
@@ -696,10 +698,12 @@ theorem verifyProgram_zeroRc_sound {cfg : Recheck.Config} {P : Src.Program}
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.object = c.elfHash ∧
+      (∀ ns : List Nat, ns.length = c.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size →
-        Sem.Refines (⟨a.src, a.checked⟩ : CheckedProgram) (Own.Plain.Program.canonical a.fir) ∧
-        Sem.Refines a.front.source (a.linked D) ∧
-        ∀ (i : Nat × List Nat),
+        Sem.RefinesOn (a.front.Covered cert) (⟨a.src, a.checked⟩ : CheckedProgram)
+          (Own.Plain.Program.canonical a.fir) ∧
+        Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked D) ∧
+        ∀ (i : Nat × List Nat), a.front.Covered cert i →
           (∀ k w, Lang.run (a.linked D) i k = .ok w →
             (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k' = .ok v ∧
               a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i) ∧
@@ -746,11 +750,12 @@ theorem verifyProgram_zeroRc_sound {cfg : Recheck.Config} {P : Src.Program}
                 (Recheck.Artifact.checkContractOwn_iff a).mpr hcheckMap
               refine ⟨cert, a, rootId, root, sig, ty, hwf, rfl, rfl, hrunC, hrun,
                 Recheck.run_front hrun, hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk,
-                hparams, hhash, ?_⟩
+                hparams, hhash,
+                fun ns hl => Recheck.Artifact.covered_head hrun hahead hnatParams (hl.trans hparams.symm), ?_⟩
               intro D hD
               exact ⟨Recheck.recheck_contract_own_refines hrun hcheckOwn,
                 Recheck.object_refines hrun D hD,
-                fun i => Recheck.sound hrun D hD i⟩
+                fun i hi => Recheck.sound hrun D hD i hi⟩
     · cases hver
 
 /-- Soundness of `CompileClaim.verifyProgram` under `.plainRc` policy, backed by
@@ -774,9 +779,10 @@ theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
       root.ty = some (sig, ty) ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.backend.object = c.elfHash ∧
+      (∀ ns : List Nat, ns.length = c.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size →
-        Sem.Refines a.front.source (a.linked D) ∧
-        ∀ (i : Nat × List Nat),
+        Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked D) ∧
+        ∀ (i : Nat × List Nat), a.front.Covered cert i →
           (∀ clock output, Lang.run (a.linked D) i clock = .ok output →
             (∃ sourceClock value,
               Lang.run (⟨a.front.src, a.front.checked⟩ : CheckedProgram)
@@ -822,10 +828,12 @@ theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
             | some st =>
               rcases st with ⟨sig, ty⟩
               refine ⟨cert, a, rootId, root, sig, ty, hwf, rfl, rfl, hrun,
-                Recheck.RcReplay.run_front hrun, hahead, hnatParams, hty, hparams, hhash, ?_⟩
+                Recheck.RcReplay.run_front hrun, hahead, hnatParams, hty, hparams, hhash,
+                fun ns hl => Recheck.RcReplay.Artifact.covered_head hrun hahead hnatParams
+                  (hl.trans hparams.symm), ?_⟩
               intro D hD
               exact ⟨Recheck.RcReplay.object_refines hrun D hD,
-                fun i => Recheck.RcReplay.sound hrun D hD i⟩
+                fun i hi => Recheck.RcReplay.sound hrun D hD i hi⟩
     · cases hver
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.immortal` policy,
@@ -869,9 +877,10 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.object = c.elfHash ∧
+      (∀ ns : List Nat, ns.length = c.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size →
-        Sem.Refines a.front.source (a.linked D) ∧
-        ∀ (i : Nat × List Nat),
+        Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked D) ∧
+        ∀ (i : Nat × List Nat), a.front.Covered cert i →
           (∀ k w, Lang.run (a.linked D) i k = .ok w →
             (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k' = .ok v ∧
               a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i) ∧
@@ -889,7 +898,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
-      hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
+      hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩ :=
       verifyProgram_immortal_sound hpol hprog
     simp only [checkCertCanonicalRelevance, hpol, hcert] at hcanonRel
     obtain ⟨table₀, htab₀, hann⟩ :=
@@ -903,7 +912,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     subst htabEq
     exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
       henv, hrole, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
-      hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
+      hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.zeroRc` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
@@ -949,10 +958,12 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       isImmortalViewType sig ty = true ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.object = c.elfHash ∧
+      (∀ ns : List Nat, ns.length = c.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size →
-        Sem.Refines (⟨a.src, a.checked⟩ : CheckedProgram) (Own.Plain.Program.canonical a.fir) ∧
-        Sem.Refines a.front.source (a.linked D) ∧
-        ∀ (i : Nat × List Nat),
+        Sem.RefinesOn (a.front.Covered cert) (⟨a.src, a.checked⟩ : CheckedProgram)
+          (Own.Plain.Program.canonical a.fir) ∧
+        Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked D) ∧
+        ∀ (i : Nat × List Nat), a.front.Covered cert i →
           (∀ k w, Lang.run (a.linked D) i k = .ok w →
             (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k' = .ok v ∧
               a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i) ∧
@@ -970,7 +981,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrunC, hrun, hfront,
-      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
+      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩ :=
       verifyProgram_zeroRc_sound hpol hprog
     simp only [checkCertCanonicalRelevance, hpol, hcert] at hcanonRel
     obtain ⟨table₀, htab₀, hann⟩ :=
@@ -984,7 +995,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     subst htabEq
     exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
       henv, hrole, hhead, hcert, hrunC, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
-      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
+      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.plainRc` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
@@ -1026,9 +1037,10 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       root.ty = some (sig, ty) ∧
       root.params = c.abiArity ∧
       Ixon.Address.blake3Pure a.backend.object = c.elfHash ∧
+      (∀ ns : List Nat, ns.length = c.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size →
-        Sem.Refines a.front.source (a.linked D) ∧
-        ∀ (i : Nat × List Nat),
+        Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked D) ∧
+        ∀ (i : Nat × List Nat), a.front.Covered cert i →
           (∀ clock output, Lang.run (a.linked D) i clock = .ok output →
             (∃ sourceClock value,
               Lang.run (⟨a.front.src, a.front.checked⟩ : CheckedProgram)
@@ -1050,7 +1062,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
-      hnatParams, hty, hparams, hhash, hsem⟩ :=
+      hnatParams, hty, hparams, hhash, hcov, hsem⟩ :=
       verifyProgram_plainRc_sound hpol hprog
     simp only [checkCertCanonicalRelevance, hpol, hcert] at hcanonRel
     obtain ⟨table₀, htab₀, hann⟩ :=
@@ -1064,7 +1076,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
     subst htabEq
     exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
       henv, hrole, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
-      hahead, hnatParams, hty, hparams, hhash, hsem⟩
+      hahead, hnatParams, hty, hparams, hhash, hcov, hsem⟩
 
 
 /-! ## The view's rejections at the claim's root
@@ -1168,14 +1180,14 @@ theorem verifyProgram_immortal_shape {cfg : Recheck.Config} {P : Src.Program}
       Recheck.run cfg P cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
-      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
-  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, hrun, _, hahead, hnat, hty, hview, -, -, hsem⟩ :=
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D := by
+  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, hrun, _, hahead, hnat, hty, hview, -, -, -, hsem⟩ :=
     verifyProgram_immortal_sound hpol hver
   have hok : checkImmortalRoot a.src root = true := by
     simp [checkImmortalRoot, hnat, hty, hview]
   exact ⟨cert, a, root, hcert, hrun, hahead, hok, fun D hD =>
-    Recheck.Artifact.shapeClaim hrun hahead hok D fun ns =>
-      ⟨((hsem D hD).2 (0, ns)).1, ((hsem D hD).2 (0, ns)).2.1⟩⟩
+    Recheck.Artifact.shapeClaim hrun hahead hok D fun ns hcv =>
+      ⟨((hsem D hD).2 (0, ns) hcv).1, ((hsem D hD).2 (0, ns) hcv).2.1⟩⟩
 
 /-- Under `.zeroRc`, `verifyProgram`'s artifact has the shape-view
 guarantees at the claim's root, for every driver the object's text admits. -/
@@ -1188,14 +1200,14 @@ theorem verifyProgram_zeroRc_shape {cfg : Recheck.Config} {P : Src.Program}
       Recheck.run cfg P cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
-      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
-  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, _, hrun, _, _, _, hahead, hnat, hty, hview, -, -,
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D := by
+  obtain ⟨cert, a, _, root, sig, ty, _, _, hcert, _, hrun, _, _, _, hahead, hnat, hty, hview, -, -, -,
     hsem⟩ := verifyProgram_zeroRc_sound hpol hver
   have hok : checkImmortalRoot a.src root = true := by
     simp [checkImmortalRoot, hnat, hty, hview]
   exact ⟨cert, a, root, hcert, hrun, hahead, hok, fun D hD =>
-    Recheck.Artifact.shapeClaim hrun hahead hok D fun ns =>
-      ⟨((hsem D hD).2.2 (0, ns)).1, ((hsem D hD).2.2 (0, ns)).2.1⟩⟩
+    Recheck.Artifact.shapeClaim hrun hahead hok D fun ns hcv =>
+      ⟨((hsem D hD).2.2 (0, ns) hcv).1, ((hsem D hD).2.2 (0, ns) hcv).2.1⟩⟩
 
 /-- Under `.immortal`, `verifyBytes`'s artifact (on the ingested program) has
 the shape-view guarantees at the claim's root. -/
@@ -1209,7 +1221,7 @@ theorem verifyBytes_immortal_shape {cfg : Recheck.Config} {envBytes : ByteArray}
       Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
-      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D := by
   unfold verifyBytes at hver
   cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
   | error e => simp [hing] at hver
@@ -1230,7 +1242,7 @@ theorem verifyBytes_zeroRc_shape {cfg : Recheck.Config} {envBytes : ByteArray}
       Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
-      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a root D := by
+      ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D := by
   unfold verifyBytes at hver
   cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
   | error e => simp [hing] at hver

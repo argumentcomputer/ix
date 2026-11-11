@@ -41,11 +41,15 @@ def Front.layout (f : Front) : Cfg.Rc.Native.Layout :=
 def Front.env (f : Front) (base : Xv.Xl.Env) : Xv.Xl.Env :=
   f.layout.env base
 
+/-- The inputs the end-to-end theorems about a front half made under
+certificate `c` cover (`Recheck.Covered`, of `c.base`). -/
+def Front.Covered (f : Front) (c : Cert) : Nat × List Nat → Prop :=
+  Recheck.Covered c.base.mid f.src f.lam f.anf
+
 def runFront (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Front := do
   let (src, checked) ← Recheck.front cfg P c.base
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let anf ← (Anf.Pipeline.run c.base.mid lam).mapError fun message =>
-    { stage := .anf, code := "anf.replay", message }
+  let anf ← Recheck.anfOf c.base src lam
   let fir ← (Fir.lower anf).mapError Err.ofFir
   let own ← (Own.Plain.Certificate.admit fir c.own).mapError fun message =>
     { stage := .cert, code := "own.plain", message }

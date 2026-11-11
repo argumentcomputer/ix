@@ -21,10 +21,10 @@ theorem runFront_native {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     | ok ls =>
       obtain ⟨lam, st⟩ := ls
       simp only [herase, Except.mapError] at accepted
-      cases hanf : Anf.Pipeline.run c.base.mid lam with
+      cases hanf : Recheck.anfOf c.base src lam with
       | error e => rw [hanf] at accepted; cases accepted
       | ok anf =>
-        simp only [hanf, Except.mapError, bind, Except.bind] at accepted
+        simp only [hanf, bind, Except.bind] at accepted
         cases hfir : Fir.lower anf with
         | error e => rw [hfir] at accepted; cases accepted
         | ok fir =>

@@ -285,7 +285,7 @@ def checkBack (rows : Rows) (cfg : Recheck.Config) (C : Cfg.Program) (root : Add
 def check (rows : Rows) (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert) : IO Nat := do
   let (src, checked) ← stage rows "check front" fun _ => Recheck.front cfg P c
   let (lam, _) ← stage rows "check erase" fun _ => (Lam.erase src checked).mapError Recheck.Err.ofErase
-  let (_, _, _, C) ← stage rows "check middle" fun _ => Recheck.middle c lam
+  let (_, _, _, C) ← stage rows "check middle" fun _ => Recheck.middle c src lam
   stage rows "check checkParams" fun _ =>
     Recheck.checkParams cfg C (C.exports.zipIdx.map fun (g, i) => (i, g))
   checkBack rows cfg C ((src.roots.head?.map (·.1)).getD default) c

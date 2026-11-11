@@ -17,24 +17,24 @@ def SourceFirWitness (A : Anf.Program) (observation : Option Sem.Obs)
   ∃ value, Anf.obsV value = observation ∧ Fir.Proof.FirWitness A value logical
 
 theorem source_fir_retained {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
-    (accepted : runFront cfg P c = .ok f) (i : Nat × List Nat) :
+    (accepted : runFront cfg P c = .ok f) (i : Nat × List Nat) (hi : f.Covered c i) :
     Sem.Behaviour.Refines
       (fun value logical => SourceFirWitness f.anf
         (Lang.obs (S := Lam.Erase.Proof.CheckedProgram) value) logical)
       (Lang.behaviour (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i)
       (Lang.behaviour f.fir i) := by
   obtain ⟨_, ⟨st, erased⟩, anf, fir, _, _, _⟩ := runFront_spec accepted
-  have front := (Lam.Erase.Proof.erase_refines erased).trans
-    (Anf.Pipeline.Proof.run_correct anf)
+  have front := Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines erased)
+    (Recheck.anfOf_refines anf)
   have tail := (Fir.Proof.lower_retained fir i).refines
     (Lang.mono f.anf i) (Lang.mono f.fir i)
-  exact ((front i).trans tail).mono fun _ _ ⟨value, observed, retained⟩ =>
+  exact ((front i hi).trans tail).mono fun _ _ ⟨value, observed, retained⟩ =>
     ⟨value, observed.symm, retained⟩
 
 /-- An actual Fir success exposes its retained source witness, unless the
 accepted source itself reaches stuck. No typing or observation is assumed. -/
 theorem source_fir_success {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
-    (accepted : runFront cfg P c = .ok f) {i : Nat × List Nat} {k : Nat}
+    (accepted : runFront cfg P c = .ok f) {i : Nat × List Nat} (hi : f.Covered c i) {k : Nat}
     {logical : Fir.Val} (success : Fir.firRun f.fir i k = .ok logical) :
     (∃ k' value,
       Lang.run (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i k' = .ok value ∧
@@ -42,7 +42,7 @@ theorem source_fir_success {cfg : Config} {P : Src.Program} {c : Cert} {f : Fron
     ∃ k', Lang.run (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i k' = .stuck := by
   have behavior : Lang.behaviour f.fir i = .terminates logical :=
     (Sem.behaviour_eq_terminates_iff (Lang.mono f.fir i)).2 ⟨k, success⟩
-  have related := source_fir_retained accepted i
+  have related := source_fir_retained accepted i hi
   rw [behavior] at related
   rcases related.of_terminates with ⟨value, terminated, witness⟩ | stuck
   · obtain ⟨k', run⟩ := (Sem.behaviour_eq_terminates_iff

@@ -32,7 +32,8 @@ def families : List System.FilePath :=
    "fixtures/corpus/phase1-resource/corpus.json",
    "fixtures/corpus/phase1-decline/corpus.json",
    "fixtures/corpus/phase1-abi/corpus.json",
-   "fixtures/corpus/phase1-bound/corpus.json"]
+   "fixtures/corpus/phase1-bound/corpus.json",
+   "fixtures/corpus/phase2-closures/corpus.json"]
 
 /-- A file of the pack and its hash (`bytes` for closures). -/
 structure FileRec where

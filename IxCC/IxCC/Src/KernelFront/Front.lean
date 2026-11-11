@@ -106,7 +106,8 @@ def produceWith (cfg : Config) (k : KInput) : Except Err Recheck.Produced := do
   let (lam, _) ← (Lam.erase src checked).mapError Recheck.Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }
-  let anf := ((trace.stages.getLast?).map (·.2)).getD default
+  -- the closures step, as the replay runs it (`Recheck.anfOf`)
+  let (anf, stages) ← Recheck.produceClosures src trace
   let fir ← (Fir.lower anf).mapError Recheck.Err.ofFir
   let C := Cfg.lower (Own.immortal fir)
   Recheck.checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
@@ -120,7 +121,7 @@ def produceWith (cfg : Config) (k : KInput) : Except Err Recheck.Produced := do
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
   pure { cert := { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert
                    alloc := r.outs, frames := layouts, order }
-         tableDiags, tableStats, fires := trace.fires, stages := trace.stages, alloc := r.outcomes }
+         tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes }
 
 /-- The producer over the kernel: the certificate. -/
 def produce (cfg : Config) (k : KInput) : Except Err Recheck.Cert :=

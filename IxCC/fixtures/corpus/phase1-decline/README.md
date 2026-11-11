@@ -17,7 +17,6 @@ that compile alone and collide when compiled together.
 
 | `stage: code` | Root | Why |
 | --- | --- | --- |
-| `fir: fir.closures` | `applyArg`, `composeClosure` | a function argument applied; a closure composed with itself per iteration |
 | `admit: unsupported` | `withPanic`, `stringLength` | a string literal in a relevant position (`panic!`'s message; `String.length` reaches the `String` library). Until the Ixon v4 refreeze, `stringLength`'s closure exceeded a count budget of the v3 decoder (`ingress: decode`); the v4 closure is within them |
 | `rt: rt.params` | `six`, `fiveAndType`, `fiveAndProof` | six parameters; an erased type or proof parameter counts |
 | `erase: erase-minor` | `recMinor` | `Nat.rec` with a variable minor premise (S25) |
@@ -25,6 +24,15 @@ that compile alone and collide when compiled together.
 | `admit: unsafe` | `useUnsafe` | an `unsafe def` |
 | `admit: relevant-axiom` | `useChoice` | `Classical.choice` in a relevant position |
 | `stacking: stacking.symbols` | `A_b` with `A.b`, `_x_y_` with `«x-y»`, `β` with `α`, `root_init` with `init` | `Rt.symbolOf` maps every character but an ASCII letter, digit or `_` to `_` (`«x-y»` → `cx__x_y_`, `α` → `cx__`) and `init` to `root_init` |
+
+**Previously declined at `fir: fir.closures`, now compiled through the
+closures step** (the roots' entries and P8): `composeClosure` (a closure
+composed with itself per iteration) left this family for
+[`phase2-closures`](../phase2-closures/README.md), where it runs its cases;
+`applyArg` (a function argument applied) compiles with no case, since the
+interpreter takes no function argument from the command line: the program
+builds no closure, so the dispatcher it calls has no alternative and traps
+(`tests-pipeline --only defun` runs it).
 
 **Previously declined, now compiled with cases:** `nestedFor` (nested `for`
 loops, compiled via `.box` specialization and CPS matcher inlining), `mulN`
@@ -34,8 +42,9 @@ reuse and clobber-aware `LinearScan`), and `unboxMatch` / `subtypeMatch`
 
 Elsewhere: `relevance: relevance-C2` (`phase1-scalar`'s
 `typeFormerPolymorphism`); `ingress: decode` for 255 fields and 126
-constructors, and `fir: fir.closures` for a wide `match`
-(`phase1-boundary`); `rt: rt.params` for arity 6 (`phase1-abi`).
+constructors (`phase1-boundary`); `rt: rt.params` for arity 6 (`phase1-abi`);
+`alloc: alloc.fallback` for a source global of eight parameters
+(`phase2-closures`' `stateLoop`).
 
 **Not a decline:** `twinB` compiled together with `twinA` (the same body, so
 the same content address) compiles, but the object exports only the first

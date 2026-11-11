@@ -820,7 +820,7 @@ differ in what they rest on:
 
 What admission adds to the frame is the absence of a fault on a source-safe
 input, for one call: `admittedRing0Sip_call_frame`. -/
-structure Ring0Safety (sip : Ring0Sip) (checkedProg : CheckedProgram)
+structure Ring0Safety (sip : Ring0Sip) (Covered : (Nat × List Nat) → Prop) (checkedProg : CheckedProgram)
     (view : Nat → Option Obs → Option (Option Obs))
     (GoesWrong : (Nat × List Nat) → Prop)
     (program : X86.Program) (encoded : X86.Encode.Output) (linked : X86.Linked) : Prop where
@@ -829,7 +829,7 @@ structure Ring0Safety (sip : Ring0Sip) (checkedProg : CheckedProgram)
   elfHash_eq  : Ixon.Address.blake3Pure linked.object = sip.claim.elfHash
   streamValid : X86.Stream.Valid program encoded
   semantics :
-    ∀ (i : Nat × List Nat),
+    ∀ (i : Nat × List Nat), Covered i →
       (∀ k w, Lang.run linked i k = .ok w →
         (∃ k' v, Lang.run checkedProg i k' = .ok v ∧
           view i.1 (Lang.obs v) = some w) ∨ GoesWrong i) ∧
@@ -881,9 +881,10 @@ def AdmittedRing0Sip (sip : Ring0Sip) (P : Src.Program) : Prop :=
       CompileClaim.isImmortalViewType sig ty = true ∧
       root.params = sip.claim.abiArity ∧
       Ixon.Address.blake3Pure a.object = sip.claim.elfHash ∧
+      (∀ ns : List Nat, ns.length = sip.claim.abiArity → a.front.Covered cert (0, ns)) ∧
       sip.driver.CanonicalOk a.backend.encoded.text.size ∧
-      Sem.Refines a.front.source (a.linked sip.driver) ∧
-      Ring0Safety sip ⟨a.src, a.checked⟩ a.front.view a.front.GoesWrong
+      Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked sip.driver) ∧
+      Ring0Safety sip (a.front.Covered cert) ⟨a.src, a.checked⟩ a.front.view a.front.GoesWrong
         a.backend.checked.program a.backend.encoded (a.linked sip.driver)
   | .zeroRc =>
     ∃ (cert : Recheck.Cert) (a : Recheck.Artifact) (rootId : Src.CId) (root : Recheck.Root)
@@ -902,10 +903,12 @@ def AdmittedRing0Sip (sip : Ring0Sip) (P : Src.Program) : Prop :=
       CompileClaim.isImmortalViewType sig ty = true ∧
       root.params = sip.claim.abiArity ∧
       Ixon.Address.blake3Pure a.object = sip.claim.elfHash ∧
+      (∀ ns : List Nat, ns.length = sip.claim.abiArity → a.front.Covered cert (0, ns)) ∧
       sip.driver.CanonicalOk a.backend.encoded.text.size ∧
-      Sem.Refines (⟨a.src, a.checked⟩ : CheckedProgram) (Own.Plain.Program.canonical a.fir) ∧
-      Sem.Refines a.front.source (a.linked sip.driver) ∧
-      Ring0Safety sip ⟨a.src, a.checked⟩ a.front.view a.front.GoesWrong
+      Sem.RefinesOn (a.front.Covered cert) (⟨a.src, a.checked⟩ : CheckedProgram)
+        (Own.Plain.Program.canonical a.fir) ∧
+      Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked sip.driver) ∧
+      Ring0Safety sip (a.front.Covered cert) ⟨a.src, a.checked⟩ a.front.view a.front.GoesWrong
         a.backend.checked.program a.backend.encoded (a.linked sip.driver)
   | .plainRc =>
     ∃ (cert : Recheck.RcReplay.Cert) (a : Recheck.RcReplay.Artifact) (rootId : Src.CId)
@@ -920,14 +923,15 @@ def AdmittedRing0Sip (sip : Ring0Sip) (P : Src.Program) : Prop :=
       root.ty = some (sig, ty) ∧
       root.params = sip.claim.abiArity ∧
       Ixon.Address.blake3Pure a.backend.object = sip.claim.elfHash ∧
+      (∀ ns : List Nat, ns.length = sip.claim.abiArity → a.front.Covered cert (0, ns)) ∧
       sip.driver.CanonicalOk a.backend.encoded.text.size ∧
-      Sem.Refines a.front.source (a.linked sip.driver) ∧
-      Ring0Safety sip ⟨a.front.src, a.front.checked⟩ a.front.view a.front.GoesWrong
+      Sem.RefinesOn (a.front.Covered cert) a.front.source (a.linked sip.driver) ∧
+      Ring0Safety sip (a.front.Covered cert) ⟨a.front.src, a.front.checked⟩ a.front.view a.front.GoesWrong
         a.backend.checked.program a.backend.encoded (a.linked sip.driver)
 
 /-- Helper constructing `Ring0Safety` once `sip.driver.CanonicalOk encoded.text.size`
 has been discharged. -/
-theorem ring0Safety_of_parts {sip : Ring0Sip} {checkedProg : CheckedProgram}
+theorem ring0Safety_of_parts {sip : Ring0Sip} {Covered : (Nat × List Nat) → Prop} {checkedProg : CheckedProgram}
     {view : Nat → Option Obs → Option (Option Obs)}
     {GoesWrong : (Nat × List Nat) → Prop}
     {program : X86.Program} {encoded : X86.Encode.Output} {linked : X86.Linked}
@@ -936,7 +940,7 @@ theorem ring0Safety_of_parts {sip : Ring0Sip} {checkedProg : CheckedProgram}
     (hhash : Ixon.Address.blake3Pure linked.object = sip.claim.elfHash)
     (hstream : X86.Stream.Valid program encoded)
     (hsem :
-      ∀ (i : Nat × List Nat),
+      ∀ (i : Nat × List Nat), Covered i →
         (∀ k w, Lang.run linked i k = .ok w →
           (∃ k' v, Lang.run checkedProg i k' = .ok v ∧
             view i.1 (Lang.obs v) = some w) ∨ GoesWrong i) ∧
@@ -944,7 +948,7 @@ theorem ring0Safety_of_parts {sip : Ring0Sip} {checkedProg : CheckedProgram}
         ((∀ k, Lang.run checkedProg i k = .timeout) →
           (∀ k, Lang.run linked i k = .timeout) ∨
             ∃ k failure, Lang.run linked i k = .resource failure)) :
-    Ring0Safety sip checkedProg view GoesWrong program encoded linked where
+    Ring0Safety sip Covered checkedProg view GoesWrong program encoded linked where
   driver_eq := hdriver
   canonicalOk := hCanon
   elfHash_eq := hhash
@@ -1066,7 +1070,7 @@ theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
   cases hpol : sip.claim.policy with
   | immortal =>
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
-      hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
+      hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩ :=
       CompileClaim.verifyProgram_immortal_sound hpol hclaimVer
     simp only [Ring0Sip.verifiedTextSize?, hpol, hcert, hrun] at hcanonCheck
     have hCanon : sip.driver.CanonicalOk a.backend.encoded.text.size :=
@@ -1077,11 +1081,11 @@ theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
       hem.encoded ▸ hem.stream
     have hsemD := hsem sip.driver hCanon.toOk
     exact ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
-      hnatParams, hty, htyOk, hparams, hhash, hCanon, hsemD.1,
+      hnatParams, hty, htyOk, hparams, hhash, hcov, hCanon, hsemD.1,
       ring0Safety_of_parts rfl hCanon hhash hstream hsemD.2⟩
   | zeroRc =>
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrunC, hrun, hfront,
-      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
+      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩ :=
       CompileClaim.verifyProgram_zeroRc_sound hpol hclaimVer
     simp only [Ring0Sip.verifiedTextSize?, hpol, hcert, hrunC] at hcanonCheck
     have hCanon : sip.driver.CanonicalOk a.backend.encoded.text.size :=
@@ -1092,12 +1096,12 @@ theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
       hem.encoded ▸ hem.stream
     have hsemD := hsem sip.driver hCanon.toOk
     exact ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrunC, hrun, hfront,
-      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hCanon,
+      hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hCanon,
       hsemD.1, hsemD.2.1,
       ring0Safety_of_parts rfl hCanon hhash hstream hsemD.2.2⟩
   | plainRc =>
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
-      hnatParams, hty, hparams, hhash, hsem⟩ :=
+      hnatParams, hty, hparams, hhash, hcov, hsem⟩ :=
       CompileClaim.verifyProgram_plainRc_sound hpol hclaimVer
     simp only [Ring0Sip.verifiedTextSize?, hpol, hcert, hrun] at hcanonCheck
     have hCanon : sip.driver.CanonicalOk a.backend.encoded.text.size :=
@@ -1108,7 +1112,7 @@ theorem verifyRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
       hem.encoded ▸ hem.stream
     have hsemD := hsem sip.driver hCanon.toOk
     exact ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
-      hnatParams, hty, hparams, hhash, hCanon, hsemD.1,
+      hnatParams, hty, hparams, hhash, hcov, hCanon, hsemD.1,
       ring0Safety_of_parts rfl hCanon hhash hstream hsemD.2⟩
 
 theorem verifyProgramRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
@@ -1213,6 +1217,8 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
 /-- What a SIP's certificate determines on `P`: the checked source, its `view` and
 `GoesWrong`, the checked stream and the linked object. -/
 structure Ring0Artifact where
+  /-- The inputs the end-to-end theorems cover (`Recheck.Covered`). -/
+  Covered : (Nat × List Nat) → Prop
   checkedProg : CheckedProgram
   view : Nat → Option Obs → Option (Option Obs)
   GoesWrong : (Nat × List Nat) → Prop
@@ -1229,7 +1235,7 @@ noncomputable def Ring0Sip.artifact? (sip : Ring0Sip) (P : Src.Program) : Option
     match Recheck.Cert.ofText sip.certText with
     | .ok cert =>
       match Recheck.run sip.cfg P cert with
-      | .ok a => some ⟨⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
+      | .ok a => some ⟨a.front.Covered cert, ⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
           a.backend.checked.program, a.backend.encoded, a.linked sip.driver⟩
       | .error _ => none
     | .error _ => none
@@ -1237,7 +1243,7 @@ noncomputable def Ring0Sip.artifact? (sip : Ring0Sip) (P : Src.Program) : Option
     match Recheck.Cert.ofText sip.certText with
     | .ok cert =>
       match Recheck.runWithContracts sip.cfg P cert with
-      | .ok a => some ⟨⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
+      | .ok a => some ⟨a.front.Covered cert, ⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
           a.backend.checked.program, a.backend.encoded, a.linked sip.driver⟩
       | .error _ => none
     | .error _ => none
@@ -1245,14 +1251,14 @@ noncomputable def Ring0Sip.artifact? (sip : Ring0Sip) (P : Src.Program) : Option
     match Recheck.RcReplay.Cert.ofText sip.certText with
     | .ok cert =>
       match Recheck.RcReplay.run sip.cfg P cert with
-      | .ok a => some ⟨⟨a.front.src, a.front.checked⟩, a.front.view, a.front.GoesWrong,
+      | .ok a => some ⟨a.front.Covered cert, ⟨a.front.src, a.front.checked⟩, a.front.view, a.front.GoesWrong,
           a.backend.checked.program, a.backend.encoded, a.linked sip.driver⟩
       | .error _ => none
     | .error _ => none
 
 /-- The guarantees an admitted SIP's artifact carries:
-1. **No model faults, with no `.ok` premise.** On a source-safe input
-   (`¬ GoesWrong i`), `¬ (Lang.run linked i k).GoesWrong` at every clock `k`.
+1. **No model faults, with no `.ok` premise.** On a covered (`Covered i`:
+   `Recheck.Covered`), source-safe input (`¬ GoesWrong i`), `¬ (Lang.run linked i k).GoesWrong` at every clock `k`.
 2. **Source value refinement.** Whenever `Lang.run linked i k = .ok w` on such an
    input, the source produces a value `v` with `view i.1 (Lang.obs v) = some w`.
 3. **Conditional frames.** A `rootCall` that returns `.ok` preserves every byte of a
@@ -1266,7 +1272,7 @@ def Ring0Artifact.Safe (A : Ring0Artifact) (sip : Ring0Sip) : Prop :=
   sip.driver.CanonicalOk A.encoded.text.size ∧
   Ixon.Address.blake3Pure A.linked.object = sip.claim.elfHash ∧
   X86.Stream.Valid A.program A.encoded ∧
-  (∀ (i : Nat × List Nat), ¬ A.GoesWrong i →
+  (∀ (i : Nat × List Nat), A.Covered i → ¬ A.GoesWrong i →
     (∀ k, ¬ (Lang.run A.linked i k).GoesWrong) ∧
     (∀ k w, Lang.run A.linked i k = .ok w →
       ∃ k' v, Lang.run A.checkedProg i k' = .ok v ∧
@@ -1283,12 +1289,12 @@ def Ring0Artifact.Safe (A : Ring0Artifact) (sip : Ring0Sip) : Prop :=
       kpt.Preserved bytes output.bytes)
 
 theorem Ring0Artifact.safe_of_ring0Safety {sip : Ring0Sip} {A : Ring0Artifact}
-    (hsafe : Ring0Safety sip A.checkedProg A.view A.GoesWrong A.program A.encoded A.linked) :
+    (hsafe : Ring0Safety sip A.Covered A.checkedProg A.view A.GoesWrong A.program A.encoded A.linked) :
     A.Safe sip := by
   refine ⟨hsafe.driver_eq, hsafe.canonicalOk, hsafe.elfHash_eq, hsafe.streamValid, ?_,
     hsafe.runTo_framePreserved, ?_, ?_⟩
-  · intro i hnotGW
-    have hsem := hsafe.semantics i
+  · intro i hcov hnotGW
+    have hsem := hsafe.semantics i hcov
     refine ⟨hsem.2.1 hnotGW, ?_⟩
     intro k w hok
     rcases hsem.1 k w hok with hval | hgw
@@ -1321,19 +1327,19 @@ theorem admittedRing0Sip_call_not_goesWrong {sip : Ring0Sip} {P : Src.Program}
   have hadm := verifyRing0Sip_sound hver
   unfold AdmittedRing0Sip at hadm
   cases hpol : sip.claim.policy <;> rw [hpol] at hadm
-  · rcases hadm with ⟨cert, a, _, _, _, _, _, _, hcert, hrun, _, _, _, _, _, _, _, _, _, hsafe⟩
-    exact ⟨⟨⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
+  · rcases hadm with ⟨cert, a, _, _, _, _, _, _, hcert, hrun, _, _, _, _, _, _, _, _, _, _, hsafe⟩
+    exact ⟨⟨a.front.Covered cert, ⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
         a.backend.checked.program, a.backend.encoded, a.linked sip.driver⟩,
       by simp only [Ring0Sip.artifact?, hpol, hcert, hrun],
       Ring0Artifact.safe_of_ring0Safety hsafe⟩
   · rcases hadm with
-      ⟨cert, a, _, _, _, _, _, _, hcert, hrunC, _, _, _, _, _, _, _, _, _, _, _, _, _, hsafe⟩
-    exact ⟨⟨⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
+      ⟨cert, a, _, _, _, _, _, _, hcert, hrunC, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsafe⟩
+    exact ⟨⟨a.front.Covered cert, ⟨a.src, a.checked⟩, a.front.view, a.front.GoesWrong,
         a.backend.checked.program, a.backend.encoded, a.linked sip.driver⟩,
       by simp only [Ring0Sip.artifact?, hpol, hcert, hrunC],
       Ring0Artifact.safe_of_ring0Safety hsafe⟩
-  · rcases hadm with ⟨cert, a, _, _, _, _, _, _, hcert, hrun, _, _, _, _, _, _, _, _, hsafe⟩
-    exact ⟨⟨⟨a.front.src, a.front.checked⟩, a.front.view, a.front.GoesWrong,
+  · rcases hadm with ⟨cert, a, _, _, _, _, _, _, hcert, hrun, _, _, _, _, _, _, _, _, _, hsafe⟩
+    exact ⟨⟨a.front.Covered cert, ⟨a.front.src, a.front.checked⟩, a.front.view, a.front.GoesWrong,
         a.backend.checked.program, a.backend.encoded, a.linked sip.driver⟩,
       by simp only [Ring0Sip.artifact?, hpol, hcert, hrun],
       Ring0Artifact.safe_of_ring0Safety hsafe⟩
@@ -1545,7 +1551,8 @@ theorem linked_run_call_ne_stuck {L : X86.Linked} {r : Nat} {root : X86.Linked.R
 
 /-- **What admission buys for the frame of one call.** For a SIP passing
 `sip.verifyProgram P`, its artifact `A` (`sip.artifact? P = some A`, with
-`A.Safe sip`) satisfies, on every source-safe input `(r, ns)` (`¬ A.GoesWrong`)
+`A.Safe sip`) satisfies, on every covered (`A.Covered`) source-safe input `(r, ns)`
+(`¬ A.GoesWrong`)
 whose root takes at most `ns.length` arguments and whose arguments fit a word,
 at every clock `k`: `cx_init`'s byte run, and the root's byte run from the
 bytes `cx_init` returns, reach clock `k` or return without a byte-machine fault,
@@ -1560,7 +1567,7 @@ theorem admittedRing0Sip_call_frame {sip : Ring0Sip} {P : Src.Program}
     ∃ A : Ring0Artifact, sip.artifact? P = some A ∧ A.Safe sip ∧
       ∀ (r : Nat) (root : X86.Linked.Root) (ns : List Nat),
         A.linked.roots[r]? = some root → root.params ≤ ns.length → (∀ n ∈ ns, n < 2 ^ 64) →
-        ¬ A.GoesWrong (r, ns) → ∀ k,
+        A.Covered (r, ns) → ¬ A.GoesWrong (r, ns) → ∀ k,
           CallRunsInFrame A.linked.object A.linked.init sip.driver.base
               (sip.driver.core [sip.driver.size, sip.driver.budget] sip.driver.initBytes)
               sip.driver.flags k ∧
@@ -1569,9 +1576,9 @@ theorem admittedRing0Sip_call_frame {sip : Ring0Sip} {P : Src.Program}
               (sip.driver.core ((ns.take root.params).map UInt64.ofNat) mem.bytes)
               sip.driver.flags k := by
   obtain ⟨A, hart, hsafe⟩ := admittedRing0Sip_call_not_goesWrong hver
-  refine ⟨A, hart, hsafe, fun r root ns hr hlen hns hsrc k => ?_⟩
+  refine ⟨A, hart, hsafe, fun r root ns hr hlen hns hcov hsrc k => ?_⟩
   have hdrv : A.linked.driver = sip.driver := hsafe.1
-  have hnot := (hsafe.2.2.2.2.1 (r, ns) hsrc).1 k
+  have hnot := (hsafe.2.2.2.2.1 (r, ns) hcov hsrc).1 k
   have hcall := linked_run_call_ne_stuck hr hlen hnot
   obtain ⟨hinit, hroot⟩ :=
     linked_call_ne_stuck (fun n hn => hns n (List.mem_of_mem_take hn)) hcall

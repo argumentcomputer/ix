@@ -23,8 +23,9 @@ certificate's serialisation, and the declines.
   `Alloc.run`, `Backend.emit`; `IxCCTests.Rt.Machine.compile`).
 * **Round trips**: the certificate's JSON parses back to a certificate with
   the same JSON, and `run` on it makes the same object.
-* **Declines**: the fallback route (a sidecar without equations) is
-  declined at `fir` with `fir.closures`; a root with six parameters with
+* **Declines**: the fallback route (a sidecar without equations), declined
+  at `fir` with `fir.closures` before the closures step, compiles; a root
+  with six parameters with
   `rt.params` (without the check, stacking would reject its wrapper); an
   unknown root name (`cli.root`), a malformed certificate (`cert.parse`) and
   another program's certificate (rejected by the table check). -/
@@ -534,18 +535,23 @@ def wide (n : Nat) : Cfg.Program :=
 
 def declines (a : Assert) (t : Tools) : IO (Array String) := do
   let mut out := #[]
-  -- the fallback route: no equations, so the middle end keeps closures
+  -- the fallback route: no equations, so the middle end keeps closures, which the
+  -- closures step removes (the defun part runs these objects natively)
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile k1Eqs))
   let noEqs := json.setObjVal! "equations" (Lean.Json.arr #[])
   let noEqsFile := t.work / "k1-no-equations.json"
   IO.FS.writeFile noEqsFile noEqs.pretty
   let bytes ← IO.FS.readBinFile k1Ixe
   for (root, _) in k1Roots do
-    out := out.push (← expectErr a s!"fallback route {root}"
-      (compile {} bytes noEqs [root] (typecheck := false)) .fir "fir.closures")
+    match compile {} bytes noEqs [root] (typecheck := false) with
+    | .ok (_, art) =>
+      expect a (Anf.firstOrder art.anf) s!"fallback route {root}: the program Fir lowers is not first order"
+      expect a (Anf.Pipeline.residual art.anf).fns.isEmpty s!"fallback route {root}: a local function is left"
+      out := out.push s!"fallback route {root}: compiled through the closures step ({art.object.size} bytes)"
+    | .error e => expect a false s!"fallback route {root}: {e.render}, expected it to compile"
   let code ← cli t ["compile", k1Ixe.toString, "--equations", noEqsFile.toString, "--root", "K1.fib",
     "--no-typecheck", "-o", (t.work / "fallback.o").toString]
-  expectEq a code 1 "fallback route: the command line's exit code"
+  expectEq a code 0 "fallback route: the command line's exit code"
   -- six parameters: declined before lowering; five are fine
   out := out.push (← expectErr a "six parameters" (checkParams { names := ["wide"] } (wide 6) [(0, 0)])
     .rt "rt.params")

@@ -1796,6 +1796,8 @@ theorem checkedProgram_run_of_srcRun (s : IxCC.Lam.Erase.Proof.CheckedProgram)
 `red_to_denotes_nat`, which share only the checked Src program `a.src` and the run `hrun`.
 When `checkDecls μ ev ds = .ok env` and `Recheck.run cfg P cert = .ok a` at a `Nat` root
 `a.src.roots[i.1]? = some (rootAddr, rootId)` where `Src.run a.src k_src rootId (i.2.map .lit) = .ok (.lit out)`,
+on an input `i` the recheck theorems cover (`a.front.Covered cert i`: of exactly the root's declared
+parameter count, or any input when the closures step left the certificate's program unchanged),
 and for a user-supplied `constSpec` satisfying `hconst` with a related closed root `eRoot`:
 1. `env` has a set-theoretic model `Nonempty (EnvModelM V μ env)`;
 2. Every valid x86-64 driver `D` (`D.Ok a.backend.encoded.text.size`) never goes wrong on `i`,
@@ -1821,6 +1823,7 @@ theorem checkDecls_recheck_x86_denotes_nat {μ : CheckMode} {ev : Evidences md}
     {i : Nat × List Nat} {k_src : Nat} {rootAddr : IxCC.Ixon.Address} {rootId : IxCC.Src.CId}
     {eRoot : Expr md} {out : Nat}
     (hrootAt : a.src.roots[i.1]? = some (rootAddr, rootId))
+    (hcov : a.front.Covered cert i)
     (hty : a.front.tys i.1 = some ({}, .nat))
     (hrootRel : constSpec [] rootId eRoot)
     (hbRoot : eRoot.bvarBound = 0)
@@ -1845,7 +1848,7 @@ theorem checkDecls_recheck_x86_denotes_nat {μ : CheckMode} {ev : Evidences md}
     checkedProgram_run_of_srcRun ⟨a.src, a.checked⟩ hrootAt hrun
   refine ⟨hmodel, hred, ?_, hden⟩
   intro D hD
-  obtain ⟨_, _, hngw, hsafe, hval⟩ := IxCC.Recheck.sound_nat hrec D hD hty heval hobs
+  obtain ⟨_, _, hngw, hsafe, hval⟩ := IxCC.Recheck.sound_nat hrec D hD hcov hty heval hobs
   exact ⟨hngw, hsafe, hval⟩
 
 /-- **Conjunction with the byte-level claim verifier (`checkDecls_verifyBytes_immortal_denotes_nat`)**:
@@ -1884,6 +1887,7 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
         ∀ {i : Nat × List Nat} {k_src : Nat} {rootAddr : IxCC.Ixon.Address} {rootCId : IxCC.Src.CId}
           {eRoot : Expr md} {out : Nat},
           a.src.roots[i.1]? = some (rootAddr, rootCId) →
+          a.front.Covered cert i →
           a.front.tys i.1 = some ({}, .nat) →
           constSpec [] rootCId eRoot →
           eRoot.bvarBound = 0 →
@@ -1908,9 +1912,9 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
     IxCC.CompileClaim.verifyBytes_immortal_sound hpol hver
   refine ⟨hmodel, inp, cert, a, rootId, root, sig, ty, hwf, hdec, htc rfl, henv, hrole, hhead, hrec,
     hahead, hty, hhash, ?_⟩
-  intro constSpec hconst i k_src rootAddr rootCId eRoot out hrootAt htyAt hrootRel hbRoot hnfRoot hrun
+  intro constSpec hconst i k_src rootAddr rootCId eRoot out hrootAt hcov htyAt hrootRel hbRoot hnfRoot hrun
   obtain ⟨_, hred, hx86, hden⟩ :=
-    checkDecls_recheck_x86_denotes_nat (V := V) hμ hchk hbasis hrec hconst hrootAt htyAt hrootRel hbRoot hnfRoot hrun
+    checkDecls_recheck_x86_denotes_nat (V := V) hμ hchk hbasis hrec hconst hrootAt hcov htyAt hrootRel hbRoot hnfRoot hrun
   exact ⟨hred, hx86, hden⟩
 
 end IxKernelBridge

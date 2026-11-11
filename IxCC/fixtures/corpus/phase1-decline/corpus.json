@@ -106,26 +106,8 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
-          "note": "an unknown function argument applied",
-          "cases": []
-        },
-        {
-          "name": "Decline.composeClosure",
-          "address": "e7037cdabfdf3423c812789879bff16a2121a5e0ee79c7099850f15f8989fa9d",
-          "params": 2,
-          "result": "nat",
-          "oracles": [
-            "lean-run"
-          ],
-          "decline": {
-            "stage": "fir",
-            "code": "fir.closures"
-          },
-          "note": "a function argument composed with itself each iteration",
+          "decline": null,
+          "note": "an unknown function argument applied: compiled through the closures step, which finds no closure source, so the dispatcher it calls has no alternative and traps (tests-pipeline, its defun part, runs it); no case: the interpreter takes no function argument from the command line",
           "cases": []
         }
       ]

@@ -9,7 +9,8 @@ test input, at
 
 * **SrcEval** on the checked program, **Lam**, **Anf after every pass**
   (P1, then each step of the certificate's middle end replayed: the
-  programs `Anf.Pipeline.run` goes through), **Fir**, **Own** (immortal) and
+  programs `Anf.Pipeline.run` goes through, then the closures step's output
+  when it changed the program), **Fir**, **Own** (immortal) and
   **Cfg**, read back by each level's own readback;
 * **Lir**, **Xv** and **Xl** from the memory `cx_init` left, and the typed
   x86 machine (`X86.step` from the root's exported wrapper) and **ByteEval**
@@ -39,7 +40,8 @@ structure Compiled where
   name : String
   cert : Cert
   art : Artifact
-  /-- P1 and the program after each certificate step. -/
+  /-- P1, the program after each certificate step, and the closures step's
+  output when it changed the program. -/
   anf : List (String × Anf.Program)
 
 /-- The middle end replayed step by step from the certificate (what
@@ -54,9 +56,12 @@ def anfStages (c : Cert) (lam : Lam.Program) : Except String (List (String × An
 /-- A compiled program with its middle end replayed from the certificate. -/
 def assemble (name : String) (cert : Cert) (art : Artifact) : IO Compiled := do
   let anf ← IO.ofExcept (anfStages cert art.lam)
-  -- the replay ends where `run` ended
   let some (_, last) := anf.getLast? | throw (IO.userError s!"{name}: no Anf stage")
-  unless last.beq art.anf do throw (IO.userError s!"{name}: the replayed middle end differs from run's")
+  -- the closures step, as `run` runs it: a stage of its own when it changed the program
+  let closed ← IO.ofExcept ((Recheck.closuresOf art.src last).mapError (·.render))
+  let anf := if closed.beq last then anf else anf ++ [("P8", closed)]
+  -- the replay ends where `run` ended
+  unless closed.beq art.anf do throw (IO.userError s!"{name}: the replayed middle end differs from run's")
   pure { name, cert, art, anf }
 
 /-- A program as the compiler made it from an ingressed input. -/

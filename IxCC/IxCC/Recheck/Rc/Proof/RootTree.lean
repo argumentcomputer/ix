@@ -203,7 +203,7 @@ theorem runFront_boolKnown {cfg : Config} {P : Src.Program} {cert : Cert} {f : F
   obtain ⟨-, ⟨st, her⟩, hanf, hfir, -, hgen, -⟩ := runFront_spec h
   have hk : f.cfg.base.known = f.lam.known :=
     (congrArg Own.Tables.known (Cfg.Rc.generate_tables hgen)).trans
-      ((Fir.Proof.lower_fields hfir).2.2.2.trans (pipeline_known hanf))
+      ((Fir.Proof.lower_fields hfir).2.2.2.trans (anfOf_known hanf))
   rw [hk, erase_known her]
   exact ⟨rfl, rfl⟩
 
@@ -215,7 +215,8 @@ theorem Front.boolRows {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
     (hk : f.src.known.boolFalse = some k ∨ f.src.known.boolTrue = some k) :
     BoolRows f.src f.cfg.base := by
   obtain ⟨-, ⟨st, her⟩, hanf, -, -, -, -⟩ := runFront_spec h
-  have hct : f.cfg.base.ctors = f.lam.ctors := (runFront_ctors h).trans (pipeline_ctors hanf)
+  obtain ⟨rs, hrs, hrk⟩ := anfOf_ctors hanf
+  have hct : f.cfg.base.ctors = f.lam.ctors ++ rs := (runFront_ctors h).trans hrs
   have hroot : (addr, c) ∈ f.src.roots := List.mem_of_getElem? hr
   have wf := Lam.Erase.Proof.erase_progWF her
   obtain ⟨F, T, hF, hT⟩ : ∃ F T, f.src.known.boolFalse = some F ∧ f.src.known.boolTrue = some T := by
@@ -226,7 +227,7 @@ theorem Front.boolRows {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
       exact ⟨f', k, hf', hk⟩
   unfold BoolRows boolRows?
   rw [hF, hT, hct]
-  simp only [Bool.and_eq_true]
+  simp only [Bool.and_eq_true, ofKey_append_src hrk]
   exact ⟨erase_boolRow her hroot hb (.inl hF), erase_boolRow her hroot hb (.inr hT)⟩
 
 theorem isImmortalViewType_boolSig (C : Cfg.Program) :
@@ -365,6 +366,14 @@ def RootWrongOffPlainShape (a : Artifact) (root : Root) : Prop :=
     (∃ k, (Lang.run (⟨a.front.src, a.front.checked⟩ : CheckedProgram) (0, ns) k).GoesWrong) ∨
       ∃ k v, Lang.run (⟨a.front.src, a.front.checked⟩ : CheckedProgram) (0, ns) k = .ok v ∧
         ¬ PlainShapeOpt a.front.src root.const (Lang.obs v)
+
+/-- **A plain-RC claim's inputs are covered** (`Recheck.covered_rootsOf_head`). -/
+theorem Artifact.covered_head {cfg : Config} {P : Src.Program} {cert : Cert}
+    {a : Artifact} (hrun : run cfg P cert = .ok a) {root : Root}
+    (hhead : a.roots.head? = some root) (hnat : CompileClaim.rootParamsAllNat a.front.src root = true)
+    {ns : List Nat} (hlen : ns.length = root.params) : a.front.Covered cert (0, ns) := by
+  rw [run_roots hrun] at hhead
+  exact Recheck.covered_rootsOf_head hhead hnat hlen
 
 /-- **The view's rejections at a plain-RC root.** For an artifact of
 `RcReplay.run` whose first root passes `checkPlainRcRoot`, the source goes

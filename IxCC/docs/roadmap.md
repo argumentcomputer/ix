@@ -105,16 +105,17 @@ phase of regenerating the fixtures from this tree; a SrcEval step counter for
 the IxVM workstream's first measurement (EV-0; the evaluator's clock is a depth
 bound, not a step count); producer speed.
 
-**In this tree, outside the production pipeline:** P8, closed-world
-defunctionalisation ([closures design](closures-design.md)). The pass
-`Anf.defun` is implemented and tested: against the Anf evaluator, and end to
-end natively on `Decline.composeClosure`, the K1 programs without equations
-and the design's workloads. Its output is proved first order, and `Fir.lower`
-declines no first-order program for closures. Nothing on the recheck path calls
-it, and its correctness theorem is not proved. Its statement follows the
-decision of 2026-11-13 on roots applied to more arguments than they take
-([closures design](closures-design.md#proof-obligation): a premise on the source
-root's declared parameter count, and the compiled arity pinned to it).
+**In this tree, on the compile and recheck path:** P8, closed-world
+defunctionalisation ([closures design](closures-design.md)), as the middle
+end's closures step after the certificate's steps: a program with no
+residual closure whose roots take their declared parameter counts passes it
+unchanged; otherwise each root whose Anf parameter count is not its declared
+count gets an entry at the declared count, and P8 removes every closure.
+`fir.closures` is unreachable after it. The end-to-end theorems hold on every
+input of exactly its root's declared count, and on every input of a program
+the step leaves unchanged (every program that compiled before the step was
+added with its roots at their declared counts), so they say what they said
+before for those programs ([closures design](closures-design.md#proof-obligation)).
 
 **Current integration surface:**
 
@@ -264,15 +265,26 @@ hosted-CI or cold-store timing is claimed.
   of inductive types; □. Fixed-width integers have no representation of
   their own (erasure unboxes them to `Nat`, so a `UInt64` at or above 2^63
   fails like a `Nat`); there are no arrays, byte arrays or strings.
-- **Higher-order code** only where bounded inlining and specialisation
-  (P3, P4) remove it; any remaining closure is declined at Anf → Fir
-  (`fir.closures`).
+- **Higher-order code**: bounded inlining and specialisation (P3, P4)
+  remove what they can; the closures step (P8, Phase 2) turns any remaining
+  closure into a constructor cell and every unknown call into a call of a
+  dispatcher, so no program is declined for its closures (`fir.closures` is
+  unreachable).
 - **Memory.** Immortal cells, or the bounded plain-RC route: shared
   constructors with 1 to 31 scanned fields, size-class free lists, iterative
   release (`--rc auto|on|off`).
 - **Roots.** Level-monomorphic, at most five `Nat` parameters; results that
   are `Nat` or enumerations (immortal and zero-RC policies) or first-order
   constructor trees (plain RC). A compile claim covers root index 0.
+- **Internal calls.** A global takes at most seven parameters, the internal
+  calling convention's argument registers: register allocation declines a
+  program with a global of more (`alloc: alloc.fallback`), whatever its root
+  takes. Erasure keeps every binder slot, erased type and instance
+  parameters included, so monad-transformer code reaches the limit: a
+  `StateT`-over-`Except` loop has a global of eight
+  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`). Passing the
+  extra parameters on the stack, or dropping the erased ones (P5), would
+  lift it.
 - **Proved.** For an accepted certificate, the object refines SrcEval on the
   checked source `a.src`, with the `GoesWrong` escape, under the x86, loader
   and driver assumptions of the [trust ledger](trusted-extern-ledger.md); at
@@ -436,7 +448,7 @@ claim, stage L or P8.
 | 0 | Reset and foundations: first gates back, the ix `eq_def` export, design notes (not kept in this repository), a declarative x86 instruction table with compact encodings, hardware-differential and decoder gates, first-wave fixtures, census, Lean/Clang measurement rows | — | Done | — | — |
 | 1 | Scalar vertical slice from real Lean source to certified ELF, with register allocation, loops and recursion (`fib`, `for` loops, Ackermann, `tak`, `gcd`) | K1 | Done: K1 certified relative to SrcEval | the first fragment's x86 exit test | — |
 | 1.5 | Reviewed resource checking, address-bound equation/profile selection and contract transport; assess upstream certification before the final producer repin | Existing K1 and annotated/plain fixtures | In progress | — | — |
-| 2 | Heap and closures: general RC (scalar fields, large objects, static objects, reset/reuse, `unique`/`borrow`, inline fast paths, the Own checker); P8 defunctionalisation; P5/P6 when measured | K0 (real `List.reverse`), K2 (lists), K3 (trees); `Decline.composeClosure` | In progress: the bounded plain-RC route and the `List.reverse` regression are implemented; P8 milestone 1 in progress | nothing: every item is below SrcEval | nothing: the evaluator has closures natively and its own memory |
+| 2 | Heap and closures: general RC (scalar fields, large objects, static objects, reset/reuse, `unique`/`borrow`, inline fast paths, the Own checker); P8 defunctionalisation; P5/P6 when measured | K0 (real `List.reverse`), K2 (lists), K3 (trees); `Decline.composeClosure` | In progress: the bounded plain-RC route and the `List.reverse` regression are implemented; P8 is on the compile and recheck path (the closures step), with `Decline.composeClosure` compiled and certified | nothing: every item is below SrcEval | nothing: the evaluator has closures natively and its own memory |
 | 3 | Data and interface: fixed-width integers and small `Int`, arrays and byte arrays with in-place update, strings, interpreted opaques, P9; the byte ABI, the claim's ABI descriptor, state-machine roots | K4 | Planned | new primitives and string rules: a new contract and image version, one meaning lemma each, new adequacy cases | the same meaning lemmas, stated at the SrcEval level, for a write-once-memory implementation |
 | 4 | Bignums: the limb library compiled by IxCC; large `Int` | K5 | Planned | nothing above SrcEval (`Nat` is exact there) | a shared `Nat` specification with the evaluator's in-circuit `Nat` |
 | 5 | Scale and usability: input-relative budgets, linear-time recheck passes, per-function rechecking and caching, diagnostics, library census | K6; a closure of at least 2,000 definitions | Planned | — | larger images |
@@ -476,11 +488,12 @@ data:
 - **P8** ([closures design](closures-design.md)): defunctionalisation,
   dispatchers, the known-dispatch shrink rule, `Anf.Defun.correct`. Started
   at the owner's request (2026-11-10) for the native route's generality,
-  although the evaluator route does not need it. The pass is implemented and
-  tested outside the production pipeline (nothing on the recheck path calls
-  it); its correctness theorem is not proved. Its statement follows the
-  decision of 2026-11-13 on roots applied to more arguments than they take
-  ([closures design](closures-design.md#proof-obligation)).
+  although the evaluator route does not need it. On the compile and recheck
+  path as the closures step, with each root entered at its declared
+  parameter count; proved and composed into the end-to-end theorems on the
+  inputs they cover ([closures design](closures-design.md#proof-obligation)).
+  Open: the known-dispatch shrink rule (and the shrink after the pass that
+  waits for it), P9, and dispatchers past about 510 closure keys.
 - **P5 and P6** only where K2/K3 measurements show the need.
 - *For the spine:* nothing. Every item is below SrcEval.
 - *For the Aiur routes:* nothing; the evaluator has closures natively and its
@@ -839,9 +852,10 @@ The owner also decided, on the same day:
   [byte contract](byte-contract.md) says which bytes and how they are
   identified), and `ix compile --unbound` is a bridge, removed when the
   fixtures are refrozen in the role-bound form (this settles DO-19).
-- **Root arity** (2026-11-13): for closures, the end-to-end theorems are
-  stated for inputs no longer than the source root's declared parameter
-  count, with the compiled arity pinned to it.
+- **Root arity** (2026-11-13, fixed 2026-11-14): a root is called with
+  exactly its declared parameter count, and the compiler makes its entry at
+  that count; the end-to-end theorems are stated for inputs of exactly that
+  count, and for every input of a program the closures step leaves unchanged.
 - **Source annotations are untrusted hints** (2026-11-14): IxCC's own
   ownership checker, on IxCC's intermediate representation, is the soundness
   basis for anything the compiler does with ownership: a unique parameter is

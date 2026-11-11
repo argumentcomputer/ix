@@ -31,7 +31,7 @@ The definitions P8's correctness proof is stated with
   at least that depth (every binder pushes exactly its values, so the bound
   holds wherever code runs, and a local function's captures, below `Γ`, are
   in the target environment);
-* `ExactArity`, `RefinesOn`: the inputs P8 refines on. A root applied to
+* `ExactArity`: the inputs P8 refines on (`Sem.RefinesOn`). A root applied to
   more arguments than it takes applies its result to the rest; when the
   result is a closure the source continues and the target, which holds a
   closure cell, is stuck (`IxCCTests.Anf.Defun`, the over-applied root). A
@@ -39,8 +39,9 @@ The definitions P8's correctness proof is stated with
   (`docs/closures-design.md`, "Proof obligation", the decisions of
   2026-11-13 and 2026-11-14), so the step is stated for inputs of exactly
   the Anf root's arity, which the end-to-end theorems get from the source
-  root's declared count. The input premise is the predicate `RefinesOn`
-  takes and nothing else; `refinesOn_mono` restricts it.
+  root's declared count (the closures step's entries, `Anf.Entry`). The
+  input premise is the predicate `Sem.RefinesOn` takes and nothing else;
+  `refinesOn_mono` restricts it.
 
 Proved here: on first-order values (no closure inside) `DV` is the identity
 (`dv_refl`, `dv_eq`), and related values observe the same (`dv_obs`). -/
@@ -174,16 +175,10 @@ def FundAt (X : Setting) (n : Nat) : Prop :=
 def ExactArity (P : Program) (i : Nat × List Nat) : Prop :=
   ∀ r gd, P.roots[i.1]? = some r → P.global? r = some gd → i.2.length = gd.ps.length
 
-/-- Refinement on the inputs of `D` (`Sem.Refines` on every input). The
-inputs are its only premise: nothing below the root-level statement names
-them. -/
-def RefinesOn {I S T : Type} [Sem.Lang I S] [Sem.Lang I T] (D : I → Prop) (s : S) (t : T) : Prop :=
-  ∀ i, D i → Sem.Behaviour.Refines Sem.Lang.ObsEq (Sem.Lang.behaviour s i) (Sem.Lang.behaviour t i)
-
-/-- Refinement on fewer inputs. -/
+/-- Refinement on fewer inputs (`Sem.RefinesOn.mono`). -/
 theorem refinesOn_mono {I S T : Type} [Sem.Lang I S] [Sem.Lang I T] {D E : I → Prop} {s : S} {t : T}
-    (hED : ∀ i, E i → D i) (h : RefinesOn D s t) : RefinesOn E s t :=
-  fun i hi => h i (hED i hi)
+    (hED : ∀ i, E i → D i) (h : Sem.RefinesOn D s t) : Sem.RefinesOn E s t :=
+  h.mono hED
 
 /-! ## First-order values -/
 

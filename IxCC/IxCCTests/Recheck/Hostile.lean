@@ -159,7 +159,7 @@ def objectNoCanonical (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert
     | .error _ => throw ({ stage := .relevance, code := "relevance",
                            message := "tiers S and C refuse the annotation" } : Recheck.Err)
   let (lam, _) ← (Lam.erase src checked).mapError Recheck.Err.ofErase
-  let (_, _, _, C) ← Recheck.middle c lam
+  let (_, _, _, C) ← Recheck.middle c src lam
   Recheck.checkParams cfg C (List.zipIdx C.exports |>.map fun (f, i) => (i, f))
   (Rt.checkSwitches C).mapError Recheck.Err.ofSwitch
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Recheck.Err.ofRt

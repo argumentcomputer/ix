@@ -13,7 +13,7 @@ for diagnostics.
   closure shape.
 * `GKey` names a global: erasure makes `const`, `byName`, `recStar` and
   `wrapper` globals, each at a universe profile; P4, P5 and P8 add `spec`,
-  `worker`, `lam` and `dispatch`.
+  `worker`, `lam` and `dispatch`, and the closures step adds `entry`.
 * `ArgKey` is a specialisation argument (P4).
 
 The three types are mutually recursive, and Lean's `DecidableEq` deriving
@@ -52,6 +52,10 @@ inductive GKey where
   | lam (g : GKey) (path : List Nat)
   /-- P8: the dispatcher of an arity. -/
   | dispatch (arity : Nat)
+  /-- The entry of root `g` at its declared parameter count `arity`: `g`'s
+  value applied to that many parameters (made before P8 when the counts
+  differ). -/
+  | entry (g : GKey) (arity : Nat)
 
 /-- A specialisation argument (P4). -/
 inductive ArgKey where
@@ -104,26 +108,35 @@ def GKey.decEq : (a b : GKey) → Decidable (a = b)
     | isFalse h1 => isFalse (fun e => by cases e; exact h1 rfl)
   | .dispatch n, .dispatch m =>
     if h : n = m then isTrue (h ▸ rfl) else isFalse (fun e => by cases e; exact h rfl)
+  | .entry f n, .entry g m =>
+    match GKey.decEq f g with
+    | isTrue h1 =>
+      if h2 : n = m then isTrue (h1 ▸ h2 ▸ rfl) else isFalse (fun e => by cases e; exact h2 rfl)
+    | isFalse h1 => isFalse (fun e => by cases e; exact h1 rfl)
   | .const .., .byName .. | .const .., .recStar .. | .const .., .wrapper .. | .const .., .spec ..
-  | .const .., .worker .. | .const .., .lam .. | .const .., .dispatch ..
+  | .const .., .worker .. | .const .., .lam .. | .const .., .dispatch .. | .const .., .entry ..
   | .byName .., .const .. | .byName .., .recStar .. | .byName .., .wrapper ..
   | .byName .., .spec .. | .byName .., .worker .. | .byName .., .lam .. | .byName .., .dispatch ..
+  | .byName .., .entry ..
   | .recStar .., .const .. | .recStar .., .byName .. | .recStar .., .wrapper ..
   | .recStar .., .spec .. | .recStar .., .worker .. | .recStar .., .lam ..
-  | .recStar .., .dispatch ..
+  | .recStar .., .dispatch .. | .recStar .., .entry ..
   | .wrapper .., .const .. | .wrapper .., .byName .. | .wrapper .., .recStar ..
   | .wrapper .., .spec .. | .wrapper .., .worker .. | .wrapper .., .lam ..
-  | .wrapper .., .dispatch ..
+  | .wrapper .., .dispatch .. | .wrapper .., .entry ..
   | .spec .., .const .. | .spec .., .byName .. | .spec .., .recStar .. | .spec .., .wrapper ..
-  | .spec .., .worker .. | .spec .., .lam .. | .spec .., .dispatch ..
+  | .spec .., .worker .. | .spec .., .lam .. | .spec .., .dispatch .. | .spec .., .entry ..
   | .worker .., .const .. | .worker .., .byName .. | .worker .., .recStar ..
   | .worker .., .wrapper .. | .worker .., .spec .. | .worker .., .lam ..
-  | .worker .., .dispatch ..
+  | .worker .., .dispatch .. | .worker .., .entry ..
   | .lam .., .const .. | .lam .., .byName .. | .lam .., .recStar .. | .lam .., .wrapper ..
-  | .lam .., .spec .. | .lam .., .worker .. | .lam .., .dispatch ..
+  | .lam .., .spec .. | .lam .., .worker .. | .lam .., .dispatch .. | .lam .., .entry ..
   | .dispatch .., .const .. | .dispatch .., .byName .. | .dispatch .., .recStar ..
   | .dispatch .., .wrapper .. | .dispatch .., .spec .. | .dispatch .., .worker ..
-  | .dispatch .., .lam .. => isFalse (fun e => by cases e)
+  | .dispatch .., .lam .. | .dispatch .., .entry ..
+  | .entry .., .const .. | .entry .., .byName .. | .entry .., .recStar .. | .entry .., .wrapper ..
+  | .entry .., .spec .. | .entry .., .worker .. | .entry .., .lam ..
+  | .entry .., .dispatch .. => isFalse (fun e => by cases e)
   termination_by structural a => a
 
 def ArgKey.decEq : (a b : ArgKey) → Decidable (a = b)
@@ -170,7 +183,7 @@ def bucket : GKey → Nat
     match h with
     | .ctor c | .quotMk c | .quotLift c | .recr c | .cases c => c
     | .prim _ => 0
-  | .spec g _ | .worker g _ | .lam g _ => g.bucket
+  | .spec g _ | .worker g _ | .lam g _ | .entry g _ => g.bucket
   | .dispatch _ => 0
 
 /-- Short rendering for diagnostics and reports. -/
@@ -187,6 +200,7 @@ def render : GKey → String
   | .worker g _ => s!"worker ({g.render})"
   | .lam g _ => s!"lam ({g.render})"
   | .dispatch n => s!"dispatch {n}"
+  | .entry g n => s!"entry {n} ({g.render})"
 
 end GKey
 

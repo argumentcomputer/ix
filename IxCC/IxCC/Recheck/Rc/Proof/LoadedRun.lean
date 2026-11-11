@@ -88,7 +88,7 @@ theorem front_refines_lir {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fr
     (accepted : runFront cfg P cert = .ok f) {model : Rt.Model}
     (region : Rt.Proof.RegionOk model.ctx model.size)
     (readable : Rt.Proof.LirRegion model.mem model.ctx model.size) :
-    Sem.Refines f.source (f.loaded model) :=
+    Sem.RefinesOn (f.Covered cert) f.source (f.loaded model) :=
   source_view_refines_of_fir accepted model (loaded_run_refines accepted region readable)
 
 

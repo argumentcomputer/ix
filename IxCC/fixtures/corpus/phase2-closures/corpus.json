@@ -1,7 +1,7 @@
 {
   "format": "ixcc/corpus/1",
   "family": "phase2-closures",
-  "description": "Higher-order workloads for P8 (docs/closures-design.md, Exit criteria): a closure that grows each iteration, dictionary-passing polymorphic recursion, a StateT-over-Except loop, partial and over-application through a stored closure, and a fuel-indexed record of closures. Not yet a registered family: the P8 end-to-end test reads it outside the production pipeline.",
+  "description": "Higher-order workloads for P8 (docs/closures-design.md, Exit criteria): a closure that grows each iteration, dictionary-passing polymorphic recursion, a StateT-over-Except loop, partial and over-application through a stored closure, and a fuel-indexed record of closures. Compiled through the closures step (the roots' entries and P8); the StateT-over-Except loop is declined by register allocation.",
   "tier": "required",
   "phase": 2,
   "directory": "fixtures/corpus/phase2-closures",
@@ -198,8 +198,11 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": null,
-          "note": "Outside the production pipeline, with P8 between the middle end and Fir (tests-pipeline, its defun part), refused by register allocation (alloc: alloc.fallback): the program has a source global of eight parameters, past the internal calling convention's seven argument registers. That limit is on parameter counts and independent of closures.",
+          "decline": {
+            "stage": "alloc",
+            "code": "alloc.fallback"
+          },
+          "note": "Declined by register allocation after the closures step: the program has a source global of eight parameters, past the internal calling convention's seven argument registers. That limit is on parameter counts and independent of closures.",
           "cases": [
             {
               "args": [

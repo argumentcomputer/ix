@@ -20,30 +20,30 @@ theorem source_goesWrong {f : Front} {input : Nat × List Nat} {clock : Nat}
   · exact ⟨clock, .inr rejected⟩
 
 section
-variable {f : Front} {O : Type} [Lang (Nat × List Nat) O] {object : O}
+variable {f : Front} {O : Type} [Lang (Nat × List Nat) O] {object : O} {D : Nat × List Nat → Prop}
 
-theorem Front.sound_of (refinement : Sem.Refines f.source object)
-    {input : Nat × List Nat} {clock : Nat} {output : Lang.Val O}
+theorem Front.sound_of (refinement : Sem.RefinesOn D f.source object)
+    {input : Nat × List Nat} (covered : D input) {clock : Nat} {output : Lang.Val O}
     (success : Lang.run object input clock = .ok output) :
     (∃ sourceClock value,
       Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
       f.view input.1 (Lang.obs value) = some (Lang.obs output)) ∨ f.GoesWrong input := by
-  rcases refinement.backward success with ⟨sourceClock, observed, run, same⟩ | ⟨sourceClock, stuck⟩
+  rcases refinement.backward covered success with ⟨sourceClock, observed, run, same⟩ | ⟨sourceClock, stuck⟩
   · obtain ⟨value, sourceRun, viewed⟩ := Sem.Viewed.run_ok run
     exact .inl ⟨sourceClock, value, sourceRun, viewed.trans (congrArg some same)⟩
   · exact .inr (source_goesWrong (clock := sourceClock) (by rw [stuck]; trivial))
 
-theorem Front.safe_of (refinement : Sem.Refines f.source object)
-    {input : Nat × List Nat} (safe : ¬ f.GoesWrong input) (clock : Nat) :
+theorem Front.safe_of (refinement : Sem.RefinesOn D f.source object)
+    {input : Nat × List Nat} (covered : D input) (safe : ¬ f.GoesWrong input) (clock : Nat) :
     ¬ (Lang.run object input clock).GoesWrong :=
-  refinement.safe (fun _ wrong => safe (source_goesWrong wrong)) clock
+  refinement.safe covered (fun _ wrong => safe (source_goesWrong wrong)) clock
 
-theorem Front.diverges_of (refinement : Sem.Refines f.source object)
-    {input : Nat × List Nat}
+theorem Front.diverges_of (refinement : Sem.RefinesOn D f.source object)
+    {input : Nat × List Nat} (covered : D input)
     (diverging : ∀ clock, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) input clock = .timeout) :
     (∀ clock, Lang.run object input clock = .timeout) ∨
       ∃ clock resource, Lang.run object input clock = .resource resource := by
-  apply refinement.diverges
+  apply refinement.diverges covered
   intro clock
   change (Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) input clock).bind _ = _
   rw [diverging clock]

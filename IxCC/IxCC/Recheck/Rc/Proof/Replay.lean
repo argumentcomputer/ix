@@ -1,5 +1,6 @@
 import IxCC.Cfg.Rc.Proof.Language
 import IxCC.Recheck.Rc.Replay
+import IxCC.Recheck.Proof.Middle
 
 /-! Compose the actual certificate-consuming front end with the abstract RC
 Cfg machine. This deliberately retains the existing accepted stage-S source
@@ -11,7 +12,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (accepted : runFront cfg P c = .ok f) :
     Recheck.front cfg P c.base = .ok (f.src, f.checked) ∧
     (∃ st, Lam.erase f.src f.checked = .ok (f.lam, st)) ∧
-    Anf.Pipeline.run c.base.mid f.lam = .ok f.anf ∧
+    Recheck.anfOf c.base f.src f.lam = .ok f.anf ∧
     Fir.lower f.anf = .ok f.fir ∧
     Own.Plain.Certificate.admit f.fir c.own = .ok f.own ∧
     Cfg.Rc.generate f.fir f.own.bodies = some f.cfg ∧
@@ -28,10 +29,10 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     | ok ls =>
       obtain ⟨lam, st⟩ := ls
       simp only [herase, Except.mapError] at accepted
-      cases hanf : Anf.Pipeline.run c.base.mid lam with
+      cases hanf : Recheck.anfOf c.base src lam with
       | error e => rw [hanf] at accepted; cases accepted
       | ok anf =>
-        simp only [hanf, Except.mapError, bind, Except.bind] at accepted
+        simp only [hanf, bind, Except.bind] at accepted
         cases hfir : Fir.lower anf with
         | error e => rw [hfir] at accepted; cases accepted
         | ok fir =>
@@ -65,14 +66,15 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
                     exact ⟨rfl, ⟨st, herase⟩, hanf, hfir, hown, hgen, hscope⟩
 
 /-- Every accepted RC certificate front end refines its actual stage-S source
-through the abstract checked RC Cfg machine. No execution-agreement premise
-is supplied by a caller, producer or certificate. -/
+through the abstract checked RC Cfg machine, on every covered input
+(`Front.Covered`). No execution-agreement premise is supplied by a caller,
+producer or certificate. -/
 theorem source_refines_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (accepted : runFront cfg P c = .ok f) :
-    Sem.Refines (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) f.cfg := by
+    Sem.RefinesOn (f.Covered c) (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) f.cfg := by
   obtain ⟨_, ⟨st, herase⟩, hanf, hfir, _, _, hscope⟩ := runFront_spec accepted
-  exact (Lam.Erase.Proof.erase_refines herase).trans
-    ((Anf.Pipeline.Proof.run_correct hanf).trans
+  exact Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines herase)
+    ((Recheck.anfOf_refines hanf).trans_refines
       (Cfg.Rc.checked_lower_refines hfir hscope))
 
 

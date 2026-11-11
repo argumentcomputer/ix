@@ -115,7 +115,7 @@ def srcKeyContracts (src : Src.Program) : Key.GKey → List V3.BinderContract
     let base := srcKeyContracts src g
     ((List.range keep.length).zip keep).filterMap fun (i, k) =>
       if k then some (base.getD i {}) else none
-  | .lam _ _ | .dispatch _ => []
+  | .lam _ _ | .dispatch _ | .entry _ _ => []
 
 /-- Result contract traced from `src` through `Key.GKey`. -/
 def srcKeyResult (src : Src.Program) : Key.GKey → V3.ValueContract
@@ -228,7 +228,8 @@ structure ProducedFir where
   stages : List (String × Anf.Program)
 
 /-- Run the front-end (`Table.build`, `Relevance.annotate`, `Recheck.annotation`,
-`Src.admit`), `Lam.erase`, `Anf.Pipeline.produce`, and `Fir.lower` once. -/
+`Src.admit`), `Lam.erase`, `Anf.Pipeline.produce`, the closures step
+(`Recheck.closuresOf`) and `Fir.lower` once. -/
 def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := do
   let P := inp.program
   let (table, tableDiags, tableStats) := Src.Table.build cfg.table P inp.hints.proposals
@@ -251,13 +252,14 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }
-  let anf := ((trace.stages.getLast?).map (·.2)).getD default
+  -- the closures step, as the replays run it (`Recheck.anfOf`)
+  let (anf, stages) ← Recheck.produceClosures src trace
   let fir ← (Fir.lower anf).mapError Err.ofFir
   pure { src, checked, lam, anf, fir
          tableCert := Src.Table.TableCert.ofTable table
          relevance := ann
          mid := trace.cert
-         tableDiags, tableStats, fires := trace.fires, stages := trace.stages }
+         tableDiags, tableStats, fires := trace.fires, stages }
 
 /-- Finish a zero-RC (`ixcc/cert/1`) certificate from an already-produced `ProducedFir`. -/
 def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.Produced := do

@@ -142,8 +142,7 @@ def runContractFront (cfg : Config) (P : Src.Program) (c : Cert)
     (candidate : Src.NatMap Own.Plain.Code) : Except Err Front := do
   let (src, checked) ← Recheck.front cfg P c
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let anf ← (Anf.Pipeline.run c.mid lam).mapError fun msg =>
-    { stage := .anf, code := "anf.replay", message := msg }
+  let anf ← Recheck.anfOf c src lam
   let fir ← (Fir.lower anf).mapError Err.ofFir
   if Own.Plain.Program.check fir candidate || Own.Plain.Program.checkWithContracts fir candidate then
     pure { src, checked, lam, anf, fir, own := { source := fir, bodies := candidate } }
@@ -155,7 +154,7 @@ theorem runContractFront_spec {cfg : Config} {P : Src.Program} {c : Cert}
     (accepted : runContractFront cfg P c candidate = .ok f) :
     Recheck.front cfg P c = .ok (f.src, f.checked) ∧
     (∃ st, Lam.erase f.src f.checked = .ok (f.lam, st)) ∧
-    Anf.Pipeline.run c.mid f.lam = .ok f.anf ∧
+    Recheck.anfOf c f.src f.lam = .ok f.anf ∧
     Fir.lower f.anf = .ok f.fir ∧
     f.own = ({ source := f.fir, bodies := candidate } : Own.Plain.Program) ∧
     Own.Plain.checkContractPlainMap f.fir candidate = true := by
@@ -171,7 +170,7 @@ theorem runContractFront_spec {cfg : Config} {P : Src.Program} {c : Cert}
     | ok ls =>
       obtain ⟨lam, st⟩ := ls
       simp only [herase, Except.mapError] at accepted
-      cases hanf : Anf.Pipeline.run c.mid lam with
+      cases hanf : Recheck.anfOf c src lam with
       | error e => rw [hanf] at accepted; cases accepted
       | ok anf =>
         simp only [hanf] at accepted
@@ -207,11 +206,12 @@ theorem runFront_implies_runContractFront {cfg : Config} {P : Src.Program} {c : 
 theorem contract_source_refines {cfg : Config} {P : Src.Program} {c : Cert}
     {candidate : Src.NatMap Own.Plain.Code} {f : Front}
     (accepted : runContractFront cfg P c candidate = .ok f) :
-    Sem.Refines (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) f.own := by
+    Sem.RefinesOn (Recheck.Covered c.mid f.src f.lam f.anf) (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram)
+      f.own := by
   obtain ⟨_, ⟨st, herase⟩, hanf, hfir, hown, hcheck⟩ := runContractFront_spec accepted
   rw [hown]
-  exact (Lam.Erase.Proof.erase_refines herase).trans
-    ((Anf.Pipeline.Proof.run_correct hanf).trans
+  exact Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines herase)
+    ((anfOf_refines hanf).trans_refines
       (Own.Plain.checked_contract_lower_refines hfir hcheck))
 
 end IxCC.Recheck.Rc
@@ -275,20 +275,20 @@ via `checked_contract_program_refines`. -/
 theorem recheck_contract_own_refines {cfg : Config} {P : Src.Program} {cert : Cert} {artifact : Artifact}
     (accepted : run cfg P cert = .ok artifact)
     (hown : artifact.checkContractOwn = true) :
-    Sem.Refines (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
+    Sem.RefinesOn (artifact.front.Covered cert) (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
       (Own.Plain.Program.canonical artifact.fir) := by
   obtain ⟨hlir, _⟩ := run_parts accepted
   obtain ⟨_, ⟨st, herase⟩, hanf, hfir, _, _, _, _⟩ := runLir_spec hlir
   have hcheck := (Artifact.checkContractOwn_iff artifact).mp hown
-  exact (Lam.Erase.Proof.erase_refines herase).trans
-    ((Anf.Pipeline.Proof.run_correct hanf).trans
+  exact Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines herase)
+    ((anfOf_refines hanf).trans_refines
       (Own.Plain.checked_contract_lower_refines hfir hcheck))
 
 /-- End-to-end soundness of `Recheck.run` (`recheck_sound`). -/
 theorem recheck_sound {cfg : Config} {P : Src.Program} {cert : Cert} {artifact : Artifact}
     (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -296,17 +296,17 @@ theorem recheck_sound {cfg : Config} {P : Src.Program} {cert : Cert} {artifact :
     ((∀ clock, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input clock = .timeout) →
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) :=
-  sound accepted driver valid input
+  sound accepted driver valid input hi
 
 /-- End-to-end soundness of `Recheck.runWithContracts`, combining canonical
 contract-aware `Own.Plain` refinement with linked x86 object soundness. -/
 theorem recheckWithContracts_sound {cfg : Config} {P : Src.Program} {cert : Cert} {artifact : Artifact}
     (accepted : runWithContracts cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
-    Sem.Refines (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
+    Sem.RefinesOn (artifact.front.Covered cert) (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
       (Own.Plain.Program.canonical artifact.fir) ∧
-    Sem.Refines artifact.front.source (artifact.linked driver) ∧
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) ∧
     ((∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -319,17 +319,17 @@ theorem recheckWithContracts_sound {cfg : Config} {P : Src.Program} {cert : Cert
     (Artifact.checkContractOwn_iff artifact).mpr hcheck
   exact ⟨recheck_contract_own_refines hrun hown,
     object_refines hrun driver valid,
-    sound hrun driver valid input⟩
+    sound hrun driver valid input hi⟩
 
 /-- End-to-end soundness of `Recheck.compileWithContracts`. -/
 theorem compileWithContracts_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
     (accepted : compileWithContracts cfg bytes equations roots typecheck = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
-    Sem.Refines (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
+    Sem.RefinesOn (artifact.front.Covered cert) (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
       (Own.Plain.Program.canonical artifact.fir) ∧
-    Sem.Refines artifact.front.source (artifact.linked driver) ∧
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) ∧
     ((∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -338,7 +338,7 @@ theorem compileWithContracts_sound {cfg : Config} {bytes : ByteArray} {equations
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure)) := by
   obtain ⟨inp, _, _, replayed⟩ := compileWithContracts_parts accepted
-  exact recheckWithContracts_sound replayed driver valid input
+  exact recheckWithContracts_sound replayed driver valid input hi
 
 end IxCC.Recheck
 
@@ -352,7 +352,7 @@ theorem recheck_sound {cfg : Recheck.Config} {P : Src.Program} {cert : Recheck.C
     {artifact : Recheck.Artifact}
     (accepted : Recheck.run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -360,14 +360,14 @@ theorem recheck_sound {cfg : Recheck.Config} {P : Src.Program} {cert : Recheck.C
     ((∀ clock, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input clock = .timeout) →
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) :=
-  Recheck.recheck_sound accepted driver valid input
+  Recheck.recheck_sound accepted driver valid input hi
 
 /-- End-to-end soundness of `Recheck.compileInput` (`Compiler.compileInput_sound`). -/
 theorem compileInput_sound {cfg : Recheck.Config} {inp : Recheck.Input}
     {cert : Recheck.Cert} {artifact : Recheck.Artifact}
     (accepted : Recheck.compileInput cfg inp = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -375,14 +375,14 @@ theorem compileInput_sound {cfg : Recheck.Config} {inp : Recheck.Input}
     ((∀ clock, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input clock = .timeout) →
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) :=
-  Recheck.sound (Recheck.compileInput_parts accepted).2 driver valid input
+  Recheck.sound (Recheck.compileInput_parts accepted).2 driver valid input hi
 
 /-- End-to-end soundness of byte-input `Recheck.compile` (`Compiler.compile_sound`). -/
 theorem compile_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {typecheck : Bool} {cert : Recheck.Cert} {artifact : Recheck.Artifact}
     (accepted : Recheck.compile cfg bytes equations roots typecheck = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -390,7 +390,7 @@ theorem compile_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Le
     ((∀ clock, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input clock = .timeout) →
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) :=
-  Recheck.compiled_sound accepted driver valid input
+  Recheck.compiled_sound accepted driver valid input hi
 
 /-- What `RcReplay.produceImmortal` computed: the zero-RC certificate and its
 `Recheck.run`. -/
@@ -570,7 +570,7 @@ theorem produceAuto_zeroRc_sound {cfg : Recheck.Config} {inp : Recheck.Input}
     {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
     (accepted : Recheck.RcReplay.produceAuto cfg inp = .ok (.zeroRc cert artifact alloc))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -579,7 +579,7 @@ theorem produceAuto_zeroRc_sound {cfg : Recheck.Config} {inp : Recheck.Input}
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
   obtain ⟨_, _, _, _, _, _, _, hrun⟩ := produceAuto_zeroRc_parts accepted
-  exact Recheck.sound hrun driver valid input
+  exact Recheck.sound hrun driver valid input hi
 
 /-- End-to-end soundness of `RcReplay.produceAuto` on the `.plainRc` path. -/
 theorem produceAuto_plainRc_sound {cfg : Recheck.Config} {inp : Recheck.Input}
@@ -587,7 +587,7 @@ theorem produceAuto_plainRc_sound {cfg : Recheck.Config} {inp : Recheck.Input}
     {alloc : List Xv.Alloc.Outcome}
     (accepted : Recheck.RcReplay.produceAuto cfg inp = .ok (.plainRc cert artifact alloc))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value,
         Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
@@ -600,7 +600,7 @@ theorem produceAuto_plainRc_sound {cfg : Recheck.Config} {inp : Recheck.Input}
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource) := by
   obtain ⟨_, _, _, _, _, _, _, hrun⟩ := produceAuto_plainRc_parts accepted
-  exact Recheck.RcReplay.sound hrun driver valid input
+  exact Recheck.RcReplay.sound hrun driver valid input hi
 
 /-- End-to-end soundness of `RcReplay.produceAuto` on its immortal fallback
 (plain RC selected but refused). -/
@@ -609,7 +609,7 @@ theorem produceAuto_immortal_sound {cfg : Recheck.Config} {inp : Recheck.Input}
     {reason : Recheck.Err}
     (accepted : Recheck.RcReplay.produceAuto cfg inp = .ok (.immortal cert artifact alloc reason))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -618,7 +618,7 @@ theorem produceAuto_immortal_sound {cfg : Recheck.Config} {inp : Recheck.Input}
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
   obtain ⟨_, _, _, _, _, _, _, _, hrun⟩ := produceAuto_immortal_parts accepted
-  exact Recheck.sound hrun driver valid input
+  exact Recheck.sound hrun driver valid input hi
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on the `.zeroRc` path. -/
 theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
@@ -626,7 +626,7 @@ theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equ
     {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
     (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck = .ok (.zeroRc cert artifact alloc))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -640,7 +640,7 @@ theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equ
   | error e => simp [hing] at accepted
   | ok inp =>
     simp only [hing] at accepted
-    exact produceAuto_zeroRc_sound accepted driver valid input
+    exact produceAuto_zeroRc_sound accepted driver valid input hi
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on the `.plainRc` path. -/
 theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
@@ -649,7 +649,7 @@ theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {eq
     {alloc : List Xv.Alloc.Outcome}
     (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck = .ok (.plainRc cert artifact alloc))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value,
         Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
@@ -667,7 +667,7 @@ theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {eq
   | error e => simp [hing] at accepted
   | ok inp =>
     simp only [hing] at accepted
-    exact produceAuto_plainRc_sound accepted driver valid input
+    exact produceAuto_plainRc_sound accepted driver valid input hi
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on its immortal fallback. -/
 theorem compileAuto_immortal_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
@@ -677,7 +677,7 @@ theorem compileAuto_immortal_sound {cfg : Recheck.Config} {bytes : ByteArray} {e
     (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck =
       .ok (.immortal cert artifact alloc reason))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -691,7 +691,7 @@ theorem compileAuto_immortal_sound {cfg : Recheck.Config} {bytes : ByteArray} {e
   | error e => simp [hing] at accepted
   | ok inp =>
     simp only [hing] at accepted
-    exact produceAuto_immortal_sound accepted driver valid input
+    exact produceAuto_immortal_sound accepted driver valid input hi
 
 end IxCC.Compiler
 

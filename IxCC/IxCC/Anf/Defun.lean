@@ -102,6 +102,7 @@ def gkeyCode : Key.GKey → List Nat
   | .worker g keep => 5 :: (gkeyCode g ++ (keep.length :: keep.map bitCode))
   | .lam g path => 6 :: (gkeyCode g ++ (path.length :: path))
   | .dispatch n => [7, n]
+  | .entry g n => 8 :: (gkeyCode g ++ [n])
   termination_by structural k => k
 
 def ctorKeyCode : Key.CtorKey → List Nat

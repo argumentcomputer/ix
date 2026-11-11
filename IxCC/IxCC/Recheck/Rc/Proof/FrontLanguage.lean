@@ -55,10 +55,10 @@ theorem source_view_refines_of_fir {cfg : Config} {P : Src.Program} {cert : Cert
     (physical : ∀ input : Nat × List Nat,
       Sem.Behaviour.Refines (ViewedFirRel f input.1)
         (Lang.behaviour f.fir input) (Lang.behaviour (f.loaded model) input)) :
-    Sem.Refines f.source (f.loaded model) := by
-  intro input
+    Sem.RefinesOn (f.Covered cert) f.source (f.loaded model) := by
+  intro input hi
   rw [Sem.Viewed.behaviour_eq]
-  have composed := (source_fir_retained accepted input).trans (physical input)
+  have composed := (source_fir_retained accepted input hi).trans (physical input)
   change Sem.Behaviour.Refines Eq
     ((Lang.behaviour (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) input).then
       fun value => Sem.viewResult f.view input.1 (Lang.obs value))

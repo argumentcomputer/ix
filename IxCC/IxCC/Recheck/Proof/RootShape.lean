@@ -529,6 +529,13 @@ theorem pipeline_known {cert : Anf.Pipeline.Cert} {L : Lam.Program} {Q : Anf.Pro
   exact (steps_known cert.shrink cert.steps P0 Q (Anf.Pipeline.Proof.convert_wf h0) h2).trans
     (Anf.Convert.Proof.convert_spec h0).2.2.2.2.1
 
+/-- The middle end with the closures step keeps the Lam program's pinned keys. -/
+theorem anfOf_known {c : Cert} {src : Src.Program} {L : Lam.Program} {A : Anf.Program}
+    (h : anfOf c src L = .ok A) : A.known = L.known := by
+  obtain ⟨pre, hpre, hcl⟩ := anfOf_ok h
+  obtain ⟨decl, -, hc⟩ := closuresOf_ok hcl
+  exact (Anf.Pipeline.Proof.closures_tables hc).1.trans (pipeline_known hpre)
+
 /-- **The front half carries the source's `Bool` pins to Cfg**, as source
 constructor keys. -/
 theorem runLir_boolKnown {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
@@ -538,7 +545,7 @@ theorem runLir_boolKnown {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
   obtain ⟨-, ⟨st, her⟩, hanf, hfir, hown, hcfg, -, -⟩ := runLir_spec h
   have hk : f.cfg.known = f.lam.known := by
     rw [hcfg, hown]
-    exact ((Fir.Proof.lower_fields hfir).2.2.2).trans (pipeline_known hanf)
+    exact ((Fir.Proof.lower_fields hfir).2.2.2).trans (anfOf_known hanf)
   rw [hk, erase_known her]
   exact ⟨rfl, rfl⟩
 
@@ -596,6 +603,30 @@ theorem pipeline_ctors {cert : Anf.Pipeline.Cert} {L : Lam.Program} {Q : Anf.Pro
   rw [hP] at h2
   exact (steps_ctors cert.shrink cert.steps P0 Q (Anf.Pipeline.Proof.convert_wf h0) h2).trans
     (Anf.Convert.Proof.convert_spec h0).2.2.2.1
+
+/-- The middle end with the closures step keeps the Lam program's constructor
+table, followed by closure rows. -/
+theorem anfOf_ctors {c : Cert} {src : Src.Program} {L : Lam.Program} {A : Anf.Program}
+    (h : anfOf c src L = .ok A) : ∃ rs, A.ctors = L.ctors ++ rs ∧ ∀ r ∈ rs, ∃ f j, r.key = .clo f j := by
+  obtain ⟨pre, hpre, hcl⟩ := anfOf_ok h
+  obtain ⟨decl, -, hc⟩ := closuresOf_ok hcl
+  obtain ⟨-, rs, hrs, hk⟩ := Anf.Pipeline.Proof.closures_tables hc
+  exact ⟨rs, by rw [hrs, pipeline_ctors hpre], hk⟩
+
+/-- Closure rows appended to a table change no source constructor's row. -/
+theorem ofKey_append_src {L rs : List Lam.CtorInfo} (hrs : ∀ r ∈ rs, ∃ f j, r.key = .clo f j) (c : Src.CId) :
+    Fir.CtorInfo.ofKey (L ++ rs) (.src c) = Fir.CtorInfo.ofKey L (.src c) := by
+  unfold Fir.CtorInfo.ofKey
+  rw [List.find?_append]
+  cases hf : L.find? (·.key == Key.CtorKey.src c) with
+  | some x => rfl
+  | none =>
+    have : rs.find? (·.key == Key.CtorKey.src c) = none := by
+      rw [List.find?_eq_none]
+      intro r hr
+      obtain ⟨f, j, hk⟩ := hrs r hr
+      simp [hk]
+    simp [this]
 
 /-- A key of the table relation erasure ends with has a row in the table it
 emits. -/
@@ -669,7 +700,8 @@ theorem Front.boolRows {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
     (hk : f.src.known.boolFalse = some k ∨ f.src.known.boolTrue = some k) :
     BoolRows f.src f.cfg := by
   obtain ⟨-, ⟨st, her⟩, hanf, -, -, -, -, -⟩ := runLir_spec h
-  have hct : f.cfg.ctors = f.lam.ctors := (runLir_ctors h).trans (pipeline_ctors hanf)
+  obtain ⟨rs, hrs, hrk⟩ := anfOf_ctors hanf
+  have hct : f.cfg.ctors = f.lam.ctors ++ rs := (runLir_ctors h).trans hrs
   have hroot : (addr, c) ∈ f.src.roots := List.mem_of_getElem? hr
   have wf := Lam.Erase.Proof.erase_progWF her
   obtain ⟨F, T, hF, hT⟩ : ∃ F T, f.src.known.boolFalse = some F ∧ f.src.known.boolTrue = some T := by
@@ -680,7 +712,7 @@ theorem Front.boolRows {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
       exact ⟨f', k, hf', hk⟩
   unfold BoolRows boolRows?
   rw [hF, hT, hct]
-  simp only [Bool.and_eq_true]
+  simp only [Bool.and_eq_true, ofKey_append_src hrk]
   exact ⟨erase_boolRow her hroot hb (.inl hF), erase_boolRow her hroot hb (.inr hT)⟩
 
 /-! ## At a root of the front half -/
@@ -970,6 +1002,45 @@ theorem Artifact.immortalRoot {cfg : Config} {P : Src.Program} {cert : Cert}
     refine ⟨by rw [hfront]; exact hf, ⟨addr, by rw [hsrc]; exact hsrc0⟩, sig, ty, ?_, hok⟩
     rw [hfront, Front.tys_root hf hsrc0, ← hrty, hty]
 
+/-- **A claim's inputs are covered**: at the first root of a front half's roots
+whose declared parameters are its `params` `Nat`s (`rootParamsAllNat`), every
+input of exactly `params` arguments is of the declared count, so the
+end-to-end theorems cover it (`Artifact.covered_head` on the immortal path,
+`RcReplay.Artifact.covered_head` on the plain-RC path). -/
+theorem covered_rootsOf_head {cfg : Config} {src : Src.Program} {C : Cfg.Program} {l : Rt.Lowered}
+    {mid : Anf.Pipeline.Cert} {lam : Lam.Program} {anf : Anf.Program} {root : Root}
+    (hhead : (rootsOf cfg src C l ((List.range src.roots.length).zip
+      (src.roots.zip (C.exports.zip l.roots)))).head? = some root)
+    (hnat : CompileClaim.rootParamsAllNat src root = true)
+    {ns : List Nat} (hlen : ns.length = root.params) : Covered mid src lam anf (0, ns) := by
+  rw [List.head?_eq_getElem?] at hhead
+  obtain ⟨j, addr, fx, fn, sym, hrow, -⟩ := rootsOf_get_const hhead
+  simp only [List.getElem?_zip_eq_some] at hrow
+  obtain ⟨-, hsrc0, -⟩ := hrow
+  refine .inl fun addr' c hc n hn => ?_
+  rw [hsrc0, Option.some.injEq, Prod.mk.injEq] at hc
+  obtain ⟨-, rfl⟩ := hc
+  unfold CompileClaim.rootParamsAllNat at hnat
+  unfold declaredParams at hn
+  cases hd : src.decl? root.const with
+  | none => rw [hd] at hnat; cases hnat
+  | some d =>
+    rw [hd] at hnat hn
+    simp only [Bool.and_eq_true, beq_iff_eq] at hnat
+    simp only [Option.map_some, Option.some.injEq] at hn
+    rw [hlen, ← hnat.1.2, hn]
+
+theorem Artifact.covered_head {cfg : Config} {P : Src.Program} {cert : Cert}
+    {a : Artifact} (hrun : run cfg P cert = .ok a) {root : Root}
+    (hhead : a.roots.head? = some root) (hnat : CompileClaim.rootParamsAllNat a.src root = true)
+    {ns : List Nat} (hlen : ns.length = root.params) : a.front.Covered cert (0, ns) := by
+  obtain ⟨f, -, hsrc, -, hlam, hanf, -, -, -, -, hroots⟩ := run_runLir hrun
+  rw [hroots] at hhead
+  rw [hsrc] at hnat
+  show Covered cert.mid a.src a.lam a.anf (0, ns)
+  rw [hsrc, hlam, hanf]
+  exact covered_rootsOf_head hhead hnat hlen
+
 /-- **The view's rejections at an immortal root.** For an artifact of
 `Recheck.run` whose first root passes `checkImmortalRoot`, the source goes
 wrong at that root only off the root's shape (`RootWrongOffShape`). -/
@@ -982,13 +1053,14 @@ theorem Artifact.goesWrong_immortalRoot {cfg : Config} {P : Src.Program} {cert :
   exact Front.goesWrong_resultShape hf hsrc0 htys hview hgw
 
 /-- **The guarantees at root 0 of artifact `a`, on the shape view**, for its
-object linked with driver `D`: a value the object returns is the shape view
+object linked with driver `D`, on every input `Recheck.sound` covers under
+certificate `cert` (`Front.Covered`): a value the object returns is the shape view
 of a value SrcEval returns, or the source goes wrong for the shape view; if
 the source does not go wrong for the shape view, the object goes wrong at no
 clock; and the source goes wrong for the shape view exactly when SrcEval gets
 stuck or traps, or returns a result off `root.const`'s result shape. -/
-def ShapeClaim (a : Artifact) (root : Root) (D : X86.Driver) : Prop :=
-  ∀ ns : List Nat,
+def ShapeClaim (a : Artifact) (cert : Cert) (root : Root) (D : X86.Driver) : Prop :=
+  ∀ ns : List Nat, a.front.Covered cert (0, ns) →
     (∀ k w, Lang.run (a.linked D) (0, ns) k = .ok w →
       (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k' = .ok v ∧
         a.front.shapeView 0 (Lang.obs v) = some w) ∨ a.front.ShapeGoesWrong (0, ns)) ∧
@@ -1004,16 +1076,16 @@ theorem Artifact.shapeClaim {cfg : Config} {P : Src.Program} {cert : Cert}
     {a : Artifact} (hrun : run cfg P cert = .ok a) {root : Root}
     (hhead : a.roots.head? = some root) (hok : CompileClaim.checkImmortalRoot a.src root = true)
     (D : X86.Driver)
-    (hview : ∀ ns : List Nat,
+    (hview : ∀ ns : List Nat, a.front.Covered cert (0, ns) →
       (∀ k w, Lang.run (a.linked D) (0, ns) k = .ok w →
         (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) (0, ns) k' = .ok v ∧
           a.front.view 0 (Lang.obs v) = some w) ∨ a.front.GoesWrong (0, ns)) ∧
       (¬ a.front.GoesWrong (0, ns) → ∀ k, ¬ (Lang.run (a.linked D) (0, ns) k).GoesWrong)) :
-    ShapeClaim a root D := by
+    ShapeClaim a cert root D := by
   obtain ⟨hf, ⟨addr, hsrc0⟩, sig, ty, htys, hvt⟩ := Artifact.immortalRoot hrun hhead hok
-  intro ns
-  exact ⟨fun k w hw => Front.sound_shape (f := a.front) (i := (0, ns)) ((hview ns).1 k w hw),
-    Front.safe_shape (f := a.front) (i := (0, ns)) (hview ns).2,
+  intro ns hcov
+  exact ⟨fun k w hw => Front.sound_shape (f := a.front) (i := (0, ns)) ((hview ns hcov).1 k w hw),
+    Front.safe_shape (f := a.front) (i := (0, ns)) (hview ns hcov).2,
     Front.shapeGoesWrong_iff hf hsrc0 htys hvt ns⟩
 
 end IxCC.Recheck

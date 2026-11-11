@@ -4,6 +4,7 @@ import IxCC.Fir.Proof.Lang
 import IxCC.Recheck.Run
 import IxCC.Lam.Erase.Proof.Correct
 import IxCC.Anf.Proof.Pass.Pipeline
+import IxCC.Recheck.Proof.Middle
 
 /-! The checked plain-RC program as the existing Nat-input language. This
 companion keeps the current source entry convention, observes complete values,
@@ -195,8 +196,7 @@ def runFront (cfg : Config) (P : Src.Program) (c : Cert)
     (candidate : Src.NatMap Own.Plain.Code) : Except Err Front := do
   let (src, checked) ← Recheck.front cfg P c
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let anf ← (Anf.Pipeline.run c.mid lam).mapError fun msg =>
-    { stage := .anf, code := "anf.replay", message := msg }
+  let anf ← Recheck.anfOf c src lam
   let fir ← (Fir.lower anf).mapError Err.ofFir
   if Own.Plain.checkPlainMap fir candidate then
     pure { src, checked, lam, anf, fir, own := { source := fir, bodies := candidate } }
@@ -208,7 +208,7 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert}
     (accepted : runFront cfg P c candidate = .ok f) :
     Recheck.front cfg P c = .ok (f.src, f.checked) ∧
     (∃ st, Lam.erase f.src f.checked = .ok (f.lam, st)) ∧
-    Anf.Pipeline.run c.mid f.lam = .ok f.anf ∧
+    Recheck.anfOf c f.src f.lam = .ok f.anf ∧
     Fir.lower f.anf = .ok f.fir ∧
     f.own = ({ source := f.fir, bodies := candidate } : Own.Plain.Program) ∧
     Own.Plain.checkPlainMap f.fir candidate = true := by
@@ -224,10 +224,10 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert}
     | ok ls =>
       obtain ⟨lam, st⟩ := ls
       simp only [herase, Except.mapError] at accepted
-      cases hanf : Anf.Pipeline.run c.mid lam with
+      cases hanf : Recheck.anfOf c src lam with
       | error e => rw [hanf] at accepted; cases accepted
       | ok anf =>
-        simp only [hanf, Except.mapError, bind, Except.bind] at accepted
+        simp only [hanf, bind, Except.bind] at accepted
         cases hfir : Fir.lower anf with
         | error e => rw [hfir] at accepted; cases accepted
         | ok fir =>
@@ -240,16 +240,18 @@ theorem runFront_spec {cfg : Config} {P : Src.Program} {c : Cert}
           · cases accepted
 
 /-- SrcEval relative composition through actual front/erase/middle/Fir and
-the checked RC proposal. No premise assumes source-target execution agreement.
-This ends at the abstract heap; Cfg/runtime/backend remain separate steps. -/
+the checked RC proposal, on every covered input (`Recheck.Covered`). No premise
+assumes source-target execution agreement. This ends at the abstract heap;
+Cfg/runtime/backend remain separate steps. -/
 theorem source_refines {cfg : Config} {P : Src.Program} {c : Cert}
     {candidate : Src.NatMap Own.Plain.Code} {f : Front}
     (accepted : runFront cfg P c candidate = .ok f) :
-    Sem.Refines (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) f.own := by
+    Sem.RefinesOn (Recheck.Covered c.mid f.src f.lam f.anf) (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram)
+      f.own := by
   obtain ⟨_, ⟨st, herase⟩, hanf, hfir, hown, hcheck⟩ := runFront_spec accepted
   rw [hown]
-  exact (Lam.Erase.Proof.erase_refines herase).trans
-    ((Anf.Pipeline.Proof.run_correct hanf).trans
+  exact Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines herase)
+    ((Recheck.anfOf_refines hanf).trans_refines
       (Own.Plain.checked_lower_refines hfir hcheck))
 
 

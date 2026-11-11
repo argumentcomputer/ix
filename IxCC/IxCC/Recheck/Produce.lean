@@ -23,7 +23,9 @@ The untrusted half of the compiler (D17) and the whole compiler:
   (arrays, hash maps): `Table.build` on the sidecar's proposals, the
   relevance annotator, `Admit` (a producer gate: a program outside the
   admitted fragment is declined here), the middle end's default oracles
-  (`Anf.Pipeline.produce`), linear scan with its validated all-slots
+  (`Anf.Pipeline.produce`), then the closures step as the replay runs it
+  (`Recheck.closuresOf`: the roots' entries and P8, a deterministic step that
+  is not in the certificate), linear scan with its validated all-slots
   fallback (`Alloc.runProducer`), and the frame-layout and block-order oracles; the
   result is the certificate;
 * `compile = ingress; produce; Recheck.run`: the object is `run`'s, never
@@ -140,7 +142,8 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }
-  let anf := ((trace.stages.getLast?).map (·.2)).getD default
+  -- the closures step, as the replay runs it (`Recheck.anfOf`)
+  let (anf, stages) ← produceClosures src trace
   let fir ← (Fir.lower anf).mapError Err.ofFir
   let C := Cfg.lower (Own.immortal fir)
   checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
@@ -152,7 +155,7 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
   let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
   pure { cert := { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert
                    alloc := r.outs, frames := layouts, order }
-         tableDiags, tableStats, fires := trace.fires, stages := trace.stages, alloc := r.outcomes }
+         tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes }
 
 /-- Verify that `rel` is the exact canonical relevance annotation produced by
 `Src.Relevance.annotate` on the theorem-validated table built from `tableCert`

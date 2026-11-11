@@ -28,6 +28,7 @@ import IxCCTests.Fences.Compile
 import IxCCTests.Fences.Erase
 import IxCCTests.Fences.Anf
 import IxCCTests.Fences.Defun
+import IxCCTests.Fences.Closures
 import IxCCTests.Fences.SemForward
 import IxCCTests.Fences.CfgProof
 import IxCCTests.Fences.LirProof

@@ -128,6 +128,86 @@ theorem diverges {s : S} {t : T} (h : Refines s t) {i : I}
 
 end Refines
 
+/-- Refinement on the inputs of `D`: `Refines` on every input `D` holds of. A
+pass whose correctness needs a premise on its inputs (P8 and the closures
+step's entries: a root applied to exactly its declared parameter count) is
+stated with it. -/
+def RefinesOn (D : I → Prop) (s : S) (t : T) : Prop :=
+  ∀ i, D i → Behaviour.Refines ObsEq (Lang.behaviour s i) (Lang.behaviour t i)
+
+/-- Refinement on every input is refinement on any set of inputs. -/
+theorem Refines.on {s : S} {t : T} (h : Refines s t) (D : I → Prop) : RefinesOn D s t :=
+  fun i _ => h i
+
+namespace RefinesOn
+
+/-- Refinement on fewer inputs. -/
+theorem mono {D E : I → Prop} {s : S} {t : T} (hED : ∀ i, E i → D i) (h : RefinesOn D s t) :
+    RefinesOn E s t :=
+  fun i hi => h i (hED i hi)
+
+theorem trans {D : I → Prop} {s : S} {t : T} {u : U} (h₁ : RefinesOn D s t) (h₂ : RefinesOn D t u) :
+    RefinesOn D s u := fun i hi =>
+  ((h₁ i hi).trans (h₂ i hi)).mono fun _ _ ⟨_, h, h'⟩ => h.trans h'
+
+/-- Followed by a refinement on every input. -/
+theorem trans_refines {D : I → Prop} {s : S} {t : T} {u : U} (h₁ : RefinesOn D s t) (h₂ : Refines t u) :
+    RefinesOn D s u :=
+  h₁.trans (h₂.on D)
+
+/-- After a refinement on every input. -/
+theorem refines_trans {D : I → Prop} {s : S} {t : T} {u : U} (h₁ : Refines s t) (h₂ : RefinesOn D t u) :
+    RefinesOn D s u :=
+  (h₁.on D).trans h₂
+
+/-- `Refines.backward` on an input of `D`. -/
+theorem backward {D : I → Prop} {s : S} {t : T} (h : RefinesOn D s t) {i : I} (hi : D i) {k : Nat}
+    {w : Lang.Val T} (ht : Lang.run t i k = .ok w) :
+    (∃ k' v, Lang.run s i k' = .ok v ∧ ObsEq v w) ∨ ∃ k', Lang.run s i k' = .stuck := by
+  have hb : Lang.behaviour t i = .terminates w :=
+    (behaviour_eq_terminates_iff (Lang.mono t i)).2 ⟨k, ht⟩
+  have href := h i hi
+  rw [hb] at href
+  rcases href.of_terminates with ⟨v, hv, hvw⟩ | hv
+  · obtain ⟨k', hk'⟩ := (behaviour_eq_terminates_iff (Lang.mono s i)).1 hv
+    exact .inl ⟨k', v, hk', hvw⟩
+  · exact .inr ((behaviour_eq_stuck_iff (Lang.mono s i)).1 hv)
+
+/-- `Refines.safe` on an input of `D`. -/
+theorem safe {D : I → Prop} {s : S} {t : T} (h : RefinesOn D s t) {i : I} (hi : D i)
+    (hs : ∀ k, ¬ (Lang.run s i k).GoesWrong) (k : Nat) : ¬ (Lang.run t i k).GoesWrong := by
+  intro ht
+  have hk : Lang.run t i k ≠ .timeout := fun h' => by simp [h'] at ht
+  have hb : (Lang.behaviour t i).GoesWrong := by
+    unfold Lang.behaviour
+    rw [behaviour_of_ne_timeout (Lang.mono t i) hk]
+    exact Behaviour.goesWrong_toBehaviour.2 ht
+  have hsb := (h i hi).goesWrong hb
+  unfold Lang.behaviour at hsb
+  by_cases hex : ∃ k', Lang.run s i k' ≠ .timeout
+  · obtain ⟨k', hk'⟩ := hex
+    rw [behaviour_of_ne_timeout (Lang.mono s i) hk'] at hsb
+    exact hs k' (Behaviour.goesWrong_toBehaviour.1 hsb)
+  · rw [behaviour_of_forall_timeout fun k' =>
+      Classical.byContradiction fun hk' => hex ⟨k', hk'⟩] at hsb
+    exact hsb
+
+/-- `Refines.diverges` on an input of `D`. -/
+theorem diverges {D : I → Prop} {s : S} {t : T} (h : RefinesOn D s t) {i : I} (hi : D i)
+    (hs : ∀ k, Lang.run s i k = .timeout) :
+    (∀ k, Lang.run t i k = .timeout) ∨ ∃ k failure, Lang.run t i k = .resource failure := by
+  have href := h i hi
+  unfold Lang.behaviour at href
+  rw [behaviour_of_forall_timeout hs] at href
+  generalize hb : Sem.behaviour (Lang.run t i) = b at href
+  cases href with
+  | diverges => exact .inl ((behaviour_eq_diverges_iff (Lang.mono t i)).1 hb)
+  | resource failure =>
+    obtain ⟨k, hk⟩ := (behaviour_eq_resource_iff (Lang.mono t i)).1 hb
+    exact .inr ⟨k, failure, hk⟩
+
+end RefinesOn
+
 /-- A pass from `S` to `T` that reads a certificate (`Unit` if it has none)
 and is correct for every certificate. `run` is the kernel-evaluable pass
 (style P re-runs it, style V checks the certificate and applies it). -/

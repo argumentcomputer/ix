@@ -2,6 +2,7 @@ import IxCCTests.Anf.Support
 import IxCCTests.Support.LamGen
 import IxCC.Anf.Pipeline
 import IxCC.Anf.Defun
+import IxCC.Anf.Pipeline.Closures
 import IxCC.Fir.Lower
 import IxCC.Rt.Layout
 
@@ -399,6 +400,40 @@ def overAppliedRoot (a : Assert) : IO (Array String) := do
   return #["an over-applied root returning a closure: source 8, target stuck (the refinement holds \
     for inputs within the root's arity only)"]
 
+/-- The closures step (`Anf.Pipeline.closures`) at declared counts: a plain
+program passes unchanged; a root whose Anf arity is not its declared count
+runs through its entry, an over-applied one (the program of
+`overAppliedRoot`, declared 2) giving the source's value where P8 alone is
+stuck, and a point-free one (a CAF whose value is a function global's
+closure, declared 2) giving the function's; a program with fewer declared
+counts than roots is refused (`anf.entry`). -/
+def closuresStep (a : Assert) : IO (Array String) := do
+  let root (q : Program) : GlobalId := q.roots.headD 0
+  -- plain: first order, the root's arity is its declared count
+  let plain := prog [gd 0 2 (b (add (x 1) (x 0)) (.ret (x 0)))] [0]
+  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] plain)
+  expect a (q.beq plain) "closures step: a plain program changed"
+  -- over-applied: the root takes one argument and returns a closure, declared 2
+  let over := prog [gd 0 1 (b (fn 1 (b (add (x 1) (x 0)) (.ret (x 0)))) (.ret (x 0)))] [0]
+  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] over)
+  checkOutput a over q "closures step, over-applied root"
+  expect a ((q.global? (root q)).any fun g => g.ps.length == 2 && g.key matches .entry _ 2)
+    "closures step: the over-applied root has no entry of two parameters"
+  let r ← runAnf q 100 (root q) [3, 5]
+  expect a (anfOutcome r == "ok lit 8") s!"closures step, over-applied root through its entry: {anfOutcome r}"
+  -- point-free: a CAF whose value is a function global's closure, declared 2
+  let pointFree := prog [gd 0 2 (b (mul (x 1) (x 0)) (.ret (x 0))), gd 1 0 (b (.glob 0) (.ret (x 0)))] [1]
+  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] pointFree)
+  checkOutput a pointFree q "closures step, point-free root"
+  let r ← runAnf q 100 (root q) [6, 7]
+  expect a (anfOutcome r == "ok lit 42") s!"closures step, point-free root through its entry: {anfOutcome r}"
+  -- one declared count per root
+  match IxCC.Anf.Pipeline.closures [] over with
+  | .error e => expect a (e.startsWith "anf.entry") s!"closures step, no declared count: {e}"
+  | .ok _ => expect a false "closures step: a program with no declared count for its root was accepted"
+  return #["the closures step: a plain program unchanged; an over-applied root (8) and a point-free \
+    root (42) through their entries; a missing declared count refused"]
+
 def handWrittenRun (a : Assert) : IO (Array String) := do
   let mut t : Tally := {}
   for (label, p, values) in handWritten do
@@ -466,6 +501,7 @@ def run (a : Assert) (count : Nat := 300) : IO (Array String) := do
   out := out ++ (← handWrittenRun a)
   out := out ++ (← declines a)
   out := out ++ (← overAppliedRoot a)
+  out := out ++ (← closuresStep a)
   out := out ++ (← generated a count)
   return out
 

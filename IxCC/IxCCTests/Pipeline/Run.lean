@@ -13,9 +13,9 @@ import IxCCTests.Pipeline.Defun
 * every level of every K1 program on its test input (`Levels`);
 * the compiled `k1.ixe` roots against their Lean-compiled twin on generated
   inputs, with the `2⁶³` boundary (`Twin`);
-* P8 (`Anf.defun`) between the middle end and Fir, outside the production
-  pipeline, on the decline corpus's `composeClosure` and the K1 fallback route
-  (`Defun`).
+* the closures step (the roots' entries and P8, `Recheck.closuresOf`) under
+  chosen middle-end schedules, on the decline corpus's `composeClosure`, the K1
+  fallback route and the `phase2-closures` and `phase2-arity` roots (`Defun`).
 
 With `--native`, objects run natively, as test executables IxCC writes
 (`IxCCTests.Rt.Native`).
@@ -119,7 +119,7 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
     part a s!"k1.ixe's roots against the Lean-compiled twin ({o.twin} generated inputs per root){natively}"
       (Twin.run a native o.twin o.seed)
   if want "defun" then
-    part a s!"P8 between the middle end and Fir, outside the production pipeline{natively}"
+    part a s!"the closures step under chosen middle-end schedules{natively}"
       (Defun.run a native)
 
 def main (args : List String) : IO UInt32 := do

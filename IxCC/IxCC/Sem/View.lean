@@ -115,12 +115,12 @@ theorem behaviour_eq (s : Viewed S) (i : Nat × List Nat) :
   exact behaviour_bind (Lang.mono s.prog i) (fun v => viewResult s.view i.1 (Lang.obs v))
     fun _ => viewResult_ne_timeout _ _ _
 
-/-- **A view keeps refinement.** -/
-theorem refines {s : S} {t : T} (h : Refines s t) (V : Nat → Option Obs → Option (Option Obs)) :
-    Refines (⟨s, V⟩ : Viewed S) (⟨t, V⟩ : Viewed T) := by
-  intro i
+/-- A view keeps refinement at one input. -/
+theorem refines_at {s : S} {t : T} {i : Nat × List Nat}
+    (hi : Behaviour.Refines Lang.ObsEq (Lang.behaviour s i) (Lang.behaviour t i))
+    (V : Nat → Option Obs → Option (Option Obs)) :
+    Behaviour.Refines Lang.ObsEq (Lang.behaviour (⟨s, V⟩ : Viewed S) i) (Lang.behaviour (⟨t, V⟩ : Viewed T) i) := by
   rw [behaviour_eq, behaviour_eq]
-  have hi := h i
   generalize Lang.behaviour s i = b₁ at hi ⊢
   generalize Lang.behaviour t i = b₂ at hi ⊢
   cases hi with
@@ -139,6 +139,17 @@ theorem refines {s : S} {t : T} (h : Refines s t) (V : Nat → Option Obs → Op
   | trap => exact .trap
   | stuck => exact .stuck
   | resource failure => exact .resource failure
+
+/-- **A view keeps refinement.** -/
+theorem refines {s : S} {t : T} (h : Refines s t) (V : Nat → Option Obs → Option (Option Obs)) :
+    Refines (⟨s, V⟩ : Viewed S) (⟨t, V⟩ : Viewed T) :=
+  fun i => refines_at (h i) V
+
+/-- A view keeps refinement on a set of inputs. -/
+theorem refinesOn {D : Nat × List Nat → Prop} {s : S} {t : T} (h : RefinesOn D s t)
+    (V : Nat → Option Obs → Option (Option Obs)) :
+    RefinesOn D (⟨s, V⟩ : Viewed S) (⟨t, V⟩ : Viewed T) :=
+  fun i hi => refines_at (h i hi) V
 
 /-- `refines` in the traced shape (decision D-1). -/
 theorem refines_traced {s : S} {t : T} (h : Refines s t) (V : Nat → Option Obs → Option (Option Obs)) :

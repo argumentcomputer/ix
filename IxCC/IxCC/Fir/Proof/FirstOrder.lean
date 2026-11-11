@@ -1,4 +1,5 @@
 import IxCC.Fir.Lower
+import IxCC.Fir.Proof.Lowering
 
 /-! # `Fir.lower` declines no first-order program for closures
 
@@ -9,7 +10,9 @@ scope, arities and pinned keys. With `Anf.Defun.Proof.run_firstOrder` this is
 what lets P8's output past the Anf → Fir boundary. The decline set
 (`Lower.residual`) of a first-order program is empty (`residual_empty`), and
 the conversion's own `closures` cases, `app`, `fn` and the value of a
-function global, are the forms `FirstOrder` excludes (`exp_noClo`). -/
+function global, are the forms `FirstOrder` excludes (`exp_noClo`).
+Conversely, a program `Fir.lower` accepts is first order
+(`lower_ok_firstOrder`): an empty decline set means no residual form. -/
 
 set_option autoImplicit false
 
@@ -312,5 +315,110 @@ theorem lower_ne_closures {A : Anf.Program} (h : Anf.FirstOrder A) (fns apps glo
     lower A ≠ .error (.closures fns apps globs) := fun he => by
   have := lower_firstOrder h _ he
   simp [Error.isClosures] at this
+
+/-! ## The converse: what `Fir.lower` accepts is first order -/
+
+mutual
+
+theorem fo_of_countExp (isFn : Anf.GlobalId → Bool) :
+    ∀ e : Anf.Exp, (countExp isFn e).fns = 0 → (countExp isFn e).apps = 0 → (countExp isFn e).globs = 0 →
+      Anf.Exp.firstOrder isFn e = true
+  | .bind _ b e, h1, h2, h3 => by
+    simp only [countExp, Counts.add, Nat.add_eq_zero_iff] at h1 h2 h3
+    simp only [Anf.Exp.firstOrder, Bool.and_eq_true]
+    exact ⟨fo_of_countBind isFn b h1.1 h2.1 h3.1, fo_of_countExp isFn e h1.2 h2.2 h3.2⟩
+  | .join _ _ b e, h1, h2, h3 => by
+    simp only [countExp, Counts.add, Nat.add_eq_zero_iff] at h1 h2 h3
+    simp only [Anf.Exp.firstOrder, Bool.and_eq_true]
+    exact ⟨fo_of_countExp isFn b h1.1 h2.1 h3.1, fo_of_countExp isFn e h1.2 h2.2 h3.2⟩
+  | .jump .., _, _, _ => rfl
+  | .case _ alts d, h1, h2, h3 => by
+    simp only [countExp, Counts.add, Nat.add_eq_zero_iff] at h1 h2 h3
+    simp only [Anf.Exp.firstOrder, Bool.and_eq_true]
+    exact ⟨fo_of_countAlts isFn alts h1.1 h2.1 h3.1, fo_of_countOpt isFn d h1.2 h2.2 h3.2⟩
+  | .ret _, _, _, _ => rfl
+  | .tick e, h1, h2, h3 => by
+    simp only [countExp] at h1 h2 h3
+    simp only [Anf.Exp.firstOrder]
+    exact fo_of_countExp isFn e h1 h2 h3
+  | .trap, _, _, _ => rfl
+
+theorem fo_of_countBind (isFn : Anf.GlobalId → Bool) :
+    ∀ b : Anf.Bind, (countBind isFn b).fns = 0 → (countBind isFn b).apps = 0 → (countBind isFn b).globs = 0 →
+      Anf.Bind.firstOrder isFn b = true
+  | .glob g, _, _, h3 => by
+    simp only [countBind] at h3
+    simp only [Anf.Bind.firstOrder]
+    cases hg : isFn g <;> simp_all
+  | .app .., _, h2, _ => by simp [countBind] at h2
+  | .fn .., h1, _, _ => by simp [countBind, Counts.add] at h1
+  | .atom _, _, _, _ => rfl
+  | .con .., _, _, _ => rfl
+  | .proj .., _, _, _ => rfl
+  | .prim .., _, _, _ => rfl
+  | .call .., _, _, _ => rfl
+
+theorem fo_of_countAlts (isFn : Anf.GlobalId → Bool) :
+    ∀ alts : List Anf.Alt, (countAlts isFn alts).fns = 0 → (countAlts isFn alts).apps = 0 →
+      (countAlts isFn alts).globs = 0 → Anf.Exp.altsFirstOrder isFn alts = true
+  | [], _, _, _ => rfl
+  | .mk _ _ b :: as, h1, h2, h3 => by
+    simp only [countAlts, Counts.add, Nat.add_eq_zero_iff] at h1 h2 h3
+    simp only [Anf.Exp.altsFirstOrder, Bool.and_eq_true]
+    exact ⟨fo_of_countExp isFn b h1.1 h2.1 h3.1, fo_of_countAlts isFn as h1.2 h2.2 h3.2⟩
+
+theorem fo_of_countOpt (isFn : Anf.GlobalId → Bool) :
+    ∀ d : Option Anf.Exp, (countOpt isFn d).fns = 0 → (countOpt isFn d).apps = 0 → (countOpt isFn d).globs = 0 →
+      Anf.Exp.optFirstOrder isFn d = true
+  | none, _, _, _ => rfl
+  | some e, h1, h2, h3 => by
+    simp only [countOpt] at h1 h2 h3
+    simp only [Anf.Exp.optFirstOrder]
+    exact fo_of_countExp isFn e h1 h2 h3
+
+end
+
+/-- A fold that ends with an empty residual began with one, and each step
+kept it empty. -/
+theorem foldl_isEmpty_inv {α : Type} (f : Residual → α → Residual) (Z : α → Prop)
+    (hf : ∀ r x, (f r x).isEmpty = true → r.isEmpty = true ∧ Z x) :
+    ∀ (l : List α) (r : Residual), (l.foldl f r).isEmpty = true → r.isEmpty = true ∧ ∀ x ∈ l, Z x
+  | [], _, h => ⟨h, fun _ hx => nomatch hx⟩
+  | x :: l, r, h => by
+    rw [List.foldl_cons] at h
+    obtain ⟨h1, h2⟩ := foldl_isEmpty_inv f Z hf l (f r x) h
+    obtain ⟨h3, h4⟩ := hf r x h1
+    exact ⟨h3, fun y hy => (List.mem_cons.1 hy).elim (fun e => e ▸ h4) (h2 y)⟩
+
+/-- A program whose decline set is empty is first order. -/
+theorem firstOrder_of_residual {A : Anf.Program} (h : (residual A).isEmpty = true) : Anf.FirstOrder A := by
+  unfold residual at h
+  have key := foldl_isEmpty_inv _
+    (fun p : Anf.GlobalId × Anf.GDef =>
+      (countExp (fun g => (A.arity? g).any (· > 0)) p.2.body).fns = 0 ∧
+      (countExp (fun g => (A.arity? g).any (· > 0)) p.2.body).apps = 0 ∧
+      (countExp (fun g => (A.arity? g).any (· > 0)) p.2.body).globs = 0) ?hf _ _ h
+  case hf =>
+    intro r x hx
+    obtain ⟨g, gd⟩ := x
+    simp only [Residual.isEmpty] at hx ⊢
+    by_cases c1 : (countExp (fun g => (A.arity? g).any (· > 0)) gd.body).fns > 0
+    · simp [c1] at hx
+    by_cases c2 : (countExp (fun g => (A.arity? g).any (· > 0)) gd.body).apps > 0
+    · simp [c2] at hx
+    by_cases c3 : (countExp (fun g => (A.arity? g).any (· > 0)) gd.body).globs > 0
+    · simp [c3] at hx
+    simp only [c1, c2, c3, ↓reduceIte] at hx
+    exact ⟨hx, by omega, by omega, by omega⟩
+  obtain ⟨-, hall⟩ := key
+  unfold Anf.FirstOrder Anf.firstOrder
+  rw [List.all_eq_true]
+  intro ⟨g, gd⟩ hm
+  obtain ⟨h1, h2, h3⟩ := hall _ hm
+  exact fo_of_countExp _ gd.body h1 h2 h3
+
+/-- **A program `Fir.lower` accepts is first order.** -/
+theorem lower_ok_firstOrder {A : Anf.Program} {F : Program} (h : lower A = .ok F) : Anf.FirstOrder A :=
+  firstOrder_of_residual (lower_ok h).1
 
 end IxCC.Fir.Proof

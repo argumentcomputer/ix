@@ -35,24 +35,24 @@ def SourceWitness (A : Anf.Program) (observation : Option Sem.Obs)
   ∃ value, Anf.obsV value = observation ∧ HeapWitness A value result
 
 theorem source_retained {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
-    (accepted : runFront cfg P c = .ok f) (i : Nat × List Nat) :
+    (accepted : runFront cfg P c = .ok f) (i : Nat × List Nat) (hi : f.Covered c i) :
     Sem.Behaviour.Refines
       (fun value result => SourceWitness f.anf
         (Lang.obs (S := Lam.Erase.Proof.CheckedProgram) value) result)
       (Lang.behaviour (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i)
       (Lang.behaviour f.cfg i) := by
   obtain ⟨_, ⟨st, erased⟩, anf, fir, _, _, checked⟩ := runFront_spec accepted
-  have front := (Lam.Erase.Proof.erase_refines erased).trans
-    (Anf.Pipeline.Proof.run_correct anf)
+  have front := Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines erased)
+    (Recheck.anfOf_refines anf)
   have tail := (checked_retained fir checked i).refines
     (Lang.mono f.anf i) (Lang.mono f.cfg i)
-  exact ((front i).trans tail).mono fun _ _ ⟨value, observed, retained⟩ =>
+  exact ((front i hi).trans tail).mono fun _ _ ⟨value, observed, retained⟩ =>
     ⟨value, observed.symm, retained⟩
 
 /-- A successful real Cfg result exposes the retained source/Fir witness,
 or the actual checked source was stuck. No source typing premise is added. -/
 theorem source_retained_success {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
-    (accepted : runFront cfg P c = .ok f) {i : Nat × List Nat} {k : Nat}
+    (accepted : runFront cfg P c = .ok f) {i : Nat × List Nat} (hi : f.Covered c i) {k : Nat}
     {result : Own.RVal × Own.Heap} (success : Cfg.Rc.cfgRun f.cfg i k = .ok result) :
     (∃ k' value,
       Lang.run (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i k' = .ok value ∧
@@ -60,7 +60,7 @@ theorem source_retained_success {cfg : Config} {P : Src.Program} {c : Cert} {f :
     ∃ k', Lang.run (⟨f.src, f.checked⟩ : Lam.Erase.Proof.CheckedProgram) i k' = .stuck := by
   have behavior : Lang.behaviour f.cfg i = .terminates result :=
     (Sem.behaviour_eq_terminates_iff (Lang.mono f.cfg i)).2 ⟨k, success⟩
-  have related := source_retained accepted i
+  have related := source_retained accepted i hi
   rw [behavior] at related
   rcases related.of_terminates with ⟨value, terminated, witness⟩ | stuck
   · obtain ⟨k', run⟩ := (Sem.behaviour_eq_terminates_iff

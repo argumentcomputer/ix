@@ -180,6 +180,10 @@ theorem diverges {s : S} {t : T} (h : TRefines s t) {i : I} {o : Env}
 
 end TRefines
 
+/-- `TRefines` on the inputs of `D`. -/
+def TRefinesOn (D : I → Prop) (s : S) (t : T) : Prop :=
+  ∀ i, D i → ∀ o, TBehaviour.Refines TLang.ObsEq (TLang.tbehaviour s i o) (TLang.tbehaviour t i o)
+
 end
 
 /-- Pure refinement is traced refinement of the lifted languages
@@ -187,6 +191,11 @@ end
 theorem Refines.ofPure {I S T : Type} [Lang I S] [Lang I T] {s : S} {t : T}
     (h : Refines s t) : TRefines s t := fun i _ =>
   TBehaviour.Refines.ofPure (Lang.mono s i) (Lang.mono t i) (h i)
+
+/-- `Refines.ofPure` on a set of inputs. -/
+theorem RefinesOn.ofPure {I S T : Type} [Lang I S] [Lang I T] {D : I → Prop} {s : S} {t : T}
+    (h : RefinesOn D s t) : TRefinesOn D s t := fun i hi _ =>
+  TBehaviour.Refines.ofPure (Lang.mono s i) (Lang.mono t i) (h i hi)
 
 /-- A pass from `S` to `T` over traced languages that reads a certificate
 (`Unit` if it has none) and is correct for every certificate. -/

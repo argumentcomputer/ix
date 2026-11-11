@@ -6,6 +6,8 @@ import IxCC.Cfg.Lower
 import IxCC.Rt.Backend
 import IxCC.Rt.Readback
 import IxCC.Recheck.Readback
+import IxCC.Recheck.Declared
+import IxCC.Anf.Pipeline.Closures
 
 /-! # `Recheck.run`: the compiler's checked path
 
@@ -16,7 +18,8 @@ decisions, validating what the producer searched for:
 
 ```text
 P ─Table.ofCert (V)→ ─install + Relevance.check + checkCanonical (V)→ ─Lazify (P)→ ─Lam.erase (P)→ Lam
-  ─Anf.Pipeline.run c.mid (P: P1, then P2/P3/P4/prune on the certificate's decisions)→ Anf
+  ─Anf.Pipeline.run c.mid (P: P1, then P2/P3/P4/prune on the certificate's decisions)→
+  ─Anf.Pipeline.closures (P: unchanged, or the roots' entries and P8)→ Anf
   ─Fir.lower (P)→ ─Own.immortal (P)→ ─Cfg.lower (P)→ Cfg ─roots (≤ 5 parameters)→
   ─switches (check)→ ─Rt.lower (P, with edge splitting)→ Lir ─Select.select (P)→ Xv
   ─Validate.program c.alloc (V)→ ─Alloc.applyProgram→ Xl
@@ -272,10 +275,38 @@ def front (cfg : Config) (P : Src.Program) (c : Cert) :
             message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p)) }
   | .error (.table msg) => throw { stage := .table, code := "table.entry", message := msg }
 
-/-- Lam through Cfg on the certificate's middle-end decisions. -/
-def middle (c : Cert) (lam : Lam.Program) : Except Err (Anf.Program × Fir.Program × Own.Program × Cfg.Program) := do
-  let anf ← (Anf.Pipeline.run c.mid lam).mapError fun msg =>
+/-- The closures step (`Anf.Pipeline.closures`) on the middle end's program
+`pre`, at the source roots' declared counts (`declaredCounts`; a root with no
+declaration is refused, `anf.entry`). The producer calls it too. -/
+def closuresOf (src : Src.Program) (pre : Anf.Program) : Except Err Anf.Program :=
+  match declaredCounts src with
+  | none => throw { stage := .anf, code := "anf.entry", message := "a root has no declaration" }
+  | some decl => (Anf.Pipeline.closures decl pre).mapError Err.ofClosures
+
+/-- Lam to the Anf program Fir lowers: the certificate's middle end
+(`Anf.Pipeline.run`), then the closures step at the source roots' declared
+counts (`closuresOf`). Every definition that replays the middle end calls it. -/
+def anfOf (c : Cert) (src : Src.Program) (lam : Lam.Program) : Except Err Anf.Program := do
+  let pre ← (Anf.Pipeline.run c.mid lam).mapError fun msg =>
     { stage := .anf, code := "anf.replay", message := msg }
+  closuresOf src pre
+
+/-- The producers' closures step (untrusted, as the rest of the producer): the
+step on the schedule's last program, as the replay runs it, and the
+schedule's stages with the step's output last when it changed the program. -/
+def produceClosures (src : Src.Program) (trace : Anf.Pipeline.Trace) :
+    Except Err (Anf.Program × List (String × Anf.Program)) := do
+  let pre := ((trace.stages.getLast?).map (·.2)).getD default
+  let anf ← closuresOf src pre
+  let plain := match declaredCounts src with
+    | some decl => Anf.Pipeline.plain decl pre
+    | none => true
+  pure (anf, if plain then trace.stages else trace.stages ++ [("P8", anf)])
+
+/-- Lam through Cfg on the certificate's middle-end decisions. -/
+def middle (c : Cert) (src : Src.Program) (lam : Lam.Program) :
+    Except Err (Anf.Program × Fir.Program × Own.Program × Cfg.Program) := do
+  let anf ← anfOf c src lam
   let fir ← (Fir.lower anf).mapError Err.ofFir
   let own := Own.immortal fir
   pure (anf, fir, own, Cfg.lower own)
@@ -332,6 +363,11 @@ structure Front where
   cfg : Cfg.Program
   lowered : Rt.Lowered
 
+/-- The inputs the end-to-end theorems about a front half made under
+certificate `c` cover (`Recheck.Covered`). -/
+def Front.Covered (f : Front) (c : Cert) : Nat × List Nat → Prop :=
+  Recheck.Covered c.mid f.src f.lam f.anf
+
 /-- The recheck path up to the lowered Lir program (the front half):
 the front end, erasure, the middle end, Fir, Own and Cfg, the roots'
 parameter check, the switch check (`Rt.checkSwitches`, which discharges
@@ -339,7 +375,7 @@ parameter check, the switch check (`Rt.checkSwitches`, which discharges
 def runLir (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Front := do
   let (src, checked) ← front cfg P c
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
-  let (anf, fir, own, C) ← middle c lam
+  let (anf, fir, own, C) ← middle c src lam
   checkParams cfg C (List.zipIdx C.exports |>.map fun (f, i) => (i, f))
   (Rt.checkSwitches C).mapError Err.ofSwitch
   let lowered ← (Rt.lower { names := cfg.names } C).mapError Err.ofRt

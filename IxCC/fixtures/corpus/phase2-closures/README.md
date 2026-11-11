@@ -15,18 +15,18 @@ sidecar, the census, the cases and the interpreter's values.
 | `Closures.storedApply` | partial and over-application through closures stored in a record that is rebuilt every iteration |
 | `Closures.knot` | a fuel-indexed record of closures, each level's closures capturing the record one level down (the shape of IxCK's `coreKnot`) |
 
-**Not a registered family.** It is not in `Corpus.families`, so `corpus check`
-and `tests-corpus` do not read it, and the production compiler would decline
-every root (`fir: fir.closures`), since P8 is not in the pipeline yet. The
-only required gate that reads it is `tests-pipeline` (its `defun` part,
-`tests-pipeline --only defun`, in the `suites` check), which compiles every
-root with P8 between the middle end and Fir, outside the production pipeline,
-under two middle-end schedules, and compares the native results with the
-interpreter's values. All roots compile and agree but `Closures.stateLoop`,
-which register allocation refuses (`alloc: alloc.fallback`): the program has a
-source global of eight parameters, past the internal calling convention's seven
-argument registers. That limit is on parameter counts, not closures; the test
-expects exactly that refusal.
+**A registered family** (`Corpus.families`): `corpus check` checks it and
+`tests-corpus` compiles every root with the production compiler, whose
+closures step (the roots' entries and P8) runs after the middle end, and runs
+every case at every level and natively. All roots compile and agree but
+`Closures.stateLoop`, which register allocation declines (`alloc:
+alloc.fallback`, the decline the manifest records): the program has a source
+global of eight parameters, past the internal calling convention's seven
+argument registers. That limit is on parameter counts, not closures.
+`tests-pipeline --only defun` also compiles every root under two middle-end
+schedules (the Phase 1 schedule, and P1 and P2 alone, so that P8 meets every
+closure specialisation would otherwise remove) and compares the native
+results with the interpreter's values.
 
 **How it was produced** (2026-11-10). With the ix of this repository (`lake
 build ix` at the repository root; the revision and the binary's SHA-256 are in

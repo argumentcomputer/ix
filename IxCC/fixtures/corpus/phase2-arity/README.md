@@ -23,15 +23,19 @@ number of arguments.
 **Not a registered family.** It is not in `Corpus.families`, so `corpus check`
 and `tests-corpus` do not read it. The only required gate that reads it is
 `tests-pipeline` (its `defun` part, `tests-pipeline --only defun`, in the
-`suites` check), which compiles every root with P8 between the middle end and
-Fir, outside the production pipeline, and with the root-arity check
-(`Recheck.checkRootArities`): every root whose two counts differ must be
-refused with `rt.arity` and both counts; `main7b` compiles with no readback
-type; the others compile and agree with the interpreter natively. With the
-η-long equation `main4` compiles at 2 and agrees; with the `csimp` entry
-`slowDouble` has arity 0 and is refused. The production compiler declines
-most of these roots today at `fir: fir.closures`; `spin` and `main7` compile
-today, and the check, once `Recheck.run` calls it, refuses them.
+`suites` check), which compiles every root through the production closures
+step (`Recheck.closuresOf`: an entry at the declared count for each root whose
+counts differ, then P8) and checks the root-arity property the entries make
+true (`Recheck.checkRootArities`): every root whose two counts differ
+compiles through an entry of its declared count and agrees with the
+interpreter natively, except `main7` (its entry returns a closure, so it has
+no readback type) and `spin` (no cases); `main7b` compiles with no readback
+type; the others compile unchanged and agree. With the η-long equation
+`main4` compiles at 2 with no entry and agrees; with the `csimp` entry
+`slowDouble` has arity 0 and compiles through an entry of one parameter and
+agrees. Before the closures step was on the production path (closures
+milestone 3), the compiler declined most of these roots at
+`fir: fir.closures`, and `spin` and `main7` compiled at their stored arity.
 
 **How it was produced** (2026-11-10). With the ix of
 [`phase2-closures`](../phase2-closures/README.md) (the same binary: the

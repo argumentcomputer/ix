@@ -628,10 +628,10 @@ def codeBindsAffine (known : Lam.Known) (body : Fir.Code) : Bool :=
   (analyzeBody known body).bindsAffine
 
 /-- Whether `key` is a compiler-synthesized helper key (`.spec`, `.worker`,
-`.lam`, `.dispatch`, `.recStar`, `.wrapper`) rather than a user-written source
+`.lam`, `.dispatch`, `.entry`, `.recStar`, `.wrapper`) rather than a user-written source
 definition (`.const`, `.byName`). -/
 def isSynthesizedKey : Key.GKey → Bool
-  | .spec .. | .worker .. | .lam .. | .dispatch .. | .recStar .. | .wrapper .. => true
+  | .spec .. | .worker .. | .lam .. | .dispatch .. | .entry .. | .recStar .. | .wrapper .. => true
   | .const .. | .byName .. => false
 
 def funHasActiveZeroRcContract (f : Fir.Fun) : Bool :=

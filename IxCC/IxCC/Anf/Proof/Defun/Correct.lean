@@ -13,8 +13,8 @@ global's closure on both sides; exact arity enters the body once on each side
 (`applyN_exact`), related one clock down by the fundamental lemma (`fund`)
 over the arguments' literals, which relate to themselves; a CAF root on no
 argument evaluates its body on both sides. Related results observe the same
-(`dv_obs`). `Anf.Defun.correct`: with first order (`defun_firstOrder`) and
-scoping (`wellScoped_run`).
+(`dv_obs`). `Anf.Defun.correct`: with first order (`defun_firstOrder`); scoping, which
+nothing downstream needs, is the separate `wellScoped_run`.
 
 As a step of the middle end in isolation (`step_correct`): a program whose
 ids are exactly `0 … size - 1` gives one again (`run_wf`), and the roots'
@@ -117,7 +117,7 @@ theorem root_sim {X : Setting} (hX : Valid X) (n : Nat) (r : GlobalId) (ns : Lis
 
 /-- **P8 refines its input** on every input of exactly the root's arity. -/
 theorem run_refines {P Q : Program} (hwf : ∀ g gd, P.global? g = some gd → g < P.size)
-    (h : run P = .ok Q) : RefinesOn (ExactArity P) P Q := by
+    (h : run P = .ok Q) : Sem.RefinesOn (ExactArity P) P Q := by
   obtain ⟨X, rfl, rfl, hX⟩ := run_valid hwf h
   intro i hi
   have hsim : Sim (DV X) id (Lang.run X.P i) (Lang.run X.Q i) := SimUpTo.sim fun n => by
@@ -135,13 +135,13 @@ theorem defun_run {P Q : Program} (h : Anf.defun P = .ok Q) : run P = .ok Q := b
   | error e => rw [hr] at h; cases h
   | ok q => rw [hr] at h; cases h; rfl
 
-/-- **`Anf.Defun.correct`**: P8's output is first order, well scoped when its
-input is, and refines its input on every input of exactly the root's arity,
-for an input whose globals lie below its size. -/
+/-- **`Anf.Defun.correct`**: P8's output is first order and refines its input
+on every input of exactly the root's arity, for an input whose globals lie
+below its size. (That the output is well scoped when the input is, which no
+later step needs, is `wellScoped_run`.) -/
 theorem correct {P Q : Program} (hwf : ∀ g gd, P.global? g = some gd → g < P.size)
-    (h : Anf.defun P = .ok Q) :
-    Anf.FirstOrder Q ∧ (WellScoped P → WellScoped Q) ∧ RefinesOn (ExactArity P) P Q :=
-  ⟨defun_firstOrder h, fun hws => wellScoped_run hwf hws (defun_run h), run_refines hwf (defun_run h)⟩
+    (h : Anf.defun P = .ok Q) : Anf.FirstOrder Q ∧ Sem.RefinesOn (ExactArity P) P Q :=
+  ⟨defun_firstOrder h, run_refines hwf (defun_run h)⟩
 
 /-! ## As a step, and followed by `Fir.lower` -/
 
@@ -228,8 +228,8 @@ theorem exactArity_of_run {P Q : Program} (hwf : ∀ g gd, P.global? g = some gd
 ids are exactly `0 … size - 1`, P8's output has that shape again and refines
 its input on every input of exactly the root's arity. -/
 theorem step_correct {P Q : Program} (hw : P.WF) (h : Anf.defun P = .ok Q) :
-    Q.WF ∧ RefinesOn (ExactArity P) P Q :=
-  ⟨run_wf hw (defun_run h), (correct hw.1 h).2.2⟩
+    Q.WF ∧ Sem.RefinesOn (ExactArity P) P Q :=
+  ⟨run_wf hw (defun_run h), (correct hw.1 h).2⟩
 
 /-- P8's output is never refused by `Fir.lower` for closures. -/
 theorem defun_lower_ne_closures {P Q : Program} (h : Anf.defun P = .ok Q) (fns apps globs : List GlobalId) :
@@ -240,7 +240,7 @@ theorem defun_lower_ne_closures {P Q : Program} (h : Anf.defun P = .ok Q) (fns a
 every input of exactly the root's arity. -/
 theorem defun_lower_refines {P Q : Program} {F : Fir.Program}
     (hwf : ∀ g gd, P.global? g = some gd → g < P.size) (h : Anf.defun P = .ok Q) (hl : Fir.lower Q = .ok F) :
-    RefinesOn (ExactArity P) P F := fun i hi =>
-  (((correct hwf h).2.2 i hi).trans (Fir.Proof.lower_refines hl i)).mono fun _ _ ⟨_, h1, h2⟩ => h1.trans h2
+    Sem.RefinesOn (ExactArity P) P F := fun i hi =>
+  (((correct hwf h).2 i hi).trans (Fir.Proof.lower_refines hl i)).mono fun _ _ ⟨_, h1, h2⟩ => h1.trans h2
 
 end IxCC.Anf.Defun.Proof

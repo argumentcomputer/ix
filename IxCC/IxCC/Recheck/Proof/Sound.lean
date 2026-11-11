@@ -28,7 +28,9 @@ it takes gives a value with no observation, to more is stuck
 (`heap`, `stack`, `natOverflow`) and asks nothing where the loaded program
 is stuck.
 
-From it, for every input:
+From it, for every input it covers (`Front.Covered`: of exactly its root's
+declared count, or any input when the closures step left the certificate's
+program unchanged):
 
 * `compile_sound`: a value the object returns is the view of a value
   SrcEval returns (relabelled by tag at the root's type), or the source goes
@@ -70,10 +72,10 @@ the source goes wrong. -/
 theorem compile_sound {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)
     {O : Type} [Lang (Nat × List Nat) O] {obj : O} (hback : Sem.Refines (f.loaded M) obj)
-    {i : Nat × List Nat} {k : Nat} {w : Lang.Val O} (hw : Lang.run obj i k = .ok w) :
+    {i : Nat × List Nat} (hi : f.Covered c i) {k : Nat} {w : Lang.Val O} (hw : Lang.run obj i k = .ok w) :
     (∃ k' v, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k' = .ok v ∧
       f.view i.1 (Lang.obs v) = some (Lang.obs w)) ∨ f.GoesWrong i := by
-  rcases ((front_refines h hok hreg).trans hback).backward hw with ⟨k', o, ho, hobs⟩ | ⟨k', hst⟩
+  rcases ((front_refines h hok hreg).trans_refines hback).backward hi hw with ⟨k', o, ho, hobs⟩ | ⟨k', hst⟩
   · obtain ⟨v, hv, hview⟩ := Sem.Viewed.run_ok ho
     exact .inl ⟨k', v, hv, hview.trans (congrArg some hobs)⟩
   · exact .inr (source_goesWrong (k := k') (by rw [hst]; trivial))
@@ -84,8 +86,9 @@ running or fails for a resource. -/
 theorem compile_safe {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)
     {O : Type} [Lang (Nat × List Nat) O] {obj : O} (hback : Sem.Refines (f.loaded M) obj)
-    {i : Nat × List Nat} (hs : ¬ f.GoesWrong i) (k : Nat) : ¬ (Lang.run obj i k).GoesWrong :=
-  ((front_refines h hok hreg).trans hback).safe (fun _ hk' => hs (source_goesWrong hk')) k
+    {i : Nat × List Nat} (hi : f.Covered c i) (hs : ¬ f.GoesWrong i) (k : Nat) :
+    ¬ (Lang.run obj i k).GoesWrong :=
+  ((front_refines h hok hreg).trans_refines hback).safe hi (fun _ hk' => hs (source_goesWrong hk')) k
 
 /-- **Divergence, from the backend half**: a source that times out at every
 clock has an object execution that times out at every clock or fails for a
@@ -93,9 +96,10 @@ resource. -/
 theorem compile_diverges {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)
     {O : Type} [Lang (Nat × List Nat) O] {obj : O} (hback : Sem.Refines (f.loaded M) obj)
-    {i : Nat × List Nat} (hs : ∀ k, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k = .timeout) :
+    {i : Nat × List Nat} (hi : f.Covered c i)
+    (hs : ∀ k, Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k = .timeout) :
     (∀ k, Lang.run obj i k = .timeout) ∨ ∃ k failure, Lang.run obj i k = .resource failure :=
-  ((front_refines h hok hreg).trans hback).diverges fun k => by
+  ((front_refines h hok hreg).trans_refines hback).diverges hi fun k => by
     show (Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k).bind _ = _
     rw [hs k]
     rfl
@@ -105,8 +109,8 @@ shape, D-1): the object refines the viewed source. -/
 theorem compose_traced {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)
     {O : Type} [Lang (Nat × List Nat) O] {obj : O} (hback : Sem.Refines (f.loaded M) obj) :
-    Sem.TRefines f.source obj :=
-  Sem.Refines.ofPure ((front_refines h hok hreg).trans hback)
+    Sem.TRefinesOn (f.Covered c) f.source obj :=
+  Sem.RefinesOn.ofPure ((front_refines h hok hreg).trans_refines hback)
 
 /-! ## Non-vacuity of `Front.GoesWrong` and `compile_sound` -/
 
@@ -182,15 +186,15 @@ theorem compile_sound_of_eval {cfg : Config} {P : Src.Program} {c : Cert} {f : F
     (h : runLir cfg P c = .ok f) {M : Rt.Model}
     (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size)
     {O : Type} [Lang (Nat × List Nat) O] {obj : O} (hback : Sem.Refines (f.loaded M) obj)
-    {i : Nat × List Nat} {k_src : Nat} {v : Lang.Val CheckedProgram} {o : Option Obs}
+    {i : Nat × List Nat} (hi : f.Covered c i) {k_src : Nat} {v : Lang.Val CheckedProgram} {o : Option Obs}
     (heval : Lang.run (⟨f.src, f.checked⟩ : CheckedProgram) i k_src = .ok v)
     (hview : f.view i.1 (Lang.obs v) = some o) :
     ¬ f.GoesWrong i ∧
     (∀ k, ¬ (Lang.run obj i k).GoesWrong) ∧
     (∀ k w, Lang.run obj i k = .ok w → Lang.obs w = o) := by
   have hngw := Front.not_goesWrong_of_eval heval hview
-  refine ⟨hngw, compile_safe h hok hreg hback hngw, fun k w hw => ?_⟩
-  rcases compile_sound h hok hreg hback hw with ⟨k', v', heval', hview'⟩ | hgw
+  refine ⟨hngw, compile_safe h hok hreg hback hi hngw, fun k w hw => ?_⟩
+  rcases compile_sound h hok hreg hback hi hw with ⟨k', v', heval', hview'⟩ | hgw
   · have hv := Front.eval_unique heval heval'
     subst hv
     rw [hview] at hview'

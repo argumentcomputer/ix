@@ -2,36 +2,23 @@ import IxCC.Recheck.Run
 
 /-! # A compiled root takes exactly its declared parameters
 
-A root is called with exactly its declared number of parameters
-(`docs/closures-design.md`, "Proof obligation", the decisions of 2026-11-13
-and 2026-11-14): `ExactDeclared`, the end-to-end statement's input premise.
-The declared count (`declaredParams`) is the number of leading binders of
-the root's declared type as written (`Src.Term.pis` unfolds no definition),
-the quantity `CompileClaim.rootParamsAllNat` compares, read from the source
-program. The compiled count (`cfgParams`) is read off the compiled function:
+The declared count (`declaredParams`, in `Recheck.Declared`) against the
+compiled one. The compiled count (`cfgParams`) is read off the compiled function:
 the leading λs of the body the unfolding table gives the root (its kernel
 value, an equation's body or a `csimp` target), which the middle end keeps.
 The table is certificate data, so the compiled count is the certificate's
 choice.
 
-`checkRootArities` is the interim guard: it refuses a program where the two
-counts differ for any root (`rt.arity`), and then an input of the declared
-count is one of the compiled root's arity (`exactDeclared_cfg`), whatever the
-certificate chose. The planned entry at the declared arity makes it
-redundant once the steps after the entry are shown to keep its parameters.
-`Recheck.run` does not call it.
+`checkRootArities` was the interim guard before the closures step: it refuses
+a program where the two counts differ for any root (`rt.arity`), and then an
+input of the declared count is one of the compiled root's arity
+(`exactDeclared_cfg`), whatever the certificate chose. The closures step's
+entries (`Anf.Entry`) make every root's Anf count its declared count, so
+`Recheck.run` does not call it; it stays as a check for tests.
 
 Kernel-evaluable (D17): lists, structural recursion. -/
 
 namespace IxCC.Recheck
-
-/-- A source root's declared parameter count. -/
-def declaredParams (src : Src.Program) (c : Src.CId) : Option Nat :=
-  (src.decl? c).map fun d => d.type.pis.1.length
-
-/-- Inputs of exactly their source root's declared parameter count. -/
-def ExactDeclared (src : Src.Program) (i : Nat × List Nat) : Prop :=
-  ∀ addr c, src.roots[i.1]? = some (addr, c) → ∀ n, declaredParams src c = some n → i.2.length = n
 
 /-- One root and its compiled function (`rootsOf` pairs them by position). -/
 def rootArityOk (src : Src.Program) (C : Cfg.Program) (p : (Ixon.Address × Src.CId) × Fir.FunId) : Bool :=

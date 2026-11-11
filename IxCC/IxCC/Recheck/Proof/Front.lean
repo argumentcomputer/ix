@@ -1,6 +1,7 @@
 import IxCC.Recheck.Run
 import IxCC.Lam.Erase.Proof.Correct
 import IxCC.Anf.Proof.Pass.Pipeline
+import IxCC.Recheck.Proof.Middle
 import IxCC.Cfg.Proof.OfAnf
 import IxCC.Rt.Proof.Lang
 
@@ -9,18 +10,21 @@ import IxCC.Rt.Proof.Lang
 
 `Recheck.front_refines`: for every program the recheck path's front half
 accepts (`Recheck.runLir`: the table and annotation of the certificate,
-`Lazify`, erasure, the middle end on the certificate's decisions, `Fir`,
-`Own` and `Cfg`, the roots' parameter check, the switch check and
-`Rt.lower`), on every model region `cx_init` accepts, the lowered Lir
-program loaded into the region (`Front.loaded`) refines the checked source
-(SrcEval on the program the front end checked) viewed at the roots'
-readback types (`Front.source`).
+`Lazify`, erasure, the middle end on the certificate's decisions and the
+closures step, `Fir`, `Own` and `Cfg`, the roots' parameter check, the switch
+check and `Rt.lower`), on every model region `cx_init` accepts, the lowered
+Lir program loaded into the region (`Front.loaded`) refines the checked
+source (SrcEval on the program the front end checked) viewed at the roots'
+readback types (`Front.source`), on every covered input (`Front.Covered`:
+an input of exactly its root's declared parameter count, and every input
+when the closures step left the certificate's program unchanged).
 
-The refinements of the passes compose by `Sem.Refines.trans`:
+The refinements of the passes compose by `Sem.Refines.trans` and, through
+the closures step, `Sem.RefinesOn`:
 
 ```text
-SrcEval ─erase_refines→ Lam ─Pipeline.Proof.run_correct→ Anf ─Cfg.ofAnf_correct→ Cfg      (obsV, by source constructor)
-   view (Sem.Viewed.refines)                                                        view
+SrcEval ─erase_refines→ Lam ─anfOf_refines (covered inputs)→ Anf ─Cfg.ofAnf_correct→ Cfg      (obsV, by source constructor)
+   view (Sem.Viewed.refinesOn)                                                        view
 SrcEval at the roots' types ───────────────────────────────────────────→ Cfg at the roots' types
                                                          ─Rt.lower_refines→ Lir (Rt.readback at the type)
 ```
@@ -82,7 +86,7 @@ def Front.loaded (f : Front) (M : Rt.Model) : Rt.Loaded := Rt.Loaded.ofLowered f
 /-- **The front half's steps**: `runLir`'s success is each step's. -/
 theorem runLir_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f) :
     front cfg P c = .ok (f.src, f.checked) ∧ (∃ st, Lam.erase f.src f.checked = .ok (f.lam, st)) ∧
-      Anf.Pipeline.run c.mid f.lam = .ok f.anf ∧ Fir.lower f.anf = .ok f.fir ∧
+      anfOf c f.src f.lam = .ok f.anf ∧ Fir.lower f.anf = .ok f.fir ∧
       f.own = Own.immortal f.fir ∧ f.cfg = Cfg.lower f.own ∧ Rt.switchesOk f.cfg = true ∧
       Rt.lower { names := cfg.names } f.cfg = .ok f.lowered := by
   unfold runLir at h
@@ -97,7 +101,7 @@ theorem runLir_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h :
     | ok ls =>
       obtain ⟨lam, st⟩ := ls
       simp only [her, Except.mapError] at h
-      cases hm : middle c lam with
+      cases hm : middle c src lam with
       | error e => rw [hm] at h; cases h
       | ok m =>
         obtain ⟨anf, fir, own, C⟩ := m
@@ -116,10 +120,10 @@ theorem runLir_spec {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h :
               simp only [hl, pure, Except.pure, Except.ok.injEq] at h
               subst h
               unfold middle at hm
-              cases ha : Anf.Pipeline.run c.mid lam with
+              cases ha : anfOf c src lam with
               | error e => rw [ha] at hm; cases hm
               | ok a =>
-                simp only [ha, Except.mapError, bind, Except.bind] at hm
+                simp only [ha, bind, Except.bind] at hm
                 cases hf : Fir.lower a with
                 | error e => rw [hf] at hm; cases hm
                 | ok F =>
@@ -153,7 +157,7 @@ theorem runLir_params {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h
     | error e => rw [her] at h; cases h
     | ok ls =>
       simp only [her, Except.mapError] at h
-      cases hm : middle c ls.1 with
+      cases hm : middle c sc.1 ls.1 with
       | error e => rw [hm] at h; cases h
       | ok m =>
         simp only [hm] at h
@@ -258,34 +262,34 @@ theorem runLir_ctors {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
 
 /-! ## The front theorem -/
 
-/-- The checked source refines into Cfg (`erase_refines`, the middle end,
-`Cfg.ofAnf_correct`). -/
+/-- The checked source refines into Cfg on every covered input (`erase_refines`,
+the middle end with the closures step `anfOf_refines`, `Cfg.ofAnf_correct`). -/
 theorem front_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f) :
-    Sem.Refines (⟨f.src, f.checked⟩ : CheckedProgram) f.cfg := by
+    Sem.RefinesOn (f.Covered c) (⟨f.src, f.checked⟩ : CheckedProgram) f.cfg := by
   obtain ⟨-, ⟨st, her⟩, hanf, hfir, hown, hcfg, -, -⟩ := runLir_spec h
   have hofAnf : Cfg.ofAnf f.anf = .ok f.cfg := by
     unfold Cfg.ofAnf
     rw [hfir, hcfg, hown]
     rfl
-  exact (Lam.Erase.Proof.erase_refines her).trans
-    ((Anf.Pipeline.Proof.run_correct hanf).trans (Cfg.ofAnf_correct hofAnf))
+  exact Sem.RefinesOn.refines_trans (Lam.Erase.Proof.erase_refines her)
+    ((anfOf_refines hanf).trans_refines (Cfg.ofAnf_correct hofAnf))
 
 /-- Under `Front.treeView`, the checked source refines `Cfg` viewed through
 `Front.treeView`. -/
 theorem front_treeSource_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (h : runLir cfg P c = .ok f) :
-    Sem.Refines f.treeSource (⟨f.cfg, f.treeView⟩ : Sem.Viewed Cfg.Program) :=
-  Sem.Viewed.refines (front_cfg h) f.treeView
+    Sem.RefinesOn (f.Covered c) f.treeSource (⟨f.cfg, f.treeView⟩ : Sem.Viewed Cfg.Program) :=
+  Sem.Viewed.refinesOn (front_cfg h) f.treeView
 
 /-- **The front half refines**: for every program `Recheck.runLir`
 accepts and every model region `cx_init` accepts, the lowered program
 loaded into the region refines the checked source viewed at the roots'
-readback types. -/
+readback types, on every covered input (`Front.Covered`). -/
 theorem front_refines {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.Region M.mem M.ctx M.size) :
-    Sem.Refines f.source (f.loaded M) := by
+    Sem.RefinesOn (f.Covered c) f.source (f.loaded M) := by
   obtain ⟨-, -, -, -, -, -, hsw, hlow⟩ := runLir_spec h
-  exact (Sem.Viewed.refines (front_cfg h) f.view).trans (Rt.lower_refines hlow hsw f.tys hok hreg)
+  exact (Sem.Viewed.refinesOn (front_cfg h) f.view).trans_refines (Rt.lower_refines hlow hsw f.tys hok hreg)
 
 /-- **The front half refines** on a model region `cx_init` accepts whose part
 Lir uses is readable and writable (`LirRegion`, from `ctx − 48`): what the
@@ -293,16 +297,17 @@ backend's entry invariant allows (the wrapper's 16 context bytes are not
 Lir's). -/
 theorem front_refines_lir {cfg : Config} {P : Src.Program} {c : Cert} {f : Front} (h : runLir cfg P c = .ok f)
     {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size) (hreg : Rt.Proof.LirRegion M.mem M.ctx M.size) :
-    Sem.Refines f.source (f.loaded M) := by
+    Sem.RefinesOn (f.Covered c) f.source (f.loaded M) := by
   obtain ⟨-, -, -, -, -, -, hsw, hlow⟩ := runLir_spec h
-  exact (Sem.Viewed.refines (front_cfg h) f.view).trans (Rt.lower_refines_lir hlow hsw f.tys hok hreg)
+  exact (Sem.Viewed.refinesOn (front_cfg h) f.view).trans_refines
+    (Rt.lower_refines_lir hlow hsw f.tys hok hreg)
 
 /-- `front_refines` in the traced shape (decision D-1). -/
 theorem front_refines_traced {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
     (h : runLir cfg P c = .ok f) {M : Rt.Model} (hok : Rt.Proof.RegionOk M.ctx M.size)
     (hreg : Rt.Proof.Region M.mem M.ctx M.size) :
-    Sem.TRefines f.source (f.loaded M) :=
-  Sem.Refines.ofPure (front_refines h hok hreg)
+    Sem.TRefinesOn (f.Covered c) f.source (f.loaded M) :=
+  Sem.RefinesOn.ofPure (front_refines h hok hreg)
 
 /-! ## The recheck path's front half -/
 

@@ -12,8 +12,8 @@ import IxCC.Anf.Proof.Defun.WellScoped
 import IxCC.Anf.Proof.Defun.Fund
 import IxCC.Anf.Proof.Defun.Correct
 
-/-! Required axiom fences for P8 (closed-world defunctionalisation, not yet in
-the pipeline): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
+/-! Required axiom fences for P8 (closed-world defunctionalisation; on the
+recheck path through the closures step, whose fences are `Fences.Closures`): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
 `Fir.lower` declines no first-order program for closures
 (`Fir.Proof.lower_firstOrder`), and the value relation is the identity on
 first-order values and keeps observations (`Anf.Defun.Proof.Rel`), the

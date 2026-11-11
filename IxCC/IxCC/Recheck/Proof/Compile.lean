@@ -50,14 +50,14 @@ theorem compile_parts {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
 theorem compileInput_object_refines {cfg : Config} {inp : Input} {cert : Cert} {artifact : Artifact}
     (accepted : compileInput cfg inp = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
-    Sem.Refines artifact.front.source (artifact.linked driver) :=
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) :=
   object_refines (compileInput_parts accepted).2 driver valid
 
 theorem compile_object_refines {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
     (accepted : compile cfg bytes equations roots typecheck = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
-    Sem.Refines artifact.front.source (artifact.linked driver) := by
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) := by
   obtain ⟨inp, _, _, replayed⟩ := compile_parts accepted
   exact object_refines replayed driver valid
 
@@ -68,13 +68,14 @@ theorem compile_driver_exists {cfg : Config} {bytes : ByteArray} {equations : Le
   obtain ⟨inp, _, _, replayed⟩ := compile_parts accepted
   exact driver_exists replayed
 
-/-- The three existing object guarantees now follow from success of the actual
-byte-input compiler, including its default or explicit typechecking choice.
+/-- The three existing object guarantees, on every covered input, now follow from
+success of the actual byte-input compiler, including its default or explicit typechecking choice.
 The typechecking switch does not discharge the stronger model/safety boundary. -/
 theorem compiled_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
     (accepted : compile cfg bytes equations roots typecheck = .ok (cert, artifact))
-    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) (input : Nat × List Nat) :
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) (input : Nat × List Nat)
+    (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value, Lang.run (⟨artifact.src, artifact.checked⟩ : CheckedProgram) input sourceClock = .ok value ∧
         artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
@@ -83,7 +84,7 @@ theorem compiled_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
   obtain ⟨inp, _, _, replayed⟩ := compile_parts accepted
-  exact sound replayed driver valid input
+  exact sound replayed driver valid input hi
 
 /-- Emitted bytes are those of the actual rechecked object, including the
 certificate and successful ingress/producer/replay that supplied that object. -/

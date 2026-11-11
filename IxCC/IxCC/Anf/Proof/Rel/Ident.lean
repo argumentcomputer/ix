@@ -152,6 +152,95 @@ theorem fund {ρ ρ' : List Val} {J J' : List JClo} (hρ : Pw IdV ρ ρ') (hJ : 
 theorem refines : Sem.Refines P P :=
   refines_of structural rfl (fun _ _ h => obs h) (fun n => (level P n).glob) (fun n => (level P n).app)
 
+/-! ## A program and an extension of it
+
+`Q` extends `P` when it has every global of `P` at the same id and the same
+pinned keys; it may have more globals (the closures step's entries). Code of
+`P` then simulates itself from `P` to `Q`: where `P` reaches a global it has,
+`Q` has the same, and where `P` reaches one it lacks, `P` is stuck. -/
+
+/-- `Q` has every global of `P` at its id, and `P`'s pinned keys. -/
+structure Extends (P Q : Program) : Prop where
+  known : Q.known = P.known
+  globals : ∀ g gd, P.global? g = some gd → Q.global? g = some gd
+
+variable {P} {Q : Program}
+
+/-- The interface and the fundamental lemma from `P` to an extension, at one
+clock bound. -/
+structure LevelExt (P Q : Program) (n : Nat) : Prop where
+  fund : FundAt P Q IdV n
+  app : AppSim P Q IdV n
+  call : CallSim P Q IdV n
+  glob : GlobSim P Q IdV n
+
+theorem app_at_ext {n : Nat} (hlow : ∀ m < n, FundAt P Q IdV m) : AppSim P Q IdV n := by
+  suffices h : ∀ len, ∀ ⦃f g : Val⦄ ⦃vs ws : List Val⦄, vs.length ≤ len → IdV f g → Pw IdV vs ws →
+      SimUpTo IdV n (fun k => applyN P k f vs) (fun k => applyN Q k g ws) from
+    fun f g vs ws hfg hvs => h vs.length (Nat.le_refl _) hfg hvs
+  intro len
+  induction len with
+  | zero =>
+    intro f g vs ws hl hfg hvs
+    cases vs with
+    | cons _ _ => simp at hl
+    | nil =>
+      cases hvs
+      exact (SimUpTo.ok hfg).congr (fun k => applyN_nil' P k f) (fun k => applyN_nil' Q k g)
+  | succ len ih =>
+    intro f g vs ws hl hfg hvs
+    cases vs with
+    | nil =>
+      cases hvs
+      exact (SimUpTo.ok hfg).congr (fun k => applyN_nil' P k f) (fun k => applyN_nil' Q k g)
+    | cons v vs' =>
+      cases hfg with
+      | clos hρ hgot =>
+        exact app_idc structural hlow (pw_of hρ) (pw_of hgot) hvs
+          fun f' g' us us' h hus hlt => ih (by simp at hl hlt; omega) h hus
+      | _ =>
+        exact (SimUpTo.stuck (fun k => applyN Q k _ ws)).congr
+          (fun k => applyN_not_clos P k _ v vs' (by intros; nofun)) (fun _ => rfl)
+
+theorem call_at_ext (hQ : Extends P Q) {n : Nat} (hlow : ∀ m < n, FundAt P Q IdV m) :
+    CallSim P Q IdV n := by
+  intro g vs ws hvs
+  cases hP : P.global? g with
+  | none => exact SimUpTo.stuck _
+  | some gd =>
+    rw [hQ.globals g gd hP]
+    simp only [Result.ofOption, Result.bind_ok, callVal]
+    have hl := hvs.length
+    by_cases hm : vs.length = gd.ps.length
+    · refine (SimUpTo.later fun i hi => hlow i (by omega) hvs.reverse .nil gd.body).congr
+        (fun k => ite_eq_left hm) (fun k => ite_eq_left (by rw [hl]; exact hm))
+    · exact (SimUpTo.stuck _).congr (fun k => ite_eq_right hm) (fun k => ite_eq_right (by rw [hl]; exact hm))
+
+theorem glob_at_ext (hQ : Extends P Q) {n : Nat} (hlow : ∀ m < n, FundAt P Q IdV m) :
+    GlobSim P Q IdV n := by
+  intro g
+  cases hP : P.global? g with
+  | none => exact SimUpTo.stuck _
+  | some gd =>
+    rw [hQ.globals g gd hP]
+    simp only [Result.ofOption, Result.bind_ok]
+    unfold globVal
+    cases gd.ps with
+    | nil => exact SimUpTo.later fun i hi => hlow i (by omega) .nil .nil gd.body
+    | cons _ _ => exact SimUpTo.ok (.clos .nil .nil)
+
+/-- The identity relation from a program to an extension, at every clock
+bound. -/
+theorem level_ext (hQ : Extends P Q) : ∀ n, LevelExt P Q n := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  have hlow : ∀ m < n, FundAt P Q IdV m := fun m hm => (ih m hm).fund
+  have ha := app_at_ext hlow
+  have hc := call_at_ext hQ hlow
+  have hg := glob_at_ext hQ hlow
+  exact ⟨fund_step structural hQ.known hlow ha hc hg, ha, hc, hg⟩
+
 end Ident
 
 end IxCC.Anf.Rel

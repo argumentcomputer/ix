@@ -12,15 +12,15 @@ variable {cfg : Config} {P : Src.Program} {cert : Cert} {artifact : Artifact}
 
 theorem object_refines (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
-    Sem.Refines artifact.front.source (artifact.linked driver) :=
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) :=
   (front_refines_lir (run_parts accepted).1 (model := Recheck.model driver)
-    (X86.Driver.regionOk valid) (X86.Driver.lirRegion valid)).trans
+    (X86.Driver.regionOk valid) (X86.Driver.lirRegion valid)).trans_refines
     (back_refines accepted valid)
 
 theorem object_refines_traced (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
-    Sem.TRefines artifact.front.source (artifact.linked driver) :=
-  Sem.Refines.ofPure (object_refines accepted driver valid)
+    Sem.TRefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) :=
+  Sem.RefinesOn.ofPure (object_refines accepted driver valid)
 
 /-- The driver premise is inhabited for every object actually emitted by
 the accepted replay path, using the assembler's checked text bound. -/
@@ -36,7 +36,7 @@ theorem driver_exists (accepted : run cfg P cert = .ok artifact) :
 fragment, preserving the existing source GoesWrong and driver contracts. -/
 theorem sound (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    (input : Nat × List Nat) :
+    (input : Nat × List Nat) (covered : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
       (∃ sourceClock value,
         Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
@@ -49,9 +49,9 @@ theorem sound (accepted : run cfg P cert = .ok artifact)
       (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
         ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource) :=
   have refinement := object_refines accepted driver valid
-  ⟨fun _ _ success => Front.sound_of refinement success,
-    fun safe clock => Front.safe_of refinement safe clock,
-    fun diverging => Front.diverges_of refinement diverging⟩
+  ⟨fun _ _ success => Front.sound_of refinement covered success,
+    fun safe clock => Front.safe_of refinement covered safe clock,
+    fun diverging => Front.diverges_of refinement covered diverging⟩
 
 
 theorem sound_bytes {bytes : List UInt8}
@@ -67,27 +67,28 @@ theorem sound_bytes {bytes : List UInt8}
 
 theorem compile_sound_linked (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    {input : Nat × List Nat} {clock : Nat} {output : Option Obs}
-    (success : Lang.run (artifact.linked driver) input clock = .ok output) :
+    {input : Nat × List Nat} (covered : artifact.front.Covered cert input) {clock : Nat}
+    {output : Option Obs} (success : Lang.run (artifact.linked driver) input clock = .ok output) :
     (∃ sourceClock value,
       Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
         input sourceClock = .ok value ∧ artifact.front.view input.1 (Lang.obs value) = some output) ∨
       artifact.front.GoesWrong input :=
-  (sound accepted driver valid input).1 clock output success
+  (sound accepted driver valid input covered).1 clock output success
 
 theorem compile_safe_linked (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    {input : Nat × List Nat} (safe : ¬ artifact.front.GoesWrong input) (clock : Nat) :
+    {input : Nat × List Nat} (covered : artifact.front.Covered cert input)
+    (safe : ¬ artifact.front.GoesWrong input) (clock : Nat) :
     ¬ (Lang.run (artifact.linked driver) input clock).GoesWrong :=
-  (sound accepted driver valid input).2.1 safe clock
+  (sound accepted driver valid input covered).2.1 safe clock
 
 theorem compile_diverges_linked (accepted : run cfg P cert = .ok artifact)
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
-    {input : Nat × List Nat}
+    {input : Nat × List Nat} (covered : artifact.front.Covered cert input)
     (diverging : ∀ clock, Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
       input clock = .timeout) :
     (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
       ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource :=
-  (sound accepted driver valid input).2.2 diverging
+  (sound accepted driver valid input covered).2.2 diverging
 
 end IxCC.Recheck.RcReplay
