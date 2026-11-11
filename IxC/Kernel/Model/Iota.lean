@@ -53,6 +53,7 @@ section
 variable {V : Type w} [SetTheory V]
 
 /-- Pushing a value keeps an agreement below a bound, one index higher. -/
+omit [SetTheory V] in
 theorem push_agree {k : Nat} {ρ ρ' : BVarIdx → V} (h : ∀ i, i < k → ρ i = ρ' i) (x : V) :
     ∀ i, i < k + 1 → push x ρ i = push x ρ' i
   | 0, _ => rfl
@@ -126,6 +127,7 @@ def pushVals (ρ : BVarIdx → V) : List V → BVarIdx → V
   | [] => ρ
   | x :: xs => pushVals (push x ρ) xs
 
+omit [SetTheory V] in
 theorem pushVals_ge : ∀ (xs : List V) (ρ : BVarIdx → V) (i : Nat), xs.length ≤ i →
     pushVals ρ xs i = ρ (i - xs.length)
   | [], ρ, i, _ => by simp [pushVals]
@@ -590,7 +592,7 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
       simp only [List.getD, List.getElem?_append_right (by omega : xsA.length ≤ mI),
         List.getElem?_append_right (by omega : xs.length ≤ mI), hxsA_len, hxs, Nat.sub_self]
       simpa using hmajv
-  obtain ⟨-, -, -, -, -, -, hteleR, -, -, -, -⟩ :=
+  obtain ⟨-, -, CR, -, -, -, hteleR, -, -, -, -⟩ :=
     fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfitR'
       (by simp [xsA, hxs]) hvalR
   obtain ⟨-, -, CC, -, -, hCC, hteleC, hCCok, hσC, hRCb, hRCf⟩ :=

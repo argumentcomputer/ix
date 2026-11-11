@@ -74,7 +74,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
   -- invariants transport to it by the completion's projections
   obtain ⟨cvT, s, hTname₀₀, hTlps₀₀, hccvT, rfl, rfl, bsT, hstripT₀⟩ :=
     Ix.Kernel.checkSumInd_shape hInd
-  try dsimp only at hCtors hK hRec hTbl hFOk hsorts hopT2 hwl hcaps
+  try dsimp only at hCtors hK hRec hplAll hTbl hFOk hsorts hopT2 hwl hcaps
   -- the record the former carries is the classified one (task #268)
   rw [← hcaps] at hCtors hsorts hRec hTbl
   -- the kinds: classified on the stored constructors, one list per
@@ -103,7 +103,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
   have hpProp : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).isProp
       = (Level.isEquiv ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).resSort
           .zero == some true) := by simp [Ix.Kernel.NativeParts.withKinds]
-  generalize hp : (p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds = p at hCtors hRec hTbl hFOk hsorts hopT2 hwl hpT hpC hpK hpP hpI hpR hpE hpL hpS hpProp
+  generalize hp : (p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds = p at hCtors hRec hplAll hTbl hFOk hsorts hopT2 hwl hpT hpC hpK hpP hpI hpR hpE hpL hpS hpProp
   have hProp : p.isProp = (Level.isEquiv p.resSort .zero == some true) := hpProp
   have hnd : (p.ctors.map (·.1.name)).Nodup := by rw [hpC]; exact hnd₀
   have hlenK : p.kinds.length = p.ctors.length := by rw [hpK, hpC]; exact hlenK₀
