@@ -298,6 +298,10 @@ rebuild and reports subterm, candidate and MSS statistics. -/
 lean_exe «sharing-study» where
   root := `Benchmarks.SharingStudy
 
+/-- The binder-data sections of compiled environments: sizes, and two compiles compared. -/
+lean_exe «binder-data-stats» where
+  root := `Benchmarks.BinderDataStats
+
 /-- The Lean names whose address differs between two compiled environments,
 grouped by block with a one-word cause (packaging, nested order, cascade,
 content): `ixe-diff <old.ixe> <new.ixe> [--names] [--tsv <rows.tsv>]`
