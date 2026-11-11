@@ -23,6 +23,7 @@ pub mod lazy;
 pub mod map;
 pub mod merkle;
 pub mod metadata;
+pub mod model_advice;
 pub mod modes;
 pub mod proof;
 pub mod role_table;

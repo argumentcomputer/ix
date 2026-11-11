@@ -4,6 +4,7 @@ import Ix.AiurInvocation
 import Ix.IxVM.RecordSections
 import Ix.Meta
 import Tests.FormalPins
+import Tests.Ix.IxVMFixtures
 import Batteries.Data.Char.Basic
 
 /-! `formal-aiur-tests [PATH]` writes the real claim fixtures, plus
@@ -265,6 +266,10 @@ def main (args : List String) : IO Unit := do
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
   IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept controllerEnv)))
+  -- Mutual and nested blocks, which IxVM checks against model advice the
+  -- prover attaches when it loads the environment.
+  let modeled ← loadSharedIxonEnv #[``IxVMInd.Even, ``IxVMInd.Tree, ``IxVMInd.DedupM] env
+  IO.FS.writeBinFile (path ++ ".modeled.ixe") (← IO.ofExcept (Ixon.serEnv modeled))
   let mut cases := (← IO.ofExcept evalCases) ++ (← IO.ofExcept assumptionCases)
     ++ (← IO.ofExcept revealModeCommitmentCases)
   for build in [claimCheckWithAsm,
