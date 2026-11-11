@@ -1589,16 +1589,19 @@ with a binder that entry's one variant. -/
 /-- The section the compiler gives a block record `c`: the annotator's when it
 is admissible, otherwise the undecided section (`undecidedSection`). A record
 for which neither is admissible does not compile. -/
+/-- The annotator's section for `c`, or none without an annotator. -/
+@[expose] def annotatorSection (annotator? : Option BinderAnnotator) (names : Array Name)
+    (c : Ixon.Constant) : Array Ixon.BinderBlock :=
+  match annotator? with
+  | some annotate => annotate names c
+  | none => #[]
+
 @[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
-  let binders := match annotator? with
-    | some annotate => annotate names c
-    | none => #[]
-  if sectionAdmissible c binders then .ok binders
-  else
-    let undecided := undecidedSection c
-    if sectionAdmissible c undecided then .ok undecided
-    else .error (.binderData "no admissible binder-data section")
+  if sectionAdmissible c (annotatorSection annotator? names c) then
+    .ok (annotatorSection annotator? names c)
+  else if sectionAdmissible c (undecidedSection c) then .ok (undecidedSection c)
+  else .error (.binderData "no admissible binder-data section")
 
 /-- `c` with the section the compiler gives it (`sectionFor`). Every other
 field is `c`'s, definitionally. -/
@@ -1613,14 +1616,17 @@ theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
     {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
   unfold sectionFor at h
-  dsimp only at h
-  split at h
-  · cases h
-    assumption
-  · split at h
-    · cases h
-      assumption
-    · cases h
+  by_cases ha : sectionAdmissible c (annotatorSection annotator? names c) = true
+  · rw [if_pos ha] at h
+    cases h
+    exact ha
+  · rw [if_neg ha] at h
+    by_cases hu : sectionAdmissible c (undecidedSection c) = true
+    · rw [if_pos hu] at h
+      cases h
+      exact hu
+    · rw [if_neg hu] at h
+      cases h
 
 /-- **The compiler's section is admissible**: a record built with a section
 is `c` with an admissible one. -/

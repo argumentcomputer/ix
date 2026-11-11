@@ -27,11 +27,11 @@ open Ix.CompileM Ix.Cert.Resolution Ix.Cert.Schedule
 
 /-- Every record is a wire-valid constant's canonical encoding, fits the
 production loader's aggregate universe-expansion budget, and has its binder data
-in canonical form. -/
+canonical and complete. -/
 def Encoded (store : Std.HashMap Address ByteArray) : Prop :=
   ∀ a b, store.get? a = some b → ∃ c : Ixon.Constant, c.wireWF ∧
     Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes ∧ c.bindersCanonical = true ∧
-      Ixon.serConstant c = b
+      c.bindersComplete = true ∧ Ixon.serConstant c = b
 
 theorem encoded_empty : Encoded ({} : Std.HashMap Address ByteArray) := fun a b h => by
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h
@@ -107,9 +107,9 @@ theorem storedCanonical_of_store {ixe : Ixon.Env} {store : Std.HashMap Address B
     (encoded : Encoded store) (order : List Address) : Stream.StoredCanonical ixe order := by
   intro a _ lc hlc
   obtain ⟨b, hb, rfl⟩ := stores a lc hlc
-  obtain ⟨c, wire, fits, canon, rfl⟩ := encoded a b hb
+  obtain ⟨c, wire, fits, canon, complete, rfl⟩ := encoded a b hb
   obtain ⟨hget, hraw⟩ := get?_serConstant wire fits
-  exact ⟨c, hget, wire, hraw.symm, canon⟩
+  exact ⟨c, hget, wire, hraw.symm, canon, complete⟩
 
 /-! ## The fold keeps its store encoded -/
 
