@@ -307,4 +307,24 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
       · exact hbool.1
       · exact hbool.2
 
+  nat_add := by
+    have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm
+    have hproj' : ∀ T i, env.findProj? T i = env'.findProj? T i := fun T i => (hproj T i).symm
+    have hKof : ∀ {n : Key md} {ci : ConstantInfo md}, env'.find? n = some ci → K n := by
+      intro n ci hf
+      have h := hname _ (List.mem_of_find?_eq_some hf)
+      rwa [show ci.name = n from
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == n) hf] at h
+    have hKc : ∀ {φ : LevelParam → Nat} {ρ : BVarIdx → V} {n : Key md} {us : List Level} {X : V},
+        Denotes M.cval env' φ ρ (.const n us) X → K n := by
+      intro φ ρ n us X h
+      cases h with
+      | const hf _ => exact hKof hf
+    intro cv v hint hf φ ρ N Z S A hN hZ hS hA
+    exact M.nat_add cv v hint (by rw [← hfind _ (hKof hf)]; exact hf) φ ρ N Z S A
+      (Denotes.mono_env hfind' hproj' hlit hN (hKc hN))
+      (Denotes.mono_env hfind' hproj' hlit hZ (hKc hZ))
+      (Denotes.mono_env hfind' hproj' hlit hS (hKc hS))
+      (Denotes.mono_env hfind' hproj' hlit hA (hKc hA))
+
 end Ix.Kernel

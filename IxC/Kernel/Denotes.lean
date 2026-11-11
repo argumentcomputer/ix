@@ -424,6 +424,21 @@ def NatLitLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
       Denotes cval env φ ρ (.app (.app (.const c []) (.lit (.natVal a))) (.lit (.natVal b))) X →
       Denotes cval env φ ρ (.const (if f a b then boolTrueName else boolFalseName) []) X
 
+/-- **`Nat.add`'s recurrences at every natural**: the kernel rewrites `Nat.add b k` at a
+non-literal `b` (an offset's successor step, adding zero, offsets in conversion), so at the
+role a stored definition binds, `x + 0 = x` and `x + succ y = succ (x + y)` for every
+member `x`, `y` of what `Nat` denotes. -/
+def NatAddLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? natAddName = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (N Z S A : V),
+      Denotes cval env φ ρ (.const natName []) N →
+      Denotes cval env φ ρ (.const natZeroName []) Z →
+      Denotes cval env φ ρ (.const natSuccName []) S →
+      Denotes cval env φ ρ (.const natAddName []) A →
+      ∀ x y, x ∈ˢ N → y ∈ˢ N →
+        app (app A x) Z = x ∧ app (app A x) (app S y) = app S (app (app A x) y)
+
 /-- **A model of the environment `env` in the set theory `V`**: one
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
@@ -473,7 +488,8 @@ where they are laws of stored constants:
   constructor at its own fields (`ProjLaw`).
 * **`Nat` literals** (`lit_ops`): `Nat.pred` and the fourteen binary
   operations the kernel computes on literals do so as Lean's functions
-  (`NatLitLaw`).
+  (`NatLitLaw`), and `Nat.add` satisfies its recurrences at every natural
+  (`nat_add`, `NatAddLaw`).
 
 The kernel's other generic definitional equalities do not depend on
 `cval`: they hold in every model because of how `Denotes` reads terms.
@@ -529,6 +545,8 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
   proj_law : ProjLaw cval env
   /-- **the `Nat` operations on literals** compute as Lean's do (`NatLitLaw`) -/
   lit_ops : NatLitLaw cval env
+  /-- **`Nat.add`'s recurrences** at every natural (`NatAddLaw`) -/
+  nat_add : NatAddLaw cval env
   /-- a stored constant's value depends on the level assignment only through its own
   level parameters (so a use of it reads its levels, and nothing else) -/
   cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →

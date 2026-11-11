@@ -1103,6 +1103,7 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
   unit_like := unitLikeLaw_of_envModelM m
   proj_law := projLaw_of_envModelM m
   lit_ops := natLitLaw_of_envModelM m
+  nat_add := natAddLaw_of_envModelM m
   cval_params := fun n ci h φ₁ φ₂ agree => by
     unfold cvalOf
     rw [m.base2.acval_params n ci h φ₁ φ₂ agree]

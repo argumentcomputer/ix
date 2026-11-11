@@ -203,4 +203,26 @@ theorem natLitLaw_of_envModelM (m : EnvModelM V μ env) :
           if_neg (by decide)]
       · rw [if_pos (Nat.le_of_ble_eq_true hb), if_pos rfl]
 
+/-- A constant used at no level denotes its leaf at `Level.substFn φ [] []`. -/
+theorem denotes_const_nil_eq {cval : Key md → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
+    {ρ : Nat → V} {n : Key md} {X : V} (h : Denotes cval env φ ρ (.const n []) X) :
+    X = cval n (Level.substFn φ [] []) := by
+  cases h with
+  | const _ hlen => rw [List.eq_nil_of_length_eq_zero hlen.symm]
+
+/-- **`Nat.add`'s recurrences at every natural, from the invariant** (`natAdd_clauses`,
+read off `EnvModelM.nat_ops`). -/
+theorem natAddLaw_of_envModelM (m : EnvModelM V μ env) :
+    Ix.Kernel.NatAddLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro cv v hint hf φ ρ N Z S A hN hZ hS hA x y hx hy
+  have hcl := m.base2.cval_closedL
+  obtain rfl := denotes_const_nil_eq hN
+  obtain rfl := denotes_const_nil_eq hZ
+  obtain rfl := denotes_const_nil_eq hS
+  obtain rfl := denotes_const_nil_eq hA
+  obtain ⟨h0, hsucc⟩ := natAdd_clauses m.base2 (m.nat_ops (Level.substFn φ [] []))
+    (m.nat_heads (Level.substFn φ [] [])) hf (fun _ => SetTheory.empty)
+  simp only [interp_cvalOf hcl] at h0 hsucc
+  exact ⟨h0 x hx, hsucc x y hx hy⟩
+
 end Ix.Kernel.Model
