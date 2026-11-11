@@ -371,7 +371,7 @@
           # checks below to be exactly those.
           ixccChecks = import ./IxCC/nix/checks.nix {
             inherit pkgs system blake3-lean;
-            inherit (ixcc) ixccLib programs auditSrc ledgerWorkspace mkCheck;
+            inherit (ixcc) ixccLib programs grounding auditSrc ledgerWorkspace mkCheck mkCheckWith;
           };
         in
         {

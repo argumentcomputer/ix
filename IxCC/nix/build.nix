@@ -111,11 +111,36 @@
     '';
     postInstall = "";
   };
+  # The grounding library, with its axiom fence, and its suite (`tests-grounding`), reusing the
+  # library's artifacts like the program build; the one build that compiles the kernel's
+  # model (`IxCK.Kernel.Denotes` and its imports, in the «ix-ck» closure the ledger records).
+  grounding = lake2nix.mkPackage {
+    inherit lakeDeps buildInputs;
+    src = sources.grounding;
+    name = "ixcc-grounding";
+    postConfigure = asciiPackages;
+    prePatch = ''
+      mkdir -p .lake
+      cp -R ${ixccLib}/.lake/build .lake/build
+      chmod -R +w .lake/build
+    '';
+    buildPhase = ''
+      runHook preBuild
+      lake -KciLeanLibDir=${lean}/lib/lean build IxCCGrounding \
+        ${pkgs.lib.escapeShellArgs sources.groundingTargets}
+      runHook postBuild
+    '';
+    installPhase = ''
+      mkdir -p "$out"
+      cp -R .lake/build/bin "$out/bin"
+    '';
+    postInstall = "";
+  };
   # The checks see the complete tracked IxCC tree; the trust-ledger check sees
   # it inside the workspace it audits (`ledgerWorkspace`, IxCC at `IxCC/`).
   auditSrc = sources.audit;
   ledgerWorkspace = sources.ledgerWorkspace;
-  mkCheck = name: inputs: command:
+  mkCheckWith = bin: name: inputs: command:
     pkgs.runCommand "${name}-check" {
       nativeBuildInputs = [pkgs.coreutils] ++ inputs;
       LEAN_SYSROOT = "${lean}";
@@ -125,10 +150,11 @@
       chmod u+w source
       cd source
       mkdir -p .lake/build
-      ln -s ${programs}/bin .lake/build/bin
+      ln -s ${bin}/bin .lake/build/bin
       ${command}
       touch $out
     '';
+  mkCheck = mkCheckWith programs;
 in {
-  inherit ixccLib programs mkCheck ixCK auditSrc ledgerWorkspace;
+  inherit ixccLib programs grounding mkCheck mkCheckWith ixCK auditSrc ledgerWorkspace;
 }

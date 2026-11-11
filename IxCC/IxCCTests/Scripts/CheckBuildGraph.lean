@@ -3,7 +3,7 @@ import IxCC.Tools.BuildGraph
 open Lean IxCC.Tools.Check IxCC.Tools.BuildGraph
 
 /-- Runtime suites whose `Run` failure assertions form the coverage inventory. -/
-def runtimeSuites : List String := ["IxonV3", "Aiur", "KernelFront"]
+def runtimeSuites : List String := ["IxonV3", "Aiur", "KernelFront", "Grounding"]
 
 def main (args : List String) : IO UInt32 := cli "build-graph check failed" do
   match args with

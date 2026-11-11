@@ -1,0 +1,120 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "grounding",
+  "description": "The subjects of the grounding suite (tests-grounding) that no other family holds: decide (fib 10 = 55), the evaluation-axiom shape, in the role-bound envelope ix compile writes by default.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/grounding",
+  "source_root": "fixtures/corpus/grounding/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "f5ee4675fb635aa4581076c264bd7d68b52cc334",
+    "ix_binary_sha256": "810a977f3dcbfed725910f2e3f1c349b57dea8a7d61c32da0b46f1a312a752b1",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "Built with Lake (lake build ix) from the recorded revision of this repository, in its dev shell, Lean 4.34.1; not a Nix build, and not reproducible, so the binary digest is a record.",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "decide",
+      "source": {
+        "path": "Decide.lean",
+        "sha256": "3a0e7c00b20fa36bf9eb6abacf32340e5c5f133684de38225a1470d1c7d0084d",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Grounding.decideFib10"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "decide.ixe",
+        "sha256": "5f7a473023cfe8da300c09d72eb1d159bce8ccaedda6402d8c51770129bc578a",
+        "bytes": 89319
+      },
+      "equations": {
+        "path": "decide.equations.json",
+        "sha256": "1b1c6dcb6b0b535a6ee0838c0454b08e6ceb85e0f0ab9f11304c4bd68df0a7be",
+        "equations": 4,
+        "failures": 0
+      },
+      "named_env_sha256": "4d3e93544309abef05252a9bf75fed3500aea68c19f58c813d302f5c50224fca",
+      "census": {
+        "path": "decide.census.json",
+        "sha256": "ac39a7857dad0bf2610cca4545d1798454273c1653b41b5dd0be54c1f378cc62"
+      },
+      "roots": [
+        {
+          "name": "Grounding.decideFib10",
+          "address": "04334d0be1895fde49ef202d3ab1edc3c854be2e4a76ddb3de0555ee818bd316",
+          "params": 0,
+          "result": "bool",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [],
+              "value": "true",
+              "machine": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

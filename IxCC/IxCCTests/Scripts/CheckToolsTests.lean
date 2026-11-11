@@ -235,6 +235,27 @@ private def buildGraphTests (root : FilePath) : IO Unit := do
   let runtime := root / "IxCCTests/IxonV3/Run.lean"
   withFile runtime ((← IO.FS.readFile runtime).replace "FAIL:" "REMOVED:") do
     rejects "removed runtime assertions" "runtime assertion inventory changed" checkGraph
+  -- the grounding library and the kernel's model stay beside production and the shared build
+  let offend (path : FilePath) (imp : String) (label fragment : String) : IO Unit := do
+    withFile path (s!"import {imp}\n" ++ (← IO.FS.readFile path)) do
+      let actual ← IxCC.Tools.BuildGraph.manifest root
+      withFile (root / "nix/lean-modules.json") actual.pretty do
+        rejects label fragment checkGraph
+  offend api "IxCCGrounding.Check" "production imports the grounding library"
+    "production imports the grounding library"
+  offend api "IxCK.Kernel.Denotes" "production imports the kernel's model"
+    "production imports the kernel's model"
+  offend (root / "IxCCTests/IxonV3/Main.lean") "IxCCGrounding.Check"
+    "a shared program imports the grounding library" "shared program tests-ixon-v3 imports the grounding library"
+  offend (root / "IxCCTests/Proofs.lean") "IxCK.Kernel.Denotes"
+    "the proof aggregate imports the kernel's model" "the shared proof aggregate imports the kernel's model"
+  let gfence := root / IxCC.Tools.BuildGraph.groundingFence
+  let gsource ← IO.FS.readFile gfence
+  let gassertions ← IxCC.Tools.BuildGraph.axiomAssertions gsource
+  need (!gassertions.isEmpty) "empty grounding fence"
+  withFile gfence (gsource.replace gassertions.head! "") do
+    rejects "removed grounding axiom assertion" "grounding axiom assertions or expected messages changed"
+      checkGraph
 
 /-- `ledger` with `relative`'s integrity hash re-recorded from `root`. -/
 private def rehash (ledger : Json) (root : FilePath) (relative : String) : IO Json := do

@@ -26,9 +26,13 @@
         lib.fileset.unions
         (common ++ map (item: root + "/${modules.${item.key}.path}") (closure roots));
     };
+  # The grounding library's suite is built with the library by `ixcc-grounding`, not by the
+  # shared program build, so editing the grounding work never rebuilds the programs.
+  groundingTargets = ["tests-grounding"];
   programTargets =
-    builtins.attrNames
-    (lib.filterAttrs (_: target: target.kind == "lean_exe") graph.targets);
+    builtins.filter (name: !(builtins.elem name groundingTargets))
+    (builtins.attrNames
+      (lib.filterAttrs (_: target: target.kind == "lean_exe") graph.targets));
   # The trust ledger is the one record of what IxCC takes from the workspace:
   # the pure Lean dependency «ix-ck» (its directory and the import closure
   # whose every file it hashes) and the repository files it audits.
@@ -42,12 +46,15 @@
   ixCKFiles = map (path: ixCKSourceRoot + "/${path}") (builtins.attrNames ixCKEntry.closure);
   repository = root + "/${ledger.policy.repository.root}";
 in {
-  inherit root programTargets;
+  inherit root programTargets groundingTargets;
   # The production library, with the vendored Aiur reference it imports.
   production = source ["IxCC"];
   # Every executable plus the complete proof and fence collection, built once.
   programs = source (["IxCCTests.Proofs"]
     ++ lib.concatMap (name: graph.targets.${name}.roots) programTargets);
+  # The grounding library (which imports the kernel's model) and its suite.
+  grounding = source (["IxCCGrounding"]
+    ++ lib.concatMap (name: graph.targets.${name}.roots) groundingTargets);
   dependencies = lib.fileset.toSource {
     inherit root;
     fileset = lib.fileset.unions common;

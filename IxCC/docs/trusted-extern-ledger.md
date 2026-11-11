@@ -110,7 +110,10 @@ rule covers everything that can change what a check builds, runs or compares
 against:
 
 - the Lake and toolchain files (`lakefile.lean`, `lake-manifest.json`,
-  `lean-toolchain`) and the root modules `IxCC.lean` and `IxCCTests.lean`;
+  `lean-toolchain`) and the root modules `IxCC.lean`, `IxCCTests.lean` and
+  `IxCCGrounding.lean`;
+- every file under `IxCCGrounding/` (the grounding library: its laws,
+  relation, lemmas, check and axiom fence);
 - every file under `IxCC/` (the production library, the repository checkers
   in `IxCC/Tools` and the vendored Aiur reference), `IxCCTests/` (tests,
   fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
@@ -218,7 +221,7 @@ Then edit by hand what the audit still names (a seed version, a new action
 repository, a symbol, a closure hash of the IxCK codec, a csimp theorem), set
 `last_reviewed`, and commit the ledger with the change. `--record` leaves the
 IxCK closure's hashes (`lean_dependencies[].closure`) alone: a change to
-those 82 files is a dependency review, edited by hand, not a routine update.
+those 98 files is a dependency review, edited by hand, not a routine update.
 
 All repository check scripts are Lean executables. The trust auditor uses
 the pinned Lake TOML parser and GNU `sha256sum`; the independent encoder
@@ -412,10 +415,20 @@ it.
 The one entry, `ix-ck-kernel`, is ix's `IxCK/` package (`«ix-ck»`), beside
 IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical`,
 `IxCK.Ixon.Codec`, `IxCK.Kernel.Key`, `IxCK.Kernel.Admission.Tier`,
-`IxCK.Kernel.Cached.CoreC` and `IxCK.Kernel.Ixon.Prelude` (an 82-module closure
-of about 49,000 lines, 13,737 of them the committed role data, importing
+`IxCK.Kernel.Cached.CoreC` and `IxCK.Kernel.Ixon.Prelude`, and the grounding
+library (`IxCCGrounding`) also `IxCK.Kernel.Core` and the kernel's model,
+`IxCK.Kernel.Denotes` (a 98-module closure: the 82 modules of the production
+library's, about 49,000 lines, 13,737 of them the committed role data, and 16
+more for the model's statement, the set theory interface
+`IxCK/Kernel/SetTheory/*`, `IxCK/Kernel/SetModel/Ops.lean` and
+`IxCK/Kernel/Verify/{Level,LevelGeran}.lean`, about 3,500 lines; importing
 `Init`, `Std` and, at elaboration time in `IxCK/Kernel/BasisGen.lean`, `Lean`;
-not the kernel's proof tree). The codec is the ingress decoder and encoder;
+not the kernel's proof tree). The model's files are pinned because the
+grounding theorems are stated over them: a change to `Denotes.lean` (the
+certified IxVM work's laws, when they land) fails this audit until reviewed.
+`check-build-graph` refuses an import of the grounding library or of the model
+from the production library or any program of the shared build, so the
+production binaries' import closures stay within the 82. The codec is the ingress decoder and encoder;
 the tiered admission entry and the executed typing core are the front end
 over the kernel ([kernel front end](kernel-front-end-design.md)), which takes
 an environment's acceptance and the relevance annotation's types from them;

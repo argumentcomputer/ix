@@ -413,7 +413,7 @@ interface.
 
 ### SP-1. Adequacy and progress on the first fragment
 
-**Planned (research core).** CD4's relation and progress, discharging SP-0's
+**In progress (since 2026-11-11; [the grounding library](#the-grounding-library-sp-1-in-progress)).** CD4's relation and progress, discharging SP-0's
 hypotheses:
 - a relation between SrcEval values and model elements, indexed by the
   kernel types the derivations give: literals to literals, constructors to
@@ -454,6 +454,76 @@ progress 2–5k); the simulation by `Red` 12–20k plus subject reduction, which
 is research of unknown size. *Calendar:* 6–12 months after SP-A. *Exit:* both
 [first-fragment tests](#the-first-grounded-fragment), fenced with the
 standard axioms.
+
+### The grounding library (SP-1 in progress)
+
+**In progress since 2026-11-11; its first landing (G1a) is the fundamental
+lemma from a check.** The library `IxCCGrounding` (`IxCC/IxCCGrounding/`, a
+Lake library of IxCC's package beside the production library, built and run by
+the required check `ixcc-grounding`) is the real development the adequacy spike
+(SP-A) recommended. It is the one library that imports the kernel's model
+(`IxCK.Kernel.Denotes`, the statement half, in
+`IxCCGrounding.Laws`); `check-build-graph` refuses an import of it, or of the
+model, from the production library or from any program of the shared build.
+
+**What is proved (G1a), fenced on `propext`, `Classical.choice` and
+`Quot.sound` (`IxCCGrounding/Fence.lean`):**
+
+- *The fundamental lemma from the check* (`allP_of_check`, and its clause for
+  constants, `const_of_check`). For every program `p`, kernel reading `env`,
+  key map, level parameters, certificate annotation and finite set `Sl` of
+  constants on which the check `groundCheck` is true; every set theory and every
+  model of `env` with the laws; assuming `SitesOk` and F5's meaning at each
+  `case` constant of `Sl`: each of SrcEval's eight mutual functions returns
+  values related to what their kernel counterparts denote, at every clock. In
+  particular a constant of `Sl` that SrcEval unfolds at an `Ok` instance
+  returns a value related to the constant's denotation.
+- *The equation lemma* (`eqn_den`): in every model, at every assignment, a
+  function whose equation theorem is stored with the checked shape denotes its
+  equation body, any telescope of arguments, any result type. It uses `mem`
+  and `eq_equality` only: no law, no typing.
+- *The run terms run* (`runs_of_sites`, `fundHyps_of`): the per-constant typing
+  facts the spike assumed are derived from the laws, the check and `SitesOk`.
+- *The check is sound* (`groundFacts_of_check`, `okClosed_of_check`): its
+  success establishes every fact `GroundFacts` names.
+
+**Its hypotheses, each with who discharges it.** This is how far the landed
+theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-spine).
+
+| Hypothesis | What it says | Who discharges it | Scheduled |
+| --- | --- | --- | --- |
+| `Laws.defn_value` | δ: a stored definition denotes what its value denotes | the IxVM side: the field `Model.defn_value` (`jcb/ixvmc-std-model`, proved) | done there; becomes a field here when their `Denotes.lean` lands on `main` |
+| `Laws.iota_rule` | ι: every stored recursor rule computes, its right-hand side denoting (their `IotaLaw`, copied verbatim) | the IxVM side: `Model.iota_rule`, proved | as δ |
+| `Laws.cval_params` | a constant depends on the level assignment only through its own parameters | the IxVM side: `Model.cval_params` | as δ |
+| `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`) | the IxVM side | scheduled there as a public law (their third note, item 6) |
+| `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side | scheduled there (item 6; DO-39) |
+| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`): a constructor image built at other parameters and levels that lies in the family at these is the image at these | the IxVM side, if accepted; otherwise IxCC by a relation that carries types (2–4k lines, the owner's decision) | asked 2026-11-11, unanswered; consumed only by the generic `case` lemma (G1b) |
+| `groundCheck … = true` | every decidable fact (`GroundFacts`): the faithfulness clauses, the fragment (no `csimp`, recursor, quotient or opaque-by-value constant in `Sl`), the `Nat` and `Eq` bases, each `eqn` entry's shape, the node-for-node correspondence and closedness of every term SrcEval runs, and `Ok`'s closure | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct |
+| `SitesOk` | typing, in the one form it is consumed: at every `Ok` instance of every constant of `Sl` SrcEval unfolds, every application site it may evaluate is in the graph regime with its argument in the domain | IxCC | not discharged. G2: a site check from `mem` and stored types, its residue measured. G3: the residue, from the kernel's derivations (an accepted definition's derivation and the rules' soundness over the public model, both kernel side: the latter decided there 2026-11-11 and being estimated) and the walk-level annotation statement (KF-1, IxCC) |
+| `CaseFires` at each `case` constant of `Sl` | F5's meaning: `casesOn` on a constructor is the selected minor on its fields | IxCC: the generic `case` lemma from the checked shape `CaseFacts` and `ctor_canon` | G1b |
+
+`Ok` is the certificate's own datum: the annotation's class of each constant
+(`ConstRel.result`, the zero condition of the sort of its stored type, as the
+kernel annotator computes it). Its correctness is not a hypothesis; the check
+decides its closure (every constant at a position SrcEval may evaluate, in a run
+term of an `Ok` instance, is at an `Ok` instance), which a complete annotation
+gives.
+
+**Still between the landed theorem and the grounded statement:**
+
+- the root theorem (soundness at a root on first-order arguments, with the
+  observation's readback) and `fib` and `decide (fib 10 = 55)` as its
+  instances, G1b; it will add one checked hypothesis, `ResultTag` (the observed
+  constructor tag names one constructor among those of `Sl` SrcEval can return),
+  because the relation does not record which inductive a returned constructor
+  belongs to;
+- `SitesOk` (G2, G3) and the three laws not yet scheduled as fields here;
+- the fragment: `let`, recursors fired directly, `Quot`, `csimp` and strings are
+  excluded by the check (G4);
+- progress (G5), which also consumes premise (i);
+- the statement is over any program and kernel reading that pass the check; that
+  the reading is the kernel's reading of the closure of the seeds (premise (i)'s
+  subject) is the native route's and the IxVM claim's (SP-N, SP-0).
 
 ### SP-2. Widening
 

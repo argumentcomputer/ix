@@ -24,6 +24,8 @@
   "tests-kernel-front":
   {"roots": ["IxCCTests.KernelFront.Main"], "kind": "lean_exe"},
   "tests-ixon-v3": {"roots": ["IxCCTests.IxonV3.Main"], "kind": "lean_exe"},
+  "tests-grounding":
+  {"roots": ["IxCCTests.Grounding.Main"], "kind": "lean_exe"},
   "tests-fir": {"roots": ["IxCCTests.Fir.Main"], "kind": "lean_exe"},
   "tests-exe": {"roots": ["IxCCTests.Exe.Main"], "kind": "lean_exe"},
   "tests-driver-session":
@@ -76,6 +78,7 @@
   "backend-probe":
   {"roots": ["IxCCTests.Backend.ProbeMain"], "kind": "lean_exe"},
   "IxCCTests": {"roots": ["IxCCTests"], "kind": "lean_lib"},
+  "IxCCGrounding": {"roots": ["IxCCGrounding"], "kind": "lean_lib"},
   "IxCC": {"roots": ["IxCC"], "kind": "lean_lib"}},
  "schema_version": 1,
  "modules":
@@ -1027,6 +1030,16 @@
     "IxCC.Src.Hints",
     "IxCC.Src.Table.Check",
     "IxCCTests.IxonV3.Catalog.Fixtures"]},
+  "IxCCTests.Grounding.Run":
+  {"path": "IxCCTests/Grounding/Run.lean",
+   "imports":
+   ["IxCC.Src.KernelFront.Front",
+    "IxCC.Src.Readback",
+    "IxCCGrounding.Check",
+    "IxCCTests.Src.Support"]},
+  "IxCCTests.Grounding.Main":
+  {"path": "IxCCTests/Grounding/Main.lean",
+   "imports": ["IxCCTests.Grounding.Run"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -3657,6 +3670,73 @@
     "IxCCTests.Recheck.KernelSlow",
     "IxCCTests.KernelFront.Run",
     "IxCCTests.Ring0"]},
+  "IxCCGrounding.Syntax":
+  {"path": "IxCCGrounding/Syntax.lean",
+   "imports":
+   ["IxCK.Kernel.Core",
+    "IxCC.Src.Semantics",
+    "IxCC.Src.Readback",
+    "IxCC.Src.Relevance.Syntax"]},
+  "IxCCGrounding.Support":
+  {"path": "IxCCGrounding/Support.lean",
+   "imports":
+   ["IxCCGrounding.Apply",
+    "IxCCGrounding.Lits",
+    "IxCC.Src.Proof.Unfold",
+    "IxCC.Sem.Bind"]},
+  "IxCCGrounding.Runs":
+  {"path": "IxCCGrounding/Runs.lean",
+   "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Hyps", "IxCCGrounding.Ok"]},
+  "IxCCGrounding.Relation":
+  {"path": "IxCCGrounding/Relation.lean", "imports": ["IxCCGrounding.Model"]},
+  "IxCCGrounding.Ok":
+  {"path": "IxCCGrounding/Ok.lean", "imports": ["IxCCGrounding.Syntax"]},
+  "IxCCGrounding.Model":
+  {"path": "IxCCGrounding/Model.lean", "imports": ["IxCCGrounding.Laws"]},
+  "IxCCGrounding.Lits":
+  {"path": "IxCCGrounding/Lits.lean", "imports": ["IxCCGrounding.Model"]},
+  "IxCCGrounding.Laws":
+  {"path": "IxCCGrounding/Laws.lean",
+   "imports": ["IxCK.Kernel.Denotes", "IxCCGrounding.Syntax"]},
+  "IxCCGrounding.Hyps":
+  {"path": "IxCCGrounding/Hyps.lean", "imports": ["IxCCGrounding.Support"]},
+  "IxCCGrounding.Heads":
+  {"path": "IxCCGrounding/Heads.lean",
+   "imports": ["IxCCGrounding.Apply", "IxCCGrounding.Lits"]},
+  "IxCCGrounding.Ground":
+  {"path": "IxCCGrounding/Ground.lean",
+   "imports":
+   ["IxCCGrounding.Fundamental", "IxCCGrounding.Runs", "IxCCGrounding.Check"]},
+  "IxCCGrounding.Fundamental":
+  {"path": "IxCCGrounding/Fundamental.lean",
+   "imports": ["IxCCGrounding.Hyps", "IxCCGrounding.Heads"]},
+  "IxCCGrounding.Fence":
+  {"path": "IxCCGrounding/Fence.lean", "imports": ["IxCCGrounding.Ground"]},
+  "IxCCGrounding.Eqn":
+  {"path": "IxCCGrounding/Eqn.lean", "imports": ["IxCCGrounding.Apply"]},
+  "IxCCGrounding.Check":
+  {"path": "IxCCGrounding/Check.lean", "imports": ["IxCCGrounding.Ok"]},
+  "IxCCGrounding.Apply":
+  {"path": "IxCCGrounding/Apply.lean", "imports": ["IxCCGrounding.Relation"]},
+  "IxCCGrounding":
+  {"path": "IxCCGrounding.lean",
+   "imports":
+   ["IxCCGrounding.Syntax",
+    "IxCCGrounding.Laws",
+    "IxCCGrounding.Model",
+    "IxCCGrounding.Lits",
+    "IxCCGrounding.Relation",
+    "IxCCGrounding.Apply",
+    "IxCCGrounding.Support",
+    "IxCCGrounding.Heads",
+    "IxCCGrounding.Hyps",
+    "IxCCGrounding.Fundamental",
+    "IxCCGrounding.Ok",
+    "IxCCGrounding.Eqn",
+    "IxCCGrounding.Runs",
+    "IxCCGrounding.Check",
+    "IxCCGrounding.Ground",
+    "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
    "imports": ["IxCC.Xv.Semantics", "IxCC.Lir.Operands"]},

@@ -90,6 +90,34 @@ def fenceAssertions (root : FilePath) (proofs : List String) : IO (List String) 
     axioms := axioms ++ (← axiomAssertions (← IO.FS.readFile path))
   return axioms
 
+/-- The grounding library's fence (`IxCCGrounding/Fence.lean`), built with the library by the
+required check `ixcc-grounding`, not by the shared proof aggregate. -/
+def groundingFence : String := "IxCCGrounding/Fence.lean"
+
+/-- The grounding library's modules and its fence's exact axiom assertions. -/
+def groundingAssertions (root : FilePath) (graph : Json) : IO (List String × List String) := do
+  let modules := (← closure graph ["IxCCGrounding"]).filter (·.startsWith "IxCCGrounding")
+  need (modules.contains "IxCCGrounding.Fence") "the grounding library no longer builds its fence"
+  return (modules, ← axiomAssertions (← IO.FS.readFile (root / groundingFence)))
+
+/-- The kernel's model, which only the grounding library may import. -/
+def modelModule (name : String) : Bool :=
+  ["IxCK.Kernel.Denotes", "IxCK.Kernel.SetModel", "IxCK.Kernel.SetTheory", "IxCK.Kernel.Verify"].any
+    fun p => name == p || name.startsWith (p ++ ".")
+
+/-- The executables built by `ixcc-grounding` rather than by the shared program build. -/
+def groundingTargets : List String := ["tests-grounding"]
+
+/-- No module of `names`' closure is the grounding library's or imports the kernel's model. -/
+def beside (graph : Json) (what : String) (names : List String) : IO Unit := do
+  let modules ← pairs (← field graph "modules")
+  for name in ← closure graph names do
+    need (!name.startsWith "IxCCGrounding")
+      s!"{what} imports the grounding library: {name}"
+    if let some (_, entry) := modules.find? (·.1 == name) then
+      for imp in ← (← arrField entry "imports").toList.mapM string do
+        need (!modelModule imp) s!"{what} imports the kernel's model: {name} imports {imp}"
+
 /-- Runtime failure assertions of each suite `S`, whose `IxCCTests.S.Run`
 module must be reachable from its executable root `IxCCTests.S.Main`. -/
 def suiteFailures (root : FilePath) (graph : Json) (suites : List String) :
@@ -109,9 +137,13 @@ def coverage (root : FilePath) (graph : Json) (baseline : String)
   let proofs := (← closure graph ["IxCCTests.Proofs"]).filter (· != "IxCCTests.Proofs")
   let axioms ← fenceAssertions root proofs
   let failures ← suiteFailures root graph suites
+  let (gmodules, gaxioms) ← groundingAssertions root graph
   return Json.mkObj [("baseline", toJson baseline),
     ("proof_modules", toJson proofs),
     ("axiom_count", toJson axioms.length), ("axiom_sha256", toJson (← digest axioms)),
+    ("grounding_modules", toJson gmodules),
+    ("grounding_axiom_count", toJson gaxioms.length),
+    ("grounding_axiom_sha256", toJson (← digest gaxioms)),
     ("runtime_suites", toJson suites),
     ("runtime_failure_count", toJson failures.length),
     ("runtime_failure_sha256", toJson (← digest failures))]
@@ -125,6 +157,12 @@ def checkCoverage (root : FilePath) (graph : Json) : IO Unit := do
   need (axioms.length == (← nat (← field expected "axiom_count")) &&
     (← digest axioms) == (← strField expected "axiom_sha256"))
     "required axiom assertions or expected messages changed; review the coverage inventory"
+  let (gmodules, gaxioms) ← groundingAssertions root graph
+  for name in ← (← arrField expected "grounding_modules").toList.mapM string do
+    need (gmodules.contains name) s!"the grounding library no longer builds {name}"
+  need (gaxioms.length == (← nat (← field expected "grounding_axiom_count")) &&
+    (← digest gaxioms) == (← strField expected "grounding_axiom_sha256"))
+    "grounding axiom assertions or expected messages changed; review the coverage inventory"
   let suites ← (← arrField expected "runtime_suites").toList.mapM string
   let failures ← suiteFailures root graph suites
   need (failures.length == (← nat (← field expected "runtime_failure_count")) &&
@@ -142,6 +180,11 @@ def check (root : FilePath) : IO Unit := do
     need (!name.startsWith "IxCCTests" &&
       !["Examples", "Fixtures", "Fence", "Tests", "WellModedGen", "ThesisBench"].any (name.endsWith ·))
       s!"production imports regression module {name}"
+  beside actual "production" ["IxCC"]
+  beside actual "the shared proof aggregate" ["IxCCTests.Proofs"]
+  for (name, target) in ← pairs (← field actual "targets") do
+    if (← strField target "kind") == "lean_exe" && !groundingTargets.contains name then
+      beside actual s!"shared program {name}" (← (← arrField target "roots").toList.mapM string)
   checkCoverage root actual
   IO.println s!"build-graph ok: {production.length} production modules, exact source/import inventory"
 
