@@ -624,7 +624,8 @@ def preparedOk (b : Binding) (E : Ixon.Env) (t : RoleTable) (order : List Addres
 
 theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
     {t : RoleTable} {order : List Address} (h : preparedOk b E t order = true) :
-    ∃ (pre : Reader.Prelude .anon) ev ds envA, Reader.preludeFor t = .ok pre ∧
+    ∃ (pre : Reader.Prelude .anon) (ev : Evidences .anon) (ds : Array (Declaration .anon))
+      (envA : Env .anon), Reader.preludeFor t = .ok pre ∧
       Admission.prepareWith Address.admissionHash b pre admissionLimits (recordsOf E order)
         (blobsOf E order) (hintsOf E) = .ok (ev, ds) ∧
       Cached.AcceptsRefUnder .strict .verified ev
