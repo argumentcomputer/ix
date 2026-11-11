@@ -6,8 +6,10 @@ Ordinary Lean declarations that `kernel-entry-cases`
 (`Tests.Ix.Kernel.EntryCases`) loads from this module's `.olean`, compiles
 with Ix's compiler and submits, as canonical record bytes, to the certified
 entry `Ix.Kernel.Admission.checkBytes`. Lean's kernel checked every
-declaration here except `falseThm`, whose value is `True.intro` installed
-unchecked (`TutorialMeta.bad_thm`): it is the one input of the wrong type.
+declaration here except the ones installed unchecked
+(`TutorialMeta.bad_thm`, `bad_decl`), the inputs of the wrong type:
+`levelWrong`, `falseThm` (its value is `True.intro`), `nb4IotaFalse` and
+`nb4CtorFalse`.
 -/
 
 open Tests.Ix.Kernel.TutorialMeta
@@ -123,6 +125,23 @@ inductive MArg where
   | named : Nat → MTm → MArg
 end
 
+/-- Nested blocks whose index domain mentions a parameter: the nested
+occurrences' index arguments (`a₀`, `[]`) mention the parameters too. -/
+inductive NB (α : Type) (a₀ : α) : α → Type where
+  | base : NB α a₀ a₀
+  | mk : List (NB α a₀ a₀) → NB α a₀ a₀
+
+inductive NB4 (α : Type) : List α → Type where
+  | nil : NB4 α []
+  | mk : List (NB4 α []) → NB4 α []
+
+/-- A value by `NB4`'s recursors (both motives), and its ι reduction. -/
+noncomputable def nb4Val (t : NB4 Nat []) : Nat :=
+  NB4.rec (motive_1 := fun _ _ => Nat) (motive_2 := fun _ => Nat) 0 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2 + 1) t
+
+theorem nb4Iota : nb4Val (NB4.mk [NB4.nil]) = 2 := rfl
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
@@ -210,5 +229,12 @@ bad_decl .thmDecl {
 
 -- A theorem of `False`, installed in Lean unchecked.
 bad_thm falseThm : False := unchecked True.intro
+
+-- A false ι equation and a false constructor equation at `NB4`, installed in
+-- Lean unchecked: the modeled route's recursor and constructors must not
+-- equate them.
+bad_thm nb4IotaFalse : nb4Val (NB4.mk [NB4.nil]) = 3 := unchecked (Eq.refl (nb4Val (NB4.mk [NB4.nil])))
+
+bad_thm nb4CtorFalse : NB4.nil (α := Nat) = NB4.mk [] := unchecked (Eq.refl (NB4.nil (α := Nat)))
 
 end Tests.Ix.Kernel.EntryCaseDefs

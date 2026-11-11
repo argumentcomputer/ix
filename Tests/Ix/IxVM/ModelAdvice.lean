@@ -19,6 +19,10 @@ model is witness data. Two properties are tested here:
   with every `iota_j` proof rewritten (`let _ : Nat := 0; p`), so that every
   theorem record, and with it the advice set, has another address. The circuit
   must accept the same claims with it.
+* **Verdicts at a nested block whose index domain mentions a parameter**
+  (`nestedVerdicts`): an ι reduction through its recursors is accepted, and a
+  false ι equation and a false constructor equation, installed in Lean
+  unchecked, are refused.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -37,11 +41,23 @@ namespace Tests.Ix.IxVM.ModelAdvice
 open IxVM.ClaimHarness
 
 /-- Mutual (`Even`/`Odd`, `SoloA`/`SoloB`) and nested (`Tree`, `DedupM`,
-`AuxTie`) fixtures, types and recursors. -/
+`AuxTie`, and `NestParIdx`/`NestListIdx`, whose index domains mention a
+parameter) fixtures, types and recursors. -/
 def modeledNames : List String := [
   "IxVMInd.Even", "IxVMInd.Odd", "IxVMInd.Even.rec", "IxVMInd.Odd.rec",
   "IxVMInd.SoloA.rec", "IxVMInd.Tree", "IxVMInd.Tree.rec", "IxVMInd.Tree.rec_1",
-  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec"]
+  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec",
+  "IxVMInd.NestParIdx.rec", "IxVMInd.NestListIdx.rec"]
+
+/-- Claims on a nested block whose index domain mentions a parameter
+(`Tests.Ix.Kernel.EntryCaseDefs.NB4`), with the verdict the circuit must give:
+an ι reduction through both recursors, and a false ι equation and a false
+constructor equation installed in Lean unchecked (`bad_thm` declares their
+names at the root). -/
+def nestedVerdicts : List (Lean.Name × Bool) := [
+  (`Tests.Ix.Kernel.EntryCaseDefs.nb4Iota, true),
+  (`nb4IotaFalse, false),
+  (`nb4CtorFalse, false)]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
@@ -123,6 +139,15 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model"))
+  -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
+  let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
+  let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv
+  let verdictCase (n : Lean.Name) (accept : Bool) : Builder := fun _ => do
+    let some target := fixEnv.getAddr? (Ix.Name.fromLeanName n)
+      | throw s!"{n} is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv fixEnv true
+    Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
+  let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
   return if digestOk && differ && rc == 0 then 0 else 1
 

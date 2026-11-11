@@ -204,6 +204,10 @@ def cases : List Case := [
   { label := "mutual-structural-recursion",
     seeds := [seed "Tm.size", seed "Args.size", seed "Tm.sizeApp"], expected := .accept },
   { label := "mutual-nested-inductive", seeds := [seed "MTm", seed "MArg"], expected := .accept },
+  -- nested blocks whose index domain mentions a parameter, with an ι
+  -- reduction through both recursors
+  { label := "nested-parameter-index", seeds := [seed "NB", seed "NB4", seed "nb4Iota"],
+    expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in
   -- canonical form, equal at every valuation (only the Géran fallback of the
@@ -291,6 +295,16 @@ def cases : List Case := [
   -- `bad_thm` declares its name at the root
   { label := "false-theorem", seeds := [`falseThm],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `falseThm with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- a false ι equation and a false constructor equation at the nested
+  -- block `NB4` (`bad_thm` declares their names at the root)
+  { label := "nested-parameter-index-false-iota", seeds := [`nb4IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `nb4IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-parameter-index-false-constructor", seeds := [`nb4CtorFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `nb4CtorFalse with
       | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 

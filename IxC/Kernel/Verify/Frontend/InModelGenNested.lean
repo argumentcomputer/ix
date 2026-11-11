@@ -797,7 +797,8 @@ theorem push_thm_map {o : Array (Declaration md)} {nm : Key md} {nm' : Key md'} 
 
 -- The elaboration budget: one theorem walks all of `genNested` (about 930 lines of
 -- generator, each emitted term descended by `rg`); genMutual's 4000000 ran out at the
--- last step (the projection artifacts). It bounds elaboration only.
+-- last step (the projection artifacts). It bounds elaboration only, as does the first
+-- `simp`'s step bound (it inlines every `let` of the generator).
 set_option maxHeartbeats 10000000 in
 theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
@@ -806,7 +807,8 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   obtain ⟨types, ctors, recs⟩ := b
   obtain ⟨hty, hct, hrc⟩ := hb
   unfold genNested
-  simp only [← Bool.cond_eq_ite, except_throw_bind, BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
+  simp (config := { maxSteps := 400000 }) only [← Bool.cond_eq_ite, except_throw_bind,
+    BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
     BlockRec.mapKeys_recs, List.length_map]
   cases types with
   | nil => exact ExRel.throw'

@@ -206,6 +206,17 @@ public abbrev PredOver (α : Type) : Type := α → Prop
 public inductive HiddenIdx (α : Type) : PredOver α where
   | mk : (a : α) → HiddenIdx α a
 
+-- Nested blocks whose index domain mentions a parameter: the nested
+-- occurrences' index arguments (`a₀`, `[]`) mention the parameters, which
+-- the modeller lifts past a minor premise's binders.
+public inductive NestParIdx (α : Type) (a₀ : α) : α → Type where
+  | base : NestParIdx α a₀ a₀
+  | mk : List (NestParIdx α a₀ a₀) → NestParIdx α a₀ a₀
+
+public inductive NestListIdx (α : Type) : List α → Type where
+  | nil : NestListIdx α []
+  | mk : List (NestListIdx α []) → NestListIdx α []
+
 public def thmMajorWant (n : Nat) (_pf : n = 1) : Nat := n
 
 @[expose] public def thmMajorUse : Nat :=
