@@ -14,7 +14,8 @@ under the assumptions collected in `Assumed` and the fragment hypotheses of
 
 Also here: the certified β step of the rules (`red_beta_certified`), which is
 what IxVM's β has to produce at a binder whose datum may be a proposition
-(there `Red.betaGate` does not apply), and `Infer.toIO`, the kernel-side lemma that turns
+(there `Red.betaGate` does not apply; IxVM's `peel_beta_cert`, outside the
+slice's fragment), and `Infer.toIO`, the kernel-side lemma that turns
 the certificate IxVM's full-grade inference would compute into the io-grade
 certificate the rule asks for. -/
 

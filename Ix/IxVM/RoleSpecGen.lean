@@ -3,6 +3,7 @@ module
 public import IxC.Kernel.Roles
 public import IxC.Kernel.RoleEquations
 public import Ix.SpecDigest.Decode
+public import IxC.Kernel.TypeChecker
 
 /-! # The role specifications, rendered for the circuit
 
@@ -192,6 +193,16 @@ def level (ps : List LevelParam) : Level → Except String RVal
     if ps.contains i then pure (rStore "KernelTypes::KLevelNode::Param" [.raw (toString (ps.idxOf i))])
     else throw s!"level parameter {i} is not among {ps}"
 
+/-- A binder's datum (D2) as the circuit's level, whose zero-ness it is: `never ↦
+succ zero`, `ifAllZero [] ↦ zero`, `ifAllZero [p₁, …, pₖ] ↦ max p₁ (max … pₖ)`. -/
+def pwLevel (ps : List LevelParam) (pw : PropWhen) : Except String RVal :=
+  match pw.toList? with
+  | none => pure (rStore "KernelTypes::KLevelNode::Succ" [rStore "KernelTypes::KLevelNode::Zero" []])
+  | some [] => pure (rStore "KernelTypes::KLevelNode::Zero" [])
+  | some qs => do
+    let lvls ← qs.mapM fun q => level ps (.param q)
+    pure (lvls.dropLast.foldr (fun l acc => rStore "KernelTypes::KLevelNode::Max" [l, acc]) lvls.getLast!)
+
 def roleKey : Key .anon → Except String Nat
   | .role r => pure (roleIdx r)
   | _ => throw "a specification mentions a key that is not a role"
@@ -208,9 +219,10 @@ def expr (ps : List LevelParam) (depth : Nat) : Expr .anon → Except String RVa
   | .const k us => do
     pure (rStore "KernelTypes::KExprNode::Const" [rBoundAddr (← roleKey k), rList (← us.mapM (level ps))])
   | .app f a => do pure (rStore "KernelTypes::KExprNode::App" [← expr ps depth f, ← expr ps depth a])
-  | .lam t b _ => do pure (rStore "KernelTypes::KExprNode::Lam" [← expr ps depth t, ← expr ps (depth + 1) b])
-  | .forallE t b _ => do
-    pure (rStore "KernelTypes::KExprNode::Forall" [← expr ps depth t, ← expr ps (depth + 1) b])
+  | .lam t b m => do
+    pure (rStore "KernelTypes::KExprNode::Lam" [← expr ps depth t, ← expr ps (depth + 1) b, ← pwLevel ps m.pw])
+  | .forallE t b m => do
+    pure (rStore "KernelTypes::KExprNode::Forall" [← expr ps depth t, ← expr ps (depth + 1) b, ← pwLevel ps m.pw])
   | .letE t v b _ => do
     pure (rStore "KernelTypes::KExprNode::Let" [← expr ps depth t, ← expr ps depth v, ← expr ps (depth + 1) b])
   | .lit _ => throw "a literal in a specification"
@@ -260,28 +272,60 @@ def Source.groupNeeds (src : Source) (g : List Role) : List Role :=
 /-- `Nat`, through the binding, at its index `nat`. -/
 def natT (nat : Nat) : RVal := rStore "KernelTypes::KExprNode::Const" [rBoundAddr nat, rNil]
 
+/-! ## Binder data (D2)
+
+The circuit's binders carry their datum (`KExprNode::Lam(ty, body, ℓ)`, the
+zero-ness of `ℓ`). The specification bytes keep the pins' raw binder data
+(`BasisDSL` writes `never` at every binder), so every rendered term is first
+annotated by IxC's own pass (`Ix.Kernel.annotateCore` at `.verified`), over the
+roles' declarations, themselves annotated in the schedule's order. A bound
+constant carries the data IxC's annotation gives its own type (the witness's
+binder data), so the two agree wherever the circuit compares them (the
+pinned types structurally, the others by definitional equality). The data are
+a function of the specified terms, so they too come from the bytes. -/
+
+/-- `ci` with the type `t`. -/
+def withType (ci : ConstantInfo .anon) (t : Expr .anon) : ConstantInfo .anon :=
+  match ci with
+  | .axiomInfo v => .axiomInfo { v with type := t }
+  | .defnInfo v x h => .defnInfo { v with type := t } x h
+  | .thmInfo v x => .thmInfo { v with type := t } x
+  | .indInfo v caps => .indInfo { v with type := t } caps
+  | .ctorInfo v nP nF => .ctorInfo { v with type := t } nP nF
+  | .recInfo v mI rP rules => .recInfo { v with type := t } mI rP rules
+  | .projInfo tbl => .projInfo tbl
+
+/-- IxC's annotation of the closed term `t` over `env`. -/
+def annotateSpec (env : Env .anon) (what : String) (t : Expr .anon) : Except String (Expr .anon) :=
+  match Ix.Kernel.annotateCore .verified env Ix.Kernel.checkFuel 0 t with
+  | .ok t' => pure t'
+  | .error e => throw s!"annotating {what} failed: {e}"
+
+/-- The role at index `i` of the bytes, as a constant. -/
+def roleConst (i : Nat) (us : List Level := []) : Expr .anon :=
+  .const (.role (Role.all.getD i .nat)) us
+
+/-- A raw binder datum, recomputed by the annotation. -/
+def rawMeta : BinderMeta := { pw := .never }
+
 /-- `λ (x y : Nat), side`. -/
-def closeEquationSide (nat : Nat) (side : Expr .anon) : Except String String := do
-  let root := rStore "KernelTypes::KExprNode::Lam"
-    [natT nat, rStore "KernelTypes::KExprNode::Lam" [natT nat, ← expr [] 2 side]]
-  pure (renderArm root)
+def closeEquationSide (env : Env .anon) (nat : Nat) (side : Expr .anon) : Except String String := do
+  let n := roleConst nat
+  let inner : Expr .anon := .lam n (side.abstract1 1) rawMeta
+  let root : Expr .anon := .lam n (inner.abstract1 0) rawMeta
+  pure (renderArm (← expr [] 0 (← annotateSpec env "an operation's equation side" root)))
 
 /-- `Π (x y : Nat) (h₀ : hyp₀) …, @Eq.{1} Nat lhs rhs`, for `Nat` and `Eq` at
 the indices `nat` and `eq`. -/
-def closeCertificate (nat eq : Nat) (hyps : List (Expr .anon)) (lhs rhs : Expr .anon) :
+def closeCertificate (env : Env .anon) (nat eq : Nat) (hyps : List (Expr .anon)) (lhs rhs : Expr .anon) :
     Except String String := do
-  let depth := 2 + hyps.length
-  let eqHead := rStore "KernelTypes::KExprNode::Const"
-    [rBoundAddr eq, rList [rStore "KernelTypes::KLevelNode::Succ" [rStore "KernelTypes::KLevelNode::Zero" []]]]
-  let eqn := rStore "KernelTypes::KExprNode::App"
-    [rStore "KernelTypes::KExprNode::App" [rStore "KernelTypes::KExprNode::App" [eqHead, natT nat], ← expr [] depth lhs],
-     ← expr [] depth rhs]
-  let mut body := eqn
+  let n := roleConst nat
+  let mut body : Expr .anon := .app (.app (.app (roleConst eq [.succ .zero]) n) lhs) rhs
   for (h, i) in hyps.zipIdx.reverse do
-    body := rStore "KernelTypes::KExprNode::Forall" [← expr [] (2 + i) h, body]
-  let root := rStore "KernelTypes::KExprNode::Forall"
-    [natT nat, rStore "KernelTypes::KExprNode::Forall" [natT nat, body]]
-  pure (renderArm root)
+    body := .forallE h (body.abstract1 (2 + i)) rawMeta
+  body := .forallE n (body.abstract1 1) rawMeta
+  body := .forallE n (body.abstract1 0) rawMeta
+  pure (renderArm (← expr [] 0 (← annotateSpec env "an operation's certificate" body)))
 
 /-! ## Per-role data, from the source -/
 
@@ -336,9 +380,9 @@ def ctorCount (src : Source) (r : Role) : Except String Nat := do
     | _, _ => pure ()
   pure count
 
-/-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 the inert
-axiom `sorryAx` (the row's `inert`: tolerated as a declaration, never
-usable), 5 definition specified by its equations. -/
+/-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 an inert axiom
+(the row's `inert`: `sorryAx` or one of Lean's compiler-trust axioms, tolerated
+as a declaration, never usable), 5 definition specified by its equations. -/
 def specKind (src : Source) (r : Role) : Nat :=
   match (src.row r).spec with
   | .block _ => 0
@@ -355,17 +399,45 @@ def levels (src : Source) (r : Role) : Except String Nat := do
   | .axiom n _ => pure n
   | .eqns n _ _ => pure n
 
-/-- The specified type; an axiom of any type has none (`Sort 0` stands in). -/
-def specType (src : Source) (r : Role) : Except String String := do
+/-- The declarations role `r` contributes to the annotation environment, raw:
+its whole block for a block member (in the block's order), otherwise an axiom of
+its specified type at its positional levels. -/
+def rawDecls (src : Source) (r : Role) : Except String (List (ConstantInfo .anon)) := do
+  let ax (n : Nat) (t : Expr .anon) : ConstantInfo .anon :=
+    .axiomInfo { name := .role r, levelParams := List.range n, type := t }
   match (src.row r).spec with
-  | .block _ =>
-    let v := (← member src r).1.toConstantVal
-    pure (renderArm (← expr v.levelParams 0 v.type))
-  | .anchor n t => pure (renderArm (← expr (List.range n) 0 t))
-  | .ops t _ => pure (renderArm (← expr [] 0 t))
-  | .axiom n (some t) => pure (renderArm (← expr (List.range n) 0 t))
+  | .block _ => pure (← member src r).2
+  | .anchor n t => pure [ax n t]
+  | .ops t _ => pure [ax 0 t]
+  | .axiom n (some t) => pure [ax n t]
+  | .axiom _ none => pure []
+  | .eqns n t _ => pure [ax n t]
+
+/-- The roles' declarations with annotated types, each annotated over the ones
+before it, in the schedule's order (a group's dependencies come before it). -/
+def annotEnv (src : Source) : Except String (Env .anon) := do
+  let mut consts : List (ConstantInfo .anon) := []
+  for g in src.committed.schedule.groups do
+    for r in g do
+      for ci in ← rawDecls src r do
+        unless consts.any (·.name == ci.name) do
+          let t ← annotateSpec ⟨consts⟩ s!"a type of {repr r}'s specification" ci.toConstantVal.type
+          consts := withType ci t :: consts
+  return ⟨consts⟩
+
+/-- The specified type, annotated; an axiom of any type has none (`Sort 0`
+stands in). -/
+def specType (src : Source) (env : Env .anon) (r : Role) : Except String String := do
+  let annotated (ps : List LevelParam) : Except String String := do
+    let some ci := env.find? (.role r) | throw s!"{repr r} has no annotated declaration"
+    pure (renderArm (← expr ps 0 ci.toConstantVal.type))
+  match (src.row r).spec with
+  | .block _ => annotated (← member src r).1.toConstantVal.levelParams
+  | .anchor n _ => annotated (List.range n)
+  | .ops _ _ => annotated []
+  | .axiom n (some _) => annotated (List.range n)
   | .axiom _ none => pure "(&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))))"
-  | .eqns n t _ => pure (renderArm (← expr (List.range n) 0 t))
+  | .eqns n _ _ => annotated (List.range n)
 
 /-- An operation's equations (`Spec.ops`), from IxC's specification set. -/
 def equations (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) :=
@@ -391,32 +463,26 @@ def eqnLevels (src : Source) (r : Role) : List LevelParam :=
 
 /-- `λ vars, side`: an unconditional equation's side, closed over its
 variables. -/
-def closeEqnSide (src : Source) (r : Role) (e : Equation .anon) (side : Expr .anon) :
+def closeEqnSide (src : Source) (env : Env .anon) (r : Role) (e : Equation .anon) (side : Expr .anon) :
     Except String String := do
   let ps := eqnLevels src r
-  let mut body ← expr ps e.vars.length side
+  let mut body := side
   for (t, i) in e.vars.zipIdx.reverse do
-    body := rStore "KernelTypes::KExprNode::Lam" [← expr ps i t, body]
-  pure (renderArm body)
+    body := .lam t (body.abstract1 i) rawMeta
+  pure (renderArm (← expr ps 0 (← annotateSpec env s!"an equation side of {repr r}" body)))
 
 /-- `Π vars, Π hyps, @Eq.{level} carrier lhs rhs`: an equation's statement,
 which a proof's type must meet, for `Eq` at the index `eq`. -/
-def closeEqnStatement (src : Source) (eq : Nat) (r : Role) (e : Equation .anon) :
+def closeEqnStatement (src : Source) (env : Env .anon) (eq : Nat) (r : Role) (e : Equation .anon) :
     Except String String := do
   let ps := eqnLevels src r
   let n := e.vars.length
-  let depth := n + e.hyps.length
-  let eqHead := rStore "KernelTypes::KExprNode::Const" [rBoundAddr eq, rList [← level ps e.level]]
-  let mut body := rStore "KernelTypes::KExprNode::App"
-    [rStore "KernelTypes::KExprNode::App"
-      [rStore "KernelTypes::KExprNode::App" [eqHead, ← expr ps depth e.carrier],
-       ← expr ps depth e.lhs],
-     ← expr ps depth e.rhs]
+  let mut body : Expr .anon := .app (.app (.app (roleConst eq [e.level]) e.carrier) e.lhs) e.rhs
   for (h, j) in e.hyps.zipIdx.reverse do
-    body := rStore "KernelTypes::KExprNode::Forall" [← expr ps (n + j) h, body]
+    body := .forallE h (body.abstract1 (n + j)) rawMeta
   for (t, i) in e.vars.zipIdx.reverse do
-    body := rStore "KernelTypes::KExprNode::Forall" [← expr ps i t, body]
-  pure (renderArm body)
+    body := .forallE t (body.abstract1 i) rawMeta
+  pure (renderArm (← expr ps 0 (← annotateSpec env s!"an equation statement of {repr r}" body)))
 
 /-- The native rule that fires on a role's constant (the row's
 `Ix.SpecDigest.nativeOp`): its family (1 `Nat` operations, 2 `String`,
@@ -432,7 +498,7 @@ def namedRoles : List Role :=
   [.nat, .natZero, .natSucc, .bool, .boolFalse, .boolTrue, .eq, .eqRefl,
    .listNil, .listCons, .quot, .quotMk, .quotLift, .quotInd, .quotSound,
    .string, .stringOfList, .char, .charOfNat, .natAdd, .propext, .choice,
-   .sorryAx, .decidableIsTrue, .decidableIsFalse, .ofDecideEqTrue, .ofDecideEqFalse,
+   .decidableIsTrue, .decidableIsFalse, .ofDecideEqTrue, .ofDecideEqFalse,
    .natLe, .natDecLe, .int, .intOfNat, .intNegSucc, .bitVecOfNat, .byteArrayEmpty,
    .intLe, .intDecLe]
 
@@ -484,6 +550,7 @@ def renderSource (src : Source) : Except String String := do
       throw s!"{repr r} has 64 or more equations, which the rendered keys cannot index"
   let nat ← src.indexOf Role.nat.leanName
   let eq ← src.indexOf Role.eq.leanName
+  let env ← annotEnv src
   let bytes := src.digest.hash.data.toList.map fun b => s!"UInt8::BYTE_{b.toNat}"
   let mut fns : Array String := #[]
   fns := fns.push (formalAiurFn "inline fn spec_version() -> Field" s!"      {c.specVersion}")
@@ -531,7 +598,7 @@ def renderSource (src : Source) : Except String String := do
       return toString (← ctorCount src r)) "0"))
   let dummy := "(&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))))"
   fns := fns.push (formalAiurFn "fn role_type(tbl: KernelRoles::RoleTable, r: Field) -> KernelTypes::KExpr"
-    (← byRole (specType src) dummy))
+    (← byRole (specType src env) dummy))
   fns := fns.push (formalAiurFn "fn op_equation_count(r: Field) -> Field"
     (← byRole (fun r => pure (toString (opEquations src r).length)) "0"))
   fns := fns.push (formalAiurFn "fn op_evidence_is_proof(r: Field) -> Field"
@@ -544,10 +611,10 @@ def renderSource (src : Source) : Except String String := do
     for ((hyps, l, rhs), k) in (opEquations src r).zipIdx do
       let key := toString (64 * roleIdx r + k)
       if hyps.isEmpty then
-        lhsArms := lhsArms ++ arm key (← closeEquationSide nat l)
-        rhsArms := rhsArms ++ arm key (← closeEquationSide nat rhs)
+        lhsArms := lhsArms ++ arm key (← closeEquationSide env nat l)
+        rhsArms := rhsArms ++ arm key (← closeEquationSide env nat rhs)
       else
-        certArms := certArms ++ arm key (← closeCertificate nat eq hyps l rhs)
+        certArms := certArms ++ arm key (← closeCertificate env nat eq hyps l rhs)
   fns := fns.push (formalAiurFn "fn op_equation_lhs(tbl: KernelRoles::RoleTable, r: Field, k: Field) -> KernelTypes::KExpr"
     s!"      match 64 * r + k \{\n{lhsArms}{arm "_" dummy}      }")
   fns := fns.push (formalAiurFn "fn op_equation_rhs(tbl: KernelRoles::RoleTable, r: Field, k: Field) -> KernelTypes::KExpr"
@@ -564,10 +631,10 @@ def renderSource (src : Source) : Except String String := do
   for r in Role.all do
     for (e, k) in (eqnsEquations src r).zipIdx do
       let key := toString (64 * roleIdx r + k)
-      stmtArms := stmtArms ++ arm key (← closeEqnStatement src eq r e)
+      stmtArms := stmtArms ++ arm key (← closeEqnStatement src env eq r e)
       if e.hyps.isEmpty then
-        eLhsArms := eLhsArms ++ arm key (← closeEqnSide src r e e.lhs)
-        eRhsArms := eRhsArms ++ arm key (← closeEqnSide src r e e.rhs)
+        eLhsArms := eLhsArms ++ arm key (← closeEqnSide src env r e e.lhs)
+        eRhsArms := eRhsArms ++ arm key (← closeEqnSide src env r e e.rhs)
       else
         condArms := condArms ++ arm key "1"
   fns := fns.push (formalAiurFn "fn eqns_conditional(r: Field, k: Field) -> Field"

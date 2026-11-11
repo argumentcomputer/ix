@@ -1,18 +1,19 @@
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Model.Denotes
+import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.Cached.MainC
 import IxC.Kernel.Verify.Cached.Reference
 
 /-! # Stored definitions denote their constants
 
-The kernel's public `Model` states types only. Its internal invariant
-`EnvModelM` also keeps `defn_reads` (`Model/Annot/EnvModelM.lean`,
-`AcvalDefnInst` in `Model/Annot/Laws.lean`): the reading of every stored
-definition's value is that constant's own leaf. Read through the kernel's
-bridge from the internal reading to the public denotation
-(`Model.Denotes_of_denoteMeta`), this gives a model of the accepted
-environment in which every stored definition's value denotes the constant
-(`checkDecls_model_defn_values`).
+The kernel's public `Model` makes every stored definition denote its value
+(`Model.defn_value`). It reads this off the internal invariant's
+`defn_reads` (`Model/Annot/EnvModelM.lean`, `AcvalDefnInst` in
+`Model/Annot/Laws.lean`): the reading of every stored definition's value is
+that constant's own leaf, and the kernel's bridge from the internal reading to
+the public denotation (`Model.Denotes_of_denoteMeta`) turns it into the
+public clause. `checkDecls_model_defn_values` below states it for the
+executed fold.
 
 The value is the stored one, i.e. the checker's annotation of the declared
 value (binder regimes computed, `let` reduced). Theorems and opaques keep
@@ -28,7 +29,9 @@ accept of the executed fold (`checkDecls_strongModel`) and at both entries
 (`Ix.LeanIngress.checkSource_strongModel`,
 `Ix.Kernel.Admission.checkBytes_strongModel`). Its public clauses
 (`ValueClauses`): definitions denote their values, and a stored constant's
-value reads only its own level parameters. A fired recursor rule keeps its
+value reads only its own level parameters, both fields of the public `Model`
+(`defn_value`, `cval_params`), as is ι (`Model.iota_rule`, here
+`StrongModel.iota_rule`). A fired recursor rule also keeps its
 internal law at the same witness (`StrongModel.rec_rule`), and the rule's
 right-hand side has its public reading (`StrongModel.rec_rhs`). -/
 
@@ -53,14 +56,7 @@ theorem checkDecls_model_defn_values (V : Type w) [SetTheory V] (ev : Evidences 
       ConstantInfo.defnInfo cv value hint ∈ env.consts →
       ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
   obtain ⟨m⟩ := Cached.checkDecls_sound (V := V) rfl accepted
-  refine ⟨Model.ofEnvModelM m, fun cv value hint hmem φ ρ => ?_⟩
-  have hr := m.defn_reads φ cv value ⟨hint, hmem⟩
-  have hv := ((m.base2.wf _ hmem).2.2.2.2.1 cv value hint rfl)
-  have hb := Denotes_of_denoteMeta (V := V) m.base2.cval_closedL 0 value hr
-    (fvarsBelow_zero_of_not_hasFvar hv.1) hv.2.2.2 ρ
-    ⟨m.base2.acval_wellDenoted _ φ ρ, m.acval_validV _ φ ρ⟩
-  rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
-  exact hb
+  exact ⟨Model.ofEnvModelM m, (Model.ofEnvModelM m).defn_value⟩
 
 /-! ## The strong model (step 7.2) -/
 
@@ -95,28 +91,25 @@ constant. -/
 theorem defn_value (m : StrongModel V env) {cv : ConstantVal md} {value : Expr md}
     {hint : ReducibilityHint} (hmem : ConstantInfo.defnInfo cv value hint ∈ env.consts)
     (φ : LevelParam → Nat) (ρ : BVarIdx → V) :
-    Denotes m.model.cval env φ ρ value (m.model.cval cv.name φ) := by
-  have hr := m.internal.defn_reads φ cv value ⟨hint, hmem⟩
-  have hv := (m.internal.base2.wf _ hmem).2.2.2.2.1 cv value hint rfl
-  have hb := Denotes_of_denoteMeta (V := V) m.internal.base2.cval_closedL 0 value hr
-    (fvarsBelow_zero_of_not_hasFvar hv.1) hv.2.2.2 ρ
-    ⟨m.internal.base2.acval_wellDenoted _ φ ρ, m.internal.acval_validV _ φ ρ⟩
-  rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.internal.base2.cval_closedL] at hb
-  exact hb
+    Denotes m.model.cval env φ ρ value (m.model.cval cv.name φ) :=
+  m.model.defn_value cv value hint hmem φ ρ
 
 /-- **Level-parameter irrelevance**: a stored constant's value depends on
 the level assignment only through its own level parameters. -/
 theorem cval_params (m : StrongModel V env) {n : Key md} {ci : ConstantInfo md}
     (h : env.find? n = some ci) {φ₁ φ₂ : LevelParam → Nat}
     (agree : ∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) :
-    m.model.cval n φ₁ = m.model.cval n φ₂ := by
-  rw [model_cval]
-  unfold cvalOf
-  rw [m.internal.base2.acval_params n ci h φ₁ φ₂ agree]
+    m.model.cval n φ₁ = m.model.cval n φ₂ :=
+  m.model.cval_params n ci h φ₁ φ₂ agree
 
 /-- The public value clauses hold of the strong model's public model. -/
 theorem valueClauses (m : StrongModel V env) : ValueClauses m.model :=
   ⟨fun _ _ _ hmem φ ρ => m.defn_value hmem φ ρ, fun _ _ h _ _ agree => m.cval_params h agree⟩
+
+/-- **ι**: every stored recursor rule computes, at the strong model's public model
+(`Model.iota_rule`). -/
+theorem iota_rule (m : StrongModel V env) : IotaLaw m.model.cval env :=
+  m.model.iota_rule
 
 /-- **A fired recursor rule's law**, at the strong model's own witness. -/
 theorem rec_rule (m : StrongModel V env) (φ : LevelParam → Nat) {n : Key md}

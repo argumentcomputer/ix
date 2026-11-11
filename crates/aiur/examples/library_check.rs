@@ -132,7 +132,12 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   // Block/chunk boundaries and odd Merkle layers, compared with the Rust
   // Blake3 crate. This tests the library, not a copied hash implementation.
-  for length in [0, 1, 63, 64, 65, 1023, 1024, 1025, 2048, 2049, 3072, 4097] {
+  // The block loop takes 64 bytes while 64 are left and hands the last 0 to
+  // 63 to the byte loop, so lengths around each 64 and 1024 multiple matter.
+  for length in [
+    0, 1, 63, 64, 65, 127, 128, 129, 960, 1023, 1024, 1025, 1087, 1088, 1089,
+    2047, 2048, 2049, 3072, 4096, 4097, 8193,
+  ] {
     let input: Vec<u8> =
       (0..length).map(|i| u8::try_from(i % 256).unwrap()).collect();
     let expected =

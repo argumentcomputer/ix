@@ -22,12 +22,12 @@ def eval_nf := aiur_fn⟦
   fn eval_nf(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       let w = KernelWhnf::whnf(rc, e, types);
       match (*(w)) {
-        KernelTypes::KExprNode::Lam(t, b) => {
+        KernelTypes::KExprNode::Lam(t, b, bl) => {
           let nt = eval_nf(rc, t, types);
-          (&(KernelTypes::KExprNode::Lam(nt, eval_nf(rc, b, (&(Lists::Node::Cons(t, types))))))) } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
+          (&(KernelTypes::KExprNode::Lam(nt, eval_nf(rc, b, (&(Lists::Node::Cons(t, types)))), bl))) } ,
+        KernelTypes::KExprNode::Forall(t, b, bl) => {
           let nt = eval_nf(rc, t, types);
-          (&(KernelTypes::KExprNode::Forall(nt, eval_nf(rc, b, (&(Lists::Node::Cons(t, types))))))) } ,
+          (&(KernelTypes::KExprNode::Forall(nt, eval_nf(rc, b, (&(Lists::Node::Cons(t, types)))), bl))) } ,
         _ => {  eval_nf_spine(rc, w, types) } ,
       }
     }
@@ -66,9 +66,9 @@ def eval_output := aiur_fn⟦
       assert_eq!(safety, Ixon::DefinitionSafety::Safe, "Eval: unsafe or partial output");
       assert_eq!(UInt64::to_field(lvls), nlvls, "Eval: universe parameter count mismatch");
       let no_recur = (&(Lists::Node::Nil));
-      let output_type = Convert::convert_root(ty, sharing, refs, no_recur, univs);
+      let output_type = Convert::convert_root(ty, sharing, refs, no_recur, univs, output, 0);
       assert_eq!(KernelCheck::kexpr_struct_eq(output_type, input_type), 1, "Eval: output type does not match input");
-      Convert::convert_root(value, sharing, refs, no_recur, univs)
+      Convert::convert_root(value, sharing, refs, no_recur, univs, output, 1)
     }
 ⟧
 

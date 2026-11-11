@@ -55,7 +55,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env md} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {J : Judgements md}
 
 /-! ## `Eq`-slot rigidity, second use -/
 
@@ -109,7 +109,7 @@ set_option maxHeartbeats 3200000 in
 /-- **The member cons's η key, P tier** — `etaLawKeyS`'s transpose, and
 the campaign's first `EtaLaw` producer. -/
 theorem memberEtaLaw : (MemberEtaLaw (md := md)) V := by
-  intro μ F blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
+  intro μ J blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
     hntc T cvT caps hfT hcape hnresT hp h0 hbT hbC hfam m₂ hac φ' C hC
   -- `MemberValR`'s data
   obtain ⟨type', hcv, hcvAeq, hms, cvm₀, mval₀, hint₀, hfm₀, hlpm₀,

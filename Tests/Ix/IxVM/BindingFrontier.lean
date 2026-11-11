@@ -104,11 +104,12 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
         name := s!"native-Char.ofNat-erased-helper-{illTyped}-assumed-{assumed}"
         env, claim
         expectedError := if illTyped then some typeError else none
-        requiredQuery := if illTyped then none else some `try_str_back }
+        -- `String.back` (B3) is no longer native (REMOVED-MOVES.md): the verdicts are the test.
+        requiredQuery := none }
   let (valid, validClaim) ← charConsumer base table
   result := result.push {
     name := "late-equation-valid-earlier-evidence"
-    env := valid, claim := validClaim, requiredQuery := some `try_str_back }
+    env := valid, claim := validClaim }
   let invalid ← invalidWfEvidence base table
   let (invalid, invalidClaim) ← charConsumer invalid table
   result := result.push {

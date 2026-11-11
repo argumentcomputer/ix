@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Model.JudgeSound
 public import IxC.Kernel.Model.FoldJ
+public import IxC.Kernel.Model.DeclIndJ
 public import IxC.Kernel.Rules.Annot
 public import IxC.Kernel.Model.Rules.Sound
 public import IxC.Kernel.Model.Rules.Reads
@@ -18,21 +19,22 @@ import all IxC.Kernel.PropWhen
 public section
 
 /-!
-# The derivation package (lane l5, obligation L5)
+# The derivation package
 
 `rulesJ` is the judgement package of the rules tier: annotation is `Annot`
 (`Rules/Annot.lean`), inference is `Infer` at the full grade, conversion is
 `DefEq`, a sort check is a reduction to a sort, the proposition test is a level
 that is zero under every assignment, and a theorem is stored with its annotated
-value (decision D11). It is the package the records an IxVM refinement produces
-are stated over.
+value (so that the value can be read in the model). It is the package the records
+an IxVM refinement produces are stated over.
 
 `judgeSound_rulesJ` discharges `JudgeSound` at any model whose rules inputs hold,
 from the derivations' soundness (`Rules.infer_sound`, `Rules.defeq_sound`) and
 the readability of an accepted subject (`infer_reads`, by recursion on the
 derivation). `axiomBits_rulesJ` gives the pinned axioms' bits over derivations
 (by inversion, `Rules/Inversion.lean`), and `foldRules` is `foldJ` at this package,
-which then asks only for the inductive kind's step.
+which then asks only for the inductive kind's step; `foldRulesModeled` discharges
+it when every inductive block takes the modeled route (`Model/DeclIndJ.lean`).
 -/
 
 namespace Ix.Kernel.Model
@@ -345,5 +347,23 @@ theorem foldRules {Ind : Env md → List (ConstantInfo md) → Nat → Env md �
     {env env' : Env md} {ds : List (Declaration md)} :
     DeclsRunJ rulesJ Ind env ds env' → EnvModelT V μ env → EnvModelT V μ env' :=
   foldJ rulesJ_thmValue (fun mp _ => judgeSound_rulesJ_of mp) axiomBits_rulesJ hind
+
+/-! ## The modeled inductive route over derivations -/
+
+/-- **A modeled block, over derivations**: the restated record at `rulesJ` gives
+the two facts `foldRules` asks of the inductive kind. -/
+theorem modeledStep_rulesJ {env env₂ : Env md} {block : List (ConstantInfo md)}
+    (mp : EnvModelM V μ env) (hE : EtaFamiliesClosed env)
+    (h : DeclIndRunJ rulesJ env block env₂) :
+    EtaFamiliesClosed env₂ ∧ ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ :=
+  declIndStepJ judgeFrames_rulesJ (fun m => judgeSound_rulesJ_of m) mp hE h
+
+/-- **The fold at the derivation package, every inductive block modeled**:
+`foldRules` with its inductive step discharged by `modeledStep_rulesJ`. -/
+theorem foldRulesModeled {env env' : Env md} {ds : List (Declaration md)} :
+    DeclsRunJ rulesJ (fun e b _ e₂ => DeclIndRunJ rulesJ e b e₂)
+      env ds env' →
+    EnvModelT V μ env → EnvModelT V μ env' :=
+  foldRules (fun {_} mp _ hE {_ _ _} h => modeledStep_rulesJ mp hE h)
 
 end Ix.Kernel.Model

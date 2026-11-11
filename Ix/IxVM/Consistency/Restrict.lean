@@ -1,9 +1,10 @@
 import Ix.IxVM.Consistency.Statement
 import IxC.Kernel.Model.Restrict
 import IxC.Kernel.Semantics.EnvFacts
+import IxC.Kernel.Verify.Rename.Installs
 
 /-!
-# The claimed sub-environment's model (lane l5, for obligation L7)
+# The claimed sub-environment's model (for obligation L7)
 
 `ConsistentRead`'s model conjunct is over `claimedEnv env`: the installed
 environment without the model families' constants. The fold gives a model of the
@@ -14,9 +15,11 @@ a model-family constant (`KeptKey`): `claimedEnv_find?`. Every input and role ke
 is such a key, and so is every projection table's (`keptKey_of_not_aux`, and a
 table is not a model-family constant). With distinct names, the two agree on
 projection tables too (`claimedEnv_findProj?`). What L7 discharges: distinct
-names (from `InstallStep`) and that every claimed constant's type mentions only
-kept keys (`RefsIn (KeptKey env)`; reader output references input and role
-keys, a projection table's type is a closed sort).
+names (from `InstallStep`), and that every claimed constant's type and every
+claimed definition's value mention only kept keys (`RefsIn (KeptKey env)`; reader
+output references input and role keys, a projection table's type is a closed
+sort). The model's laws are then the claimed constants' own: none of them reads
+a model-family constant.
 -/
 
 namespace IxVM.Consistency
@@ -106,27 +109,99 @@ theorem claimedEnv_findProj? {env : Env .anon} (hnd : (env.consts.map (·.name))
       | none => cases ci <;> first | rfl | exact absurd ⟨_, rfl⟩ hp
       | some x => obtain rfl := hone x hc; rfl
 
+/-- With distinct names, a claimed constant's own key is kept. -/
+theorem keptKey_of_claimed {env : Env .anon} (hnd : (env.consts.map (·.name)).Nodup)
+    {c : ConstantInfo .anon} (hc : c ∈ (claimedEnv env).consts) : KeptKey env c.name := by
+  intro ci hci
+  have hc' := List.mem_filter.mp hc
+  obtain rfl := eq_of_name_eq hnd (Ix.Kernel.Semantics.Env.find?_mem hci) hc'.1
+    (Ix.Kernel.Semantics.Env.find?_name hci)
+  simpa using hc'.2
+
+/-! ## What `Installs` gives -/
+
+/-- One install step grows the environment by fresh constants. -/
+theorem InstallStep.grows {env env₂ : Env .anon} {d : Declaration .anon}
+    (h : InstallStep env d env₂) : Grows (fun _ => True) env env₂ := by
+  obtain ⟨new, rfl, hnd, hfresh, -, -⟩ := h
+  exact ⟨new, rfl, fun c hc => ⟨trivial, hfresh c hc⟩, hnd⟩
+
+/-- **The installed environment's names are distinct.** -/
+theorem Installs.nodup {ds : List (Declaration .anon)} {env : Env .anon} (h : Installs ds env) :
+    (env.consts.map (·.name)).Nodup := by
+  induction h with
+  | nil => exact List.nodup_nil
+  | snoc _ hstep ih => exact hstep.grows.nodup ih
+
+/-- A lookup in front of a list finds a constant of distinct-named new constants. -/
+theorem find?_front {new rest : List (ConstantInfo .anon)} (hnd : (new.map (·.name)).Nodup)
+    {c : ConstantInfo .anon} (hc : c ∈ new) :
+    (⟨new ++ rest⟩ : Env .anon).find? c.name = some c := by
+  unfold Env.find?
+  rw [List.find?_append]
+  obtain ⟨c', hc'⟩ : ∃ c', new.find? (·.name == c.name) = some c' :=
+    Option.isSome_iff_exists.mp (List.find?_isSome.mpr ⟨c, hc, by simp⟩)
+  have hname : c'.name = c.name := by simpa using List.find?_some hc'
+  obtain rfl := eq_of_name_eq hnd (List.mem_of_find?_eq_some hc') hc hname
+  rw [hc']
+  rfl
+
+/-- **Every constant a declaration installs is stored as declared** in the
+environment the declarations install. -/
+theorem Installs.stored {ds : List (Declaration .anon)} {env : Env .anon} (h : Installs ds env) :
+    ∀ {d : Declaration .anon}, d ∈ ds → ∀ {ci₀ : ConstantInfo .anon}, ci₀ ∈ installs d →
+      ∃ ci, env.find? ci₀.name = some ci ∧ StoredAs ci ci₀ := by
+  induction h with
+  | nil => intro d hd; exact absurd hd List.not_mem_nil
+  | snoc _ hstep ih =>
+    intro d hd ci₀ hci₀
+    rcases List.mem_append.mp hd with hd | hd
+    · obtain ⟨ci, hf, hs⟩ := ih hd hci₀
+      exact ⟨ci, hstep.grows.persist hf, hs⟩
+    · obtain rfl := List.mem_singleton.mp hd
+      obtain ⟨new, rfl, hnd, -, hall, -⟩ := hstep
+      obtain ⟨ci, hci, hs⟩ := hall ci₀ hci₀
+      exact ⟨ci, by rw [← hs.name_eq]; exact find?_front hnd hci, hs⟩
+
+/-- **A declared constant at an input or role key is claimed**: the claimed
+sub-environment stores it as declared. -/
+theorem Installs.claimed {ds : List (Declaration .anon)} {env : Env .anon} (h : Installs ds env)
+    {d : Declaration .anon} (hd : d ∈ ds) {ci₀ : ConstantInfo .anon} (hci₀ : ci₀ ∈ installs d)
+    (hk : ∀ b t, ci₀.name ≠ .aux b t) :
+    ∃ ci, (claimedEnv env).find? ci₀.name = some ci ∧ StoredAs ci ci₀ := by
+  obtain ⟨ci, hf, hs⟩ := h.stored hd hci₀
+  exact ⟨ci, by rw [claimedEnv_find? (keptKey_of_not_aux hk)]; exact hf, hs⟩
+
 /-- **The claimed sub-environment's model** (for L7): a model of the installed
-environment, with distinct names, whose claimed constants' types mention only
-kept keys, restricts to `claimedEnv env`. -/
+environment, with distinct names, whose claimed constants' types, claimed
+definitions' values and claimed recursor rules' right-hand sides mention only kept
+keys, restricts to `claimedEnv env`. -/
 def claimedModel {V : Type u} [SetTheory V] {env : Env .anon} (M : Model V env)
     (hnd : (env.consts.map (·.name)).Nodup)
-    (htype : ∀ c ∈ (claimedEnv env).consts, c.toConstantVal.type.RefsIn (KeptKey env)) :
+    (htype : ∀ c ∈ (claimedEnv env).consts, c.toConstantVal.type.RefsIn (KeptKey env))
+    (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ (claimedEnv env).consts →
+      value.RefsIn (KeptKey env))
+    (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ (claimedEnv env).consts →
+      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env)) :
     Model V (claimedEnv env) :=
   M.restrict (K := KeptKey env) (fun _ hK => claimedEnv_find? hK) (claimedEnv_findProj? hnd)
     ⟨keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h),
       keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h),
       keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h),
       keptKey_of_not_aux (fun _ _ h => nomatch h)⟩
-    (fun _ hc => (List.mem_filter.mp hc).1) htype
-    (keptKey_of_not_aux (fun _ _ h => nomatch h)) (keptKey_of_not_aux (fun _ _ h => nomatch h))
+    (fun _ hc => (List.mem_filter.mp hc).1) (fun _ hc => keptKey_of_claimed hnd hc) htype hvalue
+    hrhs (keptKey_of_not_aux (fun _ _ h => nomatch h)) (keptKey_of_not_aux (fun _ _ h => nomatch h))
 
 /-- The model conjunct's form. -/
 theorem nonempty_claimedModel {env : Env .anon}
     (hM : ∀ (V : Type u) [SetTheory V], Nonempty (Model V env))
     (hnd : (env.consts.map (·.name)).Nodup)
-    (htype : ∀ c ∈ (claimedEnv env).consts, c.toConstantVal.type.RefsIn (KeptKey env)) :
+    (htype : ∀ c ∈ (claimedEnv env).consts, c.toConstantVal.type.RefsIn (KeptKey env))
+    (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ (claimedEnv env).consts →
+      value.RefsIn (KeptKey env))
+    (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ (claimedEnv env).consts →
+      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env)) :
     ∀ (V : Type u) [SetTheory V], Nonempty (Model V (claimedEnv env)) :=
-  fun V _ => let ⟨M⟩ := hM V; ⟨claimedModel M hnd htype⟩
+  fun V _ => let ⟨M⟩ := hM V; ⟨claimedModel M hnd htype hvalue hrhs⟩
 
 end IxVM.Consistency

@@ -4,7 +4,8 @@ import Aiur.Modules.Function
 
 Claims: their parsing and the checking entry points (`run_check`, `run_claim`).
 A typing claim refuses a seed outside Lean's logic, an unsafe or partial
-constant or one projected from such a block (`assert_claimable`).
+constant or one projected from such a block, and a seed its binding binds to an
+inert role, `sorryAx` or one of Lean's compiler-trust axioms (`assert_claimable`).
 
 Named Aiur declarations, elaborated together by `IxVM.Program`. -/
 
@@ -530,7 +531,7 @@ def record_unsafe := aiur_fn⟦
 ⟧
 
 def assert_claimable := aiur_fn⟦
-  fn assert_claimable(addr: Bytes::AddressRef) -> () {
+  fn assert_claimable(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       let owner = match c {
         Ixon::Constant::Mk(info, _, _, _) => {
@@ -556,17 +557,21 @@ def assert_claimable := aiur_fn⟦
       };
       assert_eq!(record_unsafe(addr), 0, "claim seed is unsafe or partial");
       assert_eq!(record_unsafe(owner), 0, "claim seed is unsafe or partial");
+      -- An inert axiom (`sorryAx`, Lean's compiler-trust axioms) installs nothing and may have
+      -- no model, so no claim certifies one: its declaration is tolerated only as a dependency
+      -- no accepted constant uses.
+      assert_eq!(KernelRoles::role_is_inert(rc, addr), 0, "claim seed is an inert axiom");
       ()
     }
 ⟧
 
 def assert_leaves_claimable := aiur_fn⟦
-  fn assert_leaves_claimable(leaves: Lists::List<Bytes::AddressRef>) -> () {
+  fn assert_leaves_claimable(rc: KernelRoles::RoleCtx, leaves: Lists::List<Bytes::AddressRef>) -> () {
       match (*(leaves)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(a, rest) => {
-          assert_claimable(a);
-          assert_leaves_claimable(rest) } ,
+          assert_claimable(rc, a);
+          assert_leaves_claimable(rc, rest) } ,
       }
     }
 ⟧
@@ -590,11 +595,11 @@ def run_check_env := aiur_fn⟦
           match KernelRoles::role_ctx_axioms(rc) {
             RBTreeMap::RBTreeMap::Nil => {  walk_leaves_owned(rc, owned) } ,
             RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
-              assert_leaves_claimable(owned);
+              assert_leaves_claimable(rc, owned);
               walk_leaves_transitive(rc, owned) } ,
           } } ,
         Options::Option::Some(r) => {
-          assert_leaves_claimable(owned);
+          assert_leaves_claimable(rc, owned);
           let owned_set = addr_set_build(owned, RBTreeMap::RBTreeMap::Nil);
           let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
           env_walk_leaves(rc, owned, owned_set, asm_set) } ,
@@ -1485,7 +1490,7 @@ def run_claim := aiur_fn⟦
           let (target, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));
-          assert_claimable(target);
+          assert_claimable(rc, target);
           match asm {
             Options::Option::None => {  run_check_transitive(rc, target) } ,
             Options::Option::Some(r) => {

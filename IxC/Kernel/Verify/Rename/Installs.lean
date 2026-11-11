@@ -360,6 +360,7 @@ theorem checkNativeTail_post {Q : Key md → Prop} (env : Env md) (q : NativePas
   refine ExPost.of_forall fun _ => ExPost.of_forall fun _ =>
     ⟨fun _ => ⟨fun _ => ?_, trivial⟩, trivial⟩
   refine ExPost.mono (fun r hr => ?_) (checkNativeRec_post _ _ _ _)
+  refine ⟨fun _ => ?_, trivial⟩
   refine ExPost.mono (fun e he => ?_) (checkNativeTable_post _ _ _ _ hT)
   refine (consSumCtors_grows _ _ _ hC hnd).trans ((Grows.push ?_ ?_).trans he)
   · show Q r.1.name

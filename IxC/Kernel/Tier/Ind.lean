@@ -261,7 +261,7 @@ def ruleC (fe : FEnv md) (cvR : ConstantVal md) (sh : TierRecShape) (rl : RecRul
   let rhsA ← runC (annotValC .verified fe cvR rl.rhs)
   let some (fvs, _) := openPisAtFvars rP cvR.type 0
     | throw (.notImplemented msg!"tier: the type of {cvR.name} has fewer binders than its rule prefix")
-  let plain := Expr.recRulePlain cvR.type mI rP cnP
+  let plain := Expr.recRulePlain cvR.type mI rP cnP cvj.levelParams
   let (fire, lvls, cps) ← if plain then
       pure (RecRuleFire.plain, cvj.levelParams.map Level.param, fvs.take cnP)
     else match nestedPins cvR.type mI rP cnP with

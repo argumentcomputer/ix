@@ -44,10 +44,11 @@ variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 set_option maxHeartbeats 3200000 in
 /-- **`RecRuleLaw`'s pin conjunct at one index**, from the two
 recorded rows. -/
-theorem nestedPinRow {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
-    (hinfC : InferClaim μ m φ F)
-    (hreads : InferReads m μ φ F)
+theorem nestedPinRow {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
+    (hinfC : InferClaimJ J m φ)
+    (hreads : InferReadsJ J m φ)
+    (hframe : InferFrameJ J m φ)
     {rP cnF cnP : Nat}
     -- the public (recursor) frame
     {fvsP : List (Expr md)} (hfvsPlen : fvsP.length = rP)
@@ -78,7 +79,7 @@ theorem nestedPinRow {m : EnvModel V env} {F : Nat}
     (hcinstP : Expr.instPisAt
       (pins.map (Expr.instSpine (fvsP.take rP) (rP - 1))) ctyP
       = some (cdomsP, crestP))
-    (hTyped : TypedListOk μ F env (rP + cnF)
+    (hTyped : TypedListJ J env (rP + cnF)
       (pins.map (Expr.instSpine (fvsP.take rP) (rP - 1))) cdomsP)
     -- the pins' instantiated readings (`TypedListW`'s own denotation,
     -- through `denoteP_isSome_of_denote`)
@@ -146,7 +147,7 @@ theorem nestedPinRow {m : EnvModel V env} {F : Nat}
     rcases hg : ΓP[rP - 1 - i]? with _ | A
     · rw [List.getElem?_eq_none_iff] at hg; omega
     · rfl
-  have hfire := nestedPinFire hclaims hinfC hreads
+  have hfire := nestedPinFire hclaims hinfC hreads hframe
     (K := rP + cnF) (by omega) hfvsPlen hshapeP hwsFvsP hleafClosedP
     hlbFvsP htowerP hokTV hdomsP0 hpinsLen hpinsWf hCw hCb hTVjP
     hokTVjP hcinstP hTyped hpinRead hΔblen hΔbent

@@ -37,8 +37,8 @@ def mutations (bytes : ByteArray) (file : String) :
     if i == natAdd then { w with native := (1, 5) } else w
   let swapped := { current.schedule with groups := swapFirstTwo current.schedule.groups }
   let lastByte := bytes.size - 1
-  let edited ← replaceOnce file "first_equation_group() -> Field {\n      41\n"
-    "first_equation_group() -> Field {\n      40\n"
+  let edited ← replaceOnce file "first_equation_group() -> Field {\n      46\n"
+    "first_equation_group() -> Field {\n      45\n"
   let renumberedBytes ← Ix.SpecDigest.encode { current with rows := renumbered }
   let swappedBytes ← Ix.SpecDigest.encode { current with schedule := swapped }
   return [
@@ -47,7 +47,7 @@ def mutations (bytes : ByteArray) (file : String) :
     ("bytes: the last byte (the first equation group) decremented",
       bytes.set! lastByte (bytes.get! lastByte - 1), file),
     ("bytes: one byte appended", bytes.push 0, file),
-    ("file: first_equation_group edited to 40", bytes, edited)]
+    ("file: first_equation_group edited to 45", bytes, edited)]
 
 /-- The rendering without its `spec_digest` literal, the one line holding byte
 constants, so that a comparison sees the tables alone. -/

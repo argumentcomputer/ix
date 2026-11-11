@@ -1629,18 +1629,25 @@ def instSpine : List (Expr md) → Nat → Expr md → Expr md
   | a :: as, t, e => instSpine as (t - 1) (e.instantiate1 a t)
 
 /-- A recursor rule is *canonical* when its constructor's parameters
-are exactly the recursor's own leading arguments: the major premise's
-type applies the eliminated family to the first `cnP` telescope
-variables.  Rules for nested auxiliary constructors (whose parameters
-are instantiations like `Array Syntax`) are not canonical; they are
-stored `.nested` when the certification against the model's `iota_j`
-theorem succeeds (see `checkIotaThmN`) and `.inert` otherwise —
-`iotaRec` never fires an inert rule, so it carries no fold
-obligation. -/
-def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) : Bool :=
+and levels are exactly the recursor's own: the major premise's type
+applies the eliminated family, at the constructor's own level
+parameters `cjLps`, to the first `cnP` telescope variables.  (A
+canonical rule's level comparands link the constructor's level
+parameters to the recursor's by name, `recFireComparands`; the major
+premise at those parameters is what makes the comparison say that the
+constructor is used at the major premise's levels.)  Rules for nested
+auxiliary constructors (whose parameters are instantiations like
+`Array Syntax`) are not canonical; they are stored `.nested` when the
+certification against the model's `iota_j` theorem succeeds (see
+`checkIotaThmN`) and `.inert` otherwise — `iotaRec` never fires an
+inert rule, so it carries no fold obligation. -/
+def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) (cjLps : List LevelParam) : Bool :=
   decide (cnP ≤ rP) && decide (rP ≤ mI) &&
   match recTy.stripPis mI with
   | some (_, .forallE dom _ _) =>
+    (match dom.getAppFn with
+     | .const _ ls => decide (ls = cjLps.map Level.param)
+     | _ => false) &&
     dom.getAppArgs.take cnP ==
       (List.range cnP).map (fun k => Expr.bvar (mI - 1 - k))
   | _ => false

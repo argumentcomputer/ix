@@ -279,6 +279,22 @@ def role_index_of := aiur_fn⟦
     }
 ⟧
 
+def role_is_inert := aiur_fn⟦
+  fn role_is_inert(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
+      -- 1 when the binding binds `a` to an inert role (specification kind 4: `sorryAx` and
+      -- Lean's compiler-trust axioms), 0 otherwise.
+      let r1 = role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {
+          match KernelRoleSpec::role_spec_kind(r1 - 1) - 4 {
+            0 => {  1 } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
 def role_is := aiur_fn⟦
   fn role_is(rc: RoleCtx, a: Bytes::AddressRef, r: Field) -> Field {
       match role_index_of(rc, a) - (r + 1) {
@@ -728,6 +744,9 @@ def axiom_standing := aiur_fn⟦
 
 def axiom_role_standing := aiur_fn⟦
   fn axiom_role_standing(r1: Field) -> Field {
+      -- 1: a standard axiom (`propext`, `Classical.choice`, `Quot.sound`); 2: an inert one
+      -- (specification kind 4: `sorryAx` and Lean's compiler-trust axioms), which may be
+      -- declared but which no constant may use (`assert_ref_allowed`); 0: any other role.
       match r1 {
         0 => {  0 } ,
         _ => {
@@ -741,7 +760,7 @@ def axiom_role_standing := aiur_fn⟦
                   match r - KernelRoleSpec::role_quot_sound() {
                     0 => {  1 } ,
                     _ => {
-                      match r - KernelRoleSpec::role_sorry_ax() {
+                      match KernelRoleSpec::role_spec_kind(r) - 4 {
                         0 => {  2 } ,
                         _ => {  0 } ,
                       } } ,
@@ -756,7 +775,7 @@ def assert_ref_allowed := aiur_fn⟦
   fn assert_ref_allowed(rc: RoleCtx, a: Bytes::AddressRef) -> () {
       match axiom_standing(rc, a) {
         2 => {
-          assert_eq!(0, 1, "a constant uses `sorryAx`");
+          assert_eq!(0, 1, "a constant uses an inert axiom");
           () } ,
         _ => {  () } ,
       }

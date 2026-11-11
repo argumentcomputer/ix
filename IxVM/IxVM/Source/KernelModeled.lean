@@ -177,12 +177,12 @@ def nested_scan := aiur_fn⟦
             1 => {  1 } ,
             _ => {  nested_scan_list(args, mems) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(t, b) => {
+        KernelTypes::KExprNode::Lam(t, b, _) => {
           match nested_scan(t, mems) {
             1 => {  1 } ,
             _ => {  nested_scan(b, mems) } ,
           } } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
+        KernelTypes::KExprNode::Forall(t, b, _) => {
           match nested_scan(t, mems) {
             1 => {  1 } ,
             _ => {  nested_scan(b, mems) } ,
@@ -246,7 +246,7 @@ def rec_family_block := aiur_fn⟦
         KernelTypes::KConstantInfo::Rec(_, ty, np, _, _, _, _, _, _, _, _) => {
           let after = KernelCheck::peel_n_foralls(ty, np);
           match (*(after)) {
-            KernelTypes::KExprNode::Forall(mdom, _) => {
+            KernelTypes::KExprNode::Forall(mdom, _, _) => {
               let carrier = last_binder_dom(mdom);
               let (head, _) = KernelTypes::collect_spine(carrier);
               match (*(head)) {
@@ -263,9 +263,9 @@ def rec_family_block := aiur_fn⟦
 def last_binder_dom := aiur_fn⟦
   fn last_binder_dom(e: KernelTypes::KExpr) -> KernelTypes::KExpr {
       match (*(e)) {
-        KernelTypes::KExprNode::Forall(d, b) => {
+        KernelTypes::KExprNode::Forall(d, b, _) => {
           match (*(b)) {
-            KernelTypes::KExprNode::Forall(_, _) => {  last_binder_dom(b) } ,
+            KernelTypes::KExprNode::Forall(_, _, _) => {  last_binder_dom(b) } ,
             _ => {  d } ,
           } } ,
       }
@@ -429,7 +429,7 @@ def rec_major_pins := aiur_fn⟦
         -> (Bytes::AddressRef, Lists::List<KernelTypes::KLevel>, Lists::List<KernelTypes::KExpr>) {
       let after = KernelCheck::peel_n_foralls(ty, rp + ni);
       match (*(after)) {
-        KernelTypes::KExprNode::Forall(dom, _) => {
+        KernelTypes::KExprNode::Forall(dom, _, _) => {
           let (h, args) = KernelTypes::collect_spine(dom);
           match (*(h)) {
             KernelTypes::KExprNode::Const(iaddr, ilvls) => {
@@ -919,6 +919,16 @@ def check_modeled_block := aiur_fn⟦
 
 def check_family := aiur_fn⟦
   fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
+      -- No model advice under user axioms: the claim's axioms tree is empty, so every axiom
+      -- this claim checks, the advice's and the block closure's, is standard or inert, and
+      -- no accepted constant uses an inert one. The role binding binds Lean's compiler-trust
+      -- axioms as inert roles, so a claim over Lean's `Init` lists no user axiom.
+      match KernelRoles::role_ctx_axioms(rc) {
+        RBTreeMap::RBTreeMap::Nil => {  () } ,
+        RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
+          assert_eq!(0, 1, "model advice: a claim with user axioms");
+          () } ,
+      };
       let s0 = read_payload(block);
       let (rb, s1) = IxonDeserialize::get_address(s0);
       assert_eq!(Bytes::address_eq(rb, rec_block), 1,
@@ -1117,10 +1127,10 @@ def rename := aiur_fn⟦
           (&(KernelTypes::KExprNode::Const(rename_addr(a, src, dst), ls))) } ,
         KernelTypes::KExprNode::App(f, x) => {
           (&(KernelTypes::KExprNode::App(rename(f, src, dst), rename(x, src, dst)))) } ,
-        KernelTypes::KExprNode::Lam(t, b) => {
-          (&(KernelTypes::KExprNode::Lam(rename(t, src, dst), rename(b, src, dst)))) } ,
-        KernelTypes::KExprNode::Forall(t, b) => {
-          (&(KernelTypes::KExprNode::Forall(rename(t, src, dst), rename(b, src, dst)))) } ,
+        KernelTypes::KExprNode::Lam(t, b, bl) => {
+          (&(KernelTypes::KExprNode::Lam(rename(t, src, dst), rename(b, src, dst), bl))) } ,
+        KernelTypes::KExprNode::Forall(t, b, bl) => {
+          (&(KernelTypes::KExprNode::Forall(rename(t, src, dst), rename(b, src, dst), bl))) } ,
         KernelTypes::KExprNode::Let(t, v, b) => {
           (&(KernelTypes::KExprNode::Let(rename(t, src, dst), rename(v, src, dst),
                                           rename(b, src, dst)))) } ,
@@ -1215,7 +1225,7 @@ def check_carriers_go := aiur_fn⟦
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(t, rest) => {
           match (*(e)) {
-            KernelTypes::KExprNode::Forall(mdom, body) => {
+            KernelTypes::KExprNode::Forall(mdom, body, _) => {
               let (head, _) = KernelTypes::collect_spine(last_binder_dom(mdom));
               match (*(head)) {
                 KernelTypes::KExprNode::Const(c, _) => {
@@ -1371,7 +1381,7 @@ def peel_collect := aiur_fn⟦
         0 => {  (e, ctx) } ,
         _ => {
           match (*(e)) {
-            KernelTypes::KExprNode::Forall(d, b) => {
+            KernelTypes::KExprNode::Forall(d, b, _) => {
               peel_collect(b, n - 1, (&(Lists::Node::Cons(d, ctx)))) } ,
           } } ,
       }
@@ -1410,7 +1420,7 @@ def inst_params := aiur_fn⟦
         Lists::Node::Nil => {  e } ,
         Lists::Node::Cons(p, rest) => {
           match (*(e)) {
-            KernelTypes::KExprNode::Forall(_, b) => {
+            KernelTypes::KExprNode::Forall(_, b, _) => {
               inst_params(KernelSubst::expr_inst1(b, p, 0), rest) } ,
           } } ,
       }
@@ -1426,7 +1436,7 @@ def inst_params_typed := aiur_fn⟦
         Lists::Node::Nil => {  e } ,
         Lists::Node::Cons(p, rest) => {
           match (*(e)) {
-            KernelTypes::KExprNode::Forall(dom, b) => {
+            KernelTypes::KExprNode::Forall(dom, b, _) => {
               let pt = KernelInfer::k_infer(rc, p, ctx);
               assert_eq!(KernelDefEq::k_is_def_eq(rc, pt, dom, ctx), 1, "nested pin type mismatch");
               inst_params_typed(rc, KernelSubst::expr_inst1(b, p, 0), rest, ctx) } ,
@@ -1445,9 +1455,9 @@ def defeq_tele := aiur_fn⟦
         0 => {  () } ,
         _ => {
           match (*(a)) {
-            KernelTypes::KExprNode::Forall(da, ba) => {
+            KernelTypes::KExprNode::Forall(da, ba, _) => {
               match (*(b)) {
-                KernelTypes::KExprNode::Forall(db, bb) => {
+                KernelTypes::KExprNode::Forall(db, bb, _) => {
                   assert_eq!(KernelDefEq::k_is_def_eq(rc, da, db, ctx), 1, "iota statement domain mismatch");
                   defeq_tele(rc, ba, bb, n - 1, (&(Lists::Node::Cons(da, ctx)))) } ,
               } } ,
@@ -1466,9 +1476,9 @@ def defeq_lam_tele := aiur_fn⟦
         0 => {  (l, ctx) } ,
         _ => {
           match (*(l)) {
-            KernelTypes::KExprNode::Lam(dl, bl) => {
+            KernelTypes::KExprNode::Lam(dl, bl, _) => {
               match (*(p)) {
-                KernelTypes::KExprNode::Forall(dp, bp) => {
+                KernelTypes::KExprNode::Forall(dp, bp, _) => {
                   assert_eq!(KernelDefEq::k_is_def_eq(rc, dl, dp, ctx), 1, "rule domain mismatch");
                   defeq_lam_tele(rc, bl, bp, n - 1, (&(Lists::Node::Cons(dl, ctx)))) } ,
               } } ,

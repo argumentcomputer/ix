@@ -101,14 +101,14 @@ def get_ci := aiur_fn⟦
                   } } ,
               };
               (&(Convert::convert_definition(defn, sharing, refs,
-                                            self_recur, univs, hint))) } ,
+                                            self_recur, univs, hint, addr, 0))) } ,
             Ixon::ConstantInfo::Axio(axio) => {
 
               (&(Convert::convert_axiom(axio, sharing, refs,
-                                       (&(Lists::Node::Nil)), univs))) } ,
+                                       (&(Lists::Node::Nil)), univs, addr))) } ,
             Ixon::ConstantInfo::Quot(quot) => {
               (&(Convert::convert_quotient(quot, sharing, refs,
-                                          (&(Lists::Node::Nil)), univs))) } ,
+                                          (&(Lists::Node::Nil)), univs, addr))) } ,
             Ixon::ConstantInfo::DPrj(prj) => {
               match prj {
                 Ixon::DefinitionProj::Mk(idx, block_addr) => {
@@ -134,7 +134,7 @@ def get_ci := aiur_fn⟦
 
               let self_recur = (&(Lists::Node::Cons(addr, (&(Lists::Node::Nil)))));
               (&(Convert::convert_recursor(recr, addr, 0,
-                                          sharing, refs, self_recur, univs))) } ,
+                                          sharing, refs, self_recur, univs, 0))) } ,
           } } ,
       }
     }
@@ -154,7 +154,8 @@ def get_ci_dprj := aiur_fn⟦
                   let hint = definition_hint(dprj_addr, d);
                   let recur_addrs =
                     defn_member_recur_addrs(d, members, block_addr);
-                  (&(Convert::convert_definition(d, sharing, refs, recur_addrs, univs, hint))) } ,
+                  (&(Convert::convert_definition(d, sharing, refs, recur_addrs, univs, hint,
+                    block_addr, Convert::muts_root_offset(members, UInt64::to_field(idx))))) } ,
               } } ,
           } } ,
       }
@@ -173,7 +174,7 @@ def get_ci_iprj := aiur_fn⟦
                 Ixon::MutConst::Indc(ind) => {
                   let recur_addrs = build_recur_addrs(members, block_addr);
                   (&(Convert::convert_inductive(ind, block_addr, idx,
-                                               sharing, refs, recur_addrs, univs))) } ,
+                                               sharing, refs, recur_addrs, univs, Convert::muts_root_offset(members, idx)))) } ,
               } } ,
           } } ,
       }
@@ -195,7 +196,8 @@ def get_ci_cprj := aiur_fn⟦
                       let c = Convert::ctor_at(ctors, cidx);
                       let recur_addrs = build_recur_addrs(members, block_addr);
                       (&(Convert::convert_constructor(c, block_addr, idx,
-                                                    sharing, refs, recur_addrs, univs))) } ,
+                                                    sharing, refs, recur_addrs, univs,
+                                                    (Convert::muts_root_offset(members, idx) + 1) + cidx))) } ,
                   } } ,
               } } ,
           } } ,
@@ -215,7 +217,7 @@ def get_ci_rprj := aiur_fn⟦
                 Ixon::MutConst::Recr(r) => {
                   let recur_addrs = build_recur_addrs(members, block_addr);
                   (&(Convert::convert_recursor(r, block_addr, idx,
-                                             sharing, refs, recur_addrs, univs))) } ,
+                                             sharing, refs, recur_addrs, univs, Convert::muts_root_offset(members, idx)))) } ,
               } } ,
           } } ,
       }

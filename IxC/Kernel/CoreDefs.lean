@@ -1159,6 +1159,19 @@ def recRuleBits (find? : Key md → Option (ConstantInfo md)) (recName : Key md)
     (rs.map (recRuleBits find? recName)).map (·.ctor) = rs.map (·.ctor) := by
   simp [List.map_map, Function.comp_def]
 
+/-- The level parameters a stored constructor is declared with (`[]`
+when `c` is not a stored constructor). -/
+def ctorLevelParamsOf (find? : Key md → Option (ConstantInfo md)) (c : Key md) :
+    List LevelParam :=
+  match find? c with
+  | some (.ctorInfo cv _ _) => cv.levelParams
+  | _ => []
+
+theorem ctorLevelParamsOf_ctor {find? : Key md → Option (ConstantInfo md)} {c : Key md}
+    {cv : ConstantVal md} {nP nF : Nat} (h : find? c = some (.ctorInfo cv nP nF)) :
+    ctorLevelParamsOf find? c = cv.levelParams := by
+  simp only [ctorLevelParamsOf, h]
+
 /-- **The stored rule of an installed projection function**: the
 degenerate recursor's single rule, at the constructor's arities and
 the generated right-hand side, with the two rescue bits stamped by
@@ -1170,7 +1183,8 @@ def projFnRule (find? : Key md → Option (ConstantInfo md)) (T ctorName : Key m
     (pty : Expr md) (nP nF i : Nat) (rhsA : Expr md) : RecRule md :=
   recRuleBits find? (projFnName T i)
     { ctor := ctorName, nfields := nF, ctorParams := nP,
-      fire := if Expr.recRulePlain pty nP nP nP then .plain else .inert,
+      fire := if Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf find? ctorName)
+        then .plain else .inert,
       rhs := rhsA, paramsBlind := false }
 
 @[simp] theorem projFnRule_ctor (find? : Key md → Option (ConstantInfo md))

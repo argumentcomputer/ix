@@ -19,6 +19,11 @@ model is witness data. Two properties are tested here:
   with every `iota_j` proof rewritten (`let _ : Nat := 0; p`), so that every
   theorem record, and with it the advice set, has another address. The circuit
   must accept the same claims with it.
+* **No advice under user axioms** (third part): a claim whose axioms tree is
+  not empty gets no model advice ("model advice: a claim with user axioms").
+  The environments above declare Lean's compiler-trust axioms, which the
+  default table binds as inert roles, so their claims name no user axiom and
+  are accepted.
 * **Verdicts at nested blocks the modeller models** (`nestedVerdicts`: an index
   domain that mentions a parameter, a reflexive field into a member): ι
   reductions through their recursors are accepted, and false ι and constructor
@@ -149,8 +154,21 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
       | throw s!"{n} is not in the Ixon environment"
     let ctx ← Ix.ClaimContext.ofEnv e true
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
+  -- no advice under user axioms: `Even` with an unused, well-typed `axiom ax : Prop`
+  let underAxiom : Builder := fun _ => do
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+    let a := Address.blake3 (Ixon.ser ax)
+    let e := env.storeConst a ax
+    let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
+    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString "IxVMInd.Even"))
+      | throw "IxVMInd.Even is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv e true
+    Case.ofClaim "check IxVMInd.Even under a user axiom (no model advice)" e
+      (.check { ctx with axioms := some axioms.root } target none)
+      (({} : Std.HashMap _ _).insert axioms.root axioms) (accept := false)
+      (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
-    (names.map (mkCase tweaked "a different valid model"))
+    (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv

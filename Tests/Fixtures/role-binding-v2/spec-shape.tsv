@@ -1,4 +1,4 @@
-# Role.block/deps and Spec.evidenceAllowed, version4
+# Role.block/deps and Spec.evidenceAllowed, version5
 0	0,1,2,3		
 1	0,1,2,3		
 2	0,1,2,3		
@@ -102,3 +102,8 @@
 100	100	0,39,40,4,8,44,47	proof,proof,proof,proof,proof
 101	101	0,37,29,39,38,8,42,100	either,either
 102	102	0,37,29,39,40,38,8,44	either,either,either
+103	103	18	
+104	104	4	
+105	105	0	
+106	106	4,8,104	
+107	107	0,8,105	

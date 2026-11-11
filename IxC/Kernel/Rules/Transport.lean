@@ -2,11 +2,12 @@ module
 
 public import IxC.Kernel.Rules.Rel
 public import IxC.Kernel.Rules.TransportKit
+public import IxC.Kernel.Rules.NatOffset
 
 @[expose] public section
 
 /-!
-# Transport of derivations: weakening and renaming (lane l5)
+# Transport of derivations: weakening and renaming
 
 The six relations of the rules tier move along a **transport**: an extension of
 the environment (`EnvExt env env'`) together with a renaming of free variables
@@ -20,7 +21,7 @@ Two instances:
 * **environment weakening** (`Transport.weaken`): `ρ` and `δ` the identity.
   Typing a theorem's value where it is unfolded (`Red.deltaThm`'s premises) reads
   the theorem's own check in a later environment.
-* **top weakening, W2** (`Transport.lift`): the variables from `p` on move up by
+* **top weakening** (`Transport.lift`): the variables from `p` on move up by
   `g` (`ρ i = i` below `p`, `i + g` from `p`), at depths from `p`. IxVM's context
   lowering checks a subterm opened at depth `p = d - g` and uses the result at
   depth `d`. With `p = 0` it lifts a closed derivation to any depth. The stored
@@ -192,6 +193,7 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .trans h₁ h₂, hd => .trans (red_tr hT h₁ hd) (red_tr hT h₂ hd)
   | _, _, _, .appFn h, hd => .appFn (red_tr hT h hd)
   | _, _, _, .projArg h, hd => .projArg (red_tr hT h hd)
+  | _, _, _, .appArg h, hd => .appArg (red_tr hT h hd)
   | _, _, _, .betaGate hnev, _ => by
     rw [renFV_instantiate1]
     exact .betaGate hnev
@@ -228,6 +230,14 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
     exact .natOp hc (hT.ext.natOpStored_mono hst) (red_tr hT hwa hd)
       (by rw [rawNatLit?_renFV]; exact hn₁) (red_tr hT hwb hd)
       (by rw [rawNatLit?_renFV]; exact hn₂) hr
+  | _, _, _, .natAddSucc (us := us) (b := b) (k := k) hs ht, _ => by
+    show Red env' _ (.app (.app (.const natAddName us) (b.renFV ρ)) (.lit (.natVal (k + 1))))
+      (.app (.const natSuccName []) ((natAddLit b k).renFV ρ))
+    rw [natAddLit_renFV]
+    exact .natAddSucc (hT.ext.natLitSupported_mono hs) (hT.ext.opt_mono (p := natAddTyOk) ht rfl)
+  | _, _, _, .natAddZero hs ht hw hn, hd =>
+    .natAddZero (hT.ext.natLitSupported_mono hs) (hT.ext.opt_mono (p := natAddTyOk) ht rfl)
+      (red_tr hT hw hd) (by rw [rawNatLit?_renFV]; exact hn)
   | _, _, _, .proj (cvC := cvC) hent hhead hi hlen hus hfire hctor hcerts, hd => by
     have hc := certs_tr hT hcerts hd
     rw [hT.fixType (cv := cvC) hctor rfl, ← getAppArgs_renFV] at hc
@@ -334,6 +344,12 @@ theorem defEq_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .const h, _ => .const h
   | _, _, _, .natZero, _ => .natZero
   | _, _, _, .natSucc h, hd => .natSucc (defEq_tr hT h hd)
+  | _, _, _, .natOffset (ba := ba) (bb := bb) (k := k) hs ht ha hb h, hd =>
+    .natOffset (ba := ba.renFV ρ) (bb := bb.renFV ρ) (k := k) (hT.ext.natLitSupported_mono hs)
+      (fun h' => hT.ext.opt_mono (p := natAddTyOk)
+        (ht (by simp only [natOffsetAdd_renFV] at h'; exact h')) rfl)
+      (by rw [natOffsetOf_renFV, ha]; rfl)
+      (by rw [natOffsetOf_renFV, hb]; rfl) (defEq_tr hT h hd)
   | _, _, _, .forallE hty hbody hpw hc, hd => by
     have h2 := defEq_tr hT hbody (hT.ok_succ hd)
     simp only [hT.δ_succ hd, hT.renFV_open hd] at h2
@@ -492,7 +508,7 @@ theorem weaken {env env' : Env md} (h : EnvExt env env') :
   ext := h
   store := .inl fun _ => rfl
 
-/-- **Top weakening (W2)**: the variables from `p` on move up by `g`, at the depths
+/-- **Top weakening**: the variables from `p` on move up by `g`, at the depths
 from `p`, along an extension of an environment whose stored terms are closed. -/
 theorem lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env) (p g : Nat) :
     Transport (fun i => if i < p then i else i + g) (fun d => d + g) (fun d => p ≤ d) env env'
@@ -564,7 +580,7 @@ theorem renFV_lift_of_wscoped {p g : Nat} :
     simp only [renFV, ih hD h]
   | bvar | sort | const | lit => intro _ _ _; rfl
 
-/-- **W2 for inference**: a derivation at depth `p` (IxVM's lowered context),
+/-- **Top weakening for inference**: a derivation at depth `p` (IxVM's lowered context),
 weakened along an extension, holds at depth `p + g` with the variables opened
 from `p` on moved up by `g`. A subject scoped below `p` is unchanged
 (`renFV_lift_of_wscoped`). -/
@@ -574,14 +590,14 @@ theorem Infer.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed 
       (t.renFV (fun i => if i < p then i else i + g)) :=
   infer_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
 
-/-- **W2 for conversion.** -/
+/-- **Top weakening for conversion.** -/
 theorem DefEq.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
     {p g : Nat} {a b : Expr md} (hi : DefEq env p a b) :
     DefEq env' (p + g) (a.renFV (fun i => if i < p then i else i + g))
       (b.renFV (fun i => if i < p then i else i + g)) :=
   defEq_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
 
-/-- **W2 for reduction.** -/
+/-- **Top weakening for reduction.** -/
 theorem Red.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
     {p g : Nat} {e e' : Expr md} (hi : Red env p e e') :
     Red env' (p + g) (e.renFV (fun i => if i < p then i else i + g))

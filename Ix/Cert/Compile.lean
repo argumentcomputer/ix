@@ -1090,7 +1090,7 @@ theorem unownedRecursorWith_eq (env : Ix.Environment) (ixe : Ixon.Env) :
   | .iff | .iffIntro | .iffRec | .nonempty | .nonemptyIntro | .nonemptyRec => .block
   | .natPred | .natAdd | .natSub | .natMul | .natPow | .natBeq | .natBle | .natDiv | .natMod
   | .natGcd | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight => .ops
-  | .propext | .choice | .sorryAx => .axiom
+  | .propext | .choice | .sorryAx | .trustCompiler | .ofReduceBool | .ofReduceNat => .axiom
   | .decidableDecide | .natDecEq | .natDecLe | .natDecLt | .intNegOfNat | .intSubNatNat | .intNeg
   | .intAdd | .intSub | .intMul | .intNatAbs | .intEdiv | .intEmod | .intPow | .bitVecToNat
   | .bitVecUlt | .stringDecEq | .stringToByteArray | .listAppend | .stringAppend | .ifThenElse
@@ -1101,7 +1101,8 @@ theorem unownedRecursorWith_eq (env : Ix.Environment) (ixe : Ixon.Env) :
 /-- Whether the record `c` has the kind the specification of the role `r` asks
 of the record stored at its bound address: a standalone definition for a `Nat`
 operation (an `ops` specification), an axiom for an axiom role (`propext`,
-`Classical.choice`, `sorryAx`); any kind for every other role. -/
+`Classical.choice` and the inert `sorryAx`, `Lean.trustCompiler`,
+`Lean.ofReduceBool`, `Lean.ofReduceNat`); any kind for every other role. -/
 @[expose] def roleRecordKindOk (r : Ix.Kernel.Role) (c : Ixon.Constant) : Bool :=
   match roleKind r, c.info with
   | .ops, .defn d => decide (d.kind = .defn)

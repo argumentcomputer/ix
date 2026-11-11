@@ -100,8 +100,7 @@ structure RulesInputs (V : Type w) [SetTheory V] {env : Env md}
   nat_succ : NatSuccRow m φ
   /-- literal tier: the binary operations -/
   nat_op : NatOpRow m φ
-  /-- install tier: the structural-`Nat` recurrence laws (S2's `nat_ops`, an
-  `EnvModelM` field) -/
+  /-- install tier: the structural-`Nat` recurrence laws (an `EnvModelM` field) -/
   nat_ops : NatOps m φ
   /-- basis tier: `Eq` interpreted as equality (an `EnvModelM` field) -/
   eq_law : EqLaw m

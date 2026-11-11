@@ -1,4 +1,5 @@
 import Aiur.Library.Blake3
+import Blake3.Pure
 import Aiur.Library.U32.Correctness
 import Aiur.Library.U64.Correctness
 
@@ -6,10 +7,11 @@ import Aiur.Library.U64.Correctness
 (`Aiur.Library.Blake3`).
 
 This module establishes:
-1. Total pure BLAKE3 specifications (`iv`, `schedules`, `rotateRight`, `mix`, `g`,
-   `round`, `permute`, `initialWords`, `compress`, `wordBytes`, `littleEndian`,
-   `bytesWord`, `blockWords`, `cvBytes`, `chunkLoop`, `chunkOutput`,
-   `parentOutput`, `subtree`, `digest`).
+1. The specification: `Blake3.Pure` (`argumentcomputer/Blake3.lean`, `Blake3/Pure.lean`),
+   whose definitions (`iv`, `schedules`, `rotateRight`, `mix`, `g`, `round`, `initialWords`,
+   `compress`, `wordBytes`, `littleEndian`, `bytesWord`, `blockWords`, `cvBytes`, `chunkLoop`,
+   `chunkOutput`, `parentOutput`, `subtree`, `digest`) are re-exported here, with two local
+   helpers (`permute`, `finalizeState`).
 2. Lean reference models of the `Blake3` library functions (`compressInnerJ`,
    `padBlock`, `nextLayer`, `compressLayer`, `packDigest`, `addressToFields`, ...)
    and their byte-level and word-level correctness against the specification
@@ -21,142 +23,38 @@ This module establishes:
    `verify_bytes_against_iff`). The models are written by hand after the Aiur
    source; no theorem here evaluates that source, so these are statements about
    the models and the specification, not about the `Blake3` Aiur functions.
+
+The model of `Blake3::hash` itself (its block loop, byte loop and tree) and the theorem that it
+computes `Blake3.Pure.digest` are in `Aiur.Library.Blake3.BlockLoop` (`hash_model_spec`).
 -/
 namespace Aiur.Library.Blake3
 
-/-! ### 1. Pure Mathematical Specification of Unkeyed 32-Byte BLAKE3 -/
+/-! ### 1. The specification: `Blake3.Pure`
 
-abbrev CV := Vector UInt32 8
-abbrev Block := Vector UInt32 16
-abbrev Digest := Vector UInt8 32
+The library is proved against `Blake3.Pure` (`Blake3/Pure.lean` of
+`argumentcomputer/Blake3.lean`: total, unkeyed, 32-byte BLAKE3 with a checked canonical
+tree), not against a copy. Its definitions are re-exported here under their own names
+(`iv`, `compress`, `chunkLoop`, `subtree`, `digest`, …), so every statement below is about
+`Blake3.Pure`'s constants. `permute` and `finalizeState` are local helpers: `Blake3.Pure`
+writes the message permutation as `schedules` and inlines the finalization into `compress`
+(`compress_eq_finalizeState`). -/
 
-def iv : CV := #v[
-  0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
-  0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19]
-
-def schedules : Vector (Vector (Fin 16) 16) 7 := #v[
-  #v[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-  #v[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8],
-  #v[3, 4, 10, 12, 13, 2, 7, 14, 6, 5, 9, 0, 11, 15, 8, 1],
-  #v[10, 7, 12, 9, 14, 3, 13, 15, 4, 0, 11, 2, 5, 8, 1, 6],
-  #v[12, 13, 9, 11, 15, 10, 14, 8, 7, 2, 5, 3, 0, 1, 6, 4],
-  #v[9, 14, 11, 5, 8, 12, 15, 1, 13, 3, 0, 10, 2, 6, 4, 7],
-  #v[11, 15, 5, 0, 1, 9, 8, 6, 14, 10, 2, 12, 3, 4, 7, 13]]
-
-def rotateRight (word count : UInt32) : UInt32 :=
-  (word >>> count) ||| (word <<< (32 - count))
-
-def mix (a b c d x y : UInt32) : Vector UInt32 4 :=
-  let a := a + b + x
-  let d := rotateRight (d ^^^ a) 16
-  let c := c + d
-  let b := rotateRight (b ^^^ c) 12
-  let a := a + b + y
-  let d := rotateRight (d ^^^ a) 8
-  let c := c + d
-  let b := rotateRight (b ^^^ c) 7
-  #v[a, b, c, d]
-
-def g (state : Block) (a b c d : Fin 16) (x y : UInt32) : Block :=
-  let words := mix state[a] state[b] state[c] state[d] x y
-  (((state.set a words[0]).set b words[1]).set c words[2]).set d words[3]
-
-def round (state message : Block) (schedule : Vector (Fin 16) 16) : Block :=
-  let state := g state 0 4 8 12 message[schedule[0]] message[schedule[1]]
-  let state := g state 1 5 9 13 message[schedule[2]] message[schedule[3]]
-  let state := g state 2 6 10 14 message[schedule[4]] message[schedule[5]]
-  let state := g state 3 7 11 15 message[schedule[6]] message[schedule[7]]
-  let state := g state 0 5 10 15 message[schedule[8]] message[schedule[9]]
-  let state := g state 1 6 11 12 message[schedule[10]] message[schedule[11]]
-  let state := g state 2 7 8 13 message[schedule[12]] message[schedule[13]]
-  g state 3 4 9 14 message[schedule[14]] message[schedule[15]]
+export _root_.Blake3.Pure (CV Block Digest iv schedules rotateRight mix g round initialWords
+  compress wordBytes littleEndian bytesWord blockWords cvBytes Output chunkLoop chunkOutput
+  parentOutput leftLen leftLen_positive leftLen_lt subtree digest NativeInput)
 
 def permute (m : Block) : Block :=
   #v[m[2], m[6], m[3], m[10], m[7], m[0], m[4], m[13],
      m[1], m[11], m[12], m[5], m[9], m[14], m[15], m[8]]
 
-def initialWords (cv : CV) (counter : UInt64) (blockLen flags : UInt32) : Block :=
-  #v[cv[0], cv[1], cv[2], cv[3], cv[4], cv[5], cv[6], cv[7],
-     iv[0], iv[1], iv[2], iv[3], counter.toUInt32, (counter >>> 32).toUInt32, blockLen, flags]
-
 def finalizeState (state : Block) : CV :=
   Vector.ofFn fun index => state[index.val] ^^^ state[index.val + 8]
 
-def compress (cv : CV) (message : Block) (counter : UInt64) (blockLen flags : UInt32) : CV :=
-  finalizeState (schedules.foldl (fun state schedule => round state message schedule)
-    (initialWords cv counter blockLen flags))
-
-def wordBytes (word : UInt32) : Vector UInt8 4 :=
-  Vector.ofFn fun index => (word.toNat / 256^index.val).toUInt8
-
-def littleEndian (bytes : List UInt8) : Nat :=
-  bytes.foldr (fun byte rest => byte.toNat + 256 * rest) 0
-
-def bytesWord (bytes : Vector UInt8 4) : UInt32 :=
-  UInt32.ofNat (littleEndian bytes.toList)
-
-def blockWords (bytes : List UInt8) : Block :=
-  let input := bytes.toArray
-  Vector.ofFn fun word => bytesWord (Vector.ofFn fun byte => input[word.val * 4 + byte.val]?.getD 0)
-
-def cvBytes (cv : CV) : Digest :=
-  Vector.ofFn fun index => (wordBytes cv[index.val / 4])[index.val % 4]
-
-structure Output where
-  cv : CV
-  block : Block
-  blockLen : UInt32
-  counter : UInt64
-  flags : UInt32
-  deriving DecidableEq, Repr
-
-def Output.chainingValue (output : Output) : CV :=
-  compress output.cv output.block output.counter output.blockLen output.flags
-
-def Output.rootHash (output : Output) : Digest :=
-  cvBytes (compress output.cv output.block 0 output.blockLen (output.flags ||| 8))
-
-def chunkLoop (counter : UInt64) (cv : CV) (start : Bool) (input : List UInt8) : Output :=
-  if _h : input.length ≤ 64 then
-    ⟨cv, blockWords input, input.length.toUInt32, counter, (if start then 1 else 0) ||| 2⟩
-  else
-    let next := compress cv (blockWords (input.take 64)) counter 64 (if start then 1 else 0)
-    chunkLoop counter next false (input.drop 64)
-termination_by input.length
-decreasing_by simp only [List.length_drop]; omega
-
-def chunkOutput (counter : UInt64) (input : List UInt8) : Output :=
-  chunkLoop counter iv true input
-
-def parentOutput (left right : CV) : Output :=
-  ⟨iv, left ++ right, 64, 0, 4⟩
-
-def leftLen (size : Nat) : Nat := 2 ^ (size - 1).log2
-
-theorem leftLen_positive (size : Nat) : 0 < leftLen size := Nat.two_pow_pos _
-
-theorem leftLen_lt {size : Nat} (large : 1024 < size) : leftLen size < size := by
-  have := Nat.log2_self_le (n := size - 1) (by omega)
-  unfold leftLen
-  omega
-
-def subtree (counter : Nat) (input : List UInt8) : Output :=
-  if _h : input.length ≤ 1024 then chunkOutput counter.toUInt64 input
-  else
-    let split := leftLen input.length
-    let left := subtree counter (input.take split)
-    let right := subtree (counter + split / 1024) (input.drop split)
-    parentOutput left.chainingValue right.chainingValue
-termination_by input.length
-decreasing_by
-  · have := leftLen_lt (size := input.length) (by omega)
-    simp only [List.length_take]; omega
-  · have := leftLen_positive input.length
-    simp only [List.length_drop]; omega
-
-def digest (input : List UInt8) : Digest := (subtree 0 input).rootHash
-
-def NativeInput (input : List UInt8) : Prop := input.length < 2^64
+theorem compress_eq_finalizeState (cv : CV) (message : Block) (counter : UInt64)
+    (blockLen flags : UInt32) :
+    compress cv message counter blockLen flags =
+      finalizeState (schedules.foldl (fun state schedule => round state message schedule)
+        (initialWords cv counter blockLen flags)) := rfl
 
 /-! ### 2. Byte / Word Packing and `iv` Specification -/
 
@@ -675,8 +573,8 @@ decreasing_by
 theorem compress_layer_two_spec (left right : CV) :
     cvBytes (compressLayer [left, right]) = (parentOutput left right).rootHash := by
   have h12 : ((4 : UInt32) ||| 8) = 12 := rfl
-  unfold parentOutput Output.rootHash
-  dsimp only
+  show cvBytes (compressLayer [left, right]) =
+    cvBytes (compress iv (left ++ right) 0 64 ((4 : UInt32) ||| 8))
   rw [h12, compressLayer]
 
 theorem compress_layer_step_spec (left right c : CV) (rest : List CV) :

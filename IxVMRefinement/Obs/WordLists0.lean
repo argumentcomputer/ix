@@ -66,7 +66,7 @@ theorem «WordLists::depth_checked».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.depth_checked.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.depth_checked.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.depth_checked) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 90) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
 
 /-- The evaluation paths of `WordLists::depth_checked`: one constructor per combination of selected arms. -/
 inductive «WordLists::depth_checked».Path (t_T : Generic.Ty) (x_list : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -141,7 +141,7 @@ theorem «WordLists::lookup_u64».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.lookup_u64.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.lookup_u64.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.lookup_u64) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 94) (by decide +kernel)) rfl t_T
 
 /-- The evaluation paths of `WordLists::lookup_u64`: one constructor per combination of selected arms. -/
 inductive «WordLists::lookup_u64».Path (t_T : Generic.Ty) (x_list x_idx : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

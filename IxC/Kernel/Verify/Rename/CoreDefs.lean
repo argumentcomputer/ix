@@ -607,6 +607,14 @@ theorem recRuleKOf_ren (hE : EnvRelG P f L env env') {ctor : Key md} (hc : ctor.
       | _ => rfl
     | _ => rfl
 
+theorem ctorLevelParamsOf_ren (hE : EnvRelG P f L env env') {ctor : Key md} (hc : ctor.Good P) :
+    ctorLevelParamsOf env'.find? (ctor.map f) = ctorLevelParamsOf env.find? ctor := by
+  unfold ctorLevelParamsOf
+  rw [hE.find ctor hc]
+  cases env.find? ctor with
+  | none => rfl
+  | some ci => cases ci <;> rfl
+
 theorem recRuleEtaOf_ren (hE : EnvRelG P f L env env') {recName ctor : Key md}
     (hc : ctor.Good P) :
     recRuleEtaOf env'.find? (recName.map f) (ctor.map f) = recRuleEtaOf env.find? recName ctor := by

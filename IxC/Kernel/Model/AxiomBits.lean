@@ -306,7 +306,7 @@ theorem choice_bits (hμ : μ.verifiedChecks = true)
     exact imax_eq_zero_iff _ _
   exact ⟨hb1, hb2⟩
 
-/-! ## The two named facts over a judgement package (lane l5)
+/-! ## The two named facts over a judgement package
 
 `propext_bits` and `choice_bits` read the recorded `inferTypeCore` run on the
 stored type through its `forallE` inversion (the binder's `pw` validation).

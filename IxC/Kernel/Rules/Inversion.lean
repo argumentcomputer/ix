@@ -5,7 +5,7 @@ public import IxC.Kernel.Rules.Rel
 @[expose] public section
 
 /-!
-# Inversions of the rules tier (lane l5)
+# Inversions of the rules tier
 
 What a derivation says about its subject's shape:
 
@@ -65,6 +65,7 @@ theorem Red.rigid {env : Env md} :
     exact (Red.rigid h₂ (h1 ▸ he)).trans h1
   | _, _, _, .appFn _, he => nomatch he
   | _, _, _, .projArg _, he => nomatch he
+  | _, _, _, .appArg _, he => nomatch he
   | _, _, _, .betaGate _, he => nomatch he
   | _, _, _, .beta _ _, he => nomatch he
   | _, _, _, .delta hu, he => by
@@ -78,6 +79,8 @@ theorem Red.rigid {env : Env md} :
   | _, _, _, .strLit _, he => nomatch he
   | _, _, _, .natSucc .., he => nomatch he
   | _, _, _, .natOp .., he => nomatch he
+  | _, _, _, .natAddSucc .., he => nomatch he
+  | _, _, _, .natAddZero .., he => nomatch he
   | _, _, _, .proj .., he => nomatch he
   | _, _, _, .iota hhead .., he => by
     rw [isSortOrPi_false_of_head hhead] at he

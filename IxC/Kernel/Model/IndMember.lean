@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Semantics.IndBlockRun
+public import IxC.Kernel.Semantics.DeclIndJ
 public import IxC.Kernel.Model.IndCons
 import IxC.Kernel.Model.Annot.BitRename
 import IxC.Kernel.Verify.Extend.Block
@@ -48,7 +49,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env md} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {J : Judgements md}
 
 /-- **The annotated half of `BlockInstalledTT`**: an installed block
 member's *leaf* is its model's.  The other three conjuncts of
@@ -82,7 +83,7 @@ inhabits the checked member's type's reading, graded, at every
 assignment. -/
 theorem memberKey (mp : EnvModelM V μ env) {blockNames : List (Key md)}
     {cv cvA : ConstantVal md}
-    (hmv : MemberValRun μ F env blockNames cv cvA)
+    (hmv : MemberValRunJ J env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
     (ψ : LevelParam → Nat) :

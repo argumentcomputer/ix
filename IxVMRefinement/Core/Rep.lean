@@ -28,7 +28,7 @@ opening depth. Design note.
      addresses to `.role r`, the others to `.id a`). Soundness needs no
      injectivity of `κ`: IxVM compares addresses, and equal addresses get equal
      keys.
-   * Binders carry `nb = { pw := .never }` (Lean-fragment contracts).
+   * `Lam ty b ℓ` and `Forall ty b ℓ` carry the binder datum `bmeta ℓ` (below).
    `RepE κ d Γ h E p` is the composite at local depth `0`.
 
 IxVM's context list `types` is not part of the relation for terms: it is a
@@ -44,14 +44,15 @@ must be moved back to depth `d` by a depth-weakening lemma the rules do not have
 The kernel's binder datum `pw` (the codomain sort's zero-ness) is read by the
 model's interpretation of `λ`/`∀` and by the rules at β (`Red.betaGate`), binder
 congruence (`DefEq.lam`/`forallE`/`eta`) and binder inference
-(`Infer.forallE`/`lam`). IxVM computes none. The relation writes `never` at every
-binder. Then β is `Red.betaGate`, binder congruence's datum and contract
-equalities are `rfl`; but a term is *graded* (the soundness theorems' premise)
-only if none of its binders has a codomain that can be a proposition. So the
-model facts proved here are about the data fragment, and `λ`-inference (whose
-rule validates the datum by a sort computation IxVM never makes) has no rule.
-Relating proofs (`λ h : p, …`) requires IxVM to carry and validate the datum;
-the relation then reads it from the node.
+(`Infer.forallE`/`lam`). IxVM stores it: `KExprNode::Lam(ty, body, ℓ)` and
+`Forall(ty, body, ℓ)` carry a level `ℓ` whose zero-ness is the datum (a witness hint
+the conversion reads and the kernel's rules validate), and the relation reads it
+from the node: the image binder's datum is `bmeta ℓ = { pw := zeronessOf (trLevel ℓ) }`.
+Zero-ness is semantic, so IxVM's level simplifications keep it, and instantiating `ℓ`
+with the rest of the term is the kernel's `substPW` (`zeronessOf_subst`). A `never`
+datum is the image of any successor level (`bmeta_succ`), the data fragment's
+binders. β at a binder of another datum is `Red.beta` with an io-grade certificate (IxVM's
+`peel_beta_cert`; `red_beta_certified`), not `Red.betaGate`.
 
 ## Lets, levels, literals, projections
 
@@ -74,7 +75,7 @@ abbrev F := IxVM.F
 /-- The kernel's expressions, in the Ixon mode. -/
 abbrev KExpr := Ix.Kernel.Expr .anon
 
-/-- The binder datum the relation writes: `never`, Lean-fragment contracts. -/
+/-- The data fragment's binder datum: `never`, Lean-fragment contracts (`bmeta_succ`). -/
 abbrev nb : Ix.Kernel.BinderMeta := { pw := .never }
 
 theorem nb_isNever : nb.pw.isNever = true := Ix.Kernel.PropWhen.isNever_never
@@ -133,23 +134,23 @@ theorem RepK.app_of_load {h : Heap F} {t : IxVMKExpr F} {p x y : SourceValue F}
     injection hargs with hx hrest; injection hrest with hy _
     subst hx hy
     exact ⟨_, _, rfl, rf, ra⟩
-  | bvar cell | sort cell _ | const cell _ _ | lam cell _ _ | forallE cell _ _
+  | bvar cell | sort cell _ | const cell _ _ | lam cell _ _ _ | forallE cell _ _ _
   | letE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
     exact absurd hc (by decide)
 
-theorem RepK.lam_of_load {h : Heap F} {t : IxVMKExpr F} {p x y : SourceValue F}
-    (rep : RepK h t p) (hl : loadValue h p = .ok (.construct kexprEnum "Lam" [x, y])) :
-    ∃ ty b, t = .lam ty b ∧ RepK h ty x ∧ RepK h b y := by
+theorem RepK.lam_of_load {h : Heap F} {t : IxVMKExpr F} {p x y z : SourceValue F}
+    (rep : RepK h t p) (hl : loadValue h p = .ok (.construct kexprEnum "Lam" [x, y, z])) :
+    ∃ ty b ℓ, t = .lam ty b ℓ ∧ RepK h ty x ∧ RepK h b y ∧ RepIxVMKUniv h ℓ z := by
   cases rep with
-  | lam cell rt rb =>
+  | lam cell rt rb rl =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ _ hargs
-    injection hargs with hx hrest; injection hrest with hy _
-    subst hx hy
-    exact ⟨_, _, rfl, rt, rb⟩
-  | bvar cell | sort cell _ | const cell _ _ | app cell _ _ | forallE cell _ _
+    injection hargs with hx hrest; injection hrest with hy hrest'; injection hrest' with hz _
+    subst hx hy hz
+    exact ⟨_, _, _, rfl, rt, rb, rl⟩
+  | bvar cell | sort cell _ | const cell _ _ | app cell _ _ | forallE cell _ _ _
   | letE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
@@ -166,7 +167,7 @@ theorem RepK.const_of_load {h : Heap F} {t : IxVMKExpr F} {p x y : SourceValue F
     injection hargs with hx hrest; injection hrest with hy _
     subst hx hy
     exact ⟨_, _, rfl, ra, rl⟩
-  | bvar cell | sort cell _ | app cell _ _ | lam cell _ _ | forallE cell _ _
+  | bvar cell | sort cell _ | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
   | letE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
@@ -178,8 +179,8 @@ theorem RepK.let_of_load {h : Heap F} {t : IxVMKExpr F} {p : SourceValue F}
     ∃ ty v b, t = .letE ty v b := by
   cases rep with
   | letE cell _ _ _ => exact ⟨_, _, _, rfl⟩
-  | bvar cell | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _
-  | forallE cell _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
+  | bvar cell | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _
+  | forallE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
     exact absurd hc (by decide)
@@ -190,8 +191,8 @@ theorem RepK.proj_of_load {h : Heap F} {t : IxVMKExpr F} {p : SourceValue F}
     ∃ a i e, t = .proj a i e := by
   cases rep with
   | proj cell _ _ => exact ⟨_, _, _, rfl⟩
-  | bvar cell | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _
-  | forallE cell _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ =>
+  | bvar cell | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _
+  | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
     exact absurd hc (by decide)
@@ -244,6 +245,13 @@ def trLevel : IxVMKUniv F → Ix.Kernel.Level
   | .imax u v => .imax (trLevel u) (trLevel v)
   | .param i => .param (ZMod.val i)
 
+/-- **The binder datum of a stored level**: the kernel's `pw` is the zero-ness of
+the level the node stores. -/
+def bmeta (ℓ : IxVMKUniv F) : Ix.Kernel.BinderMeta := { pw := (trLevel ℓ).zeronessOf }
+
+/-- A successor level stores the data fragment's datum, `never`. -/
+theorem bmeta_succ (u : IxVMKUniv F) : bmeta (.succ u) = nb := rfl
+
 /-- The value of a little-endian limb list. -/
 def limbsVal : List UInt64 → Nat
   | [] => 0
@@ -260,10 +268,11 @@ inductive Tr (κ : Bytes.Address → Ix.Kernel.Key .anon) (d : Nat) (Γ : Nat �
   | const {k : Nat} {a : Bytes.Address} : Tr κ d Γ k (.const a []) (.const (κ a) [])
   | app {k : Nat} {f a : IxVMKExpr F} {Ef Ea : KExpr} :
       Tr κ d Γ k f Ef → Tr κ d Γ k a Ea → Tr κ d Γ k (.app f a) (.app Ef Ea)
-  | lam {k : Nat} {ty b : IxVMKExpr F} {T B : KExpr} :
-      Tr κ d Γ k ty T → Tr κ d Γ (k + 1) b B → Tr κ d Γ k (.lam ty b) (.lam T B nb)
-  | forallE {k : Nat} {ty b : IxVMKExpr F} {T B : KExpr} :
-      Tr κ d Γ k ty T → Tr κ d Γ (k + 1) b B → Tr κ d Γ k (.forallE ty b) (.forallE T B nb)
+  | lam {k : Nat} {ty b : IxVMKExpr F} {ℓ : IxVMKUniv F} {T B : KExpr} :
+      Tr κ d Γ k ty T → Tr κ d Γ (k + 1) b B → Tr κ d Γ k (.lam ty b ℓ) (.lam T B (bmeta ℓ))
+  | forallE {k : Nat} {ty b : IxVMKExpr F} {ℓ : IxVMKUniv F} {T B : KExpr} :
+      Tr κ d Γ k ty T → Tr κ d Γ (k + 1) b B →
+        Tr κ d Γ k (.forallE ty b ℓ) (.forallE T B (bmeta ℓ))
   | litNat {k : Nat} {limbs : List UInt64} :
       Tr κ d Γ k (.litNat limbs) (.lit (.natVal (limbsVal limbs)))
 
@@ -273,8 +282,15 @@ theorem Tr.app_inv {κ : Bytes.Address → Ix.Kernel.Key .anon} {d : Nat} {Γ : 
   cases h; exact ⟨_, _, rfl, by assumption, by assumption⟩
 
 theorem Tr.lam_inv {κ : Bytes.Address → Ix.Kernel.Key .anon} {d : Nat} {Γ : Nat → KExpr}
-    {k : Nat} {ty b : IxVMKExpr F} {E : KExpr} (h : Tr κ d Γ k (.lam ty b) E) :
-    ∃ T B, E = .lam T B nb ∧ Tr κ d Γ k ty T ∧ Tr κ d Γ (k + 1) b B := by
+    {k : Nat} {ty b : IxVMKExpr F} {ℓ : IxVMKUniv F} {E : KExpr}
+    (h : Tr κ d Γ k (.lam ty b ℓ) E) :
+    ∃ T B, E = .lam T B (bmeta ℓ) ∧ Tr κ d Γ k ty T ∧ Tr κ d Γ (k + 1) b B := by
+  cases h; exact ⟨_, _, rfl, by assumption, by assumption⟩
+
+theorem Tr.forallE_inv {κ : Bytes.Address → Ix.Kernel.Key .anon} {d : Nat} {Γ : Nat → KExpr}
+    {k : Nat} {ty b : IxVMKExpr F} {ℓ : IxVMKUniv F} {E : KExpr}
+    (h : Tr κ d Γ k (.forallE ty b ℓ) E) :
+    ∃ T B, E = .forallE T B (bmeta ℓ) ∧ Tr κ d Γ k ty T ∧ Tr κ d Γ (k + 1) b B := by
   cases h; exact ⟨_, _, rfl, by assumption, by assumption⟩
 
 theorem Tr.const_inv {κ : Bytes.Address → Ix.Kernel.Key .anon} {d : Nat} {Γ : Nat → KExpr}

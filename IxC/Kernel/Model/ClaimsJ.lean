@@ -8,7 +8,7 @@ public import IxC.Kernel.Semantics.DeclJ
 public section
 
 /-!
-# The claims over a judgement package (lane l5)
+# The claims over a judgement package
 
 `InferClaim`, `DefEqClaim` (`Model/Claims.lean`) and `InferReads`
 (`Model/Tiers.lean`) with the checker's run replaced by a judgement package's

@@ -8,9 +8,9 @@ import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVMFixtures
 import Tests.Ix.Kernel.SourceIngressStep
 
-/-! # Lane s4 measurements (manual tier, not a gate)
+/-! # IxVM inductive-declaration measurements (manual tier, not a gate)
 
-Spike S4 of the IxVM consistency plan (`plans/ixvm-no-false-plan.md` 8.5-8.7):
+Measurements behind the choice of how IxVM checks inductive declarations: the
 costs of checking inductive declarations in the deployed IxVM program, a
 sizeable `Std` shard for the performance baseline, and a census of the
 environment's mutual and nested inductive blocks with the certified kernel's
@@ -58,6 +58,13 @@ def runStats (suite : String) (cases : Array (Unit → Except String Case)) (job
       IO.eprintln s!"[{suite}] a case could not be built: {e}"
       failed := failed + 1
     | .ok c =>
+      -- the binder data (D2), and with `$IX_PW_CHECK` their host-side check
+      let c ← IO.ofExcept c.withPwHints
+      if let some mode ← IO.getEnv "IX_PW_CHECK" then
+        if let some e ← pwCheckCase suite c then
+          IO.eprintln s!"[{suite}] {e}"
+          failed := failed + 1
+        if mode == "only" then continue
       let path := dir / s!"{suite}-{i}.ixt"
       i := i + 1
       IO.FS.writeBinFile path (Ix.AiurInvocation.casesHeader ++ c.encode ++ Ix.AiurInvocation.casesTrailer)
@@ -164,7 +171,7 @@ def stdShard (env : Lean.Environment) (base : Lean.Name) (pre : List String) :
     if owned.isEmpty then throw s!"the Std shard {pre} selected nothing"
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
     return { label := s!"s4 std shard {".".intercalate pre} of {base} ({owned.size} owned)",
-             accept := true, witness }
+             accept := true, witness, env := ixonEnv }
 
 /-- A module shard: every constant declared in a module whose name begins
 with `pre` (and, when `only` is given, whose own name begins with it too),
@@ -191,7 +198,8 @@ def moduleShard (env : Lean.Environment) (pre : Lean.Name) : IO (Unit → Except
   return fun _ => do
     if owned.isEmpty then throw s!"the module shard {pre} selected nothing"
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
-    return { label := s!"s4 std module shard {pre} ({owned.size} owned)", accept := true, witness }
+    return { label := s!"s4 std module shard {pre} ({owned.size} owned)", accept := true, witness,
+             env := ixonEnv }
 
 def bench (env : Lean.Environment) : IO UInt32 := do
   let present := targets.filter fun (label, ns, r) =>
@@ -206,7 +214,8 @@ def bench (env : Lean.Environment) : IO UInt32 := do
     cases := cases.push fun _ => do
       let owned ← declOwned ixonEnv ns
       let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-      return { label := s!"s4 decl {label} ({owned.size} owned)", accept := true, witness }
+      return { label := s!"s4 decl {label} ({owned.size} owned)", accept := true, witness,
+               env := ixonEnv }
     -- the same declarations split: the inductive block alone, then the
     -- recursor block alone (the other assumed)
     let (recs, inds) := ns.partition isRecName
@@ -215,7 +224,8 @@ def bench (env : Lean.Environment) : IO UInt32 := do
         cases := cases.push fun _ => do
           let owned ← declOwned ixonEnv sel
           let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-          return { label := s!"s4 decl-{part} {label} ({owned.size} owned)", accept := true, witness }
+          return { label := s!"s4 decl-{part} {label} ({owned.size} owned)", accept := true, witness,
+                   env := ixonEnv }
     cases := cases.push fun _ => do
       let some target := ixonEnv.getAddr? (Ix.Name.fromLeanName (nameOfString r))
         | throw s!"{r} is not in the Ixon environment"
@@ -332,15 +342,16 @@ def census (env : Lean.Environment) : IO UInt32 := do
       IO.eprintln s!"[ixvm-s4-census] {t}: {e}"
   return if failed == 0 then 0 else 1
 
-/-! ## Candidate (a), prototyped: IxVM checks the modeller's records
+/-! ## Prototype: IxVM checks the modeller's records
 
 The records the in-process modeller generates for a block (Source mode, keys
 are Lean names) are converted to Lean declarations, added through Lean's
 kernel (`Environment.addDeclCore`, which also generates the tag's and the
 auxiliary family's recursors), compiled to Ixon by the certified compiler,
 and checked by the deployed IxVM program as one shard that owns them all,
-with everything else assumed. That is the "certification tax" candidate (a)
-pays per block; the modeled install's own pins (`Inductives/Modeled.lean`)
+with everything else assumed. That is the cost IxVM pays per block when it checks
+the modeller's records instead of checking the block natively; the modeled
+install's own pins (`Inductives/Modeled.lean`)
 are not part of it. -/
 
 /-- A Source-mode level parameter's Lean name. -/

@@ -473,19 +473,46 @@ def CompileCovers : Prop :=
 
 /-! ## Value models
 
-The public `Ix.Kernel.Model` constrains types only: a definition may denote
-any inhabitant of its type. A value model also makes every stored definition
-denote its value. That is what the fold's soundness proof provides
-(`Ix.Kernel.Cached.checkDecls_model_defn_values`). Not covered: theorem and
-opaque values (the fold records none), the definitional equalities of
-inductive types (recursor rules, structure eta) and of the quotient (its
-computation rule), and level-parameter irrelevance. -/
+A value model is the typing model plus δ: every stored constant is a member of
+what its type denotes, `False` is empty, `Eq` is equality, and every stored
+definition denotes what its value denotes. That is what the fold's soundness
+proof provides (`Ix.Kernel.Cached.checkDecls_model_defn_values`), and what the
+renaming and quotient pullbacks below carry. It leaves out the kernel model's
+other laws (`Ix.Kernel.Model`): the recursors' ι rules (the quotient's
+computation rule among them), structure and unit-like η, projections of
+constructors, and the `Nat` accelerations; theorem and opaque values (the fold
+records none); and level-parameter irrelevance. A kernel model gives a value
+model (`ValueModel.ofModel`). -/
 
-/-- A model of `env` in which every stored definition denotes its value. -/
-structure ValueModel (V : Type w) [SetTheory V] (env : Env md) extends Model V env where
+/-- **A value model of `env`**: the typing model plus δ (see above). Each field
+is the field of the same name of `Ix.Kernel.Model`. -/
+structure ValueModel (V : Type w) [SetTheory V] (env : Env md) where
+  /-- the set a constant denotes, per level assignment -/
+  cval : Ix.Kernel.Key md → (LevelParam → Nat) → V
+  /-- every stored constant is a member of what its type denotes -/
+  mem : ∀ c ∈ env.consts, ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+    ∃ T, Denotes cval env φ ρ c.toConstantVal.type T ∧ SetTheory.Mem (cval c.name φ) T
+  /-- whatever the built-in `False` denotes is the empty set -/
+  false_empty : ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F : V),
+    Denotes cval env φ ρ (.const falseName []) F → F = SetTheory.empty
+  /-- whatever the built-in `Eq` denotes is set equality, on its graph's domains -/
+  eq_equality : ∀ (u : Ix.Kernel.Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (E A a b : V),
+    Denotes cval env φ ρ (.const Ix.Kernel.eqName [u]) E →
+    SetTheory.Mem A (SetTheory.univ (Ix.Kernel.Level.eval φ u)) → SetTheory.Mem a A →
+    SetTheory.Mem b A →
+    SetTheory.app (SetTheory.app (SetTheory.app E A) a) b = SetTheory.eqv a b
+  /-- every stored definition denotes what its value denotes (δ) -/
   defn_value : ∀ (cv : Ix.Kernel.ConstantVal md) (value : Ix.Kernel.Expr md)
       (hint : Ix.Kernel.ReducibilityHint), Ix.Kernel.ConstantInfo.defnInfo cv value hint ∈ env.consts →
     ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes cval env φ ρ value (cval cv.name φ)
+
+/-- A kernel model is a value model: keep the typing laws and δ. -/
+def ValueModel.ofModel {V : Type w} [SetTheory V] {env : Env md} (M : Model V env) :
+    ValueModel V env :=
+  ⟨M.cval, M.mem, M.false_empty, M.eq_equality, M.defn_value⟩
+
+theorem ValueModel.ofModel_cval {V : Type w} [SetTheory V] {env : Env md} (M : Model V env) :
+    (ValueModel.ofModel M).cval = M.cval := rfl
 
 /-! ## The reading τ -/
 

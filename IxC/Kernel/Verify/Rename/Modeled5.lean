@@ -297,12 +297,13 @@ theorem projFnRule_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env e
   unfold projFnRule
   have hrl : RecRule.Good P
       ({ ctor := ctorName, nfields := nF, ctorParams := nP,
-         fire := (if Expr.recRulePlain pty nP nP nP then .plain else .inert),
+         fire := (if Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env.find? ctorName)
+           then .plain else .inert),
          rhs := rhsA, paramsBlind := false } : RecRule md) := by
     refine ⟨hc, ?_, hr⟩
     split <;> trivial
   have h := recRuleBits_ren hE (recName := projFnName T i) hrl
-  rw [← h, Expr.recRulePlain_mapKeys]
+  rw [← h, Expr.recRulePlain_mapKeys, ctorLevelParamsOf_ren hE hc]
   simp only [RecRule.mapKeys]
   split <;> rfl
 
@@ -326,7 +327,7 @@ theorem checkProjFn_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {env :
   obtain ⟨hcvj, hmcv⟩ := hr
   simp only [ConstantVal.mapKeys_type]
   refine SimR.bindE (checkProjTy_sim hE hT hc lps hmcv.2 nP nF) (fun pty hpty => ?_)
-  refine SimR.bindE (checkProjShape_sim pty cvj.type nP nF) (fun _ _ => ?_)
+  refine SimR.bindE (checkProjShape_sim pty cvj.type nP nF cvj.levelParams) (fun _ _ => ?_)
   refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => SimR.throw_bind)
   refine SimR.bindE (checkProjRule_sim hops hE hpty hcvj lps nP nF i) (fun rhsA hrhsA => ?_)
   refine SimR.bindE (checkProjIota_sim mode hops hE hE hT hc lps hcvj nP nF i) (fun _ _ => ?_)

@@ -207,7 +207,7 @@ def shardCase (env : Lean.Environment) : IO Builder := do
   return fun _ => do
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
     return { label := s!"shard CheckEnv of {owned.size} String/Char constants of {base}'s closure",
-             accept := true, expectedFftCost := some 132_567_104_056, witness := witness }
+             accept := true, expectedFftCost := some 124_218_178_223, witness := witness }
 
 /-- The verdict suite: every listed constant accepted, the binding claim of the
 default table, and a shard of the shard pipeline. A listed constant missing
@@ -231,7 +231,7 @@ def kernelChecks (env : Lean.Environment) : IO UInt32 := do
   let binding : Builder := fun _ => do
     let ctx ← Ix.ClaimContext.ofEnv ixonEnv
     let c ← Case.ofClaim "binding claim for the default table" ixonEnv (.binding ctx.spec ctx.binding)
-    return { c with expectedFftCost := some 440_836_498_395 }
+    return { c with expectedFftCost := some 422_044_432_397 }
   let shard ← shardCase env
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (entryCheckEntries.map (nameOfString ∘ Prod.fst)).toArray fenv

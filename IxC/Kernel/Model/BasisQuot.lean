@@ -781,10 +781,11 @@ theorem extendQuotInd (mp : EnvModelM V μ env)
         rfl)
       (fun _ h => nomatch h)
       (fun _ _ _ _ heq r hr => by
-        injection heq with _ _ _ h4
+        injection heq with h1 h2 h3 h4
+        subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨⟨_, _, _, hM⟩, fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hM rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun _ _ => rfl) ?_
@@ -2247,10 +2248,11 @@ theorem extendQuotLift (mp : EnvModelM V μ env)
         rfl)
       (fun _ h => nomatch h)
       (fun _ _ _ _ heq r hr => by
-        injection heq with _ _ _ h4
+        injection heq with h1 h2 h3 h4
+        subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨⟨_, _, _, hM⟩, fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hM rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun _ _ => rfl) ?_

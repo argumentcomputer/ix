@@ -284,7 +284,7 @@ def sumRules (find? : Key md → Option (ConstantInfo md)) (recName : Key md)
   | c :: cs, rhs :: rhss =>
     recRuleBits find? recName
       { ctor := c.1.name, nfields := c.2, ctorParams := nP,
-        fire := if Expr.recRulePlain recTy mI rP nP then .plain else .inert,
+        fire := if Expr.recRulePlain recTy mI rP nP c.1.levelParams then .plain else .inert,
         rhs := rhs, paramsBlind := true }
       :: sumRules find? recName nP mI rP recTy cs rhss
   | _, _ => []

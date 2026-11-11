@@ -124,7 +124,7 @@ theorem sumRules_getElem? {find? : Key md → Option (ConstantInfo md)}
         ctorsA[j]? = some cA ∧ rhss[j]? = some rhs ∧
         r = recRuleBits find? recName
           { ctor := cA.1.name, nfields := cA.2, ctorParams := nP,
-            fire := if Expr.recRulePlain recTy mI rP nP then .plain
+            fire := if Expr.recRulePlain recTy mI rP nP cA.1.levelParams then .plain
               else .inert,
             rhs := rhs, paramsBlind := true }
   | [], _, r, h => by simp [sumRules] at h
