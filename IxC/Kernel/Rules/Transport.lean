@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Rules.Rel
 public import IxC.Kernel.Rules.TransportKit
+public import IxC.Kernel.Rules.NatOffset
 
 @[expose] public section
 
@@ -192,6 +193,7 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .trans h₁ h₂, hd => .trans (red_tr hT h₁ hd) (red_tr hT h₂ hd)
   | _, _, _, .appFn h, hd => .appFn (red_tr hT h hd)
   | _, _, _, .projArg h, hd => .projArg (red_tr hT h hd)
+  | _, _, _, .appArg h, hd => .appArg (red_tr hT h hd)
   | _, _, _, .betaGate hnev, _ => by
     rw [renFV_instantiate1]
     exact .betaGate hnev
@@ -228,6 +230,14 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
     exact .natOp hc (hT.ext.natOpStored_mono hst) (red_tr hT hwa hd)
       (by rw [rawNatLit?_renFV]; exact hn₁) (red_tr hT hwb hd)
       (by rw [rawNatLit?_renFV]; exact hn₂) hr
+  | _, _, _, .natAddSucc (us := us) (b := b) (k := k) hs ht, _ => by
+    show Red env' _ (.app (.app (.const natAddName us) (b.renFV ρ)) (.lit (.natVal (k + 1))))
+      (.app (.const natSuccName []) ((natAddLit b k).renFV ρ))
+    rw [natAddLit_renFV]
+    exact .natAddSucc (hT.ext.natLitSupported_mono hs) (hT.ext.opt_mono (p := natAddTyOk) ht rfl)
+  | _, _, _, .natAddZero hs ht hw hn, hd =>
+    .natAddZero (hT.ext.natLitSupported_mono hs) (hT.ext.opt_mono (p := natAddTyOk) ht rfl)
+      (red_tr hT hw hd) (by rw [rawNatLit?_renFV]; exact hn)
   | _, _, _, .proj (cvC := cvC) hent hhead hi hlen hus hfire hctor hcerts, hd => by
     have hc := certs_tr hT hcerts hd
     rw [hT.fixType (cv := cvC) hctor rfl, ← getAppArgs_renFV] at hc
@@ -334,6 +344,12 @@ theorem defEq_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .const h, _ => .const h
   | _, _, _, .natZero, _ => .natZero
   | _, _, _, .natSucc h, hd => .natSucc (defEq_tr hT h hd)
+  | _, _, _, .natOffset (ba := ba) (bb := bb) (k := k) hs ht ha hb h, hd =>
+    .natOffset (ba := ba.renFV ρ) (bb := bb.renFV ρ) (k := k) (hT.ext.natLitSupported_mono hs)
+      (fun h' => hT.ext.opt_mono (p := natAddTyOk)
+        (ht (by simp only [natOffsetAdd_renFV] at h'; exact h')) rfl)
+      (by rw [natOffsetOf_renFV, ha]; rfl)
+      (by rw [natOffsetOf_renFV, hb]; rfl) (defEq_tr hT h hd)
   | _, _, _, .forallE hty hbody hpw hc, hd => by
     have h2 := defEq_tr hT hbody (hT.ok_succ hd)
     simp only [hT.δ_succ hd, hT.renFV_open hd] at h2
