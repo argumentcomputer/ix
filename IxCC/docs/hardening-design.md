@@ -78,8 +78,9 @@ kept as a filter (DC-4, decided): the [kernel front
 end](kernel-front-end-design.md) replaces it in the producer and on the
 native verifier path, and its switch is in progress (the owner's decision of
 2026-11-11). The erased checker's cost leaves IxCC's verifier; the kernel's
-typing core takes its place there, with its own blow-up on chains of `let`
-until the kernel's fix lands ([below](#external-dependencies)).
+typing core takes its place there, exponential on universe levels it cannot
+fold until its planned work budget lands (its blow-up on chains of `let` is
+fixed, [below](#external-dependencies)).
 
 **HD-2. A metered verifier by construction (planned; after SP-0).** Replace
 the patchwork of per-stage budgets by one work budget threaded through every
@@ -103,36 +104,42 @@ decision](roadmap.md#open-decisions).
 
 ## External dependencies
 
-- **The kernel's typing core.** IxCK's typing core is exponential in the size
-  of a well-typed constant whose `let`s duplicate a growing subterm: a constant
-  of about 225 bytes takes about a minute and each further `let` doubles the
-  time. Lean's own kernel checks the same type in constant time. Any verifier
-  that runs IxCK's admission on hostile bytes inherits this. *The cause is not
-  established.* It was first attributed, by reading the code and without a
-  profile, to substituting every `let` eagerly and losing the sharing when
-  binder telescopes are rebuilt. But the core's binder operations already
-  return a term unchanged outside its loose-variable range, and its typing
-  memo is keyed on the term alone. The IxVM kernel circuit of the certified
-  IxVM work (pull request #678) substitutes `let`s just as eagerly and is
-  linear on the same family (that work's measurement of 2026-11-11, up to a
-  thousand `let`s); what it has and
-  IxCK's core lacks is interning of terms, so that equal terms are one object
-  and compare in constant time, and a memo table for every function. A count
-  of calls and memo misses per function would settle which of the core's
-  functions doubles. The fix (interning and memoisation in the core, or
-  charging its walks to a budget, or both) is the kernel side's to choose. It
-  matters to IxCC because IxCC's verifier is to run IxCK itself: the front end
-  over the kernel ([kernel front end](kernel-front-end-design.md#resource-bounds))
-  runs the kernel's entry and typing core on the claimant's bytes, and the core
-  exposes no work counter for IxCC to bound. **The fix is planned on this
-  branch** (the owner's decision of 2026-11-11): another engineer makes it in
-  the kernel package, in parallel with the switch of IxCC's front end to the
-  kernel, which proceeds now, and both land before the branch is merged.
-  Until the fix lands the exposure is on the branch: once the switch's step 3
-  lands, the erased checker (flat on this family) is gone from the verifier
-  path, and a closure of ordinary size can hold the byte-level verifiers as
-  long as its author chooses (52 s at 30 `let`s, measured in the [kernel front
-  end](kernel-front-end-design.md#resource-bounds)). If the fix exposes a step
-  counter, the front end passes it as a budget and reports a decline (KF-3).
+- **The kernel's typing core.** IxCK's typing core took time exponential in
+  the size of a well-typed constant whose ∀s share one type at each step: a
+  constant of about 225 bytes (`k = 30` nested `let`s, `let a(j+1) : Type :=
+  aj → aj`) took about 50 s, each further step doubling the time, where
+  Lean's own kernel is flat. *The cause* (profiled with per-function counts):
+  no work on terms doubles; two functions on universe levels did. The ∀ rule
+  built its level as `imax u v`, and on such a chain the level is shared as a
+  DAG of linear size whose tree doubles per step; `Level.simplify` (from the
+  comparison of the inferred sort with the declared one) and `levelHasParam`
+  (at every `.sort` node built) walked it as a tree. The `let` is incidental:
+  a `let`-free chain of sharing-table entries (`T (j+1) = T j → T j`) did the
+  same. *The fix* was made in the kernel package on this branch, in parallel
+  with the switch of IxCC's front end to the kernel, which proceeds (the
+  owner's decision of 2026-11-11), and has landed: the ∀ rule builds its
+  level with the official kernel's `mk_imax`/`mk_max` folds (`Level.mkIMax`,
+  which is always one of its arguments or their plain `imax`), in the
+  specification, the executed core and the declarative rule with its
+  soundness proof, and `Level` caches its has-parameter bit. Every such chain
+  then checks in milliseconds at a thousand steps, through the kernel's entry
+  and through IxCC's front end over it (28 ms at 30 `let`s where it took 50 s,
+  [kernel front end](kernel-front-end-design.md#resource-bounds), which keeps
+  the measurements from before the fix; `tests-kernel-front` checks such a
+  closure at 200). *Still exposed*, as in Lean's own kernel: levels the folds
+  cannot merge, such as two chains at two universe parameters each mentioning
+  the other at every step, whose level keeps a tree that doubles per step
+  (comparing it with a declared sort doubles in time and memory; level
+  equality is structural below a pointer and hash test, so comparing two such
+  levels, equal but built apart, walks them as trees too). It matters to IxCC
+  because IxCC's verifier runs IxCK itself: once the switch's step 3 lands, the
+  erased checker is gone from the verifier path, and a closure of ordinary
+  size carrying such a constant can hold the byte-level verifiers as long as
+  its author chooses. The core exposes no work counter, and its fuel bounds
+  recursion depth, not work; the planned guard is a work budget in the
+  kernel's core that meters the size of the levels it compares, which the
+  front end passes as a budget and reports as a decline (KF-3). Until it
+  lands, a verifier that runs IxCK's admission on hostile bytes needs a time
+  and memory limit of its own.
 - **The proof system's verifier** on the Aiur routes, which has its own
   parameter checks (the IxVM workstream's).

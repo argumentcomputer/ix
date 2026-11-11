@@ -7,9 +7,9 @@ new front end is **implemented beside the old one** (`IxCC.Src.KernelFront`,
 [`Src/KernelFront`](../IxCC/Src/KernelFront)), with a differential suite
 (`tests-kernel-front`); the switch that makes it the only front end is **in
 progress** ([The switch](#the-switch)): by the owner's decision of 2026-11-11
-it proceeds now, while the kernel's blow-up on chains of `let` is fixed in the
-kernel package on this branch in parallel, and both land before the branch is
-merged ([decisions](#decisions)). Its step 2 is done; the old front end is
+it proceeds now, and the kernel's fix of its blow-up on chains of `let`, made
+in parallel in the kernel package on this branch, has landed ([resource
+bounds](#resource-bounds), [decisions](#decisions)). Its step 2 is done; the old front end is
 still the default. This is most of the native
 discharge of the premises in the [roadmap](roadmap.md#milestones) (SP-N): the
 faithfulness check and the source of the typing derivations; the first
@@ -414,20 +414,23 @@ asks a change of behaviour:
    written); SrcEval evaluates the term with its `let`s. A lemma that the
    annotation pass preserves the interpretation of a readable term in every
    strong model connects them.
-4. **A work budget.** The typing core takes time exponential in the size of a
-   well-typed constant whose `let`s duplicate a growing subterm, and its fuel
-   bounds recursion depth, not work. The cause is not established
-   ([hardening design](hardening-design.md#external-dependencies)): the IxVM
-   kernel circuit substitutes `let`s as eagerly and is linear on the same
-   family, by interning terms and memoising every function, so interning in
-   the core may remove the blow-up itself. A budget is needed either way, for
-   whatever family is found next. A step counter threaded through
-   the core, with acceptance stated within the budget, is what lets IxCC bound
-   its verifier ([Resource bounds](#resource-bounds)). Planned on this branch
-   (the owner's decision of 2026-11-11): another engineer fixes the blow-up in
-   the kernel package, in parallel with the switch, and both land before the
-   branch is merged; whether by interning, a budget or both is the kernel
-   side's choice.
+4. **A work budget.** The typing core's fuel bounds recursion depth, not
+   work. Its exponential time on constants whose ∀s share one type at each
+   step had its cause in universe levels, not terms: the ∀ rule built `imax u
+   v`, a level shared as a DAG whose tree doubles per step, which
+   `Level.simplify` and `levelHasParam` walked as trees. The fix was made in
+   the kernel package on this branch, in parallel with the switch (the
+   owner's decision of 2026-11-11), and has landed: the kernel builds that
+   level with `mk_imax`'s folds and caches the has-parameter bit ([hardening
+   design](hardening-design.md#external-dependencies)), which closes those
+   families. Levels the folds cannot merge (two chains at two universe
+   parameters, each step mentioning the other) still take time doubling per
+   step, as in Lean's own kernel. A step counter on the core's calls would
+   not bound them, since the calls grow linearly: the budget has to meter the
+   size of the levels the core compares (a saturating size on `Level`, and a
+   decline where a level consumer meets one over the bound). That budget,
+   with acceptance stated within it, is what lets IxCC bound its verifier
+   ([Resource bounds](#resource-bounds)); it is planned (KF-3).
 5. **The rules' soundness over the public model** (added 2026-11-11).
    `infer_sound`, `defeq_sound` and `red_sound` are stated over the internal
    carrier with `RulesInputs`; soundness of the evaluator over every public
@@ -512,47 +515,47 @@ bounds it:
   in all) and the kernel's per-record universe budget;
 - the kernel's fuel, per call: a recursion-depth bound (`checkFuel`, 100,000),
   not a work bound;
-- nothing else. The kernel's typing core is exponential on a constant of a
-  few hundred bytes whose `let`s duplicate a growing subterm, and IxCC cannot
-  meter a function it does not own: no counter is exposed. Admission limits do
-  not help (the payload is tiny). A syntactic refusal of `let` chains is
-  evadable (the same blow-up through δ-reducts of separate definitions).
+- nothing else. IxCC cannot meter a function it does not own: no counter is
+  exposed, and admission limits do not help against a payload of a few
+  hundred bytes.
 
-The erased checker had no closure-wide budget either ([hardening
-design](hardening-design.md)), but it is not exponential on this family: it
-opens each `let` as a let-bound local, as Lean's own checker does, and
-hash-conses its terms. Measured on a role-bound closure of 206 records with
-one such constant (`k` nested `let`s, the constant 200 to 330 bytes), each
-acceptance alone in its own process:
+The kernel's typing core was exponential on a constant of a few hundred bytes
+whose ∀s share one type at each step (`k` nested `let`s, `let a(j+1) : Type
+:= aj → aj`, or the same chain in a sharing table): the ∀ rule built a
+universe level whose tree doubles per step, and two level functions walked it
+as a tree ([hardening design](hardening-design.md#external-dependencies)).
+The kernel now builds that level with `mk_imax`'s folds and caches the
+level's has-parameter bit. Measured on a role-bound closure of 206 records
+with one such constant (the constant 200 to 330 bytes), each acceptance alone
+in its own process, before and after the kernel's fix (the earlier erased
+checker, which opens each `let` as a let-bound local and hash-conses its
+terms, for comparison):
 
-| `k` | erased checker | kernel front end |
-| ---: | ---: | ---: |
-| 16 | 0.14 s | 0.03 s |
-| 20 | 0.14 s | 0.08 s |
-| 22 | 0.14 s | 0.22 s |
-| 24 | 0.14 s | 0.80 s |
-| 26 | 0.14 s | 3.1 s |
-| 28 | 0.14 s | 14.7 s |
-| 30 | 0.19 s | 52.2 s |
+| `k` | erased checker | kernel front end, before | kernel front end, after |
+| ---: | ---: | ---: | ---: |
+| 24 | 0.14 s | 0.78 s | 0.027 s |
+| 28 | 0.14 s | 12.1 s | 0.028 s |
+| 30 | 0.19 s | 50.4 s | 0.028 s |
+| 34 | | | 0.028 s |
 
-Both accept every one. So the switch adds an exposure the erased checker does
-not have: a claimant can make the verifier's acceptance take as long as it
-likes with a closure of ordinary size. The annotator asks the same core about
+All accept. (`tests-kernel-front` checks such a closure at `k = 200`.) What
+remains exposed is a universe level the folds cannot merge: two chains at two
+universe parameters, each step mentioning the other, keep a level whose tree
+doubles per step, and the kernel's comparisons of it (with a declared sort,
+or in its proof-irrelevance test) take time doubling per step, as in Lean's
+own kernel. So the switch still adds an exposure the erased checker does not
+have: a claimant can make the verifier's acceptance take as long as it likes
+with a closure of ordinary size. The annotator asks the same core about
 `let`-substituted subterms, so a root whose terms carry such a chain costs as
-much again in the producer and in Stage A. The guard is a dependency: the
-kernel's fix of its blow-up (kernel-side item 4), and, if the fix exposes a
-step counter, a budget the front end passes and reports as a decline
-(milestone KF-3 below). The owner decided on 2026-11-11 that the switch
-proceeds now and that the fix is made in the kernel package on this branch,
-by another engineer, in parallel; both land before the branch is merged.
-**Until the fix lands, the exposure is on this branch**: once the switch's
-step 3 lands, the kernel's typing time is outside the verifier's time bound,
-and a constant of a few hundred bytes chosen by a claimant can hold
-`verifyBytes`, `Ring0Sip.verifyBytes` and `ixcc check-cert` as long as it
-chooses (52 s at 30 `let`s, roughly doubling with each further one; the table
-above).
-Before step 3 it is so only for the kernel front end's own entry points. On
-every closure `ix compile` writes, the kernel is faster
+much again in the producer and in Stage A. The guard for these is a
+dependency: a work budget in the kernel's core that meters the size of the
+levels it compares (kernel-side item 4), which the front end passes as a
+budget and reports as a decline (milestone KF-3 below). Until that budget
+exists, once the switch's step 3 lands, the kernel's typing time on such levels is outside
+the verifier's time bound, and a constant of a few hundred bytes chosen by a
+claimant can hold `verifyBytes`, `Ring0Sip.verifyBytes` and `ixcc check-cert`
+as long as it chooses; before step 3 it is so only for the kernel front end's
+own entry points. On every closure `ix compile` writes, the kernel is faster
 ([measurements](#measurements)).
 The kernel's recursion depth on the verifier's 8 MiB stack is likewise the
 kernel's to bound (HD-3 audits it with IxCC's own).
@@ -562,8 +565,8 @@ kernel's to bound (HD-3 audits it with IxCC's own).
 The steps that make the new front end the only one, in an order that keeps
 the tree green at every commit. The switch proceeds now (the owner's decision
 of 2026-11-11, [decision 5](#decisions)); the kernel's fix of its blow-up on
-`let` chains is made in parallel in the kernel package on this branch, and
-both land before the branch is merged.
+`let` chains, made in parallel in the kernel package on this branch, has
+landed; what stays exposed is under [resource bounds](#resource-bounds).
 
 1. **Prerequisites (not this work).** The fixtures refrozen in the role-bound
    form (RL-1 phase 2; the kernel admits only role-bound environments, and
@@ -728,16 +731,15 @@ front end's acceptance time. A hostile closure is measured under
 | KF-0 | The front end beside the old one, the differential suite, the acceptance and classifier lemmas, the ledger's exception (this change) | `tests-kernel-front` passes; identical annotations, certificates and objects on every role-bound closure the kernel accepts |
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
 | KF-2 | The switch (steps 2–5). In progress: step 2 done (2026-11-11); steps 3–5 after the refreeze | all required checks on the refrozen corpus; the deletion list gone |
-| KF-3 | The kernel's fix of its blow-up on `let` chains (kernel-side item 4: interning, a work budget threaded through the core, or both), made in the kernel package on this branch by another engineer, in parallel with KF-2; a budget, if the fix exposes one, passed by the front end. Lands with KF-2 before the branch is merged (the owner's decision of 2026-11-11) | the hostile `let`-chain closure accepted in time flat in `k`, or declined within the budget |
+| KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's level built with `mk_imax`'s folds, the level's has-parameter bit cached. Planned: a work budget in the kernel's core metering the size of the levels it compares, passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a closure whose levels the kernel cannot fold (two interleaved chains at two universe parameters) declined within the budget (planned) |
 | KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
 ## Decisions
 
 **Decided by the owner on 2026-11-11** (decision 5 below): the switch
-proceeds now; the kernel's blow-up on `let` chains is fixed in the kernel
-package on this branch, by another engineer, in parallel with the switch;
-both land before the branch is merged; until the fix lands the exposure is
-on the branch. The fixtures are being refrozen in the role-bound form by
+proceeds now, and the kernel's blow-up on `let` chains is fixed in the
+kernel package on this branch, in parallel with the switch (the fix has
+landed; what stays exposed is under [resource bounds](#resource-bounds)). The fixtures are being refrozen in the role-bound form by
 another engineer, and the switch's step 3 lands after that. Item 6 (the
 closure run for premise (i)) was decided the same day (DO-37).
 
@@ -768,18 +770,20 @@ rather than choosing between two.
    The switch (step 3; the producer and the verifier go together) either
    lands with the exposure documented or waits for the kernel's fix
    (kernel-side item 4, KF-3). **Decided** (the owner, 2026-11-11): the
-   switch proceeds now, with the exposure documented; the kernel's fix is
-   made in the kernel package on this branch by another engineer, in
-   parallel, and both land before the branch is merged. Until the fix lands
-   the exposure is on the branch. (The earlier working default held the
-   switch until the kernel's typing core had a work budget.) The exposure,
-   measured: acceptance of a role-bound closure of 206 records
+   switch proceeds now, with the exposure documented, and the kernel's fix is
+   made in the kernel package on this branch, in parallel; both land before
+   the branch is merged. (The earlier working default held the switch until
+   the kernel's typing core had a work budget.) The exposure, measured when
+   the decision was taken: acceptance of a role-bound closure of 206 records
    with one constant of `k` nested `let`s, each alone in its own process:
 
    | `k` | 16 | 20 | 22 | 24 | 26 | 28 | 30 |
    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
    | erased checker | 0.14 s | 0.14 s | 0.14 s | 0.14 s | 0.14 s | 0.14 s | 0.19 s |
    | kernel front end | 0.03 s | 0.08 s | 0.22 s | 0.80 s | 3.1 s | 14.7 s | 52.2 s |
+
+   The fix has since landed; [resource bounds](#resource-bounds) has the
+   measurements after it and what stays exposed.
 6. **The native discharge of premise (i)** (added 2026-11-11). Either keep
    the tiered whole-artifact acceptance and prove the three restriction lemmas,
    or add a run of the logical entry on the closure of the seeds under the

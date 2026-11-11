@@ -42,7 +42,8 @@ says to take them: from `ConstantValR`'s own recorded
    bit by `pwBit_zeronessOf`, and the *telescope collapse*
    `Level.eval φ (imax u v) = 0 ↔ Level.eval φ v = 0` makes it **one
    fact per pin rather than one per binder**: the ∀ clause's own
-   result `.sort (.imax u v)` carries the innermost bit outward
+   result `.sort (mkIMax u v)`, which is `imax u v` in every assignment
+   (`Level.eval_mkIMax`), carries the innermost bit outward
    through every remaining binder.
 
 `whnf_forallE_eq` (a `∀`-tower is its own whnf) and its sort twin
@@ -212,13 +213,15 @@ theorem propext_bits (hμ : μ.verifiedChecks = true)
   obtain rfl : v3 = .zero := ensureSortCore_sort_eq hens3
   have hb3 : pwBit φ m₃.pw = 0 := by
     rw [← hpw3 hμ]; exact (pwBit_zeronessOf φ _).mpr rfl
-  obtain rfl : v2 = .imax u3 .zero := ensureSortCore_sort_eq hens2
+  obtain rfl : v2 = Level.mkIMax u3 .zero := ensureSortCore_sort_eq hens2
   have hb2 : pwBit φ m₂.pw = 0 := by
-    rw [← hpw2 hμ]; exact (pwBit_zeronessOf φ _).mpr (by simp [Level.eval])
-  obtain rfl : v1 = .imax u2 (.imax u3 .zero) :=
+    rw [← hpw2 hμ]
+    exact (pwBit_zeronessOf φ _).mpr (by simp [Level.eval_mkIMax, Level.eval])
+  obtain rfl : v1 = Level.mkIMax u2 (Level.mkIMax u3 .zero) :=
     ensureSortCore_sort_eq hens1
   have hb1 : pwBit φ m₁.pw = 0 := by
-    rw [← hpw1 hμ]; exact (pwBit_zeronessOf φ _).mpr (by simp [Level.eval])
+    rw [← hpw1 hμ]
+    exact (pwBit_zeronessOf φ _).mpr (by simp [Level.eval_mkIMax, Level.eval])
   exact ⟨hb1, hb2, hb3⟩
 
 
@@ -299,10 +302,10 @@ theorem choice_bits (hμ : μ.verifiedChecks = true)
   obtain rfl : v2 = .param uN := ensureSortCore_sort_eq hens2
   have hb2 : pwBit φ m₂.pw = 0 ↔ φ uN = 0 := by
     rw [← hpw2 hμ, pwBit_zeronessOf]; simp [Level.eval]
-  obtain rfl : v1 = .imax u2 (.param uN) := ensureSortCore_sort_eq hens1
+  obtain rfl : v1 = Level.mkIMax u2 (.param uN) := ensureSortCore_sort_eq hens1
   have hb1 : pwBit φ m₁.pw = 0 ↔ φ uN = 0 := by
     rw [← hpw1 hμ, pwBit_zeronessOf]
-    simp only [Level.eval]
+    simp only [Level.eval_mkIMax, Level.eval]
     exact imax_eq_zero_iff _ _
   exact ⟨hb1, hb2⟩
 

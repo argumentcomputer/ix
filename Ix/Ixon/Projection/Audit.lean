@@ -136,9 +136,14 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- The indexed inductive shape guard adds 14 compiled functions net and the
 -- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps; see
 -- `IxCK/Kernel/Audit/Roots.lean`).
+-- The level's cached has-parameter bit (`Level.hasParamData`, read through the proved
+-- `levelHasParam_eq_csimp`; see `IxCK/Kernel/Audit/Roots.lean`) adds one ruled computed field
+-- with its `unsafe` override and one ruled csimp to each closure here.
+-- The ∀ rule's level built with `mk_imax`'s folds (`Level.mkIMax` and its helpers) adds 7
+-- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6875 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 6882 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

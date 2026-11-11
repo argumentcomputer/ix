@@ -400,4 +400,186 @@ theorem substFn_param_self (φ : LevelParam → Nat) :
     · simp only [List.map_cons, Level.substFn, if_neg h]
       exact congrFun ih n
 
+/-! ### The ∀ rule's level
+
+`mkIMax` (`Level.lean`, `imax` with the C++ kernel's `mk_imax` and
+`mk_max` folds) is `imax` in every assignment, and builds no node the
+plain `imax` would not. -/
+
+theorem eval_toOffset (φ : LevelParam → Nat) :
+    ∀ l : Level, eval φ l = eval φ (toOffset l).1 + (toOffset l).2
+  | .succ l => by
+    simp only [toOffset, eval]
+    rw [eval_toOffset φ l]
+    omega
+  | .zero | .max _ _ | .imax _ _ | .param _ => by simp [toOffset]
+
+theorem toOffset_fst_of_isExplicit :
+    ∀ {l : Level}, isExplicit l = true → (toOffset l).1 = .zero
+  | .zero, _ => rfl
+  | .succ l, h => by
+    simp only [toOffset]
+    exact toOffset_fst_of_isExplicit (l := l) h
+  | .max _ _, h | .imax _ _, h | .param _, h => by simp [isExplicit] at h
+
+/-- A numeral evaluates to its offset. -/
+theorem eval_of_isExplicit (φ : LevelParam → Nat) {l : Level}
+    (h : isExplicit l = true) : eval φ l = (toOffset l).2 := by
+  rw [eval_toOffset φ l, toOffset_fst_of_isExplicit h]
+  simp [eval]
+
+/-- `isNeverZero` is sound: such a level is nonzero in every
+assignment. -/
+theorem eval_ne_zero_of_isNeverZero (φ : LevelParam → Nat) :
+    ∀ {l : Level}, isNeverZero l = true → eval φ l ≠ 0
+  | .succ _, _ => by simp [eval]
+  | .max a b, h => by
+    simp only [isNeverZero, Bool.or_eq_true] at h
+    simp only [eval]
+    rcases h with h | h
+    · have := eval_ne_zero_of_isNeverZero φ h
+      omega
+    · have := eval_ne_zero_of_isNeverZero φ h
+      omega
+  | .imax _ b, h => by
+    simp only [isNeverZero] at h
+    have := eval_ne_zero_of_isNeverZero φ h
+    simp only [eval, if_neg this]
+    omega
+  | .zero, h | .param _, h => by simp [isNeverZero] at h
+
+/-- A fold of `max l1 l2` is `max l1 l2` in every assignment. -/
+theorem eval_maxFold (φ : LevelParam → Nat) {l1 l2 l : Level}
+    (h : maxFold l1 l2 = some l) :
+    eval φ l = Max.max (eval φ l1) (eval φ l2) := by
+  unfold maxFold at h
+  by_cases hx : (isExplicit l1 && isExplicit l2) = true
+  · rw [if_pos hx, Option.some.injEq] at h
+    cases h
+    simp only [Bool.and_eq_true] at hx
+    have e1 := eval_of_isExplicit φ hx.1
+    have e2 := eval_of_isExplicit φ hx.2
+    split <;> omega
+  rw [if_neg hx] at h
+  by_cases h12 : (l1 == l2) = true
+  · rw [if_pos h12, Option.some.injEq] at h
+    cases h
+    rw [eq_of_beq h12]
+    omega
+  rw [if_neg h12] at h
+  by_cases h1z : (l1 == .zero) = true
+  · rw [if_pos h1z, Option.some.injEq] at h
+    cases h
+    rw [eq_of_beq h1z]
+    simp only [eval]
+    omega
+  rw [if_neg h1z] at h
+  by_cases h2z : (l2 == .zero) = true
+  · rw [if_pos h2z, Option.some.injEq] at h
+    cases h
+    rw [eq_of_beq h2z]
+    simp only [eval]
+    omega
+  rw [if_neg h2z] at h
+  by_cases hab : maxHas l1 l2 = true
+  · rw [if_pos hab, Option.some.injEq] at h
+    cases h
+    cases l2 with
+    | max a b =>
+      simp only [maxHas, Bool.or_eq_true, beq_iff_eq] at hab
+      simp only [eval]
+      rcases hab with rfl | rfl <;> omega
+    | _ => simp [maxHas] at hab
+  rw [if_neg hab] at h
+  by_cases hb : ((toOffset l1).1 == (toOffset l2).1) = true
+  · rw [if_pos hb, Option.some.injEq] at h
+    cases h
+    have e1 := eval_toOffset φ l1
+    have e2 := eval_toOffset φ l2
+    rw [eq_of_beq hb] at e1
+    split <;> omega
+  · rw [if_neg hb] at h
+    simp at h
+
+/-- The ∀ rule's level is `l1`, `l2` or `imax l1 l2`: it never builds a
+node the plain rule would not. -/
+theorem mkIMax_cases (l1 l2 : Level) :
+    mkIMax l1 l2 = l1 ∨ mkIMax l1 l2 = l2 ∨ mkIMax l1 l2 = .imax l1 l2 := by
+  have hf : ∀ l, maxFold l1 l2 = some l → l = l1 ∨ l = l2 := by
+    intro l h
+    unfold maxFold at h
+    split at h
+    · simp only [Option.some.injEq] at h
+      subst h
+      split <;> simp
+    split at h
+    · simp only [Option.some.injEq] at h
+      exact Or.inl h.symm
+    split at h
+    · simp only [Option.some.injEq] at h
+      exact Or.inr h.symm
+    split at h
+    · simp only [Option.some.injEq] at h
+      exact Or.inl h.symm
+    split at h
+    · simp only [Option.some.injEq] at h
+      exact Or.inr h.symm
+    split at h
+    · simp only [Option.some.injEq] at h
+      subst h
+      split <;> simp
+    · simp at h
+  unfold mkIMax
+  by_cases hn : isNeverZero l2 = true
+  · rw [if_pos hn]
+    cases hfo : maxFold l1 l2 with
+    | none => exact Or.inr (Or.inr rfl)
+    | some l =>
+      simp only [Option.getD_some]
+      rcases hf l hfo with h | h
+      · exact Or.inl h
+      · exact Or.inr (Or.inl h)
+  rw [if_neg hn]
+  by_cases h2z : (l2 == .zero) = true
+  · rw [if_pos h2z]
+    exact Or.inr (Or.inl rfl)
+  rw [if_neg h2z]
+  by_cases h1z : (l1 == .zero) = true
+  · rw [if_pos h1z]
+    exact Or.inr (Or.inl rfl)
+  rw [if_neg h1z]
+  by_cases h12 : (l1 == l2) = true
+  · rw [if_pos h12]
+    exact Or.inl rfl
+  rw [if_neg h12]
+  exact Or.inr (Or.inr rfl)
+
+theorem eval_mkIMax (φ : LevelParam → Nat) (l1 l2 : Level) :
+    eval φ (mkIMax l1 l2) = eval φ (.imax l1 l2) := by
+  unfold mkIMax
+  by_cases hn : isNeverZero l2 = true
+  · rw [if_pos hn]
+    have := eval_ne_zero_of_isNeverZero φ hn
+    cases hfo : maxFold l1 l2 with
+    | none => rfl
+    | some l =>
+      simp only [Option.getD_some]
+      rw [eval_maxFold φ hfo]
+      simp only [eval, if_neg this]
+  rw [if_neg hn]
+  by_cases h2z : (l2 == .zero) = true
+  · rw [if_pos h2z, eq_of_beq h2z]
+    simp [eval]
+  rw [if_neg h2z]
+  by_cases h1z : (l1 == .zero) = true
+  · rw [if_pos h1z, eq_of_beq h1z]
+    simp only [eval]
+    split <;> omega
+  rw [if_neg h1z]
+  by_cases h12 : (l1 == l2) = true
+  · rw [if_pos h12, eq_of_beq h12]
+    simp only [eval]
+    split <;> omega
+  rw [if_neg h12]
+
 end Ix.Kernel.Level

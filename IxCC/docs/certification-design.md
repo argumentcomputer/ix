@@ -468,8 +468,8 @@ other roots than index 0. Each new SrcEval rule is a new version of the
 
 **Planned, optional; its front end in progress.** For a consumer of x86
 claims without an IxVM proof:
-existence by running IxCK natively (its typing core's blow-up on chains of
-`let` then matters to that verifier,
+existence by running IxCK natively (its typing core's running time on hostile
+input then matters to that verifier,
 [hardening design](hardening-design.md#external-dependencies)), and
 faithfulness and typing either by IxCC's verifier-side ingress rebuilt on
 IxCK's reader, so that there is one reading by construction (the earlier
@@ -481,10 +481,11 @@ kernel's runs. Designed, and built beside the default front end, as the
 the whole artifact, IxCC's reading is checked against IxCK's, and the
 relevance annotation comes from IxCK's inference; the erased type checker is
 deleted at its switch. The switch proceeds now (the owner's decision of
-2026-11-11; its step 2 is done), and IxCK's blow-up on chains of `let` is
-fixed in the kernel package on this branch in parallel, both before the
-branch is merged; until that fix lands, the native verifier the switch
-produces inherits the blow-up.
+2026-11-11; its step 2 is done), and IxCK's blow-up on chains of `let`,
+fixed in the kernel package on this branch in parallel, has landed; the
+native verifier the switch produces still inherits the kernel's exponential
+time on universe levels it cannot fold, until the kernel's level-metering
+work budget lands.
 
 **Which entry discharges existence natively.** The tiered entry's acceptance
 of the artifact gives a model of the artifact's whole logical environment,
@@ -763,8 +764,9 @@ rest. Missing for the first fragment, as the law table marks: the projection
 of a constructor and the `Nat` operations on literals as public laws (or
 IxCC's derivations), public level irrelevance, the rules' soundness over the
 public model, "the annotation pass preserves denotation", an opaque value law
-(none, by design); and, if IxCK runs on the claim path, a typing core that is
-not exponential on chains of `let` (a kernel-side fix,
+(none, by design); and, if IxCK runs on the claim path, a typing core whose
+work is bounded on hostile input (the chains of `let` that made it
+exponential are fixed; universe levels the kernel cannot fold remain,
 [hardening design](hardening-design.md#external-dependencies)).
 
 **The hard points.** Dependent types (SrcEval drops type arguments the model

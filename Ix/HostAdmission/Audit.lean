@@ -30,8 +30,13 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- from Key and two from SpecDigest, and removes eight old specializations.
 -- The complete extern, unsafe, direct and reached implementation, csimp,
 -- replacement and opaque entry sets are unchanged, as are all runtime rulings.
+-- The level's cached has-parameter bit (`Level.hasParamData`, read through the proved
+-- `levelHasParam_eq_csimp`; see `IxCK/Kernel/Audit/Roots.lean`) adds one ruled computed field
+-- with its `unsafe` override and one ruled csimp to each closure here.
+-- The ∀ rule's level built with `mk_imax`'s folds (`Level.mkIMax` and its helpers) adds 7
+-- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7173 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7180 compiled functions; inherited externs 125, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

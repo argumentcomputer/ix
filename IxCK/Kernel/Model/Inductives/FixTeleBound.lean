@@ -62,7 +62,7 @@ theorem piDoms_of_infer {mode : CheckMode} :
       | 0, h => rw [Ix.Kernel.inferTypeCore_zero] at h; exact nomatch h
       | F + 1, h =>
         obtain ⟨tty, u, bt, v, hdom, hwh, hbt, hensb, -, rfl⟩ := Ix.Kernel.inferTypeCore_forall_inv h
-        have hv₀ : v₀ = .imax u v := ensureSortCore_sort_eq hens
+        have hv₀ : v₀ = Level.mkIMax u v := ensureSortCore_sort_eq hens
         subst hv₀
         simp only [Ix.Kernel.openPisAtFvars] at hop
         split at hop
@@ -75,7 +75,8 @@ theorem piDoms_of_infer {mode : CheckMode} :
             subst hk
             refine ⟨F, tty, u, hdom, ?_, fun φ hne => ?_⟩
             · rw [Nat.add_zero, Ix.Kernel.ensureSortCore_eq, hwh]; rfl
-            · have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
+            · rw [Level.eval_mkIMax] at hne ⊢
+              have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
               simp only [Level.eval, if_neg hv]
               exact Nat.le_max_left _ _
           | succ k =>
@@ -83,6 +84,7 @@ theorem piDoms_of_infer {mode : CheckMode} :
             obtain ⟨F', t', u', h1, h2, h3⟩ := piDoms_of_infer n hop' hbt hensb k a hk
             refine ⟨F', t', u', by rw [show d + (k + 1) = d + 1 + k from by omega]; exact h1,
               by rw [show d + (k + 1) = d + 1 + k from by omega]; exact h2, fun φ hne => ?_⟩
+            rw [Level.eval_mkIMax] at hne ⊢
             have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
             have := h3 φ hv
             simp only [Level.eval, if_neg hv]
