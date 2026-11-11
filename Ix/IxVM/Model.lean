@@ -136,7 +136,7 @@ partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option N
 
 def addressOf (c : Ixon.Constant) : Address := Address.blake3 (Ixon.ser c)
 
-def projRecord (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[]⟩
+def projRecord (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
 
 def hintOf : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
   | .opaque => .opaque

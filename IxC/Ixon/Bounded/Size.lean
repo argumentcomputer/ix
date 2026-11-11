@@ -45,12 +45,20 @@ def ConstantInfo.resourceSize : ConstantInfo → Nat
   | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => 1
   | .muts members => 1 + (members.toList.map MutConst.resourceSize).sum
 
+def BinderNode.resourceSize : BinderNode → Nat
+  | .ifAllZero params => 1 + params.size
+  | _ => 1
+
+def BinderBlock.resourceSize (value : BinderBlock) : Nat :=
+  1 + (value.nodes.toList.map BinderNode.resourceSize).sum
+
 /-- Constant/declaration/expression constructors and variable-size table
 slots. Scalar metadata and fixed-width addresses are represented by their
 containing record or slot. Each universe contributes its table slot here;
-expanded universe trees have the separate `Bounded.univNodes` budget. -/
+expanded universe trees have the separate `Bounded.univNodes` budget. Binder data
+count one unit per block, node and parameter. -/
 def Constant.resourceSize (value : Constant) : Nat :=
   1 + value.info.resourceSize + (value.sharing.toList.map Expr.resourceSize).sum +
-    value.refs.size + value.univs.size
+    value.refs.size + value.univs.size + (value.binders.toList.map BinderBlock.resourceSize).sum
 
 end Ixon

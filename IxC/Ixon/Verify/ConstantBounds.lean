@@ -231,10 +231,70 @@ theorem getUniv_progress : ReaderBound getUniv (fun _ => 2) := by
   change getUnivFuel (start.bytes.size - start.idx + 1) start = .ok value finish at read
   exact getUnivFuel_progress _ _ _ _ valid read
 
+/-- A binder-data node: a tag byte, then at most a count and its parameters. -/
+theorem getBinderNode_bound : ReaderBound getBinderNode BinderNode.resourceSize := by
+  intro start finish value valid read
+  unfold getBinderNode at read
+  obtain ⟨tag, middle, tagRead, read⟩ := bind_ok.mp read
+  have tagSpan := getU8_bound _ _ _ valid tagRead
+  split at read
+  · change EStateM.Result.ok _ _ = .ok value finish at read
+    cases read
+    exact tagSpan.weaken (by simp [BinderNode.resourceSize])
+  · change EStateM.Result.ok _ _ = .ok value finish at read
+    cases read
+    exact tagSpan.weaken (by simp [BinderNode.resourceSize])
+  · obtain ⟨count, countState, countRead, read⟩ := bind_ok.mp read
+    have countSpan := (getTagN_bound 0) _ _ _ tagSpan.valid countRead
+    obtain ⟨params, final, paramsRead, result⟩ := bind_ok.mp read
+    obtain ⟨length, paramsSpan⟩ := getTagN0Values_spec _ _ _ _ countSpan.valid paramsRead
+    change EStateM.Result.ok _ _ = .ok value finish at result
+    cases result
+    exact ((tagSpan.trans countSpan).trans paramsSpan).weaken
+      (by simp only [BinderNode.resourceSize, List.size_toArray, length]; omega)
+  · obtain ⟨variant, final, variantRead, result⟩ := bind_ok.mp read
+    have variantSpan := (getTagN_bound 0) _ _ _ tagSpan.valid variantRead
+    change EStateM.Result.ok _ _ = .ok value finish at result
+    cases result
+    exact (tagSpan.trans variantSpan).weaken (by simp [BinderNode.resourceSize])
+  · change EStateM.Result.ok _ _ = .ok value finish at read
+    cases read
+    exact tagSpan.weaken (by simp [BinderNode.resourceSize])
+  · cases read
+
+theorem getBinderBlock_bound : ReaderBound getBinderBlock BinderBlock.resourceSize := by
+  intro start finish value valid read
+  unfold getBinderBlock at read
+  obtain ⟨shared, sharedState, sharedRead, read⟩ := bind_ok.mp read
+  have sharedSpan := getBool_bound _ _ _ valid sharedRead
+  obtain ⟨index, indexState, indexRead, read⟩ := bind_ok.mp read
+  have indexSpan := (getTagN_bound 0) _ _ _ sharedSpan.valid indexRead
+  obtain ⟨variant, variantState, variantRead, read⟩ := bind_ok.mp read
+  have variantSpan := (getTagN_bound 0) _ _ _ indexSpan.valid variantRead
+  obtain ⟨count, countState, countRead, read⟩ := bind_ok.mp read
+  have countSpan := (getTagN_bound 0) _ _ _ variantSpan.valid countRead
+  obtain ⟨nodes, final, nodesRead, result⟩ := bind_ok.mp read
+  have nodesSpan :=
+    getArray_bound _ _ getBinderNode_bound _ _ _ _ countSpan.valid nodesRead
+  change EStateM.Result.ok _ _ = .ok value finish at result
+  cases result
+  exact ((((sharedSpan.trans indexSpan).trans variantSpan).trans countSpan).trans
+    nodesSpan).weaken (by dsimp [BinderBlock.resourceSize]; omega)
+
+/-- The binder-data section: its count, then its blocks. -/
+theorem getBinders_bound :
+    ReaderBound getBinders (fun blocks => (blocks.toList.map BinderBlock.resourceSize).sum) := by
+  intro start finish value valid read
+  unfold getBinders at read
+  obtain ⟨count, countState, countRead, read⟩ := bind_ok.mp read
+  have countSpan := (getTagN_bound 0) _ _ _ valid countRead
+  have blocksSpan := getArray_bound _ _ getBinderBlock_bound _ _ _ _ countSpan.valid read
+  exact (countSpan.trans blocksSpan).weaken (Nat.le_add_left _ _)
+
 /-- Every non-universe component of a production constant is structurally
 bounded by consumed bytes. The result includes declaration and expression
-constructors, reference-index vectors, and reference/universe table slots.
-No canonicality or wire-well-formedness premise is required. -/
+constructors, reference-index vectors, reference/universe table slots, and the
+binder data. No canonicality or wire-well-formedness premise is required. -/
 theorem getConstant_bound : ReaderBound getConstant Constant.resourceSize := by
   intro start finish value valid read
   unfold getConstant getConstantWithUnivs at read
@@ -253,14 +313,17 @@ theorem getConstant_bound : ReaderBound getConstant Constant.resourceSize := by
     simpa [sum_const] using getArray_bound _ _ refsBound _ _ _ _ refsCountSpan.valid refsRead
   obtain ⟨univsCount, univsState, univsCountRead, read⟩ := bind_ok.mp read
   have univsCountSpan := (getTagN_bound 0) _ _ _ refsSpan.valid univsCountRead
-  obtain ⟨univs, final, univsRead, result⟩ := bind_ok.mp read
+  obtain ⟨univs, bindersState, univsRead, read⟩ := bind_ok.mp read
   have univsBound := getUniv_progress.weaken (fun _ => 1) (fun _ => by decide)
-  have univsSpan : Span univsState final univs.size := by
+  have univsSpan : Span univsState bindersState univs.size := by
     simpa [sum_const] using getArray_bound _ _ univsBound _ _ _ _ univsCountSpan.valid univsRead
+  obtain ⟨binders, final, bindersRead, result⟩ := bind_ok.mp read
+  have bindersSpan := getBinders_bound _ _ _ univsSpan.valid bindersRead
   change EStateM.Result.ok _ _ = .ok value finish at result
   cases result
-  exact ((((((infoSpan.trans sharingCountSpan).trans sharingSpan).trans refsCountSpan).trans
-    refsSpan).trans univsCountSpan).trans univsSpan).weaken (by dsimp [Constant.resourceSize]; omega)
+  exact (((((((infoSpan.trans sharingCountSpan).trans sharingSpan).trans refsCountSpan).trans
+    refsSpan).trans univsCountSpan).trans univsSpan).trans bindersSpan).weaken
+      (by dsimp [Constant.resourceSize]; omega)
 
 theorem deConstantExact_resource_bound (bytes : ByteArray) (value : Constant)
     (read : deConstantExact bytes = .ok value) : value.resourceSize ≤ 2 * bytes.size :=

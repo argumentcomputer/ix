@@ -28,32 +28,32 @@ inductive ProjectionLayout where
 validated against the supplied store by the record-level reader/writer. -/
 inductive ProjectionReads : Ixon.Constant → ProjectionLayout → ConstRef Address → Prop where
   | definition (p : Ixon.DefinitionProj) :
-      ProjectionReads ⟨.dPrj p, #[], #[], #[]⟩ .definition (.member p.block p.idx.toNat)
+      ProjectionReads ⟨.dPrj p, #[], #[], #[], #[]⟩ .definition (.member p.block p.idx.toNat)
   | inductive (p : Ixon.InductiveProj) :
-      ProjectionReads ⟨.iPrj p, #[], #[], #[]⟩ .inductive (.member p.block p.idx.toNat)
+      ProjectionReads ⟨.iPrj p, #[], #[], #[], #[]⟩ .inductive (.member p.block p.idx.toNat)
   | recursor (p : Ixon.RecursorProj) :
-      ProjectionReads ⟨.rPrj p, #[], #[], #[]⟩ .recursor (.member p.block p.idx.toNat)
+      ProjectionReads ⟨.rPrj p, #[], #[], #[], #[]⟩ .recursor (.member p.block p.idx.toNat)
   | constructor (p : Ixon.ConstructorProj) :
-      ProjectionReads ⟨.cPrj p, #[], #[], #[]⟩ .constructor (.ctor p.block p.idx.toNat p.cidx.toNat)
+      ProjectionReads ⟨.cPrj p, #[], #[], #[], #[]⟩ .constructor (.ctor p.block p.idx.toNat p.cidx.toNat)
 
 def readProjectionC (source : Ixon.Constant) : Search { value : ProjectionLayout × ConstRef Address //
     ProjectionReads source value.1 value.2 } :=
   if tables : Ingress.emptyTables source = true then
     match info : source.info with
     | .dPrj p => .ok ⟨(.definition, .member p.block p.idx.toNat), by
-        have original : source = ⟨.dPrj p, #[], #[], #[]⟩ := by
+        have original : source = ⟨.dPrj p, #[], #[], #[], #[]⟩ := by
           cases source; simp_all [Ingress.emptyTables]
         rw [original]; exact .definition p⟩
     | .iPrj p => .ok ⟨(.inductive, .member p.block p.idx.toNat), by
-        have original : source = ⟨.iPrj p, #[], #[], #[]⟩ := by
+        have original : source = ⟨.iPrj p, #[], #[], #[], #[]⟩ := by
           cases source; simp_all [Ingress.emptyTables]
         rw [original]; exact .inductive p⟩
     | .rPrj p => .ok ⟨(.recursor, .member p.block p.idx.toNat), by
-        have original : source = ⟨.rPrj p, #[], #[], #[]⟩ := by
+        have original : source = ⟨.rPrj p, #[], #[], #[], #[]⟩ := by
           cases source; simp_all [Ingress.emptyTables]
         rw [original]; exact .recursor p⟩
     | .cPrj p => .ok ⟨(.constructor, .ctor p.block p.idx.toNat p.cidx.toNat), by
-        have original : source = ⟨.cPrj p, #[], #[], #[]⟩ := by
+        have original : source = ⟨.cPrj p, #[], #[], #[], #[]⟩ := by
           cases source; simp_all [Ingress.emptyTables]
         rw [original]; exact .constructor p⟩
     | _ => .error (.malformed "record is not a projection")

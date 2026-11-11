@@ -622,7 +622,7 @@ theorem buildConstantWithSharing_wireWF_headers {limits : Ix.Sharing.Exact.Limit
   obtain ⟨r, info', hr, -, hw, rfl⟩ := buildConstantWithSharing_eq_ok h
   obtain ⟨hentries, hroots, hcapacity, -, -⟩ := Tiered.canonicalSharingTiered_format hr
   refine ⟨withRootExprs_wireWF_headers hw hinfo ?_, hcapacity, ?_, htables.refsCount,
-    htables.refs, htables.univsCount, htables.univs⟩
+    htables.refs, htables.univsCount, htables.univs, Ixon.bindersWireWF_empty⟩
   · intro expr hmem
     exact hroots expr (by simpa using hmem)
   · intro expr hmem

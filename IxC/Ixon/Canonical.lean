@@ -6,15 +6,19 @@ public section
 
 namespace Ixon.Canonical
 
-/-- Decode one canonical Ixon v4 constant, under explicit input-byte and aggregate
+/-- Decode one canonical Ixon v5 constant, under explicit input-byte and aggregate
 universe-expansion limits. Successful values satisfy the production wire
-invariant and re-encode to exactly the supplied bytes. Mutual-block member
-ordering is a separate semantic contract. -/
+invariant, re-encode to exactly the supplied bytes, and carry their binder data
+in canonical form (`Constant.bindersCanonical`). Mutual-block member ordering
+is a separate semantic contract. -/
 def deConstant (maxBytes maxUnivNodes : Nat) (bytes : ByteArray) : Except String Constant := do
   let constant ← Bounded.deConstant maxBytes maxUnivNodes bytes
   if WireCheck.validConstant constant then
     if serConstant constant = bytes then
-      return constant
+      if constant.bindersCanonical then
+        return constant
+      else
+        throw "getConstantCanonical: binder data not in canonical form"
     else
       throw "getConstantCanonical: noncanonical wire encoding"
   else

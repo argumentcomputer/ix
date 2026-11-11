@@ -129,6 +129,33 @@ def constantInfo : M ConstantInfo := do
     | v => fail s!"getConstantInfo: invalid variant {v}"
   else fail s!"getConstantInfo: invalid flag {tag.flag}"
 
+def binderNode : M BinderNode := do
+  let tag ← u8
+  match tag with
+  | 0 => charged 1 (pure .never)
+  | 1 => charged 1 (pure .zero)
+  | 2 => do
+    let count ← tagN 0
+    let params ← tagN0Values count.value.toNat
+    charged (2 * params.length + 1) (pure (.ifAllZero params.toArray))
+  | 3 => do
+    let variant ← tagN 0
+    charged 1 (pure (.share variant.value))
+  | 4 => charged 1 (pure .undecided)
+  | t => fail s!"getBinderNode: invalid tag {t}"
+
+def binderBlock : M BinderBlock := do
+  let shared ← bool
+  let index ← tagN 0
+  let variant ← tagN 0
+  let count ← tagN 0
+  let nodes ← array binderNode count.value.toNat
+  charged 1 (pure ⟨shared, index.value, variant.value, nodes⟩)
+
+def binders : M (Array BinderBlock) := do
+  let count ← tagN 0
+  array binderBlock count.value.toNat
+
 /-- The tuple exposes the shared grammar prefix in proofs only. Its work is
 charged conservatively even though production does not allocate this tuple. -/
 def recordPrefix : M (ConstantInfo × Array Expr × Array Address × Nat) := do
@@ -143,7 +170,8 @@ def recordPrefix : M (ConstantInfo × Array Expr × Array Address × Nat) := do
 def constant (budget : Nat) : M Constant := do
   let (info, sharing, refs, count) ← recordPrefix
   let (univs, _) ← univArray count budget
-  charged 1 (pure ⟨info, sharing, refs, univs⟩)
+  let blocks ← binders
+  charged 1 (pure ⟨info, sharing, refs, univs, blocks⟩)
 
 theorem bool_erases : Erases bool (Serialize.get (α := Bool)) := by
   unfold bool
@@ -281,6 +309,29 @@ theorem constantInfo_erases : Erases constantInfo getConstantInfo := by
       · exact fail_erases _
     · exact fail_erases _
 
+theorem binderNode_erases : Erases binderNode getBinderNode := by
+  unfold binderNode getBinderNode
+  apply u8_erases.bind
+  intro tag
+  split <;> simp_all only
+  · exact (pure_erases _).charged 1
+  · exact (pure_erases _).charged 1
+  · exact (tagN_erases 0).bind fun _ => (tagN0Values_erases _).bind fun _ =>
+      (pure_erases _).charged _
+  · exact (tagN_erases 0).bind fun _ => (pure_erases _).charged 1
+  · exact (pure_erases _).charged 1
+  · exact fail_erases _
+
+theorem binderBlock_erases : Erases binderBlock getBinderBlock := by
+  unfold binderBlock getBinderBlock
+  exact bool_erases.bind fun _ => (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ =>
+    (tagN_erases 0).bind fun _ => (array_erases binderNode_erases _).bind fun _ =>
+      (pure_erases _).charged 1
+
+theorem binders_erases : Erases binders getBinders := by
+  unfold binders getBinders
+  exact (tagN_erases 0).bind fun _ => array_erases binderBlock_erases _
+
 theorem prefix_erases : Erases recordPrefix BoundedConstant.getPrefix := by
   unfold recordPrefix BoundedConstant.getPrefix
   exact constantInfo_erases.bind fun _ => (tagN_erases 0).bind fun _ =>
@@ -296,7 +347,7 @@ theorem constant_erases (budget : Nat) : Erases (constant budget) (Bounded.getCo
   simp only [map_eq_pure_bind, bind_assoc, pure_bind]
   apply (univArray_erases count budget).bind
   rintro ⟨univs, remaining⟩
-  exact (pure_erases _).charged 1
+  exact binders_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem bool_bound : Bound bool 16 0 (fun _ => 15) := by
   unfold bool
@@ -462,6 +513,42 @@ theorem constantInfo_bound : Bound constantInfo 16 0 (fun _ => 2) := by
       · exact fail_bound _ _ _ _
     · exact fail_bound _ _ _ _
 
+theorem binderNode_bound : Bound binderNode 16 0 (fun _ => 2) := by
+  unfold binderNode
+  apply (u8_bound 16 (by decide)).bind
+  intro tag
+  split
+  · exact charged_pure_bound _ _ _ _ _ (by decide)
+  · exact charged_pure_bound _ _ _ _ _ (by decide)
+  · apply ((tagN_bound 0 16 (by decide)).frame 15).bind
+    intro count
+    apply ((tagN0Values_bound _).frame 29).bind
+    intro params
+    exact charged_pure_bound _ _ _ _ _ (by omega)
+  · apply ((tagN_bound 0 16 (by decide)).frame 15).bind
+    intro variant
+    exact charged_pure_bound _ _ _ _ _ (by decide)
+  · exact charged_pure_bound _ _ _ _ _ (by decide)
+  · exact fail_bound _ _ _ _
+
+theorem binderBlock_bound : Bound binderBlock 16 0 (fun _ => 2) := by
+  unfold binderBlock
+  apply bool_bound.bind_zero
+  intro shared
+  apply (tagN_bound 0 16 (by decide)).bind_zero
+  intro index
+  apply (tagN_bound 0 16 (by decide)).bind_zero
+  intro variant
+  apply (tagN_bound 0 16 (by decide)).bind
+  intro count
+  exact ((array_bound binderNode_bound _).carry 14).bind fun _ =>
+    charged_pure_bound _ _ _ _ _ (by decide)
+
+theorem binders_bound : Bound binders 16 0 (fun _ => 0) := by
+  unfold binders
+  exact (tagN_bound 0 16 (by decide)).bind fun _ =>
+    (array_bound binderBlock_bound _).weaken (Nat.zero_le _) (fun _ => Nat.le_refl _)
+
 theorem prefix_bound : Bound recordPrefix 16 0 (fun _ => 4) := by
   unfold recordPrefix
   apply constantInfo_bound.bind_zero
@@ -486,6 +573,8 @@ theorem constant_bound (budget : Nat) : Bound (constant budget) 16 (2 * budget) 
   apply Bound.bind (intermediate := fun value => 2 * value.2 + 4)
   · exact ((univArray_bound count budget).frame 4).weaken (by omega) (fun _ => Nat.le_refl _)
   · rintro ⟨univs, remaining⟩
+    apply (binders_bound.carry (2 * remaining + 4)).bind
+    intro blocks
     exact charged_pure_bound _ _ _ _ _ (by omega)
 
 end Ixon.Verify.Work

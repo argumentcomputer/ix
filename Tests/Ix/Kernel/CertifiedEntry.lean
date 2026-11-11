@@ -294,8 +294,8 @@ from declaration role shape and leaves explicit readPrelude inputs flexible. -/
 def fallbackOf (c : Ixon.Constant) : Ix.Kernel.Reader.Prelude .anon :=
   { evidence := #[(address 98, c)] }
 
-def singletonRecFallback : Ixon.Constant := ⟨.recr default, #[], #[], #[]⟩
-def mutualRecFallback : Ixon.Constant := ⟨.muts #[.indc default, .recr default], #[], #[], #[]⟩
+def singletonRecFallback : Ixon.Constant := ⟨.recr default, #[], #[], #[], #[]⟩
+def mutualRecFallback : Ixon.Constant := ⟨.muts #[.indc default, .recr default], #[], #[], #[], #[]⟩
 
 def fallbackRefused (pre : Ix.Kernel.Reader.Prelude .anon) : Bool :=
   match Ix.Kernel.Reader.checkFallbackRecursors pre with
@@ -303,8 +303,8 @@ def fallbackRefused (pre : Ix.Kernel.Reader.Prelude .anon) : Bool :=
   | _ => false
 
 #guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf singletonRecFallback)).isOk
-#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf ⟨.muts #[.indc default], #[], #[], #[]⟩)).isOk
-#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf ⟨.muts #[.defn default], #[], #[], #[]⟩)).isOk
+#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf ⟨.muts #[.indc default], #[], #[], #[], #[]⟩)).isOk
+#guard (Ix.Kernel.Reader.checkFallbackRecursors (fallbackOf ⟨.muts #[.defn default], #[], #[], #[], #[]⟩)).isOk
 #guard fallbackRefused (fallbackOf mutualRecFallback)
 -- The same exact refusal covers recursors in the prelude records.
 #guard fallbackRefused { records := #[(address 98, mutualRecFallback)] }

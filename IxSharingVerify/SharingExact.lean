@@ -686,7 +686,8 @@ theorem constantBytes_size (c : Ixon.Constant) :
         (c.sharing.toList.map S).sum +
           ((tag0Bytes c.refs.size.toUInt64).size + (listBytes Address.hash c.refs.toList).size +
             (tag0Bytes c.univs.size.toUInt64).size +
-              (listBytes Ixon.Verify.Codec.Univ.wireEncode c.univs.toList).size) := by
+              (listBytes Ixon.Verify.Codec.Univ.wireEncode c.univs.toList).size +
+                (Ixon.Verify.Codec.ConstantTables.bindersBytes c.binders).size) := by
   simp only [Ixon.Verify.Codec.MutualConstant.constantBytes, ByteArray.size_append,
     tag0Bytes_size, listBytes_size]
   rw [map_S_eq]
@@ -701,18 +702,18 @@ theorem serConstant_size_decomposition (c : Ixon.Constant) (h : c.wireWF) :
     (Ixon.serConstant c).size =
       fixedConstantBytes c + exprsSize (constantInfoRoots c.info) + tag0Size c.sharing.size +
         exprsSize c.sharing := by
-  obtain ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs⟩ := h
+  obtain ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs, hbinders⟩ := h
   let c' : Ixon.Constant :=
     { c with info := mapRoots (fun _ => Ixon.Expr.var 0) c.info, sharing := #[] }
   have h' : c'.wireWF := by
     refine ⟨mapRoots_wireWF (fun _ => Ixon.Expr.var 0)
       (fun _ => by unfold Ixon.Expr.wireWF; trivial) _ hinfo,
       by simp [c'], ?_, hrefsSize, hrefs,
-      hunivsSize, hunivs⟩
+      hunivsSize, hunivs, hbinders⟩
     intro e he
     simp [c'] at he
   have hc := serConstant_eq_constantBytes c
-    ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs⟩
+    ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs, hbinders⟩
   have hc' := serConstant_eq_constantBytes c' h'
   have hfixed : fixedConstantBytes c = (Ixon.serConstant c').size -
       (constantInfoRoots c.info).size - tag0Size 0 := rfl

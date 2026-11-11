@@ -174,11 +174,11 @@ def recordChecked (maxBytes budget : Nat) (input : ByteArray) : Bool :=
     parsed.2 ≤ 16 * input.size + 2 * budget + 3
 
 def recordCases : List Ixon.Constant := variants.map Prod.snd ++
-  [sharedIdentity, Codec.sharedUniverseBudget, ⟨.muts #[], #[], #[], #[]⟩]
+  [sharedIdentity, Codec.sharedUniverseBudget, ⟨.muts #[], #[], #[], #[], #[]⟩]
 
 #guard (Work.record 0 0 ⟨#[]⟩).2 == 3
 #guard (Work.record 0 0 ⟨#[0]⟩).2 == 1
-#guard (Work.record 256 0 (Ixon.serConstant ⟨.muts #[], #[], #[], #[]⟩)).2 == 13
+#guard (Work.record 256 0 (Ixon.serConstant ⟨.muts #[], #[], #[], #[], #[]⟩)).2 == 13
 #guard [(0, 14), (16, 54), (31, 86), (32, 93)].all fun (budget, work) =>
   (Work.record 256 budget (Ixon.serConstant Codec.sharedUniverseBudget)).2 == work
 #guard recordCases.all fun value =>

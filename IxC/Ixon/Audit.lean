@@ -189,7 +189,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ix
   (bytes : ByteArray) (constant : Ixon.Constant),
   Ixon.Canonical.deConstant maxBytes maxUnivNodes bytes = Except.ok constant ↔
   constant.wireWF ∧ Ixon.serConstant constant = bytes ∧ bytes.size ≤ maxBytes ∧
-  Ixon.Bounded.univNodes constant.univs ≤ maxUnivNodes -/
+  Ixon.Bounded.univNodes constant.univs ≤ maxUnivNodes ∧ constant.bindersCanonical = true -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Verify.Canonical.deConstant_ok_iff
 

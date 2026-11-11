@@ -168,10 +168,10 @@ theorem standalone_rows (sources : List MutConst) (block : Ixon.Constant)
 /-! ## Wire validity and codec -/
 
 theorem empty_tables_wire (info : Ixon.ConstantInfo) (header : info.wireWF) :
-    (⟨info, #[], #[], #[]⟩ : Ixon.Constant).wireWF :=
+    (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF :=
   ⟨header, by change 0 < UInt64.size; decide, by simp,
     by change 0 < UInt64.size; decide, by simp,
-    by change 0 < UInt64.size; decide, by simp⟩
+    by change 0 < UInt64.size; decide, by simp, Ixon.bindersWireWF_empty⟩
 
 theorem member_wire (owner : Address) (width : owner.hash.size = 32) (index : UInt64) (source : MutConst) :
     (memberProjection owner index source).wireWF := by

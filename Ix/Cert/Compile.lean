@@ -505,7 +505,8 @@ inductive Head where
     throw s!"getConstantInfo: invalid flag {tag.flag}"
 
 /-- **A record's `refs` table and its projection block**, read by
-`Ixon.Bounded.getConstant`'s grammar without keeping its expressions or universes. -/
+`Ixon.Bounded.getConstant`'s grammar without keeping its expressions, universes or
+binder data. -/
 @[expose] def getRefs (maxUnivNodes : Nat := loadMaxUnivNodes) :
     GetM (Array Address × Option Address) := do
   let block ← skipInfo
@@ -515,6 +516,7 @@ inductive Head where
   let refs ← getArray Serialize.get numRefs
   let numUnivs := (← getTagN 0).value.toNat
   let _ ← skipUnivArray numUnivs maxUnivNodes
+  let _ ← getBinders
   return (refs, block)
 
 /-- `getRefs` over exactly the window `buf[off, off + len)`, as

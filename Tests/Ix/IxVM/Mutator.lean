@@ -141,7 +141,7 @@ def storeMutated (env : Ixon.Env) (block : Ixon.Constant) (ms : Array Ixon.MutCo
       | .defn _ => .dPrj ⟨i.toUInt64, blockAddr⟩
       | .indc _ => .iPrj ⟨i.toUInt64, blockAddr⟩
       | .recr _ => .rPrj ⟨i.toUInt64, blockAddr⟩
-    let wrapper : Ixon.Constant := ⟨info, #[], #[], #[]⟩
+    let wrapper : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
     let a := Address.blake3 (Ixon.ser wrapper)
     env := env.storeConst a wrapper
     match member with
@@ -151,7 +151,7 @@ def storeMutated (env : Ixon.Env) (block : Ixon.Constant) (ms : Array Ixon.MutCo
         env := env.storeConst (Address.blake3 (Ixon.ser cw)) cw
     | .defn _ => env := { env with anonHints := env.anonHints.insert a (.regular 0) }
     | _ => pure ()
-  let target : Ixon.Constant := ⟨proj blockAddr, #[], #[], #[]⟩
+  let target : Ixon.Constant := ⟨proj blockAddr, #[], #[], #[], #[]⟩
   (env, Address.blake3 (Ixon.ser target))
 
 /-- Real `muts` blocks of `env` that hold an inductive or recursor member,

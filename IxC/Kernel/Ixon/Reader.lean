@@ -181,7 +181,7 @@ structure Bindings (md : Mode) where
 abbrev Store := Address → Option Ixon.Constant
 
 def emptyTables (c : Ixon.Constant) : Bool :=
-  c.sharing.isEmpty && c.refs.isEmpty && c.univs.isEmpty
+  c.sharing.isEmpty && c.refs.isEmpty && c.univs.isEmpty && c.binders.isEmpty
 
 /-- The reference a record address denotes: a singleton is member 0 of
 itself, a projection the member (or constructor) of its owning block, a

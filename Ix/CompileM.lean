@@ -2112,7 +2112,7 @@ def buildMutualProjections (sources : List MutConst)
       | .defn _ => .dPrj ⟨idx, blockAddr⟩
       | .indc _ => .iPrj ⟨idx, blockAddr⟩
       | .recr _ => .rPrj ⟨idx, blockAddr⟩
-    let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[]⟩
+    let proj : Ixon.Constant := ⟨projInfo, #[], #[], #[], #[]⟩
     let sourceMeta := metaMap.get? source.name |>.getD .empty
     projections := projections.push (source.name, proj, sourceMeta)
     if let .indc inductiveData := source then
@@ -2120,7 +2120,7 @@ def buildMutualProjections (sources : List MutConst)
       for ctor in inductiveData.ctors do
         let ctorProjInfo : Ixon.ConstantInfo :=
           .cPrj ⟨idx, cidx, blockAddr⟩
-        let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+        let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[], #[]⟩
         let ctorMeta := metaMap.get? ctor.cnst.name |>.getD .empty
         projections := projections.push
           (ctor.cnst.name, ctorProj, ctorMeta)
@@ -2224,12 +2224,12 @@ def buildInductiveProjections (i : InductiveVal)
     (blockAddr : Address) :
     Array (Name × Ixon.Constant × Ixon.ConstantMeta) :=
   let indProjInfo : Ixon.ConstantInfo := .iPrj ⟨0, blockAddr⟩
-  let indProj : Ixon.Constant := ⟨indProjInfo, #[], #[], #[]⟩
+  let indProj : Ixon.Constant := ⟨indProjInfo, #[], #[], #[], #[]⟩
   #[(i.cnst.name, indProj, indMeta)] ++
     ctorMetaPairs.mapIdx fun cidx (ctorName, ctorMeta) =>
       let ctorProjInfo : Ixon.ConstantInfo :=
         .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
-      let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
+      let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[], #[]⟩
       (ctorName, ctorProj, ctorMeta)
 
 /-- Finish the main block and projections of a compiled standalone inductive

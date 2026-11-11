@@ -83,7 +83,7 @@ def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env 
   let table? := Ix.Kernel.RoleTable.ofBytes bytes
   let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
   let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
-    let c : Ixon.Constant := ⟨info, #[], #[], #[]⟩
+    let c : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
     (Address.blake3 (Ixon.ser c), c)
   for (a, c) in records do
     if let .axio _ := c.info then
@@ -227,7 +227,7 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
 
 /-- Content address of a synthesized projection wrapper. -/
 def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
-  Address.blake3 (Ixon.ser (⟨info, #[], #[], #[]⟩ : Ixon.Constant))
+  Address.blake3 (Ixon.ser (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant))
 
 /-- Walk the Constant ref-graph from `roots` to compute the set of
     addresses needed to type-check them. -/

@@ -304,10 +304,10 @@ theorem runGet_runPut_constantInfo_core (info : Ixon.ConstantInfo)
   rw [hread]
 
 def emptyConstant (info : Ixon.ConstantInfo) : Ixon.Constant :=
-  ⟨info, #[], #[], #[]⟩
+  ⟨info, #[], #[], #[], #[]⟩
 
 def emptyConstantBytes (info : Ixon.ConstantInfo) : ByteArray :=
-  infoBytes info ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0
+  infoBytes info ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0
 
 def getConstantUnivs (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) (refs : Array Address) :
@@ -316,7 +316,8 @@ def getConstantUnivs (info : Ixon.ConstantInfo)
   let mut univs : Array Ixon.Univ := #[]
   for _ in [0:numUnivs] do
     univs := univs.push (← Ixon.getUniv)
-  return ⟨info, sharing, refs, univs⟩
+  let binders ← Ixon.getBinders
+  return ⟨info, sharing, refs, univs, binders⟩
 
 def getConstantRefs (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) : Ixon.GetM Ixon.Constant := do
@@ -340,13 +341,27 @@ theorem getConstant_eq :
     getConstantAfterInfo getConstantRefs getConstantUnivs
   simp
 
+/-- An empty binder-data section is its count, zero. -/
+theorem putBinders_writes_empty :
+    Writes (Ixon.putBinders #[]) (tag0Bytes 0) := by
+  simpa [Ixon.putBinders] using putTag0_writes 0
+
+theorem getBinders_reads_empty :
+    Reads Ixon.getBinders (tag0Bytes 0) #[] := by
+  have htail : Reads (Ixon.getArray Ixon.getBinderBlock 0) ByteArray.empty #[] := by
+    simpa [Ixon.getArray] using Reads.pure (#[] : Array Ixon.BinderBlock)
+  have hall := Reads.bind
+    (next := fun count : Ixon.TagN => Ixon.getArray Ixon.getBinderBlock count.value.toNat)
+    (getTag0_reads 0) htail
+  simpa [Ixon.getBinders] using hall
+
 theorem putConstant_writes_core_empty (info : Ixon.ConstantInfo)
     (h : CoreInfoWireWF info) :
     Writes (Ixon.putConstant (emptyConstant info))
       (emptyConstantBytes info) := by
   have hwrite := (putConstantInfo_writes_core info h).bind
     ((putTag0_writes 0).bind
-      ((putTag0_writes 0).bind (putTag0_writes 0)))
+      ((putTag0_writes 0).bind ((putTag0_writes 0).bind putBinders_writes_empty)))
   simpa [Ixon.putConstant, emptyConstant, emptyConstantBytes,
     ByteArray.append_assoc] using hwrite
 
@@ -355,24 +370,29 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
     Reads Ixon.getConstant (emptyConstantBytes info) (emptyConstant info) := by
   have hinfo := getConstantInfo_reads_core info h
   have hzero := getTag0_reads 0
-  have hreturn := Reads.pure (emptyConstant info)
+  have hreturn := Reads.bind
+    (next := fun binders : Array Ixon.BinderBlock =>
+      (pure (⟨info, #[], #[], #[], binders⟩ : Ixon.Constant) : Ixon.GetM Ixon.Constant))
+    getBinders_reads_empty (Reads.pure (emptyConstant info))
   have hunivsTail : Reads
       (do
         let mut univs : Array Ixon.Univ := #[]
         for _ in [0:0] do
           univs := univs.push (← Ixon.getUniv)
-        return (⟨info, #[], #[], univs⟩ : Ixon.Constant))
-      ByteArray.empty (emptyConstant info) := by
+        let binders ← Ixon.getBinders
+        return (⟨info, #[], #[], univs, binders⟩ : Ixon.Constant))
+      (tag0Bytes 0) (emptyConstant info) := by
     simpa [emptyConstant] using hreturn
   have hunivs := Reads.bind
     (next := fun count : Ixon.TagN => do
       let mut univs : Array Ixon.Univ := #[]
       for _ in [0:count.value.toNat] do
         univs := univs.push (← Ixon.getUniv)
-      return (⟨info, #[], #[], univs⟩ : Ixon.Constant))
+      let binders ← Ixon.getBinders
+      return (⟨info, #[], #[], univs, binders⟩ : Ixon.Constant))
     hzero hunivsTail
   have hunivs' : Reads (getConstantUnivs info #[] #[])
-      (tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
     simpa [getConstantUnivs] using hunivs
   have hrefsTail : Reads
       (do
@@ -380,7 +400,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
         for _ in [0:0] do
           refs := refs.push (← Ixon.Serialize.get)
         getConstantUnivs info #[] refs)
-      (tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
     simpa using hunivs'
   have hrefs := Reads.bind
     (next := fun count : Ixon.TagN => do
@@ -390,7 +410,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       getConstantUnivs info #[] refs)
     hzero hrefsTail
   have hrefs' : Reads (getConstantRefs info #[])
-      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ (tag0Bytes 0 ++ tag0Bytes 0)) (emptyConstant info) := by
     simpa [getConstantRefs] using hrefs
   have hsharingTail : Reads
       (do
@@ -398,7 +418,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
         for _ in [0:0] do
           sharing := sharing.push (← Ixon.getExpr)
         getConstantRefs info sharing)
-      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ (tag0Bytes 0 ++ tag0Bytes 0)) (emptyConstant info) := by
     simpa using hrefs'
   have hsharing := Reads.bind
     (next := fun count : Ixon.TagN => do
@@ -408,7 +428,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       getConstantRefs info sharing)
     hzero hsharingTail
   have htail : Reads (getConstantAfterInfo info)
-      (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0)
+      (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0)
       (emptyConstant info) := by
     simpa [getConstantAfterInfo, ByteArray.append_assoc] using hsharing
   have hall := Reads.bind (next := getConstantAfterInfo) hinfo htail

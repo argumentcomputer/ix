@@ -456,6 +456,7 @@ structure ConstantWireWF (constant : Ixon.Constant) : Prop where
   univsCount : ArrayCountWF constant.univs
   univsEntries : ∀ value, value ∈ constant.univs.toList →
     Ixon.Verify.Codec.Univ.WireWF value
+  binders : Ixon.bindersWireWF constant.binders
 
 theorem recursorWireWF_of_catalog (recursor : Ixon.Recursor)
     (h : recursor.wireWF) : RecursorWireWF recursor := by
@@ -523,7 +524,7 @@ theorem constantWireWF_of_catalog (constant : Ixon.Constant)
     (h : constant.wireWF) : ConstantWireWF constant := by
   rcases h with
     ⟨hinfo, hsharingCount, hsharing, hrefsCount, hrefs,
-      hunivsCount, hunivs⟩
+      hunivsCount, hunivs, hbinders⟩
   refine {
     info := constantInfoWireWF_of_catalog constant.info hinfo
     sharingCount := hsharingCount
@@ -532,6 +533,7 @@ theorem constantWireWF_of_catalog (constant : Ixon.Constant)
     refsEntries := ?_
     univsCount := hunivsCount
     univsEntries := ?_
+    binders := hbinders
   }
   · intro value hmem
     exact hsharing value (by simpa using hmem)
@@ -583,7 +585,7 @@ theorem constantInfoWireWF_to_catalog {info : Ixon.ConstantInfo}
 theorem constantWireWF_to_catalog {constant : Ixon.Constant}
     (h : ConstantWireWF constant) : constant.wireWF := by
   refine ⟨constantInfoWireWF_to_catalog h.info, h.sharingCount, ?_,
-    h.refsCount, ?_, h.univsCount, ?_⟩
+    h.refsCount, ?_, h.univsCount, ?_, h.binders⟩
   · intro value hmem
     exact h.sharingEntries value (by simpa using hmem)
   · intro value hmem
@@ -604,7 +606,8 @@ def constantBytes (constant : Ixon.Constant) : ByteArray :=
           listBytes Address.hash constant.refs.toList ++
             tag0Bytes constant.univs.size.toUInt64 ++
               listBytes Ixon.Verify.Codec.Univ.wireEncode
-                constant.univs.toList
+                constant.univs.toList ++
+                bindersBytes constant.binders
 
 theorem putConstant_writes (constant : Ixon.Constant)
     (h : ConstantWireWF constant) :
@@ -615,7 +618,8 @@ theorem putConstant_writes (constant : Ixon.Constant)
         ((putTag0_writes constant.refs.size.toUInt64).bind
           ((putAddressArray_writes constant.refs h.refsEntries).bind
             ((putTag0_writes constant.univs.size.toUInt64).bind
-              (putUnivArray_writes constant.univs h.univsEntries))))))
+              ((putUnivArray_writes constant.univs h.univsEntries).bind
+                (putBinders_writes constant.binders)))))))
   simpa [Ixon.putConstant, constantBytes, ByteArray.append_assoc] using hwrite
 
 theorem getConstant_reads (constant : Ixon.Constant)
@@ -623,8 +627,8 @@ theorem getConstant_reads (constant : Ixon.Constant)
     Reads Ixon.getConstant (constantBytes constant) constant := by
   have hinfo := getConstantInfo_reads constant.info h.info
   have htail := getConstantAfterInfo_reads_core constant.info
-    constant.sharing constant.refs constant.univs h.sharingCount
-    h.sharingEntries h.refsCount h.refsEntries h.univsCount h.univsEntries
+    constant.sharing constant.refs constant.univs constant.binders h.sharingCount
+    h.sharingEntries h.refsCount h.refsEntries h.univsCount h.univsEntries h.binders
   have hall := Reads.bind (next := getConstantAfterInfo) hinfo htail
   rw [getConstant_eq]
   simpa [constantBytes, ByteArray.append_assoc] using hall

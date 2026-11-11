@@ -41,18 +41,18 @@ def exactCanonicalConstant (value : Ixon.Constant) : Bool :=
 #guard falseStore.all fun (_, value) => exactConstant value
 #guard separatedFalse.all fun (_, value) => exactConstant value
 #guard exactConstant sharedIdentity
-#guard exactConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard exactConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 #guard variants.all fun (_, value) => exactBoundedConstant value
 #guard falseStore.all fun (_, value) => exactBoundedConstant value
 #guard separatedFalse.all fun (_, value) => exactBoundedConstant value
 #guard exactBoundedConstant sharedIdentity
-#guard exactBoundedConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard exactBoundedConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 #guard exactBoundedConstant ⟨.muts #[], #[], #[], Array.replicate 4096 .zero⟩
 #guard variants.all fun (_, value) => exactCanonicalConstant value
 #guard falseStore.all fun (_, value) => exactCanonicalConstant value
 #guard separatedFalse.all fun (_, value) => exactCanonicalConstant value
 #guard exactCanonicalConstant sharedIdentity
-#guard exactCanonicalConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard exactCanonicalConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 
 -- Malformed address widths are outside the wire domain regardless of typing.
 #guard !Ixon.WireCheck.validConstant ⟨.muts #[], #[], #[⟨⟨#[0]⟩⟩], #[]⟩
@@ -388,7 +388,7 @@ def resourceConstant (value : Ixon.Constant) : Bool :=
 #guard (variants ++ falseStore ++ separatedFalse).all fun (_, value) => resourceConstant value
 #guard resourceConstant sharedIdentity
 #guard resourceConstant sharedUniverseBudget
-#guard resourceConstant ⟨.muts #[], #[], #[], #[]⟩
+#guard resourceConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 #guard resourceConstant ⟨.muts #[], Array.replicate 128 (.var 0),
   Array.replicate 128 (address 0), Array.replicate 128 .zero⟩
 #guard alternateSpellings.all fun bytes =>
@@ -452,10 +452,10 @@ example (value : Ixon.Constant) (h : value.wireWF) :
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
   Ixon.Verify.BoundedConstant.deConstant_serConstant value h _ _ (by omega) (by omega)
 
-example (value : Ixon.Constant) (h : value.wireWF) :
+example (value : Ixon.Constant) (h : value.wireWF) (binders : value.bindersCanonical = true) :
     Ixon.Canonical.deConstant (Ixon.serConstant value).size
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
-  Ixon.Verify.Canonical.deConstant_serConstant value h _ _ (by omega) (by omega)
+  Ixon.Verify.Canonical.deConstant_serConstant value h binders _ _ (by omega) (by omega)
 
 example (start finish : Ixon.GetState) (value : Ixon.Expr)
     (valid : start.idx ≤ start.bytes.size) (read : Ixon.getExpr start = .ok value finish) :

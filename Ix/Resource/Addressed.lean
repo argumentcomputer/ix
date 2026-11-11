@@ -113,7 +113,7 @@ structure Pending where
   auxiliary : Array Ixon.Expr := #[]
   deriving Inhabited
 
-def wrapper (info : Ixon.ConstantInfo) : Constant := ⟨info, #[], #[], #[]⟩
+def wrapper (info : Ixon.ConstantInfo) : Constant := ⟨info, #[], #[], #[], #[]⟩
 
 def commit (constant : Constant) : Address := Address.blake3 (serConstant constant)
 
