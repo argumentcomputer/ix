@@ -16,6 +16,7 @@ import Tests.Ix.SourceContract.SyntaxCheck
 import Tests.Ix.SourceContract.Driver
 import Tests.IxonV4Handoff
 import Tests.Ix.IxonV4Paths
+import Ix.IxVM.ClaimSeeds
 
 def usage : String :=
   s!"usage: lake exe ixon-v4-tests [--export-fixtures] [--export-handoff] [--primitives]
@@ -29,7 +30,8 @@ checks, and check the generated fixtures of Tests/Fixtures/ixon-v4/.
   --export-handoff   write the handoff artifacts to ixon-v4-handoff/ in the
                      scratch directory instead of checking the checked-in ones
   --primitives       also validate the primitive closure that
-                     `lake exe ixon-v4-primitives` wrote
+                     `lake exe ixon-v4-primitives` wrote, without the inert
+                     axioms and the constants that use them
 
 {Tests.IxonV4.scratchUsage}"
 
@@ -82,8 +84,20 @@ def main (args : List String) : IO Unit := do
   unless result == 0 do throw <| IO.userError "primitive or source contract regression"
   if args.contains "--primitives" then
     let bytes ← IO.FS.readBinFile (Tests.IxonV4.primitivesIxe dir)
-    let env ← IO.ofExcept (Ixon.runGetExact Ixon.Env.getEnv bytes)
-    IO.println s!"Validating {env.consts.size} constants from the primitive closure"
+    let full ← IO.ofExcept (Ixon.runGetExact Ixon.Env.getEnv bytes)
+    -- The inert axioms (`sorryAx`, Lean's compiler-trust axioms) and every constant that uses
+    -- one (here `Lean.trustCompiler` and `Lean.reduceBool`, `Lean.reduceNat`, whose values use
+    -- it) are outside Lean's logic: the default table binds those axioms as inert roles and the
+    -- certified entry declines them. The closure is validated without them, as the claim and
+    -- shard builders leave them out (`IxVM.ClaimHarness.inertUsers`).
+    let inert := IxVM.ClaimHarness.inertUsers full
+    let env := { full with
+      consts := inert.fold (fun m a => m.erase a) full.consts
+      named := full.named.filter fun _ n => !inert.contains n.addr
+      addrToName := inert.fold (fun m a => m.erase a) full.addrToName }
+    let names := inert.toList.filterMap (fun a => full.addrToName[a]?) |>.map toString
+    IO.println s!"Validating {env.consts.size} constants from the primitive closure; left out \
+      {inert.size}, the inert axioms and the constants that use one: {names.mergeSort (fun a b => decide (a ≤ b))}"
     let resolved ← IO.ofExcept (Ix.Resource.validate env (Ix.Resource.standardProfile env))
     IO.println s!"Validated {resolved.addresses.size} addressed interfaces"
     -- Time the actual typing check on the same committed primitive closure.
