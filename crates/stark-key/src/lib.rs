@@ -500,12 +500,22 @@ fn decode(bytes: &[u8], floor: bool) -> Result<Decoded, String> {
     },
     t => return Err(format!("bad Option tag {t}")),
   };
+  // A circuit's preprocessed matrix is the `k`-th committed one, `k` its rank
+  // among the circuits that have one: the in-circuit verifier reads it by slot,
+  // multi-stark by rank, and the two agree only on keys in that form.
   let mut preprocessed_indices = Vec::with_capacity(n_circuits);
+  let mut ranked = 0usize;
   for _ in 0..n_circuits {
     let v = r.u16()?;
     preprocessed_indices.push(if v == NO_PREP_INDEX {
       None
     } else {
+      if v as usize != ranked {
+        return Err(format!(
+          "preprocessed index {v} is not the circuit's rank {ranked}"
+        ));
+      }
+      ranked += 1;
       Some(v as usize)
     });
   }

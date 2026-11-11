@@ -203,6 +203,16 @@ module Pcs {
       }
     }
 
+  fn heights_fit(log_degrees: Lists::List<UInt8::U8>, log_blowup: Field, log_gmax: Field, rem: Field) -> Field {
+      match rem {
+        0 => {  1 } ,
+        _ => {
+          let &Lists::Node::Cons(ld, rest) = log_degrees;
+          UInt32::less_than_fields(UInt8::to_field(ld) + log_blowup, log_gmax + 1)
+            * heights_fit(rest, log_blowup, log_gmax, rem - 1) } ,
+      }
+    }
+
   fn build_buckets(log_degrees: Lists::List<UInt8::U8>, log_blowup: Field, num_circuits: Field, h: Field) -> Lists::List<Bucket> {
       match h {
         0 => {  (&(Lists::Node::Nil)) } ,
@@ -596,6 +606,7 @@ module Pcs {
       let log_gmax = num_rounds + log_blowup;
 
       assert_eq!(UInt32::less_than_fields(log_gmax, 33), 1);
+      assert_eq!(heights_fit(log_degrees, log_blowup, log_gmax, num_circuits), 1);
       let indices = sample_query_indices(input, output, num_queries, log_gmax);
       assert_eq!(verify_input_multi(input_openings, indices, s1c, s2c, qc,
         prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, log_blowup, log_gmax), 1);
