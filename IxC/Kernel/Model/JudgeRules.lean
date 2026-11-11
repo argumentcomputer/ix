@@ -205,7 +205,7 @@ theorem judgeSound_rulesJ {env : Env md} (m : EnvModel V env)
   accepted := fun φ _ _ _ h hws hb hL => infer_reads m φ h rfl hws hb hL
   infer := fun φ => by
     intro d e t Δa h hws hb hL ea ta hC hea hta
-    have hs : Rules.InferSemFull m φ d e t := Rules.infer_sound (hin φ) h
+    have hs : Rules.InferSemFull m φ d e t := Rules.infer_sound hin h
     obtain ⟨-, -, ta', hta', hgE, hgT, hmem⟩ :=
       hs (⟨hws, hb, hL⟩ : Expr.WScoped d e ∧ e.looseBVarsBounded 0 = true ∧
         Expr.LeavesBounded e) hC hea
@@ -213,21 +213,21 @@ theorem judgeSound_rulesJ {env : Env md} (m : EnvModel V env)
     exact ⟨hgE, hgT, hmem⟩
   defeq := fun φ => by
     intro d a b Δa h hwa hba hLa hwb hbb hLb aa ba' hCa hCb hra hrb hga hgb
-    have hs : Rules.DefEqSem m φ d a b := Rules.defeq_sound (hin φ) h
+    have hs : Rules.DefEqSem m φ d a b := Rules.defeq_sound hin h
     exact hs (⟨hwa, hba, hLa⟩ : Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true ∧
         Expr.LeavesBounded a)
       (⟨hwb, hbb, hLb⟩ : Expr.WScoped d b ∧ b.looseBVarsBounded 0 = true ∧
         Expr.LeavesBounded b) hCa hCb hra hrb hga hgb
   reads := fun φ => by
     intro d e t Δa ea h hws hb hL hC hea
-    have hs : Rules.InferSemFull m φ d e t := Rules.infer_sound (hin φ) h
+    have hs : Rules.InferSemFull m φ d e t := Rules.infer_sound hin h
     obtain ⟨-, -, ta, hta, -⟩ :=
       hs (⟨hws, hb, hL⟩ : Expr.WScoped d e ∧ e.looseBVarsBounded 0 = true ∧
         Expr.LeavesBounded e) hC hea
     exact ⟨ta, hta⟩
   frame := fun φ => by
     intro d e t Δa ea h hws hb hL hC hea
-    have hs : Rules.InferSemFull m φ d e t := Rules.infer_sound (hin φ) h
+    have hs : Rules.InferSemFull m φ d e t := Rules.infer_sound hin h
     obtain ⟨⟨hwt, hbt, -⟩, hsub, -⟩ :=
       hs (⟨hws, hb, hL⟩ : Expr.WScoped d e ∧ e.looseBVarsBounded 0 = true ∧
         Expr.LeavesBounded e) hC hea

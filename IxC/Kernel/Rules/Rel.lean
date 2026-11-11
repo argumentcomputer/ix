@@ -225,19 +225,27 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       unfoldDefinition env e = some e' → Red env d e e'
   /-- **A theorem unfolds** (IxVM unfolds theorems in lazy δ and
   at ι majors, the checker does not): a stored theorem constant becomes its
-  stored value at the use's levels. The rule carries what its soundness reads:
-  the value is closed and has the theorem's type at this environment, and that
-  type is a proposition at every assignment, so value and constant are the one
-  proof (proof irrelevance). The rest of a spine unfolds by `appFn`. -/
+  stored value at the use's levels. The rule carries the theorem's own check,
+  at the theorem's level parameters and in the empty context: the value is
+  closed and has the theorem's type at this environment, and that type is a
+  proposition at every assignment. Read at the assignment the use's levels
+  induce, value and constant are then the one proof (proof irrelevance).
+
+  The check is stated at the theorem's own levels because a derivation is not
+  closed under level instantiation (a binder's datum is the zero-ness of a level,
+  which instantiation can change). It is the check the theorem's declaration
+  ran, carried from the environment that declaration was checked in to this one
+  by `Transport.weaken` (`Rules/Transport.lean`). The rest of a spine unfolds by
+  `appFn`. -/
   | deltaThm {d : Nat} {n : Key md} {us : List Level} {cv : ConstantVal md}
       {value vt s : Expr md} {u : Level} :
       env.find? n = some (.thmInfo cv value) →
       us.length = cv.levelParams.length →
       value.hasFvar = false → value.looseBVarsBounded 0 = true →
-      Infer env .full d (value.instantiateLevelParams cv.levelParams us) vt →
-      DefEq env d vt (cv.type.instantiateLevelParams cv.levelParams us) →
-      Infer env .full d (cv.type.instantiateLevelParams cv.levelParams us) s →
-      Red env d s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
+      Infer env .full 0 value vt →
+      DefEq env 0 vt cv.type →
+      Infer env .full 0 cv.type s →
+      Red env 0 s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
       Red env d (.const n us) (value.instantiateLevelParams cv.levelParams us)
   /-- **An equation's proof rewrites its left side** (equality reflection): a
   constant application `a` reduces to `b` given a proof

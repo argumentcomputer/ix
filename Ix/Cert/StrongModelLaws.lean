@@ -79,7 +79,7 @@ theorem _root_.Ix.Cert.TypedClosed.graded (M : Cached.StrongModel V env) (φ : L
     ∃ ea, denoteMeta M.internal.base2.acval env φ 0 e = some ea ∧ Graded V [] ea := by
   obtain ⟨t, ht⟩ := h.2.2
   obtain ⟨ea, read⟩ := infer_reads M.internal.base2.acval φ ht rfl
-  have typed := Model.Rules.infer_sound (Model.Rules.RulesInputs.ofSem M.internal φ) ht
+  have typed := Model.Rules.infer_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ) ht
   obtain ⟨_, _, _, _, graded, _, _⟩ :=
     typed h.frame (ConversionValues.frame_context M φ h.frame) read
   exact ⟨ea, read, graded⟩
@@ -93,7 +93,7 @@ theorem red_denoteSame (M : Cached.StrongModel V env) {e e' : Ix.Kernel.Expr md}
   intro φ ρ
   obtain ⟨ea, read, graded⟩ := ht.graded M φ
   obtain ⟨frame', -, ea', read', graded', heq⟩ :=
-    Model.Rules.red_sound (Model.Rules.RulesInputs.ofSem M.internal φ) hr ht.frame
+    Model.Rules.red_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ) hr ht.frame
       (ConversionValues.frame_context M φ ht.frame) read graded
   refine ⟨interp V ρ ea, ConversionValues.reading_denotes M ht.frame read graded ρ, ?_⟩
   rw [heq ρ (Sat_nil V ρ)]
@@ -107,7 +107,7 @@ theorem defeq_denoteSame (M : Cached.StrongModel V env) {a b : Ix.Kernel.Expr md
   intro φ ρ
   obtain ⟨aa, readA, gradeA⟩ := ha.graded M φ
   obtain ⟨ba, readB, gradeB⟩ := hb.graded M φ
-  have eq := Model.Rules.defeq_sound (Model.Rules.RulesInputs.ofSem M.internal φ) h ha.frame
+  have eq := Model.Rules.defeq_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ) h ha.frame
     hb.frame (ConversionValues.frame_context M φ ha.frame)
     (ConversionValues.frame_context M φ hb.frame) readA readB gradeA gradeB ρ (Sat_nil V ρ)
   refine ⟨interp V ρ aa, ConversionValues.reading_denotes M ha.frame readA gradeA ρ, ?_⟩

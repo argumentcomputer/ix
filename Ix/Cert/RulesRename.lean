@@ -395,12 +395,10 @@ theorem red_rename (hR : Renaming P f env env') :
     simp only [ConstantInfo.Good] at hci
     have hvg : (value.instantiateLevelParams cv.levelParams us).Good P :=
       Expr.Good.instantiateLevelParams hci.2 _ _
-    have htg : (cv.type.instantiateLevelParams cv.levelParams us).Good P :=
-      Expr.Good.instantiateLevelParams hci.1.2 _ _
-    obtain ⟨gvt, ivt⟩ := infer_rename hR hinf hvg
-    obtain ⟨gs, its⟩ := infer_rename hR hinfT htg
+    obtain ⟨gvt, ivt⟩ := infer_rename hR hinf hci.2
+    obtain ⟨gs, its⟩ := infer_rename hR hinfT hci.1.2
     obtain ⟨-, rs⟩ := red_rename hR hred gs
-    have dvt := defEq_rename hR hde gvt htg
+    have dvt := defEq_rename hR hde gvt hci.1.2
     refine ⟨hvg, ?_⟩
     have key := Red.deltaThm (env := env') (n := n.map f) (us := us)
       (cv := cv.mapKeys f) (value := value.mapKeys f)
@@ -408,14 +406,8 @@ theorem red_rename (hR : Renaming P f env env') :
       (by rw [ConstantVal.mapKeys_levelParams]; exact hlen)
       (by rw [Expr.hasFvar_mapKeys]; exact hvf)
       (by rw [Expr.looseBVarsBounded_mapKeys]; exact hvb)
-      (by rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams]
-          exact ivt)
-      (by rw [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
-            ← Expr.mapKeys_instantiateLevelParams]
-          exact dvt)
-      (by rw [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
-            ← Expr.mapKeys_instantiateLevelParams]
-          exact its)
+      ivt (by rw [ConstantVal.mapKeys_type]; exact dvt)
+      (by rw [ConstantVal.mapKeys_type]; exact its)
       rs hz
     rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams] at key
     exact key

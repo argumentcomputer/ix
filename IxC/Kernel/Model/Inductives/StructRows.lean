@@ -42,9 +42,9 @@ structure ClaimsAt (μ : CheckMode) {env : Env md} (m : EnvModel V env)
 /-- A P carrier answers them (the sealed capstone). -/
 theorem claimsAt_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     (φ : LevelParam → Nat) (F : Nat) : ClaimsAt μ mp.base2 φ F :=
-  have h := checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp φ) F
+  have h := checkSoundAt (V := V) (φ := φ) hμ (fun ψ => Rules.RulesInputs.ofSem mp ψ) F
   have hr : InferReads mp.base2 μ φ F :=
-    inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
+    inferReads_of (φ := φ) hμ (fun ψ => Rules.RulesInputs.ofSem mp ψ)
   ⟨h.2.1, h.2.2.1, h.2.2.2, hr, sortSemAt_of_claims h.2.1 h.2.2.2 hr⟩
 
 namespace ClaimsAt

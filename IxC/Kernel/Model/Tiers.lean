@@ -77,7 +77,7 @@ closing): the bridge turns the run into a derivation and the infer
 motive CONCLUDES the type's reading — the shape `Recompose.lean`'s
 fourth case destructures. -/
 theorem inferReads_of (hμ : μ.verifiedChecks = true)
-    {m : EnvModel V env} (hin : Rules.RulesInputs V m φ) :
+    {m : EnvModel V env} (hin : ∀ ψ, Rules.RulesInputs V m ψ) :
     InferReads m μ φ fuel := by
   intro d e t Δa ea hrun hws hb hLb hC hea
   obtain rfl : μ = .verified := CheckMode.eq_verified hμ

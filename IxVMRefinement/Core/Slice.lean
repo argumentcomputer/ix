@@ -87,7 +87,7 @@ theorem defEq_of_run (c : Ctx) (hA : Assumed c) {rc a b types : SourceValue F}
 framed, readable, graded terms means equal interpretations (`DefEqSem`). -/
 theorem defEq_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory V]
     {m : Ix.Kernel.Model.EnvModel V c.env} {φ : Ix.Kernel.LevelParam → Nat}
-    (hin : Ix.Kernel.Model.Rules.RulesInputs V m φ)
+    (hin : ∀ ψ, Ix.Kernel.Model.Rules.RulesInputs V m ψ)
     {rc a b types : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
@@ -108,7 +108,7 @@ framed, readable, graded `E` has a reduct `E'` that reads, is graded, and has
 the same interpretation (`RedSem`). -/
 theorem whnf_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory V]
     {m : Ix.Kernel.Model.EnvModel V c.env} {φ : Ix.Kernel.LevelParam → Nat}
-    (hin : Ix.Kernel.Model.Rules.RulesInputs V m φ)
+    (hin : ∀ ψ, Ix.Kernel.Model.Rules.RulesInputs V m ψ)
     {rc e types : SourceValue F} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' calls)
     (loads : LoadsInFrag c calls) (natives : NoNatives calls)
