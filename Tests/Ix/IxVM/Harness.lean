@@ -4,6 +4,7 @@ public import Ix.Cli.FormalAiur
 public import Ix.IxVM.ClaimHarness
 public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
+public import Ix.IxVM.RecordSections
 
 /-!
 # Running claims through the IxVM program
@@ -99,11 +100,124 @@ structure Case where
   expectedFftCost : Option Nat := none
   witness : ClaimWitness
 
+/-! ## Binder data for hand-built records
+
+Records the compiler writes carry their binder-data section. The suites also
+build records by hand, without one, and name them in claims, trees and role
+tables by the address of their bytes. `withRecordSections` gives each decodable
+record that has no section but has a binder its section from IxC's pass
+(`IxVM.RecordSections`; `never` where the pass cannot compute a datum, so a
+deliberately ill-typed record is still rejected where it was), re-addresses it and
+every record that names it, and renames the environment's names, hints, role
+binding, assumptions, the claim and its trees to follow. Every other record keeps
+its bytes, so a hand-crafted encoding stays as it was. -/
+
+/-- Whether `c` lacks the section it needs: none, and a binder in a root. -/
+def needsSection (c : Ixon.Constant) : Bool :=
+  c.binders.isEmpty &&
+    (_root_.IxVM.PwHints.roots c).any (_root_.IxVM.PwHints.hasBinder (_root_.IxVM.PwHints.binderful c.sharing))
+
+/-- A claim context with its binding renamed by `a` and its axioms tree by `t`. -/
+def renameCtx (a t : Address → Address) (ctx : Ix.ClaimContext) : Ix.ClaimContext :=
+  { ctx with binding := a ctx.binding, axioms := ctx.axioms.map t }
+
+/-- `claim` with its addresses renamed: constants by `a`, tree roots by `t`. -/
+def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
+  | .eval ctx i o asm => .eval (renameCtx a t ctx) (a i) (a o) (asm.map t)
+  | .check ctx c asm => .check (renameCtx a t ctx) (a c) (asm.map t)
+  | .checkEnv ctx r asm => .checkEnv (renameCtx a t ctx) (t r) (asm.map t)
+  | .contains tree c => .contains (t tree) (a c)
+  | .resource r p => .resource (t r) p
+  | .binding spec b => .binding spec (a b)
+  | other => other
+
+/-- `env`, `claim` and `trees` with every hand-built record that needs one given
+its section. Nothing changes when no record needs one. -/
+def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
+    (trees : Std.HashMap Address Ix.AssumptionTree) :
+    Except String (Ixon.Env × Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let mut store : Std.HashMap Address Ixon.Constant := {}
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then store := store.insert a c
+  let pending := store.toArray.filter (needsSection ·.2)
+  if pending.isEmpty then return (env, claim, trees)
+  let support := store.toArray.filter (!needsSection ·.2)
+  let sections ← _root_.IxVM.RecordSections.sectionsOf pending support env.blobs env.anonHints
+    (← _root_.IxVM.RecordSections.chosenOf env) (taint := false)
+  -- the records to rewrite: those needing a section, and every record naming one
+  let mut affected : Std.HashSet Address := pending.foldl (fun s (a, _) => s.insert a) {}
+  let mut grown := true
+  while grown do
+    grown := false
+    for (a, c) in store do
+      if affected.contains a then continue
+      if (Ix.Compile.BinderData.targets c).any affected.contains then
+        affected := affected.insert a
+        grown := true
+  let order ← Ix.Compile.BinderData.bottomUp store
+    (store.toArray.filter (affected.contains ·.1))
+  let mut renamed : Std.HashMap Address Address := {}
+  let mut consts := env.consts
+  for a in order do
+    unless affected.contains a do continue
+    let some c := store[a]? | continue
+    let rename (x : Address) : Address := renamed.getD x x
+    let binders := if needsSection c then sections.getD a #[] else c.binders
+    let c' := Ix.Compile.BinderData.rewriteRecord rename c binders
+    let bytes := Ixon.serConstant c'
+    let a' := Address.blake3 bytes
+    consts := (consts.erase a).insert a' { buf := bytes, len := bytes.size, cache := some c' }
+    renamed := renamed.insert a a'
+  let rename (x : Address) : Address := renamed.getD x x
+  let named := env.named.fold (init := ({} : Std.HashMap Ix.Name Ixon.Named)) fun m n entry =>
+    m.insert n { entry with addr := rename entry.addr
+                            original := entry.original.map fun (x, cm) => (rename x, cm) }
+  let addrToName := env.addrToName.fold (init := ({} : Std.HashMap Address Ix.Name)) fun m x n =>
+    m.insert (rename x) n
+  let anonHints := env.anonHints.fold
+    (init := ({} : Std.HashMap Address Lean.ReducibilityHints)) fun m x h => m.insert (rename x) h
+  let mut addrMap := renamed
+  let roleBinding ← match env.roleBinding with
+    | none => pure none
+    | some b => do
+      let some t := Ix.Kernel.RoleTable.ofBytes b.bytes | pure (some b)
+      let bytes := (Ix.Compile.BinderData.renameTable rename t).toBytes
+      if bytes == b.bytes then pure (some b) else pure (some { address := Address.blake3 bytes, bytes })
+  if let (some b, some b') := (env.roleBinding, roleBinding) then
+    unless b.address == b'.address do addrMap := addrMap.insert b.address b'.address
+  let env' := { env with
+    consts, named, addrToName, anonHints, roleBinding
+    main := env.main.map rename
+    assumptions := env.assumptions.fold (init := ({} : Std.HashSet Address)) fun s x => s.insert (rename x) }
+  -- the trees: a tree with a renamed leaf is rebuilt canonically
+  let mut treeMap : Std.HashMap Address Address := {}
+  let mut trees' : Std.HashMap Address Ix.AssumptionTree := {}
+  for (root, tree) in trees do
+    let leaves := tree.leaves
+    let leaves' := leaves.map rename
+    if leaves' == leaves then trees' := trees'.insert root tree
+    else match Ix.AssumptionTree.canonical leaves' with
+      | some t =>
+        trees' := trees'.insert t.root t
+        treeMap := treeMap.insert root t.root
+      | none => trees' := trees'.insert root tree
+  if let (some old, some new) := (Ix.ClaimContext.userAxiomTree env, Ix.ClaimContext.userAxiomTree env') then
+    unless old.root == new.root do treeMap := treeMap.insert old.root new.root
+  let a (x : Address) : Address := addrMap.getD x x
+  let t (x : Address) : Address := treeMap.getD x x
+  return (env', renameClaim a t claim, trees')
+
+/-- `buildClaimWitness` after `withRecordSections`. -/
+def buildSectionedWitness (env : Ixon.Env) (claim : Ix.Claim)
+    (trees : Std.HashMap Address Ix.AssumptionTree := {}) : Except String ClaimWitness := do
+  let (env, claim, trees) ← withRecordSections env claim trees
+  buildClaimWitness env claim trees
+
 /-- The case for `claim` over `env`, with the assumption trees its roots name. -/
 def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) (accept : Bool := true)
     (rejectsWith : Option String := none) : Except String Case := do
-  let witness ← buildClaimWitness env claim trees
+  let witness ← buildSectionedWitness env claim trees
   return { label, accept, rejectsWith, witness }
 
 /-! ## The case file
