@@ -54,13 +54,17 @@ index domain whose sort not even a ceiling bounds (`Kit.sortCeil`,
 task #227).  (Members' parameter telescopes and sorts are not
 compared: task #218, `Mutual.lean`'s header.)
 
-KNOWN GAP, not a decline (task #227's finding): a member whose index
-DOMAIN mentions a parameter — `inductive NB (α : Type) (a₀ : α) : α →
+Index arguments that mention the parameters.  A member whose index
+domain mentions a parameter — `inductive NB (α : Type) (a₀ : α) : α →
 Type` nesting through `List`, or `NB4 (α : Type) : List α → Type` —
-gets a `_impl.rec` the fold REJECTS (an application type mismatch at
-the tag dispatch), where official accepts the block.  It is older than
-the ceiling and independent of it: the same block with a closed index
-domain (`Nat`) installs, and the same domain in a MUTUAL block installs.
+has nested occurrences whose index arguments mention the parameters
+(`List (NB α a₀ a₀)`, `List (NB4 α [])`).  An index argument read off
+a field's domain lives at that field's frame over the parameters, so
+wherever a minor premise binds the fields below other binders (the
+motives and minors of `_impl.rec`, the index and major binders of
+`pack_j`, `unpackPack_j` and `proj_i`) its parameters are lifted past
+those binders (`fieldIdxAt`, `ctorIdxAt`), as the fields' own domains
+are (`specDoms`, `modelDoms`).
 -/
 
 namespace Ix.Kernel.Frontend.InModel
@@ -673,6 +677,18 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   -- field's own frame
   let fieldIdx := fun (c : ACtor md) (i : Nat) (o' : Nat) =>
     ((matchCarrier fam i (c.doms.getD i default)).map (·.2)).getD [] |>.map (·.liftLooseBVars o' 0)
+  -- the same where `o` binders sit between the parameter frame and the
+  -- fields (a minor premise's, below the motives and minors or below a
+  -- pack's index and major binders): an index argument may mention the
+  -- parameters (`List (T α a₀)` at `T (α) (a₀ : α) : α → Type`), which
+  -- are lifted past them; the earlier fields are not
+  let fieldIdxAt := fun (c : ACtor md) (i : Nat) (o o' : Nat) =>
+    ((((matchCarrier fam i (c.doms.getD i default)).map (·.2)).getD []).map (·.liftLooseBVars o i)).map
+      (·.liftLooseBVars o' 0)
+  -- a constructor's residual index arguments, likewise, at `o` binders
+  -- between the parameter frame and the fields and `o'` below the fields
+  let ctorIdxAt := fun (c : ACtor md) (o o' : Nat) =>
+    (c.idx.map (·.liftLooseBVars o c.nF)).map (·.liftLooseBVars o' 0)
   -- `tag.rec p⃗ (λ i', ∀ s, aux p⃗ i' → Sort ℓs) branches i s` at frame
   -- `o` below the parameters, given the per-member branches (each a
   -- term at frame `o + 3`... no: branches are built by the caller at
@@ -799,7 +815,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       let ihbs := grpRec.map fun i =>
         let k := (grpRec.filter (· < i)).length
         let fo := c.nF + k
-        auxAt fam ((c.kinds.getD i none).getD 0) (o + fo) (fieldIdx c i (fo - i))
+        auxAt fam ((c.kinds.getD i none).getD 0) (o + fo) (fieldIdxAt c i o (fo - i))
       let gVar := fun (i : Nat) => Expr.bvar (nIhI + c.nF - 1 - i)
       let ihVarI := fun (i : Nat) => Expr.bvar (nIhI - 1 - (grpRec.filter (· < i)).length)
       let fo := c.nF + nIhI
@@ -811,7 +827,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               if g.tags.contains t' then ihVarI i
               else if t' ≥ r then
                 let mem' := mems.getD t' default
-                appImpl (packName mem'.j) (o + fo) (fieldIdx c i (fo - i)) [gVar i]
+                appImpl (packName mem'.j) (o + fo) (fieldIdxAt c i o (fo - i)) [gVar i]
               else gVar i
             | none => gVar i))
     for k in List.range g.tags.length do
@@ -871,7 +887,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         let k := (grpRec.filter (· < i)).length
         let fo' := c.nF + k
         let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-        upStmtOf mem' (o + fo') (fieldIdx c i (fo' - i)) (.bvar (fo' - 1 - i))
+        upStmtOf mem' (o + fo') (fieldIdxAt c i o (fo' - i)) (.bvar (fo' - 1 - i))
       -- the spine's pins are the constructor's OWN container's (a group
       -- member's container differs from the group's head container)
       let F := fun (o' : Nat) (args : List (Expr md)) =>
@@ -882,7 +898,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         | some t' =>
           if t' ≥ r then
             let mem' := mems.getD t' default
-            let idx := fieldIdx c i (fo - i)
+            let idx := fieldIdxAt c i o (fo - i)
             appImpl (unpackName mem'.j) (o + fo) idx [appImpl (packName mem'.j) (o + fo) idx [gVarAt i 0]]
           else gVarAt i 0
         | none => gVarAt i 0
@@ -892,15 +908,15 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         | some t' =>
           if g.tags.contains t' then
             some (i, Expr.bvar (nIhI - 1 - (grpRec.filter (· < i)).length),
-              carrM (mems.getD t' default) (o + fo) (fieldIdx c i (fo - i)), u)
+              carrM (mems.getD t' default) (o + fo) (fieldIdxAt c i o (fo - i)), u)
           else if t' ≥ r then
             let mem' := mems.getD t' default
-            let idx := fieldIdx c i (fo - i)
+            let idx := fieldIdxAt c i o (fo - i)
             some (i, appImpl (unpackPackName mem'.j) (o + fo) idx [gVarAt i 0], carrM mem' (o + fo) idx, u)
           else none
         | none => none
       mkLams (gbs ++ ihbs)
-        (congrChain u (carrM memC (o + fo) (c.idx.map (·.liftLooseBVars nIhI 0))) F ls rs moved)
+        (congrChain u (carrM memC (o + fo) (ctorIdxAt c o nIhI)) F ls rs moved)
     for k in List.range g.tags.length do
       let t := g.tags.getD k 0
       let mem := mems.getD t default
@@ -1031,7 +1047,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         let k := ihPos c i
         let fo' := c.nF + k
         some <| Expr.mkAppN (motR (o + fo'))
-            [Expr.mkAppN (constP (tagCtorName T t) lps) (varsAt (oP + fo') nP ++ fieldIdx c i (fo' - i)),
+            [Expr.mkAppN (constP (tagCtorName T t) lps) (varsAt (oP + fo') nP ++ fieldIdxAt c i oP (fo' - i)),
              .bvar (fo' - 1 - i)]
       | none => none
     -- the public minor applied: fields (unpacked where mimic-typed) and the ihs
@@ -1039,7 +1055,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       match c.kinds.getD i none with
       | some t' =>
         if t' ≥ r then
-          appImpl (unpackName (mems.getD t' default).j) (oP + fo) (fieldIdx c i (fo - i)) [fieldVar i]
+          appImpl (unpackName (mems.getD t' default).j) (oP + fo) (fieldIdxAt c i oP (fo - i)) [fieldVar i]
         else fieldVar i
       | none => fieldVar i
     let X := Expr.mkAppN (minVar (o + fo) c.J)
@@ -1051,14 +1067,14 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         -- transports along `packUnpack_j f'_k` at each packed position
         let packed := (List.range c.nF).filter fun i =>
           match c.kinds.getD i none with | some t' => t' ≥ r | none => false
-        let idxC := c.idx.map (·.liftLooseBVars nIh 0)
+        let idxC := ctorIdxAt c oP nIh
         let spineAt := fun (o' : Nat) (args : List (Expr md)) =>
           Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (oP + fo + o') nP ++ args)
         let motApp := fun (o' : Nat) (args : List (Expr md)) =>
           Expr.mkAppN (motVar (o + fo + o') m) (liftAll o' idxC ++ [spineAt o' args])
         let packUnpackOf := fun (i : Nat) =>
           let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-          let idx := fieldIdx c i (fo - i)
+          let idx := fieldIdxAt c i oP (fo - i)
           (appImpl (packName mem'.j) (oP + fo) idx [appImpl (unpackName mem'.j) (oP + fo) idx [fieldVar i]],
            appImpl (packUnpackName mem'.j) (oP + fo) idx [fieldVar i],
            auxAt fam mem'.tag (oP + fo) idx)
@@ -1327,7 +1343,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               let k := ihPos c' i'
               let fo' := c'.nF + k
               some <| Expr.mkAppN (motP (o + fo'))
-                  [Expr.mkAppN (constP (tagCtorName T t') lps) (varsAt (o + fo') nP ++ fieldIdx c' i' (fo' - i')),
+                  [Expr.mkAppN (constP (tagCtorName T t') lps) (varsAt (o + fo') nP ++ fieldIdxAt c' i' o (fo' - i')),
                    .bvar (fo' - 1 - i')]
             | none => none
           let fo := c'.nF + nIh
@@ -1336,7 +1352,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               match c'.kinds.getD i none with
               | some t' =>
                 if t' ≥ r then
-                  appImpl (unpackName (mems.getD t' default).j) (o + fo) (fieldIdx c' i (fo - i)) [fieldVar i]
+                  appImpl (unpackName (mems.getD t' default).j) (o + fo) (fieldIdxAt c' i o (fo - i)) [fieldVar i]
                 else fieldVar i
               | none => fieldVar i
             else .const punitUnitName [ℓi]
