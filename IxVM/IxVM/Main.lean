@@ -208,7 +208,7 @@ unsafe def main (args : List String) : IO Unit := do
   IO.eprintln s!"Exported {exported.bytecode.functions.length} functions."
   if mode == "check" then return
   let fixture ← IO.ofExcept (Fixture.decode (← IO.FS.readBinFile (← sourcePath "fixtures/nat-add-comm.ixf")))
-  unless fixture.format == "ixon-v4" do throw (IO.userError "unsupported fixture format")
+  unless fixture.format == "ixon-v5" do throw (IO.userError "unsupported fixture format")
   IO.eprintln "Building typed hints..."
   let hints := fixtureHints fixture
   IO.eprintln s!"Preparing {hints.size} hint entries..."

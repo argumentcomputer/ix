@@ -1,0 +1,82 @@
+module
+
+public import Ix.Compile.BinderData
+
+public section
+
+/-!
+# Binder-data sections for records that no compile wrote
+
+The compiler writes each record's binder-data section while it builds the
+record, from Lean's elaboration of the record's sources. Some records IxVM reads
+have no Lean source: the model records `IxVM.Model` generates, the closed
+role-evidence theorems `kernel-pin-gen` writes, and hand-built test records.
+Their sections come from IxC's annotation pass over the Ixon tree
+(`IxVM.PwHints.annotateRecord`), typed against the records they reference,
+spelled in the canonical form (`Ix.Compile.BinderData.sectionOf`). A datum is
+the zero-ness of a binder's codomain sort, which is unique, so both routes write
+the same data for the same record.
+
+Nothing here is trusted: IxVM validates every datum it reads.
+-/
+
+namespace IxVM.RecordSections
+
+open IxVM.PwHints
+
+/-- The sections of `records` (by address; a record without a numbered node gets
+the empty one), typed against `support`, records the kernel reads without
+annotating them, under the role table and prelude `chosen`. With `taint`, a
+binder whose datum IxC's datum function cannot compute is the undecided node, as
+the compiler writes it; without, it is `never` (deliberately ill-typed test
+records, whose rejection should not move to the sentinel). -/
+def sectionsOf (records support : Array (Address × Ixon.Constant))
+    (blobs : Std.HashMap Address ByteArray)
+    (hints : Std.HashMap Address Lean.ReducibilityHints)
+    (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) (taint : Bool := true) :
+    Except String (Std.HashMap Address (Array Ixon.BinderBlock)) := do
+  let view : View := { records, support, blobs, hints, table := some chosen.1.toBytes }
+  let k ← KernelEnv.ofView view (prelude? := some chosen)
+  let (tables, _) := annotateKernel k (taint := taint)
+  let store : Std.HashMap Address Ixon.Constant :=
+    records.foldl (fun m (a, c) => m.insert a c) {}
+  let mut out : Std.HashMap Address (Array Ixon.BinderBlock) := {}
+  for (a, blocks) in tables do
+    let some c := store[a]? | continue
+    out := out.insert a (← Ix.Compile.BinderData.sectionOf c blocks)
+  return out
+
+/-- The role table and prelude of `env`: its binding, the prelude read from its
+own records when it holds them, and otherwise the committed prelude. -/
+def chosenOf (env : Ixon.Env) :
+    Except String (Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) := do
+  let store : Std.HashMap Address Ixon.Constant := env.consts.fold (init := {}) fun m a lc =>
+    match lc.get? with
+    | some c => m.insert a c
+    | none => m
+  match Ix.Compile.BinderData.preludeOf env store with
+  | .ok p => pure p
+  | .error _ =>
+    let table ← match env.roleBinding with
+      | some b => match Ix.Kernel.RoleTable.ofBytes b.bytes with
+        | some t => pure t
+        | none => throw "record sections: the role binding does not decode"
+      | none => Ix.Kernel.Reader.defaultTable
+    return (table, ← Ix.Kernel.Reader.preludeFor (md := .anon) table)
+
+/-- `c` with its section, typed against the records of `env` (which `c` may
+reference). The record's address changes with its section. -/
+def withSection (env : Ixon.Env) (c : Ixon.Constant) (taint : Bool := false) :
+    Except String Ixon.Constant := do
+  let c := { c with binders := #[] }
+  let addr := Address.blake3 (Ixon.ser c)
+  let support : Array (Address × Ixon.Constant) := env.consts.fold (init := #[]) fun out a lc =>
+    if a == addr then out else match lc.get? with
+      | some c' => out.push (a, c')
+      | none => out
+  let sections ← sectionsOf #[(addr, c)] support env.blobs env.anonHints (← chosenOf env) taint
+  return { c with binders := sections.getD addr #[] }
+
+end IxVM.RecordSections
+
+end

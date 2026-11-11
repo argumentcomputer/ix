@@ -6,6 +6,8 @@ public import Ix.Ixon.CheckOrder
 public import IxC.Kernel.Admission
 public import IxC.Kernel.Ixon.Prelude
 public import Aiur.Ixon
+public import Ix.CompileM
+public import Ix.IxVM.RecordSections
 
 /-!
 # Model advice for IxVM's modeled route (decision D7)
@@ -138,6 +140,16 @@ def addressOf (c : Ixon.Constant) : Address := Address.blake3 (Ixon.ser c)
 
 def projRecord (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
 
+/-- A generated record with the compiler's canonical sharing
+(`Ix.CompileM.buildConstantWithSharing`): a generated record that is
+alpha-equivalent to a compiled one (a two-constructor tag enumeration and `Bool`)
+is then the same record. Its binder data come later, per block
+(`BlockAdvice.withSections`). -/
+def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
+    Except String Ixon.Constant :=
+  (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info refs univs).mapError
+    (s!"model record sharing: {·}")
+
 def hintOf : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
   | .opaque => .opaque
   | .abbrev => .abbrev
@@ -169,8 +181,8 @@ def encDefinition (nm : Names) (cv : ConstantVal .anon) (value : Expr .anon) (ki
       let t ← encExpr nm lps (fun _ => none) cv.type
       let v ← encExpr nm lps (fun _ => none) value
       pure (t, v) : EncM _).run {}
-  let c : Ixon.Constant := ⟨.defn { kind := kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v },
-    #[], s.refs, s.univs, #[]⟩
+  let c ← sharedRecord (.defn { kind := kind, safety := .safe, lvls := lps.length.toUInt64, typ, value := v })
+    s.refs s.univs
   let a := addressOf c
   return { records := #[(a, c)], keys := #[(cv.name, a)], blobs := s.blobs,
            hints := match hint with | some h => #[(a, hintOf h)] | none => #[] }
@@ -200,7 +212,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       pure (t, cs) : EncM _).run {}
   let ind : Ixon.Inductive := { isUnsafe := false, lvls := lps.length.toUInt64, params := nP.toUInt64,
                                 indices := nIdx.toUInt64, typ, ctors := ctorRecs }
-  let blockC : Ixon.Constant := ⟨.muts #[.indc ind], #[], s.refs, s.univs, #[]⟩
+  let blockC ← sharedRecord (.muts #[.indc ind]) s.refs s.univs
   let blockA := addressOf blockC
   let iprj := projRecord (.iPrj ⟨0, blockA⟩)
   let iprjA := addressOf iprj
@@ -231,7 +243,7 @@ def encInductive (nm : Names) (block : List (ConstantInfo .anon)) (nP : Nat) : E
       { k := k, isUnsafe := false, lvls := rlps.length.toUInt64,
         params := nP.toUInt64, indices := (mI - rP).toUInt64, motives := 1,
         minors := ctors.length.toUInt64, typ := rtyp, rules := rrules }
-    let recC : Ixon.Constant := ⟨.recr recR, #[], rs.refs, rs.univs, #[]⟩
+    let recC ← sharedRecord (.recr recR) rs.refs rs.univs
     let recA := addressOf recC
     out := { out with records := out.records.push (recA, recC), keys := out.keys.push (cvR.name, recA),
                       blobs := out.blobs ++ rs.blobs }
@@ -519,6 +531,57 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
                             typeModels, ctorModels, recModels, iotas }
   return { layout, records, hints, blobs, deps }
 
+/-! ## The advice's binder data
+
+A generated record carries its binder-data section like any record, so its
+address covers the data IxVM reads from it. The records are encoded first (each
+naming the ones before it by address), then annotated as a whole by IxC's pass,
+typed against the environment's records (`IxVM.RecordSections.sectionsOf`; the
+data do not depend on addresses), and then re-addressed bottom-up: each record's
+references to the advice follow their new addresses, its section is set, and it
+is hashed. The payload, hints and dependencies name the new addresses. -/
+
+/-- `adv` with every record's binder-data section, re-addressed. `support` are the
+environment's records, `chosen` its role table and prelude. -/
+def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ixon.Constant))
+    (blobs : Std.HashMap Address ByteArray) (hints : Std.HashMap Address Lean.ReducibilityHints)
+    (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) : Except String BlockAdvice := do
+  let blobs := adv.blobs.foldl (fun m (a, b) => m.insert a b) blobs
+  let hints := adv.hints.foldl (fun m (a, h) => m.insert a h) hints
+  let sections ← IxVM.RecordSections.sectionsOf adv.records support blobs hints chosen
+  let store : Std.HashMap Address Ixon.Constant :=
+    adv.records.foldl (fun m (a, c) => m.insert a c) {}
+  let order ← Ix.Compile.BinderData.bottomUp store adv.records
+  let mut renamed : Std.HashMap Address Address := {}
+  let mut rewritten : Std.HashMap Address Ixon.Constant := {}
+  for a in order do
+    let some c := store[a]? | continue
+    let rename (x : Address) : Address := renamed.getD x x
+    let c' := Ix.Compile.BinderData.rewriteRecord rename c (sections.getD a #[])
+    let a' := addressOf c'
+    renamed := renamed.insert a a'
+    rewritten := rewritten.insert a' c'
+  let rename (x : Address) : Address := renamed.getD x x
+  -- the records in their original order, each once
+  let mut records : Array (Address × Ixon.Constant) := #[]
+  for (a, _) in adv.records do
+    let a' := rename a
+    if records.any (·.1 == a') then continue
+    let some c' := rewritten[a']? | throw s!"model advice: record {a} was not re-addressed"
+    records := records.push (a', c')
+  let l := adv.layout
+  let layout : Payload := { l with
+    recBlock := rename l.recBlock
+    advice := records.map (·.1)
+    witnesses := l.witnesses.map fun (x, k, steps, extra) => (rename x, k, steps, extra)
+    typeModels := l.typeModels.map rename
+    ctorModels := l.ctorModels.map rename
+    recModels := l.recModels.map rename
+    iotas := l.iotas.map rename }
+  return { adv with layout, records,
+                    hints := adv.hints.map fun (a, h) => (rename a, h),
+                    deps := adv.deps.map rename }
+
 /-! ## Attaching the models -/
 
 /-- `env` with an empty payload for every inductive block that has none: a
@@ -595,7 +658,9 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
         report := { report with blocks := report.blocks.push (a, .error "the reader generated no model")}
         continue
       let some shape := cx.index.blocks[a]? | continue
-      match blockAdvice table look cx a c shape (r.decls.toList.take r.generated) tweak with
+      let advice := blockAdvice table look cx a c shape (r.decls.toList.take r.generated) tweak
+        >>= (·.withSections records env.blobs env.anonHints (table, pre))
+      match advice with
       | .error e => report := { report with blocks := report.blocks.push (a, .error e) }
       | .ok adv =>
         for (ra, rc) in adv.records do
