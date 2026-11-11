@@ -664,8 +664,8 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
 theorem caseFacts_of_check {ann : IxCC.Src.Relevance.Ann}
     (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFacts p env κ (· ∈ Sl) := by
   intro c r hc hr
-  have h1 := List.all_eq_true.mp (part_of (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts])) c hc
-  have h2 := List.all_eq_true.mp (part_of (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts])) c hc
+  have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts])) c hc
+  have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts])) c hc
   simp only [caseShapeB, caseProgOkB, hr] at h1 h2
   split at h1
   · rename_i sh hsh
