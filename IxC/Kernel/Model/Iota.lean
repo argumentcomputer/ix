@@ -874,7 +874,7 @@ theorem unitLikeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : 
     simp [ws, Function.comp_def]
   obtain ⟨-, -, -, hstrip, -, -, htele, -, -, -, -⟩ :=
     fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfit hws_len hws_val
-  have hpc : PiChain ws.length TVa := by
+  have hpc : Rules.PiChain ws.length TVa := by
     rw [hws_len]
     exact Rules.piChain_of_stripPis ts.length (by rw [hstrip]; rfl) hTVa
   have hfitT := Rules.teleFit_of_teleFitPA hpc htele
