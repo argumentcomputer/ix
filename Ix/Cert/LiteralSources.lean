@@ -1064,19 +1064,16 @@ theorem finishConstant_lits {T : Ix.Expr → Prop} (info : Ixon.ConstantInfo) (b
     (roots : ∀ e ∈ (constantInfoRootExprs info).toList, LitsIn T e) :
     Triple LI (fun _ _ => True) (finishConstantInfoWithSharing info blockMeta) (fun _ _ r => BlockLits T r) := by
   intro context before value after hI _ ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, hc, ran⟩ := bind_ok ran
-  have hc : (Except.ok before, before) = (Except.ok cache, mid) := hc
-  cases hc
-  obtain ⟨block, mid', hb, done⟩ := bind_ok ran
-  have same : mid' = before := by
-    have := RefTables.buildBlockConstant_preserves info before.refs before.univs context before
-    rw [hb] at this
-    exact this
-  subst same
-  rw [rawRun_pure] at done
-  cases done
-  exact ⟨hI, built_lits (BlockLayout.buildBlockConstant_ok hb) roots⟩
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (buildConstantWithSharing context.1.sharingLimits info before.refs before.univs >>=
+      withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, rfl⟩ := ran
+    have lits := built_lits (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1 roots
+    exact ⟨hI, lits⟩
 
 theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
@@ -1089,7 +1086,8 @@ theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {c
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    refine built_lits hb fun e he => ?_
+    have lits := built_lits hb (fun e he => ?_)
+    · exact lits
     rcases payloads with ⟨l⟩
     rcases l with _ | ⟨m, _ | ⟨m₂, rest⟩⟩
     · cases hs
@@ -1107,7 +1105,8 @@ theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {c
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    refine built_lits hb fun e he => ?_
+    have lits := built_lits hb (fun e he => ?_)
+    · exact lits
     simp only [constantInfoRootExprs, List.toList_toArray, List.mem_flatMap] at he
     obtain ⟨p, hp, he⟩ := he
     exact roots p hp e he

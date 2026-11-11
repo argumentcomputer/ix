@@ -756,50 +756,28 @@ theorem build_refs {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo}
     c.refs = refs :=
   (SharingRoots.build_roots (md := .anon) limits info refs univs c h).2.1
 
-theorem buildBlockConstant_preserves (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
-    Preserves id (buildBlockConstant info refs univs) := by
-  unfold buildBlockConstant
-  refine Preserves.bind (fun _ _ => rfl) fun context => ?_
-  unfold liftSharing
-  split
-  · exact Preserves.pure _ _
-  · exact Preserves.throw _ _
-
 theorem Holds.finishConstant (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
     Holds (RefsOK M B) (finishConstantInfoWithSharing info blockMeta) (fun _ s r => r.block.refs = s.refs) := by
   intro context before value after hI _ ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, hc, ran⟩ := bind_ok ran
-  have hc : (Except.ok before, before) = (Except.ok cache, mid) := hc
-  cases hc
-  obtain ⟨block, mid', hb, done⟩ := bind_ok ran
-  have same : mid' = before := by
-    have := buildBlockConstant_preserves info before.refs before.univs context before
-    rw [hb] at this
-    exact this
-  subst same
-  rw [rawRun_pure] at done
-  cases done
-  exact ⟨hI, build_refs (BlockLayout.buildBlockConstant_ok hb)⟩
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (buildConstantWithSharing context.1.sharingLimits info before.refs before.univs >>=
+      withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, rfl⟩ := ran
+    have refs := build_refs (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1
+    exact ⟨hI, refs⟩
 
 theorem Holds.finishInductiveFamily (source : InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
     Holds (RefsOK M B) (finishInductiveFamilyBlock source ind indMeta pairs) (fun _ s r => r.block.refs = s.refs) := by
-  unfold finishInductiveFamilyBlock
-  refine Holds.seq (Holds.checkedCount _ _) fun _ => Holds.seq (Holds.checkedCount _ _) fun _ => ?_
   intro context before value after hI _ ran
-  obtain ⟨cache, mid, hc, ran⟩ := bind_ok ran
-  have hc : (Except.ok before, before) = (Except.ok cache, mid) := hc
-  cases hc
-  obtain ⟨block, mid', hb, done⟩ := bind_ok ran
-  have same : mid' = before := by
-    have := buildBlockConstant_preserves (.muts #[.indc ind]) before.refs before.univs context before
-    rw [hb] at this
-    exact this
+  obtain ⟨same, built, -⟩ := Ix.CompileCert.EmissionBlocks.familyFinish_ok source ind indMeta pairs ran
   subst same
-  rw [rawRun_pure] at done
-  cases done
-  exact ⟨hI, build_refs (BlockLayout.buildBlockConstant_ok hb)⟩
+  have refs := build_refs built
+  exact ⟨hI, refs⟩
 
 theorem mutual_refs {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
@@ -812,12 +790,14 @@ theorem mutual_refs {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    exact build_refs hb
+    have refs := build_refs hb
+    exact refs
   | none =>
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    exact build_refs hb
+    have refs := build_refs hb
+    exact refs
 
 theorem Holds.finishMutual (classes : List MutConst) (payloads : Array Ixon.MutConst)
     (metas : Array (Ix.Name × Ixon.ConstantMeta)) :
