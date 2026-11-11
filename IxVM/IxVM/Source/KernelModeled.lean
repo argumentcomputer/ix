@@ -962,10 +962,128 @@ def check_family := aiur_fn⟦
               members_val(type_addrs, type_models, src, dst, aset);
               members_val(ctor_addrs, ctor_models, src, dst, aset);
               members_val(rec_addrs, rec_models, src, dst, aset);
+              -- the family-wide elimination level and the block's level count, from the
+              -- block alone: its types share their level count and result universe, and
+              -- a block of two or more types (mutual, or nested, which the kernel
+              -- flattens) eliminates into every sort exactly when that universe is never
+              -- `Prop` (Lean's `elim_only_at_universe_zero`)
+              let (bnl, univ_offset) = block_elim(rc, type_addrs);
+              -- the family record references only what the block's own walk checks:
+              -- the block's used references, members of the blocks those project from,
+              -- the block's members, and witnessed members of its closure
+              family_refs_ok(rec_block, block, wset);
               let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
-                                  n_recs, 0, np);
+                                  n_recs, 0, np, univ_offset, bnl);
               let Lists::Node::Nil = (*(s9));
               () } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The block's level count and its family-wide elimination offset. Every type
+  -- has the first's level count and result universe (one `inductDecl` has one level
+  -- list, and Lean's mutual types live in one universe); the offset is 1 exactly
+  -- when that universe is never zero. A modeled block flattens to two or more types,
+  -- where Lean's `elim_only_at_universe_zero` has no constructor case.
+
+def block_elim := aiur_fn⟦
+  fn block_elim(rc: KernelRoles::RoleCtx, type_addrs: Lists::List<Bytes::AddressRef>) -> (Field, Field) {
+      let Lists::Node::Cons(t0, rest) = (*(type_addrs));
+      match (*(Ingress::get_ci(t0))) {
+        KernelTypes::KConstantInfo::Induct(nl, ty, np, ni, _, _, _, _) => {
+          let lvl = KernelCheck::get_result_sort_level(rc, ty, np + ni, (&(Lists::Node::Nil)));
+          peers_agree(rc, rest, nl, lvl);
+          (nl, KernelLevels::level_is_not_zero(lvl)) } ,
+      }
+    }
+⟧
+
+def peers_agree := aiur_fn⟦
+  fn peers_agree(rc: KernelRoles::RoleCtx, type_addrs: Lists::List<Bytes::AddressRef>,
+                 nl0: Field, lvl0: KernelTypes::KLevel) -> () {
+      match (*(type_addrs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(t, rest) => {
+          match (*(Ingress::get_ci(t))) {
+            KernelTypes::KConstantInfo::Induct(nl, ty, np, ni, _, _, _, _) => {
+              assert_eq!(nl, nl0, "modeled block: types disagree on the universe-parameter count");
+              let lvl = KernelCheck::get_result_sort_level(rc, ty, np + ni, (&(Lists::Node::Nil)));
+              assert_eq!(KernelLevels::level_equal(lvl, lvl0), 1,
+                "modeled block: types land in different universes");
+              peers_agree(rc, rest, nl0, lvl0) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The family record's used references: each is a used reference of the block, a
+  -- member of the block or of a block one of those projects from, or a witnessed
+  -- member of the block's closure. The family adds no constant the claim's walk of
+  -- the block does not check (a canonical family mentions only the block's types,
+  -- constructors, parameter and index domains, and the containers it nests through).
+
+def family_refs_ok := aiur_fn⟦
+  fn family_refs_ok(rec_block: Bytes::AddressRef, block: Bytes::AddressRef,
+                    wset: RBTreeMap::RBTreeMap<Field>) -> () {
+      let rcst = Ingress::load_verified_constant(rec_block);
+      let bc = Ingress::load_verified_constant(block);
+      match rcst {
+        Ixon::Constant::Mk(_, _, refs, _) => {
+          match bc {
+            Ixon::Constant::Mk(_, _, irefs, _) => {
+              family_refs_go(refs, KernelClaim::const_idxs_of(rcst), 0, block, irefs,
+                             KernelClaim::const_idxs_of(bc), wset) } ,
+          } } ,
+      }
+    }
+⟧
+
+def family_refs_go := aiur_fn⟦
+  fn family_refs_go(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
+                    block: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
+                    iused: Lists::List<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(r, rest) => {
+          match KernelClaim::g_list_has(used, i) {
+            1 => {
+              let ok = match used_ref_has(irefs, iused, 0, r) {
+                1 => {  1 } ,
+                _ => {
+                  match is_projection_of(r, block) {
+                    1 => {  1 } ,
+                    _ => {
+                      match projection_of_ref_block(r, irefs, iused) {
+                        1 => {  1 } ,
+                        _ => {  KernelClaim::addr_set_member(r, wset) } ,
+                      } } ,
+                  } } ,
+              };
+              assert_eq!(ok, 1, "modeled recursor family references outside its block's closure");
+              () } ,
+            _ => {  () } ,
+          };
+          family_refs_go(rest, used, i + 1, block, irefs, iused, wset) } ,
+      }
+    }
+⟧
+
+  -- Is `r` one of the used references `irefs`?
+
+def used_ref_has := aiur_fn⟦
+  fn used_ref_has(irefs: Lists::List<Bytes::AddressRef>, iused: Lists::List<Field>, i: Field,
+                  r: Bytes::AddressRef) -> Field {
+      match (*(irefs)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(q, rest) => {
+          let hit = match KernelClaim::g_list_has(iused, i) {
+            1 => {  Bytes::address_eq(q, r) } ,
+            _ => {  0 } ,
+          };
+          match hit {
+            1 => {  1 } ,
+            _ => {  used_ref_has(rest, iused, i + 1, r) } ,
           } } ,
       }
     }
@@ -1169,43 +1287,34 @@ def rename_list := aiur_fn⟦
 
   -- ## The family: recursors and their rules
 
-  -- Each member of the family record: no K, the block's parameter count, one motive per
-  -- member (a complete family), eliminating motive `k` at position `k`, its first
-  -- motives' carriers the block's types in order; then its rules.
+  -- Each member of the family record: safe, no K, the block's parameter count, one
+  -- motive per member (a complete family), eliminating motive `k` at position `k`, its
+  -- first motives' carriers the block's types in order; its type well-scoped and a
+  -- type; the canonical recursor at the family-wide elimination offset (the level
+  -- link, the type up to definitional equality and every rule syntactically the
+  -- reconstruction's, from the block and the family record alone); then each rule's
+  -- `iota_j` theorem, which shows the advice's model satisfies that canonical rule.
+  -- The advice decides no reduction: a second payload for the block could only
+  -- witness another model of the same canonical family.
 
 def check_recs := aiur_fn⟦
   fn check_recs(rc: KernelRoles::RoleCtx, type_addrs: Lists::List<Bytes::AddressRef>,
                 recs: Lists::List<Bytes::AddressRef>, models: Lists::List<Bytes::AddressRef>,
                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                 aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream,
-                n_recs: Field, k: Field, np: Field) -> Bytes::Stream {
+                n_recs: Field, k: Field, np: Field, univ_offset: Field, bnl: Field) -> Bytes::Stream {
       match (*(recs)) {
         Lists::Node::Nil => {  s } ,
         Lists::Node::Cons(r, rest) => {
           let Lists::Node::Cons(rm, mrest) = (*(models));
-          match (*(Ingress::get_ci(r))) {
+          let rci = (*(Ingress::get_ci(r)));
+          match rci {
             KernelTypes::KConstantInfo::Rec(nl, ty, rnp, ni, nmot, nmin, rules, kf, r_uns, _, _) => {
               assert_eq!(kf, 0, "modeled recursor declares K");
               -- the family's recursors are safe: the reader declines an unsafe one, so
-              -- no model stores it. (`check_const` reaches `check_family` only for a
-              -- safe recursor, but a family member read here is checked directly.)
+              -- no model stores it
               assert_eq!(r_uns, 0, "modeled recursor family has an unsafe member");
               assert_eq!(rnp, np, "modeled recursor parameter count differs from its block's");
-              -- the level link (K1-5(e)) on the modeled route: a recursor's universe
-              -- count is its block's, or its block's plus one for the elimination
-              -- parameter. The reader decides `large` from this count
-              -- (`r.lvls == block.lvls + 1`); outside {block, block + 1} the installed
-              -- level list is too short for the recursor type's free parameters, and
-              -- the read environment has no model.
-              let (bnl, _) = ci_lvls_type((*(Ingress::get_ci(Lists::lookup(type_addrs, 0)))));
-              match nl - bnl {
-                0 => {  () } ,
-                1 => {  () } ,
-                _ => {
-                  assert_eq!(0, 1,
-                    "modeled recursor universe-parameter count is not its block's plus the elimination parameter");
-                  () } ,
-              };
               assert_eq!(nmot, n_recs, "modeled recursor family record is not one complete family");
               assert_eq!(UInt32::less_than_fields(1, nmot), 1,
                 "a modeled recursor family with one motive");
@@ -1213,8 +1322,15 @@ def check_recs := aiur_fn⟦
                 "modeled recursor has fewer motives than its block has types");
               check_rec_motive(ty, (((rnp + nmot) + nmin) + ni) + 1, rnp + k);
               check_carriers(ty, rnp, type_addrs);
+              -- the raw type, as `check_const` checks a recursor reached directly
+              KernelCheck::validate_expr_well_scoped(ty, 0, nl);
+              KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
+              let parent = KernelCheck::rec_to_parent_addr(ty, rnp, nmot, nmin, ni);
+              KernelCheck::check_recursor_canonical_at(rc, rci, r, (*(Ingress::get_ci(parent))),
+                parent, univ_offset, bnl);
               let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, src, dst, aset, s);
-              check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np) } ,
+              check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np,
+                         univ_offset, bnl) } ,
           } } ,
       }
     }

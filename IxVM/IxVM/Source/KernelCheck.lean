@@ -1772,8 +1772,8 @@ def check_recursor_canonical_full := aiur_fn⟦
                                             parent_ci: KernelTypes::KConstantInfo,
                                             parent_addr: Bytes::AddressRef) -> () {
       match rec_ci {
-        KernelTypes::KConstantInfo::Rec(nlvls, ty, n_p, n_i, n_mot, n_min, rules,
-                            _k_flag, _uns, rec_block_addr, _rec_idx) => {
+        KernelTypes::KConstantInfo::Rec(_nlvls, ty, n_p, n_i, n_mot, n_min, _rules,
+                            _k_flag, _uns, _rec_block_addr, _rec_idx) => {
           match parent_ci {
             KernelTypes::KConstantInfo::Induct(pnlvls, pty, pnp, pni, num_ctors, _,
                                    parent_block_addr, parent_ind_idx) => {
@@ -1788,18 +1788,67 @@ def check_recursor_canonical_full := aiur_fn⟦
               };
               let result_level = get_result_sort_level(rc, pty, pnp + pni,
                 (&(Lists::Node::Nil)));
+              -- the elimination restriction for a one-type block (Lean's
+              -- `elim_only_at_universe_zero`; the kernel's `checkNativeTail` front
+              -- guard and `checkStructFieldSortsI`): large unless the sort may be
+              -- `Prop`; then large only with no constructor, or one whose fields are
+              -- propositions or result indices. A native block is not auxiliary
+              -- (`check_recursor_member` asserts it), so its parent is its block.
               let univ_offset = is_large_eliminator(rc, result_level,
                 num_ctors, single_ctor_pair,
                 ind_is_solo(parent_block_addr, parent_addr));
-              -- the level link (K1-5(e)): a native recursor carries its block's
-              -- universe parameters, plus one fresh elimination parameter exactly
-              -- when it is a large eliminator. The reader decides `large` from the
-              -- declared level count (`r.lvls == block.lvls + 1`), so an unchecked
-              -- count lets a recursor install with a level list too short for its
-              -- own type's free parameters (no model). A native block is not
-              -- auxiliary (`check_recursor_member` asserts it), so its parent is
-              -- its block and `pnlvls` is the block's own count.
-              assert_eq!(nlvls, pnlvls + univ_offset,
+              -- the major premise is syntactically plain (the kernel's
+              -- `recRulePlain`), so every rule fires `.plain`
+              check_rec_major_plain(ty, ((n_p + n_mot) + n_min) + n_i, n_p, n_i,
+                parent_addr, pnlvls, univ_offset);
+              check_recursor_canonical_at(rc, rec_ci, addr, parent_ci, parent_addr,
+                univ_offset, pnlvls) } ,
+            _ => {  () } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The recursor's major premise, syntactically: `I.{u⃗} p⃗ ı⃗` with `u⃗` the block's
+  -- level parameters behind the elimination parameter, `p⃗` the parameter variables
+  -- and `ı⃗` the index variables (the kernel's `recRulePlain`, with the index tuple).
+
+def check_rec_major_plain := aiur_fn⟦
+  fn check_rec_major_plain(ty: KernelTypes::KExpr, m_i: Field, n_p: Field, n_i: Field,
+                           ind_addr: Bytes::AddressRef, ind_nlvls: Field, univ_offset: Field) -> () {
+      let KernelTypes::KExprNode::Forall(major_ty, _, _) = (*(peel_n_foralls(ty, m_i)));
+      let head = (&(KernelTypes::KExprNode::Const(ind_addr,
+        build_param_lvls_range(univ_offset, ind_nlvls, 0))));
+      let expected = build_major_indices(
+        build_apply_bvars_decreasing(head, n_p, m_i - 1, 0), n_i, 0);
+      assert_eq!(kexpr_struct_eq(major_ty, expected), 1,
+        "recursor major premise is not its inductive at its own levels, parameters and indices");
+      ()
+    }
+⟧
+
+  -- The canonical recursor at a given elimination offset (the native route's, or a
+  -- modeled block's family-wide one): the level link, the type up to definitional
+  -- equality against the reconstruction, and every rule syntactically the
+  -- reconstruction's. Nothing here reads model advice, so no reduction a recursor
+  -- performs depends on it.
+
+def check_recursor_canonical_at := aiur_fn⟦
+  fn check_recursor_canonical_at(rc: KernelRoles::RoleCtx, rec_ci: KernelTypes::KConstantInfo, addr: Bytes::AddressRef,
+                                 parent_ci: KernelTypes::KConstantInfo, parent_addr: Bytes::AddressRef,
+                                 univ_offset: Field, block_nlvls: Field) -> () {
+      match rec_ci {
+        KernelTypes::KConstantInfo::Rec(nlvls, ty, n_p, n_i, n_mot, n_min, rules,
+                            _k_flag, _uns, rec_block_addr, _rec_idx) => {
+          match parent_ci {
+            KernelTypes::KConstantInfo::Induct(pnlvls, pty, pnp, pni, num_ctors, _,
+                                   parent_block_addr, parent_ind_idx) => {
+              -- the level link (K1-5(e)): a recursor carries its block's universe
+              -- parameters, plus one fresh elimination parameter exactly when it is
+              -- a large eliminator. The reader decides `large` from the declared
+              -- count (`r.lvls == block.lvls + 1`), so an unchecked count installs
+              -- a recursor with a level list too short for its own type (no model).
+              assert_eq!(nlvls, block_nlvls + univ_offset,
                 "recursor universe-parameter count is not its block's plus the elimination parameter");
               let elim_level = match univ_offset {
                 1 => {  (&(KernelTypes::KLevelNode::Param(0))) } ,
@@ -1873,8 +1922,9 @@ def canonical_rules_at_pos := aiur_fn⟦
             parent_block_addr, parent_ind_idx, n_p, n_mot, n_min, occ_us,
             rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
             spec_params, 0, elim_level);
-          compare_rules(rc, rules, canonical, n_p, n_mot, n_min,
-            parent_block_addr, parent_ind_idx, num_ctors, 0, elim_level) } ,
+          compare_rules(rules, canonical, n_p, n_mot, n_min,
+            parent_block_addr, parent_ind_idx, num_ctors, 0, elim_level,
+            ty, self_ctors_offset) } ,
       }
     }
 ⟧
@@ -1935,11 +1985,19 @@ def populate_rules := aiur_fn⟦
     }
 ⟧
 
+  -- Each stored rule against the reconstruction, syntactically (the kernel's
+  -- `nativeRulesOk`): its λ-prefix binds the recursor's parameters, motives and
+  -- minors at the recursor type's own binder domains, then the constructor's fields
+  -- at the domains the rule's minor premise gives them (`nativeRulePrefixOk`; the
+  -- minor `minor_off + pos` sits `n_min - (minor_off + pos)` minors shallower), every
+  -- λ carrying the elimination level's zero-ness; its body is the reconstruction's.
+  -- The rhs is therefore closed and well-typed by the recursor type's own check.
+
 def compare_rules := aiur_fn⟦
-  fn compare_rules(rc: KernelRoles::RoleCtx, stored: Lists::List<KernelTypes::KRecRule>, canonical: Lists::List<KernelTypes::KExpr>,
+  fn compare_rules(stored: Lists::List<KernelTypes::KRecRule>, canonical: Lists::List<KernelTypes::KExpr>,
                           n_p: Field, n_mot: Field, n_min: Field,
                           block_addr: Bytes::AddressRef, ind_idx: Field, num_ctors: Field, pos: Field,
-                          elim: KernelTypes::KLevel) -> () {
+                          elim: KernelTypes::KLevel, ty: KernelTypes::KExpr, minor_off: Field) -> () {
       match (*(stored)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
@@ -1960,20 +2018,17 @@ def compare_rules := aiur_fn⟦
               match (*(canonical)) {
                 Lists::Node::Nil => {  () } ,
                 Lists::Node::Cons(cbody, crest) => {
-                  let total = ((n_p + n_mot) + n_min) + nf;
-                  match peel_rule_lams(rhs, total, 0,
-                          (&(Lists::Node::Nil)), elim) {
-                    (stored_body, peeled, _) => {
-                      assert_eq!(peeled, total,
-                        "recursor rule rhs has too few binders to peel");
-
-                      assert_eq!(KernelDefEq::k_is_def_eq(rc, stored_body, cbody,
-                          (&(Lists::Node::Nil))), 1,
-                        "recursor rule rhs differs from canonical reconstruction");
-                      () } ,
-                  };
-                  compare_rules(rc, rest, crest, n_p, n_mot, n_min,
-                    block_addr, ind_idx, num_ctors, pos + 1, elim) } ,
+                  let pre = (n_p + n_mot) + n_min;
+                  let minor = minor_off + pos;
+                  let after_pre = rule_lam_doms(rhs, ty, pre, elim);
+                  let KernelTypes::KExprNode::Forall(mdom, _, _) =
+                    (*(peel_n_foralls(ty, (n_p + n_mot) + minor)));
+                  let fields_pi = KernelSubst::expr_lift(mdom, n_min - minor, 0);
+                  let stored_body = rule_lam_doms(after_pre, fields_pi, nf, elim);
+                  assert_eq!(kexpr_struct_eq(stored_body, cbody), 1,
+                    "recursor rule rhs is not the canonical reconstruction");
+                  compare_rules(rest, crest, n_p, n_mot, n_min,
+                    block_addr, ind_idx, num_ctors, pos + 1, elim, ty, minor_off) } ,
               } } ,
           } } ,
       }
@@ -2782,25 +2837,27 @@ def peel_n_lams_collect := aiur_fn⟦
     }
 ⟧
 
-  -- `peel_n_lams_collect` for a recursor rule (D2): each peeled λ must carry the
-  -- elimination level's zero-ness, as the kernel's canonical rules do.
+  -- The first `n` λs of a recursor rule against the first `n` ∀s of `p`: each λ's
+  -- domain is syntactically the ∀'s, and its datum is the elimination level's
+  -- zero-ness, as the kernel's canonical rules' (the body's type is a motive
+  -- application). Returns the rule under the `n` λs.
 
-def peel_rule_lams := aiur_fn⟦
-  fn peel_rule_lams(e: KernelTypes::KExpr, n: Field, peeled: Field, acc: Lists::List<KernelTypes::KExpr>,
-                         elim: KernelTypes::KLevel)
-                                -> (KernelTypes::KExpr, Field, Lists::List<KernelTypes::KExpr>) {
+def rule_lam_doms := aiur_fn⟦
+  fn rule_lam_doms(l: KernelTypes::KExpr, p: KernelTypes::KExpr, n: Field,
+                   elim: KernelTypes::KLevel) -> KernelTypes::KExpr {
       match n {
-        0 => {  (e, peeled, acc) } ,
+        0 => {  l } ,
         _ => {
-          match (*(e)) {
-            KernelTypes::KExprNode::Lam(dom, body, bl) => {
-              -- The rule's λs are the kernel's canonical ones, whose data are the
-              -- elimination level's zero-ness (the body's type is a motive application).
-              assert_eq!(KernelLevels::pw_eq(bl, elim), 1,
+          match (*(l)) {
+            KernelTypes::KExprNode::Lam(dl, bl, ll) => {
+              assert_eq!(KernelLevels::pw_eq(ll, elim), 1,
                 "a recursor rule's binder datum is not the zero-ness of its elimination level");
-              peel_rule_lams(body, n - 1, peeled + 1,
-                (&(Lists::Node::Cons(dom, acc))), elim) } ,
-            _ => {  (e, peeled, acc) } ,
+              match (*(p)) {
+                KernelTypes::KExprNode::Forall(dp, bp, _) => {
+                  assert_eq!(kexpr_struct_eq(dl, dp), 1,
+                    "a recursor rule's binder domain is not its recursor type's");
+                  rule_lam_doms(bl, bp, n - 1, elim) } ,
+              } } ,
           } } ,
       }
     }
@@ -2966,6 +3023,10 @@ def check_const := aiur_fn⟦
         KernelTypes::KConstantInfo::Induct(nlvls, ty, n_params, n_indices, num_ctors,
                               ind_is_unsafe, ind_block, ind_idx) => {
           validate_expr_well_scoped(ty, 0, nlvls);
+          -- an inductive's type is typed before its block is installed (the kernel's
+          -- `SumInstall`, `DeclIndJ`), so it mentions no type of its own block
+          assert_eq!(expr_mentions_block(ty, (&(Lists::Node::Cons(ind_block, (&(Lists::Node::Nil)))))), 0,
+            "an inductive's type mentions a type of its own block");
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
           assert_safety(u, ty);
 
