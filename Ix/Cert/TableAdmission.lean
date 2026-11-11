@@ -607,20 +607,47 @@ theorem declsOk_sound {b : Binding} {envA : Env .anon} {ev : Evidences .anon}
 /-- The coverage limits of the reading (input bounds only). -/
 def admissionLimits : Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
 
+/-- The three stages of `preparedOk`, abstracted over the computations: the
+prelude, the reading, the fold, then `fin` on the fold's environment. -/
+def preparedOkWith {P Ev Ds En ε₁ ε₂ ε₃ : Type} (pref : Except ε₁ P)
+    (prep : P → Except ε₂ (Ev × Ds)) (ck : Ev → Ds → Except ε₃ En) (fin : En → Ev → Ds → Bool) :
+    Bool :=
+  match pref with
+  | .error _ => false
+  | .ok pre =>
+    match prep pre with
+    | .error _ => false
+    | .ok (ev, ds) =>
+      match ck ev ds with
+      | .error _ => false
+      | .ok envA => fin envA ev ds
+
+theorem preparedOkWith_sound {P Ev Ds En ε₁ ε₂ ε₃ : Type} {pref : Except ε₁ P}
+    {prep : P → Except ε₂ (Ev × Ds)} {ck : Ev → Ds → Except ε₃ En} {fin : En → Ev → Ds → Bool}
+    (h : preparedOkWith pref prep ck fin = true) :
+    ∃ pre ev ds envA, pref = .ok pre ∧ prep pre = .ok (ev, ds) ∧ ck ev ds = .ok envA ∧
+      fin envA ev ds = true := by
+  unfold preparedOkWith at h
+  split at h
+  · exact absurd h Bool.false_ne_true
+  · rename_i pre hpre
+    split at h
+    · exact absurd h Bool.false_ne_true
+    · rename_i ev ds hprep
+      split at h
+      · exact absurd h Bool.false_ne_true
+      · rename_i envA hck
+        exact ⟨pre, ev, ds, envA, hpre, hprep, hck, h⟩
+
 /-- **The reading and the fold accept the records of `order`** under the admitted
 table `t` (of the binding `b`), behind its committed prelude, and the installed
 environment meets `declsOk`. -/
 def preparedOk (b : Binding) (E : Ixon.Env) (t : RoleTable) (order : List Address) : Bool :=
-  match (Reader.preludeFor t : Except String (Reader.Prelude .anon)) with
-  | .error _ => false
-  | .ok pre =>
-    match Admission.prepareWith Address.admissionHash b pre admissionLimits (recordsOf E order)
-        (blobsOf E order) (hintsOf E) with
-    | .error _ => false
-    | .ok (ev, ds) =>
-      match Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn) with
-      | .error _ => false
-      | .ok envA => declsOk envA ev ds.toList
+  preparedOkWith (Reader.preludeFor t : Except String (Reader.Prelude .anon))
+    (fun pre => Admission.prepareWith Address.admissionHash b pre admissionLimits
+      (recordsOf E order) (blobsOf E order) (hintsOf E))
+    (fun ev ds => Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn))
+    (fun envA ev ds => declsOk envA ev ds.toList)
 
 theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
     {t : RoleTable} {order : List Address} (h : preparedOk b E t order = true) :
@@ -633,21 +660,12 @@ theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
       IxVM.Refinement.TheoremsInProp envA ds.toList ∧
       IxVM.Refinement.UserAxiomsWithin (fun _ => False) ds.toList ∧
       IxVM.Refinement.BindingSpecs b envA ds.toList := by
-  unfold preparedOk at h
-  split at h
-  · exact absurd h Bool.false_ne_true
-  · rename_i pre hpre
-    split at h
-    · exact absurd h Bool.false_ne_true
-    · rename_i ev ds hprep
-      split at h
-      · exact absurd h Bool.false_ne_true
-      · rename_i envA hck
-        have href := Cached.checkDecls_refines_ref W rfl hck
-        rw [Array.toList_map] at href
-        obtain ⟨hthm, hax, hspecs⟩ := declsOk_sound (b := b) h
-        exact ⟨pre, ev, ds, envA, hpre, hprep, Cached.acceptsRefUnder_strict.mpr href,
-          hthm, hax, hspecs⟩
+  obtain ⟨pre, ev, ds, envA, hpre, hprep, hck, hfin⟩ := preparedOkWith_sound h
+  have href := Cached.checkDecls_refines_ref W rfl hck
+  rw [Array.toList_map] at href
+  obtain ⟨hthm, hax, hspecs⟩ := declsOk_sound (b := b) hfin
+  exact ⟨pre, ev, ds, envA, hpre, hprep, Cached.acceptsRefUnder_strict.mpr href,
+    hthm, hax, hspecs⟩
 
 /-! ## The check -/
 
