@@ -118,14 +118,44 @@ partial def ixeFiles (dir : System.FilePath) : IO (Array System.FilePath) := do
     else if e.path.extension == some "ixe" then out := out.push e.path
   return out.qsort (·.toString < ·.toString)
 
+/-- One role-bound artifact of the survey: its file, records, original table address,
+the decoded table, and the binding it is checked under. -/
+structure Entry where
+  file : String
+  env : Ixon.Env
+  table : Address
+  decoded : RoleTable
+  binding : Ix.Kernel.Admission.Binding
+
+/-- The survey's line for `e`: the check's verdict over the artifact's own records, its
+time, and, for a refusal, the refusing stage. -/
+def survey (defaultTable : RoleTable) (e : Entry) : IO (Bool × String) := do
+  let t := e.decoded
+  let restriction := t.bound.all fun (r, a) => defaultTable.addressOf? r == some a
+  let missing := (Ix.Cert.TableAdmission.seedList t).filter (!e.env.consts.contains ·)
+  let t0 ← IO.monoMsNow
+  let admitted ← IO.lazyPure fun _ => Ix.Cert.TableAdmission.check e.binding e.env
+  let ms := (← IO.monoMsNow) - t0
+  let why := if admitted then "" else Ix.Cli.TableAdmissionKernel.explain e.binding e.env
+  return (admitted, s!"FIXTURE {e.file}: table {e.table} checked-as {e.binding.address} \
+    version={t.version} roles={t.bound.size} evidence={(proofsOf t).length} \
+    records={e.env.consts.size} restriction={restriction} admitted={admitted} ms={ms} \
+    missing-seeds={missing.length}{if missing.isEmpty then "" else s!" {missing.take 8}"}\
+    {if admitted then "" else s!" why: {why}"}")
+
+/-- The survey. With `IX_TABLE_FIXTURES_REVERSION` set, each table is checked
+re-encoded at this build's specification version, the same bindings and evidence
+(a diagnostic: another table, at another address), so that a table made for an
+earlier version shows what the rest of the admission makes of its artifact's records.
+The first artifact of each table is checked alone and timed; the others in parallel. -/
 def fixtures : IO UInt32 := do
   let some root ← IO.getEnv "IX_TABLE_FIXTURES"
     | IO.eprintln "[table-admission-fixtures] set IX_TABLE_FIXTURES to a directory of .ixe files"
       return 2
+  let reversion := (← IO.getEnv "IX_TABLE_FIXTURES_REVERSION").isSome
   let defaultTable ← IO.ofExcept Ix.Kernel.Reader.defaultTable
   let files ← ixeFiles root
-  let mut tables : Std.HashMap Address (Array String) := {}
-  let mut refused := 0
+  let mut entries : Array Entry := #[]
   let mut unbound := 0
   for f in files do
     let env ← match Ixon.deEnvAnon (← IO.FS.readBinFile f) with
@@ -136,24 +166,38 @@ def fixtures : IO UInt32 := do
       IO.println s!"FIXTURE {f}: no role table"
       continue
     let some rb := env.roleBinding | continue
-    let b : Ix.Kernel.Admission.Binding := ⟨rb.address, rb.bytes⟩
     let some t := RoleTable.ofBytes rb.bytes
       | IO.println s!"FIXTURE {f}: table {rb.address} does not decode"; continue
-    let restriction := t.bound.all fun (r, a) => defaultTable.addressOf? r == some a
-    let missing := (Ix.Cert.TableAdmission.seedList t).filter (!env.consts.contains ·)
-    let t0 ← IO.monoMsNow
-    let admitted ← IO.lazyPure fun _ => Ix.Cert.TableAdmission.check b env
-    let ms := (← IO.monoMsNow) - t0
-    let why := if admitted then "" else Ix.Cli.TableAdmissionKernel.explain b env
-    unless admitted do refused := refused + 1
-    tables := tables.insert rb.address ((tables.getD rb.address #[]).push f.toString)
-    IO.println s!"FIXTURE {f}: table {rb.address} roles={t.bound.size} \
-      evidence={(proofsOf t).length} records={env.consts.size} restriction={restriction} \
-      admitted={admitted} ms={ms} missing-seeds={missing.length}\
-      {if missing.isEmpty then "" else s!" {missing.take 8}"}\
-      {if admitted then "" else s!" why: {why}"}"
-  IO.println s!"[table-admission-fixtures] {files.size} files, {tables.size} tables, \
-    {unbound} without a table, {refused} refused"
+    let (binding, env) :=
+      if reversion then
+        let bytes := ({ t with version := Ix.Kernel.specVersion } : RoleTable).toBytes
+        let a := Address.admissionHash bytes
+        ((⟨a, bytes⟩ : Ix.Kernel.Admission.Binding), { env with roleBinding := some ⟨a, bytes⟩ })
+      else ((⟨rb.address, rb.bytes⟩ : Ix.Kernel.Admission.Binding), env)
+    entries := entries.push { file := f.toString, env, table := rb.address, decoded := t, binding }
+  let mut seen : Std.HashSet Address := {}
+  let mut firsts : Array Entry := #[]
+  let mut rest : Array Entry := #[]
+  for e in entries do
+    if seen.contains e.table then rest := rest.push e
+    else
+      seen := seen.insert e.table
+      firsts := firsts.push e
+  let mut refused := 0
+  let t0 ← IO.monoMsNow
+  for e in firsts do
+    let (ok, line) ← survey defaultTable e
+    unless ok do refused := refused + 1
+    IO.println line
+  let sequential := (← IO.monoMsNow) - t0
+  let tasks ← rest.mapM fun e => IO.asTask (prio := .dedicated) (survey defaultTable e)
+  for task in tasks do
+    let (ok, line) ← IO.ofExcept (← IO.wait task)
+    unless ok do refused := refused + 1
+    IO.println line
+  IO.println s!"[table-admission-fixtures] {files.size} files, {seen.size} tables, \
+    {unbound} without a table, {refused} refused; the first artifact of each table checked \
+    alone in {sequential} ms{if reversion then " (tables re-encoded at this specification version)" else ""}"
   return 0
 
 end Tests.Ix.TableAdmissionCli
