@@ -9,8 +9,9 @@ a claim's role table, and receives it at startup, because the check
 the two: `checker` is that check, with `explain`, the first of its stages that
 refuses, for the refusal's message; `install` hands it to the command line.
 
-`explain` reruns `check`'s stages in `check`'s order (the table's admission,
-the stored seeds, the closure's order, the committed prelude, the reading, the
+`explain` reruns `check`'s stages in `check`'s order (the table's admission, a
+string literal's support bound with `String`, the stored seeds, the closure's
+order, the committed prelude, the reading (its hints read as `check` reads them), the
 fold, then the specifications the fold does not check). It is read only after
 `check` refused, and decides nothing. -/
 
@@ -25,6 +26,10 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
   | .error e => s!"the table's section does not admit: {Admission.Error.binding e}"
   | .ok t =>
     let seeds := seedList t
+    if !literalSupportOk t then
+      "the table binds String without the rest of a string literal's support \
+        (String.ofList, List and its constructors, Char, Char.ofNat)"
+    else
     match seeds.find? (!E.consts.contains ·) with
     | some a =>
       s!"the environment lacks {a}, which the table binds or its evidence names"
@@ -39,8 +44,10 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
         match (Reader.preludeFor t : Except String (Reader.Prelude .anon)) with
         | .error e => s!"the committed prelude does not read under the table: {e}"
         | .ok pre =>
+          -- the hints read through a map built once, as `check` reads them (`hintsAt`)
           match Admission.prepareWith Address.admissionHash b pre admissionLimits
-              (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) with
+              (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order)
+              (hintsAt (hintsProjAt E) E) with
           | .error e =>
             let why := toString e
             let record := match e with

@@ -18,7 +18,9 @@ admitted one then fails at verification only.
 * with an environment that lacks one of the table's evidence theorems, refused,
   naming the record;
 * with the artifact as `--binding-env`, admitted by the kernel;
-* then with no environment, admitted from the record the previous run wrote.
+* then with no environment, admitted from the record the previous run wrote;
+* a table that also binds `String`, without the rest of a string literal's
+  support, refused at that stage.
 
 `table-admission-fixtures` (`fixtures`, manual): every role-bound `.ixe` under
 `$IX_TABLE_FIXTURES`, each table checked over its own artifact's records, with
@@ -78,15 +80,30 @@ def cli : IO UInt32 := do
     IO.FS.writeBinFile lacking (← IO.ofExcept (Ixon.serEnv stripped))
     let spec ← IO.ofExcept Ix.SpecDigest.specDigest
     let some (_, target) := t.bound[0]? | throw (IO.userError "the table binds nothing")
-    let claim : Ix.Claim := .check { spec, binding := rb.address, axioms := none } target none
-    let wrapper : Ixon.Proof := { claim, proof := "no proof".toUTF8 }
-    let addr ← storeUnder home (Ixon.Proof.ser wrapper)
-    let verify (extra : Array String) : IO String := do
+    -- a stored wrapper with no proof, for a check claim under the table `table`
+    let claimUnder (table : Address) : IO Address := do
+      let claim : Ix.Claim := .check { spec, binding := table, axioms := none } target none
+      storeUnder home (Ixon.Proof.ser { claim, proof := "no proof".toUTF8 })
+    let addr ← claimUnder rb.address
+    -- the artifact's table with String bound too, and nothing else of a literal's support
+    let some lone := artifact.consts.toList.findSome? fun (a, _) =>
+        if t.bound.any (·.2 == a) then none else some a
+      | throw (IO.userError "every record of the artifact is bound")
+    let loneTable := RoleTable.ofEntries t.version (t.bound.toList ++ [(Role.string, lone)])
+      t.evidence.toList
+    let loneBytes := loneTable.toBytes
+    let loneAddr := Address.admissionHash loneBytes
+    let loneEnv := dir / "lone-string.ixe"
+    IO.FS.writeBinFile loneEnv (← IO.ofExcept (Ixon.serEnv
+      { artifact with roleBinding := some ⟨loneAddr, loneBytes⟩ }))
+    let loneClaim ← claimUnder loneAddr
+    let verifyAt (proof : Address) (extra : Array String) : IO String := do
       let out ← IO.Process.output {
         cmd := ix.toString
-        args := #["verify", toString addr, "--aiur-artifact", (dir / "absent.ixa").toString] ++ extra
+        args := #["verify", toString proof, "--aiur-artifact", (dir / "absent.ixa").toString] ++ extra
         env := #[("HOME", some home.toString)] }
       return out.stdout ++ out.stderr
+    let verify := verifyAt addr
     let check (label : String) (ok : Bool) (out : String) : IO Unit := do
       IO.println s!"[table-admission-cli] {if ok then "ok" else "FAILED"}: {label}"
       unless ok do
@@ -104,6 +121,9 @@ def cli : IO UInt32 := do
     let o4 ← verify #[]
     check "then with no environment: admitted from the record"
       (!mentions o4 "refused:" && mentions o4 "recorded by an earlier run") o4
+    let o5 ← verifyAt loneClaim #["--binding-env", loneEnv.toString]
+    check "a table binding String without a literal's support: refused, saying so"
+      (mentions o5 "refused:" && mentions o5 "binds String without") o5
   finally
     IO.FS.removeDirAll dir
   let failed ← failures.get
