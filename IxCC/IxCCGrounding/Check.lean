@@ -635,8 +635,8 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       fun c r hc hr => caseRec_of (all "caseRec" (by simp [checkParts]) c hc) r hr,
       fun c hc => defn_of (all "defn" (by simp [checkParts]) c hc),
       fun c thm body hc hr => eqnNames_of (all "eqnNames" (by simp [checkParts]) c hc) thm body hr,
-      fun s hc => proj_of (all "proj" (by simp [checkParts]) s hc),
-      fun s hc => projSort_of (all "proj" (by simp [checkParts]) s hc),
+      fun s hc => proj_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts]) s hc),
+      fun s hc => projSort_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts]) s hc),
       fun c hc => by simp only [hc, decide_eq_true_eq] at hz; exact hz,
       fun c hc => by simp only [hc, decide_eq_true_eq] at hs; exact hs, ?_⟩
     intro b c hbc
