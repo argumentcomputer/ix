@@ -10,7 +10,8 @@ open IxCC.Ixon
 /-- Parameter ownership/locality mode derived from the frontend's binder
 contracts (`~` borrowed -> `.borrow`, `!`/`1` unique/linear -> `.unique`,
 otherwise `.shared`). Resource admission checks those contracts; it is not
-certified, and the erased typing does not compare them. -/
+certified, and the certified kernel's acceptance compares binders' input
+contracts but not their result contracts. -/
 inductive ParamMode where
   | shared
   | borrow

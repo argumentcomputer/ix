@@ -34,7 +34,7 @@ namespace IxCC.Recheck
 
 /-- Where the compiler stopped. -/
 inductive Stage where
-  /-- Decoding, erased typing, ingress, the sidecar (not on the recheck path),
+  /-- Decoding, the certified kernel's acceptance, ingress, the sidecar (not on the recheck path),
   and the recheck path's own size and depth check of the program
   (`Recheck.checkSrc`). -/
   | ingress

@@ -115,14 +115,18 @@ def manyEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
   let (eM, main) := store e ⟨defn (.ref 0 #[]) (.app (.ref 1 #[]) (.ref 2 #[])), #[], #[b.enumI, f, b.ctors[0]!], #[]⟩
   return (eM, main)
 
-/-- `shared n`: `main : E := idc t (w t)`, where `t` is `n` applications of
-`idc` over `c₁` and `w` wraps `n` more around it, all stored as shares of at
-most 200: the term's tree is about `2 n` deep, but `t` is first used shallowly.
+/-- `shared n`: `main : E := k t (w t)` (`k (a b : E) : E := a`), where `t`
+is `n` applications of `idc` over `c₁` and `w` wraps `n` more around it, all
+stored as shares of at most 200: the term's tree is about `2 n` deep, but `t`
+is first used shallowly (the certified kernel accepts it; the program is well
+typed).
 Ingress used to reuse its conversion under `w` without counting its depth
 again; it now checks a reused share's height against the depth left there. -/
 def sharedEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
   let b := base env0 3
-  -- refs: 0 E, 1 idc, 2 c₁
+  let (e, k) := store b.env
+    ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
+  -- refs: 0 E, 1 idc, 2 c₁, 3 k
   let step := fun (t : X) => (.app (.ref 1 #[]) t : X)
   let mut sh : Array X := #[]
   let mut cur : X := .ref 2 #[]
@@ -133,8 +137,8 @@ def sharedEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
   for _ in [0:(n + 199) / 200] do
     sh := sh.push (Nat.repeat step 200 cur)
     cur := .share (sh.size - 1).toUInt64
-  let (e, main) := store b.env ⟨defn (.ref 0 #[]) (.app (.app (.ref 1 #[]) top) cur), sh,
-    #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
+  let (e, main) := store e ⟨defn (.ref 0 #[]) (.app (.app (.ref 3 #[]) top) cur), sh,
+    #[b.enumI, b.idc, b.ctors[1]!, k], #[]⟩
   return (e, main)
 
 /-- `main : T`, a balanced tree of `node`s of depth `d` stored as a share DAG

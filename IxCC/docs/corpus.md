@@ -293,8 +293,7 @@ the fixtures, manifests, READMEs and generated modules (`tools/citations.sh
 --fixtures`); it exits 0 only when nothing differs and nothing is cited. If
 the tables differ it stops there (the tools built from the checkout would be
 stale): regenerate in place. On a 64-core machine it takes about 30 minutes
-and 10 GB at its peak, nearly all of it the families (the erased typing of
-the census of each 2.5 MB closure, about 200 s).
+and 10 GB at its peak, nearly all of it the families.
 
 Not regenerated, and why: `fixtures/ixon-v4/typing` and `catalog` (the
 erased checker's unbound typing bundles and the catalogs over them; this
