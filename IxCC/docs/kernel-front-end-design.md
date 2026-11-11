@@ -400,9 +400,13 @@ asks a change of behaviour:
    annotation pass preserves the interpretation of a readable term in every
    strong model connects them.
 4. **A work budget.** The typing core takes time exponential in the size of a
-   well-typed constant whose `let`s duplicate a growing subterm (it substitutes
-   every `let` eagerly and loses sharing when it reopens binder telescopes), and
-   its fuel bounds recursion depth, not work. A step counter threaded through
+   well-typed constant whose `let`s duplicate a growing subterm, and its fuel
+   bounds recursion depth, not work. The cause is not established
+   ([hardening design](hardening-design.md#external-dependencies)): the IxVM
+   kernel circuit substitutes `let`s as eagerly and is linear on the same
+   family, by interning terms and memoising every function, so interning in
+   the core may remove the blow-up itself. A budget is needed either way, for
+   whatever family is found next. A step counter threaded through
    the core, with acceptance stated within the budget, is what lets IxCC bound
    its verifier ([Resource bounds](#resource-bounds)).
 5. **The rules' soundness over the public model** (added 2026-11-11).

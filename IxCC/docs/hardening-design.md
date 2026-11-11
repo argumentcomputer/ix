@@ -102,13 +102,23 @@ decision](roadmap.md#open-decisions).
 ## External dependencies
 
 - **The kernel's typing core.** IxCK's typing core is exponential in the size
-  of a well-typed constant whose `let`s duplicate a growing subterm: it reduces
-  every `let` eagerly and loses the sharing when it rebuilds binder telescopes,
-  so a constant of about 225 bytes takes about a minute and each further `let`
-  doubles the time. Lean's own kernel checks the same type in constant time. Any
-  verifier that runs IxCK's admission on hostile bytes inherits this. The fix
-  (charge the core's walks to a budget, or reduce `let` on demand, or make the
-  telescope operations sharing-preserving) belongs to the IxVM workstream. It
+  of a well-typed constant whose `let`s duplicate a growing subterm: a constant
+  of about 225 bytes takes about a minute and each further `let` doubles the
+  time. Lean's own kernel checks the same type in constant time. Any verifier
+  that runs IxCK's admission on hostile bytes inherits this. *The cause is not
+  established.* It was first attributed, by reading the code and without a
+  profile, to substituting every `let` eagerly and losing the sharing when
+  binder telescopes are rebuilt. But the core's binder operations already
+  return a term unchanged outside its loose-variable range, and its typing
+  memo is keyed on the term alone. The IxVM kernel circuit of the certified
+  IxVM work (pull request #678) substitutes `let`s just as eagerly and is
+  linear on the same family (that work's measurement of 2026-11-11, up to a
+  thousand `let`s); what it has and
+  IxCK's core lacks is interning of terms, so that equal terms are one object
+  and compare in constant time, and a memo table for every function. A count
+  of calls and memo misses per function would settle which of the core's
+  functions doubles. The fix (interning and memoisation in the core, or
+  charging its walks to a budget, or both) is the kernel owners' to decide. It
   matters to IxCC because IxCC's verifier is to run IxCK itself: the front end
   over the kernel ([kernel front end](kernel-front-end-design.md#resource-bounds))
   runs the kernel's entry and typing core on the claimant's bytes, and the core
