@@ -1,5 +1,6 @@
 import IxCCGrounding.Ground
 import IxCCGrounding.Root
+import IxCCGrounding.Direct.Sites
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -171,3 +172,93 @@ the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 
 /-- info: 'IxCC.Grounding.projSort_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.projSort_of
+
+/-- info: 'IxCC.Grounding.holds_of_pwAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.holds_of_pwAt
+
+/-- info: 'IxCC.Grounding.profAt_of_lvAt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.profAt_of_lvAt
+
+/-- info: 'IxCC.Grounding.maxPlusLe_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.maxPlusLe_sound
+
+/-- info: 'IxCC.Grounding.lvlEq_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lvlEq_sound
+
+/-- info: 'IxCC.Grounding.litEqE_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.litEqE_sound
+
+/-- info: 'IxCC.Grounding.eqUpTo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqUpTo_sound
+
+/-- info: 'IxCC.Grounding.den_inst1Lift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_inst1Lift
+
+/-- info: 'IxCC.Grounding.fits_inst1Lift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_inst1Lift
+
+/-- info: 'IxCC.Grounding.fits_uninst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_uninst
+
+/-- info: 'IxCC.Grounding.piR_mem_univ'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.piR_mem_univ'
+
+/-- info: 'IxCC.Grounding.hasTy_app' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.hasTy_app
+
+/-- info: 'IxCC.Grounding.hasTy_lam' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.hasTy_lam
+
+/-- info: 'IxCC.Grounding.hasTy_pi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.hasTy_pi
+
+/-- info: 'IxCC.Grounding.reduces_beta' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.reduces_beta
+
+/-- info: 'IxCC.Grounding.reduces_delta' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.reduces_delta
+
+/-- info: 'IxCC.Grounding.reduces_proj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.reduces_proj
+
+/-- info: 'IxCC.Grounding.checks_lam' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.checks_lam
+
+/-- info: 'IxCC.Grounding.direct_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.direct_sound
+
+/-- info: 'IxCC.Grounding.spine_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spine_sound
+
+/-- info: 'IxCC.Grounding.termRefused_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.termRefused_sound
+
+/-- info: 'IxCC.Grounding.runPair_mem_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.runPair_mem_of_check
+
+/-- info: 'IxCC.Grounding.sitesOkRes_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sitesOkRes_of_sitesOk
+
+/-- info: 'IxCC.Grounding.sitesOk_of_res' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sitesOk_of_res
+
+/-- info: 'IxCC.Grounding.directFacts_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.directFacts_of_check
+
+/-- info: 'IxCC.Grounding.sitesOkRes_of_direct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sitesOkRes_of_direct
+
+/-- info: 'IxCC.Grounding.allP_of_check_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.allP_of_check_of_sitesOk
+
+/-- info: 'IxCC.Grounding.const_of_check_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.const_of_check_of_sitesOk
+
+/-- info: 'IxCC.Grounding.rootSound_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_of_sitesOk
+
+/-- info: 'IxCC.Grounding.fibRoot_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fibRoot_of_sitesOk
+
+/-- info: 'IxCC.Grounding.decideRoot_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.decideRoot_of_sitesOk

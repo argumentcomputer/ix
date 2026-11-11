@@ -10,7 +10,9 @@ Three kinds of hypothesis, kept apart because they are discharged differently:
 * **`CaseFires`, per `case` constant**: F5's meaning; the generic `case` lemma derives it from a
   checked shape.
 * **The run terms run** (`FundHyps.value`, the `Runs` half of `FundHyps.eqn`): `IxCCGrounding.Runs`
-  derives them from the checks and the one typing hypothesis, `SitesOk`.
+  derives them from the checks and the typing hypothesis `SitesOk`, which
+  `IxCCGrounding.Direct.Sites` derives in turn from typing at the sites the direct route refuses
+  (`SitesOkRes`).
 -/
 
 namespace IxCC.Grounding

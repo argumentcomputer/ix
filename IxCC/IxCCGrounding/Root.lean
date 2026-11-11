@@ -6,10 +6,10 @@ import IxCCGrounding.RootCheck
 
 **`rootSound`**: in every set theory, every model of the kernel's reading with the laws, and every
 level assignment: if the checked facts hold on `Sl` (`GroundFacts`, `CaseFacts`, `RootFacts`),
-every application site SrcEval may evaluate is typed (`SitesOk`), and SrcEval runs the root on
-first-order arguments to a value whose readback names a kernel term at the result type (the tag
-checked by `ResultTag`), then the root applied to the arguments' terms denotes what that term
-denotes.
+every application site SrcEval may evaluate that the direct route refuses is typed
+(`SitesOkRes`), and SrcEval runs the root on first-order arguments to a value whose readback
+names a kernel term at the result type (the tag checked by `ResultTag`), then the root applied to
+the arguments' terms denotes what that term denotes.
 
 `run` is δ on the root and β per argument: the fundamental lemma relates the root's value to the
 root's denotation; the root's stored first-order type puts the arguments' sets in its domains at
@@ -18,7 +18,10 @@ argument's the listed constructor's image. The result reads back as a literal (i
 literal's) or as a field-less constructor whose key, by `ResultTag`, is the named constructor's.
 
 `fibRoot` (a root `Nat → Nat`) and `decideRoot` (a root `Bool`, read back as `true`) are its
-instances, the grounding statements of `fib 10 = 55` and of `decide (fib 10 = 55) = true`.
+instances, the grounding statements of `fib 10 = 55` and of `decide (fib 10 = 55) = true`, with no
+typing hypothesis: they take `DirectFacts` (the direct route refuses no site, decided by
+`sitesDirectB`); their forms under `SitesOk` are kept as `fibRoot_of_sitesOk`,
+`decideRoot_of_sitesOk`.
 -/
 
 namespace IxCC.Grounding
@@ -121,8 +124,8 @@ end Args
 theorem allP_of_facts (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
-    (hT : SitesOk M p κ lpsOf ann (· ∈ Sl)) : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
-  allP (fundHyps_of hL hG hT fun c r hc hr => by
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl)) : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
+  allP (fundHyps_of hL hG (sitesOk_of_res hL hG hT) fun c r hc hr => by
     obtain ⟨sh, hst, hpr⟩ := hC c r hc hr
     exact caseFires_of_shape hL hG.faith hG.natBasis hc hr hst hpr)
 
@@ -130,7 +133,8 @@ theorem allP_of_facts (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : C
 theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
-    (hR : RootFacts p env κ ann (· ∈ Sl) root args res) (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
     {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
     (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
     (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
@@ -232,8 +236,36 @@ theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId �
       hL.cval_params _ _ hfc ψ φ (by simp [ConstantInfo.toConstantVal, hlc])]
     exact (hden ρ _).mpr rfl
 
-/-- **`fib`, as an instance**: a root `Nat → Nat`. -/
+/-- The landed form of `rootSound`, under `SitesOk`. -/
+theorem rootSound_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res) (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound hL hG hC hR (sitesOkRes_of_sitesOk hT) hA hrun hrb hRT hO φ ρ X hX
+
+/-- **`fib`, as an instance, with no typing hypothesis**: a root `Nat → Nat`, the direct route
+refusing no site (`DirectFacts`, decided by `sitesDirectB`). -/
 theorem fibRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat)
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  rootSound hL hG hC hR (sitesOkRes_of_direct hD) (.cons (.nat n) .nil) hrun hrb trivial (.nat w)
+    φ ρ X hX
+
+/-- The landed form of `fibRoot`, under `SitesOk`. -/
+theorem fibRoot_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
     (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat) (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
@@ -241,12 +273,32 @@ theorem fibRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId →
     (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
     (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
     Denotes M.cval env φ ρ (litE w) X :=
-  rootSound hL hG hC hR hT (.cons (.nat n) .nil) hrun hrb trivial (.nat w) φ ρ X hX
+  rootSound hL hG hC hR (sitesOkRes_of_sitesOk hT) (.cons (.nat n) .nil) hrun hrb trivial (.nat w)
+    φ ρ X hX
 
-/-- **`decide (fib 10 = 55)`, as an instance**: a root `Bool` read back as constructor `1`, which
-denotes the kernel's `Bool.true`. -/
+/-- **`decide (fib 10 = 55)`, as an instance, with no typing hypothesis**: a root `Bool` read
+back as constructor `1`, which denotes the kernel's `Bool.true`. -/
 theorem decideRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (_hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X := by
+  obtain ⟨safe, ty, cs, hd, h1, hsome⟩ := hBL
+  obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hsome
+  rw [ht] at h1
+  obtain ⟨_, hkt, _⟩ := hG.faith.bool true t (by simpa using ht)
+  have h := rootSound hL hG hC hR (sitesOkRes_of_direct hD) .nil hrun hrb hRT (.enum hd h1) φ ρ X hX
+  simpa [hkt] using h
+
+/-- The landed form of `decideRoot`, under `SitesOk`. -/
+theorem decideRoot_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
     (_hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
     (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
@@ -260,7 +312,8 @@ theorem decideRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId 
   obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hsome
   rw [ht] at h1
   obtain ⟨_, hkt, _⟩ := hG.faith.bool true t (by simpa using ht)
-  have h := rootSound hL hG hC hR hT .nil hrun hrb hRT (.enum hd h1) φ ρ X hX
+  have h := rootSound hL hG hC hR (sitesOkRes_of_sitesOk hT) .nil hrun hrb hRT (.enum hd h1) φ ρ X
+    hX
   simpa [hkt] using h
 
 end IxCC.Grounding

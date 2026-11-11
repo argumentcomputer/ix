@@ -20,4 +20,10 @@ import IxCCGrounding.Check
 import IxCCGrounding.Ground
 import IxCCGrounding.RootCheck
 import IxCCGrounding.Root
+import IxCCGrounding.Direct.Check
+import IxCCGrounding.Direct.Eq
+import IxCCGrounding.Direct.Subst
+import IxCCGrounding.Direct.Rules
+import IxCCGrounding.Direct.Sound
+import IxCCGrounding.Direct.Sites
 import IxCCGrounding.Fence

@@ -1064,7 +1064,12 @@
     "IxCC.Src.Readback",
     "IxCCGrounding.Check",
     "IxCCGrounding.RootCheck",
+    "IxCCGrounding.Direct.Check",
+    "IxCCTests.Grounding.Oracle",
     "IxCCTests.Src.Support"]},
+  "IxCCTests.Grounding.Oracle":
+  {"path": "IxCCTests/Grounding/Oracle.lean",
+   "imports": ["IxCC.Src.KernelFront.Annotate", "IxCCGrounding.Direct.Check"]},
   "IxCCTests.Grounding.Main":
   {"path": "IxCCTests/Grounding/Main.lean",
    "imports": ["IxCCTests.Grounding.Run"]},
@@ -3750,15 +3755,42 @@
    ["IxCCGrounding.Fundamental",
     "IxCCGrounding.Runs",
     "IxCCGrounding.Check",
-    "IxCCGrounding.CaseFire"]},
+    "IxCCGrounding.CaseFire",
+    "IxCCGrounding.Direct.Sites"]},
   "IxCCGrounding.Fundamental":
   {"path": "IxCCGrounding/Fundamental.lean",
    "imports": ["IxCCGrounding.Hyps", "IxCCGrounding.Heads"]},
   "IxCCGrounding.Fence":
   {"path": "IxCCGrounding/Fence.lean",
-   "imports": ["IxCCGrounding.Ground", "IxCCGrounding.Root"]},
+   "imports":
+   ["IxCCGrounding.Ground",
+    "IxCCGrounding.Root",
+    "IxCCGrounding.Direct.Sites"]},
   "IxCCGrounding.Eqn":
   {"path": "IxCCGrounding/Eqn.lean", "imports": ["IxCCGrounding.Apply"]},
+  "IxCCGrounding.Direct.Subst":
+  {"path": "IxCCGrounding/Direct/Subst.lean",
+   "imports": ["IxCCGrounding.Tele"]},
+  "IxCCGrounding.Direct.Sound":
+  {"path": "IxCCGrounding/Direct/Sound.lean",
+   "imports": ["IxCCGrounding.Direct.Rules"]},
+  "IxCCGrounding.Direct.Sites":
+  {"path": "IxCCGrounding/Direct/Sites.lean",
+   "imports":
+   ["IxCCGrounding.Direct.Sound", "IxCCGrounding.Runs", "IxCCGrounding.Check"]},
+  "IxCCGrounding.Direct.Rules":
+  {"path": "IxCCGrounding/Direct/Rules.lean",
+   "imports":
+   ["IxCCGrounding.Direct.Eq",
+    "IxCCGrounding.Direct.Subst",
+    "IxCCGrounding.Runs",
+    "IxCCGrounding.Case"]},
+  "IxCCGrounding.Direct.Eq":
+  {"path": "IxCCGrounding/Direct/Eq.lean",
+   "imports": ["IxCCGrounding.Direct.Check", "IxCCGrounding.Subst"]},
+  "IxCCGrounding.Direct.Check":
+  {"path": "IxCCGrounding/Direct/Check.lean",
+   "imports": ["IxCCGrounding.Check"]},
   "IxCCGrounding.Check":
   {"path": "IxCCGrounding/Check.lean",
    "imports": ["IxCCGrounding.Ok", "IxCCGrounding.CaseCheck"]},
@@ -3797,6 +3829,12 @@
     "IxCCGrounding.Ground",
     "IxCCGrounding.RootCheck",
     "IxCCGrounding.Root",
+    "IxCCGrounding.Direct.Check",
+    "IxCCGrounding.Direct.Eq",
+    "IxCCGrounding.Direct.Subst",
+    "IxCCGrounding.Direct.Rules",
+    "IxCCGrounding.Direct.Sound",
+    "IxCCGrounding.Direct.Sites",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
