@@ -51,19 +51,35 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
 -- here, the entry's (`IxC/Kernel/Audit/Roots.lean`).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6786 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6807 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6920 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6941 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6786 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6807 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6920 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6941 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -80,8 +96,12 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
 -- here, the entry's (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 6981 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7002 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
