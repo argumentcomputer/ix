@@ -132,7 +132,7 @@ theorem natLitLaw_of_envModelM (m : EnvModelM V μ env) :
       obtain ⟨hs, -, -⟩ := Ix.Kernel.natOpGuard_inv hg
       rw [hX, hop]
       exact Denotes.natLit (Denotes_natLitToConstructor hcl hs ρ (f a b))
-    simp only [Ix.Kernel.natArithOps, List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false,
+    simp only [Ix.Kernel.natArithOps, List.mem_cons, List.mem_nil_iff, or_false,
       Prod.mk.injEq] at hmem
     rcases hmem with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -188,7 +188,7 @@ theorem natLitLaw_of_envModelM (m : EnvModelM V μ env) :
       split
       · exact denotes_const_nil hfT hlpT
       · exact denotes_const_nil hfF hlpF
-    simp only [Ix.Kernel.natCmpOps, List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false,
+    simp only [Ix.Kernel.natCmpOps, List.mem_cons, List.mem_nil_iff, or_false,
       Prod.mk.injEq] at hmem
     rcases hmem with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
     · refine key (Or.inl rfl) (by cases md <;> decide) fun ψ => ?_
