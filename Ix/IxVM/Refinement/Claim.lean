@@ -295,16 +295,17 @@ def AnchorsTyped (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
     cv.matchesPin pin = true
 
 /-- **The role specifications the pure declaration fold does not check on its
-own** (`IxC/Kernel/Roles.lean`, `IxC/Kernel/RoleEquations.lean`): no
-declaration mismatches an install-checked anchor
-(`Ix.Kernel.Declaration.anchorMismatch?`), every declared anchor has its
-specification's type (`AnchorsTyped`), and every role specified by definition
-equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some fuel in the
-installed environment. -/
-def BindingSpecs (_ : Binding) (envA : Ix.Kernel.Env .anon)
+own**, under the role table `t` (`IxC/Kernel/Roles.lean`,
+`IxC/Kernel/RoleEquations.lean`): no declaration mismatches an install-checked
+anchor (`Ix.Kernel.Declaration.anchorMismatch?`), every declared anchor has its
+specification's type (`AnchorsTyped`), and every role `t` binds that is specified
+by definition equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some
+fuel in the installed environment. A role `t` leaves unbound has no constant at
+its key, so there are no equations of it to check. -/
+def BindingSpecs (t : Ix.Kernel.RoleTable) (_ : Binding) (envA : Ix.Kernel.Env .anon)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
   (∀ d ∈ ds, d.anchorMismatch? = none) ∧ AnchorsTyped ds ∧
-    ∃ ev, ∀ r ∈ Ix.Kernel.Role.all, (r.spec (md := .anon)).kind = .eqns →
+    ∃ ev, ∀ r, t.addressOf? r ≠ none → (r.spec (md := .anon)).kind = .eqns →
       ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps .verified F) envA r ev = .ok ()
 
 /-- **The `binding` claim in a view** (`binding spec b`, validator 3): `spec`
@@ -318,7 +319,7 @@ def BindingIn (V : View) (spec b : Address) : Prop :=
     ∃ bnd t, V.binding? b = some bnd ∧
       Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = .ok t ∧
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
-      AcceptsIn V (Scope.strict bnd) (BindingSeeds t) BindingSpecs
+      AcceptsIn V (Scope.strict bnd) (BindingSeeds t) (BindingSpecs t)
 
 /-- **The string-literal support roles** (`Ix.Kernel.Reader.strLitSupportNames`): the `Nat`
 literal support, `String`, `String.ofList`, `List` with its constructors, `Char` and
@@ -349,7 +350,7 @@ every role bound), with one more: a table that binds `String` binds all of its l
 support (`LiteralSupportBound`; `BindingIn`'s "every role bound" implies it). -/
 def TableAdmitted (V : View) (b : Binding) : Prop :=
   ∃ t, Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧ LiteralSupportBound t ∧
-    AcceptsIn V (Scope.strict b) (BindingSeeds t) BindingSpecs
+    AcceptsIn V (Scope.strict b) (BindingSeeds t) (BindingSpecs t)
 
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or
 not, as IxVM validates it (`KernelRoles::validate_user_axioms`): the view
