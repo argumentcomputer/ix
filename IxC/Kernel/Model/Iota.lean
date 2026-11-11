@@ -872,7 +872,7 @@ theorem unitLikeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : 
       (fun j _ => by rw [Nat.zero_add])
     rw [← h]
     simp [ws, Function.comp_def]
-  obtain ⟨-, -, -, hstrip, -, -, htele, -, -, -, -⟩ :=
+  obtain ⟨_, _, _, hstrip, -, -, htele, -, -, -, -⟩ :=
     fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfit hws_len hws_val
   have hpc : Rules.PiChain ws.length TVa := by
     rw [hws_len]
