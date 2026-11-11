@@ -727,7 +727,8 @@ def red_iota := aiur_fn⟦
                           let rec_ty_i = KernelLevels::expr_inst_levels(rec_ty, lvls);
                           let pre = Lists::take(spine, major_idx);
                           match iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)
-                                * iota_certs(rc, rec_ty_i, Lists::snoc(pre, major), cty, clvls, margs, types) {
+                                * iota_certs(rc, rec_ty_i, Lists::snoc(pre, major), major_idx + 1, cty, clvls, margs,
+                                             cnp + cnf, types) {
                             1 => {
                               let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
                               let r1 = apply_spine(rhs_lvled, Lists::take(spine, pmm_end));
@@ -796,21 +797,22 @@ def iota_cmp := aiur_fn⟦
   -- recursor's type and the constructor's type at the redex's levels. A slot skips
   -- when its own binder's datum is never zero (`Certs.skip`); when every slot of a
   -- walk does, the walk needs no certificate, and otherwise every argument of it is
-  -- certified (`Certs.cert`).
+  -- certified (`Certs.cert`). `n_rec` and `n_ctor` are the walks' lengths (the arguments
+  -- certified), so the slot test is shared by every firing at one recursor and level list.
 
 def iota_certs := aiur_fn⟦
   fn iota_certs(rc: KernelRoles::RoleCtx, rec_ty_i: KernelTypes::KExpr,
-                rec_args: Lists::List<KernelTypes::KExpr>, cty: KernelTypes::KExpr,
+                rec_args: Lists::List<KernelTypes::KExpr>, n_rec: Field, cty: KernelTypes::KExpr,
                 clvls: Lists::List<KernelTypes::KLevel>, margs: Lists::List<KernelTypes::KExpr>,
-                types: Lists::List<KernelTypes::KExpr>) -> Field {
-      let c1 = match slots_never(rec_ty_i, rec_args) {
+                n_ctor: Field, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      let c1 = match slots_never(rec_ty_i, n_rec) {
         1 => {  1 } ,
         _ => {  certs_all(rc, rec_ty_i, rec_args, (&(Lists::Node::Nil)), types) } ,
       };
       match c1 {
         1 => {
           let cty_i = KernelLevels::expr_inst_levels(cty, clvls);
-          match slots_never(cty_i, margs) {
+          match slots_never(cty_i, n_ctor) {
             1 => {  1 } ,
             _ => {  certs_all(rc, cty_i, margs, (&(Lists::Node::Nil)), types) } ,
           } } ,
@@ -819,19 +821,19 @@ def iota_certs := aiur_fn⟦
     }
 ⟧
 
-  -- Whether every slot of the telescope `t` that the arguments `args` fill has a
-  -- binder datum that is never zero (`Certs.skip`'s premise, slot by slot). 0 when
-  -- `t` is not syntactically a telescope that long.
+  -- Whether each of the first `n` slots of the telescope `t` has a binder datum that
+  -- is never zero (`Certs.skip`'s premise, slot by slot). 0 when `t` is not
+  -- syntactically a telescope that long.
 
 def slots_never := aiur_fn⟦
-  fn slots_never(t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>) -> Field {
-      match (*(args)) {
-        Lists::Node::Nil => {  1 } ,
-        Lists::Node::Cons(_, rest) => {
+  fn slots_never(t: KernelTypes::KExpr, n: Field) -> Field {
+      match n {
+        0 => {  1 } ,
+        _ => {
           match (*(t)) {
             KernelTypes::KExprNode::Forall(_, body, bl) => {
               match KernelLevels::level_is_not_zero(bl) {
-                1 => {  slots_never(body, rest) } ,
+                1 => {  slots_never(body, n - 1) } ,
                 _ => {  0 } ,
               } } ,
             _ => {  0 } ,
