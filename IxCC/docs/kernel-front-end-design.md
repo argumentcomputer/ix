@@ -7,9 +7,10 @@ front end over the kernel (`IxCC.Src.KernelFront`,
 [`Src/KernelFront`](../IxCC/Src/KernelFront), and `Recheck.ingress`) **is the
 only front end** since the switch's step 3 ([The switch](#the-switch)): every
 compile path's ingress is the kernel's acceptance and every annotation the
-kernel annotator's. The erased checker's code is still in the tree, off every
-path, until step 4 deletes it; `tests-kernel-front` compares its verdicts and
-the earlier annotator's with the kernel's until then. The kernel's fix of its
+kernel annotator's. Step 4 deletes the earlier front end: the earlier
+annotator is gone, with `tests-kernel-front`'s comparison, which found the two
+annotators equal on every committed closure; the erased checker's code is
+still in the tree, off every path. The kernel's fix of its
 blow-up on chains of `let`, made in parallel in the kernel package on this
 branch, has landed ([resource bounds](#resource-bounds),
 [decisions](#decisions)). This is most of the native
@@ -307,7 +308,7 @@ only callers, with `tests-kernel-front`'s comparison):
 | `typecheck = true → V3.Tc.checkEnv inp.env = .ok ()` and `Src.Relevance.annotate … = .ok …` in statements: `Recheck.ingress_parts` (`Compiler/Proof.lean`), `verifyBytes_{immortal,zeroRc,plainRc}_sound` (`CompileClaim/Proof.lean`), `verifyBytesRing0Sip_sound` (`Ring0/Proof.lean`), and the bridge's `checkDecls_verifyBytes_immortal_denotes_nat` (`Models/KernelBridge/IxKernelBridge/NatBridge.lean`); the `typecheck` parameter alone in `compile_parts` and its siblings (`Recheck/Proof/Compile.lean`), `compileWithContracts_*` and `compileAuto_*_sound` (`Compiler/Proof.lean`), `checkClaim_iff` (`CompileClaim.lean`) | the byte-level guarantees | restated with the acceptance and the kernel Stage A conjuncts ([statements](#the-byte-level-theorems-after-the-switch)) |
 | `--no-typecheck` (`Cli.lean`) | skips typing at ingress | removed ([the typing flag](#the-typing-flag)) |
 | the erased checker's tests: `IxCCTests/IxonV3/{Typing,Primitives,K1}.lean` (`Tc.checkEnv`, `KUniv`, `univEq`, `getConstVerified`, `primAddrSet`, `tcUInt64BytesLE`) | `tests-ixon-v3`'s typing part | deleted; its assertions that are not typing (the primitive table against `primitives.tsv`, the `Nat` literal bytes) move to the suite's other parts |
-| `IxCCTests/KernelFront/Diff.lean` (`V3.Tc.checkEnv`, the old front end) | the differential | the old side goes; the kernel front end's regressions stay, and its run over the refrozen corpus becomes the required differential's successor |
+| `IxCCTests/KernelFront/Diff.lean` (`V3.Tc.checkEnv`, the old front end) | the differential | the old side went in step 4 (the module is now `IxCCTests/KernelFront/Report.lean`: the kernel's acceptance, ingress, and every root through the producer and Stage A); the kernel front end's regressions stay, and its run over the refrozen corpus is the required differential's successor |
 | docstrings: `Ixon/Hash.lean` (`V3.Tc.finishHash`, the Rust hasher's one user), `Src/Prim.lean` (`Tc.computeNatBin`), `Src/KernelFront/Front.lean`, `Ixon/V4/Convert.lean`, `CompileClaim.lean`, `Ring0.lean` | — | rewritten; with the checker gone, `Blake3.Rust` has no user in IxCC |
 | not typing: the block-member keys, the `Nat` literal bytes, address order and hexadecimal reading, the primitive table | ingress, the pinned identities, the sidecar's reader, the resource profile | moved by step 2 to `V3.*ProjAddr` ([`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean)), `V3.natFromBytesLE`, `V3.natBytesLE`, `Address.cmpBytes`, `Address.fromString` ([`Ixon/V3/Support.lean`](../IxCC/Ixon/V3/Support.lean)) and `V3.PrimAddrs` ([`Ixon/V3/PrimAddrs.lean`](../IxCC/Ixon/V3/PrimAddrs.lean)); the kernel's key map checks the keys against its own reconstruction (`Reading.build`) |
 
