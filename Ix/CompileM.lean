@@ -1586,9 +1586,6 @@ with a binder that entry's one variant. -/
                         nodes := undecidedNodes full c.sharing[n] #[] }
   return out
 
-/-- The section the compiler gives a block record `c`: the annotator's when it
-is admissible, otherwise the undecided section (`undecidedSection`). A record
-for which neither is admissible does not compile. -/
 /-- The annotator's section for `c`, or none without an annotator. -/
 @[expose] def annotatorSection (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
@@ -1596,6 +1593,9 @@ for which neither is admissible does not compile. -/
   | some annotate => annotate names c
   | none => #[]
 
+/-- The section the compiler gives a block record `c`: the annotator's when it
+is admissible, otherwise the undecided section (`undecidedSection`). A record
+for which neither is admissible does not compile. -/
 @[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
   if sectionAdmissible c (annotatorSection annotator? names c) then
