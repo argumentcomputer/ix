@@ -3098,13 +3098,13 @@ def check_const := aiur_fn⟦
               assert_eq!(n_mot, 1, "a recursor of a native block with more than one motive");
               check_recursor_member(rc, ci, addr) } ,
             _ => {
-              -- the modeled route: no K; the recursor's whole family record
-              -- against the block's model
+              -- the modeled route: no K, safe; the recursor's whole family record
+              -- against the block and its model. An unsafe recursor of a modeled block
+              -- is refused rather than accepted unchecked: every recursor record IxVM
+              -- accepts is then the canonical one.
               assert_eq!(k_flag, 0, "a recursor of a mutual or nested block declares K");
-              match rec_uns {
-                0 => {  KernelModeled::check_family(rc, family, rec_block) } ,
-                _ => {  () } ,
-              } } ,
+              assert_eq!(rec_uns, 0, "an unsafe recursor of a mutual or nested block");
+              KernelModeled::check_family(rc, family, rec_block) } ,
           } } ,
       }
     }
