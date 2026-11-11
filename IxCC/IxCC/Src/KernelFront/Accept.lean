@@ -181,7 +181,7 @@ def Refusal.ofTierError (records : Ix.Kernel.Admission.Records)
   | .read i _ => { stage := .read, outcome := some e.outcome, message := toString e ++ at_ i,
                    record := records[i]?.map (·.1) }
   | .tier ce i => { stage := .kernel, outcome := some e.outcome, message := toString e ++ at_ i,
-                   record := records[i]?.map (·.1), policy := policyOf ce }
+                     record := records[i]?.map (·.1), policy := policyOf ce }
 
 /-- The closure's records and blobs by address, sorted, in the kernel's types. -/
 def recordsOf (env : Ixon.V3.Env) : Array (KAddr × ByteArray) :=
