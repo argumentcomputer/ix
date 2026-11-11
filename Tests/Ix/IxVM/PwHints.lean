@@ -330,6 +330,74 @@ def diagnose (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
     let (_, fb, _) := annotateRecord k core a c
     if fb > 0 then IO.println s!"PWDIAG fallbacks {fb}: {nameOf a}"
 
+private def pre (n : Nat) (s : String) : String := String.ofList (s.toList.take n)
+
+/-- The extended diagnosis of one witness (`IX_PW_DIAG2=1`): the store's
+recursor-index conflicts (records filed under one block's motive), the role
+bindings of the `Bool` roles, the install order at each refusal, and IxC's own
+record check (`checkLoop`, phase B included, no lenient install) over the same
+records in the same order. -/
+def diagnose2 (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
+  let mut allNames : Std.HashMap Address (Array String) := {}
+  for (n, named) in env.named do
+    let cur := allNames.getD named.addr #[]
+    if cur.size < 3 then allNames := allNames.insert named.addr (cur.push (toString n))
+  let nameOf (a : Address) : String :=
+    match allNames[a]? with
+    | some ns => s!"{ns.toList}@{pre 12 (toString a)}"
+    | none => pre 16 (toString a)
+  let cut (s : String) : String := pre 200 s
+  let v := View.ofBuffer io env
+  let k ← IO.ofExcept (KernelEnv.ofView v)
+  let s := k.setup
+  -- the recursor index: every record a recursor analysis files under a block's motive
+  let mut groups : Std.HashMap (Address × Nat) (Array Address) := {}
+  for (a, c) in s.store.toArray do
+    for (_, r) in Ix.Kernel.Reader.recursorMembers c do
+      if let some (m, carriers, _) := Ix.Kernel.Reader.analyseRecursor s.cx.store a c r then
+        if let some (Ix.Kernel.ConstRef.member b _) := carriers[0]? then
+          let cur := groups.getD (b, m) #[]
+          unless cur.contains a do groups := groups.insert (b, m) (cur.push a)
+  let indexed (a : Address) : Bool :=
+    match s.store[a]? with
+    | some c => (Ix.Kernel.Reader.recursorMembers c).any fun (j, _) =>
+        s.cx.index.recs.contains (.member a j)
+    | none => false
+  let mut conflicts := 0
+  for ((b, m), rs) in groups.toList do
+    if rs.size > 1 then
+      conflicts := conflicts + 1
+      if conflicts ≤ 20 then
+        let shown := rs.toList.map fun r => s!"{nameOf r} indexed={indexed r}"
+        IO.println s!"PWDIAG2 index conflict: block {nameOf b} motive {m}: {shown}"
+  IO.println s!"PWDIAG2 index conflicts: {conflicts} (of {groups.size} block motives)"
+  for (r, key) in s.cx.roles.names.toList do
+    let ks := toString key
+    if ks.startsWith "Bool" then
+      let a := match r with
+        | .member a _ => a
+        | .ctor a _ _ => a
+      IO.println s!"PWDIAG2 role {ks} -> {nameOf a} indexed={indexed a}"
+  -- the install order, and the refusals in it
+  let preRead ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude (md := .anon))
+  let first := preRead.records.map (·.1)
+  let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ k.owners)
+  let pos : Std.HashMap Address Nat := addresses.zipIdx.foldl (fun m (a, i) => m.insert a i) {}
+  IO.println s!"PWDIAG2 install order: {addresses.size} records"
+  for (a, why) in k.failures.extract 0 30 do
+    IO.println s!"PWDIAG2 refused at {(pos[a]?).getD 0}: {nameOf a}: {cut why}"
+  -- IxC's own record check over the same records, in the same order
+  let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
+  let out ← Benchmarks.Kernel.CheckIxeStep.checkLoop s (fun a => #[nameOf a]) addresses {}
+    (fun row => if row.outcome == "accept" || row.outcome == "typed" then pure ()
+      else rows.modify (·.push row)) (tier := true)
+  IO.println s!"PWDIAG2 strict IxC over the same records: {out.counts.toList}"
+  for (why, n) in (histogram ((← rows.get).map (cut ·.reason))).extract 0 12 do
+    IO.println s!"PWDIAG2 strict reason {n}: {why}"
+  for row in (← rows.get).extract 0 40 do
+    IO.println s!"PWDIAG2 strict {row.outcome} at {(pos[row.address]?).getD 0}: \
+      {nameOf row.address}: {cut row.reason}"
+
 def corpus : IO UInt32 := do
   let some ixe ← IO.getEnv "IX_PW_IXE" | do IO.eprintln "IX_PW_IXE is not set"; return 1
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))
@@ -343,14 +411,18 @@ def corpus : IO UInt32 := do
     let mut total : Stats := {}
     let t0 ← IO.monoMsNow
     for (blocks, k) in shards.zipIdx do
-      if let some s ← IO.getEnv "IX_PW_SHARD" then
-        if s != toString k then continue
+      let chosen := (← IO.getEnv "IX_PW_SHARD").map (·.splitOn ",")
+      if let some ks := chosen then
+        unless ks.contains (toString k) do continue
       let owned := _root_.Ix.Shard.ownedConstsForBlocks env blocks
       let (_, closure, _) ← IO.ofExcept (_root_.IxVM.ClaimHarness.shardCheckEnvClaim env owned true)
       let io := _root_.IxVM.ClaimHarness.addEntries env closure.contains
         (_root_.IxVM.ClaimHarness.seedBinding env default)
       total := total.add (← measure s!"shard {k} ({owned.size} owned, {closure.size} in closure)" env io)
-      if (← IO.getEnv "IX_PW_SHARD") == some (toString k) then diagnose env io
+      if chosen.isSome then
+        IO.println s!"PWDIAG shard {k}"
+        diagnose env io
+        if (← IO.getEnv "IX_PW_DIAG2") == some "1" then diagnose2 env io
     IO.println s!"PWCORPUS shards total: ms={(← IO.monoMsNow) - t0} {total.render} hwm_kb={← rssKb}"
   | none => pure ()
   if (← IO.getEnv "IX_PW_WHOLE") != some "0" then
