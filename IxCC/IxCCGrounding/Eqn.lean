@@ -31,10 +31,10 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
 
 /-! ## Environments with several bound sets -/
 
-/-- `xs` bound in order, the last innermost: index `i < xs.length` reads `xs[n-1-i]`, and the
-indices above read `ρ`. -/
+/-- `xs` bound in order, the last innermost: index `i < xs.length` reads `xs[n-1-i]` (the
+reversed list), and the indices above read `ρ`. -/
 def pushAll (xs : List V) (ρ : BVarIdx → V) : BVarIdx → V := fun i =>
-  if h : i < xs.length then xs[xs.length - 1 - i]'(by omega) else ρ (i - xs.length)
+  xs.reverse.getD i (ρ (i - xs.length))
 
 theorem pushAll_nil (ρ : BVarIdx → V) : pushAll [] ρ = ρ := by
   funext i; simp [pushAll]
@@ -45,17 +45,16 @@ theorem pushAll_snoc (xs : List V) (x : V) (ρ : BVarIdx → V) :
   cases i with
   | zero => simp [pushAll, push]
   | succ i =>
-    simp only [pushAll, push, List.length_append, List.length_singleton]
-    by_cases h : i < xs.length
-    · have h1 : i + 1 < xs.length + 1 := by omega
-      rw [dif_pos h1, dif_pos h]
-      rw [List.getElem_append_left (by omega)]
-      congr 1
-      omega
-    · have h1 : ¬ i + 1 < xs.length + 1 := by omega
-      rw [dif_neg h1, dif_neg h]
-      congr 1
-      omega
+    simp only [pushAll, push, List.reverse_append, List.reverse_cons, List.reverse_nil,
+      List.nil_append, List.singleton_append, List.getD_cons_succ, List.length_append,
+      List.length_singleton, Nat.add_sub_add_right]
+
+theorem pushAll_rev (xs : List V) (ρ : BVarIdx → V) (j : Nat) (hj : j < xs.length) :
+    pushAll xs ρ (xs.length - 1 - j) = xs[j] := by
+  simp only [pushAll]
+  rw [List.getD_eq_getElem _ _ (by simp; omega), List.getElem_reverse]
+  congr 1
+  omega
 
 /-- `n` consecutive variables from `k`, applied to a head, denote the head applied to the sets
 the environment holds there. -/
@@ -194,10 +193,8 @@ theorem eqn_tele (M : Model V env) (hEq : EqBasis env) {φ : LevelParam → Nat}
         (Expr.mkAppN (.const fk us) (bvarsFrom 0 n)) (pre.foldl app F) := by
       subst hl
       refine den_mkAppN_bvars 0 pre _ _ (fun j hj => ?_) (hfk _)
-      simp only [pushAll, Nat.zero_add]
-      rw [dif_pos (show pre.length - 1 - j < pre.length by omega)]
-      congr 1
-      omega
+      rw [Nat.zero_add]
+      exact pushAll_rev pre ρ0 j hj
     obtain rfl := Denotes_functional hx hfx
     exact hr
   | (D, mT, mF) :: bs, pre, hlen, TT, TF, hTT, hP, hTF, hF => by
