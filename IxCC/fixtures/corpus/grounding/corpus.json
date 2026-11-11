@@ -71,7 +71,7 @@
       "name": "decide",
       "source": {
         "path": "Decide.lean",
-        "sha256": "",
+        "sha256": "3a0e7c00b20fa36bf9eb6abacf32340e5c5f133684de38225a1470d1c7d0084d",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -82,24 +82,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "decide.ixe",
-        "sha256": "",
-        "bytes": 0
+        "sha256": "5f7a473023cfe8da300c09d72eb1d159bce8ccaedda6402d8c51770129bc578a",
+        "bytes": 89319
       },
       "equations": {
         "path": "decide.equations.json",
-        "sha256": "",
-        "equations": 0,
+        "sha256": "1b1c6dcb6b0b535a6ee0838c0454b08e6ceb85e0f0ab9f11304c4bd68df0a7be",
+        "equations": 4,
         "failures": 0
       },
-      "named_env_sha256": "",
+      "named_env_sha256": "4d3e93544309abef05252a9bf75fed3500aea68c19f58c813d302f5c50224fca",
       "census": {
         "path": "decide.census.json",
-        "sha256": ""
+        "sha256": "ac39a7857dad0bf2610cca4545d1798454273c1653b41b5dd0be54c1f378cc62"
       },
       "roots": [
         {
           "name": "Grounding.decideFib10",
-          "address": "",
+          "address": "04334d0be1895fde49ef202d3ab1edc3c854be2e4a76ddb3de0555ee818bd316",
           "params": 0,
           "result": "bool",
           "oracles": [
