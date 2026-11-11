@@ -227,7 +227,9 @@ def check (io : Aiur.IOBuffer) (env : Ixon.Env := {}) : Except String Report := 
   let table ← tableOf io
   let v := View.ofBuffer io env
   if v.records.isEmpty then return {}
-  let k ← KernelEnv.ofView v
+  -- the reference is the strict kernel: what IxC installs itself, no record put in by the
+  -- annotator's lenient path (whose data are the annotator's own)
+  let k ← KernelEnv.ofView v (lenient := false)
   let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
   let mut report : Report := {}
   for a in k.owners do

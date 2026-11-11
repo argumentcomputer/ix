@@ -613,7 +613,7 @@ as it was. Partial and unsafe records go through the typing tier. A record
 the kernel does not install enters directly, annotated by the walk
 (`lenientInfos`). Returns the environment, the declarations installed and the
 records refused. -/
-def install (s : Setup) (addresses : Array Address) :
+def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
     Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
   let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
   let mut st : Ix.Kernel.Reader.State .anon := {}
@@ -652,14 +652,14 @@ def install (s : Setup) (addresses : Array Address) :
             if failure.isNone then
               failure := some (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
     if let some why := failure then failures := failures.push (a, why)
-    if failure.isSome || unread then
+    if lenient && (failure.isSome || unread) then
       if let some c := s.store[a]? then
         for ci in lenientInfos s.cx fe s.cx.hint a c do
           if (fe.find? ci.name).isNone then fe := fe.push ci
   return (fe, ok, failures)
 
 /-- The kernel's environment for a view. -/
-def KernelEnv.ofView (v : View) : Except String KernelEnv := do
+def KernelEnv.ofView (v : View) (lenient : Bool := true) : Except String KernelEnv := do
   -- the witness's role table and its prelude; a table that does not decode
   -- or whose prelude does not read (a malformed binding, which the circuit
   -- refuses) falls back to the default one, so that every key is answered
@@ -689,7 +689,7 @@ def KernelEnv.ofView (v : View) : Except String KernelEnv := do
       unless (roots oc).isEmpty do owners := owners.push o
   let first := pre.records.map (·.1)
   let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ owners)
-  let (fe, installed, failures) := install s addresses
+  let (fe, installed, failures) := install s addresses lenient
   return { setup := s, fe, owners, installed, refused := failures.size, failures }
 
 /-- Every owner record's blocks. -/
