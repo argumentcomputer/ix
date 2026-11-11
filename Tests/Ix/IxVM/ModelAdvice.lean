@@ -24,6 +24,10 @@ model is witness data. Two properties are tested here:
   The environments above declare Lean's compiler-trust axioms, which the
   default table binds as inert roles, so their claims name no user axiom and
   are accepted.
+* **Verdicts at nested blocks the modeller models** (`nestedVerdicts`: an index
+  domain that mentions a parameter, a reflexive field into a member): ι
+  reductions through their recursors are accepted, and false ι and constructor
+  equations, installed in Lean unchecked, are refused.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -47,6 +51,30 @@ def modeledNames : List String := [
   "IxVMInd.Even", "IxVMInd.Odd", "IxVMInd.Even.rec", "IxVMInd.Odd.rec",
   "IxVMInd.SoloA.rec", "IxVMInd.Tree", "IxVMInd.Tree.rec", "IxVMInd.Tree.rec_1",
   "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec"]
+
+/-- Claims on nested blocks the modeller models, with the verdict the circuit
+must give: `Tests.Ix.Kernel.EntryCaseDefs.NB4` (an index domain that mentions
+a parameter), `RA1` and `RA3` (a reflexive field into a member), `BD1` and `BD2`
+(a member behind a definition) and `EA` (a member only where whnf erases it). For
+each, ι
+reductions through the recursors are accepted, and false ι or constructor
+equations installed in Lean unchecked are refused (`bad_thm` declares their
+names at the root). -/
+def nestedVerdicts : List (Lean.Name × Bool) := [
+  (`Tests.Ix.Kernel.EntryCaseDefs.nb4Iota, true),
+  (`nb4IotaFalse, false),
+  (`nb4CtorFalse, false),
+  (`Tests.Ix.Kernel.EntryCaseDefs.ra1Iota, true),
+  (`ra1IotaFalse, false),
+  (`Tests.Ix.Kernel.EntryCaseDefs.ra3Iota, true),
+  (`ra3IotaFalse, false),
+  (`ra3CtorFalse, false),
+  (`bd1Iota, true),
+  (`bd1IotaFalse, false),
+  (`bd2Iota, true),
+  (`bd2CtorFalse, false),
+  (`Tests.Ix.Kernel.EntryCaseDefs.eaIota, true),
+  (`eaIotaFalse, false)]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
@@ -141,6 +169,15 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
       (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom]
+  -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
+  let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
+  let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv
+  let verdictCase (n : Lean.Name) (accept : Bool) : Builder := fun _ => do
+    let some target := fixEnv.getAddr? (Ix.Name.fromLeanName n)
+      | throw s!"{n} is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv fixEnv true
+    Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
+  let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
   return if digestOk && differ && rc == 0 then 0 else 1
 

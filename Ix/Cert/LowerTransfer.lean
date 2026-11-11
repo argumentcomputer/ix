@@ -5,7 +5,8 @@ import Ix.Cert.SourceOriginRead
 
 /-! # Lowering a renamed block
 
-`lowerInductive` checks a block's recursors (`Checks`: skipped for a nested block), lowers it
+`lowerInductive` checks a block's recursors (`Checks`: of a nested block only that none declares
+K), lowers it
 (`Body`: the modeller's records, then the block's declaration) and declines a read whose
 declarations declare a name twice. `lowerInductive_iff` states it. The checks read counts, the
 block's sort and the types' telescope lengths, which a renaming keeps (`checks_mapKeys`);
@@ -37,10 +38,11 @@ def RecChecks (rb : BlockRead md) (r : RecCounts) : Prop :=
     ∀ m (ty : CVal md) p i n, r.motive = some m → rb.types[m]? = some (ty, p, i) →
       ty.type.piSortTeleLen? = some n → rb.numParams + r.indices = n
 
-/-- **The block passes the stream's checks**: a nested block is not checked; every recursor of
-another passes them. -/
+/-- **The block passes the stream's checks**: no recursor of a nested block declares K; every
+recursor of another passes them. -/
 def Checks (rb : BlockRead md) : Prop :=
-  numNestedOf rb ≠ 0 ∨ ∀ x ∈ rb.recs.toList, RecChecks rb x.2.1
+  (numNestedOf rb ≠ 0 → ∀ x ∈ rb.recs.toList, x.2.1.k = false) ∧
+    (numNestedOf rb = 0 → ∀ x ∈ rb.recs.toList, RecChecks rb x.2.1)
 
 /-- **What the block lowers to**, past its checks. -/
 def Body (st : State md) (rb : BlockRead md) (r : Read md) : Prop :=
@@ -89,6 +91,12 @@ def checkStep (rb : BlockRead md) (x : CVal md × RecCounts × List (RecRule md)
           malformed s!"recursor {cv.name} declares {r.indices} indices; {ty.name} has {n - rb.numParams}"
   pure (.yield ())
 
+/-- One recursor's check in a nested block, as `lowerInductive` runs it. -/
+def kStep (x : CVal md × RecCounts × List (RecRule md)) (_ : PUnit) : ReadM (ForInStep PUnit) := do
+  let (cv, r, _) := x
+  if r.k then malformed s!"recursor {cv.name} of a nested block declares k := true"
+  pure (.yield ())
+
 /-- The lowering past the checks, as `lowerInductive` runs it. -/
 def lowerBody (st : State md) (rb : BlockRead md) : ReadM (Read md) :=
   if wants (blockRecOf rb) then
@@ -101,7 +109,8 @@ def lowerBody (st : State md) (rb : BlockRead md) : ReadM (Read md) :=
   else pure { decls := #[indDeclOf rb], owners := ownersOf rb, blocks := CtxAgree.blocksOf rb }
 
 theorem lowerInductiveDecls_eq (st : State md) (rb : BlockRead md) :
-    lowerInductiveDecls st rb = if (numNestedOf rb != 0) = true then lowerBody st rb
+    lowerInductiveDecls st rb = if (numNestedOf rb != 0) = true then
+        (forIn rb.recs PUnit.unit kStep >>= fun _ => lowerBody st rb)
       else (forIn rb.recs PUnit.unit (checkStep rb) >>= fun _ => lowerBody st rb) := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
   rfl
@@ -119,6 +128,20 @@ theorem checkStep_iff (rb : BlockRead md) (x : CVal md × RecCounts × List (Rec
     intro m ty p i n e ht hs
     subst e
     simp_all
+
+theorem kStep_iff (x : CVal md × RecCounts × List (RecRule md)) :
+    kStep x () = .ok (.yield ()) ↔ x.2.1.k = false := by
+  obtain ⟨cv, rc, rules⟩ := x
+  cases h : rc.k <;>
+    simp [kStep, h, malformed, throw, throwThe, MonadExceptOf.throw, bind, Except.bind, pure, Except.pure]
+
+theorem kStep_yields (x : CVal md × RecCounts × List (RecRule md)) (r : ForInStep PUnit)
+    (h : kStep x () = .ok r) : r = .yield () := by
+  obtain ⟨cv, rc, rules⟩ := x
+  cases hk : rc.k <;>
+    simp [kStep, hk, malformed, throw, throwThe, MonadExceptOf.throw, bind, Except.bind, pure,
+      Except.pure] at h
+  all_goals exact h.symm
 
 theorem checkStep_yields (rb : BlockRead md) (x : CVal md × RecCounts × List (RecRule md))
     (r : ForInStep PUnit) (h : checkStep rb x () = .ok r) : r = .yield () := by
@@ -150,24 +173,31 @@ theorem lowerInductiveDecls_iff {st : State md} {rb : BlockRead md} {r : Read md
   have loop : forIn rb.recs PUnit.unit (checkStep rb) = .ok () ↔ ∀ x ∈ rb.recs.toList, RecChecks rb x.2.1 := by
     rw [← Array.forIn_toList]
     exact forIn_unit_ok_iff _ _ (checkStep_iff rb) (checkStep_yields rb) _
+  have loopK : forIn rb.recs PUnit.unit kStep = .ok () ↔ ∀ x ∈ rb.recs.toList, x.2.1.k = false := by
+    rw [← Array.forIn_toList]
+    exact forIn_unit_ok_iff _ _ kStep_iff kStep_yields _
   rw [lowerInductiveDecls_eq]
-  unfold Checks
   by_cases hn : numNestedOf rb = 0
   · have hb : (numNestedOf rb != 0) = false := by simp [hn]
     rw [hb]
-    simp only [Bool.false_eq_true, ↓reduceIte, hn, ne_eq, not_true_eq_false, false_or]
+    simp only [Bool.false_eq_true, ↓reduceIte]
     constructor
     · intro h
       obtain ⟨u, hfor, hbody⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-      exact ⟨loop.mp hfor, lowerBody_iff.mp hbody⟩
+      exact ⟨⟨fun h0 => absurd hn h0, fun _ => loop.mp hfor⟩, lowerBody_iff.mp hbody⟩
     · rintro ⟨hc, hbody⟩
-      rw [loop.mpr hc]
+      rw [loop.mpr (hc.2 hn)]
       exact lowerBody_iff.mpr hbody
   · have hb : (numNestedOf rb != 0) = true := by simp [hn]
     rw [hb]
     simp only [↓reduceIte]
-    rw [lowerBody_iff]
-    exact ⟨fun h => ⟨.inl hn, h⟩, fun h => h.2⟩
+    constructor
+    · intro h
+      obtain ⟨u, hfor, hbody⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+      exact ⟨⟨fun _ => loopK.mp hfor, fun h0 => absurd h0 hn⟩, lowerBody_iff.mp hbody⟩
+    · rintro ⟨hc, hbody⟩
+      rw [loopK.mpr (hc.1 hn)]
+      exact lowerBody_iff.mpr hbody
 
 /-- **What `lowerInductive` accepts and returns**: a block passing its checks, lowered, whose
 declarations declare pairwise distinct names. -/
@@ -264,7 +294,13 @@ theorem recChecks_mapKeys (rb : BlockRead md) (rc : RecCounts) :
 theorem checks_mapKeys (rb : BlockRead md) : Checks (rb.mapKeys f) ↔ Checks rb := by
   unfold Checks
   rw [numNestedOf_mapKeys]
-  refine or_congr_right ⟨fun h x hx => ?_, fun h x hx => ?_⟩
+  refine and_congr (imp_congr_right fun _ => ⟨fun h x hx => ?_, fun h x hx => ?_⟩)
+    (imp_congr_right fun _ => ⟨fun h x hx => ?_, fun h x hx => ?_⟩)
+  · exact h (x.1.mapKeys f, x.2.1, x.2.2.map (RecRule.mapKeys f))
+      (by simp only [BlockRead.mapKeys, Array.toList_map, List.mem_map]; exact ⟨x, hx, rfl⟩)
+  · simp only [BlockRead.mapKeys, Array.toList_map, List.mem_map] at hx
+    obtain ⟨y, hy, rfl⟩ := hx
+    exact h y hy
   · have := h (x.1.mapKeys f, x.2.1, x.2.2.map (RecRule.mapKeys f))
       (by simp only [BlockRead.mapKeys, Array.toList_map, List.mem_map]; exact ⟨x, hx, rfl⟩)
     exact (recChecks_mapKeys rb _).mp this
@@ -340,8 +376,23 @@ theorem lowerInductive_motives {st : State md} {rb rb' : BlockRead md} (hn : num
   have hn' : numNestedOf rb' ≠ 0 := by
     rw [← numNestedOf_eraseMotives, he, numNestedOf_eraseMotives]
     exact hn
+  -- the motives aside the recursors' counts agree, and so do their `k` flags
+  have hk : ∀ (a c : BlockRead md), eraseMotives a = eraseMotives c →
+      (∀ x ∈ c.recs.toList, x.2.1.k = false) → ∀ x ∈ a.recs.toList, x.2.1.k = false := by
+    intro a c hac hc x hx
+    have hx' : (x.1, { x.2.1 with motive := none }, x.2.2) ∈ (eraseMotives c).recs.toList := by
+      rw [← hac]
+      simp only [eraseMotives, Array.toList_map, List.mem_map]
+      exact ⟨x, hx, rfl⟩
+    simp only [eraseMotives, Array.toList_map, List.mem_map] at hx'
+    obtain ⟨⟨cv, rc, rules⟩, hy, hyx⟩ := hx'
+    have hkk : rc.k = x.2.1.k :=
+      congrArg (fun z : CVal md × RecCounts × List (RecRule md) => z.2.1.k) hyx
+    rw [← hkk]
+    exact hc _ hy
   rw [lowerInductive_iff, lowerInductive_iff, ← body_eraseMotives, he, body_eraseMotives]
-  exact ⟨fun h => ⟨.inl hn, h.2⟩, fun h => ⟨.inl hn', h.2⟩⟩
+  exact ⟨fun h => ⟨⟨fun _ => hk rb rb' he.symm (h.1.1 hn'), fun h0 => absurd h0 hn⟩, h.2⟩,
+    fun h => ⟨⟨fun _ => hk rb' rb he (h.1.1 hn), fun h0 => absurd h0 hn'⟩, h.2⟩⟩
 
 /-- **A block quotient Source lowers lowers renamed, motives aside**: at a state related to
 Source's, the renamed block, or a nested one with other motives, lowers to a renamed read. -/

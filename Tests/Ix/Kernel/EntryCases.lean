@@ -204,6 +204,23 @@ def cases : List Case := [
   { label := "mutual-structural-recursion",
     seeds := [seed "Tm.size", seed "Args.size", seed "Tm.sizeApp"], expected := .accept },
   { label := "mutual-nested-inductive", seeds := [seed "MTm", seed "MArg"], expected := .accept },
+  -- nested blocks whose index domain mentions a parameter, with an ι
+  -- reduction through both recursors
+  { label := "nested-parameter-index", seeds := [seed "NB", seed "NB4", seed "nb4Iota"],
+    expected := .accept },
+  -- nested blocks with a reflexive field into a member (in a constructor of
+  -- the block, and in a container pinned at a function into it), with ι
+  -- reductions through the reflexive hypotheses
+  { label := "nested-reflexive", seeds := [seed "RA1", seed "RA3", seed "ra1Iota", seed "ra3Iota"],
+    expected := .accept },
+  -- nested blocks with a recursive occurrence behind a definition (`Id' T`, in a
+  -- constructor of the block and in a container's), with ι reductions through
+  -- the fields' hypotheses
+  { label := "nested-behind-definition", seeds := [seed "BD1", seed "BD2", `bd1Iota, `bd2Iota],
+    expected := .accept },
+  -- a nested block whose field mentions a member only where whnf erases it
+  -- (`KE Nat (EA α)`, the member under-applied), with an ι reduction through it
+  { label := "nested-erased", seeds := [seed "EA", seed "eaIota"], expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in
   -- canonical form, equal at every valuation (only the Géran fallback of the
@@ -291,6 +308,45 @@ def cases : List Case := [
   -- `bad_thm` declares its name at the root
   { label := "false-theorem", seeds := [`falseThm],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `falseThm with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- a false ι equation and a false constructor equation at the nested
+  -- block `NB4` (`bad_thm` declares their names at the root)
+  { label := "nested-parameter-index-false-iota", seeds := [`nb4IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `nb4IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-parameter-index-false-constructor", seeds := [`nb4CtorFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `nb4CtorFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- false ι equations through the reflexive fields of `RA1` and `RA3`, and a
+  -- false constructor equation at `RA3`
+  { label := "nested-reflexive-false-iota", seeds := [`ra1IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `ra1IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-reflexive-container-false-iota", seeds := [`ra3IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `ra3IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-reflexive-container-false-constructor", seeds := [`ra3CtorFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `ra3CtorFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- a false ι equation through `BD1`'s field behind `Id'`, and a false
+  -- constructor equation at `BD2`
+  { label := "nested-behind-definition-false-iota", seeds := [`bd1IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `bd1IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-behind-definition-false-constructor", seeds := [`bd2CtorFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `bd2CtorFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- a false ι equation through `EA`'s erasing field
+  { label := "nested-erased-false-iota", seeds := [`eaIotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `eaIotaFalse with
       | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
@@ -405,6 +461,98 @@ def tierCases : List TierCase := [
     alter := some fun input => alterConstant input (seed "loop._unsafe_rec") fun c => match c.info with
       | .defn d => pure { c with info := .defn { d with kind := .thm } }
       | _ => throw "loop._unsafe_rec is not a definition record" } ]
+
+/-! ## Forged records of a modeled block
+
+Hand-built records Lean cannot produce, at the nested blocks the in-process
+modeller models (`NB4`, whose index domain mentions a parameter; `RA1` and
+`RA3`, with a reflexive field into a member; `BD1` and `BD2`, with a member behind a
+definition; `EA`, with a member only where whnf erases it): the blocks'
+recursor records altered over the decoded records, each under its key, and
+checked by the logical entry (`Admission.checkConstants`). Each must be
+refused, by the reader or the checker (a K flag on a nested block by the reader).
+The labels name the shape and the forgery (`modeled-<shape>-forged-<what>`). -/
+
+structure ForgedCase where
+  label : String
+  seeds : List Lean.Name
+  /-- the forgery of a recursor record of the block (every recursor of a
+  record of several) -/
+  forge : Ixon.Recursor → Ixon.Recursor
+  /-- the record to forge, by a name of its block's recursors -/
+  target : Lean.Name
+  /-- the refusal expected, by its message (any refusal by default) -/
+  refusal : String → Bool := fun _ => true
+
+/-- `s` contains `piece`. -/
+def hasInfix (s piece : String) : Bool := (s.splitOn piece).length > 1
+
+/-- A recursor record, or a record of recursors, with `f` applied to each. -/
+def forgeRecursors (f : Ixon.Recursor → Ixon.Recursor) (c : Ixon.Constant) : Except String Ixon.Constant :=
+  match c.info with
+  | .recr r => pure { c with info := .recr (f r) }
+  | .muts ms =>
+    if ms.all (fun | .recr _ => true | _ => false) then
+      pure { c with info := .muts (ms.map fun | .recr r => .recr (f r) | m => m) }
+    else throw "the record is not a record of recursors"
+  | _ => throw "the record is not a recursor record"
+
+/-- The right-hand sides of the first two rules exchanged. -/
+def swapRules (r : Ixon.Recursor) : Ixon.Recursor :=
+  match r.rules[0]?, r.rules[1]? with
+  | some a, some b => { r with rules := (r.rules.set! 0 { a with rhs := b.rhs }).set! 1 { b with rhs := a.rhs } }
+  | _, _ => r
+
+def forgedCases : List ForgedCase := [
+  { label := "modeled-nested-parameter-index-forged-rule", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := swapRules },
+  { label := "modeled-nested-parameter-index-forged-motives", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => { r with motives := r.motives + 1 } },
+  { label := "modeled-nested-parameter-index-forged-fields", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => match r.rules[1]? with
+      | some b => { r with rules := r.rules.set! 1 { b with fields := b.fields + 1 } }
+      | none => r },
+  { label := "modeled-nested-parameter-index-forged-k", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => { r with k := true },
+    refusal := (hasInfix · "of a nested block declares k := true") },
+  -- a reflexive field into a member: in a constructor of the block (`RA1`),
+  -- and in a container pinned at a function into it (`RA3`)
+  { label := "modeled-nested-reflexive-forged-rule", seeds := [seed "RA1"],
+    target := seed "RA1.rec", forge := swapRules },
+  { label := "modeled-nested-reflexive-forged-fields", seeds := [seed "RA1"],
+    target := seed "RA1.rec", forge := fun r => match r.rules[1]? with
+      | some b => { r with rules := r.rules.set! 1 { b with fields := b.fields + 1 } }
+      | none => r },
+  { label := "modeled-nested-reflexive-container-forged-rule", seeds := [seed "RA3"],
+    target := seed "RA3.rec", forge := swapRules },
+  -- a recursive occurrence behind a definition (`BD1`, `BD2`)
+  { label := "modeled-nested-behind-definition-forged-rule", seeds := [seed "BD1"],
+    target := seed "BD1.rec", forge := swapRules },
+  { label := "modeled-nested-behind-definition-container-forged-rule", seeds := [seed "BD2"],
+    target := seed "BD2.rec", forge := swapRules },
+  -- a field that mentions a member only where whnf erases it (`EA`)
+  { label := "modeled-nested-erased-forged-rule", seeds := [seed "EA"],
+    target := seed "EA.rec", forge := swapRules } ]
+
+def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
+  let started ← IO.monoMsNow
+  let input ← prepare leanEnv test.seeds
+  let constants ← IO.ofExcept (alterConstant input test.target (forgeRecursors test.forge))
+  let table ← IO.ofExcept defaultTable
+  let result := Ix.Kernel.Admission.checkConstants Address.blake3 table constants input.blobs input.hints.lookup
+  let (outcome, detail, passed) := match result with
+    | .ok _ => ("accept", "", false)
+    | .error e => (match e.outcome with | .rejected => "reject" | .declined => "decline", toString e,
+        test.refusal (toString e))
+  let ms := (← IO.monoMsNow) - started
+  IO.println (Lean.Json.mkObj [
+    ("case", Lean.toJson test.label), ("expected", Lean.toJson "refuse"),
+    ("outcome", Lean.toJson outcome), ("detail", Lean.toJson detail),
+    ("passed", Lean.toJson passed), ("records", Lean.toJson constants.length), ("ms", Lean.toJson ms),
+    ("leanVersion", Lean.toJson Lean.versionString)]).compress
+  unless passed do
+    IO.eprintln s!"{test.label}: expected a refusal, got {outcome}: {detail}"
+  return passed
 
 def runTier (leanEnv : Lean.Environment) (test : TierCase) : IO Bool := do
   let started ← IO.monoMsNow
@@ -546,7 +694,12 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  let total := cases.length + stepCases.length + tierCases.length
+  for test in forgedCases do
+    let passed ← try runForged leanEnv test catch e => do
+      IO.eprintln s!"{test.label}: harness error: {e}"
+      pure false
+    unless passed do failed := failed + 1
+  let total := cases.length + stepCases.length + tierCases.length + forgedCases.length
   IO.eprintln s!"Certified entry, host-compiled cases: {total - failed}/{total} passed."
   return if failed == 0 then 0 else 1
 
