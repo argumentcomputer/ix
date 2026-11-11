@@ -1,3 +1,4 @@
+import Ix.Compile.BinderData
 import Ix.IxVM.PwCheck
 import Ix.IxVM.ClaimHarness
 import Ix.Shard.Environment
@@ -460,3 +461,119 @@ def fixture : IO UInt32 := do
   return 0
 
 end Tests.Ix.IxVM.PwHints
+
+/-! ## The compiler's sections (`Ix.Compile.BinderData`)
+
+`ixvm-binder-data` runs the compile side on the hand-made records above,
+bound to the default table with its support records: each record's section is
+the annotator's data in the section's spelling (binder-free share nodes and
+blocks dropped, "always zero" written `.zero`), canonical, with no undecided
+binder; the environment is re-addressed (each record under the hash of its
+new bytes, the binding rewritten); and a second run on the result changes
+nothing (the data do not depend on addresses, and the run is deterministic).
+
+`binder-data-corpus` (manual) checks a compiled `.ixe` (`IX_BD_IXE`): every
+record's section canonical, projections' empty, the undecided binders counted
+and named, and the sections recomputed from the artifact itself equal to the
+stored ones. -/
+
+namespace Tests.Ix.IxVM.BinderData
+
+open _root_.IxVM.PwHints
+open _root_.Ix.Compile.BinderData
+
+private def ensure (ok : Bool) (msg : String) : IO Unit :=
+  unless ok do throw (IO.userError msg)
+
+/-- The expected sections of the hand-made records. -/
+def expectedSections : List (Ixon.Constant × Array Ixon.BinderBlock) := [
+  (Tests.Ix.IxVM.PwHints.twoSorts,
+    #[⟨false, 0, 0, #[.never, .never, .share 0, .never, .never, .share 1]⟩,
+      ⟨true, 0, 0, #[.zero]⟩, ⟨true, 0, 1, #[.never]⟩]),
+  (Tests.Ix.IxVM.PwHints.letBody,
+    #[⟨false, 0, 0, #[.never]⟩, ⟨false, 1, 0, #[.never, .zero, .zero]⟩]),
+  (Tests.Ix.IxVM.PwHints.polyId, #[⟨false, 0, 0, #[.ifAllZero #[0], .ifAllZero #[0]]⟩])]
+
+/-- The serialized environment, for comparisons. -/
+private def bytesOf (env : Ixon.Env) : Except String ByteArray := Ixon.serEnv env
+
+def units : IO Unit := do
+  let base := expectedSections.foldl
+    (fun (env : Ixon.Env) (c, _) => env.storeConst (Address.blake3 (Ixon.ser c)) c) {}
+  let env ← IO.ofExcept (_root_.IxVM.ClaimHarness.withRoleTable base
+    (← IO.ofExcept _root_.Ix.Kernel.Reader.defaultTableBytes))
+  let (env', report) ← IO.ofExcept (apply env)
+  IO.println s!"[ixvm-binder-data] {report.summary}"
+  ensure report.undecided.isEmpty "an undecided binder"
+  ensure (env'.consts.size == env.consts.size) "the record count changed"
+  -- every record under the hash of its bytes, its section canonical
+  for (a, lc) in env'.consts do
+    ensure (Address.blake3 lc.rawBytes == a) s!"{a} is not the hash of its record"
+    let c ← IO.ofExcept lc.get
+    ensure c.bindersCanonical s!"{a}: the section is not canonical"
+  -- the hand-made records' sections, under their new addresses
+  for (c, sec) in expectedSections do
+    let a' := Address.blake3 (Ixon.ser { c with binders := sec })
+    ensure (env'.consts.contains a') s!"no record with the expected section {repr sec}"
+    ensure (!env.consts.contains a') "the record kept its old address"
+  -- the binding names the new addresses
+  let some b := env'.roleBinding | throw (IO.userError "the binding is gone")
+  ensure (Address.blake3 b.bytes == b.address) "the binding is not under the hash of its bytes"
+  let some t := _root_.Ix.Kernel.RoleTable.ofBytes b.bytes | throw (IO.userError "binding decode")
+  for (_, a) in t.bound do
+    ensure (env'.consts.contains a) s!"the binding names {a}, not a record"
+  -- a second run changes nothing; a run is deterministic
+  let (env'', _) ← IO.ofExcept (apply env')
+  ensure ((← IO.ofExcept (bytesOf env'')) == (← IO.ofExcept (bytesOf env')))
+    "a second run changed the environment"
+  let (again, _) ← IO.ofExcept (apply env)
+  ensure ((← IO.ofExcept (bytesOf again)) == (← IO.ofExcept (bytesOf env')))
+    "two runs differ"
+
+def run : IO UInt32 := do
+  try
+    units
+    IO.println "[ixvm-binder-data] passed"
+    return 0
+  catch e =>
+    IO.eprintln s!"[ixvm-binder-data] FAILED: {e}"
+    return 1
+
+private def rssKb : IO Nat := Benchmarks.Kernel.CheckIxeStep.statusKb "VmHWM:"
+
+/-- `binder-data-corpus` (manual): a compiled `.ixe`'s sections (`IX_BD_IXE`). -/
+def corpus : IO UInt32 := do
+  let some ixe ← IO.getEnv "IX_BD_IXE" | do IO.eprintln "IX_BD_IXE is not set"; return 1
+  let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))
+  IO.println s!"BDCORPUS loaded {ixe}: {env.consts.size} records, hwm_kb={← rssKb}"
+  let records ← IO.ofExcept (recordsOf env)
+  let mut stored : Std.HashMap Address (Array Ixon.BinderBlock) := {}
+  let mut nonCanonical := 0
+  let mut projections := 0
+  let mut undecided := 0
+  let mut nodes := 0
+  for (a, c) in records do
+    unless c.bindersCanonical do
+      nonCanonical := nonCanonical + 1
+      if nonCanonical ≤ 10 then IO.println s!"BDCORPUS not canonical: {a}"
+    if (roots c).isEmpty && !c.binders.isEmpty then projections := projections + 1
+    unless c.binders.isEmpty do stored := stored.insert a c.binders
+    for b in c.binders do
+      nodes := nodes + b.nodes.size
+      undecided := undecided + (b.nodes.filter (· == .undecided)).size
+  IO.println s!"BDCORPUS stored: {stored.size} records with a section, {nodes} nodes, \
+    {undecided} undecided, {nonCanonical} not canonical, {projections} projections with data"
+  let t0 ← IO.monoMsNow
+  let (sections, report) ← IO.ofExcept (annotate env records)
+  IO.println s!"BDCORPUS recomputed in {(← IO.monoMsNow) - t0}ms: {report.summary}, \
+    hwm_kb={← rssKb}"
+  let mut differ := 0
+  for (a, _) in records do
+    unless sections.getD a #[] == stored.getD a #[] do
+      differ := differ + 1
+      if differ ≤ 10 then IO.println s!"BDCORPUS differs: {a}"
+  IO.println s!"BDCORPUS sections recomputed from the artifact that differ from the stored: {differ}"
+  report.print env "BDCORPUS" (limit := 30)
+  return (if nonCanonical == 0 && differ == 0 && projections == 0 then 0 else 1)
+
+end Tests.Ix.IxVM.BinderData

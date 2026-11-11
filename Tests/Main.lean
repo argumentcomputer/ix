@@ -256,6 +256,9 @@ def registry : List Entry := [
   .runner "ixvm-pw-fixture" (.manual "rewrite the dev fixture with its binder data; IX_PW_FIXTURE, IX_PW_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
+  -- The compiler's binder-data sections and re-addressing (`Ix.Compile.BinderData`).
+  .runner "ixvm-binder-data" (.ci .ixvm) Tests.Ix.IxVM.BinderData.run,
+  .runner "binder-data-corpus" (.manual "a compiled artifact's binder-data sections: canonical, recomputed equal; IX_BD_IXE") Tests.Ix.IxVM.BinderData.corpus,
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
   -- real inductive blocks and recursor records (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
