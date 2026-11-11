@@ -843,16 +843,55 @@ theorem iotaLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
   obtain ⟨⟨-, -, -, -, hfire⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
   exact iotaRule_of_fires m hf hrl hfire
 
-/-- **Unit-like η from the invariant**: the unit law of a family the install flags
-unit-like (`CapsOk`'s unit half), read at the bound-variable readings of the parameters
-through the fit (`fits_teleFitPA`, `Rules.teleFit_of_teleFitPA`). -/
+/-- **The kernel's unit-like flag is Lean's criterion** at a natively installed block
+(Lean's `is_def_eq_unit_like`: a structure-like family, one constructor and no index, whose
+constructor has no field). -/
+theorem _root_.Ix.Kernel.nativeCapsAt_unitlike_iff (p : Ix.Kernel.InductiveShape md)
+    (r : Bool) :
+    (Ix.Kernel.nativeCapsAt p r).unitlike = true ↔
+      ∃ c, p.ctors = [c] ∧ p.nIdx = 0 ∧ c.2 = 0 := by
+  unfold Ix.Kernel.nativeCapsAt
+  split
+  · next c hc => simp [hc]
+  · next hne =>
+    constructor
+    · intro h; simp at h
+    · rintro ⟨c, hc, -⟩; exact absurd hc (hne c)
+
+/-- **Unit-like η from the invariant**: at a family the install flags unit-like, the unit
+law (`CapsOk`'s unit half), read at the bound-variable readings of the parameters through
+the fit (`fits_teleFitPA`, `Rules.teleFit_of_teleFitPA`); at the pinned `PUnit`, the only
+pinned family with the flag (`pinnedInfo_unitlike`), its leaf, the unit set. -/
 theorem unitLikeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
     Ix.Kernel.UnitLikeLaw (cvalOf (V := V) m.base2.acval) env := by
-  intro T cvT caps hf hu hres us φ ρ σ ts R F x y hus hts hF hfit hx hy
+  intro T cvT caps hf hu us φ ρ σ ts R F x y hus hts hF hfit hx hy
   have hcl := m.base2.cval_closedL
   have hFv : F = cvalOf m.base2.acval T (Level.substFn φ cvT.levelParams us) := by
     cases hF with
     | const hfr _ => rw [hf] at hfr; cases hfr; rfl
+  by_cases hres' : Ix.Kernel.reservedBasisNames.contains T = true
+  · -- the pinned `PUnit`, with no parameters: its leaf is the unit set
+    have hpin := (m.base2.basis_pinned T _ hf hres').1
+    obtain rfl := Ix.Kernel.pinnedInfo_unitlike hpin.symm hu
+    rw [show Ix.Kernel.pinnedInfo Ix.Kernel.punitName = Ix.Kernel.punitA from rfl] at hpin
+    obtain ⟨hcv, hcaps⟩ := ConstantInfo.indInfo.inj hpin
+    have hlps : cvT.levelParams = [Ix.Kernel.uN] := (congrArg ConstantVal.levelParams hcv).trans rfl
+    have hup : caps.unitParams = 0 := (congrArg Ix.Kernel.IndCaps.unitParams hcaps).trans rfl
+    rw [hlps] at hFv
+    obtain rfl : ts = [] := List.eq_nil_of_length_eq_zero (hts.trans hup)
+    have hpinT : m.base2.cvalE Ix.Kernel.punitName (Level.substFn φ [Ix.Kernel.uN] us)
+        = Term.punitT (Level.substFn φ [Ix.Kernel.uN] us Ix.Kernel.uN) :=
+      (m.base2.basis_pinned Ix.Kernel.punitName _ hf (by (cases md <;> decide))).2 _ _ rfl
+    have hleaf : m.base2.acval Ix.Kernel.punitName (Level.substFn φ [Ix.Kernel.uN] us)
+        = .const .punit [Level.substFn φ [Ix.Kernel.uN] us Ix.Kernel.uN] :=
+      erase_eq_const (by rw [m.base2.acval_erase, hpinT]; rfl)
+    have hunit : ∀ z, z ∈ˢ ([] : List V).foldl app F → z = pt := by
+      intro z hz
+      have hz' : z ∈ˢ F := hz
+      rw [hFv, cvalOf, hleaf, interp_const] at hz'
+      exact mem_unitSet hz'
+    rw [hunit x hx, hunit y hy]
+  have hres : Ix.Kernel.reservedBasisNames.contains T = false := by simpa using hres'
   have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hf)
   have hTf : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := by
     rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
@@ -930,7 +969,7 @@ theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
       rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwf.2.2.2.1
     obtain ⟨TCa', hTCa', hokTC, hmemC⟩ := m.constType (φ := φ) 0 entry.ctor _ us hfC rfl
       (by show us.length = cvC.levelParams.length; rw [hlpsC]; exact hus)
-    obtain rfl : TCa' = TCa := Option.some.inj (hTCa'.symm.trans hTCa)
+    obtain rfl : TCa = TCa' := Option.some.inj (hTCa.symm.trans hTCa')
     let ρ' : Nat → V := fun j => ys.getD j SetTheory.empty
     let ws : List AnnotTerm := (List.range ys.length).map AnnotTerm.bvar
     have hws_len : ws.length = ys.length := by simp [ws]

@@ -320,12 +320,12 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
 /-- **Unit-like η at a family the kernel flags unit-like** (`IndCaps.unitlike`; Lean's
 `is_def_eq_unit_like`): at levels `us` and parameters `ts` that fit the family's type (as
 many as the flag's parameter count), any two members of the family's instance are equal.
-The pinned basis families (`reservedBasisNames`) are left out: their laws are the basis
-install's. -/
+Every stored family with the flag, the pinned `PUnit` among them. The kernel sets the flag
+on a natively installed block exactly at Lean's criterion: one constructor, no index, no
+field (`nativeCapsAt_unitlike_iff`). -/
 def UnitLikeLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
   ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
-    reservedBasisNames.contains T = false →
     ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (ts : List V) (R : Expr md)
       (F x y : V),
       us.length = cvT.levelParams.length → ts.length = caps.unitParams →

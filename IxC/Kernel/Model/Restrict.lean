@@ -237,7 +237,7 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     exact ⟨H, Denotes.mono_env hfind hproj hlit hH
       (Expr.RefsIn.instantiateLevelParams _ _ (hrhs cv mI rP rules hmR rl hrl)), heq⟩
   unit_like := by
-    intro T cvT caps hf hu hres us φ ρ σ ts R F x y hus hts hF hfit hx hy
+    intro T cvT caps hf hu us φ ρ σ ts R F x y hus hts hF hfit hx hy
     have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm
     have hproj' : ∀ T i, env.findProj? T i = env'.findProj? T i := fun T i => (hproj T i).symm
     have hmT := List.mem_of_find?_eq_some hf
@@ -247,7 +247,7 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
         by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == T) hf] at h
     obtain ⟨hfit', -⟩ := Fits.mono_env hfind' hproj' hlit hfit
       (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmT))
-    exact M.unit_like T cvT caps (by rw [← hfind T hKT]; exact hf) hu hres us φ ρ σ ts R F x y
+    exact M.unit_like T cvT caps (by rw [← hfind T hKT]; exact hf) hu us φ ρ σ ts R F x y
       hus hts (Denotes.mono_env hfind' hproj' hlit hF hKT) hfit' hx hy
   proj_law := by
     intro T i entry cvT capsT hfP hfT

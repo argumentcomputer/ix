@@ -423,6 +423,75 @@ theorem BasisBlocks.empty : (BasisBlocks (md := md)) Env.empty := by
   else if n = quotSoundName then quotSoundA
   else .axiomInfo ⟨n, [], .sort .zero⟩
 
+/-- The unit-like flag of a stored inductive (`false` at any other constant). -/
+@[expose] def ConstantInfo.unitlikeCap : ConstantInfo md → Bool
+  | .indInfo _ caps => caps.unitlike
+  | _ => false
+
+/-- **Among the pinned declarations only `PUnit` is unit-like.** -/
+theorem pinnedInfo_unitlike {n : Key md} {cv : ConstantVal md} {caps : IndCaps md}
+    (h : pinnedInfo n = .indInfo cv caps) (hu : caps.unitlike = true) : n = punitName := by
+  have hf : (pinnedInfo n).unitlikeCap = true := by rw [h]; exact hu
+  by_cases hp : n = punitName
+  · exact hp
+  exfalso
+  delta pinnedInfo at hf
+  by_cases h1 : n = eqName
+  · rw [if_pos h1] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h1] at hf
+  by_cases h2 : n = eqReflName
+  · rw [if_pos h2] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h2] at hf
+  by_cases h3 : n = eqRecName
+  · rw [if_pos h3] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h3] at hf
+  by_cases h4 : n = natName
+  · rw [if_pos h4] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h4] at hf
+  by_cases h5 : n = natZeroName
+  · rw [if_pos h5] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h5] at hf
+  by_cases h6 : n = natSuccName
+  · rw [if_pos h6] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h6] at hf
+  by_cases h7 : n = natRecName
+  · rw [if_pos h7] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h7, if_neg hp] at hf
+  by_cases h12 : n = punitUnitName
+  · rw [if_pos h12] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h12] at hf
+  by_cases h13 : n = punitRecName
+  · rw [if_pos h13] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h13] at hf
+  by_cases h14 : n = emptyName
+  · rw [if_pos h14] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h14] at hf
+  by_cases h15 : n = emptyRecName
+  · rw [if_pos h15] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15] at hf
+  by_cases h15a : n = falseName
+  · rw [if_pos h15a] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15a] at hf
+  by_cases h15b : n = falseRecName
+  · rw [if_pos h15b] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15b] at hf
+  by_cases h16 : n = quotName
+  · rw [if_pos h16] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h16] at hf
+  by_cases h17 : n = quotMkName
+  · rw [if_pos h17] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h17] at hf
+  by_cases h18 : n = quotLiftName
+  · rw [if_pos h18] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h18] at hf
+  by_cases h19 : n = quotIndName
+  · rw [if_pos h19] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h19] at hf
+  by_cases h20 : n = quotSoundName
+  · rw [if_pos h20] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h20] at hf
+  exact absurd hf (by simp [ConstantInfo.unitlikeCap])
+
 /-- Which names carry constructor-shaped pinned declarations. -/
 theorem pinnedInfo_ctorInfo_cases {n : Key md} {cv : ConstantVal md} {nP nF : Nat}
     (h : pinnedInfo n = .ctorInfo cv nP nF) :
