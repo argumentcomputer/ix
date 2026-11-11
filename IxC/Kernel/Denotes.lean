@@ -286,13 +286,17 @@ The last two premises are exactly what Lean's typing of the redex supplies: the 
 premise `C ys` must have the type the recursor's telescope gives it, `D.{ls} as`, while
 the constructor's type gives it the type `RC`, the same family at the constructor's
 parameters and its own indices; the two agree only if the parameters and the indices
-do. -/
+do.
+
+The right-hand side is part of the conclusion: at such a redex it denotes. Without that,
+a stored right-hand side that denotes nothing (a wrong binder annotation) would make the
+rule say nothing. -/
 def IotaRule (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : Key md)
     (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) : Prop :=
   ∀ (cvC : ConstantVal md) (nP nF : Nat),
     env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
     ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ σC : BVarIdx → V) (xs ys : List V)
-      (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K H X : V),
+      (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K X : V),
       us.length = cv.levelParams.length → xs.length = mI → ys.length = nP + nF →
       Denotes cval env φ ρ (.const r us) R →
       Fits cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us) xs σ
@@ -303,8 +307,8 @@ def IotaRule (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : 
       ys.foldl app K ∈ˢ X →
       DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP) →
       DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP) →
-      Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H →
-      (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
+      ∃ H, Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H ∧
+        (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
 
 /-- **ι at every stored recursor rule** (`IotaRule`). -/
 def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=

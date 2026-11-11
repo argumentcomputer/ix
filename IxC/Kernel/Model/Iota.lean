@@ -493,8 +493,8 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
     {rl : RecRule md} (hf : env.find? r = some (.recInfo cv mI rP rules)) (hrl : rl ∈ rules)
     (hfire : RecRule.fire rl ≠ .inert) :
     Ix.Kernel.IotaRule (cvalOf (V := V) m.base2.acval) env r cv mI rP rl := by
-  intro cvC nP nF hC us φ ρ σ σC xs ys dom body RC mb D ls R K H X hus hxs hys hR hfitR
-    hdomFn hX hK hfitC hmaj hpar hidx hH
+  intro cvC nP nF hC us φ ρ σ σC xs ys dom body RC mb D ls R K X hus hxs hys hR hfitR
+    hdomFn hX hK hfitC hmaj hpar hidx
   have hcl := m.base2.cval_closedL
   -- the rule's constructor, as the store records it
   obtain ⟨⟨cvj, hfj, hplainShape, hnestLen, -⟩, -, -⟩ :=
@@ -810,17 +810,15 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
       rw [hysA_val i (by omega), hxsA_val i him]
       exact hparams hpl i hi him)
     hnestPar hpin hTVa hTVja hteleR hteleC).1
-  -- the right-hand side's value
-  have hHv : H = interp V ρ' Ra := by
-    have hnf : (rl.rhs.instantiateLevelParams cv.levelParams us).hasFvar = false := by
-      rw [Expr.hasFvar_instantiateLevelParams]; exact hrhsF
-    have hlb : (rl.rhs.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
-      rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hrhsB
-    have hbr := Denotes_of_denoteMeta (V := V) hcl 0 _ hRa
-      (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ' (hRaok ρ')
-    rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
-    exact Ix.Kernel.Denotes_functional
-      (hH.congr_below hlb (fun i hi => absurd hi (by omega))) hbr
+  -- the right-hand side denotes its reading
+  have hnf : (rl.rhs.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact hrhsF
+  have hlb : (rl.rhs.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
+    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hrhsB
+  have hbr := Denotes_of_denoteMeta (V := V) hcl 0 _ hRa
+    (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ' (hRaok ρ')
+  rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
+  refine ⟨interp V ρ' Ra, hbr.congr_below hlb (fun i hi => absurd hi (by omega)), ?_⟩
   calc (xs ++ [ys.foldl app K]).foldl app R
       = ((xsA ++ [majA]).map (interp V ρ')).foldl app
           (interp V ρ' (m.base2.acval r (Level.substFn φ cv.levelParams us))) := by
@@ -832,8 +830,8 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
     _ = ((xsA.take rP ++ ysA.drop rl.ctorParams).map (interp V ρ')).foldl app
           (interp V ρ' Ra) := by
         rw [interp_mkAppN, List.foldl_map]
-    _ = (xs.take rP ++ ys.drop rl.ctorParams).foldl app H := by
-        rw [List.map_append, List.map_take, List.map_drop, hxsMap, hysMap, hHv]
+    _ = (xs.take rP ++ ys.drop rl.ctorParams).foldl app (interp V ρ' Ra) := by
+        rw [List.map_append, List.map_take, List.map_drop, hxsMap, hysMap]
 
 /-- **ι at every stored rule, from the invariant**: the store records that every stored
 rule fires (`RuleCtorOk`), and a fired rule's computation rule holds. -/

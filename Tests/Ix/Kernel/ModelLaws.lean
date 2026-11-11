@@ -1,5 +1,6 @@
 import IxC.Kernel.Denotes
 import IxC.Kernel.Semantics.EnvFacts
+import Ix.IxVM.Consistency.Restrict
 
 /-! # The model's laws rule out wrong meanings
 
@@ -61,5 +62,64 @@ info: 'Tests.Ix.Kernel.ModelLaws.no_model_of_false_def' depends on axioms: [prop
 -/
 #guard_msgs in
 #print axioms no_model_of_false_def
+
+/-! ## Stated over what the consistency statement gives
+
+`IxVM.Consistency.ConsistentRead` does not hand over lookups: it gives the reader's
+declarations `ds`, an environment they install (`Installs`, each constant stored as
+declared, `StoredAs`), and a model of its claimed sub-environment. The examples below are
+stated over those. -/
+
+open _root_.IxVM.Consistency in
+/-- **Declarations that define `P : Prop` as `False` and prove `P` install no environment
+with a model.** If `ds` installs `env`, `ds` holds `def P : Prop := False` and a theorem
+of type `P`, and both are at input or role keys, then the claimed sub-environment of `env`
+has no model: both are stored as declared, so δ reads `P`'s own value. -/
+theorem no_model_of_false_def_installs {ds : List (Declaration .anon)} {env : Env .anon}
+    (hI : Installs ds env) {cvP cvB : ConstantVal .anon} {hint : ReducibilityHint}
+    {v : Expr .anon}
+    (hP : .defnDecl cvP (.const falseName []) hint ∈ ds) (hB : .thmDecl cvB v ∈ ds)
+    (hty : cvB.type = .const cvP.name [])
+    (hPk : ∀ b t, cvP.name ≠ .aux b t) (hBk : ∀ b t, cvB.name ≠ .aux b t) :
+    Model V (claimedEnv env) → False := by
+  obtain ⟨ciP, hfP, hsP⟩ :=
+    hI.claimed hP (ci₀ := .defnInfo cvP (.const falseName []) hint) (List.mem_singleton_self _) hPk
+  obtain ⟨ciB, hfB, hsB⟩ := hI.claimed hB (ci₀ := .thmInfo cvB v) (List.mem_singleton_self _) hBk
+  cases ciP with
+  | defnInfo cvP' vP hP' =>
+    obtain ⟨hav, rfl⟩ := hsP.2
+    obtain rfl := hav.const_inv
+    cases ciB with
+    | thmInfo cvB' vB =>
+      have hann : Annotates cvB'.type cvB.type := hsB.1.2.2
+      rw [hty] at hann
+      exact no_model_of_false_def (P := cvP.name) (bad := cvB.name) hfP hfB hann.const_inv
+    | _ => exact False.elim hsB.2
+  | _ => exact False.elim hsP.2
+
+open _root_.IxVM.Consistency in
+/-- **No `ConsistentRead` reads `def P : Prop := False` with a theorem of type `P`**: in
+every set theory, the reading a `ConsistentRead` exhibits holds no such pair at input or
+role keys. -/
+theorem consistentRead_no_false_def (V : Type w) [SetTheory V]
+    {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {seeds : List _root_.Address}
+    (h : ConsistentRead.{w} calls seeds) :
+    ∃ (b : _root_.Ix.Kernel.Admission.Binding) (E : _root_.Ixon.Env) (ev : Evidences .anon)
+      (ds : Array (Declaration .anon)),
+      ReadIn b E (fun a => a ∈ seeds) ev ds ∧
+      ∀ (cvP cvB : ConstantVal .anon) (hint : ReducibilityHint) (v : Expr .anon),
+        .defnDecl cvP (.const falseName []) hint ∈ ds.toList → .thmDecl cvB v ∈ ds.toList →
+        cvB.type = .const cvP.name [] → (∀ b t, cvP.name ≠ .aux b t) →
+        (∀ b t, cvB.name ≠ .aux b t) → False := by
+  obtain ⟨b, -, E, ev, ds, env, -, -, -, hread, hI, -, hmodel⟩ := h
+  obtain ⟨M⟩ := hmodel V
+  exact ⟨b, E, ev, ds, hread, fun _ _ _ _ hP hB hty hPk hBk =>
+    no_model_of_false_def_installs hI hP hB hty hPk hBk M⟩
+
+/--
+info: 'Tests.Ix.Kernel.ModelLaws.consistentRead_no_false_def' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms consistentRead_no_false_def
 
 end Tests.Ix.Kernel.ModelLaws
