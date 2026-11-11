@@ -1951,7 +1951,7 @@ theorem checkProjFn_wfimp {env' : Env md} (henv' : EnvWF env')
   simp only [Bind.bind, Except.bind]
   obtain ⟨u0, hshape, h⟩ := atF_bind_ok h
   rw [checkProjShape_datF] at hshape
-  show ((checkProjShape pty cvj.type nP nF : CheckM md Unit) >>= _) = _
+  show ((checkProjShape pty cvj.type nP nF cvj.levelParams : CheckM md Unit) >>= _) = _
   rw [hshape]
   simp only [Bind.bind, Except.bind]
   dsimp only [] at h ⊢

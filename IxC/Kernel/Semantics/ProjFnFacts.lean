@@ -242,7 +242,7 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
         ∀ r ∈ rules, RuleCtorOk env'.find? cvR mI rP r := by
   obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps, hpnone,
     hTf, heqf, hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1,
-    hilt, hstripP, hbig, henv⟩ := hR
+    hilt, hstripP, hplP, hbig, henv⟩ := hR
   obtain ⟨cbinders, cbody, hCstrip, hcbodyArity, hcbodyHead, hrhsw,
     hrhsb, hrlp, hrres, hrstrip, hrhsKey, -, -⟩ := hbig
   subst henv
@@ -281,8 +281,9 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
     subst h1 h2 h3
     rw [← h4] at hr
     rcases List.mem_cons.mp hr with rfl | h
-    · exact RuleCtorOk.of_ifPlain hctor rfl
-        (fun hb => by rw [ctorLevelParamsOf_ctor hctor] at hb; exact hb)
+    · have hpl' : Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env'.find? ctorName) = true := by
+        rw [ctorLevelParamsOf_ctor hctor]; exact hplP
+      exact RuleCtorOk.of_plain hctor (by simp [projFnRule, recRuleBits, hpl']) hplP
     · exact nomatch h
 
 /-! ## Two shared projection-phase constants (task #161 S7)

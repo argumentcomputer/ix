@@ -393,6 +393,11 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
       p cvTa ctorsA = .ok (cvRa, rhss) := by
     rw [← checkNativeRec_datF]; exact hF₃
   have henv₃ := direct_fix_rec_wf henv₂ hF₃p
+  -- every stored rule fires
+  by_cases hpl : ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) = true
+  case neg => rw [if_neg hpl] at h; exact absurd h throwC_bind_ok
+  rw [if_pos hpl] at h
   -- the projection table at a structure-like block (task #210 Part A)
   rw [push_mkFEnv, show FEnv.find? (mkFEnv (consSumCtors p.nP ctorsA env₁))
     = (consSumCtors p.nP ctorsA env₁).find? from
@@ -424,6 +429,8 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
   rw [if_pos hk, if_pos hr]
   rw [g₃]
   simp only [Except.bind]
+  rw [if_pos hpl]
+  try simp only [Bind.bind, Except.bind, pure, Except.pure]
   exact g₆
 
 /-- The direct recursive install at the cached driver is reproduced by

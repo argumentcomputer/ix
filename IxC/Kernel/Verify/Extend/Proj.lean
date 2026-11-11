@@ -494,14 +494,22 @@ theorem checkProjIota_inv {env' : Env md} {T ctorName : Key md}
       fun _ => ⟨tα, htα, hdα⟩⟩⟩
 
 /-- Invert a successful `checkProjShape` run. -/
-theorem checkProjShape_inv {pty cty : Expr md} {nP nF : Nat} {u : Unit}
-    (h : (checkProjShape pty cty nP nF : CheckM md Unit) = .ok u) :
+theorem checkProjShape_inv {pty cty : Expr md} {nP nF : Nat} {cjLps : List LevelParam}
+    {u : Unit}
+    (h : (checkProjShape pty cty nP nF cjLps : CheckM md Unit) = .ok u) :
+    Expr.recRulePlain pty nP nP nP cjLps = true ∧
     ∃ abinders arest cbindersR cbody,
       pty.stripPis nP = some (abinders, arest) ∧
       cty.stripPis (nP + nF) = some (cbindersR, cbody) ∧
       (∃ dN dus, cbody.getAppFn = Expr.const dN dus) ∧
       cbody.getAppArgs.length = nP := by
   simp only [checkProjShape, Bind.bind, Except.bind] at h
+  have hpl : Expr.recRulePlain pty nP nP nP cjLps = true := by
+    by_contra hc
+    rw [if_neg hc] at h
+    exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
+  rw [if_pos hpl] at h
+  refine ⟨hpl, ?_⟩
   revert h
   match hA : pty.stripPis nP with
   | none => intro h; exact nomatch h
@@ -543,7 +551,7 @@ theorem checkProjFn_inv {env' env₁ : Env md} {T ctorName : Key md}
         .ok (cvj, mcv) ∧
       ∃ pty, (checkProjTy env' T ctorName lps mcv.type nP nF : CheckM md _) =
         .ok pty ∧
-      (∃ u : Unit, (checkProjShape pty cvj.type nP nF : CheckM md _)
+      (∃ u : Unit, (checkProjShape pty cvj.type nP nF cvj.levelParams : CheckM md _)
         = .ok u) ∧
       i < nF ∧
       ∃ rhsA, checkProjRule (fueledOps mode F) env' pty cvj lps nP nF i =
@@ -566,7 +574,7 @@ theorem checkProjFn_inv {env' env₁ : Env md} {T ctorName : Key md}
   | ok pty => ?_
   rw [hty] at h
   try dsimp only at h
-  cases hshape : (checkProjShape pty cvj.type nP nF : CheckM md Unit) with
+  cases hshape : (checkProjShape pty cvj.type nP nF cvj.levelParams : CheckM md Unit) with
   | error e => rw [hshape] at h; exact nomatch h
   | ok u0 => ?_
   rw [hshape] at h

@@ -317,6 +317,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env md)
     (pty.stripPis (nP + 1)).isSome = true ∧
     i < nF ∧
     (pty.stripPis nP).isSome = true ∧
+    Expr.recRulePlain pty nP nP nP cvj.levelParams = true ∧
     (∃ cbinders cbody,
       cvj.type.stripPis (nP + nF) = some (cbinders, cbody) ∧
       cbody.getAppArgs.length = nP ∧

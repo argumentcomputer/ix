@@ -434,7 +434,7 @@ theorem projFnRun_of {env' env₁ : Env md} {μ : CheckMode}
     checkProjLookups_inv hlk
   obtain ⟨hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1⟩ :=
     checkProjTy_inv hty
-  obtain ⟨abinders, arest, cbindersR, cbody, hstripP, hCstrip,
+  obtain ⟨hplP, abinders, arest, cbindersR, cbody, hstripP, hCstrip,
     hcbodyHead, hcbodyArity⟩ := checkProjShape_inv hshape
   obtain ⟨raw, rbinders, cbindersR2, cbody2, hraw, hrawnf, hrawb,
     hrawann, hrlp, hrres, hrhsb, hrhsnf, hrhsAstrip, hCstrip2,
@@ -453,7 +453,7 @@ theorem projFnRun_of {env' env₁ : Env md} {μ : CheckMode}
   refine ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps,
     (by rw [hpnone]; rfl), hTf, heqf, hptyB, (by rw [hround]; simp),
     hptyres, hptyb, hptyf, hptylp, hstrip1, hilt,
-    (by rw [hstripP]; rfl),
+    (by rw [hstripP]; rfl), hplP,
     ⟨cbindersR, cbody, hCstrip, hcbodyArity, hcbodyHead, hrhsnf,
       hrhsb, hrlp, hrres, ⟨rbinders, hrhsAstrip, ?_⟩,
       ⟨rhsTy, hity⟩,

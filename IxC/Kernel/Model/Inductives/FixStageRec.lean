@@ -584,6 +584,7 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
     (hmI : mI = p.nP + 1 + ctorsA.length + p.nIdx) (hrP : rP = p.nP + 1 + ctorsA.length)
     (hmIp : p.majorIdx = mI) (hrPp : p.rulePrefix = rP)
     (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
+    (hplAll : ctorsA.all (fun c => Expr.recRulePlain cvRa.type mI rP p.nP c.1.levelParams) = true)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     {caps : IndCaps md}
@@ -1101,7 +1102,10 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
         subst h1 h2 h3 hrules
         obtain ⟨j, cA, rhs, hj, -, rfl⟩ := Ix.Kernel.sumRules_getElem? hr
         obtain ⟨hf, -, -⟩ := hcf j cA hj
-        exact ⟨Ix.Kernel.RuleCtorOk.of_ifPlain hf rfl id, fun hb => hb, fun hb => hb⟩))
+        have hpl := List.all_eq_true.mp hplAll cA (List.mem_of_getElem? hj)
+        dsimp only at hpl
+        exact ⟨Ix.Kernel.RuleCtorOk.of_plain hf (by simp [Ix.Kernel.recRuleBits, hpl]) hpl,
+          fun hb => hb, fun hb => hb⟩))
     (fun ψ k => AnnotTerm.liftN_eq_self _ (Term.bvarsBelow.mono (Nat.zero_le k) (hAcl ψ)) 1)
     hAparams (fun ψ ρ => (hleafF ψ ρ).1.1) (fun ψ ρ => (hleafF ψ ρ).1.2) (fun ψ => ⟨_, hreadR ψ⟩)
     ?_ ?_ ?_ ?_

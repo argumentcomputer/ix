@@ -873,12 +873,15 @@ theorem checkProjTyS_sim {env' : Env md} {T ctorName : Key md}
   exact SimC.pure hs rfl
 
 /-- `checkProjShape` (operation-free) as a `SimC`. -/
-theorem checkProjShapeS_sim {pty cty : Expr md} {nP nF : Nat}
+theorem checkProjShapeS_sim {pty cty : Expr md} {nP nF : Nat} {cjLps : List LevelParam}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
-      (checkProjShape pty cty nP nF : (CheckCM md) _)
-      (checkProjShape pty cty nP nF : FueledM md _) := by
+      (checkProjShape pty cty nP nF cjLps : (CheckCM md) _)
+      (checkProjShape pty cty nP nF cjLps : FueledM md _) := by
   unfold checkProjShape
+  by_cases h0 : Expr.recRulePlain pty nP nP nP cjLps = true
+  case neg => simp only [if_neg h0]; exact SimC.throw_bind
+  simp only [if_pos h0]
   match h1 : pty.stripPis nP with
   | none => exact SimC.throw
   | some (abinders, arest) => ?_

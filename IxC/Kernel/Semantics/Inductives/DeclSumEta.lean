@@ -85,7 +85,7 @@ theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {p₀ : Ix.Kernel.NativeParts md} (hE : EtaFamiliesClosed env)
     (h : DeclNativeRun μ F env p₀ env₂) : EtaFamiliesClosed env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
-    hCtors, -, hcaps, -, -, -, -, -, hRec, hTbl⟩ := h
+    hCtors, -, hcaps, -, -, -, -, -, hRec, -, hTbl⟩ := h
   obtain ⟨cvT, s, hTn, -, hcvT, rfl, rfl, -⟩ := Ix.Kernel.checkSumInd_shape hInd
   obtain ⟨hfT, -, -, -, -, -, _, _, _, -, -, -, -, -, hTeq⟩ :=
     Ix.Kernel.checkConstantVal_inv hcvT

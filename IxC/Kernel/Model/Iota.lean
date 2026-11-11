@@ -41,6 +41,8 @@ recursor's arguments followed by the constructor's, and the readings are `bvar i
 
 namespace Ix.Kernel
 
+open SetTheory
+
 universe w
 
 section
@@ -398,8 +400,8 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
   have hRv : R = cvalOf m.base2.acval r (Level.substFn φ cv.levelParams us) := by
     cases hR with
     | const hfr _ => rw [hf] at hfr; cases hfr; rfl
-  obtain ⟨hlsLen, hKv⟩ : ls.length = cvj.levelParams.length ∧
-      K = cvalOf m.base2.acval rl.ctor (Level.substFn φ cvj.levelParams ls) := by
+  obtain ⟨hlsLen, hKv⟩ : ls.length = cvC.levelParams.length ∧
+      K = cvalOf m.base2.acval rl.ctor (Level.substFn φ cvC.levelParams ls) := by
     cases hK with
     | const hfk hlen => rw [hC] at hfk; cases hfk; exact ⟨hlen, rfl⟩
   -- the stored types and the right-hand side are closed
@@ -410,9 +412,9 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
     rw [Expr.hasFvar_instantiateLevelParams]; exact hwfR.1
   have hTb : (cv.type.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
     rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwfR.2.2.2.1
-  have hTCf : (cvj.type.instantiateLevelParams cvj.levelParams ls).hasFvar = false := by
+  have hTCf : (cvC.type.instantiateLevelParams cvC.levelParams ls).hasFvar = false := by
     rw [Expr.hasFvar_instantiateLevelParams]; exact hwfC.1
-  have hTCb : (cvj.type.instantiateLevelParams cvj.levelParams ls).looseBVarsBounded 0 = true := by
+  have hTCb : (cvC.type.instantiateLevelParams cvC.levelParams ls).looseBVarsBounded 0 = true := by
     rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwfC.2.2.2.1
   obtain ⟨TVa, hTVa, hTVaok, -⟩ := m.constType (φ := φ) 0 r _ us hf rfl hus
   obtain ⟨TVja, hTVja, hTVjaok, -⟩ := m.constType (φ := φ) 0 rl.ctor _ ls hC rfl hlsLen
@@ -460,7 +462,7 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
     simp [ysA, Function.comp_def]
   -- the major premise
   let majA := AnnotTerm.mkAppN (m.base2.acval (RecRule.ctor rl)
-    (Level.substFn φ cvj.levelParams ls)) ysA
+    (Level.substFn φ cvC.levelParams ls)) ysA
   have hmajv : interp V ρ' majA = ys.foldl app K := by
     show interp V ρ' (AnnotTerm.mkAppN _ ysA) = _
     rw [interp_mkAppN, interp_cvalOf hcl, ← hKv]
@@ -496,7 +498,7 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
     Expr.stripPis_instantiateLevelParams_eq cv.levelParams us mI hs0 hstripR
   simp only [Expr.instantiateLevelParams] at hbodyEq
   obtain ⟨hdomEq, -, -⟩ := Expr.forallE.inj hbodyEq
-  have hls : ls = cvj.levelParams.map fun p => Level.subst cv.levelParams us (.param p) := by
+  have hls : ls = cvC.levelParams.map fun p => Level.subst cv.levelParams us (.param p) := by
     have h := hdomFn
     rw [hdomEq, Expr.getAppFn_instantiateLevelParams, hfn0] at h
     simp only [Expr.instantiateLevelParams, List.map_map] at h
@@ -571,10 +573,10 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
       simp only [List.getD] at this
       rw [this]
   -- the fired law
-  have hlev : Level.substFn φ cvj.levelParams ls = Level.substFn φ cvj.levelParams
-      (Ix.Kernel.recFireComparands rl cv.levelParams us cvj.levelParams [] rP).1 := by
+  have hlev : Level.substFn φ cvC.levelParams ls = Level.substFn φ cvC.levelParams
+      (Ix.Kernel.recFireComparands rl cv.levelParams us cvC.levelParams [] rP).1 := by
     rw [Ix.Kernel.recFireComparands_plain hplain, hls]
-  have hlawEq := (hmain cvj rl.ctorParams rl.nfields hC ls ρ' xsA ysA TVa TVja _ _
+  have hlawEq := (hmain cvC rl.ctorParams rl.nfields hC ls ρ' xsA ysA TVa TVja _ _
     hxsA_len (by rw [hysA_len, hys]) hlsLen hlev
     (fun _ _ i hi him => by
       rw [hysA_val i (by omega), hxsA_val i him]

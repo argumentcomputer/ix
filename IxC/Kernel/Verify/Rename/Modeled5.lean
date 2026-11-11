@@ -327,7 +327,7 @@ theorem checkProjFn_sim (mode : CheckMode) (hops : OpsSim P f L ops ops') {env :
   obtain ⟨hcvj, hmcv⟩ := hr
   simp only [ConstantVal.mapKeys_type]
   refine SimR.bindE (checkProjTy_sim hE hT hc lps hmcv.2 nP nF) (fun pty hpty => ?_)
-  refine SimR.bindE (checkProjShape_sim pty cvj.type nP nF) (fun _ _ => ?_)
+  refine SimR.bindE (checkProjShape_sim pty cvj.type nP nF cvj.levelParams) (fun _ _ => ?_)
   refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => SimR.throw_bind)
   refine SimR.bindE (checkProjRule_sim hops hE hpty hcvj lps nP nF i) (fun rhsA hrhsA => ?_)
   refine SimR.bindE (checkProjIota_sim mode hops hE hE hT hc lps hcvj nP nF i) (fun _ _ => ?_)

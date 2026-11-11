@@ -53,6 +53,7 @@ uses it to resolve the constants a rule right-hand side mentions. -/
     env.find? punitUnitName = some punitUnitA)
 
 /-- **A recursor rule's constructor, against the store** (`find?`): the
+rule fires (the install stores no rule it cannot certify); its
 constructor is stored with the rule's own parameter and field counts; a
 canonical (`.plain`) rule has the shape its install tested
 (`Expr.recRulePlain`: the recursor's major premise is the family at the
@@ -67,7 +68,8 @@ parameters. -/
   ∃ cvj, find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields) ∧
     (RecRule.fire r = .plain →
       Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) ∧
-    (∀ lvls pins, RecRule.fire r = .nested lvls pins → pins.length = r.ctorParams)
+    (∀ lvls pins, RecRule.fire r = .nested lvls pins → pins.length = r.ctorParams) ∧
+    RecRule.fire r ≠ .inert
 
 /-- The rule's constructor is stored. -/
 theorem RuleCtorOk.stored {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
@@ -81,8 +83,8 @@ theorem RuleCtorOk.mono {f g : Key md → Option (ConstantInfo md)} {cv : Consta
     (hkeep : ∀ (m : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) → f m = some ci → g m = some ci)
     (h : RuleCtorOk f cv mI rP r) : RuleCtorOk g cv mI rP r :=
-  let ⟨cvj, hf, hp, hn⟩ := h
-  ⟨cvj, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf, hp, hn⟩
+  let ⟨cvj, hf, hp, hn, hi⟩ := h
+  ⟨cvj, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf, hp, hn, hi⟩
 
 /-- The record at a canonical rule. -/
 theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
@@ -91,22 +93,8 @@ theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : 
     (hfire : RecRule.fire r = .plain)
     (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) :
     RuleCtorOk find? cv mI rP r :=
-  ⟨cvj, hf, fun _ => hpl, fun _ _ h => by rw [hfire] at h; exact nomatch h⟩
-
-/-- The record at a rule whose firing mode is the canonical test's verdict
-(canonical or inert). -/
-theorem RuleCtorOk.of_ifPlain {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
-    {mI rP : Nat} {r : RecRule md} {cvj : ConstantVal md} {b : Bool}
-    (hf : find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields))
-    (hfire : RecRule.fire r = if b then .plain else .inert)
-    (hb : b = true → Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) :
-    RuleCtorOk find? cv mI rP r := by
-  refine ⟨cvj, hf, fun hp => ?_, fun _ _ h => ?_⟩
-  · cases b
-    · rw [hfire] at hp; simp at hp
-    · exact hb rfl
-  · rw [hfire] at h
-    cases b <;> simp at h
+  ⟨cvj, hf, fun _ => hpl, fun _ _ h => by rw [hfire] at h; exact nomatch h,
+    by rw [hfire]; exact fun h => nomatch h⟩
 
 /-- **A stored recursor's rules against the store**: every rule's
 constructor is itself stored (blocks carry their constructors, and the

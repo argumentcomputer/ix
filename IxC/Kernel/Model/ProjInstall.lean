@@ -84,7 +84,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
   have hRid := hR
   obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps, hpnone,
     hTf, heqf, hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1,
-    hilt, hstripP, hbig, henv⟩ := hR
+    hilt, hstripP, hplP, hbig, henv⟩ := hR
   obtain ⟨cbinders, cbody, hCstrip, hcbodyArity, hcbodyHead, hrhsw,
     -- `-` at position 11: `ProjFnR`'s rule-rhs **derivation** row, no
     -- longer consumed (task #161 S10 — the reading comes from the run

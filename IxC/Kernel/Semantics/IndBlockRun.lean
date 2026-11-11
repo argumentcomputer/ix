@@ -672,7 +672,7 @@ theorem iotaRulesFactsRun {J : Judgements md}
       · -- the constructor's record: its counts, and the shape of the mode
         have hr'cp : RecRule.ctorParams r' = cnPK := by rw [hr'eq]; rfl
         have hr'nf : RecRule.nfields r' = cnFK := by rw [hr'eq]; exact hnfK
-        refine ⟨cvjK, by rw [hr'cp, hr'nf]; exact hfcS, fun hp => ?_, fun lvls pins hfireN => ?_⟩
+        refine ⟨cvjK, by rw [hr'cp, hr'nf]; exact hfcS, fun hp => ?_, fun lvls pins hfireN => ?_, ?_⟩
         · rw [hr'cp]
           rw [hr'fire] at hp
           rcases hbranch with ⟨hplain, -, -⟩ | ⟨-, hrest⟩
@@ -688,6 +688,10 @@ theorem iotaRulesFactsRun {J : Judgements md}
           obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj hfireN
           obtain ⟨-, -, -, _, _, _, _, _, -, -, -, hlen⟩ := nestedRuleShape_inv hthmN.1
           exact hlen
+        · rw [hr'fire]
+          rcases hbranch with ⟨-, hfireP, -⟩ | ⟨-, lvls₀, pins₀, hfireN₀, -⟩
+          · rw [hfireP]; exact fun h => nomatch h
+          · rw [hfireN₀]; exact fun h => nomatch h
       · -- a fired rule: the parameter bound and the rhs's reading
         intro hfire
         refine ⟨?_, fun φ => ?_⟩

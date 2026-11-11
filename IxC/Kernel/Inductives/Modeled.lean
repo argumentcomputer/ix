@@ -571,7 +571,7 @@ def checkProjFn (ops : (CheckerOps md) m) (env' : Env md) (T ctorName : Key md) 
     (nP nF i : Nat) : m (Env md) := do
   let (cvj, mcv) ← checkProjLookups env' T ctorName lps nP nF i
   let pty ← checkProjTy env' T ctorName lps mcv.type nP nF
-  checkProjShape pty cvj.type nP nF
+  checkProjShape pty cvj.type nP nF cvj.levelParams
   unless i < nF do
     throw (.invalid "projection index out of range")
   let rhsA ← checkProjRule ops env' pty cvj lps nP nF i
