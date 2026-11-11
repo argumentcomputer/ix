@@ -116,7 +116,7 @@ The ordinary commands use the formal Aiur backend. The retired backend's
 `--legacy` flag, the `--formal` alias and `--interp` have been removed:
 
 ```sh
-ix prepare          # once per source revision: certified artifacts
+lake build ix       # compiles the certified programs once per source revision
 ix check Nat.add_comm
 ix prove Nat.add_comm
 ix verify <proof-address>
@@ -132,9 +132,9 @@ The CLI compiles a certified program with the compiler linked into `ix`
 (`Ix.FormalCompiler`, which runs the exporters' own `IxVM.compilePackage` and
 `MultiStark.compilePackage`) and caches the package by the compiler's identity
 and the program's digest, in the `.lake/aiur` of the checkout `ix` was built
-in, so commands work from any directory. `ix prepare` does this ahead of time
-and selects the artifacts for the native executors that the next `lake build
-ix` links; otherwise the first command that needs a program compiles it, which
+in, so commands work from any directory. `lake build ix` does this ahead of
+time, before it generates the native executors from the same packages;
+otherwise the first command that needs a program compiles it, which
 takes about ten minutes for IxVM. Each command loads a package once and
 prepares its verifying system once; see
 [direct FFI](formal-aiur-direct-ffi.md). The prover runs inside `ix` as a linked
