@@ -5,6 +5,7 @@ import Ix.Cert.CompileCorrect
 import Ix.Cert.ConversionValues
 import Ix.Cert.Hybrid
 import Ix.Cert.ReaderClosureKeys
+import Ix.Cert.TableAdmission
 import Ix.Compile.ReadyCompile
 import Ix.CompileCertified
 import Ix.HostAdmission.Theorems
@@ -20,6 +21,7 @@ import Ix.RoleBinding.Generate
 bounds every declaration they reach. The modules named here are reached by
 none of them, or only in part:
 * the computed closure (`Ix.Cert.Closure`);
+* the executed admission of a role table (`Ix.Cert.TableAdmission`);
 * the theorems of the artifact and host admission entries
   (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`);
 * parallel canonical record decoding used by artifact-specific generation
@@ -46,6 +48,7 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 
 #guard_module_axioms
   Ix.Cert.Closure
+  Ix.Cert.TableAdmission
   Ix.HostAdmission.Theorems
   Ix.RoleBinding.ArtifactOrderTheorems
   Ix.RoleBinding.ArtifactTheorems
@@ -87,5 +90,6 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 #guard_kernel_axioms Ix.Kernel.checkDecls_consistent [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.no_proof_of_False_cached_userAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.TableAdmission.tableAdmitted_of_check [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert

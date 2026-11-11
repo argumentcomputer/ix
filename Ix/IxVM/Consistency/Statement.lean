@@ -6,6 +6,8 @@ import IxC.Kernel.Model.Denotes
 import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
+import Aiur.WireMemory
+import Aiur.Memory.Partition
 
 /-! # `IxVM.consistent`: the IxVM circuit accepts only claims with a model
 
@@ -17,9 +19,11 @@ another role table or user axioms, `eval`) are not covered.
 
 Suppose the verifier's checks hold for the deployed IxVM circuit on at most
 `2^39` rows (`CircuitSound`, reused from `Ix.IxVM.Refinement.Statement`), for a
-public claim digest whose claim is `check` or `checkEnv` under the default role
-binding, with the binding validated, no user axioms and no assumed leaves
-(`InScope`). Then either the run hashed a BLAKE3 collision, exhibited from the
+public claim digest whose claim is `check` or `checkEnv` that validates its role
+table, with no user axioms and no assumed leaves (`InScope`), and every role table
+the reader reads it under (the default table, or one the kernel admits with its
+bound constants checked: `ReaderTable`, `TableAdmitted`). Then either the run
+hashed a BLAKE3 collision, exhibited from the
 trace (`View.HashedCollision`, reused), or there is an environment `env` that
 
 * is read from the records the run loaded (`LoadedBy`: every record and blob is a
@@ -32,10 +36,12 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   annotation of its type, and with the declaration's own value, counts and
   recursor rules (`StoredAs`, `Annotates`);
 * contains each claimed constant at its key, stored as declared (`SeedStored`).
-  Every seed is in Lean's logic:
+  Every seed is in Lean's logic and none is an inert axiom:
   IxVM refuses a claim whose seed record, or its block, is unsafe or `partial`
-  (`KernelClaim::assert_claimable`; `OutsideLogicAt`), and L6
-  carries the refusal (`ClaimPhase`);
+  (`OutsideLogicAt`), or whose seed the role table binds to an inert role
+  (`InertAt`: `sorryAx` and Lean's compiler-trust axioms, which install nothing),
+  both in `KernelClaim::assert_claimable`, and L6 carries the refusals
+  (`ClaimPhase`);
 * has a claimed sub-environment (`claimedEnv`: without the model families'
   auxiliary constants) with a model in every set theory:
   `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
@@ -67,7 +73,7 @@ Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 | L3 term operations | `L3` | given `Levels`, `Terms`: substitution and lifting refine the kernel's |
 | L4 core | `L4` | given L1 to L3, `Core`: whnf, conversion and inference refine `Rules.Red`, `DefEq`, `Infer` |
 | L5 declarations | `L5` | given L1 to L4, `Decls`: each accepted declaration's install preserves an invariant giving `EnvModelOk` |
-| L6 claims and roles | `L6` | given L1, `ClaimPhase`: an in-scope claim's run refused seeds outside Lean's logic and walked the closure of its seeds under the default table |
+| L6 claims and roles | `L6` | given L1, `ClaimPhase`: an in-scope claim's run refused seeds outside Lean's logic and walked the closure of its seeds under the reader's role table |
 | L7 assembly | `L7` | given L1, L5, L6: the source-level statement |
 
 Layers communicate through `Seams`, the representation relations the layer
@@ -149,11 +155,13 @@ def L0 : Prop :=
           CallsInROM (compiled.traceROM rom) calls ∧
           MemoCallsAtMost source (compiled.traceROM rom) calls (2 ^ 39)
 
-/-- **A bounded derivation**: its calls, read in some ROM, have at most `2^39`
-distinct memoized calls. A sub-derivation of a bounded derivation is bounded
-(its calls are among the derivation's). -/
+/-- **A bounded derivation**: its calls, read in some valid ROM, have at most
+`2^39` distinct memoized calls. The ROM must be valid (no address holds two
+values): in an invalid one, lists of different lengths could share a key, and the
+bound would say nothing. A sub-derivation of a bounded derivation is bounded (its
+calls are among the derivation's). -/
 def Bounded (calls : List (Call IxVM.F)) : Prop :=
-  ∃ rom : Aiur.ROM IxVM.F, MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
+  ∃ rom : Aiur.ROM IxVM.F, rom.Valid ∧ MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
 
 /-- **Source-level soundness for `P`, over bounded derivations**: `SourceSound`
 restricted to observed `verify_claim` derivations with at most `2^39` distinct
@@ -178,33 +186,38 @@ theorem circuitSound_of_bounded (h0 : L0) {P : List (Call IxVM.F) → Digest →
   obtain ⟨value, heap, calls, observed, -, carried, memo⟩ :=
     h0 compiled physical certified bits plan activated (List.mem_singleton.mpr rfl) valid signed
       rooted outside bound checked arguments decoded
-  exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed ⟨_, memo⟩⟩
+  exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed
+    ⟨compiled.traceROM rom, Aiur.WireROM.decode_valid (Aiur.WidthROM.toWireROM_valid valid _ _), memo⟩⟩
 
 /-! ## The claims in scope -/
 
-/-- **The default context**: the claim commits to the default role table's
-address (`Ix.Kernel.Admission.defaultBinding`), validates it
-(`bindingAssumed = false`, validator 3) and names no user axioms. -/
-def DefaultContext (ctx : ClaimContext) : Prop :=
-  (∃ b, Ix.Kernel.Admission.defaultBinding = .ok b ∧ ctx.binding = b.address) ∧
-    ctx.bindingAssumed = false ∧ ctx.axioms = none
-
-/-- **The claims covered**: `check` and `checkEnv` in the default context, with no
-assumed leaves. -/
+/-- **The claims covered**: `check` and `checkEnv` that validate their role table
+(`bindingAssumed = false`, validator 3), name no user axioms and assume no
+leaves. Which tables are covered is `ReaderTable`'s. -/
 def InScope : Claim → Prop
-  | .check ctx _ asm => DefaultContext ctx ∧ asm = none
-  | .checkEnv ctx _ asm => DefaultContext ctx ∧ asm = none
+  | .check ctx _ asm => ctx.bindingAssumed = false ∧ ctx.axioms = none ∧ asm = none
+  | .checkEnv ctx _ asm => ctx.bindingAssumed = false ∧ ctx.axioms = none ∧ asm = none
   | _ => False
 
 /-- **A claim's seeds, and the view its reader holds**: for `check ctx a`, the
 seed `a` and no tree; for `checkEnv ctx root`, the leaves of a tree whose root is
-`root`, the view holding that tree. The collision escape is relative to the view,
-so a reader's tree whose images collide with what the run hashed is covered. -/
+`root`, the view holding that tree. The view's records are the reader's (the role
+table's constants, for `ReaderTable`). The collision escape is relative to the
+view, so a reader's tree or record whose image collides with what the run hashed
+is covered. -/
 def ClaimSeeds : Claim → View → List Address → Prop
-  | .check _ a _, V, seeds => V = { env := {} } ∧ seeds = [a]
+  | .check _ a _, V, seeds => V.trees = [] ∧ seeds = [a]
   | .checkEnv _ root _, V, seeds =>
-    ∃ t, V = { env := {}, trees := [t] } ∧ treeRoot t = root ∧ seeds = treeLeaves t
+    ∃ t, V.trees = [t] ∧ treeRoot t = root ∧ seeds = treeLeaves t
   | _, _, _ => False
+
+/-- **The role table the reader reads a claim under**: a binding `b` at the
+claim's address, which is the default table (`Ix.Kernel.Admission.defaultBinding`)
+or a table the kernel admits with its bound constants checked in the reader's
+records (`TableAdmitted`). -/
+def ReaderTable (c : Claim) (V : View) (b : Binding) : Prop :=
+  (∃ ctx, c.context? = some ctx ∧ b.address = ctx.binding) ∧
+    (Ix.Kernel.Admission.defaultBinding = .ok b ∨ TableAdmitted V b)
 
 /-! ## The environment read from the records the run loaded -/
 
@@ -218,13 +231,17 @@ def LoadedBy (calls : List (Call IxVM.F)) (E : Ixon.Env) : Prop :=
 /-- **The kernel's reading of the closure of `seeds` in `E`** under the role
 table `b` (the trusted component, as `AcceptsIn` uses it): the table
 admitted, the compiled closure in an order with no record before one it
-references, the table's prelude, and `prepareWith`'s evidence and declarations. -/
+references, the table's prelude, and `prepareWith`'s evidence and declarations.
+The closure also starts from the theorems the table's evidence names that `E`
+holds, so that an operation's evidence reads from the records the run loaded (a
+table's evidence theorems need not be among the claim's references). -/
 def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
     (ev : Ix.Kernel.Evidences .anon) (ds : Array (Ix.Kernel.Declaration .anon)) : Prop :=
   ∃ (t : Ix.Kernel.RoleTable) (order : List Address) (pre : Ix.Kernel.Reader.Prelude .anon)
     (limits : Ix.Kernel.Admission.Limits),
     Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-    Ix.Cert.ClosureOrderAt t E seeds order ∧
+    Ix.Cert.ClosureOrderAt t E
+      (fun a => seeds a ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) order ∧
     Ix.Kernel.Reader.preludeFor t = .ok pre ∧
     Ix.Kernel.Admission.prepareWith Address.admissionHash b pre limits (Ix.Cert.recordsOf E order)
       (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)
@@ -258,15 +275,25 @@ theorem Annotates.const_inv {t' : Ix.Kernel.Expr .anon} {n : Ix.Kernel.Key .anon
   cases h with
   | const => rfl
 
+/-- **The key of an inert axiom role** (`Ix.Kernel.Role.inert`: `sorryAx` and Lean's
+compiler-trust axioms). The kernel's fold installs nothing for such a declaration, and
+no accepted constant uses one. -/
+def inertKey : Ix.Kernel.Key .anon → Bool
+  | .role r => r.inert
+  | _ => false
+
 /-- **The constants a declaration installs**, as the reader declares them, by
 `Ix.Kernel.Semantics.DeclRun`'s dispatch: a definition, a theorem and an axiom
 install themselves; an opaque installs an axiom of its type (the kernel never
 unfolds an opaque, so it keeps no value); a block the fold recognises as pinned
 installs its pin, and any other block its members; the quotient package's `type`
 record installs the pinned quotient block, and its other records install nothing
-of their own, nor does the `Quot.sound` record (a slot of that block). -/
+of their own, nor does the `Quot.sound` record (a slot of that block), nor an
+inert axiom role's record (`inertKey`: the fold installs nothing for `sorryAx` and
+declines Lean's compiler-trust axioms). -/
 def installs : Ix.Kernel.Declaration .anon → List (Ix.Kernel.ConstantInfo .anon)
-  | .axiomDecl cv => if cv.name = Ix.Kernel.quotSoundName then [] else [.axiomInfo cv]
+  | .axiomDecl cv =>
+    if cv.name = Ix.Kernel.quotSoundName ∨ inertKey cv.name = true then [] else [.axiomInfo cv]
   | .defnDecl cv value hint => [.defnInfo cv value hint]
   | .thmDecl cv value => [.thmInfo cv value]
   | .opaqueDecl cv _ => [.axiomInfo cv]
@@ -381,6 +408,14 @@ def OutsideLogicAt (E : Ixon.Env) (a : Address) : Prop :=
   ∃ c, Ix.Cert.recordAt E a = some c ∧
     (¬ InLogic c ∨ ∃ cb, Ix.Cert.recordAt E (Ix.Cert.ownerOf a c) = some cb ∧ ¬ InLogic cb)
 
+/-- **`a` is an inert axiom of the role table `t`**: `t` binds an inert role
+(`Ix.Kernel.Role.inert`: `sorryAx` and Lean's compiler-trust axioms) to it. Such a
+declaration installs nothing (`installs`, as the kernel's fold), so no claim can
+certify it: IxVM refuses it as a seed (`KernelClaim::assert_claimable`'s
+`role_is_inert`), which L6 states (`ClaimPhase`). -/
+def InertAt (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
+  ∃ r : Ix.Kernel.Role, r.inert = true ∧ t.addressOf? r = some a
+
 /-- **A constant of a model family**: an auxiliary key (`Key.aux`) that is not a
 projection table. Model families (the in-process modeller's `_model`
 declarations, their ι and projection theorems) are the checker's means; a
@@ -400,28 +435,42 @@ def claimedEnv (env : Ix.Kernel.Env .anon) : Ix.Kernel.Env .anon :=
   ⟨env.consts.filter fun ci => !isModelAux ci⟩
 
 /-- **The consistency conclusion**: an environment read from the records the run
-loaded, under the default role table, from the claim's seeds, installing every
+loaded, under the role table `b`, from the claim's seeds, installing every
 declaration as declared (`Installs`) and storing every claimed constant, whose
 claimed sub-environment (`claimedEnv`: without the model families' auxiliary
-constants, which the run checks as advice) has a model in every set theory. A block seed is covered by its members, which
-are stored. Every seed is in Lean's logic: IxVM refuses the others
-(`KernelClaim::assert_claimable`, carried by L6). -/
-def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
-  ∃ (b : Binding) (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
+constants, which the run checks as advice) has a model in every set theory. A
+block seed is covered by its members, which are stored. Every seed is in Lean's
+logic and none is an inert axiom (`InertAt`; such an axiom installs nothing): IxVM refuses the
+others (`KernelClaim::assert_claimable`, carried by L6). -/
+def ConsistentRead (calls : List (Call IxVM.F)) (b : Binding) (seeds : List Address) : Prop :=
+  ∃ (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
-    Ix.Kernel.Admission.defaultBinding = .ok b ∧ LoadedBy calls E₀ ∧ Draws E E₀ ∧
+    LoadedBy calls E₀ ∧ Draws E E₀ ∧
     ReadIn b E (fun a => a ∈ seeds) ev ds ∧ Installs ds.toList env ∧
     (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
     ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V (claimedEnv env))
 
-/-- **What a verify_claim derivation establishes**: for every claim
-byte string whose digest packs to `d` and decodes to an in-scope claim, and every
-reader's view of its seeds, the run hashed a collision, or `ConsistentRead`. -/
+/-- **The images the reading takes from the kernel's committed data**, not from the
+run: the records and blobs behind every reading (`Ix.Kernel.Reader.RoleData`: the
+prelude, the default table's evidence records and their blobs). The run loads them
+by address, so a different byte string it hashes at one of their addresses is a
+collision with them (`View.HashedCollision`). -/
+def committedImages : List ByteArray :=
+  ((Ix.Kernel.Reader.RoleData.prelude ++ Ix.Kernel.Reader.RoleData.evidence ++
+      Ix.Kernel.Reader.RoleData.blobs).toList.map (·.2)).filterMap bytesOfHex
+
+/-- **What a verify_claim derivation establishes**: for every claim byte string
+whose digest packs to `d` and decodes to an in-scope claim, every reader's view of
+its seeds and every role table the reader reads it under (`ReaderTable`), the run
+hashed a collision (with the claim's bytes, the table's, the view's data or the
+committed images the reading uses, `committedImages`), or `ConsistentRead`. -/
 def ConsistencySpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
   ∀ (bytes : ByteArray) (c : Claim), Claim.de bytes = .ok c →
     packDigest (Address.blake3Pure bytes) = d → InScope c →
-      ∀ (V : View) (seeds : List Address), ClaimSeeds c V seeds →
-        V.HashedCollision [bytes] calls ∨ ConsistentRead.{u} calls seeds
+      ∀ (V : View) (seeds : List Address) (b : Binding), ClaimSeeds c V seeds →
+        ReaderTable c V b →
+        V.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
+          ConsistentRead.{u} calls b seeds
 
 /-- **The deployed IxVM circuit accepts only claims whose claimed environment has a
 model**: `CircuitSound` of `ConsistencySpec`. -/
@@ -433,8 +482,9 @@ def CircuitConsistent : Prop := CircuitSound ConsistencySpec.{u}
 environment is consistent (`Ix.Kernel.Consistent`), and every claimed constant
 that is not a block has a reader's type, and a stored type, other than `False`. -/
 theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
-    {calls : List (Call IxVM.F)} {seeds : List Address} (h : ConsistentRead.{u} calls seeds) :
-    ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
+    {calls : List (Call IxVM.F)} {b : Binding} {seeds : List Address}
+    (h : ConsistentRead.{u} calls b seeds) :
+    ∃ (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
       (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
       ∀ a ∈ seeds, IsBlockAt E a ∨
         ∃ (k : Ix.Kernel.Key .anon) (ci₀ ci : Ix.Kernel.ConstantInfo .anon),
@@ -442,9 +492,9 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
           env.find? k = some ci ∧
           ci₀.toConstantVal.type ≠ .const Ix.Kernel.falseName [] ∧
           ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] := by
-  obtain ⟨b, E, -, -, ds, env, -, -, -, -, -, hseeds, hmodel⟩ := h
+  obtain ⟨E, -, -, ds, env, -, -, -, -, hseeds, hmodel⟩ := h
   have hcons : Ix.Kernel.Consistent (claimedEnv env) := Ix.Kernel.consistent_of_model V (hmodel V)
-  refine ⟨b, E, ds, env, hcons, fun a ha => ?_⟩
+  refine ⟨E, ds, env, hcons, fun a ha => ?_⟩
   rcases hseeds a ha with hblock | ⟨k, ci₀, ci, hkey, hname, hdecl, hfind, hst⟩
   · exact Or.inl hblock
   · have hmem0 : ci ∈ env.consts := List.mem_of_find?_eq_some hfind
@@ -469,9 +519,10 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
     {calls : List (Call IxVM.F)} {d : Digest} (h : ConsistencySpec.{u} calls d)
     {bytes : ByteArray} {c : Claim} (hde : Claim.de bytes = .ok c)
     (hd : packDigest (Address.blake3Pure bytes) = d) (hc : InScope c)
-    {W : View} {seeds : List Address} (hs : ClaimSeeds c W seeds) :
-    W.HashedCollision [bytes] calls ∨
-      ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
+    {W : View} {seeds : List Address} {b : Binding} (hs : ClaimSeeds c W seeds)
+    (hb : ReaderTable c W b) :
+    W.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
+      ∃ (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
         (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
         ∀ a ∈ seeds, IsBlockAt E a ∨
           ∃ (k : Ix.Kernel.Key .anon) (ci₀ ci : Ix.Kernel.ConstantInfo .anon),
@@ -479,7 +530,7 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
             env.find? k = some ci ∧
             ci₀.toConstantVal.type ≠ .const Ix.Kernel.falseName [] ∧
             ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] :=
-  (h bytes c hde hd hc W seeds hs).elim Or.inl
+  (h bytes c hde hd hc W seeds b hs hb).elim Or.inl
     fun hr => Or.inr (ConsistentRead.seeds_not_false V hr)
 
 /-! ## The kernel's model invariant at the ends of the fold -/
@@ -684,27 +735,30 @@ def Decls : Prop :=
 /-- **Obligation L5** (declarations), given L1 to L4. -/
 def L5 : Prop := Records S → Levels → Terms S → Core S → Decls.{u} S
 
-/-- **L6's content: an in-scope claim's run refused seeds outside Lean's logic
-and walked the closure of its seeds** (`KernelClaim`, `KernelRoles`,
-`KernelRoleSpec`): for a bounded `verify_claim` derivation, every claim byte
-string with the public digest that decodes to an in-scope claim, and every
-reader's view of its seeds, the run hashed a collision, or the default role table
-admits, no seed's loaded record or block is unsafe or `partial` (the refusal
-`KernelClaim::assert_claimable`, which runs after the context loads and before
-any walk; both records are loaded, so they are in `LoadedBy calls E₀`),
-and the run walked the closure of the seeds in records it loaded (`Seams.Walked`). -/
+/-- **L6's content: an in-scope claim's run read its role table, refused seeds
+outside Lean's logic and inert seeds, and walked the closure of its seeds**
+(`KernelClaim`, `KernelRoles`, `KernelRoleSpec`): for a bounded `verify_claim`
+derivation, every claim byte string with the public digest that decodes to an
+in-scope claim, every reader's view of its seeds and every role table the reader
+reads it under (`ReaderTable`), the run hashed a collision, or the table admits
+(`t`), no seed's loaded record or block is unsafe or `partial` and no seed is an
+inert axiom of `t` (`InertAt`; the refusals of `KernelClaim::assert_claimable`,
+which runs after the context loads and before any walk; both records are loaded,
+so they are in `LoadedBy calls E₀`), and the run walked the closure of the seeds
+in records it loaded, under `t` (`Seams.Walked`). -/
 def ClaimPhase : Prop :=
   ∀ (d : Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
     (calls : List (Call IxVM.F)),
     ObsFn IxVM.source.world verifyClaim [digestValue d] [] value heap calls → Bounded calls →
     ∀ (bytes : ByteArray) (c : Claim), Claim.de bytes = .ok c →
       packDigest (Address.blake3Pure bytes) = d → InScope c →
-      ∀ (V : View) (seeds : List Address), ClaimSeeds c V seeds →
-        V.HashedCollision [bytes] calls ∨
-        ∃ (b : Binding) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env),
-          Ix.Kernel.Admission.defaultBinding = .ok b ∧
+      ∀ (V : View) (seeds : List Address) (b : Binding), ClaimSeeds c V seeds →
+        ReaderTable c V b →
+        V.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
+        ∃ (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env),
           Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-          LoadedBy calls E₀ ∧ (∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a) ∧ S.Walked calls t E₀ seeds
+          LoadedBy calls E₀ ∧ (∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a ∧ ¬ InertAt t a) ∧
+          S.Walked calls t E₀ seeds
 
 /-- **Obligation L6** (claims and roles), given L1. -/
 def L6 : Prop := Records S → ClaimPhase S
