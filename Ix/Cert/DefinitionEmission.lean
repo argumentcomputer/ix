@@ -239,7 +239,8 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
   rw [hs] at built
   obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
   cases Except.ok.inj returned
-  obtain ⟨erased, reads⟩ := build_reads cx param self _ _ _ block hb
+  obtain ⟨erased, reads⟩ := build_reads cx param self _ _ _ _ hb
+  rw [SharingRoots.memberReader_read_same_tables _ { block with binders := #[] } block _ _ rfl rfl rfl] at reads
   -- the record's definitions keep the payloads' headers
   have hblock : ∃ ts : List Ixon.Definition, block.info = .muts (ts.map Ixon.MutConst.defn).toArray ∧
       List.Forall₂ (fun t q => t.kind = q.kind ∧ t.safety = q.safety ∧ t.lvls = q.lvls) ts qs := by
