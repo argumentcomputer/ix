@@ -426,8 +426,8 @@ Hand-built records Lean cannot produce, at a nested block the in-process
 modeller models (`NB4`, whose index domain mentions a parameter): the block's
 recursor records altered over the decoded records, each under its key, and
 checked by the logical entry (`Admission.checkConstants`). Each must be
-refused, by the reader or the checker. The labels name the shape and the
-forgery (`modeled-<shape>-forged-<what>`). -/
+refused, by the reader or the checker (a K flag on a nested block by the reader).
+The labels name the shape and the forgery (`modeled-<shape>-forged-<what>`). -/
 
 structure ForgedCase where
   label : String
@@ -437,6 +437,11 @@ structure ForgedCase where
   forge : Ixon.Recursor → Ixon.Recursor
   /-- the record to forge, by a name of its block's recursors -/
   target : Lean.Name
+  /-- the refusal expected, by its message (any refusal by default) -/
+  refusal : String → Bool := fun _ => true
+
+/-- `s` contains `piece`. -/
+def hasInfix (s piece : String) : Bool := (s.splitOn piece).length > 1
 
 /-- A recursor record, or a record of recursors, with `f` applied to each. -/
 def forgeRecursors (f : Ixon.Recursor → Ixon.Recursor) (c : Ixon.Constant) : Except String Ixon.Constant :=
@@ -462,7 +467,10 @@ def forgedCases : List ForgedCase := [
   { label := "modeled-nested-parameter-index-forged-fields", seeds := [seed "NB4"],
     target := seed "NB4.rec", forge := fun r => match r.rules[1]? with
       | some b => { r with rules := r.rules.set! 1 { b with fields := b.fields + 1 } }
-      | none => r } ]
+      | none => r },
+  { label := "modeled-nested-parameter-index-forged-k", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => { r with k := true },
+    refusal := (hasInfix · "of a nested block declares k := true") } ]
 
 def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
   let started ← IO.monoMsNow
@@ -472,7 +480,8 @@ def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
   let result := Ix.Kernel.Admission.checkConstants Address.blake3 table constants input.blobs input.hints.lookup
   let (outcome, detail, passed) := match result with
     | .ok _ => ("accept", "", false)
-    | .error e => (match e.outcome with | .rejected => "reject" | .declined => "decline", toString e, true)
+    | .error e => (match e.outcome with | .rejected => "reject" | .declined => "decline", toString e,
+        test.refusal (toString e))
   let ms := (← IO.monoMsNow) - started
   IO.println (Lean.Json.mkObj [
     ("case", Lean.toJson test.label), ("expected", Lean.toJson "refuse"),
@@ -480,7 +489,7 @@ def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
     ("passed", Lean.toJson passed), ("records", Lean.toJson constants.length), ("ms", Lean.toJson ms),
     ("leanVersion", Lean.toJson Lean.versionString)]).compress
   unless passed do
-    IO.eprintln s!"{test.label}: expected a refusal, got {outcome}"
+    IO.eprintln s!"{test.label}: expected a refusal, got {outcome}: {detail}"
   return passed
 
 def runTier (leanEnv : Lean.Environment) (test : TierCase) : IO Bool := do

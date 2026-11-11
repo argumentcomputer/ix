@@ -680,8 +680,7 @@ theorem quotient_motives {types : Array Ix.InductiveVal} {ctors : Array (Array I
         simp only at e0 hn ⊢
         rw [e0]
         simpa [InductiveUnits.srcBlock] using hn
-  rcases checks with hne | hall
-  · exact absurd hnest hne
+  have hall := checks.2 hnest
   intro j hj
   have hj' : j < (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ
       (InductiveUnits.srcBlock types ctors recs first))).recs.size := by
