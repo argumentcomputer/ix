@@ -31,7 +31,9 @@ are written as Ixon v4 bytes with the test byte writer and read through
   verifier; an inline round over many callers; a walk that copies past its
   budget; a specialisation over an exponentially shared value tree. Each must
   be refused with an ordinary error, not by running out of stack, memory or
-  time. -/
+  time. And the producer's inline-round retry: a round the re-run refuses for
+  one caller is retried without it, and a program whose retried round takes it
+  past a budget checked later compiles through the run without the retry. -/
 
 namespace IxCCTests.Recheck.Hostile
 
@@ -677,6 +679,205 @@ def betaJoinProgram (m : Nat) : Anf.Program :=
   let gd : Anf.GDef :=
     { key := .dispatch 0, ps := [{}], body := .bind Anf.freshLet (.fn [{}] (fat m)) (.join 1 false jb sw) }
   { globals := Src.NatMap.ofList [(0, gd)], size := 1, roots := [0], ctors := [], known := {} }
+
+def retryFallbackMechanism (a : Assert) : IO String := do
+  -- the producer's inline-round retry falls back to the run without it when
+  -- the run with it fails, and is not tried at all when it is off
+  let late : Bool → Except String Nat := fun r => if r then .error "a later budget" else .ok 0
+  expect a (Anf.Pipeline.withRetryFallback true late matches .ok 0)
+    "retryFallback: a run the retry makes fail is not rerun without it"
+  let onlyRetry : Bool → Except String Nat := fun r => if r then .ok 1 else .error "without"
+  expect a (Anf.Pipeline.withRetryFallback false onlyRetry matches .error _)
+    "retryFallback: with the retry off, the run with it was taken"
+  let both : Bool → Except String Nat := fun r => if r then .ok 1 else .ok 0
+  expect a (Anf.Pipeline.withRetryFallback true both matches .ok 1)
+    "retryFallback: a run with the retry that succeeds is not the one taken"
+  let never : Bool → Except String Nat := fun _ => .error "refused"
+  expect a (Anf.Pipeline.withRetryFallback true never matches .error _)
+    "retryFallback: a run that fails both ways succeeds"
+  return "retry fallback: the run without the retry is taken exactly when the run with it fails"
+
+/-- The program of `retryLater`: `E` (three constructors); the structures
+`T₁ := mk E E`, `Tᵢ₊₁ := mk Tᵢ Tᵢ` up to `T₉`, and `W := mk T₉ T₉`;
+`k (a b : E) : E := a`; `pi (w : W) : E`, the first field ten times;
+`h (q : E → T₉) : W := W.mk (q c₀) (q c₁)`; for `i < 17`,
+`bᵢ (x : E) : W := h (fun y => tᵢ)`, where `tᵢ` is the balanced `T₉` tree of
+511 constructor applications whose leaves are the `i`-th pair of `y`, `x`, `c₀`,
+`c₁`, `c₂` (so that the `bᵢ` are distinct constants); and
+`main : E := k (pi (b₀ c₀)) (k (pi (b₁ c₀)) (… (pi (b₁₆ c₀))))`. The trees are
+`share` DAGs. -/
+def retryLaterEnv : Env × Addr := Id.run do
+  let b := base 3
+  let mut e := b.env
+  -- `tys`: E, T₁ … T₉, W; `mks`: their constructors from T₁'s
+  let mut tys : Array Addr := #[b.enumI]
+  let mut mks : Array Addr := #[]
+  for _ in [0:10] do
+    let (e', blk) := block e (pairBlock tys.back!)
+    e := e'
+    tys := tys.push (V3.indcProjAddr blk 0)
+    mks := mks.push (V3.ctorProjAddr blk 0 0)
+  let (e', k) := store e
+    ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
+  e := e'
+  -- `pi`'s references: W, T₉, …, T₁, E
+  let mut pv : X := .var 0
+  for i in [0:10] do pv := .prj i.toUInt64 0 pv
+  let (e', pi) := store e
+    ⟨defn (arrow (.ref 0 #[]) (.ref 10 #[])) (lambda (.ref 0 #[]) pv), #[], tys.reverse, #[]⟩
+  e := e'
+  -- `h`'s references: E, T₉, W, W.mk, c₀, c₁
+  let q : X := arrow enumC (.ref 1 #[])
+  let hv := lambda q (.app (.app (.ref 3 #[]) (.app (.var 0) (.ref 4 #[]))) (.app (.var 0) (.ref 5 #[])))
+  let (e', h) := store e
+    ⟨defn (arrow q (.ref 2 #[])) hv, #[], #[b.enumI, tys[9]!, tys[10]!, mks[9]!, b.ctors[0]!, b.ctors[1]!], #[]⟩
+  e := e'
+  -- each `bᵢ`'s references: E, W, h, T₁.mk … T₉.mk, c₀, c₁, c₂; under `fun x => … fun y =>`,
+  -- `y` is variable 0 and `x` variable 1
+  let leaves : Array X := #[.var 0, .var 1, .ref 12 #[], .ref 13 #[], .ref 14 #[]]
+  let bRefs : Array Addr := #[b.enumI, tys[10]!, h] ++ mks.extract 0 9 ++ b.ctors
+  let mut bs : Array Addr := #[]
+  for i in [0:17] do
+    let mut sh : Array X := #[.app (.app (.ref 3 #[]) leaves[i / 5]!) leaves[i % 5]!]
+    for l in [1:9] do
+      let prev : X := .share (l - 1).toUInt64
+      sh := sh.push (.app (.app (.ref (3 + l).toUInt64 #[]) prev) prev)
+    let (e', bi) := store e
+      ⟨defn (arrow enumC (.ref 1 #[])) (lambda enumC (.app (.ref 2 #[]) (lambda enumC (.share 8)))),
+        sh, bRefs, #[]⟩
+    e := e'
+    bs := bs.push bi
+  -- `main`'s references: E, k, pi, c₀, b₀ … b₁₆
+  let call : Nat → X := fun i => .app (.ref 2 #[]) (.app (.ref (4 + i).toUInt64 #[]) (.ref 3 #[]))
+  let mut mv : X := call 16
+  for j in [0:16] do
+    mv := .app (.app (.ref 1 #[]) (call (15 - j))) mv
+  let (e', main) := store e ⟨defn enumC mv, #[], #[b.enumI, k, pi, b.ctors[0]!] ++ bs, #[]⟩
+  return (e', main)
+
+/-- The inline-round retry's fallback on a program from bytes (`retryLaterEnv`).
+The first inline round lists `main` (callees `k`, `pi` and every `bᵢ`, each about
+2,050 nodes, which `main`'s walk copies past the walk's copy budget) and each
+`bᵢ` (callee `h`). The re-run refuses the round, so without the retry the rounds
+end and nothing is inlined. With the retry the round is taken without `main`;
+the shrink step after it β-reduces each `bᵢ`'s local function at the two
+applications `h` brought in, which doubles each `bᵢ` (a second expansion of 2,045
+nodes, within the walk's budgets) and takes the whole program past the back
+end's work budget (`Anf.maxBackWork`), which is checked only after the shrink
+step: `produceOnce` with the retry refuses the program there. `produce` (and so
+`compileInput`, and `compileInputRetry` around it) falls back to the run without
+the retry, which compiles. -/
+def retryLater (a : Assert) : IO String := do
+  let (env, main) := retryLaterEnv
+  let bs := bytes env
+  let json := sidecar [("main", main)]
+  let inp ← ofErr "retryLater: ingress" (Recheck.ingress bs json [] true)
+  let cfg := Recheck.Config.forInput {} inp
+  let ps ← ofErr "retryLater: front" (Recheck.produceSource cfg inp)
+  let (lam, _) ← match Lam.erase ps.src ps.checked with
+    | .ok r => pure r
+    | .error _ => throw (IO.userError "retryLater: erasure declined")
+  -- the middle end with the retry refuses the program after the retried round's shrink step
+  match Anf.Pipeline.produceOnce { cfg.budgets with retryInline := true } lam with
+  | .ok _ => expect a false "retryLater: the middle end with the retry accepted the program"
+  | .error m => expect a ((m.splitOn "back end's work budget").length > 1) s!"retryLater: with the retry: {m}"
+  let t0 ← match Anf.Pipeline.produceOnce { cfg.budgets with retryInline := false } lam with
+    | .ok t => pure (some t)
+    | .error m => expect a false s!"retryLater: the middle end without the retry refused it: {m}"; pure none
+  -- the mechanism, step by step on the program the first round is proposed on
+  let p := cfg.budgets.shrink.params
+  if let some t0 := t0 then
+    expect a (t0.cert.steps.all fun | .inline _ => false | _ => true)
+      "retryLater: without the retry an inline round was taken"
+    let P0 ← IO.ofExcept (Anf.Pipeline.run { t0.cert with steps := t0.cert.steps.take 2 } lam)
+    let r := Anf.Inline.produce cfg.budgets.inline P0
+    expect a (!(Anf.Pipeline.Step.run p (.inline r) P0).isOk) "retryLater: the re-run accepts the first round"
+    let r' := r.filter fun e => (Anf.Pipeline.Step.run p (.inline [e]) P0).isOk
+    expect a (r'.length + 1 == r.length) s!"retryLater: the re-run refuses {r.length - r'.length} callers alone, expected one"
+    match Anf.Pipeline.Step.run p (.inline r') P0 with
+    | .error m => expect a false s!"retryLater: the re-run refuses the retried round: {m}"
+    | .ok P3 =>
+      let (_, P2, _) ← IO.ofExcept (Anf.Shrink.produce cfg.budgets.shrink P3)
+      expect a (Anf.backWork P3 ≤ Anf.maxBackWork && Anf.backWork P2 > Anf.maxBackWork)
+        s!"retryLater: back-end work {Anf.backWork P3} after the retried round, {Anf.backWork P2} after its \
+          shrink step; expected within {Anf.maxBackWork}, then past it"
+  -- the producer and the compiler fall back to the run without the retry
+  match Anf.Pipeline.produce cfg.budgets lam, t0 with
+  | .ok t, some t0 =>
+    let last := fun (t : Anf.Pipeline.Trace) => ((t.stages.getLast?).map (·.2)).getD default
+    expect a (t.cert.steps.length == t0.cert.steps.length && (last t).beq (last t0))
+      "retryLater: produce did not fall back to the run without the retry"
+  | .error m, _ => expect a false s!"retryLater: produce refused the program: {m}"
+  | _, none => pure ()
+  let (c, art) ← ofErr "retryLater: compileInputRetry" (Recheck.compileInputRetry {} inp)
+  let (c0, art0) ← ofErr "retryLater: compileInput without the retry" (Recheck.compileInput ({} : Recheck.Config).noRetry inp)
+  expect a (c.mid.steps.length == c0.mid.steps.length && art.object == art0.object)
+    "retryLater: compileInputRetry's object is not the one compiled without the retry"
+  return s!"inline-round retry, fallback: the retried round's shrink step takes the program past the back \
+    end's work budget; produce, compileInput and compileInputRetry compile it without the retry \
+    ({art.object.size}-byte object)"
+
+/-- The inline-round retry (`Anf.Pipeline.produce`, `Budgets.retryInline`), on
+`ampEnv 3 8` compiled from bytes: `f x` makes 15 calls of `k` (61 nodes, so the
+default oracle inlines it) and `g x` makes 255 calls of `k` over 256 leaves `f
+x`. The first inline round the oracle proposes lists `f` (callee `k`) and `g`
+(callees `k` and `f`); `g`'s walk copies `f` at its leaves past the walk's
+budgets, so the re-run refuses the round, and refuses `g`'s entry alone, while
+it accepts `f`'s alone. Without the retry that round ends the rounds of every
+phase and nothing is inlined; with it the round is taken without `g` and `f`
+shrinks to its parameter (behind ticks), so the program ends smaller. Both runs
+compile (each certificate replayed by `Recheck.run`). -/
+def retryRound (a : Assert) : IO String := do
+  let (env, f, g, main) := ampEnv 3 8
+  let bs := bytes env
+  let json := sidecar [("main", main)]
+  let inp ← ofErr "retry: ingress" (Recheck.ingress bs json [] true)
+  let P := inp.program
+  let (c1, a1) ← ofErr "retry: compile with the retry" (Recheck.compileInput {} inp)
+  let (c0, a0) ← ofErr "retry: compile without the retry"
+    (Recheck.compileInput ({} : Recheck.Config).noRetry inp)
+  let some fId := P.lookup f | throw (IO.userError "retry: f not ingested")
+  let some gId := P.lookup g | throw (IO.userError "retry: g not ingested")
+  let rounds := fun (c : Recheck.Cert) => c.mid.steps.filterMap fun
+    | .inline r => some r
+    | _ => none
+  expect a (rounds c0).isEmpty
+    s!"retry: without the retry {(rounds c0).length} inline rounds were taken, expected none"
+  -- the program the first round was proposed on: the steps before it, replayed
+  let before := c1.mid.steps.takeWhile fun
+    | .inline _ => false
+    | _ => true
+  let P0 ← IO.ofExcept (Anf.Pipeline.run { c1.mid with steps := before } a1.lam)
+  -- `f`'s and `g`'s globals there (pruning renumbers the globals)
+  let gidOf := fun (c : Src.CId) =>
+    (P0.globalList.find? fun (_, gd) => match gd.key with
+      | .const c' _ => c' == c
+      | _ => false).map (·.1)
+  let some gf := gidOf fId | throw (IO.userError "retry: no global for f")
+  let some gg := gidOf gId | throw (IO.userError "retry: no global for g")
+  let r := Anf.Inline.produce {} P0
+  let p := c1.mid.shrink
+  let callers := r.map (·.1)
+  expect a (callers.length == 2 && callers.contains gf && callers.contains gg)
+    s!"retry: the proposed round lists the callers {callers}, expected f ({gf}) and g ({gg})"
+  expect a (!(Anf.Pipeline.Step.run p (.inline r) P0).isOk) "retry: the re-run accepts the proposed round"
+  let rf := r.filter (·.1 == gf)
+  match Anf.Pipeline.Step.run p (.inline (r.filter (·.1 == gg))) P0 with
+  | .ok _ => expect a false "retry: the re-run accepts g's entry alone"
+  | .error m => expect a ((m.splitOn "budget exhausted").length > 1) s!"retry: g alone: {m}"
+  expect a (Anf.Pipeline.Step.run p (.inline rf) P0).isOk "retry: the re-run refuses f's entry alone"
+  -- the round taken is the proposed one without g
+  match rounds c1 with
+  | r1 :: _ =>
+    expect a (r1.map (·.1) == [gf] && r1 == rf)
+      s!"retry: the first round taken lists the callers {r1.map (·.1)}, expected f's entry alone"
+  | [] => expect a false "retry: with the retry no inline round was taken"
+  let nodes := fun (Q : Anf.Program) => Q.globalList.foldl (fun n (_, gd) => n + gd.body.nodes) 0
+  expect a (nodes a1.anf < nodes a0.anf)
+    s!"retry: {nodes a1.anf} nodes with the retry, {nodes a0.anf} without; expected fewer with it"
+  return s!"inline-round retry: the round over f and g is refused (g alone past the walk's budgets) \
+    and retried as f's entry; {(rounds c1).length} rounds and {nodes a1.anf} nodes with the retry, \
+    none and {nodes a0.anf} without; both compile"
 
 /-- The walk's copy accounting for β-reductions (2026-11-11): a local function
 the walk inlines at its applications is moved by its first expansion, which is

@@ -20,7 +20,8 @@ certificate step by step and records, over all of them, the largest
   `Specialize.maxNodes`).
 
 It fails if any reaches its budget, and prints the maxima with the headroom
-factor; `docs/compiler-design.md` ("Middle-end budgets") records them. The
+factor and the first program that reaches each; `docs/compiler-design.md`
+("Middle-end budgets") records them. The
 programs are every root of every registered corpus family (compiled with the
 roots it is compiled together with, as `tests-corpus` does) and, with all
 their sidecar roots, `k1.ixe`, `src-sortpoly`, `src-diag`, the ownership
@@ -252,50 +253,65 @@ def extraFixtures : IO (List (FilePath × FilePath)) := do
         if ← eqs.pathExists then out := out ++ [(e.path, eqs)]
   return out
 
+/-- `budget / got` to one decimal, rounded down (`7.3×`). -/
+def headroom (budget got : Nat) : String :=
+  let t := budget * 10 / got
+  s!"{t / 10}.{t % 10}×"
+
 def survey (a : Assert) : IO (Array String) := do
   let mut s : Stats := {}
+  -- each measured program with its stats, to name the one that sets each maximum
+  let mut each : Array (String × Stats) := #[]
   for path in families do
     let m ← Family.read path
     let dir : FilePath := m.directory
     for f in m.fixtures do
       for r in f.roots do
         match ← file (dir / f.closure.path) (dir / f.equations.path) (r.name :: r.together) with
-        | some t => s := s.merge t
+        | some t =>
+          s := s.merge t
+          each := each.push (s!"{m.family}/{r.name}", t)
         | none => s := { s with declined := s.declined + 1 }
   for (ixe, eqs) in ← extraFixtures do
     match ← file ixe eqs with
-    | some t => s := s.merge t
+    | some t =>
+      s := s.merge t
+      each := each.push (ixe.toString, t)
     | none => s := { s with declined := s.declined + 1 }
-  let rows : List (String × Nat × Nat) := [
-    ("largest global", s.maxGlobal, Anf.maxGlobalNodes),
-    ("largest program", s.maxProgram, Anf.maxProgramNodes),
-    ("largest copy in an inline walk", s.maxCopyInline, Anf.Walk.maxCopy),
-    ("largest copy in a shrink round", s.maxCopyShrink, Anf.Walk.maxCopy),
-    ("most firings in one walk", s.maxFires, Anf.Walk.maxFires),
-    ("most work in a specialisation step", s.maxSpecWork, Anf.Specialize.maxWork),
-    ("most nodes charged in a specialisation step", s.maxSpecNodes, Anf.Specialize.maxNodes),
-    ("most work in one walk", s.maxWalkWork, Anf.Walk.maxWalkWork),
-    ("most walk work in one inline or shrink step", s.maxStepWork, Anf.maxStepWork),
-    ("largest Lam global", s.maxLam, Anf.maxLamNodes),
-    ("deepest source term", s.maxSrcDepth, Src.maxTermDepth),
-    ("most source nodes, counted as trees", s.maxSrcVisits, Recheck.maxSrcVisits),
-    ("deepest Lam global", s.maxLamDepth, Anf.maxLamDepth),
-    ("deepest Anf global", s.maxDepth, Anf.maxDepth),
-    ("most walk steps on the stack at once", s.maxCopyDepth, Anf.Walk.maxWalkDepth),
-    ("most back-end work (nodes squared, and table searches)", s.maxBackWork, Anf.maxBackWork),
-    ("most allocation edits at one position", s.maxEditsAt, Xv.Validate.maxEditsAt),
-    ("most allocation edits per register mention or block, in thousandths", s.maxEditPermille,
+  let rows : List (String × (Stats → Nat) × Nat) := [
+    ("largest global", (·.maxGlobal), Anf.maxGlobalNodes),
+    ("largest program", (·.maxProgram), Anf.maxProgramNodes),
+    ("largest copy in an inline walk", (·.maxCopyInline), Anf.Walk.maxCopy),
+    ("largest copy in a shrink round", (·.maxCopyShrink), Anf.Walk.maxCopy),
+    ("most firings in one walk", (·.maxFires), Anf.Walk.maxFires),
+    ("most work in a specialisation step", (·.maxSpecWork), Anf.Specialize.maxWork),
+    ("most nodes charged in a specialisation step", (·.maxSpecNodes), Anf.Specialize.maxNodes),
+    ("most work in one walk", (·.maxWalkWork), Anf.Walk.maxWalkWork),
+    ("most walk work in one inline or shrink step", (·.maxStepWork), Anf.maxStepWork),
+    ("largest Lam global", (·.maxLam), Anf.maxLamNodes),
+    ("deepest source term", (·.maxSrcDepth), Src.maxTermDepth),
+    ("most source nodes, counted as trees", (·.maxSrcVisits), Recheck.maxSrcVisits),
+    ("deepest Lam global", (·.maxLamDepth), Anf.maxLamDepth),
+    ("deepest Anf global", (·.maxDepth), Anf.maxDepth),
+    ("most walk steps on the stack at once", (·.maxCopyDepth), Anf.Walk.maxWalkDepth),
+    ("most back-end work (nodes squared, and table searches)", (·.maxBackWork), Anf.maxBackWork),
+    ("most allocation edits at one position", (·.maxEditsAt), Xv.Validate.maxEditsAt),
+    ("most allocation edits per register mention or block, in thousandths", (·.maxEditPermille),
       Xv.Validate.editFactor * 1000),
-    ("most allocation fact entries in one block per register mention, in thousandths", s.maxFactPermille,
+    ("most allocation fact entries in one block per register mention, in thousandths", (·.maxFactPermille),
       Xv.Validate.factFactor * 1000),
-    ("most frame slots beyond the register mentions", s.maxSlotsOver, Xv.Validate.slotSlack)]
+    ("most frame slots beyond the register mentions", (·.maxSlotsOver), Xv.Validate.slotSlack)]
   let mut out := #[s!"{s.programs} programs measured, {s.declined} declined before the middle end"]
   expect a (s.stepsOver == 0 && s.walks > 0)
     s!"{s.stepsOver} of {s.walks} walks took more steps than their global's nodes plus their copies"
   out := out.push s!"walks within their step bound (steps at most the global's nodes plus the copies): {s.walks} of {s.walks}"
-  for (label, got, budget) in rows do
+  for (label, get, budget) in rows do
+    let got := get s
     expect a (got < budget) s!"{label}: {got} reaches its budget {budget}"
-    out := out.push s!"{label}: {got} (budget {budget}, {if got == 0 then "unused" else s!"{budget / got}×"})"
+    let who := match each.find? (fun (_, t) => get t == got) with
+      | some (p, _) => if got == 0 then "" else s!"; {p}"
+      | none => ""
+    out := out.push s!"{label}: {got} (budget {budget}, {if got == 0 then "unused" else headroom budget got}{who})"
   return out
 
 end IxCCTests.Corpus.Budget

@@ -106,6 +106,9 @@ structure Budgets where
   shrink : Shrink.Budgets := {}
   inline : Inline.Budgets := {}
   spec : Specialize.Budgets := {}
+  /-- Retry an inline round the re-run refuses, without the callers whose
+  walk it refuses alone (`produce`). Producer only. -/
+  retryInline : Bool := true
   deriving Inhabited
 
 /-- What `produce` did: the certificate, the program after each step (for
@@ -125,12 +128,14 @@ and back-end work check (`checkGlobalNodes`), and a program that fails it is
 refused here, with the re-run's message, before the back end runs; an inline
 round or a specialisation is taken through the re-run's own step
 (`Step.run`), and one it refuses (a walk, step or program past its budgets)
-is not taken: a refused round ends that invocation's rounds, and a refused
+is not taken: a refused round is retried once without the callers whose walk
+the re-run refuses alone (`Budgets.retryInline`), and ends that invocation's
+rounds if it is still refused or no caller is left; a refused
 specialisation ends the schedule's phases, as one that adds no global does;
 and a round or specialisation is only begun while the certificate has room
 for its two steps and the final prune (`maxSteps`). Where the re-run would
 accept every step anyway, none of these checks changes a choice. -/
-def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
+def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
   let p1 ← checkLamNodes L >>= convert >>= checkGlobalNodes
   let mut P := p1
   let mut steps : Array Step := #[]
@@ -159,7 +164,16 @@ def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
       if steps.size + 3 > maxSteps then break
       let r := Inline.produce B.inline P
       if r.isEmpty then break
-      let .ok P3 := Step.run B.shrink.params (.inline r) P | break
+      -- a round the re-run refuses is retried once without the callers whose
+      -- walk the re-run refuses alone (each caller's walk is independent of
+      -- the others'): at most one re-run per caller and one of the rest
+      let some (r, P3) := (match Step.run B.shrink.params (.inline r) P with
+          | .ok P3 => some (r, P3)
+          | .error _ =>
+            if !B.retryInline then none else
+            let r := r.filter fun e => (Step.run B.shrink.params (.inline [e]) P).isOk
+            if r.isEmpty then none
+            else (Step.run B.shrink.params (.inline r) P).toOption.map (r, ·)) | break
       steps := steps.push (.inline r); stages := stages.push ("P3", P3)
       let (c, P2, f) ← Shrink.produce B.shrink P3
       P ← checkGlobalNodes P2; fires := fires.add f
@@ -168,6 +182,20 @@ def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := do
   steps := steps.push .prune; stages := stages.push ("prune", P)
   return { cert := { shrink := B.shrink.params, steps := steps.toList }
            stages := stages.toList, fires }
+
+/-- Run `attempt` with the inline-round retry if `retry`, and without it when
+that fails: a retried round's larger program may fail a budget checked later
+(the whole program's nodes or back-end work after the next shrink step, or a
+later stage), where the run without the retry would not. -/
+def withRetryFallback {ε α : Type} (retry : Bool) (attempt : Bool → Except ε α) : Except ε α :=
+  match attempt retry with
+  | .ok a => .ok a
+  | .error e => if retry then attempt false else .error e
+
+/-- `produceOnce`, falling back to the run without the inline-round retry
+when the run with it fails (`withRetryFallback`). -/
+def produce (B : Budgets := {}) (L : Lam.Program) : Except String Trace :=
+  withRetryFallback B.retryInline fun retry => produceOnce { B with retryInline := retry } L
 
 /-! ## What the Anf → Fir boundary will decline -/
 

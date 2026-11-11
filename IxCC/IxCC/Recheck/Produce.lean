@@ -204,6 +204,20 @@ def compileInput (cfg : Config) (inp : Input) : Except Err (Cert × Artifact) :=
   let a ← run cfg inp.program c
   pure (c, a)
 
+/-- The configuration without the middle end's inline-round retry
+(`Anf.Pipeline.Budgets.retryInline`). -/
+def Config.noRetry (cfg : Config) : Config :=
+  { cfg with budgets := { cfg.budgets with retryInline := false } }
+
+/-- `compileInput` with the inline-round retry the configuration asks for and,
+if that fails at any stage, `compileInput` again without it: a retried round's
+larger program may fail a budget that the program without it passes. Each run
+is `compileInput` at its own configuration, so `compileInput_parts` and the
+theorems after it cover whichever succeeds. -/
+def compileInputRetry (cfg : Config) (inp : Input) : Except Err (Cert × Artifact) :=
+  Anf.Pipeline.withRetryFallback cfg.budgets.retryInline fun retry =>
+    compileInput (if retry then cfg else cfg.noRetry) inp
+
 /-- The compiler: ingress, `produce`, `run`. -/
 def compile (cfg : Config) (bytes : ByteArray) (equations : Lean.Json) (roots : List String := [])
     (typecheck : Bool := true) : Except Err (Cert × Artifact) := do

@@ -626,14 +626,53 @@ Three limits, in the order ordinary code meets them:
    the message step with `==`, the root's last shrink round fails (with
    case-of-case off it copies 28 to 32 nodes), so the `==` method, passed in a
    dictionary, stays a known global applied as a value (2 keys, 2
-   dispatchers; `chain24` from 80 keys to 2). (b) *The program-wide stop of
-   inline rounds*: an inline round that one caller's walk exceeds (its
-   inlined callees copy more than the budget) is refused for the whole
-   program and ends the phase's rounds (`Anf.Pipeline.produce`): `stepOnly`,
-   `fibMain` and `fibMainHO` keep 150, 159 and 232 keys (from 228, 237 and
-   353). Retrying the round without the refused callers (a producer change)
-   now helps (117, 127, 146 keys in a probe; before the change it made them
-   worse, 228 to 472). No registered root meets either stop.
+   dispatchers; `chain24` from 80 keys to 2). (b) *Inline rounds refused
+   for one caller*: an inline round that one caller's walk exceeds (its
+   inlined callees copy more than the budget) was refused for the whole
+   program and ended the phase's rounds. The producer now retries such a
+   round once without the callers whose walk the re-run refuses alone
+   (`Anf.Pipeline.produce`, `Budgets.retryInline`). It is a producer change:
+   the re-run checks every round as before, and no rule, budget or
+   certificate format changes. A retried round gives the steps after it a
+   larger program, which can fail a budget checked later where the run
+   without the retry passes (the next shrink step can take the whole
+   program past the back end's work budget; the closures step and the back
+   end have budgets of their own); the producer then falls back to the run
+   without the retry (`Anf.Pipeline.withRetryFallback`): `produce` itself
+   for a failure in the middle end, and `ixcc compile` and
+   `Recheck.compileInputRetry` (which `tests-corpus` uses) for a failure at
+   any stage (the other producers, such as `Recheck.produce` and the claim
+   producer, only for one in the middle end). Each run is the proved
+   composition at its own configuration, so no statement changes. The
+   probe library meets it: on `fibSplit` (`fibMain` with the step split into
+   a function per phase) the run with the retry takes the program past the back end's
+   work budget after a shrink step, and the fallback compiles it as before. On the probe library, without the retry → with
+   it (measured on the same compiler):
+
+   | root | closure keys | closure allocation sites | text bytes |
+   | --- | ---: | ---: | ---: |
+   | `stepOnly` | 150 → 117 | 274 → 309 | 101,252 → 112,973 |
+   | `fibMain` | 159 → 127 | 297 → 350 | 109,837 → 123,846 |
+   | `fibMainHO` | 232 → 146 | 405 → 366 | 139,504 → 127,462 |
+
+   So the retry gives 20 to 37 % fewer keys, which is what the dispatch
+   budget counts (limit 3). On `stepOnly` and `fibMain` it costs about 12 %
+   more text and 13 and 18 % more allocation sites: inlining copies the
+   branch thunks into more callers, where each is built and applied in the
+   same global. On `fibMainHO` text and allocation sites fall as well (9 and
+   10 %). The known-dispatch rule with steps after P8
+   ([Known calls after P8](#known-calls-after-p8)) is expected to remove the
+   extra allocation sites (a closure built and applied in one global becomes
+   a direct call); it is not done. What the retry leaves is the callers
+   whose inlined callees alone exceed one walk's copy budget. No registered
+   root meets either stop (a), (b), and no registered root's object changes
+   with the retry (none has a refused round, even with the inliner's callee
+   size raised from 128 to 8,192 nodes). `tests-recheck` covers the retry
+   (a round refused for one caller and retried without it) and its fallback
+   (a program from bytes whose retried round's shrink step passes the back
+   end's work budget, compiled without the retry). `tests-corpus --survey`
+   prints each compiled root's keys, allocation sites and dispatch call
+   sites.
 2. **The tail-call limit**: an internal tail call passes at most seven
    arguments ([roadmap](roadmap.md), "Internal tail calls"), and a dispatcher
    tail-calls each closure's function with its captures and arguments, so a

@@ -736,8 +736,12 @@ closures step's survey (`tests-corpus --survey`):
 Before the change `fibMainHO`'s dispatchers took 57 % of the closures step's
 dispatch budget; after it the step has nothing to do. What still leaves
 closures in the first library is in `docs/closures-design.md`, "Measured
-limits": case-of-case copies on its `==` chains (the message step) and an
-inline round refused for the whole program (its `fibMain` and `fibMainHO`).
+limits": case-of-case copies on its `==` chains (the message step) and, in
+its `fibMain` and `fibMainHO`, inline rounds that one caller's walk exceeds.
+The producer now retries such a round without that caller, which takes
+`fibMain` from 159 keys to 127 and `fibMainHO` from 232 to 146 (with 13 %
+more text for `fibMain`, 9 % less for `fibMainHO`); what is left are callers
+whose inlined callees alone exceed one walk's copy budget.
 
 ### What is assumed and not proved for an X2 executable
 
