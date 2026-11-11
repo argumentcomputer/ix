@@ -152,11 +152,11 @@ theorem den_bvarsFrom (ρ : BVarIdx → V) (zs : List V) : ∀ (ys a : List V),
   | y :: ys, a => by
     rw [List.length_cons, bvarsFrom_succ]
     refine .cons ?_ ?_
-    · have h := pushAll_at a y (ys ++ zs) ρ
-      rw [List.length_append, Nat.add_comm] at h
-      have e : a ++ y :: ys ++ zs = a ++ y :: (ys ++ zs) := by simp
-      rw [e, ← h]
-      exact .bvar
+    · have e : a ++ y :: ys ++ zs = a ++ y :: (ys ++ zs) := by simp
+      rw [e, show zs.length + ys.length = (ys ++ zs).length by simp; omega]
+      have h := Denotes.bvar (cval := cval) (env := env) (φ := φ)
+        (ρ := pushAll (a ++ y :: (ys ++ zs)) ρ) (i := (ys ++ zs).length)
+      rwa [pushAll_at] at h
     · have e : a ++ y :: ys ++ zs = (a ++ [y]) ++ ys ++ zs := by simp
       rw [e]
       exact den_bvarsFrom ρ zs ys (a ++ [y])
@@ -167,6 +167,7 @@ theorem den_bvar_at {a c : List V} {y : V} {ρ : BVarIdx → V} :
     (ρ := pushAll (a ++ y :: c) ρ) (i := c.length)
   rwa [pushAll_at] at h
 
+omit [Ix.Kernel.SetTheory V] in
 /-- Within the bound sets, the environment below them does not matter. -/
 theorem pushAll_lt {xs : List V} {E E' : BVarIdx → V} {i : Nat} (h : i < xs.length) :
     pushAll xs E i = pushAll xs E' i := by
@@ -174,6 +175,7 @@ theorem pushAll_lt {xs : List V} {E E' : BVarIdx → V} {i : Nat} (h : i < xs.le
   rw [List.getElem?_eq_getElem (by simpa using h)]
   rfl
 
+omit [Ix.Kernel.SetTheory V] in
 /-- Two environments differing only in a block of as many sets agree outside the block. -/
 theorem pushAll_agree {a b b' c : List V} {ρ : BVarIdx → V} (hb : b.length = b'.length) {i : Nat}
     (hi : i < c.length ∨ c.length + b.length ≤ i) :
@@ -240,8 +242,9 @@ theorem fits_piTele : ∀ (bs : List (KExpr × BinderMeta)) (C : KExpr) {ρ σ :
       σ = pushAll xs ρ ∧ R = piTele (bs.drop xs.length) C ∧
         ∀ C', Fits cval env φ ρ (piTele bs C') xs σ (piTele (bs.drop xs.length) C')
   | bs, C, ρ, σ, R, [], h, _ => by
-    obtain ⟨rfl, rfl⟩ := fits_nil_inv h rfl
-    exact ⟨(pushAll_nil ρ).symm, rfl, fun _ => .nil⟩
+    obtain ⟨h1, h2⟩ := fits_nil_inv h rfl
+    subst h1 h2
+    exact ⟨(pushAll_nil _).symm, rfl, fun _ => .nil⟩
   | [], _, _, _, _, _ :: _, _, hl => by simp at hl
   | (A, m) :: bs, C, ρ, σ, R, x :: xs, h, hl => by
     have h0 : Fits cval env φ ρ (.forallE A (piTele bs C) m) (x :: xs) σ R := h
