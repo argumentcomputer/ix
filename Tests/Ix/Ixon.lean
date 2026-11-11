@@ -712,26 +712,27 @@ private def envelopeUnits (definition : Definition) : TestSeq :=
 /-! ## The binder-data section
 
 A record ends with its binder-data section. The fixture carries every node
-kind: a root block with a parameter list and a share node, a second root
-block, and two variants of a sharing entry, the second the sentinel. The Rust
-crate's `binder_fixture` checks the same section bytes. -/
+kind: two root blocks, each with a share node, the first with a parameter
+list, and the two variants of the sharing entry they name, in order of first
+occurrence, the second the sentinel. The Rust crate's `binder_fixture` checks
+the same section bytes. -/
 
 def binderFixture : Constant :=
   { info := .defn (Definition.mk .defn .safe 3
-      (.all .many .shared (.sort 0) (.share 0)) (.lam .many (.sort 0) (.var 0)))
+      (.all .many .shared (.sort 0) (.share 0)) (.lam .many (.sort 0) (.share 0)))
     sharing := #[.lam .many (.sort 0) (.var 0)]
     refs := #[]
     univs := #[.var 0]
     binders := #[
-      ⟨false, 0, 0, #[.ifAllZero #[0, 2], .share 1]⟩,
-      ⟨false, 1, 0, #[.never]⟩,
+      ⟨false, 0, 0, #[.ifAllZero #[0, 2], .share 0]⟩,
+      ⟨false, 1, 0, #[.never, .share 1]⟩,
       ⟨true, 0, 0, #[.zero]⟩,
       ⟨true, 0, 1, #[.undecided]⟩] }
 
 def binderFixtureSection : Array UInt8 :=
   #[4,
-    0, 0, 0, 2, 2, 2, 0, 2, 3, 1,
-    0, 1, 0, 1, 0,
+    0, 0, 0, 2, 2, 2, 0, 2, 3, 0,
+    0, 1, 0, 2, 0, 3, 1,
     1, 0, 0, 1, 1,
     1, 0, 1, 1, 4]
 
@@ -746,10 +747,27 @@ def noncanonicalSections : List (String × Array BinderBlock) :=
   [("blocks out of order", #[b[1]!, b[0]!, b[2]!, b[3]!]),
    ("a repeated key", b.push b[3]!),
    ("a root block at variant 1", b.set! 1 { b[1]! with variant := 1 }),
-   ("an empty parameter list", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[], .share 1] }),
-   ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0], .share 1] }),
-   ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1], .share 1] }),
-   ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3], .share 1] })]
+   ("an empty parameter list", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[], .share 0] }),
+   ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0], .share 0] }),
+   ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1], .share 0] }),
+   ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3], .share 0] }),
+   ("an empty block", b.push ⟨true, 0, 2, #[]⟩),
+   ("a variant no share node names", b.push ⟨true, 0, 2, #[.never]⟩),
+   ("a missing root block", #[b[0]!, b[2]!, b[3]!]),
+   ("a missing variant", #[b[0]!, b[1]!, b[2]!]),
+   ("variants out of first-occurrence order",
+     (b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2], .share 1] }).set! 1
+       { b[1]! with nodes := #[.never, .share 0] }),
+   ("two equal variants", b.set! 3 { b[3]! with nodes := #[.zero] }),
+   ("a share node at a binder", b.set! 2 { b[2]! with nodes := #[.share 0] }),
+   ("a binder node at a share", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2], .never] }),
+   ("a node too many", b.set! 2 { b[2]! with nodes := #[.zero, .zero] }),
+   ("a block for an entry that is not shared", b.push ⟨true, 1, 0, #[.never]⟩)]
+
+/-- A projection record carries no binder data. -/
+def projectionWithSection (node : BinderNode) : Constant :=
+  { info := .dPrj ⟨0, Address.blake3 "block".toUTF8⟩, sharing := #[], refs := #[], univs := #[],
+    binders := #[⟨false, 0, 0, #[node]⟩] }
 
 def binderSectionUnits : TestSeq :=
   let bytes := serConstant binderFixture
@@ -771,8 +789,9 @@ def binderSectionUnits : TestSeq :=
       acc ++ test s!"{label}: round-trips" (constantSerde c)
         ++ test s!"{label}: not canonical" (!c.bindersCanonical && !canonicalRead c))
   ++ test "a projection with a parameter is not canonical"
-      (!canonicalRead { info := .dPrj ⟨0, Address.blake3 "block".toUTF8⟩, sharing := #[],
-          refs := #[], univs := #[], binders := #[⟨false, 0, 0, #[.ifAllZero #[0]]⟩] })
+      (!canonicalRead (projectionWithSection (.ifAllZero #[0])))
+  ++ test "a projection with any section is not canonical"
+      (!canonicalRead (projectionWithSection .never))
   ++ test "an unknown node tag is rejected" ((deConstant badTag).toOption.isNone)
   ++ test "a block kind other than 0 or 1 is rejected" ((deConstant badKind).toOption.isNone)
   ++ test "a truncated section is rejected"

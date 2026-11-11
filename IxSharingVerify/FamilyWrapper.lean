@@ -56,18 +56,18 @@ theorem normalizeFamily_wire_headers {cfg : Config} {layout : ShareLayout} {limi
     (headers : ConstantInfoHeaderWF input.info)
     (refsCount : input.refs.size < UInt64.size) (refs : ∀ r ∈ input.refs, r.hash.size = 32)
     (univsCount : input.univs.size < UInt64.size) (univs : ∀ u ∈ input.univs, u.wireWF)
-    (binders : Ixon.bindersWireWF input.binders)
     (run : normalizeFamily cfg layout input limits = .ok (output, result)) : output.wireWF := by
   obtain ⟨_, _, _, normalized, written, rfl⟩ := normalizeFamily_parts run
   have format := (familyExpanded_output_of_success normalized).format
   refine ⟨withRoots_wireWF_headers written headers (fun e he => format.2.1 e (Array.mem_toList_iff.mpr he)),
-    format.2.2.1, fun e he => format.1 e (Array.mem_toList_iff.mpr he), refsCount, refs, univsCount, univs, binders⟩
+    format.2.2.1, fun e he => format.1 e (Array.mem_toList_iff.mpr he), refsCount, refs, univsCount, univs,
+    Ixon.bindersWireWF_empty⟩
 
 theorem normalizeFamily_wire {cfg : Config} {layout : ShareLayout} {limits : Limits}
     {input output : Ixon.Constant} {result : TieredSharingResult} (wire : input.wireWF)
     (run : normalizeFamily cfg layout input limits = .ok (output, result)) : output.wireWF :=
   normalizeFamily_wire_headers (ConstantInfoHeaderWF.of_wire wire.1)
-    wire.2.2.2.1 wire.2.2.2.2.1 wire.2.2.2.2.2.1 wire.2.2.2.2.2.2.1 wire.2.2.2.2.2.2.2 run
+    wire.2.2.2.1 wire.2.2.2.2.1 wire.2.2.2.2.2.1 wire.2.2.2.2.2.2.1 run
 
 /-- This is the table-count plus serialized table/root EXPRESSION bytes.
 It excludes unchanged constant headers, references and universe tables. -/

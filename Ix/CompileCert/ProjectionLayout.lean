@@ -506,7 +506,7 @@ theorem inductive_projection_resolves (source : InductiveVal) (constructors : Ar
       resolveSource store (Address.admissionHash (Ixon.ser projection)) projection =
         some (.member output.blockAddr 0) := by
   obtain ⟨target, metadata, pairs, info, _, _, _, projections⟩ := layout
-  let projection : Ixon.Constant := ⟨.iPrj ⟨0, output.blockAddr⟩, #[], #[], #[]⟩
+  let projection : Ixon.Constant := ⟨.iPrj ⟨0, output.blockAddr⟩, #[], #[], #[], #[]⟩
   refine ⟨projection, metadata, ?_, ?_⟩
   · simp [projections, buildInductiveProjections, projection, Array.getElem?_append]
   · simp [projection, resolveSource, emptyTables, stored, info, guard]
@@ -541,7 +541,7 @@ theorem constructor_projection_resolves (source : InductiveVal) (constructors : 
   have naturalIndex := (mapped_index indices index targetInside inside).trans sourceIndex
   have exactIndex : index.toUInt64.toNat = index := Emission.exact_header index (Nat.lt_trans pairInside bound)
   have converted : target.ctors[index].cidx = index.toUInt64 := UInt64.toNat_inj.mp (naturalIndex.trans exactIndex.symm)
-  let projection : Ixon.Constant := ⟨.cPrj ⟨0, index.toUInt64, output.blockAddr⟩, #[], #[], #[]⟩
+  let projection : Ixon.Constant := ⟨.cPrj ⟨0, index.toUInt64, output.blockAddr⟩, #[], #[], #[], #[]⟩
   refine ⟨projection, pairs[index].2, ?_, ?_⟩
   · rw [projections]
     simp only [buildInductiveProjections]

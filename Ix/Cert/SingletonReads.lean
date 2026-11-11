@@ -188,7 +188,7 @@ theorem lone_keys {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
   have compiled : compile env = .ok ixe := by unfold compile; rw [P.compiled]; rfl
   obtain ⟨lc, hlc, header⟩ := publishedReadable P.compiled n named hn input
   rw [haddr] at hlc
-  obtain ⟨c', hget', wire, enc⟩ := canonical _ hB lc hlc
+  obtain ⟨c', hget', wire, enc, -⟩ := canonical _ hB lc hlc
   have hc' : c' = output.block := by
     unfold recordAt at stored
     rw [hlc] at stored

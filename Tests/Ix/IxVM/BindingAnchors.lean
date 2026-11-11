@@ -29,7 +29,7 @@ def putConstant (env : Ixon.Env) (constant : Ixon.Constant) : Ixon.Env × Addres
   ({ env with anonHints := env.anonHints.insert key .opaque }, key)
 
 def definition (typ value : Ixon.Expr) (refs : Array Address) : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, 0, typ, value⟩, #[], refs, #[]⟩
+  ⟨.defn ⟨.defn, .safe, 0, typ, value⟩, #[], refs, #[], #[]⟩
 
 structure Fixture where
   env : Ixon.Env
@@ -84,7 +84,7 @@ def consumer (table : RoleTable) (fixture : Fixture) (assumed : Bool) :
   let typ : Ixon.Expr := .app (.app (.app (.ref 0 #[0]) (.ref 1 #[])) lhs) rhs
   let value : Ixon.Expr := .app (.app (.ref 7 #[0]) (.ref 1 #[])) rhs
   let proofRecord : Ixon.Constant := ⟨.defn ⟨.thm, .safe, 0, typ, value⟩,
-    #[], refs, #[.succ .zero]⟩
+    #[], refs, #[.succ .zero], #[]⟩
   let (env, target) := putConstant fixture.env proofRecord
   let closure := IxVM.ClaimHarness.closureFromRoots env #[target]
   need "consumer directly references the new anchor" (!closure.contains fixture.anchor)

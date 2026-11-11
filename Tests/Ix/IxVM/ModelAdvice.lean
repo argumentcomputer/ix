@@ -156,7 +156,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
   -- no advice under user axioms: `Even` with an unused, well-typed `axiom ax : Prop`
   let underAxiom : Builder := fun _ => do
-    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero]⟩
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let a := Address.blake3 (Ixon.ser ax)
     let e := env.storeConst a ax
     let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
