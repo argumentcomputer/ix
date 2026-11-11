@@ -72,7 +72,9 @@ theorem readback_ctor {p : Program} {v : Value} {i : Nat}
       refine ⟨c, ls, ps, rfl, ?_⟩
       rw [← htag]
       unfold readTag
-      split <;> rfl
+      cases p.decl? c with
+      | none => rfl
+      | some d => cases d <;> rfl
   | lit n => simp [IxCC.Src.readbackAll, IxCC.Src.readback] at h
   | _ => simp [IxCC.Src.readbackAll, IxCC.Src.readback] at h
 
