@@ -2,8 +2,8 @@ import IxCC.Aiur.Static.CounterProofs
 import IxCC.Aiur.Static.OrderProofs
 import IxCCTests.Aiur.Static.Proofs
 
-/-! Exact static-assignment cones. The addressed ingress adapter inherits
-only the existing native BLAKE3 exception; all other cones use ordinary logic. -/
+/-! Exact static-assignment cones, on ordinary logic (the addressed ingress
+adapter's hash is pure BLAKE3). -/
 
 /-- info: 'IxCC.Aiur.Static.Program.accepted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Static.Program.accepted
@@ -74,10 +74,7 @@ only the existing native BLAKE3 exception; all other cones use ordinary logic. -
 /-- info: 'IxCC.Aiur.Static.validate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Static.validate
 
-/-- info: 'IxCC.Aiur.Wire.Ingress.validateTrace' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Aiur.Wire.Ingress.validateTrace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Ingress.validateTrace
 
 /-- info: 'IxCCTests.Aiur.Static.input_decrement_exec' depends on axioms: [propext, Classical.choice, Quot.sound] -/

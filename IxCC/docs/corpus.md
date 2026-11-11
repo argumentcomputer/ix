@@ -14,6 +14,7 @@ ix.
 | `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
 | `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
 | `phase1-abi` | [`fixtures/corpus/phase1-abi/corpus.json`](../fixtures/corpus/phase1-abi/corpus.json) | [`fixtures/corpus/phase1-abi/src`](../fixtures/corpus/phase1-abi/README.md) | the ABI and readback matrix, arities 0–6 by `Nat`, `Bool` and an enumeration |
+| `phase1-bound` | [`fixtures/corpus/phase1-bound/corpus.json`](../fixtures/corpus/phase1-bound/corpus.json) | [`fixtures/corpus/phase1-scalar/src`](../fixtures/corpus/phase1-bound/README.md) | five `phase1-scalar` programs in the role-bound envelope `ix compile` writes by default (closure, role support, certificates and role binding), with the unbound twins' cases and declines |
 | `ownership` | [`fixtures/ownership/corpus.json`](../fixtures/ownership/corpus.json) | [`fixtures/ownership/src`](../fixtures/ownership/README.md) | the ownership suite: annotated programs ix accepts, each beside its plain twin, and plain erasure and allocation fixtures; run by `tests-own` (with ix's verdicts on the annotated sources it rejects), not among `tests-corpus`'s registered families |
 | `k1` | [`fixtures/ixon-v4/k1/corpus.json`](../fixtures/ixon-v4/k1/corpus.json) | [`fixtures/ixon-v4/k1`](../fixtures/ixon-v4/k1/README.md) | the K1 pack: the five K1 programs in one closure with their 40 unfolding equations and its census, without cases (the stage suites run its roots); not among `tests-corpus`'s registered families, so `corpus check` takes its manifest by path |
 
@@ -209,7 +210,7 @@ systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 --quiet \
   --out plans/certified-census/run-1 --timeout 60 --recursors as-frozen
 ```
 
-With no inputs it checks the six registered corpus families. Repeated
+With no inputs it checks the seven registered corpus families. Repeated
 `--manifest PATH` selects other families; repeated `--input CLOSURE.ixe`
 selects individual closures. Manifest inputs must match their frozen hash.
 Use `--recursors explicitly-seeded` only when the supplied inputs were built

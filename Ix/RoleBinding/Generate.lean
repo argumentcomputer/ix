@@ -133,6 +133,15 @@ structure Generated where
   /-- Retained for independent reader roundtrip verification by the caller. -/
   closed : Std.HashMap Address (CExpr .anon)
 
+/-- Whether `generate` retains the whole certificate closure of `required` as
+`Generated.support`: it does when a required role with certificate theorems is a
+definition specified by its equations (`Ix.RoleEvidence.eqnsTheorems`), whose
+evidence keeps its ordinary theorem dependencies instead of being closed over
+the operation's own closure. The retained records enter the emitted artifact. -/
+def retainsCertificates (required : List Role) : Bool :=
+  (Ix.RoleEvidence.allCertTheorems.filter fun (r, _) => required.contains r).any
+    fun (role, _) => !Ix.RoleEvidence.certTheorems.any (·.1 == role)
+
 /-- Generate evidence for the required, actually published roles. The
 certificate module's bound operations must have the artifact's addresses.
 Missing proofs, unreadable closure records and noncanonical output refuse.
@@ -263,7 +272,7 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     ⟨Address.admissionHash bytes, bytes⟩).mapError fun e => toString (Ix.Kernel.Admission.Error.binding e)
   unless decoded.toBytes == bytes do throw "role generation: binding does not roundtrip"
   let finalPrelude : Prelude .anon ← readPrelude table preRecords records blobs.toList
-  let retained := selected.any fun (role, _) => !Ix.RoleEvidence.certTheorems.any (·.1 == role)
+  let retained := retainsCertificates required
   let support := if retained then certRecords.toArray else #[]
   let supportBlobs := if retained then certificates.blobs.toArray else #[]
   let supportHints := if retained then certificates.anonHints.toArray else #[]

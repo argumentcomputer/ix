@@ -224,11 +224,41 @@ theorem getN0_sound (pre rest : ByteArray) {value : Nat} {st' : Ixon.GetState}
 theorem getN0_canonical : Ixon.GetCanonical getN0 n0Bytes :=
   fun pre rest _ _ h => (getN0_sound pre rest h).2
 
+theorem optAddrRest_zero : optAddrRest 0 = pure none := by
+  unfold optAddrRest
+  rw [if_pos rfl]
+
+theorem optAddrRest_one :
+    optAddrRest 1 = ((Ixon.Serialize.get : Ixon.GetM Ixon.Address) >>= fun a => pure (some a)) := by
+  unfold optAddrRest
+  rw [if_neg (by decide), if_pos rfl]
+
+/-- `getOptAddr` consumes the role-table field of `o` and returns `o`. -/
+theorem getOptAddr_spec (o : Option Ixon.Address) :
+    Ixon.GetSpec getOptAddr (optAddrBytes o) o := by
+  cases o with
+  | none =>
+    have hrest : Ixon.GetSpec (optAddrRest 0) ByteArray.empty none := by
+      rw [optAddrRest_zero]
+      exact Ixon.GetSpec.pure none
+    have h := Ixon.GetSpec.bind (next := optAddrRest) (Ixon.getU8_spec 0) hrest
+    simpa [getOptAddr, optAddrBytes, ByteArray.append_empty] using h
+  | some a =>
+    have hrest : Ixon.GetSpec (optAddrRest 1) a.hash (some a) := by
+      rw [optAddrRest_one]
+      have h := Ixon.GetSpec.bind
+        (next := fun a => (pure (some a) : Ixon.GetM (Option Ixon.Address)))
+        (Ixon.Address.get_spec a) (Ixon.GetSpec.pure (some a))
+      simpa [ByteArray.append_empty] using h
+    exact Ixon.GetSpec.bind (next := optAddrRest) (Ixon.getU8_spec 1) hrest
+
 /-- `getPayloadM` consumes `c.toPayloadBytes` and returns `c` for any well-formed `CompileClaim`. -/
 theorem getPayloadM_spec {c : CompileClaim} (hwf : c.WellFormed) :
     Ixon.GetSpec getPayloadM c.toPayloadBytes c := by
   have henv : Ixon.GetSpec (Ixon.Serialize.get : Ixon.GetM Ixon.Address) c.env.hash c.env :=
     Ixon.Address.get_spec c.env
+  have hrole : Ixon.GetSpec getOptAddr (optAddrBytes c.roleTable) c.roleTable :=
+    getOptAddr_spec c.roleTable
   have htarget : Ixon.GetSpec (Ixon.Serialize.get : Ixon.GetM Ixon.Address) c.target.hash c.target :=
     Ixon.Address.get_spec c.target
   have hpol : Ixon.GetSpec Ixon.getU8 (Ixon.u8Bytes c.policy.toUInt8) c.policy.toUInt8 :=
@@ -241,6 +271,7 @@ theorem getPayloadM_spec {c : CompileClaim} (hwf : c.WellFormed) :
       let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
       pure ({
         env := c.env
+        roleTable := c.roleTable
         target := c.target
         policy := c.policy
         abiArity := c.abiArity
@@ -248,12 +279,14 @@ theorem getPayloadM_spec {c : CompileClaim} (hwf : c.WellFormed) :
       } : CompileClaim)) c.elfHash.hash c := by
     have hpure : Ixon.GetSpec (pure ({
       env := c.env
+      roleTable := c.roleTable
       target := c.target
       policy := c.policy
       abiArity := c.abiArity
       elfHash := c.elfHash
     } : CompileClaim)) ByteArray.empty ({
       env := c.env
+      roleTable := c.roleTable
       target := c.target
       policy := c.policy
       abiArity := c.abiArity
@@ -261,16 +294,18 @@ theorem getPayloadM_spec {c : CompileClaim} (hwf : c.WellFormed) :
     } : CompileClaim) := Ixon.GetSpec.pure _
     have h := Ixon.GetSpec.bind (next := fun elfHash => pure ({
       env := c.env
+      roleTable := c.roleTable
       target := c.target
       policy := c.policy
       abiArity := c.abiArity
       elfHash
     } : CompileClaim)) helf hpure
-    rcases c with ⟨env, target, pol, arity, elfHash⟩
+    rcases c with ⟨env, roleTable, target, pol, arity, elfHash⟩
     simpa [ByteArray.append_empty] using h
   unfold getPayloadM toPayloadBytes
   simp only [ByteArray.append_assoc]
   refine Ixon.GetSpec.bind henv ?_
+  refine Ixon.GetSpec.bind hrole ?_
   refine Ixon.GetSpec.bind htarget ?_
   refine Ixon.GetSpec.bind hpol ?_
   rw [CompilePolicy.ofUInt8?_toUInt8]
@@ -334,6 +369,54 @@ theorem address_get_canonical :
       split at haddr <;> cases haddr
       exact ⟨suffix, hrest, hmid⟩
 
+/-- Converse of `getOptAddr_spec`: every successful parse of the role-table field
+consumes exactly its canonical encoding. -/
+theorem getOptAddr_canonical : Ixon.GetCanonical getOptAddr optAddrBytes := by
+  intro pre rest o st' h
+  unfold getOptAddr at h
+  simp only [StateT.run_bind] at h
+  cases ht : Ixon.getU8.run ⟨pre ++ rest, pre.size⟩ with
+  | error e => rw [ht] at h; contradiction
+  | ok r =>
+    rcases r with ⟨tag, st1⟩
+    rw [ht] at h
+    simp only [bind, Except.bind] at h
+    obtain ⟨rest1, hrest1, hst1⟩ := Ixon.getU8_canonical pre rest ht
+    by_cases h0 : tag = 0
+    · subst h0
+      rw [optAddrRest_zero] at h
+      change Except.ok (none, st1) = Except.ok (o, st') at h
+      cases h
+      refine ⟨rest1, ?_, ?_⟩
+      · simpa [optAddrBytes] using hrest1
+      · simpa [optAddrBytes] using hst1
+    · by_cases h1 : tag = 1
+      · subst h1
+        rw [optAddrRest_one] at h
+        simp only [StateT.run_bind] at h
+        let pre1 := pre ++ Ixon.u8Bytes 1
+        have hst1' : st1 = ⟨pre1 ++ rest1, pre1.size⟩ := by
+          rw [hst1]; simp [pre1, hrest1, ByteArray.append_assoc]
+        rw [hst1'] at h
+        cases ha : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre1 ++ rest1, pre1.size⟩ with
+        | error e => rw [ha] at h; contradiction
+        | ok r2 =>
+          rcases r2 with ⟨a, st2⟩
+          rw [ha] at h
+          change Except.ok (some a, st2) = Except.ok (o, st') at h
+          cases h
+          obtain ⟨suffix, hrest2, hst2⟩ := address_get_canonical pre1 rest1 ha
+          refine ⟨suffix, ?_, ?_⟩
+          · rw [hrest1, hrest2]; simp [optAddrBytes, ByteArray.append_assoc]
+          · rw [hst2]
+            simp [pre1, hrest1, hrest2, optAddrBytes, ByteArray.append_assoc, Nat.add_assoc]
+      · have hthrow : optAddrRest tag = throw "CompileClaim: invalid role table tag" := by
+          unfold optAddrRest
+          rw [if_neg h0, if_neg h1]
+        rw [hthrow] at h
+        change Except.error _ = Except.ok (o, st') at h
+        contradiction
+
 theorem CompilePolicy.toUInt8_ofUInt8? {b : UInt8} {p : CompilePolicy}
     (h : CompilePolicy.ofUInt8? b = some p) : p.toUInt8 = b := by
   unfold CompilePolicy.ofUInt8? at h
@@ -360,70 +443,81 @@ theorem getPayloadM_canonical (pre rest : ByteArray) {c : CompileClaim} {st' : I
     have hst1' : st1 = ⟨pre1 ++ rest1, pre1.size⟩ := by
       rw [hst1]; simp [pre1, hrest1, ByteArray.append_assoc]
     rw [hst1'] at h
-    cases htarget : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre1 ++ rest1, pre1.size⟩ with
-    | error e => rw [htarget] at h; contradiction
-    | ok r2 =>
-      rcases r2 with ⟨target, st2⟩
-      rw [htarget] at h
+    cases hrole : getOptAddr.run ⟨pre1 ++ rest1, pre1.size⟩ with
+    | error e => rw [hrole] at h; contradiction
+    | ok rR =>
+      rcases rR with ⟨roleTable, stR⟩
+      rw [hrole] at h
       dsimp only at h
-      obtain ⟨rest2, hrest2, hst2⟩ := address_get_canonical pre1 rest1 htarget
-      let pre2 := pre1 ++ target.hash
-      have hst2' : st2 = ⟨pre2 ++ rest2, pre2.size⟩ := by
-        rw [hst2]; simp [pre2, hrest2, ByteArray.append_assoc]
-      rw [hst2'] at h
-      cases hpol : Ixon.getU8.run ⟨pre2 ++ rest2, pre2.size⟩ with
-      | error e => rw [hpol] at h; contradiction
-      | ok r3 =>
-        rcases r3 with ⟨polByte, st3⟩
-        rw [hpol] at h
+      obtain ⟨restR, hrestR, hstR⟩ := getOptAddr_canonical pre1 rest1 hrole
+      let preR := pre1 ++ optAddrBytes roleTable
+      have hstR' : stR = ⟨preR ++ restR, preR.size⟩ := by
+        rw [hstR]; simp [preR, hrestR, ByteArray.append_assoc]
+      rw [hstR'] at h
+      cases htarget : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨preR ++ restR, preR.size⟩ with
+      | error e => rw [htarget] at h; contradiction
+      | ok r2 =>
+        rcases r2 with ⟨target, st2⟩
+        rw [htarget] at h
         dsimp only at h
-        obtain ⟨rest3, hrest3, hst3⟩ := Ixon.getU8_canonical pre2 rest2 hpol
-        cases hpolOpt : CompilePolicy.ofUInt8? polByte with
-        | none =>
-          rw [hpolOpt] at h
-          change Except.error _ = Except.ok (c, st') at h
-          contradiction
-        | some policy =>
-          rw [hpolOpt] at h
-          change (do
-            let abiArity ← getN0
-            let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
-            pure ({ env, target, policy, abiArity, elfHash } : CompileClaim)).run st3 =
-              .ok (c, st') at h
-          simp only [StateT.run_bind] at h
-          have hpolEq : policy.toUInt8 = polByte := CompilePolicy.toUInt8_ofUInt8? hpolOpt
-          let pre3 := pre2 ++ Ixon.u8Bytes polByte
-          have hst3' : st3 = ⟨pre3 ++ rest3, pre3.size⟩ := by
-            rw [hst3]; simp [pre3, hrest3, ByteArray.append_assoc]
-          rw [hst3'] at h
-          cases harity : getN0.run ⟨pre3 ++ rest3, pre3.size⟩ with
-          | error e => rw [harity] at h; contradiction
-          | ok r4 =>
-            rcases r4 with ⟨abiArity, st4⟩
-            rw [harity] at h
-            simp only [bind, Except.bind] at h
-            obtain ⟨harityLt, rest4, hrest4, hst4⟩ := getN0_sound pre3 rest3 harity
-            let pre4 := pre3 ++ n0Bytes abiArity
-            have hst4' : st4 = ⟨pre4 ++ rest4, pre4.size⟩ := by
-              rw [hst4]; simp [pre4, hrest4, ByteArray.append_assoc]
-            rw [hst4'] at h
-            cases helf : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre4 ++ rest4, pre4.size⟩ with
-            | error e => rw [helf] at h; contradiction
-            | ok r5 =>
-              rcases r5 with ⟨elfHash, st5⟩
-              rw [helf] at h
-              change Except.ok ({ env, target, policy, abiArity, elfHash }, st5) =
-                Except.ok (c, st') at h
-              cases h
-              obtain ⟨suffix, hrest5, hst5⟩ := address_get_canonical pre4 rest4 helf
-              have hwf : ({ env, target, policy, abiArity, elfHash } : CompileClaim).WellFormed :=
-                harityLt
-              refine ⟨hwf, suffix, ?_, ?_⟩
-              · rw [hrest1, hrest2, hrest3, hrest4, hrest5]
-                simp [toPayloadBytes, hpolEq, ByteArray.append_assoc]
-              · rw [hst5]
-                simp [pre4, pre3, pre2, pre1, hrest1, hrest2, hrest3, hrest4, hrest5,
-                  toPayloadBytes, hpolEq, ByteArray.append_assoc, Nat.add_assoc]
+        obtain ⟨rest2, hrest2, hst2⟩ := address_get_canonical preR restR htarget
+        let pre2 := preR ++ target.hash
+        have hst2' : st2 = ⟨pre2 ++ rest2, pre2.size⟩ := by
+          rw [hst2]; simp [pre2, hrest2, ByteArray.append_assoc]
+        rw [hst2'] at h
+        cases hpol : Ixon.getU8.run ⟨pre2 ++ rest2, pre2.size⟩ with
+        | error e => rw [hpol] at h; contradiction
+        | ok r3 =>
+          rcases r3 with ⟨polByte, st3⟩
+          rw [hpol] at h
+          dsimp only at h
+          obtain ⟨rest3, hrest3, hst3⟩ := Ixon.getU8_canonical pre2 rest2 hpol
+          cases hpolOpt : CompilePolicy.ofUInt8? polByte with
+          | none =>
+            rw [hpolOpt] at h
+            change Except.error _ = Except.ok (c, st') at h
+            contradiction
+          | some policy =>
+            rw [hpolOpt] at h
+            change (do
+              let abiArity ← getN0
+              let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
+              pure ({ env, roleTable, target, policy, abiArity, elfHash } : CompileClaim)).run st3 =
+                .ok (c, st') at h
+            simp only [StateT.run_bind] at h
+            have hpolEq : policy.toUInt8 = polByte := CompilePolicy.toUInt8_ofUInt8? hpolOpt
+            let pre3 := pre2 ++ Ixon.u8Bytes polByte
+            have hst3' : st3 = ⟨pre3 ++ rest3, pre3.size⟩ := by
+              rw [hst3]; simp [pre3, hrest3, ByteArray.append_assoc]
+            rw [hst3'] at h
+            cases harity : getN0.run ⟨pre3 ++ rest3, pre3.size⟩ with
+            | error e => rw [harity] at h; contradiction
+            | ok r4 =>
+              rcases r4 with ⟨abiArity, st4⟩
+              rw [harity] at h
+              simp only [bind, Except.bind] at h
+              obtain ⟨harityLt, rest4, hrest4, hst4⟩ := getN0_sound pre3 rest3 harity
+              let pre4 := pre3 ++ n0Bytes abiArity
+              have hst4' : st4 = ⟨pre4 ++ rest4, pre4.size⟩ := by
+                rw [hst4]; simp [pre4, hrest4, ByteArray.append_assoc]
+              rw [hst4'] at h
+              cases helf : (Ixon.Serialize.get : Ixon.GetM Ixon.Address).run ⟨pre4 ++ rest4, pre4.size⟩ with
+              | error e => rw [helf] at h; contradiction
+              | ok r5 =>
+                rcases r5 with ⟨elfHash, st5⟩
+                rw [helf] at h
+                change Except.ok ({ env, roleTable, target, policy, abiArity, elfHash }, st5) =
+                  Except.ok (c, st') at h
+                cases h
+                obtain ⟨suffix, hrest5, hst5⟩ := address_get_canonical pre4 rest4 helf
+                have hwf : ({ env, roleTable, target, policy, abiArity, elfHash } : CompileClaim).WellFormed :=
+                  harityLt
+                refine ⟨hwf, suffix, ?_, ?_⟩
+                · rw [hrest1, hrestR, hrest2, hrest3, hrest4, hrest5]
+                  simp [toPayloadBytes, hpolEq, ByteArray.append_assoc]
+                · rw [hst5]
+                  simp [pre4, pre3, pre2, preR, pre1, hrest1, hrestR, hrest2, hrest3, hrest4, hrest5,
+                    toPayloadBytes, hpolEq, ByteArray.append_assoc, Nat.add_assoc]
 
 private theorem byteArray_eq_empty_of_size_zero {bs : ByteArray} (h : bs.size = 0) :
     bs = ByteArray.empty := by
@@ -757,6 +851,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
         Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
+      inp.env.bindingAddress = c.roleTable ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.run cfg inp.program cert = .ok a ∧
@@ -789,8 +884,9 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨henv_b, hcanonRel⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
+    have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
       hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
@@ -806,7 +902,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       rfl
     subst htabEq
     exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
-      henv, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
+      henv, hrole, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
       hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.zeroRc` policy,
@@ -832,6 +928,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
         Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
+      inp.env.bindingAddress = c.roleTable ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.runWithContracts cfg inp.program cert = .ok a ∧
@@ -868,8 +965,9 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨henv_b, hcanonRel⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
+    have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrunC, hrun, hfront,
       hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩ :=
@@ -885,7 +983,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       rfl
     subst htabEq
     exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
-      henv, hhead, hcert, hrunC, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
+      henv, hrole, hhead, hcert, hrunC, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
       hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.plainRc` policy,
@@ -911,6 +1009,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
         Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
+      inp.env.bindingAddress = c.roleTable ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
       Recheck.RcReplay.Cert.ofText certText = .ok cert ∧
       Recheck.RcReplay.run cfg inp.program cert = .ok a ∧
@@ -946,8 +1045,9 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨henv_b, hcanonRel⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
+    have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
       hnatParams, hty, hparams, hhash, hsem⟩ :=
@@ -963,7 +1063,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       rfl
     subst htabEq
     exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
-      henv, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
+      henv, hrole, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
       hahead, hnatParams, hty, hparams, hhash, hsem⟩
 
 

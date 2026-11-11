@@ -465,7 +465,7 @@ def verifyBytes (sip : Ring0Sip) (envBytes : ByteArray) (equations : Lean.Json)
       (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) typecheck with
   | .error _ => false
   | .ok input =>
-    (input.env.root == sip.claim.env) &&
+    (input.env.root == sip.claim.env && input.env.bindingAddress == sip.claim.roleTable) &&
     CompileClaim.checkCertCanonicalRelevance sip.cfg input sip.claim.policy sip.certText &&
     sip.verifyProgram input.program
 

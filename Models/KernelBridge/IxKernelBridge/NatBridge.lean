@@ -80,9 +80,8 @@ only to its stored recursor form (`Nat.brecOn`, `WellFounded.fix`), never to the
    `checkDecls_verifyBytes_immortal_denotes_nat`)**:
    - Conjunctions of Layers 1 and 2 with `Ix.Kernel.Cached.checkDecls_sound`,
      `IxCC.Recheck.sound_nat` and `IxCC.CompileClaim.verifyBytes_immortal_sound`, under the
-     premises above. `checkDecls_verifyBytes_immortal_denotes_nat` inherits the Blake3
-     `native_decide` axiom of `verifyBytes_immortal_sound`; the others use only the standard
-     three (`IxKernelBridge.Audit`).
+     premises above. All of them use only the standard three axioms
+     (`IxKernelBridge.Audit`).
 -/
 
 namespace IxKernelBridge
@@ -1856,7 +1855,8 @@ the conclusions of `checkDecls_recheck_x86_denotes_nat` for the artifact `a` the
 rechecked. This is not adequacy for the claim: `ds`/`env` occur only in `hchk` and `hbasis`
 and `envBytes` only in `hver`, so `env` is not the claim's environment; `eRoot` is not the
 kernel constant of `claim.target`; and the root index `i` is not tied to `claim.target`.
-Its axioms include the Blake3 `native_decide` axiom of `verifyBytes_immortal_sound`. -/
+Like `verifyBytes_immortal_sound`, it rests on the three standard axioms only (every address
+IxCC computes is pure BLAKE3). -/
 theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evidences md}
     {ds : Array (Declaration md)} {env : Env md}
     {cfg : IxCC.Recheck.Config} {envBytes : ByteArray} {equations : Lean.Json}
@@ -1873,6 +1873,7 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
       IxCC.Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
       IxCC.Ixon.V3.Tc.checkEnv inp.env = .ok () ∧
       inp.env.root = claim.env ∧
+      inp.env.bindingAddress = claim.roleTable ∧
       inp.program.roots.head? = some (claim.target, rootId) ∧
       IxCC.Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
@@ -1902,10 +1903,10 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
               Denotes (Model.ofEnvModelM mp).cval env φ ρ (natLitToConstructor out) v) := by
   have hmodel : Nonempty (EnvModelM V μ env) :=
     Ix.Kernel.Cached.checkDecls_sound (V := V) hμ hchk
-  obtain ⟨inp, cert, a, rootId, root, sig, ty, hwf, _, hdec, htc, _, _, henv, hhead, _,
+  obtain ⟨inp, cert, a, rootId, root, sig, ty, hwf, _, hdec, htc, _, _, henv, hrole, hhead, _,
     hrec, _, _, hahead, _, hty, _, _, hhash, _⟩ :=
     IxCC.CompileClaim.verifyBytes_immortal_sound hpol hver
-  refine ⟨hmodel, inp, cert, a, rootId, root, sig, ty, hwf, hdec, htc rfl, henv, hhead, hrec,
+  refine ⟨hmodel, inp, cert, a, rootId, root, sig, ty, hwf, hdec, htc rfl, henv, hrole, hhead, hrec,
     hahead, hty, hhash, ?_⟩
   intro constSpec hconst i k_src rootAddr rootCId eRoot out hrootAt htyAt hrootRel hbRoot hnfRoot hrun
   obtain ⟨_, hred, hx86, hden⟩ :=

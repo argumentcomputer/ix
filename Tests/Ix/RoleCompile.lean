@@ -38,8 +38,53 @@ private def checkArtifact (artifact : Ixon.Env) (roots : Array Address) : IO Uni
     let key ← IO.ofExcept ((setup.cx.keyAt address).mapError reprStr)
     require (logical.find? key).isSome "a requested safe root was not installed in the logical environment"
 
+/-- Roles whose constants only the certificate closure brings in. The fixture's
+`String.utf8ByteSize` keeps its certificates' closure in the artifact, and that
+closure contains `Classical.choice` and `Nat.lor`, which the source closure does
+not. `ix compile` must bind both at the records the artifact holds (a checker
+reads an unbound `Classical.choice` as an axiom it does not admit), and
+`ix check-lean` must admit the whole artifact, named and anonymous, and write its
+host statement. -/
+private def checkCertificateRoles (dir executable : System.FilePath) : IO Unit := do
+  let source := "Tests/Fixtures/RoleCompileCertClosure.lean"
+  for anon in [false, true] do
+    let label := if anon then "anonymous" else "named"
+    let path := dir / s!"cert-closure-{label}.ixe"
+    let args := #["compile", source, "--local", "--no-build", "--out", path.toString]
+    let result ← IO.Process.output {
+      cmd := executable.toString
+      args := if anon then args.push "--anon" else args
+    }
+    require (result.exitCode == 0)
+      s!"certificate-closure artifact ({label}) failed:\n{result.stdout}\n{result.stderr}"
+    let artifact ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+    let some raw := artifact.roleBinding
+      | throw (IO.userError s!"certificate-closure artifact ({label}) has no role binding")
+    let table ← IO.ofExcept ((Ix.Kernel.Admission.admitBinding Address.admissionHash
+      ⟨raw.address, raw.bytes⟩).mapError fun e => toString (Ix.Kernel.Admission.Error.binding e))
+    for role in [Ix.Kernel.Role.choice, .natLor, .stringUtf8ByteSize] do
+      let some address := table.addressOf? role
+        | throw (IO.userError s!"the role table ({label}) does not bind {repr role}")
+      require (artifact.consts.contains address) s!"{repr role} is bound outside the artifact ({label})"
+      unless anon do
+        let name := Ix.RoleBinding.Compile.roleName role
+        let some named := artifact.named[Ix.Name.fromLeanName name]?
+          | throw (IO.userError s!"{name} is not published")
+        require (named.addr == address) s!"{name} is bound at another address than it is published at"
+    let statement := dir / s!"cert-closure-{label}.host"
+    let checkArgs := #["check-lean", path.toString, "--host-out", statement.toString]
+    let checked ← IO.Process.output {
+      cmd := executable.toString
+      args := if anon then checkArgs.push "--anon" else checkArgs
+    }
+    require (checked.exitCode == 0)
+      s!"ix check-lean did not admit the certificate-closure artifact ({label}), exit {checked.exitCode}:\n{checked.stdout}\n{checked.stderr}"
+    require (← statement.pathExists) s!"ix check-lean wrote no host statement ({label})"
+  IO.println "artifact compilation: certificate-closure roles bound, whole artifact admitted by ix check-lean, named and anonymous"
+
 private def check : IO Bool := IO.FS.withTempDir fun dir => do
   let executable ← IO.FS.realPath ".lake/build/bin/ix"
+  checkCertificateRoles dir executable
   for fixture in ["RoleCompileProof", "RoleCompileStructural"] do
     let path := dir / s!"{fixture}.ixe"
     let source := s!"Tests/Fixtures/{fixture}.lean"

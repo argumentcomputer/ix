@@ -1,7 +1,6 @@
 import IxCCTests.Aiur.WireProofs
 
-/-! Exact wire proof cones. Only addressed wrappers inherit the existing
-native BLAKE3 exception; codec and component facts use ordinary logic. -/
+/-! Exact wire proof cones, on ordinary logic (the addressed wrappers' hash is pure BLAKE3). -/
 
 /-- info: 'IxCC.Ixon.u64OfLEBytes_eight' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.u64OfLEBytes_eight
@@ -66,28 +65,16 @@ native BLAKE3 exception; codec and component facts use ordinary logic. -/
 /-- info: 'IxCC.Aiur.Wire.Encoded.roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Encoded.roundtrip
 
-/-- info: 'IxCC.Aiur.Wire.Addressed.canonical' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Aiur.Wire.Addressed.canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Addressed.canonical
 
-/-- info: 'IxCC.Aiur.Wire.Addressed.fits' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Aiur.Wire.Addressed.fits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Addressed.fits
 
-/-- info: 'IxCC.Aiur.Wire.Addressed.root_eq' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Aiur.Wire.Addressed.root_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Addressed.root_eq
 
-/-- info: 'IxCC.Aiur.Wire.Addressed.matches' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Aiur.Wire.Addressed.matches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Addressed.matches
 
 /-- info: 'IxCC.Aiur.Wire.checkComponents' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -96,10 +83,7 @@ native BLAKE3 exception; codec and component facts use ordinary logic. -/
 /-- info: 'IxCC.Aiur.Wire.ComponentChecked.evidence' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.ComponentChecked.evidence
 
-/-- info: 'IxCC.Aiur.Wire.Ingress.validated' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Aiur.Wire.Ingress.validated' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Aiur.Wire.Ingress.validated
 
 /-- info: 'IxCCTests.Aiur.WireProofs.counter_fits' depends on axioms: [propext, Classical.choice, Quot.sound] -/

@@ -62,6 +62,10 @@ structure Env where
 /-- Whether the environment was read from the role-bound envelope. -/
 def Env.isBound (env : Env) : Bool := env.binding.isSome
 
+/-- The role table's address (the binding hash) of a role-bound environment, `none`
+for an unbound one: what a compile claim names beside the root. -/
+def Env.bindingAddress (env : Env) : Option Address := env.binding.map (·.address)
+
 abbrev EnvM := _root_.Ixon.GetM
 
 def getAddress : EnvM Address := do

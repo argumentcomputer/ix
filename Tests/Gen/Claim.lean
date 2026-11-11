@@ -110,7 +110,7 @@ def genCompilePolicy : Gen CompilePolicy :=
   ]
 
 def genCompileClaim : Gen CompileClaim :=
-  CompileClaim.mk <$> genAddress <*> genAddress <*> genCompilePolicy <*> genUInt64Small <*> genAddress
+  CompileClaim.mk <$> genAddress <*> genOptional genAddress <*> genAddress <*> genCompilePolicy <*> genUInt64Small <*> genAddress
 
 def genClaim : Gen Claim :=
   frequency [

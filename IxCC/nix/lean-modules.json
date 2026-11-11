@@ -6037,7 +6037,7 @@
   "IxCC.Ixon.Kinds": {"path": "IxCC/Ixon/Kinds.lean", "imports": []},
   "IxCC.Ixon.Hash":
   {"path": "IxCC/Ixon/Hash.lean",
-   "imports": ["Blake3.Rust", "IxCC.Ixon.Address"]},
+   "imports": ["Blake3.Rust", "IxCC.Ixon.PureHash"]},
   "IxCC.Ixon.Address":
   {"path": "IxCC/Ixon/Address.lean", "imports": ["IxCC.Ixon.Serialize"]},
   "IxCC.IxIR.Encoding":

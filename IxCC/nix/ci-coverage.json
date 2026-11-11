@@ -1584,7 +1584,8 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
- "baseline": "P8 is correct; its fences",
+ "baseline":
+ "2026-11-14: the byte-level fences on the standard axioms (one hash), the compile claim's role table, the role-bound family; merged the closures pass's proofs, the resource checker's fix and standalone executables",
  "axiom_sha256":
- "b769b1e005e42359a8bb959ca2d025dc5aff1768bf4ebabd08d8678d7e807f8f",
+ "0981e678cad9236d0a33b4186c3bbfd1f93a143fd4108d93ec4b4e1dcd81c34d",
  "axiom_count": 5800}

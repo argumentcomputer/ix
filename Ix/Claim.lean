@@ -181,11 +181,15 @@ inductive CompilePolicy where
   | plainRc
   deriving BEq, Repr, Inhabited, DecidableEq
 
-/-- Asserts that `target` in the Ixon environment with Merkle root `env`
-compiles under `policy` with ABI parameter count `abiArity` to an x86-64 ELF64
-object whose BLAKE3 digest is `elfHash`. -/
+/-- Asserts that `target` in the Ixon environment with Merkle root `env`, read
+under the role table with binding hash `roleTable` (`none` for an environment
+without a role binding), compiles under `policy` with ABI parameter count
+`abiArity` to an x86-64 ELF64 object whose BLAKE3 digest is `elfHash`. A
+typing claim about the same artifact names the same pair: its `root` and its
+context's `binding`. -/
 structure CompileClaim where
   env      : Address
+  roleTable : Option Address
   target   : Address
   policy   : CompilePolicy
   abiArity : UInt64
@@ -222,12 +226,13 @@ Nine variants in six families:
   condition of the typing claims that assume their binding
   (`ClaimContext.bindingAssumed`), once per aggregate.
 - **`compile`**: certified compilation claim asserting that `target` in the
-  environment with Merkle root `env` compiles under `policy` with ABI parameter
-  count `abiArity` to an x86-64 ELF64 object with BLAKE3 digest `elfHash`
-  (tag 13, 2-byte header `E8 05`, object format `04`, validator `06`, followed
-  by `env` (32B), `target` (32B), `policy` (1B), `putTagN 0 0 abiArity`, and
-  `elfHash` (32B)). Values 11 and 12 of the tag space are the role-binding
-  section (`E8 03`) and the literal-class preimage (`E8 04`).
+  environment with Merkle root `env` and role table `roleTable` compiles under
+  `policy` with ABI parameter count `abiArity` to an x86-64 ELF64 object with
+  BLAKE3 digest `elfHash` (tag 13, 2-byte header `E8 05`, object format `04`,
+  validator `07`, followed by `env` (32B), `roleTable` (`00`, or `01` and 32B),
+  `target` (32B), `policy` (1B), `putTagN 0 0 abiArity`, and `elfHash` (32B)).
+  The former format (validator `06`, without `roleTable`) is refused. Values 11
+  and 12 of the tag space are the role-binding section (`E8 03`) and the literal-class preimage (`E8 04`).
 
 A `catalog` claim is formed only by aggregation (`ix_aggr` shape 16), from
 unconditional `checkEnv` claims (validator `erased-lean-v2` or
@@ -295,6 +300,9 @@ namespace CompileClaim
 
 def put (c : CompileClaim) : PutM Unit := do
   Serialize.put c.env
+  match c.roleTable with
+  | none => putU8 0
+  | some a => do putU8 1; Serialize.put a
   Serialize.put c.target
   CompilePolicy.put c.policy
   putTagN 0 0 c.abiArity
@@ -302,18 +310,22 @@ def put (c : CompileClaim) : PutM Unit := do
 
 def get : GetM CompileClaim := do
   let env ← Serialize.get
+  let roleTable ← match ← getU8 with
+    | 0 => pure none
+    | 1 => some <$> Serialize.get
+    | t => throw s!"CompileClaim.get: invalid role table tag {t}"
   let target ← Serialize.get
   let policy ← CompilePolicy.get
   let abiArity ← getTagN0Value
   let elfHash ← Serialize.get
-  return { env, target, policy, abiArity, elfHash }
+  return { env, roleTable, target, policy, abiArity, elfHash }
 
 instance : Serialize CompileClaim where
   put := put
   get := get
 
 instance : ToString CompileClaim where
-  toString c := s!"CompileClaim({c.env}, {c.target}, {c.policy}, {c.abiArity}, {c.elfHash})"
+  toString c := s!"CompileClaim({c.env}, {c.roleTable}, {c.target}, {c.policy}, {c.abiArity}, {c.elfHash})"
 
 end CompileClaim
 
@@ -630,8 +642,9 @@ namespace Claim
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
 -- so catalog is `E8 00`, resource `E8 01`, binding `E8 02`, and compile
--- `E8 05` (followed by scope `04 06`, `env` (32B), `target` (32B),
--- `policy` (1B), `putTagN 0 0 abiArity`, and `elfHash` (32B)) on the wire.
+-- `E8 05` (followed by scope `04 07`, `env` (32B), `roleTable` (`00`, or `01`
+-- and 32B), `target` (32B), `policy` (1B), `putTagN 0 0 abiArity`, and
+-- `elfHash` (32B)) on the wire.
 -- Values 11 (`E8 03`) and 12 (`E8 04`) are not claims: they begin the
 -- role-binding section (`IxCK/Kernel/Ixon/RoleTable.lean`) and the literal-class
 -- preimage (`Ix.ClaimContext.literalClassTag`), whose hashes claims commit to.
@@ -701,20 +714,23 @@ def getOptAddr : GetM (Option Address) := do
 - `5`, erased-lean-v2-class: a `checkEnv` claim relative to a literal class
   instead of one binding (`ClaimContext.literalClass`): its typing holds
   under every binding of that class that meets the specifications;
-- `6`, compile-v1: `compile`. -/
+- `6`, compile-v1: the former `compile` format, without the role table;
+  retired and refused;
+- `7`, compile-v2: `compile`. -/
 def VALIDATOR_STRUCTURAL : UInt8 := 0
 def VALIDATOR_ERASED_LEAN_RETIRED : UInt8 := 1
 def VALIDATOR_RESOURCE : UInt8 := 2
 def VALIDATOR_ERASED_LEAN : UInt8 := 3
 def VALIDATOR_ERASED_LEAN_ASSUMED : UInt8 := 4
 def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
-def VALIDATOR_COMPILE_V1 : UInt8 := 6
+def VALIDATOR_COMPILE_V1_RETIRED : UInt8 := 6
+def VALIDATOR_COMPILE_V2 : UInt8 := 7
 
 def validatorForVariant (variant : UInt64) : UInt8 :=
   if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then
     VALIDATOR_STRUCTURAL
   else if variant == VARIANT_RESOURCE_CLAIM then VALIDATOR_RESOURCE
-  else if variant == VARIANT_COMPILE_CLAIM then VALIDATOR_COMPILE_V1
+  else if variant == VARIANT_COMPILE_CLAIM then VALIDATOR_COMPILE_V2
   else VALIDATOR_ERASED_LEAN
 
 /-- Whether claims of variant `variant` may assume their binding: `check`
@@ -765,6 +781,8 @@ def getScope (variant : UInt64) : GetM UInt8 := do
   if found == VALIDATOR_ERASED_LEAN_CLASS && variant == VARIANT_CHECK_ENV_CLAIM then return found
   if validator == VALIDATOR_ERASED_LEAN && found == VALIDATOR_ERASED_LEAN_RETIRED then
     throw "claim: validator erased-lean-v1 is retired — regenerate the claim"
+  if validator == VALIDATOR_COMPILE_V2 && found == VALIDATOR_COMPILE_V1_RETIRED then
+    throw "claim: validator compile-v1 is retired (the compile claim now names the role table) — regenerate the claim"
   throw "claim: wrong validator identity"
 
 def putContext (ctx : ClaimContext) : PutM Unit := do

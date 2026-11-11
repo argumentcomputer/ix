@@ -6,10 +6,10 @@ import IxCC.Ixon.Address
 
 `Blake3.Pure.hash` is a total Lean implementation of unkeyed 32-byte BLAKE3
 (Blake3.lean, the pinned revision; standard axioms only), compiled natively
-like the rest of our code. Ingress authenticates every object of an Ixon
-environment with it, so reading a closure involves no foreign hash
-function. `IxCC.Ixon.Hash` keeps the Rust backend (`Address.blake3`)
-for its existing users.
+like the rest of our code. Every address IxCC computes is this
+hash (`Address.blake3`, `IxCC.Ixon.Hash`, is defined as it), so no address on the
+verifier path comes from foreign code (the erased checker's internal keys are
+not addresses; `IxCC.Ixon.Hash`).
 -/
 
 namespace IxCC.Ixon

@@ -4,57 +4,30 @@ import IxCC.CompileClaim.Proof
 import IxCC.Ring0.Proof
 import IxCC.Src.Proof.Lazify
 
-/-! The actual compiler statements expose the existing native BLAKE3 dependency
-through ingress and production. The separate replay fences retain their exact
-standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -/
+/-! The actual compiler statements, through ingress and production, and the replay
+fences alike rest on the standard axioms only: every address IxCC computes is pure BLAKE3
+(`IxCC.Ixon.Address.blake3`), so no statement depends on the Blake3 package's `native_decide`
+length proof. This file adds no assumption to `Recheck.run` or `sound`. -/
 
-/-- info: 'IxCC.Recheck.compileInput_parts' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compileInput_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compileInput_parts
 
-/-- info: 'IxCC.Recheck.compile_parts' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compile_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_parts
 
-/-- info: 'IxCC.Recheck.compileInput_object_refines' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compileInput_object_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compileInput_object_refines
 
-/-- info: 'IxCC.Recheck.compile_object_refines' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compile_object_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_object_refines
 
-/-- info: 'IxCC.Recheck.compile_driver_exists' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compile_driver_exists' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_driver_exists
 
-/-- info: 'IxCC.Recheck.compiled_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compiled_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compiled_sound
 
-/-- info: 'IxCC.Recheck.compile_bytes' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compile_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_bytes
 
 /-- info: 'IxCC.Recheck.sound_of_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -63,70 +36,34 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.Recheck.recheckWithContracts_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.recheckWithContracts_sound
 
-/-- info: 'IxCC.Recheck.compileWithContracts_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.compileWithContracts_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compileWithContracts_sound
 
 /-- info: 'IxCC.Compiler.recheck_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.recheck_sound
 
-/-- info: 'IxCC.Compiler.compileInput_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.compileInput_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.compileInput_sound
 
-/-- info: 'IxCC.Compiler.compile_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.compile_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.compile_sound
 
-/-- info: 'IxCC.Compiler.produceAuto_zeroRc_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.produceAuto_zeroRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.produceAuto_zeroRc_sound
 
-/-- info: 'IxCC.Compiler.produceAuto_plainRc_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.produceAuto_plainRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.produceAuto_plainRc_sound
 
-/-- info: 'IxCC.Compiler.compileAuto_zeroRc_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.compileAuto_zeroRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.compileAuto_zeroRc_sound
 
-/-- info: 'IxCC.Compiler.compileAuto_plainRc_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.compileAuto_plainRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.compileAuto_plainRc_sound
 
-/-- info: 'IxCC.Compiler.produceAuto_immortal_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.produceAuto_immortal_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.produceAuto_immortal_sound
 
-/-- info: 'IxCC.Compiler.compileAuto_immortal_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Compiler.compileAuto_immortal_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Compiler.compileAuto_immortal_sound
 
 /-- info: 'IxCC.CompileClaim.ofPayloadBytes_toPayloadBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -135,11 +72,7 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.CompileClaim.ofClaimBytes_toClaimBytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.ofClaimBytes_toClaimBytes
 
-/-- info: 'IxCC.CompileClaim.checkClaim_ok_iff' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.checkClaim_ok_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.checkClaim_ok_iff
 
 /-- info: 'IxCC.CompileClaim.verifyProgram_immortal_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -151,25 +84,13 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.CompileClaim.verifyProgram_plainRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_plainRc_sound
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_immortal_sound
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_zeroRc_sound
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_plainRc_sound
 
 /-- info: 'IxCC.X86.Mnemonic.all_unprivileged' does not depend on any axioms -/
@@ -211,11 +132,7 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.Ring0.verifyRing0Sip_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.verifyRing0Sip_sound
 
-/-- info: 'IxCC.Ring0.verifyBytesRing0Sip_sound' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Ring0.verifyBytesRing0Sip_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.verifyBytesRing0Sip_sound
 
 /-- info: 'IxCC.Ring0.admittedRing0Sip_call_not_goesWrong' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -278,11 +195,7 @@ standard-axiom sets. This file adds no assumption to `Recheck.run` or `sound`. -
 /-- info: 'IxCC.Ring0.kernelTablesPreserved_of_session_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ring0.kernelTablesPreserved_of_session_run
 
-/-- info: 'IxCC.Recheck.checkCanonicalRelevance_iff' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Recheck.checkCanonicalRelevance_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.checkCanonicalRelevance_iff
 
 /-- info: 'IxCC.Recheck.front_wellAnnotated' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -313,15 +226,9 @@ example {p : IxCC.Src.Program} {thm c : IxCC.Src.CId}
 #guard_msgs in #print axioms IxCC.Src.Table.ofCert_ok_props
 
 /-! The pins of the program ingress reads are the environment's: its role table's for a
-role-bound closure, the fixed table for an unbound one (`IxCC/docs/byte-contract.md`). Ingress
-keys block members by projection addresses computed with the native hash, hence the Blake3
-axiom. -/
+role-bound closure, the fixed table for an unbound one (`IxCC/docs/byte-contract.md`). -/
 
-/-- info: 'IxCC.Src.Ingress.ofEnv_pins' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.Src.Ingress.ofEnv_pins' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Ingress.ofEnv_pins
 
 /-- info: 'IxCC.Src.Pinned.known_pins' depends on axioms: [propext] -/
@@ -493,18 +400,10 @@ readback-discovery facts they rest on (`IxCC.Recheck.Readback`). -/
 /-- info: 'IxCC.CompileClaim.verifyProgram_zeroRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_zeroRc_rootShape
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_rootShape' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_immortal_rootShape
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_rootShape' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_zeroRc_rootShape
 
 /-- info: 'IxCC.Ring0.verifyRing0Sip_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -607,26 +506,14 @@ plain-RC roots (`IxCC.Recheck.Rc.Proof.RootTree`). -/
 /-- info: 'IxCC.CompileClaim.verifyProgram_zeroRc_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_zeroRc_shape
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_shape' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_immortal_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_immortal_shape
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_shape' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_zeroRc_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_zeroRc_shape
 
 /-- info: 'IxCC.CompileClaim.verifyProgram_plainRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyProgram_plainRc_rootShape
 
-/-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_rootShape' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_plainRc_rootShape

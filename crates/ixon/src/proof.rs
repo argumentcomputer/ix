@@ -1854,20 +1854,31 @@ mod tests {
   }
 
   /// The Lean-only compile claim (`Ix.Claim.compile`, `IxCC.CompileClaim`):
-  /// TagN `0xE8 0x05` (variant 13), scope `04 06` (compile-v1), `env`,
-  /// `target`, policy, `abiArity` and `elfHash`. This is the 102-byte vector
-  /// that `Tests/Ix/Claim.lean` and `IxCC/IxCCTests/Pipeline/Compiler.lean` pin. Rust
-  /// has no compile variant: it must refuse these bytes with an error, under
-  /// either validator byte, as a proof wrapper, and as a role-binding section,
-  /// never read them as another claim.
+  /// TagN `0xE8 0x05` (variant 13), scope `04 07` (compile-v2), `env`, the role
+  /// table (`00`, or `01` and its address), `target`, policy, `abiArity` and
+  /// `elfHash`. This is the 103-byte vector that `Tests/Ix/Claim.lean` and
+  /// `IxCC/IxCCTests/Pipeline/Compiler.lean` pin. Rust has no compile variant: it
+  /// must refuse these bytes with an error, under either validator byte, as a
+  /// proof wrapper, and as a role-binding section, never read them as another
+  /// claim; the same holds for the former 102-byte format (validator `06`, no
+  /// role table).
   #[test]
   fn compile_claim_vector_refused() {
-    let mut bytes = vec![0xE8, 0x05, 4, 6];
+    let mut bytes = vec![0xE8, 0x05, 4, 7];
     bytes.extend_from_slice(&[0x11; 32]);
+    bytes.push(0x00);
     bytes.extend_from_slice(&[0x22; 32]);
     bytes.extend_from_slice(&[0x02, 0x03]);
     bytes.extend_from_slice(&[0x33; 32]);
-    assert_eq!(bytes.len(), 102);
+    assert_eq!(bytes.len(), 103);
+    let mut former = vec![0xE8, 0x05, 4, 6];
+    former.extend_from_slice(&[0x11; 32]);
+    former.extend_from_slice(&[0x22; 32]);
+    former.extend_from_slice(&[0x02, 0x03]);
+    former.extend_from_slice(&[0x33; 32]);
+    assert_eq!(former.len(), 102);
+    let err = Claim::from_bytes(&former).unwrap_err();
+    assert!(err.contains("wrong validator identity"), "{err}");
     let err = Claim::from_bytes(&bytes).unwrap_err();
     assert!(err.contains("wrong validator identity"), "{err}");
     // Under the validator its variant would have (erased-lean-v2), the

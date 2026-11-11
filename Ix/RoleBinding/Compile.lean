@@ -829,6 +829,15 @@ def sliceSupportRoles? (source : Lean.Environment) (artifact : Ixon.Env)
 def certTheoremsOf (roles : List Role) : List Lean.Name :=
   (Ix.RoleEvidence.allCertTheorems.filter (fun (role, _) => roles.contains role)).flatMap (·.2)
 
+/-- The roles whose constants the certificate closure of `required` contains: the
+closure `compileCertificates` compiles for `certTheoremsOf required`, read from
+`certSource`. When `generate` retains that closure (`retainsCertificates`), its
+records enter the artifact, so these are roles the artifact publishes. -/
+def certificateRoles (certSource : Lean.Environment) (required : List Role) : List Role :=
+  let constants := Ix.EnvScope.collectSelectedDeps certSource (certTheoremsOf required)
+  let found := constants.filterMap fun (name, _) => Role.ofLeanName? (Ix.Kernel.Name.ofLeanName name)
+  Role.all.filter found.contains
+
 /-- The certificate closure of `theorems`, read from `certSource` and compiled
 by `backend` (empty for no theorems). -/
 def compileCertificates (backend : Backend) (certSource : IO Lean.Environment)
@@ -865,7 +874,9 @@ toolchain's environment as `source`: `nativeCertSource` for a compile of ix's ow
 toolchain, and the imported environment itself for a compile of another
 toolchain's export (`Ix.LeanExport`). It is only run when a role with
 certificate evidence (a well-founded operation, or a definition specified by
-equations that hold by a certificate) is published. A `prefetched` compile
+equations that hold by a certificate) is published; role selection reads it
+too when the artifact retains the certificate closure (`certificateRoles`).
+A `prefetched` compile
 (`prefetchCertificates`, from the same `backend` and `certSource`) stands in
 for it when its theorems are the ones needed.
 
@@ -884,17 +895,37 @@ def finalize (backend : Backend) (source : Lean.Environment)
     | some m => pure m
     | none => IO.ofExcept (sourceAddresses artifact)
   let initialRoles := publishedRolesFrom existing
-  let initRoles := closeRoles (Ix.Kernel.preludeShape.flatten ++ initialRoles)
-  -- The roles to support, and how: `initRoles`, sliced from the artifact when
-  -- it can be; otherwise `supportInput`'s closure, from its selected input.
-  let sliced? := if initialRoles == initRoles then
-      sliceSupportRoles? source artifact existing initRoles
-    else none
-  let (required, plan) ← match sliced? with
-    | some sliced => pure (initRoles, Sum.inl sliced)
-    | none => do
-      let (required, selected) ← IO.ofExcept (supportInput source artifact (some initialRoles))
-      pure (required, Sum.inr selected)
+  -- The roles to support, and how, to a fixpoint over the role domain. From the
+  -- roles `seed` (first the artifact's published roles): `closeRoles` of them,
+  -- sliced from the artifact when that is the artifact's own role closure;
+  -- otherwise `supportInput`'s closure, from its selected input. When the
+  -- emitted artifact retains the certificate closure (`retainsCertificates`),
+  -- every role whose constant that closure contains (`certificateRoles`) joins
+  -- the seed: those records enter the artifact, and a checker reads a role's
+  -- constant as its role only when the table binds it (an unbound
+  -- `Classical.choice` is an axiom the checker does not admit).
+  let mut seed := initialRoles
+  let mut selection? : Option (List Role × (Ixon.Env ⊕ Ix.Compile.CompileInput)) := none
+  for _ in [:Role.all.length + 1] do
+    let initRoles := closeRoles (Ix.Kernel.preludeShape.flatten ++ seed)
+    let sliced? := if seed == initialRoles && initialRoles == initRoles then
+        sliceSupportRoles? source artifact existing initRoles
+      else none
+    let (required, plan) ← match sliced? with
+      | some sliced => pure (initRoles, Sum.inl sliced)
+      | none => do
+        let (required, selected) ← IO.ofExcept (supportInput source artifact (some seed))
+        pure (required, Sum.inr selected)
+    let mut extra : List Role := []
+    if retainsCertificates required && required.length < Role.all.length then
+      let certEnv ← certSource
+      extra := (certificateRoles certEnv required).filter (!required.contains ·)
+    if extra.isEmpty then
+      selection? := some (required, plan)
+      break
+    seed := Role.all.filter (required ++ extra).contains
+  let some (required, plan) := selection?
+    | throw (IO.userError "artifact support: role selection exceeded its finite domain")
   -- Their certificates: the prefetched compile when it compiles exactly these
   -- theorems, otherwise our own, joined in the `finally` below.
   let theorems := certTheoremsOf required

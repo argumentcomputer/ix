@@ -1118,7 +1118,9 @@ theorem verifyProgramRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
 
 /-- **Byte-Level Ring-0 Certified-Compilation Admission Theorem (`verifyBytesRing0Sip_sound`)**:
 Any `Ring0Sip` that passes `sip.verifyBytes envBytes equations typecheck = true`
-yields an ingested `Recheck.Input` with `typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`,
+yields an ingested `Recheck.Input` whose environment root and role-table address
+(`none` for an unbound environment) are the claim's, with
+`typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`,
 `Src.Resource.validate inp.program = .ok ()`, `inp.program` built by
 `Src.Ingress.ofEnv` from `inp.env` and the selected roots (`Recheck.ingress_parts`), and
 canonical relevance (`Stage A`): the certificate's table passes `Src.Table.ofCert` and its
@@ -1146,6 +1148,7 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
         inp.program = { rawProg with known := Src.Pinned.known rawProg,
                                      resource := inp.hints.resource }) ∧
       inp.env.root = sip.claim.env ∧
+      inp.env.bindingAddress = sip.claim.roleTable ∧
       CompileClaim.checkCertCanonicalRelevance sip.cfg inp sip.claim.policy sip.certText = true ∧
       (match sip.claim.policy with
        | .immortal | .zeroRc =>
@@ -1204,7 +1207,7 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
             (Recheck.checkCanonicalRelevance_iff sip.cfg inp cert.base.table
               cert.base.relevance).mp hcanon
           exact ⟨cert, table, rfl, htab, hann⟩
-    exact ⟨inp, rfl, hdec, htc, hres, hingProg, hver.1.1, hver.1.2, hann,
+    exact ⟨inp, rfl, hdec, htc, hres, hingProg, hver.1.1.1, hver.1.1.2, hver.1.2, hann,
       verifyRing0Sip_sound hver.2⟩
 
 /-- What a SIP's certificate determines on `P`: the checked source, its `view` and

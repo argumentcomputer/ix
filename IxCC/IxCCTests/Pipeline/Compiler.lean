@@ -388,27 +388,56 @@ def compileClaims (a : Assert) : IO String := do
     "CompilePolicy: wire tag round-trip"
   let vecClaim : CompileClaim := {
     env := ⟨ByteArray.mk (Array.replicate 32 0x11), by decide⟩
+    roleTable := none
     target := ⟨ByteArray.mk (Array.replicate 32 0x22), by decide⟩
     policy := .plainRc
     abiArity := 3
     elfHash := ⟨ByteArray.mk (Array.replicate 32 0x33), by decide⟩
   }
+  -- The claim names the role table (`roleTable`, validator `07`). ix's `Tests/Ix/Claim.lean`
+  -- pins the same vectors: `00` after `env` for an unbound environment, `01` and the
+  -- table's address for a role-bound one; the former format (validator `06`, no role
+  -- table) is refused.
   let expectedVecBytes : ByteArray :=
+    ByteArray.mk (#[0xE8, 0x05, 0x04, 0x07] ++
+      Array.replicate 32 0x11 ++ #[0x00] ++
+      Array.replicate 32 0x22 ++
+      #[0x02, 0x03] ++
+      Array.replicate 32 0x33)
+  let boundVecClaim : CompileClaim :=
+    { vecClaim with roleTable := some ⟨ByteArray.mk (Array.replicate 32 0x44), by decide⟩ }
+  let expectedBoundVecBytes : ByteArray :=
+    ByteArray.mk (#[0xE8, 0x05, 0x04, 0x07] ++
+      Array.replicate 32 0x11 ++ #[0x01] ++ Array.replicate 32 0x44 ++
+      Array.replicate 32 0x22 ++
+      #[0x02, 0x03] ++
+      Array.replicate 32 0x33)
+  let formerVecBytes : ByteArray :=
     ByteArray.mk (#[0xE8, 0x05, 0x04, 0x06] ++
       Array.replicate 32 0x11 ++
       Array.replicate 32 0x22 ++
       #[0x02, 0x03] ++
       Array.replicate 32 0x33)
   expect a (vecClaim.toClaimBytes == expectedVecBytes &&
-      vecClaim.toClaimBytes.size == 102 &&
+      vecClaim.toClaimBytes.size == 103 &&
       CompileClaim.ofClaimBytes vecClaim.toClaimBytes == some vecClaim &&
       CompileClaim.ofPayloadBytes vecClaim.toPayloadBytes == some vecClaim)
-    "CompileClaim: deterministic 102-byte wire vector (#[0xE8, 0x05, 0x04, 0x06, ...]) and roundtrip"
+    "CompileClaim: deterministic 103-byte wire vector (#[0xE8, 0x05, 0x04, 0x07, ...], no role table) and roundtrip"
+  expect a (boundVecClaim.toClaimBytes == expectedBoundVecBytes &&
+      boundVecClaim.toClaimBytes.size == 135 &&
+      CompileClaim.ofClaimBytes boundVecClaim.toClaimBytes == some boundVecClaim &&
+      CompileClaim.ofPayloadBytes boundVecClaim.toPayloadBytes == some boundVecClaim)
+    "CompileClaim: deterministic 135-byte wire vector with a role table, and roundtrip"
+  expect a (CompileClaim.ofClaimBytes formerVecBytes == none &&
+      CompileClaim.ofClaimBytes (formerVecBytes.set! 3 0x07) == none &&
+      CompileClaim.ofClaimBytes (expectedVecBytes.set! 3 0x06) == none &&
+      CompileClaim.ofClaimBytes (expectedVecBytes.set! 36 0x02) == none)
+    "CompileClaim: the former format (validator 06, no role table), either header over the other payload, and an invalid role-table tag are refused"
   -- `abiArity` is ix's `N0` code. ix's `Tests/Ix/Claim.lean` pins the same
   -- vectors: one byte below 128, then the TagN rungs; `80 80` is 256 (IxCC's former
   -- Tag0 spelling of 128); the invalid code `C4` and the code of `2 ^ 64` are refused.
   let arityClaimBytes (arity : List UInt8) : ByteArray :=
-    ByteArray.mk (#[0xE8, 0x05, 0x04, 0x06] ++ Array.replicate 32 0x11 ++
+    ByteArray.mk (#[0xE8, 0x05, 0x04, 0x07] ++ Array.replicate 32 0x11 ++ #[0x00] ++
       Array.replicate 32 0x22 ++ #[0x02] ++ arity.toArray ++ Array.replicate 32 0x33)
   let arityVectors : List (Nat × List UInt8) := [
     (0, [0x00]), (5, [0x05]), (6, [0x06]), (127, [0x7F]), (128, [0x80, 0x00]),
@@ -427,24 +456,24 @@ def compileClaims (a : Assert) : IO String := do
       CompileClaim.ofClaimBytes (vecClaim.toClaimBytes.set! 1 0x04) == none)
     "CompileClaim: the role-binding (E8 03) and literal-class (E8 04) tags are not compile claims"
   let gcdClaimBytes := gcdClaim.toClaimBytes
-  expect a (gcdClaimBytes.size == 102 &&
+  expect a (gcdClaimBytes.size == 103 && gcdClaim.roleTable == none &&
       gcdClaimBytes.get! 0 == 0xE8 && gcdClaimBytes.get! 1 == 0x05 &&
-      gcdClaimBytes.get! 2 == 0x04 && gcdClaimBytes.get! 3 == 0x06 &&
-      gcdClaimBytes.get! 68 == 1 && gcdClaimBytes.get! 69 == 2 &&
+      gcdClaimBytes.get! 2 == 0x04 && gcdClaimBytes.get! 3 == 0x07 &&
+      gcdClaimBytes.get! 36 == 0 && gcdClaimBytes.get! 69 == 1 && gcdClaimBytes.get! 70 == 2 &&
       CompileClaim.ofClaimBytes gcdClaimBytes == some gcdClaim &&
       CompileClaim.ofPayloadBytes gcdClaim.toPayloadBytes == some gcdClaim &&
       gcdClaim.commit == Ixon.Address.blake3Pure gcdClaimBytes)
-    "gcd CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x06, ...]), roundtrip, and deterministic BLAKE3 commit"
+    "gcd CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x07, ...], no role table), roundtrip, and deterministic BLAKE3 commit"
   let rcClaimBytes := rcClaim.toClaimBytes
-  expect a (rcClaimBytes.size == 102 &&
+  expect a (rcClaimBytes.size == 103 &&
       rcClaimBytes.get! 0 == 0xE8 && rcClaimBytes.get! 1 == 0x05 &&
-      rcClaimBytes.get! 2 == 0x04 && rcClaimBytes.get! 3 == 0x06 &&
-      rcClaimBytes.get! 68 == 2 && rcClaimBytes.get! 69 == 2 &&
+      rcClaimBytes.get! 2 == 0x04 && rcClaimBytes.get! 3 == 0x07 &&
+      rcClaimBytes.get! 36 == 0 && rcClaimBytes.get! 69 == 2 && rcClaimBytes.get! 70 == 2 &&
       CompileClaim.ofClaimBytes rcClaimBytes == some rcClaim &&
       CompileClaim.ofPayloadBytes rcClaim.toPayloadBytes == some rcClaim &&
       rcClaim.commit == Ixon.Address.blake3Pure rcClaimBytes &&
       rcClaim.commit != gcdClaim.commit)
-    "reverseList CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x06, ...]), roundtrip, and deterministic BLAKE3 commit"
+    "reverseList CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x07, ...], no role table), roundtrip, and deterministic BLAKE3 commit"
   let (madeGcdClaim, madeGcdCert, madeGcdElf) ← IO.ofExcept (CompileClaim.makeClaim gcdCfg gcdBytes gcdJson)
   expect a (madeGcdClaim == gcdClaim && madeGcdCert == gcdCert && madeGcdElf == gcdElf &&
       (CompileClaim.checkClaim gcdCfg gcdBytes gcdJson madeGcdClaim madeGcdCert).isOk &&

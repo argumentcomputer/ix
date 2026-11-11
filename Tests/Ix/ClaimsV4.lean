@@ -34,6 +34,7 @@ def fixtures : Array (String × Ix.Claim) :=
 def compileFixture : String × Ix.Claim :=
   ("compile", .compile
     { env := ⟨ByteArray.mk (Array.replicate 32 0x11)⟩
+      roleTable := some ⟨ByteArray.mk (Array.replicate 32 0x44)⟩
       target := ⟨ByteArray.mk (Array.replicate 32 0x22)⟩
       policy := .plainRc
       abiArity := 3

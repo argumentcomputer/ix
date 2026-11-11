@@ -279,7 +279,8 @@ def stage (name : String) (bs : ByteArray) (json : Lean.Json) (typecheck : Bool)
     else pure base
   if name == "verify" then
     let claim : CompileClaim :=
-      { env := inp.env.root, target := (P.roots.head?.map (·.1)).getD default, policy := .immortal
+      { env := inp.env.root, roleTable := inp.env.bindingAddress
+        target := (P.roots.head?.map (·.1)).getD default, policy := .immortal
         abiArity := 0, elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
     let text := base.toText
     let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
@@ -394,7 +395,8 @@ def bytesEntries (dir : System.FilePath) (label : String) (bs : ByteArray) (json
   let main := match Src.Hints.ofK1Json json with
     | .ok h => (h.roots[0]?.map (·.1)).getD default
     | .error _ => default
-  let claim : CompileClaim := { env := env.root, target := main, policy := .immortal, abiArity := 0
+  let claim : CompileClaim := { env := env.root, roleTable := env.bindingAddress, target := main
+                                policy := .immortal, abiArity := 0
                                 elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
   let word := fun (b : Bool) => if b then "accepted" else "refused"
   let mut outs : Array String := #[]
@@ -517,7 +519,8 @@ def entryPoints (dir : System.FilePath) (label : String) (bs : ByteArray) (json 
     IO String := do
   traceInput label
   let env ← IO.ofExcept (V3.decodeAnonymousEnv bs)
-  let claim : CompileClaim := { env := env.root, target := main, policy := .immortal, abiArity := 0
+  let claim : CompileClaim := { env := env.root, roleTable := env.bindingAddress, target := main
+                                policy := .immortal, abiArity := 0
                                 elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
   let (inp?, cert) ← match Recheck.ingress bs json [] typecheck with
     | .error e => pure (Sum.inl e.render, ({} : Recheck.Cert))

@@ -592,7 +592,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
 aggregating their members' check-env claims"
   | .compile .. =>
     -- A compile claim is formed and verified by the IxCC certificate checker
-    -- (`compile-v1`), never by an IxVM circuit run.
+    -- (`compile-v2`), never by an IxVM circuit run.
     throw "compile claims have no IxVM witness; they are verified by the \
 IxCC certificate checker"
   return { funcName := `verify_claim

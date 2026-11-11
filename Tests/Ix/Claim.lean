@@ -81,13 +81,13 @@ def claimUnits : TestSeq :=
     (.quot (some .type) (some 1) (some addr2))))
   -- Compile claims
   ++ test "Compile immortal roundtrip" (claimSerde (.compile
-    { env := addr1, target := addr2, policy := .immortal, abiArity := 2, elfHash := addr3 }))
+    { env := addr1, roleTable := none, target := addr2, policy := .immortal, abiArity := 2, elfHash := addr3 }))
   ++ test "Compile zeroRc roundtrip" (claimSerde (.compile
-    { env := addr1, target := addr2, policy := .zeroRc, abiArity := 3, elfHash := addr3 }))
+    { env := addr1, roleTable := some addr2, target := addr2, policy := .zeroRc, abiArity := 3, elfHash := addr3 }))
   ++ test "Compile plainRc roundtrip" (claimSerde (.compile
-    { env := addr1, target := addr2, policy := .plainRc, abiArity := 1, elfHash := addr3 }))
+    { env := addr1, roleTable := some addr3, target := addr2, policy := .plainRc, abiArity := 1, elfHash := addr3 }))
   ++ test "Compile proof roundtrip" (proofSerde
-    { claim := .compile { env := addr1, target := addr2, policy := .zeroRc, abiArity := 2, elfHash := addr3 }
+    { claim := .compile { env := addr1, roleTable := some addr1, target := addr2, policy := .zeroRc, abiArity := 2, elfHash := addr3 }
       proof := ⟨#[0x10, 0x20, 0x30]⟩ })
 
 /-! ## Byte-level encoding tests
@@ -144,23 +144,37 @@ def claimEncodingTests : TestSeq :=
   -- Contains: tag + scope + two addresses = 67
   ++ test "Contains tag byte is 0xE7" (containsBytes.data[0]! == 0xE7)
   ++ test "Contains size is 67" (containsBytes.size == 67)
-  -- Compile: deterministic 102-byte wire vector shared with IxCC.CompileClaim
+  -- Compile: deterministic 103- and 135-byte wire vectors shared with IxCC.CompileClaim
   ++ (let envHash : Address := ⟨ByteArray.mk (Array.replicate 32 0x11)⟩
       let target : Address := ⟨ByteArray.mk (Array.replicate 32 0x22)⟩
       let elfHash : Address := ⟨ByteArray.mk (Array.replicate 32 0x33)⟩
       let cc : Ix.CompileClaim :=
-        { env := envHash, target := target, policy := .plainRc, abiArity := 3, elfHash := elfHash }
+        { env := envHash, roleTable := none, target := target, policy := .plainRc, abiArity := 3
+          elfHash := elfHash }
       let compileBytes := Claim.ser (.compile cc)
-      let expectedCompileBytes : ByteArray :=
+      -- The claim names the role table (validator `07`): `00` after `env` for an
+      -- environment without a role binding, `01` and the table's address otherwise.
+      let boundCc : Ix.CompileClaim :=
+        { cc with roleTable := some ⟨ByteArray.mk (Array.replicate 32 0x44)⟩ }
+      let expectedBoundBytes : ByteArray :=
+        ByteArray.mk (#[0xE8, 0x05, 0x04, 0x07]
+          ++ Array.replicate 32 0x11 ++ #[0x01] ++ Array.replicate 32 0x44
+          ++ Array.replicate 32 0x22 ++ #[0x02, 0x03] ++ Array.replicate 32 0x33)
+      -- The former format (validator `06`, no role table) is refused.
+      let formerBytes : ByteArray :=
         ByteArray.mk (#[0xE8, 0x05, 0x04, 0x06]
-          ++ Array.replicate 32 0x11
+          ++ Array.replicate 32 0x11 ++ Array.replicate 32 0x22
+          ++ #[0x02, 0x03] ++ Array.replicate 32 0x33)
+      let expectedCompileBytes : ByteArray :=
+        ByteArray.mk (#[0xE8, 0x05, 0x04, 0x07]
+          ++ Array.replicate 32 0x11 ++ #[0x00]
           ++ Array.replicate 32 0x22
           ++ #[0x02, 0x03]
           ++ Array.replicate 32 0x33)
       -- `abiArity`'s `N0` code at its boundaries; `IxCC/IxCCTests/Pipeline/Compiler.lean`
       -- pins the same vectors for `IxCC.CompileClaim` (B4-2). `80 80` is 256.
       let arityClaimBytes (arity : List UInt8) : ByteArray :=
-        ByteArray.mk (#[0xE8, 0x05, 0x04, 0x06] ++ Array.replicate 32 0x11
+        ByteArray.mk (#[0xE8, 0x05, 0x04, 0x07] ++ Array.replicate 32 0x11 ++ #[0x00]
           ++ Array.replicate 32 0x22 ++ #[0x02] ++ arity.toArray ++ Array.replicate 32 0x33)
       let arityVectors : List (UInt64 × List UInt8) := [
         (0, [0x00]), (5, [0x05]), (6, [0x06]), (127, [0x7F]), (128, [0x80, 0x00]),
@@ -168,11 +182,18 @@ def claimEncodingTests : TestSeq :=
         (18446744073709551615, [0xC3, 0x7F, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF])]
       let arityRejected : List (List UInt8) :=
         [[0xC4], [0xC3, 0x80, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]]
-      test "Compile wire header is E8 05 04 06"
-        (compileBytes.extract 0 4 == ⟨#[0xE8, 0x05, 0x04, 0x06]⟩)
-      ++ test "Compile wire size is 102" (compileBytes.size == 102)
-      ++ test "Compile wire matches deterministic 102-byte vector"
+      test "Compile wire header is E8 05 04 07"
+        (compileBytes.extract 0 4 == ⟨#[0xE8, 0x05, 0x04, 0x07]⟩)
+      ++ test "Compile wire size is 103 without a role table" (compileBytes.size == 103)
+      ++ test "Compile wire matches deterministic 103-byte vector"
            (compileBytes == expectedCompileBytes)
+      ++ test "Compile with a role table matches deterministic 135-byte vector and roundtrips"
+           (Claim.ser (.compile boundCc) == expectedBoundBytes &&
+             (Claim.de expectedBoundBytes).toOption == some (.compile boundCc))
+      ++ test "Compile former format (validator 06, no role table) is refused"
+           ((Claim.de formerBytes).toOption.isNone && (Claim.de (formerBytes.set! 3 0x07)).toOption.isNone
+             && (Claim.de (expectedCompileBytes.set! 3 0x06)).toOption.isNone
+             && (Claim.de (expectedCompileBytes.set! 36 0x02)).toOption.isNone)
       ++ test "Compile deterministic vector roundtrips via Claim.de"
            ((Claim.de compileBytes).toOption == some (.compile cc))
       ++ test "Compile abiArity N0 vectors shared with IxCC.CompileClaim"

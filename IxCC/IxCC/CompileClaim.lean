@@ -14,9 +14,13 @@ object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
 
 1. **Wire Format Alignment**:
    - `CompileClaim.toClaimBytes` serializes the exact 4-byte `Ix.Claim.put (.compile ...)`
-     header `#[0xE8, 0x05, 0x04, 0x06]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V1`)
-     followed by `toPayloadBytes` (`env` 32B ++ `target` 32B ++ `[policy.toUInt8]` 1B ++
-     `n0Bytes abiArity` 1..9B ++ `elfHash` 32B), totaling 102 bytes when `abiArity < 128`.
+     header `#[0xE8, 0x05, 0x04, 0x07]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V2`)
+     followed by `toPayloadBytes` (`env` 32B ++ `roleTable` as `00`, or `01` and 32B ++
+     `target` 32B ++ `[policy.toUInt8]` 1B ++ `n0Bytes abiArity` 1..9B ++ `elfHash` 32B),
+     totaling 103 bytes for an unbound environment and 135 for a role-bound one when
+     `abiArity < 128`. The claim names the pair `(env, roleTable)` a kernel claim about the
+     same artifact names (`IxCC/docs/byte-contract.md`). Claims of the earlier format
+     (validator `06`, no role table) are refused.
      `abiArity` uses ix's TagN code at flag width 0 (`Ixon.putTagN 0 0`), so the
      bytes agree with `Ix.Claim.ser` for every arity below `2 ^ 64`.
    - `CompileClaim.ofClaimBytes` parses and validates the canonical wire envelope
@@ -93,10 +97,14 @@ def ofUInt8? : UInt8 → Option CompilePolicy
 
 end CompilePolicy
 
-/-- Certified compilation claim connecting an Ixon environment Merkle root `env`
-and target constant `target` under `policy` and `abiArity` to `elfHash`. -/
+/-- Certified compilation claim connecting an Ixon environment Merkle root `env`,
+its role table's address `roleTable` and target constant `target` under `policy` and
+`abiArity` to `elfHash`. -/
 structure CompileClaim where
   env      : Ixon.Address
+  /-- The binding hash of a role-bound environment (the role table's address,
+  `IxCC/docs/byte-contract.md`); `none` for an unbound one. -/
+  roleTable : Option Ixon.Address
   target   : Ixon.Address
   policy   : CompilePolicy
   abiArity : Nat
@@ -123,16 +131,17 @@ def CLAIM_TAG4_COMPILE : ByteArray := ByteArray.mk #[0xE8, 0x05]
 /-- Scope domain tag for object format claims (`OBJECT_FORMAT = 4`). -/
 def OBJECT_FORMAT : UInt8 := 0x04
 
-/-- Validator ID for `CompileClaim` v1 (`6`, matching `Ix.Claim.VALIDATOR_COMPILE_V1`). -/
-def VALIDATOR_COMPILE_V1 : UInt8 := 0x06
+/-- Validator ID for `CompileClaim` v2 (`7`, matching `Ix.Claim.VALIDATOR_COMPILE_V2`): the
+claim with the role table. Version 1 (`6`, without it) is refused. -/
+def VALIDATOR_COMPILE_V2 : UInt8 := 0x07
 
 /-- Claim variant index (`13`, encoded in `CLAIM_TAG4_COMPILE`). -/
 def VARIANT_COMPILE_CLAIM : UInt8 := 13
 
 /-- The exact 4-byte `Ix.Claim.put (.compile ...)` wire header:
-`#[0xE8, 0x05, 0x04, 0x06]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V1`). -/
+`#[0xE8, 0x05, 0x04, 0x07]` (`putTagN 4 0xE 13` ++ `putScope VALIDATOR_COMPILE_V2`). -/
 def validatorHeader : ByteArray :=
-  ByteArray.mk #[0xE8, 0x05, OBJECT_FORMAT, VALIDATOR_COMPILE_V1]
+  ByteArray.mk #[0xE8, 0x05, OBJECT_FORMAT, VALIDATOR_COMPILE_V2]
 
 /-! ### `abiArity`: ix's `N0` integer code
 
@@ -211,9 +220,25 @@ def getN0 : Ixon.GetM Nat :=
     | some width => Ixon.getBytes width >>= n0Finish header
     | none => throw "CompileClaim: invalid abiArity code"
 
+/-- The role-table field on the wire: `00` for none, `01` and the 32-byte address for
+some (ix's `Claim.putOptAddr`). -/
+def optAddrBytes : Option Ixon.Address → ByteArray
+  | none => Ixon.u8Bytes 0
+  | some a => Ixon.u8Bytes 1 ++ a.hash
+
+/-- The role-table field after its tag byte. -/
+def optAddrRest (tag : UInt8) : Ixon.GetM (Option Ixon.Address) :=
+  if tag = 0 then pure none
+  else if tag = 1 then (Ixon.Serialize.get : Ixon.GetM Ixon.Address) >>= fun a => pure (some a)
+  else throw "CompileClaim: invalid role table tag"
+
+/-- Strict reader of the role-table field (`optAddrBytes`). -/
+def getOptAddr : Ixon.GetM (Option Ixon.Address) := Ixon.getU8 >>= optAddrRest
+
 /-- Monadic payload reader in `Ixon.GetM` for `CompileClaim`. -/
 def getPayloadM : Ixon.GetM CompileClaim := do
   let env ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
+  let roleTable ← getOptAddr
   let target ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
   let polByte ← Ixon.getU8
   let some policy := CompilePolicy.ofUInt8? polByte |
@@ -222,6 +247,7 @@ def getPayloadM : Ixon.GetM CompileClaim := do
   let elfHash ← (Ixon.Serialize.get : Ixon.GetM Ixon.Address)
   return {
     env
+    roleTable
     target
     policy
     abiArity
@@ -235,10 +261,12 @@ def getClaimM : Ixon.GetM CompileClaim := do
     throw "CompileClaim: invalid validator header"
   getPayloadM
 
-/-- Serialize the `CompileClaim` payload (`env ++ target ++ [policy.toUInt8] ++ n0Bytes abiArity ++ elfHash`),
-matching `Ix.Claim.CompileClaim.put` byte-for-byte (98 bytes when `abiArity < 128`). -/
+/-- Serialize the `CompileClaim` payload (`env ++ optAddrBytes roleTable ++ target ++
+[policy.toUInt8] ++ n0Bytes abiArity ++ elfHash`), matching `Ix.Claim.CompileClaim.put`
+byte-for-byte (99 bytes unbound, 131 role-bound, when `abiArity < 128`). -/
 def toPayloadBytes (c : CompileClaim) : ByteArray :=
   c.env.hash ++
+    optAddrBytes c.roleTable ++
     c.target.hash ++
     Ixon.u8Bytes c.policy.toUInt8 ++
     n0Bytes c.abiArity ++
@@ -248,8 +276,9 @@ def toPayloadBytes (c : CompileClaim) : ByteArray :=
 def ofPayloadBytes (bs : ByteArray) : Option CompileClaim :=
   (Ixon.runGet getPayloadM bs).toOption
 
-/-- Serialize the full `CompileClaim` wire envelope (`#[0xE8, 0x05, 0x04, 0x06] ++ c.toPayloadBytes`),
-matching `Ix.Claim.ser (.compile ...)` byte-for-byte (102 bytes when `abiArity < 128`). -/
+/-- Serialize the full `CompileClaim` wire envelope (`#[0xE8, 0x05, 0x04, 0x07] ++ c.toPayloadBytes`),
+matching `Ix.Claim.ser (.compile ...)` byte-for-byte (103 bytes unbound, 135 role-bound, when
+`abiArity < 128`). -/
 def toClaimBytes (c : CompileClaim) : ByteArray :=
   validatorHeader ++ c.toPayloadBytes
 
@@ -395,7 +424,9 @@ def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
     | .error _ => false
 
 /-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
-JSON, and serialized certificate `certText`. Defaults to `typecheck := true` so
+JSON, and serialized certificate `certText`: the environment the bytes are has the
+claim's root and role table (`roleTable` is the binding hash of a role-bound
+envelope, `none` for an unbound one). Defaults to `typecheck := true` so
 `Ixon.V3.Tc.checkEnv` validates the decoded environment at ingress
 and `checkCertCanonicalRelevance` validates canonical relevance (`Stage A`). -/
 def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
@@ -403,7 +434,7 @@ def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.
   let roots := selectTargetRoots cfg equations c.target
   match Recheck.ingress envBytes equations roots typecheck with
   | .ok inp =>
-    (inp.env.root == c.env) &&
+    (inp.env.root == c.env && inp.env.bindingAddress == c.roleTable) &&
       checkCertCanonicalRelevance cfg inp c.policy certText &&
       verifyProgram cfg inp.program c certText
   | .error _ => false
@@ -428,6 +459,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
       let elfBytes := a.backend.object
       let claim : CompileClaim :=
         { env := input.env.root
+          roleTable := input.env.bindingAddress
           target
           policy := .zeroRc
           abiArity := root.params
@@ -441,6 +473,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
       let elfBytes := a.backend.object
       let claim : CompileClaim :=
         { env := input.env.root
+          roleTable := input.env.bindingAddress
           target
           policy := .plainRc
           abiArity := root.params
@@ -455,6 +488,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
       let elfBytes := a.backend.object
       let claim : CompileClaim :=
         { env := input.env.root
+          roleTable := input.env.bindingAddress
           target
           policy := .immortal
           abiArity := root.params
@@ -470,6 +504,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
     let elfBytes := a.backend.object
     let claim : CompileClaim :=
       { env := input.env.root
+        roleTable := input.env.bindingAddress
         target
         policy := .immortal
         abiArity := root.params
@@ -487,6 +522,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
     let elfBytes := a.backend.object
     let claim : CompileClaim :=
       { env := input.env.root
+        roleTable := input.env.bindingAddress
         target
         policy := .zeroRc
         abiArity := root.params
@@ -501,6 +537,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
     let elfBytes := a.backend.object
     let claim : CompileClaim :=
       { env := input.env.root
+        roleTable := input.env.bindingAddress
         target
         policy := .plainRc
         abiArity := root.params

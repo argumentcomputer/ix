@@ -1,33 +1,39 @@
 import Blake3.Rust
-import IxCC.Ixon.Address
+import IxCC.Ixon.PureHash
 
 /-!
 # Content hashing
 
-Low-level BLAKE3 primitives over canonical artifact serializations. The hash
-itself is FFI (Rust blake3 via Blake3.lean) — an active entry in the tracked
-`docs/trusted-extern-ledger.md`: assumed semantics is the BLAKE3
-function; the endgame replacement is a verified Lean implementation
-compiled by our own backend.
+`Address.blake3` is the content hash of every address IxCC computes: object
+and blob authentication, Merkle roots, projection keys, catalog file hashes,
+resource commitments. It is pure BLAKE3 (`Address.blake3Pure`, a total Lean
+implementation, `IxCC.Ixon.PureHash`), the function the statements and the
+certified kernel's admission hash are about, so no address on the verifier
+path comes from foreign code and no theorem depends on the `native_decide`
+length proof inside the Blake3 package's `HasherOps.hash`
+(`IxCC/docs/byte-contract.md`, "The hash").
+
+The Rust backend (Blake3.lean's `Blake3.Rust`, the trust ledger's native
+interface) stays imported for one user: the erased type checker's incremental
+hasher (`Blake3.Rust.Hasher`, `IxCC.Ixon.V3.Tc`), which builds the checker's
+internal hash-consing and cache keys. Those keys are not addresses of anything
+a claim or a statement names: a collision among them can change only the
+checker's verdict, which no theorem uses, and their length proofs are
+explicit (`V3.Tc.finishHash`).
 
 The semantic `Constant.address?` boundary lives in `Ixon.Sharing`, after the
 layer-2 recompression check. IxIR declaration preimages and address APIs live
 in their respective `IxIR0/Serialize.lean` and `IxIR1/Serialize.lean` modules.
 This module intentionally exposes no unchecked constant-address helper.
-
-NB: no `#guard`/`#eval` here — executing the FFI at elaboration needs
-the Blake3 shared lib loaded in the interpreter (`--load-dynlib`),
-which the nix-built dependency artifact doesn't provide. Execution
-tests live in the compiled `tests` executable (`Tests.lean`), run as a
-flake check.
 -/
 
 namespace IxCC.Ixon
 
-/-- blake3 of arbitrary bytes as an `Address`. -/
-def Address.blake3 (x : ByteArray) : Address :=
-  let digest := Blake3.Rust.hash x
-  ⟨digest.val, digest.property⟩
+/-- BLAKE3 of arbitrary bytes as an `Address`: pure BLAKE3. -/
+def Address.blake3 (x : ByteArray) : Address := Address.blake3Pure x
+
+/-- `Address.blake3` is pure BLAKE3. -/
+theorem Address.blake3_eq_pure : Address.blake3 = Address.blake3Pure := rfl
 
 namespace Address
 

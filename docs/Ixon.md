@@ -1743,7 +1743,9 @@ so a claim's tag alone tells which kind of object it begins.
 The claim payloads in this table follow the two scope bytes. Reveal and
 Contains require validator `0`; Eval, Catalog and Binding require validator
 `3`; Check takes validator `3` or `4`; CheckEnv takes `3`, `4` or `5`;
-Resource requires validator `2`; Compile requires validator `6` (`compile-v1`).
+Resource requires validator `2`; Compile requires validator `7` (`compile-v2`);
+the former compile format, validator `6` (`compile-v1`, without the role
+table), is refused.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
@@ -1991,17 +1993,22 @@ E8 02                 -- N4(0xE, 10) (Binding): two-byte TagN rung
 ```
 Total: 68 bytes.
 
-**Compile claim** (`0xE8 0x05`, 3 addresses + policy + `abiArity`):
+**Compile claim** (`0xE8 0x05`, 3 addresses, the role table, policy and `abiArity`):
 ```
 E8 05                 -- N4(0xE, 13) (Compile): two-byte TagN rung
-04 06                 -- object format 4, compile-v1
+04 07                 -- object format 4, compile-v2
 [32 bytes]            -- env Merkle root
+[1 or 33 bytes]       -- role table: 00 (no role binding), or 01 and its binding hash
 [32 bytes]            -- target constant address
 [1 byte]              -- policy (0 = immortal, 1 = zeroRc, 2 = plainRc)
 [N0]                  -- abiArity (1 byte when < 128; `80 00` is 128)
 [32 bytes]            -- elfHash (BLAKE3 of x86-64 ELF64 object)
 ```
-Total: 102 bytes (for 1-byte `abiArity`). The compile proof wrapper keeps
+Total: 103 bytes without a role table and 135 with one (for 1-byte
+`abiArity`). The claim names the pair `(env, role table)` that a typing claim
+about the same artifact names (its `root` and its context's `binding`). The
+former format (scope `04 06`, without the role table, 102 bytes) is refused.
+The compile proof wrapper keeps
 proof variant 8 (`F8 00`), which wraps claim variant 13. `IxCC.CompileClaim`
 writes and reads `abiArity` with the same `N0` code.
 
@@ -2013,11 +2020,12 @@ canonical bytes and BLAKE3 digest of one claim of every variant shared between
 the Rust and Lean codecs (`eval` through `binding`, plus the `check` and
 `checkEnv` validator-4 and validator-5 forms); its headers and scope bytes match
 the claim examples above. Lean-only `compile` claims (`0xE8 0x05`, scope
-`04 06`) are tested alongside them in `Tests/Ix/ClaimsV4.lean` and
-`Tests/Ix/Claim.lean`, which pins the 102-byte vector and the `abiArity`
-vectors that `IxCC/IxCCTests/Pipeline/Compiler.lean` also pins; Rust's
+`04 07`) are tested alongside them in `Tests/Ix/ClaimsV4.lean` and
+`Tests/Ix/Claim.lean`, which pins the 103- and 135-byte vectors, the refused
+former 102-byte vector and the `abiArity` vectors that
+`IxCC/IxCCTests/Pipeline/Compiler.lean` also pins; Rust's
 `compile_claim_vector_refused` (`crates/ixon/src/proof.rs`) checks that Rust
-refuses that vector. `lake exe ixon-v4-tests` compares `claims.tsv`
+refuses both formats. `lake exe ixon-v4-tests` compares `claims.tsv`
 with the serializers' output, and `--export-fixtures` regenerates it under
 `ixon-v4-fixtures/` in the scratch directory `$IX_IXON_V4_DIR` (default
 `/tmp`).

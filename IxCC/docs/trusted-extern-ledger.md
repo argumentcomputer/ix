@@ -262,12 +262,15 @@ and its coverage changes.
 | Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend |
 
-The actual compiler composition results in `Recheck/Proof/Compile.lean`
-retain this same native hash dependency through their ingress/producer premises.
-Seven required exact fences in `IxCCTests/Fences/Compile.lean` record
-the three standard logical axioms plus
-`Blake3.HasherOps.hash._native.native_decide.ax_1`. No axiom declaration,
-native symbol or dependency was added. `Recheck.run` and `Recheck.sound` retain
+IxCC's addresses do not use this backend: `IxCC.Ixon.Address.blake3` is pure
+BLAKE3 (`Address.blake3Pure`), so the actual compiler composition results in
+`Recheck/Proof/Compile.lean` and every byte-level theorem rest on the three
+standard axioms; the 46 fences that used to list
+`Blake3.HasherOps.hash._native.native_decide.ax_1` (a `native_decide` proof of
+`32 < 2 ^ System.Platform.numBits` inside `HasherOps.hash`) now list only those.
+The backend's one remaining user is the erased checker's incremental hasher
+(`Blake3.Rust.Hasher`) for its internal hash-consing keys, with explicit length
+proofs. `Recheck.run` and `Recheck.sound` retain
 their original exact fences. The compiler bridge is SrcEval-relative and does
 not discharge the source-model or resource-profile compatibility obligations.
 

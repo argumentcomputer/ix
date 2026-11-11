@@ -193,7 +193,8 @@ def aloneCases (a : Assert) : IO (Array String) := do
       | .ok (some o) => expect a (o == .ctor j []) s!"{label}: the object returns {repr o}"
       | _ => expect a false s!"{label}: the object returns no observation"
       let claim : CompileClaim :=
-        { env := inp.env.root, target, policy := .immortal, abiArity := 0
+        { env := inp.env.root, roleTable := inp.env.bindingAddress, target, policy := .immortal
+          abiArity := 0
           elfHash := Ixon.Address.blake3Pure art.object }
       expect a (CompileClaim.verifyBytes cfg bs json claim cert.toText)
         s!"{label}: verifyBytes refused the claim"
@@ -261,7 +262,8 @@ def illTyped (a : Assert) : IO String := do
   | .ok (some o) => expect a (o == .ctor 1 []) s!"ill-typed: the object returns {repr o}"
   | _ => expect a false "ill-typed: the object returns no observation"
   let claim : CompileClaim :=
-    { env := inp.env.root, target := main, policy := .immortal, abiArity := 0
+    { env := inp.env.root, roleTable := inp.env.bindingAddress, target := main
+      policy := .immortal, abiArity := 0
       elfHash := Ixon.Address.blake3Pure art.object }
   expect a (CompileClaim.verifyBytes cfg bs json claim cert.toText (typecheck := false))
     "ill-typed: erased-typing verifyBytes refused the claim"

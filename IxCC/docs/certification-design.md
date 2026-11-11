@@ -33,7 +33,7 @@ The chain from the bytes to the object's result, link by link:
 
 | Link | Content | State | Under the plan |
 | --- | --- | --- | --- |
-| Claim bytes | `CompileClaim` encodes and decodes exactly | Proved (round trip). Binds the environment root, target, policy, arity and object hash only: not the role binding, the certificate, the sidecar, the typing flag or `Recheck.Config` | SP-0: the claim also binds the role table and the image digest |
+| Claim bytes | `CompileClaim` encodes and decodes exactly | Proved (round trip). Binds the environment root, the role table's address (absent for an unbound environment), target, policy, arity and object hash only: not the certificate, the sidecar, the typing flag or `Recheck.Config` | SP-0: the claim also binds the image digest |
 | IxCC's reading | `.ixe` bytes to IxCC's environment (`V3.decodeAnonymousEnv`), pure BLAKE3 authentication, canonicity evidence | Proved that it ran; IxCC's own framing of both envelopes, the role binding authenticated and decoded, pins from its role table ([byte contract](byte-contract.md)) | SP-0: pure BLAKE3 for every address; off the trusted path once faithfulness is a premise |
 | IxCK's reading | the same bytes to IxCK's records and declarations | Proved by IxCK (`checkBytesWith_reading`, [`IxCK/Kernel/Admission/Theorems.lean`](../../IxCK/Kernel/Admission/Theorems.lean)); needs a role binding | the reading the premises are about |
 | The two readings agree | IxCC and IxCK decode the same constants under the same keys | **Absent.** They share the constant decoder and the role vocabulary (`Ix.Kernel.Role`), not the framing or the reading into declarations | Not needed: premise (ii), or one reading by construction (SP-N) |
@@ -198,7 +198,8 @@ bytes the IxVM proof is about and state what it guarantees about them.
   closures.
 - **The claim binds what composition needs.** The environment root `H`, the
   target, the role table and the image digest `D` (today the claim binds the
-  root, the target, the policy, the arity and the object hash). The verifier
+  root, the role table, the target, the policy, the arity and the object
+  hash; the image digest waits for the image). The verifier
   checks that `D` is the digest of the checked source program it compiled.
 - **The conditional statement.** The faithfulness predicate defined in Lean,
   with a structural map from IxCK's terms to `Src.Term` as its specification

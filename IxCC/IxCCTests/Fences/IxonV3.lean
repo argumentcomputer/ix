@@ -2,7 +2,7 @@ import IxCC.Ixon.V3.Resource.StateProofs
 import IxCC.Ixon.V3.Source
 
 /-! Contract/state fences retain ordinary logic. The addressed input equations
-retain the already ledgered BLAKE3 compiler boundary. -/
+rest on the standard axioms too (pure BLAKE3). -/
 
 /-- info: 'IxCC.Ixon.V3.Locality.ofBits?_toBits' does not depend on any axioms -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.Locality.ofBits?_toBits
@@ -79,14 +79,8 @@ retain the already ledgered BLAKE3 compiler boundary. -/
 /-- info: 'IxCC.Ixon.V3.Resource.checkDemand_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.Resource.checkDemand_sound
 
-/-- info: 'IxCC.Ixon.V3.ResourceInput.resources_checked' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Ixon.V3.ResourceInput.resources_checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.ResourceInput.resources_checked
 
-/-- info: 'IxCC.Ixon.V3.ResourceInput.source_decoded' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝] -/
+/-- info: 'IxCC.Ixon.V3.ResourceInput.source_decoded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.ResourceInput.source_decoded

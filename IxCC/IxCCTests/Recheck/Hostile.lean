@@ -234,7 +234,8 @@ def pinFree (a : Assert) (n : Nat) : IO String := do
   -- The honest certificate is accepted everywhere, and its object returns `c₁`.
   let art ← ofErr s!"enum-{n}: Recheck.run (honest)" (Recheck.run cfg P c.honest)
   let claim : CompileClaim :=
-    { env := c.inp.env.root, target := c.main, policy := .immortal, abiArity := 0
+    { env := c.inp.env.root, roleTable := c.inp.env.bindingAddress, target := c.main
+      policy := .immortal, abiArity := 0
       elfHash := Address.blake3Pure art.object }
   let text := c.honest.toText
   let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
@@ -523,7 +524,8 @@ def amplifier (a : Assert) (dF dG : Nat) (budget : String) : IO String := IO.FS.
       s!"amp: Recheck.run refused, but not by {budget}: {e.render}"
   let ms := (← IO.monoMsNow) - t0
   let claim : CompileClaim :=
-    { env := inp.env.root, target := main, policy := .immortal, abiArity := 0
+    { env := inp.env.root, roleTable := inp.env.bindingAddress, target := main
+      policy := .immortal, abiArity := 0
       elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
   let text := hostile.toText
   let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }

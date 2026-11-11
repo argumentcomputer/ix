@@ -1,10 +1,10 @@
 # The byte contract: what a compile claim is about
 
-Written 2026-11-10. **Status:** IxCC reads both envelopes below and takes its
-pinned identities from the role table of a role-bound one (implemented); the
-compile claim does not yet name the role table, and two kinds of address on
-the verifier path are still computed with the native hash (both planned,
-[below](#what-is-not-yet-so)).
+Written 2026-11-10. **Status:** IxCC reads both envelopes below, takes its
+pinned identities from the role table of a role-bound one, computes every
+address with pure BLAKE3, and its compile claim names the role table beside
+the root (all implemented). The committed fixtures are still mostly unbound
+([below](#what-is-not-yet-so)).
 
 A statement of the [end-to-end plan](end-to-end.md) has two premises about a
 content address: that the certified kernel accepts the environment with root
@@ -63,9 +63,12 @@ Two artifacts with the same records and different role tables have the same
 ### The hash
 
 BLAKE3, unkeyed, 32-byte output, everywhere: records, blobs, the root's
-leaves and nodes, the binding section. IxCC's ingress computes it with the
-pure Lean implementation (`Blake3.Pure.hash`, `Address.blake3Pure`), so
-reading an artifact involves no foreign code. The kernel's admission takes the
+leaves and nodes, the binding section, the projection keys of block members.
+Every address IxCC computes uses the pure Lean implementation
+(`Blake3.Pure.hash`; `Address.blake3` is `Address.blake3Pure`), so no address on
+the verifier path comes from foreign code and every byte-level theorem rests on
+the three standard axioms. (The erased checker keeps the Rust hasher for its
+internal hash-consing keys, which are not addresses anything names.) The kernel's admission takes the
 hash as a parameter (`IxCK/Kernel/Admission.lean`), and every theorem holds at
 every hash; ix instantiates it with `Address.admissionHash`, which is pure
 BLAKE3 by definition and is executed by the Rust implementation on a recorded
@@ -98,6 +101,15 @@ one. For a role-bound artifact they are, by provenance:
    source.
 3. **Certificates**: the theorems the role table names as evidence for the
    equations of the bound operations, and their closures.
+
+`ix compile` binds every role whose constant is among these records, wherever
+the constant came from: when the artifact keeps the certificates' closure (a
+bound definition is specified by equations, as `String.utf8ByteSize` is), a
+role constant that only that closure contains (for `String.utf8ByteSize`,
+`Classical.choice` and `Nat.lor`) is bound too
+(`Ix.RoleBinding.Compile.finalize`). A record that is a role's constant but is
+not bound to it would be read as an ordinary declaration, and an unbound
+`Classical.choice` as an axiom the kernel's strict check does not admit.
 
 The three are not marked in the file and need not be: they are ordinary
 records under one root, and the kernel admits them together. IxCC accounts
@@ -176,34 +188,36 @@ its reduction of literals.
 | Term | Compile claim (`CompileClaim`, `Ix.Claim.compile`) | Kernel typing claim (`checkEnv`) | Host admission statement |
 | --- | --- | --- | --- |
 | records | `env` = `H` | `root` = `H` | `contentRoot` = `H` |
-| role table | not named yet | `ctx.binding` = `ρ` | `bindingHash` = `ρ` |
+| role table | `roleTable` = `ρ`; absent for an unbound artifact | `ctx.binding` = `ρ` | `bindingHash` = `ρ` |
 | specifications | not named | `ctx.spec`, the specification digest | `hostSpecDigest` |
 | axioms beyond the standard three | not named: the producer's admission refuses relevant axioms, and the table admits only the standard three in the closure of an `eqn` or `csimp` theorem | `ctx.axioms` | the policy |
 | the constant | `target`: its record's or projection's address | (all of them) | `main` |
 | hash | BLAKE3 | BLAKE3 | BLAKE3 |
 
-A consumer pairs a compile claim with a kernel claim by `H` today, and is to
-pair them by `(H, ρ)` once the claim names the role table.
+A consumer pairs a compile claim with a kernel claim by `(H, ρ)`.
+
+The compile claim is the header `E8 05 04 07` (validator 7), then `env`
+(32 bytes), the role table (`00` for none, or `01` and its 32-byte address),
+`target` (32), the policy (one byte), the ABI arity (N0) and `elfHash` (32):
+103 bytes in all for an unbound artifact and 135 for a role-bound one when the
+arity takes one byte, on both sides
+(`IxCC/IxCC/CompileClaim.lean`, `Ix/Claim.lean`, `crates/ixon/src/proof.rs`).
+The former payload without the role table (validator 6) is refused.
+`CompileClaim.verifyBytes` and `Ring0Sip.verifyBytes` accept a claim only when
+the environment's root and role-table address are the claim's, and their
+soundness theorems state both (`verifyBytes_immortal_sound`,
+`verifyBytes_zeroRc_sound`, `verifyBytes_plainRc_sound`,
+`verifyBytesRing0Sip_sound`).
 
 ## What is not yet so
 
-- **The claim does not name `ρ`.** Two role-bound artifacts with the same
-  records and different tables (and so possibly different pins) give compile
-  claims with the same bytes. The planned change adds the role table's address
-  to the compile claim on both sides, in the style of the tag-13 change, with
-  the old bytes refused; an image digest is to follow when the image exists
-  ([roadmap](roadmap.md), DO-11).
-- **Two hashes on the verifier path.** Block members are keyed by projection
-  addresses computed with the native (Rust) BLAKE3 (`V3.Tc.defnProjAddr` and
-  its siblings), and the byte-level theorems carry the axiom
-  `Blake3.HasherOps.hash._native.native_decide.ax_1`, which asserts only
-  `32 < 2 ^ System.Platform.numBits`
-  ([compile boundary](compile-boundary.md)). The plan is pure BLAKE3 for every
-  address on the verifier path, with the native code at most a checked
-  accelerator.
-- **The fixtures are unbound.** IxCC's committed closures are `0xE4`
-  envelopes, regenerated with `ix compile --unbound`. That flag is a bridge,
-  to be removed when the fixtures are refrozen in the role-bound form.
+- **The image is not named.** An image digest is to join the claim when the
+  image exists ([roadmap](roadmap.md), DO-11).
+- **Most fixtures are unbound.** IxCC's committed closures are `0xE4`
+  envelopes, regenerated with `ix compile --unbound`, apart from the two
+  role-bound closures and the registered role-bound family
+  ([corpus](corpus.md)). That flag is a bridge, to be removed when the
+  fixtures are refrozen in the role-bound form.
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
   bytes; they share the record decoder and, for the binding, the role
   vocabulary, not the framing or the reading into declarations. The plan

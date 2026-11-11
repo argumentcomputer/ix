@@ -11,10 +11,10 @@ import IxKernelBridge.Examples
    fails unless each depends on exactly the three standard Lean axioms (`propext`,
    `Classical.choice`, `Quot.sound`).
 2. Guards `#print axioms` on every Layer 1, Layer 2 and Layer 3 theorem and on every theorem
-   of `IxKernelBridge.Examples`. `checkDecls_verifyBytes_immortal_denotes_nat` additionally
-   depends on the Blake3 `native_decide` axiom, inherited from
-   `IxCC.CompileClaim.verifyBytes_immortal_sound`; `ble_premise_false` and
-   `pow_premise_false` use only `propext` and `Quot.sound`.
+   of `IxKernelBridge.Examples`. `checkDecls_verifyBytes_immortal_denotes_nat` rests on the
+   same three as `IxCC.CompileClaim.verifyBytes_immortal_sound`, every address IxCC computes
+   being pure BLAKE3; `ble_premise_false` and `pow_premise_false` use only `propext` and
+   `Quot.sound`.
 
 `lake run check-kernel-bridge` (the root lakefile) builds this module and compares the set
 of fenced theorems with its recorded inventory, so a fence cannot disappear unnoticed.
@@ -43,8 +43,8 @@ private partial def closure (env : Environment) (pending : List Name)
     | none => closure env rest (seen.insert name)
 
 /-- Theorems that must depend on exactly the three standard Lean axioms (`propext`,
-`Classical.choice`, `Quot.sound`): the simulation lemma, its compositions other than the
-byte-level one, and the instances and per-operation facts of `IxKernelBridge.Examples`
+`Classical.choice`, `Quot.sound`): the simulation lemma, its compositions (the byte-level
+one included), and the instances and per-operation facts of `IxKernelBridge.Examples`
 that use all three. -/
 def standardRoots : List Name :=
   [ ``IxKernelBridge.srcRun_to_red
@@ -54,6 +54,7 @@ def standardRoots : List Name :=
   , ``IxKernelBridge.srcRun_infer_to_denotes_nat
   , ``IxKernelBridge.checkDecls_srcRun_denotes_nat
   , ``IxKernelBridge.checkDecls_recheck_x86_denotes_nat
+  , ``IxKernelBridge.checkDecls_verifyBytes_immortal_denotes_nat
   , ``IxKernelBridge.Examples.add_premise
   , ``IxKernelBridge.Examples.sub_premise
   , ``IxKernelBridge.Examples.mul_premise
@@ -109,11 +110,7 @@ run_cmd do
 /-- info: 'IxKernelBridge.checkDecls_recheck_x86_denotes_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxKernelBridge.checkDecls_recheck_x86_denotes_nat
 
-/-- info: 'IxKernelBridge.checkDecls_verifyBytes_immortal_denotes_nat' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- Blake3.HasherOps.hash._native.native_decide.ax_1✝]
--/
+/-- info: 'IxKernelBridge.checkDecls_verifyBytes_immortal_denotes_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxKernelBridge.checkDecls_verifyBytes_immortal_denotes_nat
 
 /-! ## `IxKernelBridge.Examples` -/

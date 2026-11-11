@@ -145,14 +145,11 @@ by a proof here.
 `#guard_msgs in #print axioms` (27 fences) and checks, by walking the constant closure, that
 `srcRun_to_red`, `red_to_denotes_nat`, `infer_red_to_denotes_nat`, `srcRun_to_denotes_nat`,
 `srcRun_infer_to_denotes_nat`, `checkDecls_srcRun_denotes_nat`,
-`checkDecls_recheck_x86_denotes_nat` and the examples that use all three depend on exactly
-`[propext, Classical.choice, Quot.sound]`. Two exceptions, both fenced:
-
-- `checkDecls_verifyBytes_immortal_denotes_nat` also depends on
-  `Blake3.HasherOps.hash._native.native_decide.ax_1`, inherited from
-  `IxCC.CompileClaim.verifyBytes_immortal_sound` (IxCC's native Blake3 hash; see
-  [IxCC's trust ledger](../../IxCC/docs/trusted-extern-ledger.md)).
-- `ble_premise_false` and `pow_premise_false` use only `propext` and `Quot.sound`.
+`checkDecls_recheck_x86_denotes_nat`, `checkDecls_verifyBytes_immortal_denotes_nat` (every
+address IxCC computes is pure BLAKE3, so `IxCC.CompileClaim.verifyBytes_immortal_sound` rests on
+the standard three as well) and the examples that use all three depend on exactly
+`[propext, Classical.choice, Quot.sound]`. One exception, fenced: `ble_premise_false` and
+`pow_premise_false` use only `propext` and `Quot.sound`.
 
 The package has no `sorry`, `axiom`, `native_decide`, `unsafe`, `implemented_by` or
 `opaque`; the one `partial` is the elaboration-time closure walk in `Audit.lean`.
