@@ -28,7 +28,7 @@ opening depth. Design note.
      addresses to `.role r`, the others to `.id a`). Soundness needs no
      injectivity of `κ`: IxVM compares addresses, and equal addresses get equal
      keys.
-   * `Lam ty b ℓ` and `Forall ty b ℓ` carry the binder datum `bmeta ℓ` (D2, below).
+   * `Lam ty b ℓ` and `Forall ty b ℓ` carry the binder datum `bmeta ℓ` (below).
    `RepE κ d Γ h E p` is the composite at local depth `0`.
 
 IxVM's context list `types` is not part of the relation for terms: it is a
@@ -44,15 +44,15 @@ must be moved back to depth `d` by a depth-weakening lemma the rules do not have
 The kernel's binder datum `pw` (the codomain sort's zero-ness) is read by the
 model's interpretation of `λ`/`∀` and by the rules at β (`Red.betaGate`), binder
 congruence (`DefEq.lam`/`forallE`/`eta`) and binder inference
-(`Infer.forallE`/`lam`). Since D2 IxVM stores it: `KExprNode::Lam(ty, body, ℓ)`
-and `Forall(ty, body, ℓ)` carry a level `ℓ` whose zero-ness is the datum (lane cx's
-"D2 hint interface"), and the relation reads it from the node: the image binder's
-datum is `bmeta ℓ = { pw := zeronessOf (trLevel ℓ) }`. Zero-ness is semantic, so
-IxVM's level simplifications keep it, and instantiating `ℓ` with the rest of the
-term is the kernel's `substPW` (`zeronessOf_subst`). A `never` datum is the image
-of any successor level (`bmeta_succ`), the data fragment's binders. β at a binder
-of another datum is `Red.beta` with an io-grade certificate (Fix A,
-`red_beta_certified`), not `Red.betaGate`.
+(`Infer.forallE`/`lam`). IxVM stores it: `KExprNode::Lam(ty, body, ℓ)` and
+`Forall(ty, body, ℓ)` carry a level `ℓ` whose zero-ness is the datum (a witness hint
+the conversion reads and the kernel's rules validate), and the relation reads it
+from the node: the image binder's datum is `bmeta ℓ = { pw := zeronessOf (trLevel ℓ) }`.
+Zero-ness is semantic, so IxVM's level simplifications keep it, and instantiating `ℓ`
+with the rest of the term is the kernel's `substPW` (`zeronessOf_subst`). A `never`
+datum is the image of any successor level (`bmeta_succ`), the data fragment's
+binders. β at a binder of another datum is `Red.beta` with an io-grade certificate (IxVM's
+`peel_beta_cert`; `red_beta_certified`), not `Red.betaGate`.
 
 ## Lets, levels, literals, projections
 
@@ -245,7 +245,7 @@ def trLevel : IxVMKUniv F → Ix.Kernel.Level
   | .imax u v => .imax (trLevel u) (trLevel v)
   | .param i => .param (ZMod.val i)
 
-/-- **The binder datum of a stored level** (D2): the kernel's `pw` is the zero-ness of
+/-- **The binder datum of a stored level**: the kernel's `pw` is the zero-ness of
 the level the node stores. -/
 def bmeta (ℓ : IxVMKUniv F) : Ix.Kernel.BinderMeta := { pw := (trLevel ℓ).zeronessOf }
 

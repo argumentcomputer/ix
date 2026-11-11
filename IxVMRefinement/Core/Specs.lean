@@ -55,14 +55,16 @@ structure Ctx where
   constructors whose terms the relation represents). -/
   frag : _root_.Address → Prop
 
-/-- **The functions the fragment does not call**: the native dispatchers (a run
-that calls none of them fires no native reduction: `try_prim_dispatch` returns
-tag `0`), the slow tiers of definitional equality, and the context-lowering
-rebase of `is_def_eq` (whose results would need a depth-weakening lemma). -/
+/-- **The functions the fragment does not call**: the native dispatcher (a run
+that does not call it fires no native reduction: `try_prim_dispatch` returns
+tag `0`), the slow tiers of definitional equality, the context-lowering
+rebase of `is_def_eq` (whose results would need a depth-weakening lemma), and
+the certified β step `peel_beta_cert` (β at a binder whose datum may be zero,
+`Red.beta`: its certificate is an io-grade inference, which the slice does not
+cover). In the fragment every binder `red_beta` consumes has the datum `never`
+(`peel_beta`'s gate), and β is `Red.betaGate`. -/
 def nativeNames : List String :=
-  ["KernelWhnf::try_nat_dispatch_prewhnf", "KernelNatPrim::try_str_dispatch",
-   "KernelNatPrim::try_bitvec_dispatch", "KernelInfer::try_dec_dispatch",
-   "KernelNatPrim::try_int_prim_dispatch",
+  ["KernelWhnf::try_nat_dispatch_prewhnf", "KernelWhnf::peel_beta_cert",
    "KernelDefEq::k_is_def_eq_slow", "KernelDefEq::k_def_eq_rebase"]
 
 /-- **The circuit's size bound**: at most `2^39` distinct memoized calls, in a valid ROM
@@ -72,7 +74,7 @@ abbrev MemoBounded (calls : List (Call F)) : Prop :=
   ∃ rom : ROM F, rom.Valid ∧ IxVM.Consistency.MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
 
 /-- **The calls are good**: they hashed no collision; every record they load is
-in the view and in the fragment; they call no native dispatcher; and they have at
+in the view and in the fragment; they call none of `nativeNames`; and they have at
 most `2^39` distinct memoized calls in a valid ROM (the circuit's bound, `MemoBounded`). -/
 def Good (c : Ctx) (calls : List (Call F)) : Prop :=
   ¬ c.V.HashedCollision [] calls ∧
@@ -89,7 +91,7 @@ def LoadsInFrag (c : Ctx) (calls : List (Call F)) : Prop :=
     Bytes.RepAddressRef addrTy cl.heap a addr →
       (∃ lc, c.V.env.consts.get? (ixAddr a) = some lc) ∧ c.frag (ixAddr a)
 
-/-- The fragment's hypothesis on natives: no native dispatcher is called. -/
+/-- The fragment's hypothesis on the functions it does not call (`nativeNames`). -/
 def NoNatives (calls : List (Call F)) : Prop := ∀ cl ∈ calls, cl.name ∉ nativeNames
 
 theorem hashed_mono {calls₁ calls₂ : List (Call F)} (hsub : ∀ x ∈ calls₁, x ∈ calls₂)
@@ -179,9 +181,10 @@ def WithSpineSpec : Prop :=
 
 /-- `red_beta(rc, lam, spine, types)`: tag `1` is `Red` of the applied `λ` to the
 reduct applied to the rest of the spine (`Red.betaGate`, one step per consumed
-argument). Nothing is claimed for tag `0` (no move). -/
+argument: in the fragment every consumed binder's datum is `never`). Nothing is
+claimed for tag `0` (no move). -/
 def RedBetaSpec : Prop :=
-  ∀ rc lam sp types, args = [rc, lam, sp, types] →
+  ∀ rc lam sp types, args = [rc, lam, sp, types] → Good c calls →
     ∀ d Γ L As, RepE c.κ d Γ h L lam → RepSpine c.κ d Γ h As sp →
       ∀ x y, r = .tuple [.field 1, x, y] →
         ∃ E Bs, RepE c.κ d Γ h' E x ∧ RepSpine c.κ d Γ h' Bs y ∧
@@ -203,9 +206,10 @@ def ApplySpineSpec : Prop :=
       RepE c.κ d Γ h' (K.mkAppN H As) r
 
 /-- `peel_beta(lam, spine, acc)`: a `λ`-telescope of as many binders as it
-consumed arguments, its body at the deeper local depth, the consumed arguments
-reversed onto the accumulator, the rest of the spine; at most one binder per
-call. -/
+consumed arguments, each with the datum `never` (it consumes an argument only
+where `level_is_not_zero` answers `1` for the binder's stored level), its body at
+the deeper local depth, the consumed arguments reversed onto the accumulator, the
+rest of the spine; at most one binder per call. -/
 def PeelSpec : Prop :=
   ∀ lam sp acc, args = [lam, sp, acc] →
     ∀ d Γ k L As Cs, RepEk c.κ d Γ k h L lam → RepSpine c.κ d Γ h As sp →
@@ -248,7 +252,7 @@ structure CoreSpecs (c : Ctx) (n : String) (args : List (SourceValue F)) (h : He
   whnf : n = "KernelWhnf::whnf" → WhnfSpec c args h r h' calls
   whnfCore : n = "KernelWhnf::whnf_core" → WhnfSpec c args h r h' calls
   withSpine : n = "KernelWhnf::whnf_with_spine" → WithSpineSpec c args h r h' calls
-  redBeta : n = "KernelWhnf::red_beta" → RedBetaSpec c args h r h'
+  redBeta : n = "KernelWhnf::red_beta" → RedBetaSpec c args h r h' calls
   constHead : n = "KernelWhnf::whnf_const_head" → ConstHeadSpec c args h r h' calls
   applySpine : n = "KernelWhnf::apply_spine" → ApplySpineSpec c args h r h'
   peel : n = "KernelWhnf::peel_beta" → PeelSpec c args h r h' calls
@@ -274,9 +278,9 @@ not prove. Each field is a proof obligation of another part of the refinement
 stated in the form the induction consumes. -/
 structure Assumed (c : Ctx) : Prop where
   /-- The fragment (by reading `try_prim_dispatch`: every family other than `0` calls
-  one of `nativeNames`): a run that calls no native dispatcher gets tag `0`. The
-  general obligation (tags `1`, `2` are reductions) belongs to the proof of the native
-  reductions, and needs kernel rules for `Int`, `BitVec`, `String` and decisions. -/
+  `try_nat_dispatch_prewhnf`): a run that does not call it gets tag `0`. The general
+  obligation (tags `1`, `2` are reductions) belongs to the proof of the native
+  reductions. -/
   tryPrim : ∀ rc addr lvls sp types h r h' calls,
     ObsFn W "KernelWhnf::try_prim_dispatch" [rc, addr, lvls, sp, types] h r h' calls →
     (∀ cl ∈ calls, cl.name ∉ nativeNames) → ∃ x, r = .tuple [.field 0, x]

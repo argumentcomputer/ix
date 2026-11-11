@@ -3,6 +3,7 @@ import IxVMRefinement.Core.Bound
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Obs.KernelLevels
+import IxC.Kernel.Verify.PropWhen
 
 /-! # The step lemmas of the whnf slice, and the induction
 
@@ -33,6 +34,109 @@ macro "lenlt" : tactic =>
 
 /-- Membership in concatenated call lists. -/
 macro "memsub" : tactic => `(tactic| (intro x hx; simp [hx]))
+
+/-! ## `level_is_not_zero`: the binder datum `never` -/
+
+/-- `level_is_not_zero` at a stored level answers `1` exactly when the level's
+image is never zero (`Level.isNeverZero`), and allocates nothing. -/
+theorem levelIsNotZero_eval {h h' : Heap F} {ℓ : IxVMKUniv F} {ptr r : SourceValue F}
+    (rep : RepIxVMKUniv h ℓ ptr)
+    (ev : EvalFn W "KernelLevels::level_is_not_zero" [ptr] h r h') :
+    r = .field (if (trLevel ℓ).isNeverZero then 1 else 0) ∧ h' = h := by
+  induction rep generalizing r h' with
+  | zero cell =>
+    have ev := ev.function_inv (IxVM.KernelLevels.level_is_not_zero.lookup)
+      (by simp [IxVM.KernelLevels.level_is_not_zero, ControlLower.hasControl])
+    simp only [IxVM.KernelLevels.level_is_not_zero] at ev
+    obtain ⟨bs, body, sel, dArm⟩ :=
+      IxVM.Refinement.KernelLevels.evalExpr_match_load_var_enum rfl cell ev
+    simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+      SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+    obtain ⟨rfl, rfl⟩ := sel
+    obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+    simp [trLevel, Ix.Kernel.Level.isNeverZero]
+  | succ cell _ _ =>
+    have ev := ev.function_inv (IxVM.KernelLevels.level_is_not_zero.lookup)
+      (by simp [IxVM.KernelLevels.level_is_not_zero, ControlLower.hasControl])
+    simp only [IxVM.KernelLevels.level_is_not_zero] at ev
+    obtain ⟨bs, body, sel, dArm⟩ :=
+      IxVM.Refinement.KernelLevels.evalExpr_match_load_var_enum rfl cell ev
+    simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+      matchPattern_wildcard, SourceSemantics.matchListWith, bind, Except.bind, pure,
+      Except.pure] at sel
+    obtain ⟨rfl, rfl⟩ := sel
+    obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+    simp [trLevel, Ix.Kernel.Level.isNeverZero]
+  | max cell repA repB iha ihb =>
+    have ev := ev.function_inv (IxVM.KernelLevels.level_is_not_zero.lookup)
+      (by simp [IxVM.KernelLevels.level_is_not_zero, ControlLower.hasControl])
+    simp only [IxVM.KernelLevels.level_is_not_zero] at ev
+    obtain ⟨bs, body, sel, dArm⟩ :=
+      IxVM.Refinement.KernelLevels.evalExpr_match_load_var_enum rfl cell ev
+    simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+      matchPattern_bind, SourceSemantics.matchListWith, bind, Except.bind, pure,
+      Except.pure] at sel
+    obtain ⟨rfl, rfl⟩ := sel
+    obtain ⟨_, _, bs2, body2, dTuple, sel2, dArm2⟩ := dArm.matchValue_inv
+    obtain ⟨_, _, _, dCallA, dCallB, rfl⟩ :=
+      IxVM.Refinement.KernelLevels.evalExpr_tuple2_inv dTuple
+    obtain ⟨_, _, dVarA, dFnA⟩ := IxVM.Refinement.KernelLevels.evalExpr_call1_inv dCallA
+    obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
+    simp only [instanceName] at dFnA
+    obtain ⟨rfl, rfl⟩ := iha dFnA
+    obtain ⟨_, _, dVarB, dFnB⟩ := IxVM.Refinement.KernelLevels.evalExpr_call1_inv dCallB
+    obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
+    simp only [instanceName] at dFnB
+    obtain ⟨rfl, rfl⟩ := ihb dFnB
+    rcases IxVM.Refinement.KernelLevels.selectArm_bool_pair_zero_zero _ _ sel2 with
+      ⟨hor, rfl, rfl⟩ | ⟨hor, rfl, rfl⟩
+    · obtain ⟨rfl, rfl⟩ := dArm2.literal_inv
+      simp [trLevel, Ix.Kernel.Level.isNeverZero, hor]
+    · obtain ⟨rfl, rfl⟩ := dArm2.literal_inv
+      simp [trLevel, Ix.Kernel.Level.isNeverZero, hor]
+  | imax cell _ repB _ ihb =>
+    have ev := ev.function_inv (IxVM.KernelLevels.level_is_not_zero.lookup)
+      (by simp [IxVM.KernelLevels.level_is_not_zero, ControlLower.hasControl])
+    simp only [IxVM.KernelLevels.level_is_not_zero] at ev
+    obtain ⟨bs, body, sel, dArm⟩ :=
+      IxVM.Refinement.KernelLevels.evalExpr_match_load_var_enum rfl cell ev
+    simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+      matchPattern_wildcard, matchPattern_bind, SourceSemantics.matchListWith, bind,
+      Except.bind, pure, Except.pure] at sel
+    obtain ⟨rfl, rfl⟩ := sel
+    obtain ⟨_, _, dVarB, dFnB⟩ := IxVM.Refinement.KernelLevels.evalExpr_call1_inv dArm
+    obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
+    simp only [instanceName] at dFnB
+    dsimp only [trLevel, Ix.Kernel.Level.isNeverZero]
+    exact ihb dFnB
+  | param cell =>
+    have ev := ev.function_inv (IxVM.KernelLevels.level_is_not_zero.lookup)
+      (by simp [IxVM.KernelLevels.level_is_not_zero, ControlLower.hasControl])
+    simp only [IxVM.KernelLevels.level_is_not_zero] at ev
+    obtain ⟨bs, body, sel, dArm⟩ :=
+      IxVM.Refinement.KernelLevels.evalExpr_match_load_var_enum rfl cell ev
+    simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+      matchPattern_wildcard, SourceSemantics.matchListWith, bind, Except.bind, pure,
+      Except.pure] at sel
+    obtain ⟨rfl, rfl⟩ := sel
+    obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+    simp [trLevel, Ix.Kernel.Level.isNeverZero]
+
+/-- **A binder `level_is_not_zero` passes has the datum `never`**: the stored level's
+zero-ness (`bmeta`) is `never` (`Level.isNeverZero_eq_isNever`). -/
+theorem bmeta_nb_of_obs {h h' : Heap F} {ℓ : IxVMKUniv F} {ptr : SourceValue F}
+    {cs : List (Call F)} (rep : RepIxVMKUniv h ℓ ptr)
+    (ev : ObsFn W "KernelLevels::level_is_not_zero" [ptr] h (.field 1) h' cs) :
+    bmeta ℓ = nb ∧ h' = h := by
+  obtain ⟨hr, rfl⟩ := levelIsNotZero_eval rep ev.erase
+  refine ⟨?_, rfl⟩
+  cases hz : (trLevel ℓ).isNeverZero
+  · simp [hz] at hr
+  · have hnv : (trLevel ℓ).zeronessOf = .never :=
+      Ix.Kernel.PropWhen.isNever_iff.mp
+        ((Ix.Kernel.Level.isNeverZero_eq_isNever (trLevel ℓ)).symm.trans hz)
+    show ({ pw := (trLevel ℓ).zeronessOf } : Ix.Kernel.BinderMeta) = { pw := .never }
+    rw [hnv]
 
 /-! ## `apply_spine` -/
 
@@ -114,7 +218,7 @@ theorem whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   intro rc e types hargs good d Γ E hE
   subst hargs
   rcases Obs.«KernelWhnf::whnf».obs ev with
-    ⟨_, -, rfl, rfl, -⟩ | ⟨_, -, rfl, rfl, -⟩ | ⟨_, _, -, rfl, rfl, -⟩ | ⟨_, _, -, rfl, rfl, -⟩ |
+    ⟨_, -, rfl, rfl, -⟩ | ⟨_, -, rfl, rfl, -⟩ | ⟨_, _, _, -, rfl, rfl, -⟩ | ⟨_, _, _, -, rfl, rfl, -⟩ |
     ⟨_, -, rfl, rfl, -⟩ | ⟨v, cs, v', m, cs', v'', m', cs'', -, -, -, -, -, -, ev1, ev2, ev3, rfl⟩
   -- `Srt`, `Lit`, `Lam`, `Forall`, `BVar`: already weak head normal
   all_goals first | exact ⟨E, hE, .refl⟩ | skip
@@ -132,8 +236,8 @@ theorem withSpine_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
   subst hargs
   rcases Obs.«KernelWhnf::whnf_with_spine».obs ev with
     ⟨f, a, m, cs, ih', is, cs', v, m', cs'', ld, ev1, ev2, ev3, rfl⟩ |
-    ⟨ty, b, m, cs, red, rest, cs', ld, ev1, ev2, rfl⟩ |
-    ⟨ty, b, v, m, cs, cs', ld, ev1, ev2, rfl⟩ |
+    ⟨ty, b, w, m, cs, red, rest, cs', ld, ev1, ev2, rfl⟩ |
+    ⟨ty, b, w, v, m, cs, cs', ld, ev1, ev2, rfl⟩ |
     ⟨ad, lv, cs, ld, ev1, rfl⟩ |
     ⟨_, _, _, _, _, _, _, ld, -, -, -⟩ |
     ⟨_, _, _, _, ld, -, -⟩ |
@@ -152,7 +256,7 @@ theorem withSpine_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
     exact hred
   · -- `Lam`, `red_beta(rc, head, spine, types)`, `(1, reduct, rest) => whnf_with_spine(rc, reduct, rest, types)`
     obtain ⟨E, Bs, hE, hBs, hred1⟩ := (ih _ _ _ _ _ _ (by lenlt) ev1).redBeta rfl _ _ _ _ rfl
-      d Γ H As hH hAs _ _ rfl
+      (good.sub (by memsub) (by lenlt)) d Γ H As hH hAs _ _ rfl
     obtain ⟨E', hE', hred2⟩ := (ih _ _ _ _ _ _ (by lenlt) ev2).withSpine rfl _ _ _ _ rfl
       (good.sub (by memsub) (by lenlt)) d Γ E Bs hE hBs
     exact ⟨E', hE', .trans hred1 hred2⟩
@@ -186,12 +290,16 @@ theorem peel_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   intro lam sp acc hargs d Γ k L As Cs hL hAs hCs
   subst hargs
   rcases Obs.«KernelWhnf::peel_beta».obs ev with
-    ⟨w, b, a, rest, cs, m, ld, ld', rfl, ev1, rfl⟩ | ⟨w, b, ld, ld', rfl, rfl, -⟩ |
+    ⟨w, b, bl, a, rest, m, csz, cs, m', ld, ld', evz, rfl, ev1, rfl⟩ |
+    ⟨w, b, bl, a, rest, v, m, csz, ld, ld', evz, hne, rfl, rfl, rfl⟩ |
+    ⟨w, b, bl, ld, ld', rfl, rfl, -⟩ |
     ⟨v, ld, -, rfl, rfl, -⟩
-  · -- `Lam(_, body)`, `Cons(a, rest) => peel_beta(body, rest, &Cons(a, acc))`
+  · -- `Lam(_, body, bl)`, `Cons(a, rest)`, `level_is_not_zero(bl)` is `1` (the binder's
+    -- datum is `never`) `=> peel_beta(body, rest, &Cons(a, acc))`
     obtain ⟨t, rt, tt⟩ := hL
-    obtain ⟨ty, b', rfl, rty, rb⟩ := RepK.lam_of_load rt ld
+    obtain ⟨ty, b', ℓ, rfl, rty, rb, rl⟩ := RepK.lam_of_load rt ld
     obtain ⟨T, B, rfl, tty, tb⟩ := Tr.lam_inv tt
+    obtain ⟨hnb, rfl⟩ := bmeta_nb_of_obs rl evz
     obtain ⟨A, As', rfl, hA1, hAs'⟩ := RepList.cons_of_load hAs ld'
     obtain ⟨deep, cons, rest', Ts, D, rfl, rfl, hlenA, hlenC, hD, hcons, hrest⟩ :=
       (ih _ _ _ _ _ _ (by lenlt) ev1).peel rfl _ _ _ rfl d Γ (k + 1) B As' (A :: Cs)
@@ -199,14 +307,20 @@ theorem peel_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
         (RepSpine.mono (Heap.Extends.snoc _ _) hAs')
         (.cons (by simp) (RepEk.mono (Heap.Extends.snoc _ _) hA1)
           (RepSpine.mono (Heap.Extends.snoc _ _) hCs))
-    refine ⟨deep, cons, rest', T :: Ts, D, rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨deep, cons, rest', T :: Ts, D, rfl, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · show _ = Ix.Kernel.Expr.lam T (K.lams Ts D) nb
+      rw [hnb]
     · simp only [List.length_cons]; omega
-    · simp only [List.length_cons, List.length_nil]; omega
+    · simp only [List.length_append, List.length_cons, List.length_nil]; omega
     · have hk : k + (T :: Ts).length = k + 1 + Ts.length := by simp; omega
       rw [hk]; exact hD
     · simpa [List.take_succ_cons, List.reverse_cons, List.append_assoc] using hcons
     · simpa [List.drop_succ_cons] using hrest
-  · -- `Lam(_, body)`, `Nil => (lam, acc, spine)`
+  · -- `Lam(_, body, bl)`, `Cons(a, rest)`, `_ => (lam, acc, spine)`: the datum may be zero
+    have ext := evz.heap_extends
+    exact ⟨_, _, _, [], _, rfl, rfl, by simp, by simp, by simpa using RepEk.mono ext hL,
+      by simpa using RepSpine.mono ext hCs, by simpa using RepSpine.mono ext hAs⟩
+  · -- `Lam(_, body, bl)`, `Nil => (lam, acc, spine)`
     exact ⟨_, _, _, [], _, rfl, rfl, by simp, by simp, by simpa using hL, by simpa using hCs,
       by simpa using hAs⟩
   · -- `_ => (lam, acc, spine)`
@@ -239,28 +353,52 @@ theorem peel_nil (c : Ctx) {calls : List (Call F)} (ih : IH c calls)
   rw [List.append_nil] at hcons
   exact ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩
 
+/-- **`beta_more` in the fragment returns its arguments**: it calls `peel_beta_cert`
+(certified β, outside the fragment) or returns `(deep, consumed, rest)`. -/
+theorem betaMore_frag {c : Ctx} {calls : List (Call F)} (good : Good c calls)
+    {rc deep rest cons types deep2 cons2 rest2 : SourceValue F} {m m' : Heap F}
+    {cs : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::beta_more" [rc, deep, rest, cons, types] m
+      (.tuple [deep2, cons2, rest2]) m' cs)
+    (hsub : ∀ x ∈ cs, x ∈ calls) :
+    deep2 = deep ∧ cons2 = cons ∧ rest2 = rest ∧ m' = m := by
+  rcases Obs.«KernelWhnf::beta_more».obs ev with
+    ⟨ld, hr, rfl, -⟩ | ⟨_, _, _, _, _, cs', ld, ld', ev', rfl⟩ | ⟨_, _, _, ld, ld', -, hr, rfl, -⟩
+  · -- `Nil => (deep, consumed, rest)`
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
+    obtain ⟨rfl, rfl, rfl⟩ := hr
+    exact ⟨rfl, rfl, rfl, rfl⟩
+  · -- `Cons(_, _)`, `Lam(_, _, _) => peel_beta_cert(…)`: outside the fragment
+    exact (good.2.2.1 _ (hsub _ (List.mem_cons_self ..)) (by simp [nativeNames])).elim
+  · -- `Cons(_, _)`, `_ => (deep, consumed, rest)`
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
+    obtain ⟨rfl, rfl, rfl⟩ := hr
+    exact ⟨rfl, rfl, rfl, rfl⟩
+
 /-- `red_beta`: the consumed arguments are matched structurally, so no
-count is read as a field element. -/
+count is read as a field element. In the fragment `beta_more` returns `peel_beta`'s
+result (`betaMore_frag`), so every consumed binder has the datum `never`. -/
 theorem redBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_beta" args h r h' calls) (ih : IH c calls) :
-    RedBetaSpec c args h r h' := by
-  intro rc lam sp types hargs d Γ L As hL hAs x y hr
+    RedBetaSpec c args h r h' calls := by
+  intro rc lam sp types hargs good d Γ L As hL hAs x y hr
   subst hargs
   rcases Obs.«KernelWhnf::red_beta».obs ev with
-    ⟨_, _, _, _, _, _, -, -, -, rfl, -, -⟩ |
-    ⟨m2, cs13, m34, deep, cons, rest, a, more, v, m163, cs171, rfl, ev15, ld78, ld142, rfl, ev173,
-      rfl, rfl⟩ |
-    ⟨m2, cs13, m34, deep, cons, rest, a, more, w1, w2, v, m238, cs246, rfl, ev15, ld78, ld142, rfl,
-      ev248, rfl, rfl⟩
+    ⟨_, _, _, _, _, _, _, _, _, _, _, -, -, -, -, rfl, -, -⟩ |
+    ⟨m2, cs13, m34, deep, cons, rest, m68, cs79, deep2, cons2, rest2, a, more, v, m239, cs247,
+      rfl, ev15, ev81, ld154, ld218, rfl, ev249, rfl, rfl⟩ |
+    ⟨m2, cs13, m34, deep, cons, rest, m68, cs79, deep2, cons2, rest2, a, more, w1, w2, v, m314,
+      cs322, rfl, ev15, ev81, ld154, ld218, rfl, ev324, rfl, rfl⟩
   · -- `Nil => (0, lam, spine)`: not tag `1`
     simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq] at hr
     exact absurd hr.1 (by decide)
   · -- `Cons(a, more)`, `Nil => (1, expr_inst1(deep, a, 0), rest)`: one `Red.betaGate`
     cases hr
+    obtain ⟨rfl, rfl, rfl, rfl⟩ := betaMore_frag good ev81 (by memsub)
     obtain ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩ := peel_nil c ih ev15 (by lenlt) hL hAs
-    obtain ⟨A1, Cs, hc, hA1, hCs⟩ := RepList.cons_of_load hcons ld78
-    obtain rfl := RepList.nil_of_load hCs ld142
+    obtain ⟨A1, Cs, hc, hA1, hCs⟩ := RepList.cons_of_load hcons ld154
+    obtain rfl := RepList.nil_of_load hCs ld218
     have hn : Ts.length = 1 := by
       have := congrArg List.length hc
       simp only [List.length_reverse, List.length_take, List.length_cons, List.length_nil] at this
@@ -277,17 +415,18 @@ theorem redBeta_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} {h
     have hAeq : A0 = A1 := by simpa using hc
     rw [← hAeq] at hA1
     simp at hD hrest
-    refine ⟨_, _, hA.inst1 _ _ _ _ _ _ ev173 d Γ D A0 hD hA1,
-      RepSpine.mono ev173.heap_extends hrest, ?_⟩
+    refine ⟨_, _, hA.inst1 _ _ _ _ _ _ ev249 d Γ D A0 hD hA1,
+      RepSpine.mono ev249.heap_extends hrest, ?_⟩
     show Red c.env d (K.mkAppN (.app (.lam T1 D nb) A0) As') (K.mkAppN (D.instantiate1 A0) As')
     exact K.red_mkAppN As' (.betaGate nb_isNever)
   · -- `Cons(a, more)`, `Cons(_, _) => (1, expr_inst_many(deep, consumed, 0), rest)`: the chain
     cases hr
+    obtain ⟨rfl, rfl, rfl, rfl⟩ := betaMore_frag good ev81 (by memsub)
     obtain ⟨Ts, D, rfl, hlenA, hD, hcons, hrest⟩ := peel_nil c ih ev15 (by lenlt) hL hAs
     have hclen : (As.take Ts.length).reverse.length = Ts.length := by simp; omega
     rw [← hclen] at hD
-    refine ⟨_, _, hA.instMany _ _ _ _ _ _ ev248 d Γ D _ hD hcons,
-      RepSpine.mono ev248.heap_extends hrest, ?_⟩
+    refine ⟨_, _, hA.instMany _ _ _ _ _ _ ev324 d Γ D _ hD hcons,
+      RepSpine.mono ev324.heap_extends hrest, ?_⟩
     have hchain := K.red_beta_chain (env := c.env) (d := d) (As.take Ts.length) Ts D
       (As.drop Ts.length) (by simp; omega)
     rwa [List.take_append_drop] at hchain
