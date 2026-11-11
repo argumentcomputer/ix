@@ -152,7 +152,7 @@ recursive verifier's adaptations (typed hints for IO and arithmetic advice,
 `StarkHash::digest_eq` by all digest bits, the aggregation byte matches) are
 likewise in its modules.
 
-## Compatibility checks
+## Refactor checks
 
 The retired legacy IxVM, as ported, was the behavioral reference, with the
 previously reviewed adaptations: no unconstrained pointer values, explicit raw
@@ -196,9 +196,6 @@ These column counts cover the function chips, before the host adds memory,
 fixed-table, and lookup-protocol columns. Those inputs also compare exactly;
 this refactor does not change circuit size or grouping. The checks and artifact
 hashes are saved in [the comparison record](benchmarks/formal-aiur-modules/summary.json).
-The pinned legacy program sources are unchanged between the pin and that
-baseline. Distributed workers recognize both the relocated `check_owned`
-callable and the old name used by cached artifacts.
 
 From the repository root:
 
@@ -212,13 +209,12 @@ tools/ixvm/check-formal.sh
 The library regression also instantiates abstract byte/word clients, rejects
 opaque hints and incomplete providers, and checks accelerated execution against
 table execution and reference trace generation. The full integration gate
-covers valid/invalid IxVM claims, recursive proofs, aggregation, and production
-controllers.
+covers valid/invalid IxVM claims, recursive proofs, aggregation, and the
+production controller.
 
 Validation of this refactor passed 2,586 accelerated/table execution and
 reference-trace comparisons, the Lean arithmetic/domain/opacity checks, two
-dishonest-hint proof rejections, and U64/Blake3 proofs. Application proof checks,
-resident/distributed controllers, and the three-workload CPU proof/key parity
-gate passed. The first controller run exposed the renamed worker callable;
-the controller gate passed after adding compatibility for both names. CUDA
-runtime validation was not repeated on this machine, which has no GPU.
+dishonest-hint proof rejections, and U64/Blake3 proofs. Application proof
+checks, the controller gate, and the three-workload CPU proof/key parity gate
+passed. CUDA runtime validation was not repeated for this refactor; the
+measuring machine had no GPU.

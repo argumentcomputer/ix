@@ -1,4 +1,5 @@
 //! Shared capacity for execution records, retained until their storage drops.
+pub mod host;
 pub mod queue;
 
 use std::collections::{BTreeMap, VecDeque};
@@ -339,6 +340,25 @@ impl RecordReservation {
       - self.0.credit.available.load(Ordering::Relaxed)
   }
 
+  /// Return the charge for storage that has been freed, without releasing
+  /// the reservation owning the remaining record. Unused credit is separate.
+  pub fn release(&self, bytes: usize) {
+    if bytes == 0 {
+      return;
+    }
+    let pool = &self.0.pool.0;
+    let mut state = pool.state.lock().unwrap();
+    let entry = state.entries.get_mut(&self.0.id).unwrap();
+    let available = self.0.credit.available.load(Ordering::Relaxed);
+    assert!(
+      bytes <= entry.grant - available,
+      "released more storage than reserved"
+    );
+    entry.grant -= bytes;
+    state.stats.reserved -= bytes;
+    pool.changed.notify_all();
+  }
+
   /// Planning and proving only read the record. Return speculative
   /// capacity now, retaining its used charge through both proving rounds.
   pub fn finish_execution(&self) {
@@ -370,6 +390,28 @@ impl Drop for ReservationInner {
 mod tests {
   use super::*;
   use std::{sync::mpsc, thread};
+
+  #[test]
+  fn partial_release_preserves_credit_and_unblocks_other_records() {
+    let pool = RecordPool::with_chunk(100, 40, 8);
+    let record = pool.try_admit().unwrap().unwrap();
+    record.reserve(30).unwrap();
+    record.release(20);
+    assert_eq!(record.bytes(), 10);
+    assert_eq!(pool.stats().reserved, 20);
+    record.reserve(10).unwrap();
+    record.finish_execution();
+    assert_eq!(record.bytes(), 20);
+    let other = pool.try_admit().unwrap().unwrap();
+    other.reserve(40).unwrap();
+    assert_eq!(pool.stats().reserved, 60);
+    record.release(20);
+    drop(record);
+    assert_eq!(pool.stats().reserved, 40);
+    drop(other);
+    assert_eq!(pool.stats().reserved, 0);
+    assert_eq!(pool.stats().peak_reserved, 60);
+  }
 
   struct Shutdown(RecordPool);
   impl Drop for Shutdown {

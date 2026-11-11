@@ -35,7 +35,7 @@ private def compressedFixture : System.FilePath :=
 
 /-- The bundled release keys belong to the current formal backends.
 
-- `ix compress` without `--fixed-root` accepts the formal aggregation key: the
+- `ix compress` accepts the formal aggregation key: the
   release has a layout (`.ixl`) for it, and a formal statement carries the
   release's statement prefix, the checks it makes before proving. Another
   IxVM backend's statement is refused.
@@ -53,13 +53,13 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
   let claimCtx : Ix.ClaimContext := { spec := testHash, binding := testHash, axioms := none }
   let claim := Ix.Claim.checkEnv claimCtx testHash none
   Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
-    (Ix.Cli.FormalAggregate.statementBytes ctx claim)
+    (Ix.Cli.FormalAggregate.statementBytes ctx.toKeys claim)
   let other := { ctx with
     allowed := Aggr.allowedBlob ctx.ixvm.key (ctx.ixvm.index + 1) ctx.aggr.key ctx.aggr.index }
   let refused ←
     try
       Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
-        (Ix.Cli.FormalAggregate.statementBytes other claim)
+        (Ix.Cli.FormalAggregate.statementBytes other.toKeys claim)
       pure false
     catch _ => pure true
   unless refused do
@@ -112,6 +112,8 @@ public def run : IO Unit := do
     unless old != addr && native.claim == compressed.claim do
       throw <| IO.userError "compression must preserve claim identity and change proof identity"
     rejects home #["compress", toString old] setupError
+    rejects home #["compress", toString old, "--dev-kzg-srs", "--out", (home / "run").toString]
+      "formal aggregate root"
     rejects home #["compress", toString otherAddr, "--dev-kzg-srs", "--out", (home / "run").toString]
       "aggregate CheckEnv proof"
     unless !(← (home / "run").pathExists) do

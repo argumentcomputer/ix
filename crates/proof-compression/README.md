@@ -112,21 +112,28 @@ install it.
 
 ## Proving and verification
 
-`ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
-normalize the aggregate root using the versioned
-[version 0.3 layout](verifying-keys/0.3/root-layout.ixl).
-`--fixed-root` is an optional layout override from `ix compress layout`. The
-default layout holds the roots of `Nat.add_comm`'s aggregate under all four
-root shapes (a wrapped leaf, ordinary and structural joins of wrapped leaves,
-and joins of raw leaves), which need the same heights, with one more doubling
-of every circuit (`--headroom 1`). It has 140 circuit heights, 12 of them
-memory circuits, and 18 claim elements. Its root verifier is the formal
-aggregation key, BLAKE3
+`ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` normalize the
+formal aggregate root (an `IXAGGR2` proof) to the versioned
+[version 0.3 layout](verifying-keys/0.3/root-layout.ixl) and compress it. Every
+root uses that one layout: there is no per-proof layout and no override. The
+formal aggregation artifact (`--aggr-artifact`, or the locally compiled one)
+supplies the backend key and the 18-word statement, and both must be the ones
+the release was derived for. The aggregate controller verifies the root, wraps
+it once more with `ix_aggr`, proves the wrap as one all-active trace shard at
+the layout's heights (`fixed_log_heights` in the prover options) and verifies
+that proof, which is what compression starts from. `ix compress normalize`
+writes the root input directory without compressing.
+
+The layout holds the roots of `Nat.add_comm`'s aggregate under all four root
+shapes (a wrapped leaf, ordinary and structural joins of wrapped leaves, and
+joins of raw leaves), which need the same heights, with one more doubling of
+every circuit. It has 140 circuit heights, 12 of them memory circuits, and 18
+claim elements. Its root verifier is the formal aggregation key, BLAKE3
 `f6d00e0451de46e218aa17a93924ae8714d87c7ebe61301470fccc55b409b44e`.
-The default rejects another backend key, and normalization rejects executions
+Compression rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
-layout is a new release profile; compression does not resize it per proof.
-The profile supplies normalization bounds, not a bundled compression verifier.
+layout is a new release; `ix compress layout` derives one when a release is
+cut, and compression never resizes it per proof.
 
 A layout file (`.ixl`, [`FixedRoot`](src/pipeline/root/fixed.rs)) is Ixon,
 written with `aiur::ixon`'s primitives, and its BLAKE3 digest is its identity;

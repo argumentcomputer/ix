@@ -20,7 +20,7 @@ program is produced (elaborated from Lean, serialized as Ixon) changes them
 only:
 
 - `programArtifact` is the IxVM claim artifact: `$IX_AIUR_ARTIFACT`, or the
-  checkout's cached export (`ix prepare`), exported on first use;
+  checkout's cached export (`lake build ix`), exported on first use;
 - `programHost` is the Rust host: `$IX_AIUR_HOST`, or the checkout's
   `ixvm-proof`, built on first use;
 - `programSources` is the program's source text, which the guards over its
@@ -53,10 +53,18 @@ open IxVM.ClaimHarness
 
 /-- The IxVM claim artifact the suites execute: `$IX_AIUR_ARTIFACT`, or the
 checkout's cached export. -/
-def programArtifact : IO String := Ix.Cli.FormalAiur.artifact default
+def programArtifact : IO String := Ix.Cli.FormalAiur.artifactPath default
 
-/-- The Rust host that executes the cases (`ixvm-proof test`). -/
-def programHost : IO String := Ix.Cli.FormalAiur.host
+/-- The Rust host that executes the cases (`ixvm-proof test`):
+`$IX_AIUR_HOST`, or the checkout's release build, built when missing. -/
+def programHost : IO String := do
+  if let some path ← IO.getEnv "IX_AIUR_HOST" then return path
+  let root ← Ix.Cli.FormalAiur.repoRoot
+  let path := root / "target" / "release" / "ixvm-proof"
+  unless ← path.pathExists do
+    Ix.Cli.FormalAiur.command "cargo" #["build", "--release", "--locked", "-p", "ixvm",
+      "--bin", "ixvm-proof", "--features", "parallel"] root
+  return path.toString
 
 /-- The Aiur source text of a program's modules as `(file, text)`, in file-name
 order: the body of the `aiur⟦ … ⟧` block of each `.lean` file in `dir`, by

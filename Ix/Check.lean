@@ -87,22 +87,24 @@ def mkWitness (addr : Address) (ixonEnv : Ixon.Env)
     IxVM.ClaimHarness.buildClaimWitness ixonEnv claim {}
 
 /-- Load an `.ixe` for IxVM claims: its environment, given the default role
-    binding when the file carries none (`withDefaultRoleBinding`), and a
-    Rust handle over that same environment. -/
+    binding when the file carries none (`withDefaultRoleBinding`) and its
+    IxVM model advice (`IxVM.Model.attach`), and a Rust handle over that same
+    environment and advice. -/
 def loadBoundIxe (path : String) : IO (Ixon.Env × Aiur.EnvHandle) := do
   let bytes ← IO.FS.readBinFile path
   let env ← match Ixon.deEnvAnon bytes with
     | .error e => throw <| IO.userError s!"Failed to deserialize {path}: {e}"
     | .ok env => pure env
   if env.roleBinding.isSome then
-    match Aiur.EnvHandle.fromIxe path with
+    let env ← IO.ofExcept (IxVM.Model.attach env)
+    match Aiur.EnvHandle.fromIxe path (IxVM.ClaimHarness.modelAdviceBytes env) with
     | .error e => throw <| IO.userError s!"EnvHandle.fromIxe {path}: {e}"
     | .ok h => return (env, h)
   let env ← IO.ofExcept (withDefaultRoleBinding env)
   let envBytes ← match Ixon.serEnv env with
     | .error e => throw <| IO.userError s!"serEnv {path}: {e}"
     | .ok b => pure b
-  match Aiur.EnvHandle.fromBytes envBytes with
+  match Aiur.EnvHandle.fromBytes envBytes (IxVM.ClaimHarness.modelAdviceBytes env) with
   | .error e => throw <| IO.userError s!"EnvHandle.fromBytes {path}: {e}"
   | .ok h => return (env, h)
 
@@ -230,7 +232,9 @@ def forEachClaim
         let envBytes ← match Ixon.serEnv ixonEnv with
           | .error e => throw (IO.userError s!"serEnv failed for {label}: {e}")
           | .ok b => pure b
-        let envHandle ← match Aiur.EnvHandle.fromBytes envBytes with
+        let ixonEnv ← IO.ofExcept (IxVM.Model.attach ixonEnv)
+        let envHandle ← match Aiur.EnvHandle.fromBytes envBytes
+            (IxVM.ClaimHarness.modelAdviceBytes ixonEnv) with
           | .error e => throw (IO.userError s!"EnvHandle.fromBytes failed for {label}: {e}")
           | .ok h => pure h
         runOne claim (some envHandle) (.addr addr) label

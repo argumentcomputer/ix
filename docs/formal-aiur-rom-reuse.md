@@ -1,6 +1,6 @@
 # Reusing the execution record's ROM index and width buckets
 
-Measured 2026-10-28 against `55022874`, following the
+Historical record: measured 2026-10-28 against `55022874`, following the
 [trace phase profile](formal-aiur-trace-profile.md). The optimization removes
 the two ROM reconstruction passes identified there. Aiur programs, certified
 layouts, grouping, constraints, circuit heights, columns and FFT estimates
@@ -41,13 +41,9 @@ samples after two warmups. Population is approximately unchanged: the win
 comes from removing preparation work. Circuit spans overlap under Rayon and
 must not be interpreted as isolated CPU time.
 
-A fresh legacy recursive run takes **687.25 ms** at 64 threads. New Aiur is now
-**18.7% slower**, down from **71.6% slower** before this change. Legacy's
-environment median is 43.63 ms; that smaller workload has substantial sample
-variation, saved in the raw data. This change does not establish recursive
-parity: row and lookup population remain the main work to investigate.
+Row and lookup population remain the main recursive trace cost to investigate.
 
-Peak process RSS for the 64-thread recursive replay falls from **31.63 GiB to
+Peak process RSS for the 64-thread recursive trace run falls from **31.63 GiB to
 31.33 GiB**, about **299 MiB less**. Retaining the index extends its lifetime
 after execution, but avoids allocating the temporary trace index and ROM row
 collections. The RSS measurement includes the entire process and allocator
@@ -121,7 +117,7 @@ hashes, source and input hashes, memory measurements and all selected controls.
 separate instrumented run. Raw samples, circuit shapes and phase spans are not
 kept in the repository; the manifest records how to reproduce them, at commits
 of the migration branch that a squash merge does not keep.
-All new-Aiur circuit statistics match before/after for each workload, including
+All formal Aiur circuit statistics match before/after for each workload, including
 the recursive verifier's 937,960,213 padded main cells.
 
 The host and inputs are the same as the
@@ -142,5 +138,5 @@ RAYON_NUM_THREADS=64 IX_BENCH_NO_THP=1 IX_BENCH_REUSE_EXECUTION=1 \
 ```
 
 Use `IX_BENCH_REUSE_EXECUTION=0` for the execution controls. The baseline binary
-was built from `55022874` with the same features and flags. Legacy uses
-`bench-compare-aiur recursion INPUT OUTPUT SAMPLES` under the same environment.
+was built from `55022874` with the same features and flags. The two `.lake`
+paths are locally exported artifacts and inputs, not checked-in files.

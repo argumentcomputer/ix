@@ -82,7 +82,7 @@ def cached (directory : System.FilePath) (target : String) (key : Address)
       return path.toString
   IO.eprintln s!"[aiur] compiling {target} with the verified Aiur compiler and exporting the \
     artifact to {directory}; this runs once per source revision and takes several minutes \
-    (`ix prepare` does it ahead of time)"
+    (`lake build ix` does it ahead of time)"
   let tmp := directory / s!"{target}-{key}.tmp.{← IO.Process.getPID}.{← IO.monoNanosNow}"
   try
     exportTo tmp

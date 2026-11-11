@@ -96,20 +96,20 @@ pub(super) struct SlotFill {
 /// checks that the callee's recorded height is the caller's minus one, so a
 /// slot the Lean planner misclassified fails here, by name, rather than as an
 /// unbalanced lookup at verification.
-struct ExactCheck {
+pub(super) struct ExactCheck {
   channel: String,
-  enable: Polynomial,
+  pub(super) enable: Polynomial,
   /// The send's arguments without its final depth word: the callee query.
-  args: Vec<Polynomial>,
+  pub(super) args: Vec<Polynomial>,
   /// The functions whose rows the callee circuit holds.
-  callees: Vec<usize>,
+  pub(super) callees: Vec<usize>,
 }
 
 /// One circuit's depth columns (exact slots need none), and its exact slots.
 pub(super) struct DepthFill {
   pub(super) column: Option<usize>,
   pub(super) slots: Vec<SlotFill>,
-  exact: Vec<ExactCheck>,
+  pub(super) exact: Vec<ExactCheck>,
 }
 
 #[cfg(feature = "stark")]
@@ -350,9 +350,8 @@ impl DepthPlan {
   }
 }
 
-/// The recorded height of the callee query `args` of a slot: from whichever
-/// of the callee circuit's functions recorded it, or from the deferred
-/// heights when another record owns it.
+/// The recorded height of the callee query `args` of a slot, from whichever
+/// of the callee circuit's functions recorded it.
 fn callee_depth<B: FieldBackend>(
   record: &Execution<B>,
   callees: &[usize],
@@ -367,10 +366,7 @@ fn callee_depth<B: FieldBackend>(
       return Ok(table.depth(id));
     }
   }
-  callees
-    .iter()
-    .find_map(|&f| record.deferred_height(f, args))
-    .ok_or_else(|| "missing recorded callee height".into())
+  Err("missing recorded callee height".into())
 }
 
 /// One SCC of recursive circuits in a record (follow-ups G1/G2).

@@ -1,4 +1,5 @@
 import Ix.Cli.AddrOfCmd
+import Ix.FormalCompiler
 import Ix.Cli.AggregateCmd
 import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd
@@ -15,7 +16,6 @@ import Ix.Cli.DiffCmd
 import Ix.Cli.MergeCmd
 import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
-import Ix.Cli.PrepareCmd
 import Ix.Cli.CompressCmd
 import Ix.Cli.ProveCmd
 import Ix.Cli.ProveBindingCmd
@@ -51,7 +51,6 @@ def ixCmd : Cli.Cmd := `[Cli|
     diffCmd;
     packCmd;
     treeCmd;
-    prepareCmd;
     proveCmd;
     proveBindingCmd;
     compressCmd;

@@ -12,6 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod depth;
+pub mod describe;
 mod plan;
 #[cfg(feature = "stark")]
 pub mod stark;
@@ -19,7 +20,7 @@ pub use depth::{DepthStatistics, RangeCounts, SccStatistics};
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Polynomial {
   Const(u64),
@@ -59,7 +60,11 @@ impl Polynomial {
       _ => Ok(()),
     }
   }
-  fn eval<B: FieldBackend>(&self, row: &[B::Element], field: B) -> B::Element {
+  pub(crate) fn eval<B: FieldBackend>(
+    &self,
+    row: &[B::Element],
+    field: B,
+  ) -> B::Element {
     match self {
       Self::Const(v) => field.from_u64(*v),
       Self::Var(v) => row[*v],
@@ -250,7 +255,7 @@ pub struct TraceArtifact {
   pub groups: Vec<FunctionGroup>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupWrite {
   pub column: usize,
   pub value: Polynomial,
@@ -279,6 +284,38 @@ pub struct FunctionGroup {
   pub receive: Vec<Polynomial>,
   pub sends: Vec<GroupLookup>,
   pub members: Vec<GroupMember>,
+}
+
+/// Where one function's logical columns land in its physical circuit. A
+/// physical row is the function's column writes through `columns`, then the
+/// `selector` set to one, then each group write in order (evaluated over the
+/// row written so far), then the multiplicity in the last column.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placement {
+  pub grouped: bool,
+  /// Index among the function circuits, in [`Layout::circuits`] order.
+  pub circuit: usize,
+  pub columns: Vec<usize>,
+  pub selector: usize,
+  pub writes: Vec<GroupWrite>,
+}
+
+/// The artifact source of one physical function circuit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FunctionCircuit {
+  /// An index into [`TraceArtifact::groups`].
+  Group(usize),
+  /// An index into [`TraceArtifact::chips`] of an ungrouped chip.
+  Chip(usize),
+}
+
+/// The certified physical placement of every chip: function circuits are
+/// emitted in chip order, a group at its first member chip.
+#[derive(Clone, Debug)]
+pub struct Layout {
+  /// By chip index.
+  pub placements: Vec<Placement>,
+  pub circuits: Vec<FunctionCircuit>,
 }
 
 /// Height is explicit: a zero-column circuit can still provide a claim.
@@ -316,7 +353,7 @@ pub struct PopulationTimings {
 
 /// A checked plan is tied to the immutable checked execution program.
 pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
-  program: &'a CheckedProgram<B>,
+  program: crate::shared::Shared<'a, CheckedProgram<B>>,
   artifact: TraceArtifact,
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
@@ -334,9 +371,11 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
 
 impl<'a, B: FieldBackend> TracePlan<'a, B> {
   pub fn new(
-    program: &'a CheckedProgram<B>,
+    program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
     mut artifact: TraceArtifact,
   ) -> Result<Self, String> {
+    let shared = program.into();
+    let program = &*shared;
     if artifact.version != 3 || artifact.modulus != program.field.modulus() {
       return Err("trace version or field mismatch".into());
     }
@@ -539,7 +578,117 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           .into(),
       );
     }
-    Ok(Self { program, artifact, callables, members, fills, depth })
+    Ok(Self { program: shared, artifact, callables, members, fills, depth })
+  }
+
+  pub fn artifact(&self) -> &TraceArtifact {
+    &self.artifact
+  }
+
+  pub fn program(&self) -> &CheckedProgram<B> {
+    &self.program
+  }
+
+  /// The chip that represents each function, by function index.
+  pub fn function_chips(&self) -> &[usize] {
+    &self.members
+  }
+
+  /// The physical placement of every chip, validated against the groups.
+  pub fn layout(&self) -> Result<Layout, String> {
+    let artifact = &self.artifact;
+    let mut grouped = FxHashMap::default();
+    for (gi, group) in artifact.groups.iter().enumerate() {
+      if group.members.len() < 2 || group.width >= u32::MAX as usize {
+        return Err("invalid function group size".into());
+      }
+      for member in &group.members {
+        if grouped.insert(member.name.as_str(), gi).is_some() {
+          return Err("function appears in multiple groups".into());
+        }
+      }
+    }
+    let mut placements: Vec<Option<Placement>> =
+      (0..artifact.chips.len()).map(|_| None).collect();
+    let mut circuits = vec![];
+    let mut emitted = vec![false; artifact.groups.len()];
+    for (ci, chip) in artifact.chips.iter().enumerate() {
+      if let Some(&gi) = grouped.get(chip.name.as_str()) {
+        if emitted[gi] {
+          continue;
+        }
+        emitted[gi] = true;
+        let group = &artifact.groups[gi];
+        for member in &group.members {
+          let original = artifact
+            .chips
+            .iter()
+            .position(|c| c.name == member.name)
+            .ok_or("unknown grouped function chip")?;
+          self.validate_member(
+            group.width,
+            member,
+            &artifact.chips[original],
+          )?;
+          placements[original] = Some(Placement {
+            grouped: true,
+            circuit: circuits.len(),
+            columns: member.columns.clone(),
+            selector: member.selector,
+            writes: member.writes.clone(),
+          });
+        }
+        circuits.push(FunctionCircuit::Group(gi));
+        continue;
+      }
+      if chip.width >= u32::MAX as usize {
+        return Err("too many circuit columns".into());
+      }
+      placements[ci] = Some(Placement {
+        grouped: false,
+        circuit: circuits.len(),
+        columns: (0..chip.width).collect(),
+        selector: chip.activation,
+        writes: vec![],
+      });
+      circuits.push(FunctionCircuit::Chip(ci));
+    }
+    if emitted.contains(&false) {
+      return Err("unknown function group members".into());
+    }
+    let placements = placements
+      .into_iter()
+      .map(|p| p.ok_or_else(|| "missing function placement".to_owned()))
+      .collect::<Result<_, _>>()?;
+    Ok(Layout { placements, circuits })
+  }
+
+  fn validate_member(
+    &self,
+    width: usize,
+    member: &GroupMember,
+    source: &Chip,
+  ) -> Result<(), String> {
+    if member.columns.len() != source.width
+      || member.selector >= width
+      || member.columns[source.activation] != member.selector
+    {
+      return Err("invalid grouped member layout".into());
+    }
+    let mut used = member.columns.clone();
+    used.sort_unstable();
+    used.dedup();
+    if used.len() != member.columns.len() || used.iter().any(|&c| c >= width) {
+      return Err("non-injective group column mapping".into());
+    }
+    for write in &member.writes {
+      if write.column >= width || used.contains(&write.column) {
+        return Err("group message column aliases a source column".into());
+      }
+      write.value.validate(width, self.program.field)?;
+      used.push(write.column);
+    }
+    Ok(())
   }
 
   /// Populate each original query once. Power-of-two padding remains all
@@ -765,10 +914,6 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                       return Err("pending recorded callee".into());
                     }
                     answer.output
-                  } else if dest.is_empty()
-                    && record.is_deferred(self.callables[name], &buffer)
-                  {
-                    &[]
                   } else {
                     return Err("missing recorded callee".into());
                   }
@@ -857,17 +1002,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     Ok(Trace { matrices, ranges })
   }
 
-  pub(crate) fn validate_record(
-    &self,
-    record: &Execution<B>,
-  ) -> Result<(), String> {
+  fn validate_record_shape(&self, record: &Execution<B>) -> Result<(), String> {
     if !std::sync::Arc::ptr_eq(&record.hints.program, &self.program.program) {
       return Err("hint providers belong to another program".into());
     }
     if record.queries.tables.len() != self.program.inputs.len() {
       return Err("query record callable count mismatch".into());
     }
-    let validate_table = |(i, table): (usize, &crate::query::QueryTable<B>)| {
+    for (i, table) in record.queries.tables.iter().enumerate() {
       if table.widths()
         != (self.program.inputs[i].width(), self.program.outputs[i].width())
       {
@@ -887,7 +1029,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           return Err("malformed static map counts".into());
         }
         // Inputs/results are borrowed from already validated tables.
-        return Ok(());
+        continue;
       }
       if table.static_map.is_some() {
         return Err("function record contains a static map".into());
@@ -899,6 +1041,19 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       }
       if table.depths().iter().any(|&d| !self.program.field.contains(d)) {
         return Err("query record depth reaches field characteristic".into());
+      }
+    }
+    Ok(())
+  }
+
+  pub(crate) fn validate_record(
+    &self,
+    record: &Execution<B>,
+  ) -> Result<(), String> {
+    self.validate_record_shape(record)?;
+    let validate_table = |(i, table): (usize, &crate::query::QueryTable<B>)| {
+      if i >= self.program.program.functions.len() {
+        return Ok(());
       }
       for row in 0..table.len() {
         let output = table.output(row);

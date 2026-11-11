@@ -2,29 +2,33 @@
 //!
 //! Lean's exporters (`Aiur.Artifact`) write these files and every Rust host
 //! reads them through this module. The grammar uses the Ixon primitives of
-//! [`crate::ixon`] and is canonical: decoding rejects unknown tags, values out
-//! of range for their Rust type and trailing bytes, and re-encoding a decoded
-//! artifact reproduces its bytes. An artifact's identity is the BLAKE3 digest
-//! of its complete file ([`Digest`]).
+//! [`crate::ixon`]. Writers are canonical: they emit [`FORMAT_VERSION`], and
+//! each pool holds every entry once, in first-reference order. Decoding
+//! rejects unknown tags, values out of range for their Rust type or the
+//! modulus, references that do not point back into a pool, oversized pools
+//! and expansions, and trailing bytes; it does not require canonical pools,
+//! so re-encoding reproduces the bytes of what a writer wrote. An artifact's
+//! identity is the BLAKE3 digest of its complete file ([`Digest`]).
 //!
 //! ```text
-//! package   = "IXAIURP\0" nat(1) program option(trace)
-//! execution = "IXAIURX\0" nat(1) package nats(args) nats(invalid_args)
+//! package   = "IXAIURP\0" nat(2) program option(trace)
+//! execution = "IXAIURX\0" nat(2) package nats(args) nats(invalid_args)
 //!             list(hint)
-//! groups    = "IXAIURG\0" nat(1) list(group)
+//! groups    = "IXAIURG\0" nat(2) nodes list(group)
 //!
-//! invocation = "IXAIURI\0" nat(1) string(entry) nats(args)
+//! invocation = "IXAIURI\0" nat(2) string(entry) nats(args)
 //!              list(nat(channel) nats(key) nats(values))
-//! cases      = "IXAIURT\0" nat(1) (1 case)* 0
+//! cases      = "IXAIURT\0" nat(2) (1 case)* 0
 //! case       = string(label) bool(accept) option(string(rejects_with))
 //!              option(string(exercises)) invocation
 //!
 //! program   = nat(version) nat(modulus) list(function) list(enum)
-//!             list(table) list(map) list(entry)
+//!             rows list(table) list(map) list(entry)
+//! rows      = list(nats)                    distinct table rows
 //! function  = string(name) list(type) type(result) nat(registers)
 //!             list(instruction)
 //! enum      = string(name) list(string(name) list(type))
-//! table     = string(name) type list(nats)
+//! table     = string(name) type nats(row)   row: an index into rows
 //! map       = string(name) list(type) type(result) nat(input) nat(output)
 //! entry     = string(name) nat(function) list(io_type) option(io_type)
 //! type      = 0 | 1 list(type) | 2 type | 3 string          field tuple ptr enum
@@ -42,10 +46,13 @@
 //!   13 fail string
 //! hint      = string(channel) type type(key) nats(key) nats(output)
 //!
-//! trace     = nat(version) nat(modulus) nats(limbs) list(plan) list(chip)
-//!             list(group)
-//! poly      = 0 nat | 1 nat | 2 poly poly | 3 poly poly | 4 poly poly
-//!                                            const var add sub mul
+//! trace     = nat(version) nat(modulus) nats(limbs) nodes list(plan)
+//!             list(chip) list(group)
+//! nodes     = list(node)                    distinct polynomial nodes
+//! node      = 0 nat | 1 nat | 2 back back | 3 back back | 4 back back
+//!             const   var     add           sub           mul
+//! back      = nat     node i's operand is node i - back, 1 <= back <= i
+//! poly      = nat     the index of its root in the file's nodes
 //! plan      = string(name) string(chip) nat(witnesses) nats(inputs)
 //!             nats(output) list(poly(guard) action)
 //!             list(nat(column) nat(source) poly(guard))
@@ -65,6 +72,20 @@
 //!             list(string(name) nats(columns) nat(selector)
 //!                  list(nat(column) poly(value)))
 //! ```
+//!
+//! A file has at most one node pool, its trace section's or its grouping's,
+//! and at most one row pool, its program's. Writers list nodes in the order
+//! a left-to-right post-order walk of every `poly`, in file order, first
+//! completes them, and rows in the order tables first name them. Decoding
+//! expands each `poly` into a [`Polynomial`] tree, without recursion and up
+//! to 2^28 nodes per pool, and each table into its rows. A trace section's
+//! constants and a program's table values must lie below their section's
+//! modulus.
+//!
+//! Every magic still reads version 1, which has no `rows` or `nodes`: a
+//! table lists its rows inline (`list(nats)`) and a polynomial is a tree,
+//! `poly = 0 nat | 1 nat | 2 poly poly | 3 poly poly | 4 poly poly`.
+//! Re-encoding a version 1 artifact writes version 2.
 use crate::{
   bytecode::{
     Binary, Constructor, Entry, Enum, Function, Instruction, Map, Program,
@@ -80,7 +101,10 @@ use crate::{
   },
   value::IoType,
 };
+use pool::{Interner, Nodes, RowInterner, Rows};
 use std::{fmt, path::Path};
+
+mod pool;
 
 /// A compiled program and, when circuits were exported, their trace plan.
 pub const PACKAGE_MAGIC: &[u8; 8] = b"IXAIURP\0";
@@ -92,8 +116,8 @@ pub const GROUPS_MAGIC: &[u8; 8] = b"IXAIURG\0";
 pub const INVOCATION_MAGIC: &[u8; 8] = b"IXAIURI\0";
 /// Labelled invocations with their expected verdicts (`test`, `cases`).
 pub const CASES_MAGIC: &[u8; 8] = b"IXAIURT\0";
-/// The artifact grammar's version. Every magic shares it.
-pub const FORMAT_VERSION: u64 = 1;
+/// The artifact grammar's version that writers emit. Every magic shares it.
+pub const FORMAT_VERSION: u64 = 2;
 /// The conventional file extension.
 pub const EXTENSION: &str = "ixa";
 
@@ -196,8 +220,11 @@ impl Package {
   }
 
   fn read(r: &mut Reader<'_>) -> Result<Self, String> {
-    header(r, PACKAGE_MAGIC)?;
-    Ok(Self { program: program(r)?, trace: r.option(trace)? })
+    let format = header(r, PACKAGE_MAGIC)?;
+    Ok(Self {
+      program: program(r, format)?,
+      trace: r.option(|r| trace(r, format))?,
+    })
   }
 
   fn write(&self, w: &mut Writer) {
@@ -256,8 +283,9 @@ impl ExecutionPackage {
 /// A function grouping (`grouping_tune`'s output) to replace a trace plan's.
 pub fn decode_groups(bytes: &[u8]) -> Result<Vec<FunctionGroup>, String> {
   let mut r = Reader::new(bytes);
-  header(&mut r, GROUPS_MAGIC)?;
-  let groups = r.list(group)?;
+  let format = header(&mut r, GROUPS_MAGIC)?;
+  let mut polys = Polys::read(&mut r, format, None)?;
+  let groups = r.list(|r| group(r, &mut polys))?;
   r.finish()?;
   Ok(groups)
 }
@@ -266,7 +294,9 @@ pub fn encode_groups(groups: &[FunctionGroup]) -> Vec<u8> {
   let mut w = Writer::new();
   w.raw(GROUPS_MAGIC);
   w.nat(FORMAT_VERSION);
-  w.list(groups, put_group);
+  put_with_nodes(&mut w, |w, nodes| {
+    w.list(groups, |w, g| put_group(w, nodes, g));
+  });
   w.into_bytes()
 }
 
@@ -397,7 +427,16 @@ pub fn encode_hints(hints: &[HintEntry]) -> Vec<u8> {
   w.into_bytes()
 }
 
-fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<(), String> {
+/// A grammar version the reader accepts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Version {
+  /// Polynomials as inline trees and table rows inline.
+  V1,
+  /// Polynomial nodes and table rows in pools ([`FORMAT_VERSION`]).
+  V2,
+}
+
+fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<Version, String> {
   let found = r.raw(magic.len()).map_err(|_e| "not an Aiur artifact")?;
   if found != magic {
     let kind = |m: &[u8]| {
@@ -417,13 +456,13 @@ fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<(), String> {
     };
     return Err(format!("expected {}, found {}", kind(magic), kind(found)));
   }
-  let version = r.nat()?;
-  if version != FORMAT_VERSION {
-    return Err(format!(
-      "unsupported Aiur artifact version {version} (expected {FORMAT_VERSION})"
-    ));
+  match r.nat()? {
+    1 => Ok(Version::V1),
+    FORMAT_VERSION => Ok(Version::V2),
+    version => Err(format!(
+      "unsupported Aiur artifact version {version} (expected 1 or {FORMAT_VERSION})"
+    )),
   }
-  Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -691,6 +730,55 @@ fn put_program(w: &mut Writer, p: &Program) {
       w.list(&c.fields, put_type);
     });
   });
+  let mut rows = RowInterner::default();
+  let tables: Vec<Vec<usize>> = p
+    .tables
+    .iter()
+    .map(|t| t.rows.iter().map(|row| rows.intern(row)).collect())
+    .collect();
+  rows.put(w);
+  w.usize(p.tables.len());
+  for (t, indices) in p.tables.iter().zip(&tables) {
+    w.str(&t.name);
+    put_type(w, &t.r#type);
+    w.usizes(indices);
+  }
+  w.list(&p.maps, |w, m| {
+    w.str(&m.name);
+    w.list(&m.params, put_type);
+    put_type(w, &m.result);
+    w.usize(m.input);
+    w.usize(m.output);
+  });
+  w.list(&p.entries, |w, e| {
+    w.str(&e.name);
+    w.usize(e.function);
+    w.list(&e.inputs, put_io_type);
+    w.option(e.output.as_ref(), put_io_type);
+  });
+}
+
+/// A program in Ixon serialization with each table listing its rows inline
+/// (the version 1 `program` grammar). The encoding does not depend on how a
+/// file pools rows, so native-executor fingerprints hash it.
+pub fn program_bytes(p: &Program) -> Vec<u8> {
+  let mut w = Writer::new();
+  w.nat(u64::from(p.version));
+  w.nat(p.modulus);
+  w.list(&p.functions, |w, f| {
+    w.str(&f.name);
+    w.list(&f.params, put_type);
+    put_type(w, &f.result);
+    w.usize(f.registers);
+    w.list(&f.code, put_instruction);
+  });
+  w.list(&p.enums, |w, e| {
+    w.str(&e.name);
+    w.list(&e.constructors, |w, c| {
+      w.str(&c.name);
+      w.list(&c.fields, put_type);
+    });
+  });
   w.list(&p.tables, |w, t| {
     w.str(&t.name);
     put_type(w, &t.r#type);
@@ -709,12 +797,15 @@ fn put_program(w: &mut Writer, p: &Program) {
     w.list(&e.inputs, put_io_type);
     w.option(e.output.as_ref(), put_io_type);
   });
+  w.into_bytes()
 }
 
-fn program(r: &mut Reader<'_>) -> Result<Program, String> {
+fn program(r: &mut Reader<'_>, format: Version) -> Result<Program, String> {
+  let version = r.u32()?;
+  let modulus = r.nat()?;
   Ok(Program {
-    version: r.u32()?,
-    modulus: r.nat()?,
+    version,
+    modulus,
     functions: r.list(|r| {
       Ok(Function {
         name: r.string()?,
@@ -732,13 +823,21 @@ fn program(r: &mut Reader<'_>) -> Result<Program, String> {
         })?,
       })
     })?,
-    tables: r.list(|r| {
-      Ok(Table {
-        name: r.string()?,
-        r#type: ty(r)?,
-        rows: r.list(Reader::nats)?,
-      })
-    })?,
+    tables: match format {
+      Version::V1 => r.list(|r| {
+        Ok(Table {
+          name: r.string()?,
+          r#type: ty(r)?,
+          rows: r.list(Reader::nats)?,
+        })
+      })?,
+      Version::V2 => {
+        let mut rows = Rows::read(r, modulus)?;
+        r.list(|r| {
+          Ok(Table { name: r.string()?, r#type: ty(r)?, rows: rows.table(r)? })
+        })?
+      },
+    },
     maps: r.list(|r| {
       Ok(Map {
         name: r.string()?,
@@ -780,34 +879,42 @@ fn hint(r: &mut Reader<'_>) -> Result<HintEntry, String> {
 // ---------------------------------------------------------------------------
 // Trace plans
 
-/// Polynomials can nest thousands deep (long sums); both directions use an
-/// explicit stack instead of recursion.
-fn put_poly(w: &mut Writer, p: &Polynomial) {
-  let mut pending = vec![p];
-  while let Some(p) = pending.pop() {
-    match p {
-      Polynomial::Const(value) => {
-        w.u8(0);
-        w.nat(*value);
-      },
-      Polynomial::Var(var) => {
-        w.u8(1);
-        w.usize(*var);
-      },
-      Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
-        w.u8(match p {
-          Polynomial::Add(_) => 2,
-          Polynomial::Sub(_) => 3,
-          _ => 4,
-        });
-        pending.push(&xs[1]);
-        pending.push(&xs[0]);
-      },
+/// How a section reads its polynomials: as inline trees (version 1), or as
+/// root indices into the file's node pool.
+enum Polys {
+  Trees,
+  Pool(Nodes),
+}
+
+impl Polys {
+  /// The node pool that starts a section of `format`, if it has one. Its
+  /// constants must lie below `modulus` when one is given.
+  fn read(
+    r: &mut Reader<'_>,
+    format: Version,
+    modulus: Option<u64>,
+  ) -> Result<Self, String> {
+    Ok(match format {
+      Version::V1 => Self::Trees,
+      Version::V2 => Self::Pool(Nodes::read(r, modulus)?),
+    })
+  }
+
+  fn poly(&mut self, r: &mut Reader<'_>) -> Result<Polynomial, String> {
+    match self {
+      Self::Trees => tree(r),
+      Self::Pool(nodes) => nodes.poly(r),
     }
+  }
+
+  fn polys(&mut self, r: &mut Reader<'_>) -> Result<Vec<Polynomial>, String> {
+    r.list(|r| self.poly(r))
   }
 }
 
-fn poly(r: &mut Reader<'_>) -> Result<Polynomial, String> {
+/// A version 1 polynomial tree. Polynomials can nest thousands deep (long
+/// sums), so this uses an explicit stack instead of recursion.
+fn tree(r: &mut Reader<'_>) -> Result<Polynomial, String> {
   // Each frame is an operator awaiting its operands, with its left operand
   // once that is complete.
   let mut frames: Vec<(u8, Option<Polynomial>)> = vec![];
@@ -840,52 +947,65 @@ fn poly(r: &mut Reader<'_>) -> Result<Polynomial, String> {
   }
 }
 
-fn put_polys(w: &mut Writer, ps: &[Polynomial]) {
-  w.list(ps, put_poly);
+/// Write `body`, whose polynomials are interned into `nodes`, after the
+/// node pool it references.
+fn put_with_nodes(
+  w: &mut Writer,
+  body: impl FnOnce(&mut Writer, &mut Interner),
+) {
+  let mut nodes = Interner::default();
+  let mut section = Writer::new();
+  body(&mut section, &mut nodes);
+  nodes.put(w);
+  w.raw(&section.into_bytes());
 }
 
-fn polys(r: &mut Reader<'_>) -> Result<Vec<Polynomial>, String> {
-  r.list(poly)
+fn put_poly(w: &mut Writer, nodes: &mut Interner, p: &Polynomial) {
+  w.usize(nodes.intern(p));
 }
 
-fn put_action(w: &mut Writer, action: &Action) {
+fn put_polys(w: &mut Writer, nodes: &mut Interner, ps: &[Polynomial]) {
+  w.list(ps, |w, p| put_poly(w, nodes, p));
+}
+
+fn put_action(w: &mut Writer, nodes: &mut Interner, action: &Action) {
   match action {
     Action::Assign { dest, values } => {
       w.u8(0);
       w.usizes(dest);
-      put_polys(w, values);
+      put_polys(w, nodes, values);
     },
     Action::Inverse { dest, value } => {
       w.u8(1);
       w.usize(*dest);
-      put_poly(w, value);
+      put_poly(w, nodes, value);
     },
     Action::Choose { dest, tests } => {
       w.u8(2);
       w.usizes(dest);
-      w.list(tests, |w, t| put_polys(w, t));
+      w.list(tests, |w, t| put_polys(w, nodes, t));
     },
     Action::Failure { dest, differences } => {
       w.u8(3);
       w.usizes(dest);
-      put_polys(w, differences);
+      put_polys(w, nodes, differences);
     },
     Action::Call { name, args, dest } => {
       w.u8(4);
       w.str(name);
-      put_polys(w, args);
+      put_polys(w, nodes, args);
       w.usizes(dest);
     },
     Action::Store { r#type, values, dest } => {
       w.u8(5);
       put_type(w, r#type);
-      put_polys(w, values);
+      put_polys(w, nodes, values);
       w.usize(*dest);
     },
     Action::Load { r#type, address, dest } => {
       w.u8(6);
       put_type(w, r#type);
-      put_poly(w, address);
+      put_poly(w, nodes, address);
       w.usizes(dest);
     },
     Action::Hint { channel, instruction, r#type, key_type, key, dest } => {
@@ -894,27 +1014,33 @@ fn put_action(w: &mut Writer, action: &Action) {
       w.usize(*instruction);
       put_type(w, r#type);
       put_type(w, key_type);
-      put_polys(w, key);
+      put_polys(w, nodes, key);
       w.usizes(dest);
     },
   }
 }
 
-fn action(r: &mut Reader<'_>) -> Result<Action, String> {
+fn action(r: &mut Reader<'_>, p: &mut Polys) -> Result<Action, String> {
   Ok(match r.tag("action", 8)? {
-    0 => Action::Assign { dest: r.usizes()?, values: polys(r)? },
-    1 => Action::Inverse { dest: r.usize()?, value: poly(r)? },
-    2 => Action::Choose { dest: r.usizes()?, tests: r.list(polys)? },
-    3 => Action::Failure { dest: r.usizes()?, differences: polys(r)? },
-    4 => Action::Call { name: r.string()?, args: polys(r)?, dest: r.usizes()? },
-    5 => Action::Store { r#type: ty(r)?, values: polys(r)?, dest: r.usize()? },
-    6 => Action::Load { r#type: ty(r)?, address: poly(r)?, dest: r.usizes()? },
+    0 => Action::Assign { dest: r.usizes()?, values: p.polys(r)? },
+    1 => Action::Inverse { dest: r.usize()?, value: p.poly(r)? },
+    2 => Action::Choose { dest: r.usizes()?, tests: r.list(|r| p.polys(r))? },
+    3 => Action::Failure { dest: r.usizes()?, differences: p.polys(r)? },
+    4 => {
+      Action::Call { name: r.string()?, args: p.polys(r)?, dest: r.usizes()? }
+    },
+    5 => {
+      Action::Store { r#type: ty(r)?, values: p.polys(r)?, dest: r.usize()? }
+    },
+    6 => {
+      Action::Load { r#type: ty(r)?, address: p.poly(r)?, dest: r.usizes()? }
+    },
     _ => Action::Hint {
       channel: r.string()?,
       instruction: r.usize()?,
       r#type: ty(r)?,
       key_type: ty(r)?,
-      key: polys(r)?,
+      key: p.polys(r)?,
       dest: r.usizes()?,
     },
   })
@@ -924,68 +1050,72 @@ fn put_trace(w: &mut Writer, t: &TraceArtifact) {
   w.nat(u64::from(t.version));
   w.nat(t.modulus);
   w.usizes(&t.limbs);
-  w.list(&t.functions, |w, f| {
-    w.str(&f.name);
-    w.str(&f.chip);
-    w.usize(f.witnesses);
-    w.usizes(&f.inputs);
-    w.usizes(&f.output);
-    w.list(&f.steps, |w, s| {
-      put_poly(w, &s.guard);
-      put_action(w, &s.action);
+  put_with_nodes(w, |w, nodes| {
+    w.list(&t.functions, |w, f| {
+      w.str(&f.name);
+      w.str(&f.chip);
+      w.usize(f.witnesses);
+      w.usizes(&f.inputs);
+      w.usizes(&f.output);
+      w.list(&f.steps, |w, s| {
+        put_poly(w, nodes, &s.guard);
+        put_action(w, nodes, &s.action);
+      });
+      w.list(&f.writes, |w, c| {
+        w.usize(c.column);
+        w.usize(c.source);
+        put_poly(w, nodes, &c.guard);
+      });
     });
-    w.list(&f.writes, |w, c| {
-      w.usize(c.column);
-      w.usize(c.source);
-      put_poly(w, &c.guard);
-    });
+    w.list(&t.chips, |w, c| put_chip(w, nodes, c));
+    w.list(&t.groups, |w, g| put_group(w, nodes, g));
   });
-  w.list(&t.chips, |w, c| {
-    w.str(&c.name);
-    w.usize(c.width);
-    w.usize(c.activation);
-    w.usizes(&c.inputs);
-    put_polys(w, &c.output);
-    put_polys(w, &c.constraints);
-    w.list(&c.sends, |w, s| {
-      w.str(&s.channel);
-      put_polys(w, &s.args);
-      w.usizes(&s.result);
-      put_poly(w, &s.enable);
-    });
-    w.list(&c.memory, |w, m| {
-      put_type(w, &m.r#type);
-      put_poly(w, &m.address);
-      put_polys(w, &m.values);
-      put_poly(w, &m.enable);
-    });
-    w.option(c.depth.column.as_ref(), |w, c| w.usize(*c));
-    w.nat(c.depth.rank);
-    w.list(&c.depth.slots, |w, s| match s {
-      DepthSlot::Plain => w.u8(0),
-      DepthSlot::Exact => w.u8(1),
-      DepthSlot::Gap { column } => {
-        w.u8(2);
-        w.usize(*column);
-      },
-      DepthSlot::External { column } => {
-        w.u8(3);
-        w.usize(*column);
-      },
-    });
-  });
-  w.list(&t.groups, put_group);
 }
 
-fn put_group(w: &mut Writer, g: &FunctionGroup) {
+fn put_chip(w: &mut Writer, nodes: &mut Interner, c: &Chip) {
+  w.str(&c.name);
+  w.usize(c.width);
+  w.usize(c.activation);
+  w.usizes(&c.inputs);
+  put_polys(w, nodes, &c.output);
+  put_polys(w, nodes, &c.constraints);
+  w.list(&c.sends, |w, s| {
+    w.str(&s.channel);
+    put_polys(w, nodes, &s.args);
+    w.usizes(&s.result);
+    put_poly(w, nodes, &s.enable);
+  });
+  w.list(&c.memory, |w, m| {
+    put_type(w, &m.r#type);
+    put_poly(w, nodes, &m.address);
+    put_polys(w, nodes, &m.values);
+    put_poly(w, nodes, &m.enable);
+  });
+  w.option(c.depth.column.as_ref(), |w, c| w.usize(*c));
+  w.nat(c.depth.rank);
+  w.list(&c.depth.slots, |w, s| match s {
+    DepthSlot::Plain => w.u8(0),
+    DepthSlot::Exact => w.u8(1),
+    DepthSlot::Gap { column } => {
+      w.u8(2);
+      w.usize(*column);
+    },
+    DepthSlot::External { column } => {
+      w.u8(3);
+      w.usize(*column);
+    },
+  });
+}
+
+fn put_group(w: &mut Writer, nodes: &mut Interner, g: &FunctionGroup) {
   w.str(&g.name);
   w.usize(g.width);
-  put_poly(w, &g.activation);
-  put_polys(w, &g.constraints);
-  put_polys(w, &g.receive);
+  put_poly(w, nodes, &g.activation);
+  put_polys(w, nodes, &g.constraints);
+  put_polys(w, nodes, &g.receive);
   w.list(&g.sends, |w, s| {
-    put_poly(w, &s.enable);
-    put_polys(w, &s.args);
+    put_poly(w, nodes, &s.enable);
+    put_polys(w, nodes, &s.args);
   });
   w.list(&g.members, |w, m| {
     w.str(&m.name);
@@ -993,92 +1123,95 @@ fn put_group(w: &mut Writer, g: &FunctionGroup) {
     w.usize(m.selector);
     w.list(&m.writes, |w, x| {
       w.usize(x.column);
-      put_poly(w, &x.value);
+      put_poly(w, nodes, &x.value);
     });
   });
 }
 
-fn trace(r: &mut Reader<'_>) -> Result<TraceArtifact, String> {
-  Ok(TraceArtifact {
-    version: r.u32()?,
-    modulus: r.nat()?,
-    limbs: r.usizes()?,
-    functions: r.list(|r| {
-      Ok(FunctionPlan {
-        name: r.string()?,
-        chip: r.string()?,
-        witnesses: r.usize()?,
-        inputs: r.usizes()?,
-        output: r.usizes()?,
-        steps: r.list(|r| {
-          Ok(PopulationStep { guard: poly(r)?, action: action(r)? })
-        })?,
-        writes: r.list(|r| {
-          Ok(ColumnWrite {
-            column: r.usize()?,
-            source: r.usize()?,
-            guard: poly(r)?,
-          })
-        })?,
+fn trace(r: &mut Reader<'_>, format: Version) -> Result<TraceArtifact, String> {
+  let version = r.u32()?;
+  let modulus = r.nat()?;
+  let limbs = r.usizes()?;
+  let mut p = Polys::read(r, format, Some(modulus))?;
+  let functions = r.list(|r| {
+    Ok(FunctionPlan {
+      name: r.string()?,
+      chip: r.string()?,
+      witnesses: r.usize()?,
+      inputs: r.usizes()?,
+      output: r.usizes()?,
+      steps: r.list(|r| {
+        Ok(PopulationStep { guard: p.poly(r)?, action: action(r, &mut p)? })
+      })?,
+      writes: r.list(|r| {
+        Ok(ColumnWrite {
+          column: r.usize()?,
+          source: r.usize()?,
+          guard: p.poly(r)?,
+        })
+      })?,
+    })
+  })?;
+  let chips = r.list(|r| chip(r, &mut p))?;
+  let groups = r.list(|r| group(r, &mut p))?;
+  Ok(TraceArtifact { version, modulus, limbs, functions, chips, groups })
+}
+
+fn chip(r: &mut Reader<'_>, p: &mut Polys) -> Result<Chip, String> {
+  Ok(Chip {
+    name: r.string()?,
+    width: r.usize()?,
+    activation: r.usize()?,
+    inputs: r.usizes()?,
+    output: p.polys(r)?,
+    constraints: p.polys(r)?,
+    sends: r.list(|r| {
+      Ok(Send {
+        channel: r.string()?,
+        args: p.polys(r)?,
+        result: r.usizes()?,
+        enable: p.poly(r)?,
       })
     })?,
-    chips: r.list(|r| {
-      Ok(Chip {
-        name: r.string()?,
-        width: r.usize()?,
-        activation: r.usize()?,
-        inputs: r.usizes()?,
-        output: polys(r)?,
-        constraints: polys(r)?,
-        sends: r.list(|r| {
-          Ok(Send {
-            channel: r.string()?,
-            args: polys(r)?,
-            result: r.usizes()?,
-            enable: poly(r)?,
-          })
-        })?,
-        memory: r.list(|r| {
-          Ok(MemoryLookup {
-            r#type: ty(r)?,
-            address: poly(r)?,
-            values: polys(r)?,
-            enable: poly(r)?,
-          })
-        })?,
-        depth: ChipDepth {
-          column: r.option(Reader::usize)?,
-          rank: r.nat()?,
-          slots: r.list(|r| {
-            Ok(match r.tag("depth slot", 4)? {
-              0 => DepthSlot::Plain,
-              1 => DepthSlot::Exact,
-              2 => DepthSlot::Gap { column: r.usize()? },
-              _ => DepthSlot::External { column: r.usize()? },
-            })
-          })?,
-        },
+    memory: r.list(|r| {
+      Ok(MemoryLookup {
+        r#type: ty(r)?,
+        address: p.poly(r)?,
+        values: p.polys(r)?,
+        enable: p.poly(r)?,
       })
     })?,
-    groups: r.list(group)?,
+    depth: ChipDepth {
+      column: r.option(Reader::usize)?,
+      rank: r.nat()?,
+      slots: r.list(|r| {
+        Ok(match r.tag("depth slot", 4)? {
+          0 => DepthSlot::Plain,
+          1 => DepthSlot::Exact,
+          2 => DepthSlot::Gap { column: r.usize()? },
+          _ => DepthSlot::External { column: r.usize()? },
+        })
+      })?,
+    },
   })
 }
 
-fn group(r: &mut Reader<'_>) -> Result<FunctionGroup, String> {
+fn group(r: &mut Reader<'_>, p: &mut Polys) -> Result<FunctionGroup, String> {
   Ok(FunctionGroup {
     name: r.string()?,
     width: r.usize()?,
-    activation: poly(r)?,
-    constraints: polys(r)?,
-    receive: polys(r)?,
-    sends: r.list(|r| Ok(GroupLookup { enable: poly(r)?, args: polys(r)? }))?,
+    activation: p.poly(r)?,
+    constraints: p.polys(r)?,
+    receive: p.polys(r)?,
+    sends: r
+      .list(|r| Ok(GroupLookup { enable: p.poly(r)?, args: p.polys(r)? }))?,
     members: r.list(|r| {
       Ok(GroupMember {
         name: r.string()?,
         columns: r.usizes()?,
         selector: r.usize()?,
         writes: r
-          .list(|r| Ok(GroupWrite { column: r.usize()?, value: poly(r)? }))?,
+          .list(|r| Ok(GroupWrite { column: r.usize()?, value: p.poly(r)? }))?,
       })
     })?,
   })

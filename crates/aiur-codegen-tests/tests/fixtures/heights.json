@@ -1,0 +1,59 @@
+{
+ "version": 1,
+ "modulus": 18446744069414584321,
+ "functions": [
+  {"name": "revfib", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 7, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":3},
+   {"op":"literal","dest":1,"value":0},
+   {"op":"ret","value":[1]},
+   {"op":"branch","tests":[[0,1]],"otherwise":6},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"ret","value":[1]},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":2,"operator":"sub","left":0,"right":1},
+   {"op":"binary","dest":4,"operator":"sub","left":2,"right":1},
+   {"op":"call","function":0,"args":[4],"dest":[5]},
+   {"op":"call","function":0,"args":[2],"dest":[3]},
+   {"op":"binary","dest":6,"operator":"add","left":3,"right":5},
+   {"op":"ret","value":[6]}
+  ]},
+  {"name": "even", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 3, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":3},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"ret","value":[1]},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":1,"operator":"sub","left":0,"right":1},
+   {"op":"call","function":2,"args":[1],"dest":[2]},
+   {"op":"ret","value":[2]}
+  ]},
+  {"name": "odd", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 3, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":3},
+   {"op":"literal","dest":1,"value":0},
+   {"op":"ret","value":[1]},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":1,"operator":"sub","left":0,"right":1},
+   {"op":"call","function":1,"args":[1],"dest":[2]},
+   {"op":"ret","value":[2]}
+  ]},
+  {"name": "outer", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 7, "code": [
+   {"op":"call","function":0,"args":[0],"dest":[1]},
+   {"op":"call","function":0,"args":[0],"dest":[2]},
+   {"op":"call","function":1,"args":[0],"dest":[3]},
+   {"op":"literal","dest":4,"value":1},
+   {"op":"binary","dest":4,"operator":"add","left":0,"right":4},
+   {"op":"call","function":2,"args":[4],"dest":[5]},
+   {"op":"binary","dest":6,"operator":"add","left":1,"right":2},
+   {"op":"binary","dest":6,"operator":"add","left":6,"right":3},
+   {"op":"binary","dest":6,"operator":"add","left":6,"right":5},
+   {"op":"ret","value":[6]}
+  ]}
+ ],
+ "enums": [],
+ "tables": [],
+ "maps": [],
+ "entries": [
+  {"name":"revfib","function":0,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"even","function":1,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"outer","function":3,"inputs":[{"kind":"field"}],"output":{"kind":"field"}}
+ ]
+}

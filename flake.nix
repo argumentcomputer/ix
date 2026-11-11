@@ -210,6 +210,8 @@
               (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
               ./IxC/lake-manifest.json
               ./IxC/lean-toolchain
+              # The pinned verifying keys `FormalAiurKeys` embeds.
+              ./tools/formal-aiur.keys
               # What its Rust archive target traces, as Crane sees it.
               cargoSource
               compressionData
@@ -276,8 +278,14 @@
             inherit lakeDeps;
             src = leanSrc;
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
+            # The Crane-built archive has no native executors: those are
+            # generated from the certified programs, which compiling here
+            # would need a writable artifact cache for. Formal jobs run on
+            # the interpreter, with identical results.
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'cmd := "cargo"' 'cmd := "true"'
+              substituteInPlace lakefile.lean \
+                --replace-fail 'def nativeExecutors : Bool := true' 'def nativeExecutors : Bool := false'
             '';
             # Preserve workspace-relative paths instead of shadowing local packages.
             preConfigure = ''

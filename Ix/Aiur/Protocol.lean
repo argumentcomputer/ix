@@ -74,18 +74,20 @@ instance : Nonempty EnvHandle := EnvHandleNonempty.property
 namespace EnvHandle
 
 @[extern "rs_aiur_env_handle_from_ixe"]
-private opaque fromIxe' : @& ByteArray → Except String EnvHandle
+private opaque fromIxe' : @& ByteArray → @& ByteArray → Except String EnvHandle
 
-/-- Load an `EnvHandle` from a `.ixe` file path (UTF-8 ByteArray). -/
-def fromIxe (path : String) : Except String EnvHandle :=
-  fromIxe' path.toUTF8
+/-- Load an `EnvHandle` from a `.ixe` file path, with the encoded IxVM model
+advice `models` (`IxVM.ClaimHarness.modelAdviceBytes`; empty for none). -/
+def fromIxe (path : String) (models : ByteArray := .empty) : Except String EnvHandle :=
+  fromIxe' path.toUTF8 models
 
 @[extern "rs_aiur_env_handle_from_bytes"]
-private opaque fromBytes' : @& ByteArray → Except String EnvHandle
+private opaque fromBytes' : @& ByteArray → @& ByteArray → Except String EnvHandle
 
-/-- Build an `EnvHandle` from a serialized env blob. -/
-def fromBytes (bytes : ByteArray) : Except String EnvHandle :=
-  fromBytes' bytes
+/-- Build an `EnvHandle` from a serialized env blob, with the encoded IxVM
+model advice `models` (`IxVM.ClaimHarness.modelAdviceBytes`; empty for none). -/
+def fromBytes (bytes : ByteArray) (models : ByteArray := .empty) : Except String EnvHandle :=
+  fromBytes' bytes models
 
 end EnvHandle
 

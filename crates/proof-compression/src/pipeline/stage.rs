@@ -17,6 +17,7 @@ use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
+use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
 use multi_stark::system::{System, SystemWitness};
@@ -25,6 +26,7 @@ use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
 use multi_stark::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
+use p3_matrix::Matrix;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
@@ -108,15 +110,24 @@ impl Prepared<Val> {
     drop(trace_span);
     drop(compiled);
     drop(self.assignment);
-    let (mut system, key) = tracing::info_span!("compression/setup")
-      .in_scope(|| System::new(config, definitions));
+    let (system, key) = tracing::info_span!("compression/setup")
+      .in_scope(|| System::new_without_preprocessed(config, definitions));
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let witness = SystemWitness::from_stage_1(traces, &system);
-    // Lookup messages now own everything needed from the fixed evaluations.
-    // Quotients/openings use PCS data; the returned verifier needs neither.
-    for circuit in &mut system.circuits {
-      circuit.preprocessed = None;
-    }
+    // A materialized lookup witness is several times the size of the traces
+    // and would coexist with every stage-one LDE. With shape-only witnesses
+    // the prover evaluates one circuit's messages at a time, reading its
+    // trace and fixed matrix back from their commitments, as it builds that
+    // circuit's stage-two column. The proof bytes are the same.
+    let lookups = traces
+      .iter()
+      .zip(&system.circuits)
+      .map(|(trace, circuit)| {
+        let widths: Vec<_> =
+          circuit.graph.lookups.iter().map(|l| l.args.len()).collect();
+        LookupValues::shape_only(trace.height(), &widths)
+      })
+      .collect();
+    let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
       .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
     drop(key);

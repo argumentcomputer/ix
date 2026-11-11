@@ -16,7 +16,10 @@ pub mod ixon;
 pub mod library;
 pub mod maps;
 pub mod memory;
+#[cfg(feature = "native")]
+pub mod native;
 pub mod query;
+pub mod shared;
 mod table;
 pub mod trace;
 pub mod value;

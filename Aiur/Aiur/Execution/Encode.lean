@@ -1,5 +1,6 @@
 import Aiur.Execution.Hints
 import Aiur.Ixon
+import Std.Data.HashMap
 
 /-! Ixon encodings of execution bytecode and data hints. The grammar is
 documented with its Rust reader, `aiur::artifact`; `Aiur.Artifact` frames the
@@ -74,6 +75,24 @@ them. -/
 def putHints (encode : F → Nat) (entries : Array (FlatHintEntry F)) : PutM Unit :=
   array entries (putHint encode)
 
+/-- The distinct rows of `tables`, in the order the tables first name them,
+and each table's rows as indices into them. -/
+def rowPool (tables : List (List (List Nat))) : Array (List Nat) × List (List Nat) := Id.run do
+  let mut rows : Array (List Nat) := #[]
+  let mut index : Std.HashMap (List Nat) Nat := {}
+  let mut indices : Array (List Nat) := #[]
+  for table in tables do
+    let mut refs : Array Nat := #[]
+    for row in table do
+      match index[row]? with
+      | some i => refs := refs.push i
+      | none =>
+        refs := refs.push rows.size
+        index := index.insert row rows.size
+        rows := rows.push row
+    indices := indices.push refs.toList
+  return (rows, indices.toList)
+
 /-- The program section of an artifact. The Rust field backend supports
 primes fitting UInt64; the bytecode compiler itself is field-generic. -/
 def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat) :
@@ -91,10 +110,12 @@ def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat)
   list code.enums fun decl => do
     str decl.name
     list decl.constructors fun c => do str c.name; list c.fields putTy
-  list code.tables fun table => do
+  let (rows, indices) := rowPool (code.tables.map fun table => table.rows.map (·.map encode))
+  array rows nats
+  list (code.tables.zip indices) fun (table, indices) => do
     str table.name
     putTy table.type
-    list table.rows fun row => nats (row.map encode)
+    nats indices
   list code.maps fun map => do
     str map.name
     list map.params putTy

@@ -223,6 +223,7 @@ impl Layout {
       },
     }
   }
+  #[inline]
   pub(crate) fn has_shape_checks(&self) -> bool {
     match self {
       Self::Field | Self::Pointer => false,
@@ -419,6 +420,8 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
   /// Each function's SCC among the depth circuits of a trace plan, when
   /// execution records honest heights ([`CheckedProgram::track_depth`]).
   pub(crate) depth: Option<std::sync::Arc<[u32]>>,
+  #[cfg(feature = "native")]
+  pub(crate) native_fingerprint: std::sync::OnceLock<String>,
 }
 
 // Only globally immutable registers may be aliased. Inputs count as writes;
@@ -638,6 +641,11 @@ impl<B: FieldBackend> CheckedProgram<B> {
       .any(|&s| s != crate::trace::depth::NO_SCC)
       .then(|| sccs.into());
     Ok(())
+  }
+  /// Whether execution records call heights for depth circuits
+  /// ([`Self::track_depth`]).
+  pub fn records_depth(&self) -> bool {
+    self.depth.is_some()
   }
   pub fn field(&self) -> B {
     self.field
@@ -908,6 +916,8 @@ impl Program {
       execution_functions,
       initial_registers,
       depth: None,
+      #[cfg(feature = "native")]
+      native_fingerprint: std::sync::OnceLock::new(),
     })
   }
 }

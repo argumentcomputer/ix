@@ -1,0 +1,31 @@
+[package]
+name = "stark-verifier-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Checks the generated native recursive verifier and aggregation executors against the interpreter"
+
+# Diagnostics of the generated native recursive verifier and aggregation
+# executors (crates/formal-generated) against the interpreter. Feature
+# `generated` compiles them from the sources `lake build ix` writes
+# (.lake/build/formal-generated). This crate is outside the default
+# workspace members.
+
+[features]
+generated = ["formal-generated/executors"]
+
+[[bin]]
+name = "stark-verifier-native"
+required-features = ["generated"]
+
+[dependencies]
+aiur = { path = "../aiur", features = ["native", "parallel"] }
+formal-generated = { path = "../formal-generated" }
+stark-verifier = { path = "../stark-verifier" }
+multi-stark = { workspace = true }
+stark-key = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

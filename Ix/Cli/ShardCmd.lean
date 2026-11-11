@@ -115,21 +115,20 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let maxRam     : Option Nat := (p.flag? "max-ram").map (·.as! Nat)
   let execJobs   : Nat := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 3
 
-  let layout := if p.hasFlag "ordered" then "ordered" else "mincut"
   match shardsFlag, maxRam with
   | some n, _ =>
     if n == 0 then
       p.printError "error: --shards must be positive"; return 1
     IO.println s!"Sharding {envPath} into {n} shards \
-      (static strategy, {layout} layout, balance ±{balancePct}%)"
-    rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64 layout
+      (static strategy, balance ±{balancePct}%)"
+    rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64
       outPath execJobs.toUSize
   | none, some gib =>
     if gib == 0 then
       p.printError "error: --max-ram must be positive"; return 1
     IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
-      (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
-    rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64 layout
+      (static block-shape seed, balance ±{balancePct}%)"
+    rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64
       outPath execJobs.toUSize
   | none, none =>
     p.printError "error: ix shard requires --shards N or --max-ram G"
@@ -150,7 +149,6 @@ def shardCmd : Cli.Cmd := `[Cli|
     "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term)."
     "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --lanes --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
-    ordered;               "Lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
 
   ARGS:

@@ -30,24 +30,24 @@ lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/groupi
 lake env Aiur/.lake/build/bin/depth_example crates/aiur/tests/fixtures/depth.ixa --check
 cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel \
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
+cargo build --release --locked -p aggregate-controller --example streams_parity
 
-if [[ -z ${IX_AIUR_ARTIFACT:-} ]]; then
-  IX_AIUR_ARTIFACT="$formal_tmp/ixvm.ixa"
-  lake env IxVM/.lake/build/bin/ixvm export-claim-trace "$IX_AIUR_ARTIFACT"
-fi
-if [[ -z ${IX_RECURSION_ARTIFACT:-} ]]; then
-  IX_RECURSION_ARTIFACT="$formal_tmp/recursion.ixa"
-  lake env MultiStark/.lake/build/bin/stark-export export-trace "$IX_RECURSION_ARTIFACT"
-fi
-if [[ -z ${IX_AGGR_ARTIFACT:-} ]]; then
-  IX_AGGR_ARTIFACT="$formal_tmp/aggregate.ixa"
-  lake env MultiStark/.lake/build/bin/stark-export export-trace "$IX_AGGR_ARTIFACT" --aggregate
+# The packages `lake build ix` compiled into the checkout's cache, unless
+# supplied: `formal-codegen` reports each one's path as it generates.
+if [[ -z ${IX_AIUR_ARTIFACT:-} || -z ${IX_RECURSION_ARTIFACT:-} || -z ${IX_AGGR_ARTIFACT:-} ]]; then
+  IX_ROOT=$PWD .lake/build/bin/formal-codegen "$formal_tmp/generated" > "$formal_tmp/programs.log"
+  prepared() { awk -v kind="$1" '$1 == kind && $2 == "artifact" { print $3 }' "$formal_tmp/programs.log"; }
+  IX_AIUR_ARTIFACT=${IX_AIUR_ARTIFACT:-$(prepared ixvm)}
+  IX_RECURSION_ARTIFACT=${IX_RECURSION_ARTIFACT:-$(prepared verifier)}
+  IX_AGGR_ARTIFACT=${IX_AGGR_ARTIFACT:-$(prepared aggregation)}
 fi
 export IX_AIUR_ARTIFACT IX_AGGR_ARTIFACT
 
 lake env .lake/build/bin/formal-aiur-tests "$formal_tmp/claims.ixt"
 target/release/ixvm-proof test "$IX_AIUR_ARTIFACT" "$formal_tmp/claims.ixt"
 .lake/build/bin/ix check --ixe "$formal_tmp/claims.ixt.ixe" Nat.add_comm
+.lake/build/bin/ix check --ixe "$formal_tmp/claims.ixt.modeled.ixe" \
+  IxVMInd.Even IxVMInd.Odd IxVMInd.Tree IxVMInd.DedupM
 .lake/build/bin/ix prove Nat.add_comm > "$formal_tmp/prove.log"
 cat "$formal_tmp/prove.log"
 formal_proof=$(tail -n 1 "$formal_tmp/prove.log")
@@ -62,6 +62,7 @@ target/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/
 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.ixi" "$formal_tmp/outer/proof.bin"
 AIUR_TRACE_ONLY_LOOKUPS=1 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.ixi" "$formal_tmp/outer/proof.bin"
 .lake/build/bin/formal-aggregate-tests "$formal_tmp/aggregation.ixt"
+target/release/examples/streams_parity "$formal_tmp/aggregation.ixt.streams.json"
 target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.ixt"
 target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.ixt.wrap.ixi" "$formal_tmp/aggregate"
 target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/public.ixi" "$formal_tmp/aggregate/proof.bin"

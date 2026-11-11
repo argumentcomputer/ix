@@ -1,5 +1,4 @@
-import Ix.Cli.FormalAggregate
-import Ix.Aggr.CatalogPlan
+import Tests.FormalAdvice
 import Ix.AiurInvocation
 
 /-! Execute every aggregation shape, 0 to 16 (wraps, flat and structural pairs,
@@ -7,8 +6,14 @@ range sums, binding discharge, cross-binding joins and catalog joins), and the
 invalid shape 17, against small real STARK children, with negative cases for
 each binding the shapes check. The stand-in keys deliberately accept arbitrary
 digests; only the production aggregator's bindings and fold relation are under
-test. -/
-open Lean Aggr Ix.Cli Ix.Cli.FormalAggregate
+test.
+
+Alongside the cases, dump the Lean reference streams of every shape the
+aggregate controller proves (wraps, pairs, binding discharge and catalog
+joins) to `<path>.streams.json` for `streams_parity`. The catalog plan dumped
+there is for stream parity only: its members carry placeholder role binding
+sections, so its joins are not run through the circuit. -/
+open Lean Aggr Ix.Cli Ix.Cli.FormalAggregate Ix.Cli.FormalAdvice
 
 private def fixture (dir : System.FilePath) (args : Array Aiur.G) : IO Unit := do
   IO.FS.withTempFile fun h path => do
@@ -16,13 +21,46 @@ private def fixture (dir : System.FilePath) (args : Array Aiur.G) : IO Unit := d
     h.flush
     FormalAiur.command "target/release/examples/claim_fixture" #[path.toString, dir.toString]
 
-private def node (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
-    (statement : CheckEnvTrees) : IO Node := do
-  let input := (outerClaim ctx kind statement.claim).extract 2 18
-  fixture dir input
+/-- A stand-in proof of `claim` as a `kind` child: a `claim_fixture` proof
+whose public input is the child's outer claim. -/
+private def standIn (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
+    (claim : Ix.Claim) : IO Ixon.Proof := do
+  fixture dir ((outerClaim ctx kind claim).extract 2 18)
   let magic := (if kind == .ixvm then "IXAIUR2\x00" else "IXAGGR2\x00").toUTF8
-  let proof ← IO.FS.readBinFile (dir / "proof.bin")
-  return { kind, statement, wrapper := { claim := statement.claim, proof := magic ++ proof } }
+  return { claim, proof := magic ++ (← IO.FS.readBinFile (dir / "proof.bin")) }
+
+private def node (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
+    (statement : CheckEnvTrees) : IO Node := do
+  return { kind, statement, wrapper := ← standIn ctx dir kind statement.claim }
+
+/-- The advice of a wrap or pair as the `IOBuffer` the circuit cases run. -/
+private def advice (ctx : Keys) (left : Node) (right : Option Node)
+    (output : CheckEnvTrees) (structural : Bool) : IO Aiur.IOBuffer :=
+  return (← streamsAdvice ctx left right output structural).toIOBuffer
+
+private def hex (b : ByteArray) : String :=
+  b.foldl (init := "") fun s x =>
+    let d := Nat.toDigits 16 x.toNat
+    s ++ (if d.length == 1 then "0" else "") ++ String.ofList d
+
+/-- The ordered streams of an advice, for the Rust encoder's parity check. -/
+private def entriesJson (s : Streams) : Json :=
+  toJson (s.entries.map fun (e : UInt64 × Array UInt64 × ByteArray) =>
+    Json.arr #[toJson e.1.toNat, toJson (e.2.1.map (·.toNat)), toJson (hex e.2.2)])
+
+private def treeJson (t : Ix.AssumptionTree) : Json :=
+  toJson (t.leaves.map toString)
+
+/-- A child given by its claim and proof only. -/
+private def wrapperJson (kind : ChildKind) (w : Ixon.Proof) : IO Json := do
+  return Json.mkObj [("kind", toJson kind.code), ("claim", toJson (hex (Ix.Claim.ser w.claim))),
+    ("proof", toJson (hex (← rawProof kind w.proof)))]
+
+private def childJson (n : Node) : IO Json := do
+  return Json.mkObj [("kind", toJson n.kind.code), ("subjects", treeJson n.statement.subjects),
+    ("assumptions", match n.statement.assumptions with | some t => treeJson t | none => Json.null),
+    ("claim", toJson (hex (Ix.Claim.ser n.statement.claim))),
+    ("proof", toJson (hex (← rawProof n.kind n.wrapper.proof)))]
 
 /-- The failure a rejected case is rejected by, where it is pinned: the
 aggregator's assertion message, or the function that refuses. -/
@@ -55,7 +93,7 @@ private def rejectionReasons : List (String × String) := [
   ("shape 16 rejects a catalog child without its members tree",
     "Aggregation::aggr_load_canonical_tree")]
 
-private def test (ctx : Context) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
+private def test (ctx : Keys) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
     (accept : Bool := true) : Ix.AiurInvocation.Case :=
   { label := label, accept := accept,
     rejectsWith := (if accept then none else rejectionReasons.lookup label),
@@ -75,23 +113,20 @@ private def shiftedGs (bytes : ByteArray) : Array Aiur.G := Id.run do
 /-- A child proving `claim`, which need not be a `CheckEnv` claim (a binding or
 a catalog claim). Advice reads only a node's kind and wrapper, so `statement`
 is a placeholder. -/
-private def claimNode (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
+private def claimNode (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
     (claim : Ix.Claim) (statement : CheckEnvTrees) : IO Node := do
-  fixture dir ((outerClaim ctx kind claim).extract 2 18)
-  let magic := (if kind == .ixvm then "IXAIUR2\x00" else "IXAGGR2\x00").toUTF8
-  let proof ← IO.FS.readBinFile (dir / "proof.bin")
-  return { kind, statement, wrapper := { claim, proof := magic ++ proof } }
+  return { kind, statement, wrapper := ← standIn ctx dir kind claim }
 
 /-- A two-child witness for `shape`: the children, the output claim, the
 channel-4 preimages and the channel-5 trees. -/
-private def pairAdvice (ctx : Context) (shape : Nat) (l r : Node) (output : Ix.Claim)
+private def pairAdvice (ctx : Keys) (shape : Nat) (l r : Node) (output : Ix.Claim)
     (preimages : Array ByteArray) (trees : Array Ix.AssumptionTree := #[]) :
     IO Aiur.IOBuffer := do
-  let io ← childAdvice ctx (extendIdentity default ctx.allowed shape) 0 l
-  let io ← childAdvice ctx io 1 r
-  let io := extendOutputClaim io (Ix.Claim.ser output)
-  let io := preimages.foldl extendPreimage io
-  return trees.foldl extendTree io
+  let s ← streamsChild ctx (({} : Streams).identity ctx.allowed shape) 0 l
+  let s ← streamsChild ctx s 1 r
+  let s := s.outputClaim (Ix.Claim.ser output)
+  let s := preimages.foldl Streams.preimage s
+  return (trees.foldl Streams.tree s).toIOBuffer
 
 /-- A complete role table binding every role to a placeholder address, with
 the roles of `rebind` bound elsewhere (`tag`). Rebinding `Nat.land` keeps the
@@ -105,11 +140,13 @@ private def tableOf (rebind : List Ix.Kernel.Role) (tag : String) (drop : Bool :
                                 bound := if drop then bound.pop else bound }
 
 /-- Shapes 13 to 16: binding discharge, cross-binding joins and catalog joins,
-each with the negative cases of the bindings it checks. -/
-private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
+each with the negative cases of the bindings it checks, and the
+`streams_parity` dumps of the accepted discharges. -/
+private def bindingShapeCases (ctx : Keys) (dir : System.FilePath)
     (claimCtx : Ix.ClaimContext) (left right : CheckEnvTrees) (li : Node) :
-    IO (Array Ix.AiurInvocation.Case) := do
+    IO (Array Ix.AiurInvocation.Case × Array Json) := do
   let mut tests : Array Ix.AiurInvocation.Case := #[]
+  let mut streams : Array Json := #[]
   -- ── binding discharge (shapes 13–14) ──
   -- Children that assume their binding (validator 4), and one proof of the
   -- binding claim for their context: the same binding proof discharges two
@@ -133,8 +170,14 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
     ("shape 13 rejects an output that still assumes the binding", ali, binding, assumedLeft, false),
     ("shape 13 rejects an output for other subjects", ali, binding, right, false)]
   for (label, child, proof, output, accept) in discharges do
-    tests := tests.push (test ctx label (Ix.Claim.ser output.claim)
-      (← dischargeAdvice ctx child proof output) accept)
+    let s ← streamsDischarge ctx child proof output
+    let outBytes := Ix.Claim.ser output.claim
+    tests := tests.push (test ctx label outBytes s.toIOBuffer accept)
+    if accept then
+      streams := streams.push (Json.mkObj [("label", toJson label),
+        ("type", toJson "discharge"), ("shape", toJson (dischargeShapeCode child.kind)),
+        ("children", toJson #[← childJson child, ← wrapperJson .ixvm proof]),
+        ("output", toJson (hex outBytes)), ("entries", entriesJson s)])
   -- ── claims under different role bindings (shapes 15–16) ──
   -- `tableA` and `tableB` bind every role and differ only in `Nat.land`, so
   -- they have one literal class; `tableC` also rebinds `Char.ofNat`, a class
@@ -250,7 +293,7 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
       partials.statements[partials.root]!.claim ==
         (CatalogTrees.join (.inl partialMember.claim) (.inl anotherPartial)).claim do
     throw (IO.userError "catalog plans do not keep incomplete bindings out of the class folds")
-  return tests
+  return (tests, streams)
 
 def main (args : List String) : IO Unit := do
   -- The sibling signals through a promise, not an `IO.Ref`: a `get` on a ref
@@ -274,12 +317,6 @@ def main (args : List String) : IO Unit := do
   let reservation : FormalAiur.HostOptions := { ram := 1024, threads := 4 }
   unless (reservation.forWave 2 1).ram == 2048 && (reservation.forWave 2 2).threads == 4 do
     throw (IO.userError "partial waves lost their RAM/CPU reservations")
-  let schedule ← IO.ofExcept (Reference.schedulePlan
-    #[.leaf 0, .leaf 1, .join 0 1, .leaf 2, .join 2 3] #[2, 3, 4] 4096)
-  unless (← IO.ofExcept (neededSlots schedule 2)) == #[true, true, true, false, false] do
-    throw (IO.userError "subtree scheduling escaped its dependency closure")
-  if (neededSlots schedule 5).toOption.isSome then
-    throw (IO.userError "out-of-range subtree was accepted")
   -- Without an argument, write into a fresh temporary directory, not a fixed
   -- /tmp path that concurrent runs would share.
   let path ← match args.head? with
@@ -293,9 +330,7 @@ def main (args : List String) : IO Unit := do
     fixture (dir / "self") (Array.replicate 16 0)
     let ixvmKey ← IO.FS.readBinFile (dir / "ixvm" / "key.bin")
     let aggrKey ← IO.FS.readBinFile (dir / "self" / "key.bin")
-    let ctx : Context := {
-      ixvmArtifact := ""
-      aggrArtifact := ""
+    let ctx : Keys := {
       ixvm := ⟨ixvmKey, 0⟩
       aggr := ⟨aggrKey, 0⟩
       allowed := allowedBlob ixvmKey 0 aggrKey 0 }
@@ -313,6 +348,27 @@ def main (args : List String) : IO Unit := do
     let ra ← node ctx (dir / "ra") .aggr right
     let bytes := Ix.Claim.ser left.claim
     let mut tests : Array Ix.AiurInvocation.Case := #[]
+    let mut streams : Array Json := #[]
+    for n in #[li, la] do
+      streams := streams.push (Json.mkObj [("label", toJson s!"wrap {n.kind.code}"),
+        ("type", toJson "wrap"), ("shape", toJson n.kind.code), ("children", toJson #[← childJson n]),
+        ("entries", entriesJson (← streamsAdvice ctx n none left false))])
+    -- Shared assumption trees, and two children of one kind, replace streams in place.
+    let shared (subjects : Address) : CheckEnvTrees :=
+      { ctx := claimCtx, subjects := tree #[subjects], assumptions := some (tree #[c]) }
+    let sharedNode (s : CheckEnvTrees) : Node :=
+      { kind := .aggr, statement := s, wrapper := { claim := s.claim, proof := la.wrapper.proof } }
+    let pairs := (#[li, la].flatMap fun l => #[ri, ra].map fun r => (l, r, left, right)).push
+      (sharedNode (shared a), sharedNode (shared b), shared a, shared b)
+    for (l, r, ls, rs) in pairs do
+      for structural in #[false, true] do
+        let output := if structural then ls.joinStructural rs else ls.join rs
+        let shape := if structural then structuralShapeCode l.kind r.kind else shapeCode (l.kind, some r.kind)
+        streams := streams.push (Json.mkObj [("label", toJson s!"pair shape {shape} over {l.kind.code}{r.kind.code}"),
+          ("type", toJson "pair"), ("shape", toJson shape), ("structural", toJson structural),
+          ("children", toJson #[← childJson l, ← childJson r]),
+          ("output", toJson (hex (Ix.Claim.ser output.claim))),
+          ("entries", entriesJson (← streamsAdvice ctx l (some r) output structural))])
     for n in #[li, la] do
       tests := tests.push (test ctx s!"wrap {n.kind.code}" bytes (← advice ctx n none left false))
     for l in #[li, la] do
@@ -398,7 +454,40 @@ def main (args : List String) : IO Unit := do
     let io ← addRange (extendIdentity default ctx.allowed 12) 0 "empty" empty
     let io := extendVk (extendChild io 1 preamble ByteArray.empty) .ixvm ctx.ixvm.key
     tests := tests.push (test ctx "range root rejects incomplete batch" bytes io false)
-    tests := tests ++ (← bindingShapeCases ctx dir claimCtx left right li)
+    let (bindingTests, dischargeStreams) ← bindingShapeCases ctx dir claimCtx left right li
+    tests := tests ++ bindingTests
+    streams := streams ++ dischargeStreams
+    -- A catalog's plan: two members of one literal class fold with the
+    -- cross-binding pair (shape 15), and a member without a class joins
+    -- them into a catalog (shape 16).
+    let member (label : String) (subjects : Array Address) (klass : Option Address) : CatalogMember :=
+      let ctx' := { claimCtx with binding := Address.blake3 (s!"binding-{label}").toUTF8 }
+      { label, toolchain := label, claim := .checkEnv ctx' (tree subjects).root none,
+        bindingSection := (s!"section-{label}").toUTF8, literalClass := klass }
+    let klass := Address.blake3 "formal-class".toUTF8
+    let members := #[member "m0" #[a, b] (some klass), member "m1" #[c] (some klass),
+      member "m2" #[d] none]
+    let plan ← IO.ofExcept (catalogPlan members)
+    let mut proofs : Array (Option Ixon.Proof) := #[]
+    for i in [:plan.nodes.size] do
+      proofs := proofs.push (some (← standIn ctx (dir / s!"catalog-{i}") .aggr plan.statements[i]!.claim))
+    let membersJson := members.map fun m => Json.mkObj [("label", toJson m.label),
+      ("claim", toJson (hex (Ix.Claim.ser m.claim))), ("binding_section", toJson (hex m.bindingSection)),
+      ("literal_class", toJson (m.literalClass.map toString))]
+    for i in [:plan.nodes.size] do
+      let some (shape, s) ← streamsCatalog ctx plan members proofs i | continue
+      let kindLabel := match plan.nodes[i]! with
+        | .crossBinding .. => "cross-binding" | _ => "catalog-join"
+      let mut children : Array Json := #[]
+      for c in plan.nodes[i]!.children do
+        children := children.push (← wrapperJson .aggr proofs[c]!.get!)
+      streams := streams.push (Json.mkObj [("label", toJson s!"catalog node {i} shape {shape} ({kindLabel})"),
+        ("type", toJson kindLabel), ("shape", toJson shape), ("node", toJson i),
+        ("members", toJson membersJson), ("children", toJson children),
+        ("output", toJson (hex (Ix.Claim.ser plan.statements[i]!.claim))), ("entries", entriesJson s)])
+    IO.FS.writeFile (path ++ ".streams.json") (Json.mkObj [("allowed", toJson (hex ctx.allowed)),
+      ("ixvm_key", toJson (hex ctx.ixvm.key)), ("aggr_key", toJson (hex ctx.aggr.key)),
+      ("cases", toJson streams)]).compress
     IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases tests)
     IO.FS.writeBinFile (path ++ ".wrap.ixi")
       (FormalAiur.invocation (pubInput ctx.allowed bytes) wrap "MultiStark::ix_aggr")

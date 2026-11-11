@@ -1,9 +1,14 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
 import Ix.AiurInvocation
+import Tests.FormalPins
+import Tests.Ix.IxVMFixtures
+import Batteries.Data.Char.Basic
 
-/-! Real claim fixtures, plus independently specified evaluation inputs.
-Run through the Rust host. -/
+/-! `formal-aiur-tests [PATH]` writes the real claim fixtures, plus
+independently specified evaluation inputs, which run through the Rust host.
+`formal-aiur-tests pins ROOT` checks acceptance against the pinned verifying
+keys (`Tests/FormalPins.lean`). -/
 open Lean IxVM.ClaimHarness
 
 private def claimCase (label : String) (w : ClaimWitness) (accept : Bool := true) :
@@ -176,7 +181,16 @@ private def claimContains : IO (String × ClaimWitness) := do
     (Ix.Claim.contains tree.root b) (singletonTrees tree)
   pure ("Claim Contains (synthetic 3-leaf)", witness)
 
+/-- Checks `name` under its compiled closure's default role binding. -/
+private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Ix.AiurInvocation.Case := do
+  let env ← loadIxonEnv name leanEnv
+  let target ← lookupAddr env name
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env)
+  let witness ← IO.ofExcept (buildClaimWitness env (.check ctx target none))
+  return claimCase s!"Check {name}" witness
+
 def main (args : List String) : IO Unit := do
+  if let ["pins", root] := args then return ← FormalPins.run root
   -- Without an argument, write into a fresh temporary directory, not a fixed
   -- /tmp path that concurrent runs would share.
   let path ← match args.head? with
@@ -189,6 +203,10 @@ def main (args : List String) : IO Unit := do
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
   IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv controllerEnv))
+  -- Mutual and nested blocks, which IxVM checks against model advice the
+  -- prover attaches when it loads the environment.
+  let modeled ← loadSharedIxonEnv #[``IxVMInd.Even, ``IxVMInd.Tree, ``IxVMInd.DedupM] env
+  IO.FS.writeBinFile (path ++ ".modeled.ixe") (← IO.ofExcept (Ixon.serEnv modeled))
   let mut cases := (← IO.ofExcept evalCases) ++ (← IO.ofExcept assumptionCases)
   for build in [claimCheckWithAsm,
       claimCheckEnvFull, claimCheckEnvFrontier,
@@ -198,5 +216,13 @@ def main (args : List String) : IO Unit := do
     cases := cases.push (claimCase label witness)
   for (label, witness) in [← claimContains, ← claimRevealBinderModes] do
     cases := cases.push (claimCase label witness)
+  -- `Nat.gcd_comm`'s recursor rules compare open bodies that are identical
+  -- to their canonical reconstruction; checking must not need their binder
+  -- types.
+  cases := cases.push (← checkCase env ``Nat.gcd_comm)
+  -- `Char.all.eq_1` compares two identical terms whose unfolding reaches
+  -- `Nat.all 1056767 …`. Def-eq must accept them by structural identity
+  -- rather than evaluate that loop, which exhausts memory.
+  cases := cases.push (← checkCase env ``Char.all.eq_1)
   IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases cases)
   IO.println s!"Wrote {cases.size} production claim cases and .ixe fixture to {path}"

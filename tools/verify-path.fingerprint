@@ -1,0 +1,11 @@
+fingerprint b0a0d8144eb6e122ad16f3f23d1f5f1d4d2a5f60aa94053ebab369f510e06232
+toolchain 4.34.1 5045d0056413266e57c625dcd7c365b10e377c52
+roots ix: Ix.Cli.VerifyCmd.runVerifyCmd Ix.Cli.FormalAggregate.verify Ix.Cli.FormalAggregate.accept Ix.Cli.FormalAggregate.acceptSlot Ix.Cli.CatalogAggregate.verifyCatalog Ix.Cli.CatalogAggregate.acceptCatalog Ix.Cli.FormalAiur.verify Ix.Cli.FormalAggregate.context Ix.Cli.FormalAiur.compiledArtifact Ix.Cli.FormalAiur.artifact Ix.Cli.FormalAiur.aggregationArtifact Ix.Cli.FormalAiur.verifierArtifact Ix.Cli.FormalAiur.artifactPath Ix.Cli.FormalAiur.aggregationArtifactPath Ix.Cli.FormalAiur.verifierArtifactPath
+closure ix: 4652 constants
+roots linked-compiler: Ix.FormalCompiler.compile Ix.FormalCompiler.digest Ix.FormalCompiler.identity
+closure linked-compiler: 10771 constants
+roots ixvm-exporter: main
+closure ixvm-exporter: 10169 constants
+roots stark-exporter: main
+closure stark-exporter: 9633 constants
+source 5229430b7a1e206ff050e722deac3fe6b80c28d807f475c7fa281ad17471a8fd tools/formal-aiur.keys

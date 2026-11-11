@@ -1,0 +1,155 @@
+{
+ "version": 1,
+ "modulus": 18446744069414584321,
+ "functions": [
+  {"name": "fib", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 7, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":3},
+   {"op":"literal","dest":1,"value":0},
+   {"op":"ret","value":[1]},
+   {"op":"branch","tests":[[0,1]],"otherwise":6},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"ret","value":[1]},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":2,"operator":"sub","left":0,"right":1},
+   {"op":"call","function":0,"args":[2],"dest":[3]},
+   {"op":"binary","dest":4,"operator":"sub","left":2,"right":1},
+   {"op":"call","function":0,"args":[4],"dest":[5]},
+   {"op":"binary","dest":6,"operator":"add","left":3,"right":5},
+   {"op":"ret","value":[6]}
+  ]},
+  {"name": "even", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 3, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":3},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"ret","value":[1]},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":2,"operator":"sub","left":0,"right":1},
+   {"op":"call","function":2,"args":[2],"dest":[1]},
+   {"op":"ret","value":[1]}
+  ]},
+  {"name": "odd", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 3, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":3},
+   {"op":"literal","dest":1,"value":0},
+   {"op":"ret","value":[1]},
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":2,"operator":"sub","left":0,"right":1},
+   {"op":"call","function":1,"args":[2],"dest":[1]},
+   {"op":"ret","value":[1]}
+  ]},
+  {"name": "join", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 4, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":4},
+   {"op":"literal","dest":1,"value":10},
+   {"op":"literal","dest":2,"value":20},
+   {"op":"jump","target":6},
+   {"op":"literal","dest":1,"value":30},
+   {"op":"literal","dest":2,"value":45},
+   {"op":"copy","dest":[1,2],"source":[2,1]},
+   {"op":"binary","dest":3,"operator":"sub","left":1,"right":2},
+   {"op":"ret","value":[3]}
+  ]},
+  {"name": "rom", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 9, "code": [
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":2,"operator":"add","left":0,"right":1},
+   {"op":"store","type":{"kind":"tuple","items":[{"kind":"field"},{"kind":"field"}]},"value":[0,2],"dest":3},
+   {"op":"store","type":{"kind":"tuple","items":[{"kind":"field"},{"kind":"field"}]},"value":[0,2],"dest":4},
+   {"op":"load","type":{"kind":"tuple","items":[{"kind":"field"},{"kind":"field"}]},"pointer":4,"dest":[5,6]},
+   {"op":"store","type":{"kind":"field"},"value":[0],"dest":7},
+   {"op":"load","type":{"kind":"field"},"pointer":7,"dest":[8]},
+   {"op":"binary","dest":5,"operator":"add","left":5,"right":6},
+   {"op":"binary","dest":5,"operator":"add","left":5,"right":8},
+   {"op":"ret","value":[5]}
+  ]},
+  {"name": "table", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 2, "code": [
+   {"op":"call","function":16,"args":[0],"dest":[1]},
+   {"op":"ret","value":[1]}
+  ]},
+  {"name": "hinted", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 2, "code": [
+   {"op":"hint","channel":"","type":{"kind":"field"},"key_type":{"kind":"field"},"key":[0],"dest":[1]},
+   {"op":"ret","value":[1]}
+  ]},
+  {"name": "main", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 12, "code": [
+   {"op":"call","function":0,"args":[0],"dest":[1]},
+   {"op":"call","function":1,"args":[0],"dest":[2]},
+   {"op":"call","function":3,"args":[0],"dest":[3]},
+   {"op":"call","function":4,"args":[0],"dest":[4]},
+   {"op":"literal","dest":5,"value":3},
+   {"op":"call","function":5,"args":[5],"dest":[6]},
+   {"op":"call","function":6,"args":[0],"dest":[7]},
+   {"op":"call","function":0,"args":[0],"dest":[8]},
+   {"op":"literal","dest":9,"value":2},
+   {"op":"binary","dest":10,"operator":"div","left":0,"right":9},
+   {"op":"binary","dest":11,"operator":"add","left":1,"right":2},
+   {"op":"binary","dest":11,"operator":"add","left":11,"right":3},
+   {"op":"binary","dest":11,"operator":"add","left":11,"right":4},
+   {"op":"binary","dest":11,"operator":"add","left":11,"right":6},
+   {"op":"binary","dest":11,"operator":"add","left":11,"right":7},
+   {"op":"binary","dest":11,"operator":"add","left":11,"right":8},
+   {"op":"binary","dest":11,"operator":"add","left":11,"right":10},
+   {"op":"ret","value":[11]}
+  ]},
+  {"name": "guard", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 1, "code": [
+   {"op":"guard","tests":[[0,5]],"message":"x must be 5"},
+   {"op":"ret","value":[0]}
+  ]},
+  {"name": "divide", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 3, "code": [
+   {"op":"literal","dest":1,"value":1},
+   {"op":"binary","dest":2,"operator":"div","left":1,"right":0},
+   {"op":"ret","value":[2]}
+  ]},
+  {"name": "assert", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 2, "code": [
+   {"op":"literal","dest":1,"value":3},
+   {"op":"assert_eq","left":[0],"right":[1],"message":"x must be 3","runtime_check":true},
+   {"op":"ret","value":[0]}
+  ]},
+  {"name": "fail", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 1, "code": [
+   {"op":"branch","tests":[[0,0]],"otherwise":2},
+   {"op":"ret","value":[0]},
+   {"op":"fail","message":"nonzero"}
+  ]},
+  {"name": "cycle", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 2, "code": [
+   {"op":"call","function":12,"args":[0],"dest":[1]},
+   {"op":"ret","value":[1]}
+  ]},
+  {"name": "dangling", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 2, "code": [
+   {"op":"load","type":{"kind":"field"},"pointer":0,"dest":[1]},
+   {"op":"ret","value":[1]}
+  ]},
+  {"name": "unchecked", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 4, "code": [
+   {"op":"literal","dest":1,"value":3},
+   {"op":"assert_eq","left":[0],"right":[1],"message":null,"runtime_check":false},
+   {"op":"literal","dest":2,"value":4},
+   {"op":"binary","dest":3,"operator":"div","left":0,"right":2},
+   {"op":"ret","value":[3]}
+  ]},
+  {"name": "xored", "params": [{"kind":"field"}], "result": {"kind":"field"}, "registers": 3, "code": [
+   {"op":"literal","dest":1,"value":3},
+   {"op":"call","function":17,"args":[0,1],"dest":[2]},
+   {"op":"ret","value":[2]}
+  ]}
+ ],
+ "enums": [],
+ "tables": [
+  {"name":"keys","type":{"kind":"tuple","items":[{"kind":"field"}]},"rows":[[0],[1],[2],[3],[4],[5],[6],[7]]},
+  {"name":"doubles","type":{"kind":"tuple","items":[{"kind":"field"}]},"rows":[[0],[2],[4],[6],[8],[10],[12],[14]]},
+  {"name":"pairs","type":{"kind":"tuple","items":[{"kind":"field"},{"kind":"field"}]},"rows":[[0,0],[0,1],[0,2],[0,3],[1,0],[1,1],[1,2],[1,3],[2,0],[2,1],[2,2],[2,3],[3,0],[3,1],[3,2],[3,3]]},
+  {"name":"xors","type":{"kind":"tuple","items":[{"kind":"field"}]},"rows":[[0],[1],[2],[3],[1],[0],[3],[2],[2],[3],[0],[1],[3],[2],[1],[0]]}
+ ],
+ "maps": [
+  {"name":"double","params":[{"kind":"field"}],"result":{"kind":"tuple","items":[{"kind":"field"}]},"input":0,"output":1},
+  {"name":"xor","params":[{"kind":"field"},{"kind":"field"}],"result":{"kind":"tuple","items":[{"kind":"field"}]},"input":2,"output":3}
+ ],
+ "entries": [
+  {"name":"main","function":7,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"guard","function":8,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"divide","function":9,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"assert","function":10,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"fail","function":11,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"cycle","function":12,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"dangling","function":13,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"unchecked","function":14,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"fib","function":0,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"even","function":1,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"rom","function":4,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"table","function":5,"inputs":[{"kind":"field"}],"output":{"kind":"field"}},
+  {"name":"xored","function":15,"inputs":[{"kind":"field"}],"output":{"kind":"field"}}
+ ]
+}
