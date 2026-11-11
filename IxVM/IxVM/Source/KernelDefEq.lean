@@ -654,7 +654,7 @@ def try_unit_like := aiur_fn⟦
   fn try_unit_like(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       let ta = KernelInferOnly::k_infer_only(rc, a, types);
       let ta_w = KernelWhnf::whnf(rc, ta, types);
-      match is_unit_like_type(ta_w) {
+      match is_unit_like_type(rc, ta_w, types) {
         0 => {  0 } ,
         _ => {
           let tb = KernelInferOnly::k_infer_only(rc, b, types);
@@ -663,15 +663,19 @@ def try_unit_like := aiur_fn⟦
     }
 ⟧
 
+  -- DefEq.unitLikeTy's shape: `ty` is a unit-like family applied to exactly its
+  -- parameters, at its level count, with the family's telescope certified against
+  -- the parameters (`family_params`).
+
 def is_unit_like_type := aiur_fn⟦
-  fn is_unit_like_type(ty: KernelTypes::KExpr) -> Field {
+  fn is_unit_like_type(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       match KernelTypes::collect_spine(ty) {
-        (head, _) => {
+        (head, args) => {
           match (*(head)) {
-            KernelTypes::KExprNode::Const(addr, _) => {
+            KernelTypes::KExprNode::Const(addr, lvls) => {
               let ci = (*(Ingress::get_ci(addr)));
               match ci {
-                KernelTypes::KConstantInfo::Induct(_, _, _, n_indices, num_ctors, _, block, idx) => {
+                KernelTypes::KConstantInfo::Induct(ind_nl, ind_ty, ind_np, n_indices, num_ctors, _, block, idx) => {
 
                   -- No unit-like conversion at a member of a mutual block (the kernel
                   -- grants it only from a model theorem; a field-less type is never nested)
@@ -683,7 +687,11 @@ def is_unit_like_type := aiur_fn⟦
                           match cci {
                             KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, nfields, _) => {
                               match nfields {
-                                0 => {  1 - KernelWhnf::struct_is_rec(addr) } ,
+                                0 => {
+                                  match KernelWhnf::struct_is_rec(addr) {
+                                    0 => {  family_params(rc, ind_nl, ind_ty, ind_np, lvls, args, types) } ,
+                                    _ => {  0 } ,
+                                  } } ,
                                 _ => {  0 } ,
                               } } ,
                             _ => {  0 } ,
@@ -696,6 +704,27 @@ def is_unit_like_type := aiur_fn⟦
               } } ,
             _ => {  0 } ,
           } } ,
+      }
+    }
+⟧
+
+  -- A family's parameters, as DefEq.unitLikeTy and DefEq.structEtaTy read them: exactly
+  -- `ind_np` of them at `ind_nl` levels, and the licensed telescope certificate (`Certs`):
+  -- a slot whose binder datum is never zero skips, and otherwise every parameter is
+  -- certified (`certs_all`).
+
+def family_params := aiur_fn⟦
+  fn family_params(rc: KernelRoles::RoleCtx, ind_nl: Field, ind_ty: KernelTypes::KExpr, ind_np: Field,
+                   lvls: Lists::List<KernelTypes::KLevel>, args: Lists::List<KernelTypes::KExpr>,
+                   types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match Fields::is_zero(Lists::length(args) - ind_np) * Fields::is_zero(Lists::length(lvls) - ind_nl) {
+        1 => {
+          let ty_i = KernelLevels::expr_inst_levels(ind_ty, lvls);
+          match KernelWhnf::slots_never(ty_i, ind_np) {
+            1 => {  1 } ,
+            _ => {  KernelWhnf::certs_all(rc, ty_i, args, (&(Lists::Node::Nil)), types) } ,
+          } } ,
+        _ => {  0 } ,
       }
     }
 ⟧
