@@ -4,17 +4,18 @@ import IxC.Kernel.Audit.Axioms
 
 /-! # The vertical slice, to a fact in the model
 
-Spike S3. `whnf_model`: an observed derivation of IxVM's `whnf` on a
+`whnf_model`: an observed derivation of IxVM's `whnf` on a
 represented term either hashed a collision, or its result represents a reduct
 whose reading is the input's, in every model of the environment
 (`Ix.Kernel.Model.Rules.red_sound`). Together with the step lemmas and the
-induction (`IxVMRefinement.Core.Whnf`), this is the slice of plan 8.7 S3,
+induction (`IxVMRefinement.Core.Whnf`), this is the vertical slice of the refinement,
 under the assumptions collected in `Assumed` and the fragment hypotheses of
 `Good`.
 
 Also here: the certified β step of the rules (`red_beta_certified`), which is
 what IxVM's β has to produce at a binder whose datum may be a proposition
-(lane s2's PM-C, "Fix A"), and `Infer.toIO`, the kernel-side lemma that turns
+(there `Red.betaGate` does not apply; IxVM's `peel_beta_cert`, outside the
+slice's fragment), and `Infer.toIO`, the kernel-side lemma that turns
 the certificate IxVM's full-grade inference would compute into the io-grade
 certificate the rule asks for. -/
 
@@ -39,7 +40,7 @@ theorem core_sound (c : Ctx) (hA : Assumed c) :
     whnf := fun hn => by subst hn; exact whnf_step c ev ih
     whnfCore := fun hn => by subst hn; exact whnfCore_step c ev ih
     withSpine := fun hn => by subst hn; exact withSpine_step c hA ev ih
-    applyBeta := fun hn => by subst hn; exact applyBeta_step c hA ev ih
+    redBeta := fun hn => by subst hn; exact redBeta_step c hA ev ih
     constHead := fun hn => by subst hn; exact constHead_step c hA ev ih
     applySpine := fun hn => by subst hn; exact applySpine_step c ev ih
     peel := fun hn => by subst hn; exact peel_step c ev ih
@@ -121,7 +122,7 @@ theorem whnf_model (c : Ctx) (hA : Assumed c) {V : Type w} [Ix.Kernel.SetTheory 
     obtain ⟨E', hE', hr⟩ := hred d Γ E hE
     exact ⟨E', hE', Ix.Kernel.Model.Rules.red_sound hin hr⟩
 
-/-! ## Fix A's certified branch (kernel side) -/
+/-! ## The certified β step (kernel side) -/
 
 /-- **The certified β step under a spine**: at a binder of any datum, β with
 the argument's io-grade type definitionally equal to the domain. -/

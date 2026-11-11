@@ -29,13 +29,18 @@ library, `EntryCaseFixtures`, loaded at run time), `IxVMInd.UnsafeSquash`
   walk, with `claim seed is unsafe or partial`.
 - **Refused** (`checkEnv`): a shard whose owned tree holds `loop._unsafe_rec`
   beside the safe `loop`.
-- **Accepted**: the safe opaques `loop` and `ping`, and the shard claim the
-  builder makes from the same owned list, which leaves `loop._unsafe_rec` out.
+- **Refused**: the inert axiom `Lean.trustCompiler` as a `check` target and
+  among a `checkEnv` claim's owned leaves, with `claim seed is an inert axiom`:
+  an inert axiom installs nothing and may have no model.
+- **Accepted**: the safe opaques `loop` and `ping`, and the shard claims the
+  builder makes from the same owned lists, which leave `loop._unsafe_rec` and
+  `Lean.trustCompiler` out.
 
 Beside the circuit cases, the host side is checked without running the
 program: `Ixon.Env.outsideLogicAt` agrees with Lean's own flags on every
-fixture, the shard owner and the claim builder leave the refused seeds out, and
-every walk edge from a constant in Lean's logic lands on one (so the owned sets
+fixture, the shard owner and the claim builder leave out the refused seeds and
+the inert axioms with the constants that use one (`inertUsers`), and every
+walk edge from a constant in Lean's logic lands on one (so the owned sets
 stay closed). `corpus` checks the last on a compiled corpus.
 -/
 
@@ -75,19 +80,14 @@ def accepted : List (String × Lean.Name) := [
 /-- The message `KernelClaim::assert_claimable` refuses a seed with. -/
 def seedMessage : String := "claim seed is unsafe or partial"
 
-/-- The walk edges of the record at `a` (`crates/ixon/src/shard_claim.rs`,
-`walk_edges`): the references its expressions use as constants, and a
-projection's block. -/
-def walkEdges (c : Ixon.Constant) : Array Address := Id.run do
-  let used := constIdxsOf c
-  let mut out : Array Address := #[]
-  for (r, i) in c.refs.zipIdx do
-    if used.contains i.toUInt64 then out := out.push r
-  match c.info with
-  | .iPrj p | .cPrj p => out := out.push p.block
-  | .rPrj p | .dPrj p => out := out.push p.block
-  | _ => pure ()
-  return out
+/-- The inert axioms of the environment's binding and the constants that use one
+(`inertUsers`): no claim names them. -/
+def inertNames : List Lean.Name :=
+  [``sorryAx, ``Lean.trustCompiler, ``Lean.reduceBool, ``Lean.reduceNat, ``Lean.ofReduceBool,
+    ``Lean.ofReduceNat]
+
+/-- The message `KernelClaim::assert_claimable` refuses an inert axiom with. -/
+def inertSeedMessage : String := "claim seed is an inert axiom"
 
 /-- The walk edges of `env` from a constant in Lean's logic to one outside it,
 with the number of constants outside it. None means that an owned set without
@@ -135,8 +135,19 @@ def hostChecks (leanEnv : Lean.Environment) (env : Ixon.Env)
     if owned.contains (← addrOf n) then throw s!"the shard owner kept {n} ({label})"
   for (label, n) in accepted do
     unless owned.contains (← addrOf n) do throw s!"the shard owner dropped {n} ({label})"
-  unless owned.size == env.inLogicConsts.size do
-    throw s!"the shard owns {owned.size} constants, {env.inLogicConsts.size} are in Lean's logic"
+  -- the inert axioms and the constants that use one: owned by nobody and refused by
+  -- `ix check`; the accepted seeds use none
+  let inert := inertUsers env
+  for n in inertNames do
+    let a ← addrOf n
+    unless inert.contains a do throw s!"{n} is not among the constants that use an inert axiom"
+    if owned.contains a then throw s!"the shard owner kept {n}"
+    if (Ix.Check.seedError? env inert (toString n) a).isNone then
+      throw s!"ix check would not refuse {n}"
+  for (label, n) in accepted do
+    if inert.contains (← addrOf n) then throw s!"{n} ({label}) uses an inert axiom"
+  unless owned.size == (claimableConsts env).size do
+    throw s!"the shard owns {owned.size} constants, {(claimableConsts env).size} are claimable"
   -- the claim builder: an owned list of refused seeds alone has no claim, and
   -- the loop pair's claim is the safe face's alone
   let loopA ← addrOf (defs "loop")
@@ -150,6 +161,12 @@ def hostChecks (leanEnv : Lean.Environment) (env : Ixon.Env)
   let some tree := envCanonicalTree env | throw "the environment has no tree"
   for (label, n) in refused do
     if tree.leaves.contains (← addrOf n) then throw s!"envCanonicalTree kept {n} ({label})"
+  for n in inertNames do
+    if tree.leaves.contains (← addrOf n) then throw s!"envCanonicalTree kept {n}"
+  -- the claim builder leaves an inert axiom out of an owned list
+  let trustA ← addrOf ``Lean.trustCompiler
+  if (claimableOwned env #[trustA]).toOption.isSome then
+    throw "the claim builder made a claim over Lean.trustCompiler alone"
   let (bad, _) := logicEdgeViolations env
   unless bad.isEmpty do
     throw s!"{bad.size} walk edge(s) from a constant in Lean's logic reach one outside it \
@@ -207,6 +224,22 @@ def run : IO UInt32 := do
   cases := cases.push fun _ => do
     let (_, witness) ← buildShardCheckEnvWitness env #[loopA, loopRecA] (assumeBinding := true)
     return { label := "accept the builder's shard over loop and loop._unsafe_rec", accept := true,
+             witness }
+  -- an inert axiom among a checkEnv claim's owned leaves, and among a check target
+  let trustA ← IO.ofExcept (addrOf ``Lean.trustCompiler)
+  let some inertTree := Ix.AssumptionTree.canonical #[loopA, trustA]
+    | IO.eprintln "[ixvm-claim-safety] no owned tree"; return 1
+  let inertTrees := ({} : Std.HashMap Address Ix.AssumptionTree).insert inertTree.root inertTree
+  cases := cases.push fun _ =>
+    Case.ofClaim "refuse a checkEnv shard owning Lean.trustCompiler" env
+      (.checkEnv ctx inertTree.root none) inertTrees false (some inertSeedMessage)
+  cases := cases.push fun _ =>
+    Case.ofClaim "refuse a check of Lean.trustCompiler" env (.check ctx trustA none) {} false
+      (some inertSeedMessage)
+  -- the builder's claim over the same owned list leaves the inert axiom out
+  cases := cases.push fun _ => do
+    let (_, witness) ← buildShardCheckEnvWitness env #[loopA, trustA] (assumeBinding := true)
+    return { label := "accept the builder's shard over loop and Lean.trustCompiler", accept := true,
              witness }
   Tests.Ix.IxVM.runCases "ixvm-claim-safety" cases
 

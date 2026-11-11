@@ -4686,7 +4686,7 @@ fun env ixe =>
 The default role table binds each role to an address. `compileReport` refuses an
 artifact in which the stored record at a bound `Nat` operation's address is not a
 standalone definition, or at a bound axiom role's address (`propext`,
-`Classical.choice`, `sorryAx`) not an axiom (`checkReport`'s sixteenth check,
+`Classical.choice`, the inert `sorryAx` and compiler-trust axioms) not an axiom (`checkReport`'s sixteenth check,
 `roleRecordKind`, over every bound entry of the decoded table, `roleTableBound`). Its meaning, `RoleRecordKinds`, holds of
 every artifact `compileReport` returns (`roleRecordKinds`). -/
 

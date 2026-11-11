@@ -1511,37 +1511,102 @@ theorem «IxonDeserialize::get_app_telescope».obs {x_func x_stream x_count : So
     · have hne164 := MatchesConst.none_inv (MatchesConst.literal 0) nm60
       exact (selectArm_nil_inv sel61).elim
 
+/-- The `let`-bound match of `IxonDeserialize::value_contract_from_bits` at `[0]`: one constructor per combination of selected arms. -/
+inductive «IxonDeserialize::value_contract_from_bits».Seg1 (e0_owned_bit e1_locality_bit : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n0
+      (hv14 : e0_owned_bit = (.field 0))
+      (he18 : r = (.construct "Ixon::Owned" "Unique" []))
+      (he19 : h' = h)
+      (hc20 : calls = [])
+  | n1
+      (hne21 : (e0_owned_bit : SourceValue F) ≠ (.field 0))
+      (hv25 : e0_owned_bit = (.field 1))
+      (he29 : r = (.construct "Ixon::Owned" "Shared" []))
+      (he30 : h' = h)
+      (hc31 : calls = [])
+
+/-- **Every observed derivation of the `let`-bound match of `IxonDeserialize::value_contract_from_bits` at `[0]` takes one of its paths.** -/
+theorem «IxonDeserialize::value_contract_from_bits».seg1 {e0_owned_bit e1_locality_bit : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)}
+    (d0 : ObsExpr W [] [("owned_bit", e0_owned_bit), ("locality_bit", e1_locality_bit)] (Expr.sub IxVM.IxonDeserialize.value_contract_from_bits.body [0]) h r h' calls) :
+    «IxonDeserialize::value_contract_from_bits».Seg1 e0_owned_bit e1_locality_bit h r h' calls := by
+  simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.IxonDeserialize.value_contract_from_bits, List.map_cons, List.map_nil] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨hv14, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt11
+    obtain ⟨vs15, a16, hres17⟩ := d9.construct_inv
+    rw [instanceName_plain_some] at hres17
+    subst hres17
+    obtain ⟨rfl, rfl, rfl⟩ := a16.nil_inv
+    exact «IxonDeserialize::value_contract_from_bits».Seg1.n0 hv14 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne21 := MatchesConst.none_inv (MatchesConst.literal 0) nm12
+    rcases selectArm_cons_inv sel13 with ⟨mt22, rfl⟩ | ⟨nm23, sel24⟩
+    · obtain ⟨hv25, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt22
+      obtain ⟨vs26, a27, hres28⟩ := d9.construct_inv
+      rw [instanceName_plain_some] at hres28
+      subst hres28
+      obtain ⟨rfl, rfl, rfl⟩ := a27.nil_inv
+      exact «IxonDeserialize::value_contract_from_bits».Seg1.n1 hne21 hv25 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne32 := MatchesConst.none_inv (MatchesConst.literal 1) nm23
+      exact (selectArm_nil_inv sel24).elim
+
+/-- The `let`-bound match of `IxonDeserialize::value_contract_from_bits` at `[1, 0]`: one constructor per combination of selected arms. -/
+inductive «IxonDeserialize::value_contract_from_bits».Seg2 (e0_owned e1_owned_bit e2_locality_bit : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n0
+      (hv55 : e2_locality_bit = (.field 0))
+      (he59 : r = (.construct "Ixon::Locality" "Unrestricted" []))
+      (he60 : h' = h)
+      (hc61 : calls = [])
+  | n1
+      (hne62 : (e2_locality_bit : SourceValue F) ≠ (.field 0))
+      (hv66 : e2_locality_bit = (.field 1))
+      (he70 : r = (.construct "Ixon::Locality" "Local" []))
+      (he71 : h' = h)
+      (hc72 : calls = [])
+
+/-- **Every observed derivation of the `let`-bound match of `IxonDeserialize::value_contract_from_bits` at `[1, 0]` takes one of its paths.** -/
+theorem «IxonDeserialize::value_contract_from_bits».seg2 {e0_owned e1_owned_bit e2_locality_bit : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)}
+    (d0 : ObsExpr W [] [("owned", e0_owned), ("owned_bit", e1_owned_bit), ("locality_bit", e2_locality_bit)] (Expr.sub IxVM.IxonDeserialize.value_contract_from_bits.body [1, 0]) h r h' calls) :
+    «IxonDeserialize::value_contract_from_bits».Seg2 e0_owned e1_owned_bit e2_locality_bit h r h' calls := by
+  simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.IxonDeserialize.value_contract_from_bits, List.map_cons, List.map_nil] at d0
+  obtain ⟨v42, m43, bs44, body45, c46, c47, d48, sel49, d50, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l51, rfl, rfl⟩ := d48.var_inv
+  simp at l51
+  subst l51
+  rcases selectArm_cons_inv sel49 with ⟨mt52, rfl⟩ | ⟨nm53, sel54⟩
+  · obtain ⟨hv55, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt52
+    obtain ⟨vs56, a57, hres58⟩ := d50.construct_inv
+    rw [instanceName_plain_some] at hres58
+    subst hres58
+    obtain ⟨rfl, rfl, rfl⟩ := a57.nil_inv
+    exact «IxonDeserialize::value_contract_from_bits».Seg2.n0 hv55 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne62 := MatchesConst.none_inv (MatchesConst.literal 0) nm53
+    rcases selectArm_cons_inv sel54 with ⟨mt63, rfl⟩ | ⟨nm64, sel65⟩
+    · obtain ⟨hv66, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt63
+      obtain ⟨vs67, a68, hres69⟩ := d50.construct_inv
+      rw [instanceName_plain_some] at hres69
+      subst hres69
+      obtain ⟨rfl, rfl, rfl⟩ := a68.nil_inv
+      exact «IxonDeserialize::value_contract_from_bits».Seg2.n1 hne62 hv66 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne73 := MatchesConst.none_inv (MatchesConst.literal 1) nm64
+      exact (selectArm_nil_inv sel65).elim
+
 /-- The evaluation paths of `IxonDeserialize::value_contract_from_bits`: one constructor per combination of selected arms. -/
 inductive «IxonDeserialize::value_contract_from_bits».Path (x_owned_bit x_locality_bit : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
-  | n0_n0
-      (hv22 : x_owned_bit = (.field 0))
-      (hv47 : x_locality_bit = (.field 0))
-      (he56 : r = (.construct "Ixon::ValueContract" "Mk" [(.construct "Ixon::Owned" "Unique" []), (.construct "Ixon::Locality" "Unrestricted" [])]))
-      (he71 : h' = h)
-      (hc72 : calls = [])
-  | n0_n1
-      (hv22 : x_owned_bit = (.field 0))
-      (hne73 : (x_locality_bit : SourceValue F) ≠ (.field 0))
-      (hv77 : x_locality_bit = (.field 1))
-      (he86 : r = (.construct "Ixon::ValueContract" "Mk" [(.construct "Ixon::Owned" "Unique" []), (.construct "Ixon::Locality" "Local" [])]))
-      (he101 : h' = h)
-      (hc102 : calls = [])
-  | n1_n0
-      (hne104 : (x_owned_bit : SourceValue F) ≠ (.field 0))
-      (hv108 : x_owned_bit = (.field 1))
-      (hv133 : x_locality_bit = (.field 0))
-      (he142 : r = (.construct "Ixon::ValueContract" "Mk" [(.construct "Ixon::Owned" "Shared" []), (.construct "Ixon::Locality" "Unrestricted" [])]))
-      (he157 : h' = h)
-      (hc158 : calls = [])
-  | n1_n1
-      (hne104 : (x_owned_bit : SourceValue F) ≠ (.field 0))
-      (hv108 : x_owned_bit = (.field 1))
-      (hne159 : (x_locality_bit : SourceValue F) ≠ (.field 0))
-      (hv163 : x_locality_bit = (.field 1))
-      (he172 : r = (.construct "Ixon::ValueContract" "Mk" [(.construct "Ixon::Owned" "Shared" []), (.construct "Ixon::Locality" "Local" [])]))
-      (he187 : h' = h)
-      (hc188 : calls = [])
+  | run
+      (v33 : SourceValue F) (m34 : Heap F) (cs36 : List (Call F)) (v74 : SourceValue F) (m75 : Heap F) (cs77 : List (Call F))
+      (sg41 : «IxonDeserialize::value_contract_from_bits».Seg1 x_owned_bit x_locality_bit h v33 m34 cs36)
+      (sg82 : «IxonDeserialize::value_contract_from_bits».Seg2 v33 x_owned_bit x_locality_bit m34 v74 m75 cs77)
+      (he88 : r = (.construct "Ixon::ValueContract" "Mk" [v33, v74]))
+      (he103 : h' = m75)
+      (hc104 : calls = (cs36 ++ cs77))
 
 /-- **Every observed derivation of `IxonDeserialize::value_contract_from_bits` takes one of its paths.** -/
 theorem «IxonDeserialize::value_contract_from_bits».obs {x_owned_bit x_locality_bit : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1550,160 +1615,124 @@ theorem «IxonDeserialize::value_contract_from_bits».obs {x_owned_bit x_localit
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonDeserialize.value_contract_from_bits.lookup
     (by simp [IxVM.IxonDeserialize.value_contract_from_bits, ControlLower.hasControl]) ev
   simp only [IxVM.IxonDeserialize.value_contract_from_bits] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
-  obtain ⟨v9, m10, bs11, body12, c13, c14, d15, sel16, d17, rfl⟩ := d6.matchValue_inv
+  obtain ⟨v33, m34, bs35, cs36, c37, d38, mt39, d40, rfl⟩ := d0.letValue_inv
+  have sg41 := «IxonDeserialize::value_contract_from_bits».seg1 d38
+  clear d38
+  obtain rfl := matchPattern_bind_inv mt39
+  obtain ⟨v74, m75, bs76, cs77, c78, d79, mt80, d81, rfl⟩ := d40.letValue_inv
+  have sg82 := «IxonDeserialize::value_contract_from_bits».seg2 d79
+  clear d79
+  obtain rfl := matchPattern_bind_inv mt80
+  obtain ⟨vs83, a84, hres85⟩ := d81.construct_inv
+  rw [instanceName_plain_some] at hres85
+  subst hres85
+  obtain ⟨v86, vs89, m90, c91, c92, rfl, d93, a94, rfl⟩ := a84.cons_inv
+  obtain ⟨l95, rfl, rfl⟩ := d93.var_inv
+  simp at l95
+  subst l95
+  obtain ⟨v87, vs96, m97, c98, c99, rfl, d100, a101, rfl⟩ := a94.cons_inv
+  obtain ⟨l102, rfl, rfl⟩ := d100.var_inv
+  simp at l102
+  subst l102
+  obtain ⟨rfl, rfl, rfl⟩ := a101.nil_inv
+  exact «IxonDeserialize::value_contract_from_bits».Path.run _ _ _ _ _ _ sg41 sg82 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+
+/-- The `let`-bound match of `IxonDeserialize::binder_contract_from_bits` at `[0]`: one constructor per combination of selected arms. -/
+inductive «IxonDeserialize::binder_contract_from_bits».Seg1 (e0_b0 e1_b1 e2_b2 e3_b3 : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n0
+      (y11 : SourceValue F)
+      (op26 : evalBinOp .mul ((.field 2) : SourceValue F) (e1_b1 : SourceValue F) = .ok y11)
+      (op17 : evalBinOp .add (e0_b0 : SourceValue F) (y11 : SourceValue F) = .ok (.field 0))
+      (he35 : r = (.construct "Ixon::Uses" "Erased" []))
+      (he36 : h' = h)
+      (hc37 : calls = [])
+  | n1
+      (y11 : SourceValue F)
+      (op26 : evalBinOp .mul ((.field 2) : SourceValue F) (e1_b1 : SourceValue F) = .ok y11)
+      (op17 : evalBinOp .add (e0_b0 : SourceValue F) (y11 : SourceValue F) = .ok (.field 1))
+      (he46 : r = (.construct "Ixon::Uses" "Linear" []))
+      (he47 : h' = h)
+      (hc48 : calls = [])
+  | n2
+      (y11 : SourceValue F)
+      (op26 : evalBinOp .mul ((.field 2) : SourceValue F) (e1_b1 : SourceValue F) = .ok y11)
+      (op17 : evalBinOp .add (e0_b0 : SourceValue F) (y11 : SourceValue F) = .ok (.field 2))
+      (he57 : r = (.construct "Ixon::Uses" "Affine" []))
+      (he58 : h' = h)
+      (hc59 : calls = [])
+  | n3
+      (y11 : SourceValue F)
+      (op26 : evalBinOp .mul ((.field 2) : SourceValue F) (e1_b1 : SourceValue F) = .ok y11)
+      (op17 : evalBinOp .add (e0_b0 : SourceValue F) (y11 : SourceValue F) = .ok (.field 3))
+      (he68 : r = (.construct "Ixon::Uses" "Many" []))
+      (he69 : h' = h)
+      (hc70 : calls = [])
+
+/-- **Every observed derivation of the `let`-bound match of `IxonDeserialize::binder_contract_from_bits` at `[0]` takes one of its paths.** -/
+theorem «IxonDeserialize::binder_contract_from_bits».seg1 {e0_b0 e1_b1 e2_b2 e3_b3 : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)}
+    (d0 : ObsExpr W [] [("b0", e0_b0), ("b1", e1_b1), ("b2", e2_b2), ("b3", e3_b3)] (Expr.sub IxVM.IxonDeserialize.binder_contract_from_bits.body [0]) h r h' calls) :
+    «IxonDeserialize::binder_contract_from_bits».Seg1 e0_b0 e1_b1 e2_b2 e3_b3 h r h' calls := by
+  simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.IxonDeserialize.binder_contract_from_bits, List.map_cons, List.map_nil] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨x10, y11, m12, c13, c14, d15, d16, op17, rfl⟩ := d7.binary_inv
   obtain ⟨l18, rfl, rfl⟩ := d15.var_inv
   simp at l18
   subst l18
-  rcases selectArm_cons_inv sel16 with ⟨mt19, rfl⟩ | ⟨nm20, sel21⟩
-  · obtain ⟨hv22, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt19
-    obtain ⟨vs23, a24, hres25⟩ := d17.construct_inv
-    rw [instanceName_plain_some] at hres25
-    subst hres25
-    obtain ⟨rfl, rfl, rfl⟩ := a24.nil_inv
-    obtain rfl := matchPattern_bind_inv mt7
-    obtain ⟨v26, m27, bs28, c29, c30, d31, mt32, d33, rfl⟩ := d8.letValue_inv
-    obtain ⟨v34, m35, bs36, body37, c38, c39, d40, sel41, d42, rfl⟩ := d31.matchValue_inv
-    obtain ⟨l43, rfl, rfl⟩ := d40.var_inv
-    simp at l43
-    subst l43
-    rcases selectArm_cons_inv sel41 with ⟨mt44, rfl⟩ | ⟨nm45, sel46⟩
-    · obtain ⟨hv47, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt44
-      obtain ⟨vs48, a49, hres50⟩ := d42.construct_inv
-      rw [instanceName_plain_some] at hres50
-      subst hres50
-      obtain ⟨rfl, rfl, rfl⟩ := a49.nil_inv
-      obtain rfl := matchPattern_bind_inv mt32
-      obtain ⟨vs51, a52, hres53⟩ := d33.construct_inv
-      rw [instanceName_plain_some] at hres53
-      subst hres53
-      obtain ⟨v54, vs57, m58, c59, c60, rfl, d61, a62, rfl⟩ := a52.cons_inv
-      obtain ⟨l63, rfl, rfl⟩ := d61.var_inv
-      simp at l63
-      subst l63
-      obtain ⟨v55, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a62.cons_inv
-      obtain ⟨l70, rfl, rfl⟩ := d68.var_inv
-      simp at l70
-      subst l70
-      obtain ⟨rfl, rfl, rfl⟩ := a69.nil_inv
-      exact «IxonDeserialize::value_contract_from_bits».Path.n0_n0 hv22 hv47 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · have hne73 := MatchesConst.none_inv (MatchesConst.literal 0) nm45
-      rcases selectArm_cons_inv sel46 with ⟨mt74, rfl⟩ | ⟨nm75, sel76⟩
-      · obtain ⟨hv77, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt74
-        obtain ⟨vs78, a79, hres80⟩ := d42.construct_inv
-        rw [instanceName_plain_some] at hres80
-        subst hres80
-        obtain ⟨rfl, rfl, rfl⟩ := a79.nil_inv
-        obtain rfl := matchPattern_bind_inv mt32
-        obtain ⟨vs81, a82, hres83⟩ := d33.construct_inv
-        rw [instanceName_plain_some] at hres83
-        subst hres83
-        obtain ⟨v84, vs87, m88, c89, c90, rfl, d91, a92, rfl⟩ := a82.cons_inv
-        obtain ⟨l93, rfl, rfl⟩ := d91.var_inv
-        simp at l93
-        subst l93
-        obtain ⟨v85, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a92.cons_inv
-        obtain ⟨l100, rfl, rfl⟩ := d98.var_inv
-        simp at l100
-        subst l100
-        obtain ⟨rfl, rfl, rfl⟩ := a99.nil_inv
-        exact «IxonDeserialize::value_contract_from_bits».Path.n0_n1 hv22 hne73 hv77 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne103 := MatchesConst.none_inv (MatchesConst.literal 1) nm75
-        exact (selectArm_nil_inv sel76).elim
-  · have hne104 := MatchesConst.none_inv (MatchesConst.literal 0) nm20
-    rcases selectArm_cons_inv sel21 with ⟨mt105, rfl⟩ | ⟨nm106, sel107⟩
-    · obtain ⟨hv108, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt105
-      obtain ⟨vs109, a110, hres111⟩ := d17.construct_inv
-      rw [instanceName_plain_some] at hres111
-      subst hres111
-      obtain ⟨rfl, rfl, rfl⟩ := a110.nil_inv
-      obtain rfl := matchPattern_bind_inv mt7
-      obtain ⟨v112, m113, bs114, c115, c116, d117, mt118, d119, rfl⟩ := d8.letValue_inv
-      obtain ⟨v120, m121, bs122, body123, c124, c125, d126, sel127, d128, rfl⟩ := d117.matchValue_inv
-      obtain ⟨l129, rfl, rfl⟩ := d126.var_inv
-      simp at l129
-      subst l129
-      rcases selectArm_cons_inv sel127 with ⟨mt130, rfl⟩ | ⟨nm131, sel132⟩
-      · obtain ⟨hv133, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt130
-        obtain ⟨vs134, a135, hres136⟩ := d128.construct_inv
-        rw [instanceName_plain_some] at hres136
-        subst hres136
-        obtain ⟨rfl, rfl, rfl⟩ := a135.nil_inv
-        obtain rfl := matchPattern_bind_inv mt118
-        obtain ⟨vs137, a138, hres139⟩ := d119.construct_inv
-        rw [instanceName_plain_some] at hres139
-        subst hres139
-        obtain ⟨v140, vs143, m144, c145, c146, rfl, d147, a148, rfl⟩ := a138.cons_inv
-        obtain ⟨l149, rfl, rfl⟩ := d147.var_inv
-        simp at l149
-        subst l149
-        obtain ⟨v141, vs150, m151, c152, c153, rfl, d154, a155, rfl⟩ := a148.cons_inv
-        obtain ⟨l156, rfl, rfl⟩ := d154.var_inv
-        simp at l156
-        subst l156
-        obtain ⟨rfl, rfl, rfl⟩ := a155.nil_inv
-        exact «IxonDeserialize::value_contract_from_bits».Path.n1_n0 hne104 hv108 hv133 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne159 := MatchesConst.none_inv (MatchesConst.literal 0) nm131
-        rcases selectArm_cons_inv sel132 with ⟨mt160, rfl⟩ | ⟨nm161, sel162⟩
-        · obtain ⟨hv163, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt160
-          obtain ⟨vs164, a165, hres166⟩ := d128.construct_inv
-          rw [instanceName_plain_some] at hres166
-          subst hres166
-          obtain ⟨rfl, rfl, rfl⟩ := a165.nil_inv
-          obtain rfl := matchPattern_bind_inv mt118
-          obtain ⟨vs167, a168, hres169⟩ := d119.construct_inv
-          rw [instanceName_plain_some] at hres169
-          subst hres169
-          obtain ⟨v170, vs173, m174, c175, c176, rfl, d177, a178, rfl⟩ := a168.cons_inv
-          obtain ⟨l179, rfl, rfl⟩ := d177.var_inv
-          simp at l179
-          subst l179
-          obtain ⟨v171, vs180, m181, c182, c183, rfl, d184, a185, rfl⟩ := a178.cons_inv
-          obtain ⟨l186, rfl, rfl⟩ := d184.var_inv
-          simp at l186
-          subst l186
-          obtain ⟨rfl, rfl, rfl⟩ := a185.nil_inv
-          exact «IxonDeserialize::value_contract_from_bits».Path.n1_n1 hne104 hv108 hne159 hv163 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · have hne189 := MatchesConst.none_inv (MatchesConst.literal 1) nm161
-          exact (selectArm_nil_inv sel162).elim
-    · have hne190 := MatchesConst.none_inv (MatchesConst.literal 1) nm106
-      exact (selectArm_nil_inv sel107).elim
+  obtain ⟨x19, y20, m21, c22, c23, d24, d25, op26, rfl⟩ := d16.binary_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d24.literal_inv
+  obtain ⟨l27, rfl, rfl⟩ := d25.var_inv
+  simp at l27
+  subst l27
+  rcases selectArm_cons_inv sel8 with ⟨mt28, rfl⟩ | ⟨nm29, sel30⟩
+  · obtain ⟨hv31, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt28
+    subst hv31
+    obtain ⟨vs32, a33, hres34⟩ := d9.construct_inv
+    rw [instanceName_plain_some] at hres34
+    subst hres34
+    obtain ⟨rfl, rfl, rfl⟩ := a33.nil_inv
+    exact «IxonDeserialize::binder_contract_from_bits».Seg1.n0 _ op26 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne38 := MatchesConst.none_inv (MatchesConst.literal 0) nm29
+    rcases selectArm_cons_inv sel30 with ⟨mt39, rfl⟩ | ⟨nm40, sel41⟩
+    · obtain ⟨hv42, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt39
+      subst hv42
+      obtain ⟨vs43, a44, hres45⟩ := d9.construct_inv
+      rw [instanceName_plain_some] at hres45
+      subst hres45
+      obtain ⟨rfl, rfl, rfl⟩ := a44.nil_inv
+      exact «IxonDeserialize::binder_contract_from_bits».Seg1.n1 _ op26 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne49 := MatchesConst.none_inv (MatchesConst.literal 1) nm40
+      rcases selectArm_cons_inv sel41 with ⟨mt50, rfl⟩ | ⟨nm51, sel52⟩
+      · obtain ⟨hv53, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt50
+        subst hv53
+        obtain ⟨vs54, a55, hres56⟩ := d9.construct_inv
+        rw [instanceName_plain_some] at hres56
+        subst hres56
+        obtain ⟨rfl, rfl, rfl⟩ := a55.nil_inv
+        exact «IxonDeserialize::binder_contract_from_bits».Seg1.n2 _ op26 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne60 := MatchesConst.none_inv (MatchesConst.literal 2) nm51
+        rcases selectArm_cons_inv sel52 with ⟨mt61, rfl⟩ | ⟨nm62, sel63⟩
+        · obtain ⟨hv64, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt61
+          subst hv64
+          obtain ⟨vs65, a66, hres67⟩ := d9.construct_inv
+          rw [instanceName_plain_some] at hres67
+          subst hres67
+          obtain ⟨rfl, rfl, rfl⟩ := a66.nil_inv
+          exact «IxonDeserialize::binder_contract_from_bits».Seg1.n3 _ op26 op17 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne71 := MatchesConst.none_inv (MatchesConst.literal 3) nm62
+          exact (selectArm_nil_inv sel63).elim
 
 /-- The evaluation paths of `IxonDeserialize::binder_contract_from_bits`: one constructor per combination of selected arms. -/
 inductive «IxonDeserialize::binder_contract_from_bits».Path (x_b0 x_b1 x_b2 x_b3 : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
-  | n0
-      (y19 : SourceValue F) (v47 : SourceValue F) (m57 : Heap F) (cs65 : List (Call F))
-      (op34 : evalBinOp .mul ((.field 2) : SourceValue F) (x_b1 : SourceValue F) = .ok y19)
-      (op25 : evalBinOp .add (x_b0 : SourceValue F) (y19 : SourceValue F) = .ok (.field 0))
-      (he48 : r = (.construct "Ixon::BinderContract" "Mk" [(.construct "Ixon::Uses" "Erased" []), v47]))
-      (ev67 : ObsFn W "IxonDeserialize::value_contract_from_bits" [x_b2, x_b3] h v47 m57 cs65)
-      (he84 : h' = m57)
-      (hc85 : calls = ((⟨"IxonDeserialize::value_contract_from_bits", [x_b2, x_b3], h⟩ : Call F) :: cs65))
-  | n1
-      (y19 : SourceValue F) (v98 : SourceValue F) (m108 : Heap F) (cs116 : List (Call F))
-      (op34 : evalBinOp .mul ((.field 2) : SourceValue F) (x_b1 : SourceValue F) = .ok y19)
-      (op25 : evalBinOp .add (x_b0 : SourceValue F) (y19 : SourceValue F) = .ok (.field 1))
-      (he99 : r = (.construct "Ixon::BinderContract" "Mk" [(.construct "Ixon::Uses" "Linear" []), v98]))
-      (ev118 : ObsFn W "IxonDeserialize::value_contract_from_bits" [x_b2, x_b3] h v98 m108 cs116)
-      (he135 : h' = m108)
-      (hc136 : calls = ((⟨"IxonDeserialize::value_contract_from_bits", [x_b2, x_b3], h⟩ : Call F) :: cs116))
-  | n2
-      (y19 : SourceValue F) (v149 : SourceValue F) (m159 : Heap F) (cs167 : List (Call F))
-      (op34 : evalBinOp .mul ((.field 2) : SourceValue F) (x_b1 : SourceValue F) = .ok y19)
-      (op25 : evalBinOp .add (x_b0 : SourceValue F) (y19 : SourceValue F) = .ok (.field 2))
-      (he150 : r = (.construct "Ixon::BinderContract" "Mk" [(.construct "Ixon::Uses" "Affine" []), v149]))
-      (ev169 : ObsFn W "IxonDeserialize::value_contract_from_bits" [x_b2, x_b3] h v149 m159 cs167)
-      (he186 : h' = m159)
-      (hc187 : calls = ((⟨"IxonDeserialize::value_contract_from_bits", [x_b2, x_b3], h⟩ : Call F) :: cs167))
-  | n3
-      (y19 : SourceValue F) (v200 : SourceValue F) (m210 : Heap F) (cs218 : List (Call F))
-      (op34 : evalBinOp .mul ((.field 2) : SourceValue F) (x_b1 : SourceValue F) = .ok y19)
-      (op25 : evalBinOp .add (x_b0 : SourceValue F) (y19 : SourceValue F) = .ok (.field 3))
-      (he201 : r = (.construct "Ixon::BinderContract" "Mk" [(.construct "Ixon::Uses" "Many" []), v200]))
-      (ev220 : ObsFn W "IxonDeserialize::value_contract_from_bits" [x_b2, x_b3] h v200 m210 cs218)
-      (he237 : h' = m210)
-      (hc238 : calls = ((⟨"IxonDeserialize::value_contract_from_bits", [x_b2, x_b3], h⟩ : Call F) :: cs218))
+  | run
+      (v72 : SourceValue F) (m73 : Heap F) (cs75 : List (Call F)) (v85 : SourceValue F) (m95 : Heap F) (cs103 : List (Call F))
+      (sg80 : «IxonDeserialize::binder_contract_from_bits».Seg1 x_b0 x_b1 x_b2 x_b3 h v72 m73 cs75)
+      (he86 : r = (.construct "Ixon::BinderContract" "Mk" [v72, v85]))
+      (ev105 : ObsFn W "IxonDeserialize::value_contract_from_bits" [x_b2, x_b3] m73 v85 m95 cs103)
+      (he122 : h' = m95)
+      (hc123 : calls = (cs75 ++ ((⟨"IxonDeserialize::value_contract_from_bits", [x_b2, x_b3], m73⟩ : Call F) :: cs103)))
 
 /-- **Every observed derivation of `IxonDeserialize::binder_contract_from_bits` takes one of its paths.** -/
 theorem «IxonDeserialize::binder_contract_from_bits».obs {x_b0 x_b1 x_b2 x_b3 : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1712,138 +1741,31 @@ theorem «IxonDeserialize::binder_contract_from_bits».obs {x_b0 x_b1 x_b2 x_b3 
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonDeserialize.binder_contract_from_bits.lookup
     (by simp [IxVM.IxonDeserialize.binder_contract_from_bits, ControlLower.hasControl]) ev
   simp only [IxVM.IxonDeserialize.binder_contract_from_bits] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
-  obtain ⟨v9, m10, bs11, body12, c13, c14, d15, sel16, d17, rfl⟩ := d6.matchValue_inv
-  obtain ⟨x18, y19, m20, c21, c22, d23, d24, op25, rfl⟩ := d15.binary_inv
-  obtain ⟨l26, rfl, rfl⟩ := d23.var_inv
-  simp at l26
-  subst l26
-  obtain ⟨x27, y28, m29, c30, c31, d32, d33, op34, rfl⟩ := d24.binary_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d32.literal_inv
-  obtain ⟨l35, rfl, rfl⟩ := d33.var_inv
-  simp at l35
-  subst l35
-  rcases selectArm_cons_inv sel16 with ⟨mt36, rfl⟩ | ⟨nm37, sel38⟩
-  · obtain ⟨hv39, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt36
-    subst hv39
-    obtain ⟨vs40, a41, hres42⟩ := d17.construct_inv
-    rw [instanceName_plain_some] at hres42
-    subst hres42
-    obtain ⟨rfl, rfl, rfl⟩ := a41.nil_inv
-    obtain rfl := matchPattern_bind_inv mt7
-    obtain ⟨vs43, a44, hres45⟩ := d8.construct_inv
-    rw [instanceName_plain_some] at hres45
-    subst hres45
-    obtain ⟨v46, vs49, m50, c51, c52, rfl, d53, a54, rfl⟩ := a44.cons_inv
-    obtain ⟨l55, rfl, rfl⟩ := d53.var_inv
-    simp at l55
-    subst l55
-    obtain ⟨v47, vs56, m57, c58, c59, rfl, d60, a61, rfl⟩ := a54.cons_inv
-    obtain ⟨vs62, m63, c64, cs65, a66, ev67, rfl⟩ := d60.call_inv
-    rw [instanceName_plain_some] at ev67
-    obtain ⟨v68, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a66.cons_inv
-    obtain ⟨l76, rfl, rfl⟩ := d74.var_inv
-    simp at l76
-    subst l76
-    obtain ⟨v69, vs77, m78, c79, c80, rfl, d81, a82, rfl⟩ := a75.cons_inv
-    obtain ⟨l83, rfl, rfl⟩ := d81.var_inv
-    simp at l83
-    subst l83
-    obtain ⟨rfl, rfl, rfl⟩ := a82.nil_inv
-    obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
-    exact «IxonDeserialize::binder_contract_from_bits».Path.n0 _ _ _ _ op34 op25 rfl ev67 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hne86 := MatchesConst.none_inv (MatchesConst.literal 0) nm37
-    rcases selectArm_cons_inv sel38 with ⟨mt87, rfl⟩ | ⟨nm88, sel89⟩
-    · obtain ⟨hv90, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt87
-      subst hv90
-      obtain ⟨vs91, a92, hres93⟩ := d17.construct_inv
-      rw [instanceName_plain_some] at hres93
-      subst hres93
-      obtain ⟨rfl, rfl, rfl⟩ := a92.nil_inv
-      obtain rfl := matchPattern_bind_inv mt7
-      obtain ⟨vs94, a95, hres96⟩ := d8.construct_inv
-      rw [instanceName_plain_some] at hres96
-      subst hres96
-      obtain ⟨v97, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a95.cons_inv
-      obtain ⟨l106, rfl, rfl⟩ := d104.var_inv
-      simp at l106
-      subst l106
-      obtain ⟨v98, vs107, m108, c109, c110, rfl, d111, a112, rfl⟩ := a105.cons_inv
-      obtain ⟨vs113, m114, c115, cs116, a117, ev118, rfl⟩ := d111.call_inv
-      rw [instanceName_plain_some] at ev118
-      obtain ⟨v119, vs121, m122, c123, c124, rfl, d125, a126, rfl⟩ := a117.cons_inv
-      obtain ⟨l127, rfl, rfl⟩ := d125.var_inv
-      simp at l127
-      subst l127
-      obtain ⟨v120, vs128, m129, c130, c131, rfl, d132, a133, rfl⟩ := a126.cons_inv
-      obtain ⟨l134, rfl, rfl⟩ := d132.var_inv
-      simp at l134
-      subst l134
-      obtain ⟨rfl, rfl, rfl⟩ := a133.nil_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a112.nil_inv
-      exact «IxonDeserialize::binder_contract_from_bits».Path.n1 _ _ _ _ op34 op25 rfl ev118 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · have hne137 := MatchesConst.none_inv (MatchesConst.literal 1) nm88
-      rcases selectArm_cons_inv sel89 with ⟨mt138, rfl⟩ | ⟨nm139, sel140⟩
-      · obtain ⟨hv141, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt138
-        subst hv141
-        obtain ⟨vs142, a143, hres144⟩ := d17.construct_inv
-        rw [instanceName_plain_some] at hres144
-        subst hres144
-        obtain ⟨rfl, rfl, rfl⟩ := a143.nil_inv
-        obtain rfl := matchPattern_bind_inv mt7
-        obtain ⟨vs145, a146, hres147⟩ := d8.construct_inv
-        rw [instanceName_plain_some] at hres147
-        subst hres147
-        obtain ⟨v148, vs151, m152, c153, c154, rfl, d155, a156, rfl⟩ := a146.cons_inv
-        obtain ⟨l157, rfl, rfl⟩ := d155.var_inv
-        simp at l157
-        subst l157
-        obtain ⟨v149, vs158, m159, c160, c161, rfl, d162, a163, rfl⟩ := a156.cons_inv
-        obtain ⟨vs164, m165, c166, cs167, a168, ev169, rfl⟩ := d162.call_inv
-        rw [instanceName_plain_some] at ev169
-        obtain ⟨v170, vs172, m173, c174, c175, rfl, d176, a177, rfl⟩ := a168.cons_inv
-        obtain ⟨l178, rfl, rfl⟩ := d176.var_inv
-        simp at l178
-        subst l178
-        obtain ⟨v171, vs179, m180, c181, c182, rfl, d183, a184, rfl⟩ := a177.cons_inv
-        obtain ⟨l185, rfl, rfl⟩ := d183.var_inv
-        simp at l185
-        subst l185
-        obtain ⟨rfl, rfl, rfl⟩ := a184.nil_inv
-        obtain ⟨rfl, rfl, rfl⟩ := a163.nil_inv
-        exact «IxonDeserialize::binder_contract_from_bits».Path.n2 _ _ _ _ op34 op25 rfl ev169 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne188 := MatchesConst.none_inv (MatchesConst.literal 2) nm139
-        rcases selectArm_cons_inv sel140 with ⟨mt189, rfl⟩ | ⟨nm190, sel191⟩
-        · obtain ⟨hv192, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt189
-          subst hv192
-          obtain ⟨vs193, a194, hres195⟩ := d17.construct_inv
-          rw [instanceName_plain_some] at hres195
-          subst hres195
-          obtain ⟨rfl, rfl, rfl⟩ := a194.nil_inv
-          obtain rfl := matchPattern_bind_inv mt7
-          obtain ⟨vs196, a197, hres198⟩ := d8.construct_inv
-          rw [instanceName_plain_some] at hres198
-          subst hres198
-          obtain ⟨v199, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a197.cons_inv
-          obtain ⟨l208, rfl, rfl⟩ := d206.var_inv
-          simp at l208
-          subst l208
-          obtain ⟨v200, vs209, m210, c211, c212, rfl, d213, a214, rfl⟩ := a207.cons_inv
-          obtain ⟨vs215, m216, c217, cs218, a219, ev220, rfl⟩ := d213.call_inv
-          rw [instanceName_plain_some] at ev220
-          obtain ⟨v221, vs223, m224, c225, c226, rfl, d227, a228, rfl⟩ := a219.cons_inv
-          obtain ⟨l229, rfl, rfl⟩ := d227.var_inv
-          simp at l229
-          subst l229
-          obtain ⟨v222, vs230, m231, c232, c233, rfl, d234, a235, rfl⟩ := a228.cons_inv
-          obtain ⟨l236, rfl, rfl⟩ := d234.var_inv
-          simp at l236
-          subst l236
-          obtain ⟨rfl, rfl, rfl⟩ := a235.nil_inv
-          obtain ⟨rfl, rfl, rfl⟩ := a214.nil_inv
-          exact «IxonDeserialize::binder_contract_from_bits».Path.n3 _ _ _ _ op34 op25 rfl ev220 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · have hne239 := MatchesConst.none_inv (MatchesConst.literal 3) nm190
-          exact (selectArm_nil_inv sel191).elim
+  obtain ⟨v72, m73, bs74, cs75, c76, d77, mt78, d79, rfl⟩ := d0.letValue_inv
+  have sg80 := «IxonDeserialize::binder_contract_from_bits».seg1 d77
+  clear d77
+  obtain rfl := matchPattern_bind_inv mt78
+  obtain ⟨vs81, a82, hres83⟩ := d79.construct_inv
+  rw [instanceName_plain_some] at hres83
+  subst hres83
+  obtain ⟨v84, vs87, m88, c89, c90, rfl, d91, a92, rfl⟩ := a82.cons_inv
+  obtain ⟨l93, rfl, rfl⟩ := d91.var_inv
+  simp at l93
+  subst l93
+  obtain ⟨v85, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a92.cons_inv
+  obtain ⟨vs100, m101, c102, cs103, a104, ev105, rfl⟩ := d98.call_inv
+  rw [instanceName_plain_some] at ev105
+  obtain ⟨v106, vs108, m109, c110, c111, rfl, d112, a113, rfl⟩ := a104.cons_inv
+  obtain ⟨l114, rfl, rfl⟩ := d112.var_inv
+  simp at l114
+  subst l114
+  obtain ⟨v107, vs115, m116, c117, c118, rfl, d119, a120, rfl⟩ := a113.cons_inv
+  obtain ⟨l121, rfl, rfl⟩ := d119.var_inv
+  simp at l121
+  subst l121
+  obtain ⟨rfl, rfl, rfl⟩ := a120.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a99.nil_inv
+  exact «IxonDeserialize::binder_contract_from_bits».Path.run _ _ _ _ _ _ sg80 rfl ev105 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `IxonDeserialize::get_lam_mode`: one constructor per combination of selected arms. -/
 inductive «IxonDeserialize::get_lam_mode».Path (x_stream : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

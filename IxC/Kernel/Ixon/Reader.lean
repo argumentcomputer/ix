@@ -64,7 +64,8 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   `Empty`, `False`, the `Quot` package), `And` and `Bool`, the literal
   support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`), the
   certified `Nat` operations, the standard axioms with `Iff` and
-  `Nonempty`, `True`, and `sorryAx`. The table
+  `Nonempty`, `True`, the inert axioms (`sorryAx` and Lean's compiler-trust
+  axioms) and the opaques `Lean.reduceBool` and `Lean.reduceNat`. The table
   is input: it is authenticated and checked for well-formedness at admission
   (`RoleTable.check`), and its bound addresses are resolved here
   (`bindingsOf`); the reader never reads Ixon metadata. The checker itself
@@ -75,8 +76,10 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   family at install; the standard axioms, with the `Iff` and `Nonempty`
   families, by `stdAxiomOk`), so a table entry on a constant of another shape
   is rejected or declined wherever the checker would use it. `True` and
-  `True.intro` are used nowhere and so validated nowhere, and `sorryAx` is
-  matched against its type at install and installs nothing (`Roles.lean`).
+  `True.intro`, `Lean.reduceBool` and `Lean.reduceNat` are used nowhere and so
+  validated nowhere, `sorryAx` is matched against its type at install and
+  installs nothing, and the compiler-trust axioms are declined as non-standard
+  axioms (`Roles.lean`).
 * **Evidence** (`evidenceOf`): a proof entry of the table names a theorem
   record; the reader resolves it to the record's key and its value's
   reading, which is what the fold checks the operation's certificates with.
@@ -936,7 +939,11 @@ def lowerInductiveDecls (st : State md) (rb : BlockRead md) : ReadM (Read md) :=
       | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
       | _ => none
     | _, _, _ => some false
-  unless nested do
+  if nested then
+    -- a nested block is never K-like: its auxiliary block has two or more types
+    for (cv, r, _) in recs do
+      if r.k then malformed s!"recursor {cv.name} of a nested block declares k := true"
+  else
     for (cv, r, _) in recs do
       unless r.params == nPd do
         malformed s!"recursor {cv.name} declares {r.params} parameters; the block declares {nPd}"

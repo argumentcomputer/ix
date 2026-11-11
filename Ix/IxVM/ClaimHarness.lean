@@ -7,7 +7,9 @@ public import Ix.CompileCertified
 public import Ix.Common
 public import Ix.PrimAddrs
 public import Ix.ClaimContext
+public import Ix.IxVM.PwHints
 public import Ix.IxVM.Model
+public import Ix.IxVM.ClaimSeeds
 
 public section
 
@@ -222,42 +224,6 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
         {fMap.size} constant(s) failed to compile: \
         {Ix.CompileM.recordedFailures fMap}")
     IO.ofExcept (withDefaultRoleBinding out.env)
-
-/-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
-    of `Prj i`. -/
-partial def constIdxsExpr : Ixon.Expr → Std.HashSet UInt64
-  | .ref i _ => {i}
-  | .prj i _ inner => (constIdxsExpr inner).insert i
-  | .app a b | .lam _ a b | .all _ _ a b =>
-    (constIdxsExpr a).union (constIdxsExpr b)
-  | .letE _ t v b =>
-    ((constIdxsExpr t).union (constIdxsExpr v)).union (constIdxsExpr b)
-  | _ => {}
-
-/-- The `refs` indices `c` uses as constants, over its `sharing` table and
-    every Expr its `ConstantInfo` carries. -/
-def constIdxsOf (c : Ixon.Constant) : Std.HashSet UInt64 := Id.run do
-  let mut out : Std.HashSet UInt64 := {}
-  for e in c.sharing do
-    out := out.union (constIdxsExpr e)
-  let ofDefn (d : Ixon.Definition) := (constIdxsExpr d.typ).union (constIdxsExpr d.value)
-  let ofRecr (r : Ixon.Recursor) := r.rules.foldl
-    (fun acc rule => acc.union (constIdxsExpr rule.rhs)) (constIdxsExpr r.typ)
-  let ofIndc (i : Ixon.Inductive) := i.ctors.foldl
-    (fun acc ctor => acc.union (constIdxsExpr ctor.typ)) (constIdxsExpr i.typ)
-  match c.info with
-  | .defn d => out := out.union (ofDefn d)
-  | .recr r => out := out.union (ofRecr r)
-  | .axio a => out := out.union (constIdxsExpr a.typ)
-  | .quot q => out := out.union (constIdxsExpr q.typ)
-  | .muts members =>
-    for m in members do
-      out := out.union <| match m with
-        | .defn d => ofDefn d
-        | .indc i => ofIndc i
-        | .recr r => ofRecr r
-  | _ => pure ()
-  return out
 
 /-- Content address of a synthesized projection wrapper. -/
 def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
@@ -482,21 +448,24 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
+  -- the binder data the conversion reads (D2, `IxVM.PwHints`)
+  ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
 /-- The owned constants a shard claim may name: `owned` without those outside
     Lean's logic (unsafe or partial, or projected from such a block;
-    `Ixon.Env.outsideLogicAt`), which IxVM refuses as seeds
-    (`KernelClaim::assert_claimable`). The rest stays closed under the claim
-    walk: a safe constant references no unsafe one (`KernelCheck::assert_safety`),
-    so no walk from it reaches what is left out. -/
+    `Ixon.Env.outsideLogicAt`) and those that use an inert axiom (`inertUsers`),
+    which IxVM refuses as seeds or on their walks. The rest stays closed under
+    the claim walk: a safe constant references no unsafe one
+    (`KernelCheck::assert_safety`), and a constant that uses no inert axiom
+    references none that does, so no walk from it reaches what is left out. -/
 def claimableOwned (env : Ixon.Env) (owned : Array Address) : Except String (Array Address) := do
   if owned.isEmpty then throw "shardCheckEnvClaim: empty owned set"
-  let kept := env.dropOutsideLogic owned
+  let kept := dropUnclaimable env owned
   if kept.isEmpty then
     throw s!"shardCheckEnvClaim: all {owned.size} owned constant(s) are unsafe or partial, \
-      outside Lean's logic; IxVM certifies none of them"
+      outside Lean's logic, or use an inert axiom; IxVM certifies none of them"
   pure kept
 
 /-- The shard claim over `owned`, already `claimableOwned`, under the bound
@@ -578,15 +547,16 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
   ioBuffer := addEntries env closure.contains ioBuffer
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer
+  ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return (claim, { funcName := `verify_claim
                    input := digestKey, inputIOBuffer := ioBuffer })
 
-/-- Canonical merkle tree over every const address in `env` in Lean's logic
-    (`Ixon.Env.inLogicConsts`): the owned tree of a `checkEnv` claim on the
-    whole of `env`, which leaves out the unsafe and partial constants IxVM
-    refuses as seeds. -/
+/-- Canonical merkle tree over every const address of `env` a claim may name
+    (`claimableConsts`): the owned tree of a `checkEnv` claim on the whole of
+    `env`, which leaves out the unsafe and partial constants and those that use
+    an inert axiom, which IxVM refuses. -/
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
-  Ix.AssumptionTree.canonical env.inLogicConsts
+  Ix.AssumptionTree.canonical (claimableConsts env)
 
 /-- Subject-only `verify_const` witness. -/
 def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWitness := do
@@ -595,6 +565,7 @@ def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWi
     | throw "verify_const: the environment carries no role binding"
   let closure := closureFrom env target
   let ioBuffer := addEntries env closure.contains (seedBinding env default)
+  let ioBuffer ← (·.1) <$> IxVM.PwHints.annotate ioBuffer env
   return { funcName := `verify_const
            input := addrKey binding.address ++ addrKey target, inputIOBuffer := ioBuffer }
 

@@ -799,6 +799,10 @@ module Aggregation {
       }
     }
 
+  -- A complete role table binds every role of the specification, in role order: the 103
+  -- kernel roles and the five inert compiler-trust roles (103-107), 108 in all (`Ix.Kernel.Role.all`,
+  -- IxVM `KernelRoleSpec::role_count`). The literal class reads the class roles among them.
+
   fn aggr_binding_class(binding: Bytes::AddressRef) -> Bytes::AddressRef {
       let bytes = aggr_load_preimage(aggr_pack_address(binding));
       let (tag0, s) = aggr_read_byte(bytes);
@@ -807,9 +811,9 @@ module Aggregation {
       assert_eq!(UInt8::to_field(tag1), 3, "aggr cross-binding: not a role binding section");
       let (_version, s) = aggr_read_byte(s);
       let (count, s) = aggr_read_byte(s);
-      assert_eq!(UInt8::to_field(count), 103,
+      assert_eq!(UInt8::to_field(count), 108,
         "aggr cross-binding: the binding does not bind every role");
-      let addrs = aggr_class_walk(s, 0, 103);
+      let addrs = aggr_class_walk(s, 0, 108);
       let body = aggr_put_addresses(addrs, (&(Lists::Node::Nil)));
       Blake3::bytes_to_addr((&(Lists::Node::Cons(UInt8::BYTE_232, (&(Lists::Node::Cons(UInt8::BYTE_4, body)))))))
     }

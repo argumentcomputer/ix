@@ -33,9 +33,10 @@ role's identity, and the order it validates the roles in:
 
 - each role's name (`Role.leanName`), so the index of every role the
   circuit names (`role_nat`, …) is fixed;
-- whether the role is inert (`inert`: `sorryAx`, which the circuit validates
-  as an axiom no constant may use), its kind if it is a quotient primitive
-  (`quotKind`), and the native rule IxVM fires on its constant (`nativeOp`);
+- whether the role is inert (`inert`: `sorryAx` and Lean's compiler-trust
+  axioms, which the circuit validates as axioms no constant may use), its
+  kind if it is a quotient primitive (`quotKind`), and the native rule IxVM
+  fires on its constant (`nativeOp`);
 - the validation schedule (`Schedule.current`): the groups in validation
   order, each as its roles, and the two boundaries the circuit validates them
   under (`Ix/SpecDigest/Schedule.lean`).
@@ -94,10 +95,15 @@ def encodingVersion : Nat := 2
 
 /-! ## What the circuit reads off a role's identity -/
 
-/-- **The inert axiom**, `sorryAx`: tolerated as a declaration, never usable.
-IxC's checker installs nothing for it and declines any use of it; IxVM
-validates it as such (`validate_inert_axiom`). -/
-def inert (r : Role) : Bool := r == .sorryAx
+/-- **The inert axioms** (`Role.inert`): `sorryAx` and Lean's compiler-trust
+axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`),
+tolerated as declarations and never usable. IxVM validates each against its
+type (`validate_inert_axiom`), refuses every constant that uses one
+(`KernelRoles::assert_ref_allowed`) and refuses each as a claim's seed
+(`KernelClaim::assert_claimable`). IxC's checker installs nothing for
+`sorryAx` and declines any use of it; it declines the compiler-trust axioms'
+declarations themselves. -/
+def inert (r : Role) : Bool := r.inert
 
 /-- **A quotient primitive's kind**, in Lean's `QuotKind` order: 1 the type,
 2 the constructor, 3 the lift, 4 the induction principle; 0 for every other

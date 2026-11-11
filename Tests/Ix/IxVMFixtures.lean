@@ -206,6 +206,36 @@ public abbrev PredOver (α : Type) : Type := α → Prop
 public inductive HiddenIdx (α : Type) : PredOver α where
   | mk : (a : α) → HiddenIdx α a
 
+-- Nested blocks whose index domain mentions a parameter: the nested
+-- occurrences' index arguments (`a₀`, `[]`) mention the parameters, which
+-- the modeller lifts past a minor premise's binders.
+public inductive NestParIdx (α : Type) (a₀ : α) : α → Type where
+  | base : NestParIdx α a₀ a₀
+  | mk : List (NestParIdx α a₀ a₀) → NestParIdx α a₀ a₀
+
+public inductive NestListIdx (α : Type) : List α → Type where
+  | nil : NestListIdx α []
+  | mk : List (NestListIdx α []) → NestListIdx α []
+
+-- Nested blocks with a reflexive field into a member: in a constructor of
+-- the block, and in a container pinned at a function into the block (the
+-- container's own field is reflexive).
+public inductive NestRefl where
+  | leaf : NestRefl
+  | mk : (Nat → NestRefl) → List NestRefl → NestRefl
+
+public inductive NestReflOpt where
+  | leaf : NestReflOpt
+  | mk : Option (Nat → NestReflOpt) → NestReflOpt
+
+-- A field that mentions the block only where whnf erases it (`Tagged T`,
+-- `Tagged _ := Nat`): Lean tests positivity after whnf, so it is ordinary.
+@[expose] public def Tagged (_ : Type) : Type := Nat
+
+public inductive Phantom where
+  | leaf : Phantom
+  | mk : Tagged Phantom → Phantom
+
 public def thmMajorWant (n : Nat) (_pf : n = 1) : Nat := n
 
 @[expose] public def thmMajorUse : Nat :=

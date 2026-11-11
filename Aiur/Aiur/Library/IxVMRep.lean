@@ -655,14 +655,16 @@ theorem RepIxVMKUniv.det {h : Heap F} {u₁ u₂ : IxVMKUniv F} {ptr : SourceVal
 
 /-! ## 5. `IxVMKExpr` (`KernelTypes::KExpr`) Representation, `HeapMono`, and Determinism -/
 
-/-- Mathematical AST of `KernelTypes::KExpr` kernel expressions. -/
+/-- Mathematical AST of `KernelTypes::KExpr` kernel expressions. A `λ` or `∀` carries its
+binder datum as a level (D2, `KExprNode::Lam(ty, body, ℓ)`): the binder's codomain sort is zero
+exactly when `ℓ` is, so the kernel's datum is the zero-ness of `ℓ`. -/
 inductive IxVMKExpr (F : Type) where
   | bvar (idx : F) : IxVMKExpr F
   | sort (lvl : IxVMKUniv F) : IxVMKExpr F
   | const (name : Address) (lvls : _root_.List (IxVMKUniv F)) : IxVMKExpr F
   | app (func arg : IxVMKExpr F) : IxVMKExpr F
-  | lam (ty body : IxVMKExpr F) : IxVMKExpr F
-  | forallE (ty body : IxVMKExpr F) : IxVMKExpr F
+  | lam (ty body : IxVMKExpr F) (lvl : IxVMKUniv F) : IxVMKExpr F
+  | forallE (ty body : IxVMKExpr F) (lvl : IxVMKUniv F) : IxVMKExpr F
   | letE (ty val body : IxVMKExpr F) : IxVMKExpr F
   | litNat (limbs : _root_.List UInt64) : IxVMKExpr F
   | litStr (bytes : _root_.List UInt8) : IxVMKExpr F
@@ -693,17 +695,20 @@ inductive RepIxVMKExpr [NatCast F] (addrTy : Ty) (lvlListEnum limbListEnum byteL
       (repArg : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h arg argPtr) :
       RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h (.app func arg)
         (.ptr (.enum "KernelTypes::KExprNode") addr)
-  | lam {addr : Nat} {ty body : IxVMKExpr F} {tyPtr bodyPtr : SourceValue F}
-      (cell : h[addr]? = some (.construct "KernelTypes::KExprNode" "Lam" [tyPtr, bodyPtr]))
+  | lam {addr : Nat} {ty body : IxVMKExpr F} {lvl : IxVMKUniv F} {tyPtr bodyPtr lvlPtr : SourceValue F}
+      (cell : h[addr]? = some (.construct "KernelTypes::KExprNode" "Lam" [tyPtr, bodyPtr, lvlPtr]))
       (repTy : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h ty tyPtr)
-      (repBody : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h body bodyPtr) :
-      RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h (.lam ty body)
+      (repBody : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h body bodyPtr)
+      (repLvl : RepIxVMKUniv h lvl lvlPtr) :
+      RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h (.lam ty body lvl)
         (.ptr (.enum "KernelTypes::KExprNode") addr)
-  | forallE {addr : Nat} {ty body : IxVMKExpr F} {tyPtr bodyPtr : SourceValue F}
-      (cell : h[addr]? = some (.construct "KernelTypes::KExprNode" "Forall" [tyPtr, bodyPtr]))
+  | forallE {addr : Nat} {ty body : IxVMKExpr F} {lvl : IxVMKUniv F}
+      {tyPtr bodyPtr lvlPtr : SourceValue F}
+      (cell : h[addr]? = some (.construct "KernelTypes::KExprNode" "Forall" [tyPtr, bodyPtr, lvlPtr]))
       (repTy : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h ty tyPtr)
-      (repBody : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h body bodyPtr) :
-      RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h (.forallE ty body)
+      (repBody : RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h body bodyPtr)
+      (repLvl : RepIxVMKUniv h lvl lvlPtr) :
+      RepIxVMKExpr addrTy lvlListEnum limbListEnum byteListEnum h (.forallE ty body lvl)
         (.ptr (.enum "KernelTypes::KExprNode") addr)
   | letE {addr : Nat} {ty val body : IxVMKExpr F} {tyPtr valPtr bodyPtr : SourceValue F}
       (cell : h[addr]? = some (.construct "KernelTypes::KExprNode" "Let" [tyPtr, valPtr, bodyPtr]))
@@ -747,10 +752,10 @@ theorem RepIxVMKExpr.mono [NatCast F] {addrTy : Ty} {lvlListEnum limbListEnum by
         (repList_heapMono₂ lvlListEnum repIxVMKUniv_heapMono₂ ext repLvls)
   | app cell _ _ ihFn ihArg =>
       exact .app (ext.getElem?_eq cell) ihFn ihArg
-  | lam cell _ _ ihTy ihBody =>
-      exact .lam (ext.getElem?_eq cell) ihTy ihBody
-  | forallE cell _ _ ihTy ihBody =>
-      exact .forallE (ext.getElem?_eq cell) ihTy ihBody
+  | lam cell _ _ repLvl ihTy ihBody =>
+      exact .lam (ext.getElem?_eq cell) ihTy ihBody (repLvl.mono ext)
+  | forallE cell _ _ repLvl ihTy ihBody =>
+      exact .forallE (ext.getElem?_eq cell) ihTy ihBody (repLvl.mono ext)
   | letE cell _ _ _ ihTy ihVal ihBody =>
       exact .letE (ext.getElem?_eq cell) ihTy ihVal ihBody
   | litNat cell repLimbs =>
@@ -803,20 +808,20 @@ theorem RepIxVMKExpr.det [Field F] (large : U32.Compatible F)
       injection hArgs with hV₁ hRest; injection hRest with hV₂ _
       subst hV₁ hV₂
       rw [ihFn repFn₂, ihArg repArg₂]
-  | lam cell₁ _ _ ihTy ihBody =>
+  | lam cell₁ _ _ repLvl₁ ihTy ihBody =>
       cases h₂ <;> (rw [cell₁] at *; clear cell₁; try (injection ‹some _ = some _› with hC; injection hC with _ hCtor _; exact absurd hCtor (by decide)))
-      rename_i repTy₂ repBody₂ cell₂
+      rename_i repTy₂ repBody₂ repLvl₂ cell₂
       injection cell₂ with hC; injection hC with _ _ hArgs
-      injection hArgs with hV₁ hRest; injection hRest with hV₂ _
-      subst hV₁ hV₂
-      rw [ihTy repTy₂, ihBody repBody₂]
-  | forallE cell₁ _ _ ihTy ihBody =>
+      injection hArgs with hV₁ hRest₁; injection hRest₁ with hV₂ hRest₂; injection hRest₂ with hV₃ _
+      subst hV₁ hV₂ hV₃
+      rw [ihTy repTy₂, ihBody repBody₂, repLvl₁.det repLvl₂]
+  | forallE cell₁ _ _ repLvl₁ ihTy ihBody =>
       cases h₂ <;> (rw [cell₁] at *; clear cell₁; try (injection ‹some _ = some _› with hC; injection hC with _ hCtor _; exact absurd hCtor (by decide)))
-      rename_i repTy₂ repBody₂ cell₂
+      rename_i repTy₂ repBody₂ repLvl₂ cell₂
       injection cell₂ with hC; injection hC with _ _ hArgs
-      injection hArgs with hV₁ hRest; injection hRest with hV₂ _
-      subst hV₁ hV₂
-      rw [ihTy repTy₂, ihBody repBody₂]
+      injection hArgs with hV₁ hRest₁; injection hRest₁ with hV₂ hRest₂; injection hRest₂ with hV₃ _
+      subst hV₁ hV₂ hV₃
+      rw [ihTy repTy₂, ihBody repBody₂, repLvl₁.det repLvl₂]
   | letE cell₁ _ _ _ ihTy ihVal ihBody =>
       cases h₂ <;> (rw [cell₁] at *; clear cell₁; try (injection ‹some _ = some _› with hC; injection hC with _ hCtor _; exact absurd hCtor (by decide)))
       rename_i repTy₂ repVal₂ repBody₂ cell₂
@@ -1084,17 +1089,19 @@ theorem RepRoleCtx.det [Field F] (large : U32.Compatible F)
 
 /-! ## 7. Ingress Stream Authentication & `TagN` Field-Decoding Correctness -/
 
-/-- Ingress stream authentication in the Lean model: if the bytes read at
-`(idx, len)` pass `depthChecked` and the model of `Blake3::verify_bytes_against`
-(field-wise equality of `addressToFields` of the Lean `Blake3.digest`), then
-allocating them yields a heap-extended `RepByteStream` of length `len < 2^32`
-whose BLAKE3 digest equals `expectedAddr`. It models the checks that the IxVM
+/-- Ingress stream authentication in the Lean model: if the `len` bytes read at `idx` are fewer
+than `2^32` (the range check `IxByteStream::read_finite_byte_stream` makes,
+`UInt32::less_than_fields(0, len)`; `read_byte_stream` builds exactly `len` bytes by its own
+recursion) and pass the model of `Blake3::verify_bytes_against` (field-wise equality of
+`addressToFields` of the Lean `Blake3.digest`; `Blake3.verify_bytes_against_model_iff` relates it
+to the model of `Blake3::hash`), then allocating them yields a heap-extended `RepByteStream` of
+length `len < 2^32` whose BLAKE3 digest equals `expectedAddr`. It models the checks that the IxVM
 functions `Ingress::load_verified_constant`, `Ingress::load_verified_blob` and
 `KernelRoles::load_role_table` make, but is not a theorem about them. -/
 theorem ingress_verify_stream_sound [Field F] (large : U32.Compatible F)
     (enumName : String) (stream : Nat → UInt8) (idx len : Nat) (h : Heap F)
     (expectedAddr : Address)
-    (hDepth : Word.depthChecked (readByteStream stream idx len) = some len)
+    (hLen : len < 2 ^ 32)
     (hVerify : Blake3.addressToFields F (Blake3.digest (readByteStream stream idx len)) =
       Blake3.addressToFields F expectedAddr) :
     let bytes := readByteStream stream idx len
@@ -1104,8 +1111,8 @@ theorem ingress_verify_stream_sound [Field F] (large : U32.Compatible F)
       bytes.length = len ∧
       len < U32.base ∧
       Blake3.digest bytes = expectedAddr := by
-  obtain ⟨hDepthIff, hExt, hRep, hLen⟩ := read_finite_byte_stream_spec enumName stream idx len h
-  exact ⟨hExt, hRep, hLen, hDepthIff.mp hDepth,
+  obtain ⟨hExt, hRep, hLength⟩ := read_byte_stream_spec enumName stream idx len h
+  exact ⟨hExt, hRep, hLength, by unfold U32.base; omega,
     (Blake3.verify_bytes_against_iff large (readByteStream stream idx len) expectedAddr).mp hVerify⟩
 
 /-- Canonical `SourceValue F` representation of a decoded `Tag4` pair `(flag, value)`

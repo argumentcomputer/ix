@@ -72,23 +72,25 @@ def k_infer_only_core := aiur_fn⟦
         KernelTypes::KExprNode::App(f, a) => {
           let f_ty = k_infer_only(rc, f, types);
           match (*(f_ty)) {
-            KernelTypes::KExprNode::Forall(_, cod) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+            KernelTypes::KExprNode::Forall(dom, cod, bl) => {  io_app_cod(rc, dom, cod, bl, a, types) } ,
             _ => {
               let f_ty_whnf = KernelWhnf::whnf(rc, f_ty, types);
               match (*(f_ty_whnf)) {
-                KernelTypes::KExprNode::Forall(_, cod) => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+                KernelTypes::KExprNode::Forall(dom, cod, bl) => {  io_app_cod(rc, dom, cod, bl, a, types) } ,
               } } ,
           } } ,
 
-        KernelTypes::KExprNode::Lam(ty, body) => {
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let body_ty = k_infer_only(rc, body, types2);
-          (&(KernelTypes::KExprNode::Forall(ty, body_ty))) } ,
+          lam_datum_ok(rc, body, body_ty, bl, types2);
+          (&(KernelTypes::KExprNode::Forall(ty, body_ty, bl))) } ,
 
-        KernelTypes::KExprNode::Forall(ty, body) => {
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {
           let u1 = ensure_sort_only(rc, ty, types);
           let types2 = (&(Lists::Node::Cons(ty, types)));
           let u2 = ensure_sort_only(rc, body, types2);
+          forall_datum_ok(u2, bl);
           (&(KernelTypes::KExprNode::Srt(KernelLevels::level_imax(u1, u2)))) } ,
 
         KernelTypes::KExprNode::Let(_, val, body) => {
@@ -114,11 +116,12 @@ def k_infer_only_core := aiur_fn⟦
                     "projection's structure type differs from the value's head");
                   let ind_ci = (*(Ingress::get_ci(head_addr)));
                   match ind_ci {
-                    KernelTypes::KConstantInfo::Induct(ind_nlvls, _, n_params, _, num_ctors, _,
+                    KernelTypes::KConstantInfo::Induct(ind_nlvls, ind_ty, n_params, n_indices, num_ctors, _,
                                            block_addr, ind_idx) => {
 
                       assert_eq!(num_ctors, 1,
                         "projection on an inductive with more than one constructor");
+                      KernelInfer::proj_shape_ok(n_indices, args, n_params, lvls, ind_nlvls);
                       let ctor_ci = (*(KernelModeled::proj_ctor(block_addr, ind_idx)));
                       match ctor_ci {
                         KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
@@ -126,11 +129,58 @@ def k_infer_only_core := aiur_fn⟦
                             "projection's constructor universe count differs from its inductive's");
                           let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
                           let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
-                          io_peel_field_loop(after_params, fidx, 0, struct_addr, e1) } ,
+                          let field_ty = io_peel_field_loop(after_params, fidx, 0, struct_addr, e1);
+                          io_prop_field_guard(rc, KernelInfer::is_inductive_prop(rc, ind_ty, lvls, n_params, types), field_ty, types);
+                          field_ty } ,
                       } } ,
                   } } ,
               } } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Infer.forallE's datum premise (both grades): the binder's datum is the zero-ness of
+  -- the body's sort (`zeronessOf v = mb.pw`).
+
+  -- Infer.appSkip and Infer.app at the io grade: at a ∀ whose datum is never, no argument
+  -- certificate; otherwise the argument's io-grade type is definitionally equal to the domain.
+
+def io_app_cod := aiur_fn⟦
+  inline fn io_app_cod(rc: KernelRoles::RoleCtx, dom: KernelTypes::KExpr, cod: KernelTypes::KExpr, bl: KernelTypes::KLevel,
+                a: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match KernelLevels::level_is_not_zero(bl) {
+        1 => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+        _ => {
+          assert_eq!(KernelDefEq::k_is_def_eq(rc, k_infer_only(rc, a, types), dom, types), 1,
+            "io application: the argument's type is not the domain");
+          KernelSubst::expr_inst1(cod, a, 0) } ,
+      }
+    }
+⟧
+
+def forall_datum_ok := aiur_fn⟦
+  inline fn forall_datum_ok(v: KernelTypes::KLevel, bl: KernelTypes::KLevel) -> () {
+      assert_eq!(KernelLevels::pw_eq(v, bl), 1, "a binder's datum is not its codomain sort's zero-ness");
+      ()
+    }
+⟧
+
+  -- Infer.lam's datum premises (both grades), once per λ-chain: at a λ whose body is a
+  -- λ, the two data agree; at the innermost λ, the datum is the zero-ness of the sort of
+  -- the body's type, computed at the io grade.
+
+def lam_datum_ok := aiur_fn⟦
+  inline fn lam_datum_ok(rc: KernelRoles::RoleCtx, body: KernelTypes::KExpr, body_ty: KernelTypes::KExpr,
+                         bl: KernelTypes::KLevel, types2: Lists::List<KernelTypes::KExpr>) -> () {
+      match (*(body)) {
+        KernelTypes::KExprNode::Lam(_, _, inner) => {
+          assert_eq!(KernelLevels::pw_eq(bl, inner), 1, "a lambda's datum differs from its inner lambda's");
+          () } ,
+        _ => {
+          assert_eq!(KernelLevels::pw_eq(ensure_sort_only(rc, body_ty, types2), bl), 1,
+            "a lambda's datum is not the zero-ness of its body type's sort");
+          () } ,
       }
     }
 ⟧
@@ -149,13 +199,30 @@ def ensure_sort_only := aiur_fn⟦
     }
 ⟧
 
+  -- Infer.proj's `FireSem` premise at the io grade (RULES-GAP G7): at a `Prop`
+  -- structure the projected field's type is a proposition. (Full inference runs the
+  -- same guard in `k_infer_proj`; the io grade used to rely on that earlier run.)
+
+def io_prop_field_guard := aiur_fn⟦
+  fn io_prop_field_guard(rc: KernelRoles::RoleCtx, is_prop: Field, field_ty: KernelTypes::KExpr,
+                         types: Lists::List<KernelTypes::KExpr>) -> () {
+      match is_prop {
+        0 => {  () } ,
+        _ => {
+          assert_eq!(KernelLevels::level_equal(ensure_sort_only(rc, field_ty, types), (&(KernelTypes::KLevelNode::Zero))), 1,
+            "projection on a Prop structure: field is not a Prop");
+          () } ,
+      }
+    }
+⟧
+
 def io_peel_params_subst := aiur_fn⟦
   fn io_peel_params_subst(ty: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>, n_params: Field) -> KernelTypes::KExpr {
       match n_params {
         0 => {  ty } ,
         _ => {
           match (*(ty)) {
-            KernelTypes::KExprNode::Forall(_, body) => {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
               match (*(args)) {
                 Lists::Node::Cons(arg, rest) => {
                   let body_substed = KernelSubst::expr_inst1(body, arg, 0);
@@ -170,7 +237,7 @@ def io_peel_field_loop := aiur_fn⟦
   fn io_peel_field_loop(ty: KernelTypes::KExpr, target: Field, current: Field,
                               struct_addr: Bytes::AddressRef, val: KernelTypes::KExpr) -> KernelTypes::KExpr {
       match (*(ty)) {
-        KernelTypes::KExprNode::Forall(dom, body) => {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
           match target - current {
             0 => {  dom } ,
             _ => {

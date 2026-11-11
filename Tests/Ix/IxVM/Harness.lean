@@ -4,6 +4,7 @@ public import Ix.Cli.FormalAiur
 public import Ix.IxVM.ClaimHarness
 public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
+public import Ix.IxVM.PwCheck
 
 /-!
 # Running claims through the IxVM program
@@ -98,13 +99,29 @@ structure Case where
   /-- Exact rounded FFT-work surrogate of the accepted execution. -/
   expectedFftCost : Option Nat := none
   witness : ClaimWitness
+  /-- The environment the witness was built from, when known: the binder-data
+  annotator and its check read it to type the witness's records
+  (`IxVM.PwHints.View.support`). -/
+  env : Ixon.Env := {}
 
 /-- The case for `claim` over `env`, with the assumption trees its roots name. -/
 def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) (accept : Bool := true)
     (rejectsWith : Option String := none) : Except String Case := do
   let witness ← buildClaimWitness env claim trees
-  return { label, accept, rejectsWith, witness }
+  -- Only a claim that converts expressions reads binder data, so only its environment is
+  -- kept (closing every case's environment over the role table is slow on large suites).
+  let env ← if _root_.IxVM.PwHints.converts claim then withDefaultRoleBinding env else pure {}
+  return { label, accept, rejectsWith, witness, env }
+
+/-- `c` with the binder data (D2, `IxVM.PwHints`) its claim's conversion
+reads, when its witness carries none: a suite that builds its IO by hand gets
+them as `IxVM.ClaimHarness`'s builders give them. -/
+def Case.withPwHints (c : Case) : Except String Case := do
+  if _root_.IxVM.PwHints.hasHints c.witness.inputIOBuffer then return c
+  let some claim := _root_.IxVM.PwHints.claimOf c.witness.inputIOBuffer c.witness.input | return c
+  let io ← _root_.IxVM.PwHints.withHints claim c.witness.inputIOBuffer c.env
+  return { c with witness := { c.witness with inputIOBuffer := io } }
 
 /-! ## The case file
 
@@ -189,8 +206,56 @@ def Runner.fail (r : Runner) (message : String) : IO Unit := do
   r.broken.modify (· + 1)
   IO.eprintln s!"[{r.suite}] {message}"
 
+/-- The host-side check of a case's binder data (`$IX_PW_CHECK`): every key
+the conversion asks for answered, every datum the kernel's
+(`IxVM.PwHints.check`), and the annotator, rerun on the witness without its
+data, deterministic. Prints one `PW` line; returns the failure, if any. -/
+def pwCheckCase (suite : String) (c : Case) : IO (Option String) := do
+  let io := c.witness.inputIOBuffer
+  unless _root_.IxVM.PwHints.hasHints io do return none
+  let t0 ← IO.monoMsNow
+  let again := _root_.IxVM.PwHints.annotate (_root_.IxVM.PwHints.stripHints io) c.env
+  let rerun ← match again with
+    | .ok (io', stats) => do
+      let same := match _root_.IxVM.PwHints.tableOf io', _root_.IxVM.PwHints.tableOf io with
+        | .ok a, .ok b => a.size == b.size && a.toList.all fun (k, v) => b[k]? == some v
+        | _, _ => false
+      pure (some (stats, same))
+    | .error _ => pure none
+  let t1 ← IO.monoMsNow
+  match _root_.IxVM.PwHints.check io c.env, rerun with
+  | .ok rep, some (stats, same) =>
+    let (values, blocks, extra) := _root_.IxVM.PwHints.streamCounts io
+    IO.println s!"PW {c.label}: {rep.render} values={values} blocks={blocks} \
+      variants>0={extra} binders={stats.binders} shares={stats.shares} \
+      free-shares={stats.freeShares} params={stats.params} \
+      fallbacks={stats.fallbacks} inherited={stats.inherited} refused={stats.refused} \
+      annotate_ms={t1 - t0} \
+      check_ms={(← IO.monoMsNow) - t1}"
+    -- the rerun repeats the build only when the case kept its environment
+    -- (`Case.env`); without it the rerun types with the witness's records alone
+    let same := same || c.env.consts.isEmpty
+    if rep.ok && same then return none
+    for s in rep.samples do IO.eprintln s!"[{suite}] PW {c.label}: {s}"
+    return some s!"PW {c.label}: binder data incomplete, not the kernel's, or not deterministic"
+  | .error e, _ => return some s!"PW {c.label}: {e}"
+  | _, none => return some s!"PW {c.label}: the annotator failed on a rerun"
+
+/-- `pwCheckCase` in a runner: a failure fails the suite. -/
+def Runner.pwCheck (r : Runner) (c : Case) : IO Unit := do
+  if let some e ← pwCheckCase r.suite c then r.fail e
+
 /-- Write `c` to the current case file. -/
 def Runner.add (r : Runner) (c : Case) : IO Unit := do
+  let built ← match c.withPwHints with
+    | .ok c' => pure (some c')
+    | .error e => do
+      r.fail s!"the binder data of {c.label} could not be built: {e}"
+      pure none
+  let some c := built | return
+  if let some mode ← IO.getEnv "IX_PW_CHECK" then
+    r.pwCheck c
+    if mode == "only" then return
   if c.expectedFftCost.isSome && !c.accept then
     return ← r.fail s!"FFT pin on rejection case {c.label}"
   if (← r.labels.get).contains c.label then
@@ -290,7 +355,15 @@ def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 8)
     (circuit : Option Bool := none) : IO UInt32 :=
   withRunner suite (jobs := jobs) (circuit := circuit) fun r => do
     IO.println s!"[{suite}] {cases.size} claims through the IxVM program"
-    for build in cases do r.build (build ())
+    let trace := (← IO.getEnv "IX_PW_TRACE").isSome
+    for (build, i) in cases.zipIdx do
+      if trace then IO.eprintln s!"[{suite}] building case {i}"
+      let t0 ← IO.monoMsNow
+      let c ← IO.lazyPure fun _ => build ()
+      if trace then
+        let label := match c with | .ok c => c.label | .error e => s!"(not built: {e})"
+        IO.eprintln s!"[{suite}] built case {i} in {(← IO.monoMsNow) - t0} ms: {label}"
+      r.build c
 
 end Tests.Ix.IxVM
 

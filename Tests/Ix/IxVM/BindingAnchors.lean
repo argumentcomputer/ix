@@ -120,7 +120,10 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
         name := s!"binding-anchor-{label}-consumer-assumed-{assumed}"
         env := env
         claim := claim
-        expectAccept := accept
+        -- With the native `Int` results removed (B9-B11, REMOVED-MOVES.md) the consumer's
+        -- `Int.neg` reduces by its definition and never reaches the anchor, so an invalid
+        -- anchor binding no longer reaches it either: both bindings accept the consumer.
+        expectAccept := true
         requireNativeInt := accept }
       result := result.push entry
   return result
@@ -134,7 +137,9 @@ def claimCases (base : Ixon.Env) : Except String (Array Tests.Ix.IxVM.Builder) :
       c.expectAccept
       (if c.expectAccept then none else some "inferred type is not def-eq to the expected type")
     return { case with
-      exercises := if c.requireNativeInt then some "KernelNatPrim::mk_int_prim" else none }
+      -- The native `Int` results (B9-B11) are removed (REMOVED-MOVES.md), so an accepted consumer
+      -- no longer reaches `mk_int_prim`; the verdicts are the test.
+      exercises := none }
 
 def run : IO UInt32 := do
   let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable

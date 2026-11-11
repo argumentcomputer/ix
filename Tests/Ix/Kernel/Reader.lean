@@ -149,7 +149,7 @@ def quotLift := bound .quotLift
 #guard defaultTable.isOk && (builtinPrelude (md := .anon)).isOk && defaultBinding.isOk
 -- the default table: every role bound, well formed, its section canonical and
 -- committed under its BLAKE3 hash
-#guard builtinTable.bound.size == 103 && builtinTable.check.isOk
+#guard builtinTable.bound.size == 108 && builtinTable.check.isOk
 #guard (Ix.Kernel.RoleTable.ofBytes builtinTable.toBytes).isSome
 #guard match defaultBinding with
   | .ok b => hash b.bytes == b.address && b.bytes == builtinTable.toBytes
@@ -1003,7 +1003,7 @@ def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
   | .error e => (e.splitOn why).length > 1
   | .ok () => false
 
-#guard refuses { builtinTable with version := 5 } "version 5"
+#guard refuses { builtinTable with version := 6 } "version 6"
 #guard refuses { builtinTable with bound := builtinTable.bound.push (.nat, address 1) } "bound twice"
 #guard refuses (rebind [(.natAdd, bound .natSub)]) "bound to two roles"
 #guard refuses (drop builtinTable [.eqRefl]) "its block's"

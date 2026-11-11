@@ -3,7 +3,7 @@ import Aiur.HeapMono
 
 /-! # Observed derivations: inversion and the induction on size
 
-Spike S3 (`plans/ixvm-no-false-plan.md` 8.4, 8.7). The core of IxVM is proved
+The core of IxVM is proved
 sound against the kernel's rules by **one induction on derivation size over all
 functions at once**. A derivation is an observed one (`ObsFn`, with its call
 list), because the collision escape of the statement is read off the calls; its

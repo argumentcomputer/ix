@@ -67,12 +67,30 @@ def outsideLogicError? (ixonEnv : Ixon.Env) (label : String) (addr : Address) :
     some s!"{label} is unsafe or partial: IxVM checks only constants in Lean's logic"
   else none
 
+/-- Why IxVM refuses a typing claim seeded at `addr` (named `label`), or `none`:
+    it is outside Lean's logic (`outsideLogicError?`), or it uses an inert axiom
+    (`sorryAx` or one of Lean's compiler-trust axioms), being one or reaching
+    one (`inert`, `IxVM.ClaimHarness.inertUsers`): IxVM refuses an inert axiom as
+    a seed (`KernelClaim::assert_claimable`) and every constant that uses one. -/
+def seedError? (ixonEnv : Ixon.Env) (inert : Std.HashSet Address) (label : String)
+    (addr : Address) : Option String :=
+  match outsideLogicError? ixonEnv label addr with
+  | some e => some e
+  | none =>
+    if inert.contains addr then
+      some s!"{label} uses an inert axiom (sorryAx or a compiler-trust axiom): no claim \
+        certifies it"
+    else none
+
 /-- The `Check` claim on `addr` (full transitive typecheck of the target's
-    closure), relative to `ixonEnv`'s role binding. Refuses a constant outside
-    Lean's logic (`outsideLogicError?`). -/
+    closure), relative to `ixonEnv`'s role binding. Refuses a seed IxVM refuses
+    (`seedError?`); `inert` is `ixonEnv`'s `IxVM.ClaimHarness.inertUsers`,
+    computed here when not given. -/
 def checkClaimOf (ixonEnv : Ixon.Env) (addr : Address)
-    (assumeBinding : Bool := false) : IO Ix.Claim := do
-  if let some e := outsideLogicError? ixonEnv s!"{addr}" addr then
+    (assumeBinding : Bool := false) (inert : Option (Std.HashSet Address) := none) :
+    IO Ix.Claim := do
+  let inert := inert.getD (IxVM.ClaimHarness.inertUsers ixonEnv)
+  if let some e := seedError? ixonEnv inert s!"{addr}" addr then
     throw (IO.userError e)
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv assumeBinding)
   return Ix.Claim.check ctx addr none
@@ -80,9 +98,9 @@ def checkClaimOf (ixonEnv : Ixon.Env) (addr : Address)
 /-- Build a `ClaimWitness` for the `verify_claim` entrypoint against
     `checkClaimOf ixonEnv addr`. -/
 def mkWitness (addr : Address) (ixonEnv : Ixon.Env)
-    (assumeBinding : Bool := false) :
+    (assumeBinding : Bool := false) (inert : Option (Std.HashSet Address) := none) :
     IO IxVM.ClaimHarness.ClaimWitness := do
-  let claim ← checkClaimOf ixonEnv addr assumeBinding
+  let claim ← checkClaimOf ixonEnv addr assumeBinding inert
   IO.ofExcept <|
     IxVM.ClaimHarness.buildClaimWitness ixonEnv claim {}
 
@@ -129,26 +147,28 @@ def forEachClaim
     (assumeBinding : Bool := false)
     : IO UInt32 := do
   let mut failures : Array String := #[]
-  -- constants outside Lean's logic, which no claim certifies, skipped when
-  -- iterating a whole environment
+  -- constants outside Lean's logic or that use an inert axiom, which no claim
+  -- certifies, skipped when iterating a whole environment
   let mut skipped : Nat := 0
   match ixePath with
   | some path =>
     let (ixonEnv, envHandle) ← loadBoundIxe path
     IO.println s!"Loaded {path}: {ixonEnv.namedCount} named, \
       {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
+    -- the constants that use an inert axiom, which no claim certifies either
+    let inert := IxVM.ClaimHarness.inertUsers ixonEnv
     if let some hex := claimHex then
       let (claim, trees) ← loadClaimAndTrees hex
       let label := s!"claim {hex}"
-      -- a typing claim's seeds outside Lean's logic, refused before running
+      -- a typing claim's seeds IxVM refuses (`seedError?`), refused before running
       let refused : Option String := match claim with
-        | .check _ addr _ => outsideLogicError? ixonEnv s!"{label}: the target {addr}" addr
+        | .check _ addr _ => seedError? ixonEnv inert s!"{label}: the target {addr}" addr
         | .checkEnv _ root _ =>
           let leaves := (trees.get? root).map (·.leaves) |>.getD #[]
-          let aside := leaves.filter ixonEnv.outsideLogicAt
+          let aside := leaves.filter fun a => ixonEnv.outsideLogicAt a || inert.contains a
           if aside.isEmpty then none
-          else some s!"{label}: {aside.size} owned constant(s) are unsafe or partial \
-            (first {aside[0]!}): IxVM checks only constants in Lean's logic"
+          else some s!"{label}: {aside.size} owned constant(s) are unsafe or partial, or use \
+            an inert axiom (first {aside[0]!}): IxVM certifies none of them"
         | _ => none
       match refused with
       | some e =>
@@ -174,13 +194,13 @@ def forEachClaim
       for (ixName, named) in sorted do
         let leanName := ixNameToLeanName ixName
         let label := toString leanName
-        if ixonEnv.outsideLogicAt named.addr then
+        if ixonEnv.outsideLogicAt named.addr || inert.contains named.addr then
           skipped := skipped + 1
           continue
-        let claim ← checkClaimOf ixonEnv named.addr assumeBinding
+        let claim ← checkClaimOf ixonEnv named.addr assumeBinding (some inert)
         let target : Target ←
           if forceLeanWitness then
-            let w ← mkWitness named.addr ixonEnv assumeBinding
+            let w ← mkWitness named.addr ixonEnv assumeBinding (some inert)
             pure (.leanW w)
           else pure (.addr named.addr)
         if (← runOne claim (some envHandle) target label) ≠ 0 then
@@ -195,15 +215,15 @@ def forEachClaim
           if !keepGoing then break
         | some addr =>
           let label := arg
-          if let some e := outsideLogicError? ixonEnv label addr then
+          if let some e := seedError? ixonEnv inert label addr then
             IO.eprintln s!"error: {e}"
             failures := failures.push label
             if !keepGoing then break
             else continue
-          let claim ← checkClaimOf ixonEnv addr assumeBinding
+          let claim ← checkClaimOf ixonEnv addr assumeBinding (some inert)
           let target : Target ←
             if forceLeanWitness then
-              let w ← mkWitness addr ixonEnv assumeBinding
+              let w ← mkWitness addr ixonEnv assumeBinding (some inert)
               pure (.leanW w)
             else pure (.addr addr)
           if (← runOne claim (some envHandle) target label) ≠ 0 then
@@ -219,12 +239,13 @@ def forEachClaim
     let runOneByName (name : Lean.Name) (label : String) : IO UInt32 := do
       let ixonEnv ← loadNamedIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
-      if let some e := outsideLogicError? ixonEnv label addr then
+      let inert := IxVM.ClaimHarness.inertUsers ixonEnv
+      if let some e := seedError? ixonEnv inert label addr then
         IO.eprintln s!"error: {e}"
         return 1
-      let claim ← checkClaimOf ixonEnv addr assumeBinding
+      let claim ← checkClaimOf ixonEnv addr assumeBinding (some inert)
       if forceLeanWitness then
-        let w ← mkWitness addr ixonEnv assumeBinding
+        let w ← mkWitness addr ixonEnv assumeBinding (some inert)
         runOne claim none (.leanW w) label
       else
         let envBytes ← match Ixon.serEnv ixonEnv with

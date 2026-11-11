@@ -3,7 +3,7 @@ import IxVMRefinement.Obs.KernelDefEq
 
 /-! # The step lemmas of the `is_def_eq` fast path
 
-Spike S3. `k_is_def_eq` at closed terms, through `k_is_def_eq_core` and
+`k_is_def_eq` at closed terms, through `k_is_def_eq_core` and
 `k_is_def_eq_ordered` to `try_def_eq_app` (same-head spine congruence) and
 `de_args` (pairwise, calling back into `k_is_def_eq`): a nonzero answer is
 `DefEq`. The slow tiers and the lowering rebase are not taken in the fragment
@@ -33,7 +33,7 @@ theorem RepK.bvar_of_load {h : Heap F} {t : IxVMKExpr F} {p x : SourceValue F}
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ _ hargs; injection hargs with hx _
     exact ⟨_, rfl, hx.symm⟩
-  | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ | forallE cell _ _
+  | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
   | letE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _

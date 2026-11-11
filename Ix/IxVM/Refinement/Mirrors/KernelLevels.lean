@@ -3117,9 +3117,9 @@ def «KernelSubst::expr_lbr» : Nat → Heap F → SourceValue F → Option (Sou
                       let (v16, h17) ← «KernelSubst::expr_lbr» k h15 x_a
                       «KernelSubst::lbr_max» k h17 v14 v16)
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, _] =>
                       (do
                         let (v8, h9) ← «KernelSubst::expr_lbr» k h1 x_ty
                         let (v10, h11) ← (do
@@ -3127,9 +3127,9 @@ def «KernelSubst::expr_lbr» : Nat → Heap F → SourceValue F → Option (Sou
                           «KernelSubst::lbr_dec» k h13 v12)
                         «KernelSubst::lbr_max» k h11 v8 v10)
                     | _ => none)
-                  (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                  (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                     (fun
-                      | [x_ty, x_body] =>
+                      | [x_ty, x_body, _] =>
                         (do
                           let (v2, h3) ← «KernelSubst::expr_lbr» k h1 x_ty
                           let (v4, h5) ← (do
@@ -3224,9 +3224,9 @@ def «KernelSubst::expr_lower_walk» : Nat → Heap F → SourceValue F → Sour
                       some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "App" [v26, v28] : SourceValue F), h29))
                     some ((.ptr v24.type h25.length : SourceValue F), h25 ++ [v24]))
                 | _ => none)
-              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                 (fun
-                  | [x_ty, x_body] =>
+                  | [x_ty, x_body, x_bl] =>
                     (do
                       let (v16, h17) ← (do
                         let (v18, h19) ← «KernelSubst::expr_lower» k h1 x_ty x_shift x_cutoff
@@ -3235,12 +3235,12 @@ def «KernelSubst::expr_lower_walk» : Nat → Heap F → SourceValue F → Sour
                             | .ok z => some (z, h19)
                             | .error _ => none
                           «KernelSubst::expr_lower» k h23 x_body x_shift v22)
-                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20] : SourceValue F), h21))
+                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20, x_bl] : SourceValue F), h21))
                       some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16]))
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, x_bl] =>
                       (do
                         let (v8, h9) ← (do
                           let (v10, h11) ← «KernelSubst::expr_lower» k h1 x_ty x_shift x_cutoff
@@ -3249,7 +3249,7 @@ def «KernelSubst::expr_lower_walk» : Nat → Heap F → SourceValue F → Sour
                               | .ok z => some (z, h11)
                               | .error _ => none
                             «KernelSubst::expr_lower» k h15 x_body x_shift v14)
-                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12] : SourceValue F), h13))
+                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12, x_bl] : SourceValue F), h13))
                         some ((.ptr v8.type h9.length : SourceValue F), h9 ++ [v8]))
                     | _ => none)
                   (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -3541,9 +3541,9 @@ def «KernelSubst::expr_lift_walk» : Nat → Heap F → SourceValue F → Sourc
                       some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "App" [v26, v28] : SourceValue F), h29))
                     some ((.ptr v24.type h25.length : SourceValue F), h25 ++ [v24]))
                 | _ => none)
-              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                 (fun
-                  | [x_ty, x_body] =>
+                  | [x_ty, x_body, x_bl] =>
                     (do
                       let (v16, h17) ← (do
                         let (v18, h19) ← «KernelSubst::expr_lift» k h1 x_ty x_shift x_cutoff
@@ -3552,12 +3552,12 @@ def «KernelSubst::expr_lift_walk» : Nat → Heap F → SourceValue F → Sourc
                             | .ok z => some (z, h19)
                             | .error _ => none
                           «KernelSubst::expr_lift» k h23 x_body x_shift v22)
-                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20] : SourceValue F), h21))
+                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20, x_bl] : SourceValue F), h21))
                       some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16]))
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, x_bl] =>
                       (do
                         let (v8, h9) ← (do
                           let (v10, h11) ← «KernelSubst::expr_lift» k h1 x_ty x_shift x_cutoff
@@ -3566,7 +3566,7 @@ def «KernelSubst::expr_lift_walk» : Nat → Heap F → SourceValue F → Sourc
                               | .ok z => some (z, h11)
                               | .error _ => none
                             «KernelSubst::expr_lift» k h15 x_body x_shift v14)
-                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12] : SourceValue F), h13))
+                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12, x_bl] : SourceValue F), h13))
                         some ((.ptr v8.type h9.length : SourceValue F), h9 ++ [v8]))
                     | _ => none)
                   (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -3941,14 +3941,14 @@ def «KernelSubst::has_bvar_in_range» : Nat → Heap F → SourceValue F → So
                         else
                           none)
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, _] =>
                       «KernelSubst::has_bvar_in_range_binder» k h1 x_ty x_body x_lo x_hi
                     | _ => none)
-                  (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                  (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                     (fun
-                      | [x_ty, x_body] =>
+                      | [x_ty, x_body, _] =>
                         «KernelSubst::has_bvar_in_range_binder» k h1 x_ty x_body x_lo x_hi
                       | _ => none)
                     (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -4037,9 +4037,9 @@ def «KernelSubst::expr_inst_many_walk» : Nat → Heap F → SourceValue F → 
                       some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "App" [v26, v28] : SourceValue F), h29))
                     some ((.ptr v24.type h25.length : SourceValue F), h25 ++ [v24]))
                 | _ => none)
-              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                 (fun
-                  | [x_ty, x_body] =>
+                  | [x_ty, x_body, x_bl] =>
                     (do
                       let (v16, h17) ← (do
                         let (v18, h19) ← «KernelSubst::expr_inst_many» k h1 x_ty x_substs x_depth
@@ -4048,12 +4048,12 @@ def «KernelSubst::expr_inst_many_walk» : Nat → Heap F → SourceValue F → 
                             | .ok z => some (z, h19)
                             | .error _ => none
                           «KernelSubst::expr_inst_many» k h23 x_body x_substs v22)
-                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20] : SourceValue F), h21))
+                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20, x_bl] : SourceValue F), h21))
                       some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16]))
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, x_bl] =>
                       (do
                         let (v8, h9) ← (do
                           let (v10, h11) ← «KernelSubst::expr_inst_many» k h1 x_ty x_substs x_depth
@@ -4062,7 +4062,7 @@ def «KernelSubst::expr_inst_many_walk» : Nat → Heap F → SourceValue F → 
                               | .ok z => some (z, h11)
                               | .error _ => none
                             «KernelSubst::expr_inst_many» k h15 x_body x_substs v14)
-                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12] : SourceValue F), h13))
+                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12, x_bl] : SourceValue F), h13))
                         some ((.ptr v8.type h9.length : SourceValue F), h9 ++ [v8]))
                     | _ => none)
                   (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -4317,14 +4317,14 @@ def «KernelSubst::expr_has_bvar_at» : Nat → Heap F → SourceValue F → Sou
                 else
                   «KernelSubst::expr_has_bvar_at» k h3 x_a x_depth)
             | _ => none)
-          (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+          (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
             (fun
-              | [x_ty, x_body] =>
+              | [x_ty, x_body, _] =>
                 «KernelSubst::expr_has_bvar_at_binder» k h1 x_ty x_body x_depth
               | _ => none)
-            (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+            (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
               (fun
-                | [x_ty, x_body] =>
+                | [x_ty, x_body, _] =>
                   «KernelSubst::expr_has_bvar_at_binder» k h1 x_ty x_body x_depth
                 | _ => none)
               (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -4413,9 +4413,9 @@ def «KernelSubst::expr_inst1_walk» : Nat → Heap F → SourceValue F → Sour
                       some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "App" [v26, v28] : SourceValue F), h29))
                     some ((.ptr v24.type h25.length : SourceValue F), h25 ++ [v24]))
                 | _ => none)
-              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                 (fun
-                  | [x_ty, x_body] =>
+                  | [x_ty, x_body, x_bl] =>
                     (do
                       let (v16, h17) ← (do
                         let (v18, h19) ← «KernelSubst::expr_inst1» k h1 x_ty x_arg x_depth
@@ -4424,12 +4424,12 @@ def «KernelSubst::expr_inst1_walk» : Nat → Heap F → SourceValue F → Sour
                             | .ok z => some (z, h19)
                             | .error _ => none
                           «KernelSubst::expr_inst1» k h23 x_body x_arg v22)
-                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20] : SourceValue F), h21))
+                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v18, v20, x_bl] : SourceValue F), h21))
                       some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16]))
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, x_bl] =>
                       (do
                         let (v8, h9) ← (do
                           let (v10, h11) ← «KernelSubst::expr_inst1» k h1 x_ty x_arg x_depth
@@ -4438,7 +4438,7 @@ def «KernelSubst::expr_inst1_walk» : Nat → Heap F → SourceValue F → Sour
                               | .ok z => some (z, h11)
                               | .error _ => none
                             «KernelSubst::expr_inst1» k h15 x_body x_arg v14)
-                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12] : SourceValue F), h13))
+                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v10, v12, x_bl] : SourceValue F), h13))
                         some ((.ptr v8.type h9.length : SourceValue F), h9 ++ [v8]))
                     | _ => none)
                   (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -4660,14 +4660,14 @@ def «KernelSubst::expr_glb_walk» : Nat → Heap F → SourceValue F → Source
                             let (v4, h5) ← «KernelSubst::expr_glb» k h3 x_a x_c
                             «KernelSubst::lbr_min» k h5 x_n v4)))
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, _] =>
                       «KernelSubst::expr_glb_binder» k h1 x_ty x_body x_c
                     | _ => none)
-                  (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                  (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                     (fun
-                      | [x_ty, x_body] =>
+                      | [x_ty, x_body, _] =>
                         «KernelSubst::expr_glb_binder» k h1 x_ty x_body x_c
                       | _ => none)
                     (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -6343,55 +6343,57 @@ def «KernelLevels::expr_inst_levels_walk» : Nat → Heap F → SourceValue F �
         (fun
           | [x_i] =>
             (do
-              let (v42, h43) ← some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "BVar" [x_i] : SourceValue F), h1)
-              some ((.ptr v42.type h43.length : SourceValue F), h43 ++ [v42]))
+              let (v46, h47) ← some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "BVar" [x_i] : SourceValue F), h1)
+              some ((.ptr v46.type h47.length : SourceValue F), h47 ++ [v46]))
           | _ => none)
         (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Srt" 1 v0
           (fun
             | [x_l] =>
               (do
-                let (v38, h39) ← (do
-                  let (v40, h41) ← «KernelLevels::level_inst_params» k h1 x_l x_params
-                  some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Srt" [v40] : SourceValue F), h41))
-                some ((.ptr v38.type h39.length : SourceValue F), h39 ++ [v38]))
+                let (v42, h43) ← (do
+                  let (v44, h45) ← «KernelLevels::level_inst_params» k h1 x_l x_params
+                  some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Srt" [v44] : SourceValue F), h45))
+                some ((.ptr v42.type h43.length : SourceValue F), h43 ++ [v42]))
             | _ => none)
           (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Const" 2 v0
             (fun
               | [x_idx, x_lvls] =>
                 (do
-                  let (v34, h35) ← (do
-                    let (v36, h37) ← «KernelLevels::level_list_inst» k h1 x_lvls x_params
-                    some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Const" [x_idx, v36] : SourceValue F), h37))
-                  some ((.ptr v34.type h35.length : SourceValue F), h35 ++ [v34]))
+                  let (v38, h39) ← (do
+                    let (v40, h41) ← «KernelLevels::level_list_inst» k h1 x_lvls x_params
+                    some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Const" [x_idx, v40] : SourceValue F), h41))
+                  some ((.ptr v38.type h39.length : SourceValue F), h39 ++ [v38]))
               | _ => none)
             (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "App" 2 v0
               (fun
                 | [x_f, x_a] =>
                   (do
-                    let (v28, h29) ← (do
-                      let (v30, h31) ← «KernelLevels::expr_inst_levels» k h1 x_f x_params
-                      let (v32, h33) ← «KernelLevels::expr_inst_levels» k h31 x_a x_params
-                      some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "App" [v30, v32] : SourceValue F), h33))
-                    some ((.ptr v28.type h29.length : SourceValue F), h29 ++ [v28]))
+                    let (v32, h33) ← (do
+                      let (v34, h35) ← «KernelLevels::expr_inst_levels» k h1 x_f x_params
+                      let (v36, h37) ← «KernelLevels::expr_inst_levels» k h35 x_a x_params
+                      some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "App" [v34, v36] : SourceValue F), h37))
+                    some ((.ptr v32.type h33.length : SourceValue F), h33 ++ [v32]))
                 | _ => none)
-              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 2 v0
+              (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Lam" 3 v0
                 (fun
-                  | [x_ty, x_body] =>
+                  | [x_ty, x_body, x_bl] =>
                     (do
-                      let (v22, h23) ← (do
-                        let (v24, h25) ← «KernelLevels::expr_inst_levels» k h1 x_ty x_params
-                        let (v26, h27) ← «KernelLevels::expr_inst_levels» k h25 x_body x_params
-                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v24, v26] : SourceValue F), h27))
-                      some ((.ptr v22.type h23.length : SourceValue F), h23 ++ [v22]))
+                      let (v24, h25) ← (do
+                        let (v26, h27) ← «KernelLevels::expr_inst_levels» k h1 x_ty x_params
+                        let (v28, h29) ← «KernelLevels::expr_inst_levels» k h27 x_body x_params
+                        let (v30, h31) ← «KernelLevels::level_inst_params» k h29 x_bl x_params
+                        some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Lam" [v26, v28, v30] : SourceValue F), h31))
+                      some ((.ptr v24.type h25.length : SourceValue F), h25 ++ [v24]))
                   | _ => none)
-                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 2 v0
+                (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Forall" 3 v0
                   (fun
-                    | [x_ty, x_body] =>
+                    | [x_ty, x_body, x_bl] =>
                       (do
                         let (v16, h17) ← (do
                           let (v18, h19) ← «KernelLevels::expr_inst_levels» k h1 x_ty x_params
                           let (v20, h21) ← «KernelLevels::expr_inst_levels» k h19 x_body x_params
-                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v18, v20] : SourceValue F), h21))
+                          let (v22, h23) ← «KernelLevels::level_inst_params» k h21 x_bl x_params
+                          some ((.construct (instanceName [] "KernelTypes::KExprNode" (some [])) "Forall" [v18, v20, v22] : SourceValue F), h23))
                         some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16]))
                     | _ => none)
                   (matchConstruct (constructorName [] (.named "KernelTypes::KExprNode" [])) "Let" 3 v0
@@ -6456,7 +6458,7 @@ theorem «WordLists::lookup_u64».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.lookup_u64.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.lookup_u64.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.lookup_u64) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 94) (by decide +kernel)) rfl t_T
 
 /-- The mirror of `WordLists::lookup_u64`. -/
 def «WordLists::lookup_u64» (t_T : Generic.Ty) : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6495,7 +6497,7 @@ theorem «WordLists::length_u64».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.length_u64.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.length_u64.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.length_u64) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 91) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 93) (by decide +kernel)) rfl t_T
 
 /-- The mirror of `WordLists::length_u64`. -/
 def «WordLists::length_u64» (t_T : Generic.Ty) : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6580,7 +6582,7 @@ theorem «WordLists::depth_checked».lookup (t_T : Generic.Ty) :
              params := IxVM.WordLists.depth_checked.params.map fun (p, pt) => (p, (pt.subst [("T", t_T)]).toCore),
              body := IxVM.WordLists.depth_checked.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.WordLists.depth_checked) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 90) (by decide +kernel)) rfl t_T
+    (List.getElem_mem (l := IxVM.functions) (n := 92) (by decide +kernel)) rfl t_T
 
 /-- The mirror of `WordLists::depth_checked`. -/
 def «WordLists::depth_checked» (t_T : Generic.Ty) : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)

@@ -453,6 +453,8 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
     let mut workers := #[]
     for i in [:owners.size] do
       let mut io := addEntries env scopes[i]!.contains (seedBinding env default)
+      -- the binder data of every record the worker converts (D2, `IxVM.PwHints`)
+      io := (← IO.ofExcept (IxVM.PwHints.annotate io env)).1
       if i == 0 then
         io := io.extend 0 args (bytes.data.map Aiur.G.ofUInt8)
         io := io.extend 1 (tree.root.hash.data.map Aiur.G.ofUInt8) (tree.ser.data.map Aiur.G.ofUInt8)

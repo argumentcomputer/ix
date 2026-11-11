@@ -44,23 +44,47 @@ container `Carrier_j` (over the *model* names) and `aux p⃗ (tag.(r+j))`:
 * `proj_i` of a structure-like owner by `aux.rec` at a constant motive
   (unpacking a packed field), its iota by `unpackPack_j` or `Eq.refl`.
 
-Declines (the residual): a field mentioning the block other than as a
-whole member/mimic carrier, anywhere in it (an occurrence under a binder —
-infinitary nesting; a field whose carriers whnf removes, `K True (Box T)`,
-is ordinary), a container that is itself nested or mutual or whose mimics
-form a cycle, a reflexive member, a `Prop` block with a large
+Declines (the residual): a container that is itself nested or mutual or
+whose mimics
+form a cycle, a reflexive field into a mimic (`∀ a⃗, I As`: a nested
+occurrence under a binder), a `Prop` block with a large
 eliminator, a container field a later container field depends on, an
 index domain whose sort not even a ceiling bounds (`Kit.sortCeil`,
 task #227).  (Members' parameter telescopes and sorts are not
 compared: task #218, `Mutual.lean`'s header.)
 
-KNOWN GAP, not a decline (task #227's finding): a member whose index
-DOMAIN mentions a parameter — `inductive NB (α : Type) (a₀ : α) : α →
+Reflexive fields.  A field `∀ a⃗, T_m p⃗ e⃗(a⃗)` into a real member — in a
+real constructor (`mk : (Nat → T) → List T → T`) or in a mimic's, the
+container pinned at a function into the block (`Option (Nat → T)`) — is
+recursive under its own telescope `a⃗` (`fieldKind`, `teleDoms`): its
+hypothesis binders are `∀ a⃗, mot (tag.m p⃗ e⃗(a⃗)) (f a⃗)` (`ihBinder`),
+its iota hypotheses `λ a⃗, R_m._model … e⃗(a⃗) (f a⃗)`, as the auxiliary
+family's own recursor has them (`Kit.recTy`).  A real member's carrier
+is its model, so such a field is never packed or transported.
+
+Members behind definitions.  Lean's kernel tests positivity after whnf,
+so a field `Id' T` (with `Id' α := α`), in a real constructor or a
+mimic's (`List (Id' T)`), is recursive: Lean's recursor gives it a
+hypothesis, which names the member and the index arguments.  Such a field
+is read at that normal form (`fieldNorm`), and everything generated over
+the fields takes it; the public models keep the declared types, which
+are definitionally equal.  Likewise a field that mentions a member only
+where whnf erases it (`K Nat (T α)`, `K a _ := a`, with `T α` under-applied)
+is ordinary: its leftover member constants are replaced by the members'
+models spelled out (`fieldErase`), and the auxiliary family's install
+decides positivity after whnf.
+
+Index arguments that mention the parameters.  A member whose index
+domain mentions a parameter — `inductive NB (α : Type) (a₀ : α) : α →
 Type` nesting through `List`, or `NB4 (α : Type) : List α → Type` —
-gets a `_impl.rec` the fold REJECTS (an application type mismatch at
-the tag dispatch), where official accepts the block.  It is older than
-the ceiling and independent of it: the same block with a closed index
-domain (`Nat`) installs, and the same domain in a MUTUAL block installs.
+has nested occurrences whose index arguments mention the parameters
+(`List (NB α a₀ a₀)`, `List (NB4 α [])`).  An index argument read off
+a field's domain lives at that field's frame over the parameters, so
+wherever a minor premise binds the fields below other binders (the
+motives and minors of `_impl.rec`, the index and major binders of
+`pack_j`, `unpackPack_j` and `proj_i`) its parameters are lifted past
+those binders (`fieldIdxAt`, `ctorIdxAt`), as the fields' own domains
+are (`specDoms`, `modelDoms`).
 -/
 
 namespace Ix.Kernel.Frontend.InModel
@@ -98,10 +122,14 @@ structure ACtor (md : Mode) where
   clv : List Level
   /-- field count -/
   nF : Nat
-  /-- the field binders, each at its own frame over the parameter frame -/
+  /-- the field binders, each at its own frame over the parameter frame, as
+  Lean's kernel reads them (`fieldNorm`) -/
   doms : List (Expr md)
   /-- per field: the member it recurses to, or `none` -/
   kinds : List (Option Nat)
+  /-- per field: the length of its leading `∀`-telescope (`teleDoms`): 0 at a
+  finitary field, the binders `a⃗` of a reflexive one `∀ a⃗, T_m p⃗ e⃗(a⃗)` -/
+  teles : List Nat
   /-- the residual's index expressions, at the fields' frame -/
   idx : List (Expr md)
   /-- the global minor index -/
@@ -278,6 +306,95 @@ def stripAllPis (e : Expr md) : List (Expr md × BinderMeta) × Expr md :=
   | .forallE d b m => let (bs, r) := stripAllPis b; ((d, m) :: bs, r)
   | e => ([], e)
 
+/-- Field `i`'s telescope: the domains of its domain's leading `∀`s, the
+`j`-th at field `i`'s frame below the `j` earlier ones.  Empty at a
+finitary field; `a⃗` at a reflexive one `∀ a⃗, T_m p⃗ e⃗(a⃗)`. -/
+def teleDoms (c : ACtor md) (i : Nat) : List (Expr md) :=
+  piBinders (stripAllPis (c.doms.getD i default)).1
+
+/-- Field `i`'s domain past its telescope (`teleDoms`): the carrier, at
+field `i`'s frame below the telescope. -/
+def teleBody (c : ACtor md) (i : Nat) : Expr md :=
+  (stripAllPis (c.doms.getD i default)).2
+
+/-- Field `i`'s telescope domains (`teleDoms`) where `o` binders sit
+between the parameter frame and the fields (the parameters are lifted
+past them) and `o'` between field `i`'s frame and the telescope (the
+earlier fields and the parameters are lifted past them; the telescope's
+own variables are kept). -/
+def liftTele (tele : List (Expr md)) (i o o' : Nat) : List (Expr md) :=
+  (List.range tele.length).map fun j =>
+    ((tele.getD j default).liftLooseBVars o (i + j)).liftLooseBVars o' j
+
+/-- The length of a field domain's leading `∀`-telescope. -/
+def fieldTele (d : Expr md) : Nat := (stripAllPis d).1.length
+
+/-- **A field's kind**: the member whose carrier the field's domain `d` (at
+field `i`'s frame) is, past the domain's own `∀`-telescope when no domain
+of that mentions the block's members (`memberNames`): a finitary field
+`T_m p⃗ e⃗` or `I As e⃗`, a reflexive one `∀ a⃗, T_m p⃗ e⃗(a⃗)` (official
+`check_positivity`'s telescope walk, syntactically; Lean's recursor gives
+it the hypothesis `∀ a⃗, motive_m e⃗(a⃗) (f a⃗)`). -/
+def fieldKind (fam : Family md) (memberNames : List (Key md)) (i : Nat) (d : Expr md) : Option Nat :=
+  if (stripAllPis d).1.any (fun b => mentionsAny memberNames b.1) then none
+  else (matchCarrier fam (i + fieldTele d) (stripAllPis d).2).map (·.1)
+
+/-- **A field's domain at Lean's hypothesis**: the declared domain `d`
+(at field `i`'s frame) — or, where `d` mentions the block but is no carrier
+syntactically (`fieldKind`) and Lean's recursor gives the field a finitary
+hypothesis on motive `t` at index arguments `e⃗` (`minorIH?`, on the field's
+minor premise `minor`: a member behind a definition, `Id' T`, which Lean's
+kernel reads after whnf), the carrier `C_t e⃗`, its normal form.  The
+auxiliary constructor is built over it (as `Mutual.lean`'s `MCtor.nty`);
+the public models keep the declared types, definitionally equal. -/
+def fieldNormIH (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (minor d : Expr md) :
+    Expr md :=
+  if (fieldKind fam memberNames i d).isNone && mentionsAny memberNames d then
+    match minorIH? M J nF i minor with
+    | some (t, idx) =>
+      if t < fam.mems.length then carrierAt fam (fam.mems.getD t default) i idx false else d
+    | none => d
+  else d
+
+/-- Every constant of a real member in `e`, replaced by the member's model
+spelled out, `λ p⃗ ı⃗, aux p⃗ (tag.m p⃗ ı⃗)`, at the constant's levels: the
+model `T_m._model` unfolded, which the auxiliary family's own constructors
+cannot name (they come before it).  The term is closed, so it needs no
+lifting under binders. -/
+def substMembers (fam : Family md) : Expr md → Expr md
+  | .const x us =>
+    match fam.mems.find? (fun m => m.real?.isSome && m.I == x) with
+    | some mem =>
+      (mkLams (fam.pbs ++ mem.idxBs) (auxAt fam mem.tag mem.nIdx (varsAt 0 mem.nIdx))).instantiateLevelParams
+        fam.lps us
+    | none => .const x us
+  | .app g a => .app (substMembers fam g) (substMembers fam a)
+  | .lam d b m => .lam (substMembers fam d) (substMembers fam b) m
+  | .forallE d b m => .forallE (substMembers fam d) (substMembers fam b) m
+  | .letE t v b lm => .letE (substMembers fam t) (substMembers fam v) (substMembers fam b) lm
+  | .proj s k x => .proj s k (substMembers fam x)
+  | e => e
+
+/-- **A field that mentions the block other than as whole carriers** (`d`, at
+field `i`'s frame, no carrier itself): a member under-applied (`K Nat (T α)`
+at `T (α) : Nat → Type`) or at other parameters, in a position whnf erases
+(`K a _ := a`), as Lean's kernel accepts it after whnf.  Its whole carriers
+rewritten into the auxiliary family (`specAll`), the members left are
+replaced by their models spelled out (`substMembers`): a domain
+definitionally equal to the declared one that mentions no member.  Whether
+whnf indeed erases them is the auxiliary family's positivity check, after
+whnf, at its install. -/
+def fieldErase (fam : Family md) (memberNames : List (Key md)) (i : Nat) (d : Expr md) : Expr md :=
+  if (fieldKind fam memberNames i d).isNone && mentionsAny memberNames (specAll fam i d) then
+    substMembers fam (specAll fam i d)
+  else d
+
+/-- **A field's domain as Lean's kernel reads it** (`fieldNormIH`, then
+`fieldErase`). -/
+def fieldNorm (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (minor d : Expr md) :
+    Expr md :=
+  fieldErase fam memberNames i (fieldNormIH fam memberNames M J nF i minor d)
+
 /-- Read the members off the motives of the first recursor's type
 (after the parameters): motive `m`'s domain `∀ ı⃗ (t : C), Sort ℓ`. -/
 def readMems (lps : List LevelParam) (nP : Nat) (types : List (IndTypeRec md))
@@ -347,15 +464,25 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     -- and earlier minors sit between the parameters and the fields)
     -- (head-β-reduced: a container at a dependent pin `I α (fun _ => T α)`
     -- leaves `(fun _ => T α) k` in the kernel's minor)
-    let doms : List (Expr md) ← (List.range nF).mapM fun i =>
-      let (d, _) := bs.getD i default
-      betaHeadE (d.lowerBVars (M + J) i)
-    -- the kinds, by the carrier match at each field's frame
+    -- (and each at Lean's reading: a member behind a definition at its
+    -- normal form, `fieldNorm`)
+    let memberNames := fam.mems.filterMap fun m => if m.real?.isSome then some m.I else none
+    let doms : List (Expr md) ← (List.range nF).mapM fun i => do
+      let d ← betaHeadE ((bs.getD i default).1.lowerBVars (M + J) i)
+      pure (fieldNorm fam memberNames M J nF i dom d)
+    -- the kinds, by the carrier match at each field's frame, past the field's
+    -- own telescope (`fieldKind`), and the telescopes' lengths
     let kinds : List (Option Nat) := (List.range nF).map fun i =>
-      (matchCarrier fam i (doms.getD i default)).map (·.1)
+      fieldKind fam memberNames i (doms.getD i default)
+    let teles : List Nat := doms.map fieldTele
     let nRec := kinds.filter (·.isSome) |>.length
     unless nRec == nIh do
       throw s!"minor {J} ({cname}): {nIh} inductive hypotheses for {nRec} recursive fields"
+    -- a reflexive field into a container occurrence (`∀ a⃗, I As`, an
+    -- occurrence nested under a binder) is not this rung's
+    for i in List.range nF do
+      if teles.getD i 0 != 0 && (kinds.getD i none).any (fam.r ≤ ·) then
+        throw s!"field {i} of {cname} is reflexive into a container occurrence (nested under a binder)"
     -- every other field must not mention the block once its whole carrier
     -- occurrences are rewritten into the auxiliary family, as the auxiliary
     -- constructors' fields are (`specAll`): Lean's kernel replaces nested
@@ -363,7 +490,6 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     -- whose occurrence reduces away (`K True (Box T)` with `K a _ := a`) is
     -- an ordinary field, and the fold's install of the auxiliary family
     -- tests it after whnf
-    let memberNames := fam.mems.filterMap fun m => if m.real?.isSome then some m.I else none
     for i in List.range nF do
       let dom := doms.getD i default
       if (kinds.getD i none).isNone && mentionsAny memberNames dom &&
@@ -375,7 +501,7 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
       (e.lowerBVars nIh 0).lowerBVars (M + J) nF
     let jIn := perMem.getD mem 0
     perMem := perMem.set mem (jIn + 1)
-    out := out ++ [⟨mem, cname, clv, nF, doms, kinds, idx, J, jIn⟩]
+    out := out ++ [⟨mem, cname, clv, nF, doms, kinds, teles, idx, J, jIn⟩]
   pure out
 
 /-! ## Emission helpers -/
@@ -440,7 +566,6 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   let nP := t0.nP
   let r := b.types.length
   for t in b.types do
-    unless !t.isReflexive do throw s!"reflexive member {t.cv.name}"
     unless t.cv.levelParams == lps && t.nP == nP do
       throw s!"member {t.cv.name}: level parameters or parameter count differ"
   let some (pbs0, .sort u) := t0.cv.type.stripPis (nP + t0.nIdx)
@@ -669,10 +794,24 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   -- the model-side field domains (public spelling renamed)
   let modelDoms := fun (c : ACtor md) (o : Nat) => (List.range c.nF).map fun i =>
     rn ((c.doms.getD i default).liftLooseBVars o i)
-  -- a field's index arguments off its domain, at `o'` below the
-  -- field's own frame
+  -- a field's index arguments off its domain past its telescope (at frame
+  -- `i + nT` over the parameters, `nT` the telescope's length), at `o'`
+  -- below field `i`'s frame (the telescope's own variables kept)
   let fieldIdx := fun (c : ACtor md) (i : Nat) (o' : Nat) =>
-    ((matchCarrier fam i (c.doms.getD i default)).map (·.2)).getD [] |>.map (·.liftLooseBVars o' 0)
+    (((matchCarrier fam (i + c.teles.getD i 0) (teleBody c i)).map (·.2)).getD []).map
+      (·.liftLooseBVars o' (c.teles.getD i 0))
+  -- the same where `o` binders sit between the parameter frame and the
+  -- fields (a minor premise's, below the motives and minors or below a
+  -- pack's index and major binders): an index argument may mention the
+  -- parameters (`List (T α a₀)` at `T (α) (a₀ : α) : α → Type`), which
+  -- are lifted past them; the earlier fields are not
+  let fieldIdxAt := fun (c : ACtor md) (i : Nat) (o o' : Nat) =>
+    ((((matchCarrier fam (i + c.teles.getD i 0) (teleBody c i)).map (·.2)).getD []).map
+      (·.liftLooseBVars o (i + c.teles.getD i 0))).map (·.liftLooseBVars o' (c.teles.getD i 0))
+  -- a constructor's residual index arguments, likewise, at `o` binders
+  -- between the parameter frame and the fields and `o'` below the fields
+  let ctorIdxAt := fun (c : ACtor md) (o o' : Nat) =>
+    (c.idx.map (·.liftLooseBVars o c.nF)).map (·.liftLooseBVars o' 0)
   -- `tag.rec p⃗ (λ i', ∀ s, aux p⃗ i' → Sort ℓs) branches i s` at frame
   -- `o` below the parameters, given the per-member branches (each a
   -- term at frame `o + 3`... no: branches are built by the caller at
@@ -714,6 +853,17 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   -- the ih positions of a constructor: the k-th recursive field is the k-th ih
   let ihPos := fun (c : ACtor md) (i : Nat) => ((List.range i).filter fun i' => (c.kinds.getD i' none).isSome).length
   let nIhOf := fun (c : ACtor md) => (c.kinds.filter (·.isSome)).length
+  -- the inductive hypothesis of recursive field `i` (into member `t`) of
+  -- `c`: `∀ a⃗, mot (tag.t p⃗ e⃗(a⃗)) (f_i a⃗)` over the field's telescope `a⃗`
+  -- (empty at a finitary field), at `oP` binders between the parameter
+  -- frame and the fields and `fo` below the fields' frame; `mot d` is the
+  -- motive `d` binders below that frame
+  let ihBinder := fun (mot : Nat → Expr md) (c : ACtor md) (i t oP fo : Nat) =>
+    mkPis (liftTele (teleDoms c i) i oP (fo - i))
+      (Expr.mkAppN (mot (c.teles.getD i 0))
+        [Expr.mkAppN (constP (tagCtorName T t) lps)
+           (varsAt (oP + fo + c.teles.getD i 0) nP ++ fieldIdxAt c i oP (fo - i)),
+         Expr.mkAppN (.bvar (fo - 1 - i + c.teles.getD i 0)) (varsAt 0 (c.teles.getD i 0))])
   -- ---------------------------------------------------------------
   -- 2b. the member models `T_m._model := λ p⃗ ı⃗, aux p⃗ (tag.m p⃗ ı⃗)` — the
   -- model-side carriers of the mimics mention them
@@ -740,9 +890,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         let k := ihPos c i
         -- at the ih's frame: `o + nF + k` below the parameters
         let fo := c.nF + k
-        some <| Expr.mkAppN (motU (o + fo))
-            [Expr.mkAppN (constP (tagCtorName T t) lps) (varsAt (o + fo) nP ++ (fieldIdx c i (fo - i))),
-             .bvar (fo - 1 - i)]
+        some <| ihBinder (fun d => motU (o + fo + d)) c i t o fo
       | none => none
     let D := o + c.nF + nIh
     let fieldVar := fun (i : Nat) => Expr.bvar (nIh + c.nF - 1 - i)
@@ -799,7 +947,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       let ihbs := grpRec.map fun i =>
         let k := (grpRec.filter (· < i)).length
         let fo := c.nF + k
-        auxAt fam ((c.kinds.getD i none).getD 0) (o + fo) (fieldIdx c i (fo - i))
+        auxAt fam ((c.kinds.getD i none).getD 0) (o + fo) (fieldIdxAt c i o (fo - i))
       let gVar := fun (i : Nat) => Expr.bvar (nIhI + c.nF - 1 - i)
       let ihVarI := fun (i : Nat) => Expr.bvar (nIhI - 1 - (grpRec.filter (· < i)).length)
       let fo := c.nF + nIhI
@@ -811,7 +959,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               if g.tags.contains t' then ihVarI i
               else if t' ≥ r then
                 let mem' := mems.getD t' default
-                appImpl (packName mem'.j) (o + fo) (fieldIdx c i (fo - i)) [gVar i]
+                appImpl (packName mem'.j) (o + fo) (fieldIdxAt c i o (fo - i)) [gVar i]
               else gVar i
             | none => gVar i))
     for k in List.range g.tags.length do
@@ -871,7 +1019,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         let k := (grpRec.filter (· < i)).length
         let fo' := c.nF + k
         let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-        upStmtOf mem' (o + fo') (fieldIdx c i (fo' - i)) (.bvar (fo' - 1 - i))
+        upStmtOf mem' (o + fo') (fieldIdxAt c i o (fo' - i)) (.bvar (fo' - 1 - i))
       -- the spine's pins are the constructor's OWN container's (a group
       -- member's container differs from the group's head container)
       let F := fun (o' : Nat) (args : List (Expr md)) =>
@@ -882,7 +1030,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         | some t' =>
           if t' ≥ r then
             let mem' := mems.getD t' default
-            let idx := fieldIdx c i (fo - i)
+            let idx := fieldIdxAt c i o (fo - i)
             appImpl (unpackName mem'.j) (o + fo) idx [appImpl (packName mem'.j) (o + fo) idx [gVarAt i 0]]
           else gVarAt i 0
         | none => gVarAt i 0
@@ -892,15 +1040,15 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         | some t' =>
           if g.tags.contains t' then
             some (i, Expr.bvar (nIhI - 1 - (grpRec.filter (· < i)).length),
-              carrM (mems.getD t' default) (o + fo) (fieldIdx c i (fo - i)), u)
+              carrM (mems.getD t' default) (o + fo) (fieldIdxAt c i o (fo - i)), u)
           else if t' ≥ r then
             let mem' := mems.getD t' default
-            let idx := fieldIdx c i (fo - i)
+            let idx := fieldIdxAt c i o (fo - i)
             some (i, appImpl (unpackPackName mem'.j) (o + fo) idx [gVarAt i 0], carrM mem' (o + fo) idx, u)
           else none
         | none => none
       mkLams (gbs ++ ihbs)
-        (congrChain u (carrM memC (o + fo) (c.idx.map (·.liftLooseBVars nIhI 0))) F ls rs moved)
+        (congrChain u (carrM memC (o + fo) (ctorIdxAt c o nIhI)) F ls rs moved)
     for k in List.range g.tags.length do
       let t := g.tags.getD k 0
       let mem := mems.getD t default
@@ -935,9 +1083,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       | some t =>
         let k := ihPos c i
         let fo' := c.nF + k
-        some <| Expr.mkAppN (motPU (o + fo'))
-            [Expr.mkAppN (constP (tagCtorName T t) lps) (varsAt (o + fo') nP ++ fieldIdx c i (fo' - i)),
-             .bvar (fo' - 1 - i)]
+        some <| ihBinder (fun d => motPU (o + fo' + d)) c i t o fo'
       | none => none
     let self := Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (o + fo) nP ++ (List.range c.nF).map fieldVar)
     let body := match (mems.getD c.mem default).real? with
@@ -1030,16 +1176,14 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       | some t =>
         let k := ihPos c i
         let fo' := c.nF + k
-        some <| Expr.mkAppN (motR (o + fo'))
-            [Expr.mkAppN (constP (tagCtorName T t) lps) (varsAt (oP + fo') nP ++ fieldIdx c i (fo' - i)),
-             .bvar (fo' - 1 - i)]
+        some <| ihBinder (fun d => motR (o + fo' + d)) c i t oP fo'
       | none => none
     -- the public minor applied: fields (unpacked where mimic-typed) and the ihs
     let unpacked := fun (i : Nat) =>
       match c.kinds.getD i none with
       | some t' =>
         if t' ≥ r then
-          appImpl (unpackName (mems.getD t' default).j) (oP + fo) (fieldIdx c i (fo - i)) [fieldVar i]
+          appImpl (unpackName (mems.getD t' default).j) (oP + fo) (fieldIdxAt c i oP (fo - i)) [fieldVar i]
         else fieldVar i
       | none => fieldVar i
     let X := Expr.mkAppN (minVar (o + fo) c.J)
@@ -1051,14 +1195,14 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         -- transports along `packUnpack_j f'_k` at each packed position
         let packed := (List.range c.nF).filter fun i =>
           match c.kinds.getD i none with | some t' => t' ≥ r | none => false
-        let idxC := c.idx.map (·.liftLooseBVars nIh 0)
+        let idxC := ctorIdxAt c oP nIh
         let spineAt := fun (o' : Nat) (args : List (Expr md)) =>
           Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (oP + fo + o') nP ++ args)
         let motApp := fun (o' : Nat) (args : List (Expr md)) =>
           Expr.mkAppN (motVar (o + fo + o') m) (liftAll o' idxC ++ [spineAt o' args])
         let packUnpackOf := fun (i : Nat) =>
           let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-          let idx := fieldIdx c i (fo - i)
+          let idx := fieldIdxAt c i oP (fo - i)
           (appImpl (packName mem'.j) (oP + fo) idx [appImpl (unpackName mem'.j) (oP + fo) idx [fieldVar i]],
            appImpl (packUnpackName mem'.j) (oP + fo) idx [fieldVar i],
            auxAt fam mem'.tag (oP + fo) idx)
@@ -1130,10 +1274,13 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       let lhs := Expr.mkAppN (.const (modelName rr.cv.name) rlvls) (prefixVars ++ idxC ++ [ctorApp])
       let ihApp := fun (i : Nat) =>
         let t' := (c.kinds.getD i none).getD 0
-        -- the recursor at the field's motive
+        -- the recursor at the field's motive, under the field's telescope
+        -- (`λ a⃗, R p⃗ M⃗ S⃗ e⃗(a⃗) (f_i a⃗)`; no binder at a finitary field)
         let rn' := modelName (b.recs.getD t' default).cv.name
-        let idxI := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF)
-        Expr.mkAppN (.const rn' rlvls) (prefixVars ++ idxI ++ [.bvar (nF - 1 - i)])
+        let idxI := (fieldIdxAt c i (M + n) (nF - i)).map rn
+        mkLams ((liftTele (teleDoms c i) i (M + n) (nF - i)).map rn)
+          (Expr.mkAppN (.const rn' rlvls) (liftAll (c.teles.getD i 0) prefixVars ++ idxI ++
+            [Expr.mkAppN (.bvar (nF - 1 - i + c.teles.getD i 0)) (varsAt 0 (c.teles.getD i 0))]))
       let rhs := Expr.mkAppN (.bvar (nF + (n - 1 - c.J)))
         (fields ++ (List.range nF).filterMap fun i =>
           if (c.kinds.getD i none).isSome then some (ihApp i) else none)
@@ -1326,9 +1473,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
             | some t' =>
               let k := ihPos c' i'
               let fo' := c'.nF + k
-              some <| Expr.mkAppN (motP (o + fo'))
-                  [Expr.mkAppN (constP (tagCtorName T t') lps) (varsAt (o + fo') nP ++ fieldIdx c' i' (fo' - i')),
-                   .bvar (fo' - 1 - i')]
+              some <| ihBinder (fun d => motP (o + fo' + d)) c' i' t' o fo'
             | none => none
           let fo := c'.nF + nIh
           let fieldVar := fun (i' : Nat) => Expr.bvar (nIh + c'.nF - 1 - i')
@@ -1336,7 +1481,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               match c'.kinds.getD i none with
               | some t' =>
                 if t' ≥ r then
-                  appImpl (unpackName (mems.getD t' default).j) (o + fo) (fieldIdx c' i (fo - i)) [fieldVar i]
+                  appImpl (unpackName (mems.getD t' default).j) (o + fo) (fieldIdxAt c' i o (fo - i)) [fieldVar i]
                 else fieldVar i
               | none => fieldVar i
             else .const punitUnitName [ℓi]

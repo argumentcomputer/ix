@@ -17,6 +17,314 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `Blake3::digest_bytes`: one constructor per combination of selected arms. -/
+inductive «Blake3::digest_bytes».Path (x_digest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | run
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (v15 : SourceValue F) (v26 : SourceValue F) (m27 : Heap F) (cs37 : List (Call F)) (v40 : SourceValue F) (v51 : SourceValue F) (m52 : Heap F) (cs62 : List (Call F)) (v65 : SourceValue F) (v76 : SourceValue F) (m77 : Heap F) (cs87 : List (Call F)) (v90 : SourceValue F) (v101 : SourceValue F) (m102 : Heap F) (cs112 : List (Call F)) (v115 : SourceValue F) (v126 : SourceValue F) (m127 : Heap F) (cs137 : List (Call F)) (v140 : SourceValue F) (v151 : SourceValue F) (m152 : Heap F) (cs162 : List (Call F)) (v165 : SourceValue F) (v176 : SourceValue F) (m177 : Heap F) (cs187 : List (Call F)) (v190 : SourceValue F) (v203 : SourceValue F) (v204 : SourceValue F) (v205 : SourceValue F) (v206 : SourceValue F) (v207 : SourceValue F) (v208 : SourceValue F) (v209 : SourceValue F) (v210 : SourceValue F) (v211 : SourceValue F) (v212 : SourceValue F) (v213 : SourceValue F) (v214 : SourceValue F) (v215 : SourceValue F) (v216 : SourceValue F) (v217 : SourceValue F) (v218 : SourceValue F) (v219 : SourceValue F) (v220 : SourceValue F) (v221 : SourceValue F) (v222 : SourceValue F) (v223 : SourceValue F) (v224 : SourceValue F) (v225 : SourceValue F) (v226 : SourceValue F) (v227 : SourceValue F) (v228 : SourceValue F) (v229 : SourceValue F) (v230 : SourceValue F) (v231 : SourceValue F) (v232 : SourceValue F) (v233 : SourceValue F) (v234 : SourceValue F)
+      (pr24 : projectValue (x_digest : SourceValue F) 0 = .ok v15)
+      (ev14 : ObsFn W "UInt32::to_bytes" [v15] h v1 m2 cs12)
+      (pr49 : projectValue (x_digest : SourceValue F) 1 = .ok v40)
+      (ev39 : ObsFn W "UInt32::to_bytes" [v40] m2 v26 m27 cs37)
+      (pr74 : projectValue (x_digest : SourceValue F) 2 = .ok v65)
+      (ev64 : ObsFn W "UInt32::to_bytes" [v65] m27 v51 m52 cs62)
+      (pr99 : projectValue (x_digest : SourceValue F) 3 = .ok v90)
+      (ev89 : ObsFn W "UInt32::to_bytes" [v90] m52 v76 m77 cs87)
+      (pr124 : projectValue (x_digest : SourceValue F) 4 = .ok v115)
+      (ev114 : ObsFn W "UInt32::to_bytes" [v115] m77 v101 m102 cs112)
+      (pr149 : projectValue (x_digest : SourceValue F) 5 = .ok v140)
+      (ev139 : ObsFn W "UInt32::to_bytes" [v140] m102 v126 m127 cs137)
+      (pr174 : projectValue (x_digest : SourceValue F) 6 = .ok v165)
+      (ev164 : ObsFn W "UInt32::to_bytes" [v165] m127 v151 m152 cs162)
+      (pr199 : projectValue (x_digest : SourceValue F) 7 = .ok v190)
+      (ev189 : ObsFn W "UInt32::to_bytes" [v190] m152 v176 m177 cs187)
+      (he235 : r = (.tuple [v203, v204, v205, v206, v207, v208, v209, v210, v211, v212, v213, v214, v215, v216, v217, v218, v219, v220, v221, v222, v223, v224, v225, v226, v227, v228, v229, v230, v231, v232, v233, v234]))
+      (pr244 : projectValue (v1 : SourceValue F) 0 = .ok v203)
+      (pr254 : projectValue (v1 : SourceValue F) 1 = .ok v204)
+      (pr264 : projectValue (v1 : SourceValue F) 2 = .ok v205)
+      (pr274 : projectValue (v1 : SourceValue F) 3 = .ok v206)
+      (pr284 : projectValue (v26 : SourceValue F) 0 = .ok v207)
+      (pr294 : projectValue (v26 : SourceValue F) 1 = .ok v208)
+      (pr304 : projectValue (v26 : SourceValue F) 2 = .ok v209)
+      (pr314 : projectValue (v26 : SourceValue F) 3 = .ok v210)
+      (pr324 : projectValue (v51 : SourceValue F) 0 = .ok v211)
+      (pr334 : projectValue (v51 : SourceValue F) 1 = .ok v212)
+      (pr344 : projectValue (v51 : SourceValue F) 2 = .ok v213)
+      (pr354 : projectValue (v51 : SourceValue F) 3 = .ok v214)
+      (pr364 : projectValue (v76 : SourceValue F) 0 = .ok v215)
+      (pr374 : projectValue (v76 : SourceValue F) 1 = .ok v216)
+      (pr384 : projectValue (v76 : SourceValue F) 2 = .ok v217)
+      (pr394 : projectValue (v76 : SourceValue F) 3 = .ok v218)
+      (pr404 : projectValue (v101 : SourceValue F) 0 = .ok v219)
+      (pr414 : projectValue (v101 : SourceValue F) 1 = .ok v220)
+      (pr424 : projectValue (v101 : SourceValue F) 2 = .ok v221)
+      (pr434 : projectValue (v101 : SourceValue F) 3 = .ok v222)
+      (pr444 : projectValue (v126 : SourceValue F) 0 = .ok v223)
+      (pr454 : projectValue (v126 : SourceValue F) 1 = .ok v224)
+      (pr464 : projectValue (v126 : SourceValue F) 2 = .ok v225)
+      (pr474 : projectValue (v126 : SourceValue F) 3 = .ok v226)
+      (pr484 : projectValue (v151 : SourceValue F) 0 = .ok v227)
+      (pr494 : projectValue (v151 : SourceValue F) 1 = .ok v228)
+      (pr504 : projectValue (v151 : SourceValue F) 2 = .ok v229)
+      (pr514 : projectValue (v151 : SourceValue F) 3 = .ok v230)
+      (pr524 : projectValue (v176 : SourceValue F) 0 = .ok v231)
+      (pr534 : projectValue (v176 : SourceValue F) 1 = .ok v232)
+      (pr544 : projectValue (v176 : SourceValue F) 2 = .ok v233)
+      (pr554 : projectValue (v176 : SourceValue F) 3 = .ok v234)
+      (he556 : h' = m177)
+      (hc557 : calls = ((⟨"UInt32::to_bytes", [v15], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt32::to_bytes", [v40], m2⟩ : Call F) :: (cs37 ++ ((⟨"UInt32::to_bytes", [v65], m27⟩ : Call F) :: (cs62 ++ ((⟨"UInt32::to_bytes", [v90], m52⟩ : Call F) :: (cs87 ++ ((⟨"UInt32::to_bytes", [v115], m77⟩ : Call F) :: (cs112 ++ ((⟨"UInt32::to_bytes", [v140], m102⟩ : Call F) :: (cs137 ++ ((⟨"UInt32::to_bytes", [v165], m127⟩ : Call F) :: (cs162 ++ ((⟨"UInt32::to_bytes", [v190], m152⟩ : Call F) :: cs187))))))))))))))))
+
+/-- **Every observed derivation of `Blake3::digest_bytes` takes one of its paths.** -/
+theorem «Blake3::digest_bytes».obs {x_digest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "Blake3::digest_bytes" [x_digest] h r h' calls) :
+    «Blake3::digest_bytes».Path x_digest h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Blake3.digest_bytes.lookup
+    (by simp [IxVM.Blake3.digest_bytes, ControlLower.hasControl]) ev
+  simp only [IxVM.Blake3.digest_bytes] at d0
+  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
+  rw [instanceName_plain_some] at ev14
+  obtain ⟨v15, vs16, m17, c18, c19, rfl, d20, a21, rfl⟩ := a13.cons_inv
+  obtain ⟨p22, d23, pr24⟩ := d20.index_inv
+  obtain ⟨l25, rfl, rfl⟩ := d23.var_inv
+  simp at l25
+  subst l25
+  obtain ⟨rfl, rfl, rfl⟩ := a21.nil_inv
+  obtain rfl := matchPattern_bind_inv mt7
+  obtain ⟨v26, m27, bs28, c29, c30, d31, mt32, d33, rfl⟩ := d8.letValue_inv
+  obtain ⟨vs34, m35, c36, cs37, a38, ev39, rfl⟩ := d31.call_inv
+  rw [instanceName_plain_some] at ev39
+  obtain ⟨v40, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a38.cons_inv
+  obtain ⟨p47, d48, pr49⟩ := d45.index_inv
+  obtain ⟨l50, rfl, rfl⟩ := d48.var_inv
+  simp at l50
+  subst l50
+  obtain ⟨rfl, rfl, rfl⟩ := a46.nil_inv
+  obtain rfl := matchPattern_bind_inv mt32
+  obtain ⟨v51, m52, bs53, c54, c55, d56, mt57, d58, rfl⟩ := d33.letValue_inv
+  obtain ⟨vs59, m60, c61, cs62, a63, ev64, rfl⟩ := d56.call_inv
+  rw [instanceName_plain_some] at ev64
+  obtain ⟨v65, vs66, m67, c68, c69, rfl, d70, a71, rfl⟩ := a63.cons_inv
+  obtain ⟨p72, d73, pr74⟩ := d70.index_inv
+  obtain ⟨l75, rfl, rfl⟩ := d73.var_inv
+  simp at l75
+  subst l75
+  obtain ⟨rfl, rfl, rfl⟩ := a71.nil_inv
+  obtain rfl := matchPattern_bind_inv mt57
+  obtain ⟨v76, m77, bs78, c79, c80, d81, mt82, d83, rfl⟩ := d58.letValue_inv
+  obtain ⟨vs84, m85, c86, cs87, a88, ev89, rfl⟩ := d81.call_inv
+  rw [instanceName_plain_some] at ev89
+  obtain ⟨v90, vs91, m92, c93, c94, rfl, d95, a96, rfl⟩ := a88.cons_inv
+  obtain ⟨p97, d98, pr99⟩ := d95.index_inv
+  obtain ⟨l100, rfl, rfl⟩ := d98.var_inv
+  simp at l100
+  subst l100
+  obtain ⟨rfl, rfl, rfl⟩ := a96.nil_inv
+  obtain rfl := matchPattern_bind_inv mt82
+  obtain ⟨v101, m102, bs103, c104, c105, d106, mt107, d108, rfl⟩ := d83.letValue_inv
+  obtain ⟨vs109, m110, c111, cs112, a113, ev114, rfl⟩ := d106.call_inv
+  rw [instanceName_plain_some] at ev114
+  obtain ⟨v115, vs116, m117, c118, c119, rfl, d120, a121, rfl⟩ := a113.cons_inv
+  obtain ⟨p122, d123, pr124⟩ := d120.index_inv
+  obtain ⟨l125, rfl, rfl⟩ := d123.var_inv
+  simp at l125
+  subst l125
+  obtain ⟨rfl, rfl, rfl⟩ := a121.nil_inv
+  obtain rfl := matchPattern_bind_inv mt107
+  obtain ⟨v126, m127, bs128, c129, c130, d131, mt132, d133, rfl⟩ := d108.letValue_inv
+  obtain ⟨vs134, m135, c136, cs137, a138, ev139, rfl⟩ := d131.call_inv
+  rw [instanceName_plain_some] at ev139
+  obtain ⟨v140, vs141, m142, c143, c144, rfl, d145, a146, rfl⟩ := a138.cons_inv
+  obtain ⟨p147, d148, pr149⟩ := d145.index_inv
+  obtain ⟨l150, rfl, rfl⟩ := d148.var_inv
+  simp at l150
+  subst l150
+  obtain ⟨rfl, rfl, rfl⟩ := a146.nil_inv
+  obtain rfl := matchPattern_bind_inv mt132
+  obtain ⟨v151, m152, bs153, c154, c155, d156, mt157, d158, rfl⟩ := d133.letValue_inv
+  obtain ⟨vs159, m160, c161, cs162, a163, ev164, rfl⟩ := d156.call_inv
+  rw [instanceName_plain_some] at ev164
+  obtain ⟨v165, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a163.cons_inv
+  obtain ⟨p172, d173, pr174⟩ := d170.index_inv
+  obtain ⟨l175, rfl, rfl⟩ := d173.var_inv
+  simp at l175
+  subst l175
+  obtain ⟨rfl, rfl, rfl⟩ := a171.nil_inv
+  obtain rfl := matchPattern_bind_inv mt157
+  obtain ⟨v176, m177, bs178, c179, c180, d181, mt182, d183, rfl⟩ := d158.letValue_inv
+  obtain ⟨vs184, m185, c186, cs187, a188, ev189, rfl⟩ := d181.call_inv
+  rw [instanceName_plain_some] at ev189
+  obtain ⟨v190, vs191, m192, c193, c194, rfl, d195, a196, rfl⟩ := a188.cons_inv
+  obtain ⟨p197, d198, pr199⟩ := d195.index_inv
+  obtain ⟨l200, rfl, rfl⟩ := d198.var_inv
+  simp at l200
+  subst l200
+  obtain ⟨rfl, rfl, rfl⟩ := a196.nil_inv
+  obtain rfl := matchPattern_bind_inv mt182
+  obtain ⟨vs201, a202, rfl⟩ := d183.array_inv
+  obtain ⟨v203, vs236, m237, c238, c239, rfl, d240, a241, rfl⟩ := a202.cons_inv
+  obtain ⟨p242, d243, pr244⟩ := d240.index_inv
+  obtain ⟨l245, rfl, rfl⟩ := d243.var_inv
+  simp at l245
+  subst l245
+  obtain ⟨v204, vs246, m247, c248, c249, rfl, d250, a251, rfl⟩ := a241.cons_inv
+  obtain ⟨p252, d253, pr254⟩ := d250.index_inv
+  obtain ⟨l255, rfl, rfl⟩ := d253.var_inv
+  simp at l255
+  subst l255
+  obtain ⟨v205, vs256, m257, c258, c259, rfl, d260, a261, rfl⟩ := a251.cons_inv
+  obtain ⟨p262, d263, pr264⟩ := d260.index_inv
+  obtain ⟨l265, rfl, rfl⟩ := d263.var_inv
+  simp at l265
+  subst l265
+  obtain ⟨v206, vs266, m267, c268, c269, rfl, d270, a271, rfl⟩ := a261.cons_inv
+  obtain ⟨p272, d273, pr274⟩ := d270.index_inv
+  obtain ⟨l275, rfl, rfl⟩ := d273.var_inv
+  simp at l275
+  subst l275
+  obtain ⟨v207, vs276, m277, c278, c279, rfl, d280, a281, rfl⟩ := a271.cons_inv
+  obtain ⟨p282, d283, pr284⟩ := d280.index_inv
+  obtain ⟨l285, rfl, rfl⟩ := d283.var_inv
+  simp at l285
+  subst l285
+  obtain ⟨v208, vs286, m287, c288, c289, rfl, d290, a291, rfl⟩ := a281.cons_inv
+  obtain ⟨p292, d293, pr294⟩ := d290.index_inv
+  obtain ⟨l295, rfl, rfl⟩ := d293.var_inv
+  simp at l295
+  subst l295
+  obtain ⟨v209, vs296, m297, c298, c299, rfl, d300, a301, rfl⟩ := a291.cons_inv
+  obtain ⟨p302, d303, pr304⟩ := d300.index_inv
+  obtain ⟨l305, rfl, rfl⟩ := d303.var_inv
+  simp at l305
+  subst l305
+  obtain ⟨v210, vs306, m307, c308, c309, rfl, d310, a311, rfl⟩ := a301.cons_inv
+  obtain ⟨p312, d313, pr314⟩ := d310.index_inv
+  obtain ⟨l315, rfl, rfl⟩ := d313.var_inv
+  simp at l315
+  subst l315
+  obtain ⟨v211, vs316, m317, c318, c319, rfl, d320, a321, rfl⟩ := a311.cons_inv
+  obtain ⟨p322, d323, pr324⟩ := d320.index_inv
+  obtain ⟨l325, rfl, rfl⟩ := d323.var_inv
+  simp at l325
+  subst l325
+  obtain ⟨v212, vs326, m327, c328, c329, rfl, d330, a331, rfl⟩ := a321.cons_inv
+  obtain ⟨p332, d333, pr334⟩ := d330.index_inv
+  obtain ⟨l335, rfl, rfl⟩ := d333.var_inv
+  simp at l335
+  subst l335
+  obtain ⟨v213, vs336, m337, c338, c339, rfl, d340, a341, rfl⟩ := a331.cons_inv
+  obtain ⟨p342, d343, pr344⟩ := d340.index_inv
+  obtain ⟨l345, rfl, rfl⟩ := d343.var_inv
+  simp at l345
+  subst l345
+  obtain ⟨v214, vs346, m347, c348, c349, rfl, d350, a351, rfl⟩ := a341.cons_inv
+  obtain ⟨p352, d353, pr354⟩ := d350.index_inv
+  obtain ⟨l355, rfl, rfl⟩ := d353.var_inv
+  simp at l355
+  subst l355
+  obtain ⟨v215, vs356, m357, c358, c359, rfl, d360, a361, rfl⟩ := a351.cons_inv
+  obtain ⟨p362, d363, pr364⟩ := d360.index_inv
+  obtain ⟨l365, rfl, rfl⟩ := d363.var_inv
+  simp at l365
+  subst l365
+  obtain ⟨v216, vs366, m367, c368, c369, rfl, d370, a371, rfl⟩ := a361.cons_inv
+  obtain ⟨p372, d373, pr374⟩ := d370.index_inv
+  obtain ⟨l375, rfl, rfl⟩ := d373.var_inv
+  simp at l375
+  subst l375
+  obtain ⟨v217, vs376, m377, c378, c379, rfl, d380, a381, rfl⟩ := a371.cons_inv
+  obtain ⟨p382, d383, pr384⟩ := d380.index_inv
+  obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
+  simp at l385
+  subst l385
+  obtain ⟨v218, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a381.cons_inv
+  obtain ⟨p392, d393, pr394⟩ := d390.index_inv
+  obtain ⟨l395, rfl, rfl⟩ := d393.var_inv
+  simp at l395
+  subst l395
+  obtain ⟨v219, vs396, m397, c398, c399, rfl, d400, a401, rfl⟩ := a391.cons_inv
+  obtain ⟨p402, d403, pr404⟩ := d400.index_inv
+  obtain ⟨l405, rfl, rfl⟩ := d403.var_inv
+  simp at l405
+  subst l405
+  obtain ⟨v220, vs406, m407, c408, c409, rfl, d410, a411, rfl⟩ := a401.cons_inv
+  obtain ⟨p412, d413, pr414⟩ := d410.index_inv
+  obtain ⟨l415, rfl, rfl⟩ := d413.var_inv
+  simp at l415
+  subst l415
+  obtain ⟨v221, vs416, m417, c418, c419, rfl, d420, a421, rfl⟩ := a411.cons_inv
+  obtain ⟨p422, d423, pr424⟩ := d420.index_inv
+  obtain ⟨l425, rfl, rfl⟩ := d423.var_inv
+  simp at l425
+  subst l425
+  obtain ⟨v222, vs426, m427, c428, c429, rfl, d430, a431, rfl⟩ := a421.cons_inv
+  obtain ⟨p432, d433, pr434⟩ := d430.index_inv
+  obtain ⟨l435, rfl, rfl⟩ := d433.var_inv
+  simp at l435
+  subst l435
+  obtain ⟨v223, vs436, m437, c438, c439, rfl, d440, a441, rfl⟩ := a431.cons_inv
+  obtain ⟨p442, d443, pr444⟩ := d440.index_inv
+  obtain ⟨l445, rfl, rfl⟩ := d443.var_inv
+  simp at l445
+  subst l445
+  obtain ⟨v224, vs446, m447, c448, c449, rfl, d450, a451, rfl⟩ := a441.cons_inv
+  obtain ⟨p452, d453, pr454⟩ := d450.index_inv
+  obtain ⟨l455, rfl, rfl⟩ := d453.var_inv
+  simp at l455
+  subst l455
+  obtain ⟨v225, vs456, m457, c458, c459, rfl, d460, a461, rfl⟩ := a451.cons_inv
+  obtain ⟨p462, d463, pr464⟩ := d460.index_inv
+  obtain ⟨l465, rfl, rfl⟩ := d463.var_inv
+  simp at l465
+  subst l465
+  obtain ⟨v226, vs466, m467, c468, c469, rfl, d470, a471, rfl⟩ := a461.cons_inv
+  obtain ⟨p472, d473, pr474⟩ := d470.index_inv
+  obtain ⟨l475, rfl, rfl⟩ := d473.var_inv
+  simp at l475
+  subst l475
+  obtain ⟨v227, vs476, m477, c478, c479, rfl, d480, a481, rfl⟩ := a471.cons_inv
+  obtain ⟨p482, d483, pr484⟩ := d480.index_inv
+  obtain ⟨l485, rfl, rfl⟩ := d483.var_inv
+  simp at l485
+  subst l485
+  obtain ⟨v228, vs486, m487, c488, c489, rfl, d490, a491, rfl⟩ := a481.cons_inv
+  obtain ⟨p492, d493, pr494⟩ := d490.index_inv
+  obtain ⟨l495, rfl, rfl⟩ := d493.var_inv
+  simp at l495
+  subst l495
+  obtain ⟨v229, vs496, m497, c498, c499, rfl, d500, a501, rfl⟩ := a491.cons_inv
+  obtain ⟨p502, d503, pr504⟩ := d500.index_inv
+  obtain ⟨l505, rfl, rfl⟩ := d503.var_inv
+  simp at l505
+  subst l505
+  obtain ⟨v230, vs506, m507, c508, c509, rfl, d510, a511, rfl⟩ := a501.cons_inv
+  obtain ⟨p512, d513, pr514⟩ := d510.index_inv
+  obtain ⟨l515, rfl, rfl⟩ := d513.var_inv
+  simp at l515
+  subst l515
+  obtain ⟨v231, vs516, m517, c518, c519, rfl, d520, a521, rfl⟩ := a511.cons_inv
+  obtain ⟨p522, d523, pr524⟩ := d520.index_inv
+  obtain ⟨l525, rfl, rfl⟩ := d523.var_inv
+  simp at l525
+  subst l525
+  obtain ⟨v232, vs526, m527, c528, c529, rfl, d530, a531, rfl⟩ := a521.cons_inv
+  obtain ⟨p532, d533, pr534⟩ := d530.index_inv
+  obtain ⟨l535, rfl, rfl⟩ := d533.var_inv
+  simp at l535
+  subst l535
+  obtain ⟨v233, vs536, m537, c538, c539, rfl, d540, a541, rfl⟩ := a531.cons_inv
+  obtain ⟨p542, d543, pr544⟩ := d540.index_inv
+  obtain ⟨l545, rfl, rfl⟩ := d543.var_inv
+  simp at l545
+  subst l545
+  obtain ⟨v234, vs546, m547, c548, c549, rfl, d550, a551, rfl⟩ := a541.cons_inv
+  obtain ⟨p552, d553, pr554⟩ := d550.index_inv
+  obtain ⟨l555, rfl, rfl⟩ := d553.var_inv
+  simp at l555
+  subst l555
+  obtain ⟨rfl, rfl, rfl⟩ := a551.nil_inv
+  exact «Blake3::digest_bytes».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr24 ev14 pr49 ev39 pr74 ev64 pr99 ev89 pr124 ev114 pr149 ev139 pr174 ev164 pr199 ev189 rfl pr244 pr254 pr264 pr274 pr284 pr294 pr304 pr314 pr324 pr334 pr344 pr354 pr364 pr374 pr384 pr394 pr404 pr414 pr424 pr434 pr444 pr454 pr464 pr474 pr484 pr494 pr504 pr514 pr524 pr534 pr544 pr554 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+
 /-- The evaluation paths of `Blake3::address_to_fields`: one constructor per combination of selected arms. -/
 inductive «Blake3::address_to_fields».Path (x_bytes : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
