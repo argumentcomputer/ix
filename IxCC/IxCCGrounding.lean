@@ -10,6 +10,7 @@ import IxCCGrounding.Hyps
 import IxCCGrounding.Fundamental
 import IxCCGrounding.Ok
 import IxCCGrounding.Eqn
+import IxCCGrounding.Subst
 import IxCCGrounding.Runs
 import IxCCGrounding.Check
 import IxCCGrounding.Ground

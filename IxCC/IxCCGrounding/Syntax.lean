@@ -133,10 +133,28 @@ def bvarsLt : Nat → KExpr → Bool
   | n, .proj _ _ e => bvarsLt n e
   | _, _ => true
 
+/-- Does the bound variable `i` occur loose in `e` (counted from `e`'s own scope)? -/
+def looseIn : Nat → KExpr → Bool
+  | i, .bvar k => k == i
+  | i, .app f a => looseIn i f || looseIn i a
+  | i, .lam d b _ => looseIn i d || looseIn (i + 1) b
+  | i, .forallE d b _ => looseIn i d || looseIn (i + 1) b
+  | i, .letE t v b _ => looseIn i t || looseIn i v || looseIn (i + 1) b
+  | i, .proj _ _ e => looseIn i e
+  | _, _ => false
+
+/-- No bound variable in `[c, c + j)` occurs loose in `e`. -/
+def avoids (c j : Nat) (e : KExpr) : Bool := (List.range j).all fun t => !looseIn (c + t) e
+
 /-- The number of leading `∀`s of a kernel term, syntactically. -/
 def kPis : KExpr → Nat
   | .forallE _ b _ => kPis b + 1
   | _ => 0
+
+/-- What remains of a kernel term after `n` leading `∀`s. -/
+def piBody : Nat → KExpr → KExpr
+  | n + 1, .forallE _ b _ => piBody n b
+  | _, e => e
 
 /-- Every constant a Src term names is in `S`. -/
 def ConstsIn (S : CId → Prop) (t : Term) : Prop :=
