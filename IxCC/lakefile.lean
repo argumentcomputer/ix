@@ -50,6 +50,16 @@ D18). -/
 lean_lib IxCCTests where
   roots := #[`IxCCTests]
 
+/- The grounding of SrcEval in the certified kernel's model
+(docs/certification-design.md, "The grounding library"): soundness of SrcEval
+in every model of the kernel's reading with the laws. It is the one library
+that imports the kernel's model (`IxCK.Kernel.Denotes`); nothing in the
+production library or the shared program build imports it
+(`check-build-graph`). Built, with its axiom fence, and run on committed
+closures by the required check `ixcc-grounding`. -/
+lean_lib IxCCGrounding where
+  roots := #[`IxCCGrounding]
+
 /- Src: rules, the K1 table and runs, the native differential, pins,
 diagnostics and the bench-k1 entries. -/
 lean_exe «tests-src» where
