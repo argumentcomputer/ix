@@ -53,8 +53,8 @@ theorem evalConsts_profile (ls : Levels) :
 /-- **The closure check is sound.** -/
 theorem okClosed_of_check {p : Program} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
     (h : okClosedB p ann Sl = true) : OkClosed p ann (· ∈ Sl) := by
-  intro c ls hc hlen hOk t ht d us hd
-  obtain ⟨r, hr, hirr⟩ := hOk
+  intro c ls hc hOk t ht d us hd
+  obtain ⟨hlen, r, hr, hirr⟩ := hOk
   have hall := List.all_eq_true.mp (List.all_eq_true.mp (List.all_eq_true.mp h c hc) t ht)
     (IxCC.Src.profileOf ls) (mem_profiles _ _ (by rw [IxCC.Src.profileOf, List.length_map, hlen]))
   rw [hr] at hall
@@ -62,11 +62,13 @@ theorem okClosed_of_check {p : Program} {ann : IxCC.Src.Relevance.Ann} {Sl : Lis
   simp only [hirr, Bool.false_or] at hall
   rw [← evalConsts_profile] at hall
   have hd' := List.all_eq_true.mp hall (d, us) hd
+  simp only [Bool.and_eq_true, beq_iff_eq] at hd'
+  obtain ⟨hus, hd'⟩ := hd'
   cases hcd : constClass ann d with
   | none => rw [hcd] at hd'; exact absurd hd' (by simp)
   | some r' =>
     rw [hcd] at hd'
-    refine ⟨r', hcd, ?_⟩
+    refine ⟨by rw [List.length_map, hus], r', hcd, ?_⟩
     simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at hd'
     simp only [IxCC.Src.Rel.irrAt]
     rw [← IxCC.Src.PropWhen.inst_holds, IxCC.Src.PropWhen.holds_profile]

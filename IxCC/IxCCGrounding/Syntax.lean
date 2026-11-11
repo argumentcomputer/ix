@@ -122,6 +122,17 @@ inductive TermCorr (κ : CId → KKey) (lps : List Nat) : Term → KExpr → Pro
       TermCorr κ lps e e' → TermCorr κ lps (.proj s i e) (.proj (κ s) i e')
   | natLit {n : Nat} : TermCorr κ lps (.natLit n) (.lit (.natVal n))
 
+/-- Every bound variable of a kernel term is below `n` (under its binders): the term is closed
+in a context of `n` binders. -/
+def bvarsLt : Nat → KExpr → Bool
+  | n, .bvar i => decide (i < n)
+  | n, .app f a => bvarsLt n f && bvarsLt n a
+  | n, .lam d b _ => bvarsLt n d && bvarsLt (n + 1) b
+  | n, .forallE d b _ => bvarsLt n d && bvarsLt (n + 1) b
+  | n, .letE t v b _ => bvarsLt n t && bvarsLt n v && bvarsLt (n + 1) b
+  | n, .proj _ _ e => bvarsLt n e
+  | _, _ => true
+
 /-- The number of leading `∀`s of a kernel term, syntactically. -/
 def kPis : KExpr → Nat
   | .forallE _ b _ => kPis b + 1
@@ -147,9 +158,13 @@ KF-1) gives; `tests-grounding` runs it on the committed closures. -/
 def constClass (ann : IxCC.Src.Relevance.Ann) (c : CId) : Option IxCC.Src.Rel :=
   (ann.constRel? c).map (·.result)
 
-/-- **`Ok`**: the annotation classifies `c` as neither a proof nor a type at `ls`. -/
-def Ok (ann : IxCC.Src.Relevance.Ann) (c : CId) (ls : Levels) : Prop :=
-  ∃ r, constClass ann c = some r ∧ r.irrAt ls = false
+/-- The number of level parameters of `c` in the program. -/
+def lvlsOf (p : Program) (c : CId) : Nat := ((p.decl? c).map IxCC.Src.Decl.lvls).getD 0
+
+/-- **`Ok`**: `ls` instantiates `c`'s level parameters, and the annotation classifies `c` as
+neither a proof nor a type there. -/
+def Ok (p : Program) (ann : IxCC.Src.Relevance.Ann) (c : CId) (ls : Levels) : Prop :=
+  ls.length = lvlsOf p c ∧ ∃ r, constClass ann c = some r ∧ r.irrAt ls = false
 
 /-- The terms SrcEval unfolds `c` to: its value (a safe definition without a table entry), or
 its `eqn` body. -/
@@ -179,13 +194,10 @@ def evalConstsP (prof : IxCC.Src.Profile) : Term → List (CId × List IxCC.Ixon
   | .proj _ _ e => evalConstsP prof e
   | _ => []
 
-/-- The number of level parameters of `c` in the program. -/
-def lvlsOf (p : Program) (c : CId) : Nat := ((p.decl? c).map IxCC.Src.Decl.lvls).getD 0
-
 /-- **`Ok` is closed** on `S`. -/
 def OkClosed (p : Program) (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
-  ∀ c ls, S c → ls.length = lvlsOf p c → Ok ann c ls → ∀ t ∈ runTerms p c,
-    ∀ d us, (d, us) ∈ evalConsts ls t → Ok ann d (us.map (IxCC.Src.evalUniv ls))
+  ∀ c ls, S c → Ok p ann c ls → ∀ t ∈ runTerms p c,
+    ∀ d us, (d, us) ∈ evalConsts ls t → Ok p ann d (us.map (IxCC.Src.evalUniv ls))
 
 /-- Every profile of `n` parameters. -/
 def profiles : Nat → List IxCC.Src.Profile
@@ -202,6 +214,7 @@ def okClosedB (p : Program) (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Boo
         | none => true
         | some r =>
           r.irrP prof || (evalConstsP prof t).all fun (d, us) =>
+            us.length == lvlsOf p d &&
             match constClass ann d with
             | some r' => !((r'.irrWhen.inst us).holdsP prof)
             | none => false
@@ -450,10 +463,12 @@ structure GroundFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CI
   cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
     ∃ sh, CaseStored env (κ c) (κ r) sh ∧ CaseProg p κ S r sh
   eqns : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) →
-    ∃ d, EqnShape env κ c thm d ∧ TermCorr κ (lpsOf c) body d.body
+    (∃ d, EqnShape env κ c thm d) ∧ ∀ d, EqnShape env κ c thm d → TermCorr κ (lpsOf c) body d.body
   values : ∀ c lvls ty v cv val hint, S c → p.table.resolveOf c = none →
     p.decl? c = some (.defn .defn .safe lvls ty v) →
     env.find? (κ c) = some (.defnInfo cv val hint) → TermCorr κ (lpsOf c) v val
+  /-- every run term is closed -/
+  closed : ∀ c t e, S c → RunPair p env κ c t e → bvarsLt 0 e = true
   okClosed : OkClosed p ann S
 
 
