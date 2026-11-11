@@ -1752,6 +1752,16 @@ def check_recursor_canonical_full := aiur_fn⟦
               let univ_offset = is_large_eliminator(rc, result_level,
                 num_ctors, single_ctor_pair,
                 ind_is_solo(parent_block_addr, parent_addr));
+              -- the level link (K1-5(e)): a native recursor carries its block's
+              -- universe parameters, plus one fresh elimination parameter exactly
+              -- when it is a large eliminator. The reader decides `large` from the
+              -- declared level count (`r.lvls == block.lvls + 1`), so an unchecked
+              -- count lets a recursor install with a level list too short for its
+              -- own type's free parameters (no model). A native block is not
+              -- auxiliary (`check_recursor_member` asserts it), so its parent is
+              -- its block and `pnlvls` is the block's own count.
+              assert_eq!(nlvls, pnlvls + univ_offset,
+                "recursor universe-parameter count is not its block's plus the elimination parameter");
               let elim_level = match univ_offset {
                 1 => {  (&(KernelTypes::KLevelNode::Param(0))) } ,
                 _ => {  (&(KernelTypes::KLevelNode::Zero)) } ,
@@ -2662,7 +2672,11 @@ def check_rec_rules_wellscoped := aiur_fn⟦
         Lists::Node::Cons(r, rest) => {
           match r {
             KernelTypes::KRecRule::Mk(_, nf, rhs) => {
-              validate_expr_well_scoped(rhs, outer_depth + nf, nlvls);
+              -- the stored rule rhs is a closed λ-telescope: scoped at depth 0, its
+              -- own binders counted as `validate_expr_well_scoped` descends them
+              -- (passing `outer_depth + nf` here double-counted, so a rhs with a
+              -- loose BVar in `[outer_depth + nf, 2*(outer_depth + nf))` was accepted)
+              validate_expr_well_scoped(rhs, 0, nlvls);
               check_rec_rules_wellscoped(rest, outer_depth, nlvls) } ,
           } } ,
       }

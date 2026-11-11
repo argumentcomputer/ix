@@ -1187,6 +1187,21 @@ def check_recs := aiur_fn⟦
             KernelTypes::KConstantInfo::Rec(nl, ty, rnp, ni, nmot, nmin, rules, kf, _, _, _) => {
               assert_eq!(kf, 0, "modeled recursor declares K");
               assert_eq!(rnp, np, "modeled recursor parameter count differs from its block's");
+              -- the level link (K1-5(e)) on the modeled route: a recursor's universe
+              -- count is its block's, or its block's plus one for the elimination
+              -- parameter. The reader decides `large` from this count
+              -- (`r.lvls == block.lvls + 1`); outside {block, block + 1} the installed
+              -- level list is too short for the recursor type's free parameters, and
+              -- the read environment has no model.
+              let (bnl, _) = ci_lvls_type((*(Ingress::get_ci(Lists::lookup(type_addrs, 0)))));
+              match nl - bnl {
+                0 => {  () } ,
+                1 => {  () } ,
+                _ => {
+                  assert_eq!(0, 1,
+                    "modeled recursor universe-parameter count is not its block's plus the elimination parameter");
+                  () } ,
+              };
               assert_eq!(nmot, n_recs, "modeled recursor family record is not one complete family");
               assert_eq!(UInt32::less_than_fields(1, nmot), 1,
                 "a modeled recursor family with one motive");
