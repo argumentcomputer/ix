@@ -109,7 +109,7 @@ theorem major_dom {cval : KKey → (LevelParam → Nat) → V} {kc kr : KKey} {s
   refine ⟨_, X, hX, htX, ?_⟩
   rw [← hps, take_left_ctx]
   have := den_bvarsFrom (cval := cval) (env := env) (φ := φ) ρ [mo] ps []
-  rwa [List.nil_append, hps] at this
+  simpa using this
 
 variable {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
   {Ok : CId → Levels → Prop}
@@ -245,9 +245,11 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
             rw [substFn_at φ cv.levelParams ls'' i q (lvlOf (ψ q)) hnd hi
               (by rw [hls'', List.getElem?_map, hi]; rfl), eval_lvlOf]
           have hK' : Denotes M.cval env φ ρ (.const (κ c') ls'') (M.cval (κ c') ψ) := by
-            have h1 := Denotes.const (cval := M.cval) (env := env) (φ := φ) (ρ := ρ) (us := ls'')
-              hfcv (by rw [hls'', List.length_map]; rfl)
-            rwa [hL.cval_params _ _ hfcv _ ψ fun q hq => hψ q hq] at h1
+            have h1 : Denotes M.cval env φ ρ (.const (κ c') ls'')
+                (M.cval (κ c') (Level.substFn φ cv.levelParams ls'')) :=
+              Denotes.const hfcv (by rw [hls'', List.length_map]; rfl)
+            rwa [hL.cval_params _ _ hfcv (Level.substFn φ cv.levelParams ls'') ψ
+              fun q hq => hψ q hq] at h1
           -- the constructor's fit, moved to the `case`'s environment and assignment
           obtain ⟨σ2, hfit2⟩ := fits_agree hfitc (ρ' := ρ) fun i hi =>
             absurd (lt_of_bvarsLt hcl hi) (Nat.not_lt_zero i)
@@ -270,13 +272,11 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
               rw [getAppArgs_mkAppN]
               simp only [Expr.getAppArgs, List.nil_append]
               rw [List.take_of_length_le (show (bvarsFrom 1 sh.nP).length ≤ sh.nP by
-                rw [bvarsFrom_length])]
+                simp [bvarsFrom_length])]
               exact hDL)
             hTmX
-          rw [hkey] at hFC heqK
           obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M hL hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
-            cidx cs cv _ Fs σ3 R3 hcs hfCk hK (by rw [← hkey] at hFC; rwa [hkey]) hFl
-            (by rw [hTm', heqK, hkey])
+            cidx cs cv _ Fs σ3 R3 hcs hfCk hK hFC hFl (by rw [hTm', heqK])
           exact ⟨Mn, Fs, hMn, relSlots_of_relVs hfs', heq, hch⟩
         · simp at hsel
       | _ => simp [hd'] at hsel
