@@ -327,40 +327,6 @@ def installDecl (ev : Ix.Kernel.Evidences .anon) (fe : Ix.Kernel.FEnv .anon) (po
   | .ok ((pos', fe', _), _) => (fe', pos', none)
   | .error (e, _) => (reindex before, pos + 1, some e)
 
-/-- A record's member types (an inductive's constructors included) as
-axioms, with their keys and level counts: what the data need of a record the
-kernel does not install (an inductive block whose recursors the witness
-lacks, which IxC's reader declines; a declaration the kernel refuses), so
-that the records that use it can still be typed. -/
-def memberAxioms (cx : Ctx .anon) (a : Address) (c : Ixon.Constant) :
-    Array (Ix.Kernel.Declaration .anon) := Id.run do
-  let n := memberCount c
-  let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
-    if i < n then some (cx.memberKey (.member a i)) else none
-  let mr := Ix.Kernel.Reader.MemberReader.mk' cx c id self
-  let mut members : Array (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon) × UInt64 × Ixon.Expr) := #[]
-  match c.info with
-  | .defn d => members := members.push (cx.memberKey (.member a 0), d.lvls, d.typ)
-  | .axio x => members := members.push (cx.memberKey (.member a 0), x.lvls, x.typ)
-  | .quot q => members := members.push (cx.memberKey (.member a 0), q.lvls, q.typ)
-  | .recr r => members := members.push (cx.memberKey (.member a 0), r.lvls, r.typ)
-  | .muts ms =>
-    for (m, i) in ms.zipIdx do
-      match m with
-      | .defn d => members := members.push (cx.memberKey (.member a i), d.lvls, d.typ)
-      | .recr r => members := members.push (cx.memberKey (.member a i), r.lvls, r.typ)
-      | .indc ind =>
-        members := members.push (cx.memberKey (.member a i), ind.lvls, ind.typ)
-        for (ctor, j) in ind.ctors.zipIdx do
-          members := members.push (cx.memberKey (.ctor a i j), ctor.lvls, ctor.typ)
-  | _ => pure ()
-  let mut out := #[]
-  for (key, lvls, typ) in members do
-    match key, mr.read typ with
-    | .ok k, .ok ty => out := out.push (.axiomDecl ⟨k, List.range lvls.toNat, ty⟩)
-    | _, _ => pure ()
-  return out
-
 /-- The largest level-parameter count a record's members declare. -/
 def levelCount (c : Ixon.Constant) : Nat :=
   let ofMember : Ixon.MutConst → Nat
@@ -381,97 +347,6 @@ with 2^32 of them (the TagN boundary cases; IxVM cannot prove such a claim eithe
 D15) would never finish. Their own data need no count: the walk reads the
 universe table. -/
 def maxLevels : Nat := 1 <<< 12
-
-/-- Install `addresses` (owners, in check order) as phase A of IxC's fold
-does, continuing past failures: a failed declaration leaves the environment
-as it was. Partial and unsafe records go through the typing tier. A record
-the kernel does not install gets its member types as axioms
-(`memberAxioms`). Returns the environment, the declarations installed and the
-records refused. -/
-def install (s : Setup) (addresses : Array Address) :
-    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
-  let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-  let mut st : Ix.Kernel.Reader.State .anon := {}
-  let mut pos := 0
-  let mut ok := 0
-  let mut failures : Array (Address × String) := #[]
-  for a in addresses do
-    let mut failure : Option String := none
-    let mut unread := false
-    if ((s.store[a]?).map levelCount).getD 0 > maxLevels then
-      failures := failures.push (a, s!"more than {maxLevels} level parameters: not installed")
-      continue
-    match s.tierRead a with
-    | some (.ok d) =>
-      let (fe', err) := Benchmarks.Kernel.CheckIxeStep.stepTier fe fe d
-      fe := fe'
-      match err with
-      | some e => failure := some (Benchmarks.Kernel.CheckIxeStep.tierOutcome d.safety e).2
-      | none => ok := ok + 1
-    | some (.error e) => failure := some (Benchmarks.Kernel.CheckIxeStep.readOutcome e).2
-    | none =>
-      match s.read st a with
-      | .error e => failure := some (Benchmarks.Kernel.CheckIxeStep.readOutcome e).2
-      | .ok rd =>
-        st := st.commit rd
-        -- a recursor record reads with its block: if the block was not
-        -- installed, its recursors are not either
-        if rd.decls.isEmpty then unread := true
-        for d in rd.decls do
-          let (fe', pos', err) := installDecl s.evidence fe pos d
-          fe := fe'
-          pos := pos'
-          match err with
-          | none => ok := ok + 1
-          | some e =>
-            if failure.isNone then
-              failure := some (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
-    if let some why := failure then failures := failures.push (a, why)
-    if failure.isSome || unread then
-      if let some c := s.store[a]? then
-        for d in memberAxioms s.cx a c do
-          let fresh := match d with
-            | .axiomDecl cv => (fe.find? cv.name).isNone
-            | _ => false
-          if fresh then
-            let (fe', pos', _) := installDecl s.evidence fe pos d
-            fe := fe'
-            pos := pos'
-  return (fe, ok, failures)
-
-/-- The kernel's environment for a view. -/
-def KernelEnv.ofView (v : View) : Except String KernelEnv := do
-  -- the witness's role table and its prelude; a table that does not decode
-  -- or whose prelude does not read (a malformed binding, which the circuit
-  -- refuses) falls back to the default one, so that every key is answered
-  let fallbackTable ← Ix.Kernel.Reader.defaultTable
-  let given := (v.table.bind Ix.Kernel.RoleTable.ofBytes).getD fallbackTable
-  let chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon ←
-    match Ix.Kernel.Reader.preludeFor (md := .anon) given with
-    | .ok pre => pure (given, pre)
-    | .error _ => do
-      let pre ← Ix.Kernel.Reader.preludeFor (md := .anon) fallbackTable
-      pure (fallbackTable, pre)
-  let (table, pre) := chosen
-  let store : Ixon.CheckOrder.RecordStore :=
-    (v.support ++ v.records).foldl (fun m (a, c) => m.insert a c) {}
-  let hints := Hints.ofStore store v.hints
-  let s := Benchmarks.Kernel.CheckIxeStep.setup store (v.blobs[·]?) table pre hints.lookup
-  -- the witness's records with expressions (a projection's block counts only
-  -- when the witness carries it: the circuit loads nothing else)
-  let carried : Std.HashSet Address := v.records.foldl (fun s (a, _) => s.insert a) {}
-  let mut owners : Array Address := #[]
-  let mut seen : Std.HashSet Address := {}
-  for (a, c) in v.records do
-    let o := Ixon.CheckOrder.owner a c
-    if seen.contains o || !carried.contains o then continue
-    seen := seen.insert o
-    if let some oc := store[o]? then
-      unless (roots oc).isEmpty do owners := owners.push o
-  let first := pre.records.map (·.1)
-  let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ owners)
-  let (fe, installed, failures) := install s addresses
-  return { setup := s, fe, owners, installed, refused := failures.size, failures }
 
 /-! ## The walk
 
@@ -650,6 +525,172 @@ def annotateRecord (k : KernelEnv) (core : Ix.Kernel.Cached.CoreFnsI .anon) (add
   match (act.run {}).run {} with
   | .ok ((rs, st), _) => (rs ++ st.blocks, st.fallbacks, st.inherited)
   | .error _ => (#[], 1, 0)
+
+/-! ## A record the kernel does not install
+
+IxC installs a record only if its fold accepts it, and refuses records of a
+partial closure in cascades (a recursor whose block is not in the input, then
+whatever uses that recursor, then the `Nat` operations whose evidence uses
+those...). The data must not depend on that: a record the kernel does not
+install is annotated by the walk (the kernel's datum functions over the
+constants installed before it), and its constants enter the environment
+directly, without the fold's checks: a definition with its annotated value
+(so that it unfolds), a theorem with its value, everything else by its annotated
+type. -/
+
+/-- A record's roots, annotated by the walk against `fe`. -/
+def annotatedRoots (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon) (addr : Address)
+    (c : Ixon.Constant) : Array KExpr :=
+  let n := memberCount c
+  let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
+    if i < n then some (cx.memberKey (.member addr i)) else none
+  let ecx : ECx .anon := ⟨cx, c, c.univs.map (Ix.Kernel.Reader.convUniv id), self⟩
+  let core := Ix.Kernel.Cached.coreKnotI .verified fe Ix.Kernel.checkFuel
+  let rc : RecCx := { fe, core, ecx, sharing := c.sharing, bounds := bounds c.sharing }
+  let act : WM (Array KExpr) := do
+    let mut out : Array KExpr := #[]
+    let tys := valueTypes c
+    for (e, i) in (roots c).zipIdx do
+      let exp := match tys[i]? with
+        | some (some j) => out[j]?
+        | _ => none
+      let (kx, _) ← (walk walkFuel rc [] 0 exp e).run #[]
+      out := out.push kx
+    return out
+  match (act.run {}).run {} with
+  | .ok ((rs, _), _) => rs
+  | .error _ => #[]
+
+/-- The constants of a record the kernel does not install, with their annotated
+types (and a definition's or theorem's annotated value). -/
+def lenientInfos (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon)
+    (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) (addr : Address)
+    (c : Ixon.Constant) : Array (Ix.Kernel.ConstantInfo .anon) := Id.run do
+  let rs := annotatedRoots cx fe addr c
+  let key (r : Ix.Kernel.ConstRef Address) : Option (Ix.Kernel.Key .anon) := (cx.memberKey r).toOption
+  let lps (n : UInt64) : List Nat := List.range n.toNat
+  let mut out : Array (Ix.Kernel.ConstantInfo .anon) := #[]
+  match c.info with
+  | .axio x =>
+    if let (some k, some ty) := (key (.member addr 0), rs[0]?) then
+      out := out.push (.axiomInfo ⟨k, lps x.lvls, ty⟩)
+  | .quot q =>
+    if let (some k, some ty) := (key (.member addr 0), rs[0]?) then
+      out := out.push (.axiomInfo ⟨k, lps q.lvls, ty⟩)
+  | _ =>
+    let members : Array Ixon.MutConst := match c.info with
+      | .defn d => #[.defn d]
+      | .recr r => #[.recr r]
+      | .muts ms => ms
+      | _ => #[]
+    let mut j := 0
+    for (m, i) in members.zipIdx do
+      match m with
+      | .defn d =>
+        if let (some k, some ty, some v) := (key (.member addr i), rs[j]?, rs[j + 1]?) then
+          let cv : Ix.Kernel.ConstantVal .anon := ⟨k, lps d.lvls, ty⟩
+          out := out.push (match d.kind with
+            | .defn => .defnInfo cv v ((hint (.member addr i)).getD (.regular 1))
+            | .thm => .thmInfo cv v
+            | .opaq => .axiomInfo cv)
+        j := j + 2
+      | .recr r =>
+        if let (some k, some ty) := (key (.member addr i), rs[j]?) then
+          out := out.push (.axiomInfo ⟨k, lps r.lvls, ty⟩)
+        j := j + 1 + r.rules.size
+      | .indc ind =>
+        if let (some k, some ty) := (key (.member addr i), rs[j]?) then
+          out := out.push (.axiomInfo ⟨k, lps ind.lvls, ty⟩)
+        for (ctor, ci) in ind.ctors.zipIdx do
+          if let (some k, some ty) := (key (.ctor addr i ci), rs[j + 1 + ci]?) then
+            out := out.push (.axiomInfo ⟨k, lps ctor.lvls, ty⟩)
+        j := j + 1 + ind.ctors.size
+  return out
+
+/-- Install `addresses` (owners, in check order) as phase A of IxC's fold
+does, continuing past failures: a failed declaration leaves the environment
+as it was. Partial and unsafe records go through the typing tier. A record
+the kernel does not install enters directly, annotated by the walk
+(`lenientInfos`). Returns the environment, the declarations installed and the
+records refused. -/
+def install (s : Setup) (addresses : Array Address) :
+    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
+  let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  let mut st : Ix.Kernel.Reader.State .anon := {}
+  let mut pos := 0
+  let mut ok := 0
+  let mut failures : Array (Address × String) := #[]
+  for a in addresses do
+    let mut failure : Option String := none
+    let mut unread := false
+    if ((s.store[a]?).map levelCount).getD 0 > maxLevels then
+      failures := failures.push (a, s!"more than {maxLevels} level parameters: not installed")
+      continue
+    match s.tierRead a with
+    | some (.ok d) =>
+      let (fe', err) := Benchmarks.Kernel.CheckIxeStep.stepTier fe fe d
+      fe := fe'
+      match err with
+      | some e => failure := some (Benchmarks.Kernel.CheckIxeStep.tierOutcome d.safety e).2
+      | none => ok := ok + 1
+    | some (.error e) => failure := some (Benchmarks.Kernel.CheckIxeStep.readOutcome e).2
+    | none =>
+      match s.read st a with
+      | .error e => failure := some (Benchmarks.Kernel.CheckIxeStep.readOutcome e).2
+      | .ok rd =>
+        st := st.commit rd
+        -- a recursor record reads with its block: if the block was not
+        -- installed, its recursors are not either
+        if rd.decls.isEmpty then unread := true
+        for d in rd.decls do
+          let (fe', pos', err) := installDecl s.evidence fe pos d
+          fe := fe'
+          pos := pos'
+          match err with
+          | none => ok := ok + 1
+          | some e =>
+            if failure.isNone then
+              failure := some (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
+    if let some why := failure then failures := failures.push (a, why)
+    if failure.isSome || unread then
+      if let some c := s.store[a]? then
+        for ci in lenientInfos s.cx fe s.cx.hint a c do
+          if (fe.find? ci.name).isNone then fe := fe.push ci
+  return (fe, ok, failures)
+
+/-- The kernel's environment for a view. -/
+def KernelEnv.ofView (v : View) : Except String KernelEnv := do
+  -- the witness's role table and its prelude; a table that does not decode
+  -- or whose prelude does not read (a malformed binding, which the circuit
+  -- refuses) falls back to the default one, so that every key is answered
+  let fallbackTable ← Ix.Kernel.Reader.defaultTable
+  let given := (v.table.bind Ix.Kernel.RoleTable.ofBytes).getD fallbackTable
+  let chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon ←
+    match Ix.Kernel.Reader.preludeFor (md := .anon) given with
+    | .ok pre => pure (given, pre)
+    | .error _ => do
+      let pre ← Ix.Kernel.Reader.preludeFor (md := .anon) fallbackTable
+      pure (fallbackTable, pre)
+  let (table, pre) := chosen
+  let store : Ixon.CheckOrder.RecordStore :=
+    (v.support ++ v.records).foldl (fun m (a, c) => m.insert a c) {}
+  let hints := Hints.ofStore store v.hints
+  let s := Benchmarks.Kernel.CheckIxeStep.setup store (v.blobs[·]?) table pre hints.lookup
+  -- the witness's records with expressions (a projection's block counts only
+  -- when the witness carries it: the circuit loads nothing else)
+  let carried : Std.HashSet Address := v.records.foldl (fun s (a, _) => s.insert a) {}
+  let mut owners : Array Address := #[]
+  let mut seen : Std.HashSet Address := {}
+  for (a, c) in v.records do
+    let o := Ixon.CheckOrder.owner a c
+    if seen.contains o || !carried.contains o then continue
+    seen := seen.insert o
+    if let some oc := store[o]? then
+      unless (roots oc).isEmpty do owners := owners.push o
+  let first := pre.records.map (·.1)
+  let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ owners)
+  let (fe, installed, failures) := install s addresses
+  return { setup := s, fe, owners, installed, refused := failures.size, failures }
 
 /-- Every owner record's blocks. -/
 def annotateKernel (k : KernelEnv) : Array (Address × Array Block) × Stats := Id.run do
