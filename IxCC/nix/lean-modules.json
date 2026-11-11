@@ -949,12 +949,12 @@
     "IxCCTests.IxonV3.ResourceBudget",
     "IxCCTests.IxonV3.Binding",
     "IxCC.Tools.Check"]},
-  "IxCCTests.IxonV3.ResourceBudget":
-  {"path": "IxCCTests/IxonV3/ResourceBudget.lean",
-   "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
   "IxCCTests.IxonV3.ResourceTransport":
   {"path": "IxCCTests/IxonV3/ResourceTransport.lean",
    "imports": ["IxCCTests.IxonV3.Fixtures"]},
+  "IxCCTests.IxonV3.ResourceBudget":
+  {"path": "IxCCTests/IxonV3/ResourceBudget.lean",
+   "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
   "IxCCTests.IxonV3.Primitives":
   {"path": "IxCCTests/IxonV3/Primitives.lean",
    "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
@@ -3077,7 +3077,11 @@
     "IxCC.Anf.Proof.Defun.Scope",
     "IxCC.Anf.Proof.Defun.Dispatch",
     "IxCC.Recheck.RootArity",
-    "IxCC.Anf.Proof.Defun.Keys"]},
+    "IxCC.Anf.Proof.Defun.Keys",
+    "IxCC.Anf.Proof.Defun.Assemble",
+    "IxCC.Anf.Proof.Defun.Rename",
+    "IxCC.Anf.Proof.Defun.Translate",
+    "IxCC.Anf.Proof.Defun.WellScoped"]},
   "IxCCTests.Fences.Compile":
   {"path": "IxCCTests/Fences/Compile.lean",
    "imports":
@@ -7519,15 +7523,28 @@
   "IxCC.Anf.Proof.Lang":
   {"path": "IxCC/Anf/Proof/Lang.lean",
    "imports": ["IxCC.Anf.Proof.Mono", "IxCC.Sem.TracedTransform"]},
+  "IxCC.Anf.Proof.Defun.WellScoped":
+  {"path": "IxCC/Anf/Proof/Defun/WellScoped.lean",
+   "imports": ["IxCC.Anf.Proof.Defun.Translate"]},
+  "IxCC.Anf.Proof.Defun.Translate":
+  {"path": "IxCC/Anf/Proof/Defun/Translate.lean",
+   "imports":
+   ["IxCC.Anf.Proof.Defun.Assemble",
+    "IxCC.Anf.Proof.Defun.Rel",
+    "IxCC.Anf.Proof.Defun.Rename"]},
   "IxCC.Anf.Proof.Defun.Scope":
   {"path": "IxCC/Anf/Proof/Defun/Scope.lean",
    "imports": ["IxCC.Anf.Proof.Defun.FirstOrder"]},
+  "IxCC.Anf.Proof.Defun.Rename":
+  {"path": "IxCC/Anf/Proof/Defun/Rename.lean",
+   "imports": ["IxCC.Anf.Proof.Defun.Scope", "IxCC.Anf.Proof.Unfold"]},
   "IxCC.Anf.Proof.Defun.Rel":
   {"path": "IxCC/Anf/Proof/Defun/Rel.lean",
    "imports": ["IxCC.Anf.Defun", "IxCC.Anf.Census", "IxCC.Anf.Proof.Lang"]},
   "IxCC.Anf.Proof.Defun.Keys":
   {"path": "IxCC/Anf/Proof/Defun/Keys.lean",
-   "imports": ["IxCC.Anf.Defun", "IxCC.Src.Proof.NatMap"]},
+   "imports":
+   ["IxCC.Anf.Defun", "IxCC.Src.Proof.NatMap", "IxCC.Anf.Proof.Defun.Scope"]},
   "IxCC.Anf.Proof.Defun.FirstOrder":
   {"path": "IxCC/Anf/Proof/Defun/FirstOrder.lean",
    "imports":
@@ -7535,6 +7552,9 @@
   "IxCC.Anf.Proof.Defun.Dispatch":
   {"path": "IxCC/Anf/Proof/Defun/Dispatch.lean",
    "imports": ["IxCC.Anf.Defun", "IxCC.Anf.Proof.Unfold"]},
+  "IxCC.Anf.Proof.Defun.Assemble":
+  {"path": "IxCC/Anf/Proof/Defun/Assemble.lean",
+   "imports": ["IxCC.Anf.Proof.Defun.Keys", "IxCC.Anf.Proof.Defun.Dispatch"]},
   "IxCC.Anf.Proof.Convert.Term":
   {"path": "IxCC/Anf/Proof/Convert/Term.lean",
    "imports": ["IxCC.Anf.Proof.Convert.Spine"]},
@@ -8110,6 +8130,10 @@
     "IxCC.Anf.Proof.Defun.Scope",
     "IxCC.Anf.Proof.Defun.Dispatch",
     "IxCC.Anf.Proof.Defun.Keys",
+    "IxCC.Anf.Proof.Defun.Assemble",
+    "IxCC.Anf.Proof.Defun.Rename",
+    "IxCC.Anf.Proof.Defun.Translate",
+    "IxCC.Anf.Proof.Defun.WellScoped",
     "IxCC.Own.Kind",
     "IxCC.Fir.Syntax",
     "IxCC.Fir.Semantics",

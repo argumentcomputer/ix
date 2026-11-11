@@ -82,7 +82,28 @@ always remove.
   P8 keeps the roots and every input global's parameters
   (`Anf.Defun.Proof.run_roots`, `run_arity`); its key check is sound: passing
   it, the keys of the globals whose closures the program builds are pairwise
-  distinct (`checkSources_ownerKeys`). The dispatchers' switch work
+  distinct (`checkSources_ownerKeys`), and it is linear: each key is filed in
+  a trie under a prefix-free code of the key and compared only with the keys
+  filed there (`Defun.firstEqualKeysT`), finding the same pair as the
+  bucketed specification (`firstEqualKeysT_eq`). Every closure source of a
+  successful run has its own key (`sources_keys`), so the dispatcher lemmas
+  hold of P8's own output with no further hypothesis (`run_dispatch_exact`,
+  `run_dispatch_under`, `run_dispatch_over`, in
+  [`Anf/Proof/Defun/Assemble.lean`](../IxCC/Anf/Proof/Defun/Assemble.lean)).
+  The walk is the translation relation `Tr`: a successful run fixes a valid
+  setting, with the input's globals at their ids with translated bodies, the
+  dispatchers at their ids and distinct source keys (`ran_valid`, `run_valid`,
+  in [`Anf/Proof/Defun/Translate.lean`](../IxCC/Anf/Proof/Defun/Translate.lean));
+  the output is well scoped when the input is and its globals lie below its
+  size (`wellScoped_run`, in
+  [`Anf/Proof/Defun/WellScoped.lean`](../IxCC/Anf/Proof/Defun/WellScoped.lean));
+  renaming free variables is exact on code without local functions, which is
+  what lets a lifted body over its captures evaluate as the walk's image over
+  the environment they came from (`eval_rename`, `capRen_env`, in
+  [`Anf/Proof/Defun/Rename.lean`](../IxCC/Anf/Proof/Defun/Rename.lean)). The
+  valid setting needs of the input only that its globals lie below its size:
+  the walk itself refuses the out-of-scope captures and parameterless local
+  functions the translation relation excludes. The dispatchers' switch work
   (`Defun.dispatchWork`: dispatchers times the square of the closure keys
   times the constructor table's length) is refused past `Anf.maxBackWork`
   before anything is built (`defun.budget`); a dispatcher cannot be split,
@@ -99,14 +120,17 @@ always remove.
   [`phase2-arity`](../fixtures/corpus/phase2-arity/corpus.json) (not
   registered) are the root-arity guard's regression cases (see [Proof
   obligation](#proof-obligation)). The fundamental lemma and the simulation
-  theorem are not written. No P9 code exists.
+  theorem are not written yet. No P9 code exists.
 - *Implemented: P8's own input checks.* The pipeline does not establish
   `Anf.WellScoped`, so the pass refuses (`defun.input`) what its correctness
   relies on and a well-scoped program never has: a global already keyed `lam`
   or `dispatch`, a closure key already in the constructor table, two globals
   whose closures the program builds with equal keys, a local function without
   parameters, a free variable of a local function out of scope, and the value
-  of a global beyond the program's size. Besides the two declines of [Exit
+  of a global beyond the program's size; and a pinned constructor (`Nat`'s or
+  `Bool`'s) keyed as a closure, which erasure never produces (it pins source
+  constructors) and which would let the closure keys the pass adds change that
+  constructor's arity. Besides the two declines of [Exit
   criteria](#exit-criteria) item 4, more captures than a cell holds and the tag space
   (`defun.captures`, `defun.tags`), it refuses nothing else but its budgets
   (`defun.budget`). The correctness proof must show that passing these checks

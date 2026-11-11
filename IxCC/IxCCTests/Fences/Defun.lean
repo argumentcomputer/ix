@@ -5,6 +5,10 @@ import IxCC.Anf.Proof.Defun.Scope
 import IxCC.Anf.Proof.Defun.Dispatch
 import IxCC.Recheck.RootArity
 import IxCC.Anf.Proof.Defun.Keys
+import IxCC.Anf.Proof.Defun.Assemble
+import IxCC.Anf.Proof.Defun.Rename
+import IxCC.Anf.Proof.Defun.Translate
+import IxCC.Anf.Proof.Defun.WellScoped
 
 /-! Required axiom fences for P8 (closed-world defunctionalisation, not yet in
 the pipeline): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
@@ -13,8 +17,11 @@ the pipeline): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
 first-order values and keeps observations (`Anf.Defun.Proof.Rel`), the
 dispatchers compute `applyN` (`Anf.Defun.Proof.Dispatch`), P8 keeps the roots
 and their arities, and the root-arity guard pins a compiled root to its
-declared count (`Recheck.RootArity`). The headline theorems come first, then
-every other public theorem of these modules. -/
+declared count (`Recheck.RootArity`); the closure sources' keys are distinct
+and the dispatcher lemmas hold of P8's own output, the walk is the
+translation, the output is well scoped when the input is, and renaming is
+exact on code without local functions (the last section). The headline
+theorems come first, then every other public theorem of these modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.run_firstOrder' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_firstOrder
@@ -341,3 +348,344 @@ every other public theorem of these modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.checkSources_ownerKeys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.checkSources_ownerKeys
+
+/-! The closure sources' distinct keys and the linear key check (`Anf.Defun.Proof.Keys`), the assembled
+program and the dispatcher lemmas on P8's output (`Assemble`), renaming (`Rename`), the walk as the
+translation (`Translate`) and the output's scoping (`WellScoped`): the headline theorems, then every
+other public theorem of these modules. -/
+
+/-- info: 'IxCC.Anf.Defun.Proof.sources_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.sources_keys
+
+/-- info: 'IxCC.Anf.Defun.Proof.firstEqualKeysT_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.firstEqualKeysT_eq
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_dispatch_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_dispatch_exact
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_dispatch_under' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_dispatch_under
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_dispatch_over' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_dispatch_over
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_valid
+
+/-- info: 'IxCC.Anf.Defun.Proof.ran_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ran_valid
+
+/-- info: 'IxCC.Anf.Defun.Proof.wellScoped_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.wellScoped_run
+
+/-- info: 'IxCC.Anf.Defun.Proof.wellScoped_ran' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.wellScoped_ran
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_rename' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_rename
+
+/-- info: 'IxCC.Anf.Defun.Proof.capRen_env' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.capRen_env
+
+/-- info: 'IxCC.Anf.Defun.Proof.keyTrie_find_empty' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.keyTrie_find_empty
+
+/-- info: 'IxCC.Anf.Defun.Proof.keyTrie_find_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.keyTrie_find_add
+
+/-- info: 'IxCC.Anf.Defun.Proof.sameFirst_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.sameFirst_add
+
+/-- info: 'IxCC.Anf.Defun.Proof.firstEqualKeysT_go' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.firstEqualKeysT_go
+
+/-- info: 'IxCC.Anf.Defun.Proof.nodup_map_of_inj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.nodup_map_of_inj
+
+/-- info: 'IxCC.Anf.Defun.Proof.eq_of_nodup_map' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eq_of_nodup_map
+
+/-- info: 'IxCC.Anf.Defun.Proof.filterMap_sublist' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.filterMap_sublist
+
+/-- info: 'IxCC.Anf.Defun.Proof.mem_ite_cons' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.mem_ite_cons
+
+/-- info: 'IxCC.Anf.Defun.Proof.natSet_contains_ofList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.natSet_contains_ofList
+
+/-- info: 'IxCC.Anf.Defun.Proof.natSet_contains_insert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.natSet_contains_insert
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalList_ids_nodup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalList_ids_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.lamKeys_add' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.lamKeys_add
+
+/-- info: 'IxCC.Anf.Defun.Proof.mem_lamKeys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.mem_lamKeys
+
+/-- info: 'IxCC.Anf.Defun.Proof.lamKeys_nodup' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.lamKeys_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.Grows.refl' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.Grows.refl
+
+/-- info: 'IxCC.Anf.Defun.Proof.Grows.trans' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.Grows.trans
+
+/-- info: 'IxCC.Anf.Defun.Proof.exp_grows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.exp_grows
+
+/-- info: 'IxCC.Anf.Defun.Proof.bind_grows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.bind_grows
+
+/-- info: 'IxCC.Anf.Defun.Proof.alts_grows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.alts_grows
+
+/-- info: 'IxCC.Anf.Defun.Proof.opt_grows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.opt_grows
+
+/-- info: 'IxCC.Anf.Defun.Proof.global_grows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.global_grows
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_parents' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_parents
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_keys
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_ran' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_ran
+
+/-- info: 'IxCC.Anf.Defun.Proof.checkInput_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.checkInput_ok
+
+/-- info: 'IxCC.Anf.Defun.Proof.ran_parents' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ran_parents
+
+/-- info: 'IxCC.Anf.Defun.Proof.mem_ownerKeys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.mem_ownerKeys
+
+/-- info: 'IxCC.Anf.Defun.Proof.ran_keysApart' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ran_keysApart
+
+/-- info: 'IxCC.Anf.Defun.Proof.ran_lifted_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ran_lifted_keys
+
+/-- info: 'IxCC.Anf.Defun.Proof.escape_sublist' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.escape_sublist
+
+/-- info: 'IxCC.Anf.Defun.Proof.numbered_map_key' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.numbered_map_key
+
+/-- info: 'IxCC.Anf.Defun.Proof.sources_keys_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.sources_keys_eq
+
+/-- info: 'IxCC.Anf.Defun.Proof.AccLe.refl' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.AccLe.refl
+
+/-- info: 'IxCC.Anf.Defun.Proof.AccLe.trans' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.AccLe.trans
+
+/-- info: 'IxCC.Anf.Defun.Proof.Grows.le' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.Grows.le
+
+/-- info: 'IxCC.Anf.Defun.Proof.global_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.global_le
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_out' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_out
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_le
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_mem
+
+/-- info: 'IxCC.Anf.Defun.Proof.map_fst_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.map_fst_eq
+
+/-- info: 'IxCC.Anf.Defun.Proof.numbered_nodup' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.numbered_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_get
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_old' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_old
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_disp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_disp
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_lifted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_lifted
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_absent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_absent
+
+/-- info: 'IxCC.Anf.Defun.Proof.sources_global' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.sources_global
+
+/-- info: 'IxCC.Anf.Defun.Proof.split_nodup' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.split_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_zero_base' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_zero_base
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_lt
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_ge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_ge
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_push' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_push
+
+/-- info: 'IxCC.Anf.Defun.Proof.atom_rename_eval' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.atom_rename_eval
+
+/-- info: 'IxCC.Anf.Defun.Proof.atoms_rename_eval' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.atoms_rename_eval
+
+/-- info: 'IxCC.Anf.Defun.Proof.JRen.get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.JRen.get
+
+/-- info: 'IxCC.Anf.Defun.Proof.later_congr' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.later_congr
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_bind' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_bind
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_exp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_exp
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_opt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_opt
+
+/-- info: 'IxCC.Anf.Defun.Proof.ren_alts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.ren_alts
+
+/-- info: 'IxCC.Anf.Defun.Proof.captures_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.captures_lt
+
+/-- info: 'IxCC.Anf.Defun.Proof.captures_nodup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.captures_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.capMap_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.capMap_get
+
+/-- info: 'IxCC.Anf.Defun.Proof.natSet_contains_insert_self' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.natSet_contains_insert_self
+
+/-- info: 'IxCC.Anf.Defun.Proof.wsList_vars' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.wsList_vars
+
+/-- info: 'IxCC.Anf.Defun.Proof.projOk_mono' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.projOk_mono
+
+/-- info: 'IxCC.Anf.Defun.Proof.trAlts_keys' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trAlts_keys
+
+/-- info: 'IxCC.Anf.Defun.Proof.tr_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.tr_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.trB_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trB_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.trAlts_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trAlts_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.trOpt_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trOpt_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.exp_tr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.exp_tr
+
+/-- info: 'IxCC.Anf.Defun.Proof.bind_tr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.bind_tr
+
+/-- info: 'IxCC.Anf.Defun.Proof.alts_tr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.alts_tr
+
+/-- info: 'IxCC.Anf.Defun.Proof.opt_tr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.opt_tr
+
+/-- info: 'IxCC.Anf.Defun.Proof.global_tr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.global_tr
+
+/-- info: 'IxCC.Anf.Defun.Proof.mem_numbered_of' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.mem_numbered_of
+
+/-- info: 'IxCC.Anf.Defun.Proof.final_ran' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.final_ran
+
+/-- info: 'IxCC.Anf.Defun.Proof.find?_of_nodup' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.find?_of_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.rows_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.rows_mem
+
+/-- info: 'IxCC.Anf.Defun.Proof.mem_rows' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.mem_rows
+
+/-- info: 'IxCC.Anf.Defun.Proof.rows_nodup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.rows_nodup
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_ctor?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_ctor?
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_ctorArity_src' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_ctorArity_src
+
+/-- info: 'IxCC.Anf.Defun.Proof.sigOk_ran' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.sigOk_ran
+
+/-- info: 'IxCC.Anf.Defun.Proof.wsList_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.wsList_append
+
+/-- info: 'IxCC.Anf.Defun.Proof.wsList_downFrom' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.wsList_downFrom
+
+/-- info: 'IxCC.Anf.Defun.Proof.downFrom_length' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.downFrom_length
+
+/-- info: 'IxCC.Anf.Defun.Proof.altsWS_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.altsWS_append
+
+/-- info: 'IxCC.Anf.Defun.Proof.altKeys_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.altKeys_append
+
+/-- info: 'IxCC.Anf.Defun.Proof.altKeys_dispAlts' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.altKeys_dispAlts
+
+/-- info: 'IxCC.Anf.Defun.Proof.altBody_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.altBody_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.keyAlts_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.keyAlts_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.dispAlts_ws' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dispAlts_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.dispatcher_ws' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dispatcher_ws
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_lws' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_lws
+
+/-- info: 'IxCC.Anf.Defun.Proof.globalsGo_key' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globalsGo_key
+
+/-- info: 'IxCC.Anf.Defun.Proof.numbered_map_snd' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.numbered_map_snd
+
+/-- info: 'IxCC.Anf.Defun.Proof.numbered_get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.numbered_get
+
+/-- info: 'IxCC.Anf.Defun.Proof.assemble_cases' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.assemble_cases
+
+/-- info: 'IxCC.Anf.Defun.Proof.nodup_map_of_fst' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.nodup_map_of_fst

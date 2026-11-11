@@ -379,6 +379,9 @@ def declines (a : Assert) : IO (Array String) := do
   expectDecline a { prog [gd 0 1 (.ret (x 0))] [0] with
       ctors := ctors ++ [{ key := .clo (.const 0 []) 0, tag := 0, arity := 0 }] } "defun.input"
     "a closure key in the table"
+  expectDecline a { prog [gd 0 1 (.ret (x 0))] [0] with
+      known := { known with natZero := some (.clo (.const 0 []) 0) } } "defun.input"
+    "a pinned constructor keyed as a closure"
   expectDecline a (prog [gd 0 1 (b (.glob 1) (b (.glob 2) (.ret (x 0)))), gd 5 1 (.ret (x 0)),
       gd 5 1 (.ret (x 0))] [0]) "defun.input" "two escaping globals with one key"
   return #["the declines at and past their limits, and the input checks"]

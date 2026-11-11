@@ -22,9 +22,9 @@ closure keys and the dispatchers (`Defun.Dispatch`):
   (`defun.tags`);
 * **input checks** (what P8's correctness needs and a well-scoped program
   meets, since the pipeline does not establish `WellScoped`): no global keyed
-  as P8 keys them (`lam`, `dispatch`), no closure key in the table, distinct
-  keys for the globals whose closures the program builds, and the walk's own
-  checks (`Lift.bind`);
+  as P8 keys them (`lam`, `dispatch`), no closure key in the table or among
+  the pinned constructors, distinct keys for the globals whose closures the
+  program builds, and the walk's own checks (`Lift.bind`);
 * **budgets**: the walk's work (`Lift.programWork`, its nodes plus the depth
   of every local function) within `maxStepWork`, and the dispatchers' nodes
   (computed without building them) within `maxGlobalNodes` each and
@@ -51,9 +51,15 @@ def closureKey : Key.CtorKey → Bool
   | .clo .. => true
   | .src _ => false
 
+/-- Whether a pinned constructor (`Nat`'s and `Bool`'s) has a closure key:
+the closure keys P8 adds to the table would then give it their arity. -/
+def knownClosure (K : Lam.Known) : Bool :=
+  [K.natZero, K.natSucc, K.boolFalse, K.boolTrue].any fun c => c.any closureKey
+
 /-- The first two of `ks` (keys with their globals) with equal keys, if any:
 keys are bucketed by their source constant (`GKey.bucket`) and compared
-within a bucket. -/
+within a bucket. The pass runs `firstEqualKeysT`, which finds the same pair
+in time linear in the keys' sizes; this is its specification. -/
 def firstEqualKeys : List (Key.GKey × GlobalId) → Src.NatMap (List (Key.GKey × GlobalId)) →
     Option (GlobalId × GlobalId)
   | [], _ => none
@@ -62,6 +68,98 @@ def firstEqualKeys : List (Key.GKey × GlobalId) → Src.NatMap (List (Key.GKey 
     match b.find? (fun (k', _) => decide (k' = k)) with
     | some (_, h) => some (h, g)
     | none => firstEqualKeys ks (m.insert k.bucket ((k, g) :: b))
+
+/-! ## The key check, linear
+
+Each key is filed in a trie under its code, a prefix-free serialisation into
+numbers (each constructor its tag, then its fields; each list its length, then
+its elements), so that distinct keys have distinct codes. A key is compared
+only with the keys already filed under its own code, which are equal to it,
+so the check costs the keys' sizes (times the depth of a `Src.NatMap` step). -/
+
+def bitCode (b : Bool) : Nat := if b then 1 else 0
+
+/-- A universe profile's code: its length, then its bits. -/
+def profileCode (p : Key.Profile) : List Nat := p.length :: p.map bitCode
+
+def headCode : Src.Head → List Nat
+  | .ctor c => [0, c]
+  | .quotMk c => [1, c]
+  | .quotLift c => [2, c]
+  | .recr c => [3, c]
+  | .cases c => [4, c]
+  | .prim op => [5, Src.PrimOp.all.idxOf op]
+
+mutual
+
+/-- A global key's code. -/
+def gkeyCode : Key.GKey → List Nat
+  | .const c p => 0 :: c :: profileCode p
+  | .byName c p => 1 :: c :: profileCode p
+  | .recStar c p => 2 :: c :: profileCode p
+  | .wrapper h p => 3 :: (headCode h ++ profileCode p)
+  | .spec g as => 4 :: (gkeyCode g ++ (as.length :: argsCode as))
+  | .worker g keep => 5 :: (gkeyCode g ++ (keep.length :: keep.map bitCode))
+  | .lam g path => 6 :: (gkeyCode g ++ (path.length :: path))
+  | .dispatch n => [7, n]
+  termination_by structural k => k
+
+def ctorKeyCode : Key.CtorKey → List Nat
+  | .src c => [0, c]
+  | .clo f n => 1 :: (gkeyCode f ++ [n])
+  termination_by structural k => k
+
+def argKeyCode : Key.ArgKey → List Nat
+  | .glob g => 0 :: gkeyCode g
+  | .con c as => 1 :: (ctorKeyCode c ++ (as.length :: argsCode as))
+  | .lit n => [2, n]
+  | .hole i => [3, i]
+  termination_by structural k => k
+
+/-- The codes of specialisation arguments, one after another. -/
+def argsCode : List Key.ArgKey → List Nat
+  | [] => []
+  | a :: as => argKeyCode a ++ argsCode as
+  termination_by structural as => as
+
+end
+
+/-- Keys filed by their codes: a node holds the keys (with their globals)
+whose code ends there, newest first, and its children by the code's next
+number. -/
+inductive KeyTrie where
+  | node (here : List (Key.GKey × GlobalId)) (kids : Src.NatMap KeyTrie)
+
+namespace KeyTrie
+
+def empty : KeyTrie := .node [] .leaf
+
+/-- The keys filed under `code`. -/
+def find : KeyTrie → List Nat → List (Key.GKey × GlobalId)
+  | .node h _, [] => h
+  | .node _ k, c :: cs =>
+    match k.get? c with
+    | some t => t.find cs
+    | none => []
+  termination_by structural _ code => code
+
+/-- File `x` under `code`. -/
+def add : KeyTrie → List Nat → Key.GKey × GlobalId → KeyTrie
+  | .node h k, [], x => .node (x :: h) k
+  | .node h k, c :: cs, x => .node h (k.insert c (((k.get? c).getD empty).add cs x))
+  termination_by structural _ code => code
+
+end KeyTrie
+
+/-- The first two of `ks` (keys with their globals) with equal keys, if any:
+each key is compared with the keys filed under its code, then filed. It finds
+what `firstEqualKeys` finds (`Proof.firstEqualKeysT_eq`). -/
+def firstEqualKeysT : List (Key.GKey × GlobalId) → KeyTrie → Option (GlobalId × GlobalId)
+  | [], _ => none
+  | (k, g) :: ks, t =>
+    match (t.find (gkeyCode k)).find? (fun (k', _) => decide (k' = k)) with
+    | some (_, h) => some (h, g)
+    | none => firstEqualKeysT ks (t.add (gkeyCode k) (k, g))
 
 /-- Rewrite the globals in order (a loop), and collect the globals that hold
 local functions. -/
@@ -87,7 +185,7 @@ def checkDispatchers (srcs : List Source) : List Nat → Nat → Except Error Un
 def checkInput (P : Program) : Except Error Unit := do
   if let some (g, _) := P.globalList.find? (fun (_, gd) => reservedKey gd.key) then
     throw (.input g "a global already keyed as a lifted local function or a dispatcher")
-  if P.ctors.any (fun r => closureKey r.key) then throw .table
+  if P.ctors.any (fun r => closureKey r.key) || knownClosure P.known then throw .table
   if programWork maxStepWork P.globalList 0 > maxStepWork then
     throw (.budget "the walk's work exceeds the step work budget")
 
@@ -131,7 +229,7 @@ def checkSources (P : Program) (acc : Acc) (parents : List GlobalId) : Except Er
   let owners := Src.NatSet.ofList ((escapeSources P acc).map (·.id) ++ parents)
   let ownerKeys := (List.range P.size).filterMap fun h =>
     if owners.contains h then (P.global? h).map fun hd => (hd.key, h) else none
-  if let some (g, h) := firstEqualKeys ownerKeys .leaf then throw (.keys g h)
+  if let some (g, h) := firstEqualKeysT ownerKeys .empty then throw (.keys g h)
   if let some s := srcs.find? (fun s => s.caps + s.arity > maxCellFields + 1) then
     throw (.captures s.id (s.caps + s.arity - 1))
   let nkeys := srcs.foldl (fun n s => n + s.arity) 0

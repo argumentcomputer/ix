@@ -53,7 +53,8 @@ inductive Error where
   | tags (keys : Nat)
   /-- The input breaks a precondition of P8 that a well-scoped program meets. -/
   | input (g : GlobalId) (what : String)
-  /-- The input's constructor table already has a closure key. -/
+  /-- The input's constructor table or one of its pinned constructors already
+  has a closure key. -/
   | table
   /-- Two globals whose closures the program builds have equal keys. -/
   | keys (g h : GlobalId)
@@ -66,7 +67,7 @@ def Error.render : Error → String
     s!"defun.captures: the closures of global {id} need cells of {n} fields, more than a constructor cell holds"
   | .tags n => s!"defun.tags: {n} closure keys, more than the constructor tag space holds"
   | .input g what => s!"defun.input: global {g}: {what}"
-  | .table => "defun.input: the constructor table already has a closure key"
+  | .table => "defun.input: the constructor table or a pinned constructor already has a closure key"
   | .keys g h => s!"defun.input: globals {g} and {h}, whose closures the program builds, have equal keys"
   | .budget what => s!"defun.budget: {what}"
 

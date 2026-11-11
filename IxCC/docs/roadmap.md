@@ -64,7 +64,7 @@ object refines SrcEval on the checked source `a.src`, unless that source goes
 wrong; at a claim's root on the immortal and zero-RC policies, the view
 rejects only a result off the root's declared shape
 ([`Recheck/Proof/RootShape.lean`](../IxCC/Recheck/Proof/RootShape.lean)).
-5,636 exact axiom fences ([CI guide](ci.md)).
+5,748 exact axiom fences ([CI guide](ci.md)).
 
 **Since the 2026-11-09 review**, on this branch:
 - the relevance checks run on every program (`checkCanonical`,

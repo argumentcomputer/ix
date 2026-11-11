@@ -108,11 +108,15 @@
   "IxCC.Anf.Proof.Convert.SpineVar",
   "IxCC.Anf.Proof.Convert.Step",
   "IxCC.Anf.Proof.Convert.Term",
+  "IxCC.Anf.Proof.Defun.Assemble",
   "IxCC.Anf.Proof.Defun.Dispatch",
   "IxCC.Anf.Proof.Defun.FirstOrder",
   "IxCC.Anf.Proof.Defun.Keys",
   "IxCC.Anf.Proof.Defun.Rel",
+  "IxCC.Anf.Proof.Defun.Rename",
   "IxCC.Anf.Proof.Defun.Scope",
+  "IxCC.Anf.Proof.Defun.Translate",
+  "IxCC.Anf.Proof.Defun.WellScoped",
   "IxCC.Anf.Proof.Lang",
   "IxCC.Anf.Proof.Mono",
   "IxCC.Anf.Proof.Pass.Basic",
@@ -1571,7 +1575,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "P8: the key check is sound; its fences",
+ "P8: the walk is the translation, the output is well scoped, renaming is exact; their fences",
  "axiom_sha256":
- "1c7b3d56985655eaa1b45465c45aefd31ba998f5f30debaddd575d579c822a5a",
- "axiom_count": 5636}
+ "aa2a6519ee499c3181a845ff707a92052dd34532a5d666a2c5444f2d9e503c1e",
+ "axiom_count": 5748}
