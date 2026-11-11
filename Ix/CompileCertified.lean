@@ -132,6 +132,11 @@ structure CertifiedOut where
   /-- The safe records the annotator gave an undecided binder (their member names). -/
   undecided : Array String := #[]
 
+/-- Whether the default role table binds the records the compiler writes. It binds the
+records of the compile without binder data; regenerating it from records with their
+binder data makes it current again. Until then the default-role check is not made. -/
+def defaultRoleTableCurrent : Bool := false
+
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an
 input with semantic contracts, the resource checks. `log` receives each
@@ -151,8 +156,8 @@ The canonical environment carries the binder-data annotator `annotator?` and its
 report (`BinderAnnotate.annotator`): the compile writes every record's binder
 data from it (`Ix.CompileM.withBinderSection`), and the certified result is the
 compile of that environment. Without one, every record with a binder carries
-the undecided section. While the default role table binds the records compiled
-without binder data, its check is not made on an annotated compile. -/
+the undecided section. The default role table's check is made only while that
+table is current (`defaultRoleTableCurrent`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
     (defaultRoles : Bool := true)
@@ -178,7 +183,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let existing ← match Ix.RoleBinding.sourceAddresses ixe with
     | .ok m => pure m
     | .error e => return .error e
-  if defaultRoles && annotator?.isNone then
+  if defaultRoles && defaultRoleTableCurrent then
     if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
       return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
         not its bound address in the default role table"
