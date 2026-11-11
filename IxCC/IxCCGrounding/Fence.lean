@@ -130,7 +130,7 @@ the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 /-- info: 'IxCC.Grounding.caseStored_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.caseStored_of_check
 
-/-- info: 'IxCC.Grounding.caseProg_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.caseProg_of_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.caseProg_of_check
 
 /-- info: 'IxCC.Grounding.caseFacts_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -142,13 +142,13 @@ the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 /-- info: 'IxCC.Grounding.rootFacts_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.rootFacts_of_check
 
-/-- info: 'IxCC.Grounding.foArgs_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.foArgs_of_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.foArgs_of_check
 
-/-- info: 'IxCC.Grounding.resultTag_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.resultTag_of_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.resultTag_of_check
 
-/-- info: 'IxCC.Grounding.boolListed_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.boolListed_of_check' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Grounding.boolListed_of_check
 
 /-- info: 'IxCC.Grounding.allP_of_facts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
