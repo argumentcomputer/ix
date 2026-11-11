@@ -436,28 +436,54 @@ namespace Tests.Ix.IxVM.PwHints
 
 open _root_.IxVM.PwHints
 
-/-- `ixvm-pw-fixture` (manual): the dev fixture (`IX_PW_FIXTURE`, default
-`IxVM/IxVM/fixtures/nat-add-comm.ixf`) rewritten at version 2 with the binder
-data of its records (`IX_PW_FIXTURE_OUT`, default in place): the witness its
-constants (the invalid proof included), tags, blobs and role table make, as
-`IxVM.Cli.fixtureHints` serves them, annotated. -/
-def fixture : IO UInt32 := do
-  let path := (← IO.getEnv "IX_PW_FIXTURE").getD "IxVM/IxVM/fixtures/nat-add-comm.ixf"
-  let outPath := (← IO.getEnv "IX_PW_FIXTURE_OUT").getD path
-  let f ← IO.ofExcept (_root_.IxVM.Fixture.decode (← IO.FS.readBinFile path))
-  let key (s : _root_.IxVM.Serialized) : Array Aiur.G := s.address.map (Aiur.G.ofNat ·)
-  let vals (s : _root_.IxVM.Serialized) : Array Aiur.G := s.bytes.map (Aiur.G.ofNat ·)
-  let mut io : Aiur.IOBuffer := default
-  for s in f.constants.push f.invalidProof do
-    io := io.extend 2 (key s) (vals s)
-    io := io.extend 3 (key s) #[.ofNat s.hint]
-  for s in f.blobs do io := io.extend 4 (key s) (vals s)
-  for s in f.roles do io := io.extend 6 (key s) (vals s)
-  let (annotated, stats) ← IO.ofExcept (annotate io)
-  let blocks := (← IO.ofExcept (blocksOf annotated)).qsort fun x y => x.1.cmpBytes y.1 == .lt
-  let binderData := blocks.map fun (a, bs) => (a.hash.data.map (·.toNat), (encode bs).map (·.n))
-  IO.FS.writeBinFile outPath (← IO.ofExcept ({ f with binderData }).encode)
-  IO.println s!"[ixvm-pw-fixture] {outPath}: {stats.render}"
+/-- `ixvm-fixture` (manual): the dev fixture `IxVM/IxVM/fixtures/nat-add-comm.ixf`
+(version 3, Ixon v5; `IX_FIXTURE_OUT` to write elsewhere), built from the test
+binary's environment: `Nat.add_comm`'s closure as `verify_constant` reads it
+(`IxVM.ClaimHarness.closureFrom`), compiled with each record's binder data, the
+blobs those records name, the default role table, each definition's channel-3
+tag, and an invalid proof: `Nat.add_comm`'s record with its proof replaced by
+`Sort 0`, correctly hashed, which the verifier must reject. -/
+def fixture (env : Lean.Environment) : IO UInt32 := do
+  let outPath := (← IO.getEnv "IX_FIXTURE_OUT").getD "IxVM/IxVM/fixtures/nat-add-comm.ixf"
+  let name := ``Nat.add_comm
+  let ixon ← _root_.IxVM.ClaimHarness.loadIxonEnv name env
+  let target ← _root_.IxVM.ClaimHarness.lookupAddr ixon name
+  let some binding := ixon.roleBinding | throw (IO.userError "the environment has no role binding")
+  let closure := _root_.IxVM.ClaimHarness.closureFrom ixon target
+  let words (a : Address) : Array Nat := a.hash.data.map (·.toNat)
+  -- the harness's channel-3 encoding (`Ingress::load_constant_hint`)
+  let tag (a : Address) : Nat := match ixon.anonHints[a]? with
+    | some .opaque => 0
+    | some .abbrev => 0xFFFFFFFF
+    | some (.regular n) => min (1 + n.toNat) 0xFFFFFFFE
+    | none => 0
+  let mut constants : Array _root_.IxVM.Serialized := #[]
+  let mut named : Std.HashSet Address := {}
+  for a in (closure.toArray.qsort fun x y => x.cmpBytes y == .lt) do
+    let some lc := ixon.consts[a]? | continue
+    constants := constants.push { address := words a, bytes := lc.rawBytes.data.map (·.toNat), hint := tag a }
+    if let some c := lc.get? then
+      for r in c.refs do named := named.insert r
+  let blobs := (ixon.blobs.toArray.filter (named.contains ·.1)).qsort (fun x y => x.1.cmpBytes y.1 == .lt)
+    |>.map fun (a, b) => ({ address := words a, bytes := b.data.map (·.toNat), hint := 0 } : _root_.IxVM.Serialized)
+  -- the invalid proof: the theorem's statement with `Sort 0` as its proof
+  let some c := ixon.getConst? target | throw (IO.userError s!"{name}'s record is missing")
+  let .defn d := c.info | throw (IO.userError s!"{name}'s record is not a definition")
+  let invalidC : Ixon.Constant := { c with
+    info := .defn { d with value := .sort c.univs.size.toUInt64 }
+    univs := c.univs.push .zero
+    -- the proof's block goes with the proof (root 1)
+    binders := c.binders.filter fun b => b.shared || b.index != 1 }
+  let invalidBytes := Ixon.ser invalidC
+  let invalid : _root_.IxVM.Serialized :=
+    { address := words (Address.blake3 invalidBytes), bytes := invalidBytes.data.map (·.toNat), hint := 0 }
+  let f : _root_.IxVM.Fixture := {
+    format := Ixon.wireFormatId, name := name.toString, address := words target,
+    invalidProof := invalid, constants, blobs,
+    roles := #[{ address := words binding.address, bytes := binding.bytes.data.map (·.toNat), hint := 0 }] }
+  IO.FS.writeBinFile outPath (← IO.ofExcept f.encode)
+  IO.println s!"[ixvm-fixture] {outPath}: {constants.size} constants, {blobs.size} blobs, \
+    target {target}, binding {binding.address}"
   return 0
 
 end Tests.Ix.IxVM.PwHints
