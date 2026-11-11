@@ -512,142 +512,89 @@ inductive «KernelModeled::basis_role_allowed».Path (x_r : SourceValue F) (h : 
       (he16 : h' = h)
       (hc17 : calls = [])
   | n1
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
       (hv22 : x_r = (.field 1))
       (he23 : r = (.field 1))
       (he24 : h' = h)
       (hc25 : calls = [])
   | n2
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
       (hv30 : x_r = (.field 2))
       (he31 : r = (.field 1))
       (he32 : h' = h)
       (hc33 : calls = [])
   | n3
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
       (hv38 : x_r = (.field 3))
       (he39 : r = (.field 1))
       (he40 : h' = h)
       (hc41 : calls = [])
   | n8
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
       (hv46 : x_r = (.field 8))
       (he47 : r = (.field 1))
       (he48 : h' = h)
       (hc49 : calls = [])
   | n9
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
       (hv54 : x_r = (.field 9))
       (he55 : r = (.field 1))
       (he56 : h' = h)
       (hc57 : calls = [])
   | n10
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
       (hv62 : x_r = (.field 10))
       (he63 : r = (.field 1))
       (he64 : h' = h)
       (hc65 : calls = [])
   | n11
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
-      (hne66 : (x_r : SourceValue F) ≠ (.field 10))
       (hv70 : x_r = (.field 11))
       (he71 : r = (.field 1))
       (he72 : h' = h)
       (hc73 : calls = [])
   | n12
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
-      (hne66 : (x_r : SourceValue F) ≠ (.field 10))
-      (hne74 : (x_r : SourceValue F) ≠ (.field 11))
       (hv78 : x_r = (.field 12))
       (he79 : r = (.field 1))
       (he80 : h' = h)
       (hc81 : calls = [])
   | n13
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
-      (hne66 : (x_r : SourceValue F) ≠ (.field 10))
-      (hne74 : (x_r : SourceValue F) ≠ (.field 11))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 12))
       (hv86 : x_r = (.field 13))
       (he87 : r = (.field 1))
       (he88 : h' = h)
       (hc89 : calls = [])
-  | n37
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
-      (hne66 : (x_r : SourceValue F) ≠ (.field 10))
-      (hne74 : (x_r : SourceValue F) ≠ (.field 11))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 12))
-      (hne90 : (x_r : SourceValue F) ≠ (.field 13))
-      (hv94 : x_r = (.field 37))
+  | n32
+      (hv94 : x_r = (.field 32))
       (he95 : r = (.field 1))
       (he96 : h' = h)
       (hc97 : calls = [])
-  | n39
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
-      (hne66 : (x_r : SourceValue F) ≠ (.field 10))
-      (hne74 : (x_r : SourceValue F) ≠ (.field 11))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 12))
-      (hne90 : (x_r : SourceValue F) ≠ (.field 13))
-      (hne98 : (x_r : SourceValue F) ≠ (.field 37))
-      (hv102 : x_r = (.field 39))
+  | n33
+      (hv102 : x_r = (.field 33))
       (he103 : r = (.field 1))
       (he104 : h' = h)
       (hc105 : calls = [])
+  | n34
+      (hv110 : x_r = (.field 34))
+      (he111 : r = (.field 1))
+      (he112 : h' = h)
+      (hc113 : calls = [])
+  | n35
+      (hv118 : x_r = (.field 35))
+      (he119 : r = (.field 1))
+      (he120 : h' = h)
+      (hc121 : calls = [])
+  | n36
+      (hv126 : x_r = (.field 36))
+      (he127 : r = (.field 1))
+      (he128 : h' = h)
+      (hc129 : calls = [])
+  | n37
+      (hv134 : x_r = (.field 37))
+      (he135 : r = (.field 1))
+      (he136 : h' = h)
+      (hc137 : calls = [])
+  | n39
+      (hv142 : x_r = (.field 39))
+      (he143 : r = (.field 1))
+      (he144 : h' = h)
+      (hc145 : calls = [])
   | other
-      (hne18 : (x_r : SourceValue F) ≠ (.field 0))
-      (hne26 : (x_r : SourceValue F) ≠ (.field 1))
-      (hne34 : (x_r : SourceValue F) ≠ (.field 2))
-      (hne42 : (x_r : SourceValue F) ≠ (.field 3))
-      (hne50 : (x_r : SourceValue F) ≠ (.field 8))
-      (hne58 : (x_r : SourceValue F) ≠ (.field 9))
-      (hne66 : (x_r : SourceValue F) ≠ (.field 10))
-      (hne74 : (x_r : SourceValue F) ≠ (.field 11))
-      (hne82 : (x_r : SourceValue F) ≠ (.field 12))
-      (hne90 : (x_r : SourceValue F) ≠ (.field 13))
-      (hne98 : (x_r : SourceValue F) ≠ (.field 37))
-      (hne106 : (x_r : SourceValue F) ≠ (.field 39))
-      (he110 : r = (.field 0))
-      (he111 : h' = h)
-      (hc112 : calls = [])
+      (he150 : r = (.field 0))
+      (he151 : h' = h)
+      (hc152 : calls = [])
 
 /-- **Every observed derivation of `KernelModeled::basis_role_allowed` takes one of its paths.** -/
 theorem «KernelModeled::basis_role_allowed».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -668,63 +615,88 @@ theorem «KernelModeled::basis_role_allowed».obs {x_r : SourceValue F} {h h' : 
     rcases selectArm_cons_inv sel13 with ⟨mt19, rfl⟩ | ⟨nm20, sel21⟩
     · obtain ⟨hv22, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt19
       obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-      exact «KernelModeled::basis_role_allowed».Path.n1 hne18 hv22 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      exact «KernelModeled::basis_role_allowed».Path.n1 hv22 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
     · have hne26 := MatchesConst.none_inv (MatchesConst.literal 1) nm20
       rcases selectArm_cons_inv sel21 with ⟨mt27, rfl⟩ | ⟨nm28, sel29⟩
       · obtain ⟨hv30, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt27
         obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-        exact «KernelModeled::basis_role_allowed».Path.n2 hne18 hne26 hv30 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        exact «KernelModeled::basis_role_allowed».Path.n2 hv30 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
       · have hne34 := MatchesConst.none_inv (MatchesConst.literal 2) nm28
         rcases selectArm_cons_inv sel29 with ⟨mt35, rfl⟩ | ⟨nm36, sel37⟩
         · obtain ⟨hv38, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt35
           obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-          exact «KernelModeled::basis_role_allowed».Path.n3 hne18 hne26 hne34 hv38 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          exact «KernelModeled::basis_role_allowed».Path.n3 hv38 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
         · have hne42 := MatchesConst.none_inv (MatchesConst.literal 3) nm36
           rcases selectArm_cons_inv sel37 with ⟨mt43, rfl⟩ | ⟨nm44, sel45⟩
           · obtain ⟨hv46, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 8) mt43
             obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-            exact «KernelModeled::basis_role_allowed».Path.n8 hne18 hne26 hne34 hne42 hv46 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            exact «KernelModeled::basis_role_allowed».Path.n8 hv46 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
           · have hne50 := MatchesConst.none_inv (MatchesConst.literal 8) nm44
             rcases selectArm_cons_inv sel45 with ⟨mt51, rfl⟩ | ⟨nm52, sel53⟩
             · obtain ⟨hv54, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 9) mt51
               obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-              exact «KernelModeled::basis_role_allowed».Path.n9 hne18 hne26 hne34 hne42 hne50 hv54 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              exact «KernelModeled::basis_role_allowed».Path.n9 hv54 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
             · have hne58 := MatchesConst.none_inv (MatchesConst.literal 9) nm52
               rcases selectArm_cons_inv sel53 with ⟨mt59, rfl⟩ | ⟨nm60, sel61⟩
               · obtain ⟨hv62, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 10) mt59
                 obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                exact «KernelModeled::basis_role_allowed».Path.n10 hne18 hne26 hne34 hne42 hne50 hne58 hv62 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                exact «KernelModeled::basis_role_allowed».Path.n10 hv62 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
               · have hne66 := MatchesConst.none_inv (MatchesConst.literal 10) nm60
                 rcases selectArm_cons_inv sel61 with ⟨mt67, rfl⟩ | ⟨nm68, sel69⟩
                 · obtain ⟨hv70, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 11) mt67
                   obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                  exact «KernelModeled::basis_role_allowed».Path.n11 hne18 hne26 hne34 hne42 hne50 hne58 hne66 hv70 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  exact «KernelModeled::basis_role_allowed».Path.n11 hv70 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                 · have hne74 := MatchesConst.none_inv (MatchesConst.literal 11) nm68
                   rcases selectArm_cons_inv sel69 with ⟨mt75, rfl⟩ | ⟨nm76, sel77⟩
                   · obtain ⟨hv78, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 12) mt75
                     obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                    exact «KernelModeled::basis_role_allowed».Path.n12 hne18 hne26 hne34 hne42 hne50 hne58 hne66 hne74 hv78 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    exact «KernelModeled::basis_role_allowed».Path.n12 hv78 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                   · have hne82 := MatchesConst.none_inv (MatchesConst.literal 12) nm76
                     rcases selectArm_cons_inv sel77 with ⟨mt83, rfl⟩ | ⟨nm84, sel85⟩
                     · obtain ⟨hv86, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 13) mt83
                       obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                      exact «KernelModeled::basis_role_allowed».Path.n13 hne18 hne26 hne34 hne42 hne50 hne58 hne66 hne74 hne82 hv86 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                      exact «KernelModeled::basis_role_allowed».Path.n13 hv86 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                     · have hne90 := MatchesConst.none_inv (MatchesConst.literal 13) nm84
                       rcases selectArm_cons_inv sel85 with ⟨mt91, rfl⟩ | ⟨nm92, sel93⟩
-                      · obtain ⟨hv94, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 37) mt91
+                      · obtain ⟨hv94, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 32) mt91
                         obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                        exact «KernelModeled::basis_role_allowed».Path.n37 hne18 hne26 hne34 hne42 hne50 hne58 hne66 hne74 hne82 hne90 hv94 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                      · have hne98 := MatchesConst.none_inv (MatchesConst.literal 37) nm92
+                        exact «KernelModeled::basis_role_allowed».Path.n32 hv94 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                      · have hne98 := MatchesConst.none_inv (MatchesConst.literal 32) nm92
                         rcases selectArm_cons_inv sel93 with ⟨mt99, rfl⟩ | ⟨nm100, sel101⟩
-                        · obtain ⟨hv102, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 39) mt99
+                        · obtain ⟨hv102, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 33) mt99
                           obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                          exact «KernelModeled::basis_role_allowed».Path.n39 hne18 hne26 hne34 hne42 hne50 hne58 hne66 hne74 hne82 hne90 hne98 hv102 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                        · have hne106 := MatchesConst.none_inv (MatchesConst.literal 39) nm100
+                          exact «KernelModeled::basis_role_allowed».Path.n33 hv102 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                        · have hne106 := MatchesConst.none_inv (MatchesConst.literal 33) nm100
                           rcases selectArm_cons_inv sel101 with ⟨mt107, rfl⟩ | ⟨nm108, sel109⟩
-                          · obtain rfl := matchPattern_wildcard_inv mt107
+                          · obtain ⟨hv110, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 34) mt107
                             obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                            exact «KernelModeled::basis_role_allowed».Path.other hne18 hne26 hne34 hne42 hne50 hne58 hne66 hne74 hne82 hne90 hne98 hne106 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                          · exact (matchPattern_wildcard_none nm108).elim
+                            exact «KernelModeled::basis_role_allowed».Path.n34 hv110 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                          · have hne114 := MatchesConst.none_inv (MatchesConst.literal 34) nm108
+                            rcases selectArm_cons_inv sel109 with ⟨mt115, rfl⟩ | ⟨nm116, sel117⟩
+                            · obtain ⟨hv118, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 35) mt115
+                              obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                              exact «KernelModeled::basis_role_allowed».Path.n35 hv118 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                            · have hne122 := MatchesConst.none_inv (MatchesConst.literal 35) nm116
+                              rcases selectArm_cons_inv sel117 with ⟨mt123, rfl⟩ | ⟨nm124, sel125⟩
+                              · obtain ⟨hv126, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 36) mt123
+                                obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                                exact «KernelModeled::basis_role_allowed».Path.n36 hv126 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                              · have hne130 := MatchesConst.none_inv (MatchesConst.literal 36) nm124
+                                rcases selectArm_cons_inv sel125 with ⟨mt131, rfl⟩ | ⟨nm132, sel133⟩
+                                · obtain ⟨hv134, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 37) mt131
+                                  obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                                  exact «KernelModeled::basis_role_allowed».Path.n37 hv134 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                · have hne138 := MatchesConst.none_inv (MatchesConst.literal 37) nm132
+                                  rcases selectArm_cons_inv sel133 with ⟨mt139, rfl⟩ | ⟨nm140, sel141⟩
+                                  · obtain ⟨hv142, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 39) mt139
+                                    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                                    exact «KernelModeled::basis_role_allowed».Path.n39 hv142 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                  · have hne146 := MatchesConst.none_inv (MatchesConst.literal 39) nm140
+                                    rcases selectArm_cons_inv sel141 with ⟨mt147, rfl⟩ | ⟨nm148, sel149⟩
+                                    · obtain rfl := matchPattern_wildcard_inv mt147
+                                      obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                                      exact «KernelModeled::basis_role_allowed».Path.other rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                    · exact (matchPattern_wildcard_none nm148).elim
 
 /-- The evaluation paths of `KernelModeled::check_witnesses`: one constructor per combination of selected arms. -/
 inductive «KernelModeled::check_witnesses».Path (x_rc x_block x_s x_n : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
