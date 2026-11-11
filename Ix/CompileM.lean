@@ -1557,31 +1557,31 @@ admissible, and otherwise `c` itself. -/
 
 theorem withBinderSection_info (names : Array Name) (c : Ixon.Constant) :
     (withBinderSection names c).info = c.info := by
-  simp only [withBinderSection]; split <;> rfl
+  unfold withBinderSection; split <;> rfl
 
 theorem withBinderSection_sharing (names : Array Name) (c : Ixon.Constant) :
     (withBinderSection names c).sharing = c.sharing := by
-  simp only [withBinderSection]; split <;> rfl
+  unfold withBinderSection; split <;> rfl
 
 theorem withBinderSection_refs (names : Array Name) (c : Ixon.Constant) :
     (withBinderSection names c).refs = c.refs := by
-  simp only [withBinderSection]; split <;> rfl
+  unfold withBinderSection; split <;> rfl
 
 theorem withBinderSection_univs (names : Array Name) (c : Ixon.Constant) :
     (withBinderSection names c).univs = c.univs := by
-  simp only [withBinderSection]; split <;> rfl
+  unfold withBinderSection; split <;> rfl
 
 /-- The record with its section is the record with some section: only the
 section differs. -/
 theorem withBinderSection_eq (names : Array Name) (c : Ixon.Constant) :
     withBinderSection names c = { c with binders := (withBinderSection names c).binders } := by
-  simp only [withBinderSection]; split <;> rfl
+  unfold withBinderSection; split <;> rfl
 
 /-- The section the compiler keeps is admissible, or the record's own. -/
 theorem withBinderSection_binders (names : Array Name) (c : Ixon.Constant) :
     sectionAdmissible c (withBinderSection names c).binders = true ∨
       (withBinderSection names c).binders = c.binders := by
-  simp only [withBinderSection]
+  unfold withBinderSection
   split
   · exact .inl (by assumption)
   · exact .inr rfl
