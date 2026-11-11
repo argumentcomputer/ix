@@ -344,14 +344,23 @@ namespace Tests.Ix.IxVM.PwHints
 open _root_.IxVM.PwHints
 
 /-- `ixvm-pw-fixture` (manual): the dev fixture (`IX_PW_FIXTURE`, default
-`IxVM/IxVM/fixtures/nat-add-comm.ixf`) rewritten at version 2 with the binder
-data of its records (`IX_PW_FIXTURE_OUT`, default in place): the witness its
-constants (the invalid proof included), tags, blobs and role table make, as
-`IxVM.Cli.fixtureHints` serves them, annotated. -/
+`IxVM/IxVM/fixtures/nat-add-comm.ixf`) rewritten at version 2 with the default
+role table and the binder data of its records (`IX_PW_FIXTURE_OUT`, default in
+place). The role table entry is the default table's binding section at its
+address (`Ix.Kernel.Reader.defaultTableBytes`, `defaultTableAddress`), the table
+the program's default binding names (`IxVMCompat::default_binding_addr`); the
+binder data are the witness its constants (the invalid proof included), tags,
+blobs and role table make, as `IxVM.Cli.fixtureHints` serves them, annotated. -/
 def fixture : IO UInt32 := do
   let path := (← IO.getEnv "IX_PW_FIXTURE").getD "IxVM/IxVM/fixtures/nat-add-comm.ixf"
   let outPath := (← IO.getEnv "IX_PW_FIXTURE_OUT").getD path
   let f ← IO.ofExcept (_root_.IxVM.Fixture.decode (← IO.FS.readBinFile path))
+  let tableAddr ← IO.ofExcept _root_.Ix.Kernel.Reader.defaultTableAddress
+  let tableBytes ← IO.ofExcept _root_.Ix.Kernel.Reader.defaultTableBytes
+  let table : _root_.IxVM.Serialized :=
+    { address := tableAddr.hash.data.map (·.toNat), bytes := tableBytes.data.map (·.toNat),
+      hint := (f.roles[0]?.map (·.hint)).getD 0 }
+  let f := { f with roles := #[table] }
   let key (s : _root_.IxVM.Serialized) : Array Aiur.G := s.address.map (Aiur.G.ofNat ·)
   let vals (s : _root_.IxVM.Serialized) : Array Aiur.G := s.bytes.map (Aiur.G.ofNat ·)
   let mut io : Aiur.IOBuffer := default
