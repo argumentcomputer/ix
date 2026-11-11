@@ -114,7 +114,7 @@ def registry : List Entry := [
   .suite "ffi" .primary Tests.FFI.suite,
   .suite "meta-env" .primary Tests.Ix.MetaEnv.suite,
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
-  .suite "claim-policy" .primary Tests.ClaimPolicy.suite,
+  .suiteIO "claim-policy" .primary Tests.ClaimPolicy.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
