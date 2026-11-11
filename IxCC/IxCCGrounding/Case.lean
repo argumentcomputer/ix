@@ -753,7 +753,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       show pushAll (ps ++ [mo] ++ Ws) ρ sh.nM = mo
       rw [← hWl, show ps ++ [mo] ++ Ws = ps ++ mo :: Ws by simp, pushAll_at]
     rw [hmo] at hRR'
-    rw [hR0e, ← hRR']
+    rw [hR0e, show app mo Fs[rf] = RR from hRR'.symm]
     exact hmRR
   -- the recursor's rule body: the wrapper at the fields and the induction hypotheses
   obtain ⟨IHs, hIHs⟩ : ∃ IHs : List V, IHs = cs.recFields.map fun rf =>
