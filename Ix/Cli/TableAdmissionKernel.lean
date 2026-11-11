@@ -70,7 +70,17 @@ def explain (b : Admission.Binding) (E : Ixon.Env) : String :=
               else if !anchorsOk ds.toList then
                 "a bound anchor does not have its specification's type"
               else if !eqnsOk envA ev then
-                "a role specified by equations does not meet them"
+                -- the first role `eqnsOk` refuses, and whether the table binds it
+                let failing := Role.all.filter fun r =>
+                  (r.spec (md := .anon)).kind == .eqns &&
+                    !isOk (eqnsCheck (fueledOps .verified pureFuel) envA r ev)
+                match failing with
+                | r :: _ =>
+                  let unbound := failing.filter fun s => (t.addressOf? s).isNone
+                  s!"the role {r.leanName}, specified by equations, does not meet them\
+                    {if (t.addressOf? r).isNone then " (the table does not bind it)" else ""}; \
+                    {failing.length} such roles fail, {unbound.length} of them unbound"
+                | [] => "a role specified by equations does not meet them"
               else "no stage refuses"
 
 /-- The kernel's admission, as the command line runs it. -/

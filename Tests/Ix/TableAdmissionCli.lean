@@ -46,6 +46,15 @@ def storeUnder (home : System.FilePath) (bytes : ByteArray) : IO Address := do
 /-- Whether `text` occurs in `s`. -/
 def mentions (s text : String) : Bool := (s.splitOn text).length > 1
 
+/-- `bound` without the roles `drop`, and, until none is left, without every role whose
+block or dependencies hold a role it dropped: a table `RoleTable.check` still closes. -/
+def dropClosed (bound : List (Role × Address)) (drop : List Role) : Nat → List (Role × Address)
+  | 0 => bound
+  | fuel + 1 =>
+    let kept := bound.filter fun (r, _) => !drop.contains r
+    let more := kept.filter fun (r, _) => (Role.block r ++ Role.deps r).any drop.contains
+    if more.isEmpty then kept else dropClosed kept (drop ++ more.map (·.1)) fuel
+
 /-- The theorems a table's evidence names. -/
 def proofsOf (t : RoleTable) : List Address :=
   t.evidence.toList.flatMap fun (_, es) => es.toList.filterMap fun
@@ -85,12 +94,17 @@ def cli : IO UInt32 := do
       let claim : Ix.Claim := .check { spec, binding := table, axioms := none } target none
       storeUnder home (Ixon.Proof.ser { claim, proof := "no proof".toUTF8 })
     let addr ← claimUnder rb.address
-    -- the artifact's table with String bound too, and nothing else of a literal's support
+    -- the artifact's table binding String, but none of the rest of a string literal's
+    -- support (nor any role whose block or dependencies need it)
     let some lone := artifact.consts.toList.findSome? fun (a, _) =>
         if t.bound.any (·.2 == a) then none else some a
       | throw (IO.userError "every record of the artifact is bound")
-    let loneTable := RoleTable.ofEntries t.version (t.bound.toList ++ [(Role.string, lone)])
-      t.evidence.toList
+    let support := [Role.stringOfList, .list, .listNil, .listCons, .char, .charOfNat]
+    let kept := dropClosed t.bound.toList support (Role.all.length + 1)
+    let bound := if kept.any (·.1 == Role.string) then kept else kept ++ [(Role.string, lone)]
+    let keptRoles := bound.map (·.1)
+    let loneTable := RoleTable.ofEntries t.version bound
+      (t.evidence.toList.filter fun (r, _) => keptRoles.contains r)
     let loneBytes := loneTable.toBytes
     let loneAddr := Address.admissionHash loneBytes
     let loneEnv := dir / "lone-string.ixe"
