@@ -226,6 +226,13 @@ closures, and the refusals; `diff` and `single` take any role-bound closure. -/
 lean_exe «tests-kernel-front» where
   root := `IxCCTests.KernelFront.Main
 
+/- The grounding check (`IxCCGrounding.Check`) on the committed closures of
+the grounding subjects, conjunct by conjunct, with negative controls that each
+falsify exactly one conjunct. Built and run by `ixcc-grounding`, not by the
+shared program build (`nix/sources.nix`). -/
+lean_exe «tests-grounding» where
+  root := `IxCCTests.Grounding.Main
+
 lean_exe «tests-ixon-v3» where
   root := `IxCCTests.IxonV3.Main
   needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
