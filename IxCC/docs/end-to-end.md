@@ -2,10 +2,9 @@
 
 Written 2026-11-10; the premises restated 2026-11-11 (below). **Status:**
 below the source evaluator the x86 route is implemented and proved; the
-shared spine above it is **in progress**: SrcEval's fundamental lemma is proved
-over every model with the laws, under a check on the bytes, one typing
-hypothesis and, until the generic `case` lemma lands, F5's meaning at each
-`case` constant ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress));
+shared spine above it is **in progress**: soundness at a root is proved for
+first-order roots (`fib`, `decide (fib 10 = 55)`) over every model with the
+laws, under checks on the bytes and one typing hypothesis ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress));
 the Aiur routes are **planned**, the first of them on the IxVM side. This page says
 what "certified end to end" is to mean for each back end, what the routes
 share and what each trusts. The [roadmap](roadmap.md#plan) schedules the
@@ -99,11 +98,15 @@ The spine's theorem, for the first grounded fragment
 
 **Landed so far** (2026-11-11, [the grounding
 library](certification-design.md#the-grounding-library-sp-1-in-progress)): the
-fundamental lemma behind soundness, over every model with the laws taken as
-hypotheses, for any program and kernel reading that pass a check run on the
-bytes, under the typing hypothesis `SitesOk` (premise (ii)'s typing part, in
-the one form it is consumed: at application sites SrcEval evaluates) and F5's
-meaning at each `case` constant. The root theorem, `SitesOk`'s discharge and
+soundness statement above for roots on first-order arguments (literals and
+enumeration constructors) with a `Nat` or enumeration result, over every model
+with the laws taken as hypotheses, for any program and kernel reading that pass
+checks run on the bytes, under the typing hypothesis `SitesOk` (premise (ii)'s
+typing part, in the one form it is consumed: at application sites SrcEval
+evaluates), with `fib` and `decide (fib 10 = 55)` as instances; F5's meaning at
+each `case` constant is proved from the checked shape, not assumed. One checked
+hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning
+`false` on the committed closures). `SitesOk`'s discharge, widening and
 progress are the next steps; the certification design lists every hypothesis
 with who discharges it.
 
