@@ -16,12 +16,16 @@ three policies (`.immortal`, `.zeroRc`, `.plainRc`):
 
 ## Scope and Trust Boundary Notes
 
-1. **Ingress & Kernel Typechecking**:
-   - `verifyBytes` defaults to `typecheck := true`, and `verifyBytes_*_sound`
-     explicitly exposes `Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp`,
-     `Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env`,
-     `typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`, and
-     `Src.Resource.validate inp.program = .ok ()`.
+1. **Ingress and the certified kernel's acceptance**:
+   - `verifyBytes` runs `Recheck.ingress`, whose acceptance by the certified kernel is not
+     optional, and `verifyBytes_*_sound` explicitly exposes
+     `Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp`,
+     `Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env`, the kernel's tiered entry having
+     accepted exactly the envelope's binding section, records and blobs
+     (`Src.KernelFront.accept`, `AcceptedFrom`, `checkBytesTieredUsing … = .ok …`), and
+     `Src.Resource.validate inp.program = .ok ()`. The acceptance is of the whole artifact
+     under its own table and prelude; it is not the end-to-end statements' first premise
+     (the closure of the seeds under the default table and the committed prelude).
 
 2. **Front-End Recheck Step**:
    - Every soundness theorem exposes `Recheck.front cfg P cert = .ok (a.src, a.checked)`
@@ -34,7 +38,7 @@ three policies (`.immortal`, `.zeroRc`, `.plainRc`):
      relevance annotation recheck, and `Lazify` under `SrcEval` (`Lam.Erase.Proof`).
      These theorems state that `front` ran, not what it preserves. The byte-level
      `verifyBytes_*_sound` also state how `a.src` was built from `inp.program`
-     (`Table.ofCert`, the annotation equal to `Relevance.annotate`'s output,
+     (`Table.ofCert`, the annotation equal to the kernel annotator's output,
      `install`, `check`, `WellAnnotated`, `Lazify.run`, which changes only
      application modes: `Lazify.run_modeEq`). None of these relates `a.src` to
      `inp.program` semantically (open item S6 in `IxCC/docs/certification-design.md`), and nothing
@@ -837,27 +841,38 @@ theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
     · cases hver
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.immortal` policy,
-exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
-`Src.Resource.validate`, `Src.Ingress.ofEnv` (`Recheck.ingress_parts`), canonical relevance
+exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, the certified kernel's acceptance of the whole
+environment (`Src.KernelFront.accept`, `accept_spec`),
+`Src.Resource.validate`, `Src.Ingress.readConsts` with the pins of the kernel's admitted table, the
+program read against the kernel's reading (`Recheck.ingress_parts`), canonical relevance over the kernel
 (`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
 and `verifyProgram_immortal_sound`. -/
 theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .immortal)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact)
       (rootId : Src.CId) (root : Recheck.Root) (sig : Rt.Sig) (ty : Rt.FoTy),
       c.WellFormed ∧
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
-      (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
+      Src.KernelFront.accept inp.env Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
+      Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
+      Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
+        Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
+        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
+      inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
       (∃ rawHints chosen rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
-        inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
+        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with
+          known := Src.Pinned.known
+            { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
+          resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
       inp.env.bindingAddress = c.roleTable ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
@@ -866,7 +881,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Recheck.front cfg inp.program cert = .ok (a.src, a.checked) ∧
       (∃ table installed,
         Src.Table.ofCert cfg.table inp.program cert.table = .ok table ∧
-        Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance ∧
+        inp.kernel.annotateChecked { inp.program with table } = .ok cert.relevance ∧
         Src.Relevance.install { inp.program with table } cert.relevance = .ok installed ∧
         Src.Relevance.check installed cert.relevance = .ok a.checked ∧
         Src.Relevance.Proof.WellAnnotated installed cert.relevance a.checked ∧
@@ -889,14 +904,14 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
             (∀ k, Lang.run (a.linked D) i k = .timeout) ∨
               ∃ k failure, Lang.run (a.linked D) i k = .resource failure) := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
     obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
-    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
       hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩ :=
       verifyProgram_immortal_sound hpol hprog
@@ -910,32 +925,43 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       cases htab
       rfl
     subst htabEq
-    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
+    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg,
       henv, hrole, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
       hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.zeroRc` policy,
-exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
-`Src.Resource.validate`, `Src.Ingress.ofEnv` (`Recheck.ingress_parts`), canonical relevance
+exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, the certified kernel's acceptance of the whole
+environment (`Src.KernelFront.accept`, `accept_spec`),
+`Src.Resource.validate`, `Src.Ingress.readConsts` with the pins of the kernel's admitted table, the
+program read against the kernel's reading (`Recheck.ingress_parts`), canonical relevance over the kernel
 (`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
 and `verifyProgram_zeroRc_sound`. -/
 theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .zeroRc)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact)
       (rootId : Src.CId) (root : Recheck.Root) (sig : Rt.Sig) (ty : Rt.FoTy),
       c.WellFormed ∧
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
-      (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
+      Src.KernelFront.accept inp.env Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
+      Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
+      Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
+        Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
+        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
+      inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
       (∃ rawHints chosen rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
-        inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
+        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with
+          known := Src.Pinned.known
+            { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
+          resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
       inp.env.bindingAddress = c.roleTable ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
@@ -945,7 +971,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Recheck.front cfg inp.program cert = .ok (a.src, a.checked) ∧
       (∃ table installed,
         Src.Table.ofCert cfg.table inp.program cert.table = .ok table ∧
-        Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance ∧
+        inp.kernel.annotateChecked { inp.program with table } = .ok cert.relevance ∧
         Src.Relevance.install { inp.program with table } cert.relevance = .ok installed ∧
         Src.Relevance.check installed cert.relevance = .ok a.checked ∧
         Src.Relevance.Proof.WellAnnotated installed cert.relevance a.checked ∧
@@ -972,14 +998,14 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
             (∀ k, Lang.run (a.linked D) i k = .timeout) ∨
               ∃ k failure, Lang.run (a.linked D) i k = .resource failure) := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
     obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
-    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrunC, hrun, hfront,
       hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩ :=
       verifyProgram_zeroRc_sound hpol hprog
@@ -993,32 +1019,43 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       cases htab
       rfl
     subst htabEq
-    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
+    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg,
       henv, hrole, hhead, hcert, hrunC, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
       hrcPol, hcheckMap, hahead, hnatParams, hty, htyOk, hparams, hhash, hcov, hsem⟩
 
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.plainRc` policy,
-exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, `Ixon.V3.Tc.checkEnv` (when `typecheck = true`),
-`Src.Resource.validate`, `Src.Ingress.ofEnv` (`Recheck.ingress_parts`), canonical relevance
+exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, the certified kernel's acceptance of the whole
+environment (`Src.KernelFront.accept`, `accept_spec`),
+`Src.Resource.validate`, `Src.Ingress.readConsts` with the pins of the kernel's admitted table, the
+program read against the kernel's reading (`Recheck.ingress_parts`), canonical relevance over the kernel
 (`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
 and `verifyProgram_plainRc_sound`. -/
 theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .plainRc)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.RcReplay.Cert) (a : Recheck.RcReplay.Artifact)
       (rootId : Src.CId) (root : Recheck.Root) (sig : Rt.Sig) (ty : Rt.FoTy),
       c.WellFormed ∧
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
-      (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
+      Src.KernelFront.accept inp.env Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
+      Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
+      Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
+        Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
+        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
+      inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
       (∃ rawHints chosen rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
-        inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource }) ∧
+        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with
+          known := Src.Pinned.known
+            { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
+          resource := inp.hints.resource }) ∧
       inp.env.root = c.env ∧
       inp.env.bindingAddress = c.roleTable ∧
       inp.program.roots.head? = some (c.target, rootId) ∧
@@ -1027,7 +1064,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Recheck.front cfg inp.program cert.base = .ok (a.front.src, a.front.checked) ∧
       (∃ table installed,
         Src.Table.ofCert cfg.table inp.program cert.base.table = .ok table ∧
-        Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.base.relevance ∧
+        inp.kernel.annotateChecked { inp.program with table } = .ok cert.base.relevance ∧
         Src.Relevance.install { inp.program with table } cert.base.relevance = .ok installed ∧
         Src.Relevance.check installed cert.base.relevance = .ok a.front.checked ∧
         Src.Relevance.Proof.WellAnnotated installed cert.base.relevance a.front.checked ∧
@@ -1053,14 +1090,14 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
             (∀ clock, Lang.run (a.linked D) i clock = .timeout) ∨
               ∃ clock resource, Lang.run (a.linked D) i clock = .resource resource) := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
     obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
-    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
     obtain ⟨cert, a, rootId, root, sig, ty, hwf, hhead, hcert, hrun, hfront, hahead,
       hnatParams, hty, hparams, hhash, hcov, hsem⟩ :=
       verifyProgram_plainRc_sound hpol hprog
@@ -1074,7 +1111,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       cases htab
       rfl
     subst htabEq
-    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, htc, hres, hingProg,
+    exact ⟨inp, cert, a, rootId, root, sig, ty, hwf, rfl, hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg,
       henv, hrole, hhead, hcert, hrun, hfront, ⟨table₀, installed, htab₀, hann, hinst, hchk, hwa, hlaz⟩,
       hahead, hnatParams, hty, hparams, hhash, hcov, hsem⟩
 
@@ -1130,18 +1167,18 @@ theorem verifyProgram_zeroRc_rootShape {cfg : Recheck.Config} {P : Src.Program}
 /-- Under `.immortal`, `verifyBytes`'s artifact (on the ingested program) goes
 wrong at the claim's root only off the root's result shape. -/
 theorem verifyBytes_immortal_rootShape {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .immortal)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
       Recheck.RootWrongOffShape a root := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
@@ -1151,18 +1188,18 @@ theorem verifyBytes_immortal_rootShape {cfg : Recheck.Config} {envBytes : ByteAr
 /-- Under `.zeroRc`, `verifyBytes`'s artifact (on the ingested program) goes
 wrong at the claim's root only off the root's result shape. -/
 theorem verifyBytes_zeroRc_rootShape {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .zeroRc)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
       Recheck.RootWrongOffShape a root := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
@@ -1212,18 +1249,18 @@ theorem verifyProgram_zeroRc_shape {cfg : Recheck.Config} {P : Src.Program}
 /-- Under `.immortal`, `verifyBytes`'s artifact (on the ingested program) has
 the shape-view guarantees at the claim's root. -/
 theorem verifyBytes_immortal_shape {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .immortal)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
@@ -1233,18 +1270,18 @@ theorem verifyBytes_immortal_shape {cfg : Recheck.Config} {envBytes : ByteArray}
 /-- Under `.zeroRc`, `verifyBytes`'s artifact (on the ingested program) has
 the shape-view guarantees at the claim's root. -/
 theorem verifyBytes_zeroRc_shape {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .zeroRc)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.Cert) (a : Recheck.Artifact) (root : Recheck.Root),
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Recheck.Cert.ofText certText = .ok cert ∧
       Recheck.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkImmortalRoot a.src root = true ∧
       ∀ (D : X86.Driver), D.Ok a.backend.encoded.text.size → Recheck.ShapeClaim a cert root D := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
@@ -1282,19 +1319,19 @@ theorem verifyProgram_plainRc_rootShape {cfg : Recheck.Config} {P : Src.Program}
 /-- Under `.plainRc`, `verifyBytes`'s artifact (on the ingested program) goes
 wrong at the claim's root only off the root's plain-RC shape. -/
 theorem verifyBytes_plainRc_rootShape {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool}
+    {equations : Lean.Json} {c : CompileClaim} {certText : String}
     (hpol : c.policy = .plainRc)
-    (hver : verifyBytes cfg envBytes equations c certText typecheck = true) :
+    (hver : verifyBytes cfg envBytes equations c certText = true) :
     ∃ (inp : Recheck.Input) (cert : Recheck.RcReplay.Cert) (a : Recheck.RcReplay.Artifact)
       (root : Recheck.Root),
-      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck = .ok inp ∧
+      Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) = .ok inp ∧
       Recheck.RcReplay.Cert.ofText certText = .ok cert ∧
       Recheck.RcReplay.run cfg inp.program cert = .ok a ∧
       a.roots.head? = some root ∧
       checkPlainRcRoot a.front.src root = true ∧
       Recheck.RcReplay.RootWrongOffPlainShape a root := by
   unfold verifyBytes at hver
-  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) typecheck with
+  cases hing : Recheck.ingress envBytes equations (selectTargetRoots cfg equations c.target) with
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver

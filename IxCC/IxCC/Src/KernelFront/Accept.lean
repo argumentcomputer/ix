@@ -91,11 +91,15 @@ def Stage.word : Stage → String
 
 /-- A refusal, with the kernel's own classification where it gave one
 (`Ix.Kernel.Admission.TierError.outcome`: a reject where the input is shown
-wrong, a decline otherwise). -/
+wrong, a decline otherwise), and the record it names where the kernel's error
+names one by address or by its position among the records (for the census;
+an error at a declaration of the logical fold names a declaration, not a
+record). -/
 structure Refusal where
   stage : Stage
   outcome : Option Ix.Kernel.Admission.Outcome := none
   message : String
+  record : Option KAddr := none
   deriving Inhabited
 
 def Refusal.render (r : Refusal) : String :=
@@ -115,7 +119,10 @@ def Refusal.ofError (e : Ix.Kernel.Admission.Error) : Refusal :=
     | .prelude _ | .preludeCopy => .prelude
     | .read .. => .read
     | .kernel .. | .axiomRoleUnbound _ => .kernel
-  { stage, outcome := some e.outcome, message := toString e }
+  let record : Option KAddr := match e with
+    | .duplicate _ _ a | .mismatch _ _ a | .decode _ a _ => some a
+    | _ => none
+  { stage, outcome := some e.outcome, message := toString e, record }
 
 /-- A tiered entry's failure as a refusal, a record position read back to the
 record's address. -/
@@ -126,9 +133,11 @@ def Refusal.ofTierError (records : Ix.Kernel.Admission.Records)
     | none => ""
   match e with
   | .entry e' => { Refusal.ofError e' with outcome := some e.outcome }
-  | .fence .. => { stage := .kernel, outcome := some e.outcome, message := toString e }
-  | .read i _ => { stage := .read, outcome := some e.outcome, message := toString e ++ at_ i }
-  | .tier _ i => { stage := .kernel, outcome := some e.outcome, message := toString e ++ at_ i }
+  | .fence a _ => { stage := .kernel, outcome := some e.outcome, message := toString e, record := some a }
+  | .read i _ => { stage := .read, outcome := some e.outcome, message := toString e ++ at_ i,
+                   record := records[i]?.map (·.1) }
+  | .tier _ i => { stage := .kernel, outcome := some e.outcome, message := toString e ++ at_ i,
+                   record := records[i]?.map (·.1) }
 
 /-- The closure's records and blobs by address, sorted, in the kernel's types. -/
 def recordsOf (env : Ixon.V3.Env) : Array (KAddr × ByteArray) :=

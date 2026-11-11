@@ -382,4 +382,21 @@ def checkReachedTypes (rd : Reading) (p : Program) (a : Ann) : Except String Uni
   for c in (annReached a p.size ++ tableThms).eraseDups do
     rd.typeCheck p c
 
+/-- **What ingress keeps of the kernel** for the producer, the loader and
+Stage A: the acceptance (`accept`), IxCC's program keyed to the kernel's
+reading (`Reading.build`), and the accepted environment's index, which the
+annotator queries. -/
+structure Kernel where
+  acc : Accepted
+  rd : Reading
+  fe : Ix.Kernel.FEnv .anon
+
+/-- **The relevance oracle over the kernel**, on a program with a table: the
+kernel annotator's output (`annotate`), and the check that the types the
+program reads are the kernel's (`checkReachedTypes`). -/
+def Kernel.annotateChecked (k : Kernel) (p : Program) : Except String Ann := do
+  let ann ← annotate k.fe k.rd p
+  checkReachedTypes k.rd p ann
+  pure ann
+
 end IxCC.Src.KernelFront

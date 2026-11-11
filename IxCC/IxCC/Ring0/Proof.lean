@@ -1121,36 +1121,45 @@ theorem verifyProgramRing0Sip_sound {sip : Ring0Sip} {P : Src.Program}
   verifyRing0Sip_sound hver
 
 /-- **Byte-Level Ring-0 Certified-Compilation Admission Theorem (`verifyBytesRing0Sip_sound`)**:
-Any `Ring0Sip` that passes `sip.verifyBytes envBytes equations typecheck = true`
-yields an ingested `Recheck.Input` whose environment root and role-table address
-(`none` for an unbound environment) are the claim's, with
-`typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()`,
-`Src.Resource.validate inp.program = .ok ()`, `inp.program` built by
-`Src.Ingress.ofEnv` from `inp.env` and the selected roots (`Recheck.ingress_parts`), and
-canonical relevance (`Stage A`): the certificate's table passes `Src.Table.ofCert` and its
-annotation is exactly `Src.Relevance.annotate inp.env { inp.program with table }`
-(`Recheck.checkCanonicalRelevance_iff`, for the certificate `sip.certText` parses to under
-the claim's policy). Its program satisfies the non-vacuous `AdmittedRing0Sip sip inp.program`.
+Any `Ring0Sip` that passes `sip.verifyBytes envBytes equations = true` yields an ingested
+`Recheck.Input` whose environment root and role-table address are the claim's, with the
+certified kernel's acceptance of the whole environment (`Src.KernelFront.accept`: its tiered
+entry ran on exactly the envelope's binding section, records and blobs, and accepted them),
+`Src.Resource.validate inp.program = .ok ()`, `inp.program` built by `Src.Ingress.readConsts`
+from `inp.env` and the selected roots with the pins of the kernel's admitted table and read
+against the kernel's reading (`Recheck.ingress_parts`), and canonical relevance (`Stage A`):
+the certificate's table passes `Src.Table.ofCert` and its annotation is exactly
+`inp.kernel.annotateChecked { inp.program with table }` (`Recheck.checkCanonicalRelevance_iff`,
+for the certificate `sip.certText` parses to under the claim's policy). Its program satisfies
+the non-vacuous `AdmittedRing0Sip sip inp.program`.
 As for `CompileClaim.verifyBytes_*_sound`, these facts bind `a.src` to
 `(inp.env, cert.table)`; they do not relate it semantically to `inp.program` (open item S6 in
 `IxCC/docs/certification-design.md`). -/
 theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
-    {equations : Lean.Json} {typecheck : Bool}
-    (hver : sip.verifyBytes envBytes equations typecheck = true) :
+    {equations : Lean.Json}
+    (hver : sip.verifyBytes envBytes equations = true) :
     ∃ inp : Recheck.Input,
       Recheck.ingress envBytes equations
-        (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) typecheck = .ok inp ∧
+        (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) = .ok inp ∧
       Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
-      (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
+      Src.KernelFront.accept inp.env Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
+      Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
+      Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
+        Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
+        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
+      Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
+      inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
       (∃ rawHints chosen rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots
           (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
-        inp.program = { rawProg with known := Src.Pinned.known rawProg,
-                                     resource := inp.hints.resource }) ∧
+        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        inp.program = { rawProg with
+          known := Src.Pinned.known
+            { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
+          resource := inp.hints.resource }) ∧
       inp.env.root = sip.claim.env ∧
       inp.env.bindingAddress = sip.claim.roleTable ∧
       CompileClaim.checkCertCanonicalRelevance sip.cfg inp sip.claim.policy sip.certText = true ∧
@@ -1159,20 +1168,20 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
          ∃ (cert : Recheck.Cert) (table : Src.Table),
            Recheck.Cert.ofText sip.certText = .ok cert ∧
            Src.Table.ofCert sip.cfg.table inp.program cert.table = .ok table ∧
-           Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance
+           inp.kernel.annotateChecked { inp.program with table } = .ok cert.relevance
        | .plainRc =>
          ∃ (cert : Recheck.RcReplay.Cert) (table : Src.Table),
            Recheck.RcReplay.Cert.ofText sip.certText = .ok cert ∧
            Src.Table.ofCert sip.cfg.table inp.program cert.base.table = .ok table ∧
-           Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.base.relevance) ∧
+           inp.kernel.annotateChecked { inp.program with table } = .ok cert.base.relevance) ∧
       AdmittedRing0Sip sip inp.program := by
   unfold Ring0Sip.verifyBytes at hver
   cases hing : Recheck.ingress envBytes equations
-      (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) typecheck with
+      (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) with
   | error _ => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true, beq_iff_eq] at hver
-    obtain ⟨hdec, htc, hres, hingProg⟩ := Recheck.ingress_parts hing
+    obtain ⟨hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
     have hcanon := hver.1.2
     have hann :
         (match sip.claim.policy with
@@ -1180,12 +1189,12 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
            ∃ (cert : Recheck.Cert) (table : Src.Table),
              Recheck.Cert.ofText sip.certText = .ok cert ∧
              Src.Table.ofCert sip.cfg.table inp.program cert.table = .ok table ∧
-             Src.Relevance.annotate inp.env { inp.program with table } = .ok cert.relevance
+             inp.kernel.annotateChecked { inp.program with table } = .ok cert.relevance
          | .plainRc =>
            ∃ (cert : Recheck.RcReplay.Cert) (table : Src.Table),
              Recheck.RcReplay.Cert.ofText sip.certText = .ok cert ∧
              Src.Table.ofCert sip.cfg.table inp.program cert.base.table = .ok table ∧
-             Src.Relevance.annotate inp.env { inp.program with table } =
+             inp.kernel.annotateChecked { inp.program with table } =
                .ok cert.base.relevance) := by
       unfold CompileClaim.checkCertCanonicalRelevance at hcanon
       cases hpol : sip.claim.policy <;> simp only [hpol] at hcanon ⊢
@@ -1211,7 +1220,7 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
             (Recheck.checkCanonicalRelevance_iff sip.cfg inp cert.base.table
               cert.base.relevance).mp hcanon
           exact ⟨cert, table, rfl, htab, hann⟩
-    exact ⟨inp, rfl, hdec, htc, hres, hingProg, hver.1.1.1, hver.1.1.2, hver.1.2, hann,
+    exact ⟨inp, rfl, hdec, hacc, hfrom, htier, hres, hrd, hfe, hingProg, hver.1.1.1, hver.1.1.2, hver.1.2, hann,
       verifyRing0Sip_sound hver.2⟩
 
 /-- What a SIP's certificate determines on `P`: the checked source, its `view` and
