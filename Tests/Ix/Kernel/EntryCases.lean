@@ -420,6 +420,67 @@ def tierCases : List TierCase := [
       | .defn d => pure { c with info := .defn { d with kind := .thm } }
       | _ => throw "loop._unsafe_rec is not a definition record" } ]
 
+/-! ## Forged records of a modeled block
+
+Hand-built records Lean cannot produce, at a nested block the in-process
+modeller models (`NB4`, whose index domain mentions a parameter): the block's
+recursor records altered over the decoded records, each under its key, and
+checked by the logical entry (`Admission.checkConstants`). Each must be
+refused, by the reader or the checker. The labels name the shape and the
+forgery (`modeled-<shape>-forged-<what>`). -/
+
+structure ForgedCase where
+  label : String
+  seeds : List Lean.Name
+  /-- the forgery of a recursor record of the block (every recursor of a
+  record of several) -/
+  forge : Ixon.Recursor → Ixon.Recursor
+  /-- the record to forge, by a name of its block's recursors -/
+  target : Lean.Name
+
+/-- A recursor record, or a record of recursors, with `f` applied to each. -/
+def forgeRecursors (f : Ixon.Recursor → Ixon.Recursor) (c : Ixon.Constant) : Except String Ixon.Constant :=
+  match c.info with
+  | .recr r => pure { c with info := .recr (f r) }
+  | .muts ms =>
+    if ms.all (fun | .recr _ => true | _ => false) then
+      pure { c with info := .muts (ms.map fun | .recr r => .recr (f r) | m => m) }
+    else throw "the record is not a record of recursors"
+  | _ => throw "the record is not a recursor record"
+
+/-- The right-hand sides of the first two rules exchanged. -/
+def swapRules (r : Ixon.Recursor) : Ixon.Recursor :=
+  match r.rules[0]?, r.rules[1]? with
+  | some a, some b => { r with rules := (r.rules.set! 0 { a with rhs := b.rhs }).set! 1 { b with rhs := a.rhs } }
+  | _, _ => r
+
+def forgedCases : List ForgedCase := [
+  { label := "modeled-nested-parameter-index-forged-rule", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := swapRules },
+  { label := "modeled-nested-parameter-index-forged-motives", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => { r with motives := r.motives + 1 } },
+  { label := "modeled-nested-parameter-index-forged-k", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => { r with k := !r.k } } ]
+
+def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
+  let started ← IO.monoMsNow
+  let input ← prepare leanEnv test.seeds
+  let constants ← IO.ofExcept (alterConstant input test.target (forgeRecursors test.forge))
+  let table ← IO.ofExcept defaultTable
+  let result := Ix.Kernel.Admission.checkConstants Address.blake3 table constants input.blobs input.hints.lookup
+  let (outcome, detail, passed) := match result with
+    | .ok _ => ("accept", "", false)
+    | .error e => (match e.outcome with | .rejected => "reject" | .declined => "decline", toString e, true)
+  let ms := (← IO.monoMsNow) - started
+  IO.println (Lean.Json.mkObj [
+    ("case", Lean.toJson test.label), ("expected", Lean.toJson "refuse"),
+    ("outcome", Lean.toJson outcome), ("detail", Lean.toJson detail),
+    ("passed", Lean.toJson passed), ("records", Lean.toJson constants.length), ("ms", Lean.toJson ms),
+    ("leanVersion", Lean.toJson Lean.versionString)]).compress
+  unless passed do
+    IO.eprintln s!"{test.label}: expected a refusal, got {outcome}"
+  return passed
+
 def runTier (leanEnv : Lean.Environment) (test : TierCase) : IO Bool := do
   let started ← IO.monoMsNow
   let input ← prepare leanEnv test.seeds
@@ -560,7 +621,12 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  let total := cases.length + stepCases.length + tierCases.length
+  for test in forgedCases do
+    let passed ← try runForged leanEnv test catch e => do
+      IO.eprintln s!"{test.label}: harness error: {e}"
+      pure false
+    unless passed do failed := failed + 1
+  let total := cases.length + stepCases.length + tierCases.length + forgedCases.length
   IO.eprintln s!"Certified entry, host-compiled cases: {total - failed}/{total} passed."
   return if failed == 0 then 0 else 1
 

@@ -41,13 +41,11 @@ namespace Tests.Ix.IxVM.ModelAdvice
 open IxVM.ClaimHarness
 
 /-- Mutual (`Even`/`Odd`, `SoloA`/`SoloB`) and nested (`Tree`, `DedupM`,
-`AuxTie`, and `NestParIdx`/`NestListIdx`, whose index domains mention a
-parameter) fixtures, types and recursors. -/
+`AuxTie`) fixtures, types and recursors. -/
 def modeledNames : List String := [
   "IxVMInd.Even", "IxVMInd.Odd", "IxVMInd.Even.rec", "IxVMInd.Odd.rec",
   "IxVMInd.SoloA.rec", "IxVMInd.Tree", "IxVMInd.Tree.rec", "IxVMInd.Tree.rec_1",
-  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec",
-  "IxVMInd.NestParIdx.rec", "IxVMInd.NestListIdx.rec"]
+  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec"]
 
 /-- Claims on a nested block whose index domain mentions a parameter
 (`Tests.Ix.Kernel.EntryCaseDefs.NB4`), with the verdict the circuit must give:
