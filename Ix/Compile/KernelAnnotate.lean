@@ -106,6 +106,11 @@ def declName (d : Ix.Kernel.Declaration .source) : String :=
   | some k => toString k
   | none => "?"
 
+private instance : Nonempty (FEnv .source) := ⟨Ix.Kernel.mkFEnv Ix.Kernel.Env.empty⟩
+
+private instance : Nonempty (Ix.Kernel.Cached.CoreFnsI .source) :=
+  ⟨Ix.Kernel.Cached.coreKnotI .verified (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty) 0⟩
+
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32) :

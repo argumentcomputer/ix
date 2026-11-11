@@ -1086,7 +1086,7 @@ theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {c
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    have lits := built_lits hb (fun e he => ?_)
+    have lits := built_lits (T := T) hb (fun e he => ?_)
     · exact lits
     rcases payloads with ⟨l⟩
     rcases l with _ | ⟨m, _ | ⟨m₂, rest⟩⟩
@@ -1105,7 +1105,7 @@ theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {c
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    have lits := built_lits hb (fun e he => ?_)
+    have lits := built_lits (T := T) hb (fun e he => ?_)
     · exact lits
     simp only [constantInfoRootExprs, List.toList_toArray, List.mem_flatMap] at he
     obtain ⟨p, hp, he⟩ := he
