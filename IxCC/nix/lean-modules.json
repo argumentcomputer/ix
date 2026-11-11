@@ -181,6 +181,9 @@
   "IxCCTests.Support.LamGen":
   {"path": "IxCCTests/Support/LamGen.lean",
    "imports": ["IxCCTests.Support.Rng", "IxCC.Lam.Syntax"]},
+  "IxCCTests.Support.Bound":
+  {"path": "IxCCTests/Support/Bound.lean",
+   "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
   "IxCCTests.Src.Table":
   {"path": "IxCCTests/Src/Table.lean", "imports": ["IxCCTests.Src.Support"]},
   "IxCCTests.Src.Support":
@@ -948,7 +951,10 @@
     "IxCCTests.Fixtures.SortPoly"]},
   "IxCCTests.KernelFront.Run":
   {"path": "IxCCTests/KernelFront/Run.lean",
-   "imports": ["IxCCTests.KernelFront.Diff", "IxCCTests.Src.Support"]},
+   "imports":
+   ["IxCCTests.KernelFront.Diff",
+    "IxCCTests.KernelFront.Bound",
+    "IxCCTests.Src.Support"]},
   "IxCCTests.KernelFront.Main":
   {"path": "IxCCTests/KernelFront/Main.lean",
    "imports": ["IxCCTests.KernelFront.Run"]},
@@ -958,6 +964,12 @@
    ["IxCC.Src.KernelFront.Front",
     "IxCC.Ixon.V3.Tc.Driver",
     "IxCC.Recheck.Json"]},
+  "IxCCTests.KernelFront.Bound":
+  {"path": "IxCCTests/KernelFront/Bound.lean",
+   "imports":
+   ["IxCCTests.Support.Bound",
+    "IxCCTests.Recheck.Hostile",
+    "IxCC.Src.KernelFront.Front"]},
   "IxCCTests.IxonV3.TypingFixtures":
   {"path": "IxCCTests/IxonV3/TypingFixtures.lean",
    "imports": ["IxCC.Ixon.V3.Validate"]},
