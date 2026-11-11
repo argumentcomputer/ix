@@ -244,11 +244,11 @@ def run : IO Bool := do
     let some (di, boolD) := dec? | throw (IO.userError "no decide subject")
     expect a (!resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 0 []))
       "decide: the observation `false` passes resultTag (expected the documented rejection)"
-    let some zero := di.src.known.natZero | throw (IO.userError "decide: no pinned Nat.zero")
+    let some natZ := di.src.known.natZero | throw (IO.userError "decide: no pinned Nat.zero")
     let some tru := di.src.known.boolTrue | throw (IO.userError "decide: no pinned Bool.true")
     expect a (foArgsB di.src di.κ [.enum boolD] [.con tru [] [] []] [.const (di.κ tru) []])
       "decide: Bool.true is not a first-order Bool argument"
-    expect a (!foArgsB di.src di.κ [.enum boolD] [.con zero [] [] []] [.const (di.κ zero) []])
+    expect a (!foArgsB di.src di.κ [.enum boolD] [.con natZ [] [] []] [.const (di.κ natZ) []])
       "decide: Nat.zero passes as a Bool argument"
     let some natD := di.src.known.nat | throw (IO.userError "decide: no pinned Nat")
     let dm := { di with src := { di.src with known := { di.src.known with bool := some natD } } }
