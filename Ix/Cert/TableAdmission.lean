@@ -129,16 +129,16 @@ theorem mem_recordTargets {E : Ixon.Env} {a b : Address} :
     · rintro (h | h)
       · refine Or.inl ?_
         by_cases ho : ownerOf a c = a
-        · rw [if_pos ho] at h
+        · rw [ite_eq_left ho] at h
           simp at h
-        · rw [if_neg ho, List.mem_singleton] at h
+        · rw [ite_eq_right ho, List.mem_singleton] at h
           subst h
           exact ⟨rfl, ho⟩
       · exact Or.inr h
     · rintro (⟨hb, hne⟩ | h)
       · refine Or.inl ?_
         subst hb
-        rw [if_neg hne, List.mem_singleton]
+        rw [ite_eq_right hne, List.mem_singleton]
       · exact Or.inr h
 
 /-- `p` is `a`, or a projection of the block at `a`. -/
@@ -174,7 +174,7 @@ theorem mem_groundPairs {t : RoleTable} {s : Role} {p : Address} :
       intro h
       simp only [List.mem_map, Prod.mk.injEq] at h
       obtain ⟨s', hs', rfl, rfl⟩ := h
-      exact ⟨r, rfl, hs'⟩
+      exact ⟨r, ha, hs'⟩
   · rintro ⟨r, ha, hs⟩
     refine ⟨r, Role.mem_all r, ?_⟩
     simp only [ha, List.mem_map]
@@ -195,16 +195,16 @@ theorem mem_groundRolesAt {t : RoleTable} {E : Ixon.Env} {a : Address} {s : Role
   · rintro ⟨⟨s', p⟩, hm, h⟩
     dsimp only at h
     by_cases ho : ownedBy E p a = true
-    · rw [if_pos ho] at h
+    · rw [ite_eq_left ho] at h
       cases h
       obtain ⟨r, ha, hs⟩ := mem_groundPairs.mp hm
       exact ⟨r, p, ha, hs, ownedBy_iff.mp ho⟩
-    · rw [if_neg ho] at h
+    · rw [ite_eq_right ho] at h
       cases h
   · rintro ⟨r, p, ha, hs, ho⟩
     refine ⟨(s, p), mem_groundPairs.mpr ⟨r, ha, hs⟩, ?_⟩
     dsimp only
-    rw [if_pos (ownedBy_iff.mpr ho)]
+    rw [ite_eq_left (ownedBy_iff.mpr ho)]
 
 /-- The roles a record's literals are checked against (`literalRoles`). -/
 def litRoles (E : Ixon.Env) (a : Address) : List Role :=
@@ -236,14 +236,14 @@ theorem groundTarget?_eq_some {t : RoleTable} {E : Ixon.Env} {lits gr : List Rol
   | some b' =>
     dsimp only
     by_cases hc : E.consts.contains b' = true ∧ (s ∈ gr ∨ s ∈ lits)
-    · rw [if_pos hc]
+    · rw [ite_eq_left hc]
       constructor
       · intro hb
         cases hb
         exact ⟨rfl, hc⟩
       · rintro ⟨hb, -⟩
         exact hb
-    · rw [if_neg hc]
+    · rw [ite_eq_right hc]
       constructor
       · intro hb
         cases hb
@@ -304,7 +304,7 @@ theorem mem_targets {t : RoleTable} {E : Ixon.Env} {a b : Address} :
   rw [List.mem_append, List.mem_append, mem_recordTargets, mem_groundTargets,
     mem_recursorTargets, or_assoc]
 
-theorem CompiledReachAt.edge {t : RoleTable} {E : Ixon.Env} {S : Address → Prop} {a b : Address}
+theorem reach_edge {t : RoleTable} {E : Ixon.Env} {S : Address → Prop} {a b : Address}
     (h : CompiledReachAt t E S a) (he : Edge t E a b) : CompiledReachAt t E S b := by
   rcases he with he | he | he
   · exact .step h he
@@ -364,9 +364,9 @@ theorem ordered_of_foldl (E : Ixon.Env) :
       intro h
       simp only [orderedStep] at h
       by_cases hc : s'.contains a = true ∨ (refOwners E a).any s'.contains = true
-      · rw [if_pos hc] at h
+      · rw [ite_eq_left hc] at h
         cases h
-      · rw [if_neg hc] at h
+      · rw [ite_eq_right hc] at h
         cases h
         have ha : a ∉ l := fun hm => hc (Or.inl ((hs' a).mpr hm))
         refine ⟨?_, List.nodup_cons.mpr ⟨ha, hnd⟩, List.pairwise_cons.mpr ⟨?_, hpw⟩⟩
@@ -466,17 +466,17 @@ theorem reach_of_foldl {t : RoleTable} {E : Ixon.Env} {S : Address → Prop} {se
     | none =>
       simp only [reachStep] at h
       by_cases hc : seeds.contains b = true ∧ E.consts.contains b = true
-      · rw [if_pos hc] at h
+      · rw [ite_eq_left hc] at h
         exact step (.seed ((hS _).mp (List.contains_iff_mem.mp hc.1)) hc.2) h
-      · rw [if_neg hc, foldl_reachStep_none] at h
+      · rw [ite_eq_right hc, foldl_reachStep_none] at h
         cases h
     | some a =>
       simp only [reachStep] at h
       by_cases hc : s₀.contains a = true ∧
           (targets t E (artifactRecIndex E) a).contains b = true
-      · rw [if_pos hc] at h
-        exact step ((h₀ a hc.1).edge (mem_targets.mp (List.contains_iff_mem.mp hc.2))) h
-      · rw [if_neg hc, foldl_reachStep_none] at h
+      · rw [ite_eq_left hc] at h
+        exact step (reach_edge (h₀ a hc.1) (mem_targets.mp (List.contains_iff_mem.mp hc.2))) h
+      · rw [ite_eq_right hc, foldl_reachStep_none] at h
         cases h
 
 /-- **The three checks give the closure order.** -/
@@ -537,7 +537,7 @@ theorem theoremsInProp_of {envA : Env .anon} {ds : List (Declaration .anon)}
       | ok u => exact fun hd => ⟨pureFuel, tA, stype, u, h1, h2, h3, hd⟩
 
 /-- A declared constant at an anchor role has its specification's type. -/
-def anchorTyped (cv : ConstantVal .anon) : Bool :=
+def anchorTyped (cv : Ix.Kernel.ConstantVal .anon) : Bool :=
   match IxVM.Refinement.anchorPin? cv.name with
   | some pin => cv.matchesPin pin
   | none => true
