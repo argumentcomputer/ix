@@ -124,7 +124,7 @@ theorem relSlots_of_relVs : ∀ {fs : List Value} {Fs : List V},
 /-- **The generic `case` lemma, SrcEval side**: `CaseFires` at every `case` constant whose shape is
 checked, from `caseIota`, the relation and canonicity. -/
 theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseShape}
-    (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (hSc : S c)
+    (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
     (hres : p.table.resolveOf c = some (.case r)) (hst : CaseStored env (κ c) (κ r) sh)
     (hpr : CaseProg p κ S r sh) : CaseFires M p κ lpsOf S Ok c := by
   intro r' sf kk lvls np nmot nmin ni ind rules ty hres' hd ls φ T ρ σ R As hh hfit hAsl hlast

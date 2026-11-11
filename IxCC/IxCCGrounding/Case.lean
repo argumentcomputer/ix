@@ -625,7 +625,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
         (by omega) hWj' hPP hXM hmXM
       have hsn := fits_snoc ih' rfl hPP hmem
       rw [← pushAll_snoc] at hsn
-      rw [List.take_succ, List.getElem?_eq_getElem (show j' < Ws.length by omega),
+      rw [List.take_add_one, List.getElem?_eq_getElem (show j' < Ws.length by omega),
         Option.toList_some, ← List.append_assoc]
       exact hsn
   have hQM := hQ sh.nM (Nat.le_refl _)
