@@ -454,14 +454,17 @@ structure NatBasis (env : KEnv) : Prop where
     cv.type = .forallE (.const natName []) (.const natName []) { pw := PropWhen.never } ∧
     cv.levelParams = []
 
+/-- **The checked shapes of the `case` entries** of `S` (consumed by the generic `case` lemma). -/
+def CaseFacts (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) : Prop :=
+  ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+    ∃ sh, CaseStored env (κ c) (κ r) sh ∧ CaseProg p κ S r sh
+
 /-- **Every decidable fact the root theorem consumes** about the program, the kernel's reading
 and the certificate's annotation, on a set `S` of constants. The check decides it. -/
 structure GroundFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop where
   faith : Faith p env κ lpsOf S
   natBasis : NatBasis env
-  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-    ∃ sh, CaseStored env (κ c) (κ r) sh ∧ CaseProg p κ S r sh
   eqns : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) →
     (∃ d, EqnShape env κ c thm d) ∧ ∀ d, EqnShape env κ c thm d → TermCorr κ (lpsOf c) body d.body
   values : ∀ c lvls ty v cv val hint, S c → p.table.resolveOf c = none →
